@@ -1,0 +1,13 @@
+[package]
+name = "emcraft-mesh"
+description = "EMCraft meshing: structured tetrahedral meshes of waveguides, edge and face numbering, boundary tags, point location"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-model = { workspace = true }
+thiserror = { workspace = true }

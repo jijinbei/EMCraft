@@ -1,0 +1,70 @@
+[workspace]
+resolver = "3"
+members = ["crates/model", "crates/mesh", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+authors = ["EMCraft contributors"]
+
+[workspace.dependencies]
+# internal
+emcraft-model = { path = "crates/model" }
+emcraft-mesh = { path = "crates/mesh" }
+emcraft-fem = { path = "crates/fem" }
+emcraft-theory = { path = "crates/theory" }
+emcraft-render = { path = "crates/render" }
+emcraft-solver = { path = "crates/solver" }
+emcraft-engine = { path = "crates/engine" }
+emcraft-ui-egui = { path = "crates/ui-egui" }
+emcraft-testkit = { path = "crates/testkit" }
+
+# foundation
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+# Complex numbers for the frequency-domain solver (docs/adr/0001-libraries.md).
+num-complex = { version = "0.4", default-features = false, features = ["std"] }
+
+# images (PNG field pictures)
+png = "0.18"
+
+# ui: the same egui/eframe line as FieldCraft, drawn with the glow backend
+egui = "0.36"
+eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+# `!(x > tol)` is our idiom for "not a usable number" (NaN-safe).
+neg_cmp_op_on_partial_ord = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+# Assembly and the sparse factorization are compute loops; their verification runs (tests)
+# need them optimised.
+[profile.dev.package.emcraft-solver]
+opt-level = 3
+
+[profile.dev.package.emcraft-fem]
+opt-level = 3
+
+[profile.dev.package.emcraft-mesh]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+debug = "line-tables-only"

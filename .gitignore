@@ -1,0 +1,9 @@
+/target*/
+/plan/
+/dist/
+/.agent-files/
+/worktrees/
+*~
+.DS_Store
+*.swp
+/out/

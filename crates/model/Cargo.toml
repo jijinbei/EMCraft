@@ -1,0 +1,13 @@
+[package]
+name = "emcraft-model"
+description = "EMCraft's solver-neutral electromagnetic model: SI units and their display conversions, materials, waveguide geometry, ports, frequency sweeps and the tetrahedral mesh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
