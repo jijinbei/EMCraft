@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use emcraft_fem::Order;
 use emcraft_model::units::{Frequency, Length, decibels};
-use emcraft_model::{End, Material, Port, Section, Shape, Solid, Waveguide};
+use emcraft_model::{End, Inclusion, Material, Port, Section, Shape, Solid, Waveguide};
 use emcraft_solver::{Complex64 as C, Driven};
 use serde_json::{Value, json};
 
@@ -67,6 +67,20 @@ pub static COMMANDS: &[CommandSpec] = &[
             p("material", "string", N, false, "the filling (default vacuum)"),
         ],
         run: solid,
+    },
+    CommandSpec {
+        id: "geometry.inclusion",
+        label: "Inclusion",
+        doc: "A body inside the solid: a dielectric region (`material`) or, without one, a conductor. The same shapes as geometry.solid, placed with their origin at `at`; it must lie inside the solid, apart from other inclusions. The regions are meshed apart and joined node for node across the interface.",
+        params: &[
+            p("shape", "string", N, true, "`box`, `cylinder` or `sphere`"),
+            p("size", "array", L, false, "the box's [x, y, z]"),
+            p("radius", "number", L, false, "the cylinder's or the sphere's radius"),
+            p("length", "number", L, false, "the cylinder's length along z"),
+            p("at", "array", L, false, "where its origin goes (default [0, 0, 0])"),
+            p("material", "string", N, false, "its filling; a perfect conductor when left out"),
+        ],
+        run: inclusion,
     },
     CommandSpec {
         id: "mesh.generate",
@@ -270,28 +284,47 @@ fn waveguide(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, |w| w.length()))}))
 }
 
-fn solid(s: &mut Session, p: &Value) -> Result<Value> {
+/// A shape from `shape`, `size`, `radius` and `length`.
+fn shape_of(s: &Session, p: &Value) -> Result<Shape> {
     let req = |s: &Session, name: &str| -> Result<f64> {
         s.positive_length(p, name)?.ok_or_else(|| EngineError::Params(format!("`{name}` is required for this shape")))
     };
-    let shape = match required_string(p, "shape")? {
-        "box" => {
-            let list = get(p, "size")
-                .and_then(Value::as_array)
-                .filter(|a| a.len() == 3)
-                .ok_or_else(|| EngineError::Params("`size` must be [x, y, z]".into()))?;
-            let mut size = [0.0; 3];
-            for (d, v) in size.iter_mut().zip(list) {
-                let x =
-                    v.as_f64().filter(|x| x.is_finite() && *x > 0.0).ok_or_else(|| EngineError::Params("`size` must be positive numbers".into()))?;
-                *d = s.display.length.to_si(x);
-            }
-            Shape::Box { size }
-        }
+    Ok(match required_string(p, "shape")? {
+        "box" => Shape::Box { size: point(s, p, "size")?.ok_or_else(|| EngineError::Params("`size` must be [x, y, z]".into()))? },
         "cylinder" => Shape::Cylinder { radius: req(s, "radius")?, length: req(s, "length")? },
         "sphere" => Shape::Sphere { radius: req(s, "radius")? },
         _ => return Err(EngineError::Params("`shape` must be box, cylinder or sphere".into())),
-    };
+    })
+}
+
+/// Three lengths `[x, y, z]` in display units, in metres.
+fn point(s: &Session, p: &Value, name: &str) -> Result<Option<[f64; 3]>> {
+    let Some(v) = get(p, name) else { return Ok(None) };
+    let list = v.as_array().filter(|a| a.len() == 3).ok_or_else(|| EngineError::Params(format!("`{name}` must be [x, y, z]")))?;
+    let mut out = [0.0; 3];
+    for (d, v) in out.iter_mut().zip(list) {
+        *d = s.display.length.to_si(v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::Params(format!("`{name}` must be numbers")))?);
+    }
+    Ok(Some(out))
+}
+
+fn inclusion(s: &mut Session, p: &Value) -> Result<Value> {
+    let shape = shape_of(s, p)?;
+    let at = point(s, p, "at")?.unwrap_or([0.0; 3]);
+    let material = string(p, "material")?.map(str::to_owned);
+    s.model.add_inclusion(Inclusion { shape, at, material })?;
+    s.sweep = None;
+    s.eigen = None;
+    Ok(json!({"inclusions": s.model.inclusions.len()}))
+}
+
+fn solid(s: &mut Session, p: &Value) -> Result<Value> {
+    let shape = shape_of(s, p)?;
+    if let Shape::Box { size } = shape
+        && size.iter().any(|v| !(*v > 0.0))
+    {
+        return Err(EngineError::Params("`size` must be positive".into()));
+    }
     let material = string(p, "material")?.unwrap_or("vacuum").to_owned();
     s.model.set_solid(Solid { shape, material })?;
     s.sweep = None;

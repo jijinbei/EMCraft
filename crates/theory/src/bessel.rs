@@ -65,6 +65,30 @@ pub fn sph_j(n: usize, x: f64) -> f64 {
     b
 }
 
+/// The spherical Neumann function y_n(x), x > 0 (upward recurrence, stable).
+pub fn sph_y(n: usize, x: f64) -> f64 {
+    let (s, c) = x.sin_cos();
+    let mut a = -c / x;
+    if n == 0 {
+        return a;
+    }
+    let mut b = -c / (x * x) - s / x;
+    for k in 1..n {
+        let next = (2 * k + 1) as f64 / x * b - a;
+        a = b;
+        b = next;
+    }
+    b
+}
+
+/// d/dx [x y_n(x)] = x y_{n−1}(x) − n y_n(x).
+pub fn sph_xy_prime(n: usize, x: f64) -> f64 {
+    if n == 0 {
+        return x.sin();
+    }
+    x * sph_y(n - 1, x) - n as f64 * sph_y(n, x)
+}
+
 /// d/dx [x j_n(x)] = x j_{n−1}(x) − n j_n(x).
 pub fn sph_xj_prime(n: usize, x: f64) -> f64 {
     if n == 0 {
@@ -164,6 +188,49 @@ pub fn sphere_cavity_resonances(a: f64, eps_r: f64, count: usize) -> Vec<(f64, S
     out
 }
 
+/// The resonances of a spherical cavity of radius `r_out` (vacuum) holding a concentric
+/// dielectric sphere of radius `r_in` and permittivity εr, lowest first, each listed 2n + 1 times.
+/// With the radial function f of the field tangential to the spheres (E for TE, H for TM), j_n
+/// inside and a combination of j_n and y_n outside: TE has f = 0 at the wall and f, (r f)'
+/// continuous at r_in; TM has (r f)' = 0 at the wall and f, (r f)'/ε continuous (Harrington
+/// 1961, §6.10, extended to two layers).
+pub fn layered_sphere_resonances(r_in: f64, eps_r: f64, r_out: f64, count: usize) -> Vec<(f64, String)> {
+    let mut out = Vec::new();
+    let n1 = eps_r.sqrt();
+    // Scan k0 up to where the empty cavity's tenth resonance lies, enough for the lowest modes.
+    let k_max = 25.0 / r_out;
+    for n in 1..5usize {
+        let gj = |x: f64| sph_xj_prime(n, x);
+        let gy = |x: f64| sph_xy_prime(n, x);
+        let te = |k0: f64| {
+            let (x1, xa, xr) = (k0 * n1 * r_in, k0 * r_in, k0 * r_out);
+            let (f1, g1) = (sph_j(n, x1), gj(x1));
+            let f2 = sph_j(n, xa) * sph_y(n, xr) - sph_y(n, xa) * sph_j(n, xr);
+            let g2 = gj(xa) * sph_y(n, xr) - gy(xa) * sph_j(n, xr);
+            f1 * g2 - f2 * g1
+        };
+        let tm = |k0: f64| {
+            let (x1, xa, xr) = (k0 * n1 * r_in, k0 * r_in, k0 * r_out);
+            let (f1, g1) = (sph_j(n, x1), gj(x1));
+            let f2 = sph_j(n, xa) * gy(xr) - sph_y(n, xa) * gj(xr);
+            let g2 = gj(xa) * gy(xr) - gy(xa) * gj(xr);
+            f1 * g2 - f2 * g1 / eps_r
+        };
+        // In k0 r_out (well scaled), above x = n/2 where the recurrences hold.
+        for (kind, f) in [("TE", &te as &dyn Fn(f64) -> f64), ("TM", &tm)] {
+            let roots = zeros(|x| f(x / r_out), 6, k_max * r_out);
+            for (p, x) in roots.iter().filter(|x| **x > 0.5 * n as f64).take(3).enumerate() {
+                for _ in 0..2 * n + 1 {
+                    out.push((C0 * x / r_out / (2.0 * PI), format!("{kind}{n}{}", p + 1)));
+                }
+            }
+        }
+    }
+    out.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+    out.truncate(count);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,6 +256,19 @@ mod tests {
             // j₀ = J_{1/2} √(π/2x): compare with the closed form.
             assert!((sph_j(0, x) - x.sin() / x).abs() < 1e-15);
         }
+    }
+
+    #[test]
+    fn a_vacuum_core_is_the_plain_sphere_and_a_dielectric_one_lowers_it() {
+        let plain = sphere_cavity_resonances(0.01, 1.0, 6);
+        let same = layered_sphere_resonances(0.004, 1.0, 0.01, 6);
+        for (a, b) in plain.iter().zip(&same) {
+            assert!((a.0 - b.0).abs() < 1e-9 * a.0 && a.1 == b.1, "{a:?} {b:?}");
+        }
+        let loaded = layered_sphere_resonances(0.004, 4.0, 0.01, 3);
+        assert!(loaded[0].0 < plain[0].0 && loaded[0].0 > plain[0].0 / 2.0);
+        // y_n against closed forms.
+        assert!((sph_y(1, 2.0) - (-(2f64.cos()) / 4.0 - 2f64.sin() / 2.0)).abs() < 1e-15);
     }
 
     #[test]

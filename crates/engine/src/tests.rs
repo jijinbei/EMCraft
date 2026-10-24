@@ -199,6 +199,13 @@ fn solids_mesh_unstructured_and_their_modes_meet_the_bessel_zeros() {
     s.execute("view.field", &json!({"path": path, "mode": 1, "plane": "cross"})).unwrap();
     assert!(std::fs::read(&path).unwrap().len() > 1000);
     assert!(s.execute("geometry.solid", &json!({"shape": "torus"})).is_err());
+    // A dielectric rod along the axis's middle third.
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.1})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 3, "length": 10, "at": [0, 0, 10], "material": "ptfe"})).unwrap();
+    let m = s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    assert!(m["tetrahedra"].as_u64().unwrap() > 0);
+    assert!(s.model.mesh.as_ref().unwrap().tet_material.contains(&1));
+    assert!(s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 20})).is_err());
     assert!(s.execute("geometry.solid", &json!({"shape": "box", "size": [1, -1, 1]})).is_err());
     // A box between two ports is compared with the empty guide.
     let mut b = Session::new();

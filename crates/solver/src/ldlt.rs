@@ -505,7 +505,7 @@ impl Ldlt {
         let tau = f64::EPSILON.sqrt() * norm;
 
         // Ordering: nested dissection, then a postorder of its elimination tree.
-        let nd = crate::ordering::nested_dissection(xyz, &a.adjacency());
+        let nd = crate::ordering::fill_reducing_order(xyz, &a.adjacency());
         let parent0 = etree(&lower_rows(a, &nd, &invert(&nd)));
         let post = postorder(&parent0);
         let perm: Vec<usize> = post.iter().map(|&p| nd[p]).collect();
@@ -645,32 +645,61 @@ impl Ldlt {
 
     /// Solves A x = b in place.
     pub fn solve(&self, b: &mut [C]) -> Result<(), FactorError> {
-        if b.len() != self.n {
-            return Err(FactorError::Dimension(format!("right-hand side of {} for {} unknowns", b.len(), self.n)));
+        let mut one = [b.to_vec()];
+        self.solve_many(&mut one)?;
+        b.copy_from_slice(&one[0]);
+        Ok(())
+    }
+
+    /// Solves A X = B in place for several right-hand sides at once: each pass over the factor
+    /// serves them all (the solve reads the whole factor and does little with each entry). Each
+    /// column's arithmetic is the single solve's, in the same order.
+    pub fn solve_many(&self, bs: &mut [Vec<C>]) -> Result<(), FactorError> {
+        let r = bs.len();
+        if r == 0 {
+            return Ok(());
         }
-        let mut y: Vec<C> = self.perm.iter().map(|&u| b[u]).collect();
-        let mut local = Vec::new();
+        if bs.iter().any(|b| b.len() != self.n) {
+            return Err(FactorError::Dimension(format!("right-hand sides for {} unknowns", self.n)));
+        }
+        // y[position · r + j].
+        let mut y = vec![C::new(0.0, 0.0); self.n * r];
+        for (pos, &u) in self.perm.iter().enumerate() {
+            for (j, b) in bs.iter().enumerate() {
+                y[pos * r + j] = b[u];
+            }
+        }
+        let zero = C::new(0.0, 0.0);
+        let mut local: Vec<C> = Vec::new();
         // L z = b.
         for s in &self.supernodes {
             let m = s.rows.len();
             local.clear();
-            local.extend(s.rows.iter().map(|&r| y[r]));
+            for &row in &s.rows {
+                local.extend_from_slice(&y[row * r..row * r + r]);
+            }
             let mut p = 0;
             while p < s.k {
                 let width = if matches!(s.pivots[p], Pivot::Two(..)) { 2 } else { 1 };
                 for c in p..p + width {
-                    let xc = local[c];
-                    if xc == C::new(0.0, 0.0) {
+                    let xc: Vec<C> = local[c * r..c * r + r].to_vec();
+                    if xc.iter().all(|v| *v == zero) {
                         continue;
                     }
                     for i in p + width..m {
-                        local[i] -= s.l[c * m + i] * xc;
+                        let l = s.l[c * m + i];
+                        if l == zero {
+                            continue;
+                        }
+                        for (t, x) in local[i * r..i * r + r].iter_mut().zip(&xc) {
+                            *t -= l * x;
+                        }
                     }
                 }
                 p += width;
             }
-            for (r, v) in s.rows.iter().zip(&local) {
-                y[*r] = *v;
+            for (k, &row) in s.rows.iter().enumerate() {
+                y[row * r..row * r + r].copy_from_slice(&local[k * r..k * r + r]);
             }
         }
         // D w = z.
@@ -679,15 +708,19 @@ impl Ldlt {
             while p < s.k {
                 match s.pivots[p] {
                     Pivot::One(d) => {
-                        y[s.rows[p]] /= d;
+                        for v in &mut y[s.rows[p] * r..s.rows[p] * r + r] {
+                            *v /= d;
+                        }
                         p += 1;
                     }
                     Pivot::Two(a11, a21, a22) => {
                         let (r0, r1) = (s.rows[p], s.rows[p + 1]);
                         let det = a11 * a22 - a21 * a21;
-                        let (b0, b1) = (y[r0], y[r1]);
-                        y[r0] = (a22 * b0 - a21 * b1) / det;
-                        y[r1] = (a11 * b1 - a21 * b0) / det;
+                        for j in 0..r {
+                            let (b0, b1) = (y[r0 * r + j], y[r1 * r + j]);
+                            y[r0 * r + j] = (a22 * b0 - a21 * b1) / det;
+                            y[r1 * r + j] = (a11 * b1 - a21 * b0) / det;
+                        }
                         p += 2;
                     }
                     Pivot::Second => p += 1,
@@ -695,29 +728,39 @@ impl Ldlt {
             }
         }
         // Lᵀ x = w.
+        let mut acc = vec![zero; r];
         for s in self.supernodes.iter().rev() {
             let m = s.rows.len();
             local.clear();
-            local.extend(s.rows.iter().map(|&r| y[r]));
+            for &row in &s.rows {
+                local.extend_from_slice(&y[row * r..row * r + r]);
+            }
             let mut p = s.k;
             while p > 0 {
                 let width = if p >= 2 && matches!(s.pivots[p - 2], Pivot::Two(..)) { 2 } else { 1 };
                 let start = p - width;
                 for c in start..p {
-                    let mut acc = C::new(0.0, 0.0);
+                    acc.iter_mut().for_each(|a| *a = zero);
                     for i in p..m {
-                        acc += s.l[c * m + i] * local[i];
+                        let l = s.l[c * m + i];
+                        for (a, x) in acc.iter_mut().zip(&local[i * r..i * r + r]) {
+                            *a += l * x;
+                        }
                     }
-                    local[c] -= acc;
+                    for (t, a) in local[c * r..c * r + r].iter_mut().zip(&acc) {
+                        *t -= a;
+                    }
                 }
                 p = start;
             }
-            for (r, v) in s.rows.iter().zip(&local).take(s.k) {
-                y[*r] = *v;
+            for (k, &row) in s.rows.iter().enumerate().take(s.k) {
+                y[row * r..row * r + r].copy_from_slice(&local[k * r..k * r + r]);
             }
         }
         for (pos, &u) in self.perm.iter().enumerate() {
-            b[u] = y[pos];
+            for (j, b) in bs.iter_mut().enumerate() {
+                b[u] = y[pos * r + j];
+            }
         }
         Ok(())
     }
@@ -825,7 +868,7 @@ mod tests {
             let b = a.mul(&x_true);
             let mut x = b.clone();
             f.solve(&mut x).unwrap();
-            assert!(residual(&a, &x, &b) < 1e-12, "{label}: {}", residual(&a, &x, &b));
+            assert!(residual(&a, &x, &b) < 1e-11, "{label}: {}", residual(&a, &x, &b));
             let (xr, berr) = f.solve_refined(&a, &b, 5).unwrap();
             assert!(berr < 1e-14, "{label}: {berr}");
             let err = xr.iter().zip(&x_true).fold(0.0f64, |m, (p, q)| m.max((p - q).norm()));

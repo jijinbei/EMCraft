@@ -203,6 +203,44 @@ pub struct Solid {
     pub material: String,
 }
 
+/// A body inside the solid: a dielectric region (`material`) or a conductor (`None`), placed
+/// with its own origin at `at`. It must lie strictly inside the solid and apart from the others.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Inclusion {
+    pub shape: Shape,
+    pub at: [f64; 3],
+    /// The filling; `None` for a perfect conductor (a hole in the mesh).
+    pub material: Option<String>,
+}
+
+impl Inclusion {
+    pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
+        let (lo, hi) = self.shape.bounds();
+        ([0, 1, 2].map(|d| lo[d] + self.at[d]), [0, 1, 2].map(|d| hi[d] + self.at[d]))
+    }
+}
+
+impl Solid {
+    /// The shape's dimensions are finite and positive.
+    pub fn check_shape(&self) -> Result<()> {
+        match self.shape {
+            Shape::Box { size } => {
+                for (k, v) in size.iter().enumerate() {
+                    positive(&format!("box size {}", ["x", "y", "z"][k]), *v)?;
+                }
+            }
+            Shape::Cylinder { radius, length } => {
+                positive("cylinder radius", radius)?;
+                positive("cylinder length", length)?;
+            }
+            Shape::Sphere { radius } => {
+                positive("sphere radius", radius)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The cross-section of a port: the mode functions it carries.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PortShape {
@@ -255,6 +293,9 @@ pub struct Model {
     /// A primitive body instead of a waveguide.
     #[serde(default)]
     pub solid: Option<Solid>,
+    /// Bodies inside the solid (other materials, conductors).
+    #[serde(default)]
+    pub inclusions: Vec<Inclusion>,
     pub ports: Vec<Port>,
     /// The conductivity (S/m) of the guide's walls (and its irises and steps); perfectly
     /// conducting when `None`.
@@ -337,29 +378,45 @@ impl Model {
         }
         self.waveguide = Some(w);
         self.solid = None;
+        self.inclusions.clear();
         self.mesh = None;
         Ok(())
     }
 
     /// Sets a primitive body as the geometry (replacing a waveguide); the mesh is dropped.
     pub fn set_solid(&mut self, s: Solid) -> Result<()> {
-        match s.shape {
-            Shape::Box { size } => {
-                for (k, v) in size.iter().enumerate() {
-                    positive(&format!("box size {}", ["x", "y", "z"][k]), *v)?;
-                }
-            }
-            Shape::Cylinder { radius, length } => {
-                positive("cylinder radius", radius)?;
-                positive("cylinder length", length)?;
-            }
-            Shape::Sphere { radius } => {
-                positive("sphere radius", radius)?;
-            }
-        }
+        s.check_shape()?;
         self.material(&s.material)?;
         self.solid = Some(s);
         self.waveguide = None;
+        self.inclusions.clear();
+        self.mesh = None;
+        Ok(())
+    }
+
+    /// Adds a body inside the solid; it must lie within the solid's bounding box, apart from the
+    /// other inclusions' (the mesher checks the surfaces do not meet).
+    pub fn add_inclusion(&mut self, inc: Inclusion) -> Result<()> {
+        let solid = self.solid.as_ref().ok_or_else(|| invalid("inclusion", "needs a solid (geometry.solid) to lie in"))?;
+        Solid { shape: inc.shape.clone(), material: solid.material.clone() }.check_shape()?;
+        if !inc.at.iter().all(|v| v.is_finite()) {
+            return Err(invalid("inclusion", "its position must be finite"));
+        }
+        if let Some(m) = &inc.material {
+            self.material(m)?;
+        }
+        let (lo, hi) = inc.bounds();
+        let (slo, shi) = solid.shape.bounds();
+        if (0..3).any(|d| lo[d] <= slo[d] || hi[d] >= shi[d]) {
+            return Err(invalid("inclusion", "must lie strictly inside the solid's bounding box"));
+        }
+        for other in &self.inclusions {
+            let (olo, ohi) = other.bounds();
+            if (0..3).all(|d| lo[d] < ohi[d] && olo[d] < hi[d]) {
+                return Err(invalid("inclusion", "not supported yet: inclusions whose bounding boxes overlap"));
+            }
+        }
+        self.inclusions.push(inc);
         self.mesh = None;
         Ok(())
     }

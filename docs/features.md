@@ -44,6 +44,19 @@ A body of one material with conducting walls, meshed with unstructured tetrahedr
 | `length` | number | length | no | the cylinder's length along z |
 | `material` | string |  | no | the filling (default vacuum) |
 
+## `geometry.inclusion` — Inclusion
+
+A body inside the solid: a dielectric region (`material`) or, without one, a conductor. The same shapes as geometry.solid, placed with their origin at `at`; it must lie inside the solid, apart from other inclusions. The regions are meshed apart and joined node for node across the interface.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `size` | array | length | no | the box's [x, y, z] |
+| `radius` | number | length | no | the cylinder's or the sphere's radius |
+| `length` | number | length | no | the cylinder's length along z |
+| `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
+| `material` | string |  | no | its filling; a perfect conductor when left out |
+
 ## `mesh.generate` — Mesh
 
 Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises.

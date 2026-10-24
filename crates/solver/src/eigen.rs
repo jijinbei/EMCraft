@@ -158,12 +158,10 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
     for it in 0..MAX_ITERATIONS {
         iterations = it + 1;
         // Y = (K − σM)⁻¹ M X.
-        let mut y = Vec::with_capacity(q);
-        for v in &x {
-            let mut r = mmul(v);
-            factor.solve(&mut r)?;
+        let mut y: Vec<Vec<C>> = x.iter().map(|v| mmul(v)).collect();
+        factor.solve_many(&mut y)?;
+        for r in &mut y {
             r.iter_mut().for_each(|c| *c = C::new(c.re, 0.0));
-            y.push(r);
         }
         let ky: Vec<Vec<C>> = y.iter().map(|v| kmul(v)).collect();
         let my: Vec<Vec<C>> = y.iter().map(|v| mmul(v)).collect();

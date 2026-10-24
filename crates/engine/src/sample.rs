@@ -30,6 +30,11 @@ pub const SAMPLES: &[Sample] = &[
         label: "Copper cylindrical cavity, radius 10 mm, 30 mm long, meshed with unstructured tetrahedra: TE111 and TM010 against the Bessel zeros",
         script: include_str!("../samples/cylinder-cavity.json"),
     },
+    Sample {
+        name: "loaded-sphere",
+        label: "Spherical cavity, radius 10 mm, around a concentric ceramic sphere (εr = 4, radius 4 mm): two material regions joined node for node, the TM11 triplet at 11.26 GHz",
+        script: include_str!("../samples/loaded-sphere.json"),
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static Sample> {

@@ -87,3 +87,35 @@ fn unstructured_waveguide_transmits_with_the_te10_phase() {
         assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-10);
     }
 }
+
+/// A spherical cavity of radius 10 mm holding a concentric dielectric sphere (εr = 4, radius
+/// 4 mm): the largest relative error of its three lowest modes at element size `h`.
+fn loaded_sphere_error(h: f64) -> f64 {
+    use emcraft_model::{Inclusion, Material};
+    let mut m = Model::new();
+    m.add_material(Material::new("ceramic", 4.0, 1.0).unwrap()).unwrap();
+    m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: [0.0; 3], material: Some("ceramic".into()) }).unwrap();
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, h).unwrap());
+    let exact = emcraft_theory::bessel::layered_sphere_resonances(0.004, 4.0, 0.01, 6);
+    let near = exact[2].0 * 1.05;
+    let e = eigenmodes(&m, Order::Two, 3, near).unwrap();
+    let f: Vec<f64> = e.modes.iter().map(|x| x.frequency).collect();
+    worst(&f, &exact)
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn dielectric_loaded_spherical_cavity() {
+    // Two regions meshed apart and joined node for node: the TM11 triplet within the outer
+    // wall's geometric error (1.0 % at 3 mm, as for the empty sphere).
+    let w = loaded_sphere_error(0.003);
+    assert!(w < 2e-2, "{w:e}");
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn dielectric_loaded_spherical_cavity_converges() {
+    let (e3, e2) = (loaded_sphere_error(0.003), loaded_sphere_error(0.002));
+    assert!(e3 / e2 > 1.8 && e2 < 5e-3, "{e3:e} {e2:e}");
+}

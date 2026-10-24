@@ -1,0 +1,7 @@
+[
+ {"command": "model.material.create", "params": {"name": "ceramic", "eps_r": 4.0}},
+ {"command": "geometry.solid", "params": {"shape": "sphere", "radius": 10}},
+ {"command": "geometry.inclusion", "params": {"shape": "sphere", "radius": 4, "at": [0, 0, 0], "material": "ceramic"}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 11.8, "count": 3, "order": 2}}
+]
