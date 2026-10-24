@@ -32,6 +32,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "emcraft-solver"
+version = "0.1.0"
+dependencies = [
+ "emcraft-fem",
+ "emcraft-mesh",
+ "emcraft-model",
+ "emcraft-theory",
+ "num-complex",
+ "thiserror",
+]
+
+[[package]]
 name = "emcraft-theory"
 version = "0.1.0"
 dependencies = [
