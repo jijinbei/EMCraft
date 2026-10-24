@@ -766,10 +766,40 @@ fn unfold(mesh: &mut Mesh) {
 
 /// [`solid`], with the edges on curved surfaces bent onto them (`curved`) or left straight.
 pub fn solid_with(model: &Model, size: f64, curved: bool) -> Result<Mesh> {
-    let size = positive("element size", size)?;
+    solid_sized(model, &Sizes { default: size, per_material: Vec::new() }, curved)
+}
+
+/// Element sizes: a default, and one per material (by index into the model's materials) where
+/// given — a fixed number of elements per wavelength in each material, say.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sizes {
+    pub default: f64,
+    pub per_material: Vec<Option<f64>>,
+}
+
+impl Sizes {
+    pub fn of(&self, material: usize) -> f64 {
+        self.per_material.get(material).copied().flatten().unwrap_or(self.default)
+    }
+}
+
+/// [`solid_with`], each material region meshed at its own size (the solid's own material
+/// outside the inclusions, each dielectric inclusion at its material's), the interfaces at the
+/// smaller of their two sides'.
+pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
-    let estimate = s.shape.volume() / (size.powi(3) / 6.0) * 1.5;
+    let size = positive("element size", sizes.of(material))?;
+    let mut inner_size = Vec::with_capacity(model.inclusions.len());
+    let mut estimate = s.shape.volume() / (size.powi(3) / 6.0) * 1.5;
+    for inc in &model.inclusions {
+        let h = match &inc.material {
+            Some(name) => positive("element size", sizes.of(model.material(name)?.0))?,
+            None => size,
+        };
+        inner_size.push(h);
+        estimate += inc.shape.volume() / (h.powi(3) / 6.0) * 1.5;
+    }
     if !(estimate <= MAX_TETS as f64) {
         return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
     }
@@ -781,8 +811,12 @@ pub fn solid_with(model: &Model, size: f64, curved: bool) -> Result<Mesh> {
     // The interfaces' current triangulations, oriented out of each inclusion. Boundary recovery
     // may add points on an interface in one region; that region's triangulation then becomes the
     // other's input, until both keep the same (frozen) triangles.
-    let mut interfaces: Vec<Tessellation> =
-        model.inclusions.iter().map(|inc| placed(tessellate(&inc.shape, interface_size(&inc.shape, size)), inc.at)).collect();
+    let mut interfaces: Vec<Tessellation> = model
+        .inclusions
+        .iter()
+        .zip(&inner_size)
+        .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h))), inc.at))
+        .collect();
     // Tags: the solid's faces, then each interface's triangles in turn.
     let first_tag = main.tri_face.iter().map(|f| f + 1).max().unwrap_or(0);
     let mut bases: Vec<(u32, u32)> = Vec::new();
@@ -818,7 +852,7 @@ pub fn solid_with(model: &Model, size: f64, curved: bool) -> Result<Mesh> {
             let Some(name) = &inc.material else { continue };
             let (m, _) = model.material(name)?;
             let n = interfaces[k].triangles.len() as u32;
-            let inner = region(&interfaces[k], size, (0..n).collect())?;
+            let inner = region(&interfaces[k], inner_size[k], (0..n).collect())?;
             let seen = extract(&inner, 0, n, true);
             if !same_triangles(&seen, &interfaces[k], size) {
                 interfaces[k] = seen;

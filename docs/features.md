@@ -88,7 +88,9 @@ Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of 
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `size` | number | length | yes | target element size |
+| `size` | number | length | no | target element size (required without `per_wavelength`; with it, the largest size) |
+| `per_wavelength` | number |  | no | elements per wavelength in each material at `frequency` (λ = c/(f√(εr μr))): a solid's regions each at their own size, a waveguide at the smallest |
+| `frequency` | number | frequency | no | the highest frequency the mesh must resolve (with `per_wavelength`) |
 | `edge` | number |  | no | element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform) |
 | `growth` | number |  | no | element growth away from those edges (default 1.5) |
 | `size_y` | number | length | no | element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there |

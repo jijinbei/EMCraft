@@ -114,7 +114,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Mesh",
         doc: "Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises. A solid is meshed without structure, its tetrahedra on curved walls and interfaces curved (quadratic geometry) unless `curved` is false.",
         params: &[
-            p("size", "number", L, true, "target element size"),
+            p("size", "number", L, false, "target element size (required without `per_wavelength`; with it, the largest size)"),
+            p(
+                "per_wavelength",
+                "number",
+                N,
+                false,
+                "elements per wavelength in each material at `frequency` (λ = c/(f√(εr μr))): a solid's regions each at their own size, a waveguide at the smallest",
+            ),
+            p("frequency", "number", F, false, "the highest frequency the mesh must resolve (with `per_wavelength`)"),
             p("edge", "number", N, false, "element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform)"),
             p("growth", "number", N, false, "element growth away from those edges (default 1.5)"),
             p(
@@ -425,26 +433,78 @@ fn solid(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"volume": s.model.solid.as_ref().map(|x| x.shape.volume())}))
 }
 
+/// The element size in each material (by index): `per_wavelength` elements per wavelength at
+/// `frequency`, at most `size`; or `size` alone.
+fn material_sizes(s: &Session, p: &Value) -> Result<(f64, Vec<Option<f64>>)> {
+    let size = s.positive_length(p, "size")?;
+    let Some(n) = number(p, "per_wavelength")? else {
+        return Ok((size.ok_or_else(|| EngineError::Params("`size` (or `per_wavelength` with `frequency`) is required".into()))?, Vec::new()));
+    };
+    if !(n.is_finite() && (1.0..=1000.0).contains(&n)) {
+        return Err(EngineError::Params("`per_wavelength` must be between 1 and 1000".into()));
+    }
+    let f = s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`per_wavelength` needs the `frequency` the mesh must resolve".into()))?;
+    let per: Vec<Option<f64>> = s
+        .model
+        .materials
+        .iter()
+        .map(|m| {
+            let h = emcraft_model::units::C0 / (f * (m.eps_r * m.mu_r).sqrt()) / n;
+            Some(size.map_or(h, |c| c.min(h)))
+        })
+        .collect();
+    let default = per.first().copied().flatten().unwrap_or(f64::NAN);
+    Ok((default, per))
+}
+
 fn mesh_generate(s: &mut Session, p: &Value) -> Result<Value> {
-    let size = s.positive_length(p, "size")?.ok_or_else(|| EngineError::Params("`size` is required".into()))?;
+    let (size, per_material) = material_sizes(s, p)?;
+    let sizes_reply = |s: &Session| -> Value {
+        let mut out = serde_json::Map::new();
+        for (m, h) in s.model.materials.iter().zip(&per_material) {
+            if let Some(h) = h {
+                out.insert(m.name.clone(), json!(s.display.length.from_si(*h)));
+            }
+        }
+        Value::Object(out)
+    };
     if s.model.waveguide.is_none() && s.model.solid.is_some() {
         let curved = match p.get("curved") {
             None | Some(Value::Null) => true,
             Some(Value::Bool(b)) => *b,
             Some(v) => return Err(EngineError::Params(format!("`curved` must be true or false, got {v}"))),
         };
-        let mesh = emcraft_mesh::solid::solid_with(&s.model, size, curved)?;
-        let reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len(), "unstructured": true, "curved_edges": mesh.curved.len()});
+        let sizes = emcraft_mesh::solid::Sizes { default: size, per_material: per_material.clone() };
+        let mesh = emcraft_mesh::solid::solid_sized(&s.model, &sizes, curved)?;
+        let mut reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len(), "unstructured": true, "curved_edges": mesh.curved.len()});
+        if !per_material.is_empty() {
+            reply["sizes"] = sizes_reply(s);
+        }
         s.model.mesh = Some(mesh);
         s.sweep = None;
         return Ok(reply);
     }
+    // A structured grid has one size: the smallest the sections' materials ask for.
+    let size = match &s.model.waveguide {
+        Some(w) if !per_material.is_empty() => {
+            let mut h = f64::INFINITY;
+            for sec in &w.sections {
+                let (m, _) = s.model.material(&sec.material)?;
+                h = h.min(per_material.get(m).copied().flatten().unwrap_or(size));
+            }
+            h
+        }
+        _ => size,
+    };
     let mut o = emcraft_mesh::Options::new(size);
     o.edge = number(p, "edge")?.unwrap_or(o.edge);
     o.growth = number(p, "growth")?.unwrap_or(o.growth);
     o.size_y = s.positive_length(p, "size_y")?;
     let mesh = emcraft_mesh::waveguide_with(&s.model, &o)?;
-    let reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len()});
+    let mut reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len()});
+    if !per_material.is_empty() {
+        reply["size"] = json!(s.display.length.from_si(size));
+    }
     s.model.mesh = Some(mesh);
     s.sweep = None;
     Ok(reply)

@@ -273,3 +273,37 @@ fn imported_surfaces_mesh_and_carry_ports() {
     // The model was left as it was by the refusals.
     assert!(matches!(s.model.solid.as_ref().unwrap().shape, emcraft_model::Shape::Surface { .. }));
 }
+
+#[test]
+fn meshes_follow_the_wavelength_in_each_material() {
+    // A ceramic sphere (εr = 4) in a vacuum sphere: at 12 GHz λ is 25 mm outside, 12.5 mm inside.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ceramic", "eps_r": 4})).unwrap();
+    s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 10})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 5, "at": [0, 0, 0], "material": "ceramic"})).unwrap();
+    let r = s.execute("mesh.generate", &json!({"per_wavelength": 8, "frequency": 12})).unwrap();
+    let lambda = emcraft_model::units::C0 / 12e9 * 1e3;
+    assert!((r["sizes"]["vacuum"].as_f64().unwrap() - lambda / 8.0).abs() < 1e-9);
+    assert!((r["sizes"]["ceramic"].as_f64().unwrap() - lambda / 16.0).abs() < 1e-9);
+    // The ceramic's tetrahedra are about half the size: an eighth of the volume, less near the
+    // interface, whose triangles the vacuum's tetrahedra share (3.9 measured).
+    let mesh = s.model.mesh.as_ref().unwrap();
+    let v = emcraft_mesh::volumes(mesh);
+    let mean = |m: u32| {
+        let (sum, n) = v.iter().zip(&mesh.tet_material).filter(|(_, k)| **k == m).fold((0.0, 0), |(s, n), (v, _)| (s + v, n + 1));
+        sum / n as f64
+    };
+    let ratio = mean(0) / mean(1);
+    assert!(ratio > 2.5 && ratio < 16.0, "{ratio}");
+    // A cap on the size; and a structured guide takes its smallest material's size.
+    let r = s.execute("mesh.generate", &json!({"per_wavelength": 8, "frequency": 12, "size": 2})).unwrap();
+    assert_eq!(r["sizes"]["vacuum"], 2.0);
+    let mut w = Session::new();
+    w.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let r = w.execute("mesh.generate", &json!({"per_wavelength": 10, "frequency": 9})).unwrap();
+    let h = emcraft_model::units::C0 / 9e9 / 2f64.sqrt() / 10.0 * 1e3;
+    assert!((r["size"].as_f64().unwrap() - h).abs() < 1e-9, "{}", r["size"]);
+    assert!(w.execute("mesh.generate", &json!({"per_wavelength": 10})).is_err());
+    assert!(w.execute("mesh.generate", &json!({"per_wavelength": 0, "frequency": 9})).is_err());
+    assert!(w.execute("mesh.generate", &json!({})).is_err());
+}
