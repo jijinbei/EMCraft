@@ -11,7 +11,7 @@
 pub mod mesh;
 pub mod units;
 
-pub use mesh::{Boundary, BoundaryFace, Grid, Mesh};
+pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -164,6 +164,54 @@ impl Waveguide {
     }
 }
 
+/// A primitive body, meshed with unstructured tetrahedra.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Shape {
+    /// [0, x] × [0, y] × [0, z].
+    Box { size: [f64; 3] },
+    /// Axis z through the origin, from z = 0 to `length`.
+    Cylinder { radius: f64, length: f64 },
+    /// Centred on the origin.
+    Sphere { radius: f64 },
+}
+
+impl Shape {
+    /// The bounding box (lo, hi).
+    pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
+        match *self {
+            Shape::Box { size } => ([0.0; 3], size),
+            Shape::Cylinder { radius: r, length } => ([-r, -r, 0.0], [r, r, length]),
+            Shape::Sphere { radius: r } => ([-r; 3], [r; 3]),
+        }
+    }
+
+    pub fn volume(&self) -> f64 {
+        match *self {
+            Shape::Box { size } => size[0] * size[1] * size[2],
+            Shape::Cylinder { radius, length } => std::f64::consts::PI * radius * radius * length,
+            Shape::Sphere { radius } => 4.0 / 3.0 * std::f64::consts::PI * radius.powi(3),
+        }
+    }
+}
+
+/// A body of one material bounded by conducting walls (a cavity, or a guide whose end faces are
+/// ports).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Solid {
+    pub shape: Shape,
+    pub material: String,
+}
+
+/// The cross-section of a port: the mode functions it carries.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PortShape {
+    /// [x0, x0 + a] × [y0, y0 + b].
+    Rect { x0: f64, y0: f64, a: f64, b: f64 },
+    /// A circle of radius r about (cx, cy).
+    Circle { cx: f64, cy: f64, r: f64 },
+}
+
 /// Which end of the waveguide a port closes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum End {
@@ -204,6 +252,9 @@ pub struct Port {
 pub struct Model {
     pub materials: Vec<Material>,
     pub waveguide: Option<Waveguide>,
+    /// A primitive body instead of a waveguide.
+    #[serde(default)]
+    pub solid: Option<Solid>,
     pub ports: Vec<Port>,
     /// The conductivity (S/m) of the guide's walls (and its irises and steps); perfectly
     /// conducting when `None`.
@@ -285,8 +336,60 @@ impl Model {
             }
         }
         self.waveguide = Some(w);
+        self.solid = None;
         self.mesh = None;
         Ok(())
+    }
+
+    /// Sets a primitive body as the geometry (replacing a waveguide); the mesh is dropped.
+    pub fn set_solid(&mut self, s: Solid) -> Result<()> {
+        match s.shape {
+            Shape::Box { size } => {
+                for (k, v) in size.iter().enumerate() {
+                    positive(&format!("box size {}", ["x", "y", "z"][k]), *v)?;
+                }
+            }
+            Shape::Cylinder { radius, length } => {
+                positive("cylinder radius", radius)?;
+                positive("cylinder length", length)?;
+            }
+            Shape::Sphere { radius } => {
+                positive("sphere radius", radius)?;
+            }
+        }
+        self.material(&s.material)?;
+        self.solid = Some(s);
+        self.waveguide = None;
+        self.mesh = None;
+        Ok(())
+    }
+
+    /// The bounding box of the geometry.
+    pub fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
+        if let Some(w) = &self.waveguide {
+            return Some(([0.0; 3], [w.width, w.height, w.length()]));
+        }
+        self.solid.as_ref().map(|s| s.shape.bounds())
+    }
+
+    /// The cross-section of the port at an end: the waveguide's end section, or a box's or a
+    /// cylinder's end face.
+    pub fn port_shape(&self, end: End) -> Result<PortShape> {
+        if let Some(w) = &self.waveguide {
+            let i = match end {
+                End::Start => 0,
+                End::End => w.sections.len().saturating_sub(1),
+            };
+            let (x0, a) = w.aperture(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
+            let (y0, b) = w.aperture_y(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
+            return Ok(PortShape::Rect { x0, y0, a, b });
+        }
+        match self.solid.as_ref().map(|s| &s.shape) {
+            Some(Shape::Box { size }) => Ok(PortShape::Rect { x0: 0.0, y0: 0.0, a: size[0], b: size[1] }),
+            Some(Shape::Cylinder { radius, .. }) => Ok(PortShape::Circle { cx: 0.0, cy: 0.0, r: *radius }),
+            Some(Shape::Sphere { .. }) => Err(invalid("port", "a sphere has no flat end faces for ports")),
+            None => Err(invalid("model", "has no geometry")),
+        }
     }
 
     /// Sets the walls' conductivity (S/m), or perfect conductors with `None`.
@@ -321,6 +424,11 @@ impl Model {
 
     /// The material filling the waveguide at a port's end.
     pub fn port_material(&self, end: End) -> Result<&Material> {
+        if self.waveguide.is_none()
+            && let Some(s) = &self.solid
+        {
+            return Ok(self.material(&s.material)?.1);
+        }
         let w = self.waveguide.as_ref().ok_or_else(|| invalid("model", "has no waveguide"))?;
         let s = match end {
             End::Start => w.sections.first(),
@@ -333,14 +441,14 @@ impl Model {
     /// Everything a frequency-domain solve needs, each problem named.
     pub fn check(&self) -> Vec<String> {
         let mut issues = Vec::new();
-        if self.waveguide.is_none() {
-            issues.push("no waveguide: create one with geometry.waveguide".to_owned());
+        if self.waveguide.is_none() && self.solid.is_none() {
+            issues.push("no geometry: create one with geometry.waveguide or geometry.solid".to_owned());
         }
         if self.ports.is_empty() {
             issues.push("no ports: create one with model.port.create".to_owned());
         }
         if self.mesh.is_none() {
-            issues.push("no mesh: mesh the waveguide with mesh.generate".to_owned());
+            issues.push("no mesh: mesh the geometry with mesh.generate".to_owned());
         }
         issues
     }
@@ -384,7 +492,22 @@ mod tests {
         assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000 }).is_err());
         m.add_port(Port { name: "2".into(), end: End::End, modes: 1 }).unwrap();
         assert_eq!(m.port_material(End::End).unwrap().name, "vacuum");
-        assert_eq!(m.check(), vec!["no mesh: mesh the waveguide with mesh.generate".to_owned()]);
+        assert_eq!(m.check(), vec!["no mesh: mesh the geometry with mesh.generate".to_owned()]);
+    }
+
+    #[test]
+    fn solids_are_checked_and_replace_the_waveguide() {
+        let mut m = Model::new();
+        m.set_waveguide(guide()).unwrap();
+        assert!(m.set_solid(Solid { shape: Shape::Cylinder { radius: -1.0, length: 1.0 }, material: "vacuum".into() }).is_err());
+        assert!(m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "nothing".into() }).is_err());
+        m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.01, length: 0.03 }, material: "vacuum".into() }).unwrap();
+        assert!(m.waveguide.is_none());
+        assert_eq!(m.bounds(), Some(([-0.01, -0.01, 0.0], [0.01, 0.01, 0.03])));
+        assert_eq!(m.port_shape(End::End).unwrap(), PortShape::Circle { cx: 0.0, cy: 0.0, r: 0.01 });
+        m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
+        assert!(m.port_shape(End::Start).is_err());
+        assert!((Shape::Sphere { radius: 1.0 }.volume() - 4.18879).abs() < 1e-5);
     }
 
     #[test]

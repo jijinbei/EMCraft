@@ -10,6 +10,7 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod solid;
 mod topology;
 
 pub use topology::{LOCAL_EDGES, LOCAL_FACES, Topology};
@@ -296,7 +297,7 @@ fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], length: 
         }
     }
     grid.cells = cells;
-    let mut mesh = Mesh { nodes, tets, tet_material, boundary: Vec::new(), grid: Some(grid) };
+    let mut mesh = Mesh { nodes, tets, tet_material, boundary: Vec::new(), grid: Some(grid), buckets: None };
     let topo = Topology::new(&mesh);
     let tol = 1e-9 * length.max(f64::MIN_POSITIVE);
     for (f, owners) in topo.faces.iter().zip(&topo.face_tets) {
@@ -341,6 +342,9 @@ fn cell_index(lines: &[f64], v: f64) -> Option<usize> {
 /// The tetrahedron containing `p` and its barycentric coordinates, or `None` outside the grid
 /// (points within 10⁻⁹ of the domain size of its boundary count as inside).
 pub fn locate(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
+    if mesh.grid.is_none() {
+        return locate_in_buckets(mesh, p);
+    }
     let g = mesh.grid.as_ref()?;
     let (nx, ny) = (g.x.len().checked_sub(1)?, g.y.len().checked_sub(1)?);
     let span = |l: &[f64]| (l.first().copied().unwrap_or(0.0), l.last().copied().unwrap_or(0.0));
@@ -388,6 +392,34 @@ pub fn locate(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
     }
     // Inside a cell that was left out: not in the mesh.
     best.filter(|b| b.2 >= -1e-9).map(|(t, l, _)| (t, l))
+}
+
+/// The tetrahedron of an unstructured mesh containing `p` (within 10⁻⁹ in barycentric terms).
+fn locate_in_buckets(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
+    let b = mesh.buckets.as_ref()?;
+    if !p.iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let mut ijk = [0usize; 3];
+    for d in 0..3 {
+        let f = (p[d] - b.lo[d]) / b.step[d];
+        if !(f >= -1e-9 && f <= b.dims[d] as f64 + 1e-9) {
+            return None;
+        }
+        ijk[d] = (f.floor().max(0.0) as usize).min(b.dims[d] - 1);
+    }
+    let cell = ijk[0] + b.dims[0] * (ijk[1] + b.dims[1] * ijk[2]);
+    let (s, e) = (*b.start.get(cell)? as usize, *b.start.get(cell + 1)? as usize);
+    let mut best: Option<(usize, [f64; 4], f64)> = None;
+    for &t in b.items.get(s..e)? {
+        let c = mesh.corners(t as usize)?;
+        let l = barycentric(&c, p);
+        let worst = l.iter().copied().fold(f64::INFINITY, f64::min);
+        if best.as_ref().is_none_or(|x| worst > x.2) {
+            best = Some((t as usize, l, worst));
+        }
+    }
+    best.filter(|x| x.2 >= -1e-9).map(|(t, l, _)| (t, l))
 }
 
 /// Volume of every tetrahedron, signed.

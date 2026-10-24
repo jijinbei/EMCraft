@@ -610,6 +610,7 @@ name = "emcraft-mesh"
 version = "0.1.0"
 dependencies = [
  "emcraft-model",
+ "emcraft-tetmesh",
  "thiserror 2.0.21",
 ]
 

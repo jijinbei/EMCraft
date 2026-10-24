@@ -43,6 +43,20 @@ pub struct Mesh {
     pub tet_material: Vec<u32>,
     pub boundary: Vec<BoundaryFace>,
     pub grid: Option<Grid>,
+    /// For an unstructured mesh: tetrahedra binned on a uniform grid of buckets, for locating
+    /// points.
+    pub buckets: Option<Buckets>,
+}
+
+/// Tetrahedra binned by their bounding boxes on a uniform grid over the mesh.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Buckets {
+    pub lo: [f64; 3],
+    pub step: [f64; 3],
+    pub dims: [usize; 3],
+    /// Bucket b holds `items[start[b]..start[b + 1]]` (buckets numbered x fastest).
+    pub start: Vec<u32>,
+    pub items: Vec<u32>,
 }
 
 impl Mesh {

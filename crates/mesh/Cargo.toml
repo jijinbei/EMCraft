@@ -10,4 +10,5 @@ workspace = true
 
 [dependencies]
 emcraft-model = { workspace = true }
+emcraft-tetmesh = { workspace = true }
 thiserror = { workspace = true }

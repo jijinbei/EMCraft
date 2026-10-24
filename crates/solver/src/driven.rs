@@ -1,4 +1,4 @@
-//! Driven frequency-domain analysis of a waveguide: the vector wave equation
+//! Driven frequency-domain analysis of a waveguide or a body with ports: the vector wave equation
 //!
 //! ∇ × (μr⁻¹ ∇ × E) − k₀² εr E = 0
 //!
@@ -228,7 +228,6 @@ impl Driven {
             return Err(SolveError::NotReady(issues.join("; ")));
         }
         let mesh = model.mesh.clone().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
-        let w = model.waveguide.as_ref().ok_or_else(|| SolveError::NotReady("no waveguide".into()))?;
         let topo = Topology::new(&mesh);
         let sigma = if lossless_walls { None } else { model.wall_conductivity };
         if let Some(c) = sigma
@@ -275,12 +274,12 @@ impl Driven {
                     "not supported yet: a port in a lossy material (end the guide with a lossless section)",
                 ));
             }
-            let end_section = match p.end {
-                End::Start => 0,
-                End::End => w.sections.len().saturating_sub(1),
+            let (x0, y0, aw, ah) = match model.port_shape(p.end)? {
+                emcraft_model::PortShape::Rect { x0, y0, a, b } => (x0, y0, a, b),
+                emcraft_model::PortShape::Circle { .. } => {
+                    return Err(invalid(format!("port `{}`", p.name), "not supported yet: circular waveguide ports"));
+                }
             };
-            let (x0, aw) = w.aperture(end_section).unwrap_or((0.0, w.width));
-            let (y0, ah) = w.aperture_y(end_section).unwrap_or((0.0, w.height));
             let list: Vec<Mode> = modes::lowest(aw, ah, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect();
             let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
             let rule = triangle_rule(if order == Order::One { 6 } else { 8 });
