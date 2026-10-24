@@ -63,29 +63,167 @@ fn signed_volume(p: &[[f64; 3]; 4]) -> f64 {
     (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
 }
 
-/// Meshes the model's waveguide with tetrahedra of about `size` (m) on a side: x and y divided
-/// evenly, each section along z divided on its own so section boundaries are grid planes. Faces
-/// at z = 0 and z = length are tagged as ports 0 and 1, every other boundary face as a perfect
-/// conductor.
+/// How finely a waveguide is meshed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Options {
+    /// The element size away from edges (m).
+    pub size: f64,
+    /// The element size at the re-entrant edges of steps and irises, as a fraction of `size`
+    /// (1: no grading).
+    pub edge: f64,
+    /// How fast elements grow away from those edges: the size grows by `growth − 1` times the
+    /// distance (a geometric grading of ratio about `growth`).
+    pub growth: f64,
+}
+
+impl Options {
+    /// Graded towards edges: a quarter of the size there, growing by half again per element.
+    pub fn new(size: f64) -> Options {
+        Options { size, edge: 0.25, growth: 1.5 }
+    }
+
+    pub fn uniform(size: f64) -> Options {
+        Options { size, edge: 1.0, growth: 1.5 }
+    }
+}
+
+/// Points dividing [u, v] (v included, u not): evenly at about `size`, or graded towards the
+/// ends marked fine. The field at a re-entrant edge is singular (E ∝ r^{−1/3} at a thin
+/// iris' edge: J. Meixner, *The behavior of electromagnetic fields at edges*, IEEE Trans.
+/// Antennas Propag. 20(4):442–446, 1972), so a uniform mesh converges slowly there; a mesh
+/// graded geometrically towards the edge restores the elements' rate (I. Babuška, R. B. Kellogg,
+/// J. Pitkäranta, *Direct and inverse error estimates for finite elements with mesh refinements*,
+/// Numer. Math. 33:447–471, 1979).
+fn graded(u: f64, v: f64, o: &Options, fine_left: bool, fine_right: bool) -> Vec<f64> {
+    let len = v - u;
+    if !(fine_left || fine_right) || !(o.edge < 1.0) {
+        let n = divisions(len, o.size, 1);
+        return line(u, len, n).skip(1).collect();
+    }
+    // Geometric steps h0, h0·g, … from each fine end while below the size; the middle evenly.
+    let h0 = o.edge.max(1e-3) * o.size;
+    let ramp = || {
+        let mut v = Vec::new();
+        let mut h = h0;
+        while h < o.size && v.len() < 200 {
+            v.push(h);
+            h *= o.growth;
+        }
+        v
+    };
+    let left = if fine_left { ramp() } else { Vec::new() };
+    let right = if fine_right { ramp() } else { Vec::new() };
+    let graded_len: f64 = left.iter().chain(&right).sum();
+    let gap = len - graded_len;
+    let mut steps: Vec<f64> = left.clone();
+    if gap > 0.0 {
+        let last = left.last().into_iter().chain(right.last()).fold(o.size, |m, h| m.min(*h));
+        let n = (gap / o.size).ceil() as usize;
+        if gap < last {
+            // A gap too short for an element: the ramps stretch over it.
+            steps.extend(right.iter().rev());
+            let k = len / graded_len;
+            steps.iter_mut().for_each(|h| *h *= k);
+        } else {
+            steps.extend(std::iter::repeat_n(gap / n as f64, n));
+            steps.extend(right.iter().rev());
+        }
+    } else {
+        // The ramps overlap: shrink them to fit.
+        steps.extend(right.iter().rev());
+        let k = len / graded_len;
+        steps.iter_mut().for_each(|h| *h *= k);
+    }
+    let mut out = Vec::with_capacity(steps.len());
+    let mut acc = u;
+    for (k, h) in steps.iter().enumerate() {
+        acc += h;
+        out.push(if k + 1 == steps.len() { v } else { acc });
+    }
+    out
+}
+
+/// Meshes the model's waveguide with tetrahedra of about `size` (m) on a side, graded towards
+/// the edges of steps and irises ([`Options::new`]).
 pub fn waveguide(model: &Model, size: f64) -> Result<Mesh> {
-    let size = positive("element size", size)?;
+    waveguide_with(model, &Options::new(size))
+}
+
+/// Meshes the model's waveguide. The grid lines along x pass through every aperture's edges,
+/// each section along z is divided on its own, so section boundaries and aperture walls are grid
+/// planes; cells outside a section's aperture are left out. Next to the re-entrant edges of a
+/// step or an iris the lines close in ([`Options`]). Faces at z = 0 and z = length are tagged as
+/// ports 0 and 1, every other boundary face (the walls, and the faces of a step or an iris) as a
+/// perfect conductor.
+pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
+    let size = positive("element size", o.size)?;
+    if !(o.edge.is_finite() && o.edge > 0.0 && o.edge <= 1.0) || !(o.growth.is_finite() && o.growth > 1.0) {
+        return Err(MeshError::Invalid { what: "grading".into(), why: "edge must be in (0, 1] and growth > 1".into() });
+    }
+    let o = Options { size, ..*o };
     let w = model.waveguide.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no waveguide".into() })?;
-    let nx = divisions(w.width, size, 2);
+    // The cap before any line is made (grading only adds to this count).
+    let estimate = [w.width, w.height, w.length()].iter().map(|l| (l / size).ceil().max(1.0)).product::<f64>() * TETS_PER_CELL as f64;
+    if !(estimate <= MAX_TETS as f64) {
+        return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
+    }
+    let tol = 1e-9 * w.width;
+    // Breakpoints across x, merged when closer than 10⁻⁹ of the width; the re-entrant edges
+    // (a narrower aperture's edge strictly inside its neighbour's) and the planes where the
+    // aperture changes.
+    let mut breaks = vec![0.0, w.width];
+    let mut sharp_x: Vec<f64> = Vec::new();
+    let mut sharp_z = vec![false; w.sections.len() + 1];
+    let ends = w.interfaces();
+    for i in 0..w.sections.len() {
+        if let Some((x0, a)) = w.aperture(i) {
+            breaks.push(x0.clamp(0.0, w.width));
+            breaks.push((x0 + a).clamp(0.0, w.width));
+        }
+        if i == 0 {
+            continue;
+        }
+        if let (Some((p0, pa)), Some((q0, qa))) = (w.aperture(i - 1), w.aperture(i)) {
+            if (p0 - q0).abs() <= tol && (pa - qa).abs() <= tol {
+                continue;
+            }
+            sharp_z[i] = true;
+            let ((n0, na), (w0, wa)) = if qa < pa { ((q0, qa), (p0, pa)) } else { ((p0, pa), (q0, qa)) };
+            for e in [n0, n0 + na] {
+                if e > w0 + tol && e < w0 + wa - tol {
+                    sharp_x.push(e);
+                }
+            }
+        }
+    }
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|a, b| (*a - *b).abs() <= tol);
+    if breaks.len() > 1000 {
+        return Err(MeshError::Invalid { what: "waveguide".into(), why: "too many aperture edges".into() });
+    }
+    let sharp = |x: f64| sharp_x.iter().any(|e| (e - x).abs() <= tol);
+    let mut x = vec![0.0];
+    for b in breaks.windows(2) {
+        x.extend(graded(b[0], b[1], &o, sharp(b[0]), sharp(b[1])));
+    }
+    let nx = (x.len() - 1).max(1);
     let ny = divisions(w.height, size, 1);
     let mut z = vec![0.0];
-    let mut materials = Vec::new();
+    let mut layers = Vec::new();
     let mut at = 0.0;
     let mut cells_z = 0usize;
-    for s in &w.sections {
-        let n = divisions(s.length, size, 1);
+    for (i, s) in w.sections.iter().enumerate() {
+        let zs = graded(ends[i], ends[i + 1], &o, sharp_z[i], sharp_z[i + 1]);
+        let n = zs.len();
         cells_z = cells_z.saturating_add(n);
         // The cap is checked before the lines are made.
         if nx.saturating_mul(ny).saturating_mul(cells_z).saturating_mul(TETS_PER_CELL) > MAX_TETS {
             break;
         }
-        z.extend(line(at, s.length, n).skip(1));
+        z.extend(zs);
         let (m, _) = model.material(&s.material)?;
-        materials.extend(std::iter::repeat_n(m as u32, n));
+        let ap = w.aperture(i).unwrap_or((0.0, w.width));
+        layers.extend(std::iter::repeat_n((m as u32, ap), n));
         at += s.length;
     }
     let tets = nx.saturating_mul(ny).saturating_mul(cells_z).saturating_mul(TETS_PER_CELL);
@@ -96,12 +234,13 @@ pub fn waveguide(model: &Model, size: f64) -> Result<Mesh> {
     if let Some(last) = z.last_mut() {
         *last = length;
     }
-    let grid = Grid { x: line(0.0, w.width, nx).collect(), y: line(0.0, w.height, ny).collect(), z };
-    Ok(structured(grid, &materials, length))
+    let grid = Grid { x, y: line(0.0, w.height, ny).collect(), z, cells: Vec::new() };
+    Ok(structured(grid, &layers, length))
 }
 
-/// The tetrahedral mesh of a grid whose cell layers along z have the given materials.
-fn structured(grid: Grid, layer_material: &[u32], length: f64) -> Mesh {
+/// The tetrahedral mesh of a grid whose cell layers along z have the given materials and
+/// apertures (x start, width): cells whose centre lies outside the aperture are left out.
+fn structured(mut grid: Grid, layers: &[(u32, (f64, f64))], length: f64) -> Mesh {
     let (nx, ny, nz) = (grid.x.len() - 1, grid.y.len() - 1, grid.z.len() - 1);
     let node = |i: usize, j: usize, k: usize| (i + (nx + 1) * (j + (ny + 1) * k)) as u32;
     let mut nodes = Vec::with_capacity((nx + 1) * (ny + 1) * (nz + 1));
@@ -114,10 +253,17 @@ fn structured(grid: Grid, layer_material: &[u32], length: f64) -> Mesh {
     }
     let mut tets = Vec::with_capacity(nx * ny * nz * TETS_PER_CELL);
     let mut tet_material = Vec::with_capacity(tets.capacity());
+    let mut cells = Vec::with_capacity(nx * ny * nz);
     for k in 0..nz {
-        let material = layer_material.get(k).copied().unwrap_or(0);
+        let (material, (x0, a)) = layers.get(k).copied().unwrap_or((0, (f64::NEG_INFINITY, f64::INFINITY)));
         for j in 0..ny {
             for i in 0..nx {
+                let xc = 0.5 * (grid.x[i] + grid.x[i + 1]);
+                if !(xc > x0 && xc < x0 + a) {
+                    cells.push(u32::MAX);
+                    continue;
+                }
+                cells.push(tets.len() as u32);
                 let corner = |c: usize| node(i + (c & 1), j + ((c >> 1) & 1), k + ((c >> 2) & 1));
                 for pattern in KUHN {
                     let mut t = pattern.map(corner);
@@ -131,6 +277,7 @@ fn structured(grid: Grid, layer_material: &[u32], length: f64) -> Mesh {
             }
         }
     }
+    grid.cells = cells;
     let mut mesh = Mesh { nodes, tets, tet_material, boundary: Vec::new(), grid: Some(grid) };
     let topo = Topology::new(&mesh);
     let tol = 1e-9 * length.max(f64::MIN_POSITIVE);
@@ -186,18 +333,43 @@ pub fn locate(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
             return None;
         }
     }
-    let (i, j, k) = (cell_index(&g.x, p[0])?, cell_index(&g.y, p[1])?, cell_index(&g.z, p[2])?);
-    let cell = i + nx * (j + ny * k);
+    // The cell holding p, and its neighbours when p lies on a grid plane (the cell on one side
+    // may be left out, at a step or an iris).
+    let near = |lines: &[f64], v: f64| -> Option<Vec<usize>> {
+        let c = cell_index(lines, v)?;
+        let n = lines.len() - 1;
+        let tol = 1e-9 * (lines[n] - lines[0]).abs();
+        let mut out = vec![c];
+        if c > 0 && (v - lines[c]).abs() <= tol {
+            out.push(c - 1);
+        }
+        if c + 1 < n && (v - lines[c + 1]).abs() <= tol {
+            out.push(c + 1);
+        }
+        Some(out)
+    };
+    let (is, js, ks) = (near(&g.x, p[0])?, near(&g.y, p[1])?, near(&g.z, p[2])?);
     let mut best: Option<(usize, [f64; 4], f64)> = None;
-    for t in cell * TETS_PER_CELL..(cell + 1) * TETS_PER_CELL {
-        let c = mesh.corners(t)?;
-        let l = barycentric(&c, p);
-        let worst = l.iter().copied().fold(f64::INFINITY, f64::min);
-        if best.as_ref().is_none_or(|b| worst > b.2) {
-            best = Some((t, l, worst));
+    for &k in &ks {
+        for &j in &js {
+            for &i in &is {
+                let first = *g.cells.get(i + nx * (j + ny * k))?;
+                if first == u32::MAX {
+                    continue;
+                }
+                for t in first as usize..first as usize + TETS_PER_CELL {
+                    let c = mesh.corners(t)?;
+                    let l = barycentric(&c, p);
+                    let worst = l.iter().copied().fold(f64::INFINITY, f64::min);
+                    if best.as_ref().is_none_or(|b| worst > b.2) {
+                        best = Some((t, l, worst));
+                    }
+                }
+            }
         }
     }
-    best.map(|(t, l, _)| (t, l))
+    // Inside a cell that was left out: not in the mesh.
+    best.filter(|b| b.2 >= -1e-9).map(|(t, l, _)| (t, l))
 }
 
 /// Volume of every tetrahedron, signed.
@@ -213,7 +385,7 @@ mod tests {
     fn model() -> Model {
         let mut m = Model::new();
         m.add_material(Material::new("ptfe", 2.0, 1.0).unwrap()).unwrap();
-        let s = |l: f64, m: &str| Section { length: l, material: m.into() };
+        let s = |l: f64, m: &str| Section::new(l, m);
         m.set_waveguide(Waveguide { width: 0.02286, height: 0.01016, sections: vec![s(0.015, "ptfe"), s(0.02, "vacuum"), s(0.015, "ptfe")] })
             .unwrap();
         m
@@ -279,6 +451,70 @@ mod tests {
         }
         assert!(locate(&mesh, [0.03, 0.0, 0.0]).is_none());
         assert!(locate(&mesh, [f64::NAN, 0.0, 0.0]).is_none());
+    }
+
+    #[test]
+    fn an_iris_leaves_its_cells_out_and_walls_its_faces() {
+        // A 22.86 mm guide with a 2 mm thick, 10 mm wide centred iris.
+        let mut m = Model::new();
+        let iris = Section { length: 0.002, material: "vacuum".into(), width: Some(0.01), offset: None };
+        m.set_waveguide(Waveguide {
+            width: 0.02286,
+            height: 0.01016,
+            sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
+        })
+        .unwrap();
+        let mesh = waveguide(&m, 0.003).unwrap();
+        let (a, b) = (0.02286, 0.01016);
+        let total: f64 = volumes(&mesh).iter().sum();
+        let exact = a * b * 0.02 + 0.01 * b * 0.002;
+        assert!((total - exact).abs() < 1e-12 * exact, "{total} {exact}");
+        // The aperture's edges are grid lines.
+        let g = mesh.grid.as_ref().unwrap();
+        for x in [0.00643, 0.01643] {
+            assert!(g.x.iter().any(|v| (v - x).abs() < 1e-12), "{x}");
+        }
+        // Conductor area: the side walls and the iris' two faces and its aperture walls.
+        let area = |tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(&mesh, &f.nodes)).sum::<f64>();
+        let pec = 2.0 * (a + b) * 0.02 + 2.0 * (0.01 + b) * 0.002 + 2.0 * (a - 0.01) * b;
+        assert!((area(Boundary::Pec) - pec).abs() < 1e-12, "{} {pec}", area(Boundary::Pec));
+        assert!((area(Boundary::Port(0)) - a * b).abs() < 1e-14);
+        // Points in the iris' metal are outside; on its faces they are inside.
+        assert!(locate(&mesh, [0.002, 0.005, 0.011]).is_none());
+        assert!(locate(&mesh, [0.002, 0.005, 0.01]).is_some());
+        assert!(locate(&mesh, [0.011, 0.005, 0.011]).is_some());
+    }
+
+    #[test]
+    fn lines_close_in_on_the_edges_of_an_iris_only() {
+        let mut m = Model::new();
+        let iris = Section { length: 0.002, material: "vacuum".into(), width: Some(0.01), offset: None };
+        m.set_waveguide(Waveguide {
+            width: 0.02286,
+            height: 0.01016,
+            sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
+        })
+        .unwrap();
+        let o = Options::new(0.004);
+        let g = waveguide_with(&m, &o).unwrap().grid.unwrap();
+        let spacing_at = |lines: &[f64], v: f64| {
+            lines.windows(2).filter(|w| (w[0] - v).abs() < 1e-12 || (w[1] - v).abs() < 1e-12).map(|w| w[1] - w[0]).fold(f64::INFINITY, f64::min)
+        };
+        // At the iris' edges (x = 6.43, 16.43 mm; z = 10, 12 mm) about a quarter of the size.
+        for x in [0.00643, 0.01643] {
+            assert!(spacing_at(&g.x, x) <= 0.26 * o.size, "x {x}: {}", spacing_at(&g.x, x));
+        }
+        for z in [0.01, 0.012] {
+            assert!(spacing_at(&g.z, z) <= 0.26 * o.size, "z {z}: {:?}", g.z);
+        }
+        // The guide's own walls and ends are not refined; spacing never exceeds the size.
+        assert!(spacing_at(&g.x, 0.0) > 0.5 * o.size && spacing_at(&g.z, 0.0) > 0.5 * o.size);
+        assert!(g.x.windows(2).chain(g.z.windows(2)).all(|w| w[1] > w[0] && w[1] - w[0] <= o.size * 1.2));
+        // Without steps, grading changes nothing.
+        let uniform_guide = model();
+        assert_eq!(waveguide_with(&uniform_guide, &o).unwrap(), waveguide_with(&uniform_guide, &Options::uniform(0.004)).unwrap());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5 }).is_err());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0 }).is_err());
     }
 
     #[test]

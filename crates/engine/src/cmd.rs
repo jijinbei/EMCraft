@@ -40,19 +40,29 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.waveguide",
         label: "Rectangular waveguide",
-        doc: "A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections. Replaces any geometry, mesh and results.",
+        doc: "A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). Replaces any geometry, mesh and results.",
         params: &[
             p("width", "number", L, true, "broad wall a (x)"),
             p("height", "number", L, true, "narrow wall b (y)"),
-            p("sections", "array", N, true, "`[{\"length\", \"material\"}]` from z = 0"),
+            p(
+                "sections",
+                "array",
+                N,
+                true,
+                "`[{\"length\", \"material\", \"width\"?, \"offset\"?}]` from z = 0: a section may narrow the broad wall to an aperture `width` wide (lengths), starting at x = `offset` (centred when left out)",
+            ),
         ],
         run: waveguide,
     },
     CommandSpec {
         id: "mesh.generate",
         label: "Mesh",
-        doc: "Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary is a grid plane).",
-        params: &[p("size", "number", L, true, "target element size")],
+        doc: "Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises.",
+        params: &[
+            p("size", "number", L, true, "target element size"),
+            p("edge", "number", N, false, "element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform)"),
+            p("growth", "number", N, false, "element growth away from those edges (default 1.5)"),
+        ],
         run: mesh_generate,
     },
     CommandSpec {
@@ -89,7 +99,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.compare",
         label: "Compare with theory",
-        doc: "Compares the sweep's S11 and S21 with the exact TE10 solution of the waveguide (every section has the same cross-section, so TE10 is exact): the errors per frequency and the worst.",
+        doc: "Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, converged mode matching (160 TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.",
         params: &[],
         run: compare,
     },
@@ -188,7 +198,9 @@ fn waveguide(s: &mut Session, p: &Value) -> Result<Value> {
         let length = s.positive_length(sec, "length").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
         let length = length.ok_or_else(|| EngineError::Params(format!("section {}: `length` is required", i + 1)))?;
         let material = string(sec, "material")?.ok_or_else(|| EngineError::Params(format!("section {}: `material` is required", i + 1)))?;
-        sections.push(Section { length, material: material.to_owned() });
+        let width = s.positive_length(sec, "width").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
+        let offset = s.length(sec, "offset").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
+        sections.push(Section { length, material: material.to_owned(), width, offset });
     }
     s.model.set_waveguide(Waveguide { width, height, sections })?;
     s.sweep = None;
@@ -197,7 +209,10 @@ fn waveguide(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn mesh_generate(s: &mut Session, p: &Value) -> Result<Value> {
     let size = s.positive_length(p, "size")?.ok_or_else(|| EngineError::Params("`size` is required".into()))?;
-    let mesh = emcraft_mesh::waveguide(&s.model, size)?;
+    let mut o = emcraft_mesh::Options::new(size);
+    o.edge = number(p, "edge")?.unwrap_or(o.edge);
+    o.growth = number(p, "growth")?.unwrap_or(o.growth);
+    let mesh = emcraft_mesh::waveguide_with(&s.model, &o)?;
     let reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len()});
     s.model.mesh = Some(mesh);
     s.sweep = None;
@@ -297,12 +312,11 @@ fn sparameters(s: &mut Session, _: &Value) -> Result<Value> {
 
 fn compare(s: &mut Session, _: &Value) -> Result<Value> {
     let sw = sweep(s)?;
-    let line = view::te10_line(s)?;
+    let reference = view::reference(s)?;
     let mut rows = Vec::new();
     let mut worst: f64 = 0.0;
     for r in &sw.results {
-        let exact = line.solve(r.frequency).map_err(|e| EngineError::Failed(e.to_string()))?;
-        let (s11, s21) = exact.s_power();
+        let (s11, s21) = reference.s(r.frequency, view::MODE_MATCHING_MODES)?;
         let (f11, f21) = (r.s[0][0], r.s.get(1).map_or(C::new(0.0, 0.0), |row| row[0]));
         let (e11, e21) = ((f11 - s11).norm(), (f21 - s21).norm());
         worst = worst.max(e11).max(e21);
@@ -313,7 +327,7 @@ fn compare(s: &mut Session, _: &Value) -> Result<Value> {
             "error_s11": e11, "error_s21": e21,
         }));
     }
-    Ok(json!({"points": rows, "worst": worst}))
+    Ok(json!({"reference": reference.label(), "points": rows, "worst": worst}))
 }
 
 fn field_error(s: &mut Session, p: &Value) -> Result<Value> {

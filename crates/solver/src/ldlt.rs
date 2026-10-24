@@ -197,6 +197,9 @@ fn interchange(f: &mut [C], m: usize, k: usize, rows: &mut [usize], p: usize, q:
 /// of the front at once.
 const BLOCK: usize = 32;
 
+/// Columns updated together in a block update.
+const TILE: usize = 8;
+
 /// Fronts whose block update is smaller than this many complex multiply–adds run on one thread.
 const PARALLEL_WORK: usize = 1 << 20;
 
@@ -341,37 +344,52 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
                 }
             }
             let columns: Vec<(usize, &mut [C])> = f[be * m..].chunks_mut(m).enumerate().map(|(c, col)| (be + c, col)).collect();
-            let update = |j: usize, col: &mut [C]| {
+            // Columns go in tiles of TILE: each row of W is read once per tile, not once per
+            // column (the update is bound by memory traffic, not arithmetic).
+            let mut tiles: Vec<Vec<(usize, &mut [C])>> = Vec::new();
+            for c in columns {
+                match tiles.last_mut() {
+                    Some(t) if t.len() < TILE => t.push(c),
+                    _ => tiles.push(vec![c]),
+                }
+            }
+            let update = |tile: &mut Vec<(usize, &mut [C])>| {
                 // Later panel columns need every row below the block (they pivot among
                 // themselves); the trailing block only its lower part.
-                let start = if j < k { be } else { j };
-                let lj = &l[(j - be) * nb..(j - be + 1) * nb];
-                for (i, x) in col.iter_mut().enumerate().skip(start) {
+                let starts: Vec<usize> = tile.iter().map(|(j, _)| if *j < k { be } else { *j }).collect();
+                let from = starts.iter().copied().min().unwrap_or(m);
+                let ls: Vec<&[C]> = tile.iter().map(|(j, _)| &l[(j - be) * nb..(j - be + 1) * nb]).collect();
+                for i in from..m {
                     let wi = &w[(i - be) * nb..(i - be + 1) * nb];
-                    let (mut re, mut im) = (0.0, 0.0);
-                    for (a, b) in wi.iter().zip(lj) {
-                        re += a.re * b.re - a.im * b.im;
-                        im += a.re * b.im + a.im * b.re;
+                    for (c, (_, col)) in tile.iter_mut().enumerate() {
+                        if i < starts[c] {
+                            continue;
+                        }
+                        let (mut re, mut im) = (0.0, 0.0);
+                        for (a, b) in wi.iter().zip(ls[c]) {
+                            re += a.re * b.re - a.im * b.im;
+                            im += a.re * b.im + a.im * b.re;
+                        }
+                        col[i] -= C::new(re, im);
                     }
-                    *x -= C::new(re, im);
                 }
             };
             let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
             if threads <= 1 || below * below * nb < PARALLEL_WORK {
-                for (j, col) in columns {
-                    update(j, col);
+                for mut t in tiles {
+                    update(&mut t);
                 }
             } else {
-                let mut parts: Vec<Vec<(usize, &mut [C])>> = (0..threads).map(|_| Vec::new()).collect();
-                for (n, c) in columns.into_iter().enumerate() {
-                    parts[n % threads].push(c);
+                let mut parts: Vec<Vec<Vec<(usize, &mut [C])>>> = (0..threads).map(|_| Vec::new()).collect();
+                for (n, t) in tiles.into_iter().enumerate() {
+                    parts[n % threads].push(t);
                 }
                 std::thread::scope(|scope| {
                     for part in parts {
                         let update = &update;
                         scope.spawn(move || {
-                            for (j, col) in part {
-                                update(j, col);
+                            for mut t in part {
+                                update(&mut t);
                             }
                         });
                     }

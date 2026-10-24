@@ -19,13 +19,16 @@ pub struct BoundaryFace {
 }
 
 /// The structured grid a mesh was made on: coordinate lines along x, y and z, each cell split
-/// into [`crate::mesh::TETS_PER_CELL`] tetrahedra numbered `TETS_PER_CELL · cell + t`, cells
-/// numbered x fastest. Lets points be located without a search tree.
+/// into [`crate::mesh::TETS_PER_CELL`] tetrahedra, consecutive from the cell's first. Lets points
+/// be located without a search tree.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Grid {
     pub x: Vec<f64>,
     pub y: Vec<f64>,
     pub z: Vec<f64>,
+    /// The first tetrahedron of each cell (cells numbered x fastest), `u32::MAX` for a cell left
+    /// out (outside a section's aperture).
+    pub cells: Vec<u32>,
 }
 
 /// Tetrahedra per grid cell.

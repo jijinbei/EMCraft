@@ -14,7 +14,7 @@ use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
 use emcraft_render::{Axis, Rgb};
 use emcraft_solver::Complex64 as C;
-use emcraft_theory::{Layer, Te10Line, te10_cutoff};
+use emcraft_theory::{HPlaneLine, HSection, Layer, Te10Line, te10_cutoff};
 
 use crate::{EngineError, Result, Session};
 
@@ -290,9 +290,14 @@ impl PlaneSamples {
     }
 }
 
-/// The exact TE₁₀ line of the model's waveguide.
+/// The exact TE₁₀ line of a waveguide of uniform cross-section.
 pub fn te10_line(session: &Session) -> Result<Te10Line> {
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
+    if !w.uniform() {
+        return Err(EngineError::Failed(
+            "not supported yet: exact fields of a guide whose aperture changes (the S-parameters are compared with mode matching)".into(),
+        ));
+    }
     let mut layers = Vec::with_capacity(w.sections.len());
     for s in &w.sections {
         let (_, m) = session.model.material(&s.material)?;
@@ -301,7 +306,51 @@ pub fn te10_line(session: &Session) -> Result<Te10Line> {
     Ok(Te10Line { a: w.width, layers })
 }
 
-/// |S11| and |S21| in dB against frequency: the solved points and the exact TE₁₀ curves.
+/// TE_m0 modes in the widest section when the reference is mode matching: converged to about
+/// 10⁻⁵ in S for irises and steps of a few millimetres.
+pub const MODE_MATCHING_MODES: usize = 160;
+
+/// What a model's S-parameters are compared with: the exact TE₁₀ cascade when every section
+/// has the full cross-section, mode matching when the aperture changes (H-plane steps, irises).
+#[derive(Clone, Debug)]
+pub enum Reference {
+    Exact(Te10Line),
+    ModeMatching(HPlaneLine),
+}
+
+impl Reference {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Reference::Exact(_) => "exact",
+            Reference::ModeMatching(_) => "mode matching",
+        }
+    }
+
+    /// (S11, S21), power waves, with `modes` TE_m0 modes for mode matching.
+    pub fn s(&self, frequency: f64, modes: usize) -> Result<(C, C)> {
+        let e = |e: emcraft_theory::TheoryError| EngineError::Failed(e.to_string());
+        match self {
+            Reference::Exact(l) => Ok(l.solve(frequency).map_err(e)?.s_power()),
+            Reference::ModeMatching(l) => l.solve(frequency, modes).map_err(e),
+        }
+    }
+}
+
+pub fn reference(session: &Session) -> Result<Reference> {
+    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
+    if w.uniform() {
+        return Ok(Reference::Exact(te10_line(session)?));
+    }
+    let mut sections = Vec::with_capacity(w.sections.len());
+    for (i, s) in w.sections.iter().enumerate() {
+        let (_, m) = session.model.material(&s.material)?;
+        let (x0, width) = w.aperture(i).unwrap_or((0.0, w.width));
+        sections.push(HSection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, x0, width });
+    }
+    Ok(Reference::ModeMatching(HPlaneLine { sections }))
+}
+
+/// |S11| and |S21| in dB against frequency: the solved points and the reference curves.
 pub fn sparameter_chart(session: &Session) -> Result<Chart> {
     let sweep = session.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))?;
     let fu = session.display.frequency;
@@ -314,25 +363,39 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
     let db = |c: C| decibels(c.norm()).max(-80.0);
     let mut series = Vec::new();
     let mut marks = Vec::new();
-    if let Ok(line) = te10_line(session) {
-        let n = 400;
+    if let Ok(reference) = reference(session) {
+        // The curve: fewer modes than the comparison takes (mode matching is dense linear algebra
+        // per frequency); 40 keep the curve within 10⁻² dB.
+        let (n, modes) = match reference {
+            Reference::Exact(_) => (400, 1),
+            Reference::ModeMatching(_) => (160, 40),
+        };
         let (mut s11, mut s21) = (Vec::new(), Vec::new());
         for k in 0..=n {
             let f = f0 + (f1 - f0) * k as f64 / n as f64;
-            if let Ok(s) = line.solve(f) {
-                let (r, t) = s.s_power();
+            if let Ok((r, t)) = reference.s(f, modes) {
                 s11.push([fu.from_si(f), db(r)]);
                 s21.push([fu.from_si(f), db(t)]);
             }
         }
-        series.push(Series { label: "|S21| exact".into(), color: Rgb(30, 90, 200), style: Style::Line, points: s21 });
-        series.push(Series { label: "|S11| exact".into(), color: Rgb(200, 60, 40), style: Style::Line, points: s11 });
+        let label = reference.label();
+        series.push(Series { label: format!("|S21| {label}"), color: Rgb(30, 90, 200), style: Style::Line, points: s21 });
+        series.push(Series { label: format!("|S11| {label}"), color: Rgb(200, 60, 40), style: Style::Line, points: s11 });
+    }
+    if let Some(w) = session.model.waveguide.as_ref() {
+        let lu = session.display.length;
         let mut seen: Vec<f64> = Vec::new();
-        for (layer, name) in line.layers.iter().zip(session.model.waveguide.iter().flat_map(|w| w.sections.iter().map(|s| s.material.clone()))) {
-            let fc = te10_cutoff(line.a, layer.eps_r, layer.mu_r);
+        for (i, sec) in w.sections.iter().enumerate() {
+            let (Ok((_, m)), Some((_, width))) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
+            let fc = te10_cutoff(width, m.eps_r, m.mu_r);
             if !seen.iter().any(|x| (x - fc).abs() < 1e-6 * fc) {
                 seen.push(fc);
-                marks.push((fu.from_si(fc), format!("fc {name}")));
+                let name = if (width - w.width).abs() <= 1e-9 * w.width {
+                    format!("fc {}", sec.material)
+                } else {
+                    format!("fc {} {}", emcraft_render::axes::format(lu.from_si(width)), lu.symbol())
+                };
+                marks.push((fu.from_si(fc), name));
             }
         }
     }

@@ -30,11 +30,14 @@ pub struct Mode {
     /// Broad wall a (x) and narrow wall b (y), m.
     pub a: f64,
     pub b: f64,
+    /// The aperture's corner (m): the mode lives on [x0, x0 + a] × [y0, y0 + b].
+    pub x0: f64,
+    pub y0: f64,
 }
 
 impl Mode {
     pub fn te10(a: f64, b: f64) -> Mode {
-        Mode { kind: Kind::Te, m: 1, n: 0, a, b }
+        Mode { kind: Kind::Te, m: 1, n: 0, a, b, x0: 0.0, y0: 0.0 }
     }
 
     /// The cut-off wavenumber k_c (rad/m).
@@ -47,8 +50,14 @@ impl Mode {
         format!("{}{}{}", if self.kind == Kind::Te { "TE" } else { "TM" }, self.m, self.n)
     }
 
-    /// The transverse field e(x, y) (x, y in the port's frame, from the corner (0, 0)).
+    /// The same mode on an aperture whose corner is at (x0, y0).
+    pub fn at(self, x0: f64, y0: f64) -> Mode {
+        Mode { x0, y0, ..self }
+    }
+
+    /// The transverse field e(x, y) (global x, y; the aperture from its corner (x0, y0)).
     pub fn field(&self, x: f64, y: f64) -> [f64; 2] {
+        let (x, y) = (x - self.x0, y - self.y0);
         let (kx, ky) = (self.m as f64 * PI / self.a, self.n as f64 * PI / self.b);
         let kc = self.cutoff();
         let (sx, cx) = (kx * x).sin_cos();
@@ -107,9 +116,9 @@ pub fn lowest(a: f64, b: f64, count: usize) -> Vec<Mode> {
             if m + n == 0 {
                 continue;
             }
-            all.push(Mode { kind: Kind::Te, m, n, a, b });
+            all.push(Mode { kind: Kind::Te, m, n, a, b, x0: 0.0, y0: 0.0 });
             if m > 0 && n > 0 {
-                all.push(Mode { kind: Kind::Tm, m, n, a, b });
+                all.push(Mode { kind: Kind::Tm, m, n, a, b, x0: 0.0, y0: 0.0 });
             }
         }
     }
@@ -134,6 +143,8 @@ mod tests {
         assert!((te10.cutoff() - PI / a).abs() < 1e-12);
         let e = te10.field(a / 2.0, 0.3 * b);
         assert!(e[0].abs() < 1e-15 && (e[1] - 1.0).abs() < 1e-15);
+        let shifted = te10.at(0.005, 0.0);
+        assert!((shifted.field(0.005 + a / 2.0, 0.1 * b)[1] - 1.0).abs() < 1e-15);
     }
 
     #[test]
@@ -177,7 +188,7 @@ mod tests {
         let (gr, gi) = m.gamma(0.5 * kc);
         assert!(gi == 0.0 && (gr - 0.75f64.sqrt() * kc).abs() < 1e-9);
         assert!(m.kappa(kc).is_none());
-        let tm = Mode { kind: Kind::Tm, m: 1, n: 1, a: 0.02, b: 0.01 };
+        let tm = Mode { kind: Kind::Tm, m: 1, n: 1, a: 0.02, b: 0.01, x0: 0.0, y0: 0.0 };
         let k = 2.0 * tm.cutoff();
         let (kr, ki) = tm.kappa(k).unwrap();
         // −k²/(jβ) = j k²/β.

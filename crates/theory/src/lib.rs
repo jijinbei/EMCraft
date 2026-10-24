@@ -18,6 +18,10 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod modematch;
+
+pub use modematch::{HPlaneLine, HSection};
+
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, MU0};

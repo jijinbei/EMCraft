@@ -16,9 +16,9 @@
 //! discontinuity that the modes it leaves out have decayed.
 //!
 //! **S-parameters.** Each port is excited in turn by a unit TE₁₀ amplitude, all from one
-//! factorization. S_pq = (c₁₀ at p − δ_pq) for excitation at q, normalised to equal power,
-//! √(Z_q/Z_p) with Z = ωμ/β, so S is unitary for a lossless structure even when the port media
-//! differ.
+//! factorization. S_pq = (c₁₀ at p − δ_pq) for excitation at q, normalised to equal power
+//! (times √(P_p/P_q), P = ‖e‖² β/μ the power of a unit wave), so S is unitary for a lossless
+//! structure even when the ports' media or apertures differ.
 
 use std::f64::consts::PI;
 
@@ -226,7 +226,12 @@ impl Driven {
                 End::End => Boundary::Port(1),
             };
             let m = model.port_material(p.end)?;
-            let list = modes::lowest(w.width, w.height, p.modes as usize);
+            let end_section = match p.end {
+                End::Start => 0,
+                End::End => w.sections.len().saturating_sub(1),
+            };
+            let (x0, aw) = w.aperture(end_section).unwrap_or((0.0, w.width));
+            let list: Vec<Mode> = modes::lowest(aw, w.height, p.modes as usize).into_iter().map(|md| md.at(x0, 0.0)).collect();
             let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
             let rule = triangle_rule(if order == Order::One { 6 } else { 8 });
             let mut touched = vec![false; dofs.unknowns];
@@ -368,15 +373,12 @@ impl Driven {
         })
     }
 
-    /// √(Z_q/Z_p) for TE₁₀ (Z = ωμ/β, equal cross-sections).
+    /// √(P_p/P_q) for TE₁₀ waves of unit amplitude at ports p and q: a wave of amplitude A
+    /// carries ½|A|² ‖e‖² β/(ωμ), so S in power waves is the amplitude ratio times this.
     fn power_factor(&self, p: usize, q: usize, k0: f64) -> f64 {
-        let z = |port: &PortData| {
-            let mode = port.modes.first().map(|m| m.0);
-            let beta = mode.map_or(1.0, |m| m.gamma(k0 * (port.eps_r * port.mu_r).sqrt()).1);
-            port.mu_r / beta
-        };
+        let power = |port: &PortData| port.modes.first().map_or(1.0, |(m, _)| m.norm() * m.gamma(k0 * (port.eps_r * port.mu_r).sqrt()).1 / port.mu_r);
         match (self.ports.get(p), self.ports.get(q)) {
-            (Some(pp), Some(qq)) => (z(qq) / z(pp)).sqrt(),
+            (Some(pp), Some(qq)) => (power(pp) / power(qq)).sqrt(),
             _ => 1.0,
         }
     }
