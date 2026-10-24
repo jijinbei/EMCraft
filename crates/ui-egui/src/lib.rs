@@ -21,17 +21,20 @@ pub struct SectionEdit {
     pub length: f64,
     pub eps_r: f64,
     pub aperture: Option<f64>,
+    /// The height of its centred aperture across the narrow wall (mm), for an E-plane step or a
+    /// capacitive iris.
+    pub aperture_h: Option<f64>,
     /// Dielectric loss tangent.
     pub tan_d: f64,
 }
 
 impl SectionEdit {
     fn new(length: f64, eps_r: f64) -> SectionEdit {
-        SectionEdit { length, eps_r, aperture: None, tan_d: 0.0 }
+        SectionEdit { length, eps_r, aperture: None, aperture_h: None, tan_d: 0.0 }
     }
 
     fn iris(length: f64, aperture: f64) -> SectionEdit {
-        SectionEdit { length, eps_r: 1.0, aperture: Some(aperture), tan_d: 0.0 }
+        SectionEdit { length, eps_r: 1.0, aperture: Some(aperture), aperture_h: None, tan_d: 0.0 }
     }
 }
 
@@ -145,9 +148,15 @@ impl ModelEdit {
             .sections
             .iter()
             .zip(&names)
-            .map(|(s, n)| match s.aperture {
-                Some(w) => json!({"length": s.length, "material": n, "width": w}),
-                None => json!({"length": s.length, "material": n}),
+            .map(|(s, n)| {
+                let mut v = json!({"length": s.length, "material": n});
+                if let Some(w) = s.aperture {
+                    v["width"] = json!(w);
+                }
+                if let Some(h) = s.aperture_h {
+                    v["height"] = json!(h);
+                }
+                v
             })
             .collect();
         steps.push(json!({"command": "geometry.waveguide", "params": {"width": self.width, "height": self.height, "sections": sections}}));
@@ -324,7 +333,18 @@ impl EmcraftApp {
                     s.aperture = narrowed.then_some(s.aperture.unwrap_or(e.width / 2.0));
                 }
                 if let Some(w) = s.aperture.as_mut() {
-                    ui.add(egui::DragValue::new(w).speed(0.05).range(0.5..=e.width).suffix(" mm"));
+                    ui.add(egui::DragValue::new(w).speed(0.05).range(0.5..=e.width).prefix("w ").suffix(" mm"));
+                }
+                let mut lowered = s.aperture_h.is_some();
+                if ui
+                    .checkbox(&mut lowered, "")
+                    .on_hover_text("narrow the narrow wall to a centred aperture (E-plane step, capacitive iris)")
+                    .changed()
+                {
+                    s.aperture_h = lowered.then_some(s.aperture_h.unwrap_or(e.height / 2.0));
+                }
+                if let Some(h) = s.aperture_h.as_mut() {
+                    ui.add(egui::DragValue::new(h).speed(0.05).range(0.2..=e.height).prefix("h ").suffix(" mm"));
                 }
                 if ui.small_button("✕").clicked() {
                     remove = Some(i);
