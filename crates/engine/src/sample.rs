@@ -9,11 +9,18 @@ pub struct Sample {
     pub script: &'static str,
 }
 
-pub const SAMPLES: &[Sample] = &[Sample {
-    name: "highpass",
-    label: "Waveguide high-pass filter: WR-90 filled with εr = 2 on both sides of a 20 mm empty section, cut off below 6.56 GHz",
-    script: include_str!("../samples/highpass.json"),
-}];
+pub const SAMPLES: &[Sample] = &[
+    Sample {
+        name: "highpass",
+        label: "Waveguide high-pass filter: WR-90 filled with εr = 2 on both sides of a 20 mm empty section, cut off below 6.56 GHz",
+        script: include_str!("../samples/highpass.json"),
+    },
+    Sample {
+        name: "iris-bandpass",
+        label: "Inductive-iris band-pass filter: three WR-90 cavities between four 2 mm irises (12.75, 9.25, 9.25, 12.75 mm), passband 9.75–10.25 GHz",
+        script: include_str!("../samples/iris-bandpass.json"),
+    },
+];
 
 pub fn find(name: &str) -> Option<&'static Sample> {
     SAMPLES.iter().find(|s| s.name == name)

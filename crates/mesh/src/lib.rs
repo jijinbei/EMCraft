@@ -71,19 +71,22 @@ pub struct Options {
     /// The element size at the re-entrant edges of steps and irises, as a fraction of `size`
     /// (1: no grading).
     pub edge: f64,
-    /// How fast elements grow away from those edges: the size grows by `growth − 1` times the
-    /// distance (a geometric grading of ratio about `growth`).
+    /// How fast elements grow away from those edges: steps grow by this ratio.
     pub growth: f64,
+    /// The element size across the narrow wall (y), when it differs from `size`. An H-plane
+    /// device (steps and irises across x only) excited by TE10 has fields that do not vary
+    /// along y, so one layer of elements represents them exactly there.
+    pub size_y: Option<f64>,
 }
 
 impl Options {
     /// Graded towards edges: a quarter of the size there, growing by half again per element.
     pub fn new(size: f64) -> Options {
-        Options { size, edge: 0.25, growth: 1.5 }
+        Options { size, edge: 0.25, growth: 1.5, size_y: None }
     }
 
     pub fn uniform(size: f64) -> Options {
-        Options { size, edge: 1.0, growth: 1.5 }
+        Options { size, edge: 1.0, growth: 1.5, size_y: None }
     }
 }
 
@@ -163,7 +166,8 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let o = Options { size, ..*o };
     let w = model.waveguide.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no waveguide".into() })?;
     // The cap before any line is made (grading only adds to this count).
-    let estimate = [w.width, w.height, w.length()].iter().map(|l| (l / size).ceil().max(1.0)).product::<f64>() * TETS_PER_CELL as f64;
+    let estimate = [w.width / size, w.height / o.size_y.unwrap_or(size), w.length() / size].iter().map(|n| n.ceil().max(1.0)).product::<f64>()
+        * TETS_PER_CELL as f64;
     if !(estimate <= MAX_TETS as f64) {
         return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
     }
@@ -207,7 +211,11 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         x.extend(graded(b[0], b[1], &o, sharp(b[0]), sharp(b[1])));
     }
     let nx = (x.len() - 1).max(1);
-    let ny = divisions(w.height, size, 1);
+    let size_y = match o.size_y {
+        Some(h) => positive("element size across y", h)?,
+        None => size,
+    };
+    let ny = divisions(w.height, size_y, 1);
     let mut z = vec![0.0];
     let mut layers = Vec::new();
     let mut at = 0.0;
@@ -513,8 +521,8 @@ mod tests {
         // Without steps, grading changes nothing.
         let uniform_guide = model();
         assert_eq!(waveguide_with(&uniform_guide, &o).unwrap(), waveguide_with(&uniform_guide, &Options::uniform(0.004)).unwrap());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5 }).is_err());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0 }).is_err());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5, size_y: None }).is_err());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0, size_y: None }).is_err());
     }
 
     #[test]

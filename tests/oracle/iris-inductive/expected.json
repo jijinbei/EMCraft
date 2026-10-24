@@ -1,0 +1,11 @@
+{
+ "title": "Inductive iris in WR-90: 2 mm thick, 12 mm wide, centred",
+ "kind": "theory",
+ "source": "Mode matching of TE_m0 modes at the iris' two junctions, cascaded as generalised scattering matrices (A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967; J. Uher, J. Bornemann, U. Rosenberg, Waveguide Components for Antenna Feed Systems: Theory and CAD, Artech House 1993), converged with 640 modes in the guide (changes below 1e-4 from 320)",
+ "quantities": [
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.7622776659010354, "tolerance": {"absolute": 0.01}, "reason": "second-order elements of 4 mm graded to 1 mm at the iris' edges, where E ∝ r^{-1/3}: the S-parameters converge as h^{4/3} there (complex error 6.6e-3 measured)"},
+  {"id": "s11_phase_10", "quantity": "phase of S11 at 10 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s11/deg"}, "value": -145.61386115548606, "tolerance": {"absolute": 1.0}, "reason": "as |S11|: the edge singularity shifts the iris' susceptance slightly"},
+  {"id": "s21_mag_10", "quantity": "|S21| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s21/mag"}, "value": 0.6472501526214329, "tolerance": {"absolute": 0.01}, "reason": "as |S11|; power is conserved to rounding"},
+  {"id": "worst", "quantity": "largest |S − S_mm| over 9, 10 and 11 GHz (S11 and S21, complex)", "measure": {"command": "results.compare", "params": {"modes": 320}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 0.015}, "reason": "measured about 7e-3 against 320-mode matching; halving the size lowers it as h^{4/3}"}
+ ]
+}

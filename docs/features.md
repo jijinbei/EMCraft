@@ -23,21 +23,24 @@ A linear, isotropic, lossless material.
 
 ## `geometry.waveguide` — Rectangular waveguide
 
-A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections. Replaces any geometry, mesh and results.
+A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). Replaces any geometry, mesh and results.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `width` | number | length | yes | broad wall a (x) |
 | `height` | number | length | yes | narrow wall b (y) |
-| `sections` | array |  | yes | `[{"length", "material"}]` from z = 0 |
+| `sections` | array |  | yes | `[{"length", "material", "width"?, "offset"?}]` from z = 0: a section may narrow the broad wall to an aperture `width` wide (lengths), starting at x = `offset` (centred when left out) |
 
 ## `mesh.generate` — Mesh
 
-Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary is a grid plane).
+Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `size` | number | length | yes | target element size |
+| `edge` | number |  | no | element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform) |
+| `growth` | number |  | no | element growth away from those edges (default 1.5) |
+| `size_y` | number | length | no | element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there |
 
 ## `model.port.create` — Create port
 
@@ -69,9 +72,11 @@ No parameters.
 
 ## `results.compare` — Compare with theory
 
-Compares the sweep's S11 and S21 with the exact TE10 solution of the waveguide (every section has the same cross-section, so TE10 is exact): the errors per frequency and the worst.
+Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, mode matching (`modes` TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.
 
-No parameters.
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `modes` | integer |  | no | TE_m0 modes in the widest section for mode matching, 10 to 1000 (default 160) |
 
 ## `results.field_error` — Field error against theory
 

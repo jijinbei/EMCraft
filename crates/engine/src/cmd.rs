@@ -62,6 +62,13 @@ pub static COMMANDS: &[CommandSpec] = &[
             p("size", "number", L, true, "target element size"),
             p("edge", "number", N, false, "element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform)"),
             p("growth", "number", N, false, "element growth away from those edges (default 1.5)"),
+            p(
+                "size_y",
+                "number",
+                L,
+                false,
+                "element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there",
+            ),
         ],
         run: mesh_generate,
     },
@@ -99,8 +106,8 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.compare",
         label: "Compare with theory",
-        doc: "Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, converged mode matching (160 TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.",
-        params: &[],
+        doc: "Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, mode matching (`modes` TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.",
+        params: &[p("modes", "integer", N, false, "TE_m0 modes in the widest section for mode matching, 10 to 1000 (default 160)")],
         run: compare,
     },
     CommandSpec {
@@ -212,6 +219,7 @@ fn mesh_generate(s: &mut Session, p: &Value) -> Result<Value> {
     let mut o = emcraft_mesh::Options::new(size);
     o.edge = number(p, "edge")?.unwrap_or(o.edge);
     o.growth = number(p, "growth")?.unwrap_or(o.growth);
+    o.size_y = s.positive_length(p, "size_y")?;
     let mesh = emcraft_mesh::waveguide_with(&s.model, &o)?;
     let reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len()});
     s.model.mesh = Some(mesh);
@@ -310,13 +318,14 @@ fn sparameters(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({"ports": names, "frequency_unit": s.display.frequency.symbol(), "points": rows}))
 }
 
-fn compare(s: &mut Session, _: &Value) -> Result<Value> {
+fn compare(s: &mut Session, p: &Value) -> Result<Value> {
+    let modes = integer(p, "modes", 10..=1000)?.map_or(view::MODE_MATCHING_MODES, |n| n as usize);
     let sw = sweep(s)?;
     let reference = view::reference(s)?;
     let mut rows = Vec::new();
     let mut worst: f64 = 0.0;
     for r in &sw.results {
-        let (s11, s21) = reference.s(r.frequency, view::MODE_MATCHING_MODES)?;
+        let (s11, s21) = reference.s(r.frequency, modes)?;
         let (f11, f21) = (r.s[0][0], r.s.get(1).map_or(C::new(0.0, 0.0), |row| row[0]));
         let (e11, e21) = ((f11 - s11).norm(), (f21 - s21).norm());
         worst = worst.max(e11).max(e21);

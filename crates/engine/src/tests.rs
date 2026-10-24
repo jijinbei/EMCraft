@@ -122,6 +122,32 @@ fn field_views_show_the_te10_pattern() {
 }
 
 #[test]
+fn an_iris_is_compared_with_mode_matching() {
+    let mut s = Session::new();
+    s.execute(
+        "geometry.waveguide",
+        &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 12, "material": "vacuum"}, {"length": 2, "material": "vacuum", "width": 12}, {"length": 12, "material": "vacuum"}]}),
+    )
+    .unwrap();
+    s.execute("mesh.generate", &json!({"size": 5, "size_y": 10.16})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    s.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
+    let c = s.execute("results.compare", &json!({"modes": 60})).unwrap();
+    assert_eq!(c["reference"], "mode matching");
+    assert!(c["worst"].as_f64().unwrap() < 5e-2, "{c}");
+    // Exact fields exist only for uniform guides.
+    assert!(matches!(s.execute("results.field_error", &json!({"frequency": 10})), Err(EngineError::Failed(_))));
+    // The iris' metal is drawn grey on the H-plane.
+    let plot = view::field_plot(&s, &view::FieldView::new(10.0e9, view::Plane::H)).unwrap();
+    assert!(plot.scalar.as_ref().unwrap().values.iter().any(|v| v.is_nan()));
+    // The band-pass sample opens (its sweep is heavy: the oracle runs it).
+    let mut b = Session::new();
+    let r = b.execute("file.sample", &json!({"name": "iris-bandpass"})).unwrap();
+    assert_eq!(r["waveguide"]["sections"].as_array().unwrap().len(), 9);
+}
+
+#[test]
 fn features_page_lists_every_command() {
     let md = features_markdown();
     for c in COMMANDS {

@@ -14,11 +14,23 @@ use emcraft_engine::view::{self, FieldView, Plane, PlaneSamples};
 use emcraft_model::units::{Frequency::Gigahertz as GHZ, Length::Millimetre as MM};
 use serde_json::{Value, json};
 
-/// One section of the waveguide being edited: length (mm) and relative permittivity.
+/// One section of the waveguide being edited: length (mm), relative permittivity and, for an
+/// iris or a step, the width of its centred aperture (mm).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SectionEdit {
     pub length: f64,
     pub eps_r: f64,
+    pub aperture: Option<f64>,
+}
+
+impl SectionEdit {
+    fn new(length: f64, eps_r: f64) -> SectionEdit {
+        SectionEdit { length, eps_r, aperture: None }
+    }
+
+    fn iris(length: f64, aperture: f64) -> SectionEdit {
+        SectionEdit { length, eps_r: 1.0, aperture: Some(aperture) }
+    }
 }
 
 /// The model as the left panel edits it, in millimetres and gigahertz.
@@ -28,6 +40,10 @@ pub struct ModelEdit {
     pub height: f64,
     pub sections: Vec<SectionEdit>,
     pub size: f64,
+    /// Element size at iris and step edges, as a fraction of `size`.
+    pub edge: f64,
+    /// One element layer across the narrow wall (exact for H-plane devices).
+    pub one_layer_y: bool,
     pub order: u8,
     pub modes: u32,
     pub start: f64,
@@ -41,12 +57,10 @@ impl Default for ModelEdit {
         ModelEdit {
             width: 22.86,
             height: 10.16,
-            sections: vec![
-                SectionEdit { length: 15.0, eps_r: 2.0 },
-                SectionEdit { length: 20.0, eps_r: 1.0 },
-                SectionEdit { length: 15.0, eps_r: 2.0 },
-            ],
+            sections: vec![SectionEdit::new(15.0, 2.0), SectionEdit::new(20.0, 1.0), SectionEdit::new(15.0, 2.0)],
             size: 3.0,
+            edge: 0.25,
+            one_layer_y: false,
             order: 2,
             modes: 4,
             start: 5.0,
@@ -57,6 +71,31 @@ impl Default for ModelEdit {
 }
 
 impl ModelEdit {
+    /// The inductive-iris band-pass filter sample.
+    pub fn bandpass() -> ModelEdit {
+        let cavity = |l: f64| SectionEdit::new(l, 1.0);
+        ModelEdit {
+            sections: vec![
+                cavity(15.0),
+                SectionEdit::iris(2.0, 12.75),
+                cavity(15.0),
+                SectionEdit::iris(2.0, 9.25),
+                cavity(16.75),
+                SectionEdit::iris(2.0, 9.25),
+                cavity(15.0),
+                SectionEdit::iris(2.0, 12.75),
+                cavity(15.0),
+            ],
+            size: 3.0,
+            edge: 0.1,
+            one_layer_y: true,
+            start: 9.0,
+            stop: 11.0,
+            points: 21,
+            ..ModelEdit::default()
+        }
+    }
+
     /// The command script that builds and solves this model.
     pub fn script(&self) -> Value {
         let mut steps = Vec::new();
@@ -72,9 +111,21 @@ impl ModelEdit {
             }
             names.push(name);
         }
-        let sections: Vec<Value> = self.sections.iter().zip(&names).map(|(s, n)| json!({"length": s.length, "material": n})).collect();
+        let sections: Vec<Value> = self
+            .sections
+            .iter()
+            .zip(&names)
+            .map(|(s, n)| match s.aperture {
+                Some(w) => json!({"length": s.length, "material": n, "width": w}),
+                None => json!({"length": s.length, "material": n}),
+            })
+            .collect();
         steps.push(json!({"command": "geometry.waveguide", "params": {"width": self.width, "height": self.height, "sections": sections}}));
-        steps.push(json!({"command": "mesh.generate", "params": {"size": self.size}}));
+        let mut mesh = json!({"size": self.size, "edge": self.edge});
+        if self.one_layer_y {
+            mesh["size_y"] = json!(self.height);
+        }
+        steps.push(json!({"command": "mesh.generate", "params": mesh}));
         steps.push(json!({"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": self.modes}}));
         steps.push(json!({"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": self.modes}}));
         steps.push(
@@ -115,7 +166,8 @@ pub struct EmcraftApp {
 }
 
 impl EmcraftApp {
-    pub fn new(sample: bool) -> EmcraftApp {
+    /// The app with a sample's model (`highpass` or `iris-bandpass`), solved at once.
+    pub fn new(sample: Option<&str>) -> EmcraftApp {
         let mut app = EmcraftApp {
             session: Session::new(),
             edit: ModelEdit::default(),
@@ -131,7 +183,11 @@ impl EmcraftApp {
             solving: None,
             status: "Edit the waveguide and press Solve.".into(),
         };
-        if sample {
+        if let Some(name) = sample {
+            if name == "iris-bandpass" {
+                app.edit = ModelEdit::bandpass();
+                app.view.frequency = 10.0e9;
+            }
             app.solve();
         }
         app
@@ -198,13 +254,20 @@ impl EmcraftApp {
             ui.add(egui::DragValue::new(&mut e.height).speed(0.1).range(0.5..=500.0).suffix(" mm"));
             ui.end_row();
         });
-        ui.label("Sections along z (length, εr):");
+        ui.label("Sections along z (length, εr, aperture):");
         let mut remove = None;
         for (i, s) in e.sections.iter_mut().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(format!("{}", i + 1));
                 ui.add(egui::DragValue::new(&mut s.length).speed(0.1).range(0.5..=1000.0).suffix(" mm"));
                 ui.add(egui::DragValue::new(&mut s.eps_r).speed(0.01).range(1.0..=100.0).prefix("εr "));
+                let mut narrowed = s.aperture.is_some();
+                if ui.checkbox(&mut narrowed, "").on_hover_text("narrow the broad wall to a centred aperture (iris, step)").changed() {
+                    s.aperture = narrowed.then_some(s.aperture.unwrap_or(e.width / 2.0));
+                }
+                if let Some(w) = s.aperture.as_mut() {
+                    ui.add(egui::DragValue::new(w).speed(0.05).range(0.5..=e.width).suffix(" mm"));
+                }
                 if ui.small_button("✕").clicked() {
                     remove = Some(i);
                 }
@@ -216,13 +279,19 @@ impl EmcraftApp {
             e.sections.remove(i);
         }
         if ui.button("Add section").clicked() {
-            e.sections.push(SectionEdit { length: 10.0, eps_r: 1.0 });
+            e.sections.push(SectionEdit::new(10.0, 1.0));
         }
         ui.separator();
         ui.heading("Mesh and sweep");
         egui::Grid::new("solve").num_columns(2).show(ui, |ui| {
             ui.label("element size");
             ui.add(egui::DragValue::new(&mut e.size).speed(0.05).range(0.5..=50.0).suffix(" mm"));
+            ui.end_row();
+            ui.label("at iris edges");
+            ui.add(egui::DragValue::new(&mut e.edge).speed(0.01).range(0.05..=1.0).prefix("× "));
+            ui.end_row();
+            ui.label("");
+            ui.checkbox(&mut e.one_layer_y, "one layer across b (H-plane)");
             ui.end_row();
             ui.label("element order");
             ui.horizontal(|ui| {
@@ -248,8 +317,11 @@ impl EmcraftApp {
             if ui.add_enabled(!busy, egui::Button::new("Solve")).clicked() {
                 self.solve();
             }
-            if ui.button("Reset to sample").clicked() {
+            if ui.button("High-pass sample").clicked() {
                 self.edit = ModelEdit::default();
+            }
+            if ui.button("Band-pass sample").clicked() {
+                self.edit = ModelEdit::bandpass();
             }
             if busy {
                 ui.spinner();
@@ -427,13 +499,13 @@ impl eframe::App for EmcraftApp {
     }
 }
 
-/// Opens the desktop app; `sample` solves the high-pass filter at once.
-pub fn run(sample: bool) -> Result<(), String> {
+/// Opens the desktop app; `sample` (`highpass`, `iris-bandpass`) is solved at once.
+pub fn run(sample: Option<String>) -> Result<(), String> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("EMCraft").with_inner_size([1500.0, 980.0]).with_min_inner_size([900.0, 600.0]),
         ..Default::default()
     };
-    eframe::run_native("EMCraft", options, Box::new(move |_cc| Ok(Box::new(EmcraftApp::new(sample))))).map_err(|e| e.to_string())
+    eframe::run_native("EMCraft", options, Box::new(move |_cc| Ok(Box::new(EmcraftApp::new(sample.as_deref()))))).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -452,6 +524,14 @@ mod tests {
         s.run_script(&quick.script()).unwrap();
         assert_eq!(s.sweep.as_ref().unwrap().results.len(), 2);
         assert_eq!(s.model.waveguide.as_ref().unwrap().sections[1].material, "vacuum");
+        // The band-pass edit builds the sample's model.
+        let mut b = Session::new();
+        let script = ModelEdit::bandpass().script();
+        b.run_script(&Value::Array(script.as_array().unwrap()[..3].to_vec())).unwrap();
+        let mut sample = Session::new();
+        sample.execute("file.sample", &json!({"name": "iris-bandpass"})).unwrap();
+        assert_eq!(b.model.waveguide, sample.model.waveguide);
+        assert_eq!(b.model.mesh.as_ref().map(|m| m.tets.len()), sample.model.mesh.as_ref().map(|m| m.tets.len()));
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub enum ScalarKind {
 }
 
 /// A scalar field sampled on a grid spanning the plot's axes: `nx × ny` values, row-major,
-/// row 0 at the y axis' minimum. NaN marks points outside the domain.
+/// row 0 at the y axis' minimum. NaN marks points outside the domain, drawn as metal.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scalar {
     pub label: String,
@@ -76,6 +76,9 @@ pub struct FieldPlot {
     pub arrow_length: f64,
 }
 
+/// The colour of points outside the domain (conductor).
+pub const METAL: Rgb = Rgb(150, 150, 155);
+
 const LEFT: f64 = 80.0;
 const RIGHT: f64 = 130.0;
 const TOP: f64 = 62.0;
@@ -106,6 +109,8 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
                 let v = 1.0 - (py as f64 + 0.5) / ph;
                 let val = s.sample(u, v);
                 if !val.is_finite() {
+                    // Outside the domain: metal (an iris, a step's wall).
+                    c.set((x0 + px as f64) as i64, (y0 + py as f64) as i64, METAL);
                     continue;
                 }
                 let col = match s.kind {

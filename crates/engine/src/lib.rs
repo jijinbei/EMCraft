@@ -181,7 +181,10 @@ impl Session {
         let w = self.model.waveguide.as_ref().map(|w| {
             serde_json::json!({
                 "width": l.from_si(w.width), "height": l.from_si(w.height), "length": l.from_si(w.length()),
-                "sections": w.sections.iter().map(|s| serde_json::json!({"length": l.from_si(s.length), "material": s.material})).collect::<Vec<_>>(),
+                "sections": w.sections.iter().enumerate().map(|(i, s)| {
+                    let (x0, a) = w.aperture(i).unwrap_or((0.0, w.width));
+                    serde_json::json!({"length": l.from_si(s.length), "material": s.material, "aperture": [l.from_si(x0), l.from_si(a)]})
+                }).collect::<Vec<_>>(),
             })
         });
         serde_json::json!({

@@ -1,0 +1,4 @@
+[
+ {"command": "file.sample", "params": {"name": "iris-bandpass"}},
+ {"command": "solve.frequency", "params": {"frequencies": [9.6, 10.0, 10.4], "order": 2}, "id": "solve"}
+]

@@ -1,0 +1,9 @@
+[
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
+   {"length": 15, "material": "vacuum"},
+   {"length": 18, "material": "vacuum", "width": 16, "offset": 0}]}},
+ {"command": "mesh.generate", "params": {"size": 4}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"frequencies": [10, 12], "order": 2}, "id": "solve"}
+]

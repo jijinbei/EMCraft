@@ -1,0 +1,12 @@
+{
+ "title": "Inductive-iris band-pass filter: three WR-90 cavities, passband 9.75–10.25 GHz",
+ "kind": "theory",
+ "source": "Mode matching of TE_m0 modes at the eight iris faces, cascaded as generalised scattering matrices through irises and cavities (Uher, Bornemann, Rosenberg, Waveguide Components for Antenna Feed Systems: Theory and CAD, Artech House 1993, ch. 2), converged with 640 modes (changes below 1e-4 from 320). The filter's dimensions are our own, chosen with the same mode matching",
+ "quantities": [
+  {"id": "s21_db_10", "quantity": "|S21| at 10 GHz, mid-band (dB)", "measure": {"step": "solve", "pointer": "/points/1/s21/db"}, "value": -0.007464356243990189, "tolerance": {"absolute": 0.02}, "reason": "in the passband the transmission is nearly total whatever the small resonance shift"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz, mid-band", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.04143978002358464, "tolerance": {"absolute": 0.015}, "reason": "a small reflection between the filter's two reflection zeros: the 8e-3 complex error of the graded mesh is a fifth of it"},
+  {"id": "s21_db_9_6", "quantity": "|S21| at 9.6 GHz, lower skirt (dB)", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -1.8996715173939969, "tolerance": {"absolute": 0.1}, "reason": "on the skirt |S21| falls 25 dB per GHz: a resonance shift of 0.05 % moves it by 0.1 dB"},
+  {"id": "s21_db_10_4", "quantity": "|S21| at 10.4 GHz, upper skirt (dB)", "measure": {"step": "solve", "pointer": "/points/2/s21/db"}, "value": -1.5214275335769767, "tolerance": {"absolute": 0.1}, "reason": "as the lower skirt"},
+  {"id": "worst", "quantity": "largest |S − S_mm| at 9.6, 10 and 10.4 GHz (complex)", "measure": {"command": "results.compare", "params": {"modes": 320}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 0.02}, "reason": "measured 8e-3 with elements of 3 mm graded to 0.3 mm at the 16 iris edges; the resonant filter magnifies small shifts in the irises' susceptances"}
+ ]
+}
