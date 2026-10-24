@@ -1,0 +1,17 @@
+[package]
+name = "emcraft-fdtd"
+description = "EMCraft's time-domain solver: the finite integration technique (FDTD) on a tensor grid, waveguide ports with CPML absorbers, broadband S-parameters by Fourier transforms"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-model = { workspace = true }
+num-complex = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+emcraft-theory = { workspace = true }

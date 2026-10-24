@@ -61,6 +61,16 @@ The methods EMCraft implements and where they come from.
 - O. Schenk, K. Gärtner, *Solving unsymmetric sparse systems of linear equations with PARDISO*,
   FGCS 20(3):475–487, 2004 — static pivoting with iterative refinement.
 
+## Time domain
+- K. S. Yee, *Numerical solution of initial boundary value problems involving Maxwell's
+  equations in isotropic media*, IEEE Trans. Antennas Propag. 14(3):302–307, 1966; T. Weiland,
+  *A discretization method for the solution of Maxwell's equations for six-component fields*,
+  AEÜ 31:116–120, 1977 — the scheme and its integral (FIT) form on non-uniform grids.
+- J. A. Roden, S. D. Gedney, *Convolution PML (CPML): an efficient FDTD implementation of the
+  CFS–PML for arbitrary media*, Microw. Opt. Technol. Lett. 27(5):334–339, 2000; A. Taflove, S.
+  C. Hagness, *Computational Electrodynamics: The FDTD Method*, 3rd ed., Artech House 2005,
+  ch. 7 — the absorbing layers and their grading.
+
 ## Eigenvalues
 - K.-J. Bathe, E. L. Wilson, *Large eigenvalue problems in dynamic analysis*, J. Eng. Mech. Div.
   ASCE 98(6):1471–1485, 1972; K.-J. Bathe, *Finite Element Procedures*, 2nd ed. 2014, §11.6 —

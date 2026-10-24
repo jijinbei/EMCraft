@@ -1,0 +1,25 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "s11_db_8_5": {
+      "band": 0.0002500069341141994,
+      "value": -6.934113199399574
+    },
+    "s21_db_5_5": {
+      "band": 0.00015000749198307268,
+      "value": -7.466955091604351
+    },
+    "s21_db_6_5": {
+      "band": 0.00015000473228613927,
+      "value": -4.706821705183069
+    },
+    "s21_db_7_5": {
+      "band": 0.00015000268802818026,
+      "value": -2.663067985089999
+    },
+    "s21_db_8_5": {
+      "band": 0.00015000099912216728,
+      "value": -0.9828865573995491
+    }
+  }
+}

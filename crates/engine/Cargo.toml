@@ -15,6 +15,7 @@ emcraft-fem = { workspace = true }
 emcraft-theory = { workspace = true }
 emcraft-render = { workspace = true }
 emcraft-solver = { workspace = true }
+emcraft-fdtd = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

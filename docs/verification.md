@@ -32,7 +32,10 @@ result is frozen so it cannot drift.
 5. **Eigenmode tests** (`crates/solver/tests/eigen.rs`): the four lowest resonances of a
    rectangular cavity (within 1e-4), a dielectric-filled cavity (frequencies scaled by 1/√εr,
    Q_d = 1/tan δ to 1e-6), the TE101 Q of copper walls (−1.2 % at 3 mm, converging: heavy).
-6. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+6. **Time-domain tests** (`crates/fdtd/tests/waveguides.rs`): the high-pass filter against the
+   exact cascade (2.5e-2 at 1.5 mm cells; heavy: 1.16e-2 → 2.8e-3 from 1 to 0.5 mm, second
+   order), the inductive iris against mode matching (heavy), passivity, hostile requests.
+7. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

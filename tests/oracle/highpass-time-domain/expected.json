@@ -1,0 +1,12 @@
+{
+ "title": "The high-pass filter by the time-domain solver",
+ "kind": "theory",
+ "source": "TE10 transmission-line cascade (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3 and §4.4), evaluated by ABCD matrices separately from EMCraft's code; the same filter the frequency-domain case highpass-filter checks",
+ "quantities": [
+  {"id": "s21_db_5_5", "quantity": "|S21| at 5.5 GHz, below the empty section's cut-off (dB)", "measure": {"step": "td", "pointer": "/points/0/s21/db"}, "value": -7.49198207270064, "tolerance": {"absolute": 0.15}, "reason": "finite integration on 1 mm cells (λg/30 to λg/60): second order, 1.2e-2 of complex error at most (measured; 2.8e-3 at 0.5 mm in the heavy test)"},
+  {"id": "s21_db_6_5", "quantity": "|S21| at 6.5 GHz (dB)", "measure": {"step": "td", "pointer": "/points/1/s21/db"}, "value": -4.732285139292419, "tolerance": {"absolute": 0.15}, "reason": "finite integration on 1 mm cells (λg/30 to λg/60): second order, 1.2e-2 of complex error at most (measured; 2.8e-3 at 0.5 mm in the heavy test)"},
+  {"id": "s21_db_7_5", "quantity": "|S21| at 7.5 GHz (dB)", "measure": {"step": "td", "pointer": "/points/2/s21/db"}, "value": -2.688027180282199, "tolerance": {"absolute": 0.15}, "reason": "finite integration on 1 mm cells (λg/30 to λg/60): second order, 1.2e-2 of complex error at most (measured; 2.8e-3 at 0.5 mm in the heavy test)"},
+  {"id": "s21_db_8_5", "quantity": "|S21| at 8.5 GHz (dB)", "measure": {"step": "td", "pointer": "/points/3/s21/db"}, "value": -0.9991211672989021, "tolerance": {"absolute": 0.15}, "reason": "finite integration on 1 mm cells (λg/30 to λg/60): second order, 1.2e-2 of complex error at most (measured; 2.8e-3 at 0.5 mm in the heavy test)"},
+  {"id": "s11_db_8_5", "quantity": "|S11| at 8.5 GHz (dB)", "measure": {"step": "td", "pointer": "/points/3/s11/db"}, "value": -6.871649068442771, "tolerance": {"absolute": 0.25}, "reason": "finite integration on 1 mm cells (λg/30 to λg/60): second order, 1.2e-2 of complex error at most (measured; 2.8e-3 at 0.5 mm in the heavy test); |S11| = 0.45 there"}
+ ]
+}

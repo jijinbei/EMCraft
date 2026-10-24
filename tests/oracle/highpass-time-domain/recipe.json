@@ -1,0 +1,4 @@
+[
+ {"command": "file.sample", "params": {"name": "highpass"}},
+ {"command": "solve.time_domain", "params": {"frequencies": [5.5, 6.5, 7.5, 8.5], "cell": 1}, "id": "td"}
+]

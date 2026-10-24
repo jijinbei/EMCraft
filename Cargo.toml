@@ -15,6 +15,7 @@ emcraft-fem = { path = "crates/fem" }
 emcraft-theory = { path = "crates/theory" }
 emcraft-render = { path = "crates/render" }
 emcraft-solver = { path = "crates/solver" }
+emcraft-fdtd = { path = "crates/fdtd" }
 emcraft-engine = { path = "crates/engine" }
 emcraft-ui-egui = { path = "crates/ui-egui" }
 
@@ -60,6 +61,9 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.emcraft-mesh]
+opt-level = 3
+
+[profile.dev.package.emcraft-fdtd]
 opt-level = 3
 
 [profile.release]

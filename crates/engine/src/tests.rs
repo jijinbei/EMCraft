@@ -168,6 +168,21 @@ fn cavity_eigenmodes_and_their_pictures() {
 }
 
 #[test]
+fn time_domain_results_join_the_chart() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let r = s.execute("solve.time_domain", &json!({"frequencies": [6, 8], "cell": 2})).unwrap();
+    assert_eq!(r["points"].as_array().unwrap().len(), 2);
+    assert!(r["converged"].as_bool().unwrap());
+    let s21 = r["points"][1]["s21"]["mag"].as_f64().unwrap();
+    assert!((s21 - 0.8149).abs() < 0.05, "{s21}");
+    // Without a frequency-domain sweep the chart shows the time-domain curves alone.
+    let chart = view::sparameter_chart(&s).unwrap();
+    assert!(chart.series.iter().any(|c| c.label.contains("time domain")));
+    assert!(s.execute("solve.time_domain", &json!({"frequencies": [6], "cell": -1})).is_err());
+}
+
+#[test]
 fn features_page_lists_every_command() {
     let md = features_markdown();
     for c in COMMANDS {

@@ -59,6 +59,9 @@ cargo run --release -p emcraft-cli -- sample cavity --out pictures
 Losses: dielectrics with a loss tangent and walls of finite conductivity (surface impedance),
 checked against the exact lossy cascade and the textbook conductor attenuation.
 
+A time-domain solver (finite integration on a hexahedral grid, like CST's) cross-checks the
+FEM: `solve.time_domain` puts its curves on the same chart.
+
 The desktop app shows the same, with a phase animation:
 
 ```
@@ -73,7 +76,8 @@ cargo run --release -p emcraft -- --sample highpass      # or iris-bandpass
 | `emcraft-mesh` | Structured tetrahedral meshes (Kuhn split) with apertures and edge grading, edge and face numbering, point location |
 | `emcraft-fem` | Nédélec elements of orders 1 and 2 with exact element matrices; quadrature; waveguide modes |
 | `emcraft-theory` | Closed-form TE10 S-parameters and fields; mode matching for H-plane steps and irises |
-| `emcraft-solver` | Driven analysis with modal ports; multifrontal complex symmetric LDLᵀ |
+| `emcraft-solver` | Driven analysis with modal ports, losses, cavity eigenmodes; multifrontal complex symmetric LDLᵀ |
+| `emcraft-fdtd` | Time domain: finite integration with PML-terminated waveguide ports |
 | `emcraft-render` | CPU pictures: field plots with vector arrows, charts, PNG |
 | `emcraft-engine` | Commands, sessions with rollback, scripts, samples |
 | `emcraft-ui-egui` | The desktop UI |

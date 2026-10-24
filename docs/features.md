@@ -73,6 +73,18 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 | `points` | integer |  | no | frequencies from start to stop (default 11) |
 | `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
 
+## `solve.time_domain` — Time-domain solve
+
+The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM; lossless models only.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequencies` | array | frequency | no | the frequencies |
+| `start` | number | frequency | no | first frequency |
+| `stop` | number | frequency | no | last frequency |
+| `points` | integer |  | no | frequencies from start to stop (default 11) |
+| `cell` | number | length | no | the cell size (default 1 mm) |
+
 ## `solve.eigenmodes` — Eigenmodes
 
 The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.

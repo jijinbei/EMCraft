@@ -576,6 +576,7 @@ dependencies = [
 name = "emcraft-engine"
 version = "0.1.0"
 dependencies = [
+ "emcraft-fdtd",
  "emcraft-fem",
  "emcraft-mesh",
  "emcraft-model",
@@ -584,6 +585,16 @@ dependencies = [
  "emcraft-theory",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "emcraft-fdtd"
+version = "0.1.0"
+dependencies = [
+ "emcraft-model",
+ "emcraft-theory",
+ "num-complex",
  "thiserror 2.0.21",
 ]
 

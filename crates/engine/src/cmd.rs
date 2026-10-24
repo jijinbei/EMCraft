@@ -105,6 +105,19 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: solve_frequency,
     },
     CommandSpec {
+        id: "solve.time_domain",
+        label: "Time-domain solve",
+        doc: "The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM; lossless models only.",
+        params: &[
+            p("frequencies", "array", F, false, "the frequencies"),
+            p("start", "number", F, false, "first frequency"),
+            p("stop", "number", F, false, "last frequency"),
+            p("points", "integer", N, false, "frequencies from start to stop (default 11)"),
+            p("cell", "number", L, false, "the cell size (default 1 mm)"),
+        ],
+        run: solve_time_domain,
+    },
+    CommandSpec {
         id: "solve.eigenmodes",
         label: "Eigenmodes",
         doc: "The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.",
@@ -321,6 +334,21 @@ fn solve_frequency(s: &mut Session, p: &Value) -> Result<Value> {
         o.insert("unknowns".into(), json!(unknowns));
         o.insert("order".into(), json!(order.as_u8()));
     }
+    Ok(reply)
+}
+
+fn solve_time_domain(s: &mut Session, p: &Value) -> Result<Value> {
+    let freqs = frequencies(s, p)?;
+    let cell = s.positive_length(p, "cell")?.unwrap_or(emcraft_model::units::Length::Millimetre.to_si(1.0));
+    let r = emcraft_fdtd::s_parameters(&s.model, &emcraft_fdtd::Options::new(cell), &freqs)?;
+    let points: Vec<Value> = r
+        .frequencies
+        .iter()
+        .zip(r.s11.iter().zip(&r.s21))
+        .map(|(f, (a, b))| json!({"frequency": s.show_frequency(*f), "s11": complex(*a), "s21": complex(*b)}))
+        .collect();
+    let reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "frequency_unit": s.display.frequency.symbol(), "points": points});
+    s.time_domain = Some(r);
     Ok(reply)
 }
 

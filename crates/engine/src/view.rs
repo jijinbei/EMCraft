@@ -372,11 +372,13 @@ pub fn reference(session: &Session) -> Result<Reference> {
 
 /// |S11| and |S21| in dB against frequency: the solved points and the reference curves.
 pub fn sparameter_chart(session: &Session) -> Result<Chart> {
-    let sweep = session.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))?;
+    let sweep = session.sweep.as_ref();
+    let td = session.time_domain.as_ref();
     let fu = session.display.frequency;
-    let (f0, f1) = match (sweep.results.first(), sweep.results.last()) {
-        (Some(a), Some(b)) => (a.frequency, b.frequency),
-        _ => return Err(EngineError::Failed("no results".into())),
+    let (f0, f1) = match (sweep, td) {
+        (Some(sw), _) if !sw.results.is_empty() => (sw.results[0].frequency, sw.results[sw.results.len() - 1].frequency),
+        (_, Some(t)) if !t.frequencies.is_empty() => (t.frequencies[0], t.frequencies[t.frequencies.len() - 1]),
+        _ => return Err(EngineError::Failed("no results: solve first (solve.frequency or solve.time_domain)".into())),
     };
     let pad = if f1 > f0 { 0.0 } else { 0.05 * f0 };
     let (f0, f1) = (f0 - pad, f1 + pad);
@@ -419,16 +421,23 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
             }
         }
     }
-    let pts = |p: usize, q: usize| {
-        sweep.results.iter().filter_map(|r| r.s.get(p).and_then(|row| row.get(q)).map(|s| [fu.from_si(r.frequency), db(*s)])).collect()
-    };
-    series.push(Series {
-        label: format!("|S21| FEM (order {})", sweep.order.as_u8()),
-        color: Rgb(20, 40, 120),
-        style: Style::Markers,
-        points: pts(1, 0),
-    });
-    series.push(Series { label: "|S11| FEM".into(), color: Rgb(140, 30, 20), style: Style::Markers, points: pts(0, 0) });
+    if let Some(sweep) = sweep {
+        let pts = |p: usize, q: usize| {
+            sweep.results.iter().filter_map(|r| r.s.get(p).and_then(|row| row.get(q)).map(|s| [fu.from_si(r.frequency), db(*s)])).collect()
+        };
+        series.push(Series {
+            label: format!("|S21| FEM (order {})", sweep.order.as_u8()),
+            color: Rgb(20, 40, 120),
+            style: Style::Markers,
+            points: pts(1, 0),
+        });
+        series.push(Series { label: "|S11| FEM".into(), color: Rgb(140, 30, 20), style: Style::Markers, points: pts(0, 0) });
+    }
+    if let Some(td) = td {
+        let pts = |v: &[C]| td.frequencies.iter().zip(v).map(|(f, s)| [fu.from_si(*f), db(*s)]).collect();
+        series.push(Series { label: "|S21| time domain".into(), color: Rgb(40, 150, 90), style: Style::Line, points: pts(&td.s21) });
+        series.push(Series { label: "|S11| time domain".into(), color: Rgb(210, 140, 30), style: Style::Line, points: pts(&td.s11) });
+    }
     let lowest = series.iter().flat_map(|s| s.points.iter().map(|p| p[1])).fold(0.0f64, f64::min);
     let ymin = ((lowest / 10.0).floor() * 10.0).max(-80.0);
     Ok(Chart {

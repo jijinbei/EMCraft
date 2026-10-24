@@ -44,6 +44,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("render", Class::Layer(1)),
     // L2: solvers.
     ("solver", Class::Layer(2)),
+    ("fdtd", Class::Layer(2)),
     // L6: commands.
     ("engine", Class::Layer(6)),
     // L7: the desktop UI.
