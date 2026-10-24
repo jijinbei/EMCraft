@@ -62,6 +62,8 @@ checked against the exact lossy cascade and the textbook conductor attenuation.
 A time-domain solver (finite integration on a hexahedral grid, like CST's) cross-checks the
 FEM: `solve.time_domain` puts its curves on the same chart.
 
+![The high-pass filter: exact, FEM and time domain](docs/media/highpass-fem-fdtd.png)
+
 The desktop app shows the same, with a phase animation:
 
 ```
