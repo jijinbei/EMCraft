@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/model", "crates/mesh", "crates/fem", "crates/theory", "crates/solver", "crates/render", "crates/engine", "apps/emcraft-cli", "xtask"]
+members = ["crates/*", "apps/*", "xtask"]
 
 [workspace.package]
 version = "0.1.0"

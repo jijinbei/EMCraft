@@ -75,14 +75,43 @@ const ARROWS: usize = 24;
 /// A vector field whose in-plane part peaks below this share of its whole peak draws no arrows.
 const IN_PLANE: f64 = 0.05;
 
+/// The complex E and H sampled on a view's plane: the expensive part of a picture, done once
+/// per frequency, plane, position and excitation. [`PlaneSamples::plot`] then draws any
+/// component at any phase cheaply (an animation over the period).
+#[derive(Clone, Debug)]
+pub struct PlaneSamples {
+    pub plane: Plane,
+    pub frequency: f64,
+    /// The plane's position along its normal (m).
+    pub at: f64,
+    pub excitation: usize,
+    nx: usize,
+    ny: usize,
+    /// (E, H) on an nx × ny grid over the plane, row 0 at the bottom; `None` outside the mesh.
+    grid: Vec<Option<([C; 3], [C; 3])>>,
+    /// Arrow positions (display units) with E and H there.
+    arrows: Vec<([f64; 2], [C; 3], [C; 3])>,
+    arrow_length: f64,
+    lines: Vec<[[f64; 2]; 2]>,
+    title: String,
+    caption: String,
+    x: Axis,
+    y: Axis,
+}
+
 /// The field plot of a view.
 pub fn field_plot(session: &Session, view: &FieldView) -> Result<FieldPlot> {
+    sample_plane(session, view)?.plot(view)
+}
+
+/// Samples the fields of a view's plane (its component, arrows and phase are not used).
+pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples> {
     let sweep = session.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))?;
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
     let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
     let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
     let (a, b, len) = (w.width, w.height, w.length());
-    // (horizontal span, vertical span, default position) and the map from plane to guide.
+    // (horizontal span, vertical span, normal span) and the map from plane to guide.
     let (hspan, vspan, normal_span) = match view.plane {
         Plane::H => (len, a, b),
         Plane::E => (len, b, a),
@@ -94,92 +123,28 @@ pub fn field_plot(session: &Session, view: &FieldView) -> Result<FieldPlot> {
         Plane::E => [at, v, u],
         Plane::Cross => [u, v, at],
     };
-    // In-plane components of a vector: (horizontal, vertical).
-    let in_plane = |f: [C; 3]| match view.plane {
-        Plane::H => (f[2], f[0]),
-        Plane::E => (f[2], f[1]),
-        Plane::Cross => (f[0], f[1]),
-    };
-    let rot = C::from_polar(1.0, view.phase);
-    let re = |c: C| (c * rot).re;
-    let comp: Box<dyn Fn(&[C; 3], &[C; 3]) -> (f64, f64)> = match view.component.as_str() {
-        c @ ("ex" | "ey" | "ez" | "hx" | "hy" | "hz") => {
-            let k = match &c[1..] {
-                "x" => 0,
-                "y" => 1,
-                _ => 2,
-            };
-            let magnetic = c.starts_with('h');
-            Box::new(move |e: &[C; 3], h: &[C; 3]| {
-                let v = if magnetic { h[k] } else { e[k] };
-                (re(v), v.norm())
-            })
-        }
-        "|e|" => Box::new(|e: &[C; 3], _: &[C; 3]| {
-            let m = e.iter().map(|c| re(*c).powi(2)).sum::<f64>().sqrt();
-            (m, e.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt())
-        }),
-        "|h|" => Box::new(|_: &[C; 3], h: &[C; 3]| {
-            let m = h.iter().map(|c| re(*c).powi(2)).sum::<f64>().sqrt();
-            (m, h.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt())
-        }),
-        other => return Err(EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", other.chars().take(20).collect::<String>()))),
-    };
-    let magnitude = view.component.starts_with('|');
-
     let longer = hspan.max(vspan);
     let (nx, ny) = (((SCALAR_SAMPLES as f64 * hspan / longer).ceil() as usize).max(2), ((SCALAR_SAMPLES as f64 * vspan / longer).ceil() as usize).max(2));
-    let mut values = Vec::with_capacity(nx * ny);
-    let mut peak: f64 = 0.0;
     let driven = &sweep.driven;
+    let mut grid = Vec::with_capacity(nx * ny);
     for j in 0..ny {
         for i in 0..nx {
             let (u, v) = (hspan * i as f64 / (nx - 1) as f64, vspan * j as f64 / (ny - 1) as f64);
-            match driven.fields(x, r.frequency, point(u, v)) {
-                Some((e, h)) => {
-                    let (val, amp) = comp(&e, &h);
-                    peak = peak.max(amp);
-                    values.push(val);
-                }
-                None => values.push(f64::NAN),
-            }
+            grid.push(driven.fields(x, r.frequency, point(u, v)));
         }
     }
     let l = session.display.length;
-    let lname = l.symbol();
-    let mut arrow_sets = Vec::new();
     let step = longer / ARROWS as f64;
     let (ax, ay) = (((hspan / step).round() as usize).max(2), ((vspan / step).round() as usize).max(2));
-    let mut e_arrows = Vec::new();
-    let mut h_arrows = Vec::new();
-    let (mut e_peak, mut h_peak): (f64, f64) = (0.0, 0.0);
-    let (mut e_total, mut h_total): (f64, f64) = (0.0, 0.0);
-    let norm = |f: &[C; 3]| f.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+    let mut arrows = Vec::with_capacity(ax * ay);
     for j in 0..ay {
         for i in 0..ax {
             let (u, v) = (hspan * (i as f64 + 0.5) / ax as f64, vspan * (j as f64 + 0.5) / ay as f64);
-            let Some((e, h)) = driven.fields(x, r.frequency, point(u, v)) else { continue };
-            let pos = [l.from_si(u), l.from_si(v)];
-            let (eu, ev) = in_plane(e);
-            let (hu, hv) = in_plane(h);
-            e_total = e_total.max(norm(&e));
-            h_total = h_total.max(norm(&h));
-            e_peak = e_peak.max((eu.norm_sqr() + ev.norm_sqr()).sqrt());
-            h_peak = h_peak.max((hu.norm_sqr() + hv.norm_sqr()).sqrt());
-            e_arrows.push((pos, [re(eu), re(ev)]));
-            h_arrows.push((pos, [re(hu), re(hv)]));
+            if let Some((e, h)) = driven.fields(x, r.frequency, point(u, v)) {
+                arrows.push(([l.from_si(u), l.from_si(v)], e, h));
+            }
         }
     }
-    // Arrows scaled by the peak over the period, so an animation keeps one scale. A field
-    // with (next to) nothing in the plane — E in the H-plane for TE10, whose in-plane part is
-    // discretisation error — draws no arrows.
-    if view.show_e && e_peak > IN_PLANE * e_total {
-        arrow_sets.push(Arrows { label: "E (in plane)".into(), color: Rgb(20, 20, 20), arrows: e_arrows, scale: Some(e_peak) });
-    }
-    if view.show_h && h_peak > IN_PLANE * h_total {
-        arrow_sets.push(Arrows { label: "H (in plane)".into(), color: Rgb(0, 120, 60), arrows: h_arrows, scale: Some(h_peak) });
-    }
-
     let (hlabel, vlabel, nlabel) = match view.plane {
         Plane::H => ("z", "x", "y"),
         Plane::E => ("z", "y", "x"),
@@ -191,41 +156,132 @@ pub fn field_plot(session: &Session, view: &FieldView) -> Result<FieldPlot> {
             lines.push([[l.from_si(*z), 0.0], [l.from_si(*z), l.from_si(vspan)]]);
         }
     }
-    let unit = if view.component.contains('h') { "A/m" } else { "V/m" };
+    let lname = l.symbol();
     let fsym = session.display.frequency;
     let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
-    Ok(FieldPlot {
-        title: format!(
-            "{} plane, {} = {} {lname}   f = {} {}",
-            match view.plane {
-                Plane::H => "H",
-                Plane::E => "E",
-                Plane::Cross => "Cross-section",
-            },
-            nlabel,
-            emcraft_render::axes::format(l.from_si(at)),
-            emcraft_render::axes::format(fsym.from_si(r.frequency)),
-            fsym.symbol()
-        ),
-        subtitle: format!(
-            "Re(F e^jωt) at ωt = {} deg, port {port_name} excited by 1 V/m TE10, order {}",
-            emcraft_render::axes::format(view.phase.to_degrees()),
-            sweep.order.as_u8()
-        ),
+    let title = format!(
+        "{} plane, {nlabel} = {} {lname}   f = {} {}",
+        match view.plane {
+            Plane::H => "H",
+            Plane::E => "E",
+            Plane::Cross => "Cross-section",
+        },
+        emcraft_render::axes::format(l.from_si(at)),
+        emcraft_render::axes::format(fsym.from_si(r.frequency)),
+        fsym.symbol()
+    );
+    let caption = format!("port {port_name} excited by 1 V/m TE10, order {}", sweep.order.as_u8());
+    Ok(PlaneSamples {
+        plane: view.plane,
+        frequency: r.frequency,
+        at,
+        excitation: view.excitation,
+        nx,
+        ny,
+        grid,
+        arrows,
+        arrow_length: l.from_si(step) * 1.1,
+        lines,
+        title,
+        caption,
         x: Axis::new(&format!("{hlabel} ({lname})"), 0.0, l.from_si(hspan)),
         y: Axis::new(&format!("{vlabel} ({lname})"), 0.0, l.from_si(vspan)),
-        scalar: Some(Scalar {
-            label: format!("{} ({unit})", view.component.replace('e', "E").replace('h', "H")),
-            nx,
-            ny,
-            values,
-            kind: if magnitude { ScalarKind::Magnitude } else { ScalarKind::Signed },
-            range: Some(peak),
-        }),
-        arrows: arrow_sets,
-        lines,
-        arrow_length: l.from_si(step) * 1.1,
     })
+}
+
+impl PlaneSamples {
+    /// Whether these samples serve a view (same frequency, plane, position and excitation).
+    pub fn serves(&self, view: &FieldView, at: f64) -> bool {
+        self.plane == view.plane && self.excitation == view.excitation && (self.frequency - view.frequency).abs() <= 1e-9 * self.frequency && (self.at - at).abs() <= 1e-12
+    }
+
+    /// The plot of a view's component and arrows at its phase.
+    pub fn plot(&self, view: &FieldView) -> Result<FieldPlot> {
+        let rot = C::from_polar(1.0, view.phase);
+        let re = |c: C| (c * rot).re;
+        let norm = |f: &[C; 3]| f.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let comp = view.component.as_str();
+        // (value at this phase, amplitude over the period)
+        let value = |e: &[C; 3], h: &[C; 3]| -> Option<(f64, f64)> {
+            match comp {
+                "ex" | "ey" | "ez" | "hx" | "hy" | "hz" => {
+                    let k = match &comp[1..] {
+                        "x" => 0,
+                        "y" => 1,
+                        _ => 2,
+                    };
+                    let v = if comp.starts_with('h') { h[k] } else { e[k] };
+                    Some((re(v), v.norm()))
+                }
+                "|e|" => Some((e.iter().map(|c| re(*c).powi(2)).sum::<f64>().sqrt(), norm(e))),
+                "|h|" => Some((h.iter().map(|c| re(*c).powi(2)).sum::<f64>().sqrt(), norm(h))),
+                _ => None,
+            }
+        };
+        if value(&[C::new(0.0, 0.0); 3], &[C::new(0.0, 0.0); 3]).is_none() {
+            return Err(EngineError::Params(format!(
+                "`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`",
+                comp.chars().take(20).collect::<String>()
+            )));
+        }
+        let mut peak: f64 = 0.0;
+        let values = self
+            .grid
+            .iter()
+            .map(|g| match g.as_ref().and_then(|(e, h)| value(e, h)) {
+                Some((v, amp)) => {
+                    peak = peak.max(amp);
+                    v
+                }
+                None => f64::NAN,
+            })
+            .collect();
+        // In-plane components of a vector: (horizontal, vertical).
+        let in_plane = |f: &[C; 3]| match self.plane {
+            Plane::H => (f[2], f[0]),
+            Plane::E => (f[2], f[1]),
+            Plane::Cross => (f[0], f[1]),
+        };
+        let mut sets = Vec::new();
+        for (show, magnetic, label, color) in [(view.show_e, false, "E (in plane)", Rgb(20, 20, 20)), (view.show_h, true, "H (in plane)", Rgb(0, 120, 60))] {
+            if !show {
+                continue;
+            }
+            let (mut in_peak, mut total): (f64, f64) = (0.0, 0.0);
+            let mut list = Vec::with_capacity(self.arrows.len());
+            for (pos, e, h) in &self.arrows {
+                let f = if magnetic { h } else { e };
+                let (u, v) = in_plane(f);
+                total = total.max(norm(f));
+                in_peak = in_peak.max((u.norm_sqr() + v.norm_sqr()).sqrt());
+                list.push((*pos, [re(u), re(v)]));
+            }
+            // Scaled by the peak over the period, so an animation keeps one scale. A field with
+            // (next to) nothing in the plane — E in the H-plane for TE10, whose in-plane part is
+            // discretisation error — draws no arrows.
+            if in_peak > IN_PLANE * total {
+                sets.push(Arrows { label: label.into(), color, arrows: list, scale: Some(in_peak) });
+            }
+        }
+        let unit = if comp.contains('h') { "A/m" } else { "V/m" };
+        Ok(FieldPlot {
+            title: self.title.clone(),
+            subtitle: format!("Re(F e^jωt) at ωt = {} deg, {}", emcraft_render::axes::format(view.phase.to_degrees()), self.caption),
+            x: self.x.clone(),
+            y: self.y.clone(),
+            scalar: Some(Scalar {
+                label: format!("{} ({unit})", comp.replace('e', "E").replace('h', "H")),
+                nx: self.nx,
+                ny: self.ny,
+                values,
+                kind: if comp.starts_with('|') { ScalarKind::Magnitude } else { ScalarKind::Signed },
+                range: Some(peak),
+            }),
+            arrows: sets,
+            lines: self.lines.clone(),
+            arrow_length: self.arrow_length,
+        })
+    }
 }
 
 /// The exact TE₁₀ line of the model's waveguide.
