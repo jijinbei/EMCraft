@@ -97,6 +97,42 @@ pub fn te10_wall_attenuation(a: f64, b: f64, frequency: f64, sigma: f64, eps_r: 
     rs * (2.0 * b * PI * PI + a.powi(3) * k * k) / (a.powi(3) * b * beta * k * eta)
 }
 
+/// The resonances of an a × b × d cavity filled with εr, perfectly conducting walls, lowest
+/// first: f = c/(2√εr) √((m/a)² + (n/b)² + (p/d)²) for TE_mnp (m, n not both 0, p ≥ 1) and
+/// TM_mnp (m, n ≥ 1, p ≥ 0), with their names (Pozar §6.3).
+pub fn cavity_resonances(a: f64, b: f64, d: f64, eps_r: f64, count: usize) -> Vec<(f64, String)> {
+    let count = count.min(1000);
+    let span = 12u32;
+    let mut out = Vec::new();
+    for m in 0..=span {
+        for n in 0..=span {
+            for p in 0..=span {
+                let f = C0 / (2.0 * eps_r.sqrt()) * ((m as f64 / a).powi(2) + (n as f64 / b).powi(2) + (p as f64 / d).powi(2)).sqrt();
+                if (m > 0 || n > 0) && p >= 1 {
+                    out.push((f, format!("TE{m}{n}{p}")));
+                }
+                if m >= 1 && n >= 1 {
+                    out.push((f, format!("TM{m}{n}{p}")));
+                }
+            }
+        }
+    }
+    out.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+    out.truncate(count);
+    out
+}
+
+/// Q of the TE101 mode of an a × b × d air-filled cavity from walls of conductivity σ:
+/// Q_c = (k a d)³ b η / (2π² R_s (2a³b + 2bd³ + a³d + ad³)) (D. M. Pozar, *Microwave
+/// Engineering*, 4th ed., Wiley 2012, eq. 6.46).
+pub fn te101_q_walls(a: f64, b: f64, d: f64, sigma: f64) -> f64 {
+    let k = PI * ((1.0 / a).powi(2) + (1.0 / d).powi(2)).sqrt();
+    let omega = k * C0;
+    let rs = (omega * MU0 / (2.0 * sigma)).sqrt();
+    let eta = MU0 * C0;
+    (k * a * d).powi(3) * b * eta / (2.0 * PI * PI * rs * (2.0 * a.powi(3) * b + 2.0 * b * d.powi(3) + a.powi(3) * d + a * d.powi(3)))
+}
+
 /// β = √(k² − (π/a)²) on the branch with Im β ≤ 0 (decaying along +z below cut-off or with
 /// losses), k² = k0² εr(1 − j tan δ) μr.
 fn beta(k0: f64, a: f64, l: &Layer) -> C {
@@ -307,6 +343,19 @@ mod tests {
         // figure usually quoted for WR-90).
         let alpha = te10_wall_attenuation(0.02286, 0.01016, 10.0e9, 5.8e7, 1.0);
         assert!((alpha - 0.01248).abs() < 1e-5, "{alpha}");
+    }
+
+    #[test]
+    fn cavity_modes_in_order() {
+        // 22.86 × 10.16 × 30 mm: TE101 at c/2·√(1/a² + 1/d²) = 1.49896e8 · 54.997 = 8.2439 GHz,
+        // then TE102.
+        let r = cavity_resonances(0.02286, 0.01016, 0.03, 1.0, 3);
+        assert_eq!(r[0].1, "TE101");
+        assert!((r[0].0 - 8.2439e9).abs() < 1e6, "{}", r[0].0);
+        assert_eq!(r[1].1, "TE102");
+        // The cavity's Q from copper walls: several thousand.
+        let q = te101_q_walls(0.02286, 0.01016, 0.03, 5.8e7);
+        assert!(q > 4000.0 && q < 12000.0, "{q}");
     }
 
     #[test]

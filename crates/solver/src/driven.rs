@@ -77,14 +77,14 @@ pub struct Dofs {
 }
 
 impl Dofs {
-    /// `walls`: whether the conducting walls fix their tangential E (perfect conductors) or keep
-    /// it as unknowns (walls of finite conductivity).
-    fn new(order: Order, mesh: &Mesh, topo: &Topology, walls: bool) -> Result<Dofs> {
+    /// `fixed_faces`: the boundary faces (indices into the mesh's) whose tangential E is zero
+    /// (perfectly conducting walls).
+    fn new(order: Order, mesh: &Mesh, topo: &Topology, fixed_faces: &[usize]) -> Result<Dofs> {
         let (pe, pf) = (order.per_edge(), order.per_face());
         let (ne, nf) = (topo.edges.len(), topo.faces.len());
         let total = ne * pe + nf * pf;
         let mut fixed = vec![false; total];
-        for b in mesh.boundary.iter().filter(|b| walls && b.tag == Boundary::Pec) {
+        for b in fixed_faces.iter().filter_map(|&i| mesh.boundary.get(i)) {
             let tet = b.tet as usize;
             let Some((local, face)) = topo.find_face(tet, b.nodes) else {
                 return Err(invalid("mesh", "a boundary face is not a face of its tetrahedron"));
@@ -175,6 +175,8 @@ pub struct Driven {
     mass: Vec<C>,
     /// Walls of finite conductivity: σ (S/m) and their tangential mass matrix.
     wall: Option<(f64, Vec<f64>)>,
+    /// The boundary faces that are walls (indices into the mesh's).
+    walls: Vec<usize>,
     pub ports: Vec<PortData>,
 }
 
@@ -205,20 +207,51 @@ pub enum Field {
 impl Driven {
     /// Prepares the model's waveguide (meshed) for solving with elements of `order`.
     pub fn new(model: &Model, order: Order) -> Result<Driven> {
-        let issues = model.check();
+        Driven::build(model, order, true, false)
+    }
+
+    /// The model's waveguide closed at both ends by conducting walls (a cavity), its ports left
+    /// out: the matrices of an eigenmode analysis ([`crate::eigen`]).
+    pub fn closed(model: &Model, order: Order) -> Result<Driven> {
+        Driven::build(model, order, false, false)
+    }
+
+    /// The cavity with perfectly conducting walls whatever their conductivity: the lossless
+    /// problem whose modes perturbation theory gives Q factors from.
+    pub fn cavity(model: &Model, order: Order) -> Result<Driven> {
+        Driven::build(model, order, false, true)
+    }
+
+    fn build(model: &Model, order: Order, with_ports: bool, lossless_walls: bool) -> Result<Driven> {
+        let issues: Vec<String> = model.check().into_iter().filter(|i| with_ports || !i.starts_with("no ports")).collect();
         if !issues.is_empty() {
             return Err(SolveError::NotReady(issues.join("; ")));
         }
         let mesh = model.mesh.clone().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
         let w = model.waveguide.as_ref().ok_or_else(|| SolveError::NotReady("no waveguide".into()))?;
         let topo = Topology::new(&mesh);
-        let sigma = model.wall_conductivity;
+        let sigma = if lossless_walls { None } else { model.wall_conductivity };
         if let Some(c) = sigma
             && !(c.is_finite() && c > 0.0)
         {
             return Err(invalid("wall conductivity", format!("must be a finite number > 0, got {c}")));
         }
-        let dofs = Dofs::new(order, &mesh, &topo, sigma.is_none())?;
+        // Walls: the conducting faces and, with no port there, the end faces.
+        let port_tags: Vec<Boundary> = if with_ports {
+            model
+                .ports
+                .iter()
+                .map(|p| match p.end {
+                    End::Start => Boundary::Port(0),
+                    End::End => Boundary::Port(1),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let walls: Vec<usize> = (0..mesh.boundary.len()).filter(|&i| !port_tags.contains(&mesh.boundary[i].tag)).collect();
+        let fixed: &[usize] = if sigma.is_none() { &walls } else { &[] };
+        let dofs = Dofs::new(order, &mesh, &topo, fixed)?;
         let material = |t: usize| mesh.tet_material.get(t).and_then(|&m| model.materials.get(m as usize));
         let mut eps = Vec::with_capacity(mesh.tets.len());
         let mut mu = Vec::with_capacity(mesh.tets.len());
@@ -230,7 +263,7 @@ impl Driven {
 
         // Port vectors.
         let mut ports = Vec::new();
-        for p in &model.ports {
+        for p in model.ports.iter().filter(|_| with_ports) {
             let tag = match p.end {
                 End::Start => Boundary::Port(0),
                 End::End => Boundary::Port(1),
@@ -312,7 +345,7 @@ impl Driven {
         let mut ww = Csr { val: vec![C::new(0.0, 0.0); pattern.col.len()], ..pattern.clone() };
         if sigma.is_some() {
             let rule = triangle_rule(if order == Order::One { 3 } else { 4 });
-            for b in mesh.boundary.iter().filter(|b| b.tag == Boundary::Pec) {
+            for b in walls.iter().filter_map(|&i| mesh.boundary.get(i)) {
                 let tet = b.tet as usize;
                 let el = element(&mesh, &topo, tet, order)?;
                 let unknowns = dofs.of_tet(&topo, tet);
@@ -334,7 +367,7 @@ impl Driven {
             }
         }
         let wall = sigma.map(|c| (c, ww.val.iter().map(|v| v.re).collect()));
-        Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, wall, ports })
+        Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, wall, walls, ports })
     }
 
     /// The system matrix at wavenumber k₀ and each port's TE₁₀ excitation vector.
@@ -513,6 +546,48 @@ impl Driven {
         Ok(0.5 * omega * eps0 * total)
     }
 
+    /// The curl–curl matrix K, the mass matrix M (complex permittivity) and their sparsity
+    /// pattern, for eigenmode analysis.
+    pub(crate) fn matrices(&self) -> (&Csr, &[f64], &[C]) {
+        (&self.pattern, &self.stiffness, &self.mass)
+    }
+
+    /// The power (W) walls of conductivity `sigma` would absorb for a field computed with
+    /// perfectly conducting walls: ½ R_s ∫ |H_t|² dS (the perturbation estimate).
+    pub fn wall_loss_perturbation(&self, x: &[C], frequency: f64, sigma: f64) -> Result<f64> {
+        let rs = surface_resistance(frequency, sigma);
+        let rule = triangle_rule(if self.order == Order::One { 3 } else { 4 });
+        let mut total = 0.0;
+        for b in self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)) {
+            let tet = b.tet as usize;
+            let el = element(&self.mesh, &self.topo, tet, self.order)?;
+            let (q, area, normal) = face_geometry(&self.mesh, &b.nodes);
+            for (l, wq) in &rule {
+                let p = [0, 1, 2].map(|d| l[0] * q[0][d] + l[1] * q[1][d] + l[2] * q[2][d]);
+                let h = self.field_in(&el, tet, x, frequency, Field::H, el.barycentric(p));
+                let hn = h[0] * normal[0] + h[1] * normal[1] + h[2] * normal[2];
+                total += wq * area * (0..3).map(|d| (h[d] - hn * normal[d]).norm_sqr()).sum::<f64>();
+            }
+        }
+        Ok(0.5 * rs * total)
+    }
+
+    /// The time-averaged stored energy (J) at resonance, twice the electric: ½ ε₀ ∫ εr |E|² dV.
+    pub fn stored_energy(&self, x: &[C], frequency: f64) -> Result<f64> {
+        let eps0 = 1.0 / (MU0 * C0 * C0);
+        let n = if self.order == Order::One { 3 } else { 4 };
+        let mut total = 0.0;
+        for t in 0..self.mesh.tets.len() {
+            let el = element(&self.mesh, &self.topo, t, self.order)?;
+            let er = self.eps.get(t).map_or(1.0, |e| e.re);
+            for (l, w) in tet_rule(&el.corners, n) {
+                let e = self.field_in(&el, t, x, frequency, Field::E, l);
+                total += w * er * e.iter().map(|c| c.norm_sqr()).sum::<f64>();
+            }
+        }
+        Ok(0.5 * eps0 * total)
+    }
+
     /// The power (W) the walls of finite conductivity absorb: ∫ |E_t|²/(4R_s) dS (= ½ R_s ∫ |H_t|²
     /// dS with the Leontovich condition).
     pub fn wall_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
@@ -520,7 +595,7 @@ impl Driven {
         let rs = surface_resistance(frequency, *sigma);
         let rule = triangle_rule(if self.order == Order::One { 3 } else { 4 });
         let mut total = 0.0;
-        for b in self.mesh.boundary.iter().filter(|b| b.tag == Boundary::Pec) {
+        for b in self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)) {
             let tet = b.tet as usize;
             let el = element(&self.mesh, &self.topo, tet, self.order)?;
             let (q, area, normal) = face_geometry(&self.mesh, &b.nodes);
