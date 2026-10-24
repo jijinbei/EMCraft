@@ -55,6 +55,8 @@ pub struct ModelEdit {
     pub conductivity: Option<f64>,
     /// The analysis to run.
     pub analysis: Analysis,
+    /// Also run the time-domain solver on cells of this size (mm) for its curves on the chart.
+    pub time_domain: Option<f64>,
 }
 
 /// What Solve runs.
@@ -83,6 +85,7 @@ impl Default for ModelEdit {
             points: 17,
             conductivity: None,
             analysis: Analysis::Sweep,
+            time_domain: None,
         }
     }
 }
@@ -161,6 +164,11 @@ impl ModelEdit {
                 steps.push(json!({"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": self.modes}}));
                 steps.push(json!({"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": self.modes}}));
                 steps.push(json!({"command": "solve.frequency", "params": {"start": self.start, "stop": self.stop, "points": self.points, "order": self.order}}));
+                if let Some(cell) = self.time_domain {
+                    let n = 81;
+                    let freqs: Vec<f64> = (0..n).map(|k| self.start + (self.stop - self.start) * k as f64 / (n - 1) as f64).collect();
+                    steps.push(json!({"command": "solve.time_domain", "params": {"frequencies": freqs, "cell": cell}}));
+                }
             }
             Analysis::Eigen { count, near } => {
                 steps.push(json!({"command": "solve.eigenmodes", "params": {"near": near, "count": count, "order": self.order}}));
@@ -391,6 +399,17 @@ impl EmcraftApp {
             ui.end_row();
             ui.label("points");
             ui.add(egui::DragValue::new(&mut e.points).range(1..=401));
+            ui.end_row();
+            ui.label("time domain");
+            ui.horizontal(|ui| {
+                let mut on = e.time_domain.is_some();
+                if ui.checkbox(&mut on, "").on_hover_text("also solve in the time domain (finite integration) and draw its curves").changed() {
+                    e.time_domain = on.then_some(1.0);
+                }
+                if let Some(cell) = e.time_domain.as_mut() {
+                    ui.add(egui::DragValue::new(cell).speed(0.05).range(0.2..=10.0).prefix("cell ").suffix(" mm"));
+                }
+            });
             ui.end_row();
         });
         ui.horizontal(|ui| {
