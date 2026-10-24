@@ -30,10 +30,17 @@ cross-section:
 ![The TE10 pattern on the cross-section at 8 GHz](docs/media/cross-8GHz.png)
 ![The evanescent field in the cut-off section at 6 GHz (E-plane)](docs/media/e-6GHz.png)
 
+Steps and irises (sections with a narrower aperture) are verified against mode matching; the
+`iris-bandpass` sample is a three-cavity inductive-iris band-pass filter (9.75–10.25 GHz):
+
+```
+cargo run --release -p emcraft-cli -- sample iris-bandpass --out pictures
+```
+
 The desktop app shows the same, with a phase animation:
 
 ```
-cargo run --release -p emcraft -- --sample highpass
+cargo run --release -p emcraft -- --sample highpass      # or iris-bandpass
 ```
 
 ## What is inside
@@ -41,9 +48,9 @@ cargo run --release -p emcraft -- --sample highpass
 | Crate | Role |
 |---|---|
 | `emcraft-model` | SI model: materials, waveguide geometry, ports, tetrahedral mesh, display units |
-| `emcraft-mesh` | Structured tetrahedral meshes (Kuhn split), edge and face numbering, point location |
+| `emcraft-mesh` | Structured tetrahedral meshes (Kuhn split) with apertures and edge grading, edge and face numbering, point location |
 | `emcraft-fem` | Nédélec elements of orders 1 and 2 with exact element matrices; quadrature; waveguide modes |
-| `emcraft-theory` | Closed-form TE10 S-parameters and fields of waveguides filled in sections |
+| `emcraft-theory` | Closed-form TE10 S-parameters and fields; mode matching for H-plane steps and irises |
 | `emcraft-solver` | Driven analysis with modal ports; multifrontal complex symmetric LDLᵀ |
 | `emcraft-render` | CPU pictures: field plots with vector arrows, charts, PNG |
 | `emcraft-engine` | Commands, sessions with rollback, scripts, samples |

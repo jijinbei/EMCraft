@@ -23,6 +23,20 @@ The methods EMCraft implements and where they come from.
 - R. E. Collin, *Foundations for Microwave Engineering*, 2nd ed., McGraw-Hill 1992 — evanescent
   modes and transmission-line equivalents (§3.12, §4.2).
 
+## Discontinuities
+- A. Wexler, *Solution of waveguide discontinuities by modal analysis*, IEEE Trans. MTT
+  15(9):508–517, 1967; T. Itoh (ed.), *Numerical Techniques for Microwave and Millimeter-Wave
+  Passive Structures*, Wiley 1989, ch. 9; J. Uher, J. Bornemann, U. Rosenberg, *Waveguide
+  Components for Antenna Feed Systems: Theory and CAD*, Artech House 1993 — mode matching and
+  generalised scattering matrices (`emcraft-theory::modematch`).
+- R. Mittra, T. Itoh, T.-S. Li, *Analytical and numerical studies of the relative convergence
+  phenomenon arising in the solution of an integral equation by the moment method*, IEEE Trans.
+  MTT 20(2):96–104, 1972 — mode counts in proportion to the apertures.
+- J. Meixner, *The behavior of electromagnetic fields at edges*, IEEE Trans. Antennas Propag.
+  20(4):442–446, 1972 — the r^{-1/3} field at a thin edge; I. Babuška, R. B. Kellogg, J.
+  Pitkäranta, *Direct and inverse error estimates for finite elements with mesh refinements*,
+  Numer. Math. 33:447–471, 1979 — geometric grading towards singularities (`emcraft-mesh`).
+
 ## Sparse direct solution
 - A. George, *Nested dissection of a regular finite element mesh*, SIAM J. Numer. Anal.
   10(2):345–363, 1973; H. D. Simon, *Partitioning of unstructured problems for parallel

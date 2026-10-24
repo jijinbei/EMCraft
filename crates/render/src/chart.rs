@@ -73,8 +73,14 @@ pub fn draw(chart: &Chart, width: usize, height: usize) -> Canvas {
         }
     }
     let mut lx = x0;
-    let ly = y0 + ph + 62.0;
+    let mut ly = y0 + ph + 56.0;
     for s in &chart.series {
+        // Wrap to a second row rather than run off the canvas.
+        let item = 52.0 + Canvas::text_width(&s.label, 2) as f64;
+        if lx > x0 && lx + item > c.w as f64 - 10.0 {
+            lx = x0;
+            ly += 20.0;
+        }
         match s.style {
             Style::Line => c.line([lx, ly + 7.0], [lx + 26.0, ly + 7.0], 2.0, s.color),
             Style::Markers => {
@@ -84,7 +90,7 @@ pub fn draw(chart: &Chart, width: usize, height: usize) -> Canvas {
             }
         }
         c.text(lx + 32.0, ly, &s.label, 2, ink);
-        lx += 52.0 + Canvas::text_width(&s.label, 2) as f64;
+        lx += item;
     }
     c
 }
