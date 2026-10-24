@@ -241,6 +241,69 @@ impl Solid {
     }
 }
 
+/// A coordinate axis.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Axis {
+    X,
+    Y,
+    #[default]
+    Z,
+}
+
+impl Axis {
+    pub fn index(self) -> usize {
+        match self {
+            Axis::X => 0,
+            Axis::Y => 1,
+            Axis::Z => 2,
+        }
+    }
+
+    /// A shape's own coordinates turned so its z axis lies along this one (a cyclic turn of
+    /// the axes, keeping handedness): x → (z, x, y), y → (y, z, x).
+    pub fn turn(self, p: [f64; 3]) -> [f64; 3] {
+        match self {
+            Axis::X => [p[2], p[0], p[1]],
+            Axis::Y => [p[1], p[2], p[0]],
+            Axis::Z => p,
+        }
+    }
+}
+
+/// How a feature combines with the solid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Combine {
+    /// The union: the body grows (a stub, a probe's housing).
+    Add,
+    /// The difference: the body loses the feature's volume, which becomes conductor (a post, a
+    /// screw, a notch).
+    Subtract,
+    /// The intersection: only what both hold remains.
+    Intersect,
+}
+
+/// A primitive combined with the solid's shape: its own origin at `at`, its z axis turned onto
+/// `axis`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Feature {
+    pub combine: Combine,
+    pub shape: Shape,
+    pub at: [f64; 3],
+    #[serde(default)]
+    pub axis: Axis,
+}
+
+impl Feature {
+    /// The bounding box (lo, hi).
+    pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
+        let (lo, hi) = self.shape.bounds();
+        let (a, b) = (self.axis.turn(lo), self.axis.turn(hi));
+        ([0, 1, 2].map(|d| a[d].min(b[d]) + self.at[d]), [0, 1, 2].map(|d| a[d].max(b[d]) + self.at[d]))
+    }
+}
+
 /// The cross-section of a port: the mode functions it carries.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PortShape {
@@ -296,6 +359,9 @@ pub struct Model {
     /// Bodies inside the solid (other materials, conductors).
     #[serde(default)]
     pub inclusions: Vec<Inclusion>,
+    /// Primitives combined with the solid's shape, in order.
+    #[serde(default)]
+    pub features: Vec<Feature>,
     pub ports: Vec<Port>,
     /// The conductivity (S/m) of the guide's walls (and its irises and steps); perfectly
     /// conducting when `None`.
@@ -379,6 +445,7 @@ impl Model {
         self.waveguide = Some(w);
         self.solid = None;
         self.inclusions.clear();
+        self.features.clear();
         self.mesh = None;
         Ok(())
     }
@@ -390,6 +457,7 @@ impl Model {
         self.solid = Some(s);
         self.waveguide = None;
         self.inclusions.clear();
+        self.features.clear();
         self.mesh = None;
         Ok(())
     }
@@ -421,12 +489,39 @@ impl Model {
         Ok(())
     }
 
+    /// Combines a primitive with the solid (after the features already there). Its box must
+    /// meet the solid's; the mesher checks the surfaces meet cleanly.
+    pub fn add_feature(&mut self, f: Feature) -> Result<()> {
+        let solid = self.solid.as_ref().ok_or_else(|| invalid("feature", "needs a solid (geometry.solid) to combine with"))?;
+        Solid { shape: f.shape.clone(), material: solid.material.clone() }.check_shape()?;
+        if !f.at.iter().all(|v| v.is_finite()) {
+            return Err(invalid("feature", "its position must be finite"));
+        }
+        let (lo, hi) = f.bounds();
+        let (slo, shi) = self.bounds().unwrap_or_else(|| solid.shape.bounds());
+        if !(0..3).all(|d| lo[d] <= shi[d] && slo[d] <= hi[d]) {
+            return Err(invalid("feature", "must meet the solid (their bounding boxes are apart)"));
+        }
+        self.features.push(f);
+        self.mesh = None;
+        Ok(())
+    }
+
     /// The bounding box of the geometry.
     pub fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
         if let Some(w) = &self.waveguide {
             return Some(([0.0; 3], [w.width, w.height, w.length()]));
         }
-        self.solid.as_ref().map(|s| s.shape.bounds())
+        let s = self.solid.as_ref()?;
+        let (mut lo, mut hi) = s.shape.bounds();
+        for f in self.features.iter().filter(|f| f.combine == Combine::Add) {
+            let (a, b) = f.bounds();
+            for d in 0..3 {
+                lo[d] = lo[d].min(a[d]);
+                hi[d] = hi[d].max(b[d]);
+            }
+        }
+        Some((lo, hi))
     }
 
     /// The cross-section of the port at an end: the waveguide's end section, or a box's or a
@@ -440,6 +535,21 @@ impl Model {
             let (x0, a) = w.aperture(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
             let (y0, b) = w.aperture_y(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
             return Ok(PortShape::Rect { x0, y0, a, b });
+        }
+        if let Some(s) = &self.solid {
+            // A port needs the end face whole: no feature may reach it.
+            let (_, hi) = s.shape.bounds();
+            let plane = match end {
+                End::Start => 0.0,
+                End::End => hi[2],
+            };
+            let tol = 1e-9 * hi[2].abs().max(1e-300);
+            if self.features.iter().any(|f| {
+                let (a, b) = f.bounds();
+                a[2] <= plane + tol && b[2] >= plane - tol
+            }) {
+                return Err(invalid("port", "a feature reaches the end face; a port needs the guide's whole cross-section there"));
+            }
         }
         match self.solid.as_ref().map(|s| &s.shape) {
             Some(Shape::Box { size }) => Ok(PortShape::Rect { x0: 0.0, y0: 0.0, a: size[0], b: size[1] }),

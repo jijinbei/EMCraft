@@ -12,10 +12,17 @@ tetrahedrization: a robust and practical approach*, ACM TOG 42(6), 2023; J. Tour
 Wormser, P. Alliez, M. Desbrun, *Interleaving Delaunay refinement and optimization for practical
 isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. R. Shewchuk,
 *Aggressive tetrahedral mesh improvement*, Proc. 16th International Meshing Roundtable, 2007.
+- S. W. Sloan, *A fast algorithm for generating constrained Delaunay triangulations*, Computers
+  & Structures 47(3):441–450, 1993 — recovering the intersection segments in each triangle a
+  Boolean splits, by flipping the edges that cross them (`emcraft-mesh::csg`).
+- A. Van Oosterom, J. Strackee, *The solid angle of a plane triangle*, IEEE Trans. Biomed. Eng.
+  30(2):125–126, 1983 — the winding number that classifies a Boolean's pieces inside or outside
+  the other surface (`emcraft-mesh::csg`).
 
 ## Special functions
 - M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, 1964, §9.12 and Tables 9.5,
-  10.6 — Bessel functions by backward recurrence, their zeros (`emcraft-theory::bessel`).
+  10.6 — Bessel functions by backward recurrence, their zeros (`emcraft-fem::bessel`, used by
+  `emcraft-theory::bessel` and the circular ports).
 - R. F. Harrington, *Time-Harmonic Electromagnetic Fields*, McGraw-Hill 1961, §6.10 — the
   resonances of a spherical cavity.
 

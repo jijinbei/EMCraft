@@ -172,3 +172,32 @@ fn dielectric_loaded_spherical_cavity_converges() {
     let (e3, e2) = (loaded_sphere_error(0.003), loaded_sphere_error(0.002));
     assert!(e3 / e2 > 1.4 && e2 < 1.5e-4, "{e3:e} {e2:e}");
 }
+
+#[test]
+fn a_post_across_the_guide_reflects_and_conserves_power() {
+    use emcraft_model::{Axis, Combine, End, Feature, Port};
+    // A 3 mm post through WR-90, wall to wall, by a Boolean difference: an inductive obstacle.
+    let (a, b, l) = (0.02286, 0.01016, 0.03);
+    let mut m = Model::new();
+    m.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
+    m.add_feature(Feature {
+        combine: Combine::Subtract,
+        shape: Shape::Cylinder { radius: 0.0015, length: b },
+        at: [a / 2.0, 0.0, l / 2.0],
+        axis: Axis::Y,
+    })
+    .unwrap();
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.003).unwrap());
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4 }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4 }).unwrap();
+    let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
+    let r = d.solve(10.0e9).unwrap();
+    let s = &r.s;
+    assert!((s[0][0].norm_sqr() + s[1][0].norm_sqr() - 1.0).abs() < 1e-9);
+    assert!((s[0][1] - s[1][0]).norm() < 1e-9, "reciprocity");
+    // Centred: S11 = S22 but for the mesh's asymmetry. A post is a small shunt reactance
+    // (Marcuvitz, Waveguide Handbook, 1951, §5.11: X/Z0 about 0.12 here), so it reflects most of
+    // the wave: |S11| = 1/|1 + 2jX/Z0| ≈ 0.97, measured 0.95.
+    assert!((s[0][0] - s[1][1]).norm() < 2e-2, "{} {}", s[0][0], s[1][1]);
+    assert!(s[0][0].norm() > 0.9 && s[0][0].norm() < 0.99, "{}", s[0][0]);
+}

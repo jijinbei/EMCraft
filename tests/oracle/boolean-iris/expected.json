@@ -1,0 +1,10 @@
+{
+ "title": "Inductive iris in WR-90 built by Boolean differences: two 5.43 mm plates, 2 mm thick, subtracted from a 32 mm box",
+ "kind": "theory",
+ "source": "The same iris as the iris-inductive case (12 mm wide, 2 mm thick, centred): mode matching of TE_m0 modes at its two junctions, cascaded as generalised scattering matrices (A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967), converged with 640 modes",
+ "quantities": [
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.7622776659010354, "tolerance": {"absolute": 0.02}, "reason": "uniform unstructured tetrahedra of 3 mm (no grading towards the iris' edges, where E ∝ r^{-1/3}): +0.011, falling as h^{4/3} (+0.006 at 2 mm)"},
+  {"id": "s11_phase_10", "quantity": "phase of S11 at 10 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s11/deg"}, "value": -145.61386115548606, "tolerance": {"absolute": 2.0}, "reason": "as |S11|: +1.2° at 3 mm, +0.66° at 2 mm"},
+  {"id": "s21_mag_10", "quantity": "|S21| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s21/mag"}, "value": 0.6472501526214329, "tolerance": {"absolute": 0.02}, "reason": "as |S11|; power is conserved to rounding"}
+ ]
+}

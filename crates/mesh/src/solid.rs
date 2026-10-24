@@ -7,7 +7,7 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::{Boundary, BoundaryFace, Buckets, Mesh, Model, Shape, positive};
+use emcraft_model::{Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Shape, positive};
 use emcraft_tetmesh::cdt::{CdtOptions, tetrahedralize};
 use emcraft_tetmesh::surface::{BoundarySurface, SurfaceOptions};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
@@ -242,6 +242,160 @@ fn interface_size(shape: &Shape, size: f64) -> f64 {
     }
 }
 
+/// A tessellation turned by `axis` and moved to `at`, its exact surfaces with it.
+fn transformed(t: Tessellation, axis: Axis, at: [f64; 3]) -> Tessellation {
+    let place = |p: [f64; 3]| {
+        let q = axis.turn(p);
+        [q[0] + at[0], q[1] + at[1], q[2] + at[2]]
+    };
+    let analytic = t
+        .analytic
+        .iter()
+        .map(|a| {
+            a.map(|a| match a {
+                AnalyticSurface::Plane { normal, point } => AnalyticSurface::Plane { normal: axis.turn(normal), point: place(point) },
+                AnalyticSurface::Cylinder { origin, axis: v, radius } => {
+                    AnalyticSurface::Cylinder { origin: place(origin), axis: axis.turn(v), radius }
+                }
+                AnalyticSurface::Sphere { center, radius } => AnalyticSurface::Sphere { center: place(center), radius },
+                AnalyticSurface::Cone { apex, axis: v, half_angle } => AnalyticSurface::Cone { apex: place(apex), axis: axis.turn(v), half_angle },
+                AnalyticSurface::Torus { center, axis: v, major, minor } => {
+                    AnalyticSurface::Torus { center: place(center), axis: axis.turn(v), major, minor }
+                }
+            })
+        })
+        .collect();
+    Tessellation { positions: t.positions.into_iter().map(place).collect(), analytic, ..t }
+}
+
+/// The flat faces of a body in place: (axis, coordinate, outward sign).
+fn flat_faces(shape: &Shape, at: [f64; 3], axis: Axis) -> Vec<(usize, f64, f64)> {
+    match *shape {
+        Shape::Box { size } => {
+            let s = axis.turn(size);
+            (0..3).flat_map(|d| [(d, at[d], -1.0), (d, at[d] + s[d], 1.0)]).collect()
+        }
+        Shape::Cylinder { length, .. } => {
+            let d = axis.index();
+            vec![(d, at[d], -1.0), (d, at[d] + length, 1.0)]
+        }
+        Shape::Sphere { .. } => Vec::new(),
+    }
+}
+
+/// The feature's body with each flat face that lies in one of the solid's moved off it by a
+/// step, so the two surfaces meet in general position with the same result: a face flush with
+/// the solid's (both bodies behind it) moves outwards for a difference or an intersection (what
+/// sticks out is not kept); a face touching the solid's from outside moves into it for a union
+/// and away for a difference. A union flush with the solid's faces is refused.
+fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, [f64; 3])> {
+    let step = 0.1 * size;
+    let base = flat_faces(solid, [0.0; 3], Axis::Z);
+    let scale = solid.bounds().1.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
+    let tol = 1e-9 * scale;
+    // Box: the lo/hi planes along each axis in place; a cylinder: its caps along its axis.
+    let (shape, at) = (f.shape.clone(), f.at);
+    let mut lo_hi: Vec<(usize, f64, f64)> = flat_faces(&shape, at, f.axis);
+    for face in lo_hi.iter_mut() {
+        for &(d, c, n) in &base {
+            if d != face.0 || (face.1 - c).abs() > tol {
+                continue;
+            }
+            // `out`: along the feature face's outward normal; for a face touching the solid's
+            // from outside, that is into the solid.
+            let same = n == face.2;
+            let out = face.2 * step;
+            face.1 += match (f.combine, same) {
+                (Combine::Subtract | Combine::Intersect, true) => out,
+                (Combine::Subtract, false) => -out,
+                (Combine::Add, false) => out,
+                (Combine::Add, true) => {
+                    return Err(MeshError::Invalid {
+                        what: "feature".into(),
+                        why: "not supported yet: a union whose face is flush with the solid's (let it stand out of the face, or reach into the body)"
+                            .into(),
+                    });
+                }
+                (Combine::Intersect, false) => {
+                    return Err(MeshError::Invalid { what: "feature".into(), why: "its intersection with the solid is only a face".into() });
+                }
+            };
+        }
+    }
+    let span = |d: usize| {
+        let lo = lo_hi.iter().find(|x| x.0 == d && x.2 < 0.0).map(|x| x.1);
+        let hi = lo_hi.iter().find(|x| x.0 == d && x.2 > 0.0).map(|x| x.1);
+        lo.zip(hi)
+    };
+    Ok(match shape {
+        Shape::Box { .. } => {
+            let (x, y, z) = (span(0).unwrap_or((0.0, 0.0)), span(1).unwrap_or((0.0, 0.0)), span(2).unwrap_or((0.0, 0.0)));
+            // Back in the feature's own frame: the box is axis-aligned whatever the turn.
+            let lo = [x.0, y.0, z.0];
+            let size = [x.1 - x.0, y.1 - y.0, z.1 - z.0];
+            let own = match f.axis {
+                Axis::Z => size,
+                Axis::X => [size[1], size[2], size[0]],
+                Axis::Y => [size[2], size[0], size[1]],
+            };
+            (Shape::Box { size: own }, lo)
+        }
+        Shape::Cylinder { radius, .. } => {
+            let d = f.axis.index();
+            let (a, b) = span(d).unwrap_or((at[d], at[d]));
+            let mut at = at;
+            at[d] = a;
+            (Shape::Cylinder { radius, length: b - a }, at)
+        }
+        other => (other, at),
+    })
+}
+
+/// The solid's tessellation combined with a feature: the feature's faces get tags after the
+/// solid's, with their exact surfaces.
+fn combined(main: Tessellation, f: &Feature, solid: &Shape, size: f64) -> Result<Tessellation> {
+    let (shape, at) = feature_body(f, solid, size)?;
+    // General position against the solid's tessellation: a round body turned about its own
+    // axis by an odd angle (it is the same body), and every feature moved by a millionth of the
+    // element size (far below the mesh's resolution, far above rounding), so no vertex of one
+    // lies exactly on a grid line or plane of the other.
+    let mut own = tessellate(&shape, size);
+    if !matches!(shape, Shape::Box { .. }) {
+        let (sn, cs) = 0.2345f64.sin_cos();
+        for p in &mut own.positions {
+            *p = [cs * p[0] - sn * p[1], sn * p[0] + cs * p[1], p[2]];
+        }
+    }
+    let jitter = [0.618034, 0.414214, 0.732051].map(|v| v * 1e-6 * size);
+    let tool = transformed(own, f.axis, [at[0] + jitter[0], at[1] + jitter[1], at[2] + jitter[2]]);
+    let base = main.tri_face.iter().map(|t| t + 1).max().unwrap_or(0).max(main.analytic.len() as u32);
+    let op = match f.combine {
+        Combine::Add => crate::csg::Op::Union,
+        Combine::Subtract => crate::csg::Op::Difference,
+        Combine::Intersect => crate::csg::Op::Intersection,
+    };
+    let a = crate::csg::Surface { positions: main.positions, triangles: main.triangles, tags: main.tri_face };
+    let b = crate::csg::Surface { positions: tool.positions, triangles: tool.triangles, tags: tool.tri_face };
+    let out = crate::csg::combine(&a, &b, op, base)?;
+    let mut analytic = main.analytic;
+    analytic.resize(base as usize, None);
+    // A difference's tool faces now face the other way.
+    analytic.extend(tool.analytic.into_iter().map(|a| match (a, op) {
+        (Some(AnalyticSurface::Plane { normal, point }), crate::csg::Op::Difference) => {
+            Some(AnalyticSurface::Plane { normal: normal.map(|v| -v), point })
+        }
+        (a, _) => a,
+    }));
+    Ok(Tessellation {
+        positions: out.positions,
+        triangles: out.triangles,
+        tri_face: out.tags,
+        analytic,
+        start_face: main.start_face,
+        end_face: main.end_face,
+    })
+}
+
 /// An inclusion's tessellation moved to its place, one face tag per triangle (`0..n`). Its
 /// faces get no exact surfaces: the interface is frozen as tessellated, and a tag per triangle
 /// keeps boundary recovery from merging coplanar triangles into one facet and triangulating it
@@ -373,8 +527,8 @@ pub fn solid(model: &Model, size: f64) -> Result<Mesh> {
 enum Curved {
     /// The side of a cylinder about z through (cx, cy).
     Cylinder {
-        cx: f64,
-        cy: f64,
+        c: [f64; 3],
+        axis: usize,
         r: f64,
     },
     Sphere {
@@ -384,10 +538,10 @@ enum Curved {
 }
 
 impl Curved {
-    fn of(shape: &Shape, at: [f64; 3]) -> Option<Curved> {
+    fn of(shape: &Shape, at: [f64; 3], axis: Axis) -> Option<Curved> {
         match *shape {
             Shape::Box { .. } => None,
-            Shape::Cylinder { radius, .. } => Some(Curved::Cylinder { cx: at[0], cy: at[1], r: radius }),
+            Shape::Cylinder { radius, .. } => Some(Curved::Cylinder { c: at, axis: axis.index(), r: radius }),
             Shape::Sphere { radius } => Some(Curved::Sphere { c: at, r: radius }),
         }
     }
@@ -399,10 +553,13 @@ impl Curved {
     /// The nearest point on the surface (radially).
     fn project(&self, p: [f64; 3]) -> [f64; 3] {
         match *self {
-            Curved::Cylinder { cx, cy, r } => {
-                let (dx, dy) = (p[0] - cx, p[1] - cy);
-                let rho = dx.hypot(dy).max(f64::MIN_POSITIVE);
-                [cx + dx * r / rho, cy + dy * r / rho, p[2]]
+            Curved::Cylinder { c, axis, r } => {
+                let mut d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+                d[axis] = 0.0;
+                let rho = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(f64::MIN_POSITIVE);
+                let mut q = [c[0] + d[0] * r / rho, c[1] + d[1] * r / rho, c[2] + d[2] * r / rho];
+                q[axis] = p[axis];
+                q
             }
             Curved::Sphere { c, r } => {
                 let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
@@ -416,7 +573,7 @@ impl Curved {
     /// its rim but face along the axis).
     fn faces(&self, normal: [f64; 3]) -> bool {
         match self {
-            Curved::Cylinder { .. } => normal[2].abs() < 0.5,
+            Curved::Cylinder { axis, .. } => normal[*axis].abs() < 0.5,
             Curved::Sphere { .. } => true,
         }
     }
@@ -581,7 +738,10 @@ pub fn solid_with(model: &Model, size: f64, curved: bool) -> Result<Mesh> {
     if !(estimate <= MAX_TETS as f64) {
         return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
     }
-    let main = tessellate(&s.shape, size);
+    let mut main = tessellate(&s.shape, size);
+    for f in &model.features {
+        main = combined(main, f, &s.shape, size)?;
+    }
     let (start_face, end_face) = (main.start_face, main.end_face);
     // The interfaces' current triangulations, oriented out of each inclusion. Boundary recovery
     // may add points on an interface in one region; that region's triangulation then becomes the
@@ -706,8 +866,11 @@ pub fn solid_with(model: &Model, size: f64, curved: bool) -> Result<Mesh> {
     }
     let mut mesh = Mesh { tet_material, nodes, tets, boundary, grid: None, buckets: None, curved: Vec::new() };
     if curved {
-        let surfaces: Vec<Curved> =
-            std::iter::once(Curved::of(&s.shape, [0.0; 3])).chain(model.inclusions.iter().map(|i| Curved::of(&i.shape, i.at))).flatten().collect();
+        let surfaces: Vec<Curved> = std::iter::once(Curved::of(&s.shape, [0.0; 3], Axis::Z))
+            .chain(model.inclusions.iter().map(|i| Curved::of(&i.shape, i.at, Axis::Z)))
+            .chain(model.features.iter().map(|f| Curved::of(&f.shape, f.at, f.axis)))
+            .flatten()
+            .collect();
         snap_interfaces(&mut mesh, &surfaces, size);
         mesh.curved = curve(&mesh, &surfaces, size);
         unfold(&mut mesh);
@@ -896,6 +1059,53 @@ mod tests {
         m.set_solid(Solid { shape: Shape::Cylinder { radius: r, length: l }, material: "vacuum".into() }).unwrap();
         assert!(solid_with(&m, 0.003, false).unwrap().curved.is_empty());
         assert!(mesh_of(Shape::Box { size: [0.02, 0.01, 0.03] }, 0.004).curved.is_empty());
+    }
+
+    #[test]
+    fn features_combine_with_the_solid() {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.03);
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
+        // A post across the guide, flush with both broad walls.
+        let r = 0.0015;
+        m.add_feature(Feature {
+            combine: Combine::Subtract,
+            shape: Shape::Cylinder { radius: r, length: b },
+            at: [a / 2.0, 0.0, l / 2.0],
+            axis: Axis::Y,
+        })
+        .unwrap();
+        let mesh = solid(&m, 0.003).unwrap();
+        let v: f64 = crate::volumes(&mesh).iter().sum();
+        let exact = a * b * l - PI * r * r * b;
+        // Flat facets on the post (12 round): the hole a little smaller than the circle.
+        assert!(v > exact && v < exact + 0.05 * PI * r * r * b, "{v} {exact}");
+        // The post's surface is wall; the ends are still whole ports.
+        let port = |k: u32| mesh.boundary.iter().filter(|f| f.tag == Boundary::Port(k)).map(|f| area(&mesh, f)).sum::<f64>();
+        assert!((port(0) - a * b).abs() < 1e-12 && (port(1) - a * b).abs() < 1e-12);
+        let on_post = |f: &BoundaryFace| {
+            f.nodes.iter().all(|n| {
+                let p = mesh.nodes[*n as usize];
+                ((p[0] - a / 2.0).hypot(p[2] - l / 2.0) - r).abs() < 1e-9
+            })
+        };
+        assert!(mesh.boundary.iter().any(on_post));
+        assert!(mesh.curved.iter().any(|(_, p)| ((p[0] - a / 2.0).hypot(p[2] - l / 2.0) - r).abs() < 1e-12));
+        // A stub added on the broad wall: a box standing on it (its foot moved into the guide).
+        let mut u = Model::new();
+        u.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
+        u.add_feature(Feature { combine: Combine::Add, shape: Shape::Box { size: [0.008, 0.006, 0.01] }, at: [0.007, b, 0.01], axis: Axis::Z })
+            .unwrap();
+        let v: f64 = crate::volumes(&solid(&u, 0.003).unwrap()).iter().sum();
+        // Exact but for the features' shift by a millionth of the element size (1e-9 m here,
+        // over the stub's 80 mm² foot).
+        assert!((v - (a * b * l + 0.008 * 0.006 * 0.01)).abs() < 1e-7 * v, "{v}");
+        // Flush faces of a union are refused, not guessed.
+        let mut w = Model::new();
+        w.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
+        w.add_feature(Feature { combine: Combine::Add, shape: Shape::Box { size: [0.03, b, 0.01] }, at: [0.0, 0.0, 0.01], axis: Axis::Z }).unwrap();
+        assert!(solid(&w, 0.003).is_err());
     }
 
     #[test]

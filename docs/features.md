@@ -57,6 +57,20 @@ A body inside the solid: a dielectric region (`material`) or, without one, a con
 | `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
 | `material` | string |  | no | its filling; a perfect conductor when left out |
 
+## `geometry.feature` — Combine a body
+
+Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall); the surfaces must otherwise meet cleanly. A port's end face must stay whole.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `combine` | string |  | yes | `add`, `subtract` or `intersect` |
+| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `size` | array | length | no | the box's [x, y, z] (in its own axes) |
+| `radius` | number | length | no | the cylinder's or the sphere's radius |
+| `length` | number | length | no | the cylinder's length along its axis |
+| `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
+| `axis` | string |  | no | `x`, `y` or `z` (default): where its own z axis points |
+
 ## `mesh.generate` — Mesh
 
 Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises. A solid is meshed without structure, its tetrahedra on curved walls and interfaces curved (quadratic geometry) unless `curved` is false.

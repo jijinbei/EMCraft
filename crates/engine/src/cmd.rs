@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use emcraft_fem::Order;
 use emcraft_model::units::{Frequency, Length, decibels};
-use emcraft_model::{End, Inclusion, Material, Port, Section, Shape, Solid, Waveguide};
+use emcraft_model::{Axis, Combine, End, Feature, Inclusion, Material, Port, Section, Shape, Solid, Waveguide};
 use emcraft_solver::{Complex64 as C, Driven};
 use serde_json::{Value, json};
 
@@ -81,6 +81,21 @@ pub static COMMANDS: &[CommandSpec] = &[
             p("material", "string", N, false, "its filling; a perfect conductor when left out"),
         ],
         run: inclusion,
+    },
+    CommandSpec {
+        id: "geometry.feature",
+        label: "Combine a body",
+        doc: "Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall); the surfaces must otherwise meet cleanly. A port's end face must stay whole.",
+        params: &[
+            p("combine", "string", N, true, "`add`, `subtract` or `intersect`"),
+            p("shape", "string", N, true, "`box`, `cylinder` or `sphere`"),
+            p("size", "array", L, false, "the box's [x, y, z] (in its own axes)"),
+            p("radius", "number", L, false, "the cylinder's or the sphere's radius"),
+            p("length", "number", L, false, "the cylinder's length along its axis"),
+            p("at", "array", L, false, "where its origin goes (default [0, 0, 0])"),
+            p("axis", "string", N, false, "`x`, `y` or `z` (default): where its own z axis points"),
+        ],
+        run: feature,
     },
     CommandSpec {
         id: "mesh.generate",
@@ -323,6 +338,28 @@ fn inclusion(s: &mut Session, p: &Value) -> Result<Value> {
     s.sweep = None;
     s.eigen = None;
     Ok(json!({"inclusions": s.model.inclusions.len()}))
+}
+
+fn feature(s: &mut Session, p: &Value) -> Result<Value> {
+    let combine = match required_string(p, "combine")? {
+        "add" => Combine::Add,
+        "subtract" => Combine::Subtract,
+        "intersect" => Combine::Intersect,
+        _ => return Err(EngineError::Params("`combine` must be add, subtract or intersect".into())),
+    };
+    let shape = shape_of(s, p)?;
+    let at = point(s, p, "at")?.unwrap_or([0.0; 3]);
+    let axis = match string(p, "axis")?.unwrap_or("z") {
+        "x" => Axis::X,
+        "y" => Axis::Y,
+        "z" => Axis::Z,
+        _ => return Err(EngineError::Params("`axis` must be x, y or z".into())),
+    };
+    s.model.add_feature(Feature { combine, shape, at, axis })?;
+    s.sweep = None;
+    s.eigen = None;
+    s.time_domain = None;
+    Ok(json!({"features": s.model.features.len()}))
 }
 
 fn solid(s: &mut Session, p: &Value) -> Result<Value> {

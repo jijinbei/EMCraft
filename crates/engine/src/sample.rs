@@ -36,6 +36,11 @@ pub const SAMPLES: &[Sample] = &[
         script: include_str!("../samples/circular-guide.json"),
     },
     Sample {
+        name: "inductive-post",
+        label: "A 3 mm conducting post across WR-90, wall to wall, cut from the box by a Boolean difference: a strong shunt inductance",
+        script: include_str!("../samples/inductive-post.json"),
+    },
+    Sample {
         name: "loaded-sphere",
         label: "Spherical cavity, radius 10 mm, around a concentric ceramic sphere (εr = 4, radius 4 mm): two material regions joined node for node, the TM11 triplet at 11.26 GHz",
         script: include_str!("../samples/loaded-sphere.json"),

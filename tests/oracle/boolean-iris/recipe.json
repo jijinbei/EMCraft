@@ -1,0 +1,9 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 32]}},
+ {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "box", "size": [5.43, 10.16, 2], "at": [0, 0, 15]}},
+ {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "box", "size": [5.43, 10.16, 2], "at": [17.43, 0, 15]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"frequencies": [9, 10, 11], "order": 2}, "id": "solve"}
+]
