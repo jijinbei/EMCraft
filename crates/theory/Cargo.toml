@@ -1,0 +1,14 @@
+[package]
+name = "emcraft-theory"
+description = "EMCraft's closed-form references: the TE10 wave through a rectangular waveguide filled in sections (S-parameters and fields), for tests, the oracle and the exact curves the UI draws"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-model = { workspace = true }
+num-complex = { workspace = true }
+thiserror = { workspace = true }
