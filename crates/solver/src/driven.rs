@@ -280,7 +280,8 @@ impl Driven {
                 End::End => w.sections.len().saturating_sub(1),
             };
             let (x0, aw) = w.aperture(end_section).unwrap_or((0.0, w.width));
-            let list: Vec<Mode> = modes::lowest(aw, w.height, p.modes as usize).into_iter().map(|md| md.at(x0, 0.0)).collect();
+            let (y0, ah) = w.aperture_y(end_section).unwrap_or((0.0, w.height));
+            let list: Vec<Mode> = modes::lowest(aw, ah, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect();
             let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
             let rule = triangle_rule(if order == Order::One { 6 } else { 8 });
             let mut touched = vec![false; dofs.unknowns];

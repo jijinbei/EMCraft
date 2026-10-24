@@ -30,7 +30,8 @@ cross-section:
 ![The TE10 pattern on the cross-section at 8 GHz](docs/media/cross-8GHz.png)
 ![The evanescent field in the cut-off section at 6 GHz (E-plane)](docs/media/e-6GHz.png)
 
-Steps and irises (sections with a narrower aperture) are verified against mode matching; the
+Steps and irises (sections with a narrower aperture, in the H-plane or the E-plane) are verified
+against mode matching; the
 `iris-bandpass` sample is a three-cavity inductive-iris band-pass filter (9.75–10.25 GHz):
 
 ```

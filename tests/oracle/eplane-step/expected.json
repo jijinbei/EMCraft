@@ -1,0 +1,13 @@
+{
+ "title": "E-plane step: WR-90 halving its height against one wall, by FEM and in the time domain",
+ "kind": "theory",
+ "source": "Mode matching of the LSE^x_1n modes (TE to x, sharing the TE10 field's sin(πx/a)) at the step (J. Uher, J. Bornemann, U. Rosenberg, Waveguide Components for Antenna Feed Systems: Theory and CAD, Artech House 1993, §2.2), converged with 640 modes (changes 1e-7 from 320); power waves between ports of different height",
+ "quantities": [
+  {"id": "fem_s11_10", "quantity": "|S11| at 10 GHz, FEM", "measure": {"step": "fem", "pointer": "/points/1/s11/mag"}, "value": 0.36241887296684244, "tolerance": {"absolute": 3e-3}, "reason": "second-order elements of 4 mm graded to 1 mm at the step's edge: 1.1e-3 of complex error measured"},
+  {"id": "fem_s11_phase_10", "quantity": "phase of S11 at 10 GHz (degrees), FEM", "measure": {"step": "fem", "pointer": "/points/1/s11/deg"}, "value": -21.668644703907567, "tolerance": {"absolute": 0.5}, "reason": "as |S11|: 1e-3 of an S11 of 0.36 is 0.2°"},
+  {"id": "fem_s21_db_11", "quantity": "|S21| at 11 GHz (dB), FEM", "measure": {"step": "fem", "pointer": "/points/2/s21/db"}, "value": -0.6648490316130595, "tolerance": {"absolute": 0.01}, "reason": "as |S11|"},
+  {"id": "fem_worst", "quantity": "largest |S − S_mm| at 9, 10 and 11 GHz, FEM (complex)", "measure": {"command": "results.compare", "params": {"modes": 320}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 3e-3}, "reason": "1.1e-3 measured"},
+  {"id": "td_s11_10", "quantity": "|S11| at 10 GHz, time domain", "measure": {"step": "td", "pointer": "/points/1/s11/mag"}, "value": 0.36241887296684244, "tolerance": {"absolute": 0.02}, "reason": "finite integration on 1 mm cells, second order, the step's edge unrefined: 1–1.7e-2 of complex error measured"},
+  {"id": "td_s21_db_11", "quantity": "|S21| at 11 GHz (dB), time domain", "measure": {"step": "td", "pointer": "/points/2/s21/db"}, "value": -0.6648490316130595, "tolerance": {"absolute": 0.1}, "reason": "as |S11|"}
+ ]
+}

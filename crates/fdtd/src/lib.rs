@@ -104,6 +104,8 @@ struct Layer {
     mu: f64,
     x0: f64,
     width: f64,
+    y0: f64,
+    height: f64,
 }
 
 /// The tensor grid and the cells that exist (inside an aperture).
@@ -138,7 +140,8 @@ impl Grid {
         }
         let l = self.layers[k as usize];
         let xc = 0.5 * (self.x[i as usize] + self.x[i as usize + 1]);
-        xc > l.x0 && xc < l.x0 + l.width
+        let yc = 0.5 * (self.y[j as usize] + self.y[j as usize + 1]);
+        xc > l.x0 && xc < l.x0 + l.width && yc > l.y0 && yc < l.y0 + l.height
     }
 }
 
@@ -158,7 +161,8 @@ fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
         let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
         let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
         let (x0, width) = w.aperture(i).unwrap_or((0.0, w.width));
-        Ok(Layer { eps: m.eps_r, mu: m.mu_r, x0, width })
+        let (y0, height) = w.aperture_y(i).unwrap_or((0.0, w.height));
+        Ok(Layer { eps: m.eps_r, mu: m.mu_r, x0, width, y0, height })
     };
     let last = w.sections.len() - 1;
     let (first_layer, last_layer) = (layer(0)?, layer(last)?);
@@ -177,8 +181,20 @@ fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
         let n = steps(b[1] - b[0], h);
         x.extend((1..=n).map(|k| b[0] + (b[1] - b[0]) * k as f64 / n as f64));
     }
-    let ny = steps(w.height, h);
-    let y: Vec<f64> = (0..=ny).map(|k| w.height * k as f64 / ny as f64).collect();
+    let mut ybreaks = vec![0.0, w.height];
+    for i in 0..w.sections.len() {
+        if let Some((y0, b)) = w.aperture_y(i) {
+            ybreaks.push(y0);
+            ybreaks.push(y0 + b);
+        }
+    }
+    ybreaks.sort_by(f64::total_cmp);
+    ybreaks.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * w.height);
+    let mut y = vec![0.0];
+    for b in ybreaks.windows(2) {
+        let n = steps(b[1] - b[0], h);
+        y.extend((1..=n).map(|k| b[0] + (b[1] - b[0]) * k as f64 / n as f64));
+    }
     // z: feed 1, the sections, feed 2.
     let first_len = w.sections[0].length;
     let dz1 = first_len / steps(first_len, h) as f64;
@@ -405,9 +421,22 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
     let psi_hy = scratch(&hy); // ∂Ex/∂z in Hy
 
     // Source and projections: the TE₁₀ profile of the planes' apertures.
+    // The TE₁₀ profile sin(π(x − x0)/a) on the aperture of a layer (zero outside it, across y too).
     let profile = |k_layer: usize| -> Vec<f64> {
         let l = g.layers[k_layer.min(g.layers.len() - 1)];
-        g.x.iter().map(|&x| if x > l.x0 && x < l.x0 + l.width { (PI * (x - l.x0) / l.width).sin() } else { 0.0 }).collect()
+        let mut w = vec![0.0; (nx + 1) * ny];
+        for j in 0..ny {
+            let yc = 0.5 * (g.y[j] + g.y[j + 1]);
+            if !(yc > l.y0 && yc < l.y0 + l.height) {
+                continue;
+            }
+            for (i, &x) in g.x.iter().enumerate() {
+                if x > l.x0 && x < l.x0 + l.width {
+                    w[i + (nx + 1) * j] = (PI * (x - l.x0) / l.width).sin();
+                }
+            }
+        }
+        w
     };
     let w_src = profile(g.source);
     let w1 = profile(g.plane1);
@@ -416,7 +445,7 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
         let mut s = 0.0;
         for j in 0..ny {
             for i in 0..=nx {
-                s += ey.get(ey.at(i, j, k)) * w[i] * dxd[i] * dy[j];
+                s += ey.get(ey.at(i, j, k)) * w[i + (nx + 1) * j] * dxd[i] * dy[j];
             }
         }
         s
@@ -576,7 +605,7 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
                 for i in 0..=nx {
                     let id = ey.at(i, j, g.source);
                     if cey[id] != 0.0 {
-                        ey.set(id, ey.get(id) + s * w_src[i]);
+                        ey.set(id, ey.get(id) + s * w_src[i + (nx + 1) * j]);
                     }
                 }
             }
@@ -658,6 +687,7 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
     }
     // Power waves: amplitude = V/‖e‖ (‖e‖ = width·height/2), power ∝ ‖e‖ β/μ.
     let (a1, a2) = (w.aperture(0).map_or(w.width, |a| a.1), w.aperture(w.sections.len() - 1).map_or(w.width, |a| a.1));
+    let (h1, h2) = (w.aperture_y(0).map_or(w.height, |a| a.1), w.aperture_y(w.sections.len() - 1).map_or(w.height, |a| a.1));
     let port = |i: usize| model.material(&w.sections[i].material).map(|(_, m)| (m.eps_r, m.mu_r)).map_err(|e| invalid("material", e.to_string()));
     let ((e1, m1), (e2, m2)) = (port(0)?, port(w.sections.len() - 1)?);
     let mut s11 = Vec::new();
@@ -674,9 +704,10 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
         let refl = dut.d1[fi] - inc;
         let trans = dut.d2[fi];
         s11.push(refl / inc);
-        // Amplitudes: V/(a/2) per unit height; power factor √((a2 β2/μ2)/(a1 β1/μ1)).
-        let amp = (trans / (0.5 * a2)) / (inc / (0.5 * a1));
-        s21.push(amp * ((a2 * b2 / m2) / (a1 * b1 / m1)).sqrt());
+        // Amplitudes: V/‖e‖, ‖e‖ = a h/2; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)).
+        let (n1, n2) = (0.5 * a1 * h1, 0.5 * a2 * h2);
+        let amp = (trans / n2) / (inc / n1);
+        s21.push(amp * ((n2 * b2 / m2) / (n1 * b1 / m1)).sqrt());
     }
     let cells = g.nx() * g.ny() * g.nz();
     Ok(TdResult { frequencies: frequencies.to_vec(), s11, s21, cells, dt, steps: dut.steps, reference_steps: reference.steps, converged })

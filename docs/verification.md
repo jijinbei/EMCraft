@@ -22,7 +22,8 @@ result is frozen so it cannot drift.
    the convergence rates: order 1 S-parameters at O(h²) or better and E at O(h), order 2 at
    O(h⁴) and O(h²) (measured 3.0 / 0.91 and 4.1 / 1.85).
 3. **Discontinuity tests** (`crates/solver/tests/discontinuities.rs`): an inductive iris and an
-   asymmetric H-plane step against converged mode matching, power conservation and reciprocity
+   asymmetric H-plane step, an E-plane step and a capacitive iris against converged mode
+   matching (TE_m0 modes, or the LSE^x_1n modes for E-plane changes), power conservation and reciprocity
    across ports of different aperture, the gain of grading towards edges (5× smaller error at the
    same element size), and (heavy) convergence with graded meshes.
 4. **Loss tests** (`crates/solver/tests/losses.rs`): a lossy slab against the complex TE₁₀

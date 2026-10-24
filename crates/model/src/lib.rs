@@ -89,11 +89,18 @@ pub struct Section {
     /// Where the aperture starts along x (m); centred in the guide when `None`.
     #[serde(default)]
     pub offset: Option<f64>,
+    /// The aperture's height along y (m); the guide's height when `None` (an E-plane step or a
+    /// capacitive iris when smaller).
+    #[serde(default)]
+    pub height: Option<f64>,
+    /// Where the aperture starts along y (m); centred when `None`.
+    #[serde(default)]
+    pub offset_y: Option<f64>,
 }
 
 impl Section {
     pub fn new(length: f64, material: &str) -> Section {
-        Section { length, material: material.to_owned(), width: None, offset: None }
+        Section { length, material: material.to_owned(), ..Default::default() }
     }
 }
 
@@ -121,10 +128,28 @@ impl Waveguide {
         Some((s.offset.unwrap_or((self.width - w) / 2.0), w))
     }
 
-    /// Whether every section has the full width (a uniform cross-section).
-    pub fn uniform(&self) -> bool {
+    /// Section i's aperture across y: (start, height) in metres.
+    pub fn aperture_y(&self, i: usize) -> Option<(f64, f64)> {
+        let s = self.sections.get(i)?;
+        let h = s.height.unwrap_or(self.height);
+        Some((s.offset_y.unwrap_or((self.height - h) / 2.0), h))
+    }
+
+    /// Whether every section has the full width (no H-plane change).
+    pub fn full_width(&self) -> bool {
         (0..self.sections.len())
             .all(|i| self.aperture(i).is_some_and(|(x0, w)| x0.abs() <= 1e-12 * self.width && (w - self.width).abs() <= 1e-12 * self.width))
+    }
+
+    /// Whether every section has the full height (no E-plane change).
+    pub fn full_height(&self) -> bool {
+        (0..self.sections.len())
+            .all(|i| self.aperture_y(i).is_some_and(|(y0, h)| y0.abs() <= 1e-12 * self.height && (h - self.height).abs() <= 1e-12 * self.height))
+    }
+
+    /// Whether every section has the full cross-section.
+    pub fn uniform(&self) -> bool {
+        self.full_width() && self.full_height()
     }
 
     /// The z coordinates of the section boundaries, from 0 to the length.
@@ -225,17 +250,33 @@ impl Model {
             {
                 return Err(invalid(format!("aperture offset of section {}", i + 1), "must be finite"));
             }
+            if let Some(h) = s.height {
+                positive(&format!("aperture height of section {}", i + 1), h)?;
+            }
+            if let Some(o) = s.offset_y
+                && !o.is_finite()
+            {
+                return Err(invalid(format!("aperture y offset of section {}", i + 1), "must be finite"));
+            }
             let (x0, a) = w.aperture(i).unwrap_or((0.0, w.width));
             if x0 < -tol || x0 + a > w.width + tol {
                 return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's width"));
             }
+            let toly = 1e-9 * w.height;
+            let (y0, h) = w.aperture_y(i).unwrap_or((0.0, w.height));
+            if y0 < -toly || y0 + h > w.height + toly {
+                return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's height"));
+            }
         }
-        // Neighbouring apertures must nest: one holds the other (steps, irises).
+        // Neighbouring apertures must nest: one rectangle holds the other (steps, irises).
+        let toly = 1e-9 * w.height;
         for i in 1..w.sections.len() {
-            let (p, q) = (w.aperture(i - 1), w.aperture(i));
-            if let (Some((x0, a0)), Some((x1, a1))) = (p, q) {
-                let holds = |xa: f64, wa: f64, xb: f64, wb: f64| xa <= xb + tol && xb + wb <= xa + wa + tol;
-                if !holds(x0, a0, x1, a1) && !holds(x1, a1, x0, a0) {
+            let rect = |k: usize| w.aperture(k).zip(w.aperture_y(k));
+            if let (Some(((x0, a0), (y0, b0))), Some(((x1, a1), (y1, b1)))) = (rect(i - 1), rect(i)) {
+                let holds = |xa: f64, wa: f64, ya: f64, ha: f64, xb: f64, wb: f64, yb: f64, hb: f64| {
+                    xa <= xb + tol && xb + wb <= xa + wa + tol && ya <= yb + toly && yb + hb <= ya + ha + toly
+                };
+                if !holds(x0, a0, y0, b0, x1, a1, y1, b1) && !holds(x1, a1, y1, b1, x0, a0, y0, b0) {
                     return Err(invalid(
                         format!("sections {} and {}", i, i + 1),
                         "not supported yet: apertures that overlap only in part (one must hold the other)",
@@ -349,7 +390,7 @@ mod tests {
     #[test]
     fn apertures_must_fit_and_nest() {
         let mut m = Model::new();
-        let sec = |w: Option<f64>, o: Option<f64>| Section { length: 0.01, material: "vacuum".into(), width: w, offset: o };
+        let sec = |w: Option<f64>, o: Option<f64>| Section { length: 0.01, material: "vacuum".into(), width: w, offset: o, ..Default::default() };
         let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s };
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
         let w = m.waveguide.as_ref().unwrap();

@@ -15,7 +15,10 @@ type Layout = [(f64, f64, f64)];
 
 fn model(layout: &Layout, opts: &emcraft_mesh::Options) -> Model {
     let mut m = Model::new();
-    let sections = layout.iter().map(|&(l, x0, w)| Section { length: l, material: "vacuum".into(), width: Some(w), offset: Some(x0) }).collect();
+    let sections = layout
+        .iter()
+        .map(|&(l, x0, w)| Section { length: l, material: "vacuum".into(), width: Some(w), offset: Some(x0), ..Default::default() })
+        .collect();
     m.set_waveguide(Waveguide { width: A, height: B, sections }).unwrap();
     m.add_port(Port { name: "1".into(), end: End::Start, modes: 4 }).unwrap();
     m.add_port(Port { name: "2".into(), end: End::End, modes: 4 }).unwrap();
@@ -92,4 +95,70 @@ fn iris_converges_with_graded_meshes() {
         .map(|&h| worst(&Driven::new(&model(&IRIS, &emcraft_mesh::Options::new(h)), Order::Two).unwrap(), &line, &[10.0e9]))
         .collect();
     assert!(errors[0] > errors[1] && errors[1] > errors[2] && errors[2] < 5e-3, "{errors:?}");
+}
+
+/// (length, aperture start along y, aperture height), all vacuum, full width.
+fn e_model(layout: &[(f64, f64, f64)], size: f64) -> Model {
+    e_model_with(layout, emcraft_mesh::Options::new(size))
+}
+
+fn e_model_with(layout: &[(f64, f64, f64)], opts: emcraft_mesh::Options) -> Model {
+    let mut m = Model::new();
+    let sections = layout
+        .iter()
+        .map(|&(l, y0, h)| Section { length: l, material: "vacuum".into(), height: Some(h), offset_y: Some(y0), ..Default::default() })
+        .collect();
+    m.set_waveguide(Waveguide { width: A, height: B, sections }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4 }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4 }).unwrap();
+    m.mesh = Some(emcraft_mesh::waveguide_with(&m, &opts).unwrap());
+    m
+}
+
+fn e_reference(layout: &[(f64, f64, f64)]) -> emcraft_theory::EPlaneLine {
+    emcraft_theory::EPlaneLine {
+        a: A,
+        sections: layout
+            .iter()
+            .map(|&(length, y0, height)| emcraft_theory::ESection { length, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, y0, height })
+            .collect(),
+    }
+}
+
+/// A 1 mm thick capacitive iris closing the narrow wall to 4 mm, centred.
+const CAP_IRIS: [(f64, f64, f64); 3] = [(0.012, 0.0, B), (0.001, (B - 0.004) / 2.0, 0.004), (0.012, 0.0, B)];
+
+/// An E-plane step down to half the height against the y = 0 wall.
+const E_STEP: [(f64, f64, f64); 2] = [(0.012, 0.0, B), (0.015, 0.0, B / 2.0)];
+
+#[test]
+fn e_plane_step_and_capacitive_iris_match_mode_matching() {
+    // Measured 1.1e-3 (step, 4 mm graded to 1 mm) and 1.9e-2 (iris, 4 mm graded only to 2 mm,
+    // for speed: its four edges are singular).
+    for (layout, edge, tol) in [(&E_STEP[..], 0.25, 3e-3), (&CAP_IRIS[..], 0.5, 3e-2)] {
+        let d = Driven::new(&e_model_with(layout, emcraft_mesh::Options { edge, ..emcraft_mesh::Options::new(0.004) }), Order::Two).unwrap();
+        let r = d.solve(10.0e9).unwrap();
+        let (s11, s21) = e_reference(layout).solve(10.0e9, 160).unwrap();
+        let e = (r.s[0][0] - s11).norm().max((r.s[1][0] - s21).norm());
+        assert!(e < tol, "{e:e}");
+        assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-10);
+    }
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn e_plane_discontinuities_match_mode_matching() {
+    for (name, layout) in [("capacitive iris", &CAP_IRIS[..]), ("E-plane step", &E_STEP[..])] {
+        let d = Driven::new(&e_model(layout, 0.003), Order::Two).unwrap();
+        let line = e_reference(layout);
+        for f in [9.0e9, 11.0e9] {
+            let r = d.solve(f).unwrap();
+            let (s11, s21) = line.solve(f, 160).unwrap();
+            let e = (r.s[0][0] - s11).norm().max((r.s[1][0] - s21).norm());
+            // Measured 4–5e-3 (iris) and 6e-4 (step) at 3 mm graded to 0.75 mm.
+            assert!(e < 1e-2, "{name} {f}: {e:e}");
+            let p = r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr();
+            assert!((p - 1.0).abs() < 1e-10, "{name}: {p}");
+        }
+    }
 }

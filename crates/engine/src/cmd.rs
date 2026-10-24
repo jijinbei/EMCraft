@@ -248,7 +248,9 @@ fn waveguide(s: &mut Session, p: &Value) -> Result<Value> {
         let material = string(sec, "material")?.ok_or_else(|| EngineError::Params(format!("section {}: `material` is required", i + 1)))?;
         let width = s.positive_length(sec, "width").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
         let offset = s.length(sec, "offset").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
-        sections.push(Section { length, material: material.to_owned(), width, offset });
+        let height = s.positive_length(sec, "height").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
+        let offset_y = s.length(sec, "offset_y").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
+        sections.push(Section { length, material: material.to_owned(), width, offset, height, offset_y });
     }
     s.model.set_waveguide(Waveguide { width, height, sections })?;
     s.sweep = None;

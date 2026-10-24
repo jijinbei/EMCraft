@@ -1,0 +1,11 @@
+{
+ "title": "Capacitive iris in WR-90: 1 mm thick, closing the narrow wall to 4 mm, centred",
+ "kind": "theory",
+ "source": "Mode matching of the LSE^x_1n modes at the iris' two faces, cascaded as generalised scattering matrices (J. Uher, J. Bornemann, U. Rosenberg, Waveguide Components for Antenna Feed Systems: Theory and CAD, Artech House 1993, §2.2), converged with 640 modes (changes 1e-6 from 320)",
+ "quantities": [
+  {"id": "s11_9", "quantity": "|S11| at 9 GHz", "measure": {"step": "fem", "pointer": "/points/0/s11/mag"}, "value": 0.36068455671437755, "tolerance": {"absolute": 0.01}, "reason": "second-order elements of 4 mm graded to 1 mm at the iris' four edges, where the field is singular: 6.3e-3 of complex error measured"},
+  {"id": "s11_11", "quantity": "|S11| at 11 GHz", "measure": {"step": "fem", "pointer": "/points/1/s11/mag"}, "value": 0.4854914383734802, "tolerance": {"absolute": 0.01}, "reason": "as at 9 GHz"},
+  {"id": "s21_db_11", "quantity": "|S21| at 11 GHz (dB)", "measure": {"step": "fem", "pointer": "/points/1/s21/db"}, "value": -1.167372409173608, "tolerance": {"absolute": 0.05}, "reason": "as |S11|"},
+  {"id": "worst", "quantity": "largest |S − S_mm| at 9 and 11 GHz (complex)", "measure": {"command": "results.compare", "params": {"modes": 320}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 0.012}, "reason": "6.3e-3 measured at 10 GHz with this mesh"}
+ ]
+}

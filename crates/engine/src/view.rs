@@ -14,7 +14,7 @@ use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
 use emcraft_render::{Axis, Rgb};
 use emcraft_solver::Complex64 as C;
-use emcraft_theory::{HPlaneLine, HSection, Layer, Te10Line, te10_cutoff};
+use emcraft_theory::{EPlaneLine, ESection, HPlaneLine, HSection, Layer, Te10Line, te10_cutoff};
 
 use crate::{EngineError, Result, Session};
 
@@ -336,13 +336,14 @@ pub const MODE_MATCHING_MODES: usize = 160;
 pub enum Reference {
     Exact(Te10Line),
     ModeMatching(HPlaneLine),
+    EPlane(EPlaneLine),
 }
 
 impl Reference {
     pub fn label(&self) -> &'static str {
         match self {
             Reference::Exact(_) => "exact",
-            Reference::ModeMatching(_) => "mode matching",
+            Reference::ModeMatching(_) | Reference::EPlane(_) => "mode matching",
         }
     }
 
@@ -352,6 +353,7 @@ impl Reference {
         match self {
             Reference::Exact(l) => Ok(l.solve(frequency).map_err(e)?.s_power()),
             Reference::ModeMatching(l) => l.solve(frequency, modes).map_err(e),
+            Reference::EPlane(l) => l.solve(frequency, modes).map_err(e),
         }
     }
 }
@@ -360,6 +362,18 @@ pub fn reference(session: &Session) -> Result<Reference> {
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
     if w.uniform() {
         return Ok(Reference::Exact(te10_line(session)?));
+    }
+    if w.full_width() {
+        let mut sections = Vec::with_capacity(w.sections.len());
+        for (i, s) in w.sections.iter().enumerate() {
+            let (_, m) = session.model.material(&s.material)?;
+            let (y0, height) = w.aperture_y(i).unwrap_or((0.0, w.height));
+            sections.push(ESection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent, y0, height });
+        }
+        return Ok(Reference::EPlane(EPlaneLine { a: w.width, sections }));
+    }
+    if !w.full_height() {
+        return Err(EngineError::Failed("not supported yet: a reference for guides whose width and height both change".into()));
     }
     let mut sections = Vec::with_capacity(w.sections.len());
     for (i, s) in w.sections.iter().enumerate() {
@@ -390,7 +404,7 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
         // per frequency); 40 keep the curve within 10⁻² dB.
         let (n, modes) = match reference {
             Reference::Exact(_) => (400, 1),
-            Reference::ModeMatching(_) => (160, 40),
+            Reference::ModeMatching(_) | Reference::EPlane(_) => (160, 40),
         };
         let (mut s11, mut s21) = (Vec::new(), Vec::new());
         for k in 0..=n {

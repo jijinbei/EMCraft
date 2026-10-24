@@ -20,7 +20,7 @@
 
 pub mod modematch;
 
-pub use modematch::{HPlaneLine, HSection};
+pub use modematch::{EPlaneLine, ESection, HPlaneLine, HSection};
 
 use std::f64::consts::PI;
 

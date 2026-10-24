@@ -1,0 +1,10 @@
+[
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
+   {"length": 12, "material": "vacuum"},
+   {"length": 15, "material": "vacuum", "height": 5.08, "offset_y": 0}]}},
+ {"command": "mesh.generate", "params": {"size": 4}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"frequencies": [9, 10, 11], "order": 2}, "id": "fem"},
+ {"command": "solve.time_domain", "params": {"frequencies": [9, 10, 11], "cell": 1}, "id": "td"}
+]

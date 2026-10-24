@@ -58,7 +58,7 @@ fn high_pass_filter_converges_at_second_order() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn inductive_iris_matches_mode_matching() {
-    let iris = Section { length: 0.002, material: "vacuum".into(), width: Some(0.012), offset: None };
+    let iris = Section { length: 0.002, material: "vacuum".into(), width: Some(0.012), offset: None, ..Default::default() };
     let m = model(vec![Section::new(0.015, "vacuum"), iris, Section::new(0.015, "vacuum")], &[]);
     let freqs = [9.0e9, 11.0e9];
     let r = s_parameters(&m, &Options::new(0.001), &freqs).unwrap();
@@ -87,4 +87,21 @@ fn hostile_requests_are_refused() {
     let mut lossy = filter();
     lossy.set_wall_conductivity(Some(5.8e7)).unwrap();
     assert!(s_parameters(&lossy, &Options::new(0.002), &[7e9]).is_err());
+}
+
+#[test]
+fn e_plane_step_matches_mode_matching() {
+    // The guide steps down to half its height against the y = 0 wall.
+    let low = Section { length: 0.015, material: "vacuum".into(), height: Some(B / 2.0), offset_y: Some(0.0), ..Default::default() };
+    let m = model(vec![Section::new(0.012, "vacuum"), low], &[]);
+    let freqs = [9.0e9, 11.0e9];
+    let r = s_parameters(&m, &Options::new(0.001), &freqs).unwrap();
+    let full = emcraft_theory::ESection { length: 0.012, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, y0: 0.0, height: B };
+    let line = emcraft_theory::EPlaneLine { a: A, sections: vec![full, emcraft_theory::ESection { length: 0.015, height: B / 2.0, ..full }] };
+    for (i, f) in freqs.iter().enumerate() {
+        let (e11, e21) = line.solve(*f, 160).unwrap();
+        let err = (r.s11[i] - e11).norm().max((r.s21[i] - e21).norm());
+        // Measured 1.0e-2 and 1.7e-2 at 1 mm cells.
+        assert!(err < 3e-2, "{f}: {err:e}");
+    }
 }
