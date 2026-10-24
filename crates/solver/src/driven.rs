@@ -381,6 +381,14 @@ impl Driven {
         Some(self.field_in(&el, t, x, frequency, which, el.barycentric(p)))
     }
 
+    /// E and H at a point, `None` outside the mesh.
+    pub fn fields(&self, x: &[C], frequency: f64, p: [f64; 3]) -> Option<([C; 3], [C; 3])> {
+        let (t, _) = emcraft_mesh::locate(&self.mesh, p)?;
+        let el = element(&self.mesh, &self.topo, t, self.order).ok()?;
+        let l = el.barycentric(p);
+        Some((self.field_in(&el, t, x, frequency, Field::E, l), self.field_in(&el, t, x, frequency, Field::H, l)))
+    }
+
     fn field_in(&self, el: &Element, t: usize, x: &[C], frequency: f64, which: Field, l: [f64; 4]) -> [C; 3] {
         let unknowns = self.dofs.of_tet(&self.topo, t);
         let values = match which {

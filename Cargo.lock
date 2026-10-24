@@ -36,6 +36,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "emcraft-cli"
+version = "0.1.0"
+dependencies = [
+ "emcraft-engine",
+ "serde_json",
+]
+
+[[package]]
+name = "emcraft-engine"
+version = "0.1.0"
+dependencies = [
+ "emcraft-fem",
+ "emcraft-mesh",
+ "emcraft-model",
+ "emcraft-render",
+ "emcraft-solver",
+ "emcraft-theory",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "emcraft-fem"
 version = "0.1.0"
 dependencies = [

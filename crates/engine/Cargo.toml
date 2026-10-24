@@ -1,0 +1,20 @@
+[package]
+name = "emcraft-engine"
+description = "EMCraft commands: every user-visible action as a CommandSpec run by Session::execute with rollback and a panic guard, scripts, samples, and headless pictures of fields and S-parameters"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-model = { workspace = true }
+emcraft-mesh = { workspace = true }
+emcraft-fem = { workspace = true }
+emcraft-theory = { workspace = true }
+emcraft-render = { workspace = true }
+emcraft-solver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
