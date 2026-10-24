@@ -1,4 +1,4 @@
-//! The EMCraft desktop app: `emcraft [--sample highpass|iris-bandpass]`.
+//! The EMCraft desktop app: `emcraft [--sample highpass|iris-bandpass|cavity]`.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::process::ExitCode;
@@ -7,9 +7,9 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let sample = match args.as_slice() {
         [] => None,
-        [flag, name] if flag == "--sample" && (name == "highpass" || name == "iris-bandpass") => Some(name.clone()),
+        [flag, name] if flag == "--sample" && (name == "highpass" || name == "iris-bandpass" || name == "cavity") => Some(name.clone()),
         _ => {
-            eprintln!("usage: emcraft [--sample highpass|iris-bandpass]");
+            eprintln!("usage: emcraft [--sample highpass|iris-bandpass|cavity]");
             return ExitCode::FAILURE;
         }
     };

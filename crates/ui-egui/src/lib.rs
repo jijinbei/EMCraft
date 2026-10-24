@@ -21,15 +21,17 @@ pub struct SectionEdit {
     pub length: f64,
     pub eps_r: f64,
     pub aperture: Option<f64>,
+    /// Dielectric loss tangent.
+    pub tan_d: f64,
 }
 
 impl SectionEdit {
     fn new(length: f64, eps_r: f64) -> SectionEdit {
-        SectionEdit { length, eps_r, aperture: None }
+        SectionEdit { length, eps_r, aperture: None, tan_d: 0.0 }
     }
 
     fn iris(length: f64, aperture: f64) -> SectionEdit {
-        SectionEdit { length, eps_r: 1.0, aperture: Some(aperture) }
+        SectionEdit { length, eps_r: 1.0, aperture: Some(aperture), tan_d: 0.0 }
     }
 }
 
@@ -49,6 +51,19 @@ pub struct ModelEdit {
     pub start: f64,
     pub stop: f64,
     pub points: u32,
+    /// Wall conductivity (S/m); perfect conductors when `None`.
+    pub conductivity: Option<f64>,
+    /// The analysis to run.
+    pub analysis: Analysis,
+}
+
+/// What Solve runs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Analysis {
+    /// A frequency sweep with ports at both ends.
+    Sweep,
+    /// The eigenmodes of the guide closed into a cavity: `count` modes near `near` GHz.
+    Eigen { count: u32, near: f64 },
 }
 
 impl Default for ModelEdit {
@@ -66,6 +81,8 @@ impl Default for ModelEdit {
             start: 5.0,
             stop: 9.0,
             points: 17,
+            conductivity: None,
+            analysis: Analysis::Sweep,
         }
     }
 }
@@ -96,18 +113,28 @@ impl ModelEdit {
         }
     }
 
+    /// The copper cavity sample: its four lowest modes.
+    pub fn cavity() -> ModelEdit {
+        ModelEdit {
+            sections: vec![SectionEdit::new(30.0, 1.0)],
+            conductivity: Some(5.8e7),
+            analysis: Analysis::Eigen { count: 4, near: 12.0 },
+            ..ModelEdit::default()
+        }
+    }
+
     /// The command script that builds and solves this model.
     pub fn script(&self) -> Value {
         let mut steps = Vec::new();
         let mut names = Vec::new();
         for s in &self.sections {
-            if s.eps_r == 1.0 {
+            if s.eps_r == 1.0 && s.tan_d == 0.0 {
                 names.push("vacuum".to_owned());
                 continue;
             }
-            let name = format!("eps {}", s.eps_r);
+            let name = if s.tan_d == 0.0 { format!("eps {}", s.eps_r) } else { format!("eps {} tan {}", s.eps_r, s.tan_d) };
             if !names.contains(&name) {
-                steps.push(json!({"command": "model.material.create", "params": {"name": name, "eps_r": s.eps_r}}));
+                steps.push(json!({"command": "model.material.create", "params": {"name": name, "eps_r": s.eps_r, "loss_tangent": s.tan_d}}));
             }
             names.push(name);
         }
@@ -121,16 +148,24 @@ impl ModelEdit {
             })
             .collect();
         steps.push(json!({"command": "geometry.waveguide", "params": {"width": self.width, "height": self.height, "sections": sections}}));
+        if let Some(sigma) = self.conductivity {
+            steps.push(json!({"command": "model.walls", "params": {"conductivity": sigma}}));
+        }
         let mut mesh = json!({"size": self.size, "edge": self.edge});
         if self.one_layer_y {
             mesh["size_y"] = json!(self.height);
         }
         steps.push(json!({"command": "mesh.generate", "params": mesh}));
-        steps.push(json!({"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": self.modes}}));
-        steps.push(json!({"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": self.modes}}));
-        steps.push(
-            json!({"command": "solve.frequency", "params": {"start": self.start, "stop": self.stop, "points": self.points, "order": self.order}}),
-        );
+        match self.analysis {
+            Analysis::Sweep => {
+                steps.push(json!({"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": self.modes}}));
+                steps.push(json!({"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": self.modes}}));
+                steps.push(json!({"command": "solve.frequency", "params": {"start": self.start, "stop": self.stop, "points": self.points, "order": self.order}}));
+            }
+            Analysis::Eigen { count, near } => {
+                steps.push(json!({"command": "solve.eigenmodes", "params": {"near": near, "count": count, "order": self.order}}));
+            }
+        }
         Value::Array(steps)
     }
 }
@@ -188,6 +223,9 @@ impl EmcraftApp {
                 app.edit = ModelEdit::bandpass();
                 app.view.frequency = 10.0e9;
             }
+            if name == "cavity" {
+                app.edit = ModelEdit::cavity();
+            }
             app.solve();
         }
         app
@@ -211,6 +249,17 @@ impl EmcraftApp {
             Ok(Ok(s)) => {
                 let secs = started.elapsed().as_secs_f64();
                 self.session = s;
+                if let Some(e) = self.session.eigen.as_ref() {
+                    self.view.mode = Some(0);
+                    let list: Vec<String> = e.modes.iter().map(|m| format!("{:.4}", GHZ.from_si(m.frequency))).collect();
+                    self.status = format!("Found {} eigenmodes in {secs:.1} s: {} GHz.", e.modes.len(), list.join(", "));
+                    self.samples = None;
+                    self.field_key = None;
+                    self.chart = None;
+                    self.solving = None;
+                    return;
+                }
+                self.view.mode = None;
                 let freqs = self.frequencies();
                 if let Some(f) = nearest(&freqs, self.view.frequency) {
                     self.view.frequency = f;
@@ -261,6 +310,7 @@ impl EmcraftApp {
                 ui.label(format!("{}", i + 1));
                 ui.add(egui::DragValue::new(&mut s.length).speed(0.1).range(0.5..=1000.0).suffix(" mm"));
                 ui.add(egui::DragValue::new(&mut s.eps_r).speed(0.01).range(1.0..=100.0).prefix("εr "));
+                ui.add(egui::DragValue::new(&mut s.tan_d).speed(0.0005).range(0.0..=1.0).prefix("tanδ ")).on_hover_text("dielectric loss tangent");
                 let mut narrowed = s.aperture.is_some();
                 if ui.checkbox(&mut narrowed, "").on_hover_text("narrow the broad wall to a centred aperture (iris, step)").changed() {
                     s.aperture = narrowed.then_some(s.aperture.unwrap_or(e.width / 2.0));
@@ -281,8 +331,20 @@ impl EmcraftApp {
         if ui.button("Add section").clicked() {
             e.sections.push(SectionEdit::new(10.0, 1.0));
         }
+        ui.horizontal(|ui| {
+            ui.label("walls");
+            let name = |c: Option<f64>| match c {
+                None => "perfect conductor".to_owned(),
+                Some(s) => format!("σ = {s:.2e} S/m"),
+            };
+            egui::ComboBox::from_id_salt("walls").selected_text(name(e.conductivity)).show_ui(ui, |ui| {
+                for (label, c) in [("perfect conductor", None), ("copper", Some(5.8e7)), ("aluminium", Some(3.8e7)), ("brass", Some(1.5e7))] {
+                    ui.selectable_value(&mut e.conductivity, c, label);
+                }
+            });
+        });
         ui.separator();
-        ui.heading("Mesh and sweep");
+        ui.heading("Mesh and analysis");
         egui::Grid::new("solve").num_columns(2).show(ui, |ui| {
             ui.label("element size");
             ui.add(egui::DragValue::new(&mut e.size).speed(0.05).range(0.5..=50.0).suffix(" mm"));
@@ -302,6 +364,25 @@ impl EmcraftApp {
             ui.label("port modes");
             ui.add(egui::DragValue::new(&mut e.modes).range(1..=32));
             ui.end_row();
+            ui.label("analysis");
+            ui.horizontal(|ui| {
+                let sweep = matches!(e.analysis, Analysis::Sweep);
+                if ui.radio(sweep, "S-parameters").clicked() {
+                    e.analysis = Analysis::Sweep;
+                }
+                if ui.radio(!sweep, "eigenmodes").clicked() && sweep {
+                    e.analysis = Analysis::Eigen { count: 4, near: 0.5 * (e.start + e.stop) };
+                }
+            });
+            ui.end_row();
+            if let Analysis::Eigen { count, near } = &mut e.analysis {
+                ui.label("modes");
+                ui.add(egui::DragValue::new(count).range(1..=50));
+                ui.end_row();
+                ui.label("near");
+                ui.add(egui::DragValue::new(near).speed(0.05).range(0.1..=1000.0).suffix(" GHz"));
+                ui.end_row();
+            }
             ui.label("start");
             ui.add(egui::DragValue::new(&mut e.start).speed(0.05).range(0.1..=1000.0).suffix(" GHz"));
             ui.end_row();
@@ -323,14 +404,32 @@ impl EmcraftApp {
             if ui.button("Band-pass sample").clicked() {
                 self.edit = ModelEdit::bandpass();
             }
+            if ui.button("Cavity sample").clicked() {
+                self.edit = ModelEdit::cavity();
+            }
             if busy {
                 ui.spinner();
             }
         });
         ui.separator();
         ui.heading("View");
+        if let Some(e) = self.session.eigen.as_ref() {
+            let label = |i: usize| {
+                e.modes.get(i).map_or(String::new(), |m| {
+                    let q = m.q().map_or(String::new(), |q| format!(", Q {q:.0}"));
+                    format!("{}: {:.4} GHz{q}", i + 1, GHZ.from_si(m.frequency))
+                })
+            };
+            let mut idx = self.view.mode.unwrap_or(0);
+            egui::ComboBox::from_label("mode").selected_text(label(idx)).show_ui(ui, |ui| {
+                for i in 0..e.modes.len() {
+                    ui.selectable_value(&mut idx, i, label(i));
+                }
+            });
+            self.view.mode = Some(idx);
+        }
         let freqs = self.frequencies();
-        if !freqs.is_empty() {
+        if !freqs.is_empty() && self.view.mode.is_none() {
             let mut idx = freqs.iter().position(|f| (f - self.view.frequency).abs() <= 1e-9 * f).unwrap_or(0);
             let label = |f: f64| format!("{:.4} GHz", GHZ.from_si(f));
             egui::ComboBox::from_label("frequency").selected_text(label(self.view.frequency)).show_ui(ui, |ui| {
@@ -384,7 +483,7 @@ impl EmcraftApp {
 
     /// The field texture, redrawn when the view or the width changed.
     fn update_field(&mut self, ctx: &egui::Context, width: usize) {
-        if self.session.sweep.is_none() {
+        if self.session.sweep.is_none() && self.session.eigen.is_none() {
             return;
         }
         self.view.at = self.at_mm.map(|mm| MM.to_si(mm));
@@ -425,6 +524,10 @@ impl EmcraftApp {
     }
 
     fn update_chart(&mut self, ctx: &egui::Context, width: usize) {
+        if self.session.sweep.is_none() {
+            self.chart = None;
+            return;
+        }
         if self.chart.is_some() && self.chart_width == width {
             return;
         }
@@ -469,7 +572,7 @@ impl eframe::App for EmcraftApp {
             let avail = ui.available_width().max(400.0);
             // Rounded so a resize does not redraw on every pixel.
             let width = ((avail / 50.0).floor() * 50.0) as usize;
-            if self.session.sweep.is_none() {
+            if self.session.sweep.is_none() && self.session.eigen.is_none() {
                 ui.centered_and_justified(|ui| {
                     ui.label(if self.solving.is_some() { "Solving…" } else { "No results yet: press Solve." });
                 });
@@ -532,6 +635,12 @@ mod tests {
         sample.execute("file.sample", &json!({"name": "iris-bandpass"})).unwrap();
         assert_eq!(b.model.waveguide, sample.model.waveguide);
         assert_eq!(b.model.mesh.as_ref().map(|m| m.tets.len()), sample.model.mesh.as_ref().map(|m| m.tets.len()));
+        // The cavity edit runs an eigenmode analysis with copper walls.
+        let script = ModelEdit::cavity().script();
+        let steps = script.as_array().unwrap();
+        assert!(steps.iter().any(|s| s["command"] == "solve.eigenmodes"));
+        assert!(steps.iter().any(|s| s["command"] == "model.walls"));
+        assert!(!steps.iter().any(|s| s["command"] == "model.port.create"));
     }
 
     #[test]
