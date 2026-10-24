@@ -1,0 +1,11 @@
+{
+ "title": "Dielectric step in WR-90: TE10 reflection and transmission",
+ "kind": "theory",
+ "source": "Reflection at a junction of TE10 lines with wave impedances Z = ωμ/β, Γ = (β1 − β2)/(β1 + β2), moved to the port planes; power-wave S-parameters between ports of different impedance: D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3, §4.3–4.4",
+ "quantities": [
+  {"id": "s11_mag_9", "quantity": "|S11| at 9 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.29298547964474786, "tolerance": {"absolute": 5e-4}, "reason": "second-order elements of 3 mm: the step is a grid plane, so only the dispersion of each line errs (≈1e-4)"},
+  {"id": "s11_phase_9", "quantity": "phase of S11 at 9 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s11/deg"}, "value": 35.082954865510544, "tolerance": {"absolute": 0.2}, "reason": "the phase carries twice the 12 mm path to the step in PTFE"},
+  {"id": "s21_mag_9", "quantity": "|S21| at 9 GHz (power waves, ports of different impedance)", "measure": {"step": "solve", "pointer": "/points/1/s21/mag"}, "value": 0.9561168907185655, "tolerance": {"absolute": 5e-4}, "reason": "as |S11|; |S11|² + |S21|² = 1 holds to rounding"},
+  {"id": "s11_mag_7_5", "quantity": "|S11| at 7.5 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.4084323106358122, "tolerance": {"absolute": 5e-4}, "reason": "closer to the empty guide's cut-off the impedances differ more; the mesh resolves the longer guide wavelength better"}
+ ]
+}

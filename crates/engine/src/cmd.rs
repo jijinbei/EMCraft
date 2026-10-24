@@ -94,6 +94,13 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: compare,
     },
     CommandSpec {
+        id: "results.field_error",
+        label: "Field error against theory",
+        doc: "The relative L2 errors ‖F − F_exact‖/‖F_exact‖ of E and H over the whole guide at a solved frequency, against the exact TE10 fields (port 1 excited).",
+        params: &[p("frequency", "number", F, true, "a solved frequency")],
+        run: field_error,
+    },
+    CommandSpec {
         id: "results.probe",
         label: "Probe fields",
         doc: "E (V/m) and H (A/m), complex, at points, for a solved frequency and an excited port.",
@@ -306,6 +313,17 @@ fn compare(s: &mut Session, _: &Value) -> Result<Value> {
         }));
     }
     Ok(json!({"points": rows, "worst": worst}))
+}
+
+fn field_error(s: &mut Session, p: &Value) -> Result<Value> {
+    let f = s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`frequency` is required".into()))?;
+    let sw = sweep(s)?;
+    let r = sw.at(f, false).ok_or_else(|| EngineError::Params(format!("{} {} was not solved", s.show_frequency(f), s.display.frequency.symbol())))?;
+    let x = r.fields.first().ok_or_else(|| EngineError::Failed("no field".into()))?;
+    let exact = view::te10_line(s)?.solve(r.frequency).map_err(|e| EngineError::Failed(e.to_string()))?;
+    let (e, en) = sw.driven.l2_error(x, r.frequency, emcraft_solver::Field::E, |q| exact.e(q[0], q[1], q[2]))?;
+    let (h, hn) = sw.driven.l2_error(x, r.frequency, emcraft_solver::Field::H, |q| exact.h(q[0], q[1], q[2]))?;
+    Ok(json!({"frequency": s.show_frequency(r.frequency), "e": e / en, "h": h / hn}))
 }
 
 fn excitation(s: &Session, p: &Value) -> Result<usize> {

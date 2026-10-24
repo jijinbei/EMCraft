@@ -630,6 +630,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "emcraft-testkit"
+version = "0.1.0"
+dependencies = [
+ "emcraft-engine",
+ "serde_json",
+]
+
+[[package]]
 name = "emcraft-theory"
 version = "0.1.0"
 dependencies = [

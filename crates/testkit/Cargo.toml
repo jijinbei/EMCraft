@@ -1,0 +1,14 @@
+[package]
+name = "emcraft-testkit"
+description = "EMCraft test tooling: the verification oracle (tests/oracle), its runner and the docs/oracle.md page"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+emcraft-engine = { workspace = true }
+serde_json = { workspace = true }
