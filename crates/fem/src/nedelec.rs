@@ -247,8 +247,8 @@ mod tests {
         for (p, [i, j]) in LOCAL_EDGES.iter().enumerate() {
             for (q, [k, l]) in LOCAL_EDGES.iter().enumerate() {
                 let cs = 4.0 * e.volume * dot(cross(g[*i], g[*j]), cross(g[*k], g[*l]));
-                let cm = ll(*i, *k) * dot(g[*j], g[*l]) - ll(*i, *l) * dot(g[*j], g[*k]) - ll(*j, *k) * dot(g[*i], g[*l])
-                    + ll(*j, *l) * dot(g[*i], g[*k]);
+                let cm =
+                    ll(*i, *k) * dot(g[*j], g[*l]) - ll(*i, *l) * dot(g[*j], g[*k]) - ll(*j, *k) * dot(g[*i], g[*l]) + ll(*j, *l) * dot(g[*i], g[*k]);
                 assert!((s[p * 6 + q] - cs).abs() < 1e-12 * cs.abs().max(1.0));
                 assert!((m[p * 6 + q] - cm).abs() < 1e-14);
             }
@@ -370,16 +370,8 @@ mod tests {
         let b = Element::new(Order::Two, [p[1], p[2], p[3], p[4]]).unwrap();
         // Global DOFs on the shared face: edges (1,2), (1,3), (2,3) and the face's two functions.
         // In a they are local edges 3, 4, 5 and face 3; in b local edges 0, 1, 3 and face 0.
-        let pairs: Vec<(usize, usize)> = vec![
-            (3, 0),
-            (4, 1),
-            (5, 3),
-            (6 + 3, 6),
-            (6 + 4, 6 + 1),
-            (6 + 5, 6 + 3),
-            (12 + 2 * 3, 12),
-            (12 + 2 * 3 + 1, 12 + 1),
-        ];
+        let pairs: Vec<(usize, usize)> =
+            vec![(3, 0), (4, 1), (5, 3), (6 + 3, 6), (6 + 4, 6 + 1), (6 + 5, 6 + 3), (12 + 2 * 3, 12), (12 + 2 * 3 + 1, 12 + 1)];
         let normal = {
             let c = cross(sub(p[2], p[1]), sub(p[3], p[1]));
             scale(c, 1.0 / dot(c, c).sqrt())

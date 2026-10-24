@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use emcraft_engine::Session;
 use emcraft_engine::view::{self, FieldView, Plane, PlaneSamples};
+use emcraft_model::units::{Frequency::Gigahertz as GHZ, Length::Millimetre as MM};
 use serde_json::{Value, json};
 
 /// One section of the waveguide being edited: length (mm) and relative permittivity.
@@ -40,7 +41,11 @@ impl Default for ModelEdit {
         ModelEdit {
             width: 22.86,
             height: 10.16,
-            sections: vec![SectionEdit { length: 15.0, eps_r: 2.0 }, SectionEdit { length: 20.0, eps_r: 1.0 }, SectionEdit { length: 15.0, eps_r: 2.0 }],
+            sections: vec![
+                SectionEdit { length: 15.0, eps_r: 2.0 },
+                SectionEdit { length: 20.0, eps_r: 1.0 },
+                SectionEdit { length: 15.0, eps_r: 2.0 },
+            ],
             size: 3.0,
             order: 2,
             modes: 4,
@@ -72,7 +77,9 @@ impl ModelEdit {
         steps.push(json!({"command": "mesh.generate", "params": {"size": self.size}}));
         steps.push(json!({"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": self.modes}}));
         steps.push(json!({"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": self.modes}}));
-        steps.push(json!({"command": "solve.frequency", "params": {"start": self.start, "stop": self.stop, "points": self.points, "order": self.order}}));
+        steps.push(
+            json!({"command": "solve.frequency", "params": {"start": self.start, "stop": self.stop, "points": self.points, "order": self.order}}),
+        );
         Value::Array(steps)
     }
 }
@@ -82,7 +89,7 @@ impl ModelEdit {
 pub fn chart_frequency(fx: f64, width_px: f64, f0: f64, f1: f64) -> Option<f64> {
     let (x0, pw) = (90.0, width_px - 120.0);
     let t = (fx * width_px - x0) / pw;
-    (pw > 0.0 && (0.0..=1.0).contains(&t)).then(|| f0 + t * (f1 - f0))
+    (pw > 0.0 && (0.0..=1.0).contains(&t)).then_some(f0 + t * (f1 - f0))
 }
 
 /// The solved frequency (Hz) nearest to `f` (Hz).
@@ -253,7 +260,7 @@ impl EmcraftApp {
         let freqs = self.frequencies();
         if !freqs.is_empty() {
             let mut idx = freqs.iter().position(|f| (f - self.view.frequency).abs() <= 1e-9 * f).unwrap_or(0);
-            let label = |f: f64| format!("{:.4} GHz", f / 1e9);
+            let label = |f: f64| format!("{:.4} GHz", GHZ.from_si(f));
             egui::ComboBox::from_label("frequency").selected_text(label(self.view.frequency)).show_ui(ui, |ui| {
                 for (i, f) in freqs.iter().enumerate() {
                     ui.selectable_value(&mut idx, i, label(*f));
@@ -276,7 +283,7 @@ impl EmcraftApp {
                 Plane::E => (w.width, "x"),
                 Plane::Cross => (w.length(), "z"),
             };
-            let span_mm = span * 1e3;
+            let span_mm = MM.from_si(span);
             let mut at = self.at_mm.unwrap_or(span_mm / 2.0);
             if ui.add(egui::Slider::new(&mut at, 0.0..=span_mm).text(format!("{axis} (mm)"))).changed() {
                 self.at_mm = Some(at);
@@ -308,7 +315,7 @@ impl EmcraftApp {
         if self.session.sweep.is_none() {
             return;
         }
-        self.view.at = self.at_mm.map(|mm| mm * 1e-3);
+        self.view.at = self.at_mm.map(|mm| MM.to_si(mm));
         let key = format!("{:?}|{width}", self.view);
         if self.field_key.as_deref() == Some(key.as_str()) {
             return;

@@ -54,8 +54,7 @@ pub fn format(v: f64) -> String {
     }
     let a = v.abs();
     if !(1e-3..1e5).contains(&a) {
-        let s = format!("{v:.2e}");
-        return s.replace("e0", "").replace("e", "e");
+        return format!("{v:.2e}");
     }
     let decimals = (3 - a.log10().floor() as i32).clamp(0, 6) as usize;
     let s = format!("{v:.decimals$}");

@@ -225,7 +225,8 @@ fn frequencies(s: &Session, p: &Value) -> Result<Vec<f64>> {
             return Err(EngineError::Params(format!("at most {} frequencies", s.limits.frequencies)));
         }
         for v in list {
-            let f = v.as_f64().filter(|f| f.is_finite() && *f > 0.0).ok_or_else(|| EngineError::Params("`frequencies` must be numbers > 0".into()))?;
+            let f =
+                v.as_f64().filter(|f| f.is_finite() && *f > 0.0).ok_or_else(|| EngineError::Params("`frequencies` must be numbers > 0".into()))?;
             out.push(s.display.frequency.to_si(f));
         }
     } else {
@@ -348,10 +349,15 @@ fn probe(s: &mut Session, p: &Value) -> Result<Value> {
         let c = pt.as_array().filter(|a| a.len() == 3).ok_or_else(|| EngineError::Params("each point is [x, y, z]".into()))?;
         let mut xyz = [0.0; 3];
         for (d, v) in xyz.iter_mut().zip(c) {
-            *d = s.display.length.to_si(v.as_f64().filter(|v| v.is_finite()).ok_or_else(|| EngineError::Params("coordinates must be finite numbers".into()))?);
+            *d = s
+                .display
+                .length
+                .to_si(v.as_f64().filter(|v| v.is_finite()).ok_or_else(|| EngineError::Params("coordinates must be finite numbers".into()))?);
         }
         let (e, h) = sw.driven.fields(x, r.frequency, xyz).ok_or_else(|| EngineError::Params(format!("{pt} is outside the mesh")))?;
-        out.push(json!({"e": e.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>(), "h": h.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>()}));
+        out.push(
+            json!({"e": e.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>(), "h": h.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>()}),
+        );
     }
     Ok(json!({"frequency": s.show_frequency(r.frequency), "points": out}))
 }
@@ -417,7 +423,9 @@ fn file_sample(s: &mut Session, p: &Value) -> Result<Value> {
     let script: Value = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;
     let steps: Vec<Value> = script
         .as_array()
-        .map(|a| a.iter().filter(|st| solve || !st.get("command").and_then(Value::as_str).is_some_and(|c| c.starts_with("solve."))).cloned().collect())
+        .map(|a| {
+            a.iter().filter(|st| solve || !st.get("command").and_then(Value::as_str).is_some_and(|c| c.starts_with("solve."))).cloned().collect()
+        })
         .unwrap_or_default();
     fresh.run_script(&Value::Array(steps))?;
     *s = fresh;

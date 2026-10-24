@@ -257,9 +257,8 @@ impl Driven {
         }
 
         // Pattern: element couplings and the dense port blocks.
-        let mut groups: Vec<Vec<usize>> = (0..mesh.tets.len())
-            .map(|t| dofs.of_tet(&topo, t).into_iter().filter(|&u| u != NONE).map(|u| u as usize).collect())
-            .collect();
+        let mut groups: Vec<Vec<usize>> =
+            (0..mesh.tets.len()).map(|t| dofs.of_tet(&topo, t).into_iter().filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
         for p in &ports {
             if let Some((_, v)) = p.modes.first() {
                 groups.push(v.iter().map(|(u, _)| *u).collect());
@@ -303,9 +302,9 @@ impl Driven {
             let k = k0 * (p.eps_r * p.mu_r).sqrt();
             let mut b = vec![C::new(0.0, 0.0); self.dofs.unknowns];
             for (mi, (mode, v)) in p.modes.iter().enumerate() {
-                let (kr, ki) = mode
-                    .kappa(k)
-                    .ok_or_else(|| invalid("frequency", format!("{} Hz is at the cut-off of mode {} at port `{}`", frequency, mode.name(), p.name)))?;
+                let (kr, ki) = mode.kappa(k).ok_or_else(|| {
+                    invalid("frequency", format!("{} Hz is at the cut-off of mode {} at port `{}`", frequency, mode.name(), p.name))
+                })?;
                 let kappa = C::new(kr, ki) / p.mu_r;
                 let c = kappa / mode.norm();
                 for &(i, vi) in v {
@@ -358,7 +357,15 @@ impl Driven {
                 s[p][q] = direct * self.power_factor(p, q, k0);
             }
         }
-        Ok(FrequencyResult { frequency, s, fields, backward_error: worst, perturbed_pivots: f.perturbed, factor_entries: f.entries, largest_front: f.largest_front })
+        Ok(FrequencyResult {
+            frequency,
+            s,
+            fields,
+            backward_error: worst,
+            perturbed_pivots: f.perturbed,
+            factor_entries: f.entries,
+            largest_front: f.largest_front,
+        })
     }
 
     /// √(Z_q/Z_p) for TE₁₀ (Z = ωμ/β, equal cross-sections).

@@ -108,7 +108,11 @@ pub struct Expected {
 }
 
 fn text(v: &Value, key: &str) -> Result<String, String> {
-    v.get(key).and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(str::to_string).ok_or_else(|| format!("`{key}` must be a non-empty string"))
+    v.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("`{key}` must be a non-empty string"))
 }
 
 impl Expected {
@@ -122,7 +126,8 @@ impl Expected {
         for q in list {
             let id = text(q, "id")?;
             let context = |e: String| format!("quantity `{id}`: {e}");
-            let reference = q.get("value").and_then(Value::as_f64).filter(|x| x.is_finite()).ok_or_else(|| context("`value` must be a finite number".into()))?;
+            let reference =
+                q.get("value").and_then(Value::as_f64).filter(|x| x.is_finite()).ok_or_else(|| context("`value` must be a finite number".into()))?;
             let tolerance = Tolerance::from_json(q.get("tolerance").unwrap_or(&Value::Null)).map_err(context)?;
             let measure = q.get("measure").cloned().unwrap_or(Value::Null);
             if measure.get("pointer").and_then(Value::as_str).is_none() {
@@ -131,7 +136,14 @@ impl Expected {
             if quantities.iter().any(|x| x.id == id) {
                 return Err(format!("quantity `{id}` is listed twice"));
             }
-            quantities.push(Quantity { description: text(q, "quantity").map_err(context)?, reason: text(q, "reason").map_err(context)?, id, measure, reference, tolerance });
+            quantities.push(Quantity {
+                description: text(q, "quantity").map_err(context)?,
+                reason: text(q, "reason").map_err(context)?,
+                id,
+                measure,
+                reference,
+                tolerance,
+            });
         }
         Ok(Expected { title: text(v, "title")?, kind, source: text(v, "source")?, quantities })
     }

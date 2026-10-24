@@ -1,0 +1,29 @@
+# Attribution
+
+Every non-code asset in this repository is listed here with its author, source and licence;
+code adapted from other projects is listed below with its licence.
+
+**Policy:** EMCraft contains no iconography, images, artwork, fonts, templates, examples or
+help text from commercial EM products. Every asset is original work by EMCraft contributors or
+third-party material under an open licence.
+
+## Assets
+
+None yet. (Pictures are drawn by EMCraft at run time; its 5 × 7 bitmap font is FieldCraft's,
+below.)
+
+## Code adapted from sibling projects
+
+FieldCraft (`../fieldcraft`, MIT OR Apache-2.0, Copyright (c) 2026 FieldCraft contributors):
+
+| EMCraft file | Adapted from | Changes |
+|---|---|---|
+| `xtask/src/layers.rs` | FieldCraft `xtask/src/layers.rs` (itself from SolidCraft's xtask) | EMCraft's crate table; the SolidCraft gateway rule removed |
+| `xtask/src/main.rs` | FieldCraft `xtask/src/main.rs` | reduced to layers, test, oracle, features and ci |
+| `crates/solver/src/ordering.rs` | FieldCraft `crates/solver/src/ordering.rs` | the coordinate nested dissection only |
+| `crates/render/src/font.rs` | FieldCraft `crates/render/src/font.rs` | marks `\|`, `^`, `<`, `>`, `*`, `ω` added |
+| `crates/testkit/src/oracle.rs` | FieldCraft `crates/testkit/src/oracle.rs` | simplified case format (no pending, slow or nightly cases), EMCraft's engine |
+| `AGENTS.md`, `rustfmt.toml`, `clippy.toml`, workspace lints | FieldCraft's | rewritten for EMCraft |
+
+The multifrontal factorization (`crates/solver/src/ldlt.rs`) is new; its pivoting follows the
+same papers as FieldCraft's supernodal LDLᵀ.

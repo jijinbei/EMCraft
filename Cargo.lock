@@ -653,6 +653,7 @@ dependencies = [
  "eframe",
  "egui",
  "emcraft-engine",
+ "emcraft-model",
  "emcraft-render",
  "serde_json",
 ]

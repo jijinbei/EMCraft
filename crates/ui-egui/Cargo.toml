@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 emcraft-engine = { workspace = true }
+emcraft-model = { workspace = true }
 emcraft-render = { workspace = true }
 egui = { workspace = true }
 eframe = { workspace = true }

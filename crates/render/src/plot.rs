@@ -125,7 +125,8 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
             };
             c.rect(bx, by + k as f64, bw, 1.0, col);
         }
-        for (a, b) in [([bx, by], [bx + bw, by]), ([bx + bw, by], [bx + bw, by + bh]), ([bx + bw, by + bh], [bx, by + bh]), ([bx, by + bh], [bx, by])] {
+        for (a, b) in [([bx, by], [bx + bw, by]), ([bx + bw, by], [bx + bw, by + bh]), ([bx + bw, by + bh], [bx, by + bh]), ([bx, by + bh], [bx, by])]
+        {
             c.line(a, b, 1.0, ink);
         }
         let marks: Vec<(f64, f64)> = match s.kind {
@@ -191,7 +192,12 @@ mod tests {
             x: Axis::new("x (mm)", 0.0, 20.0),
             y: Axis::new("y (mm)", 0.0, 10.0),
             scalar: Some(Scalar { label: "Ey".into(), nx, ny, values, kind: ScalarKind::Signed, range: None }),
-            arrows: vec![Arrows { label: "H".into(), color: Rgb(0, 0, 0), arrows: vec![([5.0, 5.0], [1.0, 0.0]), ([15.0, 5.0], [0.0, -1.0])], scale: None }],
+            arrows: vec![Arrows {
+                label: "H".into(),
+                color: Rgb(0, 0, 0),
+                arrows: vec![([5.0, 5.0], [1.0, 0.0]), ([15.0, 5.0], [0.0, -1.0])],
+                scale: None,
+            }],
             lines: vec![[[10.0, 0.0], [10.0, 10.0]]],
             arrow_length: 2.0,
         }

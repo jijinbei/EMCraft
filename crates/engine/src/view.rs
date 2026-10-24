@@ -124,7 +124,8 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         Plane::Cross => [u, v, at],
     };
     let longer = hspan.max(vspan);
-    let (nx, ny) = (((SCALAR_SAMPLES as f64 * hspan / longer).ceil() as usize).max(2), ((SCALAR_SAMPLES as f64 * vspan / longer).ceil() as usize).max(2));
+    let (nx, ny) =
+        (((SCALAR_SAMPLES as f64 * hspan / longer).ceil() as usize).max(2), ((SCALAR_SAMPLES as f64 * vspan / longer).ceil() as usize).max(2));
     let driven = &sweep.driven;
     let mut grid = Vec::with_capacity(nx * ny);
     for j in 0..ny {
@@ -192,7 +193,10 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
 impl PlaneSamples {
     /// Whether these samples serve a view (same frequency, plane, position and excitation).
     pub fn serves(&self, view: &FieldView, at: f64) -> bool {
-        self.plane == view.plane && self.excitation == view.excitation && (self.frequency - view.frequency).abs() <= 1e-9 * self.frequency && (self.at - at).abs() <= 1e-12
+        self.plane == view.plane
+            && self.excitation == view.excitation
+            && (self.frequency - view.frequency).abs() <= 1e-9 * self.frequency
+            && (self.at - at).abs() <= 1e-12
     }
 
     /// The plot of a view's component and arrows at its phase.
@@ -243,7 +247,9 @@ impl PlaneSamples {
             Plane::Cross => (f[0], f[1]),
         };
         let mut sets = Vec::new();
-        for (show, magnetic, label, color) in [(view.show_e, false, "E (in plane)", Rgb(20, 20, 20)), (view.show_h, true, "H (in plane)", Rgb(0, 120, 60))] {
+        for (show, magnetic, label, color) in
+            [(view.show_e, false, "E (in plane)", Rgb(20, 20, 20)), (view.show_h, true, "H (in plane)", Rgb(0, 120, 60))]
+        {
             if !show {
                 continue;
             }
@@ -330,8 +336,15 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
             }
         }
     }
-    let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p).and_then(|row| row.get(q)).map(|s| [fu.from_si(r.frequency), db(*s)])).collect();
-    series.push(Series { label: format!("|S21| FEM (order {})", sweep.order.as_u8()), color: Rgb(20, 40, 120), style: Style::Markers, points: pts(1, 0) });
+    let pts = |p: usize, q: usize| {
+        sweep.results.iter().filter_map(|r| r.s.get(p).and_then(|row| row.get(q)).map(|s| [fu.from_si(r.frequency), db(*s)])).collect()
+    };
+    series.push(Series {
+        label: format!("|S21| FEM (order {})", sweep.order.as_u8()),
+        color: Rgb(20, 40, 120),
+        style: Style::Markers,
+        points: pts(1, 0),
+    });
     series.push(Series { label: "|S11| FEM".into(), color: Rgb(140, 30, 20), style: Style::Markers, points: pts(0, 0) });
     let lowest = series.iter().flat_map(|s| s.points.iter().map(|p| p[1])).fold(0.0f64, f64::min);
     let ymin = ((lowest / 10.0).floor() * 10.0).max(-80.0);

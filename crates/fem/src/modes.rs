@@ -114,11 +114,7 @@ pub fn lowest(a: f64, b: f64, count: usize) -> Vec<Mode> {
         }
     }
     all.sort_by(|p, q| {
-        p.cutoff()
-            .total_cmp(&q.cutoff())
-            .then((p.kind == Kind::Tm).cmp(&(q.kind == Kind::Tm)))
-            .then(p.m.cmp(&q.m))
-            .then(p.n.cmp(&q.n))
+        p.cutoff().total_cmp(&q.cutoff()).then((p.kind == Kind::Tm).cmp(&(q.kind == Kind::Tm))).then(p.m.cmp(&q.m)).then(p.n.cmp(&q.n))
     });
     all.truncate(count);
     all
