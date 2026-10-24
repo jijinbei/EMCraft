@@ -206,11 +206,12 @@ pub fn results_far_field(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"frequency": s.show_frequency(r.result.frequency), "power": r.power, "points": points}))
 }
 
-pub fn view_pattern(s: &mut Session, p: &Value) -> Result<Value> {
-    let path = required_string(p, "path")?;
+/// The far-field pattern of the last radiation solve against θ at azimuth `phi` (degrees),
+/// `points` angles from 0 to 180°: directivity for sources, radar cross-section for a plane
+/// wave, over the closed form where it applies.
+pub fn pattern_chart(s: &Session, phi: f64, points: usize) -> Result<Chart> {
     let r = solved(s)?;
-    let phi = number(p, "phi")?.unwrap_or(0.0);
-    let n = integer(p, "points", 13..=721)?.unwrap_or(91) as usize;
+    let n = points.clamp(13, 721);
     let dirs: Vec<(f64, f64)> = (0..n).map(|i| ((180.0 * i as f64 / (n - 1) as f64).to_radians(), phi.to_radians())).collect();
     let ff = r.driven.far_field(&s.model, &r.result.field, r.result.frequency, &dirs)?;
     let rows: Vec<Value> = ff.iter().map(|x| describe(s, &r, x)).collect();
@@ -231,7 +232,14 @@ pub fn view_pattern(s: &mut Session, p: &Value) -> Result<Value> {
     }
     series.push(Series { label: "FEM".into(), color: Rgb(200, 40, 40), style: Style::Markers, points: ours });
     let title = format!("Far field at {} {}, φ = {phi}°", s.show_frequency(r.result.frequency), s.display.frequency.symbol());
-    let chart = Chart { title, x: Axis::new("θ (degrees)", 0.0, 180.0), y: Axis::new(label, top - 40.0, top), series, marks: Vec::new() };
+    Ok(Chart { title, x: Axis::new("θ (degrees)", 0.0, 180.0), y: Axis::new(label, top - 40.0, top), series, marks: Vec::new() })
+}
+
+pub fn view_pattern(s: &mut Session, p: &Value) -> Result<Value> {
+    let path = required_string(p, "path")?;
+    let phi = number(p, "phi")?.unwrap_or(0.0);
+    let n = integer(p, "points", 13..=721)?.unwrap_or(91) as usize;
+    let chart = pattern_chart(s, phi, n)?;
     let side = 200..=s.limits.picture_side as u64;
     let w = integer(p, "width", side.clone())?.unwrap_or(1000) as usize;
     let h = integer(p, "height", side)?.unwrap_or(600) as usize;

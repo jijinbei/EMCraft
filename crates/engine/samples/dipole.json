@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [60, 60, 60]}},
+ {"command": "model.open", "params": {"thickness": 15}},
+ {"command": "mesh.generate", "params": {"per_wavelength": 6, "frequency": 10}},
+ {"command": "source.dipole", "params": {"at": [30.1, 30.2, 29.9], "direction": [0, 0, 1], "length": 1, "current": 1}},
+ {"command": "solve.radiation", "params": {"frequency": 10}}
+]

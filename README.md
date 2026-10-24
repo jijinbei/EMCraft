@@ -79,10 +79,13 @@ FEM: `solve.time_domain` puts its curves on the same chart.
 
 ![The high-pass filter: exact, FEM and time domain](docs/media/highpass-fem-fdtd.png)
 
-The desktop app shows the same, with a phase animation:
+The desktop app shows the same, with a phase animation; besides its waveguide editor it runs
+any sample or command script (solids, imported surfaces, open problems with their far-field
+pattern):
 
 ```
-cargo run --release -p emcraft -- --sample highpass      # or iris-bandpass
+cargo run --release -p emcraft -- --sample highpass      # or iris-bandpass, cavity, or any
+                                                         # engine sample: sphere-scattering, …
 ```
 
 ## What is inside

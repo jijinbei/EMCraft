@@ -353,3 +353,13 @@ fn open_problems_radiate_and_scatter() {
     s.execute("source.clear", &json!({})).unwrap();
     assert!(s.execute("model.port.create", &json!({"name": "1", "end": "start"})).is_err());
 }
+
+#[test]
+fn every_sample_opens() {
+    // Without their solve steps: the geometry, mesh, ports and sources of each.
+    for smp in crate::sample::SAMPLES {
+        let mut s = Session::new();
+        s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
+        assert!(s.model.mesh.is_some(), "{}", smp.name);
+    }
+}

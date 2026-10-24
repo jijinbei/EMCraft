@@ -123,6 +123,15 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
             let q = m.q().map_or(String::new(), |q| format!(", Q = {}", emcraft_render::axes::format(q)));
             (&e.driven, &m.vector, m.frequency, format!("eigenmode {}{q} (arbitrary amplitude), order {}", i + 1, e.driven.order.as_u8()))
         }
+        None if session.sweep.is_none() && session.radiation.is_some() => {
+            let r = session.radiation.as_ref().ok_or_else(|| EngineError::Failed("no results".into()))?;
+            let what = if session.model.sources.iter().any(|s| matches!(s, emcraft_model::Source::PlaneWave { .. })) {
+                "the field scattered from a 1 V/m plane wave"
+            } else {
+                "the field the sources radiate"
+            };
+            (&r.driven, &r.result.field, r.result.frequency, format!("{what}, order {}", r.driven.order.as_u8()))
+        }
         None => {
             let sweep = session.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))?;
             let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;

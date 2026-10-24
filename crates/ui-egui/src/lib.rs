@@ -215,6 +215,11 @@ pub struct EmcraftApp {
     last_frame: Option<Instant>,
     solving: Option<(Receiver<Result<Session, String>>, Instant)>,
     status: String,
+    /// The engine sample chosen to run, and a script file's path.
+    sample: String,
+    script_path: String,
+    /// The azimuth (degrees) of the far-field pattern chart.
+    pattern_phi: f64,
 }
 
 impl EmcraftApp {
@@ -233,7 +238,10 @@ impl EmcraftApp {
             animate: false,
             last_frame: None,
             solving: None,
-            status: "Edit the waveguide and press Solve.".into(),
+            status: "Edit the waveguide and press Solve, or run a sample.".into(),
+            sample: "circular-guide".into(),
+            script_path: String::new(),
+            pattern_phi: 0.0,
         };
         if let Some(name) = sample {
             if name == "iris-bandpass" {
@@ -243,13 +251,40 @@ impl EmcraftApp {
             if name == "cavity" {
                 app.edit = ModelEdit::cavity();
             }
-            app.solve();
+            match name {
+                "highpass" | "iris-bandpass" | "cavity" => app.solve(),
+                other => {
+                    app.sample = other.to_owned();
+                    app.run_sample();
+                }
+            }
         }
         app
     }
 
     fn solve(&mut self) {
-        let script = self.edit.script();
+        self.run(self.edit.script());
+    }
+
+    /// Runs the chosen engine sample, solve steps included.
+    fn run_sample(&mut self) {
+        match emcraft_engine::sample::find(&self.sample).map(|s| serde_json::from_str::<Value>(s.script)) {
+            Some(Ok(script)) => self.run(script),
+            Some(Err(e)) => self.status = format!("Sample {}: {e}", self.sample),
+            None => self.status = format!("No sample `{}`", self.sample),
+        }
+    }
+
+    /// Runs a script file (a JSON array of commands, as `emcraft-cli run` takes).
+    fn run_file(&mut self) {
+        let path = self.script_path.trim().to_owned();
+        match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string())) {
+            Ok(script) => self.run(script),
+            Err(e) => self.status = format!("Script `{path}`: {e}"),
+        }
+    }
+
+    fn run(&mut self, script: Value) {
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let mut s = Session::new();
@@ -277,6 +312,28 @@ impl EmcraftApp {
                     return;
                 }
                 self.view.mode = None;
+                self.at_mm = None;
+                if let Some(r) = self.session.radiation.as_ref() {
+                    self.view.frequency = r.result.frequency;
+                    let what = if r.driven.ports.is_empty()
+                        && self.session.model.sources.iter().any(|x| matches!(x, emcraft_model::Source::PlaneWave { .. }))
+                    {
+                        let sigma = r.power * 2.0 * emcraft_model::units::MU0 * emcraft_model::units::C0;
+                        format!("scattering cross-section {:.4} mm²", sigma * 1e6)
+                    } else {
+                        format!("radiated power {:.4e} W", r.power)
+                    };
+                    self.status = format!(
+                        "Solved the open problem at {:.4} GHz, {} unknowns, in {secs:.1} s: {what}.",
+                        GHZ.from_si(r.result.frequency),
+                        r.driven.dofs.unknowns
+                    );
+                    self.samples = None;
+                    self.field_key = None;
+                    self.chart = None;
+                    self.solving = None;
+                    return;
+                }
                 let freqs = self.frequencies();
                 if let Some(f) = nearest(&freqs, self.view.frequency) {
                     self.view.frequency = f;
@@ -307,6 +364,22 @@ impl EmcraftApp {
 
     fn frequencies(&self) -> Vec<f64> {
         self.session.sweep.as_ref().map(|s| s.results.iter().map(|r| r.frequency).collect()).unwrap_or_default()
+    }
+
+    /// Whether there is anything to show.
+    fn solved(&self) -> bool {
+        self.session.sweep.is_some() || self.session.eigen.is_some() || self.session.radiation.is_some()
+    }
+
+    /// The span of the view's plane position, and its axis: the waveguide's, or the solid's
+    /// bounding box.
+    fn plane_span(&self) -> Option<(f64, &'static str)> {
+        let (lo, hi) = self.session.model.bounds()?;
+        Some(match self.view.plane {
+            Plane::H => (hi[1] - lo[1], "y"),
+            Plane::E => (hi[0] - lo[0], "x"),
+            Plane::Cross => (hi[2] - lo[2], "z"),
+        })
     }
 
     fn controls(&mut self, ui: &mut egui::Ui) {
@@ -451,6 +524,30 @@ impl EmcraftApp {
             }
         });
         ui.separator();
+        ui.heading("Samples and scripts");
+        ui.label("Any model the engine knows, solved as it comes: solids, imported surfaces, open problems.");
+        let busy = self.solving.is_some();
+        ui.horizontal(|ui| {
+            let current = self.sample.clone();
+            egui::ComboBox::from_id_salt("sample").selected_text(current).show_ui(ui, |ui| {
+                for smp in emcraft_engine::sample::SAMPLES {
+                    ui.selectable_value(&mut self.sample, smp.name.to_owned(), smp.name).on_hover_text(smp.label);
+                }
+            });
+            if ui.add_enabled(!busy, egui::Button::new("Run sample")).clicked() {
+                self.run_sample();
+            }
+        });
+        if let Some(smp) = emcraft_engine::sample::find(&self.sample) {
+            ui.small(smp.label);
+        }
+        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.script_path).hint_text("script.json").desired_width(200.0));
+            if ui.add_enabled(!busy && !self.script_path.trim().is_empty(), egui::Button::new("Run script")).clicked() {
+                self.run_file();
+            }
+        });
+        ui.separator();
         ui.heading("View");
         if let Some(e) = self.session.eigen.as_ref() {
             let label = |i: usize| {
@@ -487,12 +584,7 @@ impl EmcraftApp {
                 }
             }
         });
-        if let Some(w) = self.session.model.waveguide.as_ref() {
-            let (span, axis) = match self.view.plane {
-                Plane::H => (w.height, "y"),
-                Plane::E => (w.width, "x"),
-                Plane::Cross => (w.length(), "z"),
-            };
+        if let Some((span, axis)) = self.plane_span() {
             let span_mm = MM.from_si(span);
             let mut at = self.at_mm.unwrap_or(span_mm / 2.0);
             if ui.add(egui::Slider::new(&mut at, 0.0..=span_mm).text(format!("{axis} (mm)"))).changed() {
@@ -518,11 +610,14 @@ impl EmcraftApp {
             self.view.phase = deg.to_radians();
         }
         ui.checkbox(&mut self.animate, "Animate over the period");
+        if self.session.radiation.is_some() && ui.add(egui::Slider::new(&mut self.pattern_phi, 0.0..=180.0).text("pattern φ (deg)")).changed() {
+            self.chart = None;
+        }
     }
 
     /// The field texture, redrawn when the view or the width changed.
     fn update_field(&mut self, ctx: &egui::Context, width: usize) {
-        if self.session.sweep.is_none() && self.session.eigen.is_none() {
+        if !self.solved() {
             return;
         }
         self.view.at = self.at_mm.map(|mm| MM.to_si(mm));
@@ -530,15 +625,8 @@ impl EmcraftApp {
         if self.field_key.as_deref() == Some(key.as_str()) {
             return;
         }
-        let at = match self.session.model.waveguide.as_ref() {
-            Some(w) => {
-                let span = match self.view.plane {
-                    Plane::H => w.height,
-                    Plane::E => w.width,
-                    Plane::Cross => w.length(),
-                };
-                self.view.at.unwrap_or(span / 2.0).clamp(0.0, span)
-            }
+        let at = match self.plane_span() {
+            Some((span, _)) => self.view.at.unwrap_or(span / 2.0).clamp(0.0, span),
             None => return,
         };
         if !self.samples.as_ref().is_some_and(|s| s.serves(&self.view, at)) {
@@ -563,14 +651,19 @@ impl EmcraftApp {
     }
 
     fn update_chart(&mut self, ctx: &egui::Context, width: usize) {
-        if self.session.sweep.is_none() {
+        if self.session.sweep.is_none() && self.session.radiation.is_none() {
             self.chart = None;
             return;
         }
         if self.chart.is_some() && self.chart_width == width {
             return;
         }
-        if let Ok(chart) = view::sparameter_chart(&self.session) {
+        let chart = if self.session.sweep.is_some() {
+            view::sparameter_chart(&self.session)
+        } else {
+            emcraft_engine::open::pattern_chart(&self.session, self.pattern_phi, 91)
+        };
+        if let Ok(chart) = chart {
             let c = emcraft_render::chart::draw(&chart, width, 360);
             let image = egui::ColorImage::from_rgba_unmultiplied([c.w, c.h], &c.rgba);
             self.chart = Some((ctx.load_texture("chart", image, egui::TextureOptions::LINEAR), [c.w, c.h]));
@@ -598,7 +691,7 @@ impl eframe::App for EmcraftApp {
         egui::Panel::top("top").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.strong("EMCraft");
-                ui.label("— frequency-domain FEM (Nédélec elements) for waveguides");
+                ui.label("— frequency-domain FEM (Nédélec elements) for waveguides, cavities, bodies and open problems");
             });
         });
         egui::Panel::bottom("status").show(ui, |ui| {
@@ -611,7 +704,7 @@ impl eframe::App for EmcraftApp {
             let avail = ui.available_width().max(400.0);
             // Rounded so a resize does not redraw on every pixel.
             let width = ((avail / 50.0).floor() * 50.0) as usize;
-            if self.session.sweep.is_none() && self.session.eigen.is_none() {
+            if !self.solved() {
                 ui.centered_and_justified(|ui| {
                     ui.label(if self.solving.is_some() { "Solving…" } else { "No results yet: press Solve." });
                 });
@@ -634,7 +727,9 @@ impl eframe::App for EmcraftApp {
                             self.view.frequency = f;
                         }
                     }
-                    ui.label("Click the chart to show the fields at the nearest solved frequency.");
+                    if self.session.sweep.is_some() {
+                        ui.label("Click the chart to show the fields at the nearest solved frequency.");
+                    }
                 }
             });
         });
@@ -690,5 +785,47 @@ mod tests {
         assert_eq!(chart_frequency(0.01, 1000.0, 5.0, 9.0), None);
         assert_eq!(nearest(&[5.0, 6.0, 7.0], 6.4), Some(6.0));
         assert_eq!(nearest(&[], 6.4), None);
+    }
+
+    /// A solved session put in the app draws its field and its chart: an unstructured solid's
+    /// eigenmode, and an open problem's field and far-field pattern.
+    #[test]
+    fn solids_and_open_problems_draw() {
+        let ctx = egui::Context::default();
+        let mut app = EmcraftApp::new(None);
+        let mut s = Session::new();
+        s.run_script(&json!([
+            {"command": "geometry.solid", "params": {"shape": "box", "size": [40, 40, 40]}},
+            {"command": "model.open", "params": {"thickness": 10}},
+            {"command": "mesh.generate", "params": {"per_wavelength": 4, "frequency": 10}},
+            {"command": "source.dipole", "params": {"at": [20.1, 20.2, 19.9], "length": 1}},
+            {"command": "solve.radiation", "params": {"frequency": 10}}
+        ]))
+        .unwrap();
+        let (tx, rx) = channel();
+        tx.send(Ok(s)).unwrap();
+        app.solving = Some((rx, Instant::now()));
+        app.poll();
+        assert!(app.solved() && app.status.contains("radiated power"), "{}", app.status);
+        assert_eq!(app.plane_span().map(|x| x.1), Some("y"));
+        app.update_field(&ctx, 600);
+        app.update_chart(&ctx, 600);
+        assert!(app.field.is_some(), "{}", app.status);
+        assert!(app.chart.is_some());
+        // A cylinder's eigenmodes: a field, no chart.
+        let mut s = Session::new();
+        s.run_script(&json!([
+            {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}},
+            {"command": "mesh.generate", "params": {"size": 5}},
+            {"command": "solve.eigenmodes", "params": {"near": 11, "count": 1, "order": 1}}
+        ]))
+        .unwrap();
+        let (tx, rx) = channel();
+        tx.send(Ok(s)).unwrap();
+        app.solving = Some((rx, Instant::now()));
+        app.poll();
+        app.update_field(&ctx, 600);
+        app.update_chart(&ctx, 600);
+        assert!(app.field.is_some() && app.chart.is_none(), "{}", app.status);
     }
 }

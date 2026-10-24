@@ -45,6 +45,16 @@ pub const SAMPLES: &[Sample] = &[
         label: "Spherical cavity, radius 10 mm, around a concentric ceramic sphere (εr = 4, radius 4 mm): two material regions joined node for node, the TM11 triplet at 11.26 GHz",
         script: include_str!("../samples/loaded-sphere.json"),
     },
+    Sample {
+        name: "dipole",
+        label: "A 1 mm current element at 10 GHz in a box lined with a perfectly matched layer: radiated power and directivity against the Hertzian dipole",
+        script: include_str!("../samples/dipole.json"),
+    },
+    Sample {
+        name: "sphere-scattering",
+        label: "A plane wave on a ceramic sphere (εr = 4, radius 5 mm) at 10 GHz: the scattered field and the radar cross-section against the Mie series",
+        script: include_str!("../samples/sphere-scattering.json"),
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static Sample> {

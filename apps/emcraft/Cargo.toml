@@ -13,4 +13,5 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+emcraft-engine = { workspace = true }
 emcraft-ui-egui = { workspace = true }
