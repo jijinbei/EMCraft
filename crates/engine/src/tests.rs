@@ -183,6 +183,35 @@ fn time_domain_results_join_the_chart() {
 }
 
 #[test]
+fn solids_mesh_unstructured_and_their_modes_meet_the_bessel_zeros() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    let m = s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    assert_eq!(m["unstructured"], true);
+    // The mode nearest 10 GHz: TE111 at 10.1.
+    let r = s.execute("solve.eigenmodes", &json!({"near": 10, "count": 1, "order": 2})).unwrap();
+    let f = r["modes"][0]["frequency"].as_f64().unwrap();
+    assert_eq!(r["exact"][0]["mode"], "TE111");
+    let exact = r["exact"][0]["frequency"].as_f64().unwrap();
+    assert!((f - exact).abs() < 0.02 * exact, "{f} {exact}");
+    // The mode's picture, on the cross-section through the axis's middle.
+    let path = scratch("cyl.png");
+    s.execute("view.field", &json!({"path": path, "mode": 1, "plane": "cross"})).unwrap();
+    assert!(std::fs::read(&path).unwrap().len() > 1000);
+    assert!(s.execute("geometry.solid", &json!({"shape": "torus"})).is_err());
+    assert!(s.execute("geometry.solid", &json!({"shape": "box", "size": [1, -1, 1]})).is_err());
+    // A box between two ports is compared with the empty guide.
+    let mut b = Session::new();
+    b.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 10.16, 20]})).unwrap();
+    b.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    b.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    b.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    b.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
+    let c = b.execute("results.compare", &json!({})).unwrap();
+    assert!(c["worst"].as_f64().unwrap() < 2e-3, "{c}");
+}
+
+#[test]
 fn features_page_lists_every_command() {
     let md = features_markdown();
     for c in COMMANDS {

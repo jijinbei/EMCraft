@@ -57,6 +57,10 @@ cargo run --release -p emcraft-cli -- sample cavity --out pictures
 
 ![The magnetic field of the copper cavity's TE101 mode](docs/media/cavity-te101-h.png)
 
+Bodies other than waveguides — boxes, cylinders, spheres — are meshed with unstructured
+tetrahedra (a mesher ported from FieldCraft); a cylindrical cavity's resonances meet the Bessel
+zeros (`sample cylinder-cavity`).
+
 Losses: dielectrics with a loss tangent and walls of finite conductivity (surface impedance),
 checked against the exact lossy cascade and the textbook conductor attenuation.
 

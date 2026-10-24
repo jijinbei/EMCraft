@@ -114,7 +114,7 @@ pub fn field_plot(session: &Session, view: &FieldView) -> Result<FieldPlot> {
 
 /// Samples the fields of a view's plane (its component, arrows and phase are not used).
 pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples> {
-    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
+    let (lo, hi) = session.model.bounds().ok_or_else(|| EngineError::Failed("no geometry".into()))?;
     // The field: a driven solution at a frequency, or an eigenmode.
     let (driven, x, frequency, caption) = match view.mode {
         Some(i) => {
@@ -131,18 +131,24 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
             (&*sweep.driven, x, r.frequency, format!("port {port_name} excited by 1 V/m TE10, order {}", sweep.order.as_u8()))
         }
     };
-    let (a, b, len) = (w.width, w.height, w.length());
-    // (horizontal span, vertical span, normal span) and the map from plane to guide.
+    let (a, b, len) = (hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+    // (horizontal span, vertical span, normal span) and the map from plane to guide; plane
+    // coordinates run from the bounding box's low corner, `at` from its low side.
     let (hspan, vspan, normal_span) = match view.plane {
         Plane::H => (len, a, b),
         Plane::E => (len, b, a),
         Plane::Cross => (a, b, len),
     };
+    let (h0, v0, n0) = match view.plane {
+        Plane::H => (lo[2], lo[0], lo[1]),
+        Plane::E => (lo[2], lo[1], lo[0]),
+        Plane::Cross => (lo[0], lo[1], lo[2]),
+    };
     let at = view.at.unwrap_or(normal_span / 2.0).clamp(0.0, normal_span);
     let point = |u: f64, v: f64| match view.plane {
-        Plane::H => [v, at, u],
-        Plane::E => [at, v, u],
-        Plane::Cross => [u, v, at],
+        Plane::H => [lo[0] + v, lo[1] + at, lo[2] + u],
+        Plane::E => [lo[0] + at, lo[1] + v, lo[2] + u],
+        Plane::Cross => [lo[0] + u, lo[1] + v, lo[2] + at],
     };
     let longer = hspan.max(vspan);
     let (nx, ny) =
@@ -162,7 +168,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         for i in 0..ax {
             let (u, v) = (hspan * (i as f64 + 0.5) / ax as f64, vspan * (j as f64 + 0.5) / ay as f64);
             if let Some((e, h)) = driven.fields(x, frequency, point(u, v)) {
-                arrows.push(([l.from_si(u), l.from_si(v)], e, h));
+                arrows.push(([l.from_si(h0 + u), l.from_si(v0 + v)], e, h));
             }
         }
     }
@@ -172,7 +178,9 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         Plane::Cross => ("x", "y", "z"),
     };
     let mut lines = Vec::new();
-    if view.plane != Plane::Cross {
+    if view.plane != Plane::Cross
+        && let Some(w) = session.model.waveguide.as_ref()
+    {
         for z in w.interfaces().iter().skip(1).take(w.sections.len().saturating_sub(1)) {
             lines.push([[l.from_si(*z), 0.0], [l.from_si(*z), l.from_si(vspan)]]);
         }
@@ -186,7 +194,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
             Plane::E => "E",
             Plane::Cross => "Cross-section",
         },
-        emcraft_render::axes::format(l.from_si(at)),
+        emcraft_render::axes::format(l.from_si(n0 + at)),
         emcraft_render::axes::format(fsym.from_si(frequency)),
         fsym.symbol()
     );
@@ -204,8 +212,8 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         lines,
         title,
         caption,
-        x: Axis::new(&format!("{hlabel} ({lname})"), 0.0, l.from_si(hspan)),
-        y: Axis::new(&format!("{vlabel} ({lname})"), 0.0, l.from_si(vspan)),
+        x: Axis::new(&format!("{hlabel} ({lname})"), l.from_si(h0), l.from_si(h0 + hspan)),
+        y: Axis::new(&format!("{vlabel} ({lname})"), l.from_si(v0), l.from_si(v0 + vspan)),
     })
 }
 
@@ -359,6 +367,19 @@ impl Reference {
 }
 
 pub fn reference(session: &Session) -> Result<Reference> {
+    if session.model.waveguide.is_none()
+        && let Some(solid) = session.model.solid.as_ref()
+    {
+        // A box between two ports is an empty guide.
+        let (_, m) = session.model.material(&solid.material)?;
+        return match solid.shape {
+            emcraft_model::Shape::Box { size } => Ok(Reference::Exact(Te10Line {
+                a: size[0],
+                layers: vec![Layer { length: size[2], eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent }],
+            })),
+            _ => Err(EngineError::Failed("not supported yet: a reference for this body's ports".into())),
+        };
+    }
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
     if w.uniform() {
         return Ok(Reference::Exact(te10_line(session)?));

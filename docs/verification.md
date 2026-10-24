@@ -36,7 +36,11 @@ result is frozen so it cannot drift.
 6. **Time-domain tests** (`crates/fdtd/tests/waveguides.rs`): the high-pass filter against the
    exact cascade (2.5e-2 at 1.5 mm cells; heavy: 1.16e-2 → 2.8e-3 from 1 to 0.5 mm, second
    order), the inductive iris against mode matching (heavy), passivity, hostile requests.
-7. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+7. **Unstructured meshes** (`crates/solver/tests/unstructured.rs`): a box cavity (2.6e-5) and a
+   box waveguide (S21 within 2.4e-4) meshed without structure; cylindrical and spherical cavities
+   against Bessel-zero resonances, their O(h²) geometric error converging (heavy). The mesher's
+   own 126 tests came with it (`crates/tetmesh`).
+8. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

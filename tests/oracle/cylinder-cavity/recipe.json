@@ -1,0 +1,5 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 11, "count": 3, "order": 2}, "id": "modes"}
+]

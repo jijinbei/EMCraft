@@ -32,6 +32,18 @@ A rectangular waveguide along z with perfectly conducting walls: cross-section `
 | `height` | number | length | yes | narrow wall b (y) |
 | `sections` | array |  | yes | `[{"length", "material", "width"?, "offset"?}]` from z = 0: a section may narrow the broad wall to an aperture `width` wide (lengths), starting at x = `offset` (centred when left out) |
 
+## `geometry.solid` — Primitive body
+
+A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`) or a sphere about the origin (`radius`). Its end faces (z = 0, z = length) can carry ports; a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `size` | array | length | no | the box's [x, y, z] |
+| `radius` | number | length | no | the cylinder's or the sphere's radius |
+| `length` | number | length | no | the cylinder's length along z |
+| `material` | string |  | no | the filling (default vacuum) |
+
 ## `mesh.generate` — Mesh
 
 Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises.

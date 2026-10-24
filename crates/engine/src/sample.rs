@@ -25,6 +25,11 @@ pub const SAMPLES: &[Sample] = &[
         label: "Copper rectangular cavity, 22.86 × 10.16 × 30 mm: its four lowest resonances (TE101 at 8.24 GHz) and Q factors",
         script: include_str!("../samples/cavity.json"),
     },
+    Sample {
+        name: "cylinder-cavity",
+        label: "Copper cylindrical cavity, radius 10 mm, 30 mm long, meshed with unstructured tetrahedra: TE111 and TM010 against the Bessel zeros",
+        script: include_str!("../samples/cylinder-cavity.json"),
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static Sample> {

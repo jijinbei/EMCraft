@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use emcraft_fem::Order;
 use emcraft_model::units::{Frequency, Length, decibels};
-use emcraft_model::{End, Material, Port, Section, Waveguide};
+use emcraft_model::{End, Material, Port, Section, Shape, Solid, Waveguide};
 use emcraft_solver::{Complex64 as C, Driven};
 use serde_json::{Value, json};
 
@@ -54,6 +54,19 @@ pub static COMMANDS: &[CommandSpec] = &[
             ),
         ],
         run: waveguide,
+    },
+    CommandSpec {
+        id: "geometry.solid",
+        label: "Primitive body",
+        doc: "A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`) or a sphere about the origin (`radius`). Its end faces (z = 0, z = length) can carry ports; a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.",
+        params: &[
+            p("shape", "string", N, true, "`box`, `cylinder` or `sphere`"),
+            p("size", "array", L, false, "the box's [x, y, z]"),
+            p("radius", "number", L, false, "the cylinder's or the sphere's radius"),
+            p("length", "number", L, false, "the cylinder's length along z"),
+            p("material", "string", N, false, "the filling (default vacuum)"),
+        ],
+        run: solid,
     },
     CommandSpec {
         id: "mesh.generate",
@@ -257,8 +270,45 @@ fn waveguide(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, |w| w.length()))}))
 }
 
+fn solid(s: &mut Session, p: &Value) -> Result<Value> {
+    let req = |s: &Session, name: &str| -> Result<f64> {
+        s.positive_length(p, name)?.ok_or_else(|| EngineError::Params(format!("`{name}` is required for this shape")))
+    };
+    let shape = match required_string(p, "shape")? {
+        "box" => {
+            let list = get(p, "size")
+                .and_then(Value::as_array)
+                .filter(|a| a.len() == 3)
+                .ok_or_else(|| EngineError::Params("`size` must be [x, y, z]".into()))?;
+            let mut size = [0.0; 3];
+            for (d, v) in size.iter_mut().zip(list) {
+                let x =
+                    v.as_f64().filter(|x| x.is_finite() && *x > 0.0).ok_or_else(|| EngineError::Params("`size` must be positive numbers".into()))?;
+                *d = s.display.length.to_si(x);
+            }
+            Shape::Box { size }
+        }
+        "cylinder" => Shape::Cylinder { radius: req(s, "radius")?, length: req(s, "length")? },
+        "sphere" => Shape::Sphere { radius: req(s, "radius")? },
+        _ => return Err(EngineError::Params("`shape` must be box, cylinder or sphere".into())),
+    };
+    let material = string(p, "material")?.unwrap_or("vacuum").to_owned();
+    s.model.set_solid(Solid { shape, material })?;
+    s.sweep = None;
+    s.eigen = None;
+    s.time_domain = None;
+    Ok(json!({"volume": s.model.solid.as_ref().map(|x| x.shape.volume())}))
+}
+
 fn mesh_generate(s: &mut Session, p: &Value) -> Result<Value> {
     let size = s.positive_length(p, "size")?.ok_or_else(|| EngineError::Params("`size` is required".into()))?;
+    if s.model.waveguide.is_none() && s.model.solid.is_some() {
+        let mesh = emcraft_mesh::solid::solid(&s.model, size)?;
+        let reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len(), "unstructured": true});
+        s.model.mesh = Some(mesh);
+        s.sweep = None;
+        return Ok(reply);
+    }
     let mut o = emcraft_mesh::Options::new(size);
     o.edge = number(p, "edge")?.unwrap_or(o.edge);
     o.growth = number(p, "growth")?.unwrap_or(o.growth);
@@ -373,6 +423,18 @@ fn eigenmode_table(s: &mut Session, _: &Value) -> Result<Value> {
         .collect();
     let mut reply =
         json!({"frequency_unit": s.display.frequency.symbol(), "unknowns": e.driven.dofs.unknowns, "iterations": e.iterations, "modes": modes});
+    // The closed form for a primitive cavity.
+    if let Some(solid) = s.model.solid.as_ref()
+        && let Ok((_, m)) = s.model.material(&solid.material)
+    {
+        let er = m.eps_r * m.mu_r;
+        let list = match solid.shape {
+            Shape::Box { size } => emcraft_theory::cavity_resonances(size[0], size[1], size[2], er, 12),
+            Shape::Cylinder { radius, length } => emcraft_theory::bessel::cylinder_cavity_resonances(radius, length, er, 12),
+            Shape::Sphere { radius } => emcraft_theory::bessel::sphere_cavity_resonances(radius, er, 12),
+        };
+        reply["exact"] = json!(list.into_iter().map(|(f, name)| json!({"mode": name, "frequency": s.show_frequency(f)})).collect::<Vec<_>>());
+    }
     // The closed form for a cavity of one full-width section.
     if let Some(w) = s.model.waveguide.as_ref()
         && w.sections.len() == 1

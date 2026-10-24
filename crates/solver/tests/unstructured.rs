@@ -69,3 +69,21 @@ fn unstructured_box_cavity() {
     // Flat walls, no geometric error: 2.6e-5, like the structured mesh.
     assert!(w < 2e-4, "{w:e}");
 }
+
+#[test]
+fn unstructured_waveguide_transmits_with_the_te10_phase() {
+    use emcraft_model::{End, Port};
+    // A 30 mm length of WR-90 as a box with ports on its ends, meshed without structure.
+    let mut m = body(Shape::Box { size: [0.02286, 0.01016, 0.03] }, 0.003);
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4 }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4 }).unwrap();
+    let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
+    for f in [8.0e9, 10.0e9, 12.0e9] {
+        let r = d.solve(f).unwrap();
+        let exact = emcraft_theory::Te10Line { a: 0.02286, layers: vec![emcraft_theory::Layer::lossless(0.03, 1.0, 1.0)] }.solve(f).unwrap();
+        let e = (r.s[1][0] - exact.s21).norm().max(r.s[0][0].norm());
+        // Measured 5e-5 to 2.4e-4: the unstructured mesh as accurate as the structured one.
+        assert!(e < 1e-3, "{f}: {e:e}");
+        assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-10);
+    }
+}

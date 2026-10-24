@@ -2,6 +2,23 @@
 
 The methods EMCraft implements and where they come from.
 
+## Meshing
+The tetrahedral mesher (`emcraft-tetmesh`) is FieldCraft's; its modules cite their sources. In
+short: J. R. Shewchuk, *Adaptive precision floating-point arithmetic and fast robust geometric
+predicates*, Discrete Comput. Geom. 18(3):305–363, 1997; A. Bowyer, *Computing Dirichlet
+tessellations*, and D. F. Watson, *Computing the n-dimensional Delaunay tessellation*, Comput.
+J. 24(2), 1981; L. Diazzi, D. Panozzo, A. Vaxman, M. Attene, *Constrained Delaunay
+tetrahedrization: a robust and practical approach*, ACM TOG 42(6), 2023; J. Tournois, C.
+Wormser, P. Alliez, M. Desbrun, *Interleaving Delaunay refinement and optimization for practical
+isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. R. Shewchuk,
+*Aggressive tetrahedral mesh improvement*, Proc. 16th International Meshing Roundtable, 2007.
+
+## Special functions
+- M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, 1964, §9.12 and Tables 9.5,
+  10.6 — Bessel functions by backward recurrence, their zeros (`emcraft-theory::bessel`).
+- R. F. Harrington, *Time-Harmonic Electromagnetic Fields*, McGraw-Hill 1961, §6.10 — the
+  resonances of a spherical cavity.
+
 ## Elements and discretisation
 - H. Whitney, *Geometric Integration Theory*, Princeton University Press 1957 — the lowest-order
   edge functions λ_i∇λ_j − λ_j∇λ_i (`emcraft-fem::nedelec`, order 1).

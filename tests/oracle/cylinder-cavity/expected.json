@@ -1,0 +1,10 @@
+{
+ "title": "Cylindrical cavity, radius 10 mm, 30 mm long, on an unstructured mesh: TE111 and TM010",
+ "kind": "theory",
+ "source": "Cylindrical cavity resonances f = c/(2π) √((x/a)² + (pπ/d)²) with x'₁₁ = 1.841183781340659 (TE111) and x₀₁ = 2.404825557695773 (TM010), the zeros tabulated in M. Abramowitz, I. A. Stegun, Handbook of Mathematical Functions, 1964, Table 9.5 (D. M. Pozar, Microwave Engineering, 4th ed., §6.4)",
+ "quantities": [
+  {"id": "te111_a", "quantity": "TE111 resonance, first of the pair (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 10.106448407398933, "tolerance": {"relative": 0.01}, "reason": "unstructured tetrahedra of 3 mm with flat facets inscribed in the curved wall: an O(h²) geometric error of +0.4 % (the elements' own error, as on the flat-walled box, is 1e-4)"},
+  {"id": "te111_b", "quantity": "TE111 resonance, second of the pair (GHz)", "measure": {"step": "modes", "pointer": "/modes/1/frequency"}, "value": 10.106448407398933, "tolerance": {"relative": 0.01}, "reason": "as the first; the unstructured mesh splits the degenerate pair by 2e-4"},
+  {"id": "tm010", "quantity": "TM010 resonance (GHz)", "measure": {"step": "modes", "pointer": "/modes/2/frequency"}, "value": 11.474252783521006, "tolerance": {"relative": 0.01}, "reason": "as TE111: +0.56 %"}
+ ]
+}

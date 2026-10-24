@@ -109,13 +109,15 @@ fn eigen_sample(name: &str, out: &str) -> Result<(), String> {
     for i in 1..=t["modes"].as_array().map_or(0, Vec::len) {
         for plane in ["h", "e", "cross"] {
             let path = format!("{out}/mode{i}-{plane}.png");
-            s.execute("view.field", &json!({"path": path, "mode": i, "plane": plane})).map_err(e)?;
+            s.execute("view.field", &json!({"path": path, "mode": i, "plane": plane, "component": "|e|"})).map_err(e)?;
             println!("wrote {path}");
         }
         // A standing wave: H peaks a quarter period after E.
-        let path = format!("{out}/mode{i}-h-90deg.png");
-        s.execute("view.field", &json!({"path": path, "mode": i, "plane": "h", "phase": 90, "component": "|h|"})).map_err(e)?;
-        println!("wrote {path}");
+        for plane in ["h", "cross"] {
+            let path = format!("{out}/mode{i}-{plane}-90deg.png");
+            s.execute("view.field", &json!({"path": path, "mode": i, "plane": plane, "phase": 90, "component": "|h|"})).map_err(e)?;
+            println!("wrote {path}");
+        }
     }
     Ok(())
 }
