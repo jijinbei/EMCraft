@@ -9,8 +9,11 @@ third-party material under an open licence.
 
 ## Assets
 
-None yet. (Pictures are drawn by EMCraft at run time; its 5 × 7 bitmap font is FieldCraft's,
-below.)
+| File | Author | Source | Licence |
+|---|---|---|---|
+| docs/media/s-parameters.png, docs/media/h-8GHz.png, docs/media/e-6GHz.png, docs/media/cross-8GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample highpass --out docs/media --frequency 6 --frequency 8` | MIT OR Apache-2.0 |
+
+EMCraft's 5 × 7 bitmap font is FieldCraft's (below).
 
 ## Code adapted from sibling projects
 

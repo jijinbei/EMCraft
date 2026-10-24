@@ -23,7 +23,14 @@ cargo run --release -p emcraft-cli -- sample highpass --out pictures
 ```
 
 and writes the S-parameter chart and the E and H fields on the H-plane, the E-plane and the
-cross-section. The desktop app shows the same, with a phase animation:
+cross-section:
+
+![S-parameters of the high-pass filter against the exact solution](docs/media/s-parameters.png)
+![E_y and the magnetic field loops on the H-plane at 8 GHz](docs/media/h-8GHz.png)
+![The TE10 pattern on the cross-section at 8 GHz](docs/media/cross-8GHz.png)
+![The evanescent field in the cut-off section at 6 GHz (E-plane)](docs/media/e-6GHz.png)
+
+The desktop app shows the same, with a phase animation:
 
 ```
 cargo run --release -p emcraft -- --sample highpass
