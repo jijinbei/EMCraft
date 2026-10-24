@@ -45,8 +45,10 @@ testkit is a dev-dependency only.
    corners sorted the same way, so tangential continuity needs no sign bookkeeping. DOFs on
    conducting faces are eliminated (tangential E = 0).
 3. **Assembly.** Element curl–curl and mass matrices are exact (products of barycentric
-   polynomials) and cached for repeated shapes; K and M are assembled once; each frequency adds
-   −k₀²M and the port terms (κ_m/μr) v_m v_mᵀ/‖e_m‖² of every port mode.
+   polynomials) and cached for repeated shapes; K, M (with the complex permittivity
+   εr(1 − j tan δ)) and, for walls of finite conductivity, the tangential wall mass matrix are
+   assembled once; each frequency adds −k₀²M, the wall term (jωμ₀/Z_s)W and the port terms
+   (κ_m/μr) v_m v_mᵀ/‖e_m‖² of every port mode.
 4. **Factorization.** Nested dissection, postorder, fundamental then relaxed supernodes, then
    one dense front per supernode: pivots chosen in blocks of 32 columns, each block updating the
    rest of the front at once on threads (deterministic).

@@ -37,6 +37,12 @@ The methods EMCraft implements and where they come from.
   Pitkäranta, *Direct and inverse error estimates for finite elements with mesh refinements*,
   Numer. Math. 33:447–471, 1979 — geometric grading towards singularities (`emcraft-mesh`).
 
+## Losses
+- T. B. A. Senior, J. L. Volakis, *Approximate Boundary Conditions in Electromagnetics*, IEE 1995,
+  §2.2 — the Leontovich surface-impedance condition for walls of finite conductivity.
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, eq. 3.96 — TE10 conductor
+  attenuation (the reference); §1.3 — the loss tangent.
+
 ## Sparse direct solution
 - A. George, *Nested dissection of a regular finite element mesh*, SIAM J. Numer. Anal.
   10(2):345–363, 1973; H. D. Simon, *Partitioning of unstructured problems for parallel

@@ -25,7 +25,11 @@ result is frozen so it cannot drift.
    asymmetric H-plane step against converged mode matching, power conservation and reciprocity
    across ports of different aperture, the gain of grading towards edges (5× smaller error at the
    same element size), and (heavy) convergence with graded meshes.
-4. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+4. **Loss tests** (`crates/solver/tests/losses.rs`): a lossy slab against the complex TE₁₀
+   cascade; walls of finite conductivity against the conductor attenuation α_c (within 0.2 %);
+   the discrete Poynting theorem — 1 − |S11|² − |S21|² equal to the power the dielectric or the
+   walls absorb — to 1e-9.
+5. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

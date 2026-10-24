@@ -84,6 +84,19 @@ pub fn te10_cutoff(a: f64, eps_r: f64, mu_r: f64) -> f64 {
     C0 / (2.0 * a * (eps_r * mu_r).sqrt())
 }
 
+/// The TE₁₀ attenuation (Np/m) of an a × b guide filled with εr, from walls of conductivity σ
+/// (S/m), to first order in the surface resistance R_s = √(ωμ₀/2σ):
+/// α_c = R_s (2bπ² + a³k²) / (a³ b β k η), η = η₀/√εr (D. M. Pozar, *Microwave Engineering*,
+/// 4th ed., Wiley 2012, eq. 3.96).
+pub fn te10_wall_attenuation(a: f64, b: f64, frequency: f64, sigma: f64, eps_r: f64) -> f64 {
+    let omega = 2.0 * PI * frequency;
+    let rs = (omega * MU0 / (2.0 * sigma)).sqrt();
+    let k = omega / C0 * eps_r.sqrt();
+    let beta = (k * k - (PI / a).powi(2)).sqrt();
+    let eta = MU0 * C0 / eps_r.sqrt();
+    rs * (2.0 * b * PI * PI + a.powi(3) * k * k) / (a.powi(3) * b * beta * k * eta)
+}
+
 /// β = √(k² − (π/a)²) on the branch with Im β ≤ 0 (decaying along +z below cut-off or with
 /// losses), k² = k0² εr(1 − j tan δ) μr.
 fn beta(k0: f64, a: f64, l: &Layer) -> C {
@@ -285,6 +298,15 @@ mod tests {
         let k0 = 2.0 * PI * f / C0;
         let beta0 = (k0 * k0 - (PI / A).powi(2)).sqrt();
         assert!((-b.im - k0 * k0 * 0.01 / (2.0 * beta0)).abs() < 1e-3 * b.im.abs());
+    }
+
+    #[test]
+    fn copper_wr90_attenuates_as_tabulated() {
+        // WR-90 in copper (σ = 5.8e7 S/m) at 10 GHz, by hand: R_s = 0.02609 Ω, k = 209.58,
+        // β = 158.24 rad/m: α = 0.02609 · 0.7253 / 1.5164 = 0.01248 Np/m (0.108 dB/m, the
+        // figure usually quoted for WR-90).
+        let alpha = te10_wall_attenuation(0.02286, 0.01016, 10.0e9, 5.8e7, 1.0);
+        assert!((alpha - 0.01248).abs() < 1e-5, "{alpha}");
     }
 
     #[test]

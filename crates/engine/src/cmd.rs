@@ -74,6 +74,13 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: mesh_generate,
     },
     CommandSpec {
+        id: "model.walls",
+        label: "Wall conductivity",
+        doc: "The conductivity of the guide's walls, irises and steps: losses by the Leontovich surface-impedance condition (good conductors, skin depth far below the guide). Without `conductivity` the walls are perfect conductors.",
+        params: &[p("conductivity", "number", N, false, "σ in S/m (copper 5.8e7); leave out for perfect conductors")],
+        run: walls,
+    },
+    CommandSpec {
         id: "model.port.create",
         label: "Create port",
         doc: "A waveguide port on an end face, matched to the guide's lowest modes. TE10 is excited and read; the other modes absorb what else reaches the port.",
@@ -227,6 +234,13 @@ fn mesh_generate(s: &mut Session, p: &Value) -> Result<Value> {
     s.model.mesh = Some(mesh);
     s.sweep = None;
     Ok(reply)
+}
+
+fn walls(s: &mut Session, p: &Value) -> Result<Value> {
+    let sigma = number(p, "conductivity")?;
+    s.model.set_wall_conductivity(sigma)?;
+    s.sweep = None;
+    Ok(json!({"conductivity": sigma}))
 }
 
 fn port_create(s: &mut Session, p: &Value) -> Result<Value> {

@@ -1,0 +1,9 @@
+{
+ "title": "Copper WR-90, 200 mm: TE10 attenuation by the walls at 10 GHz",
+ "kind": "theory",
+ "source": "TE10 conductor attenuation α_c = R_s(2bπ² + a³k²)/(a³bβkη) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, eq. 3.96), R_s = √(ωμ0/2σ), σ = 5.8e7 S/m: 0.012478 Np/m, evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_db", "quantity": "|S21| at 10 GHz (dB): the loss of 200 mm of copper guide", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -0.021677067318946426, "tolerance": {"relative": 0.01}, "reason": "the Leontovich condition on the walls with second-order elements of 4 mm: within 0.2 % of the formula in the solver's tests, which is itself first order in R_s/η ≈ 7e-5"},
+  {"id": "s11_mag", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 1e-3}, "reason": "the lossy guide's TE10 differs from the lossless port mode by order R_s/η"}
+ ]
+}

@@ -13,13 +13,14 @@ Sets the units parameters are read in and replies written in.
 
 ## `model.material.create` — Create material
 
-A linear, isotropic, lossless material.
+A linear, isotropic material, lossless unless it has a loss tangent.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `name` | string |  | yes | unique name |
 | `eps_r` | number |  | yes | relative permittivity εr > 0 |
 | `mu_r` | number |  | no | relative permeability μr > 0 (default 1) |
+| `loss_tangent` | number |  | no | dielectric loss tangent tan δ ≥ 0 (default 0): ε = εr(1 − j tan δ) |
 
 ## `geometry.waveguide` — Rectangular waveguide
 
@@ -41,6 +42,14 @@ Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of 
 | `edge` | number |  | no | element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform) |
 | `growth` | number |  | no | element growth away from those edges (default 1.5) |
 | `size_y` | number | length | no | element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there |
+
+## `model.walls` — Wall conductivity
+
+The conductivity of the guide's walls, irises and steps: losses by the Leontovich surface-impedance condition (good conductors, skin depth far below the guide). Without `conductivity` the walls are perfect conductors.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `conductivity` | number |  | no | σ in S/m (copper 5.8e7); leave out for perfect conductors |
 
 ## `model.port.create` — Create port
 

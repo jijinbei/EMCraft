@@ -1,0 +1,11 @@
+{
+ "title": "Lossy dielectric slab in WR-90: εr = 2.2, tan δ = 0.02, 20 mm",
+ "kind": "theory",
+ "source": "TE10 transmission-line cascade with the complex propagation constant β = √(k0² εr(1 − j tan δ) − (π/a)²) in the slab (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3 and §4.4), evaluated by ABCD matrices",
+ "quantities": [
+  {"id": "s21_db_10", "quantity": "|S21| at 10 GHz (dB)", "measure": {"step": "solve", "pointer": "/points/1/s21/db"}, "value": -1.1932369406334056, "tolerance": {"absolute": 0.01}, "reason": "second-order elements of 3 mm (as for the lossless dielectric step, error about 1e-3 dB)"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.3399006331585228, "tolerance": {"absolute": 1e-3}, "reason": "as |S21|"},
+  {"id": "s21_db_8", "quantity": "|S21| at 8 GHz (dB)", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -2.2756132077581412, "tolerance": {"absolute": 0.01}, "reason": "as at 10 GHz"},
+  {"id": "worst", "quantity": "largest |S − S_exact| at 8, 10 and 12 GHz (complex)", "measure": {"command": "results.compare", "params": {}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 3e-3}, "reason": "measured 1.8e-3 (at 12 GHz, ten elements per guide wavelength in the slab): the same discretisation error as the lossless cases, the loss term being exact in the element mass matrix"}
+ ]
+}

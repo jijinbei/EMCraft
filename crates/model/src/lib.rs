@@ -180,6 +180,10 @@ pub struct Model {
     pub materials: Vec<Material>,
     pub waveguide: Option<Waveguide>,
     pub ports: Vec<Port>,
+    /// The conductivity (S/m) of the guide's walls (and its irises and steps); perfectly
+    /// conducting when `None`.
+    #[serde(default)]
+    pub wall_conductivity: Option<f64>,
     /// The mesh of the waveguide (made by `emcraft-mesh`).
     #[serde(skip)]
     pub mesh: Option<Mesh>,
@@ -241,6 +245,15 @@ impl Model {
         }
         self.waveguide = Some(w);
         self.mesh = None;
+        Ok(())
+    }
+
+    /// Sets the walls' conductivity (S/m), or perfect conductors with `None`.
+    pub fn set_wall_conductivity(&mut self, sigma: Option<f64>) -> Result<()> {
+        if let Some(s) = sigma {
+            positive("wall conductivity", s)?;
+        }
+        self.wall_conductivity = sigma;
         Ok(())
     }
 
