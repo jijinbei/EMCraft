@@ -59,7 +59,7 @@ A body inside the solid: a dielectric region (`material`) or, without one, a con
 
 ## `mesh.generate` — Mesh
 
-Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises.
+Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises. A solid is meshed without structure, its tetrahedra on curved walls and interfaces curved (quadratic geometry) unless `curved` is false.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -67,6 +67,7 @@ Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of 
 | `edge` | number |  | no | element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform) |
 | `growth` | number |  | no | element growth away from those edges (default 1.5) |
 | `size_y` | number | length | no | element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there |
+| `curved` | boolean |  | no | solids: bend the edges on curved surfaces onto them (default true; false leaves flat facets inscribed in the surface) |
 
 ## `model.walls` — Wall conductivity
 

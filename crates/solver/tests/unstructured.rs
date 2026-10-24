@@ -1,5 +1,7 @@
 //! The solvers on unstructured tetrahedral meshes of curved bodies against closed-form cavity
-//! resonances (Bessel zeros), and on an unstructured box against the rectangular cavity.
+//! resonances (Bessel zeros), and on an unstructured box against the rectangular cavity. The
+//! tetrahedra on curved walls and interfaces are curved (their edges' midpoints on the exact
+//! surface) unless a test asks for straight ones.
 
 use emcraft_fem::Order;
 use emcraft_model::{Model, Shape, Solid};
@@ -7,9 +9,13 @@ use emcraft_solver::eigen::eigenmodes;
 use emcraft_theory::bessel::{cylinder_cavity_resonances, sphere_cavity_resonances};
 
 fn body(shape: Shape, size: f64) -> Model {
+    body_with(shape, size, true)
+}
+
+fn body_with(shape: Shape, size: f64, curved: bool) -> Model {
     let mut m = Model::new();
     m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::solid::solid_with(&m, size, curved).unwrap());
     m
 }
 
@@ -19,9 +25,9 @@ fn worst(found: &[f64], exact: &[(f64, String)]) -> f64 {
 }
 
 /// The cylinder's three lowest modes at element size `h`: the largest relative error.
-fn cylinder_error(h: f64) -> f64 {
+fn cylinder_error(h: f64, curved: bool) -> f64 {
     // r = 10 mm, d = 30 mm: TE111 (a degenerate pair) at 10.1 GHz, then TM010 at 11.5 GHz.
-    let m = body(Shape::Cylinder { radius: 0.01, length: 0.03 }, h);
+    let m = body_with(Shape::Cylinder { radius: 0.01, length: 0.03 }, h, curved);
     let e = eigenmodes(&m, Order::Two, 3, 11.0e9).unwrap();
     let f: Vec<f64> = e.modes.iter().map(|x| x.frequency).collect();
     worst(&f, &cylinder_cavity_resonances(0.01, 0.03, 1.0, 3))
@@ -29,10 +35,12 @@ fn cylinder_error(h: f64) -> f64 {
 
 #[test]
 fn cylindrical_cavity_resonances() {
-    // The flat facets inscribed in the curved wall shrink the cavity: an O(h²) error of the
-    // geometry, 5.6e-3 at 3 mm (the elements' own error is far smaller, see the box).
-    let w = cylinder_error(0.003);
-    assert!(w < 1e-2, "{w:e}");
+    // Curved elements: 4.0e-5 at 3 mm. Straight ones, flat facets inscribed in the wall, shrink
+    // the cavity: an O(h²) error of the geometry, 5.6e-3.
+    let w = cylinder_error(0.003, true);
+    assert!(w < 2e-4, "{w:e}");
+    let straight = cylinder_error(0.003, false);
+    assert!(straight > 3e-3 && straight < 1e-2, "{straight:e}");
 }
 
 fn sphere_error(h: f64) -> f64 {
@@ -45,18 +53,21 @@ fn sphere_error(h: f64) -> f64 {
 
 #[test]
 fn spherical_cavity_resonances() {
-    // 1.3e-2 at 3 mm, from the geometry as for the cylinder.
+    // 1.6e-4 at 3 mm (straight elements: 1.3e-2).
     let w = sphere_error(0.003);
-    assert!(w < 2e-2, "{w:e}");
+    assert!(w < 5e-4, "{w:e}");
 }
 
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
-fn curved_cavities_converge_with_the_geometry() {
-    // Measured 5.6e-3 → 2.5e-3 (cylinder) and 1.3e-2 → 3.3e-3 (sphere) from 3 to 2 mm.
-    let (c3, c2) = (cylinder_error(0.003), cylinder_error(0.002));
+fn curved_cavities_converge() {
+    // Measured 4.0e-5 → 1.05e-5 (cylinder) and 1.6e-4 → 2.3e-5 (sphere) from 3 to 2 mm: faster
+    // than the h² of straight elements (5.6e-3 → 2.5e-3 for the cylinder).
+    let (c3, c2) = (cylinder_error(0.003, true), cylinder_error(0.002, true));
     let (s3, s2) = (sphere_error(0.003), sphere_error(0.002));
-    assert!(c3 / c2 > 1.8 && s3 / s2 > 1.8, "{c3:e} {c2:e} {s3:e} {s2:e}");
+    assert!(c3 / c2 > 3.0 && s3 / s2 > 3.0, "{c3:e} {c2:e} {s3:e} {s2:e}");
+    let (t3, t2) = (cylinder_error(0.003, false), cylinder_error(0.002, false));
+    assert!(t3 / t2 > 1.8, "{t3:e} {t2:e}");
 }
 
 #[test]
@@ -114,19 +125,18 @@ fn circular_guide_error(h: f64) -> f64 {
 
 #[test]
 fn circular_waveguide_transmits_with_the_te11_phase() {
-    // The ports' TE11, TM01 and the cross-polarized TE11 against Bessel modes. The flat facets
-    // inscribed in the wall raise the cut-off a little, so the phase lags: an O(h²) error of the
-    // geometry (|S11| itself stays near 2e-3).
+    // The ports' TE11, TM01 and the cross-polarized TE11 against Bessel modes: 1.1e-3 at 3 mm,
+    // |S11| under 1e-4 (straight elements, whose flat facets raise the cut-off: 4.4e-2).
     let w = circular_guide_error(0.003);
-    assert!(w < 6e-2, "{w:e}");
+    assert!(w < 3e-3, "{w:e}");
 }
 
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
-fn circular_waveguide_converges_with_the_geometry() {
+fn circular_waveguide_converges() {
+    // Measured 1.1e-3 → 2.3e-4 from 3 to 2 mm.
     let (e3, e2) = (circular_guide_error(0.003), circular_guide_error(0.002));
-    eprintln!("{e3:e} {e2:e}");
-    assert!(e3 / e2 > 1.8, "{e3:e} {e2:e}");
+    assert!(e3 / e2 > 3.0, "{e3:e} {e2:e}");
 }
 
 /// A spherical cavity of radius 10 mm holding a concentric dielectric sphere (εr = 4, radius
@@ -148,15 +158,17 @@ fn loaded_sphere_error(h: f64) -> f64 {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn dielectric_loaded_spherical_cavity() {
-    // Two regions meshed apart and joined node for node: the TM11 triplet within the outer
-    // wall's geometric error (1.0 % at 3 mm, as for the empty sphere).
+    // Two regions meshed apart and joined node for node, the wall and the interface curved:
+    // the TM11 triplet within 1.3e-4 at 3 mm (straight elements: 1.0e-2).
     let w = loaded_sphere_error(0.003);
-    assert!(w < 2e-2, "{w:e}");
+    assert!(w < 4e-4, "{w:e}");
 }
 
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn dielectric_loaded_spherical_cavity_converges() {
+    // 1.3e-4 → 7.7e-5 from 3 to 2 mm (the interface is tessellated at π/16 of its radius
+    // whatever the size, so its part of the error stays).
     let (e3, e2) = (loaded_sphere_error(0.003), loaded_sphere_error(0.002));
-    assert!(e3 / e2 > 1.8 && e2 < 5e-3, "{e3:e} {e2:e}");
+    assert!(e3 / e2 > 1.4 && e2 < 1.5e-4, "{e3:e} {e2:e}");
 }

@@ -85,7 +85,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "mesh.generate",
         label: "Mesh",
-        doc: "Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises.",
+        doc: "Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises. A solid is meshed without structure, its tetrahedra on curved walls and interfaces curved (quadratic geometry) unless `curved` is false.",
         params: &[
             p("size", "number", L, true, "target element size"),
             p("edge", "number", N, false, "element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform)"),
@@ -96,6 +96,13 @@ pub static COMMANDS: &[CommandSpec] = &[
                 L,
                 false,
                 "element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there",
+            ),
+            p(
+                "curved",
+                "boolean",
+                N,
+                false,
+                "solids: bend the edges on curved surfaces onto them (default true; false leaves flat facets inscribed in the surface)",
             ),
         ],
         run: mesh_generate,
@@ -336,8 +343,13 @@ fn solid(s: &mut Session, p: &Value) -> Result<Value> {
 fn mesh_generate(s: &mut Session, p: &Value) -> Result<Value> {
     let size = s.positive_length(p, "size")?.ok_or_else(|| EngineError::Params("`size` is required".into()))?;
     if s.model.waveguide.is_none() && s.model.solid.is_some() {
-        let mesh = emcraft_mesh::solid::solid(&s.model, size)?;
-        let reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len(), "unstructured": true});
+        let curved = match p.get("curved") {
+            None | Some(Value::Null) => true,
+            Some(Value::Bool(b)) => *b,
+            Some(v) => return Err(EngineError::Params(format!("`curved` must be true or false, got {v}"))),
+        };
+        let mesh = emcraft_mesh::solid::solid_with(&s.model, size, curved)?;
+        let reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len(), "unstructured": true, "curved_edges": mesh.curved.len()});
         s.model.mesh = Some(mesh);
         s.sweep = None;
         return Ok(reply);

@@ -38,8 +38,13 @@ result is frozen so it cannot drift.
    order), the inductive iris against mode matching (heavy), passivity, hostile requests.
 7. **Unstructured meshes** (`crates/solver/tests/unstructured.rs`): a box cavity (2.6e-5) and a
    box waveguide (S21 within 2.4e-4) meshed without structure; cylindrical and spherical cavities
-   against Bessel-zero resonances, their O(h²) geometric error converging (heavy). The mesher's
-   own 126 tests came with it (`crates/tetmesh`).
+   against Bessel-zero resonances, a dielectric-loaded sphere (two regions joined node for node)
+   against the two-layer closed form, and a circular waveguide against the TE11 phase. Their
+   tetrahedra on curved walls and interfaces are curved (quadratic maps): 4e-5 for the cylinder
+   at 3 mm, converging faster than h² (heavy), against the O(h²) 5.6e-3 of flat facets, which a
+   test keeps measuring. The curved elements' identities — duality to curved edges, gradients
+   in the curl's kernel, tangential continuity across a curved face — are tested in
+   `emcraft-fem`. The mesher's own 126 tests came with it (`crates/tetmesh`).
 8. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).

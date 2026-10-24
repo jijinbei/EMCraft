@@ -24,6 +24,9 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   edge functions λ_i∇λ_j − λ_j∇λ_i (`emcraft-fem::nedelec`, order 1).
 - J.-C. Nédélec, *Mixed finite elements in R³*, Numer. Math. 35:315–341, 1980 — the
   H(curl)-conforming spaces of the first kind.
+- P. Monk, *Finite Element Methods for Maxwell's Equations*, Oxford 2003, §3.9 — the covariant
+  Piola transform N = DΦ^{−T} N̂, curl N = DΦ curl N̂ / det DΦ that carries edge elements to
+  curved (isoparametric) tetrahedra (`emcraft-fem::nedelec`, `Element::curved`).
 - J. P. Webb, *Hierarchal vector basis functions of arbitrary order for triangular and
   tetrahedral finite elements*, IEEE Trans. Antennas Propag. 47(8):1244–1253, 1999 — the order 2
   basis (edge gradients ∇(λ_iλ_j), face functions λ_i w_jk).

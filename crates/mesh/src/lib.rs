@@ -297,7 +297,7 @@ fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], length: 
         }
     }
     grid.cells = cells;
-    let mut mesh = Mesh { nodes, tets, tet_material, boundary: Vec::new(), grid: Some(grid), buckets: None };
+    let mut mesh = Mesh { nodes, tets, tet_material, boundary: Vec::new(), grid: Some(grid), buckets: None, curved: Vec::new() };
     let topo = Topology::new(&mesh);
     let tol = 1e-9 * length.max(f64::MIN_POSITIVE);
     for (f, owners) in topo.faces.iter().zip(&topo.face_tets) {

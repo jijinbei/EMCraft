@@ -365,6 +365,215 @@ fn region(t: &Tessellation, size: f64, frozen: Vec<u32>) -> Result<RegionMesh> {
 /// in it (conductors) or regions of their own (dielectrics), each meshed on its own with the
 /// shared interface's triangles kept, the regions then joined node for node.
 pub fn solid(model: &Model, size: f64) -> Result<Mesh> {
+    solid_with(model, size, true)
+}
+
+/// A curved surface of the model: the edges on it are bent onto it.
+#[derive(Clone, Copy, Debug)]
+enum Curved {
+    /// The side of a cylinder about z through (cx, cy).
+    Cylinder {
+        cx: f64,
+        cy: f64,
+        r: f64,
+    },
+    Sphere {
+        c: [f64; 3],
+        r: f64,
+    },
+}
+
+impl Curved {
+    fn of(shape: &Shape, at: [f64; 3]) -> Option<Curved> {
+        match *shape {
+            Shape::Box { .. } => None,
+            Shape::Cylinder { radius, .. } => Some(Curved::Cylinder { cx: at[0], cy: at[1], r: radius }),
+            Shape::Sphere { radius } => Some(Curved::Sphere { c: at, r: radius }),
+        }
+    }
+
+    fn distance(&self, p: [f64; 3]) -> f64 {
+        self.project(p).iter().zip(&p).map(|(a, b)| (a - b) * (a - b)).sum::<f64>().sqrt()
+    }
+
+    /// The nearest point on the surface (radially).
+    fn project(&self, p: [f64; 3]) -> [f64; 3] {
+        match *self {
+            Curved::Cylinder { cx, cy, r } => {
+                let (dx, dy) = (p[0] - cx, p[1] - cy);
+                let rho = dx.hypot(dy).max(f64::MIN_POSITIVE);
+                [cx + dx * r / rho, cy + dy * r / rho, p[2]]
+            }
+            Curved::Sphere { c, r } => {
+                let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+                let rho = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(f64::MIN_POSITIVE);
+                [c[0] + d[0] * r / rho, c[1] + d[1] * r / rho, c[2] + d[2] * r / rho]
+            }
+        }
+    }
+
+    /// Whether a triangle with this unit normal can lie on the surface (a cylinder's caps share
+    /// its rim but face along the axis).
+    fn faces(&self, normal: [f64; 3]) -> bool {
+        match self {
+            Curved::Cylinder { .. } => normal[2].abs() < 0.5,
+            Curved::Sphere { .. } => true,
+        }
+    }
+}
+
+/// Moves the vertices of interface triangles onto their curved surface: the points boundary
+/// recovery added there sit on chords of the tessellation. A move that would turn a tetrahedron
+/// inside out is not made.
+fn snap_interfaces(mesh: &mut Mesh, surfaces: &[Curved], size: f64) {
+    let topo = crate::Topology::new(mesh);
+    let mut node_tets: Vec<Vec<u32>> = vec![Vec::new(); mesh.nodes.len()];
+    for (t, tet) in mesh.tets.iter().enumerate() {
+        for &n in tet {
+            node_tets[n as usize].push(t as u32);
+        }
+    }
+    let volume = |mesh: &Mesh, t: u32| {
+        let Some(c) = mesh.corners(t as usize) else { return 0.0 };
+        let d = |k: usize| [c[k][0] - c[0][0], c[k][1] - c[0][1], c[k][2] - c[0][2]];
+        let (a, b, e) = (d(1), d(2), d(3));
+        a[0] * (b[1] * e[2] - b[2] * e[1]) - a[1] * (b[0] * e[2] - b[2] * e[0]) + a[2] * (b[0] * e[1] - b[1] * e[0])
+    };
+    for (f, tets) in topo.face_tets.iter().enumerate() {
+        let material = |t: u32| mesh.tet_material.get(t as usize).copied();
+        if tets[1] == u32::MAX || material(tets[0]) == material(tets[1]) {
+            continue;
+        }
+        let Some(nodes) = topo.faces.get(f) else { continue };
+        let p = nodes.map(|n| mesh.nodes[n as usize]);
+        let Some(s) = surface_of(&p, surfaces, size) else { continue };
+        for &n in nodes {
+            let old = mesh.nodes[n as usize];
+            let new = s.project(old);
+            if s.distance(old) < 1e-12 * size {
+                continue;
+            }
+            mesh.nodes[n as usize] = new;
+            if node_tets[n as usize].iter().any(|&t| volume(mesh, t) <= 0.0) {
+                mesh.nodes[n as usize] = old;
+            }
+        }
+    }
+}
+
+/// The curved surface a boundary or interface triangle lies on, if any: its vertices within
+/// 0.2 of the element size of it (the boundary's are snapped to it, the interfaces' are as
+/// tessellated, and the points boundary recovery added on them sit on chords, up to a sagitta
+/// h²/8r away) and its normal across the surface (a cylinder's caps share its rim but face
+/// along the axis).
+fn surface_of<'a>(p: &[[f64; 3]; 3], surfaces: &'a [Curved], size: f64) -> Option<&'a Curved> {
+    let c = [
+        (p[1][1] - p[0][1]) * (p[2][2] - p[0][2]) - (p[1][2] - p[0][2]) * (p[2][1] - p[0][1]),
+        (p[1][2] - p[0][2]) * (p[2][0] - p[0][0]) - (p[1][0] - p[0][0]) * (p[2][2] - p[0][2]),
+        (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]),
+    ];
+    let len = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt().max(f64::MIN_POSITIVE);
+    let normal = c.map(|v| v / len);
+    surfaces.iter().find(|s| s.faces(normal) && p.iter().all(|q| s.distance(*q) < 0.2 * size))
+}
+
+/// The midpoints of the edges of boundary and interface triangles that lie on a curved surface,
+/// moved onto it (the quadratic geometry of the tetrahedra that hold them).
+fn curve(mesh: &Mesh, surfaces: &[Curved], size: f64) -> Vec<([u32; 2], [f64; 3])> {
+    let topo = crate::Topology::new(mesh);
+    let mut out = std::collections::BTreeMap::new();
+    for (f, tets) in topo.face_tets.iter().enumerate() {
+        let material = |t: u32| mesh.tet_material.get(t as usize).copied();
+        let on_surface = tets[1] == u32::MAX || material(tets[0]) != material(tets[1]);
+        let Some(nodes) = topo.faces.get(f).filter(|_| on_surface) else { continue };
+        let p = nodes.map(|n| mesh.nodes.get(n as usize).copied().unwrap_or([f64::NAN; 3]));
+        let Some(s) = surface_of(&p, surfaces, size) else { continue };
+        for (i, j) in [(0, 1), (1, 2), (0, 2)] {
+            let mid = [0, 1, 2].map(|d| 0.5 * (p[i][d] + p[j][d]));
+            out.entry([nodes[i].min(nodes[j]), nodes[i].max(nodes[j])]).or_insert_with(|| s.project(mid));
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// The smallest det DΦ of tetrahedron t's quadratic map at the points the elements check
+/// (corners, edge midpoints, face centroids, centroid; see `emcraft_fem::nedelec`).
+fn least_jacobian(mesh: &Mesh, t: usize) -> f64 {
+    let Some(tet) = mesh.tets.get(t) else { return 0.0 };
+    let c = tet.map(|n| mesh.nodes[n as usize]);
+    let e = [1, 2, 3].map(|k| [c[k][0] - c[0][0], c[k][1] - c[0][1], c[k][2] - c[0][2]]);
+    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let det = dot(e[0], cross(e[1], e[2]));
+    let g1 = cross(e[1], e[2]).map(|v| v / det);
+    let g2 = cross(e[2], e[0]).map(|v| v / det);
+    let g3 = cross(e[0], e[1]).map(|v| v / det);
+    let g = [[-(g1[0] + g2[0] + g3[0]), -(g1[1] + g2[1] + g3[1]), -(g1[2] + g2[2] + g3[2])], g1, g2, g3];
+    let edges = crate::LOCAL_EDGES;
+    let d: Vec<[f64; 3]> = edges
+        .iter()
+        .map(|[a, b]| match mesh.midpoint(tet[*a], tet[*b]) {
+            Some(m) => [0, 1, 2].map(|k| m[k] - 0.5 * (c[*a][k] + c[*b][k])),
+            None => [0.0; 3],
+        })
+        .collect();
+    let mut points: Vec<[f64; 4]> = Vec::new();
+    for i in 0..4 {
+        let mut l = [0.0; 4];
+        l[i] = 1.0;
+        points.push(l);
+    }
+    for [i, j] in edges {
+        let mut l = [0.0; 4];
+        l[i] = 0.5;
+        l[j] = 0.5;
+        points.push(l);
+    }
+    for skip in 0..4 {
+        points.push([0, 1, 2, 3].map(|i| if i == skip { 0.0 } else { 1.0 / 3.0 }));
+    }
+    points.push([0.25; 4]);
+    points
+        .iter()
+        .map(|l| {
+            let mut j = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+            for (k, [a, b]) in edges.iter().enumerate() {
+                let gr = [0, 1, 2].map(|q| 4.0 * (l[*a] * g[*b][q] + l[*b] * g[*a][q]));
+                for r in 0..3 {
+                    for q in 0..3 {
+                        j[r][q] += d[k][r] * gr[q];
+                    }
+                }
+            }
+            dot(j[0], cross(j[1], j[2]))
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// Straightens the curved edges of tetrahedra whose map would come close to folding (thin
+/// tetrahedra against a strongly curved surface), until none does.
+fn unfold(mesh: &mut Mesh) {
+    for _ in 0..20 {
+        let mut straighten = std::collections::BTreeSet::new();
+        for (t, tet) in mesh.tets.iter().enumerate() {
+            let curved: Vec<[u32; 2]> = crate::LOCAL_EDGES
+                .iter()
+                .map(|[a, b]| [tet[*a].min(tet[*b]), tet[*a].max(tet[*b])])
+                .filter(|e| mesh.midpoint(e[0], e[1]).is_some())
+                .collect();
+            if !curved.is_empty() && !(least_jacobian(mesh, t) > 0.1) {
+                straighten.extend(curved);
+            }
+        }
+        if straighten.is_empty() {
+            return;
+        }
+        mesh.curved.retain(|(e, _)| !straighten.contains(e));
+    }
+}
+
+/// [`solid`], with the edges on curved surfaces bent onto them (`curved`) or left straight.
+pub fn solid_with(model: &Model, size: f64, curved: bool) -> Result<Mesh> {
     let size = positive("element size", size)?;
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
@@ -495,7 +704,14 @@ pub fn solid(model: &Model, size: f64) -> Result<Mesh> {
             why: "an interface between two materials was not kept the same from both sides (boundary recovery added points on it); try another element size".into(),
         });
     }
-    let mut mesh = Mesh { tet_material, nodes, tets, boundary, grid: None, buckets: None };
+    let mut mesh = Mesh { tet_material, nodes, tets, boundary, grid: None, buckets: None, curved: Vec::new() };
+    if curved {
+        let surfaces: Vec<Curved> =
+            std::iter::once(Curved::of(&s.shape, [0.0; 3])).chain(model.inclusions.iter().map(|i| Curved::of(&i.shape, i.at))).flatten().collect();
+        snap_interfaces(&mut mesh, &surfaces, size);
+        mesh.curved = curve(&mesh, &surfaces, size);
+        unfold(&mut mesh);
+    }
     mesh.buckets = Some(buckets(&mesh));
     Ok(mesh)
 }
@@ -634,6 +850,52 @@ mod tests {
         assert!(walls > mesh.boundary.len());
         // Inclusions must lie inside.
         assert!(m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: [0.008, 0.0, 0.0], material: None }).is_err());
+    }
+
+    #[test]
+    fn edges_on_curved_walls_are_bent_onto_them() {
+        let (r, l) = (0.01, 0.02);
+        let mesh = mesh_of(Shape::Cylinder { radius: r, length: l }, 0.003);
+        assert!(!mesh.curved.is_empty() && mesh.curved.windows(2).all(|w| w[0].0 < w[1].0));
+        let boundary_edges: std::collections::HashSet<[u32; 2]> = mesh
+            .boundary
+            .iter()
+            .flat_map(|f| [(0, 1), (1, 2), (0, 2)].map(|(i, j)| [f.nodes[i].min(f.nodes[j]), f.nodes[i].max(f.nodes[j])]))
+            .collect();
+        for (e, m) in &mesh.curved {
+            // On the side wall, between two wall nodes, an edge of the boundary.
+            assert!(((m[0] * m[0] + m[1] * m[1]).sqrt() - r).abs() < 1e-12 && boundary_edges.contains(e));
+        }
+        // Every edge on the side (both ends on the wall, not across a cap) is curved.
+        let rho = |n: u32| {
+            let p = mesh.nodes[n as usize];
+            (p[0] * p[0] + p[1] * p[1]).sqrt()
+        };
+        let side = mesh
+            .boundary
+            .iter()
+            .filter(|f| {
+                f.nodes.iter().all(|n| (rho(*n) - r).abs() < 1e-9) && {
+                    let z = f.nodes.map(|n| mesh.nodes[n as usize][2]);
+                    !(z.iter().all(|z| z.abs() < 1e-12) || z.iter().all(|z| (z - l).abs() < 1e-12))
+                }
+            })
+            .count();
+        assert!(side > 0);
+        for f in &mesh.boundary {
+            let z = f.nodes.map(|n| mesh.nodes[n as usize][2]);
+            let cap = z.iter().all(|z| z.abs() < 1e-12) || z.iter().all(|z| (z - l).abs() < 1e-12);
+            if !cap && f.nodes.iter().all(|n| (rho(*n) - r).abs() < 1e-9) {
+                for (i, j) in [(0, 1), (1, 2), (0, 2)] {
+                    assert!(mesh.midpoint(f.nodes[i], f.nodes[j]).is_some());
+                }
+            }
+        }
+        // Straight on request; a box has nothing to bend.
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Cylinder { radius: r, length: l }, material: "vacuum".into() }).unwrap();
+        assert!(solid_with(&m, 0.003, false).unwrap().curved.is_empty());
+        assert!(mesh_of(Shape::Box { size: [0.02, 0.01, 0.03] }, 0.004).curved.is_empty());
     }
 
     #[test]

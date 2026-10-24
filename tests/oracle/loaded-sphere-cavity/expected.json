@@ -3,8 +3,8 @@
  "kind": "theory",
  "source": "Two-layer spherical cavity: spherical Bessel functions j₁ in the core and a combination of j₁ and y₁ in the shell, the tangential fields continuous at the interface and the tangential E zero at the wall (R. F. Harrington, Time-Harmonic Electromagnetic Fields, 1961, §6.10, extended to two layers); the roots computed by emcraft-theory (bessel::layered_sphere_resonances)",
  "quantities": [
-  {"id": "tm11_a", "quantity": "TM11 resonance, first of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 11.259304797921461, "tolerance": {"relative": 0.02}, "reason": "two regions meshed apart with 3 mm tetrahedra and joined node for node; the flat facets inscribed in the outer wall and the interface give an O(h²) geometric error of about +1 %, as for the empty sphere"},
-  {"id": "tm11_b", "quantity": "TM11 resonance, second of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/1/frequency"}, "value": 11.259304797921461, "tolerance": {"relative": 0.02}, "reason": "as the first"},
-  {"id": "tm11_c", "quantity": "TM11 resonance, third of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/2/frequency"}, "value": 11.259304797921461, "tolerance": {"relative": 0.02}, "reason": "as the first"}
+  {"id": "tm11_a", "quantity": "TM11 resonance, first of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 11.259304797921461, "tolerance": {"relative": 5e-4}, "reason": "two regions meshed apart with 3 mm tetrahedra and joined node for node, the wall and the interface curved (quadratic tetrahedra): −1.3e-4 (flat facets would give about +1 %)"},
+  {"id": "tm11_b", "quantity": "TM11 resonance, second of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/1/frequency"}, "value": 11.259304797921461, "tolerance": {"relative": 5e-4}, "reason": "as the first"},
+  {"id": "tm11_c", "quantity": "TM11 resonance, third of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/2/frequency"}, "value": 11.259304797921461, "tolerance": {"relative": 5e-4}, "reason": "as the first"}
  ]
 }

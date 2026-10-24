@@ -46,6 +46,10 @@ pub struct Mesh {
     /// For an unstructured mesh: tetrahedra binned on a uniform grid of buckets, for locating
     /// points.
     pub buckets: Option<Buckets>,
+    /// Edges that follow a curved surface: their nodes (ascending) and the point on the surface
+    /// their midpoint moves to, sorted by edge. The tetrahedra holding them are curved
+    /// (quadratic geometry).
+    pub curved: Vec<([u32; 2], [f64; 3])>,
 }
 
 /// Tetrahedra binned by their bounding boxes on a uniform grid over the mesh.
@@ -60,6 +64,12 @@ pub struct Buckets {
 }
 
 impl Mesh {
+    /// The curved midpoint of edge (a, b), if it is curved.
+    pub fn midpoint(&self, a: u32, b: u32) -> Option<[f64; 3]> {
+        let key = [a.min(b), a.max(b)];
+        self.curved.binary_search_by(|(e, _)| e.cmp(&key)).ok().map(|i| self.curved[i].1)
+    }
+
     /// The corner coordinates of a tetrahedron, if it exists.
     pub fn corners(&self, t: usize) -> Option<[[f64; 3]; 4]> {
         let tet = self.tets.get(t)?;

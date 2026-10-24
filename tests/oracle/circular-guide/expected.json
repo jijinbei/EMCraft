@@ -3,9 +3,9 @@
  "kind": "theory",
  "source": "TE11 propagation in a circular waveguide, S21 = exp(−jβL) with β = √(k0² − (x'₁₁/a)²), x'₁₁ = 1.841183781340659 the first zero of J₁' (M. Abramowitz, I. A. Stegun, Handbook of Mathematical Functions, 1964, Table 9.5; D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.4)",
  "quantities": [
-  {"id": "s21_phase_10_5", "quantity": "phase of S21 at 10.5 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/0/s21/deg"}, "value": 152.8171602637114, "tolerance": {"absolute": 4.0}, "reason": "the flat facets inscribed in the wall (3 mm) make the guide slightly narrower and raise its cut-off, so near cut-off (λg = 52 mm) the phase drifts by +2.5° over 30 mm: an O(h²) error of the geometry that falls 2.2× from 3 to 2 mm"},
+  {"id": "s21_phase_10_5", "quantity": "phase of S21 at 10.5 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/0/s21/deg"}, "value": 152.8171602637114, "tolerance": {"absolute": 0.2}, "reason": "3 mm tetrahedra, those on the wall curved: +0.03° over 30 mm near cut-off (λg = 52 mm); flat facets inscribed in the wall would narrow the guide and raise its cut-off, +2.5°"},
   {"id": "s21_mag_10_5", "quantity": "|S21| at 10.5 GHz", "measure": {"step": "solve", "pointer": "/points/0/s21/mag"}, "value": 1.0, "tolerance": {"absolute": 1e-4}, "reason": "lossless: power is conserved; |S21| moves only by the small reflection"},
-  {"id": "s11_mag_10_5", "quantity": "|S11| at 10.5 GHz (no discontinuity)", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 5e-3}, "reason": "the exact Bessel modes at the ports against the faceted cross-section: a reflection of 3e-3"},
-  {"id": "s21_phase_13_5", "quantity": "phase of S21 at 13.5 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s21/deg"}, "value": -9.277633913320447, "tolerance": {"absolute": 2.5}, "reason": "as at 10.5 GHz, farther from cut-off (λg = 29 mm): +1.4°"}
+  {"id": "s11_mag_10_5", "quantity": "|S11| at 10.5 GHz (no discontinuity)", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 5e-4}, "reason": "the exact Bessel modes at the ports against the curved cross-section: 4e-5 (3e-3 with flat facets)"},
+  {"id": "s21_phase_13_5", "quantity": "phase of S21 at 13.5 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s21/deg"}, "value": -9.277633913320447, "tolerance": {"absolute": 0.3}, "reason": "as at 10.5 GHz, farther from cut-off (λg = 29 mm): +0.06°"}
  ]
 }

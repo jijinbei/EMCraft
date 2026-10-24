@@ -2,16 +2,16 @@
   "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
   "values": {
     "te111_a": {
-      "band": 1.0144929383688193e-8,
-      "value": 10.144928383688192
+      "band": 1.0106797449285291e-8,
+      "value": 10.10679644928529
     },
     "te111_b": {
-      "band": 1.014715740317307e-8,
-      "value": 10.147156403173069
+      "band": 1.0106835162075985e-8,
+      "value": 10.106834162075984
     },
     "tm010": {
-      "band": 1.1538056609938342e-8,
-      "value": 11.538055609938342
+      "band": 1.1474717053138983e-8,
+      "value": 11.474716053138982
     }
   }
 }

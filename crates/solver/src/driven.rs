@@ -20,11 +20,11 @@
 //! (times √(P_p/P_q), P = ‖e‖² β/μ the power of a unit wave), so S is unitary for a lossless
 //! structure even when the ports' media or apertures differ.
 
+use emcraft_fem::nedelec::LOCAL_EDGES;
 use std::f64::consts::PI;
 
 use emcraft_fem::modes::{self, Mode};
 use emcraft_fem::poly::{Vec3, dot};
-use emcraft_fem::quadrature::{tet_rule, triangle_rule};
 use emcraft_fem::{Element, Order};
 use emcraft_mesh::Topology;
 use emcraft_model::units::{C0, MU0};
@@ -283,17 +283,15 @@ impl Driven {
                 }
             };
             let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
-            let rule = triangle_rule(if order == Order::One { 6 } else { 8 });
+            let n = if order == Order::One { 6 } else { 8 };
             let mut touched = vec![false; dofs.unknowns];
             for b in mesh.boundary.iter().filter(|b| b.tag == tag) {
                 let tet = b.tet as usize;
                 let el = element(&mesh, &topo, tet, order)?;
                 let unknowns = dofs.of_tet(&topo, tet);
-                let q = b.nodes.map(|n| mesh.nodes[n as usize]);
-                let area = 0.5 * norm3(emcraft_fem::poly::cross(emcraft_fem::poly::sub(q[1], q[0]), emcraft_fem::poly::sub(q[2], q[0])));
-                for (l, wq) in &rule {
-                    let x = [0, 1, 2].map(|d| l[0] * q[0][d] + l[1] * q[1][d] + l[2] * q[2][d]);
-                    let values = el.values(el.barycentric(x));
+                for (l, wa, _) in el.face_rule(local_face(&topo, tet, &b.nodes)?, n) {
+                    let x = el.point(l);
+                    let values = el.values(l);
                     // Only the functions of the face's own edges and the face have a tangential
                     // trace on it; the others are normal to it (zero but for rounding), and
                     // keeping them would make the dense port block several times larger.
@@ -303,7 +301,7 @@ impl Driven {
                         let e = [e[0], e[1], 0.0];
                         for (u, v) in unknowns.iter().zip(&values) {
                             if *u != NONE && v[0].hypot(v[1]) > 1e-9 * scale {
-                                vectors[mi][*u as usize] += wq * area * dot(*v, e);
+                                vectors[mi][*u as usize] += wa * dot(*v, e);
                                 touched[*u as usize] = true;
                             }
                         }
@@ -349,22 +347,20 @@ impl Driven {
         // Walls of finite conductivity: ∫ N_i,t · N_j,t dS over them.
         let mut ww = Csr { val: vec![C::new(0.0, 0.0); pattern.col.len()], ..pattern.clone() };
         if sigma.is_some() {
-            let rule = triangle_rule(if order == Order::One { 3 } else { 4 });
+            let n = if order == Order::One { 3 } else { 4 };
             for b in walls.iter().filter_map(|&i| mesh.boundary.get(i)) {
                 let tet = b.tet as usize;
                 let el = element(&mesh, &topo, tet, order)?;
                 let unknowns = dofs.of_tet(&topo, tet);
-                let (q, area, normal) = face_geometry(&mesh, &b.nodes);
-                for (l, wq) in &rule {
-                    let x = [0, 1, 2].map(|d| l[0] * q[0][d] + l[1] * q[1][d] + l[2] * q[2][d]);
-                    let t: Vec<Vec3> = el.values(el.barycentric(x)).into_iter().map(|v| tangential(v, normal)).collect();
+                for (l, wa, normal) in el.face_rule(local_face(&topo, tet, &b.nodes)?, n) {
+                    let t: Vec<Vec3> = el.values(l).into_iter().map(|v| tangential(v, normal)).collect();
                     for (i, ui) in unknowns.iter().enumerate() {
                         if *ui == NONE {
                             continue;
                         }
                         for (j, uj) in unknowns.iter().enumerate() {
                             if *uj != NONE {
-                                ww.add(*ui as usize, *uj as usize, C::new(wq * area * dot(t[i], t[j]), 0.0));
+                                ww.add(*ui as usize, *uj as usize, C::new(wa * dot(t[i], t[j]), 0.0));
                             }
                         }
                     }
@@ -518,7 +514,7 @@ impl Driven {
         let (mut err, mut norm) = (0.0, 0.0);
         for t in 0..self.mesh.tets.len() {
             let el = element(&self.mesh, &self.topo, t, self.order)?;
-            for (l, w) in tet_rule(&el.corners, n) {
+            for (l, w) in el.rule(n) {
                 let u = self.field_in(&el, t, x, frequency, which, l);
                 let e = exact(el.point(l));
                 for d in 0..3 {
@@ -543,7 +539,7 @@ impl Driven {
                 continue;
             }
             let el = element(&self.mesh, &self.topo, t, self.order)?;
-            for (l, w) in tet_rule(&el.corners, n) {
+            for (l, w) in el.rule(n) {
                 let e = self.field_in(&el, t, x, frequency, Field::E, l);
                 total += w * loss * e.iter().map(|c| c.norm_sqr()).sum::<f64>();
             }
@@ -561,17 +557,15 @@ impl Driven {
     /// perfectly conducting walls: ½ R_s ∫ |H_t|² dS (the perturbation estimate).
     pub fn wall_loss_perturbation(&self, x: &[C], frequency: f64, sigma: f64) -> Result<f64> {
         let rs = surface_resistance(frequency, sigma);
-        let rule = triangle_rule(if self.order == Order::One { 3 } else { 4 });
+        let n = if self.order == Order::One { 3 } else { 4 };
         let mut total = 0.0;
         for b in self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)) {
             let tet = b.tet as usize;
             let el = element(&self.mesh, &self.topo, tet, self.order)?;
-            let (q, area, normal) = face_geometry(&self.mesh, &b.nodes);
-            for (l, wq) in &rule {
-                let p = [0, 1, 2].map(|d| l[0] * q[0][d] + l[1] * q[1][d] + l[2] * q[2][d]);
-                let h = self.field_in(&el, tet, x, frequency, Field::H, el.barycentric(p));
+            for (l, wa, normal) in el.face_rule(local_face(&self.topo, tet, &b.nodes)?, n) {
+                let h = self.field_in(&el, tet, x, frequency, Field::H, l);
                 let hn = h[0] * normal[0] + h[1] * normal[1] + h[2] * normal[2];
-                total += wq * area * (0..3).map(|d| (h[d] - hn * normal[d]).norm_sqr()).sum::<f64>();
+                total += wa * (0..3).map(|d| (h[d] - hn * normal[d]).norm_sqr()).sum::<f64>();
             }
         }
         Ok(0.5 * rs * total)
@@ -585,7 +579,7 @@ impl Driven {
         for t in 0..self.mesh.tets.len() {
             let el = element(&self.mesh, &self.topo, t, self.order)?;
             let er = self.eps.get(t).map_or(1.0, |e| e.re);
-            for (l, w) in tet_rule(&el.corners, n) {
+            for (l, w) in el.rule(n) {
                 let e = self.field_in(&el, t, x, frequency, Field::E, l);
                 total += w * er * e.iter().map(|c| c.norm_sqr()).sum::<f64>();
             }
@@ -598,18 +592,16 @@ impl Driven {
     pub fn wall_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
         let Some((sigma, _)) = &self.wall else { return Ok(0.0) };
         let rs = surface_resistance(frequency, *sigma);
-        let rule = triangle_rule(if self.order == Order::One { 3 } else { 4 });
+        let n = if self.order == Order::One { 3 } else { 4 };
         let mut total = 0.0;
         for b in self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)) {
             let tet = b.tet as usize;
             let el = element(&self.mesh, &self.topo, tet, self.order)?;
-            let (q, area, normal) = face_geometry(&self.mesh, &b.nodes);
-            for (l, wq) in &rule {
-                let p = [0, 1, 2].map(|d| l[0] * q[0][d] + l[1] * q[1][d] + l[2] * q[2][d]);
-                let e = self.field_in(&el, tet, x, frequency, Field::E, el.barycentric(p));
+            for (l, wa, normal) in el.face_rule(local_face(&self.topo, tet, &b.nodes)?, n) {
+                let e = self.field_in(&el, tet, x, frequency, Field::E, l);
                 let en = e[0] * normal[0] + e[1] * normal[1] + e[2] * normal[2];
                 let et: f64 = (0..3).map(|d| (e[d] - en * normal[d]).norm_sqr()).sum();
-                total += wq * area * et;
+                total += wa * et;
             }
         }
         Ok(total / (4.0 * rs))
@@ -640,12 +632,14 @@ fn wall_factor(frequency: f64, sigma: f64) -> C {
     C::new(1.0, 1.0) * (omega * MU0 / (2.0 * surface_resistance(frequency, sigma)))
 }
 
-/// A boundary triangle's corners, area and unit normal.
-fn face_geometry(mesh: &Mesh, nodes: &[u32; 3]) -> ([Vec3; 3], f64, Vec3) {
-    let q = nodes.map(|n| mesh.nodes.get(n as usize).copied().unwrap_or([0.0; 3]));
-    let c = emcraft_fem::poly::cross(emcraft_fem::poly::sub(q[1], q[0]), emcraft_fem::poly::sub(q[2], q[0]));
-    let len = norm3(c).max(f64::MIN_POSITIVE);
-    (q, 0.5 * len, emcraft_fem::poly::scale(c, 1.0 / len))
+/// The local corners (in the sorted order) of a tetrahedron's boundary face.
+fn local_face(topo: &Topology, t: usize, nodes: &[u32; 3]) -> Result<[usize; 3]> {
+    let s = topo.sorted.get(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
+    let mut out = [0usize; 3];
+    for (o, n) in out.iter_mut().zip(nodes) {
+        *o = s.iter().position(|v| v == n).ok_or_else(|| invalid("mesh", format!("boundary face {nodes:?} is not on tetrahedron {t}")))?;
+    }
+    Ok(out)
 }
 
 /// v − (v·n)n.
@@ -657,7 +651,11 @@ fn tangential(v: Vec3, n: Vec3) -> Vec3 {
 fn element(mesh: &Mesh, topo: &Topology, t: usize, order: Order) -> Result<Element> {
     let s = topo.sorted.get(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
     let corners = s.map(|n| mesh.nodes.get(n as usize).copied().unwrap_or([f64::NAN; 3]));
-    Ok(Element::new(order, corners)?)
+    let el = Element::new(order, corners)?;
+    if mesh.curved.is_empty() {
+        return Ok(el);
+    }
+    Ok(el.curved(LOCAL_EDGES.map(|[i, j]| mesh.midpoint(s[i], s[j])))?)
 }
 
 /// Element matrices of a structured mesh repeat: tetrahedra that are translates of each other
@@ -670,6 +668,11 @@ struct ElementCache {
 impl ElementCache {
     fn matrices(&mut self, mesh: &Mesh, topo: &Topology, t: usize, order: Order) -> Result<(Vec<f64>, Vec<f64>)> {
         let s = topo.sorted.get(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
+        // Curved tetrahedra are their own.
+        if LOCAL_EDGES.iter().any(|[i, j]| mesh.midpoint(s[*i], s[*j]).is_some()) {
+            let el = element(mesh, topo, t, order)?;
+            return Ok((el.stiffness(1.0), el.mass(1.0)));
+        }
         let c = s.map(|n| mesh.nodes.get(n as usize).copied().unwrap_or([f64::NAN; 3]));
         // Edge vectors quantised far below the mesh size (10⁻¹⁵ m): only exact repeats match.
         let mut key = [0i64; 9];
