@@ -28,7 +28,7 @@ pub fn guide(sections: &[(f64, f64)], size: f64, modes: u32) -> Model {
 }
 
 pub fn line(sections: &[(f64, f64)]) -> Te10Line {
-    Te10Line { a: A, layers: sections.iter().map(|(l, e)| Layer { length: *l, eps_r: *e, mu_r: 1.0 }).collect() }
+    Te10Line { a: A, layers: sections.iter().map(|(l, e)| Layer::lossless(*l, *e, 1.0)).collect() }
 }
 
 /// The high-pass filter: PTFE-like fill (εr = 2) feeding a 20 mm empty section below its cut-off.

@@ -41,6 +41,20 @@ pub struct Layer {
     pub length: f64,
     pub eps_r: f64,
     pub mu_r: f64,
+    /// Dielectric loss tangent: ε = εr(1 − j tan δ).
+    pub loss_tangent: f64,
+}
+
+impl Layer {
+    pub fn lossless(length: f64, eps_r: f64, mu_r: f64) -> Layer {
+        Layer { length, eps_r, mu_r, loss_tangent: 0.0 }
+    }
+}
+
+/// √z on the branch with Im ≤ 0 (a wave e^{−jβz} that decays, or does not grow, along +z).
+pub fn decaying_sqrt(z: C) -> C {
+    let r = z.sqrt();
+    if r.im > 0.0 { -r } else { r }
 }
 
 /// The TE₁₀ wave through a waveguide of width `a` (m) filled in sections.
@@ -70,10 +84,11 @@ pub fn te10_cutoff(a: f64, eps_r: f64, mu_r: f64) -> f64 {
     C0 / (2.0 * a * (eps_r * mu_r).sqrt())
 }
 
-/// β = √(k² − (π/a)²) on the branch with Im β ≤ 0 (decaying along +z below cut-off).
+/// β = √(k² − (π/a)²) on the branch with Im β ≤ 0 (decaying along +z below cut-off or with
+/// losses), k² = k0² εr(1 − j tan δ) μr.
 fn beta(k0: f64, a: f64, l: &Layer) -> C {
-    let d = k0 * k0 * l.eps_r * l.mu_r - (PI / a).powi(2);
-    if d >= 0.0 { C::new(d.sqrt(), 0.0) } else { C::new(0.0, -(-d).sqrt()) }
+    let k2 = C::new(1.0, -l.loss_tangent) * (k0 * k0 * l.eps_r * l.mu_r);
+    decaying_sqrt(k2 - (PI / a).powi(2))
 }
 
 const J: C = C::new(0.0, 1.0);
@@ -87,7 +102,7 @@ impl Te10Line {
             return Err(TheoryError::Invalid("line".into()));
         }
         for l in &self.layers {
-            if ![l.length, l.eps_r, l.mu_r].iter().all(|v| v.is_finite() && *v > 0.0) {
+            if ![l.length, l.eps_r, l.mu_r].iter().all(|v| v.is_finite() && *v > 0.0) || !(l.loss_tangent.is_finite() && l.loss_tangent >= 0.0) {
                 return Err(TheoryError::Invalid(format!("layer {l:?}")));
             }
         }
@@ -131,7 +146,8 @@ impl Te10Line {
 
 impl Te10Solution {
     /// (S₁₁, S₂₁) normalised to equal power at both ports: the field ratio times
-    /// √((β_last/μ_last)/(β₀/μ₀)), since a TE₁₀ wave of amplitude A carries power ∝ |A|² β/μ.
+    /// √((β_last/μ_last)/(β₀/μ₀)), since a TE₁₀ wave of amplitude A carries power ∝ |A|² β/μ
+    /// (the end sections lossless).
     pub fn s_power(&self) -> (C, C) {
         let n = self.layers.len() - 1;
         let y = |i: usize| self.beta[i] / self.layers[i].mu_r;
@@ -178,7 +194,7 @@ mod tests {
     const A: f64 = 0.02286;
 
     fn filter() -> Te10Line {
-        let l = |length: f64, eps_r: f64| Layer { length, eps_r, mu_r: 1.0 };
+        let l = |length: f64, eps_r: f64| Layer::lossless(length, eps_r, 1.0);
         Te10Line { a: A, layers: vec![l(0.015, 2.0), l(0.02, 1.0), l(0.015, 2.0)] }
     }
 
@@ -190,7 +206,7 @@ mod tests {
             assert!((s.s11.norm_sqr() + s.s21.norm_sqr() - 1.0).abs() < 1e-12, "{f}");
         }
         // An asymmetric line: S21 is the same both ways (equal port media).
-        let l = |length: f64, eps_r: f64| Layer { length, eps_r, mu_r: 1.0 };
+        let l = |length: f64, eps_r: f64| Layer::lossless(length, eps_r, 1.0);
         let fwd = Te10Line { a: A, layers: vec![l(0.01, 2.0), l(0.013, 1.0), l(0.004, 3.0), l(0.02, 2.0)] };
         let mut rev = fwd.clone();
         rev.layers.reverse();
@@ -200,7 +216,7 @@ mod tests {
 
     #[test]
     fn a_single_step_reflects_by_the_impedance_ratio() {
-        let l = |length: f64, eps_r: f64| Layer { length, eps_r, mu_r: 1.0 };
+        let l = |length: f64, eps_r: f64| Layer::lossless(length, eps_r, 1.0);
         let line = Te10Line { a: A, layers: vec![l(0.01, 2.0), l(0.03, 1.0)] };
         let f = 8.0e9;
         let s = line.solve(f).unwrap();
@@ -253,11 +269,31 @@ mod tests {
     }
 
     #[test]
+    fn a_lossy_slab_absorbs_and_matches_the_complex_propagation_constant() {
+        // A long matched-ish lossy line: |S21| ≈ e^{−Im(−β) L}.
+        let f = 10.0e9;
+        let lossy = Layer { length: 0.1, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.01 };
+        let line = Te10Line { a: A, layers: vec![Layer::lossless(0.01, 1.0, 1.0), lossy, Layer::lossless(0.01, 1.0, 1.0)] };
+        let s = line.solve(f).unwrap();
+        let (r, t) = s.s_power();
+        assert!(r.norm_sqr() + t.norm_sqr() < 1.0);
+        let b = s.beta[1];
+        assert!(b.im < 0.0);
+        // The reflection of a slightly lossy section is tiny; transmission is its decay.
+        assert!((t.norm().ln() - b.im * 0.1).abs() < 1e-3 * (b.im * 0.1).abs(), "{} {}", t.norm().ln(), b.im * 0.1);
+        // α = k² tan δ / (2β) to first order in tan δ.
+        let k0 = 2.0 * PI * f / C0;
+        let beta0 = (k0 * k0 - (PI / A).powi(2)).sqrt();
+        assert!((-b.im - k0 * k0 * 0.01 / (2.0 * beta0)).abs() < 1e-3 * b.im.abs());
+    }
+
+    #[test]
     fn hostile_inputs_are_refused() {
         let line = filter();
         assert!(line.solve(f64::NAN).is_err());
         assert!(line.solve(-1.0).is_err());
         assert!(matches!(line.solve(te10_cutoff(A, 1.0, 1.0)), Err(TheoryError::Cutoff(1))));
         assert!(Te10Line { a: A, layers: vec![] }.solve(1e10).is_err());
+        assert!(Te10Line { a: A, layers: vec![Layer { loss_tangent: -1.0, ..Layer::lossless(0.01, 1.0, 1.0) }] }.solve(1e10).is_err());
     }
 }

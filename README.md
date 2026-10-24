@@ -37,6 +37,9 @@ Steps and irises (sections with a narrower aperture) are verified against mode m
 cargo run --release -p emcraft-cli -- sample iris-bandpass --out pictures
 ```
 
+![The band-pass filter's S-parameters against mode matching](docs/media/bandpass-s-parameters.png)
+![E_y and H in the three cavities at 10 GHz (irises grey)](docs/media/bandpass-h-10GHz.png)
+
 The desktop app shows the same, with a phase animation:
 
 ```

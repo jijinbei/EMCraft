@@ -44,6 +44,8 @@ pub struct HSection {
     /// The aperture's start and width along x (m).
     pub x0: f64,
     pub width: f64,
+    /// Dielectric loss tangent.
+    pub loss_tangent: f64,
 }
 
 /// A waveguide of sections whose apertures nest from one to the next.
@@ -239,7 +241,10 @@ impl HPlaneLine {
             return Err(TheoryError::Invalid("line or mode count".into()));
         }
         for s in &self.sections {
-            if ![s.length, s.eps_r, s.mu_r, s.width].iter().all(|v| v.is_finite() && *v > 0.0) || !s.x0.is_finite() {
+            if ![s.length, s.eps_r, s.mu_r, s.width].iter().all(|v| v.is_finite() && *v > 0.0)
+                || !s.x0.is_finite()
+                || !(s.loss_tangent.is_finite() && s.loss_tangent >= 0.0)
+            {
                 return Err(TheoryError::Invalid(format!("section {s:?}")));
             }
         }
@@ -252,13 +257,8 @@ impl HPlaneLine {
             .iter()
             .enumerate()
             .map(|(i, s)| {
-                let k2 = k0 * k0 * s.eps_r * s.mu_r;
-                let beta: Vec<C> = (1..=count(s))
-                    .map(|m| {
-                        let d = k2 - (m as f64 * PI / s.width).powi(2);
-                        if d >= 0.0 { C::new(d.sqrt(), 0.0) } else { C::new(0.0, -(-d).sqrt()) }
-                    })
-                    .collect();
+                let k2 = C::new(1.0, -s.loss_tangent) * (k0 * k0 * s.eps_r * s.mu_r);
+                let beta: Vec<C> = (1..=count(s)).map(|m| crate::decaying_sqrt(k2 - (m as f64 * PI / s.width).powi(2))).collect();
                 if beta.first().is_some_and(|b| b.norm() < 1e-9 * PI / s.width) {
                     return Err(TheoryError::Cutoff(i));
                 }
@@ -299,24 +299,18 @@ mod tests {
     const A: f64 = 0.02286;
 
     fn full(length: f64, eps_r: f64) -> HSection {
-        HSection { length, eps_r, mu_r: 1.0, x0: 0.0, width: A }
+        HSection { length, eps_r, mu_r: 1.0, x0: 0.0, width: A, loss_tangent: 0.0 }
     }
 
     fn iris(length: f64, width: f64) -> HSection {
-        HSection { length, eps_r: 1.0, mu_r: 1.0, x0: (A - width) / 2.0, width }
+        HSection { length, eps_r: 1.0, mu_r: 1.0, x0: (A - width) / 2.0, width, loss_tangent: 0.0 }
     }
 
     #[test]
     fn equal_apertures_reduce_to_the_te10_cascade() {
         let line = HPlaneLine { sections: vec![full(0.015, 2.0), full(0.02, 1.0), full(0.015, 2.0)] };
-        let exact = Te10Line {
-            a: A,
-            layers: vec![
-                Layer { length: 0.015, eps_r: 2.0, mu_r: 1.0 },
-                Layer { length: 0.02, eps_r: 1.0, mu_r: 1.0 },
-                Layer { length: 0.015, eps_r: 2.0, mu_r: 1.0 },
-            ],
-        };
+        let exact =
+            Te10Line { a: A, layers: vec![Layer::lossless(0.015, 2.0, 1.0), Layer::lossless(0.02, 1.0, 1.0), Layer::lossless(0.015, 2.0, 1.0)] };
         for f in [5.0e9, 8.0e9] {
             let (s11, s21) = line.solve(f, 12).unwrap();
             let (e11, e21) = exact.solve(f).unwrap().s_power();
@@ -362,7 +356,7 @@ mod tests {
     #[test]
     fn a_step_and_its_mirror_agree() {
         // A wide-to-narrow step at the guide's side, seen from both ends.
-        let side = HSection { length: 0.015, eps_r: 1.0, mu_r: 1.0, x0: 0.0, width: 0.016 };
+        let side = HSection { length: 0.015, eps_r: 1.0, mu_r: 1.0, x0: 0.0, width: 0.016, loss_tangent: 0.0 };
         let fwd = HPlaneLine { sections: vec![full(0.01, 1.0), side] };
         let rev = HPlaneLine { sections: vec![side, full(0.01, 1.0)] };
         let f = 12.0e9;

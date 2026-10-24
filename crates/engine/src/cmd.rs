@@ -29,11 +29,12 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.material.create",
         label: "Create material",
-        doc: "A linear, isotropic, lossless material.",
+        doc: "A linear, isotropic material, lossless unless it has a loss tangent.",
         params: &[
             p("name", "string", N, true, "unique name"),
             p("eps_r", "number", N, true, "relative permittivity εr > 0"),
             p("mu_r", "number", N, false, "relative permeability μr > 0 (default 1)"),
+            p("loss_tangent", "number", N, false, "dielectric loss tangent tan δ ≥ 0 (default 0): ε = εr(1 − j tan δ)"),
         ],
         run: material_create,
     },
@@ -189,7 +190,8 @@ fn material_create(s: &mut Session, p: &Value) -> Result<Value> {
     let name = required_string(p, "name")?;
     let eps = required_number(p, "eps_r")?;
     let mu = number(p, "mu_r")?.unwrap_or(1.0);
-    s.model.add_material(Material::new(name, eps, mu)?)?;
+    let tan_d = number(p, "loss_tangent")?.unwrap_or(0.0);
+    s.model.add_material(Material::new(name, eps, mu)?.with_loss_tangent(tan_d)?)?;
     Ok(json!({"name": name}))
 }
 

@@ -43,6 +43,10 @@ pub struct Material {
     pub eps_r: f64,
     /// Relative permeability μr.
     pub mu_r: f64,
+    /// Dielectric loss tangent tan δ: the permittivity is εr (1 − j tan δ) (time dependence
+    /// e^{jωt}).
+    #[serde(default)]
+    pub loss_tangent: f64,
 }
 
 impl Material {
@@ -50,11 +54,25 @@ impl Material {
         if name.trim().is_empty() {
             return Err(invalid("material name", "must not be empty"));
         }
-        Ok(Material { name: name.to_owned(), eps_r: positive("relative permittivity", eps_r)?, mu_r: positive("relative permeability", mu_r)? })
+        Ok(Material {
+            name: name.to_owned(),
+            eps_r: positive("relative permittivity", eps_r)?,
+            mu_r: positive("relative permeability", mu_r)?,
+            loss_tangent: 0.0,
+        })
+    }
+
+    /// The same material with a dielectric loss tangent (finite, ≥ 0).
+    pub fn with_loss_tangent(mut self, tan_d: f64) -> Result<Material> {
+        if !(tan_d.is_finite() && tan_d >= 0.0) {
+            return Err(invalid("loss tangent", format!("must be a finite number ≥ 0, got {tan_d}")));
+        }
+        self.loss_tangent = tan_d;
+        Ok(self)
     }
 
     pub fn vacuum() -> Material {
-        Material { name: "vacuum".into(), eps_r: 1.0, mu_r: 1.0 }
+        Material { name: "vacuum".into(), eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0 }
     }
 }
 
@@ -288,6 +306,8 @@ mod tests {
         assert!(Material::new("x", f64::NAN, 1.0).is_err());
         assert!(Material::new("x", 2.0, -1.0).is_err());
         assert!(Material::new(" ", 2.0, 1.0).is_err());
+        assert!(Material::new("x", 2.0, 1.0).unwrap().with_loss_tangent(-0.1).is_err());
+        assert!(Material::new("x", 2.0, 1.0).unwrap().with_loss_tangent(f64::NAN).is_err());
         m.add_material(Material::new("ptfe", 2.0, 1.0).unwrap()).unwrap();
         assert!(matches!(m.add_material(Material::new("ptfe", 3.0, 1.0).unwrap()), Err(ModelError::Duplicate { .. })));
         assert_eq!(m.material("ptfe").unwrap().0, 1);

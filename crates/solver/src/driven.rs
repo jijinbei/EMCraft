@@ -165,12 +165,12 @@ pub struct Driven {
     pub mesh: Mesh,
     pub topo: Topology,
     pub dofs: Dofs,
-    /// Relative permittivity and permeability per tetrahedron.
-    eps: Vec<f64>,
+    /// Complex relative permittivity εr(1 − j tan δ) and relative permeability per tetrahedron.
+    eps: Vec<C>,
     mu: Vec<f64>,
     pattern: Csr,
     stiffness: Vec<f64>,
-    mass: Vec<f64>,
+    mass: Vec<C>,
     pub ports: Vec<PortData>,
 }
 
@@ -214,7 +214,7 @@ impl Driven {
         let mut mu = Vec::with_capacity(mesh.tets.len());
         for t in 0..mesh.tets.len() {
             let m = material(t).ok_or_else(|| invalid("mesh", format!("tetrahedron {t} has no material")))?;
-            eps.push(m.eps_r);
+            eps.push(C::new(m.eps_r, -m.eps_r * m.loss_tangent));
             mu.push(m.mu_r);
         }
 
@@ -226,6 +226,12 @@ impl Driven {
                 End::End => Boundary::Port(1),
             };
             let m = model.port_material(p.end)?;
+            if m.loss_tangent != 0.0 {
+                return Err(invalid(
+                    format!("port `{}`", p.name),
+                    "not supported yet: a port in a lossy material (end the guide with a lossless section)",
+                ));
+            }
             let end_section = match p.end {
                 End::Start => 0,
                 End::End => w.sections.len().saturating_sub(1),
@@ -286,12 +292,12 @@ impl Driven {
                         continue;
                     }
                     kk.add(*ui as usize, *uj as usize, C::new(s[i * n + j] / mu[t], 0.0));
-                    mm.add(*ui as usize, *uj as usize, C::new(m[i * n + j] * eps[t], 0.0));
+                    mm.add(*ui as usize, *uj as usize, eps[t] * m[i * n + j]);
                 }
             }
         }
         let stiffness = kk.val.iter().map(|v| v.re).collect();
-        let mass = mm.val.iter().map(|v| v.re).collect();
+        let mass = mm.val;
         Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, ports })
     }
 
@@ -300,7 +306,7 @@ impl Driven {
         let k0 = 2.0 * PI * frequency / C0;
         let mut a = self.pattern.clone();
         for (x, (s, m)) in a.val.iter_mut().zip(self.stiffness.iter().zip(&self.mass)) {
-            *x = C::new(s - k0 * k0 * m, 0.0);
+            *x = C::new(*s, 0.0) - m * (k0 * k0);
         }
         let mut rhs = Vec::new();
         for p in &self.ports {
@@ -440,9 +446,34 @@ impl Driven {
         Ok((err.sqrt(), norm.sqrt()))
     }
 
-    /// The relative permittivity of each tetrahedron.
-    pub fn permittivity(&self) -> &[f64] {
-        &self.eps
+    /// The power (W) the dielectrics absorb for the coefficients `x`: ½ ω ε₀ ∫ εr tan δ |E|² dV
+    /// (fields in peak values).
+    pub fn dielectric_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
+        let omega = 2.0 * PI * frequency;
+        let eps0 = 1.0 / (MU0 * C0 * C0);
+        let n = if self.order == Order::One { 3 } else { 4 };
+        let mut total = 0.0;
+        for t in 0..self.mesh.tets.len() {
+            let loss = -self.eps.get(t).map_or(0.0, |e| e.im);
+            if loss == 0.0 {
+                continue;
+            }
+            let el = element(&self.mesh, &self.topo, t, self.order)?;
+            for (l, w) in tet_rule(&el.corners, n) {
+                let e = self.field_in(&el, t, x, frequency, Field::E, l);
+                total += w * loss * e.iter().map(|c| c.norm_sqr()).sum::<f64>();
+            }
+        }
+        Ok(0.5 * omega * eps0 * total)
+    }
+
+    /// The power (W) a unit TE₁₀ wave carries into port `p`: ½ ‖e‖² β/(ωμ).
+    pub fn incident_power(&self, p: usize, frequency: f64) -> Option<f64> {
+        let port = self.ports.get(p)?;
+        let (mode, _) = port.modes.first()?;
+        let omega = 2.0 * PI * frequency;
+        let k = omega / C0 * (port.eps_r * port.mu_r).sqrt();
+        Some(0.5 * mode.norm() * mode.gamma(k).1 / (omega * MU0 * port.mu_r))
     }
 }
 

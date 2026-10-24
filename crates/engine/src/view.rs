@@ -301,7 +301,7 @@ pub fn te10_line(session: &Session) -> Result<Te10Line> {
     let mut layers = Vec::with_capacity(w.sections.len());
     for s in &w.sections {
         let (_, m) = session.model.material(&s.material)?;
-        layers.push(Layer { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r });
+        layers.push(Layer { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent });
     }
     Ok(Te10Line { a: w.width, layers })
 }
@@ -345,7 +345,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
     for (i, s) in w.sections.iter().enumerate() {
         let (_, m) = session.model.material(&s.material)?;
         let (x0, width) = w.aperture(i).unwrap_or((0.0, w.width));
-        sections.push(HSection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, x0, width });
+        sections.push(HSection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, x0, width, loss_tangent: m.loss_tangent });
     }
     Ok(Reference::ModeMatching(HPlaneLine { sections }))
 }

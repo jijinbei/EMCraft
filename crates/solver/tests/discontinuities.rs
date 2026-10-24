@@ -24,7 +24,9 @@ fn model(layout: &Layout, opts: &emcraft_mesh::Options) -> Model {
 }
 
 fn reference(layout: &Layout) -> HPlaneLine {
-    HPlaneLine { sections: layout.iter().map(|&(length, x0, width)| HSection { length, eps_r: 1.0, mu_r: 1.0, x0, width }).collect() }
+    HPlaneLine {
+        sections: layout.iter().map(|&(length, x0, width)| HSection { length, eps_r: 1.0, mu_r: 1.0, x0, width, loss_tangent: 0.0 }).collect(),
+    }
 }
 
 /// The largest |S − S_mm| over the frequencies (S11 and S21).
