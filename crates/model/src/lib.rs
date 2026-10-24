@@ -370,6 +370,59 @@ impl Feature {
     }
 }
 
+/// An open boundary: a perfectly matched layer of this thickness (m) lining every face of a box
+/// solid, the conducting walls behind it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Open {
+    pub thickness: f64,
+}
+
+/// What drives an open problem.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Source {
+    /// A short current element: `current` (A, peak) along the unit `direction` over `length`
+    /// (m) at `at` — the Hertzian dipole of moment I·l.
+    Dipole { at: [f64; 3], direction: [f64; 3], length: f64, current: f64 },
+    /// A plane wave of 1 V/m travelling along the unit `direction`, its electric field along the
+    /// unit `polarization` (perpendicular to it); the problem is solved for the field the
+    /// dielectric inclusions scatter.
+    PlaneWave { direction: [f64; 3], polarization: [f64; 3] },
+}
+
+fn unit(name: &str, v: [f64; 3]) -> Result<[f64; 3]> {
+    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if !(l.is_finite() && l > 0.0) {
+        return Err(invalid(name, "must be a nonzero finite vector"));
+    }
+    Ok(v.map(|c| c / l))
+}
+
+impl Source {
+    /// The source with its directions made unit vectors, checked.
+    pub fn checked(self) -> Result<Source> {
+        Ok(match self {
+            Source::Dipole { at, direction, length, current } => {
+                if !at.iter().all(|v| v.is_finite()) {
+                    return Err(invalid("dipole", "its position must be finite"));
+                }
+                positive("dipole length", length)?;
+                if !current.is_finite() || current == 0.0 {
+                    return Err(invalid("dipole current", "must be a finite nonzero number"));
+                }
+                Source::Dipole { at, direction: unit("dipole direction", direction)?, length, current }
+            }
+            Source::PlaneWave { direction, polarization } => {
+                let (k, e) = (unit("plane-wave direction", direction)?, unit("plane-wave polarization", polarization)?);
+                if (k[0] * e[0] + k[1] * e[1] + k[2] * e[2]).abs() > 1e-9 {
+                    return Err(invalid("plane wave", "its polarization must be perpendicular to its direction"));
+                }
+                Source::PlaneWave { direction: k, polarization: e }
+            }
+        })
+    }
+}
+
 /// The cross-section of a port: the mode functions it carries.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PortShape {
@@ -433,6 +486,12 @@ pub struct Model {
     /// conducting when `None`.
     #[serde(default)]
     pub wall_conductivity: Option<f64>,
+    /// An open boundary (radiation into free space through a PML).
+    #[serde(default)]
+    pub open: Option<Open>,
+    /// What drives an open problem.
+    #[serde(default)]
+    pub sources: Vec<Source>,
     /// The mesh of the waveguide (made by `emcraft-mesh`).
     #[serde(skip)]
     pub mesh: Option<Mesh>,
@@ -512,6 +571,8 @@ impl Model {
         self.solid = None;
         self.inclusions.clear();
         self.features.clear();
+        self.open = None;
+        self.sources.clear();
         self.mesh = None;
         Ok(())
     }
@@ -524,6 +585,8 @@ impl Model {
         self.waveguide = None;
         self.inclusions.clear();
         self.features.clear();
+        self.open = None;
+        self.sources.clear();
         self.mesh = None;
         Ok(())
     }
@@ -656,6 +719,41 @@ impl Model {
         }
     }
 
+    /// Lines the box solid's faces with a perfectly matched layer of `thickness` (m), or closes
+    /// it again with `None`.
+    pub fn set_open(&mut self, open: Option<Open>) -> Result<()> {
+        if let Some(o) = open {
+            let Some(Solid { shape: Shape::Box { size }, .. }) = &self.solid else {
+                return Err(invalid(
+                    "open boundary",
+                    "not supported yet: a perfectly matched layer needs a box solid (geometry.solid, shape box) to line",
+                ));
+            };
+            positive("layer thickness", o.thickness)?;
+            if size.iter().any(|s| 2.0 * o.thickness >= *s) {
+                return Err(invalid("layer thickness", "must leave room inside the box (under half its smallest side)"));
+            }
+            if !self.ports.is_empty() {
+                return Err(invalid("open boundary", "not supported yet: waveguide ports together with an open boundary"));
+            }
+        }
+        self.open = open;
+        Ok(())
+    }
+
+    /// Adds a source for an open problem.
+    pub fn add_source(&mut self, src: Source) -> Result<()> {
+        let src = src.checked()?;
+        if let Source::Dipole { at, .. } = src
+            && let Some((lo, hi)) = self.bounds()
+            && (0..3).any(|d| at[d] <= lo[d] || at[d] >= hi[d])
+        {
+            return Err(invalid("dipole", "must lie inside the geometry"));
+        }
+        self.sources.push(src);
+        Ok(())
+    }
+
     /// Sets the walls' conductivity (S/m), or perfect conductors with `None`.
     pub fn set_wall_conductivity(&mut self, sigma: Option<f64>) -> Result<()> {
         if let Some(s) = sigma {
@@ -668,6 +766,9 @@ impl Model {
     pub fn add_port(&mut self, p: Port) -> Result<()> {
         if p.name.trim().is_empty() {
             return Err(invalid("port name", "must not be empty"));
+        }
+        if self.open.is_some() {
+            return Err(invalid("port", "not supported yet: waveguide ports together with an open boundary"));
         }
         if self.ports.iter().any(|x| x.name == p.name) {
             return Err(ModelError::Duplicate { kind: "port", name: p.name });

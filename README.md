@@ -57,9 +57,19 @@ cargo run --release -p emcraft-cli -- sample cavity --out pictures
 
 ![The magnetic field of the copper cavity's TE101 mode](docs/media/cavity-te101-h.png)
 
-Bodies other than waveguides — boxes, cylinders, spheres — are meshed with unstructured
-tetrahedra (a mesher ported from FieldCraft); a cylindrical cavity's resonances meet the Bessel
-zeros (`sample cylinder-cavity`).
+Bodies other than waveguides — boxes, cylinders, spheres, Boolean combinations of them
+(`geometry.feature`: a post through a guide, a stub on it) and closed surfaces imported from STL
+or 3MF (`geometry.import`) — are meshed with unstructured tetrahedra (a mesher ported from
+FieldCraft), with dielectric or conducting inclusions as regions of their own, the tetrahedra on
+curved walls curved, and the element size set per material from the wavelength if asked. A
+cylindrical cavity's resonances meet the Bessel zeros to 4e-5 (`sample cylinder-cavity`), and
+circular-waveguide ports carry the TE and TM Bessel modes (`sample circular-guide`).
+
+Open problems: a box lined with a perfectly matched layer (`model.open`), driven by a dipole
+(`source.dipole`) or lit by a plane wave (`source.plane_wave`), with far fields from a
+near-to-far transform. A ceramic sphere's radar cross-section meets the Mie series:
+
+![The bistatic RCS of a dielectric sphere in the E-plane against the Mie series](docs/media/sphere-rcs-e-plane.png)
 
 Losses: dielectrics with a loss tangent and walls of finite conductivity (surface impedance),
 checked against the exact lossy cascade and the textbook conductor attenuation.
@@ -79,11 +89,13 @@ cargo run --release -p emcraft -- --sample highpass      # or iris-bandpass
 
 | Crate | Role |
 |---|---|
-| `emcraft-model` | SI model: materials, waveguide geometry, ports, tetrahedral mesh, display units |
-| `emcraft-mesh` | Structured tetrahedral meshes (Kuhn split) with apertures and edge grading, edge and face numbering, point location |
-| `emcraft-fem` | Nédélec elements of orders 1 and 2 with exact element matrices; quadrature; waveguide modes |
-| `emcraft-theory` | Closed-form TE10 S-parameters and fields; mode matching for H-plane steps and irises |
-| `emcraft-solver` | Driven analysis with modal ports, losses, cavity eigenmodes; multifrontal complex symmetric LDLᵀ |
+| `emcraft-model` | SI model: materials, waveguide geometry, solids, inclusions, features, ports, open boundaries and sources, tetrahedral mesh, display units |
+| `emcraft-tetmesh` | The unstructured tetrahedral mesher (exact predicates, constrained Delaunay, refinement), ported from FieldCraft |
+| `emcraft-mesh` | Structured tetrahedral meshes (Kuhn split) with apertures and edge grading; unstructured meshes of solids with regions, Boolean features and curved edges; edge and face numbering, point location |
+| `emcraft-io` | STL and 3MF import |
+| `emcraft-fem` | Nédélec elements of orders 1 and 2, straight (exact matrices) or curved (quadrature); quadrature; Bessel functions; rectangular and circular waveguide modes |
+| `emcraft-theory` | Closed forms: TE10 S-parameters and fields, cavity resonances, mode matching for steps and irises, the Hertzian dipole and the Mie series |
+| `emcraft-solver` | Driven analysis with modal ports, losses, cavity eigenmodes, open problems with a PML and far fields; multifrontal complex symmetric LDLᵀ |
 | `emcraft-fdtd` | Time domain: finite integration with PML-terminated waveguide ports |
 | `emcraft-render` | CPU pictures: field plots with vector arrows, charts, PNG |
 | `emcraft-engine` | Commands, sessions with rollback, scripts, samples |

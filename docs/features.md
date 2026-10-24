@@ -213,6 +213,70 @@ Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over 
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
 
+## `model.open` — Open boundary
+
+Lines every face of a box solid with a perfectly matched layer of `thickness` (conducting walls behind it), for radiation and scattering: an anisotropic medium of stretched coordinates, s = 1 − j(σ₀/k₀)(ξ/d)², designed for 1e-6 reflection at normal incidence. A quarter to half a wavelength is typical. Without `thickness`, closes the box again.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `thickness` | number | length | no | the layer's thickness |
+
+## `source.dipole` — Dipole source
+
+A short current element (Hertzian dipole) driving an open problem: `current` (A, peak) over `length` along `direction` at `at`.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `at` | array | length | yes | its position [x, y, z] |
+| `direction` | array |  | no | its axis (default [0, 0, 1]) |
+| `length` | number | length | yes | its length (the moment is current × length) |
+| `current` | number |  | no | its current in amperes, peak (default 1) |
+
+## `source.plane_wave` — Plane wave
+
+A plane wave of 1 V/m on the model's dielectric bodies: the solve finds the field they scatter, its radar cross-section and the power it carries away.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `direction` | array |  | no | the direction it travels (default [0, 0, 1]) |
+| `polarization` | array |  | no | its electric field's direction, across `direction` (default [1, 0, 0]) |
+
+## `source.clear` — Clear sources
+
+Removes every source.
+
+No parameters.
+
+## `solve.radiation` — Radiation
+
+Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box a third of the layer's thickness inside it, with the closed form for a lone dipole (radiated power) or a lone dielectric sphere (the Mie series' scattering cross-section).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequency` | number | frequency | yes | the frequency |
+| `order` | integer |  | no | element order: 1 or 2 (default) |
+
+## `results.far_field` — Far field
+
+The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles `theta` and azimuth `phi` (degrees), by the near-to-far transform of the Huygens box's equivalent currents: directivity for sources, radar cross-section for a plane wave, with the closed forms where they apply.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `theta` | array |  | no | polar angles in degrees (default 0 to 180 by 10) |
+| `phi` | number |  | no | the azimuth in degrees (default 0) |
+
+## `view.pattern` — Pattern chart
+
+Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity in dBi for sources, radar cross-section in dBsm for a plane wave, over the closed form where it applies.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | PNG file to write |
+| `phi` | number |  | no | the azimuth in degrees (default 0) |
+| `points` | integer |  | no | angles from 0 to 180° (default 91) |
+| `width` | integer |  | no | pixels (default 1000) |
+| `height` | integer |  | no | pixels (default 600) |
+
 ## `file.sample` — Open sample
 
 Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script; `solve: true` also runs its analysis.

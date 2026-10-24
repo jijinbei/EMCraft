@@ -1,0 +1,11 @@
+{
+ "title": "Hertzian dipole at 10 GHz in a 60 mm box lined with a 15 mm perfectly matched layer: radiated power and directivity",
+ "kind": "theory",
+ "source": "The Hertzian dipole of moment I·l = 1 mA·m in free space: P = η (k I l)²/(12π), directivity D(θ) = (3/2) sin²θ from its axis (C. A. Balanis, Antenna Theory, 4th ed., Wiley 2016, §4.2, eqs. 4-16, 4-31)",
+ "quantities": [
+  {"id": "power", "quantity": "radiated power (W)", "measure": {"step": "solve", "pointer": "/radiated_power"}, "value": 0.4389527551740313, "tolerance": {"relative": 0.03}, "reason": "through a Huygens box 20 mm from the walls; second-order elements of λ/6 and a layer of half a wavelength: +0.2 % (the layer's reflection and the discretization; +1 % at λ/7.5 with a 10 mm layer)"},
+  {"id": "directivity_90", "quantity": "directivity at θ = 90°, φ = 17°", "measure": {"step": "ff", "pointer": "/points/0/directivity"}, "value": 1.5, "tolerance": {"relative": 0.03}, "reason": "the near-to-far transform of the Huygens box's currents, 3 × 3 Gauss points on patches of λ/12: +1.2 %"},
+  {"id": "directivity_45", "quantity": "directivity at θ = 45°", "measure": {"step": "ff", "pointer": "/points/1/directivity"}, "value": 0.75, "tolerance": {"relative": 0.03}, "reason": "as at 90°: +1.1 %"},
+  {"id": "directivity_20", "quantity": "directivity at θ = 20° (near the null on the axis)", "measure": {"step": "ff", "pointer": "/points/2/directivity"}, "value": 0.17546666766076642, "tolerance": {"relative": 0.08}, "reason": "a weak field near the axis, where the layer's small reflections weigh most: +3.8 %"}
+ ]
+}

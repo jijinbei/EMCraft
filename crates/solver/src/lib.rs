@@ -7,6 +7,7 @@ pub mod driven;
 pub mod eigen;
 pub mod ldlt;
 pub mod ordering;
+pub mod radiation;
 pub mod sparse;
 
 pub use driven::{Driven, Field, FrequencyResult, SolveError};

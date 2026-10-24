@@ -307,3 +307,48 @@ fn meshes_follow_the_wavelength_in_each_material() {
     assert!(w.execute("mesh.generate", &json!({"per_wavelength": 0, "frequency": 9})).is_err());
     assert!(w.execute("mesh.generate", &json!({})).is_err());
 }
+
+#[test]
+fn open_problems_radiate_and_scatter() {
+    let mut s = Session::new();
+    // A layer needs a box, and room inside it.
+    s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 10})).unwrap();
+    assert!(s.execute("model.open", &json!({"thickness": 3})).is_err());
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    assert!(s.execute("model.open", &json!({"thickness": 25})).is_err());
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
+    assert!(s.execute("solve.radiation", &json!({"frequency": 10})).is_err(), "no sources");
+    assert!(s.execute("results.far_field", &json!({})).is_err(), "nothing solved");
+    assert!(s.execute("source.dipole", &json!({"at": [50, 20, 20], "length": 1})).is_err(), "outside");
+    assert!(s.execute("source.dipole", &json!({"at": [20, 20, 20], "length": 1, "direction": [0, 0, 0]})).is_err());
+    s.execute("source.dipole", &json!({"at": [20.1, 20.2, 19.9], "length": 1})).unwrap();
+    let r = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
+    // Coarse (λ/4, a third of a wavelength of layer): the plumbing, not the accuracy.
+    let (p, exact) = (r["radiated_power"].as_f64().unwrap(), r["exact_radiated_power"].as_f64().unwrap());
+    assert!((p / exact - 1.0).abs() < 0.2, "{p} {exact}");
+    let ff = s.execute("results.far_field", &json!({"theta": [90, 0.0], "phi": 30})).unwrap();
+    let d = ff["points"][0]["directivity"].as_f64().unwrap();
+    assert!((d / 1.5 - 1.0).abs() < 0.2, "{d}");
+    assert!(ff["points"][1]["directivity"].as_f64().unwrap() < 0.1, "the axis is a null");
+    let path = scratch("pattern.png");
+    s.execute("view.pattern", &json!({"path": path, "points": 37})).unwrap();
+    assert!(std::fs::read(&path).unwrap().len() > 1000);
+    // A plane wave needs dielectrics, not conductors, to scatter.
+    s.execute("source.clear", &json!({})).unwrap();
+    assert!(s.execute("source.plane_wave", &json!({"direction": [0, 0, 1], "polarization": [0, 0, 1]})).is_err(), "not transverse");
+    s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 3, "at": [20, 20, 20]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
+    s.execute("source.plane_wave", &json!({})).unwrap();
+    let e = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap_err();
+    assert!(e.to_string().contains("conductors"), "{e}");
+    // Ports and an open boundary do not mix.
+    let mut g = Session::new();
+    g.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 10.16, 30]})).unwrap();
+    g.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    g.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    assert!(g.execute("model.open", &json!({"thickness": 2})).is_err());
+    s.execute("source.clear", &json!({})).unwrap();
+    assert!(s.execute("model.port.create", &json!({"name": "1", "end": "start"})).is_err());
+}

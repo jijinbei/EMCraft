@@ -48,7 +48,13 @@ result is frozen so it cannot drift.
    from STL against mode matching (oracle `imported-step`) and the readers' hostile-file tests. The curved elements' identities — duality to curved edges, gradients
    in the curl's kernel, tangential continuity across a curved face — are tested in
    `emcraft-fem`. The mesher's own 126 tests came with it (`crates/tetmesh`).
-8. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+8. **Open problems** (engine tests, the oracle): a Hertzian dipole in a box lined with a perfectly
+   matched layer — radiated power within 0.2 % and directivity within 1–4 % at six elements per
+   wavelength (oracle `dipole-radiation`) — and a plane wave on a ceramic sphere against the Mie
+   series, which itself meets Bohren and Huffman's BHMIE listing to 1e-5: scattering
+   cross-section within 0.6 %, bistatic radar cross-section within 0.1–1.6 % (oracle
+   `dielectric-sphere-scattering`).
+9. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

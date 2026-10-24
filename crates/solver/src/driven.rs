@@ -57,11 +57,11 @@ pub enum SolveError {
 
 pub type Result<T> = std::result::Result<T, SolveError>;
 
-fn invalid(what: impl Into<String>, why: impl Into<String>) -> SolveError {
+pub(crate) fn invalid(what: impl Into<String>, why: impl Into<String>) -> SolveError {
     SolveError::Invalid { what: what.into(), why: why.into() }
 }
 
-const NONE: u32 = u32::MAX;
+pub(crate) const NONE: u32 = u32::MAX;
 
 /// Degrees of freedom: per edge and per face, those on conducting walls eliminated.
 #[derive(Clone, Debug)]
@@ -178,7 +178,15 @@ pub struct Driven {
     /// The boundary faces that are walls (indices into the mesh's).
     walls: Vec<usize>,
     pub ports: Vec<PortData>,
+    /// The perfectly matched layer: its thickness and, for each tetrahedron in it, the depth
+    /// into it along x, y and z as fractions of the thickness (0 where it is not in the layer
+    /// along that axis). Their matrices depend on the frequency and are assembled with it.
+    pub(crate) pml: Option<(f64, Vec<(usize, [f64; 3])>)>,
 }
+
+/// The reflection a perfectly matched layer is designed for at normal incidence, before
+/// discretization: its stretch is s = 1 − j(σ₀/k₀)(ξ/d)², σ₀ = 3 ln(1/R)/(2d).
+pub const PML_REFLECTION: f64 = 1e-6;
 
 /// The solution at one frequency.
 #[derive(Clone, Debug, PartialEq)]
@@ -222,6 +230,15 @@ impl Driven {
         Driven::build(model, order, false, true)
     }
 
+    /// The model's open problem: its box lined with the perfectly matched layer
+    /// ([`emcraft_model::Open`]), no ports (sources drive it, [`crate::radiation`]).
+    pub fn open(model: &Model, order: Order) -> Result<Driven> {
+        if model.open.is_none() {
+            return Err(SolveError::NotReady("no open boundary: line the box with model.open".into()));
+        }
+        Driven::build(model, order, false, false)
+    }
+
     fn build(model: &Model, order: Order, with_ports: bool, lossless_walls: bool) -> Result<Driven> {
         let issues: Vec<String> = model.check().into_iter().filter(|i| with_ports || !i.starts_with("no ports")).collect();
         if !issues.is_empty() {
@@ -259,6 +276,25 @@ impl Driven {
             eps.push(C::new(m.eps_r, -m.eps_r * m.loss_tangent));
             mu.push(m.mu_r);
         }
+
+        // The layer (open problems only): tetrahedra by their centroids' depth into it.
+        let pml = match (&model.open, &model.solid, with_ports) {
+            (Some(o), Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }), false) => {
+                let d = o.thickness;
+                let mut list = Vec::new();
+                for t in 0..mesh.tets.len() {
+                    let c = mesh.corners(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
+                    let centroid = [0, 1, 2].map(|k| (c[0][k] + c[1][k] + c[2][k] + c[3][k]) / 4.0);
+                    let depth = [0, 1, 2].map(|k| ((d - centroid[k]).max(centroid[k] - (size[k] - d)).max(0.0) / d).min(1.0));
+                    if depth.iter().any(|x| *x > 0.0) {
+                        list.push((t, depth));
+                    }
+                }
+                Some((d, list))
+            }
+            _ => None,
+        };
+        let in_pml: std::collections::HashSet<usize> = pml.iter().flat_map(|(_, l)| l.iter().map(|(t, _)| *t)).collect();
 
         // Port vectors.
         let mut ports = Vec::new();
@@ -325,7 +361,7 @@ impl Driven {
         let mut kk = Csr { val: vec![C::new(0.0, 0.0); pattern.col.len()], ..pattern.clone() };
         let mut mm = kk.clone();
         let mut cache = ElementCache::default();
-        for t in 0..mesh.tets.len() {
+        for t in (0..mesh.tets.len()).filter(|t| !in_pml.contains(t)) {
             let (s, m) = cache.matrices(&mesh, &topo, t, order)?;
             let unknowns = dofs.of_tet(&topo, t);
             let n = unknowns.len();
@@ -368,16 +404,51 @@ impl Driven {
             }
         }
         let wall = sigma.map(|c| (c, ww.val.iter().map(|v| v.re).collect()));
-        Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, wall, walls, ports })
+        Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, wall, walls, ports, pml })
+    }
+
+    /// Adds the layer's tetrahedra at wavenumber k₀: with stretches s_d = 1 − j(σ₀/k₀)ξ_d², the
+    /// layer is the anisotropic medium εr Λ, μr Λ, Λ = diag(s_y s_z/s_x, s_z s_x/s_y, s_x s_y/s_z)
+    /// (Z. S. Sacks, D. M. Kingsland, R. Lee, J.-F. Lee, IEEE Trans. AP 43(12), 1995; Jin 2014,
+    /// §9.6), so its element matrices are Σ_d (1/(μr Λ_d)) K_d − k₀² Σ_d εr Λ_d M_d by component.
+    fn add_pml(&self, a: &mut Csr, k0: f64) -> Result<()> {
+        let Some((d, list)) = &self.pml else { return Ok(()) };
+        let sigma0 = 3.0 * (1.0 / PML_REFLECTION).ln() / (2.0 * d);
+        for &(t, depth) in list {
+            let s = depth.map(|x| C::new(1.0, -sigma0 / k0 * x * x));
+            let lambda = [s[1] * s[2] / s[0], s[2] * s[0] / s[1], s[0] * s[1] / s[2]];
+            let el = element(&self.mesh, &self.topo, t, self.order)?;
+            let (kc, mc) = (el.stiffness_components(), el.mass_components());
+            let unknowns = self.dofs.of_tet(&self.topo, t);
+            let n = unknowns.len();
+            let (eps, mu) = (self.eps.get(t).copied().unwrap_or(C::new(1.0, 0.0)), self.mu.get(t).copied().unwrap_or(1.0));
+            for (i, ui) in unknowns.iter().enumerate() {
+                if *ui == NONE {
+                    continue;
+                }
+                for (j, uj) in unknowns.iter().enumerate() {
+                    if *uj == NONE {
+                        continue;
+                    }
+                    let mut v = C::new(0.0, 0.0);
+                    for k in 0..3 {
+                        v += kc[k][i * n + j] / (mu * lambda[k]) - k0 * k0 * eps * lambda[k] * mc[k][i * n + j];
+                    }
+                    a.add(*ui as usize, *uj as usize, v);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The system matrix at wavenumber k₀ and each port's TE₁₀ excitation vector.
-    fn system(&self, frequency: f64) -> Result<(Csr, Vec<Vec<C>>)> {
+    pub(crate) fn system(&self, frequency: f64) -> Result<(Csr, Vec<Vec<C>>)> {
         let k0 = 2.0 * PI * frequency / C0;
         let mut a = self.pattern.clone();
         for (x, (s, m)) in a.val.iter_mut().zip(self.stiffness.iter().zip(&self.mass)) {
             *x = C::new(*s, 0.0) - m * (k0 * k0);
         }
+        self.add_pml(&mut a, k0)?;
         // The Leontovich condition E_t = Z_s n̂ × H on the walls (n̂ into the guide), Z_s =
         // (1 + j)R_s, R_s = √(ωμ₀/2σ), adds (jωμ₀/Z_s) ∫ N_i,t · N_j,t dS (T. B. A. Senior, J. L.
         // Volakis, Approximate Boundary Conditions in Electromagnetics, IEE 1995, §2.2; Jin 2014,
@@ -467,6 +538,22 @@ impl Driven {
             (Some(pp), Some(qq)) => (power(pp) / power(qq)).sqrt(),
             _ => 1.0,
         }
+    }
+
+    pub(crate) fn element_of(&self, t: usize) -> Result<Element> {
+        element(&self.mesh, &self.topo, t, self.order)
+    }
+
+    pub(crate) fn dofs_of(&self, t: usize) -> Vec<u32> {
+        self.dofs.of_tet(&self.topo, t)
+    }
+
+    pub(crate) fn eps_of(&self, t: usize) -> C {
+        self.eps.get(t).copied().unwrap_or(C::new(1.0, 0.0))
+    }
+
+    pub(crate) fn mu_of(&self, t: usize) -> f64 {
+        self.mu.get(t).copied().unwrap_or(1.0)
     }
 
     /// The field (E in V/m or H in A/m) at a point for the coefficients `x` at `frequency`.

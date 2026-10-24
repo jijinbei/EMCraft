@@ -20,6 +20,7 @@
 
 pub mod bessel;
 pub mod modematch;
+pub mod radiation;
 
 pub use modematch::{EPlaneLine, ESection, HPlaneLine, HSection};
 

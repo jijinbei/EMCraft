@@ -107,6 +107,18 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §6.3 and §6.7 — cavity resonances,
   Q by perturbation, the TE101 Q (eq. 6.46).
 
+## Open problems
+- Z. S. Sacks, D. M. Kingsland, R. Lee, J.-F. Lee, *A perfectly matched anisotropic absorber for
+  use as an absorbing boundary condition*, IEEE Trans. Antennas Propag. 43(12):1460–1463, 1995;
+  J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., §9.6 — the layer as the
+  medium εΛ, μΛ of stretched coordinates (`emcraft-solver::driven`, `add_pml`).
+- C. A. Balanis, *Advanced Engineering Electromagnetics*, 2nd ed., Wiley 2012, §6.8 — the
+  near-to-far transform of equivalent currents; *Antenna Theory*, 4th ed., §4.2 — the Hertzian
+  dipole (`emcraft-solver::radiation`, `emcraft-theory::radiation`).
+- C. F. Bohren, D. R. Huffman, *Absorption and Scattering of Light by Small Particles*, Wiley
+  1983, §4.4 and Appendix A — the Mie series and its BHMIE test values
+  (`emcraft-theory::radiation`).
+
 ## Quadrature
 - A. H. Stroud, *Approximate Calculation of Multiple Integrals*, Prentice-Hall 1971; M. G. Duffy,
   *Quadrature over a pyramid or cube of integrands with a singularity at a vertex*, SIAM J.

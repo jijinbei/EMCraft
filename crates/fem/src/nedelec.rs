@@ -274,6 +274,45 @@ impl Element {
         gram(&self.basis, self.volume, eps)
     }
 
+    /// The curl–curl matrix split by component, ∫ (curl Nᵢ)_d (curl Nⱼ)_d dV for d = x, y, z:
+    /// for a diagonal tensor ν the matrix is Σ_d ν_d of these (perfectly matched layers).
+    pub fn stiffness_components(&self) -> [Vec<f64>; 3] {
+        [0, 1, 2].map(|d| self.component_gram(d, true))
+    }
+
+    /// The mass matrix split by component, ∫ (Nᵢ)_d (Nⱼ)_d dV.
+    pub fn mass_components(&self) -> [Vec<f64>; 3] {
+        [0, 1, 2].map(|d| self.component_gram(d, false))
+    }
+
+    fn component_gram(&self, d: usize, curl: bool) -> Vec<f64> {
+        let n = self.basis.len();
+        let mut m = vec![0.0; n * n];
+        if self.curve.is_some() {
+            for (l, w) in self.rule(5) {
+                let v = if curl { self.curl_values(l) } else { self.values(l) };
+                for i in 0..n {
+                    for j in i..n {
+                        m[i * n + j] += w * v[i][d] * v[j][d];
+                    }
+                }
+            }
+        } else {
+            let p = if curl { &self.curls } else { &self.basis };
+            for i in 0..n {
+                for j in i..n {
+                    m[i * n + j] = p[i].inner_component(&p[j], self.volume, d);
+                }
+            }
+        }
+        for i in 0..n {
+            for j in 0..i {
+                m[i * n + j] = m[j * n + i];
+            }
+        }
+        m
+    }
+
     fn gram_by_quadrature(&self, factor: f64, curl: bool) -> Vec<f64> {
         let n = self.basis.len();
         let mut m = vec![0.0; n * n];
@@ -674,6 +713,18 @@ mod tests {
         let mut mids = [None; 6];
         mids[0] = Some(crate::poly::add(c[2], [0.0, 0.5, 0.0]));
         assert!(Element::new(Order::One, c).unwrap().curved(mids).is_err());
+    }
+
+    #[test]
+    fn component_matrices_add_up() {
+        for e in [Element::new(Order::Two, tet()).unwrap(), bent(Order::Two)] {
+            let (s, m) = (e.stiffness(1.0), e.mass(1.0));
+            let (sc, mc) = (e.stiffness_components(), e.mass_components());
+            for k in 0..s.len() {
+                assert!((sc[0][k] + sc[1][k] + sc[2][k] - s[k]).abs() < 1e-11 * s[k].abs().max(1.0));
+                assert!((mc[0][k] + mc[1][k] + mc[2][k] - m[k]).abs() < 1e-14);
+            }
+        }
     }
 
     #[test]

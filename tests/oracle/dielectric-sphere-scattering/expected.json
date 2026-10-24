@@ -1,0 +1,12 @@
+{
+ "title": "Plane wave on a dielectric sphere (εr = 4, radius 5 mm) at 10 GHz: scattering and radar cross-sections",
+ "kind": "theory",
+ "source": "The Mie series for a sphere of size parameter ka = 1.047 and index 2: the coefficients aₙ, bₙ and amplitudes S₁, S₂ (C. F. Bohren, D. R. Huffman, Absorption and Scattering of Light by Small Particles, Wiley 1983, §4.4), evaluated by emcraft-theory (which meets their BHMIE listing to 1e-5); σ = 4π|S₂|²/k² in the E-plane, 4π|S₁|²/k² in the H-plane",
+ "quantities": [
+  {"id": "sigma_sca", "quantity": "scattering cross-section (mm²)", "measure": {"step": "solve", "pointer": "/scattering_cross_section"}, "value": 74.74153854134258, "tolerance": {"relative": 0.02}, "reason": "the scattered power through the Huygens box; six second-order elements per wavelength in each material (1.9 mm in the ceramic), the sphere's surface curved, a 12 mm layer: +0.6 % (+0.08 % at eight per wavelength with a 15 mm layer)"},
+  {"id": "rcs_forward", "quantity": "radar cross-section forwards, θ = 0 (mm²)", "measure": {"step": "e", "pointer": "/points/0/rcs"}, "value": 198.8306074098338, "tolerance": {"relative": 0.02}, "reason": "the near-to-far transform: +0.3 %"},
+  {"id": "rcs_side_e", "quantity": "radar cross-section at θ = 90° in the E-plane (mm², near the dipole null)", "measure": {"step": "e", "pointer": "/points/1/rcs"}, "value": 4.448988279897746, "tolerance": {"relative": 0.05}, "reason": "a weak lobe, 16 dB below the forward one: −1.6 %"},
+  {"id": "rcs_back", "quantity": "radar cross-section backwards, θ = 180° (mm²)", "measure": {"step": "e", "pointer": "/points/2/rcs"}, "value": 43.27823712996167, "tolerance": {"relative": 0.03}, "reason": "+0.2 %"},
+  {"id": "rcs_side_h", "quantity": "radar cross-section at θ = 90° in the H-plane (mm²)", "measure": {"step": "h", "pointer": "/points/0/rcs"}, "value": 99.97818445490027, "tolerance": {"relative": 0.02}, "reason": "+0.1 %"}
+ ]
+}

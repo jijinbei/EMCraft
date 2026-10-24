@@ -14,6 +14,7 @@ third-party material under an open licence.
 | docs/media/s-parameters.png, docs/media/h-8GHz.png, docs/media/e-6GHz.png, docs/media/cross-8GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample highpass --out docs/media --frequency 6 --frequency 8` | MIT OR Apache-2.0 |
 | docs/media/highpass-fem-fdtd.png | EMCraft contributors | Original: drawn by `view.sparameters` after the highpass sample's sweep and `solve.time_domain` | MIT OR Apache-2.0 |
 | docs/media/cavity-te101-h.png | EMCraft contributors | Original: drawn by `emcraft-cli sample cavity` (mode1-h-90deg.png) | MIT OR Apache-2.0 |
+| docs/media/sphere-rcs-e-plane.png, docs/media/sphere-rcs-h-plane.png, docs/media/dipole-directivity.png | EMCraft contributors | Original: drawn by `view.pattern` after the dielectric-sphere-scattering and dipole-radiation oracle recipes | MIT OR Apache-2.0 |
 | docs/media/bandpass-s-parameters.png, docs/media/bandpass-h-10GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample iris-bandpass --frequency 10` | MIT OR Apache-2.0 |
 
 EMCraft's 5 × 7 bitmap font is FieldCraft's (below).
@@ -29,7 +30,7 @@ FieldCraft (`../fieldcraft`, MIT OR Apache-2.0, Copyright (c) 2026 FieldCraft co
 | `crates/tetmesh/src/{predicates,delaunay,cdt,surface,quality,tet}/`, `size.rs`, `seeds.rs`, `vec3.rs`, `message.rs`, `lib.rs` | FieldCraft `crates/mesh/src/` (the same modules) | the crate's name and error type; hex-only quality reports and model-based reports removed; `compat.rs` adapts what they used from FieldCraft's `crates/model` (element kinds, the Jacobian rule, coordinate checks, seeds spacing, number formatting, a no-op progress channel) |
 | `crates/solver/src/ordering.rs` | FieldCraft `crates/solver/src/ordering.rs` | the coordinate nested dissection only |
 | `crates/io/src/threemf.rs` | FieldCraft `crates/geometry/src/tagged_mesh.rs` | surfaces in metres with EMCraft's own unit table; the stitching and SolidCraft surface types removed |
-| `crates/render/src/font.rs` | FieldCraft `crates/render/src/font.rs` | marks `\|`, `^`, `<`, `>`, `*`, `ω` added |
+| `crates/render/src/font.rs` | FieldCraft `crates/render/src/font.rs` | marks `\|`, `^`, `<`, `>`, `*` and the Greek `ω`, `θ`, `φ`, `λ`, `ε`, `σ`, `π` added |
 | `crates/testkit/src/oracle.rs` | FieldCraft `crates/testkit/src/oracle.rs` | simplified case format (no pending, slow or nightly cases), EMCraft's engine |
 | `AGENTS.md`, `rustfmt.toml`, `clippy.toml`, workspace lints | FieldCraft's | rewritten for EMCraft |
 

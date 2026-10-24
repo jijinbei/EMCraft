@@ -30,7 +30,7 @@ use num_complex::Complex64 as C;
 use crate::sparse::Csr;
 
 /// The largest frontal matrix (rows) a factorization may form: m² complex entries.
-pub const MAX_FRONT: usize = 8000;
+pub const MAX_FRONT: usize = 12_000;
 
 const ALPHA: f64 = 0.640_388_203_202_208; // (1 + √17)/8
 
@@ -199,6 +199,12 @@ const BLOCK: usize = 32;
 
 /// Columns updated together in a block update.
 const TILE: usize = 8;
+
+/// The start of column b of a packed lower triangle of order m (columns stored from their
+/// diagonal down).
+fn packed(b: usize, m: usize) -> usize {
+    b * m - b * b.saturating_sub(1) / 2
+}
 
 /// Fronts whose block update is smaller than this many complex multiply–adds run on one thread.
 const PARALLEL_WORK: usize = 1 << 20;
@@ -602,13 +608,15 @@ impl Ldlt {
                 }
             }
             for (urows, u) in pending[s].drain(..) {
-                // U is stored lower (i ≥ j); positions in this front ascend with its rows.
+                // U is stored packed lower by columns (i ≥ j); positions in this front ascend
+                // with its rows.
                 let mu = urows.len();
                 let at: Vec<usize> = urows.iter().map(|&p| pos[p]).collect();
                 for b in 0..mu {
                     let cb = at[b];
+                    let start = packed(b, mu);
                     for a in b..mu {
-                        let v = u[b * mu + a];
+                        let v = u[start + a - b];
                         let ra = at[a];
                         f[cb * m + ra] += v;
                         if ra != cb {
@@ -623,18 +631,21 @@ impl Ldlt {
             // The update matrix U = F₂₂ − L₂₁ D L₂₁ᵀ (lower) for the parent: the trailing block.
             let mu = m - k;
             if mu > 0 {
-                let mut u = vec![C::new(0.0, 0.0); mu * mu];
+                let mut u = Vec::with_capacity(mu * (mu + 1) / 2);
                 for j in 0..mu {
-                    u[j * mu + j..(j + 1) * mu].copy_from_slice(&f[(k + j) * m + k + j..(k + j + 1) * m]);
+                    u.extend_from_slice(&f[(k + j) * m + k + j..(k + j + 1) * m]);
                 }
                 // The first row below is the etree parent of the supernode's last column.
                 if let Some(&ps) = parent.get(c1 - 1).and_then(|&q| snode_of.get(q)) {
                     pending[ps].push((rows[k..].to_vec(), u));
                 }
             }
-            f.truncate(k * m);
+            // Keep the k factored columns only, in an allocation of their own (the front's m × m
+            // is freed).
+            let l = f[..k * m].to_vec();
+            drop(f);
             entries += k * m - k * (k - 1) / 2;
-            supernodes.push(Supernode { rows, k, l: f, pivots });
+            supernodes.push(Supernode { rows, k, l, pivots });
         }
         Ok(Ldlt { n, perm, supernodes, perturbed, two_by_two, entries, largest_front })
     }

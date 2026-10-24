@@ -266,6 +266,66 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: view_sparameters,
     },
     CommandSpec {
+        id: "model.open",
+        label: "Open boundary",
+        doc: "Lines every face of a box solid with a perfectly matched layer of `thickness` (conducting walls behind it), for radiation and scattering: an anisotropic medium of stretched coordinates, s = 1 − j(σ₀/k₀)(ξ/d)², designed for 1e-6 reflection at normal incidence. A quarter to half a wavelength is typical. Without `thickness`, closes the box again.",
+        params: &[p("thickness", "number", L, false, "the layer's thickness")],
+        run: crate::open::model_open,
+    },
+    CommandSpec {
+        id: "source.dipole",
+        label: "Dipole source",
+        doc: "A short current element (Hertzian dipole) driving an open problem: `current` (A, peak) over `length` along `direction` at `at`.",
+        params: &[
+            p("at", "array", L, true, "its position [x, y, z]"),
+            p("direction", "array", N, false, "its axis (default [0, 0, 1])"),
+            p("length", "number", L, true, "its length (the moment is current × length)"),
+            p("current", "number", N, false, "its current in amperes, peak (default 1)"),
+        ],
+        run: crate::open::source_dipole,
+    },
+    CommandSpec {
+        id: "source.plane_wave",
+        label: "Plane wave",
+        doc: "A plane wave of 1 V/m on the model's dielectric bodies: the solve finds the field they scatter, its radar cross-section and the power it carries away.",
+        params: &[
+            p("direction", "array", N, false, "the direction it travels (default [0, 0, 1])"),
+            p("polarization", "array", N, false, "its electric field's direction, across `direction` (default [1, 0, 0])"),
+        ],
+        run: crate::open::source_plane_wave,
+    },
+    CommandSpec { id: "source.clear", label: "Clear sources", doc: "Removes every source.", params: &[], run: crate::open::source_clear },
+    CommandSpec {
+        id: "solve.radiation",
+        label: "Radiation",
+        doc: "Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box a third of the layer's thickness inside it, with the closed form for a lone dipole (radiated power) or a lone dielectric sphere (the Mie series' scattering cross-section).",
+        params: &[p("frequency", "number", F, true, "the frequency"), p("order", "integer", N, false, "element order: 1 or 2 (default)")],
+        run: crate::open::solve_radiation,
+    },
+    CommandSpec {
+        id: "results.far_field",
+        label: "Far field",
+        doc: "The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles `theta` and azimuth `phi` (degrees), by the near-to-far transform of the Huygens box's equivalent currents: directivity for sources, radar cross-section for a plane wave, with the closed forms where they apply.",
+        params: &[
+            p("theta", "array", N, false, "polar angles in degrees (default 0 to 180 by 10)"),
+            p("phi", "number", N, false, "the azimuth in degrees (default 0)"),
+        ],
+        run: crate::open::results_far_field,
+    },
+    CommandSpec {
+        id: "view.pattern",
+        label: "Pattern chart",
+        doc: "Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity in dBi for sources, radar cross-section in dBsm for a plane wave, over the closed form where it applies.",
+        params: &[
+            p("path", "string", N, true, "PNG file to write"),
+            p("phi", "number", N, false, "the azimuth in degrees (default 0)"),
+            p("points", "integer", N, false, "angles from 0 to 180° (default 91)"),
+            p("width", "integer", N, false, "pixels (default 1000)"),
+            p("height", "integer", N, false, "pixels (default 600)"),
+        ],
+        run: crate::open::view_pattern,
+    },
+    CommandSpec {
         id: "file.sample",
         label: "Open sample",
         doc: "Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script; `solve: true` also runs its analysis.",
@@ -741,7 +801,7 @@ fn probe(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"frequency": s.show_frequency(r.frequency), "points": out}))
 }
 
-fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
+pub(crate) fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
     if path.trim().is_empty() {
         return Err(EngineError::Params("`path` must not be empty".into()));
     }

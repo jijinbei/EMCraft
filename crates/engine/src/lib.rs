@@ -9,6 +9,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod cmd;
+pub mod open;
 pub mod params;
 pub mod sample;
 pub mod view;
@@ -140,6 +141,8 @@ pub struct Session {
     pub eigen: Option<Arc<emcraft_solver::eigen::Eigen>>,
     /// The time-domain solver's S-parameters from `solve.time_domain`.
     pub time_domain: Option<emcraft_fdtd::TdResult>,
+    /// The open problem from `solve.radiation`.
+    pub radiation: Option<Arc<open::Radiated>>,
     pub display: Display,
     pub limits: Limits,
 }
@@ -152,7 +155,15 @@ impl Default for Session {
 
 impl Session {
     pub fn new() -> Session {
-        Session { model: Model::new(), sweep: None, eigen: None, time_domain: None, display: Display::default(), limits: Limits::default() }
+        Session {
+            model: Model::new(),
+            sweep: None,
+            eigen: None,
+            time_domain: None,
+            radiation: None,
+            display: Display::default(),
+            limits: Limits::default(),
+        }
     }
 
     /// Runs a command. Unknown parameters are refused; a failed or panicking command leaves the
@@ -161,16 +172,16 @@ impl Session {
         // An id from hostile input is not echoed in full.
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
         check_keys(spec, params)?;
-        let before = (self.model.clone(), self.sweep.clone(), self.eigen.clone(), self.time_domain.clone(), self.display);
+        let before = (self.model.clone(), self.sweep.clone(), self.eigen.clone(), self.time_domain.clone(), self.radiation.clone(), self.display);
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, params)));
         match outcome {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => {
-                (self.model, self.sweep, self.eigen, self.time_domain, self.display) = before;
+                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.display) = before;
                 Err(e)
             }
             Err(_) => {
-                (self.model, self.sweep, self.eigen, self.time_domain, self.display) = before;
+                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.display) = before;
                 Err(EngineError::Panicked(spec.id.to_owned()))
             }
         }

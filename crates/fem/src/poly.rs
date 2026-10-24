@@ -106,6 +106,24 @@ impl VecPoly {
         s
     }
 
+    /// ∫_T self_d other_d dV: one component of the inner product.
+    pub fn inner_component(&self, other: &VecPoly, volume: f64, d: usize) -> f64 {
+        let mut s = 0.0;
+        for a in &self.terms {
+            for b in &other.terms {
+                let c = a.coef[d] * b.coef[d];
+                if c != 0.0 {
+                    let mut e = a.exp;
+                    for (x, y) in e.iter_mut().zip(b.exp) {
+                        *x += y;
+                    }
+                    s += c * monomial_integral(e, volume);
+                }
+            }
+        }
+        s
+    }
+
     /// ∫_T self · f dV for a field `f` given at the corners and varying linearly between them.
     pub fn inner_linear(&self, corners: &[Vec3; 4], volume: f64) -> f64 {
         let mut s = 0.0;
