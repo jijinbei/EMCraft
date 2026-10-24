@@ -86,15 +86,17 @@ fn lone_dipole(s: &Session) -> Option<(f64, [f64; 3])> {
     }
 }
 
-/// The one dielectric sphere a plane wave lights, whose Mie series applies: (radius, εr).
-fn lone_sphere(s: &Session) -> Option<(f64, f64)> {
+/// The one sphere a plane wave lights, whose Mie series applies: (radius, εr), εr `None` for a
+/// conductor.
+fn lone_sphere(s: &Session) -> Option<(f64, Option<f64>)> {
     plane_wave(s)?;
     match &s.model.inclusions[..] {
         [inc] if s.model.features.is_empty() && s.model.sources.len() == 1 => match (&inc.shape, &inc.material) {
             (Shape::Sphere { radius }, Some(name)) => {
                 let (_, m) = s.model.material(name).ok()?;
-                (m.mu_r == 1.0 && m.loss_tangent == 0.0).then_some((*radius, m.eps_r))
+                (m.mu_r == 1.0 && m.loss_tangent == 0.0).then_some((*radius, Some(m.eps_r)))
             }
+            (Shape::Sphere { radius }, None) => Some((*radius, None)),
             _ => None,
         },
         _ => None,
@@ -116,7 +118,7 @@ pub fn solve_radiation(s: &mut Session, p: &Value) -> Result<Value> {
         reply["scattering_cross_section"] = json!(sigma * l * l);
         if let Some((a, er)) = lone_sphere(s) {
             let x = 2.0 * PI * f / C0 * a;
-            let q = emcraft_theory::radiation::mie_efficiencies(x, er.sqrt()).0;
+            let q = emcraft_theory::radiation::mie_efficiencies(x, er.map(f64::sqrt)).0;
             reply["exact_scattering_cross_section"] = json!(q * PI * a * a * l * l);
         }
     } else {
@@ -151,7 +153,10 @@ fn describe(s: &Session, r: &Radiated, ff: &FarField) -> Value {
             let h = cross(kk, e);
             let (pe, ph) = (dir[0] * e[0] + dir[1] * e[1] + dir[2] * e[2], dir[0] * h[0] + dir[1] * h[1] + dir[2] * h[2]);
             let cphi2 = if pe * pe + ph * ph > 0.0 { pe * pe / (pe * pe + ph * ph) } else { 1.0 };
-            let (s1, s2) = emcraft_theory::radiation::mie_amplitudes(k * a, er.sqrt(), cos_t.acos());
+            let (s1, s2) = match er {
+                Some(er) => emcraft_theory::radiation::mie_amplitudes(k * a, er.sqrt(), cos_t.acos()),
+                None => emcraft_theory::radiation::mie_amplitudes_pec(k * a, cos_t.acos()),
+            };
             let exact = 4.0 * PI * (s2.norm_sqr() * cphi2 + s1.norm_sqr() * (1.0 - cphi2)) / (k * k);
             out["exact_rcs"] = json!(exact * l * l);
         }

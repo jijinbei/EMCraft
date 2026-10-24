@@ -17,7 +17,7 @@
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, MU0};
-use emcraft_model::{Combine, Model, Shape, Source};
+use emcraft_model::{Model, Shape, Source};
 use num_complex::Complex64 as C;
 
 use crate::driven::{Driven, Result, SolveError, invalid};
@@ -153,12 +153,7 @@ impl Driven {
                     }
                 }
                 Source::PlaneWave { direction, polarization } => {
-                    if model.inclusions.iter().any(|i| i.material.is_none()) || model.features.iter().any(|f| f.combine != Combine::Add) {
-                        return Err(invalid(
-                            "plane wave",
-                            "not supported yet: plane waves on conductors (the scattered field needs n × E_s = −n × E_inc on them)",
-                        ));
-                    }
+                    self.lift_conductors(model, k0, direction, polarization, &mut b)?;
                     let in_pml: std::collections::HashSet<usize> = self.pml.iter().flat_map(|(_, l)| l.iter().map(|(t, _)| *t)).collect();
                     for t in 0..self.mesh.tets.len() {
                         let contrast = self.eps_of(t) - 1.0;
@@ -187,6 +182,118 @@ impl Driven {
         let f = Ldlt::factor(&a, &self.dofs.points)?;
         let (field, backward_error) = f.solve_refined(&a, &b, 4)?;
         Ok(OpenResult { frequency, field, backward_error })
+    }
+
+    /// The plane wave's conductors: on them the scattered field is n × E_s = −n × E_inc, so their
+    /// eliminated degrees of freedom take the values g of that trace (its L² projection on the
+    /// conducting surface: Σ_j ∫ (n × Nᵢ)·(n × Nⱼ) gⱼ = −∫ (n × Nᵢ)·(n × E_inc)), and the free
+    /// ones' right-hand side loses A_IB g, element by element. Conductors are the walls not on
+    /// the box's own faces (behind the layer, where the scattered field has died away).
+    fn lift_conductors(&self, model: &Model, k0: f64, direction: [f64; 3], polarization: [f64; 3], b: &mut [C]) -> Result<()> {
+        let Some(emcraft_model::Solid { shape: Shape::Box { size }, .. }) = &model.solid else { return Ok(()) };
+        let tol = 1e-9 * size.iter().fold(0.0f64, |m, v| m.max(*v));
+        let node = |n: u32| self.mesh.nodes.get(n as usize).copied().unwrap_or([f64::NAN; 3]);
+        let on_box = |nodes: &[u32; 3]| (0..3).any(|d| [0.0, size[d]].iter().any(|c| nodes.iter().all(|n| (node(*n)[d] - c).abs() <= tol)));
+        let faces: Vec<(usize, usize)> = self
+            .mesh
+            .boundary
+            .iter()
+            .filter(|f| !on_box(&f.nodes))
+            .filter_map(|f| self.topo.find_face(f.tet as usize, f.nodes).map(|(lf, _)| (f.tet as usize, lf)))
+            .collect();
+        if faces.is_empty() {
+            return Ok(());
+        }
+        // The local functions with a tangential trace on local face lf.
+        let order = self.order;
+        let on_face = |lf: usize| -> Vec<usize> {
+            let corners = emcraft_fem::nedelec::LOCAL_FACES[lf];
+            let mut out = Vec::new();
+            for (e, [a, c]) in emcraft_fem::nedelec::LOCAL_EDGES.iter().enumerate() {
+                if corners.contains(a) && corners.contains(c) {
+                    out.push(e);
+                    if order == emcraft_fem::Order::Two {
+                        out.push(6 + e);
+                    }
+                }
+            }
+            if order == emcraft_fem::Order::Two {
+                out.extend([12 + 2 * lf, 13 + 2 * lf]);
+            }
+            out
+        };
+        let mut index: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        let mut points = Vec::new();
+        let mut groups: Vec<Vec<usize>> = Vec::with_capacity(faces.len());
+        for &(t, lf) in &faces {
+            let slots = self.dofs.slots_of_tet(&self.topo, t);
+            let c = self.mesh.corners(t).unwrap_or([[0.0; 3]; 4]);
+            let centroid = [0, 1, 2].map(|d| (c[0][d] + c[1][d] + c[2][d] + c[3][d]) / 4.0);
+            groups.push(
+                on_face(lf)
+                    .into_iter()
+                    .map(|li| {
+                        *index.entry(slots[li]).or_insert_with(|| {
+                            points.push(centroid);
+                            points.len() - 1
+                        })
+                    })
+                    .collect(),
+            );
+        }
+        let nb = points.len();
+        let mut m = crate::sparse::Csr::from_groups(nb, groups.iter().map(|g| g.as_slice()));
+        let mut r = vec![C::new(0.0, 0.0); nb];
+        let tangential = |v: [f64; 3], n: [f64; 3]| {
+            let d = v[0] * n[0] + v[1] * n[1] + v[2] * n[2];
+            [v[0] - d * n[0], v[1] - d * n[1], v[2] - d * n[2]]
+        };
+        for (&(t, lf), group) in faces.iter().zip(&groups) {
+            let el = self.element_of(t)?;
+            let local = on_face(lf);
+            let corners = emcraft_fem::nedelec::LOCAL_FACES[lf];
+            for (l, w, n) in el.face_rule(corners, 4) {
+                let v = el.values(l);
+                let p = el.point(l);
+                let phase = C::from_polar(1.0, -k0 * (direction[0] * p[0] + direction[1] * p[1] + direction[2] * p[2]));
+                let g = tangential(polarization, n).map(|c| -phase * c);
+                let tv: Vec<[f64; 3]> = local.iter().map(|&li| tangential(v[li], n)).collect();
+                for (a, ta) in group.iter().zip(&tv) {
+                    r[*a] += w * (ta[0] * g[0] + ta[1] * g[1] + ta[2] * g[2]);
+                    for (bb, tb) in group.iter().zip(&tv) {
+                        m.add(*a, *bb, C::new(w * (ta[0] * tb[0] + ta[1] * tb[1] + ta[2] * tb[2]), 0.0));
+                    }
+                }
+            }
+        }
+        let f = Ldlt::factor(&m, &points)?;
+        let (g, _) = f.solve_refined(&m, &r, 2)?;
+        // Lift: every tetrahedron with a conductor's degree of freedom.
+        let in_pml: std::collections::HashSet<usize> = self.pml.iter().flat_map(|(_, l)| l.iter().map(|(t, _)| *t)).collect();
+        for t in 0..self.mesh.tets.len() {
+            let slots = self.dofs.slots_of_tet(&self.topo, t);
+            let known: Vec<(usize, C)> = slots.iter().enumerate().filter_map(|(li, s)| index.get(s).map(|&k| (li, g[k]))).collect();
+            if known.is_empty() {
+                continue;
+            }
+            if in_pml.contains(&t) {
+                return Err(invalid("plane wave", "a conductor reaches into the perfectly matched layer"));
+            }
+            let el = self.element_of(t)?;
+            let (s, mm) = (el.stiffness(1.0), el.mass(1.0));
+            let n = slots.len();
+            let (eps, mu) = (self.eps_of(t), self.mu_of(t));
+            for (i, u) in self.dofs_of(t).iter().enumerate() {
+                if *u == crate::driven::NONE {
+                    continue;
+                }
+                for &(j, gj) in &known {
+                    let a = s[i * n + j] / mu - k0 * k0 * eps * mm[i * n + j];
+                    b[*u as usize] -= a * gj;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// E and H at the Huygens surface's points, with the points' weights and normals.

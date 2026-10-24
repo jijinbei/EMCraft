@@ -128,6 +128,24 @@ impl Dofs {
         Ok(Dofs { order, edges: ne, faces: nf, unknown, unknowns: free, points })
     }
 
+    /// The global degrees of freedom (slots, eliminated or not) of a tetrahedron's local basis
+    /// functions, in the order of [`Dofs::of_tet`].
+    pub(crate) fn slots_of_tet(&self, topo: &Topology, tet: usize) -> Vec<usize> {
+        let (pe, pf) = (self.order.per_edge(), self.order.per_face());
+        let mut out = Vec::with_capacity(self.order.dofs());
+        for j in 0..pe {
+            for e in topo.tet_edges[tet] {
+                out.push(e as usize * pe + j);
+            }
+        }
+        for f in topo.tet_faces[tet] {
+            for j in 0..pf {
+                out.push(self.edges * pe + f as usize * pf + j);
+            }
+        }
+        out
+    }
+
     /// The unknowns of a tetrahedron's local basis functions ([`NONE`] for eliminated ones).
     fn of_tet(&self, topo: &Topology, tet: usize) -> Vec<u32> {
         let (pe, pf) = (self.order.per_edge(), self.order.per_face());

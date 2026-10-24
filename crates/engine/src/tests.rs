@@ -334,15 +334,16 @@ fn open_problems_radiate_and_scatter() {
     let path = scratch("pattern.png");
     s.execute("view.pattern", &json!({"path": path, "points": 37})).unwrap();
     assert!(std::fs::read(&path).unwrap().len() > 1000);
-    // A plane wave needs dielectrics, not conductors, to scatter.
+    // A plane wave on a conducting sphere: the Mie series' cross-section comes with it.
     s.execute("source.clear", &json!({})).unwrap();
     assert!(s.execute("source.plane_wave", &json!({"direction": [0, 0, 1], "polarization": [0, 0, 1]})).is_err(), "not transverse");
     s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 3, "at": [20, 20, 20]})).unwrap();
     s.execute("model.open", &json!({"thickness": 10})).unwrap();
     s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
     s.execute("source.plane_wave", &json!({})).unwrap();
-    let e = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap_err();
-    assert!(e.to_string().contains("conductors"), "{e}");
+    let r = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
+    let (sigma, exact) = (r["scattering_cross_section"].as_f64().unwrap(), r["exact_scattering_cross_section"].as_f64().unwrap());
+    assert!((sigma / exact - 1.0).abs() < 0.3, "{sigma} {exact}");
     // Ports and an open boundary do not mix.
     let mut g = Session::new();
     g.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 10.16, 30]})).unwrap();

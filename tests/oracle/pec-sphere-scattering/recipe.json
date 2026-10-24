@@ -1,0 +1,10 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [50, 50, 50]}},
+ {"command": "geometry.inclusion", "params": {"shape": "sphere", "radius": 5, "at": [25, 25, 25]}},
+ {"command": "model.open", "params": {"thickness": 12}},
+ {"command": "mesh.generate", "params": {"per_wavelength": 6, "frequency": 10}},
+ {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},
+ {"command": "solve.radiation", "params": {"frequency": 10}, "id": "solve"},
+ {"command": "results.far_field", "params": {"theta": [0, 90, 180], "phi": 0}, "id": "e"},
+ {"command": "results.far_field", "params": {"theta": [90], "phi": 90}, "id": "h"}
+]

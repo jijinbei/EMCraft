@@ -234,7 +234,7 @@ A short current element (Hertzian dipole) driving an open problem: `current` (A,
 
 ## `source.plane_wave` — Plane wave
 
-A plane wave of 1 V/m on the model's dielectric bodies: the solve finds the field they scatter, its radar cross-section and the power it carries away.
+A plane wave of 1 V/m on the model's dielectric and conducting bodies: the solve finds the field they scatter (on conductors n × E_s = −n × E_inc), its radar cross-section and the power it carries away.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -249,7 +249,7 @@ No parameters.
 
 ## `solve.radiation` — Radiation
 
-Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box a third of the layer's thickness inside it, with the closed form for a lone dipole (radiated power) or a lone dielectric sphere (the Mie series' scattering cross-section).
+Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box a third of the layer's thickness inside it, with the closed form for a lone dipole (radiated power) or a lone dielectric or conducting sphere (the Mie series' scattering cross-section).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

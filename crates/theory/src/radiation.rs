@@ -77,12 +77,37 @@ pub fn mie_coefficients(x: f64, m: f64) -> Vec<(C, C)> {
         .collect()
 }
 
+/// The Mie coefficients of a perfectly conducting sphere (the limit m → ∞): aₙ = ψₙ'(x)/ξₙ'(x),
+/// bₙ = ψₙ(x)/ξₙ(x) (J. A. Stratton, *Electromagnetic Theory*, McGraw-Hill 1941, §9.25).
+pub fn mie_coefficients_pec(x: f64) -> Vec<(C, C)> {
+    let nmax = (x + 4.0 * x.cbrt() + 2.0).ceil() as usize;
+    let jx = sph_j_all(nmax + 1, x);
+    let y = |n: usize| crate::bessel::sph_y(n, x);
+    (1..=nmax)
+        .map(|n| {
+            let (psi, dpsi) = (x * jx[n], x * jx[n - 1] - n as f64 * jx[n]);
+            let xi = C::new(psi, x * y(n));
+            let dxi = C::new(dpsi, x * y(n - 1) - n as f64 * y(n));
+            (C::new(dpsi, 0.0) / dxi, C::new(psi, 0.0) / xi)
+        })
+        .collect()
+}
+
 /// S₁(θ), S₂(θ) for size parameter x and index m.
 pub fn mie_amplitudes(x: f64, m: f64, theta: f64) -> (C, C) {
+    amplitudes(&mie_coefficients(x, m), theta)
+}
+
+/// S₁(θ), S₂(θ) of a perfectly conducting sphere.
+pub fn mie_amplitudes_pec(x: f64, theta: f64) -> (C, C) {
+    amplitudes(&mie_coefficients_pec(x), theta)
+}
+
+fn amplitudes(coefficients: &[(C, C)], theta: f64) -> (C, C) {
     let mu = theta.cos();
     let (mut s1, mut s2) = (C::new(0.0, 0.0), C::new(0.0, 0.0));
     let (mut pi_prev, mut pi) = (0.0, 1.0);
-    for (k, (a, b)) in mie_coefficients(x, m).into_iter().enumerate() {
+    for (k, &(a, b)) in coefficients.iter().enumerate() {
         let n = (k + 1) as f64;
         let tau = n * mu * pi - (n + 1.0) * pi_prev;
         let f = (2.0 * n + 1.0) / (n * (n + 1.0));
@@ -104,9 +129,13 @@ pub fn sphere_rcs(a: f64, eps_r: f64, frequency: f64, theta: f64, e_plane: bool)
     4.0 * PI * if e_plane { s2.norm_sqr() } else { s1.norm_sqr() } / (k * k)
 }
 
-/// The scattering and extinction efficiencies Q_sca, Q_ext (cross-sections over πa²).
-pub fn mie_efficiencies(x: f64, m: f64) -> (f64, f64) {
-    let c = mie_coefficients(x, m);
+/// The scattering and extinction efficiencies Q_sca, Q_ext (cross-sections over πa²); `m`
+/// `None` for a perfect conductor.
+pub fn mie_efficiencies(x: f64, m: impl Into<Option<f64>>) -> (f64, f64) {
+    let c = match m.into() {
+        Some(m) => mie_coefficients(x, m),
+        None => mie_coefficients_pec(x),
+    };
     let sca: f64 = c.iter().enumerate().map(|(k, (a, b))| (2 * k + 3) as f64 * (a.norm_sqr() + b.norm_sqr())).sum();
     let ext: f64 = c.iter().enumerate().map(|(k, (a, b))| (2 * k + 3) as f64 * (a.re + b.re)).sum();
     (2.0 * sca / (x * x), 2.0 * ext / (x * x))
@@ -159,6 +188,28 @@ mod tests {
         let (s1, _) = mie_amplitudes(x, 1.55, PI);
         let back = 4.0 * s1.norm_sqr() / (x * x);
         assert!((back - 2.92534).abs() < 1e-5, "{back}");
+    }
+
+    #[test]
+    fn a_conducting_sphere() {
+        // Lossless too. Small spheres (Rayleigh): σ_back = 9πa²(ka)⁴ and Q_sca = (10/3)(ka)⁴
+        // (J. J. Bowman, T. B. A. Senior, P. L. E. Uslenghi, Electromagnetic and Acoustic
+        // Scattering by Simple Shapes, 1969, §10.2).
+        for x in [0.5, 1.0, 3.0] {
+            let (sca, ext) = mie_efficiencies(x, None);
+            assert!((sca / ext - 1.0).abs() < 1e-10, "{x}");
+        }
+        let x: f64 = 0.01;
+        assert!((mie_efficiencies(x, None).0 / (10.0 / 3.0 * x.powi(4)) - 1.0).abs() < 1e-3);
+        let (s1, _) = mie_amplitudes_pec(x, PI);
+        let back = 4.0 * s1.norm_sqr() / (x * x);
+        assert!((back / (9.0 * x.powi(4)) - 1.0).abs() < 1e-3, "{back}");
+        // Large spheres reflect like their geometric cross-section (σ_back → πa²) and extinguish
+        // twice it.
+        let x = 60.0;
+        let (s1, _) = mie_amplitudes_pec(x, PI);
+        assert!((4.0 * s1.norm_sqr() / (x * x) - 1.0).abs() < 0.05);
+        assert!((mie_efficiencies(x, None).1 - 2.0).abs() < 0.05);
     }
 
     #[test]

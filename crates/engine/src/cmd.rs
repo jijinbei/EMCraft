@@ -287,7 +287,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "source.plane_wave",
         label: "Plane wave",
-        doc: "A plane wave of 1 V/m on the model's dielectric bodies: the solve finds the field they scatter, its radar cross-section and the power it carries away.",
+        doc: "A plane wave of 1 V/m on the model's dielectric and conducting bodies: the solve finds the field they scatter (on conductors n × E_s = −n × E_inc), its radar cross-section and the power it carries away.",
         params: &[
             p("direction", "array", N, false, "the direction it travels (default [0, 0, 1])"),
             p("polarization", "array", N, false, "its electric field's direction, across `direction` (default [1, 0, 0])"),
@@ -298,7 +298,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.radiation",
         label: "Radiation",
-        doc: "Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box a third of the layer's thickness inside it, with the closed form for a lone dipole (radiated power) or a lone dielectric sphere (the Mie series' scattering cross-section).",
+        doc: "Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box a third of the layer's thickness inside it, with the closed form for a lone dipole (radiated power) or a lone dielectric or conducting sphere (the Mie series' scattering cross-section).",
         params: &[p("frequency", "number", F, true, "the frequency"), p("order", "integer", N, false, "element order: 1 or 2 (default)")],
         run: crate::open::solve_radiation,
     },
