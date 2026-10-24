@@ -44,6 +44,17 @@ A body of one material with conducting walls, meshed with unstructured tetrahedr
 | `length` | number | length | no | the cylinder's length along z |
 | `material` | string |  | no | the filling (default vacuum) |
 
+## `geometry.import` — Import a surface
+
+A body bounded by a closed triangulated surface read from an STL (binary or ASCII) or 3MF file, meshed with unstructured tetrahedra like geometry.solid. Its triangles are grouped into faces by the angle between neighbours, so its sharp edges stay edges. The faces on its lowest and highest z planes can carry ports when they are a whole rectangle or a disc. Replaces any geometry, mesh and results.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | the file (`.stl` or `.3mf`) |
+| `unit` | number | length | no | an STL file's length unit in display units (default 1, i.e. the display unit); 3MF files carry their own |
+| `angle` | number |  | no | neighbouring triangles turning by more than this many degrees are on different faces (default 30) |
+| `material` | string |  | no | the filling (default vacuum) |
+
 ## `geometry.inclusion` — Inclusion
 
 A body inside the solid: a dielectric region (`material`) or, without one, a conductor. The same shapes as geometry.solid, placed with their origin at `at`; it must lie inside the solid, apart from other inclusions. The regions are meshed apart and joined node for node across the interface.

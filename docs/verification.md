@@ -44,7 +44,8 @@ result is frozen so it cannot drift.
    at 3 mm, converging faster than h² (heavy), against the O(h²) 5.6e-3 of flat facets, which a
    test keeps measuring. Bodies combined by Booleans: the mesh Boolean's volumes exact for boxes in
    general position and through-holes, a post across a guide (power, reciprocity), and an iris
-   made of two subtracted plates against mode matching (oracle `boolean-iris`). The curved elements' identities — duality to curved edges, gradients
+   made of two subtracted plates against mode matching (oracle `boolean-iris`); an H-plane step read
+   from STL against mode matching (oracle `imported-step`) and the readers' hostile-file tests. The curved elements' identities — duality to curved edges, gradients
    in the curl's kernel, tangential continuity across a curved face — are tested in
    `emcraft-fem`. The mesher's own 126 tests came with it (`crates/tetmesh`).
 8. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our

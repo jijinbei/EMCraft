@@ -12,6 +12,7 @@ FieldCraft, so its behaviour is deterministic and fully verified.
 | `serde`, `serde_json` | MIT OR Apache-2.0 | command parameters and replies, scripts, oracle files |
 | `num-complex` | MIT OR Apache-2.0 | complex arithmetic of the frequency-domain solver |
 | `png` | MIT OR Apache-2.0 | PNG pictures |
+| `zip` (deflate only), `quick-xml` | MIT | reading 3MF packages (`emcraft-io`), the same lines as FieldCraft's |
 | `egui`, `eframe` (glow backend) | MIT OR Apache-2.0 | the desktop UI (L7 and apps only) |
 
 Rejected: any GPL/LGPL/AGPL solver or mesher (Elmer, openEMS, MEEP, GetDP, NGSolve, Gmsh, …) —

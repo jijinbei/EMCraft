@@ -1,0 +1,10 @@
+{
+ "title": "Asymmetric H-plane step read from an STL file: WR-90 narrowing to 16 mm against one wall",
+ "kind": "theory",
+ "source": "The geometry of the hplane-step-offset case, given as a 20-triangle ASCII STL surface (step.stl, millimetres) instead of waveguide sections: mode matching of TE_m0 modes at the step (A. Wexler, IEEE Trans. MTT 15(9):508–517, 1967), converged with 640 modes; power waves between ports of different aperture",
+ "quantities": [
+  {"id": "s11_mag_12", "quantity": "|S11| at 12 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.12729501348267938, "tolerance": {"absolute": 0.006}, "reason": "the surface's six faces found by the angle between triangles, the ports on its end planes recognised as rectangles, meshed with uniform unstructured tetrahedra of 3 mm (no grading at the step's re-entrant edge): +2.2e-3"},
+  {"id": "s11_phase_12", "quantity": "phase of S11 at 12 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s11/deg"}, "value": 96.62939513332852, "tolerance": {"absolute": 3.0}, "reason": "a small reflection: 3e-3 of complex error is about 1.4° of its phase (+1.8° measured)"},
+  {"id": "s21_mag_12", "quantity": "|S21| at 12 GHz", "measure": {"step": "solve", "pointer": "/points/1/s21/mag"}, "value": 0.991864899843947, "tolerance": {"absolute": 0.001}, "reason": "|S21|² = 1 − |S11|² to rounding, so it errs by |S11| δ|S11|"}
+ ]
+}

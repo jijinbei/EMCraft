@@ -174,7 +174,13 @@ pub enum Shape {
     Cylinder { radius: f64, length: f64 },
     /// Centred on the origin.
     Sphere { radius: f64 },
+    /// A closed triangulated surface (imported): positions (m), outward triangles and a face
+    /// tag per triangle.
+    Surface { name: String, positions: Vec<[f64; 3]>, triangles: Vec<[u32; 3]>, tags: Vec<u32> },
 }
+
+/// Most triangles an imported surface may have.
+pub const MAX_SURFACE_TRIANGLES: usize = 2_000_000;
 
 impl Shape {
     /// The bounding box (lo, hi).
@@ -183,7 +189,28 @@ impl Shape {
             Shape::Box { size } => ([0.0; 3], size),
             Shape::Cylinder { radius: r, length } => ([-r, -r, 0.0], [r, r, length]),
             Shape::Sphere { radius: r } => ([-r; 3], [r; 3]),
+            Shape::Surface { ref positions, .. } => {
+                let mut lo = [f64::INFINITY; 3];
+                let mut hi = [f64::NEG_INFINITY; 3];
+                for p in positions {
+                    for d in 0..3 {
+                        lo[d] = lo[d].min(p[d]);
+                        hi[d] = hi[d].max(p[d]);
+                    }
+                }
+                if positions.is_empty() { ([0.0; 3], [0.0; 3]) } else { (lo, hi) }
+            }
         }
+    }
+
+    /// An imported surface's triangles on its lowest and highest z planes, the faces a port can
+    /// close (empty for the primitives, whose ends the mesher knows).
+    pub fn end_triangles(&self) -> [Vec<usize>; 2] {
+        let Shape::Surface { positions, triangles, .. } = self else { return [Vec::new(), Vec::new()] };
+        let (lo, hi) = self.bounds();
+        let tol = 1e-9 * (0..3).map(|d| hi[d] - lo[d]).fold(0.0, f64::max);
+        let on = |t: &[u32; 3], z: f64| t.iter().all(|v| positions.get(*v as usize).is_some_and(|p| (p[2] - z).abs() <= tol));
+        [lo[2], hi[2]].map(|z| (0..triangles.len()).filter(|&i| on(&triangles[i], z)).collect())
     }
 
     pub fn volume(&self) -> f64 {
@@ -191,6 +218,13 @@ impl Shape {
             Shape::Box { size } => size[0] * size[1] * size[2],
             Shape::Cylinder { radius, length } => std::f64::consts::PI * radius * radius * length,
             Shape::Sphere { radius } => 4.0 / 3.0 * std::f64::consts::PI * radius.powi(3),
+            Shape::Surface { ref positions, ref triangles, .. } => triangles
+                .iter()
+                .map(|t| {
+                    let [a, b, c] = t.map(|v| positions.get(v as usize).copied().unwrap_or([0.0; 3]));
+                    (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+                })
+                .sum(),
         }
     }
 }
@@ -235,6 +269,38 @@ impl Solid {
             }
             Shape::Sphere { radius } => {
                 positive("sphere radius", radius)?;
+            }
+            Shape::Surface { ref positions, ref triangles, ref tags, .. } => {
+                if triangles.len() < 4 || triangles.len() > MAX_SURFACE_TRIANGLES {
+                    return Err(invalid("surface", format!("has {} triangles; it needs 4 to {MAX_SURFACE_TRIANGLES}", triangles.len())));
+                }
+                if tags.len() != triangles.len() {
+                    return Err(invalid("surface", "needs a face tag per triangle"));
+                }
+                if !positions.iter().flatten().all(|c| c.is_finite()) {
+                    return Err(invalid("surface", "has a coordinate that is not a finite number"));
+                }
+                // Closed and oriented: every edge held once each way.
+                let mut half = std::collections::HashMap::new();
+                for t in triangles {
+                    if t.iter().any(|v| *v as usize >= positions.len()) || t[0] == t[1] || t[1] == t[2] || t[0] == t[2] {
+                        return Err(invalid("surface", "has a triangle with a missing or repeated corner"));
+                    }
+                    for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                        *half.entry((a, b)).or_insert(0u32) += 1;
+                    }
+                }
+                if let Some(((a, b), _)) = half.iter().find(|((a, b), n)| **n != 1 || half.get(&(*b, *a)) != Some(&1)) {
+                    return Err(invalid(
+                        "surface",
+                        format!(
+                            "is not closed and consistently oriented (its edge between vertices {a} and {b}); a solid needs a watertight surface"
+                        ),
+                    ));
+                }
+                if !(self.shape.volume() > 0.0) {
+                    return Err(invalid("surface", "encloses no volume (its triangles may face inwards)"));
+                }
             }
         }
         Ok(())
@@ -555,6 +621,37 @@ impl Model {
             Some(Shape::Box { size }) => Ok(PortShape::Rect { x0: 0.0, y0: 0.0, a: size[0], b: size[1] }),
             Some(Shape::Cylinder { radius, .. }) => Ok(PortShape::Circle { cx: 0.0, cy: 0.0, r: *radius }),
             Some(Shape::Sphere { .. }) => Err(invalid("port", "a sphere has no flat end faces for ports")),
+            Some(shape @ Shape::Surface { positions, triangles, .. }) => {
+                // The end plane's triangles: a full rectangle, or a disc (a polygon round it).
+                let tris = &shape.end_triangles()[match end {
+                    End::Start => 0,
+                    End::End => 1,
+                }];
+                if tris.is_empty() {
+                    return Err(invalid("port", "the imported surface has no flat face on its end plane (its lowest or highest z)"));
+                }
+                let mut lo = [f64::INFINITY; 2];
+                let mut hi = [f64::NEG_INFINITY; 2];
+                let mut area = 0.0;
+                for &i in tris {
+                    let [a, b, c] = triangles[i].map(|v| positions[v as usize]);
+                    area += 0.5 * ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])).abs();
+                    for p in [a, b, c] {
+                        for d in 0..2 {
+                            lo[d] = lo[d].min(p[d]);
+                            hi[d] = hi[d].max(p[d]);
+                        }
+                    }
+                }
+                let (w, h) = (hi[0] - lo[0], hi[1] - lo[1]);
+                if (area - w * h).abs() <= 1e-6 * w * h {
+                    Ok(PortShape::Rect { x0: lo[0], y0: lo[1], a: w, b: h })
+                } else if (w - h).abs() <= 1e-3 * w && (area / (std::f64::consts::PI * w * h / 4.0) - 1.0).abs() < 0.05 {
+                    Ok(PortShape::Circle { cx: 0.5 * (lo[0] + hi[0]), cy: 0.5 * (lo[1] + hi[1]), r: 0.25 * (w + h) })
+                } else {
+                    Err(invalid("port", "the end face of the imported surface is neither a whole rectangle nor a disc"))
+                }
+            }
             None => Err(invalid("model", "has no geometry")),
         }
     }

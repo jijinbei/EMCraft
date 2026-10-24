@@ -230,14 +230,49 @@ fn tessellate(shape: &Shape, size: f64) -> Tessellation {
         Shape::Box { size: xyz } => tessellate_box(xyz, size),
         Shape::Cylinder { radius, length } => tessellate_cylinder(radius, length, size),
         Shape::Sphere { radius } => tessellate_sphere(radius, size),
+        Shape::Surface { .. } => tessellate_surface(shape),
     }
+}
+
+/// An imported surface as it is (the mesher refines it to the size): its faces as tagged, the
+/// triangles on its lowest and highest z planes made the end faces a port may close, with
+/// their planes as exact surfaces.
+fn tessellate_surface(shape: &Shape) -> Tessellation {
+    let Shape::Surface { positions, triangles, tags, .. } = shape else {
+        return Tessellation {
+            positions: Vec::new(),
+            triangles: Vec::new(),
+            tri_face: Vec::new(),
+            analytic: Vec::new(),
+            start_face: None,
+            end_face: None,
+        };
+    };
+    let mut tri_face = tags.clone();
+    let faces = tags.iter().map(|t| t + 1).max().unwrap_or(0);
+    let mut analytic = vec![None; faces as usize];
+    let (lo, hi) = shape.bounds();
+    let ends = shape.end_triangles();
+    let mut tag_of = [None, None];
+    for (k, (list, z, n)) in [(&ends[0], lo[2], -1.0), (&ends[1], hi[2], 1.0)].into_iter().enumerate() {
+        if list.is_empty() {
+            continue;
+        }
+        let tag = analytic.len() as u32;
+        analytic.push(Some(AnalyticSurface::Plane { normal: [0.0, 0.0, n], point: [0.0, 0.0, z] }));
+        for &i in list {
+            tri_face[i] = tag;
+        }
+        tag_of[k] = Some(tag);
+    }
+    Tessellation { positions: positions.clone(), triangles: triangles.clone(), tri_face, analytic, start_face: tag_of[0], end_face: tag_of[1] }
 }
 
 /// The tessellation size of an inclusion: its interface is kept as tessellated (frozen), so a
 /// curved one is divided finely enough for its curvature (about π/16 of its radius).
 fn interface_size(shape: &Shape, size: f64) -> f64 {
     match *shape {
-        Shape::Box { .. } => size,
+        Shape::Box { .. } | Shape::Surface { .. } => size,
         Shape::Cylinder { radius, .. } | Shape::Sphere { radius } => size.min(radius * PI / 16.0),
     }
 }
@@ -279,7 +314,7 @@ fn flat_faces(shape: &Shape, at: [f64; 3], axis: Axis) -> Vec<(usize, f64, f64)>
             let d = axis.index();
             vec![(d, at[d], -1.0), (d, at[d] + length, 1.0)]
         }
-        Shape::Sphere { .. } => Vec::new(),
+        Shape::Sphere { .. } | Shape::Surface { .. } => Vec::new(),
     }
 }
 
@@ -540,7 +575,7 @@ enum Curved {
 impl Curved {
     fn of(shape: &Shape, at: [f64; 3], axis: Axis) -> Option<Curved> {
         match *shape {
-            Shape::Box { .. } => None,
+            Shape::Box { .. } | Shape::Surface { .. } => None,
             Shape::Cylinder { radius, .. } => Some(Curved::Cylinder { c: at, axis: axis.index(), r: radius }),
             Shape::Sphere { radius } => Some(Curved::Sphere { c: at, r: radius }),
         }

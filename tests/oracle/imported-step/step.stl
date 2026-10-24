@@ -1,0 +1,142 @@
+solid step
+ facet normal 0 0 -1
+  outer loop
+   vertex 0 0 0
+   vertex 22.86 10.16 0
+   vertex 22.86 0 0
+  endloop
+ endfacet
+ facet normal 0 0 -1
+  outer loop
+   vertex 0 0 0
+   vertex 0 10.16 0
+   vertex 22.86 10.16 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 0 0 33.0
+   vertex 16.0 0 33.0
+   vertex 16.0 10.16 33.0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 0 0 33.0
+   vertex 16.0 10.16 33.0
+   vertex 0 10.16 33.0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 16.0 0 15.0
+   vertex 22.86 0 15.0
+   vertex 22.86 10.16 15.0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 16.0 0 15.0
+   vertex 22.86 10.16 15.0
+   vertex 16.0 10.16 15.0
+  endloop
+ endfacet
+ facet normal -1 0 0
+  outer loop
+   vertex 0 0 0
+   vertex 0 0 33.0
+   vertex 0 10.16 33.0
+  endloop
+ endfacet
+ facet normal -1 0 0
+  outer loop
+   vertex 0 0 0
+   vertex 0 10.16 33.0
+   vertex 0 10.16 0
+  endloop
+ endfacet
+ facet normal 1 0 0
+  outer loop
+   vertex 22.86 0 0
+   vertex 22.86 10.16 15.0
+   vertex 22.86 0 15.0
+  endloop
+ endfacet
+ facet normal 1 0 0
+  outer loop
+   vertex 22.86 0 0
+   vertex 22.86 10.16 0
+   vertex 22.86 10.16 15.0
+  endloop
+ endfacet
+ facet normal 1 0 0
+  outer loop
+   vertex 16.0 0 15.0
+   vertex 16.0 10.16 33.0
+   vertex 16.0 0 33.0
+  endloop
+ endfacet
+ facet normal 1 0 0
+  outer loop
+   vertex 16.0 0 15.0
+   vertex 16.0 10.16 15.0
+   vertex 16.0 10.16 33.0
+  endloop
+ endfacet
+ facet normal 0 -1 0
+  outer loop
+   vertex 0 0 0
+   vertex 22.86 0 0
+   vertex 22.86 0 15.0
+  endloop
+ endfacet
+ facet normal 0 -1 0
+  outer loop
+   vertex 0 0 0
+   vertex 22.86 0 15.0
+   vertex 16.0 0 15.0
+  endloop
+ endfacet
+ facet normal 0 -1 0
+  outer loop
+   vertex 0 0 0
+   vertex 16.0 0 15.0
+   vertex 16.0 0 33.0
+  endloop
+ endfacet
+ facet normal 0 -1 0
+  outer loop
+   vertex 0 0 0
+   vertex 16.0 0 33.0
+   vertex 0 0 33.0
+  endloop
+ endfacet
+ facet normal 0 1 0
+  outer loop
+   vertex 0 10.16 0
+   vertex 22.86 10.16 15.0
+   vertex 22.86 10.16 0
+  endloop
+ endfacet
+ facet normal 0 1 0
+  outer loop
+   vertex 0 10.16 0
+   vertex 16.0 10.16 15.0
+   vertex 22.86 10.16 15.0
+  endloop
+ endfacet
+ facet normal 0 1 0
+  outer loop
+   vertex 0 10.16 0
+   vertex 16.0 10.16 33.0
+   vertex 16.0 10.16 15.0
+  endloop
+ endfacet
+ facet normal 0 1 0
+  outer loop
+   vertex 0 10.16 0
+   vertex 0 10.16 33.0
+   vertex 16.0 10.16 33.0
+  endloop
+ endfacet
+endsolid step

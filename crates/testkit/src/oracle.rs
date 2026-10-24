@@ -173,7 +173,11 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>), String> {
     let mut replies: BTreeMap<String, Value> = BTreeMap::new();
     for (i, step) in steps.iter().enumerate() {
         let id = step.get("command").and_then(Value::as_str).ok_or_else(|| format!("recipe step {}: no `command`", i + 1))?;
-        let params = step.get("params").cloned().unwrap_or_else(|| json!({}));
+        let mut params = step.get("params").cloned().unwrap_or_else(|| json!({}));
+        // Files a case brings (an imported surface) are named relative to its directory.
+        if let Some(path) = params.get("path").and_then(Value::as_str).filter(|p| id == "geometry.import" && Path::new(p).is_relative()) {
+            params["path"] = json!(dir.join(path).to_string_lossy());
+        }
         let reply = session.execute(id, &params).map_err(|e| format!("recipe step {} ({id}): {e}", i + 1))?;
         if let Some(name) = step.get("id").and_then(Value::as_str) {
             replies.insert(name.to_owned(), reply);

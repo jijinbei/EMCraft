@@ -225,3 +225,51 @@ fn features_page_lists_every_command() {
         assert!(md.contains(&format!("`{}`", c.id)));
     }
 }
+
+/// A box [0, x] × [0, y] × [0, z] (mm) as a closed surface, two outward triangles per face.
+fn box_surface(x: f64, y: f64, z: f64) -> emcraft_io::Surface {
+    let mut s = emcraft_io::Surface::default();
+    for i in 0..8 {
+        s.positions.push([if i & 1 == 0 { 0.0 } else { x }, if i & 2 == 0 { 0.0 } else { y }, if i & 4 == 0 { 0.0 } else { z }]);
+    }
+    for q in [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]] {
+        s.triangles.push([q[0], q[1], q[2]]);
+        s.triangles.push([q[0], q[2], q[3]]);
+    }
+    s.tags = vec![0; 12];
+    s
+}
+
+#[test]
+fn imported_surfaces_mesh_and_carry_ports() {
+    // WR-90, 30 mm long, as binary STL in millimetres (exact in f32: 22.86 is not, so 22.5).
+    let path = scratch("guide.stl");
+    std::fs::write(&path, emcraft_io::stl::write_binary(&box_surface(22.5, 10.0, 30.0), 1.0)).unwrap();
+    let mut s = Session::new();
+    let r = s.execute("geometry.import", &json!({"path": path})).unwrap();
+    assert_eq!(r["faces"], 6);
+    assert!((r["volume"].as_f64().unwrap() - 22.5e-3 * 10e-3 * 30e-3).abs() < 1e-15);
+    s.execute("mesh.generate", &json!({"size": 3})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    let r = s.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
+    let s21 = &r["points"][0]["s21"];
+    let (re, im) = (s21["re"].as_f64().unwrap(), s21["im"].as_f64().unwrap());
+    let exact = emcraft_theory::Te10Line { a: 0.0225, layers: vec![emcraft_theory::Layer::lossless(0.03, 1.0, 1.0)] }.solve(10e9).unwrap().s21;
+    assert!((re - exact.re).hypot(im - exact.im) < 1e-3, "{re} {im} {exact}");
+    // The same as ASCII, in centimetres.
+    std::fs::write(&path, emcraft_io::stl::write_ascii(&box_surface(2.25, 1.0, 3.0), 1.0)).unwrap();
+    let r = s.execute("geometry.import", &json!({"path": path, "unit": 10})).unwrap();
+    assert!((r["volume"].as_f64().unwrap() - 6.75e-6).abs() < 1e-15);
+    // An open surface, a missing file and an unknown format are refused.
+    let mut open = box_surface(1.0, 1.0, 1.0);
+    open.triangles.pop();
+    open.tags.pop();
+    std::fs::write(&path, emcraft_io::stl::write_binary(&open, 1.0)).unwrap();
+    let e = s.execute("geometry.import", &json!({"path": path})).unwrap_err();
+    assert!(e.to_string().contains("closed"), "{e}");
+    assert!(s.execute("geometry.import", &json!({"path": scratch("nothing-here.stl")})).is_err());
+    assert!(s.execute("geometry.import", &json!({"path": scratch("guide.obj")})).is_err());
+    // The model was left as it was by the refusals.
+    assert!(matches!(s.model.solid.as_ref().unwrap().shape, emcraft_model::Shape::Surface { .. }));
+}

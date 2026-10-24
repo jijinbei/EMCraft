@@ -12,6 +12,7 @@ workspace = true
 emcraft-model = { workspace = true }
 emcraft-mesh = { workspace = true }
 emcraft-fem = { workspace = true }
+emcraft-io = { workspace = true }
 emcraft-theory = { workspace = true }
 emcraft-render = { workspace = true }
 emcraft-solver = { workspace = true }

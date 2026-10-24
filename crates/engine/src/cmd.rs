@@ -69,6 +69,18 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: solid,
     },
     CommandSpec {
+        id: "geometry.import",
+        label: "Import a surface",
+        doc: "A body bounded by a closed triangulated surface read from an STL (binary or ASCII) or 3MF file, meshed with unstructured tetrahedra like geometry.solid. Its triangles are grouped into faces by the angle between neighbours, so its sharp edges stay edges. The faces on its lowest and highest z planes can carry ports when they are a whole rectangle or a disc. Replaces any geometry, mesh and results.",
+        params: &[
+            p("path", "string", N, true, "the file (`.stl` or `.3mf`)"),
+            p("unit", "number", L, false, "an STL file's length unit in display units (default 1, i.e. the display unit); 3MF files carry their own"),
+            p("angle", "number", N, false, "neighbouring triangles turning by more than this many degrees are on different faces (default 30)"),
+            p("material", "string", N, false, "the filling (default vacuum)"),
+        ],
+        run: import,
+    },
+    CommandSpec {
         id: "geometry.inclusion",
         label: "Inclusion",
         doc: "A body inside the solid: a dielectric region (`material`) or, without one, a conductor. The same shapes as geometry.solid, placed with their origin at `at`; it must lie inside the solid, apart from other inclusions. The regions are meshed apart and joined node for node across the interface.",
@@ -340,6 +352,42 @@ fn inclusion(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"inclusions": s.model.inclusions.len()}))
 }
 
+/// Largest geometry file read.
+const MAX_IMPORT_BYTES: u64 = 512 << 20;
+
+fn import(s: &mut Session, p: &Value) -> Result<Value> {
+    let path = required_string(p, "path")?;
+    let unit = s.display.length.to_si(number(p, "unit")?.unwrap_or(1.0));
+    if !(unit.is_finite() && unit > 0.0) {
+        return Err(EngineError::Params("`unit` must be a positive length".into()));
+    }
+    let angle = number(p, "angle")?.unwrap_or(30.0);
+    if !(angle.is_finite() && angle > 0.0 && angle < 180.0) {
+        return Err(EngineError::Params("`angle` must be between 0 and 180 degrees".into()));
+    }
+    let len = std::fs::metadata(path).map_err(|e| EngineError::Failed(format!("`{path}`: {e}")))?.len();
+    if len > MAX_IMPORT_BYTES {
+        return Err(EngineError::Failed(format!("`{path}` is {} MB; at most {} MB are read", len >> 20, MAX_IMPORT_BYTES >> 20)));
+    }
+    let bytes = std::fs::read(path).map_err(|e| EngineError::Failed(format!("`{path}`: {e}")))?;
+    let mut surface = emcraft_io::read(path, &bytes, unit).map_err(|e| EngineError::Failed(e.to_string()))?;
+    let faces = emcraft_io::split_faces(&mut surface, angle);
+    let material = string(p, "material")?.unwrap_or("vacuum").to_owned();
+    let triangles = surface.triangles.len();
+    let shape = Shape::Surface { name: surface.name, positions: surface.positions, triangles: surface.triangles, tags: surface.tags };
+    s.model.set_solid(Solid { shape, material })?;
+    s.sweep = None;
+    s.eigen = None;
+    s.time_domain = None;
+    let (lo, hi) = s.model.bounds().unwrap_or(([0.0; 3], [0.0; 3]));
+    Ok(json!({
+        "triangles": triangles,
+        "faces": faces,
+        "volume": s.model.solid.as_ref().map(|x| x.shape.volume()),
+        "bounds": [lo.map(|v| s.display.length.from_si(v)), hi.map(|v| s.display.length.from_si(v))],
+    }))
+}
+
 fn feature(s: &mut Session, p: &Value) -> Result<Value> {
     let combine = match required_string(p, "combine")? {
         "add" => Combine::Add,
@@ -507,6 +555,8 @@ fn eigenmode_table(s: &mut Session, _: &Value) -> Result<Value> {
         json!({"frequency_unit": s.display.frequency.symbol(), "unknowns": e.driven.dofs.unknowns, "iterations": e.iterations, "modes": modes});
     // The closed form for a primitive cavity.
     if let Some(solid) = s.model.solid.as_ref()
+        && s.model.inclusions.is_empty()
+        && s.model.features.is_empty()
         && let Ok((_, m)) = s.model.material(&solid.material)
     {
         let er = m.eps_r * m.mu_r;
@@ -514,8 +564,11 @@ fn eigenmode_table(s: &mut Session, _: &Value) -> Result<Value> {
             Shape::Box { size } => emcraft_theory::cavity_resonances(size[0], size[1], size[2], er, 12),
             Shape::Cylinder { radius, length } => emcraft_theory::bessel::cylinder_cavity_resonances(radius, length, er, 12),
             Shape::Sphere { radius } => emcraft_theory::bessel::sphere_cavity_resonances(radius, er, 12),
+            Shape::Surface { .. } => Vec::new(),
         };
-        reply["exact"] = json!(list.into_iter().map(|(f, name)| json!({"mode": name, "frequency": s.show_frequency(f)})).collect::<Vec<_>>());
+        if !list.is_empty() {
+            reply["exact"] = json!(list.into_iter().map(|(f, name)| json!({"mode": name, "frequency": s.show_frequency(f)})).collect::<Vec<_>>());
+        }
     }
     // The closed form for a cavity of one full-width section.
     if let Some(w) = s.model.waveguide.as_ref()

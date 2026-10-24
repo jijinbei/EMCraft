@@ -17,6 +17,7 @@ emcraft-theory = { path = "crates/theory" }
 emcraft-render = { path = "crates/render" }
 emcraft-solver = { path = "crates/solver" }
 emcraft-fdtd = { path = "crates/fdtd" }
+emcraft-io = { path = "crates/io" }
 emcraft-engine = { path = "crates/engine" }
 emcraft-ui-egui = { path = "crates/ui-egui" }
 
@@ -26,6 +27,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 # Complex numbers for the frequency-domain solver (docs/adr/0001-libraries.md).
 num-complex = { version = "0.4", default-features = false, features = ["std"] }
+
+# geometry import: 3MF packages (zip, XML), the same lines as FieldCraft
+zip = { version = "9", default-features = false, features = ["deflate"] }
+quick-xml = "0.42"
 
 # images (PNG field pictures)
 png = "0.18"
