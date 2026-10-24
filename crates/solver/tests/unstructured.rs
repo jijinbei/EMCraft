@@ -88,6 +88,47 @@ fn unstructured_waveguide_transmits_with_the_te10_phase() {
     }
 }
 
+/// The TE11 wave through `len` of empty circular guide, radius r: S21 = e^{−jβL}.
+fn circular_s21(r: f64, len: f64, f: f64) -> num_complex::Complex64 {
+    let k = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;
+    let kc = 1.841183781340659 / r;
+    num_complex::Complex64::from_polar(1.0, -(k * k - kc * kc).sqrt() * len)
+}
+
+fn circular_guide_error(h: f64) -> f64 {
+    use emcraft_model::{End, Port};
+    // r = 10 mm: TE11 above 8.79 GHz, TM01 above 11.47 GHz, TE21 above 14.58 GHz.
+    let mut m = body(Shape::Cylinder { radius: 0.01, length: 0.03 }, h);
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 3 }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 3 }).unwrap();
+    let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
+    let mut worst = 0.0f64;
+    for f in [10.5e9, 13.5e9] {
+        let r = d.solve(f).unwrap();
+        let e = (r.s[1][0] - circular_s21(0.01, 0.03, f)).norm().max(r.s[0][0].norm());
+        assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-3, "{f}");
+        worst = worst.max(e);
+    }
+    worst
+}
+
+#[test]
+fn circular_waveguide_transmits_with_the_te11_phase() {
+    // The ports' TE11, TM01 and the cross-polarized TE11 against Bessel modes. The flat facets
+    // inscribed in the wall raise the cut-off a little, so the phase lags: an O(h²) error of the
+    // geometry (|S11| itself stays near 2e-3).
+    let w = circular_guide_error(0.003);
+    assert!(w < 6e-2, "{w:e}");
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn circular_waveguide_converges_with_the_geometry() {
+    let (e3, e2) = (circular_guide_error(0.003), circular_guide_error(0.002));
+    eprintln!("{e3:e} {e2:e}");
+    assert!(e3 / e2 > 1.8, "{e3:e} {e2:e}");
+}
+
 /// A spherical cavity of radius 10 mm holding a concentric dielectric sphere (εr = 4, radius
 /// 4 mm): the largest relative error of its three lowest modes at element size `h`.
 fn loaded_sphere_error(h: f64) -> f64 {

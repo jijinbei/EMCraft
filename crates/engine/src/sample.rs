@@ -31,6 +31,11 @@ pub const SAMPLES: &[Sample] = &[
         script: include_str!("../samples/cylinder-cavity.json"),
     },
     Sample {
+        name: "circular-guide",
+        label: "Circular waveguide, radius 10 mm, 30 mm long, on an unstructured mesh: TE11 (cut-off 8.79 GHz) through ports closed by the Bessel modes",
+        script: include_str!("../samples/circular-guide.json"),
+    },
+    Sample {
         name: "loaded-sphere",
         label: "Spherical cavity, radius 10 mm, around a concentric ceramic sphere (εr = 4, radius 4 mm): two material regions joined node for node, the TM11 triplet at 11.26 GHz",
         script: include_str!("../samples/loaded-sphere.json"),

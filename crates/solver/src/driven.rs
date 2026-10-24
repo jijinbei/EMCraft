@@ -274,13 +274,14 @@ impl Driven {
                     "not supported yet: a port in a lossy material (end the guide with a lossless section)",
                 ));
             }
-            let (x0, y0, aw, ah) = match model.port_shape(p.end)? {
-                emcraft_model::PortShape::Rect { x0, y0, a, b } => (x0, y0, a, b),
-                emcraft_model::PortShape::Circle { .. } => {
-                    return Err(invalid(format!("port `{}`", p.name), "not supported yet: circular waveguide ports"));
+            let list: Vec<Mode> = match model.port_shape(p.end)? {
+                emcraft_model::PortShape::Rect { x0, y0, a, b } => {
+                    modes::lowest(a, b, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect()
+                }
+                emcraft_model::PortShape::Circle { cx, cy, r } => {
+                    modes::lowest_circular(r, p.modes as usize).into_iter().map(|md| md.at(cx, cy)).collect()
                 }
             };
-            let list: Vec<Mode> = modes::lowest(aw, ah, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect();
             let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
             let rule = triangle_rule(if order == Order::One { 6 } else { 8 });
             let mut touched = vec![false; dofs.unknowns];
@@ -293,11 +294,15 @@ impl Driven {
                 for (l, wq) in &rule {
                     let x = [0, 1, 2].map(|d| l[0] * q[0][d] + l[1] * q[1][d] + l[2] * q[2][d]);
                     let values = el.values(el.barycentric(x));
+                    // Only the functions of the face's own edges and the face have a tangential
+                    // trace on it; the others are normal to it (zero but for rounding), and
+                    // keeping them would make the dense port block several times larger.
+                    let scale = values.iter().map(|v| norm3(*v)).fold(0.0, f64::max);
                     for (mi, mode) in list.iter().enumerate() {
                         let e = mode.field(x[0], x[1]);
                         let e = [e[0], e[1], 0.0];
                         for (u, v) in unknowns.iter().zip(&values) {
-                            if *u != NONE {
+                            if *u != NONE && v[0].hypot(v[1]) > 1e-9 * scale {
                                 vectors[mi][*u as usize] += wq * area * dot(*v, e);
                                 touched[*u as usize] = true;
                             }
