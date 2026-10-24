@@ -3,8 +3,10 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod driven;
 pub mod ldlt;
 pub mod ordering;
 pub mod sparse;
 
+pub use driven::{Driven, Field, FrequencyResult, SolveError};
 pub use num_complex::Complex64;

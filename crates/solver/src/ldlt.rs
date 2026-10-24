@@ -193,6 +193,282 @@ fn interchange(f: &mut [C], m: usize, k: usize, rows: &mut [usize], p: usize, q:
     rows.swap(p, q);
 }
 
+/// Pivot columns per block: pivots are chosen within a block, then the block updates the rest
+/// of the front at once.
+const BLOCK: usize = 32;
+
+/// Fronts whose block update is smaller than this many complex multiply–adds run on one thread.
+const PARALLEL_WORK: usize = 1 << 20;
+
+/// Eliminates the first `k` columns of a front (column-major m × m: full in the first k columns,
+/// lower in the rest) in blocks of [`BLOCK`] pivots. Within a block, pivots are found by the
+/// Bunch–Kaufman test among the block's columns and applied right-looking to the block alone;
+/// the block then updates every later column with one product, F[i][j] −= Σ_t W[i][t] L[j][t]
+/// (W = L D), split by columns over threads. Each entry is summed in the same order on any
+/// number of threads, so the result is the same bit for bit. On return the first k columns hold
+/// L (unit diagonal) and the rest the Schur complement (lower).
+fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, perturbed: &mut usize, two_by_two: &mut usize) -> Vec<Pivot> {
+    let mut pivots = vec![Pivot::Second; k];
+    let mut b0 = 0;
+    while b0 < k {
+        let be = (b0 + BLOCK).min(k);
+        let mut p = b0;
+        while p < be {
+            let (r, w1) = colmax(f, m, p, p);
+            let app = f[p * m + p].norm();
+            // (column to bring to p, 2 × 2 partner)
+            let mut choice: Option<(usize, Option<usize>)> = None;
+            if app >= ALPHA * w1 && (app > 0.0 || w1 == 0.0) {
+                choice = Some((p, None));
+            } else if r < be {
+                let (_, wr) = colmax(f, m, r, p);
+                let arr = f[r * m + r].norm();
+                if app * wr >= ALPHA * w1 * w1 {
+                    choice = Some((p, None));
+                } else if arr >= ALPHA * wr {
+                    choice = Some((r, None));
+                } else if p + 1 < be {
+                    choice = Some((p, Some(r)));
+                }
+            }
+            if choice.is_none() {
+                // The largest entry lies outside the block: another column of the block that
+                // passes the test, else the best 2 × 2 inside it, else column p.
+                for j in p + 1..be {
+                    let (_, wj) = colmax(f, m, j, p);
+                    if f[j * m + j].norm() >= ALPHA * wj && f[j * m + j].norm() > tau {
+                        choice = Some((j, None));
+                        break;
+                    }
+                }
+            }
+            if choice.is_none() && p + 1 < be {
+                let (q, wq) = (p + 1..be).fold((usize::MAX, 0.0), |b, i| if f[p * m + i].norm() > b.1 { (i, f[p * m + i].norm()) } else { b });
+                if q != usize::MAX {
+                    let det = f[p * m + p] * f[q * m + q] - f[p * m + q] * f[p * m + q];
+                    if det.norm() > tau * wq {
+                        choice = Some((p, Some(q)));
+                    }
+                }
+            }
+            let (col, partner) = choice.unwrap_or((p, None));
+            match partner {
+                None => {
+                    interchange(f, m, k, rows, p, col);
+                    let mut d = f[p * m + p];
+                    if !(d.norm() > tau) {
+                        d = if d.norm() > 0.0 { d / d.norm() * tau } else { C::new(tau, 0.0) };
+                        *perturbed += 1;
+                    }
+                    pivots[p] = Pivot::One(d);
+                    // Original column values c_i, then l_i = c_i / d.
+                    let c: Vec<C> = f[p * m + p + 1..p * m + m].to_vec();
+                    let dinv = d.inv();
+                    for (x, ci) in f[p * m + p + 1..p * m + m].iter_mut().zip(&c) {
+                        *x = ci * dinv;
+                    }
+                    f[p * m + p] = C::new(1.0, 0.0);
+                    for j in p + 1..be {
+                        let cj = c[j - p - 1];
+                        if cj == C::new(0.0, 0.0) {
+                            continue;
+                        }
+                        for i in p + 1..m {
+                            let li = f[p * m + i];
+                            f[j * m + i] -= li * cj;
+                        }
+                    }
+                    p += 1;
+                }
+                Some(q) => {
+                    interchange(f, m, k, rows, p + 1, q);
+                    let (a11, a21, a22) = (f[p * m + p], f[p * m + p + 1], f[(p + 1) * m + p + 1]);
+                    let det = a11 * a22 - a21 * a21;
+                    let (i11, i21, i22) = (a22 / det, -a21 / det, a11 / det);
+                    pivots[p] = Pivot::Two(a11, a21, a22);
+                    pivots[p + 1] = Pivot::Second;
+                    *two_by_two += 1;
+                    let c0v: Vec<C> = f[p * m + p + 2..p * m + m].to_vec();
+                    let c1v: Vec<C> = f[(p + 1) * m + p + 2..(p + 1) * m + m].to_vec();
+                    for i in 0..c0v.len() {
+                        f[p * m + p + 2 + i] = c0v[i] * i11 + c1v[i] * i21;
+                        f[(p + 1) * m + p + 2 + i] = c0v[i] * i21 + c1v[i] * i22;
+                    }
+                    f[p * m + p] = C::new(1.0, 0.0);
+                    f[p * m + p + 1] = C::new(0.0, 0.0);
+                    f[(p + 1) * m + p + 1] = C::new(1.0, 0.0);
+                    for j in p + 2..be {
+                        let (cj0, cj1) = (c0v[j - p - 2], c1v[j - p - 2]);
+                        for i in p + 2..m {
+                            let (l0, l1) = (f[p * m + i], f[(p + 1) * m + i]);
+                            f[j * m + i] -= l0 * cj0 + l1 * cj1;
+                        }
+                    }
+                    p += 2;
+                }
+            }
+        }
+
+        // The block's L and W = L D for the rows below it, by row (contiguous per row).
+        let nb = be - b0;
+        let below = m - be;
+        if below > 0 {
+            let mut l = vec![C::new(0.0, 0.0); below * nb];
+            for t in 0..nb {
+                for i in 0..below {
+                    l[i * nb + t] = f[(b0 + t) * m + be + i];
+                }
+            }
+            let mut w = vec![C::new(0.0, 0.0); below * nb];
+            let mut t = 0;
+            while t < nb {
+                match pivots[b0 + t] {
+                    Pivot::One(d) => {
+                        for i in 0..below {
+                            w[i * nb + t] = l[i * nb + t] * d;
+                        }
+                        t += 1;
+                    }
+                    Pivot::Two(a11, a21, a22) => {
+                        for i in 0..below {
+                            let (l0, l1) = (l[i * nb + t], l[i * nb + t + 1]);
+                            w[i * nb + t] = l0 * a11 + l1 * a21;
+                            w[i * nb + t + 1] = l0 * a21 + l1 * a22;
+                        }
+                        t += 2;
+                    }
+                    Pivot::Second => t += 1,
+                }
+            }
+            let columns: Vec<(usize, &mut [C])> = f[be * m..].chunks_mut(m).enumerate().map(|(c, col)| (be + c, col)).collect();
+            let update = |j: usize, col: &mut [C]| {
+                // Later panel columns need every row below the block (they pivot among
+                // themselves); the trailing block only its lower part.
+                let start = if j < k { be } else { j };
+                let lj = &l[(j - be) * nb..(j - be + 1) * nb];
+                for (i, x) in col.iter_mut().enumerate().skip(start) {
+                    let wi = &w[(i - be) * nb..(i - be + 1) * nb];
+                    let (mut re, mut im) = (0.0, 0.0);
+                    for (a, b) in wi.iter().zip(lj) {
+                        re += a.re * b.re - a.im * b.im;
+                        im += a.re * b.im + a.im * b.re;
+                    }
+                    *x -= C::new(re, im);
+                }
+            };
+            let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
+            if threads <= 1 || below * below * nb < PARALLEL_WORK {
+                for (j, col) in columns {
+                    update(j, col);
+                }
+            } else {
+                let mut parts: Vec<Vec<(usize, &mut [C])>> = (0..threads).map(|_| Vec::new()).collect();
+                for (n, c) in columns.into_iter().enumerate() {
+                    parts[n % threads].push(c);
+                }
+                std::thread::scope(|scope| {
+                    for part in parts {
+                        let update = &update;
+                        scope.spawn(move || {
+                            for (j, col) in part {
+                                update(j, col);
+                            }
+                        });
+                    }
+                });
+            }
+        }
+        b0 = be;
+    }
+    pivots
+}
+
+/// Entries of a supernode's columns of L: k columns over m rows.
+fn fill(k: usize, m: usize) -> usize {
+    k * m - k * k.saturating_sub(1) / 2
+}
+
+/// Relaxed supernode amalgamation (C. Ashcraft, R. Grimes, *The influence of relaxed supernode
+/// partitions on the multifrontal method*, ACM TOMS 15(4):291–309, 1989): a supernode is merged
+/// into its parent when its columns come right before the parent's and the merged front stores
+/// few explicit zeros: always up to 4 columns, up to 16 with under 80 % zeros, up to 48 with
+/// under 10 %, and any size under 5 % (the thresholds of CHOLMOD: Y. Chen, T. A. Davis, W. W.
+/// Hager, S. Rajamanickam, *Algorithm 887: CHOLMOD*, ACM TOMS 35(3):22, 2008). Small supernodes
+/// would otherwise each build and clear a front as large as their parent's.
+fn amalgamate(starts: &[usize], rows: Vec<Vec<usize>>, parent: &[usize], n: usize) -> (Vec<usize>, Vec<Vec<usize>>) {
+    let ns = rows.len();
+    let mut snode_of = vec![0usize; n];
+    for s in 0..ns {
+        for j in starts[s]..starts[s + 1] {
+            snode_of[j] = s;
+        }
+    }
+    let sparent: Vec<usize> = (0..ns).map(|s| parent.get(starts[s + 1] - 1).and_then(|&q| snode_of.get(q).copied()).unwrap_or(usize::MAX)).collect();
+    // Merged supernodes keep the parent's id; `fills` counts the true entries they hold.
+    let mut start: Vec<usize> = starts[..ns].to_vec();
+    let mut rows: Vec<Vec<usize>> = rows;
+    let mut fills: Vec<usize> = (0..ns).map(|s| fill(starts[s + 1] - starts[s], rows[s].len())).collect();
+    let mut alive: Vec<usize> = Vec::with_capacity(ns);
+    for p in 0..ns {
+        while let Some(&c) = alive.last() {
+            if sparent[c] != p {
+                break;
+            }
+            let kc = starts[c + 1] - start[c];
+            let kp = starts[p + 1] - start[p];
+            let k = kc + kp;
+            // The union of the two row sets (both ascending).
+            let (a, b) = (&rows[c], &rows[p]);
+            let mut merged = Vec::with_capacity(a.len() + b.len());
+            let (mut i, mut j) = (0, 0);
+            while i < a.len() || j < b.len() {
+                let next = match (a.get(i), b.get(j)) {
+                    (Some(&x), Some(&y)) if x == y => {
+                        i += 1;
+                        j += 1;
+                        x
+                    }
+                    (Some(&x), Some(&y)) if x < y => {
+                        i += 1;
+                        x
+                    }
+                    (Some(_), Some(&y)) => {
+                        j += 1;
+                        y
+                    }
+                    (Some(&x), None) => {
+                        i += 1;
+                        x
+                    }
+                    (None, Some(&y)) => {
+                        j += 1;
+                        y
+                    }
+                    (None, None) => break,
+                };
+                merged.push(next);
+            }
+            let total = fill(k, merged.len());
+            let real = fills[c] + fills[p];
+            let zeros = total.saturating_sub(real) as f64 / total.max(1) as f64;
+            let merge = k <= 4 || (k <= 16 && zeros < 0.8) || (k <= 48 && zeros < 0.1) || zeros < 0.05;
+            if !merge {
+                break;
+            }
+            alive.pop();
+            start[p] = start[c];
+            rows[p] = merged;
+            fills[p] = real;
+            rows[c] = Vec::new();
+        }
+        alive.push(p);
+    }
+    let mut out_starts: Vec<usize> = alive.iter().map(|&s| start[s]).collect();
+    out_starts.push(n);
+    let out_rows = alive.into_iter().map(|s| std::mem::take(&mut rows[s])).collect();
+    (out_starts, out_rows)
+}
+
 impl Ldlt {
     /// Factors `a` (complex symmetric, both triangles stored) with the unknowns ordered by
     /// nested dissection on `xyz` (a point per unknown).
@@ -272,6 +548,7 @@ impl Ldlt {
             }
         }
 
+        let (starts, super_rows) = amalgamate(&starts, super_rows, &parent, n);
         let ns = super_rows.len();
         let mut snode_of = vec![0usize; n];
         for s in 0..ns {
@@ -307,164 +584,30 @@ impl Ldlt {
                 }
             }
             for (urows, u) in pending[s].drain(..) {
+                // U is stored lower (i ≥ j); positions in this front ascend with its rows.
                 let mu = urows.len();
                 let at: Vec<usize> = urows.iter().map(|&p| pos[p]).collect();
                 for b in 0..mu {
-                    let cb = at[b] * m;
-                    for a in 0..mu {
-                        f[cb + at[a]] += u[b * mu + a];
+                    let cb = at[b];
+                    for a in b..mu {
+                        let v = u[b * mu + a];
+                        let ra = at[a];
+                        f[cb * m + ra] += v;
+                        if ra != cb {
+                            f[ra * m + cb] += v;
+                        }
                     }
                 }
             }
 
-            // Partial factorization of the first k columns, right-looking within the panel.
-            let mut pivots = vec![Pivot::Second; k];
-            let mut p = 0;
-            while p < k {
-                let (r, w1) = colmax(&f, m, p, p);
-                let app = f[p * m + p].norm();
-                let mut choice: Option<(usize, Option<usize>)> = None; // (column to bring to p, 2×2 partner)
-                if app >= ALPHA * w1 && (app > 0.0 || w1 == 0.0) {
-                    choice = Some((p, None));
-                } else if r < k {
-                    let (_, wr) = colmax(&f, m, r, p);
-                    let arr = f[r * m + r].norm();
-                    if app * wr >= ALPHA * w1 * w1 {
-                        choice = Some((p, None));
-                    } else if arr >= ALPHA * wr {
-                        choice = Some((r, None));
-                    } else if p + 1 < k {
-                        choice = Some((p, Some(r)));
-                    }
-                }
-                if choice.is_none() {
-                    // The largest entry lies outside the supernode: another column that passes
-                    // the test, else the best 2 × 2 inside it, else column p.
-                    for j in p + 1..k {
-                        let (_, wj) = colmax(&f, m, j, p);
-                        if f[j * m + j].norm() >= ALPHA * wj && f[j * m + j].norm() > tau {
-                            choice = Some((j, None));
-                            break;
-                        }
-                    }
-                }
-                if choice.is_none() && p + 1 < k {
-                    let (q, wq) = (p + 1..k).fold((usize::MAX, 0.0), |b, i| if f[p * m + i].norm() > b.1 { (i, f[p * m + i].norm()) } else { b });
-                    if q != usize::MAX {
-                        let det = f[p * m + p] * f[q * m + q] - f[p * m + q] * f[p * m + q];
-                        if det.norm() > tau * wq {
-                            choice = Some((p, Some(q)));
-                        }
-                    }
-                }
-                let (col, partner) = choice.unwrap_or((p, None));
-                match partner {
-                    None => {
-                        interchange(&mut f, m, k, &mut rows, p, col);
-                        let mut d = f[p * m + p];
-                        if !(d.norm() > tau) {
-                            d = if d.norm() > 0.0 { d / d.norm() * tau } else { C::new(tau, 0.0) };
-                            perturbed += 1;
-                        }
-                        pivots[p] = Pivot::One(d);
-                        // Original column values c_i, then l_i = c_i / d.
-                        let c: Vec<C> = f[p * m + p + 1..p * m + m].to_vec();
-                        let dinv = d.inv();
-                        for (i, ci) in c.iter().enumerate() {
-                            f[p * m + p + 1 + i] = ci * dinv;
-                        }
-                        f[p * m + p] = C::new(1.0, 0.0);
-                        // Update the rest of the panel: F[i][j] −= l_i c_j.
-                        for j in p + 1..k {
-                            let cj = c[j - p - 1];
-                            if cj == C::new(0.0, 0.0) {
-                                continue;
-                            }
-                            for i in p + 1..m {
-                                let li = f[p * m + i];
-                                f[j * m + i] -= li * cj;
-                            }
-                        }
-                        p += 1;
-                    }
-                    Some(q) => {
-                        interchange(&mut f, m, k, &mut rows, p + 1, q);
-                        let (a11, a21, a22) = (f[p * m + p], f[p * m + p + 1], f[(p + 1) * m + p + 1]);
-                        let det = a11 * a22 - a21 * a21;
-                        let (i11, i21, i22) = (a22 / det, -a21 / det, a11 / det);
-                        pivots[p] = Pivot::Two(a11, a21, a22);
-                        pivots[p + 1] = Pivot::Second;
-                        two_by_two += 1;
-                        let c0v: Vec<C> = f[p * m + p + 2..p * m + m].to_vec();
-                        let c1v: Vec<C> = f[(p + 1) * m + p + 2..(p + 1) * m + m].to_vec();
-                        for i in 0..c0v.len() {
-                            f[p * m + p + 2 + i] = c0v[i] * i11 + c1v[i] * i21;
-                            f[(p + 1) * m + p + 2 + i] = c0v[i] * i21 + c1v[i] * i22;
-                        }
-                        f[p * m + p] = C::new(1.0, 0.0);
-                        f[p * m + p + 1] = C::new(0.0, 0.0);
-                        f[(p + 1) * m + p + 1] = C::new(1.0, 0.0);
-                        for j in p + 2..k {
-                            let (cj0, cj1) = (c0v[j - p - 2], c1v[j - p - 2]);
-                            for i in p + 2..m {
-                                let (l0, l1) = (f[p * m + i], f[(p + 1) * m + i]);
-                                f[j * m + i] -= l0 * cj0 + l1 * cj1;
-                            }
-                        }
-                        p += 2;
-                    }
-                }
-            }
+            let pivots = factor_front(&mut f, m, k, &mut rows, tau, &mut perturbed, &mut two_by_two);
 
-            // The update matrix U = F₂₂ − L₂₁ D L₂₁ᵀ for the parent.
+            // The update matrix U = F₂₂ − L₂₁ D L₂₁ᵀ (lower) for the parent: the trailing block.
             let mu = m - k;
             if mu > 0 {
-                // W = L₂₁ D (mu × k, by column).
-                let mut w = vec![C::new(0.0, 0.0); mu * k];
-                let mut q = 0;
-                while q < k {
-                    match pivots[q] {
-                        Pivot::One(d) => {
-                            for i in 0..mu {
-                                w[q * mu + i] = f[q * m + k + i] * d;
-                            }
-                            q += 1;
-                        }
-                        Pivot::Two(a11, a21, a22) => {
-                            for i in 0..mu {
-                                let (l0, l1) = (f[q * m + k + i], f[(q + 1) * m + k + i]);
-                                w[q * mu + i] = l0 * a11 + l1 * a21;
-                                w[(q + 1) * mu + i] = l0 * a21 + l1 * a22;
-                            }
-                            q += 2;
-                        }
-                        Pivot::Second => q += 1,
-                    }
-                }
                 let mut u = vec![C::new(0.0, 0.0); mu * mu];
                 for j in 0..mu {
-                    for i in j..mu {
-                        u[j * mu + i] = f[(k + j) * m + k + i];
-                    }
-                }
-                for q in 0..k {
-                    let wq = &w[q * mu..(q + 1) * mu];
-                    let lq = &f[q * m + k..q * m + m];
-                    for j in 0..mu {
-                        let lj = lq[j];
-                        if lj == C::new(0.0, 0.0) {
-                            continue;
-                        }
-                        let col = &mut u[j * mu + j..(j + 1) * mu];
-                        for (x, wi) in col.iter_mut().zip(&wq[j..]) {
-                            *x -= wi * lj;
-                        }
-                    }
-                }
-                for j in 0..mu {
-                    for i in j + 1..mu {
-                        u[i * mu + j] = u[j * mu + i];
-                    }
+                    u[j * mu + j..(j + 1) * mu].copy_from_slice(&f[(k + j) * m + k + j..(k + j + 1) * m]);
                 }
                 // The first row below is the etree parent of the supernode's last column.
                 if let Some(&ps) = parent.get(c1 - 1).and_then(|&q| snode_of.get(q)) {

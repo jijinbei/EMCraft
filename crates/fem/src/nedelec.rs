@@ -166,6 +166,13 @@ impl Element {
         self.curls.iter().map(|p| p.eval(l)).collect()
     }
 
+    /// The barycentric coordinates of a point.
+    pub fn barycentric(&self, p: Vec3) -> [f64; 4] {
+        let d = sub(p, self.corners[0]);
+        let (l1, l2, l3) = (dot(self.grads[1], d), dot(self.grads[2], d), dot(self.grads[3], d));
+        [1.0 - l1 - l2 - l3, l1, l2, l3]
+    }
+
     /// The point at barycentric coordinates `l`.
     pub fn point(&self, l: [f64; 4]) -> Vec3 {
         let mut p = [0.0; 3];

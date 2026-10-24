@@ -126,6 +126,14 @@ impl Te10Line {
 }
 
 impl Te10Solution {
+    /// (S₁₁, S₂₁) normalised to equal power at both ports: the field ratio times
+    /// √((β_last/μ_last)/(β₀/μ₀)), since a TE₁₀ wave of amplitude A carries power ∝ |A|² β/μ.
+    pub fn s_power(&self) -> (C, C) {
+        let n = self.layers.len() - 1;
+        let y = |i: usize| self.beta[i] / self.layers[i].mu_r;
+        (self.s11, self.s21 * (y(n) / y(0)).sqrt())
+    }
+
     /// The section holding z (clamped to the line).
     fn section(&self, z: f64) -> usize {
         self.starts.partition_point(|s| *s <= z).saturating_sub(1).min(self.layers.len().saturating_sub(1))
@@ -198,6 +206,9 @@ mod tests {
         // Referred to the interface at z = 0.01: S11 e^{2jβ₁l₁} = (β₁ − β₂)/(β₁ + β₂).
         let at_interface = s.s11 * (2.0 * J * b1 * 0.01).exp();
         assert!((at_interface - C::new((b1 - b2) / (b1 + b2), 0.0)).norm() < 1e-12);
+        // Power: |S11|² + |S21|²(power) = 1 with different port media.
+        let (r, t) = s.s_power();
+        assert!((r.norm_sqr() + t.norm_sqr() - 1.0).abs() < 1e-12);
     }
 
     #[test]
