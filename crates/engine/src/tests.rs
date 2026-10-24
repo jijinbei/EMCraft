@@ -148,6 +148,26 @@ fn an_iris_is_compared_with_mode_matching() {
 }
 
 #[test]
+fn cavity_eigenmodes_and_their_pictures() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "cavity"})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    // The two modes nearest 9 GHz: TE101 (8.24) and TE102 (11.95).
+    let r = s.execute("solve.eigenmodes", &json!({"near": 9, "count": 2})).unwrap();
+    let modes = r["modes"].as_array().unwrap();
+    assert_eq!(modes.len(), 2);
+    let (f, exact) = (modes[0]["frequency"].as_f64().unwrap(), r["exact"][0]["frequency"].as_f64().unwrap());
+    assert_eq!(r["exact"][0]["mode"], "TE101");
+    assert!((f - exact).abs() < 1e-3 * exact, "{f} {exact}");
+    assert!(modes[0]["q_walls"].as_f64().unwrap() > 5000.0);
+    let path = scratch("mode1.png");
+    s.execute("view.field", &json!({"path": path, "mode": 1, "plane": "cross"})).unwrap();
+    assert!(std::fs::read(&path).unwrap().starts_with(&[0x89, b'P', b'N', b'G']));
+    assert!(s.execute("view.field", &json!({"path": path, "mode": 9})).is_err());
+    assert!(s.execute("solve.eigenmodes", &json!({"near": 12, "count": 0})).is_err());
+}
+
+#[test]
 fn features_page_lists_every_command() {
     let md = features_markdown();
     for c in COMMANDS {

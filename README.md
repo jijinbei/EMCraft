@@ -40,6 +40,25 @@ cargo run --release -p emcraft-cli -- sample iris-bandpass --out pictures
 ![The band-pass filter's S-parameters against mode matching](docs/media/bandpass-s-parameters.png)
 ![E_y and H in the three cavities at 10 GHz (irises grey)](docs/media/bandpass-h-10GHz.png)
 
+Cavities have an eigenmode solver with Q factors from wall and dielectric losses:
+
+```
+cargo run --release -p emcraft-cli -- sample cavity --out pictures
+```
+
+```
+ mode       f (GHz)        exact    exact          Q
+    1      8.244032     8.243877    TE101     7614.0
+    2     11.953276    11.952313    TE102     9411.6
+    3     14.035151    14.033880    TE201     9411.8
+    4     15.577196    15.576685    TE011     7888.7
+```
+
+![The magnetic field of the copper cavity's TE101 mode](docs/media/cavity-te101-h.png)
+
+Losses: dielectrics with a loss tangent and walls of finite conductivity (surface impedance),
+checked against the exact lossy cascade and the textbook conductor attenuation.
+
 The desktop app shows the same, with a phase animation:
 
 ```

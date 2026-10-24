@@ -61,6 +61,15 @@ The methods EMCraft implements and where they come from.
 - O. Schenk, K. Gärtner, *Solving unsymmetric sparse systems of linear equations with PARDISO*,
   FGCS 20(3):475–487, 2004 — static pivoting with iterative refinement.
 
+## Eigenvalues
+- K.-J. Bathe, E. L. Wilson, *Large eigenvalue problems in dynamic analysis*, J. Eng. Mech. Div.
+  ASCE 98(6):1471–1485, 1972; K.-J. Bathe, *Finite Element Procedures*, 2nd ed. 2014, §11.6 —
+  subspace iteration with Rayleigh–Ritz.
+- G. H. Golub, C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins 2013, §8.5 — the
+  cyclic Jacobi method for the reduced problem.
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §6.3 and §6.7 — cavity resonances,
+  Q by perturbation, the TE101 Q (eq. 6.46).
+
 ## Quadrature
 - A. H. Stroud, *Approximate Calculation of Multiple Integrals*, Prentice-Hall 1971; M. G. Duffy,
   *Quadrature over a pyramid or cube of integrands with a singularity at a vertex*, SIAM J.

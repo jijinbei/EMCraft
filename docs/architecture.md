@@ -23,7 +23,7 @@ crates in strictly lower layers.
 | L1 | `emcraft-fem` | Nédélec elements of the first kind, orders 1 (Whitney, 6 functions) and 2 (Webb's hierarchical basis, 20 functions), as polynomials in barycentric coordinates whose products integrate exactly; Gauss–Legendre and collapsed simplex quadrature; rectangular waveguide modes (TE/TM fields, cut-offs, propagation constants, modal port factors). |
 | L1 | `emcraft-theory` | References: the TE₁₀ wave through a guide filled in sections (closed-form transmission-line cascade), S-parameters and fields; mode matching of TE_m0 modes through H-plane steps and irises (generalised scattering matrices, Redheffer star products). |
 | L1 | `emcraft-render` | Pictures without a GPU: canvas with anti-aliased lines, arrows and a bitmap font; colour maps; field plots (colour map + arrows + colour bar + legend); line charts; PNG. |
-| L2 | `emcraft-solver` | Complex sparse assembly; coordinate nested dissection; multifrontal complex symmetric LDLᵀ (Bunch–Kaufman pivots within supernodes, static pivoting fallback, relaxed supernode amalgamation, blocked fronts updated on threads); iterative refinement with the backward error; the driven waveguide analysis (`Driven`): PEC elimination, modal ports, power-normalised S-parameters, E and H at points, L² errors. |
+| L2 | `emcraft-solver` | Complex sparse assembly; coordinate nested dissection; multifrontal complex symmetric LDLᵀ (Bunch–Kaufman pivots within supernodes, static pivoting fallback, relaxed supernode amalgamation, blocked fronts updated on threads); iterative refinement with the backward error; the driven waveguide analysis (`Driven`): PEC elimination, modal ports, power-normalised S-parameters, E and H at points, L² errors, absorbed powers; walls of finite conductivity (Leontovich); cavity eigenmodes and Q factors (`eigen`). |
 | L6 | `emcraft-engine` | Commands (`CommandSpec`), `Session::execute` with rollback and a panic guard, scripts, the `highpass` sample, plane samples and field plots, S-parameter charts. |
 | L7 | `emcraft-ui-egui` | The desktop UI (eframe, glow): model editing, background sweep, field and chart textures from `emcraft-render`, phase animation. |
 | testkit | `emcraft-testkit` | The verification oracle (`tests/oracle`), its runner and docs/oracle.md. |
@@ -54,5 +54,9 @@ testkit is a dev-dependency only.
    rest of the front at once on threads (deterministic).
 5. **Solves.** Each port is excited by a unit TE₁₀ wave from the same factorization, with
    iterative refinement; S_pq is read by projecting E on TE₁₀ at port p.
-6. **Results.** Fields at any point from the element basis (H = −∇×E/(jωμ)); field plots sample
+6. **Eigenmodes** (`emcraft-solver::eigen`). The guide closed into a cavity (ports left out,
+   walls perfectly conducting), K x = k² M x by shift-invert subspace iteration on the same
+   LDLᵀ, Rayleigh–Ritz with a dense Jacobi eigensolver; Q factors by perturbation from the walls'
+   conductivity and the dielectrics' loss tangents.
+7. **Results.** Fields at any point from the element basis (H = −∇×E/(jωμ)); field plots sample
    a plane once and draw any component at any phase.

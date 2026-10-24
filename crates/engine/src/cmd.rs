@@ -105,6 +105,24 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: solve_frequency,
     },
     CommandSpec {
+        id: "solve.eigenmodes",
+        label: "Eigenmodes",
+        doc: "The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.",
+        params: &[
+            p("near", "number", F, true, "the frequency the modes are sought around"),
+            p("count", "integer", N, false, "modes, 1 to 50 (default 5)"),
+            p("order", "integer", N, false, "element order: 1 or 2 (default)"),
+        ],
+        run: solve_eigenmodes,
+    },
+    CommandSpec {
+        id: "results.eigenmodes",
+        label: "Eigenmode table",
+        doc: "The eigenmodes' frequencies and Q factors; for a cavity of one uniform section, the closed-form resonances too.",
+        params: &[],
+        run: eigenmode_table,
+    },
+    CommandSpec {
         id: "results.sparameters",
         label: "S-parameters",
         doc: "The S-parameter table of the last sweep: each S[p][q] (at port p for a wave into port q) as real, imaginary, magnitude, dB and phase (degrees).",
@@ -142,7 +160,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes a PNG of the fields on a plane: a component as colour and the in-plane E and H as arrows, Re(F e^jωt) at a phase.",
         params: &[
             p("path", "string", N, true, "PNG file to write"),
-            p("frequency", "number", F, true, "a solved frequency (the nearest is used)"),
+            p("frequency", "number", F, false, "a solved frequency (the nearest is used); required unless `mode` is given"),
+            p("mode", "integer", N, false, "an eigenmode (1 = the lowest) instead of a driven solution"),
             p("plane", "string", N, false, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)"),
             p("at", "number", L, false, "the plane's position along its normal (default the middle)"),
             p("component", "string", N, false, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|"),
@@ -167,7 +186,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "file.sample",
         label: "Open sample",
-        doc: "Replaces the session with a sample model (`highpass`: the waveguide high-pass filter), built by its script; `solve: true` also runs its sweep.",
+        doc: "Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script; `solve: true` also runs its analysis.",
         params: &[p("name", "string", N, true, "sample name"), p("solve", "boolean", N, false, "run the sample's sweep (default false)")],
         run: file_sample,
     },
@@ -305,6 +324,40 @@ fn solve_frequency(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(reply)
 }
 
+fn solve_eigenmodes(s: &mut Session, p: &Value) -> Result<Value> {
+    let near = s.frequency(p, "near")?.ok_or_else(|| EngineError::Params("`near` is required".into()))?;
+    let count = integer(p, "count", 1..=crate::eigen_max())?.unwrap_or(5) as usize;
+    let order = Order::from_u8(integer(p, "order", 1..=2)?.unwrap_or(2) as u8).unwrap_or(Order::Two);
+    let e = emcraft_solver::eigen::eigenmodes(&s.model, order, count, near)?;
+    s.eigen = Some(Arc::new(e));
+    eigenmode_table(s, &Value::Null)
+}
+
+fn eigenmode_table(s: &mut Session, _: &Value) -> Result<Value> {
+    let e = s.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
+    let modes: Vec<Value> = e
+        .modes
+        .iter()
+        .enumerate()
+        .map(|(i, m)| json!({"mode": i + 1, "frequency": s.show_frequency(m.frequency), "q": m.q(), "q_walls": m.q_walls, "q_dielectric": m.q_dielectric}))
+        .collect();
+    let mut reply =
+        json!({"frequency_unit": s.display.frequency.symbol(), "unknowns": e.driven.dofs.unknowns, "iterations": e.iterations, "modes": modes});
+    // The closed form for a cavity of one full-width section.
+    if let Some(w) = s.model.waveguide.as_ref()
+        && w.sections.len() == 1
+        && w.uniform()
+        && let Ok((_, m)) = s.model.material(&w.sections[0].material)
+    {
+        let exact: Vec<Value> = emcraft_theory::cavity_resonances(w.width, w.height, w.length(), m.eps_r * m.mu_r, 12)
+            .into_iter()
+            .map(|(f, name)| json!({"mode": name, "frequency": s.show_frequency(f)}))
+            .collect();
+        reply["exact"] = json!(exact);
+    }
+    Ok(reply)
+}
+
 fn complex(c: C) -> Value {
     json!({"re": c.re, "im": c.im, "mag": c.norm(), "db": decibels(c.norm()), "deg": c.arg().to_degrees()})
 }
@@ -411,12 +464,14 @@ fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
 
 /// A field view from command parameters.
 pub fn field_view(s: &Session, p: &Value) -> Result<FieldView> {
-    let f = s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`frequency` is required".into()))?;
     let plane = match string(p, "plane")? {
         None => Plane::H,
         Some(n) => Plane::parse(n).ok_or_else(|| EngineError::Params("`plane` must be h, e or cross".into()))?,
     };
-    let mut v = FieldView::new(f, plane);
+    let mut v = match integer(p, "mode", 1..=crate::eigen_max())? {
+        Some(m) => FieldView::mode(m as usize - 1, plane),
+        None => FieldView::new(s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`frequency` or `mode` is required".into()))?, plane),
+    };
     v.at = s.length(p, "at")?;
     if let Some(c) = string(p, "component")? {
         v.component = c.to_ascii_lowercase();

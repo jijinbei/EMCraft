@@ -73,6 +73,22 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 | `points` | integer |  | no | frequencies from start to stop (default 11) |
 | `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
 
+## `solve.eigenmodes` — Eigenmodes
+
+The resonances of the guide closed at both ends by conducting walls (a cavity; ports are left out): the `count` modes nearest `near`, with Q factors from the walls' conductivity and the dielectrics' loss tangents by perturbation. Put `near` a little above the modes wanted: modes up to about √2 times it are found before the curl's null space.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `near` | number | frequency | yes | the frequency the modes are sought around |
+| `count` | integer |  | no | modes, 1 to 50 (default 5) |
+| `order` | integer |  | no | element order: 1 or 2 (default) |
+
+## `results.eigenmodes` — Eigenmode table
+
+The eigenmodes' frequencies and Q factors; for a cavity of one uniform section, the closed-form resonances too.
+
+No parameters.
+
 ## `results.sparameters` — S-parameters
 
 The S-parameter table of the last sweep: each S[p][q] (at port p for a wave into port q) as real, imaginary, magnitude, dB and phase (degrees).
@@ -112,7 +128,8 @@ Writes a PNG of the fields on a plane: a component as colour and the in-plane E 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `frequency` | number | frequency | yes | a solved frequency (the nearest is used) |
+| `frequency` | number | frequency | no | a solved frequency (the nearest is used); required unless `mode` is given |
+| `mode` | integer |  | no | an eigenmode (1 = the lowest) instead of a driven solution |
 | `plane` | string |  | no | `h` (H-plane, default), `e` (E-plane) or `cross` (cross-section) |
 | `at` | number | length | no | the plane's position along its normal (default the middle) |
 | `component` | string |  | no | colour: ex, ey (default), ez, hx, hy, hz, |e|, |h| |
@@ -133,7 +150,7 @@ Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over 
 
 ## `file.sample` — Open sample
 
-Replaces the session with a sample model (`highpass`: the waveguide high-pass filter), built by its script; `solve: true` also runs its sweep.
+Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script; `solve: true` also runs its analysis.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

@@ -1,0 +1,4 @@
+[
+ {"command": "file.sample", "params": {"name": "cavity"}},
+ {"command": "solve.eigenmodes", "params": {"near": 12, "count": 4, "order": 2}, "id": "modes"}
+]

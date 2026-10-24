@@ -18,7 +18,9 @@ usage: emcraft-cli <command>
                            open and solve a sample, print its S-parameters against the
                            exact solution, and write its pictures to DIR (default .):
                            s-parameters.png and the H-plane, E-plane and cross-section
-                           fields at each frequency (default 6 and 8 GHz)
+                           fields at each frequency (default 6 and 8 GHz); an eigenmode
+                           sample (cavity) prints its modes against the closed form and
+                           writes each mode's pictures
 ";
 
 fn main() -> ExitCode {
@@ -84,6 +86,40 @@ fn exec(id: Option<&String>, params: Option<&String>) -> Result<(), String> {
     Ok(())
 }
 
+/// An eigenmode sample: its modes against the closed form, and each mode's pictures.
+fn eigen_sample(name: &str, out: &str) -> Result<(), String> {
+    let mut s = Session::new();
+    let e = |e: emcraft_engine::EngineError| e.to_string();
+    s.execute("file.sample", &json!({"name": name, "solve": true})).map_err(e)?;
+    let t = s.execute("results.eigenmodes", &json!({})).map_err(e)?;
+    println!("{:>5}  {:>12} {:>12} {:>8}  {:>9}", "mode", "f (GHz)", "exact", "exact", "Q");
+    let exact = t["exact"].as_array().cloned().unwrap_or_default();
+    for (i, m) in t["modes"].as_array().into_iter().flatten().enumerate() {
+        let f = m["frequency"].as_f64().unwrap_or(f64::NAN);
+        let x = exact.get(i);
+        println!(
+            "{:>5}  {:>12.6} {:>12.6} {:>8}  {:>9.1}",
+            i + 1,
+            f,
+            x.and_then(|x| x["frequency"].as_f64()).unwrap_or(f64::NAN),
+            x.and_then(|x| x["mode"].as_str()).unwrap_or(""),
+            m["q"].as_f64().unwrap_or(f64::NAN)
+        );
+    }
+    for i in 1..=t["modes"].as_array().map_or(0, Vec::len) {
+        for plane in ["h", "e", "cross"] {
+            let path = format!("{out}/mode{i}-{plane}.png");
+            s.execute("view.field", &json!({"path": path, "mode": i, "plane": plane})).map_err(e)?;
+            println!("wrote {path}");
+        }
+        // A standing wave: H peaks a quarter period after E.
+        let path = format!("{out}/mode{i}-h-90deg.png");
+        s.execute("view.field", &json!({"path": path, "mode": i, "plane": "h", "phase": 90, "component": "|h|"})).map_err(e)?;
+        println!("wrote {path}");
+    }
+    Ok(())
+}
+
 fn sample(args: &[String]) -> Result<(), String> {
     let name = args.first().ok_or("sample: give a sample name (highpass)")?;
     let mut out = ".".to_owned();
@@ -102,9 +138,12 @@ fn sample(args: &[String]) -> Result<(), String> {
     std::fs::create_dir_all(&out).map_err(|e| format!("{out}: {e}"))?;
     let mut s = Session::new();
     let e = |e: emcraft_engine::EngineError| e.to_string();
+    let script: Value = emcraft_engine::sample::find(name).and_then(|x| serde_json::from_str(x.script).ok()).unwrap_or(Value::Null);
+    if script.as_array().is_some_and(|steps| steps.iter().any(|st| st["command"] == "solve.eigenmodes")) {
+        return eigen_sample(name, &out);
+    }
     s.execute("file.sample", &json!({"name": name})).map_err(e)?;
     // The sample's own sweep, with the pictures' frequencies added.
-    let script: Value = emcraft_engine::sample::find(name).and_then(|x| serde_json::from_str(x.script).ok()).unwrap_or(Value::Null);
     let mut solve = script
         .as_array()
         .and_then(|steps| steps.iter().find(|st| st["command"] == "solve.frequency"))

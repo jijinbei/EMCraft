@@ -29,7 +29,10 @@ result is frozen so it cannot drift.
    cascade; walls of finite conductivity against the conductor attenuation α_c (within 0.2 %);
    the discrete Poynting theorem — 1 − |S11|² − |S21|² equal to the power the dielectric or the
    walls absorb — to 1e-9.
-5. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+5. **Eigenmode tests** (`crates/solver/tests/eigen.rs`): the four lowest resonances of a
+   rectangular cavity (within 1e-4), a dielectric-filled cavity (frequencies scaled by 1/√εr,
+   Q_d = 1/tan δ to 1e-6), the TE101 Q of copper walls (−1.2 % at 3 mm, converging: heavy).
+6. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

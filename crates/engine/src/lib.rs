@@ -84,6 +84,11 @@ pub struct CommandSpec {
     pub run: fn(&mut Session, &Value) -> Result<Value>,
 }
 
+/// The most eigenmodes one command may ask for.
+pub(crate) fn eigen_max() -> u64 {
+    emcraft_solver::eigen::MAX_MODES as u64
+}
+
 pub fn find_command(id: &str) -> Option<&'static CommandSpec> {
     COMMANDS.iter().find(|c| c.id == id)
 }
@@ -125,6 +130,8 @@ impl Default for Limits {
 pub struct Session {
     pub model: Model,
     pub sweep: Option<Sweep>,
+    /// The cavity's eigenmodes from `solve.eigenmodes`.
+    pub eigen: Option<Arc<emcraft_solver::eigen::Eigen>>,
     pub display: Display,
     pub limits: Limits,
 }
@@ -137,7 +144,7 @@ impl Default for Session {
 
 impl Session {
     pub fn new() -> Session {
-        Session { model: Model::new(), sweep: None, display: Display::default(), limits: Limits::default() }
+        Session { model: Model::new(), sweep: None, eigen: None, display: Display::default(), limits: Limits::default() }
     }
 
     /// Runs a command. Unknown parameters are refused; a failed or panicking command leaves the
@@ -146,16 +153,16 @@ impl Session {
         // An id from hostile input is not echoed in full.
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
         check_keys(spec, params)?;
-        let before = (self.model.clone(), self.sweep.clone(), self.display);
+        let before = (self.model.clone(), self.sweep.clone(), self.eigen.clone(), self.display);
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, params)));
         match outcome {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => {
-                (self.model, self.sweep, self.display) = before;
+                (self.model, self.sweep, self.eigen, self.display) = before;
                 Err(e)
             }
             Err(_) => {
-                (self.model, self.sweep, self.display) = before;
+                (self.model, self.sweep, self.eigen, self.display) = before;
                 Err(EngineError::Panicked(spec.id.to_owned()))
             }
         }
@@ -194,6 +201,7 @@ impl Session {
             "ports": self.model.ports.iter().map(|p| serde_json::json!({"name": p.name, "end": p.end, "modes": p.modes})).collect::<Vec<_>>(),
             "mesh": self.model.mesh.as_ref().map(|m| serde_json::json!({"nodes": m.nodes.len(), "tetrahedra": m.tets.len()})),
             "results": self.sweep.as_ref().map(|s| serde_json::json!({"order": s.order.as_u8(), "unknowns": s.driven.dofs.unknowns, "frequencies": s.results.len()})),
+            "eigenmodes": self.eigen.as_ref().map(|e| e.modes.len()),
         })
     }
 }

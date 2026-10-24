@@ -20,6 +20,11 @@ pub const SAMPLES: &[Sample] = &[
         label: "Inductive-iris band-pass filter: three WR-90 cavities between four 2 mm irises (12.75, 9.25, 9.25, 12.75 mm), passband 9.75–10.25 GHz",
         script: include_str!("../samples/iris-bandpass.json"),
     },
+    Sample {
+        name: "cavity",
+        label: "Copper rectangular cavity, 22.86 × 10.16 × 30 mm: its four lowest resonances (TE101 at 8.24 GHz) and Q factors",
+        script: include_str!("../samples/cavity.json"),
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static Sample> {

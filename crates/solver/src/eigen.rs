@@ -80,7 +80,8 @@ fn jacobi(mut a: Vec<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
     }
     let norm: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
     for _ in 0..100 {
-        let off: f64 = (0..n).flat_map(|i| (0..n).filter(move |&j| j != i).map(move |j| (i, j))).map(|(i, j)| a[i * n + j].powi(2)).sum::<f64>().sqrt();
+        let off: f64 =
+            (0..n).flat_map(|i| (0..n).filter(move |&j| j != i).map(move |j| (i, j))).map(|(i, j)| a[i * n + j].powi(2)).sum::<f64>().sqrt();
         if off <= 1e-15 * norm {
             break;
         }
@@ -227,9 +228,8 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
         x = idx.iter().map(|&c| (0..n).map(|r| C::new((0..q).map(|k| y[k][r].re * phi[k * q + c]).sum(), 0.0)).collect()).collect();
         lambdas = idx.iter().map(|&c| lam[c]).collect::<Vec<f64>>();
         let wanted: Vec<f64> = lambdas.iter().copied().filter(|l| *l > null).take(count).collect();
-        let converged = wanted.len() == count
-            && previous.len() == count
-            && wanted.iter().zip(&previous).all(|(a, b)| (a - b).abs() <= 1e-11 * a.abs());
+        let converged =
+            wanted.len() == count && previous.len() == count && wanted.iter().zip(&previous).all(|(a, b)| (a - b).abs() <= 1e-11 * a.abs());
         previous = wanted;
         if converged {
             break;

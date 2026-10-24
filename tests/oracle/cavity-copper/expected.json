@@ -1,0 +1,12 @@
+{
+ "title": "Copper rectangular cavity 22.86 × 10.16 × 30 mm: resonances and the TE101 Q",
+ "kind": "theory",
+ "source": "Rectangular cavity resonances f = (c/2)√((m/a)² + (n/b)² + (p/d)²) and the TE101 conductor Q, Q_c = (kad)³bη / (2π²R_s(2a³b + 2bd³ + a³d + ad³)) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §6.3, eq. 6.46), σ = 5.8e7 S/m; evaluated separately from EMCraft code",
+ "quantities": [
+  {"id": "f1", "quantity": "TE101 resonance (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 8.243877215534543, "tolerance": {"relative": 2e-4}, "reason": "second-order elements of 3 mm: eigenvalues converge as h⁴ (measured within 1e-4)"},
+  {"id": "f2", "quantity": "TE102 resonance (GHz)", "measure": {"step": "modes", "pointer": "/modes/1/frequency"}, "value": 11.952312597967993, "tolerance": {"relative": 2e-4}, "reason": "second-order elements of 3 mm: eigenvalues converge as h⁴ (measured within 1e-4)"},
+  {"id": "f3", "quantity": "TE201 resonance (GHz)", "measure": {"step": "modes", "pointer": "/modes/2/frequency"}, "value": 14.03387976592729, "tolerance": {"relative": 2e-4}, "reason": "second-order elements of 3 mm: eigenvalues converge as h⁴ (measured within 1e-4)"},
+  {"id": "f4", "quantity": "TE011 resonance (GHz)", "measure": {"step": "modes", "pointer": "/modes/3/frequency"}, "value": 15.576685360413224, "tolerance": {"relative": 2e-4}, "reason": "second-order elements of 3 mm: eigenvalues converge as h⁴ (measured within 1e-4)"},
+  {"id": "q1", "quantity": "TE101 Q from the copper walls", "measure": {"step": "modes", "pointer": "/modes/0/q_walls"}, "value": 7707.135372789849, "tolerance": {"relative": 0.02}, "reason": "perturbation: ½R_s∫|H_t|² with H from the curl of the second-order E, one order lower; −1.2 % at 3 mm, −0.3 % at 1.5 mm (heavy test)"}
+ ]
+}

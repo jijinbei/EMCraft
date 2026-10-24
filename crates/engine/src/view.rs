@@ -60,11 +60,18 @@ pub struct FieldView {
     pub phase: f64,
     /// The excited port's index.
     pub excitation: usize,
+    /// An eigenmode's index (from `solve.eigenmodes`) instead of a driven solution.
+    pub mode: Option<usize>,
 }
 
 impl FieldView {
     pub fn new(frequency: f64, plane: Plane) -> FieldView {
-        FieldView { frequency, plane, at: None, component: "ey".into(), show_e: true, show_h: true, phase: 0.0, excitation: 0 }
+        FieldView { frequency, plane, at: None, component: "ey".into(), show_e: true, show_h: true, phase: 0.0, excitation: 0, mode: None }
+    }
+
+    /// A view of eigenmode `index`.
+    pub fn mode(index: usize, plane: Plane) -> FieldView {
+        FieldView { mode: Some(index), ..FieldView::new(0.0, plane) }
     }
 }
 
@@ -85,6 +92,7 @@ pub struct PlaneSamples {
     /// The plane's position along its normal (m).
     pub at: f64,
     pub excitation: usize,
+    pub mode: Option<usize>,
     nx: usize,
     ny: usize,
     /// (E, H) on an nx × ny grid over the plane, row 0 at the bottom; `None` outside the mesh.
@@ -106,10 +114,23 @@ pub fn field_plot(session: &Session, view: &FieldView) -> Result<FieldPlot> {
 
 /// Samples the fields of a view's plane (its component, arrows and phase are not used).
 pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples> {
-    let sweep = session.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))?;
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
-    let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
-    let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
+    // The field: a driven solution at a frequency, or an eigenmode.
+    let (driven, x, frequency, caption) = match view.mode {
+        Some(i) => {
+            let e = session.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
+            let m = e.modes.get(i).ok_or_else(|| EngineError::Params(format!("no eigenmode {} (there are {})", i + 1, e.modes.len())))?;
+            let q = m.q().map_or(String::new(), |q| format!(", Q = {}", emcraft_render::axes::format(q)));
+            (&e.driven, &m.vector, m.frequency, format!("eigenmode {}{q} (arbitrary amplitude), order {}", i + 1, e.driven.order.as_u8()))
+        }
+        None => {
+            let sweep = session.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))?;
+            let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
+            let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
+            let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
+            (&*sweep.driven, x, r.frequency, format!("port {port_name} excited by 1 V/m TE10, order {}", sweep.order.as_u8()))
+        }
+    };
     let (a, b, len) = (w.width, w.height, w.length());
     // (horizontal span, vertical span, normal span) and the map from plane to guide.
     let (hspan, vspan, normal_span) = match view.plane {
@@ -126,12 +147,11 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     let longer = hspan.max(vspan);
     let (nx, ny) =
         (((SCALAR_SAMPLES as f64 * hspan / longer).ceil() as usize).max(2), ((SCALAR_SAMPLES as f64 * vspan / longer).ceil() as usize).max(2));
-    let driven = &sweep.driven;
     let mut grid = Vec::with_capacity(nx * ny);
     for j in 0..ny {
         for i in 0..nx {
             let (u, v) = (hspan * i as f64 / (nx - 1) as f64, vspan * j as f64 / (ny - 1) as f64);
-            grid.push(driven.fields(x, r.frequency, point(u, v)));
+            grid.push(driven.fields(x, frequency, point(u, v)));
         }
     }
     let l = session.display.length;
@@ -141,7 +161,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     for j in 0..ay {
         for i in 0..ax {
             let (u, v) = (hspan * (i as f64 + 0.5) / ax as f64, vspan * (j as f64 + 0.5) / ay as f64);
-            if let Some((e, h)) = driven.fields(x, r.frequency, point(u, v)) {
+            if let Some((e, h)) = driven.fields(x, frequency, point(u, v)) {
                 arrows.push(([l.from_si(u), l.from_si(v)], e, h));
             }
         }
@@ -159,7 +179,6 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     }
     let lname = l.symbol();
     let fsym = session.display.frequency;
-    let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
     let title = format!(
         "{} plane, {nlabel} = {} {lname}   f = {} {}",
         match view.plane {
@@ -168,15 +187,15 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
             Plane::Cross => "Cross-section",
         },
         emcraft_render::axes::format(l.from_si(at)),
-        emcraft_render::axes::format(fsym.from_si(r.frequency)),
+        emcraft_render::axes::format(fsym.from_si(frequency)),
         fsym.symbol()
     );
-    let caption = format!("port {port_name} excited by 1 V/m TE10, order {}", sweep.order.as_u8());
     Ok(PlaneSamples {
         plane: view.plane,
-        frequency: r.frequency,
+        frequency,
         at,
         excitation: view.excitation,
+        mode: view.mode,
         nx,
         ny,
         grid,
@@ -194,8 +213,9 @@ impl PlaneSamples {
     /// Whether these samples serve a view (same frequency, plane, position and excitation).
     pub fn serves(&self, view: &FieldView, at: f64) -> bool {
         self.plane == view.plane
+            && self.mode == view.mode
             && self.excitation == view.excitation
-            && (self.frequency - view.frequency).abs() <= 1e-9 * self.frequency
+            && (view.mode.is_some() || (self.frequency - view.frequency).abs() <= 1e-9 * self.frequency)
             && (self.at - at).abs() <= 1e-12
     }
 
