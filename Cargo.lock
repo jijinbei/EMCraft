@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "emcraft-fem"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "emcraft-mesh"
 version = "0.1.0"
 dependencies = [

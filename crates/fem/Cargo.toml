@@ -1,0 +1,12 @@
+[package]
+name = "emcraft-fem"
+description = "EMCraft element kernels: Nédélec (first kind) edge elements of orders 1 and 2 on tetrahedra with exact element matrices, quadrature, and the modes of rectangular waveguide ports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
