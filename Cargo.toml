@@ -11,6 +11,7 @@ license = "MIT OR Apache-2.0"
 # internal
 emcraft-model = { path = "crates/model" }
 emcraft-mesh = { path = "crates/mesh" }
+emcraft-tetmesh = { path = "crates/tetmesh" }
 emcraft-fem = { path = "crates/fem" }
 emcraft-theory = { path = "crates/theory" }
 emcraft-render = { path = "crates/render" }
@@ -61,6 +62,9 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.emcraft-mesh]
+opt-level = 3
+
+[profile.dev.package.emcraft-tetmesh]
 opt-level = 3
 
 [profile.dev.package.emcraft-fdtd]

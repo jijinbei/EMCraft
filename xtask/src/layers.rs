@@ -39,6 +39,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("model", Class::Layer(0)),
     // L1: meshing, element kernels, closed-form references, pictures.
     ("mesh", Class::Layer(1)),
+    // L0, no workspace dependencies: the unstructured tetrahedral mesher.
+    ("tetmesh", Class::Standalone),
     ("fem", Class::Layer(1)),
     ("theory", Class::Layer(1)),
     ("render", Class::Layer(1)),

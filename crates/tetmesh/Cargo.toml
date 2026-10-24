@@ -1,0 +1,18 @@
+[package]
+name = "emcraft-tetmesh"
+description = "EMCraft's unstructured tetrahedral mesher: robust predicates, surface preparation, Delaunay tetrahedralization, constrained boundary recovery and the quality stage (refinement, smoothing, improvement), adapted from FieldCraft's"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+num-bigint = "0.4"
+num-rational = { version = "0.4", default-features = false, features = ["num-bigint", "std"] }
+num-traits = "0.2"
+robust = "1.2"
