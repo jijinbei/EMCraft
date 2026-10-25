@@ -1,6 +1,7 @@
 //! EMCraft's element kernels: Nédélec edge elements of orders 1 and 2 on tetrahedra
 //! ([`nedelec`]) with exact element matrices ([`poly`]), quadrature rules ([`quadrature`]) and the
-//! modes of rectangular and circular waveguide ports ([`modes`], with [`bessel`]). Pure functions, no solver loop.
+//! modes of rectangular and circular waveguide ports ([`modes`], with [`bessel`]), triangle
+//! elements for the modes of ports of any shape ([`tri`]). Pure functions, no solver loop.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -9,6 +10,7 @@ pub mod modes;
 pub mod nedelec;
 pub mod poly;
 pub mod quadrature;
+pub mod tri;
 
 pub use nedelec::{Element, ElementError, Order};
 

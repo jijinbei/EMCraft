@@ -49,6 +49,15 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   S-parameters and power waves (§4.3–4.4).
 - R. E. Collin, *Foundations for Microwave Engineering*, 2nd ed., McGraw-Hill 1992 — evanescent
   modes and transmission-line equivalents (§3.12, §4.2).
+- J.-F. Lee, D.-K. Sun, Z. J. Cendes, *Full-wave analysis of dielectric waveguides using
+  tangential vector finite elements*, IEEE Trans. MTT 39(8):1262–1271, 1991; J.-M. Jin, *The
+  Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, §8.4 — the modes of a port of
+  any cross-section: edge functions for the transverse field, nodal ones for the axial, the
+  generalised eigenproblem in −β² (`emcraft-solver::portmode`, elements in `emcraft-fem::tri`).
+- R. E. Collin, *Field Theory of Guided Waves*, 2nd ed., IEEE Press 1991, §6.1; R. F.
+  Harrington, *Time-Harmonic Electromagnetic Fields*, McGraw-Hill 1961, §4-7 — the LSE and LSM
+  modes of a slab-loaded rectangular guide, the reference for hybrid port modes
+  (`emcraft-theory::slab`).
 
 ## Discontinuities
 - A. Wexler, *Solution of waveguide discontinuities by modal analysis*, IEEE Trans. MTT
@@ -103,7 +112,9 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   ASCE 98(6):1471–1485, 1972; K.-J. Bathe, *Finite Element Procedures*, 2nd ed. 2014, §11.6 —
   subspace iteration with Rayleigh–Ritz.
 - G. H. Golub, C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins 2013, §8.5 — the
-  cyclic Jacobi method for the reduced problem.
+  cyclic Jacobi method for the reduced problem; §7.4–7.6 — Householder reduction to Hessenberg
+  form, the Francis double-shift QR algorithm and inverse iteration, for the nonsymmetric
+  projected problems of the port modes (`emcraft-solver::dense`).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §6.3 and §6.7 — cavity resonances,
   Q by perturbation, the TE101 Q (eq. 6.46).
 
