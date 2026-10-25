@@ -489,3 +489,39 @@ fn circular_and_coaxial_guides_have_exact_references() {
     s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "cylinder", "radius": 1, "length": 30, "at": [5, 0, 0]})).unwrap();
     assert!(crate::view::reference(&s).is_err());
 }
+
+#[test]
+fn planar_circuits_are_layered_guides_with_strips() {
+    // A microstrip in a box: its ports' modes come from the cross-section solver; hostile
+    // layers and strips are refused, and nothing panics.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "fr4", "eps_r": 4.4})).unwrap();
+    let guide = |layers: Value, strips: Value| json!({"width": 8, "height": 4, "sections": [{"length": 1, "material": "vacuum"}], "layers": layers, "strips": strips});
+    s.execute("geometry.waveguide", &guide(json!([{"thickness": 0.8, "material": "fr4"}]), json!([{"y": 0.8, "x0": 3.25, "width": 1.5}]))).unwrap();
+    s.execute("mesh.generate", &json!({"size": 0.8})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    let r = s.execute("solve.port_modes", &json!({"frequency": 2})).unwrap();
+    let m = &r["ports"][0]["modes"][0];
+    // Between the air's 1 and the substrate's 4.4, nearer the substrate for a wide strip.
+    let eps = m["eps_eff"].as_f64().unwrap();
+    assert!(m["propagating"].as_bool().unwrap() && eps > 2.7 && eps < 4.4 && !m["closed_form"].as_bool().unwrap(), "{r}");
+    assert!(!r["ports"][0]["modes"][1]["propagating"].as_bool().unwrap());
+    let sw = s.execute("solve.frequency", &json!({"frequencies": [2], "order": 1})).unwrap();
+    assert!(sw["points"][0]["s21"]["mag"].as_f64().unwrap() > 0.99, "{sw}");
+    // The time domain does not take strips.
+    assert!(s.execute("solve.time_domain", &json!({"frequencies": [2]})).is_err());
+    for (layers, strips) in [
+        (json!([{"thickness": 5, "material": "fr4"}]), json!([])),
+        (json!([{"thickness": -1, "material": "fr4"}]), json!([])),
+        (json!([{"thickness": 1, "material": "nothing"}]), json!([])),
+        (json!([]), json!([{"y": 4, "x0": 1, "width": 1}])),
+        (json!([]), json!([{"y": 1, "x0": 7.5, "width": 1}])),
+        (json!([]), json!([{"y": 1, "x0": 1, "width": 1, "z0": 0.5, "z1": 0.2}])),
+        (json!([]), json!([{"y": f64::MAX, "x0": 1, "width": 1}])),
+        (json!("layers"), json!([])),
+    ] {
+        assert!(s.execute("geometry.waveguide", &guide(layers.clone(), strips.clone())).is_err(), "{layers} {strips}");
+    }
+    assert!(s.execute("solve.port_modes", &json!({"frequency": -1})).is_err());
+}

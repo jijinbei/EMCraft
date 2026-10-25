@@ -41,7 +41,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.waveguide",
         label: "Rectangular waveguide",
-        doc: "A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). Replaces any geometry, mesh and results.",
+        doc: "A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). A shielded planar circuit is one too: `layers` fill it from y = 0 up (a substrate), `strips` of no thickness lie on planes y = const (a microstrip on the substrate's top, a stripline between two layers); its ports then take their modes from the cross-section solver. Replaces any geometry, mesh and results.",
         params: &[
             p("width", "number", L, true, "broad wall a (x)"),
             p("height", "number", L, true, "narrow wall b (y)"),
@@ -51,6 +51,20 @@ pub static COMMANDS: &[CommandSpec] = &[
                 N,
                 true,
                 "`[{\"length\", \"material\", \"width\"?, \"offset\"?}]` from z = 0: a section may narrow the broad wall to an aperture `width` wide (lengths), starting at x = `offset` (centred when left out)",
+            ),
+            p(
+                "layers",
+                "array",
+                N,
+                false,
+                "`[{\"thickness\", \"material\"}]` from y = 0 up, across the whole guide (lengths); above them each section's material",
+            ),
+            p(
+                "strips",
+                "array",
+                N,
+                false,
+                "`[{\"y\", \"x0\", \"width\", \"z0\"?, \"z1\"?}]`: conducting strips of no thickness, [x0, x0 + width] × [z0, z1] on the plane y (lengths; z0, z1 the guide's ends when left out)",
             ),
         ],
         run: waveguide,
@@ -205,6 +219,16 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The eigenmodes' frequencies and Q factors; for a cavity of one uniform section, the closed-form resonances too.",
         params: &[],
         run: eigenmode_table,
+    },
+    CommandSpec {
+        id: "solve.port_modes",
+        label: "Port modes",
+        doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit) and the effective permittivity (β/k₀)² when it propagates, the attenuation (dB per length unit) when it does not.",
+        params: &[
+            p("frequency", "number", F, true, "the frequency"),
+            p("order", "integer", N, false, "element order of the cross-section solver, 1 or 2 (default 2)"),
+        ],
+        run: port_modes,
     },
     CommandSpec {
         id: "results.sparameters",
@@ -423,7 +447,47 @@ fn waveguide(s: &mut Session, p: &Value) -> Result<Value> {
         let offset_y = s.length(sec, "offset_y").map_err(|e| EngineError::Params(format!("section {}: {e}", i + 1)))?;
         sections.push(Section { length, material: material.to_owned(), width, offset, height, offset_y });
     }
-    s.model.set_waveguide(Waveguide { width, height, sections })?;
+    let total: f64 = sections.iter().map(|x| x.length).sum();
+    let list_of = |name: &str| -> Result<&[Value]> {
+        match get(p, name) {
+            None => Ok(&[]),
+            Some(v) => {
+                let a = v.as_array().ok_or_else(|| EngineError::Params(format!("`{name}` must be an array")))?;
+                if a.len() > 1000 {
+                    return Err(EngineError::Params(format!("`{name}`: at most 1000")));
+                }
+                Ok(a.as_slice())
+            }
+        }
+    };
+    let layers = list_of("layers")?
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let e = |e: EngineError| EngineError::Params(format!("layer {}: {e}", i + 1));
+            let thickness = s
+                .positive_length(l, "thickness")
+                .map_err(e)?
+                .ok_or_else(|| EngineError::Params(format!("layer {}: `thickness` is required", i + 1)))?;
+            let material = string(l, "material")?.ok_or_else(|| EngineError::Params(format!("layer {}: `material` is required", i + 1)))?.to_owned();
+            Ok(emcraft_model::Layer { thickness, material })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let strips = list_of("strips")?
+        .iter()
+        .enumerate()
+        .map(|(i, st)| {
+            let e = |e: EngineError| EngineError::Params(format!("strip {}: {e}", i + 1));
+            let need = |name: &str, v: Option<f64>| v.ok_or_else(|| EngineError::Params(format!("strip {}: `{name}` is required", i + 1)));
+            let y = need("y", s.length(st, "y").map_err(e)?)?;
+            let x0 = need("x0", s.length(st, "x0").map_err(e)?)?;
+            let width = need("width", s.positive_length(st, "width").map_err(e)?)?;
+            let z0 = s.length(st, "z0").map_err(e)?.unwrap_or(0.0);
+            let z1 = s.length(st, "z1").map_err(e)?.unwrap_or(total);
+            Ok(emcraft_model::Strip { y, x0, width, z0, z1 })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    s.model.set_waveguide(Waveguide { width, height, sections, layers, strips })?;
     s.sweep = None;
     Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, |w| w.length()))}))
 }
@@ -779,6 +843,34 @@ fn complex(c: C) -> Value {
 
 fn sweep(s: &Session) -> Result<&Sweep> {
     s.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))
+}
+
+fn port_modes(s: &mut Session, p: &Value) -> Result<Value> {
+    let f = s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`frequency` is required".into()))?;
+    let order = Order::from_u8(integer(p, "order", 1..=2)?.unwrap_or(2) as u8).unwrap_or(Order::Two);
+    let list = emcraft_solver::driven::port_modes(&s.model, order, f)?;
+    let k0 = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;
+    // Per display length: a quantity per metre times the metres in one unit.
+    let per_unit = s.display.length.to_si(1.0);
+    let ports: Vec<Value> = list
+        .iter()
+        .map(|(name, modes)| {
+            let rows: Vec<Value> = modes
+                .iter()
+                .map(|m| {
+                    if m.beta2 > 0.0 {
+                        let beta = m.beta2.sqrt();
+                        json!({"name": m.name, "propagating": true, "beta": beta * per_unit, "eps_eff": m.beta2 / (k0 * k0), "closed_form": m.closed_form})
+                    } else {
+                        let alpha = (-m.beta2).sqrt();
+                        json!({"name": m.name, "propagating": false, "attenuation_db": 20.0 * std::f64::consts::LOG10_E * alpha * per_unit, "closed_form": m.closed_form})
+                    }
+                })
+                .collect();
+            json!({"name": name, "modes": rows})
+        })
+        .collect();
+    Ok(json!({"frequency": s.show_frequency(f), "length_unit": s.display.length.symbol(), "ports": ports}))
 }
 
 fn sparameters(s: &mut Session, _: &Value) -> Result<Value> {

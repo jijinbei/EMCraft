@@ -1,0 +1,72 @@
+{
+ "title": "WR-90 with a polystyrene layer (εr = 2.25) filling its lower half, 20 mm long: the hybrid LSM₁₀ mode through ports solved on the layered cross-section",
+ "kind": "theory",
+ "source": "The LSE and LSM modes of a rectangular guide loaded with a dielectric slab across its width: −(k_y1/εr) tan(k_y1 d) = k_y2 tan(k_y2 (b − d)) for LSM^y (R. E. Collin, Field Theory of Guided Waves, 2nd ed., IEEE Press 1991, §6.1; R. F. Harrington, Time-Harmonic Electromagnetic Fields, 1961, §4-7), solved by bisection; S21 = exp(−jβL), S11 = 0",
+ "quantities": [
+  {
+   "id": "eps_eff_10",
+   "quantity": "(β/k0)² of the LSM₁₀ port mode at 10 GHz",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/eps_eff"
+   },
+   "value": 1.1032488978656474,
+   "tolerance": {
+    "absolute": 0.0001
+   },
+   "reason": "the cross-section solver on the port's 2 mm triangles, order 2: −7e-6"
+  },
+  {
+   "id": "s21_phase_8",
+   "quantity": "phase of S21 at 8 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -172.24487007357138,
+   "tolerance": {
+    "absolute": 0.05
+   },
+   "reason": "2 mm hexahedral cells in tetrahedra, order 2: +0.002°"
+  },
+  {
+   "id": "s21_phase_10",
+   "quantity": "phase of S21 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/1/s21/deg"
+   },
+   "value": 107.73991099070054,
+   "tolerance": {
+    "absolute": 0.05
+   },
+   "reason": "+0.006°"
+  },
+  {
+   "id": "s21_phase_12",
+   "quantity": "phase of S21 at 12 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/2/s21/deg"
+   },
+   "value": 30.657402791828645,
+   "tolerance": {
+    "absolute": 0.1
+   },
+   "reason": "+0.017°, a shorter wavelength"
+  },
+  {
+   "id": "s11_mag_12",
+   "quantity": "|S11| at 12 GHz (no discontinuity)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/2/s11/mag"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.0002
+   },
+   "reason": "the ports' modes in the volume's trace space: 2e-5"
+  }
+ ]
+}

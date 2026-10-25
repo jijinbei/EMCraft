@@ -1,0 +1,59 @@
+{
+ "title": "Stripline: a 1.5 mm strip of no thickness across the middle of a PTFE-filled 6 × 3 mm box, 6 mm long: TEM through ports solved with the strip in their cross-section",
+ "kind": "theory",
+ "source": "Two conductors in one homogeneous dielectric carry a TEM wave with β = k0 √εr whatever the cross-section (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.7), so S21 = exp(−jβL) and S11 = 0",
+ "quantities": [
+  {
+   "id": "s21_phase_5",
+   "quantity": "phase of S21 at 5 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -53.43359482421212,
+   "tolerance": {
+    "absolute": 0.05
+   },
+   "reason": "1.5 mm cells graded to a twentieth at the strip's edges (E ∝ r^{−1/2} there), order 2: −0.003°"
+  },
+  {
+   "id": "s11_mag_5",
+   "quantity": "|S11| at 5 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.001
+   },
+   "reason": "1.5e-4: the edges' singularity resolved by the grading"
+  },
+  {
+   "id": "s21_phase_10",
+   "quantity": "phase of S21 at 10 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/1/s21/deg"
+   },
+   "value": -106.86718964842426,
+   "tolerance": {
+    "absolute": 0.05
+   },
+   "reason": "−0.003°"
+  },
+  {
+   "id": "s11_mag_10",
+   "quantity": "|S11| at 10 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/1/s11/mag"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.001
+   },
+   "reason": "2.2e-4"
+  }
+ ]
+}

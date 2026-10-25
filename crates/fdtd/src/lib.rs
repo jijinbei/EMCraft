@@ -650,6 +650,9 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
         return Err(invalid("frequencies", "must be finite numbers > 0"));
     }
     let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
+    if !w.plain() {
+        return Err(FdtdError::Unsupported("layers and strips in the time domain (its ports carry TE10 only)".into()));
+    }
     // Every frequency above both ports' TE₁₀ cut-off, checked before any run.
     for (i, &f) in [0, w.sections.len() - 1].iter().flat_map(|i| frequencies.iter().map(move |f| (*i, f))) {
         let (x0w, s) = (w.aperture(i).map_or(w.width, |a| a.1), &w.sections[i]);

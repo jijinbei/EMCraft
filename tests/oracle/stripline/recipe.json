@@ -1,0 +1,8 @@
+[
+ {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.2}},
+ {"command": "geometry.waveguide", "params": {"width": 6, "height": 3, "sections": [{"length": 6, "material": "ptfe"}], "strips": [{"y": 1.5, "x0": 2.25, "width": 1.5}]}},
+ {"command": "mesh.generate", "params": {"size": 1.5}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+ {"command": "solve.frequency", "params": {"frequencies": [5, 10], "order": 2}, "id": "solve"}
+]

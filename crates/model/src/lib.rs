@@ -109,6 +109,10 @@ impl Section {
 /// A rectangular waveguide along z: x ∈ [0, a], y ∈ [0, b], z from 0 through its sections. A
 /// section may narrow the broad wall to an aperture of its own (an H-plane step, an inductive
 /// iris); the narrow wall b is the same throughout.
+///
+/// Planar circuits in a shielding box are guides too: dielectric `layers` fill it from y = 0 up
+/// (a substrate, its whole width and length), and conducting `strips` of no thickness lie on
+/// planes y = const (a microstrip on the substrate, a stripline between two layers).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Waveguide {
     /// Broad wall width a (m), along x: the widest aperture.
@@ -116,6 +120,29 @@ pub struct Waveguide {
     /// Narrow wall height b (m), along y.
     pub height: f64,
     pub sections: Vec<Section>,
+    /// Layers from y = 0 up; above the last, each section's own material.
+    #[serde(default)]
+    pub layers: Vec<Layer>,
+    #[serde(default)]
+    pub strips: Vec<Strip>,
+}
+
+/// A dielectric layer across the whole guide.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Layer {
+    /// Thickness along y (m).
+    pub thickness: f64,
+    pub material: String,
+}
+
+/// A perfectly conducting strip of no thickness: [x0, x0 + width] × [z0, z1] on the plane y.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Strip {
+    pub y: f64,
+    pub x0: f64,
+    pub width: f64,
+    pub z0: f64,
+    pub z1: f64,
 }
 
 impl Waveguide {
@@ -152,6 +179,31 @@ impl Waveguide {
     /// Whether every section has the full cross-section.
     pub fn uniform(&self) -> bool {
         self.full_width() && self.full_height()
+    }
+
+    /// Whether the guide is a plain one: no layers, no strips.
+    pub fn plain(&self) -> bool {
+        self.layers.is_empty() && self.strips.is_empty()
+    }
+
+    /// The layer holding height y (the tops of the layers, bottom up), `None` above them.
+    pub fn layer_at(&self, y: f64) -> Option<&Layer> {
+        let mut top = 0.0;
+        self.layers.iter().find(|l| {
+            top += l.thickness;
+            y < top
+        })
+    }
+
+    /// The planes y = const between layers.
+    pub fn layer_tops(&self) -> Vec<f64> {
+        self.layers
+            .iter()
+            .scan(0.0, |top, l| {
+                *top += l.thickness;
+                Some(*top)
+            })
+            .collect()
     }
 
     /// The z coordinates of the section boundaries, from 0 to the length.
@@ -632,6 +684,34 @@ impl Model {
                 return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's height"));
             }
         }
+        let toly = 1e-9 * w.height;
+        for (i, l) in w.layers.iter().enumerate() {
+            positive(&format!("thickness of layer {}", i + 1), l.thickness)?;
+            self.material(&l.material)?;
+        }
+        if w.layers.iter().map(|l| l.thickness).sum::<f64>() > w.height + toly {
+            return Err(invalid("layers", "are thicker than the guide is high"));
+        }
+        let length = w.length();
+        for (i, st) in w.strips.iter().enumerate() {
+            let what = || format!("strip {}", i + 1);
+            if ![st.y, st.x0, st.width, st.z0, st.z1].iter().all(|v| v.is_finite()) {
+                return Err(invalid(what(), "must be finite"));
+            }
+            positive(&format!("width of strip {}", i + 1), st.width)?;
+            if !(st.y > toly && st.y < w.height - toly) {
+                return Err(invalid(what(), "must lie inside the guide (0 < y < height)"));
+            }
+            if st.x0 < -tol || st.x0 + st.width > w.width + tol || !(st.z0 >= -1e-9 * length && st.z1 <= length * (1.0 + 1e-9) && st.z1 > st.z0) {
+                return Err(invalid(what(), "must lie within the guide's width and length, z0 < z1"));
+            }
+            if !w.uniform() {
+                return Err(invalid(what(), "not supported yet: strips in a guide whose aperture changes"));
+            }
+        }
+        if !w.layers.is_empty() && !w.uniform() {
+            return Err(invalid("layers", "not supported yet: layers in a guide whose aperture changes"));
+        }
         // Neighbouring apertures must nest: one rectangle holds the other (steps, irises).
         let toly = 1e-9 * w.height;
         for i in 1..w.sections.len() {
@@ -779,6 +859,9 @@ impl Model {
     /// cylinder's end face.
     pub fn port_shape(&self, end: End) -> Result<PortShape> {
         if let Some(w) = &self.waveguide {
+            if !w.plain() {
+                return Err(invalid("port", "a layered guide or one with strips has no closed-form modes"));
+            }
             let i = match end {
                 End::Start => 0,
                 End::End => w.sections.len().saturating_sub(1),
@@ -997,7 +1080,7 @@ mod tests {
     use super::*;
 
     fn guide() -> Waveguide {
-        Waveguide { width: 0.02286, height: 0.01016, sections: vec![Section::new(0.01, "vacuum")] }
+        Waveguide { width: 0.02286, height: 0.01016, sections: vec![Section::new(0.01, "vacuum")], layers: Vec::new(), strips: Vec::new() }
     }
 
     #[test]
@@ -1081,7 +1164,7 @@ mod tests {
     fn apertures_must_fit_and_nest() {
         let mut m = Model::new();
         let sec = |w: Option<f64>, o: Option<f64>| Section { length: 0.01, material: "vacuum".into(), width: w, offset: o, ..Default::default() };
-        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s };
+        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new() };
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
         let w = m.waveguide.as_ref().unwrap();
         assert_eq!(w.aperture(1), Some((0.005, 0.01)));

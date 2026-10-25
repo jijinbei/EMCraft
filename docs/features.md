@@ -24,13 +24,15 @@ A linear, isotropic material, lossless unless it has a loss tangent.
 
 ## `geometry.waveguide` — Rectangular waveguide
 
-A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). Replaces any geometry, mesh and results.
+A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). A shielded planar circuit is one too: `layers` fill it from y = 0 up (a substrate), `strips` of no thickness lie on planes y = const (a microstrip on the substrate's top, a stripline between two layers); its ports then take their modes from the cross-section solver. Replaces any geometry, mesh and results.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `width` | number | length | yes | broad wall a (x) |
 | `height` | number | length | yes | narrow wall b (y) |
 | `sections` | array |  | yes | `[{"length", "material", "width"?, "offset"?}]` from z = 0: a section may narrow the broad wall to an aperture `width` wide (lengths), starting at x = `offset` (centred when left out) |
+| `layers` | array |  | no | `[{"thickness", "material"}]` from y = 0 up, across the whole guide (lengths); above them each section's material |
+| `strips` | array |  | no | `[{"y", "x0", "width", "z0"?, "z1"?}]`: conducting strips of no thickness, [x0, x0 + width] × [z0, z1] on the plane y (lengths; z0, z1 the guide's ends when left out) |
 
 ## `geometry.solid` — Primitive body
 
@@ -155,6 +157,15 @@ The resonances of the guide closed at both ends by conducting walls (a cavity; p
 The eigenmodes' frequencies and Q factors; for a cavity of one uniform section, the closed-form resonances too.
 
 No parameters.
+
+## `solve.port_modes` — Port modes
+
+Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit) and the effective permittivity (β/k₀)² when it propagates, the attenuation (dB per length unit) when it does not.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequency` | number | frequency | yes | the frequency |
+| `order` | integer |  | no | element order of the cross-section solver, 1 or 2 (default 2) |
 
 ## `results.sparameters` — S-parameters
 

@@ -93,7 +93,14 @@ mod tests {
     #[test]
     fn euler_characteristic_and_sharing() {
         let mut m = Model::new();
-        m.set_waveguide(Waveguide { width: 0.02, height: 0.01, sections: vec![Section::new(0.03, "vacuum")] }).unwrap();
+        m.set_waveguide(Waveguide {
+            width: 0.02,
+            height: 0.01,
+            sections: vec![Section::new(0.03, "vacuum")],
+            layers: Vec::new(),
+            strips: Vec::new(),
+        })
+        .unwrap();
         let mesh = crate::waveguide(&m, 0.005).unwrap();
         let t = Topology::new(&mesh);
         // A ball: V − E + F − T = 1.

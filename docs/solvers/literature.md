@@ -58,6 +58,13 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Harrington, *Time-Harmonic Electromagnetic Fields*, McGraw-Hill 1961, §4-7 — the LSE and LSM
   modes of a slab-loaded rectangular guide, the reference for hybrid port modes
   (`emcraft-theory::slab`).
+- E. Hammerstad, Ø. Jensen, *Accurate models for microstrip computer-aided design*, IEEE MTT-S
+  International Microwave Symposium Digest, 1980, pp. 407–409 — microstrip's quasi-static
+  effective permittivity and impedance, the benchmark for strips on a substrate
+  (`emcraft-theory::microstrip`).
+- J. Meixner, *The behavior of electromagnetic fields at edges*, IEEE Trans. AP 20(4):442–446,
+  1972 — E ∝ r^{−1/2} at a strip's edge, why the structured mesh closes in harder there than at
+  an iris' (`emcraft-mesh`, `strip_edge`).
 
 ## Discontinuities
 - A. Wexler, *Solution of waveguide discontinuities by modal analysis*, IEEE Trans. MTT
@@ -96,6 +103,9 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   linear systems*, Math. Comp. 31(137):163–179, 1977 — 1 × 1 and 2 × 2 pivots.
 - O. Schenk, K. Gärtner, *Solving unsymmetric sparse systems of linear equations with PARDISO*,
   FGCS 20(3):475–487, 2004 — static pivoting with iterative refinement.
+- A. van der Sluis, *Condition numbers and equilibration of matrices*, Numer. Math. 14:14–23,
+  1969 — the symmetric scaling S A S, each row's largest entry one, before the factorization:
+  the static-pivot threshold then means the same for every unknown of a graded mesh.
 
 ## Time domain
 - K. S. Yee, *Numerical solution of initial boundary value problems involving Maxwell's

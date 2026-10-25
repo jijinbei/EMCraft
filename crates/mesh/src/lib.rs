@@ -78,16 +78,19 @@ pub struct Options {
     /// device (steps and irises across x only) excited by TE10 has fields that do not vary
     /// along y, so one layer of elements represents them exactly there.
     pub size_y: Option<f64>,
+    /// The element size at the edges of strips, as a fraction of `size`: a strip of no
+    /// thickness is singular there more strongly than an iris (E ∝ r^{−1/2}).
+    pub strip_edge: f64,
 }
 
 impl Options {
     /// Graded towards edges: a quarter of the size there, growing by half again per element.
     pub fn new(size: f64) -> Options {
-        Options { size, edge: 0.25, growth: 1.5, size_y: None }
+        Options { size, edge: 0.25, growth: 1.5, size_y: None, strip_edge: 0.05 }
     }
 
     pub fn uniform(size: f64) -> Options {
-        Options { size, edge: 1.0, growth: 1.5, size_y: None }
+        Options { size, edge: 1.0, growth: 1.5, size_y: None, strip_edge: 1.0 }
     }
 }
 
@@ -98,25 +101,27 @@ impl Options {
 /// graded geometrically towards the edge restores the elements' rate (I. Babuška, R. B. Kellogg,
 /// J. Pitkäranta, *Direct and inverse error estimates for finite elements with mesh refinements*,
 /// Numer. Math. 33:447–471, 1979).
-fn graded(u: f64, v: f64, o: &Options, fine_left: bool, fine_right: bool) -> Vec<f64> {
+///
+/// `left` and `right` are the ends' element sizes as fractions of the size (1: not graded).
+fn graded(u: f64, v: f64, o: &Options, left: f64, right: f64) -> Vec<f64> {
     let len = v - u;
-    if !(fine_left || fine_right) || !(o.edge < 1.0) {
+    let (fine_left, fine_right) = (left < 1.0, right < 1.0);
+    if !(fine_left || fine_right) {
         let n = divisions(len, o.size, 1);
         return line(u, len, n).skip(1).collect();
     }
     // Geometric steps h0, h0·g, … from each fine end while below the size; the middle evenly.
-    let h0 = o.edge.max(1e-3) * o.size;
-    let ramp = || {
+    let ramp = |edge: f64| {
         let mut v = Vec::new();
-        let mut h = h0;
+        let mut h = edge.max(1e-3) * o.size;
         while h < o.size && v.len() < 200 {
             v.push(h);
             h *= o.growth;
         }
         v
     };
-    let left = if fine_left { ramp() } else { Vec::new() };
-    let right = if fine_right { ramp() } else { Vec::new() };
+    let left = if fine_left { ramp(left) } else { Vec::new() };
+    let right = if fine_right { ramp(right) } else { Vec::new() };
     let graded_len: f64 = left.iter().chain(&right).sum();
     let gap = len - graded_len;
     let mut steps: Vec<f64> = left.clone();
@@ -161,8 +166,11 @@ pub fn waveguide(model: &Model, size: f64) -> Result<Mesh> {
 /// perfect conductor.
 pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let size = positive("element size", o.size)?;
-    if !(o.edge.is_finite() && o.edge > 0.0 && o.edge <= 1.0) || !(o.growth.is_finite() && o.growth > 1.0) {
-        return Err(MeshError::Invalid { what: "grading".into(), why: "edge must be in (0, 1] and growth > 1".into() });
+    if !(o.edge.is_finite() && o.edge > 0.0 && o.edge <= 1.0)
+        || !(o.strip_edge.is_finite() && o.strip_edge > 0.0 && o.strip_edge <= 1.0)
+        || !(o.growth.is_finite() && o.growth > 1.0)
+    {
+        return Err(MeshError::Invalid { what: "grading".into(), why: "edge and strip_edge must be in (0, 1] and growth > 1".into() });
     }
     let o = Options { size, ..*o };
     let w = model.waveguide.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no waveguide".into() })?;
@@ -181,10 +189,22 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     // aperture changes.
     let mut sharp_z = vec![false; w.sections.len() + 1];
     let ends = w.interfaces();
-    let axis = |span: f64, aperture: &dyn Fn(usize) -> Option<(f64, f64)>, step: f64, sharp_z: &mut Vec<bool>| -> Result<Vec<f64>> {
+    // Layers' tops are planes; strips' edges are planes the lines close in on (the field is
+    // singular at a strip's edge).
+    let strip_x: Vec<f64> = w.strips.iter().flat_map(|s| [s.x0, s.x0 + s.width]).collect();
+    let strip_y: Vec<f64> = w.strips.iter().map(|s| s.y).collect();
+    let layer_y = w.layer_tops();
+    let axis = |span: f64,
+                aperture: &dyn Fn(usize) -> Option<(f64, f64)>,
+                step: f64,
+                sharp_z: &mut Vec<bool>,
+                planes: &[f64],
+                edges: &[f64]|
+     -> Result<Vec<f64>> {
         let tol = 1e-9 * span;
         let mut breaks = vec![0.0, span];
-        let mut sharp: Vec<f64> = Vec::new();
+        breaks.extend(planes.iter().chain(edges).copied().filter(|v| *v > tol && *v < span - tol));
+        let mut sharp: Vec<f64> = edges.iter().copied().filter(|v| *v > tol && *v < span - tol).collect();
         for i in 0..w.sections.len() {
             if let Some((p0, pa)) = aperture(i) {
                 breaks.push(p0.clamp(0.0, span));
@@ -211,35 +231,63 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         if breaks.len() > 1000 {
             return Err(MeshError::Invalid { what: "waveguide".into(), why: "too many aperture edges".into() });
         }
-        let is_sharp = |v: f64| sharp.iter().any(|e| (e - v).abs() <= tol);
+        // A strip's edge, an aperture's re-entrant edge, or neither.
+        let fraction = |v: f64| {
+            if edges.iter().any(|e| (e - v).abs() <= tol) {
+                o.strip_edge
+            } else if sharp.iter().any(|e| (e - v).abs() <= tol) {
+                o.edge
+            } else {
+                1.0
+            }
+        };
         let oo = Options { size: step, ..o };
         let mut lines = vec![0.0];
         for b in breaks.windows(2) {
-            lines.extend(graded(b[0], b[1], &oo, is_sharp(b[0]), is_sharp(b[1])));
+            lines.extend(graded(b[0], b[1], &oo, fraction(b[0]), fraction(b[1])));
         }
         Ok(lines)
     };
-    let x = axis(w.width, &|i| w.aperture(i), size, &mut sharp_z)?;
-    let y = axis(w.height, &|i| w.aperture_y(i), size_y, &mut sharp_z)?;
+    let x = axis(w.width, &|i| w.aperture(i), size, &mut sharp_z, &[], &strip_x)?;
+    let y = axis(w.height, &|i| w.aperture_y(i), size_y, &mut sharp_z, &layer_y, &strip_y)?;
     let nx = (x.len() - 1).max(1);
     let ny = (y.len() - 1).max(1);
     let mut z = vec![0.0];
     let mut layers = Vec::new();
     let mut at = 0.0;
     let mut cells_z = 0usize;
+    // Strips' ends inside a section split it: planes the lines close in on.
+    let tolz = 1e-9 * w.length();
+    let strip_z: Vec<f64> = w.strips.iter().flat_map(|s| [s.z0, s.z1]).collect();
     for (i, s) in w.sections.iter().enumerate() {
-        let zs = graded(ends[i], ends[i + 1], &o, sharp_z[i], sharp_z[i + 1]);
-        let n = zs.len();
-        cells_z = cells_z.saturating_add(n);
-        // The cap is checked before the lines are made.
-        if nx.saturating_mul(ny).saturating_mul(cells_z).saturating_mul(TETS_PER_CELL) > MAX_TETS {
-            break;
-        }
-        z.extend(zs);
+        let mut cuts: Vec<(f64, bool)> = vec![(ends[i], sharp_z[i]), (ends[i + 1], sharp_z[i + 1])];
+        cuts.extend(strip_z.iter().filter(|z| **z > ends[i] + tolz && **z < ends[i + 1] - tolz).map(|z| (*z, true)));
+        cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
+        cuts.dedup_by(|a, b| (a.0 - b.0).abs() <= tolz);
         let (m, _) = model.material(&s.material)?;
         let ap = w.aperture(i).unwrap_or((0.0, w.width));
         let apy = w.aperture_y(i).unwrap_or((0.0, w.height));
-        layers.extend(std::iter::repeat_n((m as u32, ap, apy), n));
+        for c in cuts.windows(2) {
+            // A strip's end inside the guide is an edge; a section's aperture change, a step.
+            let fraction = |(z, sharp): (f64, bool)| {
+                if strip_z.iter().any(|e| (e - z).abs() <= tolz) && z > tolz && z < w.length() - tolz {
+                    o.strip_edge
+                } else if sharp {
+                    o.edge
+                } else {
+                    1.0
+                }
+            };
+            let zs = graded(c[0].0, c[1].0, &o, fraction(c[0]), fraction(c[1]));
+            let n = zs.len();
+            cells_z = cells_z.saturating_add(n);
+            // The cap is checked before the lines are made.
+            if nx.saturating_mul(ny).saturating_mul(cells_z).saturating_mul(TETS_PER_CELL) > MAX_TETS {
+                break;
+            }
+            z.extend(zs);
+            layers.extend(std::iter::repeat_n((m as u32, ap, apy), n));
+        }
         at += s.length;
     }
     let tets = nx.saturating_mul(ny).saturating_mul(cells_z).saturating_mul(TETS_PER_CELL);
@@ -251,13 +299,40 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         *last = length;
     }
     let grid = Grid { x, y, z, cells: Vec::new() };
-    Ok(structured(grid, &layers, length))
+    let ylayers =
+        w.layer_tops().into_iter().zip(&w.layers).map(|(top, l)| Ok((top, model.material(&l.material)?.0 as u32))).collect::<Result<Vec<_>>>()?;
+    let mut mesh = structured(grid, &layers, &ylayers, length);
+    add_strips(&mut mesh, &w.strips, w.height);
+    Ok(mesh)
+}
+
+/// Tags the faces inside the mesh that lie on a strip as conductors (each once, with one of its
+/// two tetrahedra): the solver eliminates their tangential field as on the walls.
+fn add_strips(mesh: &mut Mesh, strips: &[emcraft_model::Strip], height: f64) {
+    if strips.is_empty() {
+        return;
+    }
+    let topo = Topology::new(mesh);
+    let tol = 1e-9 * height;
+    for (f, owners) in topo.faces.iter().zip(&topo.face_tets) {
+        if owners[1] == u32::MAX {
+            continue;
+        }
+        let p = f.map(|n| mesh.nodes[n as usize]);
+        let Some(c) = Point3::centroid(p) else { continue };
+        let on = strips.iter().any(|s| p.iter().all(|q| (q.y - s.y).abs() <= tol) && c.x > s.x0 && c.x < s.x0 + s.width && c.z > s.z0 && c.z < s.z1);
+        if on {
+            mesh.boundary.push(BoundaryFace { nodes: *f, tet: owners[0], tag: Boundary::Pec });
+        }
+    }
 }
 
 /// The tetrahedral mesh of a grid whose cell layers along z have the given materials and
 /// apertures ((x start, width), (y start, height)): cells whose centre lies outside the aperture
 /// are left out.
-fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], length: f64) -> Mesh {
+/// `ylayers` (tops ascending, material) override the material of the cells whose centre lies
+/// below a top.
+fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], ylayers: &[(f64, u32)], length: f64) -> Mesh {
     let (nx, ny, nz) = (grid.x.len() - 1, grid.y.len() - 1, grid.z.len() - 1);
     let node = |i: usize, j: usize, k: usize| (i + (nx + 1) * (j + (ny + 1) * k)) as u32;
     let mut nodes = Vec::with_capacity((nx + 1) * (ny + 1) * (nz + 1));
@@ -276,6 +351,7 @@ fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], length: 
         let (material, (x0, a), (y0, b)) = layers.get(k).copied().unwrap_or((0, all, all));
         for j in 0..ny {
             let yc = 0.5 * (grid.y[j] + grid.y[j + 1]);
+            let material = ylayers.iter().find(|(top, _)| yc < *top).map_or(material, |(_, m)| *m);
             for i in 0..nx {
                 let xc = 0.5 * (grid.x[i] + grid.x[i + 1]);
                 if !(xc > x0 && xc < x0 + a && yc > y0 && yc < y0 + b) {
@@ -463,8 +539,14 @@ mod tests {
         let mut m = Model::new();
         m.add_material(Material::new("ptfe", 2.0, 1.0).unwrap()).unwrap();
         let s = |l: f64, m: &str| Section::new(l, m);
-        m.set_waveguide(Waveguide { width: 0.02286, height: 0.01016, sections: vec![s(0.015, "ptfe"), s(0.02, "vacuum"), s(0.015, "ptfe")] })
-            .unwrap();
+        m.set_waveguide(Waveguide {
+            width: 0.02286,
+            height: 0.01016,
+            sections: vec![s(0.015, "ptfe"), s(0.02, "vacuum"), s(0.015, "ptfe")],
+            layers: Vec::new(),
+            strips: Vec::new(),
+        })
+        .unwrap();
         m
     }
 
@@ -536,6 +618,8 @@ mod tests {
             width: 0.02286,
             height: 0.01016,
             sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
+            layers: Vec::new(),
+            strips: Vec::new(),
         })
         .unwrap();
         let mesh = waveguide(&m, 0.003).unwrap();
@@ -567,6 +651,8 @@ mod tests {
             width: 0.02286,
             height: 0.01016,
             sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
+            layers: Vec::new(),
+            strips: Vec::new(),
         })
         .unwrap();
         let o = Options::new(0.004);
@@ -587,8 +673,8 @@ mod tests {
         // Without steps, grading changes nothing.
         let uniform_guide = model();
         assert_eq!(waveguide_with(&uniform_guide, &o).unwrap(), waveguide_with(&uniform_guide, &Options::uniform(0.004)).unwrap());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5, size_y: None }).is_err());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0, size_y: None }).is_err());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5, size_y: None, strip_edge: 0.05 }).is_err());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0, size_y: None, strip_edge: 0.05 }).is_err());
     }
 
     #[test]

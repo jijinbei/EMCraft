@@ -949,6 +949,26 @@ fn numeric_port(
     order: Order,
     faces: &[usize],
 ) -> Result<NumericPort> {
+    let section = cross_section(model, p, mesh, order, faces)?;
+    // The unknowns with a tangential trace on the faces (as for the closed forms).
+    let mut touched = std::collections::BTreeSet::new();
+    let rule = if order == Order::One { 6 } else { 8 };
+    for b in faces.iter().filter_map(|&i| mesh.boundary.get(i)) {
+        let tet = b.tet as usize;
+        let el = element(mesh, topo, tet, order)?;
+        let unknowns: Vec<u32> = dofs.of_tet(topo, tet).collect();
+        for (l, _, _) in el.face_rule(local_face(topo, tet, &b.nodes)?, rule) {
+            let values = el.values(l);
+            let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
+            touched.extend(unknowns.iter().zip(&values).filter(|(u, v)| **u != NONE && v.x.hypot(v.y) > 1e-9 * scale).map(|(u, _)| *u as usize));
+        }
+    }
+    Ok(NumericPort { section, faces: faces.to_vec(), count: p.modes as usize, support: touched.into_iter().collect() })
+}
+
+/// A port's cross-section from its faces: materials from the tetrahedra behind them, conductors
+/// where wall faces meet it, edges bent as the volume's.
+fn cross_section(model: &Model, p: &emcraft_model::Port, mesh: &Mesh, order: Order, faces: &[usize]) -> Result<crate::portmode::CrossSection> {
     let what = || format!("port `{}`", p.name);
     let mut global: Vec<u32> = faces.iter().filter_map(|&f| mesh.boundary.get(f)).flat_map(|b| b.nodes).collect();
     global.sort_unstable();
@@ -981,21 +1001,72 @@ fn numeric_port(
             }
         }
     }
-    let section = crate::portmode::CrossSection::new(order, nodes, tris, eps, mu, &[], &curved)?;
-    // The unknowns with a tangential trace on the faces (as for the closed forms).
-    let mut touched = std::collections::BTreeSet::new();
-    let rule = if order == Order::One { 6 } else { 8 };
-    for b in faces.iter().filter_map(|&i| mesh.boundary.get(i)) {
-        let tet = b.tet as usize;
-        let el = element(mesh, topo, tet, order)?;
-        let unknowns: Vec<u32> = dofs.of_tet(topo, tet).collect();
-        for (l, _, _) in el.face_rule(local_face(topo, tet, &b.nodes)?, rule) {
-            let values = el.values(l);
-            let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
-            touched.extend(unknowns.iter().zip(&values).filter(|(u, v)| **u != NONE && v.x.hypot(v.y) > 1e-9 * scale).map(|(u, _)| *u as usize));
-        }
+    // Conductors inside the cross-section (a strip ending on the port): the section's edges that
+    // also bound a wall face, by local nodes. (Its rim is a wall anyway.)
+    let own: std::collections::HashSet<usize> = faces.iter().copied().collect();
+    let wall_edges: std::collections::HashSet<[u32; 2]> = mesh
+        .boundary
+        .iter()
+        .enumerate()
+        .filter(|(i, b)| !own.contains(i) && b.tag == Boundary::Pec)
+        .flat_map(|(_, b)| emcraft_fem::tri::TRI_EDGES.map(|[i, j]| [b.nodes[i].min(b.nodes[j]), b.nodes[i].max(b.nodes[j])]))
+        .collect();
+    let conductors: Vec<[u32; 2]> = tris
+        .iter()
+        .flat_map(|t| emcraft_fem::tri::TRI_EDGES.map(|[i, j]| [t[i].min(t[j]), t[i].max(t[j])]))
+        .filter(|[a, b]| wall_edges.contains(&[global[*a as usize], global[*b as usize]]))
+        .collect();
+    crate::portmode::CrossSection::new(order, nodes, tris, eps, mu, &conductors, &curved)
+}
+
+/// A port mode at a frequency: its name and β² (rad²/m²; negative when evanescent).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModeInfo {
+    pub name: String,
+    pub beta2: f64,
+    /// Whether the closed forms gave it.
+    pub closed_form: bool,
+}
+
+/// Each port's modes at `frequency` (Hz), from the meshed model, without assembling the
+/// volume: closed forms where they apply, the cross-section solver elsewhere.
+pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(String, Vec<ModeInfo>)>> {
+    if !(frequency.is_finite() && frequency > 0.0) {
+        return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
     }
-    Ok(NumericPort { section, faces: faces.to_vec(), count: p.modes as usize, support: touched.into_iter().collect() })
+    let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
+    if model.ports.is_empty() {
+        return Err(SolveError::NotReady("no ports: create one with model.port.create".into()));
+    }
+    let k0 = 2.0 * PI * frequency / C0;
+    model
+        .ports
+        .iter()
+        .map(|p| {
+            let shape = if p.numeric { None } else { model.port_shape_of(p).ok() };
+            let list = match shape {
+                Some(shape) => {
+                    let m = model.port_material(p.end)?;
+                    let k = k0 * (m.eps_r * m.mu_r).sqrt();
+                    let modes = match shape {
+                        emcraft_model::PortShape::Rect { a, b, .. } => modes::lowest(a, b, p.modes as usize),
+                        emcraft_model::PortShape::Circle { r, .. } => modes::lowest_circular(r, p.modes as usize),
+                    };
+                    modes.iter().map(|md| ModeInfo { name: md.name(), beta2: k * k - md.cutoff().powi(2), closed_form: true }).collect()
+                }
+                None => {
+                    let section = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
+                    section
+                        .modes(k0, p.modes as usize)?
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, m)| ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false })
+                        .collect()
+                }
+            };
+            Ok((p.name.clone(), list))
+        })
+        .collect()
 }
 
 /// The port's vector: the line integral along the gap, or for a band of radius r its average
