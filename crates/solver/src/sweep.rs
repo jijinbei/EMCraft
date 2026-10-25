@@ -132,11 +132,17 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
     if hi != lo {
         solve_full(hi, &mut basis, &mut results, &mut full)?;
     }
+    // The ports' terms at each frequency do not depend on the basis: made once.
+    let mut terms: Vec<Option<Vec<Vec<PortTerm<'_>>>>> = (0..nf).map(|_| None).collect();
     let worst_residual = loop {
         // Every frequency not solved in full, in the basis.
         let mut worst: Option<(usize, f64)> = None;
         for i in (0..nf).filter(|&i| !full[i]) {
-            let (r, residual) = reduced(d, &basis, frequencies[i])?;
+            if terms[i].is_none() {
+                terms[i] = Some(d.checked_terms(frequencies[i])?);
+            }
+            let t = terms[i].as_ref().ok_or_else(|| invalid("sweep", "a frequency's port terms are missing"))?;
+            let (r, residual) = reduced(d, &basis, frequencies[i], t)?;
             if worst.is_none_or(|(_, w)| residual > w) {
                 worst = Some((i, residual));
             }
@@ -155,12 +161,11 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
 
 /// One frequency solved in the basis: its result and the largest relative residual of its
 /// excitations.
-fn reduced(d: &Driven, basis: &Basis, frequency: f64) -> Result<(FrequencyResult, f64)> {
+fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>]) -> Result<(FrequencyResult, f64)> {
     let t0 = std::time::Instant::now();
     let k0 = 2.0 * PI * frequency / C0;
     let omega = 2.0 * PI * frequency;
     let (n, m) = (d.dofs.unknowns, basis.v.len());
-    let terms = d.checked_terms(frequency)?;
     let wall = d.wall.as_ref().map(|(sigma, _)| wall_factor(frequency, *sigma));
     // The layer at this k₀: its own matrix on the pattern, times the basis.
     let pv: Option<Vec<Vec<C>>> = if d.pml.is_some() {
@@ -204,7 +209,7 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64) -> Result<(FrequencyResult
     }
     let mut fields = Vec::with_capacity(terms.len());
     let mut worst: f64 = 0.0;
-    for list in &terms {
+    for list in terms {
         let Some(t0m) = list.first() else { continue };
         // b = rhs · v of the excited port's first mode.
         let b: Vec<(usize, C)> = t0m.v.iter().map(|&(i, x)| (i, t0m.rhs * x)).collect();
