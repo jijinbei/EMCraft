@@ -133,15 +133,9 @@ impl Driven {
         huygens_box(model)?;
         let omega = 2.0 * PI * frequency;
         let k0 = omega / C0;
-        let (a, rhs) = self.system(frequency)?;
-        // A waveguide port's TE10 drives it (the first port's), else nothing but the sources.
+        let (a, rhs, terms) = self.system(frequency)?;
+        // A waveguide port's first mode drives it (the first port's), else nothing but the sources.
         let mut b = rhs.into_iter().next().unwrap_or_else(|| vec![C::new(0.0, 0.0); self.dofs.unknowns]);
-        if let Some(p) = self.ports.first() {
-            let te10 = p.modes.first().map(|m| m.0).ok_or_else(|| invalid(format!("port `{}`", p.name), "has no modes"))?;
-            if k0 * (p.eps_r * p.mu_r).sqrt() <= te10.cutoff() {
-                return Err(invalid("frequency", format!("{frequency} Hz is below the TE10 cut-off at port `{}`", p.name)));
-            }
-        }
         for src in &model.sources {
             match *src {
                 Source::Dipole { at, direction, length, current } => {
@@ -200,12 +194,12 @@ impl Driven {
                 LumpedResult { name: l.name.clone(), current, voltage, impedance, s11, power: 0.5 * (voltage * current.conj()).re }
             })
             .collect();
-        let feed = match (self.ports.first(), self.incident_power(0, frequency)) {
-            (Some(p), Some(incident)) => p.modes.first().map(|(mode, v)| {
-                let c: C = v.iter().map(|&(i, vi)| field[i] * vi).sum::<C>() / mode.norm();
+        let feed = match (terms.first().and_then(|l| l.first()), self.incident_power(0, frequency)) {
+            (Some(t), Some(incident)) => {
+                let c: C = t.v.iter().map(|&(i, vi)| field[i] * vi).sum::<C>() / t.norm;
                 let s11 = c - 1.0;
-                (s11, incident * (1.0 - s11.norm_sqr()))
-            }),
+                Some((s11, incident * (1.0 - s11.norm_sqr())))
+            }
             _ => None,
         };
         Ok(OpenResult { frequency, field, backward_error, ports, feed })

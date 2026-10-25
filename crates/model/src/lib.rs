@@ -528,6 +528,11 @@ pub struct Port {
     /// guide lies (start: above the plane, its outward normal −z; end: below it).
     #[serde(default)]
     pub face: Option<PortFace>,
+    /// Modes from the numerical cross-section solver even where the closed forms apply (they
+    /// do for a whole rectangle or circle of one material; any other cross-section — a coaxial
+    /// line, a ridge, a polygon — gets the numerical ones in any case).
+    #[serde(default)]
+    pub numeric: bool,
 }
 
 /// A port's rectangle: [x0, x0 + a] × [y0, y0 + b] at height z (m).
@@ -1048,11 +1053,11 @@ mod tests {
         assert!(matches!(m.set_waveguide(w), Err(ModelError::Unknown { .. })));
         m.set_waveguide(guide()).unwrap();
         assert!((m.waveguide.as_ref().unwrap().length() - 0.01).abs() < 1e-15);
-        m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None }).unwrap();
-        assert!(m.add_port(Port { name: "2".into(), end: End::Start, modes: 4, face: None }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 0, face: None }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000, face: None }).is_err());
-        m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None }).unwrap();
+        m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false }).unwrap();
+        assert!(m.add_port(Port { name: "2".into(), end: End::Start, modes: 4, face: None, numeric: false }).is_err());
+        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 0, face: None, numeric: false }).is_err());
+        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000, face: None, numeric: false }).is_err());
+        m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None, numeric: false }).unwrap();
         assert_eq!(m.port_material(End::End).unwrap().name, "vacuum");
         assert_eq!(m.check(), vec!["no mesh: mesh the geometry with mesh.generate".to_owned()]);
     }

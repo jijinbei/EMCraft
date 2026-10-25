@@ -15,6 +15,12 @@
 //! made of the modes it carries, propagating or evanescent; a port should be far enough from a
 //! discontinuity that the modes it leaves out have decayed.
 //!
+//! A port whose cross-section is not a whole rectangle or circle of one material — a coaxial
+//! line, a ridge, a polygon — takes its modes from [`crate::portmode`] at each frequency, hybrid
+//! ones included: H_t = ŝ × (e_t + ∇φ) β/(ωμ) leaving it, so its rank-one terms are
+//! (jβ/D) v vᵀ with v_i = ∫ μr⁻¹ Nᵢ · (e_t + ∇φ) dS and D = ∫ μr⁻¹ e_t · (e_t + ∇φ) dS, which
+//! for a TE mode are the closed forms' (κ = jβ, D = ‖e‖²/μr).
+//!
 //! **S-parameters.** Each port is excited in turn by a unit TE₁₀ amplitude, all from one
 //! factorization. S_pq = (c₁₀ at p − δ_pq) for excitation at q, normalised to equal power
 //! (times √(P_p/P_q), P = ‖e‖² β/μ the power of a unit wave), so S is unitary for a lossless
@@ -142,10 +148,43 @@ impl Dofs {
 pub struct PortData {
     pub name: String,
     pub end: End,
-    pub eps_r: f64,
-    pub mu_r: f64,
-    /// Each mode with its vector v_m,i = ∫ Nᵢ · e_m dS (unknown, value).
-    pub modes: Vec<(Mode, Vec<(usize, f64)>)>,
+    pub modes: PortModes,
+}
+
+/// A port's modes: closed forms, or the numerical solver's on its cross-section.
+#[derive(Clone, Debug)]
+pub enum PortModes {
+    /// A whole rectangle or circle of one material (εr, μr): each mode with its vector
+    /// v_m,i = ∫ Nᵢ · e_m dS (unknown, value).
+    Analytic { eps_r: f64, mu_r: f64, modes: Vec<(Mode, Vec<(usize, f64)>)> },
+    /// Any other cross-section; its modes depend on the frequency and are solved with it.
+    Numeric(Box<NumericPort>),
+}
+
+/// A port whose modes come from [`crate::portmode`].
+#[derive(Clone, Debug)]
+pub struct NumericPort {
+    pub section: crate::portmode::CrossSection,
+    /// The mesh's boundary face of each of the section's triangles.
+    faces: Vec<usize>,
+    /// Modes in the port condition.
+    count: usize,
+    /// The unknowns with a tangential trace on the port, ascending.
+    support: Vec<usize>,
+}
+
+/// One mode's part of a port condition at one frequency: the matrix gains factor·v vᵀ, a unit
+/// incident wave drives rhs·v, and the mode's coefficient in a field x is vᵀx/norm.
+#[derive(Clone, Debug)]
+pub struct PortTerm<'a> {
+    pub name: String,
+    pub v: std::borrow::Cow<'a, [(usize, f64)]>,
+    pub factor: C,
+    pub rhs: C,
+    pub norm: f64,
+    /// 2ωμ₀ times the power a unit wave of the mode carries (0 for an evanescent one).
+    pub proxy: f64,
+    pub propagating: bool,
 }
 
 /// A waveguide meshed and assembled up to the frequency: the curl–curl and mass matrices and
@@ -293,53 +332,16 @@ impl Driven {
         };
         let in_pml: std::collections::HashSet<usize> = pml.iter().flat_map(|(_, _, l)| l.iter().map(|(t, _)| *t)).collect();
 
-        // Port vectors.
+        // Port vectors: the closed forms' once, the numerical modes' support (their vectors come
+        // with each frequency).
         let mut ports = Vec::new();
         for (k, p) in model.ports.iter().enumerate().filter(|_| with_ports) {
-            let m = model.port_material(p.end)?;
-            if m.loss_tangent != 0.0 {
-                return Err(invalid(
-                    format!("port `{}`", p.name),
-                    "not supported yet: a port in a lossy material (end the guide with a lossless section)",
-                ));
-            }
-            let list: Vec<Mode> = match model.port_shape_of(p)? {
-                emcraft_model::PortShape::Rect { x0, y0, a, b } => {
-                    modes::lowest(a, b, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect()
-                }
-                emcraft_model::PortShape::Circle { cx, cy, r } => {
-                    modes::lowest_circular(r, p.modes as usize).into_iter().map(|md| md.at(cx, cy)).collect()
-                }
+            let shape = if p.numeric { None } else { model.port_shape_of(p).ok() };
+            let modes = match shape {
+                Some(shape) => analytic_port(model, p, shape, &mesh, &topo, &dofs, order, &port_faces[k])?,
+                None => PortModes::Numeric(Box::new(numeric_port(model, p, &mesh, &topo, &dofs, order, &port_faces[k])?)),
             };
-            let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
-            let n = if order == Order::One { 6 } else { 8 };
-            let mut touched = vec![false; dofs.unknowns];
-            for b in port_faces[k].iter().filter_map(|&i| mesh.boundary.get(i)) {
-                let tet = b.tet as usize;
-                let el = element(&mesh, &topo, tet, order)?;
-                let unknowns: Vec<u32> = dofs.of_tet(&topo, tet).collect();
-                for (l, wa, _) in el.face_rule(local_face(&topo, tet, &b.nodes)?, n) {
-                    let x = el.point(l);
-                    let values = el.values(l);
-                    // Only the functions of the face's own edges and the face have a tangential
-                    // trace on it; the others are normal to it (zero but for rounding), and
-                    // keeping them would make the dense port block several times larger.
-                    let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
-                    for (mi, mode) in list.iter().enumerate() {
-                        let e = mode.field(x.x, x.y);
-                        let e = Vec3::new(e[0], e[1], 0.0);
-                        for (u, v) in unknowns.iter().zip(&values) {
-                            if *u != NONE && v.x.hypot(v.y) > 1e-9 * scale {
-                                vectors[mi][*u as usize] += wa * v.dot(e);
-                                touched[*u as usize] = true;
-                            }
-                        }
-                    }
-                }
-            }
-            let support: Vec<usize> = (0..dofs.unknowns).filter(|&u| touched[u]).collect();
-            let modes = list.into_iter().zip(vectors).map(|(mode, v)| (mode, support.iter().map(|&u| (u, v[u])).collect())).collect();
-            ports.push(PortData { name: p.name.clone(), end: p.end, eps_r: m.eps_r, mu_r: m.mu_r, modes });
+            ports.push(PortData { name: p.name.clone(), end: p.end, modes });
         }
 
         // Lumped ports: their gaps' line integrals.
@@ -356,8 +358,13 @@ impl Driven {
         let mut groups: Vec<Vec<usize>> =
             (0..mesh.tets.len()).map(|t| dofs.of_tet(&topo, t).filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
         for p in &ports {
-            if let Some((_, v)) = p.modes.first() {
-                groups.push(v.iter().map(|(u, _)| *u).collect());
+            match &p.modes {
+                PortModes::Analytic { modes, .. } => {
+                    if let Some((_, v)) = modes.first() {
+                        groups.push(v.iter().map(|(u, _)| *u).collect());
+                    }
+                }
+                PortModes::Numeric(n) => groups.push(n.support.clone()),
             }
         }
         for l in &lumped {
@@ -448,7 +455,7 @@ impl Driven {
     }
 
     /// The system matrix at wavenumber k₀ and each port's TE₁₀ excitation vector.
-    pub(crate) fn system(&self, frequency: f64) -> Result<(Csr, Vec<Vec<C>>)> {
+    pub(crate) fn system(&self, frequency: f64) -> Result<(Csr, Vec<Vec<C>>, Vec<Vec<PortTerm<'_>>>)> {
         let k0 = 2.0 * PI * frequency / C0;
         let mut a = self.pattern.clone();
         for (x, (s, m)) in a.val.iter_mut().zip(self.stiffness.iter().zip(&self.mass)) {
@@ -476,29 +483,37 @@ impl Driven {
             }
         }
         let mut rhs = Vec::new();
-        for p in &self.ports {
-            let k = k0 * (p.eps_r * p.mu_r).sqrt();
+        let mut terms = Vec::with_capacity(self.ports.len());
+        for p in 0..self.ports.len() {
+            // (A closed-form mode is refused before its κ, singular at the cut-off.)
+            let below = self.below_cutoff(p, k0);
+            let list = if below { Vec::new() } else { self.port_terms(p, frequency)? };
+            if below || !list.first().is_some_and(|t| t.propagating) {
+                return Err(invalid(
+                    "frequency",
+                    format!(
+                        "{frequency} Hz is below the cut-off of the first mode at port `{}`: no wave can carry power into the port",
+                        self.ports[p].name
+                    ),
+                ));
+            }
             let mut b = vec![C::new(0.0, 0.0); self.dofs.unknowns];
-            for (mi, (mode, v)) in p.modes.iter().enumerate() {
-                let (kr, ki) = mode.kappa(k).ok_or_else(|| {
-                    invalid("frequency", format!("{} Hz is at the cut-off of mode {} at port `{}`", frequency, mode.name(), p.name))
-                })?;
-                let kappa = C::new(kr, ki) / p.mu_r;
-                let c = kappa / mode.norm();
-                for &(i, vi) in v {
-                    for &(j, vj) in v {
-                        a.add(i, j, c * (vi * vj));
+            for (mi, t) in list.iter().enumerate() {
+                for &(i, vi) in t.v.iter() {
+                    for &(j, vj) in t.v.iter() {
+                        a.add(i, j, t.factor * (vi * vj));
                     }
                 }
                 if mi == 0 {
-                    for &(i, vi) in v {
-                        b[i] = 2.0 * kappa * vi;
+                    for &(i, vi) in t.v.iter() {
+                        b[i] = t.rhs * vi;
                     }
                 }
             }
             rhs.push(b);
+            terms.push(list);
         }
-        Ok((a, rhs))
+        Ok((a, rhs, terms))
     }
 
     /// Solves at one frequency (Hz).
@@ -506,17 +521,7 @@ impl Driven {
         if !(frequency.is_finite() && frequency > 0.0) {
             return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
         }
-        let k0 = 2.0 * PI * frequency / C0;
-        for p in &self.ports {
-            let te10 = p.modes.first().map(|m| m.0).ok_or_else(|| invalid(format!("port `{}`", p.name), "has no modes"))?;
-            if k0 * (p.eps_r * p.mu_r).sqrt() <= te10.cutoff() {
-                return Err(invalid(
-                    "frequency",
-                    format!("{frequency} Hz is below the TE10 cut-off at port `{}`: no wave can carry power into the port", p.name),
-                ));
-            }
-        }
-        let (a, rhs) = self.system(frequency)?;
+        let (a, rhs, terms) = self.system(frequency)?;
         let f = Ldlt::factor(&a, &self.dofs.points)?;
         let mut fields = Vec::with_capacity(rhs.len());
         let mut worst: f64 = 0.0;
@@ -528,11 +533,12 @@ impl Driven {
         let np = self.ports.len();
         let mut s = vec![vec![C::new(0.0, 0.0); np]; np];
         for (q, x) in fields.iter().enumerate() {
-            for (p, port) in self.ports.iter().enumerate() {
-                let Some((mode, v)) = port.modes.first() else { continue };
-                let c: C = v.iter().map(|&(i, vi)| x[i] * vi).sum::<C>() / mode.norm();
+            for (p, list) in terms.iter().enumerate() {
+                let Some(t) = list.first() else { continue };
+                let c: C = t.v.iter().map(|&(i, vi)| x[i] * vi).sum::<C>() / t.norm;
                 let direct = if p == q { c - 1.0 } else { c };
-                s[p][q] = direct * self.power_factor(p, q, k0);
+                let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
+                s[p][q] = direct * (proxy(p) / proxy(q)).sqrt();
             }
         }
         Ok(FrequencyResult {
@@ -544,16 +550,6 @@ impl Driven {
             factor_entries: f.entries,
             largest_front: f.largest_front,
         })
-    }
-
-    /// √(P_p/P_q) for TE₁₀ waves of unit amplitude at ports p and q: a wave of amplitude A
-    /// carries ½|A|² ‖e‖² β/(ωμ), so S in power waves is the amplitude ratio times this.
-    fn power_factor(&self, p: usize, q: usize, k0: f64) -> f64 {
-        let power = |port: &PortData| port.modes.first().map_or(1.0, |(m, _)| m.norm() * m.gamma(k0 * (port.eps_r * port.mu_r).sqrt()).1 / port.mu_r);
-        match (self.ports.get(p), self.ports.get(q)) {
-            (Some(pp), Some(qq)) => (power(pp) / power(qq)).sqrt(),
-            _ => 1.0,
-        }
     }
 
     pub(crate) fn element_of(&self, t: usize) -> Result<Element> {
@@ -689,10 +685,101 @@ impl Driven {
     /// The power (W) a unit TE₁₀ wave carries into port `p`: ½ ‖e‖² β/(ωμ).
     pub fn incident_power(&self, p: usize, frequency: f64) -> Option<f64> {
         let port = self.ports.get(p)?;
-        let (mode, _) = port.modes.first()?;
         let omega = 2.0 * PI * frequency;
-        let k = omega / C0 * (port.eps_r * port.mu_r).sqrt();
-        Some(0.5 * mode.norm() * mode.gamma(k).1 / (omega * MU0 * port.mu_r))
+        match &port.modes {
+            PortModes::Analytic { eps_r, mu_r, modes } => {
+                let (mode, _) = modes.first()?;
+                let k = omega / C0 * (eps_r * mu_r).sqrt();
+                Some(0.5 * mode.norm() * mode.gamma(k).1 / (omega * MU0 * mu_r))
+            }
+            PortModes::Numeric(_) => Some(0.5 * self.port_terms(p, frequency).ok()?.first()?.proxy / (omega * MU0)),
+        }
+    }
+
+    /// Whether a closed-form port's first mode is at or below its cut-off at k₀ (numerical ports
+    /// tell by their terms).
+    fn below_cutoff(&self, p: usize, k0: f64) -> bool {
+        match self.ports.get(p).map(|p| &p.modes) {
+            Some(PortModes::Analytic { eps_r, mu_r, modes }) => modes.first().is_none_or(|(m, _)| k0 * (eps_r * mu_r).sqrt() <= m.cutoff()),
+            _ => false,
+        }
+    }
+
+    /// Port `p`'s modes as terms of its condition at `frequency` (the first is the one excited and
+    /// read). Closed forms: n̂ × ∇ × E_t = κ E_t, factor κ/(μr‖e‖²); numerical modes: H_t =
+    /// ŝ × g β/(ωμ), factor jβ/D, with v_i = ∫ μr⁻¹ Nᵢ · g dS and D = ∫ μr⁻¹ e · g dS
+    /// ([`crate::portmode`]).
+    pub fn port_terms(&self, p: usize, frequency: f64) -> Result<Vec<PortTerm<'_>>> {
+        let port = self.ports.get(p).ok_or_else(|| invalid("port", format!("no port {p}")))?;
+        let k0 = 2.0 * PI * frequency / C0;
+        match &port.modes {
+            PortModes::Analytic { eps_r, mu_r, modes } => {
+                let k = k0 * (eps_r * mu_r).sqrt();
+                modes
+                    .iter()
+                    .map(|(mode, v)| {
+                        let (kr, ki) = mode.kappa(k).ok_or_else(|| {
+                            invalid("frequency", format!("{} Hz is at the cut-off of mode {} at port `{}`", frequency, mode.name(), port.name))
+                        })?;
+                        let kappa = C::new(kr, ki) / mu_r;
+                        let gamma = mode.gamma(k);
+                        Ok(PortTerm {
+                            name: mode.name(),
+                            v: std::borrow::Cow::Borrowed(v.as_slice()),
+                            factor: kappa / mode.norm(),
+                            rhs: 2.0 * kappa,
+                            norm: mode.norm(),
+                            proxy: mode.norm() * gamma.1 / mu_r,
+                            propagating: gamma.1 > 0.0,
+                        })
+                    })
+                    .collect()
+            }
+            PortModes::Numeric(n) => self.numeric_terms(n, k0),
+        }
+    }
+
+    fn numeric_terms(&self, n: &NumericPort, k0: f64) -> Result<Vec<PortTerm<'static>>> {
+        let modes = n.section.modes(k0, n.count)?;
+        let index: std::collections::HashMap<usize, usize> = n.support.iter().enumerate().map(|(k, &u)| (u, k)).collect();
+        let mut v = vec![vec![0.0; n.support.len()]; modes.len()];
+        let rule = if self.order == Order::One { 6 } else { 8 };
+        for (t, &f) in n.faces.iter().enumerate() {
+            let b = self.mesh.boundary.get(f).ok_or_else(|| invalid("port", "a face is missing from the mesh"))?;
+            let tet = b.tet as usize;
+            let el = self.element_of(tet)?;
+            let unknowns: Vec<u32> = self.dofs_of(tet).collect();
+            let inv_mu = 1.0 / n.section.mu_of(t);
+            for (l, wa, _) in el.face_rule(local_face(&self.topo, tet, &b.nodes)?, rule) {
+                let x = el.point(l);
+                let values = el.values(l);
+                let gs = modes.iter().map(|m| n.section.fields(m, t, x).map(|(_, g)| g)).collect::<Result<Vec<_>>>()?;
+                for (u, val) in unknowns.iter().zip(&values) {
+                    let Some(&k) = index.get(&(*u as usize)) else { continue };
+                    for (vm, g) in v.iter_mut().zip(&gs) {
+                        vm[k] += wa * inv_mu * val.dot(*g);
+                    }
+                }
+            }
+        }
+        Ok(modes
+            .iter()
+            .zip(v)
+            .enumerate()
+            .map(|(i, (m, vm))| {
+                let beta = m.beta();
+                let jb = C::new(0.0, 1.0) * beta;
+                PortTerm {
+                    name: format!("mode {}", i + 1),
+                    v: std::borrow::Cow::Owned(n.support.iter().copied().zip(vm).collect()),
+                    factor: jb / m.d,
+                    rhs: 2.0 * jb,
+                    norm: m.d,
+                    proxy: if m.beta2 > 0.0 { beta.re * m.d } else { 0.0 },
+                    propagating: m.beta2 > 0.0,
+                }
+            })
+            .collect())
     }
 }
 
@@ -747,6 +834,118 @@ fn faces_of_port(mesh: &Mesh, p: &emcraft_model::Port) -> Result<Vec<usize>> {
         return Err(invalid(format!("port `{}`", p.name), "no boundary face lies there (is the guide closed by a face on that plane?)"));
     }
     Ok(out)
+}
+
+/// A port of a whole rectangle or circle filled with one material: its closed-form modes and
+/// their vectors.
+#[allow(clippy::too_many_arguments)]
+fn analytic_port(
+    model: &Model,
+    p: &emcraft_model::Port,
+    shape: emcraft_model::PortShape,
+    mesh: &Mesh,
+    topo: &Topology,
+    dofs: &Dofs,
+    order: Order,
+    faces: &[usize],
+) -> Result<PortModes> {
+    let m = model.port_material(p.end)?;
+    if m.loss_tangent != 0.0 {
+        return Err(invalid(format!("port `{}`", p.name), "not supported yet: a port in a lossy material (end the guide with a lossless section)"));
+    }
+    let list: Vec<Mode> = match shape {
+        emcraft_model::PortShape::Rect { x0, y0, a, b } => modes::lowest(a, b, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect(),
+        emcraft_model::PortShape::Circle { cx, cy, r } => modes::lowest_circular(r, p.modes as usize).into_iter().map(|md| md.at(cx, cy)).collect(),
+    };
+    let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
+    let n = if order == Order::One { 6 } else { 8 };
+    let mut touched = vec![false; dofs.unknowns];
+    for b in faces.iter().filter_map(|&i| mesh.boundary.get(i)) {
+        let tet = b.tet as usize;
+        let el = element(mesh, topo, tet, order)?;
+        let unknowns: Vec<u32> = dofs.of_tet(topo, tet).collect();
+        for (l, wa, _) in el.face_rule(local_face(topo, tet, &b.nodes)?, n) {
+            let x = el.point(l);
+            let values = el.values(l);
+            // Only the functions of the face's own edges and the face have a tangential trace on
+            // it; the others are normal to it (zero but for rounding), and keeping them would
+            // make the dense port block several times larger.
+            let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
+            for (mi, mode) in list.iter().enumerate() {
+                let e = mode.field(x.x, x.y);
+                let e = Vec3::new(e[0], e[1], 0.0);
+                for (u, v) in unknowns.iter().zip(&values) {
+                    if *u != NONE && v.x.hypot(v.y) > 1e-9 * scale {
+                        vectors[mi][*u as usize] += wa * v.dot(e);
+                        touched[*u as usize] = true;
+                    }
+                }
+            }
+        }
+    }
+    let support: Vec<usize> = (0..dofs.unknowns).filter(|&u| touched[u]).collect();
+    let modes = list.into_iter().zip(vectors).map(|(mode, v)| (mode, support.iter().map(|&u| (u, v[u])).collect())).collect();
+    Ok(PortModes::Analytic { eps_r: m.eps_r, mu_r: m.mu_r, modes })
+}
+
+/// A port of any other cross-section: its faces as the triangles of a [`crate::portmode`]
+/// problem, materials from the tetrahedra behind them, and the unknowns with a trace there.
+fn numeric_port(
+    model: &Model,
+    p: &emcraft_model::Port,
+    mesh: &Mesh,
+    topo: &Topology,
+    dofs: &Dofs,
+    order: Order,
+    faces: &[usize],
+) -> Result<NumericPort> {
+    let what = || format!("port `{}`", p.name);
+    let mut global: Vec<u32> = faces.iter().filter_map(|&f| mesh.boundary.get(f)).flat_map(|b| b.nodes).collect();
+    global.sort_unstable();
+    global.dedup();
+    let local = |g: u32| global.binary_search(&g).map(|k| k as u32).map_err(|_| invalid(what(), "a face's node is missing"));
+    let nodes = global.iter().map(|&g| mesh.node(g).ok_or_else(|| invalid(what(), "a face's node is missing"))).collect::<Result<Vec<_>>>()?;
+    let mut tris = Vec::with_capacity(faces.len());
+    let (mut eps, mut mu) = (Vec::with_capacity(faces.len()), Vec::with_capacity(faces.len()));
+    for &f in faces {
+        let b = mesh.boundary.get(f).ok_or_else(|| invalid(what(), "a face is missing from the mesh"))?;
+        tris.push([local(b.nodes[0])?, local(b.nodes[1])?, local(b.nodes[2])?]);
+        let m = mesh
+            .tet_material
+            .get(b.tet as usize)
+            .and_then(|&m| model.materials.get(m as usize))
+            .ok_or_else(|| invalid(what(), "a face has no material behind it"))?;
+        if m.loss_tangent != 0.0 {
+            return Err(invalid(what(), "not supported yet: a port in a lossy material (end the guide with a lossless section)"));
+        }
+        eps.push(m.eps_r);
+        mu.push(m.mu_r);
+    }
+    // Edges of the faces bent onto a curved wall, by local nodes.
+    let mut curved = std::collections::BTreeMap::new();
+    for t in &tris {
+        for [i, j] in emcraft_fem::tri::TRI_EDGES {
+            let (a, b) = (t[i].min(t[j]), t[i].max(t[j]));
+            if let Some(m) = mesh.midpoint(global[a as usize], global[b as usize]) {
+                curved.insert([a, b], m);
+            }
+        }
+    }
+    let section = crate::portmode::CrossSection::new(order, nodes, tris, eps, mu, &[], &curved)?;
+    // The unknowns with a tangential trace on the faces (as for the closed forms).
+    let mut touched = std::collections::BTreeSet::new();
+    let rule = if order == Order::One { 6 } else { 8 };
+    for b in faces.iter().filter_map(|&i| mesh.boundary.get(i)) {
+        let tet = b.tet as usize;
+        let el = element(mesh, topo, tet, order)?;
+        let unknowns: Vec<u32> = dofs.of_tet(topo, tet).collect();
+        for (l, _, _) in el.face_rule(local_face(topo, tet, &b.nodes)?, rule) {
+            let values = el.values(l);
+            let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
+            touched.extend(unknowns.iter().zip(&values).filter(|(u, v)| **u != NONE && v.x.hypot(v.y) > 1e-9 * scale).map(|(u, _)| *u as usize));
+        }
+    }
+    Ok(NumericPort { section, faces: faces.to_vec(), count: p.modes as usize, support: touched.into_iter().collect() })
 }
 
 /// The port's vector: the line integral along the gap, or for a band of radius r its average

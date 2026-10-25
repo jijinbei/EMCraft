@@ -106,7 +106,7 @@ The conductivity of the guide's walls, irises and steps: losses by the Leontovic
 
 ## `model.port.create` — Create port
 
-A waveguide port on an end face, matched to the guide's lowest modes. TE10 is excited and read; the other modes absorb what else reaches the port. With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).
+A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -114,6 +114,7 @@ A waveguide port on an end face, matched to the guide's lowest modes. TE10 is ex
 | `end` | string |  | yes | `start` (z = 0) or `end` (z = length); with `face`, the side the guide lies |
 | `modes` | integer |  | no | modes in the port condition, 1 to 32 (default 4) |
 | `face` | array | length | no | [z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z |
+| `mode_solver` | string |  | no | `auto` (default: closed forms where they apply) or `numeric` (the cross-section solver) |
 
 ## `solve.frequency` — Frequency sweep
 

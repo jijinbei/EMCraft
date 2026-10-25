@@ -152,12 +152,13 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.port.create",
         label: "Create port",
-        doc: "A waveguide port on an end face, matched to the guide's lowest modes. TE10 is excited and read; the other modes absorb what else reaches the port. With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).",
+        doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).",
         params: &[
             p("name", "string", N, true, "unique name"),
             p("end", "string", N, true, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies"),
             p("modes", "integer", N, false, "modes in the port condition, 1 to 32 (default 4)"),
             p("face", "array", L, false, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z"),
+            p("mode_solver", "string", N, false, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)"),
         ],
         run: port_create,
     },
@@ -644,7 +645,12 @@ fn port_create(s: &mut Session, p: &Value) -> Result<Value> {
             Some(emcraft_model::PortFace { z: f[0], x0: f[1], y0: f[2], a: f[3], b: f[4] })
         }
     };
-    s.model.add_port(Port { name: name.to_owned(), end, modes, face })?;
+    let numeric = match string(p, "mode_solver")?.unwrap_or("auto") {
+        "auto" => false,
+        "numeric" => true,
+        _ => return Err(EngineError::Params("`mode_solver` must be auto or numeric".into())),
+    };
+    s.model.add_port(Port { name: name.to_owned(), end, modes, face, numeric })?;
     s.sweep = None;
     Ok(json!({"name": name}))
 }

@@ -45,6 +45,8 @@ pub struct CrossSection {
     eps: Vec<f64>,
     mu: Vec<f64>,
     tri_edges: Vec<[u32; 3]>,
+    /// Each triangle's moved edge midpoints (in its local edge order).
+    mids: Vec<[Option<Point3>; 3]>,
     /// Unknown of each transverse slot (edge functions, then triangle functions), then of each
     /// scalar slot (nodes, then edges); [`NONE`] on the walls.
     t_unknown: Vec<u32>,
@@ -84,8 +86,18 @@ impl PortMode {
 
 impl CrossSection {
     /// A cross-section of triangles on `nodes` (their z ignored) with εr and μr per triangle;
-    /// its boundary edges and the `conductors` edges inside it are conducting walls.
-    pub fn new(order: Order, nodes: Vec<Point3>, tris: Vec<[u32; 3]>, eps: Vec<f64>, mu: Vec<f64>, conductors: &[[u32; 2]]) -> Result<CrossSection> {
+    /// its boundary edges and the `conductors` edges inside it are conducting walls. Edges in
+    /// `curved` (by their nodes, ascending) have their midpoints moved there, onto a curved wall:
+    /// their triangles are curved ([`Triangle::curved`]).
+    pub fn new(
+        order: Order,
+        nodes: Vec<Point3>,
+        tris: Vec<[u32; 3]>,
+        eps: Vec<f64>,
+        mu: Vec<f64>,
+        conductors: &[[u32; 2]],
+        curved: &std::collections::BTreeMap<[u32; 2], Point3>,
+    ) -> Result<CrossSection> {
         if tris.is_empty() || eps.len() != tris.len() || mu.len() != tris.len() {
             return Err(invalid("port cross-section", "needs triangles, each with its materials"));
         }
@@ -156,6 +168,7 @@ impl CrossSection {
         if unknowns > MAX_UNKNOWNS {
             return Err(SolveError::TooLarge { unknowns, limit: MAX_UNKNOWNS });
         }
+        let mids = tris.iter().map(|t| TRI_EDGES.map(|[i, j]| curved.get(&[t[i], t[j]]).copied())).collect();
         let mut cs = CrossSection {
             order,
             nodes,
@@ -163,6 +176,7 @@ impl CrossSection {
             eps,
             mu,
             tri_edges,
+            mids,
             t_unknown,
             z_unknown,
             edges: ne,
@@ -183,7 +197,10 @@ impl CrossSection {
 
     fn triangle(&self, t: usize) -> Result<Triangle> {
         let corners = self.tris[t].map(|v| self.nodes[v as usize]);
-        Triangle::new(self.order, corners).ok_or_else(|| invalid("port cross-section", format!("triangle {t} is degenerate")))
+        let mids = self.mids.get(t).copied().unwrap_or([None; 3]);
+        Triangle::new(self.order, corners)
+            .and_then(|tri| tri.curved(mids))
+            .ok_or_else(|| invalid("port cross-section", format!("triangle {t} is degenerate or folds over")))
     }
 
     /// The unknowns of a triangle's transverse and scalar functions ([`NONE`] on walls).
@@ -480,7 +497,7 @@ mod tests {
         }
         let e: Vec<f64> = tris.iter().map(|t| Point3::centroid(t.map(|v| nodes[v as usize])).map_or(1.0, |c| eps(c.x, c.y))).collect();
         let mu = vec![1.0; tris.len()];
-        CrossSection::new(order, nodes, tris, e, mu, &[]).unwrap()
+        CrossSection::new(order, nodes, tris, e, mu, &[], &Default::default()).unwrap()
     }
 
     #[test]
@@ -554,7 +571,7 @@ mod tests {
             .flat_map(|i| (0..sectors).flat_map(move |j| [[id(i, j), id(i + 1, j), id(i + 1, j + 1)], [id(i, j), id(i + 1, j + 1), id(i, j + 1)]]))
             .collect();
         let n = tris.len();
-        CrossSection::new(order, nodes, tris, vec![eps; n], vec![1.0; n], &[]).unwrap()
+        CrossSection::new(order, nodes, tris, vec![eps; n], vec![1.0; n], &[], &Default::default()).unwrap()
     }
 
     #[test]
