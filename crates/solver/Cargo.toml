@@ -15,6 +15,7 @@ emcraft-fem = { workspace = true }
 emcraft-theory = { workspace = true }
 num-complex = { workspace = true }
 faer = { workspace = true }
+rayon = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

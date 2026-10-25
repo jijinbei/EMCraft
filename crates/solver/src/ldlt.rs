@@ -29,6 +29,7 @@ use emcraft_model::Point3;
 use faer::linalg::matmul::triangular::{BlockStructure, matmul};
 use faer::{Accum, MatMut, MatRef, Par};
 use num_complex::Complex64 as C;
+use rayon::prelude::*;
 
 use crate::sparse::Csr;
 
@@ -711,6 +712,144 @@ impl Analysis {
     }
 }
 
+/// What the threads of a factorization share: A's columns, the supernodes' first columns, the
+/// pivot threshold, and the memory budget with the scratch file beyond it.
+struct Shared<'a> {
+    a_cols: &'a [Vec<(usize, C)>],
+    starts: &'a [usize],
+    tau: f64,
+    budget: u64,
+    in_memory: std::sync::atomic::AtomicU64,
+    scratch: std::sync::Mutex<Option<Scratch>>,
+}
+
+/// One supernode factored: its node, its update for the parent, and counts.
+struct Factored {
+    node: Supernode,
+    update: Option<(Vec<usize>, Vec<C>)>,
+    m: usize,
+    perturbed: usize,
+    two_by_two: usize,
+    entries: usize,
+}
+
+/// A subtree factored on a thread.
+struct Subtree {
+    root: usize,
+    nodes: Vec<(usize, Supernode)>,
+    update: Option<(Vec<usize>, Vec<C>)>,
+    perturbed: usize,
+    two_by_two: usize,
+    entries: usize,
+    largest_front: usize,
+}
+
+impl Shared<'_> {
+    /// Factors the subtree of `root` (its supernodes in postorder with their rows), as the
+    /// sequential factorization would.
+    fn subtree(&self, root: usize, list: Vec<(usize, Vec<usize>)>, parent_s: &[Option<usize>]) -> Result<Subtree, FactorError> {
+        let mut pending: std::collections::BTreeMap<usize, Vec<(Vec<usize>, Vec<C>)>> = std::collections::BTreeMap::new();
+        let mut out =
+            Subtree { root, nodes: Vec::with_capacity(list.len()), update: None, perturbed: 0, two_by_two: 0, entries: 0, largest_front: 0 };
+        for (s, rows) in list {
+            let updates = pending.remove(&s).unwrap_or_default();
+            let f = self.node(s, rows, updates)?;
+            out.perturbed += f.perturbed;
+            out.two_by_two += f.two_by_two;
+            out.entries += f.entries;
+            out.largest_front = out.largest_front.max(f.m);
+            if s == root {
+                out.update = f.update;
+            } else if let (Some(u), Some(p)) = (f.update, parent_s.get(s).copied().flatten()) {
+                pending.entry(p).or_default().push(u);
+            }
+            out.nodes.push((s, f.node));
+        }
+        Ok(out)
+    }
+
+    /// Assembles supernode `s`'s front from A and its children's updates (in the children's
+    /// order), factors its columns and keeps them (in memory, or on disk beyond the budget).
+    fn node(&self, s: usize, mut rows: Vec<usize>, updates: Vec<(Vec<usize>, Vec<C>)>) -> Result<Factored, FactorError> {
+        let (c0, c1) = (self.starts[s], self.starts[s + 1]);
+        let k = c1 - c0;
+        let m = rows.len();
+        if m > MAX_FRONT {
+            return Err(FactorError::FrontTooLarge { rows: m, limit: MAX_FRONT });
+        }
+        // Rows ascend: a position's place in the front by binary search.
+        let at = |p: usize| rows.binary_search(&p).unwrap_or(usize::MAX);
+        let mut f = vec![C::new(0.0, 0.0); m * m];
+        for j in c0..c1 {
+            let cj = j - c0;
+            for &(i, v) in self.a_cols.get(j).map(Vec::as_slice).unwrap_or(&[]) {
+                let r = at(i);
+                if r >= m {
+                    return Err(FactorError::Dimension("an entry outside its front".into()));
+                }
+                f[cj * m + r] += v;
+                if r != cj {
+                    f[r * m + cj] += v;
+                }
+            }
+        }
+        for (urows, u) in updates {
+            // U is stored packed lower by columns (i ≥ j); positions in this front ascend with
+            // its rows.
+            let mu = urows.len();
+            let place: Vec<usize> = urows.iter().map(|&p| at(p)).collect();
+            if place.iter().any(|&r| r >= m) {
+                return Err(FactorError::Dimension("an update outside its parent's front".into()));
+            }
+            for b in 0..mu {
+                let cb = place[b];
+                let start = packed(b, mu);
+                for a in b..mu {
+                    let v = u[start + a - b];
+                    let ra = place[a];
+                    f[cb * m + ra] += v;
+                    if ra != cb {
+                        f[ra * m + cb] += v;
+                    }
+                }
+            }
+        }
+        let (mut perturbed, mut two_by_two) = (0, 0);
+        let pivots = factor_front(&mut f, m, k, &mut rows, self.tau, &mut perturbed, &mut two_by_two);
+        // The update matrix U = F₂₂ − L₂₁ D L₂₁ᵀ (lower) for the parent: the trailing block.
+        let mu = m - k;
+        let update = (mu > 0).then(|| {
+            let mut u = Vec::with_capacity(mu * (mu + 1) / 2);
+            for j in 0..mu {
+                u.extend_from_slice(&f[(k + j) * m + k + j..(k + j + 1) * m]);
+            }
+            (rows[k..].to_vec(), u)
+        });
+        // Keep the k factored columns only, in an allocation of their own (the front's m × m is
+        // freed).
+        let l = f[..k * m].to_vec();
+        drop(f);
+        let bytes = (l.len() * 16) as u64;
+        use std::sync::atomic::Ordering;
+        // Beyond the memory budget the columns go to the scratch file.
+        let fits =
+            self.in_memory.try_update(Ordering::SeqCst, Ordering::SeqCst, |used| (used + bytes <= self.budget).then_some(used + bytes)).is_ok();
+        let l = if fits {
+            Columns::Memory(l)
+        } else {
+            let mut guard = self.scratch.lock().map_err(|_| FactorError::Dimension("the scratch file's lock was poisoned".into()))?;
+            if guard.is_none() {
+                *guard = Some(Scratch::new()?);
+            }
+            match guard.as_mut() {
+                Some(sc) => sc.write(&l)?,
+                None => Columns::Memory(l),
+            }
+        };
+        Ok(Factored { node: Supernode { rows, k, l, pivots }, update, m, perturbed, two_by_two, entries: k * m - k * k.saturating_sub(1) / 2 })
+    }
+}
+
 impl Ldlt {
     /// Factors `a` (complex symmetric, both triangles stored) with the unknowns ordered by
     /// nested dissection on `xyz` (a point per unknown).
@@ -781,88 +920,87 @@ impl Ldlt {
             }
         }
 
-        // Pending update matrices: (rows, m × m values) per supernode, consumed by the parent.
-        let mut pending: Vec<Vec<(Vec<usize>, Vec<C>)>> = vec![Vec::new(); ns];
-        let mut pos = vec![usize::MAX; n];
-        let mut supernodes = Vec::with_capacity(ns);
-        let (mut perturbed, mut two_by_two, mut entries, mut largest_front) = (0, 0, 0, 0);
-        let mut in_memory = 0u64;
-        let mut scratch: Option<Scratch> = None;
-        for (s, mut rows) in super_rows.into_iter().enumerate() {
-            let (c0, c1) = (starts[s], starts[s + 1]);
-            let k = c1 - c0;
-            let m = rows.len();
-            if m > MAX_FRONT {
-                return Err(FactorError::FrontTooLarge { rows: m, limit: MAX_FRONT });
+        // The supernodal tree: each supernode's parent (the supernode of its last column's etree
+        // parent) and children, in postorder (children before parents, ascending).
+        let parent_s: Vec<Option<usize>> = (0..ns).map(|s| parent.get(starts[s + 1] - 1).and_then(|&q| snode_of.get(q)).copied()).collect();
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); ns];
+        for (s, p) in parent_s.iter().enumerate() {
+            if let Some(p) = p {
+                children[*p].push(s);
             }
-            largest_front = largest_front.max(m);
-            for (r, &p) in rows.iter().enumerate() {
-                pos[p] = r;
-            }
-            let mut f = vec![C::new(0.0, 0.0); m * m];
-            for j in c0..c1 {
-                let cj = j - c0;
-                for &(i, v) in &a_cols[j] {
-                    let r = pos[i];
-                    f[cj * m + r] += v;
-                    if r != cj {
-                        f[r * m + cj] += v;
-                    }
-                }
-            }
-            for (urows, u) in pending[s].drain(..) {
-                // U is stored packed lower by columns (i ≥ j); positions in this front ascend
-                // with its rows.
-                let mu = urows.len();
-                let at: Vec<usize> = urows.iter().map(|&p| pos[p]).collect();
-                for b in 0..mu {
-                    let cb = at[b];
-                    let start = packed(b, mu);
-                    for a in b..mu {
-                        let v = u[start + a - b];
-                        let ra = at[a];
-                        f[cb * m + ra] += v;
-                        if ra != cb {
-                            f[ra * m + cb] += v;
-                        }
-                    }
-                }
-            }
-
-            let pivots = factor_front(&mut f, m, k, &mut rows, tau, &mut perturbed, &mut two_by_two);
-
-            // The update matrix U = F₂₂ − L₂₁ D L₂₁ᵀ (lower) for the parent: the trailing block.
-            let mu = m - k;
-            if mu > 0 {
-                let mut u = Vec::with_capacity(mu * (mu + 1) / 2);
-                for j in 0..mu {
-                    u.extend_from_slice(&f[(k + j) * m + k + j..(k + j + 1) * m]);
-                }
-                // The first row below is the etree parent of the supernode's last column.
-                if let Some(&ps) = parent.get(c1 - 1).and_then(|&q| snode_of.get(q)) {
-                    pending[ps].push((rows[k..].to_vec(), u));
-                }
-            }
-            // Keep the k factored columns only, in an allocation of their own (the front's m × m
-            // is freed).
-            let l = f[..k * m].to_vec();
-            drop(f);
-            entries += k * m - k * (k - 1) / 2;
-            // Beyond the memory budget the columns go to the scratch file.
-            let l = if in_memory + (l.len() * 16) as u64 > budget {
-                if scratch.is_none() {
-                    scratch = Some(Scratch::new()?);
-                }
-                match scratch.as_mut() {
-                    Some(sc) => sc.write(&l)?,
-                    None => Columns::Memory(l),
-                }
-            } else {
-                in_memory += (l.len() * 16) as u64;
-                Columns::Memory(l)
-            };
-            supernodes.push(Supernode { rows, k, l, pivots });
         }
+        // Subtrees light enough go to threads whole, each in postorder as alone (so each keeps
+        // the memory of a sequential factorization); the heavy top, whose fronts are large, after
+        // them in order, its fronts' products threaded inside. A subtree is the contiguous range
+        // of its first descendant to itself.
+        let mut first: Vec<usize> = (0..ns).collect();
+        let mut work = vec![0.0f64; ns];
+        for s in 0..ns {
+            let (k, m) = ((starts[s + 1] - starts[s]) as f64, super_rows[s].len() as f64);
+            work[s] += k * m * m;
+            if let Some(p) = parent_s[s] {
+                first[p] = first[p].min(first[s]);
+                work[p] += work[s];
+            }
+        }
+        let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let total: f64 = (0..ns).filter(|&s| parent_s[s].is_none()).map(|s| work[s]).sum();
+        let light = total / (8 * threads) as f64;
+        let (mut tasks, mut top): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+        let mut stack: Vec<usize> = (0..ns).filter(|&s| parent_s[s].is_none()).collect();
+        while let Some(s) = stack.pop() {
+            if work[s] <= light || children[s].is_empty() {
+                tasks.push(s);
+            } else {
+                top.push(s);
+                stack.extend(children[s].iter().copied());
+            }
+        }
+        tasks.sort_unstable();
+        top.sort_unstable();
+
+        let shared =
+            Shared { a_cols: &a_cols, starts, tau, budget, in_memory: std::sync::atomic::AtomicU64::new(0), scratch: std::sync::Mutex::new(None) };
+        let mut nodes: Vec<Option<Supernode>> = (0..ns).map(|_| None).collect();
+        let mut super_rows: Vec<Option<Vec<usize>>> = super_rows.into_iter().map(Some).collect();
+        // Each task's subtree: its rows taken out for the thread.
+        let jobs: Vec<(usize, Vec<(usize, Vec<usize>)>)> =
+            tasks.iter().map(|&s| (s, (first[s]..=s).map(|t| (t, super_rows[t].take().unwrap_or_default())).collect())).collect();
+        let done: Vec<Result<Subtree, FactorError>> = jobs.into_par_iter().map(|(root, list)| shared.subtree(root, list, &parent_s)).collect();
+        // Updates waiting for a top supernode: (child, rows, values).
+        let mut pending: Vec<Vec<(usize, Vec<usize>, Vec<C>)>> = vec![Vec::new(); ns];
+        let (mut perturbed, mut two_by_two, mut entries, mut largest_front) = (0, 0, 0, 0);
+        for d in done {
+            let d = d?;
+            perturbed += d.perturbed;
+            two_by_two += d.two_by_two;
+            entries += d.entries;
+            largest_front = largest_front.max(d.largest_front);
+            for (s, node) in d.nodes {
+                nodes[s] = Some(node);
+            }
+            if let (Some((rows, u)), Some(p)) = (d.update, parent_s[d.root]) {
+                pending[p].push((d.root, rows, u));
+            }
+        }
+        for s in top {
+            let rows = super_rows[s].take().unwrap_or_default();
+            let mut from_children = std::mem::take(&mut pending[s]);
+            from_children.sort_by_key(|c| c.0);
+            let updates = from_children.into_iter().map(|(_, r, u)| (r, u)).collect();
+            let f = shared.node(s, rows, updates)?;
+            perturbed += f.perturbed;
+            two_by_two += f.two_by_two;
+            entries += f.entries;
+            largest_front = largest_front.max(f.m);
+            if let (Some(u), Some(p)) = (f.update, parent_s[s]) {
+                pending[p].push((s, u.0, u.1));
+            }
+            nodes[s] = Some(f.node);
+        }
+        let supernodes =
+            nodes.into_iter().map(|n| n.ok_or(FactorError::Dimension("a supernode was left unfactored".into()))).collect::<Result<Vec<_>, _>>()?;
+        let scratch = shared.scratch.into_inner().map_err(|_| FactorError::Dimension("the scratch file's lock was poisoned".into()))?;
         let bytes_on_disk = scratch.as_ref().map_or(0, |s| s.end);
         Ok(Ldlt {
             numeric_seconds: t0.elapsed().as_secs_f64(),

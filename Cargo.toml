@@ -28,6 +28,7 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # Complex numbers for the frequency-domain solver (docs/adr/0001-libraries.md).
 num-complex = { version = "0.4", default-features = false, features = ["std"] }
 faer = "0.24"
+rayon = "1"
 
 # geometry import: 3MF packages (zip, XML), the same lines as FieldCraft
 zip = { version = "9", default-features = false, features = ["deflate"] }
