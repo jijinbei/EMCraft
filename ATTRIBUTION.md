@@ -34,5 +34,23 @@ FieldCraft (`../fieldcraft`, MIT OR Apache-2.0, Copyright (c) 2026 FieldCraft co
 | `crates/testkit/src/oracle.rs` | FieldCraft `crates/testkit/src/oracle.rs` | simplified case format (no pending, slow or nightly cases), EMCraft's engine |
 | `AGENTS.md`, `rustfmt.toml`, `clippy.toml`, workspace lints | FieldCraft's | rewritten for EMCraft |
 
+SolidCraft (`../solidcraft`, MIT OR Apache-2.0, Copyright (c) 2026 SolidCraft contributors):
+
+| EMCraft file | Adapted from | Changes |
+|---|---|---|
+| `crates/ui-egui/src/theme.rs` | SolidCraft `crates/ui-egui/src/theme.rs`, `assets/styles/ui/palettes.rs` | the token names and the light and dark palette values EMCraft uses; per-tab accents for EMCraft's tabs (values from SolidCraft's tab palette); no colour vision modes or theme files |
+| `crates/ui-egui/src/ui_kit.rs` | SolidCraft `crates/ui-egui/src/ui_kit/` (panel header, layout rows, actions, status progress) | reduced to a card header, label rows, buttons, error band, section heading and progress bar; drawn marks instead of SVG icons |
+| `crates/ui-egui/src/control.rs` | SolidCraft `crates/ui-egui/src/control.rs` | EMCraft's methods; injected pointer and key events as there; replies that wait for a worker job |
+| `crates/ui-egui/src/scenario.rs` | SolidCraft `crates/ui-egui/src/scenario.rs` | the handle registry and the headless harness; EMCraft's steps and checks |
+| `crates/ui-egui/src/raster.rs` | SolidCraft `crates/ui-egui/src/ui_kit/checks_tests.rs` (`raster`, `textures_update`) | bilinear texture sampling, no panics on partial or missing textures, PNG through `emcraft-render` |
+| `crates/ui-egui/src/lib.rs` (`raw_input_hook`, screenshots) | SolidCraft `crates/ui-egui/src/lib.rs` | one pointer event per frame as there |
+| `apps/emcraft/src/control_server.rs` | SolidCraft `apps/solidcraft/src/control_server.rs` (itself from CADCraft, MIT OR Apache-2.0) | without the pending-request bookkeeping; EMCraft's waits |
+| `apps/emcraft/src/control_auth.rs` | SolidCraft `crates/engine/src/control_auth.rs` | EMCraft's folders and variables; the token made here |
+| `docs/control-protocol.md`, the "Running and looking at the app" section of `AGENTS.md` | SolidCraft's | rewritten for EMCraft's methods |
+
+The ribbon, browser, dialogs, viewport and glyphs (`crates/ui-egui/src/{ribbon,browser,dialogs,dialog_ui,viewport,glyphs,worker}.rs`)
+are new, laid out after SolidCraft's; no SolidCraft icon or image file is used (the glyphs are
+EMCraft's own drawings in code).
+
 The multifrontal factorization (`crates/solver/src/ldlt.rs`) is new; its pivoting follows the
 same papers as FieldCraft's supernodal LDLᵀ.

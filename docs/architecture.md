@@ -29,10 +29,10 @@ vectors `CVec3` (`emcraft_model::geom`), from the model up.
 | L1 | `emcraft-render` | Pictures without a GPU: canvas with anti-aliased lines, arrows and a bitmap font; colour maps; field plots (colour map + arrows + colour bar + legend); line charts; PNG. |
 | L2 | `emcraft-fdtd` | The time-domain solver: finite integration (Yee) on the tensor grid of the waveguide's aperture and section lines, CPML along z, a TE10 pulse in feeds beyond the ports, S-parameters by Fourier transforms of the TE10 amplitudes on the end faces against a uniform-guide reference run; z-slabs on threads that live for the run (atomics and barriers, no `unsafe`, results independent of the thread count). |
 | L2 | `emcraft-solver` | Complex sparse assembly; coordinate nested dissection; multifrontal complex symmetric LDLᵀ (Bunch–Kaufman pivots within supernodes, static pivoting fallback, relaxed supernode amalgamation, blocked fronts updated on threads); iterative refinement with the backward error; the driven waveguide analysis (`Driven`): PEC elimination, modal ports, power-normalised S-parameters, E and H at points, L² errors, absorbed powers; walls of finite conductivity (Leontovich); cavity eigenmodes and Q factors (`eigen`). |
-| L6 | `emcraft-engine` | Commands (`CommandSpec`), `Session::execute` with rollback and a panic guard, scripts, the `highpass` sample, plane samples and field plots, S-parameter charts. |
-| L7 | `emcraft-ui-egui` | The desktop UI (eframe, glow): model editing, background sweep, field and chart textures from `emcraft-render`, phase animation. |
+| L6 | `emcraft-engine` | Commands (`CommandSpec`), `Session::execute` with rollback and a panic guard, scripts, the `highpass` sample, plane samples and field plots, S-parameter charts; progress and cancellation of long commands (`progress`). |
+| L7 | `emcraft-ui-egui` | The desktop UI (eframe, glow), in SolidCraft's style: ribbon of engine commands, browser, dialogs generated from the commands' parameter specs, results views (field and chart textures from `emcraft-render`, phase animation, tables), long commands on a worker thread with progress and Cancel (`emcraft_engine::progress`), the control channel's methods, a CPU renderer of whole frames (`ui.render`) and headless scenarios. |
 | testkit | `emcraft-testkit` | The verification oracle (`tests/oracle`), its runner and docs/oracle.md. |
-| apps | `emcraft`, `emcraft-cli` | Desktop and command line. |
+| apps | `emcraft`, `emcraft-cli` | Desktop (with the control channel's loopback server and token, docs/control-protocol.md) and command line. |
 
 Rules beyond the layer order: nothing below L7 uses egui, eframe, winit, wgpu or glow; the
 testkit is a dev-dependency only.

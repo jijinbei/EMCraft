@@ -87,5 +87,24 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
   sample, prints its S-parameters against the exact solution and writes the pictures.
 - `cargo run --release -p emcraft -- --sample highpass` opens the desktop app with it.
 
+## Running and looking at the app
+- `cargo run --release -p emcraft -- --sample highpass --control PORT` (sample + control
+  channel). Pick a free port. Never screenshot the user's desktop.
+- Drive it with JSON lines on `127.0.0.1:PORT` (docs/control-protocol.md). The first request on a
+  connection carries the launch's token as `"token"`: read it from
+  `~/.local/share/emcraft/control/PORT.token`, or start the app with
+  `EMCRAFT_CONTROL_TOKEN=$(openssl rand -hex 32)` and send that.
+  - `{"id":1,"method":"engine.execute","params":{"command":"solve.frequency","params":{"start":6,"stop":9}}}`
+  - `{"id":2,"method":"ui.click","params":{"handle":"toolbar:mesh.generate"}}` (`ui.handles` lists them)
+  - `{"id":3,"method":"ui.render","params":{"path":"/tmp/shot.png"}}` then read the PNG.
+- **For UI work, look at the result.** `ui.render` draws the whole window on the CPU, no window
+  or display needed; `ui.screenshot` captures the presented window. Without a display, use the
+  headless scenarios: `EMCRAFT_SCENARIO_SHOTS=DIR cargo test -p emcraft-ui-egui scenario` writes
+  each scenario's `shot` steps as PNGs into DIR.
+- Every UI behaviour lands with a scenario in `crates/ui-egui/tests/scenarios/` (real clicks,
+  keys and text through the control requests, checks on `ui.inspect`), run by `cargo test`.
+- Launch-check the real app with a timeout (`timeout 10 cargo run --release -p emcraft --
+  --sample highpass`) and confirm it starts without errors.
+
 ## Roadmap
 `ROADMAP.md` tracks milestones. Update it whenever a milestone task lands.
