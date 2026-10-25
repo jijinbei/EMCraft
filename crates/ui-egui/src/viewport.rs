@@ -129,7 +129,11 @@ impl Frame2 {
 fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
-    let overlay = app.workflow.step.map_or(crate::scene3d::Overlay::Plain, crate::steps::Step::overlay);
+    let mut overlay = app.workflow.step.map_or(crate::scene3d::Overlay::Plain, crate::steps::Step::overlay);
+    // In Results, the field's plane in the model.
+    if app.workflow.step == Some(crate::steps::Step::Results) && solved(app) {
+        overlay = crate::scene3d::Overlay::Field;
+    }
     crate::view3d::show(app, ui, area, overlay);
 }
 
@@ -379,6 +383,21 @@ fn plane_span(app: &EmcraftApp) -> Option<(f64, &'static str)> {
     })
 }
 
+/// The field view's plot: its plane sampled once (kept in `app.field.samples`), then drawn
+/// at its component and phase.
+pub(crate) fn field_plot(app: &mut EmcraftApp) -> Result<emcraft_render::plot::FieldPlot, String> {
+    let l = app.session.display.length;
+    app.field.view.at = app.field.at.map(|v| l.to_si(v));
+    let at = plane_span(app).map_or(0.0, |(span, _)| l.to_si(app.field.at.unwrap_or(span / 2.0).clamp(0.0, span)));
+    if !app.field.samples.as_ref().is_some_and(|s| s.serves(&app.field.view, at)) {
+        app.field.samples = Some(view::sample_plane(&app.session, &app.field.view).map_err(|e| e.to_string())?);
+    }
+    match app.field.samples.as_ref().map(|s| s.plot(&app.field.view)) {
+        Some(r) => r.map_err(|e| e.to_string()),
+        None => Err("no field samples".into()),
+    }
+}
+
 fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     if !solved(app) {
         empty(ui, "No fields yet: solve a sweep, eigenmodes or an open problem first.");
@@ -390,24 +409,13 @@ fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     app.field.view.at = app.field.at.map(|v| l.to_si(v));
     let key = format!("{:?}|{width}|{}", app.field.view, app.revision);
     if app.field.picture.as_ref().is_none_or(|p| p.key != key) {
-        let at = plane_span(app).map_or(0.0, |(span, _)| l.to_si(app.field.at.unwrap_or(span / 2.0).clamp(0.0, span)));
-        if !app.field.samples.as_ref().is_some_and(|s| s.serves(&app.field.view, at)) {
-            match view::sample_plane(&app.session, &app.field.view) {
-                Ok(s) => app.field.samples = Some(s),
-                Err(e) => {
-                    app.field.picture = None;
-                    empty(ui, &e.to_string());
-                    return;
-                }
-            }
-        }
-        let plot = match app.field.samples.as_ref().map(|s| s.plot(&app.field.view)) {
-            Some(Ok(p)) => p,
-            Some(Err(e)) => {
-                empty(ui, &e.to_string());
+        let plot = match field_plot(app) {
+            Ok(p) => p,
+            Err(e) => {
+                app.field.picture = None;
+                empty(ui, &e);
                 return;
             }
-            None => return,
         };
         let c = emcraft_render::plot::draw(&plot, width);
         app.field.picture = Some(Picture::new(key, &c));

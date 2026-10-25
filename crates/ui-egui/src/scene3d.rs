@@ -23,6 +23,8 @@ pub enum Overlay {
     Boundaries,
     /// The mesh's edges.
     Mesh,
+    /// The field on its plane, inside see-through walls.
+    Field,
 }
 
 impl Overlay {
@@ -33,6 +35,7 @@ impl Overlay {
             Overlay::Ports => "ports",
             Overlay::Boundaries => "boundaries",
             Overlay::Mesh => "mesh",
+            Overlay::Field => "field",
         }
     }
 }
@@ -78,8 +81,21 @@ fn p3(p: emcraft_model::geom::Point3) -> [f64; 3] {
     [p.x, p.y, p.z]
 }
 
+/// A field plot on its plane: which plane and where along its normal (m from the model's low
+/// side).
+pub struct FieldLayer<'a> {
+    pub plot: &'a emcraft_render::plot::FieldPlot,
+    pub plane: emcraft_engine::view::Plane,
+    pub at: f64,
+}
+
 /// Builds the scene of `session` for `overlay`.
 pub fn build(session: &Session, overlay: Overlay) -> Built {
+    build_with(session, overlay, None)
+}
+
+/// Builds the scene, with the field's plane for [`Overlay::Field`].
+pub fn build_with(session: &Session, overlay: Overlay, field: Option<&FieldLayer>) -> Built {
     let m = &session.model;
     let mut out = Built { bounds: m.bounds().map(|(lo, hi)| (p3(lo), p3(hi))), ..Default::default() };
     match &m.mesh {
@@ -88,7 +104,55 @@ pub fn build(session: &Session, overlay: Overlay) -> Built {
     }
     extras(m, overlay, &mut out);
     legend(session, overlay, &mut out);
+    if let (Overlay::Field, Some(f)) = (overlay, field) {
+        field_plane(session, f, &mut out);
+    }
     out
+}
+
+/// Most cells along the field plane's longer side.
+const FIELD_CELLS: usize = 120;
+
+/// The field's colour map on its plane, cell by cell (cells outside the mesh left out).
+fn field_plane(session: &Session, f: &FieldLayer, out: &mut Built) {
+    use emcraft_engine::view::Plane;
+    use emcraft_render::plot::ScalarKind;
+    let (Some(s), Some((lo, _))) = (f.plot.scalar.as_ref(), out.bounds) else { return };
+    let (nx, ny) = (s.nx, s.ny);
+    if nx < 2 || ny < 2 || s.values.len() < nx * ny {
+        return;
+    }
+    let l = session.display.length;
+    let (h0, h1, v0, v1) = (l.to_si(f.plot.x.min), l.to_si(f.plot.x.max), l.to_si(f.plot.y.min), l.to_si(f.plot.y.max));
+    let point = |u: f64, v: f64| match f.plane {
+        Plane::H => [v, lo[1] + f.at, u],
+        Plane::E => [lo[0] + f.at, v, u],
+        Plane::Cross => [u, v, lo[2] + f.at],
+    };
+    let peak = s.range.filter(|r| *r > 0.0).unwrap_or_else(|| s.values.iter().filter(|v| v.is_finite()).fold(0.0, |a: f64, b| a.max(b.abs())));
+    let color = |v: f64| match s.kind {
+        ScalarKind::Signed => emcraft_render::colormap::diverging(v / peak.max(1e-300)),
+        ScalarKind::Magnitude => emcraft_render::colormap::sequential(v / peak.max(1e-300)),
+    };
+    let step = nx.max(ny).div_ceil(FIELD_CELLS).max(1);
+    let at = |i: usize, j: usize| s.values.get(j * nx + i).copied().unwrap_or(f64::NAN);
+    let (mut j, du, dv) = (0, (h1 - h0) / (nx - 1) as f64, (v1 - v0) / (ny - 1) as f64);
+    while j + 1 < ny {
+        let j1 = (j + step).min(ny - 1);
+        let mut i = 0;
+        while i + 1 < nx {
+            let i1 = (i + step).min(nx - 1);
+            let corners = [at(i, j), at(i1, j), at(i1, j1), at(i, j1)];
+            if corners.iter().all(|v| v.is_finite()) {
+                let mean = corners.iter().sum::<f64>() / 4.0;
+                let (u0, u1, w0, w1) = (h0 + du * i as f64, h0 + du * i1 as f64, v0 + dv * j as f64, v0 + dv * j1 as f64);
+                out.scene.quad([point(u0, w0), point(u1, w0), point(u1, w1), point(u0, w1)], color(mean), 255);
+            }
+            i = i1;
+        }
+        j = j1;
+    }
+    out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| s.label.clone()), color(peak)));
 }
 
 fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
@@ -123,7 +187,7 @@ fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
                 out.legend.push((format!("open boundary: PML {} {}", l.from_si(o.thickness), l.symbol()), PML));
             }
         }
-        Overlay::Plain | Overlay::Mesh => {}
+        Overlay::Plain | Overlay::Mesh | Overlay::Field => {}
     }
 }
 
@@ -132,7 +196,7 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
     let Some(mesh) = &m.mesh else { return };
     let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
     let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
-    let see_through = matches!(overlay, Overlay::Materials | Overlay::Ports | Overlay::Boundaries);
+    let see_through = matches!(overlay, Overlay::Materials | Overlay::Ports | Overlay::Boundaries | Overlay::Field);
     // Faces, their keys for edges (material or tag).
     let mut faces: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.boundary.len());
     for f in &mesh.boundary {
@@ -147,6 +211,7 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         let (color, alpha) = match overlay {
             Overlay::Plain => (if port { PORT_SOFT } else { METAL }, 255),
             Overlay::Mesh => (if port { PORT_SOFT } else { Rgb(214, 220, 228) }, 255),
+            Overlay::Field => (METAL, 40),
             Overlay::Materials => (material_rgb(m, tet_mat(f.tet)), if port { 200 } else { 120 }),
             Overlay::Ports => {
                 if port {
@@ -319,7 +384,7 @@ fn turned(axis: Axis, at: emcraft_model::geom::Point3) -> impl Fn([f64; 3]) -> [
 fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
     let mat = |name: &str| m.materials.iter().position(|x| x.name == name).unwrap_or(0);
     let tint = |name: &str| if overlay == Overlay::Materials { material_rgb(m, mat(name)) } else { METAL };
-    let see_through = matches!(overlay, Overlay::Ports | Overlay::Boundaries);
+    let see_through = matches!(overlay, Overlay::Ports | Overlay::Boundaries | Overlay::Field);
     if let Some(w) = &m.waveguide {
         let mut z = 0.0;
         let layered = !w.layers.is_empty();

@@ -23,7 +23,7 @@ const SUPERSAMPLE_PIXELS: f64 = 1.3e6;
 /// What the picture was drawn from.
 #[derive(Clone, Debug, PartialEq)]
 struct Key {
-    scene: (u64, Overlay),
+    scene: (u64, Overlay, String),
     camera: Camera,
     size: [usize; 2],
     supersample: usize,
@@ -35,7 +35,7 @@ pub struct View3d {
     pub camera: Camera,
     /// The box last fitted to: a new geometry is framed once.
     fitted: Option<([f64; 3], [f64; 3])>,
-    built: Option<((u64, Overlay), Built)>,
+    built: Option<((u64, Overlay, String), Built)>,
     picture: Option<(Key, Picture)>,
     /// Milliseconds the last picture took, and its size.
     pub last_ms: f64,
@@ -63,9 +63,20 @@ impl Default for View3d {
 impl View3d {
     /// The scene for `overlay` (built once per revision).
     pub fn built(&mut self, app_revision: u64, session: &emcraft_engine::Session, overlay: Overlay) -> &Built {
-        let key = (app_revision, overlay);
+        self.built_with(app_revision, session, overlay, None)
+    }
+
+    /// The scene with the field's plane (`extra` names the field's state).
+    pub fn built_with(
+        &mut self,
+        app_revision: u64,
+        session: &emcraft_engine::Session,
+        overlay: Overlay,
+        field: Option<(String, &scene3d::FieldLayer)>,
+    ) -> &Built {
+        let key = (app_revision, overlay, field.as_ref().map(|f| f.0.clone()).unwrap_or_default());
         if self.built.as_ref().is_none_or(|(k, _)| *k != key) {
-            self.built = Some((key, scene3d::build(session, overlay)));
+            self.built = Some((key, scene3d::build_with(session, overlay, field.map(|f| f.1))));
         }
         match &self.built {
             Some((_, b)) => b,
@@ -114,8 +125,22 @@ fn color(c: Rgb) -> Color32 {
 pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overlay) {
     let t = Tokens::get();
     let revision = app.revision;
+    // The field's plane, for the Results step.
+    let mut field_key = String::new();
+    let mut layer = None;
+    if overlay == Overlay::Field {
+        match crate::viewport::field_plot(app) {
+            Ok(plot) => {
+                field_key = format!("{:?}|{:?}", app.field.view, app.field.at);
+                let (plane, at) = app.field.samples.as_ref().map_or((app.field.view.plane, 0.0), |s| (s.plane, s.at));
+                layer = Some((plot, plane, at));
+            }
+            Err(e) => app.message(e, true),
+        }
+    }
     let v = &mut app.view3d;
-    let built = v.built(revision, &app.session, overlay).clone_shallow();
+    let fl = layer.as_ref().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at });
+    let built = v.built_with(revision, &app.session, overlay, fl.as_ref().map(|f| (field_key.clone(), f))).clone_shallow();
     let Some(bounds) = built.bounds.or_else(|| built.scene.bounds()) else {
         ui.painter().text(
             rect.center(),
@@ -180,7 +205,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     }
     let size = [((rect.width() as f64 * scale).round() as usize).max(1), ((rect.height() as f64 * scale).round() as usize).max(1)];
     let supersample = if !v.dragging && (size[0] * size[1]) as f64 <= SUPERSAMPLE_PIXELS { 2 } else { 1 };
-    let key = Key { scene: (revision, overlay), camera: v.camera, size, supersample, dark: crate::theme::is_dark() };
+    let key = Key { scene: (revision, overlay, field_key), camera: v.camera, size, supersample, dark: crate::theme::is_dark() };
     if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
         let began = Instant::now();
         let opt = view3d::Options {

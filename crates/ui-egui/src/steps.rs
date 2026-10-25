@@ -1133,6 +1133,7 @@ fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &To
     let views: Vec<View> = [
         (s.sweep.is_some() || s.time_domain.is_some(), View::SParameters),
         (s.sweep.is_some() || s.eigen.is_some() || s.radiation.is_some(), View::Field),
+        (s.sweep.is_some() || s.eigen.is_some() || s.radiation.is_some(), View::Model),
         (s.eigen.is_some(), View::Eigenmodes),
         (s.radiation.is_some() || s.td_radiation.is_some(), View::FarField),
         (s.sweep.is_some(), View::Compare),
@@ -1147,7 +1148,7 @@ fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &To
     ui_kit::section(ui, "Show");
     ui.horizontal_wrapped(|ui| {
         for v in views {
-            let r = ui.selectable_label(app.view == v, v.label());
+            let r = ui.selectable_label(app.view == v, if v == View::Model { "Field in 3D" } else { v.label() });
             scenario::publish_target(&format!("results:show:{}", v.id()), r.rect);
             if r.clicked() {
                 crate::ribbon::show_view(app, v);
