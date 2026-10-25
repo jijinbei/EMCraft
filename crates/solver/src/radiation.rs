@@ -196,7 +196,7 @@ impl Driven {
                 }
                 Source::PlaneWave { direction, polarization } => {
                     self.lift_conductors(model, k0, direction, polarization, &mut b)?;
-                    let in_pml: std::collections::HashSet<usize> = self.pml.iter().flat_map(|(_, l)| l.iter().map(|(t, _)| *t)).collect();
+                    let in_pml: std::collections::HashSet<usize> = self.pml.iter().flat_map(|(_, _, l)| l.iter().map(|(t, _)| *t)).collect();
                     for t in 0..self.mesh.tets.len() {
                         let contrast = self.eps_of(t) - 1.0;
                         if contrast.norm() == 0.0 || in_pml.contains(&t) {
@@ -340,7 +340,7 @@ impl Driven {
         let f = Ldlt::factor(&m, &points)?;
         let (g, _) = f.solve_refined(&m, &r, 2)?;
         // Lift: every tetrahedron with a conductor's degree of freedom.
-        let in_pml: std::collections::HashSet<usize> = self.pml.iter().flat_map(|(_, l)| l.iter().map(|(t, _)| *t)).collect();
+        let in_pml: std::collections::HashSet<usize> = self.pml.iter().flat_map(|(_, _, l)| l.iter().map(|(t, _)| *t)).collect();
         for t in 0..self.mesh.tets.len() {
             let slots = self.dofs.slots_of_tet(&self.topo, t);
             let known: Vec<(usize, C)> = slots.iter().enumerate().filter_map(|(li, s)| index.get(s).map(|&k| (li, g[k]))).collect();

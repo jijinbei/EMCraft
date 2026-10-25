@@ -221,6 +221,7 @@ Lines every face of a box solid with a perfectly matched layer of `thickness` (c
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `thickness` | number | length | no | the layer's thickness |
+| `reflection` | number |  | no | the reflection at normal incidence the layer's profile is designed for, 0 to 1 (default 1e-6) |
 
 ## `source.dipole` — Dipole source
 

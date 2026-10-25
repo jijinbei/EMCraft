@@ -270,7 +270,10 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "model.open",
         label: "Open boundary",
         doc: "Lines every face of a box solid with a perfectly matched layer of `thickness` (conducting walls behind it), for radiation and scattering: an anisotropic medium of stretched coordinates, s = 1 − j(σ₀/k₀)(ξ/d)², designed for 1e-6 reflection at normal incidence. A quarter to half a wavelength is typical; leave as much again between what radiates and the layer (the Huygens surface for the far field lies between them, and wants a couple of elements' distance from sources' near fields). Without `thickness`, closes the box again.",
-        params: &[p("thickness", "number", L, false, "the layer's thickness")],
+        params: &[
+            p("thickness", "number", L, false, "the layer's thickness"),
+            p("reflection", "number", N, false, "the reflection at normal incidence the layer's profile is designed for, 0 to 1 (default 1e-6)"),
+        ],
         run: crate::open::model_open,
     },
     CommandSpec {

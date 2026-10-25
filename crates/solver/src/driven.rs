@@ -199,7 +199,8 @@ pub struct Driven {
     /// The perfectly matched layer: its thickness and, for each tetrahedron in it, the depth
     /// into it along x, y and z as fractions of the thickness (0 where it is not in the layer
     /// along that axis). Their matrices depend on the frequency and are assembled with it.
-    pub(crate) pml: Option<(f64, Vec<(usize, [f64; 3])>)>,
+    /// (thickness, design reflection, and per tetrahedron its depths)
+    pub(crate) pml: Option<(f64, f64, Vec<(usize, [f64; 3])>)>,
     /// Lumped ports: each with its vector cᵢ = ∫ Nᵢ · ŝ dl along its gap.
     pub lumped: Vec<LumpedData>,
 }
@@ -316,11 +317,11 @@ impl Driven {
                         list.push((t, depth));
                     }
                 }
-                Some((d, list))
+                Some((d, o.reflection.unwrap_or(PML_REFLECTION), list))
             }
             _ => None,
         };
-        let in_pml: std::collections::HashSet<usize> = pml.iter().flat_map(|(_, l)| l.iter().map(|(t, _)| *t)).collect();
+        let in_pml: std::collections::HashSet<usize> = pml.iter().flat_map(|(_, _, l)| l.iter().map(|(t, _)| *t)).collect();
 
         // Port vectors.
         let mut ports = Vec::new();
@@ -447,8 +448,8 @@ impl Driven {
     /// (Z. S. Sacks, D. M. Kingsland, R. Lee, J.-F. Lee, IEEE Trans. AP 43(12), 1995; Jin 2014,
     /// §9.6), so its element matrices are Σ_d (1/(μr Λ_d)) K_d − k₀² Σ_d εr Λ_d M_d by component.
     fn add_pml(&self, a: &mut Csr, k0: f64) -> Result<()> {
-        let Some((d, list)) = &self.pml else { return Ok(()) };
-        let sigma0 = 3.0 * (1.0 / PML_REFLECTION).ln() / (2.0 * d);
+        let Some((d, reflection, list)) = &self.pml else { return Ok(()) };
+        let sigma0 = 3.0 * (1.0 / reflection).ln() / (2.0 * d);
         for &(t, depth) in list {
             let s = depth.map(|x| C::new(1.0, -sigma0 / k0 * x * x));
             let lambda = [s[1] * s[2] / s[0], s[2] * s[0] / s[1], s[0] * s[1] / s[2]];

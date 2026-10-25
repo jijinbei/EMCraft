@@ -375,6 +375,10 @@ impl Feature {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Open {
     pub thickness: f64,
+    /// The reflection the layer is designed for at normal incidence (its absorption profile's
+    /// strength); `None` for the default, 1e-6.
+    #[serde(default)]
+    pub reflection: Option<f64>,
 }
 
 /// What drives an open problem.
@@ -771,6 +775,11 @@ impl Model {
                 ));
             };
             positive("layer thickness", o.thickness)?;
+            if let Some(r) = o.reflection
+                && !(r > 0.0 && r < 1.0)
+            {
+                return Err(invalid("layer reflection", "must be between 0 and 1"));
+            }
             if size.iter().any(|s| 2.0 * o.thickness >= *s) {
                 return Err(invalid("layer thickness", "must leave room inside the box (under half its smallest side)"));
             }

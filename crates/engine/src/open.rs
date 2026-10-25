@@ -37,7 +37,8 @@ fn vector(p: &Value, name: &str) -> Result<Option<[f64; 3]>> {
 }
 
 pub fn model_open(s: &mut Session, p: &Value) -> Result<Value> {
-    let open = s.positive_length(p, "thickness")?.map(|thickness| Open { thickness });
+    let reflection = number(p, "reflection")?;
+    let open = s.positive_length(p, "thickness")?.map(|thickness| Open { thickness, reflection });
     s.model.set_open(open)?;
     s.radiation = None;
     Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.display.length.from_si(o.thickness))}))

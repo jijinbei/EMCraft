@@ -316,6 +316,8 @@ fn open_problems_radiate_and_scatter() {
     assert!(s.execute("model.open", &json!({"thickness": 3})).is_err());
     s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
     assert!(s.execute("model.open", &json!({"thickness": 25})).is_err());
+    assert!(s.execute("model.open", &json!({"thickness": 10, "reflection": 2})).is_err());
+    assert!(s.execute("model.open", &json!({"thickness": 10, "reflection": 0})).is_err());
     s.execute("model.open", &json!({"thickness": 10})).unwrap();
     s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
     assert!(s.execute("solve.radiation", &json!({"frequency": 10})).is_err(), "no sources");
