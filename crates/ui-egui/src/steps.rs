@@ -1094,7 +1094,9 @@ fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &
     let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(&app.session.model));
     ui.add_space(6.0);
     ui.label(egui::RichText::new(format!("Solver: {}", solver.label())).size(t.font_small).color(t.text));
-    let label = if pre.warnings.is_empty() || !pre.blocking.is_empty() {
+    let label = if !pre.blocking.is_empty() {
+        format!("Run — {} problem(s) to fix first", pre.blocking.len())
+    } else if pre.warnings.is_empty() {
         "Run".to_owned()
     } else {
         format!("Run, accepting {} warning(s)", pre.warnings.len())
