@@ -390,6 +390,27 @@ pub enum Source {
     PlaneWave { direction: [f64; 3], polarization: [f64; 3] },
 }
 
+/// A lumped (discrete) port: a gap from `from` to `to` (m) across which a source of `voltage`
+/// (V, peak, complex as [re, im]) in series with `impedance` (Ω) drives current from `from`
+/// towards `to` — the feed of an antenna, its terminals the conductors at either end.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LumpedPort {
+    pub name: String,
+    pub from: [f64; 3],
+    pub to: [f64; 3],
+    pub impedance: f64,
+    #[serde(default = "unit_voltage")]
+    pub voltage: [f64; 2],
+    /// The current spread evenly round a band of this radius (m) about the gap's line — the
+    /// surface of the wire a centre-fed antenna's gap cuts — instead of along the line itself.
+    #[serde(default)]
+    pub radius: f64,
+}
+
+fn unit_voltage() -> [f64; 2] {
+    [1.0, 0.0]
+}
+
 fn unit(name: &str, v: [f64; 3]) -> Result<[f64; 3]> {
     let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
     if !(l.is_finite() && l > 0.0) {
@@ -492,6 +513,9 @@ pub struct Model {
     /// What drives an open problem.
     #[serde(default)]
     pub sources: Vec<Source>,
+    /// Lumped ports (antenna feeds).
+    #[serde(default)]
+    pub lumped: Vec<LumpedPort>,
     /// The mesh of the waveguide (made by `emcraft-mesh`).
     #[serde(skip)]
     pub mesh: Option<Mesh>,
@@ -573,6 +597,7 @@ impl Model {
         self.features.clear();
         self.open = None;
         self.sources.clear();
+        self.lumped.clear();
         self.mesh = None;
         Ok(())
     }
@@ -587,6 +612,7 @@ impl Model {
         self.features.clear();
         self.open = None;
         self.sources.clear();
+        self.lumped.clear();
         self.mesh = None;
         Ok(())
     }
@@ -751,6 +777,34 @@ impl Model {
             return Err(invalid("dipole", "must lie inside the geometry"));
         }
         self.sources.push(src);
+        Ok(())
+    }
+
+    /// Adds a lumped port.
+    pub fn add_lumped_port(&mut self, p: LumpedPort) -> Result<()> {
+        if p.name.trim().is_empty() {
+            return Err(invalid("port name", "must not be empty"));
+        }
+        if self.lumped.iter().any(|x| x.name == p.name) || self.ports.iter().any(|x| x.name == p.name) {
+            return Err(ModelError::Duplicate { kind: "port", name: p.name });
+        }
+        positive("port impedance", p.impedance)?;
+        if !(p.radius.is_finite() && p.radius >= 0.0) {
+            return Err(invalid("lumped port radius", "must be a finite number ≥ 0"));
+        }
+        if !p.from.iter().chain(&p.to).chain(&p.voltage).all(|v| v.is_finite()) {
+            return Err(invalid("lumped port", "its ends and voltage must be finite"));
+        }
+        let gap = ((0..3).map(|d| (p.to[d] - p.from[d]).powi(2)).sum::<f64>()).sqrt();
+        if !(gap > 0.0) {
+            return Err(invalid("lumped port", "its two ends must differ"));
+        }
+        if let Some((lo, hi)) = self.bounds()
+            && [p.from, p.to].iter().any(|q| (0..3).any(|d| q[d] <= lo[d] || q[d] >= hi[d]))
+        {
+            return Err(invalid("lumped port", "must lie inside the geometry"));
+        }
+        self.lumped.push(p);
         Ok(())
     }
 

@@ -31,6 +31,22 @@ pub struct OpenResult {
     /// plane wave.
     pub field: Vec<C>,
     pub backward_error: f64,
+    /// Each lumped port's terminal quantities.
+    pub ports: Vec<LumpedResult>,
+}
+
+/// A lumped port's terminals: with every port's source on at once, its current, the voltage
+/// across its terminals, their ratio (the input impedance, or the active impedance of an
+/// array element), the reflection against the port's impedance and the power it delivers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LumpedResult {
+    pub name: String,
+    pub current: C,
+    pub voltage: C,
+    pub impedance: C,
+    pub s11: C,
+    /// ½ Re(V I*), W.
+    pub power: f64,
 }
 
 /// The far field in one direction: r e^{jkr} E_θ and r e^{jkr} E_φ (V).
@@ -130,8 +146,8 @@ impl Driven {
         if !(frequency.is_finite() && frequency > 0.0) {
             return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
         }
-        if model.sources.is_empty() {
-            return Err(SolveError::NotReady("no sources: add one with source.dipole or source.plane_wave".into()));
+        if model.sources.is_empty() && self.lumped.is_empty() {
+            return Err(SolveError::NotReady("no sources: add one with source.dipole, source.plane_wave or port.lumped".into()));
         }
         huygens_box(model)?;
         let omega = 2.0 * PI * frequency;
@@ -179,9 +195,30 @@ impl Driven {
                 }
             }
         }
+        // Lumped ports: their sources drive −jωμ₀ (V_s/R) c (see the system's rank-one terms).
+        for l in &self.lumped {
+            let f = C::new(0.0, -omega * MU0) * l.voltage / l.impedance;
+            for &(i, ci) in &l.c {
+                b[i] += f * ci;
+            }
+        }
         let f = Ldlt::factor(&a, &self.dofs.points)?;
         let (field, backward_error) = f.solve_refined(&a, &b, 4)?;
-        Ok(OpenResult { frequency, field, backward_error })
+        let ports = self
+            .lumped
+            .iter()
+            .map(|l| {
+                // ∫ E · ŝ dl across the gap, the current through it and the terminal voltage
+                // V = V_s − R I = −∫ E · ŝ dl.
+                let line: C = l.c.iter().map(|&(i, ci)| field[i] * ci).sum();
+                let current = (l.voltage + line) / l.impedance;
+                let voltage = -line;
+                let impedance = voltage / current;
+                let s11 = (impedance - l.impedance) / (impedance + l.impedance);
+                LumpedResult { name: l.name.clone(), current, voltage, impedance, s11, power: 0.5 * (voltage * current.conj()).re }
+            })
+            .collect();
+        Ok(OpenResult { frequency, field, backward_error, ports })
     }
 
     /// The plane wave's conductors: on them the scattered field is n × E_s = −n × E_inc, so their

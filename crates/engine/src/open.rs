@@ -61,6 +61,50 @@ pub fn source_plane_wave(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"sources": s.model.sources.len()}))
 }
 
+pub fn port_lumped(s: &mut Session, p: &Value) -> Result<Value> {
+    let name = required_string(p, "name")?.to_owned();
+    let from = vector(p, "from")?.ok_or_else(|| EngineError::Params("`from` is required".into()))?.map(|v| s.display.length.to_si(v));
+    let to = vector(p, "to")?.ok_or_else(|| EngineError::Params("`to` is required".into()))?.map(|v| s.display.length.to_si(v));
+    let impedance = number(p, "impedance")?.unwrap_or(50.0);
+    let amplitude = number(p, "voltage")?.unwrap_or(1.0);
+    let phase = number(p, "phase")?.unwrap_or(0.0).to_radians();
+    if !(amplitude.is_finite() && phase.is_finite()) {
+        return Err(EngineError::Params("`voltage` and `phase` must be finite".into()));
+    }
+    let radius = s.positive_length(p, "radius")?.unwrap_or(0.0);
+    s.model.add_lumped_port(emcraft_model::LumpedPort {
+        name,
+        from,
+        to,
+        impedance,
+        voltage: [amplitude * phase.cos(), amplitude * phase.sin()],
+        radius,
+    })?;
+    s.radiation = None;
+    Ok(json!({"lumped_ports": s.model.lumped.len()}))
+}
+
+/// A centre-fed wire dipole the induced-EMF closed form applies to: two coaxial conducting
+/// cylinders of one radius with the model's one lumped port across the gap between them, in
+/// vacuum: (total length, radius).
+fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
+    let vacuum = s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r == 1.0 && m.mu_r == 1.0));
+    let ([a, b], [port]) = (&s.model.inclusions[..], &s.model.lumped[..]) else { return None };
+    if !vacuum || !s.model.sources.is_empty() || !s.model.features.is_empty() || a.material.is_some() || b.material.is_some() {
+        return None;
+    }
+    let (Shape::Cylinder { radius: ra, length: la }, Shape::Cylinder { radius: rb, length: lb }) = (&a.shape, &b.shape) else { return None };
+    let tol = 1e-9 * (la + lb);
+    let coaxial = (a.at[0] - b.at[0]).abs() < tol && (a.at[1] - b.at[1]).abs() < tol && (ra - rb).abs() < tol;
+    let on_axis = [port.from, port.to].iter().all(|q| (q[0] - a.at[0]).abs() < tol && (q[1] - a.at[1]).abs() < tol);
+    if !(coaxial && on_axis) {
+        return None;
+    }
+    let lo = a.at[2].min(b.at[2]);
+    let hi = (a.at[2] + la).max(b.at[2] + lb);
+    Some((hi - lo, *ra))
+}
+
 pub fn source_clear(s: &mut Session, _: &Value) -> Result<Value> {
     s.model.sources.clear();
     s.radiation = None;
@@ -126,6 +170,31 @@ pub fn solve_radiation(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some((il, _)) = lone_dipole(s) {
             reply["exact_radiated_power"] = json!(emcraft_theory::radiation::dipole_power(il, f));
         }
+    }
+    if !result.ports.is_empty() {
+        let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im});
+        let exact = wire_dipole(s).map(|(l, a)| emcraft_theory::radiation::dipole_impedance(l, a, f));
+        let ports: Vec<Value> = result
+            .ports
+            .iter()
+            .map(|pr| {
+                let mut v = json!({
+                    "name": pr.name, "impedance": c(pr.impedance), "current": c(pr.current), "voltage": c(pr.voltage),
+                    "s11": {"re": pr.s11.re, "im": pr.s11.im, "mag": pr.s11.norm(), "db": emcraft_model::units::decibels(pr.s11.norm())},
+                    "power": pr.power,
+                });
+                if let Some(z) = exact {
+                    // The thin-wire, sinusoidal-current estimate: a guide, not a reference (a
+                    // wire a sixtieth of a wavelength thick differs by tens of percent).
+                    v["induced_emf_impedance"] = c(z);
+                }
+                v
+            })
+            .collect();
+        let input: f64 = result.ports.iter().map(|pr| pr.power).sum();
+        reply["ports"] = json!(ports);
+        reply["input_power"] = json!(input);
+        reply["radiation_efficiency"] = json!(if input > 0.0 { power / input } else { f64::NAN });
     }
     s.radiation = Some(Arc::new(Radiated { driven, result, power }));
     Ok(reply)

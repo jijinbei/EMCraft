@@ -51,6 +51,11 @@ pub const SAMPLES: &[Sample] = &[
         script: include_str!("../samples/dipole.json"),
     },
     Sample {
+        name: "halfwave-dipole",
+        label: "A half-wave wire dipole at 10 GHz (radius 0.5 mm, 1 mm gap) fed by a lumped port: input impedance, S11, power balance and pattern",
+        script: include_str!("../samples/halfwave-dipole.json"),
+    },
+    Sample {
         name: "sphere-scattering",
         label: "A plane wave on a ceramic sphere (εr = 4, radius 5 mm) at 10 GHz: the scattered field and the radar cross-section against the Mie series",
         script: include_str!("../samples/sphere-scattering.json"),

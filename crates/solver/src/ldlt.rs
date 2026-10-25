@@ -87,7 +87,8 @@ struct Scratch {
 }
 
 /// Bytes of factor kept in memory before the rest goes to the scratch file: the environment's
-/// `EMCRAFT_FACTOR_MEMORY_GB`, else half the memory the system reports available (Linux), else
+/// `EMCRAFT_FACTOR_MEMORY_GB`, else a quarter of the memory the system reports available (Linux; the
+/// fronts and update matrices need the rest), else
 /// 8 GB.
 fn memory_budget() -> u64 {
     if let Some(gb) = std::env::var("EMCRAFT_FACTOR_MEMORY_GB").ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|g| g.is_finite() && *g >= 0.0)
@@ -97,7 +98,7 @@ fn memory_budget() -> u64 {
     let available = std::fs::read_to_string("/proc/meminfo").ok().and_then(|t| {
         t.lines().find(|l| l.starts_with("MemAvailable:")).and_then(|l| l.split_whitespace().nth(1)).and_then(|kb| kb.parse::<u64>().ok())
     });
-    available.map_or(8_000_000_000, |kb| kb * 1024 / 2)
+    available.map_or(8_000_000_000, |kb| kb * 1024 / 4)
 }
 
 /// The directory for scratch files: `EMCRAFT_SCRATCH`, else `~/.cache/emcraft` (on disk; the

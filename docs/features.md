@@ -241,6 +241,20 @@ A plane wave of 1 V/m on the model's dielectric and conducting bodies: the solve
 | `direction` | array |  | no | the direction it travels (default [0, 0, 1]) |
 | `polarization` | array |  | no | its electric field's direction, across `direction` (default [1, 0, 0]) |
 
+## `model.port.lumped` — Lumped port
+
+A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usually between two conductors) across which a source of `voltage` at `phase` in series with `impedance` drives current from `from` towards `to`. solve.radiation reports its input (or, with several ports on, active) impedance, S11 against `impedance` and the power it delivers.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | port name |
+| `from` | array | length | yes | the gap's start [x, y, z] |
+| `to` | array | length | yes | the gap's end [x, y, z] |
+| `impedance` | number |  | no | the source's internal impedance in ohms (default 50) |
+| `voltage` | number |  | no | the source's voltage in volts, peak (default 1) |
+| `phase` | number |  | no | the source's phase in degrees (default 0) |
+| `radius` | number | length | no | spread the current round a band of this radius about the gap's line (a wire's radius, for a gap cut in a wire); default 0, the line itself |
+
 ## `source.clear` — Clear sources
 
 Removes every source.

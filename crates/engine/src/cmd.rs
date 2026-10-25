@@ -294,6 +294,27 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         run: crate::open::source_plane_wave,
     },
+    CommandSpec {
+        id: "model.port.lumped",
+        label: "Lumped port",
+        doc: "A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usually between two conductors) across which a source of `voltage` at `phase` in series with `impedance` drives current from `from` towards `to`. solve.radiation reports its input (or, with several ports on, active) impedance, S11 against `impedance` and the power it delivers.",
+        params: &[
+            p("name", "string", N, true, "port name"),
+            p("from", "array", L, true, "the gap's start [x, y, z]"),
+            p("to", "array", L, true, "the gap's end [x, y, z]"),
+            p("impedance", "number", N, false, "the source's internal impedance in ohms (default 50)"),
+            p("voltage", "number", N, false, "the source's voltage in volts, peak (default 1)"),
+            p("phase", "number", N, false, "the source's phase in degrees (default 0)"),
+            p(
+                "radius",
+                "number",
+                L,
+                false,
+                "spread the current round a band of this radius about the gap's line (a wire's radius, for a gap cut in a wire); default 0, the line itself",
+            ),
+        ],
+        run: crate::open::port_lumped,
+    },
     CommandSpec { id: "source.clear", label: "Clear sources", doc: "Removes every source.", params: &[], run: crate::open::source_clear },
     CommandSpec {
         id: "solve.radiation",

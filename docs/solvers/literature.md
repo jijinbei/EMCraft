@@ -115,6 +115,10 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - C. A. Balanis, *Advanced Engineering Electromagnetics*, 2nd ed., Wiley 2012, §6.8 — the
   near-to-far transform of equivalent currents; *Antenna Theory*, 4th ed., §4.2 — the Hertzian
   dipole (`emcraft-solver::radiation`, `emcraft-theory::radiation`).
+- J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., §9.4 — lumped ports as
+  currents across a gap behind an impedance; C. A. Balanis, *Antenna Theory*, §8.5 — the
+  induced-EMF impedance of a dipole and the sine and cosine integrals (Abramowitz & Stegun
+  §5.2) (`emcraft-solver::driven`, `emcraft-theory::radiation`).
 - C. F. Bohren, D. R. Huffman, *Absorption and Scattering of Light by Small Particles*, Wiley
   1983, §4.4 and Appendix A — the Mie series and its BHMIE test values
   (`emcraft-theory::radiation`).

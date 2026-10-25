@@ -3,10 +3,10 @@
  "kind": "theory",
  "source": "The Mie series of a perfectly conducting sphere, aₙ = ψₙ'(ka)/ξₙ'(ka), bₙ = ψₙ(ka)/ξₙ(ka) (J. A. Stratton, Electromagnetic Theory, 1941, §9.25; C. F. Bohren, D. R. Huffman, 1983, §4.4); the back-scatter σ/πa² = 3.65 near ka = 1 is the classic peak of the sphere's monostatic RCS (Bowman, Senior, Uslenghi, Electromagnetic and Acoustic Scattering by Simple Shapes, 1969, §10.3)",
  "quantities": [
-  {"id": "sigma_sca", "quantity": "scattering cross-section (mm²)", "measure": {"step": "solve", "pointer": "/scattering_cross_section"}, "value": 168.78884549980634, "tolerance": {"relative": 0.02}, "reason": "the scattered field on the curved sphere set to −n × E_inc by L² projection, six second-order elements per wavelength, a 12 mm layer: +0.5 %"},
-  {"id": "rcs_forward", "quantity": "radar cross-section forwards, θ = 0 (mm²)", "measure": {"step": "e", "pointer": "/points/0/rcs"}, "value": 146.64105489312038, "tolerance": {"relative": 0.03}, "reason": "+1.3 %"},
-  {"id": "rcs_side_e", "quantity": "radar cross-section at θ = 90° in the E-plane (mm²)", "measure": {"step": "e", "pointer": "/points/1/rcs"}, "value": 57.13991789134818, "tolerance": {"relative": 0.03}, "reason": "−0.6 %"},
-  {"id": "rcs_back", "quantity": "back-scatter (monostatic RCS), θ = 180° (mm²)", "measure": {"step": "e", "pointer": "/points/2/rcs"}, "value": 286.39280106310224, "tolerance": {"relative": 0.02}, "reason": "−0.4 %"},
-  {"id": "rcs_side_h", "quantity": "radar cross-section at θ = 90° in the H-plane (mm²)", "measure": {"step": "h", "pointer": "/points/0/rcs"}, "value": 236.53233829129115, "tolerance": {"relative": 0.02}, "reason": "+0.7 %"}
+  {"id": "sigma_sca", "quantity": "scattering cross-section (mm²)", "measure": {"step": "solve", "pointer": "/scattering_cross_section"}, "value": 168.78884549980634, "tolerance": {"relative": 0.02}, "reason": "the scattered field on the curved sphere set to −n × E_inc by L² projection, six second-order elements per wavelength (the conductor's surface divided at π/6 of its radius and its edges curved), a 12 mm layer: +1.0 %"},
+  {"id": "rcs_forward", "quantity": "radar cross-section forwards, θ = 0 (mm²)", "measure": {"step": "e", "pointer": "/points/0/rcs"}, "value": 146.64105489312038, "tolerance": {"relative": 0.03}, "reason": "+1.1 %"},
+  {"id": "rcs_side_e", "quantity": "radar cross-section at θ = 90° in the E-plane (mm²)", "measure": {"step": "e", "pointer": "/points/1/rcs"}, "value": 57.13991789134818, "tolerance": {"relative": 0.03}, "reason": "+1.4 %"},
+  {"id": "rcs_back", "quantity": "back-scatter (monostatic RCS), θ = 180° (mm²)", "measure": {"step": "e", "pointer": "/points/2/rcs"}, "value": 286.39280106310224, "tolerance": {"relative": 0.02}, "reason": "+0.5 %"},
+  {"id": "rcs_side_h", "quantity": "radar cross-section at θ = 90° in the H-plane (mm²)", "measure": {"step": "h", "pointer": "/points/0/rcs"}, "value": 236.53233829129115, "tolerance": {"relative": 0.02}, "reason": "−0.1 %"}
  ]
 }

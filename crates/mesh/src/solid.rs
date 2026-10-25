@@ -269,11 +269,15 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
 }
 
 /// The tessellation size of an inclusion: its interface is kept as tessellated (frozen), so a
-/// curved one is divided finely enough for its curvature (about π/16 of its radius).
-fn interface_size(shape: &Shape, size: f64) -> f64 {
+/// curved one is divided finely enough for its curvature — about π/16 of its radius for a
+/// dielectric's interface, π/6 for a conductor's surface (no region inside to match, and its
+/// edges are bent onto it with curved elements; a thin wire would otherwise fill with tiny
+/// elements along its whole length).
+fn interface_size(shape: &Shape, size: f64, conductor: bool) -> f64 {
+    let per = if conductor { 6.0 } else { 16.0 };
     match *shape {
         Shape::Box { .. } | Shape::Surface { .. } => size,
-        Shape::Cylinder { radius, .. } | Shape::Sphere { radius } => size.min(radius * PI / 16.0),
+        Shape::Cylinder { radius, .. } | Shape::Sphere { radius } => size.min(radius * PI / per),
     }
 }
 
@@ -815,7 +819,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
         .inclusions
         .iter()
         .zip(&inner_size)
-        .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h))), inc.at))
+        .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h), inc.material.is_none())), inc.at))
         .collect();
     // Tags: the solid's faces, then each interface's triangles in turn.
     let first_tag = main.tri_face.iter().map(|f| f + 1).max().unwrap_or(0);

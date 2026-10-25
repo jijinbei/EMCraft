@@ -1,0 +1,12 @@
+{
+ "title": "Three 1 mm lumped ports at 10 GHz, 15 mm apart side by side and end to end: self resistance and mutual impedances",
+ "kind": "theory",
+ "source": "A gap carrying a uniform current is a Hertzian dipole: its radiation resistance is 80π²(l/λ)² and its field at the other gaps the exact field of the current elements (C. A. Balanis, Antenna Theory, 4th ed., Wiley 2016, eqs. 4-10, 4-19); the open-circuit voltage V₂ = −∫ E₁ · dl over the second gap, summed by 16 × 16 Gauss points in emcraft-theory (radiation::mutual_impedance_parallel)",
+ "quantities": [
+  {"id": "r11", "quantity": "Re Z11 of the driven gap (Ω; its current is 1 A, real, to 1e-8)", "measure": {"step": "solve", "pointer": "/ports/0/voltage/re"}, "value": 0.8785132712079293, "tolerance": {"relative": 0.02}, "reason": "the power the gap delivers, radiated through the layer: +0.2 % at six elements per wavelength (its reactance, the self-inductance of a filament, has no finite limit and is not compared)"},
+  {"id": "z21_re", "quantity": "Re Z21, side by side at 15 mm (Ω)", "measure": {"step": "solve", "pointer": "/ports/1/voltage/re"}, "value": -0.134102070020547, "tolerance": {"absolute": 0.02}, "reason": "second-order elements of λ/6, three between the gaps: −0.0045 Ω (complex error 2 % of |Z21|)"},
+  {"id": "z21_im", "quantity": "Im Z21, side by side (Ω)", "measure": {"step": "solve", "pointer": "/ports/1/voltage/im"}, "value": -0.37572741870386, "tolerance": {"absolute": 0.02}, "reason": "+0.0064 Ω; the near field's 1/r³ part is the hardest to resolve"},
+  {"id": "z31_re", "quantity": "Re Z31, end to end at 15 mm (Ω)", "measure": {"step": "solve", "pointer": "/ports/2/voltage/re"}, "value": 0.266508429694059, "tolerance": {"absolute": 0.02}, "reason": "−0.0015 Ω"},
+  {"id": "z31_im", "quantity": "Im Z31, end to end (Ω)", "measure": {"step": "solve", "pointer": "/ports/2/voltage/im"}, "value": -0.084168416833513, "tolerance": {"absolute": 0.02}, "reason": "−0.0075 Ω (complex error 2.7 % of |Z31|)"}
+ ]
+}

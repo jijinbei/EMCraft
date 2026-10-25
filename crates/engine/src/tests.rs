@@ -355,6 +355,18 @@ fn open_problems_radiate_and_scatter() {
 }
 
 #[test]
+fn every_sample_is_a_script_of_known_commands() {
+    for smp in crate::sample::SAMPLES {
+        let script: serde_json::Value = serde_json::from_str(smp.script).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
+        for step in script.as_array().unwrap() {
+            let id = step["command"].as_str().unwrap();
+            assert!(crate::find_command(id).is_some(), "{}: {id}", smp.name);
+        }
+    }
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn every_sample_opens() {
     // Without their solve steps: the geometry, mesh, ports and sources of each.
     for smp in crate::sample::SAMPLES {
@@ -362,4 +374,53 @@ fn every_sample_opens() {
         s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
         assert!(s.model.mesh.is_some(), "{}", smp.name);
     }
+}
+
+#[test]
+fn a_lumped_gap_radiates_as_a_hertzian_dipole() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
+    // Refused: outside, no gap, no impedance, a duplicate name.
+    assert!(s.execute("model.port.lumped", &json!({"name": "x", "from": [20, 20, 50], "to": [20, 20, 51]})).is_err());
+    assert!(s.execute("model.port.lumped", &json!({"name": "x", "from": [20, 20, 20], "to": [20, 20, 20]})).is_err());
+    assert!(s.execute("model.port.lumped", &json!({"name": "x", "from": [20, 20, 19.5], "to": [20, 20, 20.5], "impedance": -50})).is_err());
+    // A current source: 1 A through a 1 mm gap.
+    s.execute("model.port.lumped", &json!({"name": "gap", "from": [20.1, 20.2, 19.4], "to": [20.1, 20.2, 20.4], "impedance": 1e9, "voltage": 1e9}))
+        .unwrap();
+    assert!(s.execute("model.port.lumped", &json!({"name": "gap", "from": [21, 20, 19], "to": [21, 20, 20]})).is_err());
+    let r = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
+    // Re Z = 80π²(l/λ)², the power balance, coarse as the mesh is.
+    let r11 = r["ports"][0]["impedance"]["re"].as_f64().unwrap();
+    assert!((r11 / 0.8785 - 1.0).abs() < 0.1, "{r11}");
+    assert!((r["radiation_efficiency"].as_f64().unwrap() - 1.0).abs() < 0.03);
+    let p = &r["ports"][0];
+    let (zr, zi) = (p["impedance"]["re"].as_f64().unwrap(), p["impedance"]["im"].as_f64().unwrap());
+    let expect = (((zr - 1e9).powi(2) + zi * zi) / ((zr + 1e9).powi(2) + zi * zi)).sqrt();
+    assert!((p["s11"]["mag"].as_f64().unwrap() - expect).abs() < 1e-9);
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn lumped_ports_feed_antennas() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [60, 60, 60]})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 0.5, "length": 7, "at": [30, 30, 22.5]})).unwrap();
+    s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 0.5, "length": 7, "at": [30, 30, 30.5]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 15})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 3, "frequency": 10})).unwrap();
+    s.execute("model.port.lumped", &json!({"name": "feed", "from": [30, 30, 29.5], "to": [30, 30, 30.5], "radius": 0.5})).unwrap();
+    let r = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
+    // Coarse (λ/3): the plumbing. The power balance holds whatever the mesh.
+    let eff = r["radiation_efficiency"].as_f64().unwrap();
+    assert!((eff - 1.0).abs() < 0.03, "{eff}");
+    let p = &r["ports"][0];
+    let z = (p["impedance"]["re"].as_f64().unwrap(), p["impedance"]["im"].as_f64().unwrap());
+    assert!(z.0 > 50.0 && z.0 < 200.0, "{z:?}");
+    let s11 = p["s11"]["mag"].as_f64().unwrap();
+    let (zr, zi) = z;
+    let expect = (((zr - 50.0).powi(2) + zi * zi) / ((zr + 50.0).powi(2) + zi * zi)).sqrt();
+    assert!((s11 - expect).abs() < 1e-12);
+    assert!(p["induced_emf_impedance"]["re"].as_f64().is_some());
 }

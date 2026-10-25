@@ -88,7 +88,7 @@ cargo run --release -p emcraft -- --sample highpass      # or iris-bandpass, cav
                                                          # engine sample: sphere-scattering, …
 ```
 
-Large problems: the direct solver keeps its factor in memory up to half of what the system has
+Large problems: the direct solver keeps its factor in memory up to a quarter of what the system has
 available (`EMCRAFT_FACTOR_MEMORY_GB` to set it) and writes the rest to a scratch file on disk
 (`EMCRAFT_SCRATCH`, default `~/.cache/emcraft`), so the problem size is bounded by the disk
 rather than the memory.

@@ -200,6 +200,18 @@ pub struct Driven {
     /// into it along x, y and z as fractions of the thickness (0 where it is not in the layer
     /// along that axis). Their matrices depend on the frequency and are assembled with it.
     pub(crate) pml: Option<(f64, Vec<(usize, [f64; 3])>)>,
+    /// Lumped ports: each with its vector cᵢ = ∫ Nᵢ · ŝ dl along its gap.
+    pub lumped: Vec<LumpedData>,
+}
+
+/// A lumped port prepared for solving.
+#[derive(Clone, Debug)]
+pub struct LumpedData {
+    pub name: String,
+    pub impedance: f64,
+    pub voltage: C,
+    /// (unknown, ∫ Nᵢ · ŝ dl) along the gap from `from` to `to`.
+    pub c: Vec<(usize, f64)>,
 }
 
 /// The reflection a perfectly matched layer is designed for at normal incidence, before
@@ -367,6 +379,16 @@ impl Driven {
             ports.push(PortData { name: p.name.clone(), end: p.end, eps_r: m.eps_r, mu_r: m.mu_r, modes });
         }
 
+        // Lumped ports: their gaps' line integrals.
+        let mut lumped = Vec::new();
+        for lp in &model.lumped {
+            let c = band_vector(&mesh, &topo, &dofs, order, lp.from, lp.to, lp.radius)?;
+            if c.is_empty() {
+                return Err(invalid(format!("lumped port `{}`", lp.name), "its gap lies outside the mesh (inside a conductor?)"));
+            }
+            lumped.push(LumpedData { name: lp.name.clone(), impedance: lp.impedance, voltage: C::new(lp.voltage[0], lp.voltage[1]), c });
+        }
+
         // Pattern: element couplings and the dense port blocks.
         let mut groups: Vec<Vec<usize>> =
             (0..mesh.tets.len()).map(|t| dofs.of_tet(&topo, t).into_iter().filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
@@ -374,6 +396,9 @@ impl Driven {
             if let Some((_, v)) = p.modes.first() {
                 groups.push(v.iter().map(|(u, _)| *u).collect());
             }
+        }
+        for l in &lumped {
+            groups.push(l.c.iter().map(|(u, _)| *u).collect());
         }
         let pattern = Csr::from_groups(dofs.unknowns, groups.iter().map(|g| g.as_slice()));
         let mut kk = Csr { val: vec![C::new(0.0, 0.0); pattern.col.len()], ..pattern.clone() };
@@ -422,7 +447,7 @@ impl Driven {
             }
         }
         let wall = sigma.map(|c| (c, ww.val.iter().map(|v| v.re).collect()));
-        Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, wall, walls, ports, pml })
+        Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, wall, walls, ports, pml, lumped })
     }
 
     /// Adds the layer's tetrahedra at wavenumber k₀: with stretches s_d = 1 − j(σ₀/k₀)ξ_d², the
@@ -467,6 +492,16 @@ impl Driven {
             *x = C::new(*s, 0.0) - m * (k0 * k0);
         }
         self.add_pml(&mut a, k0)?;
+        // Lumped ports: the current I = (V_s + cᵀx)/R through each gap adds (jωμ₀/R) c cᵀ.
+        let omega = 2.0 * PI * frequency;
+        for l in &self.lumped {
+            let f = C::new(0.0, omega * MU0 / l.impedance);
+            for &(i, ci) in &l.c {
+                for &(j, cj) in &l.c {
+                    a.add(i, j, f * (ci * cj));
+                }
+            }
+        }
         // The Leontovich condition E_t = Z_s n̂ × H on the walls (n̂ into the guide), Z_s =
         // (1 + j)R_s, R_s = √(ωμ₀/2σ), adds (jωμ₀/Z_s) ∫ N_i,t · N_j,t dS (T. B. A. Senior, J. L.
         // Volakis, Approximate Boundary Conditions in Electromagnetics, IEE 1995, §2.2; Jin 2014,
@@ -735,6 +770,105 @@ pub fn surface_resistance(frequency: f64, sigma: f64) -> f64 {
 fn wall_factor(frequency: f64, sigma: f64) -> C {
     let omega = 2.0 * PI * frequency;
     C::new(1.0, 1.0) * (omega * MU0 / (2.0 * surface_resistance(frequency, sigma)))
+}
+
+/// The port's vector: the line integral along the gap, or for a band of radius r its average
+/// over 16 lines evenly round the band (the trapezoid rule, spectrally accurate round a
+/// circle): the voltage is the band's mean line integral and the current spreads evenly round
+/// it.
+fn band_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: [f64; 3], b: [f64; 3], r: f64) -> Result<Vec<(usize, f64)>> {
+    if r == 0.0 {
+        return line_vector(mesh, topo, dofs, order, a, b);
+    }
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let s = emcraft_fem::poly::scale(d, 1.0 / norm3(d));
+    // Two unit vectors across the line.
+    let helper = if s[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let u = emcraft_fem::poly::cross(s, helper);
+    let u = emcraft_fem::poly::scale(u, 1.0 / norm3(u));
+    let v = emcraft_fem::poly::cross(s, u);
+    let n = 16;
+    let mut out: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+    for k in 0..n {
+        let phi = 2.0 * PI * k as f64 / n as f64;
+        let off = [0, 1, 2].map(|i| r * (phi.cos() * u[i] + phi.sin() * v[i]));
+        let (pa, pb) = ([0, 1, 2].map(|i| a[i] + off[i]), [0, 1, 2].map(|i| b[i] + off[i]));
+        for (i, c) in line_vector(mesh, topo, dofs, order, pa, pb)? {
+            *out.entry(i).or_default() += c / n as f64;
+        }
+    }
+    Ok(out.into_iter().collect())
+}
+
+/// ∫ Nᵢ · ŝ dl along the segment from `a` to `b` (ŝ its direction), for every unknown: the
+/// segment is clipped to each tetrahedron it crosses (barycentric coordinates are linear along
+/// it), and each stretch between the clips' breakpoints is integrated once, in one of the
+/// tetrahedra holding it (the tangential component along the line is the same in all of them),
+/// by four-point Gauss rules.
+fn line_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: [f64; 3], b: [f64; 3]) -> Result<Vec<(usize, f64)>> {
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let len = norm3(d);
+    let s = d.map(|v| v / len);
+    let (lo, hi) = ([0, 1, 2].map(|k| a[k].min(b[k])), [0, 1, 2].map(|k| a[k].max(b[k])));
+    let mut pieces: Vec<(f64, f64, usize)> = Vec::new();
+    for t in 0..mesh.tets.len() {
+        let Some(c) = mesh.corners(t) else { continue };
+        if (0..3).any(|k| c.iter().all(|p| p[k] < lo[k]) || c.iter().all(|p| p[k] > hi[k])) {
+            continue;
+        }
+        // Barycentric coordinates of a and b in the straight tetrahedron.
+        let e = [1, 2, 3].map(|i| [c[i][0] - c[0][0], c[i][1] - c[0][1], c[i][2] - c[0][2]]);
+        let det = dot(e[0], emcraft_fem::poly::cross(e[1], e[2]));
+        if det == 0.0 {
+            continue;
+        }
+        let g = [emcraft_fem::poly::cross(e[1], e[2]), emcraft_fem::poly::cross(e[2], e[0]), emcraft_fem::poly::cross(e[0], e[1])];
+        let bary = |p: [f64; 3]| {
+            let q = [p[0] - c[0][0], p[1] - c[0][1], p[2] - c[0][2]];
+            let l: [f64; 3] = g.map(|gi| dot(gi, q) / det);
+            [1.0 - l[0] - l[1] - l[2], l[0], l[1], l[2]]
+        };
+        let (la, lb) = (bary(a), bary(b));
+        let (mut t0, mut t1) = (0.0f64, 1.0f64);
+        let tol = 1e-12;
+        for i in 0..4 {
+            let (u, v) = (la[i], lb[i]);
+            // u + t (v − u) ≥ −tol.
+            if (v - u).abs() < 1e-15 {
+                if u < -tol {
+                    t1 = -1.0;
+                }
+            } else {
+                let t = (-tol - u) / (v - u);
+                if v > u { t0 = t0.max(t) } else { t1 = t1.min(t) }
+            }
+        }
+        if t1 - t0 > 1e-12 {
+            pieces.push((t0.max(0.0), t1.min(1.0), t));
+        }
+    }
+    let mut cuts: Vec<f64> = pieces.iter().flat_map(|p| [p.0, p.1]).collect();
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|x, y| (*x - *y).abs() < 1e-12);
+    let (x, w) = emcraft_fem::quadrature::gauss_legendre(4);
+    let mut out: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+    for win in cuts.windows(2) {
+        let (t0, t1) = (win[0], win[1]);
+        let mid = 0.5 * (t0 + t1);
+        let Some(&(_, _, tet)) = pieces.iter().find(|p| p.0 <= mid && mid <= p.1) else { continue };
+        let el = element(mesh, topo, tet, order)?;
+        let unknowns = dofs.of_tet(topo, tet);
+        for (xi, wi) in x.iter().zip(&w) {
+            let t = t0 + xi * (t1 - t0);
+            let p = [a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]];
+            for (u, v) in unknowns.iter().zip(el.values(el.barycentric(p))) {
+                if *u != NONE {
+                    *out.entry(*u as usize).or_default() += wi * (t1 - t0) * len * dot(v, s);
+                }
+            }
+        }
+    }
+    Ok(out.into_iter().collect())
 }
 
 /// The local corners (in the sorted order) of a tetrahedron's boundary face.

@@ -54,7 +54,11 @@ result is frozen so it cannot drift.
    series, which itself meets Bohren and Huffman's BHMIE listing to 1e-5: scattering
    cross-section within 0.6 %, bistatic radar cross-section within 0.1–1.6 % (oracle
    `dielectric-sphere-scattering`); the same for a perfectly conducting sphere, its
-   back-scatter at the ka ≈ 1 peak within 0.4 % (oracle `pec-sphere-scattering`).
+   back-scatter at the ka ≈ 1 peak within 0.5 % (oracle `pec-sphere-scattering`). Lumped ports:
+   three short gaps against the exact Hertzian self resistance and mutual impedances (oracle
+   `lumped-port-coupling`), and a half-wave wire dipole's power balance and directivity (oracle
+   `halfwave-dipole`; its input impedance, 111 + j27 Ω converged, has no closed form at this
+   thickness and is compared with a moment-method estimate in the case's README).
 9. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).

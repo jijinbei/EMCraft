@@ -2,24 +2,24 @@
   "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
   "values": {
     "rcs_back": {
-      "band": 2.8639280206310227e-7,
-      "value": 285.25746746105244
+      "band": 2.8769994588071757e-7,
+      "value": 287.69994488071757
     },
     "rcs_forward": {
-      "band": 1.4857915642628308e-7,
-      "value": 148.57915542628305
+      "band": 1.4818127283212292e-7,
+      "value": 148.18127183212292
     },
     "rcs_side_e": {
-      "band": 5.7139918891348184e-8,
-      "value": 56.799821239741384
+      "band": 5.7921197131272974e-8,
+      "value": 57.92119613127297
     },
     "rcs_side_h": {
-      "band": 2.381635484588943e-7,
-      "value": 238.16354745889427
+      "band": 2.3653233929129117e-7,
+      "value": 236.2091350635845
     },
     "sigma_sca": {
-      "band": 1.6970429241430946e-7,
-      "value": 169.70429141430944
+      "band": 1.7055252745681803e-7,
+      "value": 170.55252645681801
     }
   }
 }

@@ -1,0 +1,10 @@
+{
+ "title": "Half-wave wire dipole at 10 GHz fed by a lumped port: power balance and directivity",
+ "kind": "theory",
+ "source": "Energy conservation (the power the port delivers is the power radiated through the Huygens box, the structure being lossless) and the directivity of a half-wave dipole with a sinusoidal current, D = (4/Cin(2π)) [cos(π/2 cos θ)/sin θ]² (C. A. Balanis, Antenna Theory, 4th ed., Wiley 2016, §4.6)",
+ "quantities": [
+  {"id": "efficiency", "quantity": "radiated power over the power the port delivers", "measure": {"step": "solve", "pointer": "/radiation_efficiency"}, "value": 1.0, "tolerance": {"absolute": 0.01}, "reason": "two independent integrals of one solution, ½ Re(V I*) at the gap and ½ Re ∮ E × H* · dS round the antenna: 0.996 at four elements per wavelength (the layer's own absorption and the box's quadrature)"},
+  {"id": "directivity_90", "quantity": "directivity broadside, θ = 90°", "measure": {"step": "ff", "pointer": "/points/0/directivity"}, "value": 1.640922376984584, "tolerance": {"relative": 0.04}, "reason": "the closed form assumes a thin wire's sinusoidal current; this one is λ/60 thick with a 1 mm gap: +2.2 %"},
+  {"id": "directivity_60", "quantity": "directivity at θ = 60°", "measure": {"step": "ff", "pointer": "/points/1/directivity"}, "value": 1.093948251323056, "tolerance": {"relative": 0.03}, "reason": "−0.02 %"}
+ ]
+}

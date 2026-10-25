@@ -36,6 +36,127 @@ pub fn dipole_far_field(il: f64, frequency: f64, theta: f64) -> f64 {
     eta0() * k * il.abs() * theta.sin().abs() / (4.0 * PI)
 }
 
+const EULER: f64 = std::f64::consts::EULER_GAMMA;
+
+/// The sine and cosine integrals Si(x) and Ci(x), x > 0, by their power series (Abramowitz &
+/// Stegun 5.2.14, 5.2.16), exact to rounding for the arguments up to about 20 used here.
+pub fn si_ci(x: f64) -> (f64, f64) {
+    let (mut si, mut ci) = (0.0, EULER + x.ln());
+    // Terms (−1)^k x^(2k+1)/((2k+1)(2k+1)!) and (−1)^k x^(2k)/((2k)(2k)!).
+    let mut t = x; // x^(2k+1)/(2k+1)!
+    for k in 0..200 {
+        let n = (2 * k + 1) as f64;
+        let term_si = t / n;
+        si += if k % 2 == 0 { term_si } else { -term_si };
+        // x^(2k+2)/(2k+2)!
+        let u = t * x / (n + 1.0);
+        let term_ci = u / (n + 1.0);
+        ci += if k % 2 == 0 { -term_ci } else { term_ci };
+        t = u * x / (n + 2.0);
+        if term_si.abs() < 1e-18 * si.abs().max(1e-300) && term_ci.abs() < 1e-18 {
+            break;
+        }
+    }
+    (si, ci)
+}
+
+/// The input impedance (Ω) of a centre-fed dipole of total length `length` and wire radius
+/// `radius` by the induced-EMF method with a sinusoidal current: the radiation resistance and
+/// reactance referred to the current maximum (C. A. Balanis, *Antenna Theory*, 4th ed., eqs.
+/// 8-60a, 8-60b) moved to the feed by 1/sin²(kl/2). (73.1 + j42.5 Ω for a thin half-wave
+/// dipole.)
+pub fn dipole_impedance(length: f64, radius: f64, frequency: f64) -> C {
+    let k = 2.0 * PI * frequency / C0;
+    let kl = k * length;
+    let eta = eta0();
+    let (si1, ci1) = si_ci(kl);
+    let (si2, ci2) = si_ci(2.0 * kl);
+    let (_, ci3) = si_ci(2.0 * k * radius * radius / length);
+    let r = eta / (2.0 * PI)
+        * (EULER + kl.ln() - ci1 + 0.5 * kl.sin() * (si2 - 2.0 * si1) + 0.5 * kl.cos() * (EULER + (kl / 2.0).ln() + ci2 - 2.0 * ci1));
+    let x = eta / (4.0 * PI) * (2.0 * si1 + kl.cos() * (2.0 * si1 - si2) - kl.sin() * (2.0 * ci1 - ci2 - ci3));
+    let s2 = (kl / 2.0).sin().powi(2);
+    C::new(r / s2, x / s2)
+}
+
+/// The open-circuit mutual impedance Z₂₁ = V₂/I₁ (Ω) of two short gaps along ẑ carrying uniform
+/// currents, of lengths `l1` and `l2`, the second's centre at `offset` from the first's: with
+/// V₂ = −∫ E₁ · ẑ dz along the second, the field of the first summed from its current
+/// elements, each the exact field of an infinitesimal dipole (Balanis, *Antenna Theory*, 4th
+/// ed., eqs. 4-10a, 4-10b), by 16 × 16 Gauss points.
+pub fn mutual_impedance_parallel(l1: f64, l2: f64, offset: [f64; 3], frequency: f64) -> C {
+    let k = 2.0 * PI * frequency / C0;
+    let eta = eta0();
+    let n = 16;
+    let (x, w) = gauss(n);
+    let mut v = C::new(0.0, 0.0);
+    for (a, wa) in x.iter().zip(&w) {
+        let z1 = (a - 0.5) * l1;
+        for (b, wb) in x.iter().zip(&w) {
+            let z2 = offset[2] + (b - 0.5) * l2;
+            let (dx, dy, dz) = (offset[0], offset[1], z2 - z1);
+            let r = (dx * dx + dy * dy + dz * dz).sqrt();
+            let (ct, st) = (dz / r, (dx * dx + dy * dy).sqrt() / r);
+            let kr = k * r;
+            let phase = C::from_polar(1.0, -kr);
+            let jkr = C::new(0.0, kr);
+            let er = eta * ct / (2.0 * PI * r * r) * (1.0 + 1.0 / jkr) * phase;
+            let et = C::new(0.0, eta * k * st / (4.0 * PI * r)) * (1.0 + 1.0 / jkr - 1.0 / (kr * kr)) * phase;
+            let ez = er * ct - et * st;
+            v -= ez * (wa * l1) * (wb * l2);
+        }
+    }
+    v
+}
+
+/// Gauss–Legendre points on [0, 1] and their weights (Golub–Welsch by Newton on Pₙ).
+fn gauss(n: usize) -> (Vec<f64>, Vec<f64>) {
+    let mut x = Vec::with_capacity(n);
+    let mut w = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut t = (PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
+        for _ in 0..100 {
+            let (mut p0, mut p1) = (1.0, t);
+            for k in 2..=n {
+                let p2 = ((2 * k - 1) as f64 * t * p1 - (k - 1) as f64 * p0) / k as f64;
+                p0 = p1;
+                p1 = p2;
+            }
+            let dp = n as f64 * (t * p1 - p0) / (t * t - 1.0);
+            let dt = p1 / dp;
+            t -= dt;
+            if dt.abs() < 1e-16 {
+                let dp = {
+                    let (mut q0, mut q1) = (1.0, t);
+                    for k in 2..=n {
+                        let q2 = ((2 * k - 1) as f64 * t * q1 - (k - 1) as f64 * q0) / k as f64;
+                        q0 = q1;
+                        q1 = q2;
+                    }
+                    n as f64 * (t * q1 - q0) / (t * t - 1.0)
+                };
+                x.push(0.5 * (1.0 - t));
+                w.push(1.0 / ((1.0 - t * t) * dp * dp));
+                break;
+            }
+        }
+    }
+    (x, w)
+}
+
+/// The directivity of a thin half-wave dipole with a sinusoidal current at polar angle θ from
+/// its axis: D = (4/Cin(2π)) [cos(π/2 cos θ)/sin θ]², 1.641 broadside (Balanis, *Antenna
+/// Theory*, 4th ed., §4.6, eqs. 4-84 to 4-91; Cin(x) = γ + ln x − Ci(x)).
+pub fn halfwave_directivity(theta: f64) -> f64 {
+    let (_, ci) = si_ci(2.0 * PI);
+    let cin = EULER + (2.0 * PI).ln() - ci;
+    let s = theta.sin();
+    if s.abs() < 1e-12 {
+        return 0.0;
+    }
+    4.0 / cin * ((PI / 2.0 * theta.cos()).cos() / s).powi(2)
+}
+
 /// j₀(ρ) … j_nmax(ρ), ρ > 0, by Miller's downward recurrence.
 fn sph_j_all(nmax: usize, rho: f64) -> Vec<f64> {
     let top = nmax + (rho.abs() as usize) + 30;
@@ -161,6 +282,42 @@ mod tests {
             })
             .sum();
         assert!((total / (2.0 * eta0()) / p - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sine_cosine_integrals_and_the_half_wave_dipole() {
+        // Abramowitz & Stegun, Table 5.1: Si(1) = 0.946083070, Ci(1) = 0.337403923,
+        // Si(10) = 1.658347594, Ci(10) = −0.045456433.
+        let (s, c) = si_ci(1.0);
+        assert!((s - 0.946_083_070_367).abs() < 1e-11 && (c - 0.337_403_922_901).abs() < 1e-11);
+        let (s, c) = si_ci(10.0);
+        assert!((s - 1.658_347_594_219).abs() < 1e-10 && (c + 0.045_456_433_005).abs() < 1e-10);
+        // Its directivity, 1.643 (Balanis eq. 4-91).
+        assert!((halfwave_directivity(PI / 2.0) - 1.641).abs() < 1e-3);
+        // The thin half-wave dipole: 73.1 + j42.5 Ω (Balanis §4.6).
+        let f = 1e9;
+        let z = dipole_impedance(C0 / f / 2.0, 1e-6, f);
+        assert!((z.re - 73.1).abs() < 0.1 && (z.im - 42.5).abs() < 0.1, "{z}");
+    }
+
+    #[test]
+    fn mutual_impedance_of_short_gaps() {
+        let f = 10e9;
+        let k = 2.0 * PI * f / C0;
+        // Short gaps far apart: the point-dipole broadside field, V₂ = E_θ l₂ (E_z = −E_θ),
+        // jηk l₁ l₂/(4πd) (1 + 1/(jkd) − 1/(kd)²) e^{−jkd}.
+        let (l, d) = (1e-5, 0.01);
+        let z = mutual_impedance_parallel(l, l, [d, 0.0, 0.0], f);
+        let kd = k * d;
+        let point = C::new(0.0, eta0() * k * l * l / (4.0 * PI * d)) * (1.0 + 1.0 / C::new(0.0, kd) - 1.0 / (kd * kd)) * C::from_polar(1.0, -kd);
+        // (The gaps' finite length shifts it by about (l/d)² = 1e-6.)
+        assert!((z - point).norm() < 1e-5 * point.norm(), "{z} {point}");
+        // Reciprocal, and the Gauss rule integrates polynomials on [0, 1].
+        let (a, b) =
+            (mutual_impedance_parallel(1e-3, 2e-3, [0.004, 0.003, 0.002], f), mutual_impedance_parallel(2e-3, 1e-3, [-0.004, -0.003, -0.002], f));
+        assert!((a - b).norm() < 1e-12 * a.norm());
+        let (x, w) = gauss(16);
+        assert!((x.iter().zip(&w).map(|(x, w)| w * x.powi(31)).sum::<f64>() - 1.0 / 32.0).abs() < 1e-15);
     }
 
     #[test]
