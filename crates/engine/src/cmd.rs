@@ -20,6 +20,63 @@ use Quantity::{Frequency as F, Length as L, None as N};
 
 pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
+        id: "project.frequency",
+        label: "Frequency band",
+        doc: "The job's frequency band: the default for meshing by wavelength (its top), for sweeps and for port-mode previews.",
+        params: &[p("start", "number", F, true, "the band's start"), p("stop", "number", F, true, "the band's stop")],
+        run: crate::project::frequency,
+    },
+    CommandSpec {
+        id: "project.status",
+        label: "Workflow status",
+        doc: "Where each step of the workflow stands (intent, geometry, materials, excitation, boundaries, mesh, setup, run, results): done, warning, missing or stale, each with messages naming the command that fixes it. Reads the model, the mesh and the results; solves nothing.",
+        params: &[],
+        run: crate::project::status,
+    },
+    CommandSpec {
+        id: "project.estimate",
+        label: "Solve estimate",
+        doc: "The meshed model's unknowns at `order`, the factor's memory and the time per frequency: from the session's last sweep when it has one, else from a reference machine's.",
+        params: &[p("order", "integer", N, false, "element order, 1 or 2 (default 2)")],
+        run: crate::project::estimate,
+    },
+    CommandSpec {
+        id: "file.save",
+        label: "Save project",
+        doc: "Saves the project as JSON: the model and the commands that built it (a script).",
+        params: &[p("path", "string", N, true, "the file")],
+        run: crate::project::save,
+    },
+    CommandSpec {
+        id: "file.open",
+        label: "Open project",
+        doc: "Opens a project saved by file.save: its commands are replayed, so the mesh comes back the same; results are solved again.",
+        params: &[p("path", "string", N, true, "the file")],
+        run: crate::project::open,
+    },
+    CommandSpec {
+        id: "edit.undo",
+        label: "Undo",
+        doc: "Goes back to the model before the last change (results stay, marked stale).",
+        params: &[],
+        run: crate::project::undo,
+    },
+    CommandSpec { id: "edit.redo", label: "Redo", doc: "Goes forward again after an undo.", params: &[], run: crate::project::redo },
+    CommandSpec {
+        id: "results.touchstone",
+        label: "Export Touchstone",
+        doc: "Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in GHz, the ports' reference impedance on the option line.",
+        params: &[p("path", "string", N, true, "the file (.s1p, .s2p, …)"), p("format", "string", N, false, "`ri` (default) or `ma`")],
+        run: crate::project::touchstone,
+    },
+    CommandSpec {
+        id: "results.check",
+        label: "Check results",
+        doc: "The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive) and reciprocity (max |S − Sᵀ|).",
+        params: &[],
+        run: crate::project::check,
+    },
+    CommandSpec {
         id: "units.set",
         label: "Display units",
         doc: "Sets the units parameters are read in and replies written in.",
@@ -246,7 +303,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Port modes",
         doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with one conductor besides the ground (coaxial, strip) — the characteristic impedance by power and current (Ω) when it propagates; the attenuation (dB per length unit) when it does not.",
         params: &[
-            p("frequency", "number", F, true, "the frequency"),
+            p("frequency", "number", F, false, "the frequency (default: the band's top)"),
             p("order", "integer", N, false, "element order of the cross-section solver, 1 or 2 (default 2)"),
         ],
         run: port_modes,
@@ -636,7 +693,10 @@ fn material_sizes(s: &Session, p: &Value) -> Result<(f64, Vec<Option<f64>>)> {
     if !(n.is_finite() && (1.0..=1000.0).contains(&n)) {
         return Err(EngineError::Params("`per_wavelength` must be between 1 and 1000".into()));
     }
-    let f = s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`per_wavelength` needs the `frequency` the mesh must resolve".into()))?;
+    let f = s
+        .frequency(p, "frequency")?
+        .or(s.model.band.map(|b| b.stop))
+        .ok_or_else(|| EngineError::Params("`per_wavelength` needs the `frequency` the mesh must resolve (or the band: project.frequency)".into()))?;
     let per: Vec<Option<f64>> = s
         .model
         .materials
@@ -755,8 +815,10 @@ fn frequencies(s: &Session, p: &Value) -> Result<Vec<f64>> {
             out.push(s.display.frequency.to_si(f));
         }
     } else {
-        let start = s.frequency(p, "start")?.ok_or_else(|| EngineError::Params("give `frequencies`, or `start` and `stop`".into()))?;
-        let stop = s.frequency(p, "stop")?.ok_or_else(|| EngineError::Params("give `frequencies`, or `start` and `stop`".into()))?;
+        // The job's band when neither is given.
+        let missing = || EngineError::Params("give `frequencies`, or `start` and `stop` (or set the band: project.frequency)".into());
+        let start = s.frequency(p, "start")?.or(s.model.band.map(|b| b.start)).ok_or_else(missing)?;
+        let stop = s.frequency(p, "stop")?.or(s.model.band.map(|b| b.stop)).ok_or_else(missing)?;
         let n = integer(p, "points", 1..=s.limits.frequencies as u64)?.unwrap_or(11) as usize;
         if stop < start {
             return Err(EngineError::Params("`stop` must not be below `start`".into()));
@@ -890,7 +952,10 @@ fn sweep(s: &Session) -> Result<&Sweep> {
 }
 
 fn port_modes(s: &mut Session, p: &Value) -> Result<Value> {
-    let f = s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`frequency` is required".into()))?;
+    let f = s
+        .frequency(p, "frequency")?
+        .or(s.model.band.map(|b| b.stop))
+        .ok_or_else(|| EngineError::Params("`frequency` is required (or set the band: project.frequency)".into()))?;
     let order = Order::from_u8(integer(p, "order", 1..=2)?.unwrap_or(2) as u8).unwrap_or(Order::Two);
     let list = emcraft_solver::driven::port_modes(&s.model, order, f)?;
     let k0 = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;

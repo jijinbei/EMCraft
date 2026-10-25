@@ -12,6 +12,7 @@ mod cmd;
 pub mod open;
 pub mod params;
 pub mod progress;
+pub mod project;
 pub mod sample;
 pub mod view;
 
@@ -148,6 +149,15 @@ pub struct Session {
     pub td_radiation: Option<Arc<emcraft_fdtd::open::OpenRun>>,
     pub display: Display,
     pub limits: Limits,
+    /// The commands that built the model, in order (a script that rebuilds it).
+    pub history: Vec<Value>,
+    /// States to go back to (`edit.undo`) and forward again (`edit.redo`).
+    pub undo: Vec<project::Snapshot>,
+    pub redo: Vec<project::Snapshot>,
+    /// The model's revision, raised by every command that changes it, and the revision the
+    /// latest results were solved at (older results are stale).
+    pub revision: u64,
+    pub solved_revision: Option<u64>,
 }
 
 impl Default for Session {
@@ -167,6 +177,11 @@ impl Session {
             td_radiation: None,
             display: Display::default(),
             limits: Limits::default(),
+            history: Vec::new(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            revision: 0,
+            solved_revision: None,
         }
     }
 
@@ -185,9 +200,28 @@ impl Session {
             self.td_radiation.clone(),
             self.display,
         );
+        let effect = project::effect(spec.id);
+        let (history_before, revision_before) = (if effect == project::Effect::None { Vec::new() } else { self.history.clone() }, self.revision);
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, params)));
         match outcome {
-            Ok(Ok(v)) => Ok(v),
+            Ok(Ok(v)) => {
+                match effect {
+                    // The state before it, to undo to; the command joins the history.
+                    project::Effect::Record | project::Effect::Replace => {
+                        let snapshot = project::Snapshot { model: before.0, display: before.6, history: history_before };
+                        project::push_undo(&mut self.undo, snapshot);
+                        self.redo.clear();
+                        if effect == project::Effect::Record {
+                            self.history.push(serde_json::json!({"command": spec.id, "params": params}));
+                        }
+                        // (A replaced session counts its own revisions from zero.)
+                        self.revision = revision_before.max(self.revision) + 1;
+                    }
+                    project::Effect::Solve => self.solved_revision = Some(self.revision),
+                    project::Effect::None => {}
+                }
+                Ok(v)
+            }
             Ok(Err(e)) => {
                 (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.td_radiation, self.display) = before;
                 Err(e)

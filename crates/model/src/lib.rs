@@ -629,9 +629,30 @@ pub struct Model {
     /// Lumped ports (antenna feeds).
     #[serde(default)]
     pub lumped: Vec<LumpedPort>,
+    /// The job's frequency band (Hz): the default for meshing by wavelength, sweeps and port
+    /// previews.
+    #[serde(default)]
+    pub band: Option<Band>,
     /// The mesh of the waveguide (made by `emcraft-mesh`).
     #[serde(skip)]
     pub mesh: Option<Mesh>,
+}
+
+/// A frequency band [start, stop] (Hz).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Band {
+    pub start: f64,
+    pub stop: f64,
+}
+
+impl Band {
+    /// The band, checked: finite, 0 < start ≤ stop.
+    pub fn new(start: f64, stop: f64) -> Result<Band> {
+        if !(start.is_finite() && stop.is_finite() && start > 0.0 && stop >= start) {
+            return Err(invalid("frequency band", format!("must be finite with 0 < start ≤ stop, got {start} to {stop}")));
+        }
+        Ok(Band { start, stop })
+    }
 }
 
 impl Model {

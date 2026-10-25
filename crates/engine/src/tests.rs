@@ -525,3 +525,65 @@ fn planar_circuits_are_layered_guides_with_strips() {
     }
     assert!(s.execute("solve.port_modes", &json!({"frequency": -1})).is_err());
 }
+
+#[test]
+fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
+    let mut s = Session::new();
+    let status = |s: &mut Session| -> Vec<(String, String)> {
+        let r = s.execute("project.status", &json!({})).unwrap();
+        r["steps"].as_array().unwrap().iter().map(|x| (x["step"].as_str().unwrap().to_owned(), x["status"].as_str().unwrap().to_owned())).collect()
+    };
+    let of = |v: &[(String, String)], step: &str| v.iter().find(|(n, _)| n == step).map(|x| x.1.clone()).unwrap();
+    // An empty session: geometry, excitation and mesh missing; no band yet.
+    let st = status(&mut s);
+    assert_eq!(of(&st, "geometry"), "missing");
+    assert_eq!(of(&st, "intent"), "warning");
+    assert_eq!(of(&st, "run"), "missing");
+    // The band below WR-90's cut-off is flagged at the port.
+    s.execute("project.frequency", &json!({"start": 5, "stop": 12})).unwrap();
+    s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    let st = status(&mut s);
+    assert_eq!(of(&st, "excitation"), "warning", "{st:?}");
+    assert_eq!(of(&st, "mesh"), "missing");
+    s.execute("project.frequency", &json!({"start": 8, "stop": 12})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 6})).unwrap();
+    let st = status(&mut s);
+    assert_eq!(of(&st, "excitation"), "done", "{st:?}");
+    assert_eq!(of(&st, "mesh"), "done", "{st:?}");
+    let est = s.execute("project.estimate", &json!({"order": 1})).unwrap();
+    assert!(est["unknowns"].as_f64().unwrap() > 100.0 && est["memory_mb"].as_f64().is_some());
+    // A sweep over the band by default; then results are done, and stale after a change.
+    s.execute("solve.frequency", &json!({"points": 3, "order": 1})).unwrap();
+    assert_eq!(of(&status(&mut s), "results"), "done");
+    let check = s.execute("results.check", &json!({})).unwrap();
+    assert!(check["passive"].as_bool().unwrap() && check["reciprocity_error"].as_f64().unwrap() < 1e-9, "{check}");
+    let ts = scratch("guide.s2p");
+    s.execute("results.touchstone", &json!({"path": ts})).unwrap();
+    let text = std::fs::read_to_string(&ts).unwrap();
+    assert!(text.contains("# GHz S RI R 50") && text.lines().filter(|l| !l.starts_with(['!', '#'])).count() == 3, "{text}");
+    s.execute("units.set", &json!({"length": "m"})).unwrap();
+    assert_eq!(of(&status(&mut s), "results"), "stale");
+    // Undo, redo; the history rebuilds the model.
+    let n = s.history.len();
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.history.len(), n - 1);
+    s.execute("edit.redo", &json!({})).unwrap();
+    assert_eq!(s.history.len(), n);
+    let path = scratch("job.emcraft.json");
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    assert_eq!(t.model.band, s.model.band);
+    assert_eq!(t.model.mesh.as_ref().map(|m| m.tets.len()), s.model.mesh.as_ref().map(|m| m.tets.len()));
+    // Back to the empty session before the open.
+    t.execute("edit.undo", &json!({})).unwrap();
+    assert!(t.model.waveguide.is_none());
+    // Hostile input is refused.
+    assert!(s.execute("project.frequency", &json!({"start": 9, "stop": 2})).is_err());
+    assert!(s.execute("project.frequency", &json!({"start": -1, "stop": 2})).is_err());
+    assert!(s.execute("file.open", &json!({"path": ts})).is_err());
+    assert!(s.execute("results.touchstone", &json!({"path": ts, "format": "db"})).is_err());
+    assert!(Session::new().execute("edit.undo", &json!({})).is_err());
+}
