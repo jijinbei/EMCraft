@@ -315,6 +315,9 @@ fn packed(b: usize, m: usize) -> usize {
 /// Fronts whose block update is smaller than this many complex multiply–adds run on one thread.
 const PARALLEL_WORK: usize = 1 << 20;
 
+/// Panel updates (rows × columns) from this size run on threads.
+const PANEL_PARALLEL: usize = 1 << 16;
+
 /// Eliminates the first `k` columns of a front (column-major m × m: full in the first k columns,
 /// lower in the rest) in blocks of [`BLOCK`] pivots. Within a block, pivots are found by the
 /// Bunch–Kaufman test among the block's columns and applied right-looking to the block alone;
@@ -399,7 +402,7 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
                             crow,
                             BlockStructure::Rectangular,
                             C::new(-1.0, 0.0),
-                            Par::Seq,
+                            if rows * cols >= PANEL_PARALLEL { Par::rayon(0) } else { Par::Seq },
                         );
                     }
                     p += 1;
@@ -438,7 +441,7 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
                             cm,
                             BlockStructure::Rectangular,
                             C::new(-1.0, 0.0),
-                            Par::Seq,
+                            if rows * cols >= PANEL_PARALLEL { Par::rayon(0) } else { Par::Seq },
                         );
                     }
                     p += 2;
@@ -446,31 +449,30 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
             }
         }
 
-        // The block's L and W = L D for the rows below it, by row (contiguous per row).
+        // The block's L below it is its columns' lower part, in place; W = L D column by column
+        // (both column-major, as the products take them best).
         let nb = be - b0;
         let below = m - be;
         if below > 0 {
-            let mut l = vec![C::new(0.0, 0.0); below * nb];
-            for t in 0..nb {
-                for i in 0..below {
-                    l[i * nb + t] = f[(b0 + t) * m + be + i];
-                }
-            }
+            let (left, right) = f.split_at_mut(be * m);
+            let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(be, below);
             let mut w = vec![C::new(0.0, 0.0); below * nb];
+            let col = |t: usize| &left[(b0 + t) * m + be..(b0 + t + 1) * m];
             let mut t = 0;
             while t < nb {
                 match pivots[b0 + t] {
                     Pivot::One(d) => {
-                        for i in 0..below {
-                            w[i * nb + t] = l[i * nb + t] * d;
+                        for (x, l) in w[t * below..(t + 1) * below].iter_mut().zip(col(t)) {
+                            *x = l * d;
                         }
                         t += 1;
                     }
                     Pivot::Two(a11, a21, a22) => {
+                        let (c0, c1) = (col(t), col(t + 1));
                         for i in 0..below {
-                            let (l0, l1) = (l[i * nb + t], l[i * nb + t + 1]);
-                            w[i * nb + t] = l0 * a11 + l1 * a21;
-                            w[i * nb + t + 1] = l0 * a21 + l1 * a22;
+                            let (l0, l1) = (c0[i], c1[i]);
+                            w[t * below + i] = l0 * a11 + l1 * a21;
+                            w[(t + 1) * below + i] = l0 * a21 + l1 * a22;
                         }
                         t += 2;
                     }
@@ -482,12 +484,12 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
             // Its sums run in an order that does not depend on the threads.
             let kp = k.saturating_sub(be).min(below);
             let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
-            let wm = MatRef::from_row_major_slice(&w, below, nb);
-            let lm = MatRef::from_row_major_slice(&l, below, nb);
-            let mut fm = MatMut::from_column_major_slice_mut(&mut *f, m, m);
+            let wm = MatRef::from_column_major_slice(&w, below, nb);
+            // The columns be.. of the front, rows from be: column c of `right` is front column be + c.
+            let mut fm = MatMut::from_column_major_slice_mut(right, m, m - be);
             let minus = C::new(-1.0, 0.0);
             if kp > 0 {
-                let dst = fm.as_mut().submatrix_mut(be, be, below, kp);
+                let dst = fm.as_mut().submatrix_mut(be, 0, below, kp);
                 matmul(
                     dst,
                     BlockStructure::Rectangular,
@@ -502,7 +504,7 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
             }
             if kp < below {
                 let rest = below - kp;
-                let dst = fm.submatrix_mut(be + kp, be + kp, rest, rest);
+                let dst = fm.submatrix_mut(be + kp, kp, rest, rest);
                 matmul(
                     dst,
                     BlockStructure::TriangularLower,

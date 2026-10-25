@@ -250,3 +250,12 @@ fn a_fast_sweep_matches_the_full_one() {
     assert!(worst < 1e-8, "{worst:e}");
     assert!(solved <= 8, "{solved}");
 }
+
+#[test]
+#[ignore = "benchmark: cargo test --release -p emcraft-solver --test ports factor_benchmark -- --ignored --nocapture"]
+fn factor_benchmark() {
+    // The coaxial line's system at 3 GHz, factored five times: the fastest numeric factorization.
+    let d = Driven::new(&coax(0.01, 0.002), Order::Two).unwrap();
+    let best = (0..5).map(|_| d.solve(3e9).unwrap().timings.factor).fold(f64::INFINITY, f64::min);
+    eprintln!("numeric factorization: best of 5 {best:.3} s ({} unknowns)", d.dofs.unknowns);
+}
