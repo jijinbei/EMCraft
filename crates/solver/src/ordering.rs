@@ -103,6 +103,21 @@ pub fn fill_reducing_order(xyz: &[Point3], adjacency: &[Vec<usize>]) -> Vec<usiz
     if fill(adjacency, &by_graph) < fill(adjacency, &by_planes) { by_graph } else { by_planes }
 }
 
+/// [`fill_reducing_order`] of the first n − `last` nodes, the last `last` after them all: the
+/// unknowns that border a matrix (one coupled to many, a port mode's) are eliminated at the end,
+/// where they fill only their own rows.
+pub fn fill_reducing_order_last(xyz: &[Point3], adjacency: &[Vec<usize>], last: usize) -> Vec<usize> {
+    let n = adjacency.len();
+    let k = n.saturating_sub(last);
+    if k == n {
+        return fill_reducing_order(xyz, adjacency);
+    }
+    let inner: Vec<Vec<usize>> = adjacency.iter().take(k).map(|row| row.iter().copied().filter(|&j| j < k).collect()).collect();
+    let mut order = fill_reducing_order(xyz.get(..k).unwrap_or(xyz), &inner);
+    order.extend(k..n);
+    order
+}
+
 /// Searches for a pseudo-peripheral node per part.
 const PERIPHERAL_SEARCHES: usize = 8;
 

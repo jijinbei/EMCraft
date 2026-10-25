@@ -133,9 +133,12 @@ impl Driven {
         huygens_box(model)?;
         let omega = 2.0 * PI * frequency;
         let k0 = omega / C0;
-        let (a, rhs, terms) = self.system(frequency)?;
+        let system = self.system(frequency)?;
+        let f = self.factor(&system)?;
+        let crate::driven::System { a, rhs, terms, border } = system;
+        let n = self.dofs.unknowns;
         // A waveguide port's first mode drives it (the first port's), else nothing but the sources.
-        let mut b = rhs.into_iter().next().unwrap_or_else(|| vec![C::new(0.0, 0.0); self.dofs.unknowns]);
+        let mut b = rhs.into_iter().next().unwrap_or_else(|| vec![C::new(0.0, 0.0); n + border]);
         for src in &model.sources {
             match *src {
                 Source::Dipole { at, direction, length, current } => {
@@ -178,8 +181,8 @@ impl Driven {
                 b[i] += f * ci;
             }
         }
-        let f = Ldlt::factor(&a, &self.dofs.points)?;
-        let (field, backward_error) = f.solve_refined(&a, &b, 4)?;
+        let (mut field, backward_error) = f.solve_refined(&a, &b, 4)?;
+        field.truncate(n);
         let ports = self
             .lumped
             .iter()

@@ -215,6 +215,52 @@ pub struct Driven {
     pub lumped: Vec<LumpedData>,
 }
 
+/// A frequency's linear system: the matrix with its border of port modes (the last `border`
+/// unknowns), the right-hand side of each port's excitation, and the ports' terms.
+pub(crate) struct System<'a> {
+    pub a: Csr,
+    pub rhs: Vec<Vec<C>>,
+    pub terms: Vec<Vec<PortTerm<'a>>>,
+    pub border: usize,
+}
+
+/// `a` bordered by one unknown per (v, f): its column holds s v and its diagonal −s²/f, with
+/// s = √(|f| ‖a‖) so the border's pivots are of the matrix's size (unscaled, −1/f can be far
+/// below the factorization's static-pivot threshold). The x part of the solution is the same
+/// whatever s.
+fn bordered(a: &Csr, borders: &[(&[(usize, f64)], C)]) -> Result<Csr> {
+    let (n, m) = (a.n, borders.len());
+    let norm = a.max_abs();
+    let scale: Vec<f64> = borders.iter().map(|(_, f)| (f.norm() * norm).sqrt()).collect();
+    let mut extra: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+    for (k, (v, _)) in borders.iter().enumerate() {
+        for &(i, vi) in v.iter() {
+            extra.get_mut(i).ok_or_else(|| invalid("port", "a mode's vector refers to a missing unknown"))?.push((n + k, scale[k] * vi));
+        }
+    }
+    let mut out = Csr { n: n + m, ptr: Vec::with_capacity(n + m + 1), col: Vec::new(), val: Vec::new() };
+    out.ptr.push(0);
+    for (i, row) in extra.iter().enumerate() {
+        let (lo, hi) = (a.ptr[i], a.ptr[i + 1]);
+        out.col.extend_from_slice(&a.col[lo..hi]);
+        out.val.extend_from_slice(&a.val[lo..hi]);
+        out.col.extend(row.iter().map(|(j, _)| *j));
+        out.val.extend(row.iter().map(|(_, v)| C::new(*v, 0.0)));
+        out.ptr.push(out.col.len());
+    }
+    for (k, (v, f)) in borders.iter().enumerate() {
+        if !(f.norm() > 0.0 && scale[k].is_finite()) {
+            return Err(invalid("port", "a mode with no coupling"));
+        }
+        out.col.extend(v.iter().map(|(i, _)| *i));
+        out.val.extend(v.iter().map(|(_, x)| C::new(scale[k] * x, 0.0)));
+        out.col.push(n + k);
+        out.val.push(-(scale[k] * scale[k]) / f);
+        out.ptr.push(out.col.len());
+    }
+    Ok(out)
+}
+
 /// A lumped port prepared for solving.
 #[derive(Clone, Debug)]
 pub struct LumpedData {
@@ -357,16 +403,7 @@ impl Driven {
         // Pattern: element couplings and the dense port blocks.
         let mut groups: Vec<Vec<usize>> =
             (0..mesh.tets.len()).map(|t| dofs.of_tet(&topo, t).filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
-        for p in &ports {
-            match &p.modes {
-                PortModes::Analytic { modes, .. } => {
-                    if let Some((_, v)) = modes.first() {
-                        groups.push(v.iter().map(|(u, _)| *u).collect());
-                    }
-                }
-                PortModes::Numeric(n) => groups.push(n.support.clone()),
-            }
-        }
+        // (The ports' rank-one terms border the matrix instead of filling it: see `system`.)
         for l in &lumped {
             groups.push(l.c.iter().map(|(u, _)| *u).collect());
         }
@@ -454,8 +491,9 @@ impl Driven {
         Ok(())
     }
 
-    /// The system matrix at wavenumber k₀ and each port's TE₁₀ excitation vector.
-    pub(crate) fn system(&self, frequency: f64) -> Result<(Csr, Vec<Vec<C>>, Vec<Vec<PortTerm<'_>>>)> {
+    /// The system at a frequency: the matrix bordered by the ports' modes, each port's
+    /// excitation by its first mode, and the modes' terms.
+    pub(crate) fn system(&self, frequency: f64) -> Result<System<'_>> {
         let k0 = 2.0 * PI * frequency / C0;
         let mut a = self.pattern.clone();
         for (x, (s, m)) in a.val.iter_mut().zip(self.stiffness.iter().zip(&self.mass)) {
@@ -482,7 +520,6 @@ impl Driven {
                 *x += c * *wij;
             }
         }
-        let mut rhs = Vec::new();
         let mut terms = Vec::with_capacity(self.ports.len());
         for p in 0..self.ports.len() {
             // (A closed-form mode is refused before its κ, singular at the cut-off.)
@@ -497,23 +534,34 @@ impl Driven {
                     ),
                 ));
             }
-            let mut b = vec![C::new(0.0, 0.0); self.dofs.unknowns];
-            for (mi, t) in list.iter().enumerate() {
-                for &(i, vi) in t.v.iter() {
-                    for &(j, vj) in t.v.iter() {
-                        a.add(i, j, t.factor * (vi * vj));
-                    }
-                }
-                if mi == 0 {
+            terms.push(list);
+        }
+        // Each mode's factor·v vᵀ would couple every unknown on the port with every other; a
+        // border unknown y_m = factor·vᵀx per mode keeps the matrix sparse:
+        // [A V; Vᵀ −F⁻¹] [x; y] = [b; 0] eliminates to (A + V F Vᵀ) x = b.
+        let borders: Vec<(&[(usize, f64)], C)> = terms.iter().flatten().map(|t| (&*t.v, t.factor)).collect();
+        let border = borders.len();
+        let a = bordered(&a, &borders)?;
+        let n = self.dofs.unknowns;
+        let rhs = terms
+            .iter()
+            .map(|list| {
+                let mut b = vec![C::new(0.0, 0.0); n + border];
+                if let Some(t) = list.first() {
                     for &(i, vi) in t.v.iter() {
                         b[i] = t.rhs * vi;
                     }
                 }
-            }
-            rhs.push(b);
-            terms.push(list);
-        }
-        Ok((a, rhs, terms))
+                b
+            })
+            .collect();
+        Ok(System { a, rhs, terms, border })
+    }
+
+    /// Factors a [`System`], its border last.
+    pub(crate) fn factor(&self, s: &System) -> Result<Ldlt> {
+        let points: Vec<Point3> = self.dofs.points.iter().copied().chain(std::iter::repeat_n(Point3::ORIGIN, s.border)).collect();
+        Ok(Ldlt::factor_bordered(&s.a, &points, crate::ldlt::memory_budget(), s.border)?)
     }
 
     /// Solves at one frequency (Hz).
@@ -521,12 +569,14 @@ impl Driven {
         if !(frequency.is_finite() && frequency > 0.0) {
             return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
         }
-        let (a, rhs, terms) = self.system(frequency)?;
-        let f = Ldlt::factor(&a, &self.dofs.points)?;
+        let system = self.system(frequency)?;
+        let f = self.factor(&system)?;
+        let System { a, rhs, terms, .. } = system;
         let mut fields = Vec::with_capacity(rhs.len());
         let mut worst: f64 = 0.0;
         for b in &rhs {
-            let (x, e) = f.solve_refined(&a, b, 4)?;
+            let (mut x, e) = f.solve_refined(&a, b, 4)?;
+            x.truncate(self.dofs.unknowns);
             worst = worst.max(e);
             fields.push(x);
         }

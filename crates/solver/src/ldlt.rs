@@ -91,7 +91,7 @@ struct Scratch {
 /// `EMCRAFT_FACTOR_MEMORY_GB`, else a quarter of the memory the system reports available (Linux; the
 /// fronts and update matrices need the rest), else
 /// 8 GB.
-fn memory_budget() -> u64 {
+pub(crate) fn memory_budget() -> u64 {
     if let Some(gb) = std::env::var("EMCRAFT_FACTOR_MEMORY_GB").ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|g| g.is_finite() && *g >= 0.0)
     {
         return (gb * 1e9) as u64;
@@ -604,6 +604,12 @@ impl Ldlt {
     /// [`Ldlt::factor`] keeping at most `budget` bytes of the factor in memory, the rest in a
     /// scratch file on disk.
     pub fn factor_within(a: &Csr, xyz: &[Point3], budget: u64) -> Result<Ldlt, FactorError> {
+        Ldlt::factor_bordered(a, xyz, budget, 0)
+    }
+
+    /// [`Ldlt::factor_within`] with the last `last` unknowns eliminated after all the others
+    /// (a bordered matrix's border: unknowns each coupled to many).
+    pub fn factor_bordered(a: &Csr, xyz: &[Point3], budget: u64, last: usize) -> Result<Ldlt, FactorError> {
         let n = a.n;
         if xyz.len() != n || a.ptr.len() != n + 1 {
             return Err(FactorError::Dimension(format!("{} unknowns, {} points", n, xyz.len())));
@@ -618,7 +624,7 @@ impl Ldlt {
         let tau = f64::EPSILON.sqrt() * norm;
 
         // Ordering: nested dissection, then a postorder of its elimination tree.
-        let nd = crate::ordering::fill_reducing_order(xyz, &a.adjacency());
+        let nd = crate::ordering::fill_reducing_order_last(xyz, &a.adjacency(), last);
         let parent0 = etree(&lower_rows(a, &nd, &invert(&nd)));
         let post = postorder(&parent0);
         let perm: Vec<usize> = post.iter().map(|&p| nd[p]).collect();
