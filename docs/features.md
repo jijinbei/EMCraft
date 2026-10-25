@@ -95,6 +95,7 @@ Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of 
 | `frequency` | number | frequency | no | the highest frequency the mesh must resolve (with `per_wavelength`) |
 | `edge` | number |  | no | element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform) |
 | `growth` | number |  | no | element growth away from those edges (default 1.5) |
+| `strip_edge` | number |  | no | element size at strips' edges, as a fraction of `size` (default 0.05: E ∝ r^{−1/2} there; 1 = uniform) |
 | `size_y` | number | length | no | element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there |
 | `curved` | boolean |  | no | solids: bend the edges on curved surfaces onto them (default true; false leaves flat facets inscribed in the surface) |
 

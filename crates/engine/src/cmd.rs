@@ -140,6 +140,13 @@ pub static COMMANDS: &[CommandSpec] = &[
             p("edge", "number", N, false, "element size at step and iris edges, as a fraction of `size` (default 0.25; 1 = uniform)"),
             p("growth", "number", N, false, "element growth away from those edges (default 1.5)"),
             p(
+                "strip_edge",
+                "number",
+                N,
+                false,
+                "element size at strips' edges, as a fraction of `size` (default 0.05: E ∝ r^{−1/2} there; 1 = uniform)",
+            ),
+            p(
                 "size_y",
                 "number",
                 L,
@@ -678,6 +685,7 @@ fn mesh_generate(s: &mut Session, p: &Value) -> Result<Value> {
     let mut o = emcraft_mesh::Options::new(size);
     o.edge = number(p, "edge")?.unwrap_or(o.edge);
     o.growth = number(p, "growth")?.unwrap_or(o.growth);
+    o.strip_edge = number(p, "strip_edge")?.unwrap_or(o.strip_edge);
     o.size_y = s.positive_length(p, "size_y")?;
     let mesh = emcraft_mesh::waveguide_with(&s.model, &o)?;
     let mut reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len()});
