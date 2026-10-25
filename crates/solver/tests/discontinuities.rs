@@ -20,8 +20,8 @@ fn model(layout: &Layout, opts: &emcraft_mesh::Options) -> Model {
         .map(|&(l, x0, w)| Section { length: l, material: "vacuum".into(), width: Some(w), offset: Some(x0), ..Default::default() })
         .collect();
     m.set_waveguide(Waveguide { width: A, height: B, sections }).unwrap();
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4 }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 4 }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None }).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide_with(&m, opts).unwrap());
     m
 }
@@ -109,8 +109,8 @@ fn e_model_with(layout: &[(f64, f64, f64)], opts: emcraft_mesh::Options) -> Mode
         .map(|&(l, y0, h)| Section { length: l, material: "vacuum".into(), height: Some(h), offset_y: Some(y0), ..Default::default() })
         .collect();
     m.set_waveguide(Waveguide { width: A, height: B, sections }).unwrap();
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4 }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 4 }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None }).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide_with(&m, &opts).unwrap());
     m
 }

@@ -486,6 +486,21 @@ pub struct Port {
     pub end: End,
     /// Modes in the port's boundary condition (the lowest cut-off first).
     pub modes: u32,
+    /// A port on a rectangle of a z plane inside the geometry instead of at one of its ends (a
+    /// guide's closed end inside a body, feeding an antenna); `end` then says which side the
+    /// guide lies (start: above the plane, its outward normal −z; end: below it).
+    #[serde(default)]
+    pub face: Option<PortFace>,
+}
+
+/// A port's rectangle: [x0, x0 + a] × [y0, y0 + b] at height z (m).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PortFace {
+    pub z: f64,
+    pub x0: f64,
+    pub y0: f64,
+    pub a: f64,
+    pub b: f64,
 }
 
 /// The model.
@@ -759,8 +774,8 @@ impl Model {
             if size.iter().any(|s| 2.0 * o.thickness >= *s) {
                 return Err(invalid("layer thickness", "must leave room inside the box (under half its smallest side)"));
             }
-            if !self.ports.is_empty() {
-                return Err(invalid("open boundary", "not supported yet: waveguide ports together with an open boundary"));
+            if self.ports.iter().any(|p| p.face.is_none()) {
+                return Err(invalid("open boundary", "ports at the box's ends would lie under the layer: put them on faces inside it (`face`)"));
             }
         }
         self.open = open;
@@ -821,13 +836,23 @@ impl Model {
         if p.name.trim().is_empty() {
             return Err(invalid("port name", "must not be empty"));
         }
-        if self.open.is_some() {
-            return Err(invalid("port", "not supported yet: waveguide ports together with an open boundary"));
+        if self.open.is_some() && p.face.is_none() {
+            return Err(invalid("port", "with an open boundary a port goes on a face inside the box (`face`), the box's ends being under the layer"));
         }
-        if self.ports.iter().any(|x| x.name == p.name) {
+        if let Some(f) = &p.face {
+            if self.solid.is_none() {
+                return Err(invalid("port", "a port on a face needs a solid (geometry.solid)"));
+            }
+            if ![f.z, f.x0, f.y0].iter().all(|v| v.is_finite()) {
+                return Err(invalid("port face", "must be finite"));
+            }
+            positive("port face width", f.a)?;
+            positive("port face height", f.b)?;
+        }
+        if self.ports.iter().any(|x| x.name == p.name) || self.lumped.iter().any(|x| x.name == p.name) {
             return Err(ModelError::Duplicate { kind: "port", name: p.name });
         }
-        if self.ports.iter().any(|x| x.end == p.end) {
+        if p.face.is_none() && self.ports.iter().any(|x| x.face.is_none() && x.end == p.end) {
             return Err(invalid(format!("port `{}`", p.name), "that end of the waveguide already has a port"));
         }
         if p.modes == 0 || p.modes > MAX_PORT_MODES {
@@ -839,6 +864,14 @@ impl Model {
 
     pub fn port(&self, name: &str) -> Result<(usize, &Port)> {
         self.ports.iter().enumerate().find(|(_, p)| p.name == name).ok_or_else(|| ModelError::Unknown { kind: "port", name: name.into() })
+    }
+
+    /// A port's cross-section: its face's rectangle, or the geometry's end.
+    pub fn port_shape_of(&self, p: &Port) -> Result<PortShape> {
+        match p.face {
+            Some(f) => Ok(PortShape::Rect { x0: f.x0, y0: f.y0, a: f.a, b: f.b }),
+            None => self.port_shape(p.end),
+        }
     }
 
     /// The material filling the waveguide at a port's end.
@@ -905,11 +938,11 @@ mod tests {
         assert!(matches!(m.set_waveguide(w), Err(ModelError::Unknown { .. })));
         m.set_waveguide(guide()).unwrap();
         assert!((m.waveguide.as_ref().unwrap().length() - 0.01).abs() < 1e-15);
-        m.add_port(Port { name: "1".into(), end: End::Start, modes: 4 }).unwrap();
-        assert!(m.add_port(Port { name: "2".into(), end: End::Start, modes: 4 }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 0 }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000 }).is_err());
-        m.add_port(Port { name: "2".into(), end: End::End, modes: 1 }).unwrap();
+        m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None }).unwrap();
+        assert!(m.add_port(Port { name: "2".into(), end: End::Start, modes: 4, face: None }).is_err());
+        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 0, face: None }).is_err());
+        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000, face: None }).is_err());
+        m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None }).unwrap();
         assert_eq!(m.port_material(End::End).unwrap().name, "vacuum");
         assert_eq!(m.check(), vec!["no mesh: mesh the geometry with mesh.generate".to_owned()]);
     }

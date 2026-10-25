@@ -58,7 +58,8 @@ result is frozen so it cannot drift.
    three short gaps against the exact Hertzian self resistance and mutual impedances (oracle
    `lumped-port-coupling`), and a half-wave wire dipole's power balance and directivity (oracle
    `halfwave-dipole`; its input impedance, 111 + j27 Ω converged, has no closed form at this
-   thickness and is compared with a moment-method estimate in the case's README).
+   thickness and is compared with a moment-method estimate in the case's README); an open-ended waveguide fed by a
+   port on a face, its accepted and radiated powers (oracle `open-waveguide`).
 9. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).

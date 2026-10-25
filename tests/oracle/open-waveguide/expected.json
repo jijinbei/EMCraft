@@ -1,0 +1,8 @@
+{
+ "title": "Open-ended WR-90 radiating at 10 GHz from a metal block in a box lined with a perfectly matched layer: power balance",
+ "kind": "theory",
+ "source": "Energy conservation: in a lossless structure the power the waveguide port's TE10 delivers, P_inc (1 − |S11|²), leaves through any closed surface round the antenna (Poynting's theorem; D. M. Pozar, Microwave Engineering, 4th ed., §1.6)",
+ "quantities": [
+  {"id": "efficiency", "quantity": "radiated power over the power the port delivers", "measure": {"step": "solve", "pointer": "/radiation_efficiency"}, "value": 1.0, "tolerance": {"absolute": 0.02}, "reason": "the port's modal projection and the Huygens box's Poynting integral, two independent measures of one solution: 0.990 to 0.997 at four and five elements per wavelength, as the mesh round the aperture changes (the layer's residual reflection and the box's quadrature)"}
+ ]
+}

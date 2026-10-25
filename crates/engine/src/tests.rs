@@ -424,3 +424,23 @@ fn lumped_ports_feed_antennas() {
     assert!((s11 - expect).abs() < 1e-12);
     assert!(p["induced_emf_impedance"]["re"].as_f64().is_some());
 }
+
+#[test]
+fn ports_on_faces_go_with_open_boundaries() {
+    let mut s = Session::new();
+    // A face port needs a solid; with an open box ports must be on faces.
+    s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum"}]})).unwrap();
+    assert!(s.execute("model.port.create", &json!({"name": "1", "end": "start", "face": [5, 0, 0, 22.86, 10.16]})).is_err());
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [60, 60, 60]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    assert!(s.execute("model.port.create", &json!({"name": "1", "end": "start"})).is_err());
+    assert!(s.execute("model.port.create", &json!({"name": "1", "end": "start", "face": [5, 0, 0, -1, 10]})).is_err());
+    assert!(s.execute("model.port.create", &json!({"name": "1", "end": "start", "face": [5, 0, 0]})).is_err());
+    // A face where the mesh has no boundary: refused when solving, nothing panics.
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "face": [30, 20, 20, 20, 10]})).unwrap();
+    s.execute("mesh.generate", &json!({"per_wavelength": 3, "frequency": 10})).unwrap();
+    let e = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap_err();
+    assert!(e.to_string().contains("no boundary face"), "{e}");
+    // Eigenmodes of an open model are refused.
+    assert!(s.execute("solve.eigenmodes", &json!({"near": 10})).is_err());
+}

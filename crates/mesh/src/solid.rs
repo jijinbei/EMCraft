@@ -392,11 +392,11 @@ fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, [f64; 3
 
 /// The solid's tessellation combined with a feature: the feature's faces get tags after the
 /// solid's, with their exact surfaces.
-fn combined(main: Tessellation, f: &Feature, solid: &Shape, size: f64) -> Result<Tessellation> {
+fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape, size: f64) -> Result<Tessellation> {
     let (shape, at) = feature_body(f, solid, size)?;
     // General position against the solid's tessellation: a round body turned about its own
-    // axis by an odd angle (it is the same body), and every feature moved by a millionth of the
-    // element size (far below the mesh's resolution, far above rounding), so no vertex of one
+    // axis by an odd angle (it is the same body), and every feature moved by up to a millionth of
+    // the element size (far below the mesh's resolution, far above rounding), so no vertex of one
     // lies exactly on a grid line or plane of the other.
     let mut own = tessellate(&shape, size);
     if !matches!(shape, Shape::Box { .. }) {
@@ -405,7 +405,9 @@ fn combined(main: Tessellation, f: &Feature, solid: &Shape, size: f64) -> Result
             *p = [cs * p[0] - sn * p[1], sn * p[0] + cs * p[1], p[2]];
         }
     }
-    let jitter = [0.618034, 0.414214, 0.732051].map(|v| v * 1e-6 * size);
+    // Each feature by its own amount (the fractional parts of multiples of irrational numbers),
+    // so two features' grids that line up exactly do not stay lined up.
+    let jitter = [0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57].map(|v: f64| ((k + 1) as f64 * v).fract() * 1e-6 * size);
     let tool = transformed(own, f.axis, [at[0] + jitter[0], at[1] + jitter[1], at[2] + jitter[2]]);
     let base = main.tri_face.iter().map(|t| t + 1).max().unwrap_or(0).max(main.analytic.len() as u32);
     let op = match f.combine {
@@ -808,8 +810,8 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
         return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
     }
     let mut main = tessellate(&s.shape, size);
-    for f in &model.features {
-        main = combined(main, f, &s.shape, size)?;
+    for (k, f) in model.features.iter().enumerate() {
+        main = combined(main, f, k, &s.shape, size)?;
     }
     let (start_face, end_face) = (main.start_face, main.end_face);
     // The interfaces' current triangulations, oriented out of each inclusion. Boundary recovery

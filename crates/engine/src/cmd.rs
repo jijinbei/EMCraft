@@ -152,11 +152,12 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.port.create",
         label: "Create port",
-        doc: "A waveguide port on an end face, matched to the guide's lowest modes. TE10 is excited and read; the other modes absorb what else reaches the port.",
+        doc: "A waveguide port on an end face, matched to the guide's lowest modes. TE10 is excited and read; the other modes absorb what else reaches the port. With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).",
         params: &[
             p("name", "string", N, true, "unique name"),
-            p("end", "string", N, true, "`start` (z = 0) or `end` (z = length)"),
+            p("end", "string", N, true, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies"),
             p("modes", "integer", N, false, "modes in the port condition, 1 to 32 (default 4)"),
+            p("face", "array", L, false, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z"),
         ],
         run: port_create,
     },
@@ -606,7 +607,19 @@ fn port_create(s: &mut Session, p: &Value) -> Result<Value> {
         _ => return Err(EngineError::Params("`end` must be start or end".into())),
     };
     let modes = integer(p, "modes", 1..=emcraft_model::MAX_PORT_MODES as u64)?.unwrap_or(4) as u32;
-    s.model.add_port(Port { name: name.to_owned(), end, modes })?;
+    let face = match get(p, "face") {
+        None => None,
+        Some(v) => {
+            let list = v.as_array().filter(|a| a.len() == 5).ok_or_else(|| EngineError::Params("`face` must be [z, x0, y0, a, b]".into()))?;
+            let mut f = [0.0; 5];
+            for (o, v) in f.iter_mut().zip(list) {
+                *o =
+                    s.display.length.to_si(v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::Params("`face` must be numbers".into()))?);
+            }
+            Some(emcraft_model::PortFace { z: f[0], x0: f[1], y0: f[2], a: f[3], b: f[4] })
+        }
+    };
+    s.model.add_port(Port { name: name.to_owned(), end, modes, face })?;
     s.sweep = None;
     Ok(json!({"name": name}))
 }

@@ -196,6 +196,14 @@ pub fn solve_radiation(s: &mut Session, p: &Value) -> Result<Value> {
         reply["input_power"] = json!(input);
         reply["radiation_efficiency"] = json!(if input > 0.0 { power / input } else { f64::NAN });
     }
+    if let Some((s11, accepted)) = result.feed {
+        reply["feed"] = json!({
+            "port": s.model.ports.first().map(|p| p.name.clone()),
+            "s11": {"re": s11.re, "im": s11.im, "mag": s11.norm(), "db": emcraft_model::units::decibels(s11.norm())},
+            "accepted_power": accepted,
+        });
+        reply["radiation_efficiency"] = json!(if accepted > 0.0 { power / accepted } else { f64::NAN });
+    }
     s.radiation = Some(Arc::new(Radiated { driven, result, power }));
     Ok(reply)
 }

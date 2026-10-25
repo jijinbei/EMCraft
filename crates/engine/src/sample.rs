@@ -56,6 +56,11 @@ pub const SAMPLES: &[Sample] = &[
         script: include_str!("../samples/halfwave-dipole.json"),
     },
     Sample {
+        name: "open-waveguide",
+        label: "An open-ended WR-90 channel in a metal block radiating at 10 GHz, fed by a waveguide port on the channel's closed end: S11, gain and pattern",
+        script: include_str!("../samples/open-waveguide.json"),
+    },
+    Sample {
         name: "sphere-scattering",
         label: "A plane wave on a ceramic sphere (εr = 4, radius 5 mm) at 10 GHz: the scattered field and the radar cross-section against the Mie series",
         script: include_str!("../samples/sphere-scattering.json"),

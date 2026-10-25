@@ -1,0 +1,9 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [80, 80, 80]}},
+ {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "box", "size": [26.86, 14.16, 20], "at": [26.57, 32.92, 22]}},
+ {"command": "geometry.feature", "params": {"combine": "add", "shape": "box", "size": [22.86, 10.16, 18], "at": [28.57, 34.92, 25]}},
+ {"command": "model.open", "params": {"thickness": 15}},
+ {"command": "mesh.generate", "params": {"per_wavelength": 5, "frequency": 10}},
+ {"command": "model.port.create", "params": {"name": "feed", "end": "start", "modes": 4, "face": [25, 28.57, 34.92, 22.86, 10.16]}},
+ {"command": "solve.radiation", "params": {"frequency": 10}, "id": "solve"}
+]

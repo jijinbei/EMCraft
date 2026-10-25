@@ -251,22 +251,25 @@ impl Driven {
     /// The model's waveguide closed at both ends by conducting walls (a cavity), its ports left
     /// out: the matrices of an eigenmode analysis ([`crate::eigen`]).
     pub fn closed(model: &Model, order: Order) -> Result<Driven> {
+        refuse_open(model)?;
         Driven::build(model, order, false, false)
     }
 
     /// The cavity with perfectly conducting walls whatever their conductivity: the lossless
     /// problem whose modes perturbation theory gives Q factors from.
     pub fn cavity(model: &Model, order: Order) -> Result<Driven> {
+        refuse_open(model)?;
         Driven::build(model, order, false, true)
     }
 
     /// The model's open problem: its box lined with the perfectly matched layer
-    /// ([`emcraft_model::Open`]), no ports (sources drive it, [`crate::radiation`]).
+    /// ([`emcraft_model::Open`]), driven by sources, lumped ports or its waveguide ports on faces
+    /// inside it ([`crate::radiation`]).
     pub fn open(model: &Model, order: Order) -> Result<Driven> {
         if model.open.is_none() {
             return Err(SolveError::NotReady("no open boundary: line the box with model.open".into()));
         }
-        Driven::build(model, order, false, false)
+        Driven::build(model, order, !model.ports.is_empty(), false)
     }
 
     fn build(model: &Model, order: Order, with_ports: bool, lossless_walls: bool) -> Result<Driven> {
@@ -282,20 +285,12 @@ impl Driven {
         {
             return Err(invalid("wall conductivity", format!("must be a finite number > 0, got {c}")));
         }
-        // Walls: the conducting faces and, with no port there, the end faces.
-        let port_tags: Vec<Boundary> = if with_ports {
-            model
-                .ports
-                .iter()
-                .map(|p| match p.end {
-                    End::Start => Boundary::Port(0),
-                    End::End => Boundary::Port(1),
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let walls: Vec<usize> = (0..mesh.boundary.len()).filter(|&i| !port_tags.contains(&mesh.boundary[i].tag)).collect();
+        // Each port's boundary faces: an end's tag, or the faces on a port's rectangle. Walls: the
+        // rest.
+        let port_faces: Vec<Vec<usize>> =
+            if with_ports { model.ports.iter().map(|p| faces_of_port(&mesh, p)).collect::<Result<_>>()? } else { Vec::new() };
+        let on_port: std::collections::HashSet<usize> = port_faces.iter().flatten().copied().collect();
+        let walls: Vec<usize> = (0..mesh.boundary.len()).filter(|i| !on_port.contains(i)).collect();
         let fixed: &[usize] = if sigma.is_none() { &walls } else { &[] };
         let dofs = Dofs::new(order, &mesh, &topo, fixed)?;
         let material = |t: usize| mesh.tet_material.get(t).and_then(|&m| model.materials.get(m as usize));
@@ -308,8 +303,9 @@ impl Driven {
         }
 
         // The layer (open problems only): tetrahedra by their centroids' depth into it.
-        let pml = match (&model.open, &model.solid, with_ports) {
-            (Some(o), Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }), false) => {
+        // The layer lines open problems (sources, or ports with an open boundary).
+        let pml = match (&model.open, &model.solid, true) {
+            (Some(o), Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }), true) => {
                 let d = o.thickness;
                 let mut list = Vec::new();
                 for t in 0..mesh.tets.len() {
@@ -328,11 +324,7 @@ impl Driven {
 
         // Port vectors.
         let mut ports = Vec::new();
-        for p in model.ports.iter().filter(|_| with_ports) {
-            let tag = match p.end {
-                End::Start => Boundary::Port(0),
-                End::End => Boundary::Port(1),
-            };
+        for (k, p) in model.ports.iter().enumerate().filter(|_| with_ports) {
             let m = model.port_material(p.end)?;
             if m.loss_tangent != 0.0 {
                 return Err(invalid(
@@ -340,7 +332,7 @@ impl Driven {
                     "not supported yet: a port in a lossy material (end the guide with a lossless section)",
                 ));
             }
-            let list: Vec<Mode> = match model.port_shape(p.end)? {
+            let list: Vec<Mode> = match model.port_shape_of(p)? {
                 emcraft_model::PortShape::Rect { x0, y0, a, b } => {
                     modes::lowest(a, b, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect()
                 }
@@ -351,7 +343,7 @@ impl Driven {
             let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
             let n = if order == Order::One { 6 } else { 8 };
             let mut touched = vec![false; dofs.unknowns];
-            for b in mesh.boundary.iter().filter(|b| b.tag == tag) {
+            for b in port_faces[k].iter().filter_map(|&i| mesh.boundary.get(i)) {
                 let tet = b.tet as usize;
                 let el = element(&mesh, &topo, tet, order)?;
                 let unknowns = dofs.of_tet(&topo, tet);
@@ -770,6 +762,44 @@ pub fn surface_resistance(frequency: f64, sigma: f64) -> f64 {
 fn wall_factor(frequency: f64, sigma: f64) -> C {
     let omega = 2.0 * PI * frequency;
     C::new(1.0, 1.0) * (omega * MU0 / (2.0 * surface_resistance(frequency, sigma)))
+}
+
+/// Cavities are closed: an open model's resonances would be complex.
+fn refuse_open(model: &Model) -> Result<()> {
+    if model.open.is_some() {
+        return Err(invalid(
+            "eigenmodes",
+            "not supported yet: an open model's resonances (complex frequencies); close the box (model.open without a thickness)",
+        ));
+    }
+    Ok(())
+}
+
+/// A port's boundary faces: those tagged for its end, or those on its face's rectangle (all
+/// three corners on the plane and inside the rectangle, to a millionth of its size).
+fn faces_of_port(mesh: &Mesh, p: &emcraft_model::Port) -> Result<Vec<usize>> {
+    let out: Vec<usize> = match &p.face {
+        None => {
+            let tag = match p.end {
+                End::Start => Boundary::Port(0),
+                End::End => Boundary::Port(1),
+            };
+            (0..mesh.boundary.len()).filter(|&i| mesh.boundary[i].tag == tag).collect()
+        }
+        Some(f) => {
+            let tol = 1e-6 * f.a.max(f.b);
+            let inside = |q: [f64; 3]| {
+                (q[2] - f.z).abs() <= tol && q[0] >= f.x0 - tol && q[0] <= f.x0 + f.a + tol && q[1] >= f.y0 - tol && q[1] <= f.y0 + f.b + tol
+            };
+            (0..mesh.boundary.len())
+                .filter(|&i| mesh.boundary[i].nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| inside(*q))))
+                .collect()
+        }
+    };
+    if out.is_empty() {
+        return Err(invalid(format!("port `{}`", p.name), "no boundary face lies there (is the guide closed by a face on that plane?)"));
+    }
+    Ok(out)
 }
 
 /// The port's vector: the line integral along the gap, or for a band of radius r its average
