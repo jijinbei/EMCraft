@@ -1,0 +1,18 @@
+[
+  {"note": "Fields on planes after a sweep: the plane switch, the phase and the animation"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 7, "stop": 8, "points": 2, "order": 1}}},
+  {"expect": {"busy": false, "view": "sparameters"}},
+  {"click": "view:field"},
+  {"frames": 2},
+  {"expect": {"view": "field", "inspect": {"field.shown": true, "field.plane": "h", "field.frequency": [8e9, 1e-9]}, "handles": ["picture:field", "field:plane:cross", "field:phase"]}},
+  {"shot": "field-h-plane"},
+  {"click": "field:plane:cross"},
+  {"frames": 2},
+  {"expect": {"inspect": {"field.plane": "cross", "field.shown": true}}},
+  {"click": "field:animate"},
+  {"frames": 30},
+  {"expect": {"inspect": {"field.animate": true, "field.phase": {"min": 0.05}}}},
+  {"call": "ui.set", "params": {"animate": false}},
+  {"shot": "field-cross-section"}
+]

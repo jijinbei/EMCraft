@@ -1,0 +1,16 @@
+[
+  {"note": "A long sweep runs on the worker while the window keeps drawing; Cancel stops it and leaves the session as it was"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 400, "order": 2}, "wait": false}},
+  {"expect": {"busy": true, "inspect": {"progress.command": "solve.frequency"}}},
+  {"frames": 5},
+  {"expect": {"busy": true, "handles": ["status:cancel"]}},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 4}}, "fail": true},
+  {"expect": {"status": "Frequency sweep", "status_error": false}},
+  {"shot": "progress"},
+  {"click": "status:cancel"},
+  {"expect": {"busy": false, "status": "cancelled", "inspect": {"model.results": null}}},
+  {"note": "A short sweep afterwards runs as usual"},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 7, "stop": 8, "points": 2, "order": 1}}},
+  {"expect": {"busy": false, "inspect": {"model.results.frequencies": 2}}}
+]

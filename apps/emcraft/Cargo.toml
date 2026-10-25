@@ -15,3 +15,6 @@ workspace = true
 [dependencies]
 emcraft-engine = { workspace = true }
 emcraft-ui-egui = { workspace = true }
+serde_json = { workspace = true }
+# The control channel's per-launch token (docs/adr/0001-libraries.md).
+getrandom = "0.3"

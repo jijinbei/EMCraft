@@ -1,6 +1,6 @@
 [package]
 name = "emcraft-ui-egui"
-description = "EMCraft's desktop UI: the waveguide model, a background frequency sweep, S-parameters against the exact curves, and E and H on planes with a phase animation"
+description = "EMCraft's desktop UI: ribbon of engine commands, browser, command dialogs, results views (S-parameters, fields with phase animation, port modes, far field), worker jobs with progress and cancel, the control channel's methods and headless scenarios"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

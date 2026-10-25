@@ -1,0 +1,108 @@
+//! The app's own tests: the headless scenarios in `tests/scenarios/` and a few direct checks.
+
+use serde_json::{Value, json};
+
+use crate::scenario::Harness;
+
+fn scenario(name: &str) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios").join(format!("{name}.json"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let steps: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let mut h = Harness::new();
+    if let Err(e) = h.run(&steps) {
+        panic!("scenario {name}: {e}\nlast messages: {:?}", h.app.messages.iter().rev().take(5).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn scenario_open_sample() {
+    scenario("open_sample");
+}
+
+#[test]
+fn scenario_sweep_and_sparameters() {
+    scenario("sweep_and_sparameters");
+}
+
+#[test]
+fn scenario_field_view() {
+    scenario("field_view");
+}
+
+#[test]
+fn scenario_port_modes_table() {
+    scenario("port_modes_table");
+}
+
+#[test]
+fn scenario_hostile_dialog_input() {
+    scenario("hostile_dialog_input");
+}
+
+#[test]
+fn scenario_ribbon_and_search() {
+    scenario("ribbon_and_search");
+}
+
+#[test]
+fn scenario_cancel_a_sweep() {
+    scenario("cancel_sweep");
+}
+
+/// Every scenario file has a test above.
+#[test]
+fn every_scenario_file_runs() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios");
+    let src = include_str!("tests.rs");
+    for e in std::fs::read_dir(dir).unwrap() {
+        let name = e.unwrap().path().file_stem().unwrap().to_string_lossy().into_owned();
+        assert!(src.contains(&format!("scenario(\"{name}\")")), "tests/scenarios/{name}.json has no test");
+    }
+}
+
+/// Hostile control requests are refused and nothing panics.
+#[test]
+fn hostile_control_requests_are_refused() {
+    let mut h = Harness::new();
+    for (m, p) in [
+        ("ui.click", json!({"x": f64::MAX, "y": 1})),
+        ("ui.click", json!({"x": "a", "y": 1})),
+        ("ui.click", json!({"handle": "x".repeat(10_000)})),
+        ("ui.key", json!({"key": "NoSuchKey"})),
+        ("ui.set", json!({"tab": "NOPE"})),
+        ("ui.set", json!({"view": 7})),
+        ("engine.execute", json!({"command": "mesh.generate", "params": {"size": -1}})),
+        ("engine.execute", json!({"command": "x".repeat(100_000)})),
+        ("engine.execute", json!({"params": {}})),
+        ("engine.script", json!({"commands": "nope"})),
+        ("ui.start", json!({"command": "geometry.waveguide", "params": {"nope": 1}})),
+        ("ui.dialog", json!({"ok": true})),
+        ("no.such.method", json!({})),
+    ] {
+        let r = h.call(m, p);
+        assert_eq!(r["ok"], json!(false), "{m}: {r}");
+    }
+    // Text far beyond a field's limit is cut, not stored.
+    let r = h.call("ui.text", json!({"text": "9".repeat(1_000_000)}));
+    assert_eq!(r["ok"], json!(true));
+    let r = h.call("ui.render", json!({"width": 1e12, "height": -5, "scale": f64::NAN}));
+    assert_eq!(r["ok"], json!(true), "{r}");
+    assert!(r["result"]["width"].as_u64().unwrap() <= 4096 * 2);
+}
+
+/// `ui.render` draws the window without one; light and dark differ.
+#[test]
+fn ui_render_draws_both_themes() {
+    let mut h = Harness::new();
+    let light = crate::raster::render_app(&mut h.app, egui::vec2(800.0, 600.0), 1.0);
+    h.app.dark = true;
+    let dark = crate::raster::render_app(&mut h.app, egui::vec2(800.0, 600.0), 1.0);
+    assert_eq!((light.w, light.h), (800, 600));
+    let mean = |c: &emcraft_render::Canvas| {
+        c.rgba.as_chunks::<4>().0.iter().map(|p| u64::from(p[0]) + u64::from(p[1]) + u64::from(p[2])).sum::<u64>() / (c.w * c.h) as u64
+    };
+    assert!(mean(&light) > mean(&dark) + 100, "light {} dark {}", mean(&light), mean(&dark));
+    // The ribbon's tabs are drawn as text: the tab row is not one flat colour.
+    let row: Vec<&[u8; 4]> = light.rgba.as_chunks::<4>().0.iter().skip(800 * 55).take(800).collect();
+    assert!(row.windows(2).filter(|w| w[0] != w[1]).count() > 20);
+}

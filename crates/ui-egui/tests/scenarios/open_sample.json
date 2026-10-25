@@ -1,0 +1,23 @@
+[
+  {"note": "Open the high-pass sample from the app bar's Samples menu; the browser and the model view show it"},
+  {"click": "bar:samples"},
+  {"expect": {"handles": ["sample:highpass", "sample:cavity"]}},
+  {"key": "Escape"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"expect": {"view": "model", "busy": false, "status": "Opened sample highpass", "status_error": false}},
+  {"expect": {"handles": ["fold:Geometry", "fold:Results", "row:Waveguide 22.86 × 10.16 × 50 mm", "row:Section 2: 20 mm, vacuum", "row:Port 1: Start, 4 modes", "tab:MODEL"]}},
+  {"expect": {"inspect": {"model.mesh.tetrahedra": {"min": 100}, "model.ports.1.name": "2"}}},
+  {"expect": {"picture": true}},
+  {"shot": "open-sample"},
+  {"note": "Folding a browser section hides its rows"},
+  {"click": "fold:Geometry"},
+  {"expect": {"hidden": ["row:Section 2: 20 mm, vacuum"]}},
+  {"click": "fold:Geometry"},
+  {"expect": {"handles": ["row:Section 2: 20 mm, vacuum"]}},
+  {"note": "Double-clicking the guide opens its dialog on the model's values"},
+  {"click": "row:Waveguide 22.86 × 10.16 × 50 mm", "double": true},
+  {"expect": {"dialog": "geometry.waveguide", "inspect": {"dialog.fields.width": "22.86", "dialog.fields.sections.1.1": "vacuum"}}},
+  {"shot": "waveguide-dialog"},
+  {"click": "dialog:cancel"},
+  {"expect": {"dialog": null}}
+]

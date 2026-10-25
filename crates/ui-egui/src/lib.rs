@@ -1,831 +1,706 @@
-//! EMCraft's desktop UI. The left panel holds the model (a rectangular waveguide in sections,
-//! its mesh, ports and sweep) and the view (frequency, plane, component, arrows, phase); the
-//! centre shows the fields on the chosen plane above the S-parameter chart. Solving runs on a
-//! background thread through the same engine commands as scripts; pictures are drawn by
-//! `emcraft-render` (the same as `emcraft-cli`'s) and shown as textures.
+//! EMCraft's desktop UI, in the style of SolidCraft's: an application bar; a ribbon of tabs
+//! (MODEL, MATERIALS, PORTS & SOURCES, MESH, SIMULATE, RESULTS) whose panels hold the engine's
+//! commands, with command search; a browser of the model and its results on the left; the
+//! viewport in the middle (the model's outline, S-parameter charts, fields on planes with a phase
+//! animation, port-mode and eigenmode tables, far-field patterns, the comparison with theory, all
+//! drawn by `emcraft-render` or egui, no GPU rendering); command dialogs as floating or docked
+//! cards; messages, progress and Cancel at the bottom.
+//!
+//! Everything the UI does goes through engine commands ([`EmcraftApp::run`]); long ones run on a
+//! worker thread ([`worker`]) so the window keeps drawing. Agents and tests drive the same app
+//! through the control channel ([`control`]: `emcraft --control PORT`) and headless scenarios
+//! ([`scenario`]); [`raster`] draws a frame without a window.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-use std::sync::mpsc::{Receiver, channel};
+pub mod browser;
+pub mod control;
+pub mod dialog_ui;
+pub mod dialogs;
+pub mod glyphs;
+pub mod raster;
+pub mod ribbon;
+pub mod scenario;
+pub mod theme;
+pub mod ui_kit;
+pub mod viewport;
+pub mod worker;
+
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
 
 use emcraft_engine::Session;
-use emcraft_engine::view::{self, FieldView, Plane, PlaneSamples};
-use emcraft_model::units::{Frequency::Gigahertz as GHZ, Length::Millimetre as MM};
+use emcraft_engine::view::{FieldView, Plane, PlaneSamples};
 use serde_json::{Value, json};
 
-/// One section of the waveguide being edited: length (mm), relative permittivity and, for an
-/// iris or a step, the width of its centred aperture (mm).
+pub use control::ControlRequest;
+
+/// What the viewport shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum View {
+    Model,
+    SParameters,
+    Field,
+    PortModes,
+    FarField,
+    Compare,
+    Eigenmodes,
+}
+
+impl View {
+    pub const ALL: [View; 7] = [View::Model, View::SParameters, View::Field, View::PortModes, View::FarField, View::Compare, View::Eigenmodes];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            View::Model => "model",
+            View::SParameters => "sparameters",
+            View::Field => "field",
+            View::PortModes => "port_modes",
+            View::FarField => "far_field",
+            View::Compare => "compare",
+            View::Eigenmodes => "eigenmodes",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            View::Model => "Model",
+            View::SParameters => "S-parameters",
+            View::Field => "Field",
+            View::PortModes => "Port modes",
+            View::FarField => "Far field",
+            View::Compare => "Compare with theory",
+            View::Eigenmodes => "Eigenmodes",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<View> {
+        View::ALL.into_iter().find(|v| v.id() == s)
+    }
+}
+
+/// A line of the message area.
 #[derive(Clone, Debug, PartialEq)]
-pub struct SectionEdit {
-    pub length: f64,
-    pub eps_r: f64,
-    pub aperture: Option<f64>,
-    /// The height of its centred aperture across the narrow wall (mm), for an E-plane step or a
-    /// capacitive iris.
-    pub aperture_h: Option<f64>,
-    /// Dielectric loss tangent.
-    pub tan_d: f64,
+pub struct Message {
+    pub text: String,
+    pub error: bool,
+    /// The same message repeated in a row.
+    pub count: u32,
 }
 
-impl SectionEdit {
-    fn new(length: f64, eps_r: f64) -> SectionEdit {
-        SectionEdit { length, eps_r, aperture: None, aperture_h: None, tan_d: 0.0 }
+/// Messages kept.
+const MAX_MESSAGES: usize = 200;
+
+/// A CPU picture shown as a texture, uploaded to each egui context that draws it (the window's,
+/// and the offscreen one of `ui.render`).
+pub struct Picture {
+    pub key: String,
+    pub image: Arc<egui::ColorImage>,
+    textures: Vec<(egui::Context, egui::TextureHandle)>,
+}
+
+impl Picture {
+    pub fn new(key: String, canvas: &emcraft_render::Canvas) -> Picture {
+        let image = egui::ColorImage::from_rgba_unmultiplied([canvas.w, canvas.h], &canvas.rgba);
+        Picture { key, image: Arc::new(image), textures: Vec::new() }
     }
 
-    fn iris(length: f64, aperture: f64) -> SectionEdit {
-        SectionEdit { length, eps_r: 1.0, aperture: Some(aperture), aperture_h: None, tan_d: 0.0 }
+    pub fn size(&self) -> egui::Vec2 {
+        egui::vec2(self.image.size[0] as f32, self.image.size[1] as f32)
     }
-}
 
-/// The model as the left panel edits it, in millimetres and gigahertz.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ModelEdit {
-    pub width: f64,
-    pub height: f64,
-    pub sections: Vec<SectionEdit>,
-    pub size: f64,
-    /// Element size at iris and step edges, as a fraction of `size`.
-    pub edge: f64,
-    /// One element layer across the narrow wall (exact for H-plane devices).
-    pub one_layer_y: bool,
-    pub order: u8,
-    pub modes: u32,
-    pub start: f64,
-    pub stop: f64,
-    pub points: u32,
-    /// Wall conductivity (S/m); perfect conductors when `None`.
-    pub conductivity: Option<f64>,
-    /// The analysis to run.
-    pub analysis: Analysis,
-    /// Also run the time-domain solver on cells of this size (mm) for its curves on the chart.
-    pub time_domain: Option<f64>,
-}
-
-/// What Solve runs.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Analysis {
-    /// A frequency sweep with ports at both ends.
-    Sweep,
-    /// The eigenmodes of the guide closed into a cavity: `count` modes near `near` GHz.
-    Eigen { count: u32, near: f64 },
-}
-
-impl Default for ModelEdit {
-    /// The high-pass filter sample.
-    fn default() -> Self {
-        ModelEdit {
-            width: 22.86,
-            height: 10.16,
-            sections: vec![SectionEdit::new(15.0, 2.0), SectionEdit::new(20.0, 1.0), SectionEdit::new(15.0, 2.0)],
-            size: 3.0,
-            edge: 0.25,
-            one_layer_y: false,
-            order: 2,
-            modes: 4,
-            start: 5.0,
-            stop: 9.0,
-            points: 17,
-            conductivity: None,
-            analysis: Analysis::Sweep,
-            time_domain: None,
+    /// Its texture in `ctx`.
+    pub fn texture(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        if let Some((_, h)) = self.textures.iter().find(|(c, _)| c == ctx) {
+            return h.id();
         }
+        let h = ctx.load_texture(format!("picture:{}", self.key.len()), self.image.clone(), egui::TextureOptions::LINEAR);
+        let id = h.id();
+        // The window's context and at most one offscreen one.
+        if self.textures.len() >= 2 {
+            drop(self.textures.remove(1));
+        }
+        self.textures.push((ctx.clone(), h));
+        id
     }
 }
 
-impl ModelEdit {
-    /// The inductive-iris band-pass filter sample.
-    pub fn bandpass() -> ModelEdit {
-        let cavity = |l: f64| SectionEdit::new(l, 1.0);
-        ModelEdit {
-            sections: vec![
-                cavity(15.0),
-                SectionEdit::iris(2.0, 12.75),
-                cavity(15.0),
-                SectionEdit::iris(2.0, 9.25),
-                cavity(16.75),
-                SectionEdit::iris(2.0, 9.25),
-                cavity(15.0),
-                SectionEdit::iris(2.0, 12.75),
-                cavity(15.0),
-            ],
-            size: 3.0,
-            edge: 0.1,
-            one_layer_y: true,
-            start: 9.0,
-            stop: 11.0,
-            points: 21,
-            ..ModelEdit::default()
-        }
-    }
-
-    /// The copper cavity sample: its four lowest modes.
-    pub fn cavity() -> ModelEdit {
-        ModelEdit {
-            sections: vec![SectionEdit::new(30.0, 1.0)],
-            conductivity: Some(5.8e7),
-            analysis: Analysis::Eigen { count: 4, near: 12.0 },
-            ..ModelEdit::default()
-        }
-    }
-
-    /// The command script that builds and solves this model.
-    pub fn script(&self) -> Value {
-        let mut steps = Vec::new();
-        let mut names = Vec::new();
-        for s in &self.sections {
-            if s.eps_r == 1.0 && s.tan_d == 0.0 {
-                names.push("vacuum".to_owned());
-                continue;
-            }
-            let name = if s.tan_d == 0.0 { format!("eps {}", s.eps_r) } else { format!("eps {} tan {}", s.eps_r, s.tan_d) };
-            if !names.contains(&name) {
-                steps.push(json!({"command": "model.material.create", "params": {"name": name, "eps_r": s.eps_r, "loss_tangent": s.tan_d}}));
-            }
-            names.push(name);
-        }
-        let sections: Vec<Value> = self
-            .sections
-            .iter()
-            .zip(&names)
-            .map(|(s, n)| {
-                let mut v = json!({"length": s.length, "material": n});
-                if let Some(w) = s.aperture {
-                    v["width"] = json!(w);
-                }
-                if let Some(h) = s.aperture_h {
-                    v["height"] = json!(h);
-                }
-                v
-            })
-            .collect();
-        steps.push(json!({"command": "geometry.waveguide", "params": {"width": self.width, "height": self.height, "sections": sections}}));
-        if let Some(sigma) = self.conductivity {
-            steps.push(json!({"command": "model.walls", "params": {"conductivity": sigma}}));
-        }
-        let mut mesh = json!({"size": self.size, "edge": self.edge});
-        if self.one_layer_y {
-            mesh["size_y"] = json!(self.height);
-        }
-        steps.push(json!({"command": "mesh.generate", "params": mesh}));
-        match self.analysis {
-            Analysis::Sweep => {
-                steps.push(json!({"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": self.modes}}));
-                steps.push(json!({"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": self.modes}}));
-                steps.push(json!({"command": "solve.frequency", "params": {"start": self.start, "stop": self.stop, "points": self.points, "order": self.order}}));
-                if let Some(cell) = self.time_domain {
-                    let n = 81;
-                    let freqs: Vec<f64> = (0..n).map(|k| self.start + (self.stop - self.start) * k as f64 / (n - 1) as f64).collect();
-                    steps.push(json!({"command": "solve.time_domain", "params": {"frequencies": freqs, "cell": cell}}));
-                }
-            }
-            Analysis::Eigen { count, near } => {
-                steps.push(json!({"command": "solve.eigenmodes", "params": {"near": near, "count": count, "order": self.order}}));
-            }
-        }
-        Value::Array(steps)
-    }
+/// The field view's state.
+pub struct FieldState {
+    pub view: FieldView,
+    /// The plane's position in display length units; the middle when `None`.
+    pub at: Option<f64>,
+    pub samples: Option<PlaneSamples>,
+    pub picture: Option<Picture>,
+    pub animate: bool,
 }
 
-/// Maps a click at fraction `fx` across the S-parameter chart image to a frequency (display
-/// units), with the chart's layout (`emcraft_render::chart::draw`: plot from x = 90 to w − 30).
-pub fn chart_frequency(fx: f64, width_px: f64, f0: f64, f1: f64) -> Option<f64> {
-    let (x0, pw) = (90.0, width_px - 120.0);
-    let t = (fx * width_px - x0) / pw;
-    (pw > 0.0 && (0.0..=1.0).contains(&t)).then_some(f0 + t * (f1 - f0))
-}
-
-/// The solved frequency (Hz) nearest to `f` (Hz).
-pub fn nearest(freqs: &[f64], f: f64) -> Option<f64> {
-    freqs.iter().copied().min_by(|a, b| (a - f).abs().total_cmp(&(b - f).abs()))
+/// A window screenshot waiting for its frame.
+pub(crate) struct Shot {
+    pub token: u64,
+    pub path: Option<String>,
+    pub reply: Sender<Value>,
+    pub asked: Instant,
+    pub sent: bool,
 }
 
 pub struct EmcraftApp {
-    session: Session,
-    edit: ModelEdit,
-    view: FieldView,
-    /// The plane position as the slider holds it (mm); `None` = the middle.
-    at_mm: Option<f64>,
-    samples: Option<PlaneSamples>,
-    field: Option<(egui::TextureHandle, [usize; 2])>,
-    chart: Option<(egui::TextureHandle, [usize; 2])>,
-    field_key: Option<String>,
-    chart_width: usize,
-    animate: bool,
+    pub session: Session,
+    /// Bumped whenever the session changes, so cached pictures and tables are redrawn.
+    pub revision: u64,
+    pub job: Option<worker::Job>,
+    pub tab: String,
+    pub dialog: Option<dialogs::Dialog>,
+    /// Dialogs open docked at the right instead of floating.
+    pub dock_dialogs: bool,
+    pub view: View,
+    pub field: FieldState,
+    pub chart: Option<Picture>,
+    /// The far-field pattern's azimuth (degrees).
+    pub pattern_phi: f64,
+    pub port_modes: Option<Value>,
+    pub compare: Option<Value>,
+    pub eigen_table: Option<(u64, Value)>,
+    pub messages: Vec<Message>,
+    pub search: ribbon::Search,
+    pub browser: browser::Browser,
+    pub dark: bool,
+    /// Input injected by the control channel, fed to egui one pointer event per frame.
+    pub synthetic: VecDeque<egui::Event>,
+    synthetic_mods: egui::Modifiers,
+    pub control_rx: Option<Receiver<ControlRequest>>,
+    pub(crate) shots: Vec<Shot>,
+    shot_token: u64,
+    pub quit_requested: bool,
     last_frame: Option<Instant>,
-    solving: Option<(Receiver<Result<Session, String>>, Instant)>,
-    status: String,
-    /// The engine sample chosen to run, and a script file's path.
-    sample: String,
-    script_path: String,
-    /// The azimuth (degrees) of the far-field pattern chart.
-    pattern_phi: f64,
+    pub frames: u64,
+    /// The viewport's rectangle last frame.
+    pub viewport_rect: Option<egui::Rect>,
+    /// The window's context, to wake it when a job ends.
+    ctx: Option<egui::Context>,
+}
+
+impl Default for EmcraftApp {
+    fn default() -> Self {
+        EmcraftApp::new()
+    }
 }
 
 impl EmcraftApp {
-    /// The app with a sample's model (`highpass` or `iris-bandpass`), solved at once.
-    pub fn new(sample: Option<&str>) -> EmcraftApp {
-        let mut app = EmcraftApp {
+    pub fn new() -> EmcraftApp {
+        EmcraftApp {
             session: Session::new(),
-            edit: ModelEdit::default(),
-            view: FieldView::new(8.0e9, Plane::H),
-            at_mm: None,
-            samples: None,
-            field: None,
+            revision: 0,
+            job: None,
+            tab: "MODEL".into(),
+            dialog: None,
+            dock_dialogs: false,
+            view: View::Model,
+            field: FieldState { view: FieldView::new(10.0e9, Plane::H), at: None, samples: None, picture: None, animate: false },
             chart: None,
-            field_key: None,
-            chart_width: 0,
-            animate: false,
-            last_frame: None,
-            solving: None,
-            status: "Edit the waveguide and press Solve, or run a sample.".into(),
-            sample: "circular-guide".into(),
-            script_path: String::new(),
             pattern_phi: 0.0,
-        };
-        if let Some(name) = sample {
-            if name == "iris-bandpass" {
-                app.edit = ModelEdit::bandpass();
-                app.view.frequency = 10.0e9;
-            }
-            if name == "cavity" {
-                app.edit = ModelEdit::cavity();
-            }
-            match name {
-                "highpass" | "iris-bandpass" | "cavity" => app.solve(),
-                other => {
-                    app.sample = other.to_owned();
-                    app.run_sample();
-                }
-            }
+            port_modes: None,
+            compare: None,
+            eigen_table: None,
+            messages: vec![Message {
+                text: "Open a sample (Samples, or MODEL › Sample) or build a model from the ribbon.".into(),
+                error: false,
+                count: 1,
+            }],
+            search: ribbon::Search::default(),
+            browser: browser::Browser::default(),
+            dark: false,
+            synthetic: VecDeque::new(),
+            synthetic_mods: egui::Modifiers::NONE,
+            control_rx: None,
+            shots: Vec::new(),
+            shot_token: 0,
+            quit_requested: false,
+            last_frame: None,
+            frames: 0,
+            viewport_rect: None,
+            ctx: None,
+        }
+    }
+
+    /// The app with a sample opened and solved (on the worker thread).
+    pub fn with_sample(name: Option<&str>) -> EmcraftApp {
+        let mut app = EmcraftApp::new();
+        if let Some(name) = name
+            && let Err(e) = app.run("file.sample", json!({"name": name, "solve": true}))
+        {
+            app.message(e, true);
         }
         app
     }
 
-    fn solve(&mut self) {
-        self.run(self.edit.script());
-    }
-
-    /// Runs the chosen engine sample, solve steps included.
-    fn run_sample(&mut self) {
-        match emcraft_engine::sample::find(&self.sample).map(|s| serde_json::from_str::<Value>(s.script)) {
-            Some(Ok(script)) => self.run(script),
-            Some(Err(e)) => self.status = format!("Sample {}: {e}", self.sample),
-            None => self.status = format!("No sample `{}`", self.sample),
+    pub fn message(&mut self, text: impl Into<String>, error: bool) {
+        let text: String = text.into().chars().take(2000).collect();
+        if let Some(last) = self.messages.last_mut()
+            && last.text == text
+            && last.error == error
+        {
+            last.count = last.count.saturating_add(1);
+            return;
+        }
+        self.messages.push(Message { text, error, count: 1 });
+        if self.messages.len() > MAX_MESSAGES {
+            let extra = self.messages.len() - MAX_MESSAGES;
+            self.messages.drain(..extra);
         }
     }
 
-    /// Runs a script file (a JSON array of commands, as `emcraft-cli run` takes).
-    fn run_file(&mut self) {
-        let path = self.script_path.trim().to_owned();
-        match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string())) {
-            Ok(script) => self.run(script),
-            Err(e) => self.status = format!("Script `{path}`: {e}"),
+    pub fn status(&self) -> Option<&Message> {
+        self.messages.last()
+    }
+
+    pub fn busy(&self) -> bool {
+        self.job.is_some()
+    }
+
+    /// Runs a command as a person or an agent asks for it: a quick one at once, a long one on
+    /// the worker thread (the reply is then `{"started": …}` and the result comes with the job).
+    /// Refused while a job runs.
+    pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        if let Some(job) = &self.job {
+            return Err(format!("busy: {} is running (cancel it first)", label(&job.command)));
         }
-    }
-
-    fn run(&mut self, script: Value) {
-        let (tx, rx) = channel();
-        std::thread::spawn(move || {
-            let mut s = Session::new();
-            let r = s.run_script(&script).map(|_| s).map_err(|e| e.to_string());
-            let _ = tx.send(r);
-        });
-        self.solving = Some((rx, Instant::now()));
-        self.status = "Solving…".into();
-    }
-
-    fn poll(&mut self) {
-        let Some((rx, started)) = &self.solving else { return };
-        match rx.try_recv() {
-            Ok(Ok(s)) => {
-                let secs = started.elapsed().as_secs_f64();
-                self.session = s;
-                if let Some(e) = self.session.eigen.as_ref() {
-                    self.view.mode = Some(0);
-                    let list: Vec<String> = e.modes.iter().map(|m| format!("{:.4}", GHZ.from_si(m.frequency))).collect();
-                    self.status = format!("Found {} eigenmodes in {secs:.1} s: {} GHz.", e.modes.len(), list.join(", "));
-                    self.samples = None;
-                    self.field_key = None;
-                    self.chart = None;
-                    self.solving = None;
-                    return;
-                }
-                self.view.mode = None;
-                self.at_mm = None;
-                if let Some(r) = self.session.radiation.as_ref() {
-                    self.view.frequency = r.result.frequency;
-                    let what = if r.driven.ports.is_empty()
-                        && self.session.model.sources.iter().any(|x| matches!(x, emcraft_model::Source::PlaneWave { .. }))
-                    {
-                        let sigma = r.power * 2.0 * emcraft_model::units::MU0 * emcraft_model::units::C0;
-                        format!("scattering cross-section {:.4} mm²", sigma * 1e6)
-                    } else {
-                        format!("radiated power {:.4e} W", r.power)
-                    };
-                    self.status = format!(
-                        "Solved the open problem at {:.4} GHz, {} unknowns, in {secs:.1} s: {what}.",
-                        GHZ.from_si(r.result.frequency),
-                        r.driven.dofs.unknowns
-                    );
-                    self.samples = None;
-                    self.field_key = None;
-                    self.chart = None;
-                    self.solving = None;
-                    return;
-                }
-                let freqs = self.frequencies();
-                if let Some(f) = nearest(&freqs, self.view.frequency) {
-                    self.view.frequency = f;
-                }
-                let unknowns = self.session.sweep.as_ref().map_or(0, |sw| sw.driven.dofs.unknowns);
-                let worst = self.session.execute("results.compare", &json!({})).ok().and_then(|c| c["worst"].as_f64());
-                self.status = format!(
-                    "Solved {} frequencies, {unknowns} unknowns, in {secs:.1} s. Worst |S − S_exact| = {}.",
-                    freqs.len(),
-                    worst.map_or("–".into(), |w| format!("{w:.2e}"))
-                );
-                self.samples = None;
-                self.field_key = None;
-                self.chart = None;
-                self.solving = None;
-            }
-            Ok(Err(e)) => {
-                self.status = format!("Solve failed: {e}");
-                self.solving = None;
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {}
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                self.status = "Solve failed: the solver stopped".into();
-                self.solving = None;
-            }
+        if emcraft_engine::find_command(id).is_none() {
+            return Err(format!("unknown command `{}`", id.chars().take(100).collect::<String>()));
         }
+        if worker::is_long(id) {
+            self.job = Some(worker::Job::start(&self.session, id, params, self.ctx.clone()));
+            self.message(format!("{}…", label(id)), false);
+            return Ok(json!({"started": id}));
+        }
+        let r = self.session.execute(id, &params).map_err(|e| e.to_string());
+        match &r {
+            Ok(reply) => self.after(id, &params, reply),
+            Err(e) => self.message(format!("{}: {e}", label(id)), true),
+        }
+        r
     }
 
-    fn frequencies(&self) -> Vec<f64> {
+    /// Runs a script (a JSON array of `{command, params}`) on the worker thread, as one job.
+    pub fn run_script(&mut self, script: Value) -> Result<Value, String> {
+        if let Some(job) = &self.job {
+            return Err(format!("busy: {} is running (cancel it first)", label(&job.command)));
+        }
+        let n = script.as_array().map(Vec::len).ok_or("a script is a JSON array of {command, params}")?;
+        self.job = Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| {
+            s.run_script(&script).map(Value::Array).map_err(|e| e.to_string())
+        }));
+        self.message(format!("Running a script of {n} commands…"), false);
+        Ok(json!({"started": "engine.script"}))
+    }
+
+    /// What follows a command's success: the view it calls for, its message.
+    fn after(&mut self, id: &str, params: &Value, reply: &Value) {
+        self.revision = self.revision.wrapping_add(1);
+        self.field.samples = None;
+        self.field.picture = None;
+        self.chart = None;
+        let f = |k: &str| reply.get(k).and_then(Value::as_f64);
+        let unit = self.session.display.frequency.symbol();
+        let text = match id {
+            "file.sample" | "engine.script" => {
+                self.port_modes = None;
+                self.compare = None;
+                self.view = if self.session.sweep.is_some() {
+                    View::SParameters
+                } else if self.session.eigen.is_some() {
+                    View::Eigenmodes
+                } else if self.session.radiation.is_some() {
+                    View::FarField
+                } else {
+                    View::Model
+                };
+                self.pick_frequency();
+                match params.get("name").and_then(Value::as_str) {
+                    Some(name) if id == "file.sample" => format!("Opened sample {name}."),
+                    _ => "Script done.".into(),
+                }
+            }
+            "solve.frequency" => {
+                self.view = View::SParameters;
+                self.pick_frequency();
+                let n = reply.get("points").and_then(Value::as_array).map_or(0, Vec::len);
+                format!("Solved {n} frequencies, {} unknowns.", reply.get("unknowns").and_then(Value::as_u64).unwrap_or(0))
+            }
+            "solve.eigenmodes" => {
+                self.view = View::Eigenmodes;
+                self.field.view.mode = Some(0);
+                let list: Vec<String> = reply
+                    .get("modes")
+                    .and_then(Value::as_array)
+                    .map(|m| m.iter().filter_map(|x| x.get("frequency").and_then(Value::as_f64)).map(|x| format!("{x:.4}")).collect())
+                    .unwrap_or_default();
+                format!("Found {} eigenmodes: {} {unit}.", list.len(), list.join(", "))
+            }
+            "solve.radiation" => {
+                self.view = View::FarField;
+                self.field.view.mode = None;
+                if let Some(r) = &self.session.radiation {
+                    self.field.view.frequency = r.result.frequency;
+                }
+                format!("Solved the open problem: radiated power {:.4e} W.", f("power").or(f("radiated_power")).unwrap_or(f64::NAN))
+            }
+            "solve.time_domain" => {
+                self.view = if self.session.td_radiation.is_some() { View::FarField } else { View::SParameters };
+                format!("Time-domain solve done in {} steps.", reply.get("steps").and_then(Value::as_u64).unwrap_or(0))
+            }
+            "solve.port_modes" => {
+                self.port_modes = Some(reply.clone());
+                self.view = View::PortModes;
+                format!("Port modes at {} {unit}.", f("frequency").unwrap_or(f64::NAN))
+            }
+            "results.compare" => {
+                self.compare = Some(reply.clone());
+                self.view = View::Compare;
+                format!(
+                    "Worst |S − S_ref| = {:.3e} ({}).",
+                    f("worst").unwrap_or(f64::NAN),
+                    reply.get("reference").and_then(Value::as_str).unwrap_or("")
+                )
+            }
+            "mesh.generate" => {
+                let m = self.session.model.mesh.as_ref().map_or((0, 0), |m| (m.nodes.len(), m.tets.len()));
+                format!("Meshed: {} nodes, {} tetrahedra.", m.0, m.1)
+            }
+            other => {
+                if other.starts_with("geometry.") {
+                    self.view = View::Model;
+                    self.port_modes = None;
+                    self.compare = None;
+                }
+                format!("{} done.", label(other))
+            }
+        };
+        self.message(text, false);
+    }
+
+    /// Puts the field view on a solved frequency.
+    fn pick_frequency(&mut self) {
+        let freqs = self.frequencies();
+        if let Some(f) = nearest(&freqs, self.field.view.frequency) {
+            self.field.view.frequency = f;
+        }
+        self.field.view.mode = if self.session.sweep.is_none() && self.session.eigen.is_some() { Some(0) } else { None };
+        self.field.at = None;
+    }
+
+    /// The sweep's frequencies (Hz).
+    pub fn frequencies(&self) -> Vec<f64> {
         self.session.sweep.as_ref().map(|s| s.results.iter().map(|r| r.frequency).collect()).unwrap_or_default()
     }
 
-    /// Whether there is anything to show.
-    fn solved(&self) -> bool {
-        self.session.sweep.is_some() || self.session.eigen.is_some() || self.session.radiation.is_some()
-    }
-
-    /// The span of the view's plane position, and its axis: the waveguide's, or the solid's
-    /// bounding box.
-    fn plane_span(&self) -> Option<(f64, &'static str)> {
-        let (lo, hi) = self.session.model.bounds()?;
-        Some(match self.view.plane {
-            Plane::H => (hi[1] - lo[1], "y"),
-            Plane::E => (hi[0] - lo[0], "x"),
-            Plane::Cross => (hi[2] - lo[2], "z"),
-        })
-    }
-
-    fn controls(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Waveguide");
-        let e = &mut self.edit;
-        egui::Grid::new("guide").num_columns(2).show(ui, |ui| {
-            ui.label("width a");
-            ui.add(egui::DragValue::new(&mut e.width).speed(0.1).range(1.0..=500.0).suffix(" mm"));
-            ui.end_row();
-            ui.label("height b");
-            ui.add(egui::DragValue::new(&mut e.height).speed(0.1).range(0.5..=500.0).suffix(" mm"));
-            ui.end_row();
-        });
-        ui.label("Sections along z (length, εr, aperture):");
-        let mut remove = None;
-        for (i, s) in e.sections.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                ui.label(format!("{}", i + 1));
-                ui.add(egui::DragValue::new(&mut s.length).speed(0.1).range(0.5..=1000.0).suffix(" mm"));
-                ui.add(egui::DragValue::new(&mut s.eps_r).speed(0.01).range(1.0..=100.0).prefix("εr "));
-                ui.add(egui::DragValue::new(&mut s.tan_d).speed(0.0005).range(0.0..=1.0).prefix("tanδ ")).on_hover_text("dielectric loss tangent");
-                let mut narrowed = s.aperture.is_some();
-                if ui.checkbox(&mut narrowed, "").on_hover_text("narrow the broad wall to a centred aperture (iris, step)").changed() {
-                    s.aperture = narrowed.then_some(s.aperture.unwrap_or(e.width / 2.0));
-                }
-                if let Some(w) = s.aperture.as_mut() {
-                    ui.add(egui::DragValue::new(w).speed(0.05).range(0.5..=e.width).prefix("w ").suffix(" mm"));
-                }
-                let mut lowered = s.aperture_h.is_some();
-                if ui
-                    .checkbox(&mut lowered, "")
-                    .on_hover_text("narrow the narrow wall to a centred aperture (E-plane step, capacitive iris)")
-                    .changed()
-                {
-                    s.aperture_h = lowered.then_some(s.aperture_h.unwrap_or(e.height / 2.0));
-                }
-                if let Some(h) = s.aperture_h.as_mut() {
-                    ui.add(egui::DragValue::new(h).speed(0.05).range(0.2..=e.height).prefix("h ").suffix(" mm"));
-                }
-                if ui.small_button("✕").clicked() {
-                    remove = Some(i);
-                }
-            });
-        }
-        if let Some(i) = remove
-            && e.sections.len() > 1
-        {
-            e.sections.remove(i);
-        }
-        if ui.button("Add section").clicked() {
-            e.sections.push(SectionEdit::new(10.0, 1.0));
-        }
-        ui.horizontal(|ui| {
-            ui.label("walls");
-            let name = |c: Option<f64>| match c {
-                None => "perfect conductor".to_owned(),
-                Some(s) => format!("σ = {s:.2e} S/m"),
-            };
-            egui::ComboBox::from_id_salt("walls").selected_text(name(e.conductivity)).show_ui(ui, |ui| {
-                for (label, c) in [("perfect conductor", None), ("copper", Some(5.8e7)), ("aluminium", Some(3.8e7)), ("brass", Some(1.5e7))] {
-                    ui.selectable_value(&mut e.conductivity, c, label);
-                }
-            });
-        });
-        ui.separator();
-        ui.heading("Mesh and analysis");
-        egui::Grid::new("solve").num_columns(2).show(ui, |ui| {
-            ui.label("element size");
-            ui.add(egui::DragValue::new(&mut e.size).speed(0.05).range(0.5..=50.0).suffix(" mm"));
-            ui.end_row();
-            ui.label("at iris edges");
-            ui.add(egui::DragValue::new(&mut e.edge).speed(0.01).range(0.05..=1.0).prefix("× "));
-            ui.end_row();
-            ui.label("");
-            ui.checkbox(&mut e.one_layer_y, "one layer across b (H-plane)");
-            ui.end_row();
-            ui.label("element order");
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut e.order, 1, "1");
-                ui.radio_value(&mut e.order, 2, "2");
-            });
-            ui.end_row();
-            ui.label("port modes");
-            ui.add(egui::DragValue::new(&mut e.modes).range(1..=32));
-            ui.end_row();
-            ui.label("analysis");
-            ui.horizontal(|ui| {
-                let sweep = matches!(e.analysis, Analysis::Sweep);
-                if ui.radio(sweep, "S-parameters").clicked() {
-                    e.analysis = Analysis::Sweep;
-                }
-                if ui.radio(!sweep, "eigenmodes").clicked() && sweep {
-                    e.analysis = Analysis::Eigen { count: 4, near: 0.5 * (e.start + e.stop) };
-                }
-            });
-            ui.end_row();
-            if let Analysis::Eigen { count, near } = &mut e.analysis {
-                ui.label("modes");
-                ui.add(egui::DragValue::new(count).range(1..=50));
-                ui.end_row();
-                ui.label("near");
-                ui.add(egui::DragValue::new(near).speed(0.05).range(0.1..=1000.0).suffix(" GHz"));
-                ui.end_row();
-            }
-            ui.label("start");
-            ui.add(egui::DragValue::new(&mut e.start).speed(0.05).range(0.1..=1000.0).suffix(" GHz"));
-            ui.end_row();
-            ui.label("stop");
-            ui.add(egui::DragValue::new(&mut e.stop).speed(0.05).range(0.1..=1000.0).suffix(" GHz"));
-            ui.end_row();
-            ui.label("points");
-            ui.add(egui::DragValue::new(&mut e.points).range(1..=401));
-            ui.end_row();
-            ui.label("time domain");
-            ui.horizontal(|ui| {
-                let mut on = e.time_domain.is_some();
-                if ui.checkbox(&mut on, "").on_hover_text("also solve in the time domain (finite integration) and draw its curves").changed() {
-                    e.time_domain = on.then_some(1.0);
-                }
-                if let Some(cell) = e.time_domain.as_mut() {
-                    ui.add(egui::DragValue::new(cell).speed(0.05).range(0.2..=10.0).prefix("cell ").suffix(" mm"));
-                }
-            });
-            ui.end_row();
-        });
-        ui.horizontal(|ui| {
-            let busy = self.solving.is_some();
-            if ui.add_enabled(!busy, egui::Button::new("Solve")).clicked() {
-                self.solve();
-            }
-            if ui.button("High-pass sample").clicked() {
-                self.edit = ModelEdit::default();
-            }
-            if ui.button("Band-pass sample").clicked() {
-                self.edit = ModelEdit::bandpass();
-            }
-            if ui.button("Cavity sample").clicked() {
-                self.edit = ModelEdit::cavity();
-            }
-            if busy {
-                ui.spinner();
-            }
-        });
-        ui.separator();
-        ui.heading("Samples and scripts");
-        ui.label("Any model the engine knows, solved as it comes: solids, imported surfaces, open problems.");
-        let busy = self.solving.is_some();
-        ui.horizontal(|ui| {
-            let current = self.sample.clone();
-            egui::ComboBox::from_id_salt("sample").selected_text(current).show_ui(ui, |ui| {
-                for smp in emcraft_engine::sample::SAMPLES {
-                    ui.selectable_value(&mut self.sample, smp.name.to_owned(), smp.name).on_hover_text(smp.label);
-                }
-            });
-            if ui.add_enabled(!busy, egui::Button::new("Run sample")).clicked() {
-                self.run_sample();
-            }
-        });
-        if let Some(smp) = emcraft_engine::sample::find(&self.sample) {
-            ui.small(smp.label);
-        }
-        ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.script_path).hint_text("script.json").desired_width(200.0));
-            if ui.add_enabled(!busy && !self.script_path.trim().is_empty(), egui::Button::new("Run script")).clicked() {
-                self.run_file();
-            }
-        });
-        ui.separator();
-        ui.heading("View");
-        if let Some(e) = self.session.eigen.as_ref() {
-            let label = |i: usize| {
-                e.modes.get(i).map_or(String::new(), |m| {
-                    let q = m.q().map_or(String::new(), |q| format!(", Q {q:.0}"));
-                    format!("{}: {:.4} GHz{q}", i + 1, GHZ.from_si(m.frequency))
-                })
-            };
-            let mut idx = self.view.mode.unwrap_or(0);
-            egui::ComboBox::from_label("mode").selected_text(label(idx)).show_ui(ui, |ui| {
-                for i in 0..e.modes.len() {
-                    ui.selectable_value(&mut idx, i, label(i));
-                }
-            });
-            self.view.mode = Some(idx);
-        }
-        let freqs = self.frequencies();
-        if !freqs.is_empty() && self.view.mode.is_none() {
-            let mut idx = freqs.iter().position(|f| (f - self.view.frequency).abs() <= 1e-9 * f).unwrap_or(0);
-            let label = |f: f64| format!("{:.4} GHz", GHZ.from_si(f));
-            egui::ComboBox::from_label("frequency").selected_text(label(self.view.frequency)).show_ui(ui, |ui| {
-                for (i, f) in freqs.iter().enumerate() {
-                    ui.selectable_value(&mut idx, i, label(*f));
-                }
-            });
-            if let Some(f) = freqs.get(idx) {
-                self.view.frequency = *f;
-            }
-        }
-        ui.horizontal(|ui| {
-            for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
-                if ui.radio_value(&mut self.view.plane, p, name).changed() {
-                    self.at_mm = None;
-                }
-            }
-        });
-        if let Some((span, axis)) = self.plane_span() {
-            let span_mm = MM.from_si(span);
-            let mut at = self.at_mm.unwrap_or(span_mm / 2.0);
-            if ui.add(egui::Slider::new(&mut at, 0.0..=span_mm).text(format!("{axis} (mm)"))).changed() {
-                self.at_mm = Some(at);
-            }
-        }
-        egui::ComboBox::from_label("colour").selected_text(self.view.component.clone()).show_ui(ui, |ui| {
-            for c in ["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"] {
-                ui.selectable_value(&mut self.view.component, c.to_owned(), c);
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.view.show_e, "E arrows");
-            ui.checkbox(&mut self.view.show_h, "H arrows");
-        });
-        ui.horizontal(|ui| {
-            ui.label("excite port");
-            ui.radio_value(&mut self.view.excitation, 0, "1");
-            ui.radio_value(&mut self.view.excitation, 1, "2");
-        });
-        let mut deg = self.view.phase.to_degrees().rem_euclid(360.0);
-        if ui.add(egui::Slider::new(&mut deg, 0.0..=360.0).text("ωt (deg)")).changed() {
-            self.view.phase = deg.to_radians();
-        }
-        ui.checkbox(&mut self.animate, "Animate over the period");
-        if self.session.radiation.is_some() && ui.add(egui::Slider::new(&mut self.pattern_phi, 0.0..=180.0).text("pattern φ (deg)")).changed() {
-            self.chart = None;
-        }
-    }
-
-    /// The field texture, redrawn when the view or the width changed.
-    fn update_field(&mut self, ctx: &egui::Context, width: usize) {
-        if !self.solved() {
-            return;
-        }
-        self.view.at = self.at_mm.map(|mm| MM.to_si(mm));
-        let key = format!("{:?}|{width}", self.view);
-        if self.field_key.as_deref() == Some(key.as_str()) {
-            return;
-        }
-        let at = match self.plane_span() {
-            Some((span, _)) => self.view.at.unwrap_or(span / 2.0).clamp(0.0, span),
-            None => return,
+    /// Takes a finished job's session and reply; answers the control requests waiting on it.
+    pub fn poll_job(&mut self) {
+        let Some(job) = &self.job else { return };
+        let done = match job.poll() {
+            worker::Poll::Running => return,
+            worker::Poll::Finished(d) => Some(d),
+            worker::Poll::Lost => None,
         };
-        if !self.samples.as_ref().is_some_and(|s| s.serves(&self.view, at)) {
-            match view::sample_plane(&self.session, &self.view) {
-                Ok(s) => self.samples = Some(s),
-                Err(e) => {
-                    self.status = e.to_string();
-                    return;
+        let Some(job) = self.job.take() else { return };
+        let secs = job.elapsed();
+        let reply = match done {
+            Some(d) => {
+                if d.reply.is_ok() {
+                    self.session = d.session;
+                }
+                d.reply
+            }
+            None => Err("the worker stopped without an answer".into()),
+        };
+        match &reply {
+            Ok(v) => {
+                self.after(&job.command, &job.params, v);
+                if let Some(m) = self.messages.last_mut() {
+                    m.text.push_str(&format!(" ({secs:.1} s)"));
                 }
             }
+            Err(e) => self.message(format!("{}: {e}", label(&job.command)), true),
         }
-        let Some(samples) = &self.samples else { return };
-        match samples.plot(&self.view) {
-            Ok(plot) => {
-                let c = emcraft_render::plot::draw(&plot, width);
-                let image = egui::ColorImage::from_rgba_unmultiplied([c.w, c.h], &c.rgba);
-                self.field = Some((ctx.load_texture("field", image, egui::TextureOptions::LINEAR), [c.w, c.h]));
-                self.field_key = Some(key);
-            }
-            Err(e) => self.status = e.to_string(),
-        }
-    }
-
-    fn update_chart(&mut self, ctx: &egui::Context, width: usize) {
-        if self.session.sweep.is_none() && self.session.radiation.is_none() {
-            self.chart = None;
-            return;
-        }
-        if self.chart.is_some() && self.chart_width == width {
-            return;
-        }
-        let chart = if self.session.sweep.is_some() {
-            view::sparameter_chart(&self.session)
-        } else {
-            emcraft_engine::open::pattern_chart(&self.session, self.pattern_phi, 91)
+        let answer = match reply {
+            Ok(v) => json!({"ok": true, "result": v}),
+            Err(e) => json!({"ok": false, "error": e}),
         };
-        if let Ok(chart) = chart {
-            let c = emcraft_render::chart::draw(&chart, width, 360);
-            let image = egui::ColorImage::from_rgba_unmultiplied([c.w, c.h], &c.rgba);
-            self.chart = Some((ctx.load_texture("chart", image, egui::TextureOptions::LINEAR), [c.w, c.h]));
-            self.chart_width = width;
+        for w in job.waiting {
+            let _ = w.send(answer.clone());
         }
     }
-}
 
-impl eframe::App for EmcraftApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.poll();
-        let ctx = ui.ctx().clone();
+    /// Stops the running job: the session stays as it was before it.
+    pub fn cancel_job(&mut self) -> bool {
+        let Some(job) = self.job.take() else { return false };
+        job.cancel();
+        self.message(format!("{} cancelled.", label(&job.command)), false);
+        for w in job.waiting {
+            let _ = w.send(json!({"ok": false, "error": emcraft_engine::progress::CANCELLED}));
+        }
+        true
+    }
+
+    /// Opens the dialog of `id` (commands without parameters run at once).
+    pub fn open_dialog(&mut self, id: &str) -> Result<(), String> {
+        let spec = emcraft_engine::find_command(id).ok_or_else(|| format!("unknown command `{}`", id.chars().take(100).collect::<String>()))?;
+        if spec.params.is_empty() {
+            return self.run(id, json!({})).map(|_| ());
+        }
+        let init = dialogs::initial(id, &self.session);
+        self.dialog = Some(dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs));
+        Ok(())
+    }
+
+    /// OK on the open dialog: runs its command with its parameters; the dialog stays open with
+    /// the error when they are refused.
+    pub fn dialog_ok(&mut self) -> Result<Value, String> {
+        let Some(d) = self.dialog.as_mut() else { return Err("no dialog is open".into()) };
+        let id = d.command.id;
+        let params = match d.params() {
+            Ok(p) => p,
+            Err(e) => {
+                d.error = Some(e.clone());
+                return Err(e);
+            }
+        };
+        match self.run(id, params) {
+            Ok(v) => {
+                self.dialog = None;
+                Ok(v)
+            }
+            Err(e) => {
+                if let Some(d) = self.dialog.as_mut() {
+                    d.error = Some(e.clone());
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// One frame's work before drawing: the job, control requests, the animation clock.
+    pub fn logic(&mut self, ctx: &egui::Context) {
+        self.frames += 1;
+        if self.ctx.as_ref() != Some(ctx) {
+            self.ctx = Some(ctx.clone());
+        }
+        theme::set_dark(self.dark);
+        theme::apply(ctx);
+        self.poll_job();
+        control::serve(self, ctx);
         let now = Instant::now();
-        if self.animate {
+        if self.field.animate && self.view == View::Field {
             let dt = self.last_frame.map_or(0.0, |t| now.duration_since(t).as_secs_f64()).min(0.1);
             // One period every three seconds.
-            self.view.phase = (self.view.phase + dt * std::f64::consts::TAU / 3.0).rem_euclid(std::f64::consts::TAU);
+            self.field.view.phase = (self.field.view.phase + dt * std::f64::consts::TAU / 3.0).rem_euclid(std::f64::consts::TAU);
             ctx.request_repaint();
         }
         self.last_frame = Some(now);
-        if self.solving.is_some() {
+        if self.job.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
+        if self.quit_requested {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
 
-        egui::Panel::top("top").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.strong("EMCraft");
-                ui.label("— frequency-domain FEM (Nédélec elements) for waveguides, cavities, bodies and open problems");
-            });
-        });
-        egui::Panel::bottom("status").show(ui, |ui| {
-            ui.label(&self.status);
-        });
-        egui::Panel::left("controls").default_size(340.0).resizable(true).show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| self.controls(ui));
-        });
-        egui::CentralPanel::default().show(ui, |ui| {
-            let avail = ui.available_width().max(400.0);
-            // Rounded so a resize does not redraw on every pixel.
-            let width = ((avail / 50.0).floor() * 50.0) as usize;
-            if !self.solved() {
-                ui.centered_and_justified(|ui| {
-                    ui.label(if self.solving.is_some() { "Solving…" } else { "No results yet: press Solve." });
-                });
-                return;
+    /// Feeds injected input to egui: everything up to and including the next pointer event, so
+    /// a click is a press in one frame after a move in the one before.
+    pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        let n = self
+            .synthetic
+            .iter()
+            .position(|e| {
+                matches!(
+                    e,
+                    egui::Event::PointerMoved(_)
+                        | egui::Event::PointerButton { .. }
+                        | egui::Event::MouseWheel { .. }
+                        | egui::Event::Key { pressed: false, .. }
+                )
+            })
+            .map_or(self.synthetic.len(), |i| i + 1);
+        for event in self.synthetic.drain(..n) {
+            match &event {
+                egui::Event::ModifiersChanged(m) => self.synthetic_mods = *m,
+                egui::Event::PointerButton { pos, modifiers, pressed, .. } => {
+                    raw.events.push(egui::Event::PointerMoved(*pos));
+                    raw.events.push(egui::Event::ModifiersChanged(*modifiers));
+                    // A drag keeps its press's modifiers until the release.
+                    self.synthetic_mods = if *pressed { *modifiers } else { egui::Modifiers::NONE };
+                }
+                egui::Event::Key { modifiers, .. } => raw.events.push(egui::Event::ModifiersChanged(*modifiers)),
+                egui::Event::PointerMoved(_) => raw.events.push(egui::Event::ModifiersChanged(self.synthetic_mods)),
+                _ => {}
             }
-            self.update_field(&ctx, width);
-            self.update_chart(&ctx, width);
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                if let Some((tex, [w, h])) = &self.field {
-                    ui.add(egui::Image::new((tex.id(), egui::vec2(*w as f32, *h as f32))));
-                }
-                if let Some((tex, [w, h])) = &self.chart {
-                    let r = ui.add(egui::Image::new((tex.id(), egui::vec2(*w as f32, *h as f32))).sense(egui::Sense::click()));
-                    let freqs = self.frequencies();
-                    if r.clicked()
-                        && let (Some(pos), Some(f0), Some(f1)) = (r.interact_pointer_pos(), freqs.first(), freqs.last())
-                    {
-                        let fx = ((pos.x - r.rect.min.x) / r.rect.width()) as f64;
-                        if let Some(f) = chart_frequency(fx, *w as f64, *f0, *f1).and_then(|f| nearest(&freqs, f)) {
-                            self.view.frequency = f;
-                        }
+            raw.events.push(event);
+        }
+    }
+
+    /// Lays out the whole window.
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        scenario::clear_handles();
+        let ctx = ui.ctx().clone();
+        ribbon::app_bar(self, ui);
+        ribbon::ribbon(self, ui);
+        status_area(self, ui);
+        browser::show(self, ui);
+        if self.dialog.as_ref().is_some_and(|d| d.docked) {
+            dialog_ui::docked(self, ui);
+        }
+        viewport::show(self, ui);
+        if self.dialog.as_ref().is_some_and(|d| !d.docked) {
+            dialog_ui::floating(self, &ctx);
+        }
+        ribbon::search_popup(self, &ctx);
+        self.collect_screenshots(&ctx);
+    }
+
+    /// Asks the window for a screenshot (answered in a later frame).
+    pub(crate) fn request_screenshot(&mut self, path: Option<String>, reply: Sender<Value>) {
+        self.shot_token += 1;
+        self.shots.push(Shot { token: self.shot_token, path, reply, asked: Instant::now(), sent: false });
+    }
+
+    fn collect_screenshots(&mut self, ctx: &egui::Context) {
+        if self.shots.is_empty() {
+            return;
+        }
+        for s in self.shots.iter_mut().filter(|s| !s.sent) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(s.token)));
+            s.sent = true;
+        }
+        let events: Vec<(u64, Arc<egui::ColorImage>)> = ctx.input(|i| {
+            i.raw
+                .events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Screenshot { user_data, image, .. } => {
+                        let token = user_data.data.as_ref().and_then(|d| d.downcast_ref::<u64>()).copied()?;
+                        Some((token, image.clone()))
                     }
-                    if self.session.sweep.is_some() {
-                        ui.label("Click the chart to show the fields at the nearest solved frequency.");
-                    }
-                }
-            });
+                    _ => None,
+                })
+                .collect()
         });
+        for (token, image) in events {
+            if let Some(i) = self.shots.iter().position(|s| s.token == token) {
+                let shot = self.shots.remove(i);
+                let _ = shot.reply.send(control::save_screenshot(&image, shot.path.as_deref()));
+            }
+        }
+        self.shots.retain(|s| {
+            if s.asked.elapsed().as_secs_f64() < 8.0 {
+                return true;
+            }
+            let _ = s.reply.send(json!({"ok": false, "error": "no frame was presented (window hidden?); use ui.render"}));
+            false
+        });
+        ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
 }
 
-/// Opens the desktop app; `sample` (`highpass`, `iris-bandpass`) is solved at once.
-pub fn run(sample: Option<String>) -> Result<(), String> {
+/// A command's label for messages.
+pub fn label(id: &str) -> &str {
+    emcraft_engine::find_command(id).map_or(id, |c| c.label)
+}
+
+/// The solved frequency nearest `f`.
+pub fn nearest(freqs: &[f64], f: f64) -> Option<f64> {
+    freqs.iter().copied().min_by(|a, b| (a - f).abs().total_cmp(&(b - f).abs()))
+}
+
+/// The message card at the bottom: the last messages, and the running job's progress and Cancel.
+fn status_area(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    let t = theme::Tokens::get();
+    // Taller while a job runs: its progress row sits above the messages.
+    egui::Panel::bottom("emcraft_status")
+        .exact_size(if app.job.is_some() { 130.0 } else { 96.0 })
+        .show_separator_line(false)
+        .frame(egui::Frame::NONE.fill(t.viewport_bottom).inner_margin(egui::Margin { left: 6, right: 6, top: 0, bottom: 6 }))
+        .show(ui, |ui| {
+            let height = ui.available_height() - 12.0;
+            t.card(t.panel).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.set_min_height(height);
+                scenario::publish_rect("status", ui.max_rect());
+                let mut cancel = false;
+                if let Some(job) = &app.job {
+                    let snap = job.snapshot();
+                    ui.horizontal(|ui| {
+                        // Cancel first, where it stays put while the text beside it changes.
+                        if ui_kit::button(ui, "Cancel", false, true, "status:cancel").clicked() {
+                            cancel = true;
+                        }
+                        ui.spinner();
+                        let what = if snap.total > 0 {
+                            format!("{} — {} {} of {}", label(&job.command), snap.stage, (snap.done + 1).min(snap.total), snap.total)
+                        } else {
+                            format!("{} — running", label(&job.command))
+                        };
+                        ui.label(egui::RichText::new(format!("{what} ({:.0} s)", job.elapsed())).size(t.font_body));
+                        ui_kit::progress(ui, snap.fraction(), 180.0);
+                    });
+                }
+                if cancel {
+                    app.cancel_job();
+                }
+                let rest = (height - if app.job.is_some() { 36.0 } else { 0.0 }).max(16.0);
+                egui::ScrollArea::vertical().stick_to_bottom(true).max_height(rest).auto_shrink([false, false]).show(ui, |ui| {
+                    let start = app.messages.len().saturating_sub(40);
+                    for m in &app.messages[start..] {
+                        let text = if m.count > 1 { format!("{} (×{})", m.text, m.count) } else { m.text.clone() };
+                        ui.label(egui::RichText::new(text).size(t.font_body).color(if m.error { t.error } else { t.text }));
+                    }
+                });
+            });
+        });
+}
+
+/// Opens the desktop app; `sample` is opened and solved at once. `control` is the control
+/// channel's request queue (`emcraft --control PORT`).
+pub fn run(sample: Option<String>, control: Option<Receiver<ControlRequest>>) -> Result<(), String> {
+    run_with(sample, move |_| control)
+}
+
+/// Like [`run`], with the control queue made from the window's context (so the server can wake
+/// the window when a request arrives).
+pub fn run_with(sample: Option<String>, control: impl FnOnce(&egui::Context) -> Option<Receiver<ControlRequest>>) -> Result<(), String> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_title("EMCraft").with_inner_size([1500.0, 980.0]).with_min_inner_size([900.0, 600.0]),
+        viewport: egui::ViewportBuilder::default().with_title("EMCraft").with_inner_size([1500.0, 960.0]).with_min_inner_size([900.0, 600.0]),
         ..Default::default()
     };
-    eframe::run_native("EMCraft", options, Box::new(move |_cc| Ok(Box::new(EmcraftApp::new(sample.as_deref()))))).map_err(|e| e.to_string())
+    eframe::run_native(
+        "EMCraft",
+        options,
+        Box::new(move |cc| {
+            let mut app = EmcraftApp::with_sample(sample.as_deref());
+            app.control_rx = control(&cc.egui_ctx);
+            Ok(Box::new(Window(app)))
+        }),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// The app inside eframe.
+struct Window(EmcraftApp);
+
+impl eframe::App for Window {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.0.logic(ctx);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.0.ui(ui);
+    }
+
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.0.raw_input_hook(raw);
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_default_edit_is_the_sample_and_solves() {
-        let script = ModelEdit::default().script();
-        let steps = script.as_array().unwrap();
-        assert_eq!(steps.iter().filter(|s| s["command"] == "model.material.create").count(), 1);
-        let mut s = Session::new();
-        // Coarser and two frequencies, for speed.
-        let mut quick = ModelEdit { size: 5.0, points: 2, ..ModelEdit::default() };
-        quick.order = 1;
-        s.run_script(&quick.script()).unwrap();
-        assert_eq!(s.sweep.as_ref().unwrap().results.len(), 2);
-        assert_eq!(s.model.waveguide.as_ref().unwrap().sections[1].material, "vacuum");
-        // The band-pass edit builds the sample's model.
-        let mut b = Session::new();
-        let script = ModelEdit::bandpass().script();
-        b.run_script(&Value::Array(script.as_array().unwrap()[..3].to_vec())).unwrap();
-        let mut sample = Session::new();
-        sample.execute("file.sample", &json!({"name": "iris-bandpass"})).unwrap();
-        assert_eq!(b.model.waveguide, sample.model.waveguide);
-        assert_eq!(b.model.mesh.as_ref().map(|m| m.tets.len()), sample.model.mesh.as_ref().map(|m| m.tets.len()));
-        // The cavity edit runs an eigenmode analysis with copper walls.
-        let script = ModelEdit::cavity().script();
-        let steps = script.as_array().unwrap();
-        assert!(steps.iter().any(|s| s["command"] == "solve.eigenmodes"));
-        assert!(steps.iter().any(|s| s["command"] == "model.walls"));
-        assert!(!steps.iter().any(|s| s["command"] == "model.port.create"));
-    }
-
-    #[test]
-    fn chart_clicks_map_to_frequencies() {
-        // 1000 px wide: the plot runs from x = 90 to 970.
-        assert_eq!(chart_frequency(90.0 / 1000.0, 1000.0, 5.0, 9.0), Some(5.0));
-        assert!((chart_frequency(530.0 / 1000.0, 1000.0, 5.0, 9.0).unwrap() - 7.0).abs() < 1e-12);
-        assert_eq!(chart_frequency(0.01, 1000.0, 5.0, 9.0), None);
-        assert_eq!(nearest(&[5.0, 6.0, 7.0], 6.4), Some(6.0));
-        assert_eq!(nearest(&[], 6.4), None);
-    }
-
-    /// A solved session put in the app draws its field and its chart: an unstructured solid's
-    /// eigenmode, and an open problem's field and far-field pattern.
-    #[test]
-    fn solids_and_open_problems_draw() {
-        let ctx = egui::Context::default();
-        let mut app = EmcraftApp::new(None);
-        let mut s = Session::new();
-        s.run_script(&json!([
-            {"command": "geometry.solid", "params": {"shape": "box", "size": [40, 40, 40]}},
-            {"command": "model.open", "params": {"thickness": 10}},
-            {"command": "mesh.generate", "params": {"per_wavelength": 4, "frequency": 10}},
-            {"command": "source.dipole", "params": {"at": [20.1, 20.2, 19.9], "length": 1}},
-            {"command": "solve.radiation", "params": {"frequency": 10}}
-        ]))
-        .unwrap();
-        let (tx, rx) = channel();
-        tx.send(Ok(s)).unwrap();
-        app.solving = Some((rx, Instant::now()));
-        app.poll();
-        assert!(app.solved() && app.status.contains("radiated power"), "{}", app.status);
-        assert_eq!(app.plane_span().map(|x| x.1), Some("y"));
-        app.update_field(&ctx, 600);
-        app.update_chart(&ctx, 600);
-        assert!(app.field.is_some(), "{}", app.status);
-        assert!(app.chart.is_some());
-        // A cylinder's eigenmodes: a field, no chart.
-        let mut s = Session::new();
-        s.run_script(&json!([
-            {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}},
-            {"command": "mesh.generate", "params": {"size": 5}},
-            {"command": "solve.eigenmodes", "params": {"near": 11, "count": 1, "order": 1}}
-        ]))
-        .unwrap();
-        let (tx, rx) = channel();
-        tx.send(Ok(s)).unwrap();
-        app.solving = Some((rx, Instant::now()));
-        app.poll();
-        app.update_field(&ctx, 600);
-        app.update_chart(&ctx, 600);
-        assert!(app.field.is_some() && app.chart.is_none(), "{}", app.status);
-    }
-}
+mod tests;

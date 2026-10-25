@@ -1,0 +1,16 @@
+[
+  {"note": "The port-mode table: RESULTS ▸ Port modes asks for its frequency, solves the cross-sections on the worker and tabulates them"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"click": "tab:RESULTS"},
+  {"expect": {"handles": ["toolbar:show:sparameters", "toolbar:show:field", "toolbar:show:port_modes", "toolbar:show:eigenmodes", "toolbar:results.compare"]}},
+  {"click": "toolbar:show:port_modes"},
+  {"expect": {"view": "port_modes", "dialog": "solve.port_modes"}},
+  {"click": "dialog:field:frequency"},
+  {"key": "A", "cmd": true},
+  {"text": "9"},
+  {"click": "dialog:ok"},
+  {"until": {"busy": false, "inspect": {"port_modes": true}}, "timeout": 60},
+  {"expect": {"view": "port_modes", "status": "Port modes at 9", "handles": ["row:Port modes"]}},
+  {"expect": {"query": {"command": "model.summary", "path": "ports.0.modes", "value": 4}}},
+  {"shot": "port-modes"}
+]
