@@ -26,6 +26,8 @@
 //! the backward error.
 
 use emcraft_model::Point3;
+use faer::linalg::matmul::triangular::{BlockStructure, matmul};
+use faer::{Accum, MatMut, MatRef, Par};
 use num_complex::Complex64 as C;
 
 use crate::sparse::Csr;
@@ -301,10 +303,7 @@ fn interchange(f: &mut [C], m: usize, k: usize, rows: &mut [usize], p: usize, q:
 
 /// Pivot columns per block: pivots are chosen within a block, then the block updates the rest
 /// of the front at once.
-const BLOCK: usize = 32;
-
-/// Columns updated together in a block update.
-const TILE: usize = 8;
+const BLOCK: usize = 64;
 
 /// The start of column b of a packed lower triangle of order m (columns stored from their
 /// diagonal down).
@@ -383,15 +382,24 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
                         *x = ci * dinv;
                     }
                     f[p * m + p] = C::new(1.0, 0.0);
-                    for j in p + 1..be {
-                        let cj = c[j - p - 1];
-                        if cj == C::new(0.0, 0.0) {
-                            continue;
-                        }
-                        for i in p + 1..m {
-                            let li = f[p * m + i];
-                            f[j * m + i] -= li * cj;
-                        }
+                    // The rest of the block's columns, every row below p: F −= l cᵀ.
+                    if p + 1 < be {
+                        let (rows, cols) = (m - p - 1, be - p - 1);
+                        let (left, right) = f.split_at_mut((p + 1) * m);
+                        let lcol = MatRef::from_column_major_slice(&left[p * m + p + 1..p * m + m], rows, 1);
+                        let crow = MatRef::from_row_major_slice(&c[..cols], 1, cols);
+                        let dst = MatMut::from_column_major_slice_mut(&mut right[..cols * m], m, cols).submatrix_mut(p + 1, 0, rows, cols);
+                        matmul(
+                            dst,
+                            BlockStructure::Rectangular,
+                            Accum::Add,
+                            lcol,
+                            BlockStructure::Rectangular,
+                            crow,
+                            BlockStructure::Rectangular,
+                            C::new(-1.0, 0.0),
+                            Par::Seq,
+                        );
                     }
                     p += 1;
                 }
@@ -412,12 +420,25 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
                     f[p * m + p] = C::new(1.0, 0.0);
                     f[p * m + p + 1] = C::new(0.0, 0.0);
                     f[(p + 1) * m + p + 1] = C::new(1.0, 0.0);
-                    for j in p + 2..be {
-                        let (cj0, cj1) = (c0v[j - p - 2], c1v[j - p - 2]);
-                        for i in p + 2..m {
-                            let (l0, l1) = (f[p * m + i], f[(p + 1) * m + i]);
-                            f[j * m + i] -= l0 * cj0 + l1 * cj1;
-                        }
+                    // F −= [l₀ l₁] [c₀ c₁]ᵀ over the rest of the block.
+                    if p + 2 < be {
+                        let (rows, cols) = (m - p - 2, be - p - 2);
+                        let (left, right) = f.split_at_mut((p + 2) * m);
+                        let lcols = MatRef::from_column_major_slice(&left[p * m..(p + 2) * m], m, 2).subrows(p + 2, rows);
+                        let crows: Vec<C> = c0v[..cols].iter().chain(&c1v[..cols]).copied().collect();
+                        let cm = MatRef::from_row_major_slice(&crows, 2, cols);
+                        let dst = MatMut::from_column_major_slice_mut(&mut right[..cols * m], m, cols).submatrix_mut(p + 2, 0, rows, cols);
+                        matmul(
+                            dst,
+                            BlockStructure::Rectangular,
+                            Accum::Add,
+                            lcols,
+                            BlockStructure::Rectangular,
+                            cm,
+                            BlockStructure::Rectangular,
+                            C::new(-1.0, 0.0),
+                            Par::Seq,
+                        );
                     }
                     p += 2;
                 }
@@ -455,57 +476,43 @@ fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, p
                     Pivot::Second => t += 1,
                 }
             }
-            let columns: Vec<(usize, &mut [C])> = f[be * m..].chunks_mut(m).enumerate().map(|(c, col)| (be + c, col)).collect();
-            // Columns go in tiles of TILE: each row of W is read once per tile, not once per
-            // column (the update is bound by memory traffic, not arithmetic).
-            let mut tiles: Vec<Vec<(usize, &mut [C])>> = Vec::new();
-            for c in columns {
-                match tiles.last_mut() {
-                    Some(t) if t.len() < TILE => t.push(c),
-                    _ => tiles.push(vec![c]),
-                }
+            // F −= W Lᵀ by a blocked matrix product (faer): the later panel columns over every
+            // row below the block (they pivot among themselves), the trailing block's lower part.
+            // Its sums run in an order that does not depend on the threads.
+            let kp = k.saturating_sub(be).min(below);
+            let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
+            let wm = MatRef::from_row_major_slice(&w, below, nb);
+            let lm = MatRef::from_row_major_slice(&l, below, nb);
+            let mut fm = MatMut::from_column_major_slice_mut(&mut *f, m, m);
+            let minus = C::new(-1.0, 0.0);
+            if kp > 0 {
+                let dst = fm.as_mut().submatrix_mut(be, be, below, kp);
+                matmul(
+                    dst,
+                    BlockStructure::Rectangular,
+                    Accum::Add,
+                    wm,
+                    BlockStructure::Rectangular,
+                    lm.subrows(0, kp).transpose(),
+                    BlockStructure::Rectangular,
+                    minus,
+                    par,
+                );
             }
-            let update = |tile: &mut Vec<(usize, &mut [C])>| {
-                // Later panel columns need every row below the block (they pivot among
-                // themselves); the trailing block only its lower part.
-                let starts: Vec<usize> = tile.iter().map(|(j, _)| if *j < k { be } else { *j }).collect();
-                let from = starts.iter().copied().min().unwrap_or(m);
-                let ls: Vec<&[C]> = tile.iter().map(|(j, _)| &l[(j - be) * nb..(j - be + 1) * nb]).collect();
-                for i in from..m {
-                    let wi = &w[(i - be) * nb..(i - be + 1) * nb];
-                    for (c, (_, col)) in tile.iter_mut().enumerate() {
-                        if i < starts[c] {
-                            continue;
-                        }
-                        let (mut re, mut im) = (0.0, 0.0);
-                        for (a, b) in wi.iter().zip(ls[c]) {
-                            re += a.re * b.re - a.im * b.im;
-                            im += a.re * b.im + a.im * b.re;
-                        }
-                        col[i] -= C::new(re, im);
-                    }
-                }
-            };
-            let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
-            if threads <= 1 || below * below * nb < PARALLEL_WORK {
-                for mut t in tiles {
-                    update(&mut t);
-                }
-            } else {
-                let mut parts: Vec<Vec<Vec<(usize, &mut [C])>>> = (0..threads).map(|_| Vec::new()).collect();
-                for (n, t) in tiles.into_iter().enumerate() {
-                    parts[n % threads].push(t);
-                }
-                std::thread::scope(|scope| {
-                    for part in parts {
-                        let update = &update;
-                        scope.spawn(move || {
-                            for mut t in part {
-                                update(&mut t);
-                            }
-                        });
-                    }
-                });
+            if kp < below {
+                let rest = below - kp;
+                let dst = fm.submatrix_mut(be + kp, be + kp, rest, rest);
+                matmul(
+                    dst,
+                    BlockStructure::TriangularLower,
+                    Accum::Add,
+                    wm.subrows(kp, rest),
+                    BlockStructure::Rectangular,
+                    lm.subrows(kp, rest).transpose(),
+                    BlockStructure::Rectangular,
+                    minus,
+                    par,
+                );
             }
         }
         b0 = be;
@@ -1217,5 +1224,33 @@ mod tests {
         let mut z = b.clone();
         again.solve(&mut z).unwrap();
         assert_eq!(x, z);
+    }
+
+    #[test]
+    #[ignore = "benchmark: cargo test --release -p emcraft-solver --lib dense_front_rate -- --ignored --nocapture"]
+    fn dense_front_rate() {
+        // A dense complex symmetric matrix, one front: the factorization's arithmetic rate.
+        for n in [800usize, 1600] {
+            let all: Vec<usize> = (0..n).collect();
+            let mut a = Csr::from_groups(n, std::iter::once(all.as_slice()));
+            let mut rng = Rng(0x1234_5678);
+            for i in 0..n {
+                for j in 0..=i {
+                    let v = C::new(rng.next(), rng.next());
+                    let v = if i == j { v + C::new(n as f64, 0.0) } else { v };
+                    a.add(i, j, v);
+                    if i != j {
+                        a.add(j, i, v);
+                    }
+                }
+            }
+            let xyz: Vec<Point3> = (0..n).map(|i| Point3::new(i as f64, 0.0, 0.0)).collect();
+            let t = std::time::Instant::now();
+            let f = Ldlt::factor(&a, &xyz).unwrap();
+            let s = t.elapsed().as_secs_f64();
+            // n³/3 complex multiply–adds of 8 real flops each.
+            let gflops = 8.0 * (n as f64).powi(3) / 3.0 / s / 1e9;
+            eprintln!("n {n}: {s:.3} s, {gflops:.1} GFLOP/s, front {}", f.largest_front);
+        }
     }
 }
