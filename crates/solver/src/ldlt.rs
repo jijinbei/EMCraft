@@ -182,6 +182,9 @@ pub struct Ldlt {
     pub entries: usize,
     /// The largest front.
     pub largest_front: usize,
+    /// Seconds of the symbolic analysis (when made with it) and of the numeric factorization.
+    pub analysis_seconds: f64,
+    pub numeric_seconds: f64,
 }
 
 /// The elimination tree of the pattern in position order: `parent[j]`, `usize::MAX` for roots.
@@ -596,52 +599,33 @@ fn amalgamate(starts: &[usize], rows: Vec<Vec<usize>>, parent: &[usize], n: usiz
     (out_starts, out_rows)
 }
 
-impl Ldlt {
-    /// Factors `a` (complex symmetric, both triangles stored) with the unknowns ordered by
-    /// nested dissection on `xyz` (a point per unknown).
-    pub fn factor(a: &Csr, xyz: &[Point3]) -> Result<Ldlt, FactorError> {
-        Ldlt::factor_within(a, xyz, memory_budget())
-    }
+/// The symbolic part of a factorization, which depends only on the pattern and the points: the
+/// fill-reducing order, the elimination tree and the supernodes with their row structures.
+#[derive(Clone, Debug)]
+pub struct Analysis {
+    n: usize,
+    /// The pattern it was made for.
+    ptr: Vec<usize>,
+    col: Vec<usize>,
+    perm: Vec<usize>,
+    inv: Vec<usize>,
+    parent: Vec<usize>,
+    starts: Vec<usize>,
+    super_rows: Vec<Vec<usize>>,
+    snode_of: Vec<usize>,
+    /// Seconds it took.
+    pub seconds: f64,
+}
 
-    /// [`Ldlt::factor`] keeping at most `budget` bytes of the factor in memory, the rest in a
-    /// scratch file on disk.
-    pub fn factor_within(a: &Csr, xyz: &[Point3], budget: u64) -> Result<Ldlt, FactorError> {
-        Ldlt::factor_bordered(a, xyz, budget, 0)
-    }
-
-    /// [`Ldlt::factor_within`] with the last `last` unknowns eliminated after all the others
-    /// (a bordered matrix's border: unknowns each coupled to many).
-    pub fn factor_bordered(a: &Csr, xyz: &[Point3], budget: u64, last: usize) -> Result<Ldlt, FactorError> {
+impl Analysis {
+    /// Orders the unknowns of `a`'s pattern (nested dissection on `xyz`, the last `last` at the
+    /// end) and finds its supernodes.
+    pub fn new(a: &Csr, xyz: &[Point3], last: usize) -> Result<Analysis, FactorError> {
+        let t0 = std::time::Instant::now();
         let n = a.n;
         if xyz.len() != n || a.ptr.len() != n + 1 {
             return Err(FactorError::Dimension(format!("{} unknowns, {} points", n, xyz.len())));
         }
-        if a.val.iter().any(|v| !v.re.is_finite() || !v.im.is_finite()) {
-            return Err(FactorError::NotFinite);
-        }
-        if n > 0 && !(a.max_abs() > 0.0) {
-            return Err(FactorError::Zero);
-        }
-        // Equilibrate: S A S with each row's largest entry about one, so the static-pivot
-        // threshold below means the same for every unknown. (Graded meshes mix elements whose
-        // matrices differ by many orders; against the largest entry of the whole matrix, the
-        // threshold would replace the pivots of every small one.)
-        let scale: Vec<f64> = (0..n)
-            .map(|i| {
-                let m = a.val[a.ptr[i]..a.ptr[i + 1]].iter().fold(0.0f64, |m, v| m.max(v.norm()));
-                if m > 0.0 { 1.0 / m.sqrt() } else { 1.0 }
-            })
-            .collect();
-        let mut scaled = a.clone();
-        for i in 0..n {
-            for k in scaled.ptr[i]..scaled.ptr[i + 1] {
-                scaled.val[k] *= scale[i] * scale[scaled.col[k]];
-            }
-        }
-        let a = &scaled;
-        let norm = a.max_abs();
-        let tau = f64::EPSILON.sqrt() * norm;
-
         // Ordering: nested dissection, then a postorder of its elimination tree.
         let nd = crate::ordering::fill_reducing_order_last(xyz, &a.adjacency(), last);
         let parent0 = etree(&lower_rows(a, &nd, &invert(&nd)));
@@ -692,6 +676,92 @@ impl Ldlt {
         drop(structure);
         starts.push(n);
 
+        let (starts, super_rows) = amalgamate(&starts, super_rows, &parent, n);
+        let ns = super_rows.len();
+        let mut snode_of = vec![0usize; n];
+        for s in 0..ns {
+            for j in starts[s]..starts[s + 1] {
+                snode_of[j] = s;
+            }
+        }
+        Ok(Analysis {
+            n,
+            ptr: a.ptr.clone(),
+            col: a.col.clone(),
+            perm,
+            inv,
+            parent,
+            starts,
+            super_rows,
+            snode_of,
+            seconds: t0.elapsed().as_secs_f64(),
+        })
+    }
+
+    /// Whether `a` has the pattern this analysis is of.
+    pub fn fits(&self, a: &Csr) -> bool {
+        a.n == self.n && a.ptr == self.ptr && a.col == self.col
+    }
+}
+
+impl Ldlt {
+    /// Factors `a` (complex symmetric, both triangles stored) with the unknowns ordered by
+    /// nested dissection on `xyz` (a point per unknown).
+    pub fn factor(a: &Csr, xyz: &[Point3]) -> Result<Ldlt, FactorError> {
+        Ldlt::factor_within(a, xyz, memory_budget())
+    }
+
+    /// [`Ldlt::factor`] keeping at most `budget` bytes of the factor in memory, the rest in a
+    /// scratch file on disk.
+    pub fn factor_within(a: &Csr, xyz: &[Point3], budget: u64) -> Result<Ldlt, FactorError> {
+        Ldlt::factor_bordered(a, xyz, budget, 0)
+    }
+
+    /// [`Ldlt::factor_within`] with the last `last` unknowns eliminated after all the others
+    /// (a bordered matrix's border: unknowns each coupled to many).
+    pub fn factor_bordered(a: &Csr, xyz: &[Point3], budget: u64, last: usize) -> Result<Ldlt, FactorError> {
+        let analysis = Analysis::new(a, xyz, last)?;
+        Ldlt::factor_analysed(a, &analysis, budget)
+    }
+
+    /// Factors `a` with an [`Analysis`] of its pattern made before (the same pattern: a sweep's
+    /// frequencies share one), skipping the ordering and the symbolic factorization.
+    pub fn factor_analysed(a: &Csr, an: &Analysis, budget: u64) -> Result<Ldlt, FactorError> {
+        let t0 = std::time::Instant::now();
+        let n = a.n;
+        if !an.fits(a) {
+            return Err(FactorError::Dimension("the analysis is of another pattern".into()));
+        }
+        if a.val.iter().any(|v| !v.re.is_finite() || !v.im.is_finite()) {
+            return Err(FactorError::NotFinite);
+        }
+        if n > 0 && !(a.max_abs() > 0.0) {
+            return Err(FactorError::Zero);
+        }
+        // Equilibrate: S A S with each row's largest entry about one, so the static-pivot
+        // threshold below means the same for every unknown. (Graded meshes mix elements whose
+        // matrices differ by many orders; against the largest entry of the whole matrix, the
+        // threshold would replace the pivots of every small one.)
+        let scale: Vec<f64> = (0..n)
+            .map(|i| {
+                let m = a.val[a.ptr[i]..a.ptr[i + 1]].iter().fold(0.0f64, |m, v| m.max(v.norm()));
+                if m > 0.0 { 1.0 / m.sqrt() } else { 1.0 }
+            })
+            .collect();
+        let mut scaled = a.clone();
+        for i in 0..n {
+            for k in scaled.ptr[i]..scaled.ptr[i + 1] {
+                scaled.val[k] *= scale[i] * scale[scaled.col[k]];
+            }
+        }
+        let a = &scaled;
+        let norm = a.max_abs();
+        let tau = f64::EPSILON.sqrt() * norm;
+
+        let (perm, inv, parent) = (an.perm.clone(), &an.inv, &an.parent);
+        let (starts, super_rows, snode_of) = (&an.starts, an.super_rows.clone(), &an.snode_of);
+        let ns = super_rows.len();
+
         // Columns of A by position, lower part with the diagonal: (row position, value).
         let mut a_cols: Vec<Vec<(usize, C)>> = vec![Vec::new(); n];
         for u in 0..n {
@@ -704,14 +774,6 @@ impl Ldlt {
             }
         }
 
-        let (starts, super_rows) = amalgamate(&starts, super_rows, &parent, n);
-        let ns = super_rows.len();
-        let mut snode_of = vec![0usize; n];
-        for s in 0..ns {
-            for j in starts[s]..starts[s + 1] {
-                snode_of[j] = s;
-            }
-        }
         // Pending update matrices: (rows, m × m values) per supernode, consumed by the parent.
         let mut pending: Vec<Vec<(Vec<usize>, Vec<C>)>> = vec![Vec::new(); ns];
         let mut pos = vec![usize::MAX; n];
@@ -796,6 +858,8 @@ impl Ldlt {
         }
         let bytes_on_disk = scratch.as_ref().map_or(0, |s| s.end);
         Ok(Ldlt {
+            numeric_seconds: t0.elapsed().as_secs_f64(),
+            analysis_seconds: an.seconds,
             n,
             perm,
             supernodes,

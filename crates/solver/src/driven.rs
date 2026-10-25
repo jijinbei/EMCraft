@@ -217,6 +217,9 @@ pub struct Driven {
     pub(crate) pml: Option<(f64, f64, Vec<(usize, Vec3)>)>,
     /// Lumped ports: each with its vector cᵢ = ∫ Nᵢ · ŝ dl along its gap.
     pub lumped: Vec<LumpedData>,
+    /// The symbolic factorization of the system's pattern, made at the first frequency and
+    /// shared by the others (the pattern does not change with the frequency).
+    analysis: std::sync::OnceLock<crate::ldlt::Analysis>,
 }
 
 /// Solves a small dense complex system by Gaussian elimination with partial pivoting.
@@ -325,6 +328,28 @@ pub struct FrequencyResult {
     /// Entries of the factor and its largest frontal matrix (rows).
     pub factor_entries: usize,
     pub largest_front: usize,
+    /// Where the time went (seconds).
+    pub timings: Timings,
+}
+
+/// Seconds spent at one frequency, by stage. Not part of a result's value: two results compare
+/// equal whatever their timings.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Timings {
+    /// The system: matrix, layer, port modes and terms.
+    pub assembly: f64,
+    /// The ordering and symbolic factorization (0 when an earlier frequency's was reused).
+    pub analysis: f64,
+    /// The numeric factorization.
+    pub factor: f64,
+    /// The solves with iterative refinement and the S-parameters.
+    pub solve: f64,
+}
+
+impl PartialEq for Timings {
+    fn eq(&self, _: &Timings) -> bool {
+        true
+    }
 }
 
 /// Which field to evaluate.
@@ -489,7 +514,23 @@ impl Driven {
             }
         }
         let wall = sigma.map(|c| (c, ww.val.iter().map(|v| v.re).collect()));
-        Ok(Driven { order, mesh, topo, dofs, eps, mu, pattern, stiffness, mass, wall, walls, ports, pml, lumped })
+        Ok(Driven {
+            order,
+            mesh,
+            topo,
+            dofs,
+            eps,
+            mu,
+            pattern,
+            stiffness,
+            mass,
+            wall,
+            walls,
+            ports,
+            pml,
+            lumped,
+            analysis: std::sync::OnceLock::new(),
+        })
     }
 
     /// Adds the layer's tetrahedra at wavenumber k₀: with stretches s_d = 1 − j(σ₀/k₀)ξ_d², the
@@ -595,8 +636,18 @@ impl Driven {
 
     /// Factors a [`System`], its border last.
     pub(crate) fn factor(&self, s: &System) -> Result<Ldlt> {
+        let budget = crate::ldlt::memory_budget();
+        if let Some(an) = self.analysis.get().filter(|an| an.fits(&s.a)) {
+            let mut f = Ldlt::factor_analysed(&s.a, an, budget)?;
+            f.analysis_seconds = 0.0;
+            return Ok(f);
+        }
         let points: Vec<Point3> = self.dofs.points.iter().copied().chain(std::iter::repeat_n(Point3::ORIGIN, s.border)).collect();
-        Ok(Ldlt::factor_bordered(&s.a, &points, crate::ldlt::memory_budget(), s.border)?)
+        let an = crate::ldlt::Analysis::new(&s.a, &points, s.border)?;
+        let f = Ldlt::factor_analysed(&s.a, &an, budget)?;
+        // Kept for the next frequencies (the first analysis stays when two race).
+        let _ = self.analysis.set(an);
+        Ok(f)
     }
 
     /// Solves at one frequency (Hz).
@@ -604,8 +655,11 @@ impl Driven {
         if !(frequency.is_finite() && frequency > 0.0) {
             return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
         }
+        let t0 = std::time::Instant::now();
         let system = self.system(frequency)?;
+        let assembly = t0.elapsed().as_secs_f64();
         let f = self.factor(&system)?;
+        let t1 = std::time::Instant::now();
         let System { a, rhs, terms, .. } = system;
         let mut fields = Vec::with_capacity(rhs.len());
         let mut worst: f64 = 0.0;
@@ -637,6 +691,7 @@ impl Driven {
             perturbed_pivots: f.perturbed,
             factor_entries: f.entries,
             largest_front: f.largest_front,
+            timings: Timings { assembly, analysis: f.analysis_seconds, factor: f.numeric_seconds, solve: t1.elapsed().as_secs_f64() },
         })
     }
 

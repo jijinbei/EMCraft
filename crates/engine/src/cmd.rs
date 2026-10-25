@@ -904,6 +904,8 @@ fn sparameters(s: &mut Session, _: &Value) -> Result<Value> {
                 }
             }
             m.insert("backward_error".into(), json!(r.backward_error));
+            let t = &r.timings;
+            m.insert("seconds".into(), json!({"assembly": t.assembly, "analysis": t.analysis, "factor": t.factor, "solve": t.solve}));
             if r.impedances.iter().any(Option::is_some) {
                 m.insert("impedances".into(), json!(r.impedances));
             }
