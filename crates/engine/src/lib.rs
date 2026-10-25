@@ -143,6 +143,8 @@ pub struct Session {
     pub time_domain: Option<emcraft_fdtd::TdResult>,
     /// The open problem from `solve.radiation`.
     pub radiation: Option<Arc<open::Radiated>>,
+    /// The open problem from `solve.time_domain` on an open model.
+    pub td_radiation: Option<Arc<emcraft_fdtd::open::OpenRun>>,
     pub display: Display,
     pub limits: Limits,
 }
@@ -161,6 +163,7 @@ impl Session {
             eigen: None,
             time_domain: None,
             radiation: None,
+            td_radiation: None,
             display: Display::default(),
             limits: Limits::default(),
         }
@@ -172,16 +175,24 @@ impl Session {
         // An id from hostile input is not echoed in full.
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
         check_keys(spec, params)?;
-        let before = (self.model.clone(), self.sweep.clone(), self.eigen.clone(), self.time_domain.clone(), self.radiation.clone(), self.display);
+        let before = (
+            self.model.clone(),
+            self.sweep.clone(),
+            self.eigen.clone(),
+            self.time_domain.clone(),
+            self.radiation.clone(),
+            self.td_radiation.clone(),
+            self.display,
+        );
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, params)));
         match outcome {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => {
-                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.display) = before;
+                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.td_radiation, self.display) = before;
                 Err(e)
             }
             Err(_) => {
-                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.display) = before;
+                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.td_radiation, self.display) = before;
                 Err(EngineError::Panicked(spec.id.to_owned()))
             }
         }

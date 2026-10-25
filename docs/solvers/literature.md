@@ -119,6 +119,10 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   currents across a gap behind an impedance; C. A. Balanis, *Antenna Theory*, §8.5 — the
   induced-EMF impedance of a dipole and the sine and cosine integrals (Abramowitz & Stegun
   §5.2) (`emcraft-solver::driven`, `emcraft-theory::radiation`).
+- M. Piket-May, A. Taflove, J. Baron, *FD-TD modeling of digital signal propagation in 3-D
+  circuits with passive and active loads*, IEEE Trans. MTT 42(8):1514–1523, 1994 — resistive
+  voltage sources (lumped ports) on Yee edges; K. R. Umashankar, A. Taflove, B. Beker, IEEE
+  Trans. AP 35(11), 1987 — thin wires as lines of edges (`emcraft-fdtd::open`).
 - C. F. Bohren, D. R. Huffman, *Absorption and Scattering of Light by Small Particles*, Wiley
   1983, §4.4 and Appendix A — the Mie series and its BHMIE test values
   (`emcraft-theory::radiation`).

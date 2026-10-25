@@ -129,7 +129,7 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 
 ## `solve.time_domain` — Time-domain solve
 
-The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM; lossless models only.
+The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM; lossless models only. For an open model (model.open) it solves the antenna instead: its lumped ports and dipoles on a uniform grid with a CPML on all sides, the ports' impedances and S11 and the radiated power at each frequency, the far field from a Huygens box (results.far_field and view.pattern with `solver` time_domain). Gaps and dipoles must lie along grid axes.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -280,6 +280,8 @@ The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles
 |---|---|---|---|---|
 | `theta` | array |  | no | polar angles in degrees (default 0 to 180 by 10) |
 | `phi` | number |  | no | the azimuth in degrees (default 0) |
+| `solver` | string |  | no | `fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first |
+| `frequency` | number | frequency | no | the time domain's frequency (the nearest solved) |
 
 ## `view.pattern` — Pattern chart
 
@@ -292,6 +294,8 @@ Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity i
 | `points` | integer |  | no | angles from 0 to 180° (default 91) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
+| `solver` | string |  | no | `fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first |
+| `frequency` | number | frequency | no | the time domain's frequency (the nearest solved) |
 
 ## `file.sample` — Open sample
 

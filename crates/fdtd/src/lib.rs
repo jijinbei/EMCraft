@@ -30,6 +30,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use num_complex::Complex64 as C;
 
+pub mod open;
+
 /// The most cells a grid may have.
 pub const MAX_CELLS: usize = 20_000_000;
 /// The most time steps a run may take.
@@ -49,7 +51,7 @@ pub enum FdtdError {
 
 pub type Result<T> = std::result::Result<T, FdtdError>;
 
-fn invalid(what: &str, why: impl Into<String>) -> FdtdError {
+pub(crate) fn invalid(what: &str, why: impl Into<String>) -> FdtdError {
     FdtdError::Invalid { what: what.into(), why: why.into() }
 }
 

@@ -1,0 +1,13 @@
+{
+ "title": "Two 1 mm lumped gaps 15 mm apart in the time domain (1 mm cells, CPML): self resistance, mutual impedance, pattern",
+ "kind": "theory",
+ "source": "Gaps carrying uniform currents are Hertzian dipoles: radiation resistance 80π²(l/λ)², directivity (3/2) sin²θ, and the exact mutual impedance of their current elements (C. A. Balanis, Antenna Theory, 4th ed., eqs. 4-10, 4-19, 4-31; emcraft-theory radiation::mutual_impedance_parallel) — the same references as the frequency-domain case lumped-port-coupling",
+ "quantities": [
+  {"id": "r11", "quantity": "Re Z11 of the driven gap (Ω)", "measure": {"step": "solve", "pointer": "/points/0/ports/0/impedance/re"}, "value": 0.8785132712079293, "tolerance": {"relative": 0.02}, "reason": "a resistive voltage source on one Yee edge, 1 mm cells (λ/30), the transforms of its voltage and current: +0.18 %"},
+  {"id": "z21_re", "quantity": "Re Z21 (Ω): the open gap's voltage per ampere in the driven one", "measure": {"step": "solve", "pointer": "/points/0/ports/1/voltage/re"}, "value": -0.134102070020547, "tolerance": {"absolute": 0.005}, "reason": "−0.0005 Ω"},
+  {"id": "z21_im", "quantity": "Im Z21 (Ω)", "measure": {"step": "solve", "pointer": "/points/0/ports/1/voltage/im"}, "value": -0.37572741870386, "tolerance": {"absolute": 0.005}, "reason": "−0.0009 Ω (complex error 0.25 % of |Z21|)"},
+  {"id": "directivity_90", "quantity": "directivity at θ = 90°, φ = 17°", "measure": {"step": "ff", "pointer": "/points/0/directivity"}, "value": 1.5, "tolerance": {"relative": 0.02}, "reason": "the near-to-far transform of the Huygens box's transforms: +0.2 %"},
+  {"id": "directivity_45", "quantity": "directivity at θ = 45°", "measure": {"step": "ff", "pointer": "/points/1/directivity"}, "value": 0.75, "tolerance": {"relative": 0.02}, "reason": "0.0 %"},
+  {"id": "directivity_20", "quantity": "directivity at θ = 20°", "measure": {"step": "ff", "pointer": "/points/2/directivity"}, "value": 0.17546666766076646, "tolerance": {"relative": 0.03}, "reason": "−0.2 %"}
+ ]
+}

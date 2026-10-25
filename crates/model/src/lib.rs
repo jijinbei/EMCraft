@@ -8,9 +8,11 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod geom;
 pub mod mesh;
 pub mod units;
 
+pub use geom::{Point3, Vec3};
 pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
 use serde::{Deserialize, Serialize};
 
@@ -203,6 +205,31 @@ impl Shape {
         }
     }
 
+    /// Whether a point in the shape's own frame lies inside it (an imported surface by its winding
+    /// number).
+    pub fn contains(&self, p: [f64; 3]) -> bool {
+        match *self {
+            Shape::Box { size } => (0..3).all(|d| p[d] > 0.0 && p[d] < size[d]),
+            Shape::Cylinder { radius, length } => p[2] > 0.0 && p[2] < length && p[0] * p[0] + p[1] * p[1] < radius * radius,
+            Shape::Sphere { radius } => p[0] * p[0] + p[1] * p[1] + p[2] * p[2] < radius * radius,
+            Shape::Surface { ref positions, ref triangles, .. } => {
+                let mut total = 0.0;
+                for t in triangles {
+                    let [a, b, c] = t.map(|v| {
+                        let q = positions.get(v as usize).copied().unwrap_or([0.0; 3]);
+                        [q[0] - p[0], q[1] - p[1], q[2] - p[2]]
+                    });
+                    let n = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+                    let d = |u: [f64; 3], v: [f64; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+                    let x = [b[1] * c[2] - b[2] * c[1], b[2] * c[0] - b[0] * c[2], b[0] * c[1] - b[1] * c[0]];
+                    let (la, lb, lc) = (n(a), n(b), n(c));
+                    total += 2.0 * d(a, x).atan2(la * lb * lc + d(a, b) * lc + d(b, c) * la + d(c, a) * lb);
+                }
+                total / (4.0 * std::f64::consts::PI) > 0.5
+            }
+        }
+    }
+
     /// An imported surface's triangles on its lowest and highest z planes, the faces a port can
     /// close (empty for the primitives, whose ends the mesher knows).
     pub fn end_triangles(&self) -> [Vec<usize>; 2] {
@@ -248,6 +275,10 @@ pub struct Inclusion {
 }
 
 impl Inclusion {
+    pub fn contains(&self, p: [f64; 3]) -> bool {
+        self.shape.contains([p[0] - self.at[0], p[1] - self.at[1], p[2] - self.at[2]])
+    }
+
     pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
         let (lo, hi) = self.shape.bounds();
         ([0, 1, 2].map(|d| lo[d] + self.at[d]), [0, 1, 2].map(|d| hi[d] + self.at[d]))
@@ -362,6 +393,18 @@ pub struct Feature {
 }
 
 impl Feature {
+    /// Whether a point lies inside the feature's body.
+    pub fn contains(&self, p: [f64; 3]) -> bool {
+        let q = [p[0] - self.at[0], p[1] - self.at[1], p[2] - self.at[2]];
+        // The inverse of the turn: x → (z, x, y) undone is (y, z, x), and y's is x's.
+        let own = match self.axis {
+            Axis::X => [q[1], q[2], q[0]],
+            Axis::Y => [q[2], q[0], q[1]],
+            Axis::Z => q,
+        };
+        self.shape.contains(own)
+    }
+
     /// The bounding box (lo, hi).
     pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
         let (lo, hi) = self.shape.bounds();
@@ -663,6 +706,32 @@ impl Model {
         Ok(())
     }
 
+    /// What fills a point of a solid model: `None` outside the body or inside a conductor, else
+    /// the material's index (a dielectric inclusion's, or the solid's).
+    pub fn material_at(&self, p: [f64; 3]) -> Option<usize> {
+        let s = self.solid.as_ref()?;
+        let mut inside = s.shape.contains(p);
+        for f in &self.features {
+            match f.combine {
+                Combine::Add => inside |= f.contains(p),
+                Combine::Subtract => inside &= !f.contains(p),
+                Combine::Intersect => inside &= f.contains(p),
+            }
+        }
+        if !inside {
+            return None;
+        }
+        for inc in &self.inclusions {
+            if inc.contains(p) {
+                return match &inc.material {
+                    Some(m) => self.material(m).ok().map(|(i, _)| i),
+                    None => None,
+                };
+            }
+        }
+        self.material(&s.material).ok().map(|(i, _)| i)
+    }
+
     /// Combines a primitive with the solid (after the features already there). Its box must
     /// meet the solid's; the mesher checks the surfaces meet cleanly.
     pub fn add_feature(&mut self, f: Feature) -> Result<()> {
@@ -921,6 +990,32 @@ mod tests {
 
     fn guide() -> Waveguide {
         Waveguide { width: 0.02286, height: 0.01016, sections: vec![Section::new(0.01, "vacuum")] }
+    }
+
+    #[test]
+    fn points_are_classified() {
+        let mut m = Model::new();
+        m.add_material(Material::new("ceramic", 4.0, 1.0).unwrap()).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: [0.04, 0.04, 0.04] }, material: "vacuum".into() }).unwrap();
+        m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.005 }, at: [0.02, 0.02, 0.02], material: Some("ceramic".into()) }).unwrap();
+        m.add_inclusion(Inclusion { shape: Shape::Cylinder { radius: 0.001, length: 0.01 }, at: [0.03, 0.03, 0.01], material: None }).unwrap();
+        m.add_feature(Feature {
+            combine: Combine::Subtract,
+            shape: Shape::Cylinder { radius: 0.002, length: 0.04 },
+            at: [0.005, 0.0, 0.005],
+            axis: Axis::Y,
+        })
+        .unwrap();
+        assert_eq!(m.material_at([0.02, 0.02, 0.022]), Some(1));
+        assert_eq!(m.material_at([0.01, 0.03, 0.03]), Some(0));
+        assert_eq!(m.material_at([0.0305, 0.03, 0.015]), None, "the conducting rod");
+        assert_eq!(m.material_at([0.006, 0.02, 0.006]), None, "the post along y");
+        assert_eq!(m.material_at([0.05, 0.02, 0.02]), None, "outside");
+        // A turned box: size [x, y, z] along y becomes [z, x, y].
+        let f = Feature { combine: Combine::Add, shape: Shape::Box { size: [1.0, 2.0, 3.0] }, at: [0.0; 3], axis: Axis::Y };
+        let (lo, hi) = f.bounds();
+        let mid = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
+        assert!(f.contains(mid) && !f.contains([hi[0] + 0.1, mid[1], mid[2]]));
     }
 
     #[test]

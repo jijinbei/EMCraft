@@ -177,7 +177,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.time_domain",
         label: "Time-domain solve",
-        doc: "The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM; lossless models only.",
+        doc: "The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM; lossless models only. For an open model (model.open) it solves the antenna instead: its lumped ports and dipoles on a uniform grid with a CPML on all sides, the ports' impedances and S11 and the radiated power at each frequency, the far field from a Huygens box (results.far_field and view.pattern with `solver` time_domain). Gaps and dipoles must lie along grid axes.",
         params: &[
             p("frequencies", "array", F, false, "the frequencies"),
             p("start", "number", F, false, "first frequency"),
@@ -334,6 +334,14 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             p("theta", "array", N, false, "polar angles in degrees (default 0 to 180 by 10)"),
             p("phi", "number", N, false, "the azimuth in degrees (default 0)"),
+            p(
+                "solver",
+                "string",
+                N,
+                false,
+                "`fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first",
+            ),
+            p("frequency", "number", F, false, "the time domain's frequency (the nearest solved)"),
         ],
         run: crate::open::results_far_field,
     },
@@ -347,6 +355,14 @@ pub static COMMANDS: &[CommandSpec] = &[
             p("points", "integer", N, false, "angles from 0 to 180° (default 91)"),
             p("width", "integer", N, false, "pixels (default 1000)"),
             p("height", "integer", N, false, "pixels (default 600)"),
+            p(
+                "solver",
+                "string",
+                N,
+                false,
+                "`fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first",
+            ),
+            p("frequency", "number", F, false, "the time domain's frequency (the nearest solved)"),
         ],
         run: crate::open::view_pattern,
     },
@@ -679,6 +695,9 @@ fn solve_frequency(s: &mut Session, p: &Value) -> Result<Value> {
 fn solve_time_domain(s: &mut Session, p: &Value) -> Result<Value> {
     let freqs = frequencies(s, p)?;
     let cell = s.positive_length(p, "cell")?.unwrap_or(emcraft_model::units::Length::Millimetre.to_si(1.0));
+    if s.model.open.is_some() {
+        return crate::open::solve_time_domain_open(s, &freqs, cell);
+    }
     let r = emcraft_fdtd::s_parameters(&s.model, &emcraft_fdtd::Options::new(cell), &freqs)?;
     let points: Vec<Value> = r
         .frequencies

@@ -61,6 +61,8 @@ result is frozen so it cannot drift.
    thickness and is compared with a moment-method estimate in the case's README); an open-ended waveguide fed by a
    port on a face, its accepted and radiated powers (oracle `open-waveguide`); a two-gap array driven in phase,
    its pattern, null and active resistance against the exact Hertzian array (oracle `gap-array`).
+   The time domain's open problems: two gaps on a Yee grid with a CPML, their self resistance,
+   mutual impedance and pattern within 0.3 % of the closed forms (oracle `time-domain-gaps`).
 9. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).

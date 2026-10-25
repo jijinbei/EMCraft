@@ -446,3 +446,23 @@ fn ports_on_faces_go_with_open_boundaries() {
     // Eigenmodes of an open model are refused.
     assert!(s.execute("solve.eigenmodes", &json!({"near": 10})).is_err());
 }
+
+#[test]
+fn the_time_domain_solves_open_problems() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    s.execute("model.port.lumped", &json!({"name": "gap", "from": [20, 20, 19], "to": [20, 20, 21], "impedance": 1e9, "voltage": 1e9})).unwrap();
+    let r = s.execute("solve.time_domain", &json!({"frequencies": [10], "cell": 2})).unwrap();
+    let p = &r["points"][0];
+    // 80π²(l/λ)² for 2 mm: 3.51 Ω, coarse grid.
+    let r11 = p["ports"][0]["impedance"]["re"].as_f64().unwrap();
+    assert!((r11 / 3.514 - 1.0).abs() < 0.15, "{r11}");
+    assert!((p["radiation_efficiency"].as_f64().unwrap() - 1.0).abs() < 0.05);
+    let ff = s.execute("results.far_field", &json!({"theta": [90], "solver": "time_domain"})).unwrap();
+    assert!((ff["points"][0]["directivity"].as_f64().unwrap() / 1.5 - 1.0).abs() < 0.1);
+    assert!(s.execute("results.far_field", &json!({"solver": "fem"})).is_err(), "no FEM solve yet");
+    assert!(s.execute("results.far_field", &json!({"solver": "magic"})).is_err());
+    let path = scratch("td-pattern.png");
+    s.execute("view.pattern", &json!({"path": path, "points": 19})).unwrap();
+}

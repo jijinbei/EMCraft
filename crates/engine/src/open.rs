@@ -275,24 +275,66 @@ fn angles(p: &Value) -> Result<(Vec<f64>, f64)> {
     Ok((theta, number(p, "phi")?.unwrap_or(0.0)))
 }
 
+/// Far-field rows in the directions given (radians), from the frequency-domain solve or, when
+/// asked (`solver` "time_domain") or the only one there, the time domain's at the frequency
+/// nearest `frequency` (Hz): (frequency, power, rows).
+fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<&str>, frequency: Option<f64>) -> Result<(f64, f64, Vec<Value>)> {
+    let use_td = match solver {
+        Some("time_domain") => true,
+        Some("fem") => false,
+        Some(other) => return Err(EngineError::Params(format!("`solver` must be fem or time_domain, got `{other}`"))),
+        None => s.radiation.is_none() && s.td_radiation.is_some(),
+    };
+    if !use_td {
+        let r = solved(s)?;
+        let ff = r.driven.far_field(&s.model, &r.result.field, r.result.frequency, dirs)?;
+        return Ok((r.result.frequency, r.power, ff.iter().map(|x| describe(s, &r, x)).collect()));
+    }
+    let r = s.td_radiation.clone().ok_or_else(|| EngineError::Failed("no time-domain open problem solved: run solve.time_domain first".into()))?;
+    let fi = match frequency {
+        Some(f) => (0..r.frequencies.len()).min_by(|&a, &b| (r.frequencies[a] - f).abs().total_cmp(&(r.frequencies[b] - f).abs())).unwrap_or(0),
+        None => 0,
+    };
+    let f = r.frequencies.get(fi).copied().ok_or_else(|| EngineError::Failed("no frequencies".into()))?;
+    let power = r.radiated.get(fi).copied().unwrap_or(f64::NAN);
+    let lone = lone_dipole(s);
+    let rows = dirs
+        .iter()
+        .map(|&(theta, phi)| {
+            let (et, ep) = r.far_field(fi, theta, phi).unwrap_or_default();
+            let d = r.directivity(fi, theta, phi).unwrap_or(f64::NAN);
+            let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
+            let mut v = json!({"theta": theta.to_degrees(), "phi": phi.to_degrees(), "e_theta": c(et), "e_phi": c(ep), "directivity": d, "directivity_dbi": 10.0 * d.log10()});
+            if let Some((_, axis)) = lone {
+                let dir = [theta.sin() * phi.cos(), theta.sin() * phi.sin(), theta.cos()];
+                let cos_a = (axis[0] * dir[0] + axis[1] * dir[1] + axis[2] * dir[2]).clamp(-1.0, 1.0);
+                v["exact_directivity"] = json!(1.5 * (1.0 - cos_a * cos_a));
+            }
+            v
+        })
+        .collect();
+    Ok((f, power, rows))
+}
+
 pub fn results_far_field(s: &mut Session, p: &Value) -> Result<Value> {
-    let r = solved(s)?;
     let (theta, phi) = angles(p)?;
     let dirs: Vec<(f64, f64)> = theta.iter().map(|t| (t.to_radians(), phi.to_radians())).collect();
-    let ff = r.driven.far_field(&s.model, &r.result.field, r.result.frequency, &dirs)?;
-    let points: Vec<Value> = ff.iter().map(|x| describe(s, &r, x)).collect();
-    Ok(json!({"frequency": s.show_frequency(r.result.frequency), "power": r.power, "points": points}))
+    let (f, power, points) = far_rows(s, &dirs, crate::params::string(p, "solver")?, s.frequency(p, "frequency")?)?;
+    Ok(json!({"frequency": s.show_frequency(f), "power": power, "points": points}))
 }
 
 /// The far-field pattern of the last radiation solve against θ at azimuth `phi` (degrees),
 /// `points` angles from 0 to 180°: directivity for sources, radar cross-section for a plane
 /// wave, over the closed form where it applies.
 pub fn pattern_chart(s: &Session, phi: f64, points: usize) -> Result<Chart> {
-    let r = solved(s)?;
+    pattern_chart_of(s, phi, points, None, None)
+}
+
+/// [`pattern_chart`] from a chosen solver and frequency (see `results.far_field`).
+pub fn pattern_chart_of(s: &Session, phi: f64, points: usize, solver: Option<&str>, frequency: Option<f64>) -> Result<Chart> {
     let n = points.clamp(13, 721);
     let dirs: Vec<(f64, f64)> = (0..n).map(|i| ((180.0 * i as f64 / (n - 1) as f64).to_radians(), phi.to_radians())).collect();
-    let ff = r.driven.far_field(&s.model, &r.result.field, r.result.frequency, &dirs)?;
-    let rows: Vec<Value> = ff.iter().map(|x| describe(s, &r, x)).collect();
+    let (f, _, rows) = far_rows(s, &dirs, solver, frequency)?;
     let scattering = plane_wave(s).is_some();
     let (key, exact_key, label) =
         if scattering { ("rcs_dbsm", "exact_rcs", "RCS (dBsm)") } else { ("directivity_dbi", "exact_directivity", "directivity (dBi)") };
@@ -309,7 +351,7 @@ pub fn pattern_chart(s: &Session, phi: f64, points: usize) -> Result<Chart> {
         series.push(Series { label: name.into(), color: Rgb(120, 120, 120), style: Style::Line, points: exact });
     }
     series.push(Series { label: "FEM".into(), color: Rgb(200, 40, 40), style: Style::Markers, points: ours });
-    let title = format!("Far field at {} {}, φ = {phi}°", s.show_frequency(r.result.frequency), s.display.frequency.symbol());
+    let title = format!("Far field at {} {}, φ = {phi}°", s.show_frequency(f), s.display.frequency.symbol());
     Ok(Chart { title, x: Axis::new("θ (degrees)", 0.0, 180.0), y: Axis::new(label, top - 40.0, top), series, marks: Vec::new() })
 }
 
@@ -317,11 +359,44 @@ pub fn view_pattern(s: &mut Session, p: &Value) -> Result<Value> {
     let path = required_string(p, "path")?;
     let phi = number(p, "phi")?.unwrap_or(0.0);
     let n = integer(p, "points", 13..=721)?.unwrap_or(91) as usize;
-    let chart = pattern_chart(s, phi, n)?;
+    let chart = pattern_chart_of(s, phi, n, crate::params::string(p, "solver")?, s.frequency(p, "frequency")?)?;
     let side = 200..=s.limits.picture_side as u64;
     let w = integer(p, "width", side.clone())?.unwrap_or(1000) as usize;
     let h = integer(p, "height", side)?.unwrap_or(600) as usize;
     let c = emcraft_render::chart::draw(&chart, w, h);
     write_png(path, c.png())?;
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
+}
+
+/// The time domain's open problem: lumped ports and dipoles on a Yee grid with a CPML.
+pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64) -> Result<Value> {
+    let r = emcraft_fdtd::open::radiate(&s.model, &emcraft_fdtd::open::OpenOptions::new(cell), freqs)?;
+    let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
+    let points: Vec<Value> = r
+        .frequencies
+        .iter()
+        .enumerate()
+        .map(|(fi, f)| {
+            let ports: Vec<Value> = r
+                .ports
+                .iter()
+                .zip(&s.model.lumped)
+                .map(|(pr, lp)| {
+                    let z = pr.impedance[fi];
+                    let s11 = (z - lp.impedance) / (z + lp.impedance);
+                    json!({"name": pr.name, "impedance": c(z), "voltage": c(pr.voltage[fi]), "current": c(pr.current[fi]), "s11": {"re": s11.re, "im": s11.im, "mag": s11.norm(), "db": emcraft_model::units::decibels(s11.norm())}, "power": pr.power[fi]})
+                })
+                .collect();
+            let input: f64 = r.ports.iter().map(|pr| pr.power[fi]).sum();
+            let mut v = json!({"frequency": s.show_frequency(*f), "radiated_power": r.radiated[fi], "ports": ports});
+            if input > 0.0 {
+                v["radiation_efficiency"] = json!(r.radiated[fi] / input);
+            }
+            v
+        })
+        .collect();
+    let reply =
+        json!({"cells": r.cells, "steps": r.steps, "converged": r.converged, "frequency_unit": s.display.frequency.symbol(), "points": points});
+    s.td_radiation = Some(Arc::new(r));
+    Ok(reply)
 }
