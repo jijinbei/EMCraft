@@ -784,11 +784,13 @@ fn solve_frequency(s: &mut Session, p: &Value) -> Result<Value> {
         _ => return Err(EngineError::Params("`sweep` must be fast or full".into())),
     };
     let (results, full) = if fast {
+        crate::progress::report(0, freqs.len(), "fast sweep")?;
         let r = emcraft_solver::sweep::fast_sweep(&driven, &freqs, &Default::default())?;
         (r.results, r.full)
     } else {
         let mut results = Vec::with_capacity(freqs.len());
-        for f in &freqs {
+        for (k, f) in freqs.iter().enumerate() {
+            crate::progress::report(k, freqs.len(), "frequency")?;
             results.push(driven.solve(*f)?);
         }
         let full = vec![true; results.len()];

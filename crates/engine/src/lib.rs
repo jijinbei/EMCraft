@@ -11,6 +11,7 @@
 mod cmd;
 pub mod open;
 pub mod params;
+pub mod progress;
 pub mod sample;
 pub mod view;
 
@@ -206,6 +207,7 @@ impl Session {
         for (i, step) in steps.iter().enumerate() {
             let id = step.get("command").and_then(Value::as_str).ok_or_else(|| EngineError::Params(format!("step {}: no `command`", i + 1)))?;
             let params = step.get("params").cloned().unwrap_or_else(|| Value::Object(Default::default()));
+            progress::report(i, steps.len(), id)?;
             let reply = self.execute(id, &params).map_err(|e| EngineError::Failed(format!("step {} ({id}): {e}", i + 1)))?;
             out.push(reply);
         }
