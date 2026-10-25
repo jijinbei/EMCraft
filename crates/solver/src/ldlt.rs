@@ -30,7 +30,7 @@ use num_complex::Complex64 as C;
 use crate::sparse::Csr;
 
 /// The largest frontal matrix (rows) a factorization may form: m² complex entries.
-pub const MAX_FRONT: usize = 12_000;
+pub const MAX_FRONT: usize = 20_000;
 
 const ALPHA: f64 = 0.640_388_203_202_208; // (1 + √17)/8
 
@@ -44,6 +44,8 @@ pub enum FactorError {
     Zero,
     #[error("dimension mismatch: {0}")]
     Dimension(String),
+    #[error("the factor's scratch file: {0}")]
+    Scratch(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -55,14 +57,107 @@ enum Pivot {
     Second,
 }
 
+/// Where a supernode's factored columns are kept.
+#[derive(Clone, Debug)]
+enum Columns {
+    Memory(Vec<C>),
+    /// In the scratch file: `len` complex numbers from byte `offset`.
+    Disk {
+        offset: u64,
+        len: usize,
+    },
+}
+
 #[derive(Clone, Debug)]
 struct Supernode {
     /// Positions of the front's rows; the first `k` are the supernode's columns in pivot order.
     rows: Vec<usize>,
     k: usize,
     /// The front's first k columns after elimination: L below the diagonal (m × k, by column).
-    l: Vec<C>,
+    l: Columns,
     pivots: Vec<Pivot>,
+}
+
+/// The factor's columns beyond the memory budget, written to a file on disk (out-of-core):
+/// the file is unlinked as soon as it is made, so it goes when the factorization does.
+#[derive(Debug)]
+struct Scratch {
+    file: std::sync::Mutex<std::fs::File>,
+    end: u64,
+}
+
+/// Bytes of factor kept in memory before the rest goes to the scratch file: the environment's
+/// `EMCRAFT_FACTOR_MEMORY_GB`, else half the memory the system reports available (Linux), else
+/// 8 GB.
+fn memory_budget() -> u64 {
+    if let Some(gb) = std::env::var("EMCRAFT_FACTOR_MEMORY_GB").ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|g| g.is_finite() && *g >= 0.0)
+    {
+        return (gb * 1e9) as u64;
+    }
+    let available = std::fs::read_to_string("/proc/meminfo").ok().and_then(|t| {
+        t.lines().find(|l| l.starts_with("MemAvailable:")).and_then(|l| l.split_whitespace().nth(1)).and_then(|kb| kb.parse::<u64>().ok())
+    });
+    available.map_or(8_000_000_000, |kb| kb * 1024 / 2)
+}
+
+/// The directory for scratch files: `EMCRAFT_SCRATCH`, else `~/.cache/emcraft` (on disk; the
+/// system's temporary directory is often in memory), else the temporary directory.
+fn scratch_dir() -> std::path::PathBuf {
+    if let Some(d) = std::env::var_os("EMCRAFT_SCRATCH") {
+        return d.into();
+    }
+    match std::env::var_os("HOME") {
+        Some(h) => std::path::Path::new(&h).join(".cache").join("emcraft"),
+        None => std::env::temp_dir(),
+    }
+}
+
+impl Scratch {
+    fn new() -> Result<Scratch, FactorError> {
+        static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = scratch_dir();
+        let fail = |e: std::io::Error| FactorError::Scratch(format!("{}: {e}", dir.display()));
+        std::fs::create_dir_all(&dir).map_err(fail)?;
+        let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = dir.join(format!("factor-{}-{n}.bin", std::process::id()));
+        let file = std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(&path).map_err(fail)?;
+        // Unlinked at once where the system allows it (the open handle keeps the data).
+        let _ = std::fs::remove_file(&path);
+        Ok(Scratch { file: std::sync::Mutex::new(file), end: 0 })
+    }
+
+    fn write(&mut self, v: &[C]) -> Result<Columns, FactorError> {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut bytes = Vec::with_capacity(v.len() * 16);
+        for z in v {
+            bytes.extend_from_slice(&z.re.to_le_bytes());
+            bytes.extend_from_slice(&z.im.to_le_bytes());
+        }
+        let mut f = self.file.lock().map_err(|_| FactorError::Scratch("the file's lock was poisoned".into()))?;
+        f.seek(SeekFrom::Start(self.end)).and_then(|_| f.write_all(&bytes)).map_err(|e| FactorError::Scratch(e.to_string()))?;
+        let offset = self.end;
+        self.end += bytes.len() as u64;
+        Ok(Columns::Disk { offset, len: v.len() })
+    }
+
+    fn read(&self, offset: u64, len: usize) -> Result<Vec<C>, FactorError> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut bytes = vec![0u8; len * 16];
+        let mut f = self.file.lock().map_err(|_| FactorError::Scratch("the file's lock was poisoned".into()))?;
+        f.seek(SeekFrom::Start(offset)).and_then(|_| f.read_exact(&mut bytes)).map_err(|e| FactorError::Scratch(e.to_string()))?;
+        Ok(bytes
+            .as_chunks::<16>()
+            .0
+            .iter()
+            .map(|c| {
+                let mut re = [0u8; 8];
+                let mut im = [0u8; 8];
+                re.copy_from_slice(&c[..8]);
+                im.copy_from_slice(&c[8..]);
+                C::new(f64::from_le_bytes(re), f64::from_le_bytes(im))
+            })
+            .collect())
+    }
 }
 
 /// A factorization.
@@ -72,6 +167,10 @@ pub struct Ldlt {
     /// `perm[position] = unknown`.
     perm: Vec<usize>,
     supernodes: Vec<Supernode>,
+    /// The columns kept on disk, when the factor outgrew the memory budget.
+    scratch: Option<std::sync::Arc<Scratch>>,
+    /// Bytes of the factor on disk.
+    pub bytes_on_disk: u64,
     /// Pivots replaced by √ε ‖A‖.
     pub perturbed: usize,
     pub two_by_two: usize,
@@ -497,6 +596,12 @@ impl Ldlt {
     /// Factors `a` (complex symmetric, both triangles stored) with the unknowns ordered by
     /// nested dissection on `xyz` (a point per unknown).
     pub fn factor(a: &Csr, xyz: &[[f64; 3]]) -> Result<Ldlt, FactorError> {
+        Ldlt::factor_within(a, xyz, memory_budget())
+    }
+
+    /// [`Ldlt::factor`] keeping at most `budget` bytes of the factor in memory, the rest in a
+    /// scratch file on disk.
+    pub fn factor_within(a: &Csr, xyz: &[[f64; 3]], budget: u64) -> Result<Ldlt, FactorError> {
         let n = a.n;
         if xyz.len() != n || a.ptr.len() != n + 1 {
             return Err(FactorError::Dimension(format!("{} unknowns, {} points", n, xyz.len())));
@@ -585,6 +690,8 @@ impl Ldlt {
         let mut pos = vec![usize::MAX; n];
         let mut supernodes = Vec::with_capacity(ns);
         let (mut perturbed, mut two_by_two, mut entries, mut largest_front) = (0, 0, 0, 0);
+        let mut in_memory = 0u64;
+        let mut scratch: Option<Scratch> = None;
         for (s, mut rows) in super_rows.into_iter().enumerate() {
             let (c0, c1) = (starts[s], starts[s + 1]);
             let k = c1 - c0;
@@ -645,9 +752,23 @@ impl Ldlt {
             let l = f[..k * m].to_vec();
             drop(f);
             entries += k * m - k * (k - 1) / 2;
+            // Beyond the memory budget the columns go to the scratch file.
+            let l = if in_memory + (l.len() * 16) as u64 > budget {
+                if scratch.is_none() {
+                    scratch = Some(Scratch::new()?);
+                }
+                match scratch.as_mut() {
+                    Some(sc) => sc.write(&l)?,
+                    None => Columns::Memory(l),
+                }
+            } else {
+                in_memory += (l.len() * 16) as u64;
+                Columns::Memory(l)
+            };
             supernodes.push(Supernode { rows, k, l, pivots });
         }
-        Ok(Ldlt { n, perm, supernodes, perturbed, two_by_two, entries, largest_front })
+        let bytes_on_disk = scratch.as_ref().map_or(0, |s| s.end);
+        Ok(Ldlt { n, perm, supernodes, scratch: scratch.map(std::sync::Arc::new), bytes_on_disk, perturbed, two_by_two, entries, largest_front })
     }
 
     pub fn n(&self) -> usize {
@@ -660,6 +781,17 @@ impl Ldlt {
         self.solve_many(&mut one)?;
         b.copy_from_slice(&one[0]);
         Ok(())
+    }
+
+    /// A supernode's factored columns, from memory or read back from the scratch file.
+    fn columns<'a>(&self, s: &'a Supernode) -> Result<std::borrow::Cow<'a, [C]>, FactorError> {
+        match &s.l {
+            Columns::Memory(v) => Ok(std::borrow::Cow::Borrowed(v)),
+            Columns::Disk { offset, len } => {
+                let sc = self.scratch.as_ref().ok_or_else(|| FactorError::Scratch("columns on disk without a file".into()))?;
+                Ok(std::borrow::Cow::Owned(sc.read(*offset, *len)?))
+            }
+        }
     }
 
     /// Solves A X = B in place for several right-hand sides at once: each pass over the factor
@@ -684,6 +816,7 @@ impl Ldlt {
         let mut local: Vec<C> = Vec::new();
         // L z = b.
         for s in &self.supernodes {
+            let cols = self.columns(s)?;
             let m = s.rows.len();
             local.clear();
             for &row in &s.rows {
@@ -698,7 +831,7 @@ impl Ldlt {
                         continue;
                     }
                     for i in p + width..m {
-                        let l = s.l[c * m + i];
+                        let l = cols[c * m + i];
                         if l == zero {
                             continue;
                         }
@@ -741,6 +874,7 @@ impl Ldlt {
         // Lᵀ x = w.
         let mut acc = vec![zero; r];
         for s in self.supernodes.iter().rev() {
+            let cols = self.columns(s)?;
             let m = s.rows.len();
             local.clear();
             for &row in &s.rows {
@@ -753,7 +887,7 @@ impl Ldlt {
                 for c in start..p {
                     acc.iter_mut().for_each(|a| *a = zero);
                     for i in p..m {
-                        let l = s.l[c * m + i];
+                        let l = cols[c * m + i];
                         for (a, x) in acc.iter_mut().zip(&local[i * r..i * r + r]) {
                             *a += l * x;
                         }
@@ -934,5 +1068,26 @@ mod tests {
         a.add(0, 0, C::new(f64::NAN, 0.0));
         assert_eq!(Ldlt::factor(&a, &xyz).unwrap_err(), FactorError::NotFinite);
         assert!(matches!(Ldlt::factor(&a, &xyz[..1]), Err(FactorError::Dimension(_))));
+    }
+
+    #[test]
+    fn a_factor_on_disk_solves_the_same() {
+        // Out of core from the first column: the same solution bit for bit.
+        let mut rng = Rng(7);
+        let (a, xyz) = grid_matrix(6, 5, 4, C::new(0.3, 0.1), &mut rng);
+        let b: Vec<C> = (0..a.n).map(|i| C::new((i % 5) as f64, -1.0)).collect();
+        let mem = Ldlt::factor_within(&a, &xyz, u64::MAX).unwrap();
+        let disk = Ldlt::factor_within(&a, &xyz, 0).unwrap();
+        assert_eq!(mem.bytes_on_disk, 0);
+        assert_eq!(disk.bytes_on_disk, 16 * disk.supernodes.iter().map(|s| s.k * s.rows.len()).sum::<usize>() as u64);
+        let (mut x, mut y) = (b.clone(), b.clone());
+        mem.solve(&mut x).unwrap();
+        disk.solve(&mut y).unwrap();
+        assert_eq!(x, y);
+        // Clones share the file.
+        let again = disk.clone();
+        let mut z = b.clone();
+        again.solve(&mut z).unwrap();
+        assert_eq!(x, z);
     }
 }
