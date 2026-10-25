@@ -121,6 +121,13 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   C. Hagness, *Computational Electrodynamics: The FDTD Method*, 3rd ed., Artech House 2005,
   ch. 7 — the absorbing layers and their grading.
 
+## Fast frequency sweeps
+- P. Benner, M. Hinze, E. J. W. ter Maten (eds.), *Model Reduction for Circuit Simulation*,
+  Springer 2011, ch. 1; A. T. Patera, G. Rozza, *Reduced Basis Approximation and A Posteriori
+  Error Estimation for Parametrized Partial Differential Equations*, MIT 2007 — the greedy
+  reduced basis: solved fields span the basis, the residual chooses the next frequency to solve
+  (`emcraft-solver::sweep`).
+
 ## Eigenvalues
 - K.-J. Bathe, E. L. Wilson, *Large eigenvalue problems in dynamic analysis*, J. Eng. Mech. Div.
   ASCE 98(6):1471–1485, 1972; K.-J. Bathe, *Finite Element Procedures*, 2nd ed. 2014, §11.6 —

@@ -11,6 +11,7 @@ pub mod ordering;
 pub mod portmode;
 pub mod radiation;
 pub mod sparse;
+pub mod sweep;
 
 pub use driven::{Driven, Field, FrequencyResult, SolveError};
 pub use num_complex::Complex64;

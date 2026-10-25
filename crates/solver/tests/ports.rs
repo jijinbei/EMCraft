@@ -227,3 +227,26 @@ fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
     wg.ports[0].reference = Some(50.0);
     assert!(Driven::new(&wg, Order::One).unwrap().solve(8e9).is_err());
 }
+
+#[test]
+fn a_fast_sweep_matches_the_full_one() {
+    // The high-pass filter over 5–9 GHz in 41 points: the reduced-basis sweep against a full solve
+    // at every point, with fewer factorisations.
+    let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::Two).unwrap();
+    let freqs: Vec<f64> = (0..41).map(|i| 5e9 + 4e9 * i as f64 / 40.0).collect();
+    let fast = emcraft_solver::sweep::fast_sweep(&d, &freqs, &Default::default()).unwrap();
+    let solved = fast.full.iter().filter(|f| **f).count();
+    let mut worst: f64 = 0.0;
+    for (f, r) in freqs.iter().zip(&fast.results) {
+        let exact = d.solve(*f).unwrap();
+        for p in 0..2 {
+            for q in 0..2 {
+                worst = worst.max((r.s[p][q] - exact.s[p][q]).norm());
+            }
+        }
+    }
+    // Measured: 6 full solves, |ΔS| 5e-11 (the error goes about as the residual squared: 8 solves
+    // and 4e-14 at a residual of 1e-6).
+    assert!(worst < 1e-8, "{worst:e}");
+    assert!(solved <= 8, "{solved}");
+}

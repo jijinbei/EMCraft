@@ -202,11 +202,11 @@ pub struct Driven {
     /// Complex relative permittivity εr(1 − j tan δ) and relative permeability per tetrahedron.
     eps: Vec<C>,
     mu: Vec<f64>,
-    pattern: Csr,
-    stiffness: Vec<f64>,
-    mass: Vec<C>,
+    pub(crate) pattern: Csr,
+    pub(crate) stiffness: Vec<f64>,
+    pub(crate) mass: Vec<C>,
     /// Walls of finite conductivity: σ (S/m) and their tangential mass matrix.
-    wall: Option<(f64, Vec<f64>)>,
+    pub(crate) wall: Option<(f64, Vec<f64>)>,
     /// The boundary faces that are walls (indices into the mesh's).
     walls: Vec<usize>,
     pub ports: Vec<PortData>,
@@ -223,7 +223,7 @@ pub struct Driven {
 }
 
 /// Solves a small dense complex system by Gaussian elimination with partial pivoting.
-fn complex_solve(mut a: Vec<Vec<C>>, mut b: Vec<C>) -> Option<Vec<C>> {
+pub(crate) fn complex_solve(mut a: Vec<Vec<C>>, mut b: Vec<C>) -> Option<Vec<C>> {
     let n = b.len();
     for k in 0..n {
         let piv = (k..n).max_by(|&i, &j| a[i][k].norm().total_cmp(&a[j][k].norm()))?;
@@ -537,7 +537,7 @@ impl Driven {
     /// layer is the anisotropic medium εr Λ, μr Λ, Λ = diag(s_y s_z/s_x, s_z s_x/s_y, s_x s_y/s_z)
     /// (Z. S. Sacks, D. M. Kingsland, R. Lee, J.-F. Lee, IEEE Trans. AP 43(12), 1995; Jin 2014,
     /// §9.6), so its element matrices are Σ_d (1/(μr Λ_d)) K_d − k₀² Σ_d εr Λ_d M_d by component.
-    fn add_pml(&self, a: &mut Csr, k0: f64) -> Result<()> {
+    pub(crate) fn add_pml(&self, a: &mut Csr, k0: f64) -> Result<()> {
         let Some((d, reflection, list)) = &self.pml else { return Ok(()) };
         let sigma0 = 3.0 * (1.0 / reflection).ln() / (2.0 * d);
         for &(t, depth) in list {
@@ -596,22 +596,7 @@ impl Driven {
                 *x += c * *wij;
             }
         }
-        let mut terms = Vec::with_capacity(self.ports.len());
-        for p in 0..self.ports.len() {
-            // (A closed-form mode is refused before its κ, singular at the cut-off.)
-            let below = self.below_cutoff(p, k0);
-            let list = if below { Vec::new() } else { self.port_terms(p, frequency)? };
-            if below || !list.first().is_some_and(|t| t.propagating) {
-                return Err(invalid(
-                    "frequency",
-                    format!(
-                        "{frequency} Hz is below the cut-off of the first mode at port `{}`: no wave can carry power into the port",
-                        self.ports[p].name
-                    ),
-                ));
-            }
-            terms.push(list);
-        }
+        let terms = self.checked_terms(frequency)?;
         // Each mode's factor·v vᵀ would couple every unknown on the port with every other; a
         // border unknown y_m = factor·vᵀx per mode keeps the matrix sparse:
         // [A V; Vᵀ −F⁻¹] [x; y] = [b; 0] eliminates to (A + V F Vᵀ) x = b.
@@ -632,6 +617,29 @@ impl Driven {
             })
             .collect();
         Ok(System { a, rhs, terms, border })
+    }
+
+    /// Every port's terms at `frequency`, refusing it where a port's first mode does not
+    /// propagate.
+    pub(crate) fn checked_terms(&self, frequency: f64) -> Result<Vec<Vec<PortTerm<'_>>>> {
+        let k0 = 2.0 * PI * frequency / C0;
+        let mut terms = Vec::with_capacity(self.ports.len());
+        for p in 0..self.ports.len() {
+            // (A closed-form mode is refused before its κ, singular at the cut-off.)
+            let below = self.below_cutoff(p, k0);
+            let list = if below { Vec::new() } else { self.port_terms(p, frequency)? };
+            if below || !list.first().is_some_and(|t| t.propagating) {
+                return Err(invalid(
+                    "frequency",
+                    format!(
+                        "{frequency} Hz is below the cut-off of the first mode at port `{}`: no wave can carry power into the port",
+                        self.ports[p].name
+                    ),
+                ));
+            }
+            terms.push(list);
+        }
+        Ok(terms)
     }
 
     /// Factors a [`System`], its border last.
@@ -853,7 +861,7 @@ impl Driven {
     /// I = (a − b)/√Z, the new waves a′ = P a + Q b, b′ = Q a + P b, P = (Z + R)/(2√(ZR)),
     /// Q = (Z − R)/(2√(ZR)), so S′ = (Q + P S)(P + Q S)⁻¹ (K. Kurokawa, *Power waves and the
     /// scattering matrix*, IEEE Trans. MTT 13(2):194–202, 1965).
-    fn refer(&self, s: Vec<Vec<C>>, impedances: &[Option<f64>]) -> Result<Vec<Vec<C>>> {
+    pub(crate) fn refer(&self, s: Vec<Vec<C>>, impedances: &[Option<f64>]) -> Result<Vec<Vec<C>>> {
         let n = s.len();
         let mut p = vec![1.0; n];
         let mut q = vec![0.0; n];
@@ -985,7 +993,7 @@ pub fn surface_resistance(frequency: f64, sigma: f64) -> f64 {
 }
 
 /// jωμ₀/Z_s = ωμ₀(1 + j)/(2R_s) (1/m).
-fn wall_factor(frequency: f64, sigma: f64) -> C {
+pub(crate) fn wall_factor(frequency: f64, sigma: f64) -> C {
     let omega = 2.0 * PI * frequency;
     C::new(1.0, 1.0) * (omega * MU0 / (2.0 * surface_resistance(frequency, sigma)))
 }

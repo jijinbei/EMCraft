@@ -193,13 +193,20 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.frequency",
         label: "Frequency sweep",
-        doc: "Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`.",
+        doc: "Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full.",
         params: &[
             p("frequencies", "array", F, false, "the frequencies"),
             p("start", "number", F, false, "first frequency"),
             p("stop", "number", F, false, "last frequency"),
             p("points", "integer", N, false, "frequencies from start to stop (default 11)"),
             p("order", "integer", N, false, "element order: 1 (Whitney) or 2 (default)"),
+            p(
+                "sweep",
+                "string",
+                N,
+                false,
+                "`fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each)",
+            ),
         ],
         run: solve_frequency,
     },
@@ -770,16 +777,35 @@ fn solve_frequency(s: &mut Session, p: &Value) -> Result<Value> {
     let freqs = frequencies(s, p)?;
     let order = Order::from_u8(integer(p, "order", 1..=2)?.unwrap_or(2) as u8).unwrap_or(Order::Two);
     let driven = Driven::new(&s.model, order)?;
-    let mut results = Vec::with_capacity(freqs.len());
-    for f in &freqs {
-        results.push(driven.solve(*f)?);
-    }
+    // Three frequencies or more: the reduced-basis sweep, unless asked for a full solve at each.
+    let fast = match string(p, "sweep")?.unwrap_or("fast") {
+        "fast" => freqs.len() >= 3,
+        "full" => false,
+        _ => return Err(EngineError::Params("`sweep` must be fast or full".into())),
+    };
+    let (results, full) = if fast {
+        let r = emcraft_solver::sweep::fast_sweep(&driven, &freqs, &Default::default())?;
+        (r.results, r.full)
+    } else {
+        let mut results = Vec::with_capacity(freqs.len());
+        for f in &freqs {
+            results.push(driven.solve(*f)?);
+        }
+        let full = vec![true; results.len()];
+        (results, full)
+    };
     let unknowns = driven.dofs.unknowns;
     s.sweep = Some(Sweep { order, driven: Arc::new(driven), results });
     let mut reply = sparameters(s, &Value::Null)?;
     if let Some(o) = reply.as_object_mut() {
         o.insert("unknowns".into(), json!(unknowns));
         o.insert("order".into(), json!(order.as_u8()));
+        o.insert("solved_in_full".into(), json!(full.iter().filter(|f| **f).count()));
+    }
+    if let Some(points) = reply.get_mut("points").and_then(Value::as_array_mut) {
+        for (pt, f) in points.iter_mut().zip(&full) {
+            pt["full"] = json!(f);
+        }
     }
     Ok(reply)
 }

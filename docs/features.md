@@ -122,7 +122,7 @@ A waveguide port on an end face, matched to the guide's lowest modes. The first 
 
 ## `solve.frequency` — Frequency sweep
 
-Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`.
+Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -131,6 +131,7 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 | `stop` | number | frequency | no | last frequency |
 | `points` | integer |  | no | frequencies from start to stop (default 11) |
 | `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
+| `sweep` | string |  | no | `fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each) |
 
 ## `solve.time_domain` — Time-domain solve
 
