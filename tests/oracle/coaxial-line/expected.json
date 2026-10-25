@@ -1,0 +1,72 @@
+{
+ "title": "PTFE coaxial line, conductors of radii 1 and 3.5 mm, 10 mm long, its ports' modes solved on the annulus: TEM transmission",
+ "kind": "theory",
+ "source": "A two-conductor line of one homogeneous dielectric carries a TEM wave with β = k0 √εr whatever the shape of its cross-section, so S21 = exp(−jβL) and S11 = 0 for a uniform length (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §2.2, §3.5)",
+ "quantities": [
+  {
+   "id": "s21_phase_3",
+   "quantity": "phase of S21 at 3 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -52.205072103196784,
+   "tolerance": {
+    "absolute": 0.05
+   },
+   "reason": "2 mm tetrahedra, those on the conductors curved, and the ports' triangles curved with them: −0.004°"
+  },
+  {
+   "id": "s21_mag_3",
+   "quantity": "|S21| at 3 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 1.0,
+   "tolerance": {
+    "absolute": 0.0001
+   },
+   "reason": "lossless: power is conserved; |S21| moves only by the small reflection"
+  },
+  {
+   "id": "s11_mag_3",
+   "quantity": "|S11| at 3 GHz (no discontinuity)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.0005
+   },
+   "reason": "the numerical TEM mode in the volume's own trace space: 6e-5 (straight port triangles in the curved guide: 5e-3)"
+  },
+  {
+   "id": "s21_phase_6",
+   "quantity": "phase of S21 at 6 GHz (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/1/s21/deg"
+   },
+   "value": -104.41014420639355,
+   "tolerance": {
+    "absolute": 0.05
+   },
+   "reason": "as at 3 GHz, half the wavelength: −0.008°"
+  },
+  {
+   "id": "s11_mag_6",
+   "quantity": "|S11| at 6 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/1/s11/mag"
+   },
+   "value": 0.0,
+   "tolerance": {
+    "absolute": 0.0005
+   },
+   "reason": "1.0e-4"
+  }
+ ]
+}

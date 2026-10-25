@@ -138,7 +138,13 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
             let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
             let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
             let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
-            (&*sweep.driven, x, r.frequency, format!("port {port_name} excited by 1 V/m TE10, order {}", sweep.order.as_u8()))
+            let mode = match sweep.driven.ports.get(view.excitation).map(|p| &p.modes) {
+                Some(emcraft_solver::driven::PortModes::Analytic { modes, .. }) => {
+                    modes.first().map_or("TE10".to_owned(), |(m, _)| format!("1 V/m {}", m.name()))
+                }
+                _ => "its first mode".to_owned(),
+            };
+            (&*sweep.driven, x, r.frequency, format!("port {port_name} excited by {mode}, order {}", sweep.order.as_u8()))
         }
     };
     let Vec3 { x: a, y: b, z: len } = hi - lo;
@@ -338,6 +344,10 @@ pub fn te10_line(session: &Session) -> Result<Te10Line> {
     Ok(Te10Line { a: w.width, layers })
 }
 
+/// x'₁₁, the first zero of J₁' (Abramowitz & Stegun, Table 9.5): the circular guide's TE11
+/// cut-off is x'₁₁/r.
+const X11_PRIME: f64 = 1.841_183_781_340_659;
+
 /// TE_m0 modes in the widest section when the reference is mode matching: converged to about
 /// 10⁻⁵ in S for irises and steps of a few millimetres.
 pub const MODE_MATCHING_MODES: usize = 160;
@@ -349,12 +359,19 @@ pub enum Reference {
     Exact(Te10Line),
     ModeMatching(HPlaneLine),
     EPlane(EPlaneLine),
+    /// A uniform guide `length` long whose first mode has cut-off wavenumber `cutoff` (0 for
+    /// TEM) in a fill of εr μr = `index2`: S11 = 0, S21 = e^{−jβL}.
+    Uniform {
+        length: f64,
+        cutoff: f64,
+        index2: f64,
+    },
 }
 
 impl Reference {
     pub fn label(&self) -> &'static str {
         match self {
-            Reference::Exact(_) => "exact",
+            Reference::Exact(_) | Reference::Uniform { .. } => "exact",
             Reference::ModeMatching(_) | Reference::EPlane(_) => "mode matching",
         }
     }
@@ -366,6 +383,14 @@ impl Reference {
             Reference::Exact(l) => Ok(l.solve(frequency).map_err(e)?.s_power()),
             Reference::ModeMatching(l) => l.solve(frequency, modes).map_err(e),
             Reference::EPlane(l) => l.solve(frequency, modes).map_err(e),
+            Reference::Uniform { length, cutoff, index2 } => {
+                let k = 2.0 * std::f64::consts::PI * frequency / emcraft_model::units::C0;
+                let b2 = k * k * index2 - cutoff * cutoff;
+                if !(b2 > 0.0) {
+                    return Err(EngineError::Failed(format!("{frequency} Hz is below the guide's cut-off")));
+                }
+                Ok((C::new(0.0, 0.0), C::from_polar(1.0, -b2.sqrt() * length)))
+            }
         }
     }
 }
@@ -376,11 +401,29 @@ pub fn reference(session: &Session) -> Result<Reference> {
     {
         // A box between two ports is an empty guide.
         let (_, m) = session.model.material(&solid.material)?;
-        return match solid.shape {
-            emcraft_model::Shape::Box { size } => Ok(Reference::Exact(Te10Line {
+        let plain = session.model.inclusions.is_empty() && m.loss_tangent == 0.0;
+        let index2 = m.eps_r * m.mu_r;
+        return match (&solid.shape, &session.model.features[..]) {
+            (emcraft_model::Shape::Box { size }, []) if session.model.inclusions.is_empty() => Ok(Reference::Exact(Te10Line {
                 a: size[0],
                 layers: vec![Layer { length: size[2], eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent }],
             })),
+            // An empty circular guide: TE11, cut off at x'₁₁/r (the first zero of J₁').
+            (emcraft_model::Shape::Cylinder { radius, length }, []) if plain => {
+                Ok(Reference::Uniform { length: *length, cutoff: X11_PRIME / radius, index2 })
+            }
+            // A coaxial line: a cylinder through the whole length on the axis, subtracted: TEM.
+            (emcraft_model::Shape::Cylinder { radius, length }, [f])
+                if plain
+                    && f.combine == emcraft_model::Combine::Subtract
+                    && f.axis == emcraft_model::Axis::Z
+                    && f.at.x == 0.0
+                    && f.at.y == 0.0
+                    && f.at.z <= 0.0
+                    && matches!(f.shape, emcraft_model::Shape::Cylinder { radius: r, length: l } if r < *radius && f.at.z + l >= *length) =>
+            {
+                Ok(Reference::Uniform { length: *length, cutoff: 0.0, index2 })
+            }
             _ => Err(EngineError::Failed("not supported yet: a reference for this body's ports".into())),
         };
     }
@@ -428,7 +471,7 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
         // The curve: fewer modes than the comparison takes (mode matching is dense linear algebra
         // per frequency); 40 keep the curve within 10⁻² dB.
         let (n, modes) = match reference {
-            Reference::Exact(_) => (400, 1),
+            Reference::Exact(_) | Reference::Uniform { .. } => (400, 1),
             Reference::ModeMatching(_) | Reference::EPlane(_) => (160, 40),
         };
         let (mut s11, mut s21) = (Vec::new(), Vec::new());

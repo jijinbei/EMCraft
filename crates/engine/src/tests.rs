@@ -470,3 +470,22 @@ fn the_time_domain_solves_open_problems() {
     let path = scratch("td-pattern.png");
     s.execute("view.pattern", &json!({"path": path, "points": 19})).unwrap();
 }
+
+#[test]
+fn circular_and_coaxial_guides_have_exact_references() {
+    // An empty cylinder: TE11 (cut-off 8.79 GHz for r = 10 mm), S21 = e^{−jβL}, no S11; with a
+    // coaxial conductor subtracted through it, TEM at k√εr; anything else has none.
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();
+    let r = crate::view::reference(&s).unwrap();
+    let (s11, s21) = r.s(12e9, 1).unwrap();
+    let kc = 1.841_183_781_340_659 / 0.01;
+    let k = 2.0 * std::f64::consts::PI * 12e9 / emcraft_model::units::C0;
+    assert!(s11.norm() == 0.0 && (s21 - emcraft_solver::Complex64::from_polar(1.0, -(k * k - kc * kc).sqrt() * 0.03)).norm() < 1e-12);
+    assert!(r.s(8e9, 1).is_err(), "below cut-off");
+    s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "cylinder", "radius": 3, "length": 30, "at": [0, 0, 0]})).unwrap();
+    let (_, t) = crate::view::reference(&s).unwrap().s(3e9, 1).unwrap();
+    assert!((t - emcraft_solver::Complex64::from_polar(1.0, -2.0 * std::f64::consts::PI * 3e9 / emcraft_model::units::C0 * 0.03)).norm() < 1e-12);
+    s.execute("geometry.feature", &json!({"combine": "subtract", "shape": "cylinder", "radius": 1, "length": 30, "at": [5, 0, 0]})).unwrap();
+    assert!(crate::view::reference(&s).is_err());
+}

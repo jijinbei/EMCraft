@@ -118,7 +118,7 @@ A waveguide port on an end face, matched to the guide's lowest modes. The first 
 
 ## `solve.frequency` — Frequency sweep
 
-Solves the driven problem at each frequency, every port excited in turn by a unit TE10 wave: S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`.
+Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

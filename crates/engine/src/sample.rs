@@ -36,6 +36,11 @@ pub const SAMPLES: &[Sample] = &[
         script: include_str!("../samples/circular-guide.json"),
     },
     Sample {
+        name: "coaxial-line",
+        label: "PTFE coaxial line, conductors of radii 1 and 3.5 mm, 20 mm long: TEM through ports whose modes are solved on the annulus",
+        script: include_str!("../samples/coaxial-line.json"),
+    },
+    Sample {
         name: "inductive-post",
         label: "A 3 mm conducting post across WR-90, wall to wall, cut from the box by a Boolean difference: a strong shunt inductance",
         script: include_str!("../samples/inductive-post.json"),

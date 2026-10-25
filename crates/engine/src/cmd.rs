@@ -165,7 +165,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.frequency",
         label: "Frequency sweep",
-        doc: "Solves the driven problem at each frequency, every port excited in turn by a unit TE10 wave: S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`.",
+        doc: "Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`.",
         params: &[
             p("frequencies", "array", F, false, "the frequencies"),
             p("start", "number", F, false, "first frequency"),
