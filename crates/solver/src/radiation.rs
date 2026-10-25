@@ -67,42 +67,57 @@ impl FarField {
     }
 }
 
-/// The Huygens box: inside the layer by a third of its thickness, so the box lies in ordinary
-/// elements.
+/// The Huygens box: each face a third of the layer's thickness inside the layer's inner face (in
+/// ordinary elements, clear of those the layer's profile reaches), or halfway between that face
+/// and what radiates (the bodies, features, dipoles and lumped ports' bounding box) when that is
+/// nearer, so it stays as far from the sources' near fields as the box allows. Whatever
+/// radiates must keep clear of the layer by an element or so.
 fn huygens_box(model: &Model) -> Result<([f64; 3], [f64; 3])> {
     let (Some(o), Some(emcraft_model::Solid { shape: Shape::Box { size }, .. })) = (&model.open, &model.solid) else {
         return Err(SolveError::NotReady("no open boundary".into()));
     };
-    let g = o.thickness * (1.0 + 1.0 / 3.0);
-    let (lo, hi) = ([g; 3], [0, 1, 2].map(|d| size[d] - g));
-    // The bodies and sources must be inside it.
-    let inside = |a: [f64; 3], b: [f64; 3]| (0..3).all(|d| a[d] > lo[d] && b[d] < hi[d]);
+    let d = o.thickness;
+    let (mut clo, mut chi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    let mut take = |a: [f64; 3], b: [f64; 3]| {
+        for k in 0..3 {
+            clo[k] = clo[k].min(a[k]);
+            chi[k] = chi[k].max(b[k]);
+        }
+    };
     for inc in &model.inclusions {
         let (a, b) = inc.bounds();
-        if !inside(a, b) {
-            return Err(invalid(
-                "open boundary",
-                "an inclusion reaches past the Huygens surface (a third of the layer's thickness inside it); enlarge the box",
-            ));
-        }
+        take(a, b);
     }
     for f in &model.features {
         let (a, b) = f.bounds();
-        if !inside(a, b) {
-            return Err(invalid(
-                "open boundary",
-                "a feature reaches past the Huygens surface (a third of the layer's thickness inside it); enlarge the box",
-            ));
+        take(a, b);
+    }
+    for src in &model.sources {
+        if let Source::Dipole { at, .. } = src {
+            take(*at, *at);
         }
     }
-    for s in &model.sources {
-        if let Source::Dipole { at, .. } = s
-            && !inside(*at, *at)
-        {
-            return Err(invalid("dipole", "must lie inside the Huygens surface (a third of the layer's thickness inside it)"));
+    for l in &model.lumped {
+        take(l.from, l.from);
+        take(l.to, l.to);
+    }
+    // Nothing placed (a plane wave on nothing): the middle of the box.
+    for k in 0..3 {
+        if clo[k] > chi[k] {
+            clo[k] = 0.5 * size[k];
+            chi[k] = 0.5 * size[k];
         }
     }
-    Ok((lo, hi))
+    let (inner_lo, inner_hi) = ([d; 3], [0, 1, 2].map(|k| size[k] - d));
+    let margin = 0.1 * d;
+    if (0..3).any(|k| clo[k] < inner_lo[k] + margin || chi[k] > inner_hi[k] - margin) {
+        return Err(invalid("open boundary", "the bodies and sources reach into or up to the perfectly matched layer; enlarge the box"));
+    }
+    let inset = d / 3.0;
+    Ok((
+        [0, 1, 2].map(|k| inner_lo[k] + inset.min(0.5 * (clo[k] - inner_lo[k]))),
+        [0, 1, 2].map(|k| inner_hi[k] - inset.min(0.5 * (inner_hi[k] - chi[k]))),
+    ))
 }
 
 /// Points and weights on the box's faces, each with its outward normal: patches of about

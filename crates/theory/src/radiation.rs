@@ -109,6 +109,32 @@ pub fn mutual_impedance_parallel(l1: f64, l2: f64, offset: [f64; 3], frequency: 
     v
 }
 
+/// An array of short gaps along ẑ, each of length `l` at `positions` carrying `currents`: its
+/// directivity in direction (θ, φ). The far field is the element's (a Hertzian dipole's, ∝ sin θ)
+/// times the array factor Σ Iₙ e^{jk r̂·rₙ}; the power is ½ Σ Re(Z_mn I_n I_m*) with the exact
+/// mutual impedances ([`mutual_impedance_parallel`]) and each gap's radiation resistance
+/// 80π²(l/λ)² (C. A. Balanis, *Antenna Theory*, 4th ed., §6.2 and §8.6).
+pub fn gap_array_directivity(positions: &[[f64; 3]], currents: &[C], l: f64, frequency: f64, theta: f64, phi: f64) -> f64 {
+    let k = 2.0 * PI * frequency / C0;
+    let eta = eta0();
+    let r = [theta.sin() * phi.cos(), theta.sin() * phi.sin(), theta.cos()];
+    let af: C = positions.iter().zip(currents).map(|(p, i)| i * C::from_polar(1.0, k * (r[0] * p[0] + r[1] * p[1] + r[2] * p[2]))).sum();
+    let f2 = (eta * k * l * theta.sin() / (4.0 * PI)).powi(2) * af.norm_sqr();
+    let lambda = C0 / frequency;
+    let mut p = 0.0;
+    for (m, (pm, im)) in positions.iter().zip(currents).enumerate() {
+        for (n, (pn, inn)) in positions.iter().zip(currents).enumerate() {
+            let z = if m == n {
+                C::new(80.0 * PI * PI * (l / lambda).powi(2), 0.0)
+            } else {
+                mutual_impedance_parallel(l, l, [pm[0] - pn[0], pm[1] - pn[1], pm[2] - pn[2]], frequency)
+            };
+            p += 0.5 * (z * inn * im.conj()).re;
+        }
+    }
+    4.0 * PI * f2 / (2.0 * eta * p)
+}
+
 /// Gauss–Legendre points on [0, 1] and their weights (Golub–Welsch by Newton on Pₙ).
 fn gauss(n: usize) -> (Vec<f64>, Vec<f64>) {
     let mut x = Vec::with_capacity(n);
@@ -318,6 +344,27 @@ mod tests {
         assert!((a - b).norm() < 1e-12 * a.norm());
         let (x, w) = gauss(16);
         assert!((x.iter().zip(&w).map(|(x, w)| w * x.powi(31)).sum::<f64>() - 1.0 / 32.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn a_gap_array_conserves_power() {
+        // The directivity integrates to 4π over the sphere (the power from the mutual impedances
+        // agrees with the pattern's), for an array of three gaps with phases.
+        let f = 10e9;
+        let pos = [[0.0, 0.0, 0.0], [0.012, 0.0, 0.0], [0.004, 0.009, 0.003]];
+        let cur = [C::new(1.0, 0.0), C::from_polar(0.7, 1.0), C::from_polar(1.2, -2.0)];
+        let (n, m) = (60, 120);
+        let mut total = 0.0;
+        for i in 0..n {
+            let t = PI * (i as f64 + 0.5) / n as f64;
+            for j in 0..m {
+                let ph = 2.0 * PI * (j as f64 + 0.5) / m as f64;
+                total += gap_array_directivity(&pos, &cur, 1e-3, f, t, ph) * t.sin() * (PI / n as f64) * (2.0 * PI / m as f64);
+            }
+        }
+        // The Hertzian self-resistance of a 1 mm gap differs from its finite length's by
+        // about (kl)²/10.
+        assert!((total / (4.0 * PI) - 1.0).abs() < 1e-2, "{}", total / (4.0 * PI));
     }
 
     #[test]

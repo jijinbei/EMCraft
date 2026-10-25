@@ -1,0 +1,11 @@
+{
+ "title": "Two 1 mm gaps 15 mm apart (half a wavelength at 10 GHz) driven in phase: array pattern and active resistance",
+ "kind": "theory",
+ "source": "An array of Hertzian dipoles: the far field is the element's (∝ sin θ) times the array factor Σ Iₙ e^{jk r̂·rₙ}, its power ½ Σ Re(Z_mn I_n I_m*) with the exact mutual impedances; each gap's active resistance is R₁₁ + Re Z₁₂ for equal currents (C. A. Balanis, Antenna Theory, 4th ed., §6.2, §8.6; emcraft-theory radiation::gap_array_directivity, mutual_impedance_parallel)",
+ "quantities": [
+  {"id": "directivity_broadside", "quantity": "directivity broadside to the pair, θ = 90°, φ = 90°", "measure": {"step": "broadside", "pointer": "/points/0/directivity"}, "value": 3.537986165231323, "tolerance": {"relative": 0.04}, "reason": "six second-order elements per wavelength, a Huygens box 12.6 mm from the gaps (much closer, the gaps' singular near fields are too coarse on it): +0.7 %"},
+  {"id": "directivity_45", "quantity": "directivity at θ = 45° in the pair's plane (φ = 0)", "measure": {"step": "xz", "pointer": "/points/0/directivity"}, "value": 0.347675402126639, "tolerance": {"relative": 0.06}, "reason": "a side lobe between the element's null and the array's: −2.9 %"},
+  {"id": "null", "quantity": "directivity along the pair, θ = 90°, φ = 0 (the array factor's null)", "measure": {"step": "xz", "pointer": "/points/1/directivity"}, "value": 0.0, "tolerance": {"absolute": 0.005}, "reason": "half a wavelength apart in phase cancel along their line: 5e-5"},
+  {"id": "r_active", "quantity": "active resistance of gap 1 (Ω; both currents 1 A)", "measure": {"step": "solve", "pointer": "/ports/0/voltage/re"}, "value": 0.744411201187382, "tolerance": {"relative": 0.04}, "reason": "R₁₁ + Re Z₁₂: −1.2 %"}
+ ]
+}

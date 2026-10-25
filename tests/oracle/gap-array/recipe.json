@@ -1,0 +1,10 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [80, 80, 80]}},
+ {"command": "model.open", "params": {"thickness": 15}},
+ {"command": "mesh.generate", "params": {"per_wavelength": 6, "frequency": 10}},
+ {"command": "model.port.lumped", "params": {"name": "1", "from": [32.6, 40.2, 39.4], "to": [32.6, 40.2, 40.4], "impedance": 1e9, "voltage": 1e9}},
+ {"command": "model.port.lumped", "params": {"name": "2", "from": [47.6, 40.2, 39.4], "to": [47.6, 40.2, 40.4], "impedance": 1e9, "voltage": 1e9}},
+ {"command": "solve.radiation", "params": {"frequency": 10}, "id": "solve"},
+ {"command": "results.far_field", "params": {"theta": [90], "phi": 90}, "id": "broadside"},
+ {"command": "results.far_field", "params": {"theta": [45, 90], "phi": 0}, "id": "xz"}
+]

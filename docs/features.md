@@ -216,7 +216,7 @@ Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over 
 
 ## `model.open` — Open boundary
 
-Lines every face of a box solid with a perfectly matched layer of `thickness` (conducting walls behind it), for radiation and scattering: an anisotropic medium of stretched coordinates, s = 1 − j(σ₀/k₀)(ξ/d)², designed for 1e-6 reflection at normal incidence. A quarter to half a wavelength is typical. Without `thickness`, closes the box again.
+Lines every face of a box solid with a perfectly matched layer of `thickness` (conducting walls behind it), for radiation and scattering: an anisotropic medium of stretched coordinates, s = 1 − j(σ₀/k₀)(ξ/d)², designed for 1e-6 reflection at normal incidence. A quarter to half a wavelength is typical; leave as much again between what radiates and the layer (the Huygens surface for the far field lies between them, and wants a couple of elements' distance from sources' near fields). Without `thickness`, closes the box again.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -264,7 +264,7 @@ No parameters.
 
 ## `solve.radiation` — Radiation
 
-Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box a third of the layer's thickness inside it, with the closed form for a lone dipole (radiated power) or a lone dielectric or conducting sphere (the Mie series' scattering cross-section).
+Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box between what radiates and the layer (a third of its thickness inside it, or halfway when that is nearer), with the closed form for a lone dipole (radiated power) or a lone dielectric or conducting sphere (the Mie series' scattering cross-section).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
