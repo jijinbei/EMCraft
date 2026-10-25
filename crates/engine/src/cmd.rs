@@ -173,6 +173,13 @@ pub static COMMANDS: &[CommandSpec] = &[
             p("modes", "integer", N, false, "modes in the port condition, 1 to 32 (default 4)"),
             p("face", "array", L, false, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z"),
             p("mode_solver", "string", N, false, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)"),
+            p(
+                "impedance",
+                "number",
+                N,
+                false,
+                "the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out",
+            ),
         ],
         run: port_create,
     },
@@ -223,7 +230,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.port_modes",
         label: "Port modes",
-        doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit) and the effective permittivity (β/k₀)² when it propagates, the attenuation (dB per length unit) when it does not.",
+        doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with one conductor besides the ground (coaxial, strip) — the characteristic impedance by power and current (Ω) when it propagates; the attenuation (dB per length unit) when it does not.",
         params: &[
             p("frequency", "number", F, true, "the frequency"),
             p("order", "integer", N, false, "element order of the cross-section solver, 1 or 2 (default 2)"),
@@ -714,7 +721,8 @@ fn port_create(s: &mut Session, p: &Value) -> Result<Value> {
         "numeric" => true,
         _ => return Err(EngineError::Params("`mode_solver` must be auto or numeric".into())),
     };
-    s.model.add_port(Port { name: name.to_owned(), end, modes, face, numeric })?;
+    let reference = number(p, "impedance")?;
+    s.model.add_port(Port { name: name.to_owned(), end, modes, face, numeric, reference })?;
     s.sweep = None;
     Ok(json!({"name": name}))
 }
@@ -860,7 +868,7 @@ fn port_modes(s: &mut Session, p: &Value) -> Result<Value> {
                 .map(|m| {
                     if m.beta2 > 0.0 {
                         let beta = m.beta2.sqrt();
-                        json!({"name": m.name, "propagating": true, "beta": beta * per_unit, "eps_eff": m.beta2 / (k0 * k0), "closed_form": m.closed_form})
+                        json!({"name": m.name, "propagating": true, "beta": beta * per_unit, "eps_eff": m.beta2 / (k0 * k0), "impedance": m.impedance, "closed_form": m.closed_form})
                     } else {
                         let alpha = (-m.beta2).sqrt();
                         json!({"name": m.name, "propagating": false, "attenuation_db": 20.0 * std::f64::consts::LOG10_E * alpha * per_unit, "closed_form": m.closed_form})
@@ -888,6 +896,9 @@ fn sparameters(s: &mut Session, _: &Value) -> Result<Value> {
                 }
             }
             m.insert("backward_error".into(), json!(r.backward_error));
+            if r.impedances.iter().any(Option::is_some) {
+                m.insert("impedances".into(), json!(r.impedances));
+            }
             Value::Object(m)
         })
         .collect();

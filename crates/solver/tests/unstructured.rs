@@ -86,8 +86,8 @@ fn unstructured_waveguide_transmits_with_the_te10_phase() {
     use emcraft_model::{End, Port};
     // A 30 mm length of WR-90 as a box with ports on its ends, meshed without structure.
     let mut m = body(Shape::Box { size: Vec3::new(0.02286, 0.01016, 0.03) }, 0.003);
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false, reference: None }).unwrap();
     let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
     for f in [8.0e9, 10.0e9, 12.0e9] {
         let r = d.solve(f).unwrap();
@@ -110,8 +110,8 @@ fn circular_guide_error(h: f64) -> f64 {
     use emcraft_model::{End, Port};
     // r = 10 mm: TE11 above 8.79 GHz, TM01 above 11.47 GHz, TE21 above 14.58 GHz.
     let mut m = body(Shape::Cylinder { radius: 0.01, length: 0.03 }, h);
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 3, face: None, numeric: false }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 3, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 3, face: None, numeric: false, reference: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 3, face: None, numeric: false, reference: None }).unwrap();
     let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
     let mut worst = 0.0f64;
     for f in [10.5e9, 13.5e9] {
@@ -188,8 +188,8 @@ fn post_s(order: Order, size: f64) -> Vec<Vec<emcraft_solver::Complex64>> {
     })
     .unwrap();
     m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap());
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false, reference: None }).unwrap();
     let d = emcraft_solver::Driven::new(&m, order).unwrap();
     d.solve(10.0e9).unwrap().s
 }

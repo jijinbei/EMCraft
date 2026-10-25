@@ -1,0 +1,33 @@
+{
+ "title": "Stripline: a 2.4 mm strip of no thickness midway between planes 3 mm apart in εr = 2.2, the box's side walls three spacings away: its characteristic impedance",
+ "kind": "theory",
+ "source": "Cohn's exact conformal mapping of the zero-thickness stripline between infinite planes: Z₀ = η0/(4√εr) K(k)/K(k′), k = sech(πW/2b), k′ = tanh(πW/2b) (S. B. Cohn, Characteristic impedance of the shielded-strip transmission line, IRE Trans. MTT 2(2):52–57, 1954), K by the arithmetic–geometric mean",
+ "quantities": [
+  {
+   "id": "z0",
+   "quantity": "the port mode's characteristic impedance at 2 GHz (Ω)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/impedance"
+   },
+   "value": 51.1771114557114,
+   "tolerance": {
+    "relative": 0.005
+   },
+   "reason": "−0.23 %: 1 mm cells graded to 50 µm at the strip's edges, and side walls three spacings away where the planes are infinite in Cohn's"
+  },
+  {
+   "id": "eps_eff",
+   "quantity": "(β/k0)² of the TEM mode",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/eps_eff"
+   },
+   "value": 2.2,
+   "tolerance": {
+    "relative": 1e-09
+   },
+   "reason": "TEM in one dielectric: exact but for rounding"
+  }
+ ]
+}

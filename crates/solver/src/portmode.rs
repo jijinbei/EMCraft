@@ -47,6 +47,8 @@ pub struct CrossSection {
     tri_edges: Vec<[u32; 3]>,
     /// Each triangle's moved edge midpoints (in its local edge order).
     mids: Vec<[Option<Point3>; 3]>,
+    /// The edges on conductors (the rim and any inside), by nodes ascending.
+    walls: Vec<[u32; 2]>,
     /// Unknown of each transverse slot (edge functions, then triangle functions), then of each
     /// scalar slot (nodes, then edges); [`NONE`] on the walls.
     t_unknown: Vec<u32>,
@@ -169,6 +171,7 @@ impl CrossSection {
             return Err(SolveError::TooLarge { unknowns, limit: MAX_UNKNOWNS });
         }
         let mids = tris.iter().map(|t| TRI_EDGES.map(|[i, j]| curved.get(&[t[i], t[j]]).copied())).collect();
+        let walls: Vec<[u32; 2]> = edge_list.iter().zip(&wall_edge).filter(|(_, w)| **w).map(|(e, _)| *e).collect();
         let mut cs = CrossSection {
             order,
             nodes,
@@ -177,6 +180,7 @@ impl CrossSection {
             mu,
             tri_edges,
             mids,
+            walls,
             t_unknown,
             z_unknown,
             edges: ne,
@@ -437,6 +441,97 @@ impl CrossSection {
         Ok(self.at(&tri, t, &mode.x, tri.barycentric(p)))
     }
 
+    /// The conductors other than the ground: each a set of nodes, ascending. Conductors are the
+    /// connected sets of wall edges; the ground is the one holding the leftmost node (the rim).
+    pub fn conductors(&self) -> Vec<Vec<u32>> {
+        let n = self.nodes.len();
+        let mut parent: Vec<usize> = (0..n).collect();
+        fn root(parent: &mut [usize], mut v: usize) -> usize {
+            while parent[v] != v {
+                parent[v] = parent[parent[v]];
+                v = parent[v];
+            }
+            v
+        }
+        for [a, b] in &self.walls {
+            let (ra, rb) = (root(&mut parent, *a as usize), root(&mut parent, *b as usize));
+            if ra != rb {
+                parent[ra.max(rb)] = ra.min(rb);
+            }
+        }
+        let mut on_wall: Vec<u32> = self.walls.iter().flatten().copied().collect();
+        on_wall.sort_unstable();
+        on_wall.dedup();
+        let Some(&leftmost) = on_wall.iter().min_by(|a, b| self.nodes[**a as usize].x.total_cmp(&self.nodes[**b as usize].x).then(a.cmp(b))) else {
+            return Vec::new();
+        };
+        let ground = root(&mut parent, leftmost as usize);
+        let mut groups: std::collections::BTreeMap<usize, Vec<u32>> = std::collections::BTreeMap::new();
+        for v in on_wall {
+            let r = root(&mut parent, v as usize);
+            if r != ground {
+                groups.entry(r).or_default().push(v);
+            }
+        }
+        groups.into_values().collect()
+    }
+
+    /// The current I = ∮ H · dl round each conductor other than the ground (A, for the mode at
+    /// unit amplitude, along +ŝ), and the power P = ½ Re ∫ (e × h*) · ŝ dS (W) the mode carries.
+    ///
+    /// The contour integral is taken in its weak form, which needs no trace of H on element
+    /// edges (its normal part jumps there): with w = 1 on the conductor and 0 a triangle away
+    /// (the sum of its nodes' hat functions), Stokes' theorem and ∇ × H = jωεE give
+    /// I = −∫ ∇w · H̃ dA − ∫ w jωε E_z dA, H̃ = μr⁻¹ g β/(ωμ₀) (H = ŝ × H̃), E_z = jβφ.
+    pub fn currents(&self, mode: &PortMode, k0: f64) -> Result<(Vec<C>, f64)> {
+        let eta0 = emcraft_model::units::MU0 * emcraft_model::units::C0;
+        let beta = mode.beta();
+        // β/(ωμ₀) = β/(k₀η₀); jωε₀ · jβ = −k₀β/η₀.
+        let scale = beta / (k0 * eta0);
+        let axial = -(k0 / eta0) * beta;
+        let power = 0.5 * (scale * mode.d).re;
+        let currents = self
+            .conductors()
+            .iter()
+            .map(|nodes| {
+                let mut sum = C::new(0.0, 0.0);
+                for t in (0..self.tris.len()).filter(|&t| self.tris[t].iter().any(|v| nodes.binary_search(v).is_ok())) {
+                    let tri = self.triangle(t)?;
+                    let on: [bool; 3] = self.tris[t].map(|v| nodes.binary_search(&v).is_ok());
+                    let (_, vz) = self.unknowns_of(t);
+                    for (l, wt) in tri.rule() {
+                        let (_, g) = self.at(&tri, t, &mode.x, l);
+                        let grads = tri.scalar_gradients(l);
+                        let w: f64 = (0..3).filter(|k| on[*k]).map(|k| l[k]).sum();
+                        let dw = (0..3).filter(|k| on[*k]).fold(Vec3::ZERO, |a, k| a + grads[k]);
+                        let phi: f64 = tri
+                            .scalars(l)
+                            .into_iter()
+                            .zip(&vz)
+                            .map(|(f, u)| if *u == NONE { 0.0 } else { f * mode.x.get(*u as usize).copied().unwrap_or(0.0) })
+                            .sum();
+                        sum += wt * (-scale * (dw.dot(g) / self.mu[t]) - axial * (self.eps[t] * w * phi));
+                    }
+                }
+                Ok(sum)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok((currents, power))
+    }
+
+    /// The mode's characteristic impedance by power and current, Z = 2P/|I|² (Ω), when the
+    /// cross-section has exactly one conductor besides the ground; `None` otherwise.
+    pub fn impedance(&self, mode: &PortMode, k0: f64) -> Result<Option<f64>> {
+        if mode.beta2 <= 0.0 {
+            return Ok(None);
+        }
+        let (currents, power) = self.currents(mode, k0)?;
+        Ok(match currents[..] {
+            [i] if i.norm() > 0.0 => Some(2.0 * power / i.norm_sqr()),
+            _ => None,
+        })
+    }
+
     /// μr of triangle `t`.
     pub fn mu_of(&self, t: usize) -> f64 {
         self.mu.get(t).copied().unwrap_or(1.0)
@@ -598,5 +693,47 @@ mod tests {
             // The next mode (TE11-like) is below its cut-off at 3 GHz: evanescent.
             assert!(modes[1].beta2 < 0.0);
         }
+    }
+
+    #[test]
+    fn a_coaxial_line_has_its_closed_form_impedance() {
+        // Z₀ = η₀ ln(b/a) / (2π √εr), by power and the inner conductor's current, the rings'
+        // edges curved onto the circles.
+        let (r_in, r_out, er, rings, sectors) = (0.001, 0.0035, 2.1, 4, 24);
+        let nodes: Vec<Point3> = (0..=rings)
+            .flat_map(|i| {
+                let r = r_in + (r_out - r_in) * i as f64 / rings as f64;
+                (0..sectors).map(move |j| {
+                    let a = 2.0 * std::f64::consts::PI * j as f64 / sectors as f64;
+                    Point3::new(r * a.cos(), r * a.sin(), 0.0)
+                })
+            })
+            .collect();
+        let id = |i: usize, j: usize| (i * sectors + j % sectors) as u32;
+        let tris: Vec<[u32; 3]> = (0..rings)
+            .flat_map(|i| (0..sectors).flat_map(move |j| [[id(i, j), id(i + 1, j), id(i + 1, j + 1)], [id(i, j), id(i + 1, j + 1), id(i, j + 1)]]))
+            .collect();
+        let mut curved = std::collections::BTreeMap::new();
+        for (i, r) in [(0, r_in), (rings, r_out)] {
+            for j in 0..sectors {
+                let (a, b) = (id(i, j), id(i, j + 1));
+                let angle = 2.0 * std::f64::consts::PI * (j as f64 + 0.5) / sectors as f64;
+                curved.insert([a.min(b), a.max(b)], Point3::new(r * angle.cos(), r * angle.sin(), 0.0));
+            }
+        }
+        let n = tris.len();
+        let cs = CrossSection::new(Order::Two, nodes, tris, vec![er; n], vec![1.0; n], &[], &curved).unwrap();
+        assert_eq!(cs.conductors().len(), 1);
+        let k0 = 2.0 * std::f64::consts::PI * 3e9 / emcraft_model::units::C0;
+        let modes = cs.modes(k0, 1).unwrap();
+        let z = cs.impedance(&modes[0], k0).unwrap().unwrap();
+        let eta0 = emcraft_model::units::MU0 * emcraft_model::units::C0;
+        let exact = eta0 * (r_out / r_in).ln() / (2.0 * std::f64::consts::PI * er.sqrt());
+        // Measured 2.6e-4 (the current taken on the edges of the first ring, where H's normal part
+        // jumps: 6.6e-2).
+        assert!((z / exact - 1.0).abs() < 1e-3, "{z} {exact}");
+        // The current flows along +ŝ for a field pointing outwards (positive inner conductor).
+        let (i, _) = cs.currents(&modes[0], k0).unwrap();
+        assert!(i[0].re.abs() > 0.0);
     }
 }

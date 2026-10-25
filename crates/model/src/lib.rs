@@ -585,6 +585,10 @@ pub struct Port {
     /// line, a ridge, a polygon — gets the numerical ones in any case).
     #[serde(default)]
     pub numeric: bool,
+    /// The impedance (Ω) the S-parameters are referred to at this port, for a line with a
+    /// characteristic impedance (coaxial, strip); its own mode's when `None`.
+    #[serde(default)]
+    pub reference: Option<f64>,
 }
 
 /// A port's rectangle: [x0, x0 + a] × [y0, y0 + b] at height z (m).
@@ -1024,6 +1028,9 @@ impl Model {
         if p.face.is_none() && self.ports.iter().any(|x| x.face.is_none() && x.end == p.end) {
             return Err(invalid(format!("port `{}`", p.name), "that end of the waveguide already has a port"));
         }
+        if let Some(r) = p.reference {
+            positive(&format!("reference impedance of port `{}`", p.name), r)?;
+        }
         if p.modes == 0 || p.modes > MAX_PORT_MODES {
             return Err(invalid(format!("port `{}`", p.name), format!("modes must be 1 to {MAX_PORT_MODES}, got {}", p.modes)));
         }
@@ -1136,11 +1143,11 @@ mod tests {
         assert!(matches!(m.set_waveguide(w), Err(ModelError::Unknown { .. })));
         m.set_waveguide(guide()).unwrap();
         assert!((m.waveguide.as_ref().unwrap().length() - 0.01).abs() < 1e-15);
-        m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false }).unwrap();
-        assert!(m.add_port(Port { name: "2".into(), end: End::Start, modes: 4, face: None, numeric: false }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 0, face: None, numeric: false }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000, face: None, numeric: false }).is_err());
-        m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None, numeric: false }).unwrap();
+        m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).unwrap();
+        assert!(m.add_port(Port { name: "2".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).is_err());
+        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 0, face: None, numeric: false, reference: None }).is_err());
+        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000, face: None, numeric: false, reference: None }).is_err());
+        m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None, numeric: false, reference: None }).unwrap();
         assert_eq!(m.port_material(End::End).unwrap().name, "vacuum");
         assert_eq!(m.check(), vec!["no mesh: mesh the geometry with mesh.generate".to_owned()]);
     }

@@ -62,6 +62,10 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   International Microwave Symposium Digest, 1980, pp. 407–409 — microstrip's quasi-static
   effective permittivity and impedance, the benchmark for strips on a substrate
   (`emcraft-theory::microstrip`).
+- S. B. Cohn, *Characteristic impedance of the shielded-strip transmission line*, IRE Trans. MTT
+  2(2):52–57, 1954 — the zero-thickness stripline's exact impedance (`emcraft-theory::stripline`).
+- K. Kurokawa, *Power waves and the scattering matrix*, IEEE Trans. MTT 13(2):194–202, 1965 — S
+  referred to reference impedances from the modes' power waves (`emcraft-solver::driven`).
 - J. Meixner, *The behavior of electromagnetic fields at edges*, IEEE Trans. AP 20(4):442–446,
   1972 — E ∝ r^{−1/2} at a strip's edge, why the structured mesh closes in harder there than at
   an iris' (`emcraft-mesh`, `strip_edge`).

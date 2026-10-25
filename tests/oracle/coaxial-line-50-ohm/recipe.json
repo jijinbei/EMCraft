@@ -1,0 +1,10 @@
+[
+ {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.1}},
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 3.5, "length": 10, "material": "ptfe"}},
+ {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "cylinder", "radius": 1.0, "length": 10, "at": [0, 0, 0]}},
+ {"command": "mesh.generate", "params": {"size": 2}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2, "impedance": 50}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2, "impedance": 50}},
+ {"command": "solve.port_modes", "params": {"frequency": 6}, "id": "modes"},
+ {"command": "solve.frequency", "params": {"frequencies": [6], "order": 2}, "id": "solve"}
+]

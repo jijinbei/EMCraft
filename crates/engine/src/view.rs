@@ -428,6 +428,9 @@ pub fn reference(session: &Session) -> Result<Reference> {
         };
     }
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
+    if !w.plain() {
+        return Err(EngineError::Failed("not supported yet: a reference for a layered guide or one with strips".into()));
+    }
     if w.uniform() {
         return Ok(Reference::Exact(te10_line(session)?));
     }

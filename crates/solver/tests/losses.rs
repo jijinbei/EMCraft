@@ -15,8 +15,8 @@ fn slab(size: f64) -> Model {
     m.add_material(Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap()).unwrap();
     let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.02, "lossy"), Section::new(0.01, "vacuum")];
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false, reference: None }).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
 }
@@ -64,7 +64,7 @@ fn a_port_in_a_lossy_material_is_refused() {
     let mut m = Model::new();
     m.add_material(Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap()).unwrap();
     m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(0.02, "lossy")], layers: Vec::new(), strips: Vec::new() }).unwrap();
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 1, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 1, face: None, numeric: false, reference: None }).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
     assert!(matches!(Driven::new(&m, Order::One), Err(SolveError::Invalid { .. })));
 }
@@ -75,8 +75,8 @@ fn lossy_walls(length: f64, sigma: f64, size: f64) -> Model {
     m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(length, "vacuum")], layers: Vec::new(), strips: Vec::new() })
         .unwrap();
     m.set_wall_conductivity(Some(sigma)).unwrap();
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None, numeric: false, reference: None }).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
 }

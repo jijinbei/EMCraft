@@ -1,0 +1,46 @@
+{
+ "title": "PTFE coaxial line (radii 1 and 3.5 mm, Z₀ = 51.8 Ω), 10 mm long, its S-parameters referred to 50 Ω at both ends",
+ "kind": "theory",
+ "source": "Z₀ = η0 ln(b/a)/(2π √εr) of a coaxial line (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §2.2) and the mismatched uniform line between reference impedances R: S11 = Γ(1 − e^{−2jβL})/(1 − Γ²e^{−2jβL}), S21 = (1 − Γ²)e^{−jβL}/(1 − Γ²e^{−2jβL}), Γ = (Z₀ − R)/(Z₀ + R), β = k0 √εr (K. Kurokawa, Power waves and the scattering matrix, IEEE Trans. MTT 13(2), 1965)",
+ "quantities": [
+  {
+   "id": "z0",
+   "quantity": "the port mode's characteristic impedance at 6 GHz (Ω)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/impedance"
+   },
+   "value": 51.833431176973605,
+   "tolerance": {
+    "relative": 0.001
+   },
+   "reason": "by power and the inner conductor's current (taken in weak form) on the port's curved triangles: −2e-4"
+  },
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 6 GHz, 50 Ω",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.034865674199638354,
+   "tolerance": {
+    "absolute": 0.001
+   },
+   "reason": "the impedance's −2e-4 and the line's own 1e-4: 3e-4"
+  },
+  {
+   "id": "s21_phase",
+   "quantity": "phase of S21 at 6 GHz, 50 Ω (degrees)",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -104.4011936006931,
+   "tolerance": {
+    "absolute": 0.05
+   },
+   "reason": "as the matched line's, 0.008°"
+  }
+ ]
+}

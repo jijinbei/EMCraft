@@ -117,6 +117,7 @@ A waveguide port on an end face, matched to the guide's lowest modes. The first 
 | `modes` | integer |  | no | modes in the port condition, 1 to 32 (default 4) |
 | `face` | array | length | no | [z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z |
 | `mode_solver` | string |  | no | `auto` (default: closed forms where they apply) or `numeric` (the cross-section solver) |
+| `impedance` | number |  | no | the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out |
 
 ## `solve.frequency` — Frequency sweep
 
@@ -160,7 +161,7 @@ No parameters.
 
 ## `solve.port_modes` — Port modes
 
-Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit) and the effective permittivity (β/k₀)² when it propagates, the attenuation (dB per length unit) when it does not.
+Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with one conductor besides the ground (coaxial, strip) — the characteristic impedance by power and current (Ω) when it propagates; the attenuation (dB per length unit) when it does not.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

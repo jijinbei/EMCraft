@@ -15,8 +15,8 @@ fn model(sections: Vec<Section>, materials: &[(&str, f64)]) -> Model {
         m.add_material(Material::new(name, *eps, 1.0).unwrap()).unwrap();
     }
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
-    m.add_port(Port { name: "1".into(), end: End::Start, modes: 1, face: None, numeric: false }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes: 1, face: None, numeric: false, reference: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None, numeric: false, reference: None }).unwrap();
     m
 }
 

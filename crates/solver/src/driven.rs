@@ -149,6 +149,8 @@ pub struct PortData {
     pub name: String,
     pub end: End,
     pub modes: PortModes,
+    /// The impedance S is referred to at this port (Ω), if any.
+    pub reference: Option<f64>,
 }
 
 /// A port's modes: closed forms, or the numerical solver's on its cross-section.
@@ -185,6 +187,8 @@ pub struct PortTerm<'a> {
     /// 2ωμ₀ times the power a unit wave of the mode carries (0 for an evanescent one).
     pub proxy: f64,
     pub propagating: bool,
+    /// The line's characteristic impedance (Ω) for a port's first mode, where defined.
+    pub impedance: Option<f64>,
 }
 
 /// A waveguide meshed and assembled up to the frequency: the curl–curl and mass matrices and
@@ -213,6 +217,34 @@ pub struct Driven {
     pub(crate) pml: Option<(f64, f64, Vec<(usize, Vec3)>)>,
     /// Lumped ports: each with its vector cᵢ = ∫ Nᵢ · ŝ dl along its gap.
     pub lumped: Vec<LumpedData>,
+}
+
+/// Solves a small dense complex system by Gaussian elimination with partial pivoting.
+fn complex_solve(mut a: Vec<Vec<C>>, mut b: Vec<C>) -> Option<Vec<C>> {
+    let n = b.len();
+    for k in 0..n {
+        let piv = (k..n).max_by(|&i, &j| a[i][k].norm().total_cmp(&a[j][k].norm()))?;
+        if a[piv][k].norm() == 0.0 {
+            return None;
+        }
+        a.swap(k, piv);
+        b.swap(k, piv);
+        for i in k + 1..n {
+            let f = a[i][k] / a[k][k];
+            for j in k..n {
+                let x = a[k][j];
+                a[i][j] -= f * x;
+            }
+            let x = b[k];
+            b[i] -= f * x;
+        }
+    }
+    let mut x = vec![C::new(0.0, 0.0); n];
+    for i in (0..n).rev() {
+        let s: C = (i + 1..n).map(|j| a[i][j] * x[j]).sum();
+        x[i] = (b[i] - s) / a[i][i];
+    }
+    Some(x)
 }
 
 /// A frequency's linear system: the matrix with its border of port modes (the last `border`
@@ -279,8 +311,11 @@ pub const PML_REFLECTION: f64 = 1e-6;
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrequencyResult {
     pub frequency: f64,
-    /// S[p][q]: at port p for a unit TE₁₀ wave into port q.
+    /// S[p][q]: at port p for a unit wave of port q's first mode into it; power waves of the
+    /// modes, or referred to the ports' reference impedances where set.
     pub s: Vec<Vec<C>>,
+    /// Each port's line impedance (Ω), where its first mode has one.
+    pub impedances: Vec<Option<f64>>,
     /// The field coefficients for each excitation (port q).
     pub fields: Vec<Vec<C>>,
     /// The worst backward error of the solves.
@@ -387,7 +422,7 @@ impl Driven {
                 Some(shape) => analytic_port(model, p, shape, &mesh, &topo, &dofs, order, &port_faces[k])?,
                 None => PortModes::Numeric(Box::new(numeric_port(model, p, &mesh, &topo, &dofs, order, &port_faces[k])?)),
             };
-            ports.push(PortData { name: p.name.clone(), end: p.end, modes });
+            ports.push(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference });
         }
 
         // Lumped ports: their gaps' line integrals.
@@ -591,9 +626,12 @@ impl Driven {
                 s[p][q] = direct * (proxy(p) / proxy(q)).sqrt();
             }
         }
+        let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
+        let s = self.refer(s, &impedances)?;
         Ok(FrequencyResult {
             frequency,
             s,
+            impedances,
             fields,
             backward_error: worst,
             perturbed_pivots: f.perturbed,
@@ -755,6 +793,48 @@ impl Driven {
         }
     }
 
+    /// S of the modes' power waves referred to the ports' reference impedances R (those without
+    /// one keep their mode's): with each port's line impedance Z, V = √Z (a + b) and
+    /// I = (a − b)/√Z, the new waves a′ = P a + Q b, b′ = Q a + P b, P = (Z + R)/(2√(ZR)),
+    /// Q = (Z − R)/(2√(ZR)), so S′ = (Q + P S)(P + Q S)⁻¹ (K. Kurokawa, *Power waves and the
+    /// scattering matrix*, IEEE Trans. MTT 13(2):194–202, 1965).
+    fn refer(&self, s: Vec<Vec<C>>, impedances: &[Option<f64>]) -> Result<Vec<Vec<C>>> {
+        let n = s.len();
+        let mut p = vec![1.0; n];
+        let mut q = vec![0.0; n];
+        let mut any = false;
+        for (i, port) in self.ports.iter().enumerate() {
+            let Some(r) = port.reference else { continue };
+            let z = impedances.get(i).copied().flatten().ok_or_else(|| {
+                invalid(
+                    format!("port `{}`", port.name),
+                    "has a reference impedance, but its mode has no line impedance (one conductor inside the ground is needed)",
+                )
+            })?;
+            let root = 2.0 * (z * r).sqrt();
+            p[i] = (z + r) / root;
+            q[i] = (z - r) / root;
+            any = true;
+        }
+        if !any {
+            return Ok(s);
+        }
+        // N = Q + P S, D = P + Q S (row i scaled by port i's P, Q); S′ = N D⁻¹.
+        let num: Vec<Vec<C>> =
+            (0..n).map(|i| (0..n).map(|j| p[i] * s[i][j] + if i == j { C::new(q[i], 0.0) } else { C::new(0.0, 0.0) }).collect()).collect();
+        let den: Vec<Vec<C>> =
+            (0..n).map(|i| (0..n).map(|j| q[i] * s[i][j] + if i == j { C::new(p[i], 0.0) } else { C::new(0.0, 0.0) }).collect()).collect();
+        // Solve S′ D = N, i.e. Dᵀ S′ᵀ = Nᵀ, column by column of S′ᵀ.
+        let dt: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| den[j][i]).collect()).collect();
+        let rows = (0..n)
+            .map(|i| {
+                complex_solve(dt.clone(), (0..n).map(|j| num[i][j]).collect())
+                    .ok_or_else(|| invalid("reference impedances", "a singular renormalisation"))
+            })
+            .collect::<Result<Vec<Vec<C>>>>()?;
+        Ok(rows)
+    }
+
     /// Port `p`'s modes as terms of its condition at `frequency` (the first is the one excited and
     /// read). Closed forms: n̂ × ∇ × E_t = κ E_t, factor κ/(μr‖e‖²); numerical modes: H_t =
     /// ŝ × g β/(ωμ), factor jβ/D, with v_i = ∫ μr⁻¹ Nᵢ · g dS and D = ∫ μr⁻¹ e · g dS
@@ -781,6 +861,7 @@ impl Driven {
                             norm: mode.norm(),
                             proxy: mode.norm() * gamma.1 / mu_r,
                             propagating: gamma.1 > 0.0,
+                            impedance: None,
                         })
                     })
                     .collect()
@@ -812,6 +893,10 @@ impl Driven {
                 }
             }
         }
+        let impedance = match modes.first() {
+            Some(m) => n.section.impedance(m, k0)?,
+            None => None,
+        };
         Ok(modes
             .iter()
             .zip(v)
@@ -820,6 +905,7 @@ impl Driven {
                 let beta = m.beta();
                 let jb = C::new(0.0, 1.0) * beta;
                 PortTerm {
+                    impedance: if i == 0 { impedance } else { None },
                     name: format!("mode {}", i + 1),
                     v: std::borrow::Cow::Owned(n.support.iter().copied().zip(vm).collect()),
                     factor: jb / m.d,
@@ -1026,6 +1112,9 @@ pub struct ModeInfo {
     pub beta2: f64,
     /// Whether the closed forms gave it.
     pub closed_form: bool,
+    /// The characteristic impedance by power and current (Ω), for a propagating mode of a
+    /// cross-section with one conductor besides the ground (a TEM or quasi-TEM line).
+    pub impedance: Option<f64>,
 }
 
 /// Each port's modes at `frequency` (Hz), from the meshed model, without assembling the
@@ -1052,7 +1141,10 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                         emcraft_model::PortShape::Rect { a, b, .. } => modes::lowest(a, b, p.modes as usize),
                         emcraft_model::PortShape::Circle { r, .. } => modes::lowest_circular(r, p.modes as usize),
                     };
-                    modes.iter().map(|md| ModeInfo { name: md.name(), beta2: k * k - md.cutoff().powi(2), closed_form: true }).collect()
+                    modes
+                        .iter()
+                        .map(|md| ModeInfo { name: md.name(), beta2: k * k - md.cutoff().powi(2), closed_form: true, impedance: None })
+                        .collect()
                 }
                 None => {
                     let section = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
@@ -1060,8 +1152,11 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                         .modes(k0, p.modes as usize)?
                         .into_iter()
                         .enumerate()
-                        .map(|(i, m)| ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false })
-                        .collect()
+                        .map(|(i, m)| {
+                            let impedance = section.impedance(&m, k0)?;
+                            Ok(ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false, impedance })
+                        })
+                        .collect::<Result<Vec<_>>>()?
                 }
             };
             Ok((p.name.clone(), list))

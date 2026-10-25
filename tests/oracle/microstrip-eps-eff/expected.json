@@ -1,7 +1,7 @@
 {
- "title": "Microstrip on alumina (εr = 9.8, h = 0.635 mm, W/h = 0.945) in a large box at 1 GHz: the quasi-TEM port mode's effective permittivity",
+ "title": "Microstrip on alumina (εr = 9.8, h = 0.635 mm, W/h = 0.945) in a large box at 1 GHz: the quasi-TEM port mode's effective permittivity and impedance",
  "kind": "benchmark",
- "source": "E. Hammerstad, Ø. Jensen, Accurate models for microstrip computer-aided design, IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409: the quasi-static effective permittivity of an open microstrip, within 0.2 % of exact for 0.01 ≤ W/h ≤ 100 (evaluated independently of the code)",
+ "source": "E. Hammerstad, Ø. Jensen, Accurate models for microstrip computer-aided design, IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409: the quasi-static effective permittivity and characteristic impedance of an open microstrip, within 0.2 % and 0.01 % (of the air line's, with its own ε_eff) for 0.01 ≤ W/h ≤ 100 (evaluated independently of the code)",
  "quantities": [
   {
    "id": "eps_eff",
@@ -15,6 +15,19 @@
     "relative": 0.005
    },
    "reason": "−0.20 %: the fit's own 0.2 %, the box (cover 38 h up, walls 12 W away; a cover at 9 h lowers ε_eff by 0.7 %) and the cross-section's 0.6 mm cells graded to 30 µm at the strip's edges"
+  },
+  {
+   "id": "z0",
+   "quantity": "the port mode's characteristic impedance (Ω)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/impedance"
+   },
+   "value": 50.66067851980078,
+   "tolerance": {
+    "relative": 0.01
+   },
+   "reason": "−0.58 %: the fit's ε_eff and the box as for ε_eff, the impedance by power and the strip's current"
   }
  ]
 }

@@ -46,7 +46,7 @@ fn coax(length: f64, size: f64) -> Model {
         .unwrap();
     m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap());
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false }).unwrap();
+        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false, reference: None }).unwrap();
     }
     m
 }
@@ -81,7 +81,7 @@ fn slab_guide(length: f64, d: f64, er: f64, size: f64) -> Model {
     };
     m.set_waveguide(w).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 4, face: None, numeric: false }).unwrap();
+        m.add_port(Port { name: name.into(), end, modes: 4, face: None, numeric: false, reference: None }).unwrap();
     }
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
@@ -117,7 +117,7 @@ fn stripline(a: f64, b: f64, w: f64, length: f64, er: f64, size: f64) -> Model {
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false }).unwrap();
+        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false, reference: None }).unwrap();
     }
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
@@ -153,7 +153,7 @@ fn microstrip(a: f64, b: f64, h: f64, w: f64, er: f64, length: f64, size: f64) -
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false }).unwrap();
+        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false, reference: None }).unwrap();
     }
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
@@ -176,4 +176,54 @@ fn a_microstrip_has_hammerstad_and_jensens_effective_permittivity() {
         let fit = emcraft_theory::microstrip::eps_eff(u, er);
         assert!((eps / fit - 1.0).abs() < 5e-3, "{u}: {eps} {fit}");
     }
+}
+
+#[test]
+fn strip_lines_have_their_closed_form_impedances() {
+    // Power and current on the ports' cross-sections against Cohn's exact stripline impedance
+    // (side walls three plate spacings from the strip) and Hammerstad–Jensen's microstrip fit:
+    // measured −0.23 % and −0.58 %.
+    let k0 = |f: f64| 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;
+    let z_of = |m: &Model, f: f64| {
+        let d = Driven::new(m, Order::Two).unwrap();
+        let emcraft_solver::driven::PortModes::Numeric(n) = &d.ports[0].modes else { panic!("closed-form port") };
+        let modes = n.section.modes(k0(f), 1).unwrap();
+        n.section.impedance(&modes[0], k0(f)).unwrap().unwrap()
+    };
+    let (b, w, er) = (0.003, 0.0024, 2.2);
+    let z = z_of(&stripline(w + 6.0 * b, b, w, 0.001, er, 0.001), 2e9);
+    let cohn = emcraft_theory::stripline::z0(w, b, er);
+    assert!((z / cohn - 1.0).abs() < 5e-3, "{z} {cohn}");
+    let (h, u, er) = (0.000635, 0.945, 9.8);
+    let z = z_of(&microstrip(24.0 * u * h, 0.024, h, u * h, er, 0.0005, 0.0006), 1e9);
+    let fit = emcraft_theory::microstrip::z0(u, er);
+    assert!((z / fit - 1.0).abs() < 1e-2, "{z} {fit}");
+}
+
+#[test]
+fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
+    // The coaxial line (Z₀ = η₀ ln 3.5/(2π√2.1) = 51.8 Ω) between 50 Ω references: a mismatched
+    // line, S11 = Γ(1 − e^{−2jβL})/(1 − Γ²e^{−2jβL}), S21 = (1 − Γ²)e^{−jβL}/(1 − Γ²e^{−2jβL}),
+    // Γ = (Z₀ − 50)/(Z₀ + 50).
+    let length = 0.01;
+    let mut m = coax(length, 0.002);
+    m.ports.iter_mut().for_each(|p| p.reference = Some(50.0));
+    let d = Driven::new(&m, Order::Two).unwrap();
+    let f = 6e9;
+    let r = d.solve(f).unwrap();
+    let eta0 = emcraft_model::units::MU0 * emcraft_model::units::C0;
+    let z0 = eta0 * 3.5f64.ln() / (2.0 * std::f64::consts::PI * 2.1f64.sqrt());
+    let g = (z0 - 50.0) / (z0 + 50.0);
+    let beta = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0 * 2.1f64.sqrt();
+    let (e1, e2) = (C::from_polar(1.0, -beta * length), C::from_polar(1.0, -2.0 * beta * length));
+    let den = 1.0 - g * g * e2;
+    let (s11, s21) = (g * (1.0 - e2) / den, (1.0 - g * g) * e1 / den);
+    let zl = r.impedances[0].unwrap();
+    assert!((zl / z0 - 1.0).abs() < 1e-3, "{zl} {z0}");
+    assert!((r.s[0][0] - s11).norm() < 1e-3 && (r.s[1][0] - s21).norm() < 1e-3);
+    assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-9);
+    // A reference on a port without a line impedance (a waveguide) is refused.
+    let mut wg = guide(&FILTER, 0.004, 2);
+    wg.ports[0].reference = Some(50.0);
+    assert!(Driven::new(&wg, Order::One).unwrap().solve(8e9).is_err());
 }

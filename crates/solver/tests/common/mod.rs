@@ -21,8 +21,8 @@ pub fn guide(sections: &[(f64, f64)], size: f64, modes: u32) -> Model {
     }
     let sections = sections.iter().zip(&names).map(|((l, _), n)| Section::new(*l, n)).collect();
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
-    m.add_port(Port { name: "1".into(), end: End::Start, modes, face: None, numeric: false }).unwrap();
-    m.add_port(Port { name: "2".into(), end: End::End, modes, face: None, numeric: false }).unwrap();
+    m.add_port(Port { name: "1".into(), end: End::Start, modes, face: None, numeric: false, reference: None }).unwrap();
+    m.add_port(Port { name: "2".into(), end: End::End, modes, face: None, numeric: false, reference: None }).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
 }

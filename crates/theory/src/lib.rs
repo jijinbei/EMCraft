@@ -23,6 +23,7 @@ pub mod microstrip;
 pub mod modematch;
 pub mod radiation;
 pub mod slab;
+pub mod stripline;
 
 pub use modematch::{EPlaneLine, ESection, HPlaneLine, HSection};
 
