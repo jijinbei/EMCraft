@@ -21,8 +21,11 @@ pub mod glyphs;
 pub mod raster;
 pub mod ribbon;
 pub mod scenario;
+pub mod scene3d;
+pub mod steps;
 pub mod theme;
 pub mod ui_kit;
+pub mod view3d;
 pub mod viewport;
 pub mod worker;
 
@@ -40,7 +43,10 @@ pub use control::ControlRequest;
 /// What the viewport shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
+    /// The model in 3D.
     Model,
+    /// The model's H-plane and E-plane outlines.
+    Outline,
     SParameters,
     Field,
     PortModes,
@@ -50,11 +56,13 @@ pub enum View {
 }
 
 impl View {
-    pub const ALL: [View; 7] = [View::Model, View::SParameters, View::Field, View::PortModes, View::FarField, View::Compare, View::Eigenmodes];
+    pub const ALL: [View; 8] =
+        [View::Model, View::Outline, View::SParameters, View::Field, View::PortModes, View::FarField, View::Compare, View::Eigenmodes];
 
     pub fn id(self) -> &'static str {
         match self {
             View::Model => "model",
+            View::Outline => "outline",
             View::SParameters => "sparameters",
             View::Field => "field",
             View::PortModes => "port_modes",
@@ -66,7 +74,8 @@ impl View {
 
     pub fn label(self) -> &'static str {
         match self {
-            View::Model => "Model",
+            View::Model => "Model 3D",
+            View::Outline => "Outline",
             View::SParameters => "S-parameters",
             View::Field => "Field",
             View::PortModes => "Port modes",
@@ -180,6 +189,12 @@ pub struct EmcraftApp {
     pub viewport_rect: Option<egui::Rect>,
     /// The window's context, to wake it when a job ends.
     ctx: Option<egui::Context>,
+    /// The 3D view's camera and pictures.
+    pub view3d: view3d::View3d,
+    /// The workflow: the active step, the steps' statuses, the step panels' fields.
+    pub workflow: steps::Workflow,
+    /// The path asked for when exporting the history as a script.
+    pub export: Option<String>,
 }
 
 impl Default for EmcraftApp {
@@ -222,6 +237,9 @@ impl EmcraftApp {
             frames: 0,
             viewport_rect: None,
             ctx: None,
+            view3d: view3d::View3d::default(),
+            workflow: steps::Workflow::default(),
+            export: None,
         }
     }
 
@@ -305,7 +323,7 @@ impl EmcraftApp {
         let f = |k: &str| reply.get(k).and_then(Value::as_f64);
         let unit = self.session.display.frequency.symbol();
         let text = match id {
-            "file.sample" | "engine.script" => {
+            "file.sample" | "engine.script" | "file.open" => {
                 self.port_modes = None;
                 self.compare = None;
                 self.view = if self.session.sweep.is_some() {
@@ -318,8 +336,11 @@ impl EmcraftApp {
                     View::Model
                 };
                 self.pick_frequency();
+                self.view3d.fit_next = true;
+                self.workflow.check = None;
                 match params.get("name").and_then(Value::as_str) {
                     Some(name) if id == "file.sample" => format!("Opened sample {name}."),
+                    _ if id == "file.open" => format!("Opened {}.", params.get("path").and_then(Value::as_str).unwrap_or("the project")),
                     _ => "Script done.".into(),
                 }
             }
@@ -353,7 +374,10 @@ impl EmcraftApp {
             }
             "solve.port_modes" => {
                 self.port_modes = Some(reply.clone());
-                self.view = View::PortModes;
+                // The Excitation step tabulates them in its panel, beside the 3D view.
+                if self.workflow.step != Some(steps::Step::Excitation) {
+                    self.view = View::PortModes;
+                }
                 format!("Port modes at {} {unit}.", f("frequency").unwrap_or(f64::NAN))
             }
             "results.compare" => {
@@ -365,6 +389,33 @@ impl EmcraftApp {
                     reply.get("reference").and_then(Value::as_str).unwrap_or("")
                 )
             }
+            "edit.undo" | "edit.redo" => {
+                self.port_modes = None;
+                format!(
+                    "{} ({} to undo, {} to redo).",
+                    if id == "edit.undo" { "Undone" } else { "Redone" },
+                    reply.get("undo").and_then(Value::as_u64).unwrap_or(0),
+                    reply.get("redo").and_then(Value::as_u64).unwrap_or(0)
+                )
+            }
+            "file.save" => format!(
+                "Saved {} commands to {}.",
+                reply.get("commands").and_then(Value::as_u64).unwrap_or(0),
+                reply.get("path").and_then(Value::as_str).unwrap_or("")
+            ),
+            "project.frequency" => format!(
+                "Band {} to {} {}.",
+                f("start").unwrap_or(f64::NAN),
+                f("stop").unwrap_or(f64::NAN),
+                reply.get("unit").and_then(Value::as_str).unwrap_or(unit)
+            ),
+            "results.touchstone" => format!("Wrote {}.", reply.get("path").and_then(Value::as_str).unwrap_or("")),
+            "results.check" => format!(
+                "Largest singular value of S {:.6} ({}), reciprocity error {:.3e}.",
+                f("largest_singular_value").unwrap_or(f64::NAN),
+                if reply.get("passive").and_then(Value::as_bool) == Some(true) { "passive" } else { "not passive" },
+                f("reciprocity_error").unwrap_or(f64::NAN)
+            ),
             "mesh.generate" => {
                 let m = self.session.model.mesh.as_ref().map_or((0, 0), |m| (m.nodes.len(), m.tets.len()));
                 format!("Meshed: {} nodes, {} tetrahedra.", m.0, m.1)
@@ -379,6 +430,10 @@ impl EmcraftApp {
             }
         };
         self.message(text, false);
+        // A run started from the Run step goes on to Results.
+        if id.starts_with("solve.") && id != "solve.port_modes" && self.workflow.step == Some(steps::Step::Run) {
+            steps::open_step(self, Some(steps::Step::Results));
+        }
     }
 
     /// Puts the field view on a solved frequency.
@@ -546,16 +601,23 @@ impl EmcraftApp {
         let ctx = ui.ctx().clone();
         ribbon::app_bar(self, ui);
         ribbon::ribbon(self, ui);
+        steps::bar(self, ui);
         status_area(self, ui);
         browser::show(self, ui);
-        if self.dialog.as_ref().is_some_and(|d| d.docked) {
+        // With a step open, its panel holds the dialog.
+        let in_step = self.workflow.step.is_some();
+        if in_step {
+            steps::panel(self, ui);
+        } else if self.dialog.as_ref().is_some_and(|d| d.docked) {
             dialog_ui::docked(self, ui);
         }
         viewport::show(self, ui);
-        if self.dialog.as_ref().is_some_and(|d| !d.docked) {
+        if !in_step && self.dialog.as_ref().is_some_and(|d| !d.docked) {
             dialog_ui::floating(self, &ctx);
         }
         ribbon::search_popup(self, &ctx);
+        ribbon::export_prompt(self, &ctx);
+        shortcuts(self, &ctx);
         self.collect_screenshots(&ctx);
     }
 
@@ -600,6 +662,28 @@ impl EmcraftApp {
             false
         });
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
+    }
+}
+
+/// Undo, redo and save from the keyboard (when no field has it).
+fn shortcuts(app: &mut EmcraftApp, ctx: &egui::Context) {
+    if ctx.egui_wants_keyboard_input() || app.busy() {
+        return;
+    }
+    let (undo, redo, save) = ctx.input(|i| {
+        let c = i.modifiers.command;
+        (
+            c && !i.modifiers.shift && i.key_pressed(egui::Key::Z),
+            c && (i.key_pressed(egui::Key::Y) || i.modifiers.shift && i.key_pressed(egui::Key::Z)),
+            c && i.key_pressed(egui::Key::S),
+        )
+    });
+    if undo {
+        let _ = app.run("edit.undo", json!({}));
+    } else if redo {
+        let _ = app.run("edit.redo", json!({}));
+    } else if save && app.dialog.is_none() {
+        let _ = app.open_dialog("file.save");
     }
 }
 

@@ -123,6 +123,41 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 *x = br.right() + 4.0;
                 resp
             };
+            let busy = app.busy();
+            let file = bar_button(ui, &mut x, "File", "menu:file");
+            egui::Popup::menu(&file).show(|ui| {
+                ui.set_min_width(220.0);
+                let item = |ui: &mut egui::Ui, text: &str, handle: &str, enabled: bool| {
+                    let r = ui.add_enabled(enabled, egui::Button::new(text));
+                    scenario::publish_target(handle, r.rect);
+                    r.clicked()
+                };
+                if item(ui, "Save…   Ctrl+S", "file:save", !busy) {
+                    let _ = app.open_dialog("file.save");
+                }
+                if item(ui, "Open…", "file:open", !busy) {
+                    let _ = app.open_dialog("file.open");
+                }
+                ui.separator();
+                if item(ui, "Export history as script…", "file:export", !app.session.history.is_empty()) {
+                    app.export = Some("emcraft-history.json".into());
+                }
+            });
+            let edit = bar_button(ui, &mut x, "Edit", "menu:edit");
+            egui::Popup::menu(&edit).show(|ui| {
+                ui.set_min_width(200.0);
+                let (u, r) = (app.session.undo.len(), app.session.redo.len());
+                let undo = ui.add_enabled(u > 0 && !busy, egui::Button::new(format!("Undo   Ctrl+Z  ({u})")));
+                scenario::publish_target("edit:undo", undo.rect);
+                if undo.clicked() {
+                    let _ = app.run("edit.undo", json!({}));
+                }
+                let redo = ui.add_enabled(r > 0 && !busy, egui::Button::new(format!("Redo   Ctrl+Y  ({r})")));
+                scenario::publish_target("edit:redo", redo.rect);
+                if redo.clicked() {
+                    let _ = app.run("edit.redo", json!({}));
+                }
+            });
             let samples = bar_button(ui, &mut x, "Samples   ", "bar:samples");
             // The drop-down's arrow.
             let a = pos2(samples.rect.right() - 16.0, samples.rect.center().y);
@@ -497,4 +532,43 @@ pub fn search_popup(app: &mut EmcraftApp, ctx: &egui::Context) {
     } else if resp.response.clicked_elsewhere() && !ctx.memory(|m| m.has_focus(egui::Id::new("emcraft_search"))) {
         app.search.open = false;
     }
+}
+
+/// The history's export: where to write it (the session's model-changing commands as a script
+/// that rebuilds the model, `cargo run -p emcraft-cli -- run FILE`).
+pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
+    let Some(mut path) = app.export.take() else { return };
+    let t = Tokens::get();
+    let (mut ok, mut cancel) = (false, false);
+    let at = app.viewport_rect.map_or(pos2(200.0, 200.0), |r| r.center_top() + vec2(-200.0, 40.0));
+    egui::Area::new(egui::Id::new("emcraft_export")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
+        t.card(t.dialog_body).inner_margin(12).show(ui, |ui| {
+            ui.set_width(400.0);
+            ui.label(egui::RichText::new("Export history as script").size(t.font_label).strong().color(t.form_ink));
+            ui.label(
+                egui::RichText::new(format!("{} commands that rebuild the model", app.session.history.len())).size(t.font_small).color(t.text_dim),
+            );
+            let r = ui.add(egui::TextEdit::singleline(&mut path).desired_width(380.0).char_limit(4096));
+            scenario::publish_target("export:path", r.rect);
+            ui.horizontal(|ui| {
+                ok = crate::ui_kit::button(ui, "Export", true, true, "export:ok").clicked();
+                cancel = crate::ui_kit::button(ui, "Cancel", false, true, "export:cancel").clicked();
+            });
+        });
+    });
+    if cancel {
+        return;
+    }
+    if ok {
+        let text = serde_json::to_string_pretty(&app.session.history).unwrap_or_else(|_| "[]".into());
+        match std::fs::write(path.trim(), text) {
+            Ok(()) => app.message(format!("Exported {} commands to {}.", app.session.history.len(), path.trim()), false),
+            Err(e) => {
+                app.message(format!("Cannot write {}: {e}", path.trim()), true);
+                app.export = Some(path);
+            }
+        }
+        return;
+    }
+    app.export = Some(path);
 }

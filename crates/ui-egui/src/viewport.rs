@@ -34,7 +34,8 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             view_tabs(app, &mut inner);
             inner.add_space(4.0);
             match app.view {
-                View::Model => model(app, &mut inner),
+                View::Model => model3d(app, &mut inner),
+                View::Outline => model(app, &mut inner),
                 View::SParameters => sparameters(app, &mut inner),
                 View::Field => field(app, &mut inner),
                 View::PortModes => port_modes(app, &mut inner),
@@ -122,6 +123,14 @@ impl Frame2 {
     fn rect(&self, h0: f64, v0: f64, h1: f64, v1: f64) -> Rect {
         Rect::from_two_pos(self.at(h0, v0), self.at(h1, v1))
     }
+}
+
+/// The model in 3D, in the active step's overlay.
+fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    let area = ui.available_rect_before_wrap();
+    ui.allocate_rect(area, Sense::hover());
+    let overlay = app.workflow.step.map_or(crate::scene3d::Overlay::Plain, crate::steps::Step::overlay);
+    crate::view3d::show(app, ui, area, overlay);
 }
 
 fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {

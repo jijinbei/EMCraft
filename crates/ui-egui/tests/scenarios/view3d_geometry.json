@@ -1,0 +1,15 @@
+[
+  {"note": "Before meshing the geometry is drawn from its shapes: the coaxial line's PTFE cylinder with the inner conductor cut out"},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.1}},
+    {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 3.5, "length": 20, "material": "ptfe"}},
+    {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "cylinder", "radius": 1.0, "length": 20, "at": [0, 0, 0]}},
+    {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+    {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}}
+  ]}},
+  {"click": "view3d:std:iso"},
+  {"expect": {"inspect": {"view3d.triangles": {"min": 300}, "model.mesh": null}}},
+  {"shot": "view3d-coax-geometry"},
+  {"call": "ui.set", "params": {"step": "materials"}},
+  {"shot": "view3d-coax-materials"}
+]

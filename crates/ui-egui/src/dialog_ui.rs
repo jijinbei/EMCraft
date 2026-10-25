@@ -60,6 +60,13 @@ pub fn docked(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     act(app, asked);
 }
 
+/// The dialog inside a step's panel.
+pub fn embedded(app: &mut EmcraftApp, ui: &mut egui::Ui, max_h: f32) {
+    scenario::publish_rect("dialog", ui.max_rect());
+    let asked = card(app, ui, max_h);
+    act(app, asked);
+}
+
 fn act(app: &mut EmcraftApp, asked: Asked) {
     if asked.dock {
         app.dock_dialogs = !app.dock_dialogs;

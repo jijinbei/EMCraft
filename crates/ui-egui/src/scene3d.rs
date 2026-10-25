@@ -1,0 +1,556 @@
+//! What the 3D view draws, built from the session for one overlay: the mesh's boundary faces
+//! (walls, ports) and the faces between materials once there is a mesh, a coarse tessellation of
+//! the geometry (the waveguide's sections, layers and strips; boxes, cylinders, spheres and
+//! imported surfaces; inclusions and Boolean features) before; ports, lumped ports, sources and
+//! the open boundary's layer on top. Pictures come from [`emcraft_render::view3d`].
+
+use emcraft_engine::Session;
+use emcraft_model::mesh::Boundary;
+use emcraft_model::{Axis, Combine, End, Model, Shape, Source};
+use emcraft_render::Rgb;
+use emcraft_render::view3d::Scene;
+
+/// What the view puts forward (the active workflow step's subject).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Overlay {
+    /// The geometry, walls opaque.
+    Plain,
+    /// Bodies coloured by material, the outer walls see-through.
+    Materials,
+    /// Ports, lumped ports and sources highlighted.
+    Ports,
+    /// Walls and the open boundary's layer shaded.
+    Boundaries,
+    /// The mesh's edges.
+    Mesh,
+}
+
+impl Overlay {
+    pub fn id(self) -> &'static str {
+        match self {
+            Overlay::Plain => "plain",
+            Overlay::Materials => "materials",
+            Overlay::Ports => "ports",
+            Overlay::Boundaries => "boundaries",
+            Overlay::Mesh => "mesh",
+        }
+    }
+}
+
+/// A text placed in 3D.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Label {
+    pub at: [f64; 3],
+    pub text: String,
+    pub color: Rgb,
+    /// The outward normal of the face it names: the label dims when that face looks away.
+    pub facing: Option<[f64; 3]>,
+}
+
+/// A scene with its labels and legend.
+#[derive(Clone, Debug, Default)]
+pub struct Built {
+    pub scene: Scene,
+    pub labels: Vec<Label>,
+    pub legend: Vec<(String, Rgb)>,
+    /// The model's box (m).
+    pub bounds: Option<([f64; 3], [f64; 3])>,
+}
+
+const METAL: Rgb = Rgb(170, 178, 190);
+const METAL_DARK: Rgb = Rgb(120, 126, 136);
+const PORT: Rgb = Rgb(240, 140, 40);
+const PORT_SOFT: Rgb = Rgb(235, 180, 120);
+const EDGE: Rgb = Rgb(40, 46, 56);
+const PML: Rgb = Rgb(150, 110, 210);
+const SOURCE: Rgb = Rgb(220, 40, 60);
+
+/// A material's colour: vacuum pale blue, the others from a fixed palette by their index.
+pub fn material_rgb(model: &Model, index: usize) -> Rgb {
+    const PALETTE: [Rgb; 6] = [Rgb(214, 150, 60), Rgb(90, 170, 110), Rgb(170, 110, 200), Rgb(60, 150, 190), Rgb(200, 100, 110), Rgb(150, 150, 70)];
+    match model.materials.get(index) {
+        Some(m) if m.eps_r <= 1.0 + 1e-12 && m.mu_r <= 1.0 + 1e-12 => Rgb(175, 200, 232),
+        _ => PALETTE[index.saturating_sub(1) % PALETTE.len()],
+    }
+}
+
+fn p3(p: emcraft_model::geom::Point3) -> [f64; 3] {
+    [p.x, p.y, p.z]
+}
+
+/// Builds the scene of `session` for `overlay`.
+pub fn build(session: &Session, overlay: Overlay) -> Built {
+    let m = &session.model;
+    let mut out = Built { bounds: m.bounds().map(|(lo, hi)| (p3(lo), p3(hi))), ..Default::default() };
+    match &m.mesh {
+        Some(_) => from_mesh(m, overlay, &mut out),
+        None => from_geometry(m, overlay, &mut out),
+    }
+    extras(m, overlay, &mut out);
+    legend(session, overlay, &mut out);
+    out
+}
+
+fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
+    let m = &session.model;
+    let l = session.display.length;
+    match overlay {
+        Overlay::Materials => {
+            for (i, mat) in m.materials.iter().enumerate() {
+                out.legend.push((format!("{} (εr {})", mat.name, mat.eps_r), material_rgb(m, i)));
+            }
+        }
+        Overlay::Ports => {
+            for p in &m.ports {
+                out.legend.push((format!("port {} ({})", p.name, if p.end == End::Start { "start" } else { "end" }), PORT));
+            }
+            for p in &m.lumped {
+                out.legend.push((format!("lumped port {}", p.name), PORT));
+            }
+            if !m.sources.is_empty() {
+                out.legend.push((format!("{} source(s)", m.sources.len()), SOURCE));
+            }
+        }
+        Overlay::Boundaries => {
+            out.legend.push((
+                match m.wall_conductivity {
+                    Some(s) => format!("walls σ = {s:.3e} S/m"),
+                    None => "walls: perfect conductor".into(),
+                },
+                METAL,
+            ));
+            if let Some(o) = &m.open {
+                out.legend.push((format!("open boundary: PML {} {}", l.from_si(o.thickness), l.symbol()), PML));
+            }
+        }
+        Overlay::Plain | Overlay::Mesh => {}
+    }
+}
+
+/// The mesh's boundary faces and, for materials, the faces between materials.
+fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
+    let Some(mesh) = &m.mesh else { return };
+    let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
+    let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
+    let see_through = matches!(overlay, Overlay::Materials | Overlay::Ports | Overlay::Boundaries);
+    // Faces, their keys for edges (material or tag).
+    let mut faces: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.boundary.len());
+    for f in &mesh.boundary {
+        let Some([a, b, c]) = f.nodes.iter().map(|n| node(*n)).collect::<Option<Vec<_>>>().and_then(|v| <[[f64; 3]; 3]>::try_from(v).ok()) else {
+            continue;
+        };
+        // An end the mesh tags as a port is a wall until a port is put there.
+        let port = match f.tag {
+            Boundary::Port(k) => m.ports.iter().any(|p| (p.end == End::Start) == (k == 0)),
+            Boundary::Pec => false,
+        };
+        let (color, alpha) = match overlay {
+            Overlay::Plain => (if port { PORT_SOFT } else { METAL }, 255),
+            Overlay::Mesh => (if port { PORT_SOFT } else { Rgb(214, 220, 228) }, 255),
+            Overlay::Materials => (material_rgb(m, tet_mat(f.tet)), if port { 200 } else { 120 }),
+            Overlay::Ports => {
+                if port {
+                    (PORT, 255)
+                } else {
+                    (METAL, 55)
+                }
+            }
+            Overlay::Boundaries => {
+                if port {
+                    (PORT_SOFT, 200)
+                } else {
+                    (METAL_DARK, 110)
+                }
+            }
+        };
+        out.scene.tri(a, b, c, color, alpha);
+        let key = match f.tag {
+            Boundary::Port(k) if port => 1 + k,
+            _ => 0,
+        };
+        faces.push((f.nodes, key));
+    }
+    // Faces between materials (opaque under the see-through walls).
+    if overlay == Overlay::Materials {
+        let mut keyed: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.tets.len() * 4);
+        for (t, tet) in mesh.tets.iter().enumerate() {
+            for skip in 0..4 {
+                let mut f = [0u32; 3];
+                let mut k = 0;
+                for (i, n) in tet.iter().enumerate() {
+                    if i != skip && k < 3 {
+                        f[k] = *n;
+                        k += 1;
+                    }
+                }
+                f.sort_unstable();
+                keyed.push((f, t as u32));
+            }
+        }
+        keyed.sort_unstable();
+        for w in keyed.windows(2) {
+            if w[0].0 == w[1].0 {
+                let (ma, mb) = (tet_mat(w[0].1), tet_mat(w[1].1));
+                if ma != mb {
+                    let denser = if m.materials.get(ma).map_or(1.0, |x| x.eps_r) >= m.materials.get(mb).map_or(1.0, |x| x.eps_r) { ma } else { mb };
+                    if let (Some(a), Some(b), Some(c)) = (node(w[0].0[0]), node(w[0].0[1]), node(w[0].0[2])) {
+                        out.scene.tri(a, b, c, material_rgb(m, denser), 235);
+                    }
+                }
+            }
+        }
+    }
+    // Edges: every one for the mesh view, else the outline (sharp folds, where tags change).
+    let mut edges: Vec<([u32; 2], usize)> = Vec::with_capacity(faces.len() * 3);
+    for (i, (f, _)) in faces.iter().enumerate() {
+        for (a, b) in [(f[0], f[1]), (f[1], f[2]), (f[2], f[0])] {
+            edges.push(([a.min(b), a.max(b)], i));
+        }
+    }
+    edges.sort_unstable();
+    let normal = |i: usize| -> Option<[f64; 3]> {
+        let f = faces.get(i)?.0;
+        let (a, b, c) = (node(f[0])?, node(f[1])?, node(f[2])?);
+        let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+        let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+        let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        (l > 0.0).then(|| [n[0] / l, n[1] / l, n[2] / l])
+    };
+    let cos_sharp = 25f64.to_radians().cos();
+    let (edge_color, edge_alpha) = if overlay == Overlay::Mesh { (EDGE, 150) } else { (EDGE, if see_through { 120 } else { 200 }) };
+    let mut i = 0;
+    while i < edges.len() {
+        let mut j = i + 1;
+        while j < edges.len() && edges[j].0 == edges[i].0 {
+            j += 1;
+        }
+        let group = &edges[i..j];
+        let show = overlay == Overlay::Mesh
+            || group.len() != 2
+            || faces.get(group[0].1).map(|f| f.1) != faces.get(group[1].1).map(|f| f.1)
+            || match (normal(group[0].1), normal(group[1].1)) {
+                (Some(a), Some(b)) => (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]).abs() < cos_sharp,
+                _ => false,
+            };
+        if show && let (Some(a), Some(b)) = (node(group[0].0[0]), node(group[0].0[1])) {
+            out.scene.line(a, b, edge_color, edge_alpha);
+        }
+        i = j;
+    }
+}
+
+/// A box's six faces and twelve edges.
+fn cuboid(s: &mut Scene, lo: [f64; 3], hi: [f64; 3], color: Rgb, alpha: u8, edges: bool) {
+    let c = |i: usize| [if i & 1 == 0 { lo[0] } else { hi[0] }, if i & 2 == 0 { lo[1] } else { hi[1] }, if i & 4 == 0 { lo[2] } else { hi[2] }];
+    for q in [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]] {
+        s.quad(q.map(c), color, alpha);
+    }
+    if edges {
+        for (a, b) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
+            s.line(c(a), c(b), EDGE, 200);
+        }
+    }
+}
+
+/// Segments round a circle.
+const ROUND: usize = 48;
+
+/// A primitive placed by `place` (its own coordinates to the world's).
+fn shape(s: &mut Scene, sh: &Shape, place: &dyn Fn([f64; 3]) -> [f64; 3], color: Rgb, alpha: u8) {
+    use std::f64::consts::{PI, TAU};
+    match sh {
+        Shape::Box { size } => {
+            let c = |i: usize| {
+                place([if i & 1 == 0 { 0.0 } else { size.x }, if i & 2 == 0 { 0.0 } else { size.y }, if i & 4 == 0 { 0.0 } else { size.z }])
+            };
+            for q in [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]] {
+                s.quad(q.map(c), color, alpha);
+            }
+            for (a, b) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
+                s.line(c(a), c(b), EDGE, 200);
+            }
+        }
+        Shape::Cylinder { radius: r, length } => {
+            let at = |k: usize, z: f64| {
+                let a = TAU * k as f64 / ROUND as f64;
+                place([r * a.cos(), r * a.sin(), z])
+            };
+            for k in 0..ROUND {
+                let (a0, a1, b0, b1) = (at(k, 0.0), at(k + 1, 0.0), at(k, *length), at(k + 1, *length));
+                s.quad([a0, a1, b1, b0], color, alpha);
+                s.tri(place([0.0, 0.0, 0.0]), a1, a0, color, alpha);
+                s.tri(place([0.0, 0.0, *length]), b0, b1, color, alpha);
+                s.line(a0, a1, EDGE, 200);
+                s.line(b0, b1, EDGE, 200);
+            }
+        }
+        Shape::Sphere { radius: r } => {
+            let (nu, nv) = (ROUND, ROUND / 2);
+            let at = |i: usize, j: usize| {
+                let (u, v) = (TAU * i as f64 / nu as f64, PI * j as f64 / nv as f64 - PI / 2.0);
+                place([r * v.cos() * u.cos(), r * v.cos() * u.sin(), r * v.sin()])
+            };
+            for i in 0..nu {
+                for j in 0..nv {
+                    s.quad([at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)], color, alpha);
+                }
+                s.line(at(i, nv / 2), at(i + 1, nv / 2), EDGE, 160);
+            }
+        }
+        Shape::Surface { positions, triangles, .. } => {
+            for t in triangles.iter().take(emcraft_render::view3d::MAX_PRIMITIVES) {
+                let p = |v: u32| positions.get(v as usize).map(|q| place(p3(*q)));
+                if let (Some(a), Some(b), Some(c)) = (p(t[0]), p(t[1]), p(t[2])) {
+                    s.tri(a, b, c, color, alpha);
+                }
+            }
+        }
+    }
+}
+
+fn turned(axis: Axis, at: emcraft_model::geom::Point3) -> impl Fn([f64; 3]) -> [f64; 3] {
+    move |q: [f64; 3]| {
+        let v = axis.turn(emcraft_model::geom::Vec3::new(q[0], q[1], q[2]));
+        [at.x + v.x, at.y + v.y, at.z + v.z]
+    }
+}
+
+/// The geometry before meshing.
+fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
+    let mat = |name: &str| m.materials.iter().position(|x| x.name == name).unwrap_or(0);
+    let tint = |name: &str| if overlay == Overlay::Materials { material_rgb(m, mat(name)) } else { METAL };
+    let see_through = matches!(overlay, Overlay::Ports | Overlay::Boundaries);
+    if let Some(w) = &m.waveguide {
+        let mut z = 0.0;
+        let layered = !w.layers.is_empty();
+        for (i, s) in w.sections.iter().enumerate() {
+            let (x0, a) = w.aperture(i).unwrap_or((0.0, w.width));
+            let (y0, b) = w.aperture_y(i).unwrap_or((0.0, w.height));
+            let alpha = if see_through || layered {
+                70
+            } else if overlay == Overlay::Materials {
+                200
+            } else {
+                255
+            };
+            cuboid(&mut out.scene, [x0, y0, z], [x0 + a, y0 + b, z + s.length], tint(&s.material), alpha, true);
+            z += s.length;
+        }
+        let mut y = 0.0;
+        for layer in &w.layers {
+            cuboid(&mut out.scene, [0.0, y, 0.0], [w.width, y + layer.thickness, w.length()], tint(&layer.material), 200, true);
+            y += layer.thickness;
+        }
+        for st in &w.strips {
+            out.scene.quad(
+                [[st.x0, st.y, st.z0], [st.x0 + st.width, st.y, st.z0], [st.x0 + st.width, st.y, st.z1], [st.x0, st.y, st.z1]],
+                PORT_SOFT.mix(Rgb(200, 160, 40), 0.6),
+                255,
+            );
+        }
+    }
+    if let Some(solid) = &m.solid {
+        let hollow = !m.inclusions.is_empty() || m.features.iter().any(|f| f.combine != Combine::Add);
+        let alpha = if see_through || hollow {
+            90
+        } else if overlay == Overlay::Materials {
+            210
+        } else {
+            255
+        };
+        shape(&mut out.scene, &solid.shape, &|q| q, tint(&solid.material), alpha);
+        for f in &m.features {
+            let (color, alpha) = match f.combine {
+                Combine::Add => (tint(&solid.material), alpha),
+                Combine::Subtract => (METAL_DARK, 255),
+                Combine::Intersect => (Rgb(120, 160, 200), 60),
+            };
+            shape(&mut out.scene, &f.shape, &turned(f.axis, f.at), color, alpha);
+        }
+        for inc in &m.inclusions {
+            let color = match &inc.material {
+                Some(name) => material_rgb(m, mat(name)),
+                None => METAL_DARK,
+            };
+            shape(&mut out.scene, &inc.shape, &turned(Axis::Z, inc.at), color, 255);
+        }
+    }
+    // Ports on the ends (the mesh tags them once meshed).
+    for p in &m.ports {
+        if let Some(q) = port_quad(m, p) {
+            let (color, alpha) = if overlay == Overlay::Ports { (PORT, 255) } else { (PORT_SOFT, 220) };
+            // Slightly off the end so it shows over the body's own face.
+            out.scene.quad(q, color, alpha);
+        }
+    }
+}
+
+/// A port's rectangle (or a circle's bounding square) in 3D.
+fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
+    let z = match (p.face, p.end) {
+        (Some(f), _) => f.z,
+        (None, End::Start) => 0.0,
+        (None, End::End) => m.bounds()?.1.z,
+    };
+    let (x0, y0, a, b) = match m.port_shape_of(p).ok()? {
+        emcraft_model::PortShape::Rect { x0, y0, a, b } => (x0, y0, a, b),
+        emcraft_model::PortShape::Circle { cx, cy, r } => (cx - r, cy - r, 2.0 * r, 2.0 * r),
+    };
+    Some([[x0, y0, z], [x0 + a, y0, z], [x0 + a, y0 + b, z], [x0, y0 + b, z]])
+}
+
+/// Ports' labels, lumped ports, sources and the open boundary's layer.
+fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
+    let size = out.bounds.map_or(0.01, |(lo, hi)| ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt());
+    if matches!(overlay, Overlay::Ports | Overlay::Plain | Overlay::Boundaries) {
+        for p in &m.ports {
+            if let Some(q) = port_quad(m, p) {
+                let c = [0.25 * (q[0][0] + q[1][0] + q[2][0] + q[3][0]), 0.25 * (q[0][1] + q[1][1] + q[2][1] + q[3][1]), q[0][2]];
+                let facing = match (p.face, p.end) {
+                    (Some(_), _) => None,
+                    (None, End::Start) => Some([0.0, 0.0, -1.0]),
+                    (None, End::End) => Some([0.0, 0.0, 1.0]),
+                };
+                out.labels.push(Label { at: c, text: format!("Port {}", p.name), color: PORT, facing });
+                if overlay == Overlay::Ports {
+                    for k in 0..4 {
+                        out.scene.line(q[k], q[(k + 1) % 4], PORT, 255);
+                    }
+                    // The direction into the guide.
+                    let dir = if p.end == End::Start { 1.0 } else { -1.0 };
+                    out.scene.line(c, [c[0], c[1], c[2] + dir * 0.12 * size], PORT, 255);
+                }
+            }
+        }
+    }
+    let strong = overlay == Overlay::Ports;
+    for p in &m.lumped {
+        let (a, b) = (p3(p.from), p3(p.to));
+        out.scene.line(a, b, PORT, 255);
+        if strong {
+            out.labels.push(Label {
+                at: [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]), 0.5 * (a[2] + b[2])],
+                text: format!("Lumped {}", p.name),
+                color: PORT,
+                facing: None,
+            });
+        }
+    }
+    for s in &m.sources {
+        match *s {
+            Source::Dipole { at, direction, .. } => {
+                let (a, d) = (p3(at), [direction.x, direction.y, direction.z]);
+                let h = 0.08 * size;
+                out.scene.line([a[0] - d[0] * h, a[1] - d[1] * h, a[2] - d[2] * h], [a[0] + d[0] * h, a[1] + d[1] * h, a[2] + d[2] * h], SOURCE, 255);
+                if strong {
+                    out.labels.push(Label { at: a, text: "Dipole".into(), color: SOURCE, facing: None });
+                }
+            }
+            Source::PlaneWave { direction, .. } => {
+                if let Some((lo, hi)) = out.bounds {
+                    let c = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
+                    let d = [direction.x, direction.y, direction.z];
+                    let h = 0.5 * size;
+                    let a = [c[0] - d[0] * h, c[1] - d[1] * h, c[2] - d[2] * h];
+                    out.scene.line(a, [c[0] - d[0] * 0.3 * h, c[1] - d[1] * 0.3 * h, c[2] - d[2] * 0.3 * h], SOURCE, 255);
+                    if strong {
+                        out.labels.push(Label { at: a, text: "Plane wave".into(), color: SOURCE, facing: None });
+                    }
+                }
+            }
+        }
+    }
+    // The open boundary: the layer's inner face, shaded when boundaries are the subject.
+    if let (Some(o), Some((lo, hi))) = (&m.open, out.bounds) {
+        let t = o.thickness;
+        let (a, b) = ([lo[0] + t, lo[1] + t, lo[2] + t], [hi[0] - t, hi[1] - t, hi[2] - t]);
+        if overlay == Overlay::Boundaries {
+            cuboid(&mut out.scene, a, b, PML, 60, false);
+            out.labels.push(Label { at: [b[0], b[1], b[2]], text: "PML".into(), color: PML, facing: None });
+        }
+        let c = |i: usize| [if i & 1 == 0 { a[0] } else { b[0] }, if i & 2 == 0 { a[1] } else { b[1] }, if i & 4 == 0 { a[2] } else { b[2] }];
+        for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
+            out.scene.line(c(i), c(j), PML, 255);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn every_overlay_of_every_sample_builds() {
+        for name in ["highpass", "coaxial-line", "dipole", "loaded-sphere"] {
+            let mut s = Session::new();
+            let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find(name).unwrap().script).unwrap();
+            // Without the solves: geometry, then the mesh.
+            let steps: Vec<serde_json::Value> =
+                script.as_array().unwrap().iter().filter(|c| !c["command"].as_str().unwrap().starts_with("solve.")).cloned().collect();
+            let unmeshed: Vec<serde_json::Value> = steps.iter().filter(|c| c["command"] != json!("mesh.generate")).cloned().collect();
+            // Meshing the open and curved samples takes seconds: their meshes are drawn in the
+            // timing report and the scenarios.
+            let scripts = if name == "highpass" { vec![unmeshed, steps] } else { vec![unmeshed] };
+            for script in scripts {
+                s.run_script(&json!(script)).unwrap();
+                for o in [Overlay::Plain, Overlay::Materials, Overlay::Ports, Overlay::Boundaries, Overlay::Mesh] {
+                    let b = build(&s, o);
+                    assert!(!b.scene.tris.is_empty(), "{name} {o:?}");
+                    assert!(b.bounds.is_some());
+                }
+                s = Session::new();
+            }
+        }
+    }
+
+    fn meshed(name: &str, size: Option<f64>) -> Session {
+        let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find(name).unwrap().script).unwrap();
+        let steps: Vec<serde_json::Value> = script
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| !c["command"].as_str().unwrap().starts_with("solve."))
+            .map(|c| match (size, c["command"].as_str()) {
+                (Some(h), Some("mesh.generate")) => json!({"command": "mesh.generate", "params": {"size": h}}),
+                _ => c.clone(),
+            })
+            .collect();
+        let mut s = Session::new();
+        s.run_script(&json!(steps)).unwrap();
+        s
+    }
+
+    /// Milliseconds per picture of the samples' meshes at the window's 3D view size (about
+    /// 1180 × 620): `cargo test --release -p emcraft-ui-egui render_timings -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing report: run by hand"]
+    fn render_timings() {
+        use emcraft_render::view3d::{Camera, Options, render};
+        for (name, size) in [("highpass", None), ("coaxial-line", None), ("coaxial-line", Some(0.45)), ("coaxial-line", Some(0.25))] {
+            let s = meshed(name, size);
+            let faces = s.model.mesh.as_ref().map_or(0, |m| m.boundary.len());
+            for o in [Overlay::Plain, Overlay::Mesh, Overlay::Materials] {
+                let b = build(&s, o);
+                let (lo, hi) = b.bounds.unwrap();
+                let mut c = Camera::default();
+                c.fit(lo, hi, 1180.0 / 620.0);
+                for (ss, w, h) in [(1, 1180, 620), (2, 1180, 620), (1, 590, 310)] {
+                    let opt = Options { width: w, height: h, supersample: ss, ..Default::default() };
+                    let t = std::time::Instant::now();
+                    let n = 5;
+                    for k in 0..n {
+                        c.orbit(3.0 * k as f64, 0.0);
+                        let _ = render(&b.scene, &c, &opt);
+                    }
+                    println!(
+                        "{name} ({faces} boundary faces) {o:?}: {} triangles, {} lines, {w}x{h} x{ss}: {:.1} ms",
+                        b.scene.tris.len(),
+                        b.scene.lines.len(),
+                        t.elapsed().as_secs_f64() * 1e3 / n as f64
+                    );
+                }
+            }
+        }
+    }
+}

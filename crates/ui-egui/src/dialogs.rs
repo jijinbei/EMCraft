@@ -351,6 +351,9 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
 pub fn initial(command: &str, s: &Session) -> Value {
     let l = s.display.length;
     let ports = s.model.ports.len();
+    // The job's band in display units.
+    let fu = s.display.frequency;
+    let band = s.model.band.map(|b| (fu.from_si(b.start), fu.from_si(b.stop)));
     match command {
         "geometry.waveguide" => match s.model.waveguide.as_ref() {
             Some(w) => {
@@ -385,6 +388,8 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "geometry.inclusion" => json!({"shape": "sphere", "radius": 2, "at": [11.43, 5.08, 15]}),
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         "geometry.import" => json!({"angle": 30}),
+        // With a band, the mesh follows it: elements per wavelength at its top.
+        "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
         "mesh.generate" => json!({"size": 3, "curved": true}),
         "model.walls" => json!({"conductivity": 5.8e7}),
         "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),
@@ -392,11 +397,23 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "source.dipole" => json!({"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1, "current": 1}),
         "source.plane_wave" => json!({"direction": [0, 0, 1], "polarization": [1, 0, 0]}),
         "model.open" => json!({"thickness": 10}),
-        "solve.frequency" => json!({"start": 8, "stop": 12, "points": 11, "order": 2}),
-        "solve.eigenmodes" => json!({"near": 10, "count": 5, "order": 2}),
-        "solve.radiation" => json!({"frequency": 10, "order": 2}),
-        "solve.time_domain" => json!({"start": 8, "stop": 12, "points": 41, "cell": 1}),
-        "solve.port_modes" => json!({"frequency": 10, "order": 2}),
+        "solve.frequency" => match band {
+            Some((a, z)) => json!({"start": a, "stop": z, "points": 11, "order": 2}),
+            None => json!({"start": 8, "stop": 12, "points": 11, "order": 2}),
+        },
+        "solve.eigenmodes" => json!({"near": band.map_or(10.0, |(a, z)| 0.5 * (a + z)), "count": 5, "order": 2}),
+        "solve.radiation" => json!({"frequency": band.map_or(10.0, |(a, z)| 0.5 * (a + z)), "order": 2}),
+        "solve.time_domain" => {
+            let (a, z) = band.unwrap_or((8.0, 12.0));
+            json!({"start": a, "stop": z, "points": 41, "cell": 1})
+        }
+        "solve.port_modes" => json!({"frequency": band.map_or(10.0, |(_, z)| z), "order": 2}),
+        "project.frequency" => match band {
+            Some((a, z)) => json!({"start": a, "stop": z}),
+            None => json!({"start": 8, "stop": 12}),
+        },
+        "file.save" | "file.open" => json!({"path": "project.emcraft.json"}),
+        "results.touchstone" => json!({"path": format!("emcraft.s{}p", ports.max(1)), "format": "ri"}),
         "results.compare" => json!({"modes": 160}),
         "file.sample" => json!({"name": "highpass", "solve": true}),
         "units.set" => json!({"length": l.symbol(), "frequency": s.display.frequency.symbol()}),
@@ -431,7 +448,9 @@ mod tests {
             let mut d = Dialog::new(c, &s, &initial(c.id, &s), false);
             if let Ok(p) = d.params() {
                 // Only cheap commands are run: the point is that the keys are the command's.
-                if !crate::worker::is_long(c.id) && !c.id.starts_with("view.") {
+                // (Nor those that write files.)
+                let writes = c.params.iter().any(|q| q.name == "path");
+                if !crate::worker::is_long(c.id) && !c.id.starts_with("view.") && !writes {
                     let mut copy = s.clone();
                     let _ = copy.execute(c.id, &p);
                 }

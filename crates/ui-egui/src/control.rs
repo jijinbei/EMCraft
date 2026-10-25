@@ -153,6 +153,12 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "port_modes": app.port_modes.is_some(),
         "compare": app.compare.as_ref().and_then(|c| c.get("worst")).cloned(),
         "frames": app.frames,
+        "workflow": crate::steps::inspect(app),
+        "view3d": app.view3d.inspect(),
+        "undo": app.session.undo.len(),
+        "redo": app.session.redo.len(),
+        "history": app.session.history.len(),
+        "export": app.export,
         "model": app.session.summary(),
     })
 }
@@ -241,6 +247,41 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
             }
             if let Some(a) = b("animate") {
                 app.field.animate = a;
+            }
+            // The workflow step (`none` closes the panel) and the 3D camera.
+            match p.get("step") {
+                None => {}
+                Some(Value::String(x)) if x == "none" => crate::steps::open_step(app, None),
+                Some(Value::String(x)) => match crate::steps::Step::parse(x) {
+                    Some(step) => crate::steps::open_step(app, Some(step)),
+                    None => return err(format!("unknown step `{}`", x.chars().take(40).collect::<String>())),
+                },
+                Some(_) => return err("`step` must be a string"),
+            }
+            if let Some(v) = s("standard_view") {
+                match emcraft_render::view3d::StandardView::parse(v) {
+                    Some(v) => app.view3d.standard(v),
+                    None => return err(format!("unknown standard view `{}`", v.chars().take(40).collect::<String>())),
+                }
+            }
+            if let Some(c) = p.get("camera") {
+                let f = |k: &str| c.get(k).and_then(Value::as_f64).filter(|v| v.is_finite());
+                let cam = &mut app.view3d.camera;
+                if let Some(v) = f("yaw") {
+                    cam.yaw = v.to_radians();
+                }
+                if let Some(v) = f("pitch") {
+                    cam.pitch = v.to_radians();
+                }
+                if let Some(v) = f("distance").filter(|v| *v > 0.0) {
+                    cam.distance = v;
+                }
+                match c.get("projection").and_then(Value::as_str) {
+                    Some("orthographic") => cam.projection = emcraft_render::view3d::Projection::Orthographic,
+                    Some("perspective") => cam.projection = emcraft_render::view3d::Projection::Perspective,
+                    _ => {}
+                }
+                *cam = cam.sanitized();
             }
             ok(inspect(app))
         }

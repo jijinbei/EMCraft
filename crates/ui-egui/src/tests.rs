@@ -49,6 +49,36 @@ fn scenario_cancel_a_sweep() {
     scenario("cancel_sweep");
 }
 
+#[test]
+fn scenario_view3d_orbit() {
+    scenario("view3d_orbit");
+}
+
+#[test]
+fn scenario_view3d_geometry() {
+    scenario("view3d_geometry");
+}
+
+#[test]
+fn scenario_view3d_open_boundary() {
+    scenario("view3d_open_boundary");
+}
+
+#[test]
+fn scenario_workflow_walk() {
+    scenario("workflow_walk");
+}
+
+#[test]
+fn scenario_workflow_missing_port() {
+    scenario("workflow_missing_port");
+}
+
+#[test]
+fn scenario_hostile_step_input() {
+    scenario("hostile_step_input");
+}
+
 /// Every scenario file has a test above.
 #[test]
 fn every_scenario_file_runs() {
@@ -105,4 +135,51 @@ fn ui_render_draws_both_themes() {
     // The ribbon's tabs are drawn as text: the tab row is not one flat colour.
     let row: Vec<&[u8; 4]> = light.rgba.as_chunks::<4>().0.iter().skip(800 * 55).take(800).collect();
     assert!(row.windows(2).filter(|w| w[0] != w[1]).count() > 20);
+}
+
+/// File › Export history as script, Save and Open, Edit › Undo and Redo, through the menus.
+#[test]
+fn file_and_edit_menus() {
+    let dir = std::env::temp_dir().join(format!("emcraft-ui-files-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (script, project) = (dir.join("history.json"), dir.join("project.json"));
+    let mut h = Harness::new();
+    let steps = json!([
+        {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+        {"call": "engine.execute", "params": {"command": "project.frequency", "params": {"start": 5, "stop": 9}}},
+        {"click": "menu:file"},
+        {"click": "file:export"},
+        {"expect": {"inspect": {"export": "emcraft-history.json"}, "handles": ["export:path", "export:ok"]}},
+        {"click": "export:path"},
+        {"key": "A", "cmd": true},
+        {"text": script.to_str().unwrap()},
+        {"click": "export:ok"},
+        {"expect": {"status": "Exported", "inspect": {"export": null}}},
+        {"click": "menu:file"},
+        {"click": "file:save"},
+        {"expect": {"dialog": "file.save"}},
+        {"call": "ui.dialog", "params": {"set": {"path": project.to_str().unwrap()}, "ok": true}},
+        {"expect": {"status": "Saved"}},
+        {"note": "Undo the band from the Edit menu, then redo it"},
+        {"click": "menu:edit"},
+        {"click": "edit:undo"},
+        {"expect": {"status": "Undone", "inspect": {"workflow.steps.intent": "warning"}}},
+        {"click": "menu:edit"},
+        {"click": "edit:redo"},
+        {"expect": {"status": "Redone", "inspect": {"workflow.steps.intent": "done"}}},
+        {"note": "A file that is not a project is refused; the project opens"},
+        {"call": "engine.execute", "params": {"command": "file.open", "params": {"path": script.to_str().unwrap()}}, "fail": true},
+        {"call": "engine.execute", "params": {"command": "file.open", "params": {"path": project.to_str().unwrap()}}},
+        {"expect": {"status": "Opened", "inspect": {"workflow.steps.intent": "done", "model.mesh.tetrahedra": {"min": 100}}}}
+    ]);
+    if let Err(e) = h.run(&steps) {
+        panic!("{e}\nlast messages: {:?}", h.app.messages.iter().rev().take(5).collect::<Vec<_>>());
+    }
+    // The exported history rebuilds the model.
+    let text = std::fs::read_to_string(&script).unwrap();
+    let mut s = emcraft_engine::Session::new();
+    s.run_script(&serde_json::from_str::<Value>(&text).unwrap()).unwrap();
+    assert_eq!(s.model.waveguide, h.app.session.model.waveguide);
+    assert_eq!(s.model.band, h.app.session.model.band);
+    let _ = std::fs::remove_dir_all(&dir);
 }
