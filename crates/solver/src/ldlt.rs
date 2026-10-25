@@ -173,7 +173,9 @@ pub struct Ldlt {
     scratch: Option<std::sync::Arc<Scratch>>,
     /// Bytes of the factor on disk.
     pub bytes_on_disk: u64,
-    /// Pivots replaced by √ε ‖A‖.
+    /// The symmetric scaling the factor is of: S A S, s_i = 1/√(max_j |a_ij|).
+    scale: Vec<f64>,
+    /// Pivots replaced by √ε ‖S A S‖.
     pub perturbed: usize,
     pub two_by_two: usize,
     /// Entries of L (with the diagonal blocks).
@@ -617,10 +619,27 @@ impl Ldlt {
         if a.val.iter().any(|v| !v.re.is_finite() || !v.im.is_finite()) {
             return Err(FactorError::NotFinite);
         }
-        let norm = a.max_abs();
-        if n > 0 && !(norm > 0.0) {
+        if n > 0 && !(a.max_abs() > 0.0) {
             return Err(FactorError::Zero);
         }
+        // Equilibrate: S A S with each row's largest entry about one, so the static-pivot
+        // threshold below means the same for every unknown. (Graded meshes mix elements whose
+        // matrices differ by many orders; against the largest entry of the whole matrix, the
+        // threshold would replace the pivots of every small one.)
+        let scale: Vec<f64> = (0..n)
+            .map(|i| {
+                let m = a.val[a.ptr[i]..a.ptr[i + 1]].iter().fold(0.0f64, |m, v| m.max(v.norm()));
+                if m > 0.0 { 1.0 / m.sqrt() } else { 1.0 }
+            })
+            .collect();
+        let mut scaled = a.clone();
+        for i in 0..n {
+            for k in scaled.ptr[i]..scaled.ptr[i + 1] {
+                scaled.val[k] *= scale[i] * scale[scaled.col[k]];
+            }
+        }
+        let a = &scaled;
+        let norm = a.max_abs();
         let tau = f64::EPSILON.sqrt() * norm;
 
         // Ordering: nested dissection, then a postorder of its elimination tree.
@@ -776,7 +795,18 @@ impl Ldlt {
             supernodes.push(Supernode { rows, k, l, pivots });
         }
         let bytes_on_disk = scratch.as_ref().map_or(0, |s| s.end);
-        Ok(Ldlt { n, perm, supernodes, scratch: scratch.map(std::sync::Arc::new), bytes_on_disk, perturbed, two_by_two, entries, largest_front })
+        Ok(Ldlt {
+            n,
+            perm,
+            supernodes,
+            scratch: scratch.map(std::sync::Arc::new),
+            bytes_on_disk,
+            scale,
+            perturbed,
+            two_by_two,
+            entries,
+            largest_front,
+        })
     }
 
     pub fn n(&self) -> usize {
@@ -817,7 +847,7 @@ impl Ldlt {
         let mut y = vec![C::new(0.0, 0.0); self.n * r];
         for (pos, &u) in self.perm.iter().enumerate() {
             for (j, b) in bs.iter().enumerate() {
-                y[pos * r + j] = b[u];
+                y[pos * r + j] = b[u] * self.scale[u];
             }
         }
         let zero = C::new(0.0, 0.0);
@@ -912,7 +942,7 @@ impl Ldlt {
         }
         for (pos, &u) in self.perm.iter().enumerate() {
             for (j, b) in bs.iter_mut().enumerate() {
-                b[u] = y[pos * r + j];
+                b[u] = y[pos * r + j] * self.scale[u];
             }
         }
         Ok(())
@@ -1065,6 +1095,32 @@ mod tests {
             x
         };
         assert_eq!(run(), run());
+    }
+
+    #[test]
+    fn badly_scaled_matrices_keep_their_pivots() {
+        // Two blocks of a graded mesh's sizes, 1e12 apart: against the whole matrix's largest
+        // entry, √ε‖A‖ would replace every pivot of the small one; equilibrated, none.
+        let n = 40;
+        let groups: Vec<Vec<usize>> = (0..n - 1).map(|i| vec![i, i + 1]).collect();
+        let mut a = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
+        for i in 0..n {
+            let s = if i < n / 2 { 1e12 } else { 1.0 };
+            a.add(i, i, C::new(4.0 * s, 0.3));
+            if i + 1 < n {
+                let s = if i + 1 < n / 2 { 1e12 } else { 1.0 };
+                a.add(i, i + 1, C::new(-s, 0.0));
+                a.add(i + 1, i, C::new(-s, 0.0));
+            }
+        }
+        let xyz: Vec<Point3> = (0..n).map(|i| Point3::new(i as f64, 0.0, 0.0)).collect();
+        let f = Ldlt::factor(&a, &xyz).unwrap();
+        assert_eq!(f.perturbed, 0);
+        let x: Vec<C> = (0..n).map(|i| C::new(1.0 + i as f64, -0.5)).collect();
+        let mut b = a.mul(&x);
+        f.solve(&mut b).unwrap();
+        let err = b.iter().zip(&x).map(|(p, q)| (p - q).norm()).fold(0.0, f64::max);
+        assert!(err < 1e-8, "{err:e}");
     }
 
     #[test]
