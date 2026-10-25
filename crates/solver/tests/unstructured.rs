@@ -4,7 +4,7 @@
 //! surface) unless a test asks for straight ones.
 
 use emcraft_fem::Order;
-use emcraft_model::{Model, Shape, Solid};
+use emcraft_model::{Model, Point3, Shape, Solid, Vec3};
 use emcraft_solver::eigen::eigenmodes;
 use emcraft_theory::bessel::{cylinder_cavity_resonances, sphere_cavity_resonances};
 
@@ -72,7 +72,7 @@ fn curved_cavities_converge() {
 
 #[test]
 fn unstructured_box_cavity() {
-    let m = body(Shape::Box { size: [0.02286, 0.01016, 0.03] }, 0.003);
+    let m = body(Shape::Box { size: Vec3::new(0.02286, 0.01016, 0.03) }, 0.003);
     let e = eigenmodes(&m, Order::Two, 3, 12.0e9).unwrap();
     let f: Vec<f64> = e.modes.iter().map(|x| x.frequency).collect();
     let exact = emcraft_theory::cavity_resonances(0.02286, 0.01016, 0.03, 1.0, 3);
@@ -85,7 +85,7 @@ fn unstructured_box_cavity() {
 fn unstructured_waveguide_transmits_with_the_te10_phase() {
     use emcraft_model::{End, Port};
     // A 30 mm length of WR-90 as a box with ports on its ends, meshed without structure.
-    let mut m = body(Shape::Box { size: [0.02286, 0.01016, 0.03] }, 0.003);
+    let mut m = body(Shape::Box { size: Vec3::new(0.02286, 0.01016, 0.03) }, 0.003);
     m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None }).unwrap();
     m.add_port(Port { name: "2".into(), end: End::End, modes: 4, face: None }).unwrap();
     let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
@@ -146,7 +146,7 @@ fn loaded_sphere_error(h: f64) -> f64 {
     let mut m = Model::new();
     m.add_material(Material::new("ceramic", 4.0, 1.0).unwrap()).unwrap();
     m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
-    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: [0.0; 3], material: Some("ceramic".into()) }).unwrap();
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.0, 0.0, 0.0), material: Some("ceramic".into()) }).unwrap();
     m.mesh = Some(emcraft_mesh::solid::solid(&m, h).unwrap());
     let exact = emcraft_theory::bessel::layered_sphere_resonances(0.004, 4.0, 0.01, 6);
     let near = exact[2].0 * 1.05;
@@ -179,11 +179,11 @@ fn a_post_across_the_guide_reflects_and_conserves_power() {
     // A 3 mm post through WR-90, wall to wall, by a Boolean difference: an inductive obstacle.
     let (a, b, l) = (0.02286, 0.01016, 0.03);
     let mut m = Model::new();
-    m.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
+    m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
     m.add_feature(Feature {
         combine: Combine::Subtract,
         shape: Shape::Cylinder { radius: 0.0015, length: b },
-        at: [a / 2.0, 0.0, l / 2.0],
+        at: Point3::new(a / 2.0, 0.0, l / 2.0),
         axis: Axis::Y,
     })
     .unwrap();

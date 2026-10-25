@@ -42,12 +42,9 @@ pub fn gauss_legendre(n: usize) -> (Vec<f64>, Vec<f64>) {
 
 /// A rule on the tetrahedron with these corners: barycentric coordinates and weights (summing
 /// to the volume), n points per direction.
-pub fn tet_rule(corners: &[[f64; 3]; 4], n: usize) -> Vec<([f64; 4], f64)> {
-    let volume = {
-        let d = |k: usize| [corners[k][0] - corners[0][0], corners[k][1] - corners[0][1], corners[k][2] - corners[0][2]];
-        let (a, b, c) = (d(1), d(2), d(3));
-        (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])).abs() / 6.0
-    };
+pub fn tet_rule(corners: &[emcraft_model::Point3; 4], n: usize) -> Vec<([f64; 4], f64)> {
+    let [a, b, c] = [1, 2, 3].map(|k| corners[k] - corners[0]);
+    let volume = emcraft_model::geom::triple(a, b, c).abs() / 6.0;
     let (x, w) = gauss_legendre(n);
     let mut out = Vec::with_capacity(x.len().pow(3));
     for (u, wu) in x.iter().zip(&w) {
@@ -98,7 +95,7 @@ mod tests {
 
     #[test]
     fn simplex_rules_integrate_monomials() {
-        let corners = [[0.0, 0.0, 0.0], [2.0, 0.1, 0.0], [0.3, 1.5, 0.2], [0.1, 0.2, 0.9]];
+        let corners = [[0.0, 0.0, 0.0], [2.0, 0.1, 0.0], [0.3, 1.5, 0.2], [0.1, 0.2, 0.9]].map(emcraft_model::Point3::from);
         let n = 4;
         let rule = tet_rule(&corners, n);
         let vol: f64 = rule.iter().map(|r| r.1).sum();

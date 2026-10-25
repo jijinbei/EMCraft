@@ -16,11 +16,64 @@
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, MU0};
+use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
 
 /// η₀ = μ₀c (Ω).
 pub fn eta0() -> f64 {
     MU0 * C0
+}
+
+/// A field sample on a Huygens surface: its point, the area it stands for, the outward unit
+/// normal, and the E and H phasors there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HuygensSample {
+    pub point: Point3,
+    pub weight: f64,
+    pub normal: Vec3,
+    pub e: CVec3,
+    pub h: CVec3,
+}
+
+/// The fields on a closed surface round everything that radiates, and what they radiate: the
+/// equivalent currents J = n̂ × H and M = −n̂ × E give the far field
+/// r e^{jkr} E_θ = −jk/(4π) (L_φ + η N_θ), r e^{jkr} E_φ = jk/(4π) (L_θ − η N_φ), with
+/// N = ∮ J e^{jk r̂·r'} dS' and L = ∮ M e^{jk r̂·r'} dS' (C. A. Balanis, *Advanced Engineering
+/// Electromagnetics*, 2nd ed., Wiley 2012, §6.8, eqs. 6-122, 6-125), r' from `centre`; the
+/// power out through it is ½ Re ∮ (E × H*) · n̂ dS. The frequency- and time-domain solvers both
+/// fill one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Huygens {
+    pub frequency: f64,
+    pub centre: Point3,
+    pub samples: Vec<HuygensSample>,
+}
+
+impl Huygens {
+    /// r e^{jkr} (E_θ, E_φ) in direction (θ, φ).
+    pub fn far_field(&self, theta: f64, phi: f64) -> (C, C) {
+        let k = 2.0 * PI * self.frequency / C0;
+        let [r, th, ph] = Vec3::spherical(theta, phi);
+        let (n, l) = self.samples.iter().fold((CVec3::ZERO, CVec3::ZERO), |(n, l), s| {
+            let phase = C::from_polar(s.weight, k * r.dot(s.point - self.centre));
+            let nrm = CVec3::from_real(s.normal);
+            (n + nrm.cross(s.h) * phase, l - nrm.cross(s.e) * phase)
+        });
+        let c = C::new(0.0, k / (4.0 * PI));
+        let eta = eta0();
+        (-c * (l.dot_real(ph) + eta * n.dot_real(th)), c * (l.dot_real(th) - eta * n.dot_real(ph)))
+    }
+
+    /// The power (W) out through the surface.
+    pub fn power(&self) -> f64 {
+        self.samples.iter().map(|s| 0.5 * s.weight * s.e.cross(s.h.conj()).re().dot(s.normal)).sum()
+    }
+
+    /// The directivity in direction (θ, φ): 4π U/P, U = |F|²/(2η).
+    pub fn directivity(&self, theta: f64, phi: f64) -> f64 {
+        let (a, b) = self.far_field(theta, phi);
+        4.0 * PI * (a.norm_sqr() + b.norm_sqr()) / (2.0 * eta0() * self.power())
+    }
 }
 
 /// The power (W) a Hertzian dipole of moment `il` (A·m, peak) radiates at `frequency` in free
@@ -84,29 +137,27 @@ pub fn dipole_impedance(length: f64, radius: f64, frequency: f64) -> C {
 /// V₂ = −∫ E₁ · ẑ dz along the second, the field of the first summed from its current
 /// elements, each the exact field of an infinitesimal dipole (Balanis, *Antenna Theory*, 4th
 /// ed., eqs. 4-10a, 4-10b), by 16 × 16 Gauss points.
-pub fn mutual_impedance_parallel(l1: f64, l2: f64, offset: [f64; 3], frequency: f64) -> C {
+pub fn mutual_impedance_parallel(l1: f64, l2: f64, offset: Vec3, frequency: f64) -> C {
     let k = 2.0 * PI * frequency / C0;
     let eta = eta0();
     let n = 16;
     let (x, w) = gauss(n);
-    let mut v = C::new(0.0, 0.0);
-    for (a, wa) in x.iter().zip(&w) {
-        let z1 = (a - 0.5) * l1;
-        for (b, wb) in x.iter().zip(&w) {
-            let z2 = offset[2] + (b - 0.5) * l2;
-            let (dx, dy, dz) = (offset[0], offset[1], z2 - z1);
-            let r = (dx * dx + dy * dy + dz * dz).sqrt();
-            let (ct, st) = (dz / r, (dx * dx + dy * dy).sqrt() / r);
+    let rho = offset.x.hypot(offset.y);
+    let pairs =
+        x.iter().zip(&w).flat_map(|(a, wa)| x.iter().zip(&w).map(move |(b, wb)| ((a - 0.5) * l1, offset.z + (b - 0.5) * l2, wa * l1 * wb * l2)));
+    -pairs
+        .map(|(z1, z2, weight)| {
+            let dz = z2 - z1;
+            let r = rho.hypot(dz);
+            let (ct, st) = (dz / r, rho / r);
             let kr = k * r;
             let phase = C::from_polar(1.0, -kr);
             let jkr = C::new(0.0, kr);
             let er = eta * ct / (2.0 * PI * r * r) * (1.0 + 1.0 / jkr) * phase;
             let et = C::new(0.0, eta * k * st / (4.0 * PI * r)) * (1.0 + 1.0 / jkr - 1.0 / (kr * kr)) * phase;
-            let ez = er * ct - et * st;
-            v -= ez * (wa * l1) * (wb * l2);
-        }
-    }
-    v
+            (er * ct - et * st) * weight
+        })
+        .sum::<C>()
 }
 
 /// An array of short gaps along ẑ, each of length `l` at `positions` carrying `currents`: its
@@ -114,24 +165,22 @@ pub fn mutual_impedance_parallel(l1: f64, l2: f64, offset: [f64; 3], frequency: 
 /// times the array factor Σ Iₙ e^{jk r̂·rₙ}; the power is ½ Σ Re(Z_mn I_n I_m*) with the exact
 /// mutual impedances ([`mutual_impedance_parallel`]) and each gap's radiation resistance
 /// 80π²(l/λ)² (C. A. Balanis, *Antenna Theory*, 4th ed., §6.2 and §8.6).
-pub fn gap_array_directivity(positions: &[[f64; 3]], currents: &[C], l: f64, frequency: f64, theta: f64, phi: f64) -> f64 {
+pub fn gap_array_directivity(positions: &[Point3], currents: &[C], l: f64, frequency: f64, theta: f64, phi: f64) -> f64 {
     let k = 2.0 * PI * frequency / C0;
     let eta = eta0();
-    let r = [theta.sin() * phi.cos(), theta.sin() * phi.sin(), theta.cos()];
-    let af: C = positions.iter().zip(currents).map(|(p, i)| i * C::from_polar(1.0, k * (r[0] * p[0] + r[1] * p[1] + r[2] * p[2]))).sum();
+    let [r, _, _] = Vec3::spherical(theta, phi);
+    let af: C = positions.iter().zip(currents).map(|(p, i)| i * C::from_polar(1.0, k * r.dot(p.to_vec()))).sum();
     let f2 = (eta * k * l * theta.sin() / (4.0 * PI)).powi(2) * af.norm_sqr();
-    let lambda = C0 / frequency;
-    let mut p = 0.0;
-    for (m, (pm, im)) in positions.iter().zip(currents).enumerate() {
-        for (n, (pn, inn)) in positions.iter().zip(currents).enumerate() {
-            let z = if m == n {
-                C::new(80.0 * PI * PI * (l / lambda).powi(2), 0.0)
-            } else {
-                mutual_impedance_parallel(l, l, [pm[0] - pn[0], pm[1] - pn[1], pm[2] - pn[2]], frequency)
-            };
-            p += 0.5 * (z * inn * im.conj()).re;
-        }
-    }
+    let self_resistance = C::new(80.0 * PI * PI * (l * frequency / C0).powi(2), 0.0);
+    let elements = || positions.iter().zip(currents).enumerate();
+    let p: f64 = elements()
+        .flat_map(|(m, (pm, im))| {
+            elements().map(move |(n, (pn, inn))| {
+                let z = if m == n { self_resistance } else { mutual_impedance_parallel(l, l, *pm - *pn, frequency) };
+                0.5 * (z * inn * im.conj()).re
+            })
+        })
+        .sum();
     4.0 * PI * f2 / (2.0 * eta * p)
 }
 
@@ -250,7 +299,9 @@ pub fn mie_amplitudes_pec(x: f64, theta: f64) -> (C, C) {
     amplitudes(&mie_coefficients_pec(x), theta)
 }
 
-fn amplitudes(coefficients: &[(C, C)], theta: f64) -> (C, C) {
+/// S₁(θ), S₂(θ) from Mie coefficients ([`mie_coefficients`], [`mie_coefficients_pec`]), for
+/// evaluating many angles from one set.
+pub fn amplitudes(coefficients: &[(C, C)], theta: f64) -> (C, C) {
     let mu = theta.cos();
     let (mut s1, mut s2) = (C::new(0.0, 0.0), C::new(0.0, 0.0));
     let (mut pi_prev, mut pi) = (0.0, 1.0);
@@ -333,14 +384,16 @@ mod tests {
         // Short gaps far apart: the point-dipole broadside field, V₂ = E_θ l₂ (E_z = −E_θ),
         // jηk l₁ l₂/(4πd) (1 + 1/(jkd) − 1/(kd)²) e^{−jkd}.
         let (l, d) = (1e-5, 0.01);
-        let z = mutual_impedance_parallel(l, l, [d, 0.0, 0.0], f);
+        let z = mutual_impedance_parallel(l, l, Vec3::new(d, 0.0, 0.0), f);
         let kd = k * d;
         let point = C::new(0.0, eta0() * k * l * l / (4.0 * PI * d)) * (1.0 + 1.0 / C::new(0.0, kd) - 1.0 / (kd * kd)) * C::from_polar(1.0, -kd);
         // (The gaps' finite length shifts it by about (l/d)² = 1e-6.)
         assert!((z - point).norm() < 1e-5 * point.norm(), "{z} {point}");
         // Reciprocal, and the Gauss rule integrates polynomials on [0, 1].
-        let (a, b) =
-            (mutual_impedance_parallel(1e-3, 2e-3, [0.004, 0.003, 0.002], f), mutual_impedance_parallel(2e-3, 1e-3, [-0.004, -0.003, -0.002], f));
+        let (a, b) = (
+            mutual_impedance_parallel(1e-3, 2e-3, Vec3::new(0.004, 0.003, 0.002), f),
+            mutual_impedance_parallel(2e-3, 1e-3, Vec3::new(-0.004, -0.003, -0.002), f),
+        );
         assert!((a - b).norm() < 1e-12 * a.norm());
         let (x, w) = gauss(16);
         assert!((x.iter().zip(&w).map(|(x, w)| w * x.powi(31)).sum::<f64>() - 1.0 / 32.0).abs() < 1e-15);
@@ -351,7 +404,7 @@ mod tests {
         // The directivity integrates to 4π over the sphere (the power from the mutual impedances
         // agrees with the pattern's), for an array of three gaps with phases.
         let f = 10e9;
-        let pos = [[0.0, 0.0, 0.0], [0.012, 0.0, 0.0], [0.004, 0.009, 0.003]];
+        let pos = [Point3::ORIGIN, Point3::new(0.012, 0.0, 0.0), Point3::new(0.004, 0.009, 0.003)];
         let cur = [C::new(1.0, 0.0), C::from_polar(0.7, 1.0), C::from_polar(1.2, -2.0)];
         let (n, m) = (60, 120);
         let mut total = 0.0;

@@ -27,6 +27,7 @@ pub use modematch::{EPlaneLine, ESection, HPlaneLine, HSection};
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, MU0};
+use emcraft_model::{CVec3, Point3};
 use num_complex::Complex64 as C;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -221,20 +222,20 @@ impl Te10Solution {
     }
 
     /// The electric field (V/m) at (x, y, z) for a unit incident TE₁₀ amplitude.
-    pub fn e(&self, x: f64, _y: f64, z: f64) -> [C; 3] {
-        let (f, _) = self.profile(z);
-        let zero = C::new(0.0, 0.0);
-        [zero, f * (PI * x / self.a).sin(), zero]
+    pub fn e(&self, p: Point3) -> CVec3 {
+        let (f, _) = self.profile(p.z);
+        CVec3 { y: f * (PI * p.x / self.a).sin(), ..CVec3::ZERO }
     }
 
     /// The magnetic field (A/m): H = −(1/jωμ) ∇ × E.
-    pub fn h(&self, x: f64, _y: f64, z: f64) -> [C; 3] {
+    pub fn h(&self, p: Point3) -> CVec3 {
+        let (x, z) = (p.x, p.z);
         let i = self.section(z);
         let (f, df) = self.profile(z);
         let jwmu = J * 2.0 * PI * self.frequency * MU0 * self.layers[i].mu_r;
         let (s, c) = (PI * x / self.a).sin_cos();
         // ∇ × (ŷ E_y) = (−∂E_y/∂z, 0, ∂E_y/∂x).
-        [df * s / jwmu, C::new(0.0, 0.0), -(f * c * PI / self.a) / jwmu]
+        CVec3::new(df * s / jwmu, C::new(0.0, 0.0), -(f * c * PI / self.a) / jwmu)
     }
 }
 
@@ -303,17 +304,17 @@ mod tests {
         let s = filter().solve(7.0e9).unwrap();
         let x = 0.3 * A;
         for z in [0.015, 0.035] {
-            let (e0, e1) = (s.e(x, 0.0, z - 1e-12), s.e(x, 0.0, z + 1e-12));
-            let (h0, h1) = (s.h(x, 0.0, z - 1e-12), s.h(x, 0.0, z + 1e-12));
+            let (e0, e1) = (s.e(Point3::new(x, 0.0, z - 1e-12)), s.e(Point3::new(x, 0.0, z + 1e-12)));
+            let (h0, h1) = (s.h(Point3::new(x, 0.0, z - 1e-12)), s.h(Point3::new(x, 0.0, z + 1e-12)));
             assert!((e0[1] - e1[1]).norm() < 1e-8 && (h0[0] - h1[0]).norm() < 1e-8 * h0[0].norm().max(1e-3));
         }
         // The incident amplitude at z = 0 is 1: E_y(a/2, 0) = 1 + S11.
-        let e = s.e(A / 2.0, 0.0, 0.0)[1];
+        let e = s.e(Point3::new(A / 2.0, 0.0, 0.0))[1];
         assert!((e - (1.0 + s.s11)).norm() < 1e-14);
         // ∂²F/∂z² = −β²F inside a section.
         let h = 1e-6;
         let z = 0.025;
-        let f = |z: f64| s.e(A / 2.0, 0.0, z)[1];
+        let f = |z: f64| s.e(Point3::new(A / 2.0, 0.0, z))[1];
         let d2 = (f(z + h) - 2.0 * f(z) + f(z - h)) / (h * h);
         let b = s.beta[1];
         assert!((d2 + b * b * f(z)).norm() < 1e-4 * (b * b * f(z)).norm());

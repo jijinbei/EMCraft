@@ -10,8 +10,8 @@ workspace = true
 
 [dependencies]
 emcraft-model = { workspace = true }
+emcraft-theory = { workspace = true }
 num-complex = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-emcraft-theory = { workspace = true }

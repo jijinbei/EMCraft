@@ -24,11 +24,11 @@ use emcraft_fem::nedelec::LOCAL_EDGES;
 use std::f64::consts::PI;
 
 use emcraft_fem::modes::{self, Mode};
-use emcraft_fem::poly::{Vec3, dot};
 use emcraft_fem::{Element, Order};
 use emcraft_mesh::Topology;
 use emcraft_model::units::{C0, MU0};
 use emcraft_model::{Boundary, End, Mesh, Model};
+use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
 
 use crate::ldlt::{FactorError, Ldlt};
@@ -73,7 +73,7 @@ pub struct Dofs {
     unknown: Vec<u32>,
     pub unknowns: usize,
     /// A point per unknown (edge midpoints, face centroids), for the ordering.
-    pub points: Vec<[f64; 3]>,
+    pub points: Vec<Point3>,
 }
 
 impl Dofs {
@@ -114,55 +114,26 @@ impl Dofs {
                 continue;
             }
             unknown[g] = points.len() as u32;
-            let p = if g < ne * pe {
-                let [a, b] = topo.edges[g / pe];
-                let (p, q) = (node(a), node(b));
-                [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0, (p[2] + q[2]) / 2.0]
-            } else {
-                let [a, b, c] = topo.faces[(g - ne * pe) / pf];
-                let (p, q, r) = (node(a), node(b), node(c));
-                [(p[0] + q[0] + r[0]) / 3.0, (p[1] + q[1] + r[1]) / 3.0, (p[2] + q[2] + r[2]) / 3.0]
-            };
-            points.push(p);
+            let centre =
+                if g < ne * pe { Point3::centroid(topo.edges[g / pe].map(node)) } else { Point3::centroid(topo.faces[(g - ne * pe) / pf].map(node)) };
+            points.push(centre.unwrap_or(Point3::ORIGIN));
         }
         Ok(Dofs { order, edges: ne, faces: nf, unknown, unknowns: free, points })
     }
 
     /// The global degrees of freedom (slots, eliminated or not) of a tetrahedron's local basis
     /// functions, in the order of [`Dofs::of_tet`].
-    pub(crate) fn slots_of_tet(&self, topo: &Topology, tet: usize) -> Vec<usize> {
-        let (pe, pf) = (self.order.per_edge(), self.order.per_face());
-        let mut out = Vec::with_capacity(self.order.dofs());
-        for j in 0..pe {
-            for e in topo.tet_edges[tet] {
-                out.push(e as usize * pe + j);
-            }
-        }
-        for f in topo.tet_faces[tet] {
-            for j in 0..pf {
-                out.push(self.edges * pe + f as usize * pf + j);
-            }
-        }
-        out
+    pub(crate) fn slots_of_tet(&self, topo: &Topology, tet: usize) -> impl Iterator<Item = usize> + use<> {
+        let (pe, pf, edges) = (self.order.per_edge(), self.order.per_face(), self.edges);
+        let (te, tf) = (topo.tet_edges[tet], topo.tet_faces[tet]);
+        (0..pe)
+            .flat_map(move |j| te.into_iter().map(move |e| e as usize * pe + j))
+            .chain(tf.into_iter().flat_map(move |f| (0..pf).map(move |j| edges * pe + f as usize * pf + j)))
     }
 
     /// The unknowns of a tetrahedron's local basis functions ([`NONE`] for eliminated ones).
-    fn of_tet(&self, topo: &Topology, tet: usize) -> Vec<u32> {
-        let (pe, pf) = (self.order.per_edge(), self.order.per_face());
-        let te = topo.tet_edges[tet];
-        let tf = topo.tet_faces[tet];
-        let mut out = Vec::with_capacity(self.order.dofs());
-        for j in 0..pe {
-            for e in te {
-                out.push(self.unknown[e as usize * pe + j]);
-            }
-        }
-        for f in tf {
-            for j in 0..pf {
-                out.push(self.unknown[self.edges * pe + f as usize * pf + j]);
-            }
-        }
-        out
+    fn of_tet<'a>(&'a self, topo: &Topology, tet: usize) -> impl Iterator<Item = u32> + use<'a> {
+        self.slots_of_tet(topo, tet).map(|s| self.unknown.get(s).copied().unwrap_or(NONE))
     }
 }
 
@@ -200,7 +171,7 @@ pub struct Driven {
     /// into it along x, y and z as fractions of the thickness (0 where it is not in the layer
     /// along that axis). Their matrices depend on the frequency and are assembled with it.
     /// (thickness, design reflection, and per tetrahedron its depths)
-    pub(crate) pml: Option<(f64, f64, Vec<(usize, [f64; 3])>)>,
+    pub(crate) pml: Option<(f64, f64, Vec<(usize, Vec3)>)>,
     /// Lumped ports: each with its vector cᵢ = ∫ Nᵢ · ŝ dl along its gap.
     pub lumped: Vec<LumpedData>,
 }
@@ -310,10 +281,9 @@ impl Driven {
                 let d = o.thickness;
                 let mut list = Vec::new();
                 for t in 0..mesh.tets.len() {
-                    let c = mesh.corners(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
-                    let centroid = [0, 1, 2].map(|k| (c[0][k] + c[1][k] + c[2][k] + c[3][k]) / 4.0);
-                    let depth = [0, 1, 2].map(|k| ((d - centroid[k]).max(centroid[k] - (size[k] - d)).max(0.0) / d).min(1.0));
-                    if depth.iter().any(|x| *x > 0.0) {
+                    let centroid = mesh.centroid(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
+                    let depth = centroid.to_vec().zip_map(*size, |c, l| ((d - c).max(c - (l - d)).max(0.0) / d).min(1.0));
+                    if depth.iter().any(|x| x > 0.0) {
                         list.push((t, depth));
                     }
                 }
@@ -347,20 +317,20 @@ impl Driven {
             for b in port_faces[k].iter().filter_map(|&i| mesh.boundary.get(i)) {
                 let tet = b.tet as usize;
                 let el = element(&mesh, &topo, tet, order)?;
-                let unknowns = dofs.of_tet(&topo, tet);
+                let unknowns: Vec<u32> = dofs.of_tet(&topo, tet).collect();
                 for (l, wa, _) in el.face_rule(local_face(&topo, tet, &b.nodes)?, n) {
                     let x = el.point(l);
                     let values = el.values(l);
                     // Only the functions of the face's own edges and the face have a tangential
                     // trace on it; the others are normal to it (zero but for rounding), and
                     // keeping them would make the dense port block several times larger.
-                    let scale = values.iter().map(|v| norm3(*v)).fold(0.0, f64::max);
+                    let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
                     for (mi, mode) in list.iter().enumerate() {
-                        let e = mode.field(x[0], x[1]);
-                        let e = [e[0], e[1], 0.0];
+                        let e = mode.field(x.x, x.y);
+                        let e = Vec3::new(e[0], e[1], 0.0);
                         for (u, v) in unknowns.iter().zip(&values) {
-                            if *u != NONE && v[0].hypot(v[1]) > 1e-9 * scale {
-                                vectors[mi][*u as usize] += wa * dot(*v, e);
+                            if *u != NONE && v.x.hypot(v.y) > 1e-9 * scale {
+                                vectors[mi][*u as usize] += wa * v.dot(e);
                                 touched[*u as usize] = true;
                             }
                         }
@@ -384,7 +354,7 @@ impl Driven {
 
         // Pattern: element couplings and the dense port blocks.
         let mut groups: Vec<Vec<usize>> =
-            (0..mesh.tets.len()).map(|t| dofs.of_tet(&topo, t).into_iter().filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
+            (0..mesh.tets.len()).map(|t| dofs.of_tet(&topo, t).filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
         for p in &ports {
             if let Some((_, v)) = p.modes.first() {
                 groups.push(v.iter().map(|(u, _)| *u).collect());
@@ -399,7 +369,7 @@ impl Driven {
         let mut cache = ElementCache::default();
         for t in (0..mesh.tets.len()).filter(|t| !in_pml.contains(t)) {
             let (s, m) = cache.matrices(&mesh, &topo, t, order)?;
-            let unknowns = dofs.of_tet(&topo, t);
+            let unknowns: Vec<u32> = dofs.of_tet(&topo, t).collect();
             let n = unknowns.len();
             for (i, ui) in unknowns.iter().enumerate() {
                 if *ui == NONE {
@@ -423,16 +393,16 @@ impl Driven {
             for b in walls.iter().filter_map(|&i| mesh.boundary.get(i)) {
                 let tet = b.tet as usize;
                 let el = element(&mesh, &topo, tet, order)?;
-                let unknowns = dofs.of_tet(&topo, tet);
+                let unknowns: Vec<u32> = dofs.of_tet(&topo, tet).collect();
                 for (l, wa, normal) in el.face_rule(local_face(&topo, tet, &b.nodes)?, n) {
-                    let t: Vec<Vec3> = el.values(l).into_iter().map(|v| tangential(v, normal)).collect();
+                    let t: Vec<Vec3> = el.values(l).into_iter().map(|v| v.tangential(normal)).collect();
                     for (i, ui) in unknowns.iter().enumerate() {
                         if *ui == NONE {
                             continue;
                         }
                         for (j, uj) in unknowns.iter().enumerate() {
                             if *uj != NONE {
-                                ww.add(*ui as usize, *uj as usize, C::new(wa * dot(t[i], t[j]), 0.0));
+                                ww.add(*ui as usize, *uj as usize, C::new(wa * t[i].dot(t[j]), 0.0));
                             }
                         }
                     }
@@ -451,11 +421,11 @@ impl Driven {
         let Some((d, reflection, list)) = &self.pml else { return Ok(()) };
         let sigma0 = 3.0 * (1.0 / reflection).ln() / (2.0 * d);
         for &(t, depth) in list {
-            let s = depth.map(|x| C::new(1.0, -sigma0 / k0 * x * x));
+            let s = [depth.x, depth.y, depth.z].map(|x| C::new(1.0, -sigma0 / k0 * x * x));
             let lambda = [s[1] * s[2] / s[0], s[2] * s[0] / s[1], s[0] * s[1] / s[2]];
             let el = element(&self.mesh, &self.topo, t, self.order)?;
             let (kc, mc) = (el.stiffness_components(), el.mass_components());
-            let unknowns = self.dofs.of_tet(&self.topo, t);
+            let unknowns: Vec<u32> = self.dofs.of_tet(&self.topo, t).collect();
             let n = unknowns.len();
             let (eps, mu) = (self.eps.get(t).copied().unwrap_or(C::new(1.0, 0.0)), self.mu.get(t).copied().unwrap_or(1.0));
             for (i, ui) in unknowns.iter().enumerate() {
@@ -590,7 +560,7 @@ impl Driven {
         element(&self.mesh, &self.topo, t, self.order)
     }
 
-    pub(crate) fn dofs_of(&self, t: usize) -> Vec<u32> {
+    pub(crate) fn dofs_of(&self, t: usize) -> impl Iterator<Item = u32> + '_ {
         self.dofs.of_tet(&self.topo, t)
     }
 
@@ -603,60 +573,77 @@ impl Driven {
     }
 
     /// The field (E in V/m or H in A/m) at a point for the coefficients `x` at `frequency`.
-    pub fn field(&self, x: &[C], frequency: f64, which: Field, p: [f64; 3]) -> Option<[C; 3]> {
+    pub fn field(&self, x: &[C], frequency: f64, which: Field, p: Point3) -> Option<CVec3> {
         let (t, _) = emcraft_mesh::locate(&self.mesh, p)?;
         let el = element(&self.mesh, &self.topo, t, self.order).ok()?;
         Some(self.field_in(&el, t, x, frequency, which, el.barycentric(p)))
     }
 
     /// E and H at a point, `None` outside the mesh.
-    pub fn fields(&self, x: &[C], frequency: f64, p: [f64; 3]) -> Option<([C; 3], [C; 3])> {
+    pub fn fields(&self, x: &[C], frequency: f64, p: Point3) -> Option<(CVec3, CVec3)> {
         let (t, _) = emcraft_mesh::locate(&self.mesh, p)?;
         let el = element(&self.mesh, &self.topo, t, self.order).ok()?;
         let l = el.barycentric(p);
         Some((self.field_in(&el, t, x, frequency, Field::E, l), self.field_in(&el, t, x, frequency, Field::H, l)))
     }
 
-    fn field_in(&self, el: &Element, t: usize, x: &[C], frequency: f64, which: Field, l: [f64; 4]) -> [C; 3] {
-        let unknowns = self.dofs.of_tet(&self.topo, t);
+    pub(crate) fn field_in(&self, el: &Element, t: usize, x: &[C], frequency: f64, which: Field, l: [f64; 4]) -> CVec3 {
         let values = match which {
             Field::E => el.values(l),
             Field::H => el.curl_values(l),
         };
-        let mut out = [C::new(0.0, 0.0); 3];
-        for (u, v) in unknowns.iter().zip(&values) {
-            if *u == NONE {
-                continue;
-            }
-            let c = x.get(*u as usize).copied().unwrap_or_default();
-            for d in 0..3 {
-                out[d] += c * v[d];
-            }
-        }
-        if which == Field::H {
+        let field: CVec3 = self
+            .dofs
+            .of_tet(&self.topo, t)
+            .zip(&values)
+            .filter(|(u, _)| *u != NONE)
+            .map(|(u, v)| *v * x.get(u as usize).copied().unwrap_or_default())
+            .sum();
+        match which {
+            Field::E => field,
             // H = −∇ × E / (jωμ).
-            let jwmu = C::new(0.0, 2.0 * PI * frequency * MU0 * self.mu.get(t).copied().unwrap_or(1.0));
-            out = out.map(|c| -c / jwmu);
+            Field::H => -field / C::new(0.0, 2.0 * PI * frequency * MU0 * self.mu_of(t)),
         }
-        out
     }
 
     /// ‖field − exact‖ and ‖exact‖ in L²(Ω), by quadrature on every tetrahedron.
-    pub fn l2_error(&self, x: &[C], frequency: f64, which: Field, exact: impl Fn([f64; 3]) -> [C; 3]) -> Result<(f64, f64)> {
-        let n = if self.order == Order::One { 3 } else { 4 };
+    pub fn l2_error(&self, x: &[C], frequency: f64, which: Field, exact: impl Fn(Point3) -> CVec3) -> Result<(f64, f64)> {
+        let n = self.rule_points();
         let (mut err, mut norm) = (0.0, 0.0);
         for t in 0..self.mesh.tets.len() {
-            let el = element(&self.mesh, &self.topo, t, self.order)?;
+            let el = self.element_of(t)?;
             for (l, w) in el.rule(n) {
-                let u = self.field_in(&el, t, x, frequency, which, l);
-                let e = exact(el.point(l));
-                for d in 0..3 {
-                    err += w * (u[d] - e[d]).norm_sqr();
-                    norm += w * e[d].norm_sqr();
-                }
+                let (u, e) = (self.field_in(&el, t, x, frequency, which, l), exact(el.point(l)));
+                err += w * (u - e).norm_sqr();
+                norm += w * e.norm_sqr();
             }
         }
         Ok((err.sqrt(), norm.sqrt()))
+    }
+
+    /// Gauss points per direction for integrals of fields over elements of this order.
+    fn rule_points(&self) -> usize {
+        if self.order == Order::One { 3 } else { 4 }
+    }
+
+    /// ∫ f(t, E) dV over every tetrahedron `keep` admits, E the field at each point of a rule.
+    fn integrate_e(&self, x: &[C], frequency: f64, keep: impl Fn(usize) -> bool, f: impl Fn(usize, CVec3) -> f64) -> Result<f64> {
+        let n = self.rule_points();
+        (0..self.mesh.tets.len()).filter(|t| keep(*t)).try_fold(0.0, |total, t| {
+            let el = self.element_of(t)?;
+            Ok(total + el.rule(n).into_iter().map(|(l, w)| w * f(t, self.field_in(&el, t, x, frequency, Field::E, l))).sum::<f64>())
+        })
+    }
+
+    /// ∫ f(field) dS over the walls, the field `which` and the wall's unit normal at each point.
+    fn integrate_walls(&self, x: &[C], frequency: f64, which: Field, f: impl Fn(CVec3, Vec3) -> f64) -> Result<f64> {
+        let n = if self.order == Order::One { 3 } else { 4 };
+        self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)).try_fold(0.0, |total, b| {
+            let tet = b.tet as usize;
+            let el = self.element_of(tet)?;
+            let rule = el.face_rule(local_face(&self.topo, tet, &b.nodes)?, n);
+            Ok(total + rule.into_iter().map(|(l, wa, normal)| wa * f(self.field_in(&el, tet, x, frequency, which, l), normal)).sum::<f64>())
+        })
     }
 
     /// The power (W) the dielectrics absorb for the coefficients `x`: ½ ω ε₀ ∫ εr tan δ |E|² dV
@@ -664,19 +651,8 @@ impl Driven {
     pub fn dielectric_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
         let omega = 2.0 * PI * frequency;
         let eps0 = 1.0 / (MU0 * C0 * C0);
-        let n = if self.order == Order::One { 3 } else { 4 };
-        let mut total = 0.0;
-        for t in 0..self.mesh.tets.len() {
-            let loss = -self.eps.get(t).map_or(0.0, |e| e.im);
-            if loss == 0.0 {
-                continue;
-            }
-            let el = element(&self.mesh, &self.topo, t, self.order)?;
-            for (l, w) in el.rule(n) {
-                let e = self.field_in(&el, t, x, frequency, Field::E, l);
-                total += w * loss * e.iter().map(|c| c.norm_sqr()).sum::<f64>();
-            }
-        }
+        let loss = |t: usize| -self.eps_of(t).im;
+        let total = self.integrate_e(x, frequency, |t| loss(t) != 0.0, |t, e| loss(t) * e.norm_sqr())?;
         Ok(0.5 * omega * eps0 * total)
     }
 
@@ -690,33 +666,14 @@ impl Driven {
     /// perfectly conducting walls: ½ R_s ∫ |H_t|² dS (the perturbation estimate).
     pub fn wall_loss_perturbation(&self, x: &[C], frequency: f64, sigma: f64) -> Result<f64> {
         let rs = surface_resistance(frequency, sigma);
-        let n = if self.order == Order::One { 3 } else { 4 };
-        let mut total = 0.0;
-        for b in self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)) {
-            let tet = b.tet as usize;
-            let el = element(&self.mesh, &self.topo, tet, self.order)?;
-            for (l, wa, normal) in el.face_rule(local_face(&self.topo, tet, &b.nodes)?, n) {
-                let h = self.field_in(&el, tet, x, frequency, Field::H, l);
-                let hn = h[0] * normal[0] + h[1] * normal[1] + h[2] * normal[2];
-                total += wa * (0..3).map(|d| (h[d] - hn * normal[d]).norm_sqr()).sum::<f64>();
-            }
-        }
+        let total = self.integrate_walls(x, frequency, Field::H, |h, n| tangential_c(h, n).norm_sqr())?;
         Ok(0.5 * rs * total)
     }
 
     /// The time-averaged stored energy (J) at resonance, twice the electric: ½ ε₀ ∫ εr |E|² dV.
     pub fn stored_energy(&self, x: &[C], frequency: f64) -> Result<f64> {
         let eps0 = 1.0 / (MU0 * C0 * C0);
-        let n = if self.order == Order::One { 3 } else { 4 };
-        let mut total = 0.0;
-        for t in 0..self.mesh.tets.len() {
-            let el = element(&self.mesh, &self.topo, t, self.order)?;
-            let er = self.eps.get(t).map_or(1.0, |e| e.re);
-            for (l, w) in el.rule(n) {
-                let e = self.field_in(&el, t, x, frequency, Field::E, l);
-                total += w * er * e.iter().map(|c| c.norm_sqr()).sum::<f64>();
-            }
-        }
+        let total = self.integrate_e(x, frequency, |_| true, |t, e| self.eps_of(t).re * e.norm_sqr())?;
         Ok(0.5 * eps0 * total)
     }
 
@@ -725,18 +682,7 @@ impl Driven {
     pub fn wall_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
         let Some((sigma, _)) = &self.wall else { return Ok(0.0) };
         let rs = surface_resistance(frequency, *sigma);
-        let n = if self.order == Order::One { 3 } else { 4 };
-        let mut total = 0.0;
-        for b in self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)) {
-            let tet = b.tet as usize;
-            let el = element(&self.mesh, &self.topo, tet, self.order)?;
-            for (l, wa, normal) in el.face_rule(local_face(&self.topo, tet, &b.nodes)?, n) {
-                let e = self.field_in(&el, tet, x, frequency, Field::E, l);
-                let en = e[0] * normal[0] + e[1] * normal[1] + e[2] * normal[2];
-                let et: f64 = (0..3).map(|d| (e[d] - en * normal[d]).norm_sqr()).sum();
-                total += wa * et;
-            }
-        }
+        let total = self.integrate_walls(x, frequency, Field::E, |e, n| tangential_c(e, n).norm_sqr())?;
         Ok(total / (4.0 * rs))
     }
 
@@ -750,8 +696,9 @@ impl Driven {
     }
 }
 
-fn norm3(v: Vec3) -> f64 {
-    dot(v, v).sqrt()
+/// The part of a complex field across the unit normal n: v − (v·n) n.
+fn tangential_c(v: CVec3, n: Vec3) -> CVec3 {
+    v - n * v.dot_real(n)
 }
 
 /// R_s = √(ωμ₀/2σ) (Ω).
@@ -789,9 +736,8 @@ fn faces_of_port(mesh: &Mesh, p: &emcraft_model::Port) -> Result<Vec<usize>> {
         }
         Some(f) => {
             let tol = 1e-6 * f.a.max(f.b);
-            let inside = |q: [f64; 3]| {
-                (q[2] - f.z).abs() <= tol && q[0] >= f.x0 - tol && q[0] <= f.x0 + f.a + tol && q[1] >= f.y0 - tol && q[1] <= f.y0 + f.b + tol
-            };
+            let inside =
+                |q: Point3| (q.z - f.z).abs() <= tol && q.x >= f.x0 - tol && q.x <= f.x0 + f.a + tol && q.y >= f.y0 - tol && q.y <= f.y0 + f.b + tol;
             (0..mesh.boundary.len())
                 .filter(|&i| mesh.boundary[i].nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| inside(*q))))
                 .collect()
@@ -807,24 +753,21 @@ fn faces_of_port(mesh: &Mesh, p: &emcraft_model::Port) -> Result<Vec<usize>> {
 /// over 16 lines evenly round the band (the trapezoid rule, spectrally accurate round a
 /// circle): the voltage is the band's mean line integral and the current spreads evenly round
 /// it.
-fn band_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: [f64; 3], b: [f64; 3], r: f64) -> Result<Vec<(usize, f64)>> {
+fn band_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: Point3, b: Point3, r: f64) -> Result<Vec<(usize, f64)>> {
     if r == 0.0 {
         return line_vector(mesh, topo, dofs, order, a, b);
     }
-    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    let s = emcraft_fem::poly::scale(d, 1.0 / norm3(d));
+    let s = (b - a).normalized().ok_or_else(|| invalid("lumped port", "its two ends coincide"))?;
     // Two unit vectors across the line.
-    let helper = if s[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
-    let u = emcraft_fem::poly::cross(s, helper);
-    let u = emcraft_fem::poly::scale(u, 1.0 / norm3(u));
-    let v = emcraft_fem::poly::cross(s, u);
+    let helper = Vec3::unit(if s.x.abs() < 0.9 { 0 } else { 1 });
+    let u = s.cross(helper).normalized().unwrap_or(Vec3::unit(0));
+    let v = s.cross(u);
     let n = 16;
     let mut out: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
     for k in 0..n {
         let phi = 2.0 * PI * k as f64 / n as f64;
-        let off = [0, 1, 2].map(|i| r * (phi.cos() * u[i] + phi.sin() * v[i]));
-        let (pa, pb) = ([0, 1, 2].map(|i| a[i] + off[i]), [0, 1, 2].map(|i| b[i] + off[i]));
-        for (i, c) in line_vector(mesh, topo, dofs, order, pa, pb)? {
+        let off = (u * phi.cos() + v * phi.sin()) * r;
+        for (i, c) in line_vector(mesh, topo, dofs, order, a + off, b + off)? {
             *out.entry(i).or_default() += c / n as f64;
         }
     }
@@ -836,27 +779,24 @@ fn band_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: [f64;
 /// it), and each stretch between the clips' breakpoints is integrated once, in one of the
 /// tetrahedra holding it (the tangential component along the line is the same in all of them),
 /// by four-point Gauss rules.
-fn line_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: [f64; 3], b: [f64; 3]) -> Result<Vec<(usize, f64)>> {
-    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    let len = norm3(d);
-    let s = d.map(|v| v / len);
-    let (lo, hi) = ([0, 1, 2].map(|k| a[k].min(b[k])), [0, 1, 2].map(|k| a[k].max(b[k])));
+fn line_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>> {
+    let d = b - a;
+    let len = d.norm();
+    let s = d / len;
+    let (lo, hi) = (a.min(b), a.max(b));
     let mut pieces: Vec<(f64, f64, usize)> = Vec::new();
-    for t in 0..mesh.tets.len() {
+    // Only the tetrahedra whose boxes meet the segment's.
+    for t in emcraft_mesh::tets_near(mesh, lo, hi) {
         let Some(c) = mesh.corners(t) else { continue };
-        if (0..3).any(|k| c.iter().all(|p| p[k] < lo[k]) || c.iter().all(|p| p[k] > hi[k])) {
-            continue;
-        }
         // Barycentric coordinates of a and b in the straight tetrahedron.
-        let e = [1, 2, 3].map(|i| [c[i][0] - c[0][0], c[i][1] - c[0][1], c[i][2] - c[0][2]]);
-        let det = dot(e[0], emcraft_fem::poly::cross(e[1], e[2]));
+        let e = [1, 2, 3].map(|i| c[i] - c[0]);
+        let det = emcraft_model::geom::triple(e[0], e[1], e[2]);
         if det == 0.0 {
             continue;
         }
-        let g = [emcraft_fem::poly::cross(e[1], e[2]), emcraft_fem::poly::cross(e[2], e[0]), emcraft_fem::poly::cross(e[0], e[1])];
-        let bary = |p: [f64; 3]| {
-            let q = [p[0] - c[0][0], p[1] - c[0][1], p[2] - c[0][2]];
-            let l: [f64; 3] = g.map(|gi| dot(gi, q) / det);
+        let g = [e[1].cross(e[2]), e[2].cross(e[0]), e[0].cross(e[1])];
+        let bary = |p: Point3| {
+            let l = g.map(|gi| gi.dot(p - c[0]) / det);
             [1.0 - l[0] - l[1] - l[2], l[0], l[1], l[2]]
         };
         let (la, lb) = (bary(a), bary(b));
@@ -888,13 +828,12 @@ fn line_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: [f64;
         let mid = 0.5 * (t0 + t1);
         let Some(&(_, _, tet)) = pieces.iter().find(|p| p.0 <= mid && mid <= p.1) else { continue };
         let el = element(mesh, topo, tet, order)?;
-        let unknowns = dofs.of_tet(topo, tet);
+        let unknowns: Vec<u32> = dofs.of_tet(topo, tet).collect();
         for (xi, wi) in x.iter().zip(&w) {
             let t = t0 + xi * (t1 - t0);
-            let p = [a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]];
-            for (u, v) in unknowns.iter().zip(el.values(el.barycentric(p))) {
+            for (u, v) in unknowns.iter().zip(el.values(el.barycentric(a + d * t))) {
                 if *u != NONE {
-                    *out.entry(*u as usize).or_default() += wi * (t1 - t0) * len * dot(v, s);
+                    *out.entry(*u as usize).or_default() += wi * (t1 - t0) * len * v.dot(s);
                 }
             }
         }
@@ -912,15 +851,10 @@ fn local_face(topo: &Topology, t: usize, nodes: &[u32; 3]) -> Result<[usize; 3]>
     Ok(out)
 }
 
-/// v − (v·n)n.
-fn tangential(v: Vec3, n: Vec3) -> Vec3 {
-    emcraft_fem::poly::sub(v, emcraft_fem::poly::scale(n, dot(v, n)))
-}
-
 /// The element of a tetrahedron, corners sorted by global node.
 fn element(mesh: &Mesh, topo: &Topology, t: usize, order: Order) -> Result<Element> {
     let s = topo.sorted.get(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
-    let corners = s.map(|n| mesh.nodes.get(n as usize).copied().unwrap_or([f64::NAN; 3]));
+    let corners = s.map(|n| mesh.node(n).unwrap_or(Point3::new(f64::NAN, f64::NAN, f64::NAN)));
     let el = Element::new(order, corners)?;
     if mesh.curved.is_empty() {
         return Ok(el);
@@ -943,12 +877,12 @@ impl ElementCache {
             let el = element(mesh, topo, t, order)?;
             return Ok((el.stiffness(1.0), el.mass(1.0)));
         }
-        let c = s.map(|n| mesh.nodes.get(n as usize).copied().unwrap_or([f64::NAN; 3]));
+        let c = s.map(|n| mesh.node(n).unwrap_or(Point3::new(f64::NAN, f64::NAN, f64::NAN)));
         // Edge vectors quantised far below the mesh size (10⁻¹⁵ m): only exact repeats match.
         let mut key = [0i64; 9];
-        for k in 0..3 {
-            for d in 0..3 {
-                key[3 * k + d] = ((c[k + 1][d] - c[0][d]) * 1e15).round() as i64;
+        for (k, e) in [1, 2, 3].map(|k| c[k] - c[0]).iter().enumerate() {
+            for (d, v) in e.iter().enumerate() {
+                key[3 * k + d] = (v * 1e15).round() as i64;
             }
         }
         if let Some(m) = self.map.get(&key) {

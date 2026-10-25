@@ -230,7 +230,11 @@ fn features_page_lists_every_command() {
 fn box_surface(x: f64, y: f64, z: f64) -> emcraft_io::Surface {
     let mut s = emcraft_io::Surface::default();
     for i in 0..8 {
-        s.positions.push([if i & 1 == 0 { 0.0 } else { x }, if i & 2 == 0 { 0.0 } else { y }, if i & 4 == 0 { 0.0 } else { z }]);
+        s.positions.push(emcraft_model::Point3::new(
+            if i & 1 == 0 { 0.0 } else { x },
+            if i & 2 == 0 { 0.0 } else { y },
+            if i & 4 == 0 { 0.0 } else { z },
+        ));
     }
     for q in [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]] {
         s.triangles.push([q[0], q[1], q[2]]);

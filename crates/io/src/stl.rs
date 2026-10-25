@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use emcraft_model::Point3;
+
 use crate::{Error, MAX_COORD, MAX_TRIANGLES, Result, Surface};
 
 fn bad<T>(msg: impl std::fmt::Display) -> Result<T> {
@@ -32,7 +34,7 @@ pub fn read(bytes: &[u8], unit: f64) -> Result<Surface> {
             // +0 and −0 are the same point.
             let key = p.map(|c| if c == 0.0 { 0u64 } else { c.to_bits() });
             *slot = *index.entry(key).or_insert_with(|| {
-                s.positions.push(p);
+                s.positions.push(Point3::from(p));
                 (s.positions.len() - 1) as u32
             });
         }
@@ -114,8 +116,8 @@ pub fn write_binary(s: &Surface, unit: f64) -> Vec<u8> {
     for t in &s.triangles {
         out.extend([0u8; 12]);
         for &v in t {
-            let p = s.positions.get(v as usize).copied().unwrap_or([0.0; 3]);
-            for c in p {
+            let p = s.positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN);
+            for c in p.iter() {
                 out.extend(((c / unit) as f32).to_le_bytes());
             }
         }
@@ -130,8 +132,8 @@ pub fn write_ascii(s: &Surface, unit: f64) -> String {
     for t in &s.triangles {
         out.push_str(" facet normal 0 0 0\n  outer loop\n");
         for &v in t {
-            let p = s.positions.get(v as usize).copied().unwrap_or([0.0; 3]);
-            out.push_str(&format!("   vertex {} {} {}\n", p[0] / unit, p[1] / unit, p[2] / unit));
+            let p = s.positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN);
+            out.push_str(&format!("   vertex {} {} {}\n", p.x / unit, p.y / unit, p.z / unit));
         }
         out.push_str("  endloop\n endfacet\n");
     }
@@ -148,7 +150,7 @@ pub(crate) mod tests {
     pub(crate) fn cube_surface(x: f64, y: f64, z: f64) -> Surface {
         let mut s = Surface::default();
         for i in 0..8 {
-            s.positions.push([if i & 1 == 0 { 0.0 } else { x }, if i & 2 == 0 { 0.0 } else { y }, if i & 4 == 0 { 0.0 } else { z }]);
+            s.positions.push(Point3::new(if i & 1 == 0 { 0.0 } else { x }, if i & 2 == 0 { 0.0 } else { y }, if i & 4 == 0 { 0.0 } else { z }));
         }
         for q in [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]] {
             s.triangles.push([q[0], q[1], q[2]]);
@@ -162,8 +164,8 @@ pub(crate) mod tests {
         s.triangles
             .iter()
             .map(|t| {
-                let [a, b, c] = t.map(|v| s.positions[v as usize]);
-                (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+                let [a, b, c] = t.map(|v| s.positions[v as usize].to_vec());
+                emcraft_model::geom::triple(a, b, c) / 6.0
             })
             .sum()
     }

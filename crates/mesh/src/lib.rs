@@ -16,8 +16,9 @@ mod topology;
 
 pub use topology::{LOCAL_EDGES, LOCAL_FACES, Topology};
 
+use emcraft_model::geom::triple;
 use emcraft_model::mesh::TETS_PER_CELL;
-use emcraft_model::{Boundary, BoundaryFace, Grid, Mesh, Model, positive};
+use emcraft_model::{Boundary, BoundaryFace, Grid, Mesh, Model, Point3, positive};
 
 /// The most tetrahedra a mesh may have (a cap on hostile sizes).
 pub const MAX_TETS: usize = 3_000_000;
@@ -59,10 +60,8 @@ const KUHN: [[usize; 4]; TETS_PER_CELL] = {
     out
 };
 
-fn signed_volume(p: &[[f64; 3]; 4]) -> f64 {
-    let d = |k: usize, i: usize| p[k][i] - p[0][i];
-    let (a, b, c) = ([d(1, 0), d(1, 1), d(1, 2)], [d(2, 0), d(2, 1), d(2, 2)], [d(3, 0), d(3, 1), d(3, 2)]);
-    (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+fn signed_volume(p: &[Point3; 4]) -> f64 {
+    triple(p[1] - p[0], p[2] - p[0], p[3] - p[0]) / 6.0
 }
 
 /// How finely a waveguide is meshed.
@@ -265,7 +264,7 @@ fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], length: 
     for &z in &grid.z {
         for &y in &grid.y {
             for &x in &grid.x {
-                nodes.push([x, y, z]);
+                nodes.push(Point3::new(x, y, z));
             }
         }
     }
@@ -305,7 +304,7 @@ fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], length: 
         if owners[1] != u32::MAX {
             continue;
         }
-        let zs = f.map(|n| mesh.nodes[n as usize][2]);
+        let zs = f.map(|n| mesh.nodes[n as usize].z);
         let tag = if zs.iter().all(|z| z.abs() <= tol) {
             Boundary::Port(0)
         } else if zs.iter().all(|z| (z - length).abs() <= tol) {
@@ -319,7 +318,7 @@ fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], length: 
 }
 
 /// Barycentric coordinates of `p` in a tetrahedron.
-pub fn barycentric(c: &[[f64; 3]; 4], p: [f64; 3]) -> [f64; 4] {
+pub fn barycentric(c: &[Point3; 4], p: Point3) -> [f64; 4] {
     let v = signed_volume(c);
     let mut l = [0.0; 4];
     for (i, li) in l.iter_mut().enumerate() {
@@ -342,14 +341,14 @@ fn cell_index(lines: &[f64], v: f64) -> Option<usize> {
 
 /// The tetrahedron containing `p` and its barycentric coordinates, or `None` outside the grid
 /// (points within 10⁻⁹ of the domain size of its boundary count as inside).
-pub fn locate(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
+pub fn locate(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     if mesh.grid.is_none() {
         return locate_in_buckets(mesh, p);
     }
     let g = mesh.grid.as_ref()?;
     let (nx, ny) = (g.x.len().checked_sub(1)?, g.y.len().checked_sub(1)?);
     let span = |l: &[f64]| (l.first().copied().unwrap_or(0.0), l.last().copied().unwrap_or(0.0));
-    for (l, v) in [(&g.x, p[0]), (&g.y, p[1]), (&g.z, p[2])] {
+    for (l, v) in [(&g.x, p.x), (&g.y, p.y), (&g.z, p.z)] {
         let (lo, hi) = span(l);
         let tol = 1e-9 * (hi - lo).abs();
         if !(v >= lo - tol && v <= hi + tol) {
@@ -371,7 +370,7 @@ pub fn locate(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
         }
         Some(out)
     };
-    let (is, js, ks) = (near(&g.x, p[0])?, near(&g.y, p[1])?, near(&g.z, p[2])?);
+    let (is, js, ks) = (near(&g.x, p.x)?, near(&g.y, p.y)?, near(&g.z, p.z)?);
     let mut best: Option<(usize, [f64; 4], f64)> = None;
     for &k in &ks {
         for &j in &js {
@@ -396,9 +395,9 @@ pub fn locate(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
 }
 
 /// The tetrahedron of an unstructured mesh containing `p` (within 10⁻⁹ in barycentric terms).
-fn locate_in_buckets(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
+fn locate_in_buckets(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     let b = mesh.buckets.as_ref()?;
-    if !p.iter().all(|v| v.is_finite()) {
+    if !p.is_finite() {
         return None;
     }
     let mut ijk = [0usize; 3];
@@ -423,6 +422,33 @@ fn locate_in_buckets(mesh: &Mesh, p: [f64; 3]) -> Option<(usize, [f64; 4])> {
     best.filter(|x| x.2 >= -1e-9).map(|(t, l, _)| (t, l))
 }
 
+/// The tetrahedra whose bounding boxes meet the box (lo, hi): from the buckets of an
+/// unstructured mesh, every tetrahedron otherwise (a box test still drops the far ones).
+pub fn tets_near(mesh: &Mesh, lo: Point3, hi: Point3) -> Vec<usize> {
+    let meets = |t: usize| {
+        mesh.corners(t).is_some_and(|c| {
+            let (a, b) = emcraft_model::bounding_box(c).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
+            (0..3).all(|d| a[d] <= hi[d] && b[d] >= lo[d])
+        })
+    };
+    let Some(bk) = mesh.buckets.as_ref() else { return (0..mesh.tets.len()).filter(|&t| meets(t)).collect() };
+    let cell = |p: Point3, d: usize| ((((p[d] - bk.lo[d]) / bk.step[d]).floor().max(0.0)) as usize).min(bk.dims[d].saturating_sub(1));
+    let mut out = Vec::new();
+    for k in cell(lo, 2)..=cell(hi, 2) {
+        for j in cell(lo, 1)..=cell(hi, 1) {
+            for i in cell(lo, 0)..=cell(hi, 0) {
+                let b = i + bk.dims[0] * (j + bk.dims[1] * k);
+                let (s, e) = (bk.start.get(b).copied().unwrap_or(0) as usize, bk.start.get(b + 1).copied().unwrap_or(0) as usize);
+                out.extend(bk.items.get(s..e).unwrap_or(&[]).iter().map(|&t| t as usize));
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out.retain(|&t| meets(t));
+    out
+}
+
 /// Volume of every tetrahedron, signed.
 pub fn volumes(mesh: &Mesh) -> Vec<f64> {
     (0..mesh.tets.len()).map(|t| mesh.corners(t).map_or(0.0, |c| signed_volume(&c))).collect()
@@ -444,10 +470,7 @@ mod tests {
 
     fn tri_area(mesh: &Mesh, f: &[u32; 3]) -> f64 {
         let p = f.map(|n| mesh.nodes[n as usize]);
-        let u = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
-        let v = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
-        let c = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-        0.5 * (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt()
+        0.5 * (p[1] - p[0]).cross(p[2] - p[0]).norm()
     }
 
     #[test]
@@ -490,7 +513,7 @@ mod tests {
     fn locate_finds_the_containing_tet() {
         let m = model();
         let mesh = waveguide(&m, 0.004).unwrap();
-        for p in [[0.011, 0.005, 0.025], [0.0, 0.0, 0.0], [0.02286, 0.01016, 0.05], [0.001, 0.009, 0.0349]] {
+        for p in [[0.011, 0.005, 0.025], [0.0, 0.0, 0.0], [0.02286, 0.01016, 0.05], [0.001, 0.009, 0.0349]].map(Point3::from) {
             let (t, l) = locate(&mesh, p).unwrap();
             assert!(l.iter().all(|&x| x >= -1e-12), "{l:?}");
             assert!((l.iter().sum::<f64>() - 1.0).abs() < 1e-12);
@@ -500,8 +523,8 @@ mod tests {
                 assert!((q - p[d]).abs() < 1e-14);
             }
         }
-        assert!(locate(&mesh, [0.03, 0.0, 0.0]).is_none());
-        assert!(locate(&mesh, [f64::NAN, 0.0, 0.0]).is_none());
+        assert!(locate(&mesh, Point3::new(0.03, 0.0, 0.0)).is_none());
+        assert!(locate(&mesh, Point3::new(f64::NAN, 0.0, 0.0)).is_none());
     }
 
     #[test]
@@ -531,9 +554,9 @@ mod tests {
         assert!((area(Boundary::Pec) - pec).abs() < 1e-12, "{} {pec}", area(Boundary::Pec));
         assert!((area(Boundary::Port(0)) - a * b).abs() < 1e-14);
         // Points in the iris' metal are outside; on its faces they are inside.
-        assert!(locate(&mesh, [0.002, 0.005, 0.011]).is_none());
-        assert!(locate(&mesh, [0.002, 0.005, 0.01]).is_some());
-        assert!(locate(&mesh, [0.011, 0.005, 0.011]).is_some());
+        assert!(locate(&mesh, Point3::new(0.002, 0.005, 0.011)).is_none());
+        assert!(locate(&mesh, Point3::new(0.002, 0.005, 0.01)).is_some());
+        assert!(locate(&mesh, Point3::new(0.011, 0.005, 0.011)).is_some());
     }
 
     #[test]

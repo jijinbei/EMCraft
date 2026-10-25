@@ -13,11 +13,13 @@
 //! Adapted from FieldCraft's `crates/solver/src/ordering.rs` (MIT OR Apache-2.0), see
 //! ATTRIBUTION.md.
 
+use emcraft_model::Point3;
+
 /// Parts this small are ordered as they come.
 const LEAF: usize = 16;
 
 /// A permutation of the nodes: `order[k]` is the node eliminated k-th.
-pub fn nested_dissection(xyz: &[[f64; 3]], adjacency: &[Vec<usize>]) -> Vec<usize> {
+pub fn nested_dissection(xyz: &[Point3], adjacency: &[Vec<usize>]) -> Vec<usize> {
     let n = xyz.len();
     let mut order = Vec::with_capacity(n);
     // 0 = not in the current part, 1 = left, 2 = right.
@@ -91,7 +93,7 @@ pub fn nested_dissection(xyz: &[[f64; 3]], adjacency: &[Vec<usize>]) -> Vec<usiz
 
 /// The nested dissection order of the nodes that fills the factor less: by coordinate planes or
 /// by the graph's level structures. Ties keep the coordinate order.
-pub fn fill_reducing_order(xyz: &[[f64; 3]], adjacency: &[Vec<usize>]) -> Vec<usize> {
+pub fn fill_reducing_order(xyz: &[Point3], adjacency: &[Vec<usize>]) -> Vec<usize> {
     let by_planes = nested_dissection(xyz, adjacency);
     if adjacency.len() <= LEAF {
         // Both order a leaf as it comes: there is no choice to make.
@@ -300,7 +302,7 @@ mod tests {
     #[test]
     fn a_permutation_with_separators_last() {
         let m = 12;
-        let xyz: Vec<[f64; 3]> = (0..m * m).map(|v| [(v / m) as f64, (v % m) as f64, 0.0]).collect();
+        let xyz: Vec<Point3> = (0..m * m).map(|v| Point3::new((v / m) as f64, (v % m) as f64, 0.0)).collect();
         let mut adj = vec![Vec::new(); m * m];
         for i in 0..m {
             for j in 0..m {

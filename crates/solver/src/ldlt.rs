@@ -25,6 +25,7 @@
 //! 2004); [`Ldlt::solve_refined`] then recovers the accuracy by iterative refinement and reports
 //! the backward error.
 
+use emcraft_model::Point3;
 use num_complex::Complex64 as C;
 
 use crate::sparse::Csr;
@@ -596,13 +597,13 @@ fn amalgamate(starts: &[usize], rows: Vec<Vec<usize>>, parent: &[usize], n: usiz
 impl Ldlt {
     /// Factors `a` (complex symmetric, both triangles stored) with the unknowns ordered by
     /// nested dissection on `xyz` (a point per unknown).
-    pub fn factor(a: &Csr, xyz: &[[f64; 3]]) -> Result<Ldlt, FactorError> {
+    pub fn factor(a: &Csr, xyz: &[Point3]) -> Result<Ldlt, FactorError> {
         Ldlt::factor_within(a, xyz, memory_budget())
     }
 
     /// [`Ldlt::factor`] keeping at most `budget` bytes of the factor in memory, the rest in a
     /// scratch file on disk.
-    pub fn factor_within(a: &Csr, xyz: &[[f64; 3]], budget: u64) -> Result<Ldlt, FactorError> {
+    pub fn factor_within(a: &Csr, xyz: &[Point3], budget: u64) -> Result<Ldlt, FactorError> {
         let n = a.n;
         if xyz.len() != n || a.ptr.len() != n + 1 {
             return Err(FactorError::Dimension(format!("{} unknowns, {} points", n, xyz.len())));
@@ -963,15 +964,15 @@ mod tests {
     }
 
     /// A random complex symmetric matrix on a 3D grid graph (7-point stencil), points per node.
-    fn grid_matrix(nx: usize, ny: usize, nz: usize, diag: C, rng: &mut Rng) -> (Csr, Vec<[f64; 3]>) {
+    fn grid_matrix(nx: usize, ny: usize, nz: usize, diag: C, rng: &mut Rng) -> (Csr, Vec<Point3>) {
         let id = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
         let n = nx * ny * nz;
         let mut groups: Vec<Vec<usize>> = Vec::new();
-        let mut xyz = vec![[0.0; 3]; n];
+        let mut xyz = vec![Point3::ORIGIN; n];
         for k in 0..nz {
             for j in 0..ny {
                 for i in 0..nx {
-                    xyz[id(i, j, k)] = [i as f64, j as f64, k as f64];
+                    xyz[id(i, j, k)] = Point3::new(i as f64, j as f64, k as f64);
                     if i + 1 < nx {
                         groups.push(vec![id(i, j, k), id(i + 1, j, k)]);
                     }
@@ -1037,7 +1038,7 @@ mod tests {
                 a.add(j, i, v);
             }
         }
-        let xyz: Vec<[f64; 3]> = (0..n).map(|i| [i as f64, 0.0, 0.0]).collect();
+        let xyz: Vec<Point3> = (0..n).map(|i| Point3::new(i as f64, 0.0, 0.0)).collect();
         let f = Ldlt::factor(&a, &xyz).unwrap();
         assert!(f.two_by_two > 0);
         assert_eq!(f.perturbed, 0);
@@ -1064,7 +1065,7 @@ mod tests {
     fn hostile_matrices_are_refused() {
         let groups = [vec![0, 1]];
         let mut a = Csr::from_groups(2, groups.iter().map(|g| g.as_slice()));
-        let xyz = [[0.0; 3], [1.0, 0.0, 0.0]];
+        let xyz = [Point3::ORIGIN, Point3::new(1.0, 0.0, 0.0)];
         assert_eq!(Ldlt::factor(&a, &xyz).unwrap_err(), FactorError::Zero);
         a.add(0, 0, C::new(f64::NAN, 0.0));
         assert_eq!(Ldlt::factor(&a, &xyz).unwrap_err(), FactorError::NotFinite);

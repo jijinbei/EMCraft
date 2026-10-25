@@ -8,27 +8,7 @@
 //! §8.8; Z. J. Cendes, *Vector finite elements for electromagnetic field computation*, IEEE
 //! Trans. Magn. 27(5):3958–3966, 1991), so element matrices need no quadrature.
 
-pub type Vec3 = [f64; 3];
-
-pub fn dot(a: Vec3, b: Vec3) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
-pub fn scale(a: Vec3, s: f64) -> Vec3 {
-    [a[0] * s, a[1] * s, a[2] * s]
-}
-
-pub fn add(a: Vec3, b: Vec3) -> Vec3 {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-pub fn sub(a: Vec3, b: Vec3) -> Vec3 {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
+pub use emcraft_model::{Point3, Vec3};
 
 /// One term: `coef · Π λᵢ^exp[i]`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -78,14 +58,14 @@ impl VecPoly {
     /// Adds a term, merging it into one with the same exponents.
     pub fn push(&mut self, exp: [u8; 4], coef: Vec3) {
         if let Some(t) = self.terms.iter_mut().find(|t| t.exp == exp) {
-            t.coef = add(t.coef, coef);
+            t.coef += coef;
         } else {
             self.terms.push(Term { exp, coef });
         }
     }
 
     pub fn eval(&self, l: [f64; 4]) -> Vec3 {
-        self.terms.iter().fold([0.0; 3], |acc, t| add(acc, scale(t.coef, monomial(t.exp, l))))
+        self.terms.iter().map(|t| t.coef * monomial(t.exp, l)).sum()
     }
 
     /// ∫_T self · other dV.
@@ -93,7 +73,7 @@ impl VecPoly {
         let mut s = 0.0;
         for a in &self.terms {
             for b in &other.terms {
-                let c = dot(a.coef, b.coef);
+                let c = a.coef.dot(b.coef);
                 if c != 0.0 {
                     let mut e = a.exp;
                     for (x, y) in e.iter_mut().zip(b.exp) {
@@ -131,7 +111,7 @@ impl VecPoly {
             for (k, f) in corners.iter().enumerate() {
                 let mut e = a.exp;
                 e[k] += 1;
-                s += dot(a.coef, *f) * monomial_integral(e, volume);
+                s += a.coef.dot(*f) * monomial_integral(e, volume);
             }
         }
         s
@@ -150,7 +130,7 @@ pub struct Symbolic {
 pub fn realise(terms: &[Symbolic], g: &[Vec3; 4]) -> VecPoly {
     let mut p = VecPoly::default();
     for t in terms {
-        p.push(t.exp, scale(g[t.grad], t.coef));
+        p.push(t.exp, g[t.grad] * t.coef);
     }
     p
 }
@@ -165,7 +145,7 @@ pub fn realise_curl(terms: &[Symbolic], g: &[Vec3; 4]) -> VecPoly {
             }
             let mut e = t.exp;
             e[q] -= 1;
-            p.push(e, scale(cross(g[q], g[t.grad]), t.coef * t.exp[q] as f64));
+            p.push(e, g[q].cross(g[t.grad]) * (t.coef * t.exp[q] as f64));
         }
     }
     p
@@ -187,10 +167,10 @@ mod tests {
     #[test]
     fn merging_and_evaluation() {
         let mut p = VecPoly::default();
-        p.push([1, 0, 0, 0], [1.0, 0.0, 0.0]);
-        p.push([1, 0, 0, 0], [0.0, 2.0, 0.0]);
-        p.push([0, 1, 1, 0], [0.0, 0.0, 3.0]);
+        p.push([1, 0, 0, 0], Vec3::new(1.0, 0.0, 0.0));
+        p.push([1, 0, 0, 0], Vec3::new(0.0, 2.0, 0.0));
+        p.push([0, 1, 1, 0], Vec3::new(0.0, 0.0, 3.0));
         assert_eq!(p.terms.len(), 2);
-        assert_eq!(p.eval([0.5, 0.2, 0.3, 0.0]), [0.5, 1.0, 3.0 * 0.06]);
+        assert_eq!(p.eval([0.5, 0.2, 0.3, 0.0]), Vec3::new(0.5, 1.0, 3.0 * 0.06));
     }
 }

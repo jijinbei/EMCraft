@@ -12,7 +12,7 @@ pub mod geom;
 pub mod mesh;
 pub mod units;
 
-pub use geom::{Point3, Vec3};
+pub use geom::{CVec3, Point3, Vec3};
 pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
 use serde::{Deserialize, Serialize};
 
@@ -171,14 +171,14 @@ impl Waveguide {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Shape {
     /// [0, x] × [0, y] × [0, z].
-    Box { size: [f64; 3] },
+    Box { size: Vec3 },
     /// Axis z through the origin, from z = 0 to `length`.
     Cylinder { radius: f64, length: f64 },
     /// Centred on the origin.
     Sphere { radius: f64 },
     /// A closed triangulated surface (imported): positions (m), outward triangles and a face
     /// tag per triangle.
-    Surface { name: String, positions: Vec<[f64; 3]>, triangles: Vec<[u32; 3]>, tags: Vec<u32> },
+    Surface { name: String, positions: Vec<Point3>, triangles: Vec<[u32; 3]>, tags: Vec<u32> },
 }
 
 /// Most triangles an imported surface may have.
@@ -186,45 +186,25 @@ pub const MAX_SURFACE_TRIANGLES: usize = 2_000_000;
 
 impl Shape {
     /// The bounding box (lo, hi).
-    pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
+    pub fn bounds(&self) -> (Point3, Point3) {
         match *self {
-            Shape::Box { size } => ([0.0; 3], size),
-            Shape::Cylinder { radius: r, length } => ([-r, -r, 0.0], [r, r, length]),
-            Shape::Sphere { radius: r } => ([-r; 3], [r; 3]),
-            Shape::Surface { ref positions, .. } => {
-                let mut lo = [f64::INFINITY; 3];
-                let mut hi = [f64::NEG_INFINITY; 3];
-                for p in positions {
-                    for d in 0..3 {
-                        lo[d] = lo[d].min(p[d]);
-                        hi[d] = hi[d].max(p[d]);
-                    }
-                }
-                if positions.is_empty() { ([0.0; 3], [0.0; 3]) } else { (lo, hi) }
-            }
+            Shape::Box { size } => (Point3::ORIGIN, size.to_point()),
+            Shape::Cylinder { radius: r, length } => (Point3::new(-r, -r, 0.0), Point3::new(r, r, length)),
+            Shape::Sphere { radius: r } => (Point3::new(-r, -r, -r), Point3::new(r, r, r)),
+            Shape::Surface { ref positions, .. } => bounding_box(positions.iter().copied()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN)),
         }
     }
 
     /// Whether a point in the shape's own frame lies inside it (an imported surface by its winding
     /// number).
-    pub fn contains(&self, p: [f64; 3]) -> bool {
+    pub fn contains(&self, p: Point3) -> bool {
         match *self {
             Shape::Box { size } => (0..3).all(|d| p[d] > 0.0 && p[d] < size[d]),
-            Shape::Cylinder { radius, length } => p[2] > 0.0 && p[2] < length && p[0] * p[0] + p[1] * p[1] < radius * radius,
-            Shape::Sphere { radius } => p[0] * p[0] + p[1] * p[1] + p[2] * p[2] < radius * radius,
+            Shape::Cylinder { radius, length } => p.z > 0.0 && p.z < length && p.x * p.x + p.y * p.y < radius * radius,
+            Shape::Sphere { radius } => p.to_vec().norm_sqr() < radius * radius,
             Shape::Surface { ref positions, ref triangles, .. } => {
-                let mut total = 0.0;
-                for t in triangles {
-                    let [a, b, c] = t.map(|v| {
-                        let q = positions.get(v as usize).copied().unwrap_or([0.0; 3]);
-                        [q[0] - p[0], q[1] - p[1], q[2] - p[2]]
-                    });
-                    let n = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-                    let d = |u: [f64; 3], v: [f64; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-                    let x = [b[1] * c[2] - b[2] * c[1], b[2] * c[0] - b[0] * c[2], b[0] * c[1] - b[1] * c[0]];
-                    let (la, lb, lc) = (n(a), n(b), n(c));
-                    total += 2.0 * d(a, x).atan2(la * lb * lc + d(a, b) * lc + d(b, c) * la + d(c, a) * lb);
-                }
+                let corner = |v: u32| positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN) - p;
+                let total: f64 = triangles.iter().map(|t| solid_angle(t.map(corner))).sum();
                 total / (4.0 * std::f64::consts::PI) > 0.5
             }
         }
@@ -242,14 +222,14 @@ impl Shape {
 
     pub fn volume(&self) -> f64 {
         match *self {
-            Shape::Box { size } => size[0] * size[1] * size[2],
+            Shape::Box { size } => size.x * size.y * size.z,
             Shape::Cylinder { radius, length } => std::f64::consts::PI * radius * radius * length,
             Shape::Sphere { radius } => 4.0 / 3.0 * std::f64::consts::PI * radius.powi(3),
             Shape::Surface { ref positions, ref triangles, .. } => triangles
                 .iter()
                 .map(|t| {
-                    let [a, b, c] = t.map(|v| positions.get(v as usize).copied().unwrap_or([0.0; 3]));
-                    (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+                    let [a, b, c] = t.map(|v| positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN).to_vec());
+                    geom::triple(a, b, c) / 6.0
                 })
                 .sum(),
         }
@@ -269,19 +249,19 @@ pub struct Solid {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Inclusion {
     pub shape: Shape,
-    pub at: [f64; 3],
+    pub at: Point3,
     /// The filling; `None` for a perfect conductor (a hole in the mesh).
     pub material: Option<String>,
 }
 
 impl Inclusion {
-    pub fn contains(&self, p: [f64; 3]) -> bool {
-        self.shape.contains([p[0] - self.at[0], p[1] - self.at[1], p[2] - self.at[2]])
+    pub fn contains(&self, p: Point3) -> bool {
+        self.shape.contains((p - self.at).to_point())
     }
 
-    pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
+    pub fn bounds(&self) -> (Point3, Point3) {
         let (lo, hi) = self.shape.bounds();
-        ([0, 1, 2].map(|d| lo[d] + self.at[d]), [0, 1, 2].map(|d| hi[d] + self.at[d]))
+        (lo + self.at.to_vec(), hi + self.at.to_vec())
     }
 }
 
@@ -291,7 +271,7 @@ impl Solid {
         match self.shape {
             Shape::Box { size } => {
                 for (k, v) in size.iter().enumerate() {
-                    positive(&format!("box size {}", ["x", "y", "z"][k]), *v)?;
+                    positive(&format!("box size {}", ["x", "y", "z"][k]), v)?;
                 }
             }
             Shape::Cylinder { radius, length } => {
@@ -308,7 +288,7 @@ impl Solid {
                 if tags.len() != triangles.len() {
                     return Err(invalid("surface", "needs a face tag per triangle"));
                 }
-                if !positions.iter().flatten().all(|c| c.is_finite()) {
+                if !positions.iter().all(|c| c.is_finite()) {
                     return Err(invalid("surface", "has a coordinate that is not a finite number"));
                 }
                 // Closed and oriented: every edge held once each way.
@@ -359,10 +339,19 @@ impl Axis {
 
     /// A shape's own coordinates turned so its z axis lies along this one (a cyclic turn of
     /// the axes, keeping handedness): x → (z, x, y), y → (y, z, x).
-    pub fn turn(self, p: [f64; 3]) -> [f64; 3] {
+    pub fn turn(self, p: Vec3) -> Vec3 {
         match self {
-            Axis::X => [p[2], p[0], p[1]],
-            Axis::Y => [p[1], p[2], p[0]],
+            Axis::X => Vec3::new(p.z, p.x, p.y),
+            Axis::Y => Vec3::new(p.y, p.z, p.x),
+            Axis::Z => p,
+        }
+    }
+
+    /// The inverse of [`Axis::turn`]: global coordinates into the shape's own.
+    pub fn unturn(self, p: Vec3) -> Vec3 {
+        match self {
+            Axis::X => Vec3::new(p.y, p.z, p.x),
+            Axis::Y => Vec3::new(p.z, p.x, p.y),
             Axis::Z => p,
         }
     }
@@ -387,29 +376,22 @@ pub enum Combine {
 pub struct Feature {
     pub combine: Combine,
     pub shape: Shape,
-    pub at: [f64; 3],
+    pub at: Point3,
     #[serde(default)]
     pub axis: Axis,
 }
 
 impl Feature {
     /// Whether a point lies inside the feature's body.
-    pub fn contains(&self, p: [f64; 3]) -> bool {
-        let q = [p[0] - self.at[0], p[1] - self.at[1], p[2] - self.at[2]];
-        // The inverse of the turn: x → (z, x, y) undone is (y, z, x), and y's is x's.
-        let own = match self.axis {
-            Axis::X => [q[1], q[2], q[0]],
-            Axis::Y => [q[2], q[0], q[1]],
-            Axis::Z => q,
-        };
-        self.shape.contains(own)
+    pub fn contains(&self, p: Point3) -> bool {
+        self.shape.contains(self.axis.unturn(p - self.at).to_point())
     }
 
     /// The bounding box (lo, hi).
-    pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
+    pub fn bounds(&self) -> (Point3, Point3) {
         let (lo, hi) = self.shape.bounds();
-        let (a, b) = (self.axis.turn(lo), self.axis.turn(hi));
-        ([0, 1, 2].map(|d| a[d].min(b[d]) + self.at[d]), [0, 1, 2].map(|d| a[d].max(b[d]) + self.at[d]))
+        let (a, b) = (self.axis.turn(lo.to_vec()), self.axis.turn(hi.to_vec()));
+        (self.at + a.min(b), self.at + a.max(b))
     }
 }
 
@@ -430,11 +412,11 @@ pub struct Open {
 pub enum Source {
     /// A short current element: `current` (A, peak) along the unit `direction` over `length`
     /// (m) at `at` — the Hertzian dipole of moment I·l.
-    Dipole { at: [f64; 3], direction: [f64; 3], length: f64, current: f64 },
+    Dipole { at: Point3, direction: Vec3, length: f64, current: f64 },
     /// A plane wave of 1 V/m travelling along the unit `direction`, its electric field along the
     /// unit `polarization` (perpendicular to it); the problem is solved for the field the
     /// dielectric inclusions scatter.
-    PlaneWave { direction: [f64; 3], polarization: [f64; 3] },
+    PlaneWave { direction: Vec3, polarization: Vec3 },
 }
 
 /// A lumped (discrete) port: a gap from `from` to `to` (m) across which a source of `voltage`
@@ -443,8 +425,8 @@ pub enum Source {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LumpedPort {
     pub name: String,
-    pub from: [f64; 3],
-    pub to: [f64; 3],
+    pub from: Point3,
+    pub to: Point3,
     pub impedance: f64,
     #[serde(default = "unit_voltage")]
     pub voltage: [f64; 2],
@@ -458,12 +440,20 @@ fn unit_voltage() -> [f64; 2] {
     [1.0, 0.0]
 }
 
-fn unit(name: &str, v: [f64; 3]) -> Result<[f64; 3]> {
-    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    if !(l.is_finite() && l > 0.0) {
-        return Err(invalid(name, "must be a nonzero finite vector"));
-    }
-    Ok(v.map(|c| c / l))
+fn unit(name: &str, v: Vec3) -> Result<Vec3> {
+    v.normalized().ok_or_else(|| invalid(name, "must be a nonzero finite vector"))
+}
+
+/// The bounding box (lo, hi) of points; `None` for none.
+pub fn bounding_box(points: impl IntoIterator<Item = Point3>) -> Option<(Point3, Point3)> {
+    points.into_iter().fold(None, |b, p| Some(b.map_or((p, p), |(lo, hi): (Point3, Point3)| (lo.min(p), hi.max(p)))))
+}
+
+/// The solid angle a triangle subtends at the origin, its corners given relative to it (A. Van
+/// Oosterom, J. Strackee, IEEE Trans. Biomed. Eng. 30(2), 1983).
+pub fn solid_angle([a, b, c]: [Vec3; 3]) -> f64 {
+    let (la, lb, lc) = (a.norm(), b.norm(), c.norm());
+    2.0 * geom::triple(a, b, c).atan2(la * lb * lc + a.dot(b) * lc + b.dot(c) * la + c.dot(a) * lb)
 }
 
 impl Source {
@@ -471,7 +461,7 @@ impl Source {
     pub fn checked(self) -> Result<Source> {
         Ok(match self {
             Source::Dipole { at, direction, length, current } => {
-                if !at.iter().all(|v| v.is_finite()) {
+                if !at.is_finite() {
                     return Err(invalid("dipole", "its position must be finite"));
                 }
                 positive("dipole length", length)?;
@@ -684,7 +674,7 @@ impl Model {
     pub fn add_inclusion(&mut self, inc: Inclusion) -> Result<()> {
         let solid = self.solid.as_ref().ok_or_else(|| invalid("inclusion", "needs a solid (geometry.solid) to lie in"))?;
         Solid { shape: inc.shape.clone(), material: solid.material.clone() }.check_shape()?;
-        if !inc.at.iter().all(|v| v.is_finite()) {
+        if !inc.at.is_finite() {
             return Err(invalid("inclusion", "its position must be finite"));
         }
         if let Some(m) = &inc.material {
@@ -706,9 +696,24 @@ impl Model {
         Ok(())
     }
 
+    /// The corners of everything that radiates or scatters: inclusions, features, dipoles and
+    /// the ends of lumped ports (an open problem's Huygens box encloses them).
+    pub fn radiators(&self) -> impl Iterator<Item = Point3> + '_ {
+        let corners = |(a, b): (Point3, Point3)| [a, b];
+        self.inclusions
+            .iter()
+            .flat_map(move |i| corners(i.bounds()))
+            .chain(self.features.iter().flat_map(move |f| corners(f.bounds())))
+            .chain(self.sources.iter().filter_map(|s| match s {
+                Source::Dipole { at, .. } => Some(*at),
+                Source::PlaneWave { .. } => None,
+            }))
+            .chain(self.lumped.iter().flat_map(|l| [l.from, l.to]))
+    }
+
     /// What fills a point of a solid model: `None` outside the body or inside a conductor, else
     /// the material's index (a dielectric inclusion's, or the solid's).
-    pub fn material_at(&self, p: [f64; 3]) -> Option<usize> {
+    pub fn material_at(&self, p: Point3) -> Option<usize> {
         let s = self.solid.as_ref()?;
         let mut inside = s.shape.contains(p);
         for f in &self.features {
@@ -737,7 +742,7 @@ impl Model {
     pub fn add_feature(&mut self, f: Feature) -> Result<()> {
         let solid = self.solid.as_ref().ok_or_else(|| invalid("feature", "needs a solid (geometry.solid) to combine with"))?;
         Solid { shape: f.shape.clone(), material: solid.material.clone() }.check_shape()?;
-        if !f.at.iter().all(|v| v.is_finite()) {
+        if !f.at.is_finite() {
             return Err(invalid("feature", "its position must be finite"));
         }
         let (lo, hi) = f.bounds();
@@ -751,20 +756,18 @@ impl Model {
     }
 
     /// The bounding box of the geometry.
-    pub fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
+    pub fn bounds(&self) -> Option<(Point3, Point3)> {
         if let Some(w) = &self.waveguide {
-            return Some(([0.0; 3], [w.width, w.height, w.length()]));
+            return Some((Point3::ORIGIN, Point3::new(w.width, w.height, w.length())));
         }
         let s = self.solid.as_ref()?;
-        let (mut lo, mut hi) = s.shape.bounds();
-        for f in self.features.iter().filter(|f| f.combine == Combine::Add) {
-            let (a, b) = f.bounds();
-            for d in 0..3 {
-                lo[d] = lo[d].min(a[d]);
-                hi[d] = hi[d].max(b[d]);
-            }
-        }
-        Some((lo, hi))
+        Some(
+            self.features
+                .iter()
+                .filter(|f| f.combine == Combine::Add)
+                .map(Feature::bounds)
+                .fold(s.shape.bounds(), |(lo, hi), (a, b)| (lo.min(a), hi.max(b))),
+        )
     }
 
     /// The cross-section of the port at an end: the waveguide's end section, or a box's or a
@@ -795,7 +798,7 @@ impl Model {
             }
         }
         match self.solid.as_ref().map(|s| &s.shape) {
-            Some(Shape::Box { size }) => Ok(PortShape::Rect { x0: 0.0, y0: 0.0, a: size[0], b: size[1] }),
+            Some(Shape::Box { size }) => Ok(PortShape::Rect { x0: 0.0, y0: 0.0, a: size.x, b: size.y }),
             Some(Shape::Cylinder { radius, .. }) => Ok(PortShape::Circle { cx: 0.0, cy: 0.0, r: *radius }),
             Some(Shape::Sphere { .. }) => Err(invalid("port", "a sphere has no flat end faces for ports")),
             Some(shape @ Shape::Surface { positions, triangles, .. }) => {
@@ -849,7 +852,7 @@ impl Model {
             {
                 return Err(invalid("layer reflection", "must be between 0 and 1"));
             }
-            if size.iter().any(|s| 2.0 * o.thickness >= *s) {
+            if size.iter().any(|s| 2.0 * o.thickness >= s) {
                 return Err(invalid("layer thickness", "must leave room inside the box (under half its smallest side)"));
             }
             if self.ports.iter().any(|p| p.face.is_none()) {
@@ -885,10 +888,10 @@ impl Model {
         if !(p.radius.is_finite() && p.radius >= 0.0) {
             return Err(invalid("lumped port radius", "must be a finite number ≥ 0"));
         }
-        if !p.from.iter().chain(&p.to).chain(&p.voltage).all(|v| v.is_finite()) {
+        if !(p.from.is_finite() && p.to.is_finite() && p.voltage.iter().all(|v| v.is_finite())) {
             return Err(invalid("lumped port", "its ends and voltage must be finite"));
         }
-        let gap = ((0..3).map(|d| (p.to[d] - p.from[d]).powi(2)).sum::<f64>()).sqrt();
+        let gap = p.from.distance(p.to);
         if !(gap > 0.0) {
             return Err(invalid("lumped port", "its two ends must differ"));
         }
@@ -996,26 +999,29 @@ mod tests {
     fn points_are_classified() {
         let mut m = Model::new();
         m.add_material(Material::new("ceramic", 4.0, 1.0).unwrap()).unwrap();
-        m.set_solid(Solid { shape: Shape::Box { size: [0.04, 0.04, 0.04] }, material: "vacuum".into() }).unwrap();
-        m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.005 }, at: [0.02, 0.02, 0.02], material: Some("ceramic".into()) }).unwrap();
-        m.add_inclusion(Inclusion { shape: Shape::Cylinder { radius: 0.001, length: 0.01 }, at: [0.03, 0.03, 0.01], material: None }).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.04, 0.04, 0.04) }, material: "vacuum".into() }).unwrap();
+        m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.005 }, at: Point3::new(0.02, 0.02, 0.02), material: Some("ceramic".into()) })
+            .unwrap();
+        m.add_inclusion(Inclusion { shape: Shape::Cylinder { radius: 0.001, length: 0.01 }, at: Point3::new(0.03, 0.03, 0.01), material: None })
+            .unwrap();
         m.add_feature(Feature {
             combine: Combine::Subtract,
             shape: Shape::Cylinder { radius: 0.002, length: 0.04 },
-            at: [0.005, 0.0, 0.005],
+            at: Point3::new(0.005, 0.0, 0.005),
             axis: Axis::Y,
         })
         .unwrap();
-        assert_eq!(m.material_at([0.02, 0.02, 0.022]), Some(1));
-        assert_eq!(m.material_at([0.01, 0.03, 0.03]), Some(0));
-        assert_eq!(m.material_at([0.0305, 0.03, 0.015]), None, "the conducting rod");
-        assert_eq!(m.material_at([0.006, 0.02, 0.006]), None, "the post along y");
-        assert_eq!(m.material_at([0.05, 0.02, 0.02]), None, "outside");
+        assert_eq!(m.material_at(Point3::new(0.02, 0.02, 0.022)), Some(1));
+        assert_eq!(m.material_at(Point3::new(0.01, 0.03, 0.03)), Some(0));
+        assert_eq!(m.material_at(Point3::new(0.0305, 0.03, 0.015)), None, "the conducting rod");
+        assert_eq!(m.material_at(Point3::new(0.006, 0.02, 0.006)), None, "the post along y");
+        assert_eq!(m.material_at(Point3::new(0.05, 0.02, 0.02)), None, "outside");
         // A turned box: size [x, y, z] along y becomes [z, x, y].
-        let f = Feature { combine: Combine::Add, shape: Shape::Box { size: [1.0, 2.0, 3.0] }, at: [0.0; 3], axis: Axis::Y };
+        let f =
+            Feature { combine: Combine::Add, shape: Shape::Box { size: Vec3::new(1.0, 2.0, 3.0) }, at: Point3::new(0.0, 0.0, 0.0), axis: Axis::Y };
         let (lo, hi) = f.bounds();
-        let mid = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
-        assert!(f.contains(mid) && !f.contains([hi[0] + 0.1, mid[1], mid[2]]));
+        let mid = lo.midpoint(hi);
+        assert!(f.contains(mid) && !f.contains(mid.with(0, hi.x + 0.1)));
     }
 
     #[test]
@@ -1059,7 +1065,7 @@ mod tests {
         assert!(m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "nothing".into() }).is_err());
         m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.01, length: 0.03 }, material: "vacuum".into() }).unwrap();
         assert!(m.waveguide.is_none());
-        assert_eq!(m.bounds(), Some(([-0.01, -0.01, 0.0], [0.01, 0.01, 0.03])));
+        assert_eq!(m.bounds(), Some((Point3::new(-0.01, -0.01, 0.0), Point3::new(0.01, 0.01, 0.03))));
         assert_eq!(m.port_shape(End::End).unwrap(), PortShape::Circle { cx: 0.0, cy: 0.0, r: 0.01 });
         m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
         assert!(m.port_shape(End::Start).is_err());

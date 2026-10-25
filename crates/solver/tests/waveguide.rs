@@ -29,8 +29,8 @@ fn worst_s_error(d: &Driven, sections: &[(f64, f64)], freqs: &[f64]) -> f64 {
 fn field_errors(d: &Driven, sections: &[(f64, f64)], f: f64) -> (f64, f64) {
     let r = d.solve(f).unwrap();
     let ex = line(sections).solve(f).unwrap();
-    let (e, en) = d.l2_error(&r.fields[0], f, Field::E, |p| ex.e(p[0], p[1], p[2])).unwrap();
-    let (h, hn) = d.l2_error(&r.fields[0], f, Field::H, |p| ex.h(p[0], p[1], p[2])).unwrap();
+    let (e, en) = d.l2_error(&r.fields[0], f, Field::E, |p| ex.e(p)).unwrap();
+    let (h, hn) = d.l2_error(&r.fields[0], f, Field::H, |p| ex.h(p)).unwrap();
     (e / en, h / hn)
 }
 
@@ -112,9 +112,9 @@ fn fields_match_the_exact_te10_fields() {
     let f = 8.0e9;
     let r = d.solve(f).unwrap();
     let ex = line(&FILTER).solve(f).unwrap();
-    let p = [A / 2.0, B / 2.0, 0.025];
+    let p = emcraft_model::Point3::new(A / 2.0, B / 2.0, 0.025);
     let e = d.field(&r.fields[0], f, Field::E, p).unwrap();
-    let e0 = ex.e(p[0], p[1], p[2]);
+    let e0 = ex.e(p);
     // E_y to 0.2 %; the spurious transverse components to 2.5 % of it.
     let scale = e0[1].norm();
     assert!((e[1] - e0[1]).norm() < 2e-3 * scale && e[0].norm() < 2.5e-2 * scale && e[2].norm() < 2.5e-2 * scale, "{e:?} {e0:?}");

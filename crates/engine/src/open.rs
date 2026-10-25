@@ -6,14 +6,15 @@ use std::sync::Arc;
 
 use emcraft_fem::Order;
 use emcraft_model::units::{C0, MU0};
-use emcraft_model::{Open, Shape, Source};
+use emcraft_model::{Open, Shape, Source, Vec3};
 use emcraft_render::Rgb;
 use emcraft_render::axes::Axis;
 use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_solver::radiation::{FarField, OpenResult};
+use emcraft_theory::radiation::Huygens;
 use serde_json::{Value, json};
 
-use crate::cmd::write_png;
+use crate::cmd::{point, write_png};
 use crate::params::{get, integer, number, required_string};
 use crate::{EngineError, Result, Session};
 
@@ -22,18 +23,18 @@ use crate::{EngineError, Result, Session};
 pub struct Radiated {
     pub driven: emcraft_solver::Driven,
     pub result: OpenResult,
+    /// The fields on the Huygens box, sampled once for every far field asked of it.
+    pub huygens: Huygens,
     /// The power (W) through the Huygens surface: radiated, or scattered for a plane wave.
     pub power: f64,
 }
 
-fn vector(p: &Value, name: &str) -> Result<Option<[f64; 3]>> {
+/// A direction `[x, y, z]` (any length; the model makes it a unit vector).
+fn vector(p: &Value, name: &str) -> Result<Option<Vec3>> {
     let Some(v) = get(p, name) else { return Ok(None) };
     let list = v.as_array().filter(|a| a.len() == 3).ok_or_else(|| EngineError::Params(format!("`{name}` must be [x, y, z]")))?;
-    let mut out = [0.0; 3];
-    for (d, v) in out.iter_mut().zip(list) {
-        *d = v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::Params(format!("`{name}` must be numbers")))?;
-    }
-    Ok(Some(out))
+    let c = |v: &Value| v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::Params(format!("`{name}` must be numbers")));
+    Ok(Some(Vec3::new(c(&list[0])?, c(&list[1])?, c(&list[2])?)))
 }
 
 pub fn model_open(s: &mut Session, p: &Value) -> Result<Value> {
@@ -45,8 +46,8 @@ pub fn model_open(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn source_dipole(s: &mut Session, p: &Value) -> Result<Value> {
-    let at = vector(p, "at")?.ok_or_else(|| EngineError::Params("`at` is required".into()))?.map(|v| s.display.length.to_si(v));
-    let direction = vector(p, "direction")?.unwrap_or([0.0, 0.0, 1.0]);
+    let at = point(s, p, "at")?.ok_or_else(|| EngineError::Params("`at` is required".into()))?;
+    let direction = vector(p, "direction")?.unwrap_or(Vec3::unit(2));
     let length = s.positive_length(p, "length")?.ok_or_else(|| EngineError::Params("`length` is required".into()))?;
     let current = number(p, "current")?.unwrap_or(1.0);
     s.model.add_source(Source::Dipole { at, direction, length, current })?;
@@ -55,8 +56,8 @@ pub fn source_dipole(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn source_plane_wave(s: &mut Session, p: &Value) -> Result<Value> {
-    let direction = vector(p, "direction")?.unwrap_or([0.0, 0.0, 1.0]);
-    let polarization = vector(p, "polarization")?.unwrap_or([1.0, 0.0, 0.0]);
+    let direction = vector(p, "direction")?.unwrap_or(Vec3::unit(2));
+    let polarization = vector(p, "polarization")?.unwrap_or(Vec3::unit(0));
     s.model.add_source(Source::PlaneWave { direction, polarization })?;
     s.radiation = None;
     Ok(json!({"sources": s.model.sources.len()}))
@@ -64,8 +65,8 @@ pub fn source_plane_wave(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn port_lumped(s: &mut Session, p: &Value) -> Result<Value> {
     let name = required_string(p, "name")?.to_owned();
-    let from = vector(p, "from")?.ok_or_else(|| EngineError::Params("`from` is required".into()))?.map(|v| s.display.length.to_si(v));
-    let to = vector(p, "to")?.ok_or_else(|| EngineError::Params("`to` is required".into()))?.map(|v| s.display.length.to_si(v));
+    let from = point(s, p, "from")?.ok_or_else(|| EngineError::Params("`from` is required".into()))?;
+    let to = point(s, p, "to")?.ok_or_else(|| EngineError::Params("`to` is required".into()))?;
     let impedance = number(p, "impedance")?.unwrap_or(50.0);
     let amplitude = number(p, "voltage")?.unwrap_or(1.0);
     let phase = number(p, "phase")?.unwrap_or(0.0).to_radians();
@@ -96,13 +97,12 @@ fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
     }
     let (Shape::Cylinder { radius: ra, length: la }, Shape::Cylinder { radius: rb, length: lb }) = (&a.shape, &b.shape) else { return None };
     let tol = 1e-9 * (la + lb);
-    let coaxial = (a.at[0] - b.at[0]).abs() < tol && (a.at[1] - b.at[1]).abs() < tol && (ra - rb).abs() < tol;
-    let on_axis = [port.from, port.to].iter().all(|q| (q[0] - a.at[0]).abs() < tol && (q[1] - a.at[1]).abs() < tol);
-    if !(coaxial && on_axis) {
+    let on_axis = |q: emcraft_model::Point3| (q.x - a.at.x).abs() < tol && (q.y - a.at.y).abs() < tol;
+    if !(on_axis(b.at) && (ra - rb).abs() < tol && on_axis(port.from) && on_axis(port.to)) {
         return None;
     }
-    let lo = a.at[2].min(b.at[2]);
-    let hi = (a.at[2] + la).max(b.at[2] + lb);
+    let lo = a.at.z.min(b.at.z);
+    let hi = (a.at.z + la).max(b.at.z + lb);
     Some((hi - lo, *ra))
 }
 
@@ -113,7 +113,7 @@ pub fn source_clear(s: &mut Session, _: &Value) -> Result<Value> {
 }
 
 /// The plane wave driving the model, if one does.
-fn plane_wave(s: &Session) -> Option<([f64; 3], [f64; 3])> {
+fn plane_wave(s: &Session) -> Option<(Vec3, Vec3)> {
     s.model.sources.iter().find_map(|x| match *x {
         Source::PlaneWave { direction, polarization } => Some((direction, polarization)),
         Source::Dipole { .. } => None,
@@ -121,7 +121,7 @@ fn plane_wave(s: &Session) -> Option<([f64; 3], [f64; 3])> {
 }
 
 /// The one dipole in an empty box, whose closed form applies: (moment I·l, axis).
-fn lone_dipole(s: &Session) -> Option<(f64, [f64; 3])> {
+fn lone_dipole(s: &Session) -> Option<(f64, Vec3)> {
     let vacuum = s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r == 1.0 && m.mu_r == 1.0));
     match s.model.sources[..] {
         [Source::Dipole { direction, length, current, .. }] if vacuum && s.model.inclusions.is_empty() && s.model.features.is_empty() => {
@@ -153,7 +153,8 @@ pub fn solve_radiation(s: &mut Session, p: &Value) -> Result<Value> {
     let order = Order::from_u8(integer(p, "order", 1..=2)?.unwrap_or(2) as u8).unwrap_or(Order::Two);
     let driven = emcraft_solver::Driven::open(&s.model, order)?;
     let result = driven.solve_open(&s.model, f)?;
-    let power = driven.radiated_power(&s.model, &result.field, f)?;
+    let huygens = driven.huygens(&s.model, &result.field, f)?;
+    let power = huygens.power();
     let mut reply = json!({"frequency": s.show_frequency(f), "unknowns": driven.dofs.unknowns, "backward_error": result.backward_error});
     let eta = MU0 * C0;
     if plane_wave(s).is_some() {
@@ -205,54 +206,80 @@ pub fn solve_radiation(s: &mut Session, p: &Value) -> Result<Value> {
         });
         reply["radiation_efficiency"] = json!(if accepted > 0.0 { power / accepted } else { f64::NAN });
     }
-    s.radiation = Some(Arc::new(Radiated { driven, result, power }));
+    s.radiation = Some(Arc::new(Radiated { driven, result, huygens, power }));
     Ok(reply)
+}
+
+/// The closed form a far field is compared with, prepared once for all its directions.
+enum Exact {
+    /// A sphere a plane wave lights: k, the incidence and polarization, its Mie coefficients.
+    Mie {
+        k: f64,
+        incidence: Vec3,
+        polarization: Vec3,
+        coefficients: Vec<(emcraft_solver::Complex64, emcraft_solver::Complex64)>,
+    },
+    /// The one dipole in an empty box: moment I·l and axis.
+    Dipole {
+        moment: f64,
+        axis: Vec3,
+    },
+    None,
+}
+
+impl Exact {
+    fn of(s: &Session, frequency: f64) -> Exact {
+        let k = 2.0 * PI * frequency / C0;
+        if let Some((incidence, polarization)) = plane_wave(s) {
+            return match lone_sphere(s) {
+                Some((a, Some(er))) => {
+                    Exact::Mie { k, incidence, polarization, coefficients: emcraft_theory::radiation::mie_coefficients(k * a, er.sqrt()) }
+                }
+                Some((a, None)) => Exact::Mie { k, incidence, polarization, coefficients: emcraft_theory::radiation::mie_coefficients_pec(k * a) },
+                None => Exact::None,
+            };
+        }
+        lone_dipole(s).map_or(Exact::None, |(moment, axis)| Exact::Dipole { moment, axis })
+    }
 }
 
 /// Directivity (dBi) for sources, radar cross-section (display area, and dB of m²) for a plane
 /// wave, in one direction; with the closed form's where it applies.
-fn describe(s: &Session, r: &Radiated, ff: &FarField) -> Value {
+fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
     let eta = MU0 * C0;
     let f = r.result.frequency;
-    let k = 2.0 * PI * f / C0;
-    let (st, ct, sp, cp) = (ff.theta.sin(), ff.theta.cos(), ff.phi.sin(), ff.phi.cos());
-    let dir = [st * cp, st * sp, ct];
+    let [dir, _, _] = Vec3::spherical(ff.theta, ff.phi);
     let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
     let mut out = json!({"theta": ff.theta.to_degrees(), "phi": ff.phi.to_degrees(), "e_theta": c(ff.e_theta), "e_phi": c(ff.e_phi)});
-    if let Some((kk, e)) = plane_wave(s) {
+    let l = s.display.length.from_si(1.0);
+    if plane_wave(s).is_some() {
         let rcs = 4.0 * PI * ff.magnitude_squared();
-        let l = s.display.length.from_si(1.0);
         out["rcs"] = json!(rcs * l * l);
         out["rcs_dbsm"] = json!(10.0 * rcs.log10());
-        if let Some((a, er)) = lone_sphere(s) {
-            // The scattering angle from the incident direction, and the azimuth from its
-            // polarization in the plane across it.
-            let cos_t = (kk[0] * dir[0] + kk[1] * dir[1] + kk[2] * dir[2]).clamp(-1.0, 1.0);
-            let h = cross(kk, e);
-            let (pe, ph) = (dir[0] * e[0] + dir[1] * e[1] + dir[2] * e[2], dir[0] * h[0] + dir[1] * h[1] + dir[2] * h[2]);
-            let cphi2 = if pe * pe + ph * ph > 0.0 { pe * pe / (pe * pe + ph * ph) } else { 1.0 };
-            let (s1, s2) = match er {
-                Some(er) => emcraft_theory::radiation::mie_amplitudes(k * a, er.sqrt(), cos_t.acos()),
-                None => emcraft_theory::radiation::mie_amplitudes_pec(k * a, cos_t.acos()),
-            };
-            let exact = 4.0 * PI * (s2.norm_sqr() * cphi2 + s1.norm_sqr() * (1.0 - cphi2)) / (k * k);
-            out["exact_rcs"] = json!(exact * l * l);
-        }
     } else {
         let d = 4.0 * PI * ff.magnitude_squared() / (2.0 * eta * r.power);
         out["directivity"] = json!(d);
         out["directivity_dbi"] = json!(10.0 * d.log10());
-        if let Some((il, axis)) = lone_dipole(s) {
-            let cos_a = (axis[0] * dir[0] + axis[1] * dir[1] + axis[2] * dir[2]).clamp(-1.0, 1.0);
-            out["exact_far_field"] = json!(emcraft_theory::radiation::dipole_far_field(il, f, cos_a.acos()));
+    }
+    match exact {
+        Exact::Mie { k, incidence, polarization, coefficients } => {
+            // The scattering angle from the incident direction, and the azimuth from its
+            // polarization in the plane across it.
+            let cos_t = incidence.dot(dir).clamp(-1.0, 1.0);
+            let (pe, ph) = (dir.dot(*polarization), dir.dot(incidence.cross(*polarization)));
+            let cphi2 = if pe * pe + ph * ph > 0.0 { pe * pe / (pe * pe + ph * ph) } else { 1.0 };
+            let (s1, s2) = emcraft_theory::radiation::amplitudes(coefficients, cos_t.acos());
+            let rcs = 4.0 * PI * (s2.norm_sqr() * cphi2 + s1.norm_sqr() * (1.0 - cphi2)) / (k * k);
+            out["exact_rcs"] = json!(rcs * l * l);
+        }
+        Exact::Dipole { moment, axis } => {
+            let cos_a = axis.dot(dir).clamp(-1.0, 1.0);
+            out["exact_far_field"] = json!(emcraft_theory::radiation::dipole_far_field(*moment, f, cos_a.acos()));
             out["exact_directivity"] = json!(1.5 * (1.0 - cos_a * cos_a));
         }
+        Exact::None => {}
     }
     out
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
 fn solved(s: &Session) -> Result<Arc<Radiated>> {
@@ -287,8 +314,9 @@ fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<&str>, frequency: O
     };
     if !use_td {
         let r = solved(s)?;
-        let ff = r.driven.far_field(&s.model, &r.result.field, r.result.frequency, dirs)?;
-        return Ok((r.result.frequency, r.power, ff.iter().map(|x| describe(s, &r, x)).collect()));
+        let exact = Exact::of(s, r.result.frequency);
+        let rows = emcraft_solver::radiation::far_fields(&r.huygens, dirs).iter().map(|x| describe(s, &r, &exact, x)).collect();
+        return Ok((r.result.frequency, r.power, rows));
     }
     let r = s.td_radiation.clone().ok_or_else(|| EngineError::Failed("no time-domain open problem solved: run solve.time_domain first".into()))?;
     let fi = match frequency {
@@ -306,8 +334,7 @@ fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<&str>, frequency: O
             let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
             let mut v = json!({"theta": theta.to_degrees(), "phi": phi.to_degrees(), "e_theta": c(et), "e_phi": c(ep), "directivity": d, "directivity_dbi": 10.0 * d.log10()});
             if let Some((_, axis)) = lone {
-                let dir = [theta.sin() * phi.cos(), theta.sin() * phi.sin(), theta.cos()];
-                let cos_a = (axis[0] * dir[0] + axis[1] * dir[1] + axis[2] * dir[2]).clamp(-1.0, 1.0);
+                let cos_a = axis.dot(Vec3::spherical(theta, phi)[0]).clamp(-1.0, 1.0);
                 v["exact_directivity"] = json!(1.5 * (1.0 - cos_a * cos_a));
             }
             v

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use emcraft_fem::Order;
 use emcraft_model::units::{Frequency, Length, decibels};
-use emcraft_model::{Axis, Combine, End, Feature, Inclusion, Material, Port, Section, Shape, Solid, Waveguide};
+use emcraft_model::{Axis, Combine, End, Feature, Inclusion, Material, Point3, Port, Section, Shape, Solid, Waveguide};
 use emcraft_solver::{Complex64 as C, Driven};
 use serde_json::{Value, json};
 
@@ -433,7 +433,7 @@ fn shape_of(s: &Session, p: &Value) -> Result<Shape> {
         s.positive_length(p, name)?.ok_or_else(|| EngineError::Params(format!("`{name}` is required for this shape")))
     };
     Ok(match required_string(p, "shape")? {
-        "box" => Shape::Box { size: point(s, p, "size")?.ok_or_else(|| EngineError::Params("`size` must be [x, y, z]".into()))? },
+        "box" => Shape::Box { size: point(s, p, "size")?.ok_or_else(|| EngineError::Params("`size` must be [x, y, z]".into()))?.to_vec() },
         "cylinder" => Shape::Cylinder { radius: req(s, "radius")?, length: req(s, "length")? },
         "sphere" => Shape::Sphere { radius: req(s, "radius")? },
         _ => return Err(EngineError::Params("`shape` must be box, cylinder or sphere".into())),
@@ -441,19 +441,25 @@ fn shape_of(s: &Session, p: &Value) -> Result<Shape> {
 }
 
 /// Three lengths `[x, y, z]` in display units, in metres.
-fn point(s: &Session, p: &Value, name: &str) -> Result<Option<[f64; 3]>> {
-    let Some(v) = get(p, name) else { return Ok(None) };
+pub(crate) fn point(s: &Session, p: &Value, name: &str) -> Result<Option<Point3>> {
+    get(p, name).map(|v| point_of(s, v, name)).transpose()
+}
+
+/// A JSON `[x, y, z]` of lengths in display units, in metres.
+fn point_of(s: &Session, v: &Value, name: &str) -> Result<Point3> {
     let list = v.as_array().filter(|a| a.len() == 3).ok_or_else(|| EngineError::Params(format!("`{name}` must be [x, y, z]")))?;
-    let mut out = [0.0; 3];
-    for (d, v) in out.iter_mut().zip(list) {
-        *d = s.display.length.to_si(v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::Params(format!("`{name}` must be numbers")))?);
-    }
-    Ok(Some(out))
+    let c = |v: &Value| {
+        v.as_f64()
+            .filter(|x| x.is_finite())
+            .map(|x| s.display.length.to_si(x))
+            .ok_or_else(|| EngineError::Params(format!("`{name}` must be finite numbers")))
+    };
+    Ok(Point3::new(c(&list[0])?, c(&list[1])?, c(&list[2])?))
 }
 
 fn inclusion(s: &mut Session, p: &Value) -> Result<Value> {
     let shape = shape_of(s, p)?;
-    let at = point(s, p, "at")?.unwrap_or([0.0; 3]);
+    let at = point(s, p, "at")?.unwrap_or(Point3::ORIGIN);
     let material = string(p, "material")?.map(str::to_owned);
     s.model.add_inclusion(Inclusion { shape, at, material })?;
     s.sweep = None;
@@ -488,7 +494,7 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     s.sweep = None;
     s.eigen = None;
     s.time_domain = None;
-    let (lo, hi) = s.model.bounds().unwrap_or(([0.0; 3], [0.0; 3]));
+    let (lo, hi) = s.model.bounds().unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
     Ok(json!({
         "triangles": triangles,
         "faces": faces,
@@ -505,7 +511,7 @@ fn feature(s: &mut Session, p: &Value) -> Result<Value> {
         _ => return Err(EngineError::Params("`combine` must be add, subtract or intersect".into())),
     };
     let shape = shape_of(s, p)?;
-    let at = point(s, p, "at")?.unwrap_or([0.0; 3]);
+    let at = point(s, p, "at")?.unwrap_or(Point3::ORIGIN);
     let axis = match string(p, "axis")?.unwrap_or("z") {
         "x" => Axis::X,
         "y" => Axis::Y,
@@ -522,7 +528,7 @@ fn feature(s: &mut Session, p: &Value) -> Result<Value> {
 fn solid(s: &mut Session, p: &Value) -> Result<Value> {
     let shape = shape_of(s, p)?;
     if let Shape::Box { size } = shape
-        && size.iter().any(|v| !(*v > 0.0))
+        && size.iter().any(|v| !(v > 0.0))
     {
         return Err(EngineError::Params("`size` must be positive".into()));
     }
@@ -817,8 +823,8 @@ fn field_error(s: &mut Session, p: &Value) -> Result<Value> {
     let r = sw.at(f, false).ok_or_else(|| EngineError::Params(format!("{} {} was not solved", s.show_frequency(f), s.display.frequency.symbol())))?;
     let x = r.fields.first().ok_or_else(|| EngineError::Failed("no field".into()))?;
     let exact = view::te10_line(s)?.solve(r.frequency).map_err(|e| EngineError::Failed(e.to_string()))?;
-    let (e, en) = sw.driven.l2_error(x, r.frequency, emcraft_solver::Field::E, |q| exact.e(q[0], q[1], q[2]))?;
-    let (h, hn) = sw.driven.l2_error(x, r.frequency, emcraft_solver::Field::H, |q| exact.h(q[0], q[1], q[2]))?;
+    let (e, en) = sw.driven.l2_error(x, r.frequency, emcraft_solver::Field::E, |q| exact.e(q))?;
+    let (h, hn) = sw.driven.l2_error(x, r.frequency, emcraft_solver::Field::H, |q| exact.h(q))?;
     Ok(json!({"frequency": s.show_frequency(r.frequency), "e": e / en, "h": h / hn}))
 }
 
@@ -839,21 +845,15 @@ fn probe(s: &mut Session, p: &Value) -> Result<Value> {
     if pts.len() > 100_000 {
         return Err(EngineError::Params("`at`: at most 100000 points".into()));
     }
-    let mut out = Vec::with_capacity(pts.len());
-    for pt in pts {
-        let c = pt.as_array().filter(|a| a.len() == 3).ok_or_else(|| EngineError::Params("each point is [x, y, z]".into()))?;
-        let mut xyz = [0.0; 3];
-        for (d, v) in xyz.iter_mut().zip(c) {
-            *d = s
-                .display
-                .length
-                .to_si(v.as_f64().filter(|v| v.is_finite()).ok_or_else(|| EngineError::Params("coordinates must be finite numbers".into()))?);
-        }
-        let (e, h) = sw.driven.fields(x, r.frequency, xyz).ok_or_else(|| EngineError::Params(format!("{pt} is outside the mesh")))?;
-        out.push(
-            json!({"e": e.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>(), "h": h.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>()}),
-        );
-    }
+    let complex = |v: emcraft_model::CVec3| v.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>();
+    let out = pts
+        .iter()
+        .map(|pt| {
+            let (e, h) =
+                sw.driven.fields(x, r.frequency, point_of(s, pt, "at")?).ok_or_else(|| EngineError::Params(format!("{pt} is outside the mesh")))?;
+            Ok(json!({"e": complex(e), "h": complex(h)}))
+        })
+        .collect::<Result<Vec<_>>>()?;
     Ok(json!({"frequency": s.show_frequency(r.frequency), "points": out}))
 }
 

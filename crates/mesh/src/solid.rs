@@ -7,7 +7,7 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::{Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Shape, positive};
+use emcraft_model::{Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Point3, Shape, Vec3, positive};
 use emcraft_tetmesh::cdt::{CdtOptions, tetrahedralize};
 use emcraft_tetmesh::surface::{BoundarySurface, SurfaceOptions};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
@@ -18,7 +18,7 @@ use crate::{MAX_TETS, MeshError, Result};
 /// A tessellated body: triangles tagged by face, each face's exact surface, and which faces are
 /// the ends a port may close (z = 0, z = length).
 struct Tessellation {
-    positions: Vec<[f64; 3]>,
+    positions: Vec<Point3>,
     triangles: Vec<[u32; 3]>,
     tri_face: Vec<u32>,
     analytic: Vec<Option<AnalyticSurface>>,
@@ -27,7 +27,7 @@ struct Tessellation {
 }
 
 impl Tessellation {
-    fn point(&mut self, p: [f64; 3]) -> u32 {
+    fn point(&mut self, p: Point3) -> u32 {
         self.positions.push(p);
         (self.positions.len() - 1) as u32
     }
@@ -39,7 +39,7 @@ fn divisions(len: f64, size: f64) -> usize {
 
 /// A box [0, x] × [0, y] × [0, z]: faces x0, x1, y0, y1, z0 (0..6 in that order), each a grid
 /// of about `size`, triangles oriented outwards.
-fn tessellate_box(size_xyz: [f64; 3], h: f64) -> Tessellation {
+fn tessellate_box(size_xyz: Vec3, h: f64) -> Tessellation {
     let mut t = Tessellation {
         positions: Vec::new(),
         triangles: Vec::new(),
@@ -48,12 +48,12 @@ fn tessellate_box(size_xyz: [f64; 3], h: f64) -> Tessellation {
         start_face: Some(4),
         end_face: Some(5),
     };
-    let n = size_xyz.map(|l| divisions(l, h));
+    let n = [0, 1, 2].map(|d| divisions(size_xyz[d], h));
     // Shared vertices on the box's surface: a map from integer lattice coordinates.
     let mut index = std::collections::HashMap::new();
     let mut vertex = |t: &mut Tessellation, i: usize, j: usize, k: usize| -> u32 {
         *index.entry((i, j, k)).or_insert_with(|| {
-            t.point([size_xyz[0] * i as f64 / n[0] as f64, size_xyz[1] * j as f64 / n[1] as f64, size_xyz[2] * k as f64 / n[2] as f64])
+            t.point(Point3::new(size_xyz.x * i as f64 / n[0] as f64, size_xyz.y * j as f64 / n[1] as f64, size_xyz.z * k as f64 / n[2] as f64))
         })
     };
     // (fixed axis, at 0 or 1, outward normal sign)
@@ -110,7 +110,7 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
         (0..count)
             .map(|k| {
                 let a = 2.0 * PI * k as f64 / count as f64;
-                t.point([rr * a.cos(), rr * a.sin(), z])
+                t.point(Point3::new(rr * a.cos(), rr * a.sin(), z))
             })
             .collect()
     };
@@ -141,7 +141,7 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
             }
             prev = inner;
         }
-        let centre = t.point([0.0, 0.0, z]);
+        let centre = t.point(Point3::new(0.0, 0.0, z));
         for j in 0..nt {
             let (a, b) = (prev[j], prev[(j + 1) % nt]);
             t.triangles.push(if face == 2 { [a, b, centre] } else { [a, centre, b] });
@@ -172,11 +172,9 @@ fn tessellate_sphere(r: f64, h: f64) -> Tessellation {
         [-g, 0.0, -1.0],
         [-g, 0.0, 1.0],
     ];
-    let on = |p: [f64; 3]| {
-        let l = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
-        [p[0] / l * r, p[1] / l * r, p[2] / l * r]
-    };
-    let mut pts: Vec<[f64; 3]> = raw.iter().map(|p| on(*p)).collect();
+    // Onto the sphere along the ray from its centre.
+    let on = |p: Vec3| Point3::ORIGIN + p / p.norm() * r;
+    let mut pts: Vec<Point3> = raw.iter().map(|p| on(Vec3::from(*p))).collect();
     let mut tris: Vec<[u32; 3]> = vec![
         [0, 11, 5],
         [0, 5, 1],
@@ -203,11 +201,11 @@ fn tessellate_sphere(r: f64, h: f64) -> Tessellation {
     let mut edge = r * 1.0515;
     while edge > h && tris.len() < 200_000 {
         let mut mid = std::collections::HashMap::new();
-        let mut midpoint = |a: u32, b: u32, pts: &mut Vec<[f64; 3]>| -> u32 {
+        let mut midpoint = |a: u32, b: u32, pts: &mut Vec<Point3>| -> u32 {
             let key = (a.min(b), a.max(b));
             *mid.entry(key).or_insert_with(|| {
                 let (p, q) = (pts[a as usize], pts[b as usize]);
-                pts.push(on([(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0, (p[2] + q[2]) / 2.0]));
+                pts.push(on(p.midpoint(q).to_vec()));
                 (pts.len() - 1) as u32
             })
         };
@@ -254,7 +252,7 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
     let (lo, hi) = shape.bounds();
     let ends = shape.end_triangles();
     let mut tag_of = [None, None];
-    for (k, (list, z, n)) in [(&ends[0], lo[2], -1.0), (&ends[1], hi[2], 1.0)].into_iter().enumerate() {
+    for (k, (list, z, n)) in [(&ends[0], lo.z, -1.0), (&ends[1], hi.z, 1.0)].into_iter().enumerate() {
         if list.is_empty() {
             continue;
         }
@@ -282,24 +280,24 @@ fn interface_size(shape: &Shape, size: f64, conductor: bool) -> f64 {
 }
 
 /// A tessellation turned by `axis` and moved to `at`, its exact surfaces with it.
-fn transformed(t: Tessellation, axis: Axis, at: [f64; 3]) -> Tessellation {
-    let place = |p: [f64; 3]| {
-        let q = axis.turn(p);
-        [q[0] + at[0], q[1] + at[1], q[2] + at[2]]
-    };
+fn transformed(t: Tessellation, axis: Axis, at: Point3) -> Tessellation {
+    let place = |p: Point3| at + axis.turn(p.to_vec());
+    // The exact surfaces' points and directions are the mesher's arrays.
+    let place_a = |p: [f64; 3]| place(p.into()).to_array();
+    let turn_a = |v: [f64; 3]| axis.turn(v.into()).to_array();
     let analytic = t
         .analytic
         .iter()
         .map(|a| {
             a.map(|a| match a {
-                AnalyticSurface::Plane { normal, point } => AnalyticSurface::Plane { normal: axis.turn(normal), point: place(point) },
+                AnalyticSurface::Plane { normal, point } => AnalyticSurface::Plane { normal: turn_a(normal), point: place_a(point) },
                 AnalyticSurface::Cylinder { origin, axis: v, radius } => {
-                    AnalyticSurface::Cylinder { origin: place(origin), axis: axis.turn(v), radius }
+                    AnalyticSurface::Cylinder { origin: place_a(origin), axis: turn_a(v), radius }
                 }
-                AnalyticSurface::Sphere { center, radius } => AnalyticSurface::Sphere { center: place(center), radius },
-                AnalyticSurface::Cone { apex, axis: v, half_angle } => AnalyticSurface::Cone { apex: place(apex), axis: axis.turn(v), half_angle },
+                AnalyticSurface::Sphere { center, radius } => AnalyticSurface::Sphere { center: place_a(center), radius },
+                AnalyticSurface::Cone { apex, axis: v, half_angle } => AnalyticSurface::Cone { apex: place_a(apex), axis: turn_a(v), half_angle },
                 AnalyticSurface::Torus { center, axis: v, major, minor } => {
-                    AnalyticSurface::Torus { center: place(center), axis: axis.turn(v), major, minor }
+                    AnalyticSurface::Torus { center: place_a(center), axis: turn_a(v), major, minor }
                 }
             })
         })
@@ -308,7 +306,7 @@ fn transformed(t: Tessellation, axis: Axis, at: [f64; 3]) -> Tessellation {
 }
 
 /// The flat faces of a body in place: (axis, coordinate, outward sign).
-fn flat_faces(shape: &Shape, at: [f64; 3], axis: Axis) -> Vec<(usize, f64, f64)> {
+fn flat_faces(shape: &Shape, at: Point3, axis: Axis) -> Vec<(usize, f64, f64)> {
     match *shape {
         Shape::Box { size } => {
             let s = axis.turn(size);
@@ -327,9 +325,9 @@ fn flat_faces(shape: &Shape, at: [f64; 3], axis: Axis) -> Vec<(usize, f64, f64)>
 /// the solid's (both bodies behind it) moves outwards for a difference or an intersection (what
 /// sticks out is not kept); a face touching the solid's from outside moves into it for a union
 /// and away for a difference. A union flush with the solid's faces is refused.
-fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, [f64; 3])> {
+fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)> {
     let step = 0.1 * size;
-    let base = flat_faces(solid, [0.0; 3], Axis::Z);
+    let base = flat_faces(solid, Point3::ORIGIN, Axis::Z);
     let scale = solid.bounds().1.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
     let tol = 1e-9 * scale;
     // Box: the lo/hi planes along each axis in place; a cylinder: its caps along its axis.
@@ -370,21 +368,14 @@ fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, [f64; 3
         Shape::Box { .. } => {
             let (x, y, z) = (span(0).unwrap_or((0.0, 0.0)), span(1).unwrap_or((0.0, 0.0)), span(2).unwrap_or((0.0, 0.0)));
             // Back in the feature's own frame: the box is axis-aligned whatever the turn.
-            let lo = [x.0, y.0, z.0];
-            let size = [x.1 - x.0, y.1 - y.0, z.1 - z.0];
-            let own = match f.axis {
-                Axis::Z => size,
-                Axis::X => [size[1], size[2], size[0]],
-                Axis::Y => [size[2], size[0], size[1]],
-            };
-            (Shape::Box { size: own }, lo)
+            let lo = Point3::new(x.0, y.0, z.0);
+            let size = Vec3::new(x.1 - x.0, y.1 - y.0, z.1 - z.0);
+            (Shape::Box { size: f.axis.unturn(size) }, lo)
         }
         Shape::Cylinder { radius, .. } => {
             let d = f.axis.index();
             let (a, b) = span(d).unwrap_or((at[d], at[d]));
-            let mut at = at;
-            at[d] = a;
-            (Shape::Cylinder { radius, length: b - a }, at)
+            (Shape::Cylinder { radius, length: b - a }, at.with(d, a))
         }
         other => (other, at),
     })
@@ -402,13 +393,13 @@ fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape, size: f64)
     if !matches!(shape, Shape::Box { .. }) {
         let (sn, cs) = 0.2345f64.sin_cos();
         for p in &mut own.positions {
-            *p = [cs * p[0] - sn * p[1], sn * p[0] + cs * p[1], p[2]];
+            *p = Point3::new(cs * p.x - sn * p.y, sn * p.x + cs * p.y, p.z);
         }
     }
     // Each feature by its own amount (the fractional parts of multiples of irrational numbers),
     // so two features' grids that line up exactly do not stay lined up.
-    let jitter = [0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57].map(|v: f64| ((k + 1) as f64 * v).fract() * 1e-6 * size);
-    let tool = transformed(own, f.axis, [at[0] + jitter[0], at[1] + jitter[1], at[2] + jitter[2]]);
+    let jitter = Vec3::new(0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57).map(|v| ((k + 1) as f64 * v).fract() * 1e-6 * size);
+    let tool = transformed(own, f.axis, at + jitter);
     let base = main.tri_face.iter().map(|t| t + 1).max().unwrap_or(0).max(main.analytic.len() as u32);
     let op = match f.combine {
         Combine::Add => crate::csg::Op::Union,
@@ -441,8 +432,8 @@ fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape, size: f64)
 /// faces get no exact surfaces: the interface is frozen as tessellated, and a tag per triangle
 /// keeps boundary recovery from merging coplanar triangles into one facet and triangulating it
 /// differently in the two regions.
-fn placed(t: Tessellation, at: [f64; 3]) -> Tessellation {
-    let shift = |p: [f64; 3]| [p[0] + at[0], p[1] + at[1], p[2] + at[2]];
+fn placed(t: Tessellation, at: Point3) -> Tessellation {
+    let shift = |p: Point3| p + at.to_vec();
     let n = t.triangles.len() as u32;
     Tessellation {
         positions: t.positions.into_iter().map(shift).collect(),
@@ -478,14 +469,9 @@ fn extract(mesh: &RegionMesh, base: u32, count: u32, inside: bool) -> Tessellati
         // by the tetrahedron's fourth corner (outwards from the region).
         let Some(tv) = mesh.tets.get(*tet as usize) else { continue };
         let Some(&apex) = tv.iter().find(|v| !nodes.contains(v)) else { continue };
-        let p = |v: u32| mesh.points.get(v as usize).copied().unwrap_or([0.0; 3]);
+        let p = |v: u32| mesh.points.get(v as usize).copied().unwrap_or(Point3::ORIGIN);
         let (a, b, c, d) = (p(nodes[0]), p(nodes[1]), p(nodes[2]), p(apex));
-        let n = [
-            (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
-            (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
-            (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]),
-        ];
-        let toward_apex = n[0] * (d[0] - a[0]) + n[1] * (d[1] - a[1]) + n[2] * (d[2] - a[2]) > 0.0;
+        let toward_apex = (b - a).cross(c - a).dot(d - a) > 0.0;
         // Outward from the region: away from the apex. Out of the inclusion: the same when the
         // region is the inclusion, the opposite when it is the outer region.
         let flip = toward_apex == inside;
@@ -512,7 +498,10 @@ fn same_triangles(a: &Tessellation, b: &Tessellation, size: f64) -> bool {
         t.triangles
             .iter()
             .map(|tri| {
-                let mut v = tri.map(|i| t.positions.get(i as usize).copied().unwrap_or([0.0; 3]).map(|c| (c / q).round() as i64));
+                let mut v = tri.map(|i| {
+                    let p = t.positions.get(i as usize).copied().unwrap_or(Point3::ORIGIN);
+                    [p.x, p.y, p.z].map(|c| (c / q).round() as i64)
+                });
                 v.sort_unstable();
                 v
             })
@@ -523,7 +512,7 @@ fn same_triangles(a: &Tessellation, b: &Tessellation, size: f64) -> bool {
 
 /// One region's mesh: points, tetrahedra and boundary faces (corners, face tag).
 struct RegionMesh {
-    points: Vec<[f64; 3]>,
+    points: Vec<Point3>,
     tets: Vec<[u32; 4]>,
     boundary: Vec<([u32; 3], u32, u32)>,
 }
@@ -532,7 +521,9 @@ struct RegionMesh {
 /// are (interfaces another region shares).
 fn region(t: &Tessellation, size: f64, frozen: Vec<u32>) -> Result<RegionMesh> {
     let fail = |e: emcraft_tetmesh::Error| MeshError::Invalid { what: "tetrahedral meshing".into(), why: e.to_string() };
-    let surface = BoundarySurface::new(&t.positions, &t.triangles, &t.tri_face, &SurfaceOptions::default()).map_err(fail)?;
+    // The mesher takes and gives coordinates as arrays.
+    let positions: Vec<[f64; 3]> = t.positions.iter().map(|p| p.to_array()).collect();
+    let surface = BoundarySurface::new(&positions, &t.triangles, &t.tri_face, &SurfaceOptions::default()).map_err(fail)?;
     let cdt = tetrahedralize(&surface, &CdtOptions::default()).map_err(fail)?;
     let options = QualityOptions { size: Some(size), max_tets: MAX_TETS, frozen_faces: frozen, ..QualityOptions::default() };
     let mut analytic = t.analytic.clone();
@@ -552,7 +543,7 @@ fn region(t: &Tessellation, size: f64, frozen: Vec<u32>) -> Result<RegionMesh> {
             Some(([n[0], n[1], n[2]], b.tet, b.face))
         })
         .collect();
-    Ok(RegionMesh { points: q.points, tets, boundary })
+    Ok(RegionMesh { points: q.points.into_iter().map(Point3::from).collect(), tets, boundary })
 }
 
 /// The model's solid meshed with tetrahedra of about `size`: its end faces (box z0/z1, the
@@ -566,20 +557,20 @@ pub fn solid(model: &Model, size: f64) -> Result<Mesh> {
 /// A curved surface of the model: the edges on it are bent onto it.
 #[derive(Clone, Copy, Debug)]
 enum Curved {
-    /// The side of a cylinder about z through (cx, cy).
+    /// The side of a cylinder through `c` along `axis`.
     Cylinder {
-        c: [f64; 3],
+        c: Point3,
         axis: usize,
         r: f64,
     },
     Sphere {
-        c: [f64; 3],
+        c: Point3,
         r: f64,
     },
 }
 
 impl Curved {
-    fn of(shape: &Shape, at: [f64; 3], axis: Axis) -> Option<Curved> {
+    fn of(shape: &Shape, at: Point3, axis: Axis) -> Option<Curved> {
         match *shape {
             Shape::Box { .. } | Shape::Surface { .. } => None,
             Shape::Cylinder { radius, .. } => Some(Curved::Cylinder { c: at, axis: axis.index(), r: radius }),
@@ -587,32 +578,28 @@ impl Curved {
         }
     }
 
-    fn distance(&self, p: [f64; 3]) -> f64 {
-        self.project(p).iter().zip(&p).map(|(a, b)| (a - b) * (a - b)).sum::<f64>().sqrt()
+    fn distance(&self, p: Point3) -> f64 {
+        self.project(p).distance(p)
     }
 
     /// The nearest point on the surface (radially).
-    fn project(&self, p: [f64; 3]) -> [f64; 3] {
+    fn project(&self, p: Point3) -> Point3 {
         match *self {
             Curved::Cylinder { c, axis, r } => {
-                let mut d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
-                d[axis] = 0.0;
-                let rho = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(f64::MIN_POSITIVE);
-                let mut q = [c[0] + d[0] * r / rho, c[1] + d[1] * r / rho, c[2] + d[2] * r / rho];
-                q[axis] = p[axis];
-                q
+                let d = (p - c).with(axis, 0.0);
+                let rho = d.norm().max(f64::MIN_POSITIVE);
+                (c + d * r / rho).with(axis, p[axis])
             }
             Curved::Sphere { c, r } => {
-                let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
-                let rho = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(f64::MIN_POSITIVE);
-                [c[0] + d[0] * r / rho, c[1] + d[1] * r / rho, c[2] + d[2] * r / rho]
+                let d = p - c;
+                c + d * r / d.norm().max(f64::MIN_POSITIVE)
             }
         }
     }
 
     /// Whether a triangle with this unit normal can lie on the surface (a cylinder's caps share
     /// its rim but face along the axis).
-    fn faces(&self, normal: [f64; 3]) -> bool {
+    fn faces(&self, normal: Vec3) -> bool {
         match self {
             Curved::Cylinder { axis, .. } => normal[*axis].abs() < 0.5,
             Curved::Sphere { .. } => true,
@@ -620,39 +607,39 @@ impl Curved {
     }
 }
 
+/// The faces between a material and the outside or another material (boundary and interface
+/// triangles): their corner nodes, and whether a tetrahedron lies on both sides (an interface).
+fn surface_faces<'a>(mesh: &'a Mesh, topo: &'a crate::Topology) -> impl Iterator<Item = ([u32; 3], bool)> + 'a {
+    let material = |t: u32| mesh.tet_material.get(t as usize).copied();
+    topo.face_tets
+        .iter()
+        .zip(&topo.faces)
+        .filter(move |(tets, _)| tets[1] == u32::MAX || material(tets[0]) != material(tets[1]))
+        .map(|(tets, f)| (*f, tets[1] != u32::MAX))
+}
+
 /// Moves the vertices of interface triangles onto their curved surface: the points boundary
 /// recovery added there sit on chords of the tessellation. A move that would turn a tetrahedron
 /// inside out is not made.
-fn snap_interfaces(mesh: &mut Mesh, surfaces: &[Curved], size: f64) {
-    let topo = crate::Topology::new(mesh);
+fn snap_interfaces(mesh: &mut Mesh, topo: &crate::Topology, surfaces: &[Curved], size: f64) {
     let mut node_tets: Vec<Vec<u32>> = vec![Vec::new(); mesh.nodes.len()];
     for (t, tet) in mesh.tets.iter().enumerate() {
         for &n in tet {
             node_tets[n as usize].push(t as u32);
         }
     }
-    let volume = |mesh: &Mesh, t: u32| {
-        let Some(c) = mesh.corners(t as usize) else { return 0.0 };
-        let d = |k: usize| [c[k][0] - c[0][0], c[k][1] - c[0][1], c[k][2] - c[0][2]];
-        let (a, b, e) = (d(1), d(2), d(3));
-        a[0] * (b[1] * e[2] - b[2] * e[1]) - a[1] * (b[0] * e[2] - b[2] * e[0]) + a[2] * (b[0] * e[1] - b[1] * e[0])
-    };
-    for (f, tets) in topo.face_tets.iter().enumerate() {
-        let material = |t: u32| mesh.tet_material.get(t as usize).copied();
-        if tets[1] == u32::MAX || material(tets[0]) == material(tets[1]) {
-            continue;
-        }
-        let Some(nodes) = topo.faces.get(f) else { continue };
+    // Interfaces only (both sides tetrahedra of different materials).
+    let interfaces: Vec<[u32; 3]> = surface_faces(mesh, topo).filter(|(_, interface)| *interface).map(|(f, _)| f).collect();
+    for nodes in interfaces {
         let p = nodes.map(|n| mesh.nodes[n as usize]);
-        let Some(s) = surface_of(&p, surfaces, size) else { continue };
-        for &n in nodes {
+        let Some(s) = surface_of(&p, surfaces, size).copied() else { continue };
+        for &n in &nodes {
             let old = mesh.nodes[n as usize];
-            let new = s.project(old);
             if s.distance(old) < 1e-12 * size {
                 continue;
             }
-            mesh.nodes[n as usize] = new;
-            if node_tets[n as usize].iter().any(|&t| volume(mesh, t) <= 0.0) {
+            mesh.nodes[n as usize] = s.project(old);
+            if node_tets[n as usize].iter().any(|&t| !mesh.volume(t as usize).is_some_and(|v| v > 0.0)) {
                 mesh.nodes[n as usize] = old;
             }
         }
@@ -664,88 +651,31 @@ fn snap_interfaces(mesh: &mut Mesh, surfaces: &[Curved], size: f64) {
 /// tessellated, and the points boundary recovery added on them sit on chords, up to a sagitta
 /// h²/8r away) and its normal across the surface (a cylinder's caps share its rim but face
 /// along the axis).
-fn surface_of<'a>(p: &[[f64; 3]; 3], surfaces: &'a [Curved], size: f64) -> Option<&'a Curved> {
-    let c = [
-        (p[1][1] - p[0][1]) * (p[2][2] - p[0][2]) - (p[1][2] - p[0][2]) * (p[2][1] - p[0][1]),
-        (p[1][2] - p[0][2]) * (p[2][0] - p[0][0]) - (p[1][0] - p[0][0]) * (p[2][2] - p[0][2]),
-        (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]),
-    ];
-    let len = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt().max(f64::MIN_POSITIVE);
-    let normal = c.map(|v| v / len);
+fn surface_of<'a>(p: &[Point3; 3], surfaces: &'a [Curved], size: f64) -> Option<&'a Curved> {
+    let normal = (p[1] - p[0]).cross(p[2] - p[0]).normalized().unwrap_or(Vec3::ZERO);
     surfaces.iter().find(|s| s.faces(normal) && p.iter().all(|q| s.distance(*q) < 0.2 * size))
 }
 
 /// The midpoints of the edges of boundary and interface triangles that lie on a curved surface,
 /// moved onto it (the quadratic geometry of the tetrahedra that hold them).
-fn curve(mesh: &Mesh, surfaces: &[Curved], size: f64) -> Vec<([u32; 2], [f64; 3])> {
-    let topo = crate::Topology::new(mesh);
+fn curve(mesh: &Mesh, topo: &crate::Topology, surfaces: &[Curved], size: f64) -> Vec<([u32; 2], Point3)> {
     let mut out = std::collections::BTreeMap::new();
-    for (f, tets) in topo.face_tets.iter().enumerate() {
-        let material = |t: u32| mesh.tet_material.get(t as usize).copied();
-        let on_surface = tets[1] == u32::MAX || material(tets[0]) != material(tets[1]);
-        let Some(nodes) = topo.faces.get(f).filter(|_| on_surface) else { continue };
-        let p = nodes.map(|n| mesh.nodes.get(n as usize).copied().unwrap_or([f64::NAN; 3]));
+    for (nodes, _) in surface_faces(mesh, topo) {
+        let p = nodes.map(|n| mesh.node(n).unwrap_or(Point3::new(f64::NAN, f64::NAN, f64::NAN)));
         let Some(s) = surface_of(&p, surfaces, size) else { continue };
         for (i, j) in [(0, 1), (1, 2), (0, 2)] {
-            let mid = [0, 1, 2].map(|d| 0.5 * (p[i][d] + p[j][d]));
-            out.entry([nodes[i].min(nodes[j]), nodes[i].max(nodes[j])]).or_insert_with(|| s.project(mid));
+            out.entry([nodes[i].min(nodes[j]), nodes[i].max(nodes[j])]).or_insert_with(|| s.project(p[i].midpoint(p[j])));
         }
     }
     out.into_iter().collect()
 }
 
 /// The smallest det DΦ of tetrahedron t's quadratic map at the points the elements check
-/// (corners, edge midpoints, face centroids, centroid; see `emcraft_fem::nedelec`).
+/// ([`emcraft_fem::nedelec::least_jacobian`]).
 fn least_jacobian(mesh: &Mesh, t: usize) -> f64 {
-    let Some(tet) = mesh.tets.get(t) else { return 0.0 };
-    let c = tet.map(|n| mesh.nodes[n as usize]);
-    let e = [1, 2, 3].map(|k| [c[k][0] - c[0][0], c[k][1] - c[0][1], c[k][2] - c[0][2]]);
-    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let det = dot(e[0], cross(e[1], e[2]));
-    let g1 = cross(e[1], e[2]).map(|v| v / det);
-    let g2 = cross(e[2], e[0]).map(|v| v / det);
-    let g3 = cross(e[0], e[1]).map(|v| v / det);
-    let g = [[-(g1[0] + g2[0] + g3[0]), -(g1[1] + g2[1] + g3[1]), -(g1[2] + g2[2] + g3[2])], g1, g2, g3];
-    let edges = crate::LOCAL_EDGES;
-    let d: Vec<[f64; 3]> = edges
-        .iter()
-        .map(|[a, b]| match mesh.midpoint(tet[*a], tet[*b]) {
-            Some(m) => [0, 1, 2].map(|k| m[k] - 0.5 * (c[*a][k] + c[*b][k])),
-            None => [0.0; 3],
-        })
-        .collect();
-    let mut points: Vec<[f64; 4]> = Vec::new();
-    for i in 0..4 {
-        let mut l = [0.0; 4];
-        l[i] = 1.0;
-        points.push(l);
-    }
-    for [i, j] in edges {
-        let mut l = [0.0; 4];
-        l[i] = 0.5;
-        l[j] = 0.5;
-        points.push(l);
-    }
-    for skip in 0..4 {
-        points.push([0, 1, 2, 3].map(|i| if i == skip { 0.0 } else { 1.0 / 3.0 }));
-    }
-    points.push([0.25; 4]);
-    points
-        .iter()
-        .map(|l| {
-            let mut j = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-            for (k, [a, b]) in edges.iter().enumerate() {
-                let gr = [0, 1, 2].map(|q| 4.0 * (l[*a] * g[*b][q] + l[*b] * g[*a][q]));
-                for r in 0..3 {
-                    for q in 0..3 {
-                        j[r][q] += d[k][r] * gr[q];
-                    }
-                }
-            }
-            dot(j[0], cross(j[1], j[2]))
-        })
-        .fold(f64::INFINITY, f64::min)
+    let (Some(tet), Some(c)) = (mesh.tets.get(t), mesh.corners(t)) else { return 0.0 };
+    let mids = crate::LOCAL_EDGES.map(|[a, b]| mesh.midpoint(tet[a], tet[b]));
+    emcraft_fem::nedelec::least_jacobian(c, mids).unwrap_or(0.0)
 }
 
 /// Straightens the curved edges of tetrahedra whose map would come close to folding (thin
@@ -875,7 +805,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
     let dielectric =
         |r: usize, face: u32| r > 0 || bases.iter().zip(&model.inclusions).any(|((b, n), inc)| inc.material.is_some() && (*b..b + n).contains(&face));
     let mut index: std::collections::HashMap<[i64; 3], u32> = std::collections::HashMap::new();
-    let mut nodes: Vec<[f64; 3]> = Vec::new();
+    let mut nodes: Vec<Point3> = Vec::new();
     let mut tets = Vec::new();
     let mut tet_material = Vec::new();
     let mut boundary = Vec::new();
@@ -884,7 +814,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
         // Coincident within 1e-9 of the element size (the regions' snapping to the exact surfaces
         // may differ in the last bits): a hash on cells of that size, checking the neighbours.
         let tol = 1e-9 * size;
-        let key = |p: &[f64; 3]| p.map(|v| (v / tol).floor() as i64);
+        let key = |p: &Point3| [p.x, p.y, p.z].map(|v| (v / tol).floor() as i64);
         let map: Vec<u32> = mesh
             .points
             .iter()
@@ -894,8 +824,8 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
                     for dy in -1..=1 {
                         for dz in -1..=1 {
                             if let Some(&i) = index.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) {
-                                let q: [f64; 3] = nodes[i as usize];
-                                if (0..3).all(|d| (q[d] - p[d]).abs() <= tol) {
+                                let q = nodes[i as usize];
+                                if (q - *p).iter().all(|d| d.abs() <= tol) {
                                     return i;
                                 }
                             }
@@ -941,13 +871,15 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
     }
     let mut mesh = Mesh { tet_material, nodes, tets, boundary, grid: None, buckets: None, curved: Vec::new() };
     if curved {
-        let surfaces: Vec<Curved> = std::iter::once(Curved::of(&s.shape, [0.0; 3], Axis::Z))
+        let surfaces: Vec<Curved> = std::iter::once(Curved::of(&s.shape, Point3::ORIGIN, Axis::Z))
             .chain(model.inclusions.iter().map(|i| Curved::of(&i.shape, i.at, Axis::Z)))
             .chain(model.features.iter().map(|f| Curved::of(&f.shape, f.at, f.axis)))
             .flatten()
             .collect();
-        snap_interfaces(&mut mesh, &surfaces, size);
-        mesh.curved = curve(&mesh, &surfaces, size);
+        // One topology serves both: moving nodes does not change it.
+        let topo = crate::Topology::new(&mesh);
+        snap_interfaces(&mut mesh, &topo, &surfaces, size);
+        mesh.curved = curve(&mesh, &topo, &surfaces, size);
         unfold(&mut mesh);
     }
     mesh.buckets = Some(buckets(&mesh));
@@ -956,19 +888,12 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
 
 /// The tetrahedra binned on a uniform grid of about one tetrahedron per bucket.
 pub fn buckets(mesh: &Mesh) -> Buckets {
-    let mut lo = [f64::INFINITY; 3];
-    let mut hi = [f64::NEG_INFINITY; 3];
-    for p in &mesh.nodes {
-        for d in 0..3 {
-            lo[d] = lo[d].min(p[d]);
-            hi[d] = hi[d].max(p[d]);
-        }
-    }
-    let ext = [0, 1, 2].map(|d| (hi[d] - lo[d]).max(f64::MIN_POSITIVE));
+    let (lo, hi) = emcraft_model::bounding_box(mesh.nodes.iter().copied()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
+    let ext = (hi - lo).map(|e| e.max(f64::MIN_POSITIVE));
     let per_side = (mesh.tets.len().max(1) as f64).cbrt().ceil() as usize;
-    let longest = ext.iter().copied().fold(0.0, f64::max);
-    let dims = ext.map(|e| ((e / longest * per_side as f64).ceil() as usize).clamp(1, 512));
-    let step = [0, 1, 2].map(|d| ext[d] / dims[d] as f64);
+    let longest = ext.iter().fold(0.0, f64::max);
+    let dims = [0, 1, 2].map(|d| ((ext[d] / longest * per_side as f64).ceil() as usize).clamp(1, 512));
+    let step = Vec3::new(ext.x / dims[0] as f64, ext.y / dims[1] as f64, ext.z / dims[2] as f64);
     let index = |v: f64, d: usize| (((v - lo[d]) / step[d]).floor().max(0.0) as usize).min(dims[d] - 1);
     let nb = dims[0] * dims[1] * dims[2];
     let mut lists: Vec<Vec<u32>> = vec![Vec::new(); nb];
@@ -1021,7 +946,7 @@ mod tests {
 
     #[test]
     fn a_box_is_filled_exactly_with_its_ports_tagged() {
-        let mesh = mesh_of(Shape::Box { size: [0.02, 0.01, 0.03] }, 0.004);
+        let mesh = mesh_of(Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, 0.004);
         let v = crate::volumes(&mesh);
         assert!(v.iter().all(|x| *x > 0.0));
         assert!((v.iter().sum::<f64>() - 6e-6).abs() < 1e-12 * 6e-6 + 1e-15);
@@ -1062,7 +987,8 @@ mod tests {
         let mut m = Model::new();
         m.add_material(Material::new("alumina", 9.8, 1.0).unwrap()).unwrap();
         m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
-        m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: [0.0; 3], material: Some("alumina".into()) }).unwrap();
+        m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.0, 0.0, 0.0), material: Some("alumina".into()) })
+            .unwrap();
         let mesh = solid(&m, 0.0025).unwrap();
         let v = crate::volumes(&mesh);
         assert!(v.iter().all(|x| *x > 0.0));
@@ -1087,7 +1013,7 @@ mod tests {
         let walls = hole.boundary.len();
         assert!(walls > mesh.boundary.len());
         // Inclusions must lie inside.
-        assert!(m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: [0.008, 0.0, 0.0], material: None }).is_err());
+        assert!(m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.008, 0.0, 0.0), material: None }).is_err());
     }
 
     #[test]
@@ -1133,7 +1059,7 @@ mod tests {
         let mut m = Model::new();
         m.set_solid(Solid { shape: Shape::Cylinder { radius: r, length: l }, material: "vacuum".into() }).unwrap();
         assert!(solid_with(&m, 0.003, false).unwrap().curved.is_empty());
-        assert!(mesh_of(Shape::Box { size: [0.02, 0.01, 0.03] }, 0.004).curved.is_empty());
+        assert!(mesh_of(Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, 0.004).curved.is_empty());
     }
 
     #[test]
@@ -1141,13 +1067,13 @@ mod tests {
         use emcraft_model::Feature;
         let (a, b, l) = (0.02286, 0.01016, 0.03);
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
         // A post across the guide, flush with both broad walls.
         let r = 0.0015;
         m.add_feature(Feature {
             combine: Combine::Subtract,
             shape: Shape::Cylinder { radius: r, length: b },
-            at: [a / 2.0, 0.0, l / 2.0],
+            at: Point3::new(a / 2.0, 0.0, l / 2.0),
             axis: Axis::Y,
         })
         .unwrap();
@@ -1169,24 +1095,35 @@ mod tests {
         assert!(mesh.curved.iter().any(|(_, p)| ((p[0] - a / 2.0).hypot(p[2] - l / 2.0) - r).abs() < 1e-12));
         // A stub added on the broad wall: a box standing on it (its foot moved into the guide).
         let mut u = Model::new();
-        u.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
-        u.add_feature(Feature { combine: Combine::Add, shape: Shape::Box { size: [0.008, 0.006, 0.01] }, at: [0.007, b, 0.01], axis: Axis::Z })
-            .unwrap();
+        u.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        u.add_feature(Feature {
+            combine: Combine::Add,
+            shape: Shape::Box { size: Vec3::new(0.008, 0.006, 0.01) },
+            at: Point3::new(0.007, b, 0.01),
+            axis: Axis::Z,
+        })
+        .unwrap();
         let v: f64 = crate::volumes(&solid(&u, 0.003).unwrap()).iter().sum();
         // Exact but for the features' shift by a millionth of the element size (1e-9 m here,
         // over the stub's 80 mm² foot).
         assert!((v - (a * b * l + 0.008 * 0.006 * 0.01)).abs() < 1e-7 * v, "{v}");
         // Flush faces of a union are refused, not guessed.
         let mut w = Model::new();
-        w.set_solid(Solid { shape: Shape::Box { size: [a, b, l] }, material: "vacuum".into() }).unwrap();
-        w.add_feature(Feature { combine: Combine::Add, shape: Shape::Box { size: [0.03, b, 0.01] }, at: [0.0, 0.0, 0.01], axis: Axis::Z }).unwrap();
+        w.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        w.add_feature(Feature {
+            combine: Combine::Add,
+            shape: Shape::Box { size: Vec3::new(0.03, b, 0.01) },
+            at: Point3::new(0.0, 0.0, 0.01),
+            axis: Axis::Z,
+        })
+        .unwrap();
         assert!(solid(&w, 0.003).is_err());
     }
 
     #[test]
     fn points_are_located_in_unstructured_meshes() {
         let mesh = mesh_of(Shape::Cylinder { radius: 0.01, length: 0.02 }, 0.003);
-        for p in [[0.0, 0.0, 0.01], [0.007, 0.0, 0.001], [-0.003, 0.004, 0.019]] {
+        for p in [[0.0, 0.0, 0.01], [0.007, 0.0, 0.001], [-0.003, 0.004, 0.019]].map(Point3::from) {
             let (t, l) = crate::locate(&mesh, p).unwrap();
             assert!(l.iter().all(|x| *x >= -1e-9), "{l:?}");
             let c = mesh.corners(t).unwrap();
@@ -1195,6 +1132,6 @@ mod tests {
                 assert!((q - p[d]).abs() < 1e-12);
             }
         }
-        assert!(crate::locate(&mesh, [0.02, 0.0, 0.01]).is_none());
+        assert!(crate::locate(&mesh, Point3::new(0.02, 0.0, 0.01)).is_none());
     }
 }

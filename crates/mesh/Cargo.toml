@@ -9,6 +9,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+emcraft-fem = { workspace = true }
 emcraft-model = { workspace = true }
 emcraft-tetmesh = { workspace = true }
 thiserror = { workspace = true }

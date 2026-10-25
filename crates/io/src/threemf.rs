@@ -15,6 +15,8 @@ use quick_xml::NsReader;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
 
+use emcraft_model::Point3;
+
 use crate::{Error, MAX_COORD, Result, Surface};
 
 /// Largest package read.
@@ -123,8 +125,12 @@ fn parse_xf(s: Option<&str>) -> Result<Xf> {
     <Xf>::try_from(v.as_slice()).map_err(|_| invalid(format!("a transform has 12 numbers, got `{s}`")))
 }
 
-fn apply(m: &Xf, p: [f64; 3]) -> [f64; 3] {
-    [p[0] * m[0] + p[1] * m[3] + p[2] * m[6] + m[9], p[0] * m[1] + p[1] * m[4] + p[2] * m[7] + m[10], p[0] * m[2] + p[1] * m[5] + p[2] * m[8] + m[11]]
+fn apply(m: &Xf, p: Point3) -> Point3 {
+    Point3::new(
+        p.x * m[0] + p.y * m[3] + p.z * m[6] + m[9],
+        p.x * m[1] + p.y * m[4] + p.z * m[7] + m[10],
+        p.x * m[2] + p.y * m[5] + p.z * m[8] + m[11],
+    )
 }
 
 fn det(m: &Xf) -> f64 {
@@ -147,7 +153,7 @@ fn unit_m(u: &str) -> Option<f64> {
 #[derive(Clone, Default)]
 struct Object {
     name: String,
-    positions: Vec<[f64; 3]>,
+    positions: Vec<Point3>,
     triangles: Vec<[u32; 3]>,
     /// One per triangle, or empty when the object is untagged.
     tags: Vec<u32>,
@@ -255,7 +261,7 @@ fn parse_model(xml: &[u8]) -> Result<Model> {
                 if vertices > MAX_ELEMENTS {
                     return bad(format!("more than {MAX_ELEMENTS} vertices"));
                 }
-                o.positions.push([coord(&a, "x")?, coord(&a, "y")?, coord(&a, "z")?]);
+                o.positions.push(Point3::new(coord(&a, "x")?, coord(&a, "y")?, coord(&a, "z")?));
             }
             "triangle" => {
                 let Some((id, o)) = cur.as_mut() else { return bad("triangle outside an object") };
@@ -416,8 +422,8 @@ mod tests {
         s.triangles
             .iter()
             .map(|t| {
-                let [a, b, c] = t.map(|v| s.positions[v as usize]);
-                (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+                let [a, b, c] = t.map(|v| s.positions[v as usize].to_vec());
+                emcraft_model::geom::triple(a, b, c) / 6.0
             })
             .sum()
     }
@@ -428,7 +434,7 @@ mod tests {
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].name, "Tet");
         assert_eq!(s[0].tags, [0, 1, 2, 3]);
-        assert_eq!(s[0].positions[1], [1e-3, 0.0, 0.0]);
+        assert_eq!(s[0].positions[1], Point3::new(1e-3, 0.0, 0.0));
         // Centimetres, mirrored and moved: the winding stays outward.
         let cm = tet(" transform=\"-1 0 0 0 1 0 0 0 1 0 0 2\"").replace("millimeter", "centimeter");
         let s = read(&package(&cm)).unwrap();

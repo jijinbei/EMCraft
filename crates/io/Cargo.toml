@@ -9,6 +9,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+emcraft-model = { workspace = true }
 thiserror = { workspace = true }
 zip = { workspace = true }
 quick-xml = { workspace = true }

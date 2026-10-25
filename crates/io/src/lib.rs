@@ -12,6 +12,8 @@ pub mod threemf;
 
 use std::collections::HashMap;
 
+use emcraft_model::{Point3, Vec3};
+
 /// Largest coordinate accepted, in metres (after units and transforms).
 pub const MAX_COORD: f64 = 1e6;
 /// Most triangles read from one file.
@@ -29,7 +31,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Surface {
     pub name: String,
-    pub positions: Vec<[f64; 3]>,
+    pub positions: Vec<Point3>,
     pub triangles: Vec<[u32; 3]>,
     pub tags: Vec<u32>,
 }
@@ -58,25 +60,15 @@ pub fn read(name: &str, bytes: &[u8], stl_unit: f64) -> Result<Surface> {
     Ok(s)
 }
 
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
 /// Splits each face into the regions whose neighbouring triangles turn by less than
 /// `angle_deg` (a surface's flat or gently curved patches, so its sharp edges stay edges when
 /// it is meshed); returns the number of faces.
 pub fn split_faces(s: &mut Surface, angle_deg: f64) -> u32 {
     let normal = |t: &[u32; 3]| {
-        let p = t.map(|v| s.positions.get(v as usize).copied().unwrap_or([0.0; 3]));
-        let n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
-        let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-        if l > 0.0 { n.map(|v| v / l) } else { [0.0; 3] }
+        let [a, b, c] = t.map(|v| s.positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN));
+        (b - a).cross(c - a).normalized().unwrap_or(Vec3::ZERO)
     };
-    let normals: Vec<[f64; 3]> = s.triangles.iter().map(normal).collect();
+    let normals: Vec<Vec3> = s.triangles.iter().map(normal).collect();
     let mut by_edge: HashMap<[u32; 2], Vec<usize>> = HashMap::new();
     for (i, t) in s.triangles.iter().enumerate() {
         for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
@@ -98,7 +90,7 @@ pub fn split_faces(s: &mut Surface, angle_deg: f64) -> u32 {
             for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
                 for &j in by_edge.get(&[a.min(b), a.max(b)]).into_iter().flatten() {
                     let (ni, nj) = (normals[i], normals[j]);
-                    if tag[j] == u32::MAX && s.tags.get(j).copied() == old && ni[0] * nj[0] + ni[1] * nj[1] + ni[2] * nj[2] >= cos {
+                    if tag[j] == u32::MAX && s.tags.get(j).copied() == old && ni.dot(nj) >= cos {
                         tag[j] = next;
                         stack.push(j);
                     }

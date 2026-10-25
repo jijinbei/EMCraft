@@ -1,6 +1,8 @@
 //! The tetrahedral mesh: nodes (m), positively oriented tetrahedra with their material, and the
 //! boundary triangles with what closes them (a perfect electric conductor or a port).
 
+use crate::geom::{Point3, Vec3};
+
 /// What a boundary triangle lies on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Boundary {
@@ -36,7 +38,7 @@ pub const TETS_PER_CELL: usize = 6;
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Mesh {
-    pub nodes: Vec<[f64; 3]>,
+    pub nodes: Vec<Point3>,
     /// Corner nodes, ordered so the signed volume is positive.
     pub tets: Vec<[u32; 4]>,
     /// The material of each tetrahedron (an index into [`crate::Model::materials`]).
@@ -49,14 +51,14 @@ pub struct Mesh {
     /// Edges that follow a curved surface: their nodes (ascending) and the point on the surface
     /// their midpoint moves to, sorted by edge. The tetrahedra holding them are curved
     /// (quadratic geometry).
-    pub curved: Vec<([u32; 2], [f64; 3])>,
+    pub curved: Vec<([u32; 2], Point3)>,
 }
 
 /// Tetrahedra binned by their bounding boxes on a uniform grid over the mesh.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Buckets {
-    pub lo: [f64; 3],
-    pub step: [f64; 3],
+    pub lo: Point3,
+    pub step: Vec3,
     pub dims: [usize; 3],
     /// Bucket b holds `items[start[b]..start[b + 1]]` (buckets numbered x fastest).
     pub start: Vec<u32>,
@@ -65,18 +67,34 @@ pub struct Buckets {
 
 impl Mesh {
     /// The curved midpoint of edge (a, b), if it is curved.
-    pub fn midpoint(&self, a: u32, b: u32) -> Option<[f64; 3]> {
+    pub fn midpoint(&self, a: u32, b: u32) -> Option<Point3> {
         let key = [a.min(b), a.max(b)];
         self.curved.binary_search_by(|(e, _)| e.cmp(&key)).ok().map(|i| self.curved[i].1)
     }
 
     /// The corner coordinates of a tetrahedron, if it exists.
-    pub fn corners(&self, t: usize) -> Option<[[f64; 3]; 4]> {
+    pub fn corners(&self, t: usize) -> Option<[Point3; 4]> {
         let tet = self.tets.get(t)?;
-        let mut out = [[0.0; 3]; 4];
+        let mut out = [Point3::ORIGIN; 4];
         for (o, &n) in out.iter_mut().zip(tet) {
             *o = *self.nodes.get(n as usize)?;
         }
         Some(out)
+    }
+
+    /// The node of index `n`, if it exists.
+    pub fn node(&self, n: u32) -> Option<Point3> {
+        self.nodes.get(n as usize).copied()
+    }
+
+    /// The signed volume of tetrahedron `t` (positive for the mesh's orientation).
+    pub fn volume(&self, t: usize) -> Option<f64> {
+        let [a, b, c, d] = self.corners(t)?;
+        Some(crate::geom::triple(b - a, c - a, d - a) / 6.0)
+    }
+
+    /// The centroid of tetrahedron `t`.
+    pub fn centroid(&self, t: usize) -> Option<Point3> {
+        Point3::centroid(self.corners(t)?)
     }
 }

@@ -60,7 +60,7 @@ pub const TABLE: &[(&str, Class)] = &[
 ];
 
 /// Explicit orderings *within* a layer (earlier may be used by later).
-pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["fem", "theory"]];
+pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["fem", "theory"], &["fem", "mesh"]];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));
@@ -268,7 +268,12 @@ mod tests {
 
     #[test]
     fn sideways_dependency_flagged() {
-        let v = check(&[c("emcraft-mesh", &[("emcraft-fem", Normal, true)])]);
+        // Within a layer only the listed order is allowed: mesh on fem, not fem on mesh, and
+        // nothing between crates no chain names together.
+        assert!(check(&[c("emcraft-mesh", &[("emcraft-fem", Normal, true)])]).is_empty());
+        let v = check(&[c("emcraft-fem", &[("emcraft-mesh", Normal, true)])]);
+        assert!(matches!(v[..], [Violation::Upward { from: 1, to: 1, .. }]));
+        let v = check(&[c("emcraft-mesh", &[("emcraft-theory", Normal, true)])]);
         assert!(matches!(v[..], [Violation::Upward { from: 1, to: 1, .. }]));
     }
 

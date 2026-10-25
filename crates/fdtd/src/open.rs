@@ -21,7 +21,8 @@
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, EPS0, ETA0, MU0};
-use emcraft_model::{Model, Shape, Source};
+use emcraft_model::{CVec3, Model, Point3, Shape, Source, Vec3};
+use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
 use crate::{FdtdError, MAX_CELLS, MAX_STEPS, Result, invalid};
@@ -62,11 +63,8 @@ pub struct OpenRun {
     pub ports: Vec<PortSpectrum>,
     /// Power through the Huygens box at each frequency, for 1 V (or 1 A·m) of source spectrum.
     pub radiated: Vec<f64>,
-    /// The Huygens box's samples: centre, area, outward normal, and E, H per frequency.
-    samples: Vec<([f64; 3], f64, [f64; 3])>,
-    e: Vec<Vec<[C; 3]>>,
-    h: Vec<Vec<[C; 3]>>,
-    centre: [f64; 3],
+    /// The fields on the Huygens box at each frequency, per unit of source spectrum.
+    pub huygens: Vec<Huygens>,
     pub cells: usize,
     pub steps: usize,
     pub dt: f64,
@@ -77,26 +75,7 @@ impl OpenRun {
     /// r e^{jkr} (E_θ, E_φ) at frequency index `fi` in direction (θ, φ), per unit of source
     /// spectrum (the same near-to-far transform as the frequency-domain solver).
     pub fn far_field(&self, fi: usize, theta: f64, phi: f64) -> Option<(C, C)> {
-        let f = *self.frequencies.get(fi)?;
-        let k = 2.0 * PI * f / C0;
-        let (st, ct, sp, cp) = (theta.sin(), theta.cos(), phi.sin(), phi.cos());
-        let r = [st * cp, st * sp, ct];
-        let (th, ph) = ([ct * cp, ct * sp, -st], [-sp, cp, 0.0]);
-        let (mut n, mut l) = ([C::new(0.0, 0.0); 3], [C::new(0.0, 0.0); 3]);
-        for (s, (e, h)) in self.samples.iter().zip(self.e.get(fi)?.iter().zip(self.h.get(fi)?)) {
-            let (p, w, nrm) = s;
-            let q = [p[0] - self.centre[0], p[1] - self.centre[1], p[2] - self.centre[2]];
-            let phase = C::from_polar(*w, k * (r[0] * q[0] + r[1] * q[1] + r[2] * q[2]));
-            let j = cross(nrm.map(|v| C::new(v, 0.0)), *h);
-            let m = cross(nrm.map(|v| C::new(v, 0.0)), *e).map(|c| -c);
-            for d in 0..3 {
-                n[d] += j[d] * phase;
-                l[d] += m[d] * phase;
-            }
-        }
-        let dot = |a: [C; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-        let c = C::new(0.0, k / (4.0 * PI));
-        Some((-c * (dot(l, ph) + ETA0 * dot(n, th)), c * (dot(l, th) - ETA0 * dot(n, ph))))
+        Some(self.huygens.get(fi)?.far_field(theta, phi))
     }
 
     /// Directivity at frequency index `fi` in direction (θ, φ).
@@ -105,10 +84,6 @@ impl OpenRun {
         let p = *self.radiated.get(fi)?;
         Some(4.0 * PI * (a.norm_sqr() + b.norm_sqr()) / (2.0 * ETA0 * p))
     }
-}
-
-fn cross(a: [C; 3], b: [C; 3]) -> [C; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
 /// A field component on the grid: dims (nx, ny, nz) of its own lattice, row-major in x.
@@ -228,7 +203,7 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
     if model.sources.iter().any(|s| matches!(s, Source::PlaneWave { .. })) {
         return Err(FdtdError::Unsupported("plane waves in the time domain".into()));
     }
-    let n = size.map(|l| ((l / h).round() as usize).max(4));
+    let n = [0, 1, 2].map(|d| ((size[d] / h).round() as usize).max(4));
     let cells = n[0].saturating_mul(n[1]).saturating_mul(n[2]);
     if cells > MAX_CELLS {
         return Err(FdtdError::TooLarge { cells, limit: MAX_CELLS });
@@ -250,7 +225,7 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
     for k in 0..n[2] {
         for j in 0..n[1] {
             for i in 0..n[0] {
-                let p = [node(0, i as f64 + 0.5), node(1, j as f64 + 0.5), node(2, k as f64 + 0.5)];
+                let p = Point3::new(node(0, i as f64 + 0.5), node(1, j as f64 + 0.5), node(2, k as f64 + 0.5));
                 let c = i + n[0] * (j + n[1] * k);
                 match model.material_at(p) {
                     Some(m) => eps_cell[c] = model.materials.get(m).map_or(1.0, |x| x.eps_r),
@@ -280,10 +255,7 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
             for j in 0..d[1] {
                 for i in 0..d[0] {
                     let idx = [i, j, k];
-                    let mut mid = [0.0; 3];
-                    for q in 0..3 {
-                        mid[q] = node(q, idx[q] as f64 + if q == a { 0.5 } else { 0.0 });
-                    }
+                    let mid = Point3::from([0, 1, 2].map(|q| node(q, idx[q] as f64 + if q == a { 0.5 } else { 0.0 })));
                     if model.material_at(mid).is_none() {
                         continue;
                     }
@@ -316,12 +288,12 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
         if lp.voltage[1] != 0.0 {
             return Err(FdtdError::Unsupported("lumped ports with a phase in the time domain (their voltages must be real)".into()));
         }
-        let d: Vec<f64> = (0..3).map(|q| lp.to[q] - lp.from[q]).collect();
-        let axis = (0..3).max_by(|&a, &b| d[a].abs().total_cmp(&d[b].abs())).unwrap_or(2);
+        let d = lp.to - lp.from;
+        let axis = d.dominant_axis();
         if (0..3).any(|q| q != axis && d[q].abs() > 1e-6 * d[axis].abs()) {
             return Err(invalid("lumped port", format!("`{}` must lie along a grid axis in the time domain", lp.name)));
         }
-        let snap = |p: [f64; 3]| [0, 1, 2].map(|q| ((p[q] / hs[q]).round().max(0.0) as usize).min(n[q]));
+        let snap = |p: Point3| [0, 1, 2].map(|q| ((p[q] / hs[q]).round().max(0.0) as usize).min(n[q]));
         let (a, b) = (snap(lp.from), snap(lp.to));
         let (lo, hi) = (a[axis].min(b[axis]), a[axis].max(b[axis]));
         if hi == lo {
@@ -355,15 +327,11 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
     let mut currents: Vec<(usize, [usize; 3], f64)> = Vec::new();
     for s in &model.sources {
         if let Source::Dipole { at, direction, length, current } = *s {
-            let axis = (0..3).max_by(|&a, &b| direction[a].abs().total_cmp(&direction[b].abs())).unwrap_or(2);
+            let axis = direction.dominant_axis();
             if (0..3).any(|q| q != axis && direction[q].abs() > 1e-9) {
                 return Err(invalid("dipole", "must lie along a grid axis in the time domain"));
             }
-            let mut c = [0usize; 3];
-            for q in 0..3 {
-                let x = at[q] / hs[q] - if q == axis { 0.5 } else { 0.0 };
-                c[q] = (x.round().max(0.0) as usize).min(dims_e[axis][q] - 1);
-            }
+            let c = [0, 1, 2].map(|q| ((at[q] / hs[q] - if q == axis { 0.5 } else { 0.0 }).round().max(0.0) as usize).min(dims_e[axis][q] - 1));
             currents.push((axis, c, current * length * direction[axis].signum() / hs[axis]));
         }
     }
@@ -411,32 +379,8 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
     // The Huygens box: a third of the layer inside it, or halfway to what radiates.
     let inner_lo = [0, 1, 2].map(|d| npml as f64 * hs[d]);
     let inner_hi = [0, 1, 2].map(|d| size[d] - npml as f64 * hs[d]);
-    let (mut clo, mut chi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    let mut take = |p: [f64; 3]| {
-        for d in 0..3 {
-            clo[d] = clo[d].min(p[d]);
-            chi[d] = chi[d].max(p[d]);
-        }
-    };
-    for inc in &model.inclusions {
-        let (a, b) = inc.bounds();
-        take(a);
-        take(b);
-    }
-    for f in &model.features {
-        let (a, b) = f.bounds();
-        take(a);
-        take(b);
-    }
-    for s in &model.sources {
-        if let Source::Dipole { at, .. } = s {
-            take(*at);
-        }
-    }
-    for l in &model.lumped {
-        take(l.from);
-        take(l.to);
-    }
+    // (A run always has a source, so the box is never empty.)
+    let (clo, chi) = emcraft_model::bounding_box(model.radiators()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
     let inset = npml as f64 / 3.0;
     let mut hlo = [0usize; 3];
     let mut hhi = [0usize; 3];
@@ -450,29 +394,21 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
         }
     }
     // Huygens samples: cell-face centres on the six faces, each sample a (axis, side, u, v).
-    let mut samples = Vec::new();
-    let mut sample_at: Vec<(usize, usize, usize, usize)> = Vec::new();
-    for a in 0..3 {
-        let (u, v) = ((a + 1) % 3, (a + 2) % 3);
-        for (side, plane) in [(-1.0, hlo[a]), (1.0, hhi[a])] {
-            for iu in hlo[u]..hhi[u] {
-                for iv in hlo[v]..hhi[v] {
-                    let mut p = [0.0; 3];
-                    p[a] = plane as f64 * hs[a];
-                    p[u] = (iu as f64 + 0.5) * hs[u];
-                    p[v] = (iv as f64 + 0.5) * hs[v];
-                    let mut nrm = [0.0; 3];
-                    nrm[a] = side;
-                    samples.push((p, hs[u] * hs[v], nrm));
-                    sample_at.push((a, plane, iu, iv));
-                }
-            }
-        }
-    }
-    let centre = [0, 1, 2].map(|d| 0.5 * (hlo[d] + hhi[d]) as f64 * hs[d]);
+    let (samples, sample_at): (Vec<(Point3, f64, Vec3)>, Vec<(usize, usize, usize, usize)>) = (0..3)
+        .flat_map(|a| [(a, -1.0, hlo[a]), (a, 1.0, hhi[a])])
+        .flat_map(|(a, side, plane)| {
+            let (u, v) = ((a + 1) % 3, (a + 2) % 3);
+            (hlo[u]..hhi[u]).flat_map(move |iu| (hlo[v]..hhi[v]).map(move |iv| (a, side, plane, u, v, iu, iv)))
+        })
+        .map(|(a, side, plane, u, v, iu, iv)| {
+            let p = Point3::ORIGIN.with(a, plane as f64 * hs[a]).with(u, (iu as f64 + 0.5) * hs[u]).with(v, (iv as f64 + 0.5) * hs[v]);
+            ((p, hs[u] * hs[v], Vec3::unit(a) * side), (a, plane, iu, iv))
+        })
+        .unzip();
+    let centre = Point3::from([0, 1, 2].map(|d| 0.5 * (hlo[d] + hhi[d]) as f64 * hs[d]));
     let nf = frequencies.len();
-    let mut de = vec![vec![[C::new(0.0, 0.0); 3]; samples.len()]; nf];
-    let mut dh = vec![vec![[C::new(0.0, 0.0); 3]; samples.len()]; nf];
+    let mut de = vec![vec![CVec3::ZERO; samples.len()]; nf];
+    let mut dh = vec![vec![CVec3::ZERO; samples.len()]; nf];
     let mut dv = vec![vec![C::new(0.0, 0.0); nf]; ports.len()];
     let mut di = vec![vec![C::new(0.0, 0.0); nf]; ports.len()];
     let mut ds = vec![C::new(0.0, 0.0); nf];
@@ -516,7 +452,7 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
     let mut steps = 0;
     let mut converged = false;
     let mut last: Option<Vec<C>> = None;
-    let t_min = t0 + 4.0 * tau + 3.0 * size.iter().fold(0.0f64, |m, v| m.max(*v)) / C0;
+    let t_min = t0 + 4.0 * tau + 3.0 * size.iter().fold(0.0f64, f64::max) / C0;
     let check = 200;
     for step in 0..o.max_steps {
         // H half step: ∂H/∂t = −(1/μ) ∇ × E, with CPML on the two derivatives of each component;
@@ -626,16 +562,8 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
                 hu_idx[v] = iv as isize;
                 let hu = interp_h(&hf, u, hu_idx, &[u, a]);
                 let hv = interp_h(&hf, v, hu_idx, &[v, a]);
-                let mut ev3 = [0.0; 3];
-                ev3[u] = eu;
-                ev3[v] = ev;
-                let mut hv3 = [0.0; 3];
-                hv3[u] = hu;
-                hv3[v] = hv;
-                for q in 0..3 {
-                    de[fi][si][q] += pe_ * ev3[q];
-                    dh[fi][si][q] += ph_ * hv3[q];
-                }
+                de[fi][si] += Vec3::ZERO.with(u, eu).with(v, ev) * pe_;
+                dh[fi][si] += Vec3::ZERO.with(u, hu).with(v, hv) * ph_;
             }
         }
         steps = step + 1;
@@ -646,7 +574,7 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
         if steps % check == 0 && t > t_min {
             // Settled: the ports' transforms (or the box's power proxy) stop moving.
             let now: Vec<C> =
-                dv.iter().chain(&di).flatten().copied().chain(de.iter().map(|x| x.iter().map(|v| v[0] + v[1] + v[2]).sum::<C>())).collect();
+                dv.iter().chain(&di).flatten().copied().chain(de.iter().map(|x| x.iter().map(|v| v.x + v.y + v.z).sum::<C>())).collect();
             let scale = now.iter().fold(0.0f64, |m, c| m.max(c.norm())).max(f64::MIN_POSITIVE);
             if let Some(prev) = &last
                 && prev.iter().zip(&now).all(|(a, b)| (a - b).norm() <= o.decay * scale)
@@ -658,42 +586,32 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
         }
     }
     // Normalise by the source spectrum and assemble.
-    let mut radiated = Vec::with_capacity(nf);
-    let mut e_out = Vec::with_capacity(nf);
-    let mut h_out = Vec::with_capacity(nf);
-    for fi in 0..nf {
-        let s = ds[fi];
-        if s.norm() == 0.0 {
-            return Err(invalid("frequency", "outside the pulse's band"));
-        }
-        let ee: Vec<[C; 3]> = de[fi].iter().map(|v| v.map(|c| c / s)).collect();
-        let hh: Vec<[C; 3]> = dh[fi].iter().map(|v| v.map(|c| c / s)).collect();
-        let p: f64 = samples
-            .iter()
-            .zip(ee.iter().zip(&hh))
-            .map(|((_, w, nrm), (e3, h3))| {
-                let sv = cross(*e3, h3.map(|c| c.conj()));
-                0.5 * w * (sv[0].re * nrm[0] + sv[1].re * nrm[1] + sv[2].re * nrm[2])
-            })
-            .sum();
-        radiated.push(p);
-        e_out.push(ee);
-        h_out.push(hh);
-    }
+    let huygens = frequencies
+        .iter()
+        .zip(ds.iter().zip(de.iter().zip(&dh)))
+        .map(|(&frequency, (&s, (ef, hf)))| {
+            if s.norm() == 0.0 {
+                return Err(invalid("frequency", "outside the pulse's band"));
+            }
+            let samples = samples
+                .iter()
+                .zip(ef.iter().zip(hf))
+                .map(|(&(point, weight, normal), (e, h))| HuygensSample { point, weight, normal, e: *e / s, h: *h / s })
+                .collect();
+            Ok(Huygens { frequency, centre, samples })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let radiated = huygens.iter().map(Huygens::power).collect();
     let port_out = ports
         .iter()
-        .enumerate()
-        .map(|(pi, p)| {
-            let (mut vs, mut is, mut imp, mut pow) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-            for fi in 0..nf {
-                let (v, i) = (dv[pi][fi] / ds[fi], di[pi][fi] / ds[fi]);
-                vs.push(v);
-                is.push(i);
-                imp.push(v / i);
-                pow.push(0.5 * (v * i.conj()).re);
-            }
-            PortSpectrum { name: p.name.clone(), voltage: vs, current: is, impedance: imp, power: pow }
+        .zip(dv.iter().zip(&di))
+        .map(|(p, (dvp, dip))| {
+            let voltage: Vec<C> = dvp.iter().zip(&ds).map(|(v, s)| v / s).collect();
+            let current: Vec<C> = dip.iter().zip(&ds).map(|(i, s)| i / s).collect();
+            let impedance = voltage.iter().zip(&current).map(|(v, i)| v / i).collect();
+            let power = voltage.iter().zip(&current).map(|(v, i)| 0.5 * (v * i.conj()).re).collect();
+            PortSpectrum { name: p.name.clone(), voltage, current, impedance, power }
         })
         .collect();
-    Ok(OpenRun { frequencies: frequencies.to_vec(), ports: port_out, radiated, samples, e: e_out, h: h_out, centre, cells, steps, dt, converged })
+    Ok(OpenRun { frequencies: frequencies.to_vec(), ports: port_out, radiated, huygens, cells, steps, dt, converged })
 }

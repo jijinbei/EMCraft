@@ -25,7 +25,8 @@
 
 use std::collections::HashMap;
 
-use emcraft_tetmesh::predicates::{Point2, Point3, Sign, orient2d, orient3d};
+use emcraft_model::Point3;
+use emcraft_tetmesh::predicates::{Point2, Point3 as Exact, Sign, orient2d, orient3d};
 
 use crate::{MeshError, Result};
 
@@ -41,7 +42,7 @@ pub enum Op {
 /// A closed, outward-oriented triangulated surface with a tag per triangle.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Surface {
-    pub positions: Vec<[f64; 3]>,
+    pub positions: Vec<Point3>,
     pub triangles: Vec<[u32; 3]>,
     pub tags: Vec<u32>,
 }
@@ -50,30 +51,17 @@ fn fail(why: impl Into<String>) -> MeshError {
     MeshError::Invalid { what: "Boolean combination".into(), why: why.into() }
 }
 
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
-fn norm(a: [f64; 3]) -> f64 {
-    dot(a, a).sqrt()
-}
-
 /// The two surfaces' points as exact-predicate points.
-fn points(s: &Surface) -> Result<Vec<Point3>> {
-    s.positions.iter().map(|p| Point3::try_from(p.map(emcraft_tetmesh::predicates::snap_to_domain)).map_err(|e| fail(e.to_string()))).collect()
+fn points(s: &Surface) -> Result<Vec<Exact>> {
+    s.positions
+        .iter()
+        .map(|p| Exact::try_from(p.to_array().map(emcraft_tetmesh::predicates::snap_to_domain)).map_err(|e| fail(e.to_string())))
+        .collect()
 }
 
 /// Which side of triangle (a, b, c)'s plane `p` lies on, by its right-hand normal; on the plane
 /// counts as the positive side.
-fn side(a: &Point3, b: &Point3, c: &Point3, p: &Point3) -> bool {
+fn side(a: &Exact, b: &Exact, c: &Exact, p: &Exact) -> bool {
     // orient3d is positive when p lies below the plane (a, b, c counter-clockwise from above).
     orient3d(a, b, c, p) != Sign::Positive
 }
@@ -81,7 +69,7 @@ fn side(a: &Point3, b: &Point3, c: &Point3, p: &Point3) -> bool {
 /// The side of the line p→q that segment (a, b) passes (the sign of orient3d(p, q, a, b)),
 /// an exact zero broken by the order of a and b (global ids), so the triangles on either side
 /// of edge (a, b) see opposite signs.
-fn around(p: &Point3, q: &Point3, a: (&Point3, u32), b: (&Point3, u32)) -> bool {
+fn around(p: &Exact, q: &Exact, a: (&Exact, u32), b: (&Exact, u32)) -> bool {
     match orient3d(p, q, a.0, b.0) {
         Sign::Positive => true,
         Sign::Negative => false,
@@ -90,7 +78,7 @@ fn around(p: &Point3, q: &Point3, a: (&Point3, u32), b: (&Point3, u32)) -> bool 
 }
 
 /// Whether edge (p, q) of one surface crosses triangle t of the other.
-fn crosses(p: &Point3, q: &Point3, t: [(&Point3, u32); 3]) -> bool {
+fn crosses(p: &Exact, q: &Exact, t: [(&Exact, u32); 3]) -> bool {
     if side(t[0].0, t[1].0, t[2].0, p) == side(t[0].0, t[1].0, t[2].0, q) {
         return false;
     }
@@ -113,7 +101,7 @@ struct Key {
 #[derive(Default)]
 struct Cut {
     /// Crossing points after both surfaces' vertices: id = offset + index.
-    positions: Vec<[f64; 3]>,
+    positions: Vec<Point3>,
     keys: HashMap<Key, u32>,
     /// Per surface, per triangle: the segments (point ids, global).
     segments: [HashMap<u32, Vec<[u32; 2]>>; 2],
@@ -141,36 +129,20 @@ impl Ids {
 
 /// Boxes of a surface's triangles binned on a uniform grid.
 struct Grid {
-    lo: [f64; 3],
+    lo: Point3,
     step: f64,
     dims: [usize; 3],
     cells: HashMap<[usize; 3], Vec<u32>>,
 }
 
-fn tri_box(s: &Surface, t: usize) -> ([f64; 3], [f64; 3]) {
-    let mut lo = [f64::INFINITY; 3];
-    let mut hi = [f64::NEG_INFINITY; 3];
-    for &v in &s.triangles[t] {
-        let p = s.positions[v as usize];
-        for d in 0..3 {
-            lo[d] = lo[d].min(p[d]);
-            hi[d] = hi[d].max(p[d]);
-        }
-    }
-    (lo, hi)
+fn tri_box(s: &Surface, t: usize) -> (Point3, Point3) {
+    emcraft_model::bounding_box(s.triangles[t].iter().map(|&v| s.positions[v as usize])).unwrap_or((Point3::ORIGIN, Point3::ORIGIN))
 }
 
 impl Grid {
     fn new(s: &Surface) -> Grid {
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        for p in &s.positions {
-            for d in 0..3 {
-                lo[d] = lo[d].min(p[d]);
-                hi[d] = hi[d].max(p[d]);
-            }
-        }
-        let ext = (0..3).map(|d| hi[d] - lo[d]).fold(0.0, f64::max).max(f64::MIN_POSITIVE);
+        let (lo, hi) = emcraft_model::bounding_box(s.positions.iter().copied()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
+        let ext = (hi - lo).iter().fold(0.0, f64::max).max(f64::MIN_POSITIVE);
         let per_side = (s.triangles.len().max(1) as f64).sqrt().ceil().clamp(1.0, 256.0);
         let step = ext / per_side;
         let dims = [0, 1, 2].map(|d| (((hi[d] - lo[d]) / step).floor() as usize + 1).min(1024));
@@ -189,12 +161,12 @@ impl Grid {
         g
     }
 
-    fn cell(&self, p: [f64; 3]) -> [usize; 3] {
+    fn cell(&self, p: Point3) -> [usize; 3] {
         [0, 1, 2].map(|d| (((p[d] - self.lo[d]) / self.step).floor().max(0.0) as usize).min(self.dims[d] - 1))
     }
 
     /// The triangles whose boxes may overlap the box (lo, hi), each once.
-    fn near(&self, lo: [f64; 3], hi: [f64; 3]) -> Vec<u32> {
+    fn near(&self, lo: Point3, hi: Point3) -> Vec<u32> {
         let (ia, ib) = (self.cell(lo), self.cell(hi));
         let mut out = Vec::new();
         for i in ia[0]..=ib[0] {
@@ -212,10 +184,10 @@ impl Grid {
     }
 }
 
-fn intersect(s: [&Surface; 2], p: [&[Point3]; 2], ids: &Ids) -> Result<Cut> {
+fn intersect(s: [&Surface; 2], p: [&[Exact]; 2], ids: &Ids) -> Result<Cut> {
     let mut cut = Cut::default();
     let grid = Grid::new(s[1]);
-    let tri = |k: usize, t: u32| -> [(&Point3, u32); 3] { s[k].triangles[t as usize].map(|v| (&p[k][v as usize], v)) };
+    let tri = |k: usize, t: u32| -> [(&Exact, u32); 3] { s[k].triangles[t as usize].map(|v| (&p[k][v as usize], v)) };
     let point = |cut: &mut Cut, edge_of: usize, a: u32, b: u32, t: u32| -> u32 {
         let (a, b) = (a.min(b), a.max(b));
         let key = Key { edge_of: edge_of as u8, a, b, tri: t };
@@ -225,11 +197,11 @@ fn intersect(s: [&Surface; 2], p: [&[Point3]; 2], ids: &Ids) -> Result<Cut> {
         // The crossing by the signed distances of a and b to the triangle's plane.
         let other = 1 - edge_of;
         let [u, v, w] = s[other].triangles[t as usize].map(|i| s[other].positions[i as usize]);
-        let n = cross(sub(v, u), sub(w, u));
+        let n = (v - u).cross(w - u);
         let (pa, pb) = (s[edge_of].positions[a as usize], s[edge_of].positions[b as usize]);
-        let (da, db) = (dot(n, sub(pa, u)), dot(n, sub(pb, u)));
+        let (da, db) = (n.dot(pa - u), n.dot(pb - u));
         let f = if da == db { 0.5 } else { (da / (da - db)).clamp(0.0, 1.0) };
-        cut.positions.push([0, 1, 2].map(|d| pa[d] + f * (pb[d] - pa[d])));
+        cut.positions.push(pa.lerp(pb, f));
         let id = ids.crossing((cut.positions.len() - 1) as u32);
         cut.keys.insert(key, id);
         cut.on_edge[edge_of].entry([a, b]).or_default().push(id);
@@ -431,7 +403,7 @@ impl Plane {
 }
 
 /// Triangle t of surface k split along its segments: the pieces, as global vertex ids.
-fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[[f64; 3]]) -> Result<Vec<[u32; 3]>> {
+fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[Point3]) -> Result<Vec<[u32; 3]>> {
     let corners = s.triangles[t as usize];
     let gc = corners.map(|v| ids.of(k, v));
     let segments = cut.segments[k].get(&t);
@@ -444,7 +416,7 @@ fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[[f64; 3]]) 
     }
     // Local 2D coordinates: drop the normal's largest component, keeping counter-clockwise.
     let q = gc.map(|v| all[v as usize]);
-    let n = cross(sub(q[1], q[0]), sub(q[2], q[0]));
+    let n = (q[1] - q[0]).cross(q[2] - q[0]);
     let axis = (0..3).max_by(|&a, &b| n[a].abs().total_cmp(&n[b].abs())).unwrap_or(2);
     let (mut u, mut w) = ((axis + 1) % 3, (axis + 2) % 3);
     if n[axis] < 0.0 {
@@ -452,7 +424,7 @@ fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[[f64; 3]]) 
     }
     let mut local: Vec<u32> = gc.to_vec();
     let mut index: HashMap<u32, usize> = gc.iter().enumerate().map(|(i, v)| (*v, i)).collect();
-    let to2 = |p: [f64; 3]| Point2::new(emcraft_tetmesh::predicates::snap_to_domain(p[u]), emcraft_tetmesh::predicates::snap_to_domain(p[w]));
+    let to2 = |p: Point3| Point2::new(emcraft_tetmesh::predicates::snap_to_domain(p[u]), emcraft_tetmesh::predicates::snap_to_domain(p[w]));
     let mut plane = Plane { p: Vec::new(), tris: vec![[0, 1, 2]], fixed: Default::default() };
     for v in &local {
         plane.p.push(to2(all[*v as usize]).map_err(|e| fail(e.to_string()))?);
@@ -477,8 +449,8 @@ fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[[f64; 3]]) 
     for (i, pts) in edge_points {
         let (a, b) = (i, (i + 1) % 3);
         let (pa, pb) = (q[a], q[b]);
-        let len2 = dot(sub(pb, pa), sub(pb, pa));
-        let mut sorted: Vec<(f64, u32)> = pts.iter().map(|&v| (dot(sub(all[v as usize], pa), sub(pb, pa)) / len2, v)).collect();
+        let len2 = (pb - pa).dot(pb - pa);
+        let mut sorted: Vec<(f64, u32)> = pts.iter().map(|&v| ((all[v as usize] - pa).dot(pb - pa) / len2, v)).collect();
         sorted.sort_by(|x, y| x.0.total_cmp(&y.0));
         let mut prev = a;
         for (_, v) in sorted {
@@ -502,16 +474,29 @@ fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[[f64; 3]]) 
 }
 
 /// The winding number of a closed surface about p.
-fn winding(s: &Surface, p: [f64; 3]) -> f64 {
-    let mut total = 0.0;
-    for t in &s.triangles {
-        let [a, b, c] = t.map(|v| sub(s.positions[v as usize], p));
-        let (la, lb, lc) = (norm(a), norm(b), norm(c));
-        let num = dot(a, cross(b, c));
-        let den = la * lb * lc + dot(a, b) * lc + dot(b, c) * la + dot(c, a) * lb;
-        total += 2.0 * num.atan2(den);
+fn winding(s: &Surface, p: Point3) -> f64 {
+    s.triangles.iter().map(|t| emcraft_model::solid_angle(t.map(|v| s.positions[v as usize] - p))).sum::<f64>() / (4.0 * std::f64::consts::PI)
+}
+
+/// A disjoint-set forest with path halving (union by index, so the result does not depend on
+/// the order of the unions' calls beyond their sequence).
+struct Sets(Vec<usize>);
+
+impl Sets {
+    fn find(&mut self, mut i: usize) -> usize {
+        while self.0[i] != i {
+            self.0[i] = self.0[self.0[i]];
+            i = self.0[i];
+        }
+        i
     }
-    total / (4.0 * std::f64::consts::PI)
+
+    fn union(&mut self, a: usize, b: usize) {
+        let (a, b) = (self.find(a), self.find(b));
+        if a != b {
+            self.0[a.max(b)] = a.min(b);
+        }
+    }
 }
 
 /// `a op b`; b's tags are offset by `b_tags` in the result.
@@ -519,7 +504,7 @@ pub fn combine(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface>
     let (pa, pb) = (points(a)?, points(b)?);
     let ids = Ids { n0: a.positions.len() as u32, n1: b.positions.len() as u32 };
     let cut = intersect([a, b], [&pa, &pb], &ids)?;
-    let all: Vec<[f64; 3]> = a.positions.iter().chain(&b.positions).chain(&cut.positions).copied().collect();
+    let all: Vec<Point3> = a.positions.iter().chain(&b.positions).chain(&cut.positions).copied().collect();
     let mut out = Surface::default();
     let mut used: HashMap<u32, u32> = HashMap::new();
     for (k, (s, other)) in [(a, b), (b, a)].into_iter().enumerate() {
@@ -531,27 +516,65 @@ pub fn combine(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface>
             (Op::Difference, 0) => (false, false),
             (Op::Difference, _) => (true, true),
         };
+        // The pieces, then one inside-or-outside test per connected region of them: pieces that
+        // share an edge not on the intersection curve lie on the same side of the other surface.
+        let mut pieces: Vec<([u32; 3], u32)> = Vec::new();
         for t in 0..s.triangles.len() as u32 {
             for piece in split(s, k, t, &cut, &ids, &all)? {
                 let q = piece.map(|v| all[v as usize]);
-                if norm(cross(sub(q[1], q[0]), sub(q[2], q[0]))) == 0.0 {
-                    continue;
+                if (q[1] - q[0]).cross(q[2] - q[0]).norm() != 0.0 {
+                    pieces.push((piece, t));
                 }
-                let centroid = [0, 1, 2].map(|d| (q[0][d] + q[1][d] + q[2][d]) / 3.0);
-                if (winding(other, centroid) > 0.5) != keep_inside {
-                    continue;
-                }
-                let piece = if flip { [piece[0], piece[2], piece[1]] } else { piece };
-                let mut ids3 = [0u32; 3];
-                for (o, v) in ids3.iter_mut().zip(piece) {
-                    *o = *used.entry(v).or_insert_with(|| {
-                        out.positions.push(all[v as usize]);
-                        (out.positions.len() - 1) as u32
-                    });
-                }
-                out.triangles.push(ids3);
-                out.tags.push(s.tags[t as usize] + if k == 1 { b_tags } else { 0 });
             }
+        }
+        let curve: std::collections::HashSet<[u32; 2]> = cut.segments[k].values().flatten().map(|e| [e[0].min(e[1]), e[0].max(e[1])]).collect();
+        let mut sets = Sets((0..pieces.len()).collect());
+        let mut by_edge: HashMap<[u32; 2], usize> = HashMap::new();
+        for (i, (p, _)) in pieces.iter().enumerate() {
+            for (a, b) in [(p[0], p[1]), (p[1], p[2]), (p[2], p[0])] {
+                let e = [a.min(b), a.max(b)];
+                if curve.contains(&e) {
+                    continue;
+                }
+                if let Some(&j) = by_edge.get(&e) {
+                    sets.union(i, j);
+                } else {
+                    by_edge.insert(e, i);
+                }
+            }
+        }
+        // Each region decided at its largest piece's centroid (the farthest from the curve).
+        let area = |p: &[u32; 3]| {
+            let q = p.map(|v| all[v as usize]);
+            (q[1] - q[0]).cross(q[2] - q[0]).norm()
+        };
+        let mut best: HashMap<usize, usize> = HashMap::new();
+        for i in 0..pieces.len() {
+            let r = sets.find(i);
+            let e = best.entry(r).or_insert(i);
+            if area(&pieces[i].0) > area(&pieces[*e].0) {
+                *e = i;
+            }
+        }
+        let mut inside: HashMap<usize, bool> = HashMap::new();
+        for (&r, &i) in &best {
+            let centroid = Point3::centroid(pieces[i].0.map(|v| all[v as usize])).unwrap_or(Point3::ORIGIN);
+            inside.insert(r, winding(other, centroid) > 0.5);
+        }
+        for (i, (piece, t)) in pieces.iter().enumerate() {
+            if inside.get(&sets.find(i)).copied().unwrap_or(false) != keep_inside {
+                continue;
+            }
+            let piece = if flip { [piece[0], piece[2], piece[1]] } else { *piece };
+            let mut ids3 = [0u32; 3];
+            for (o, v) in ids3.iter_mut().zip(piece) {
+                *o = *used.entry(v).or_insert_with(|| {
+                    out.positions.push(all[v as usize]);
+                    (out.positions.len() - 1) as u32
+                });
+            }
+            out.triangles.push(ids3);
+            out.tags.push(s.tags[*t as usize] + if k == 1 { b_tags } else { 0 });
         }
     }
     // Closed: every edge held once each way.
@@ -578,11 +601,11 @@ mod tests {
     fn cube(lo: [f64; 3], hi: [f64; 3]) -> Surface {
         let mut s = Surface::default();
         for i in 0..8 {
-            s.positions.push([
+            s.positions.push(Point3::new(
                 if i & 1 == 0 { lo[0] } else { hi[0] },
                 if i & 2 == 0 { lo[1] } else { hi[1] },
                 if i & 4 == 0 { lo[2] } else { hi[2] },
-            ]);
+            ));
         }
         let quads = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]];
         for (f, q) in quads.iter().enumerate() {
@@ -598,7 +621,7 @@ mod tests {
             .iter()
             .map(|t| {
                 let [a, b, c] = t.map(|v| s.positions[v as usize]);
-                dot(a, cross(b, c)) / 6.0
+                emcraft_model::geom::triple(a.to_vec(), b.to_vec(), c.to_vec()) / 6.0
             })
             .sum()
     }

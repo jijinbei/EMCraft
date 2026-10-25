@@ -10,6 +10,7 @@
 //! - `cross` (cross-section): x across, y up, at z — the TE₁₀ pattern of E (vertical) and H.
 
 use emcraft_model::units::decibels;
+use emcraft_model::{CVec3, Vec3};
 use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
 use emcraft_render::{Axis, Rgb};
@@ -96,9 +97,9 @@ pub struct PlaneSamples {
     nx: usize,
     ny: usize,
     /// (E, H) on an nx × ny grid over the plane, row 0 at the bottom; `None` outside the mesh.
-    grid: Vec<Option<([C; 3], [C; 3])>>,
+    grid: Vec<Option<(CVec3, CVec3)>>,
     /// Arrow positions (display units) with E and H there.
-    arrows: Vec<([f64; 2], [C; 3], [C; 3])>,
+    arrows: Vec<([f64; 2], CVec3, CVec3)>,
     arrow_length: f64,
     lines: Vec<[[f64; 2]; 2]>,
     title: String,
@@ -140,7 +141,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
             (&*sweep.driven, x, r.frequency, format!("port {port_name} excited by 1 V/m TE10, order {}", sweep.order.as_u8()))
         }
     };
-    let (a, b, len) = (hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+    let Vec3 { x: a, y: b, z: len } = hi - lo;
     // (horizontal span, vertical span, normal span) and the map from plane to guide; plane
     // coordinates run from the bounding box's low corner, `at` from its low side.
     let (hspan, vspan, normal_span) = match view.plane {
@@ -149,38 +150,32 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         Plane::Cross => (a, b, len),
     };
     let (h0, v0, n0) = match view.plane {
-        Plane::H => (lo[2], lo[0], lo[1]),
-        Plane::E => (lo[2], lo[1], lo[0]),
-        Plane::Cross => (lo[0], lo[1], lo[2]),
+        Plane::H => (lo.z, lo.x, lo.y),
+        Plane::E => (lo.z, lo.y, lo.x),
+        Plane::Cross => (lo.x, lo.y, lo.z),
     };
     let at = view.at.unwrap_or(normal_span / 2.0).clamp(0.0, normal_span);
-    let point = |u: f64, v: f64| match view.plane {
-        Plane::H => [lo[0] + v, lo[1] + at, lo[2] + u],
-        Plane::E => [lo[0] + at, lo[1] + v, lo[2] + u],
-        Plane::Cross => [lo[0] + u, lo[1] + v, lo[2] + at],
+    let point = |u: f64, v: f64| {
+        lo + match view.plane {
+            Plane::H => Vec3::new(v, at, u),
+            Plane::E => Vec3::new(at, v, u),
+            Plane::Cross => Vec3::new(u, v, at),
+        }
     };
     let longer = hspan.max(vspan);
     let (nx, ny) =
         (((SCALAR_SAMPLES as f64 * hspan / longer).ceil() as usize).max(2), ((SCALAR_SAMPLES as f64 * vspan / longer).ceil() as usize).max(2));
-    let mut grid = Vec::with_capacity(nx * ny);
-    for j in 0..ny {
-        for i in 0..nx {
-            let (u, v) = (hspan * i as f64 / (nx - 1) as f64, vspan * j as f64 / (ny - 1) as f64);
-            grid.push(driven.fields(x, frequency, point(u, v)));
-        }
-    }
+    let grid = (0..ny)
+        .flat_map(|j| (0..nx).map(move |i| (hspan * i as f64 / (nx - 1) as f64, vspan * j as f64 / (ny - 1) as f64)))
+        .map(|(u, v)| driven.fields(x, frequency, point(u, v)))
+        .collect();
     let l = session.display.length;
     let step = longer / ARROWS as f64;
     let (ax, ay) = (((hspan / step).round() as usize).max(2), ((vspan / step).round() as usize).max(2));
-    let mut arrows = Vec::with_capacity(ax * ay);
-    for j in 0..ay {
-        for i in 0..ax {
-            let (u, v) = (hspan * (i as f64 + 0.5) / ax as f64, vspan * (j as f64 + 0.5) / ay as f64);
-            if let Some((e, h)) = driven.fields(x, frequency, point(u, v)) {
-                arrows.push(([l.from_si(h0 + u), l.from_si(v0 + v)], e, h));
-            }
-        }
-    }
+    let arrows = (0..ay)
+        .flat_map(|j| (0..ax).map(move |i| (hspan * (i as f64 + 0.5) / ax as f64, vspan * (j as f64 + 0.5) / ay as f64)))
+        .filter_map(|(u, v)| driven.fields(x, frequency, point(u, v)).map(|(e, h)| ([l.from_si(h0 + u), l.from_si(v0 + v)], e, h)))
+        .collect();
     let (hlabel, vlabel, nlabel) = match view.plane {
         Plane::H => ("z", "x", "y"),
         Plane::E => ("z", "y", "x"),
@@ -240,10 +235,10 @@ impl PlaneSamples {
     pub fn plot(&self, view: &FieldView) -> Result<FieldPlot> {
         let rot = C::from_polar(1.0, view.phase);
         let re = |c: C| (c * rot).re;
-        let norm = |f: &[C; 3]| f.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+        let norm = |f: &CVec3| f.norm_sqr().sqrt();
         let comp = view.component.as_str();
         // (value at this phase, amplitude over the period)
-        let value = |e: &[C; 3], h: &[C; 3]| -> Option<(f64, f64)> {
+        let value = |e: &CVec3, h: &CVec3| -> Option<(f64, f64)> {
             match comp {
                 "ex" | "ey" | "ez" | "hx" | "hy" | "hz" => {
                     let k = match &comp[1..] {
@@ -254,12 +249,12 @@ impl PlaneSamples {
                     let v = if comp.starts_with('h') { h[k] } else { e[k] };
                     Some((re(v), v.norm()))
                 }
-                "|e|" => Some((e.iter().map(|c| re(*c).powi(2)).sum::<f64>().sqrt(), norm(e))),
-                "|h|" => Some((h.iter().map(|c| re(*c).powi(2)).sum::<f64>().sqrt(), norm(h))),
+                "|e|" => Some(((*e * rot).re().norm(), norm(e))),
+                "|h|" => Some(((*h * rot).re().norm(), norm(h))),
                 _ => None,
             }
         };
-        if value(&[C::new(0.0, 0.0); 3], &[C::new(0.0, 0.0); 3]).is_none() {
+        if value(&CVec3::ZERO, &CVec3::ZERO).is_none() {
             return Err(EngineError::Params(format!(
                 "`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`",
                 comp.chars().take(20).collect::<String>()
@@ -278,10 +273,10 @@ impl PlaneSamples {
             })
             .collect();
         // In-plane components of a vector: (horizontal, vertical).
-        let in_plane = |f: &[C; 3]| match self.plane {
-            Plane::H => (f[2], f[0]),
-            Plane::E => (f[2], f[1]),
-            Plane::Cross => (f[0], f[1]),
+        let in_plane = |f: &CVec3| match self.plane {
+            Plane::H => (f.z, f.x),
+            Plane::E => (f.z, f.y),
+            Plane::Cross => (f.x, f.y),
         };
         let mut sets = Vec::new();
         for (show, magnetic, label, color) in

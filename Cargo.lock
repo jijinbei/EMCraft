@@ -604,6 +604,7 @@ dependencies = [
 name = "emcraft-fem"
 version = "0.1.0"
 dependencies = [
+ "emcraft-model",
  "thiserror 2.0.21",
 ]
 
@@ -611,6 +612,7 @@ dependencies = [
 name = "emcraft-io"
 version = "0.1.0"
 dependencies = [
+ "emcraft-model",
  "quick-xml 0.42.0",
  "thiserror 2.0.21",
  "zip",
@@ -620,6 +622,7 @@ dependencies = [
 name = "emcraft-mesh"
 version = "0.1.0"
 dependencies = [
+ "emcraft-fem",
  "emcraft-model",
  "emcraft-tetmesh",
  "thiserror 2.0.21",
@@ -629,6 +632,7 @@ dependencies = [
 name = "emcraft-model"
 version = "0.1.0"
 dependencies = [
+ "num-complex",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
