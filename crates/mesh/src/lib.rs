@@ -18,7 +18,7 @@ pub use topology::{LOCAL_EDGES, LOCAL_FACES, Topology};
 
 use emcraft_model::geom::triple;
 use emcraft_model::mesh::TETS_PER_CELL;
-use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Model, Point3, positive};
+use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Model, Point3, Span, positive};
 
 /// The most tetrahedra a mesh may have (a cap on hostile sizes).
 pub const MAX_TETS: usize = 3_000_000;
@@ -195,7 +195,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let strip_y: Vec<f64> = w.strips.iter().map(|s| s.y).collect();
     let layer_y = w.layer_tops();
     let axis = |span: f64,
-                aperture: &dyn Fn(usize) -> Option<(f64, f64)>,
+                aperture: &dyn Fn(usize) -> Option<Span>,
                 step: f64,
                 sharp_z: &mut Vec<bool>,
                 planes: &[f64],
@@ -206,21 +206,21 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         breaks.extend(planes.iter().chain(edges).copied().filter(|v| *v > tol && *v < span - tol));
         let mut sharp: Vec<f64> = edges.iter().copied().filter(|v| *v > tol && *v < span - tol).collect();
         for i in 0..w.sections.len() {
-            if let Some((p0, pa)) = aperture(i) {
-                breaks.push(p0.clamp(0.0, span));
-                breaks.push((p0 + pa).clamp(0.0, span));
+            if let Some(a) = aperture(i) {
+                breaks.push(a.start.clamp(0.0, span));
+                breaks.push(a.end().clamp(0.0, span));
             }
             if i == 0 {
                 continue;
             }
-            if let (Some((p0, pa)), Some((q0, qa))) = (aperture(i - 1), aperture(i)) {
-                if (p0 - q0).abs() <= tol && (pa - qa).abs() <= tol {
+            if let (Some(p), Some(q)) = (aperture(i - 1), aperture(i)) {
+                if p.same(q, tol) {
                     continue;
                 }
                 sharp_z[i] = true;
-                let ((n0, na), (w0, wa)) = if qa < pa { ((q0, qa), (p0, pa)) } else { ((p0, pa), (q0, qa)) };
-                for e in [n0, n0 + na] {
-                    if e > w0 + tol && e < w0 + wa - tol {
+                let (narrow, wide) = if q.width < p.width { (q, p) } else { (p, q) };
+                for e in [narrow.start, narrow.end()] {
+                    if e > wide.start + tol && e < wide.end() - tol {
                         sharp.push(e);
                     }
                 }
@@ -265,8 +265,8 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
         cuts.dedup_by(|a, b| (a.0 - b.0).abs() <= tolz);
         let (m, _) = model.material(&s.material)?;
-        let ap = w.aperture(i).unwrap_or((0.0, w.width));
-        let apy = w.aperture_y(i).unwrap_or((0.0, w.height));
+        let ap = w.aperture(i).unwrap_or(w.across_x());
+        let apy = w.aperture_y(i).unwrap_or(w.across_y());
         for c in cuts.windows(2) {
             // A strip's end inside the guide is an edge; a section's aperture change, a step.
             let fraction = |(z, sharp): (f64, bool)| {
@@ -332,7 +332,7 @@ fn add_strips(mesh: &mut Mesh, strips: &[emcraft_model::Strip], height: f64) {
 /// are left out.
 /// `ylayers` (tops ascending, material) override the material of the cells whose centre lies
 /// below a top.
-fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], ylayers: &[(f64, u32)], length: f64) -> Mesh {
+fn structured(mut grid: Grid, layers: &[(u32, Span, Span)], ylayers: &[(f64, u32)], length: f64) -> Mesh {
     let (nx, ny, nz) = (grid.x.len() - 1, grid.y.len() - 1, grid.z.len() - 1);
     let node = |i: usize, j: usize, k: usize| (i + (nx + 1) * (j + (ny + 1) * k)) as u32;
     let mut nodes = Vec::with_capacity((nx + 1) * (ny + 1) * (nz + 1));
@@ -347,14 +347,14 @@ fn structured(mut grid: Grid, layers: &[(u32, (f64, f64), (f64, f64))], ylayers:
     let mut tet_material = Vec::with_capacity(tets.capacity());
     let mut cells = Vec::with_capacity(nx * ny * nz);
     for k in 0..nz {
-        let all = (f64::NEG_INFINITY, f64::INFINITY);
-        let (material, (x0, a), (y0, b)) = layers.get(k).copied().unwrap_or((0, all, all));
+        let all = Span::new(f64::NEG_INFINITY, f64::INFINITY);
+        let (material, x_span, y_span) = layers.get(k).copied().unwrap_or((0, all, all));
         for j in 0..ny {
             let yc = 0.5 * (grid.y[j] + grid.y[j + 1]);
             let material = ylayers.iter().find(|(top, _)| yc < *top).map_or(material, |(_, m)| *m);
             for i in 0..nx {
                 let xc = 0.5 * (grid.x[i] + grid.x[i + 1]);
-                if !(xc > x0 && xc < x0 + a && yc > y0 && yc < y0 + b) {
+                if !(x_span.contains(xc) && y_span.contains(yc)) {
                     cells.push(u32::MAX);
                     continue;
                 }
@@ -498,10 +498,11 @@ fn locate_in_buckets(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     best.filter(|x| x.2 >= -1e-9).map(|(t, l, _)| (t, l))
 }
 
-/// The tetrahedra whose bounding boxes meet the box (lo, hi): from the buckets of an
-/// unstructured mesh, every tetrahedron otherwise (a box test still drops the far ones).
-pub fn tets_near(mesh: &Mesh, lo: Point3, hi: Point3) -> Vec<usize> {
-    let meets = |t: usize| mesh.corners(t).is_some_and(|c| Aabb::around(c).unwrap_or_default().overlaps(Aabb::new(lo, hi)));
+/// The tetrahedra whose bounding boxes meet `region`: from the buckets of an unstructured mesh,
+/// every tetrahedron otherwise (a box test still drops the far ones).
+pub fn tets_near(mesh: &Mesh, region: Aabb) -> Vec<usize> {
+    let Aabb { min: lo, max: hi } = region;
+    let meets = |t: usize| mesh.corners(t).is_some_and(|c| Aabb::around(c).unwrap_or_default().overlaps(region));
     let Some(bk) = mesh.buckets.as_ref() else { return (0..mesh.tets.len()).filter(|&t| meets(t)).collect() };
     let cell = |p: Point3, d: usize| ((((p[d] - bk.lo[d]) / bk.step[d]).floor().max(0.0)) as usize).min(bk.dims[d].saturating_sub(1));
     let mut out = Vec::new();

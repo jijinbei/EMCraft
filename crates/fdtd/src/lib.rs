@@ -23,8 +23,8 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::Model;
 use emcraft_model::units::{C0, EPS0, ETA0, MU0};
+use emcraft_model::{Model, Span};
 use std::sync::Barrier;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -162,8 +162,8 @@ fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
     let layer = |i: usize| -> Result<Layer> {
         let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
         let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
-        let (x0, width) = w.aperture(i).unwrap_or((0.0, w.width));
-        let (y0, height) = w.aperture_y(i).unwrap_or((0.0, w.height));
+        let Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
+        let Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
         Ok(Layer { eps: m.eps_r, mu: m.mu_r, x0, width, y0, height })
     };
     let last = w.sections.len() - 1;
@@ -171,9 +171,9 @@ fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
     // x: through every aperture edge.
     let mut breaks = vec![0.0, w.width];
     for i in 0..w.sections.len() {
-        if let Some((x0, a)) = w.aperture(i) {
-            breaks.push(x0);
-            breaks.push(x0 + a);
+        if let Some(a) = w.aperture(i) {
+            breaks.push(a.start);
+            breaks.push(a.end());
         }
     }
     breaks.sort_by(f64::total_cmp);
@@ -185,9 +185,9 @@ fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
     }
     let mut ybreaks = vec![0.0, w.height];
     for i in 0..w.sections.len() {
-        if let Some((y0, b)) = w.aperture_y(i) {
-            ybreaks.push(y0);
-            ybreaks.push(y0 + b);
+        if let Some(b) = w.aperture_y(i) {
+            ybreaks.push(b.start);
+            ybreaks.push(b.end());
         }
     }
     ybreaks.sort_by(f64::total_cmp);
@@ -655,7 +655,7 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
     }
     // Every frequency above both ports' TE₁₀ cut-off, checked before any run.
     for (i, &f) in [0, w.sections.len() - 1].iter().flat_map(|i| frequencies.iter().map(move |f| (*i, f))) {
-        let (x0w, s) = (w.aperture(i).map_or(w.width, |a| a.1), &w.sections[i]);
+        let (x0w, s) = (w.aperture(i).map_or(w.width, |a| a.width), &w.sections[i]);
         let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
         if f <= C0 / (2.0 * x0w * (m.eps_r * m.mu_r).sqrt()) {
             return Err(invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off")));
@@ -691,8 +691,8 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
         return Err(invalid("grid", "the incident and device runs differ in time step"));
     }
     // Power waves: amplitude = V/‖e‖ (‖e‖ = width·height/2), power ∝ ‖e‖ β/μ.
-    let (a1, a2) = (w.aperture(0).map_or(w.width, |a| a.1), w.aperture(w.sections.len() - 1).map_or(w.width, |a| a.1));
-    let (h1, h2) = (w.aperture_y(0).map_or(w.height, |a| a.1), w.aperture_y(w.sections.len() - 1).map_or(w.height, |a| a.1));
+    let (a1, a2) = (w.aperture(0).map_or(w.width, |a| a.width), w.aperture(w.sections.len() - 1).map_or(w.width, |a| a.width));
+    let (h1, h2) = (w.aperture_y(0).map_or(w.height, |a| a.width), w.aperture_y(w.sections.len() - 1).map_or(w.height, |a| a.width));
     let port = |i: usize| model.material(&w.sections[i].material).map(|(_, m)| (m.eps_r, m.mu_r)).map_err(|e| invalid("material", e.to_string()));
     let ((e1, m1), (e2, m2)) = (port(0)?, port(w.sections.len() - 1)?);
     let mut s11 = Vec::new();

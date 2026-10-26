@@ -1255,10 +1255,9 @@ fn line_vector(mesh: &Mesh, topo: &Topology, dofs: &Dofs, order: Order, a: Point
     let d = b - a;
     let len = d.norm();
     let s = d / len;
-    let (lo, hi) = (a.min(b), a.max(b));
     let mut pieces: Vec<(f64, f64, usize)> = Vec::new();
     // Only the tetrahedra whose boxes meet the segment's.
-    for t in emcraft_mesh::tets_near(mesh, lo, hi) {
+    for t in emcraft_mesh::tets_near(mesh, emcraft_model::Aabb::new(a.min(b), a.max(b))) {
         let Some(c) = mesh.corners(t) else { continue };
         // Barycentric coordinates of a and b in the straight tetrahedron.
         let e = [1, 2, 3].map(|i| c[i] - c[0]);

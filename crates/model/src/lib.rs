@@ -145,35 +145,75 @@ pub struct Strip {
     pub z1: f64,
 }
 
+/// An interval along one axis: from `start`, `width` long (m).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Span {
+    pub start: f64,
+    pub width: f64,
+}
+
+impl Span {
+    pub const fn new(start: f64, width: f64) -> Span {
+        Span { start, width }
+    }
+
+    pub fn end(self) -> f64 {
+        self.start + self.width
+    }
+
+    /// Whether `v` lies strictly inside.
+    pub fn contains(self, v: f64) -> bool {
+        v > self.start && v < self.end()
+    }
+
+    /// Whether `o` lies inside, within `tol`.
+    pub fn holds(self, o: Span, tol: f64) -> bool {
+        self.start <= o.start + tol && o.end() <= self.end() + tol
+    }
+
+    /// Whether the two are the same within `tol`.
+    pub fn same(self, o: Span, tol: f64) -> bool {
+        (self.start - o.start).abs() <= tol && (self.width - o.width).abs() <= tol
+    }
+}
+
 impl Waveguide {
     pub fn length(&self) -> f64 {
         self.sections.iter().map(|s| s.length).sum()
     }
 
-    /// Section i's aperture across x: (start, width) in metres.
-    pub fn aperture(&self, i: usize) -> Option<(f64, f64)> {
+    /// Section i's aperture across x.
+    pub fn aperture(&self, i: usize) -> Option<Span> {
         let s = self.sections.get(i)?;
         let w = s.width.unwrap_or(self.width);
-        Some((s.offset.unwrap_or((self.width - w) / 2.0), w))
+        Some(Span::new(s.offset.unwrap_or((self.width - w) / 2.0), w))
     }
 
-    /// Section i's aperture across y: (start, height) in metres.
-    pub fn aperture_y(&self, i: usize) -> Option<(f64, f64)> {
+    /// Section i's aperture across y.
+    pub fn aperture_y(&self, i: usize) -> Option<Span> {
         let s = self.sections.get(i)?;
         let h = s.height.unwrap_or(self.height);
-        Some((s.offset_y.unwrap_or((self.height - h) / 2.0), h))
+        Some(Span::new(s.offset_y.unwrap_or((self.height - h) / 2.0), h))
+    }
+
+    /// The whole width, [0, a].
+    pub fn across_x(&self) -> Span {
+        Span::new(0.0, self.width)
+    }
+
+    /// The whole height, [0, b].
+    pub fn across_y(&self) -> Span {
+        Span::new(0.0, self.height)
     }
 
     /// Whether every section has the full width (no H-plane change).
     pub fn full_width(&self) -> bool {
-        (0..self.sections.len())
-            .all(|i| self.aperture(i).is_some_and(|(x0, w)| x0.abs() <= 1e-12 * self.width && (w - self.width).abs() <= 1e-12 * self.width))
+        (0..self.sections.len()).all(|i| self.aperture(i).is_some_and(|a| a.same(self.across_x(), 1e-12 * self.width)))
     }
 
     /// Whether every section has the full height (no E-plane change).
     pub fn full_height(&self) -> bool {
-        (0..self.sections.len())
-            .all(|i| self.aperture_y(i).is_some_and(|(y0, h)| y0.abs() <= 1e-12 * self.height && (h - self.height).abs() <= 1e-12 * self.height))
+        (0..self.sections.len()).all(|i| self.aperture_y(i).is_some_and(|a| a.same(self.across_y(), 1e-12 * self.height)))
     }
 
     /// Whether every section has the full cross-section.
@@ -752,13 +792,11 @@ impl Model {
             {
                 return Err(invalid(format!("aperture y offset of section {}", i + 1), "must be finite"));
             }
-            let (x0, a) = w.aperture(i).unwrap_or((0.0, w.width));
-            if x0 < -tol || x0 + a > w.width + tol {
+            if !w.across_x().holds(w.aperture(i).unwrap_or(w.across_x()), tol) {
                 return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's width"));
             }
             let toly = 1e-9 * w.height;
-            let (y0, h) = w.aperture_y(i).unwrap_or((0.0, w.height));
-            if y0 < -toly || y0 + h > w.height + toly {
+            if !w.across_y().holds(w.aperture_y(i).unwrap_or(w.across_y()), toly) {
                 return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's height"));
             }
         }
@@ -794,11 +832,9 @@ impl Model {
         let toly = 1e-9 * w.height;
         for i in 1..w.sections.len() {
             let rect = |k: usize| w.aperture(k).zip(w.aperture_y(k));
-            if let (Some(((x0, a0), (y0, b0))), Some(((x1, a1), (y1, b1)))) = (rect(i - 1), rect(i)) {
-                let holds = |xa: f64, wa: f64, ya: f64, ha: f64, xb: f64, wb: f64, yb: f64, hb: f64| {
-                    xa <= xb + tol && xb + wb <= xa + wa + tol && ya <= yb + toly && yb + hb <= ya + ha + toly
-                };
-                if !holds(x0, a0, y0, b0, x1, a1, y1, b1) && !holds(x1, a1, y1, b1, x0, a0, y0, b0) {
+            if let (Some(p), Some(q)) = (rect(i - 1), rect(i)) {
+                let holds = |(ax, ay): (Span, Span), (bx, by): (Span, Span)| ax.holds(bx, tol) && ay.holds(by, toly);
+                if !holds(p, q) && !holds(q, p) {
                     return Err(invalid(
                         format!("sections {} and {}", i, i + 1),
                         "not supported yet: apertures that overlap only in part (one must hold the other)",
@@ -935,8 +971,8 @@ impl Model {
                 End::Start => 0,
                 End::End => w.sections.len().saturating_sub(1),
             };
-            let (x0, a) = w.aperture(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
-            let (y0, b) = w.aperture_y(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
+            let Span { start: x0, width: a } = w.aperture(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
+            let Span { start: y0, width: b } = w.aperture_y(i).ok_or_else(|| invalid("waveguide", "has no sections"))?;
             return Ok(PortShape::Rect { x0, y0, a, b });
         }
         if let Some(s) = &self.solid {
@@ -1238,7 +1274,7 @@ mod tests {
         let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new() };
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
         let w = m.waveguide.as_ref().unwrap();
-        assert_eq!(w.aperture(1), Some((0.005, 0.01)));
+        assert_eq!(w.aperture(1), Some(Span::new(0.005, 0.01)));
         assert!(!w.uniform());
         assert!(m.set_waveguide(guide(vec![sec(Some(0.03), None)])).is_err());
         assert!(m.set_waveguide(guide(vec![sec(Some(0.01), Some(0.0)), sec(Some(0.01), Some(0.008))])).is_err());

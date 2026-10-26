@@ -389,8 +389,8 @@ fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
         let mut z = 0.0;
         let layered = !w.layers.is_empty();
         for (i, s) in w.sections.iter().enumerate() {
-            let (x0, a) = w.aperture(i).unwrap_or((0.0, w.width));
-            let (y0, b) = w.aperture_y(i).unwrap_or((0.0, w.height));
+            let emcraft_model::Span { start: x0, width: a } = w.aperture(i).unwrap_or(w.across_x());
+            let emcraft_model::Span { start: y0, width: b } = w.aperture_y(i).unwrap_or(w.across_y());
             let alpha = if see_through || layered {
                 70
             } else if overlay == Overlay::Materials {

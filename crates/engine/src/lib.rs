@@ -341,8 +341,8 @@ impl Session {
             json!({
                 "width": l.from_si(w.width), "height": l.from_si(w.height), "length": l.from_si(w.length()),
                 "sections": w.sections.iter().enumerate().map(|(i, s)| {
-                    let (x0, a) = w.aperture(i).unwrap_or((0.0, w.width));
-                    json!({"length": l.from_si(s.length), "material": s.material, "aperture": [l.from_si(x0), l.from_si(a)]})
+                    let a = w.aperture(i).unwrap_or(w.across_x());
+                    json!({"length": l.from_si(s.length), "material": s.material, "aperture": [l.from_si(a.start), l.from_si(a.width)]})
                 }).collect::<Vec<_>>(),
             })
         });

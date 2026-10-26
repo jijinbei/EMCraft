@@ -490,7 +490,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
         let mut sections = Vec::with_capacity(w.sections.len());
         for (i, s) in w.sections.iter().enumerate() {
             let (_, m) = session.model.material(&s.material)?;
-            let (y0, height) = w.aperture_y(i).unwrap_or((0.0, w.height));
+            let emcraft_model::Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
             sections.push(ESection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent, y0, height });
         }
         return Ok(Reference::EPlane(EPlaneLine { a: w.width, sections }));
@@ -501,7 +501,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
     let mut sections = Vec::with_capacity(w.sections.len());
     for (i, s) in w.sections.iter().enumerate() {
         let (_, m) = session.model.material(&s.material)?;
-        let (x0, width) = w.aperture(i).unwrap_or((0.0, w.width));
+        let emcraft_model::Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
         sections.push(HSection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, x0, width, loss_tangent: m.loss_tangent });
     }
     Ok(Reference::ModeMatching(HPlaneLine { sections }))
@@ -545,7 +545,7 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
         let lu = session.display.length;
         let mut seen: Vec<f64> = Vec::new();
         for (i, sec) in w.sections.iter().enumerate() {
-            let (Ok((_, m)), Some((_, width))) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
+            let (Ok((_, m)), Some(emcraft_model::Span { width, .. })) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
             let fc = te10_cutoff(width, m.eps_r, m.mu_r);
             if !seen.iter().any(|x| (x - fc).abs() < 1e-6 * fc) {
                 seen.push(fc);

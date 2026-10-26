@@ -170,7 +170,8 @@ fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         if let Some(w) = &m.waveguide {
             let mut z = 0.0;
             for (i, s) in w.sections.iter().enumerate() {
-                let (a0, a) = if axis == 0 { w.aperture(i).unwrap_or((0.0, w.width)) } else { w.aperture_y(i).unwrap_or((0.0, w.height)) };
+                let emcraft_model::Span { start: a0, width: a } =
+                    if axis == 0 { w.aperture(i).unwrap_or(w.across_x()) } else { w.aperture_y(i).unwrap_or(w.across_y()) };
                 let full = if axis == 0 { w.width } else { w.height };
                 // Metal outside the aperture.
                 let metal = t.text_dim.gamma_multiply(0.55);
