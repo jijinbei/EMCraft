@@ -44,7 +44,7 @@ fn display_units_convert_at_the_boundary() {
     let r = s.execute("solve.frequency", &json!({"frequencies": [9000], "order": 1})).unwrap();
     assert_eq!(r["frequency_unit"], "MHz");
     assert_eq!(r["points"][0]["frequency"], 9000.0);
-    assert!((s.sweep.as_ref().unwrap().results[0].frequency - 9e9).abs() < 1e-3);
+    assert!((s.results.sweep.as_ref().unwrap().results[0].frequency - 9e9).abs() < 1e-3);
 }
 
 #[test]
@@ -55,9 +55,9 @@ fn a_failed_command_leaves_the_session_as_it_was() {
     let e = s.execute("geometry.waveguide", &json!({"width": 10, "height": 5, "sections": [{"length": 3, "material": "nothing"}]}));
     assert!(e.is_err());
     assert_eq!(s.model, before);
-    assert!(s.sweep.is_some());
+    assert!(s.results.sweep.is_some());
     assert!(matches!(s.execute("mesh.generate", &json!({"size": 1e-5})), Err(EngineError::Failed(_))));
-    assert!(s.model.mesh.is_some() && s.sweep.is_some());
+    assert!(s.model.mesh.is_some() && s.results.sweep.is_some());
 }
 
 #[test]
@@ -586,4 +586,35 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     assert!(s.execute("file.open", &json!({"path": ts})).is_err());
     assert!(s.execute("results.touchstone", &json!({"path": ts, "format": "db"})).is_err());
     assert!(Session::new().execute("edit.undo", &json!({})).is_err());
+}
+
+#[test]
+fn every_choice_a_command_lists_is_one_its_parameter_reads() {
+    use serde::de::DeserializeOwned;
+    fn reads<T: DeserializeOwned>(id: &str, name: &str) -> usize {
+        let spec = find_command(id).and_then(|c| c.params.iter().find(|p| p.name == name)).unwrap();
+        assert!(!spec.choices.is_empty(), "{id} {name}");
+        for c in spec.choices {
+            assert!(serde_json::from_value::<T>(json!(c)).is_ok(), "{id} {name}: {c}");
+        }
+        spec.choices.len()
+    }
+    reads::<emcraft_model::units::Length>("units.set", "length");
+    reads::<emcraft_model::units::Frequency>("units.set", "frequency");
+    for id in ["geometry.solid", "geometry.inclusion", "geometry.feature"] {
+        reads::<crate::geometry::Primitive>(id, "shape");
+    }
+    reads::<emcraft_model::Combine>("geometry.feature", "combine");
+    reads::<emcraft_model::Axis>("geometry.feature", "axis");
+    reads::<emcraft_model::End>("model.port.create", "end");
+    reads::<emcraft_model::ModeSolver>("model.port.create", "mode_solver");
+    reads::<crate::solve::Strategy>("solve.frequency", "sweep");
+    reads::<crate::view::Plane>("view.field", "plane");
+    reads::<crate::open::FarSolver>("results.far_field", "solver");
+    reads::<crate::open::FarSolver>("view.pattern", "solver");
+    reads::<crate::project::Format>("results.touchstone", "format");
+    let component = find_command("view.field").and_then(|c| c.params.iter().find(|p| p.name == "component")).unwrap();
+    let names: Vec<&str> = crate::view::Component::ALL.iter().map(|c| c.name()).collect();
+    assert_eq!(component.choices, names.as_slice());
+    assert!(component.choices.iter().all(|c| c.parse::<crate::view::Component>().is_ok()));
 }

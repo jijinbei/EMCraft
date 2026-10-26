@@ -45,7 +45,7 @@ fn err(e: impl std::fmt::Display) -> Outcome {
     Outcome::Done(json!({"ok": false, "error": e.to_string()}))
 }
 
-fn wrap(r: Result<Value, String>) -> Outcome {
+fn wrap(r: Result<Value, impl std::fmt::Display>) -> Outcome {
     match r {
         Ok(v) => ok(v),
         Err(e) => err(e),
@@ -148,7 +148,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "messages": app.messages.len(),
         "search": {"open": app.search.open, "text": app.search.text},
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
-        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component, "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.animate, "shown": app.field.picture.is_some()},
+        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.animate, "shown": app.field.picture.is_some()},
         "chart": app.chart.as_ref().map(|c| c.key.clone()),
         "port_modes": app.port_modes.is_some(),
         "compare": app.compare.as_ref().and_then(|c| c.get("worst")).cloned(),
@@ -211,8 +211,11 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
             emcraft_engine::COMMANDS
                 .iter()
                 .map(|c| {
-                    let params: Vec<Value> =
-                        c.params.iter().map(|q| json!({"name": q.name, "kind": q.kind, "required": q.required, "doc": q.doc})).collect();
+                    let params: Vec<Value> = c
+                        .params
+                        .iter()
+                        .map(|q| json!({"name": q.name, "kind": q.kind.name(), "required": q.required, "doc": q.doc, "choices": q.choices}))
+                        .collect();
                     json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": crate::worker::is_long(c.id)})
                 })
                 .collect(),
@@ -252,7 +255,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
             match p.get("step") {
                 None => {}
                 Some(Value::String(x)) if x == "none" => crate::steps::open_step(app, None),
-                Some(Value::String(x)) => match crate::steps::Step::parse(x) {
+                Some(Value::String(x)) => match x.parse::<crate::steps::Step>().ok() {
                     Some(step) => crate::steps::open_step(app, Some(step)),
                     None => return err(format!("unknown step `{}`", x.chars().take(40).collect::<String>())),
                 },

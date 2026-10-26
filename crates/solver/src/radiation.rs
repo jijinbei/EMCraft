@@ -81,7 +81,7 @@ fn huygens_box(model: &Model) -> Result<(Point3, Point3)> {
     let (inner_lo, inner_hi) = (Point3::new(d, d, d), size.to_point() - Vec3::new(d, d, d));
     // Nothing placed (a plane wave on nothing): the middle of the box.
     let centre = inner_lo.midpoint(inner_hi);
-    let (clo, chi) = emcraft_model::bounding_box(model.radiators()).unwrap_or((centre, centre));
+    let emcraft_model::Aabb { min: clo, max: chi } = emcraft_model::Aabb::around(model.radiators()).unwrap_or(emcraft_model::Aabb::point(centre));
     let margin = 0.1 * d;
     if (0..3).any(|k| clo[k] < inner_lo[k] + margin || chi[k] > inner_hi[k] - margin) {
         return Err(invalid("open boundary", "the bodies and sources reach into or up to the perfectly matched layer; enlarge the box"));

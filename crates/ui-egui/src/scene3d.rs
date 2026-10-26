@@ -97,7 +97,7 @@ pub fn build(session: &Session, overlay: Overlay) -> Built {
 /// Builds the scene, with the field's plane for [`Overlay::Field`].
 pub fn build_with(session: &Session, overlay: Overlay, field: Option<&FieldLayer>) -> Built {
     let m = &session.model;
-    let mut out = Built { bounds: m.bounds().map(|(lo, hi)| (p3(lo), p3(hi))), ..Default::default() };
+    let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
         Some(_) => from_mesh(m, overlay, &mut out),
         None => from_geometry(m, overlay, &mut out),
@@ -455,7 +455,7 @@ fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
     let z = match (p.face, p.end) {
         (Some(f), _) => f.z,
         (None, End::Start) => 0.0,
-        (None, End::End) => m.bounds()?.1.z,
+        (None, End::End) => m.bounds()?.max.z,
     };
     let (x0, y0, a, b) = match m.port_shape_of(p).ok()? {
         emcraft_model::PortShape::Rect { x0, y0, a, b } => (x0, y0, a, b),

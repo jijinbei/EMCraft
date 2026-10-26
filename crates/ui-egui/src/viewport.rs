@@ -129,7 +129,7 @@ impl Frame2 {
 fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
-    let mut overlay = app.workflow.step.map_or(crate::scene3d::Overlay::Plain, crate::steps::Step::overlay);
+    let mut overlay = app.workflow.step.map_or(crate::scene3d::Overlay::Plain, crate::steps::overlay);
     // In Results, the field's plane in the model.
     if app.workflow.step == Some(crate::steps::Step::Results) && solved(app) {
         overlay = crate::scene3d::Overlay::Field;
@@ -140,7 +140,7 @@ fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let m = &app.session.model;
-    let Some((lo, hi)) = m.bounds() else {
+    let Some(emcraft_model::Aabb { min: lo, max: hi }) = m.bounds() else {
         empty(ui, "No geometry yet: MODEL › Waveguide or Solid, or open a sample.");
         return;
     };
@@ -217,7 +217,7 @@ fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 }
             }
             for inc in &m.inclusions {
-                let (a, b) = inc.bounds();
+                let emcraft_model::Aabb { min: a, max: b } = inc.bounds();
                 let (va, vb) = if axis == 0 { (a.x, b.x) } else { (a.y, b.y) };
                 let r = fr.rect(a.z, va, b.z, vb);
                 let fill = match &inc.material {
@@ -231,7 +231,7 @@ fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 }
             }
             for f in &m.features {
-                let (a, b) = f.bounds();
+                let emcraft_model::Aabb { min: a, max: b } = f.bounds();
                 let (va, vb) = if axis == 0 { (a.x, b.x) } else { (a.y, b.y) };
                 let r = fr.rect(a.z, va, b.z, vb);
                 let s = Stroke::new(1.2, if matches!(f.combine, emcraft_model::Combine::Subtract) { t.error } else { t.success });
@@ -293,7 +293,7 @@ fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 
 fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    if app.session.sweep.is_none() && app.session.time_domain.is_none() {
+    if app.session.results.sweep.is_none() && app.session.results.time_domain.is_none() {
         empty(ui, "No S-parameters yet: SIMULATE › Frequency sweep.");
         return;
     }
@@ -328,7 +328,7 @@ fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     ui.label(egui::RichText::new("Click the chart to open the fields at the nearest solved frequency.").size(t.font_small).color(t.text_dim));
     // The table.
-    let Some(sw) = app.session.sweep.as_ref() else { return };
+    let Some(sw) = app.session.results.sweep.as_ref() else { return };
     let fu = app.session.display.frequency;
     egui::ScrollArea::vertical().id_salt("s_table").show(ui, |ui| {
         egui::Grid::new("s_grid").striped(true).num_columns(5).show(ui, |ui| {
@@ -338,8 +338,8 @@ fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             ui.end_row();
             for r in &sw.results {
                 ui.label(format!("{:.4}", fu.from_si(r.frequency)));
-                let s11 = r.s.first().and_then(|row| row.first()).copied();
-                let s21 = r.s.get(1).and_then(|row| row.first()).copied();
+                let s11 = r.s.get(0, 0);
+                let s21 = r.s.get(1, 0);
                 for c in [s11, s21] {
                     match c {
                         Some(c) => {
@@ -369,12 +369,12 @@ pub fn chart_frequency(fx: f64, width_px: f64, f0: f64, f1: f64) -> Option<f64> 
 // ---- fields --------------------------------------------------------------------------------
 
 fn solved(app: &EmcraftApp) -> bool {
-    app.session.sweep.is_some() || app.session.eigen.is_some() || app.session.radiation.is_some()
+    app.session.results.sweep.is_some() || app.session.results.eigen.is_some() || app.session.results.radiation.is_some()
 }
 
 /// The span of the plane's position (display units) and its axis name.
 fn plane_span(app: &EmcraftApp) -> Option<(f64, &'static str)> {
-    let (lo, hi) = app.session.model.bounds()?;
+    let emcraft_model::Aabb { min: lo, max: hi } = app.session.model.bounds()?;
     let l = app.session.display.length;
     Some(match app.field.view.plane {
         Plane::H => (l.from_si(hi.y - lo.y), "y"),
@@ -428,8 +428,8 @@ fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let fu = app.session.display.frequency;
     ui.horizontal_wrapped(|ui| {
-        if let Some(e) = app.session.eigen.as_ref()
-            && (app.field.view.mode.is_some() || app.session.sweep.is_none())
+        if let Some(e) = app.session.results.eigen.as_ref()
+            && (app.field.view.mode.is_some() || app.session.results.sweep.is_none())
         {
             let mut idx = app.field.view.mode.unwrap_or(0);
             let label =
@@ -472,9 +472,9 @@ fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
     });
     ui.horizontal_wrapped(|ui| {
-        egui::ComboBox::from_id_salt("component").selected_text(app.field.view.component.clone()).show_ui(ui, |ui| {
-            for c in ["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"] {
-                ui.selectable_value(&mut app.field.view.component, c.to_owned(), c);
+        egui::ComboBox::from_id_salt("component").selected_text(app.field.view.component.name()).show_ui(ui, |ui| {
+            for c in emcraft_engine::view::Component::ALL {
+                ui.selectable_value(&mut app.field.view.component, c, c.name());
             }
         });
         ui.checkbox(&mut app.field.view.show_e, "E arrows");
@@ -547,7 +547,7 @@ fn num(v: &Value, digits: usize) -> String {
 
 fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    if app.session.eigen.is_none() {
+    if app.session.results.eigen.is_none() {
         empty(ui, "No eigenmodes yet: SIMULATE › Eigenmodes.");
         return;
     }
@@ -597,7 +597,7 @@ fn compare(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.add_space(40.0);
             ui.label(egui::RichText::new("Compare the sweep with the exact TE10 solution or mode matching.").size(t.font_heading).color(t.text_dim));
-            let r = ui.add_enabled(!app.busy() && app.session.sweep.is_some(), egui::Button::new("Compare…"));
+            let r = ui.add_enabled(!app.busy() && app.session.results.sweep.is_some(), egui::Button::new("Compare…"));
             scenario::publish_target("compare:run", r.rect);
             if r.clicked() {
                 let _ = app.run("results.compare", json!({}));
@@ -632,7 +632,7 @@ fn compare(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 // ---- far field -----------------------------------------------------------------------------
 
 fn far_field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    if app.session.radiation.is_none() && app.session.td_radiation.is_none() {
+    if app.session.results.radiation.is_none() && app.session.results.td_radiation.is_none() {
         empty(ui, "No far field yet: SIMULATE › Radiation (an open model with sources or lumped ports).");
         return;
     }

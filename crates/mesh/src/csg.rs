@@ -25,7 +25,7 @@
 
 use std::collections::HashMap;
 
-use emcraft_model::Point3;
+use emcraft_model::{Aabb, Point3};
 use emcraft_tetmesh::predicates::{Point2, Point3 as Exact, Sign, orient2d, orient3d};
 
 use crate::{MeshError, Result};
@@ -136,12 +136,13 @@ struct Grid {
 }
 
 fn tri_box(s: &Surface, t: usize) -> (Point3, Point3) {
-    emcraft_model::bounding_box(s.triangles[t].iter().map(|&v| s.positions[v as usize])).unwrap_or((Point3::ORIGIN, Point3::ORIGIN))
+    let b = Aabb::around(s.triangles[t].iter().map(|&v| s.positions[v as usize])).unwrap_or_default();
+    (b.min, b.max)
 }
 
 impl Grid {
     fn new(s: &Surface) -> Grid {
-        let (lo, hi) = emcraft_model::bounding_box(s.positions.iter().copied()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
+        let Aabb { min: lo, max: hi } = Aabb::around(s.positions.iter().copied()).unwrap_or_default();
         let ext = (hi - lo).iter().fold(0.0, f64::max).max(f64::MIN_POSITIVE);
         let per_side = (s.triangles.len().max(1) as f64).sqrt().ceil().clamp(1.0, 256.0);
         let step = ext / per_side;

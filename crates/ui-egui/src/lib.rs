@@ -34,8 +34,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
 
-use emcraft_engine::Session;
 use emcraft_engine::view::{FieldView, Plane, PlaneSamples};
+use emcraft_engine::{EngineError, Session};
 use serde_json::{Value, json};
 
 pub use control::ControlRequest;
@@ -254,8 +254,8 @@ impl EmcraftApp {
         app
     }
 
-    pub fn message(&mut self, text: impl Into<String>, error: bool) {
-        let text: String = text.into().chars().take(2000).collect();
+    pub fn message(&mut self, text: impl std::fmt::Display, error: bool) {
+        let text: String = text.to_string().chars().take(2000).collect();
         if let Some(last) = self.messages.last_mut()
             && last.text == text
             && last.error == error
@@ -281,19 +281,19 @@ impl EmcraftApp {
     /// Runs a command as a person or an agent asks for it: a quick one at once, a long one on
     /// the worker thread (the reply is then `{"started": …}` and the result comes with the job).
     /// Refused while a job runs.
-    pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+    pub fn run(&mut self, id: &str, params: Value) -> Result<Value, UiError> {
         if let Some(job) = &self.job {
-            return Err(format!("busy: {} is running (cancel it first)", label(&job.command)));
+            return Err(UiError::Busy(label(&job.command).to_owned()));
         }
         if emcraft_engine::find_command(id).is_none() {
-            return Err(format!("unknown command `{}`", id.chars().take(100).collect::<String>()));
+            return Err(EngineError::UnknownCommand(id.chars().take(100).collect()).into());
         }
         if worker::is_long(id) {
             self.job = Some(worker::Job::start(&self.session, id, params, self.ctx.clone()));
             self.message(format!("{}…", label(id)), false);
             return Ok(json!({"started": id}));
         }
-        let r = self.session.execute(id, &params).map_err(|e| e.to_string());
+        let r = self.session.execute(id, &params).map_err(UiError::from);
         match &r {
             Ok(reply) => self.after(id, &params, reply),
             Err(e) => self.message(format!("{}: {e}", label(id)), true),
@@ -302,14 +302,13 @@ impl EmcraftApp {
     }
 
     /// Runs a script (a JSON array of `{command, params}`) on the worker thread, as one job.
-    pub fn run_script(&mut self, script: Value) -> Result<Value, String> {
+    pub fn run_script(&mut self, script: Value) -> Result<Value, UiError> {
         if let Some(job) = &self.job {
-            return Err(format!("busy: {} is running (cancel it first)", label(&job.command)));
+            return Err(UiError::Busy(label(&job.command).to_owned()));
         }
-        let n = script.as_array().map(Vec::len).ok_or("a script is a JSON array of {command, params}")?;
-        self.job = Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| {
-            s.run_script(&script).map(Value::Array).map_err(|e| e.to_string())
-        }));
+        let n = script.as_array().map(Vec::len).ok_or_else(|| UiError::Input("a script is a JSON array of {command, params}".into()))?;
+        self.job =
+            Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| s.run_script(&script).map(Value::Array)));
         self.message(format!("Running a script of {n} commands…"), false);
         Ok(json!({"started": "engine.script"}))
     }
@@ -326,11 +325,11 @@ impl EmcraftApp {
             "file.sample" | "engine.script" | "file.open" => {
                 self.port_modes = None;
                 self.compare = None;
-                self.view = if self.session.sweep.is_some() {
+                self.view = if self.session.results.sweep.is_some() {
                     View::SParameters
-                } else if self.session.eigen.is_some() {
+                } else if self.session.results.eigen.is_some() {
                     View::Eigenmodes
-                } else if self.session.radiation.is_some() {
+                } else if self.session.results.radiation.is_some() {
                     View::FarField
                 } else {
                     View::Model
@@ -363,13 +362,13 @@ impl EmcraftApp {
             "solve.radiation" => {
                 self.view = View::FarField;
                 self.field.view.mode = None;
-                if let Some(r) = &self.session.radiation {
+                if let Some(r) = &self.session.results.radiation {
                     self.field.view.frequency = r.result.frequency;
                 }
                 format!("Solved the open problem: radiated power {:.4e} W.", f("power").or(f("radiated_power")).unwrap_or(f64::NAN))
             }
             "solve.time_domain" => {
-                self.view = if self.session.td_radiation.is_some() { View::FarField } else { View::SParameters };
+                self.view = if self.session.results.td_radiation.is_some() { View::FarField } else { View::SParameters };
                 format!("Time-domain solve done in {} steps.", reply.get("steps").and_then(Value::as_u64).unwrap_or(0))
             }
             "solve.port_modes" => {
@@ -442,13 +441,13 @@ impl EmcraftApp {
         if let Some(f) = nearest(&freqs, self.field.view.frequency) {
             self.field.view.frequency = f;
         }
-        self.field.view.mode = if self.session.sweep.is_none() && self.session.eigen.is_some() { Some(0) } else { None };
+        self.field.view.mode = if self.session.results.sweep.is_none() && self.session.results.eigen.is_some() { Some(0) } else { None };
         self.field.at = None;
     }
 
     /// The sweep's frequencies (Hz).
     pub fn frequencies(&self) -> Vec<f64> {
-        self.session.sweep.as_ref().map(|s| s.results.iter().map(|r| r.frequency).collect()).unwrap_or_default()
+        self.session.results.sweep.as_ref().map(|s| s.results.iter().map(|r| r.frequency).collect()).unwrap_or_default()
     }
 
     /// Takes a finished job's session and reply; answers the control requests waiting on it.
@@ -468,7 +467,7 @@ impl EmcraftApp {
                 }
                 d.reply
             }
-            None => Err("the worker stopped without an answer".into()),
+            None => Err(EngineError::failed("the worker stopped without an answer")),
         };
         match &reply {
             Ok(v) => {
@@ -481,7 +480,7 @@ impl EmcraftApp {
         }
         let answer = match reply {
             Ok(v) => json!({"ok": true, "result": v}),
-            Err(e) => json!({"ok": false, "error": e}),
+            Err(e) => json!({"ok": false, "error": e.to_string()}),
         };
         for w in job.waiting {
             let _ = w.send(answer.clone());
@@ -500,8 +499,8 @@ impl EmcraftApp {
     }
 
     /// Opens the dialog of `id` (commands without parameters run at once).
-    pub fn open_dialog(&mut self, id: &str) -> Result<(), String> {
-        let spec = emcraft_engine::find_command(id).ok_or_else(|| format!("unknown command `{}`", id.chars().take(100).collect::<String>()))?;
+    pub fn open_dialog(&mut self, id: &str) -> Result<(), UiError> {
+        let spec = emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
         if spec.params.is_empty() {
             return self.run(id, json!({})).map(|_| ());
         }
@@ -512,14 +511,14 @@ impl EmcraftApp {
 
     /// OK on the open dialog: runs its command with its parameters; the dialog stays open with
     /// the error when they are refused.
-    pub fn dialog_ok(&mut self) -> Result<Value, String> {
-        let Some(d) = self.dialog.as_mut() else { return Err("no dialog is open".into()) };
+    pub fn dialog_ok(&mut self) -> Result<Value, UiError> {
+        let Some(d) = self.dialog.as_mut() else { return Err(UiError::NoDialog) };
         let id = d.command.id;
         let params = match d.params() {
             Ok(p) => p,
             Err(e) => {
                 d.error = Some(e.clone());
-                return Err(e);
+                return Err(UiError::Input(e));
             }
         };
         match self.run(id, params) {
@@ -529,7 +528,7 @@ impl EmcraftApp {
             }
             Err(e) => {
                 if let Some(d) = self.dialog.as_mut() {
-                    d.error = Some(e.clone());
+                    d.error = Some(e.to_string());
                 }
                 Err(e)
             }
@@ -744,15 +743,33 @@ fn status_area(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         });
 }
 
+/// Why the app refused or could not do what a person or an agent asked.
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum UiError {
+    /// A job runs (its label); one at a time.
+    #[error("busy: {0} is running (cancel it first)")]
+    Busy(String),
+    #[error(transparent)]
+    Engine(#[from] EngineError),
+    #[error("no dialog is open")]
+    NoDialog,
+    /// Input that cannot be used: a field's text, a request's shape.
+    #[error("{0}")]
+    Input(String),
+    /// Run's preflight found problems that block it.
+    #[error("Run refused: {0}")]
+    Refused(String),
+}
+
 /// Opens the desktop app; `sample` is opened and solved at once. `control` is the control
 /// channel's request queue (`emcraft --control PORT`).
-pub fn run(sample: Option<String>, control: Option<Receiver<ControlRequest>>) -> Result<(), String> {
+pub fn run(sample: Option<String>, control: Option<Receiver<ControlRequest>>) -> eframe::Result {
     run_with(sample, move |_| control)
 }
 
 /// Like [`run`], with the control queue made from the window's context (so the server can wake
 /// the window when a request arrives).
-pub fn run_with(sample: Option<String>, control: impl FnOnce(&egui::Context) -> Option<Receiver<ControlRequest>>) -> Result<(), String> {
+pub fn run_with(sample: Option<String>, control: impl FnOnce(&egui::Context) -> Option<Receiver<ControlRequest>>) -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("EMCraft").with_inner_size([1500.0, 960.0]).with_min_inner_size([900.0, 600.0]),
         ..Default::default()
@@ -766,7 +783,6 @@ pub fn run_with(sample: Option<String>, control: impl FnOnce(&egui::Context) -> 
             Ok(Box::new(Window(app)))
         }),
     )
-    .map_err(|e| e.to_string())
 }
 
 /// The app inside eframe.

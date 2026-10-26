@@ -12,7 +12,7 @@ pub mod geom;
 pub mod mesh;
 pub mod units;
 
-pub use geom::{CVec3, Point3, Vec3};
+pub use geom::{Aabb, CVec3, Point3, Vec3};
 pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
 use serde::{Deserialize, Serialize};
 
@@ -237,13 +237,13 @@ pub enum Shape {
 pub const MAX_SURFACE_TRIANGLES: usize = 2_000_000;
 
 impl Shape {
-    /// The bounding box (lo, hi).
-    pub fn bounds(&self) -> (Point3, Point3) {
+    /// The bounding box.
+    pub fn bounds(&self) -> Aabb {
         match *self {
-            Shape::Box { size } => (Point3::ORIGIN, size.to_point()),
-            Shape::Cylinder { radius: r, length } => (Point3::new(-r, -r, 0.0), Point3::new(r, r, length)),
-            Shape::Sphere { radius: r } => (Point3::new(-r, -r, -r), Point3::new(r, r, r)),
-            Shape::Surface { ref positions, .. } => bounding_box(positions.iter().copied()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN)),
+            Shape::Box { size } => Aabb::new(Point3::ORIGIN, size.to_point()),
+            Shape::Cylinder { radius: r, length } => Aabb::new(Point3::new(-r, -r, 0.0), Point3::new(r, r, length)),
+            Shape::Sphere { radius: r } => Aabb::new(Point3::new(-r, -r, -r), Point3::new(r, r, r)),
+            Shape::Surface { ref positions, .. } => Aabb::around(positions.iter().copied()).unwrap_or_default(),
         }
     }
 
@@ -266,7 +266,7 @@ impl Shape {
     /// close (empty for the primitives, whose ends the mesher knows).
     pub fn end_triangles(&self) -> [Vec<usize>; 2] {
         let Shape::Surface { positions, triangles, .. } = self else { return [Vec::new(), Vec::new()] };
-        let (lo, hi) = self.bounds();
+        let Aabb { min: lo, max: hi } = self.bounds();
         let tol = 1e-9 * (0..3).map(|d| hi[d] - lo[d]).fold(0.0, f64::max);
         let on = |t: &[u32; 3], z: f64| t.iter().all(|v| positions.get(*v as usize).is_some_and(|p| (p[2] - z).abs() <= tol));
         [lo[2], hi[2]].map(|z| (0..triangles.len()).filter(|&i| on(&triangles[i], z)).collect())
@@ -311,9 +311,9 @@ impl Inclusion {
         self.shape.contains((p - self.at).to_point())
     }
 
-    pub fn bounds(&self) -> (Point3, Point3) {
-        let (lo, hi) = self.shape.bounds();
-        (lo + self.at.to_vec(), hi + self.at.to_vec())
+    pub fn bounds(&self) -> Aabb {
+        let b = self.shape.bounds();
+        Aabb::new(b.min + self.at.to_vec(), b.max + self.at.to_vec())
     }
 }
 
@@ -439,11 +439,11 @@ impl Feature {
         self.shape.contains(self.axis.unturn(p - self.at).to_point())
     }
 
-    /// The bounding box (lo, hi).
-    pub fn bounds(&self) -> (Point3, Point3) {
-        let (lo, hi) = self.shape.bounds();
-        let (a, b) = (self.axis.turn(lo.to_vec()), self.axis.turn(hi.to_vec()));
-        (self.at + a.min(b), self.at + a.max(b))
+    /// The bounding box.
+    pub fn bounds(&self) -> Aabb {
+        let own = self.shape.bounds();
+        let (a, b) = (self.axis.turn(own.min.to_vec()), self.axis.turn(own.max.to_vec()));
+        Aabb::new(self.at + a.min(b), self.at + a.max(b))
     }
 }
 
@@ -494,11 +494,6 @@ fn unit_voltage() -> [f64; 2] {
 
 fn unit(name: &str, v: Vec3) -> Result<Vec3> {
     v.normalized().ok_or_else(|| invalid(name, "must be a nonzero finite vector"))
-}
-
-/// The bounding box (lo, hi) of points; `None` for none.
-pub fn bounding_box(points: impl IntoIterator<Item = Point3>) -> Option<(Point3, Point3)> {
-    points.into_iter().fold(None, |b, p| Some(b.map_or((p, p), |(lo, hi): (Point3, Point3)| (lo.min(p), hi.max(p)))))
 }
 
 /// The solid angle a triangle subtends at the origin, its corners given relative to it (A. Van
@@ -580,15 +575,53 @@ pub struct Port {
     /// guide lies (start: above the plane, its outward normal −z; end: below it).
     #[serde(default)]
     pub face: Option<PortFace>,
-    /// Modes from the numerical cross-section solver even where the closed forms apply (they
-    /// do for a whole rectangle or circle of one material; any other cross-section — a coaxial
-    /// line, a ridge, a polygon — gets the numerical ones in any case).
+    /// Where the modes come from: the closed forms where they apply (a whole rectangle or
+    /// circle of one material) or the numerical cross-section solver; any other cross-section —
+    /// a coaxial line, a ridge, a polygon — gets the numerical ones in any case.
     #[serde(default)]
-    pub numeric: bool,
+    pub mode_solver: ModeSolver,
     /// The impedance (Ω) the S-parameters are referred to at this port, for a line with a
     /// characteristic impedance (coaxial, strip); its own mode's when `None`.
     #[serde(default)]
     pub reference: Option<f64>,
+}
+
+/// Where a port's modes come from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModeSolver {
+    /// The closed forms where they apply, the numerical solver elsewhere.
+    #[default]
+    Auto,
+    /// The numerical cross-section solver everywhere.
+    Numeric,
+}
+
+impl Port {
+    /// A port at `end` with four modes, the closed forms' where they apply, its S-parameters
+    /// in its own mode's power waves.
+    pub fn new(name: impl Into<String>, end: End) -> Port {
+        Port { name: name.into(), end, modes: 4, face: None, mode_solver: ModeSolver::Auto, reference: None }
+    }
+
+    /// The port with `modes` modes in its boundary condition.
+    pub fn with_modes(self, modes: u32) -> Port {
+        Port { modes, ..self }
+    }
+
+    /// The port on a rectangle inside the geometry instead of an end face.
+    pub fn on_face(self, face: PortFace) -> Port {
+        Port { face: Some(face), ..self }
+    }
+
+    pub fn with_mode_solver(self, mode_solver: ModeSolver) -> Port {
+        Port { mode_solver, ..self }
+    }
+
+    /// The port's S-parameters referred to `ohms`.
+    pub fn referred_to(self, ohms: f64) -> Port {
+        Port { reference: Some(ohms), ..self }
+    }
 }
 
 /// A port's rectangle: [x0, x0 + a] × [y0, y0 + b] at height z (m).
@@ -602,7 +635,7 @@ pub struct PortFace {
 }
 
 /// The model.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
     pub materials: Vec<Material>,
     pub waveguide: Option<Waveguide>,
@@ -655,9 +688,29 @@ impl Band {
     }
 }
 
+impl Default for Model {
+    /// An empty model with one material, vacuum.
+    fn default() -> Model {
+        Model {
+            materials: vec![Material::vacuum()],
+            waveguide: None,
+            solid: None,
+            inclusions: Vec::new(),
+            features: Vec::new(),
+            ports: Vec::new(),
+            wall_conductivity: None,
+            open: None,
+            sources: Vec::new(),
+            lumped: Vec::new(),
+            band: None,
+            mesh: None,
+        }
+    }
+}
+
 impl Model {
     pub fn new() -> Model {
-        Model { materials: vec![Material::vacuum()], ..Model::default() }
+        Model::default()
     }
 
     pub fn material(&self, name: &str) -> Result<(usize, &Material)> {
@@ -790,13 +843,13 @@ impl Model {
         if let Some(m) = &inc.material {
             self.material(m)?;
         }
-        let (lo, hi) = inc.bounds();
-        let (slo, shi) = solid.shape.bounds();
+        let Aabb { min: lo, max: hi } = inc.bounds();
+        let Aabb { min: slo, max: shi } = solid.shape.bounds();
         if (0..3).any(|d| lo[d] <= slo[d] || hi[d] >= shi[d]) {
             return Err(invalid("inclusion", "must lie strictly inside the solid's bounding box"));
         }
         for other in &self.inclusions {
-            let (olo, ohi) = other.bounds();
+            let Aabb { min: olo, max: ohi } = other.bounds();
             if (0..3).all(|d| lo[d] < ohi[d] && olo[d] < hi[d]) {
                 return Err(invalid("inclusion", "not supported yet: inclusions whose bounding boxes overlap"));
             }
@@ -809,11 +862,10 @@ impl Model {
     /// The corners of everything that radiates or scatters: inclusions, features, dipoles and
     /// the ends of lumped ports (an open problem's Huygens box encloses them).
     pub fn radiators(&self) -> impl Iterator<Item = Point3> + '_ {
-        let corners = |(a, b): (Point3, Point3)| [a, b];
         self.inclusions
             .iter()
-            .flat_map(move |i| corners(i.bounds()))
-            .chain(self.features.iter().flat_map(move |f| corners(f.bounds())))
+            .flat_map(|i| i.bounds().corners())
+            .chain(self.features.iter().flat_map(|f| f.bounds().corners()))
             .chain(self.sources.iter().filter_map(|s| match s {
                 Source::Dipole { at, .. } => Some(*at),
                 Source::PlaneWave { .. } => None,
@@ -855,9 +907,7 @@ impl Model {
         if !f.at.is_finite() {
             return Err(invalid("feature", "its position must be finite"));
         }
-        let (lo, hi) = f.bounds();
-        let (slo, shi) = self.bounds().unwrap_or_else(|| solid.shape.bounds());
-        if !(0..3).all(|d| lo[d] <= shi[d] && slo[d] <= hi[d]) {
+        if !f.bounds().overlaps(self.bounds().unwrap_or_else(|| solid.shape.bounds())) {
             return Err(invalid("feature", "must meet the solid (their bounding boxes are apart)"));
         }
         self.features.push(f);
@@ -866,18 +916,12 @@ impl Model {
     }
 
     /// The bounding box of the geometry.
-    pub fn bounds(&self) -> Option<(Point3, Point3)> {
+    pub fn bounds(&self) -> Option<Aabb> {
         if let Some(w) = &self.waveguide {
-            return Some((Point3::ORIGIN, Point3::new(w.width, w.height, w.length())));
+            return Some(Aabb::new(Point3::ORIGIN, Point3::new(w.width, w.height, w.length())));
         }
         let s = self.solid.as_ref()?;
-        Some(
-            self.features
-                .iter()
-                .filter(|f| f.combine == Combine::Add)
-                .map(Feature::bounds)
-                .fold(s.shape.bounds(), |(lo, hi), (a, b)| (lo.min(a), hi.max(b))),
-        )
+        Some(self.features.iter().filter(|f| f.combine == Combine::Add).map(Feature::bounds).fold(s.shape.bounds(), Aabb::union))
     }
 
     /// The cross-section of the port at an end: the waveguide's end section, or a box's or a
@@ -897,15 +941,15 @@ impl Model {
         }
         if let Some(s) = &self.solid {
             // A port needs the end face whole: no feature may reach it.
-            let (_, hi) = s.shape.bounds();
+            let hi = s.shape.bounds().max;
             let plane = match end {
                 End::Start => 0.0,
                 End::End => hi[2],
             };
             let tol = 1e-9 * hi[2].abs().max(1e-300);
             if self.features.iter().any(|f| {
-                let (a, b) = f.bounds();
-                a[2] <= plane + tol && b[2] >= plane - tol
+                let b = f.bounds();
+                b.min.z <= plane + tol && b.max.z >= plane - tol
             }) {
                 return Err(invalid("port", "a feature reaches the end face; a port needs the guide's whole cross-section there"));
             }
@@ -980,7 +1024,7 @@ impl Model {
     pub fn add_source(&mut self, src: Source) -> Result<()> {
         let src = src.checked()?;
         if let Source::Dipole { at, .. } = src
-            && let Some((lo, hi)) = self.bounds()
+            && let Some(Aabb { min: lo, max: hi }) = self.bounds()
             && (0..3).any(|d| at[d] <= lo[d] || at[d] >= hi[d])
         {
             return Err(invalid("dipole", "must lie inside the geometry"));
@@ -1008,7 +1052,7 @@ impl Model {
         if !(gap > 0.0) {
             return Err(invalid("lumped port", "its two ends must differ"));
         }
-        if let Some((lo, hi)) = self.bounds()
+        if let Some(Aabb { min: lo, max: hi }) = self.bounds()
             && [p.from, p.to].iter().any(|q| (0..3).any(|d| q[d] <= lo[d] || q[d] >= hi[d]))
         {
             return Err(invalid("lumped port", "must lie inside the geometry"));
@@ -1135,9 +1179,8 @@ mod tests {
         // A turned box: size [x, y, z] along y becomes [z, x, y].
         let f =
             Feature { combine: Combine::Add, shape: Shape::Box { size: Vec3::new(1.0, 2.0, 3.0) }, at: Point3::new(0.0, 0.0, 0.0), axis: Axis::Y };
-        let (lo, hi) = f.bounds();
-        let mid = lo.midpoint(hi);
-        assert!(f.contains(mid) && !f.contains(mid.with(0, hi.x + 0.1)));
+        let b = f.bounds();
+        assert!(f.contains(b.center()) && !f.contains(b.center().with(0, b.max.x + 0.1)));
     }
 
     #[test]
@@ -1164,11 +1207,11 @@ mod tests {
         assert!(matches!(m.set_waveguide(w), Err(ModelError::Unknown { .. })));
         m.set_waveguide(guide()).unwrap();
         assert!((m.waveguide.as_ref().unwrap().length() - 0.01).abs() < 1e-15);
-        m.add_port(Port { name: "1".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).unwrap();
-        assert!(m.add_port(Port { name: "2".into(), end: End::Start, modes: 4, face: None, numeric: false, reference: None }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 0, face: None, numeric: false, reference: None }).is_err());
-        assert!(m.add_port(Port { name: "2".into(), end: End::End, modes: 1000, face: None, numeric: false, reference: None }).is_err());
-        m.add_port(Port { name: "2".into(), end: End::End, modes: 1, face: None, numeric: false, reference: None }).unwrap();
+        m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
+        assert!(m.add_port(Port::new("2", End::Start).with_modes(4)).is_err());
+        assert!(m.add_port(Port::new("2", End::End).with_modes(0)).is_err());
+        assert!(m.add_port(Port::new("2", End::End).with_modes(1000)).is_err());
+        m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
         assert_eq!(m.port_material(End::End).unwrap().name, "vacuum");
         assert_eq!(m.check(), vec!["no mesh: mesh the geometry with mesh.generate".to_owned()]);
     }
@@ -1181,7 +1224,7 @@ mod tests {
         assert!(m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "nothing".into() }).is_err());
         m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.01, length: 0.03 }, material: "vacuum".into() }).unwrap();
         assert!(m.waveguide.is_none());
-        assert_eq!(m.bounds(), Some((Point3::new(-0.01, -0.01, 0.0), Point3::new(0.01, 0.01, 0.03))));
+        assert_eq!(m.bounds(), Some(Aabb::new(Point3::new(-0.01, -0.01, 0.0), Point3::new(0.01, 0.01, 0.03))));
         assert_eq!(m.port_shape(End::End).unwrap(), PortShape::Circle { cx: 0.0, cy: 0.0, r: 0.01 });
         m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
         assert!(m.port_shape(End::Start).is_err());

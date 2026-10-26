@@ -380,7 +380,7 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
     let inner_lo = [0, 1, 2].map(|d| npml as f64 * hs[d]);
     let inner_hi = [0, 1, 2].map(|d| size[d] - npml as f64 * hs[d]);
     // (A run always has a source, so the box is never empty.)
-    let (clo, chi) = emcraft_model::bounding_box(model.radiators()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
+    let emcraft_model::Aabb { min: clo, max: chi } = emcraft_model::Aabb::around(model.radiators()).unwrap_or_default();
     let inset = npml as f64 / 3.0;
     let mut hlo = [0usize; 3];
     let mut hhi = [0usize; 3];

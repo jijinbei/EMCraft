@@ -8,14 +8,14 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::time::Instant;
 
-use emcraft_engine::Session;
 use emcraft_engine::progress::{Progress, Snapshot};
+use emcraft_engine::{EngineError, Session};
 use serde_json::Value;
 
 /// What a finished job hands back: the session after the command, and its reply.
 pub struct Done {
     pub session: Session,
-    pub reply: Result<Value, String>,
+    pub reply: Result<Value, EngineError>,
 }
 
 /// A running job.
@@ -42,7 +42,7 @@ impl Job {
     /// Starts `command` on a copy of `session`.
     pub fn start(session: &Session, command: &str, params: Value, ctx: Option<egui::Context>) -> Job {
         let (id, p) = (command.to_owned(), params.clone());
-        Job::spawn(session, command, params, ctx, move |s| s.execute(&id, &p).map_err(|e| e.to_string()))
+        Job::spawn(session, command, params, ctx, move |s| s.execute(&id, &p))
     }
 
     /// Starts `work` on a copy of `session`; `command` names it.
@@ -51,7 +51,7 @@ impl Job {
         command: &str,
         params: Value,
         ctx: Option<egui::Context>,
-        work: impl FnOnce(&mut Session) -> Result<Value, String> + Send + 'static,
+        work: impl FnOnce(&mut Session) -> Result<Value, EngineError> + Send + 'static,
     ) -> Job {
         let (tx, rx) = channel();
         let progress = Progress::new();

@@ -155,6 +155,6 @@ mod tests {
         p.cancel();
         let r = scope(p, || s.execute("solve.frequency", &serde_json::json!({"start": 8, "stop": 9, "points": 3, "order": 1})));
         assert_eq!(r, Err(EngineError::Failed(CANCELLED.into())));
-        assert!(s.sweep.is_none());
+        assert!(s.results.sweep.is_none());
     }
 }

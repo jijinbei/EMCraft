@@ -78,37 +78,28 @@ fn strings(v: &[&str]) -> Vec<String> {
 
 /// The editor of parameter `p` of command `command`.
 pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
-    let choice = |v: &[&str]| Kind::Choice(strings(v));
+    if !p.choices.is_empty() {
+        return Kind::Choice(strings(p.choices));
+    }
     match (command, p.name) {
         (_, "sections") => return Kind::Table(SECTIONS),
         (_, "layers") => return Kind::Table(LAYERS),
         (_, "strips") => return Kind::Table(STRIPS),
-        ("units.set", "length") => return choice(&["mm", "m"]),
-        ("units.set", "frequency") => return choice(&["GHz", "MHz", "Hz"]),
-        (_, "shape") => return choice(&["box", "cylinder", "sphere"]),
-        (_, "combine") => return choice(&["add", "subtract", "intersect"]),
-        (_, "axis") => return choice(&["x", "y", "z"]),
-        ("model.port.create", "end") => return choice(&["start", "end"]),
-        (_, "mode_solver") => return choice(&["auto", "numeric"]),
-        ("solve.frequency", "sweep") => return choice(&["fast", "full"]),
-        (_, "plane") => return choice(&["h", "e", "cross"]),
-        (_, "component") => return choice(&["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"]),
-        (_, "solver") => return choice(&["fem", "time_domain"]),
         ("file.sample", "name") => return Kind::Choice(emcraft_engine::sample::SAMPLES.iter().map(|s| s.name.to_owned()).collect()),
         (_, "material") => return Kind::Choice(session.model.materials.iter().map(|m| m.name.clone()).collect()),
         (_, "excitation") => return Kind::Choice(session.model.ports.iter().map(|p| p.name.clone()).collect()),
         ("results.probe", "at") => return Kind::Json,
-        (_, "size" | "at" | "direction" | "polarization" | "from" | "to") if p.kind == "array" => return Kind::Vector(XYZ),
+        (_, "size" | "at" | "direction" | "polarization" | "from" | "to") if p.kind == emcraft_engine::Kind::Array => return Kind::Vector(XYZ),
         (_, "face") => return Kind::Vector(FACE),
         (_, "frequencies" | "theta") => return Kind::Numbers,
         _ => {}
     }
     match p.kind {
-        "number" => Kind::Number,
-        "integer" => Kind::Integer,
-        "boolean" => Kind::Bool,
-        "string" => Kind::Text,
-        _ => Kind::Json,
+        emcraft_engine::Kind::Number => Kind::Number,
+        emcraft_engine::Kind::Integer => Kind::Integer,
+        emcraft_engine::Kind::Boolean => Kind::Bool,
+        emcraft_engine::Kind::String => Kind::Text,
+        emcraft_engine::Kind::Array | emcraft_engine::Kind::Object => Kind::Json,
     }
 }
 

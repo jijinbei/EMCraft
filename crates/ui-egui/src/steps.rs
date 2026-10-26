@@ -12,176 +12,29 @@ use serde_json::{Value, json};
 
 use crate::scene3d::Overlay;
 use crate::theme::Tokens;
-use crate::{EmcraftApp, View, dialogs, glyphs, scenario, ui_kit};
+use crate::{EmcraftApp, UiError, View, dialogs, glyphs, scenario, ui_kit};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Step {
-    Intent,
-    Geometry,
-    Materials,
-    Excitation,
-    Boundaries,
-    Mesh,
-    Setup,
-    Run,
-    Results,
-}
+pub use emcraft_engine::workflow::{Check, Status, Step, StepState};
 
-impl Step {
-    pub const ALL: [Step; 9] =
-        [Step::Intent, Step::Geometry, Step::Materials, Step::Excitation, Step::Boundaries, Step::Mesh, Step::Setup, Step::Run, Step::Results];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Step::Intent => "intent",
-            Step::Geometry => "geometry",
-            Step::Materials => "materials",
-            Step::Excitation => "excitation",
-            Step::Boundaries => "boundaries",
-            Step::Mesh => "mesh",
-            Step::Setup => "setup",
-            Step::Run => "run",
-            Step::Results => "results",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Step::Intent => "Intent",
-            Step::Geometry => "Geometry",
-            Step::Materials => "Materials",
-            Step::Excitation => "Excitation",
-            Step::Boundaries => "Boundaries",
-            Step::Mesh => "Mesh",
-            Step::Setup => "Setup",
-            Step::Run => "Run",
-            Step::Results => "Results",
-        }
-    }
-
-    pub fn index(self) -> usize {
-        Step::ALL.iter().position(|s| *s == self).unwrap_or(0)
-    }
-
-    pub fn parse(s: &str) -> Option<Step> {
-        Step::ALL.into_iter().find(|x| x.id() == s)
-    }
-
-    /// What the 3D view puts forward in this step.
-    pub fn overlay(self) -> Overlay {
-        match self {
-            Step::Materials => Overlay::Materials,
-            Step::Excitation => Overlay::Ports,
-            Step::Boundaries => Overlay::Boundaries,
-            Step::Mesh => Overlay::Mesh,
-            _ => Overlay::Plain,
-        }
-    }
-
-    /// The step's commands, offered in its panel.
-    pub fn commands(self) -> &'static [&'static str] {
-        match self {
-            Step::Intent => &["units.set"],
-            Step::Geometry => &["geometry.waveguide", "geometry.solid", "geometry.feature", "geometry.inclusion", "geometry.import", "file.sample"],
-            Step::Materials => &["model.material.create"],
-            Step::Excitation => &["model.port.create", "model.port.lumped", "source.dipole", "source.plane_wave", "source.clear"],
-            Step::Boundaries => &["model.walls", "model.open"],
-            Step::Mesh => &["mesh.generate"],
-            Step::Setup | Step::Run => &[],
-            Step::Results => &["results.compare", "view.sparameters", "view.field", "view.pattern"],
-        }
-    }
-
-    /// The step a command belongs to.
-    pub fn of_command(id: &str) -> Option<Step> {
-        Some(match id {
-            "project.frequency" | "units.set" => Step::Intent,
-            _ if id.starts_with("geometry.") || id == "file.sample" => Step::Geometry,
-            "model.material.create" => Step::Materials,
-            _ if id.starts_with("model.port.") || id.starts_with("source.") || id == "solve.port_modes" => Step::Excitation,
-            "model.walls" | "model.open" => Step::Boundaries,
-            "mesh.generate" | "project.estimate" => Step::Mesh,
-            _ if id.starts_with("solve.") => Step::Run,
-            _ if id.starts_with("results.") || id.starts_with("view.") => Step::Results,
-            _ => return None,
-        })
+/// What the 3D view puts forward in a step.
+pub fn overlay(step: Step) -> Overlay {
+    match step {
+        Step::Materials => Overlay::Materials,
+        Step::Excitation => Overlay::Ports,
+        Step::Boundaries => Overlay::Boundaries,
+        Step::Mesh => Overlay::Mesh,
+        _ => Overlay::Plain,
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Status {
-    Done,
-    Warning,
-    Missing,
-    Stale,
-}
-
-impl Status {
-    pub fn parse(s: &str) -> Status {
-        match s {
-            "done" => Status::Done,
-            "warning" => Status::Warning,
-            "stale" => Status::Stale,
-            _ => Status::Missing,
-        }
+/// A status's colour in the step bar and panels.
+fn status_color(status: Status, t: &Tokens) -> Color32 {
+    match status {
+        Status::Done => t.success,
+        Status::Warning => t.warning,
+        Status::Missing => t.error,
+        Status::Stale => Color32::from_rgb(70, 130, 210),
     }
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Status::Done => "done",
-            Status::Warning => "warning",
-            Status::Missing => "missing",
-            Status::Stale => "stale",
-        }
-    }
-
-    fn color(self, t: &Tokens) -> Color32 {
-        match self {
-            Status::Done => t.success,
-            Status::Warning => t.warning,
-            Status::Missing => t.error,
-            Status::Stale => Color32::from_rgb(70, 130, 210),
-        }
-    }
-}
-
-/// A check's message and the command that fixes it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Check {
-    pub text: String,
-    pub command: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct StepState {
-    pub step: Step,
-    pub status: Status,
-    pub messages: Vec<Check>,
-}
-
-/// `project.status`'s reply as step states (every step present, in order).
-pub fn parse_status(reply: &Value) -> Vec<StepState> {
-    let list = reply.get("steps").and_then(Value::as_array).cloned().unwrap_or_default();
-    Step::ALL
-        .into_iter()
-        .map(|step| {
-            let v = list.iter().find(|s| s.get("step").and_then(Value::as_str) == Some(step.id()));
-            let status = v.and_then(|s| s.get("status")).and_then(Value::as_str).map_or(Status::Missing, Status::parse);
-            let messages = v
-                .and_then(|s| s.get("messages"))
-                .and_then(Value::as_array)
-                .map(|m| {
-                    m.iter()
-                        .map(|x| Check {
-                            text: x.get("text").and_then(Value::as_str).unwrap_or("").to_owned(),
-                            command: x.get("command").and_then(Value::as_str).map(str::to_owned),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            StepState { step, status, messages }
-        })
-        .collect()
 }
 
 /// The solver Run starts.
@@ -291,13 +144,7 @@ pub fn statuses(app: &mut EmcraftApp) -> Vec<StepState> {
     {
         return v.clone();
     }
-    let v = match app.session.execute("project.status", &json!({})) {
-        Ok(reply) => parse_status(&reply),
-        Err(e) => Step::ALL
-            .into_iter()
-            .map(|step| StepState { step, status: Status::Missing, messages: vec![Check { text: e.to_string(), command: None }] })
-            .collect(),
-    };
+    let v = emcraft_engine::workflow::steps(&app.session).to_vec();
     app.workflow.status = Some((key, v.clone()));
     v
 }
@@ -309,7 +156,7 @@ pub fn statuses_now(app: &EmcraftApp) -> Vec<StepState> {
     {
         return v.clone();
     }
-    app.session.clone().execute("project.status", &json!({})).map(|r| parse_status(&r)).unwrap_or_default()
+    emcraft_engine::workflow::steps(&app.session).to_vec()
 }
 
 /// The workflow's state for `ui.inspect`.
@@ -362,11 +209,11 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
     .into();
     app.view = match step {
         Step::Results => {
-            if app.session.sweep.is_some() || app.session.time_domain.is_some() {
+            if app.session.results.sweep.is_some() || app.session.results.time_domain.is_some() {
                 View::SParameters
-            } else if app.session.eigen.is_some() {
+            } else if app.session.results.eigen.is_some() {
                 View::Eigenmodes
-            } else if app.session.radiation.is_some() || app.session.td_radiation.is_some() {
+            } else if app.session.results.radiation.is_some() || app.session.results.td_radiation.is_some() {
                 View::FarField
             } else {
                 View::Model
@@ -456,7 +303,7 @@ pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 
 /// A status mark: a tick, an exclamation, a cross or a turning arrow in a disc.
 fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
-    let col = s.color(t);
+    let col = status_color(s, t);
     p.circle_filled(c, 7.0, col);
     let ink = Stroke::new(1.8, Color32::WHITE);
     match s {
@@ -526,7 +373,7 @@ fn header(ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
         let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
         mark(ui.painter(), r.center(), s.status, t);
         ui.label(egui::RichText::new(format!("Step {} · {}", s.step.index(), s.step.label())).size(t.font_heading).strong().color(t.text));
-        ui.label(egui::RichText::new(s.status.id()).size(t.font_small).color(s.status.color(t)));
+        ui.label(egui::RichText::new(s.status.id()).size(t.font_small).color(status_color(s.status, t)));
     });
     ui.add_space(4.0);
 }
@@ -541,7 +388,7 @@ fn checks(app: &mut EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
     let mut chosen = None;
     for (i, m) in s.messages.iter().enumerate() {
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(&m.text).size(t.font_small).color(s.status.color(t)));
+            ui.label(egui::RichText::new(&m.text).size(t.font_small).color(status_color(s.status, t)));
             // A fix that only leads back to this step is left out.
             let here = m.command.as_deref().is_some_and(|c| c.starts_with("solve.") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
@@ -698,7 +545,7 @@ fn body(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, states: &[StepState
                     ui.label(egui::RichText::new(&r.text).size(t.font_small).color(t.text));
                 }
             }
-            if let Some((lo, hi)) = app.session.model.bounds() {
+            if let Some(emcraft_model::Aabb { min: lo, max: hi }) = app.session.model.bounds() {
                 let l = app.session.display.length;
                 kv(
                     ui,
@@ -771,7 +618,7 @@ pub fn apply_band(app: &mut EmcraftApp) {
         return;
     }
     if let Err(e) = app.run("project.frequency", json!({"start": a, "stop": z})) {
-        app.workflow.fields.set_error("stop", Some(e));
+        app.workflow.fields.set_error("stop", Some(e.to_string()));
     }
 }
 
@@ -1047,21 +894,21 @@ pub fn preflight(app: &mut EmcraftApp, states: &[StepState]) -> Preflight {
 }
 
 /// Run: refuses on blocking problems; warnings are accepted by pressing Run.
-pub fn start_run(app: &mut EmcraftApp) -> Result<Value, String> {
+pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     let states = statuses(app);
     let pre = preflight(app, &states);
     if !pre.blocking.is_empty() {
-        let e = format!(
-            "Run refused: {} problem(s) block it — {}",
+        let e = UiError::Refused(format!(
+            "{} problem(s) block it — {}",
             pre.blocking.len(),
             pre.blocking.iter().map(|(s, m)| format!("{} ({})", m, s.label())).collect::<Vec<_>>().join("; ")
-        );
-        app.workflow.fields.refused = Some(e.clone());
-        app.message(e.clone(), true);
+        ));
+        app.workflow.fields.refused = Some(e.to_string());
+        app.message(&e, true);
         return Err(e);
     }
     app.workflow.fields.refused = None;
-    let (solver, params) = run_params(app)?;
+    let (solver, params) = run_params(app).map_err(UiError::Input)?;
     if !pre.warnings.is_empty() {
         app.message(format!("Running with {} accepted warning(s).", pre.warnings.len()), false);
     }
@@ -1133,12 +980,12 @@ fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &To
     }
     let s = &app.session;
     let views: Vec<View> = [
-        (s.sweep.is_some() || s.time_domain.is_some(), View::SParameters),
-        (s.sweep.is_some() || s.eigen.is_some() || s.radiation.is_some(), View::Field),
-        (s.sweep.is_some() || s.eigen.is_some() || s.radiation.is_some(), View::Model),
-        (s.eigen.is_some(), View::Eigenmodes),
-        (s.radiation.is_some() || s.td_radiation.is_some(), View::FarField),
-        (s.sweep.is_some(), View::Compare),
+        (s.results.sweep.is_some() || s.results.time_domain.is_some(), View::SParameters),
+        (s.results.sweep.is_some() || s.results.eigen.is_some() || s.results.radiation.is_some(), View::Field),
+        (s.results.sweep.is_some() || s.results.eigen.is_some() || s.results.radiation.is_some(), View::Model),
+        (s.results.eigen.is_some(), View::Eigenmodes),
+        (s.results.radiation.is_some() || s.results.td_radiation.is_some(), View::FarField),
+        (s.results.sweep.is_some(), View::Compare),
     ]
     .into_iter()
     .filter_map(|(on, v)| on.then_some(v))
@@ -1157,7 +1004,7 @@ fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &To
             }
         }
     });
-    if app.session.sweep.is_none() {
+    if app.session.results.sweep.is_none() {
         return;
     }
     ui_kit::section(ui, "Checks");
@@ -1199,7 +1046,7 @@ fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &To
         } else {
             f.set_error("touchstone", None);
             if let Err(e) = app.run("results.touchstone", json!({"path": path, "format": format})) {
-                app.workflow.fields.set_error("touchstone", Some(e));
+                app.workflow.fields.set_error("touchstone", Some(e.to_string()));
             }
         }
     }
@@ -1210,18 +1057,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_replies_parse_whatever_their_shape() {
-        let v =
-            parse_status(&json!({"steps": [{"step": "mesh", "status": "warning", "messages": [{"text": "coarse", "command": "mesh.generate"}]}]}));
-        assert_eq!(v.len(), 9);
-        assert_eq!(v[Step::Mesh.index()].status, Status::Warning);
-        assert_eq!(v[Step::Mesh.index()].messages[0].command.as_deref(), Some("mesh.generate"));
-        assert_eq!(v[0].status, Status::Missing);
-        assert_eq!(parse_status(&json!("nonsense")).len(), 9);
+    fn steps_read_their_ids_and_commands() {
         for s in Step::ALL {
-            assert_eq!(Step::parse(s.id()), Some(s));
+            assert_eq!(s.id().parse::<Step>(), Ok(s));
         }
         assert_eq!(Step::of_command("geometry.solid"), Some(Step::Geometry));
         assert_eq!(Step::of_command("solve.port_modes"), Some(Step::Excitation));
+        assert_eq!(overlay(Step::Mesh), Overlay::Mesh);
     }
 }

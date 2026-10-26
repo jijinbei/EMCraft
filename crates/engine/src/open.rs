@@ -4,7 +4,6 @@
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use emcraft_fem::Order;
 use emcraft_model::units::{C0, MU0};
 use emcraft_model::{Open, Shape, Source, Vec3};
 use emcraft_render::Rgb;
@@ -14,9 +13,8 @@ use emcraft_solver::radiation::{FarField, OpenResult};
 use emcraft_theory::radiation::Huygens;
 use serde_json::{Value, json};
 
-use crate::cmd::{point, write_png};
-use crate::params::{get, integer, number, required_string};
-use crate::{EngineError, Result, Session};
+use crate::results::write_png;
+use crate::{EngineError, Params, Result, Session};
 
 /// An open problem solved at one frequency.
 #[derive(Debug)]
@@ -29,60 +27,45 @@ pub struct Radiated {
     pub power: f64,
 }
 
-/// A direction `[x, y, z]` (any length; the model makes it a unit vector).
-fn vector(p: &Value, name: &str) -> Result<Option<Vec3>> {
-    let Some(v) = get(p, name) else { return Ok(None) };
-    let list = v.as_array().filter(|a| a.len() == 3).ok_or_else(|| EngineError::Params(format!("`{name}` must be [x, y, z]")))?;
-    let c = |v: &Value| v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::Params(format!("`{name}` must be numbers")));
-    Ok(Some(Vec3::new(c(&list[0])?, c(&list[1])?, c(&list[2])?)))
-}
-
-pub fn model_open(s: &mut Session, p: &Value) -> Result<Value> {
-    let reflection = number(p, "reflection")?;
-    let open = s.positive_length(p, "thickness")?.map(|thickness| Open { thickness, reflection });
+pub fn model_open(s: &mut Session, p: &Params) -> Result<Value> {
+    let reflection = p.number("reflection").optional()?;
+    let open = p.positive_length("thickness").optional()?.map(|thickness| Open { thickness, reflection });
     s.model.set_open(open)?;
-    s.radiation = None;
-    Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.display.length.from_si(o.thickness))}))
+    s.results.radiation = None;
+    Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.show_length(o.thickness))}))
 }
 
-pub fn source_dipole(s: &mut Session, p: &Value) -> Result<Value> {
-    let at = point(s, p, "at")?.ok_or_else(|| EngineError::Params("`at` is required".into()))?;
-    let direction = vector(p, "direction")?.unwrap_or(Vec3::unit(2));
-    let length = s.positive_length(p, "length")?.ok_or_else(|| EngineError::Params("`length` is required".into()))?;
-    let current = number(p, "current")?.unwrap_or(1.0);
-    s.model.add_source(Source::Dipole { at, direction, length, current })?;
-    s.radiation = None;
+pub fn source_dipole(s: &mut Session, p: &Params) -> Result<Value> {
+    let dipole = Source::Dipole {
+        at: p.point("at").required()?,
+        direction: p.vector("direction").or(Vec3::unit(2))?,
+        length: p.positive_length("length").required()?,
+        current: p.number("current").or(1.0)?,
+    };
+    s.model.add_source(dipole)?;
+    s.results.radiation = None;
     Ok(json!({"sources": s.model.sources.len()}))
 }
 
-pub fn source_plane_wave(s: &mut Session, p: &Value) -> Result<Value> {
-    let direction = vector(p, "direction")?.unwrap_or(Vec3::unit(2));
-    let polarization = vector(p, "polarization")?.unwrap_or(Vec3::unit(0));
-    s.model.add_source(Source::PlaneWave { direction, polarization })?;
-    s.radiation = None;
+pub fn source_plane_wave(s: &mut Session, p: &Params) -> Result<Value> {
+    let wave = Source::PlaneWave { direction: p.vector("direction").or(Vec3::unit(2))?, polarization: p.vector("polarization").or(Vec3::unit(0))? };
+    s.model.add_source(wave)?;
+    s.results.radiation = None;
     Ok(json!({"sources": s.model.sources.len()}))
 }
 
-pub fn port_lumped(s: &mut Session, p: &Value) -> Result<Value> {
-    let name = required_string(p, "name")?.to_owned();
-    let from = point(s, p, "from")?.ok_or_else(|| EngineError::Params("`from` is required".into()))?;
-    let to = point(s, p, "to")?.ok_or_else(|| EngineError::Params("`to` is required".into()))?;
-    let impedance = number(p, "impedance")?.unwrap_or(50.0);
-    let amplitude = number(p, "voltage")?.unwrap_or(1.0);
-    let phase = number(p, "phase")?.unwrap_or(0.0).to_radians();
-    if !(amplitude.is_finite() && phase.is_finite()) {
-        return Err(EngineError::Params("`voltage` and `phase` must be finite".into()));
-    }
-    let radius = s.positive_length(p, "radius")?.unwrap_or(0.0);
+pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
+    let amplitude = p.number("voltage").or(1.0)?;
+    let phase = p.number("phase").or(0.0)?.to_radians();
     s.model.add_lumped_port(emcraft_model::LumpedPort {
-        name,
-        from,
-        to,
-        impedance,
+        name: p.string("name").required()?.to_owned(),
+        from: p.point("from").required()?,
+        to: p.point("to").required()?,
+        impedance: p.number("impedance").or(50.0)?,
         voltage: [amplitude * phase.cos(), amplitude * phase.sin()],
-        radius,
+        radius: p.positive_length("radius").or(0.0)?,
     })?;
-    s.radiation = None;
+    s.results.radiation = None;
     Ok(json!({"lumped_ports": s.model.lumped.len()}))
 }
 
@@ -106,9 +89,9 @@ fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
     Some((hi - lo, *ra))
 }
 
-pub fn source_clear(s: &mut Session, _: &Value) -> Result<Value> {
+pub fn source_clear(s: &mut Session, _: &Params) -> Result<Value> {
     s.model.sources.clear();
-    s.radiation = None;
+    s.results.radiation = None;
     Ok(json!({"sources": 0}))
 }
 
@@ -148,9 +131,9 @@ fn lone_sphere(s: &Session) -> Option<(f64, Option<f64>)> {
     }
 }
 
-pub fn solve_radiation(s: &mut Session, p: &Value) -> Result<Value> {
-    let f = s.frequency(p, "frequency")?.ok_or_else(|| EngineError::Params("`frequency` is required".into()))?;
-    let order = Order::from_u8(integer(p, "order", 1..=2)?.unwrap_or(2) as u8).unwrap_or(Order::Two);
+pub fn solve_radiation(s: &mut Session, p: &Params) -> Result<Value> {
+    let f = p.frequency("frequency").required()?;
+    let order = p.order()?;
     let driven = emcraft_solver::Driven::open(&s.model, order)?;
     let result = driven.solve_open(&s.model, f)?;
     let huygens = driven.huygens(&s.model, &result.field, f)?;
@@ -206,7 +189,7 @@ pub fn solve_radiation(s: &mut Session, p: &Value) -> Result<Value> {
         });
         reply["radiation_efficiency"] = json!(if accepted > 0.0 { power / accepted } else { f64::NAN });
     }
-    s.radiation = Some(Arc::new(Radiated { driven, result, huygens, power }));
+    s.results.radiation = Some(Arc::new(Radiated { driven, result, huygens, power }));
     Ok(reply)
 }
 
@@ -283,34 +266,41 @@ fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
 }
 
 fn solved(s: &Session) -> Result<Arc<Radiated>> {
-    s.radiation.clone().ok_or_else(|| EngineError::Failed("no open problem solved: run solve.radiation first".into()))
+    s.results.radiation.clone().ok_or_else(|| EngineError::Failed("no open problem solved: run solve.radiation first".into()))
 }
 
-fn angles(p: &Value) -> Result<(Vec<f64>, f64)> {
-    let theta: Vec<f64> = match get(p, "theta") {
-        None => (0..=18).map(|i| 10.0 * i as f64).collect(),
-        Some(Value::Array(list)) => list
-            .iter()
-            .map(|v| v.as_f64().filter(|x| x.is_finite()))
-            .collect::<Option<_>>()
-            .ok_or_else(|| EngineError::Params("`theta` must be numbers".into()))?,
-        Some(v) => vec![v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::Params("`theta` must be a number or a list".into()))?],
+/// The polar angles `theta` (degrees; every 10° by default) and the azimuth `phi`.
+fn angles(p: &Params) -> Result<(Vec<f64>, f64)> {
+    let theta: Vec<f64> = match p.raw("theta") {
+        None => (0..=18).map(|i| 10.0 * f64::from(i)).collect(),
+        Some(Value::Array(list)) => {
+            list.iter().map(|v| v.as_f64().filter(|x| x.is_finite())).collect::<Option<_>>().ok_or_else(|| p.error("theta", "must be numbers"))?
+        }
+        Some(_) => vec![p.number("theta").required()?],
     };
     if theta.is_empty() || theta.len() > 3601 {
-        return Err(EngineError::Params("`theta` needs 1 to 3601 angles".into()));
+        return Err(p.error("theta", "needs 1 to 3601 angles"));
     }
-    Ok((theta, number(p, "phi")?.unwrap_or(0.0)))
+    Ok((theta, p.number("phi").or(0.0)?))
+}
+
+/// Which solver's far field to read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FarSolver {
+    /// The frequency domain's (`solve.radiation`).
+    Fem,
+    /// The time domain's (`solve.time_domain` on an open model).
+    TimeDomain,
 }
 
 /// Far-field rows in the directions given (radians), from the frequency-domain solve or, when
 /// asked (`solver` "time_domain") or the only one there, the time domain's at the frequency
 /// nearest `frequency` (Hz): (frequency, power, rows).
-fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<&str>, frequency: Option<f64>) -> Result<(f64, f64, Vec<Value>)> {
+fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolver>, frequency: Option<f64>) -> Result<(f64, f64, Vec<Value>)> {
     let use_td = match solver {
-        Some("time_domain") => true,
-        Some("fem") => false,
-        Some(other) => return Err(EngineError::Params(format!("`solver` must be fem or time_domain, got `{other}`"))),
-        None => s.radiation.is_none() && s.td_radiation.is_some(),
+        Some(solver) => solver == FarSolver::TimeDomain,
+        None => s.results.radiation.is_none() && s.results.td_radiation.is_some(),
     };
     if !use_td {
         let r = solved(s)?;
@@ -318,7 +308,11 @@ fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<&str>, frequency: O
         let rows = emcraft_solver::radiation::far_fields(&r.huygens, dirs).iter().map(|x| describe(s, &r, &exact, x)).collect();
         return Ok((r.result.frequency, r.power, rows));
     }
-    let r = s.td_radiation.clone().ok_or_else(|| EngineError::Failed("no time-domain open problem solved: run solve.time_domain first".into()))?;
+    let r = s
+        .results
+        .td_radiation
+        .clone()
+        .ok_or_else(|| EngineError::Failed("no time-domain open problem solved: run solve.time_domain first".into()))?;
     let fi = match frequency {
         Some(f) => (0..r.frequencies.len()).min_by(|&a, &b| (r.frequencies[a] - f).abs().total_cmp(&(r.frequencies[b] - f).abs())).unwrap_or(0),
         None => 0,
@@ -343,10 +337,10 @@ fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<&str>, frequency: O
     Ok((f, power, rows))
 }
 
-pub fn results_far_field(s: &mut Session, p: &Value) -> Result<Value> {
+pub fn results_far_field(s: &mut Session, p: &Params) -> Result<Value> {
     let (theta, phi) = angles(p)?;
     let dirs: Vec<(f64, f64)> = theta.iter().map(|t| (t.to_radians(), phi.to_radians())).collect();
-    let (f, power, points) = far_rows(s, &dirs, crate::params::string(p, "solver")?, s.frequency(p, "frequency")?)?;
+    let (f, power, points) = far_rows(s, &dirs, p.choice("solver").optional()?, p.frequency("frequency").optional()?)?;
     Ok(json!({"frequency": s.show_frequency(f), "power": power, "points": points}))
 }
 
@@ -358,7 +352,7 @@ pub fn pattern_chart(s: &Session, phi: f64, points: usize) -> Result<Chart> {
 }
 
 /// [`pattern_chart`] from a chosen solver and frequency (see `results.far_field`).
-pub fn pattern_chart_of(s: &Session, phi: f64, points: usize, solver: Option<&str>, frequency: Option<f64>) -> Result<Chart> {
+pub fn pattern_chart_of(s: &Session, phi: f64, points: usize, solver: Option<FarSolver>, frequency: Option<f64>) -> Result<Chart> {
     let n = points.clamp(13, 721);
     let dirs: Vec<(f64, f64)> = (0..n).map(|i| ((180.0 * i as f64 / (n - 1) as f64).to_radians(), phi.to_radians())).collect();
     let (f, _, rows) = far_rows(s, &dirs, solver, frequency)?;
@@ -382,14 +376,12 @@ pub fn pattern_chart_of(s: &Session, phi: f64, points: usize, solver: Option<&st
     Ok(Chart { title, x: Axis::new("θ (degrees)", 0.0, 180.0), y: Axis::new(label, top - 40.0, top), series, marks: Vec::new() })
 }
 
-pub fn view_pattern(s: &mut Session, p: &Value) -> Result<Value> {
-    let path = required_string(p, "path")?;
-    let phi = number(p, "phi")?.unwrap_or(0.0);
-    let n = integer(p, "points", 13..=721)?.unwrap_or(91) as usize;
-    let chart = pattern_chart_of(s, phi, n, crate::params::string(p, "solver")?, s.frequency(p, "frequency")?)?;
-    let side = 200..=s.limits.picture_side as u64;
-    let w = integer(p, "width", side.clone())?.unwrap_or(1000) as usize;
-    let h = integer(p, "height", side)?.unwrap_or(600) as usize;
+pub fn view_pattern(s: &mut Session, p: &Params) -> Result<Value> {
+    let path = p.string("path").required()?;
+    let phi = p.number("phi").or(0.0)?;
+    let n = p.integer("points", 13..=721).or(91)?;
+    let chart = pattern_chart_of(s, phi, n, p.choice("solver").optional()?, p.frequency("frequency").optional()?)?;
+    let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
     let c = emcraft_render::chart::draw(&chart, w, h);
     write_png(path, c.png())?;
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
@@ -424,6 +416,6 @@ pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64) -> Resu
         .collect();
     let reply =
         json!({"cells": r.cells, "steps": r.steps, "converged": r.converged, "frequency_unit": s.display.frequency.symbol(), "points": points});
-    s.td_radiation = Some(Arc::new(r));
+    s.results.td_radiation = Some(Arc::new(r));
     Ok(reply)
 }

@@ -38,6 +38,7 @@ use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
 
 use crate::ldlt::{FactorError, Ldlt};
+use crate::smatrix::SMatrix;
 use crate::sparse::Csr;
 
 /// The most unknowns a problem may have.
@@ -222,6 +223,23 @@ pub struct Driven {
     analysis: std::sync::OnceLock<crate::ldlt::Analysis>,
 }
 
+/// S read from the solutions of each port's excitation (`fields[q]`): the first mode's
+/// coefficient at each port, less the incident wave, as power waves of the modes (scaled by
+/// the ports' power proxies).
+pub(crate) fn read_s(terms: &[Vec<PortTerm<'_>>], fields: &[Vec<C>]) -> SMatrix {
+    let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
+    let mut s = SMatrix::zeros(terms.len());
+    for (q, x) in fields.iter().enumerate() {
+        for (p, list) in terms.iter().enumerate() {
+            let Some(t) = list.first() else { continue };
+            let c: C = t.v.iter().map(|&(i, vi)| x[i] * vi).sum::<C>() / t.norm;
+            let direct = if p == q { c - 1.0 } else { c };
+            s[(p, q)] = direct * (proxy(p) / proxy(q)).sqrt();
+        }
+    }
+    s
+}
+
 /// Solves a small dense complex system by Gaussian elimination with partial pivoting.
 pub(crate) fn complex_solve(mut a: Vec<Vec<C>>, mut b: Vec<C>) -> Option<Vec<C>> {
     let n = b.len();
@@ -316,7 +334,7 @@ pub struct FrequencyResult {
     pub frequency: f64,
     /// S[p][q]: at port p for a unit wave of port q's first mode into it; power waves of the
     /// modes, or referred to the ports' reference impedances where set.
-    pub s: Vec<Vec<C>>,
+    pub s: SMatrix,
     /// Each port's line impedance (Ω), where its first mode has one.
     pub impedances: Vec<Option<f64>>,
     /// The field coefficients for each excitation (port q).
@@ -442,7 +460,7 @@ impl Driven {
         // with each frequency).
         let mut ports = Vec::new();
         for (k, p) in model.ports.iter().enumerate().filter(|_| with_ports) {
-            let shape = if p.numeric { None } else { model.port_shape_of(p).ok() };
+            let shape = if p.mode_solver == emcraft_model::ModeSolver::Numeric { None } else { model.port_shape_of(p).ok() };
             let modes = match shape {
                 Some(shape) => analytic_port(model, p, shape, &mesh, &topo, &dofs, order, &port_faces[k])?,
                 None => PortModes::Numeric(Box::new(numeric_port(model, p, &mesh, &topo, &dofs, order, &port_faces[k])?)),
@@ -677,19 +695,8 @@ impl Driven {
             worst = worst.max(e);
             fields.push(x);
         }
-        let np = self.ports.len();
-        let mut s = vec![vec![C::new(0.0, 0.0); np]; np];
-        for (q, x) in fields.iter().enumerate() {
-            for (p, list) in terms.iter().enumerate() {
-                let Some(t) = list.first() else { continue };
-                let c: C = t.v.iter().map(|&(i, vi)| x[i] * vi).sum::<C>() / t.norm;
-                let direct = if p == q { c - 1.0 } else { c };
-                let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
-                s[p][q] = direct * (proxy(p) / proxy(q)).sqrt();
-            }
-        }
         let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
-        let s = self.refer(s, &impedances)?;
+        let s = self.refer(read_s(&terms, &fields), &impedances)?;
         Ok(FrequencyResult {
             frequency,
             s,
@@ -861,8 +868,8 @@ impl Driven {
     /// I = (a − b)/√Z, the new waves a′ = P a + Q b, b′ = Q a + P b, P = (Z + R)/(2√(ZR)),
     /// Q = (Z − R)/(2√(ZR)), so S′ = (Q + P S)(P + Q S)⁻¹ (K. Kurokawa, *Power waves and the
     /// scattering matrix*, IEEE Trans. MTT 13(2):194–202, 1965).
-    pub(crate) fn refer(&self, s: Vec<Vec<C>>, impedances: &[Option<f64>]) -> Result<Vec<Vec<C>>> {
-        let n = s.len();
+    pub(crate) fn refer(&self, s: SMatrix, impedances: &[Option<f64>]) -> Result<SMatrix> {
+        let n = s.ports();
         let mut p = vec![1.0; n];
         let mut q = vec![0.0; n];
         let mut any = false;
@@ -882,20 +889,7 @@ impl Driven {
         if !any {
             return Ok(s);
         }
-        // N = Q + P S, D = P + Q S (row i scaled by port i's P, Q); S′ = N D⁻¹.
-        let num: Vec<Vec<C>> =
-            (0..n).map(|i| (0..n).map(|j| p[i] * s[i][j] + if i == j { C::new(q[i], 0.0) } else { C::new(0.0, 0.0) }).collect()).collect();
-        let den: Vec<Vec<C>> =
-            (0..n).map(|i| (0..n).map(|j| q[i] * s[i][j] + if i == j { C::new(p[i], 0.0) } else { C::new(0.0, 0.0) }).collect()).collect();
-        // Solve S′ D = N, i.e. Dᵀ S′ᵀ = Nᵀ, column by column of S′ᵀ.
-        let dt: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| den[j][i]).collect()).collect();
-        let rows = (0..n)
-            .map(|i| {
-                complex_solve(dt.clone(), (0..n).map(|j| num[i][j]).collect())
-                    .ok_or_else(|| invalid("reference impedances", "a singular renormalisation"))
-            })
-            .collect::<Result<Vec<Vec<C>>>>()?;
-        Ok(rows)
+        s.renormalized(&p, &q).ok_or_else(|| invalid("reference impedances", "a singular renormalisation"))
     }
 
     /// Port `p`'s modes as terms of its condition at `frequency` (the first is the one excited and
@@ -1195,7 +1189,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
         .ports
         .iter()
         .map(|p| {
-            let shape = if p.numeric { None } else { model.port_shape_of(p).ok() };
+            let shape = if p.mode_solver == emcraft_model::ModeSolver::Numeric { None } else { model.port_shape_of(p).ok() };
             let list = match shape {
                 Some(shape) => {
                     let m = model.port_material(p.end)?;

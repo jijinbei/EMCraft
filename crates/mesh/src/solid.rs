@@ -7,7 +7,7 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::{Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Point3, Shape, Vec3, positive};
+use emcraft_model::{Aabb, Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Point3, Shape, Vec3, positive};
 use emcraft_tetmesh::cdt::{CdtOptions, tetrahedralize};
 use emcraft_tetmesh::surface::{BoundarySurface, SurfaceOptions};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
@@ -249,7 +249,7 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
     let mut tri_face = tags.clone();
     let faces = tags.iter().map(|t| t + 1).max().unwrap_or(0);
     let mut analytic = vec![None; faces as usize];
-    let (lo, hi) = shape.bounds();
+    let Aabb { min: lo, max: hi } = shape.bounds();
     let ends = shape.end_triangles();
     let mut tag_of = [None, None];
     for (k, (list, z, n)) in [(&ends[0], lo.z, -1.0), (&ends[1], hi.z, 1.0)].into_iter().enumerate() {
@@ -328,7 +328,7 @@ fn flat_faces(shape: &Shape, at: Point3, axis: Axis) -> Vec<(usize, f64, f64)> {
 fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)> {
     let step = 0.1 * size;
     let base = flat_faces(solid, Point3::ORIGIN, Axis::Z);
-    let scale = solid.bounds().1.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
+    let scale = solid.bounds().max.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
     let tol = 1e-9 * scale;
     // Box: the lo/hi planes along each axis in place; a cylinder: its caps along its axis.
     let (shape, at) = (f.shape.clone(), f.at);
@@ -888,7 +888,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
 
 /// The tetrahedra binned on a uniform grid of about one tetrahedron per bucket.
 pub fn buckets(mesh: &Mesh) -> Buckets {
-    let (lo, hi) = emcraft_model::bounding_box(mesh.nodes.iter().copied()).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
+    let Aabb { min: lo, max: hi } = Aabb::around(mesh.nodes.iter().copied()).unwrap_or_default();
     let ext = (hi - lo).map(|e| e.max(f64::MIN_POSITIVE));
     let per_side = (mesh.tets.len().max(1) as f64).cbrt().ceil() as usize;
     let longest = ext.iter().fold(0.0, f64::max);

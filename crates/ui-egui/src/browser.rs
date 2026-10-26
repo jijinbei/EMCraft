@@ -119,7 +119,7 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         None => vec![row("Not meshed", "mesh", Act::Edit("mesh.generate"))],
     };
     let mut results = Vec::new();
-    if let Some(sw) = &s.sweep {
+    if let Some(sw) = &s.results.sweep {
         results.push(row(
             format!("Sweep: {} frequencies, {} unknowns", sw.results.len(), sw.driven.dofs.unknowns),
             "chart",
@@ -127,16 +127,16 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         ));
         results.push(row("Fields", "field", Act::Show(View::Field)));
     }
-    if let Some(e) = &s.eigen {
+    if let Some(e) = &s.results.eigen {
         results.push(row(format!("Eigenmodes: {}", e.modes.len()), "eigen", Act::Show(View::Eigenmodes)));
     }
-    if let Some(td) = &s.time_domain {
+    if let Some(td) = &s.results.time_domain {
         results.push(row(format!("Time domain: {} frequencies", td.frequencies.len()), "time", Act::Show(View::SParameters)));
     }
-    if let Some(r) = &s.radiation {
+    if let Some(r) = &s.results.radiation {
         results.push(row(format!("Radiation at {:.4} {}", fu.from_si(r.result.frequency), fu.symbol()), "radiation", Act::Show(View::FarField)));
     }
-    if s.td_radiation.is_some() {
+    if s.results.td_radiation.is_some() {
         results.push(row("Time-domain radiation", "radiation", Act::Show(View::FarField)));
     }
     if app.port_modes.is_some() {

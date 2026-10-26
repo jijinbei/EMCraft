@@ -9,24 +9,33 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod cmd;
+mod geometry;
+mod meshing;
 pub mod open;
 pub mod params;
 pub mod progress;
 pub mod project;
+mod results;
 pub mod sample;
+mod solve;
 pub mod view;
+pub mod workflow;
 
+use std::fmt;
 use std::sync::Arc;
 
 use emcraft_fem::Order;
 use emcraft_model::Model;
 use emcraft_model::units::Display;
 use emcraft_solver::{Driven, FrequencyResult};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 pub use cmd::COMMANDS;
+pub use params::Params;
+pub use project::Effect;
+pub use results::field_view;
 
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum EngineError {
     #[error("unknown command `{0}`")]
     UnknownCommand(String),
@@ -40,29 +49,32 @@ pub enum EngineError {
 
 pub type Result<T> = std::result::Result<T, EngineError>;
 
-impl From<emcraft_model::ModelError> for EngineError {
-    fn from(e: emcraft_model::ModelError) -> Self {
-        EngineError::Failed(e.to_string())
+impl EngineError {
+    /// A command that could not do its work, for `why`.
+    pub fn failed(why: impl fmt::Display) -> EngineError {
+        EngineError::Failed(why.to_string())
     }
 }
 
-impl From<emcraft_mesh::MeshError> for EngineError {
-    fn from(e: emcraft_mesh::MeshError) -> Self {
-        EngineError::Failed(e.to_string())
-    }
+/// The lower layers' errors: the command failed for the reason they give.
+macro_rules! failed_from {
+    ($($error:ty),* $(,)?) => {$(
+        impl From<$error> for EngineError {
+            fn from(e: $error) -> Self {
+                EngineError::failed(e)
+            }
+        }
+    )*};
 }
 
-impl From<emcraft_fdtd::FdtdError> for EngineError {
-    fn from(e: emcraft_fdtd::FdtdError) -> Self {
-        EngineError::Failed(e.to_string())
-    }
-}
-
-impl From<emcraft_solver::SolveError> for EngineError {
-    fn from(e: emcraft_solver::SolveError) -> Self {
-        EngineError::Failed(e.to_string())
-    }
-}
+failed_from!(
+    emcraft_model::ModelError,
+    emcraft_mesh::MeshError,
+    emcraft_fdtd::FdtdError,
+    emcraft_solver::SolveError,
+    emcraft_theory::TheoryError,
+    emcraft_io::Error,
+);
 
 /// The physical quantity of a numeric parameter, which decides its display unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,15 +85,79 @@ pub enum Quantity {
     Frequency,
 }
 
+impl Quantity {
+    /// The unit's kind as the command reference names it ("" for a plain number).
+    pub const fn name(self) -> &'static str {
+        match self {
+            Quantity::None => "",
+            Quantity::Length => "length",
+            Quantity::Frequency => "frequency",
+        }
+    }
+}
+
+/// The JSON type of a parameter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Number,
+    Integer,
+    String,
+    Array,
+    Object,
+    Boolean,
+}
+
+impl Kind {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Kind::Number => "number",
+            Kind::Integer => "integer",
+            Kind::String => "string",
+            Kind::Array => "array",
+            Kind::Object => "object",
+            Kind::Boolean => "boolean",
+        }
+    }
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// A command parameter.
 #[derive(Clone, Copy, Debug)]
 pub struct ParamSpec {
     pub name: &'static str,
-    /// `number`, `integer`, `string`, `array`, `object` or `boolean`.
-    pub kind: &'static str,
+    pub kind: Kind,
     pub quantity: Quantity,
     pub required: bool,
     pub doc: &'static str,
+    /// The values a string parameter may take, when it is a choice.
+    pub choices: &'static [&'static str],
+}
+
+impl ParamSpec {
+    /// A parameter every call must give.
+    pub const fn required(name: &'static str, kind: Kind, doc: &'static str) -> ParamSpec {
+        ParamSpec { name, kind, quantity: Quantity::None, required: true, doc, choices: &[] }
+    }
+
+    /// A parameter calls may leave out.
+    pub const fn optional(name: &'static str, kind: Kind, doc: &'static str) -> ParamSpec {
+        ParamSpec { required: false, ..ParamSpec::required(name, kind, doc) }
+    }
+
+    /// The parameter as a physical quantity, read in the session's display unit for it.
+    pub const fn of(self, quantity: Quantity) -> ParamSpec {
+        ParamSpec { quantity, ..self }
+    }
+
+    /// The parameter as a choice among `choices`.
+    pub const fn one_of(self, choices: &'static [&'static str]) -> ParamSpec {
+        ParamSpec { choices, ..self }
+    }
 }
 
 /// A command.
@@ -90,13 +166,19 @@ pub struct CommandSpec {
     pub label: &'static str,
     pub doc: &'static str,
     pub params: &'static [ParamSpec],
-    pub run: fn(&mut Session, &Value) -> Result<Value>,
+    /// What it does to the job: whether it joins the history, can be undone, or solves.
+    pub effect: Effect,
+    pub run: fn(&mut Session, &Params) -> Result<Value>,
+}
+
+impl fmt::Debug for CommandSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommandSpec").field("id", &self.id).field("effect", &self.effect).finish_non_exhaustive()
+    }
 }
 
 /// The most eigenmodes one command may ask for.
-pub(crate) fn eigen_max() -> u64 {
-    emcraft_solver::eigen::MAX_MODES as u64
-}
+pub(crate) const EIGEN_MAX: usize = emcraft_solver::eigen::MAX_MODES;
 
 pub fn find_command(id: &str) -> Option<&'static CommandSpec> {
     COMMANDS.iter().find(|c| c.id == id)
@@ -119,6 +201,33 @@ impl Sweep {
     }
 }
 
+/// What the solvers made of the model, each from its own command.
+#[derive(Clone, Debug, Default)]
+pub struct Results {
+    /// The driven frequency sweep from `solve.frequency`.
+    pub sweep: Option<Sweep>,
+    /// The cavity's eigenmodes from `solve.eigenmodes`.
+    pub eigen: Option<Arc<emcraft_solver::eigen::Eigen>>,
+    /// The time-domain solver's S-parameters from `solve.time_domain`.
+    pub time_domain: Option<emcraft_fdtd::TdResult>,
+    /// The open problem from `solve.radiation`.
+    pub radiation: Option<Arc<open::Radiated>>,
+    /// The open problem from `solve.time_domain` on an open model.
+    pub td_radiation: Option<Arc<emcraft_fdtd::open::OpenRun>>,
+}
+
+impl Results {
+    /// Whether any solver has run.
+    pub fn any(&self) -> bool {
+        self.sweep.is_some() || self.eigen.is_some() || self.time_domain.is_some() || self.radiation.is_some() || self.td_radiation.is_some()
+    }
+
+    /// The sweep, or an error asking for one.
+    pub fn sweep(&self) -> Result<&Sweep> {
+        self.sweep.as_ref().ok_or_else(|| EngineError::failed("no results: solve first (solve.frequency)"))
+    }
+}
+
 /// Limits on the work one command may ask for.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
@@ -135,18 +244,10 @@ impl Default for Limits {
 }
 
 /// A session: the model, its results and the display units.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Session {
     pub model: Model,
-    pub sweep: Option<Sweep>,
-    /// The cavity's eigenmodes from `solve.eigenmodes`.
-    pub eigen: Option<Arc<emcraft_solver::eigen::Eigen>>,
-    /// The time-domain solver's S-parameters from `solve.time_domain`.
-    pub time_domain: Option<emcraft_fdtd::TdResult>,
-    /// The open problem from `solve.radiation`.
-    pub radiation: Option<Arc<open::Radiated>>,
-    /// The open problem from `solve.time_domain` on an open model.
-    pub td_radiation: Option<Arc<emcraft_fdtd::open::OpenRun>>,
+    pub results: Results,
     pub display: Display,
     pub limits: Limits,
     /// The commands that built the model, in order (a script that rebuilds it).
@@ -160,29 +261,14 @@ pub struct Session {
     pub solved_revision: Option<u64>,
 }
 
-impl Default for Session {
-    fn default() -> Self {
-        Session::new()
-    }
-}
-
 impl Session {
     pub fn new() -> Session {
-        Session {
-            model: Model::new(),
-            sweep: None,
-            eigen: None,
-            time_domain: None,
-            radiation: None,
-            td_radiation: None,
-            display: Display::default(),
-            limits: Limits::default(),
-            history: Vec::new(),
-            undo: Vec::new(),
-            redo: Vec::new(),
-            revision: 0,
-            solved_revision: None,
-        }
+        Session::default()
+    }
+
+    /// A fresh session with this one's limits.
+    pub(crate) fn fresh(&self) -> Session {
+        Session { limits: self.limits, ..Session::default() }
     }
 
     /// Runs a command. Unknown parameters are refused; a failed or panicking command leaves the
@@ -191,84 +277,84 @@ impl Session {
         // An id from hostile input is not echoed in full.
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
         check_keys(spec, params)?;
-        let before = (
-            self.model.clone(),
-            self.sweep.clone(),
-            self.eigen.clone(),
-            self.time_domain.clone(),
-            self.radiation.clone(),
-            self.td_radiation.clone(),
-            self.display,
-        );
-        let effect = project::effect(spec.id);
-        let (history_before, revision_before) = (if effect == project::Effect::None { Vec::new() } else { self.history.clone() }, self.revision);
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, params)));
-        match outcome {
-            Ok(Ok(v)) => {
-                match effect {
+        let before = project::Snapshot { model: self.model.clone(), display: self.display, history: Vec::new() };
+        let results_before = self.results.clone();
+        let (history_before, revision_before) = (if spec.effect == Effect::None { Vec::new() } else { self.history.clone() }, self.revision);
+        let reader = Params::new(params, self.display);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, &reader)));
+        let error = match outcome {
+            Ok(Ok(reply)) => {
+                match spec.effect {
                     // The state before it, to undo to; the command joins the history.
-                    project::Effect::Record | project::Effect::Replace => {
-                        let snapshot = project::Snapshot { model: before.0, display: before.6, history: history_before };
-                        project::push_undo(&mut self.undo, snapshot);
+                    Effect::Record | Effect::Replace => {
+                        project::push_undo(&mut self.undo, project::Snapshot { history: history_before, ..before });
                         self.redo.clear();
-                        if effect == project::Effect::Record {
-                            self.history.push(serde_json::json!({"command": spec.id, "params": params}));
+                        if spec.effect == Effect::Record {
+                            self.history.push(json!({"command": spec.id, "params": params}));
                         }
                         // (A replaced session counts its own revisions from zero.)
                         self.revision = revision_before.max(self.revision) + 1;
                     }
-                    project::Effect::Solve => self.solved_revision = Some(self.revision),
-                    project::Effect::None => {}
+                    Effect::Solve => self.solved_revision = Some(self.revision),
+                    Effect::None => {}
                 }
-                Ok(v)
+                return Ok(reply);
             }
-            Ok(Err(e)) => {
-                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.td_radiation, self.display) = before;
-                Err(e)
-            }
-            Err(_) => {
-                (self.model, self.sweep, self.eigen, self.time_domain, self.radiation, self.td_radiation, self.display) = before;
-                Err(EngineError::Panicked(spec.id.to_owned()))
-            }
-        }
+            Ok(Err(e)) => e,
+            Err(_) => EngineError::Panicked(spec.id.to_owned()),
+        };
+        self.model = before.model;
+        self.display = before.display;
+        self.results = results_before;
+        Err(error)
     }
 
     /// Runs a script: a JSON array of `{"command", "params"}` steps; stops at the first error.
     /// Returns each step's reply.
     pub fn run_script(&mut self, script: &Value) -> Result<Vec<Value>> {
         let steps = script.as_array().ok_or_else(|| EngineError::Params("a script is a JSON array of {\"command\", \"params\"} steps".into()))?;
-        let mut out = Vec::with_capacity(steps.len());
-        for (i, step) in steps.iter().enumerate() {
-            let id = step.get("command").and_then(Value::as_str).ok_or_else(|| EngineError::Params(format!("step {}: no `command`", i + 1)))?;
-            let params = step.get("params").cloned().unwrap_or_else(|| Value::Object(Default::default()));
-            progress::report(i, steps.len(), id)?;
-            let reply = self.execute(id, &params).map_err(|e| EngineError::Failed(format!("step {} ({id}): {e}", i + 1)))?;
-            out.push(reply);
-        }
-        Ok(out)
+        steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| {
+                let id = step.get("command").and_then(Value::as_str).ok_or_else(|| EngineError::Params(format!("step {}: no `command`", i + 1)))?;
+                let params = step.get("params").cloned().unwrap_or_else(|| json!({}));
+                progress::report(i, steps.len(), id)?;
+                self.execute(id, &params).map_err(|e| EngineError::Failed(format!("step {} ({id}): {e}", i + 1)))
+            })
+            .collect()
+    }
+
+    /// A frequency (Hz) as a value in display units.
+    pub fn show_frequency(&self, hz: f64) -> f64 {
+        self.display.frequency.from_si(hz)
+    }
+
+    pub fn show_length(&self, m: f64) -> f64 {
+        self.display.length.from_si(m)
     }
 
     /// A short summary of the model and results.
     pub fn summary(&self) -> Value {
         let l = self.display.length;
         let w = self.model.waveguide.as_ref().map(|w| {
-            serde_json::json!({
+            json!({
                 "width": l.from_si(w.width), "height": l.from_si(w.height), "length": l.from_si(w.length()),
                 "sections": w.sections.iter().enumerate().map(|(i, s)| {
                     let (x0, a) = w.aperture(i).unwrap_or((0.0, w.width));
-                    serde_json::json!({"length": l.from_si(s.length), "material": s.material, "aperture": [l.from_si(x0), l.from_si(a)]})
+                    json!({"length": l.from_si(s.length), "material": s.material, "aperture": [l.from_si(x0), l.from_si(a)]})
                 }).collect::<Vec<_>>(),
             })
         });
-        serde_json::json!({
+        json!({
             "units": {"length": l.symbol(), "frequency": self.display.frequency.symbol()},
-            "materials": self.model.materials.iter().map(|m| serde_json::json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r})).collect::<Vec<_>>(),
+            "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r})).collect::<Vec<_>>(),
             "waveguide": w,
-            "solid": self.model.solid.as_ref().map(|s| serde_json::json!({"shape": format!("{:?}", s.shape), "material": s.material})),
-            "ports": self.model.ports.iter().map(|p| serde_json::json!({"name": p.name, "end": p.end, "modes": p.modes})).collect::<Vec<_>>(),
-            "mesh": self.model.mesh.as_ref().map(|m| serde_json::json!({"nodes": m.nodes.len(), "tetrahedra": m.tets.len()})),
-            "results": self.sweep.as_ref().map(|s| serde_json::json!({"order": s.order.as_u8(), "unknowns": s.driven.dofs.unknowns, "frequencies": s.results.len()})),
-            "eigenmodes": self.eigen.as_ref().map(|e| e.modes.len()),
+            "solid": self.model.solid.as_ref().map(|s| json!({"shape": format!("{:?}", s.shape), "material": s.material})),
+            "ports": self.model.ports.iter().map(|p| json!({"name": p.name, "end": p.end, "modes": p.modes})).collect::<Vec<_>>(),
+            "mesh": self.model.mesh.as_ref().map(|m| json!({"nodes": m.nodes.len(), "tetrahedra": m.tets.len()})),
+            "results": self.results.sweep.as_ref().map(|s| json!({"order": s.order.as_u8(), "unknowns": s.driven.dofs.unknowns, "frequencies": s.results.len()})),
+            "eigenmodes": self.results.eigen.as_ref().map(|e| e.modes.len()),
         })
     }
 }
@@ -279,23 +365,19 @@ fn check_keys(spec: &CommandSpec, params: &Value) -> Result<()> {
         Value::Null => return Ok(()),
         _ => return Err(EngineError::Params(format!("{}: parameters must be a JSON object", spec.id))),
     };
-    for k in obj.keys() {
-        if !spec.params.iter().any(|p| p.name == k) {
-            let known: Vec<&str> = spec.params.iter().map(|p| p.name).collect();
-            return Err(EngineError::Params(format!(
-                "{}: unknown parameter `{}` (known: {})",
-                spec.id,
-                k.chars().take(64).collect::<String>(),
-                known.join(", ")
-            )));
-        }
+    if let Some(k) = obj.keys().find(|k| !spec.params.iter().any(|p| p.name == k.as_str())) {
+        let known: Vec<&str> = spec.params.iter().map(|p| p.name).collect();
+        return Err(EngineError::Params(format!(
+            "{}: unknown parameter `{}` (known: {})",
+            spec.id,
+            k.chars().take(64).collect::<String>(),
+            known.join(", ")
+        )));
     }
-    for p in spec.params.iter().filter(|p| p.required) {
-        if !obj.contains_key(p.name) {
-            return Err(EngineError::Params(format!("{}: missing parameter `{}`", spec.id, p.name)));
-        }
+    match spec.params.iter().find(|p| p.required && !obj.contains_key(p.name)) {
+        Some(p) => Err(EngineError::Params(format!("{}: missing parameter `{}`", spec.id, p.name))),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Every command as a Markdown page (docs/features.md).
@@ -311,12 +393,8 @@ pub fn features_markdown() -> String {
         }
         s.push_str("| Parameter | Type | Unit | Required | Description |\n|---|---|---|---|---|\n");
         for p in c.params {
-            let unit = match p.quantity {
-                Quantity::None => "",
-                Quantity::Length => "length",
-                Quantity::Frequency => "frequency",
-            };
-            s.push_str(&format!("| `{}` | {} | {} | {} | {} |\n", p.name, p.kind, unit, if p.required { "yes" } else { "no" }, p.doc));
+            let required = if p.required { "yes" } else { "no" };
+            s.push_str(&format!("| `{}` | {} | {} | {} | {} |\n", p.name, p.kind, p.quantity.name(), required, p.doc));
         }
     }
     s

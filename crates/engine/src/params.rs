@@ -1,83 +1,271 @@
 //! Reading command parameters: input-derived numbers are hostile, so every value is checked
 //! (finite, in range) and converted from display units to SI here.
+//!
+//! [`Params`] wraps a command's JSON object; each lookup gives an [`Arg`], which says what to do
+//! when the parameter is absent:
+//!
+//! ```ignore
+//! let width = p.positive_length("width").required()?;
+//! let mu_r = p.number("mu_r").or(1.0)?;
+//! let end: End = p.choice("end").required()?;
+//! ```
 
+use std::fmt::Display as Show;
+use std::ops::RangeInclusive;
+
+use emcraft_fem::Order;
+use emcraft_model::units::Display;
+use emcraft_model::{Point3, Vec3};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::{EngineError, Result, Session};
+use crate::{EngineError, Result};
 
-fn bad(name: &str, why: impl std::fmt::Display) -> EngineError {
-    EngineError::Params(format!("`{name}` {why}"))
+/// The parameters of a command, or of one item of a list inside them.
+#[derive(Clone, Debug)]
+pub struct Params<'a> {
+    value: &'a Value,
+    display: Display,
+    /// Which item of a list these are ("section 2"), for errors.
+    context: Option<String>,
 }
 
-pub fn get<'a>(p: &'a Value, name: &str) -> Option<&'a Value> {
-    p.get(name).filter(|v| !v.is_null())
+/// One parameter looked up: its value when given, or why it is wrong.
+#[must_use = "say what an absent parameter means: required, optional or a default"]
+pub struct Arg<'p, T> {
+    params: &'p Params<'p>,
+    name: &'p str,
+    value: Result<Option<T>>,
 }
 
-/// A finite number.
-pub fn number(p: &Value, name: &str) -> Result<Option<f64>> {
-    match get(p, name) {
-        None => Ok(None),
-        Some(v) => v.as_f64().filter(|x| x.is_finite()).map(Some).ok_or_else(|| bad(name, "must be a finite number")),
+impl<'a> Params<'a> {
+    pub fn new(value: &'a Value, display: Display) -> Params<'a> {
+        Params { value, display, context: None }
     }
-}
 
-pub fn required_number(p: &Value, name: &str) -> Result<f64> {
-    number(p, name)?.ok_or_else(|| bad(name, "is required"))
-}
-
-/// A finite number > 0.
-pub fn positive(p: &Value, name: &str) -> Result<Option<f64>> {
-    match number(p, name)? {
-        Some(x) if x > 0.0 => Ok(Some(x)),
-        Some(x) => Err(bad(name, format!("must be > 0, got {x}"))),
-        None => Ok(None),
-    }
-}
-
-/// A whole number in `range`.
-pub fn integer(p: &Value, name: &str, range: std::ops::RangeInclusive<u64>) -> Result<Option<u64>> {
-    match get(p, name) {
-        None => Ok(None),
-        Some(v) => {
-            let n = v.as_u64().ok_or_else(|| bad(name, "must be a whole number ≥ 0"))?;
-            if range.contains(&n) { Ok(Some(n)) } else { Err(bad(name, format!("must be {} to {}, got {n}", range.start(), range.end()))) }
+    /// An error about parameter `name`.
+    pub fn error(&self, name: &str, why: impl Show) -> EngineError {
+        match &self.context {
+            Some(c) => EngineError::Params(format!("{c}: `{name}` {why}")),
+            None => EngineError::Params(format!("`{name}` {why}")),
         }
     }
-}
 
-pub fn string<'a>(p: &'a Value, name: &str) -> Result<Option<&'a str>> {
-    match get(p, name) {
-        None => Ok(None),
-        Some(v) => v.as_str().map(Some).ok_or_else(|| bad(name, "must be a string")),
+    /// The JSON value of `name`, absent when missing or null.
+    pub fn raw(&self, name: &str) -> Option<&'a Value> {
+        self.value.get(name).filter(|v| !v.is_null())
     }
-}
 
-pub fn required_string<'a>(p: &'a Value, name: &str) -> Result<&'a str> {
-    string(p, name)?.ok_or_else(|| bad(name, "is required"))
-}
+    pub fn has(&self, name: &str) -> bool {
+        self.raw(name).is_some()
+    }
 
-impl Session {
-    /// A length parameter in display units, in metres.
-    pub fn length(&self, p: &Value, name: &str) -> Result<Option<f64>> {
-        Ok(number(p, name)?.map(|v| self.display.length.to_si(v)))
+    fn arg<'p, T>(&'p self, name: &'p str, read: impl FnOnce(&'a Value) -> Result<T>) -> Arg<'p, T> {
+        Arg { params: self, name, value: self.raw(name).map(read).transpose() }
+    }
+
+    /// A finite number.
+    pub fn number<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
+        self.arg(name, |v| finite(v).ok_or_else(|| self.error(name, "must be a finite number")))
+    }
+
+    /// A finite number > 0.
+    pub fn positive<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
+        self.number(name).and_then(|x| if x > 0.0 { Ok(x) } else { Err(self.error(name, format!("must be > 0, got {x}"))) })
+    }
+
+    /// A whole number in `range`.
+    pub fn integer<'p>(&'p self, name: &'p str, range: RangeInclusive<usize>) -> Arg<'p, usize> {
+        self.arg(name, |v| {
+            let n = v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or_else(|| self.error(name, "must be a whole number ≥ 0"))?;
+            if range.contains(&n) { Ok(n) } else { Err(self.error(name, format!("must be {} to {}, got {n}", range.start(), range.end()))) }
+        })
+    }
+
+    pub fn string<'p>(&'p self, name: &'p str) -> Arg<'p, &'a str> {
+        self.arg(name, |v| v.as_str().ok_or_else(|| self.error(name, "must be a string")))
+    }
+
+    pub fn flag<'p>(&'p self, name: &'p str) -> Arg<'p, bool> {
+        self.arg(name, |v| v.as_bool().ok_or_else(|| self.error(name, format!("must be true or false, got {v}"))))
+    }
+
+    /// One of the names a type deserializes from (an enum's variants: `"start"`, `"end"`).
+    pub fn choice<'p, T: DeserializeOwned>(&'p self, name: &'p str) -> Arg<'p, T> {
+        self.arg(name, |v| serde_json::from_value(v.clone()).map_err(|e| self.error(name, format!("is not one of the choices: {e}"))))
+    }
+
+    /// A list of at most `max` values.
+    pub fn list<'p>(&'p self, name: &'p str, max: usize) -> Arg<'p, &'a [Value]> {
+        self.arg(name, |v| {
+            let list = v.as_array().ok_or_else(|| self.error(name, "must be an array"))?;
+            if list.len() > max {
+                return Err(self.error(name, format!("holds at most {max} items, got {}", list.len())));
+            }
+            Ok(list.as_slice())
+        })
+    }
+
+    /// A list of at most `max` objects, each read as parameters of its own (`what` 1, 2, … in
+    /// errors).
+    pub fn items(&self, name: &str, what: &str, max: usize) -> Result<Vec<Params<'a>>> {
+        let list = self.list(name, max).or(&[])?;
+        Ok(list.iter().enumerate().map(|(i, value)| Params { value, display: self.display, context: Some(format!("{what} {}", i + 1)) }).collect())
+    }
+
+    /// Three finite numbers `[x, y, z]`.
+    fn triple(&self, name: &str, v: &Value) -> Result<[f64; 3]> {
+        let list = v.as_array().filter(|a| a.len() == 3).ok_or_else(|| self.error(name, "must be [x, y, z]"))?;
+        let c = |v: &Value| finite(v).ok_or_else(|| self.error(name, "must be finite numbers"));
+        Ok([c(&list[0])?, c(&list[1])?, c(&list[2])?])
+    }
+
+    /// A direction or other plain vector `[x, y, z]`.
+    pub fn vector<'p>(&'p self, name: &'p str) -> Arg<'p, Vec3> {
+        self.arg(name, |v| self.triple(name, v).map(|[x, y, z]| Vec3::new(x, y, z)))
+    }
+
+    /// Finite numbers in display units of length, in metres.
+    pub fn lengths<'p>(&'p self, name: &'p str) -> Arg<'p, Vec<f64>> {
+        self.arg(name, |v| {
+            let list = v.as_array().ok_or_else(|| self.error(name, "must be an array of numbers"))?;
+            list.iter().map(|x| finite(x).map(|x| self.display.length.to_si(x)).ok_or_else(|| self.error(name, "must be finite numbers"))).collect()
+        })
+    }
+
+    /// A point `[x, y, z]` of lengths in display units, in metres.
+    pub fn point<'p>(&'p self, name: &'p str) -> Arg<'p, Point3> {
+        self.arg(name, |v| self.point_of(name, v))
+    }
+
+    /// A JSON `[x, y, z]` of lengths in display units, in metres.
+    pub fn point_of(&self, name: &str, v: &Value) -> Result<Point3> {
+        let [x, y, z] = self.triple(name, v)?.map(|c| self.display.length.to_si(c));
+        Ok(Point3::new(x, y, z))
+    }
+
+    /// A length in display units, in metres.
+    pub fn length<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
+        let unit = self.display.length;
+        self.number(name).map(|v| unit.to_si(v))
     }
 
     /// A positive length in metres.
-    pub fn positive_length(&self, p: &Value, name: &str) -> Result<Option<f64>> {
-        Ok(positive(p, name)?.map(|v| self.display.length.to_si(v)))
+    pub fn positive_length<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
+        let unit = self.display.length;
+        self.positive(name).map(|v| unit.to_si(v))
     }
 
     /// A positive frequency in hertz.
-    pub fn frequency(&self, p: &Value, name: &str) -> Result<Option<f64>> {
-        Ok(positive(p, name)?.map(|v| self.display.frequency.to_si(v)))
+    pub fn frequency<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
+        let unit = self.display.frequency;
+        self.positive(name).map(|v| unit.to_si(v))
     }
 
-    /// A frequency (Hz) as a value in display units.
-    pub fn show_frequency(&self, hz: f64) -> f64 {
-        self.display.frequency.from_si(hz)
+    /// The element order `order`, 1 or 2 (default 2).
+    pub fn order(&self) -> Result<Order> {
+        self.integer("order", 1..=2).map(|n| if n == 1 { Order::One } else { Order::Two }).or(Order::Two)
     }
 
-    pub fn show_length(&self, m: f64) -> f64 {
-        self.display.length.from_si(m)
+    /// A picture's side `name` in pixels, between 200 and `max`.
+    pub fn side(&self, name: &str, max: usize, default: usize) -> Result<usize> {
+        self.integer(name, 200..=max).or(default)
+    }
+}
+
+impl<'p, T> Arg<'p, T> {
+    /// The value; an error when it is absent.
+    pub fn required(self) -> Result<T> {
+        self.value?.ok_or_else(|| self.params.error(self.name, "is required"))
+    }
+
+    /// The value; an error naming `hint` (what else would have done) when it is absent.
+    pub fn required_or(self, hint: &str) -> Result<T> {
+        self.value?.ok_or_else(|| self.params.error(self.name, format!("is required ({hint})")))
+    }
+
+    pub fn optional(self) -> Result<Option<T>> {
+        self.value
+    }
+
+    /// The value, or `default` when absent.
+    pub fn or(self, default: T) -> Result<T> {
+        Ok(self.value?.unwrap_or(default))
+    }
+
+    /// The value, or the type's default when absent.
+    pub fn or_default(self) -> Result<T>
+    where
+        T: Default,
+    {
+        Ok(self.value?.unwrap_or_default())
+    }
+
+    /// The value, or `fallback` (when it holds one) when absent.
+    pub fn or_maybe(self, fallback: Option<T>) -> Arg<'p, T> {
+        Arg { value: self.value.map(|v| v.or(fallback)), ..self }
+    }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Arg<'p, U> {
+        Arg { params: self.params, name: self.name, value: self.value.map(|v| v.map(f)) }
+    }
+
+    /// A further check of a value given.
+    pub fn and_then<U>(self, f: impl FnOnce(T) -> Result<U>) -> Arg<'p, U> {
+        Arg { params: self.params, name: self.name, value: self.value.and_then(|v| v.map(f).transpose()) }
+    }
+
+    /// Refuses a value given that fails `ok`, saying it `must` be something.
+    pub fn check(self, ok: impl FnOnce(&T) -> bool, must: &str) -> Arg<'p, T> {
+        let (params, name) = (self.params, self.name);
+        self.and_then(|v| if ok(&v) { Ok(v) } else { Err(params.error(name, format!("must be {must}"))) })
+    }
+}
+
+fn finite(v: &Value) -> Option<f64> {
+    v.as_f64().filter(|x| x.is_finite())
+}
+
+#[cfg(test)]
+mod tests {
+    use emcraft_model::End;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn absent_values_are_required_optional_or_defaulted() {
+        let v = json!({"a": 2.0, "n": null});
+        let p = Params::new(&v, Display::default());
+        assert_eq!(p.number("a").required(), Ok(2.0));
+        assert_eq!(p.number("n").optional(), Ok(None));
+        assert_eq!(p.number("b").or(7.0), Ok(7.0));
+        assert_eq!(p.number("b").or_maybe(Some(3.0)).required(), Ok(3.0));
+        assert!(matches!(p.number("b").required(), Err(EngineError::Params(m)) if m == "`b` is required"));
+    }
+
+    #[test]
+    fn values_are_checked_and_converted_to_si() {
+        let v = json!({"w": 2.5, "neg": -1, "end": "start", "bad": "middle", "at": [1, 2, 3], "f": 9, "k": 3});
+        let p = Params::new(&v, Display::default());
+        assert_eq!(p.positive_length("w").required(), Ok(0.0025));
+        assert!(p.positive("neg").required().is_err());
+        assert_eq!(p.choice::<End>("end").required(), Ok(End::Start));
+        assert!(p.choice::<End>("bad").required().is_err());
+        assert_eq!(p.point("at").required(), Ok(Point3::new(0.001, 0.002, 0.003)));
+        assert_eq!(p.frequency("f").required(), Ok(9e9));
+        assert!(p.integer("k", 1..=2).optional().is_err());
+        assert!(p.string("w").optional().is_err());
+    }
+
+    #[test]
+    fn errors_inside_a_list_name_the_item() {
+        let v = json!({"sections": [{"length": 1}, {"length": -1}]});
+        let p = Params::new(&v, Display::default());
+        let items = p.items("sections", "section", 10).unwrap();
+        assert!(items[0].positive("length").required().is_ok());
+        let e = items[1].positive("length").required().unwrap_err();
+        assert_eq!(e, EngineError::Params("section 2: `length` must be > 0, got -1".into()));
+        assert!(p.items("sections", "section", 1).is_err());
     }
 }

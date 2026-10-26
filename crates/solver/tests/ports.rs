@@ -11,7 +11,7 @@ use emcraft_solver::{Complex64 as C, Driven};
 /// The high-pass filter with its ports' modes solved numerically.
 fn numeric_filter() -> Model {
     let mut m = guide(&FILTER, 0.004, 4);
-    m.ports.iter_mut().for_each(|p| p.numeric = true);
+    m.ports.iter_mut().for_each(|p| p.mode_solver = emcraft_model::ModeSolver::Numeric);
     m
 }
 
@@ -46,7 +46,7 @@ fn coax(length: f64, size: f64) -> Model {
         .unwrap();
     m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap());
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false, reference: None }).unwrap();
+        m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
     m
 }
@@ -81,7 +81,7 @@ fn slab_guide(length: f64, d: f64, er: f64, size: f64) -> Model {
     };
     m.set_waveguide(w).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 4, face: None, numeric: false, reference: None }).unwrap();
+        m.add_port(Port::new(name, end).with_modes(4)).unwrap();
     }
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
@@ -117,7 +117,7 @@ fn stripline(a: f64, b: f64, w: f64, length: f64, er: f64, size: f64) -> Model {
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false, reference: None }).unwrap();
+        m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
@@ -153,7 +153,7 @@ fn microstrip(a: f64, b: f64, h: f64, w: f64, er: f64, length: f64, size: f64) -
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
-        m.add_port(Port { name: name.into(), end, modes: 2, face: None, numeric: false, reference: None }).unwrap();
+        m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m

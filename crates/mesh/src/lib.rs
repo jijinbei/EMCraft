@@ -18,7 +18,7 @@ pub use topology::{LOCAL_EDGES, LOCAL_FACES, Topology};
 
 use emcraft_model::geom::triple;
 use emcraft_model::mesh::TETS_PER_CELL;
-use emcraft_model::{Boundary, BoundaryFace, Grid, Mesh, Model, Point3, positive};
+use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Model, Point3, positive};
 
 /// The most tetrahedra a mesh may have (a cap on hostile sizes).
 pub const MAX_TETS: usize = 3_000_000;
@@ -501,12 +501,7 @@ fn locate_in_buckets(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
 /// The tetrahedra whose bounding boxes meet the box (lo, hi): from the buckets of an
 /// unstructured mesh, every tetrahedron otherwise (a box test still drops the far ones).
 pub fn tets_near(mesh: &Mesh, lo: Point3, hi: Point3) -> Vec<usize> {
-    let meets = |t: usize| {
-        mesh.corners(t).is_some_and(|c| {
-            let (a, b) = emcraft_model::bounding_box(c).unwrap_or((Point3::ORIGIN, Point3::ORIGIN));
-            (0..3).all(|d| a[d] <= hi[d] && b[d] >= lo[d])
-        })
-    };
+    let meets = |t: usize| mesh.corners(t).is_some_and(|c| Aabb::around(c).unwrap_or_default().overlaps(Aabb::new(lo, hi)));
     let Some(bk) = mesh.buckets.as_ref() else { return (0..mesh.tets.len()).filter(|&t| meets(t)).collect() };
     let cell = |p: Point3, d: usize| ((((p[d] - bk.lo[d]) / bk.step[d]).floor().max(0.0)) as usize).min(bk.dims[d].saturating_sub(1));
     let mut out = Vec::new();

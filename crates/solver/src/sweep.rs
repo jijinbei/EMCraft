@@ -19,7 +19,7 @@ use std::f64::consts::PI;
 use emcraft_model::units::{C0, MU0};
 use num_complex::Complex64 as C;
 
-use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, complex_solve, invalid, wall_factor};
+use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, complex_solve, invalid, read_s, wall_factor};
 
 /// How a fast sweep decides it is done.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -233,19 +233,8 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
         fields.push(x);
     }
     // S as the full solve reads it.
-    let np = terms.len();
-    let mut s = vec![vec![C::new(0.0, 0.0); np]; np];
-    let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
-    for (q, x) in fields.iter().enumerate() {
-        for (p, list) in terms.iter().enumerate() {
-            let Some(t) = list.first() else { continue };
-            let c: C = t.v.iter().map(|&(i, vi)| x[i] * vi).sum::<C>() / t.norm;
-            let direct = if p == q { c - 1.0 } else { c };
-            s[p][q] = direct * (proxy(p) / proxy(q)).sqrt();
-        }
-    }
     let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
-    let s = d.refer(s, &impedances)?;
+    let s = d.refer(read_s(terms, &fields), &impedances)?;
     let seconds = t0.elapsed().as_secs_f64();
     Ok((
         FrequencyResult {

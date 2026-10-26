@@ -145,6 +145,67 @@ impl Point3 {
     }
 }
 
+/// An axis-aligned box: the points from `min` to `max` in each coordinate.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Aabb {
+    pub min: Point3,
+    pub max: Point3,
+}
+
+impl Aabb {
+    pub const fn new(min: Point3, max: Point3) -> Aabb {
+        Aabb { min, max }
+    }
+
+    /// The box of one point.
+    pub const fn point(p: Point3) -> Aabb {
+        Aabb { min: p, max: p }
+    }
+
+    /// The smallest box holding the points (`None` for none).
+    pub fn around(points: impl IntoIterator<Item = Point3>) -> Option<Aabb> {
+        points.into_iter().map(Aabb::point).reduce(Aabb::union)
+    }
+
+    /// The smallest box holding both.
+    pub fn union(self, o: Aabb) -> Aabb {
+        Aabb { min: self.min.min(o.min), max: self.max.max(o.max) }
+    }
+
+    /// The box grown by `margin` on every side.
+    pub fn grown(self, margin: f64) -> Aabb {
+        Aabb { min: self.min.map(|v| v - margin), max: self.max.map(|v| v + margin) }
+    }
+
+    pub fn size(self) -> Vec3 {
+        self.max - self.min
+    }
+
+    pub fn center(self) -> Point3 {
+        self.min.midpoint(self.max)
+    }
+
+    /// Whether `p` lies inside or on the box.
+    pub fn contains(self, p: Point3) -> bool {
+        (0..3).all(|i| self.min[i] <= p[i] && p[i] <= self.max[i])
+    }
+
+    /// Whether `o` lies inside or on the box, within `tol`.
+    pub fn encloses(self, o: Aabb, tol: f64) -> bool {
+        (0..3).all(|i| o.min[i] >= self.min[i] - tol && o.max[i] <= self.max[i] + tol)
+    }
+
+    /// Whether the boxes share any point.
+    pub fn overlaps(self, o: Aabb) -> bool {
+        (0..3).all(|i| self.min[i] <= o.max[i] && o.min[i] <= self.max[i])
+    }
+
+    /// The two opposite corners, `min` first.
+    pub fn corners(self) -> [Point3; 2] {
+        [self.min, self.max]
+    }
+}
+
 impl Vec3 {
     pub const ZERO: Vec3 = Vec3::new(0.0, 0.0, 0.0);
 

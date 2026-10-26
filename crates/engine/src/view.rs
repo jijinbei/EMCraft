@@ -19,29 +19,105 @@ use emcraft_theory::{EPlaneLine, ESection, HPlaneLine, HSection, Layer, Te10Line
 
 use crate::{EngineError, Result, Session};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A plane through the guide a field picture shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Plane {
+    #[serde(alias = "h-plane")]
     H,
+    #[serde(alias = "e-plane")]
     E,
+    #[serde(alias = "cross-section")]
     Cross,
 }
 
 impl Plane {
-    pub fn parse(s: &str) -> Option<Plane> {
-        match s {
-            "h" | "h-plane" => Some(Plane::H),
-            "e" | "e-plane" => Some(Plane::E),
-            "cross" | "cross-section" => Some(Plane::Cross),
-            _ => None,
-        }
-    }
-
     pub fn name(self) -> &'static str {
         match self {
             Plane::H => "h",
             Plane::E => "e",
             Plane::Cross => "cross",
         }
+    }
+}
+
+/// The quantity a field picture colours: a Cartesian component of E or H, or the magnitude of
+/// one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Component {
+    Ex,
+    #[default]
+    Ey,
+    Ez,
+    Hx,
+    Hy,
+    Hz,
+    /// |E|.
+    E,
+    /// |H|.
+    H,
+}
+
+impl Component {
+    pub const ALL: [Component; 8] =
+        [Component::Ex, Component::Ey, Component::Ez, Component::Hx, Component::Hy, Component::Hz, Component::E, Component::H];
+
+    /// The name commands use: `ex` … `hz`, `|e|`, `|h|`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Component::Ex => "ex",
+            Component::Ey => "ey",
+            Component::Ez => "ez",
+            Component::Hx => "hx",
+            Component::Hy => "hy",
+            Component::Hz => "hz",
+            Component::E => "|e|",
+            Component::H => "|h|",
+        }
+    }
+
+    /// The name on a picture: `Ey`, `|H|`.
+    pub fn label(self) -> String {
+        self.name().replace('e', "E").replace('h', "H")
+    }
+
+    pub const fn is_magnetic(self) -> bool {
+        matches!(self, Component::Hx | Component::Hy | Component::Hz | Component::H)
+    }
+
+    pub const fn is_magnitude(self) -> bool {
+        matches!(self, Component::E | Component::H)
+    }
+
+    /// The value at the phase `rot` (e^{jωt}) and the amplitude over the period, of the fields
+    /// E and H at a point.
+    fn sample(self, e: &CVec3, h: &CVec3, rot: C) -> (f64, f64) {
+        let f = if self.is_magnetic() { h } else { e };
+        let axis = match self {
+            Component::Ex | Component::Hx => 0,
+            Component::Ey | Component::Hy => 1,
+            Component::Ez | Component::Hz => 2,
+            Component::E | Component::H => return ((*f * rot).re().norm(), f.norm_sqr().sqrt()),
+        };
+        ((f[axis] * rot).re, f[axis].norm())
+    }
+}
+
+impl std::fmt::Display for Component {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl std::str::FromStr for Component {
+    type Err = EngineError;
+
+    /// A component by its name, in either case.
+    fn from_str(s: &str) -> Result<Component> {
+        let lower = s.to_ascii_lowercase();
+        Component::ALL.into_iter().find(|c| c.name() == lower).ok_or_else(|| {
+            EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", s.chars().take(20).collect::<String>()))
+        })
     }
 }
 
@@ -53,8 +129,8 @@ pub struct FieldView {
     pub plane: Plane,
     /// The plane's position along its normal (m); its middle when `None`.
     pub at: Option<f64>,
-    /// The colour-mapped quantity: `ex`, `ey`, `ez`, `hx`, `hy`, `hz`, `|e|` or `|h|`.
-    pub component: String,
+    /// The colour-mapped quantity.
+    pub component: Component,
     pub show_e: bool,
     pub show_h: bool,
     /// Phase ωt (rad): the picture shows Re(F e^{jωt}).
@@ -67,7 +143,7 @@ pub struct FieldView {
 
 impl FieldView {
     pub fn new(frequency: f64, plane: Plane) -> FieldView {
-        FieldView { frequency, plane, at: None, component: "ey".into(), show_e: true, show_h: true, phase: 0.0, excitation: 0, mode: None }
+        FieldView { frequency, plane, at: None, component: Component::Ey, show_e: true, show_h: true, phase: 0.0, excitation: 0, mode: None }
     }
 
     /// A view of eigenmode `index`.
@@ -115,17 +191,17 @@ pub fn field_plot(session: &Session, view: &FieldView) -> Result<FieldPlot> {
 
 /// Samples the fields of a view's plane (its component, arrows and phase are not used).
 pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples> {
-    let (lo, hi) = session.model.bounds().ok_or_else(|| EngineError::Failed("no geometry".into()))?;
+    let emcraft_model::Aabb { min: lo, max: hi } = session.model.bounds().ok_or_else(|| EngineError::failed("no geometry"))?;
     // The field: a driven solution at a frequency, or an eigenmode.
     let (driven, x, frequency, caption) = match view.mode {
         Some(i) => {
-            let e = session.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
+            let e = session.results.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
             let m = e.modes.get(i).ok_or_else(|| EngineError::Params(format!("no eigenmode {} (there are {})", i + 1, e.modes.len())))?;
             let q = m.q().map_or(String::new(), |q| format!(", Q = {}", emcraft_render::axes::format(q)));
             (&e.driven, &m.vector, m.frequency, format!("eigenmode {}{q} (arbitrary amplitude), order {}", i + 1, e.driven.order.as_u8()))
         }
-        None if session.sweep.is_none() && session.radiation.is_some() => {
-            let r = session.radiation.as_ref().ok_or_else(|| EngineError::Failed("no results".into()))?;
+        None if session.results.sweep.is_none() && session.results.radiation.is_some() => {
+            let r = session.results.radiation.as_ref().ok_or_else(|| EngineError::Failed("no results".into()))?;
             let what = if session.model.sources.iter().any(|s| matches!(s, emcraft_model::Source::PlaneWave { .. })) {
                 "the field scattered from a 1 V/m plane wave"
             } else {
@@ -134,7 +210,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
             (&r.driven, &r.result.field, r.result.frequency, format!("{what}, order {}", r.driven.order.as_u8()))
         }
         None => {
-            let sweep = session.sweep.as_ref().ok_or_else(|| EngineError::Failed("no results: solve first (solve.frequency)".into()))?;
+            let sweep = session.results.sweep()?;
             let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
             let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
             let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
@@ -242,35 +318,12 @@ impl PlaneSamples {
         let rot = C::from_polar(1.0, view.phase);
         let re = |c: C| (c * rot).re;
         let norm = |f: &CVec3| f.norm_sqr().sqrt();
-        let comp = view.component.as_str();
-        // (value at this phase, amplitude over the period)
-        let value = |e: &CVec3, h: &CVec3| -> Option<(f64, f64)> {
-            match comp {
-                "ex" | "ey" | "ez" | "hx" | "hy" | "hz" => {
-                    let k = match &comp[1..] {
-                        "x" => 0,
-                        "y" => 1,
-                        _ => 2,
-                    };
-                    let v = if comp.starts_with('h') { h[k] } else { e[k] };
-                    Some((re(v), v.norm()))
-                }
-                "|e|" => Some(((*e * rot).re().norm(), norm(e))),
-                "|h|" => Some(((*h * rot).re().norm(), norm(h))),
-                _ => None,
-            }
-        };
-        if value(&CVec3::ZERO, &CVec3::ZERO).is_none() {
-            return Err(EngineError::Params(format!(
-                "`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`",
-                comp.chars().take(20).collect::<String>()
-            )));
-        }
+        let comp = view.component;
         let mut peak: f64 = 0.0;
         let values = self
             .grid
             .iter()
-            .map(|g| match g.as_ref().and_then(|(e, h)| value(e, h)) {
+            .map(|g| match g.as_ref().map(|(e, h)| comp.sample(e, h, rot)) {
                 Some((v, amp)) => {
                     peak = peak.max(amp);
                     v
@@ -307,18 +360,18 @@ impl PlaneSamples {
                 sets.push(Arrows { label: label.into(), color, arrows: list, scale: Some(in_peak) });
             }
         }
-        let unit = if comp.contains('h') { "A/m" } else { "V/m" };
+        let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
         Ok(FieldPlot {
             title: self.title.clone(),
             subtitle: format!("Re(F e^jωt) at ωt = {} deg, {}", emcraft_render::axes::format(view.phase.to_degrees()), self.caption),
             x: self.x.clone(),
             y: self.y.clone(),
             scalar: Some(Scalar {
-                label: format!("{} ({unit})", comp.replace('e', "E").replace('h', "H")),
+                label: format!("{} ({unit})", comp.label()),
                 nx: self.nx,
                 ny: self.ny,
                 values,
-                kind: if comp.starts_with('|') { ScalarKind::Magnitude } else { ScalarKind::Signed },
+                kind: if comp.is_magnitude() { ScalarKind::Magnitude } else { ScalarKind::Signed },
                 range: Some(peak),
             }),
             arrows: sets,
@@ -378,11 +431,10 @@ impl Reference {
 
     /// (S11, S21), power waves, with `modes` TE_m0 modes for mode matching.
     pub fn s(&self, frequency: f64, modes: usize) -> Result<(C, C)> {
-        let e = |e: emcraft_theory::TheoryError| EngineError::Failed(e.to_string());
         match self {
-            Reference::Exact(l) => Ok(l.solve(frequency).map_err(e)?.s_power()),
-            Reference::ModeMatching(l) => l.solve(frequency, modes).map_err(e),
-            Reference::EPlane(l) => l.solve(frequency, modes).map_err(e),
+            Reference::Exact(l) => Ok(l.solve(frequency)?.s_power()),
+            Reference::ModeMatching(l) => Ok(l.solve(frequency, modes)?),
+            Reference::EPlane(l) => Ok(l.solve(frequency, modes)?),
             Reference::Uniform { length, cutoff, index2 } => {
                 let k = 2.0 * std::f64::consts::PI * frequency / emcraft_model::units::C0;
                 let b2 = k * k * index2 - cutoff * cutoff;
@@ -457,8 +509,8 @@ pub fn reference(session: &Session) -> Result<Reference> {
 
 /// |S11| and |S21| in dB against frequency: the solved points and the reference curves.
 pub fn sparameter_chart(session: &Session) -> Result<Chart> {
-    let sweep = session.sweep.as_ref();
-    let td = session.time_domain.as_ref();
+    let sweep = session.results.sweep.as_ref();
+    let td = session.results.time_domain.as_ref();
     let fu = session.display.frequency;
     let (f0, f1) = match (sweep, td) {
         (Some(sw), _) if !sw.results.is_empty() => (sw.results[0].frequency, sw.results[sw.results.len() - 1].frequency),
@@ -507,9 +559,7 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
         }
     }
     if let Some(sweep) = sweep {
-        let pts = |p: usize, q: usize| {
-            sweep.results.iter().filter_map(|r| r.s.get(p).and_then(|row| row.get(q)).map(|s| [fu.from_si(r.frequency), db(*s)])).collect()
-        };
+        let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), db(s)])).collect();
         series.push(Series {
             label: format!("|S21| FEM (order {})", sweep.order.as_u8()),
             color: Rgb(20, 40, 120),
