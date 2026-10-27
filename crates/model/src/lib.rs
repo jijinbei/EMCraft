@@ -76,12 +76,9 @@ pub enum Pole {
 }
 
 impl Pole {
-    /// Checks the pole: finite parameters, Δε and the time constants or frequencies > 0, the
-    /// damping ≥ 0 (> 0 for Drude, whose undamped static susceptibility is unbounded).
+    /// Checks the pole: finite parameters, all > 0 (an undamped pole is singular at its
+    /// resonance, an undamped Drude pole at zero frequency).
     pub fn checked(self) -> Result<Pole> {
-        let nonneg = |what: &str, v: f64| {
-            if v.is_finite() && v >= 0.0 { Ok(v) } else { Err(invalid(what, format!("must be a finite number ≥ 0, got {v}"))) }
-        };
         match self {
             Pole::Debye { delta_eps, tau } => {
                 positive("Debye pole Δε", delta_eps)?;
@@ -90,7 +87,7 @@ impl Pole {
             Pole::Lorentz { delta_eps, frequency, damping } => {
                 positive("Lorentz pole Δε", delta_eps)?;
                 positive("Lorentz resonance frequency", frequency)?;
-                nonneg("Lorentz damping", damping)?;
+                positive("Lorentz damping", damping)?;
             }
             Pole::Drude { plasma_frequency, damping } => {
                 positive("Drude plasma frequency", plasma_frequency)?;
@@ -158,6 +155,12 @@ impl Material {
     /// Whether the permittivity depends on the frequency.
     pub fn is_dispersive(&self) -> bool {
         !self.dispersion.is_empty()
+    }
+
+    /// The refractive index that sets the wavelength at `frequency` (Hz): √(εr μr), with
+    /// dispersion √(|εr(ω)| μr).
+    pub fn index_at(&self, frequency: f64) -> f64 {
+        if self.is_dispersive() { (self.eps_at(frequency).norm() * self.mu_r).sqrt() } else { (self.eps_r * self.mu_r).sqrt() }
     }
 
     /// The complex relative permittivity at `frequency` (Hz): εr (1 − j tan δ) + Σ χ_k(ω)
