@@ -248,3 +248,9 @@ fn file_and_edit_menus() {
     assert_eq!(s.model.band, h.app.session.model.band);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+#[ignore = "a tour of every sample's steps for looking at: EMCRAFT_SCENARIO_SHOTS=DIR cargo test -p emcraft-ui-egui scenario_visibility_tour -- --ignored"]
+fn scenario_visibility_tour() {
+    scenario("visibility_tour");
+}

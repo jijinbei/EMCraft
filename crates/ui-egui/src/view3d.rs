@@ -164,14 +164,15 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         );
         return;
     };
+    let frame = focus(&app.session.model, bounds);
     let v = &mut app.view3d;
     let aspect = (rect.width() / rect.height().max(1.0)) as f64;
     if v.fitted != Some(bounds) || v.fit_next {
-        v.camera.fit(bounds.0, bounds.1, aspect);
+        v.camera.fit(frame.0, frame.1, aspect);
         v.fitted = Some(bounds);
         v.fit_next = false;
     }
-    let edit = navigate(v, ui, rect, bounds);
+    let edit = navigate(v, ui, rect, frame);
     if let Some(d) = edit.plane_drag {
         move_plane(app, rect, bounds, d);
     }
@@ -203,6 +204,21 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     let facing = layers.first().map(|(plot, plane, at)| facing_plane(app.session.display.length, bounds.0, plot, *plane, *at));
     navigator(app, ui, rect);
     nav_bar(app, ui, rect, facing);
+}
+
+/// What a fit frames: an open problem's structure (its bodies, ports and sources) with room
+/// around it, not the air and the layer that fill most of its box; else the whole scene.
+fn focus(m: &emcraft_model::Model, (lo, hi): ([f64; 3], [f64; 3])) -> ([f64; 3], [f64; 3]) {
+    if m.open.is_none() {
+        return (lo, hi);
+    }
+    let Some(emcraft_model::Aabb { min, max }) = emcraft_model::Aabb::around(m.radiators()) else { return (lo, hi) };
+    let (a, b) = ([min.x, min.y, min.z], [max.x, max.y, max.z]);
+    // Twice the structure's largest side around its middle, at least a quarter of the box.
+    let side = (0..3).map(|i| b[i] - a[i]).fold(0.0f64, f64::max).max(0.25 * (0..3).map(|i| hi[i] - lo[i]).fold(0.0f64, f64::max));
+    let half = side;
+    let c = [0, 1, 2].map(|i| 0.5 * (a[i] + b[i]));
+    ([0, 1, 2].map(|i| (c[i] - half).max(lo[i])), [0, 1, 2].map(|i| (c[i] + half).min(hi[i])))
 }
 
 /// The field view's plane's middle on screen, as the handle `view3d:plane`.

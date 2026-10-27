@@ -1,0 +1,650 @@
+[
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "highpass"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-highpass-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-highpass-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-highpass-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-highpass-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-highpass-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "iris-bandpass"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-iris-bandpass-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-iris-bandpass-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-iris-bandpass-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-iris-bandpass-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-iris-bandpass-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "cavity"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cavity-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cavity-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cavity-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cavity-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cavity-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "cylinder-cavity"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cylinder-cavity-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cylinder-cavity-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cylinder-cavity-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cylinder-cavity-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-cylinder-cavity-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "circular-guide"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-circular-guide-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-circular-guide-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-circular-guide-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-circular-guide-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-circular-guide-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "coaxial-line"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-coaxial-line-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-coaxial-line-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-coaxial-line-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-coaxial-line-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-coaxial-line-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "inductive-post"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-inductive-post-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-inductive-post-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-inductive-post-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-inductive-post-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-inductive-post-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "loaded-sphere"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-loaded-sphere-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-loaded-sphere-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-loaded-sphere-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-loaded-sphere-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-loaded-sphere-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "dipole"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-dipole-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-dipole-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-dipole-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-dipole-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-dipole-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "halfwave-dipole"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-halfwave-dipole-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-halfwave-dipole-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-halfwave-dipole-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-halfwave-dipole-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-halfwave-dipole-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "open-waveguide"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-open-waveguide-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-open-waveguide-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-open-waveguide-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-open-waveguide-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-open-waveguide-mesh"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "sphere-scattering"
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-sphere-scattering-geometry"
+ },
+ {
+  "click": "step:materials"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-sphere-scattering-materials"
+ },
+ {
+  "click": "step:excitation"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-sphere-scattering-excitation"
+ },
+ {
+  "click": "step:boundaries"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-sphere-scattering-boundaries"
+ },
+ {
+  "click": "step:mesh"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "tour-sphere-scattering-mesh"
+ }
+]
