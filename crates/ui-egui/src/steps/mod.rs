@@ -144,6 +144,9 @@ pub struct Workflow {
     pub check: Option<(u64, Value)>,
     /// The port mode chosen in the Excitation panel's table, which the Port modes view marks.
     pub mode_focus: Option<ModeFocus>,
+    /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
+    /// frequencies.
+    pub diagram: Option<Value>,
 }
 
 /// A port mode picked in the Excitation panel: the Port modes view marks its row and scrolls
@@ -195,6 +198,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "refused": f.refused,
         "solver": f.solver.unwrap_or_else(|| Solver::infer(&app.session.model)).id(),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
+        "diagram": app.workflow.diagram,
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })
 }

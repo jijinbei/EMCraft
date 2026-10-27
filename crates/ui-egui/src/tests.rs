@@ -120,6 +120,11 @@ fn scenario_port_mode_rows() {
 }
 
 #[test]
+fn scenario_setup_band() {
+    scenario("setup_band");
+}
+
+#[test]
 fn scenario_hostile_step_input() {
     scenario("hostile_step_input");
 }
