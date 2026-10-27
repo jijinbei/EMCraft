@@ -342,6 +342,19 @@ pub fn paint(p: &Painter, r: Rect, name: &str, ink: Color32, accent: Color32) {
             poly(&[(0.78, 0.08), (0.78, 0.44)], false, bold);
             poly(&[(0.6, 0.26), (0.96, 0.26)], false, bold);
         }
+        // A shape and its mirror image across a dashed plane.
+        "symmetry" => {
+            for k in 0..5 {
+                let y0 = 0.08 + 0.18 * k as f32;
+                poly(&[(0.5, y0), (0.5, y0 + 0.1)], false, bold);
+            }
+            poly(&[(0.42, 0.2), (0.12, 0.5), (0.42, 0.8)], true, line);
+            p.add(Shape::convex_polygon(
+                [(0.58, 0.2), (0.88, 0.5), (0.58, 0.8)].iter().map(|&(x, y)| at(x, y)).collect(),
+                accent.gamma_multiply(0.3),
+                line,
+            ));
+        }
         // A house: the start page.
         "start" => {
             poly(&[(0.1, 0.5), (0.5, 0.14), (0.9, 0.5)], false, bold);
@@ -369,7 +382,8 @@ pub fn for_command(id: &str) -> &'static str {
         "geometry.inclusion" => "inclusion",
         "geometry.import" => "import",
         "model.material.create" => "material",
-        "model.walls" | "model.symmetry" => "walls",
+        "model.walls" => "walls",
+        "model.symmetry" => "symmetry",
         "model.port.create" => "port",
         "model.port.lumped" => "lumped",
         "source.dipole" => "dipole",

@@ -153,6 +153,26 @@ impl Material {
     }
 
     /// Whether the permittivity depends on the frequency.
+    /// The permittivity in brief for lists: "εr 2.2, μr 1, tan δ 0.01", or for a dispersive
+    /// material "ε∞ 2, 1 Debye + 1 Lorentz pole(s), μr 1".
+    pub fn summary(&self) -> String {
+        let loss = if self.loss_tangent > 0.0 { format!(", tan δ {}", self.loss_tangent) } else { String::new() };
+        if !self.is_dispersive() {
+            return format!("εr {}, μr {}{loss}", self.eps_r, self.mu_r);
+        }
+        let count = |f: fn(&Pole) -> bool| self.dispersion.iter().filter(|p| f(p)).count();
+        let kinds: Vec<String> = [
+            (count(|p| matches!(p, Pole::Debye { .. })), "Debye"),
+            (count(|p| matches!(p, Pole::Lorentz { .. })), "Lorentz"),
+            (count(|p| matches!(p, Pole::Drude { .. })), "Drude"),
+        ]
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, k)| format!("{n} {k}"))
+        .collect();
+        format!("ε∞ {}, {} pole{}, μr {}{loss}", self.eps_r, kinds.join(" + "), if self.dispersion.len() == 1 { "" } else { "s" }, self.mu_r)
+    }
+
     pub fn is_dispersive(&self) -> bool {
         !self.dispersion.is_empty()
     }
@@ -1451,6 +1471,19 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn material_summaries_name_their_poles() {
+        let plain = Material::new("ptfe", 2.1, 1.0).unwrap();
+        assert_eq!(plain.summary(), "εr 2.1, μr 1");
+        let lossy = plain.clone().with_loss_tangent(0.01).unwrap();
+        assert_eq!(lossy.summary(), "εr 2.1, μr 1, tan δ 0.01");
+        let d = Material::new("water", 5.0, 1.0)
+            .unwrap()
+            .with_dispersion(vec![Pole::Debye { delta_eps: 75.0, tau: 8e-12 }, Pole::Lorentz { delta_eps: 1.0, frequency: 1e12, damping: 1e10 }])
+            .unwrap();
+        assert_eq!(d.summary(), "ε∞ 5, 1 Debye + 1 Lorentz poles, μr 1");
+    }
 
     fn guide() -> Waveguide {
         Waveguide { width: 0.02286, height: 0.01016, sections: vec![Section::new(0.01, "vacuum")], layers: Vec::new(), strips: Vec::new() }

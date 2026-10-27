@@ -97,14 +97,7 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         let what = inc.material.clone().unwrap_or_else(|| "conductor".into());
         geometry.push(row(format!("  Inclusion {}: {what}", i + 1), "inclusion", Act::Edit("geometry.inclusion")).picks(Pick::Inclusion(i)));
     }
-    let materials = m
-        .materials
-        .iter()
-        .map(|mat| {
-            let loss = if mat.loss_tangent > 0.0 { format!(", tan δ {}", mat.loss_tangent) } else { String::new() };
-            row(format!("{}: εr {}, μr {}{loss}", mat.name, mat.eps_r, mat.mu_r), "material", Act::None)
-        })
-        .collect();
+    let materials = m.materials.iter().map(|mat| row(format!("{}: {}", mat.name, mat.summary()), "material", Act::None)).collect();
     let mut ports: Vec<Row> = m
         .ports
         .iter()

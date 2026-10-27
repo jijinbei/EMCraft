@@ -1,0 +1,11 @@
+[
+  {"note": "A magnetic wall at x = a/2: the half is meshed and drawn, the plane shown in the Boundaries step, the browser lists it"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "model.symmetry", "params": {"axis": "x", "kind": "magnetic"}}},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 3}}},
+  {"call": "ui.set", "params": {"step": "boundaries"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"handles": ["toolbar:model.symmetry"]}},
+  {"shot": "symmetry-boundaries"}
+]

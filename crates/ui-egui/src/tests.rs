@@ -80,6 +80,11 @@ fn scenario_view3d_gpu() {
 }
 
 #[test]
+fn scenario_symmetry_plane() {
+    scenario("symmetry_plane");
+}
+
+#[test]
 fn scenario_start_page() {
     scenario("start_page");
 }

@@ -516,8 +516,7 @@ fn body(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, states: &[StepState
                     let c = crate::scene3d::material_rgb(m, i);
                     let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
                     ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c.0, c.1, c.2));
-                    let loss = if mat.loss_tangent > 0.0 { format!(", tan δ {}", mat.loss_tangent) } else { String::new() };
-                    ui.label(egui::RichText::new(format!("{}: εr {}, μr {}{loss}", mat.name, mat.eps_r, mat.mu_r)).size(t.font_small).color(t.text));
+                    ui.label(egui::RichText::new(format!("{}: {}", mat.name, mat.summary())).size(t.font_small).color(t.text));
                 });
             }
         }
@@ -528,6 +527,15 @@ fn body(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, states: &[StepState
             kv(ui, "walls", m.wall_conductivity.map_or("perfect conductor".into(), |s| format!("σ = {s:.3e} S/m")), t);
             let l = app.session.display.length;
             kv(ui, "open", m.open.map_or("closed (no PML)".into(), |o| format!("PML {} {lu} thick", fmt(l.from_si(o.thickness)))), t);
+            let planes: Vec<String> = m
+                .symmetry
+                .iter()
+                .map(|s| {
+                    let wall = if s.kind == emcraft_model::SymmetryKind::Electric { "electric" } else { "magnetic" };
+                    format!("{} = {} {lu}, {wall}", if s.axis == emcraft_model::Axis::X { "x" } else { "y" }, fmt(l.from_si(s.at)))
+                })
+                .collect();
+            kv(ui, "symmetry", if planes.is_empty() { "none (the whole model)".into() } else { planes.join("; ") }, t);
         }
         Step::Mesh => mesh(app, ui, lu, t),
         Step::Setup => setup(app, ui, fu, t),

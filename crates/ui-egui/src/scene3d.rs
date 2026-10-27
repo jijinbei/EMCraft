@@ -90,6 +90,14 @@ impl Pick {
     }
 }
 
+/// A symmetry plane's colour: an electric wall blue, a magnetic one green.
+fn symmetry_rgb(kind: emcraft_model::SymmetryKind) -> Rgb {
+    match kind {
+        emcraft_model::SymmetryKind::Electric => Rgb(70, 120, 220),
+        emcraft_model::SymmetryKind::Magnetic => Rgb(60, 170, 110),
+    }
+}
+
 /// The colour picked things turn towards.
 const HIGHLIGHT: Rgb = Rgb(30, 120, 255);
 
@@ -305,6 +313,14 @@ fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
             }
         }
         Overlay::Boundaries => {
+            for s in &m.symmetry {
+                let wall = match s.kind {
+                    emcraft_model::SymmetryKind::Electric => "electric wall",
+                    emcraft_model::SymmetryKind::Magnetic => "magnetic wall",
+                };
+                let axis = if s.axis == Axis::X { "x" } else { "y" };
+                out.legend.push((format!("symmetry: {wall}, {axis} = {} {}", l.from_si(s.at), l.symbol()), symmetry_rgb(s.kind)));
+            }
             out.legend.push((
                 match m.wall_conductivity {
                     Some(s) => format!("walls σ = {s:.3e} S/m"),
@@ -356,6 +372,11 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
                     (METAL_DARK, 110)
                 }
             }
+        };
+        // A symmetry plane is no wall: its own colour in every overlay.
+        let (color, alpha) = match f.tag {
+            Boundary::Symmetry(kind) => (symmetry_rgb(kind), if overlay == Overlay::Boundaries { 200 } else { alpha.min(120) }),
+            _ => (color, alpha),
         };
         let pick = match f.tag {
             Boundary::Port(k) if port => m.ports.iter().position(|p| p.face.is_none() && (p.end == End::Start) == (k == 0)).map(Pick::Port),
