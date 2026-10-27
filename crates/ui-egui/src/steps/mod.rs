@@ -142,6 +142,17 @@ pub struct Workflow {
     pub fields: Fields,
     /// `results.check`'s last reply, and the revision it was made at.
     pub check: Option<(u64, Value)>,
+    /// The port mode chosen in the Excitation panel's table, which the Port modes view marks.
+    pub mode_focus: Option<ModeFocus>,
+}
+
+/// A port mode picked in the Excitation panel: the Port modes view marks its row and scrolls
+/// to it once.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModeFocus {
+    pub port: String,
+    pub mode: usize,
+    pub scroll: bool,
 }
 
 /// The statuses of the steps (from `project.status`, once per revision).
@@ -184,6 +195,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "refused": f.refused,
         "solver": f.solver.unwrap_or_else(|| Solver::infer(&app.session.model)).id(),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
+        "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })
 }
 

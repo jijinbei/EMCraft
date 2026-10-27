@@ -190,8 +190,30 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
             t.color = t.color.mix(HIGHLIGHT, 0.5);
             t.alpha = t.alpha.max(170);
         }
+        highlight_outline(&mut out.scene, tag);
     }
     out
+}
+
+/// The outline of the triangles tagged `tag` (their edges that no other of them shares), so a
+/// highlighted face stands out from its neighbours whatever its shading.
+fn highlight_outline(scene: &mut emcraft_render::view3d::Scene, tag: u32) {
+    use std::collections::BTreeMap;
+    type Key = [u64; 3];
+    let key = |p: [f64; 3]| p.map(|v| (v * 1e9).round().to_bits());
+    let mut edges: BTreeMap<(Key, Key), ([f64; 3], [f64; 3], u32)> = BTreeMap::new();
+    for t in scene.tris.iter().filter(|t| t.tag == tag).take(200_000) {
+        for (a, b) in [(t.p[0], t.p[1]), (t.p[1], t.p[2]), (t.p[2], t.p[0])] {
+            let (ka, kb) = (key(a), key(b));
+            let k = if ka <= kb { (ka, kb) } else { (kb, ka) };
+            edges.entry(k).or_insert((a, b, 0)).2 += 1;
+        }
+    }
+    for (a, b, n) in edges.into_values() {
+        if n == 1 {
+            scene.line(a, b, HIGHLIGHT, 255);
+        }
+    }
 }
 
 /// Most cells along the field plane's longer side.

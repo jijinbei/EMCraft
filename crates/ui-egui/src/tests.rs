@@ -115,6 +115,11 @@ fn scenario_workflow_missing_port() {
 }
 
 #[test]
+fn scenario_port_mode_rows() {
+    scenario("port_mode_rows");
+}
+
+#[test]
 fn scenario_hostile_step_input() {
     scenario("hostile_step_input");
 }
