@@ -40,6 +40,16 @@ fn corner(positions: &[Point3], v: u32) -> Point3 {
 }
 
 impl Shape {
+    /// The kind of primitive, for display.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Shape::Box { .. } => "Box",
+            Shape::Cylinder { .. } => "Cylinder",
+            Shape::Sphere { .. } => "Sphere",
+            Shape::Surface { .. } => "Surface",
+        }
+    }
+
     /// The bounding box.
     pub fn bounds(&self) -> Aabb {
         match *self {
@@ -278,6 +288,15 @@ pub enum Combine {
 }
 
 impl Combine {
+    /// The operation's name, for display.
+    pub fn kind(self) -> &'static str {
+        match self {
+            Combine::Add => "add",
+            Combine::Subtract => "subtract",
+            Combine::Intersect => "intersect",
+        }
+    }
+
     /// Whether a point lies in the combination, given whether it lies in the body so far and
     /// in the feature.
     pub fn apply(self, body: bool, feature: bool) -> bool {
