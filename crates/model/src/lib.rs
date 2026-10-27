@@ -38,11 +38,11 @@ pub fn positive(what: &str, v: f64) -> Result<f64> {
     if v.is_finite() && v > 0.0 { Ok(v) } else { Err(invalid(what, format!("must be a finite number > 0, got {v}"))) }
 }
 
-/// A linear, isotropic, lossless material.
+/// A linear, isotropic material, lossless unless it has a loss tangent or dispersion.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Material {
     pub name: String,
-    /// Relative permittivity εr.
+    /// Relative permittivity εr; with dispersion, its value at infinite frequency ε∞.
     pub eps_r: f64,
     /// Relative permeability μr.
     pub mu_r: f64,
@@ -50,6 +50,77 @@ pub struct Material {
     /// e^{jωt}).
     #[serde(default)]
     pub loss_tangent: f64,
+    /// Dispersion: poles whose susceptibilities add to the permittivity ([`Material::eps_at`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dispersion: Vec<Pole>,
+}
+
+/// The most poles one material may carry.
+pub const MAX_POLES: usize = 16;
+
+/// One pole of a dispersive permittivity: a susceptibility χ(ω) added to ε∞. The forms are the
+/// standard ones (A. Taflove, S. C. Hagness, *Computational Electrodynamics: The
+/// Finite-Difference Time-Domain Method*, 3rd ed., Artech House 2005, §9.2 and §9.4), written
+/// for the time dependence e^{jωt}, so that a lossy medium has ε = ε′ − jε″ with ε″ > 0.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Pole {
+    /// Debye relaxation: χ = Δε / (1 + jωτ), τ the relaxation time (s).
+    Debye { delta_eps: f64, tau: f64 },
+    /// Lorentz resonance: χ = Δε ω₀² / (ω₀² − ω² + jωγ), ω₀ = 2π `frequency`, γ = 2π
+    /// `damping` (both in Hz).
+    Lorentz { delta_eps: f64, frequency: f64, damping: f64 },
+    /// Drude (free carriers, a Lorentz pole with ω₀ = 0): χ = −ω_p² / (ω² − jωγ), ω_p = 2π
+    /// `plasma_frequency`, γ = 2π `damping` (both in Hz).
+    Drude { plasma_frequency: f64, damping: f64 },
+}
+
+impl Pole {
+    /// Checks the pole: finite parameters, Δε and the time constants or frequencies > 0, the
+    /// damping ≥ 0 (> 0 for Drude, whose undamped static susceptibility is unbounded).
+    pub fn checked(self) -> Result<Pole> {
+        let nonneg = |what: &str, v: f64| {
+            if v.is_finite() && v >= 0.0 { Ok(v) } else { Err(invalid(what, format!("must be a finite number ≥ 0, got {v}"))) }
+        };
+        match self {
+            Pole::Debye { delta_eps, tau } => {
+                positive("Debye pole Δε", delta_eps)?;
+                positive("Debye relaxation time", tau)?;
+            }
+            Pole::Lorentz { delta_eps, frequency, damping } => {
+                positive("Lorentz pole Δε", delta_eps)?;
+                positive("Lorentz resonance frequency", frequency)?;
+                nonneg("Lorentz damping", damping)?;
+            }
+            Pole::Drude { plasma_frequency, damping } => {
+                positive("Drude plasma frequency", plasma_frequency)?;
+                positive("Drude damping", damping)?;
+            }
+        }
+        Ok(self)
+    }
+
+    /// The pole as a second-order one, χ = a / (ω₀² − ω² + jωγ) in rad/s, or `None` for Debye.
+    pub fn second_order(self) -> Option<(f64, f64, f64)> {
+        let w = |f: f64| 2.0 * std::f64::consts::PI * f;
+        match self {
+            Pole::Debye { .. } => None,
+            Pole::Lorentz { delta_eps, frequency, damping } => Some((delta_eps * w(frequency) * w(frequency), w(frequency), w(damping))),
+            Pole::Drude { plasma_frequency, damping } => Some((w(plasma_frequency) * w(plasma_frequency), 0.0, w(damping))),
+        }
+    }
+
+    /// The susceptibility χ(ω) at `frequency` (Hz).
+    pub fn susceptibility(self, frequency: f64) -> Complex64 {
+        let omega = 2.0 * std::f64::consts::PI * frequency;
+        match self {
+            Pole::Debye { delta_eps, tau } => Complex64::new(delta_eps, 0.0) / Complex64::new(1.0, omega * tau),
+            p => match p.second_order() {
+                Some((a, w0, g)) => Complex64::new(a, 0.0) / Complex64::new(w0 * w0 - omega * omega, omega * g),
+                None => Complex64::new(0.0, 0.0),
+            },
+        }
+    }
 }
 
 impl Material {
@@ -62,6 +133,7 @@ impl Material {
             eps_r: positive("relative permittivity", eps_r)?,
             mu_r: positive("relative permeability", mu_r)?,
             loss_tangent: 0.0,
+            dispersion: Vec::new(),
         })
     }
 
@@ -74,8 +146,36 @@ impl Material {
         Ok(self)
     }
 
+    /// The same material with dispersion poles (each checked, at most [`MAX_POLES`]).
+    pub fn with_dispersion(mut self, poles: Vec<Pole>) -> Result<Material> {
+        if poles.len() > MAX_POLES {
+            return Err(invalid("dispersion", format!("holds at most {MAX_POLES} poles, got {}", poles.len())));
+        }
+        self.dispersion = poles.into_iter().map(Pole::checked).collect::<Result<_>>()?;
+        Ok(self)
+    }
+
+    /// Whether the permittivity depends on the frequency.
+    pub fn is_dispersive(&self) -> bool {
+        !self.dispersion.is_empty()
+    }
+
+    /// The complex relative permittivity at `frequency` (Hz): εr (1 − j tan δ) + Σ χ_k(ω)
+    /// (time dependence e^{jωt}, so ε = ε′ − jε″).
+    pub fn eps_at(&self, frequency: f64) -> Complex64 {
+        let base = Complex64::new(self.eps_r, -self.eps_r * self.loss_tangent);
+        self.dispersion.iter().fold(base, |e, p| e + p.susceptibility(frequency))
+    }
+
+    /// Checks every field again (a model read from a file has not been through the
+    /// constructors).
+    pub fn checked(&self) -> Result<()> {
+        let again = Material::new(&self.name, self.eps_r, self.mu_r)?.with_loss_tangent(self.loss_tangent)?;
+        again.with_dispersion(self.dispersion.clone()).map(|_| ())
+    }
+
     pub fn vacuum() -> Material {
-        Material { name: "vacuum".into(), eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0 }
+        Material { name: "vacuum".into(), eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, dispersion: Vec::new() }
     }
 }
 
@@ -1231,6 +1331,46 @@ mod tests {
         m.add_material(Material::new("ptfe", 2.0, 1.0).unwrap()).unwrap();
         assert!(matches!(m.add_material(Material::new("ptfe", 3.0, 1.0).unwrap()), Err(ModelError::Duplicate { .. })));
         assert_eq!(m.material("ptfe").unwrap().0, 1);
+    }
+
+    #[test]
+    fn dispersion_is_checked_and_evaluated() {
+        use std::f64::consts::PI;
+        let x = || Material::new("x", 2.0, 1.0).unwrap();
+        for bad in [
+            Pole::Debye { delta_eps: f64::NAN, tau: 1e-11 },
+            Pole::Debye { delta_eps: 1.0, tau: 0.0 },
+            Pole::Debye { delta_eps: -1.0, tau: 1e-11 },
+            Pole::Lorentz { delta_eps: 1.0, frequency: f64::INFINITY, damping: 1e9 },
+            Pole::Lorentz { delta_eps: 1.0, frequency: 1e10, damping: -1.0 },
+            Pole::Drude { plasma_frequency: 1e10, damping: 0.0 },
+        ] {
+            assert!(x().with_dispersion(vec![bad]).is_err(), "{bad:?}");
+        }
+        assert!(x().with_dispersion(vec![Pole::Debye { delta_eps: 1.0, tau: 1e-11 }; MAX_POLES + 1]).is_err());
+        // Debye: ε(0) = ε∞ + Δε, ε(∞) = ε∞, at ωτ = 1 the loss peak ε″ = Δε/2.
+        let tau = 1e-11;
+        let d = x().with_dispersion(vec![Pole::Debye { delta_eps: 3.0, tau }]).unwrap();
+        let e = d.eps_at(1.0 / (2.0 * PI * tau));
+        assert!((e.re - 3.5).abs() < 1e-12 && (e.im + 1.5).abs() < 1e-12, "{e}");
+        assert!((d.eps_at(1e-3).re - 5.0).abs() < 1e-9);
+        // Lorentz: static ε∞ + Δε; above the resonance below ε∞; lossy (ε″ > 0).
+        let l = x().with_dispersion(vec![Pole::Lorentz { delta_eps: 2.0, frequency: 1e10, damping: 1e9 }]).unwrap();
+        assert!((l.eps_at(1.0).re - 4.0).abs() < 1e-9);
+        assert!(l.eps_at(1e10).im < 0.0 && l.eps_at(3e10).re < 2.0);
+        // Drude: χ = −ωp²/(ω² − jωγ).
+        let (fp, g) = (1e10, 1e9);
+        let dr = x().with_dispersion(vec![Pole::Drude { plasma_frequency: fp, damping: g }]).unwrap();
+        let w = 2.0 * PI * 2e10;
+        let expect = Complex64::new(2.0, 0.0) - (2.0 * PI * fp).powi(2) / Complex64::new(w * w, -w * 2.0 * PI * g);
+        assert!((dr.eps_at(2e10) - expect).norm() < 1e-12);
+        assert!(dr.eps_at(2e10).im < 0.0);
+        dr.checked().unwrap();
+        // Old models (no dispersion) still read; new ones round-trip.
+        let old: Material = serde_json::from_str(r#"{"name":"a","eps_r":2.0,"mu_r":1.0}"#).unwrap();
+        assert!(!old.is_dispersive());
+        let back: Material = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
+        assert_eq!(back, l);
     }
 
     #[test]
