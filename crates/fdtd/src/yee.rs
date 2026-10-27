@@ -141,6 +141,24 @@ impl Grading {
     }
 }
 
+/// The CPML's coefficients at positions `xs` along an axis whose layer lies outside
+/// [`inner.0`, `inner.1`], `depth` thick: graded by the depth into the layer as a fraction of
+/// its thickness (none inside).
+pub(crate) fn layer_profile(grading: &Grading, xs: impl Iterator<Item = f64>, inner: (f64, f64), depth: f64) -> Vec<Cpml> {
+    let (lo, hi) = inner;
+    xs.map(|x| {
+        let d = if x < lo {
+            (lo - x) / depth
+        } else if x > hi {
+            (x - hi) / depth
+        } else {
+            0.0
+        };
+        grading.at(d)
+    })
+    .collect()
+}
+
 /// The largest stable time step (times `courant`) on a grid whose smallest steps are `h`.
 pub(crate) fn time_step(courant: f64, h: [f64; 3]) -> f64 {
     courant / (C0 * (1.0 / h[0].powi(2) + 1.0 / h[1].powi(2) + 1.0 / h[2].powi(2)).sqrt())

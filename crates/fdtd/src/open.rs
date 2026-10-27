@@ -27,7 +27,7 @@ use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
 use crate::device::{CurrentPlan, OpenPlan, OpenStepper, PortEdgePlan, PortPlan, SamplePlan};
-use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, index, lattices, leapfrog, time_step};
+use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, index, lattices, layer_profile, leapfrog, time_step};
 use crate::{FdtdError, MAX_CELLS, MAX_STEPS, Result, invalid};
 
 /// Run settings of an open problem.
@@ -340,23 +340,13 @@ impl BoxCpml {
     fn new(grid: &BoxGrid, dt: f64, fc: f64) -> BoxCpml {
         let npml = grid.npml;
         // Coefficients at nodes (or half cells) along an axis of `n` cells.
+        // In cells along the axis: the layer's inner faces at npml and n − npml.
         let axis = |d: usize, half: bool| -> Vec<Cpml> {
             let n = grid.n[d];
             let grading = Grading::new(grid.hs[d], dt, fc);
             let count = if half { n } else { n + 1 };
-            (0..count)
-                .map(|i| {
-                    let x = i as f64 + if half { 0.5 } else { 0.0 };
-                    let d = if x < npml as f64 {
-                        (npml as f64 - x) / npml as f64
-                    } else if x > (n - npml) as f64 {
-                        (x - (n - npml) as f64) / npml as f64
-                    } else {
-                        0.0
-                    };
-                    grading.at(d)
-                })
-                .collect()
+            let xs = (0..count).map(|i| i as f64 + if half { 0.5 } else { 0.0 });
+            layer_profile(&grading, xs, (npml as f64, (n - npml) as f64), npml as f64)
         };
         BoxCpml { e: [0, 1, 2].map(|d| axis(d, false)), h: [0, 1, 2].map(|d| axis(d, true)) }
     }

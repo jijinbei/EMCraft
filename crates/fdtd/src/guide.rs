@@ -11,7 +11,7 @@ use num_complex::Complex64 as C;
 
 use crate::device::{Plan, Poles, Stepper};
 use crate::dispersion::{Dispersion, Term};
-use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, index, lattices, leapfrog, time_step};
+use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, index, lattices, layer_profile, leapfrog, time_step};
 use crate::{FdtdError, MAX_CELLS, Options, Result, invalid};
 
 /// Divisions of `len` into steps of at most `h`.
@@ -340,19 +340,7 @@ impl ZCpml {
         let (z_lo, z_hi) = (g.z[g.pml], g.z[g.nz() - g.pml]);
         let depth = (g.z[g.pml] - g.z[0]).max(f64::MIN_POSITIVE);
         let grading = Grading::new(depth / g.pml.max(1) as f64, dt, fc);
-        let profile = |zs: &mut dyn Iterator<Item = f64>| -> Vec<Cpml> {
-            zs.map(|z| {
-                let d = if z < z_lo {
-                    (z_lo - z) / depth
-                } else if z > z_hi {
-                    (z - z_hi) / depth
-                } else {
-                    0.0
-                };
-                grading.at(d)
-            })
-            .collect()
-        };
+        let profile = |zs: &mut dyn Iterator<Item = f64>| layer_profile(&grading, zs, (z_lo, z_hi), depth);
         ZCpml { e: profile(&mut g.z.iter().copied()), h: profile(&mut g.z.windows(2).map(|w| 0.5 * (w[0] + w[1]))) }
     }
 }
