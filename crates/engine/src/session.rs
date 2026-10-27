@@ -9,7 +9,7 @@ use emcraft_model::units::Display;
 use emcraft_solver::{Driven, FrequencyResult};
 use serde_json::{Value, json};
 
-use crate::cmd::{check_keys, find_command};
+use crate::cmd::{CommandSpec, check_keys, find_command};
 use crate::project::{self, Effect};
 use crate::{EngineError, Params, Result, expr, open, progress, solve, study};
 
@@ -100,6 +100,15 @@ impl Results {
     }
 }
 
+/// The session as it was before a command ran: to undo to when it succeeds, to go back to when
+/// it fails.
+struct Before {
+    /// The model, units and variables, and the history (for commands that change the job).
+    state: project::Snapshot,
+    results: Results,
+    revision: u64,
+}
+
 /// Limits on the work one command may ask for.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
@@ -174,46 +183,60 @@ impl Session {
         // An id from hostile input is not echoed in full.
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
         check_keys(spec, params)?;
-        let before = project::Snapshot { model: self.model.clone(), display: self.display, history: Vec::new(), variables: self.variables.clone() };
-        let results_before = self.results.clone();
-        let (history_before, revision_before) = (if spec.effect == Effect::None { Vec::new() } else { self.history.clone() }, self.revision);
-        let variables = self.variables.clone();
-        let reader = Params::new(params, self.display).with_variables(&variables);
+        let before = self.before(spec.effect);
+        let reader = Params::new(params, self.display).with_variables(&before.state.variables);
         let accelerator = self.compute.accelerator();
         let outcome =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emcraft_solver::accel::with(accelerator, || (spec.run)(self, &reader))));
         let error = match outcome {
             Ok(Ok(reply)) => {
-                match spec.effect {
-                    // The state before it, to undo to; the command joins the history.
-                    Effect::Record | Effect::Replace => {
-                        // A replaced session solved to its last state (a sample opened with its
-                        // solve) keeps its results current.
-                        let current = spec.effect == Effect::Replace && self.solved_revision == Some(self.revision);
-                        project::push_undo(&mut self.undo, project::Snapshot { history: history_before, ..before });
-                        self.redo.clear();
-                        if spec.effect == Effect::Record {
-                            self.history.push(json!({"command": spec.id, "params": params}));
-                        }
-                        // (A replaced session counts its own revisions from zero.)
-                        self.revision = revision_before.max(self.revision) + 1;
-                        if current {
-                            self.solved_revision = Some(self.revision);
-                        }
-                    }
-                    Effect::Solve => self.solved_revision = Some(self.revision),
-                    Effect::None => {}
-                }
+                self.commit(spec, params, before);
                 return Ok(reply);
             }
             Ok(Err(e)) => e,
             Err(_) => EngineError::Panicked(spec.id.to_owned()),
         };
-        self.model = before.model;
-        self.display = before.display;
-        self.variables = before.variables;
-        self.results = results_before;
+        self.restore(before);
         Err(error)
+    }
+
+    /// What a command with `effect` may change, as it is now.
+    fn before(&self, effect: Effect) -> Before {
+        let history = if effect == Effect::None { Vec::new() } else { self.history.clone() };
+        let state = project::Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone() };
+        Before { state, results: self.results.clone(), revision: self.revision }
+    }
+
+    /// Records a command that succeeded by its effect: one that changed the model leaves the
+    /// state before it to undo to and joins the history; a solve's results are current.
+    fn commit(&mut self, spec: &CommandSpec, params: &Value, before: Before) {
+        match spec.effect {
+            Effect::Record | Effect::Replace => {
+                // A replaced session solved to its last state (a sample opened with its solve)
+                // keeps its results current.
+                let current = spec.effect == Effect::Replace && self.solved_revision == Some(self.revision);
+                project::push_undo(&mut self.undo, before.state);
+                self.redo.clear();
+                if spec.effect == Effect::Record {
+                    self.history.push(json!({"command": spec.id, "params": params}));
+                }
+                // (A replaced session counts its own revisions from zero.)
+                self.revision = before.revision.max(self.revision) + 1;
+                if current {
+                    self.solved_revision = Some(self.revision);
+                }
+            }
+            Effect::Solve => self.solved_revision = Some(self.revision),
+            Effect::None => {}
+        }
+    }
+
+    /// Puts back the model, units, variables and results a failed command may have changed.
+    fn restore(&mut self, before: Before) {
+        self.model = before.state.model;
+        self.display = before.state.display;
+        self.variables = before.state.variables;
+        self.results = before.results;
     }
 
     /// Runs a script: a JSON array of `{"command", "params"}` steps; stops at the first error.

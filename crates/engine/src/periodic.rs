@@ -72,7 +72,7 @@ pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
 
 pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
     let periodic = s.model.periodic.ok_or_else(|| EngineError::failed("no periodic boundaries: set them with model.periodic"))?;
-    // By default the axis along a guide, else across it.
+    // Without `axis`: z when the cell is periodic along it, else x, else y.
     let axis = match p.choice::<AxisName>("axis").optional()? {
         Some(a) => a.index(),
         None if periodic.z => 2,
