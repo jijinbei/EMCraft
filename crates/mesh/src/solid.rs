@@ -1134,4 +1134,69 @@ mod tests {
         }
         assert!(crate::locate(&mesh, Point3::new(0.02, 0.0, 0.01)).is_none());
     }
+
+    /// The post through WR-90 of the driven gate (`a_post_across_the_guide_conserves_power`).
+    fn post_model() -> Model {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.03);
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        m.add_feature(Feature {
+            combine: Combine::Subtract,
+            shape: Shape::Cylinder { radius: 0.0015, length: b },
+            at: Point3::new(a / 2.0, 0.0, l / 2.0),
+            axis: Axis::Y,
+        })
+        .unwrap();
+        m
+    }
+
+    /// A digest of a mesh's nodes and tetrahedra, bit for bit (FNV-1a).
+    fn digest(mesh: &Mesh) -> u64 {
+        let mut h = 0xcbf2_9ce4_8422_2325u64;
+        let mut eat = |x: u64| {
+            for b in x.to_le_bytes() {
+                h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+        for p in &mesh.nodes {
+            for c in [p.x, p.y, p.z] {
+                eat(c.to_bits());
+            }
+        }
+        for t in &mesh.tets {
+            for v in t {
+                eat(u64::from(*v));
+            }
+        }
+        h
+    }
+
+    /// Times the post at 4 mm (the ROADMAP's quality-stage case): `cargo test --release -p
+    /// emcraft-mesh post_mesh_timing -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+    fn post_mesh_timing() {
+        // The process's CPU time (user + system, Linux), steadier than the wall clock on a busy
+        // machine; 0 where /proc is missing.
+        let cpu = || -> f64 {
+            let stat = std::fs::read_to_string("/proc/self/stat").unwrap_or_default();
+            let fields: Vec<&str> = stat.rsplit(')').next().unwrap_or("").split_whitespace().collect();
+            let tick = |i: usize| fields.get(i).and_then(|f| f.parse::<f64>().ok()).unwrap_or(0.0);
+            (tick(11) + tick(12)) / 100.0
+        };
+        let m = post_model();
+        for h in [0.004, 0.003] {
+            let (t, c) = (std::time::Instant::now(), cpu());
+            let mesh = solid(&m, h).unwrap();
+            let (s, c) = (t.elapsed().as_secs_f64(), cpu() - c);
+            eprintln!(
+                "post at {} mm: {s:.2} s ({c:.2} s CPU), {} tetrahedra, {} nodes, digest {:016x}",
+                h * 1e3,
+                mesh.tets.len(),
+                mesh.nodes.len(),
+                digest(&mesh)
+            );
+        }
+    }
 }
