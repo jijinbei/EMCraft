@@ -47,20 +47,26 @@ pub const MAX_RING: usize = 10;
 pub const BOUNDARY_FLIP_COS: f64 = 0.939_692_620_785_908_4;
 
 /// Klincsek's table: the best worst quality of a triangulation of the chain `v_i … v_j`
-/// (with the closing edge `v_i v_j`), and the apex `k` that achieves it.
-fn klincsek(m: usize, q: &mut dyn FnMut(usize, usize, usize) -> Result<f64>) -> Result<(Vec<f64>, Vec<usize>)> {
+/// (with the closing edge `v_i v_j`), and the apex `k` that achieves it — for the chains whose
+/// best is above `floor`. A chain that cannot beat `floor` is entered as `floor` and its
+/// triangles are not evaluated further: no triangulation through it beats `floor` either, and
+/// every chain that does is found exactly as without the floor (the same best, the same first
+/// apex achieving it), so a caller that wants only triangulations better than `floor` gets the
+/// same ones for less work. `q(i, k, j, b)` is the quality of triangle `(i, k, j)`, or any value
+/// not above `b` when it is not above `b` (nothing at or below the best so far changes the table).
+fn klincsek(m: usize, floor: f64, q: &mut dyn FnMut(usize, usize, usize, f64) -> Result<f64>) -> Result<(Vec<f64>, Vec<usize>)> {
     let mut best = vec![f64::INFINITY; m * m];
     let mut arg = vec![0usize; m * m];
     for i in (0..m.saturating_sub(2)).rev() {
         for j in i + 2..m {
-            let mut b = f64::NEG_INFINITY;
+            let mut b = floor;
             let mut a = i + 1;
             for k in i + 1..j {
                 let sub = best.get(i * m + k).copied().unwrap_or(f64::NEG_INFINITY).min(best.get(k * m + j).copied().unwrap_or(f64::NEG_INFINITY));
                 if sub <= b {
                     continue;
                 }
-                let v = sub.min(q(i, k, j)?);
+                let v = sub.min(q(i, k, j, b)?);
                 if v > b {
                     b = v;
                     a = k;
@@ -120,7 +126,7 @@ pub fn remove_edge_at(cx: &mut TetComplex, t: u32, a: u32, b: u32) -> Result<boo
     if m < 3 || m > MAX_RING + usize::from(!ring.closed) {
         return Ok(false);
     }
-    let v = ring.verts.clone();
+    let v = &ring.verts;
     // An open ring ends in a 2-2 flip that lays the boundary across v_0 v_{m−1} (below). Should
     // the mesh have that edge already (round a boundary vertex with three faces), a face would
     // get a third tetrahedron; [`TetComplex::replace`] refuses every other edge or face a
@@ -151,15 +157,20 @@ pub fn remove_edge_at(cx: &mut TetComplex, t: u32, a: u32, b: u32) -> Result<boo
     }
     let before = worst(cx, &ring.tets)?;
     let xv = v.iter().map(|&id| x(id)).collect::<Result<Vec<P>>>()?;
-    let mut q = |i: usize, k: usize, j: usize| -> Result<f64> {
+    let mut q = |i: usize, k: usize, j: usize, b: f64| -> Result<f64> {
         let (pi, pk, pj) = match (xv.get(i), xv.get(k), xv.get(j)) {
             (Some(p), Some(q), Some(r)) => (*p, *q, *r),
             _ => return Ok(f64::NEG_INFINITY),
         };
-        Ok(measure::quality(&[pi, pj, pk, xa]).min(measure::quality(&[pi, pk, pj, xb])))
+        // The second tetrahedron cannot raise a first that is not above b.
+        let first = measure::quality(&[pi, pj, pk, xa]);
+        if !(first > b) {
+            return Ok(first);
+        }
+        Ok(first.min(measure::quality(&[pi, pk, pj, xb])))
     };
     // Triangulate the polygon v_0 … v_{m−1}, closed by the edge v_{m−1} v_0.
-    let (best, arg) = klincsek(m, &mut q)?;
+    let (best, arg) = klincsek(m, before, &mut q)?;
     let total = best.get(m - 1).copied().unwrap_or(f64::NEG_INFINITY);
     if !(total > before) {
         return Ok(false);
@@ -218,42 +229,77 @@ pub fn remove_face(cx: &mut TetComplex, t: u32, k: usize) -> Result<bool> {
     let mut faces: Vec<[u32; 3]> = vec![face];
     let mut old: Vec<u32> = vec![t, u];
     let mut best: Option<(f64, Vec<u32>, Vec<[u32; 4]>)> = None;
-    for _round in 0..8 {
-        let removed_q = worst(cx, &old)?;
+    // The worst of `old`, kept as it grows (a minimum, so the same as taken afresh).
+    let mut removed_q = worst(cx, &old)?;
+    // Each ring edge's new tetrahedron and its quality, made once: an edge stays on the ring
+    // until a face is grown across it.
+    let mut made: Vec<((u32, u32), [u32; 4], f64)> = Vec::new();
+    let mut edges: Vec<((u32, u32), (u32, u32), usize)> = Vec::new();
+    // Ring edges across which no sandwiched face was found.
+    let mut barren: Vec<(u32, u32)> = Vec::new();
+    const ROUNDS: usize = 8;
+    for round in 0..ROUNDS {
         // The boundary edges of the face set (edges in exactly one face), oriented as in the face
-        // seen from a: each gives the new tetrahedron (a, b, e) positive.
-        let mut count: IdMap<(u32, u32), (u32, u32, usize)> = IdMap::default();
-        for f in &faces {
+        // seen from a: each gives the new tetrahedron (a, b, e) positive. With each, its face's
+        // tetrahedron on a's side (old[2i] = a ∪ faces[i]).
+        edges.clear();
+        for (n, f) in faces.iter().enumerate() {
             for i in 0..3 {
                 let (p, q) = (f[i], f[(i + 1) % 3]);
-                let e = count.entry(sorted2(p, q)).or_insert((p, q, 0));
-                e.2 += 1;
+                edges.push((sorted2(p, q), (p, q), n));
             }
         }
-        let mut ring: Vec<(u32, u32)> = count.values().filter(|e| e.2 == 1).map(|e| (e.0, e.1)).collect();
-        ring.sort_unstable();
+        edges.sort_unstable_by_key(|e| e.0);
+        let mut ring: Vec<((u32, u32), u32)> = Vec::with_capacity(edges.len());
+        for (i, e) in edges.iter().enumerate() {
+            let shared = |j: Option<usize>| j.and_then(|j| edges.get(j)).is_some_and(|o| o.0 == e.0);
+            if !shared(i.checked_sub(1)) && !shared(Some(i + 1)) {
+                ring.push((e.1, old.get(2 * e.2).copied().unwrap_or(NONE)));
+            }
+        }
+        // Distinct edges: the order of the edges alone.
+        ring.sort_unstable_by_key(|e| e.0);
         let mut new = Vec::with_capacity(ring.len());
         let mut q = f64::INFINITY;
-        for &(p, r) in &ring {
-            // face (p, r, x) has a on its positive side, so (p, r, a, b)… orient explicitly.
-            let cand = [p, r, b, a];
-            let cand = if cx.orient(cand)? == Sign::Positive { cand } else { [r, p, b, a] };
-            q = q.min(tet_quality(cx, cand)?);
+        for &((p, r), _) in &ring {
+            let (cand, cq) = match made.iter().find(|m| m.0 == (p, r)) {
+                Some(m) => (m.1, m.2),
+                None => {
+                    // face (p, r, x) has a on its positive side, so (p, r, a, b)… orient explicitly.
+                    let cand = [p, r, b, a];
+                    let cand = if cx.orient(cand)? == Sign::Positive { cand } else { [r, p, b, a] };
+                    let cq = tet_quality(cx, cand)?;
+                    made.push(((p, r), cand, cq));
+                    (cand, cq)
+                }
+            };
+            q = q.min(cq);
             new.push(cand);
         }
         if q > removed_q && best.as_ref().is_none_or(|(bq, _, _)| q > *bq) {
             best = Some((q, old.clone(), new));
         }
-        // Grow: a sandwiched neighbour face across a ring edge.
+        // Grow: a sandwiched neighbour face across a ring edge. An edge with none stays without:
+        // the mesh does not change here, the edge stays on the ring (in its one face) until a
+        // face is grown across it, and growing only adds faces for the search to pass over.
+        // The last round's growth would not be looked at.
+        if round + 1 == ROUNDS {
+            break;
+        }
         let mut grown = false;
-        for &(p, r) in &ring {
-            if let Some((f, ta, tb)) = sandwiched_across(cx, a, b, p, r, &faces)? {
+        for &((p, r), owner) in &ring {
+            if barren.contains(&(p, r)) {
+                continue;
+            }
+            if let Some((f, ta, tb)) = sandwiched_across(cx, a, b, p, r, owner, &faces)? {
                 faces.push(f);
                 old.push(ta);
                 old.push(tb);
+                removed_q = removed_q.min(tet_quality(cx, cx.tet(ta)?)?).min(tet_quality(cx, cx.tet(tb)?)?);
                 grown = true;
                 break;
             }
+            barren.push((p, r));
         }
         if !grown {
             break;
@@ -265,30 +311,53 @@ pub fn remove_face(cx: &mut TetComplex, t: u32, k: usize) -> Result<bool> {
 }
 
 /// A face `(p, r, x)` sandwiched between `a` and `b` (tetrahedra `a ∪ f` and `b ∪ f` both exist)
-/// next to edge `pr`, not already in `faces`.
-fn sandwiched_across(cx: &mut TetComplex, a: u32, b: u32, p: u32, r: u32, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
-    let Some(ring) = cx.edge_ring(p, r)? else { return Ok(None) };
-    // Tetrahedra around pr containing a, and containing b.
-    for &ta in &ring.tets {
-        let va = cx.tet(ta)?;
-        if !va.contains(&a) {
-            continue;
-        }
-        let x = va.iter().copied().find(|&v| v != a && v != p && v != r).unwrap_or(NONE);
-        if x == NONE || x == b {
-            continue;
-        }
-        let f = [p, r, x];
-        if faces.iter().any(|g| sorted3(*g) == sorted3(f)) {
-            continue;
-        }
-        let k = va.iter().position(|&v| v == a).unwrap_or(0);
-        let tb = cx.adj(ta)?.get(k).copied().unwrap_or(NONE);
-        if tb != NONE && cx.tet(tb)?.contains(&b) {
-            return Ok(Some((f, ta, tb)));
+/// next to edge `pr`, not already in `faces`; `owner` is `a ∪ g` for the face `g` of `faces` on
+/// `pr`.
+///
+/// The search runs over the tetrahedra round `pr` as [`TetComplex::edge_ring`] walks them. Those
+/// holding `a` share the triangle `apr`, so there are at most two: `owner`, whose face `g` is in
+/// `faces`, and its neighbour across `apr`. At most one candidate passes, so the order of the walk
+/// does not matter; and when `owner`'s fan holds every tetrahedron on `pr` (the edge is not
+/// pinched between two fans), the walk meets that neighbour, which is looked at directly.
+fn sandwiched_across(cx: &mut TetComplex, a: u32, b: u32, p: u32, r: u32, owner: u32, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
+    if cx.fan_is_whole(owner, p, r)? {
+        let vs = cx.tet(owner)?;
+        let Some(k) = vs.iter().position(|&v| v != a && v != p && v != r) else { return Ok(None) };
+        let ta = cx.adj(owner)?.get(k).copied().unwrap_or(NONE);
+        return if ta == NONE { Ok(None) } else { sandwich_at(cx, a, b, p, r, faces, ta) };
+    }
+    sandwiched_by_fan(cx, a, b, p, r, faces)
+}
+
+/// [`sandwiched_across`] by the walk round `pr`: the tetrahedra round it holding `a`, in turn.
+fn sandwiched_by_fan(cx: &mut TetComplex, a: u32, b: u32, p: u32, r: u32, faces: &[[u32; 3]]) -> Result<Option<([u32; 3], u32, u32)>> {
+    let Some(fan) = cx.edge_fan(p, r)? else { return Ok(None) };
+    for &ta in &fan {
+        if let Some(found) = sandwich_at(cx, a, b, p, r, faces, ta)? {
+            return Ok(Some(found));
         }
     }
     Ok(None)
+}
+
+/// Whether tetrahedron `ta` round `pr` is `a ∪ f` for a face `f = (p, r, x)` not in `faces` whose
+/// tetrahedron across from `a` is `b ∪ f`: then `(f, ta, tb)`.
+fn sandwich_at(cx: &TetComplex, a: u32, b: u32, p: u32, r: u32, faces: &[[u32; 3]], ta: u32) -> Result<Option<([u32; 3], u32, u32)>> {
+    let va = cx.tet(ta)?;
+    if !va.contains(&a) {
+        return Ok(None);
+    }
+    let x = va.iter().copied().find(|&v| v != a && v != p && v != r).unwrap_or(NONE);
+    if x == NONE || x == b {
+        return Ok(None);
+    }
+    let f = [p, r, x];
+    if faces.iter().any(|g| sorted3(*g) == sorted3(f)) {
+        return Ok(None);
+    }
+    let k = va.iter().position(|&v| v == a).unwrap_or(0);
+    let tb = cx.adj(ta)?.get(k).copied().unwrap_or(NONE);
+    Ok((tb != NONE && cx.tet(tb)?.contains(&b)).then_some((f, ta, tb)))
 }
 
 /// How an inserted vertex is placed.
@@ -795,4 +864,103 @@ pub fn collapse(cx: &mut TetComplex, a: u32, b: u32, max_len: f64, floor: f64) -
         cx.set_curve(x, y, Some(c));
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cdt::tests::{surface, uv_sphere};
+    use crate::cdt::{CdtOptions, tetrahedralize};
+    use crate::surface::{BoundarySurface, SurfaceOptions};
+    use crate::tet::{QualityOptions, complex_from_cdt};
+
+    /// A ball of a few hundred tetrahedra (the boundary recovery's mesh of a coarse sphere,
+    /// refined by inserting the centroids of some tetrahedra).
+    fn ball() -> TetComplex {
+        let (p, t) = uv_sphere(8, 12);
+        let p: Vec<[f64; 3]> = p.iter().map(|c| c.map(|x| 5.0 * x)).collect();
+        let s = surface(&p, &t, [0.0; 3]);
+        let faces = vec![0u32; s.triangles().len()];
+        let s = BoundarySurface::new(s.points(), s.triangles(), &faces, &SurfaceOptions::default()).unwrap();
+        let cdt = tetrahedralize(&s, &CdtOptions::default()).unwrap();
+        let (mut cx, _) = complex_from_cdt(&s, &cdt, &QualityOptions::default()).unwrap();
+        let some: Vec<u32> = cx.live_tets().map(|(t, _)| t).step_by(3).collect();
+        for t in some {
+            if !cx.is_live(t) {
+                continue;
+            }
+            let g = measure::centroid(&cx.coords(cx.tet(t).unwrap()).unwrap());
+            insert_delaunay(&mut cx, Point3::try_from(g).unwrap(), VertexKind::Interior, Site::Interior(t), MAX_CAVITY_TEST).unwrap();
+        }
+        cx.validate().unwrap();
+        cx
+    }
+
+    const MAX_CAVITY_TEST: usize = 64;
+
+    /// The direct look across `apr` finds what the walk round `pr` finds, for every face of the
+    /// mesh, each of its edges and either side; and every edge's fan is whole.
+    #[test]
+    fn a_sandwiched_face_is_found_as_by_the_walk_round_the_edge() {
+        let mut cx = ball();
+        let (mut found, mut tried) = (0, 0);
+        for (t, vs) in cx.live_tets().collect::<Vec<_>>() {
+            let ns = cx.adj(t).unwrap();
+            for k in 0..4 {
+                let u = ns[k];
+                if u == NONE {
+                    continue;
+                }
+                let (a, face) = (vs[k], face_toward(vs, k));
+                let Some(b) = cx.tet(u).unwrap().into_iter().find(|v| !face.contains(v)) else { continue };
+                for i in 0..3 {
+                    let (p, r) = (face[i], face[(i + 1) % 3]);
+                    assert!(cx.fan_is_whole(t, p, r).unwrap());
+                    assert_eq!(cx.edge_fan(p, r).unwrap().map(|f| f.len()), Some(cx.edge_degree_for_tests(p, r)));
+                    let fast = sandwiched_across(&mut cx, a, b, p, r, t, &[face]).unwrap();
+                    let walk = sandwiched_by_fan(&mut cx, a, b, p, r, &[face]).unwrap();
+                    assert_eq!(fast, walk);
+                    tried += 1;
+                    found += usize::from(fast.is_some());
+                }
+            }
+        }
+        assert!(found > 0 && found < tried, "{found} {tried}");
+    }
+
+    /// Klincsek's table with a floor finds every triangulation above the floor exactly as without
+    /// one (the same worst quality, the same triangles), and none where there is none.
+    #[test]
+    fn the_floor_keeps_every_triangulation_above_it() {
+        let mut s = 0x9e37_79b9_7f4a_7c15u64;
+        let mut r = move || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            (s >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (mut above, mut below) = (0, 0);
+        for n in 0..4000 {
+            let m = 3 + n % 9;
+            // A quality per triangle, coarsely quantized so that ties occur.
+            let table: Vec<f64> = (0..m * m * m).map(|_| (r() * 16.0).floor() / 16.0).collect();
+            let quality = |i: usize, k: usize, j: usize| table[(i * m + k) * m + j];
+            let floor = (r() * 16.0).floor() / 16.0;
+            let (b0, a0) = klincsek(m, f64::NEG_INFINITY, &mut |i, k, j, _| Ok(quality(i, k, j))).unwrap();
+            let (b1, a1) = klincsek(m, floor, &mut |i, k, j, b| Ok(if quality(i, k, j) > b { quality(i, k, j) } else { b - 1.0 })).unwrap();
+            let (t0, t1) = (b0[m - 1], b1[m - 1]);
+            if t0 > floor {
+                above += 1;
+                assert_eq!(t0.to_bits(), t1.to_bits());
+                let (mut x, mut y) = (Vec::new(), Vec::new());
+                triangles(&a0, m, 0, m - 1, &mut x);
+                triangles(&a1, m, 0, m - 1, &mut y);
+                assert_eq!(x, y);
+            } else {
+                below += 1;
+                assert!(!(t1 > floor));
+            }
+        }
+        assert!(above > 100 && below > 100, "{above} {below}");
+    }
 }
