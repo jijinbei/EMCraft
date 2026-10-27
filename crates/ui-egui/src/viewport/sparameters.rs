@@ -25,6 +25,22 @@ pub(super) fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let freqs = app.frequencies();
     if let Some(p) = app.chart.as_mut() {
         let r = picture(ui, p, "chart:sparameters");
+        // The field view's frequency, marked where the chart puts it.
+        if let (Some(f0), Some(f1)) = (freqs.first(), freqs.last())
+            && f1 > f0
+            && app.field.view.mode.is_none()
+            && (*f0..=*f1).contains(&app.field.view.frequency)
+        {
+            let w = p.size().x;
+            let px = 90.0 + ((app.field.view.frequency - f0) / (f1 - f0)) as f32 * (w - 120.0);
+            let x = r.rect.min.x + px / w * r.rect.width();
+            let painter = ui.painter_at(r.rect);
+            let (top, bottom) = (r.rect.top() + r.rect.height() * 0.08, r.rect.bottom() - r.rect.height() * 0.22);
+            painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
+            let (at, align) =
+                if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
+            painter.text(at, align, "fields shown", FontId::proportional(t.font_small), t.accent);
+        }
         // A click picks the nearest solved frequency for the field view.
         if r.clicked()
             && let (Some(pos), Some(f0), Some(f1)) = (r.interact_pointer_pos(), freqs.first(), freqs.last())
@@ -37,7 +53,11 @@ pub(super) fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             }
         }
     }
-    ui.label(egui::RichText::new("Click the chart to open the fields at the nearest solved frequency.").size(t.font_small).color(t.text_dim));
+    ui.label(
+        egui::RichText::new("Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.")
+            .size(t.font_small)
+            .color(t.text_dim),
+    );
     // The table.
     let Some(sw) = app.session.results.sweep.as_ref() else { return };
     let fu = app.session.display.frequency;

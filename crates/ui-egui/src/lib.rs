@@ -159,6 +159,8 @@ pub struct FieldState {
     /// units), and their samples.
     pub kept: Vec<(Plane, f64)>,
     pub kept_samples: Vec<Option<PlaneSamples>>,
+    /// The model in 3D beside the picture.
+    pub beside_3d: bool,
 }
 
 /// A window screenshot waiting for its frame.
@@ -257,6 +259,7 @@ impl EmcraftApp {
                 pinned: None,
                 kept: Vec::new(),
                 kept_samples: Vec::new(),
+                beside_3d: false,
             },
             chart: None,
             pattern_phi: 0.0,
@@ -542,6 +545,20 @@ impl EmcraftApp {
             return self.run(id, json!({})).map(|_| ());
         }
         let init = dialogs::initial(id, &self.session);
+        self.dialog = Some(dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs));
+        Ok(())
+    }
+
+    /// Opens the dialog of `id` with `values` over its usual initial ones (the view's settings
+    /// for an export, say).
+    pub fn open_dialog_with(&mut self, id: &str, values: Value) -> Result<(), UiError> {
+        let spec = emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
+        let mut init = dialogs::initial(id, &self.session);
+        if let (Some(o), Some(v)) = (init.as_object_mut(), values.as_object()) {
+            o.extend(v.clone());
+        } else {
+            init = values;
+        }
         self.dialog = Some(dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs));
         Ok(())
     }

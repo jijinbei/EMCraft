@@ -12,6 +12,7 @@ use crate::theme::Tokens;
 use crate::{EmcraftApp, Picture, View, scenario};
 
 mod far_field;
+mod field_side;
 mod fields;
 mod model;
 mod sparameters;
@@ -23,7 +24,7 @@ use model::*;
 use sparameters::*;
 use tables::*;
 
-pub(crate) use fields::field_plots;
+pub(crate) use fields::{field_plots, plane_span_of};
 pub use sparameters::chart_frequency;
 
 /// The central card.
@@ -103,17 +104,6 @@ pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
 pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: &str) -> egui::Response {
     let size = p.size();
     let avail = ui.available_size();
-    let scale = (avail.x / size.x).min(avail.y / size.y).clamp(0.1, 1.0);
-    let id = p.texture(ui.ctx());
-    let r = ui.add(egui::Image::new((id, size * scale)).sense(Sense::click()));
-    scenario::publish_target(handle, r.rect);
-    r
-}
-
-/// A picture as large as fits with `below` pixels kept free under it.
-pub(super) fn picture_above(ui: &mut egui::Ui, p: &mut Picture, handle: &str, below: f32) -> egui::Response {
-    let size = p.size();
-    let avail = ui.available_size() - vec2(0.0, below);
     let scale = (avail.x / size.x).min(avail.y / size.y).clamp(0.1, 1.0);
     let id = p.texture(ui.ctx());
     let r = ui.add(egui::Image::new((id, size * scale)).sense(Sense::click()));

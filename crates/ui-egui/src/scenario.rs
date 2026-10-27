@@ -7,7 +7,8 @@
 //! - `{"call": "ui.start", "params": {…}, "fail"?: true}`: any control request (`fail`: it must
 //!   be refused)
 //! - `{"click": AT, "double"?: true}`, `{"move": AT}`, `{"drag": [AT, AT]}` where AT is `[x, y]`
-//!   or a published handle's name (`"toolbar:mesh.generate"`, `"tab:SIMULATE"`, `"row:…"`)
+//!   or a published handle's name (`"toolbar:mesh.generate"`, `"tab:SIMULATE"`, `"row:…"`), or
+//!   `{"handle": name, "offset": [dx, dy]}`
 //! - `{"widget": "Label"}`: click the widget whose accessible label is that text
 //! - `{"key": "Enter", "cmd"?: true}`, `{"text": "22.86"}`; `{"frames": n}`
 //! - `{"until": {…}, "timeout"?: s}`: frames until the checks pass (a job running on the worker)
@@ -217,7 +218,8 @@ impl Harness {
                 }
                 last = now;
             }
-            return last.map(|p| [p.x as f64, p.y as f64]).ok_or_else(|| format!("no handle `{name}` on screen"));
+            let off = v.get("offset").map_or([0.0, 0.0], |o| [0, 1].map(|i| o.get(i).and_then(Value::as_f64).unwrap_or(0.0)));
+            return last.map(|p| [p.x as f64 + off[0], p.y as f64 + off[1]]).ok_or_else(|| format!("no handle `{name}` on screen"));
         }
         match (v.get(0).and_then(Value::as_f64), v.get(1).and_then(Value::as_f64)) {
             (Some(x), Some(y)) => Ok([x, y]),

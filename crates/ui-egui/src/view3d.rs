@@ -49,6 +49,8 @@ pub struct View3d {
     pub selected: Option<scene3d::Pick>,
     /// Whether the last frame was drawn by the window's GPU rather than the CPU renderer.
     pub drawn_on_gpu: bool,
+    /// A drag that began on the field view's plane moves it instead of orbiting.
+    moving_plane: bool,
 }
 
 impl Default for View3d {
@@ -64,6 +66,7 @@ impl Default for View3d {
             fit_next: false,
             selected: None,
             drawn_on_gpu: false,
+            moving_plane: false,
         }
     }
 }
@@ -159,6 +162,12 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         v.fit_next = false;
     }
     let edit = navigate(v, ui, rect, bounds);
+    if let Some(d) = edit.plane_drag {
+        move_plane(app, rect, bounds, d);
+    }
+    if overlay == Overlay::Field {
+        publish_plane(app, rect, bounds);
+    }
     let picked = app.view3d.selected.and_then(|p| crate::browser::row_of(app, p));
     if edit.clicked {
         app.browser.selected = picked.as_ref().map(|(k, _)| k.clone());
@@ -186,6 +195,49 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     nav_bar(app, ui, rect, facing);
 }
 
+/// The field view's plane's middle on screen, as the handle `view3d:plane`.
+fn publish_plane(app: &EmcraftApp, rect: Rect, (lo, hi): ([f64; 3], [f64; 3])) {
+    let Some((span, _)) = crate::viewport::plane_span_of(app, app.field.view.plane) else { return };
+    let axis = normal(app.field.view.plane);
+    let frac = if span > 0.0 { app.field.at.unwrap_or(span / 2.0) / span } else { 0.5 };
+    let mut c = [0, 1, 2].map(|i| 0.5 * (lo[i] + hi[i]));
+    c[axis] = lo[axis] + frac * (hi[axis] - lo[axis]);
+    if let Some(p) = app.view3d.camera.project(c, f64::from(rect.width()), f64::from(rect.height())) {
+        scenario::publish_handle("view3d:plane", rect.min + vec2(p[0] as f32, p[1] as f32));
+    }
+}
+
+/// The normal axis of a field plane (0 x, 1 y, 2 z).
+fn normal(plane: Plane) -> usize {
+    match plane {
+        Plane::E => 0,
+        Plane::H => 1,
+        Plane::Cross => 2,
+    }
+}
+
+/// Moves the field view's plane along its normal by the pointer's move `d` on the view: the
+/// move's share of the normal's direction on screen, over the model's span.
+fn move_plane(app: &mut EmcraftApp, rect: Rect, (lo, hi): ([f64; 3], [f64; 3]), d: egui::Vec2) {
+    let Some((span, _)) = crate::viewport::plane_span_of(app, app.field.view.plane) else { return };
+    let axis = normal(app.field.view.plane);
+    let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
+    let mid = [0, 1, 2].map(|i| 0.5 * (lo[i] + hi[i]));
+    let (mut a, mut b) = (mid, mid);
+    a[axis] = lo[axis];
+    b[axis] = hi[axis];
+    let cam = &app.view3d.camera;
+    let (Some(pa), Some(pb)) = (cam.project(a, w, h), cam.project(b, w, h)) else { return };
+    let along = vec2((pb[0] - pa[0]) as f32, (pb[1] - pa[1]) as f32);
+    let len2 = along.length_sq();
+    if len2 < 4.0 {
+        return;
+    }
+    let at = app.field.at.unwrap_or(span / 2.0);
+    app.field.at = Some((at + f64::from(d.dot(along) / len2) * span).clamp(0.0, span));
+    app.field.pinned = None;
+}
+
 /// The field plots for the 3D view in the Results step, and a key naming their state.
 fn field_layers(app: &mut EmcraftApp, overlay: Overlay) -> (String, Vec<(emcraft_render::plot::FieldPlot, Plane, f64)>) {
     if overlay != Overlay::Field {
@@ -205,6 +257,8 @@ struct Gesture {
     clicked: bool,
     /// A double-click on something picked: edit it.
     double: bool,
+    /// The pointer's move this frame while dragging the field view's plane.
+    plane_drag: Option<egui::Vec2>,
 }
 
 /// Orbit, pan and zoom by the pointer; a click picks what is under it (empty space clears), a
@@ -230,7 +284,21 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
         (i.modifiers.shift, i.pointer.middle_down(), steps)
     });
     let d = resp.drag_delta();
-    if resp.dragged() && (d.x != 0.0 || d.y != 0.0) {
+    // A drag starting on the field view's own plane (the first) moves it.
+    if resp.drag_started_by(egui::PointerButton::Primary) && !shift {
+        v.moving_plane = resp.interact_pointer_pos().is_some_and(|pos| {
+            let at = pos - rect.min;
+            let tag = v.built.as_ref().and_then(|(_, b)| {
+                view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()))
+            });
+            tag.and_then(scene3d::Pick::from_tag) == Some(scene3d::Pick::Plane(0))
+        });
+    }
+    if !resp.dragged() {
+        v.moving_plane = false;
+    }
+    let plane_drag = (v.moving_plane && resp.dragged()).then_some(d);
+    if resp.dragged() && (d.x != 0.0 || d.y != 0.0) && !v.moving_plane {
         if middle || shift || resp.dragged_by(egui::PointerButton::Middle) {
             v.camera.pan(d.x as f64, d.y as f64, rect.height() as f64);
         } else if resp.dragged_by(egui::PointerButton::Primary) {
@@ -257,7 +325,7 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
             }
         }
     }
-    Gesture { clicked: resp.clicked(), double }
+    Gesture { clicked: resp.clicked(), double, plane_drag }
 }
 
 /// The scene drawn into `rect`: by the window's GPU (every frame, full size) or the CPU

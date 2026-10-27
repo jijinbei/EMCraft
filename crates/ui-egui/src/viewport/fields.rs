@@ -11,7 +11,7 @@ pub(super) fn plane_span(app: &EmcraftApp) -> Option<(f64, &'static str)> {
     plane_span_of(app, app.field.view.plane)
 }
 
-pub(super) fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'static str)> {
+pub(crate) fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'static str)> {
     let emcraft_model::Aabb { min: lo, max: hi } = app.session.model.bounds()?;
     let l = app.session.display.length;
     Some(match plane {
@@ -66,6 +66,29 @@ pub(super) fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         return;
     }
     field_controls(app, ui);
+    // The model in 3D on the left when asked, then the picture and, beside it, the side column
+    // about it (where, which frequency, the readout, saving).
+    let area = ui.available_rect_before_wrap();
+    ui.allocate_rect(area, Sense::hover());
+    let gap = 10.0;
+    let rest = if app.field.beside_3d {
+        let split = area.left() + (area.width() * 0.36).round();
+        let left = Rect::from_min_max(area.min, pos2(split - gap / 2.0, area.max.y));
+        crate::view3d::show(app, ui, left, crate::scene3d::Overlay::Field);
+        Rect::from_min_max(pos2(split + gap / 2.0, area.min.y), area.max)
+    } else {
+        area
+    };
+    let side_rect = Rect::from_min_max(pos2(rest.max.x - field_side::SIDE, rest.min.y), rest.max);
+    let pic_rect = Rect::from_min_max(rest.min, pos2(side_rect.min.x - gap, rest.max.y));
+    let mut pic_ui = ui.new_child(egui::UiBuilder::new().max_rect(pic_rect));
+    picture_column(app, &mut pic_ui);
+    let mut side_ui = ui.new_child(egui::UiBuilder::new().max_rect(side_rect));
+    egui::ScrollArea::vertical().id_salt("field:side").show(&mut side_ui, |ui| field_side::side(app, ui));
+}
+
+/// The field's picture, as large as its column allows, with the probe on it.
+fn picture_column(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let width = picture_width(ui);
     let l = app.session.display.length;
     app.field.view.at = app.field.at.map(|v| l.to_si(v));
@@ -84,16 +107,12 @@ pub(super) fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         app.field.picture = Some(Picture::new(key, &c));
     }
     let Some(p) = app.field.picture.as_mut() else { return };
-    let r = picture_above(ui, p, "picture:field", READOUT_HEIGHT);
+    let r = picture(ui, p, "picture:field");
     probe_picture(app, ui, &r);
-    readout(app, ui);
 }
 
 /// Most planes kept for the 3D view.
 pub(super) const MAX_KEPT: usize = 8;
-
-/// Room under the field picture for the probe's readout.
-pub(super) const READOUT_HEIGHT: f32 = 58.0;
 
 /// The pointer over the field picture: the fields under it, a click pins a point (a right click
 /// lets it go); both are marked on the picture.
@@ -128,6 +147,19 @@ pub(super) fn probe_picture(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Respo
         painter.circle_stroke(c, 7.0, Stroke::new(3.0, Color32::WHITE));
         painter.circle_stroke(c, 7.0, Stroke::new(1.6, t.accent));
         painter.circle_filled(c, 2.0, t.accent);
+        // The value beside the pin, on the side with room.
+        let comp = app.field.view.component;
+        let (now, amp) = pin.value(comp, app.field.view.phase);
+        let fmt = emcraft_render::axes::format;
+        let text = format!("{} {} (amp. {})", comp.label(), fmt(now), fmt(amp));
+        let galley = painter.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
+        let size = galley.size() + vec2(10.0, 6.0);
+        let right = c.x + 12.0 + size.x < rect.right();
+        let min = if right { pos2(c.x + 12.0, c.y - size.y - 6.0) } else { pos2(c.x - 12.0 - size.x, c.y - size.y - 6.0) };
+        let callout = Rect::from_min_size(pos2(min.x, min.y.max(rect.top() + 2.0)), size);
+        painter.rect_filled(callout, t.radius_sm, t.panel.gamma_multiply(0.95));
+        painter.rect_stroke(callout, t.radius_sm, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        painter.galley(callout.min + vec2(5.0, 3.0), galley, t.text);
     }
     if let Some(h) = &app.field.hover {
         let c = to_screen(h.at);
@@ -145,53 +177,17 @@ pub(super) fn phasor(c: emcraft_model::Complex64) -> String {
     if c.norm() == 0.0 { "0".into() } else { format!("{} ({}°)", format(c.norm()), format(c.arg().to_degrees().round())) }
 }
 
-/// The readout under the field picture: the fields at the pointer and at the pinned point —
-/// the coloured component at this phase and its amplitude, and every component of E and H as
-/// amplitude (phase).
-pub(super) fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
-    let Some(samples) = app.field.samples.as_ref() else { return };
-    let (xa, ya) = samples.axes();
-    let name = |a: &emcraft_render::Axis| a.label.split(' ').next().unwrap_or("").to_owned();
-    let (hx, vy) = (name(xa), name(ya));
-    let lu = app.session.display.length.symbol();
-    let comp = app.field.view.component;
-    let phase = app.field.view.phase;
-    let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
-    let rows = [("pointer", app.field.hover), ("pinned", app.field.pinned.and_then(|q| samples.probe(q)))];
-    let fmt = emcraft_render::axes::format;
-    let text = |s: String| egui::RichText::new(s).size(t.font_small).color(t.text);
-    let dim = |s: &str| egui::RichText::new(s).size(t.font_small).color(t.text_dim);
-    ui.add_space(t.space_4);
-    egui::Grid::new("field:readout").num_columns(5).spacing(vec2(t.space_12, 2.0)).show(ui, |ui| {
-        for (what, probe) in rows {
-            ui.label(dim(what));
-            match probe {
-                None => {
-                    ui.label(dim(if what == "pointer" {
-                        "hover the picture to read the fields"
-                    } else {
-                        "click the picture to pin a point (right click lets it go)"
-                    }));
-                }
-                Some(p) => {
-                    let (now, amp) = p.value(comp, phase);
-                    ui.label(text(format!("{hx} = {} {lu}, {vy} = {} {lu}", fmt(p.at[0]), fmt(p.at[1]))));
-                    ui.label(text(format!("{} = {} {unit}, amplitude {}", comp.label(), fmt(now), fmt(amp))).strong());
-                    ui.label(text(format!("E (V/m): x {}, y {}, z {}", phasor(p.e.x), phasor(p.e.y), phasor(p.e.z))));
-                    ui.label(text(format!("H (A/m): x {}, y {}, z {}", phasor(p.h.x), phasor(p.h.y), phasor(p.h.z))));
-                }
-            }
-            ui.end_row();
-        }
-    });
-}
-
 pub(super) fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         field_choice(app, ui);
         ui.separator();
         plane_choice(app, ui);
+        ui.separator();
+        let r = ui.selectable_label(app.field.beside_3d, "Beside 3D").on_hover_text("The model in 3D beside the picture, the plane in it");
+        scenario::publish_target("field:beside3d", r.rect);
+        if r.clicked() {
+            app.field.beside_3d = !app.field.beside_3d;
+        }
     });
     kept_planes(app, ui);
     ui.horizontal_wrapped(|ui| field_display(app, ui));
@@ -245,6 +241,16 @@ pub(super) fn plane_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let unit = app.session.display.length.symbol();
     let r = crate::ui_kit::slider(ui, &mut at, 0.0..=span, format!("{axis} ({unit})"));
     scenario::publish_target("field:at", r.rect);
+    // What lies along the slider: the materials (or sections) the plane passes, as a strip under
+    // its track.
+    let track = Rect::from_min_size(pos2(r.rect.left() + 6.0, r.rect.bottom() - 2.0), vec2(ui.spacing().slider_width - 12.0, 4.0));
+    for (from, to, colour) in field_side::bands(app, app.field.view.plane) {
+        let band = Rect::from_min_max(
+            pos2(track.left() + from as f32 * track.width(), track.top()),
+            pos2(track.left() + to as f32 * track.width(), track.bottom()),
+        );
+        ui.painter().rect_filled(band, 0.0, colour.unwrap_or(Color32::from_gray(110)));
+    }
     if r.changed() {
         app.field.at = Some(at);
         app.field.pinned = None;
