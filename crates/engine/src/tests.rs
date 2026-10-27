@@ -288,6 +288,10 @@ fn the_device_is_a_setting_of_the_machine() {
     for bad in [json!({"device": "tpu"}), json!({"device": "cpu", "precision": "half"}), json!({"device": "cubecl-cpu", "min_front": 0})] {
         assert!(s.execute("solve.device", &bad).is_err(), "{bad}");
     }
+    // A device chosen again keeps the earlier `min_front`.
+    s.execute("solve.device", &json!({"device": "cubecl-cpu", "min_front": 300})).unwrap();
+    s.execute("solve.device", &json!({"device": "cubecl-cpu", "precision": "single"})).unwrap();
+    assert!(s.compute.accelerator().is_some_and(|a| !a.takes(299, 1) && a.takes(300, 1)));
     s.execute("solve.device", &json!({"device": "cpu"})).unwrap();
     assert!(s.compute.accelerator().is_none());
 }

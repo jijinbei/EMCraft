@@ -45,6 +45,11 @@ impl Fronts {
 }
 
 impl Fronts {
+    /// The fewest rows of a front it takes.
+    pub fn min_rows(&self) -> usize {
+        self.min_rows
+    }
+
     /// The fronts this device has held so far.
     pub fn taken(&self) -> usize {
         self.taken.load(Ordering::Relaxed)

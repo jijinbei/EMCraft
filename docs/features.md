@@ -262,7 +262,7 @@ Where the solvers run from now on: `cpu` (the CPU's threads, the default), `cuda
 |---|---|---|---|---|
 | `device` | string |  | yes | `cpu`, `cuda` or `cubecl-cpu` |
 | `precision` | string |  | no | the time domain's fields: `single` (default) or `double` |
-| `min_front` | integer |  | no | the factorization's fronts from this many rows go to the device (default 1024) |
+| `min_front` | integer |  | no | the factorization's fronts from this many rows go to the device (default: as before, at first 1024) |
 
 ## `solve.devices` — Devices
 

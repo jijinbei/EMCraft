@@ -153,7 +153,11 @@ pub fn device(s: &mut Session, p: &Params) -> Result<Value> {
             if !here.is_some_and(|a| a.precisions.contains(&precision)) {
                 return Err(p.error("precision", format!("{name} does not run {precision} precision here")));
             }
-            Some(Arc::new(Fronts::new(b, p.integer("min_front", 1..=emcraft_gpu::MAX_ROWS).optional()?)?))
+            {
+                // Without `min_front`, the last setting's stays.
+                let min_front = p.integer("min_front", 1..=emcraft_gpu::MAX_ROWS).optional()?.or(s.compute.fronts.as_ref().map(|f| f.min_rows()));
+                Some(Arc::new(Fronts::new(b, min_front)?))
+            }
         }
     };
     s.compute = Compute { backend, precision, fronts };

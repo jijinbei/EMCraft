@@ -298,7 +298,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             req("device", K::String, "`cpu`, `cuda` or `cubecl-cpu`").one_of(&["cpu", "cuda", "cubecl-cpu"]),
             opt("precision", K::String, "the time domain's fields: `single` (default) or `double`").one_of(&["single", "double"]),
-            opt("min_front", K::Integer, "the factorization's fronts from this many rows go to the device (default 1024)"),
+            opt("min_front", K::Integer, "the factorization's fronts from this many rows go to the device (default: as before, at first 1024)"),
         ],
         effect: Effect::None,
         run: crate::solve::device,
