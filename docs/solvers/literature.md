@@ -83,6 +83,14 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   20(4):442–446, 1972 — the r^{-1/3} field at a thin edge; I. Babuška, R. B. Kellogg, J.
   Pitkäranta, *Direct and inverse error estimates for finite elements with mesh refinements*,
   Numer. Math. 33:447–471, 1979 — geometric grading towards singularities (`emcraft-mesh`).
+- N. Marcuvitz, *Waveguide Handbook*, McGraw-Hill 1951, §5.11; L. Lewin, *Theory of Waveguides*,
+  Butterworth 1975, ch. 6; R. E. Collin, *Field Theory of Guided Waves*, 2nd ed., IEEE Press
+  1991, ch. 5 — the full-height post as a two-dimensional problem, the parallel-plate Green's
+  function in modes with its static part summed in closed form (Kummer); R. Kress, *Linear
+  Integral Equations*, 3rd ed., Springer 2014, ch. 12–13, and D. Colton, R. Kress, *Inverse
+  Acoustic and Electromagnetic Scattering Theory*, 3rd ed., Springer 2013, §3.6 — the Nyström
+  method with logarithmic-split weights, exponentially convergent on a smooth boundary
+  (`emcraft-theory::post`, the reference of the oracle's inductive post).
 
 ## Symmetry planes
 - J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, ch. 1 and
