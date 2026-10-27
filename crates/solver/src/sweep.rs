@@ -180,72 +180,83 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
     Ok(FastSweep { results, full, basis: basis.v.len(), worst_residual })
 }
 
-/// One frequency solved in the basis: its result and the largest relative residual of its
-/// excitations.
-fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>]) -> Result<(FrequencyResult, f64)> {
-    let t0 = std::time::Instant::now();
-    let k0 = wavenumber(frequency);
-    let (n, m) = (d.dofs.unknowns, basis.v.len());
-    let wall = d.wall.as_ref().map(|w| wall_factor(frequency, w.sigma));
-    // k₀² εr,d(ω) per dispersive material.
-    let dispersive = d.dispersive_scales(frequency);
-    // The layer at this k₀: its own matrix on the pattern, times the basis.
-    let pv: Option<Vec<Vec<C>>> = if d.pml.is_some() {
-        let mut p = d.pattern.zeroed();
-        d.add_pml(&mut p, k0)?;
-        Some(basis.v.iter().map(|v| p.mul(&v.iter().map(|x| C::new(*x, 0.0)).collect::<Vec<_>>())).collect())
-    } else {
-        None
-    };
-    // A V, column by column: K v − k₀² (M v + Σ εr,d M_d v) + c W v + P v (the rank-one terms
-    // come after).
-    let av: Vec<Vec<C>> = (0..m)
-        .map(|j| {
-            (0..n)
-                .map(|i| {
-                    let mut x = C::new(basis.kv[j][i], 0.0) - basis.mv[j][i] * (k0 * k0);
-                    for (c, dv) in dispersive.iter().zip(&basis.dv[j]) {
-                        x -= c * dv[i];
-                    }
-                    if let Some(c) = wall {
-                        x += c * basis.wv[j][i];
-                    }
-                    if let Some(p) = &pv {
-                        x += p[j][i];
-                    }
-                    x
-                })
-                .collect()
-        })
-        .collect();
-    // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ and the port modes' factor v vᵀ.
-    let mut rank_one: Vec<RankOne> = d.lumped.iter().map(|l| RankOne { factor: l.factor(frequency), v: l.c.clone() }).collect();
-    rank_one.extend(terms.iter().flatten().map(|t: &PortTerm<'_>| RankOne { factor: t.factor, v: t.v.to_vec() }));
-    let project = |v: &[(usize, f64)]| -> Vec<f64> { basis.v.iter().map(|b| v.iter().map(|&(i, x)| b[i] * x).sum()).collect() };
-    let projected: Vec<(C, Vec<f64>)> = rank_one.iter().map(|r| (r.factor, project(&r.v))).collect();
-    let mut ar: Vec<Vec<C>> = (0..m).map(|i| (0..m).map(|j| dot_rc(&basis.v[i], &av[j])).collect()).collect();
-    for (f, u) in &projected {
-        for i in 0..m {
-            for j in 0..m {
-                ar[i][j] += f * (u[i] * u[j]);
+/// The system at one frequency in the basis V: A V by columns (all but the rank-one terms),
+/// the rank-one terms, and Vᵀ A V with them.
+struct Reduced {
+    /// The unknowns of the full equations.
+    n: usize,
+    av: Vec<Vec<C>>,
+    rank_one: Vec<RankOne>,
+    ar: Vec<Vec<C>>,
+}
+
+impl Reduced {
+    fn new(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>]) -> Result<Reduced> {
+        let k0 = wavenumber(frequency);
+        let (n, m) = (d.dofs.unknowns, basis.v.len());
+        let wall = d.wall.as_ref().map(|w| wall_factor(frequency, w.sigma));
+        // k₀² εr,d(ω) per dispersive material.
+        let dispersive = d.dispersive_scales(frequency);
+        // The layer at this k₀: its own matrix on the pattern, times the basis.
+        let pv: Option<Vec<Vec<C>>> = if d.pml.is_some() {
+            let mut p = d.pattern.zeroed();
+            d.add_pml(&mut p, k0)?;
+            Some(basis.v.iter().map(|v| p.mul(&v.iter().map(|x| C::new(*x, 0.0)).collect::<Vec<_>>())).collect())
+        } else {
+            None
+        };
+        // A V, column by column: K v − k₀² (M v + Σ εr,d M_d v) + c W v + P v (the rank-one terms
+        // come after).
+        let av: Vec<Vec<C>> = (0..m)
+            .map(|j| {
+                (0..n)
+                    .map(|i| {
+                        let mut x = C::new(basis.kv[j][i], 0.0) - basis.mv[j][i] * (k0 * k0);
+                        for (c, dv) in dispersive.iter().zip(&basis.dv[j]) {
+                            x -= c * dv[i];
+                        }
+                        if let Some(c) = wall {
+                            x += c * basis.wv[j][i];
+                        }
+                        if let Some(p) = &pv {
+                            x += p[j][i];
+                        }
+                        x
+                    })
+                    .collect()
+            })
+            .collect();
+        // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ and the port modes' factor v vᵀ.
+        let mut rank_one: Vec<RankOne> = d.lumped.iter().map(|l| RankOne { factor: l.factor(frequency), v: l.c.clone() }).collect();
+        rank_one.extend(terms.iter().flatten().map(|t: &PortTerm<'_>| RankOne { factor: t.factor, v: t.v.to_vec() }));
+        let project = |v: &[(usize, f64)]| -> Vec<f64> { basis.v.iter().map(|b| v.iter().map(|&(i, x)| b[i] * x).sum()).collect() };
+        let projected: Vec<(C, Vec<f64>)> = rank_one.iter().map(|r| (r.factor, project(&r.v))).collect();
+        let mut ar: Vec<Vec<C>> = (0..m).map(|i| (0..m).map(|j| dot_rc(&basis.v[i], &av[j])).collect()).collect();
+        for (f, u) in &projected {
+            for i in 0..m {
+                for j in 0..m {
+                    ar[i][j] += f * (u[i] * u[j]);
+                }
             }
         }
+        Ok(Reduced { n, av, rank_one, ar })
     }
-    let mut fields = Vec::with_capacity(terms.len());
-    let mut worst: f64 = 0.0;
-    for list in terms {
-        let Some(t0m) = list.first() else { continue };
+
+    /// The field of a unit incident wave of the mode `t`, solved in the basis, and its relative
+    /// residual ‖b − A x‖/‖b‖ in the full equations.
+    fn solve(&self, basis: &Basis, t: &PortTerm<'_>) -> Result<(Vec<C>, f64)> {
+        let (n, m) = (self.n, basis.v.len());
         // b = rhs · v of the excited port's first mode.
-        let b: Vec<(usize, C)> = t0m.excitation().collect();
+        let b: Vec<(usize, C)> = t.excitation().collect();
         let br: Vec<C> = basis.v.iter().map(|v| b.iter().map(|&(i, x)| x * v[i]).sum()).collect();
-        let z = zdense::solve(ar.clone(), br).ok_or_else(|| invalid("sweep", "a singular reduced system"))?;
+        let z = zdense::solve(self.ar.clone(), br).ok_or_else(|| invalid("sweep", "a singular reduced system"))?;
         let x: Vec<C> = (0..n).map(|i| (0..m).map(|j| z[j] * basis.v[j][i]).sum()).collect();
         // r = b − A x.
-        let mut r: Vec<C> = (0..n).map(|i| -(0..m).map(|j| z[j] * av[j][i]).sum::<C>()).collect();
+        let mut r: Vec<C> = (0..n).map(|i| -(0..m).map(|j| z[j] * self.av[j][i]).sum::<C>()).collect();
         for &(i, bi) in &b {
             r[i] += bi;
         }
-        for RankOne { factor, v } in &rank_one {
+        for RankOne { factor, v } in &self.rank_one {
             let vx: C = v.iter().map(|&(i, c)| x[i] * c).sum();
             for &(i, c) in v {
                 r[i] -= factor * vx * c;
@@ -253,7 +264,20 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
         }
         let bn = b.iter().map(|(_, x)| x.norm_sqr()).sum::<f64>().sqrt();
         let rn = r.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
-        worst = worst.max(if bn > 0.0 { rn / bn } else { rn });
+        Ok((x, if bn > 0.0 { rn / bn } else { rn }))
+    }
+}
+
+/// One frequency solved in the basis: its result and the largest relative residual of its
+/// excitations.
+fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>]) -> Result<(FrequencyResult, f64)> {
+    let t0 = std::time::Instant::now();
+    let system = Reduced::new(d, basis, frequency, terms)?;
+    let mut fields = Vec::with_capacity(terms.len());
+    let mut worst: f64 = 0.0;
+    for t in terms.iter().filter_map(|list| list.first()) {
+        let (x, residual) = system.solve(basis, t)?;
+        worst = worst.max(residual);
         fields.push(x);
     }
     // S as the full solve reads it.
