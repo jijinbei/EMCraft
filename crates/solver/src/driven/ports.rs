@@ -346,3 +346,76 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
         })
         .collect()
 }
+
+/// A port mode's transverse electric field on a grid over the port's face.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModePattern {
+    pub name: String,
+    /// β² (rad²/m²): positive for a propagating mode.
+    pub beta2: f64,
+    /// The grid's span (model x and y, m) and size.
+    pub x: (f64, f64),
+    pub y: (f64, f64),
+    pub nx: usize,
+    pub ny: usize,
+    /// e_t at each grid point, row-major from the lowest y; NaN outside the cross-section (in a
+    /// conductor).
+    pub e: Vec<[f64; 2]>,
+}
+
+/// Most grid points a mode pattern samples along a side.
+pub const MAX_PATTERN_SIDE: usize = 400;
+
+/// Mode `mode` (from 0) of port `port` at `frequency`, its transverse E sampled on a grid of
+/// about `side` points along the face's longer side: the closed form, or the cross-section's
+/// solution (as `port_modes` finds them).
+pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usize, mode: usize, side: usize) -> Result<ModePattern> {
+    check_frequency(frequency)?;
+    let side = side.clamp(8, MAX_PATTERN_SIDE);
+    let p = model.ports.get(port).ok_or_else(|| invalid("port mode", format!("no port {}", port + 1)))?;
+    let grid = |x: (f64, f64), y: (f64, f64)| {
+        let (w, h) = (x.1 - x.0, y.1 - y.0);
+        let (nx, ny) =
+            if w >= h { (side, ((side as f64 * h / w).round() as usize).max(8)) } else { (((side as f64 * w / h).round() as usize).max(8), side) };
+        let points: Vec<(f64, f64)> =
+            (0..ny).flat_map(|j| (0..nx).map(move |i| (x.0 + w * i as f64 / (nx - 1) as f64, y.0 + h * j as f64 / (ny - 1) as f64))).collect();
+        (nx, ny, points)
+    };
+    if let Some(shape) = closed_form_shape(model, p) {
+        let list = port_mode_list(model, p, shape)?;
+        let md = list.get(mode).ok_or_else(|| invalid(what(p), format!("has {} modes, not {}", list.len(), mode + 1)))?;
+        let m = model.port_material(p.end)?;
+        let k = wavenumber(frequency) * (m.eps_r * m.mu_r).sqrt();
+        let (x, y, inside): ((f64, f64), (f64, f64), Box<dyn Fn(f64, f64) -> bool>) = match shape {
+            PortShape::Rect { x0, y0, a, b } => ((x0, x0 + a), (y0, y0 + b), Box::new(|_, _| true)),
+            PortShape::Circle { cx, cy, r } => {
+                ((cx - r, cx + r), (cy - r, cy + r), Box::new(move |x: f64, y: f64| (x - cx).hypot(y - cy) <= r * (1.0 + 1e-9)))
+            }
+        };
+        let (nx, ny, points) = grid(x, y);
+        let e = points.iter().map(|&(px, py)| if inside(px, py) { md.field(px, py) } else { [f64::NAN; 2] }).collect();
+        return Ok(ModePattern { name: md.name(), beta2: k * k - md.cutoff().powi(2), x, y, nx, ny, e });
+    }
+    let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
+    let section = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
+    let modes = section.modes(wavenumber(frequency), p.modes as usize)?;
+    let md = modes.get(mode).ok_or_else(|| invalid(what(p), format!("has {} modes, not {}", modes.len(), mode + 1)))?;
+    let (lo, hi) = section
+        .nodes
+        .iter()
+        .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(l, h), q| ([l[0].min(q.x), l[1].min(q.y)], [h[0].max(q.x), h[1].max(q.y)]));
+    let (x, y) = ((lo[0], hi[0]), (lo[1], hi[1]));
+    let (nx, ny, points) = grid(x, y);
+    let mut e = Vec::with_capacity(points.len());
+    for &(px, py) in &points {
+        let q = Point3::new(px, py, 0.0);
+        e.push(match section.locate(q) {
+            Some(t) => {
+                let (et, _) = section.fields(md, t, q)?;
+                [et.x, et.y]
+            }
+            None => [f64::NAN; 2],
+        });
+    }
+    Ok(ModePattern { name: format!("mode {}", mode + 1), beta2: md.beta2, x, y, nx, ny, e })
+}

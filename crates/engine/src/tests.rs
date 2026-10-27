@@ -1170,3 +1170,21 @@ fn a_part_of_several_bodies_lies_in_air_each_metal_unless_named() {
     s.execute("geometry.import", &json!({"path": path, "region": "Post"})).unwrap_err();
     assert!(s.execute("geometry.import", &json!({"path": path, "materials": {"Lid": "metal"}})).is_err());
 }
+
+#[test]
+fn a_port_mode_is_drawn_across_its_face() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let path = scratch("te11.png");
+    let r = s.execute("view.port_mode", &json!({"path": path, "port": "1", "mode": 4, "frequency": 8})).unwrap();
+    assert!(r["mode"].as_str().unwrap().contains("TE11"), "{r}");
+    assert!(std::fs::metadata(&path).unwrap().len() > 1000);
+    // The pattern itself: TE10's E is along y, largest in the middle, zero at the side walls.
+    let pat = emcraft_solver::driven::port_mode_pattern(&s.model, emcraft_fem::Order::Two, 8e9, 0, 0, 41).unwrap();
+    let at = |i: usize, j: usize| pat.e[j * pat.nx + i];
+    let (mid, wall) = (at(pat.nx / 2, pat.ny / 2), at(0, pat.ny / 2));
+    assert!(mid[0].abs() < 1e-9 * mid[1].abs() && mid[1].abs() > 0.0 && wall[1].abs() < 1e-9 * mid[1].abs(), "{mid:?} {wall:?}");
+    for bad in [json!({"path": path, "port": "9", "frequency": 8}), json!({"path": path, "port": "1", "mode": 9, "frequency": 8})] {
+        assert!(s.execute("view.port_mode", &bad).is_err(), "{bad}");
+    }
+}

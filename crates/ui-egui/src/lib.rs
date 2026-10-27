@@ -189,6 +189,8 @@ pub struct EmcraftApp {
     pub port_modes: Option<Value>,
     pub compare: Option<Value>,
     pub eigen_table: Option<(u64, Value)>,
+    /// The picked port mode's picture (Port modes view).
+    pub mode_picture: Option<Picture>,
     pub messages: Vec<Message>,
     pub search: ribbon::Search,
     pub browser: browser::Browser,
@@ -271,6 +273,7 @@ impl EmcraftApp {
             port_modes: None,
             compare: None,
             eigen_table: None,
+            mode_picture: None,
             messages: vec![Message { text: "Open a sample or a project (File) or build a model from the ribbon.".into(), error: false, count: 1 }],
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),

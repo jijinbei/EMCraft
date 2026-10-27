@@ -406,6 +406,21 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::probe,
     },
     CommandSpec {
+        id: "view.port_mode",
+        label: "Port mode picture",
+        doc: "Writes a PNG of a port mode's shape: its transverse E across the port's face, |E_t| in colour and E_t as arrows, conductors grey (from the closed forms, or the port's cross-section solved as solve.port_modes does). The amplitude is arbitrary; the subtitle says whether the mode propagates.",
+        params: &[
+            req("path", K::String, "PNG file to write"),
+            req("port", K::String, "the port's name"),
+            opt("mode", K::Integer, "the mode, 1 = the lowest (default 1)"),
+            opt("frequency", K::Number, "the frequency (default: the band's top)").of(F),
+            opt("order", K::Integer, "element order of the cross-section solver, 1 or 2 (default 2)"),
+            opt("width", K::Integer, "picture width in pixels (default 900)"),
+        ],
+        effect: Effect::None,
+        run: crate::results::view_port_mode,
+    },
+    CommandSpec {
         id: "view.field",
         label: "Field picture",
         doc: "Writes a PNG of the fields on a plane: a component as colour and the in-plane E and H as arrows, Re(F e^jωt) at a phase.",

@@ -353,6 +353,19 @@ E (V/m) and H (A/m), complex, at points, for a solved frequency and an excited p
 | `at` | array | length | yes | points `[[x, y, z], …]` |
 | `excitation` | string |  | no | the excited port (default the first) |
 
+## `view.port_mode` — Port mode picture
+
+Writes a PNG of a port mode's shape: its transverse E across the port's face, |E_t| in colour and E_t as arrows, conductors grey (from the closed forms, or the port's cross-section solved as solve.port_modes does). The amplitude is arbitrary; the subtitle says whether the mode propagates.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | PNG file to write |
+| `port` | string |  | yes | the port's name |
+| `mode` | integer |  | no | the mode, 1 = the lowest (default 1) |
+| `frequency` | number | frequency | no | the frequency (default: the band's top) |
+| `order` | integer |  | no | element order of the cross-section solver, 1 or 2 (default 2) |
+| `width` | integer |  | no | picture width in pixels (default 900) |
+
 ## `view.field` — Field picture
 
 Writes a PNG of the fields on a plane: a component as colour and the in-plane E and H as arrows, Re(F e^jωt) at a phase.

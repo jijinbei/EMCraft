@@ -13,5 +13,11 @@
   {"until": {"busy": false, "inspect": {"port_modes": true}}, "timeout": 60},
   {"expect": {"view": "port_modes", "status": "Port modes at 9", "handles": ["row:Port modes"]}},
   {"expect": {"query": {"command": "model.summary", "path": "ports.0.modes", "value": 4}}},
-  {"shot": "port-modes"}
+  {"expect": {"handles": ["picture:port_mode", "port_modes:row:1:1", "port_modes:row:2:4"], "inspect": {"workflow.mode_focus": {"port": "1", "mode": 0}}}},
+  {"shot": "port-modes"},
+  {"note": "A click on a row shows that mode's pattern"},
+  {"click": "port_modes:row:1:4"},
+  {"frames": 3},
+  {"expect": {"inspect": {"workflow.mode_focus": {"port": "1", "mode": 3}}, "handles": ["picture:port_mode"]}},
+  {"shot": "port-mode-te11"}
 ]

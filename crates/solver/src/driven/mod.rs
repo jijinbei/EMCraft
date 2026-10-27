@@ -82,7 +82,7 @@ pub(crate) use losses::wall_factor;
 pub use lumped::LumpedData;
 use pml::Layer;
 pub use pml::PML_REFLECTION;
-pub use ports::{ModeInfo, NumericPort, PortData, PortModes, kept_by, port_modes};
+pub use ports::{MAX_PATTERN_SIDE, ModeInfo, ModePattern, NumericPort, PortData, PortModes, kept_by, port_mode_pattern, port_modes};
 pub use terms::PortTerm;
 
 use assembly::Space;

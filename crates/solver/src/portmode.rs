@@ -464,6 +464,21 @@ impl CrossSection {
         Ok(self.at(&tri, t, &mode.x, tri.barycentric(p)))
     }
 
+    /// The triangle holding point `p` (its z ignored; straight sides), if any.
+    pub fn locate(&self, p: Point3) -> Option<usize> {
+        self.tris.iter().position(|t| {
+            let [a, b, c] = t.map(|v| self.nodes.get(v as usize).copied().unwrap_or(Point3::ORIGIN));
+            let d = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+            if d == 0.0 {
+                return false;
+            }
+            let l1 = ((p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y)) / d;
+            let l2 = ((b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y)) / d;
+            let tol = -1e-9;
+            l1 >= tol && l2 >= tol && 1.0 - l1 - l2 >= tol
+        })
+    }
+
     /// The conductors other than the ground: each a set of nodes, ascending. Conductors are the
     /// connected sets of wall edges; the ground is the one holding the leftmost node (the rim).
     pub fn conductors(&self) -> Vec<Vec<u32>> {

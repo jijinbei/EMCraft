@@ -904,17 +904,42 @@ fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
             }
         }
     }
-    // The open boundary: the layer's inner face, shaded when boundaries are the subject.
+    // The open boundary: the layer's inner face as a frame. When boundaries are the subject, the
+    // layer's thickness is shaded as a band round each outer face (a picture frame), so what
+    // lies inside stays clear, and its corners join the inner frame's.
     if let (Some(o), Some((lo, hi))) = (&m.open, out.bounds) {
         let t = o.thickness;
         let (a, b) = ([lo[0] + t, lo[1] + t, lo[2] + t], [hi[0] - t, hi[1] - t, hi[2] - t]);
+        let corner = |p: [f64; 3], q: [f64; 3], i: usize| {
+            [if i & 1 == 0 { p[0] } else { q[0] }, if i & 2 == 0 { p[1] } else { q[1] }, if i & 4 == 0 { p[2] } else { q[2] }]
+        };
         if overlay == Overlay::Boundaries {
-            cuboid(&mut out.scene, a, b, PML, 60, false);
-            out.labels.push(Label { at: [b[0], b[1], b[2]], text: "PML".into(), color: PML, facing: None });
+            for axis in 0..3 {
+                let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+                for side in [lo[axis], hi[axis]] {
+                    // The face's band: four strips t wide along its edges.
+                    let at = |x: f64, y: f64| {
+                        let mut p = [0.0; 3];
+                        p[axis] = side;
+                        p[u] = x;
+                        p[v] = y;
+                        p
+                    };
+                    let (u0, u1, v0, v1) = (lo[u], hi[u], lo[v], hi[v]);
+                    let (ui0, ui1, vi0, vi1) = (u0 + t, u1 - t, v0 + t, v1 - t);
+                    for (x0, x1, y0, y1) in [(u0, u1, v0, vi0), (u0, u1, vi1, v1), (u0, ui0, vi0, vi1), (ui1, u1, vi0, vi1)] {
+                        out.scene.quad([at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)], PML, 70);
+                    }
+                }
+            }
+            for i in 0..8 {
+                out.scene.line(corner(lo, hi, i), corner(a, b, i), PML, 200);
+            }
+            // On the band, at a corner of the outer box.
+            out.labels.push(Label { at: [hi[0], hi[1], lo[2] + 0.5 * t], text: "PML".into(), color: PML, facing: None });
         }
-        let c = |i: usize| [if i & 1 == 0 { a[0] } else { b[0] }, if i & 2 == 0 { a[1] } else { b[1] }, if i & 4 == 0 { a[2] } else { b[2] }];
         for (i, j) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
-            out.scene.line(c(i), c(j), PML, 255);
+            out.scene.line(corner(a, b, i), corner(a, b, j), PML, 255);
         }
     }
 }

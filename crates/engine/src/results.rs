@@ -217,6 +217,19 @@ pub fn view_field(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
 
+/// A port mode's transverse E across the port's face as a PNG.
+pub fn view_port_mode(s: &mut Session, p: &Params) -> Result<Value> {
+    let path = p.string("path").required()?;
+    let width = p.side("width", s.limits.picture_side, 900)?;
+    let port = p.string("port").required()?;
+    let mode = p.integer("mode", 1..=crate::EIGEN_MAX).or(1)?;
+    let frequency = p.frequency("frequency").or_maybe(s.model.band.map(|b| b.stop)).required_or("or set the band: project.frequency")?;
+    let plot = view::port_mode_plot(s, port, mode - 1, frequency, p.order()?.as_u8())?;
+    let c = emcraft_render::plot::draw(&plot, width);
+    write_png(path, c.png())?;
+    Ok(json!({"path": path, "width": c.w, "height": c.h, "mode": plot.title}))
+}
+
 /// The most frames an animation may have.
 pub const MAX_FRAMES: usize = 120;
 

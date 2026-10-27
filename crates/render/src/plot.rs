@@ -82,6 +82,51 @@ pub const METAL: Rgb = Rgb(150, 150, 155);
 const LEFT: f64 = 80.0;
 const RIGHT: f64 = 130.0;
 const TOP: f64 = 62.0;
+/// Pixels from one header line to the next.
+const LINE: f64 = 22.0;
+
+/// Splits `text` into lines at most `room` pixels wide at `scale`, at spaces outside TeX math
+/// (`$…$` stays whole); a word wider than the room stands alone.
+fn wrap(text: &str, room: f64, scale: usize) -> Vec<String> {
+    let mut words: Vec<String> = Vec::new();
+    let (mut word, mut math) = (String::new(), false);
+    for ch in text.chars() {
+        if ch == '$' {
+            math = !math;
+        }
+        if ch == ' ' && !math {
+            words.push(std::mem::take(&mut word));
+        } else {
+            word.push(ch);
+        }
+    }
+    words.push(word);
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for w in words.into_iter().filter(|w| !w.is_empty()) {
+        let longer = if line.is_empty() { w.clone() } else { format!("{line} {w}") };
+        if line.is_empty() || crate::text::width(&longer, scale) <= room {
+            line = longer;
+        } else {
+            lines.push(std::mem::replace(&mut line, w));
+        }
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// The header of a plot drawn `width` pixels wide: the title's lines, the subtitle's.
+fn header(plot: &FieldPlot, width: f64) -> (Vec<String>, Vec<String>) {
+    let room = (width - LEFT - 10.0).max(100.0);
+    (wrap(&plot.title, room, 2), wrap(&plot.subtitle, room, 2))
+}
+
+/// The plane's top below a header of `lines` lines (two fit the usual margin).
+fn top(lines: usize) -> f64 {
+    TOP + LINE * lines.saturating_sub(2) as f64
+}
 const BOTTOM: f64 = 90.0;
 
 /// Where a plot drawn at some width puts its plane: the picture's size and the plane's
@@ -104,7 +149,9 @@ impl Layout {
         let pw = (width as f64 - LEFT - RIGHT).max(100.0);
         let ph = (pw * (y.1 - y.0) / (x.1 - x.0)).clamp(60.0, 3000.0);
         let pw = if ph >= 3000.0 { 3000.0 * (x.1 - x.0) / (y.1 - y.0) } else { pw };
-        Layout { width: (pw + LEFT + RIGHT).ceil() as usize, height: (ph + TOP + BOTTOM).ceil() as usize, plane: [LEFT, TOP, pw, ph], x, y }
+        let (title, subtitle) = header(plot, pw + LEFT + RIGHT);
+        let top = top(title.len() + subtitle.len());
+        Layout { width: (pw + LEFT + RIGHT).ceil() as usize, height: (ph + top + BOTTOM).ceil() as usize, plane: [LEFT, top, pw, ph], x, y }
     }
 
     /// A point of the plane (axis units) in pixels.
@@ -131,8 +178,11 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
     let ink = Rgb(30, 30, 30);
     let to_px = |p: [f64; 2]| layout.to_pixels(p);
 
-    c.text(LEFT, 10.0, &plot.title, 2, ink);
-    c.text(LEFT, 32.0, &plot.subtitle, 2, Rgb(90, 90, 90));
+    // The title and the subtitle, wrapped to the picture's width.
+    let (title, subtitle) = header(plot, layout.width as f64);
+    for (i, (line, colour)) in title.iter().map(|l| (l, ink)).chain(subtitle.iter().map(|l| (l, Rgb(90, 90, 90)))).enumerate() {
+        c.text(LEFT, 10.0 + LINE * i as f64, line, 2, colour);
+    }
 
     if let Some(s) = &plot.scalar {
         let r = s.scale();
@@ -274,5 +324,14 @@ mod tests {
         p.arrows[0].arrows.push(([f64::NAN, 0.0], [f64::INFINITY, 1.0]));
         let c = draw(&p, 0);
         assert!(c.png().is_some());
+    }
+
+    #[test]
+    fn a_long_header_wraps_and_the_plane_moves_down() {
+        let lines = wrap("Re(F e$^{j omega t}$) at one two three four five six seven", 200.0, 2);
+        assert!(lines.len() > 1, "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("$^{j omega t}$")), "math kept whole: {lines:?}");
+        assert_eq!(top(2), TOP);
+        assert!(top(4) > TOP);
     }
 }
