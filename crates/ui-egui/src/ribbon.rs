@@ -10,55 +10,35 @@ use serde_json::{Value, json};
 use crate::theme::Tokens;
 use crate::{EmcraftApp, View, glyphs, scenario};
 
-/// A ribbon item: an engine command, or a view of the results.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Item {
-    Command(&'static str),
-    /// A view: its id, label and glyph.
-    Show(View, &'static str, &'static str),
-}
-
-/// The ribbon: tabs of panels of items.
-pub const TABS: &[(&str, &[(&str, &[Item])])] = {
-    use Item::{Command as C, Show as S};
-    &[
-        (
-            "MODEL",
-            &[
-                ("GEOMETRY", &[C("geometry.waveguide"), C("geometry.solid"), C("geometry.feature"), C("geometry.inclusion")]),
-                ("FILE", &[C("geometry.import"), C("file.sample")]),
-                ("SETTINGS", &[C("units.set"), S(View::Model, "Model view", "summary")]),
-            ],
-        ),
-        ("MATERIALS", &[("MATERIALS", &[C("model.material.create")]), ("BOUNDARIES", &[C("model.walls"), C("model.open")])]),
-        (
-            "PORTS & SOURCES",
-            &[
-                ("PORTS", &[C("model.port.create"), C("model.port.lumped")]),
-                ("SOURCES", &[C("source.dipole"), C("source.plane_wave"), C("source.clear")]),
-                ("BOUNDARIES", &[C("model.open")]),
-            ],
-        ),
-        ("MESH", &[("MESH", &[C("mesh.generate")])]),
-        (
-            "SIMULATE",
-            &[
-                ("FREQUENCY DOMAIN", &[C("solve.frequency"), C("solve.eigenmodes"), C("solve.radiation")]),
-                ("TIME DOMAIN", &[C("solve.time_domain")]),
-                ("PORTS", &[C("solve.port_modes")]),
-            ],
-        ),
-        (
-            "RESULTS",
-            &[
-                ("CHARTS", &[S(View::SParameters, "S-parameters", "chart"), S(View::FarField, "Far field", "pattern")]),
-                ("FIELDS", &[S(View::Field, "Field view", "field")]),
-                ("TABLES", &[S(View::PortModes, "Port modes", "port_modes"), S(View::Eigenmodes, "Eigenmodes", "eigen"), C("results.compare")]),
-                ("EXPORT", &[C("view.sparameters"), C("view.field"), C("view.pattern")]),
-            ],
-        ),
-    ]
-};
+/// The ribbon: tabs of panels of commands, each command in one place (views are switched
+/// from the view tabs over the viewport, files from the File menu and the start page).
+pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
+    (
+        "MODEL",
+        &[
+            ("GEOMETRY", &["geometry.waveguide", "geometry.solid", "geometry.feature", "geometry.inclusion", "geometry.import"]),
+            ("SETTINGS", &["units.set", "project.frequency"]),
+        ],
+    ),
+    ("MATERIALS", &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open"])]),
+    (
+        "PORTS & SOURCES",
+        &[("PORTS", &["model.port.create", "model.port.lumped"]), ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"])],
+    ),
+    ("MESH", &[("MESH", &["mesh.generate"])]),
+    (
+        "SIMULATE",
+        &[
+            ("FREQUENCY DOMAIN", &["solve.frequency", "solve.eigenmodes", "solve.radiation"]),
+            ("TIME DOMAIN", &["solve.time_domain"]),
+            ("PORTS", &["solve.port_modes"]),
+        ],
+    ),
+    (
+        "RESULTS",
+        &[("ANALYSIS", &["results.compare", "results.check"]), ("EXPORT", &["results.touchstone", "view.sparameters", "view.field", "view.pattern"])],
+    ),
+];
 
 /// A button's label: the command's own, shortened where the ribbon has little room.
 pub fn button_label(id: &str) -> &str {
@@ -70,6 +50,9 @@ pub fn button_label(id: &str) -> &str {
         "geometry.import" => "Import",
         "file.sample" => "Sample",
         "units.set" => "Units",
+        "project.frequency" => "Band",
+        "results.check" => "Checks",
+        "results.touchstone" => "Touchstone",
         "model.material.create" => "Material",
         "model.walls" => "Walls",
         "model.open" => "Open boundary",
@@ -106,9 +89,19 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         |ui| {
             let r = ui.max_rect();
             let p = ui.painter();
-            // The wordmark: a small field glyph and the name.
-            glyphs::paint(p, Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(20.0, 20.0)), "waveguide", t.app_bar_text, t.accent);
-            p.text(pos2(r.left() + 36.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
+            // The start page's house, then the wordmark.
+            let house = Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(26.0, 26.0));
+            let home = ui.interact(house, ui.id().with("bar:start"), Sense::click());
+            if home.hovered() || app.home.open {
+                p.rect_filled(house, t.radius_sm, Color32::from_white_alpha(if app.home.open { 40 } else { 28 }));
+            }
+            glyphs::paint(p, house.shrink(4.0), "start", t.app_bar_text, t.accent);
+            scenario::publish_target("bar:start", house);
+            if home.on_hover_text("Start page").clicked() {
+                app.home.open = !app.home.open;
+            }
+            let p = ui.painter();
+            p.text(pos2(r.left() + 40.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
             let mut x = r.left() + 120.0;
             let bar_button = |ui: &mut egui::Ui, x: &mut f32, text: &str, handle: &str| {
                 let g = ui.painter().layout_no_wrap(text.to_owned(), FontId::proportional(t.font_button), t.app_bar_text);
@@ -125,69 +118,41 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             };
             let busy = app.busy();
             let file = bar_button(ui, &mut x, "File", "menu:file");
-            egui::Popup::menu(&file).show(|ui| {
-                ui.set_min_width(220.0);
-                let item = |ui: &mut egui::Ui, text: &str, handle: &str, enabled: bool| {
-                    let r = ui.add_enabled(enabled, egui::Button::new(text));
-                    scenario::publish_target(handle, r.rect);
-                    r.clicked()
-                };
-                if item(ui, "Save…   Ctrl+S", "file:save", !busy) {
-                    let _ = app.open_dialog("file.save");
-                }
-                if item(ui, "Open…", "file:open", !busy) {
-                    let _ = app.open_dialog("file.open");
-                }
-                ui.separator();
-                if item(ui, "Export history as script…", "file:export", !app.session.history.is_empty()) {
-                    app.export = Some("emcraft-history.json".into());
-                }
-            });
+            egui::Popup::menu(&file).show(|ui| crate::files::menu(app, ui));
             let edit = bar_button(ui, &mut x, "Edit", "menu:edit");
             egui::Popup::menu(&edit).show(|ui| {
                 ui.set_min_width(200.0);
                 let (u, r) = (app.session.undo.len(), app.session.redo.len());
-                let undo = ui.add_enabled(u > 0 && !busy, egui::Button::new(format!("Undo   Ctrl+Z  ({u})")));
+                let undo = ui.add_enabled(u > 0 && !busy, egui::Button::new(format!("Undo  ({u})")).shortcut_text("Ctrl+Z"));
                 scenario::publish_target("edit:undo", undo.rect);
                 if undo.clicked() {
                     let _ = app.run("edit.undo", json!({}));
                 }
-                let redo = ui.add_enabled(r > 0 && !busy, egui::Button::new(format!("Redo   Ctrl+Y  ({r})")));
+                let redo = ui.add_enabled(r > 0 && !busy, egui::Button::new(format!("Redo  ({r})")).shortcut_text("Ctrl+Y"));
                 scenario::publish_target("edit:redo", redo.rect);
                 if redo.clicked() {
                     let _ = app.run("edit.redo", json!({}));
                 }
             });
-            let samples = bar_button(ui, &mut x, "Samples   ", "bar:samples");
-            // The drop-down's arrow.
-            let a = pos2(samples.rect.right() - 16.0, samples.rect.center().y);
-            ui.painter().add(egui::Shape::convex_polygon(
-                vec![a + vec2(-4.0, -2.0), a + vec2(4.0, -2.0), a + vec2(0.0, 3.0)],
-                t.app_bar_text,
-                Stroke::NONE,
-            ));
-            egui::Popup::menu(&samples).show(|ui| {
-                ui.set_min_width(260.0);
-                for s in emcraft_engine::sample::SAMPLES {
-                    let r = ui.button(s.name).on_hover_text(s.label);
-                    scenario::publish_target(&format!("sample:{}", s.name), r.rect);
-                    if r.clicked() {
-                        let _ = app.run("file.sample", json!({"name": s.name, "solve": true}));
-                        ui.close();
-                    }
-                }
+            // The project's name in the middle, a dot while it has unsaved changes.
+            if !app.home.open {
+                let title = crate::files::title(app);
+                ui.painter().text(r.center(), Align2::CENTER_CENTER, &title, FontId::proportional(t.font_body), t.app_bar_text);
+                scenario::publish_rect("bar:title", Rect::from_center_size(r.center(), vec2(200.0, r.height())));
+            }
+            // At the right: the settings.
+            let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(26.0, 26.0));
+            let resp = ui.interact(gear, ui.id().with("bar:settings"), Sense::click());
+            if resp.hovered() {
+                ui.painter().rect_filled(gear, t.radius_sm, Color32::from_white_alpha(28));
+            }
+            glyphs::paint(ui.painter(), gear.shrink(4.0), "settings", t.app_bar_text, t.app_bar_text);
+            scenario::publish_target("bar:settings", gear);
+            let resp = resp.on_hover_text("Settings");
+            egui::Popup::menu(&resp).show(|ui| {
+                ui.set_min_width(300.0);
+                crate::home::settings(app, ui);
             });
-            let theme = bar_button(ui, &mut x, if app.dark { "Light theme" } else { "Dark theme" }, "bar:theme");
-            if theme.clicked() {
-                app.dark = !app.dark;
-            }
-            let dock = bar_button(ui, &mut x, if app.dock_dialogs { "Float dialogs" } else { "Dock dialogs" }, "bar:dock");
-            if dock.clicked() {
-                app.dock_dialogs = !app.dock_dialogs;
-                if let Some(d) = app.dialog.as_mut() {
-                    d.docked = app.dock_dialogs;
-                }
-            }
             // The running job, at the right.
             if let Some(job) = &app.job {
                 ui.painter().text(
@@ -225,22 +190,13 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             let busy = app.busy();
             for (panel, items) in panels.iter() {
                 let x0 = x;
-                for item in items.iter() {
-                    let (id, text, glyph) = match item {
-                        Item::Command(id) => (*id, button_label(id), glyphs::for_command(id)),
-                        Item::Show(v, label, glyph) => (v.id(), *label, *glyph),
-                    };
+                for &id in items.iter() {
+                    let (text, glyph) = (button_label(id), glyphs::for_command(id));
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
                     let w = (g.size().x + 14.0).max(BUTTON_MIN_WIDTH);
                     let br = Rect::from_min_size(pos2(x, top), vec2(w, BUTTON_HEIGHT));
-                    let enabled = match item {
-                        Item::Command(_) => !busy,
-                        Item::Show(..) => true,
-                    };
-                    let active = match item {
-                        Item::Show(v, ..) => app.view == *v,
-                        Item::Command(id) => app.dialog.as_ref().is_some_and(|d| d.command.id == *id),
-                    };
+                    let enabled = !busy;
+                    let active = app.dialog.as_ref().is_some_and(|d| d.command.id == id);
                     let resp = ui.interact(br, ui.id().with(("ribbon", id)), if enabled { Sense::click() } else { Sense::hover() });
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
                     if active {
@@ -259,17 +215,11 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                     let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
                     ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
-                    let handle = match item {
-                        Item::Command(id) => format!("toolbar:{id}"),
-                        Item::Show(v, ..) => format!("toolbar:show:{}", v.id()),
-                    };
-                    scenario::publish_target(&handle, br);
-                    let resp = match item {
-                        Item::Command(id) => resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)),
-                        Item::Show(..) => resp,
-                    };
-                    if resp.clicked() {
-                        click(app, item);
+                    scenario::publish_target(&format!("toolbar:{id}"), br);
+                    if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked()
+                        && let Err(e) = app.open_dialog(id)
+                    {
+                        app.message(e, true);
                     }
                     x += w + 3.0;
                 }
@@ -282,18 +232,6 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 x += 7.0;
             }
         });
-}
-
-/// What clicking a ribbon item does.
-pub fn click(app: &mut EmcraftApp, item: &Item) {
-    match item {
-        Item::Command(id) => {
-            if let Err(e) = app.open_dialog(id) {
-                app.message(e, true);
-            }
-        }
-        Item::Show(v, ..) => show_view(app, *v),
-    }
 }
 
 /// Switches the viewport to `v`, solving the port modes when that view has none yet.

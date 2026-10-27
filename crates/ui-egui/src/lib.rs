@@ -17,7 +17,10 @@ pub mod browser;
 pub mod control;
 pub mod dialog_ui;
 pub mod dialogs;
+pub mod files;
 pub mod glyphs;
+pub mod home;
+pub mod prefs;
 pub mod raster;
 pub mod ribbon;
 pub mod scenario;
@@ -201,6 +204,23 @@ pub struct EmcraftApp {
     pub workflow: steps::Workflow,
     /// The path asked for when exporting the history as a script.
     pub export: Option<String>,
+    /// The preferences, where they are kept (none in the headless harness) and as last written.
+    pub prefs: prefs::Prefs,
+    pub prefs_path: Option<std::path::PathBuf>,
+    prefs_written: prefs::Prefs,
+    /// Project files: the file dialog, the path field, the question before changes are lost.
+    pub files: files::Files,
+    /// The start page.
+    pub home: home::Home,
+}
+
+/// What the desktop app gives the window: a file dialog and where preferences are kept.
+#[derive(Default)]
+pub struct Host {
+    pub picker: Option<Arc<dyn files::Picker>>,
+    pub prefs: Option<std::path::PathBuf>,
+    /// A project file to open at once.
+    pub open: Option<String>,
 }
 
 impl Default for EmcraftApp {
@@ -234,11 +254,7 @@ impl EmcraftApp {
             port_modes: None,
             compare: None,
             eigen_table: None,
-            messages: vec![Message {
-                text: "Open a sample (Samples, or MODEL › Sample) or build a model from the ribbon.".into(),
-                error: false,
-                count: 1,
-            }],
+            messages: vec![Message { text: "Open a sample or a project (File) or build a model from the ribbon.".into(), error: false, count: 1 }],
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),
             dark: false,
@@ -255,6 +271,47 @@ impl EmcraftApp {
             view3d: view3d::View3d::default(),
             workflow: steps::Workflow::default(),
             export: None,
+            prefs: prefs::Prefs::default(),
+            prefs_path: None,
+            prefs_written: prefs::Prefs::default(),
+            files: files::Files::default(),
+            home: home::Home::default(),
+        }
+    }
+
+    /// The app of the desktop window: the host's file dialog and preferences, and the start
+    /// page unless a sample is opened.
+    pub fn for_host(sample: Option<&str>, host: Host) -> EmcraftApp {
+        let mut app = EmcraftApp::with_sample(sample);
+        if let Some(path) = host.prefs {
+            app.prefs = prefs::Prefs::load(&path);
+            app.prefs_written = app.prefs.clone();
+            app.prefs_path = Some(path);
+            app.dark = app.prefs.dark;
+            app.dock_dialogs = app.prefs.dock_dialogs;
+        }
+        app.files.picker = host.picker;
+        app.home.open = sample.is_none() && host.open.is_none();
+        if let Some(path) = host.open
+            && let Err(e) = app.run("file.open", json!({"path": path}))
+        {
+            app.message(e, true);
+        }
+        app
+    }
+
+    /// Keeps the preferences in step with the window and writes them when they change.
+    fn keep_prefs(&mut self) {
+        self.prefs.dark = self.dark;
+        self.prefs.dock_dialogs = self.dock_dialogs;
+        if self.prefs == self.prefs_written {
+            return;
+        }
+        self.prefs_written = self.prefs.clone();
+        if let Some(path) = &self.prefs_path
+            && let Err(e) = self.prefs.save(path)
+        {
+            self.message(format!("cannot keep the preferences in {}: {e}", path.display()), true);
         }
     }
 
@@ -337,8 +394,17 @@ impl EmcraftApp {
         self.chart = None;
         let f = |k: &str| reply.get(k).and_then(Value::as_f64);
         let unit = self.session.display.frequency.symbol();
+        match id {
+            "file.open" | "file.save" => {
+                if let Some(path) = reply.get("path").and_then(Value::as_str) {
+                    files::opened(self, path);
+                }
+            }
+            "file.new" | "file.sample" => self.home.open = false,
+            _ => {}
+        }
         let text = match id {
-            "file.sample" | "engine.script" | "file.open" => {
+            "file.sample" | "engine.script" | "file.open" | "file.new" => {
                 self.port_modes = None;
                 self.compare = None;
                 self.view = if self.session.results.sweep.is_some() {
@@ -356,6 +422,7 @@ impl EmcraftApp {
                 match params.get("name").and_then(Value::as_str) {
                     Some(name) if id == "file.sample" => format!("Opened sample {name}."),
                     _ if id == "file.open" => format!("Opened {}.", params.get("path").and_then(Value::as_str).unwrap_or("the project")),
+                    _ if id == "file.new" => "New project.".to_owned(),
                     _ => "Script done.".into(),
                 }
             }
@@ -615,6 +682,14 @@ impl EmcraftApp {
         scenario::clear_handles();
         let ctx = ui.ctx().clone();
         ribbon::app_bar(self, ui);
+        if self.home.open {
+            home::show(self, ui);
+            files::show(self, &ctx);
+            shortcuts(self, &ctx);
+            self.collect_screenshots(&ctx);
+            self.keep_prefs();
+            return;
+        }
         ribbon::ribbon(self, ui);
         steps::bar(self, ui);
         status_area(self, ui);
@@ -632,8 +707,10 @@ impl EmcraftApp {
         }
         ribbon::search_popup(self, &ctx);
         ribbon::export_prompt(self, &ctx);
+        files::show(self, &ctx);
         shortcuts(self, &ctx);
         self.collect_screenshots(&ctx);
+        self.keep_prefs();
     }
 
     /// Asks the window for a screenshot (answered in a later frame).
@@ -685,20 +762,19 @@ fn shortcuts(app: &mut EmcraftApp, ctx: &egui::Context) {
     if ctx.egui_wants_keyboard_input() || app.busy() {
         return;
     }
-    let (undo, redo, save) = ctx.input(|i| {
+    let (undo, redo) = ctx.input(|i| {
         let c = i.modifiers.command;
         (
             c && !i.modifiers.shift && i.key_pressed(egui::Key::Z),
             c && (i.key_pressed(egui::Key::Y) || i.modifiers.shift && i.key_pressed(egui::Key::Z)),
-            c && i.key_pressed(egui::Key::S),
         )
     });
     if undo {
         let _ = app.run("edit.undo", json!({}));
     } else if redo {
         let _ = app.run("edit.redo", json!({}));
-    } else if save && app.dialog.is_none() {
-        let _ = app.open_dialog("file.save");
+    } else if app.dialog.is_none() && app.files.prompt.is_none() && app.files.confirm.is_none() {
+        files::shortcuts(app, ctx);
     }
 }
 
@@ -780,12 +856,12 @@ pub enum UiError {
 /// Opens the desktop app; `sample` is opened and solved at once. `control` is the control
 /// channel's request queue (`emcraft --control PORT`).
 pub fn run(sample: Option<String>, control: Option<Receiver<ControlRequest>>) -> eframe::Result {
-    run_with(sample, move |_| control)
+    run_with(sample, Host::default(), move |_| control)
 }
 
 /// Like [`run`], with the control queue made from the window's context (so the server can wake
 /// the window when a request arrives).
-pub fn run_with(sample: Option<String>, control: impl FnOnce(&egui::Context) -> Option<Receiver<ControlRequest>>) -> eframe::Result {
+pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::Context) -> Option<Receiver<ControlRequest>>) -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("EMCraft").with_inner_size([1500.0, 960.0]).with_min_inner_size([900.0, 600.0]),
         ..Default::default()
@@ -794,7 +870,7 @@ pub fn run_with(sample: Option<String>, control: impl FnOnce(&egui::Context) -> 
         "EMCraft",
         options,
         Box::new(move |cc| {
-            let mut app = EmcraftApp::with_sample(sample.as_deref());
+            let mut app = EmcraftApp::for_host(sample.as_deref(), host);
             app.control_rx = control(&cc.egui_ctx);
             Ok(Box::new(Window(app)))
         }),

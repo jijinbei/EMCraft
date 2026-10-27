@@ -1,35 +1,47 @@
-//! The EMCraft desktop app: `emcraft [--sample NAME] [--control PORT]`. `--sample` opens a
-//! sample and solves it; `--control` listens for an agent's JSON-line requests on
-//! 127.0.0.1:PORT (docs/control-protocol.md).
+//! The EMCraft desktop app: `emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT]`. A
+//! project file is opened; `--sample` opens a sample and solves it; with neither the start page
+//! shows. `--control` listens for an agent's JSON-line requests on 127.0.0.1:PORT
+//! (docs/control-protocol.md).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod control_auth;
 mod control_server;
+mod picker;
 
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let usage = || {
-        eprintln!("usage: emcraft [--sample NAME] [--control PORT]   (samples: {})", emcraft_engine::sample::names().join(", "));
+        eprintln!("usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT]   (samples: {})", emcraft_engine::sample::names().join(", "));
         ExitCode::FAILURE
     };
     let mut sample = None;
+    let mut project = None;
     let mut control: Option<u16> = std::env::var("EMCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        match (a.as_str(), it.next()) {
-            ("--sample", Some(name)) if emcraft_engine::sample::find(name).is_some() => sample = Some(name.clone()),
-            ("--control", Some(port)) => match port.parse::<u16>() {
-                Ok(p) => control = Some(p),
-                Err(_) => return usage(),
+        match a.as_str() {
+            "--sample" => match it.next() {
+                Some(name) if emcraft_engine::sample::find(name).is_some() => sample = Some(name.clone()),
+                _ => return usage(),
             },
+            "--control" => match it.next().map(|p| p.parse::<u16>()) {
+                Some(Ok(p)) => control = Some(p),
+                _ => return usage(),
+            },
+            path if !path.starts_with('-') && project.is_none() => project = Some(path.to_owned()),
             _ => return usage(),
         }
     }
+    let host = emcraft_ui_egui::Host {
+        picker: Some(std::sync::Arc::new(picker::SystemPicker)),
+        prefs: emcraft_ui_egui::prefs::default_path(),
+        open: project,
+    };
     // The token file lives as long as the app.
     let mut token_file = None;
-    let result = emcraft_ui_egui::run_with(sample, |ctx| {
+    let result = emcraft_ui_egui::run_with(sample, host, |ctx| {
         let port = control?;
         let ctx = ctx.clone();
         match control_server::start(port, move || ctx.request_repaint()) {

@@ -65,6 +65,11 @@ fn scenario_view3d_open_boundary() {
 }
 
 #[test]
+fn scenario_start_page() {
+    scenario("start_page");
+}
+
+#[test]
 fn scenario_view3d_field_arrows() {
     scenario("view3d_field_arrows");
 }
@@ -147,7 +152,7 @@ fn ui_render_draws_both_themes() {
 fn file_and_edit_menus() {
     let dir = std::env::temp_dir().join(format!("emcraft-ui-files-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let (script, project) = (dir.join("history.json"), dir.join("project.json"));
+    let (script, project) = (dir.join("history.json"), dir.join("project.emcraft"));
     let mut h = Harness::new();
     let steps = json!([
         {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
@@ -160,11 +165,16 @@ fn file_and_edit_menus() {
         {"text": script.to_str().unwrap()},
         {"click": "export:ok"},
         {"expect": {"status": "Exported", "inspect": {"export": null}}},
+        {"note": "Save: the project has no file yet, so its path is asked (the path field, without a file dialog)"},
+        {"expect": {"inspect": {"project.dirty": true, "project.title": "highpass •"}}},
         {"click": "menu:file"},
         {"click": "file:save"},
-        {"expect": {"dialog": "file.save"}},
-        {"call": "ui.dialog", "params": {"set": {"path": project.to_str().unwrap()}, "ok": true}},
-        {"expect": {"status": "Saved"}},
+        {"expect": {"inspect": {"files.prompt": "highpass.emcraft"}}},
+        {"click": "file:path"},
+        {"key": "A", "cmd": true},
+        {"text": project.with_extension("").to_str().unwrap()},
+        {"click": "file:ok"},
+        {"expect": {"status": "Saved", "inspect": {"project.dirty": false, "project.name": "project", "recent.0": project.to_str().unwrap()}}},
         {"note": "Undo the band from the Edit menu, then redo it"},
         {"click": "menu:edit"},
         {"click": "edit:undo"},

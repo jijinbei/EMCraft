@@ -46,11 +46,26 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         });
 }
 
-/// The views as a row of pills.
+/// Whether view `v` has something to show: the model always, results once solved.
+pub(crate) fn available(app: &EmcraftApp, v: View) -> bool {
+    let r = &app.session.results;
+    match v {
+        View::Model | View::Outline => true,
+        View::SParameters => r.sweep.is_some() || r.time_domain.is_some(),
+        View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
+        View::PortModes => app.port_modes.is_some() || (app.session.model.mesh.is_some() && !app.session.model.ports.is_empty()),
+        View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
+        View::Compare => r.sweep.is_some(),
+        View::Eigenmodes => r.eigen.is_some(),
+    }
+}
+
+/// The views with something to show, as a row of pills.
 fn view_tabs(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     ui.horizontal(|ui| {
-        for v in View::ALL {
+        let shown: Vec<View> = View::ALL.into_iter().filter(|v| *v == app.view || available(app, *v)).collect();
+        for v in shown {
             let on = app.view == v;
             let text = egui::RichText::new(v.label()).size(t.font_body).color(if on { t.selected_ink } else { t.text });
             let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(12));

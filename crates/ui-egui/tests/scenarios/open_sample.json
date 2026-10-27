@@ -1,8 +1,9 @@
 [
-  {"note": "Open the high-pass sample from the app bar's Samples menu; the browser and the model view show it"},
-  {"click": "bar:samples"},
-  {"expect": {"handles": ["sample:highpass", "sample:cavity"]}},
-  {"key": "Escape"},
+  {"note": "The start page (the app bar's house) offers the samples; the high-pass filter opens and the browser and the model view show it"},
+  {"click": "bar:start"},
+  {"expect": {"inspect": {"home": true}, "handles": ["home:new", "home:open", "sample:highpass", "sample:cavity"]}},
+  {"click": "bar:start"},
+  {"expect": {"inspect": {"home": false}}},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"expect": {"view": "model", "busy": false, "status": "Opened sample highpass", "status_error": false}},
   {"expect": {"handles": ["fold:Geometry", "fold:Results", "row:Waveguide 22.86 × 10.16 × 50 mm", "row:Section 2: 20 mm, vacuum", "row:Port 1: Start, 4 modes", "tab:MODEL"]}},

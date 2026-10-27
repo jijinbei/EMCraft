@@ -239,6 +239,105 @@ pub fn paint(p: &Painter, r: Rect, name: &str, ink: Color32, accent: Color32) {
                 poly(&[(0.3, y), (x1, y)], false, bold);
             }
         }
+        // Four corners closing in on a box: fit the model to the view.
+        "fit" => {
+            for (x, y, dx, dy) in [(0.12, 0.12, 1.0, 1.0), (0.88, 0.12, -1.0, 1.0), (0.88, 0.88, -1.0, -1.0), (0.12, 0.88, 1.0, -1.0)] {
+                poly(&[(x, y + 0.22 * dy), (x, y), (x + 0.22 * dx, y)], false, line);
+            }
+            p.rect_filled(rect(0.36, 0.36, 0.64, 0.64), 1.5, accent);
+        }
+        // A cube seen from a corner: the home (isometric) view.
+        "home" | "iso" => {
+            let top = [(0.5, 0.14), (0.84, 0.32), (0.5, 0.5), (0.16, 0.32)];
+            p.add(Shape::convex_polygon(top.iter().map(|&(x, y)| at(x, y)).collect(), accent.gamma_multiply(0.35), bold));
+            poly(&[(0.16, 0.32), (0.16, 0.7), (0.5, 0.88), (0.84, 0.7), (0.84, 0.32)], false, line);
+            poly(&[(0.5, 0.5), (0.5, 0.88)], false, line);
+        }
+        // An eye on a plane seen square on: face the field's plane.
+        "lookat" => {
+            p.add(Shape::convex_polygon(
+                [(0.42, 0.18), (0.88, 0.18), (0.88, 0.82), (0.42, 0.82)].iter().map(|&(x, y)| at(x, y)).collect(),
+                accent.gamma_multiply(0.3),
+                bold,
+            ));
+            poly(&[(0.08, 0.5), (0.36, 0.5)], false, line);
+            poly(&[(0.26, 0.4), (0.36, 0.5), (0.26, 0.6)], false, line);
+        }
+        // Converging (perspective) or parallel (orthographic) edges of a box.
+        "perspective" => {
+            poly(&[(0.3, 0.3), (0.7, 0.3), (0.7, 0.7), (0.3, 0.7)], true, bold);
+            poly(&[(0.1, 0.12), (0.3, 0.3)], false, line);
+            poly(&[(0.9, 0.12), (0.7, 0.3)], false, line);
+            poly(&[(0.9, 0.88), (0.7, 0.7)], false, line);
+            poly(&[(0.1, 0.88), (0.3, 0.7)], false, line);
+        }
+        "orthographic" => {
+            poly(&[(0.12, 0.3), (0.62, 0.3), (0.62, 0.84), (0.12, 0.84)], true, line);
+            poly(&[(0.38, 0.14), (0.88, 0.14), (0.88, 0.68), (0.38, 0.68)], true, bold);
+            for (x, y) in [(0.12, 0.3), (0.62, 0.3), (0.62, 0.84), (0.12, 0.84)] {
+                poly(&[(x, y), (x + 0.26, y - 0.16)], false, line);
+            }
+        }
+        // A page with a folded corner and a plus.
+        "new" => {
+            poly(&[(0.22, 0.1), (0.6, 0.1), (0.78, 0.28), (0.78, 0.9), (0.22, 0.9)], true, line);
+            poly(&[(0.6, 0.1), (0.6, 0.28), (0.78, 0.28)], false, line);
+            poly(&[(0.5, 0.44), (0.5, 0.76)], false, bold);
+            poly(&[(0.34, 0.6), (0.66, 0.6)], false, bold);
+        }
+        // An open folder.
+        "open_file" => {
+            poly(&[(0.08, 0.82), (0.08, 0.22), (0.36, 0.22), (0.44, 0.3), (0.82, 0.3), (0.82, 0.42)], false, line);
+            p.add(Shape::convex_polygon(
+                [(0.08, 0.82), (0.24, 0.42), (0.94, 0.42), (0.78, 0.82)].iter().map(|&(x, y)| at(x, y)).collect(),
+                accent.gamma_multiply(0.3),
+                bold,
+            ));
+        }
+        // A floppy disk.
+        "save" => {
+            poly(&[(0.14, 0.14), (0.74, 0.14), (0.86, 0.26), (0.86, 0.86), (0.14, 0.86)], true, line);
+            p.rect_stroke(rect(0.3, 0.14, 0.66, 0.36), 1.0, line, egui::StrokeKind::Middle);
+            p.rect_filled(rect(0.28, 0.54, 0.72, 0.86), 1.5, accent);
+        }
+        // A gear.
+        "settings" => {
+            let teeth: Vec<Pos2> = (0..48)
+                .map(|k| {
+                    let a = k as f32 / 48.0 * std::f32::consts::TAU;
+                    let r = if (k / 3) % 2 == 0 { 0.42 } else { 0.32 } * s;
+                    pos2(c.x + r * a.cos(), c.y + r * a.sin())
+                })
+                .collect();
+            p.add(Shape::closed_line(teeth, line));
+            p.circle_stroke(c, 0.13 * s, bold);
+        }
+        // A band marked on a frequency axis.
+        "band" => {
+            poly(&[(0.08, 0.78), (0.92, 0.78)], false, line);
+            p.rect_filled(rect(0.3, 0.3, 0.7, 0.72), 1.5, accent.gamma_multiply(0.35));
+            poly(&[(0.3, 0.86), (0.3, 0.26)], false, bold);
+            poly(&[(0.7, 0.86), (0.7, 0.26)], false, bold);
+        }
+        // A tick in a circle: the results' checks.
+        "check" => {
+            p.circle_stroke(c, 0.38 * s, line);
+            poly(&[(0.3, 0.52), (0.45, 0.66), (0.72, 0.36)], false, bold);
+        }
+        // A page of numbers: a Touchstone file.
+        "touchstone" => {
+            poly(&[(0.2, 0.1), (0.62, 0.1), (0.8, 0.28), (0.8, 0.9), (0.2, 0.9)], true, line);
+            for y in [0.38, 0.52, 0.66, 0.8] {
+                poly(&[(0.3, y), (0.46, y)], false, bold);
+                poly(&[(0.54, y), (0.7, y)], false, line);
+            }
+        }
+        // A house: the start page.
+        "start" => {
+            poly(&[(0.1, 0.5), (0.5, 0.14), (0.9, 0.5)], false, bold);
+            poly(&[(0.2, 0.42), (0.2, 0.86), (0.8, 0.86), (0.8, 0.42)], false, line);
+            p.rect_filled(rect(0.42, 0.6, 0.58, 0.86), 1.0, accent);
+        }
         _ => {
             p.rect_stroke(rect(0.2, 0.2, 0.8, 0.8), 3.0, line, egui::StrokeKind::Middle);
         }
@@ -280,6 +379,12 @@ pub fn for_command(id: &str) -> &'static str {
         "view.field" => "field",
         "file.sample" => "sample",
         "units.set" => "units",
+        "project.frequency" => "band",
+        "results.check" => "check",
+        "results.touchstone" => "touchstone",
+        "file.new" => "new",
+        "file.open" => "open_file",
+        "file.save" => "save",
         "model.summary" => "summary",
         _ => "",
     }

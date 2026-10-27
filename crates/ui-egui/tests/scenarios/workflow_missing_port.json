@@ -7,7 +7,7 @@
   ]}},
   {"expect": {"inspect": {"workflow.steps.geometry": "done", "workflow.steps.mesh": "done", "workflow.steps.excitation": "missing", "workflow.messages.excitation.0.command": "model.port.create"}}},
   {"click": "step:excitation"},
-  {"expect": {"inspect": {"workflow.step": "excitation", "view3d.overlay": "ports"}, "handles": ["step:fix:0", "steppanel:model.port.create"]}},
+  {"expect": {"inspect": {"workflow.step": "excitation", "view3d.overlay": "ports"}, "handles": ["step:fix:0", "toolbar:model.port.create"]}},
   {"shot": "missing-port-excitation"},
   {"note": "A sweep is chosen in Setup; Run refuses it"},
   {"click": "step:setup"},

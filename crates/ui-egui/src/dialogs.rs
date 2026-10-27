@@ -403,7 +403,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
             Some((a, z)) => json!({"start": a, "stop": z}),
             None => json!({"start": 8, "stop": 12}),
         },
-        "file.save" | "file.open" => json!({"path": "project.emcraft.json"}),
+        "file.save" | "file.open" => json!({"path": "project.emcraft"}),
         "results.touchstone" => json!({"path": format!("emcraft.s{}p", ports.max(1)), "format": "ri"}),
         "results.compare" => json!({"modes": 160}),
         "file.sample" => json!({"name": "highpass", "solve": true}),

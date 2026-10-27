@@ -7,12 +7,12 @@
 //! warnings can be accepted), Results marks results of a changed model stale and exports and
 //! checks them.
 
-use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
+use egui::{Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::{Value, json};
 
 use crate::scene3d::Overlay;
 use crate::theme::Tokens;
-use crate::{EmcraftApp, UiError, View, dialogs, glyphs, scenario, ui_kit};
+use crate::{EmcraftApp, UiError, View, dialogs, scenario, ui_kit};
 
 pub use emcraft_engine::workflow::{Check, Status, Step, StepState};
 
@@ -355,7 +355,6 @@ pub fn panel(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         checks(app, ui, &state, &t);
                         body(app, ui, step, &states, &t);
-                        commands(app, ui, step, &t);
                     });
                 if app.dialog.is_some() {
                     ui.add_space(6.0);
@@ -411,52 +410,6 @@ fn fix_label(command: &str) -> String {
         Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => format!("Go to {}", step.label()),
         Some(Step::Intent) if command == "project.frequency" => "Set the band".into(),
         _ => format!("Fix: {}", crate::ribbon::button_label(command)),
-    }
-}
-
-/// The step's commands as buttons.
-fn commands(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, t: &Tokens) {
-    let list = step.commands();
-    if list.is_empty() {
-        return;
-    }
-    ui_kit::section(ui, "Commands");
-    let busy = app.busy();
-    let mut chosen = None;
-    ui.horizontal_wrapped(|ui| {
-        for id in list {
-            let (r, resp) = ui.allocate_exact_size(vec2(96.0, 54.0), if busy { Sense::hover() } else { Sense::click() });
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, !busy, crate::ribbon::button_label(id)));
-            let active = app.dialog.as_ref().is_some_and(|d| d.command.id == *id);
-            if active {
-                ui.painter().rect_filled(r, t.radius_sm, t.accent_soft);
-            } else if resp.hovered() && !busy {
-                ui.painter().rect_filled(r, t.radius_sm, t.hover);
-            }
-            glyphs::paint(
-                ui.painter(),
-                Rect::from_center_size(pos2(r.center().x, r.top() + 16.0), vec2(22.0, 22.0)),
-                glyphs::for_command(id),
-                t.icon,
-                t.accent,
-            );
-            ui.painter().text(
-                pos2(r.center().x, r.top() + 40.0),
-                Align2::CENTER_CENTER,
-                crate::ribbon::button_label(id),
-                FontId::proportional(t.font_small),
-                t.text,
-            );
-            scenario::publish_target(&format!("steppanel:{id}"), r);
-            if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked() {
-                chosen = Some(*id);
-            }
-        }
-    });
-    if let Some(id) = chosen
-        && let Err(e) = app.open_dialog(id)
-    {
-        app.message(e, true);
     }
 }
 
@@ -978,32 +931,12 @@ fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &To
     if stale {
         ui_kit::error_band(ui, "These results belong to an earlier state of the model.");
     }
-    let s = &app.session;
-    let views: Vec<View> = [
-        (s.results.sweep.is_some() || s.results.time_domain.is_some(), View::SParameters),
-        (s.results.sweep.is_some() || s.results.eigen.is_some() || s.results.radiation.is_some(), View::Field),
-        (s.results.sweep.is_some() || s.results.eigen.is_some() || s.results.radiation.is_some(), View::Model),
-        (s.results.eigen.is_some(), View::Eigenmodes),
-        (s.results.radiation.is_some() || s.results.td_radiation.is_some(), View::FarField),
-        (s.results.sweep.is_some(), View::Compare),
-    ]
-    .into_iter()
-    .filter_map(|(on, v)| on.then_some(v))
-    .collect();
-    if views.is_empty() {
-        ui.label(egui::RichText::new("No results yet: Run (step 7).").size(t.font_small).color(t.text_dim));
+    if !app.session.results.any() {
+        ui.label(
+            egui::RichText::new("No results yet: Run (step 7). The view tabs over the viewport show them.").size(t.font_small).color(t.text_dim),
+        );
         return;
     }
-    ui_kit::section(ui, "Show");
-    ui.horizontal_wrapped(|ui| {
-        for v in views {
-            let r = ui.selectable_label(app.view == v, if v == View::Model { "Field in 3D" } else { v.label() });
-            scenario::publish_target(&format!("results:show:{}", v.id()), r.rect);
-            if r.clicked() {
-                crate::ribbon::show_view(app, v);
-            }
-        }
-    });
     if app.session.results.sweep.is_none() {
         return;
     }

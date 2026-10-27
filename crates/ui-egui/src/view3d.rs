@@ -15,7 +15,7 @@ use emcraft_engine::view::Plane;
 
 use crate::scene3d::{self, Built, Overlay};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, Picture, scenario};
+use crate::{EmcraftApp, Picture, glyphs, scenario};
 
 /// The most pixels the view is drawn with (beyond, it is drawn smaller and scaled up).
 const MAX_PIXELS: f64 = 2.4e6;
@@ -251,7 +251,6 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         }
     }
     legend(&p, rect, &built.legend, &t);
-    gizmo(&p, rect, &cam, &t);
     // The field's plane: its box in the model and the view that faces it.
     let facing = layer.as_ref().map(|(plot, plane, at)| {
         let l = app.session.display.length;
@@ -264,7 +263,8 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
             Plane::Cross => ([h0, v0, lo[2] + at], [h1, v1, lo[2] + at], StandardView::Front),
         }
     });
-    toolbar(app, ui, rect, facing);
+    navigator(app, ui, rect);
+    nav_bar(app, ui, rect, facing);
 }
 
 impl Built {
@@ -296,70 +296,108 @@ fn legend(p: &egui::Painter, rect: Rect, items: &[(String, Rgb)], t: &Tokens) {
     }
 }
 
-/// The axes' directions in the corner: x red, y green, z blue.
-fn gizmo(p: &egui::Painter, rect: Rect, cam: &Camera, t: &Tokens) {
-    let c = pos2(rect.left() + 46.0, rect.bottom() - 46.0);
-    p.circle_filled(c, 36.0, t.panel.gamma_multiply(0.7));
-    let axes = view3d::axes_on_screen(cam);
-    let colors = [Color32::from_rgb(214, 60, 60), Color32::from_rgb(60, 160, 70), Color32::from_rgb(60, 110, 220)];
-    // Farthest first, so the one towards the eye is on top.
-    let b = cam.basis();
-    let mut order = [0usize, 1, 2];
-    order.sort_by(|&i, &j| b.forward[j].total_cmp(&b.forward[i]));
-    for k in order {
-        let e = c + vec2(axes[k][0] as f32, axes[k][1] as f32) * 26.0;
-        p.line_segment([c, e], Stroke::new(2.0, colors[k]));
-        p.text(c + (e - c) * 1.25, Align2::CENTER_CENTER, ["X", "Y", "Z"][k], FontId::proportional(t.font_small), colors[k]);
+/// The axes' colours: x red, y green, z blue.
+const AXIS_COLORS: [Color32; 3] = [Color32::from_rgb(214, 60, 60), Color32::from_rgb(60, 160, 70), Color32::from_rgb(60, 110, 220)];
+
+/// The standard view looking from the side of axis `k` given by `sign` (its eye there).
+fn view_from(k: usize, sign: f64) -> Option<StandardView> {
+    StandardView::ALL.into_iter().filter(|v| *v != StandardView::Iso).find(|v| {
+        let mut c = Camera::default();
+        c.standard(*v);
+        // The eye sits against the view direction.
+        -c.basis().forward[k] * sign > 0.99
+    })
+}
+
+/// The axes navigator in the bottom-left corner: the six signed axes as tips round a disc, the
+/// positive ones filled with their letter, the negative ones rings; a click views the model
+/// from that side.
+fn navigator(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect) {
+    let t = Tokens::get();
+    let cam = app.view3d.camera;
+    let c = pos2(rect.left() + 52.0, rect.bottom() - 52.0);
+    let p = ui.painter().with_clip_rect(rect);
+    p.circle_filled(c, 44.0, t.panel.gamma_multiply(0.75));
+    let axes = view3d::axes_on_screen(&cam);
+    let forward = cam.basis().forward;
+    // Farthest first, so the tips towards the eye are drawn (and hit) on top.
+    let mut tips: Vec<(usize, f64)> = (0..3).flat_map(|k| [(k, 1.0), (k, -1.0)]).collect();
+    tips.sort_by(|a, b| (forward[b.0] * b.1).total_cmp(&(forward[a.0] * a.1)));
+    let mut clicked = None;
+    for (k, sign) in tips {
+        let dir = vec2(axes[k][0] as f32, axes[k][1] as f32) * sign as f32;
+        let tip = c + dir * 30.0;
+        let color = AXIS_COLORS[k];
+        if sign > 0.0 {
+            p.line_segment([c, tip], Stroke::new(2.0, color));
+        }
+        let r = Rect::from_center_size(tip, vec2(18.0, 18.0));
+        let Some(view) = view_from(k, sign) else { continue };
+        let resp = ui.interact(r, ui.id().with(("navigator", k, sign as i32)), Sense::click());
+        let name = format!("{}{}", if sign > 0.0 { "+" } else { "−" }, ["X", "Y", "Z"][k]);
+        let hover = resp.hovered();
+        if sign > 0.0 {
+            p.circle_filled(tip, if hover { 10.0 } else { 9.0 }, color);
+            p.text(tip, Align2::CENTER_CENTER, &name[1..], FontId::proportional(t.font_small), Color32::WHITE);
+        } else {
+            p.circle_filled(tip, 7.0, t.panel);
+            p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
+        }
+        scenario::publish_target(&format!("view3d:std:{}", view.name()), r);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.name()));
+        if resp.on_hover_text(format!("View from {name} ({})", view.name())).clicked() {
+            clicked = Some(view);
+        }
+    }
+    if let Some(v) = clicked {
+        app.view3d.standard(v);
     }
 }
 
-/// Fit, the standard views and the projection, at the top right.
-fn toolbar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, facing: Option<([f64; 3], [f64; 3], StandardView)>) {
+/// The view's tools as icons in a bar at the bottom centre: fit, the home (isometric) view,
+/// facing the field's plane (in Results), perspective or orthographic.
+fn nav_bar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, facing: Option<([f64; 3], [f64; 3], StandardView)>) {
     let t = Tokens::get();
     let ortho = app.view3d.camera.projection == Projection::Orthographic;
-    let mut items: Vec<(String, String)> = vec![("Fit".into(), "view3d:fit".into())];
+    let mut items: Vec<(&str, &str, &str)> =
+        vec![("fit", "view3d:fit", "Fit the model to the view (double-click the view)"), ("home", "view3d:std:iso", "Home view (isometric)")];
     if facing.is_some() {
-        items.push(("Face the plane".into(), "view3d:face".into()));
+        items.push(("lookat", "view3d:face", "Face the field's plane"));
     }
-    for v in StandardView::ALL {
-        let name = v.name();
-        let mut label = name.to_owned();
-        if let Some(f) = label.get_mut(0..1) {
-            f.make_ascii_uppercase();
-        }
-        items.push((label, format!("view3d:std:{name}")));
-    }
-    items.push((if ortho { "Orthographic" } else { "Perspective" }.into(), "view3d:projection".into()));
-    let font = FontId::proportional(t.font_small);
-    let widths: Vec<f32> = items.iter().map(|(s, _)| ui.painter().layout_no_wrap(s.clone(), font.clone(), t.text).size().x + 14.0).collect();
-    let total: f32 = widths.iter().sum::<f32>() + 2.0 * items.len() as f32;
-    let mut x = rect.right() - total - 10.0;
-    let y = rect.top() + 10.0;
-    let bar = Rect::from_min_size(pos2(x - 4.0, y - 3.0), vec2(total + 6.0, 26.0));
-    ui.painter().rect_filled(bar, 6.0, t.panel.gamma_multiply(0.9));
-    ui.painter().rect_stroke(bar, 6.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    for ((label, handle), w) in items.iter().zip(widths) {
-        let r = Rect::from_min_size(pos2(x, y), vec2(w, 20.0));
-        let resp = ui.interact(r, ui.id().with(handle.as_str()), Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    items.push(if ortho {
+        ("orthographic", "view3d:projection", "Orthographic — click for perspective")
+    } else {
+        ("perspective", "view3d:projection", "Perspective — click for orthographic")
+    });
+    let (size, pitch) = (28.0, 32.0);
+    let width = pitch * items.len() as f32 + 6.0;
+    let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 26.0), vec2(width, size + 8.0));
+    let p = ui.painter().with_clip_rect(rect);
+    let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|q| bar.expand(24.0).contains(q));
+    p.rect_filled(bar, 8.0, t.panel.gamma_multiply(if near { 0.95 } else { 0.6 }));
+    p.rect_stroke(bar, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    for (i, (glyph, handle, tip)) in items.into_iter().enumerate() {
+        let r = Rect::from_center_size(pos2(bar.left() + 3.0 + pitch * (i as f32 + 0.5), bar.center().y), vec2(size, size));
+        let resp = ui.interact(r, ui.id().with(handle), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
         if resp.hovered() {
-            ui.painter().rect_filled(r, 4.0, t.hover);
+            p.rect_filled(r, 5.0, t.hover);
         }
-        ui.painter().text(r.center(), Align2::CENTER_CENTER, label, font.clone(), t.text);
+        let ink = if near || resp.hovered() { t.text } else { t.text.gamma_multiply(0.7) };
+        glyphs::paint(&p, r.shrink(4.0), glyph, ink, t.accent);
         scenario::publish_target(handle, r);
-        if resp.clicked() {
-            match handle.strip_prefix("view3d:std:").and_then(StandardView::parse) {
-                Some(v) => app.view3d.standard(v),
-                None if handle == "view3d:fit" => app.view3d.fit_next = true,
-                None if handle == "view3d:face" => {
+        if resp.on_hover_text(tip).clicked() {
+            match handle {
+                "view3d:fit" => app.view3d.fit_next = true,
+                "view3d:std:iso" => app.view3d.standard(StandardView::Iso),
+                "view3d:face" => {
                     if let Some((lo, hi, v)) = facing {
                         app.view3d.camera.standard(v);
                         app.view3d.camera.fit(lo, hi, (rect.width() / rect.height().max(1.0)) as f64);
                     }
                 }
-                None => app.view3d.toggle_projection(),
+                _ => app.view3d.toggle_projection(),
             }
         }
-        x += w + 2.0;
     }
 }
