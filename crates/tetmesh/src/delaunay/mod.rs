@@ -40,7 +40,7 @@
 //!   no tetrahedra: [`Triangulation::dimension`] reports their affine dimension and the
 //!   tetrahedron lists are empty. Points arriving later that leave the plane start the 3D
 //!   triangulation.
-//! - **Hostile coordinates** are rejected at the boundary by [`Point3::new`] (NaN, infinities,
+//! - **Hostile coordinates** are rejected at the boundary by [`ExactPoint3::new`] (NaN, infinities,
 //!   magnitudes outside `[2⁻¹²⁰, 2¹⁶⁰]`); at most [`MAX_POINTS`] points.
 //!
 //! # Determinism
@@ -61,7 +61,7 @@ mod verify;
 #[cfg(test)]
 mod tests;
 
-use crate::predicates::{Axis, GenericPoint, Point3, Sign, generic_orient2d, insphere_sos, orient3d, tet_volume_sign};
+use crate::predicates::{Axis, ExactPoint3, GenericPoint, Sign, generic_orient2d, insphere_sos, orient3d, tet_volume_sign};
 use crate::{Error, Result};
 
 /// The infinite vertex of the ghost tetrahedra that close the convex hull.
@@ -106,7 +106,7 @@ pub enum Insertion {
 /// gives positive volume exactly when that point is beyond the hull face.
 #[derive(Debug, Clone)]
 pub struct Triangulation {
-    points: Vec<Point3>,
+    points: Vec<ExactPoint3>,
     /// `NONE`, or the vertex this point duplicates.
     duplicate_of: Vec<u32>,
     tets: Vec<[u32; 4]>,
@@ -148,20 +148,20 @@ fn corrupt(what: &str) -> Error {
 
 /// The sign of the volume `det[b − a, c − a, d − a]` (the tet4 convention).
 #[inline]
-fn volume_sign(p: [&Point3; 4]) -> Sign {
+fn volume_sign(p: [&ExactPoint3; 4]) -> Sign {
     let [a, b, c, d] = p;
     tet_volume_sign(a, b, c, d)
 }
 
 /// Whether three points are collinear: all three axis projections are (exactly).
-fn collinear(a: &Point3, b: &Point3, c: &Point3) -> bool {
+fn collinear(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3) -> bool {
     let [a, b, c] = [a, b, c].map(|p| GenericPoint::from(*p));
     [Axis::X, Axis::Y, Axis::Z].into_iter().all(|axis| generic_orient2d(&a, &b, &c, axis).is_zero())
 }
 
-/// A coordinate triple as a [`Point3`], with `-0.0` made `+0.0` so equal points have equal bits.
-fn admit([x, y, z]: [f64; 3]) -> Result<Point3> {
-    Point3::new(x + 0.0, y + 0.0, z + 0.0)
+/// A coordinate triple as a [`ExactPoint3`], with `-0.0` made `+0.0` so equal points have equal bits.
+fn admit([x, y, z]: [f64; 3]) -> Result<ExactPoint3> {
+    ExactPoint3::new(x + 0.0, y + 0.0, z + 0.0)
 }
 
 impl Triangulation {
@@ -236,7 +236,7 @@ impl Triangulation {
     }
 
     /// The points, by vertex id (including duplicates).
-    pub fn points(&self) -> &[Point3] {
+    pub fn points(&self) -> &[ExactPoint3] {
         &self.points
     }
 
@@ -300,7 +300,7 @@ impl Triangulation {
 
     // ---- internals ----
 
-    fn pt(&self, v: u32) -> Result<&Point3> {
+    fn pt(&self, v: u32) -> Result<&ExactPoint3> {
         self.points.get(v as usize).ok_or_else(|| corrupt("vertex id"))
     }
 
@@ -313,12 +313,12 @@ impl Triangulation {
     }
 
     /// The four points of a finite tetrahedron.
-    fn pts(&self, [a, b, c, d]: [u32; 4]) -> Result<[&Point3; 4]> {
+    fn pts(&self, [a, b, c, d]: [u32; 4]) -> Result<[&ExactPoint3; 4]> {
         Ok([self.pt(a)?, self.pt(b)?, self.pt(c)?, self.pt(d)?])
     }
 
     /// The four points of `vs` with slot `k` replaced by `p` (`k` may hold the ghost).
-    fn with_point<'a>(&'a self, vs: [u32; 4], k: usize, p: &'a Point3) -> Result<[&'a Point3; 4]> {
+    fn with_point<'a>(&'a self, vs: [u32; 4], k: usize, p: &'a ExactPoint3) -> Result<[&'a ExactPoint3; 4]> {
         let mut out = [p; 4];
         for (i, (o, &v)) in out.iter_mut().zip(&vs).enumerate() {
             if i != k {
@@ -437,7 +437,7 @@ impl Triangulation {
 
     /// Whether `p` is in conflict with tetrahedron `t` (inside its perturbed circumsphere). Only
     /// `dig` calls it: it reads the current cavity marks.
-    fn conflict(&self, t: u32, p: &Point3) -> Result<bool> {
+    fn conflict(&self, t: u32, p: &ExactPoint3) -> Result<bool> {
         let vs = self.tet_at(t)?;
         let Some(g) = vs.iter().position(|&v| v == GHOST) else {
             let [a, b, c, d] = self.pts(vs)?;
@@ -467,7 +467,7 @@ impl Triangulation {
     }
 
     /// The visibility walk towards `p` from `start` (Devillers, Pion, Teillaud 2002).
-    fn walk(&self, p: &Point3, start: u32, rng: &mut u64) -> Result<Location> {
+    fn walk(&self, p: &ExactPoint3, start: u32, rng: &mut u64) -> Result<Location> {
         let mut t = start;
         let vs = self.tet_at(t)?;
         if let Some(g) = vs.iter().position(|&v| v == GHOST) {
@@ -512,7 +512,7 @@ impl Triangulation {
     }
 
     /// `p` lies in the closed finite tetrahedron `t`: one of its vertices, or inside.
-    fn inside(&self, vs: [u32; 4], t: u32, p: &Point3) -> Result<Location> {
+    fn inside(&self, vs: [u32; 4], t: u32, p: &ExactPoint3) -> Result<Location> {
         for v in vs {
             if self.pt(v)? == p {
                 return Ok(Location::Vertex(v));
@@ -522,7 +522,7 @@ impl Triangulation {
     }
 
     /// Point location by testing every tetrahedron (the walk's fallback).
-    fn locate_by_scan(&self, p: &Point3) -> Result<Location> {
+    fn locate_by_scan(&self, p: &ExactPoint3) -> Result<Location> {
         let mut outside = None;
         for (t, &vs) in self.tets.iter().enumerate() {
             if vs[0] == DEAD {
@@ -592,7 +592,7 @@ impl Triangulation {
 
     /// The cavity of `p`: every tetrahedron in conflict, grown by adjacency from `seed`, and the
     /// faces between it and the rest.
-    fn dig(&mut self, seed: u32, p: &Point3, s: &mut Scratch) -> Result<()> {
+    fn dig(&mut self, seed: u32, p: &ExactPoint3, s: &mut Scratch) -> Result<()> {
         self.next_epoch();
         let (inside, outside) = (self.epoch, self.epoch + 1);
         s.cavity.clear();

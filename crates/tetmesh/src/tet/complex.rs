@@ -27,7 +27,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::compat::{normalized_jacobian, tet4_jacobian};
 
-use crate::predicates::{Point3, Sign, insphere, tet_volume_sign};
+use crate::predicates::{ExactPoint3, Sign, insphere, tet_volume_sign};
 use crate::surface::Box3;
 use crate::surface::intersect::{is_degenerate, projections_apart, surface_pair_intersects};
 use crate::{Error, Result};
@@ -212,7 +212,7 @@ pub enum Step {
     },
     Moved {
         v: u32,
-        from: Point3,
+        from: ExactPoint3,
     },
     Added {
         v: u32,
@@ -245,7 +245,7 @@ pub struct Journal {
 /// The mutable tetrahedral mesh (see the module docs).
 #[derive(Debug, Clone)]
 pub struct TetComplex {
-    pts: Vec<Point3>,
+    pts: Vec<ExactPoint3>,
     kinds: Vec<VertexKind>,
     tets: Vec<[u32; 4]>,
     adj: Vec<[u32; 4]>,
@@ -329,7 +329,7 @@ impl TetComplex {
         if kinds.len() != points.len() {
             return Err(Error::Invalid("one vertex kind per point".into()));
         }
-        let pts = points.iter().map(|p| Point3::try_from(*p)).collect::<Result<Vec<_>>>()?;
+        let pts = points.iter().map(|p| ExactPoint3::try_from(*p)).collect::<Result<Vec<_>>>()?;
         let mut cx = TetComplex {
             vtets: vec![Vec::new(); pts.len()],
             pts,
@@ -397,7 +397,7 @@ impl TetComplex {
         self.pts.len()
     }
 
-    pub fn point(&self, v: u32) -> Result<Point3> {
+    pub fn point(&self, v: u32) -> Result<ExactPoint3> {
         self.pts.get(v as usize).copied().ok_or_else(|| corrupt("vertex id"))
     }
 
@@ -503,12 +503,12 @@ impl TetComplex {
     }
 
     /// The exact orientation of three vertices and a point.
-    pub fn orient_with(&self, [a, b, c]: [u32; 3], p: &Point3) -> Result<Sign> {
+    pub fn orient_with(&self, [a, b, c]: [u32; 3], p: &ExactPoint3) -> Result<Sign> {
         Ok(tet_volume_sign(&self.point(a)?, &self.point(b)?, &self.point(c)?, p))
     }
 
     /// Whether `p` lies strictly inside the circumsphere of the positive tetrahedron `vs`.
-    pub fn in_sphere(&self, vs: [u32; 4], p: &Point3) -> Result<bool> {
+    pub fn in_sphere(&self, vs: [u32; 4], p: &ExactPoint3) -> Result<bool> {
         let [a, b, c, d] = [self.point(vs[0])?, self.point(vs[1])?, self.point(vs[2])?, self.point(vs[3])?];
         // Shewchuk's insphere is positive inside for orient3d(a, b, c, d) > 0, which is the
         // negative tet4 orientation.
@@ -775,7 +775,7 @@ impl TetComplex {
 
     /// Walk from tetrahedron `start` toward `p` (visibility walk, faces tried in a fixed
     /// pseudo-random order so it cannot cycle forever), at most `cap` steps.
-    pub fn walk(&self, start: u32, p: &Point3, cap: usize) -> Result<Option<Walk>> {
+    pub fn walk(&self, start: u32, p: &ExactPoint3, cap: usize) -> Result<Option<Walk>> {
         let mut t = start;
         let mut rng: u32 = 0x9E37_79B9;
         for _ in 0..cap {
@@ -813,7 +813,7 @@ impl TetComplex {
     }
 
     /// Add a vertex (no tetrahedron uses it yet).
-    pub fn add_point(&mut self, p: Point3, kind: VertexKind) -> Result<u32> {
+    pub fn add_point(&mut self, p: ExactPoint3, kind: VertexKind) -> Result<u32> {
         if self.pts.len() >= self.max_points {
             return Err(Error::Limit(format!("{} vertices; the limit is {}", self.pts.len(), self.max_points)));
         }
@@ -884,7 +884,7 @@ impl TetComplex {
 
     /// Move a vertex. The caller has checked that every tetrahedron around it stays positive
     /// ([`Self::move_is_valid`]).
-    pub fn move_point(&mut self, v: u32, p: Point3) -> Result<()> {
+    pub fn move_point(&mut self, v: u32, p: ExactPoint3) -> Result<()> {
         let slot = self.pts.get_mut(v as usize).ok_or_else(|| corrupt("vertex id"))?;
         let from = *slot;
         *slot = p;
@@ -895,7 +895,7 @@ impl TetComplex {
     }
 
     /// Vertex `u`, at `p` when it is the moved `v`.
-    fn point_moved(&self, u: u32, moved: Option<(u32, Point3)>) -> Result<Point3> {
+    fn point_moved(&self, u: u32, moved: Option<(u32, ExactPoint3)>) -> Result<ExactPoint3> {
         match moved {
             Some((v, p)) if v == u => Ok(p),
             _ => self.point(u),
@@ -905,13 +905,13 @@ impl TetComplex {
     /// Whether every tetrahedron of `star` (around `v`) stays positive and admissible with `v`
     /// at `p`, every boundary face round `v` turns by at most 30° ([`BOUNDARY_TURN_COS`]), and
     /// none passes through the rest of the skin ([`Self::skin_allows`]).
-    pub fn move_is_valid(&self, v: u32, p: &Point3, star: &[u32]) -> Result<bool> {
+    pub fn move_is_valid(&self, v: u32, p: &ExactPoint3, star: &[u32]) -> Result<bool> {
         Ok(self.move_keeps_star(v, p, star)? && self.skin_allows(v, p, star)?)
     }
 
     /// [`Self::move_is_valid`] without the skin check: for a vertex moved in several steps,
     /// whose final place alone is checked against the skin ([`Self::skin_allows`]).
-    pub fn move_keeps_star(&self, v: u32, p: &Point3, star: &[u32]) -> Result<bool> {
+    pub fn move_keeps_star(&self, v: u32, p: &ExactPoint3, star: &[u32]) -> Result<bool> {
         for &t in star {
             let vs = self.tet(t)?;
             let k = vs.iter().position(|&u| u == v).ok_or_else(|| corrupt("star"))?;
@@ -942,7 +942,7 @@ impl TetComplex {
 
     /// Whether, with `v` at `p`, the boundary faces round it (in `star`) meet the rest of the skin
     /// properly. True without a skin index ([`Self::index_skin`]).
-    pub fn skin_allows(&self, v: u32, p: &Point3, star: &[u32]) -> Result<bool> {
+    pub fn skin_allows(&self, v: u32, p: &ExactPoint3, star: &[u32]) -> Result<bool> {
         if self.skin.is_none() {
             return Ok(true);
         }
@@ -1365,7 +1365,7 @@ impl TetComplex {
     }
 
     /// The bounding box of a face, with `v` at `p` when given.
-    fn face_box(&self, f: [u32; 3], moved: Option<(u32, Point3)>) -> Result<Box3> {
+    fn face_box(&self, f: [u32; 3], moved: Option<(u32, ExactPoint3)>) -> Result<Box3> {
         let mut b = Box3::EMPTY;
         for u in f {
             b.add_point(self.point_moved(u, moved)?.coords());
@@ -1377,7 +1377,7 @@ impl TetComplex {
     /// another of `faces`, in more than their shared vertices (exact; [`surface_pair_intersects`]).
     /// Faces holding `v` and the boundary faces `removed` (sorted keys, sorted) are passed over.
     /// False without a skin index.
-    fn skin_crossed(&self, faces: &[[u32; 3]], moved: Option<(u32, Point3)>, removed: &[[u32; 3]]) -> Result<bool> {
+    fn skin_crossed(&self, faces: &[[u32; 3]], moved: Option<(u32, ExactPoint3)>, removed: &[[u32; 3]]) -> Result<bool> {
         let Some(skin) = &self.skin else { return Ok(false) };
         if faces.is_empty() {
             return Ok(false);

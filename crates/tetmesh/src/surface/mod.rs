@@ -57,7 +57,7 @@ use crate::compat::{MAX_COORD, MAX_ELEMENTS, MAX_NODES};
 
 use crate::message;
 use crate::message::{Message, length, point, volume};
-use crate::predicates::Point3;
+use crate::predicates::ExactPoint3;
 use crate::vec3::{cross, norm, sub};
 use crate::{Error, Result};
 
@@ -332,7 +332,7 @@ impl BoundarySurface {
         if welded.triangles.is_empty() {
             return Err(Error::Invalid("every triangle collapses when the vertices are welded".into()));
         }
-        let pts: Vec<Point3> = welded.points.iter().map(|&p| Point3::try_from(p)).collect::<Result<_>>()?;
+        let pts: Vec<ExactPoint3> = welded.points.iter().map(|&p| ExactPoint3::try_from(p)).collect::<Result<_>>()?;
         let tri_face: Vec<u32> = welded.source_triangle.iter().map(|&t| tri_face.get(t as usize).copied().unwrap_or(0)).collect();
         let surface =
             Surface { pts: &pts, triangles: &welded.triangles, source_vertex: &welded.source_vertex, source_triangle: &welded.source_triangle };
@@ -369,8 +369,8 @@ impl BoundarySurface {
     }
 
     /// Vertex `v` as a predicate point.
-    pub fn point3(&self, v: u32) -> Option<Point3> {
-        self.points.get(v as usize).and_then(|&p| Point3::try_from(p).ok())
+    pub fn point3(&self, v: u32) -> Option<ExactPoint3> {
+        self.points.get(v as usize).and_then(|&p| ExactPoint3::try_from(p).ok())
     }
 
     /// Triangles over [`Self::points`], counter-clockwise seen from outside the solid.
@@ -471,23 +471,23 @@ pub(crate) fn index(i: usize) -> u32 {
 
 /// The welded surface the checks run on.
 pub(crate) struct Surface<'a> {
-    pts: &'a [Point3],
+    pts: &'a [ExactPoint3],
     triangles: &'a [[u32; 3]],
     source_vertex: &'a [u32],
     source_triangle: &'a [u32],
 }
 
 impl Surface<'_> {
-    fn point(&self, v: u32) -> Result<&Point3> {
+    fn point(&self, v: u32) -> Result<&ExactPoint3> {
         self.pts.get(v as usize).ok_or_else(|| Error::Failed(format!("surface: no vertex {v}")))
     }
 
-    fn corners(&self, t: &[u32; 3]) -> Result<[&Point3; 3]> {
+    fn corners(&self, t: &[u32; 3]) -> Result<[&ExactPoint3; 3]> {
         Ok([self.point(t[0])?, self.point(t[1])?, self.point(t[2])?])
     }
 
     fn xyz(&self, v: u32) -> [f64; 3] {
-        self.pts.get(v as usize).map_or([0.0; 3], Point3::coords)
+        self.pts.get(v as usize).map_or([0.0; 3], ExactPoint3::coords)
     }
 
     /// The corner positions of triangle `t`.

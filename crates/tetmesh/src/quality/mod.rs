@@ -39,7 +39,7 @@ pub use report::{
     GateOptions, GateReport, Marked, MetricStats, QualityReport, VOLUME_TOLERANCE, enclosed_volume, validity_gate_checks, validity_gate_elements,
 };
 
-use crate::predicates::{Point2, Point3, Sign, orient2d, snap_to_domain, tet_volume_sign};
+use crate::predicates::{ExactPoint2, ExactPoint3, Sign, orient2d, snap_to_domain, tet_volume_sign};
 use crate::{Error, Result};
 
 /// A quality metric. Angles are in degrees.
@@ -208,7 +208,7 @@ fn checked(kind: ElementKind, xyz: &[[f64; 3]], p: &[[f64; 3]]) -> Result<(Optio
 /// The exact orientation of a tetrahedron (positive for node 4 on the side of face 1-2-3's
 /// right-hand normal), or `None` when a coordinate is outside the predicates' domain.
 fn exact_tet_sign(xyz: &[[f64; 3]]) -> Option<Sign> {
-    let p = |i: usize| xyz.get(i).and_then(|c| Point3::try_from(*c).ok());
+    let p = |i: usize| xyz.get(i).and_then(|c| ExactPoint3::try_from(*c).ok());
     Some(tet_volume_sign(&p(0)?, &p(1)?, &p(2)?, &p(3)?))
 }
 
@@ -301,13 +301,13 @@ fn generic_quality(kind: ElementKind, xyz: &[[f64; 3]], p: &[[f64; 3]]) -> Resul
 /// smallest magnitude are rounded to zero first.
 pub fn planar_quad_validity(p: &[[f64; 2]; 4]) -> Result<Validity> {
     check_coordinates(p.as_flattened())?;
-    let [a, b, c, d] = p.map(|c| Point2::new(snap_to_domain(c[0]), snap_to_domain(c[1])));
+    let [a, b, c, d] = p.map(|c| ExactPoint2::new(snap_to_domain(c[0]), snap_to_domain(c[1])));
     Ok(if turns_left([&a?, &b?, &c?, &d?]) { Validity::Valid } else { Validity::Invalid })
 }
 
 /// The exact corner test of [`planar_quad_validity`] on admissible points: every corner of the
 /// quadrilateral turns left.
-pub(crate) fn turns_left(p: [&Point2; 4]) -> bool {
+pub(crate) fn turns_left(p: [&ExactPoint2; 4]) -> bool {
     (0..4).all(|i| orient2d(p[(i + 3) % 4], p[i], p[(i + 1) % 4]) == Sign::Positive)
 }
 

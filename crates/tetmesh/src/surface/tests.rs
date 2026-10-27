@@ -345,8 +345,8 @@ fn random_soups_never_panic() {
     }
 }
 
-fn p3(c: [f64; 3]) -> Point3 {
-    Point3::try_from(c).unwrap()
+fn p3(c: [f64; 3]) -> ExactPoint3 {
+    ExactPoint3::try_from(c).unwrap()
 }
 
 #[test]
@@ -388,8 +388,8 @@ fn exact_pair_tests() {
 }
 
 /// The exact orientation of `c` against the directed line `ab` seen from +z, as -1, 0, 1.
-fn orient2d_sign(a: &Point3, b: &Point3, c: &Point3) -> i32 {
-    let p = |q: &Point3| crate::predicates::Point2::new(q.coords()[0], q.coords()[1]).unwrap();
+fn orient2d_sign(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3) -> i32 {
+    let p = |q: &ExactPoint3| crate::predicates::ExactPoint2::new(q.coords()[0], q.coords()[1]).unwrap();
     crate::predicates::orient2d(&p(a), &p(b), &p(c)) as i32
 }
 

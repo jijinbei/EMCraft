@@ -20,7 +20,7 @@
 //! (the spheres around acute vertices keep splits from cascading); the number of Steiner points
 //! and of passes is still capped.
 
-use crate::predicates::{Axis, GenericPoint, Lnc, Point3, generic_orient2d};
+use crate::predicates::{Axis, ExactPoint3, GenericPoint, Lnc, generic_orient2d};
 use crate::vec3::{cross, dot, norm, sub};
 use crate::{Error, Result};
 
@@ -285,6 +285,6 @@ impl Recovery {
 }
 
 /// The explicit point of an original segment endpoint.
-fn explicit(p: &GenericPoint) -> Result<Point3> {
+fn explicit(p: &GenericPoint) -> Result<ExactPoint3> {
     p.explicit().copied().ok_or_else(|| super::complex::corrupt("a segment endpoint is not an input vertex"))
 }

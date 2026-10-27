@@ -61,7 +61,7 @@ fn gate(tri: &Triangulation, expected: f64) -> f64 {
 
 /// The volume enclosed by the hull faces, outward oriented, through the quality module.
 fn hull_volume(tri: &Triangulation) -> f64 {
-    let points: Vec<[f64; 3]> = tri.points().iter().map(Point3::coords).collect();
+    let points: Vec<[f64; 3]> = tri.points().iter().map(ExactPoint3::coords).collect();
     let mut triangles = Vec::new();
     for t in 0..tri.slots() as u32 {
         let Some(vs) = tri.tet(t) else { continue };
@@ -86,7 +86,7 @@ fn check(tri: &Triangulation, hull_volume: f64) {
 /// Delaunay tetrahedra by definition: every positively oriented 4-subset whose perturbed
 /// circumsphere excludes every other point.
 fn brute_force(points: &[[f64; 3]]) -> Vec<[[u64; 3]; 4]> {
-    let p: Vec<Point3> = points.iter().map(|&c| Point3::try_from(c).unwrap()).collect();
+    let p: Vec<ExactPoint3> = points.iter().map(|&c| ExactPoint3::try_from(c).unwrap()).collect();
     let n = p.len();
     let mut out = Vec::new();
     for i in 0..n {

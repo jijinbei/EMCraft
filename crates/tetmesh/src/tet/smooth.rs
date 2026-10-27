@@ -21,7 +21,7 @@
 //!   convex hull of the active gradients, line search), applied only when the worst improves.
 
 use crate::Result;
-use crate::predicates::Point3;
+use crate::predicates::ExactPoint3;
 
 use super::complex::{NONE, TetComplex, VertexKind, face_toward};
 use super::measure::{self, P, add, dot, scale, sub};
@@ -270,7 +270,7 @@ pub fn smooth_vertex(cx: &mut TetComplex, ctx: &Context, v: u32) -> Result<bool>
     let (mut at_x, mut trial) = (Vec::with_capacity(local.tets.len()), Vec::with_capacity(local.tets.len()));
     let mut worst = local.qualities_at(x, &mut at_x);
     let (mut qs, mut active) = (Vec::with_capacity(local.tets.len()), Vec::with_capacity(local.tets.len()));
-    let mut to: Option<Point3> = None;
+    let mut to: Option<ExactPoint3> = None;
     for _ in 0..8 {
         // Qualities and gradients (central differences) of the tetrahedra near the worst.
         qs.clear();

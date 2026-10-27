@@ -4,7 +4,7 @@
 
 use super::meet::{in_closed_tet, meet_properly};
 use super::*;
-use crate::predicates::{GenericPoint, Lnc, Point3};
+use crate::predicates::{ExactPoint3, GenericPoint, Lnc};
 use crate::surface::{BoundarySurface, SurfaceOptions};
 use crate::vec3::{cross, dot, norm, sub};
 
@@ -164,7 +164,7 @@ fn caps_are_reported() {
 }
 
 fn e(x: f64, y: f64, z: f64) -> GenericPoint {
-    GenericPoint::Explicit(Point3::new(x, y, z).unwrap())
+    GenericPoint::Explicit(ExactPoint3::new(x, y, z).unwrap())
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn proper_meeting_handles_coplanar_and_shared_cases() {
     assert!(!in_closed_tet(&p, tet, 8).unwrap());
     // An LNC point on edge 0 3 is on the tet's boundary.
     let mut q = p.clone();
-    q.push(GenericPoint::Lnc(Lnc::new(&Point3::new(0.0, 0.0, 0.0).unwrap(), &Point3::new(0.0, 0.0, 1.0).unwrap(), 0.3).unwrap()));
+    q.push(GenericPoint::Lnc(Lnc::new(&ExactPoint3::new(0.0, 0.0, 0.0).unwrap(), &ExactPoint3::new(0.0, 0.0, 1.0).unwrap(), 0.3).unwrap()));
     assert!(in_closed_tet(&q, tet, 10).unwrap());
     assert!(!meet_properly(&q, &tet, &[10, 6, 8]).unwrap(), "touches edge 0 3 at a non-shared point");
     // Tetrahedra sharing a face meet properly; overlapping ones do not.

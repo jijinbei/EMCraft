@@ -14,7 +14,7 @@
 //! later step, is a deterministic function of the input. Floating point is used only to quantize
 //! coordinates for the curve; it never decides any topology.
 
-use crate::predicates::Point3;
+use crate::predicates::ExactPoint3;
 
 /// Bits per axis of the Hilbert grid (3 × 21 = 63-bit keys).
 const BITS: u32 = 21;
@@ -74,8 +74,8 @@ fn hilbert(mut x: [u32; 3]) -> u64 {
 }
 
 /// The vertices in BRIO order, Hilbert order inside each round, ties by vertex index.
-pub(super) fn brio_hilbert(points: &[Point3], vertices: &[u32]) -> Vec<u32> {
-    let coords = |v: u32| points.get(v as usize).map(Point3::coords);
+pub(super) fn brio_hilbert(points: &[ExactPoint3], vertices: &[u32]) -> Vec<u32> {
+    let coords = |v: u32| points.get(v as usize).map(ExactPoint3::coords);
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
     for c in vertices.iter().filter_map(|&v| coords(v)) {
         for k in 0..3 {
@@ -125,7 +125,8 @@ mod tests {
 
     #[test]
     fn order_is_a_permutation_with_geometric_rounds() {
-        let points: Vec<Point3> = (0..10_000).map(|i| Point3::new(f64::from(i % 97), f64::from(i % 89), f64::from(i % 83)).unwrap()).collect();
+        let points: Vec<ExactPoint3> =
+            (0..10_000).map(|i| ExactPoint3::new(f64::from(i % 97), f64::from(i % 89), f64::from(i % 83)).unwrap()).collect();
         let vertices: Vec<u32> = (0..10_000).collect();
         let order = brio_hilbert(&points, &vertices);
         let mut sorted = order.clone();

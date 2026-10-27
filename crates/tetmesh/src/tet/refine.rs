@@ -17,7 +17,7 @@
 //! tetrahedron whose point could not be inserted is not retried, and the number of insertions
 //! and tetrahedra are capped (the stop is reported).
 
-use crate::predicates::{Point3, snap_to_domain};
+use crate::predicates::{ExactPoint3, snap_to_domain};
 use crate::size::SizeField;
 use crate::{Error, Result};
 
@@ -42,14 +42,14 @@ impl Context<'_> {
     }
 
     /// `p` moved onto the boundary entity of a vertex of `kind`, as an admissible point.
-    pub fn place(&self, kind: VertexKind, p: P) -> Option<Point3> {
+    pub fn place(&self, kind: VertexKind, p: P) -> Option<ExactPoint3> {
         let q = match kind {
             VertexKind::Interior => p,
             VertexKind::Face(f) => self.geometry.project_face(f, p)?,
             VertexKind::Curve(c) => self.geometry.project_curve(*self.curve_faces.get(c as usize)?, p)?,
             VertexKind::Corner => return None,
         };
-        Point3::try_from(q.map(snap_to_domain)).ok()
+        ExactPoint3::try_from(q.map(snap_to_domain)).ok()
     }
 }
 
@@ -119,7 +119,7 @@ fn encroached(cx: &TetComplex, tets: &[u32], p: P) -> Result<Option<(u32, usize)
 }
 
 /// The tetrahedra whose circumsphere holds `p`, grown from `t` across interior faces.
-fn conflicts(cx: &TetComplex, t: u32, p: &Point3) -> Result<Vec<u32>> {
+fn conflicts(cx: &TetComplex, t: u32, p: &ExactPoint3) -> Result<Vec<u32>> {
     let mut out = vec![t];
     let mut seen: IdMap<u32, ()> = IdMap::default();
     seen.insert(t, ());
@@ -290,7 +290,7 @@ pub fn refine(cx: &mut TetComplex, ctx: &Context, o: &RefineOptions) -> Result<R
             stats.stopped = Some(format!("refinement stopped at {} tetrahedra and {} vertices", cx.live_count(), cx.point_count()));
             break;
         }
-        let result = match Point3::try_from(c.map(snap_to_domain)) {
+        let result = match ExactPoint3::try_from(c.map(snap_to_domain)) {
             Err(_) => None,
             Ok(p) => {
                 // The boundary face the circumcentre lies beyond or encroaches, if any.

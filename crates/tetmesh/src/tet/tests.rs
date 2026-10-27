@@ -1,7 +1,7 @@
 use super::complex::*;
 use super::measure;
 use super::ops::*;
-use crate::predicates::Point3;
+use crate::predicates::ExactPoint3;
 
 /// A cube [0, 1]³ split into six tetrahedra around the diagonal 0–6, boundary faces tagged by
 /// cube side (0..6).
@@ -9,7 +9,7 @@ pub(crate) fn cube() -> TetComplex {
     let p: Vec<[f64; 3]> = (0..8).map(|i| [(i & 1) as f64, ((i >> 1) & 1) as f64, ((i >> 2) & 1) as f64]).collect();
     // Vertex i = (x, y, z) bits; diagonal 0 → 7.
     let raw = [[0, 1, 3, 7], [0, 3, 2, 7], [0, 2, 6, 7], [0, 6, 4, 7], [0, 4, 5, 7], [0, 5, 1, 7]];
-    let pts: Vec<Point3> = p.iter().map(|c| Point3::try_from(*c).unwrap()).collect();
+    let pts: Vec<ExactPoint3> = p.iter().map(|c| ExactPoint3::try_from(*c).unwrap()).collect();
     let tets: Vec<[u32; 4]> = raw
         .iter()
         .map(|t| {
@@ -102,7 +102,7 @@ fn interior_insertion_and_rollback() {
     let mut cx = cube();
     cx.journal.recording = true;
     let start = cx.journal.steps.len();
-    let p = Point3::try_from([0.5, 0.5, 0.5]).unwrap();
+    let p = ExactPoint3::try_from([0.5, 0.5, 0.5]).unwrap();
     let t = match cx.walk(0, &p, 100).unwrap().unwrap() {
         Walk::Inside(t) => t,
         w => panic!("{w:?}"),
@@ -122,7 +122,7 @@ fn interior_insertion_and_rollback() {
 fn boundary_face_insertion_keeps_tags() {
     let mut cx = cube();
     // A point on the z = 0 side.
-    let p = Point3::try_from([0.3, 0.6, 0.0]).unwrap();
+    let p = ExactPoint3::try_from([0.3, 0.6, 0.0]).unwrap();
     let mut site = None;
     for (t, _) in cx.live_tets().collect::<Vec<_>>() {
         let vs = cx.tet(t).unwrap();
@@ -157,7 +157,7 @@ fn boundary_face_insertion_keeps_tags() {
 #[test]
 fn edge_and_face_removal_keep_the_mesh_valid() {
     let mut cx = cube();
-    let p = Point3::try_from([0.5, 0.45, 0.55]).unwrap();
+    let p = ExactPoint3::try_from([0.5, 0.45, 0.55]).unwrap();
     let Walk::Inside(t) = cx.walk(0, &p, 100).unwrap().unwrap() else { panic!() };
     insert_delaunay(&mut cx, p, VertexKind::Interior, Site::Interior(t), 1000).unwrap().unwrap();
     let mut changed = 0;
@@ -266,7 +266,7 @@ mod pipeline {
         use super::super::ops::{Site, insert_delaunay};
         use super::super::refine::{Context, MAX_CAVITY, split_edge};
         use super::super::{complex_from_cdt, measure};
-        use crate::predicates::Point3;
+        use crate::predicates::ExactPoint3;
         use crate::size::UniformSize;
         // Whether `p` lies in triangle `f` of the z = 0 plane.
         let contains = |f: [[f64; 3]; 3], p: [f64; 3]| {
@@ -286,7 +286,7 @@ mod pipeline {
         let centre = [5.0, 5.0, 0.0];
         let mid = measure::mid(xa, xb);
         let inward = measure::scale(measure::sub(centre, mid), 0.3 * len / measure::dist(centre, mid));
-        let q = Point3::try_from(measure::add(mid, inward)).unwrap();
+        let q = ExactPoint3::try_from(measure::add(mid, inward)).unwrap();
         let (t, k) = cx
             .live_tets()
             .flat_map(|(t, vs)| (0..4).map(move |k| (t, vs, k)))
@@ -509,7 +509,7 @@ mod determinism {
 #[test]
 fn deleting_a_cap_never_leaves_a_neighbour_floating() {
     let p: Vec<[f64; 3]> = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.3, 0.3, -1.0], [1.0, 1.0, 1.0]];
-    let pts: Vec<Point3> = p.iter().map(|c| Point3::try_from(*c).unwrap()).collect();
+    let pts: Vec<ExactPoint3> = p.iter().map(|c| ExactPoint3::try_from(*c).unwrap()).collect();
     let positive = |t: [u32; 4]| if measure::volume6(&t.map(|v| pts[v as usize].coords())) > 0.0 { t } else { [t[1], t[0], t[2], t[3]] };
     // The cap, and a tetrahedron on each of its faces 012 and 123.
     let tets = [positive([0, 1, 2, 3]), positive([0, 1, 2, 4]), positive([1, 2, 3, 5])];
@@ -578,7 +578,7 @@ fn a_boundary_insertion_never_rings_a_kept_face() {
     let kinds: Vec<VertexKind> = on_fillet.iter().map(|&f| if f { VertexKind::Face(20) } else { VertexKind::Corner }).collect();
     let mut cx = TetComplex::new(&p, kinds, &tets, &boundary, &[], 100, 100).unwrap();
     // On the fillet face of tetrahedron 0, as far from the other vertices as the improvement asks.
-    let q = Point3::try_from([37.57631755601779, 26.730747346632697, 19.941167252265036]).unwrap();
+    let q = ExactPoint3::try_from([37.57631755601779, 26.730747346632697, 19.941167252265036]).unwrap();
     insert_delaunay_apart(&mut cx, q, VertexKind::Face(20), Site::Face(0, 1), 4096, 0.06539086641130744).unwrap();
     cx.validate().unwrap();
     let floating: Vec<[u32; 4]> = cx.live_tets().filter(|(t, _)| cx.adj(*t).unwrap().iter().all(|&n| n == NONE)).map(|(_, vs)| vs).collect();
@@ -593,7 +593,7 @@ fn a_boundary_insertion_never_rings_a_kept_face() {
 fn a_move_never_turns_a_boundary_face_over() {
     let mut cx = cube();
     let star = cx.star(1).unwrap();
-    let to = |p: [f64; 3]| Point3::try_from(p).unwrap();
+    let to = |p: [f64; 3]| ExactPoint3::try_from(p).unwrap();
     assert!(cx.move_is_valid(1, &to([1.1, 0.0, 0.0]), &star).unwrap());
     assert!(!cx.move_is_valid(1, &to([3.0, 0.0, 0.0]), &star).unwrap());
 }
@@ -623,7 +623,7 @@ fn the_skin_never_passes_through_itself() {
     let plain = complex_of(&p, &tets, vec![VertexKind::Corner; p.len()], |_| 0);
     let mut indexed = plain.clone();
     indexed.index_skin(1.0).unwrap();
-    let to = |z: f64| Point3::try_from([0.0, 0.0, z]).unwrap();
+    let to = |z: f64| ExactPoint3::try_from([0.0, 0.0, z]).unwrap();
     for (mut cx, skin) in [(plain, false), (indexed, true)] {
         let star = cx.star(0).unwrap();
         assert!(cx.move_is_valid(0, &to(0.05), &star).unwrap());
@@ -664,7 +664,7 @@ fn the_skin_index_follows_moved_faces() {
     tets.push([6, 7, 8, 9]);
     let mut cx = complex_of(&p, &tets, vec![VertexKind::Corner; p.len()], |_| 0);
     cx.index_skin(10.0).unwrap();
-    let to = |x: [f64; 3]| Point3::try_from(x).unwrap();
+    let to = |x: [f64; 3]| ExactPoint3::try_from(x).unwrap();
     let star = cx.star(0).unwrap();
     assert!(cx.move_is_valid(0, &to([0.0, 0.0, 0.05]), &star).unwrap());
     for v in [6, 7, 8] {

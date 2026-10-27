@@ -58,7 +58,7 @@ use std::collections::HashMap;
 use crate::compat::ElementKind;
 
 use crate::delaunay::Triangulation;
-use crate::predicates::{GenericPoint, Point3, Sign};
+use crate::predicates::{ExactPoint3, GenericPoint, Sign};
 use crate::quality::{GateOptions, GateReport, validity_gate_elements};
 use crate::surface::{BoundarySurface, Box3};
 use crate::{Error, Result};
@@ -211,7 +211,7 @@ impl Recovery {
         if tri.dimension() != 3 || (0..points.len() as u32).any(|v| tri.duplicate_of(v).is_some()) {
             return Err(Error::Invalid("the surface's vertices must be distinct".into()));
         }
-        let generic = points.iter().map(|&p| Point3::try_from(p).map(GenericPoint::Explicit)).collect::<Result<Vec<_>>>()?;
+        let generic = points.iter().map(|&p| ExactPoint3::try_from(p).map(GenericPoint::Explicit)).collect::<Result<Vec<_>>>()?;
         let cx = Complex::from_delaunay(&tri, generic, options.max_tets)?;
         let mut edges: Vec<(u32, u32)> =
             triangles.iter().flat_map(|t| (0..3).map(move |k| (t[k].min(t[(k + 1) % 3]), t[k].max(t[(k + 1) % 3])))).collect();

@@ -28,7 +28,7 @@
 //!
 //! # Domain
 //! Shewchuk's error bounds and the exactness of expansion arithmetic need no overflow and no
-//! underflow (§5). Every coordinate of a [`Point2`] / [`Point3`] is therefore either zero or has
+//! underflow (§5). Every coordinate of a [`ExactPoint2`] / [`ExactPoint3`] is therefore either zero or has
 //! magnitude in [[`MIN_MAGNITUDE`], [`MAX_MAGNITUDE`]] = [2⁻¹²⁰, 2¹⁶⁰]: then every intermediate
 //! value of the degree-5 `insphere` is either zero or above 2⁻⁸⁶⁰ and below 2⁸¹², all normal
 //! doubles. The constructors reject anything else (NaN, infinities, out-of-range magnitudes) with
@@ -112,7 +112,7 @@ impl std::ops::Mul for Sign {
 /// The sign of the volume `det[b − a, c − a, d − a]`: positive when `d` lies on the side of
 /// face `a, b, c`'s right-hand normal (the tet4 node order). It is [`orient3d`] negated.
 #[inline]
-pub fn tet_volume_sign(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Sign {
+pub fn tet_volume_sign(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3) -> Sign {
     -orient3d(a, b, c, d)
 }
 
@@ -140,9 +140,9 @@ fn check<const N: usize>(c: [f64; N]) -> Result<[f64; N]> {
 
 /// A 2D point whose coordinates are admissible for the exact predicates.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point2([f64; 2]);
+pub struct ExactPoint2([f64; 2]);
 
-impl Point2 {
+impl ExactPoint2 {
     pub fn new(x: f64, y: f64) -> Result<Self> {
         check([x, y]).map(Self)
     }
@@ -153,7 +153,7 @@ impl Point2 {
     }
 }
 
-impl TryFrom<[f64; 2]> for Point2 {
+impl TryFrom<[f64; 2]> for ExactPoint2 {
     type Error = Error;
 
     fn try_from(c: [f64; 2]) -> Result<Self> {
@@ -163,9 +163,9 @@ impl TryFrom<[f64; 2]> for Point2 {
 
 /// A 3D point whose coordinates are admissible for the exact predicates.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point3([f64; 3]);
+pub struct ExactPoint3([f64; 3]);
 
-impl Point3 {
+impl ExactPoint3 {
     pub fn new(x: f64, y: f64, z: f64) -> Result<Self> {
         check([x, y, z]).map(Self)
     }
@@ -176,7 +176,7 @@ impl Point3 {
     }
 }
 
-impl TryFrom<[f64; 3]> for Point3 {
+impl TryFrom<[f64; 3]> for ExactPoint3 {
     type Error = Error;
 
     fn try_from(c: [f64; 3]) -> Result<Self> {

@@ -25,7 +25,7 @@ use super::dyadic::Dyadic;
 use super::eft::{two_diff, two_product, two_sum};
 use super::interval::Interval;
 use super::ring::{Ring, Signed, det2, det3, sq3};
-use super::{Point2, Point3, Sign, insphere, orient2d, orient3d};
+use super::{ExactPoint2, ExactPoint3, Sign, insphere, orient2d, orient3d};
 use crate::{Error, Result};
 
 /// A coordinate axis: the axis compared by [`generic_compare`], or dropped by
@@ -158,7 +158,7 @@ pub struct Lpi {
 impl Lpi {
     /// Fails when the point is undefined: the line is parallel to the plane, `q1 = q2`, or
     /// `r, s, t` are collinear (decided exactly).
-    pub fn new(q1: &Point3, q2: &Point3, r: &Point3, s: &Point3, t: &Point3) -> Result<Self> {
+    pub fn new(q1: &ExactPoint3, q2: &ExactPoint3, r: &ExactPoint3, s: &ExactPoint3, t: &ExactPoint3) -> Result<Self> {
         let points = [q1.0, q2.0, r.0, s.0, t.0];
         let filter = lpi_hom::<Interval>(&points);
         if exact_w_sign(&filter, || lpi_hom::<Dyadic>(&points)).is_zero() {
@@ -178,7 +178,7 @@ pub struct Tpi {
 impl Tpi {
     /// Fails when the planes do not meet in exactly one point, or a plane's points are collinear
     /// (decided exactly).
-    pub fn new(planes: [[&Point3; 3]; 3]) -> Result<Self> {
+    pub fn new(planes: [[&ExactPoint3; 3]; 3]) -> Result<Self> {
         let planes = planes.map(|p| p.map(|q| q.0));
         let filter = tpi_hom::<Interval>(&planes);
         if exact_w_sign(&filter, || tpi_hom::<Dyadic>(&planes)).is_zero() {
@@ -201,7 +201,7 @@ pub struct Lnc {
 
 impl Lnc {
     /// Fails unless `a ≠ b` and `t` is an admissible double strictly between 0 and 1.
-    pub fn new(a: &Point3, b: &Point3, t: f64) -> Result<Self> {
+    pub fn new(a: &ExactPoint3, b: &ExactPoint3, t: f64) -> Result<Self> {
         if !(t > 0.0 && t < 1.0 && super::is_admissible(t)) {
             return Err(Error::Invalid(format!("segment parameter {t:e} is not an admissible number strictly between 0 and 1")));
         }
@@ -239,21 +239,21 @@ impl Lnc {
 /// An explicit point or an implicit one, for the `generic_*` predicates.
 #[derive(Debug, Clone)]
 pub enum GenericPoint {
-    Explicit(Point3),
+    Explicit(ExactPoint3),
     Lpi(Lpi),
     Tpi(Tpi),
     Lnc(Lnc),
 }
 
-impl From<Point3> for GenericPoint {
-    fn from(p: Point3) -> Self {
+impl From<ExactPoint3> for GenericPoint {
+    fn from(p: ExactPoint3) -> Self {
         GenericPoint::Explicit(p)
     }
 }
 
 impl GenericPoint {
     /// The point, when it is explicit.
-    pub fn explicit(&self) -> Option<&Point3> {
+    pub fn explicit(&self) -> Option<&ExactPoint3> {
         match self {
             GenericPoint::Explicit(p) => Some(p),
             _ => None,
@@ -414,9 +414,9 @@ pub fn generic_orient2d(a: &GenericPoint, b: &GenericPoint, c: &GenericPoint, dr
 
 /// [`orient2d`] of the projections of three explicit points onto the coordinate plane that drops
 /// `drop`, seen from the positive side of that axis (the explicit case of [`generic_orient2d`]).
-pub fn orient2d_projected(a: &Point3, b: &Point3, c: &Point3, drop: Axis) -> Sign {
+pub fn orient2d_projected(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, drop: Axis) -> Sign {
     let (u, v) = drop.projected();
-    let proj = |p: &Point3| Point2([coord(&p.0, u), coord(&p.0, v)]);
+    let proj = |p: &ExactPoint3| ExactPoint2([coord(&p.0, u), coord(&p.0, v)]);
     orient2d(&proj(a), &proj(b), &proj(c))
 }
 

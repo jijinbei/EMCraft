@@ -51,7 +51,7 @@ use std::collections::BTreeMap;
 use crate::compat::ElementKind;
 
 use crate::cdt::TetMesh;
-use crate::predicates::Point3;
+use crate::predicates::ExactPoint3;
 use crate::quality::{GateOptions, GateReport, Metric, Validity, element_quality, enclosed_volume, validity_gate_elements};
 use crate::surface::BoundarySurface;
 use crate::{Error, Result};
@@ -455,7 +455,7 @@ fn snap_to_geometry(cx: &mut TetComplex, ctx: &Context, guarded: bool) -> Result
             cx.move_point(v, p)?;
             let after = ops::worst(cx, &star)?;
             if after < before.min(0.3) {
-                cx.move_point(v, Point3::try_from(x)?)?;
+                cx.move_point(v, ExactPoint3::try_from(x)?)?;
                 ok = false;
             }
         } else if ok {

@@ -54,16 +54,16 @@ fn lifted(mut row: Vec<BigRational>) -> Vec<BigRational> {
     row
 }
 
-fn o2(a: &Point2, b: &Point2, c: &Point2) -> Sign {
+fn o2(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2) -> Sign {
     rsign(&rdet(&[rdiff(&a.0, &c.0), rdiff(&b.0, &c.0)]))
 }
-fn o3(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Sign {
+fn o3(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3) -> Sign {
     rsign(&rdet(&[rdiff(&a.0, &d.0), rdiff(&b.0, &d.0), rdiff(&c.0, &d.0)]))
 }
-fn ic(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
+fn ic(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Sign {
     rsign(&rdet(&[lifted(rdiff(&a.0, &d.0)), lifted(rdiff(&b.0, &d.0)), lifted(rdiff(&c.0, &d.0))]))
 }
-fn is(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Sign {
+fn is(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Sign {
     rsign(&rdet(&[lifted(rdiff(&a.0, &e.0)), lifted(rdiff(&b.0, &e.0)), lifted(rdiff(&c.0, &e.0)), lifted(rdiff(&d.0, &e.0))]))
 }
 
@@ -95,22 +95,22 @@ impl Rng {
     }
 }
 
-fn p2(x: f64, y: f64) -> Point2 {
-    Point2::new(x, y).unwrap()
+fn p2(x: f64, y: f64) -> ExactPoint2 {
+    ExactPoint2::new(x, y).unwrap()
 }
-fn p3(x: f64, y: f64, z: f64) -> Point3 {
-    Point3::new(x, y, z).unwrap()
+fn p3(x: f64, y: f64, z: f64) -> ExactPoint3 {
+    ExactPoint3::new(x, y, z).unwrap()
 }
 
-fn rc2(p: &Point2) -> robust::Coord<f64> {
+fn rc2(p: &ExactPoint2) -> robust::Coord<f64> {
     robust::Coord { x: p.0[0], y: p.0[1] }
 }
-fn rc3(p: &Point3) -> robust::Coord3D<f64> {
+fn rc3(p: &ExactPoint3) -> robust::Coord3D<f64> {
     robust::Coord3D { x: p.0[0], y: p.0[1], z: p.0[2] }
 }
 
 /// Every stage agrees with every oracle, and the filter, when it answers, agrees too.
-fn check2(a: &Point2, b: &Point2, c: &Point2, d: &Point2) {
+fn check2(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) {
     let want = o2(a, b, c);
     assert_eq!(orient2d(a, b, c), want, "orient2d {a:?} {b:?} {c:?}");
     assert_eq!(exact::orient2d(a, b, c), want);
@@ -123,7 +123,7 @@ fn check2(a: &Point2, b: &Point2, c: &Point2, d: &Point2) {
     assert!(incircle_filter(a, b, c, d).is_none_or(|s| s == want));
 }
 
-fn check3(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) {
+fn check3(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) {
     let want = o3(a, b, c, d);
     assert_eq!(orient3d(a, b, c, d), want, "orient3d {a:?} {b:?} {c:?} {d:?}");
     assert_eq!(exact::orient3d(a, b, c, d), want);
@@ -182,7 +182,7 @@ fn near_degenerate_points_match_the_oracles() {
             p3(r.nudge(scale * ph.cos() * th.cos() + scale, k), r.nudge(scale * ph.cos() * th.sin(), k), r.nudge(scale * ph.sin() - scale * 0.5, k))
         };
         let (a, b, c, d) = (p3(a[0], a[1], a[2]), p3(b[0], b[1], b[2]), p3(c[0], c[1], c[2]), p3(d[0], d[1], d[2]));
-        let s: Vec<Point3> = (0..5).map(|_| on_sphere(&mut r)).collect();
+        let s: Vec<ExactPoint3> = (0..5).map(|_| on_sphere(&mut r)).collect();
         check3(&a, &b, &c, &d, &s[0]);
         check3(&s[0], &s[1], &s[2], &s[3], &s[4]);
     }
@@ -264,7 +264,7 @@ fn extreme_magnitudes_inside_the_domain_stay_exact() {
             if m.abs() < 0.2 { 0.0 } else { (m * s).clamp(-huge, huge) }
         };
         let fix = |x: f64| if is_admissible(x) { x } else { 0.0 };
-        let v: Vec<Point3> = (0..5)
+        let v: Vec<ExactPoint3> = (0..5)
             .map(|_| {
                 let (x, y, z) = (pick(&mut r), pick(&mut r), pick(&mut r));
                 p3(fix(r.nudge(x, 1)), fix(y), fix(z))
@@ -323,11 +323,11 @@ fn conventions_match_the_documentation() {
 #[test]
 fn the_domain_is_enforced_at_construction() {
     for bad in [f64::NAN, f64::INFINITY, -f64::INFINITY, 1e-40, -1e-300, 5e-324, 1e49, f64::MAX] {
-        assert!(Point3::new(0.0, bad, 1.0).is_err(), "{bad}");
-        assert!(Point2::try_from([bad, 0.0]).is_err(), "{bad}");
+        assert!(ExactPoint3::new(0.0, bad, 1.0).is_err(), "{bad}");
+        assert!(ExactPoint2::try_from([bad, 0.0]).is_err(), "{bad}");
     }
     for good in [0.0, -0.0, MIN_MAGNITUDE, -MAX_MAGNITUDE, 1e-36, 1e48] {
-        assert!(Point3::new(good, good, good).is_ok(), "{good}");
+        assert!(ExactPoint3::new(good, good, good).is_ok(), "{good}");
     }
 }
 
@@ -337,7 +337,7 @@ fn hostile_bit_patterns_never_panic() {
     let mut accepted = Vec::new();
     for _ in 0..20_000 {
         let c = [f64::from_bits(r.next_u64()), f64::from_bits(r.next_u64()), f64::from_bits(r.next_u64())];
-        if let Ok(p) = Point3::try_from(c) {
+        if let Ok(p) = ExactPoint3::try_from(c) {
             accepted.push(p);
         }
     }
@@ -390,7 +390,7 @@ fn perturbed_insphere_matches_an_infinitesimal_lift() {
         if (0..5).any(|i| (0..i).any(|j| v[i] == v[j])) {
             continue;
         }
-        let p: Vec<Point3> = v.iter().map(|c| p3(c[0], c[1], c[2])).collect();
+        let p: Vec<ExactPoint3> = v.iter().map(|c| p3(c[0], c[1], c[2])).collect();
         if orient3d(&p[0], &p[1], &p[2], &p[3]).is_zero() {
             continue;
         }
@@ -411,7 +411,7 @@ fn perturbed_incircle_matches_an_infinitesimal_lift() {
         if (0..4).any(|i| (0..i).any(|j| v[i] == v[j])) {
             continue;
         }
-        let p: Vec<Point2> = v.iter().map(|c| p2(c[0], c[1])).collect();
+        let p: Vec<ExactPoint2> = v.iter().map(|c| p2(c[0], c[1])).collect();
         if orient2d(&p[0], &p[1], &p[2]).is_zero() {
             continue;
         }
@@ -429,7 +429,7 @@ fn perturbed_incircle_matches_an_infinitesimal_lift() {
 
 type RPoint = [BigRational; 3];
 
-fn rp(p: &Point3) -> RPoint {
+fn rp(p: &ExactPoint3) -> RPoint {
     p.0.map(q)
 }
 fn rsub(a: &RPoint, b: &RPoint) -> RPoint {
@@ -447,7 +447,7 @@ fn rcross(a: &RPoint, b: &RPoint) -> RPoint {
 }
 
 /// Line–plane intersection by the parametric form (independent of the determinant formula).
-fn r_lpi(q1: &Point3, q2: &Point3, r: &Point3, s: &Point3, t: &Point3) -> RPoint {
+fn r_lpi(q1: &ExactPoint3, q2: &ExactPoint3, r: &ExactPoint3, s: &ExactPoint3, t: &ExactPoint3) -> RPoint {
     let (q1, q2, r, s, t) = (rp(q1), rp(q2), rp(r), rp(s), rp(t));
     let n = rcross(&rsub(&s, &r), &rsub(&t, &r));
     let dir = rsub(&q2, &q1);
@@ -456,7 +456,7 @@ fn r_lpi(q1: &Point3, q2: &Point3, r: &Point3, s: &Point3, t: &Point3) -> RPoint
 }
 
 /// Three-plane intersection by Gaussian elimination.
-fn r_tpi(planes: &[[Point3; 3]; 3]) -> RPoint {
+fn r_tpi(planes: &[[ExactPoint3; 3]; 3]) -> RPoint {
     let mut m: Vec<Vec<BigRational>> = planes
         .iter()
         .map(|[r, s, t]| {
@@ -487,7 +487,7 @@ fn r_orient3d(p: &[RPoint; 4]) -> Sign {
     rsign(&rdet(&rows))
 }
 
-fn rand_pt(r: &mut Rng, scale: f64) -> Point3 {
+fn rand_pt(r: &mut Rng, scale: f64) -> ExactPoint3 {
     p3(r.unit() * scale, r.unit() * scale, r.unit() * scale)
 }
 
@@ -496,7 +496,7 @@ fn indirect_orient3d_matches_rational_constructions() {
     let mut r = Rng(9);
     let mut checked = 0;
     for i in 0..150 {
-        let pts: Vec<Point3> = (0..14).map(|_| rand_pt(&mut r, 1.0)).collect();
+        let pts: Vec<ExactPoint3> = (0..14).map(|_| rand_pt(&mut r, 1.0)).collect();
         let Ok(lpi) = Lpi::new(&pts[0], &pts[1], &pts[2], &pts[3], &pts[4]) else { continue };
         let Ok(tpi) = Tpi::new([[&pts[5], &pts[6], &pts[7]], [&pts[8], &pts[9], &pts[10]], [&pts[11], &pts[12], &pts[13]]]) else {
             continue;
@@ -505,7 +505,7 @@ fn indirect_orient3d_matches_rational_constructions() {
         let rt = r_tpi(&[[pts[5], pts[6], pts[7]], [pts[8], pts[9], pts[10]], [pts[11], pts[12], pts[13]]]);
         let g = [GenericPoint::Lpi(lpi.clone()), GenericPoint::Tpi(tpi.clone())];
         let rg = [rl.clone(), rt.clone()];
-        let ex: Vec<Point3> = (0..4).map(|_| rand_pt(&mut r, 1.0)).collect();
+        let ex: Vec<ExactPoint3> = (0..4).map(|_| rand_pt(&mut r, 1.0)).collect();
         // Every mix of implicit and explicit points in every position.
         for mask in 0u32..81 {
             let mut gp = Vec::new();
@@ -534,7 +534,7 @@ fn indirect_orient3d_matches_rational_constructions() {
         // The constructed points lie exactly on their defining planes.
         let lp = GenericPoint::Lpi(lpi);
         let tp = GenericPoint::Tpi(tpi);
-        let e = |p: &Point3| GenericPoint::Explicit(*p);
+        let e = |p: &ExactPoint3| GenericPoint::Explicit(*p);
         assert_eq!(generic_orient3d(&e(&pts[2]), &e(&pts[3]), &e(&pts[4]), &lp), Sign::Zero);
         assert_eq!(generic_orient3d(&lp, &e(&pts[2]), &e(&pts[3]), &e(&pts[4])), Sign::Zero);
         for k in 0..3 {
@@ -566,7 +566,7 @@ fn indirect_orient3d_matches_rational_constructions() {
 fn indirect_orient2d_matches_rational_constructions() {
     let mut r = Rng(10);
     for _ in 0..200 {
-        let pts: Vec<Point3> = (0..8).map(|_| rand_pt(&mut r, 10.0)).collect();
+        let pts: Vec<ExactPoint3> = (0..8).map(|_| rand_pt(&mut r, 10.0)).collect();
         let Ok(lpi) = Lpi::new(&pts[0], &pts[1], &pts[2], &pts[3], &pts[4]) else { continue };
         let rl = r_lpi(&pts[0], &pts[1], &pts[2], &pts[3], &pts[4]);
         for axis in [Axis::X, Axis::Y, Axis::Z] {
@@ -597,7 +597,7 @@ fn undefined_constructions_are_rejected() {
     // A nearly parallel line is fine: z rises by one ulp over the segment.
     assert!(Lpi::new(&p3(0.0, 0.0, -1.0), &p3(1.0, 0.0, -1.0 + f64::EPSILON), &o, &x, &y).is_ok());
     // Two parallel planes.
-    let lifted = |p: &Point3| p3(p.0[0], p.0[1], 1.0);
+    let lifted = |p: &ExactPoint3| p3(p.0[0], p.0[1], 1.0);
     assert!(Tpi::new([[&o, &x, &y], [&lifted(&o), &lifted(&x), &lifted(&y)], [&o, &x, &z]]).is_err());
     let t = Tpi::new([[&o, &x, &y], [&o, &y, &z], [&o, &z, &x]]).unwrap();
     let t = GenericPoint::Tpi(t);
@@ -610,7 +610,7 @@ fn undefined_constructions_are_rejected() {
 // LNC points and the generic in-sphere (Diazzi et al. 2023, §4.3)
 // ---------------------------------------------------------------------------------------------
 
-fn r_lnc(a: &Point3, b: &Point3, t: f64) -> RPoint {
+fn r_lnc(a: &ExactPoint3, b: &ExactPoint3, t: f64) -> RPoint {
     let (a, b) = (rp(a), rp(b));
     std::array::from_fn(|k| a[k].clone() + q(t) * (b[k].clone() - a[k].clone()))
 }
@@ -657,13 +657,13 @@ fn generic_orient3d_and_insphere_match_rationals_on_lnc_points() {
     let mut r = Rng(12);
     let mut checked = 0;
     for i in 0..120 {
-        let pts: Vec<Point3> = (0..9).map(|_| rand_pt(&mut r, 1.0)).collect();
+        let pts: Vec<ExactPoint3> = (0..9).map(|_| rand_pt(&mut r, 1.0)).collect();
         let t = r.unit().clamp(1e-6, 1.0 - 1e-6);
         let lnc = Lnc::new(&pts[0], &pts[1], t).unwrap();
         let Ok(lpi) = Lpi::new(&pts[2], &pts[3], &pts[4], &pts[5], &pts[6]) else { continue };
         let g = [GenericPoint::Lnc(lnc), GenericPoint::Lpi(lpi)];
         let rg = [r_lnc(&pts[0], &pts[1], t), r_lpi(&pts[2], &pts[3], &pts[4], &pts[5], &pts[6])];
-        let ex: Vec<Point3> = (0..5).map(|_| rand_pt(&mut r, 1.0)).collect();
+        let ex: Vec<ExactPoint3> = (0..5).map(|_| rand_pt(&mut r, 1.0)).collect();
         for mask in 0u32..243 {
             if !(i + mask as usize).is_multiple_of(5) {
                 continue;
@@ -694,7 +694,7 @@ fn generic_orient3d_and_insphere_match_rationals_on_lnc_points() {
     // The explicit fast path and the formula agree on the sign convention.
     let (a, b, c, d) = (p3(0.0, 0.0, 0.0), p3(1.0, 0.0, 0.0), p3(0.0, 1.0, 0.0), p3(0.0, 0.0, 1.0));
     let inside = GenericPoint::Lnc(Lnc::new(&a, &p3(1.0, 1.0, 1.0), 0.25).unwrap());
-    let e = |p: &Point3| GenericPoint::Explicit(*p);
+    let e = |p: &ExactPoint3| GenericPoint::Explicit(*p);
     let shewchuk_positive = orient3d(&b, &a, &c, &d) == Sign::Positive;
     let (x, y) = if shewchuk_positive { (b, a) } else { (a, b) };
     assert_eq!(insphere(&x, &y, &c, &d, &p3(0.25, 0.25, 0.25)), Sign::Positive);
@@ -712,7 +712,7 @@ fn perturbed_generic_insphere_agrees_with_explicit_points() {
         if (0..5).any(|i| (0..i).any(|j| v[i] == v[j])) {
             continue;
         }
-        let p: Vec<Point3> = v.iter().map(|c| p3(c[0], c[1], c[2])).collect();
+        let p: Vec<ExactPoint3> = v.iter().map(|c| p3(c[0], c[1], c[2])).collect();
         if orient3d(&p[0], &p[1], &p[2], &p[3]).is_zero() {
             continue;
         }

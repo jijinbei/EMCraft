@@ -26,7 +26,7 @@
 use std::collections::HashMap;
 
 use emcraft_model::{Aabb, Point3};
-use emcraft_tetmesh::predicates::{Point2, Point3 as Exact, Sign, orient2d, orient3d};
+use emcraft_tetmesh::predicates::{ExactPoint2, ExactPoint3 as Exact, Sign, orient2d, orient3d};
 
 use crate::{MeshError, Result};
 
@@ -248,7 +248,7 @@ fn intersect(s: [&Surface; 2], p: [&[Exact]; 2], ids: &Ids) -> Result<Cut> {
 /// A planar triangulation being built: 2D points (local), triangles counter-clockwise, and the
 /// edges that may not be flipped.
 struct Plane {
-    p: Vec<Point2>,
+    p: Vec<ExactPoint2>,
     tris: Vec<[usize; 3]>,
     fixed: std::collections::HashSet<[usize; 2]>,
 }
@@ -425,7 +425,7 @@ fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[Point3]) ->
     }
     let mut local: Vec<u32> = gc.to_vec();
     let mut index: HashMap<u32, usize> = gc.iter().enumerate().map(|(i, v)| (*v, i)).collect();
-    let to2 = |p: Point3| Point2::new(emcraft_tetmesh::predicates::snap_to_domain(p[u]), emcraft_tetmesh::predicates::snap_to_domain(p[w]));
+    let to2 = |p: Point3| ExactPoint2::new(emcraft_tetmesh::predicates::snap_to_domain(p[u]), emcraft_tetmesh::predicates::snap_to_domain(p[w]));
     let mut plane = Plane { p: Vec::new(), tris: vec![[0, 1, 2]], fixed: Default::default() };
     for v in &local {
         plane.p.push(to2(all[*v as usize]).map_err(|e| fail(e.to_string()))?);

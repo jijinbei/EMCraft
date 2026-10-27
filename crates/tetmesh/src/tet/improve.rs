@@ -18,7 +18,7 @@
 //! repair, which the paper's own composite operation relies on to make insertion pay off.
 
 use crate::Result;
-use crate::predicates::Point3;
+use crate::predicates::ExactPoint3;
 
 use super::complex::{EDGES, IdMap, NONE, Step, TetComplex, VertexKind, Walk, face_toward, sorted4};
 use super::measure::{self, P};
@@ -226,7 +226,7 @@ fn below(cx: &TetComplex, good: f64) -> Result<Vec<u32>> {
 fn change_quality(cx: &mut TetComplex, len: usize) -> Result<(f64, f64)> {
     let steps: Vec<Step> = cx.journal.steps.get(len..).unwrap_or_default().to_vec();
     // Earliest position of each moved vertex.
-    let mut first: IdMap<u32, Point3> = IdMap::default();
+    let mut first: IdMap<u32, ExactPoint3> = IdMap::default();
     for s in &steps {
         if let Step::Moved { v, from } = s {
             first.entry(*v).or_insert(*from);
@@ -288,7 +288,7 @@ fn change_quality(cx: &mut TetComplex, len: usize) -> Result<(f64, f64)> {
 }
 
 /// The composite insertion of §3.5 (see the module docs). Returns whether it was kept.
-fn attempt_insert(cx: &mut TetComplex, ctx: &Context, p: Point3, kind: VertexKind, site: Site) -> Result<bool> {
+fn attempt_insert(cx: &mut TetComplex, ctx: &Context, p: ExactPoint3, kind: VertexKind, site: Site) -> Result<bool> {
     let was = cx.journal.recording;
     cx.journal.recording = true;
     let len = cx.journal.steps.len();
@@ -372,7 +372,7 @@ fn insertion_pass(cx: &mut TetComplex, ctx: &Context, list: &[u32], budget: usiz
                 // Unit inward normals within 25° of each other: |n_i + n_j| > 2 cos 12.5°.
                 if len > 1.952 {
                     let target = measure::add(measure::mid(pa, pb), measure::scale(inward, 0.4 * l / len));
-                    if let Ok(p) = Point3::try_from(target)
+                    if let Ok(p) = ExactPoint3::try_from(target)
                         && let Some(Walk::Inside(at)) = cx.walk(t, &p, 1 << 12)?
                         && attempt_insert(cx, ctx, p, VertexKind::Interior, Site::Interior(at))?
                     {
@@ -399,7 +399,7 @@ fn insertion_pass(cx: &mut TetComplex, ctx: &Context, list: &[u32], budget: usiz
         // The barycentre.
         if !done && cx.is_live(t) && cx.tet(t)? == vs {
             let g = measure::centroid(&cx.coords(vs)?);
-            if let Ok(p) = Point3::try_from(g)
+            if let Ok(p) = ExactPoint3::try_from(g)
                 && attempt_insert(cx, ctx, p, VertexKind::Interior, Site::Interior(t))?
             {
                 done = true;
@@ -545,7 +545,7 @@ mod tests {
                 let x = cx.xyz(v).unwrap();
                 let d = measure::sub(g, x);
                 let q = measure::add(x, measure::scale(d, 0.5 * MIN_GAP * H / measure::norm(d)));
-                let q = Point3::try_from(q).unwrap();
+                let q = ExactPoint3::try_from(q).unwrap();
                 if let Some(Walk::Inside(at)) = cx.walk(t, &q, 1 << 12).unwrap() {
                     tried += 1;
                     assert!(!attempt_insert(&mut cx, &ctx, q, VertexKind::Interior, Site::Interior(at)).unwrap());
