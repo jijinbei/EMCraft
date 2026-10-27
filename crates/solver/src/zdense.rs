@@ -5,11 +5,39 @@
 //! §7.4–7.5, the complex single-shift variant); eigenvectors by inverse iteration on the
 //! original matrix (§7.6.1).
 //!
-//! Matrices are row-major `n × n` slices.
+//! Matrices are row-major `n × n` slices; [`solve`] takes a small dense system by rows (the
+//! reduced systems of the fast sweep, the eigensolver's projected pencil, S renormalised).
 
 use num_complex::Complex64 as C;
 
-use crate::driven::complex_solve;
+/// Solves a small dense complex system by Gaussian elimination with partial pivoting; `None`
+/// when it is singular.
+pub(crate) fn solve(mut a: Vec<Vec<C>>, mut b: Vec<C>) -> Option<Vec<C>> {
+    let n = b.len();
+    for k in 0..n {
+        let piv = (k..n).max_by(|&i, &j| a[i][k].norm().total_cmp(&a[j][k].norm()))?;
+        if a[piv][k].norm() == 0.0 {
+            return None;
+        }
+        a.swap(k, piv);
+        b.swap(k, piv);
+        for i in k + 1..n {
+            let f = a[i][k] / a[k][k];
+            for j in k..n {
+                let x = a[k][j];
+                a[i][j] -= f * x;
+            }
+            let x = b[k];
+            b[i] -= f * x;
+        }
+    }
+    let mut x = vec![C::new(0.0, 0.0); n];
+    for i in (0..n).rev() {
+        let s: C = (i + 1..n).map(|j| a[i][j] * x[j]).sum();
+        x[i] = (b[i] - s) / a[i][i];
+    }
+    Some(x)
+}
 
 /// QR sweeps per eigenvalue before giving up.
 const MAX_SWEEPS: usize = 80;
@@ -32,7 +60,7 @@ fn vector(a: &[C], n: usize, lambda: C, scale: f64) -> Option<Vec<C>> {
     let m: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| a[i * n + j] - if i == j { shift } else { C::new(0.0, 0.0) }).collect()).collect();
     let mut v: Vec<C> = (0..n).map(|i| C::new(1.0 + 0.1 * i as f64, 0.05 * i as f64)).collect();
     for _ in 0..3 {
-        v = complex_solve(m.clone(), v)?;
+        v = solve(m.clone(), v)?;
         let norm = v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
         if !(norm > 0.0 && norm.is_finite()) {
             return None;
@@ -159,7 +187,7 @@ mod tests {
             })
             .collect();
         let inv: Vec<Vec<C>> =
-            (0..n).map(|j| complex_solve(v.clone(), (0..n).map(|i| C::new(if i == j { 1.0 } else { 0.0 }, 0.0)).collect()).unwrap()).collect();
+            (0..n).map(|j| solve(v.clone(), (0..n).map(|i| C::new(if i == j { 1.0 } else { 0.0 }, 0.0)).collect()).unwrap()).collect();
         let mut a = vec![C::new(0.0, 0.0); n * n];
         for i in 0..n {
             for j in 0..n {

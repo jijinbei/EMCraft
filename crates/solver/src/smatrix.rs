@@ -4,7 +4,7 @@
 use std::ops::{Index, IndexMut};
 
 use crate::Complex64 as C;
-use crate::driven::complex_solve;
+use crate::zdense;
 
 /// S of `n` ports: `S[(p, q)]` (or `S[p][q]`) is the wave out of port p for a unit wave into
 /// port q. Square by construction.
@@ -86,7 +86,7 @@ impl SMatrix {
         let den = SMatrix::from_fn(n, |i, j| q[i] * self[(i, j)] + diagonal(i, j, p[i]));
         // Solve S′ D = N, i.e. Dᵀ S′ᵀ = Nᵀ, column by column of S′ᵀ.
         let dt: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| den[(j, i)]).collect()).collect();
-        let rows = (0..n).map(|i| complex_solve(dt.clone(), num[i].to_vec())).collect::<Option<Vec<Vec<C>>>>()?;
+        let rows = (0..n).map(|i| zdense::solve(dt.clone(), num[i].to_vec())).collect::<Option<Vec<Vec<C>>>>()?;
         Some(SMatrix { n, entries: rows.concat() })
     }
 }
