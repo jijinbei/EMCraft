@@ -15,6 +15,7 @@ pub struct Snapshot {
     pub model: Model,
     pub display: Display,
     pub history: Vec<Value>,
+    pub variables: crate::expr::Variables,
 }
 
 /// The most states kept to undo to.
@@ -34,6 +35,7 @@ impl Session {
             model: std::mem::replace(&mut self.model, with.model),
             display: std::mem::replace(&mut self.display, with.display),
             history: std::mem::replace(&mut self.history, with.history),
+            variables: std::mem::replace(&mut self.variables, with.variables),
         }
     }
 }

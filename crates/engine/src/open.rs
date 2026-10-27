@@ -275,7 +275,7 @@ fn angles(p: &Params) -> Result<(Vec<f64>, f64)> {
     let theta: Vec<f64> = match p.raw("theta") {
         None => (0..=18).map(|i| 10.0 * f64::from(i)).collect(),
         Some(Value::Array(list)) => {
-            list.iter().map(|v| v.as_f64().filter(|x| x.is_finite())).collect::<Option<_>>().ok_or_else(|| p.error("theta", "must be numbers"))?
+            list.iter().map(|v| p.number_of("theta", v).ok()).collect::<Option<_>>().ok_or_else(|| p.error("theta", "must be numbers"))?
         }
         Some(_) => vec![p.number("theta").required()?],
     };

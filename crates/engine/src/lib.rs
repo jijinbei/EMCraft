@@ -11,6 +11,7 @@
 mod adapt;
 pub mod bodies;
 mod cmd;
+pub mod expr;
 mod geometry;
 mod meshing;
 pub mod open;
@@ -20,6 +21,7 @@ pub mod project;
 mod results;
 pub mod sample;
 mod solve;
+pub mod study;
 pub use solve::Compute;
 pub mod view;
 pub mod workflow;
@@ -217,6 +219,9 @@ pub struct Results {
     pub radiation: Option<Arc<open::Radiated>>,
     /// The open problem from `solve.time_domain` on an open model.
     pub td_radiation: Option<Arc<emcraft_fdtd::open::OpenRun>>,
+    /// The last parameter study (`study.sweep`, `study.optimize`): solved on models rebuilt
+    /// from the history, so no change to the model now makes it wrong.
+    pub study: Option<Arc<study::Study>>,
 }
 
 /// What changed in the model, which decides the results that no longer hold.
@@ -237,7 +242,7 @@ impl Results {
     /// but old (the band, the units) keep them, marked stale by the workflow.
     pub fn invalidate(&mut self, change: Change) {
         match change {
-            Change::Geometry => *self = Results::default(),
+            Change::Geometry => *self = Results { study: self.study.take(), ..Results::default() },
             Change::Walls => {
                 self.sweep = None;
                 self.eigen = None;
@@ -304,6 +309,9 @@ pub struct Session {
     pub saved: Vec<Value>,
     /// Where the solvers run (`solve.device`).
     pub compute: solve::Compute,
+    /// The named variables expressions in parameters read (`project.variable`), defined by
+    /// commands of the history.
+    pub variables: expr::Variables,
 }
 
 impl Session {
@@ -335,10 +343,11 @@ impl Session {
         // An id from hostile input is not echoed in full.
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
         check_keys(spec, params)?;
-        let before = project::Snapshot { model: self.model.clone(), display: self.display, history: Vec::new() };
+        let before = project::Snapshot { model: self.model.clone(), display: self.display, history: Vec::new(), variables: self.variables.clone() };
         let results_before = self.results.clone();
         let (history_before, revision_before) = (if spec.effect == Effect::None { Vec::new() } else { self.history.clone() }, self.revision);
-        let reader = Params::new(params, self.display);
+        let variables = self.variables.clone();
+        let reader = Params::new(params, self.display).with_variables(&variables);
         let accelerator = self.compute.accelerator();
         let outcome =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emcraft_solver::accel::with(accelerator, || (spec.run)(self, &reader))));
@@ -371,6 +380,7 @@ impl Session {
         };
         self.model = before.model;
         self.display = before.display;
+        self.variables = before.variables;
         self.results = results_before;
         Err(error)
     }
