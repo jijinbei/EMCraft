@@ -321,13 +321,7 @@ impl CrossSection {
         let factor = Ldlt::factor(&shifted, &self.points)?;
         let project = self.constraint(k2)?;
         let q = (count + count.max(6)).min(n);
-        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
-        let mut rand = || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
-        };
+        let mut rand = crate::eigen::uniform(0x9e37_79b9_7f4a_7c15);
         let mut x: Vec<Vec<f64>> = (0..q).map(|_| (0..n).map(|_| rand()).collect()).collect();
         for v in &mut x {
             project(v)?;

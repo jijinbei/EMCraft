@@ -28,6 +28,7 @@ use emcraft_model::{Model, Point3};
 use num_complex::Complex64 as C;
 
 use crate::driven::{Driven, Result, SolveError, Tie, check_frequency, invalid, wavenumber};
+use crate::eigen::{galerkin, uniform};
 use crate::ldlt::Analysis;
 use crate::lu::Lu;
 use crate::sparse::Csr;
@@ -72,11 +73,6 @@ pub struct Dispersion {
     pub points: Vec<BlochPoint>,
     /// Unknowns after the periodic reduction.
     pub unknowns: usize,
-}
-
-/// y = A x.
-fn mul(a: &Csr, x: &[C]) -> Vec<C> {
-    a.mul(x)
 }
 
 /// The conjugate product xᴴy.
@@ -151,39 +147,9 @@ impl Deflation {
         if nz == 0 {
             return Ok(Deflation { columns, factor: None });
         }
-        let mut owners: Vec<Vec<(usize, C)>> = vec![Vec::new(); m.n];
-        for (c, col) in columns.iter().enumerate() {
-            for &(u, z) in col {
-                if let Some(o) = owners.get_mut(u) {
-                    o.push((c, z));
-                }
-            }
-        }
-        // (ZᴴMZ)_ab = Σ conj(z_a,i) M_ij z_b,j, row a by row, summed in a fixed order.
-        let mut ptr = vec![0];
-        let (mut col, mut val) = (Vec::new(), Vec::new());
-        for za in &columns {
-            let mut w: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
-            for &(i, z) in za {
-                for k in m.ptr[i]..m.ptr[i + 1] {
-                    // (Mᴴ z̄)… M is Hermitian: row i of zᴴM is Σ_i z̄_i M_ij.
-                    *w.entry(m.col[k]).or_default() += z.conj() * m.val[k];
-                }
-            }
-            let mut row: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
-            for (j, wj) in w {
-                for &(b, zb) in owners.get(j).map_or(&[][..], Vec::as_slice) {
-                    *row.entry(b).or_default() += wj * zb;
-                }
-            }
-            // A symmetric pattern for the analysis: the transpose's entries too (zero).
-            for (b, v) in row {
-                col.push(b);
-                val.push(v);
-            }
-            ptr.push(col.len());
-        }
-        let mut a = Csr { n: nz, ptr, col, val };
+        // (ZᴴMZ)_ab = Σ conj(z_a,i) M_ij z_b,j: row i of z_aᴴM is Σ_i z̄_i M_ij.
+        let mut a = galerkin(&columns, m, |k, z: C| z.conj() * m.val[k], |wj, zb| wj * zb);
+        // A symmetric pattern for the analysis: the transpose's entries too (zero).
         symmetrize_pattern(&mut a);
         let an = Analysis::new(&a, points, 0)?;
         let f = Lu::factor_analysed(&a, &an, crate::ldlt::memory_budget())?;
@@ -193,7 +159,7 @@ impl Deflation {
     fn project(&self, xs: &mut [Vec<C>], m: &Csr) -> Result<()> {
         let Some((f, _)) = &self.factor else { return Ok(()) };
         for x in xs.iter_mut() {
-            let mx = mul(m, x);
+            let mx = m.mul(x);
             let mut rhs: Vec<C> = self.columns.iter().map(|z| z.iter().map(|&(u, c)| c.conj() * mx[u]).sum()).collect();
             f.solve(&mut rhs)?;
             for (z, coef) in self.columns.iter().zip(&rhs) {
@@ -355,13 +321,7 @@ fn ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<Vec<(f64, Vec<C>)>
 
 /// Deterministic complex starting vectors.
 fn start_vectors(q: usize, n: usize) -> Vec<Vec<C>> {
-    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
-    let mut rand = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
-    };
+    let mut rand = uniform(0x9e37_79b9_7f4a_7c15);
     (0..q).map(|_| (0..n).map(|_| C::new(rand(), rand())).collect()).collect()
 }
 
@@ -391,13 +351,13 @@ fn bands_at(d: &Driven, tie: &Tie, an: &Analysis, psi: [f64; 3], bands: usize, s
         iterations = it + 1;
         let mut y: Vec<Vec<C>> = Vec::with_capacity(q);
         for v in &x {
-            let mut r = mul(&m, v);
+            let mut r = m.mul(v);
             f.solve(&mut r)?;
             y.push(r);
         }
         deflation.project(&mut y, &m)?;
-        let ky: Vec<Vec<C>> = y.iter().map(|v| mul(&k, v)).collect();
-        let my: Vec<Vec<C>> = y.iter().map(|v| mul(&m, v)).collect();
+        let ky: Vec<Vec<C>> = y.iter().map(|v| k.mul(v)).collect();
+        let my: Vec<Vec<C>> = y.iter().map(|v| m.mul(v)).collect();
         let mut pairs = ritz(&y, &ky, &my)?;
         pairs.sort_by(|a, b| (a.0 - sigma).abs().total_cmp(&(b.0 - sigma).abs()));
         (lambdas, x) = pairs.into_iter().unzip();
