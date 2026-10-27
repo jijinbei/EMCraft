@@ -61,6 +61,12 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             device => format!("Time-domain solve done in {} steps on {device} ({} precision).", r.count("steps"), r.text("precision")),
         },
         "solve.port_modes" => format!("Port modes at {} {unit}.", r.num("frequency")),
+        "solve.device" => format!(
+            "The solvers run on {} ({} precision in the time domain; factorization: {}).",
+            r.text("device"),
+            r.text("precision"),
+            r.text("factorization")
+        ),
         "results.compare" => format!("Worst |S − S_ref| = {:.3e} ({}).", r.num("worst"), r.text("reference")),
         "edit.undo" | "edit.redo" => {
             format!("{} ({} to undo, {} to redo).", if id == "edit.undo" { "Undone" } else { "Redone" }, r.count("undo"), r.count("redo"))

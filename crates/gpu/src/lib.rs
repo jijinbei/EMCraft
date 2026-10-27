@@ -1,11 +1,13 @@
-//! EMCraft's time-domain leapfrog on a GPU: the waveguide run's [`Plan`] stepped by kernels
-//! written in Rust with CubeCL (docs/adr/0002-gpu.md), on CUDA or on the CPU's SIMD, in single
-//! or double precision.
+//! EMCraft's solvers on a GPU, through kernels written in Rust with CubeCL
+//! (docs/adr/0002-gpu.md), on CUDA or on the CPU's SIMD: the time domain's runs (the guide's
+//! [`Plan`] and the open box's [`OpenPlan`]) in single or double precision, and the
+//! factorization's large fronts ([`Fronts`]) in complex double.
 //!
-//! **What runs where.** The CPU prepares the plan, transforms the projections and decides when
-//! to stop, as for its own threads (`emcraft_fdtd`); the device holds the fields and runs four
-//! kernels a step: H, E, the source and the two projections. The projections are kept on the
-//! device and read back every [`BATCH`] steps, so the host waits on the device once a batch.
+//! **What runs where.** The CPU prepares the plan, transforms the projections (or the ports'
+//! voltages and currents) and decides when to stop, as for its own threads (`emcraft_fdtd`);
+//! the device holds the fields and runs the step's kernels, the values the host needs kept on
+//! it and read back once a batch ([`BATCH`] steps for the guide), so the host waits on the
+//! device once a batch.
 //!
 //! **Determinism.** Every field value is written by one unit, from values of the previous half
 //! step, and each projection is summed in a fixed order (each unit a fixed stride, then a tree
@@ -21,11 +23,13 @@ use emcraft_fdtd::{OpenBatch, OpenPlan, OpenStepper, Plan, Result, Stepper};
 
 mod buffer;
 mod device;
+mod front;
 mod guide;
 mod kernels;
 mod open;
 
 pub use device::{Available, Backend, Precision, available};
+pub use front::{Fronts, MAX_ROWS, MIN_ROWS};
 
 use crate::device::guarded;
 use crate::guide::Run;

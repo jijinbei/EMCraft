@@ -60,6 +60,22 @@ impl<F: Real> Buf<F> {
         TensorHandle::new_contiguous([self.len], self.handle.clone(), cubecl::ir::ElemType::Float(F::KIND)).binding().into_buffer_arg()
     }
 
+    /// An array of `len` elements from their bytes, as they lie in memory.
+    pub(crate) fn from_bytes(client: &Client, bytes: &[u8], len: usize) -> Buf<F> {
+        Buf { handle: client.create_from_slice(bytes), len, _f: PhantomData }
+    }
+
+    /// The bytes of elements `range` of the array.
+    pub(crate) fn read_bytes(&self, client: &Client, range: std::ops::Range<usize>) -> Result<Vec<u8>> {
+        let size = std::mem::size_of::<F>() as u64;
+        if range.start > range.end || range.end > self.len {
+            return Err(FdtdError::Invalid { what: "read".into(), why: "outside the array".into() });
+        }
+        let handle = self.handle.clone().offset_start(range.start as u64 * size).offset_end((self.len - range.end) as u64 * size);
+        let bytes = client.read_one(handle).map_err(|e| FdtdError::Device(format!("{e:?}")))?;
+        Ok(bytes.to_vec())
+    }
+
     pub(crate) fn read(&self, client: &Client) -> Result<Vec<f64>> {
         let bytes = client.read_one(self.handle.clone()).map_err(|e| FdtdError::Device(format!("{e:?}")))?;
         Ok(F::from_bytes(&bytes).iter().map(|x| x.wide()).collect())

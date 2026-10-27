@@ -418,6 +418,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
             json!({"start": a, "stop": z, "points": 41, "cell": 1})
         }
         "solve.port_modes" => json!({"frequency": band.map_or(10.0, |(_, z)| z), "order": 2}),
+        "solve.device" => json!({"device": s.compute.device(), "precision": s.compute.precision.name()}),
         "project.frequency" => match band {
             Some((a, z)) => json!({"start": a, "stop": z}),
             None => json!({"start": 8, "stop": 12}),

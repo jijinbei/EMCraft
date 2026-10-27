@@ -1972,9 +1972,11 @@ dependencies = [
 name = "emcraft-gpu"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cubecl",
  "emcraft-fdtd",
  "emcraft-model",
+ "emcraft-solver",
  "num-complex",
 ]
 

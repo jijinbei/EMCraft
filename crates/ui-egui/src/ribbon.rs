@@ -32,6 +32,7 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
             ("FREQUENCY DOMAIN", &["solve.frequency", "solve.eigenmodes", "solve.radiation"]),
             ("TIME DOMAIN", &["solve.time_domain"]),
             ("PORTS", &["solve.port_modes"]),
+            ("COMPUTE", &["solve.device"]),
         ],
     ),
     (
@@ -71,6 +72,7 @@ pub fn button_label(id: &str) -> &str {
         "solve.radiation" => "Radiation",
         "solve.time_domain" => "Time domain",
         "solve.port_modes" => "Port modes",
+        "solve.device" => "Device",
         "results.compare" => "Compare",
         "view.sparameters" => "S-param PNG",
         "view.field" => "Field PNG",

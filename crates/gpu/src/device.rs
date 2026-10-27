@@ -59,9 +59,10 @@ impl fmt::Display for Backend {
 }
 
 /// The floating-point type of the fields on the device.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Precision {
     /// f32: half the memory and traffic of double; ample for S-parameters to 1e-4.
+    #[default]
     Single,
     /// f64: for checking single against.
     Double,

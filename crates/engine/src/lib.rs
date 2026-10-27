@@ -19,6 +19,7 @@ pub mod project;
 mod results;
 pub mod sample;
 mod solve;
+pub use solve::Compute;
 pub mod view;
 pub mod workflow;
 
@@ -300,6 +301,8 @@ pub struct Session {
     /// The history as last saved or opened: the session has unsaved changes when its history
     /// differs (an undo back to it is clean again).
     pub saved: Vec<Value>,
+    /// Where the solvers run (`solve.device`).
+    pub compute: solve::Compute,
 }
 
 impl Session {
@@ -309,7 +312,7 @@ impl Session {
 
     /// A fresh session with this one's limits.
     pub(crate) fn fresh(&self) -> Session {
-        Session { limits: self.limits, ..Session::default() }
+        Session { limits: self.limits, compute: self.compute.clone(), ..Session::default() }
     }
 
     /// Whether the model changed since it was last saved or opened.
@@ -335,7 +338,9 @@ impl Session {
         let results_before = self.results.clone();
         let (history_before, revision_before) = (if spec.effect == Effect::None { Vec::new() } else { self.history.clone() }, self.revision);
         let reader = Params::new(params, self.display);
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, &reader)));
+        let accelerator = self.compute.accelerator();
+        let outcome =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emcraft_solver::accel::with(accelerator, || (spec.run)(self, &reader))));
         let error = match outcome {
             Ok(Ok(reply)) => {
                 match spec.effect {

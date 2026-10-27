@@ -277,6 +277,41 @@ fn time_domain_results_join_the_chart() {
 }
 
 #[test]
+fn the_device_is_a_setting_of_the_machine() {
+    let mut s = Session::new();
+    let r = s.execute("solve.device", &json!({"device": "cubecl-cpu", "precision": "double"})).unwrap();
+    assert!(r["factorization"].as_str().unwrap().contains("complex double"), "{r}");
+    // Kept across a new project; the time domain takes it as its default.
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    assert!(s.compute.accelerator().is_some());
+    assert_eq!(s.compute.precision, emcraft_gpu::Precision::Double);
+    for bad in [json!({"device": "tpu"}), json!({"device": "cpu", "precision": "half"}), json!({"device": "cubecl-cpu", "min_front": 0})] {
+        assert!(s.execute("solve.device", &bad).is_err(), "{bad}");
+    }
+    s.execute("solve.device", &json!({"device": "cpu"})).unwrap();
+    assert!(s.compute.accelerator().is_none());
+}
+
+#[test]
+#[ignore = "slow on CubeCL's CPU runtime: cargo test --release -p emcraft-engine -- --ignored"]
+fn the_factorization_hands_its_large_fronts_to_the_device() {
+    // CubeCL's CPU runtime runs the tiled update slowly (some 25 s here); CUDA is checked by
+    // emcraft-gpu's ignored tests.
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let sweep = json!({"frequencies": [7.5], "order": 1});
+    let cpu = s.execute("solve.frequency", &sweep).unwrap();
+    // Fronts from 150 rows to the GPU's kernels, here on the CPU; kept across a new project.
+    let r = s.execute("solve.device", &json!({"device": "cubecl-cpu", "min_front": 250})).unwrap();
+    assert!(r["factorization"].as_str().unwrap().contains("complex double"), "{r}");
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let on = s.execute("solve.frequency", &sweep).unwrap();
+    let s21 = |r: &Value| (r["points"][0]["s21"]["re"].as_f64().unwrap(), r["points"][0]["s21"]["im"].as_f64().unwrap());
+    let (a, b) = (s21(&cpu), s21(&on));
+    assert!((a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9, "{a:?} {b:?}");
+}
+
+#[test]
 fn the_time_domain_runs_where_the_machine_can() {
     let mut s = Session::new();
     let r = s.execute("solve.devices", &json!({})).unwrap();

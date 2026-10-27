@@ -251,8 +251,18 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `stop` | number | frequency | no | last frequency |
 | `points` | integer |  | no | frequencies from start to stop (default 11) |
 | `cell` | number | length | no | the cell size (default 1 mm) |
-| `device` | string |  | no | where the guide's leapfrog runs: `cpu` (the CPU's threads, default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); solve.devices lists what this machine has |
-| `precision` | string |  | no | the fields' floating point on a GPU device: `single` (default) or `double`; the CPU's threads run in double |
+| `device` | string |  | no | where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has |
+| `precision` | string |  | no | the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double |
+
+## `solve.device` — Device
+
+Where the solvers run from now on: `cpu` (the CPU's threads, the default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them). On a device the time domain steps its fields in `precision`, and the frequency domain's factorizations hand their large fronts (from `min_front` rows) to it in complex double; the CPU still pivots each block and solves. Consumer GPUs run double precision slowly: on an RTX 3080 the factorization runs at about the CPU's pace. A setting of this machine, kept across projects and never saved with them.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `device` | string |  | yes | `cpu`, `cuda` or `cubecl-cpu` |
+| `precision` | string |  | no | the time domain's fields: `single` (default) or `double` |
+| `min_front` | integer |  | no | the factorization's fronts from this many rows go to the device (default 1024) |
 
 ## `solve.devices` — Devices
 

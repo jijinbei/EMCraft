@@ -39,11 +39,13 @@ result is frozen so it cannot drift.
    exact cascade (2.5e-2 at 1.5 mm cells; heavy: 1.16e-2 → 2.8e-3 from 1 to 0.5 mm, second
    order), the inductive iris against mode matching (heavy), the dispersive slab's auxiliary
    differential equations against the cascade (heavy: second order, 3.5e-2 → 1.6e-2 from 1 to
-   0.7 mm), passivity, hostile requests. On devices (`crates/gpu/tests/guide.rs`): a
+   0.7 mm), passivity, hostile requests. On devices (`crates/gpu/tests/`): a
    serial stepper written from the plan alone matches the threads; CubeCL's CPU runtime
-   matches them to 1e-9 in double and 1e-4 in single (in the gate); CUDA, on a machine with an
-   NVIDIA GPU, the same and the same bits twice (`cargo test -p emcraft-gpu --features
-   cuda -- --ignored`).
+   matches them to 1e-9 in double and 1e-4 in single for the guide, the dispersive slab and
+   the open box with ports and a dipole (in the gate); CUDA, on a machine with an NVIDIA GPU,
+   the same, the same bits twice, and the factorization's fronts held by the device solving
+   alike to 1e-9 (`cargo test -p emcraft-gpu --features cuda -- --ignored`). The solver's
+   own test holds fronts in a host-side device written from `DeviceFront`'s documentation.
 7. **Unstructured meshes** (`crates/solver/tests/unstructured.rs`): a box cavity (2.6e-5) and a
    box waveguide (S21 within 2.4e-4) meshed without structure; cylindrical and spherical cavities
    against Bessel-zero resonances, a dielectric-loaded sphere (two regions joined node for node)

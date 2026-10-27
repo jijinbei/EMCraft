@@ -3,9 +3,10 @@
 use std::f64::consts::{LOG10_E, PI};
 use std::sync::Arc;
 
-use emcraft_gpu::{Backend, Gpu, Precision};
+use emcraft_gpu::{Backend, Fronts, Gpu, Precision};
 use emcraft_model::units::{C0, Length};
 use emcraft_solver::Driven;
+use emcraft_solver::accel::Accelerator;
 use serde_json::{Value, json};
 
 use crate::results::{complex, sparameter_table};
@@ -89,17 +90,78 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(reply)
 }
 
-/// The time-domain solver's devices by the names commands use: the CPU's threads, then the
-/// GPU crate's backends.
+/// The devices by the names commands use: the CPU's threads, then the GPU crate's backends.
 const DEVICES: [(&str, Option<Backend>); 3] = [("cpu", None), ("cuda", Some(Backend::Cuda)), ("cubecl-cpu", Some(Backend::Cpu))];
+
+/// The device named `name` (`None` for the CPU's threads).
+fn device_named(p: &Params, name: &str) -> Result<Option<Backend>> {
+    Ok(DEVICES.iter().find(|(n, _)| *n == name).ok_or_else(|| p.error("device", "must be cpu, cuda or cubecl-cpu"))?.1)
+}
+
+/// The name commands use for `backend`.
+fn device_name(backend: Option<Backend>) -> &'static str {
+    DEVICES.iter().find(|(_, b)| *b == backend).map_or("cpu", |(n, _)| n)
+}
+
+/// Where the solvers run: the time domain's leapfrog (in `precision`) and the factorization's
+/// large fronts (in complex double), on the CPU's threads or a GPU crate backend. The machine's,
+/// not the model's: kept across new projects, never saved with them.
+#[derive(Clone, Default)]
+pub struct Compute {
+    pub backend: Option<Backend>,
+    pub precision: Precision,
+    fronts: Option<Arc<Fronts>>,
+}
+
+impl std::fmt::Debug for Compute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Compute({}, {})", device_name(self.backend), self.precision)
+    }
+}
+
+impl Compute {
+    /// The device's name as commands give it.
+    pub fn device(&self) -> &'static str {
+        device_name(self.backend)
+    }
+
+    /// The factorization's accelerator, if the fronts go to a device.
+    pub fn accelerator(&self) -> Option<Arc<dyn Accelerator>> {
+        self.fronts.clone().map(|f| f as Arc<dyn Accelerator>)
+    }
+}
+
+pub fn device(s: &mut Session, p: &Params) -> Result<Value> {
+    let name = p.string("device").required()?;
+    let backend = device_named(p, name)?;
+    let precision = match p.string("precision").optional()? {
+        None => Precision::Single,
+        Some(n) => Precision::parse(n).ok_or_else(|| p.error("precision", "must be single or double"))?,
+    };
+    let fronts = match backend {
+        None => None,
+        Some(b) => {
+            let here = emcraft_gpu::available().into_iter().find(|a| a.backend == b);
+            if let Some(problem) = here.as_ref().and_then(|a| a.problem.clone()) {
+                return Err(emcraft_fdtd::FdtdError::Device(format!("{name} cannot run here: {problem}")).into());
+            }
+            if !here.is_some_and(|a| a.precisions.contains(&precision)) {
+                return Err(p.error("precision", format!("{name} does not run {precision} precision here")));
+            }
+            Some(Arc::new(Fronts::new(b, p.integer("min_front", 1..=emcraft_gpu::MAX_ROWS).optional()?)?))
+        }
+    };
+    s.compute = Compute { backend, precision, fronts };
+    Ok(json!({"device": name, "precision": precision.name(), "factorization": s.compute.fronts.as_ref().map_or("cpu".to_owned(), |f| f.name())}))
+}
 
 pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     let freqs = frequencies(s, p)?;
     let cell = p.positive_length("cell").or(Length::Millimetre.to_si(1.0))?;
-    let device = p.string("device").or("cpu")?;
-    let backend = DEVICES.iter().find(|(name, _)| *name == device).ok_or_else(|| p.error("device", "must be cpu, cuda or cubecl-cpu"))?.1;
+    let device = p.string("device").or(device_name(s.compute.backend))?;
+    let backend = device_named(p, device)?;
     let precision = match p.string("precision").optional()? {
-        None => Precision::Single,
+        None => s.compute.precision,
         Some(name) => Precision::parse(name).ok_or_else(|| p.error("precision", "must be single or double"))?,
     };
     if backend.is_none() && p.has("precision") && precision == Precision::Single {

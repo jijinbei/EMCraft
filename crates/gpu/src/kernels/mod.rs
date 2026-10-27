@@ -10,6 +10,7 @@ use cubecl::prelude::*;
 
 use crate::buffer::{Buf, Real};
 
+pub(crate) mod front;
 pub(crate) mod guide;
 pub(crate) mod open;
 

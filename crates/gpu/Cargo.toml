@@ -1,6 +1,6 @@
 [package]
 name = "emcraft-gpu"
-description = "EMCraft's time-domain leapfrog on a GPU (or the CPU's SIMD) through CubeCL, in single or double precision"
+description = "EMCraft's solvers on GPUs through CubeCL: the time-domain leapfrog in single or double precision, the factorization's large fronts in complex double"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,8 +14,10 @@ cuda = ["cubecl/cuda"]
 
 [dependencies]
 emcraft-fdtd = { workspace = true }
+emcraft-solver = { workspace = true }
 cubecl = { workspace = true }
-num-complex = { workspace = true }
+num-complex = { workspace = true, features = ["bytemuck"] }
+bytemuck = "1"
 
 [dev-dependencies]
 emcraft-model = { workspace = true }
