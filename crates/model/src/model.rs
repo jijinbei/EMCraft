@@ -10,6 +10,7 @@ use crate::geom::{Aabb, Point3};
 use crate::material::Material;
 use crate::mesh::Mesh;
 use crate::open::{LumpedPort, Open, Source, inside_ball};
+use crate::periodic::Periodic;
 use crate::port::Port;
 use crate::shape::{Combine, Feature, Inclusion, Solid};
 use crate::symmetry::Symmetry;
@@ -51,6 +52,9 @@ pub struct Model {
     /// on the side below them only.
     #[serde(default)]
     pub symmetry: Vec<Symmetry>,
+    /// Periodic boundaries: the model is the unit cell of an infinite array.
+    #[serde(default)]
+    pub periodic: Option<Periodic>,
     /// The mesh of the waveguide (made by `emcraft-mesh`).
     #[serde(skip)]
     pub mesh: Option<Mesh>,
@@ -72,6 +76,7 @@ impl Default for Model {
             lumped: Vec::new(),
             band: None,
             symmetry: Vec::new(),
+            periodic: None,
             mesh: None,
         }
     }
@@ -222,6 +227,9 @@ impl Model {
         let mut issues = Vec::new();
         if let Some(why) = self.symmetry_issue() {
             issues.push(format!("symmetry: {why} (clear it with model.symmetry, clear true)"));
+        }
+        if let Some(why) = self.periodic_issue() {
+            issues.push(format!("periodic: {why} (clear it with model.periodic, clear true)"));
         }
         if self.waveguide.is_none() && self.solid.is_none() {
             issues.push("no geometry: create one with geometry.waveguide or geometry.solid".to_owned());
