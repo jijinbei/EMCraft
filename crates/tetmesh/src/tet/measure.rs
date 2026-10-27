@@ -82,7 +82,50 @@ pub fn dihedral_cosines(x: &[P; 4]) -> [f64; 6] {
 /// limit, [`crate::quality`]), does. 0 for a flat tetrahedron; for an inverted one the negative
 /// sine of largest magnitude, so worse inversions score lower. Extremes are found on squared
 /// lengths and areas, with one square root each.
+///
+/// The six edge vectors are formed once and shared by the volume, the faces' cross products and
+/// both measures. This is the same arithmetic as [`volume6`], [`face_cross`] and the corner
+/// products taken separately, bit for bit: IEEE 754 rounding is symmetric, so `u − w = −(w − u)`,
+/// `cross(−u, −w) = cross(u, w)`, `dot(−u, w) = −dot(u, w)` and `|−u|² = |u|²` exactly (Rust
+/// contracts no multiply–add), and only the repeated work is gone (the improvement evaluates this
+/// millions of times).
 pub fn quality(x: &[P; 4]) -> f64 {
+    let [x0, x1, x2, x3] = *x;
+    // The edges in EDGE_FACES order, as x[i] − x[j].
+    let e = [sub(x0, x1), sub(x0, x2), sub(x0, x3), sub(x1, x2), sub(x1, x3), sub(x2, x3)];
+    // face_cross(x, 1) = (x2 − x0) × (x3 − x0) = e02 × e03; volume6 = (x1 − x0) · that.
+    let c1 = cross(e[1], e[2]);
+    let v6 = -dot(e[0], c1);
+    if v6 == 0.0 || !v6.is_finite() {
+        return 0.0;
+    }
+    // face_cross(x, k) for k = 0, 1, 2, 3: (x2 − x1) × (x3 − x1), c1, (x1 − x0) × (x3 − x0),
+    // (x1 − x0) × (x2 − x0).
+    let area2sq = [cross(e[3], e[4]), c1, cross(e[0], e[2]), cross(e[0], e[1])].map(|a| dot(a, a));
+    let l2 = e.map(|d| dot(d, d));
+    let mut pick = if v6 > 0.0 { f64::INFINITY } else { 0.0 };
+    for (&(_, _, k, l), &len2) in EDGE_FACES.iter().zip(&l2) {
+        let r = len2 / (area2sq[k] * area2sq[l]);
+        pick = if v6 > 0.0 { pick.min(r) } else { pick.max(r) };
+    }
+    let q = v6 * pick.sqrt();
+    let q = if v6 > 0.0 {
+        // The corner products of [`corner_products`], from the shared squared lengths in the
+        // same order (corner c times its edges to the other corners, ascending; 1 × l = l).
+        let [l01, l02, l03, l12, l13, l23] = l2;
+        let corners = [l01 * l02 * l03, l01 * l12 * l13, l02 * l12 * l23, l03 * l13 * l23];
+        let worst = corners.iter().fold(0.0_f64, |m, &p| m.max(p));
+        q.min(JACOBIAN_WEIGHT * (std::f64::consts::SQRT_2 * v6 / worst.sqrt()))
+    } else {
+        q
+    };
+    if q.is_finite() { q } else { 0.0 }
+}
+
+/// [`quality`] as first written, term by term: the reference its shared-edge form must match bit
+/// for bit.
+#[cfg(test)]
+pub(crate) fn quality_reference(x: &[P; 4]) -> f64 {
     let v6 = volume6(x);
     if v6 == 0.0 || !v6.is_finite() {
         return 0.0;
@@ -109,9 +152,11 @@ pub fn quality(x: &[P; 4]) -> f64 {
 pub const JACOBIAN_WEIGHT: f64 = 0.5 / 0.3;
 
 /// The corners of a tetrahedron and the other three corners of each.
+#[cfg(test)]
 const CORNERS: [(usize, [usize; 3]); 4] = [(0, [1, 2, 3]), (1, [0, 2, 3]), (2, [0, 1, 3]), (3, [0, 1, 2])];
 
 /// The squared product of the three edge lengths at each corner.
+#[cfg(test)]
 fn corner_products(x: &[P; 4]) -> [f64; 4] {
     CORNERS.map(|(c, o)| {
         o.iter().fold(1.0, |m, &j| {
@@ -123,6 +168,7 @@ fn corner_products(x: &[P; 4]) -> [f64; 4] {
 
 /// The scaled Jacobian at the worst corner of a tetrahedron with six times the volume `v6`
 /// (as [`crate::quality`] reports it).
+#[cfg(test)]
 fn scaled_jacobian(x: &[P; 4], v6: f64) -> f64 {
     let worst = corner_products(x).iter().fold(0.0_f64, |m, &p| m.max(p));
     std::f64::consts::SQRT_2 * v6 / worst.sqrt()
@@ -266,5 +312,50 @@ mod tests {
         let x = positive([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.01]]);
         assert!(quality(&x) < 0.05 && quality(&x) > 0.0, "{}", quality(&x));
         assert!(radius_ratio(&x) < 0.1);
+    }
+
+    /// The shared-edge [`quality`] is the term-by-term formula bit for bit: on random
+    /// tetrahedra of every shape and scale, inverted, flat and with repeated or huge corners.
+    #[test]
+    fn quality_matches_the_term_by_term_formula_bit_for_bit() {
+        let mut s = 0x2545_f491_4f6c_dd1du64;
+        let mut r = move || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            (s >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+        };
+        let mut seen = [0usize; 3];
+        for n in 0..200_000 {
+            let scale = [1e-9, 1e-3, 1.0, 1e3, 1e150][n % 5];
+            let mut x = [[0.0; 3]; 4];
+            for p in &mut x {
+                for c in p.iter_mut() {
+                    *c = 0.3 + scale * r();
+                }
+            }
+            match n % 7 {
+                // Nearly flat: the fourth corner close to the plane of the others.
+                0 => x[3] = add(scale_mid(x[0], x[1], x[2]), [scale * 1e-9 * r(); 3]),
+                // A repeated corner, and an exactly flat one.
+                1 => x[2] = x[1],
+                2 => x[3] = mid(x[0], x[1]),
+                _ => {}
+            }
+            let (a, b) = (quality(&x), quality_reference(&x));
+            assert_eq!(a.to_bits(), b.to_bits(), "{x:?}: {a:e} {b:e}");
+            seen[if a > 0.0 {
+                0
+            } else if a < 0.0 {
+                1
+            } else {
+                2
+            }] += 1;
+        }
+        assert!(seen.iter().all(|&k| k > 1000), "{seen:?}");
+    }
+
+    fn scale_mid(a: P, b: P, c: P) -> P {
+        scale(add(add(a, b), c), 1.0 / 3.0)
     }
 }
