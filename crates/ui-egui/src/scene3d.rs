@@ -130,6 +130,8 @@ const PORT: Rgb = Rgb(240, 140, 40);
 const PORT_SOFT: Rgb = Rgb(235, 180, 120);
 const EDGE: Rgb = Rgb(40, 46, 56);
 const PML: Rgb = Rgb(150, 110, 210);
+/// The rim under field arrows.
+const RIM: Rgb = Rgb(245, 245, 245);
 const SOURCE: Rgb = Rgb(220, 40, 60);
 
 /// A material's colour: vacuum pale blue, the others from a fixed palette by their index.
@@ -312,6 +314,15 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
             // In plane coordinates: `along` the arrow from its tail, `across` it.
             let at = |along: f64, across: f64| [p[0] - d[0] / 2.0 + along * u[0] + across * n[0], p[1] - d[1] / 2.0 + along * u[1] + across * n[1]];
             let (head, shaft) = (0.4 * len, (0.07 * f.plot.arrow_length).min(0.15 * len));
+            // A white rim under each arrow (between it and the plane), as the pictures have, so
+            // a dark arrow shows on the colour map's dark end too.
+            let rim = 0.45 * shaft;
+            for side in [lift, -lift] {
+                let q = |along: f64, across: f64| point(at(along, across), 0.5 * side);
+                let (h, w) = (head + 2.0 * rim, shaft / 2.0 + rim);
+                out.scene.quad([q(-rim, -w), q(len - head, -w), q(len - head, w), q(-rim, w)], RIM, 255);
+                out.scene.tri(q(len + rim - h, -0.45 * h), q(len + rim, 0.0), q(len + rim - h, 0.45 * h), RIM, 255);
+            }
             for side in [lift, -lift] {
                 let q = |along: f64, across: f64| point(at(along, across), side);
                 out.scene.quad([q(0.0, -shaft / 2.0), q(len - head, -shaft / 2.0), q(len - head, shaft / 2.0), q(0.0, shaft / 2.0)], set.color, 255);

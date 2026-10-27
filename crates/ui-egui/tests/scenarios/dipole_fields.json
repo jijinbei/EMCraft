@@ -51,5 +51,20 @@
  },
  {
   "shot": "dipole-field"
+ },
+ {
+  "call": "ui.set",
+  "params": {
+   "dark": true
+  }
+ },
+ {
+  "click": "view:model"
+ },
+ {
+  "frames": 4
+ },
+ {
+  "shot": "dipole-results-3d-dark"
  }
 ]
