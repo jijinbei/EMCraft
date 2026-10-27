@@ -34,7 +34,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
 
-use emcraft_engine::view::{FieldView, Plane, PlaneSamples};
+use emcraft_engine::view::{FieldView, Plane, PlaneSamples, Probe};
 use emcraft_engine::{EngineError, Session};
 use serde_json::{Value, json};
 
@@ -143,7 +143,13 @@ pub struct FieldState {
     pub at: Option<f64>,
     pub samples: Option<PlaneSamples>,
     pub picture: Option<Picture>,
+    /// Where the picture puts the plane, for reading the pointer's position.
+    pub layout: Option<emcraft_render::plot::Layout>,
     pub animate: bool,
+    /// The fields under the pointer (last frame), and the point clicked on the plane (display
+    /// units along the picture's axes), read again whenever the view changes.
+    pub hover: Option<Probe>,
+    pub pinned: Option<[f64; 2]>,
 }
 
 /// A window screenshot waiting for its frame.
@@ -213,7 +219,16 @@ impl EmcraftApp {
             dialog: None,
             dock_dialogs: false,
             view: View::Model,
-            field: FieldState { view: FieldView::new(10.0e9, Plane::H), at: None, samples: None, picture: None, animate: false },
+            field: FieldState {
+                view: FieldView { show_h: false, ..FieldView::new(10.0e9, Plane::H) },
+                at: None,
+                samples: None,
+                picture: None,
+                layout: None,
+                animate: false,
+                hover: None,
+                pinned: None,
+            },
             chart: None,
             pattern_phi: 0.0,
             port_modes: None,
@@ -318,6 +333,7 @@ impl EmcraftApp {
         self.revision = self.revision.wrapping_add(1);
         self.field.samples = None;
         self.field.picture = None;
+        self.field.pinned = None;
         self.chart = None;
         let f = |k: &str| reply.get(k).and_then(Value::as_f64);
         let unit = self.session.display.frequency.symbol();

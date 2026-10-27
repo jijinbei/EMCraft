@@ -109,6 +109,19 @@ fn field_views_show_the_te10_pattern() {
     let (mx, my) = e.arrows.iter().fold((0.0f64, 0.0f64), |m, (_, v)| (m.0.max(v[0].abs()), m.1.max(v[1].abs())));
     assert!(mx < 0.1 * my, "{mx} {my}");
     assert!(plot.arrows.iter().any(|a| a.label.starts_with('H')));
+    // H's arrows sit between E's, never on them.
+    let h = plot.arrows.iter().find(|a| a.label.starts_with('H')).unwrap();
+    assert!(h.arrows.iter().all(|(p, _)| e.arrows.iter().all(|(q, _)| (p[0] - q[0]).abs() + (p[1] - q[1]).abs() > 1e-6)));
+    // A probe at the guide's middle reads TE10's E: along y, largest there, none at the walls.
+    let samples = view::sample_plane(&s, &v).unwrap();
+    let (x, y) = samples.axes();
+    let mid = samples.probe([(x.min + x.max) / 2.0, (y.min + y.max) / 2.0]).unwrap();
+    assert!(mid.e.y.norm() > 10.0 * (mid.e.x.norm() + mid.e.z.norm()), "{mid:?}");
+    let wall = samples.probe([x.min, (y.min + y.max) / 2.0]).unwrap();
+    assert!(wall.e.y.norm() < 0.05 * mid.e.y.norm(), "{wall:?}");
+    let (_, amplitude) = mid.value(view::Component::Ey, 0.0);
+    assert!((amplitude - mid.e.y.norm()).abs() < 1e-12);
+    assert!(samples.probe([x.max + 1.0, y.min]).is_none() && samples.probe([f64::NAN, 0.0]).is_none());
     // H-plane: E has no in-plane part, so only H arrows; E_y largest across the middle (x = a/2).
     let plot = view::field_plot(&s, &view::FieldView::new(8.0e9, view::Plane::H)).unwrap();
     assert!(plot.arrows.iter().all(|a| a.label.starts_with('H')));

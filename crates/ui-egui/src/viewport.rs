@@ -80,6 +80,17 @@ fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: &str) -> egui::Response {
     r
 }
 
+/// A picture as large as fits with `below` pixels kept free under it.
+fn picture_above(ui: &mut egui::Ui, p: &mut Picture, handle: &str, below: f32) -> egui::Response {
+    let size = p.size();
+    let avail = ui.available_size() - vec2(0.0, below);
+    let scale = (avail.x / size.x).min(avail.y / size.y).clamp(0.1, 1.0);
+    let id = p.texture(ui.ctx());
+    let r = ui.add(egui::Image::new((id, size * scale)).sense(Sense::click()));
+    scenario::publish_target(handle, r.rect);
+    r
+}
+
 /// A width for pictures, rounded so resizing does not redraw on every pixel.
 fn picture_width(ui: &egui::Ui) -> usize {
     (((ui.available_width().max(400.0)) / 50.0).floor() * 50.0).min(2400.0) as usize
@@ -419,11 +430,108 @@ fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             }
         };
         let c = emcraft_render::plot::draw(&plot, width);
+        app.field.layout = Some(emcraft_render::plot::Layout::of(&plot, width));
         app.field.picture = Some(Picture::new(key, &c));
     }
-    if let Some(p) = app.field.picture.as_mut() {
-        picture(ui, p, "picture:field");
+    let Some(p) = app.field.picture.as_mut() else { return };
+    let r = picture_above(ui, p, "picture:field", READOUT_HEIGHT);
+    probe_picture(app, ui, &r);
+    readout(app, ui);
+}
+
+/// Room under the field picture for the probe's readout.
+const READOUT_HEIGHT: f32 = 58.0;
+
+/// The pointer over the field picture: the fields under it, a click pins a point (a right click
+/// lets it go); both are marked on the picture.
+fn probe_picture(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response) {
+    app.field.hover = None;
+    let (Some(layout), Some(samples)) = (app.field.layout, app.field.samples.as_ref()) else { return };
+    let rect = r.rect;
+    let (lw, lh) = (layout.width as f32, layout.height as f32);
+    let to_plane = |pos: Pos2| {
+        let f = (pos - rect.min) / rect.size();
+        layout.to_axes([f64::from(f.x * lw), f64::from(f.y * lh)])
+    };
+    let to_screen = |q: [f64; 2]| {
+        let [x, y] = layout.to_pixels(q);
+        rect.min + vec2(x as f32 / lw * rect.width(), y as f32 / lh * rect.height())
+    };
+    if let Some(q) = r.hover_pos().and_then(to_plane) {
+        app.field.hover = samples.probe(q);
     }
+    if r.clicked()
+        && let Some(q) = r.interact_pointer_pos().and_then(to_plane)
+    {
+        app.field.pinned = samples.probe(q).map(|p| p.at);
+    }
+    if r.secondary_clicked() {
+        app.field.pinned = None;
+    }
+    let painter = ui.painter_at(rect);
+    let t = Tokens::get();
+    if let Some(pin) = app.field.pinned.and_then(|q| samples.probe(q)) {
+        let c = to_screen(pin.at);
+        painter.circle_stroke(c, 7.0, Stroke::new(3.0, Color32::WHITE));
+        painter.circle_stroke(c, 7.0, Stroke::new(1.6, t.accent));
+        painter.circle_filled(c, 2.0, t.accent);
+    }
+    if let Some(h) = &app.field.hover {
+        let c = to_screen(h.at);
+        let ink = Stroke::new(1.0, Color32::from_black_alpha(160));
+        let [x0, y0, pw, ph] = layout.plane;
+        let (left, top) = (to_screen(layout.to_axes([x0, y0 + ph]).unwrap_or(h.at)), to_screen(layout.to_axes([x0 + pw, y0]).unwrap_or(h.at)));
+        painter.line_segment([pos2(left.x, c.y), pos2(top.x, c.y)], ink);
+        painter.line_segment([pos2(c.x, top.y), pos2(c.x, left.y)], ink);
+    }
+}
+
+/// A complex component as its amplitude and phase.
+fn phasor(c: emcraft_model::Complex64) -> String {
+    use emcraft_render::axes::format;
+    if c.norm() == 0.0 { "0".into() } else { format!("{} ({}°)", format(c.norm()), format(c.arg().to_degrees().round())) }
+}
+
+/// The readout under the field picture: the fields at the pointer and at the pinned point —
+/// the coloured component at this phase and its amplitude, and every component of E and H as
+/// amplitude (phase).
+fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    let t = Tokens::get();
+    let Some(samples) = app.field.samples.as_ref() else { return };
+    let (xa, ya) = samples.axes();
+    let name = |a: &emcraft_render::Axis| a.label.split(' ').next().unwrap_or("").to_owned();
+    let (hx, vy) = (name(xa), name(ya));
+    let lu = app.session.display.length.symbol();
+    let comp = app.field.view.component;
+    let phase = app.field.view.phase;
+    let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
+    let rows = [("pointer", app.field.hover), ("pinned", app.field.pinned.and_then(|q| samples.probe(q)))];
+    let fmt = emcraft_render::axes::format;
+    let text = |s: String| egui::RichText::new(s).size(t.font_small).color(t.text);
+    let dim = |s: &str| egui::RichText::new(s).size(t.font_small).color(t.text_dim);
+    ui.add_space(t.space_4);
+    egui::Grid::new("field:readout").num_columns(5).spacing(vec2(t.space_12, 2.0)).show(ui, |ui| {
+        for (what, probe) in rows {
+            ui.label(dim(what));
+            match probe {
+                None => {
+                    ui.label(dim(if what == "pointer" {
+                        "hover the picture to read the fields"
+                    } else {
+                        "click the picture to pin a point (right click lets it go)"
+                    }));
+                }
+                Some(p) => {
+                    let (now, amp) = p.value(comp, phase);
+                    ui.label(text(format!("{hx} = {} {lu}, {vy} = {} {lu}", fmt(p.at[0]), fmt(p.at[1]))));
+                    ui.label(text(format!("{} = {} {unit}, amplitude {}", comp.label(), fmt(now), fmt(amp))).strong());
+                    ui.label(text(format!("E (V/m): x {}, y {}, z {}", phasor(p.e.x), phasor(p.e.y), phasor(p.e.z))));
+                    ui.label(text(format!("H (A/m): x {}, y {}, z {}", phasor(p.h.x), phasor(p.h.y), phasor(p.h.z))));
+                }
+            }
+            ui.end_row();
+        }
+    });
 }
 
 fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
@@ -456,39 +564,54 @@ fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 app.field.view.frequency = *f;
             }
         }
+        ui.separator();
         for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
             let r = ui.selectable_label(app.field.view.plane == p, name);
             scenario::publish_target(&format!("field:plane:{}", p.name()), r.rect);
-            if r.clicked() {
+            if r.clicked() && app.field.view.plane != p {
                 app.field.view.plane = p;
                 app.field.at = None;
+                app.field.pinned = None;
             }
         }
         if let Some((span, axis)) = plane_span(app) {
             let mut at = app.field.at.unwrap_or(span / 2.0);
             let unit = app.session.display.length.symbol();
-            if ui.add(egui::Slider::new(&mut at, 0.0..=span).text(format!("{axis} ({unit})"))).changed() {
+            let r = crate::ui_kit::slider(ui, &mut at, 0.0..=span, format!("{axis} ({unit})"));
+            scenario::publish_target("field:at", r.rect);
+            if r.changed() {
                 app.field.at = Some(at);
+                app.field.pinned = None;
             }
         }
     });
     ui.horizontal_wrapped(|ui| {
-        egui::ComboBox::from_id_salt("component").selected_text(app.field.view.component.name()).show_ui(ui, |ui| {
+        let before = app.field.view.component;
+        let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {
             for c in emcraft_engine::view::Component::ALL {
-                ui.selectable_value(&mut app.field.view.component, c, c.name());
+                ui.selectable_value(&mut app.field.view.component, c, c.label());
             }
         });
+        scenario::publish_target("field:component", r.response.rect);
+        // Arrows of the field coloured; the other stays a click away.
+        let now = app.field.view.component;
+        if now != before && now.is_magnetic() != before.is_magnetic() {
+            app.field.view.show_e = !now.is_magnetic();
+            app.field.view.show_h = now.is_magnetic();
+        }
         ui.checkbox(&mut app.field.view.show_e, "E arrows");
         ui.checkbox(&mut app.field.view.show_h, "H arrows");
         let ports: Vec<String> = app.session.model.ports.iter().map(|p| p.name.clone()).collect();
         if ports.len() > 1 && app.field.view.mode.is_none() {
+            ui.separator();
             ui.label("excite");
             for (i, n) in ports.iter().enumerate() {
                 ui.radio_value(&mut app.field.view.excitation, i, n.as_str());
             }
         }
+        ui.separator();
         let mut deg = app.field.view.phase.to_degrees().rem_euclid(360.0);
-        let r = ui.add(egui::Slider::new(&mut deg, 0.0..=360.0).text("ωt (°)"));
+        let r = crate::ui_kit::slider(ui, &mut deg, 0.0..=360.0, "ωt (°)");
         scenario::publish_target("field:phase", r.rect);
         if r.changed() {
             app.field.view.phase = deg.to_radians();
@@ -639,7 +762,7 @@ fn far_field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     let mut phi = app.pattern_phi;
     ui.horizontal(|ui| {
-        let r = ui.add(egui::Slider::new(&mut phi, 0.0..=180.0).text("azimuth φ (°)"));
+        let r = crate::ui_kit::slider(ui, &mut phi, 0.0..=180.0, "azimuth φ (°)");
         scenario::publish_target("pattern:phi", r.rect);
     });
     if (phi - app.pattern_phi).abs() > 1e-9 {

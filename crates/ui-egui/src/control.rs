@@ -148,7 +148,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "messages": app.messages.len(),
         "search": {"open": app.search.open, "text": app.search.text},
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
-        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.animate, "shown": app.field.picture.is_some()},
+        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.animate, "shown": app.field.picture.is_some(), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned},
         "chart": app.chart.as_ref().map(|c| c.key.clone()),
         "port_modes": app.port_modes.is_some(),
         "compare": app.compare.as_ref().and_then(|c| c.get("worst")).cloned(),

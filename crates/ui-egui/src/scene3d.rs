@@ -153,6 +153,57 @@ fn field_plane(session: &Session, f: &FieldLayer, out: &mut Built) {
         j = j1;
     }
     out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| s.label.clone()), color(peak)));
+    field_arrows(session, f, lo, out);
+}
+
+/// The plot's arrows (E's, H's) on the field's plane, filled (a shaft and a head), a hair off
+/// the plane on both sides so they show from either.
+fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], out: &mut Built) {
+    use emcraft_engine::view::Plane;
+    let l = session.display.length;
+    let normal = match f.plane {
+        Plane::H => 1,
+        Plane::E => 0,
+        Plane::Cross => 2,
+    };
+    let (xa, xb) = f.plot.x.span();
+    let lift = 1e-3 * l.to_si(xb - xa);
+    // Plane coordinates (display units) to the model's (m), `side` lifts off the plane.
+    let point = |p: [f64; 2], side: f64| {
+        let (u, v) = (l.to_si(p[0]), l.to_si(p[1]));
+        let mut q = match f.plane {
+            Plane::H => [v, lo[1] + f.at, u],
+            Plane::E => [lo[0] + f.at, v, u],
+            Plane::Cross => [u, v, lo[2] + f.at],
+        };
+        q[normal] += side;
+        q
+    };
+    for set in &f.plot.arrows {
+        let largest = set.arrows.iter().map(|(_, v)| v[0].hypot(v[1])).filter(|m| m.is_finite()).fold(0.0, f64::max);
+        let scale = set.scale.filter(|s| *s > 0.0 && s.is_finite()).unwrap_or(largest);
+        if !(scale > 0.0) {
+            continue;
+        }
+        let k = f.plot.arrow_length / scale;
+        for (p, v) in &set.arrows {
+            let d = [v[0] * k, v[1] * k];
+            let len = d[0].hypot(d[1]);
+            if !(len.is_finite() && len > 0.08 * f.plot.arrow_length) {
+                continue;
+            }
+            let (u, n) = ([d[0] / len, d[1] / len], [-d[1] / len, d[0] / len]);
+            // In plane coordinates: `along` the arrow from its tail, `across` it.
+            let at = |along: f64, across: f64| [p[0] - d[0] / 2.0 + along * u[0] + across * n[0], p[1] - d[1] / 2.0 + along * u[1] + across * n[1]];
+            let (head, shaft) = (0.4 * len, (0.07 * f.plot.arrow_length).min(0.15 * len));
+            for side in [lift, -lift] {
+                let q = |along: f64, across: f64| point(at(along, across), side);
+                out.scene.quad([q(0.0, -shaft / 2.0), q(len - head, -shaft / 2.0), q(len - head, shaft / 2.0), q(0.0, shaft / 2.0)], set.color, 255);
+                out.scene.tri(q(len - head, -0.45 * head), q(len, 0.0), q(len - head, 0.45 * head), set.color, 255);
+            }
+        }
+        out.legend.push((set.label.clone(), set.color));
+    }
 }
 
 fn legend(session: &Session, overlay: Overlay, out: &mut Built) {

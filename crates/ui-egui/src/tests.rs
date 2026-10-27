@@ -65,6 +65,11 @@ fn scenario_view3d_open_boundary() {
 }
 
 #[test]
+fn scenario_view3d_field_arrows() {
+    scenario("view3d_field_arrows");
+}
+
+#[test]
 fn scenario_workflow_walk() {
     scenario("workflow_walk");
 }

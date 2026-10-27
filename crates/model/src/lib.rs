@@ -14,6 +14,7 @@ pub mod units;
 
 pub use geom::{Aabb, CVec3, Point3, Vec3};
 pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
+pub use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error, PartialEq)]

@@ -1,0 +1,23 @@
+[
+  {"note": "The Results step's 3D view: the field's cross-section in the guide with E's arrows on it"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}},
+  {"expect": {"busy": false}},
+  {"click": "view:field"},
+  {"frames": 2},
+  {"click": "field:plane:cross"},
+  {"frames": 2},
+  {"call": "ui.set", "params": {"step": "results"}},
+  {"frames": 2},
+  {"click": "view:model"},
+  {"frames": 2},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.overlay": "field", "view3d.triangles": {"min": 2000}}}},
+  {"shot": "view3d-field-cross-arrows"},
+  {"note": "Face the plane: the view turns to look along the plane's normal and frames the plane"},
+  {"click": "view3d:face"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.yaw": [0.0, 1e-9], "view3d.pitch": [0.0, 1e-9], "view3d.distance": {"max": 0.06}}}},
+  {"shot": "view3d-field-cross-front"}
+]

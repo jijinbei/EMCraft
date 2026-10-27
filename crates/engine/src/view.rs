@@ -174,8 +174,11 @@ pub struct PlaneSamples {
     ny: usize,
     /// (E, H) on an nx × ny grid over the plane, row 0 at the bottom; `None` outside the mesh.
     grid: Vec<Option<(CVec3, CVec3)>>,
-    /// Arrow positions (display units) with E and H there.
+    /// Arrow positions (display units) with E and H there: the arrow lattice's cell centres.
     arrows: Vec<([f64; 2], CVec3, CVec3)>,
+    /// The same at the lattice's inner corners, between the centres: where H's arrows go when
+    /// E's are drawn too, so the two never sit on one point.
+    corners: Vec<([f64; 2], CVec3, CVec3)>,
     arrow_length: f64,
     lines: Vec<[[f64; 2]; 2]>,
     title: String,
@@ -258,6 +261,10 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         .flat_map(|j| (0..ax).map(move |i| (hspan * (i as f64 + 0.5) / ax as f64, vspan * (j as f64 + 0.5) / ay as f64)))
         .filter_map(|(u, v)| driven.fields(x, frequency, point(u, v)).map(|(e, h)| ([l.from_si(h0 + u), l.from_si(v0 + v)], e, h)))
         .collect();
+    let corners = (1..ay)
+        .flat_map(|j| (1..ax).map(move |i| (hspan * i as f64 / ax as f64, vspan * j as f64 / ay as f64)))
+        .filter_map(|(u, v)| driven.fields(x, frequency, point(u, v)).map(|(e, h)| ([l.from_si(h0 + u), l.from_si(v0 + v)], e, h)))
+        .collect();
     let (hlabel, vlabel, nlabel) = match view.plane {
         Plane::H => ("z", "x", "y"),
         Plane::E => ("z", "y", "x"),
@@ -294,6 +301,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         ny,
         grid,
         arrows,
+        corners,
         arrow_length: l.from_si(step) * 1.1,
         lines,
         title,
@@ -303,7 +311,46 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     })
 }
 
+/// The fields at one sample of a plane: where it is (display units along the picture's axes)
+/// and the complex E (V/m) and H (A/m) there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Probe {
+    pub at: [f64; 2],
+    pub e: CVec3,
+    pub h: CVec3,
+}
+
+impl Probe {
+    /// The value of `component` at phase ωt = `phase` (rad), and its amplitude over the period.
+    pub fn value(&self, component: Component, phase: f64) -> (f64, f64) {
+        component.sample(&self.e, &self.h, C::from_polar(1.0, phase))
+    }
+}
+
 impl PlaneSamples {
+    /// The picture's horizontal and vertical axes (display units).
+    pub fn axes(&self) -> (&Axis, &Axis) {
+        (&self.x, &self.y)
+    }
+
+    /// The fields at the sample nearest `point` (display units along the axes); `None` off the
+    /// plane or where the plane leaves the mesh (inside a conductor).
+    pub fn probe(&self, point: [f64; 2]) -> Option<Probe> {
+        if self.nx < 2 || self.ny < 2 || !point.iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let ((xa, xb), (ya, yb)) = (self.x.span(), self.y.span());
+        let (u, v) = ((point[0] - xa) / (xb - xa), (point[1] - ya) / (yb - ya));
+        if !((0.0..=1.0).contains(&u) && (0.0..=1.0).contains(&v)) {
+            return None;
+        }
+        let i = (u * (self.nx - 1) as f64).round() as usize;
+        let j = (v * (self.ny - 1) as f64).round() as usize;
+        let (e, h) = (*self.grid.get(j * self.nx + i)?)?;
+        let at = [xa + (xb - xa) * i as f64 / (self.nx - 1) as f64, ya + (yb - ya) * j as f64 / (self.ny - 1) as f64];
+        Some(Probe { at, e, h })
+    }
+
     /// Whether these samples serve a view (same frequency, plane, position and excitation).
     pub fn serves(&self, view: &FieldView, at: f64) -> bool {
         self.plane == view.plane
@@ -345,8 +392,10 @@ impl PlaneSamples {
                 continue;
             }
             let (mut in_peak, mut total): (f64, f64) = (0.0, 0.0);
-            let mut list = Vec::with_capacity(self.arrows.len());
-            for (pos, e, h) in &self.arrows {
+            // H between E's arrows when both show.
+            let lattice = if magnetic && view.show_e && !self.corners.is_empty() { &self.corners } else { &self.arrows };
+            let mut list = Vec::with_capacity(lattice.len());
+            for (pos, e, h) in lattice {
                 let f = if magnetic { h } else { e };
                 let (u, v) = in_plane(f);
                 total = total.max(norm(f));

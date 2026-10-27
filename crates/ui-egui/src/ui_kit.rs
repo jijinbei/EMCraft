@@ -149,3 +149,18 @@ pub fn progress(ui: &mut Ui, fraction: Option<f64>, width: f32) -> Response {
     scenario::publish_rect("progress", r);
     resp
 }
+
+/// A slider whose track shows on the panels' colours: the track in the controls' border colour,
+/// the part up to the handle in the accent.
+pub fn slider(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>, text: impl Into<egui::WidgetText>) -> Response {
+    let t = Tokens::get();
+    ui.scope(|ui| {
+        let v = ui.visuals_mut();
+        v.widgets.inactive.bg_fill = t.border;
+        v.selection.bg_fill = t.accent;
+        v.slider_trailing_fill = true;
+        ui.spacing_mut().slider_width = 200.0;
+        ui.add(egui::Slider::new(value, range).text(text))
+    })
+    .inner
+}

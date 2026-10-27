@@ -11,6 +11,8 @@ use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_render::Rgb;
 use emcraft_render::view3d::{self, Camera, Projection, StandardView};
 
+use emcraft_engine::view::Plane;
+
 use crate::scene3d::{self, Built, Overlay};
 use crate::theme::Tokens;
 use crate::{EmcraftApp, Picture, scenario};
@@ -250,7 +252,19 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     }
     legend(&p, rect, &built.legend, &t);
     gizmo(&p, rect, &cam, &t);
-    toolbar(app, ui, rect);
+    // The field's plane: its box in the model and the view that faces it.
+    let facing = layer.as_ref().map(|(plot, plane, at)| {
+        let l = app.session.display.length;
+        let (lo, _) = bounds;
+        let ((h0, h1), (v0, v1)) = (plot.x.span(), plot.y.span());
+        let (h0, h1, v0, v1) = (l.to_si(h0), l.to_si(h1), l.to_si(v0), l.to_si(v1));
+        match plane {
+            Plane::H => ([v0, lo[1] + at, h0], [v1, lo[1] + at, h1], StandardView::Top),
+            Plane::E => ([lo[0] + at, v0, h0], [lo[0] + at, v1, h1], StandardView::Right),
+            Plane::Cross => ([h0, v0, lo[2] + at], [h1, v1, lo[2] + at], StandardView::Front),
+        }
+    });
+    toolbar(app, ui, rect, facing);
 }
 
 impl Built {
@@ -300,10 +314,13 @@ fn gizmo(p: &egui::Painter, rect: Rect, cam: &Camera, t: &Tokens) {
 }
 
 /// Fit, the standard views and the projection, at the top right.
-fn toolbar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect) {
+fn toolbar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, facing: Option<([f64; 3], [f64; 3], StandardView)>) {
     let t = Tokens::get();
     let ortho = app.view3d.camera.projection == Projection::Orthographic;
     let mut items: Vec<(String, String)> = vec![("Fit".into(), "view3d:fit".into())];
+    if facing.is_some() {
+        items.push(("Face the plane".into(), "view3d:face".into()));
+    }
     for v in StandardView::ALL {
         let name = v.name();
         let mut label = name.to_owned();
@@ -334,6 +351,12 @@ fn toolbar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             match handle.strip_prefix("view3d:std:").and_then(StandardView::parse) {
                 Some(v) => app.view3d.standard(v),
                 None if handle == "view3d:fit" => app.view3d.fit_next = true,
+                None if handle == "view3d:face" => {
+                    if let Some((lo, hi, v)) = facing {
+                        app.view3d.camera.standard(v);
+                        app.view3d.camera.fit(lo, hi, (rect.width() / rect.height().max(1.0)) as f64);
+                    }
+                }
                 None => app.view3d.toggle_projection(),
             }
         }
