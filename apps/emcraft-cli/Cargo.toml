@@ -13,5 +13,5 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-emcraft-engine = { workspace = true }
+emcraft-engine = { workspace = true, features = ["cuda"] }
 serde_json = { workspace = true }

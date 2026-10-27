@@ -56,7 +56,10 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             let power = reply.get("power").or(reply.get("radiated_power")).and_then(Value::as_f64).unwrap_or(f64::NAN);
             format!("Solved the open problem: radiated power {power:.4e} W.")
         }
-        "solve.time_domain" => format!("Time-domain solve done in {} steps.", r.count("steps")),
+        "solve.time_domain" => match r.text("device") {
+            "" | "cpu" => format!("Time-domain solve done in {} steps.", r.count("steps")),
+            device => format!("Time-domain solve done in {} steps on {device} ({} precision).", r.count("steps"), r.text("precision")),
+        },
         "solve.port_modes" => format!("Port modes at {} {unit}.", r.num("frequency")),
         "results.compare" => format!("Worst |S − S_ref| = {:.3e} ({}).", r.num("worst"), r.text("reference")),
         "edit.undo" | "edit.redo" => {

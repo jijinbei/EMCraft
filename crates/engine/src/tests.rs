@@ -277,6 +277,31 @@ fn time_domain_results_join_the_chart() {
 }
 
 #[test]
+fn the_time_domain_runs_where_the_machine_can() {
+    let mut s = Session::new();
+    let r = s.execute("solve.devices", &json!({})).unwrap();
+    let devices = r["devices"].as_array().unwrap();
+    let names: Vec<&str> = devices.iter().map(|d| d["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["cpu", "cuda", "cubecl-cpu"]);
+    assert_eq!(devices[0]["precisions"], json!(["double"]));
+    assert_eq!(devices[2]["precisions"], json!(["single", "double"]));
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    // The threads run in double; unknown devices and precisions are refused.
+    for bad in [json!({"device": "tpu"}), json!({"precision": "half"}), json!({"device": "cpu", "precision": "single"})] {
+        let mut p = json!({"frequencies": [6, 8], "cell": 3});
+        p.as_object_mut().unwrap().extend(bad.as_object().unwrap().clone());
+        assert!(s.execute("solve.time_domain", &p).is_err(), "{p}");
+    }
+    let r = s.execute("solve.time_domain", &json!({"frequencies": [6, 8], "cell": 3, "device": "cpu", "precision": "double"})).unwrap();
+    assert_eq!((r["device"].as_str(), r["precision"].as_str()), (Some("cpu"), Some("double")));
+    // An open model stays on the threads.
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    s.execute("model.open", &json!({"thickness": 10})).unwrap();
+    assert!(s.execute("solve.time_domain", &json!({"frequencies": [10], "device": "cubecl-cpu"})).is_err());
+}
+
+#[test]
 fn solids_mesh_unstructured_and_their_modes_meet_the_bessel_zeros() {
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "cylinder", "radius": 10, "length": 30})).unwrap();

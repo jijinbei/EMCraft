@@ -25,6 +25,11 @@ fn scenario_sweep_and_sparameters() {
 }
 
 #[test]
+fn scenario_time_domain_device() {
+    scenario("time_domain_device");
+}
+
+#[test]
 fn scenario_field_view() {
     scenario("field_view");
 }

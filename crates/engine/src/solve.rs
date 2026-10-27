@@ -3,6 +3,7 @@
 use std::f64::consts::{LOG10_E, PI};
 use std::sync::Arc;
 
+use emcraft_fdtd_gpu::{Backend, Gpu, Precision};
 use emcraft_model::units::{C0, Length};
 use emcraft_solver::Driven;
 use serde_json::{Value, json};
@@ -88,22 +89,56 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(reply)
 }
 
+/// The time-domain solver's devices by the names commands use: the CPU's threads, then the
+/// GPU crate's backends.
+const DEVICES: [(&str, Option<Backend>); 3] = [("cpu", None), ("cuda", Some(Backend::Cuda)), ("cubecl-cpu", Some(Backend::Cpu))];
+
 pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     let freqs = frequencies(s, p)?;
     let cell = p.positive_length("cell").or(Length::Millimetre.to_si(1.0))?;
+    let device = p.string("device").or("cpu")?;
+    let backend = DEVICES.iter().find(|(name, _)| *name == device).ok_or_else(|| p.error("device", "must be cpu, cuda or cubecl-cpu"))?.1;
+    let precision = match p.string("precision").optional()? {
+        None => Precision::Single,
+        Some(name) => Precision::parse(name).ok_or_else(|| p.error("precision", "must be single or double"))?,
+    };
+    if backend.is_none() && p.has("precision") && precision == Precision::Single {
+        return Err(p.error("precision", "the CPU's threads run in double precision (single needs a GPU device)"));
+    }
     if s.model.open.is_some() {
+        if backend.is_some() {
+            return Err(emcraft_fdtd::FdtdError::Unsupported(format!("open models on {device} (run them on cpu)")).into());
+        }
         return crate::open::solve_time_domain_open(s, &freqs, cell);
     }
-    let r = emcraft_fdtd::s_parameters(&s.model, &emcraft_fdtd::Options::new(cell), &freqs)?;
+    let gpu = backend.map(|backend| Gpu { backend, precision });
+    let r =
+        emcraft_fdtd::s_parameters_with(&s.model, &emcraft_fdtd::Options::new(cell), &freqs, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::Stepper))?;
     let points: Vec<Value> = r
         .frequencies
         .iter()
         .zip(r.s11.iter().zip(&r.s21))
         .map(|(f, (a, b))| json!({"frequency": s.show_frequency(*f), "s11": complex(*a), "s21": complex(*b)}))
         .collect();
-    let reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "frequency_unit": s.display.frequency.symbol(), "points": points});
+    let precision = gpu.map_or("double", |g| g.precision.name());
+    let reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device, "precision": precision, "frequency_unit": s.display.frequency.symbol(), "points": points});
     s.results.time_domain = Some(r);
     Ok(reply)
+}
+
+pub fn devices(_: &mut Session, _: &Params) -> Result<Value> {
+    let gpu = emcraft_fdtd_gpu::available();
+    let list: Vec<Value> = DEVICES
+        .iter()
+        .map(|(name, backend)| match backend.and_then(|b| gpu.iter().find(|a| a.backend == b)) {
+            None => json!({"name": name, "available": true, "precisions": ["double"]}),
+            Some(a) => {
+                let precisions: Vec<&str> = a.precisions.iter().map(|p| p.name()).collect();
+                json!({"name": name, "available": a.problem.is_none(), "precisions": precisions, "problem": a.problem})
+            }
+        })
+        .collect();
+    Ok(json!({"devices": list}))
 }
 
 pub fn eigenmodes(s: &mut Session, p: &Params) -> Result<Value> {

@@ -1,0 +1,9 @@
+[
+  {"note": "The time-domain dialog offers where to run and in what precision; solve.devices lists what the machine has"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"click": "tab:SIMULATE"},
+  {"click": "toolbar:solve.time_domain"},
+  {"expect": {"dialog": "solve.time_domain"}},
+  {"shot": "time-domain-dialog"},
+  {"call": "engine.execute", "params": {"command": "solve.devices", "params": {}}}
+]

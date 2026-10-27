@@ -251,6 +251,14 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `stop` | number | frequency | no | last frequency |
 | `points` | integer |  | no | frequencies from start to stop (default 11) |
 | `cell` | number | length | no | the cell size (default 1 mm) |
+| `device` | string |  | no | where the guide's leapfrog runs: `cpu` (the CPU's threads, default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); solve.devices lists what this machine has |
+| `precision` | string |  | no | the fields' floating point on a GPU device: `single` (default) or `double`; the CPU's threads run in double |
+
+## `solve.devices` — Devices
+
+Where the time-domain solver can run on this machine: each device with the precisions it runs, or why it cannot run.
+
+No parameters.
 
 ## `solve.eigenmodes` — Eigenmodes
 
