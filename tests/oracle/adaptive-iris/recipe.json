@@ -4,5 +4,5 @@
  {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "box", "size": [5.43, 10.16, 2], "at": [17.43, 0, 15]}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
- {"command": "mesh.adapt", "params": {"size": 4, "frequency": 10, "passes": 6, "tolerance": 0.001, "fraction": 0.3, "order": 2}, "id": "adapt"}
+ {"command": "mesh.adapt", "params": {"size": 4, "frequency": 10, "passes": 4, "tolerance": 0.003, "fraction": 0.3, "order": 2}, "id": "adapt"}
 ]

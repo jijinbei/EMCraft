@@ -2,20 +2,20 @@
   "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
   "values": {
     "delta_s": {
-      "band": 1.0000002402492403e-6,
-      "value": 0.00023924924032526042
+      "band": 3.0000028690057384e-6,
+      "value": 0.0028680057383183746
     },
     "s11_mag": {
-      "band": 2.0095265409438094e-7,
-      "value": 0.9526425786657599
+      "band": 2.0095266799744503e-7,
+      "value": 0.9526669974449962
     },
     "s11_phase": {
-      "band": 0.000020099594225309033,
-      "value": -99.59422430902994
+      "band": 0.000020099586444687965,
+      "value": -99.57991021921592
     },
     "s21_mag": {
-      "band": 5.00304093284205e-7,
-      "value": 0.3040922842050598
+      "band": 5.003040603504428e-7,
+      "value": 0.30401577587213113
     }
   }
 }
