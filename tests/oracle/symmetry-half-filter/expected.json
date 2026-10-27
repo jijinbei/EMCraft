@@ -1,0 +1,12 @@
+{
+ "title": "Half of the inductive-iris band-pass filter below a magnetic wall at x = a/2",
+ "kind": "theory",
+ "source": "The whole filter's reference (oracle iris-bandpass): mode matching of TE_m0 modes at the eight iris faces, cascaded as generalised scattering matrices (Uher, Bornemann, Rosenberg, Waveguide Components for Antenna Feed Systems: Theory and CAD, Artech House 1993, ch. 2), converged with 640 modes. The filter is symmetric about x = a/2 and TE10 even about it, so the half closed by a magnetic wall there (tangential H = 0, the natural condition of edge elements: J.-M. Jin, The Finite Element Method in Electromagnetics, 3rd ed., Wiley 2014, ch. 8) has the whole filter's S-parameters",
+ "quantities": [
+  {"id": "s21_db_10", "quantity": "|S21| at 10 GHz, mid-band (dB)", "measure": {"step": "solve", "pointer": "/points/1/s21/db"}, "value": -0.007464356243990189, "tolerance": {"absolute": 0.02}, "reason": "as the whole filter's: in the passband the transmission is nearly total whatever the small resonance shift"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz, mid-band", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.04143978002358464, "tolerance": {"absolute": 0.015}, "reason": "as the whole filter's: the 8e-3 complex error of the graded mesh is a fifth of this small reflection"},
+  {"id": "s21_db_9_6", "quantity": "|S21| at 9.6 GHz, lower skirt (dB)", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -1.8996715173939969, "tolerance": {"absolute": 0.1}, "reason": "on the skirt |S21| falls 25 dB per GHz: a resonance shift of 0.05 % moves it by 0.1 dB"},
+  {"id": "s21_db_10_4", "quantity": "|S21| at 10.4 GHz, upper skirt (dB)", "measure": {"step": "solve", "pointer": "/points/2/s21/db"}, "value": -1.5214275335769767, "tolerance": {"absolute": 0.1}, "reason": "as the lower skirt"},
+  {"id": "worst", "quantity": "largest |S − S_mm| at 9.6, 10 and 10.4 GHz (complex)", "measure": {"command": "results.compare", "params": {"modes": 320}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 0.02}, "reason": "the whole filter's mesh, cut on its middle: its error (6.9e-3 for the whole) moves only by the lines the plane adds"}
+ ]
+}
