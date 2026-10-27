@@ -1,7 +1,7 @@
 //! An RGBA canvas with anti-aliased lines and triangles (coverage from the pixel centre's
-//! distance to the shape's edges) and bitmap text.
+//! distance to the shape's edges) and anti-aliased text ([`crate::text`]).
 
-use crate::font;
+use crate::text;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
@@ -149,58 +149,28 @@ impl Canvas {
         self.triangle([b, [base[0] + n[0], base[1] + n[1]], [base[0] - n[0], base[1] - n[1]]], c);
     }
 
-    /// Width in pixels of `text` at `scale` pixels per font pixel.
+    /// Width in pixels of `text` at `scale` ([`crate::text`]).
     pub fn text_width(text: &str, scale: usize) -> usize {
-        text.chars().count() * font::ADVANCE * scale.max(1)
+        text::width(text, scale).ceil() as usize
     }
 
-    /// Draws `text` with its top-left corner at (x, y).
+    /// Draws `text` with the top-left corner of its box at (x, y).
     pub fn text(&mut self, x: f64, y: f64, text: &str, scale: usize, c: Rgb) {
-        if !(x.is_finite() && y.is_finite()) {
+        if !(x.is_finite() && y.is_finite() && x.abs() < 1e7 && y.abs() < 1e7) {
             return;
         }
-        let s = scale.clamp(1, 16) as i64;
         let (x0, y0) = (x.round() as i64, y.round() as i64);
-        for (i, ch) in text.chars().enumerate() {
-            let rows = font::cased(ch);
-            for (ry, row) in rows.iter().enumerate() {
-                for rx in 0..font::W {
-                    if row & (0x10 >> rx) != 0 {
-                        for dy in 0..s {
-                            for dx in 0..s {
-                                let gx = x0 + (i * font::ADVANCE + rx) as i64 * s + dx;
-                                self.set(gx, y0 + ry as i64 * s + dy, c);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        text::rasterize(text, scale, |u, v, a| self.blend(x0 + u, y0 + v, c, f64::from(a)));
     }
 
     /// Text drawn rotated a quarter turn anticlockwise, reading upwards from (x, y) (its
     /// bottom-left corner).
     pub fn text_up(&mut self, x: f64, y: f64, text: &str, scale: usize, c: Rgb) {
-        if !(x.is_finite() && y.is_finite()) {
+        if !(x.is_finite() && y.is_finite() && x.abs() < 1e7 && y.abs() < 1e7) {
             return;
         }
-        let s = scale.clamp(1, 16) as i64;
         let (x0, y0) = (x.round() as i64, y.round() as i64);
-        for (i, ch) in text.chars().enumerate() {
-            let rows = font::cased(ch);
-            for (ry, row) in rows.iter().enumerate() {
-                for rx in 0..font::W {
-                    if row & (0x10 >> rx) != 0 {
-                        for dy in 0..s {
-                            for dx in 0..s {
-                                let along = (i * font::ADVANCE + rx) as i64 * s + dx;
-                                self.set(x0 + ry as i64 * s + dy, y0 - along, c);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        text::rasterize(text, scale, |u, v, a| self.blend(x0 + v, y0 - u, c, f64::from(a)));
     }
 
     /// The canvas as a PNG file.
@@ -241,10 +211,10 @@ mod tests {
 
     #[test]
     fn text_draws_inside_its_box() {
-        let mut c = Canvas::new(60, 20, Rgb::WHITE);
+        let mut c = Canvas::new(60, 24, Rgb::WHITE);
         c.text(2.0, 2.0, "S21", 2, Rgb::BLACK);
         let w = Canvas::text_width("S21", 2);
-        let dark = |x0: usize, x1: usize| (x0..x1).any(|x| (0..20).any(|y| c.pixel(x, y) == Some(Rgb::BLACK)));
+        let dark = |x0: usize, x1: usize| (x0..x1).any(|x| (0..20).any(|y| c.pixel(x, y).is_some_and(|p| p.0 < 128)));
         assert!(dark(2, 2 + w));
         assert!(!dark(2 + w, 60));
     }

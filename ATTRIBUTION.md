@@ -17,7 +17,10 @@ third-party material under an open licence.
 | docs/media/sphere-rcs-e-plane.png, docs/media/sphere-rcs-h-plane.png, docs/media/dipole-directivity.png | EMCraft contributors | Original: drawn by `view.pattern` after the dielectric-sphere-scattering and dipole-radiation oracle recipes | MIT OR Apache-2.0 |
 | docs/media/bandpass-s-parameters.png, docs/media/bandpass-h-10GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample iris-bandpass --frequency 10` | MIT OR Apache-2.0 |
 
-EMCraft's 5 × 7 bitmap font is FieldCraft's (below).
+| crates/render/fonts/DejaVuSans.ttf | Bitstream, Inc. (Vera); the DejaVu fonts team (DejaVu changes) | DejaVu fonts 2.37, https://dejavu-fonts.github.io/ (unmodified) | Bitstream Vera Fonts licence; DejaVu changes public domain — crates/render/fonts/LICENSE-DejaVu.txt |
+
+Text in pictures is set in DejaVu Sans (above). EMCraft's 5 × 7 bitmap font, drawn only if the
+face cannot be read, is FieldCraft's (below).
 
 ## Code adapted from sibling projects
 

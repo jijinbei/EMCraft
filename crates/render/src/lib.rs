@@ -1,5 +1,5 @@
-//! EMCraft pictures without a GPU: a 2D canvas with anti-aliased lines, arrows and a bitmap
-//! font ([`canvas`], [`font`]), colour maps ([`colormap`]), field plots on planes — a colour
+//! EMCraft pictures without a GPU: a 2D canvas with anti-aliased lines, arrows and text in
+//! DejaVu Sans ([`canvas`], [`text`]; the bitmap [`font`] as a fallback), colour maps ([`colormap`]), field plots on planes — a colour
 //! map with vector arrows over it ([`plot`]) —, line charts ([`chart`]) and 3D views of triangles and
 //! lines with a depth buffer ([`view3d`]), written as PNG. The
 //! desktop app shows the same pictures, so headless and on-screen views agree.
@@ -12,6 +12,7 @@ pub mod chart;
 pub mod colormap;
 pub mod font;
 pub mod plot;
+pub mod text;
 pub mod view3d;
 
 pub use axes::Axis;
