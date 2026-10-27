@@ -76,9 +76,22 @@ impl Component {
         }
     }
 
-    /// The name on a picture: `Ey`, `|H|`.
+    /// The name in text: `Ey`, `|H|`.
     pub fn label(self) -> String {
         self.name().replace('e', "E").replace('h', "H")
+    }
+
+    /// The name as TeX math, for pictures: `$E_y$`, `$|H|$`.
+    pub fn tex(self) -> String {
+        match self {
+            Component::E => "$|E|$".into(),
+            Component::H => "$|H|$".into(),
+            c => {
+                let n = c.label();
+                let (f, axis) = n.split_at(1);
+                format!("${f}_{axis}$")
+            }
+        }
     }
 
     pub const fn is_magnetic(self) -> bool {
@@ -412,11 +425,15 @@ impl PlaneSamples {
         let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
         Ok(FieldPlot {
             title: self.title.clone(),
-            subtitle: format!("Re(F e^jωt) at ωt = {} deg, {}", emcraft_render::axes::format(view.phase.to_degrees()), self.caption),
+            subtitle: format!(
+                "Re($F\\,e^{{j\\omega t}}$) at $\\omega t$ = {}°, {}",
+                emcraft_render::axes::format(view.phase.to_degrees()),
+                self.caption
+            ),
             x: self.x.clone(),
             y: self.y.clone(),
             scalar: Some(Scalar {
-                label: format!("{} ({unit})", comp.label()),
+                label: format!("{} ({unit})", comp.tex()),
                 nx: self.nx,
                 ny: self.ny,
                 values,
@@ -587,8 +604,8 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
             }
         }
         let label = reference.label();
-        series.push(Series { label: format!("|S21| {label}"), color: Rgb(30, 90, 200), style: Style::Line, points: s21 });
-        series.push(Series { label: format!("|S11| {label}"), color: Rgb(200, 60, 40), style: Style::Line, points: s11 });
+        series.push(Series { label: format!("$|S_{{21}}|$ {label}"), color: Rgb(30, 90, 200), style: Style::Line, points: s21 });
+        series.push(Series { label: format!("$|S_{{11}}|$ {label}"), color: Rgb(200, 60, 40), style: Style::Line, points: s11 });
     }
     if let Some(w) = session.model.waveguide.as_ref() {
         let lu = session.display.length;
@@ -599,9 +616,9 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
             if !seen.iter().any(|x| (x - fc).abs() < 1e-6 * fc) {
                 seen.push(fc);
                 let name = if (width - w.width).abs() <= 1e-9 * w.width {
-                    format!("fc {}", sec.material)
+                    format!("$f_c$ {}", sec.material)
                 } else {
-                    format!("fc {} {}", emcraft_render::axes::format(lu.from_si(width)), lu.symbol())
+                    format!("$f_c$ {} {}", emcraft_render::axes::format(lu.from_si(width)), lu.symbol())
                 };
                 marks.push((fu.from_si(fc), name));
             }
@@ -610,24 +627,24 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
     if let Some(sweep) = sweep {
         let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), db(s)])).collect();
         series.push(Series {
-            label: format!("|S21| FEM (order {})", sweep.order.as_u8()),
+            label: format!("$|S_{{21}}|$ FEM (order {})", sweep.order.as_u8()),
             color: Rgb(20, 40, 120),
             style: Style::Markers,
             points: pts(1, 0),
         });
-        series.push(Series { label: "|S11| FEM".into(), color: Rgb(140, 30, 20), style: Style::Markers, points: pts(0, 0) });
+        series.push(Series { label: "$|S_{11}|$ FEM".into(), color: Rgb(140, 30, 20), style: Style::Markers, points: pts(0, 0) });
     }
     if let Some(td) = td {
         let pts = |v: &[C]| td.frequencies.iter().zip(v).map(|(f, s)| [fu.from_si(*f), db(*s)]).collect();
-        series.push(Series { label: "|S21| time domain".into(), color: Rgb(40, 150, 90), style: Style::Line, points: pts(&td.s21) });
-        series.push(Series { label: "|S11| time domain".into(), color: Rgb(210, 140, 30), style: Style::Line, points: pts(&td.s11) });
+        series.push(Series { label: "$|S_{21}|$ time domain".into(), color: Rgb(40, 150, 90), style: Style::Line, points: pts(&td.s21) });
+        series.push(Series { label: "$|S_{11}|$ time domain".into(), color: Rgb(210, 140, 30), style: Style::Line, points: pts(&td.s11) });
     }
     let lowest = series.iter().flat_map(|s| s.points.iter().map(|p| p[1])).fold(0.0f64, f64::min);
     let ymin = ((lowest / 10.0).floor() * 10.0).max(-80.0);
     Ok(Chart {
         title: "S-parameters".into(),
         x: Axis::new(&format!("frequency ({})", fu.symbol()), fu.from_si(f0), fu.from_si(f1)),
-        y: Axis::new("|S| (dB)", ymin.min(-10.0), 2.0),
+        y: Axis::new("$|S|$ (dB)", ymin.min(-10.0), 2.0),
         series,
         marks,
     })

@@ -11,6 +11,7 @@ pub mod canvas;
 pub mod chart;
 pub mod colormap;
 pub mod font;
+pub mod math;
 pub mod plot;
 pub mod text;
 pub mod view3d;

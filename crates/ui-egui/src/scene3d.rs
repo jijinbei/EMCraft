@@ -152,7 +152,7 @@ fn field_plane(session: &Session, f: &FieldLayer, out: &mut Built) {
         }
         j = j1;
     }
-    out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| s.label.clone()), color(peak)));
+    out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| emcraft_render::math::to_unicode(&s.label)), color(peak)));
     field_arrows(session, f, lo, out);
 }
 
@@ -202,7 +202,7 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], out: &mut Built
                 out.scene.tri(q(len - head, -0.45 * head), q(len, 0.0), q(len - head, 0.45 * head), set.color, 255);
             }
         }
-        out.legend.push((set.label.clone(), set.color));
+        out.legend.push((emcraft_render::math::to_unicode(&set.label), set.color));
     }
 }
 
