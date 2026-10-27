@@ -3,12 +3,13 @@
 //! problems, whose phase-shifted boundary conditions make A Hermitian-like rather than complex
 //! symmetric ([`crate::driven::periodic`]).
 //!
-//! **Structure.** The pattern being symmetric, the symmetric machinery of [`crate::ldlt`] serves
-//! unchanged: its [`Analysis`] (nested dissection, the elimination tree's postorder, relaxed
-//! supernodes) gives the fronts, each assembled from A's rows and columns of its supernode and
-//! the update matrices of its children (extend-add), its supernode's k variables eliminated and
-//! the Schur complement passed to the parent (I. S. Duff, J. K. Reid, *The multifrontal solution
-//! of unsymmetric sets of linear equations*, SIAM J. Sci. Stat. Comput. 5(3):633–641, 1984).
+//! **Structure.** The pattern being symmetric, the machinery the LDLᵀ ([`crate::ldlt`]) uses
+//! serves unchanged ([`crate::multifrontal`]): its [`Analysis`] (nested dissection, the
+//! elimination tree's postorder, relaxed supernodes) gives the fronts, each assembled from A's
+//! rows and columns of its supernode and the update matrices of its children (extend-add), its
+//! supernode's k variables eliminated and the Schur complement passed to the parent (I. S. Duff,
+//! J. K. Reid, *The multifrontal solution of unsymmetric sets of linear equations*, SIAM J. Sci.
+//! Stat. Comput. 5(3):633–641, 1984). The update matrices are passed full.
 //!
 //! **Pivoting.** Within a front, the k fully summed rows may be interchanged freely without
 //! changing any structure: column j's pivot is its largest entry among the fully summed rows
@@ -22,15 +23,17 @@
 //! **Blocks.** Each front is factored in blocks of [`BLOCK`] columns: the block's panel by
 //! rank-one updates, the block's rows of U by a unit lower triangular solve, the trailing
 //! matrix by one product (faer), whose sums run in an order that does not depend on the threads,
-//! so the factor is the same bit for bit on any machine. The supernodes are factored one after
-//! another in postorder; the factor is kept in memory (its size is checked against the memory
-//! budget first).
+//! so the factor is the same bit for bit on any machine. The supernodes are factored by the
+//! multifrontal driver (light subtrees on threads, each front's updates summed in its children's
+//! order); the factor is kept in memory (its size is checked against the memory budget first).
+
+use std::ops::Range;
 
 use faer::linalg::matmul::matmul;
 use faer::{Accum, MatMut, MatRef, Par};
 use num_complex::Complex64 as C;
 
-use crate::ldlt::{Analysis, FactorError, MAX_FRONT};
+use crate::multifrontal::{Analysis, Counts, Eliminated, FactorError, Front, FrontKernel, MAX_FRONT, Update, check, factor_tree, refine};
 use crate::sparse::Csr;
 
 /// Pivot columns per block.
@@ -98,77 +101,201 @@ fn scalings(a: &Csr) -> (Vec<f64>, Vec<f64>) {
 /// interchanging rows among the first k (`eqs` follows them). On return the first k columns
 /// hold L and U₁₁, rows 0..k of the rest U₁₂, and the trailing block the Schur complement.
 fn factor_front(f: &mut [C], m: usize, k: usize, eqs: &mut [usize], tau: f64, perturbed: &mut usize) {
-    let zero = C::new(0.0, 0.0);
     let mut b0 = 0;
     while b0 < k {
         let b1 = (b0 + BLOCK).min(k);
-        // The panel: columns b0..b1, every row from b0.
-        for j in b0..b1 {
-            let mut p = j;
-            let mut best = f[j * m + j].norm();
-            for i in j + 1..k {
-                let v = f[j * m + i].norm();
-                if v > best {
-                    best = v;
-                    p = i;
-                }
-            }
-            if best < tau {
-                let d = f[j * m + j];
-                f[j * m + j] = if d.norm() > 0.0 { d / d.norm() * tau } else { C::new(tau, 0.0) };
-                *perturbed += 1;
-            } else if p != j {
-                for c in 0..m {
-                    f.swap(c * m + j, c * m + p);
-                }
-                eqs.swap(j, p);
-            }
-            let inv = C::new(1.0, 0.0) / f[j * m + j];
-            for i in j + 1..m {
-                f[j * m + i] *= inv;
-            }
-            // Rank-one update of the panel's later columns.
-            for c in j + 1..b1 {
-                let u = f[c * m + j];
-                if u == zero {
-                    continue;
-                }
-                for i in j + 1..m {
-                    let l = f[j * m + i];
-                    f[c * m + i] -= l * u;
-                }
-            }
-        }
+        factor_panel(f, m, k, b0..b1, eqs, tau, perturbed);
         if b1 == m {
             break;
         }
-        let nb = b1 - b0;
-        // U's block rows over the later columns: L₁₁⁻¹ (unit lower) applied to rows b0..b1.
-        for c in b1..m {
-            for j in b0..b1 {
-                let u = f[c * m + j];
-                if u == zero {
-                    continue;
-                }
-                for i in j + 1..b1 {
-                    let l = f[j * m + i];
-                    f[c * m + i] -= l * u;
-                }
+        solve_u_rows(f, m, b0..b1);
+        update_trailing(f, m, b0..b1);
+        b0 = b1;
+    }
+}
+
+/// The panel: columns `block`, every row from its first, by rank-one updates, each column's
+/// pivot the largest among the fully summed rows j..k.
+fn factor_panel(f: &mut [C], m: usize, k: usize, block: Range<usize>, eqs: &mut [usize], tau: f64, perturbed: &mut usize) {
+    let zero = C::new(0.0, 0.0);
+    let b1 = block.end;
+    for j in block {
+        let mut p = j;
+        let mut best = f[j * m + j].norm();
+        for i in j + 1..k {
+            let v = f[j * m + i].norm();
+            if v > best {
+                best = v;
+                p = i;
             }
         }
-        // The trailing matrix: F[b1.., b1..] −= L[b1.., b0..b1] U[b0..b1, b1..].
-        let below = m - b1;
-        let mut ublock = vec![zero; nb * below];
-        for c in 0..below {
-            ublock[c * nb..(c + 1) * nb].copy_from_slice(&f[(b1 + c) * m + b0..(b1 + c) * m + b1]);
+        if best < tau {
+            let d = f[j * m + j];
+            f[j * m + j] = if d.norm() > 0.0 { d / d.norm() * tau } else { C::new(tau, 0.0) };
+            *perturbed += 1;
+        } else if p != j {
+            for c in 0..m {
+                f.swap(c * m + j, c * m + p);
+            }
+            eqs.swap(j, p);
         }
-        let (left, right) = f.split_at_mut(b1 * m);
-        let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(b1, below);
-        let um = MatRef::from_column_major_slice(&ublock, nb, below);
-        let fm = MatMut::from_column_major_slice_mut(right, m, below);
-        let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
-        matmul(fm.submatrix_mut(b1, 0, below, below), Accum::Add, lm, um, C::new(-1.0, 0.0), par);
-        b0 = b1;
+        let inv = C::new(1.0, 0.0) / f[j * m + j];
+        for i in j + 1..m {
+            f[j * m + i] *= inv;
+        }
+        // Rank-one update of the panel's later columns.
+        for c in j + 1..b1 {
+            let u = f[c * m + j];
+            if u == zero {
+                continue;
+            }
+            for i in j + 1..m {
+                let l = f[j * m + i];
+                f[c * m + i] -= l * u;
+            }
+        }
+    }
+}
+
+/// U's block rows over the later columns: L₁₁⁻¹ (unit lower) applied to rows `block`.
+fn solve_u_rows(f: &mut [C], m: usize, block: Range<usize>) {
+    let zero = C::new(0.0, 0.0);
+    let (b0, b1) = (block.start, block.end);
+    for c in b1..m {
+        for j in b0..b1 {
+            let u = f[c * m + j];
+            if u == zero {
+                continue;
+            }
+            for i in j + 1..b1 {
+                let l = f[j * m + i];
+                f[c * m + i] -= l * u;
+            }
+        }
+    }
+}
+
+/// The trailing matrix: F[b1.., b1..] −= L[b1.., block] U[block, b1..], by one product.
+fn update_trailing(f: &mut [C], m: usize, block: Range<usize>) {
+    let (b0, b1) = (block.start, block.end);
+    let nb = b1 - b0;
+    let below = m - b1;
+    let mut ublock = vec![C::new(0.0, 0.0); nb * below];
+    for c in 0..below {
+        ublock[c * nb..(c + 1) * nb].copy_from_slice(&f[(b1 + c) * m + b0..(b1 + c) * m + b1]);
+    }
+    let (left, right) = f.split_at_mut(b1 * m);
+    let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(b1, below);
+    let um = MatRef::from_column_major_slice(&ublock, nb, below);
+    let fm = MatMut::from_column_major_slice_mut(right, m, below);
+    let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
+    matmul(fm.submatrix_mut(b1, 0, below, below), Accum::Add, lm, um, C::new(-1.0, 0.0), par);
+}
+
+/// R A C's entries by position (`inv[unknown] = position`): column j holds (row position,
+/// value) for rows ≥ j, row i holds (column position, value) for columns > i; and the largest
+/// |entry|.
+fn by_position(a: &Csr, inv: &[usize], row_scale: &[f64], col_scale: &[f64]) -> (Vec<Vec<(usize, C)>>, Vec<Vec<(usize, C)>>, f64) {
+    let n = a.n;
+    let mut lower: Vec<Vec<(usize, C)>> = vec![Vec::new(); n];
+    let mut upper: Vec<Vec<(usize, C)>> = vec![Vec::new(); n];
+    let mut norm: f64 = 0.0;
+    for u in 0..n {
+        let pu = inv[u];
+        for k in a.ptr[u]..a.ptr[u + 1] {
+            let v = a.col[k];
+            let pv = inv[v];
+            let x = a.val[k] * (row_scale[u] * col_scale[v]);
+            norm = norm.max(x.norm());
+            if pu >= pv {
+                lower[pv].push((pu, x));
+            } else {
+                upper[pu].push((pv, x));
+            }
+        }
+    }
+    (lower, upper, norm)
+}
+
+/// Refuses a factor that would not fit in `budget` bytes (both triangles of every front's
+/// columns), or a front beyond [`MAX_FRONT`], before any of it is made.
+fn check_size(an: &Analysis, budget: u64) -> Result<(), FactorError> {
+    let mut bytes: u64 = 0;
+    for s in 0..an.supernodes() {
+        let (k, m) = (an.columns(s).len() as u64, an.super_rows[s].len() as u64);
+        if m as usize > MAX_FRONT {
+            return Err(FactorError::FrontTooLarge { rows: m as usize, limit: MAX_FRONT });
+        }
+        bytes = bytes.saturating_add(16 * (2 * k * m).saturating_sub(k * k));
+    }
+    if bytes > budget {
+        return Err(FactorError::Scratch(format!(
+            "the LU factor needs {:.1} GB, beyond the {:.1} GB budget (the unsymmetric factor is kept in memory)",
+            bytes as f64 / 1e9,
+            budget as f64 / 1e9
+        )));
+    }
+    Ok(())
+}
+
+/// The LU's fronts: R A C by position and the static-pivot threshold.
+struct Kernel {
+    lower: Vec<Vec<(usize, C)>>,
+    upper: Vec<Vec<(usize, C)>>,
+    tau: f64,
+}
+
+impl FrontKernel for Kernel {
+    type Node = Node;
+
+    fn assemble(&self, columns: Range<usize>, front: &mut Front) -> Result<(), FactorError> {
+        let m = front.m();
+        for j in columns.clone() {
+            let cj = j - columns.start;
+            for &(i, v) in self.lower.get(j).map(Vec::as_slice).unwrap_or(&[]) {
+                let r = front.place_entry(i)?;
+                front.f[cj * m + r] += v;
+            }
+            for &(c, v) in self.upper.get(j).map(Vec::as_slice).unwrap_or(&[]) {
+                let r = front.place_entry(c)?;
+                front.f[r * m + cj] += v;
+            }
+        }
+        Ok(())
+    }
+
+    /// The update is full (m_u × m_u, by column).
+    fn extend_add(&self, f: &mut [C], m: usize, place: &[usize], u: &[C]) {
+        let mu = place.len();
+        for b in 0..mu {
+            let cb = place[b];
+            for a in 0..mu {
+                f[cb * m + place[a]] += u[b * mu + a];
+            }
+        }
+    }
+
+    fn eliminate(&self, front: Front) -> Result<Eliminated<Node>, FactorError> {
+        let Front { rows, k, mut f } = front;
+        let m = rows.len();
+        let mut eqs: Vec<usize> = rows[..k].to_vec();
+        let mut perturbed = 0;
+        factor_front(&mut f, m, k, &mut eqs, self.tau, &mut perturbed);
+        let mu = m - k;
+        let update = (mu > 0).then(|| {
+            let mut u = Vec::with_capacity(mu * mu);
+            for j in 0..mu {
+                u.extend_from_slice(&f[(k + j) * m + k..(k + j + 1) * m]);
+            }
+            Update { rows: rows[k..].to_vec(), values: u }
+        });
+        let mut upart = Vec::with_capacity(k * mu);
+        for j in 0..mu {
+            upart.extend_from_slice(&f[(k + j) * m..(k + j) * m + k]);
+        }
+        f.truncate(k * m);
+        let counts = Counts { perturbed, two_by_two: 0, entries: k * m + k * mu, largest_front: 0 };
+        Ok(Eliminated { node: Node { rows, eqs, k, l: f, u: upart }, update, counts })
     }
 }
 
@@ -177,127 +304,21 @@ impl Lu {
     /// most bytes the factor may take.
     pub fn factor_analysed(a: &Csr, an: &Analysis, budget: u64) -> Result<Lu, FactorError> {
         let t0 = std::time::Instant::now();
-        let n = a.n;
-        if !an.fits(a) {
-            return Err(FactorError::Dimension("the analysis is of another pattern".into()));
-        }
-        if a.val.iter().any(|v| !v.re.is_finite() || !v.im.is_finite()) {
-            return Err(FactorError::NotFinite);
-        }
-        if n > 0 && !(a.max_abs() > 0.0) {
-            return Err(FactorError::Zero);
-        }
-        // The factor's size, before any of it is made: both triangles of every front's columns.
-        let ns = an.super_rows.len();
-        let mut bytes: u64 = 0;
-        for s in 0..ns {
-            let (k, m) = ((an.starts[s + 1] - an.starts[s]) as u64, an.super_rows[s].len() as u64);
-            if m as usize > MAX_FRONT {
-                return Err(FactorError::FrontTooLarge { rows: m as usize, limit: MAX_FRONT });
-            }
-            bytes = bytes.saturating_add(16 * (2 * k * m).saturating_sub(k * k));
-        }
-        if bytes > budget {
-            return Err(FactorError::Scratch(format!(
-                "the LU factor needs {:.1} GB, beyond the {:.1} GB budget (the unsymmetric factor is kept in memory)",
-                bytes as f64 / 1e9,
-                budget as f64 / 1e9
-            )));
-        }
+        check(a, an)?;
+        check_size(an, budget)?;
         let (row_scale, col_scale) = scalings(a);
-        let inv = &an.inv;
-        // A's entries by position: column j holds (row position, value) for rows ≥ j, row i
-        // holds (column position, value) for columns > i; R A C applied.
-        let mut lower: Vec<Vec<(usize, C)>> = vec![Vec::new(); n];
-        let mut upper: Vec<Vec<(usize, C)>> = vec![Vec::new(); n];
-        let mut norm: f64 = 0.0;
-        for u in 0..n {
-            let pu = inv[u];
-            for k in a.ptr[u]..a.ptr[u + 1] {
-                let v = a.col[k];
-                let pv = inv[v];
-                let x = a.val[k] * (row_scale[u] * col_scale[v]);
-                norm = norm.max(x.norm());
-                if pu >= pv {
-                    lower[pv].push((pu, x));
-                } else {
-                    upper[pu].push((pv, x));
-                }
-            }
-        }
-        let tau = f64::EPSILON.sqrt() * norm;
-        let parent_s: Vec<Option<usize>> = (0..ns).map(|s| an.parent.get(an.starts[s + 1] - 1).and_then(|&q| an.snode_of.get(q)).copied()).collect();
-        let mut pending: Vec<Vec<(Vec<usize>, Vec<C>)>> = vec![Vec::new(); ns];
-        let mut nodes = Vec::with_capacity(ns);
-        let (mut perturbed, mut entries, mut largest_front) = (0, 0, 0);
-        for s in 0..ns {
-            let (c0, c1) = (an.starts[s], an.starts[s + 1]);
-            let k = c1 - c0;
-            let rows = an.super_rows[s].clone();
-            let m = rows.len();
-            largest_front = largest_front.max(m);
-            let at = |p: usize| rows.binary_search(&p).unwrap_or(usize::MAX);
-            let mut f = vec![C::new(0.0, 0.0); m * m];
-            for j in c0..c1 {
-                let cj = j - c0;
-                for &(i, v) in &lower[j] {
-                    let r = at(i);
-                    if r >= m {
-                        return Err(FactorError::Dimension("an entry outside its front".into()));
-                    }
-                    f[cj * m + r] += v;
-                }
-                for &(c, v) in &upper[j] {
-                    let r = at(c);
-                    if r >= m {
-                        return Err(FactorError::Dimension("an entry outside its front".into()));
-                    }
-                    f[r * m + cj] += v;
-                }
-            }
-            // The children's updates, full (m_u × m_u, by column), in the children's order.
-            for (urows, u) in std::mem::take(&mut pending[s]) {
-                let mu = urows.len();
-                let place: Vec<usize> = urows.iter().map(|&p| at(p)).collect();
-                if place.iter().any(|&r| r >= m) {
-                    return Err(FactorError::Dimension("an update outside its parent's front".into()));
-                }
-                for b in 0..mu {
-                    let cb = place[b];
-                    for a in 0..mu {
-                        f[cb * m + place[a]] += u[b * mu + a];
-                    }
-                }
-            }
-            let mut eqs: Vec<usize> = rows[..k].to_vec();
-            factor_front(&mut f, m, k, &mut eqs, tau, &mut perturbed);
-            let mu = m - k;
-            if mu > 0
-                && let Some(p) = parent_s[s]
-            {
-                let mut u = Vec::with_capacity(mu * mu);
-                for j in 0..mu {
-                    u.extend_from_slice(&f[(k + j) * m + k..(k + j + 1) * m]);
-                }
-                pending[p].push((rows[k..].to_vec(), u));
-            }
-            let mut upart = Vec::with_capacity(k * mu);
-            for j in 0..mu {
-                upart.extend_from_slice(&f[(k + j) * m..(k + j) * m + k]);
-            }
-            f.truncate(k * m);
-            entries += k * m + k * mu;
-            nodes.push(Node { rows, eqs, k, l: f, u: upart });
-        }
+        let (lower, upper, norm) = by_position(a, &an.inv, &row_scale, &col_scale);
+        let kernel = Kernel { lower, upper, tau: f64::EPSILON.sqrt() * norm };
+        let (nodes, counts) = factor_tree(&kernel, an)?;
         Ok(Lu {
-            n,
+            n: a.n,
             perm: an.perm.clone(),
             nodes,
             row_scale,
             col_scale,
-            perturbed,
-            entries,
-            largest_front,
+            perturbed: counts.perturbed,
+            entries: counts.entries,
+            largest_front: counts.largest_front,
             analysis_seconds: an.seconds,
             numeric_seconds: t0.elapsed().as_secs_f64(),
         })
@@ -362,81 +383,24 @@ impl Lu {
     /// ‖b − A x‖∞ / (‖A‖ ‖x‖∞ + ‖b‖∞) stops falling (at most `steps` corrections); returns x and
     /// that error.
     pub fn solve_refined(&self, a: &Csr, b: &[C], steps: usize) -> Result<(Vec<C>, f64), FactorError> {
-        let mut x = b.to_vec();
-        self.solve(&mut x)?;
-        let norm_a = a.max_abs();
-        let inf = |v: &[C]| v.iter().fold(0.0f64, |m, z| m.max(z.norm()));
-        let berr = |x: &[C]| -> (Vec<C>, f64) {
-            let ax = a.mul(x);
-            let r: Vec<C> = b.iter().zip(&ax).map(|(b, a)| b - a).collect();
-            let e = inf(&r) / (norm_a * inf(x) + inf(b)).max(f64::MIN_POSITIVE);
-            (r, e)
-        };
-        let (mut r, mut err) = berr(&x);
-        for _ in 0..steps.min(20) {
-            if err < 4.0 * f64::EPSILON {
-                break;
-            }
-            self.solve(&mut r)?;
-            let trial: Vec<C> = x.iter().zip(&r).map(|(x, d)| x + d).collect();
-            let (r2, e2) = berr(&trial);
-            if !(e2 < err) {
-                break;
-            }
-            x = trial;
-            r = r2;
-            err = e2;
-        }
-        Ok((x, err))
+        refine(a, b, steps, |x| self.solve(x))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::multifrontal::testing::{Rng, grid_pattern};
     use emcraft_model::Point3;
-
-    struct Rng(u64);
-    impl Rng {
-        fn next(&mut self) -> f64 {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            (self.0 >> 11) as f64 / (1u64 << 53) as f64 - 0.5
-        }
-        fn c(&mut self) -> C {
-            C::new(self.next(), self.next())
-        }
-    }
 
     /// An unsymmetric matrix on a 3D grid graph's symmetric pattern.
     fn grid_matrix(nx: usize, ny: usize, nz: usize, diag: C, rng: &mut Rng) -> (Csr, Vec<Point3>) {
-        let id = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
-        let n = nx * ny * nz;
-        let mut groups: Vec<Vec<usize>> = Vec::new();
-        let mut xyz = vec![Point3::ORIGIN; n];
-        for k in 0..nz {
-            for j in 0..ny {
-                for i in 0..nx {
-                    xyz[id(i, j, k)] = Point3::new(i as f64, j as f64, k as f64);
-                    if i + 1 < nx {
-                        groups.push(vec![id(i, j, k), id(i + 1, j, k)]);
-                    }
-                    if j + 1 < ny {
-                        groups.push(vec![id(i, j, k), id(i, j + 1, k)]);
-                    }
-                    if k + 1 < nz {
-                        groups.push(vec![id(i, j, k), id(i, j, k + 1)]);
-                    }
-                }
-            }
-        }
-        let mut a = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
-        for g in &groups {
+        let (mut a, edges, xyz) = grid_pattern(nx, ny, nz);
+        for g in &edges {
             a.add(g[0], g[1], rng.c());
             a.add(g[1], g[0], rng.c());
         }
-        for i in 0..n {
+        for i in 0..a.n {
             a.add(i, i, diag + rng.c() * 0.1);
         }
         (a, xyz)

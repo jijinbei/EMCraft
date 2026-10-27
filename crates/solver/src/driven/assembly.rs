@@ -152,38 +152,50 @@ pub(crate) struct System<'a> {
     pub border: usize,
 }
 
-/// `a` bordered by one unknown per (v, f): its column holds s v and its diagonal −s²/f, with
+/// The rows of `a` bordered by one unknown per (column v, factor f): each row of `a` followed
+/// by its entries s v_i of the border's columns (column n + k for the k-th), with
 /// s = √(|f| ‖a‖) so the border's pivots are of the matrix's size (unscaled, −1/f can be far
-/// below the factorization's static-pivot threshold). The x part of the solution is the same
-/// whatever s.
-fn bordered(a: &Csr, borders: &[(&[(usize, f64)], C)]) -> Result<Csr> {
-    let (n, m) = (a.n, borders.len());
+/// below the factorization's static-pivot threshold); and each border's s. The x part of the
+/// solution is the same whatever s. The border's own rows are the caller's to add.
+pub(super) fn border_columns<V: IntoIterator<Item = (usize, C)>>(a: &Csr, borders: impl IntoIterator<Item = (V, C)>) -> Result<(Csr, Vec<f64>)> {
+    let n = a.n;
     let norm = a.max_abs();
-    let scale: Vec<f64> = borders.iter().map(|(_, f)| (f.norm() * norm).sqrt()).collect();
-    let mut extra: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
-    for (k, (v, _)) in borders.iter().enumerate() {
-        for &(i, vi) in v.iter() {
-            extra.get_mut(i).ok_or_else(|| invalid("port", "a mode's vector refers to a missing unknown"))?.push((n + k, scale[k] * vi));
+    let mut scale = Vec::new();
+    let mut extra: Vec<Vec<(usize, C)>> = vec![Vec::new(); n];
+    for (k, (v, f)) in borders.into_iter().enumerate() {
+        let s = (f.norm() * norm).sqrt();
+        for (i, vi) in v {
+            extra.get_mut(i).ok_or_else(|| invalid("port", "a mode's vector refers to a missing unknown"))?.push((n + k, vi * s));
         }
+        if !(f.norm() > 0.0 && s.is_finite()) {
+            return Err(invalid("port", "a mode with no coupling"));
+        }
+        scale.push(s);
     }
-    let mut out = Csr { n: n + m, ptr: Vec::with_capacity(n + m + 1), col: Vec::new(), val: Vec::new() };
+    let mut out = Csr { n: n + scale.len(), ptr: Vec::with_capacity(n + scale.len() + 1), col: Vec::new(), val: Vec::new() };
     out.ptr.push(0);
     for (i, row) in extra.iter().enumerate() {
         let (lo, hi) = (a.ptr[i], a.ptr[i + 1]);
         out.col.extend_from_slice(&a.col[lo..hi]);
         out.val.extend_from_slice(&a.val[lo..hi]);
         out.col.extend(row.iter().map(|(j, _)| *j));
-        out.val.extend(row.iter().map(|(_, v)| C::new(*v, 0.0)));
+        out.val.extend(row.iter().map(|(_, v)| *v));
         out.ptr.push(out.col.len());
     }
-    for (k, (v, f)) in borders.iter().enumerate() {
-        if !(f.norm() > 0.0 && scale[k].is_finite()) {
-            return Err(invalid("port", "a mode with no coupling"));
-        }
+    Ok((out, scale))
+}
+
+/// `a` bordered by one unknown per (v, f) ([`border_columns`]): its column and row hold s v
+/// (the matrix stays complex symmetric) and its diagonal −s²/f.
+fn bordered(a: &Csr, borders: &[(&[(usize, f64)], C)]) -> Result<Csr> {
+    let n = a.n;
+    let columns = borders.iter().map(|(v, f)| (v.iter().map(|&(i, x)| (i, C::new(x, 0.0))), *f));
+    let (mut out, scale) = border_columns(a, columns)?;
+    for (k, ((v, f), s)) in borders.iter().zip(scale).enumerate() {
         out.col.extend(v.iter().map(|(i, _)| *i));
-        out.val.extend(v.iter().map(|(_, x)| C::new(scale[k] * x, 0.0)));
+        out.val.extend(v.iter().map(|(_, x)| C::new(s * x, 0.0)));
         out.col.push(n + k);
-        out.val.push(-(scale[k] * scale[k]) / f);
+        out.val.push(-(s * s) / f);
         out.ptr.push(out.col.len());
     }
     Ok(out)

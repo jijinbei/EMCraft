@@ -113,6 +113,56 @@ fn gradients(driven: &Driven) -> (Vec<Vec<(usize, f64)>>, Vec<emcraft_model::Poi
     (columns, points)
 }
 
+/// The small matrix Z* M Z of the sparse columns Z (each (unknown, z)) and M on `pattern`, row a
+/// by row: w = Σ_i over z_a's entries of `weigh(k, z_a,i)` into column `pattern.col[k]` for each
+/// entry k of M's row i, then entry (a, b) = Σ_j `times(w_j, z_b,j)`; both summed in a fixed
+/// order. (Z* is Zᵀ or Zᴴ as `weigh` conjugates or not.)
+pub(crate) fn galerkin<Z: Copy>(columns: &[Vec<(usize, Z)>], pattern: &Csr, weigh: impl Fn(usize, Z) -> C, times: impl Fn(C, Z) -> C) -> Csr {
+    // Which columns hold each unknown.
+    let mut owners: Vec<Vec<(usize, Z)>> = vec![Vec::new(); pattern.n];
+    for (c, col) in columns.iter().enumerate() {
+        for &(u, z) in col {
+            if let Some(o) = owners.get_mut(u) {
+                o.push((c, z));
+            }
+        }
+    }
+    let mut ptr = Vec::with_capacity(columns.len() + 1);
+    ptr.push(0);
+    let (mut col, mut val) = (Vec::new(), Vec::new());
+    for za in columns {
+        let mut w: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
+        for &(i, z) in za {
+            for k in pattern.ptr[i]..pattern.ptr[i + 1] {
+                *w.entry(pattern.col[k]).or_insert(C::new(0.0, 0.0)) += weigh(k, z);
+            }
+        }
+        let mut row: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
+        for (j, wj) in w {
+            for &(b, zb) in owners.get(j).map_or(&[][..], Vec::as_slice) {
+                *row.entry(b).or_insert(C::new(0.0, 0.0)) += times(wj, zb);
+            }
+        }
+        for (b, v) in row {
+            col.push(b);
+            val.push(v);
+        }
+        ptr.push(col.len());
+    }
+    Csr { n: columns.len(), ptr, col, val }
+}
+
+/// A deterministic sequence uniform in [−½, ½): a xorshift generator from `seed`.
+pub(crate) fn uniform(seed: u64) -> impl FnMut() -> f64 {
+    let mut state = seed;
+    move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+    }
+}
+
 /// x ↦ x − Z (ZᵀMZ)⁻¹ ZᵀM x: the M-orthogonal projection off the discrete gradients.
 struct Deflation {
     columns: Vec<Vec<(usize, f64)>>,
@@ -127,39 +177,8 @@ impl Deflation {
         if m == 0 {
             return Ok(Deflation { columns, factor: None });
         }
-        // Which columns hold each unknown.
-        let mut owners: Vec<Vec<(usize, f64)>> = vec![Vec::new(); pattern.n];
-        for (c, col) in columns.iter().enumerate() {
-            for &(u, z) in col {
-                if let Some(o) = owners.get_mut(u) {
-                    o.push((c, z));
-                }
-            }
-        }
-        // ZᵀMZ row by row: w = M z_a, then (ZᵀMZ)_ab = z_b · w; summed in a fixed order.
-        let mut ptr = Vec::with_capacity(m + 1);
-        ptr.push(0);
-        let (mut col, mut val) = (Vec::new(), Vec::new());
-        for za in &columns {
-            let mut w: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
-            for &(i, z) in za {
-                for k in pattern.ptr[i]..pattern.ptr[i + 1] {
-                    *w.entry(pattern.col[k]).or_insert(C::new(0.0, 0.0)) += mass_entry(k) * z;
-                }
-            }
-            let mut row: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
-            for (j, wj) in w {
-                for &(b, zb) in owners.get(j).map_or(&[][..], Vec::as_slice) {
-                    *row.entry(b).or_insert(C::new(0.0, 0.0)) += wj * zb;
-                }
-            }
-            for (b, v) in row {
-                col.push(b);
-                val.push(v);
-            }
-            ptr.push(col.len());
-        }
-        let a = Csr { n: m, ptr, col, val };
+        // ZᵀMZ: w = M z_a, then (ZᵀMZ)_ab = z_b · w.
+        let a = galerkin(&columns, pattern, |k, z| mass_entry(k) * z, |wj, zb| wj * zb);
         Ok(Deflation { columns, factor: Some(Ldlt::factor(&a, &points)?) })
     }
 
@@ -459,13 +478,7 @@ fn symmetric_ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<(Vec<f64
 /// Deterministic starting vectors: `q` of length `n`, entries uniform in [−½, ½) from a
 /// xorshift generator with a fixed seed.
 fn start_vectors(q: usize, n: usize) -> Vec<Vec<C>> {
-    let mut state: u64 = 0x2545_f491_4f6c_dd1d;
-    let mut rand = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
-    };
+    let mut rand = uniform(0x2545_f491_4f6c_dd1d);
     (0..q).map(|_| (0..n).map(|_| C::new(rand(), 0.0)).collect()).collect()
 }
 

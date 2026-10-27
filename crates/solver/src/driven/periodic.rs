@@ -98,14 +98,19 @@ fn phase(psi: [f64; 3], s: [i8; 3]) -> C {
     C::new(a.cos(), -a.sin())
 }
 
-impl Tie {
-    /// The reduction of `dofs` on `mesh` for the axes `periodic` ties; `pattern` is the full
-    /// system's pattern.
-    pub(super) fn new(mesh: &Mesh, topo: &Topology, dofs: &Dofs, periodic: &Periodic, pattern: &Csr) -> Result<Tie> {
+/// The nodes' partners across the tied faces: per axis, each node on the high face's partner
+/// on the low face.
+struct Partners {
+    partner: [Vec<u32>; 3],
+    on_high: [Vec<bool>; 3],
+}
+
+impl Partners {
+    /// The partners of `mesh`'s nodes along `axes`, and the cell's periods (0 where not
+    /// periodic).
+    fn new(mesh: &Mesh, axes: [bool; 3]) -> Result<(Partners, [f64; 3])> {
         let ext = extent(mesh);
-        let axes = [periodic.x, periodic.y, periodic.z];
         let mut periods = [0.0; 3];
-        // Per axis, each node on the high face's partner on the low face.
         let mut partner: [Vec<u32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
         let mut on_high: [Vec<bool>; 3] = [Vec::new(), Vec::new(), Vec::new()];
         for d in (0..3).filter(|&d| axes[d]) {
@@ -147,127 +152,175 @@ impl Tie {
             partner[d] = part;
             on_high[d] = high;
         }
-        let shift_of = |n: u32| -> [i8; 3] { [0, 1, 2].map(|d| on_high[d].get(n as usize).is_some_and(|h| *h) as i8) };
-        let translate = |mut n: u32, s: [i8; 3]| -> u32 {
-            for d in 0..3 {
-                if s[d] == 1 {
-                    n = partner[d].get(n as usize).copied().unwrap_or(NONE);
-                }
+        Ok((Partners { partner, on_high }, periods))
+    }
+
+    /// The periods from node `n`'s master: 1 along each axis whose high face it lies on.
+    fn shift_of(&self, n: u32) -> [i8; 3] {
+        [0, 1, 2].map(|d| self.on_high[d].get(n as usize).is_some_and(|h| *h) as i8)
+    }
+
+    /// Node `n` moved back by the periods `s`.
+    fn translate(&self, mut n: u32, s: [i8; 3]) -> u32 {
+        for d in 0..3 {
+            if s[d] == 1 {
+                n = self.partner[d].get(n as usize).copied().unwrap_or(NONE);
             }
-            n
-        };
-        let edge_id: HashMap<[u32; 2], u32> = topo.edges.iter().enumerate().map(|(i, e)| (*e, i as u32)).collect();
-        let face_id: HashMap<[u32; 3], u32> = topo.faces.iter().enumerate().map(|(i, f)| (*f, i as u32)).collect();
-        let (pe, pf) = (dofs.order.per_edge(), dofs.order.per_face());
-        let total = dofs.edges * pe + dofs.faces * pf;
-        // Each slot's master slot, sign and shift.
-        let mut master: Vec<(usize, f64, [i8; 3])> = (0..total).map(|g| (g, 1.0, [0i8; 3])).collect();
-        for (e, &[a, b]) in topo.edges.iter().enumerate() {
-            let (sa, sb) = (shift_of(a), shift_of(b));
-            let s = [0, 1, 2].map(|d| sa[d].min(sb[d]));
+        }
+        n
+    }
+}
+
+/// A slot's master slot, its orientation relative to it, and the periods to it.
+#[derive(Clone, Copy)]
+struct Master {
+    slot: usize,
+    sign: f64,
+    shift: [i8; 3],
+}
+
+/// Each slot's master (itself when it lies on no high face): an edge's or a face's translate on
+/// the low faces.
+fn masters(topo: &Topology, dofs: &Dofs, partners: &Partners) -> Result<Vec<Master>> {
+    let edge_id: HashMap<[u32; 2], u32> = topo.edges.iter().enumerate().map(|(i, e)| (*e, i as u32)).collect();
+    let face_id: HashMap<[u32; 3], u32> = topo.faces.iter().enumerate().map(|(i, f)| (*f, i as u32)).collect();
+    let (pe, pf) = (dofs.order.per_edge(), dofs.order.per_face());
+    let total = dofs.edges * pe + dofs.faces * pf;
+    let mut master: Vec<Master> = (0..total).map(|g| Master { slot: g, sign: 1.0, shift: [0i8; 3] }).collect();
+    for (e, &[a, b]) in topo.edges.iter().enumerate() {
+        let (sa, sb) = (partners.shift_of(a), partners.shift_of(b));
+        let s = [0, 1, 2].map(|d| sa[d].min(sb[d]));
+        if s == [0; 3] {
+            continue;
+        }
+        let (ma, mb) = (partners.translate(a, s), partners.translate(b, s));
+        let key = [ma.min(mb), ma.max(mb)];
+        let m =
+            *edge_id.get(&key).ok_or_else(|| invalid("periodic boundaries", "an edge on a periodic face has no translate on the opposite face"))?;
+        let sign = if ma < mb { 1.0 } else { -1.0 };
+        if sign < 0.0 && dofs.order == Order::Two {
+            return Err(invalid("periodic boundaries", "not supported yet: order 2 on a mesh whose translates reverse an edge (use order 1)"));
+        }
+        for j in 0..pe {
+            // The Whitney function turns with its edge, the edge's gradient ∇(λ_iλ_j) does not.
+            master[e * pe + j] = Master { slot: m as usize * pe + j, sign: if j == 0 { sign } else { 1.0 }, shift: s };
+        }
+    }
+    if pf > 0 {
+        for (f, nodes) in topo.faces.iter().enumerate() {
+            let sh = nodes.map(|n| partners.shift_of(n));
+            let s = [0, 1, 2].map(|d| sh.iter().map(|x| x[d]).min().unwrap_or(0));
             if s == [0; 3] {
                 continue;
             }
-            let (ma, mb) = (translate(a, s), translate(b, s));
-            let key = [ma.min(mb), ma.max(mb)];
-            let m = *edge_id
+            let image = nodes.map(|n| partners.translate(n, s));
+            let mut key = image;
+            key.sort_unstable();
+            if key != image {
+                return Err(invalid(
+                    "periodic boundaries",
+                    "not supported yet: order 2 on a mesh whose translates reorder a face's nodes (use order 1)",
+                ));
+            }
+            let m = *face_id
                 .get(&key)
-                .ok_or_else(|| invalid("periodic boundaries", "an edge on a periodic face has no translate on the opposite face"))?;
-            let sign = if ma < mb { 1.0 } else { -1.0 };
-            if sign < 0.0 && dofs.order == Order::Two {
-                return Err(invalid("periodic boundaries", "not supported yet: order 2 on a mesh whose translates reverse an edge (use order 1)"));
-            }
-            for j in 0..pe {
-                // The Whitney function turns with its edge, the edge's gradient ∇(λ_iλ_j) does not.
-                master[e * pe + j] = (m as usize * pe + j, if j == 0 { sign } else { 1.0 }, s);
+                .ok_or_else(|| invalid("periodic boundaries", "a face on a periodic face has no translate on the opposite face"))?;
+            for j in 0..pf {
+                master[dofs.edges * pe + f * pf + j] = Master { slot: dofs.edges * pe + m as usize * pf + j, sign: 1.0, shift: s };
             }
         }
-        if pf > 0 {
-            for (f, nodes) in topo.faces.iter().enumerate() {
-                let sh = nodes.map(shift_of);
-                let s = [0, 1, 2].map(|d| sh.iter().map(|x| x[d]).min().unwrap_or(0));
-                if s == [0; 3] {
-                    continue;
+    }
+    Ok(master)
+}
+
+/// Each full unknown's slot among the kept ones (`None` when dropped), and a point per kept
+/// unknown (its master's).
+fn reduction(dofs: &Dofs, master: &[Master]) -> Result<(Vec<Option<Slot>>, Vec<Point3>)> {
+    let total = master.len();
+    // A master slot is dead when any slot tied to it is eliminated (a wall on either face).
+    let mut dead = vec![false; total];
+    for (g, m) in master.iter().enumerate() {
+        if dofs.unknown_of(g).is_none() {
+            dead[m.slot] = true;
+        }
+    }
+    let mut reduced_of = vec![NONE; total];
+    let mut points = Vec::new();
+    let mut map = vec![None; dofs.unknowns];
+    for (g, &Master { slot: m, sign, shift }) in master.iter().enumerate() {
+        let Some(u) = dofs.unknown_of(g) else { continue };
+        if dead[m] {
+            continue;
+        }
+        if reduced_of[m] == NONE {
+            let mu = dofs.unknown_of(m).ok_or_else(|| invalid("periodic boundaries", "a master unknown was eliminated"))?;
+            reduced_of[m] = points.len() as u32;
+            points.push(dofs.points.get(mu).copied().unwrap_or(Point3::ORIGIN));
+        }
+        map[u] = Some(Slot { reduced: reduced_of[m], sign, shift });
+    }
+    Ok((map, points))
+}
+
+/// The kept pattern — every pair of kept unknowns some full entry couples — and, for each entry
+/// of the full `pattern`, its entry there (NONE when dropped) with its phase's period difference
+/// and sign product.
+fn kept_pattern(pattern: &Csr, map: &[Option<Slot>], reduced: usize) -> Result<(Csr, Vec<(u32, [i8; 3], f64)>)> {
+    let mut rows: Vec<Vec<usize>> = vec![Vec::new(); reduced];
+    for i in 0..pattern.n {
+        let Some(si) = map[i] else { continue };
+        for &j in &pattern.col[pattern.ptr[i]..pattern.ptr[i + 1]] {
+            if let Some(sj) = map[j] {
+                rows[si.reduced as usize].push(sj.reduced as usize);
+            }
+        }
+    }
+    let mut kept = Csr { n: reduced, ptr: Vec::with_capacity(reduced + 1), col: Vec::new(), val: Vec::new() };
+    kept.ptr.push(0);
+    for (i, mut r) in rows.into_iter().enumerate() {
+        r.push(i);
+        r.sort_unstable();
+        r.dedup();
+        kept.col.extend(r);
+        kept.ptr.push(kept.col.len());
+    }
+    kept.val = vec![C::new(0.0, 0.0); kept.col.len()];
+    let mut entries = Vec::with_capacity(pattern.col.len());
+    for i in 0..pattern.n {
+        for k in pattern.ptr[i]..pattern.ptr[i + 1] {
+            let j = pattern.col[k];
+            let e = match (map[i], map[j]) {
+                (Some(si), Some(sj)) => {
+                    let (r, c) = (si.reduced as usize, sj.reduced as usize);
+                    let row = &kept.col[kept.ptr[r]..kept.ptr[r + 1]];
+                    let at = row.binary_search(&c).map_err(|_| invalid("periodic boundaries", "an entry outside the kept pattern"))?;
+                    ((kept.ptr[r] + at) as u32, [0, 1, 2].map(|d| sj.shift[d] - si.shift[d]), si.sign * sj.sign)
                 }
-                let image = nodes.map(|n| translate(n, s));
-                let mut key = image;
-                key.sort_unstable();
-                if key != image {
-                    return Err(invalid(
-                        "periodic boundaries",
-                        "not supported yet: order 2 on a mesh whose translates reorder a face's nodes (use order 1)",
-                    ));
-                }
-                let m = *face_id
-                    .get(&key)
-                    .ok_or_else(|| invalid("periodic boundaries", "a face on a periodic face has no translate on the opposite face"))?;
-                for j in 0..pf {
-                    master[dofs.edges * pe + f * pf + j] = (dofs.edges * pe + m as usize * pf + j, 1.0, s);
-                }
-            }
+                _ => (NONE, [0; 3], 0.0),
+            };
+            entries.push(e);
         }
-        // A master slot is dead when any slot tied to it is eliminated (a wall on either face).
-        let mut dead = vec![false; total];
-        for (g, &(m, _, _)) in master.iter().enumerate() {
-            if dofs.unknown_of(g).is_none() {
-                dead[m] = true;
-            }
-        }
-        let mut reduced_of = vec![NONE; total];
-        let mut points = Vec::new();
-        let mut map = vec![None; dofs.unknowns];
-        for g in 0..total {
-            let (m, sign, shift) = master[g];
-            let Some(u) = dofs.unknown_of(g) else { continue };
-            if dead[m] {
-                continue;
-            }
-            if reduced_of[m] == NONE {
-                let mu = dofs.unknown_of(m).ok_or_else(|| invalid("periodic boundaries", "a master unknown was eliminated"))?;
-                reduced_of[m] = points.len() as u32;
-                points.push(dofs.points.get(mu).copied().unwrap_or(Point3::ORIGIN));
-            }
-            map[u] = Some(Slot { reduced: reduced_of[m], sign, shift });
-        }
+    }
+    Ok((kept, entries))
+}
+
+impl Tie {
+    /// The reduction of `dofs` on `mesh` for the axes `periodic` ties; `pattern` is the full
+    /// system's pattern.
+    pub(super) fn new(mesh: &Mesh, topo: &Topology, dofs: &Dofs, periodic: &Periodic, pattern: &Csr) -> Result<Tie> {
+        let axes = [periodic.x, periodic.y, periodic.z];
+        let (partners, periods) = Partners::new(mesh, axes)?;
+        let master = masters(topo, dofs, &partners)?;
+        let (map, points) = reduction(dofs, &master)?;
         let reduced = points.len();
-        // The kept pattern: every pair of kept unknowns some full entry couples.
-        let mut rows: Vec<Vec<usize>> = vec![Vec::new(); reduced];
-        for i in 0..pattern.n {
-            let Some(si) = map[i] else { continue };
-            for &j in &pattern.col[pattern.ptr[i]..pattern.ptr[i + 1]] {
-                if let Some(sj) = map[j] {
-                    rows[si.reduced as usize].push(sj.reduced as usize);
-                }
-            }
-        }
-        let mut kept = Csr { n: reduced, ptr: Vec::with_capacity(reduced + 1), col: Vec::new(), val: Vec::new() };
-        kept.ptr.push(0);
-        for (i, mut r) in rows.into_iter().enumerate() {
-            r.push(i);
-            r.sort_unstable();
-            r.dedup();
-            kept.col.extend(r);
-            kept.ptr.push(kept.col.len());
-        }
-        kept.val = vec![C::new(0.0, 0.0); kept.col.len()];
-        let mut entries = Vec::with_capacity(pattern.col.len());
-        for i in 0..pattern.n {
-            for k in pattern.ptr[i]..pattern.ptr[i + 1] {
-                let j = pattern.col[k];
-                let e = match (map[i], map[j]) {
-                    (Some(si), Some(sj)) => {
-                        let (r, c) = (si.reduced as usize, sj.reduced as usize);
-                        let row = &kept.col[kept.ptr[r]..kept.ptr[r + 1]];
-                        let at = row.binary_search(&c).map_err(|_| invalid("periodic boundaries", "an entry outside the kept pattern"))?;
-                        ((kept.ptr[r] + at) as u32, [0, 1, 2].map(|d| sj.shift[d] - si.shift[d]), si.sign * sj.sign)
-                    }
-                    _ => (NONE, [0; 3], 0.0),
-                };
-                entries.push(e);
-            }
-        }
-        let nodes = (0..mesh.nodes.len() as u32).map(|n| (translate(n, shift_of(n)), shift_of(n))).collect();
-        Ok(Tie { map, reduced, points, periods, axes, pattern: kept, entries, nodes })
+        let (pattern, entries) = kept_pattern(pattern, &map, reduced)?;
+        let nodes = (0..mesh.nodes.len() as u32)
+            .map(|n| {
+                let s = partners.shift_of(n);
+                (partners.translate(n, s), s)
+            })
+            .collect();
+        Ok(Tie { map, reduced, points, periods, axes, pattern, entries, nodes })
     }
 
     /// Node `n`'s master node and the periods from it.
