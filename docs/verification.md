@@ -99,7 +99,8 @@ result is frozen so it cannot drift.
   GB and a few minutes. Since results are deterministic bit for bit, CI runs the oracle only
   when its inputs change (every crate the oracle is built from, the cases, the lock file and
   the compiler version, hashed into a cache key): a change to the UI, the apps or the docs
-  reuses the last pass.
+  reuses the last pass. The heavy convergence studies are skipped the same way, keyed on the
+  solver and the crates below it; the gate's tests run in release, sharing the oracle's build.
 
 ```
 cargo xtask oracle                      # every case; writes docs/oracle.md
