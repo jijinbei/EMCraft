@@ -130,7 +130,7 @@ pub fn field_error(s: &mut Session, p: &Params) -> Result<Value> {
     let r = solved_at(s, p)?;
     let driven = &s.results.sweep()?.driven;
     let x = r.fields.first().ok_or_else(|| EngineError::failed("no field"))?;
-    let exact = view::te10_line(s)?.solve(r.frequency)?;
+    let exact = view::te10_line(s)?.at(r.frequency).solve(r.frequency)?;
     let (e, en) = driven.l2_error(x, r.frequency, emcraft_solver::Field::E, |q| exact.e(q))?;
     let (h, hn) = driven.l2_error(x, r.frequency, emcraft_solver::Field::H, |q| exact.h(q))?;
     Ok(json!({"frequency": s.show_frequency(r.frequency), "e": e / en, "h": h / hn}))
