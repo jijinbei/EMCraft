@@ -138,20 +138,9 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     let t = Tokens::get();
     let revision = app.revision;
     // The field's planes, for the Results step: the field view's and those kept.
-    let mut field_key = String::new();
-    let mut layers = Vec::new();
-    if overlay == Overlay::Field {
-        match crate::viewport::field_plots(app) {
-            Ok(list) => {
-                field_key = format!("{:?}|{:?}|{:?}", app.field.view, app.field.at, app.field.kept);
-                layers = list;
-            }
-            Err(e) => app.message(e, true),
-        }
-    }
-    let v = &mut app.view3d;
+    let (field_key, layers) = field_layers(app, overlay);
     let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at }).collect();
-    let built = v.built_with(revision, &app.session, overlay, field_key.clone(), &fl).clone_shallow();
+    let built = app.view3d.built_with(revision, &app.session, overlay, field_key.clone(), &fl).clone_shallow();
     let Some(bounds) = built.bounds.or_else(|| built.scene.bounds()) else {
         ui.painter().text(
             rect.center(),
@@ -169,7 +158,57 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         v.fitted = Some(bounds);
         v.fit_next = false;
     }
-    // Input.
+    let edit = navigate(v, ui, rect, bounds);
+    let picked = app.view3d.selected.and_then(|p| crate::browser::row_of(app, p));
+    if edit.clicked {
+        app.browser.selected = picked.as_ref().map(|(k, _)| k.clone());
+    }
+    if edit.double
+        && let Some((_, row)) = &picked
+        && let crate::browser::Act::Edit(id) = row.act
+        && !app.busy()
+        && let Err(e) = app.open_dialog(id)
+    {
+        app.message(e, true);
+    }
+    let gpu = app.prefs.gpu3d || app.view3d.dragging;
+    let key = format!("{field_key}|{:?}", app.view3d.selected);
+    let p = ui.painter().with_clip_rect(rect);
+    draw(&mut app.view3d, ui, &p, rect, (revision, overlay, key), gpu, &t);
+    labels(&p, rect, &app.view3d.camera, &built.labels, &t);
+    legend(&p, rect, &built.legend, &t);
+    if let Some((_, row)) = &picked {
+        selection_card(&p, rect, row, &t);
+    }
+    let facing = layers.first().map(|(plot, plane, at)| facing_plane(app.session.display.length, bounds.0, plot, *plane, *at));
+    navigator(app, ui, rect);
+    nav_bar(app, ui, rect, facing);
+}
+
+/// The field plots for the 3D view in the Results step, and a key naming their state.
+fn field_layers(app: &mut EmcraftApp, overlay: Overlay) -> (String, Vec<(emcraft_render::plot::FieldPlot, Plane, f64)>) {
+    if overlay != Overlay::Field {
+        return (String::new(), Vec::new());
+    }
+    match crate::viewport::field_plots(app) {
+        Ok(list) => (format!("{:?}|{:?}|{:?}", app.field.view, app.field.at, app.field.kept), list),
+        Err(e) => {
+            app.message(e, true);
+            (String::new(), Vec::new())
+        }
+    }
+}
+
+/// What the pointer asked of the view this frame.
+struct Gesture {
+    clicked: bool,
+    /// A double-click on something picked: edit it.
+    double: bool,
+}
+
+/// Orbit, pan and zoom by the pointer; a click picks what is under it (empty space clears), a
+/// double-click on nothing fits the view.
+fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f64; 3])) -> Gesture {
     let resp = ui.interact(rect, ui.id().with("view3d"), Sense::click_and_drag());
     scenario::publish_target("view3d", rect);
     let (shift, middle, scroll) = ui.input(|i| {
@@ -201,9 +240,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     if resp.hovered() && scroll != 0.0 {
         v.camera.zoom(scroll as f64);
     }
-    // A click picks what is under the pointer (empty space clears); a double-click on it opens
-    // its dialog, on nothing fits the view.
-    let mut edit = None;
+    let mut double = false;
     if (resp.clicked() || resp.double_clicked())
         && let Some(pos) = resp.interact_pointer_pos()
     {
@@ -214,56 +251,37 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         v.selected = tag.and_then(scene3d::Pick::from_tag);
         if resp.double_clicked() {
             match v.selected {
-                Some(p) => edit = Some(p),
-                None => v.camera.fit(bounds.0, bounds.1, aspect),
+                Some(_) => double = true,
+                None => v.camera.fit(bounds.0, bounds.1, (rect.width() / rect.height().max(1.0)) as f64),
             }
         }
     }
-    let selected = app.view3d.selected;
-    let picked = selected.and_then(|p| crate::browser::row_of(app, p));
-    if resp.clicked() {
-        app.browser.selected = picked.as_ref().map(|(k, _)| k.clone());
-    }
-    if let (Some(_), Some((_, row))) = (edit, &picked)
-        && let crate::browser::Act::Edit(id) = row.act
-        && !app.busy()
-        && let Err(e) = app.open_dialog(id)
-    {
-        app.message(e, true);
-    }
-    let gpu = app.prefs.gpu3d || app.view3d.dragging;
-    let v = &mut app.view3d;
+    Gesture { clicked: resp.clicked(), double }
+}
+
+/// The scene drawn into `rect`: by the window's GPU (every frame, full size) or the CPU
+/// renderer's picture (cached by `scene_key`, the camera and the size).
+fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key: (u64, Overlay, String), gpu: bool, t: &Tokens) {
     v.drawn_on_gpu = gpu;
     if gpu {
-        // Projected and shaded here, rasterised by the window's GPU: every frame, at full size.
         let began = Instant::now();
-        let p = ui.painter().with_clip_rect(rect);
         p.add(gradient(rect, t.viewport_top, t.viewport_bottom));
         if let Some((_, b)) = &v.built {
             p.add(mesh_of(&view3d::flatten(&b.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height())), rect.min, 1.4));
         }
         v.last_ms = began.elapsed().as_secs_f64() * 1e3;
+        return;
     }
-    // The picture.
     let ppp = ui.ctx().pixels_per_point() as f64;
     let mut scale = ppp;
     let full = rect.width() as f64 * rect.height() as f64 * ppp * ppp;
     if full > MAX_PIXELS {
         scale *= (MAX_PIXELS / full).sqrt();
     }
-    if v.dragging {
-        scale *= 0.5;
-    }
     let size = [((rect.width() as f64 * scale).round() as usize).max(1), ((rect.height() as f64 * scale).round() as usize).max(1)];
-    let supersample = if !v.dragging && (size[0] * size[1]) as f64 <= SUPERSAMPLE_PIXELS { 2 } else { 1 };
-    let key = Key {
-        scene: (revision, overlay, format!("{field_key}|{:?}", v.selected)),
-        camera: v.camera,
-        size,
-        supersample,
-        dark: crate::theme::is_dark(),
-    };
-    if !gpu && v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
+    let supersample = if (size[0] * size[1]) as f64 <= SUPERSAMPLE_PIXELS { 2 } else { 1 };
+    let key = Key { scene: scene_key, camera: v.camera, size, supersample, dark: crate::theme::is_dark() };
+    if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
         let began = Instant::now();
         let opt = view3d::Options {
             width: size[0],
@@ -280,56 +298,59 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         v.last_size = size;
         v.picture = Some((key, Picture::new("view3d".into(), &canvas)));
     }
-    let p = ui.painter().with_clip_rect(rect);
-    if !gpu && let Some((_, pic)) = v.picture.as_mut() {
+    if let Some((_, pic)) = v.picture.as_mut() {
         let id = pic.texture(ui.ctx());
         p.image(id, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
-    // Labels.
-    let cam = v.camera;
+}
+
+/// The scene's labels where they project, faint on faces turned away.
+fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label], t: &Tokens) {
     let font = FontId::proportional(t.font_small);
-    for l in &built.labels {
-        if let Some(q) = cam.project(l.at, rect.width() as f64, rect.height() as f64) {
-            let at = rect.min + vec2(q[0] as f32, q[1] as f32);
-            if rect.contains(at) {
-                // A label on a face turned away is faint.
-                let b = cam.basis();
-                let away = l.facing.is_some_and(|n| n[0] * (b.eye[0] - l.at[0]) + n[1] * (b.eye[1] - l.at[1]) + n[2] * (b.eye[2] - l.at[2]) < 0.0);
-                let ink = if away { t.text_dim } else { color(l.color) };
-                let g = p.layout_no_wrap(l.text.clone(), font.clone(), ink);
-                let r = Rect::from_center_size(at, g.size() + vec2(8.0, 4.0));
-                if !away {
-                    p.rect_filled(r, 3.0, t.panel.gamma_multiply(0.85));
-                }
-                p.galley(r.min + vec2(4.0, 2.0), g, ink);
-            }
+    let b = cam.basis();
+    for l in labels {
+        let Some(q) = cam.project(l.at, rect.width() as f64, rect.height() as f64) else { continue };
+        let at = rect.min + vec2(q[0] as f32, q[1] as f32);
+        if !rect.contains(at) {
+            continue;
         }
-    }
-    legend(&p, rect, &built.legend, &t);
-    if let Some((_, row)) = &picked {
-        let hint = if matches!(row.act, crate::browser::Act::Edit(_)) { "  ·  double-click to edit" } else { "" };
-        let text = format!("{}{hint}", row.text.trim());
-        let g = p.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
-        let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
-        p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
-        p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
-        p.galley(r.min + vec2(10.0, 5.0), g, t.text);
-        scenario::publish_target("view3d:selected", r);
-    }
-    // The field's plane: its box in the model and the view that faces it.
-    let facing = layers.first().map(|(plot, plane, at)| {
-        let l = app.session.display.length;
-        let (lo, _) = bounds;
-        let ((h0, h1), (v0, v1)) = (plot.x.span(), plot.y.span());
-        let (h0, h1, v0, v1) = (l.to_si(h0), l.to_si(h1), l.to_si(v0), l.to_si(v1));
-        match plane {
-            Plane::H => ([v0, lo[1] + at, h0], [v1, lo[1] + at, h1], StandardView::Top),
-            Plane::E => ([lo[0] + at, v0, h0], [lo[0] + at, v1, h1], StandardView::Right),
-            Plane::Cross => ([h0, v0, lo[2] + at], [h1, v1, lo[2] + at], StandardView::Front),
+        let away = l.facing.is_some_and(|n| n[0] * (b.eye[0] - l.at[0]) + n[1] * (b.eye[1] - l.at[1]) + n[2] * (b.eye[2] - l.at[2]) < 0.0);
+        let ink = if away { t.text_dim } else { color(l.color) };
+        let g = p.layout_no_wrap(l.text.clone(), font.clone(), ink);
+        let r = Rect::from_center_size(at, g.size() + vec2(8.0, 4.0));
+        if !away {
+            p.rect_filled(r, 3.0, t.panel.gamma_multiply(0.85));
         }
-    });
-    navigator(app, ui, rect);
-    nav_bar(app, ui, rect, facing);
+        p.galley(r.min + vec2(4.0, 2.0), g, ink);
+    }
+}
+
+/// The selection's name on a card at the top, with how to edit it.
+fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &Tokens) {
+    let hint = if matches!(row.act, crate::browser::Act::Edit(_)) { "  ·  double-click to edit" } else { "" };
+    let g = p.layout_no_wrap(format!("{}{hint}", row.text.trim()), FontId::proportional(t.font_small), t.text);
+    let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
+    p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
+    p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+    p.galley(r.min + vec2(10.0, 5.0), g, t.text);
+    scenario::publish_target("view3d:selected", r);
+}
+
+/// A field plane's box in the model (m) and the standard view that faces it.
+fn facing_plane(
+    l: emcraft_model::units::Length,
+    lo: [f64; 3],
+    plot: &emcraft_render::plot::FieldPlot,
+    plane: Plane,
+    at: f64,
+) -> ([f64; 3], [f64; 3], StandardView) {
+    let ((h0, h1), (v0, v1)) = (plot.x.span(), plot.y.span());
+    let (h0, h1, v0, v1) = (l.to_si(h0), l.to_si(h1), l.to_si(v0), l.to_si(v1));
+    match plane {
+        Plane::H => ([v0, lo[1] + at, h0], [v1, lo[1] + at, h1], StandardView::Top),
+        Plane::E => ([lo[0] + at, v0, h0], [lo[0] + at, v1, h1], StandardView::Right),
+        Plane::Cross => ([h0, v0, lo[2] + at], [h1, v1, lo[2] + at], StandardView::Front),
+    }
 }
 
 impl Built {

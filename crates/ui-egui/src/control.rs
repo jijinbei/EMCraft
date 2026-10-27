@@ -171,272 +171,308 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// (`wait: false`: at once, with `{"started": id}`; follow it with `ui.inspect`).
 fn execute(app: &mut EmcraftApp, req: &ControlRequest, id: &str, params: Value, wait: bool) -> Outcome {
     let long = crate::worker::is_long(id);
-    let r = app.run(id, params);
-    match r {
-        Ok(v) if long && wait => match app.job.as_mut() {
-            Some(job) => {
-                job.waiting.push(req.reply.clone());
-                Outcome::Later
-            }
-            None => ok(v),
-        },
+    match app.run(id, params) {
+        Ok(v) if long && wait => after_job(app, req, v),
         other => wrap(other),
+    }
+}
+
+/// A request's parameters, read with their checks.
+#[derive(Clone, Copy)]
+struct Args<'a>(&'a Value);
+
+impl<'a> Args<'a> {
+    fn str(self, k: &str) -> Option<&'a str> {
+        self.0.get(k).and_then(Value::as_str)
+    }
+
+    fn bool(self, k: &str) -> Option<bool> {
+        self.0.get(k).and_then(Value::as_bool)
+    }
+
+    /// A finite number.
+    fn num(self, k: &str) -> Option<f64> {
+        self.0.get(k).and_then(Value::as_f64).filter(|v| v.is_finite())
+    }
+
+    /// A finite number clamped to `lo..=hi`, `default` when absent.
+    fn clamped(self, k: &str, default: f64, lo: f64, hi: f64) -> f64 {
+        self.num(k).unwrap_or(default).clamp(lo, hi)
+    }
+
+    fn get(self, k: &str) -> Option<&'a Value> {
+        self.0.get(k)
+    }
+}
+
+/// What a method gives: its outcome, or why it refused.
+type Handled = Result<Outcome, String>;
+
+/// At most `n` characters of hostile text, for an error.
+fn clip(text: &str, n: usize) -> String {
+    text.chars().take(n).collect()
+}
+
+/// A job to wait for, or the reply now: `r`'s value goes back when the job ends, if one runs.
+fn after_job(app: &mut EmcraftApp, req: &ControlRequest, value: Value) -> Outcome {
+    match app.job.as_mut() {
+        Some(job) => {
+            job.waiting.push(req.reply.clone());
+            Outcome::Later
+        }
+        None => ok(value),
     }
 }
 
 /// Handles one request.
 pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
-    let p = &req.params;
-    let s = |k: &str| p.get(k).and_then(Value::as_str);
-    let b = |k: &str| p.get(k).and_then(Value::as_bool);
-    match req.method.as_str() {
-        "engine.execute" => {
-            let Some(id) = s("command") else { return err("missing `command`") };
-            let params = p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
-            execute(app, req, id, params, b("wait").unwrap_or(true))
-        }
-        "engine.script" => {
-            let Some(steps) = p.get("commands").and_then(Value::as_array) else { return err("`commands` must be an array of {command, params}") };
-            if steps.len() > 10_000 {
-                return err("at most 10000 commands");
-            }
-            match app.run_script(Value::Array(steps.clone())) {
-                Ok(_) if b("wait").unwrap_or(true) => match app.job.as_mut() {
-                    Some(job) => {
-                        job.waiting.push(req.reply.clone());
-                        Outcome::Later
-                    }
-                    None => ok(Value::Null),
-                },
-                other => wrap(other),
-            }
-        }
-        "engine.commands" => ok(Value::Array(
-            emcraft_engine::COMMANDS
-                .iter()
-                .map(|c| {
-                    let params: Vec<Value> = c
-                        .params
-                        .iter()
-                        .map(|q| json!({"name": q.name, "kind": q.kind.name(), "required": q.required, "doc": q.doc, "choices": q.choices}))
-                        .collect();
-                    json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": crate::worker::is_long(c.id)})
-                })
-                .collect(),
-        )),
-        "ui.inspect" => ok(inspect(app)),
-        "ui.set" => {
-            for k in ["tab", "view"] {
-                if p.get(k).is_some_and(|v| !v.is_string()) {
-                    return err(format!("`{k}` must be a string"));
-                }
-            }
-            if let Some(tab) = s("tab") {
-                if !crate::ribbon::TABS.iter().any(|(t, _)| *t == tab) {
-                    return err(format!("unknown tab `{}`", tab.chars().take(40).collect::<String>()));
-                }
-                app.tab = tab.to_owned();
-            }
-            if let Some(v) = s("view") {
-                match View::parse(v) {
-                    Some(v) => app.view = v,
-                    None => return err(format!("unknown view `{}`", v.chars().take(40).collect::<String>())),
-                }
-            }
-            if let Some(d) = b("dark") {
-                app.dark = d;
-            }
-            if let Some(d) = b("dock") {
-                app.dock_dialogs = d;
-                if let Some(dialog) = app.dialog.as_mut() {
-                    dialog.docked = d;
-                }
-            }
-            if let Some(at) = p.get("field_at").and_then(Value::as_f64).filter(|v| v.is_finite()) {
-                app.field.at = Some(at);
-            }
-            if let Some(a) = b("animate") {
-                app.field.animate = a;
-            }
-            // The workflow step (`none` closes the panel) and the 3D camera.
-            match p.get("step") {
-                None => {}
-                Some(Value::String(x)) if x == "none" => crate::steps::open_step(app, None),
-                Some(Value::String(x)) => match x.parse::<crate::steps::Step>().ok() {
-                    Some(step) => crate::steps::open_step(app, Some(step)),
-                    None => return err(format!("unknown step `{}`", x.chars().take(40).collect::<String>())),
-                },
-                Some(_) => return err("`step` must be a string"),
-            }
-            if let Some(v) = s("standard_view") {
-                match emcraft_render::view3d::StandardView::parse(v) {
-                    Some(v) => app.view3d.standard(v),
-                    None => return err(format!("unknown standard view `{}`", v.chars().take(40).collect::<String>())),
-                }
-            }
-            if let Some(c) = p.get("camera") {
-                let f = |k: &str| c.get(k).and_then(Value::as_f64).filter(|v| v.is_finite());
-                let cam = &mut app.view3d.camera;
-                if let Some(v) = f("yaw") {
-                    cam.yaw = v.to_radians();
-                }
-                if let Some(v) = f("pitch") {
-                    cam.pitch = v.to_radians();
-                }
-                if let Some(v) = f("distance").filter(|v| *v > 0.0) {
-                    cam.distance = v;
-                }
-                match c.get("projection").and_then(Value::as_str) {
-                    Some("orthographic") => cam.projection = emcraft_render::view3d::Projection::Orthographic,
-                    Some("perspective") => cam.projection = emcraft_render::view3d::Projection::Perspective,
-                    _ => {}
-                }
-                *cam = cam.sanitized();
-            }
-            ok(inspect(app))
-        }
-        "ui.start" => {
-            let Some(id) = s("command") else { return err("missing `command`") };
-            if let Err(e) = app.open_dialog(id) {
-                return err(e);
-            }
-            if let (Some(d), Some(Value::Object(o))) = (app.dialog.as_mut(), p.get("params")) {
-                for (k, v) in o {
-                    if let Err(e) = d.set(k, v) {
-                        app.dialog = None;
-                        return err(e);
-                    }
-                }
-            }
-            ok(inspect(app)["dialog"].clone())
-        }
-        "ui.dialog" => {
-            if app.dialog.is_none() {
-                return err("no dialog is open");
-            }
-            if let (Some(d), Some(Value::Object(o))) = (app.dialog.as_mut(), p.get("set")) {
-                for (k, v) in o {
-                    if let Err(e) = d.set(k, v) {
-                        return err(e);
-                    }
-                }
-            }
-            if b("cancel") == Some(true) {
-                app.dialog = None;
-                return ok(json!({"closed": true}));
-            }
-            if b("ok") == Some(true) {
-                return wrap(app.dialog_ok());
-            }
-            ok(inspect(app)["dialog"].clone())
-        }
-        "ui.cancel" => ok(json!({"cancelled": app.cancel_job()})),
-        "ui.messages" => {
-            if b("clear") == Some(true) {
-                app.messages.clear();
-            }
-            ok(json!(app.messages.iter().map(|m| json!({"text": m.text, "error": m.error, "count": m.count})).collect::<Vec<_>>()))
-        }
-        "ui.move" | "ui.click" => {
-            let pos = match point(p, "x", "y") {
-                Ok(p) => p,
-                Err(e) => return err(e),
-            };
-            let m = mods(p);
-            let mut ev = vec![egui::Event::ModifiersChanged(m), egui::Event::PointerMoved(pos)];
-            if req.method == "ui.click" {
-                let button = button(p);
-                for _ in 0..if b("double") == Some(true) { 2 } else { 1 } {
-                    ev.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: m });
-                    ev.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: m });
-                }
-            }
-            wrap(push(app, ev).map(|()| json!({"x": pos.x, "y": pos.y})))
-        }
-        "ui.drag" => {
-            let (a, z) = match (point(p, "x0", "y0"), point(p, "x1", "y1")) {
-                (Ok(a), Ok(z)) => (a, z),
-                (Err(e), _) | (_, Err(e)) => return err(e),
-            };
-            let (button, m) = (button(p), mods(p));
-            let steps = p.get("steps").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(10.0).clamp(1.0, 200.0) as usize;
-            let mut ev = vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE), egui::Event::PointerMoved(a)];
-            ev.push(egui::Event::PointerButton { pos: a, button, pressed: true, modifiers: m });
-            for k in 1..=steps {
-                ev.push(egui::Event::PointerMoved(a + (z - a) * (k as f32 / steps as f32)));
-            }
-            ev.push(egui::Event::PointerButton { pos: z, button, pressed: false, modifiers: m });
-            wrap(push(app, ev).map(|()| Value::Null))
-        }
-        "ui.scroll" => {
-            let pos = match point(p, "x", "y") {
-                Ok(p) => p,
-                Err(e) => return err(e),
-            };
-            let delta = p.get("delta").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(-1.0).clamp(-100.0, 100.0) as f32;
-            let ev = vec![
-                egui::Event::PointerMoved(pos),
-                egui::Event::MouseWheel {
-                    unit: egui::MouseWheelUnit::Line,
-                    delta: egui::vec2(0.0, delta),
-                    modifiers: Default::default(),
-                    phase: egui::TouchPhase::Move,
-                },
-            ];
-            wrap(push(app, ev).map(|()| Value::Null))
-        }
-        "ui.key" => {
-            let Some(key) = s("key").and_then(key_from) else { return err("unknown key") };
-            let m = mods(p);
-            let ev = vec![
-                egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: m },
-                egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers: m },
-            ];
-            wrap(push(app, ev).map(|()| Value::Null))
-        }
+    let a = Args(&req.params);
+    let handled = match req.method.as_str() {
+        "engine.execute" => engine_execute(app, req, a),
+        "engine.script" => engine_script(app, req, a),
+        "engine.commands" => Ok(ok(commands())),
+        "ui.inspect" => Ok(ok(inspect(app))),
+        "ui.set" => ui_set(app, a),
+        "ui.start" => ui_start(app, a),
+        "ui.dialog" => ui_dialog(app, a),
+        "ui.cancel" => Ok(ok(json!({"cancelled": app.cancel_job()}))),
+        "ui.messages" => Ok(ok(messages(app, a))),
+        "ui.move" => pointer(app, a, None),
+        "ui.click" => pointer(app, a, Some(a.bool("double") == Some(true))),
+        "ui.drag" => drag(app, a),
+        "ui.scroll" => scroll(app, a),
+        "ui.key" => key(app, a),
         "ui.text" => {
-            let text: String = s("text").unwrap_or("").chars().take(crate::dialogs::MAX_FIELD).collect();
-            wrap(push(app, vec![egui::Event::Text(text)]).map(|()| Value::Null))
+            let text: String = a.str("text").unwrap_or("").chars().take(crate::dialogs::MAX_FIELD).collect();
+            push(app, vec![egui::Event::Text(text)]).map(|()| ok(Value::Null))
         }
         "ui.handles" => {
-            let list = scenario::handles(s("prefix").unwrap_or(""));
-            ok(json!(list.into_iter().map(|(n, p)| json!({"name": n, "x": p.x, "y": p.y})).collect::<Vec<_>>()))
+            let list = scenario::handles(a.str("prefix").unwrap_or(""));
+            Ok(ok(json!(list.into_iter().map(|(n, p)| json!({"name": n, "x": p.x, "y": p.y})).collect::<Vec<_>>())))
         }
-        "ui.at" => match s("handle").and_then(scenario::handle_at) {
-            Some(q) => ok(json!([q.x, q.y])),
-            None => err("that handle is not on screen"),
-        },
-        "ui.render" => {
-            let f = |k: &str, d: f64, lo: f64, hi: f64| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(d).clamp(lo, hi);
-            let size = egui::vec2(f("width", 1500.0, 320.0, 4096.0) as f32, f("height", 960.0, 240.0, 4096.0) as f32);
-            let scale = f("scale", 1.0, 0.5, 2.0) as f32;
-            let canvas = crate::raster::render_app(app, size, scale);
-            let Some(png) = canvas.png() else { return err("could not encode the picture") };
-            match s("path") {
-                Some(path) if !path.trim().is_empty() => match std::fs::write(path, &png) {
-                    Ok(()) => ok(json!({"path": path, "width": canvas.w, "height": canvas.h, "bytes": png.len(), "renderer": "cpu"})),
-                    Err(e) => err(format!("cannot write {path}: {e}")),
-                },
-                _ => ok(json!({"width": canvas.w, "height": canvas.h, "bytes": png.len(), "renderer": "cpu"})),
-            }
-        }
+        "ui.at" => a.str("handle").and_then(scenario::handle_at).map(|q| ok(json!([q.x, q.y]))).ok_or_else(|| "that handle is not on screen".into()),
+        "ui.render" => render(app, a),
         "ui.screenshot" => {
-            app.request_screenshot(s("path").map(str::to_owned), req.reply.clone());
+            app.request_screenshot(a.str("path").map(str::to_owned), req.reply.clone());
             ctx.request_repaint();
-            Outcome::Later
+            Ok(Outcome::Later)
         }
         "ui.resize" => {
-            let f = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite());
-            let (Some(w), Some(h)) = (f("width"), f("height")) else { return err("missing width/height") };
+            let (Some(w), Some(h)) = (a.num("width"), a.num("height")) else { return err("missing width/height") };
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w.clamp(640.0, 8192.0) as f32, h.clamp(480.0, 8192.0) as f32)));
-            ok(Value::Null)
+            Ok(ok(Value::Null))
         }
         "app.quit" => {
             app.quit_requested = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            ok(json!({"quitting": true}))
+            Ok(ok(json!({"quitting": true})))
         }
-        other => err(format!("unknown method `{}`", other.chars().take(64).collect::<String>())),
+        other => Err(format!("unknown method `{}`", clip(other, 64))),
+    };
+    handled.unwrap_or_else(err)
+}
+
+fn engine_execute(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled {
+    let id = a.str("command").ok_or("missing `command`")?;
+    let params = a.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
+    Ok(execute(app, req, id, params, a.bool("wait").unwrap_or(true)))
+}
+
+fn engine_script(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled {
+    let steps = a.get("commands").and_then(Value::as_array).ok_or("`commands` must be an array of {command, params}")?;
+    if steps.len() > 10_000 {
+        return Err("at most 10000 commands".into());
+    }
+    app.run_script(Value::Array(steps.clone())).map_err(|e| e.to_string())?;
+    Ok(if a.bool("wait").unwrap_or(true) { after_job(app, req, Value::Null) } else { ok(Value::Null) })
+}
+
+/// Every command with its parameters, for agents.
+fn commands() -> Value {
+    emcraft_engine::COMMANDS
+        .iter()
+        .map(|c| {
+            let params: Vec<Value> = c
+                .params
+                .iter()
+                .map(|q| json!({"name": q.name, "kind": q.kind.name(), "required": q.required, "doc": q.doc, "choices": q.choices}))
+                .collect();
+            json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": crate::worker::is_long(c.id)})
+        })
+        .collect()
+}
+
+/// Sets what the window shows: tab, view, theme, docking, the field's plane position and
+/// animation, the workflow step, the 3D camera.
+fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
+    for k in ["tab", "view"] {
+        if a.get(k).is_some_and(|v| !v.is_string()) {
+            return Err(format!("`{k}` must be a string"));
+        }
+    }
+    if let Some(tab) = a.str("tab") {
+        if !crate::ribbon::TABS.iter().any(|(t, _)| *t == tab) {
+            return Err(format!("unknown tab `{}`", clip(tab, 40)));
+        }
+        app.tab = tab.to_owned();
+    }
+    if let Some(v) = a.str("view") {
+        app.view = View::parse(v).ok_or_else(|| format!("unknown view `{}`", clip(v, 40)))?;
+    }
+    if let Some(d) = a.bool("dark") {
+        app.dark = d;
+    }
+    if let Some(d) = a.bool("dock") {
+        app.dock_dialogs = d;
+        if let Some(dialog) = app.dialog.as_mut() {
+            dialog.docked = d;
+        }
+    }
+    if let Some(at) = a.num("field_at") {
+        app.field.at = Some(at);
+    }
+    if let Some(on) = a.bool("animate") {
+        app.field.animate = on;
+    }
+    // The workflow step (`none` closes the panel).
+    match a.get("step") {
+        None => {}
+        Some(Value::String(x)) if x == "none" => crate::steps::open_step(app, None),
+        Some(Value::String(x)) => {
+            let step = x.parse::<crate::steps::Step>().map_err(|_| format!("unknown step `{}`", clip(x, 40)))?;
+            crate::steps::open_step(app, Some(step));
+        }
+        Some(_) => return Err("`step` must be a string".into()),
+    }
+    if let Some(v) = a.str("standard_view") {
+        let view = emcraft_render::view3d::StandardView::parse(v).ok_or_else(|| format!("unknown standard view `{}`", clip(v, 40)))?;
+        app.view3d.standard(view);
+    }
+    if let Some(c) = a.get("camera") {
+        let c = Args(c);
+        let cam = &mut app.view3d.camera;
+        if let Some(v) = c.num("yaw") {
+            cam.yaw = v.to_radians();
+        }
+        if let Some(v) = c.num("pitch") {
+            cam.pitch = v.to_radians();
+        }
+        if let Some(v) = c.num("distance").filter(|v| *v > 0.0) {
+            cam.distance = v;
+        }
+        match c.str("projection") {
+            Some("orthographic") => cam.projection = emcraft_render::view3d::Projection::Orthographic,
+            Some("perspective") => cam.projection = emcraft_render::view3d::Projection::Perspective,
+            _ => {}
+        }
+        *cam = cam.sanitized();
+    }
+    Ok(ok(inspect(app)))
+}
+
+/// Opens a command's dialog with fields set, as a person would before pressing OK.
+fn ui_start(app: &mut EmcraftApp, a: Args) -> Handled {
+    let id = a.str("command").ok_or("missing `command`")?;
+    app.open_dialog(id).map_err(|e| e.to_string())?;
+    if let (Some(d), Some(Value::Object(o))) = (app.dialog.as_mut(), a.get("params")) {
+        for (k, v) in o {
+            if let Err(e) = d.set(k, v) {
+                app.dialog = None;
+                return Err(e);
+            }
+        }
+    }
+    Ok(ok(inspect(app)["dialog"].clone()))
+}
+
+/// Sets the open dialog's fields, then OK or Cancel.
+fn ui_dialog(app: &mut EmcraftApp, a: Args) -> Handled {
+    let d = app.dialog.as_mut().ok_or("no dialog is open")?;
+    if let Some(Value::Object(o)) = a.get("set") {
+        for (k, v) in o {
+            d.set(k, v)?;
+        }
+    }
+    if a.bool("cancel") == Some(true) {
+        app.dialog = None;
+        return Ok(ok(json!({"closed": true})));
+    }
+    if a.bool("ok") == Some(true) {
+        return Ok(wrap(app.dialog_ok()));
+    }
+    Ok(ok(inspect(app)["dialog"].clone()))
+}
+
+fn messages(app: &mut EmcraftApp, a: Args) -> Value {
+    if a.bool("clear") == Some(true) {
+        app.messages.clear();
+    }
+    json!(app.messages.iter().map(|m| json!({"text": m.text, "error": m.error, "count": m.count})).collect::<Vec<_>>())
+}
+
+/// The pointer moved to a point, then clicked there (`double`: twice) when `click` is given.
+fn pointer(app: &mut EmcraftApp, a: Args, click: Option<bool>) -> Handled {
+    let pos = point(a.0, "x", "y")?;
+    let m = mods(a.0);
+    let mut ev = vec![egui::Event::ModifiersChanged(m), egui::Event::PointerMoved(pos)];
+    if let Some(double) = click {
+        let button = button(a.0);
+        for _ in 0..if double { 2 } else { 1 } {
+            ev.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: m });
+            ev.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: m });
+        }
+    }
+    push(app, ev)?;
+    Ok(ok(json!({"x": pos.x, "y": pos.y})))
+}
+
+fn drag(app: &mut EmcraftApp, a: Args) -> Handled {
+    let (from, to) = (point(a.0, "x0", "y0")?, point(a.0, "x1", "y1")?);
+    let (button, m) = (button(a.0), mods(a.0));
+    let steps = a.clamped("steps", 10.0, 1.0, 200.0) as usize;
+    let mut ev = vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE), egui::Event::PointerMoved(from)];
+    ev.push(egui::Event::PointerButton { pos: from, button, pressed: true, modifiers: m });
+    ev.extend((1..=steps).map(|k| egui::Event::PointerMoved(from + (to - from) * (k as f32 / steps as f32))));
+    ev.push(egui::Event::PointerButton { pos: to, button, pressed: false, modifiers: m });
+    push(app, ev)?;
+    Ok(ok(Value::Null))
+}
+
+fn scroll(app: &mut EmcraftApp, a: Args) -> Handled {
+    let pos = point(a.0, "x", "y")?;
+    let delta = a.clamped("delta", -1.0, -100.0, 100.0) as f32;
+    let wheel = egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, delta),
+        modifiers: Default::default(),
+        phase: egui::TouchPhase::Move,
+    };
+    push(app, vec![egui::Event::PointerMoved(pos), wheel])?;
+    Ok(ok(Value::Null))
+}
+
+fn key(app: &mut EmcraftApp, a: Args) -> Handled {
+    let key = a.str("key").and_then(key_from).ok_or("unknown key")?;
+    let m = mods(a.0);
+    let press = |pressed| egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: m };
+    push(app, vec![press(true), press(false)])?;
+    Ok(ok(Value::Null))
+}
+
+/// The whole window drawn on the CPU, written to `path` or measured.
+fn render(app: &mut EmcraftApp, a: Args) -> Handled {
+    let size = egui::vec2(a.clamped("width", 1500.0, 320.0, 4096.0) as f32, a.clamped("height", 960.0, 240.0, 4096.0) as f32);
+    let canvas = crate::raster::render_app(app, size, a.clamped("scale", 1.0, 0.5, 2.0) as f32);
+    let png = canvas.png().ok_or("could not encode the picture")?;
+    let reply = json!({"width": canvas.w, "height": canvas.h, "bytes": png.len(), "renderer": "cpu"});
+    match a.str("path").filter(|p| !p.trim().is_empty()) {
+        Some(path) => {
+            std::fs::write(path, &png).map_err(|e| format!("cannot write {path}: {e}"))?;
+            let mut reply = reply;
+            reply["path"] = json!(path);
+            Ok(ok(reply))
+        }
+        None => Ok(ok(reply)),
     }
 }
 
