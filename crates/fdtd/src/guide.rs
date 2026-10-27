@@ -10,7 +10,7 @@ use emcraft_model::{Model, Pole, Span, Waveguide};
 use num_complex::Complex64 as C;
 
 use crate::dispersion::{Dispersion, Term};
-use crate::yee::{Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, leapfrog, time_step};
+use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, leapfrog, time_step};
 use crate::{FdtdError, MAX_CELLS, Options, Result, invalid};
 
 /// Divisions of `len` into steps of at most `h`.
@@ -565,21 +565,6 @@ fn first_check(g: &Grid, band: Band, pulse: Pulse) -> f64 {
         })
         .fold(C0, f64::min);
     pulse.t0 + 4.0 * pulse.tau + 3.0 * (g.z[g.nz()] - g.z[0]) / v_min
-}
-
-/// The run's band: its lowest, highest and centre frequencies.
-#[derive(Clone, Copy, Debug)]
-struct Band {
-    f0: f64,
-    f1: f64,
-    fc: f64,
-}
-
-impl Band {
-    fn of(freqs: &[f64]) -> Band {
-        let (f0, f1) = freqs.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
-        Band { f0, f1, fc: 0.5 * (f0 + f1) }
-    }
 }
 
 /// The Fourier transforms of the TE₁₀ projections at the two planes, accumulated every step.

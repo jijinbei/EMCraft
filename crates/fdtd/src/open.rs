@@ -19,12 +19,14 @@
 //! spectrum cancels, and fields are reported per volt (or ampere) of source spectrum.
 
 use std::f64::consts::PI;
+use std::ops::{ControlFlow, Range};
 
 use emcraft_model::units::{C0, EPS0, ETA0, MU0};
 use emcraft_model::{CVec3, Model, Point3, Shape, Source, Vec3};
 use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
+use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, leapfrog, time_step};
 use crate::{FdtdError, MAX_CELLS, MAX_STEPS, Result, invalid};
 
 /// Run settings of an open problem.
@@ -86,208 +88,156 @@ impl OpenRun {
     }
 }
 
-/// A field component on the grid: dims (nx, ny, nz) of its own lattice, row-major in x.
-struct Comp {
+/// The two axes across `a`, in cyclic order.
+#[inline]
+const fn across(a: usize) -> (usize, usize) {
+    ((a + 1) % 3, (a + 2) % 3)
+}
+
+/// The uniform grid of the box: `n` cells of `hs` along each axis, `npml` of them in the layer
+/// at each face.
+struct BoxGrid {
+    size: Vec3,
     n: [usize; 3],
-    v: Vec<f64>,
+    hs: [f64; 3],
+    npml: usize,
 }
 
-impl Comp {
-    fn new(n: [usize; 3]) -> Comp {
-        Comp { n, v: vec![0.0; n[0] * n[1] * n[2]] }
+impl BoxGrid {
+    /// The grid of the model's box solid at cell size `h`, refusing what the time domain's open
+    /// problems do not support.
+    fn new(model: &Model, h: f64) -> Result<BoxGrid> {
+        let (Some(open), Some(solid)) = (&model.open, &model.solid) else {
+            return Err(FdtdError::NotReady("no open boundary: a box solid lined by model.open".into()));
+        };
+        let Shape::Box { size } = solid.shape else {
+            return Err(FdtdError::NotReady("the time domain's open problems need a box solid".into()));
+        };
+        if model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.mu_r != 1.0 || m.is_dispersive()) || model.wall_conductivity.is_some() {
+            return Err(FdtdError::Unsupported("losses, dispersion or magnetic materials in the time domain's open problems".into()));
+        }
+        if !model.ports.is_empty() {
+            return Err(FdtdError::Unsupported("waveguide ports in the time domain's open problems (use lumped ports)".into()));
+        }
+        if model.sources.iter().any(|s| matches!(s, Source::PlaneWave { .. })) {
+            return Err(FdtdError::Unsupported("plane waves in the time domain".into()));
+        }
+        let n = [0, 1, 2].map(|d| ((size[d] / h).round() as usize).max(4));
+        let cells = n[0].saturating_mul(n[1]).saturating_mul(n[2]);
+        if cells > MAX_CELLS {
+            return Err(FdtdError::TooLarge { cells, limit: MAX_CELLS });
+        }
+        let hs = [0, 1, 2].map(|d| size[d] / n[d] as f64);
+        let npml = ((open.thickness / h).round() as usize).max(4);
+        if (0..3).any(|d| 2 * npml + 4 > n[d]) {
+            return Err(invalid("open boundary", "the layer leaves no room inside the box at this cell size"));
+        }
+        Ok(BoxGrid { size, n, hs, npml })
     }
-    #[inline]
-    fn id(&self, i: usize, j: usize, k: usize) -> usize {
-        i + self.n[0] * (j + self.n[1] * k)
-    }
-    #[inline]
-    fn get(&self, i: usize, j: usize, k: usize) -> f64 {
-        self.v[self.id(i, j, k)]
-    }
-}
 
-/// CPML coefficients (b, a) at positions `pos` (in cells from the low face, may be half-integer)
-/// on an axis of `n` cells with `npml` PML cells at each end.
-fn cpml_axis(n: usize, npml: usize, h: f64, dt: f64, fc: f64, half: bool) -> Vec<(f64, f64)> {
-    let m = 3.0;
-    let sigma_max = 0.8 * (m + 1.0) / (ETA0 * h);
-    let alpha_max = 2.0 * PI * fc * EPS0 * 0.05;
-    let count = if half { n } else { n + 1 };
-    (0..count)
-        .map(|i| {
-            let x = i as f64 + if half { 0.5 } else { 0.0 };
-            let d = if x < npml as f64 {
-                (npml as f64 - x) / npml as f64
-            } else if x > (n - npml) as f64 {
-                (x - (n - npml) as f64) / npml as f64
-            } else {
-                0.0
-            };
-            if d <= 0.0 {
-                return (1.0, 0.0);
+    fn cells(&self) -> usize {
+        self.n[0] * self.n[1] * self.n[2]
+    }
+
+    /// The position of (fractional) node `i` along axis `d`.
+    fn node(&self, d: usize, i: f64) -> f64 {
+        i * self.hs[d]
+    }
+
+    /// The cross-section of an edge along `a`.
+    fn area(&self, a: usize) -> f64 {
+        let (u, v) = across(a);
+        self.hs[u] * self.hs[v]
+    }
+
+    /// dt/ε per E edge: 0 on conductors and the box's walls, where an edge's midpoint or any of
+    /// the four cells round it is a conductor's; ε the average of those cells'.
+    fn edge_coefficients(&self, model: &Model, fields: &Fields, dt: f64) -> [Vec<f64>; 3] {
+        let n = self.n;
+        // Materials per cell: εr, or `None` in a conductor.
+        let mut eps_cell = vec![None; self.cells()];
+        for k in 0..n[2] {
+            for j in 0..n[1] {
+                for i in 0..n[0] {
+                    let p = Point3::new(self.node(0, i as f64 + 0.5), self.node(1, j as f64 + 0.5), self.node(2, k as f64 + 0.5));
+                    eps_cell[i + n[0] * (j + n[1] * k)] = model.material_at(p).map(|m| model.materials.get(m).map_or(1.0, |x| x.eps_r));
+                }
             }
-            let sigma = sigma_max * d.powf(m);
-            let alpha = alpha_max * (1.0 - d);
-            let b = (-(sigma + alpha) * dt / EPS0).exp();
-            let a = if sigma > 0.0 { sigma / (sigma + alpha) * (b - 1.0) } else { 0.0 };
-            (b, a)
+        }
+        let cell_eps = |c: [isize; 3]| -> Option<f64> {
+            if (0..3).any(|d| c[d] < 0 || c[d] as usize >= n[d]) {
+                return None;
+            }
+            eps_cell[c[0] as usize + n[0] * (c[1] as usize + n[1] * c[2] as usize)]
+        };
+        [0, 1, 2].map(|a| {
+            let (u, v) = across(a);
+            let f = &fields.e[a];
+            let d = f.dims();
+            let mut ce = vec![0.0; f.len()];
+            for k in 0..d[2] {
+                for j in 0..d[1] {
+                    for i in 0..d[0] {
+                        let idx = [i, j, k];
+                        let mid = Point3::from([0, 1, 2].map(|q| self.node(q, idx[q] as f64 + if q == a { 0.5 } else { 0.0 })));
+                        if model.material_at(mid).is_none() {
+                            continue;
+                        }
+                        // The four cells round the edge: offsets −1, 0 along u and v.
+                        let mut eps = 0.0;
+                        let mut ok = true;
+                        for du in [-1isize, 0] {
+                            for dv in [-1isize, 0] {
+                                let mut c = idx.map(|x| x as isize);
+                                c[u] += du;
+                                c[v] += dv;
+                                match cell_eps(c) {
+                                    Some(e) => eps += 0.25 * e,
+                                    None => ok = false,
+                                }
+                            }
+                        }
+                        if ok {
+                            ce[f.at(i, j, k)] = dt / (EPS0 * eps);
+                        }
+                    }
+                }
+            }
+            ce
         })
-        .collect()
+    }
 }
 
-/// Runs `f` on every value of a component (dims `d`) and its two ψ arrays, the z planes split
-/// into slabs over `threads` scoped threads.
-fn par_planes(
-    threads: usize,
-    d: [usize; 3],
-    out: &mut [f64],
-    p0: &mut [f64],
-    p1: &mut [f64],
-    f: &(dyn Fn(usize, usize, usize, &mut f64, &mut f64, &mut f64) + Sync),
-) {
-    let plane = d[0] * d[1];
-    if plane == 0 || d[2] == 0 {
-        return;
-    }
-    let slab = d[2].div_ceil(threads.max(1)).max(1);
-    let run = |k0: usize, o: &mut [f64], q0: &mut [f64], q1: &mut [f64]| {
-        for (n, ((x, y), z)) in o.iter_mut().zip(q0.iter_mut()).zip(q1.iter_mut()).enumerate() {
-            let (i, j, k) = (n % d[0], (n / d[0]) % d[1], k0 + n / plane);
-            f(i, j, k, x, y, z);
-        }
-    };
-    if threads <= 1 || d[2] < 2 * threads {
-        run(0, out, p0, p1);
-        return;
-    }
-    std::thread::scope(|scope| {
-        for (t, ((o, q0), q1)) in out.chunks_mut(slab * plane).zip(p0.chunks_mut(slab * plane)).zip(p1.chunks_mut(slab * plane)).enumerate() {
-            let run = &run;
-            scope.spawn(move || run(t * slab, o, q0, q1));
-        }
-    });
+/// A lumped port's edge with its semi-implicit coefficients (Piket-May et al. 1994):
+/// Eⁿ⁺¹ = ca Eⁿ + cb (∇ × H) − cv V_s.
+struct PortEdge {
+    id: usize,
+    ca: f64,
+    cb: f64,
+    cv: f64,
+    /// E on the edge before the step's plain update.
+    old: f64,
 }
 
-/// A lumped port on the grid: its edges (axis, i, j, k), each's resistance and source share.
+/// A lumped port on the grid: its run of edges along `axis`.
 struct GridPort {
     name: String,
     axis: usize,
-    edges: Vec<[usize; 3]>,
+    edges: Vec<PortEdge>,
     /// Ohms per edge, and the sign of the gap's direction along the axis.
     r_edge: f64,
     sign: f64,
-    voltage: C,
+    /// The source voltage per edge.
+    voltage: f64,
 }
 
-/// Solves the model's open problem in the time domain at `frequencies` (Hz).
-pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<OpenRun> {
-    let h = o.cell;
-    if !(h.is_finite() && h > 0.0) || !(o.courant > 0.0 && o.courant < 1.0) || o.max_steps == 0 || o.max_steps > MAX_STEPS || !(o.decay > 0.0) {
-        return Err(invalid("options", format!("{o:?}")));
-    }
-    if frequencies.is_empty() || frequencies.len() > 64 || frequencies.iter().any(|f| !(f.is_finite() && *f > 0.0)) {
-        return Err(invalid("frequencies", "1 to 64 finite numbers > 0"));
-    }
-    let (Some(open), Some(solid)) = (&model.open, &model.solid) else {
-        return Err(FdtdError::NotReady("no open boundary: a box solid lined by model.open".into()));
-    };
-    let Shape::Box { size } = solid.shape else {
-        return Err(FdtdError::NotReady("the time domain's open problems need a box solid".into()));
-    };
-    if model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.mu_r != 1.0 || m.is_dispersive()) || model.wall_conductivity.is_some() {
-        return Err(FdtdError::Unsupported("losses, dispersion or magnetic materials in the time domain's open problems".into()));
-    }
-    if !model.ports.is_empty() {
-        return Err(FdtdError::Unsupported("waveguide ports in the time domain's open problems (use lumped ports)".into()));
-    }
-    if model.sources.iter().any(|s| matches!(s, Source::PlaneWave { .. })) {
-        return Err(FdtdError::Unsupported("plane waves in the time domain".into()));
-    }
-    let n = [0, 1, 2].map(|d| ((size[d] / h).round() as usize).max(4));
-    let cells = n[0].saturating_mul(n[1]).saturating_mul(n[2]);
-    if cells > MAX_CELLS {
-        return Err(FdtdError::TooLarge { cells, limit: MAX_CELLS });
-    }
-    let hs = [0, 1, 2].map(|d| size[d] / n[d] as f64);
-    let npml = ((open.thickness / h).round() as usize).max(4);
-    if (0..3).any(|d| 2 * npml + 4 > n[d]) {
-        return Err(invalid("open boundary", "the layer leaves no room inside the box at this cell size"));
-    }
-    let fmin = frequencies.iter().copied().fold(f64::INFINITY, f64::min);
-    let fmax = frequencies.iter().copied().fold(0.0f64, f64::max);
-    let fc = 0.5 * (fmin + fmax);
-    let dt = o.courant / (C0 * (1.0 / hs[0].powi(2) + 1.0 / hs[1].powi(2) + 1.0 / hs[2].powi(2)).sqrt());
-
-    // Materials per cell; conductors per E edge.
-    let node = |d: usize, i: f64| i * hs[d];
-    let mut eps_cell = vec![0.0; cells];
-    let mut pec_cell = vec![false; cells];
-    for k in 0..n[2] {
-        for j in 0..n[1] {
-            for i in 0..n[0] {
-                let p = Point3::new(node(0, i as f64 + 0.5), node(1, j as f64 + 0.5), node(2, k as f64 + 0.5));
-                let c = i + n[0] * (j + n[1] * k);
-                match model.material_at(p) {
-                    Some(m) => eps_cell[c] = model.materials.get(m).map_or(1.0, |x| x.eps_r),
-                    None => pec_cell[c] = true,
-                }
-            }
-        }
-    }
-    let cell_ok = |i: isize, j: isize, k: isize| -> Option<usize> {
-        if i < 0 || j < 0 || k < 0 || i as usize >= n[0] || j as usize >= n[1] || k as usize >= n[2] {
-            return None;
-        }
-        let c = i as usize + n[0] * (j as usize + n[1] * k as usize);
-        (!pec_cell[c]).then_some(c)
-    };
-    // E components: Ex (nx, ny+1, nz+1), Ey (nx+1, ny, nz+1), Ez (nx+1, ny+1, nz).
-    let dims_e = [[n[0], n[1] + 1, n[2] + 1], [n[0] + 1, n[1], n[2] + 1], [n[0] + 1, n[1] + 1, n[2]]];
-    let dims_h = [[n[0] + 1, n[1], n[2]], [n[0], n[1] + 1, n[2]], [n[0], n[1], n[2] + 1]];
-    let mut e: Vec<Comp> = dims_e.iter().map(|d| Comp::new(*d)).collect();
-    let mut hf: Vec<Comp> = dims_h.iter().map(|d| Comp::new(*d)).collect();
-    // dt/ε per E edge (0 on conductors and the box's walls).
-    let mut ce: Vec<Vec<f64>> = dims_e.iter().map(|d| vec![0.0; d[0] * d[1] * d[2]]).collect();
-    for a in 0..3 {
-        let (u, v) = ((a + 1) % 3, (a + 2) % 3);
-        let d = dims_e[a];
-        for k in 0..d[2] {
-            for j in 0..d[1] {
-                for i in 0..d[0] {
-                    let idx = [i, j, k];
-                    let mid = Point3::from([0, 1, 2].map(|q| node(q, idx[q] as f64 + if q == a { 0.5 } else { 0.0 })));
-                    if model.material_at(mid).is_none() {
-                        continue;
-                    }
-                    // The four cells round the edge: offsets −1, 0 along u and v.
-                    let mut eps = 0.0;
-                    let mut ok = true;
-                    for du in [-1isize, 0] {
-                        for dv in [-1isize, 0] {
-                            let mut c = [idx[0] as isize, idx[1] as isize, idx[2] as isize];
-                            c[u] += du;
-                            c[v] += dv;
-                            match cell_ok(c[0], c[1], c[2]) {
-                                Some(id) => eps += 0.25 * eps_cell[id],
-                                None => ok = false,
-                            }
-                        }
-                    }
-                    if ok {
-                        ce[a][i + d[0] * (j + d[1] * k)] = dt / (EPS0 * eps);
-                    }
-                }
-            }
-        }
-    }
-    let chh = dt / MU0;
-
-    // Lumped ports: runs of edges along an axis between grid nodes.
-    let mut ports = Vec::new();
-    for lp in &model.lumped {
+impl GridPort {
+    /// The model's lumped port `lp` as a run of edges between grid nodes.
+    fn new(lp: &emcraft_model::LumpedPort, grid: &BoxGrid, fields: &Fields, ce: &[Vec<f64>; 3], dt: f64) -> Result<GridPort> {
         if lp.voltage[1] != 0.0 {
             return Err(FdtdError::Unsupported("lumped ports with a phase in the time domain (their voltages must be real)".into()));
         }
+        let (hs, n) = (grid.hs, grid.n);
         let d = lp.to - lp.from;
         let axis = d.dominant_axis();
         if (0..3).any(|q| q != axis && d[q].abs() > 1e-6 * d[axis].abs()) {
@@ -299,319 +249,491 @@ pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<Op
         if hi == lo {
             return Err(invalid("lumped port", format!("`{}`'s gap is shorter than a cell", lp.name)));
         }
-        let edges: Vec<[usize; 3]> = (lo..hi)
+        let e = &fields.e[axis];
+        let ids: Vec<usize> = (lo..hi)
             .map(|t| {
                 let mut c = a;
                 c[axis] = t;
-                c
+                e.at(c[0], c[1], c[2])
             })
             .collect();
-        for c in &edges {
-            let id = c[0] + dims_e[axis][0] * (c[1] + dims_e[axis][1] * c[2]);
-            if ce[axis][id] == 0.0 {
-                return Err(invalid("lumped port", format!("`{}` crosses a conductor on the grid", lp.name)));
-            }
+        if ids.iter().any(|&id| ce[axis][id] == 0.0) {
+            return Err(invalid("lumped port", format!("`{}` crosses a conductor on the grid", lp.name)));
         }
+        let count = ids.len() as f64;
+        let r_edge = lp.impedance / count;
+        let area = grid.area(axis);
+        let edges = ids
+            .into_iter()
+            .map(|id| {
+                let eps = dt / ce[axis][id]; // ε (F/m)
+                let g = hs[axis] / (2.0 * r_edge * area);
+                let den = eps / dt + g;
+                PortEdge { id, ca: (eps / dt - g) / den, cb: 1.0 / den, cv: 1.0 / (r_edge * area) / den, old: 0.0 }
+            })
+            .collect();
         let sign = if b[axis] > a[axis] { 1.0 } else { -1.0 };
-        let count = edges.len() as f64;
-        ports.push(GridPort {
-            name: lp.name.clone(),
-            axis,
-            edges,
-            r_edge: lp.impedance / count,
-            sign,
-            voltage: C::new(lp.voltage[0], lp.voltage[1]) / count,
-        });
+        Ok(GridPort { name: lp.name.clone(), axis, edges, r_edge, sign, voltage: lp.voltage[0] / count })
     }
-    // Current elements: one edge each, carrying the moment.
-    let mut currents: Vec<(usize, [usize; 3], f64)> = Vec::new();
+
+    /// Redoes the port's edges semi-implicitly after the plain update, with the source at `s`;
+    /// returns the terminal voltage and the current along the gap.
+    fn update(&self, e: &Field, ce: &[f64], h: f64, s: f64) -> (f64, f64) {
+        let mut vsum = 0.0;
+        let mut isum = 0.0;
+        for edge in &self.edges {
+            let (c, old) = (ce[edge.id], edge.old);
+            // The plain update added c·curl (with the layer's ψ, zero here): recover it.
+            let curl = (e.get(edge.id) - old) / c;
+            let vs = self.voltage * s * self.sign;
+            let updated = edge.ca * old + edge.cb * curl - edge.cv * vs;
+            e.set(edge.id, updated);
+            let e_avg = 0.5 * (old + updated);
+            isum += (vs + h * e_avg) / self.r_edge * self.sign;
+            vsum += -h * e_avg * self.sign;
+        }
+        (vsum, isum / self.edges.len() as f64)
+    }
+
+    /// Keeps E on the port's edges before the next step's plain update.
+    fn remember(&mut self, e: &Field) {
+        for edge in &mut self.edges {
+            edge.old = e.get(edge.id);
+        }
+    }
+}
+
+/// A current element on one E edge, carrying its moment (A, per unit of source).
+struct Current {
+    axis: usize,
+    id: usize,
+    moment: f64,
+}
+
+/// The model's current elements, each on the grid edge nearest its centre.
+fn currents(model: &Model, grid: &BoxGrid, fields: &Fields) -> Result<Vec<Current>> {
+    let hs = grid.hs;
+    let mut out = Vec::new();
     for s in &model.sources {
         if let Source::Dipole { at, direction, length, current } = *s {
             let axis = direction.dominant_axis();
             if (0..3).any(|q| q != axis && direction[q].abs() > 1e-9) {
                 return Err(invalid("dipole", "must lie along a grid axis in the time domain"));
             }
-            let c = [0, 1, 2].map(|q| ((at[q] / hs[q] - if q == axis { 0.5 } else { 0.0 }).round().max(0.0) as usize).min(dims_e[axis][q] - 1));
-            currents.push((axis, c, current * length * direction[axis].signum() / hs[axis]));
+            let e = &fields.e[axis];
+            let c = [0, 1, 2].map(|q| ((at[q] / hs[q] - if q == axis { 0.5 } else { 0.0 }).round().max(0.0) as usize).min(e.dims()[q] - 1));
+            out.push(Current { axis, id: e.at(c[0], c[1], c[2]), moment: current * length * direction[axis].signum() / hs[axis] });
         }
     }
+    Ok(out)
+}
+
+/// The CPML lining the six faces: coefficients per axis for E (at nodes) and H (at half
+/// cells), and each component's auxiliary variables for its two derivatives.
+struct BoxCpml {
+    e: [Vec<Cpml>; 3],
+    h: [Vec<Cpml>; 3],
+    psi_e: [[Field; 2]; 3],
+    psi_h: [[Field; 2]; 3],
+}
+
+impl BoxCpml {
+    fn new(grid: &BoxGrid, fields: &Fields, dt: f64, fc: f64) -> BoxCpml {
+        let npml = grid.npml;
+        // Coefficients at nodes (or half cells) along an axis of `n` cells.
+        let axis = |d: usize, half: bool| -> Vec<Cpml> {
+            let n = grid.n[d];
+            let grading = Grading::new(grid.hs[d], dt, fc);
+            let count = if half { n } else { n + 1 };
+            (0..count)
+                .map(|i| {
+                    let x = i as f64 + if half { 0.5 } else { 0.0 };
+                    let d = if x < npml as f64 {
+                        (npml as f64 - x) / npml as f64
+                    } else if x > (n - npml) as f64 {
+                        (x - (n - npml) as f64) / npml as f64
+                    } else {
+                        0.0
+                    };
+                    grading.at(d)
+                })
+                .collect()
+        };
+        let psi = |f: &Field| [f.zeros_like(), f.zeros_like()];
+        BoxCpml {
+            e: [0, 1, 2].map(|d| axis(d, false)),
+            h: [0, 1, 2].map(|d| axis(d, true)),
+            psi_e: fields.e.each_ref().map(psi),
+            psi_h: fields.h.each_ref().map(psi),
+        }
+    }
+}
+
+/// The leapfrog of the box: uniform steps, CPML on every derivative.
+struct OpenKernel<'a> {
+    fields: &'a Fields,
+    /// dt/ε per E edge, and dt/μ₀.
+    ce: &'a [Vec<f64>; 3],
+    ch: f64,
+    cpml: &'a BoxCpml,
+    hs: [f64; 3],
+}
+
+impl OpenKernel<'_> {
+    /// ∂H_a/∂t = −(1/μ) (∇ × E)_a, (∇ × E)_a = ∂E_v/∂u − ∂E_u/∂v, H_a at (a: node, u, v: half).
+    fn step_h_comp<const A: usize>(&self, ks: Range<usize>) {
+        let (u, v) = across(A);
+        let (h, [eu, ev]) = (&self.fields.h[A], [&self.fields.e[u], &self.fields.e[v]]);
+        let [p0, p1] = &self.cpml.psi_h[A];
+        let (pu, pv) = (&self.cpml.h[u], &self.cpml.h[v]);
+        let (su, sv) = (ev.stride(u), eu.stride(v));
+        let d = h.dims();
+        for k in ks.start.min(d[2])..ks.end.min(d[2]) {
+            for j in 0..d[1] {
+                for i in 0..d[0] {
+                    let idx = [i, j, k];
+                    let id = h.at(i, j, k);
+                    let (iv, iu) = (ev.at(i, j, k), eu.at(i, j, k));
+                    let dev_du = (ev.get(iv + su) - ev.get(iv)) / self.hs[u];
+                    let deu_dv = (eu.get(iu + sv) - eu.get(iu)) / self.hs[v];
+                    let q0 = pu[idx[u]].psi(p0.get(id), dev_du);
+                    let q1 = pv[idx[v]].psi(p1.get(id), deu_dv);
+                    p0.set(id, q0);
+                    p1.set(id, q1);
+                    h.set(id, h.get(id) - self.ch * (dev_du + q0 - deu_dv - q1));
+                }
+            }
+        }
+    }
+
+    /// ∂E_a/∂t = (1/ε) (∇ × H)_a, (∇ × H)_a = ∂H_v/∂u − ∂H_u/∂v, E_a at (a: half, u, v: nodes).
+    fn step_e_comp<const A: usize>(&self, ks: Range<usize>) {
+        let (u, v) = across(A);
+        let (e, [hu, hv]) = (&self.fields.e[A], [&self.fields.h[u], &self.fields.h[v]]);
+        let [p0, p1] = &self.cpml.psi_e[A];
+        let (pu, pv) = (&self.cpml.e[u], &self.cpml.e[v]);
+        let (su, sv) = (hv.stride(u), hu.stride(v));
+        let ce = &self.ce[A];
+        let d = e.dims();
+        for k in ks.start.min(d[2])..ks.end.min(d[2]) {
+            for j in 0..d[1] {
+                for i in 0..d[0] {
+                    let id = e.at(i, j, k);
+                    let c = ce[id];
+                    let idx = [i, j, k];
+                    if c == 0.0 || idx[u] == 0 || idx[v] == 0 {
+                        continue;
+                    }
+                    let (iv, iu) = (hv.at(i, j, k), hu.at(i, j, k));
+                    let dhv_du = (hv.get(iv) - hv.get(iv - su)) / self.hs[u];
+                    let dhu_dv = (hu.get(iu) - hu.get(iu - sv)) / self.hs[v];
+                    let q0 = pu[idx[u]].psi(p0.get(id), dhv_du);
+                    let q1 = pv[idx[v]].psi(p1.get(id), dhu_dv);
+                    p0.set(id, q0);
+                    p1.set(id, q1);
+                    e.set(id, e.get(id) + c * (dhv_du + q0 - dhu_dv - q1));
+                }
+            }
+        }
+    }
+}
+
+impl Kernel for OpenKernel<'_> {
+    fn step_h(&self, ks: Range<usize>) {
+        self.step_h_comp::<0>(ks.clone());
+        self.step_h_comp::<1>(ks.clone());
+        self.step_h_comp::<2>(ks);
+    }
+
+    /// The ports' edges get the plain update too; it is redone semi-implicitly afterwards.
+    fn step_e(&self, ks: Range<usize>) {
+        self.step_e_comp::<0>(ks.clone());
+        self.step_e_comp::<1>(ks.clone());
+        self.step_e_comp::<2>(ks);
+    }
+}
+
+/// A sample of the Huygens box: the centre of a cell face on the box's face normal to `axis`
+/// at node `plane`, at cells (iu, iv) across.
+struct BoxSample {
+    point: Point3,
+    weight: f64,
+    normal: Vec3,
+    axis: usize,
+    plane: usize,
+    iu: usize,
+    iv: usize,
+}
+
+/// The Huygens box: its samples and centre.
+struct HuygensBox {
+    samples: Vec<BoxSample>,
+    centre: Point3,
+}
+
+impl HuygensBox {
+    /// A third of the layer inside it, or halfway to what radiates.
+    fn new(model: &Model, grid: &BoxGrid) -> Result<HuygensBox> {
+        let BoxGrid { size, n, hs, npml } = *grid;
+        let inner_lo = [0, 1, 2].map(|d| npml as f64 * hs[d]);
+        let inner_hi = [0, 1, 2].map(|d| size[d] - npml as f64 * hs[d]);
+        // (A run always has a source, so the box is never empty.)
+        let emcraft_model::Aabb { min: clo, max: chi } = emcraft_model::Aabb::around(model.radiators()).unwrap_or_default();
+        let inset = npml as f64 / 3.0;
+        let mut hlo = [0usize; 3];
+        let mut hhi = [0usize; 3];
+        for d in 0..3 {
+            let lo_nodes = npml as f64 + inset.min(0.5 * (clo[d] - inner_lo[d]) / hs[d]);
+            let hi_nodes = (n[d] - npml) as f64 - inset.min(0.5 * (inner_hi[d] - chi[d]) / hs[d]);
+            hlo[d] = lo_nodes.floor().max(npml as f64 + 1.0) as usize;
+            hhi[d] = (hi_nodes.ceil() as usize).min(n[d] - npml - 1);
+            if hhi[d] <= hlo[d] + 1 || clo[d] <= hlo[d] as f64 * hs[d] || chi[d] >= hhi[d] as f64 * hs[d] {
+                return Err(invalid("open boundary", "the bodies and sources reach into or up to the layer; enlarge the box"));
+            }
+        }
+        // Cell-face centres on the six faces.
+        let samples = (0..3)
+            .flat_map(|a| [(a, -1.0, hlo[a]), (a, 1.0, hhi[a])])
+            .flat_map(|(a, side, plane)| {
+                let (u, v) = across(a);
+                (hlo[u]..hhi[u]).flat_map(move |iu| (hlo[v]..hhi[v]).map(move |iv| (a, side, plane, iu, iv)))
+            })
+            .map(|(axis, side, plane, iu, iv)| {
+                let (u, v) = across(axis);
+                let point = Point3::ORIGIN.with(axis, plane as f64 * hs[axis]).with(u, (iu as f64 + 0.5) * hs[u]).with(v, (iv as f64 + 0.5) * hs[v]);
+                BoxSample { point, weight: hs[u] * hs[v], normal: Vec3::unit(axis) * side, axis, plane, iu, iv }
+            })
+            .collect();
+        let centre = Point3::from([0, 1, 2].map(|d| 0.5 * (hlo[d] + hhi[d]) as f64 * hs[d]));
+        Ok(HuygensBox { samples, centre })
+    }
+}
+
+impl BoxSample {
+    /// The tangential E and H at the sample: each component averaged over the lattice points
+    /// straddling the face centre.
+    fn fields(&self, f: &Fields) -> (Vec3, Vec3) {
+        let (a, plane, iu, iv) = (self.axis, self.plane, self.iu, self.iv);
+        let (u, v) = across(a);
+        // E_u at (u half, v node) → average over v and v + 1; E_v likewise.
+        let mut e_idx = [0usize; 3];
+        e_idx[a] = plane;
+        e_idx[u] = iu;
+        e_idx[v] = iv;
+        let eu = interp_e(&f.e[u], e_idx, &[v]);
+        let ev = interp_e(&f.e[v], e_idx, &[u]);
+        // H_u at (u node, v half, a half) → average over u and a; H_v likewise; H at a ± ½
+        // straddles the plane.
+        let mut h_idx = [0isize; 3];
+        h_idx[a] = plane as isize - 1;
+        h_idx[u] = iu as isize;
+        h_idx[v] = iv as isize;
+        let hu = interp_h(&f.h[u], h_idx, &[u, a]);
+        let hv = interp_h(&f.h[v], h_idx, &[v, a]);
+        (Vec3::ZERO.with(u, eu).with(v, ev), Vec3::ZERO.with(u, hu).with(v, hv))
+    }
+}
+
+/// E at a point of a component's lattice, averaged over the positions straddling it along
+/// `dirs` (the staggering to the cell-face centre).
+fn interp_e(e: &Field, idx: [usize; 3], dirs: &[usize]) -> f64 {
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for mask in 0..1usize << dirs.len() {
+        let mut c = idx;
+        for (b, &d) in dirs.iter().enumerate() {
+            if mask >> b & 1 == 1 {
+                c[d] += 1;
+            }
+        }
+        sum += e.get(e.at(c[0], c[1], c[2]));
+        count += 1.0;
+    }
+    sum / count
+}
+
+/// H likewise, skipping positions off the lattice's low end.
+fn interp_h(h: &Field, idx: [isize; 3], dirs: &[usize]) -> f64 {
+    let mut sum = 0.0;
+    let mut count = 0.0;
+    for mask in 0..1usize << dirs.len() {
+        let mut c = idx;
+        for (b, &d) in dirs.iter().enumerate() {
+            if mask >> b & 1 == 1 {
+                c[d] += 1;
+            }
+        }
+        if c.iter().all(|x| *x >= 0) {
+            sum += h.get(h.at(c[0] as usize, c[1] as usize, c[2] as usize));
+            count += 1.0;
+        }
+    }
+    if count > 0.0 { sum / count } else { 0.0 }
+}
+
+/// The running Fourier transforms of a run, per frequency: the source, the ports' voltages and
+/// currents, and the tangential fields on the Huygens box. Each step's phasor is e^{−jωt} Δt,
+/// E sampled at t = (n + 1) Δt, H, the source and the ports at (n + ½) Δt.
+struct Transforms {
+    source: Vec<C>,
+    voltage: Vec<Vec<C>>,
+    current: Vec<Vec<C>>,
+    e: Vec<Vec<CVec3>>,
+    h: Vec<Vec<CVec3>>,
+    /// The step's tangential fields at the samples (scratch).
+    at_samples: Vec<(Vec3, Vec3)>,
+}
+
+impl Transforms {
+    fn new(freqs: usize, ports: usize, samples: usize) -> Transforms {
+        Transforms {
+            source: vec![C::new(0.0, 0.0); freqs],
+            voltage: vec![vec![C::new(0.0, 0.0); freqs]; ports],
+            current: vec![vec![C::new(0.0, 0.0); freqs]; ports],
+            e: vec![vec![CVec3::ZERO; samples]; freqs],
+            h: vec![vec![CVec3::ZERO; samples]; freqs],
+            at_samples: Vec::with_capacity(samples),
+        }
+    }
+
+    /// Adds step `step`'s samples: the source `s` and the ports' (voltage, current) at t_h, the
+    /// fields on the box.
+    #[allow(clippy::too_many_arguments)]
+    fn add(&mut self, freqs: &[f64], dt: f64, step: usize, s: f64, ports: &[(f64, f64)], hbox: &HuygensBox, fields: &Fields) {
+        let (t_h, t_e) = ((step as f64 + 0.5) * dt, (step as f64 + 1.0) * dt);
+        self.at_samples.clear();
+        self.at_samples.extend(hbox.samples.iter().map(|x| x.fields(fields)));
+        for (fi, &f) in freqs.iter().enumerate() {
+            let w = 2.0 * PI * f;
+            let pe = C::from_polar(dt, -w * t_e);
+            let ph = C::from_polar(dt, -w * t_h);
+            self.source[fi] += ph * s;
+            for (pi, (v, i)) in ports.iter().enumerate() {
+                self.voltage[pi][fi] += ph * *v;
+                self.current[pi][fi] += ph * *i;
+            }
+            for ((de, dh), &(e, h)) in self.e[fi].iter_mut().zip(self.h[fi].iter_mut()).zip(&self.at_samples) {
+                *de += e * pe;
+                *dh += h * ph;
+            }
+        }
+    }
+
+    /// What settles: the ports' transforms and a proxy of the box's.
+    fn settling(&self) -> Vec<C> {
+        self.voltage
+            .iter()
+            .chain(&self.current)
+            .flatten()
+            .copied()
+            .chain(self.e.iter().map(|x| x.iter().map(|v| v.x + v.y + v.z).sum::<C>()))
+            .collect()
+    }
+}
+
+/// Steps between checks of whether the transforms have settled.
+const CHECK: usize = 200;
+
+/// Solves the model's open problem in the time domain at `frequencies` (Hz).
+pub fn radiate(model: &Model, o: &OpenOptions, frequencies: &[f64]) -> Result<OpenRun> {
+    let h = o.cell;
+    if !(h.is_finite() && h > 0.0) || !(o.courant > 0.0 && o.courant < 1.0) || o.max_steps == 0 || o.max_steps > MAX_STEPS || !(o.decay > 0.0) {
+        return Err(invalid("options", format!("{o:?}")));
+    }
+    if frequencies.is_empty() || frequencies.len() > 64 || frequencies.iter().any(|f| !(f.is_finite() && *f > 0.0)) {
+        return Err(invalid("frequencies", "1 to 64 finite numbers > 0"));
+    }
+    let grid = BoxGrid::new(model, h)?;
+    let band = Band::of(frequencies);
+    let dt = time_step(o.courant, grid.hs);
+    let fields = Fields::new(grid.n);
+    let ce = grid.edge_coefficients(model, &fields, dt);
+    let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &fields, &ce, dt)).collect::<Result<Vec<_>>>()?;
+    let currents = currents(model, &grid, &fields)?;
     if ports.is_empty() && currents.is_empty() {
         return Err(FdtdError::NotReady("no sources: a dipole or a lumped port".into()));
     }
-    // Port edges' semi-implicit coefficients: (ε/dt − h/(2RA))/(ε/dt + h/(2RA)) etc. per edge.
-    struct PortEdge {
-        id: usize,
-        ca: f64,
-        cb: f64,
-        cv: f64,
-    }
-    let port_edges: Vec<Vec<PortEdge>> = ports
-        .iter()
-        .map(|p| {
-            let a = p.axis;
-            let area = hs[(a + 1) % 3] * hs[(a + 2) % 3];
-            p.edges
-                .iter()
-                .map(|c| {
-                    let id = c[0] + dims_e[a][0] * (c[1] + dims_e[a][1] * c[2]);
-                    let eps = dt / ce[a][id]; // ε (F/m)
-                    let g = hs[a] / (2.0 * p.r_edge * area);
-                    let den = eps / dt + g;
-                    PortEdge { id, ca: (eps / dt - g) / den, cb: 1.0 / den, cv: 1.0 / (p.r_edge * area) / den }
-                })
-                .collect()
-        })
-        .collect();
-
-    // CPML profiles: E at nodes, H at half cells, per axis.
-    let pe: Vec<Vec<(f64, f64)>> = (0..3).map(|d| cpml_axis(n[d], npml, hs[d], dt, fc, false)).collect();
-    let ph: Vec<Vec<(f64, f64)>> = (0..3).map(|d| cpml_axis(n[d], npml, hs[d], dt, fc, true)).collect();
-    // ψ for each component and each of its two derivatives.
-    let mut psi_e: Vec<[Vec<f64>; 2]> = dims_e.iter().map(|d| [vec![0.0; d[0] * d[1] * d[2]], vec![0.0; d[0] * d[1] * d[2]]]).collect();
-    let mut psi_h: Vec<[Vec<f64>; 2]> = dims_h.iter().map(|d| [vec![0.0; d[0] * d[1] * d[2]], vec![0.0; d[0] * d[1] * d[2]]]).collect();
-
-    // The pulse: Gaussian-modulated over [fmin, fmax].
-    let bw = (fmax - fmin).max(0.4 * fc);
+    let cpml = BoxCpml::new(&grid, &fields, dt, band.fc);
+    // The pulse: Gaussian-modulated over the band.
+    let bw = (band.f1 - band.f0).max(0.4 * band.fc);
     let tau = 1.5 / (PI * 0.5 * bw);
-    let t0 = 4.0 * tau;
-    let pulse = |t: f64| (-((t - t0) / tau).powi(2)).exp() * (2.0 * PI * fc * (t - t0)).sin();
+    let pulse = Pulse { t0: 4.0 * tau, tau, fc: band.fc };
+    let hbox = HuygensBox::new(model, &grid)?;
 
-    // The Huygens box: a third of the layer inside it, or halfway to what radiates.
-    let inner_lo = [0, 1, 2].map(|d| npml as f64 * hs[d]);
-    let inner_hi = [0, 1, 2].map(|d| size[d] - npml as f64 * hs[d]);
-    // (A run always has a source, so the box is never empty.)
-    let emcraft_model::Aabb { min: clo, max: chi } = emcraft_model::Aabb::around(model.radiators()).unwrap_or_default();
-    let inset = npml as f64 / 3.0;
-    let mut hlo = [0usize; 3];
-    let mut hhi = [0usize; 3];
-    for d in 0..3 {
-        let lo_nodes = npml as f64 + inset.min(0.5 * (clo[d] - inner_lo[d]) / hs[d]);
-        let hi_nodes = (n[d] - npml) as f64 - inset.min(0.5 * (inner_hi[d] - chi[d]) / hs[d]);
-        hlo[d] = lo_nodes.floor().max(npml as f64 + 1.0) as usize;
-        hhi[d] = (hi_nodes.ceil() as usize).min(n[d] - npml - 1);
-        if hhi[d] <= hlo[d] + 1 || clo[d] <= hlo[d] as f64 * hs[d] || chi[d] >= hhi[d] as f64 * hs[d] {
-            return Err(invalid("open boundary", "the bodies and sources reach into or up to the layer; enlarge the box"));
-        }
-    }
-    // Huygens samples: cell-face centres on the six faces, each sample a (axis, side, u, v).
-    let (samples, sample_at): (Vec<(Point3, f64, Vec3)>, Vec<(usize, usize, usize, usize)>) = (0..3)
-        .flat_map(|a| [(a, -1.0, hlo[a]), (a, 1.0, hhi[a])])
-        .flat_map(|(a, side, plane)| {
-            let (u, v) = ((a + 1) % 3, (a + 2) % 3);
-            (hlo[u]..hhi[u]).flat_map(move |iu| (hlo[v]..hhi[v]).map(move |iv| (a, side, plane, u, v, iu, iv)))
-        })
-        .map(|(a, side, plane, u, v, iu, iv)| {
-            let p = Point3::ORIGIN.with(a, plane as f64 * hs[a]).with(u, (iu as f64 + 0.5) * hs[u]).with(v, (iv as f64 + 0.5) * hs[v]);
-            ((p, hs[u] * hs[v], Vec3::unit(a) * side), (a, plane, iu, iv))
-        })
-        .unzip();
-    let centre = Point3::from([0, 1, 2].map(|d| 0.5 * (hlo[d] + hhi[d]) as f64 * hs[d]));
-    let nf = frequencies.len();
-    let mut de = vec![vec![CVec3::ZERO; samples.len()]; nf];
-    let mut dh = vec![vec![CVec3::ZERO; samples.len()]; nf];
-    let mut dv = vec![vec![C::new(0.0, 0.0); nf]; ports.len()];
-    let mut di = vec![vec![C::new(0.0, 0.0); nf]; ports.len()];
-    let mut ds = vec![C::new(0.0, 0.0); nf];
-    // E at a point of a component's lattice, averaged over the two positions straddling it
-    // along `dir` (the staggering to the cell-face centre).
-    let interp_e = |e: &[Comp], comp: usize, idx: [usize; 3], dirs: &[usize]| -> f64 {
-        let mut sum = 0.0;
-        let mut count = 0.0;
-        let combos = 1usize << dirs.len();
-        for mask in 0..combos {
-            let mut c = idx;
-            for (b, &d) in dirs.iter().enumerate() {
-                if mask >> b & 1 == 1 {
-                    c[d] += 1;
-                }
-            }
-            sum += e[comp].get(c[0], c[1], c[2]);
-            count += 1.0;
-        }
-        sum / count
-    };
-    let interp_h = |hf: &[Comp], comp: usize, idx: [isize; 3], dirs: &[usize]| -> f64 {
-        let mut sum = 0.0;
-        let mut count = 0.0;
-        for mask in 0..(1usize << dirs.len()) {
-            let mut c = idx;
-            for (b, &d) in dirs.iter().enumerate() {
-                if mask >> b & 1 == 1 {
-                    c[d] += 1;
-                }
-            }
-            if c.iter().all(|x| *x >= 0) {
-                sum += hf[comp].get(c[0] as usize, c[1] as usize, c[2] as usize);
-                count += 1.0;
-            }
-        }
-        if count > 0.0 { sum / count } else { 0.0 }
-    };
-
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
-    let mut steps = 0;
-    let mut converged = false;
+    let kernel = OpenKernel { fields: &fields, ce: &ce, ch: dt / MU0, cpml: &cpml, hs: grid.hs };
+    let mut tr = Transforms::new(frequencies.len(), ports.len(), hbox.samples.len());
+    let mut port_vi = Vec::with_capacity(ports.len());
+    let t_min = pulse.t0 + 4.0 * tau + 3.0 * grid.size.iter().fold(0.0f64, f64::max) / C0;
+    let (mut converged, mut diverged) = (false, false);
     let mut last: Option<Vec<C>> = None;
-    let t_min = t0 + 4.0 * tau + 3.0 * size.iter().fold(0.0f64, f64::max) / C0;
-    let check = 200;
-    for step in 0..o.max_steps {
-        // H half step: ∂H/∂t = −(1/μ) ∇ × E, with CPML on the two derivatives of each component;
-        // threads take slabs of z planes (each value its own, so any split gives the same bits).
-        for a in 0..3 {
-            let (u, v) = ((a + 1) % 3, (a + 2) % 3);
-            let d = dims_h[a];
-            let (er, phr) = (&e, &ph);
-            let [q0, q1] = &mut psi_h[a];
-            par_planes(threads, d, &mut hf[a].v, q0, q1, &|i, j, k, h, p0, p1| {
-                let idx = [i, j, k];
-                // H_a at (a: node, u, v: half). (∇×E)_a = ∂E_v/∂u − ∂E_u/∂v.
-                let mut pu = idx;
-                pu[u] += 1;
-                let mut pv = idx;
-                pv[v] += 1;
-                let dev_du = (er[v].get(pu[0], pu[1], pu[2]) - er[v].get(i, j, k)) / hs[u];
-                let deu_dv = (er[u].get(pv[0], pv[1], pv[2]) - er[u].get(i, j, k)) / hs[v];
-                let (bu, au) = phr[u][idx[u]];
-                let (bv, av) = phr[v][idx[v]];
-                *p0 = bu * *p0 + au * dev_du;
-                *p1 = bv * *p1 + av * deu_dv;
-                *h -= chh * (dev_du + *p0 - deu_dv - *p1);
-            });
+    let steps = leapfrog(&kernel, grid.n[2] + 1, o.max_steps, |step| {
+        let s_now = pulse.at((step as f64 + 0.5) * dt);
+        // Lumped ports: redo their edges semi-implicitly; then the current elements.
+        port_vi.clear();
+        port_vi.extend(ports.iter().map(|p| p.update(&fields.e[p.axis], &ce[p.axis], grid.hs[p.axis], s_now)));
+        for c in &currents {
+            let e = &fields.e[c.axis];
+            e.set(c.id, e.get(c.id) - ce[c.axis][c.id] * c.moment * s_now / grid.area(c.axis));
         }
-        let t_h = (step as f64 + 0.5) * dt;
-        // E full step: ∂E/∂t = (1/ε)(∇ × H − J). The ports' edges keep their old values to be
-        // redone semi-implicitly.
-        let s_now = pulse(t_h);
-        let olds: Vec<Vec<f64>> = ports.iter().zip(&port_edges).map(|(p, pes)| pes.iter().map(|x| e[p.axis].v[x.id]).collect()).collect();
-        for a in 0..3 {
-            let (u, v) = ((a + 1) % 3, (a + 2) % 3);
-            let d = dims_e[a];
-            let (hr, per, cea) = (&hf, &pe, &ce[a]);
-            let [q0, q1] = &mut psi_e[a];
-            par_planes(threads, d, &mut e[a].v, q0, q1, &|i, j, k, ev, p0, p1| {
-                let c = cea[i + d[0] * (j + d[1] * k)];
-                let idx = [i, j, k];
-                // E_a at (a: half, u, v: nodes); (∇×H)_a = ∂H_v/∂u − ∂H_u/∂v.
-                if c == 0.0 || idx[u] == 0 || idx[v] == 0 {
-                    return;
-                }
-                let mut mu_ = idx;
-                mu_[u] -= 1;
-                let mut mv = idx;
-                mv[v] -= 1;
-                let dhv_du = (hr[v].get(i, j, k) - hr[v].get(mu_[0], mu_[1], mu_[2])) / hs[u];
-                let dhu_dv = (hr[u].get(i, j, k) - hr[u].get(mv[0], mv[1], mv[2])) / hs[v];
-                let (bu, au) = per[u][idx[u]];
-                let (bv, av) = per[v][idx[v]];
-                *p0 = bu * *p0 + au * dhv_du;
-                *p1 = bv * *p1 + av * dhu_dv;
-                *ev += c * (dhv_du + *p0 - dhu_dv - *p1);
-            });
+        tr.add(frequencies, dt, step, s_now, &port_vi, &hbox, &fields);
+        if !port_vi.iter().all(|(v, i)| v.is_finite() && i.is_finite()) || !tr.source.iter().all(|c| c.re.is_finite()) {
+            diverged = true;
+            return ControlFlow::Break(());
         }
-        // Lumped ports: redo their edges semi-implicitly (undo the plain update first).
-        let mut port_vi = Vec::with_capacity(ports.len());
-        for ((p, pes), old_values) in ports.iter().zip(&port_edges).zip(&olds) {
-            let a = p.axis;
-            let mut vsum = 0.0;
-            let mut isum = 0.0;
-            for (pe_, &old) in pes.iter().zip(old_values) {
-                let c = ce[a][pe_.id];
-                // The plain update added c·curl (with the layer's ψ, zero here): recover it.
-                let curl = (e[a].v[pe_.id] - old) / c;
-                let vs = p.voltage.re * s_now * p.sign;
-                let updated = pe_.ca * old + pe_.cb * curl - pe_.cv * vs;
-                e[a].v[pe_.id] = updated;
-                let e_avg = 0.5 * (old + updated);
-                // Current along the gap's direction and the terminal voltage.
-                isum += (vs + hs[a] * e_avg) / p.r_edge * p.sign;
-                vsum += -hs[a] * e_avg * p.sign;
-            }
-            port_vi.push((vsum, isum / pes.len() as f64));
-        }
-        // Current elements.
-        for &(a, c, moment) in &currents {
-            let id = e[a].id(c[0], c[1], c[2]);
-            let area = hs[(a + 1) % 3] * hs[(a + 2) % 3];
-            e[a].v[id] -= ce[a][id] * moment * s_now / area;
-        }
-        // Transforms: E at t = (n+1) dt, H at (n+½) dt, ports at (n+½) dt.
-        let t_e = (step as f64 + 1.0) * dt;
-        for (fi, &f) in frequencies.iter().enumerate() {
-            let w = 2.0 * PI * f;
-            let pe_ = C::from_polar(dt, -w * t_e);
-            let ph_ = C::from_polar(dt, -w * t_h);
-            ds[fi] += ph_ * s_now;
-            for (pi, (v, i)) in port_vi.iter().enumerate() {
-                dv[pi][fi] += ph_ * *v;
-                di[pi][fi] += ph_ * *i;
-            }
-            for (si, &(a, plane, iu, iv)) in sample_at.iter().enumerate() {
-                let (u, v) = ((a + 1) % 3, (a + 2) % 3);
-                // E tangential: E_u at (u half, v node) → average over v and v+1; E_v likewise.
-                let mut eu_idx = [0usize; 3];
-                eu_idx[a] = plane;
-                eu_idx[u] = iu;
-                eu_idx[v] = iv;
-                let eu = interp_e(&e, u, eu_idx, &[v]);
-                let ev = interp_e(&e, v, eu_idx, &[u]);
-                // H tangential: H_u at (u node, v half, a half) → average over u and a; H_v
-                // likewise; H at a ± ½ straddles the plane.
-                let mut hu_idx = [0isize; 3];
-                hu_idx[a] = plane as isize - 1;
-                hu_idx[u] = iu as isize;
-                hu_idx[v] = iv as isize;
-                let hu = interp_h(&hf, u, hu_idx, &[u, a]);
-                let hv = interp_h(&hf, v, hu_idx, &[v, a]);
-                de[fi][si] += Vec3::ZERO.with(u, eu).with(v, ev) * pe_;
-                dh[fi][si] += Vec3::ZERO.with(u, hu).with(v, hv) * ph_;
-            }
-        }
-        steps = step + 1;
-        let t = t_e;
-        if !port_vi.iter().all(|(v, i)| v.is_finite() && i.is_finite()) || !ds.iter().all(|c| c.re.is_finite()) {
-            return Err(invalid("run", "the fields diverged"));
-        }
-        if steps % check == 0 && t > t_min {
-            // Settled: the ports' transforms (or the box's power proxy) stop moving.
-            let now: Vec<C> =
-                dv.iter().chain(&di).flatten().copied().chain(de.iter().map(|x| x.iter().map(|v| v.x + v.y + v.z).sum::<C>())).collect();
+        if (step + 1) % CHECK == 0 && (step as f64 + 1.0) * dt > t_min {
+            let now = tr.settling();
             let scale = now.iter().fold(0.0f64, |m, c| m.max(c.norm())).max(f64::MIN_POSITIVE);
             if let Some(prev) = &last
                 && prev.iter().zip(&now).all(|(a, b)| (a - b).norm() <= o.decay * scale)
             {
                 converged = true;
-                break;
+                return ControlFlow::Break(());
             }
             last = Some(now);
         }
+        for p in &mut ports {
+            p.remember(&fields.e[p.axis]);
+        }
+        ControlFlow::Continue(())
+    });
+    if diverged {
+        return Err(invalid("run", "the fields diverged"));
     }
-    // Normalise by the source spectrum and assemble.
+    let (ports, radiated, huygens) = normalise(frequencies, &ports, tr, hbox)?;
+    Ok(OpenRun { frequencies: frequencies.to_vec(), ports, radiated, huygens, cells: grid.cells(), steps, dt, converged })
+}
+
+/// The ports' spectra, the radiated power and the Huygens box's fields: the transforms
+/// normalised by the source spectrum.
+fn normalise(frequencies: &[f64], ports: &[GridPort], tr: Transforms, hbox: HuygensBox) -> Result<(Vec<PortSpectrum>, Vec<f64>, Vec<Huygens>)> {
+    let ds = &tr.source;
     let huygens = frequencies
         .iter()
-        .zip(ds.iter().zip(de.iter().zip(&dh)))
+        .zip(ds.iter().zip(tr.e.iter().zip(&tr.h)))
         .map(|(&frequency, (&s, (ef, hf)))| {
             if s.norm() == 0.0 {
                 return Err(invalid("frequency", "outside the pulse's band"));
             }
-            let samples = samples
+            let samples = hbox
+                .samples
                 .iter()
                 .zip(ef.iter().zip(hf))
-                .map(|(&(point, weight, normal), (e, h))| HuygensSample { point, weight, normal, e: *e / s, h: *h / s })
+                .map(|(x, (e, h))| HuygensSample { point: x.point, weight: x.weight, normal: x.normal, e: *e / s, h: *h / s })
                 .collect();
-            Ok(Huygens { frequency, centre, samples })
+            Ok(Huygens { frequency, centre: hbox.centre, samples })
         })
         .collect::<Result<Vec<_>>>()?;
     let radiated = huygens.iter().map(Huygens::power).collect();
-    let port_out = ports
+    let ports = ports
         .iter()
-        .zip(dv.iter().zip(&di))
+        .zip(tr.voltage.iter().zip(&tr.current))
         .map(|(p, (dvp, dip))| {
-            let voltage: Vec<C> = dvp.iter().zip(&ds).map(|(v, s)| v / s).collect();
-            let current: Vec<C> = dip.iter().zip(&ds).map(|(i, s)| i / s).collect();
+            let voltage: Vec<C> = dvp.iter().zip(ds).map(|(v, s)| v / s).collect();
+            let current: Vec<C> = dip.iter().zip(ds).map(|(i, s)| i / s).collect();
             let impedance = voltage.iter().zip(&current).map(|(v, i)| v / i).collect();
             let power = voltage.iter().zip(&current).map(|(v, i)| 0.5 * (v * i.conj()).re).collect();
             PortSpectrum { name: p.name.clone(), voltage, current, impedance, power }
         })
         .collect();
-    Ok(OpenRun { frequencies: frequencies.to_vec(), ports: port_out, radiated, huygens, cells, steps, dt, converged })
+    Ok((ports, radiated, huygens))
 }

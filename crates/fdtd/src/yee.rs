@@ -46,6 +46,16 @@ impl Field {
         i + self.dims[0] * (j + self.dims[1] * k)
     }
 
+    /// The step of the index along `axis`.
+    #[inline]
+    pub(crate) fn stride(&self, axis: usize) -> usize {
+        match axis {
+            0 => 1,
+            1 => self.dims[0],
+            _ => self.dims[0] * self.dims[1],
+        }
+    }
+
     #[inline]
     pub(crate) fn get(&self, id: usize) -> f64 {
         f64::from_bits(self.v[id].load(Ordering::Relaxed))
@@ -126,6 +136,21 @@ impl Grading {
 /// The largest stable time step (times `courant`) on a grid whose smallest steps are `h`.
 pub(crate) fn time_step(courant: f64, h: [f64; 3]) -> f64 {
     courant / (C0 * (1.0 / h[0].powi(2) + 1.0 / h[1].powi(2) + 1.0 / h[2].powi(2)).sqrt())
+}
+
+/// The run's band: its lowest, highest and centre frequencies.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Band {
+    pub(crate) f0: f64,
+    pub(crate) f1: f64,
+    pub(crate) fc: f64,
+}
+
+impl Band {
+    pub(crate) fn of(freqs: &[f64]) -> Band {
+        let (f0, f1) = freqs.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
+        Band { f0, f1, fc: 0.5 * (f0 + f1) }
+    }
 }
 
 /// A Gaussian-modulated sine: e^{−((t − t₀)/τ)²} sin(2π f_c (t − t₀)).
@@ -245,6 +270,9 @@ mod tests {
         let f = Fields::new([2, 3, 4]);
         assert_eq!(f.e.each_ref().map(Field::dims), [[2, 4, 5], [3, 3, 5], [3, 4, 4]]);
         assert_eq!(f.h.each_ref().map(Field::dims), [[3, 3, 4], [2, 4, 4], [2, 3, 5]]);
+        let x = &f.e[1];
+        assert_eq!(x.at(1, 2, 3) + x.stride(1), x.at(1, 3, 3));
+        assert_eq!(x.at(1, 2, 3) + x.stride(2), x.at(1, 2, 4));
     }
 
     #[test]
