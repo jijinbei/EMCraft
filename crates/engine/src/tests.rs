@@ -375,6 +375,37 @@ fn open_problems_radiate_and_scatter() {
 }
 
 #[test]
+fn spherical_layers_radiate() {
+    let mut s = Session::new();
+    // A spherical layer needs a sphere, and room inside it; unknown shapes are refused.
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    assert!(s.execute("model.open", &json!({"thickness": 10, "shape": "sphere"})).is_err());
+    s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 20})).unwrap();
+    assert!(s.execute("model.open", &json!({"thickness": 10, "shape": "ellipsoid"})).is_err());
+    assert!(s.execute("model.open", &json!({"thickness": 15, "shape": "sphere"})).is_err());
+    let r = s.execute("model.open", &json!({"thickness": 8, "shape": "sphere"})).unwrap();
+    assert_eq!(r["shape"], "sphere");
+    assert!(s.execute("model.port.create", &json!({"name": "1", "end": "start"})).is_err(), "no waveguide ports");
+    assert!(s.execute("geometry.feature", &json!({"combine": "add", "shape": "box", "size": [5, 5, 5], "at": [0, 0, 0]})).is_err());
+    s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
+    // A source in the layer is refused at the solve.
+    s.execute("source.dipole", &json!({"at": [0, 0, 16], "length": 1})).unwrap();
+    assert!(s.execute("solve.radiation", &json!({"frequency": 10})).is_err());
+    s.execute("source.clear", &json!({})).unwrap();
+    s.execute("source.dipole", &json!({"at": [0.1, 0.2, -0.1], "length": 1})).unwrap();
+    let r = s.execute("solve.radiation", &json!({"frequency": 10})).unwrap();
+    // Coarse (λ/4): the plumbing, not the accuracy (the oracle's dipole-radiation-spherical-pml).
+    let (p, exact) = (r["radiated_power"].as_f64().unwrap(), r["exact_radiated_power"].as_f64().unwrap());
+    assert!((p / exact - 1.0).abs() < 0.2, "{p} {exact}");
+    let ff = s.execute("results.far_field", &json!({"theta": [90, 0.0], "phi": 30})).unwrap();
+    let d = ff["points"][0]["directivity"].as_f64().unwrap();
+    assert!((d / 1.5 - 1.0).abs() < 0.2, "{d}");
+    assert!(ff["points"][1]["directivity"].as_f64().unwrap() < 0.1, "the axis is a null");
+    // The time domain's grid is a box: refused.
+    assert!(s.execute("solve.time_domain", &json!({"frequencies": [10]})).is_err());
+}
+
+#[test]
 fn every_sample_is_a_script_of_known_commands() {
     for smp in crate::sample::SAMPLES {
         let script: serde_json::Value = serde_json::from_str(smp.script).unwrap_or_else(|e| panic!("{}: {e}", smp.name));

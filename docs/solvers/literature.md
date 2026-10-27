@@ -144,6 +144,13 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   use as an absorbing boundary condition*, IEEE Trans. Antennas Propag. 43(12):1460–1463, 1995;
   J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., §9.6 — the layer as the
   medium εΛ, μΛ of stretched coordinates (`emcraft-solver::driven`, `add_pml`).
+- W. C. Chew, W. H. Weedon, *A 3D perfectly matched medium from modified Maxwell's equations
+  with stretched coordinates*, Microw. Opt. Technol. Lett. 7(13):599–604, 1994 — complex
+  coordinate stretching; F. L. Teixeira, W. C. Chew, *Systematic derivation of anisotropic PML
+  absorbing media in cylindrical and spherical coordinates*, IEEE Microw. Guided Wave Lett.
+  7(11):371–373, 1997 — the spherical layer: the radius alone stretched, r̃ = r + (1/jk₀)∫σ dr,
+  is the Cartesian medium εΛ, μΛ with Λ = (r̃/r)² s_r⁻¹ r̂r̂ + s_r (θ̂θ̂ + φ̂φ̂), its axes turning
+  with r̂ (evaluated at each quadrature point: `emcraft-solver::driven`, `add_spherical_pml`).
 - C. A. Balanis, *Advanced Engineering Electromagnetics*, 2nd ed., Wiley 2012, §6.8 — the
   near-to-far transform of equivalent currents; *Antenna Theory*, 4th ed., §4.2 — the Hertzian
   dipole (`emcraft-solver::radiation`, `emcraft-theory::radiation`).
