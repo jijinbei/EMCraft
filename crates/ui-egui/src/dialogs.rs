@@ -383,6 +383,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
         "mesh.generate" => json!({"size": 3, "curved": true}),
         "model.walls" => json!({"conductivity": 5.8e7}),
+        "model.symmetry" => json!({"axis": "x", "kind": "magnetic"}),
         "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),
         "model.port.lumped" => json!({"name": format!("L{}", s.model.lumped.len() + 1), "from": [0, 0, -0.5], "to": [0, 0, 0.5], "impedance": 50}),
         "source.dipole" => json!({"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1, "current": 1}),

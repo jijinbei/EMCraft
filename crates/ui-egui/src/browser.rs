@@ -114,6 +114,11 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     if let Some(open) = &m.open {
         boundaries.push(row(format!("Open: PML {} {lu}", mm(open.thickness)), "open", Act::Edit("model.open")));
     }
+    for plane in &m.symmetry {
+        let axis = if plane.axis == emcraft_model::Axis::X { "x" } else { "y" };
+        let kind = if plane.kind == emcraft_model::SymmetryKind::Electric { "electric" } else { "magnetic" };
+        boundaries.push(row(format!("Symmetry: {axis} = {} {lu}, {kind} wall", mm(plane.at)), "walls", Act::Edit("model.symmetry")));
+    }
     let mesh = match &m.mesh {
         Some(mesh) => vec![row(format!("{} nodes, {} tetrahedra", mesh.nodes.len(), mesh.tets.len()), "mesh", Act::Edit("mesh.generate"))],
         None => vec![row("Not meshed", "mesh", Act::Edit("mesh.generate"))],

@@ -665,3 +665,68 @@ fn projects_save_as_emcraft_files_and_know_when_they_changed() {
     assert_eq!(t.display.frequency, emcraft_model::units::Frequency::Megahertz);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn symmetry_planes_halve_the_model_and_keep_its_s_parameters() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    let whole = s.execute("solve.frequency", &json!({"frequencies": [6.0, 8.0]})).unwrap();
+    let r = s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).unwrap();
+    assert_eq!(r["planes"][0]["at"], 11.43);
+    assert!(s.model.mesh.is_none() && s.results.sweep.is_none(), "the mesh and results go");
+    s.execute("model.symmetry", &json!({"axis": "y", "kind": "magnetic"})).unwrap();
+    let r = s.execute("model.symmetry", &json!({"axis": "y", "kind": "electric", "at": 5.08})).unwrap();
+    assert_eq!(r["fraction"], 0.25, "{r}");
+    assert_eq!(r["planes"][1]["kind"], "electric", "a new plane replaces the old");
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    let quarter = s.execute("solve.frequency", &json!({"frequencies": [6.0, 8.0]})).unwrap();
+    let (nw, nq) = (whole["unknowns"].as_u64().unwrap(), quarter["unknowns"].as_u64().unwrap());
+    assert!(nq * 3 < nw, "{nq} of {nw}");
+    let c = s.execute("results.compare", &json!({})).unwrap();
+    assert!(c["worst"].as_f64().unwrap() < 4e-3, "{c}");
+    // The field view shows the whole guide: images beyond the planes.
+    let v = view::FieldView::new(8.0e9, view::Plane::Cross);
+    let samples = view::sample_plane(&s, &v).unwrap();
+    let (x, y) = samples.axes();
+    let left = samples.probe([x.min + 0.3 * (x.max - x.min), y.min + 0.4 * (y.max - y.min)]).unwrap();
+    let right = samples.probe([x.min + 0.7 * (x.max - x.min), y.min + 0.6 * (y.max - y.min)]).unwrap();
+    assert!((left.e.y - right.e.y).norm() < 2e-2 * left.e.y.norm(), "{left:?} {right:?}");
+    // The time domain refuses; clearing one plane, then all.
+    assert!(s.execute("solve.time_domain", &json!({"frequencies": [8.0]})).is_err());
+    let r = s.execute("model.symmetry", &json!({"clear": true, "axis": "y"})).unwrap();
+    assert_eq!(r["planes"].as_array().unwrap().len(), 1);
+    let r = s.execute("model.symmetry", &json!({"clear": true})).unwrap();
+    assert_eq!(r["planes"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn hostile_symmetry_planes_are_refused() {
+    let mut s = Session::new();
+    assert!(s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).is_err(), "no geometry");
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    for bad in [
+        json!({"axis": "z", "kind": "magnetic"}),
+        json!({"axis": "x", "kind": "nothing"}),
+        json!({"axis": "x"}),
+        json!({"kind": "electric"}),
+        json!({"axis": "x", "kind": "electric", "at": 5}),
+        json!({"axis": "x", "kind": "electric", "at": 1e308}),
+        json!({"axis": "x", "kind": "electric", "at": "middle"}),
+        json!({"axis": 1, "kind": "electric"}),
+        json!({"clear": "yes"}),
+        json!({"clear": true, "kind": "electric"}),
+    ] {
+        let before = s.model.clone();
+        let r = s.execute("model.symmetry", &bad);
+        assert!(matches!(r, Err(EngineError::Params(_)) | Err(EngineError::Failed(_))), "{bad}: {r:?}");
+        assert_eq!(s.model, before);
+    }
+    // A solid is refused; an asymmetric guide too, across x only.
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [20, 10, 30]})).unwrap();
+    assert!(s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).is_err());
+    let step = json!({"width": 20, "height": 10, "sections": [{"length": 5, "material": "vacuum"}, {"length": 2, "material": "vacuum", "width": 8, "offset": 0}]});
+    s.execute("geometry.waveguide", &step).unwrap();
+    assert!(s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).is_err());
+    assert!(s.execute("model.symmetry", &json!({"axis": "y", "kind": "electric"})).is_ok(), "symmetric across y");
+}
