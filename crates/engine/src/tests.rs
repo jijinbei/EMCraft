@@ -988,3 +988,11 @@ fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
     r.invalidate(Change::Geometry);
     assert!(!r.any());
 }
+
+/// The summary names a solid's shape; it never dumps an imported surface's triangles.
+#[test]
+fn the_summary_names_the_solid_shape() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 5})).unwrap();
+    assert_eq!(s.summary()["solid"]["shape"], json!("Sphere"));
+}

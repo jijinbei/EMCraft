@@ -404,7 +404,7 @@ impl Session {
             "units": {"length": l.symbol(), "frequency": self.display.frequency.symbol()},
             "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r})).collect::<Vec<_>>(),
             "waveguide": w,
-            "solid": self.model.solid.as_ref().map(|s| json!({"shape": format!("{:?}", s.shape), "material": s.material})),
+            "solid": self.model.solid.as_ref().map(|s| json!({"shape": s.shape.kind(), "material": s.material})),
             "ports": self.model.ports.iter().map(|p| json!({"name": p.name, "end": p.end, "modes": p.modes})).collect::<Vec<_>>(),
             "mesh": self.model.mesh.as_ref().map(|m| json!({"nodes": m.nodes.len(), "tetrahedra": m.tets.len()})),
             "results": self.results.sweep.as_ref().map(|s| json!({"order": s.order.as_u8(), "unknowns": s.driven.dofs.unknowns, "frequencies": s.results.len()})),
