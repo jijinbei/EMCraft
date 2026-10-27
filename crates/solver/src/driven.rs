@@ -25,6 +25,13 @@
 //! factorization. S_pq = (c₁₀ at p − δ_pq) for excitation at q, normalised to equal power
 //! (times √(P_p/P_q), P = ‖e‖² β/μ the power of a unit wave), so S is unitary for a lossless
 //! structure even when the ports' media or apertures differ.
+//!
+//! **Dispersive materials.** A material with Debye, Lorentz or Drude poles
+//! ([`emcraft_model::Pole`]) has a permittivity εr(ω) of its own at each frequency. Its
+//! tetrahedra are kept out of the assembled mass matrix: each dispersive material has its own
+//! (unit-permittivity) mass matrix M_d, and the system at ω is K − k₀² (M + Σ_d εr,d(ω) M_d) —
+//! exact at every frequency, the permittivity evaluated in closed form (A. Taflove, S. C. Hagness,
+//! *Computational Electrodynamics*, 3rd ed., Artech House 2005, §9.2–9.4, for the pole forms).
 
 use emcraft_fem::nedelec::LOCAL_EDGES;
 use std::f64::consts::PI;
@@ -45,6 +52,10 @@ use crate::sparse::Csr;
 pub const MAX_UNKNOWNS: usize = 2_000_000;
 /// The most frequencies one sweep may solve.
 pub const MAX_FREQUENCIES: usize = 2001;
+
+/// Why a port may not lie in a dispersive material.
+const DISPERSIVE_PORT: &str =
+    "not supported yet: a port in a dispersive material (end the guide with a section of a non-dispersive, lossless material)";
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum SolveError {
@@ -200,8 +211,14 @@ pub struct Driven {
     pub mesh: Mesh,
     pub topo: Topology,
     pub dofs: Dofs,
-    /// Complex relative permittivity εr(1 − j tan δ) and relative permeability per tetrahedron.
+    /// Complex relative permittivity εr(1 − j tan δ) and relative permeability per tetrahedron
+    /// (for a dispersive tetrahedron, see `dispersive`).
     eps: Vec<C>,
+    /// Per tetrahedron, its dispersive material's index into `dispersive` (`NONE` if none).
+    tet_dispersive: Vec<u32>,
+    /// Dispersive materials: each with its unit-permittivity mass matrix on the pattern (its
+    /// tetrahedra are not in `mass`).
+    pub(crate) dispersive: Vec<(emcraft_model::Material, Vec<f64>)>,
     mu: Vec<f64>,
     pub(crate) pattern: Csr,
     pub(crate) stiffness: Vec<f64>,
@@ -431,10 +448,21 @@ impl Driven {
         let material = |t: usize| mesh.tet_material.get(t).and_then(|&m| model.materials.get(m as usize));
         let mut eps = Vec::with_capacity(mesh.tets.len());
         let mut mu = Vec::with_capacity(mesh.tets.len());
+        let mut tet_dispersive = Vec::with_capacity(mesh.tets.len());
+        // Dispersive materials by model index, in the model's order (deterministic).
+        let mut dispersive_index = vec![NONE; model.materials.len()];
+        let mut dispersive_materials = Vec::new();
+        for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
+            m.checked()?;
+            dispersive_index[i] = dispersive_materials.len() as u32;
+            dispersive_materials.push(m.clone());
+        }
         for t in 0..mesh.tets.len() {
             let m = material(t).ok_or_else(|| invalid("mesh", format!("tetrahedron {t} has no material")))?;
             eps.push(C::new(m.eps_r, -m.eps_r * m.loss_tangent));
             mu.push(m.mu_r);
+            let d = mesh.tet_material.get(t).and_then(|&k| dispersive_index.get(k as usize)).copied().unwrap_or(NONE);
+            tet_dispersive.push(d);
         }
 
         // The layer (open problems only): tetrahedra by their centroids' depth into it.
@@ -488,6 +516,7 @@ impl Driven {
         let pattern = Csr::from_groups(dofs.unknowns, groups.iter().map(|g| g.as_slice()));
         let mut kk = Csr { val: vec![C::new(0.0, 0.0); pattern.col.len()], ..pattern.clone() };
         let mut mm = kk.clone();
+        let mut md: Vec<Csr> = dispersive_materials.iter().map(|_| kk.clone()).collect();
         let mut cache = ElementCache::default();
         for t in (0..mesh.tets.len()).filter(|t| !in_pml.contains(t)) {
             let (s, m) = cache.matrices(&mesh, &topo, t, order)?;
@@ -502,12 +531,17 @@ impl Driven {
                         continue;
                     }
                     kk.add(*ui as usize, *uj as usize, C::new(s[i * n + j] / mu[t], 0.0));
-                    mm.add(*ui as usize, *uj as usize, eps[t] * m[i * n + j]);
+                    let (target, e) = match md.get_mut(tet_dispersive[t] as usize) {
+                        Some(d) => (d, C::new(1.0, 0.0)),
+                        None => (&mut mm, eps[t]),
+                    };
+                    target.add(*ui as usize, *uj as usize, e * m[i * n + j]);
                 }
             }
         }
         let stiffness = kk.val.iter().map(|v| v.re).collect();
         let mass = mm.val;
+        let dispersive = dispersive_materials.into_iter().zip(md).map(|(m, d)| (m, d.val.iter().map(|v| v.re).collect())).collect();
         // Walls of finite conductivity: ∫ N_i,t · N_j,t dS over them.
         let mut ww = Csr { val: vec![C::new(0.0, 0.0); pattern.col.len()], ..pattern.clone() };
         if sigma.is_some() {
@@ -538,6 +572,8 @@ impl Driven {
             topo,
             dofs,
             eps,
+            tet_dispersive,
+            dispersive,
             mu,
             pattern,
             stiffness,
@@ -565,7 +601,7 @@ impl Driven {
             let (kc, mc) = (el.stiffness_components(), el.mass_components());
             let unknowns: Vec<u32> = self.dofs.of_tet(&self.topo, t).collect();
             let n = unknowns.len();
-            let (eps, mu) = (self.eps.get(t).copied().unwrap_or(C::new(1.0, 0.0)), self.mu.get(t).copied().unwrap_or(1.0));
+            let (eps, mu) = (self.eps_at(t, k0 * C0 / (2.0 * PI)), self.mu_of(t));
             for (i, ui) in unknowns.iter().enumerate() {
                 if *ui == NONE {
                     continue;
@@ -592,6 +628,12 @@ impl Driven {
         let mut a = self.pattern.clone();
         for (x, (s, m)) in a.val.iter_mut().zip(self.stiffness.iter().zip(&self.mass)) {
             *x = C::new(*s, 0.0) - m * (k0 * k0);
+        }
+        for (material, md) in &self.dispersive {
+            let c = material.eps_at(frequency) * (k0 * k0);
+            for (x, m) in a.val.iter_mut().zip(md) {
+                *x -= c * *m;
+            }
         }
         self.add_pml(&mut a, k0)?;
         // Lumped ports: the current I = (V_s + cᵀx)/R through each gap adds (jωμ₀/R) c cᵀ.
@@ -718,8 +760,17 @@ impl Driven {
         self.dofs.of_tet(&self.topo, t)
     }
 
-    pub(crate) fn eps_of(&self, t: usize) -> C {
-        self.eps.get(t).copied().unwrap_or(C::new(1.0, 0.0))
+    /// Tetrahedron `t`'s complex relative permittivity at `frequency` (Hz).
+    pub(crate) fn eps_at(&self, t: usize, frequency: f64) -> C {
+        match self.tet_dispersive.get(t).and_then(|&d| self.dispersive.get(d as usize)) {
+            Some((m, _)) => m.eps_at(frequency),
+            None => self.eps.get(t).copied().unwrap_or(C::new(1.0, 0.0)),
+        }
+    }
+
+    /// Whether any material's permittivity depends on the frequency.
+    pub fn is_dispersive(&self) -> bool {
+        !self.dispersive.is_empty()
     }
 
     pub(crate) fn mu_of(&self, t: usize) -> f64 {
@@ -805,7 +856,7 @@ impl Driven {
     pub fn dielectric_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
         let omega = 2.0 * PI * frequency;
         let eps0 = 1.0 / (MU0 * C0 * C0);
-        let loss = |t: usize| -self.eps_of(t).im;
+        let loss = |t: usize| -self.eps_at(t, frequency).im;
         let total = self.integrate_e(x, frequency, |t| loss(t) != 0.0, |t, e| loss(t) * e.norm_sqr())?;
         Ok(0.5 * omega * eps0 * total)
     }
@@ -827,7 +878,7 @@ impl Driven {
     /// The time-averaged stored energy (J) at resonance, twice the electric: ½ ε₀ ∫ εr |E|² dV.
     pub fn stored_energy(&self, x: &[C], frequency: f64) -> Result<f64> {
         let eps0 = 1.0 / (MU0 * C0 * C0);
-        let total = self.integrate_e(x, frequency, |_| true, |t, e| self.eps_of(t).re * e.norm_sqr())?;
+        let total = self.integrate_e(x, frequency, |_| true, |t, e| self.eps_at(t, frequency).re * e.norm_sqr())?;
         Ok(0.5 * eps0 * total)
     }
 
@@ -1046,6 +1097,9 @@ fn analytic_port(
     if m.loss_tangent != 0.0 {
         return Err(invalid(format!("port `{}`", p.name), "not supported yet: a port in a lossy material (end the guide with a lossless section)"));
     }
+    if m.is_dispersive() {
+        return Err(invalid(format!("port `{}`", p.name), DISPERSIVE_PORT));
+    }
     let list: Vec<Mode> = match shape {
         emcraft_model::PortShape::Rect { x0, y0, a, b } => modes::lowest(a, b, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect(),
         emcraft_model::PortShape::Circle { cx, cy, r } => modes::lowest_circular(r, p.modes as usize).into_iter().map(|md| md.at(cx, cy)).collect(),
@@ -1131,6 +1185,9 @@ fn cross_section(model: &Model, p: &emcraft_model::Port, mesh: &Mesh, order: Ord
         if m.loss_tangent != 0.0 {
             return Err(invalid(what(), "not supported yet: a port in a lossy material (end the guide with a lossless section)"));
         }
+        if m.is_dispersive() {
+            return Err(invalid(what(), DISPERSIVE_PORT));
+        }
         eps.push(m.eps_r);
         mu.push(m.mu_r);
     }
@@ -1193,6 +1250,9 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
             let list = match shape {
                 Some(shape) => {
                     let m = model.port_material(p.end)?;
+                    if m.is_dispersive() {
+                        return Err(invalid(format!("port `{}`", p.name), DISPERSIVE_PORT));
+                    }
                     let k = k0 * (m.eps_r * m.mu_r).sqrt();
                     let modes = match shape {
                         emcraft_model::PortShape::Rect { a, b, .. } => modes::lowest(a, b, p.modes as usize),

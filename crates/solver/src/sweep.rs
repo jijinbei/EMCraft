@@ -13,6 +13,12 @@
 //! matrices up to a scalar — are projected once per basis; the layer (its stretches depend on
 //! k₀) and the ports' modes (they can) are formed at each frequency. Port modes enter through
 //! their rank-one terms, factor · (Vᵀv)(vᵀV), not the bordered matrix of the full solve.
+//!
+//! **Dispersive materials.** Their permittivities εr,d(ω) are not affine in ω², but the system
+//! stays a sum of fixed matrices with scalar coefficients, K − k₀² (M + Σ_d εr,d(ω) M_d): each
+//! M_d V is projected once per basis and scaled by εr,d(ω) at each frequency, so the projection
+//! is as exact as without dispersion, and the residual of the full equations still decides which
+//! frequencies are solved in full.
 
 use std::f64::consts::PI;
 
@@ -58,6 +64,8 @@ struct Basis {
     kv: Vec<Vec<f64>>,
     mv: Vec<Vec<C>>,
     wv: Vec<Vec<f64>>,
+    /// M_d v per dispersive material d, per basis vector.
+    dv: Vec<Vec<Vec<f64>>>,
 }
 
 fn dot_rr(a: &[f64], b: &[f64]) -> f64 {
@@ -96,6 +104,7 @@ impl Basis {
             if let Some((_, w)) = &d.wall {
                 self.wv.push((0..p.n).map(|i| row(i).map(|k| w[k] * u[p.col[k]]).sum()).collect());
             }
+            self.dv.push(d.dispersive.iter().map(|(_, md)| (0..p.n).map(|i| row(i).map(|k| md[k] * u[p.col[k]]).sum()).collect()).collect());
             self.v.push(u);
         }
     }
@@ -113,7 +122,7 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
     let nf = frequencies.len();
     let mut results: Vec<Option<FrequencyResult>> = vec![None; nf];
     let mut full = vec![false; nf];
-    let mut basis = Basis { v: Vec::new(), kv: Vec::new(), mv: Vec::new(), wv: Vec::new() };
+    let mut basis = Basis { v: Vec::new(), kv: Vec::new(), mv: Vec::new(), wv: Vec::new(), dv: Vec::new() };
     let solve_full = |i: usize, basis: &mut Basis, results: &mut Vec<Option<FrequencyResult>>, full: &mut Vec<bool>| -> Result<()> {
         let r = d.solve(frequencies[i])?;
         for x in &r.fields {
@@ -167,6 +176,8 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
     let omega = 2.0 * PI * frequency;
     let (n, m) = (d.dofs.unknowns, basis.v.len());
     let wall = d.wall.as_ref().map(|(sigma, _)| wall_factor(frequency, *sigma));
+    // k₀² εr,d(ω) per dispersive material.
+    let dispersive: Vec<C> = d.dispersive.iter().map(|(m, _)| m.eps_at(frequency) * (k0 * k0)).collect();
     // The layer at this k₀: its own matrix on the pattern, times the basis.
     let pv: Option<Vec<Vec<C>>> = if d.pml.is_some() {
         let mut p = d.pattern.clone();
@@ -176,12 +187,16 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
     } else {
         None
     };
-    // A V, column by column: K v − k₀² M v + c W v + P v (the rank-one terms come after).
+    // A V, column by column: K v − k₀² (M v + Σ εr,d M_d v) + c W v + P v (the rank-one terms
+    // come after).
     let av: Vec<Vec<C>> = (0..m)
         .map(|j| {
             (0..n)
                 .map(|i| {
                     let mut x = C::new(basis.kv[j][i], 0.0) - basis.mv[j][i] * (k0 * k0);
+                    for (c, dv) in dispersive.iter().zip(&basis.dv[j]) {
+                        x -= c * dv[i];
+                    }
                     if let Some(c) = wall {
                         x += c * basis.wv[j][i];
                     }
