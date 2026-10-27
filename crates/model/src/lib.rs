@@ -488,6 +488,60 @@ impl Feature {
     }
 }
 
+/// What a symmetry plane is: the wall that stands in for the half of the model it cuts away.
+///
+/// A model symmetric about a plane carries fields of two parities about it, and each parity is
+/// the field of the half model closed on the plane by a wall (J.-M. Jin, *The Finite Element
+/// Method in Electromagnetics*, 3rd ed., Wiley 2014: ch. 1 on the boundary conditions, ch. 8 on
+/// their essential and natural imposition with edge elements; R. F. Harrington, *Time-Harmonic
+/// Electromagnetic Fields*, McGraw-Hill 1961, ch. 3 on duality and images):
+/// - an electric wall (perfect electric conductor): tangential E = 0 on the plane — the field
+///   whose tangential E is odd and normal E even about it (TE20 about x = a/2 in a rectangular
+///   guide; TE10 about y = b/2, its E being normal to that plane);
+/// - a magnetic wall (perfect magnetic conductor): tangential H = 0, so normal E = 0 — the field
+///   whose tangential E is even and normal E odd (TE10 about x = a/2).
+///
+/// With edge elements the electric wall is the essential condition (the tangential unknowns on
+/// the plane are eliminated, as on the conducting walls) and the magnetic wall the natural one
+/// (the unknowns are kept and no surface term is added): n̂ × (μr⁻¹ ∇ × E) = 0 holds weakly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SymmetryKind {
+    /// A perfect electric conductor on the plane: tangential E = 0.
+    Electric,
+    /// A perfect magnetic conductor on the plane: tangential H = 0.
+    Magnetic,
+}
+
+/// A plane of symmetry `axis` = `at` (m) through the model: only the side below it is meshed and
+/// solved, the plane closed by the wall of `kind`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Symmetry {
+    pub axis: Axis,
+    pub at: f64,
+    pub kind: SymmetryKind,
+}
+
+impl Symmetry {
+    /// Mirrors a point from the side cut away onto the side kept (the point itself when it is
+    /// kept), with the signs the image's E and H components take: an electric wall flips E's
+    /// tangential components and H's normal one, a magnetic wall E's normal component and H's
+    /// tangential ones (H being a pseudovector).
+    pub fn image(self, p: Point3) -> (Point3, [f64; 3], [f64; 3]) {
+        let d = self.axis.index();
+        if p[d] <= self.at {
+            return (p, [1.0; 3], [1.0; 3]);
+        }
+        let q = p.with(d, 2.0 * self.at - p[d]);
+        let normal = |k: usize| if k == d { -1.0 } else { 1.0 };
+        let tangential = |k: usize| if k == d { 1.0 } else { -1.0 };
+        match self.kind {
+            SymmetryKind::Electric => (q, [0, 1, 2].map(tangential), [0, 1, 2].map(normal)),
+            SymmetryKind::Magnetic => (q, [0, 1, 2].map(normal), [0, 1, 2].map(tangential)),
+        }
+    }
+}
+
 /// An open boundary: a perfectly matched layer of this thickness (m) lining every face of a box
 /// solid, the conducting walls behind it.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -707,6 +761,10 @@ pub struct Model {
     /// previews.
     #[serde(default)]
     pub band: Option<Band>,
+    /// Symmetry planes (at most one across x and one across y): the model is meshed and solved
+    /// on the side below them only.
+    #[serde(default)]
+    pub symmetry: Vec<Symmetry>,
     /// The mesh of the waveguide (made by `emcraft-mesh`).
     #[serde(skip)]
     pub mesh: Option<Mesh>,
@@ -744,6 +802,7 @@ impl Default for Model {
             sources: Vec::new(),
             lumped: Vec::new(),
             band: None,
+            symmetry: Vec::new(),
             mesh: None,
         }
     }
@@ -1168,9 +1227,99 @@ impl Model {
         Ok(self.material(&s.material)?.1)
     }
 
+    /// Sets the symmetry planes (none clears them) after checking the geometry is symmetric
+    /// about each; the mesh is dropped.
+    pub fn set_symmetry(&mut self, planes: Vec<Symmetry>) -> Result<()> {
+        if let Some(why) = self.symmetry_issue_of(&planes) {
+            return Err(invalid("symmetry", why));
+        }
+        self.symmetry = planes;
+        self.mesh = None;
+        Ok(())
+    }
+
+    /// Why the model is not symmetric about its symmetry planes, if it is not (the geometry may
+    /// have changed since they were set).
+    pub fn symmetry_issue(&self) -> Option<String> {
+        self.symmetry_issue_of(&self.symmetry)
+    }
+
+    /// The fraction of the model the symmetry planes keep: ½ per plane.
+    pub fn symmetry_fraction(&self) -> f64 {
+        0.5f64.powi(self.symmetry.len().min(2) as i32)
+    }
+
+    fn symmetry_issue_of(&self, planes: &[Symmetry]) -> Option<String> {
+        if planes.is_empty() {
+            return None;
+        }
+        if planes.len() > 2 {
+            return Some(format!("at most two planes (one across x, one across y), got {}", planes.len()));
+        }
+        if planes.iter().any(|p| p.axis == Axis::Z) {
+            return Some("a symmetry plane must be x = const or y = const (the ports lie on z planes)".into());
+        }
+        if planes.len() == 2 && planes[0].axis == planes[1].axis {
+            return Some("two planes across the same axis".into());
+        }
+        if planes.iter().any(|p| !p.at.is_finite()) {
+            return Some("the plane's position must be finite".into());
+        }
+        let Some(w) = &self.waveguide else {
+            return Some(if self.solid.is_some() {
+                "not supported yet: symmetry planes in a solid (they need the structured waveguide mesh, geometry.waveguide)".into()
+            } else {
+                "needs a waveguide (geometry.waveguide) to cut".into()
+            });
+        };
+        for p in planes {
+            let d = p.axis.index();
+            let (span, name) = if d == 0 { (w.width, "x = a/2") } else { (w.height, "y = b/2") };
+            let tol = 1e-9 * span;
+            let mid = span / 2.0;
+            if (p.at - mid).abs() > tol {
+                return Some(format!("the guide's walls are symmetric only about its middle, {name} = {mid} m; the plane is at {} m", p.at));
+            }
+            for i in 0..w.sections.len() {
+                let ap = if d == 0 { w.aperture(i) } else { w.aperture_y(i) };
+                if let Some(a) = ap
+                    && (a.start + a.end() - span).abs() > tol
+                {
+                    return Some(format!("section {}'s aperture is not centred on the plane: the guide is not symmetric about it", i + 1));
+                }
+            }
+            if d == 1 && !w.layers.is_empty() {
+                return Some("not supported yet: a plane across y in a layered guide (its layers from y = 0 are not symmetric about it)".into());
+            }
+            // Strips: each mirrored by one (itself when it straddles an x plane).
+            let mirror = |s: &Strip| if d == 0 { Strip { x0: span - s.x0 - s.width, ..*s } } else { Strip { y: span - s.y, ..*s } };
+            let t = 1e-9 * w.width.max(w.height).max(w.length());
+            let same = |a: &Strip, b: &Strip| {
+                (a.y - b.y).abs() <= t
+                    && (a.x0 - b.x0).abs() <= t
+                    && (a.width - b.width).abs() <= t
+                    && (a.z0 - b.z0).abs() <= t
+                    && (a.z1 - b.z1).abs() <= t
+            };
+            for (k, s) in w.strips.iter().enumerate() {
+                if d == 1 && (s.y - mid).abs() <= tol {
+                    return Some(format!("not supported yet: strip {} lies on the symmetry plane", k + 1));
+                }
+                let m = mirror(s);
+                if !w.strips.iter().any(|o| same(o, &m)) {
+                    return Some(format!("strip {} has no mirror image about the plane: the guide is not symmetric about it", k + 1));
+                }
+            }
+        }
+        None
+    }
+
     /// Everything a frequency-domain solve needs, each problem named.
     pub fn check(&self) -> Vec<String> {
         let mut issues = Vec::new();
+        if let Some(why) = self.symmetry_issue() {
+            issues.push(format!("symmetry: {why} (clear it with model.symmetry, clear true)"));
+        }
         if self.waveguide.is_none() && self.solid.is_none() {
             issues.push("no geometry: create one with geometry.waveguide or geometry.solid".to_owned());
         }
@@ -1266,6 +1415,48 @@ mod tests {
         m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
         assert!(m.port_shape(End::Start).is_err());
         assert!((Shape::Sphere { radius: 1.0 }.volume() - 4.18879).abs() < 1e-5);
+    }
+
+    #[test]
+    fn symmetry_planes_need_a_symmetric_guide() {
+        let mut m = Model::new();
+        let plane = |axis, at, kind| Symmetry { axis, at, kind };
+        assert!(m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic)]).is_err(), "no geometry");
+        let sec = |w: Option<f64>, o: Option<f64>| Section { length: 0.01, material: "vacuum".into(), width: w, offset: o, ..Default::default() };
+        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new() };
+        m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
+        m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic), plane(Axis::Y, 0.005, SymmetryKind::Electric)]).unwrap();
+        assert_eq!(m.symmetry_fraction(), 0.25);
+        assert!(m.check().iter().all(|i| !i.starts_with("symmetry")));
+        for bad in [
+            vec![plane(Axis::X, 0.009, SymmetryKind::Magnetic)],
+            vec![plane(Axis::Z, 0.01, SymmetryKind::Magnetic)],
+            vec![plane(Axis::X, f64::NAN, SymmetryKind::Magnetic)],
+            vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic), plane(Axis::X, 0.01, SymmetryKind::Electric)],
+            vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic); 3],
+        ] {
+            assert!(m.set_symmetry(bad).is_err());
+        }
+        assert_eq!(m.symmetry.len(), 2, "a refused change keeps the planes");
+        // An off-centre aperture breaks the symmetry; the check says so.
+        m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), Some(0.0))])).unwrap();
+        assert!(m.check().iter().any(|i| i.starts_with("symmetry")));
+        m.set_symmetry(Vec::new()).unwrap();
+        // Strips must mirror; a solid is refused.
+        let mut w = guide(vec![sec(None, None)]);
+        w.strips = vec![Strip { y: 0.002, x0: 0.002, width: 0.004, z0: 0.0, z1: 0.01 }];
+        m.set_waveguide(w.clone()).unwrap();
+        assert!(m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic)]).is_err());
+        w.strips.push(Strip { y: 0.002, x0: 0.014, width: 0.004, z0: 0.0, z1: 0.01 });
+        m.set_waveguide(w).unwrap();
+        m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Electric)]).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.02, 0.01, 0.01) }, material: "vacuum".into() }).unwrap();
+        assert!(m.check().iter().any(|i| i.contains("not supported yet")));
+        // Images: a magnetic wall flips E's normal component, H's tangential ones.
+        let (q, e, h) = plane(Axis::X, 0.01, SymmetryKind::Magnetic).image(Point3::new(0.015, 0.0, 0.0));
+        assert!((q.x - 0.005).abs() < 1e-15 && e == [-1.0, 1.0, 1.0] && h == [1.0, -1.0, -1.0]);
+        let (_, e, h) = plane(Axis::Y, 0.005, SymmetryKind::Electric).image(Point3::new(0.0, 0.008, 0.0));
+        assert!(e == [-1.0, 1.0, -1.0] && h == [1.0, -1.0, 1.0]);
     }
 
     #[test]
