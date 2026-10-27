@@ -36,47 +36,36 @@ fn short(v: f64) -> String {
 
 pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let Some(study) = app.session.results.study.clone() else {
-        empty(ui, "No study yet: define a variable, then SIMULATE › Sweep or Optimize.");
-        return;
-    };
-    ui.label(egui::RichText::new(summary(&study)).size(t.font_body).color(t.text));
+    let Some(study) = app.session.results.study.as_ref() else { return };
+    let state = &mut app.views.study;
+    ui.label(egui::RichText::new(summary(study)).size(t.font_body).color(t.text));
     // The S-parameter a sweep's chart shows.
     let parameters = if study.kind == Kind::Sweep { study.parameters() } else { Vec::new() };
-    if parameters.len() > 1 {
+    if let [first, _, ..] = parameters.as_slice() {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Show").size(t.font_small).color(t.text_dim));
+            crate::ui_kit::small(ui, "Show", t.text_dim);
             for p in &parameters {
-                let on = app.study_parameter.as_deref().unwrap_or(parameters[0].as_str()) == p.as_str();
-                let text = egui::RichText::new(format!("|{}|", p.to_uppercase())).size(t.font_small).color(if on { t.selected_ink } else { t.text });
-                let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(10));
-                scenario::publish_target(&format!("study:parameter:{p}"), r.rect);
-                if r.clicked() && !on {
-                    app.study_parameter = Some(p.clone());
-                    app.study_chart = None;
+                let on = state.parameter.as_ref().unwrap_or(first) == p;
+                if pill(ui, &format!("|{}|", p.to_uppercase()), on, &format!("study:parameter:{p}"), 10, true) && !on {
+                    state.parameter = Some(p.clone());
+                    state.chart.clear();
                 }
             }
         });
     }
-    let parameter = app.study_parameter.clone().filter(|p| parameters.contains(p));
+    let parameter = state.parameter.clone().filter(|p| parameters.contains(p));
     let width = picture_width(ui);
     let key = format!("study|{}|{}|{width}|{}", app.revision, parameter.as_deref().unwrap_or(""), crate::theme::is_dark());
-    if app.study_chart.as_ref().is_none_or(|c| c.key != key) {
-        match emcraft_engine::study::chart(&study, parameter.as_deref()) {
-            Ok(chart) => {
-                let height = (ui.available_height() * 0.6).clamp(240.0, 640.0) as usize;
-                app.study_chart = Some(Picture::new(key, &emcraft_render::chart::draw(&chart, width, height)));
-            }
-            Err(e) => {
-                app.study_chart = None;
-                ui.label(egui::RichText::new(e.to_string()).size(t.font_body).color(t.text_dim));
-            }
+    match cached_chart(ui, &mut state.chart, key, width, Height::new(0.6, 240.0, 640.0), || emcraft_engine::study::chart(study, parameter.as_deref()))
+    {
+        Ok(p) => {
+            picture(ui, p, "chart:study");
+        }
+        Err(e) => {
+            ui.label(egui::RichText::new(e).size(t.font_body).color(t.text_dim));
         }
     }
-    if let Some(p) = app.study_chart.as_mut() {
-        picture(ui, p, "chart:study");
-    }
-    table(ui, &study, parameter.as_deref().or(parameters.first().map(String::as_str)));
+    table(ui, study, parameter.as_deref().or(parameters.first().map(String::as_str)));
 }
 
 /// The study's points: the values, the goal or the band's extremes of the S-parameter shown, and

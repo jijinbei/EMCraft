@@ -4,36 +4,26 @@
 use super::*;
 
 pub(super) fn dispersion(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
-    if app.session.results.dispersion.is_none() {
-        empty(ui, "No dispersion diagram yet: MATERIALS › Periodic, then SIMULATE › Dispersion.");
-        return;
-    }
     let width = picture_width(ui);
     let key = format!("d|{}|{width}|{}", app.revision, crate::theme::is_dark());
-    if app.chart.as_ref().is_none_or(|c| c.key != key) {
-        match emcraft_engine::periodic::dispersion_chart(&app.session) {
-            Ok(chart) => {
-                let height = (ui.available_height() * 0.62).clamp(260.0, 700.0) as usize;
-                app.chart = Some(Picture::new(key, &emcraft_render::chart::draw(&chart, width, height)));
-            }
-            Err(e) => {
-                empty(ui, &e.to_string());
-                return;
-            }
+    let session = &app.session;
+    let drawn =
+        cached_chart(ui, &mut app.views.chart, key, width, Height::new(0.62, 260.0, 700.0), || emcraft_engine::periodic::dispersion_chart(session));
+    match drawn {
+        Ok(p) => {
+            picture(ui, p, "chart:dispersion");
         }
+        Err(e) => return empty(ui, &e),
     }
-    if let Some(p) = app.chart.as_mut() {
-        picture(ui, p, "chart:dispersion");
-    }
+    table(app, ui);
+}
+
+/// The bands' frequencies at each phase.
+fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let Some(d) = app.session.results.dispersion.as_ref() else { return };
     let (fu, lu) = (app.session.display.frequency, app.session.display.length);
     let bands = d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0);
-    ui.label(
-        egui::RichText::new(format!("{} unknowns after the periodic reduction; period {:.4} {}", d.unknowns, lu.from_si(d.period), lu.symbol()))
-            .size(t.font_small)
-            .color(t.text_dim),
-    );
+    crate::ui_kit::caption(ui, &format!("{} unknowns after the periodic reduction; period {:.4} {}", d.unknowns, lu.from_si(d.period), lu.symbol()));
     egui::ScrollArea::vertical().id_salt("dispersion_table").show(ui, |ui| {
         egui::Grid::new("dispersion_grid").striped(true).num_columns(2 + bands).show(ui, |ui| {
             ui.label(egui::RichText::new("ψ (°)").strong());

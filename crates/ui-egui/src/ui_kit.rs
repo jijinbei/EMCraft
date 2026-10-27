@@ -87,8 +87,13 @@ pub fn row<R>(ui: &mut Ui, label: &str, required: bool, add: impl FnOnce(&mut Ui
 
 /// A caption: small dim wrapping text.
 pub fn caption(ui: &mut Ui, text: &str) {
+    small(ui, text, Tokens::get().text_dim);
+}
+
+/// Small text in `color`.
+pub fn small(ui: &mut Ui, text: impl Into<String>, color: Color32) -> Response {
     let t = Tokens::get();
-    ui.label(egui::RichText::new(text).size(t.font_small).color(t.text_dim));
+    ui.label(egui::RichText::new(text).size(t.font_small).color(color))
 }
 
 /// A section heading in small capitals with a hairline after it.

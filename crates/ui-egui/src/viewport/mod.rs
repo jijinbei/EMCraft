@@ -8,6 +8,7 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
 
+use crate::picture::Cached;
 use crate::theme::Tokens;
 use crate::{EmcraftApp, Picture, View, scenario};
 
@@ -56,6 +57,10 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(10.0)));
             view_tabs(app, &mut inner);
             inner.add_space(4.0);
+            if let Some(text) = app.view.missing(app) {
+                empty(&mut inner, text);
+                return;
+            }
             match app.view {
                 View::Model => model3d(app, &mut inner),
                 View::Outline => model(app, &mut inner),
@@ -72,37 +77,57 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         });
 }
 
-/// Whether view `v` has something to show: the model always, results once solved.
-pub(crate) fn available(app: &EmcraftApp, v: View) -> bool {
-    let r = &app.session.results;
-    match v {
-        View::Model | View::Outline => true,
-        View::SParameters | View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
-        View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
-        View::PortModes => app.port_modes.is_some() || (app.session.model.mesh.is_some() && !app.session.model.ports.is_empty()),
-        View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
-        View::Compare => r.sweep.is_some(),
-        View::Eigenmodes => r.eigen.is_some(),
-        View::Study => r.study.is_some(),
-        View::Dispersion => r.dispersion.is_some(),
-    }
-}
-
 /// The views with something to show, as a row of pills.
 pub(super) fn view_tabs(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
     ui.horizontal(|ui| {
-        let shown: Vec<View> = View::ALL.into_iter().filter(|v| *v == app.view || available(app, *v)).collect();
+        let shown: Vec<View> = View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)).collect();
         for v in shown {
-            let on = app.view == v;
-            let text = egui::RichText::new(v.label()).size(t.font_body).color(if on { t.selected_ink } else { t.text });
-            let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(12));
-            scenario::publish_target(&format!("view:{}", v.id()), r.rect);
-            if r.clicked() {
+            if pill(ui, v.label(), app.view == v, &format!("view:{}", v.id()), 12, false) {
                 crate::ribbon::show_view(app, v);
             }
         }
     });
+}
+
+/// A pill of a row of options: filled when `on`, the body's size (`small`: the small one);
+/// `true` when clicked.
+pub(super) fn pill(ui: &mut egui::Ui, label: &str, on: bool, handle: &str, radius: u8, small: bool) -> bool {
+    let t = Tokens::get();
+    let text = egui::RichText::new(label).size(if small { t.font_small } else { t.font_body }).color(if on { t.selected_ink } else { t.text });
+    let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius));
+    scenario::publish_target(handle, r.rect);
+    r.clicked()
+}
+
+/// A chart's height: a share of the room left in the card, within `min..=max` pixels.
+#[derive(Clone, Copy)]
+pub(super) struct Height {
+    pub share: f32,
+    pub min: f32,
+    pub max: f32,
+}
+
+impl Height {
+    pub const fn new(share: f32, min: f32, max: f32) -> Height {
+        Height { share, min, max }
+    }
+
+    fn of(self, ui: &egui::Ui) -> usize {
+        (ui.available_height() * self.share).clamp(self.min, self.max) as usize
+    }
+}
+
+/// The chart kept in `slot`, drawn again (`width` wide, `height` high) from `chart` when `key`
+/// changed; the error that kept it from being drawn.
+pub(super) fn cached_chart<'a, E: ToString>(
+    ui: &egui::Ui,
+    slot: &'a mut Cached,
+    key: String,
+    width: usize,
+    height: Height,
+    chart: impl FnOnce() -> Result<emcraft_render::chart::Chart, E>,
+) -> Result<&'a mut Picture, String> {
+    slot.get_or_draw(key, || chart().map(|c| emcraft_render::chart::draw(&c, width, height.of(ui))))
 }
 
 pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
@@ -110,6 +135,20 @@ pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
     ui.centered_and_justified(|ui| {
         ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));
     });
+}
+
+/// The card's message while a view has nothing to show, with the button that makes it; `true`
+/// when the button was clicked.
+pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, button: &str, enabled: bool, handle: &str) -> bool {
+    let t = Tokens::get();
+    ui.vertical_centered(|ui| {
+        ui.add_space(40.0);
+        ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));
+        let r = ui.add_enabled(enabled, egui::Button::new(button));
+        scenario::publish_target(handle, r.rect);
+        r.clicked()
+    })
+    .inner
 }
 
 /// A picture in the rest of the card, scaled down to fit; the image's response.

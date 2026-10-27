@@ -5,6 +5,8 @@
 
 use emcraft_model::{Aabb, Point3};
 
+use crate::scene3d::{BOX_EDGES, box_corner, normal_axis};
+
 use super::*;
 
 /// The side column's width.
@@ -87,15 +89,6 @@ fn export_params(app: &EmcraftApp, path: &str) -> Value {
     p
 }
 
-/// The plane's normal axis (0 x, 1 y, 2 z).
-fn normal(plane: Plane) -> usize {
-    match plane {
-        Plane::E => 0,
-        Plane::H => 1,
-        Plane::Cross => 2,
-    }
-}
-
 /// What fills the model along the plane's normal through its middle: runs of (from, to) as
 /// fractions of the span, with a material's colour, or `None` where there is no material
 /// (conductor, outside).
@@ -106,7 +99,7 @@ pub(super) fn bands(app: &EmcraftApp, plane: Plane) -> Vec<(f64, f64, Option<Col
         let c = crate::scene3d::material_rgb(m, i);
         Color32::from_rgb(c.0, c.1, c.2)
     };
-    let axis = normal(plane);
+    let axis = normal_axis(plane);
     // A waveguide's sections lie along z; across it, its first section's material.
     if let Some(w) = &m.waveguide {
         let index = |name: &str| m.material(name).ok().map(|(i, _)| colour(i));
@@ -167,13 +160,13 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         pos2(origin.x + (u * scale) as f32, origin.y - (v * scale) as f32)
     };
     let [sx, sy, sz] = size;
-    let corner = |i: usize| [if i & 1 == 1 { sx } else { 0.0 }, if i & 2 == 2 { sy } else { 0.0 }, if i & 4 == 4 { sz } else { 0.0 }];
+    let corner = |i: usize| box_corner([0.0; 3], size, i);
     let edge = Stroke::new(1.0, t.text_dim);
-    for (a, b) in [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)] {
+    for (a, b) in BOX_EDGES {
         painter.line_segment([to(corner(a)), to(corner(b))], edge);
     }
     // The sections (or materials) along z as faint frames at their boundaries.
-    if normal(app.field.view.plane) == 2 {
+    if normal_axis(app.field.view.plane) == 2 {
         for (from, _, _) in bands(app, Plane::Cross).iter().skip(1) {
             let z = from * sz;
             let ring = [[0.0, 0.0, z], [sx, 0.0, z], [sx, sy, z], [0.0, sy, z]].map(to);
@@ -181,7 +174,7 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
     }
     // The plane.
-    let axis = normal(app.field.view.plane);
+    let axis = normal_axis(app.field.view.plane);
     let at = app.field.at.unwrap_or(span / 2.0).clamp(0.0, span);
     let frac = if span > 0.0 { at / span } else { 0.5 };
     let quad: Vec<Pos2> = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
@@ -311,7 +304,7 @@ fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         heading(ui, what);
         match probe {
             None => {
-                ui.label(egui::RichText::new(hint).size(t.font_small).color(t.text_dim));
+                crate::ui_kit::small(ui, hint, t.text_dim);
             }
             Some(p) => {
                 let (now, amp) = p.value(comp, phase);

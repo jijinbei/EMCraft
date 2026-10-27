@@ -2,10 +2,6 @@
 
 use super::*;
 
-pub(super) fn solved(app: &EmcraftApp) -> bool {
-    app.session.results.sweep.is_some() || app.session.results.eigen.is_some() || app.session.results.radiation.is_some()
-}
-
 /// The span of the plane's position (display units) and its axis name.
 pub(super) fn plane_span(app: &EmcraftApp) -> Option<(f64, &'static str)> {
     plane_span_of(app, app.field.view.plane)
@@ -61,10 +57,6 @@ pub(crate) fn field_plots(app: &mut EmcraftApp) -> Result<Vec<(emcraft_render::p
 }
 
 pub(super) fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    if !solved(app) {
-        empty(ui, "No fields yet: solve a sweep, eigenmodes or an open problem first.");
-        return;
-    }
     field_controls(app, ui);
     // The model in 3D on the left when asked, then the picture and, beside it, the side column
     // about it (where, which frequency, the readout, saving).
@@ -93,20 +85,18 @@ fn picture_column(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let l = app.session.display.length;
     app.field.view.at = app.field.at.map(|v| l.to_si(v));
     let key = format!("{:?}|{width}|{}", app.field.view, app.revision);
-    if app.field.picture.as_ref().is_none_or(|p| p.key != key) {
+    if !app.field.picture.is_fresh(&key) {
         let plot = match field_plot(app) {
             Ok(p) => p,
             Err(e) => {
-                app.field.picture = None;
-                empty(ui, &e);
-                return;
+                app.field.picture.clear();
+                return empty(ui, &e);
             }
         };
-        let c = emcraft_render::plot::draw(&plot, width);
         app.field.layout = Some(emcraft_render::plot::Layout::of(&plot, width));
-        app.field.picture = Some(Picture::new(key, &c));
+        app.field.picture.set(key, &emcraft_render::plot::draw(&plot, width));
     }
-    let Some(p) = app.field.picture.as_mut() else { return };
+    let Some(p) = app.field.picture.get_mut() else { return };
     let r = picture(ui, p, "picture:field");
     probe_picture(app, ui, &r);
 }
@@ -276,7 +266,7 @@ pub(super) fn kept_planes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     ui.horizontal_wrapped(|ui| {
         let t = Tokens::get();
-        ui.label(egui::RichText::new("In 3D:").size(t.font_small).color(t.text_dim));
+        crate::ui_kit::small(ui, "In 3D:", t.text_dim);
         let unit = app.session.display.length.symbol();
         let mut drop = None;
         for (k, (plane, at)) in app.field.kept.iter().enumerate() {

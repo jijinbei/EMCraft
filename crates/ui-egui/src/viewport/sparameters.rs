@@ -3,62 +3,50 @@
 use super::*;
 
 pub(super) fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
-    if app.session.results.sweep.is_none() && app.session.results.time_domain.is_none() {
-        empty(ui, "No S-parameters yet: SIMULATE › Frequency sweep.");
-        return;
-    }
     let width = picture_width(ui);
     let key = format!("s|{}|{width}|{}", app.revision, crate::theme::is_dark());
-    if app.chart.as_ref().is_none_or(|c| c.key != key) {
-        match view::sparameter_chart(&app.session) {
-            Ok(chart) => {
-                let height = (ui.available_height() * 0.62).clamp(260.0, 700.0) as usize;
-                app.chart = Some(Picture::new(key, &emcraft_render::chart::draw(&chart, width, height)));
-            }
-            Err(e) => {
-                empty(ui, &e.to_string());
-                return;
-            }
-        }
-    }
     let freqs = app.frequencies();
-    if let Some(p) = app.chart.as_mut() {
-        let r = picture(ui, p, "chart:sparameters");
-        // The field view's frequency, marked where the chart puts it.
-        if let (Some(f0), Some(f1)) = (freqs.first(), freqs.last())
-            && f1 > f0
-            && app.field.view.mode.is_none()
-            && (*f0..=*f1).contains(&app.field.view.frequency)
-        {
-            let w = p.size().x;
-            let px = 90.0 + ((app.field.view.frequency - f0) / (f1 - f0)) as f32 * (w - 120.0);
-            let x = r.rect.min.x + px / w * r.rect.width();
-            let painter = ui.painter_at(r.rect);
-            let (top, bottom) = (r.rect.top() + r.rect.height() * 0.08, r.rect.bottom() - r.rect.height() * 0.22);
-            painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
-            let (at, align) =
-                if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
-            painter.text(at, align, "fields shown", FontId::proportional(t.font_small), t.accent);
-        }
-        // A click picks the nearest solved frequency for the field view.
-        if r.clicked()
-            && let (Some(pos), Some(f0), Some(f1)) = (r.interact_pointer_pos(), freqs.first(), freqs.last())
-        {
-            let fx = ((pos.x - r.rect.min.x) / r.rect.width()) as f64;
-            if let Some(f) = chart_frequency(fx, p.size().x as f64, *f0, *f1).and_then(|f| crate::nearest(&freqs, f)) {
-                app.field.view.frequency = f;
-                app.field.view.mode = None;
-                app.view = View::Field;
-            }
+    let session = &app.session;
+    let p = match cached_chart(ui, &mut app.views.chart, key, width, Height::new(0.62, 260.0, 700.0), || view::sparameter_chart(session)) {
+        Ok(p) => p,
+        Err(e) => return empty(ui, &e),
+    };
+    let r = picture(ui, p, "chart:sparameters");
+    let chart_width = p.size().x;
+    frequency_marker(app, ui, &r, chart_width, &freqs);
+    crate::ui_kit::caption(ui, "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.");
+    table(app, ui);
+}
+
+/// The field view's frequency, marked where the chart (`chart_width` pixels wide) puts it; a
+/// click picks the nearest solved frequency for the field view and opens it.
+fn frequency_marker(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response, chart_width: f32, freqs: &[f64]) {
+    let t = Tokens::get();
+    let (Some(f0), Some(f1)) = (freqs.first().copied(), freqs.last().copied()) else { return };
+    let f = app.field.view.frequency;
+    if f1 > f0 && app.field.view.mode.is_none() && (f0..=f1).contains(&f) {
+        let px = 90.0 + ((f - f0) / (f1 - f0)) as f32 * (chart_width - 120.0);
+        let x = r.rect.min.x + px / chart_width * r.rect.width();
+        let painter = ui.painter_at(r.rect);
+        let (top, bottom) = (r.rect.top() + r.rect.height() * 0.08, r.rect.bottom() - r.rect.height() * 0.22);
+        painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
+        let (at, align) = if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
+        painter.text(at, align, "fields shown", FontId::proportional(t.font_small), t.accent);
+    }
+    if r.clicked()
+        && let Some(pos) = r.interact_pointer_pos()
+    {
+        let fx = ((pos.x - r.rect.min.x) / r.rect.width()) as f64;
+        if let Some(f) = chart_frequency(fx, chart_width as f64, f0, f1).and_then(|f| crate::nearest(freqs, f)) {
+            app.field.view.frequency = f;
+            app.field.view.mode = None;
+            app.view = View::Field;
         }
     }
-    ui.label(
-        egui::RichText::new("Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.")
-            .size(t.font_small)
-            .color(t.text_dim),
-    );
-    // The table.
+}
+
+/// The sweep's S11 and S21 at each frequency.
+fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let Some(sw) = app.session.results.sweep.as_ref() else { return };
     let fu = app.session.display.frequency;
     egui::ScrollArea::vertical().id_salt("s_table").show(ui, |ui| {
@@ -95,4 +83,18 @@ pub fn chart_frequency(fx: f64, width_px: f64, f0: f64, f1: f64) -> Option<f64> 
     let (x0, pw) = (90.0, width_px - 120.0);
     let t = (fx * width_px - x0) / pw;
     (pw > 0.0 && (0.0..=1.0).contains(&t)).then_some(f0 + t * (f1 - f0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chart_clicks_map_to_frequencies() {
+        assert_eq!(chart_frequency(90.0 / 1000.0, 1000.0, 5.0, 9.0), Some(5.0));
+        assert!((chart_frequency(530.0 / 1000.0, 1000.0, 5.0, 9.0).unwrap_or(0.0) - 7.0).abs() < 1e-12);
+        assert_eq!(chart_frequency(0.01, 1000.0, 5.0, 9.0), None);
+        assert_eq!(crate::nearest(&[5.0, 6.0, 7.0], 6.4), Some(6.0));
+        assert_eq!(crate::nearest(&[], 6.4), None);
+    }
 }
