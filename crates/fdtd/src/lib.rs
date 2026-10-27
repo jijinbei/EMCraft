@@ -34,14 +34,16 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::units::{C0, EPS0, ETA0, MU0};
-use emcraft_model::{Model, Pole, SecondOrder, Span};
-use std::sync::Barrier;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-
+use emcraft_model::units::C0;
+use emcraft_model::{Model, Waveguide};
 use num_complex::Complex64 as C;
 
+use crate::guide::{Grid, run};
+
+mod dispersion;
+mod guide;
 pub mod open;
+mod yee;
 
 /// The most cells a grid may have.
 pub const MAX_CELLS: usize = 20_000_000;
@@ -105,707 +107,6 @@ pub struct TdResult {
     pub converged: bool,
 }
 
-/// Divisions of `len` into steps of at most `h`.
-fn steps(len: f64, h: f64) -> usize {
-    ((len / h) * (1.0 - 1e-9)).ceil().max(1.0) as usize
-}
-
-/// The material and aperture of a z-layer of cells.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Layer {
-    /// εr (ε∞ with dispersion).
-    eps: f64,
-    /// The largest |εr(ω)| over the run's frequencies (`eps` without dispersion): sets the
-    /// slowest wave.
-    slow: f64,
-    /// The layer's dispersive material: an index into the grid's `poles` (`NO_POLES` if none).
-    disp: u32,
-    mu: f64,
-    x0: f64,
-    width: f64,
-    y0: f64,
-    height: f64,
-}
-
-/// The tensor grid and the cells that exist (inside an aperture).
-struct Grid {
-    x: Vec<f64>,
-    y: Vec<f64>,
-    z: Vec<f64>,
-    /// Per z-layer of cells.
-    layers: Vec<Layer>,
-    /// The poles of each dispersive material in the layers.
-    poles: Vec<Vec<Pole>>,
-    /// z-node index of the model's planes z = 0 and z = L, and of the source.
-    plane1: usize,
-    plane2: usize,
-    source: usize,
-    pml: usize,
-}
-
-impl Grid {
-    fn nx(&self) -> usize {
-        self.x.len() - 1
-    }
-    fn ny(&self) -> usize {
-        self.y.len() - 1
-    }
-    fn nz(&self) -> usize {
-        self.z.len() - 1
-    }
-
-    /// Whether cell (i, j, k) is inside the domain (signed indices; outside the grid is metal).
-    fn exists(&self, i: isize, j: isize, k: isize) -> bool {
-        if i < 0 || j < 0 || k < 0 || i as usize >= self.nx() || j as usize >= self.ny() || k as usize >= self.nz() {
-            return false;
-        }
-        let l = self.layers[k as usize];
-        let xc = 0.5 * (self.x[i as usize] + self.x[i as usize + 1]);
-        let yc = 0.5 * (self.y[j as usize] + self.y[j as usize + 1]);
-        xc > l.x0 && xc < l.x0 + l.width && yc > l.y0 && yc < l.y0 + l.height
-    }
-}
-
-/// A layer without dispersion.
-const NO_POLES: u32 = u32::MAX;
-
-/// Builds the grid of the model's guide with its two feeds; `reference` makes every layer the
-/// port-1 guide (the incident run). `freqs` are the run's frequencies (for the slowest wave).
-fn grid(model: &Model, o: &Options, reference: bool, freqs: &[f64]) -> Result<Grid> {
-    let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
-    if model.wall_conductivity.is_some() || model.materials.iter().any(|m| m.loss_tangent != 0.0) {
-        return Err(FdtdError::Unsupported("losses in the time domain".into()));
-    }
-    // Dispersive materials in the model's order (deterministic), none at the ports.
-    let mut poles: Vec<Vec<Pole>> = Vec::new();
-    let mut disp_of = vec![NO_POLES; model.materials.len()];
-    for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
-        m.checked().map_err(|e| invalid("material", e.to_string()))?;
-        disp_of[i] = poles.len() as u32;
-        poles.push(m.dispersion.clone());
-    }
-    for i in [0, w.sections.len().saturating_sub(1)] {
-        let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
-        if model.material(&s.material).is_ok_and(|(_, m)| m.is_dispersive()) {
-            return Err(FdtdError::Unsupported("a port in a dispersive material (end the guide with a non-dispersive section)".into()));
-        }
-    }
-    let h = o.cell;
-    let n_est = (w.width / h).ceil() * (w.height / h).ceil() * ((w.length() + 2.0 * (o.pml + 2 * o.feed) as f64 * h) / h).ceil();
-    if !(n_est <= MAX_CELLS as f64) {
-        return Err(FdtdError::TooLarge { cells: n_est.min(usize::MAX as f64) as usize, limit: MAX_CELLS });
-    }
-    let layer = |i: usize| -> Result<Layer> {
-        let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
-        let (index, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
-        let Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
-        let Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
-        let slow = freqs.iter().map(|f| m.eps_at(*f).norm()).fold(m.eps_r, f64::max);
-        let disp = disp_of.get(index).copied().unwrap_or(NO_POLES);
-        Ok(Layer { eps: m.eps_r, slow, disp, mu: m.mu_r, x0, width, y0, height })
-    };
-    let last = w.sections.len() - 1;
-    let (first_layer, last_layer) = (layer(0)?, layer(last)?);
-    // x: through every aperture edge.
-    let mut breaks = vec![0.0, w.width];
-    for i in 0..w.sections.len() {
-        if let Some(a) = w.aperture(i) {
-            breaks.push(a.start);
-            breaks.push(a.end());
-        }
-    }
-    breaks.sort_by(f64::total_cmp);
-    breaks.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * w.width);
-    let mut x = vec![0.0];
-    for b in breaks.windows(2) {
-        let n = steps(b[1] - b[0], h);
-        x.extend((1..=n).map(|k| b[0] + (b[1] - b[0]) * k as f64 / n as f64));
-    }
-    let mut ybreaks = vec![0.0, w.height];
-    for i in 0..w.sections.len() {
-        if let Some(b) = w.aperture_y(i) {
-            ybreaks.push(b.start);
-            ybreaks.push(b.end());
-        }
-    }
-    ybreaks.sort_by(f64::total_cmp);
-    ybreaks.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * w.height);
-    let mut y = vec![0.0];
-    for b in ybreaks.windows(2) {
-        let n = steps(b[1] - b[0], h);
-        y.extend((1..=n).map(|k| b[0] + (b[1] - b[0]) * k as f64 / n as f64));
-    }
-    // z: feed 1, the sections, feed 2.
-    let first_len = w.sections[0].length;
-    let dz1 = first_len / steps(first_len, h) as f64;
-    let last_len = w.sections[last].length;
-    let dz2 = last_len / steps(last_len, h) as f64;
-    let ext = o.pml + 2 * o.feed;
-    let mut z: Vec<f64> = (0..=ext).map(|k| -((ext - k) as f64) * dz1).collect();
-    let mut layers = vec![first_layer; ext];
-    let plane1 = ext;
-    let mut at = 0.0;
-    for (i, s) in w.sections.iter().enumerate() {
-        let n = steps(s.length, h);
-        z.extend((1..=n).map(|k| at + s.length * k as f64 / n as f64));
-        let l = if reference { first_layer } else { layer(i)? };
-        layers.extend(std::iter::repeat_n(l, n));
-        at += s.length;
-    }
-    let plane2 = z.len() - 1;
-    let end_layer = if reference { first_layer } else { last_layer };
-    z.extend((1..=o.pml + o.feed).map(|k| at + k as f64 * dz2));
-    layers.extend(std::iter::repeat_n(end_layer, o.pml + o.feed));
-    let g = Grid { x, y, z, layers, poles, plane1, plane2, source: o.pml + o.feed, pml: o.pml };
-    let cells = g.nx() * g.ny() * g.nz();
-    if cells > MAX_CELLS {
-        return Err(FdtdError::TooLarge { cells, limit: MAX_CELLS });
-    }
-    Ok(g)
-}
-
-/// A field component's array on the grid. Values are stored as atomics so the threads of a
-/// run can share them without `unsafe`: each thread writes only its own slabs of z, and the
-/// barriers between half steps order every write before the reads of the next half step
-/// (relaxed loads and stores compile to plain moves).
-struct Field {
-    nx: usize,
-    ny: usize,
-    v: Vec<AtomicU64>,
-}
-
-impl Field {
-    fn new(nx: usize, ny: usize, nz: usize) -> Field {
-        Field { nx, ny, v: (0..nx * ny * nz).map(|_| AtomicU64::new(0)).collect() }
-    }
-    #[inline]
-    fn at(&self, i: usize, j: usize, k: usize) -> usize {
-        i + self.nx * (j + self.ny * k)
-    }
-    #[inline]
-    fn get(&self, id: usize) -> f64 {
-        f64::from_bits(self.v[id].load(Ordering::Relaxed))
-    }
-    #[inline]
-    fn set(&self, id: usize, x: f64) {
-        self.v[id].store(x.to_bits(), Ordering::Relaxed);
-    }
-    fn len(&self) -> usize {
-        self.v.len()
-    }
-}
-
-/// A scratch array of the same layout (CPML auxiliary variables).
-fn scratch(f: &Field) -> Field {
-    Field { nx: f.nx, ny: f.ny, v: (0..f.len()).map(|_| AtomicU64::new(0)).collect() }
-}
-
-/// One pole's update on one edge (its weight on the edge folded in).
-#[derive(Clone, Copy, Debug)]
-enum Term {
-    /// Pⁿ⁺¹ = ka Pⁿ + kb (Eⁿ⁺¹ + Eⁿ).
-    Debye { ka: f64, kb: f64 },
-    /// Pⁿ⁺¹ = c1 Pⁿ − c2 Pⁿ⁻¹ + c3 Eⁿ.
-    Second { c1: f64, c2: f64, c3: f64 },
-}
-
-impl Term {
-    /// The pole's update for a time step `dt`, weighted by `w` (the share of the edge's area in
-    /// its cells).
-    fn new(pole: Pole, w: f64, dt: f64) -> Term {
-        match (pole, pole.second_order()) {
-            (Pole::Debye { delta_eps, tau }, _) => {
-                Term::Debye { ka: (2.0 * tau - dt) / (2.0 * tau + dt), kb: w * EPS0 * delta_eps * dt / (2.0 * tau + dt) }
-            }
-            (_, Some(SecondOrder { strength: a, omega0: w0, gamma: g })) => {
-                let d = 1.0 + 0.5 * g * dt;
-                Term::Second { c1: (2.0 - w0 * w0 * dt * dt) / d, c2: (1.0 - 0.5 * g * dt) / d, c3: w * dt * dt * EPS0 * a / d }
-            }
-            _ => Term::Second { c1: 0.0, c2: 0.0, c3: 0.0 },
-        }
-    }
-}
-
-/// The dispersive E edges of one component: each edge's slot, and per slot ε₀ε∞ (the edge's
-/// average) and its terms, with their polarizations now and a step before.
-struct Dispersion {
-    slot_of: Vec<u32>,
-    slots: Vec<(f64, std::ops::Range<usize>)>,
-    terms: Vec<Term>,
-    p: Field,
-    p_prev: Field,
-}
-
-impl Dispersion {
-    /// No dispersive edges.
-    fn none() -> Dispersion {
-        Dispersion { slot_of: Vec::new(), slots: Vec::new(), terms: Vec::new(), p: Field::new(0, 0, 0), p_prev: Field::new(0, 0, 0) }
-    }
-
-    /// The new E on edge `id` from E now and the bracketed curl term (∇ × H less the CPML's),
-    /// advancing the edge's polarizations; `None` for an edge without dispersion.
-    #[inline]
-    fn step(&self, id: usize, e: f64, curl: f64, dt: f64) -> Option<f64> {
-        let slot = *self.slot_of.get(id)?;
-        let (eps, range) = self.slots.get(slot as usize)?;
-        let (mut kb_sum, mut rhs) = (0.0, dt * curl);
-        for t in range.clone() {
-            let p = self.p.get(t);
-            match self.terms[t] {
-                Term::Debye { ka, kb } => {
-                    kb_sum += kb;
-                    rhs -= (ka - 1.0) * p;
-                }
-                Term::Second { c1, c2, c3 } => {
-                    let next = c1 * p - c2 * self.p_prev.get(t) + c3 * e;
-                    rhs -= next - p;
-                    self.p_prev.set(t, p);
-                    self.p.set(t, next);
-                }
-            }
-        }
-        let e_new = ((eps - kb_sum) * e + rhs) / (eps + kb_sum);
-        for t in range.clone() {
-            if let Term::Debye { ka, kb } = self.terms[t] {
-                self.p.set(t, ka * self.p.get(t) + kb * (e_new + e));
-            }
-        }
-        Some(e_new)
-    }
-}
-
-/// CPML coefficients (b, a) along z at the given positions.
-fn cpml(zs: &[f64], g: &Grid, dt: f64, f_center: f64) -> Vec<(f64, f64)> {
-    let (z_lo, z_hi) = (g.z[g.pml], g.z[g.nz() - g.pml]);
-    let depth = (g.z[g.pml] - g.z[0]).max(f64::MIN_POSITIVE);
-    let dz = depth / g.pml.max(1) as f64;
-    let m = 3.0;
-    let sigma_max = 0.8 * (m + 1.0) / (ETA0 * dz);
-    let alpha_max = 2.0 * PI * f_center * EPS0 * 0.05;
-    zs.iter()
-        .map(|&z| {
-            let d = if z < z_lo {
-                (z_lo - z) / depth
-            } else if z > z_hi {
-                (z - z_hi) / depth
-            } else {
-                0.0
-            };
-            if d <= 0.0 {
-                return (1.0, 0.0);
-            }
-            let sigma = sigma_max * d.powf(m);
-            let alpha = alpha_max * (1.0 - d);
-            let b = (-(sigma + alpha) * dt / EPS0).exp();
-            let a = if sigma > 0.0 { sigma / (sigma + alpha) * (b - 1.0) } else { 0.0 };
-            (b, a)
-        })
-        .collect()
-}
-
-/// The Fourier transforms of the TE₁₀ projections at the two planes, accumulated every step.
-struct Recording {
-    d1: Vec<C>,
-    d2: Vec<C>,
-    steps: usize,
-}
-
-/// Steps between checks of whether the transforms have settled.
-const CHECK: usize = 500;
-
-/// One run: launches the pulse and transforms the TE₁₀ projections at the two planes at
-/// `freqs` on the fly. Every [`CHECK`] steps after the pulse, `stop` sees the transforms and
-/// says when they have settled (energy outside the band, near a port's cut-off, may linger
-/// long after; it does not matter).
-fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) -> bool) -> Result<(Recording, f64)> {
-    let (f0, f1) = freqs.iter().fold((f64::INFINITY, 0.0f64), |(a, b), f| (a.min(*f), b.max(*f)));
-    let (nx, ny, nz) = (g.nx(), g.ny(), g.nz());
-    let dx: Vec<f64> = g.x.windows(2).map(|w| w[1] - w[0]).collect();
-    let dy: Vec<f64> = g.y.windows(2).map(|w| w[1] - w[0]).collect();
-    let dz: Vec<f64> = g.z.windows(2).map(|w| w[1] - w[0]).collect();
-    // Dual steps at nodes (half cells at the ends).
-    let dual =
-        |d: &[f64], n: usize| -> Vec<f64> { (0..=n).map(|i| 0.5 * (if i > 0 { d[i - 1] } else { 0.0 } + if i < n { d[i] } else { 0.0 })).collect() };
-    let (dxd, dyd, dzd) = (dual(&dx, nx), dual(&dy, ny), dual(&dz, nz));
-    let min = |d: &[f64]| d.iter().copied().fold(f64::INFINITY, f64::min);
-    let dt = o.courant / (C0 * (1.0 / min(&dx).powi(2) + 1.0 / min(&dy).powi(2) + 1.0 / min(&dz).powi(2)).sqrt());
-
-    let ex = Field::new(nx, ny + 1, nz + 1);
-    let ey = Field::new(nx + 1, ny, nz + 1);
-    let ez = Field::new(nx + 1, ny + 1, nz);
-    let hx = Field::new(nx + 1, ny, nz);
-    let hy = Field::new(nx, ny + 1, nz);
-    let hz = Field::new(nx, ny, nz + 1);
-    // A second-order pole is explicit in time: stable while its frequencies stay well below
-    // 1/Δt (ω₀Δt < 2 and the plasma term likewise; refused well before).
-    for pole in g.poles.iter().flatten() {
-        if let Some(SecondOrder { strength: a, omega0: w0, .. }) = pole.second_order()
-            && !(w0 * dt < 0.5 && a.sqrt() * dt < 0.5)
-        {
-            return Err(FdtdError::Unsupported(format!("a pole too fast for the time step ({dt:e} s): {pole:?}")));
-        }
-    }
-    // Update coefficients: dt/ε per E edge (0 on conductors), dt/μ per H face.
-    let ii = |v: usize| v as isize;
-    // Dispersive edges: each edge's poles, weighted by the share of its cells' area.
-    let mut dispersion = [Dispersion::none(), Dispersion::none(), Dispersion::none()];
-    let any_poles = !g.poles.is_empty();
-    let edge_coef = |cells: [(isize, isize, isize, f64); 4], comp: usize, id: usize, dispersion: &mut [Dispersion; 3]| -> f64 {
-        let mut area = 0.0;
-        let mut eps = 0.0;
-        for (i, j, k, a) in cells {
-            if !g.exists(i, j, k) {
-                return 0.0;
-            }
-            area += a;
-            eps += a * g.layers[k as usize].eps;
-        }
-        let c = dt / (EPS0 * eps / area);
-        if any_poles && cells.iter().any(|(_, _, k, a)| *a > 0.0 && g.layers[*k as usize].disp != NO_POLES) {
-            let d = &mut dispersion[comp];
-            if d.slot_of.is_empty() {
-                d.slot_of = vec![u32::MAX; [ex.len(), ey.len(), ez.len()][comp]];
-            }
-            let start = d.terms.len();
-            for (_, _, k, a) in cells {
-                let l = g.layers[k as usize];
-                if let Some(list) = g.poles.get(l.disp as usize).filter(|_| a > 0.0) {
-                    d.terms.extend(list.iter().map(|p| Term::new(*p, a / area, dt)));
-                }
-            }
-            if let Some(s) = d.slot_of.get_mut(id) {
-                *s = d.slots.len() as u32;
-            }
-            d.slots.push((dt / c, start..d.terms.len()));
-        }
-        c
-    };
-    let mut cex = vec![0.0; ex.len()];
-    for k in 0..=nz {
-        for j in 0..=ny {
-            for i in 0..nx {
-                let a = |jj: usize, kk: usize| dy.get(jj).copied().unwrap_or(0.0) * dz.get(kk).copied().unwrap_or(0.0);
-                let (jm, km) = (j.wrapping_sub(1), k.wrapping_sub(1));
-                let id = ex.at(i, j, k);
-                cex[id] = edge_coef(
-                    [
-                        (ii(i), ii(j) - 1, ii(k) - 1, a(jm, km)),
-                        (ii(i), ii(j), ii(k) - 1, a(j, km)),
-                        (ii(i), ii(j) - 1, ii(k), a(jm, k)),
-                        (ii(i), ii(j), ii(k), a(j, k)),
-                    ],
-                    0,
-                    id,
-                    &mut dispersion,
-                );
-            }
-        }
-    }
-    let mut cey = vec![0.0; ey.len()];
-    for k in 0..=nz {
-        for j in 0..ny {
-            for i in 0..=nx {
-                let a = |ii_: usize, kk: usize| dx.get(ii_).copied().unwrap_or(0.0) * dz.get(kk).copied().unwrap_or(0.0);
-                let (im, km) = (i.wrapping_sub(1), k.wrapping_sub(1));
-                let id = ey.at(i, j, k);
-                cey[id] = edge_coef(
-                    [
-                        (ii(i) - 1, ii(j), ii(k) - 1, a(im, km)),
-                        (ii(i), ii(j), ii(k) - 1, a(i, km)),
-                        (ii(i) - 1, ii(j), ii(k), a(im, k)),
-                        (ii(i), ii(j), ii(k), a(i, k)),
-                    ],
-                    1,
-                    id,
-                    &mut dispersion,
-                );
-            }
-        }
-    }
-    let mut cez = vec![0.0; ez.len()];
-    for k in 0..nz {
-        for j in 0..=ny {
-            for i in 0..=nx {
-                let a = |ii_: usize, jj: usize| dx.get(ii_).copied().unwrap_or(0.0) * dy.get(jj).copied().unwrap_or(0.0);
-                let (im, jm) = (i.wrapping_sub(1), j.wrapping_sub(1));
-                let id = ez.at(i, j, k);
-                cez[id] = edge_coef(
-                    [
-                        (ii(i) - 1, ii(j) - 1, ii(k), a(im, jm)),
-                        (ii(i), ii(j) - 1, ii(k), a(i, jm)),
-                        (ii(i) - 1, ii(j), ii(k), a(im, j)),
-                        (ii(i), ii(j), ii(k), a(i, j)),
-                    ],
-                    2,
-                    id,
-                    &mut dispersion,
-                );
-            }
-        }
-    }
-    // H: μ of the cells on either side of the face (one may be metal).
-    let face_coef = |a: (isize, isize, isize), b: (isize, isize, isize)| -> f64 {
-        let mu: Vec<f64> = [a, b].iter().filter(|c| g.exists(c.0, c.1, c.2)).map(|c| g.layers[c.2 as usize].mu).collect();
-        if mu.is_empty() { 0.0 } else { dt / (MU0 * mu.iter().sum::<f64>() / mu.len() as f64) }
-    };
-    for d in &mut dispersion {
-        d.p = Field::new(d.terms.len(), 1, 1);
-        d.p_prev = Field::new(d.terms.len(), 1, 1);
-    }
-    let [disp_x, disp_y, disp_z] = &dispersion;
-    let mut chx = vec![0.0; hx.len()];
-    for k in 0..nz {
-        for j in 0..ny {
-            for i in 0..=nx {
-                chx[hx.at(i, j, k)] = face_coef((ii(i) - 1, ii(j), ii(k)), (ii(i), ii(j), ii(k)));
-            }
-        }
-    }
-    let mut chy = vec![0.0; hy.len()];
-    for k in 0..nz {
-        for j in 0..=ny {
-            for i in 0..nx {
-                chy[hy.at(i, j, k)] = face_coef((ii(i), ii(j) - 1, ii(k)), (ii(i), ii(j), ii(k)));
-            }
-        }
-    }
-    let mut chz = vec![0.0; hz.len()];
-    for k in 0..=nz {
-        for j in 0..ny {
-            for i in 0..nx {
-                chz[hz.at(i, j, k)] = face_coef((ii(i), ii(j), ii(k) - 1), (ii(i), ii(j), ii(k)));
-            }
-        }
-    }
-    // CPML along z: E at nodes, H at cell centres.
-    let fc = 0.5 * (f0 + f1);
-    let pe = cpml(&g.z, g, dt, fc);
-    let zc: Vec<f64> = g.z.windows(2).map(|w| 0.5 * (w[0] + w[1])).collect();
-    let ph = cpml(&zc, g, dt, fc);
-    let psi_ex = scratch(&ex); // ∂Hy/∂z in Ex
-    let psi_ey = scratch(&ey); // ∂Hx/∂z in Ey
-    let psi_hx = scratch(&hx); // ∂Ey/∂z in Hx
-    let psi_hy = scratch(&hy); // ∂Ex/∂z in Hy
-
-    // Source and projections: the TE₁₀ profile of the planes' apertures.
-    // The TE₁₀ profile sin(π(x − x0)/a) on the aperture of a layer (zero outside it, across y too).
-    let profile = |k_layer: usize| -> Vec<f64> {
-        let l = g.layers[k_layer.min(g.layers.len() - 1)];
-        let mut w = vec![0.0; (nx + 1) * ny];
-        for j in 0..ny {
-            let yc = 0.5 * (g.y[j] + g.y[j + 1]);
-            if !(yc > l.y0 && yc < l.y0 + l.height) {
-                continue;
-            }
-            for (i, &x) in g.x.iter().enumerate() {
-                if x > l.x0 && x < l.x0 + l.width {
-                    w[i + (nx + 1) * j] = (PI * (x - l.x0) / l.width).sin();
-                }
-            }
-        }
-        w
-    };
-    let w_src = profile(g.source);
-    let w1 = profile(g.plane1);
-    let w2 = profile(g.plane2.saturating_sub(1));
-    let project = |ey: &Field, k: usize, w: &[f64]| -> f64 {
-        let mut s = 0.0;
-        for j in 0..ny {
-            for i in 0..=nx {
-                s += ey.get(ey.at(i, j, k)) * w[i + (nx + 1) * j] * dxd[i] * dy[j];
-            }
-        }
-        s
-    };
-    // Gaussian-modulated pulse over [f0, f1], its spectrum down to 1e-4 at the ports' TE₁₀
-    // cut-off: energy there travels ever more slowly and would linger in the feeds.
-    let bw = (f1 - f0).max(1e-3 * fc);
-    let cutoff = g.layers.iter().map(|l| C0 / (2.0 * l.width * (l.eps * l.mu).sqrt())).fold(0.0f64, f64::max);
-    let cutoff = [g.layers[g.plane1.min(g.layers.len() - 1)], g.layers[g.plane2.saturating_sub(1)]]
-        .iter()
-        .map(|l| C0 / (2.0 * l.width * (l.eps * l.mu).sqrt()))
-        .fold(0.0f64, f64::max)
-        .min(cutoff);
-    let mut tau = 1.5 / (PI * 0.5 * bw);
-    if fc > 1.01 * cutoff {
-        tau = tau.max((1e4f64).ln().sqrt() / (PI * (fc - cutoff)));
-    }
-    let t0 = 4.0 * tau;
-    // Checks begin once the slowest in-band wave has crossed the grid three times.
-    let v_min = g
-        .layers
-        .iter()
-        .filter_map(|l| {
-            let fc_l = C0 / (2.0 * l.width * (l.slow * l.mu).sqrt());
-            (f0 > fc_l).then(|| C0 / (l.slow * l.mu).sqrt() * (1.0 - (fc_l / f0).powi(2)).sqrt())
-        })
-        .fold(C0, f64::min);
-    let t_min = t0 + 4.0 * tau + 3.0 * (g.z[nz] - g.z[0]) / v_min;
-    let mut rec = Recording { d1: vec![C::new(0.0, 0.0); freqs.len()], d2: vec![C::new(0.0, 0.0); freqs.len()], steps: 0 };
-    // Running transforms: phasors e^{−jωt} advanced each step.
-    let advance: Vec<C> = freqs.iter().map(|f| C::from_polar(1.0, -2.0 * PI * f * dt)).collect();
-    let mut phasor = advance.clone();
-    // Threads own slabs of z nodes, for the whole run.
-    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16).min((nz + 1) / 4).max(1);
-    let ranges: Vec<std::ops::Range<usize>> = (0..threads).map(|t| t * (nz + 1) / threads..(t + 1) * (nz + 1) / threads).collect();
-    let barrier = Barrier::new(threads);
-    let done = AtomicBool::new(false);
-    let failed = AtomicBool::new(false);
-    let fields = (&ex, &ey, &ez, &hx, &hy, &hz);
-    let half_steps = |ks: &std::ops::Range<usize>| {
-        let (ex, ey, ez, hx, hy, hz) = fields;
-        // H half step on this thread's slabs.
-        for k in ks.clone().filter(|&k| k < nz) {
-            let (bh, ah) = ph[k];
-            for j in 0..ny {
-                for i in 0..=nx {
-                    let id = hx.at(i, j, k);
-                    let c = chx[id];
-                    if c == 0.0 {
-                        continue;
-                    }
-                    let dez_dy = (ez.get(ez.at(i, j + 1, k)) - ez.get(ez.at(i, j, k))) / dy[j];
-                    let dey_dz = (ey.get(ey.at(i, j, k + 1)) - ey.get(ey.at(i, j, k))) / dz[k];
-                    let psi = bh * psi_hx.get(id) + ah * dey_dz;
-                    psi_hx.set(id, psi);
-                    hx.set(id, hx.get(id) - c * (dez_dy - dey_dz - psi));
-                }
-            }
-            for j in 0..=ny {
-                for i in 0..nx {
-                    let id = hy.at(i, j, k);
-                    let c = chy[id];
-                    if c == 0.0 {
-                        continue;
-                    }
-                    let dex_dz = (ex.get(ex.at(i, j, k + 1)) - ex.get(ex.at(i, j, k))) / dz[k];
-                    let dez_dx = (ez.get(ez.at(i + 1, j, k)) - ez.get(ez.at(i, j, k))) / dx[i];
-                    let psi = bh * psi_hy.get(id) + ah * dex_dz;
-                    psi_hy.set(id, psi);
-                    hy.set(id, hy.get(id) - c * (dex_dz + psi - dez_dx));
-                }
-            }
-        }
-        for k in ks.clone() {
-            for j in 0..ny {
-                for i in 0..nx {
-                    let id = hz.at(i, j, k);
-                    let c = chz[id];
-                    if c == 0.0 {
-                        continue;
-                    }
-                    let dey_dx = (ey.get(ey.at(i + 1, j, k)) - ey.get(ey.at(i, j, k))) / dx[i];
-                    let dex_dy = (ex.get(ex.at(i, j + 1, k)) - ex.get(ex.at(i, j, k))) / dy[j];
-                    hz.set(id, hz.get(id) - c * (dey_dx - dex_dy));
-                }
-            }
-        }
-        barrier.wait();
-        // E full step (interior nodes; edges on conductors have zero coefficients).
-        for k in ks.clone().filter(|&k| k >= 1 && k < nz) {
-            let (be, ae) = pe[k];
-            for j in 1..ny {
-                for i in 0..nx {
-                    let id = ex.at(i, j, k);
-                    let c = cex[id];
-                    if c == 0.0 {
-                        continue;
-                    }
-                    let dhz_dy = (hz.get(hz.at(i, j, k)) - hz.get(hz.at(i, j - 1, k))) / dyd[j];
-                    let dhy_dz = (hy.get(hy.at(i, j, k)) - hy.get(hy.at(i, j, k - 1))) / dzd[k];
-                    let psi = be * psi_ex.get(id) + ae * dhy_dz;
-                    psi_ex.set(id, psi);
-                    let (e, curl) = (ex.get(id), dhz_dy - dhy_dz - psi);
-                    ex.set(id, disp_x.step(id, e, curl, dt).unwrap_or(e + c * curl));
-                }
-            }
-            for j in 0..ny {
-                for i in 1..nx {
-                    let id = ey.at(i, j, k);
-                    let c = cey[id];
-                    if c == 0.0 {
-                        continue;
-                    }
-                    let dhx_dz = (hx.get(hx.at(i, j, k)) - hx.get(hx.at(i, j, k - 1))) / dzd[k];
-                    let dhz_dx = (hz.get(hz.at(i, j, k)) - hz.get(hz.at(i - 1, j, k))) / dxd[i];
-                    let psi = be * psi_ey.get(id) + ae * dhx_dz;
-                    psi_ey.set(id, psi);
-                    let (e, curl) = (ey.get(id), dhx_dz + psi - dhz_dx);
-                    ey.set(id, disp_y.step(id, e, curl, dt).unwrap_or(e + c * curl));
-                }
-            }
-        }
-        for k in ks.clone().filter(|&k| k < nz) {
-            for j in 1..ny {
-                for i in 1..nx {
-                    let id = ez.at(i, j, k);
-                    let c = cez[id];
-                    if c == 0.0 {
-                        continue;
-                    }
-                    let dhy_dx = (hy.get(hy.at(i, j, k)) - hy.get(hy.at(i - 1, j, k))) / dxd[i];
-                    let dhx_dy = (hx.get(hx.at(i, j, k)) - hx.get(hx.at(i, j - 1, k))) / dyd[j];
-                    let (e, curl) = (ez.get(id), dhy_dx - dhx_dy);
-                    ez.set(id, disp_z.step(id, e, curl, dt).unwrap_or(e + c * curl));
-                }
-            }
-        }
-        barrier.wait();
-    };
-    std::thread::scope(|scope| {
-        for ks in ranges.iter().skip(1) {
-            let (half_steps, barrier, done) = (&half_steps, &barrier, &done);
-            scope.spawn(move || {
-                loop {
-                    half_steps(ks);
-                    // Thread 0 adds the source and records.
-                    barrier.wait();
-                    if done.load(Ordering::Relaxed) {
-                        break;
-                    }
-                }
-            });
-        }
-        let ks0 = ranges.first().cloned().unwrap_or(0..0);
-        for n in 0..o.max_steps {
-            half_steps(&ks0);
-            let t = (n + 1) as f64 * dt;
-            let s = (-((t - t0) / tau).powi(2)).exp() * (2.0 * PI * fc * (t - t0)).sin();
-            for j in 0..ny {
-                for i in 0..=nx {
-                    let id = ey.at(i, j, g.source);
-                    if cey[id] != 0.0 {
-                        ey.set(id, ey.get(id) + s * w_src[i + (nx + 1) * j]);
-                    }
-                }
-            }
-            let (v1, v2) = (project(&ey, g.plane1, &w1), project(&ey, g.plane2, &w2));
-            for ((p, a), (d1, d2)) in phasor.iter_mut().zip(&advance).zip(rec.d1.iter_mut().zip(rec.d2.iter_mut())) {
-                *d1 += *p * v1;
-                *d2 += *p * v2;
-                *p *= a;
-            }
-            rec.steps = n + 1;
-            let check = (n + 1) % CHECK == 0 && t > t_min;
-            let finished = n + 1 == o.max_steps || (check && stop(&rec.d1, &rec.d2));
-            if !(v1.is_finite() && v2.is_finite()) {
-                failed.store(true, Ordering::Relaxed);
-            }
-            if finished || failed.load(Ordering::Relaxed) {
-                done.store(true, Ordering::Relaxed);
-            }
-            barrier.wait();
-            if done.load(Ordering::Relaxed) {
-                break;
-            }
-        }
-    });
-    if failed.load(Ordering::Relaxed) {
-        return Err(invalid("run", "the fields diverged"));
-    }
-    Ok((rec, dt))
-}
-
 /// The broadband S-parameters (port 1 excited) of the model's guide at `frequencies` (Hz).
 pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<TdResult> {
     if !(o.cell.is_finite() && o.cell > 0.0) {
@@ -825,66 +126,112 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
         return Err(FdtdError::Unsupported("layers and strips in the time domain (its ports carry TE10 only)".into()));
     }
     // Every frequency above both ports' TE₁₀ cut-off, checked before any run.
-    for (i, &f) in [0, w.sections.len() - 1].iter().flat_map(|i| frequencies.iter().map(move |f| (*i, f))) {
-        let (x0w, s) = (w.aperture(i).map_or(w.width, |a| a.width), &w.sections[i]);
-        let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
-        if f <= C0 / (2.0 * x0w * (m.eps_r * m.mu_r).sqrt()) {
-            return Err(invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off")));
+    let below = |f: f64| invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off"));
+    let port = |i: usize| -> Result<PortGuide> {
+        let p = PortGuide::new(model, w, i)?;
+        match frequencies.iter().find(|&&f| f <= p.cutoff()) {
+            Some(&f) => Err(below(f)),
+            None => Ok(p),
         }
-    }
-    // The transforms have settled when no frequency moved by more than `decay` of the incident
-    // wave's largest since the last check.
-    let settled = |last: &mut Option<(Vec<C>, Vec<C>)>, d1: &[C], d2: &[C], scale: f64| -> bool {
-        let moved = last.as_ref().map(|(p1, p2)| {
-            let m1 = p1.iter().zip(d1).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
-            let m2 = p2.iter().zip(d2).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
-            m1.max(m2)
-        });
-        *last = Some((d1.to_vec(), d2.to_vec()));
-        moved.is_some_and(|m| m <= o.decay * scale)
     };
+    let (p1, p2) = (port(0)?, port(w.sections.len().saturating_sub(1))?);
     // The incident run: the port-1 guide throughout.
-    let gr = grid(model, o, true, frequencies)?;
-    let mut last = None;
-    let (reference, dt) = run(&gr, o, frequencies, |d1, _| {
-        let scale = d1.iter().fold(0.0f64, |m, c| m.max(c.norm()));
-        settled(&mut last, d1, &[], scale)
-    })?;
-    let scale = reference.d1.iter().fold(0.0f64, |m, c| m.max(c.norm()));
-    let g = grid(model, o, false, frequencies)?;
-    let mut last = None;
+    let gr = Grid::new(model, o, true, frequencies)?;
+    let mut settling = Settling::new(o.decay);
+    let (reference, dt) = run(&gr, o, frequencies, |d1, _| settling.settled(d1, &[], peak(d1)))?;
+    let scale = peak(&reference.d1);
+    let g = Grid::new(model, o, false, frequencies)?;
+    let mut settling = Settling::new(o.decay);
     let mut converged = false;
     let (dut, dt2) = run(&g, o, frequencies, |d1, d2| {
-        converged = settled(&mut last, d1, d2, scale);
+        converged = settling.settled(d1, d2, scale);
         converged
     })?;
     if (dt - dt2).abs() > 1e-12 * dt {
         return Err(invalid("grid", "the incident and device runs differ in time step"));
     }
-    // Power waves: amplitude = V/‖e‖ (‖e‖ = width·height/2), power ∝ ‖e‖ β/μ.
-    let (a1, a2) = (w.aperture(0).map_or(w.width, |a| a.width), w.aperture(w.sections.len() - 1).map_or(w.width, |a| a.width));
-    let (h1, h2) = (w.aperture_y(0).map_or(w.height, |a| a.width), w.aperture_y(w.sections.len() - 1).map_or(w.height, |a| a.width));
-    let port = |i: usize| model.material(&w.sections[i].material).map(|(_, m)| (m.eps_r, m.mu_r)).map_err(|e| invalid("material", e.to_string()));
-    let ((e1, m1), (e2, m2)) = (port(0)?, port(w.sections.len() - 1)?);
+    // Power waves: amplitude = V/‖e‖, power ∝ ‖e‖ β/μ.
     let mut s11 = Vec::new();
     let mut s21 = Vec::new();
     for (fi, &f) in frequencies.iter().enumerate() {
-        let k0 = 2.0 * PI * f / C0;
-        let beta = |a: f64, e: f64, m: f64| (k0 * k0 * e * m - (PI / a).powi(2)).max(0.0).sqrt();
-        let (b1, b2) = (beta(a1, e1, m1), beta(a2, e2, m2));
+        let (b1, b2) = (p1.beta(f), p2.beta(f));
         if b1 == 0.0 || b2 == 0.0 {
-            return Err(invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off")));
+            return Err(below(f));
         }
         let inc = reference.d1[fi];
         // The transform is linear: the reflected wave's is the difference of the two runs'.
         let refl = dut.d1[fi] - inc;
         let trans = dut.d2[fi];
         s11.push(refl / inc);
-        // Amplitudes: V/‖e‖, ‖e‖ = a h/2; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)).
-        let (n1, n2) = (0.5 * a1 * h1, 0.5 * a2 * h2);
+        // Amplitudes: V/‖e‖; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)).
+        let (n1, n2) = (p1.norm(), p2.norm());
         let amp = (trans / n2) / (inc / n1);
-        s21.push(amp * ((n2 * b2 / m2) / (n1 * b1 / m1)).sqrt());
+        s21.push(amp * ((n2 * b2 / p2.mu) / (n1 * b1 / p1.mu)).sqrt());
     }
-    let cells = g.nx() * g.ny() * g.nz();
-    Ok(TdResult { frequencies: frequencies.to_vec(), s11, s21, cells, dt, steps: dut.steps, reference_steps: reference.steps, converged })
+    Ok(TdResult { frequencies: frequencies.to_vec(), s11, s21, cells: g.cells(), dt, steps: dut.steps, reference_steps: reference.steps, converged })
+}
+
+/// A port's guide: its aperture across x and y and its material.
+struct PortGuide {
+    width: f64,
+    height: f64,
+    eps: f64,
+    mu: f64,
+}
+
+impl PortGuide {
+    /// The guide of section `i`.
+    fn new(model: &Model, w: &Waveguide, i: usize) -> Result<PortGuide> {
+        let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
+        let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
+        let width = w.aperture(i).map_or(w.width, |a| a.width);
+        let height = w.aperture_y(i).map_or(w.height, |a| a.width);
+        Ok(PortGuide { width, height, eps: m.eps_r, mu: m.mu_r })
+    }
+
+    /// The TE₁₀ cut-off frequency.
+    fn cutoff(&self) -> f64 {
+        C0 / (2.0 * self.width * (self.eps * self.mu).sqrt())
+    }
+
+    /// The TE₁₀ propagation constant at `f` (0 below cut-off).
+    fn beta(&self, f: f64) -> f64 {
+        let k0 = 2.0 * PI * f / C0;
+        (k0 * k0 * self.eps * self.mu - (PI / self.width).powi(2)).max(0.0).sqrt()
+    }
+
+    /// The TE₁₀ profile's norm ‖e‖ = width·height/2.
+    fn norm(&self) -> f64 {
+        0.5 * self.width * self.height
+    }
+}
+
+/// The largest magnitude of a transform.
+fn peak(d: &[C]) -> f64 {
+    d.iter().fold(0.0f64, |m, c| m.max(c.norm()))
+}
+
+/// Whether a run's transforms have settled: no frequency moved by more than `decay` of the
+/// incident wave's largest since the last check.
+struct Settling {
+    decay: f64,
+    last: Option<(Vec<C>, Vec<C>)>,
+}
+
+impl Settling {
+    fn new(decay: f64) -> Settling {
+        Settling { decay, last: None }
+    }
+
+    /// Checks the transforms at the two planes against the last check's, `scale` the incident
+    /// wave's largest.
+    fn settled(&mut self, d1: &[C], d2: &[C], scale: f64) -> bool {
+        let moved = self.last.as_ref().map(|(p1, p2)| {
+            let m1 = p1.iter().zip(d1).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
+            let m2 = p2.iter().zip(d2).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
+            m1.max(m2)
+        });
+        self.last = Some((d1.to_vec(), d2.to_vec()));
+        moved.is_some_and(|m| m <= self.decay * scale)
+    }
 }
