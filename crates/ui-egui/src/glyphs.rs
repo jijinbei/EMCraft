@@ -126,6 +126,28 @@ pub fn paint(p: &Painter, r: Rect, name: &str, ink: Color32, accent: Color32) {
             pen.closed(&[(0.3, 0.18), (0.78, 0.45), (0.3, 0.72)], bold);
             pen.open(&[(0.1, 0.88), (0.9, 0.88)], line);
         }
+        // A named value: a dimension line between two ticks, its value a slider's knob.
+        "variable" => {
+            pen.open(&[(0.14, 0.3), (0.14, 0.7)], line);
+            pen.open(&[(0.86, 0.3), (0.86, 0.7)], line);
+            pen.open(&[(0.14, 0.5), (0.86, 0.5)], line);
+            p.circle_filled(pen.at(0.58, 0.5), 0.1 * s, accent);
+            pen.open(&[(0.3, 0.82), (0.7, 0.82)], bold);
+        }
+        // A family of curves, one per value of a variable.
+        "param_sweep" => {
+            pen.open(&[(0.1, 0.9), (0.9, 0.9)], line);
+            pen.open(&[(0.1, 0.9), (0.1, 0.1)], line);
+            pen.open(&[(0.18, 0.75), (0.4, 0.6), (0.62, 0.55), (0.88, 0.25)], line);
+            pen.open(&[(0.18, 0.62), (0.4, 0.45), (0.62, 0.42), (0.88, 0.15)], bold);
+            pen.open(&[(0.18, 0.82), (0.4, 0.74), (0.62, 0.7), (0.88, 0.45)], line);
+        }
+        // A valley with the point found at its bottom.
+        "optimize" => {
+            pen.open(&[(0.08, 0.2), (0.3, 0.62), (0.5, 0.78), (0.7, 0.62), (0.92, 0.2)], line);
+            p.circle_filled(pen.at(0.5, 0.78), 0.09 * s, accent);
+            pen.open(&[(0.2, 0.92), (0.8, 0.92)], bold);
+        }
         // A resonance peak.
         "eigen" => {
             pen.open(&[(0.08, 0.85), (0.3, 0.8), (0.42, 0.65), (0.5, 0.15), (0.58, 0.65), (0.7, 0.8), (0.92, 0.85)], bold);
@@ -441,6 +463,10 @@ pub fn for_command(id: &str) -> &'static str {
         "file.open" => "open_file",
         "file.save" => "save",
         "model.summary" => "summary",
+        "project.variable" | "project.variable.delete" | "project.variables" => "variable",
+        "study.sweep" => "param_sweep",
+        "study.optimize" => "optimize",
+        "view.study" => "chart",
         _ => "",
     }
 }

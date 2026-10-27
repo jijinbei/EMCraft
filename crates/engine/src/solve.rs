@@ -21,7 +21,11 @@ fn frequencies(s: &Session, p: &Params) -> Result<Vec<f64>> {
             .required()?
             .iter()
             .map(|v| {
-                v.as_f64().filter(|f| f.is_finite() && *f > 0.0).map(|f| unit.to_si(f)).ok_or_else(|| p.error("frequencies", "must be numbers > 0"))
+                p.number_of("frequencies", v)
+                    .ok()
+                    .filter(|f| *f > 0.0)
+                    .map(|f| unit.to_si(f))
+                    .ok_or_else(|| p.error("frequencies", "must be numbers > 0"))
             })
             .collect::<Result<Vec<f64>>>()?
     } else {

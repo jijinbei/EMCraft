@@ -96,6 +96,12 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             let converged = if r.flag("converged") { "converged" } else { "not converged" };
             format!("Adaptive mesh: {} passes, {tets} tetrahedra, last ΔS {last}, {converged}.", passes.len())
         }
+        "project.variable" => format!("{} = {}.", p.text("name"), r.num("value")),
+        "project.variable.delete" => format!("Deleted variable {}.", p.text("name")),
+        "study.sweep" | "study.optimize" => match session.results.study.as_ref() {
+            Some(study) => format!("{}.", crate::viewport::study_summary(study)),
+            None => format!("{} done.", label(id)),
+        },
         other => format!("{} done.", label(other)),
     }
 }

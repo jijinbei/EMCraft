@@ -1,0 +1,16 @@
+{
+ "title": "Parameter sweep: the high-pass filter's empty middle section 10, 20 and 30 mm long, each length rebuilt, meshed and solved from the history",
+ "kind": "theory",
+ "source": "Cascade of TE10 transmission lines of one cross-section (evanescent below cut-off), ABCD matrices: D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3 and §4.4; evaluated separately for each length",
+ "quantities": [
+  {"id": "s21_db_l10_6", "quantity": "|S21| at 6 GHz, l = 10 mm (dB)", "measure": {"step": "sweep", "pointer": "/rows/0/points/0/s21/db"}, "value": -1.8838257778407637, "tolerance": {"absolute": 0.01}, "reason": "second-order elements of 3 mm, every interface a grid plane: within about 1e-3 dB, as the high-pass filter's own case"},
+  {"id": "s21_db_l10_8", "quantity": "|S21| at 8 GHz, l = 10 mm (dB)", "measure": {"step": "sweep", "pointer": "/rows/0/points/1/s21/db"}, "value": -1.4150286436057755, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_l20_6", "quantity": "|S21| at 6 GHz, l = 20 mm (dB)", "measure": {"step": "sweep", "pointer": "/rows/1/points/0/s21/db"}, "value": -5.922908126121244, "tolerance": {"absolute": 0.01}, "reason": "the high-pass filter itself: the same value as its case"},
+  {"id": "s21_db_l20_8", "quantity": "|S21| at 8 GHz, l = 20 mm (dB)", "measure": {"step": "sweep", "pointer": "/rows/1/points/1/s21/db"}, "value": -1.7782665483443207, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_l30_6", "quantity": "|S21| at 6 GHz, l = 30 mm, deeper below the cut-off's tunnelling (dB)", "measure": {"step": "sweep", "pointer": "/rows/2/points/0/s21/db"}, "value": -10.540513277250607, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_l30_8", "quantity": "|S21| at 8 GHz, l = 30 mm (dB)", "measure": {"step": "sweep", "pointer": "/rows/2/points/1/s21/db"}, "value": -0.16159364096164508, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s11_db_l10_8", "quantity": "|S11| at 8 GHz, l = 10 mm (dB)", "measure": {"step": "sweep", "pointer": "/rows/0/points/1/s11/db"}, "value": -5.5585117560843855, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s11_db_l30_8", "quantity": "|S11| at 8 GHz, l = 30 mm, near a reflection dip (dB)", "measure": {"step": "sweep", "pointer": "/rows/2/points/1/s11/db"}, "value": -14.374146746236496, "tolerance": {"absolute": 0.02}, "reason": "a dip is the most sensitive point: a few 1e-3 dB"},
+  {"id": "s21_phase_l30_8", "quantity": "phase of S21 at 8 GHz, l = 30 mm (degrees)", "measure": {"step": "sweep", "pointer": "/rows/2/points/1/s21/deg"}, "value": -133.6862361060668, "tolerance": {"absolute": 0.1}, "reason": "the phase accumulates over 60 mm of line: a few 0.01°"}
+ ]
+}

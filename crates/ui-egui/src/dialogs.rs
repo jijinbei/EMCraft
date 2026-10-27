@@ -3,7 +3,9 @@
 //! known values, a check box per boolean, coordinate fields for points and directions, a table for
 //! lists of records (a waveguide's sections, layers and strips), a list field for lists of
 //! numbers, and a JSON field for anything else. OK builds the command's JSON parameters and runs
-//! the command; a field that does not parse is marked and nothing runs.
+//! the command; a field that does not parse is marked and nothing runs. Any number may instead be
+//! an expression of the project's variables, starting with `=` (`=w/2`): it goes to the engine
+//! as written, which evaluates it and keeps it in the history.
 //!
 //! Dialogs are only a way to write parameters: programmatic calls (`engine.execute`, scripts)
 //! never open them.
@@ -105,6 +107,7 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         }
         (_, "material") => return Kind::Choice(session.model.materials.iter().map(|m| m.name.clone()).collect()),
         (_, "excitation") => return Kind::Choice(session.model.ports.iter().map(|p| p.name.clone()).collect()),
+        ("study.sweep", "variable") | ("project.variable.delete", "name") => return Kind::Choice(session.variables.keys().cloned().collect()),
         ("results.probe", "at") => return Kind::Json,
         (_, "size" | "at" | "direction" | "polarization" | "from" | "to") if p.kind == emcraft_engine::Kind::Array => return Kind::Vector(XYZ),
         (_, "face") => return Kind::Vector(FACE),
@@ -291,6 +294,19 @@ impl Dialog {
     }
 }
 
+/// A number field's value: a finite number, or an expression of the variables (`=w/2`) passed
+/// on as written for the engine to evaluate.
+pub fn numeric(text: &str) -> Result<Value, String> {
+    let t = text.trim();
+    if t.starts_with('=') {
+        if t.len() > emcraft_engine::expr::MAX_LEN + 1 {
+            return Err(format!("an expression holds at most {} characters", emcraft_engine::expr::MAX_LEN));
+        }
+        return Ok(json!(t));
+    }
+    parse_number(t).map(number_value)
+}
+
 /// A finite number from a field's text.
 pub fn parse_number(text: &str) -> Result<f64, String> {
     let t = text.trim();
@@ -310,13 +326,16 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             if empty {
                 return Ok(None);
             }
-            number_value(parse_number(&f.text)?)
+            numeric(&f.text)?
         }
         Kind::Integer => {
             if empty {
                 return Ok(None);
             }
             let t = f.text.trim();
+            if t.starts_with('=') {
+                return numeric(t).map(Some);
+            }
             json!(t.parse::<i64>().map_err(|_| format!("`{}` is not a whole number", t.chars().take(40).collect::<String>()))?)
         }
         Kind::Text | Kind::Choice(_) => {
@@ -330,7 +349,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             if f.parts.iter().all(|p| p.trim().is_empty()) {
                 return Ok(None);
             }
-            let v = f.parts.iter().map(|p| parse_number(p).map(number_value)).collect::<Result<Vec<_>, _>>()?;
+            let v = f.parts.iter().map(|p| numeric(p)).collect::<Result<Vec<_>, _>>()?;
             Value::Array(v)
         }
         Kind::Numbers => {
@@ -338,7 +357,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
                 return Ok(None);
             }
             let list = f.text.split([',', ' ', ';']).filter(|s| !s.trim().is_empty()).take(100_000);
-            Value::Array(list.map(|p| parse_number(p).map(number_value)).collect::<Result<Vec<_>, _>>()?)
+            Value::Array(list.map(numeric).collect::<Result<Vec<_>, _>>()?)
         }
         Kind::Table(cols) => {
             if f.rows.is_empty() {
@@ -356,7 +375,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
                         continue;
                     }
                     let v = match c.cell {
-                        Cell::Number => number_value(parse_number(cell).map_err(|e| format!("row {}, {}: {e}", i + 1, c.name))?),
+                        Cell::Number => numeric(cell).map_err(|e| format!("row {}, {}: {e}", i + 1, c.name))?,
                         Cell::Material => json!(cell),
                     };
                     o.insert(c.name.to_owned(), v);
@@ -462,6 +481,39 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "results.compare" => json!({"modes": 160}),
         "file.sample" => json!({"name": "highpass", "solve": true}),
         "units.set" => json!({"length": l.symbol(), "frequency": s.display.frequency.symbol()}),
+        "project.variable" => {
+            let name = ["l", "w", "h", "d", "er"].into_iter().map(str::to_owned).find(|n| !s.variables.contains_key(n));
+            json!({"name": name.unwrap_or_else(|| format!("v{}", s.variables.len() + 1)), "value": 10})
+        }
+        "project.variable.delete" => json!({"name": s.variables.keys().next()}),
+        "study.sweep" | "study.optimize" => {
+            let (name, v) = s.variables.iter().next().map_or((None, 1.0), |(n, v)| (Some(n.clone()), *v));
+            let spread = |k: f64| if v == 0.0 { k } else { v * (1.0 + k) };
+            let (solve, goal) = if s.model.open.is_some() {
+                (
+                    json!({"command": "solve.radiation", "params": initial("solve.radiation", s)}),
+                    json!({"type": "maximize", "quantity": "radiated_power"}),
+                )
+            } else if s.model.ports.is_empty() {
+                let near = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
+                (
+                    json!({"command": "solve.eigenmodes", "params": {"near": near, "count": 3, "order": 2}}),
+                    json!({"type": "eigenfrequency", "mode": 1, "target": near}),
+                )
+            } else {
+                let (a, z) = band.unwrap_or((8.0, 12.0));
+                (
+                    json!({"command": "solve.frequency", "params": {"start": a, "stop": z, "points": 11, "order": 2}}),
+                    json!({"type": "min_max_db", "parameter": "s11"}),
+                )
+            };
+            if command == "study.sweep" {
+                json!({"variable": name, "start": spread(-0.2), "stop": spread(0.2), "points": 5, "solve": solve})
+            } else {
+                json!({"variables": [{"name": name, "min": spread(-0.5), "max": spread(0.5)}], "goal": goal, "solve": solve, "max_evaluations": 40})
+            }
+        }
+        "view.study" => json!({"path": "study.png"}),
         _ => json!({}),
     }
 }

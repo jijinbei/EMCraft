@@ -103,5 +103,8 @@ pub fn is_long(id: &str) -> bool {
                 | "results.compare"
                 | "results.field_error"
                 | "results.far_field"
+                | "project.variable"
+                | "study.sweep"
+                | "study.optimize"
         )
 }

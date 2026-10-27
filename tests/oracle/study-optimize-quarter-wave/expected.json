@@ -1,0 +1,9 @@
+{
+ "title": "Optimization: the length of a quarter-wave matching section between an empty WR-90 guide and one filled with εr = 2.2, found by Nelder–Mead from 8 mm",
+ "kind": "theory",
+ "source": "Quarter-wave transformer: D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §2.5 and §5.4, with TE10 wave impedances Z = ωμ/β (§3.3); the section's εr makes β_m = √(β₁β₃), so Z_m = √(Z₁Z₃) and the reflection vanishes at l = π/(2β_m) = λg/4. The simplex: J. A. Nelder and R. Mead, Comput. J. 7(4):308–313, 1965",
+ "quantities": [
+  {"id": "length", "quantity": "the optimum's length of the matching section (mm)", "measure": {"step": "optimize", "pointer": "/best/values/0"}, "value": 11.132600374720626, "tolerance": {"absolute": 0.03}, "reason": "the simplex stops within 1e-3 of the 14 mm range (0.014 mm); second-order elements of 3 mm put the section's β within about 1e-4: measured 0.002 mm"},
+  {"id": "s11_at_optimum", "quantity": "|S11| at 8 GHz of the model the optimization leaves", "measure": {"step": "at_optimum", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 1e-3}, "reason": "matched: the model is left at the optimum (about 1e-4, the discretization's own reflection)"}
+ ]
+}

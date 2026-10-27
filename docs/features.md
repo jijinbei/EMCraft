@@ -527,6 +527,66 @@ Replaces the session with a sample model (`highpass`: the waveguide high-pass fi
 | `name` | string |  | yes | sample name |
 | `solve` | boolean |  | no | run the sample's sweep (default false) |
 
+## `project.variable` — Variable
+
+Defines a named variable, or changes one. Any number parameter of a later command may be an expression of variables, a string starting with `=`: `"=w"`, `"=w/2 + 1"`, `"=sqrt(er)*pi"` (+ − * / ^, parentheses, `pi`, sqrt, abs, sin, cos, tan, exp, ln); its value reads as the literal it stands for, in the parameter's display unit. The history keeps the expressions: changing a variable replays the commands with its new value and rebuilds the model (the mesh too); undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the variable's name: a letter or `_`, then letters, digits or `_` |
+| `value` | number |  | yes | its value, a plain number (or an expression of the variables defined before it) |
+
+## `project.variable.delete` — Delete variable
+
+Removes a variable no command refers to.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the variable |
+
+## `project.variables` — Variables
+
+The project's variables: each one's value, the expression that defines it (when it is one) and how many commands use it.
+
+No parameters.
+
+## `study.sweep` — Parameter sweep
+
+Sweeps a variable: for each value the model is rebuilt from the history with it (meshed when the history meshes), solved by `solve` (`{"command": "solve.frequency", "params": {…}}`, any solve command) and its results collected: S-parameters at the solve's frequencies, eigenmodes' frequencies, the solve's other numbers. The session's model is left as it was. A point that cannot be built or solved is reported in its row; cancelling stops at the next point.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `variable` | string |  | yes | the variable swept |
+| `values` | array |  | no | its values (at most 101) |
+| `start` | number |  | no | the first value (without `values`) |
+| `stop` | number |  | no | the last value |
+| `points` | integer |  | no | values from start to stop (default 5, at most 101) |
+| `solve` | object |  | yes | the solve at each point: {"command", "params"} |
+| `outputs` | array |  | no | the S-parameters kept, such as ["s11", "s21"] (default all) |
+
+## `study.optimize` — Optimize
+
+Finds the variables' values within their bounds that minimize a goal, by the Nelder–Mead simplex (Comput. J. 7(4):308–313, 1965) on the range scaled to [0, 1], from the current values; each point is the model rebuilt from the history and solved by `solve`. Goals (`type`): `min_max_db` (the largest |S| over the frequencies, default s11: a reflection), `max_min_db` (the smallest |S|, default s21: a transmission), `target_db` (|S| at `target` dB), `eigenfrequency` (mode `mode`, default 1, at `target` in display units), `maximize` or `minimize` (a number the solve gives: `quantity`). The model is left at the best point (undo goes back); every evaluation is kept.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `variables` | array |  | yes | the variables varied: [{"name", "min", "max"}] (at most 8) |
+| `goal` | object |  | yes | what to minimize: {"type", "parameter", "target", "mode", "quantity"} |
+| `solve` | object |  | yes | the solve at each point: {"command", "params"} |
+| `max_evaluations` | integer |  | no | the most solves (default 50, at most 500) |
+| `tolerance` | number |  | no | the simplex's size at which it stops, a share of each range (default 1e-3) |
+
+## `view.study` — Study chart
+
+Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve per value (against the value when it solved one frequency), or its eigenmodes against the value; an optimization's goal at each solve and the best so far.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | PNG file to write |
+| `parameter` | string |  | no | the S-parameter of a sweep, such as s21 (default the first) |
+| `width` | integer |  | no | pixels (default 1000) |
+| `height` | integer |  | no | pixels (default 600) |
+
 ## `model.summary` — Summary
 
 The model, mesh and results in brief.

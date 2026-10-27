@@ -59,11 +59,23 @@ pub enum View {
     FarField,
     Compare,
     Eigenmodes,
+    /// The last parameter study: a sweep's curves or an optimization's progress.
+    Study,
 }
 
 impl View {
-    pub const ALL: [View; 9] =
-        [View::Model, View::Outline, View::SParameters, View::Tdr, View::Field, View::PortModes, View::FarField, View::Compare, View::Eigenmodes];
+    pub const ALL: [View; 10] = [
+        View::Model,
+        View::Outline,
+        View::SParameters,
+        View::Tdr,
+        View::Field,
+        View::PortModes,
+        View::FarField,
+        View::Compare,
+        View::Eigenmodes,
+        View::Study,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -76,6 +88,7 @@ impl View {
             View::FarField => "far_field",
             View::Compare => "compare",
             View::Eigenmodes => "eigenmodes",
+            View::Study => "study",
         }
     }
 
@@ -90,6 +103,7 @@ impl View {
             View::FarField => "Far field",
             View::Compare => "Compare with theory",
             View::Eigenmodes => "Eigenmodes",
+            View::Study => "Study",
         }
     }
 
@@ -188,6 +202,9 @@ pub struct EmcraftApp {
     pub view: View,
     pub field: FieldState,
     pub chart: Option<Picture>,
+    /// The study view's chart and the S-parameter it shows (a sweep's; the first when `None`).
+    pub study_chart: Option<Picture>,
+    pub study_parameter: Option<String>,
     /// The far-field pattern's azimuth (degrees).
     pub pattern_phi: f64,
     pub port_modes: Option<Value>,
@@ -276,6 +293,8 @@ impl EmcraftApp {
                 beside_3d: false,
             },
             chart: None,
+            study_chart: None,
+            study_parameter: None,
             pattern_phi: 0.0,
             port_modes: None,
             compare: None,
@@ -496,6 +515,10 @@ impl EmcraftApp {
             "results.compare" => {
                 self.compare = Some(reply.clone());
                 self.view = View::Compare;
+            }
+            "study.sweep" | "study.optimize" => {
+                self.study_chart = None;
+                self.view = View::Study;
             }
             "edit.undo" | "edit.redo" => self.port_modes = None,
             other if other.starts_with("geometry.") => {

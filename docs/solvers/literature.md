@@ -218,6 +218,16 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   1983, §4.4 and Appendix A — the Mie series and its BHMIE test values
   (`emcraft-theory::radiation`).
 
+## Parameter studies
+- J. A. Nelder, R. Mead, *A simplex method for function minimization*, Comput. J. 7(4):308–313,
+  1965 — the downhill simplex `study.optimize` runs on the variables scaled to [0, 1], trial
+  points clamped into the box; J. C. Lagarias, J. A. Reeds, M. H. Wright, P. E. Wright,
+  *Convergence properties of the Nelder–Mead simplex method in low dimensions*, SIAM J. Optim.
+  9(1):112–147, 1998 — the coefficients (1, 2, ½, ½), the order of the tests and the tie rules
+  (`emcraft-engine::study`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §2.5 and §5.4 — the quarter-wave
+  transformer the optimizer's oracle case is checked against.
+
 ## Quadrature
 - A. H. Stroud, *Approximate Calculation of Multiple Integrals*, Prentice-Hall 1971; M. G. Duffy,
   *Quadrature over a pyramid or cube of integrands with a singularity at a vertex*, SIAM J.

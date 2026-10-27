@@ -154,6 +154,13 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
         "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some(), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d},
         "chart": app.chart.as_ref().map(|c| c.key.clone()),
+        "variables": app.session.variables,
+        "study": app.session.results.study.as_ref().map(|s| json!({
+            "kind": if s.kind == emcraft_engine::study::Kind::Sweep { "sweep" } else { "optimize" },
+            "variables": s.variables, "rows": s.rows.len(), "converged": s.converged,
+            "best": s.best.and_then(|b| s.rows.get(b)).map(|r| r.values.clone()),
+            "chart": app.study_chart.as_ref().map(|c| c.key.clone()), "parameter": app.study_parameter,
+        })),
         "port_modes": app.port_modes.is_some(),
         "compare": app.compare.as_ref().and_then(|c| c.get("worst")).cloned(),
         "frames": app.frames,

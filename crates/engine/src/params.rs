@@ -9,6 +9,10 @@
 //! let mu_r = p.number("mu_r").or(1.0)?;
 //! let end: End = p.choice("end").required()?;
 //! ```
+//!
+//! Every number may also be given as an expression of the session's variables, a string
+//! starting with `=` (`"=w/2 + 1"`, [`crate::expr`]): it is evaluated here, before the unit is
+//! applied, so it reads as the literal it stands for.
 
 use std::fmt::Display as Show;
 use std::ops::RangeInclusive;
@@ -19,6 +23,7 @@ use emcraft_model::{Point3, Vec3};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::expr::{self, Variables};
 use crate::{EngineError, Result};
 
 /// The parameters of a command, or of one item of a list inside them.
@@ -28,6 +33,8 @@ pub struct Params<'a> {
     display: Display,
     /// Which item of a list these are ("section 2"), for errors.
     context: Option<String>,
+    /// The variables expressions read.
+    vars: Option<&'a Variables>,
 }
 
 /// One parameter looked up: its value when given, or why it is wrong.
@@ -40,7 +47,30 @@ pub struct Arg<'p, T> {
 
 impl<'a> Params<'a> {
     pub fn new(value: &'a Value, display: Display) -> Params<'a> {
-        Params { value, display, context: None }
+        Params { value, display, context: None, vars: None }
+    }
+
+    /// The parameters with `vars` for the expressions among them.
+    pub fn with_variables(self, vars: &'a Variables) -> Params<'a> {
+        Params { vars: Some(vars), ..self }
+    }
+
+    /// Other parameters (an object nested in these) read with the same units and variables.
+    pub fn nested(&self, value: &'a Value, context: impl Into<String>) -> Params<'a> {
+        Params { value, display: self.display, context: Some(context.into()), vars: self.vars }
+    }
+
+    /// A JSON value of parameter `name` as a finite number: a number, or an expression of the
+    /// variables (`"=w/2"`).
+    pub fn number_of(&self, name: &str, v: &Value) -> Result<f64> {
+        match v {
+            Value::String(text) => {
+                let body = expr::body(text).ok_or_else(|| self.error(name, "must be a finite number (or an expression: \"=w/2\")"))?;
+                let vars = self.vars.ok_or_else(|| self.error(name, "cannot hold an expression here"))?;
+                expr::eval(body, vars).map_err(|e| self.error(name, format!("`{}`: {e}", text.chars().take(64).collect::<String>())))
+            }
+            _ => finite(v).ok_or_else(|| self.error(name, "must be a finite number")),
+        }
     }
 
     /// An error about parameter `name`.
@@ -49,6 +79,11 @@ impl<'a> Params<'a> {
             Some(c) => EngineError::Params(format!("{c}: `{name}` {why}")),
             None => EngineError::Params(format!("`{name}` {why}")),
         }
+    }
+
+    /// The parameters' JSON object as given.
+    pub fn value(&self) -> &'a Value {
+        self.value
     }
 
     /// The JSON value of `name`, absent when missing or null.
@@ -66,7 +101,7 @@ impl<'a> Params<'a> {
 
     /// A finite number.
     pub fn number<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
-        self.arg(name, |v| finite(v).ok_or_else(|| self.error(name, "must be a finite number")))
+        self.arg(name, |v| self.number_of(name, v))
     }
 
     /// A finite number > 0.
@@ -77,7 +112,15 @@ impl<'a> Params<'a> {
     /// A whole number in `range`.
     pub fn integer<'p>(&'p self, name: &'p str, range: RangeInclusive<usize>) -> Arg<'p, usize> {
         self.arg(name, |v| {
-            let n = v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or_else(|| self.error(name, "must be a whole number ≥ 0"))?;
+            let n = match v {
+                Value::String(_) => {
+                    let x = self.number_of(name, v)?;
+                    // Whole numbers only, at most 2^53 (exact in f64).
+                    (x >= 0.0 && x.fract() == 0.0 && x <= 9.007_199_254_740_992e15).then_some(x as u64)
+                }
+                _ => v.as_u64(),
+            };
+            let n = n.and_then(|n| usize::try_from(n).ok()).ok_or_else(|| self.error(name, "must be a whole number ≥ 0"))?;
             if range.contains(&n) { Ok(n) } else { Err(self.error(name, format!("must be {} to {}, got {n}", range.start(), range.end()))) }
         })
     }
@@ -110,13 +153,13 @@ impl<'a> Params<'a> {
     /// errors).
     pub fn items(&self, name: &str, what: &str, max: usize) -> Result<Vec<Params<'a>>> {
         let list = self.list(name, max).or(&[])?;
-        Ok(list.iter().enumerate().map(|(i, value)| Params { value, display: self.display, context: Some(format!("{what} {}", i + 1)) }).collect())
+        Ok(list.iter().enumerate().map(|(i, value)| self.nested(value, format!("{what} {}", i + 1))).collect())
     }
 
     /// Three finite numbers `[x, y, z]`.
     fn triple(&self, name: &str, v: &Value) -> Result<[f64; 3]> {
         let list = v.as_array().filter(|a| a.len() == 3).ok_or_else(|| self.error(name, "must be [x, y, z]"))?;
-        let c = |v: &Value| finite(v).ok_or_else(|| self.error(name, "must be finite numbers"));
+        let c = |v: &Value| self.number_of(name, v);
         Ok([c(&list[0])?, c(&list[1])?, c(&list[2])?])
     }
 
@@ -129,7 +172,7 @@ impl<'a> Params<'a> {
     pub fn lengths<'p>(&'p self, name: &'p str) -> Arg<'p, Vec<f64>> {
         self.arg(name, |v| {
             let list = v.as_array().ok_or_else(|| self.error(name, "must be an array of numbers"))?;
-            list.iter().map(|x| finite(x).map(|x| self.display.length.to_si(x)).ok_or_else(|| self.error(name, "must be finite numbers"))).collect()
+            list.iter().map(|x| self.number_of(name, x).map(|x| self.display.length.to_si(x))).collect()
         })
     }
 

@@ -79,6 +79,27 @@ impl Progress {
 
 thread_local! {
     static CURRENT: RefCell<Option<Arc<Progress>>> = const { RefCell::new(None) };
+    /// The outer step the reports belong to ([`within`]): its number, the outer total and its
+    /// name.
+    static OUTER: RefCell<Option<(usize, usize, String)>> = const { RefCell::new(None) };
+}
+
+/// Restores the previous outer step when [`within`] ends.
+struct RestoreOuter(Option<(usize, usize, String)>);
+
+impl Drop for RestoreOuter {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        OUTER.with(|c| *c.borrow_mut() = previous);
+    }
+}
+
+/// Runs `f` as step `done` of `total` of a longer work (a study's points): the reports inside it
+/// are scaled into that step, their stage named after it.
+pub fn within<R>(done: usize, total: usize, stage: &str, f: impl FnOnce() -> R) -> R {
+    let previous = OUTER.with(|c| c.borrow_mut().replace((done, total, stage.chars().take(100).collect())));
+    let _restore = RestoreOuter(previous);
+    f()
 }
 
 /// Restores the previous progress when a scope ends, even by unwinding.
@@ -104,7 +125,14 @@ pub fn report(done: usize, total: usize, stage: &str) -> Result<()> {
     CURRENT.with(|c| match c.borrow().as_ref() {
         Some(p) if p.cancelled() => Err(EngineError::Failed(CANCELLED.into())),
         Some(p) => {
-            p.set(done, total, stage);
+            match OUTER.with(|o| o.borrow().clone()) {
+                // Each outer step counts 1000; the inner work fills its share.
+                Some((i, n, outer)) => {
+                    let inner = (done.min(total) * 1000).checked_div(total).unwrap_or(0);
+                    p.set(i.saturating_mul(1000).saturating_add(inner), n.saturating_mul(1000), &format!("{outer}: {stage}"));
+                }
+                None => p.set(done, total, stage),
+            }
             Ok(())
         }
         None => Ok(()),
@@ -138,6 +166,18 @@ mod tests {
         });
         // The scope is gone with its end.
         assert!(check().is_ok());
+    }
+
+    #[test]
+    fn reports_within_a_step_fill_its_share() {
+        let p = Progress::new();
+        scope(p.clone(), || {
+            within(2, 4, "point 3", || report(1, 2, "frequency")).unwrap();
+            let s = p.snapshot();
+            assert_eq!((s.done, s.total, s.stage.as_str()), (2500, 4000, "point 3: frequency"));
+            report(1, 3, "after").unwrap();
+            assert_eq!(p.snapshot().total, 3);
+        });
     }
 
     /// A cancelled sweep stops between frequencies and leaves the session as it was.
