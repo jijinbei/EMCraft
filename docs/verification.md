@@ -50,7 +50,10 @@ result is frozen so it cannot drift.
    `emcraft-fem`. The mesher's own 126 tests came with it (`crates/tetmesh`).
 8. **Open problems** (engine tests, the oracle): a Hertzian dipole in a box lined with a perfectly
    matched layer — radiated power within 0.2 % and directivity within 1–4 % at six elements per
-   wavelength (oracle `dipole-radiation`) — and a plane wave on a ceramic sphere against the Mie
+   wavelength (oracle `dipole-radiation`); the same dipole at the centre of a sphere whose outer
+   shell is a spherical layer, through a Huygens sphere — power within 0.8 % and directivity
+   within 1–3 % at eight per wavelength, with the box case's unknowns (half the box's at the same
+   size; oracle `dipole-radiation-spherical-pml`) — and a plane wave on a ceramic sphere against the Mie
    series, which itself meets Bohren and Huffman's BHMIE listing to 1e-5: scattering
    cross-section within 0.6 %, bistatic radar cross-section within 0.1–1.6 % (oracle
    `dielectric-sphere-scattering`); the same for a perfectly conducting sphere, its
