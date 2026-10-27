@@ -2,14 +2,14 @@
 //! inclusions and features, walls and ports.
 
 use emcraft_model::{
-    Axis, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Section, Shape, Solid, Strip, Symmetry, SymmetryKind,
+    Axis, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Section, Shape, Solid, Strip, Symmetry, SymmetryKind, Via,
     Waveguide,
 };
 use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session};
 
-/// Most items in one list parameter (sections, layers, strips).
+/// Most items in one list parameter (sections, layers, strips, vias).
 const MAX_ITEMS: usize = 1000;
 
 pub fn material(s: &mut Session, p: &Params) -> Result<Value> {
@@ -84,7 +84,21 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    s.model.set_waveguide(Waveguide { width, height, sections, layers, strips })?;
+    let vias = p
+        .items("vias", "via", MAX_ITEMS)?
+        .iter()
+        .map(|v| {
+            Ok(Via {
+                x0: v.length("x0").required()?,
+                z0: v.length("z0").required()?,
+                wx: v.positive_length("wx").required()?,
+                wz: v.positive_length("wz").required()?,
+                y0: v.length("y0").or(0.0)?,
+                y1: v.length("y1").or(height)?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    s.model.set_waveguide(Waveguide { width, height, sections, layers, strips, vias })?;
     s.results.sweep = None;
     Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, Waveguide::length))}))
 }

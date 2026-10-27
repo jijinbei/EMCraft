@@ -602,6 +602,50 @@ fn planar_circuits_are_layered_guides_with_strips() {
 }
 
 #[test]
+fn stubs_and_vias_mesh_and_solve_and_hostile_vias_are_refused() {
+    // A stripline with a short stub off it, ended by a via through the whole height: the via's
+    // cells are left out of the mesh, its faces walls; the stub's open end and the T mesh and
+    // solve. Below the stub's quarter-wave frequency a shorted stub is a shunt inductor, so the
+    // line reflects much more than without it.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.2})).unwrap();
+    let guide = |vias: Value| {
+        json!({"width": 12, "height": 2, "sections": [{"length": 6, "material": "ptfe"}],
+            "strips": [{"y": 1, "x0": 2, "width": 2}, {"y": 1, "x0": 4, "width": 4, "z0": 2, "z1": 4}], "vias": vias})
+    };
+    s.execute("geometry.waveguide", &guide(json!([{"x0": 8, "z0": 1, "wx": 1, "wz": 4}]))).unwrap();
+    assert_eq!(s.model.waveguide.as_ref().unwrap().vias[0].y1, 0.002, "y1 is the height when left out");
+    s.execute("model.symmetry", &json!({"axis": "y", "kind": "magnetic"})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 1})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 1})).unwrap();
+    let r = s.execute("solve.frequency", &json!({"frequencies": [1], "order": 1})).unwrap();
+    let (s11, s21) = (r["points"][0]["s11"]["mag"].as_f64().unwrap(), r["points"][0]["s21"]["mag"].as_f64().unwrap());
+    assert!((s11 * s11 + s21 * s21 - 1.0).abs() < 1e-6, "{r}");
+    assert!(s11 > 0.5, "a shorted stub 5 mm long at 1 GHz: {r}");
+    // The time domain does not take vias.
+    assert!(s.execute("solve.time_domain", &json!({"frequencies": [2]})).is_err());
+    for vias in [
+        json!([{"x0": 8, "z0": 1, "wx": 0, "wz": 4}]),
+        json!([{"x0": 8, "z0": 1, "wx": -1, "wz": 4}]),
+        json!([{"x0": 11.5, "z0": 1, "wx": 1, "wz": 4}]),
+        json!([{"x0": 8, "z0": 5.5, "wx": 1, "wz": 1}]),
+        json!([{"x0": 8, "z0": 1, "wx": 1, "wz": 1, "y0": 1.5, "y1": 1}]),
+        json!([{"x0": 8, "z0": 1, "wx": 1, "wz": 1, "y1": 3}]),
+        json!([{"x0": 8, "z0": 1, "wx": 1, "wz": 1, "y0": -1}]),
+        json!([{"x0": f64::MAX, "z0": 1, "wx": 1, "wz": 1}]),
+        json!([{"x0": 8, "z0": 1, "wx": 1}]),
+        json!([{"x0": 0, "z0": 0, "wx": 12, "wz": 1}]),
+        json!("vias"),
+    ] {
+        assert!(s.execute("geometry.waveguide", &guide(vias.clone())).is_err(), "{vias}");
+    }
+    // A via off the y plane has no mirror image there: the symmetry is refused at meshing.
+    s.execute("geometry.waveguide", &guide(json!([{"x0": 8, "z0": 1, "wx": 1, "wz": 4, "y1": 1}]))).unwrap();
+    assert!(s.execute("mesh.generate", &json!({"size": 1})).is_err());
+}
+
+#[test]
 fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     let mut s = Session::new();
     let status = |s: &mut Session| -> Vec<(String, String)> {

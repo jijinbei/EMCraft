@@ -552,6 +552,9 @@ fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
                 )
             });
         }
+        for v in &w.vias {
+            cuboid(&mut out.scene, [v.x0, v.y0, v.z0], [v.x0 + v.wx, v.y1, v.z0 + v.wz], METAL_DARK, 255, true);
+        }
     }
     if let Some(solid) = &m.solid {
         let hollow = !m.inclusions.is_empty() || m.features.iter().any(|f| f.combine != Combine::Add);

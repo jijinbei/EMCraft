@@ -216,7 +216,9 @@ impl Section {
 ///
 /// Planar circuits in a shielding box are guides too: dielectric `layers` fill it from y = 0 up
 /// (a substrate, its whole width and length), and conducting `strips` of no thickness lie on
-/// planes y = const (a microstrip on the substrate, a stripline between two layers).
+/// planes y = const (a microstrip on the substrate, a stripline between two layers), ending
+/// anywhere inside the box (open stubs, a stub off a line); `vias` are conducting posts (to
+/// ground, or through the whole height).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Waveguide {
     /// Broad wall width a (m), along x: the widest aperture.
@@ -229,6 +231,9 @@ pub struct Waveguide {
     pub layers: Vec<Layer>,
     #[serde(default)]
     pub strips: Vec<Strip>,
+    /// Conducting posts across the layers (a via from the ground to a strip, a shorting pin).
+    #[serde(default)]
+    pub vias: Vec<Via>,
 }
 
 /// A dielectric layer across the whole guide.
@@ -247,6 +252,27 @@ pub struct Strip {
     pub width: f64,
     pub z0: f64,
     pub z1: f64,
+}
+
+/// A perfectly conducting rectangular post: [x0, x0 + wx] × [y0, y1] × [z0, z0 + wz], solid
+/// metal (the mesh leaves its cells out, so its faces are conducting walls). From y0 = 0 it is
+/// grounded; ending on a strip's plane under the strip, it joins the two (a via); from y = 0 to
+/// the height it shorts the guide's planes (a shorting pin through a stripline).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Via {
+    pub x0: f64,
+    pub z0: f64,
+    pub wx: f64,
+    pub wz: f64,
+    pub y0: f64,
+    pub y1: f64,
+}
+
+impl Via {
+    /// The post as a box.
+    pub fn bounds(&self) -> Aabb {
+        Aabb::new(Point3::new(self.x0, self.y0, self.z0), Point3::new(self.x0 + self.wx, self.y1, self.z0 + self.wz))
+    }
 }
 
 /// An interval along one axis: from `start`, `width` long (m).
@@ -325,9 +351,9 @@ impl Waveguide {
         self.full_width() && self.full_height()
     }
 
-    /// Whether the guide is a plain one: no layers, no strips.
+    /// Whether the guide is a plain one: no layers, no strips, no vias.
     pub fn plain(&self) -> bool {
-        self.layers.is_empty() && self.strips.is_empty()
+        self.layers.is_empty() && self.strips.is_empty() && self.vias.is_empty()
     }
 
     /// The layer holding height y (the tops of the layers, bottom up), `None` above them.
@@ -997,6 +1023,26 @@ impl Model {
                 return Err(invalid(what(), "not supported yet: strips in a guide whose aperture changes"));
             }
         }
+        for (i, v) in w.vias.iter().enumerate() {
+            let what = || format!("via {}", i + 1);
+            if ![v.x0, v.z0, v.wx, v.wz, v.y0, v.y1].iter().all(|c| c.is_finite()) {
+                return Err(invalid(what(), "must be finite"));
+            }
+            positive(&format!("x width of via {}", i + 1), v.wx)?;
+            positive(&format!("z width of via {}", i + 1), v.wz)?;
+            if !(v.y0 >= -toly && v.y1 <= w.height + toly && v.y1 > v.y0 + toly) {
+                return Err(invalid(what(), "must run within the guide's height, 0 ≤ y0 < y1 ≤ height"));
+            }
+            if v.x0 < -tol || v.x0 + v.wx > w.width + tol || v.z0 < -1e-9 * length || v.z0 + v.wz > length * (1.0 + 1e-9) {
+                return Err(invalid(what(), "must lie within the guide's width and length"));
+            }
+            if v.wx >= w.width - tol && v.y0 <= toly && v.y1 >= w.height - toly && (v.z0 <= 1e-9 * length || v.z0 + v.wz >= length * (1.0 - 1e-9)) {
+                return Err(invalid(what(), "fills a port's whole face: end the guide there instead"));
+            }
+            if !w.uniform() {
+                return Err(invalid(what(), "not supported yet: vias in a guide whose aperture changes"));
+            }
+        }
         if !w.layers.is_empty() && !w.uniform() {
             return Err(invalid("layers", "not supported yet: layers in a guide whose aperture changes"));
         }
@@ -1416,13 +1462,22 @@ impl Model {
                     && (a.z0 - b.z0).abs() <= t
                     && (a.z1 - b.z1).abs() <= t
             };
+            // A strip on a y plane is its own image: it stays a conductor on the plane.
             for (k, s) in w.strips.iter().enumerate() {
-                if d == 1 && (s.y - mid).abs() <= tol {
-                    return Some(format!("not supported yet: strip {} lies on the symmetry plane", k + 1));
-                }
                 let m = mirror(s);
                 if !w.strips.iter().any(|o| same(o, &m)) {
                     return Some(format!("strip {} has no mirror image about the plane: the guide is not symmetric about it", k + 1));
+                }
+            }
+            // Vias likewise (a post through the whole height is its own image about y = b/2).
+            let mirror_via = |v: &Via| if d == 0 { Via { x0: span - v.x0 - v.wx, ..*v } } else { Via { y0: span - v.y1, y1: span - v.y0, ..*v } };
+            let same_via = |a: &Via, b: &Via| {
+                [(a.x0, b.x0), (a.z0, b.z0), (a.wx, b.wx), (a.wz, b.wz), (a.y0, b.y0), (a.y1, b.y1)].iter().all(|(p, q)| (p - q).abs() <= t)
+            };
+            for (k, v) in w.vias.iter().enumerate() {
+                let m = mirror_via(v);
+                if !w.vias.iter().any(|o| same_via(o, &m)) {
+                    return Some(format!("via {} has no mirror image about the plane: the guide is not symmetric about it", k + 1));
                 }
             }
         }
@@ -1453,7 +1508,14 @@ mod tests {
     use super::*;
 
     fn guide() -> Waveguide {
-        Waveguide { width: 0.02286, height: 0.01016, sections: vec![Section::new(0.01, "vacuum")], layers: Vec::new(), strips: Vec::new() }
+        Waveguide {
+            width: 0.02286,
+            height: 0.01016,
+            sections: vec![Section::new(0.01, "vacuum")],
+            layers: Vec::new(),
+            strips: Vec::new(),
+            vias: Vec::new(),
+        }
     }
 
     #[test]
@@ -1578,7 +1640,7 @@ mod tests {
         let plane = |axis, at, kind| Symmetry { axis, at, kind };
         assert!(m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic)]).is_err(), "no geometry");
         let sec = |w: Option<f64>, o: Option<f64>| Section { length: 0.01, material: "vacuum".into(), width: w, offset: o, ..Default::default() };
-        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new() };
+        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() };
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
         m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic), plane(Axis::Y, 0.005, SymmetryKind::Electric)]).unwrap();
         assert_eq!(m.symmetry_fraction(), 0.25);
@@ -1618,7 +1680,7 @@ mod tests {
     fn apertures_must_fit_and_nest() {
         let mut m = Model::new();
         let sec = |w: Option<f64>, o: Option<f64>| Section { length: 0.01, material: "vacuum".into(), width: w, offset: o, ..Default::default() };
-        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new() };
+        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() };
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
         let w = m.waveguide.as_ref().unwrap();
         assert_eq!(w.aperture(1), Some(Span::new(0.005, 0.01)));

@@ -20,7 +20,7 @@ fn with_materials(sections: Vec<Section>, materials: Vec<Material>) -> Model {
     for x in materials {
         m.add_material(x).unwrap();
     }
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
     m
@@ -169,7 +169,15 @@ fn dispersion_is_refused_where_unsupported() {
     let mut m = Model::new();
     let drude = Pole::Drude { plasma_frequency: 5e9, damping: 1e9 };
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(0.02, "plasma")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(0.02, "plasma")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
     // A resonance far too fast for the time step.
     let fast = Pole::Lorentz { delta_eps: 1.0, frequency: 1e14, damping: 1e9 };
