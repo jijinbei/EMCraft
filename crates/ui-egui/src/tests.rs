@@ -115,6 +115,26 @@ fn scenario_workflow_missing_port() {
 }
 
 #[test]
+fn scenario_port_mode_rows() {
+    scenario("port_mode_rows");
+}
+
+#[test]
+fn scenario_setup_band() {
+    scenario("setup_band");
+}
+
+#[test]
+fn scenario_setup_device() {
+    scenario("setup_device");
+}
+
+#[test]
+fn scenario_errors_in_place() {
+    scenario("errors_in_place");
+}
+
+#[test]
 fn scenario_hostile_step_input() {
     scenario("hostile_step_input");
 }

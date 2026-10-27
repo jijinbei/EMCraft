@@ -214,6 +214,26 @@ impl Dialog {
         self.fields.iter_mut().find(|f| f.name == name)
     }
 
+    /// The engine's refusal of OK, shown where it belongs: under the field it names (engine
+    /// errors quote a parameter as `` `name` ``, or a table's column inside a row), else in the
+    /// band under the fields.
+    pub fn refused(&mut self, error: &str) {
+        let quoted: Vec<&str> = error.split('`').skip(1).step_by(2).take(8).collect();
+        let named = quoted.iter().find_map(|q| {
+            self.fields
+                .iter()
+                .position(|f| f.name == *q)
+                .or_else(|| self.fields.iter().position(|f| matches!(&f.kind, Kind::Table(cols) if cols.iter().any(|c| c.name == *q))))
+        });
+        match named.and_then(|i| self.fields.get_mut(i)) {
+            Some(f) => {
+                f.error = Some(error.chars().take(400).collect());
+                self.error = None;
+            }
+            None => self.error = Some(error.to_owned()),
+        }
+    }
+
     /// Sets a field from a JSON value, as typing it would (the control channel's `ui.dialog`).
     pub fn set(&mut self, name: &str, v: &Value) -> Result<(), String> {
         let f = self.field_mut(name).ok_or_else(|| format!("the dialog has no field `{}`", name.chars().take(64).collect::<String>()))?;
@@ -475,6 +495,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// An engine refusal lands under the field it names, a table's column under its table, and
+    /// anything else in the band.
+    #[test]
+    fn refusals_land_under_the_field_they_name() {
+        let s = Session::new();
+        let mut d = Dialog::new(spec("geometry.waveguide"), &s, &json!({}), false);
+        d.refused("`width` must be > 0, got -5");
+        assert_eq!(d.field_mut("width").and_then(|f| f.error.clone()).as_deref(), Some("`width` must be > 0, got -5"));
+        assert_eq!(d.error, None);
+        d.refused("section 2: `length` must be > 0, got -1");
+        assert!(d.field_mut("sections").is_some_and(|f| f.error.is_some()));
+        d.refused("unknown material `unobtainium`");
+        assert_eq!(d.error.as_deref(), Some("unknown material `unobtainium`"));
+        // Hostile text: unbalanced quotes, nothing named.
+        d.refused("``` ` `");
+        assert!(d.error.is_some());
     }
 
     /// The waveguide dialog round-trips the model's guide: the same parameters rebuild it.

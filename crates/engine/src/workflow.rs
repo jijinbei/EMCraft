@@ -162,6 +162,65 @@ impl StepState {
     }
 }
 
+/// A cut-off frequency to mark beside the band: a port mode's or a guide section's.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Cutoff {
+    /// Hz.
+    pub frequency: f64,
+    /// What it belongs to: `TE10 port 1, 2`, `TE10 vacuum`.
+    pub label: String,
+    /// The first mode of a port: below it no power enters.
+    pub first: bool,
+}
+
+/// Bessel zeros for a circular port's first modes: J1′ (TE11) and J0 (TM01).
+const X11_PRIME: f64 = 1.841_183_781_340_659;
+const X01: f64 = 2.404_825_557_695_773;
+
+/// The cut-offs of the ports' first modes (closed form, from each port's cross-section and
+/// filling) and of the guide's sections (TE10), in ascending order; a frequency shared by several
+/// ports is listed once.
+pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
+    let m = &s.model;
+    let mut out: Vec<Cutoff> = Vec::new();
+    let add = |frequency: f64, mode: &str, owner: String, first: bool, out: &mut Vec<Cutoff>| {
+        if !(frequency.is_finite() && frequency > 0.0) {
+            return;
+        }
+        match out.iter_mut().find(|c| (c.frequency - frequency).abs() <= 1e-6 * frequency && c.label.starts_with(mode)) {
+            Some(c) if c.label.starts_with(&format!("{mode} port ")) && owner.starts_with("port ") => {
+                c.label.push_str(&format!(", {}", owner.trim_start_matches("port ")));
+            }
+            Some(_) => {}
+            None => out.push(Cutoff { frequency, label: format!("{mode} {owner}"), first }),
+        }
+    };
+    for p in m.ports.iter().take(64) {
+        let (Ok(shape), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
+        let n = (mat.eps_r * mat.mu_r).sqrt();
+        let owner = format!("port {}", p.name);
+        match shape {
+            emcraft_model::PortShape::Rect { a, b, .. } => {
+                add(C0 / (2.0 * a * n), "TE10", owner.clone(), true, &mut out);
+                add(C0 / (a * n), "TE20", owner.clone(), false, &mut out);
+                add(C0 / (2.0 * b * n), "TE01", owner, false, &mut out);
+            }
+            emcraft_model::PortShape::Circle { r, .. } => {
+                let k = C0 / (2.0 * std::f64::consts::PI * r * n);
+                add(X11_PRIME * k, "TE11", owner.clone(), true, &mut out);
+                add(X01 * k, "TM01", owner, false, &mut out);
+            }
+        }
+    }
+    for (fc, name) in crate::view::section_cutoffs(s) {
+        if !out.iter().any(|c| (c.frequency - fc).abs() <= 1e-6 * fc) {
+            out.push(Cutoff { frequency: fc, label: format!("TE10 {name}"), first: false });
+        }
+    }
+    out.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    out
+}
+
 /// Where each step stands, from the model, the mesh and the results; in workflow order.
 pub fn steps(s: &Session) -> [StepState; 9] {
     let (geometry, excitation, mesh) = (geometry(s), excitation(s), mesh(s));

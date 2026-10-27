@@ -760,6 +760,23 @@ fn stubs_and_vias_mesh_and_solve_and_hostile_vias_are_refused() {
 }
 
 #[test]
+fn the_cut_offs_beside_the_band_are_the_ports_and_the_sections() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let c = crate::workflow::cutoffs(&s);
+    // WR-90 (a = 22.86 mm, b = 10.16 mm): c/2a = 6.5571 GHz in vacuum, divided by √2 in the
+    // ports' εr = 2 filling; TE20 and TE01 from c/a and c/2b.
+    let te10 = 299_792_458.0 / (2.0 * 22.86e-3);
+    let near = |f: f64, label: &str| c.iter().any(|x| (x.frequency - f).abs() < 1e-6 * f && x.label == label);
+    assert!(near(te10 / 2f64.sqrt(), "TE10 port 1, 2"), "{c:?}");
+    assert!(near(2.0 * te10 / 2f64.sqrt(), "TE20 port 1, 2"), "{c:?}");
+    assert!(near(299_792_458.0 / (2.0 * 10.16e-3) / 2f64.sqrt(), "TE01 port 1, 2"), "{c:?}");
+    assert!(near(te10, "TE10 vacuum"), "{c:?}");
+    assert!(c.windows(2).all(|w| w[0].frequency <= w[1].frequency));
+    assert_eq!(c.iter().filter(|x| x.first).count(), 1);
+}
+
+#[test]
 fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     let mut s = Session::new();
     let status = |s: &mut Session| -> Vec<(String, String)> {

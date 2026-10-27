@@ -1,0 +1,23 @@
+[
+  {"note": "Setup chooses where the solve runs, through solve.device: the devices solve.devices lists (those the machine cannot run disabled, with the reason on hover) and the time domain's precision; the panel says what the next solve uses, and the ribbon's SIMULATE › Device stays a shortcut to the same setting"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"click": "step:setup"},
+  {"expect": {"handles": ["setup:device:cpu", "setup:device:cuda", "setup:device:cubecl-cpu", "setup:precision:single", "setup:precision:double"], "inspect": {"workflow.device": "cpu"}}},
+  {"shot": "setup-device-cpu"},
+  {"click": "setup:solver:time_domain"},
+  {"click": "setup:device:cubecl-cpu"},
+  {"until": {"busy": false, "inspect": {"workflow.device": "cubecl-cpu"}}, "timeout": 120},
+  {"expect": {"status": "run on cubecl-cpu"}},
+  {"click": "setup:precision:double"},
+  {"until": {"busy": false, "inspect": {"workflow.device": "cubecl-cpu", "workflow.precision": "double"}}, "timeout": 120},
+  {"shot": "setup-device-cubecl"},
+  {"note": "The ribbon's Device dialog opens on the same setting"},
+  {"click": "toolbar:solve.device"},
+  {"expect": {"dialog": "solve.device", "inspect": {"dialog.fields.device": "cubecl-cpu", "dialog.fields.precision": "double"}}},
+  {"click": "dialog:cancel"},
+  {"call": "ui.set", "params": {"dark": true}},
+  {"frames": 2},
+  {"shot": "setup-device-dark"},
+  {"click": "setup:device:cpu"},
+  {"until": {"busy": false, "inspect": {"workflow.device": "cpu"}}, "timeout": 120}
+]

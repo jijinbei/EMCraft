@@ -47,6 +47,9 @@ pub struct View3d {
     pub fit_next: bool,
     /// What is selected (by a click in the view or on its browser row), highlighted.
     pub selected: Option<scene3d::Pick>,
+    /// What a row elsewhere (the port-mode table) points at while hovered: highlighted for one
+    /// frame instead of the selection, which it leaves alone.
+    pub hover: Option<scene3d::Pick>,
     /// Whether the last frame was drawn by the window's GPU rather than the CPU renderer.
     pub drawn_on_gpu: bool,
     /// A drag that began on the field view's plane moves it instead of orbiting.
@@ -65,6 +68,7 @@ impl Default for View3d {
             dragging: false,
             fit_next: false,
             selected: None,
+            hover: None,
             drawn_on_gpu: false,
             moving_plane: false,
         }
@@ -86,14 +90,19 @@ impl View3d {
         field_key: String,
         fields: &[scene3d::FieldLayer],
     ) -> &Built {
-        let key = (app_revision, overlay, format!("{field_key}|{:?}", self.selected));
+        let key = (app_revision, overlay, format!("{field_key}|{:?}", self.highlighted()));
         if self.built.as_ref().is_none_or(|(k, _)| *k != key) {
-            self.built = Some((key, scene3d::build_with(session, overlay, fields, self.selected)));
+            self.built = Some((key, scene3d::build_with(session, overlay, fields, self.highlighted())));
         }
         match &self.built {
             Some((_, b)) => b,
             None => &EMPTY,
         }
+    }
+
+    /// What is drawn highlighted: the hovered row's part, else the selection.
+    pub fn highlighted(&self) -> Option<scene3d::Pick> {
+        self.hover.or(self.selected)
     }
 
     pub fn standard(&mut self, v: StandardView) {
@@ -120,6 +129,7 @@ impl View3d {
             "overlay": b.map(|x| x.0), "triangles": b.map(|x| x.1), "lines": b.map(|x| x.2),
             "ms": self.last_ms, "size": self.last_size,
             "selected": self.selected.map(|p| format!("{p:?}")),
+            "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
         })
     }
@@ -182,7 +192,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     }
     // Moving pictures (an orbit, a playing field) draw on the GPU.
     let gpu = app.prefs.gpu3d || app.view3d.dragging || (overlay == Overlay::Field && app.field.player.playing);
-    let key = format!("{field_key}|{:?}", app.view3d.selected);
+    let key = format!("{field_key}|{:?}", app.view3d.highlighted());
     let p = ui.painter().with_clip_rect(rect);
     draw(&mut app.view3d, ui, &p, rect, (revision, overlay, key), gpu, &t);
     labels(&p, rect, &app.view3d.camera, &built.labels, &t);

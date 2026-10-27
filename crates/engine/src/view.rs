@@ -612,6 +612,27 @@ pub fn reference(session: &Session) -> Result<Reference> {
     Ok(Reference::ModeMatching(HPlaneLine { sections }))
 }
 
+/// The TE10 cut-offs (Hz) of the waveguide's sections, each once, with what tells them apart:
+/// the section's material, or its width where it is narrowed.
+pub fn section_cutoffs(session: &Session) -> Vec<(f64, String)> {
+    let mut out: Vec<(f64, String)> = Vec::new();
+    let Some(w) = session.model.waveguide.as_ref() else { return out };
+    let lu = session.display.length;
+    for (i, sec) in w.sections.iter().enumerate() {
+        let (Ok((_, m)), Some(emcraft_model::Span { width, .. })) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
+        let fc = te10_cutoff(width, m.eps_r, m.mu_r);
+        if !out.iter().any(|(x, _)| (x - fc).abs() < 1e-6 * fc) {
+            let name = if (width - w.width).abs() <= 1e-9 * w.width {
+                sec.material.clone()
+            } else {
+                format!("{} {}", emcraft_render::axes::format(lu.from_si(width)), lu.symbol())
+            };
+            out.push((fc, name));
+        }
+    }
+    out
+}
+
 /// |S11| and |S21| in dB against frequency: the solved points and the reference curves.
 pub fn sparameter_chart(session: &Session) -> Result<Chart> {
     let sweep = session.results.sweep.as_ref();
@@ -646,22 +667,8 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
         series.push(Series { label: format!("$|S_{{21}}|$ {label}"), color: Rgb(30, 90, 200), style: Style::Line, points: s21 });
         series.push(Series { label: format!("$|S_{{11}}|$ {label}"), color: Rgb(200, 60, 40), style: Style::Line, points: s11 });
     }
-    if let Some(w) = session.model.waveguide.as_ref() {
-        let lu = session.display.length;
-        let mut seen: Vec<f64> = Vec::new();
-        for (i, sec) in w.sections.iter().enumerate() {
-            let (Ok((_, m)), Some(emcraft_model::Span { width, .. })) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
-            let fc = te10_cutoff(width, m.eps_r, m.mu_r);
-            if !seen.iter().any(|x| (x - fc).abs() < 1e-6 * fc) {
-                seen.push(fc);
-                let name = if (width - w.width).abs() <= 1e-9 * w.width {
-                    format!("$f_c$ {}", sec.material)
-                } else {
-                    format!("$f_c$ {} {}", emcraft_render::axes::format(lu.from_si(width)), lu.symbol())
-                };
-                marks.push((fu.from_si(fc), name));
-            }
-        }
+    for (fc, name) in section_cutoffs(session) {
+        marks.push((fu.from_si(fc), format!("$f_c$ {name}")));
     }
     if let Some(sweep) = sweep {
         let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), db(s)])).collect();
