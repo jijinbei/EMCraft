@@ -55,5 +55,5 @@ The ribbon, browser, dialogs, viewport and glyphs (`crates/ui-egui/src/{ribbon,b
 are new, laid out after SolidCraft's; no SolidCraft icon or image file is used (the glyphs are
 EMCraft's own drawings in code).
 
-The multifrontal factorization (`crates/solver/src/ldlt.rs`) is new; its pivoting follows the
+The multifrontal factorizations (`crates/solver/src/multifrontal/`, `ldlt/`, `lu.rs`) are new; their pivoting follows the
 same papers as FieldCraft's supernodal LDLᵀ.

@@ -11,6 +11,7 @@ pub mod driven;
 pub mod eigen;
 pub mod ldlt;
 pub mod lu;
+mod multifrontal;
 pub mod ordering;
 pub mod portmode;
 pub mod radiation;
