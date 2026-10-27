@@ -1,0 +1,7 @@
+[
+ {"command": "model.material.create", "params": {"name": "polystyrene", "eps_r": 2.56}},
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 5, "material": "vacuum"}, {"length": 5, "material": "polystyrene"}]}},
+ {"command": "mesh.generate", "params": {"size": 2.5}},
+ {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}},
+ {"command": "solve.dispersion", "params": {"axis": "z", "from": 45, "to": 135, "points": 3, "bands": 1, "near": 10, "order": 2}, "id": "bands"}
+]

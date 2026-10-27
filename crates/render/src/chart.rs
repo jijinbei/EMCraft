@@ -74,7 +74,7 @@ pub fn draw(chart: &Chart, width: usize, height: usize) -> Canvas {
     }
     let mut lx = x0;
     let mut ly = y0 + ph + 56.0;
-    for s in &chart.series {
+    for s in chart.series.iter().filter(|s| !s.label.is_empty()) {
         // Wrap to a second row rather than run off the canvas.
         let item = 52.0 + Canvas::text_width(&s.label, 2) as f64;
         if lx > x0 && lx + item > c.w as f64 - 10.0 {

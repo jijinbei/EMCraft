@@ -1,0 +1,13 @@
+{
+ "title": "Empty WR-90 periodic along z (period 10 mm): the Bloch bands at ψ = 0°, 90°, 180°",
+ "kind": "theory",
+ "source": "Modes of a rectangular guide with a phase ψ per period L: k² = (mπ/a)² + (nπ/b)² + ((ψ + 2πq)/L)² (D. M. Pozar, Microwave Engineering, 4th ed., §3.3; R. E. Collin, Foundations for Microwave Engineering, 2nd ed., periodic structures), evaluated by an independent script",
+ "quantities": [
+  {"id": "band1_0", "quantity": "band 1 at ψ = 0: TE10's cut-off (GHz)", "measure": {"step": "bands", "pointer": "/points/0/frequencies/0"}, "value": 6.557140376202974, "tolerance": {"relative": 2e-4}, "reason": "second-order elements of 3 mm: measured 2e-6 (the field is uniform along z, sin(πx/a) across)"},
+  {"id": "band2_0", "quantity": "band 2 at ψ = 0: TE20's cut-off (GHz)", "measure": {"step": "bands", "pointer": "/points/0/frequencies/1"}, "value": 13.114280752405948, "tolerance": {"relative": 5e-4}, "reason": "TE20 varies twice as fast across the guide: measured +2.8e-5"},
+  {"id": "band1_90", "quantity": "band 1 at ψ = 90°: TE10 with β = π/2L (GHz)", "measure": {"step": "bands", "pointer": "/points/1/frequencies/0"}, "value": 9.958327599767061, "tolerance": {"relative": 2e-4}, "reason": "the Floquet phase e^{−jψ} complex, the Hermitian problem solved by LU: measured +2.6e-5"},
+  {"id": "band2_90", "quantity": "band 2 at ψ = 90°: TE20 (GHz)", "measure": {"step": "bands", "pointer": "/points/1/frequencies/1"}, "value": 15.104852145055121, "tolerance": {"relative": 5e-4}, "reason": "as at ψ = 0: measured +1.3e-4"},
+  {"id": "band1_180", "quantity": "band 1 at ψ = 180°: TE10 at the zone's edge (GHz)", "measure": {"step": "bands", "pointer": "/points/2/frequencies/0"}, "value": 16.361078344578505, "tolerance": {"relative": 5e-4}, "reason": "β = π/L, about three elements per half wavelength along z: measured +9.6e-5"},
+  {"id": "band2_180", "quantity": "band 2 at ψ = 180°: TE10's backward harmonic, degenerate with band 1 (GHz)", "measure": {"step": "bands", "pointer": "/points/2/frequencies/1"}, "value": 16.361078344578505, "tolerance": {"relative": 5e-4}, "reason": "the degenerate pair at the zone's edge, found as two vectors of the Hermitian Ritz problem"}
+ ]
+}

@@ -1,0 +1,6 @@
+[
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum"}]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}},
+ {"command": "solve.dispersion", "params": {"axis": "z", "from": 0, "to": 180, "points": 3, "bands": 2, "near": 15, "order": 2}, "id": "bands"}
+]

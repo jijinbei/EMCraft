@@ -14,6 +14,7 @@
 //! - [`port`]: waveguide ports;
 //! - [`open`]: the open boundary, sources and lumped ports;
 //! - [`symmetry`]: symmetry planes and the images they make;
+//! - [`periodic`]: periodic boundaries (unit cells of infinite arrays);
 //! - [`band`]: the frequency band;
 //! - [`model`]: the [`Model`] and its checked setters.
 
@@ -26,6 +27,7 @@ pub mod material;
 pub mod mesh;
 pub mod model;
 pub mod open;
+pub mod periodic;
 pub mod port;
 pub mod shape;
 pub mod symmetry;
@@ -40,6 +42,7 @@ pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
 pub use model::Model;
 pub use num_complex::Complex64;
 pub use open::{LumpedPort, Open, OpenShape, Source, SphericalLayer};
+pub use periodic::{Periodic, Polarization};
 pub use port::{End, MAX_PORT_MODES, ModeSolver, Port, PortFace, PortShape};
 pub use shape::{Axis, Combine, Feature, Inclusion, MAX_SURFACE_TRIANGLES, Shape, Solid, solid_angle};
 pub use symmetry::{Image, Symmetry, SymmetryKind};

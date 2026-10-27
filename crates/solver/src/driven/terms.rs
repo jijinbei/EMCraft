@@ -76,6 +76,12 @@ impl Driven {
                 Some(0.5 * mode.norm() * fraction * mode.gamma(k).1 / (omega * MU0 * mu_r))
             }
             PortModes::Numeric(_) => Some(0.5 * self.port_terms(p, frequency).ok()?.first()?.proxy / (omega * MU0)),
+            PortModes::Floquet(fp) => {
+                let periodic = self.periodic.as_ref()?;
+                let (kx, ky) = super::floquet::incidence(periodic, fp, frequency);
+                let terms = self.floquet_terms(frequency, kx, ky).ok()?;
+                Some(0.5 * terms.get(p)?.first()?.proxy / (omega * MU0))
+            }
         }
     }
 
@@ -122,6 +128,10 @@ impl Driven {
                     .collect()
             }
             PortModes::Numeric(n) => self.numeric_terms(n, k0),
+            PortModes::Floquet(_) => Err(invalid(
+                format!("port `{}`", port.name),
+                "a Floquet port's modes are complex: its terms come with the periodic solve (not supported yet: the fast sweep and the symmetric solver paths)",
+            )),
         }
     }
 

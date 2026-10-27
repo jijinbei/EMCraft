@@ -23,6 +23,7 @@ mod geometry;
 mod meshing;
 pub mod open;
 pub mod params;
+pub mod periodic;
 pub mod progress;
 pub mod project;
 mod results;
@@ -229,6 +230,8 @@ pub struct Results {
     /// The last parameter study (`study.sweep`, `study.optimize`): solved on models rebuilt
     /// from the history, so no change to the model now makes it wrong.
     pub study: Option<Arc<study::Study>>,
+    /// A periodic cell's dispersion diagram from `solve.dispersion`.
+    pub dispersion: Option<Arc<emcraft_solver::bloch::Dispersion>>,
 }
 
 /// What changed in the model, which decides the results that no longer hold.
@@ -267,7 +270,12 @@ impl Results {
 
     /// Whether any solver has run.
     pub fn any(&self) -> bool {
-        self.sweep.is_some() || self.eigen.is_some() || self.time_domain.is_some() || self.radiation.is_some() || self.td_radiation.is_some()
+        self.sweep.is_some()
+            || self.eigen.is_some()
+            || self.time_domain.is_some()
+            || self.radiation.is_some()
+            || self.td_radiation.is_some()
+            || self.dispersion.is_some()
     }
 
     /// The sweep, or an error asking for one.

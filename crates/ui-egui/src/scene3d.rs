@@ -93,6 +93,26 @@ impl Pick {
     }
 }
 
+/// The colour of a periodic boundary's faces.
+const PERIODIC: Rgb = Rgb(170, 90, 200);
+
+/// Which faces of a mesh lie on a face of the cell its periodic boundaries tie: per axis, the
+/// mesh's extent, if the axis is tied.
+fn periodic_planes(m: &Model, mesh: &emcraft_model::Mesh) -> [Option<(f64, f64)>; 3] {
+    let Some(p) = &m.periodic else { return [None; 3] };
+    let tied = [p.x, p.y, p.z];
+    let mut out = [None; 3];
+    for d in 0..3 {
+        if tied[d] {
+            let (lo, hi) = mesh.nodes.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), q| (a.min(q[d]), b.max(q[d])));
+            if lo < hi {
+                out[d] = Some((lo, hi));
+            }
+        }
+    }
+    out
+}
+
 /// A symmetry plane's colour: an electric wall blue, a magnetic one green.
 fn symmetry_rgb(kind: emcraft_model::SymmetryKind) -> Rgb {
     match kind {
@@ -364,6 +384,11 @@ fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
                 let axis = if s.axis == Axis::X { "x" } else { "y" };
                 out.legend.push((format!("symmetry: {wall}, {axis} = {} {}", l.from_si(s.at), l.symbol()), symmetry_rgb(s.kind)));
             }
+            if let Some(p) = &m.periodic {
+                let axes: Vec<&str> = p.axes().into_iter().map(|d| ["x", "y", "z"][d.min(2)]).collect();
+                let angles = if p.x || p.y { format!(", θ {:.1}°, φ {:.1}°", p.theta.to_degrees(), p.phi.to_degrees()) } else { String::new() };
+                out.legend.push((format!("periodic: {}{angles}", axes.join(", ")), PERIODIC));
+            }
             out.legend.push((
                 match m.wall_conductivity {
                     Some(s) => format!("walls σ = {s:.3e} S/m"),
@@ -385,6 +410,15 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
     let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
     let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
     let surface = Surface::of(m, mesh);
+    let planes = periodic_planes(m, mesh);
+    let periodic = |nodes: &[u32; 3]| {
+        planes.iter().enumerate().any(|(d, pl)| {
+            pl.is_some_and(|(lo, hi)| {
+                let tol = 1e-9 * (hi - lo);
+                [lo, hi].iter().any(|c| nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| (q[d] - c).abs() <= tol)))
+            })
+        })
+    };
     // Faces, their keys for edges (material or tag), and whether they are air.
     let mut faces: Vec<([u32; 3], u32, bool)> = Vec::with_capacity(mesh.boundary.len());
     for (i, f) in mesh.boundary.iter().enumerate() {
@@ -397,6 +431,11 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         };
         let kind = surface.kind(i);
         let (color, alpha) = match f.tag {
+            // A periodic boundary is no wall either: tied to the opposite face.
+            _ if !port && periodic(&f.nodes) => {
+                let (_, alpha) = wall_style(m, overlay, port, tet_mat(f.tet), Kind::Wall);
+                (PERIODIC, if overlay == Overlay::Boundaries { 200 } else { alpha.min(120) })
+            }
             // A symmetry plane is no wall: its own colour in every overlay.
             Boundary::Symmetry(kind) => {
                 let (_, alpha) = wall_style(m, overlay, port, tet_mat(f.tet), Kind::Wall);

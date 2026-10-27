@@ -20,7 +20,7 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
             ("SETTINGS", &["units.set", "project.frequency"]),
         ],
     ),
-    ("MATERIALS", &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open", "model.symmetry"])]),
+    ("MATERIALS", &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open", "model.symmetry", "model.periodic"])]),
     (
         "PORTS & SOURCES",
         &[("PORTS", &["model.port.create", "model.port.lumped"]), ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"])],
@@ -29,7 +29,7 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
     (
         "SIMULATE",
         &[
-            ("FREQUENCY DOMAIN", &["solve.frequency", "solve.eigenmodes", "solve.radiation"]),
+            ("FREQUENCY DOMAIN", &["solve.frequency", "solve.eigenmodes", "solve.dispersion", "solve.radiation"]),
             ("TIME DOMAIN", &["solve.time_domain"]),
             ("PORTS", &["solve.port_modes"]),
             ("STUDY", &["project.variable", "study.sweep", "study.optimize"]),
@@ -40,7 +40,7 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
         "RESULTS",
         &[
             ("ANALYSIS", &["results.compare", "results.check", "results.tdr"]),
-            ("EXPORT", &["results.touchstone", "view.sparameters", "view.field", "view.animation", "view.pattern"]),
+            ("EXPORT", &["results.touchstone", "view.sparameters", "view.field", "view.animation", "view.pattern", "view.dispersion"]),
         ],
     ),
 ];
@@ -64,6 +64,9 @@ pub fn button_label(id: &str) -> &str {
         "model.walls" => "Walls",
         "model.open" => "Open boundary",
         "model.symmetry" => "Symmetry",
+        "model.periodic" => "Periodic",
+        "solve.dispersion" => "Dispersion",
+        "view.dispersion" => "Dispersion PNG",
         "model.port.create" => "Port",
         "model.port.lumped" => "Lumped port",
         "source.dipole" => "Dipole",

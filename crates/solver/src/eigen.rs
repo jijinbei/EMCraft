@@ -527,7 +527,7 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
 
 /// Eigenvalues and vectors of a dense symmetric matrix (row-major, n × n) by cyclic Jacobi
 /// rotations (Golub & Van Loan, *Matrix Computations*, 4th ed., §8.5).
-fn jacobi(mut a: Vec<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn jacobi(mut a: Vec<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
     let mut v = vec![0.0; n * n];
     for i in 0..n {
         v[i * n + i] = 1.0;
@@ -578,6 +578,9 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
         return Err(invalid("mode count", format!("must be 1 to {MAX_MODES}")));
     }
     check_frequency(near)?;
+    if model.periodic.is_some() {
+        return Err(invalid("eigenmodes", "a periodic cell's eigenmodes depend on the phase across it: use solve.dispersion"));
+    }
     let driven = Driven::cavity(model, order)?;
     if driven.is_dispersive() {
         // ε(ω) makes the eigenproblem nonlinear in ω.

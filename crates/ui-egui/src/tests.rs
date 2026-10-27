@@ -15,6 +15,16 @@ fn scenario(name: &str) {
 }
 
 #[test]
+fn scenario_periodic_cell() {
+    scenario("periodic_cell");
+}
+
+#[test]
+fn scenario_dispersion_diagram() {
+    scenario("dispersion_diagram");
+}
+
+#[test]
 fn scenario_open_sample() {
     scenario("open_sample");
 }

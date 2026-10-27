@@ -185,6 +185,9 @@ fn body(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, states: &[StepState
                 })
                 .collect();
             kv(ui, "symmetry", if planes.is_empty() { "none (the whole model)".into() } else { planes.join("; ") }, t);
+            if let Some(p) = &m.periodic {
+                kv(ui, "periodic", crate::browser::periodic_text(p), t);
+            }
         }
         Step::Mesh => mesh(app, ui, lu, t),
         Step::Setup => setup(app, ui, fu, t),

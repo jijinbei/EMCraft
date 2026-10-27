@@ -241,6 +241,20 @@ Cuts a waveguide symmetric about its middle (x = a/2 or y = b/2) on that plane: 
 | `at` | number | length | no | the plane's position (default the guide's middle, the only one allowed) |
 | `clear` | boolean |  | no | remove the plane across `axis`, or every plane without it |
 
+## `model.periodic` — Periodic boundaries
+
+Makes the model the unit cell of an infinite array: the faces x = 0 and x = a (`x`), y = 0 and y = b (`y`) or z = 0 and z = length (`z`) tied by Floquet's condition E(r + L) = e^{−jψ}E(r) (master/slave elimination; the system is then solved by LU, being Hermitian rather than complex symmetric). Across x and y the phases come from a plane wave incident at `theta` from the z axis and azimuth `phi` from x, in the first port's medium; the ports on the cell's ends become Floquet ports (the harmonics TE and TM (m, n), the (0, 0) of `polarization` excited and read, the rest absorbing). Along z the cell is a period of a guide whose dispersion `solve.dispersion` finds (no ports). Waveguide geometries only (the structured mesh's opposite faces match); not with symmetry planes, open boundaries, lumped ports or the time domain. `clear` removes them.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `x` | boolean |  | no | tie x = 0 and x = a (default true; as before when set) |
+| `y` | boolean |  | no | tie y = 0 and y = b (default true) |
+| `z` | boolean |  | no | tie z = 0 and z = length (default false; no ports then) |
+| `theta` | number |  | no | incidence angle from the z axis in degrees, 0 to below 90 (default 0) |
+| `phi` | number |  | no | incidence azimuth from the x axis in degrees (default 0) |
+| `polarization` | string |  | no | `te` (E across the plane of incidence, default) or `tm` |
+| `clear` | boolean |  | no | remove the periodic boundaries |
+
 ## `model.port.create` — Create port
 
 A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).
@@ -307,6 +321,36 @@ The resonances of the guide closed at both ends by conducting walls (a cavity; p
 | `near` | number | frequency | yes | the frequency the modes are sought around |
 | `count` | integer |  | no | modes, 1 to 50 (default 5) |
 | `order` | integer |  | no | element order: 1 or 2 (default) |
+
+## `solve.dispersion` — Dispersion diagram
+
+The Bloch modes of the periodic cell (model.periodic), its walls perfectly conducting and its ports left out: at each phase per period ψ from `from` to `to` along `axis` (the other periodic axes at phase 0), the `bands` lowest eigenfrequencies, by shift-invert subspace iteration on the phase-shifted (Hermitian) eigenproblem. Put `near` a little above the highest band wanted: modes up to about √2 times it are found. For a guide periodic along z whose sections fill its cross-section, results.dispersion adds the closed form (TE/TM harmonics of an empty guide; TE10's Bloch bands of a loaded one).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `axis` | string |  | no | the periodic axis swept: `x`, `y` or `z` (default z if periodic, else x) |
+| `from` | number |  | no | first phase per period in degrees (default 0) |
+| `to` | number |  | no | last phase per period in degrees (default 180: the zone's edge) |
+| `points` | integer |  | no | phases from `from` to `to`, 1 to 201 (default 11) |
+| `bands` | integer |  | no | eigenfrequencies per phase, 1 to 20 (default 4) |
+| `near` | number | frequency | no | the shift: a little above the highest band wanted (default the band's stop) |
+| `order` | integer |  | no | element order: 1 or 2 (default) |
+
+## `results.dispersion` — Dispersion table
+
+The dispersion diagram's phases, Bloch wavenumbers β = ψ/L (per display length) and bands, with the closed form where it applies.
+
+No parameters.
+
+## `view.dispersion` — Dispersion chart
+
+Writes a PNG of the dispersion diagram: frequency against the phase per period, the solved bands as markers over the closed form's curves where they apply, and the light line.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | PNG file to write |
+| `width` | integer |  | no | pixels (default 1000) |
+| `height` | integer |  | no | pixels (default 600) |
 
 ## `results.eigenmodes` — Eigenmode table
 

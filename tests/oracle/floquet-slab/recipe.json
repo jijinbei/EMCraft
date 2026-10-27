@@ -1,0 +1,13 @@
+[
+ {"command": "model.material.create", "params": {"name": "slab", "eps_r": 4}},
+ {"command": "geometry.waveguide", "params": {"width": 10, "height": 10, "sections": [{"length": 6, "material": "vacuum"}, {"length": 5, "material": "slab"}, {"length": 6, "material": "vacuum"}]}},
+ {"command": "mesh.generate", "params": {"size": 2.5}},
+ {"command": "model.port.create", "params": {"name": "below", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "above", "end": "end", "modes": 2}},
+ {"command": "model.periodic", "params": {"x": true, "y": true, "theta": 0}},
+ {"command": "solve.frequency", "params": {"frequencies": [10], "order": 2}, "id": "normal"},
+ {"command": "model.periodic", "params": {"theta": 30, "phi": 20, "polarization": "te"}},
+ {"command": "solve.frequency", "params": {"frequencies": [10], "order": 2}, "id": "te30"},
+ {"command": "model.periodic", "params": {"polarization": "tm"}},
+ {"command": "solve.frequency", "params": {"frequencies": [10], "order": 2}, "id": "tm30"}
+]

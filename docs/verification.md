@@ -99,7 +99,16 @@ result is frozen so it cannot drift.
    guide finds the length within 0.002 mm of the closed form's λg/4 = 11.1326 mm, |S11| 1.3e-4
    at the model it leaves (oracle `study-optimize-quarter-wave`; order 1 at 5 mm within 2 % in
    the gate); the simplex itself on a quadratic, on a minimum outside its box, on its budget.
-12. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+12. **Periodic structures** (`crates/solver/tests/periodic.rs`, `emcraft-solver::bloch`,
+   `emcraft-solver::lu`, the oracle): the unsymmetric LU against random systems with zero
+   diagonals; an infinite dielectric slab as a unit cell with Floquet ports at normal and
+   oblique incidence, TE and TM, against the transfer-matrix closed form — 6e-4 at 2.5 mm,
+   1.0e-4 at 1.25 mm (heavy: h⁴, as the guide's S) (oracle `floquet-slab`); an empty WR-90
+   periodic along z against TE10's (and TE20's) dispersion, the degenerate pair at the zone's
+   edge included (2e-6 to 1.3e-4; oracle `periodic-guide-dispersion`); WR-90 loaded
+   periodically with a dielectric against the closed-form Bloch band cos ψ = (A + D)/2 (within
+   4e-5; oracle `loaded-periodic-guide`).
+13. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

@@ -132,6 +132,12 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
         return Err(invalid("sweep options", "the tolerance must be > 0 and at least two frequencies solved in full"));
     }
     let nf = frequencies.len();
+    // A periodic cell's phases change with the frequency (and its system is not symmetric):
+    // not supported yet in the reduced basis, so each frequency is solved in full.
+    if d.tie.is_some() {
+        let results = frequencies.iter().map(|f| d.solve(*f)).collect::<Result<Vec<_>>>()?;
+        return Ok(FastSweep { results, full: vec![true; nf], basis: 0, worst_residual: 0.0 });
+    }
     let mut results: Vec<Option<FrequencyResult>> = vec![None; nf];
     let mut full = vec![false; nf];
     let mut basis = Basis { v: Vec::new(), kv: Vec::new(), mv: Vec::new(), wv: Vec::new(), dv: Vec::new() };

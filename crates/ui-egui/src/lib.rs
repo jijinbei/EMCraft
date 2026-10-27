@@ -61,10 +61,12 @@ pub enum View {
     Eigenmodes,
     /// The last parameter study: a sweep's curves or an optimization's progress.
     Study,
+    /// A periodic cell's dispersion diagram.
+    Dispersion,
 }
 
 impl View {
-    pub const ALL: [View; 10] = [
+    pub const ALL: [View; 11] = [
         View::Model,
         View::Outline,
         View::SParameters,
@@ -75,6 +77,7 @@ impl View {
         View::Compare,
         View::Eigenmodes,
         View::Study,
+        View::Dispersion,
     ];
 
     pub fn id(self) -> &'static str {
@@ -89,6 +92,7 @@ impl View {
             View::Compare => "compare",
             View::Eigenmodes => "eigenmodes",
             View::Study => "study",
+            View::Dispersion => "dispersion",
         }
     }
 
@@ -104,6 +108,7 @@ impl View {
             View::Compare => "Compare with theory",
             View::Eigenmodes => "Eigenmodes",
             View::Study => "Study",
+            View::Dispersion => "Dispersion",
         }
     }
 
@@ -470,6 +475,8 @@ impl EmcraftApp {
                     View::Eigenmodes
                 } else if results.radiation.is_some() {
                     View::FarField
+                } else if results.dispersion.is_some() {
+                    View::Dispersion
                 } else {
                     View::Model
                 };
@@ -481,6 +488,7 @@ impl EmcraftApp {
                 self.view = View::SParameters;
                 self.pick_frequency();
             }
+            "solve.dispersion" => self.view = View::Dispersion,
             "solve.eigenmodes" => {
                 self.view = View::Eigenmodes;
                 self.field.view.mode = Some(0);
