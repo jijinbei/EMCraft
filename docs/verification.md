@@ -90,7 +90,7 @@ result is frozen so it cannot drift.
    a closed-form step, ρ e^{−j2πfτ}, steps to ρ at τ and stays there (low pass) and peaks at τ
    with |ρ| (band pass); a stripline narrowing from 3 to 1 mm steps at its round trip to the ρ
    of its two ends' cross-section impedances, 0.339 against 0.346 (heavy).
-11. **Parameter studies** (`crates/engine/src/study_tests.rs`, the oracle): a variable changed
+11. **Parameter studies** (`crates/engine/src/study/tests.rs`, the oracle): a variable changed
    rebuilds the model (geometry and mesh) from the history, undo goes back, the project saved
    and opened is the same, expressions and all; hostile expressions and studies are refused.
    A sweep of the high-pass filter's middle section over 10, 20 and 30 mm against the exact
