@@ -219,3 +219,20 @@ fn the_study_is_charted() {
     assert_eq!(r["width"], 400);
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn a_cancelled_study_stops_and_leaves_the_session() {
+    let mut s = filter(8.0);
+    let history = s.history.clone();
+    let p = crate::progress::Progress::new();
+    p.cancel();
+    let solve = json!({"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}});
+    let r = crate::progress::scope(p.clone(), || s.execute("study.sweep", &json!({"variable": "l", "values": [15, 25], "solve": solve})));
+    assert_eq!(r, Err(EngineError::Failed(crate::progress::CANCELLED.into())));
+    let r = crate::progress::scope(p, || {
+        s.execute("study.optimize", &json!({"variables": [{"name": "l", "min": 10, "max": 30}], "goal": {"type": "max_min_db"}, "solve": solve}))
+    });
+    assert_eq!(r, Err(EngineError::Failed(crate::progress::CANCELLED.into())));
+    assert_eq!(s.history, history);
+    assert!(s.results.study.is_none());
+}

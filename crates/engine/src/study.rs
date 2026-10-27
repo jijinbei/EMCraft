@@ -655,7 +655,7 @@ fn axis_of(label: &str, values: impl Iterator<Item = f64>) -> Axis {
     if !lo.is_finite() {
         return Axis::new(label, 0.0, 1.0);
     }
-    let pad = if hi > lo { 0.0 } else { 0.05 * lo.abs().max(1.0) };
+    let pad = if hi > lo { 0.05 * (hi - lo) } else { 0.05 * lo.abs().max(1.0) };
     Axis::new(label, lo - pad, hi + pad)
 }
 
@@ -685,7 +685,7 @@ pub fn chart(study: &Study, parameter: Option<&str>) -> Result<Chart> {
         let y = axis_of("goal", points.iter().map(|p| p[1]));
         return Ok(Chart {
             title: format!("Optimization: {}", study.goal.clone().unwrap_or_default()),
-            x: Axis::new("evaluation", 1.0, (study.rows.len().max(2)) as f64),
+            x: Axis::new("evaluation", 0.5, study.rows.len().max(2) as f64 + 0.5),
             y,
             series: vec![
                 Series { label: "each solve".into(), color: Rgb(140, 140, 150), style: Style::Markers, points },
@@ -730,7 +730,9 @@ pub fn chart(study: &Study, parameter: Option<&str>) -> Result<Chart> {
         if series.is_empty() {
             return Err(none());
         }
-        let x = axis_of(&format!("frequency ({fu})"), series.iter().flat_map(|s| s.points.iter().map(|q| q[0])));
+        let (f0, f1) =
+            series.iter().flat_map(|s| s.points.iter().map(|q| q[0])).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), f| (a.min(f), b.max(f)));
+        let x = if f1 > f0 { Axis::new(&format!("frequency ({fu})"), f0, f1) } else { axis_of(&format!("frequency ({fu})"), [f0].into_iter()) };
         let lowest = series.iter().flat_map(|s| s.points.iter().map(|q| q[1])).fold(0.0f64, f64::min);
         let y = Axis::new(&format!("{label} (dB)"), ((lowest / 10.0).floor() * 10.0).clamp(-80.0, -10.0), 2.0);
         return Ok(Chart { title: format!("{label} as {} varies", name("")), x, y, series, marks: Vec::new() });
