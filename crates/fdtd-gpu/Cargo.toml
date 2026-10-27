@@ -1,0 +1,20 @@
+[package]
+name = "emcraft-fdtd-gpu"
+description = "EMCraft's time-domain leapfrog on a GPU (or the CPU's SIMD) through CubeCL, in single or double precision"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# NVIDIA GPUs (the driver is loaded at run time: a build without CUDA installed still runs).
+cuda = ["cubecl/cuda"]
+
+[dependencies]
+emcraft-fdtd = { workspace = true }
+cubecl = { workspace = true }
+
+[dev-dependencies]
+emcraft-model = { workspace = true }

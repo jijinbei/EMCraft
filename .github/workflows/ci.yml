@@ -33,7 +33,7 @@ jobs:
       # apps or the docs keeps it and skips the run.
       - name: Oracle inputs
         id: oracle-key
-        run: echo "key=oracle-pass-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'tests/oracle/**', 'crates/model/**', 'crates/mesh/**', 'crates/tetmesh/**', 'crates/fem/**', 'crates/theory/**', 'crates/solver/**', 'crates/fdtd/**', 'crates/io/**', 'crates/render/**', 'crates/engine/**', 'crates/testkit/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=oracle-pass-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'tests/oracle/**', 'crates/model/**', 'crates/mesh/**', 'crates/tetmesh/**', 'crates/fem/**', 'crates/theory/**', 'crates/solver/**', 'crates/fdtd/**', 'crates/fdtd-gpu/**', 'crates/io/**', 'crates/render/**', 'crates/engine/**', 'crates/testkit/**') }}" >> "$GITHUB_OUTPUT"
       - name: Oracle passed before with these inputs
         id: oracle-cache
         uses: actions/cache/restore@v4

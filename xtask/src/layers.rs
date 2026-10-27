@@ -48,6 +48,7 @@ pub const TABLE: &[(&str, Class)] = &[
     // L2: solvers.
     ("solver", Class::Layer(2)),
     ("fdtd", Class::Layer(2)),
+    ("fdtd-gpu", Class::Layer(2)),
     // L6: commands.
     ("engine", Class::Layer(6)),
     // L7: the desktop UI.
@@ -60,7 +61,7 @@ pub const TABLE: &[(&str, Class)] = &[
 ];
 
 /// Explicit orderings *within* a layer (earlier may be used by later).
-pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["fem", "theory"], &["fem", "mesh"]];
+pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["fem", "theory"], &["fem", "mesh"], &["fdtd", "fdtd-gpu"]];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));

@@ -17,6 +17,7 @@ emcraft-theory = { path = "crates/theory" }
 emcraft-render = { path = "crates/render" }
 emcraft-solver = { path = "crates/solver" }
 emcraft-fdtd = { path = "crates/fdtd" }
+emcraft-fdtd-gpu = { path = "crates/fdtd-gpu" }
 emcraft-io = { path = "crates/io" }
 emcraft-engine = { path = "crates/engine" }
 emcraft-ui-egui = { path = "crates/ui-egui" }
@@ -28,6 +29,8 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # Complex numbers for the frequency-domain solver (docs/adr/0001-libraries.md).
 num-complex = { version = "0.4", default-features = false, features = ["std"] }
 faer = "0.24"
+# GPU kernels written in Rust (docs/adr/0002-gpu.md); pinned, its API moves between releases.
+cubecl = { version = "=0.11.3", features = ["cpu"] }
 rayon = "1"
 
 # geometry import: 3MF packages (zip, XML), the same lines as FieldCraft
@@ -76,6 +79,9 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.emcraft-fdtd]
+opt-level = 3
+
+[profile.dev.package.emcraft-fdtd-gpu]
 opt-level = 3
 
 [profile.release]

@@ -60,6 +60,8 @@ pub enum FdtdError {
     Invalid { what: String, why: String },
     #[error("not supported yet: {0}")]
     Unsupported(String),
+    #[error("the device failed: {0}")]
+    Device(String),
     #[error("the grid would have {cells} cells, more than the limit of {limit}: use a larger cell")]
     TooLarge { cells: usize, limit: usize },
 }
