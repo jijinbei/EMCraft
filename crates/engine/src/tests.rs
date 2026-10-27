@@ -294,11 +294,16 @@ fn the_time_domain_runs_where_the_machine_can() {
     }
     let r = s.execute("solve.time_domain", &json!({"frequencies": [6, 8], "cell": 3, "device": "cpu", "precision": "double"})).unwrap();
     assert_eq!((r["device"].as_str(), r["precision"].as_str()), (Some("cpu"), Some("double")));
-    // An open model stays on the threads.
+    // An open model on the GPU's kernels (run on the CPU here) matches the threads.
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
     s.execute("model.open", &json!({"thickness": 10})).unwrap();
-    assert!(s.execute("solve.time_domain", &json!({"frequencies": [10], "device": "cubecl-cpu"})).is_err());
+    s.execute("model.port.lumped", &json!({"name": "gap", "from": [20, 20, 19], "to": [20, 20, 21], "impedance": 50})).unwrap();
+    let threads = s.execute("solve.time_domain", &json!({"frequencies": [10], "cell": 2})).unwrap();
+    let kernels = s.execute("solve.time_domain", &json!({"frequencies": [10], "cell": 2, "device": "cubecl-cpu", "precision": "double"})).unwrap();
+    let z = |r: &Value| r["points"][0]["ports"][0]["impedance"]["re"].as_f64().unwrap();
+    assert!((z(&kernels) / z(&threads) - 1.0).abs() < 1e-9, "{} {}", z(&kernels), z(&threads));
+    assert_eq!(kernels["device"], "cubecl-cpu");
 }
 
 #[test]

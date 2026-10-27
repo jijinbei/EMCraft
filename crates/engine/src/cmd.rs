@@ -285,7 +285,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("stop", K::Number, "last frequency").of(F),
             opt("points", K::Integer, "frequencies from start to stop (default 11)"),
             opt("cell", K::Number, "the cell size (default 1 mm)").of(L),
-            opt("device", K::String, "where the guide's leapfrog runs: `cpu` (the CPU's threads, default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); solve.devices lists what this machine has").one_of(&["cpu", "cuda", "cubecl-cpu"]),
+            opt("device", K::String, "where the leapfrog runs: `cpu` (the CPU's threads, default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); solve.devices lists what this machine has").one_of(&["cpu", "cuda", "cubecl-cpu"]),
             opt("precision", K::String, "the fields' floating point on a GPU device: `single` (default) or `double`; the CPU's threads run in double").one_of(&["single", "double"]),
         ],
         effect: Effect::Solve,

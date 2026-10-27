@@ -1,21 +1,11 @@
-//! The kernels: one unit per lattice point for H and E (each unit updating the components that
-//! have that point), one per E_y node of the source plane, and one cube per projection.
-//!
-//! Lattices (n cells along each axis): E_x (nx, ny+1, nz+1), E_y (nx+1, ny, nz+1),
-//! E_z (nx+1, ny+1, nz); H_x (nx+1, ny, nz), H_y (nx, ny+1, nz), H_z (nx, ny, nz+1); indices
-//! i + d₀ (j + d₁ k). Edges and faces with a zero coefficient are not updated (conductors).
+//! The guide's kernels: H and E on a tensor grid with the CPML along z and dispersive edges,
+//! one unit per E_y node of the source plane, one cube per projection. Edges and faces with a
+//! zero coefficient are not updated (conductors).
 
 use cubecl::prelude::*;
 
-use crate::buffer::{Buf, Real};
-
-/// One array per axis: a field's components, their coefficients, the grid's steps.
-#[derive(CubeLaunch, CubeType)]
-pub(crate) struct Xyz<F: Float> {
-    x: Box<[F]>,
-    y: Box<[F]>,
-    z: Box<[F]>,
-}
+use super::{Cells, Xyz, at, point};
+use crate::buffer::Real;
 
 /// The CPML along z of the two components with a z derivative: their auxiliary variables ψ
 /// and (b, a) per z position (ψ ← b ψ + a ∂).
@@ -76,40 +66,6 @@ fn advance<F: Real>(poles: &mut Poles<F>, slot: u32, e: F, curl: F) -> F {
         t += 1;
     }
     e_new
-}
-
-/// The grid's cells along each axis.
-#[derive(CubeLaunch, CubeType)]
-pub(crate) struct Cells {
-    nx: u32,
-    ny: u32,
-    nz: u32,
-}
-
-/// A lattice point: the unit's (i, j, k) on the node lattice (nx+1) × (ny+1) × (nz+1).
-#[derive(CubeType)]
-struct Point {
-    i: usize,
-    j: usize,
-    k: usize,
-    nx: usize,
-    ny: usize,
-    nz: usize,
-}
-
-#[cube]
-fn point(n: &Cells) -> Point {
-    let nx = n.nx as usize;
-    let ny = n.ny as usize;
-    let nz = n.nz as usize;
-    let pos = ABSOLUTE_POS;
-    Point { i: pos % (nx + 1), j: (pos / (nx + 1)) % (ny + 1), k: pos / ((nx + 1) * (ny + 1)), nx, ny, nz }
-}
-
-/// The index of (i, j, k) on a lattice of d0 × d1 × ….
-#[cube]
-fn at(d0: usize, d1: usize, i: usize, j: usize, k: usize) -> usize {
-    i + d0 * (j + d1 * k)
 }
 
 /// H from n − ½ to n + ½ (`c` holds dt/μ, `d` the primal steps, the CPML's (b, a) per cell
@@ -274,19 +230,4 @@ pub(crate) fn project<F: Real>(ey: &[F], weights: &[F], record: &mut [F], plane:
     if u == 0 {
         record[2 * (slot as usize) + cube] = sums[0];
     }
-}
-
-/// out[0] = 2 × 1.5, to see whether a device runs `F` at all.
-#[cube(launch)]
-fn twice<F: Real>(out: &mut [F], x: F) {
-    if ABSOLUTE_POS == 0 {
-        out[0] = x * F::new(2.0_f32);
-    }
-}
-
-/// Whether the device runs kernels in `F`.
-pub(crate) fn probe<F: Real>(client: &Client) -> bool {
-    let out = Buf::<F>::zeros(client, 1);
-    twice::launch::<F>(client, CubeCount::Static(1, 1, 1), CubeDim::new_1d(1), out.arg(), F::of(1.5));
-    out.read(client).is_ok_and(|v| v.first() == Some(&3.0))
 }

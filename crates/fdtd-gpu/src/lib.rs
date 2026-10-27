@@ -17,17 +17,19 @@
 
 use std::ops::ControlFlow;
 
-use emcraft_fdtd::{Plan, Result, Stepper};
+use emcraft_fdtd::{OpenBatch, OpenPlan, OpenStepper, Plan, Result, Stepper};
 
 mod buffer;
 mod device;
 mod guide;
 mod kernels;
+mod open;
 
 pub use device::{Available, Backend, Precision, available};
 
 use crate::device::guarded;
 use crate::guide::Run;
+use crate::open::OpenRun;
 
 /// Steps between reads of the projections.
 pub const BATCH: usize = 500;
@@ -47,6 +49,19 @@ impl Stepper for Gpu {
             match self.precision {
                 Precision::Single => Run::<f32>::new(&client, plan)?.go(&client, plan, max_steps, observe),
                 Precision::Double => Run::<f64>::new(&client, plan)?.go(&client, plan, max_steps, observe),
+            }
+        })
+    }
+}
+
+impl OpenStepper for Gpu {
+    fn radiate(&self, plan: &OpenPlan, max_steps: usize, observe: &mut dyn FnMut(OpenBatch<'_>) -> ControlFlow<()>) -> Result<usize> {
+        let device = self.backend.device()?;
+        guarded(|| {
+            let client = device.client();
+            match self.precision {
+                Precision::Single => OpenRun::<f32>::new(&client, plan)?.go(&client, plan, max_steps, observe),
+                Precision::Double => OpenRun::<f64>::new(&client, plan)?.go(&client, plan, max_steps, observe),
             }
         })
     }

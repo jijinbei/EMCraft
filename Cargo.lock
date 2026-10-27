@@ -1967,6 +1967,7 @@ dependencies = [
  "cubecl",
  "emcraft-fdtd",
  "emcraft-model",
+ "num-complex",
 ]
 
 [[package]]

@@ -15,6 +15,7 @@ cuda = ["cubecl/cuda"]
 [dependencies]
 emcraft-fdtd = { workspace = true }
 cubecl = { workspace = true }
+num-complex = { workspace = true }
 
 [dev-dependencies]
 emcraft-model = { workspace = true }

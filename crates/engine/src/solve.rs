@@ -105,13 +105,13 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     if backend.is_none() && p.has("precision") && precision == Precision::Single {
         return Err(p.error("precision", "the CPU's threads run in double precision (single needs a GPU device)"));
     }
-    if s.model.open.is_some() {
-        if backend.is_some() {
-            return Err(emcraft_fdtd::FdtdError::Unsupported(format!("open models on {device} (run them on cpu)")).into());
-        }
-        return crate::open::solve_time_domain_open(s, &freqs, cell);
-    }
     let gpu = backend.map(|backend| Gpu { backend, precision });
+    if s.model.open.is_some() {
+        let mut reply = crate::open::solve_time_domain_open(s, &freqs, cell, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::OpenStepper))?;
+        reply["device"] = json!(device);
+        reply["precision"] = json!(gpu.map_or("double", |g| g.precision.name()));
+        return Ok(reply);
+    }
     let r =
         emcraft_fdtd::s_parameters_with(&s.model, &emcraft_fdtd::Options::new(cell), &freqs, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::Stepper))?;
     let points: Vec<Value> = r

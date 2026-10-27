@@ -8,7 +8,8 @@ use emcraft_fdtd::{FdtdError, Plan, Result};
 
 use crate::BATCH;
 use crate::buffer::{Buf, Ints, Real, Xyz};
-use crate::kernels::{self, CellsLaunch, PolesLaunch, ZCpmlLaunch};
+use crate::kernels::CellsLaunch;
+use crate::kernels::guide::{self as kernels, PolesLaunch, ZCpmlLaunch};
 
 /// One half step's arrays: the CPML's ψ of the x and y components and its (b, a) along z.
 struct Cpml<F> {

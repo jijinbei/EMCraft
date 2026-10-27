@@ -389,8 +389,8 @@ pub fn view_pattern(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// The time domain's open problem: lumped ports and dipoles on a Yee grid with a CPML.
-pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64) -> Result<Value> {
-    let r = emcraft_fdtd::open::radiate(&s.model, &emcraft_fdtd::open::OpenOptions::new(cell), freqs)?;
+pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64, device: Option<&dyn emcraft_fdtd::OpenStepper>) -> Result<Value> {
+    let r = emcraft_fdtd::open::radiate_with(&s.model, &emcraft_fdtd::open::OpenOptions::new(cell), freqs, device)?;
     let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
     let points: Vec<Value> = r
         .frequencies
