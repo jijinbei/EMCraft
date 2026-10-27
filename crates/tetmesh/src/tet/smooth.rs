@@ -211,8 +211,28 @@ impl LocalStar {
         measure::quality(&y)
     }
 
-    fn worst_at(&self, p: P) -> f64 {
-        (0..self.tets.len()).map(|k| self.quality_at(k, p)).fold(f64::INFINITY, f64::min)
+    /// The qualities with the vertex at `p`, into `out`; their minimum.
+    fn qualities_at(&self, p: P, out: &mut Vec<f64>) -> f64 {
+        out.clear();
+        out.extend((0..self.tets.len()).map(|k| self.quality_at(k, p)));
+        out.iter().copied().fold(f64::INFINITY, f64::min)
+    }
+
+    /// With the vertex at `p`: the worst quality when it is above `floor` (and the qualities in
+    /// `out`), else `None`, found without evaluating the tetrahedra after the first that is not
+    /// above `floor`.
+    fn worst_above(&self, p: P, floor: f64, out: &mut Vec<f64>) -> Option<f64> {
+        out.clear();
+        let mut worst = f64::INFINITY;
+        for k in 0..self.tets.len() {
+            let q = self.quality_at(k, p);
+            if !(q > floor) {
+                return None;
+            }
+            worst = worst.min(q);
+            out.push(q);
+        }
+        (worst > floor).then_some(worst)
     }
 }
 
@@ -245,13 +265,16 @@ pub fn smooth_vertex(cx: &mut TetComplex, ctx: &Context, v: u32) -> Result<bool>
     // The vertex moves once, to where the steps end: nothing sees the steps on the way, and each
     // is checked from where it started (the turn of its boundary faces too).
     let mut x = x0;
-    let mut worst = local.worst_at(x);
+    // The qualities at x (each evaluated once per place: the accepted step's are reused), and
+    // the buffers of a trial step and of the gradients.
+    let (mut at_x, mut trial) = (Vec::with_capacity(local.tets.len()), Vec::with_capacity(local.tets.len()));
+    let mut worst = local.qualities_at(x, &mut at_x);
+    let (mut qs, mut active) = (Vec::with_capacity(local.tets.len()), Vec::with_capacity(local.tets.len()));
     let mut to: Option<Point3> = None;
     for _ in 0..8 {
         // Qualities and gradients (central differences) of the tetrahedra near the worst.
-        let mut qs = Vec::with_capacity(local.tets.len());
-        for k in 0..local.tets.len() {
-            let q = local.quality_at(k, x);
+        qs.clear();
+        for (k, &q) in at_x.iter().enumerate() {
             let mut g = [0.0; 3];
             if q <= worst + 0.1 {
                 for (c, gc) in g.iter_mut().enumerate() {
@@ -263,7 +286,8 @@ pub fn smooth_vertex(cx: &mut TetComplex, ctx: &Context, v: u32) -> Result<bool>
             }
             qs.push((q, restrict(g, f)));
         }
-        let active: Vec<P> = qs.iter().filter(|s| s.0 <= worst + 1e-4).map(|s| s.1).collect();
+        active.clear();
+        active.extend(qs.iter().filter(|s| s.0 <= worst + 1e-4).map(|s| s.1));
         let d = min_norm(&active);
         let dd = dot(d, d);
         if !(dd > 1e-20) {
@@ -281,10 +305,13 @@ pub fn smooth_vertex(cx: &mut TetComplex, ctx: &Context, v: u32) -> Result<bool>
         let mut accepted = false;
         for _ in 0..6 {
             let Some(p) = ctx.place(cx.kind(v), add(x, scale(d, alpha))) else { break };
-            let q = local.worst_at(p.coords());
-            if p.coords() != x && q > worst && cx.move_keeps_star(v, &p, &star)? {
+            if p.coords() != x
+                && let Some(q) = local.worst_above(p.coords(), worst, &mut trial)
+                && cx.move_keeps_star(v, &p, &star)?
+            {
                 x = p.coords();
                 worst = q;
+                std::mem::swap(&mut at_x, &mut trial);
                 accepted = true;
                 to = Some(p);
                 break;
