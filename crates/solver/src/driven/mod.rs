@@ -454,6 +454,13 @@ impl Driven {
         self.media.mu(t)
     }
 
+    /// The system's matrix at `frequency` without the ports' terms, on the full unknowns (for
+    /// checks of the periodic reduction).
+    pub fn matrix_without_ports(&self, frequency: f64) -> Result<Csr> {
+        check_frequency(frequency)?;
+        self.unbordered(frequency)
+    }
+
     /// The curl–curl matrix K, the mass matrix M (complex permittivity) and their sparsity
     /// pattern, for eigenmode analysis.
     pub(crate) fn matrices(&self) -> (&Csr, &[f64], &[C]) {

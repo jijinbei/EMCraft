@@ -64,6 +64,43 @@ fn slab_at_oblique_incidence_te_and_tm() {
 }
 
 #[test]
+fn oblique_cells_are_deterministic_passive_and_reciprocal() {
+    let d = Driven::new(&slab_cell(25f64.to_radians(), 0.4, Polarization::Te, 0.0025), Order::Two).unwrap();
+    let (a, b) = (d.solve(9e9).unwrap(), d.solve(9e9).unwrap());
+    assert_eq!(a.s, b.s, "the same input gives the same S, bit for bit");
+    // Lossless: |S11|² + |S21|² = 1 but for what the mesh scatters into the cross-polarised
+    // (0, 0) mode, which propagates too (measured 2.7e-8 of the power); the slab is symmetric:
+    // S22 = S11.
+    let (s11, s21, s22) = (a.s[0][0], a.s[1][0], a.s[1][1]);
+    assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-6, "{}", s11.norm_sqr() + s21.norm_sqr());
+    assert!((s22 - s11).norm() < 1e-3, "{s11} {s22}");
+}
+
+#[test]
+fn the_reduced_curl_curl_matrix_is_hermitian() {
+    // Tᴴ K T with K real symmetric and a complex phase: Hermitian, not symmetric.
+    let mut m = slab_cell(0.0, 0.0, Polarization::Te, 0.004);
+    m.ports.clear();
+    m.set_periodic(Some(Periodic { x: true, y: true, z: true, theta: 0.0, phi: 0.0, polarization: Polarization::Te })).unwrap();
+    let d = Driven::cavity(&m, Order::One).unwrap();
+    let tie = d.tie.as_ref().unwrap();
+    let a = d.matrix_without_ports(5e9).unwrap();
+    let r = tie.reduce(&a.val, [0.7, -1.1, 2.3]);
+    let (mut asym, mut aherm, mut scale) = (0.0f64, 0.0f64, 0.0f64);
+    for i in 0..r.n {
+        for k in r.ptr[i]..r.ptr[i + 1] {
+            let j = r.col[k];
+            let (x, y) = (r.val[k], r.get(j, i));
+            scale = scale.max(x.norm());
+            asym = asym.max((x - y).norm());
+            aherm = aherm.max((x - y.conj()).norm());
+        }
+    }
+    assert!(aherm < 1e-12 * scale, "{aherm:e}");
+    assert!(asym > 1e-3 * scale, "a complex phase makes it unsymmetric: {asym:e}");
+}
+
+#[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn slab_converges() {
     let th = 40f64.to_radians();
