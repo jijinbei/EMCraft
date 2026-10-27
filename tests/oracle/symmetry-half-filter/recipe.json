@@ -1,0 +1,6 @@
+[
+ {"command": "file.sample", "params": {"name": "iris-bandpass"}},
+ {"command": "model.symmetry", "params": {"axis": "x", "kind": "magnetic"}},
+ {"command": "mesh.generate", "params": {"size": 3, "edge": 0.1, "size_y": 10.16}},
+ {"command": "solve.frequency", "params": {"frequencies": [9.6, 10.0, 10.4], "order": 2}, "id": "solve"}
+]

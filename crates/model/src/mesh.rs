@@ -10,6 +10,8 @@ pub enum Boundary {
     Pec,
     /// The port with this index in [`crate::Model::ports`]'s order of ends (0 = start, 1 = end).
     Port(u32),
+    /// A symmetry plane closed by an electric or magnetic wall ([`crate::Symmetry`]).
+    Symmetry(crate::SymmetryKind),
 }
 
 /// A boundary triangle: its nodes, the tetrahedron it bounds and its condition.

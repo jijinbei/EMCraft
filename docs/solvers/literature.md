@@ -84,6 +84,16 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Pitkäranta, *Direct and inverse error estimates for finite elements with mesh refinements*,
   Numer. Math. 33:447–471, 1979 — geometric grading towards singularities (`emcraft-mesh`).
 
+## Symmetry planes
+- J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, ch. 1 and
+  ch. 8 — the electric wall (tangential E = 0) as the essential condition of edge elements, its
+  tangential unknowns eliminated, and the magnetic wall (tangential H = 0) as the natural one,
+  its unknowns kept with no surface term (`emcraft-model::Symmetry`, `emcraft-solver::driven`).
+- R. F. Harrington, *Time-Harmonic Electromagnetic Fields*, McGraw-Hill 1961, ch. 3 — duality
+  and images: a field even or odd about a plane of a symmetric model is the half model's closed
+  there by a magnetic or an electric wall, and beyond the plane the image of the half's (the
+  ports' modes of that parity; fields shown beyond the plane).
+
 ## Losses
 - T. B. A. Senior, J. L. Volakis, *Approximate Boundary Conditions in Electromagnetics*, IEE 1995,
   §2.2 — the Leontovich surface-impedance condition for walls of finite conductivity.

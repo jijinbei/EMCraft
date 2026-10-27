@@ -650,6 +650,9 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
         return Err(invalid("frequencies", "must be finite numbers > 0"));
     }
     let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
+    if !model.symmetry.is_empty() {
+        return Err(FdtdError::Unsupported("symmetry planes in the time domain (clear them: model.symmetry with clear true)".into()));
+    }
     if !w.plain() {
         return Err(FdtdError::Unsupported("layers and strips in the time domain (its ports carry TE10 only)".into()));
     }

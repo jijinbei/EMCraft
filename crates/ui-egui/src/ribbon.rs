@@ -20,7 +20,7 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
             ("SETTINGS", &["units.set", "project.frequency"]),
         ],
     ),
-    ("MATERIALS", &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open"])]),
+    ("MATERIALS", &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open", "model.symmetry"])]),
     (
         "PORTS & SOURCES",
         &[("PORTS", &["model.port.create", "model.port.lumped"]), ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"])],
@@ -56,6 +56,7 @@ pub fn button_label(id: &str) -> &str {
         "model.material.create" => "Material",
         "model.walls" => "Walls",
         "model.open" => "Open boundary",
+        "model.symmetry" => "Symmetry",
         "model.port.create" => "Port",
         "model.port.lumped" => "Lumped port",
         "source.dipole" => "Dipole",

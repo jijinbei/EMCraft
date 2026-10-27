@@ -335,7 +335,7 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         // An end the mesh tags as a port is a wall until a port is put there.
         let port = match f.tag {
             Boundary::Port(k) => m.ports.iter().any(|p| (p.end == End::Start) == (k == 0)),
-            Boundary::Pec => false,
+            Boundary::Pec | Boundary::Symmetry(_) => false,
         };
         let (color, alpha) = match overlay {
             Overlay::Plain => (if port { PORT_SOFT } else { METAL }, 255),

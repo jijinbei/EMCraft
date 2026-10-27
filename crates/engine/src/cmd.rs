@@ -207,6 +207,19 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::geometry::walls,
     },
     CommandSpec {
+        id: "model.symmetry",
+        label: "Symmetry plane",
+        doc: "Cuts a waveguide symmetric about its middle (x = a/2 or y = b/2) on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters; ports carry only the modes of the kept parity, fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. Waveguides only; the time-domain solver refuses symmetry planes. Drops the mesh.",
+        params: &[
+            opt("axis", K::String, "`x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove").one_of(&["x", "y"]),
+            opt("kind", K::String, "`electric` (PEC wall) or `magnetic` (PMC wall)").one_of(&["electric", "magnetic"]),
+            opt("at", K::Number, "the plane's position (default the guide's middle, the only one allowed)").of(L),
+            opt("clear", K::Boolean, "remove the plane across `axis`, or every plane without it"),
+        ],
+        effect: Effect::Record,
+        run: crate::geometry::symmetry,
+    },
+    CommandSpec {
         id: "model.port.create",
         label: "Create port",
         doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).",

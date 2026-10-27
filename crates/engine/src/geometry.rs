@@ -1,7 +1,9 @@
 //! Commands that build the model: materials, the waveguide, solids, imported surfaces,
 //! inclusions and features, walls and ports.
 
-use emcraft_model::{Feature, Inclusion, Layer, Material, Point3, Port, PortFace, Section, Shape, Solid, Strip, Waveguide};
+use emcraft_model::{
+    Axis, Feature, Inclusion, Layer, Material, Point3, Port, PortFace, Section, Shape, Solid, Strip, Symmetry, SymmetryKind, Waveguide,
+};
 use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session};
@@ -155,6 +157,49 @@ pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
     s.model.set_wall_conductivity(sigma)?;
     s.results.sweep = None;
     Ok(json!({"conductivity": sigma}))
+}
+
+/// A plane's axis for `model.symmetry` (z is not one: the ports lie on z planes).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum PlaneAxis {
+    X,
+    Y,
+}
+
+pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
+    let clear = p.flag("clear").or(false)?;
+    let axis = p.choice::<PlaneAxis>("axis").optional()?.map(|a| match a {
+        PlaneAxis::X => Axis::X,
+        PlaneAxis::Y => Axis::Y,
+    });
+    let mut planes = s.model.symmetry.clone();
+    if clear {
+        if p.has("kind") || p.has("at") {
+            return Err(p.error("clear", "takes only `axis` (the plane to remove; all of them without it)"));
+        }
+        planes.retain(|q| axis.is_some_and(|a| q.axis != a));
+    } else {
+        let axis = axis.ok_or_else(|| p.error("axis", "is required (or `clear`)"))?;
+        let kind: SymmetryKind = p.choice("kind").required()?;
+        // The guide's middle by default: the only plane its walls are symmetric about.
+        let middle = s.model.bounds().map(|b| 0.5 * (b.min[axis.index()] + b.max[axis.index()]));
+        let at = p.length("at").or_maybe(middle).required_or("no geometry to take the middle of")?;
+        planes.retain(|q| q.axis != axis);
+        planes.push(Symmetry { axis, at, kind });
+        planes.sort_by_key(|q| q.axis.index());
+    }
+    s.model.set_symmetry(planes)?;
+    s.results.sweep = None;
+    s.results.eigen = None;
+    s.results.time_domain = None;
+    let shown: Vec<Value> = s
+        .model
+        .symmetry
+        .iter()
+        .map(|q| json!({"axis": if q.axis == Axis::X { "x" } else { "y" }, "at": s.show_length(q.at), "kind": q.kind}))
+        .collect();
+    Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction()}))
 }
 
 pub fn port(s: &mut Session, p: &Params) -> Result<Value> {

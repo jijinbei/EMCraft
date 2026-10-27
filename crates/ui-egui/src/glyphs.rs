@@ -369,7 +369,7 @@ pub fn for_command(id: &str) -> &'static str {
         "geometry.inclusion" => "inclusion",
         "geometry.import" => "import",
         "model.material.create" => "material",
-        "model.walls" => "walls",
+        "model.walls" | "model.symmetry" => "walls",
         "model.port.create" => "port",
         "model.port.lumped" => "lumped",
         "source.dipole" => "dipole",

@@ -41,6 +41,11 @@ pub(crate) fn eigenmode_table(s: &Session) -> Result<Value> {
 /// waveguide section; none for other models.
 fn exact_resonances(s: &Session) -> Vec<(f64, String)> {
     let m = &s.model;
+    // Cut by a symmetry plane, the cavity holds only the modes of one parity: the whole list
+    // would mislead.
+    if !m.symmetry.is_empty() {
+        return Vec::new();
+    }
     if let Some(w) = m.waveguide.as_ref()
         && w.sections.len() == 1
         && w.uniform()
