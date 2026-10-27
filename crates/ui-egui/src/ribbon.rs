@@ -254,7 +254,7 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 /// Switches the viewport to `v`, solving the port modes when that view has none yet.
 pub fn show_view(app: &mut EmcraftApp, v: View) {
     app.view = v;
-    if v == View::PortModes && app.port_modes.is_none() && app.session.model.mesh.is_some() && !app.busy() {
+    if v == View::PortModes && app.views.port_modes.is_none() && app.session.model.mesh.is_some() && !app.busy() {
         let _ = app.open_dialog("solve.port_modes");
     }
 }

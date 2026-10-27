@@ -46,7 +46,7 @@ pub(super) fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     ui.allocate_rect(area, Sense::hover());
     let mut overlay = app.workflow.step.map_or(crate::scene3d::Overlay::Plain, crate::steps::overlay);
     // In Results, the field's plane in the model.
-    if app.workflow.step == Some(crate::steps::Step::Results) && solved(app) {
+    if app.workflow.step == Some(crate::steps::Step::Results) && View::Field.available(app) {
         overlay = crate::scene3d::Overlay::Field;
     }
     crate::view3d::show(app, ui, area, overlay);

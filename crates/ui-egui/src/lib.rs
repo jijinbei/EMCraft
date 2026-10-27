@@ -7,12 +7,14 @@
 //! cards; messages, progress and Cancel at the bottom.
 //!
 //! Everything the UI does goes through engine commands ([`EmcraftApp::run`]); long ones run on a
-//! worker thread ([`worker`]) so the window keeps drawing. Agents and tests drive the same app
-//! through the control channel ([`control`]: `emcraft --control PORT`) and headless scenarios
-//! ([`scenario`]); [`raster`] draws a frame without a window.
+//! worker thread ([`worker`]) so the window keeps drawing, and what follows a command's success
+//! (the view it calls for, the state it resets) is in `after`. Agents and tests drive the same
+//! app through the control channel ([`control`]: `emcraft --control PORT`) and headless
+//! scenarios ([`scenario`]); [`raster`] draws a frame without a window.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod after;
 pub mod browser;
 pub mod control;
 pub mod dialog_ui;
@@ -20,180 +22,36 @@ pub mod dialogs;
 pub mod files;
 pub mod glyphs;
 pub mod home;
+mod messages;
+pub mod picture;
 pub mod prefs;
 pub mod raster;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;
+mod shots;
+pub mod state;
 mod status;
 pub mod steps;
 pub mod theme;
 pub mod ui_kit;
+pub mod view;
 pub mod view3d;
 pub mod viewport;
 pub mod worker;
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender};
-use std::time::Instant;
+use std::sync::mpsc::Receiver;
 
-use emcraft_engine::view::{FieldView, Plane, PlaneSamples, Probe};
 use emcraft_engine::{EngineError, Session};
 use serde_json::{Value, json};
 
 pub use control::ControlRequest;
-
-/// What the viewport shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum View {
-    /// The model in 3D.
-    Model,
-    /// The model's H-plane and E-plane outlines.
-    Outline,
-    SParameters,
-    /// Time-domain reflectometry of a port.
-    Tdr,
-    Field,
-    PortModes,
-    FarField,
-    Compare,
-    Eigenmodes,
-    /// The last parameter study: a sweep's curves or an optimization's progress.
-    Study,
-    /// A periodic cell's dispersion diagram.
-    Dispersion,
-}
-
-impl View {
-    pub const ALL: [View; 11] = [
-        View::Model,
-        View::Outline,
-        View::SParameters,
-        View::Tdr,
-        View::Field,
-        View::PortModes,
-        View::FarField,
-        View::Compare,
-        View::Eigenmodes,
-        View::Study,
-        View::Dispersion,
-    ];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            View::Model => "model",
-            View::Outline => "outline",
-            View::SParameters => "sparameters",
-            View::Tdr => "tdr",
-            View::Field => "field",
-            View::PortModes => "port_modes",
-            View::FarField => "far_field",
-            View::Compare => "compare",
-            View::Eigenmodes => "eigenmodes",
-            View::Study => "study",
-            View::Dispersion => "dispersion",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            View::Model => "Model 3D",
-            View::Outline => "Outline",
-            View::SParameters => "S-parameters",
-            View::Tdr => "TDR",
-            View::Field => "Field",
-            View::PortModes => "Port modes",
-            View::FarField => "Far field",
-            View::Compare => "Compare with theory",
-            View::Eigenmodes => "Eigenmodes",
-            View::Study => "Study",
-            View::Dispersion => "Dispersion",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<View> {
-        View::ALL.into_iter().find(|v| v.id() == s)
-    }
-}
-
-/// A line of the message area.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Message {
-    pub text: String,
-    pub error: bool,
-    /// The same message repeated in a row.
-    pub count: u32,
-}
-
-/// Messages kept.
-const MAX_MESSAGES: usize = 200;
-
-/// A CPU picture shown as a texture, uploaded to each egui context that draws it (the window's,
-/// and the offscreen one of `ui.render`).
-pub struct Picture {
-    pub key: String,
-    pub image: Arc<egui::ColorImage>,
-    textures: Vec<(egui::Context, egui::TextureHandle)>,
-}
-
-impl Picture {
-    pub fn new(key: String, canvas: &emcraft_render::Canvas) -> Picture {
-        let image = egui::ColorImage::from_rgba_unmultiplied([canvas.w, canvas.h], &canvas.rgba);
-        Picture { key, image: Arc::new(image), textures: Vec::new() }
-    }
-
-    pub fn size(&self) -> egui::Vec2 {
-        egui::vec2(self.image.size[0] as f32, self.image.size[1] as f32)
-    }
-
-    /// Its texture in `ctx`.
-    pub fn texture(&mut self, ctx: &egui::Context) -> egui::TextureId {
-        if let Some((_, h)) = self.textures.iter().find(|(c, _)| c == ctx) {
-            return h.id();
-        }
-        let h = ctx.load_texture(format!("picture:{}", self.key.len()), self.image.clone(), egui::TextureOptions::LINEAR);
-        let id = h.id();
-        // The window's context and at most one offscreen one.
-        if self.textures.len() >= 2 {
-            drop(self.textures.remove(1));
-        }
-        self.textures.push((ctx.clone(), h));
-        id
-    }
-}
-
-/// The field view's state.
-pub struct FieldState {
-    pub view: FieldView,
-    /// The plane's position in display length units; the middle when `None`.
-    pub at: Option<f64>,
-    pub samples: Option<PlaneSamples>,
-    pub picture: Option<Picture>,
-    /// Where the picture puts the plane, for reading the pointer's position.
-    pub layout: Option<emcraft_render::plot::Layout>,
-    /// The phase animation, played like a video.
-    pub player: ui_kit::Player,
-    /// The fields under the pointer (last frame), and the point clicked on the plane (display
-    /// units along the picture's axes), read again whenever the view changes.
-    pub hover: Option<Probe>,
-    pub pinned: Option<[f64; 2]>,
-    /// Planes kept for the 3D view beside the field view's own (plane, position in display
-    /// units), and their samples.
-    pub kept: Vec<(Plane, f64)>,
-    pub kept_samples: Vec<Option<PlaneSamples>>,
-    /// The model in 3D beside the picture.
-    pub beside_3d: bool,
-}
-
-/// A window screenshot waiting for its frame.
-pub(crate) struct Shot {
-    pub token: u64,
-    pub path: Option<String>,
-    pub reply: Sender<Value>,
-    pub asked: Instant,
-    pub sent: bool,
-}
+pub use messages::Message;
+pub use picture::Picture;
+pub use state::FieldState;
+pub use view::View;
 
 pub struct EmcraftApp {
     pub session: Session,
@@ -206,20 +64,8 @@ pub struct EmcraftApp {
     pub dock_dialogs: bool,
     pub view: View,
     pub field: FieldState,
-    pub chart: Option<Picture>,
-    /// The study view's chart and the S-parameter it shows (a sweep's; the first when `None`).
-    pub study_chart: Option<Picture>,
-    pub study_parameter: Option<String>,
-    /// The far-field pattern's azimuth (degrees).
-    pub pattern_phi: f64,
-    pub port_modes: Option<Value>,
-    pub compare: Option<Value>,
-    pub eigen_table: Option<(u64, Value)>,
-    /// The picked port mode's picture (Port modes view).
-    pub mode_picture: Option<Picture>,
-    /// The TDR view's port and transform (defaults when `None`), and its chart.
-    pub tdr: (Option<String>, Option<emcraft_engine::tdr::Mode>),
-    pub tdr_chart: Option<Picture>,
+    /// What the result views keep: their charts, tables and settings.
+    pub views: state::ViewState,
     pub messages: Vec<Message>,
     pub search: ribbon::Search,
     pub browser: browser::Browser,
@@ -228,7 +74,7 @@ pub struct EmcraftApp {
     pub synthetic: VecDeque<egui::Event>,
     synthetic_mods: egui::Modifiers,
     pub control_rx: Option<Receiver<ControlRequest>>,
-    pub(crate) shots: Vec<Shot>,
+    pub(crate) shots: Vec<shots::Shot>,
     shot_token: u64,
     pub quit_requested: bool,
     /// The input time of the last frame (s), which the animation advances from.
@@ -284,29 +130,8 @@ impl EmcraftApp {
             dialog: None,
             dock_dialogs: false,
             view: View::Model,
-            field: FieldState {
-                view: FieldView { show_h: false, ..FieldView::new(10.0e9, Plane::H) },
-                at: None,
-                samples: None,
-                picture: None,
-                layout: None,
-                player: ui_kit::Player::default(),
-                hover: None,
-                pinned: None,
-                kept: Vec::new(),
-                kept_samples: Vec::new(),
-                beside_3d: false,
-            },
-            chart: None,
-            study_chart: None,
-            study_parameter: None,
-            pattern_phi: 0.0,
-            port_modes: None,
-            compare: None,
-            eigen_table: None,
-            mode_picture: None,
-            tdr: (None, None),
-            tdr_chart: None,
+            field: FieldState::default(),
+            views: state::ViewState::default(),
             messages: vec![Message { text: "Open a sample or a project (File) or build a model from the ribbon.".into(), error: false, count: 1 }],
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),
@@ -381,40 +206,24 @@ impl EmcraftApp {
         app
     }
 
-    pub fn message(&mut self, text: impl std::fmt::Display, error: bool) {
-        let text: String = text.to_string().chars().take(2000).collect();
-        if let Some(last) = self.messages.last_mut()
-            && last.text == text
-            && last.error == error
-        {
-            last.count = last.count.saturating_add(1);
-            return;
-        }
-        self.messages.push(Message { text, error, count: 1 });
-        if self.messages.len() > MAX_MESSAGES {
-            let extra = self.messages.len() - MAX_MESSAGES;
-            self.messages.drain(..extra);
-        }
-    }
-
-    pub fn status(&self) -> Option<&Message> {
-        self.messages.last()
-    }
-
     pub fn busy(&self) -> bool {
         self.job.is_some()
+    }
+
+    /// Refused while a job runs: one at a time.
+    fn idle(&self) -> Result<(), UiError> {
+        match &self.job {
+            Some(job) => Err(UiError::Busy(label(&job.command).to_owned())),
+            None => Ok(()),
+        }
     }
 
     /// Runs a command as a person or an agent asks for it: a quick one at once, a long one on
     /// the worker thread (the reply is then `{"started": …}` and the result comes with the job).
     /// Refused while a job runs.
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, UiError> {
-        if let Some(job) = &self.job {
-            return Err(UiError::Busy(label(&job.command).to_owned()));
-        }
-        if emcraft_engine::find_command(id).is_none() {
-            return Err(EngineError::UnknownCommand(id.chars().take(100).collect()).into());
-        }
+        self.idle()?;
+        find_command(id)?;
         if worker::is_long(id) {
             self.job = Some(worker::Job::start(&self.session, id, params, self.ctx.clone()));
             self.message(format!("{}…", label(id)), false);
@@ -423,134 +232,25 @@ impl EmcraftApp {
         let r = self.session.execute(id, &params).map_err(UiError::from);
         match &r {
             Ok(reply) => self.after(id, &params, reply),
-            Err(e) => {
-                self.failure = Some((id.to_owned(), e.to_string()));
-                self.message(format!("{}: {e}", label(id)), true);
-            }
+            Err(e) => self.failed(id, e),
         }
         r
     }
 
+    /// A command's failure: kept for the panel that asked for it, and in the messages.
+    fn failed(&mut self, id: &str, e: &impl std::fmt::Display) {
+        self.failure = Some((id.to_owned(), e.to_string()));
+        self.message(format!("{}: {e}", label(id)), true);
+    }
+
     /// Runs a script (a JSON array of `{command, params}`) on the worker thread, as one job.
     pub fn run_script(&mut self, script: Value) -> Result<Value, UiError> {
-        if let Some(job) = &self.job {
-            return Err(UiError::Busy(label(&job.command).to_owned()));
-        }
+        self.idle()?;
         let n = script.as_array().map(Vec::len).ok_or_else(|| UiError::Input("a script is a JSON array of {command, params}".into()))?;
         self.job =
             Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| s.run_script(&script).map(Value::Array)));
         self.message(format!("Running a script of {n} commands…"), false);
         Ok(json!({"started": "engine.script"}))
-    }
-
-    /// What follows a command's success: the view it calls for, its message.
-    fn after(&mut self, id: &str, params: &Value, reply: &Value) {
-        self.revision = self.revision.wrapping_add(1);
-        self.failure = None;
-        self.field.samples = None;
-        self.field.picture = None;
-        self.field.pinned = None;
-        self.field.kept_samples.clear();
-        self.chart = None;
-        if matches!(id, "file.open" | "file.save")
-            && let Some(path) = reply.get("path").and_then(Value::as_str)
-        {
-            files::opened(self, path);
-        }
-        let results = &self.session.results;
-        match id {
-            "file.sample" | "engine.script" | "file.open" | "file.new" => {
-                if matches!(id, "file.new" | "file.sample") {
-                    self.home.open = false;
-                }
-                // An open problem's fields read best as |E| (a source's own component may vanish
-                // on the planes through it); a guide's as Ey, its TE10 field.
-                self.field.view.component =
-                    if self.session.model.open.is_some() { emcraft_engine::view::Component::E } else { emcraft_engine::view::Component::Ey };
-                self.port_modes = None;
-                self.compare = None;
-                self.view = if results.sweep.is_some() {
-                    View::SParameters
-                } else if results.eigen.is_some() {
-                    View::Eigenmodes
-                } else if results.radiation.is_some() {
-                    View::FarField
-                } else if results.dispersion.is_some() {
-                    View::Dispersion
-                } else {
-                    View::Model
-                };
-                self.pick_frequency();
-                self.view3d.fit_next = true;
-                self.workflow.check = None;
-            }
-            "solve.frequency" => {
-                self.view = View::SParameters;
-                self.pick_frequency();
-            }
-            "solve.dispersion" => self.view = View::Dispersion,
-            "solve.eigenmodes" => {
-                self.view = View::Eigenmodes;
-                self.field.view.mode = Some(0);
-            }
-            "solve.radiation" => {
-                self.view = View::FarField;
-                self.field.view.mode = None;
-                if self.field.view.component == emcraft_engine::view::Component::Ey {
-                    self.field.view.component = emcraft_engine::view::Component::E;
-                }
-                if let Some(r) = &results.radiation {
-                    self.field.view.frequency = r.result.frequency;
-                }
-            }
-            "solve.time_domain" => {
-                self.view = if results.td_radiation.is_some() { View::FarField } else { View::SParameters };
-            }
-            "solve.port_modes" => {
-                self.port_modes = Some(reply.clone());
-                // The Excitation step tabulates them in its panel, beside the 3D view.
-                if self.workflow.step != Some(steps::Step::Excitation) {
-                    self.view = View::PortModes;
-                }
-            }
-            "results.tdr" => {
-                self.tdr = (
-                    params.get("port").and_then(Value::as_str).map(str::to_owned),
-                    params.get("mode").and_then(|m| serde_json::from_value(m.clone()).ok()),
-                );
-                self.view = View::Tdr;
-            }
-            "results.compare" => {
-                self.compare = Some(reply.clone());
-                self.view = View::Compare;
-            }
-            "study.sweep" | "study.optimize" => {
-                self.study_chart = None;
-                self.view = View::Study;
-            }
-            "edit.undo" | "edit.redo" => self.port_modes = None,
-            other if other.starts_with("geometry.") => {
-                self.view = View::Model;
-                self.port_modes = None;
-                self.compare = None;
-            }
-            _ => {}
-        }
-        self.message(status::text(id, params, reply, &self.session), false);
-        // A run started from the Run step goes on to Results.
-        if id.starts_with("solve.") && id != "solve.port_modes" && self.workflow.step == Some(steps::Step::Run) {
-            steps::open_step(self, Some(steps::Step::Results));
-        }
-    }
-
-    /// Puts the field view on a solved frequency.
-    fn pick_frequency(&mut self) {
-        let freqs = self.frequencies();
-        if let Some(f) = nearest(&freqs, self.field.view.frequency) {
-            self.field.view.frequency = f;
-        }
-        self.field.view.mode = if self.session.results.sweep.is_none() && self.session.results.eigen.is_some() { Some(0) } else { None };
-        self.field.at = None;
     }
 
     /// The sweep's frequencies (Hz).
@@ -585,8 +285,7 @@ impl EmcraftApp {
                 }
             }
             Err(e) => {
-                self.failure = Some((job.command.clone(), e.to_string()));
-                self.message(format!("{}: {e}", label(&job.command)), true);
+                self.failed(&job.command, e);
                 // The dialog that started it opens again, the error under its field.
                 if let Some(mut d) = self.dialog_job.take().filter(|d| d.command.id == job.command && self.dialog.is_none()) {
                     d.refused(&e.to_string());
@@ -618,7 +317,7 @@ impl EmcraftApp {
 
     /// Opens the dialog of `id` (commands without parameters run at once).
     pub fn open_dialog(&mut self, id: &str) -> Result<(), UiError> {
-        let spec = emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
+        let spec = find_command(id)?;
         if spec.params.is_empty() {
             return self.run(id, json!({})).map(|_| ());
         }
@@ -630,7 +329,7 @@ impl EmcraftApp {
     /// Opens the dialog of `id` with `values` over its usual initial ones (the view's settings
     /// for an export, say).
     pub fn open_dialog_with(&mut self, id: &str, values: Value) -> Result<(), UiError> {
-        let spec = emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
+        let spec = find_command(id)?;
         let mut init = dialogs::initial(id, &self.session);
         if let (Some(o), Some(v)) = (init.as_object_mut(), values.as_object()) {
             o.extend(v.clone());
@@ -735,15 +434,21 @@ impl EmcraftApp {
         ribbon::app_bar(self, ui);
         if self.home.open {
             home::show(self, ui);
-            files::show(self, &ctx);
-            shortcuts(self, &ctx);
-            self.collect_screenshots(&ctx);
-            self.keep_prefs();
-            return;
+        } else {
+            self.workspace(ui, &ctx);
         }
+        files::show(self, &ctx);
+        shortcuts(self, &ctx);
+        self.collect_screenshots(&ctx);
+        self.keep_prefs();
+    }
+
+    /// The window past the start page: the ribbon, the steps, the messages, the browser, the
+    /// step's panel or the docked dialog, the viewport, and what floats over them.
+    fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ribbon::ribbon(self, ui);
         steps::bar(self, ui);
-        status_area(self, ui);
+        messages::area(self, ui);
         browser::show(self, ui);
         // With a step open, its panel holds the dialog.
         let in_step = self.workflow.step.is_some();
@@ -754,57 +459,10 @@ impl EmcraftApp {
         }
         viewport::show(self, ui);
         if !in_step && self.dialog.as_ref().is_some_and(|d| !d.docked) {
-            dialog_ui::floating(self, &ctx);
+            dialog_ui::floating(self, ctx);
         }
-        ribbon::search_popup(self, &ctx);
-        ribbon::export_prompt(self, &ctx);
-        files::show(self, &ctx);
-        shortcuts(self, &ctx);
-        self.collect_screenshots(&ctx);
-        self.keep_prefs();
-    }
-
-    /// Asks the window for a screenshot (answered in a later frame).
-    pub(crate) fn request_screenshot(&mut self, path: Option<String>, reply: Sender<Value>) {
-        self.shot_token += 1;
-        self.shots.push(Shot { token: self.shot_token, path, reply, asked: Instant::now(), sent: false });
-    }
-
-    fn collect_screenshots(&mut self, ctx: &egui::Context) {
-        if self.shots.is_empty() {
-            return;
-        }
-        for s in self.shots.iter_mut().filter(|s| !s.sent) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(s.token)));
-            s.sent = true;
-        }
-        let events: Vec<(u64, Arc<egui::ColorImage>)> = ctx.input(|i| {
-            i.raw
-                .events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::Screenshot { user_data, image, .. } => {
-                        let token = user_data.data.as_ref().and_then(|d| d.downcast_ref::<u64>()).copied()?;
-                        Some((token, image.clone()))
-                    }
-                    _ => None,
-                })
-                .collect()
-        });
-        for (token, image) in events {
-            if let Some(i) = self.shots.iter().position(|s| s.token == token) {
-                let shot = self.shots.remove(i);
-                let _ = shot.reply.send(control::save_screenshot(&image, shot.path.as_deref()));
-            }
-        }
-        self.shots.retain(|s| {
-            if s.asked.elapsed().as_secs_f64() < 8.0 {
-                return true;
-            }
-            let _ = s.reply.send(json!({"ok": false, "error": "no frame was presented (window hidden?); use ui.render"}));
-            false
-        });
-        ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        ribbon::search_popup(self, ctx);
+        ribbon::export_prompt(self, ctx);
     }
 }
 
@@ -829,6 +487,11 @@ fn shortcuts(app: &mut EmcraftApp, ctx: &egui::Context) {
     }
 }
 
+/// The engine's command `id`, or the error naming it (cut short).
+fn find_command(id: &str) -> Result<&'static emcraft_engine::CommandSpec, UiError> {
+    emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()).into())
+}
+
 /// A command's label for messages.
 pub fn label(id: &str) -> &str {
     emcraft_engine::find_command(id).map_or(id, |c| c.label)
@@ -837,53 +500,6 @@ pub fn label(id: &str) -> &str {
 /// The solved frequency nearest `f`.
 pub fn nearest(freqs: &[f64], f: f64) -> Option<f64> {
     freqs.iter().copied().min_by(|a, b| (a - f).abs().total_cmp(&(b - f).abs()))
-}
-
-/// The message card at the bottom: the last messages, and the running job's progress and Cancel.
-fn status_area(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let t = theme::Tokens::get();
-    // Taller while a job runs: its progress row sits above the messages.
-    egui::Panel::bottom("emcraft_status")
-        .exact_size(if app.job.is_some() { 130.0 } else { 96.0 })
-        .show_separator_line(false)
-        .frame(egui::Frame::NONE.fill(t.viewport_bottom).inner_margin(egui::Margin { left: 6, right: 6, top: 0, bottom: 6 }))
-        .show(ui, |ui| {
-            let height = ui.available_height() - 12.0;
-            t.card(t.panel).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.set_min_height(height);
-                scenario::publish_rect("status", ui.max_rect());
-                let mut cancel = false;
-                if let Some(job) = &app.job {
-                    let snap = job.snapshot();
-                    ui.horizontal(|ui| {
-                        // Cancel first, where it stays put while the text beside it changes.
-                        if ui_kit::button(ui, "Cancel", false, true, "status:cancel").clicked() {
-                            cancel = true;
-                        }
-                        ui.spinner();
-                        let what = if snap.total > 0 {
-                            format!("{} — {} {} of {}", label(&job.command), snap.stage, (snap.done + 1).min(snap.total), snap.total)
-                        } else {
-                            format!("{} — running", label(&job.command))
-                        };
-                        ui.label(egui::RichText::new(format!("{what} ({:.0} s)", job.elapsed())).size(t.font_body));
-                        ui_kit::progress(ui, snap.fraction(), 180.0);
-                    });
-                }
-                if cancel {
-                    app.cancel_job();
-                }
-                let rest = (height - if app.job.is_some() { 36.0 } else { 0.0 }).max(16.0);
-                egui::ScrollArea::vertical().stick_to_bottom(true).max_height(rest).auto_shrink([false, false]).show(ui, |ui| {
-                    let start = app.messages.len().saturating_sub(40);
-                    for m in &app.messages[start..] {
-                        let text = if m.count > 1 { format!("{} (×{})", m.text, m.count) } else { m.text.clone() };
-                        ui.label(egui::RichText::new(text).size(t.font_body).color(if m.error { t.error } else { t.text }));
-                    }
-                });
-            });
-        });
 }
 
 /// Why the app refused or could not do what a person or an agent asked.

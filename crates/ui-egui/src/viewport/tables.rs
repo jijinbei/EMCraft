@@ -4,18 +4,12 @@ use super::*;
 
 pub(super) fn port_modes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let Some(reply) = app.port_modes.clone() else {
-        ui.vertical_centered(|ui| {
-            ui.add_space(40.0);
-            ui.label(egui::RichText::new("No port modes yet: they need a meshed model with ports.").size(t.font_heading).color(t.text_dim));
-            let r = ui.add_enabled(!app.busy(), egui::Button::new("Solve port modes…"));
-            scenario::publish_target("port_modes:solve", r.rect);
-            if r.clicked()
-                && let Err(e) = app.open_dialog("solve.port_modes")
-            {
-                app.message(e, true);
-            }
-        });
+    let Some(reply) = app.views.port_modes.clone() else {
+        let make =
+            empty_with_action(ui, "No port modes yet: they need a meshed model with ports.", "Solve port modes…", !app.busy(), "port_modes:solve");
+        if make && let Err(e) = app.open_dialog("solve.port_modes") {
+            app.message(e, true);
+        }
         return;
     };
     let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
@@ -94,18 +88,16 @@ fn mode_picture(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value) {
     let Some(frequency) = reply["frequency"].as_f64().map(|v| fu.to_si(v)) else { return };
     let width = picture_width(ui);
     let key = format!("{}|{}|{frequency}|{}|{width}|{}", f.port, f.mode, app.revision, crate::theme::is_dark());
-    if app.mode_picture.as_ref().is_none_or(|p| p.key != key) {
-        match view::port_mode_plot(&app.session, &f.port, f.mode, frequency, 2) {
-            Ok(plot) => app.mode_picture = Some(Picture::new(key, &emcraft_render::plot::draw(&plot, width))),
-            Err(e) => {
-                app.mode_picture = None;
-                empty(ui, &e.to_string());
-                return;
-            }
+    let session = &app.session;
+    let drawn = app
+        .views
+        .mode_picture
+        .get_or_draw(key, || view::port_mode_plot(session, &f.port, f.mode, frequency, 2).map(|plot| emcraft_render::plot::draw(&plot, width)));
+    match drawn {
+        Ok(p) => {
+            picture(ui, p, "picture:port_mode");
         }
-    }
-    if let Some(p) = app.mode_picture.as_mut() {
-        picture(ui, p, "picture:port_mode");
+        Err(e) => empty(ui, &e),
     }
 }
 
@@ -115,20 +107,16 @@ pub(super) fn num(v: &Value, digits: usize) -> String {
 
 pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    if app.session.results.eigen.is_none() {
-        empty(ui, "No eigenmodes yet: SIMULATE › Eigenmodes.");
-        return;
-    }
-    if app.eigen_table.as_ref().is_none_or(|(rev, _)| *rev != app.revision) {
+    if app.views.eigen_table.as_ref().is_none_or(|(rev, _)| *rev != app.revision) {
         match app.session.execute("results.eigenmodes", &json!({})) {
-            Ok(v) => app.eigen_table = Some((app.revision, v)),
+            Ok(v) => app.views.eigen_table = Some((app.revision, v)),
             Err(e) => {
                 empty(ui, &e.to_string());
                 return;
             }
         }
     }
-    let Some((_, table)) = app.eigen_table.clone() else { return };
+    let Some((_, table)) = app.views.eigen_table.clone() else { return };
     let fu = app.session.display.frequency.symbol();
     let mut open = None;
     egui::Grid::new("eigen_grid").striped(true).num_columns(4).show(ui, |ui| {
@@ -161,16 +149,11 @@ pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 
 pub(super) fn compare(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let Some(reply) = app.compare.clone() else {
-        ui.vertical_centered(|ui| {
-            ui.add_space(40.0);
-            ui.label(egui::RichText::new("Compare the sweep with the exact TE10 solution or mode matching.").size(t.font_heading).color(t.text_dim));
-            let r = ui.add_enabled(!app.busy() && app.session.results.sweep.is_some(), egui::Button::new("Compare…"));
-            scenario::publish_target("compare:run", r.rect);
-            if r.clicked() {
-                let _ = app.run("results.compare", json!({}));
-            }
-        });
+    let Some(reply) = app.views.compare.clone() else {
+        let ready = !app.busy() && app.session.results.sweep.is_some();
+        if empty_with_action(ui, "Compare the sweep with the exact TE10 solution or mode matching.", "Compare…", ready, "compare:run") {
+            let _ = app.run("results.compare", json!({}));
+        }
         return;
     };
     ui.label(

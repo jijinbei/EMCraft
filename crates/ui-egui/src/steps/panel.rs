@@ -272,7 +272,7 @@ fn excitation(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens) {
             app.message(e, true);
         }
     }
-    let Some(reply) = app.port_modes.clone() else { return };
+    let Some(reply) = app.views.port_modes.clone() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
     ui.label(egui::RichText::new(format!("at {} {fu}", fmt(f))).size(t.font_small).color(t.text_dim));
     mode_table(app, ui, &reply, t);

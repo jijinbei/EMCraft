@@ -254,10 +254,10 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     if r.td_radiation.is_some() {
         rows.push(row("Time-domain radiation", "radiation", Act::Show(View::FarField)));
     }
-    if app.port_modes.is_some() {
+    if app.views.port_modes.is_some() {
         rows.push(row("Port modes", "port_modes", Act::Show(View::PortModes)));
     }
-    if app.compare.is_some() {
+    if app.views.compare.is_some() {
         rows.push(row("Comparison with theory", "compare", Act::Show(View::Compare)));
     }
     if let Some(study) = &r.study {
