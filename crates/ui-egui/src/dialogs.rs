@@ -423,6 +423,11 @@ pub fn initial(command: &str, s: &Session) -> Value {
             None => json!({"start": 8, "stop": 12}),
         },
         "file.save" | "file.open" => json!({"path": "project.emcraft"}),
+        // The highest solved frequency of the sweep, as the field view opens on.
+        "view.animation" => {
+            let f = s.results.sweep.as_ref().and_then(|sw| sw.results.last()).map(|r| fu.from_si(r.frequency));
+            json!({"path": "field-animation.png", "frames": 24, "frequency": f})
+        }
         "results.touchstone" => json!({"path": format!("emcraft.s{}p", ports.max(1)), "format": "ri"}),
         "results.compare" => json!({"modes": 160}),
         "file.sample" => json!({"name": "highpass", "solve": true}),

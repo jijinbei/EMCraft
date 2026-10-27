@@ -430,6 +430,7 @@ pub fn for_command(id: &str) -> &'static str {
         "results.far_field" | "view.pattern" => "pattern",
         "results.probe" => "probe",
         "view.field" => "field",
+        "view.animation" => "play",
         "file.sample" => "sample",
         "units.set" => "units",
         "project.frequency" => "band",

@@ -36,7 +36,10 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
     ),
     (
         "RESULTS",
-        &[("ANALYSIS", &["results.compare", "results.check"]), ("EXPORT", &["results.touchstone", "view.sparameters", "view.field", "view.pattern"])],
+        &[
+            ("ANALYSIS", &["results.compare", "results.check"]),
+            ("EXPORT", &["results.touchstone", "view.sparameters", "view.field", "view.animation", "view.pattern"]),
+        ],
     ),
 ];
 
@@ -71,6 +74,7 @@ pub fn button_label(id: &str) -> &str {
         "results.compare" => "Compare",
         "view.sparameters" => "S-param PNG",
         "view.field" => "Field PNG",
+        "view.animation" => "Field video",
         "view.pattern" => "Pattern PNG",
         other => crate::label(other),
     }

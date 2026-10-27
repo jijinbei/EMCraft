@@ -217,6 +217,38 @@ pub fn view_field(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
 
+/// The most frames an animation may have.
+pub const MAX_FRAMES: usize = 120;
+
+/// One period of the field's phase as an animated PNG: the plane sampled once, a frame at each
+/// of `frames` phases evenly spaced over 360°, looping.
+pub fn view_animation(s: &mut Session, p: &Params) -> Result<Value> {
+    let path = p.string("path").required()?;
+    let width = p.side("width", s.limits.picture_side, 800)?;
+    let frames = p.integer("frames", 4..=MAX_FRAMES).or(24)?;
+    let period = p.positive("period").check(|t| *t <= 60.0, "at most 60 s").or(2.0)?;
+    let mut v = field_view(s, p)?;
+    let samples = view::sample_plane(s, &v)?;
+    let delay = (period * 1000.0 / frames as f64).round().clamp(1.0, f64::from(u16::MAX)) as u16;
+    let mut failed = None;
+    let pictures = (0..frames).map_while(|k| {
+        v.phase = std::f64::consts::TAU * k as f64 / frames as f64;
+        match samples.plot(&v) {
+            Ok(plot) => Some(emcraft_render::plot::draw(&plot, width)),
+            Err(e) => {
+                failed = Some(e);
+                None
+            }
+        }
+    });
+    let bytes = emcraft_render::apng(pictures, frames, delay);
+    if let Some(e) = failed {
+        return Err(e);
+    }
+    write_png(path, bytes)?;
+    Ok(json!({"path": path, "frames": frames, "period": period, "delay_ms": delay}))
+}
+
 pub fn view_sparameters(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
     let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);

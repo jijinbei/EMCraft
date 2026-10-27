@@ -187,9 +187,59 @@ impl Canvas {
     }
 }
 
+/// An animated PNG (APNG) of `count` frames of one size, each shown for `delay_ms`, looping
+/// forever. Frames are encoded as they come, so only one is held at a time. `None` when a frame
+/// differs in size from the first or the encoder fails.
+pub fn apng(frames: impl IntoIterator<Item = Canvas>, count: usize, delay_ms: u16) -> Option<Vec<u8>> {
+    let mut frames = frames.into_iter();
+    let first = frames.next()?;
+    let (w, h) = (first.w, first.h);
+    let mut buf = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut buf, u32::try_from(w).ok()?, u32::try_from(h).ok()?);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.set_animated(u32::try_from(count).ok()?, 0).ok()?;
+        enc.set_frame_delay(delay_ms, 1000).ok()?;
+        let mut writer = enc.write_header().ok()?;
+        writer.write_image_data(&first.rgba).ok()?;
+        let mut written = 1;
+        for c in frames.take(count.saturating_sub(1)) {
+            if (c.w, c.h) != (w, h) {
+                return None;
+            }
+            writer.write_image_data(&c.rgba).ok()?;
+            written += 1;
+        }
+        if written != count {
+            return None;
+        }
+        writer.finish().ok()?;
+    }
+    Some(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_animation_holds_its_frames() {
+        let frame = |c: Rgb| Canvas::new(8, 6, c);
+        let a = apng([frame(Rgb::WHITE), frame(Rgb::BLACK), frame(Rgb(255, 0, 0))], 3, 40).unwrap();
+        let mut d = png::Decoder::new(std::io::Cursor::new(a)).read_info().unwrap();
+        let info = d.info().animation_control().copied().unwrap();
+        assert_eq!((info.num_frames, info.num_plays), (3, 0));
+        let mut buf = vec![0; d.output_buffer_size().unwrap()];
+        for want in [255, 0, 255] {
+            d.next_frame(&mut buf).unwrap();
+            assert_eq!(buf[0], want);
+        }
+        // Frames of another size, or fewer than announced, are refused.
+        assert!(apng([frame(Rgb::WHITE), Canvas::new(9, 6, Rgb::WHITE)], 2, 40).is_none());
+        assert!(apng([frame(Rgb::WHITE)], 2, 40).is_none());
+        assert!(apng(std::iter::empty(), 0, 40).is_none());
+    }
 
     #[test]
     fn shapes_cover_their_pixels() {

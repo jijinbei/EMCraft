@@ -326,6 +326,24 @@ Writes a PNG of the fields on a plane: a component as colour and the in-plane E 
 | `excitation` | string |  | no | the excited port (default the first) |
 | `width` | integer |  | no | picture width in pixels (default 1100) |
 
+## `view.animation` — Field animation
+
+Writes an animated PNG of the fields on a plane over one period of ωt, looping: the view.field picture at evenly spaced phases.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | animated PNG (APNG) file to write |
+| `frequency` | number | frequency | no | a solved frequency (the nearest is used); required unless `mode` is given |
+| `mode` | integer |  | no | an eigenmode (1 = the lowest) instead of a driven solution |
+| `plane` | string |  | no | `h` (H-plane, default), `e` (E-plane) or `cross` (cross-section) |
+| `at` | number | length | no | the plane's position along its normal (default the middle) |
+| `component` | string |  | no | colour: ex, ey (default), ez, hx, hy, hz, |e|, |h| |
+| `arrows` | array |  | no | vector fields drawn: `["e", "h"]` (default: the coloured component's field) |
+| `excitation` | string |  | no | the excited port (default the first) |
+| `frames` | integer |  | no | frames in a period, 4 to 120 (default 24) |
+| `period` | number |  | no | seconds a period plays for (default 2) |
+| `width` | integer |  | no | picture width in pixels (default 800) |
+
 ## `view.sparameters` — S-parameter chart
 
 Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over the exact TE10 curves, with the cut-off frequencies marked.

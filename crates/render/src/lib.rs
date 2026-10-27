@@ -17,4 +17,4 @@ pub mod text;
 pub mod view3d;
 
 pub use axes::Axis;
-pub use canvas::{Canvas, Rgb};
+pub use canvas::{Canvas, Rgb, apng};

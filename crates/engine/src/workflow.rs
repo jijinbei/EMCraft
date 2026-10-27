@@ -72,7 +72,7 @@ impl Step {
             Step::Boundaries => &["model.walls", "model.open", "model.symmetry"],
             Step::Mesh => &["mesh.generate"],
             Step::Setup | Step::Run => &[],
-            Step::Results => &["results.compare", "view.sparameters", "view.field", "view.pattern"],
+            Step::Results => &["results.compare", "view.sparameters", "view.field", "view.animation", "view.pattern"],
         }
     }
 

@@ -162,6 +162,24 @@ fn pictures_are_written() {
     assert!(std::fs::read(&path).unwrap().len() > 1000);
 }
 
+/// `view.animation` writes one period as a looping APNG; frames and period are bounded.
+#[test]
+fn an_animation_is_written() {
+    let mut s = small();
+    let path = scratch("anim.png");
+    let r = s.execute("view.animation", &json!({"path": path, "frequency": 8, "plane": "cross", "frames": 6, "period": 1.2, "width": 300})).unwrap();
+    assert_eq!((r["frames"].as_u64(), r["delay_ms"].as_u64()), (Some(6), Some(200)));
+    let bytes = std::fs::read(&path).unwrap();
+    // The animation control chunk announces six frames, looping forever.
+    let actl = bytes.windows(4).position(|w| w == b"acTL").unwrap();
+    assert_eq!(&bytes[actl + 4..actl + 12], &[0, 0, 0, 6, 0, 0, 0, 0]);
+    for bad in [json!({"frames": 1}), json!({"frames": 10_000}), json!({"period": -1}), json!({"period": 1e9}), json!({"width": 1_000_000})] {
+        let mut p = json!({"path": path, "frequency": 8});
+        p.as_object_mut().unwrap().extend(bad.as_object().unwrap().clone());
+        assert!(matches!(s.execute("view.animation", &p), Err(EngineError::Params(_))), "{p}");
+    }
+}
+
 #[test]
 fn field_views_show_the_te10_pattern() {
     let s = small();
