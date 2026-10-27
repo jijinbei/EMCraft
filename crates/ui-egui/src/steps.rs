@@ -526,7 +526,8 @@ fn body(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, states: &[StepState
             let m = &app.session.model;
             kv(ui, "walls", m.wall_conductivity.map_or("perfect conductor".into(), |s| format!("σ = {s:.3e} S/m")), t);
             let l = app.session.display.length;
-            kv(ui, "open", m.open.map_or("closed (no PML)".into(), |o| format!("PML {} {lu} thick", fmt(l.from_si(o.thickness)))), t);
+            let kind = |o: &emcraft_model::Open| if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" };
+            kv(ui, "open", m.open.map_or("closed (no PML)".into(), |o| format!("{} {} {lu} thick", kind(&o), fmt(l.from_si(o.thickness)))), t);
             let planes: Vec<String> = m
                 .symmetry
                 .iter()

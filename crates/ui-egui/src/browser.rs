@@ -124,7 +124,8 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         None => row("Walls: perfect conductor", "walls", Act::Edit("model.walls")),
     });
     if let Some(open) = &m.open {
-        boundaries.push(row(format!("Open: PML {} {lu}", mm(open.thickness)), "open", Act::Edit("model.open")));
+        let kind = if open.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" };
+        boundaries.push(row(format!("Open: {kind} {} {lu}", mm(open.thickness)), "open", Act::Edit("model.open")));
     }
     for plane in &m.symmetry {
         let axis = if plane.axis == emcraft_model::Axis::X { "x" } else { "y" };

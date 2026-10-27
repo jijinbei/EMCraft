@@ -1,0 +1,11 @@
+{
+ "title": "Hertzian dipole at 10 GHz at the centre of a 30 mm sphere whose outer 15 mm shell is a spherical perfectly matched layer: radiated power and directivity",
+ "kind": "theory",
+ "source": "The Hertzian dipole of moment I·l = 1 mA·m in free space: P = η (k I l)²/(12π), directivity D(θ) = (3/2) sin²θ from its axis (C. A. Balanis, Antenna Theory, 4th ed., Wiley 2016, §4.2, eqs. 4-16, 4-31), evaluated separately (η = μ₀c)",
+ "quantities": [
+  {"id": "power", "quantity": "radiated power (W)", "measure": {"step": "solve", "pointer": "/radiated_power"}, "value": 0.4389527551740313, "tolerance": {"relative": 0.03}, "reason": "through a Huygens sphere of 10 mm radius, 5 mm inside the layer; second-order elements of λ/8 and a layer of half a wavelength: +0.8 %. At this size the error is the source's: the current element is spread over the tetrahedron holding it, whose size and shape move the power by +0.8 to +2.4 % over three placements within 0.4 mm of the centre (the layer's design reflection, 1e-3 to 1e-9, by under 1 %; a Huygens box in place of the sphere gives the same)"},
+  {"id": "directivity_90", "quantity": "directivity at θ = 90°, φ = 17°", "measure": {"step": "ff", "pointer": "/points/0/directivity"}, "value": 1.5, "tolerance": {"relative": 0.03}, "reason": "the near-to-far transform of the Huygens sphere's currents, 3 Gauss points on bands of λ/12 in θ and 3 points per λ/12 in φ: +1.2 % (−0.2 to +1.2 % over the three placements)"},
+  {"id": "directivity_45", "quantity": "directivity at θ = 45°", "measure": {"step": "ff", "pointer": "/points/1/directivity"}, "value": 0.75, "tolerance": {"relative": 0.03}, "reason": "as at 90°: −1.4 % (−1.4 to +2.0 %)"},
+  {"id": "directivity_20", "quantity": "directivity at θ = 20° (near the null on the axis)", "measure": {"step": "ff", "pointer": "/points/2/directivity"}, "value": 0.17546666766076646, "tolerance": {"relative": 0.08}, "reason": "a weak field near the axis, where the source element's higher multipoles weigh most: −3.1 % (−2.2 to −5.9 %)"}
+ ]
+}
