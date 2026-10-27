@@ -65,10 +65,6 @@ impl Field {
     pub(crate) fn set(&self, id: usize, x: f64) {
         self.v[id].store(x.to_bits(), Ordering::Relaxed);
     }
-
-    pub(crate) fn len(&self) -> usize {
-        self.v.len()
-    }
 }
 
 /// The six components on a grid of `n` cells: E_a on the primal edges along axis a (a half
