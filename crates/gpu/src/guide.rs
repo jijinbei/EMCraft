@@ -9,8 +9,8 @@ use emcraft_fdtd::{FdtdError, Plan, Result};
 use crate::BATCH;
 use crate::buffer::{Buf, Ints, Real, Xyz};
 use crate::device::cube_units;
-use crate::kernels::CellsLaunch;
 use crate::kernels::guide::{self as kernels, PolesLaunch, ZCpmlLaunch};
+use crate::lattice::Lattice;
 
 /// One half step's arrays: the CPML's ψ of the x and y components and its (b, a) along z.
 struct Cpml<F> {
@@ -97,9 +97,7 @@ impl<F: Real> Poles<F> {
 
 /// The run's arrays on the device.
 pub(crate) struct Run<F> {
-    n: [u32; 3],
-    /// Units per cube.
-    units: u32,
+    grid: Lattice,
     e: Xyz<F>,
     h: Xyz<F>,
     /// dt/ε and dt/μ.
@@ -120,15 +118,12 @@ pub(crate) struct Run<F> {
 /// The most units a projection's cube uses.
 const REDUCE: u32 = 256;
 
-/// The most units per cube of the field kernels.
-const UNITS: u32 = 256;
-
 impl<F: Real> Run<F> {
     pub(crate) fn new(client: &Client, p: &Plan) -> Result<Run<F>> {
         let [nx, ny, nz] = p.n;
         let plane = (nx + 1) * ny;
-        let lens_e = [nx * (ny + 1) * (nz + 1), (nx + 1) * ny * (nz + 1), (nx + 1) * (ny + 1) * nz];
-        let lens_h = [(nx + 1) * ny * nz, nx * (ny + 1) * nz, nx * ny * (nz + 1)];
+        let grid = Lattice::new(client, p.n)?;
+        let (lens_e, lens_h) = (grid.e, grid.h);
         let shapes_agree = p.e.iter().zip(lens_e).all(|(c, l)| c.len() == l)
             && p.h.iter().zip(lens_h).all(|(c, l)| c.len() == l)
             && p.primal.iter().zip(p.n).all(|(d, n)| d.len() == n)
@@ -142,14 +137,9 @@ impl<F: Real> Run<F> {
         if !shapes_agree {
             return Err(FdtdError::Invalid { what: "plan".into(), why: "its arrays do not match its grid".into() });
         }
-        // Indices on the device are 32-bit.
-        if lens_e.iter().chain(&lens_h).any(|&l| l >= u32::MAX as usize / 2) {
-            return Err(FdtdError::TooLarge { cells: nx * ny * nz, limit: emcraft_fdtd::MAX_CELLS });
-        }
         let weights: Vec<f64> = p.weights.iter().flatten().copied().collect();
         Ok(Run {
-            n: p.n.map(|n| n as u32),
-            units: cube_units(client, UNITS),
+            grid,
             e: Xyz::zeros(client, lens_e),
             h: Xyz::zeros(client, lens_h),
             ce: Xyz::new(client, &p.e),
@@ -165,46 +155,39 @@ impl<F: Real> Run<F> {
         })
     }
 
-    fn cells(&self) -> CellsLaunch {
-        let [nx, ny, nz] = self.n;
-        CellsLaunch::new(nx, ny, nz)
-    }
-
     /// One step, `b` its slot in the batch's record.
     fn step(&self, client: &Client, p: &Plan, n: usize, b: usize, reduce: u32) {
-        let [nx, ny, nz] = self.n;
-        let nodes = (nx + 1) * (ny + 1) * (nz + 1);
-        let plane = (nx + 1) * ny;
-        let cubes = |units: u32| CubeCount::Static(units.div_ceil(self.units), 1, 1);
-        let dim = CubeDim::new_1d(self.units);
+        let (nodes, dim) = self.grid.over_nodes();
+        let plane = self.grid.plane();
         kernels::step_h::launch::<F>(
             client,
-            cubes(nodes),
+            nodes.clone(),
             dim,
             self.h.arg(),
             self.e.arg(),
             self.ch.arg(),
             self.cpml_h.arg(),
             self.primal.arg(),
-            self.cells(),
+            self.grid.cells(),
         );
         kernels::step_e::launch::<F>(
             client,
-            cubes(nodes),
+            nodes,
             dim,
             self.e.arg(),
             self.h.arg(),
             self.ce.arg(),
             self.cpml_e.arg(),
             self.dual.arg(),
-            self.cells(),
+            self.grid.cells(),
             self.poles.arg(),
             self.poles.any,
         );
         let (ey, cey) = (&self.e.0[1], &self.ce.0[1]);
+        let (across, dim) = self.grid.over(plane);
         kernels::inject::launch::<F>(
             client,
-            cubes(plane),
+            across,
             dim,
             ey.arg(),
             cey.arg(),

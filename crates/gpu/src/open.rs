@@ -9,12 +9,8 @@ use emcraft_fdtd::{FdtdError, OpenBatch, OpenPlan, Result};
 use num_complex::Complex64;
 
 use crate::buffer::{Buf, Ints, Real, Xyz};
-use crate::device::cube_units;
-use crate::kernels::CellsLaunch;
 use crate::kernels::open::{self as kernels, PsiLaunch, SamplesLaunch, SourcesLaunch, StepsLaunch, TransformsLaunch};
-
-/// The most units per cube.
-const UNITS: u32 = 256;
+use crate::lattice::Lattice;
 
 /// Each component's two auxiliary variables.
 struct Psi<F>([Buf<F>; 6]);
@@ -134,9 +130,7 @@ impl Huygens {
 
 /// The run's arrays on the device.
 pub(crate) struct OpenRun<F> {
-    n: [u32; 3],
-    /// Units per cube.
-    units: u32,
+    grid: Lattice,
     e: Xyz<F>,
     h: Xyz<F>,
     ce: Xyz<F>,
@@ -152,9 +146,8 @@ pub(crate) struct OpenRun<F> {
 
 impl<F: Real> OpenRun<F> {
     pub(crate) fn new(client: &Client, p: &OpenPlan) -> Result<OpenRun<F>> {
-        let [nx, ny, nz] = p.n;
-        let lens_e = [nx * (ny + 1) * (nz + 1), (nx + 1) * ny * (nz + 1), (nx + 1) * (ny + 1) * nz];
-        let lens_h = [(nx + 1) * ny * nz, nx * (ny + 1) * nz, nx * ny * (nz + 1)];
+        let grid = Lattice::new(client, p.n)?;
+        let (lens_e, lens_h) = (grid.e, grid.h);
         let agree = p.ce.iter().zip(lens_e).all(|(c, l)| c.len() == l)
             && p.cpml_e.iter().zip(p.n).all(|(c, n)| c.len() == n + 1)
             && p.cpml_h.iter().zip(p.n).all(|(c, n)| c.len() == n)
@@ -167,13 +160,9 @@ impl<F: Real> OpenRun<F> {
         if !agree {
             return Err(FdtdError::Invalid { what: "plan".into(), why: "its arrays do not match its grid".into() });
         }
-        if lens_e.iter().chain(&lens_h).any(|&l| l >= u32::MAX as usize / 2) {
-            return Err(FdtdError::TooLarge { cells: nx * ny * nz, limit: emcraft_fdtd::MAX_CELLS });
-        }
         let profile = |c: &[Vec<[f64; 2]>; 3]| c.each_ref().map(|c| c.iter().flatten().copied().collect::<Vec<f64>>());
         Ok(OpenRun {
-            n: p.n.map(|n| n as u32),
-            units: cube_units(client, UNITS),
+            grid,
             e: Xyz::zeros(client, lens_e),
             h: Xyz::zeros(client, lens_h),
             ce: Xyz::new(client, &p.ce),
@@ -187,21 +176,13 @@ impl<F: Real> OpenRun<F> {
         })
     }
 
-    fn cells(&self) -> CellsLaunch {
-        let [nx, ny, nz] = self.n;
-        CellsLaunch::new(nx, ny, nz)
-    }
-
     /// One step, `b` its slot in the batch's record and `phasors` the batch's.
     fn step(&self, client: &Client, p: &OpenPlan, n: usize, b: usize, phasors: &Buf<f64>) {
-        let [nx, ny, nz] = self.n;
-        let cubes = |units: u32| CubeCount::Static(units.div_ceil(self.units).max(1), 1, 1);
-        let dim = CubeDim::new_1d(self.units);
-        let nodes = (nx + 1) * (ny + 1) * (nz + 1);
+        let (nodes, dim) = self.grid.over_nodes();
         let steps = || StepsLaunch::new(F::of(p.hs[0]), F::of(p.hs[1]), F::of(p.hs[2]));
         kernels::step_h::launch::<F>(
             client,
-            cubes(nodes),
+            nodes.clone(),
             dim,
             self.h.arg(),
             self.e.arg(),
@@ -209,14 +190,15 @@ impl<F: Real> OpenRun<F> {
             self.cpml_h.arg(),
             steps(),
             F::of(p.ch),
-            self.cells(),
+            self.grid.cells(),
         );
         if self.sources.edges > 0 {
-            kernels::remember::launch::<F>(client, cubes(self.sources.edges), dim, self.e.arg(), self.sources.arg(), self.sources.edges);
+            let (edges, dim) = self.grid.over(self.sources.edges);
+            kernels::remember::launch::<F>(client, edges, dim, self.e.arg(), self.sources.arg(), self.sources.edges);
         }
         kernels::step_e::launch::<F>(
             client,
-            cubes(nodes),
+            nodes,
             dim,
             self.e.arg(),
             self.h.arg(),
@@ -224,7 +206,7 @@ impl<F: Real> OpenRun<F> {
             self.psi_e.arg(),
             self.cpml_e.arg(),
             steps(),
-            self.cells(),
+            self.grid.cells(),
         );
         let single = CubeCount::Static(1, 1, 1);
         kernels::drive::launch::<F>(
@@ -241,7 +223,8 @@ impl<F: Real> OpenRun<F> {
         let hy = &self.huygens;
         let samples = SamplesLaunch::new(hy.axis.arg(), hy.plane.arg(), hy.iu.arg(), hy.iv.arg(), hy.count);
         let transforms = TransformsLaunch::new(phasors.arg(), hy.e.arg(), hy.h.arg(), p.frequencies.len() as u32);
-        kernels::transform::launch::<F>(client, cubes(hy.count), dim, self.e.arg(), self.h.arg(), samples, transforms, b as u32, self.cells());
+        let (across, dim) = self.grid.over(hy.count);
+        kernels::transform::launch::<F>(client, across, dim, self.e.arg(), self.h.arg(), samples, transforms, b as u32, self.grid.cells());
     }
 
     /// Steps in batches of `p.batch`, handing each to `observe`.

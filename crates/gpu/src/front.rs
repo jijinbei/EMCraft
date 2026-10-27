@@ -121,10 +121,11 @@ impl DeviceFront for HeldFront {
         let columns = (cols.end - cols.start) as u32;
         guarded(|| {
             let list = Ints::new(&self.client, &pairs);
+            let (count, dim) = crate::lattice::line(columns, cube_units(&self.client, 256));
             kernels::swap_rows::launch(
                 &self.client,
-                CubeCount::Static(columns.div_ceil(256), 1, 1),
-                CubeDim::new_1d(256),
+                count,
+                dim,
                 self.front.arg(),
                 list.arg(),
                 swaps.len() as u32,

@@ -26,11 +26,15 @@ mod device;
 mod front;
 mod guide;
 mod kernels;
+mod lattice;
 mod open;
 
 pub use device::{Available, Backend, Precision, available};
 pub use front::{Fronts, MAX_ROWS, MIN_ROWS};
 
+use cubecl::prelude::Client;
+
+use crate::buffer::Real;
 use crate::device::guarded;
 use crate::guide::Run;
 use crate::open::OpenRun;
@@ -45,28 +49,62 @@ pub struct Gpu {
     pub precision: Precision,
 }
 
-impl Stepper for Gpu {
-    fn leapfrog(&self, plan: &Plan, max_steps: usize, observe: &mut dyn FnMut(usize, [f64; 2]) -> ControlFlow<()>) -> Result<usize> {
+/// Work run on a device in the float type the precision picks.
+trait OnDevice {
+    type Out;
+    fn run<F: Real>(self, client: &Client) -> Result<Self::Out>;
+}
+
+impl Gpu {
+    /// Runs `job` on the device in the chosen precision, a panic in the runtime an error.
+    fn dispatch<J: OnDevice>(&self, job: J) -> Result<J::Out> {
         let device = self.backend.device()?;
         guarded(|| {
             let client = device.client();
             match self.precision {
-                Precision::Single => Run::<f32>::new(&client, plan)?.go(&client, plan, max_steps, observe),
-                Precision::Double => Run::<f64>::new(&client, plan)?.go(&client, plan, max_steps, observe),
+                Precision::Single => job.run::<f32>(&client),
+                Precision::Double => job.run::<f64>(&client),
             }
         })
     }
 }
 
+/// A guide's leapfrog.
+struct Guide<'a, 'o> {
+    plan: &'a Plan,
+    max_steps: usize,
+    observe: &'o mut dyn FnMut(usize, [f64; 2]) -> ControlFlow<()>,
+}
+
+impl OnDevice for Guide<'_, '_> {
+    type Out = usize;
+    fn run<F: Real>(self, client: &Client) -> Result<usize> {
+        Run::<F>::new(client, self.plan)?.go(client, self.plan, self.max_steps, self.observe)
+    }
+}
+
+/// An open box's leapfrog.
+struct Open<'a, 'o> {
+    plan: &'a OpenPlan,
+    max_steps: usize,
+    observe: &'o mut dyn FnMut(OpenBatch<'_>) -> ControlFlow<()>,
+}
+
+impl OnDevice for Open<'_, '_> {
+    type Out = usize;
+    fn run<F: Real>(self, client: &Client) -> Result<usize> {
+        OpenRun::<F>::new(client, self.plan)?.go(client, self.plan, self.max_steps, self.observe)
+    }
+}
+
+impl Stepper for Gpu {
+    fn leapfrog(&self, plan: &Plan, max_steps: usize, observe: &mut dyn FnMut(usize, [f64; 2]) -> ControlFlow<()>) -> Result<usize> {
+        self.dispatch(Guide { plan, max_steps, observe })
+    }
+}
+
 impl OpenStepper for Gpu {
     fn radiate(&self, plan: &OpenPlan, max_steps: usize, observe: &mut dyn FnMut(OpenBatch<'_>) -> ControlFlow<()>) -> Result<usize> {
-        let device = self.backend.device()?;
-        guarded(|| {
-            let client = device.client();
-            match self.precision {
-                Precision::Single => OpenRun::<f32>::new(&client, plan)?.go(&client, plan, max_steps, observe),
-                Precision::Double => OpenRun::<f64>::new(&client, plan)?.go(&client, plan, max_steps, observe),
-            }
-        })
+        self.dispatch(Open { plan, max_steps, observe })
     }
 }
