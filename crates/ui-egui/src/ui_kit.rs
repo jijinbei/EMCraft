@@ -150,6 +150,76 @@ pub fn progress(ui: &mut Ui, fraction: Option<f64>, width: f32) -> Response {
     resp
 }
 
+/// A periodic animation played like a video: playing or paused, at a speed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Player {
+    pub playing: bool,
+    /// Periods per [`Player::PERIOD`] seconds.
+    pub speed: f64,
+}
+
+impl Default for Player {
+    /// Plays from the start, as a video opens.
+    fn default() -> Player {
+        Player { playing: true, speed: 1.0 }
+    }
+}
+
+impl Player {
+    /// Seconds a period takes at speed 1.
+    pub const PERIOD: f64 = 3.0;
+    pub const SPEEDS: [f64; 4] = [0.25, 0.5, 1.0, 2.0];
+
+    /// The phase (radians) `dt` seconds later.
+    pub fn advance(self, phase: f64, dt: f64) -> f64 {
+        (phase + dt * self.speed * std::f64::consts::TAU / Player::PERIOD).rem_euclid(std::f64::consts::TAU)
+    }
+}
+
+/// A video player's controls for a phase (radians): play or pause, a timeline over one period
+/// that seeks (and pauses) when dragged, and the speed. Handles `{handle}:play`, `{handle}` (the
+/// timeline) and `{handle}:speed`.
+pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: &str) {
+    use std::f64::consts::TAU;
+    let t = Tokens::get();
+    // Play / pause.
+    let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(r, t.radius_sm, t.hover);
+    }
+    crate::glyphs::paint(ui.painter(), r.shrink(3.0), if player.playing { "pause" } else { "play" }, t.icon, t.accent);
+    scenario::publish_target(&format!("{handle}:play"), r);
+    let tip = if player.playing { "Pause" } else { "Play" };
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
+    if resp.on_hover_text(tip).clicked() {
+        player.playing = !player.playing;
+    }
+    // The timeline: one period, the played part in the accent.
+    let (r, resp) = ui.allocate_exact_size(vec2(200.0, 22.0), Sense::click_and_drag());
+    let track = Rect::from_center_size(r.center(), vec2(r.width() - 10.0, 4.0));
+    let p = ui.painter();
+    p.rect_filled(track, 2, t.border);
+    let f = (phase.rem_euclid(TAU) / TAU) as f32;
+    p.rect_filled(Rect::from_min_size(track.min, vec2(track.width() * f, track.height())), 2, t.accent);
+    let knob = pos2(track.left() + track.width() * f, track.center().y);
+    p.circle_filled(knob, if resp.hovered() || resp.dragged() { 6.0 } else { 5.0 }, t.accent);
+    scenario::publish_target(handle, r);
+    if let Some(q) = resp.interact_pointer_pos()
+        && (resp.dragged() || resp.clicked())
+    {
+        *phase = f64::from(((q.x - track.left()) / track.width()).clamp(0.0, 1.0)) * TAU;
+        player.playing = false;
+    }
+    ui.label(egui::RichText::new(format!("ωt {:>3.0}°", phase.rem_euclid(TAU).to_degrees())).size(t.font_small).color(t.text_dim).monospace());
+    // Speed.
+    let r = egui::ComboBox::from_id_salt((handle, "speed")).width(52.0).selected_text(format!("{}×", player.speed)).show_ui(ui, |ui| {
+        for s in Player::SPEEDS {
+            ui.selectable_value(&mut player.speed, s, format!("{s}×"));
+        }
+    });
+    scenario::publish_target(&format!("{handle}:speed"), r.response.rect);
+}
+
 /// A slider whose track shows on the panels' colours: the track in the controls' border colour,
 /// the part up to the handle in the accent.
 pub fn slider(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>, text: impl Into<egui::WidgetText>) -> Response {

@@ -149,7 +149,8 @@ pub struct FieldState {
     pub picture: Option<Picture>,
     /// Where the picture puts the plane, for reading the pointer's position.
     pub layout: Option<emcraft_render::plot::Layout>,
-    pub animate: bool,
+    /// The phase animation, played like a video.
+    pub player: ui_kit::Player,
     /// The fields under the pointer (last frame), and the point clicked on the plane (display
     /// units along the picture's axes), read again whenever the view changes.
     pub hover: Option<Probe>,
@@ -197,7 +198,8 @@ pub struct EmcraftApp {
     pub(crate) shots: Vec<Shot>,
     shot_token: u64,
     pub quit_requested: bool,
-    last_frame: Option<Instant>,
+    /// The input time of the last frame (s), which the animation advances from.
+    last_frame: Option<f64>,
     pub frames: u64,
     /// The viewport's rectangle last frame.
     pub viewport_rect: Option<egui::Rect>,
@@ -250,7 +252,7 @@ impl EmcraftApp {
                 samples: None,
                 picture: None,
                 layout: None,
-                animate: false,
+                player: ui_kit::Player::default(),
                 hover: None,
                 pinned: None,
                 kept: Vec::new(),
@@ -580,14 +582,15 @@ impl EmcraftApp {
         theme::apply(ctx);
         self.poll_job();
         control::serve(self, ctx);
-        let now = Instant::now();
-        if self.field.animate && self.view == View::Field {
-            let dt = self.last_frame.map_or(0.0, |t| now.duration_since(t).as_secs_f64()).min(0.1);
-            // One period every three seconds.
-            self.field.view.phase = (self.field.view.phase + dt * std::f64::consts::TAU / 3.0).rem_euclid(std::f64::consts::TAU);
+        // The phase plays while a field is on screen: the field view, or the 3D view in Results.
+        let time = ctx.input(|i| i.time);
+        let showing = self.view == View::Field || (self.view == View::Model && self.workflow.step == Some(steps::Step::Results));
+        if showing && self.field.player.playing {
+            let dt = self.last_frame.map_or(0.0, |t| time - t).clamp(0.0, 0.1);
+            self.field.view.phase = self.field.player.advance(self.field.view.phase, dt);
             ctx.request_repaint();
         }
-        self.last_frame = Some(now);
+        self.last_frame = Some(time);
         if self.job.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }

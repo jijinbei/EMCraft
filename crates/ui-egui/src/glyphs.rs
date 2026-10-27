@@ -334,6 +334,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, ink: Color32, accent: Color32) {
             pen.open(&[(0.2, 0.42), (0.2, 0.86), (0.8, 0.86), (0.8, 0.42)], line);
             p.rect_filled(pen.rect(0.42, 0.6, 0.58, 0.86), 1.0, accent);
         }
+        // A video's play and pause.
+        "play" => pen.fill(&[(0.3, 0.18), (0.82, 0.5), (0.3, 0.82)], accent, Stroke::new(w, accent)),
+        "pause" => {
+            p.rect_filled(pen.rect(0.26, 0.2, 0.42, 0.8), 1.0, accent);
+            p.rect_filled(pen.rect(0.58, 0.2, 0.74, 0.8), 1.0, accent);
+        }
         _ => {
             pen.frame(pen.rect(0.2, 0.2, 0.8, 0.8), 3.0, line);
         }

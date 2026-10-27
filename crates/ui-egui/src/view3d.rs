@@ -171,7 +171,8 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     {
         app.message(e, true);
     }
-    let gpu = app.prefs.gpu3d || app.view3d.dragging;
+    // Moving pictures (an orbit, a playing field) draw on the GPU.
+    let gpu = app.prefs.gpu3d || app.view3d.dragging || (overlay == Overlay::Field && app.field.player.playing);
     let key = format!("{field_key}|{:?}", app.view3d.selected);
     let p = ui.painter().with_clip_rect(rect);
     draw(&mut app.view3d, ui, &p, rect, (revision, overlay, key), gpu, &t);
@@ -449,6 +450,12 @@ fn nav_bar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, facing: Option<(
         vec![("fit", "view3d:fit", "Fit the model to the view (double-click the view)"), ("home", "view3d:std:iso", "Home view (isometric)")];
     if facing.is_some() {
         items.push(("lookat", "view3d:face", "Face the field's plane"));
+        // The field's phase, played like a video.
+        items.push(if app.field.player.playing {
+            ("pause", "view3d:play", "Pause the field's animation")
+        } else {
+            ("play", "view3d:play", "Play the field's animation")
+        });
     }
     items.push(if ortho {
         ("orthographic", "view3d:projection", "Orthographic — click for perspective")
@@ -476,6 +483,7 @@ fn nav_bar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, facing: Option<(
             match handle {
                 "view3d:fit" => app.view3d.fit_next = true,
                 "view3d:std:iso" => app.view3d.standard(StandardView::Iso),
+                "view3d:play" => app.field.player.playing = !app.field.player.playing,
                 "view3d:face" => {
                     if let Some((lo, hi, v)) = facing {
                         app.view3d.camera.standard(v);

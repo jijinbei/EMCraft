@@ -294,7 +294,8 @@ pub(super) fn kept_planes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     });
 }
 
-/// What is drawn: the coloured component, the arrows, the excited port and the phase.
+/// What is drawn: the coloured component, the arrows, the excited port, and the phase played
+/// like a video.
 pub(super) fn field_display(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let before = app.field.view.component;
     let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {
@@ -320,12 +321,5 @@ pub(super) fn field_display(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
     }
     ui.separator();
-    let mut deg = app.field.view.phase.to_degrees().rem_euclid(360.0);
-    let r = crate::ui_kit::slider(ui, &mut deg, 0.0..=360.0, "ωt (°)");
-    scenario::publish_target("field:phase", r.rect);
-    if r.changed() {
-        app.field.view.phase = deg.to_radians();
-    }
-    let r = ui.checkbox(&mut app.field.animate, "Animate");
-    scenario::publish_target("field:animate", r.rect);
+    crate::ui_kit::player(ui, &mut app.field.player, &mut app.field.view.phase, "field:phase");
 }
