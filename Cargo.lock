@@ -1937,8 +1937,8 @@ name = "emcraft-engine"
 version = "0.1.0"
 dependencies = [
  "emcraft-fdtd",
- "emcraft-fdtd-gpu",
  "emcraft-fem",
+ "emcraft-gpu",
  "emcraft-io",
  "emcraft-mesh",
  "emcraft-model",
@@ -1961,21 +1961,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "emcraft-fdtd-gpu"
+name = "emcraft-fem"
+version = "0.1.0"
+dependencies = [
+ "emcraft-model",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "emcraft-gpu"
 version = "0.1.0"
 dependencies = [
  "cubecl",
  "emcraft-fdtd",
  "emcraft-model",
  "num-complex",
-]
-
-[[package]]
-name = "emcraft-fem"
-version = "0.1.0"
-dependencies = [
- "emcraft-model",
- "thiserror 2.0.21",
 ]
 
 [[package]]

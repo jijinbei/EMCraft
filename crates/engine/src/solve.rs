@@ -3,7 +3,7 @@
 use std::f64::consts::{LOG10_E, PI};
 use std::sync::Arc;
 
-use emcraft_fdtd_gpu::{Backend, Gpu, Precision};
+use emcraft_gpu::{Backend, Gpu, Precision};
 use emcraft_model::units::{C0, Length};
 use emcraft_solver::Driven;
 use serde_json::{Value, json};
@@ -127,7 +127,7 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 pub fn devices(_: &mut Session, _: &Params) -> Result<Value> {
-    let gpu = emcraft_fdtd_gpu::available();
+    let gpu = emcraft_gpu::available();
     let list: Vec<Value> = DEVICES
         .iter()
         .map(|(name, backend)| match backend.and_then(|b| gpu.iter().find(|a| a.backend == b)) {

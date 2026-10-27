@@ -4,7 +4,7 @@
 use std::time::Instant;
 
 use emcraft_fdtd::{Options, TdResult, s_parameters, s_parameters_with};
-use emcraft_fdtd_gpu::{Backend, Gpu, Precision, available};
+use emcraft_gpu::{Backend, Gpu, Precision, available};
 use std::f64::consts::PI;
 
 use emcraft_model::{End, Material, Model, Pole, Port, Section, Waveguide};
@@ -90,9 +90,9 @@ fn every_built_backend_reports_what_it_runs() {
     }
 }
 
-/// On a machine with CUDA (`cargo test -p emcraft-fdtd-gpu --features cuda -- --ignored`).
+/// On a machine with CUDA (`cargo test -p emcraft-gpu --features cuda -- --ignored`).
 #[test]
-#[ignore = "needs an NVIDIA GPU: cargo test -p emcraft-fdtd-gpu --features cuda -- --ignored"]
+#[ignore = "needs an NVIDIA GPU: cargo test -p emcraft-gpu --features cuda -- --ignored"]
 fn cuda_matches_the_threads() {
     let cuda = available().into_iter().find(|a| a.backend == Backend::Cuda).unwrap();
     assert!(cuda.problem.is_none(), "{cuda:?}");

@@ -4,7 +4,7 @@
 use std::time::Instant;
 
 use emcraft_fdtd::open::{OpenOptions, OpenRun, radiate, radiate_with};
-use emcraft_fdtd_gpu::{Backend, Gpu, Precision, available};
+use emcraft_gpu::{Backend, Gpu, Precision, available};
 use emcraft_model::{LumpedPort, Model, Open, Point3, Shape, Solid, Source, Vec3};
 
 fn open_box(size: f64, pml: f64) -> Model {
@@ -70,7 +70,7 @@ fn the_cpu_backend_matches_the_threads_in_the_open() {
 }
 
 #[test]
-#[ignore = "needs an NVIDIA GPU: cargo test -p emcraft-fdtd-gpu --features cuda -- --ignored"]
+#[ignore = "needs an NVIDIA GPU: cargo test -p emcraft-gpu --features cuda -- --ignored"]
 fn cuda_matches_the_threads_in_the_open() {
     let cuda = available().into_iter().find(|a| a.backend == Backend::Cuda).unwrap();
     assert!(cuda.problem.is_none(), "{cuda:?}");

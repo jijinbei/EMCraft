@@ -1,5 +1,5 @@
 [package]
-name = "emcraft-fdtd-gpu"
+name = "emcraft-gpu"
 description = "EMCraft's time-domain leapfrog on a GPU (or the CPU's SIMD) through CubeCL, in single or double precision"
 version.workspace = true
 edition.workspace = true

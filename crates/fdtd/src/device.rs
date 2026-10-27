@@ -1,5 +1,5 @@
 //! Running the waveguide leapfrog somewhere other than the CPU's threads: the run prepared as
-//! plain arrays (a [`Plan`]), and what steps it (a [`Stepper`], such as `emcraft-fdtd-gpu`'s).
+//! plain arrays (a [`Plan`]), and what steps it (a [`Stepper`], such as `emcraft-gpu`'s).
 //! The CPU prepares, transforms and checks; the device only steps the fields, injects the
 //! source and projects E_y on the two planes.
 

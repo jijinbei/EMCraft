@@ -25,12 +25,15 @@
 //! 2004); [`Ldlt::solve_refined`] then recovers the accuracy by iterative refinement and reports
 //! the backward error.
 
+use std::ops::Range;
+
 use emcraft_model::Point3;
 use faer::linalg::matmul::triangular::{BlockStructure, matmul};
 use faer::{Accum, MatMut, MatRef, Par};
 use num_complex::Complex64 as C;
 use rayon::prelude::*;
 
+use crate::accel::Accelerator;
 use crate::sparse::Csr;
 
 /// The largest frontal matrix (rows) a factorization may form: m² complex entries.
@@ -50,6 +53,8 @@ pub enum FactorError {
     Dimension(String),
     #[error("the factor's scratch file: {0}")]
     Scratch(String),
+    #[error("the device failed: {0}")]
+    Device(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -327,200 +332,280 @@ const PANEL_PARALLEL: usize = 1 << 16;
 /// L (unit diagonal) and the rest the Schur complement (lower).
 fn factor_front(f: &mut [C], m: usize, k: usize, rows: &mut [usize], tau: f64, perturbed: &mut usize, two_by_two: &mut usize) -> Vec<Pivot> {
     let mut pivots = vec![Pivot::Second; k];
+    let mut swaps = Vec::new();
     let mut b0 = 0;
     while b0 < k {
         let be = (b0 + BLOCK).min(k);
-        let mut p = b0;
-        while p < be {
-            let (r, w1) = colmax(f, m, p, p);
-            let app = f[p * m + p].norm();
-            // (column to bring to p, 2 × 2 partner)
-            let mut choice: Option<(usize, Option<usize>)> = None;
-            if app >= ALPHA * w1 && (app > 0.0 || w1 == 0.0) {
-                choice = Some((p, None));
-            } else if r < be {
-                let (_, wr) = colmax(f, m, r, p);
-                let arr = f[r * m + r].norm();
-                if app * wr >= ALPHA * w1 * w1 {
-                    choice = Some((p, None));
-                } else if arr >= ALPHA * wr {
-                    choice = Some((r, None));
-                } else if p + 1 < be {
-                    choice = Some((p, Some(r)));
-                }
-            }
-            if choice.is_none() {
-                // The largest entry lies outside the block: another column of the block that
-                // passes the test, else the best 2 × 2 inside it, else column p.
-                for j in p + 1..be {
-                    let (_, wj) = colmax(f, m, j, p);
-                    if f[j * m + j].norm() >= ALPHA * wj && f[j * m + j].norm() > tau {
-                        choice = Some((j, None));
-                        break;
-                    }
-                }
-            }
-            if choice.is_none() && p + 1 < be {
-                let (q, wq) = (p + 1..be).fold((usize::MAX, 0.0), |b, i| if f[p * m + i].norm() > b.1 { (i, f[p * m + i].norm()) } else { b });
-                if q != usize::MAX {
-                    let det = f[p * m + p] * f[q * m + q] - f[p * m + q] * f[p * m + q];
-                    if det.norm() > tau * wq {
-                        choice = Some((p, Some(q)));
-                    }
-                }
-            }
-            let (col, partner) = choice.unwrap_or((p, None));
-            match partner {
-                None => {
-                    interchange(f, m, k, rows, p, col);
-                    let mut d = f[p * m + p];
-                    if !(d.norm() > tau) {
-                        d = if d.norm() > 0.0 { d / d.norm() * tau } else { C::new(tau, 0.0) };
-                        *perturbed += 1;
-                    }
-                    pivots[p] = Pivot::One(d);
-                    // Original column values c_i, then l_i = c_i / d.
-                    let c: Vec<C> = f[p * m + p + 1..p * m + m].to_vec();
-                    let dinv = d.inv();
-                    for (x, ci) in f[p * m + p + 1..p * m + m].iter_mut().zip(&c) {
-                        *x = ci * dinv;
-                    }
-                    f[p * m + p] = C::new(1.0, 0.0);
-                    // The rest of the block's columns, every row below p: F −= l cᵀ.
-                    if p + 1 < be {
-                        let (rows, cols) = (m - p - 1, be - p - 1);
-                        let (left, right) = f.split_at_mut((p + 1) * m);
-                        let lcol = MatRef::from_column_major_slice(&left[p * m + p + 1..p * m + m], rows, 1);
-                        let crow = MatRef::from_row_major_slice(&c[..cols], 1, cols);
-                        let dst = MatMut::from_column_major_slice_mut(&mut right[..cols * m], m, cols).submatrix_mut(p + 1, 0, rows, cols);
-                        matmul(
-                            dst,
-                            BlockStructure::Rectangular,
-                            Accum::Add,
-                            lcol,
-                            BlockStructure::Rectangular,
-                            crow,
-                            BlockStructure::Rectangular,
-                            C::new(-1.0, 0.0),
-                            if rows * cols >= PANEL_PARALLEL { Par::rayon(0) } else { Par::Seq },
-                        );
-                    }
-                    p += 1;
-                }
-                Some(q) => {
-                    interchange(f, m, k, rows, p + 1, q);
-                    let (a11, a21, a22) = (f[p * m + p], f[p * m + p + 1], f[(p + 1) * m + p + 1]);
-                    let det = a11 * a22 - a21 * a21;
-                    let (i11, i21, i22) = (a22 / det, -a21 / det, a11 / det);
-                    pivots[p] = Pivot::Two(a11, a21, a22);
-                    pivots[p + 1] = Pivot::Second;
-                    *two_by_two += 1;
-                    let c0v: Vec<C> = f[p * m + p + 2..p * m + m].to_vec();
-                    let c1v: Vec<C> = f[(p + 1) * m + p + 2..(p + 1) * m + m].to_vec();
-                    for i in 0..c0v.len() {
-                        f[p * m + p + 2 + i] = c0v[i] * i11 + c1v[i] * i21;
-                        f[(p + 1) * m + p + 2 + i] = c0v[i] * i21 + c1v[i] * i22;
-                    }
-                    f[p * m + p] = C::new(1.0, 0.0);
-                    f[p * m + p + 1] = C::new(0.0, 0.0);
-                    f[(p + 1) * m + p + 1] = C::new(1.0, 0.0);
-                    // F −= [l₀ l₁] [c₀ c₁]ᵀ over the rest of the block.
-                    if p + 2 < be {
-                        let (rows, cols) = (m - p - 2, be - p - 2);
-                        let (left, right) = f.split_at_mut((p + 2) * m);
-                        let lcols = MatRef::from_column_major_slice(&left[p * m..(p + 2) * m], m, 2).subrows(p + 2, rows);
-                        let crows: Vec<C> = c0v[..cols].iter().chain(&c1v[..cols]).copied().collect();
-                        let cm = MatRef::from_row_major_slice(&crows, 2, cols);
-                        let dst = MatMut::from_column_major_slice_mut(&mut right[..cols * m], m, cols).submatrix_mut(p + 2, 0, rows, cols);
-                        matmul(
-                            dst,
-                            BlockStructure::Rectangular,
-                            Accum::Add,
-                            lcols,
-                            BlockStructure::Rectangular,
-                            cm,
-                            BlockStructure::Rectangular,
-                            C::new(-1.0, 0.0),
-                            if rows * cols >= PANEL_PARALLEL { Par::rayon(0) } else { Par::Seq },
-                        );
-                    }
-                    p += 2;
-                }
-            }
-        }
-
-        // The block's L below it is its columns' lower part, in place; W = L D column by column
-        // (both column-major, as the products take them best).
-        let nb = be - b0;
-        let below = m - be;
-        if below > 0 {
-            let (left, right) = f.split_at_mut(be * m);
-            let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(be, below);
-            let mut w = vec![C::new(0.0, 0.0); below * nb];
-            let col = |t: usize| &left[(b0 + t) * m + be..(b0 + t + 1) * m];
-            let mut t = 0;
-            while t < nb {
-                match pivots[b0 + t] {
-                    Pivot::One(d) => {
-                        for (x, l) in w[t * below..(t + 1) * below].iter_mut().zip(col(t)) {
-                            *x = l * d;
-                        }
-                        t += 1;
-                    }
-                    Pivot::Two(a11, a21, a22) => {
-                        let (c0, c1) = (col(t), col(t + 1));
-                        for i in 0..below {
-                            let (l0, l1) = (c0[i], c1[i]);
-                            w[t * below + i] = l0 * a11 + l1 * a21;
-                            w[(t + 1) * below + i] = l0 * a21 + l1 * a22;
-                        }
-                        t += 2;
-                    }
-                    Pivot::Second => t += 1,
-                }
-            }
-            // F −= W Lᵀ by a blocked matrix product (faer): the later panel columns over every
-            // row below the block (they pivot among themselves), the trailing block's lower part.
-            // Its sums run in an order that does not depend on the threads.
-            let kp = k.saturating_sub(be).min(below);
-            let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
-            let wm = MatRef::from_column_major_slice(&w, below, nb);
-            // The columns be.. of the front, rows from be: column c of `right` is front column be + c.
-            let mut fm = MatMut::from_column_major_slice_mut(right, m, m - be);
-            let minus = C::new(-1.0, 0.0);
-            if kp > 0 {
-                let dst = fm.as_mut().submatrix_mut(be, 0, below, kp);
-                matmul(
-                    dst,
-                    BlockStructure::Rectangular,
-                    Accum::Add,
-                    wm,
-                    BlockStructure::Rectangular,
-                    lm.subrows(0, kp).transpose(),
-                    BlockStructure::Rectangular,
-                    minus,
-                    par,
-                );
-            }
-            if kp < below {
-                let rest = below - kp;
-                let dst = fm.submatrix_mut(be + kp, kp, rest, rest);
-                matmul(
-                    dst,
-                    BlockStructure::TriangularLower,
-                    Accum::Add,
-                    wm.subrows(kp, rest),
-                    BlockStructure::Rectangular,
-                    lm.subrows(kp, rest).transpose(),
-                    BlockStructure::Rectangular,
-                    minus,
-                    par,
-                );
-            }
-        }
+        factor_block(f, m, k, b0..be, rows, tau, perturbed, two_by_two, &mut pivots, &mut swaps);
+        update_below(f, m, k, b0..be, &pivots);
         b0 = be;
     }
     pivots
+}
+
+/// [`factor_front`] with the front held by `device`: each block's columns are read back, its
+/// pivots found here (the same code), its interchanges and its update of the later columns done
+/// there; the Schur complement is read back at the end.
+fn factor_front_on(
+    device: &dyn Accelerator,
+    f: &mut [C],
+    m: usize,
+    k: usize,
+    rows: &mut [usize],
+    tau: f64,
+    perturbed: &mut usize,
+    two_by_two: &mut usize,
+) -> Result<Vec<Pivot>, FactorError> {
+    let failed = |e: String| FactorError::Device(format!("{}: {e}", device.name()));
+    let mut front = device.front(f, m).map_err(failed)?;
+    let mut pivots = vec![Pivot::Second; k];
+    let mut swaps = Vec::new();
+    let mut b0 = 0;
+    while b0 < k {
+        let be = (b0 + BLOCK).min(k);
+        front.read(b0..be, &mut f[b0 * m..be * m]).map_err(failed)?;
+        swaps.clear();
+        factor_block(f, m, k, b0..be, rows, tau, perturbed, two_by_two, &mut pivots, &mut swaps);
+        if be < k && !swaps.is_empty() {
+            front.swap_rows(be..k, &swaps).map_err(failed)?;
+        }
+        if be < m {
+            let w = block_w(f, m, b0..be, &pivots);
+            let l: Vec<C> = (b0..be).flat_map(|c| f[c * m + be..(c + 1) * m].iter().copied()).collect();
+            front.update(be, k, &w, &l).map_err(failed)?;
+        }
+        b0 = be;
+    }
+    if k < m {
+        front.read(k..m, &mut f[k * m..]).map_err(failed)?;
+    }
+    Ok(pivots)
+}
+
+/// Finds the pivots of the block of columns `block` by the Bunch–Kaufman test among its columns
+/// and applies them right-looking to the block alone (rows below p, the block's later columns),
+/// recording each interchange of variables in `swaps`.
+#[allow(clippy::too_many_arguments)]
+fn factor_block(
+    f: &mut [C],
+    m: usize,
+    k: usize,
+    block: Range<usize>,
+    rows: &mut [usize],
+    tau: f64,
+    perturbed: &mut usize,
+    two_by_two: &mut usize,
+    pivots: &mut [Pivot],
+    swaps: &mut Vec<(usize, usize)>,
+) {
+    let (b0, be) = (block.start, block.end);
+    let mut p = b0;
+    while p < be {
+        let (r, w1) = colmax(f, m, p, p);
+        let app = f[p * m + p].norm();
+        // (column to bring to p, 2 × 2 partner)
+        let mut choice: Option<(usize, Option<usize>)> = None;
+        if app >= ALPHA * w1 && (app > 0.0 || w1 == 0.0) {
+            choice = Some((p, None));
+        } else if r < be {
+            let (_, wr) = colmax(f, m, r, p);
+            let arr = f[r * m + r].norm();
+            if app * wr >= ALPHA * w1 * w1 {
+                choice = Some((p, None));
+            } else if arr >= ALPHA * wr {
+                choice = Some((r, None));
+            } else if p + 1 < be {
+                choice = Some((p, Some(r)));
+            }
+        }
+        if choice.is_none() {
+            // The largest entry lies outside the block: another column of the block that
+            // passes the test, else the best 2 × 2 inside it, else column p.
+            for j in p + 1..be {
+                let (_, wj) = colmax(f, m, j, p);
+                if f[j * m + j].norm() >= ALPHA * wj && f[j * m + j].norm() > tau {
+                    choice = Some((j, None));
+                    break;
+                }
+            }
+        }
+        if choice.is_none() && p + 1 < be {
+            let (q, wq) = (p + 1..be).fold((usize::MAX, 0.0), |b, i| if f[p * m + i].norm() > b.1 { (i, f[p * m + i].norm()) } else { b });
+            if q != usize::MAX {
+                let det = f[p * m + p] * f[q * m + q] - f[p * m + q] * f[p * m + q];
+                if det.norm() > tau * wq {
+                    choice = Some((p, Some(q)));
+                }
+            }
+        }
+        let (col, partner) = choice.unwrap_or((p, None));
+        match partner {
+            None => {
+                interchange(f, m, k, rows, p, col);
+                if col != p {
+                    swaps.push((p, col));
+                }
+                let mut d = f[p * m + p];
+                if !(d.norm() > tau) {
+                    d = if d.norm() > 0.0 { d / d.norm() * tau } else { C::new(tau, 0.0) };
+                    *perturbed += 1;
+                }
+                pivots[p] = Pivot::One(d);
+                // Original column values c_i, then l_i = c_i / d.
+                let c: Vec<C> = f[p * m + p + 1..p * m + m].to_vec();
+                let dinv = d.inv();
+                for (x, ci) in f[p * m + p + 1..p * m + m].iter_mut().zip(&c) {
+                    *x = ci * dinv;
+                }
+                f[p * m + p] = C::new(1.0, 0.0);
+                // The rest of the block's columns, every row below p: F −= l cᵀ.
+                if p + 1 < be {
+                    let (rows, cols) = (m - p - 1, be - p - 1);
+                    let (left, right) = f.split_at_mut((p + 1) * m);
+                    let lcol = MatRef::from_column_major_slice(&left[p * m + p + 1..p * m + m], rows, 1);
+                    let crow = MatRef::from_row_major_slice(&c[..cols], 1, cols);
+                    let dst = MatMut::from_column_major_slice_mut(&mut right[..cols * m], m, cols).submatrix_mut(p + 1, 0, rows, cols);
+                    matmul(
+                        dst,
+                        BlockStructure::Rectangular,
+                        Accum::Add,
+                        lcol,
+                        BlockStructure::Rectangular,
+                        crow,
+                        BlockStructure::Rectangular,
+                        C::new(-1.0, 0.0),
+                        if rows * cols >= PANEL_PARALLEL { Par::rayon(0) } else { Par::Seq },
+                    );
+                }
+                p += 1;
+            }
+            Some(q) => {
+                interchange(f, m, k, rows, p + 1, q);
+                if q != p + 1 {
+                    swaps.push((p + 1, q));
+                }
+                let (a11, a21, a22) = (f[p * m + p], f[p * m + p + 1], f[(p + 1) * m + p + 1]);
+                let det = a11 * a22 - a21 * a21;
+                let (i11, i21, i22) = (a22 / det, -a21 / det, a11 / det);
+                pivots[p] = Pivot::Two(a11, a21, a22);
+                pivots[p + 1] = Pivot::Second;
+                *two_by_two += 1;
+                let c0v: Vec<C> = f[p * m + p + 2..p * m + m].to_vec();
+                let c1v: Vec<C> = f[(p + 1) * m + p + 2..(p + 1) * m + m].to_vec();
+                for i in 0..c0v.len() {
+                    f[p * m + p + 2 + i] = c0v[i] * i11 + c1v[i] * i21;
+                    f[(p + 1) * m + p + 2 + i] = c0v[i] * i21 + c1v[i] * i22;
+                }
+                f[p * m + p] = C::new(1.0, 0.0);
+                f[p * m + p + 1] = C::new(0.0, 0.0);
+                f[(p + 1) * m + p + 1] = C::new(1.0, 0.0);
+                // F −= [l₀ l₁] [c₀ c₁]ᵀ over the rest of the block.
+                if p + 2 < be {
+                    let (rows, cols) = (m - p - 2, be - p - 2);
+                    let (left, right) = f.split_at_mut((p + 2) * m);
+                    let lcols = MatRef::from_column_major_slice(&left[p * m..(p + 2) * m], m, 2).subrows(p + 2, rows);
+                    let crows: Vec<C> = c0v[..cols].iter().chain(&c1v[..cols]).copied().collect();
+                    let cm = MatRef::from_row_major_slice(&crows, 2, cols);
+                    let dst = MatMut::from_column_major_slice_mut(&mut right[..cols * m], m, cols).submatrix_mut(p + 2, 0, rows, cols);
+                    matmul(
+                        dst,
+                        BlockStructure::Rectangular,
+                        Accum::Add,
+                        lcols,
+                        BlockStructure::Rectangular,
+                        cm,
+                        BlockStructure::Rectangular,
+                        C::new(-1.0, 0.0),
+                        if rows * cols >= PANEL_PARALLEL { Par::rayon(0) } else { Par::Seq },
+                    );
+                }
+                p += 2;
+            }
+        }
+    }
+}
+
+/// W = L D of the block `block`: its columns' rows below it times their pivots (column-major,
+/// (m − be) × nb).
+fn block_w(f: &[C], m: usize, block: Range<usize>, pivots: &[Pivot]) -> Vec<C> {
+    let (b0, be) = (block.start, block.end);
+    let (nb, below) = (be - b0, m - be);
+    let mut w = vec![C::new(0.0, 0.0); below * nb];
+    let col = |t: usize| &f[(b0 + t) * m + be..(b0 + t + 1) * m];
+    let mut t = 0;
+    while t < nb {
+        match pivots[b0 + t] {
+            Pivot::One(d) => {
+                for (x, l) in w[t * below..(t + 1) * below].iter_mut().zip(col(t)) {
+                    *x = l * d;
+                }
+                t += 1;
+            }
+            Pivot::Two(a11, a21, a22) => {
+                let (c0, c1) = (col(t), col(t + 1));
+                for i in 0..below {
+                    let (l0, l1) = (c0[i], c1[i]);
+                    w[t * below + i] = l0 * a11 + l1 * a21;
+                    w[(t + 1) * below + i] = l0 * a21 + l1 * a22;
+                }
+                t += 2;
+            }
+            Pivot::Second => t += 1,
+        }
+    }
+    w
+}
+
+/// The block `block`'s update of every later column, F −= W Lᵀ, by a blocked matrix product
+/// (faer): the later panel columns over every row below the block (they pivot among
+/// themselves), the trailing block's lower part. Its sums run in an order that does not depend
+/// on the threads.
+fn update_below(f: &mut [C], m: usize, k: usize, block: Range<usize>, pivots: &[Pivot]) {
+    let (b0, be) = (block.start, block.end);
+    let (nb, below) = (be - b0, m - be);
+    if below == 0 {
+        return;
+    }
+    // W = L D, column-major as the products take it best; the block's L below it is its
+    // columns' lower part, in place.
+    let w = block_w(f, m, b0..be, pivots);
+    let (left, right) = f.split_at_mut(be * m);
+    let lm = MatRef::from_column_major_slice(&left[b0 * m..], m, nb).subrows(be, below);
+    let kp = k.saturating_sub(be).min(below);
+    let par = if below * below * nb < PARALLEL_WORK { Par::Seq } else { Par::rayon(0) };
+    let wm = MatRef::from_column_major_slice(&w, below, nb);
+    // The columns be.. of the front, rows from be: column c of `right` is front column be + c.
+    let mut fm = MatMut::from_column_major_slice_mut(right, m, m - be);
+    let minus = C::new(-1.0, 0.0);
+    if kp > 0 {
+        let dst = fm.as_mut().submatrix_mut(be, 0, below, kp);
+        matmul(
+            dst,
+            BlockStructure::Rectangular,
+            Accum::Add,
+            wm,
+            BlockStructure::Rectangular,
+            lm.subrows(0, kp).transpose(),
+            BlockStructure::Rectangular,
+            minus,
+            par,
+        );
+    }
+    if kp < below {
+        let rest = below - kp;
+        let dst = fm.submatrix_mut(be + kp, kp, rest, rest);
+        matmul(
+            dst,
+            BlockStructure::TriangularLower,
+            Accum::Add,
+            wm.subrows(kp, rest),
+            BlockStructure::Rectangular,
+            lm.subrows(kp, rest).transpose(),
+            BlockStructure::Rectangular,
+            minus,
+            par,
+        );
+    }
 }
 
 /// Entries of a supernode's columns of L: k columns over m rows.
@@ -817,7 +902,10 @@ impl Shared<'_> {
             }
         }
         let (mut perturbed, mut two_by_two) = (0, 0);
-        let pivots = factor_front(&mut f, m, k, &mut rows, self.tau, &mut perturbed, &mut two_by_two);
+        let pivots = match crate::accel::current().filter(|a| a.takes(m, k)) {
+            Some(device) => factor_front_on(&*device, &mut f, m, k, &mut rows, self.tau, &mut perturbed, &mut two_by_two)?,
+            None => factor_front(&mut f, m, k, &mut rows, self.tau, &mut perturbed, &mut two_by_two),
+        };
         // The update matrix U = F₂₂ − L₂₁ D L₂₁ᵀ (lower) for the parent: the trailing block.
         let mu = m - k;
         let update = (mu > 0).then(|| {
@@ -1293,6 +1381,75 @@ mod tests {
         let mut x = b.clone();
         f.solve(&mut x).unwrap();
         assert!(residual(&a, &x, &b) < 1e-13);
+    }
+
+    /// A device held on the host, doing what `DeviceFront` documents in the plainest way.
+    struct HostDevice(std::sync::atomic::AtomicUsize);
+
+    struct HostFront {
+        f: Vec<C>,
+        m: usize,
+    }
+
+    impl Accelerator for HostDevice {
+        fn name(&self) -> String {
+            "host".into()
+        }
+        fn takes(&self, m: usize, _: usize) -> bool {
+            m >= 40
+        }
+        fn front(&self, f: &[C], m: usize) -> Result<Box<dyn crate::accel::DeviceFront>, String> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(Box::new(HostFront { f: f.to_vec(), m }))
+        }
+    }
+
+    impl crate::accel::DeviceFront for HostFront {
+        fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), String> {
+            out.copy_from_slice(&self.f[cols.start * self.m..cols.end * self.m]);
+            Ok(())
+        }
+        fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), String> {
+            for c in cols {
+                for &(p, q) in swaps {
+                    self.f.swap(c * self.m + p, c * self.m + q);
+                }
+            }
+            Ok(())
+        }
+        fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), String> {
+            let (m, below) = (self.m, self.m - be);
+            let nb = w.len() / below;
+            for j in be..m {
+                for i in (if j < k { be } else { j })..m {
+                    let sum = (0..nb).fold(C::new(0.0, 0.0), |s, t| s + w[t * below + i - be] * l[t * below + j - be]);
+                    self.f[j * m + i] -= sum;
+                }
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_device_holding_the_large_fronts_factors_alike() {
+        let mut rng = Rng(7);
+        for diag in [C::new(4.0, 0.0), C::new(0.0, 0.0)] {
+            let (a, xyz) = grid_matrix(9, 8, 7, diag, &mut rng);
+            let x_true: Vec<C> = (0..a.n).map(|_| rng.c()).collect();
+            let b = a.mul(&x_true);
+            let host = Ldlt::factor(&a, &xyz).unwrap();
+            let device = std::sync::Arc::new(HostDevice(Default::default()));
+            let on = crate::accel::with(Some(device.clone()), || Ldlt::factor(&a, &xyz)).unwrap();
+            assert!(device.0.load(std::sync::atomic::Ordering::Relaxed) > 0);
+            assert_eq!((on.perturbed, on.two_by_two), (host.perturbed, host.two_by_two));
+            let (mut x, mut y) = (b.clone(), b.clone());
+            host.solve(&mut x).unwrap();
+            on.solve(&mut y).unwrap();
+            let gap = x.iter().zip(&y).fold(0.0f64, |m, (p, q)| m.max((p - q).norm()));
+            assert!(residual(&a, &y, &b) < 1e-11 && gap < 1e-9, "{gap:e}");
+        }
+        // Outside `with`, no device.
+        assert!(crate::accel::current().is_none());
     }
 
     #[test]

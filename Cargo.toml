@@ -17,7 +17,7 @@ emcraft-theory = { path = "crates/theory" }
 emcraft-render = { path = "crates/render" }
 emcraft-solver = { path = "crates/solver" }
 emcraft-fdtd = { path = "crates/fdtd" }
-emcraft-fdtd-gpu = { path = "crates/fdtd-gpu" }
+emcraft-gpu = { path = "crates/gpu" }
 emcraft-io = { path = "crates/io" }
 emcraft-engine = { path = "crates/engine" }
 emcraft-ui-egui = { path = "crates/ui-egui" }
@@ -81,7 +81,7 @@ opt-level = 3
 [profile.dev.package.emcraft-fdtd]
 opt-level = 3
 
-[profile.dev.package.emcraft-fdtd-gpu]
+[profile.dev.package.emcraft-gpu]
 opt-level = 3
 
 [profile.release]
