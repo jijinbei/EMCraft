@@ -18,7 +18,7 @@ use emcraft_model::Mesh;
 use emcraft_solver::{Driven, SMatrix, SolveError};
 use serde_json::{Value, json};
 
-use crate::{EngineError, Params, Result, Session};
+use crate::{Change, EngineError, Params, Result, Session};
 
 /// The most passes.
 pub const MAX_PASSES: usize = 12;
@@ -146,6 +146,6 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
         "tetrahedra": mesh.tets.len(),
     });
     s.model.mesh = Some(mesh);
-    s.results.sweep = None;
+    s.results.invalidate(Change::Geometry);
     Ok(reply)
 }

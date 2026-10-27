@@ -217,7 +217,40 @@ pub struct Results {
     pub td_radiation: Option<Arc<emcraft_fdtd::open::OpenRun>>,
 }
 
+/// What changed in the model, which decides the results that no longer hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Change {
+    /// The geometry, the mesh or a symmetry plane: every result was solved on another model.
+    Geometry,
+    /// The walls' conductivity: the sweep and the eigenmodes' Q.
+    Walls,
+    /// A waveguide port: the sweep and the time domain's S-parameters.
+    Ports,
+    /// The open boundary, a source or a lumped port: the open problem's results.
+    Open,
+}
+
 impl Results {
+    /// Drops the results a change to the model leaves wrong. Changes that leave them right
+    /// but old (the band, the units) keep them, marked stale by the workflow.
+    pub fn invalidate(&mut self, change: Change) {
+        match change {
+            Change::Geometry => *self = Results::default(),
+            Change::Walls => {
+                self.sweep = None;
+                self.eigen = None;
+            }
+            Change::Ports => {
+                self.sweep = None;
+                self.time_domain = None;
+            }
+            Change::Open => {
+                self.radiation = None;
+                self.td_radiation = None;
+            }
+        }
+    }
+
     /// Whether any solver has run.
     pub fn any(&self) -> bool {
         self.sweep.is_some() || self.eigen.is_some() || self.time_domain.is_some() || self.radiation.is_some() || self.td_radiation.is_some()

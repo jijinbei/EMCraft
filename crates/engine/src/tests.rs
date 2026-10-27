@@ -960,3 +960,31 @@ fn hostile_adaptive_requests_are_refused() {
     assert!(bare.execute("mesh.adapt", &json!({"size": 8, "frequency": 10})).is_err());
     assert!(Session::new().execute("mesh.adapt", &json!({"size": 8, "frequency": 10})).is_err());
 }
+
+#[test]
+fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
+    let mut r = Results::default();
+    let filled = |r: &mut Results| {
+        r.radiation = None;
+        r.time_domain = Some(emcraft_fdtd::TdResult {
+            frequencies: Vec::new(),
+            s11: Vec::new(),
+            s21: Vec::new(),
+            cells: 0,
+            dt: 0.0,
+            steps: 0,
+            reference_steps: 0,
+            converged: true,
+        });
+    };
+    filled(&mut r);
+    r.invalidate(Change::Open);
+    assert!(r.time_domain.is_some(), "an open-boundary change keeps the guide's time domain");
+    r.invalidate(Change::Walls);
+    assert!(r.time_domain.is_some(), "walls keep the time domain's S-parameters");
+    r.invalidate(Change::Ports);
+    assert!(r.time_domain.is_none());
+    filled(&mut r);
+    r.invalidate(Change::Geometry);
+    assert!(!r.any());
+}
