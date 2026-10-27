@@ -12,10 +12,16 @@ pub(super) use crate::tet::complex::{IdMap, NONE, face_toward, sorted3};
 
 use crate::delaunay::Triangulation;
 use crate::predicates::{GenericPoint, Sign, generic_insphere_sos, generic_lex, generic_orient3d};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 /// Marks a recycled tetrahedron slot.
 const DEAD: u32 = u32::MAX - 1;
+
+/// The box certainly containing a point, as points.
+fn bounds(p: &GenericPoint) -> (Point3, Point3) {
+    let (l, h) = p.bounds();
+    (Point3::from(l), Point3::from(h))
+}
 
 pub(super) fn corrupt(what: &str) -> Error {
     Error::Failed(format!("constrained tetrahedralization is inconsistent: {what}"))
@@ -26,10 +32,10 @@ pub(super) fn corrupt(what: &str) -> Error {
 pub(super) struct Complex {
     points: Vec<GenericPoint>,
     /// A box certainly containing each point (implicit points are not exactly representable).
-    lo: Vec<[f64; 3]>,
-    hi: Vec<[f64; 3]>,
+    lo: Vec<Point3>,
+    hi: Vec<Point3>,
     /// Rounded coordinates (floating-point estimates only, never decisions).
-    approx: Vec<[f64; 3]>,
+    approx: Vec<Point3>,
     tets: Vec<[u32; 4]>,
     adj: Vec<[u32; 4]>,
     free: Vec<u32>,
@@ -73,8 +79,8 @@ impl Complex {
             let ns = tri.neighbors(t).ok_or_else(|| corrupt("Delaunay neighbours"))?;
             adj.push(ns.map(|n| id.get(n as usize).copied().unwrap_or(NONE)));
         }
-        let (lo, hi) = points.iter().map(GenericPoint::bounds).unzip();
-        let approx = points.iter().map(GenericPoint::approx).collect();
+        let (lo, hi) = points.iter().map(bounds).unzip();
+        let approx = points.iter().map(|p| Point3::from(p.approx())).collect();
         let mut cx = Complex {
             vertex_tet: vec![NONE; points.len()],
             points,
@@ -111,30 +117,24 @@ impl Complex {
     }
 
     /// Vertex `v`'s coordinates rounded to doubles: for estimates and messages only.
-    pub(super) fn approx(&self, v: u32) -> Result<[f64; 3]> {
+    pub(super) fn approx(&self, v: u32) -> Result<Point3> {
         self.approx.get(v as usize).copied().ok_or_else(|| corrupt("vertex id"))
     }
 
     /// The box certainly containing vertex `v`.
-    pub(super) fn bounds(&self, v: u32) -> ([f64; 3], [f64; 3]) {
+    pub(super) fn bounds(&self, v: u32) -> (Point3, Point3) {
         match (self.lo.get(v as usize), self.hi.get(v as usize)) {
             (Some(&l), Some(&h)) => (l, h),
-            _ => ([f64::NEG_INFINITY; 3], [f64::INFINITY; 3]),
+            _ => (Point3::splat(f64::NEG_INFINITY), Point3::splat(f64::INFINITY)),
         }
     }
 
     /// The box certainly containing all of `vs`.
-    pub(super) fn bounds_of(&self, vs: &[u32]) -> ([f64; 3], [f64; 3]) {
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        for &v in vs {
+    pub(super) fn bounds_of(&self, vs: &[u32]) -> (Point3, Point3) {
+        vs.iter().fold((Point3::splat(f64::INFINITY), Point3::splat(f64::NEG_INFINITY)), |(lo, hi), &v| {
             let (l, h) = self.bounds(v);
-            for k in 0..3 {
-                lo[k] = lo[k].min(l[k]);
-                hi[k] = hi[k].max(h[k]);
-            }
-        }
-        (lo, hi)
+            (lo.min(l), hi.max(h))
+        })
     }
 
     pub(super) fn slots(&self) -> usize {
@@ -262,7 +262,7 @@ impl Complex {
 
     /// The tetrahedra whose (conservative) box meets the box `lo..hi`, connected to the star of
     /// `v` through such tetrahedra; at most `cap` of them.
-    pub(super) fn tets_near(&mut self, v: u32, lo: [f64; 3], hi: [f64; 3], cap: usize) -> Result<Vec<u32>> {
+    pub(super) fn tets_near(&mut self, v: u32, lo: Point3, hi: Point3, cap: usize) -> Result<Vec<u32>> {
         let mut out = Vec::new();
         self.star(v, &mut out)?;
         self.next_epoch();
@@ -362,8 +362,8 @@ impl Complex {
         if self.points.len() >= (NONE - 2) as usize {
             return Err(Error::Limit("too many vertices".into()));
         }
-        let (l, h) = p.bounds();
-        self.approx.push(p.approx());
+        let (l, h) = bounds(&p);
+        self.approx.push(Point3::from(p.approx()));
         self.points.push(p);
         self.lo.push(l);
         self.hi.push(h);

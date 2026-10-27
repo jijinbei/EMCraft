@@ -58,10 +58,10 @@ use std::collections::HashMap;
 use crate::compat::ElementKind;
 
 use crate::delaunay::Triangulation;
-use crate::predicates::{GenericPoint, Point3, Sign};
+use crate::predicates::{ExactPoint3, GenericPoint, Sign};
 use crate::quality::{GateOptions, GateReport, validity_gate_elements};
 use crate::surface::{BoundarySurface, Box3};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 use complex::{Complex, NONE, corrupt, face_toward, sorted3};
 use segments::Segment;
@@ -133,7 +133,7 @@ pub struct CdtStats {
 pub struct TetMesh {
     /// The surface's vertices (same ids as [`BoundarySurface::points`]), then the Steiner
     /// points rounded to doubles.
-    pub points: Vec<[f64; 3]>,
+    pub points: Vec<Point3>,
     /// The Steiner points, for `points[surface vertices..]`.
     pub steiner: Vec<SteinerPoint>,
     /// The inside tetrahedra, tet4 order (positive volume in exact arithmetic).
@@ -147,7 +147,7 @@ impl TetMesh {
     /// The validity gate on the rounded coordinates: every tetrahedron positive, and the volume
     /// equal to `expected_volume` (the surface's, [`BoundarySurface::volume`]) within 1e-9.
     pub fn gate(&self, expected_volume: f64) -> Result<GateReport> {
-        let coords = |t: &[u32; 4]| -> Result<[[f64; 3]; 4]> {
+        let coords = |t: &[u32; 4]| -> Result<[Point3; 4]> {
             let p = |v: u32| self.points.get(v as usize).copied().ok_or_else(|| corrupt("output vertex id"));
             Ok([p(t[0])?, p(t[1])?, p(t[2])?, p(t[3])?])
         };
@@ -195,23 +195,23 @@ impl Recovery {
         if triangles.is_empty() {
             return Err(Error::Invalid("the surface has no triangles".into()));
         }
-        let mut points: Vec<[f64; 3]> = surface.points().iter().map(|p| p.map(|x| x + 0.0)).collect();
+        let mut points: Vec<Point3> = surface.points().iter().map(|p| p.map(|x| x + 0.0)).collect();
         let mut bbox = Box3::EMPTY;
         for p in &points {
             bbox.add_point(*p);
         }
         let size = (0..3).map(|k| bbox.hi[k] - bbox.lo[k]).fold(0.0, f64::max).max(1.0);
         for corner in 0..8 {
-            points.push(std::array::from_fn(|k| {
+            points.push(Point3::from(std::array::from_fn(|k| {
                 let x = if corner >> k & 1 == 0 { bbox.lo[k] - size } else { bbox.hi[k] + size };
                 crate::predicates::snap_to_domain(x) + 0.0
-            }));
+            })));
         }
         let tri = Triangulation::new(&points)?;
         if tri.dimension() != 3 || (0..points.len() as u32).any(|v| tri.duplicate_of(v).is_some()) {
             return Err(Error::Invalid("the surface's vertices must be distinct".into()));
         }
-        let generic = points.iter().map(|&p| Point3::try_from(p).map(GenericPoint::Explicit)).collect::<Result<Vec<_>>>()?;
+        let generic = points.iter().map(|&p| ExactPoint3::try_from(p).map(GenericPoint::Explicit)).collect::<Result<Vec<_>>>()?;
         let cx = Complex::from_delaunay(&tri, generic, options.max_tets)?;
         let mut edges: Vec<(u32, u32)> =
             triangles.iter().flat_map(|t| (0..3).map(move |k| (t[k].min(t[(k + 1) % 3]), t[k].max(t[(k + 1) % 3])))).collect();

@@ -5,7 +5,7 @@
 //! intermediate extended precision and no fused multiply-add contraction; that is what Rust's
 //! `f64` guarantees on every target FieldCraft builds for (x86_64 with SSE2, aarch64, wasm32):
 //! rustc never contracts `a * b + c` into an FMA and does not use x87. No overflow or underflow
-//! may occur, which the coordinate domain of [`super::Point2`] / [`super::Point3`] guarantees.
+//! may occur, which the coordinate domain of [`super::ExactPoint2`] / [`super::ExactPoint3`] guarantees.
 
 /// `2^ceil(53 / 2) + 1`, the splitter for Dekker's product (§2.5, Theorem 17).
 const SPLITTER: f64 = 134_217_729.0;

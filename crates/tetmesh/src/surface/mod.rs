@@ -57,9 +57,9 @@ use crate::compat::{MAX_COORD, MAX_ELEMENTS, MAX_NODES};
 
 use crate::message;
 use crate::message::{Message, length, point, volume};
-use crate::predicates::Point3;
-use crate::vec3::{cross, norm, sub};
+use crate::predicates::ExactPoint3;
 use crate::{Error, Result};
+use crate::{Point3, Vec3};
 
 /// The default relative weld distance.
 const DEFAULT_WELD: f64 = 1e-9; // unit-factors: relative to the diagonal
@@ -110,17 +110,17 @@ pub enum Defect {
     /// A triangle refers to a vertex that does not exist.
     BadIndex { triangle: u32 },
     /// A triangle with exactly collinear corners.
-    Degenerate { triangle: u32, at: [f64; 3] },
+    Degenerate { triangle: u32, at: Point3 },
     /// An edge with only one triangle: the surface has a hole there.
-    OpenEdge { vertices: [u32; 2], triangle: u32, at: [f64; 3] },
+    OpenEdge { vertices: [u32; 2], triangle: u32, at: Point3 },
     /// An edge shared by more than two triangles.
-    NonManifoldEdge { vertices: [u32; 2], triangles: u32, at: [f64; 3] },
+    NonManifoldEdge { vertices: [u32; 2], triangles: u32, at: Point3 },
     /// Two triangles traverse their shared edge in the same direction: one of them is flipped.
-    Flipped { vertices: [u32; 2], triangles: [u32; 2], at: [f64; 3] },
+    Flipped { vertices: [u32; 2], triangles: [u32; 2], at: Point3 },
     /// The triangles around a vertex form more than one fan (two sheets touch at a point).
-    NonManifoldVertex { vertex: u32, at: [f64; 3] },
+    NonManifoldVertex { vertex: u32, at: Point3 },
     /// Two triangles meet outside the vertices and edge they share.
-    SelfIntersection { triangles: [u32; 2], at: [f64; 3] },
+    SelfIntersection { triangles: [u32; 2], at: Point3 },
     /// A shell enclosing negative volume although it is not inside another shell (its triangles
     /// face inwards), or positive volume although it is a void.
     Inverted { shell: u32, triangle: u32, volume: f64 },
@@ -146,7 +146,7 @@ impl Defect {
     }
 
     /// A position near the defect, when it has one.
-    pub fn at(&self) -> Option<[f64; 3]> {
+    pub fn at(&self) -> Option<Point3> {
         match self {
             Defect::BadCoordinate { .. } | Defect::BadIndex { .. } | Defect::Inverted { .. } | Defect::Flat { .. } => None,
             Defect::Degenerate { at, .. }
@@ -294,7 +294,7 @@ pub struct FeatureEdge {
 /// the cavity), and all output is a deterministic function of the input.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundarySurface {
-    points: Vec<[f64; 3]>,
+    points: Vec<Point3>,
     triangles: Vec<[u32; 3]>,
     tri_face: Vec<u32>,
     neighbors: Vec<[u32; 3]>,
@@ -311,7 +311,7 @@ impl BoundarySurface {
     /// [`Error::Surface`] listing the defects of the first check that fails, with
     /// [`Error::Invalid`] on unusable options or sizes, or with [`Error::Limit`] when a search cap
     /// is reached.
-    pub fn new(positions: &[[f64; 3]], triangles: &[[u32; 3]], tri_face: &[u32], options: &SurfaceOptions) -> Result<Self> {
+    pub fn new(positions: &[Point3], triangles: &[[u32; 3]], tri_face: &[u32], options: &SurfaceOptions) -> Result<Self> {
         check_options(options)?;
         if positions.len() > MAX_NODES || triangles.len() > MAX_ELEMENTS {
             return Err(Error::Invalid(format!(
@@ -332,7 +332,7 @@ impl BoundarySurface {
         if welded.triangles.is_empty() {
             return Err(Error::Invalid("every triangle collapses when the vertices are welded".into()));
         }
-        let pts: Vec<Point3> = welded.points.iter().map(|&p| Point3::try_from(p)).collect::<Result<_>>()?;
+        let pts: Vec<ExactPoint3> = welded.points.iter().map(|&p| ExactPoint3::try_from(p)).collect::<Result<_>>()?;
         let tri_face: Vec<u32> = welded.source_triangle.iter().map(|&t| tri_face.get(t as usize).copied().unwrap_or(0)).collect();
         let surface =
             Surface { pts: &pts, triangles: &welded.triangles, source_vertex: &welded.source_vertex, source_triangle: &welded.source_triangle };
@@ -364,13 +364,13 @@ impl BoundarySurface {
     }
 
     /// Welded vertex positions.
-    pub fn points(&self) -> &[[f64; 3]] {
+    pub fn points(&self) -> &[Point3] {
         &self.points
     }
 
     /// Vertex `v` as a predicate point.
-    pub fn point3(&self, v: u32) -> Option<Point3> {
-        self.points.get(v as usize).and_then(|&p| Point3::try_from(p).ok())
+    pub fn point3(&self, v: u32) -> Option<ExactPoint3> {
+        self.points.get(v as usize).and_then(|&p| ExactPoint3::try_from(p).ok())
     }
 
     /// Triangles over [`Self::points`], counter-clockwise seen from outside the solid.
@@ -449,7 +449,7 @@ fn check_options(o: &SurfaceOptions) -> Result<()> {
     Ok(())
 }
 
-fn check_input(positions: &[[f64; 3]], triangles: &[[u32; 3]]) -> Result<()> {
+fn check_input(positions: &[Point3], triangles: &[[u32; 3]]) -> Result<()> {
     let mut defects = Defects::new();
     for (v, p) in positions.iter().enumerate() {
         if p.iter().any(|c| !(c.abs() <= MAX_COORD)) {
@@ -471,38 +471,39 @@ pub(crate) fn index(i: usize) -> u32 {
 
 /// The welded surface the checks run on.
 pub(crate) struct Surface<'a> {
-    pts: &'a [Point3],
+    pts: &'a [ExactPoint3],
     triangles: &'a [[u32; 3]],
     source_vertex: &'a [u32],
     source_triangle: &'a [u32],
 }
 
 impl Surface<'_> {
-    fn point(&self, v: u32) -> Result<&Point3> {
+    fn point(&self, v: u32) -> Result<&ExactPoint3> {
         self.pts.get(v as usize).ok_or_else(|| Error::Failed(format!("surface: no vertex {v}")))
     }
 
-    fn corners(&self, t: &[u32; 3]) -> Result<[&Point3; 3]> {
+    fn corners(&self, t: &[u32; 3]) -> Result<[&ExactPoint3; 3]> {
         Ok([self.point(t[0])?, self.point(t[1])?, self.point(t[2])?])
     }
 
-    fn xyz(&self, v: u32) -> [f64; 3] {
-        self.pts.get(v as usize).map_or([0.0; 3], Point3::coords)
+    fn xyz(&self, v: u32) -> Point3 {
+        self.pts.get(v as usize).map_or(Point3::ORIGIN, ExactPoint3::point)
     }
 
     /// The corner positions of triangle `t`.
-    fn tri_xyz(&self, t: usize) -> [[f64; 3]; 3] {
+    fn tri_xyz(&self, t: usize) -> [Point3; 3] {
         self.triangles.get(t).copied().unwrap_or([0; 3]).map(|v| self.xyz(v))
     }
 
-    fn centroid(&self, t: usize) -> [f64; 3] {
+    /// `(a + b + c) / 3`.
+    fn centroid(&self, t: usize) -> Point3 {
         let [a, b, c] = self.tri_xyz(t);
-        [(a[0] + b[0] + c[0]) / 3.0, (a[1] + b[1] + c[1]) / 3.0, (a[2] + b[2] + c[2]) / 3.0]
+        (a.to_vec() + b.to_vec() + c.to_vec()).map(|s| s / 3.0).to_point()
     }
 
-    fn midpoint(&self, a: u32, b: u32) -> [f64; 3] {
-        let (a, b) = (self.xyz(a), self.xyz(b));
-        [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0]
+    /// `(a + b) / 2` (the same bits as `0.5 (a + b)`: halving is exact).
+    fn midpoint(&self, a: u32, b: u32) -> Point3 {
+        self.xyz(a).midpoint(self.xyz(b))
     }
 
     fn source_tri(&self, t: usize) -> u32 {
@@ -514,31 +515,29 @@ impl Surface<'_> {
     }
 
     /// The unnormalized normal of triangle `t` (floating point; for angles only).
-    fn normal(&self, t: usize) -> [f64; 3] {
+    fn normal(&self, t: usize) -> Vec3 {
         let [a, b, c] = self.tri_xyz(t);
-        cross(sub(b, a), sub(c, a))
+        (b - a).cross(c - a)
     }
 }
 
 /// An axis-aligned box (empty until a point is added).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Box3 {
-    pub lo: [f64; 3],
-    pub hi: [f64; 3],
+    pub lo: Point3,
+    pub hi: Point3,
 }
 
 impl Box3 {
-    pub const EMPTY: Box3 = Box3 { lo: [f64::INFINITY; 3], hi: [f64::NEG_INFINITY; 3] };
+    pub const EMPTY: Box3 = Box3 { lo: Point3::splat(f64::INFINITY), hi: Point3::splat(f64::NEG_INFINITY) };
 
-    pub fn add_point(&mut self, p: [f64; 3]) {
+    pub fn add_point(&mut self, p: Point3) {
         self.add(&Box3 { lo: p, hi: p });
     }
 
     pub fn add(&mut self, o: &Box3) {
-        for ((lo, hi), (olo, ohi)) in self.lo.iter_mut().zip(&mut self.hi).zip(o.lo.iter().zip(&o.hi)) {
-            *lo = lo.min(*olo);
-            *hi = hi.max(*ohi);
-        }
+        self.lo = self.lo.min(o.lo);
+        self.hi = self.hi.max(o.hi);
     }
 
     /// Closed overlap.
@@ -546,11 +545,11 @@ impl Box3 {
         (0..3).all(|k| self.lo[k] <= o.hi[k] && o.lo[k] <= self.hi[k])
     }
 
-    pub fn contains(&self, p: [f64; 3]) -> bool {
+    pub fn contains(&self, p: Point3) -> bool {
         self.touches(&Box3 { lo: p, hi: p })
     }
 
     pub fn diagonal(&self) -> f64 {
-        norm(sub(self.hi, self.lo))
+        (self.hi - self.lo).norm()
     }
 }

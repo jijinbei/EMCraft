@@ -6,8 +6,8 @@
 use std::f64::consts::PI;
 
 use super::{Box3, Defect, Defects, FeatureEdge, FeatureKind, MAX_WINDING_WORK, Shell, Surface, index};
-use crate::vec3::{angle_deg, det, dot, norm, sub};
 use crate::{Error, Result};
+use crate::{Point3, Vec3};
 
 /// No triangle (only while building).
 const NONE: u32 = u32::MAX;
@@ -131,7 +131,7 @@ pub(crate) fn shells(s: &Surface, topo: &Topology) -> Result<Shells> {
     let mut tri_shell = vec![NONE; n];
     let mut shells = Vec::new();
     // Per shell: its box and its reference point (first vertex of its first triangle).
-    let mut extent: Vec<(Box3, [f64; 3])> = Vec::new();
+    let mut extent: Vec<(Box3, Point3)> = Vec::new();
     let mut vertex_shell = vec![NONE; s.pts.len()];
     let mut stack = Vec::new();
     for start in 0..n {
@@ -139,7 +139,7 @@ pub(crate) fn shells(s: &Surface, topo: &Topology) -> Result<Shells> {
             continue;
         }
         let id = index(shells.len());
-        let origin = s.triangles.get(start).map_or([0.0; 3], |t| s.xyz(t[0]));
+        let origin = s.triangles.get(start).map_or(Point3::ORIGIN, |t| s.xyz(t[0]));
         let (mut faces, mut verts, mut six_v) = (0u32, 0u32, 0.0);
         let mut bounds = Box3::EMPTY;
         if let Some(x) = tri_shell.get_mut(start) {
@@ -158,8 +158,8 @@ pub(crate) fn shells(s: &Surface, topo: &Topology) -> Result<Shells> {
                     bounds.add_point(s.xyz(v));
                 }
             }
-            let [a, b, c] = s.tri_xyz(t).map(|p| sub(p, origin));
-            six_v += det(a, b, c);
+            let [a, b, c] = s.tri_xyz(t).map(|p| p - origin);
+            six_v += a.det(b, c);
             for &m in topo.neighbors.get(t).into_iter().flatten() {
                 if let Some(x) = tri_shell.get_mut(m as usize)
                     && *x == NONE
@@ -196,7 +196,7 @@ pub(crate) fn shells(s: &Surface, topo: &Topology) -> Result<Shells> {
 /// Mark the voids: shells inside an odd number of other shells, by the generalized winding
 /// number of one of their vertices (shells do not intersect, so it is ±1 inside and 0 outside,
 /// up to rounding).
-fn nest(s: &Surface, tri_shell: &[u32], shells: &mut [Shell], extent: &[(Box3, [f64; 3])]) -> Result<()> {
+fn nest(s: &Surface, tri_shell: &[u32], shells: &mut [Shell], extent: &[(Box3, Point3)]) -> Result<()> {
     if shells.len() < 2 {
         return Ok(());
     }
@@ -232,23 +232,23 @@ fn nest(s: &Surface, tri_shell: &[u32], shells: &mut [Shell], extent: &[(Box3, [
 }
 
 /// The signed solid angle triangle `t` subtends at `x` (van Oosterom and Strackee 1983).
-fn solid_angle(s: &Surface, t: usize, x: [f64; 3]) -> f64 {
-    let [a, b, c] = s.tri_xyz(t).map(|p| sub(p, x));
-    let (la, lb, lc) = (norm(a), norm(b), norm(c));
-    let den = la * lb * lc + dot(a, b) * lc + dot(a, c) * lb + dot(b, c) * la;
-    2.0 * crate::vec3::atan2(det(a, b, c), den)
+fn solid_angle(s: &Surface, t: usize, x: Point3) -> f64 {
+    let [a, b, c] = s.tri_xyz(t).map(|p| p - x);
+    let (la, lb, lc) = (a.norm(), b.norm(), c.norm());
+    let den = la * lb * lc + a.dot(b) * lc + a.dot(c) * lb + b.dot(c) * la;
+    2.0 * crate::vec3::atan2(a.det(b, c), den)
 }
 
 /// Edges between different B-rep faces, and edges inside a face whose normals turn by more than
 /// `feature_angle` degrees.
 pub(crate) fn feature_edges(s: &Surface, topo: &Topology, tri_face: &[u32], feature_angle: f64) -> Vec<FeatureEdge> {
     let face = |t: u32| tri_face.get(t as usize).copied().unwrap_or(0);
-    let normals: Vec<[f64; 3]> = (0..s.triangles.len()).map(|t| s.normal(t)).collect();
-    let normal = |t: u32| normals.get(t as usize).copied().unwrap_or([0.0; 3]);
+    let normals: Vec<Vec3> = (0..s.triangles.len()).map(|t| s.normal(t)).collect();
+    let normal = |t: u32| normals.get(t as usize).copied().unwrap_or(Vec3::ZERO);
     topo.edges
         .iter()
         .filter_map(|e| {
-            let angle = angle_deg(normal(e.t[0]), normal(e.t[1]));
+            let angle = normal(e.t[0]).angle_deg(normal(e.t[1]));
             let kind = if face(e.t[0]) != face(e.t[1]) {
                 FeatureKind::FaceBoundary
             } else if angle > feature_angle {

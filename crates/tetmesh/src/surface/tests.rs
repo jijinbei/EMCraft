@@ -74,7 +74,7 @@ fn grid(n: u32, m: u32, poles: bool, f: impl Fn(f64, f64) -> [f64; 3]) -> Mesh {
     let faces = vec![0; t.len()];
     let mut mesh = (p, t, faces);
     // Orient outwards.
-    let six_v: f64 = mesh.1.iter().map(|t| crate::vec3::det(mesh.0[t[0] as usize], mesh.0[t[1] as usize], mesh.0[t[2] as usize])).sum();
+    let six_v: f64 = mesh.1.iter().map(|t| Vec3::from(mesh.0[t[0] as usize]).det(mesh.0[t[1] as usize].into(), mesh.0[t[2] as usize].into())).sum();
     if six_v < 0.0 {
         flip(&mut mesh);
     }
@@ -100,7 +100,7 @@ fn moved(m: Mesh, d: [f64; 3]) -> Mesh {
 }
 
 fn prepare(m: &Mesh) -> Result<BoundarySurface> {
-    BoundarySurface::new(&m.0, &m.1, &m.2, &SurfaceOptions::default())
+    BoundarySurface::new(&crate::vec3::points_of(&m.0), &m.1, &m.2, &SurfaceOptions::default())
 }
 
 fn defects(m: &Mesh) -> Defects {
@@ -158,7 +158,7 @@ fn a_triangle_soup_welds_into_the_solid() {
     }
     assert_eq!(prepare(&noisy).unwrap().points().len(), 8);
     let exact = SurfaceOptions { weld_tolerance: 0.0, ..SurfaceOptions::default() };
-    assert!(matches!(BoundarySurface::new(&noisy.0, &noisy.1, &noisy.2, &exact), Err(Error::Surface(_))));
+    assert!(matches!(BoundarySurface::new(&crate::vec3::points_of(&noisy.0), &noisy.1, &noisy.2, &exact), Err(Error::Surface(_))));
     // Or an absolute distance (a CAD kernel's tolerance).
     let mut noisy = soup(&c);
     for (i, p) in noisy.0.iter_mut().enumerate() {
@@ -166,18 +166,18 @@ fn a_triangle_soup_welds_into_the_solid() {
     }
     assert!(matches!(prepare(&noisy), Err(Error::Surface(_))));
     let kernel = SurfaceOptions { weld_distance: 2e-6, ..SurfaceOptions::default() };
-    assert_eq!(BoundarySurface::new(&noisy.0, &noisy.1, &noisy.2, &kernel).unwrap().points().len(), 8);
+    assert_eq!(BoundarySurface::new(&crate::vec3::points_of(&noisy.0), &noisy.1, &noisy.2, &kernel).unwrap().points().len(), 8);
 }
 
 #[test]
 fn untagged_faces_use_the_dihedral_angle() {
     let c = cube([0.0; 3], 1.0);
-    let s = BoundarySurface::new(&c.0, &c.1, &[], &SurfaceOptions::default()).unwrap();
+    let s = BoundarySurface::new(&crate::vec3::points_of(&c.0), &c.1, &[], &SurfaceOptions::default()).unwrap();
     assert!(s.tri_face().iter().all(|&f| f == 0));
     assert_eq!(s.feature_edges().len(), 12);
     assert!(s.feature_edges().iter().all(|e| e.kind == FeatureKind::Sharp));
     let blunt = SurfaceOptions { feature_angle: 90.0, ..SurfaceOptions::default() };
-    assert!(BoundarySurface::new(&c.0, &c.1, &[], &blunt).unwrap().feature_edges().is_empty());
+    assert!(BoundarySurface::new(&crate::vec3::points_of(&c.0), &c.1, &[], &blunt).unwrap().feature_edges().is_empty());
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn holes_and_bad_edges_are_located() {
 #[test]
 fn cubes_touching_at_a_corner_are_not_a_manifold() {
     let d = defects(&merge(cube([0.0; 3], 1.0), cube([1.0; 3], 1.0)));
-    assert_eq!(d.listed, vec![Defect::NonManifoldVertex { vertex: 7, at: [1.0; 3] }]);
+    assert_eq!(d.listed, vec![Defect::NonManifoldVertex { vertex: 7, at: Point3::splat(1.0) }]);
 }
 
 #[test]
@@ -295,17 +295,19 @@ fn hostile_input_is_an_error() {
     assert_eq!(kinds(&defects(&degenerate)), vec!["degenerate"]);
 
     let o = SurfaceOptions::default();
-    assert!(matches!(BoundarySurface::new(&[], &[], &[], &o), Err(ref e) if e.kind() == Some(crate::Kind::Invalid)));
-    assert!(matches!(BoundarySurface::new(&c.0, &c.1, &[0, 1], &o), Err(ref e) if e.kind() == Some(crate::Kind::Invalid)));
-    assert!(matches!(BoundarySurface::new(&[[1.0; 3]; 3], &[[0, 1, 2]], &[], &o), Err(ref e) if e.kind() == Some(crate::Kind::Invalid)));
+    assert!(matches!(BoundarySurface::new(&crate::vec3::points_of(&[]), &[], &[], &o), Err(ref e) if e.kind() == Some(crate::Kind::Invalid)));
+    assert!(matches!(BoundarySurface::new(&crate::vec3::points_of(&c.0), &c.1, &[0, 1], &o), Err(ref e) if e.kind() == Some(crate::Kind::Invalid)));
+    assert!(
+        matches!(BoundarySurface::new(&crate::vec3::points_of(&[[1.0; 3]; 3]), &[[0, 1, 2]], &[], &o), Err(ref e) if e.kind() == Some(crate::Kind::Invalid))
+    );
     for w in [-1.0, f64::NAN, 1e-20, 0.5, f64::INFINITY] {
-        assert!(BoundarySurface::new(&c.0, &c.1, &c.2, &SurfaceOptions { weld_tolerance: w, ..o }).is_err(), "{w}");
+        assert!(BoundarySurface::new(&crate::vec3::points_of(&c.0), &c.1, &c.2, &SurfaceOptions { weld_tolerance: w, ..o }).is_err(), "{w}");
     }
     for d in [-1.0, f64::NAN, f64::INFINITY, 0.01] {
-        assert!(BoundarySurface::new(&c.0, &c.1, &c.2, &SurfaceOptions { weld_distance: d, ..o }).is_err(), "{d}");
+        assert!(BoundarySurface::new(&crate::vec3::points_of(&c.0), &c.1, &c.2, &SurfaceOptions { weld_distance: d, ..o }).is_err(), "{d}");
     }
     for a in [0.0, -1.0, 181.0, f64::NAN] {
-        assert!(BoundarySurface::new(&c.0, &c.1, &c.2, &SurfaceOptions { feature_angle: a, ..o }).is_err(), "{a}");
+        assert!(BoundarySurface::new(&crate::vec3::points_of(&c.0), &c.1, &c.2, &SurfaceOptions { feature_angle: a, ..o }).is_err(), "{a}");
     }
 }
 
@@ -313,8 +315,9 @@ fn hostile_input_is_an_error() {
 fn tessellation_noise_snaps_into_the_predicates_domain() {
     let mut c = cube([0.0; 3], 1.0);
     c.0[0] = [1e-40, -1e-300, 0.0];
-    let s = BoundarySurface::new(&c.0, &c.1, &c.2, &SurfaceOptions { weld_tolerance: 0.0, ..SurfaceOptions::default() }).unwrap();
-    assert_eq!(s.points()[0], [0.0; 3]);
+    let s = BoundarySurface::new(&crate::vec3::points_of(&c.0), &c.1, &c.2, &SurfaceOptions { weld_tolerance: 0.0, ..SurfaceOptions::default() })
+        .unwrap();
+    assert_eq!(s.points()[0], Point3::ORIGIN);
     assert!((0..8).all(|v| s.point3(v).is_some()));
 }
 
@@ -341,12 +344,12 @@ fn random_soups_never_panic() {
         let p: Vec<[f64; 3]> =
             (0..n).map(|_| [0, 1, 2].map(|_| if next() % 4 == 0 { specials[(next() % 9) as usize] } else { (next() % 5) as f64 })).collect();
         let t: Vec<[u32; 3]> = (0..next() % 12).map(|_| [0, 1, 2].map(|_| (next() % (n as u64 + 1)) as u32)).collect();
-        let _ = BoundarySurface::new(&p, &t, &[], &SurfaceOptions::default());
+        let _ = BoundarySurface::new(&crate::vec3::points_of(&p), &t, &[], &SurfaceOptions::default());
     }
 }
 
-fn p3(c: [f64; 3]) -> Point3 {
-    Point3::try_from(c).unwrap()
+fn p3(c: [f64; 3]) -> ExactPoint3 {
+    ExactPoint3::try_from(c).unwrap()
 }
 
 #[test]
@@ -388,8 +391,8 @@ fn exact_pair_tests() {
 }
 
 /// The exact orientation of `c` against the directed line `ab` seen from +z, as -1, 0, 1.
-fn orient2d_sign(a: &Point3, b: &Point3, c: &Point3) -> i32 {
-    let p = |q: &Point3| crate::predicates::Point2::new(q.coords()[0], q.coords()[1]).unwrap();
+fn orient2d_sign(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3) -> i32 {
+    let p = |q: &ExactPoint3| crate::predicates::ExactPoint2::new(q.coords()[0], q.coords()[1]).unwrap();
     crate::predicates::orient2d(&p(a), &p(b), &p(c)) as i32
 }
 
@@ -406,9 +409,23 @@ fn t_junctions_are_closed() {
     t.push([m, 6, 2]);
     f.push(f[i]);
     let (sp, st, sf) = soup(&(p, t, f));
-    let s = BoundarySurface::new(&sp, &st, &sf, &SurfaceOptions { weld_tolerance: 0.0, weld_distance: 1e-9, feature_angle: 30.0 }).unwrap();
+    let s = BoundarySurface::new(
+        &crate::vec3::points_of(&sp),
+        &st,
+        &sf,
+        &SurfaceOptions { weld_tolerance: 0.0, weld_distance: 1e-9, feature_angle: 30.0 },
+    )
+    .unwrap();
     assert!((s.volume() - 1.0).abs() < 1e-12, "{}", s.volume());
     assert_eq!(s.triangles().len(), 14);
     // Without a weld distance nothing is split, and the open edge is reported.
-    assert!(BoundarySurface::new(&sp, &st, &sf, &SurfaceOptions { weld_tolerance: 0.0, weld_distance: 0.0, feature_angle: 30.0 }).is_err());
+    assert!(
+        BoundarySurface::new(
+            &crate::vec3::points_of(&sp),
+            &st,
+            &sf,
+            &SurfaceOptions { weld_tolerance: 0.0, weld_distance: 0.0, feature_angle: 30.0 }
+        )
+        .is_err()
+    );
 }

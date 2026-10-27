@@ -16,6 +16,11 @@ pub fn check_coordinates(xyz: &[f64]) -> crate::Result<()> {
     }
 }
 
+/// Every coordinate of every point (in order x, y, z, point by point) as [`check_coordinates`].
+pub fn check_points<'a>(points: impl IntoIterator<Item = &'a crate::Point3>) -> crate::Result<()> {
+    points.into_iter().try_for_each(|p| check_coordinates(&p.to_array()))
+}
+
 /// The smallest normalized Jacobian of an admissible element.
 pub const MIN_NORMALIZED_JACOBIAN: f64 = 1e-12;
 
@@ -33,10 +38,9 @@ pub fn admissible_jacobian(j: &[[f64; 3]; 3]) -> bool {
 }
 
 /// The Jacobian of a linear tetrahedron: its edges from the first corner.
-pub fn tet4_jacobian(xyz: &[[f64; 3]; 4]) -> [[f64; 3]; 3] {
-    let [o, a, b, c] = xyz;
-    let e = |p: &[f64; 3]| [p[0] - o[0], p[1] - o[1], p[2] - o[2]];
-    [e(a), e(b), e(c)]
+pub fn tet4_jacobian(xyz: &[crate::Point3; 4]) -> [[f64; 3]; 3] {
+    let [o, a, b, c] = *xyz;
+    [(a - o).to_array(), (b - o).to_array(), (c - o).to_array()]
 }
 
 /// The physical quantity of a number in a message.

@@ -1,9 +1,9 @@
 //! Mesh-wide quality: statistics per metric, and the validity gate meshers run on their output.
 
-use crate::compat::{ElementKind, check_coordinates};
+use crate::compat::{ElementKind, check_points};
 
 use super::{JacobianCheck, Metric, Validity, element_validity};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 /// The volume gate's tolerance: the mesh's volume matches the boundary's within this fraction.
 pub const VOLUME_TOLERANCE: f64 = 1e-9; // unit-factors: relative to the volume
@@ -48,7 +48,7 @@ pub struct Marked {
     pub label: u32,
     pub kind: ElementKind,
     /// The mean of its nodes.
-    pub centroid: [f64; 3],
+    pub centroid: Point3,
     /// The certified validity, for solids.
     pub validity: Option<Validity>,
     /// Each limit it fails: the metric, its value and the limit.
@@ -150,7 +150,7 @@ impl Gate {
         Ok(Gate(GateReport { checked: 0, invalid: Vec::new(), undetermined: Vec::new(), volume: 0.0, options: *options }))
     }
 
-    fn add(&mut self, label: u32, kind: ElementKind, xyz: &[[f64; 3]]) -> Result<()> {
+    fn add(&mut self, label: u32, kind: ElementKind, xyz: &[Point3]) -> Result<()> {
         if kind.dimension() != 3 {
             return Ok(());
         }
@@ -192,7 +192,7 @@ where
 pub fn validity_gate_elements<I, E>(elements: I, options: &GateOptions) -> Result<GateReport>
 where
     I: IntoIterator<Item = (u32, ElementKind, E)>,
-    E: AsRef<[[f64; 3]]>,
+    E: AsRef<[Point3]>,
 {
     let mut gate = Gate::new(options)?;
     for (label, kind, xyz) in elements {
@@ -203,13 +203,13 @@ where
 
 /// The signed volume enclosed by a closed triangle surface (positive when the triangles' right-
 /// hand normals point outwards), by the divergence theorem.
-pub fn enclosed_volume(points: &[[f64; 3]], triangles: &[[usize; 3]]) -> Result<f64> {
-    check_coordinates(points.as_flattened())?;
-    let o = points.first().copied().unwrap_or([0.0; 3]);
+pub fn enclosed_volume(points: &[Point3], triangles: &[[usize; 3]]) -> Result<f64> {
+    check_points(points)?;
+    let o = points.first().copied().unwrap_or(Point3::ORIGIN);
     let mut six_v = 0.0;
     for t in triangles {
-        let p = |i: usize| points.get(i).map(|p| super::shape::sub(*p, o)).ok_or_else(|| Error::Invalid(format!("triangle {t:?}: no point {i}")));
-        six_v += super::shape::det(p(t[0])?, p(t[1])?, p(t[2])?);
+        let p = |i: usize| points.get(i).map(|p| *p - o).ok_or_else(|| Error::Invalid(format!("triangle {t:?}: no point {i}")));
+        six_v += p(t[0])?.det(p(t[1])?, p(t[2])?);
     }
     Ok(six_v / 6.0)
 }

@@ -1,7 +1,8 @@
 use super::complex::*;
 use super::measure;
 use super::ops::*;
-use crate::predicates::Point3;
+use crate::Point3;
+use crate::predicates::ExactPoint3;
 
 /// A cube [0, 1]³ split into six tetrahedra around the diagonal 0–6, boundary faces tagged by
 /// cube side (0..6).
@@ -9,12 +10,12 @@ pub(crate) fn cube() -> TetComplex {
     let p: Vec<[f64; 3]> = (0..8).map(|i| [(i & 1) as f64, ((i >> 1) & 1) as f64, ((i >> 2) & 1) as f64]).collect();
     // Vertex i = (x, y, z) bits; diagonal 0 → 7.
     let raw = [[0, 1, 3, 7], [0, 3, 2, 7], [0, 2, 6, 7], [0, 6, 4, 7], [0, 4, 5, 7], [0, 5, 1, 7]];
-    let pts: Vec<Point3> = p.iter().map(|c| Point3::try_from(*c).unwrap()).collect();
+    let pts: Vec<ExactPoint3> = p.iter().map(|c| ExactPoint3::try_from(*c).unwrap()).collect();
     let tets: Vec<[u32; 4]> = raw
         .iter()
         .map(|t| {
             let t = t.map(|v: usize| v as u32);
-            let x = t.map(|v| pts[v as usize].coords());
+            let x = t.map(|v| pts[v as usize].point());
             if measure::volume6(&x) > 0.0 { t } else { [t[1], t[0], t[2], t[3]] }
         })
         .collect();
@@ -38,7 +39,7 @@ pub(crate) fn cube() -> TetComplex {
         }
     }
     let kinds = vec![VertexKind::Corner; 8];
-    TetComplex::new(&p, kinds, &tets, &boundary, &[], 1000, 10_000).unwrap()
+    TetComplex::new(&crate::vec3::points_of(&p), kinds, &tets, &boundary, &[], 1000, 10_000).unwrap()
 }
 
 /// A complex of these tetrahedra (each turned positive) and vertex kinds, every face not shared on
@@ -47,7 +48,7 @@ fn complex_of(p: &[[f64; 3]], raw: &[[u32; 4]], kinds: Vec<VertexKind>, tag: imp
     let tets: Vec<[u32; 4]> = raw
         .iter()
         .map(|t| {
-            let x = t.map(|v| p[v as usize]);
+            let x = t.map(|v| Point3::from(p[v as usize]));
             if measure::volume6(&x) > 0.0 { *t } else { [t[1], t[0], t[2], t[3]] }
         })
         .collect();
@@ -60,7 +61,7 @@ fn complex_of(p: &[[f64; 3]], raw: &[[u32; 4]], kinds: Vec<VertexKind>, tag: imp
             }
         }
     }
-    TetComplex::new(p, kinds, &tets, &boundary, &[], 100, 100).unwrap()
+    TetComplex::new(&crate::vec3::points_of(p), kinds, &tets, &boundary, &[], 100, 100).unwrap()
 }
 
 /// The link condition (Dey, Edelsbrunner, Guha, Nekhayev 1999). The cube's boundary edge 0–1 may
@@ -102,7 +103,7 @@ fn interior_insertion_and_rollback() {
     let mut cx = cube();
     cx.journal.recording = true;
     let start = cx.journal.steps.len();
-    let p = Point3::try_from([0.5, 0.5, 0.5]).unwrap();
+    let p = ExactPoint3::try_from([0.5, 0.5, 0.5]).unwrap();
     let t = match cx.walk(0, &p, 100).unwrap().unwrap() {
         Walk::Inside(t) => t,
         w => panic!("{w:?}"),
@@ -122,7 +123,7 @@ fn interior_insertion_and_rollback() {
 fn boundary_face_insertion_keeps_tags() {
     let mut cx = cube();
     // A point on the z = 0 side.
-    let p = Point3::try_from([0.3, 0.6, 0.0]).unwrap();
+    let p = ExactPoint3::try_from([0.3, 0.6, 0.0]).unwrap();
     let mut site = None;
     for (t, _) in cx.live_tets().collect::<Vec<_>>() {
         let vs = cx.tet(t).unwrap();
@@ -130,7 +131,7 @@ fn boundary_face_insertion_keeps_tags() {
             if cx.adj(t).unwrap()[k] == NONE && cx.tags(t).unwrap()[k] == 4 {
                 let f = face_toward(vs, k).map(|v| cx.xyz(v).unwrap());
                 // inside the triangle in xy
-                let s = |a: [f64; 3], b: [f64; 3]| (b[0] - a[0]) * (0.6 - a[1]) - (b[1] - a[1]) * (0.3 - a[0]);
+                let s = |a: Point3, b: Point3| (b[0] - a[0]) * (0.6 - a[1]) - (b[1] - a[1]) * (0.3 - a[0]);
                 let signs = [s(f[0], f[1]), s(f[1], f[2]), s(f[2], f[0])];
                 if signs.iter().all(|x| *x > 0.0) || signs.iter().all(|x| *x < 0.0) {
                     site = Some(Site::Face(t, k));
@@ -148,7 +149,7 @@ fn boundary_face_insertion_keeps_tags() {
         .filter(|b| b.2 == 4)
         .map(|&(t, k, _)| {
             let f = face_toward(c.tets[t as usize], k).map(|v| c.points[v as usize]);
-            0.5 * measure::norm(measure::cross(measure::sub(f[1], f[0]), measure::sub(f[2], f[0])))
+            0.5 * (f[1] - f[0]).cross(f[2] - f[0]).norm()
         })
         .sum();
     assert!((area - 1.0).abs() < 1e-15, "{area}");
@@ -157,7 +158,7 @@ fn boundary_face_insertion_keeps_tags() {
 #[test]
 fn edge_and_face_removal_keep_the_mesh_valid() {
     let mut cx = cube();
-    let p = Point3::try_from([0.5, 0.45, 0.55]).unwrap();
+    let p = ExactPoint3::try_from([0.5, 0.45, 0.55]).unwrap();
     let Walk::Inside(t) = cx.walk(0, &p, 100).unwrap().unwrap() else { panic!() };
     insert_delaunay(&mut cx, p, VertexKind::Interior, Site::Interior(t), 1000).unwrap().unwrap();
     let mut changed = 0;
@@ -191,6 +192,7 @@ mod pipeline {
     use crate::cdt::tests::{cube, surface, uv_sphere};
     use crate::cdt::{CdtOptions, tetrahedralize};
     use crate::surface::{BoundarySurface, SurfaceOptions};
+    use crate::{Point3, Vec3};
 
     /// A 10 mm cube with one B-rep face per side.
     fn box_surface() -> BoundarySurface {
@@ -218,18 +220,16 @@ mod pipeline {
         let analytic = (0..6)
             .map(|f: usize| {
                 let (k, e) = (f / 2, f % 2);
-                let mut normal = [0.0; 3];
-                normal[k] = if e == 0 { -1.0 } else { 1.0 };
-                let mut point = [0.0; 3];
-                point[k] = 10.0 * e as f64;
+                let normal = Vec3::ZERO.with(k, if e == 0 { -1.0 } else { 1.0 });
+                let point = Point3::ORIGIN.with(k, 10.0 * e as f64);
                 Some(crate::tet::geometry::AnalyticSurface::Plane { normal, point })
             })
             .collect();
         let t = crate::tet::geometry::Tessellation::new(&s, analytic);
-        let q = t.project_trimmed(0, [0.5, 11.0, 5.0]).unwrap();
-        assert!(crate::vec3::dist(q, [0.0, 10.0, 5.0]) < 1e-9, "{q:?}");
-        let q = t.project_trimmed(0, [0.5, 9.0, 5.0]).unwrap();
-        assert!(crate::vec3::dist(q, [0.0, 9.0, 5.0]) < 1e-9, "{q:?}");
+        let q = t.project_trimmed(0, Point3::new(0.5, 11.0, 5.0)).unwrap();
+        assert!(q.distance(Point3::new(0.0, 10.0, 5.0)) < 1e-9, "{q:?}");
+        let q = t.project_trimmed(0, Point3::new(0.5, 9.0, 5.0)).unwrap();
+        assert!(q.distance(Point3::new(0.0, 9.0, 5.0)) < 1e-9, "{q:?}");
     }
 
     #[test]
@@ -262,15 +262,15 @@ mod pipeline {
     #[test]
     fn a_face_edge_split_that_encroaches_a_curve_splits_the_curve() {
         use super::super::complex::{NONE, VertexKind, face_toward};
+        use super::super::complex_from_cdt;
         use super::super::geometry::Tessellation;
         use super::super::ops::{Site, insert_delaunay};
         use super::super::refine::{Context, MAX_CAVITY, split_edge};
-        use super::super::{complex_from_cdt, measure};
-        use crate::predicates::Point3;
+        use crate::predicates::ExactPoint3;
         use crate::size::UniformSize;
         // Whether `p` lies in triangle `f` of the z = 0 plane.
-        let contains = |f: [[f64; 3]; 3], p: [f64; 3]| {
-            let side = |a: [f64; 3], b: [f64; 3]| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        let contains = |f: [Point3; 3], p: Point3| {
+            let side = |a: Point3, b: Point3| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
             let s = [side(f[0], f[1]), side(f[1], f[2]), side(f[2], f[0])];
             s.iter().all(|&x| x >= 0.0) || s.iter().all(|&x| x <= 0.0)
         };
@@ -282,16 +282,16 @@ mod pipeline {
         // A curve edge on the z = 0 side, and a face vertex beside it on that side.
         let ((a, b), _) = cx.curve_edges().into_iter().find(|&((a, b), _)| [a, b].iter().all(|&v| cx.xyz(v).unwrap()[2] == 0.0)).unwrap();
         let (xa, xb) = (cx.xyz(a).unwrap(), cx.xyz(b).unwrap());
-        let len = measure::dist(xa, xb);
-        let centre = [5.0, 5.0, 0.0];
-        let mid = measure::mid(xa, xb);
-        let inward = measure::scale(measure::sub(centre, mid), 0.3 * len / measure::dist(centre, mid));
-        let q = Point3::try_from(measure::add(mid, inward)).unwrap();
+        let len = xa.distance(xb);
+        let centre = Point3::new(5.0, 5.0, 0.0);
+        let mid = xa.midpoint(xb);
+        let inward = (centre - mid) * (0.3 * len / centre.distance(mid));
+        let q = ExactPoint3::try_from(mid + inward).unwrap();
         let (t, k) = cx
             .live_tets()
             .flat_map(|(t, vs)| (0..4).map(move |k| (t, vs, k)))
             .find(|&(t, vs, k)| {
-                cx.adj(t).unwrap()[k] == NONE && cx.tags(t).unwrap()[k] == 4 && contains(face_toward(vs, k).map(|v| cx.xyz(v).unwrap()), q.coords())
+                cx.adj(t).unwrap()[k] == NONE && cx.tags(t).unwrap()[k] == 4 && contains(face_toward(vs, k).map(|v| cx.xyz(v).unwrap()), q.point())
             })
             .map(|(t, _, k)| (t, k))
             .unwrap();
@@ -299,7 +299,7 @@ mod pipeline {
         assert!(cx.edge_tet(v, a).unwrap().is_some());
         let w = split_edge(&mut cx, &ctx, v, a, 4, 0.0).unwrap().unwrap();
         assert!(matches!(cx.kind(w), VertexKind::Curve(_)), "{:?}", cx.kind(w));
-        assert!(measure::dist(cx.xyz(w).unwrap(), mid) < 1e-9);
+        assert!(cx.xyz(w).unwrap().distance(mid) < 1e-9);
         cx.validate().unwrap();
     }
 
@@ -309,7 +309,7 @@ mod pipeline {
         use crate::seeds::EdgeSeed;
         let s = box_surface();
         let cdt = tetrahedralize(&s, &CdtOptions::default()).unwrap();
-        let edge = vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]];
+        let edge = vec![Point3::ORIGIN, Point3::new(10.0, 0.0, 0.0)];
         let seed = EdgeSeed { name: "front".into(), points: edge, tolerance: 0.0, count: 16, bias: None, constraint: SeedConstraint::Exact };
         let plain = QualityOptions { size: Some(5.0), seeds: vec![EdgeSeed { count: 1, ..seed.clone() }], ..QualityOptions::default() };
         let seeded = QualityOptions { seeds: vec![seed], ..plain.clone() };
@@ -340,7 +340,7 @@ mod pipeline {
         let faces = vec![0u32; s.triangles().len()];
         let s = BoundarySurface::new(s.points(), s.triangles(), &faces, &SurfaceOptions::default()).unwrap();
         let cdt = tetrahedralize(&s, &CdtOptions::default()).unwrap();
-        let sphere = vec![Some(AnalyticSurface::Sphere { center: [0.0; 3], radius: 5.0 })];
+        let sphere = vec![Some(AnalyticSurface::Sphere { center: Point3::ORIGIN, radius: 5.0 })];
         let o = QualityOptions { size: Some(1.5), order: Order::Quadratic, ..QualityOptions::default() };
         let m = quality_mesh(&s, &cdt, sphere, &o).unwrap();
         assert_eq!(m.kind, crate::compat::ElementKind::Tet10);
@@ -364,7 +364,7 @@ mod pipeline {
         assert!(m.report.output.min_dihedral > 15.0, "{:?}", m.report.output);
         // Every element passes the certified check of the gate.
         for e in &m.elements {
-            let xyz: Vec<[f64; 3]> = e.iter().map(|&v| m.points[v as usize]).collect();
+            let xyz: Vec<Point3> = e.iter().map(|&v| m.points[v as usize]).collect();
             let v = crate::quality::element_validity(crate::compat::ElementKind::Tet10, &xyz).unwrap();
             assert_eq!(v.validity, crate::quality::Validity::Valid);
         }
@@ -391,6 +391,7 @@ mod pipeline {
 /// Determinism (#115): the quality mesh is a function of the geometry, the same bit for bit on
 /// every platform, run and listing order of the input.
 mod determinism {
+    use crate::Point3;
     use crate::cdt::{CdtOptions, tetrahedralize};
     use crate::surface::{BoundarySurface, SurfaceOptions};
     use crate::tet::canonical::CanonicalSoup;
@@ -438,7 +439,7 @@ mod determinism {
     }
 
     fn mesh(p: &[[f64; 3]], t: &[[u32; 3]], f: &[u32]) -> QualityMesh {
-        let soup = CanonicalSoup::new(p, t, f).unwrap();
+        let soup = CanonicalSoup::new(&crate::vec3::points_of(p), t, f).unwrap();
         let s = BoundarySurface::new(&soup.positions, &soup.triangles, &soup.tri_face, &SurfaceOptions::default()).unwrap();
         assert!(s.volume() > 0.0);
         let cdt = tetrahedralize(&s, &CdtOptions::default()).unwrap();
@@ -456,7 +457,7 @@ mod determinism {
                 h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
             }
         };
-        m.points.iter().flatten().for_each(|c| eat(c.to_bits()));
+        m.points.iter().flat_map(|p| p.iter()).for_each(|c| eat(c.to_bits()));
         m.elements.iter().flatten().for_each(|&v| eat(u64::from(v)));
         m.boundary.iter().for_each(|b| eat(u64::from(b.tet) << 40 | u64::from(b.opposite) << 32 | u64::from(b.face)));
         h
@@ -476,7 +477,7 @@ mod determinism {
             .elements
             .iter()
             .map(|e| {
-                let xyz: Vec<[f64; 3]> = e.iter().map(|&v| m.points[v as usize]).collect();
+                let xyz: Vec<Point3> = e.iter().map(|&v| m.points[v as usize]).collect();
                 crate::quality::element_quality(m.kind, &xyz).unwrap().get(crate::quality::Metric::ScaledJacobian).unwrap()
             })
             .fold(f64::INFINITY, f64::min);
@@ -509,8 +510,8 @@ mod determinism {
 #[test]
 fn deleting_a_cap_never_leaves_a_neighbour_floating() {
     let p: Vec<[f64; 3]> = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.3, 0.3, -1.0], [1.0, 1.0, 1.0]];
-    let pts: Vec<Point3> = p.iter().map(|c| Point3::try_from(*c).unwrap()).collect();
-    let positive = |t: [u32; 4]| if measure::volume6(&t.map(|v| pts[v as usize].coords())) > 0.0 { t } else { [t[1], t[0], t[2], t[3]] };
+    let pts: Vec<ExactPoint3> = p.iter().map(|c| ExactPoint3::try_from(*c).unwrap()).collect();
+    let positive = |t: [u32; 4]| if measure::volume6(&t.map(|v| pts[v as usize].point())) > 0.0 { t } else { [t[1], t[0], t[2], t[3]] };
     // The cap, and a tetrahedron on each of its faces 012 and 123.
     let tets = [positive([0, 1, 2, 3]), positive([0, 1, 2, 4]), positive([1, 2, 3, 5])];
     let key = |f: [u32; 3]| {
@@ -528,7 +529,7 @@ fn deleting_a_cap_never_leaves_a_neighbour_floating() {
             }
         }
     }
-    let mut cx = TetComplex::new(&p, vec![VertexKind::Corner; 6], &tets, &boundary, &[], 100, 100).unwrap();
+    let mut cx = TetComplex::new(&crate::vec3::points_of(&p), vec![VertexKind::Corner; 6], &tets, &boundary, &[], 100, 100).unwrap();
     assert!(!cx.delete_boundary_tet(0).unwrap(), "the cap was deleted, leaving its neighbours floating");
     assert_eq!(cx.live_tets().count(), 3);
     cx.validate().unwrap();
@@ -576,9 +577,9 @@ fn a_boundary_insertion_never_rings_a_kept_face() {
     }
     let on_fillet = [false, true, true, true, false, false, true, false, false, true, true];
     let kinds: Vec<VertexKind> = on_fillet.iter().map(|&f| if f { VertexKind::Face(20) } else { VertexKind::Corner }).collect();
-    let mut cx = TetComplex::new(&p, kinds, &tets, &boundary, &[], 100, 100).unwrap();
+    let mut cx = TetComplex::new(&crate::vec3::points_of(&p), kinds, &tets, &boundary, &[], 100, 100).unwrap();
     // On the fillet face of tetrahedron 0, as far from the other vertices as the improvement asks.
-    let q = Point3::try_from([37.57631755601779, 26.730747346632697, 19.941167252265036]).unwrap();
+    let q = ExactPoint3::try_from([37.57631755601779, 26.730747346632697, 19.941167252265036]).unwrap();
     insert_delaunay_apart(&mut cx, q, VertexKind::Face(20), Site::Face(0, 1), 4096, 0.06539086641130744).unwrap();
     cx.validate().unwrap();
     let floating: Vec<[u32; 4]> = cx.live_tets().filter(|(t, _)| cx.adj(*t).unwrap().iter().all(|&n| n == NONE)).map(|(_, vs)| vs).collect();
@@ -593,7 +594,7 @@ fn a_boundary_insertion_never_rings_a_kept_face() {
 fn a_move_never_turns_a_boundary_face_over() {
     let mut cx = cube();
     let star = cx.star(1).unwrap();
-    let to = |p: [f64; 3]| Point3::try_from(p).unwrap();
+    let to = |p: [f64; 3]| ExactPoint3::try_from(p).unwrap();
     assert!(cx.move_is_valid(1, &to([1.1, 0.0, 0.0]), &star).unwrap());
     assert!(!cx.move_is_valid(1, &to([3.0, 0.0, 0.0]), &star).unwrap());
 }
@@ -623,7 +624,7 @@ fn the_skin_never_passes_through_itself() {
     let plain = complex_of(&p, &tets, vec![VertexKind::Corner; p.len()], |_| 0);
     let mut indexed = plain.clone();
     indexed.index_skin(1.0).unwrap();
-    let to = |z: f64| Point3::try_from([0.0, 0.0, z]).unwrap();
+    let to = |z: f64| ExactPoint3::try_from([0.0, 0.0, z]).unwrap();
     for (mut cx, skin) in [(plain, false), (indexed, true)] {
         let star = cx.star(0).unwrap();
         assert!(cx.move_is_valid(0, &to(0.05), &star).unwrap());
@@ -664,7 +665,7 @@ fn the_skin_index_follows_moved_faces() {
     tets.push([6, 7, 8, 9]);
     let mut cx = complex_of(&p, &tets, vec![VertexKind::Corner; p.len()], |_| 0);
     cx.index_skin(10.0).unwrap();
-    let to = |x: [f64; 3]| Point3::try_from(x).unwrap();
+    let to = |x: [f64; 3]| ExactPoint3::try_from(x).unwrap();
     let star = cx.star(0).unwrap();
     assert!(cx.move_is_valid(0, &to([0.0, 0.0, 0.05]), &star).unwrap());
     for v in [6, 7, 8] {
@@ -721,9 +722,9 @@ fn the_gate_refuses_a_detached_tetrahedron() {
     let p = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0, 1.0], [2.0, 1.0, 1.0], [1.0, 2.0, 1.0], [1.0, 1.0, 2.0]];
     let tets = [[0, 1, 2, 3], [4, 5, 6, 7]];
     let v = 2.0 / 6.0;
-    let e = super::linear_gate(&p, &tets, &faces_but(&tets, &[]), v).unwrap_err().to_string();
+    let e = super::linear_gate(&crate::vec3::points_of(&p), &tets, &faces_but(&tets, &[]), v).unwrap_err().to_string();
     assert!(e.contains("share no face") && e.contains("(1, 2)"), "{e}");
-    assert!(super::linear_gate(&p, &tets[..1], &faces_but(&tets[..1], &[]), v / 2.0).is_ok());
+    assert!(super::linear_gate(&crate::vec3::points_of(&p), &tets[..1], &faces_but(&tets[..1], &[]), v / 2.0).is_ok());
 }
 
 /// The validity gate refuses a mesh folded over itself even when the fold's two layers add up to
@@ -734,9 +735,9 @@ fn the_gate_refuses_a_face_of_three_tetrahedra() {
     let p = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.2, 0.2, 1.0], [0.2, 0.2, -1.0], [0.3, 0.3, 0.5]];
     let tets = [[0, 1, 2, 3], [0, 2, 1, 4], [0, 1, 2, 5]];
     let v = (1.0 + 1.0 + 0.5) / 6.0;
-    let e = super::linear_gate(&p, &tets, &faces_but(&tets, &[[0, 1, 2]]), v).unwrap_err().to_string();
+    let e = super::linear_gate(&crate::vec3::points_of(&p), &tets, &faces_but(&tets, &[[0, 1, 2]]), v).unwrap_err().to_string();
     assert!(e.contains("held by more than two"), "{e}");
-    assert!(super::linear_gate(&p, &tets[..2], &faces_but(&tets[..2], &[[0, 1, 2]]), 2.0 / 6.0).is_ok());
+    assert!(super::linear_gate(&crate::vec3::points_of(&p), &tets[..2], &faces_but(&tets[..2], &[[0, 1, 2]]), 2.0 / 6.0).is_ok());
 }
 
 /// The validity gate refuses a face listed as boundary that two tetrahedra hold, one on either
@@ -747,15 +748,15 @@ fn the_gate_refuses_a_boundary_face_of_two_tetrahedra() {
     let p = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.2, 0.2, 1.0], [0.2, 0.2, -1.0]];
     let tets = [[0, 1, 2, 3], [0, 2, 1, 4]];
     let v = 2.0 / 6.0;
-    let e = super::linear_gate(&p, &tets, &faces_but(&tets, &[]), v).unwrap_err().to_string();
+    let e = super::linear_gate(&crate::vec3::points_of(&p), &tets, &faces_but(&tets, &[]), v).unwrap_err().to_string();
     assert!(e.contains("1 boundary faces are held by two tetrahedra"), "{e}");
-    assert!(super::linear_gate(&p, &tets, &faces_but(&tets, &[[0, 1, 2]]), v).is_ok());
+    assert!(super::linear_gate(&crate::vec3::points_of(&p), &tets, &faces_but(&tets, &[[0, 1, 2]]), v).is_ok());
     // A face held once but left out of the list, or listed twice.
     let mut short = faces_but(&tets, &[[0, 1, 2]]);
     let last = short.pop().unwrap();
-    assert!(super::linear_gate(&p, &tets, &short, v).is_err());
+    assert!(super::linear_gate(&crate::vec3::points_of(&p), &tets, &short, v).is_err());
     short.extend([last, last]);
-    assert!(super::linear_gate(&p, &tets, &short, v).is_err());
+    assert!(super::linear_gate(&crate::vec3::points_of(&p), &tets, &short, v).is_err());
 }
 
 /// Every face of `tets` except `inner`, as a boundary list.

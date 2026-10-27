@@ -11,12 +11,12 @@
 //! C and exact are not reproduced: they only make rare inputs faster.
 //!
 //! The error bounds assume IEEE binary64 round-to-nearest-even arithmetic without overflow or
-//! underflow (§5); the coordinate domain of [`Point2`] / [`Point3`] rules both out.
+//! underflow (§5); the coordinate domain of [`ExactPoint2`] / [`ExactPoint3`] rules both out.
 
 use super::eft::two_diff_tail;
 use super::expansion::{Exp, Expansion, cross_diff};
 use super::ring::{det2, det3, sq2, sq3};
-use super::{Point2, Point3, Sign};
+use super::{ExactPoint2, ExactPoint3, Sign};
 
 /// `ε = 2^-53`, half a unit in the last place of 1 (the machine epsilon of §2.1).
 const EPS: f64 = f64::EPSILON / 2.0;
@@ -43,13 +43,13 @@ fn certain(det: f64, errbound: f64) -> bool {
 
 /// Stage A of [`orient2d`]: the sign when the double-precision filter certifies it.
 #[inline]
-pub fn orient2d_filter(a: &Point2, b: &Point2, c: &Point2) -> Option<Sign> {
+pub fn orient2d_filter(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2) -> Option<Sign> {
     orient2d_a(a, b, c).ok()
 }
 
 /// `Ok(sign)` when stage A decides, else `Err(detsum)` for the adaptive stages.
 #[inline(always)]
-fn orient2d_a(a: &Point2, b: &Point2, c: &Point2) -> Result<Sign, f64> {
+fn orient2d_a(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2) -> Result<Sign, f64> {
     let ([ax, ay], [bx, by], [cx, cy]) = (a.0, b.0, c.0);
     let det_left = (ax - cx) * (by - cy);
     let det_right = (ay - cy) * (bx - cx);
@@ -76,7 +76,7 @@ fn orient2d_a(a: &Point2, b: &Point2, c: &Point2) -> Result<Sign, f64> {
 /// [`Sign::Negative`] when clockwise, [`Sign::Zero`] when collinear. Exact. It is the sign of
 /// `det[a - c; b - c]`.
 #[inline]
-pub fn orient2d(a: &Point2, b: &Point2, c: &Point2) -> Sign {
+pub fn orient2d(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2) -> Sign {
     match orient2d_a(a, b, c) {
         Ok(sign) => sign,
         Err(det_sum) => orient2d_adapt(a, b, c, det_sum),
@@ -84,7 +84,7 @@ pub fn orient2d(a: &Point2, b: &Point2, c: &Point2) -> Sign {
 }
 
 #[cold]
-fn orient2d_adapt(a: &Point2, b: &Point2, c: &Point2, det_sum: f64) -> Sign {
+fn orient2d_adapt(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, det_sum: f64) -> Sign {
     let ([ax, ay], [bx, by], [cx, cy]) = (a.0, b.0, c.0);
     let (acx, bcx, acy, bcy) = (ax - cx, bx - cx, ay - cy, by - cy);
 
@@ -121,12 +121,12 @@ fn orient2d_adapt(a: &Point2, b: &Point2, c: &Point2, det_sum: f64) -> Sign {
 
 /// Stage A of [`orient3d`].
 #[inline]
-pub fn orient3d_filter(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Option<Sign> {
+pub fn orient3d_filter(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3) -> Option<Sign> {
     orient3d_a(a, b, c, d).ok()
 }
 
 #[inline(always)]
-fn orient3d_a(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Result<Sign, f64> {
+fn orient3d_a(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3) -> Result<Sign, f64> {
     let ([ax, ay, az], [bx, by, bz], [cx, cy, cz], [dx, dy, dz]) = (a.0, b.0, c.0, d.0);
     let (adx, bdx, cdx) = (ax - dx, bx - dx, cx - dx);
     let (ady, bdy, cdy) = (ay - dy, by - dy, cy - dy);
@@ -145,7 +145,7 @@ fn orient3d_a(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Result<Sign, f6
 /// `det[a - d; b - d; c - d] = -det[b - a; c - a; d - a]` (Shewchuk's convention), so it is
 /// positive when the tetrahedron `a, b, c, d` is negatively oriented in the right-handed sense.
 #[inline]
-pub fn orient3d(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Sign {
+pub fn orient3d(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3) -> Sign {
     match orient3d_a(a, b, c, d) {
         Ok(sign) => sign,
         Err(permanent) => orient3d_adapt(a, b, c, d, permanent),
@@ -153,7 +153,7 @@ pub fn orient3d(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Sign {
 }
 
 #[cold]
-fn orient3d_adapt(a: &Point3, b: &Point3, c: &Point3, d: &Point3, permanent: f64) -> Sign {
+fn orient3d_adapt(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, permanent: f64) -> Sign {
     let ([ax, ay, az], [bx, by, bz], [cx, cy, cz], [dx, dy, dz]) = (a.0, b.0, c.0, d.0);
     let (adx, bdx, cdx) = (ax - dx, bx - dx, cx - dx);
     let (ady, bdy, cdy) = (ay - dy, by - dy, cy - dy);
@@ -192,17 +192,17 @@ fn orient3d_adapt(a: &Point3, b: &Point3, c: &Point3, d: &Point3, permanent: f64
 }
 
 /// `det[a - d; b - d; c - d]` exactly, from the input coordinates.
-fn orient3d_exact(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Sign {
+fn orient3d_exact(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3) -> Sign {
     det3(&[diffs3(a, d), diffs3(b, d), diffs3(c, d)]).sign()
 }
 
 /// The exact coordinate differences `p - o` as expansions.
-fn diffs3(p: &Point3, o: &Point3) -> [Expansion; 3] {
+fn diffs3(p: &ExactPoint3, o: &ExactPoint3) -> [Expansion; 3] {
     let ([px, py, pz], [ox, oy, oz]) = (p.0, o.0);
     [Expansion::diff(px, ox), Expansion::diff(py, oy), Expansion::diff(pz, oz)]
 }
 
-fn diffs2(p: &Point2, o: &Point2) -> [Expansion; 2] {
+fn diffs2(p: &ExactPoint2, o: &ExactPoint2) -> [Expansion; 2] {
     let ([px, py], [ox, oy]) = (p.0, o.0);
     [Expansion::diff(px, ox), Expansion::diff(py, oy)]
 }
@@ -213,12 +213,12 @@ fn diffs2(p: &Point2, o: &Point2) -> [Expansion; 2] {
 
 /// Stage A of [`incircle`].
 #[inline]
-pub fn incircle_filter(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Option<Sign> {
+pub fn incircle_filter(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Option<Sign> {
     incircle_a(a, b, c, d).ok()
 }
 
 #[inline(always)]
-fn incircle_a(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Result<Sign, f64> {
+fn incircle_a(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Result<Sign, f64> {
     let ([ax, ay], [bx, by], [cx, cy], [dx, dy]) = (a.0, b.0, c.0, d.0);
     let (adx, bdx, cdx) = (ax - dx, bx - dx, cx - dx);
     let (ady, bdy, cdy) = (ay - dy, by - dy, cy - dy);
@@ -238,7 +238,7 @@ fn incircle_a(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Result<Sign, f6
 /// reversed when they are clockwise). Exact. It is the sign of
 /// `det[a - d, |a - d|²; b - d, |b - d|²; c - d, |c - d|²]`.
 #[inline]
-pub fn incircle(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
+pub fn incircle(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Sign {
     match incircle_a(a, b, c, d) {
         Ok(sign) => sign,
         Err(permanent) => incircle_adapt(a, b, c, d, permanent),
@@ -246,7 +246,7 @@ pub fn incircle(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
 }
 
 #[cold]
-fn incircle_adapt(a: &Point2, b: &Point2, c: &Point2, d: &Point2, permanent: f64) -> Sign {
+fn incircle_adapt(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2, permanent: f64) -> Sign {
     let ([ax, ay], [bx, by], [cx, cy], [dx, dy]) = (a.0, b.0, c.0, d.0);
     let (adx, bdx, cdx) = (ax - dx, bx - dx, cx - dx);
     let (ady, bdy, cdy) = (ay - dy, by - dy, cy - dy);
@@ -277,8 +277,8 @@ fn incircle_adapt(a: &Point2, b: &Point2, c: &Point2, d: &Point2, permanent: f64
     incircle_exact(a, b, c, d)
 }
 
-fn incircle_exact(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
-    let row = |p: &Point2| {
+fn incircle_exact(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Sign {
+    let row = |p: &ExactPoint2| {
         let [x, y] = diffs2(p, d);
         let lift = sq2(&x, &y);
         [x, y, lift]
@@ -292,12 +292,12 @@ fn incircle_exact(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
 
 /// Stage A of [`insphere`].
 #[inline]
-pub fn insphere_filter(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Option<Sign> {
+pub fn insphere_filter(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Option<Sign> {
     insphere_a(a, b, c, d, e).ok()
 }
 
 #[inline(always)]
-fn insphere_a(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Result<Sign, f64> {
+fn insphere_a(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Result<Sign, f64> {
     let ([ax, ay, az], [bx, by, bz], [cx, cy, cz], [dx, dy, dz], [ex, ey, ez]) = (a.0, b.0, c.0, d.0, e.0);
     let (aex, bex, cex, dex) = (ax - ex, bx - ex, cx - ex, dx - ex);
     let (aey, bey, cey, dey) = (ay - ey, by - ey, cy - ey, dy - ey);
@@ -343,7 +343,7 @@ fn insphere_a(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Res
 /// reversed otherwise). Exact. It is the sign of the 4×4 determinant with rows
 /// `[p - e, |p - e|²]` for `p = a, b, c, d`.
 #[inline]
-pub fn insphere(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Sign {
+pub fn insphere(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Sign {
     match insphere_a(a, b, c, d, e) {
         Ok(sign) => sign,
         Err(permanent) => insphere_adapt(a, b, c, d, e, permanent),
@@ -351,7 +351,7 @@ pub fn insphere(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> S
 }
 
 #[cold]
-fn insphere_adapt(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3, permanent: f64) -> Sign {
+fn insphere_adapt(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3, permanent: f64) -> Sign {
     let ([ax, ay, az], [bx, by, bz], [cx, cy, cz], [dx, dy, dz], [ex, ey, ez]) = (a.0, b.0, c.0, d.0, e.0);
     let (aex, bex, cex, dex) = (ax - ex, bx - ex, cx - ex, dx - ex);
     let (aey, bey, cey, dey) = (ay - ey, by - ey, cy - ey, dy - ey);
@@ -408,7 +408,7 @@ fn insphere_adapt(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3, pe
 
 /// The same expansion as stage B (shared 2×2 minors, then the 3×3 minors, then the lifts), on
 /// the exact differences.
-fn insphere_exact(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Sign {
+fn insphere_exact(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Sign {
     let [ax, ay, az] = diffs3(a, e);
     let [bx, by, bz] = diffs3(b, e);
     let [cx, cy, cz] = diffs3(c, e);
@@ -432,18 +432,18 @@ fn insphere_exact(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) ->
 pub(crate) mod exact {
     use super::*;
 
-    pub(crate) fn orient2d(a: &Point2, b: &Point2, c: &Point2) -> Sign {
+    pub(crate) fn orient2d(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2) -> Sign {
         let [ax, ay] = diffs2(a, c);
         let [bx, by] = diffs2(b, c);
         det2(&ax, &ay, &bx, &by).sign()
     }
-    pub(crate) fn orient3d(a: &Point3, b: &Point3, c: &Point3, d: &Point3) -> Sign {
+    pub(crate) fn orient3d(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3) -> Sign {
         orient3d_exact(a, b, c, d)
     }
-    pub(crate) fn incircle(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
+    pub(crate) fn incircle(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Sign {
         incircle_exact(a, b, c, d)
     }
-    pub(crate) fn insphere(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Sign {
+    pub(crate) fn insphere(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Sign {
         insphere_exact(a, b, c, d, e)
     }
 }

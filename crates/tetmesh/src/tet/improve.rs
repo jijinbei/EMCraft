@@ -18,13 +18,14 @@
 //! repair, which the paper's own composite operation relies on to make insertion pay off.
 
 use crate::Result;
-use crate::predicates::Point3;
+use crate::predicates::ExactPoint3;
 
 use super::complex::{EDGES, IdMap, NONE, Step, TetComplex, VertexKind, Walk, face_toward, sorted4};
-use super::measure::{self, P};
+use super::measure;
 use super::ops::{self, Site, remove_edge_at, remove_face, tet_quality};
 use super::refine::{Context, MAX_CAVITY, MIN_GAP};
 use super::smooth::smooth_vertex;
+use crate::{Point3, Vec3};
 
 /// Settings of the schedule.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -131,13 +132,13 @@ fn delete_flat(cx: &mut TetComplex, t: u32) -> Result<bool> {
     if tags[i] != tags[j] {
         return Ok(false);
     }
-    let normal = |k: usize| -> Result<P> {
+    let normal = |k: usize| -> Result<Vec3> {
         let f = face_toward(vs, k);
         Ok(measure::triangle_normal(cx.xyz(f[0])?, cx.xyz(f[1])?, cx.xyz(f[2])?))
     };
     // The inward normals of the two faces of such a cap point nearly the same way.
     let (a, b) = (normal(i)?, normal(j)?);
-    if !(measure::dot(a, b) >= ops::BOUNDARY_FLIP_COS) {
+    if !(a.dot(b) >= ops::BOUNDARY_FLIP_COS) {
         return Ok(false);
     }
     cx.delete_boundary_tet(t)
@@ -226,13 +227,13 @@ fn below(cx: &TetComplex, good: f64) -> Result<Vec<u32>> {
 fn change_quality(cx: &mut TetComplex, len: usize) -> Result<(f64, f64)> {
     let steps: Vec<Step> = cx.journal.steps.get(len..).unwrap_or_default().to_vec();
     // Earliest position of each moved vertex.
-    let mut first: IdMap<u32, Point3> = IdMap::default();
+    let mut first: IdMap<u32, ExactPoint3> = IdMap::default();
     for s in &steps {
         if let Step::Moved { v, from } = s {
             first.entry(*v).or_insert(*from);
         }
     }
-    let old_xyz = |cx: &TetComplex, v: u32| -> Result<P> { first.get(&v).map_or_else(|| cx.xyz(v), |p| Ok(p.coords())) };
+    let old_xyz = |cx: &TetComplex, v: u32| -> Result<Point3> { first.get(&v).map_or_else(|| cx.xyz(v), |p| Ok(p.point())) };
     // Net removed and added tetrahedra by sorted vertices.
     let mut net: IdMap<[u32; 4], (i32, [u32; 4])> = IdMap::default();
     let key = sorted4;
@@ -288,7 +289,7 @@ fn change_quality(cx: &mut TetComplex, len: usize) -> Result<(f64, f64)> {
 }
 
 /// The composite insertion of §3.5 (see the module docs). Returns whether it was kept.
-fn attempt_insert(cx: &mut TetComplex, ctx: &Context, p: Point3, kind: VertexKind, site: Site) -> Result<bool> {
+fn attempt_insert(cx: &mut TetComplex, ctx: &Context, p: ExactPoint3, kind: VertexKind, site: Site) -> Result<bool> {
     let was = cx.journal.recording;
     cx.journal.recording = true;
     let len = cx.journal.steps.len();
@@ -296,7 +297,7 @@ fn attempt_insert(cx: &mut TetComplex, ctx: &Context, p: Point3, kind: VertexKin
         // Refused within MIN_GAP of the local size of an existing vertex, as in refinement: a
         // tetrahedron that stays below the target would otherwise draw an insertion every pass
         // and pile vertices around one of its own, whose star then grows without bound (#311).
-        let gap = MIN_GAP * ctx.h(p.coords(), 0.0);
+        let gap = MIN_GAP * ctx.h(p.point(), 0.0);
         let Some(v) = ops::insert_delaunay_apart(cx, p, kind, site, MAX_CAVITY, gap)? else { return Ok(false) };
         for _ in 0..4 {
             smooth_vertex(cx, ctx, v)?;
@@ -361,18 +362,18 @@ fn insertion_pass(cx: &mut TetComplex, ctx: &Context, list: &[u32], budget: usiz
         if let &[i, j] = bnd.as_slice() {
             let edge: Vec<u32> = (0..4).filter(|&k| k != i && k != j).map(|k| vs[k]).collect();
             if let &[a, b] = edge.as_slice() {
-                let n = |k: usize| -> Result<P> {
+                let n = |k: usize| -> Result<Vec3> {
                     let f = face_toward(vs, k);
                     Ok(measure::triangle_normal(cx.xyz(f[0])?, cx.xyz(f[1])?, cx.xyz(f[2])?))
                 };
-                let inward = measure::add(n(i)?, n(j)?);
-                let len = measure::norm(inward);
+                let inward = n(i)? + n(j)?;
+                let len = inward.norm();
                 let (pa, pb) = (cx.xyz(a)?, cx.xyz(b)?);
-                let l = measure::dist(pa, pb);
+                let l = pa.distance(pb);
                 // Unit inward normals within 25° of each other: |n_i + n_j| > 2 cos 12.5°.
                 if len > 1.952 {
-                    let target = measure::add(measure::mid(pa, pb), measure::scale(inward, 0.4 * l / len));
-                    if let Ok(p) = Point3::try_from(target)
+                    let target = pa.midpoint(pb) + inward * (0.4 * l / len);
+                    if let Ok(p) = ExactPoint3::try_from(target)
                         && let Some(Walk::Inside(at)) = cx.walk(t, &p, 1 << 12)?
                         && attempt_insert(cx, ctx, p, VertexKind::Interior, Site::Interior(at))?
                     {
@@ -387,7 +388,7 @@ fn insertion_pass(cx: &mut TetComplex, ctx: &Context, list: &[u32], budget: usiz
                 continue;
             }
             let f = face_toward(vs, k);
-            let g = measure::scale(measure::add(measure::add(cx.xyz(f[0])?, cx.xyz(f[1])?), cx.xyz(f[2])?), 1.0 / 3.0);
+            let g = Point3::centroid3(cx.xyz(f[0])?, cx.xyz(f[1])?, cx.xyz(f[2])?);
             let kind = VertexKind::Face(tags[k]);
             if let Some(p) = ctx.place(kind, g)
                 && cx.is_live(t)
@@ -399,7 +400,7 @@ fn insertion_pass(cx: &mut TetComplex, ctx: &Context, list: &[u32], budget: usiz
         // The barycentre.
         if !done && cx.is_live(t) && cx.tet(t)? == vs {
             let g = measure::centroid(&cx.coords(vs)?);
-            if let Ok(p) = Point3::try_from(g)
+            if let Ok(p) = ExactPoint3::try_from(g)
                 && attempt_insert(cx, ctx, p, VertexKind::Interior, Site::Interior(t))?
             {
                 done = true;
@@ -428,7 +429,7 @@ fn insertion_pass(cx: &mut TetComplex, ctx: &Context, list: &[u32], budget: usiz
                     None if tag != NONE => VertexKind::Face(tag),
                     None => continue,
                 };
-                let m = measure::mid(cx.xyz(a)?, cx.xyz(b)?);
+                let m = cx.xyz(a)?.midpoint(cx.xyz(b)?);
                 if let Some(p) = ctx.place(kind, m)
                     && attempt_insert(cx, ctx, p, kind, Site::Edge(a, b))?
                 {
@@ -543,9 +544,9 @@ mod tests {
             let g = measure::centroid(&cx.coords(vs).unwrap());
             for v in vs {
                 let x = cx.xyz(v).unwrap();
-                let d = measure::sub(g, x);
-                let q = measure::add(x, measure::scale(d, 0.5 * MIN_GAP * H / measure::norm(d)));
-                let q = Point3::try_from(q).unwrap();
+                let d = g - x;
+                let q = x + (d * (0.5 * MIN_GAP * H / d.norm()));
+                let q = ExactPoint3::try_from(q).unwrap();
                 if let Some(Walk::Inside(at)) = cx.walk(t, &q, 1 << 12).unwrap() {
                     tried += 1;
                     assert!(!attempt_insert(&mut cx, &ctx, q, VertexKind::Interior, Site::Interior(at)).unwrap());

@@ -19,10 +19,9 @@
 //! take the predicates' slowest path (their sides are exact zeros); [`projections_apart`] is a
 //! cheap sufficient test for them to try first.
 
-use crate::predicates::{Axis, Point3, Sign, orient2d_projected, orient3d};
-use crate::vec3::{cross, sub};
+use crate::predicates::{Axis, ExactPoint3, Sign, orient2d_projected, orient3d};
 
-type Tri<'a> = [&'a Point3; 3];
+type Tri<'a> = [&'a ExactPoint3; 3];
 
 /// A coordinate plane on which triangle `abc` projects to a proper triangle, and the
 /// orientation of that projection; `None` when the corners are collinear.
@@ -38,22 +37,22 @@ pub fn is_degenerate(t: Tri) -> bool {
     plane_axis(t).is_none()
 }
 
-fn edges<'a>([a, b, c]: Tri<'a>) -> [(&'a Point3, &'a Point3); 3] {
+fn edges<'a>([a, b, c]: Tri<'a>) -> [(&'a ExactPoint3, &'a ExactPoint3); 3] {
     [(a, b), (b, c), (c, a)]
 }
 
 /// The side of `p` against the plane of `t`.
-fn side(t: Tri, p: &Point3) -> Sign {
+fn side(t: Tri, p: &ExactPoint3) -> Sign {
     orient3d(t[0], t[1], t[2], p)
 }
 
 /// Closed point-in-triangle test in the plane of `t` (`p` must lie in it).
-fn point_in_triangle(p: &Point3, t: Tri, drop: Axis, s: Sign) -> bool {
+fn point_in_triangle(p: &ExactPoint3, t: Tri, drop: Axis, s: Sign) -> bool {
     edges(t).into_iter().all(|(u, v)| orient2d_projected(u, v, p, drop) != -s)
 }
 
 /// Whether `r`, collinear with `p` and `q`, lies on the closed segment `pq`.
-fn on_segment(p: &Point3, q: &Point3, r: &Point3) -> bool {
+fn on_segment(p: &ExactPoint3, q: &ExactPoint3, r: &ExactPoint3) -> bool {
     let (p, q, r) = (p.coords(), q.coords(), r.coords());
     (0..3).all(|k| {
         let (lo, hi) = if p[k] <= q[k] { (p[k], q[k]) } else { (q[k], p[k]) };
@@ -63,7 +62,7 @@ fn on_segment(p: &Point3, q: &Point3, r: &Point3) -> bool {
 
 /// Closed segment–segment intersection of two coplanar segments, on the projection `drop`
 /// (which must be injective on their plane).
-fn segments_meet(p: &Point3, q: &Point3, a: &Point3, b: &Point3, drop: Axis) -> bool {
+fn segments_meet(p: &ExactPoint3, q: &ExactPoint3, a: &ExactPoint3, b: &ExactPoint3, drop: Axis) -> bool {
     let d1 = orient2d_projected(p, q, a, drop);
     let d2 = orient2d_projected(p, q, b, drop);
     let d3 = orient2d_projected(a, b, p, drop);
@@ -77,7 +76,7 @@ fn segments_meet(p: &Point3, q: &Point3, a: &Point3, b: &Point3, drop: Axis) -> 
 
 /// Whether the closed segment `pq` meets the closed, non-degenerate triangle `t`, given the
 /// sides `op`, `oq` of `p` and `q` against `t`'s plane.
-fn segment_meets(p: &Point3, q: &Point3, op: Sign, oq: Sign, t: Tri) -> bool {
+fn segment_meets(p: &ExactPoint3, q: &ExactPoint3, op: Sign, oq: Sign, t: Tri) -> bool {
     if op == oq && !op.is_zero() {
         return false;
     }
@@ -94,7 +93,7 @@ fn segment_meets(p: &Point3, q: &Point3, op: Sign, oq: Sign, t: Tri) -> bool {
 }
 
 /// Whether the closed segment `pq` meets the closed, non-degenerate triangle `t`.
-pub fn segment_meets_triangle(p: &Point3, q: &Point3, t: Tri) -> bool {
+pub fn segment_meets_triangle(p: &ExactPoint3, q: &ExactPoint3, t: Tri) -> bool {
     segment_meets(p, q, side(t, p), side(t, q), t)
 }
 
@@ -113,7 +112,7 @@ pub fn triangles_meet(s: Tri, t: Tri) -> bool {
 /// For triangles sharing the corner `v`: whether the edge from `v` to `a` (whose side of the
 /// plane of triangle `v c d` is `side_a`) contains a point of that triangle other than `v`: it
 /// lies in that plane, inside the triangle's corner at `v`.
-fn edge_enters_corner(v: &Point3, a: &Point3, side_a: Sign, c: &Point3, d: &Point3) -> bool {
+fn edge_enters_corner(v: &ExactPoint3, a: &ExactPoint3, side_a: Sign, c: &ExactPoint3, d: &ExactPoint3) -> bool {
     if !side_a.is_zero() {
         return false;
     }
@@ -127,10 +126,10 @@ fn edge_enters_corner(v: &Point3, a: &Point3, side_a: Sign, c: &Point3, d: &Poin
 /// triangle with its third vertex on one side and every vertex of the other but that edge's
 /// strictly on the other; false when no edge tells.
 pub fn projections_apart(ids: [[u32; 3]; 2], s: Tri, t: Tri) -> bool {
-    let n = cross(sub(s[1].coords(), s[0].coords()), sub(s[2].coords(), s[0].coords())).map(f64::abs);
-    let drop = if n[0] >= n[1] && n[0] >= n[2] {
+    let n = (s[1].point() - s[0].point()).cross(s[2].point() - s[0].point()).map(f64::abs);
+    let drop = if n.x >= n.y && n.x >= n.z {
         Axis::X
-    } else if n[1] >= n[2] {
+    } else if n.y >= n.z {
         Axis::Y
     } else {
         Axis::Z

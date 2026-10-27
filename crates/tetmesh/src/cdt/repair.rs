@@ -19,7 +19,7 @@ use super::BoundaryFace;
 use crate::tet::complex::{EDGES, NONE, TetComplex, VertexKind};
 use crate::tet::ops::{remove_edge_at, remove_face};
 use crate::tet::refine::feature_curves;
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 /// A tetrahedron is repaired when its normalized Jacobian is at most this (a margin of a
 /// thousand above the validity criterion, so rounding differences cannot bring it back).
@@ -27,13 +27,13 @@ const REPAIR_BELOW: f64 = 1e3 * crate::compat::MIN_NORMALIZED_JACOBIAN; // unit-
 /// Passes over the tetrahedra still to repair.
 const MAX_PASSES: usize = 8;
 
-fn needs_repair(points: &[[f64; 3]], t: &[u32; 4]) -> bool {
-    let p = |v: u32| points.get(v as usize).copied().unwrap_or([f64::NAN; 3]);
+fn needs_repair(points: &[Point3], t: &[u32; 4]) -> bool {
+    let p = |v: u32| points.get(v as usize).copied().unwrap_or(Point3::splat(f64::NAN));
     !(normalized_jacobian(&tet4_jacobian(&[p(t[0]), p(t[1]), p(t[2]), p(t[3])])) > REPAIR_BELOW)
 }
 
 /// Repair the rounded mesh in place; the number of tetrahedra that needed it.
-pub(super) fn repair(points: &[[f64; 3]], tets: &mut Vec<[u32; 4]>, boundary: &mut Vec<BoundaryFace>, max_tets: usize) -> Result<usize> {
+pub(super) fn repair(points: &[Point3], tets: &mut Vec<[u32; 4]>, boundary: &mut Vec<BoundaryFace>, max_tets: usize) -> Result<usize> {
     let bad = tets.iter().filter(|t| needs_repair(points, t)).count();
     if bad == 0 {
         return Ok(0);

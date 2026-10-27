@@ -17,10 +17,11 @@
 //!   the new vertex, so a mesh that is no longer exactly Delaunay (after smoothing) stays valid.
 
 use crate::Result;
-use crate::predicates::{Point3, Sign};
+use crate::predicates::{ExactPoint3, Sign};
 
 use super::complex::{Change, EDGES, IdMap, NONE, TetComplex, VertexKind, face_toward, sorted2, sorted3, turns_over};
-use super::measure::{self, P};
+use super::measure;
+use crate::Point3;
 
 /// The quality objective of a tetrahedron given by vertex ids ([`measure::quality`]).
 pub fn tet_quality(cx: &TetComplex, vs: [u32; 4]) -> Result<f64> {
@@ -147,7 +148,7 @@ pub fn remove_edge_at(cx: &mut TetComplex, t: u32, a: u32, b: u32) -> Result<boo
         let (Some(t0), Some(t1)) = (boundary_tag(cx, first, [a, b, v0])?, boundary_tag(cx, last, [a, b, vl])?) else { return Ok(false) };
         let n0 = measure::triangle_normal(xa, xb, x(v0)?);
         let n1 = measure::triangle_normal(xa, x(vl)?, xb);
-        if t0 != t1 || !(measure::dot(n0, n1) >= BOUNDARY_FLIP_COS) {
+        if t0 != t1 || !(n0.dot(n1) >= BOUNDARY_FLIP_COS) {
             return Ok(false);
         }
         // Oriented into the mesh, as the faces of the new tetrahedra (v_0, v_l, v_k, a) and
@@ -156,7 +157,7 @@ pub fn remove_edge_at(cx: &mut TetComplex, t: u32, a: u32, b: u32) -> Result<boo
         new_boundary.push(([v0, vl, b], t0));
     }
     let before = worst(cx, &ring.tets)?;
-    let xv = v.iter().map(|&id| x(id)).collect::<Result<Vec<P>>>()?;
+    let xv = v.iter().map(|&id| x(id)).collect::<Result<Vec<Point3>>>()?;
     let mut q = |i: usize, k: usize, j: usize, b: f64| -> Result<f64> {
         let (pi, pk, pj) = match (xv.get(i), xv.get(k), xv.get(j)) {
             (Some(p), Some(q), Some(r)) => (*p, *q, *r),
@@ -377,14 +378,21 @@ pub enum Site {
 /// cavity on the same B-rep face(s) whose circumcircle holds `p` and that connect to the site
 /// without crossing a feature edge, and fans the new vertex to their outline. Returns the new
 /// vertex, or `None` when no valid cavity exists (nothing changes then).
-pub fn insert_delaunay(cx: &mut TetComplex, p: Point3, kind: VertexKind, site: Site, max_cavity: usize) -> Result<Option<u32>> {
+pub fn insert_delaunay(cx: &mut TetComplex, p: ExactPoint3, kind: VertexKind, site: Site, max_cavity: usize) -> Result<Option<u32>> {
     insert_delaunay_apart(cx, p, kind, site, max_cavity, 0.0)
 }
 
 /// [`insert_delaunay`], refused when a vertex of the cavity lies closer than `min_gap` to `p`
 /// (the nearest vertex of a Delaunay mesh is a vertex of the cavity), so refinement cannot
 /// pile vertices onto one spot.
-pub fn insert_delaunay_apart(cx: &mut TetComplex, p: Point3, kind: VertexKind, site: Site, max_cavity: usize, min_gap: f64) -> Result<Option<u32>> {
+pub fn insert_delaunay_apart(
+    cx: &mut TetComplex,
+    p: ExactPoint3,
+    kind: VertexKind,
+    site: Site,
+    max_cavity: usize,
+    min_gap: f64,
+) -> Result<Option<u32>> {
     let (roots, root_faces) = site_roots(cx, site)?;
     if roots.is_empty() {
         return Ok(None);
@@ -409,10 +417,10 @@ pub fn insert_delaunay_apart(cx: &mut TetComplex, p: Point3, kind: VertexKind, s
         }
     }
     if min_gap > 0.0 {
-        let px = p.coords();
+        let px = p.point();
         for &t in &cavity {
             for v in cx.tet(t)? {
-                if measure::dist(cx.xyz(v)?, px) < min_gap {
+                if cx.xyz(v)?.distance(px) < min_gap {
                     return Ok(None);
                 }
             }
@@ -502,7 +510,7 @@ enum Plan {
 }
 
 /// Plan the fill of a cavity from `p`.
-fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &Point3, site: Site, root_faces: &[[u32; 3]]) -> Result<Plan> {
+fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, root_faces: &[[u32; 3]]) -> Result<Plan> {
     let inset: IdMap<u32, ()> = cavity.iter().map(|&t| (t, ())).collect();
     // Boundary faces of cavity tetrahedra: candidates for removal (only for boundary sites).
     let mut bfaces: Vec<([u32; 3], [u32; 3], u32, u32)> = Vec::new(); // (oriented, sorted, tag, tet)
@@ -533,7 +541,7 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &Point3, site: Site, root_fac
         if queue.len() != root_faces.len() {
             return Ok(Plan::Fail);
         }
-        let px = p.coords();
+        let px = p.point();
         let mut taken = vec![false; bfaces.len()];
         for &i in &queue {
             if let Some(s) = taken.get_mut(i) {
@@ -555,8 +563,8 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &Point3, site: Site, root_fac
                     }
                     let [ga, gb, gc] = [cx.xyz(g.0[0])?, cx.xyz(g.0[1])?, cx.xyz(g.0[2])?];
                     let Some(o) = measure::triangle_circumcenter(ga, gb, gc) else { continue };
-                    let r = measure::dist(o, ga);
-                    if measure::dist(o, px) < r {
+                    let r = o.distance(ga);
+                    if o.distance(px) < r {
                         if let Some(s) = taken.get_mut(j) {
                             *s = true;
                         }
@@ -807,7 +815,7 @@ pub fn collapse(cx: &mut TetComplex, a: u32, b: u32, max_len: f64, floor: f64) -
         }
         let moved = vs.map(|v| if v == a { b } else { v });
         for v in moved {
-            if v != b && measure::dist(cx.xyz(v)?, xb) > max_len {
+            if v != b && cx.xyz(v)?.distance(xb) > max_len {
                 return Ok(false);
             }
         }
@@ -890,7 +898,7 @@ mod tests {
                 continue;
             }
             let g = measure::centroid(&cx.coords(cx.tet(t).unwrap()).unwrap());
-            insert_delaunay(&mut cx, Point3::try_from(g).unwrap(), VertexKind::Interior, Site::Interior(t), MAX_CAVITY_TEST).unwrap();
+            insert_delaunay(&mut cx, ExactPoint3::try_from(g).unwrap(), VertexKind::Interior, Site::Interior(t), MAX_CAVITY_TEST).unwrap();
         }
         cx.validate().unwrap();
         cx

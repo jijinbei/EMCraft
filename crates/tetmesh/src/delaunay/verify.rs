@@ -2,8 +2,7 @@
 //! the exact predicates; nothing here relies on how the insertion built them.
 
 use super::{DEAD, GHOST, NONE, Triangulation, volume_sign};
-use crate::predicates::{Point3, Sign, insphere, insphere_sos};
-use crate::quality::shape::{det, sub};
+use crate::predicates::{ExactPoint3, Sign, insphere, insphere_sos};
 use crate::{Error, Result};
 
 fn failed<T>(what: String) -> Result<T> {
@@ -11,14 +10,14 @@ fn failed<T>(what: String) -> Result<T> {
 }
 
 /// `det[b − a, c − a, d − a] / 6` in floating point (a measure for the volume balance only).
-pub(super) fn volume(p: [&Point3; 4]) -> f64 {
-    let [a, b, c, d] = p.map(Point3::coords);
-    det(sub(b, a), sub(c, a), sub(d, a)) / 6.0
+pub(super) fn volume(p: [&ExactPoint3; 4]) -> f64 {
+    let [a, b, c, d] = p.map(ExactPoint3::point);
+    (b - a).det(c - a, d - a) / 6.0
 }
 
 /// Whether `e` is outside the circumsphere of the positive-volume tetrahedron `[a, b, c, d]`:
 /// never inside exactly, and outside with the perturbation.
-fn outside_sphere([a, b, c, d]: [&Point3; 4], e: &Point3) -> bool {
+fn outside_sphere([a, b, c, d]: [&ExactPoint3; 4], e: &ExactPoint3) -> bool {
     // `insphere` wants Shewchuk-positive orientation: swap the first two vertices.
     match insphere(b, a, c, d, e) {
         Sign::Positive => false,
@@ -38,18 +37,18 @@ pub(super) fn face(vs: [u32; 4], k: usize) -> [u32; 3] {
 }
 
 impl Triangulation {
-    fn point_of(&self, v: u32) -> Result<&Point3> {
+    fn point_of(&self, v: u32) -> Result<&ExactPoint3> {
         match self.points.get(v as usize) {
             Some(p) => Ok(p),
             None => failed(format!("vertex {v} does not exist")),
         }
     }
 
-    fn points_of(&self, [a, b, c, d]: [u32; 4]) -> Result<[&Point3; 4]> {
+    fn points_of(&self, [a, b, c, d]: [u32; 4]) -> Result<[&ExactPoint3; 4]> {
         Ok([self.point_of(a)?, self.point_of(b)?, self.point_of(c)?, self.point_of(d)?])
     }
 
-    fn points_with<'a>(&'a self, vs: [u32; 4], k: usize, p: &'a Point3) -> Result<[&'a Point3; 4]> {
+    fn points_with<'a>(&'a self, vs: [u32; 4], k: usize, p: &'a ExactPoint3) -> Result<[&'a ExactPoint3; 4]> {
         let mut out = [p; 4];
         for (i, o) in out.iter_mut().enumerate() {
             if i != k {

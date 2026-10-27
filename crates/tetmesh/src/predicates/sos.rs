@@ -21,7 +21,7 @@
 use std::cmp::Ordering;
 
 use super::indirect::{Axis, GenericPoint, generic_compare, generic_insphere, generic_orient3d};
-use super::{Point2, Point3, Sign, incircle, insphere, orient2d, orient3d};
+use super::{ExactPoint2, ExactPoint3, Sign, incircle, insphere, orient2d, orient3d};
 
 /// Lexicographic order on coordinates (total: `f64::total_cmp`).
 fn lex<const N: usize>(p: &[f64; N], q: &[f64; N]) -> Ordering {
@@ -44,13 +44,13 @@ fn ranked<const N: usize, const M: usize>(points: &[[f64; N]; M]) -> [usize; M] 
 /// Delaunay triangulation never passes duplicates); with all five points coplanar it returns
 /// `Zero`.
 #[inline]
-pub fn insphere_sos(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Sign {
+pub fn insphere_sos(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Sign {
     let exact = insphere(a, b, c, d, e);
     if exact.is_zero() { insphere_perturbed(a, b, c, d, e) } else { exact }
 }
 
 #[cold]
-fn insphere_perturbed(a: &Point3, b: &Point3, c: &Point3, d: &Point3, e: &Point3) -> Sign {
+fn insphere_perturbed(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3, d: &ExactPoint3, e: &ExactPoint3) -> Sign {
     perturbed_cofactors([a, b, c, d, e], ranked(&[a.0, b.0, c.0, d.0, e.0]), orient3d)
 }
 
@@ -118,13 +118,13 @@ pub fn generic_insphere_sos(a: &GenericPoint, b: &GenericPoint, c: &GenericPoint
 /// [`incircle`] with symbolic perturbation: never [`Sign::Zero`] when `a, b, c` is not
 /// collinear. Same conventions as [`insphere_sos`].
 #[inline]
-pub fn incircle_sos(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
+pub fn incircle_sos(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Sign {
     let exact = incircle(a, b, c, d);
     if exact.is_zero() { incircle_perturbed(a, b, c, d) } else { exact }
 }
 
 #[cold]
-fn incircle_perturbed(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> Sign {
+fn incircle_perturbed(a: &ExactPoint2, b: &ExactPoint2, c: &ExactPoint2, d: &ExactPoint2) -> Sign {
     for i in ranked(&[a.0, b.0, c.0, d.0]) {
         let [p, q, r] = match i {
             0 => [b, c, d],
