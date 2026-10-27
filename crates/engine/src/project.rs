@@ -78,6 +78,8 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let steps: Vec<Value> = script.into_iter().filter(|step| solve || !is_solve(step)).collect();
     let mut fresh = s.fresh();
     fresh.run_script(&Value::Array(steps))?;
+    fresh.saved = fresh.history.clone();
+    fresh.sample = Some(name.to_owned());
     *s = fresh;
     Ok(s.summary())
 }
@@ -124,12 +126,47 @@ pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
 /// Most bytes of a project file read.
 const MAX_PROJECT_BYTES: u64 = 64 << 20;
 
+/// The extension of project files.
+pub const EXTENSION: &str = "emcraft";
+
 pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
+    let path = match p.string("path").optional()? {
+        Some(path) if path.trim().is_empty() => return Err(p.error("path", "must not be empty")),
+        Some(path) if std::path::Path::new(path).extension().is_none() => format!("{path}.{EXTENSION}"),
+        Some(path) => path.to_owned(),
+        None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
+    };
     let doc = json!({"format": "emcraft-project", "version": 1, "history": s.history, "model": s.model});
     let text = serde_json::to_string_pretty(&doc).map_err(EngineError::failed)?;
-    std::fs::write(path, text).map_err(|e| EngineError::Failed(format!("cannot write {path}: {e}")))?;
-    Ok(json!({"path": path, "commands": s.history.len()}))
+    write_atomically(&path, text.as_bytes())?;
+    s.path = Some(path.clone());
+    s.saved = s.history.clone();
+    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len()}))
+}
+
+/// Writes `bytes` to a temporary file beside `path` and renames it over: a crash or a full
+/// disk leaves the old file whole.
+fn write_atomically(path: &str, bytes: &[u8]) -> Result<()> {
+    let target = std::path::Path::new(path);
+    let temp = target.with_extension(format!("{}.tmp", target.extension().and_then(|e| e.to_str()).unwrap_or(EXTENSION)));
+    let fail = |e: std::io::Error| EngineError::Failed(format!("cannot write {path}: {e}"));
+    std::fs::write(&temp, bytes).map_err(fail)?;
+    std::fs::rename(&temp, target).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        fail(e)
+    })
+}
+
+/// An empty project with the session's display units.
+pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
+    let mut fresh = s.fresh();
+    if s.display != fresh.display {
+        let units = json!({"length": s.display.length.symbol(), "frequency": s.display.frequency.symbol()});
+        fresh.execute("units.set", &units)?;
+        fresh.saved = fresh.history.clone();
+    }
+    *s = Session { undo: std::mem::take(&mut s.undo), ..fresh };
+    Ok(s.summary())
 }
 
 /// Opens a project: its history replayed in a fresh session (so the mesh comes back the same).
@@ -145,8 +182,10 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     fresh.run_script(&history)?;
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
+    fresh.path = Some(path.to_owned());
+    fresh.saved = fresh.history.clone();
     *s = Session { undo: std::mem::take(&mut s.undo), ..fresh };
-    Ok(json!({"path": path, "commands": s.history.len(), "summary": s.summary()}))
+    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "summary": s.summary()}))
 }
 
 pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {

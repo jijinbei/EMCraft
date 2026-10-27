@@ -631,3 +631,37 @@ fn every_choice_a_command_lists_is_one_its_parameter_reads() {
     assert_eq!(component.choices, names.as_slice());
     assert!(component.choices.iter().all(|c| c.parse::<crate::view::Component>().is_ok()));
 }
+
+#[test]
+fn projects_save_as_emcraft_files_and_know_when_they_changed() {
+    let dir = std::env::temp_dir().join(format!("emcraft-project-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let mut s = Session::new();
+    assert!(!s.is_dirty() && s.name() == "Untitled");
+    // No file yet: a path is needed.
+    assert!(matches!(s.execute("file.save", &json!({})), Err(EngineError::Params(_))));
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.1})).unwrap();
+    assert!(s.is_dirty());
+    let base = dir.join("filter").to_string_lossy().into_owned();
+    let r = s.execute("file.save", &json!({"path": base})).unwrap();
+    let path = format!("{base}.emcraft");
+    assert_eq!(r["path"], json!(path));
+    assert!(!s.is_dirty() && s.name() == "filter" && std::path::Path::new(&path).exists());
+    // Changed, then saved again to its own file; undo back to the saved state is clean.
+    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    assert!(s.is_dirty());
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(!s.is_dirty());
+    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    s.execute("file.save", &json!({})).unwrap();
+    assert!(!s.is_dirty());
+    // Open: the same model, clean, with its path; new: empty and untitled, units kept.
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    assert!(!t.is_dirty() && t.path.as_deref() == Some(path.as_str()) && t.model.band.is_some());
+    t.execute("units.set", &json!({"frequency": "MHz"})).unwrap();
+    t.execute("file.new", &json!({})).unwrap();
+    assert!(t.path.is_none() && !t.is_dirty() && t.model.band.is_none());
+    assert_eq!(t.display.frequency, emcraft_model::units::Frequency::Megahertz);
+    let _ = std::fs::remove_dir_all(&dir);
+}

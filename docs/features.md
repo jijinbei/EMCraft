@@ -27,15 +27,21 @@ The meshed model's unknowns at `order`, the factor's memory and the time per fre
 
 ## `file.save` — Save project
 
-Saves the project as JSON: the model and the commands that built it (a script).
+Saves the project as an `.emcraft` file (JSON: the model and the commands that built it, a script), to `path` or, without one, to the file it was opened from or last saved to. A path without an extension gets `.emcraft`.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `path` | string |  | yes | the file |
+| `path` | string |  | no | the file (default: the project's own) |
+
+## `file.new` — New project
+
+Replaces the session with an empty project (vacuum only), keeping the display units; undo goes back.
+
+No parameters.
 
 ## `file.open` — Open project
 
-Opens a project saved by file.save: its commands are replayed, so the mesh comes back the same; results are solved again.
+Opens a project saved by file.save (`.emcraft`, or a `.json` of the same form): its commands are replayed, so the mesh comes back the same; results are solved again.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

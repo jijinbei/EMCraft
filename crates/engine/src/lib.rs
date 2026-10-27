@@ -259,6 +259,13 @@ pub struct Session {
     /// latest results were solved at (older results are stale).
     pub revision: u64,
     pub solved_revision: Option<u64>,
+    /// The project file the session was opened from or last saved to (`.emcraft`).
+    pub path: Option<String>,
+    /// The sample the session was opened from, which names it until it is saved.
+    pub sample: Option<String>,
+    /// The history as last saved or opened: the session has unsaved changes when its history
+    /// differs (an undo back to it is clean again).
+    pub saved: Vec<Value>,
 }
 
 impl Session {
@@ -269,6 +276,19 @@ impl Session {
     /// A fresh session with this one's limits.
     pub(crate) fn fresh(&self) -> Session {
         Session { limits: self.limits, ..Session::default() }
+    }
+
+    /// Whether the model changed since it was last saved or opened.
+    pub fn is_dirty(&self) -> bool {
+        self.history != self.saved
+    }
+
+    /// The project's name: its file's stem, the sample's name, or "Untitled".
+    pub fn name(&self) -> String {
+        match self.path.as_deref().and_then(|p| std::path::Path::new(p).file_stem()) {
+            Some(stem) => stem.to_string_lossy().into_owned(),
+            None => self.sample.clone().unwrap_or_else(|| "Untitled".to_owned()),
+        }
     }
 
     /// Runs a command. Unknown parameters are refused; a failed or panicking command leaves the
