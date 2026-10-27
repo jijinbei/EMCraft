@@ -14,7 +14,7 @@ use emcraft_tetmesh::surface::{BoundarySurface, SurfaceOptions};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 use emcraft_tetmesh::tet::{QualityOptions, quality_mesh};
 
-use crate::{MAX_TETS, MeshError, Result};
+use crate::{MAX_TETS, MeshError, Result, too_large};
 
 /// The mesher's own point and vector types: `emcraft_tetmesh` depends on no workspace crate, so
 /// points cross into it and back here, component for component (no arithmetic).
@@ -39,6 +39,7 @@ fn model_vec(v: MVec) -> Vec3 {
 
 /// A tessellated body: triangles tagged by face, each face's exact surface, and which faces are
 /// the ends a port may close (z = 0, z = length).
+#[derive(Clone, Debug, Default)]
 struct Tessellation {
     positions: Vec<Point3>,
     triangles: Vec<[u32; 3]>,
@@ -62,14 +63,7 @@ fn divisions(len: f64, size: f64) -> usize {
 /// A box [0, x] × [0, y] × [0, z]: faces x0, x1, y0, y1, z0 (0..6 in that order), each a grid
 /// of about `size`, triangles oriented outwards.
 fn tessellate_box(size_xyz: Vec3, h: f64) -> Tessellation {
-    let mut t = Tessellation {
-        positions: Vec::new(),
-        triangles: Vec::new(),
-        tri_face: Vec::new(),
-        analytic: Vec::new(),
-        start_face: Some(4),
-        end_face: Some(5),
-    };
+    let mut t = Tessellation { start_face: Some(4), end_face: Some(5), ..Tessellation::default() };
     let n = [0, 1, 2].map(|d| divisions(size_xyz[d], h));
     // Shared vertices on the box's surface: a map from integer lattice coordinates.
     let mut index = std::collections::HashMap::new();
@@ -112,14 +106,7 @@ fn tessellate_box(size_xyz: Vec3, h: f64) -> Tessellation {
 
 /// A cylinder about z, radius r, from z = 0 to `len`: faces side (0), bottom (1), top (2).
 fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
-    let mut t = Tessellation {
-        positions: Vec::new(),
-        triangles: Vec::new(),
-        tri_face: Vec::new(),
-        analytic: Vec::new(),
-        start_face: Some(1),
-        end_face: Some(2),
-    };
+    let mut t = Tessellation { start_face: Some(1), end_face: Some(2), ..Tessellation::default() };
     t.analytic.push(Some(AnalyticSurface::Cylinder { origin: MPoint::ORIGIN, axis: MVec::new(0.0, 0.0, 1.0), radius: r }));
     t.analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, -1.0), point: MPoint::ORIGIN }));
     t.analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, 1.0), point: MPoint::new(0.0, 0.0, len) }));
@@ -174,8 +161,7 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
 /// A sphere about the origin: an icosahedron subdivided until its edges are about `size`, its
 /// vertices on the sphere; one face (0).
 fn tessellate_sphere(r: f64, h: f64) -> Tessellation {
-    let mut t =
-        Tessellation { positions: Vec::new(), triangles: Vec::new(), tri_face: Vec::new(), analytic: Vec::new(), start_face: None, end_face: None };
+    let mut t = Tessellation::default();
     t.analytic.push(Some(AnalyticSurface::Sphere { center: MPoint::ORIGIN, radius: r }));
     let g = (1.0 + 5f64.sqrt()) / 2.0;
     let raw = [
@@ -256,16 +242,7 @@ fn tessellate(shape: &Shape, size: f64) -> Tessellation {
 /// triangles on its lowest and highest z planes made the end faces a port may close, with
 /// their planes as exact surfaces.
 fn tessellate_surface(shape: &Shape) -> Tessellation {
-    let Shape::Surface { positions, triangles, tags, .. } = shape else {
-        return Tessellation {
-            positions: Vec::new(),
-            triangles: Vec::new(),
-            tri_face: Vec::new(),
-            analytic: Vec::new(),
-            start_face: None,
-            end_face: None,
-        };
-    };
+    let Shape::Surface { positions, triangles, tags, .. } = shape else { return Tessellation::default() };
     let mut tri_face = tags.clone();
     let faces = tags.iter().map(|t| t + 1).max().unwrap_or(0);
     let mut analytic = vec![None; faces as usize];
@@ -459,9 +436,7 @@ fn placed(t: Tessellation, at: Point3) -> Tessellation {
         positions: t.positions.into_iter().map(shift).collect(),
         triangles: t.triangles,
         tri_face: (0..n).collect(),
-        analytic: Vec::new(),
-        start_face: None,
-        end_face: None,
+        ..Tessellation::default()
     }
 }
 
@@ -479,8 +454,7 @@ fn append(a: &mut Tessellation, b: &Tessellation, base: u32, outward: bool) {
 /// of it), one tag per triangle again.
 fn extract(mesh: &RegionMesh, base: u32, count: u32, inside: bool) -> Tessellation {
     let mut index = std::collections::HashMap::new();
-    let mut t =
-        Tessellation { positions: Vec::new(), triangles: Vec::new(), tri_face: Vec::new(), analytic: Vec::new(), start_face: None, end_face: None };
+    let mut t = Tessellation::default();
     for (nodes, tet, face) in &mesh.boundary {
         if !(base..base + count).contains(face) {
             continue;
@@ -745,6 +719,11 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
     solid_refined(model, sizes, curved, &[])
 }
 
+/// The tetrahedra a body of `volume` meshed at `size` has, about.
+fn tets_in(volume: f64, size: f64) -> f64 {
+    volume / (size.powi(3) / 6.0) * 1.5
+}
+
 /// The tetrahedra local refinements add, about: the body's bounding box in voxels (at most 64
 /// a side), each at the smallest size of the balls that reach it, counted against the uniform
 /// `size`.
@@ -752,12 +731,12 @@ fn refined_estimate(points: &[Point3], size: f64, refine: &[Refinement]) -> f64 
     let Some(Aabb { min: lo, max: hi }) = Aabb::around(points.iter().copied()) else { return 0.0 };
     let ext = hi - lo;
     let cell = (ext.x.max(ext.y).max(ext.z) / 64.0).max(f64::MIN_POSITIVE);
-    let dims = [ext.x, ext.y, ext.z].map(|e| ((e / cell).ceil() as usize).clamp(1, 64));
+    let voxels = Voxels { lo, step: Vec3::new(cell, cell, cell), dims: [ext.x, ext.y, ext.z].map(|e| ((e / cell).ceil() as usize).clamp(1, 64)) };
+    let dims = voxels.dims;
     let mut h = vec![size; dims[0] * dims[1] * dims[2]];
-    let index = |v: f64, d: usize| (((v - lo[d]) / cell).floor().max(0.0) as usize).min(dims[d] - 1);
     for r in refine {
-        let a = [0, 1, 2].map(|d| index(r.center[d] - r.radius, d));
-        let b = [0, 1, 2].map(|d| index(r.center[d] + r.radius, d));
+        let a = [0, 1, 2].map(|d| voxels.index(r.center[d] - r.radius, d));
+        let b = [0, 1, 2].map(|d| voxels.index(r.center[d] + r.radius, d));
         for k in a[2]..=b[2] {
             for j in a[1]..=b[1] {
                 for i in a[0]..=b[0] {
@@ -769,7 +748,7 @@ fn refined_estimate(points: &[Point3], size: f64, refine: &[Refinement]) -> f64 
         }
     }
     let voxel = cell.powi(3);
-    h.iter().map(|v| voxel / (v.powi(3) / 6.0) * 1.5 - voxel / (size.powi(3) / 6.0) * 1.5).sum::<f64>().max(0.0)
+    h.iter().map(|v| tets_in(voxel, *v) - tets_in(voxel, size)).sum::<f64>().max(0.0)
 }
 
 /// The most local refinements one mesh takes.
@@ -785,41 +764,40 @@ pub struct Refinement {
     pub size: f64,
 }
 
-/// [`solid_sized`] refined locally: the size field is at most each refinement's size in its ball,
-/// graded away from it.
-pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refinement]) -> Result<Mesh> {
+/// The refinements as the mesher's local sizes (balls), checked.
+fn local_sizes(refine: &[Refinement]) -> Result<Vec<LocalSize>> {
     if refine.len() > MAX_REFINEMENTS {
         return Err(MeshError::Invalid { what: "refinement".into(), why: format!("{} local sizes; the limit is {MAX_REFINEMENTS}", refine.len()) });
     }
-    let mut locals = Vec::with_capacity(refine.len());
-    for r in refine {
-        if ![r.center.x, r.center.y, r.center.z].iter().all(|v| v.is_finite()) {
-            return Err(MeshError::Invalid { what: "refinement".into(), why: "a centre is not finite".into() });
-        }
-        positive("refinement size", r.size)?;
-        positive("refinement radius", r.radius)?;
-        locals.push(LocalSize { region: Region::Sphere { center: mesher_point(r.center), radius: r.radius }, size: r.size });
-    }
-    let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
-    let (material, _) = model.material(&s.material)?;
-    let size = positive("element size", sizes.of(material))?;
-    let mut inner_size = Vec::with_capacity(model.inclusions.len());
-    let mut estimate = s.shape.volume() / (size.powi(3) / 6.0) * 1.5;
-    for inc in &model.inclusions {
-        let h = match &inc.material {
-            Some(name) => positive("element size", sizes.of(model.material(name)?.0))?,
-            None => size,
-        };
-        inner_size.push(h);
-        estimate += inc.shape.volume() / (h.powi(3) / 6.0) * 1.5;
-    }
-    if !(estimate <= MAX_TETS as f64) {
-        return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
-    }
-    // A spherical layer (model.open, shape sphere): the solid's region is the ball inside the
-    // layer's inner sphere, its surface an interface (tagged per triangle and frozen, like an
-    // inclusion's) with the layer's shell, meshed as a region of its own between it and the
-    // solid's sphere — so the shell's tetrahedra are a layer of their own.
+    refine
+        .iter()
+        .map(|r| {
+            if !r.center.is_finite() {
+                return Err(MeshError::Invalid { what: "refinement".into(), why: "a centre is not finite".into() });
+            }
+            positive("refinement size", r.size)?;
+            positive("refinement radius", r.radius)?;
+            Ok(LocalSize { region: Region::Sphere { center: mesher_point(r.center), radius: r.radius }, size: r.size })
+        })
+        .collect()
+}
+
+/// The element size of each inclusion: its material's for a dielectric, the solid's `size`
+/// for a conductor (a hole).
+fn inclusion_sizes(model: &Model, sizes: &Sizes, size: f64) -> Result<Vec<f64>> {
+    model
+        .inclusions
+        .iter()
+        .map(|inc| match &inc.material {
+            Some(name) => Ok(positive("element size", sizes.of(model.material(name)?.0))?),
+            None => Ok(size),
+        })
+        .collect()
+}
+
+/// The model's spherical layer, if it has one, checked: no features with it, and a positive
+/// inner radius.
+fn spherical_layer(model: &Model) -> Result<Option<SphericalLayer>> {
     let layer = model.spherical_layer();
     if let Some(SphericalLayer { inner, .. }) = layer {
         if !model.features.is_empty() {
@@ -829,6 +807,24 @@ pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refin
             return Err(MeshError::Invalid { what: "spherical layer".into(), why: "its inner radius must be positive".into() });
         }
     }
+    Ok(layer)
+}
+
+/// [`solid_sized`] refined locally: the size field is at most each refinement's size in its ball,
+/// graded away from it.
+pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refinement]) -> Result<Mesh> {
+    let locals = local_sizes(refine)?;
+    let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
+    let (material, _) = model.material(&s.material)?;
+    let size = positive("element size", sizes.of(material))?;
+    let inner_size = inclusion_sizes(model, sizes, size)?;
+    let estimate = model.inclusions.iter().zip(&inner_size).fold(tets_in(s.shape.volume(), size), |e, (inc, h)| e + tets_in(inc.shape.volume(), *h));
+    too_large(estimate)?;
+    // A spherical layer (model.open, shape sphere): the solid's region is the ball inside the
+    // layer's inner sphere, its surface an interface (tagged per triangle and frozen, like an
+    // inclusion's) with the layer's shell, meshed as a region of its own between it and the
+    // solid's sphere — so the shell's tetrahedra are a layer of their own.
+    let layer = spherical_layer(model)?;
     let mut main = match layer {
         Some(SphericalLayer { inner, .. }) => {
             let ball = Shape::Sphere { radius: inner };
@@ -837,194 +833,270 @@ pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refin
         None => tessellate(&s.shape, size),
     };
     if !refine.is_empty() {
-        let extra = refined_estimate(&main.positions, size, refine);
-        if !(estimate + extra <= MAX_TETS as f64) {
-            return Err(MeshError::TooLarge { tets: (estimate + extra).min(usize::MAX as f64) as usize, limit: MAX_TETS });
-        }
+        too_large(estimate + refined_estimate(&main.positions, size, refine))?;
     }
     for (k, f) in model.features.iter().enumerate() {
         main = combined(main, f, k, &s.shape, size)?;
     }
-    let (start_face, end_face) = (main.start_face, main.end_face);
-    // The interfaces' current triangulations, oriented out of each inclusion. Boundary recovery
-    // may add points on an interface in one region; that region's triangulation then becomes the
-    // other's input, until both keep the same (frozen) triangles.
-    let mut interfaces: Vec<Tessellation> = model
-        .inclusions
-        .iter()
-        .zip(&inner_size)
-        .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h), inc.material.is_none())), inc.at))
-        .collect();
-    // Tags: the solid's faces (with a spherical layer, the inner sphere's triangles), then each
-    // interface's triangles in turn.
-    let mut first_tag = 0;
-    let mut bases: Vec<(u32, u32)> = Vec::new();
-    let mut regions: Vec<(RegionMesh, u32)> = Vec::new();
-    for _ in 0..6 {
-        first_tag = main.tri_face.iter().map(|f| f + 1).max().unwrap_or(0);
-        let mut outer = Tessellation {
-            positions: main.positions.clone(),
-            triangles: main.triangles.clone(),
-            tri_face: main.tri_face.clone(),
-            analytic: main.analytic.clone(),
-            start_face,
-            end_face,
-        };
-        bases.clear();
-        let mut next = first_tag;
-        for t in &interfaces {
-            let n = t.triangles.len() as u32;
-            append(&mut outer, t, next, false);
-            bases.push((next, n));
-            next += n;
-        }
-        let frozen_from = if layer.is_some() { 0 } else { first_tag };
-        let outer_mesh = region(&outer, size, (frozen_from..next).collect(), &locals)?;
-        let mut changed = false;
-        for (k, t) in interfaces.iter_mut().enumerate() {
-            let seen = extract(&outer_mesh, bases[k].0, bases[k].1, false);
-            if !same_triangles(&seen, t, size) {
-                *t = seen;
-                changed = true;
-            }
-        }
-        // The layer's shell: the solid's sphere outside, the inner sphere as a hole (tags 1..).
-        let shell = match layer {
-            Some(_) => {
-                let seen = extract(&outer_mesh, 0, first_tag, true);
-                if !same_triangles(&seen, &main, size) {
-                    main = seen;
-                    changed = true;
-                }
-                let mut t = tessellate(&s.shape, size);
-                append(&mut t, &main, 1, false);
-                let n = main.triangles.len() as u32;
-                let shell = region(&t, size, (1..1 + n).collect(), &locals)?;
-                let seen = extract(&shell, 1, n, false);
-                if !same_triangles(&seen, &main, size) {
-                    main = seen;
-                    changed = true;
-                }
-                Some(shell)
-            }
-            None => None,
-        };
-        regions = vec![(outer_mesh, material as u32)];
-        regions.extend(shell.map(|m| (m, material as u32)));
-        for (k, inc) in model.inclusions.iter().enumerate() {
-            let Some(name) = &inc.material else { continue };
-            let (m, _) = model.material(name)?;
-            let n = interfaces[k].triangles.len() as u32;
-            let inner = region(&interfaces[k], inner_size[k], (0..n).collect(), &locals)?;
-            let seen = extract(&inner, 0, n, true);
-            if !same_triangles(&seen, &interfaces[k], size) {
-                interfaces[k] = seen;
-                changed = true;
-            }
-            regions.push((inner, m as u32));
-        }
-
-        if !changed {
-            break;
-        }
-    }
-    // Join: nodes with the same coordinates (the frozen interfaces' vertices) become one.
-    // Outer-region tags on a dielectric's interface (the inner regions' tags are all interface);
-    // with a spherical layer, region 1 is its shell (tag 0 its outer wall, the rest the inner
-    // sphere) and the solid region's own faces are that inner sphere.
-    let shell = if layer.is_some() { 1 } else { usize::MAX };
-    let dielectric = |r: usize, face: u32| {
-        if r == shell {
-            return face >= 1;
-        }
-        r > 0
-            || (layer.is_some() && face < first_tag)
-            || bases.iter().zip(&model.inclusions).any(|((b, n), inc)| inc.material.is_some() && (*b..b + n).contains(&face))
-    };
-    let mut index: std::collections::HashMap<[i64; 3], u32> = std::collections::HashMap::new();
-    let mut nodes: Vec<Point3> = Vec::new();
-    let mut tets = Vec::new();
-    let mut tet_material = Vec::new();
-    let mut boundary = Vec::new();
-    let mut interface_sides: std::collections::HashMap<[u32; 3], u32> = std::collections::HashMap::new();
-    for (r, (mesh, mat)) in regions.iter().enumerate() {
-        // Coincident within 1e-9 of the element size (the regions' snapping to the exact surfaces
-        // may differ in the last bits): a hash on cells of that size, checking the neighbours.
-        let tol = 1e-9 * size;
-        let key = |p: &Point3| [p.x, p.y, p.z].map(|v| (v / tol).floor() as i64);
-        let map: Vec<u32> = mesh
-            .points
-            .iter()
-            .map(|p| {
-                let k = key(p);
-                for dx in -1..=1 {
-                    for dy in -1..=1 {
-                        for dz in -1..=1 {
-                            if let Some(&i) = index.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) {
-                                let q = nodes[i as usize];
-                                if (q - *p).iter().all(|d| d.abs() <= tol) {
-                                    return i;
-                                }
-                            }
-                        }
-                    }
-                }
-                nodes.push(*p);
-                let i = (nodes.len() - 1) as u32;
-                index.insert(k, i);
-                i
-            })
-            .collect();
-        let first = tets.len() as u32;
-        tets.extend(mesh.tets.iter().map(|t| t.map(|v| map[v as usize])));
-        tet_material.extend(std::iter::repeat_n(*mat, mesh.tets.len()));
-        for (n, tet, face) in &mesh.boundary {
-            let n = n.map(|v| map[v as usize]);
-            if dielectric(r, *face) {
-                let mut key = n;
-                key.sort_unstable();
-                *interface_sides.entry(key).or_default() += 1;
-                continue;
-            }
-            if r == shell {
-                boundary.push(BoundaryFace { nodes: n, tet: first + tet, tag: Boundary::Pec });
-                continue;
-            }
-            if r > 0 {
-                continue;
-            }
-            let tag = if Some(*face) == start_face {
-                Boundary::Port(0)
-            } else if Some(*face) == end_face {
-                Boundary::Port(1)
-            } else {
-                Boundary::Pec
-            };
-            boundary.push(BoundaryFace { nodes: n, tet: first + tet, tag });
-        }
-    }
-    // Every interface triangle seen from both sides: the regions conform.
-    if interface_sides.values().any(|&c| c != 2) {
-        return Err(MeshError::Invalid {
-            what: "tetrahedral meshing".into(),
-            why: "an interface between two materials was not kept the same from both sides (boundary recovery added points on it); try another element size".into(),
-        });
-    }
-    let mut mesh = Mesh { tet_material, nodes, tets, boundary, grid: None, buckets: None, curved: Vec::new() };
+    let body = Body { model, shape: &s.shape, material: material as u32, size, inner_size, locals, shell: layer.is_some() };
+    let regions = body.regions(main)?;
+    let mut mesh = body.join(&regions)?;
     if curved {
-        let surfaces: Vec<Curved> = std::iter::once(Curved::of(&s.shape, Point3::ORIGIN, Axis::Z))
-            .chain(model.inclusions.iter().map(|i| Curved::of(&i.shape, i.at, Axis::Z)))
-            .chain(model.features.iter().map(|f| Curved::of(&f.shape, f.at, f.axis)))
-            .flatten()
-            .collect();
-        // One topology serves both: moving nodes does not change it.
-        let topo = crate::Topology::new(&mesh);
-        snap_interfaces(&mut mesh, &topo, &surfaces, size);
-        mesh.curved = curve(&mesh, &topo, &surfaces, size);
-        unfold(&mut mesh);
+        bend(&mut mesh, model, &s.shape, size);
     }
     mesh.buckets = Some(buckets(&mesh));
     Ok(mesh)
+}
+
+/// What a solid is meshed from: the model (its inclusions), the solid's shape, material and
+/// element size, each inclusion's size, the local sizes, and whether a spherical layer's shell
+/// is a region of its own.
+struct Body<'a> {
+    model: &'a Model,
+    shape: &'a Shape,
+    material: u32,
+    size: f64,
+    inner_size: Vec<f64>,
+    locals: Vec<LocalSize>,
+    shell: bool,
+}
+
+/// A range of face tags: `first..first + count`.
+#[derive(Clone, Copy, Debug)]
+struct Tags {
+    first: u32,
+    count: u32,
+}
+
+impl Tags {
+    fn contains(self, tag: u32) -> bool {
+        (self.first..self.first + self.count).contains(&tag)
+    }
+}
+
+/// The regions of a solid, meshed so that they agree on their interfaces: the outer region (the
+/// solid around its inclusions, with a spherical layer the ball inside it), the layer's shell
+/// when there is one, then each dielectric inclusion, each with its material.
+struct Regions {
+    meshes: Vec<(RegionMesh, u32)>,
+    /// The solid's faces that are ports.
+    start_face: Option<u32>,
+    end_face: Option<u32>,
+    /// The first tag of the inclusions' interfaces in the outer region (after the solid's own
+    /// faces, with a spherical layer the inner sphere's triangles).
+    first_tag: u32,
+    /// Each inclusion's interface tags in the outer region.
+    interfaces: Vec<Tags>,
+}
+
+/// `seen` in place of `current` when its triangles differ (corners within 1e-9 of the size);
+/// whether it did.
+fn adopt(current: &mut Tessellation, seen: Tessellation, size: f64) -> bool {
+    let differs = !same_triangles(&seen, current, size);
+    if differs {
+        *current = seen;
+    }
+    differs
+}
+
+/// The most rounds of meshing the regions again until their interfaces agree.
+const MAX_INTERFACE_ROUNDS: usize = 6;
+
+impl Body<'_> {
+    /// Meshes the regions: boundary recovery may add points on an interface in one region; that
+    /// region's triangulation then becomes the other's input, until both keep the same (frozen)
+    /// triangles (at most [`MAX_INTERFACE_ROUNDS`] rounds). `main` is the solid's tessellation
+    /// (with a spherical layer, its inner sphere's).
+    fn regions(&self, mut main: Tessellation) -> Result<Regions> {
+        let (model, size) = (self.model, self.size);
+        // The interfaces' current triangulations, oriented out of each inclusion.
+        let mut interfaces: Vec<Tessellation> = model
+            .inclusions
+            .iter()
+            .zip(&self.inner_size)
+            .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h), inc.material.is_none())), inc.at))
+            .collect();
+        let mut out = Regions { meshes: Vec::new(), start_face: main.start_face, end_face: main.end_face, first_tag: 0, interfaces: Vec::new() };
+        for _ in 0..MAX_INTERFACE_ROUNDS {
+            // Tags: the solid's faces (with a spherical layer, the inner sphere's triangles), then
+            // each interface's triangles in turn.
+            out.first_tag = main.tri_face.iter().map(|f| f + 1).max().unwrap_or(0);
+            let mut outer = main.clone();
+            out.interfaces.clear();
+            let mut next = out.first_tag;
+            for t in &interfaces {
+                let count = t.triangles.len() as u32;
+                append(&mut outer, t, next, false);
+                out.interfaces.push(Tags { first: next, count });
+                next += count;
+            }
+            let frozen_from = if self.shell { 0 } else { out.first_tag };
+            let outer_mesh = region(&outer, size, (frozen_from..next).collect(), &self.locals)?;
+            let mut changed = false;
+            for (t, tags) in interfaces.iter_mut().zip(&out.interfaces) {
+                changed |= adopt(t, extract(&outer_mesh, tags.first, tags.count, false), size);
+            }
+            // The layer's shell: the solid's sphere outside, the inner sphere as a hole (tags 1..).
+            let shell = if self.shell {
+                changed |= adopt(&mut main, extract(&outer_mesh, 0, out.first_tag, true), size);
+                let mut t = tessellate(self.shape, size);
+                append(&mut t, &main, 1, false);
+                let n = main.triangles.len() as u32;
+                let shell = region(&t, size, (1..1 + n).collect(), &self.locals)?;
+                changed |= adopt(&mut main, extract(&shell, 1, n, false), size);
+                Some(shell)
+            } else {
+                None
+            };
+            out.meshes = vec![(outer_mesh, self.material)];
+            out.meshes.extend(shell.map(|m| (m, self.material)));
+            for ((inc, t), h) in model.inclusions.iter().zip(&mut interfaces).zip(&self.inner_size) {
+                let Some(name) = &inc.material else { continue };
+                let (m, _) = model.material(name)?;
+                let n = t.triangles.len() as u32;
+                let inner = region(t, *h, (0..n).collect(), &self.locals)?;
+                changed |= adopt(t, extract(&inner, 0, n, true), size);
+                out.meshes.push((inner, m as u32));
+            }
+            if !changed {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    /// Whether face `face` of region `r` lies on an interface with a dielectric (the outer
+    /// region's tags on a dielectric's interface; every face of an inner region): with a
+    /// spherical layer, region 1 is its shell (tag 0 its outer wall, the rest the inner sphere)
+    /// and the solid region's own faces are that inner sphere.
+    fn on_dielectric(&self, regions: &Regions, r: usize, face: u32) -> bool {
+        if self.shell && r == 1 {
+            return face >= 1;
+        }
+        r > 0
+            || (self.shell && face < regions.first_tag)
+            || regions.interfaces.iter().zip(&self.model.inclusions).any(|(tags, inc)| inc.material.is_some() && tags.contains(face))
+    }
+
+    /// The regions joined into one mesh: nodes with the same coordinates (the frozen interfaces'
+    /// vertices) become one; the outer region's faces are walls or ports, the shell's outer wall
+    /// a wall, and every interface triangle must be seen from both sides.
+    fn join(&self, regions: &Regions) -> Result<Mesh> {
+        let shell = if self.shell { 1 } else { usize::MAX };
+        let mut nodes = Nodes::new(1e-9 * self.size);
+        let mut tets = Vec::new();
+        let mut tet_material = Vec::new();
+        let mut boundary = Vec::new();
+        let mut interface_sides: std::collections::HashMap<[u32; 3], u32> = std::collections::HashMap::new();
+        for (r, (mesh, mat)) in regions.meshes.iter().enumerate() {
+            let map: Vec<u32> = mesh.points.iter().map(|p| nodes.id(*p)).collect();
+            let first = tets.len() as u32;
+            tets.extend(mesh.tets.iter().map(|t| t.map(|v| map[v as usize])));
+            tet_material.extend(std::iter::repeat_n(*mat, mesh.tets.len()));
+            for (n, tet, face) in &mesh.boundary {
+                let n = n.map(|v| map[v as usize]);
+                if self.on_dielectric(regions, r, *face) {
+                    let mut key = n;
+                    key.sort_unstable();
+                    *interface_sides.entry(key).or_default() += 1;
+                    continue;
+                }
+                let tag = match r {
+                    0 if Some(*face) == regions.start_face => Boundary::Port(0),
+                    0 if Some(*face) == regions.end_face => Boundary::Port(1),
+                    0 => Boundary::Pec,
+                    r if r == shell => Boundary::Pec,
+                    _ => continue,
+                };
+                boundary.push(BoundaryFace { nodes: n, tet: first + tet, tag });
+            }
+        }
+        // Every interface triangle seen from both sides: the regions conform.
+        if interface_sides.values().any(|&c| c != 2) {
+            return Err(MeshError::Invalid {
+                what: "tetrahedral meshing".into(),
+                why: "an interface between two materials was not kept the same from both sides (boundary recovery added points on it); try another element size".into(),
+            });
+        }
+        Ok(Mesh { tet_material, nodes: nodes.points, tets, boundary, grid: None, buckets: None, curved: Vec::new() })
+    }
+}
+
+/// The nodes of a joined mesh: a point within `tol` of one already there (the regions' snapping
+/// to the exact surfaces may differ in the last bits) is that node, found through a hash on
+/// cells of that size, checking the neighbours.
+struct Nodes {
+    tol: f64,
+    index: std::collections::HashMap<[i64; 3], u32>,
+    points: Vec<Point3>,
+}
+
+impl Nodes {
+    fn new(tol: f64) -> Nodes {
+        Nodes { tol, index: std::collections::HashMap::new(), points: Vec::new() }
+    }
+
+    /// The node at `p`, added when there is none.
+    fn id(&mut self, p: Point3) -> u32 {
+        let tol = self.tol;
+        let k = [p.x, p.y, p.z].map(|v| (v / tol).floor() as i64);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if let Some(&i) = self.index.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) {
+                        let q = self.points[i as usize];
+                        if (q - p).iter().all(|d| d.abs() <= tol) {
+                            return i;
+                        }
+                    }
+                }
+            }
+        }
+        self.points.push(p);
+        let i = (self.points.len() - 1) as u32;
+        self.index.insert(k, i);
+        i
+    }
+}
+
+/// Bends the mesh onto the model's curved surfaces (the solid's, the inclusions' and the
+/// features'): interface vertices snapped onto them, the edges on them curved, and the curved
+/// edges of tetrahedra that would fold straightened again.
+fn bend(mesh: &mut Mesh, model: &Model, shape: &Shape, size: f64) {
+    let surfaces: Vec<Curved> = std::iter::once(Curved::of(shape, Point3::ORIGIN, Axis::Z))
+        .chain(model.inclusions.iter().map(|i| Curved::of(&i.shape, i.at, Axis::Z)))
+        .chain(model.features.iter().map(|f| Curved::of(&f.shape, f.at, f.axis)))
+        .flatten()
+        .collect();
+    // One topology serves both: moving nodes does not change it.
+    let topo = crate::Topology::new(mesh);
+    snap_interfaces(mesh, &topo, &surfaces, size);
+    mesh.curved = curve(mesh, &topo, &surfaces, size);
+    unfold(mesh);
+}
+
+/// A uniform grid of boxes over space: `dims` boxes of `step` along each axis from `lo`.
+struct Voxels {
+    lo: Point3,
+    step: Vec3,
+    dims: [usize; 3],
+}
+
+impl Voxels {
+    fn of(b: &Buckets) -> Voxels {
+        Voxels { lo: b.lo, step: b.step, dims: b.dims }
+    }
+
+    /// The box along axis `d` holding coordinate `v`, clamped to the grid.
+    fn index(&self, v: f64, d: usize) -> usize {
+        (((v - self.lo[d]) / self.step[d]).floor().max(0.0) as usize).min(self.dims[d].saturating_sub(1))
+    }
+}
+
+/// The bucket along axis `d` of a mesh's buckets holding coordinate `v`, clamped to the grid
+/// (for point location and box queries, [`crate::locate`], [`crate::tets_near`]).
+pub(crate) fn bucket_index(b: &Buckets, v: f64, d: usize) -> usize {
+    Voxels::of(b).index(v, d)
 }
 
 /// The tetrahedra binned on a uniform grid of about one tetrahedron per bucket.
@@ -1035,7 +1107,7 @@ pub fn buckets(mesh: &Mesh) -> Buckets {
     let longest = ext.iter().fold(0.0, f64::max);
     let dims = [0, 1, 2].map(|d| ((ext[d] / longest * per_side as f64).ceil() as usize).clamp(1, 512));
     let step = Vec3::new(ext.x / dims[0] as f64, ext.y / dims[1] as f64, ext.z / dims[2] as f64);
-    let index = |v: f64, d: usize| (((v - lo[d]) / step[d]).floor().max(0.0) as usize).min(dims[d] - 1);
+    let grid = Voxels { lo, step, dims };
     let nb = dims[0] * dims[1] * dims[2];
     let mut lists: Vec<Vec<u32>> = vec![Vec::new(); nb];
     for (t, tet) in mesh.tets.iter().enumerate() {
@@ -1044,8 +1116,8 @@ pub fn buckets(mesh: &Mesh) -> Buckets {
         for &n in tet {
             let p = mesh.nodes[n as usize];
             for d in 0..3 {
-                a[d] = a[d].min(index(p[d], d));
-                b[d] = b[d].max(index(p[d], d));
+                a[d] = a[d].min(grid.index(p[d], d));
+                b[d] = b[d].max(grid.index(p[d], d));
             }
         }
         for k in a[2]..=b[2] {

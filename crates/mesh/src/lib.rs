@@ -126,14 +126,13 @@ fn locate_in_buckets(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     if !p.is_finite() {
         return None;
     }
-    let mut ijk = [0usize; 3];
     for d in 0..3 {
         let f = (p[d] - b.lo[d]) / b.step[d];
         if !(f >= -1e-9 && f <= b.dims[d] as f64 + 1e-9) {
             return None;
         }
-        ijk[d] = (f.floor().max(0.0) as usize).min(b.dims[d] - 1);
     }
+    let ijk = [0, 1, 2].map(|d| solid::bucket_index(b, p[d], d));
     let cell = ijk[0] + b.dims[0] * (ijk[1] + b.dims[1] * ijk[2]);
     let (s, e) = (*b.start.get(cell)? as usize, *b.start.get(cell + 1)? as usize);
     let mut best: Option<(usize, [f64; 4], f64)> = None;
@@ -154,7 +153,7 @@ pub fn tets_near(mesh: &Mesh, region: Aabb) -> Vec<usize> {
     let Aabb { min: lo, max: hi } = region;
     let meets = |t: usize| mesh.corners(t).is_some_and(|c| Aabb::around(c).unwrap_or_default().overlaps(region));
     let Some(bk) = mesh.buckets.as_ref() else { return (0..mesh.tets.len()).filter(|&t| meets(t)).collect() };
-    let cell = |p: Point3, d: usize| ((((p[d] - bk.lo[d]) / bk.step[d]).floor().max(0.0)) as usize).min(bk.dims[d].saturating_sub(1));
+    let cell = |p: Point3, d: usize| solid::bucket_index(bk, p[d], d);
     let mut out = Vec::new();
     for k in cell(lo, 2)..=cell(hi, 2) {
         for j in cell(lo, 1)..=cell(hi, 1) {
