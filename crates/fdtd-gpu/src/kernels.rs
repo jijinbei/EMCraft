@@ -7,7 +7,52 @@
 
 use cubecl::prelude::*;
 
-use crate::{Buf, Real};
+use crate::buffer::{Buf, Real};
+
+/// One array per axis: a field's components, their coefficients, the grid's steps.
+#[derive(CubeLaunch, CubeType)]
+pub(crate) struct Xyz<F: Float> {
+    x: Box<[F]>,
+    y: Box<[F]>,
+    z: Box<[F]>,
+}
+
+/// The CPML along z of the two components with a z derivative: their auxiliary variables ψ
+/// and (b, a) per z position (ψ ← b ψ + a ∂).
+#[derive(CubeLaunch, CubeType)]
+pub(crate) struct ZCpml<F: Float> {
+    psi_x: Box<[F]>,
+    psi_y: Box<[F]>,
+    ba: Box<[F]>,
+}
+
+/// The grid's cells along each axis.
+#[derive(CubeLaunch, CubeType)]
+pub(crate) struct Cells {
+    nx: u32,
+    ny: u32,
+    nz: u32,
+}
+
+/// A lattice point: the unit's (i, j, k) on the node lattice (nx+1) × (ny+1) × (nz+1).
+#[derive(CubeType)]
+struct Point {
+    i: usize,
+    j: usize,
+    k: usize,
+    nx: usize,
+    ny: usize,
+    nz: usize,
+}
+
+#[cube]
+fn point(n: &Cells) -> Point {
+    let nx = n.nx as usize;
+    let ny = n.ny as usize;
+    let nz = n.nz as usize;
+    let pos = ABSOLUTE_POS;
+    Point { i: pos % (nx + 1), j: (pos / (nx + 1)) % (ny + 1), k: pos / ((nx + 1) * (ny + 1)), nx, ny, nz }
+}
 
 /// The index of (i, j, k) on a lattice of d0 × d1 × ….
 #[cube]
@@ -15,146 +60,99 @@ fn at(d0: usize, d1: usize, i: usize, j: usize, k: usize) -> usize {
     i + d0 * (j + d1 * k)
 }
 
-/// H from n − ½ to n + ½, with the CPML's ψ for the z derivatives; `cpml` holds (b, a) per
-/// cell centre along z.
+/// H from n − ½ to n + ½ (`c` holds dt/μ, `d` the primal steps, the CPML's (b, a) per cell
+/// centre along z).
 #[cube(launch)]
-pub(crate) fn step_h<F: Real>(
-    hx: &mut [F],
-    hy: &mut [F],
-    hz: &mut [F],
-    ex: &[F],
-    ey: &[F],
-    ez: &[F],
-    chx: &[F],
-    chy: &[F],
-    chz: &[F],
-    psi_hx: &mut [F],
-    psi_hy: &mut [F],
-    dx: &[F],
-    dy: &[F],
-    dz: &[F],
-    cpml: &[F],
-    nx: u32,
-    ny: u32,
-    nz: u32,
-) {
-    let nx = nx as usize;
-    let ny = ny as usize;
-    let nz = nz as usize;
-    let pos = ABSOLUTE_POS;
-    let i = pos % (nx + 1);
-    let j = (pos / (nx + 1)) % (ny + 1);
-    let k = pos / ((nx + 1) * (ny + 1));
+pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, c: Xyz<F>, mut cpml: ZCpml<F>, d: Xyz<F>, n: Cells) {
+    let p = point(&n);
+    let (i, j, k, nx, ny, nz) = (p.i, p.j, p.k, p.nx, p.ny, p.nz);
     let zero = F::new(0.0_f32);
     if k <= nz {
         if j < ny && k < nz {
             let id = at(nx + 1, ny, i, j, k);
-            let c = chx[id];
-            if c != zero {
-                let dez_dy = (ez[at(nx + 1, ny + 1, i, j + 1, k)] - ez[at(nx + 1, ny + 1, i, j, k)]) / dy[j];
-                let dey_dz = (ey[at(nx + 1, ny, i, j, k + 1)] - ey[at(nx + 1, ny, i, j, k)]) / dz[k];
-                let psi = cpml[2 * k] * psi_hx[id] + cpml[2 * k + 1] * dey_dz;
-                psi_hx[id] = psi;
-                hx[id] -= c * (dez_dy - dey_dz - psi);
+            let cf = c.x[id];
+            if cf != zero {
+                let dez_dy = (e.z[at(nx + 1, ny + 1, i, j + 1, k)] - e.z[at(nx + 1, ny + 1, i, j, k)]) / d.y[j];
+                let dey_dz = (e.y[at(nx + 1, ny, i, j, k + 1)] - e.y[at(nx + 1, ny, i, j, k)]) / d.z[k];
+                let psi = cpml.ba[2 * k] * cpml.psi_x[id] + cpml.ba[2 * k + 1] * dey_dz;
+                cpml.psi_x[id] = psi;
+                h.x[id] -= cf * (dez_dy - dey_dz - psi);
             }
         }
         if i < nx && k < nz {
             let id = at(nx, ny + 1, i, j, k);
-            let c = chy[id];
-            if c != zero {
-                let dex_dz = (ex[at(nx, ny + 1, i, j, k + 1)] - ex[at(nx, ny + 1, i, j, k)]) / dz[k];
-                let dez_dx = (ez[at(nx + 1, ny + 1, i + 1, j, k)] - ez[at(nx + 1, ny + 1, i, j, k)]) / dx[i];
-                let psi = cpml[2 * k] * psi_hy[id] + cpml[2 * k + 1] * dex_dz;
-                psi_hy[id] = psi;
-                hy[id] -= c * (dex_dz + psi - dez_dx);
+            let cf = c.y[id];
+            if cf != zero {
+                let dex_dz = (e.x[at(nx, ny + 1, i, j, k + 1)] - e.x[at(nx, ny + 1, i, j, k)]) / d.z[k];
+                let dez_dx = (e.z[at(nx + 1, ny + 1, i + 1, j, k)] - e.z[at(nx + 1, ny + 1, i, j, k)]) / d.x[i];
+                let psi = cpml.ba[2 * k] * cpml.psi_y[id] + cpml.ba[2 * k + 1] * dex_dz;
+                cpml.psi_y[id] = psi;
+                h.y[id] -= cf * (dex_dz + psi - dez_dx);
             }
         }
         if i < nx && j < ny {
             let id = at(nx, ny, i, j, k);
-            let c = chz[id];
-            if c != zero {
-                let dey_dx = (ey[at(nx + 1, ny, i + 1, j, k)] - ey[at(nx + 1, ny, i, j, k)]) / dx[i];
-                let dex_dy = (ex[at(nx, ny + 1, i, j + 1, k)] - ex[at(nx, ny + 1, i, j, k)]) / dy[j];
-                hz[id] -= c * (dey_dx - dex_dy);
+            let cf = c.z[id];
+            if cf != zero {
+                let dey_dx = (e.y[at(nx + 1, ny, i + 1, j, k)] - e.y[at(nx + 1, ny, i, j, k)]) / d.x[i];
+                let dex_dy = (e.x[at(nx, ny + 1, i, j + 1, k)] - e.x[at(nx, ny + 1, i, j, k)]) / d.y[j];
+                h.z[id] -= cf * (dey_dx - dex_dy);
             }
         }
     }
 }
 
-/// E from n to n + 1 on interior edges, with the CPML's ψ; `cpml` holds (b, a) per z node.
+/// E from n to n + 1 on interior edges (`c` holds dt/ε, `d` the dual steps, the CPML's (b, a)
+/// per z node).
 #[cube(launch)]
-pub(crate) fn step_e<F: Real>(
-    ex: &mut [F],
-    ey: &mut [F],
-    ez: &mut [F],
-    hx: &[F],
-    hy: &[F],
-    hz: &[F],
-    cex: &[F],
-    cey: &[F],
-    cez: &[F],
-    psi_ex: &mut [F],
-    psi_ey: &mut [F],
-    dxd: &[F],
-    dyd: &[F],
-    dzd: &[F],
-    cpml: &[F],
-    nx: u32,
-    ny: u32,
-    nz: u32,
-) {
-    let nx = nx as usize;
-    let ny = ny as usize;
-    let nz = nz as usize;
-    let pos = ABSOLUTE_POS;
-    let i = pos % (nx + 1);
-    let j = (pos / (nx + 1)) % (ny + 1);
-    let k = pos / ((nx + 1) * (ny + 1));
+pub(crate) fn step_e<F: Real>(mut e: Xyz<F>, h: Xyz<F>, c: Xyz<F>, mut cpml: ZCpml<F>, d: Xyz<F>, n: Cells) {
+    let p = point(&n);
+    let (i, j, k, nx, ny, nz) = (p.i, p.j, p.k, p.nx, p.ny, p.nz);
     let zero = F::new(0.0_f32);
     if k <= nz {
         if i < nx && j >= 1 && j < ny && k >= 1 && k < nz {
             let id = at(nx, ny + 1, i, j, k);
-            let c = cex[id];
-            if c != zero {
-                let dhz_dy = (hz[at(nx, ny, i, j, k)] - hz[at(nx, ny, i, j - 1, k)]) / dyd[j];
-                let dhy_dz = (hy[at(nx, ny + 1, i, j, k)] - hy[at(nx, ny + 1, i, j, k - 1)]) / dzd[k];
-                let psi = cpml[2 * k] * psi_ex[id] + cpml[2 * k + 1] * dhy_dz;
-                psi_ex[id] = psi;
-                ex[id] += c * (dhz_dy - dhy_dz - psi);
+            let cf = c.x[id];
+            if cf != zero {
+                let dhz_dy = (h.z[at(nx, ny, i, j, k)] - h.z[at(nx, ny, i, j - 1, k)]) / d.y[j];
+                let dhy_dz = (h.y[at(nx, ny + 1, i, j, k)] - h.y[at(nx, ny + 1, i, j, k - 1)]) / d.z[k];
+                let psi = cpml.ba[2 * k] * cpml.psi_x[id] + cpml.ba[2 * k + 1] * dhy_dz;
+                cpml.psi_x[id] = psi;
+                e.x[id] += cf * (dhz_dy - dhy_dz - psi);
             }
         }
         if i >= 1 && i < nx && j < ny && k >= 1 && k < nz {
             let id = at(nx + 1, ny, i, j, k);
-            let c = cey[id];
-            if c != zero {
-                let dhx_dz = (hx[at(nx + 1, ny, i, j, k)] - hx[at(nx + 1, ny, i, j, k - 1)]) / dzd[k];
-                let dhz_dx = (hz[at(nx, ny, i, j, k)] - hz[at(nx, ny, i - 1, j, k)]) / dxd[i];
-                let psi = cpml[2 * k] * psi_ey[id] + cpml[2 * k + 1] * dhx_dz;
-                psi_ey[id] = psi;
-                ey[id] += c * (dhx_dz + psi - dhz_dx);
+            let cf = c.y[id];
+            if cf != zero {
+                let dhx_dz = (h.x[at(nx + 1, ny, i, j, k)] - h.x[at(nx + 1, ny, i, j, k - 1)]) / d.z[k];
+                let dhz_dx = (h.z[at(nx, ny, i, j, k)] - h.z[at(nx, ny, i - 1, j, k)]) / d.x[i];
+                let psi = cpml.ba[2 * k] * cpml.psi_y[id] + cpml.ba[2 * k + 1] * dhx_dz;
+                cpml.psi_y[id] = psi;
+                e.y[id] += cf * (dhx_dz + psi - dhz_dx);
             }
         }
         if i >= 1 && i < nx && j >= 1 && j < ny && k < nz {
             let id = at(nx + 1, ny + 1, i, j, k);
-            let c = cez[id];
-            if c != zero {
-                let dhy_dx = (hy[at(nx, ny + 1, i, j, k)] - hy[at(nx, ny + 1, i - 1, j, k)]) / dxd[i];
-                let dhx_dy = (hx[at(nx + 1, ny, i, j, k)] - hx[at(nx + 1, ny, i, j - 1, k)]) / dyd[j];
-                ez[id] += c * (dhy_dx - dhx_dy);
+            let cf = c.z[id];
+            if cf != zero {
+                let dhy_dx = (h.y[at(nx, ny + 1, i, j, k)] - h.y[at(nx, ny + 1, i - 1, j, k)]) / d.x[i];
+                let dhx_dy = (h.x[at(nx + 1, ny, i, j, k)] - h.x[at(nx + 1, ny, i, j - 1, k)]) / d.y[j];
+                e.z[id] += cf * (dhy_dx - dhx_dy);
             }
         }
     }
 }
 
-/// E_y += s × profile on the source plane's updated edges.
+/// E_y += s × profile on plane `k`'s updated edges (`plane` E_y nodes a plane).
 #[cube(launch)]
-pub(crate) fn inject<F: Real>(ey: &mut [F], cey: &[F], source: &[F], s: F, plane: u32, k: u32) {
+pub(crate) fn inject<F: Real>(ey: &mut [F], cey: &[F], profile: &[F], s: F, plane: u32, k: u32) {
     let plane = plane as usize;
     let m = ABSOLUTE_POS;
     if m < plane {
         let id = m + plane * (k as usize);
         if cey[id] != F::new(0.0_f32) {
-            ey[id] += s * source[m];
+            ey[id] += s * profile[m];
         }
     }
 }
