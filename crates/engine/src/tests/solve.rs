@@ -1,7 +1,7 @@
 //! The solvers against their references: driven sweeps, eigenmodes, the time domain and its
 //! devices, symmetry planes.
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::scratch;
 use crate::*;
