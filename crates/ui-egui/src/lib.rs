@@ -153,6 +153,10 @@ pub struct FieldState {
     /// units along the picture's axes), read again whenever the view changes.
     pub hover: Option<Probe>,
     pub pinned: Option<[f64; 2]>,
+    /// Planes kept for the 3D view beside the field view's own (plane, position in display
+    /// units), and their samples.
+    pub kept: Vec<(Plane, f64)>,
+    pub kept_samples: Vec<Option<PlaneSamples>>,
 }
 
 /// A window screenshot waiting for its frame.
@@ -248,6 +252,8 @@ impl EmcraftApp {
                 animate: false,
                 hover: None,
                 pinned: None,
+                kept: Vec::new(),
+                kept_samples: Vec::new(),
             },
             chart: None,
             pattern_phi: 0.0,
@@ -391,6 +397,7 @@ impl EmcraftApp {
         self.field.samples = None;
         self.field.picture = None;
         self.field.pinned = None;
+        self.field.kept_samples.clear();
         self.chart = None;
         let f = |k: &str| reply.get(k).and_then(Value::as_f64);
         let unit = self.session.display.frequency.symbol();

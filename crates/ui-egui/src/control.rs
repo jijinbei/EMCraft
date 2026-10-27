@@ -252,6 +252,9 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
                     dialog.docked = d;
                 }
             }
+            if let Some(at) = p.get("field_at").and_then(Value::as_f64).filter(|v| v.is_finite()) {
+                app.field.at = Some(at);
+            }
             if let Some(a) = b("animate") {
                 app.field.animate = a;
             }

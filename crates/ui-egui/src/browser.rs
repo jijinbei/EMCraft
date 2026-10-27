@@ -5,6 +5,7 @@
 
 use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
 
+use crate::scene3d::Pick;
 use crate::theme::Tokens;
 use crate::{EmcraftApp, View, glyphs, scenario};
 
@@ -29,10 +30,23 @@ pub struct Row {
     pub text: String,
     pub glyph: &'static str,
     pub act: Act,
+    /// What the row is in the 3D view (selecting one selects the other).
+    pub pick: Option<Pick>,
 }
 
 fn row(text: impl Into<String>, glyph: &'static str, act: Act) -> Row {
-    Row { text: text.into(), glyph, act }
+    Row { text: text.into(), glyph, act, pick: None }
+}
+
+impl Row {
+    fn picks(self, pick: Pick) -> Row {
+        Row { pick: Some(pick), ..self }
+    }
+}
+
+/// The row of what `pick` is: its key (`section/text`) and action.
+pub fn row_of(app: &EmcraftApp, pick: Pick) -> Option<(String, Row)> {
+    tree(app).into_iter().find_map(|(section, rows)| rows.into_iter().find(|r| r.pick == Some(pick)).map(|r| (format!("{section}/{}", r.text), r)))
 }
 
 /// The tree's sections and rows for a session.
@@ -45,39 +59,43 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let mm = |x: f64| format!("{:.4}", l.from_si(x)).trim_end_matches('0').trim_end_matches('.').to_owned();
     let mut geometry = Vec::new();
     if let Some(w) = &m.waveguide {
-        geometry.push(row(
-            format!("Waveguide {} × {} × {} {lu}", mm(w.width), mm(w.height), mm(w.length())),
-            "waveguide",
-            Act::Edit("geometry.waveguide"),
-        ));
+        geometry.push(
+            row(format!("Waveguide {} × {} × {} {lu}", mm(w.width), mm(w.height), mm(w.length())), "waveguide", Act::Edit("geometry.waveguide"))
+                .picks(Pick::Guide),
+        );
         for (i, sec) in w.sections.iter().enumerate() {
             let ap = sec.width.map(|a| format!(", aperture {}", mm(a))).unwrap_or_default();
-            geometry.push(row(format!("  Section {}: {} {lu}, {}{ap}", i + 1, mm(sec.length), sec.material), "box", Act::Edit("geometry.waveguide")));
+            geometry.push(
+                row(format!("  Section {}: {} {lu}, {}{ap}", i + 1, mm(sec.length), sec.material), "box", Act::Edit("geometry.waveguide"))
+                    .picks(Pick::Section(i)),
+            );
         }
         for (i, layer) in w.layers.iter().enumerate() {
-            geometry.push(row(
-                format!("  Layer {}: {} {lu}, {}", i + 1, mm(layer.thickness), layer.material),
-                "material",
-                Act::Edit("geometry.waveguide"),
-            ));
+            geometry.push(
+                row(format!("  Layer {}: {} {lu}, {}", i + 1, mm(layer.thickness), layer.material), "material", Act::Edit("geometry.waveguide"))
+                    .picks(Pick::Layer(i)),
+            );
         }
         for (i, st) in w.strips.iter().enumerate() {
-            geometry.push(row(format!("  Strip {}: y {}, width {}", i + 1, mm(st.y), mm(st.width)), "port_modes", Act::Edit("geometry.waveguide")));
+            geometry.push(
+                row(format!("  Strip {}: y {}, width {}", i + 1, mm(st.y), mm(st.width)), "port_modes", Act::Edit("geometry.waveguide"))
+                    .picks(Pick::Strip(i)),
+            );
         }
     }
     if let Some(solid) = &m.solid {
         let shape = format!("{:?}", solid.shape);
         let name = shape.split([' ', '{']).next().unwrap_or("Solid").to_owned();
-        geometry.push(row(format!("Solid: {name}, {}", solid.material), "box", Act::Edit("geometry.solid")));
+        geometry.push(row(format!("Solid: {name}, {}", solid.material), "box", Act::Edit("geometry.solid")).picks(Pick::Solid));
     }
     for (i, f) in m.features.iter().enumerate() {
         let text = format!("{f:?}");
         let kind = text.split([' ', '{', '(']).next().unwrap_or("Feature").to_owned();
-        geometry.push(row(format!("  Boolean {}: {kind}", i + 1), "feature", Act::Edit("geometry.feature")));
+        geometry.push(row(format!("  Boolean {}: {kind}", i + 1), "feature", Act::Edit("geometry.feature")).picks(Pick::Feature(i)));
     }
     for (i, inc) in m.inclusions.iter().enumerate() {
         let what = inc.material.clone().unwrap_or_else(|| "conductor".into());
-        geometry.push(row(format!("  Inclusion {}: {what}", i + 1), "inclusion", Act::Edit("geometry.inclusion")));
+        geometry.push(row(format!("  Inclusion {}: {what}", i + 1), "inclusion", Act::Edit("geometry.inclusion")).picks(Pick::Inclusion(i)));
     }
     let materials = m
         .materials
@@ -90,9 +108,10 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let mut ports: Vec<Row> = m
         .ports
         .iter()
-        .map(|p| {
+        .enumerate()
+        .map(|(i, p)| {
             let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
-            row(format!("Port {}: {:?}, {} modes{z}", p.name, p.end, p.modes), "port", Act::Show(View::PortModes))
+            row(format!("Port {}: {:?}, {} modes{z}", p.name, p.end, p.modes), "port", Act::Show(View::PortModes)).picks(Pick::Port(i))
         })
         .collect();
     ports.extend(m.lumped.iter().map(|p| row(format!("Lumped {}: {} Ω", p.name, p.impedance), "lumped", Act::None)));
@@ -244,6 +263,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                             let resp = resp.on_hover_text(text);
                             if resp.clicked() {
                                 app.browser.selected = Some(key.clone());
+                                app.view3d.selected = r.pick;
                                 if let Act::Show(v) = &r.act {
                                     act = Some(r.act.clone());
                                     let _ = v;

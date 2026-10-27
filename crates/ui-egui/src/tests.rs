@@ -65,6 +65,16 @@ fn scenario_view3d_open_boundary() {
 }
 
 #[test]
+fn scenario_view3d_picking() {
+    scenario("view3d_picking");
+}
+
+#[test]
+fn scenario_view3d_ports_before_mesh() {
+    scenario("view3d_ports_before_mesh");
+}
+
+#[test]
 fn scenario_start_page() {
     scenario("start_page");
 }

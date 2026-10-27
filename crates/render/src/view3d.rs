@@ -219,6 +219,58 @@ impl Camera {
     pub fn project(&self, p: [f64; 3], w: f64, h: f64) -> Option<[f64; 3]> {
         Projector::new(self, w, h).project(p, 0.0)
     }
+
+    /// The ray through pixel (x, y) of a w × h picture: its origin and unit direction.
+    pub fn ray(&self, x: f64, y: f64, w: f64, h: f64) -> Option<([f64; 3], [f64; 3])> {
+        let pr = Projector::new(self, w, h);
+        let (u, v) = ((x - pr.cx) / pr.scale, (pr.cy - y) / pr.scale);
+        let b = pr.b;
+        let along = |o: [f64; 3], d: [f64; 3], k: f64| [o[0] + d[0] * k, o[1] + d[1] * k, o[2] + d[2] * k];
+        let (origin, dir) =
+            if pr.persp { (b.eye, along(along(b.forward, b.right, u), b.up, v)) } else { (along(along(b.eye, b.right, u), b.up, v), b.forward) };
+        let len = dot(dir, dir).sqrt();
+        (len > 0.0 && origin.iter().chain(&dir).all(|c| c.is_finite())).then(|| (origin, dir.map(|c| c / len)))
+    }
+}
+
+/// Where a ray meets a triangle: the distance along it (Möller and Trumbore, *Fast, minimum
+/// storage ray–triangle intersection*, J. Graphics Tools 2(1), 1997).
+fn hit(origin: [f64; 3], dir: [f64; 3], t: &Tri) -> Option<f64> {
+    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let (e1, e2) = (sub(t.p[1], t.p[0]), sub(t.p[2], t.p[0]));
+    let p = cross(dir, e2);
+    let det = dot(e1, p);
+    if det.abs() < 1e-300 {
+        return None;
+    }
+    let s = sub(origin, t.p[0]);
+    let u = dot(s, p) / det;
+    let q = cross(s, e1);
+    let v = dot(dir, q) / det;
+    let d = dot(e2, q) / det;
+    ((0.0..=1.0).contains(&u) && v >= 0.0 && u + v <= 1.0 && d > 0.0).then_some(d)
+}
+
+/// The tag under pixel (x, y): the nearest tagged triangle the ray through it meets, the
+/// nearer of the solid ones (opacity ≥ 200) if any, so see-through walls let what is inside be
+/// picked.
+pub fn pick(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
+    let (origin, dir) = camera.ray(x, y, w, h)?;
+    let mut solid: Option<(f64, u32)> = None;
+    let mut any: Option<(f64, u32)> = None;
+    for t in scene.tris.iter().filter(|t| t.tag != 0) {
+        let Some(d) = hit(origin, dir, t) else { continue };
+        let keep = |best: &mut Option<(f64, u32)>| {
+            if best.is_none_or(|(b, _)| d < b) {
+                *best = Some((d, t.tag));
+            }
+        };
+        keep(&mut any);
+        if t.alpha >= 200 {
+            keep(&mut solid);
+        }
+    }
+    solid.or(any).map(|(_, tag)| tag)
 }
 
 /// A camera's projection onto one picture size.
@@ -258,12 +310,14 @@ impl Projector {
     }
 }
 
-/// A triangle: corners (world), colour and opacity (255 opaque).
+/// A triangle: corners (world), colour and opacity (255 opaque), and the tag of what it
+/// belongs to (0 for nothing that can be picked).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tri {
     pub p: [[f64; 3]; 3],
     pub color: Rgb,
     pub alpha: u8,
+    pub tag: u32,
 }
 
 /// A line segment (world) with its colour and opacity.
@@ -280,11 +334,20 @@ pub struct Line {
 pub struct Scene {
     pub tris: Vec<Tri>,
     pub lines: Vec<Line>,
+    /// The tag the triangles added now get ([`Scene::tagged`]).
+    pub tag: u32,
 }
 
 impl Scene {
     pub fn tri(&mut self, a: [f64; 3], b: [f64; 3], c: [f64; 3], color: Rgb, alpha: u8) {
-        self.tris.push(Tri { p: [a, b, c], color, alpha });
+        self.tris.push(Tri { p: [a, b, c], color, alpha, tag: self.tag });
+    }
+
+    /// Tags what `draw` adds (for picking), then goes back to the tag before.
+    pub fn tagged(&mut self, tag: u32, draw: impl FnOnce(&mut Scene)) {
+        let before = std::mem::replace(&mut self.tag, tag);
+        draw(self);
+        self.tag = before;
     }
 
     /// A planar quad a b c d (in order round it) as two triangles.
@@ -531,6 +594,35 @@ pub fn axes_on_screen(camera: &Camera) -> [[f64; 2]; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picking_finds_the_nearest_solid_tag_under_the_pixel() {
+        // Two unit squares facing the camera along z, one behind the other, and a see-through
+        // one in front of both.
+        let mut s = Scene::default();
+        let square = |s: &mut Scene, z: f64, alpha: u8| s.quad([[-1.0, -1.0, z], [1.0, -1.0, z], [1.0, 1.0, z], [-1.0, 1.0, z]], Rgb(1, 2, 3), alpha);
+        s.tagged(1, |s| square(s, 0.0, 255));
+        s.tagged(2, |s| square(s, 1.0, 255));
+        s.tagged(3, |s| square(s, 2.0, 40));
+        s.quad([[-9.0, -9.0, 3.0], [9.0, -9.0, 3.0], [9.0, 9.0, 3.0], [-9.0, 9.0, 3.0]], Rgb(0, 0, 0), 255);
+        for projection in [Projection::Perspective, Projection::Orthographic] {
+            let mut c = Camera { projection, ..Camera::default() };
+            c.standard(StandardView::Front);
+            c.fit([-1.0, -1.0, 0.0], [1.0, 1.0, 2.0], 1.0);
+            let b = c.basis();
+            // The camera looks along its forward; the square nearer the eye is the solid hit.
+            let nearer = if b.forward[2] < 0.0 { 2 } else { 1 };
+            assert_eq!(pick(&s, &c, 50.0, 50.0, 100.0, 100.0), Some(nearer), "{projection:?}");
+            // Off the squares: nothing tagged.
+            assert_eq!(pick(&s, &c, 1.0, 1.0, 100.0, 100.0), None, "{projection:?}");
+            // The ray through the centre passes the target.
+            let (o, d) = c.ray(50.0, 50.0, 100.0, 100.0).unwrap();
+            let to = sub(c.target, o);
+            let off = sub(to, d.map(|x| x * dot(to, d)));
+            assert!(dot(off, off).sqrt() < 1e-9);
+        }
+        assert!(Camera::default().ray(f64::NAN, 0.0, 10.0, 10.0).is_none());
+    }
 
     fn square(z: f64, c: Rgb) -> Scene {
         let mut s = Scene::default();

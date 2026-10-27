@@ -45,6 +45,8 @@ pub struct View3d {
     pub dragging: bool,
     /// Fit on the next frame.
     pub fit_next: bool,
+    /// What is selected (by a click in the view or on its browser row), highlighted.
+    pub selected: Option<scene3d::Pick>,
 }
 
 impl Default for View3d {
@@ -58,6 +60,7 @@ impl Default for View3d {
             last_size: [0, 0],
             dragging: false,
             fit_next: false,
+            selected: None,
         }
     }
 }
@@ -65,20 +68,21 @@ impl Default for View3d {
 impl View3d {
     /// The scene for `overlay` (built once per revision).
     pub fn built(&mut self, app_revision: u64, session: &emcraft_engine::Session, overlay: Overlay) -> &Built {
-        self.built_with(app_revision, session, overlay, None)
+        self.built_with(app_revision, session, overlay, String::new(), &[])
     }
 
-    /// The scene with the field's plane (`extra` names the field's state).
+    /// The scene with the field's planes (`field_key` names the field's state).
     pub fn built_with(
         &mut self,
         app_revision: u64,
         session: &emcraft_engine::Session,
         overlay: Overlay,
-        field: Option<(String, &scene3d::FieldLayer)>,
+        field_key: String,
+        fields: &[scene3d::FieldLayer],
     ) -> &Built {
-        let key = (app_revision, overlay, field.as_ref().map(|f| f.0.clone()).unwrap_or_default());
+        let key = (app_revision, overlay, format!("{field_key}|{:?}", self.selected));
         if self.built.as_ref().is_none_or(|(k, _)| *k != key) {
-            self.built = Some((key, scene3d::build_with(session, overlay, field.map(|f| f.1))));
+            self.built = Some((key, scene3d::build_with(session, overlay, fields, self.selected)));
         }
         match &self.built {
             Some((_, b)) => b,
@@ -109,11 +113,13 @@ impl View3d {
             "projection": match c.projection { Projection::Perspective => "perspective", Projection::Orthographic => "orthographic" },
             "overlay": b.map(|x| x.0), "triangles": b.map(|x| x.1), "lines": b.map(|x| x.2),
             "ms": self.last_ms, "size": self.last_size,
+            "selected": self.selected.map(|p| format!("{p:?}")),
         })
     }
 }
 
-static EMPTY: Built = Built { scene: view3d::Scene { tris: Vec::new(), lines: Vec::new() }, labels: Vec::new(), legend: Vec::new(), bounds: None };
+static EMPTY: Built =
+    Built { scene: view3d::Scene { tris: Vec::new(), lines: Vec::new(), tag: 0 }, labels: Vec::new(), legend: Vec::new(), bounds: None };
 
 fn rgb(c: Color32) -> Rgb {
     Rgb(c.r(), c.g(), c.b())
@@ -127,22 +133,21 @@ fn color(c: Rgb) -> Color32 {
 pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overlay) {
     let t = Tokens::get();
     let revision = app.revision;
-    // The field's plane, for the Results step.
+    // The field's planes, for the Results step: the field view's and those kept.
     let mut field_key = String::new();
-    let mut layer = None;
+    let mut layers = Vec::new();
     if overlay == Overlay::Field {
-        match crate::viewport::field_plot(app) {
-            Ok(plot) => {
-                field_key = format!("{:?}|{:?}", app.field.view, app.field.at);
-                let (plane, at) = app.field.samples.as_ref().map_or((app.field.view.plane, 0.0), |s| (s.plane, s.at));
-                layer = Some((plot, plane, at));
+        match crate::viewport::field_plots(app) {
+            Ok(list) => {
+                field_key = format!("{:?}|{:?}|{:?}", app.field.view, app.field.at, app.field.kept);
+                layers = list;
             }
             Err(e) => app.message(e, true),
         }
     }
     let v = &mut app.view3d;
-    let fl = layer.as_ref().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at });
-    let built = v.built_with(revision, &app.session, overlay, fl.as_ref().map(|f| (field_key.clone(), f))).clone_shallow();
+    let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at }).collect();
+    let built = v.built_with(revision, &app.session, overlay, field_key.clone(), &fl).clone_shallow();
     let Some(bounds) = built.bounds.or_else(|| built.scene.bounds()) else {
         ui.painter().text(
             rect.center(),
@@ -192,9 +197,37 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     if resp.hovered() && scroll != 0.0 {
         v.camera.zoom(scroll as f64);
     }
-    if resp.double_clicked() {
-        v.camera.fit(bounds.0, bounds.1, aspect);
+    // A click picks what is under the pointer (empty space clears); a double-click on it opens
+    // its dialog, on nothing fits the view.
+    let mut edit = None;
+    if (resp.clicked() || resp.double_clicked())
+        && let Some(pos) = resp.interact_pointer_pos()
+    {
+        let at = pos - rect.min;
+        let tag = v.built.as_ref().and_then(|(_, b)| {
+            view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()))
+        });
+        v.selected = tag.and_then(scene3d::Pick::from_tag);
+        if resp.double_clicked() {
+            match v.selected {
+                Some(p) => edit = Some(p),
+                None => v.camera.fit(bounds.0, bounds.1, aspect),
+            }
+        }
     }
+    let selected = app.view3d.selected;
+    let picked = selected.and_then(|p| crate::browser::row_of(app, p));
+    if resp.clicked() {
+        app.browser.selected = picked.as_ref().map(|(k, _)| k.clone());
+    }
+    if let (Some(_), Some((_, row))) = (edit, &picked)
+        && let crate::browser::Act::Edit(id) = row.act
+        && !app.busy()
+        && let Err(e) = app.open_dialog(id)
+    {
+        app.message(e, true);
+    }
+    let v = &mut app.view3d;
     // The picture.
     let ppp = ui.ctx().pixels_per_point() as f64;
     let mut scale = ppp;
@@ -207,7 +240,13 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     }
     let size = [((rect.width() as f64 * scale).round() as usize).max(1), ((rect.height() as f64 * scale).round() as usize).max(1)];
     let supersample = if !v.dragging && (size[0] * size[1]) as f64 <= SUPERSAMPLE_PIXELS { 2 } else { 1 };
-    let key = Key { scene: (revision, overlay, field_key), camera: v.camera, size, supersample, dark: crate::theme::is_dark() };
+    let key = Key {
+        scene: (revision, overlay, format!("{field_key}|{:?}", v.selected)),
+        camera: v.camera,
+        size,
+        supersample,
+        dark: crate::theme::is_dark(),
+    };
     if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
         let began = Instant::now();
         let opt = view3d::Options {
@@ -251,8 +290,18 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         }
     }
     legend(&p, rect, &built.legend, &t);
+    if let Some((_, row)) = &picked {
+        let hint = if matches!(row.act, crate::browser::Act::Edit(_)) { "  ·  double-click to edit" } else { "" };
+        let text = format!("{}{hint}", row.text.trim());
+        let g = p.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
+        let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
+        p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
+        p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        p.galley(r.min + vec2(10.0, 5.0), g, t.text);
+        scenario::publish_target("view3d:selected", r);
+    }
     // The field's plane: its box in the model and the view that faces it.
-    let facing = layer.as_ref().map(|(plot, plane, at)| {
+    let facing = layers.first().map(|(plot, plane, at)| {
         let l = app.session.display.length;
         let (lo, _) = bounds;
         let ((h0, h1), (v0, v1)) = (plot.x.span(), plot.y.span());

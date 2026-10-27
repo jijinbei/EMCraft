@@ -294,7 +294,8 @@ pub fn symbol(name: &str) -> Option<&'static str> {
 }
 
 /// A label in plain Unicode: scripts as Unicode super- and subscripts where every character
-/// has one (`S_{21}` → `S₂₁`), else marked (`E_y`, `e^(jωt)`); fractions as `a/b`; roots as
+/// has one (`S_{21}` → `S₂₁`), a lone letter after its base (`E_y` → `Ey`), else marked
+/// (`e^(jωt)`, `x_(ab)`); fractions as `a/b`; roots as
 /// `√(…)`.
 pub fn to_unicode(text: &str) -> String {
     let mut out = String::new();
@@ -348,6 +349,8 @@ fn script(nodes: &[Node], out: &mut String, map: fn(char) -> Option<char>, mark:
     write_unicode(nodes, &mut s);
     match s.chars().map(map).collect::<Option<String>>() {
         Some(t) if !t.is_empty() => out.push_str(&t),
+        // One letter or digit without a subscript form follows its base (E_y → Ey).
+        _ if mark == '_' && s.chars().count() == 1 && s.chars().all(char::is_alphanumeric) => out.push_str(&s),
         _ => {
             out.push(mark);
             if s.chars().count() == 1 {
@@ -460,7 +463,7 @@ mod tests {
     fn unicode_forms() {
         assert_eq!(to_unicode("$S_{21}$"), "S₂₁");
         assert_eq!(to_unicode("$x^2$ m"), "x² m");
-        assert_eq!(to_unicode("$E_y$ (V/m)"), "E_y (V/m)");
+        assert_eq!(to_unicode("$E_y$ (V/m)"), "Ey (V/m)");
         assert_eq!(to_unicode("$e^{j\\omega t}$"), "e^(jωt)");
         assert_eq!(to_unicode("$\\varepsilon_r$"), "εᵣ");
         assert_eq!(to_unicode("$\\frac{1}{2}$"), "1/2");

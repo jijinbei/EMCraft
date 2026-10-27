@@ -332,6 +332,16 @@ pub fn paint(p: &Painter, r: Rect, name: &str, ink: Color32, accent: Color32) {
                 poly(&[(0.54, y), (0.7, y)], false, line);
             }
         }
+        // A plane with a plus: keep it.
+        "keep_plane" => {
+            p.add(Shape::convex_polygon(
+                [(0.1, 0.35), (0.6, 0.2), (0.6, 0.8), (0.1, 0.95)].iter().map(|&(x, y)| at(x, y)).collect(),
+                accent.gamma_multiply(0.3),
+                line,
+            ));
+            poly(&[(0.78, 0.08), (0.78, 0.44)], false, bold);
+            poly(&[(0.6, 0.26), (0.96, 0.26)], false, bold);
+        }
         // A house: the start page.
         "start" => {
             poly(&[(0.1, 0.5), (0.5, 0.14), (0.9, 0.5)], false, bold);

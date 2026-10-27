@@ -401,9 +401,13 @@ fn solved(app: &EmcraftApp) -> bool {
 
 /// The span of the plane's position (display units) and its axis name.
 fn plane_span(app: &EmcraftApp) -> Option<(f64, &'static str)> {
+    plane_span_of(app, app.field.view.plane)
+}
+
+fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'static str)> {
     let emcraft_model::Aabb { min: lo, max: hi } = app.session.model.bounds()?;
     let l = app.session.display.length;
-    Some(match app.field.view.plane {
+    Some(match plane {
         Plane::H => (l.from_si(hi.y - lo.y), "y"),
         Plane::E => (l.from_si(hi.x - lo.x), "x"),
         Plane::Cross => (l.from_si(hi.z - lo.z), "z"),
@@ -423,6 +427,30 @@ pub(crate) fn field_plot(app: &mut EmcraftApp) -> Result<emcraft_render::plot::F
         Some(r) => r.map_err(|e| e.to_string()),
         None => Err("no field samples".into()),
     }
+}
+
+/// The field view's plot and those of the planes kept for the 3D view, each with its plane and
+/// its position along the normal (m from the model's low side). The kept planes share the
+/// view's frequency, component, phase and excitation.
+pub(crate) fn field_plots(app: &mut EmcraftApp) -> Result<Vec<(emcraft_render::plot::FieldPlot, Plane, f64)>, String> {
+    let plot = field_plot(app)?;
+    let (plane, at) = app.field.samples.as_ref().map_or((app.field.view.plane, 0.0), |s| (s.plane, s.at));
+    let mut out = vec![(plot, plane, at)];
+    let l = app.session.display.length;
+    app.field.kept_samples.resize_with(app.field.kept.len(), || None);
+    for k in 0..app.field.kept.len() {
+        let (plane, at_display) = app.field.kept[k];
+        let Some((span, _)) = plane_span_of(app, plane) else { continue };
+        let at = l.to_si(at_display.clamp(0.0, span));
+        let view = emcraft_engine::view::FieldView { plane, at: Some(at), ..app.field.view.clone() };
+        if !app.field.kept_samples[k].as_ref().is_some_and(|s| s.serves(&view, at)) {
+            app.field.kept_samples[k] = Some(view::sample_plane(&app.session, &view).map_err(|e| e.to_string())?);
+        }
+        if let Some(s) = &app.field.kept_samples[k] {
+            out.push((s.plot(&view).map_err(|e| e.to_string())?, plane, s.at));
+        }
+    }
+    Ok(out)
 }
 
 fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
@@ -453,6 +481,9 @@ fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     probe_picture(app, ui, &r);
     readout(app, ui);
 }
+
+/// Most planes kept for the 3D view.
+const MAX_KEPT: usize = 8;
 
 /// Room under the field picture for the probe's readout.
 const READOUT_HEIGHT: f32 = 58.0;
@@ -598,8 +629,47 @@ fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 app.field.at = Some(at);
                 app.field.pinned = None;
             }
+            // Keep this plane in the 3D view (Results), beside the one being moved.
+            let here = (app.field.view.plane, at);
+            let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
+            let t = Tokens::get();
+            if resp.hovered() {
+                ui.painter().rect_filled(r, t.radius_sm, t.hover);
+            }
+            crate::glyphs::paint(ui.painter(), r.shrink(3.0), "keep_plane", t.icon, t.accent);
+            scenario::publish_target("field:keep", r);
+            if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !app.field.kept.contains(&here) && app.field.kept.len() < MAX_KEPT {
+                app.field.kept.push(here);
+            }
         }
     });
+    // The planes kept for the 3D view, each a chip that a click lets go.
+    if !app.field.kept.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            let t = Tokens::get();
+            ui.label(egui::RichText::new("In 3D:").size(t.font_small).color(t.text_dim));
+            let unit = app.session.display.length.symbol();
+            let mut drop = None;
+            for (k, (plane, at)) in app.field.kept.iter().enumerate() {
+                let name = match plane {
+                    Plane::H => "H-plane y",
+                    Plane::E => "E-plane x",
+                    Plane::Cross => "cross z",
+                };
+                let r = ui.button(egui::RichText::new(format!("{name} = {} {unit}  ✕", emcraft_render::axes::format(*at))).size(t.font_small));
+                scenario::publish_target(&format!("field:kept:{k}"), r.rect);
+                if r.on_hover_text("Remove from the 3D view").clicked() {
+                    drop = Some(k);
+                }
+            }
+            if let Some(k) = drop {
+                app.field.kept.remove(k);
+                if k < app.field.kept_samples.len() {
+                    app.field.kept_samples.remove(k);
+                }
+            }
+        });
+    }
     ui.horizontal_wrapped(|ui| {
         let before = app.field.view.component;
         let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {

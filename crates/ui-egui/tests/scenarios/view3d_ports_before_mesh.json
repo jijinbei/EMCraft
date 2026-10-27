@@ -1,0 +1,16 @@
+[
+  {"note": "Before meshing, a coaxial line's ports show as their annulus (a feature reaches the end faces, so no closed form describes them)"},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.1}},
+    {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 3.5, "length": 20, "material": "ptfe"}},
+    {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "cylinder", "radius": 1.0, "length": 20, "at": [0, 0, 0]}},
+    {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+    {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}}
+  ]}},
+  {"until": {"busy": false}},
+  {"call": "ui.set", "params": {"step": "excitation"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.overlay": "ports", "model.mesh": null, "view3d.triangles": {"min": 2000}}}},
+  {"shot": "view3d-coax-ports"}
+]

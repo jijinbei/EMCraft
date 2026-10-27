@@ -1,0 +1,22 @@
+[
+  {"note": "Picking in the 3D view: a click selects what is under the pointer, highlights it and its browser row; a click on its row selects it in the view; a double-click opens its dialog"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 15, "material": "ptfe-like"}, {"length": 20, "material": "vacuum"}, {"length": 15, "material": "ptfe-like"}]}}},
+  {"call": "ui.set", "params": {"step": "geometry"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"click": "view3d"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.selected": "Section(1)"}, "handles": ["view3d:selected"]}},
+  {"shot": "view3d-picked"},
+  {"note": "The row of section 3 selects it in the view"},
+  {"click": "row:Section 3: 15 mm, ptfe-like"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.selected": "Section(2)"}}},
+  {"shot": "view3d-row-selected"},
+  {"note": "Double-click in the view on the section: its dialog"},
+  {"click": "view3d", "double": true},
+  {"frames": 2},
+  {"expect": {"dialog": "geometry.waveguide"}},
+  {"click": "dialog:cancel"}
+]

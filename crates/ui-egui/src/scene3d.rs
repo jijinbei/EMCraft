@@ -40,6 +40,59 @@ impl Overlay {
     }
 }
 
+/// What a picked triangle belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pick {
+    /// The waveguide's walls (once meshed).
+    Guide,
+    Section(usize),
+    Layer(usize),
+    Strip(usize),
+    Solid,
+    Feature(usize),
+    Inclusion(usize),
+    Port(usize),
+    /// A field plane in the Results step's view.
+    Plane(usize),
+}
+
+impl Pick {
+    /// The triangle tag (0 is "nothing").
+    pub fn tag(self) -> u32 {
+        let (kind, i) = match self {
+            Pick::Guide => (1, 0),
+            Pick::Section(i) => (2, i),
+            Pick::Layer(i) => (3, i),
+            Pick::Strip(i) => (4, i),
+            Pick::Solid => (5, 0),
+            Pick::Feature(i) => (6, i),
+            Pick::Inclusion(i) => (7, i),
+            Pick::Port(i) => (8, i),
+            Pick::Plane(i) => (9, i),
+        };
+        (kind << 16) | (i.min(0xFFFF) as u32)
+    }
+
+    pub fn from_tag(tag: u32) -> Option<Pick> {
+        let i = (tag & 0xFFFF) as usize;
+        Some(match tag >> 16 {
+            1 => Pick::Guide,
+            2 => Pick::Section(i),
+            3 => Pick::Layer(i),
+            4 => Pick::Strip(i),
+            5 => Pick::Solid,
+            6 => Pick::Feature(i),
+            7 => Pick::Inclusion(i),
+            8 => Pick::Port(i),
+            9 => Pick::Plane(i),
+            _ => return None,
+        })
+    }
+}
+
+/// The colour picked things turn towards.
+const HIGHLIGHT: Rgb = Rgb(30, 120, 255);
+
 /// A text placed in 3D.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Label {
@@ -91,11 +144,12 @@ pub struct FieldLayer<'a> {
 
 /// Builds the scene of `session` for `overlay`.
 pub fn build(session: &Session, overlay: Overlay) -> Built {
-    build_with(session, overlay, None)
+    build_with(session, overlay, &[], None)
 }
 
-/// Builds the scene, with the field's plane for [`Overlay::Field`].
-pub fn build_with(session: &Session, overlay: Overlay, field: Option<&FieldLayer>) -> Built {
+/// Builds the scene, with the field's planes for [`Overlay::Field`] and what is selected
+/// highlighted.
+pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], selected: Option<Pick>) -> Built {
     let m = &session.model;
     let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
@@ -104,8 +158,27 @@ pub fn build_with(session: &Session, overlay: Overlay, field: Option<&FieldLayer
     }
     extras(m, overlay, &mut out);
     legend(session, overlay, &mut out);
-    if let (Overlay::Field, Some(f)) = (overlay, field) {
-        field_plane(session, f, &mut out);
+    if overlay == Overlay::Field {
+        // One colour scale for every plane: the largest peak.
+        let peak = fields
+            .iter()
+            .filter_map(|f| f.plot.scalar.as_ref())
+            .map(|s| s.values.iter().filter(|v| v.is_finite()).fold(0.0, |a: f64, b| a.max(b.abs())))
+            .fold(0.0, f64::max);
+        for (i, f) in fields.iter().enumerate() {
+            out.scene.tagged(Pick::Plane(i).tag(), |scene| {
+                let mut part = Built { scene: std::mem::take(scene), bounds: out.bounds, ..Default::default() };
+                field_plane(session, f, peak, i == 0, &mut part);
+                *scene = part.scene;
+                out.legend.extend(part.legend);
+            });
+        }
+    }
+    if let Some(tag) = selected.map(Pick::tag) {
+        for t in out.scene.tris.iter_mut().filter(|t| t.tag == tag) {
+            t.color = t.color.mix(HIGHLIGHT, 0.5);
+            t.alpha = t.alpha.max(170);
+        }
     }
     out
 }
@@ -114,7 +187,7 @@ pub fn build_with(session: &Session, overlay: Overlay, field: Option<&FieldLayer
 const FIELD_CELLS: usize = 120;
 
 /// The field's colour map on its plane, cell by cell (cells outside the mesh left out).
-fn field_plane(session: &Session, f: &FieldLayer, out: &mut Built) {
+fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, legend: bool, out: &mut Built) {
     use emcraft_engine::view::Plane;
     use emcraft_render::plot::ScalarKind;
     let (Some(s), Some((lo, _))) = (f.plot.scalar.as_ref(), out.bounds) else { return };
@@ -129,7 +202,8 @@ fn field_plane(session: &Session, f: &FieldLayer, out: &mut Built) {
         Plane::E => [lo[0] + f.at, v, u],
         Plane::Cross => [u, v, lo[2] + f.at],
     };
-    let peak = s.range.filter(|r| *r > 0.0).unwrap_or_else(|| s.values.iter().filter(|v| v.is_finite()).fold(0.0, |a: f64, b| a.max(b.abs())));
+    let own = s.range.filter(|r| *r > 0.0).unwrap_or_else(|| s.values.iter().filter(|v| v.is_finite()).fold(0.0, |a: f64, b| a.max(b.abs())));
+    let peak = if shared_peak > 0.0 { shared_peak } else { own };
     let color = |v: f64| match s.kind {
         ScalarKind::Signed => emcraft_render::colormap::diverging(v / peak.max(1e-300)),
         ScalarKind::Magnitude => emcraft_render::colormap::sequential(v / peak.max(1e-300)),
@@ -152,13 +226,15 @@ fn field_plane(session: &Session, f: &FieldLayer, out: &mut Built) {
         }
         j = j1;
     }
-    out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| emcraft_render::math::to_unicode(&s.label)), color(peak)));
-    field_arrows(session, f, lo, out);
+    if legend {
+        out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| emcraft_render::math::to_unicode(&s.label)), color(peak)));
+    }
+    field_arrows(session, f, lo, legend, out);
 }
 
 /// The plot's arrows (E's, H's) on the field's plane, filled (a shaft and a head), a hair off
 /// the plane on both sides so they show from either.
-fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], out: &mut Built) {
+fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, out: &mut Built) {
     use emcraft_engine::view::Plane;
     let l = session.display.length;
     let normal = match f.plane {
@@ -202,7 +278,9 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], out: &mut Built
                 out.scene.tri(q(len - head, -0.45 * head), q(len, 0.0), q(len - head, 0.45 * head), set.color, 255);
             }
         }
-        out.legend.push((emcraft_render::math::to_unicode(&set.label), set.color));
+        if legend {
+            out.legend.push((emcraft_render::math::to_unicode(&set.label), set.color));
+        }
     }
 }
 
@@ -279,7 +357,12 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
                 }
             }
         };
-        out.scene.tri(a, b, c, color, alpha);
+        let pick = match f.tag {
+            Boundary::Port(k) if port => m.ports.iter().position(|p| p.face.is_none() && (p.end == End::Start) == (k == 0)).map(Pick::Port),
+            _ => None,
+        }
+        .unwrap_or(if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid });
+        out.scene.tagged(pick.tag(), |s| s.tri(a, b, c, color, alpha));
         let key = match f.tag {
             Boundary::Port(k) if port => 1 + k,
             _ => 0,
@@ -449,20 +532,25 @@ fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             } else {
                 255
             };
-            cuboid(&mut out.scene, [x0, y0, z], [x0 + a, y0 + b, z + s.length], tint(&s.material), alpha, true);
+            out.scene
+                .tagged(Pick::Section(i).tag(), |scene| cuboid(scene, [x0, y0, z], [x0 + a, y0 + b, z + s.length], tint(&s.material), alpha, true));
             z += s.length;
         }
         let mut y = 0.0;
-        for layer in &w.layers {
-            cuboid(&mut out.scene, [0.0, y, 0.0], [w.width, y + layer.thickness, w.length()], tint(&layer.material), 200, true);
+        for (i, layer) in w.layers.iter().enumerate() {
+            out.scene.tagged(Pick::Layer(i).tag(), |scene| {
+                cuboid(scene, [0.0, y, 0.0], [w.width, y + layer.thickness, w.length()], tint(&layer.material), 200, true)
+            });
             y += layer.thickness;
         }
-        for st in &w.strips {
-            out.scene.quad(
-                [[st.x0, st.y, st.z0], [st.x0 + st.width, st.y, st.z0], [st.x0 + st.width, st.y, st.z1], [st.x0, st.y, st.z1]],
-                PORT_SOFT.mix(Rgb(200, 160, 40), 0.6),
-                255,
-            );
+        for (i, st) in w.strips.iter().enumerate() {
+            out.scene.tagged(Pick::Strip(i).tag(), |scene| {
+                scene.quad(
+                    [[st.x0, st.y, st.z0], [st.x0 + st.width, st.y, st.z0], [st.x0 + st.width, st.y, st.z1], [st.x0, st.y, st.z1]],
+                    PORT_SOFT.mix(Rgb(200, 160, 40), 0.6),
+                    255,
+                )
+            });
         }
     }
     if let Some(solid) = &m.solid {
@@ -474,45 +562,124 @@ fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
         } else {
             255
         };
-        shape(&mut out.scene, &solid.shape, &|q| q, tint(&solid.material), alpha);
-        for f in &m.features {
+        out.scene.tagged(Pick::Solid.tag(), |scene| shape(scene, &solid.shape, &|q| q, tint(&solid.material), alpha));
+        for (i, f) in m.features.iter().enumerate() {
             let (color, alpha) = match f.combine {
                 Combine::Add => (tint(&solid.material), alpha),
                 Combine::Subtract => (METAL_DARK, 255),
                 Combine::Intersect => (Rgb(120, 160, 200), 60),
             };
-            shape(&mut out.scene, &f.shape, &turned(f.axis, f.at), color, alpha);
+            out.scene.tagged(Pick::Feature(i).tag(), |scene| shape(scene, &f.shape, &turned(f.axis, f.at), color, alpha));
         }
-        for inc in &m.inclusions {
+        for (i, inc) in m.inclusions.iter().enumerate() {
             let color = match &inc.material {
                 Some(name) => material_rgb(m, mat(name)),
                 None => METAL_DARK,
             };
-            shape(&mut out.scene, &inc.shape, &turned(Axis::Z, inc.at), color, 255);
+            out.scene.tagged(Pick::Inclusion(i).tag(), |scene| shape(scene, &inc.shape, &turned(Axis::Z, inc.at), color, 255));
         }
     }
     // Ports on the ends (the mesh tags them once meshed).
-    for p in &m.ports {
-        if let Some(q) = port_quad(m, p) {
-            let (color, alpha) = if overlay == Overlay::Ports { (PORT, 255) } else { (PORT_SOFT, 220) };
-            // Slightly off the end so it shows over the body's own face.
-            out.scene.quad(q, color, alpha);
+    for (i, p) in m.ports.iter().enumerate() {
+        let (color, alpha) = if overlay == Overlay::Ports { (PORT, 255) } else { (PORT_SOFT, 220) };
+        let face = port_face(m, p);
+        out.scene.tagged(Pick::Port(i).tag(), |scene| {
+            for [a, b, c] in face {
+                scene.tri(a, b, c, color, alpha);
+            }
+        });
+    }
+}
+
+/// Cells across a port's face where its cross-section is sampled (a face that features reach).
+const PORT_CELLS: usize = 96;
+
+/// A port's face as triangles: its rectangle, its circle, or — where Boolean features reach the
+/// end face, so no closed form describes it — the cells of a grid over the end whose centres lie
+/// in the body (a coaxial line's annulus).
+fn port_face(m: &Model, p: &emcraft_model::Port) -> Vec<[[f64; 3]; 3]> {
+    let Some(z) = port_z(m, p) else { return Vec::new() };
+    match m.port_shape_of(p) {
+        Ok(emcraft_model::PortShape::Rect { x0, y0, a, b }) => {
+            let q = [[x0, y0, z], [x0 + a, y0, z], [x0 + a, y0 + b, z], [x0, y0 + b, z]];
+            vec![[q[0], q[1], q[2]], [q[0], q[2], q[3]]]
+        }
+        Ok(emcraft_model::PortShape::Circle { cx, cy, r }) => {
+            let at = |k: usize| {
+                let a = std::f64::consts::TAU * k as f64 / ROUND as f64;
+                [cx + r * a.cos(), cy + r * a.sin(), z]
+            };
+            (0..ROUND).map(|k| [[cx, cy, z], at(k), at(k + 1)]).collect()
+        }
+        Err(_) => {
+            let Some(b) = m.bounds() else { return Vec::new() };
+            // Just inside the body from the end face.
+            let inside = z + if p.end == End::Start { 1e-6 } else { -1e-6 } * (b.max.z - b.min.z).max(1e-9);
+            let (dx, dy) = ((b.max.x - b.min.x) / PORT_CELLS as f64, (b.max.y - b.min.y) / PORT_CELLS as f64);
+            let mut out = Vec::new();
+            for j in 0..PORT_CELLS {
+                for i in 0..PORT_CELLS {
+                    let (x, y) = (b.min.x + dx * i as f64, b.min.y + dy * j as f64);
+                    if m.material_at(emcraft_model::Point3::new(x + dx / 2.0, y + dy / 2.0, inside)).is_some() {
+                        let q = [[x, y, z], [x + dx, y, z], [x + dx, y + dy, z], [x, y + dy, z]];
+                        out.push([q[0], q[1], q[2]]);
+                        out.push([q[0], q[2], q[3]]);
+                    }
+                }
+            }
+            out
         }
     }
 }
 
-/// A port's rectangle (or a circle's bounding square) in 3D.
-fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
-    let z = match (p.face, p.end) {
+/// The edges of a set of triangles that only one of them has: their outline.
+fn outline(tris: &[[[f64; 3]; 3]]) -> Vec<([f64; 3], [f64; 3])> {
+    let key = |p: [f64; 3]| p.map(|c| (c * 1e9).round() as i64);
+    let mut edges: Vec<([i64; 3], [i64; 3], [f64; 3], [f64; 3])> = Vec::with_capacity(tris.len() * 3);
+    for t in tris {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let (ka, kb) = (key(a), key(b));
+            edges.push(if ka <= kb { (ka, kb, a, b) } else { (kb, ka, b, a) });
+        }
+    }
+    edges.sort_by_key(|e| (e.0, e.1));
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < edges.len() {
+        let mut j = i + 1;
+        while j < edges.len() && (edges[j].0, edges[j].1) == (edges[i].0, edges[i].1) {
+            j += 1;
+        }
+        if j - i == 1 {
+            out.push((edges[i].2, edges[i].3));
+        }
+        i = j;
+    }
+    out
+}
+
+/// The plane of a port's face.
+fn port_z(m: &Model, p: &emcraft_model::Port) -> Option<f64> {
+    Some(match (p.face, p.end) {
         (Some(f), _) => f.z,
-        (None, End::Start) => 0.0,
+        (None, End::Start) => m.bounds()?.min.z.min(0.0),
         (None, End::End) => m.bounds()?.max.z,
-    };
-    let (x0, y0, a, b) = match m.port_shape_of(p).ok()? {
-        emcraft_model::PortShape::Rect { x0, y0, a, b } => (x0, y0, a, b),
-        emcraft_model::PortShape::Circle { cx, cy, r } => (cx - r, cy - r, 2.0 * r, 2.0 * r),
-    };
-    Some([[x0, y0, z], [x0 + a, y0, z], [x0 + a, y0 + b, z], [x0, y0 + b, z]])
+    })
+}
+
+/// A port's face's bounding rectangle in 3D.
+fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
+    let face = port_face(m, p);
+    let pts = face.iter().flatten();
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for q in pts {
+        for k in 0..2 {
+            lo[k] = lo[k].min(q[k]);
+            hi[k] = hi[k].max(q[k]);
+        }
+    }
+    let z = face.first()?[0][2];
+    Some([[lo[0], lo[1], z], [hi[0], lo[1], z], [hi[0], hi[1], z], [lo[0], hi[1], z]])
 }
 
 /// Ports' labels, lumped ports, sources and the open boundary's layer.
@@ -529,8 +696,8 @@ fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
                 };
                 out.labels.push(Label { at: c, text: format!("Port {}", p.name), color: PORT, facing });
                 if overlay == Overlay::Ports {
-                    for k in 0..4 {
-                        out.scene.line(q[k], q[(k + 1) % 4], PORT, 255);
+                    for (a, b) in outline(&port_face(m, p)) {
+                        out.scene.line(a, b, PORT, 255);
                     }
                     // The direction into the guide.
                     let dir = if p.end == End::Start { 1.0 } else { -1.0 };
