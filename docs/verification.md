@@ -86,7 +86,16 @@ result is frozen so it cannot drift.
    its pattern, null and active resistance against the exact Hertzian array (oracle `gap-array`).
    The time domain's open problems: two gaps on a Yee grid with a CPML, their self resistance,
    mutual impedance and pattern within 0.3 % of the closed forms (oracle `time-domain-gaps`).
-10. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+10. **Parameter studies** (`crates/engine/src/study_tests.rs`, the oracle): a variable changed
+   rebuilds the model (geometry and mesh) from the history, undo goes back, the project saved
+   and opened is the same, expressions and all; hostile expressions and studies are refused.
+   A sweep of the high-pass filter's middle section over 10, 20 and 30 mm against the exact
+   TE₁₀ cascade at each length (within 5e-4 dB of |S21|; oracle `study-sweep-highpass`); the
+   Nelder–Mead optimizer on a quarter-wave matching section between an empty and an εr = 2.2
+   guide finds the length within 0.002 mm of the closed form's λg/4 = 11.1326 mm, |S11| 1.3e-4
+   at the model it leaves (oracle `study-optimize-quarter-wave`; order 1 at 5 mm within 2 % in
+   the gate); the simplex itself on a quadratic, on a minimum outside its box, on its budget.
+11. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 
