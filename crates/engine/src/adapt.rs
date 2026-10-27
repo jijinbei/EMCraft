@@ -40,6 +40,66 @@ enum Stop {
     Limit,
 }
 
+impl Stop {
+    fn reason(self) -> &'static str {
+        match self {
+            Stop::Converged => "converged",
+            Stop::Passes => "passes",
+            Stop::Limit => "mesh or unknowns limit",
+        }
+    }
+}
+
+/// How each pass's mesh is made.
+enum Refine {
+    /// A solid: meshed again with the balls of every pass's marked tetrahedra.
+    Adaptive { sizes: emcraft_mesh::solid::Sizes, curved: bool, theta: f64, floor: f64, balls: Vec<emcraft_mesh::solid::Refinement> },
+    /// A waveguide grid: its size shrunk by [`UNIFORM`] a pass.
+    Uniform { size: f64 },
+}
+
+impl Refine {
+    fn mesh(&self, s: &Session, p: &Params, pass: usize) -> Result<std::result::Result<Mesh, emcraft_mesh::MeshError>> {
+        Ok(match self {
+            Refine::Adaptive { sizes, curved, balls, .. } => emcraft_mesh::solid::solid_refined(&s.model, sizes, *curved, balls),
+            Refine::Uniform { size } => {
+                let h = size / UNIFORM.powi(pass as i32);
+                emcraft_mesh::waveguide_with(&s.model, &crate::meshing::grid_options(p, h)?)
+            }
+        })
+    }
+
+    /// Marks where the error is and adds its balls for the next pass; how many tetrahedra it
+    /// marked (none for a uniform grid).
+    fn mark(&mut self, driven: &Driven, r: &emcraft_solver::driven::FrequencyResult) -> Result<usize> {
+        let Refine::Adaptive { theta, floor, balls, .. } = self else { return Ok(0) };
+        crate::progress::check()?;
+        let eta = emcraft_solver::adapt::indicator(driven, r)?;
+        let marked = emcraft_mesh::adapt::dorfler(&eta, *theta)?;
+        balls.extend(emcraft_mesh::adapt::refinements(&driven.mesh, &marked, *floor)?);
+        Ok(marked.len())
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            Refine::Adaptive { .. } => "adaptive",
+            Refine::Uniform { .. } => "uniform",
+        }
+    }
+}
+
+/// One pass, as the reply lists it.
+#[derive(serde::Serialize)]
+struct Pass {
+    pass: usize,
+    tetrahedra: usize,
+    unknowns: usize,
+    delta_s: Option<f64>,
+    marked: usize,
+    s11: Value,
+    seconds: f64,
+}
+
 pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
     if s.model.open.is_some() {
         return Err(EngineError::failed(
@@ -63,24 +123,21 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
     let theta = p.positive("fraction").check(|t| *t <= 1.0, "at most 1").or(0.3)?;
     let order = p.order()?;
     let curved = p.flag("curved").or(true)?;
-    let solid_sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
-    let grid_size = sizes.grid_size(s)?;
-    let floor = solid_sizes.per_material.iter().flatten().copied().fold(solid_sizes.default, f64::min) / FLOOR;
+    let mut refine = if solid {
+        let sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
+        let floor = sizes.per_material.iter().flatten().copied().fold(sizes.default, f64::min) / FLOOR;
+        Refine::Adaptive { sizes, curved, theta, floor, balls: Vec::new() }
+    } else {
+        Refine::Uniform { size: sizes.grid_size(s)? }
+    };
 
-    let mut refine: Vec<emcraft_mesh::solid::Refinement> = Vec::new();
     let mut last: Option<(Mesh, SMatrix)> = None;
-    let mut rows = Vec::new();
+    let mut rows: Vec<Pass> = Vec::new();
     let mut stop = Stop::Passes;
     for pass in 0..passes {
         crate::progress::report(pass, passes, "adaptive pass")?;
         let t0 = Instant::now();
-        let mesh = if solid {
-            emcraft_mesh::solid::solid_refined(&s.model, &solid_sizes, curved, &refine)
-        } else {
-            let h = grid_size / UNIFORM.powi(pass as i32);
-            emcraft_mesh::waveguide_with(&s.model, &crate::meshing::grid_options(p, h)?)
-        };
-        let mesh = match mesh {
+        let mesh = match refine.mesh(s, p, pass)? {
             Ok(m) => m,
             Err(emcraft_mesh::MeshError::TooLarge { .. }) if last.is_some() => {
                 stop = Stop::Limit;
@@ -88,7 +145,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
             }
             Err(e) => return Err(e.into()),
         };
-        let tets = mesh.tets.len();
+        let tetrahedra = mesh.tets.len();
         s.model.mesh = Some(mesh);
         let driven = match Driven::new(&s.model, order) {
             Ok(d) => d,
@@ -100,25 +157,18 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
         };
         crate::progress::check()?;
         let r = driven.solve(frequency)?;
-        let change = last.as_ref().map(|(_, prev)| delta(&r.s, prev));
-        let mut marked = 0;
-        let converged = change.is_some_and(|d| d < tolerance);
-        if solid && !converged && pass + 1 < passes {
-            crate::progress::check()?;
-            let eta = emcraft_solver::adapt::indicator(&driven, &r)?;
-            let m = emcraft_mesh::adapt::dorfler(&eta, theta)?;
-            marked = m.len();
-            refine.extend(emcraft_mesh::adapt::refinements(&driven.mesh, &m, floor)?);
-        }
-        rows.push(json!({
-            "pass": pass + 1,
-            "tetrahedra": tets,
-            "unknowns": driven.dofs.unknowns,
-            "delta_s": change,
-            "marked": marked,
-            "s11": crate::results::complex(r.s.get(0, 0).unwrap_or_default()),
-            "seconds": t0.elapsed().as_secs_f64(),
-        }));
+        let delta_s = last.as_ref().map(|(_, prev)| delta(&r.s, prev));
+        let converged = delta_s.is_some_and(|d| d < tolerance);
+        let marked = if !converged && pass + 1 < passes { refine.mark(&driven, &r)? } else { 0 };
+        rows.push(Pass {
+            pass: pass + 1,
+            tetrahedra,
+            unknowns: driven.dofs.unknowns,
+            delta_s,
+            marked,
+            s11: crate::results::complex(r.s.get(0, 0).unwrap_or_default()),
+            seconds: t0.elapsed().as_secs_f64(),
+        });
         last = Some((driven.mesh, r.s));
         if converged {
             stop = Stop::Converged;
@@ -129,15 +179,11 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
     let reply = json!({
         "frequency": s.show_frequency(frequency),
         "order": order.as_u8(),
-        "refinement": if solid { "adaptive" } else { "uniform" },
+        "refinement": refine.name(),
         "tolerance": tolerance,
         "converged": stop == Stop::Converged,
-        "stopped": match stop {
-            Stop::Converged => "converged",
-            Stop::Passes => "passes",
-            Stop::Limit => "mesh or unknowns limit",
-        },
-        "delta_s": rows.last().and_then(|r| r["delta_s"].as_f64()),
+        "stopped": stop.reason(),
+        "delta_s": rows.last().and_then(|r| r.delta_s),
         "passes": rows,
         // The last pass's S-parameters.
         "s11": crate::results::complex(sm.get(0, 0).unwrap_or_default()),
