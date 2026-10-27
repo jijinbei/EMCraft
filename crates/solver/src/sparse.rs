@@ -36,6 +36,11 @@ impl Csr {
         Csr { n, ptr, col, val }
     }
 
+    /// The same pattern with every value zero.
+    pub fn zeroed(&self) -> Csr {
+        Csr { n: self.n, ptr: self.ptr.clone(), col: self.col.clone(), val: vec![C::new(0.0, 0.0); self.col.len()] }
+    }
+
     fn position(&self, i: usize, j: usize) -> Option<usize> {
         let (a, b) = (*self.ptr.get(i)?, *self.ptr.get(i + 1)?);
         let row = self.col.get(a..b)?;

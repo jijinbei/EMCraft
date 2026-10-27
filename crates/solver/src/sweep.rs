@@ -20,12 +20,11 @@
 //! is as exact as without dispersion, and the residual of the full equations still decides which
 //! frequencies are solved in full.
 
-use std::f64::consts::PI;
-
-use emcraft_model::units::{C0, MU0};
 use num_complex::Complex64 as C;
 
-use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, complex_solve, invalid, read_s, wall_factor};
+use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, invalid, wall_factor, wavenumber};
+use crate::sparse::Csr;
+use crate::zdense;
 
 /// How a fast sweep decides it is done.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,6 +75,20 @@ fn dot_rc(a: &[f64], b: &[C]) -> C {
     a.iter().zip(b).map(|(x, y)| y * *x).sum()
 }
 
+/// A u for a real vector u, A's values `val` on the pattern `p`.
+fn product<T>(p: &Csr, val: &[T], u: &[f64]) -> Vec<T>
+where
+    T: Copy + std::ops::Mul<f64, Output = T> + std::iter::Sum,
+{
+    (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| val[k] * u[p.col[k]]).sum()).collect()
+}
+
+/// A rank-one term factor · v vᵀ of the system, v sparse.
+struct RankOne {
+    factor: C,
+    v: Vec<(usize, f64)>,
+}
+
 impl Basis {
     /// Adds the real and imaginary parts of `x`, orthogonalised against the basis (twice), unless
     /// nothing new is left of them.
@@ -98,13 +111,12 @@ impl Basis {
             }
             u.iter_mut().for_each(|p| *p /= len);
             let p = &d.pattern;
-            let row = |i: usize| p.ptr[i]..p.ptr[i + 1];
-            self.kv.push((0..p.n).map(|i| row(i).map(|k| d.stiffness[k] * u[p.col[k]]).sum()).collect());
-            self.mv.push((0..p.n).map(|i| row(i).map(|k| d.mass[k] * u[p.col[k]]).sum()).collect());
-            if let Some((_, w)) = &d.wall {
-                self.wv.push((0..p.n).map(|i| row(i).map(|k| w[k] * u[p.col[k]]).sum()).collect());
+            self.kv.push(product(p, &d.stiffness, &u));
+            self.mv.push(product(p, &d.mass, &u));
+            if let Some(w) = &d.wall {
+                self.wv.push(product(p, &w.mass, &u));
             }
-            self.dv.push(d.dispersive.iter().map(|(_, md)| (0..p.n).map(|i| row(i).map(|k| md[k] * u[p.col[k]]).sum()).collect()).collect());
+            self.dv.push(d.dispersive_mass.iter().map(|md| product(p, md, &u)).collect());
             self.v.push(u);
         }
     }
@@ -172,16 +184,14 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
 /// excitations.
 fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>]) -> Result<(FrequencyResult, f64)> {
     let t0 = std::time::Instant::now();
-    let k0 = 2.0 * PI * frequency / C0;
-    let omega = 2.0 * PI * frequency;
+    let k0 = wavenumber(frequency);
     let (n, m) = (d.dofs.unknowns, basis.v.len());
-    let wall = d.wall.as_ref().map(|(sigma, _)| wall_factor(frequency, *sigma));
+    let wall = d.wall.as_ref().map(|w| wall_factor(frequency, w.sigma));
     // k₀² εr,d(ω) per dispersive material.
-    let dispersive: Vec<C> = d.dispersive.iter().map(|(m, _)| m.eps_at(frequency) * (k0 * k0)).collect();
+    let dispersive = d.dispersive_scales(frequency);
     // The layer at this k₀: its own matrix on the pattern, times the basis.
     let pv: Option<Vec<Vec<C>>> = if d.pml.is_some() {
-        let mut p = d.pattern.clone();
-        p.val.iter_mut().for_each(|x| *x = C::new(0.0, 0.0));
+        let mut p = d.pattern.zeroed();
         d.add_pml(&mut p, k0)?;
         Some(basis.v.iter().map(|v| p.mul(&v.iter().map(|x| C::new(*x, 0.0)).collect::<Vec<_>>())).collect())
     } else {
@@ -208,12 +218,11 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
                 .collect()
         })
         .collect();
-    // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ and the port modes' factor v vᵀ, as
-    // (factor, sparse vector).
-    let mut rank_one: Vec<(C, Vec<(usize, f64)>)> = d.lumped.iter().map(|l| (C::new(0.0, omega * MU0 / l.impedance), l.c.clone())).collect();
-    rank_one.extend(terms.iter().flatten().map(|t: &PortTerm<'_>| (t.factor, t.v.to_vec())));
+    // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ and the port modes' factor v vᵀ.
+    let mut rank_one: Vec<RankOne> = d.lumped.iter().map(|l| RankOne { factor: l.factor(frequency), v: l.c.clone() }).collect();
+    rank_one.extend(terms.iter().flatten().map(|t: &PortTerm<'_>| RankOne { factor: t.factor, v: t.v.to_vec() }));
     let project = |v: &[(usize, f64)]| -> Vec<f64> { basis.v.iter().map(|b| v.iter().map(|&(i, x)| b[i] * x).sum()).collect() };
-    let projected: Vec<(C, Vec<f64>)> = rank_one.iter().map(|(f, v)| (*f, project(v))).collect();
+    let projected: Vec<(C, Vec<f64>)> = rank_one.iter().map(|r| (r.factor, project(&r.v))).collect();
     let mut ar: Vec<Vec<C>> = (0..m).map(|i| (0..m).map(|j| dot_rc(&basis.v[i], &av[j])).collect()).collect();
     for (f, u) in &projected {
         for i in 0..m {
@@ -227,19 +236,19 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
     for list in terms {
         let Some(t0m) = list.first() else { continue };
         // b = rhs · v of the excited port's first mode.
-        let b: Vec<(usize, C)> = t0m.v.iter().map(|&(i, x)| (i, t0m.rhs * x)).collect();
+        let b: Vec<(usize, C)> = t0m.excitation().collect();
         let br: Vec<C> = basis.v.iter().map(|v| b.iter().map(|&(i, x)| x * v[i]).sum()).collect();
-        let z = complex_solve(ar.clone(), br).ok_or_else(|| invalid("sweep", "a singular reduced system"))?;
+        let z = zdense::solve(ar.clone(), br).ok_or_else(|| invalid("sweep", "a singular reduced system"))?;
         let x: Vec<C> = (0..n).map(|i| (0..m).map(|j| z[j] * basis.v[j][i]).sum()).collect();
         // r = b − A x.
         let mut r: Vec<C> = (0..n).map(|i| -(0..m).map(|j| z[j] * av[j][i]).sum::<C>()).collect();
         for &(i, bi) in &b {
             r[i] += bi;
         }
-        for (f, v) in &rank_one {
+        for RankOne { factor, v } in &rank_one {
             let vx: C = v.iter().map(|&(i, c)| x[i] * c).sum();
             for &(i, c) in v {
-                r[i] -= f * vx * c;
+                r[i] -= factor * vx * c;
             }
         }
         let bn = b.iter().map(|(_, x)| x.norm_sqr()).sum::<f64>().sqrt();
@@ -248,8 +257,7 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
         fields.push(x);
     }
     // S as the full solve reads it.
-    let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
-    let s = d.deembed(d.refer(read_s(terms, &fields), &impedances)?, terms);
+    let (s, impedances) = d.s_parameters(terms, &fields)?;
     let seconds = t0.elapsed().as_secs_f64();
     Ok((
         FrequencyResult {

@@ -219,7 +219,7 @@ fn lossy_modes(model: &Model, driven: Driven, count: usize, sigma: f64, deflatio
         let mut b = vec![C::new(0.0, 0.0); q * q];
         for j in 0..q {
             let col: Vec<C> = (0..q).map(|i| dot(&y[i], &ky[j])).collect();
-            let s = crate::driven::complex_solve(mr.clone(), col)
+            let s = crate::zdense::solve(mr.clone(), col)
                 .ok_or_else(|| SolveError::Invalid { what: "eigen iteration".into(), why: "the subspace lost its independence".into() })?;
             for i in 0..q {
                 b[i * q + j] = s[i];

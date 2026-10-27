@@ -225,7 +225,7 @@ impl Driven {
                 }
                 Source::PlaneWave { direction, polarization } => {
                     self.lift_conductors(model, k0, direction, polarization, &mut b)?;
-                    let in_pml: std::collections::HashSet<usize> = self.pml.as_ref().map(crate::driven::Layer::tets).unwrap_or_default();
+                    let in_pml = self.pml_tets();
                     for t in 0..self.mesh.tets.len() {
                         let contrast = self.eps_at(t, frequency) - 1.0;
                         if contrast.norm() == 0.0 || in_pml.contains(&t) {
@@ -236,7 +236,7 @@ impl Driven {
                         }
                         let el = self.element_of(t)?;
                         let unknowns: Vec<u32> = self.dofs_of(t).collect();
-                        for (l, w) in el.rule(if self.order == emcraft_fem::Order::One { 3 } else { 4 }) {
+                        for (l, w) in el.rule(crate::driven::rule_points(self.order)) {
                             let phase = C::from_polar(1.0, -k0 * direction.dot(el.point(l).to_vec()));
                             let c = k0 * k0 * contrast * phase * w;
                             for (u, v) in unknowns.iter().zip(el.values(l)).filter(|(u, _)| **u != crate::driven::NONE) {
@@ -272,8 +272,7 @@ impl Driven {
             .collect();
         let feed = match (terms.first().and_then(|l| l.first()), self.incident_power(0, frequency)) {
             (Some(t), Some(incident)) => {
-                let c: C = t.v.iter().map(|&(i, vi)| field[i] * vi).sum::<C>() / t.norm;
-                let s11 = c - 1.0;
+                let s11 = t.coefficient(&field) - 1.0;
                 Some((s11, incident * (1.0 - s11.norm_sqr())))
             }
             _ => None,
@@ -366,7 +365,7 @@ impl Driven {
         let f = Ldlt::factor(&m, &points)?;
         let (g, _) = f.solve_refined(&m, &r, 2)?;
         // Lift: every tetrahedron with a conductor's degree of freedom.
-        let in_pml: std::collections::HashSet<usize> = self.pml.as_ref().map(crate::driven::Layer::tets).unwrap_or_default();
+        let in_pml = self.pml_tets();
         for t in 0..self.mesh.tets.len() {
             let known: Vec<(usize, C)> =
                 self.dofs.slots_of_tet(&self.topo, t).enumerate().filter_map(|(li, s)| index.get(&s).map(|&k| (li, g[k]))).collect();
