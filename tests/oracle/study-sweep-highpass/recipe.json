@@ -1,0 +1,11 @@
+[
+ {"command": "project.variable", "params": {"name": "l", "value": 20}},
+ {"command": "model.material.create", "params": {"name": "ptfe-like", "eps_r": 2.0}},
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
+   {"length": 15, "material": "ptfe-like"}, {"length": "=l", "material": "vacuum"}, {"length": 15, "material": "ptfe-like"}]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "study.sweep", "params": {"variable": "l", "values": [10, 20, 30],
+   "solve": {"command": "solve.frequency", "params": {"frequencies": [6, 8], "order": 2}}}, "id": "sweep"}
+]
