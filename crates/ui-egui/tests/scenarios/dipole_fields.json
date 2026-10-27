@@ -1,0 +1,55 @@
+[
+ {
+  "note": "A dipole's fields: its singular near field saturates instead of setting the scale, so the plane's colours and arrows show"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "dipole",
+    "solve": true
+   }
+  }
+ },
+ {
+  "click": "step:results"
+ },
+ {
+  "frames": 4
+ },
+ {
+  "call": "ui.set",
+  "params": {
+   "animate": false
+  }
+ },
+ {
+  "frames": 2
+ },
+ {
+  "click": "view:model"
+ },
+ {
+  "frames": 4
+ },
+ {
+  "shot": "dipole-results-3d"
+ },
+ {
+  "click": "view:field"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "expect": {
+   "inspect": {
+    "field.shown": true
+   }
+  }
+ },
+ {
+  "shot": "dipole-field"
+ }
+]

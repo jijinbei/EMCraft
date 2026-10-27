@@ -347,6 +347,9 @@ impl Session {
                 match spec.effect {
                     // The state before it, to undo to; the command joins the history.
                     Effect::Record | Effect::Replace => {
+                        // A replaced session solved to its last state (a sample opened with its
+                        // solve) keeps its results current.
+                        let current = spec.effect == Effect::Replace && self.solved_revision == Some(self.revision);
                         project::push_undo(&mut self.undo, project::Snapshot { history: history_before, ..before });
                         self.redo.clear();
                         if spec.effect == Effect::Record {
@@ -354,6 +357,9 @@ impl Session {
                         }
                         // (A replaced session counts its own revisions from zero.)
                         self.revision = revision_before.max(self.revision) + 1;
+                        if current {
+                            self.solved_revision = Some(self.revision);
+                        }
                     }
                     Effect::Solve => self.solved_revision = Some(self.revision),
                     Effect::None => {}

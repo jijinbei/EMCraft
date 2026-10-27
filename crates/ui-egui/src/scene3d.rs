@@ -141,6 +141,12 @@ pub fn material_rgb(model: &Model, index: usize) -> Rgb {
     }
 }
 
+/// A picture's label as plain text for the legend: TeX math in Unicode, subscripts written on
+/// the line (the UI's font lacks most subscript letters: `$E_z$` reads `Ez`).
+fn plain(label: &str) -> String {
+    emcraft_render::math::to_unicode(&label.replace('_', ""))
+}
+
 fn p3(p: emcraft_model::geom::Point3) -> [f64; 3] {
     [p.x, p.y, p.z]
 }
@@ -260,7 +266,7 @@ fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, legend: bool
         j = j1;
     }
     if legend {
-        out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| emcraft_render::math::to_unicode(&s.label)), color(peak)));
+        out.legend.push((f.plot.scalar.as_ref().map_or(String::new(), |s| plain(&s.label)), color(peak)));
     }
     field_arrows(session, f, lo, legend, out);
 }
@@ -294,8 +300,9 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
         if !(scale > 0.0) {
             continue;
         }
-        let k = f.plot.arrow_length / scale;
         for (p, v) in &set.arrows {
+            // Arrows above the scale (a source's spike) stop at the full length.
+            let k = f.plot.arrow_length / scale.max(v[0].hypot(v[1]));
             let d = [v[0] * k, v[1] * k];
             let len = d[0].hypot(d[1]);
             if !(len.is_finite() && len > 0.08 * f.plot.arrow_length) {
@@ -312,7 +319,7 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
             }
         }
         if legend {
-            out.legend.push((emcraft_render::math::to_unicode(&set.label), set.color));
+            out.legend.push((plain(&set.label), set.color));
         }
     }
 }

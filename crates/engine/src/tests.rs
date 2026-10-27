@@ -1212,3 +1212,25 @@ fn an_open_part_gets_air_and_a_layer_a_quarter_wavelength_each() {
     assert!(s.execute("geometry.import", &json!({"path": path, "open": true, "margin": 8, "thickness": 8})).is_err());
     assert!(s.execute("geometry.import", &json!({"path": path, "open": true, "region": "Post"})).is_err());
 }
+
+#[test]
+fn a_source_spike_does_not_set_a_pictures_scale() {
+    // A plane of values about 1 with a few near a source a thousand times larger: the scale is
+    // the bulk's; without a spike, the largest.
+    let mut v: Vec<f64> = (0..200).map(|i| 1.0 + (i % 7) as f64 * 0.01).collect();
+    v.extend([1000.0, 800.0, 500.0]);
+    assert!(view::robust_peak(v) < 1.1);
+    let plain: Vec<f64> = (0..200).map(|i| (i as f64 * 0.1).sin().abs()).collect();
+    let max = plain.iter().copied().fold(0.0, f64::max);
+    assert_eq!(view::robust_peak(plain), max);
+}
+
+#[test]
+fn a_sample_opened_with_its_solve_has_current_results() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass", "solve": true})).unwrap();
+    assert_eq!(s.solved_revision, Some(s.revision));
+    // A change after it makes them stale.
+    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    assert_ne!(s.solved_revision, Some(s.revision));
+}

@@ -383,18 +383,19 @@ impl PlaneSamples {
         let re = |c: C| (c * rot).re;
         let norm = |f: &CVec3| f.norm_sqr().sqrt();
         let comp = view.component;
-        let mut peak: f64 = 0.0;
+        let mut amplitudes = Vec::with_capacity(self.grid.len());
         let values = self
             .grid
             .iter()
             .map(|g| match g.as_ref().map(|(e, h)| comp.sample(e, h, rot)) {
                 Some((v, amp)) => {
-                    peak = peak.max(amp);
+                    amplitudes.push(amp);
                     v
                 }
                 None => f64::NAN,
             })
             .collect();
+        let peak = robust_peak(amplitudes);
         // In-plane components of a vector: (horizontal, vertical).
         let in_plane = |f: &CVec3| match self.plane {
             Plane::H => (f.z, f.x),
@@ -408,17 +409,19 @@ impl PlaneSamples {
             if !show {
                 continue;
             }
-            let (mut in_peak, mut total): (f64, f64) = (0.0, 0.0);
+            let mut totals = Vec::new();
             // H between E's arrows when both show.
             let lattice = if magnetic && view.show_e && !self.corners.is_empty() { &self.corners } else { &self.arrows };
             let mut list = Vec::with_capacity(lattice.len());
+            let mut sizes = Vec::with_capacity(lattice.len());
             for (pos, e, h) in lattice {
                 let f = if magnetic { h } else { e };
                 let (u, v) = in_plane(f);
-                total = total.max(norm(f));
-                in_peak = in_peak.max((u.norm_sqr() + v.norm_sqr()).sqrt());
+                totals.push(norm(f));
+                sizes.push((u.norm_sqr() + v.norm_sqr()).sqrt());
                 list.push((*pos, [re(u), re(v)]));
             }
+            let (in_peak, total) = (robust_peak(sizes), robust_peak(totals));
             // Scaled by the peak over the period, so an animation keeps one scale. A field with
             // (next to) nothing in the plane — E in the H-plane for TE10, whose in-plane part is
             // discretisation error — draws no arrows.
@@ -449,6 +452,24 @@ impl PlaneSamples {
             arrow_length: self.arrow_length,
         })
     }
+}
+
+/// How far the largest value may stand above the 90th percentile before it no longer sets the
+/// scale.
+const SPIKE: f64 = 4.0;
+
+/// The value a picture's colours and arrows are scaled to: the largest, unless it is a spike —
+/// a source's near field, falling as 1/r³ round a dipole or a gap, far above everything else —
+/// when the 90th percentile is (the larger values saturate), so the rest of the plane shows.
+pub fn robust_peak(mut values: Vec<f64>) -> f64 {
+    values.retain(|v| v.is_finite());
+    let peak = values.iter().copied().fold(0.0f64, f64::max);
+    if values.len() < 50 {
+        return peak;
+    }
+    values.sort_by(f64::total_cmp);
+    let q = values[(values.len() - 1) * 90 / 100];
+    if q > 0.0 && peak > SPIKE * q { q } else { peak }
 }
 
 /// A TE₁₀ line's section `length` long of material `m` at `frequency` (Hz): its permittivity

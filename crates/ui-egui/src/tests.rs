@@ -255,6 +255,12 @@ fn file_and_edit_menus() {
 }
 
 #[test]
+#[ignore = "solves the dipole (seconds): cargo test --release -p emcraft-ui-egui scenario_dipole_fields -- --ignored"]
+fn scenario_dipole_fields() {
+    scenario("dipole_fields");
+}
+
+#[test]
 #[ignore = "a tour of every sample's steps for looking at: EMCRAFT_SCENARIO_SHOTS=DIR cargo test -p emcraft-ui-egui scenario_visibility_tour -- --ignored"]
 fn scenario_visibility_tour() {
     scenario("visibility_tour");

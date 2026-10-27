@@ -240,7 +240,8 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
         }
         for (p, v) in &set.arrows {
             let q = to_px(*p);
-            let k = full / scale;
+            // Arrows above the scale (a source's spike) stop at the full length.
+            let k = full / scale.max((v[0] * v[0] + v[1] * v[1]).sqrt());
             // Screen y points down.
             let d = [v[0] * k, -v[1] * k];
             if !(d[0].is_finite() && d[1].is_finite()) || (d[0] * d[0] + d[1] * d[1]).sqrt() < 2.5 {

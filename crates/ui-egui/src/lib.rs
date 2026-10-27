@@ -430,6 +430,10 @@ impl EmcraftApp {
                 if matches!(id, "file.new" | "file.sample") {
                     self.home.open = false;
                 }
+                // An open problem's fields read best as |E| (a source's own component may vanish
+                // on the planes through it); a guide's as Ey, its TE10 field.
+                self.field.view.component =
+                    if self.session.model.open.is_some() { emcraft_engine::view::Component::E } else { emcraft_engine::view::Component::Ey };
                 self.port_modes = None;
                 self.compare = None;
                 self.view = if results.sweep.is_some() {
@@ -456,6 +460,9 @@ impl EmcraftApp {
             "solve.radiation" => {
                 self.view = View::FarField;
                 self.field.view.mode = None;
+                if self.field.view.component == emcraft_engine::view::Component::Ey {
+                    self.field.view.component = emcraft_engine::view::Component::E;
+                }
                 if let Some(r) = &results.radiation {
                     self.field.view.frequency = r.result.frequency;
                 }
