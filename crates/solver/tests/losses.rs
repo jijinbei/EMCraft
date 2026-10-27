@@ -14,7 +14,7 @@ fn slab(size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap()).unwrap();
     let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.02, "lossy"), Section::new(0.01, "vacuum")];
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
@@ -63,7 +63,15 @@ fn absorbed_power_balances_the_ports() {
 fn a_port_in_a_lossy_material_is_refused() {
     let mut m = Model::new();
     m.add_material(Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap()).unwrap();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(0.02, "lossy")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(0.02, "lossy")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
     assert!(matches!(Driven::new(&m, Order::One), Err(SolveError::Invalid { .. })));
@@ -72,8 +80,15 @@ fn a_port_in_a_lossy_material_is_refused() {
 /// An empty WR-90 guide `length` long with walls of conductivity `sigma`.
 fn lossy_walls(length: f64, sigma: f64, size: f64) -> Model {
     let mut m = Model::new();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(length, "vacuum")], layers: Vec::new(), strips: Vec::new() })
-        .unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(length, "vacuum")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.set_wall_conductivity(Some(sigma)).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
@@ -127,7 +142,7 @@ fn dispersive_slab(size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("disp", 2.0, 1.0).unwrap().with_dispersion(poles()).unwrap()).unwrap();
     let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.02, "disp"), Section::new(0.01, "vacuum")];
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
@@ -180,7 +195,15 @@ fn dispersive_ports_and_eigenmodes_are_refused() {
     let mut m = Model::new();
     let drude = Pole::Drude { plasma_frequency: 5e9, damping: 1e9 };
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(0.02, "plasma")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(0.02, "plasma")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
     let e = Driven::new(&m, Order::One).unwrap_err();

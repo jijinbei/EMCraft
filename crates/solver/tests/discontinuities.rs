@@ -19,7 +19,7 @@ fn model(layout: &Layout, opts: &emcraft_mesh::Options) -> Model {
         .iter()
         .map(|&(l, x0, w)| Section { length: l, material: "vacuum".into(), width: Some(w), offset: Some(x0), ..Default::default() })
         .collect();
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide_with(&m, opts).unwrap());
@@ -108,7 +108,7 @@ fn e_model_with(layout: &[(f64, f64, f64)], opts: emcraft_mesh::Options) -> Mode
         .iter()
         .map(|&(l, y0, h)| Section { length: l, material: "vacuum".into(), height: Some(h), offset_y: Some(y0), ..Default::default() })
         .collect();
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide_with(&m, &opts).unwrap());

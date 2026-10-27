@@ -63,7 +63,14 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   effective permittivity and impedance, the benchmark for strips on a substrate
   (`emcraft-theory::microstrip`).
 - S. B. Cohn, *Characteristic impedance of the shielded-strip transmission line*, IRE Trans. MTT
-  2(2):52–57, 1954 — the zero-thickness stripline's exact impedance (`emcraft-theory::stripline`).
+  2(2):52–57, 1954 — the zero-thickness stripline's exact impedance (`emcraft-theory::stripline`);
+  its wide-strip limit K(k′)/K(k) → W/b + (2/π) ln 2 gives each edge's excess width b ln 2/π,
+  the open end's extension in the oracle cases `stripline-ends` and `stripline-stub`.
+- A. G. Altschuler, A. A. Oliner, *Discontinuities in the center conductor of symmetric strip
+  transmission line*, IRE Trans. MTT 8(3):328–339, 1960 — the open end of a stripline, its
+  quasi-static extension that of a side edge; A. A. Oliner, *Equivalent circuits for
+  discontinuities in balanced strip transmission line*, IRE Trans. MTT 3(2):134–143, 1955 — the
+  T-junction's equivalent circuit, what the stubs' line model leaves out (`stripline-stub`).
 - K. Kurokawa, *Power waves and the scattering matrix*, IEEE Trans. MTT 13(2):194–202, 1965 — S
   referred to reference impedances from the modes' power waves (`emcraft-solver::driven`).
 - J. Meixner, *The behavior of electromagnetic fields at edges*, IEEE Trans. AP 20(4):442–446,

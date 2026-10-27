@@ -115,13 +115,14 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.waveguide",
         label: "Rectangular waveguide",
-        doc: "A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). A shielded planar circuit is one too: `layers` fill it from y = 0 up (a substrate), `strips` of no thickness lie on planes y = const (a microstrip on the substrate's top, a stripline between two layers); its ports then take their modes from the cross-section solver. Replaces any geometry, mesh and results.",
+        doc: "A rectangular waveguide along z with perfectly conducting walls: cross-section `width` (x) × `height` (y) from the origin, filled along z in sections, each with its own aperture across x (H-plane steps, inductive irises; neighbouring apertures must nest). A shielded planar circuit is one too: `layers` fill it from y = 0 up (a substrate), `strips` of no thickness lie on planes y = const (a microstrip on the substrate's top, a stripline between two layers; strips may end inside the box: open stubs, a stub branching off a line), `vias` are conducting posts (a via to ground, a shorting pin); its ports then take their modes from the cross-section solver. Replaces any geometry, mesh and results.",
         params: &[
             req("width", K::Number, "broad wall a (x)").of(L),
             req("height", K::Number, "narrow wall b (y)").of(L),
             req("sections", K::Array, "`[{\"length\", \"material\", \"width\"?, \"offset\"?}]` from z = 0: a section may narrow the broad wall to an aperture `width` wide (lengths), starting at x = `offset` (centred when left out)"),
             opt("layers", K::Array, "`[{\"thickness\", \"material\"}]` from y = 0 up, across the whole guide (lengths); above them each section's material"),
             opt("strips", K::Array, "`[{\"y\", \"x0\", \"width\", \"z0\"?, \"z1\"?}]`: conducting strips of no thickness, [x0, x0 + width] × [z0, z1] on the plane y (lengths; z0, z1 the guide's ends when left out)"),
+            opt("vias", K::Array, "`[{\"x0\", \"z0\", \"wx\", \"wz\", \"y0\"?, \"y1\"?}]`: conducting rectangular posts [x0, x0 + wx] × [y0, y1] × [z0, z0 + wz], solid metal (lengths; y0 = 0 and y1 = the height when left out: a post from the ground plane, through a strip on its way, to the top); a via from the ground to a strip ends at the strip's y"),
         ],
         effect: Effect::Record,
         run: crate::geometry::waveguide,

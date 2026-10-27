@@ -99,6 +99,7 @@ mod tests {
             sections: vec![Section::new(0.03, "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
+            vias: Vec::new(),
         })
         .unwrap();
         let mesh = crate::waveguide(&m, 0.005).unwrap();

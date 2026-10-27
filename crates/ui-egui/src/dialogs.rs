@@ -69,6 +69,14 @@ const STRIPS: &[Column] = &[
     col("z0", Cell::Number, false),
     col("z1", Cell::Number, false),
 ];
+const VIAS: &[Column] = &[
+    col("x0", Cell::Number, true),
+    col("z0", Cell::Number, true),
+    col("wx", Cell::Number, true),
+    col("wz", Cell::Number, true),
+    col("y0", Cell::Number, false),
+    col("y1", Cell::Number, false),
+];
 const XYZ: &[&str] = &["x", "y", "z"];
 const FACE: &[&str] = &["z", "x0", "y0", "a", "b"];
 
@@ -85,6 +93,7 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         (_, "sections") => return Kind::Table(SECTIONS),
         (_, "layers") => return Kind::Table(LAYERS),
         (_, "strips") => return Kind::Table(STRIPS),
+        (_, "vias") => return Kind::Table(VIAS),
         ("file.sample", "name") => return Kind::Choice(emcraft_engine::sample::SAMPLES.iter().map(|s| s.name.to_owned()).collect()),
         (_, "material") => return Kind::Choice(session.model.materials.iter().map(|m| m.name.clone()).collect()),
         (_, "excitation") => return Kind::Choice(session.model.ports.iter().map(|p| p.name.clone()).collect()),
@@ -370,7 +379,14 @@ pub fn initial(command: &str, s: &Session) -> Value {
                     .iter()
                     .map(|x| json!({"y": l.from_si(x.y), "x0": l.from_si(x.x0), "width": l.from_si(x.width), "z0": l.from_si(x.z0), "z1": l.from_si(x.z1)}))
                     .collect();
-                json!({"width": l.from_si(w.width), "height": l.from_si(w.height), "sections": sections, "layers": layers, "strips": strips})
+                let vias: Vec<Value> = w
+                    .vias
+                    .iter()
+                    .map(|v| {
+                        json!({"x0": l.from_si(v.x0), "z0": l.from_si(v.z0), "wx": l.from_si(v.wx), "wz": l.from_si(v.wz), "y0": l.from_si(v.y0), "y1": l.from_si(v.y1)})
+                    })
+                    .collect();
+                json!({"width": l.from_si(w.width), "height": l.from_si(w.height), "sections": sections, "layers": layers, "strips": strips, "vias": vias})
             }
             None => json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]}),
         },

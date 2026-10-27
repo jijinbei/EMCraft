@@ -11,7 +11,10 @@
 //! - `README.md`: the problem in our own words.
 //!
 //! A measure reads a number from a step's reply (`{"step": id, "pointer": "/json/pointer"}`)
-//! or from a command run after the recipe (`{"command", "params", "pointer"}`).
+//! or from a command run after the recipe (`{"command", "params", "pointer"}`). With
+//! `"minimum": {"x": "/frequency", "y": "/s21/mag"}` the pointer names a list (a sweep's points)
+//! and the number is the x where y is least: the vertex of the parabola through y² at the least
+//! sampled point and its two neighbours (a notch, where y ∝ |x − x₀| and y² is quadratic).
 //!
 //! Adapted from FieldCraft's `crates/testkit/src/oracle.rs` (MIT OR Apache-2.0), see
 //! ATTRIBUTION.md.
@@ -226,8 +229,10 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
         } else {
             Err(OracleError::Measure("`measure` gives a `step` or a `command`".into()))
         };
-        let value =
-            reply.and_then(|r| r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))));
+        let value = reply.and_then(|r| match m.get("minimum") {
+            Some(spec) => minimum(&r, pointer, spec),
+            None => r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))),
+        });
         let pass = value.as_ref().is_ok_and(|v| q.tolerance.allows(q.reference, *v));
         let fixed = fixture.as_ref().and_then(|f| f.pointer(&format!("/values/{}", q.id)));
         let fixture = match (fixed, &value) {
@@ -241,6 +246,36 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
         out.push(Outcome { quantity: q.clone(), value, pass, fixture });
     }
     Ok((expected, out))
+}
+
+/// The x where y is least over the list at `pointer` (see the module docs): the parabola's vertex
+/// through y² at the least point and its neighbours, which must be evenly spaced in x.
+fn minimum(reply: &Value, pointer: &str, spec: &Value) -> Result<f64> {
+    let fail = |why: String| OracleError::Measure(format!("minimum over `{pointer}`: {why}"));
+    let list = reply.pointer(pointer).and_then(Value::as_array).ok_or_else(|| fail("not a list".into()))?;
+    let key = |k: &str| spec.get(k).and_then(Value::as_str).ok_or_else(|| fail(format!("`minimum` needs a JSON pointer `{k}`")));
+    let (kx, ky) = (key("x")?, key("y")?);
+    let points = list
+        .iter()
+        .map(|p| match (p.pointer(kx).and_then(Value::as_f64), p.pointer(ky).and_then(Value::as_f64)) {
+            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok((x, y * y)),
+            _ => Err(fail(format!("a point without numbers at `{kx}` and `{ky}`"))),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let k = (0..points.len()).min_by(|a, b| points[*a].1.total_cmp(&points[*b].1)).ok_or_else(|| fail("no points".into()))?;
+    if k == 0 || k + 1 == points.len() {
+        return Err(fail(format!("the least value is at the list's end (x = {}): widen the sweep", points[k].0)));
+    }
+    let [(x0, y0), (x1, y1), (x2, y2)] = [points[k - 1], points[k], points[k + 1]];
+    let h = x1 - x0;
+    if !(h > 0.0) || ((x2 - x1) - h).abs() > 1e-9 * h.abs().max(x1.abs()) {
+        return Err(fail("the points must be evenly spaced, ascending".into()));
+    }
+    let curvature = y0 - 2.0 * y1 + y2;
+    if !(curvature > 0.0) {
+        return Err(fail("no minimum between the points".into()));
+    }
+    Ok(x1 + 0.5 * h * (y0 - y2) / curvature)
 }
 
 fn band(q: &Quantity, v: f64) -> f64 {
@@ -379,6 +414,22 @@ mod tests {
         let q = twice["quantities"][0].clone();
         twice["quantities"].as_array_mut().unwrap().push(q);
         assert!(Expected::parse(&twice).is_err());
+    }
+
+    #[test]
+    fn a_minimum_is_the_parabolas_vertex() {
+        // y = |x − 2.3| sampled at 0.5 steps: y² is a parabola, its vertex exact.
+        let points: Vec<Value> = (0..9).map(|i| f64::from(i) * 0.5).map(|x| json!({"f": x, "s": {"mag": (x - 2.3f64).abs()}})).collect();
+        let reply = json!({"points": points});
+        let spec = json!({"x": "/f", "y": "/s/mag"});
+        assert!((minimum(&reply, "/points", &spec).unwrap() - 2.3).abs() < 1e-12);
+        // At the list's end, uneven, or without the keys: refused.
+        let edge: Vec<Value> = (0..4).map(|i| json!({"f": f64::from(i), "s": {"mag": f64::from(i)}})).collect();
+        assert!(minimum(&json!({"points": edge}), "/points", &spec).is_err());
+        let uneven = json!({"points": [{"f": 0.0, "s": {"mag": 1.0}}, {"f": 1.0, "s": {"mag": 0.1}}, {"f": 3.0, "s": {"mag": 1.0}}]});
+        assert!(minimum(&uneven, "/points", &spec).is_err());
+        assert!(minimum(&reply, "/points", &json!({"x": "/f"})).is_err());
+        assert!(minimum(&reply, "/nothing", &spec).is_err());
     }
 
     /// Every committed case parses and has a recipe and a README (running them is

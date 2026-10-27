@@ -25,6 +25,7 @@ fn iris(modes: u32, planes: &[Symmetry], opts: &emcraft_mesh::Options) -> Model 
         sections: vec![sec(0.015, None), sec(0.002, Some(0.012)), sec(0.015, None)],
         layers: Vec::new(),
         strips: Vec::new(),
+        vias: Vec::new(),
     })
     .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(modes)).unwrap();
@@ -156,7 +157,15 @@ fn half_and_quarter_iris_match_the_whole_and_mode_matching() {
 /// An empty WR-90 guide, 30 mm long.
 fn empty(planes: &[Symmetry], solver: ModeSolver) -> Model {
     let mut m = Model::new();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(0.03, "vacuum")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(0.03, "vacuum")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(2).with_mode_solver(solver)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(2).with_mode_solver(solver)).unwrap();
     m.set_symmetry(planes.to_vec()).unwrap();
@@ -204,7 +213,15 @@ fn a_half_stripline_has_the_whole_lines_impedance() {
         let mut m = Model::new();
         m.add_material(emcraft_model::Material::new("fill", er, 1.0).unwrap()).unwrap();
         let strips = vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }];
-        m.set_waveguide(Waveguide { width: a, height: b, sections: vec![Section::new(length, "fill")], layers: Vec::new(), strips }).unwrap();
+        m.set_waveguide(Waveguide {
+            width: a,
+            height: b,
+            sections: vec![Section::new(length, "fill")],
+            layers: Vec::new(),
+            strips,
+            vias: Vec::new(),
+        })
+        .unwrap();
         m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
         m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
         m.set_symmetry(planes.to_vec()).unwrap();
@@ -212,6 +229,40 @@ fn a_half_stripline_has_the_whole_lines_impedance() {
         Driven::new(&m, Order::Two).unwrap().solve(2e9).unwrap()
     };
     let (whole, half) = (line(&[]), line(&[Symmetry { axis: Axis::X, at: a / 2.0, kind: SymmetryKind::Magnetic }]));
+    let (zw, zh) = (whole.impedances[0].unwrap(), half.impedances[0].unwrap());
+    let cohn = emcraft_theory::stripline::z0(w, b, er);
+    assert!((zh / zw - 1.0).abs() < 2e-3, "{zh} {zw}");
+    assert!((zh / cohn - 1.0).abs() < 5e-3, "{zh} {cohn}");
+    assert!((half.s[1][0] - whole.s[1][0]).norm() < 1e-3, "{} {}", half.s[1][0], whole.s[1][0]);
+}
+
+#[test]
+fn a_stripline_halved_through_its_strip_plane_keeps_the_whole_lines_impedance() {
+    // The stripline's TEM is even about the strip's plane y = b/2 (tangential E even, normal E
+    // odd): a magnetic wall there keeps it, the strip a conductor on the wall. Power and current
+    // both halve, so the reported impedance is the whole's; S is the whole's.
+    let (b, w, er, length) = (0.003, 0.0024, 2.2, 0.002);
+    let a = w + 6.0 * b;
+    let line = |planes: &[Symmetry]| {
+        let mut m = Model::new();
+        m.add_material(emcraft_model::Material::new("fill", er, 1.0).unwrap()).unwrap();
+        let strips = vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }];
+        m.set_waveguide(Waveguide {
+            width: a,
+            height: b,
+            sections: vec![Section::new(length, "fill")],
+            layers: Vec::new(),
+            strips,
+            vias: Vec::new(),
+        })
+        .unwrap();
+        m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
+        m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
+        m.set_symmetry(planes.to_vec()).unwrap();
+        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap());
+        Driven::new(&m, Order::Two).unwrap().solve(2e9).unwrap()
+    };
+    let (whole, half) = (line(&[]), line(&[Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Magnetic }]));
     let (zw, zh) = (whole.impedances[0].unwrap(), half.impedances[0].unwrap());
     let cohn = emcraft_theory::stripline::z0(w, b, er);
     assert!((zh / zw - 1.0).abs() < 2e-3, "{zh} {zw}");

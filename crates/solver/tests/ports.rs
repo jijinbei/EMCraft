@@ -78,6 +78,7 @@ fn slab_guide(length: f64, d: f64, er: f64, size: f64) -> Model {
         sections: vec![emcraft_model::Section::new(length, "vacuum")],
         layers: vec![emcraft_model::Layer { thickness: d, material: "slab".into() }],
         strips: Vec::new(),
+        vias: Vec::new(),
     };
     m.set_waveguide(w).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
@@ -114,6 +115,7 @@ fn stripline(a: f64, b: f64, w: f64, length: f64, er: f64, size: f64) -> Model {
         sections: vec![emcraft_model::Section::new(length, "fill")],
         layers: Vec::new(),
         strips: vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }],
+        vias: Vec::new(),
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
@@ -150,6 +152,7 @@ fn microstrip(a: f64, b: f64, h: f64, w: f64, er: f64, length: f64, size: f64) -
         sections: vec![emcraft_model::Section::new(length, "vacuum")],
         layers: vec![emcraft_model::Layer { thickness: h, material: "substrate".into() }],
         strips: vec![emcraft_model::Strip { y: h, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }],
+        vias: Vec::new(),
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {

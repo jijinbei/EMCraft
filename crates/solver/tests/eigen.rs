@@ -12,7 +12,15 @@ const D: f64 = 0.03;
 
 fn cavity(size: f64) -> Model {
     let mut m = Model::new();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(D, "vacuum")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(D, "vacuum")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
     m
 }
@@ -52,7 +60,15 @@ fn a_very_lossy_fill_gives_its_complex_frequency() {
     let tan_d: f64 = 0.05;
     let mut m = Model::new();
     m.add_material(Material::new("fill", 2.25, 1.0).unwrap().with_loss_tangent(tan_d).unwrap()).unwrap();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(D, "fill")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(D, "fill")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
     let lossy = eigenmodes(&m, Order::Two, 2, 5.5e9).unwrap();
     let mut lossless = m.clone();
@@ -99,7 +115,15 @@ fn a_filled_cavity_scales_and_its_dielectric_sets_q() {
     // Filled with εr = 2.25, tan δ = 1e-3: frequencies fall by 1.5, Q_d = 1/tan δ.
     let mut m = Model::new();
     m.add_material(Material::new("fill", 2.25, 1.0).unwrap().with_loss_tangent(1e-3).unwrap()).unwrap();
-    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(D, "fill")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: A,
+        height: B,
+        sections: vec![Section::new(D, "fill")],
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
     let e = eigenmodes(&m, Order::Two, 1, 5.5e9).unwrap();
     let (f, _) = cavity_resonances(A, B, D, 2.25, 1)[0].clone();

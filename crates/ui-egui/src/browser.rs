@@ -82,6 +82,13 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
                     .picks(Pick::Strip(i)),
             );
         }
+        for (i, v) in w.vias.iter().enumerate() {
+            geometry.push(row(
+                format!("  Via {}: {} × {} {lu}, y {} to {}", i + 1, mm(v.wx), mm(v.wz), mm(v.y0), mm(v.y1)),
+                "box",
+                Act::Edit("geometry.waveguide"),
+            ));
+        }
     }
     if let Some(solid) = &m.solid {
         let shape = format!("{:?}", solid.shape);

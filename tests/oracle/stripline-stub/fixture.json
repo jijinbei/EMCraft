@@ -1,0 +1,13 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "open_notch": {
+      "band": 4.892761599933597e-9,
+      "value": 4.892760599933596
+    },
+    "shorted_notch": {
+      "band": 1.0110595299520993e-8,
+      "value": 10.110594299520992
+    }
+  }
+}

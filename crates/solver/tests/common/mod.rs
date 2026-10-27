@@ -20,7 +20,7 @@ pub fn guide(sections: &[(f64, f64)], size: f64, modes: u32) -> Model {
         names.push(name);
     }
     let sections = sections.iter().zip(&names).map(|((l, _), n)| Section::new(*l, n)).collect();
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(modes)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(modes)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());

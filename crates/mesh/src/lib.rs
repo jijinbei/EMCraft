@@ -164,7 +164,8 @@ pub fn waveguide(model: &Model, size: f64) -> Result<Mesh> {
 /// step or an iris the lines close in ([`Options`]). Faces at z = 0 and z = length are tagged as
 /// ports 0 and 1, every other boundary face (the walls, and the faces of a step or an iris) as a
 /// perfect conductor. A symmetry plane of the model ([`emcraft_model::Symmetry`]) is a grid
-/// plane too: only the side below it is meshed, its faces tagged with its wall.
+/// plane too: only the side below it is meshed, its faces tagged with its wall. A via's faces are
+/// grid planes graded like a step's edges, its cells left out like those outside an aperture.
 pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let size = positive("element size", o.size)?;
     if !(o.edge.is_finite() && o.edge > 0.0 && o.edge <= 1.0)
@@ -195,17 +196,23 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let strip_x: Vec<f64> = w.strips.iter().flat_map(|s| [s.x0, s.x0 + s.width]).collect();
     let strip_y: Vec<f64> = w.strips.iter().map(|s| s.y).collect();
     let layer_y = w.layer_tops();
+    // Vias' faces are planes the lines close in on as on a step's edges (a post's corners are
+    // re-entrant).
+    let via_x: Vec<f64> = w.vias.iter().flat_map(|v| [v.x0, v.x0 + v.wx]).collect();
+    let via_y: Vec<f64> = w.vias.iter().flat_map(|v| [v.y0, v.y1]).collect();
     let axis = |span: f64,
                 aperture: &dyn Fn(usize) -> Option<Span>,
                 step: f64,
                 sharp_z: &mut Vec<bool>,
                 planes: &[f64],
-                edges: &[f64]|
+                edges: &[f64],
+                posts: &[f64]|
      -> Result<Vec<f64>> {
         let tol = 1e-9 * span;
+        let inside = |v: &f64| *v > tol && *v < span - tol;
         let mut breaks = vec![0.0, span];
-        breaks.extend(planes.iter().chain(edges).copied().filter(|v| *v > tol && *v < span - tol));
-        let mut sharp: Vec<f64> = edges.iter().copied().filter(|v| *v > tol && *v < span - tol).collect();
+        breaks.extend(planes.iter().chain(edges).chain(posts).copied().filter(inside));
+        let mut sharp: Vec<f64> = posts.iter().copied().filter(inside).collect();
         for i in 0..w.sections.len() {
             if let Some(a) = aperture(i) {
                 breaks.push(a.start.clamp(0.0, span));
@@ -266,8 +273,8 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     };
     let x_planes: Vec<f64> = cut(0).into_iter().collect();
     let y_planes: Vec<f64> = layer_y.iter().copied().chain(cut(1)).collect();
-    let x = keep(axis(w.width, &|i| w.aperture(i), size, &mut sharp_z, &x_planes, &strip_x)?, cut(0), w.width);
-    let y = keep(axis(w.height, &|i| w.aperture_y(i), size_y, &mut sharp_z, &y_planes, &strip_y)?, cut(1), w.height);
+    let x = keep(axis(w.width, &|i| w.aperture(i), size, &mut sharp_z, &x_planes, &strip_x, &via_x)?, cut(0), w.width);
+    let y = keep(axis(w.height, &|i| w.aperture_y(i), size_y, &mut sharp_z, &y_planes, &strip_y, &via_y)?, cut(1), w.height);
     let nx = (x.len() - 1).max(1);
     let ny = (y.len() - 1).max(1);
     let mut z = vec![0.0];
@@ -277,9 +284,11 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     // Strips' ends inside a section split it: planes the lines close in on.
     let tolz = 1e-9 * w.length();
     let strip_z: Vec<f64> = w.strips.iter().flat_map(|s| [s.z0, s.z1]).collect();
+    let via_z: Vec<f64> = w.vias.iter().flat_map(|v| [v.z0, v.z0 + v.wz]).collect();
     for (i, s) in w.sections.iter().enumerate() {
         let mut cuts: Vec<(f64, bool)> = vec![(ends[i], sharp_z[i]), (ends[i + 1], sharp_z[i + 1])];
-        cuts.extend(strip_z.iter().filter(|z| **z > ends[i] + tolz && **z < ends[i + 1] - tolz).map(|z| (*z, true)));
+        let within = |z: &&f64| **z > ends[i] + tolz && **z < ends[i + 1] - tolz;
+        cuts.extend(strip_z.iter().chain(&via_z).filter(within).map(|z| (*z, true)));
         cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
         cuts.dedup_by(|a, b| (a.0 - b.0).abs() <= tolz);
         let (m, _) = model.material(&s.material)?;
@@ -290,7 +299,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
             let fraction = |(z, sharp): (f64, bool)| {
                 if strip_z.iter().any(|e| (e - z).abs() <= tolz) && z > tolz && z < w.length() - tolz {
                     o.strip_edge
-                } else if sharp {
+                } else if sharp || via_z.iter().any(|e| (e - z).abs() <= tolz) {
                     o.edge
                 } else {
                     1.0
@@ -319,27 +328,35 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let grid = Grid { x, y, z, cells: Vec::new() };
     let ylayers =
         w.layer_tops().into_iter().zip(&w.layers).map(|(top, l)| Ok((top, model.material(&l.material)?.0 as u32))).collect::<Result<Vec<_>>>()?;
-    let mut mesh = structured(grid, &layers, &ylayers, length, &cuts);
+    let posts: Vec<Aabb> = w.vias.iter().map(emcraft_model::Via::bounds).collect();
+    let mut mesh = structured(grid, &layers, &ylayers, &posts, length, &cuts);
     add_strips(&mut mesh, &w.strips, w.height);
     Ok(mesh)
 }
 
 /// Tags the faces inside the mesh that lie on a strip as conductors (each once, with one of its
-/// two tetrahedra): the solver eliminates their tangential field as on the walls.
+/// two tetrahedra): the solver eliminates their tangential field as on the walls. A strip on a
+/// symmetry plane y = b/2 lies on the mesh's boundary: its faces there become conductor instead
+/// of the plane's wall.
 fn add_strips(mesh: &mut Mesh, strips: &[emcraft_model::Strip], height: f64) {
     if strips.is_empty() {
         return;
     }
-    let topo = Topology::new(mesh);
     let tol = 1e-9 * height;
-    for (f, owners) in topo.faces.iter().zip(&topo.face_tets) {
-        if owners[1] == u32::MAX {
-            continue;
-        }
+    let on = |mesh: &Mesh, f: &[u32; 3]| {
         let p = f.map(|n| mesh.nodes[n as usize]);
-        let Some(c) = Point3::centroid(p) else { continue };
-        let on = strips.iter().any(|s| p.iter().all(|q| (q.y - s.y).abs() <= tol) && c.x > s.x0 && c.x < s.x0 + s.width && c.z > s.z0 && c.z < s.z1);
-        if on {
+        Point3::centroid(p).is_some_and(|c| {
+            strips.iter().any(|s| p.iter().all(|q| (q.y - s.y).abs() <= tol) && c.x > s.x0 && c.x < s.x0 + s.width && c.z > s.z0 && c.z < s.z1)
+        })
+    };
+    for k in 0..mesh.boundary.len() {
+        if matches!(mesh.boundary[k].tag, Boundary::Symmetry(_)) && on(mesh, &mesh.boundary[k].nodes) {
+            mesh.boundary[k].tag = Boundary::Pec;
+        }
+    }
+    let topo = Topology::new(mesh);
+    for (f, owners) in topo.faces.iter().zip(&topo.face_tets) {
+        if owners[1] != u32::MAX && on(mesh, f) {
             mesh.boundary.push(BoundaryFace { nodes: *f, tet: owners[0], tag: Boundary::Pec });
         }
     }
@@ -350,9 +367,17 @@ fn add_strips(mesh: &mut Mesh, strips: &[emcraft_model::Strip], height: f64) {
 /// are left out.
 /// `ylayers` (tops ascending, material) override the material of the cells whose centre lies
 /// below a top.
+/// `posts` are conductors whose cells are left out too (vias), their faces walls.
 /// `cuts` (axis, position, wall) are symmetry planes the grid ends on: the faces there are tagged
 /// with their wall.
-fn structured(mut grid: Grid, layers: &[(u32, Span, Span)], ylayers: &[(f64, u32)], length: f64, cuts: &[(usize, f64, SymmetryKind)]) -> Mesh {
+fn structured(
+    mut grid: Grid,
+    layers: &[(u32, Span, Span)],
+    ylayers: &[(f64, u32)],
+    posts: &[Aabb],
+    length: f64,
+    cuts: &[(usize, f64, SymmetryKind)],
+) -> Mesh {
     let (nx, ny, nz) = (grid.x.len() - 1, grid.y.len() - 1, grid.z.len() - 1);
     let node = |i: usize, j: usize, k: usize| (i + (nx + 1) * (j + (ny + 1) * k)) as u32;
     let mut nodes = Vec::with_capacity((nx + 1) * (ny + 1) * (nz + 1));
@@ -374,7 +399,9 @@ fn structured(mut grid: Grid, layers: &[(u32, Span, Span)], ylayers: &[(f64, u32
             let material = ylayers.iter().find(|(top, _)| yc < *top).map_or(material, |(_, m)| *m);
             for i in 0..nx {
                 let xc = 0.5 * (grid.x[i] + grid.x[i + 1]);
-                if !(x_span.contains(xc) && y_span.contains(yc)) {
+                let zc = 0.5 * (grid.z[k] + grid.z[k + 1]);
+                let in_post = posts.iter().any(|b| b.min.x < xc && xc < b.max.x && b.min.y < yc && yc < b.max.y && b.min.z < zc && zc < b.max.z);
+                if !(x_span.contains(xc) && y_span.contains(yc)) || in_post {
                     cells.push(u32::MAX);
                     continue;
                 }
@@ -565,6 +592,7 @@ mod tests {
             sections: vec![s(0.015, "ptfe"), s(0.02, "vacuum"), s(0.015, "ptfe")],
             layers: Vec::new(),
             strips: Vec::new(),
+            vias: Vec::new(),
         })
         .unwrap();
         m
@@ -673,6 +701,7 @@ mod tests {
             sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
+            vias: Vec::new(),
         })
         .unwrap();
         let mesh = waveguide(&m, 0.003).unwrap();
@@ -706,6 +735,7 @@ mod tests {
             sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
+            vias: Vec::new(),
         })
         .unwrap();
         let o = Options::new(0.004);
@@ -728,6 +758,51 @@ mod tests {
         assert_eq!(waveguide_with(&uniform_guide, &o).unwrap(), waveguide_with(&uniform_guide, &Options::uniform(0.004)).unwrap());
         assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5, size_y: None, strip_edge: 0.05 }).is_err());
         assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0, size_y: None, strip_edge: 0.05 }).is_err());
+    }
+
+    #[test]
+    fn vias_leave_their_cells_out_and_strips_on_a_symmetry_plane_stay_conductors() {
+        use emcraft_model::{Axis, Strip, Symmetry, SymmetryKind, Via};
+        let (a, b, l) = (0.012, 0.002, 0.006);
+        let mut m = Model::new();
+        let strip = Strip { y: b / 2.0, x0: 0.002, width: 0.002, z0: 0.0, z1: l };
+        let via = Via { x0: 0.0071, z0: 0.0023, wx: 0.0013, wz: 0.0017, y0: 0.0, y1: b };
+        m.set_waveguide(Waveguide {
+            width: a,
+            height: b,
+            sections: vec![Section::new(l, "vacuum")],
+            layers: Vec::new(),
+            strips: vec![strip],
+            vias: vec![via],
+        })
+        .unwrap();
+        let mesh = waveguide(&m, 0.001).unwrap();
+        // The post's faces are grid planes, its cells gone, its four sides walls.
+        let g = mesh.grid.as_ref().unwrap();
+        for (lines, v) in [(&g.x, 0.0071), (&g.x, 0.0084), (&g.z, 0.0023), (&g.z, 0.004)] {
+            assert!(lines.iter().any(|x| (x - v).abs() < 1e-15), "{v}");
+        }
+        let total: f64 = volumes(&mesh).iter().sum();
+        let exact = a * b * l - via.wx * via.wz * b;
+        assert!((total - exact).abs() < 1e-12 * exact, "{total} {exact}");
+        let area = |mesh: &Mesh, tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(mesh, &f.nodes)).sum::<f64>();
+        let walls = 2.0 * (a + b) * l - 2.0 * via.wx * via.wz + 2.0 * (via.wx + via.wz) * b;
+        // The strip's faces inside the mesh are tagged once each.
+        assert!((area(&mesh, Boundary::Pec) - walls - strip.width * l).abs() < 1e-12, "{}", area(&mesh, Boundary::Pec));
+        assert!(locate(&mesh, Point3::new(0.0075, 0.001, 0.003)).is_none() && locate(&mesh, Point3::new(0.0065, 0.001, 0.003)).is_some());
+        // Halved on the strip's plane by a magnetic wall: the strip's faces there are conductor,
+        // the rest of the plane the wall.
+        m.set_symmetry(vec![Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Magnetic }]).unwrap();
+        let half = waveguide(&m, 0.001).unwrap();
+        let plane = a * l - via.wx * via.wz;
+        assert!((area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)) - (plane - strip.width * l)).abs() < 1e-12);
+        let half_walls = (2.0 * b / 2.0 + a) * l - via.wx * via.wz + 2.0 * (via.wx + via.wz) * b / 2.0;
+        assert!((area(&half, Boundary::Pec) - half_walls - strip.width * l).abs() < 1e-12, "{}", area(&half, Boundary::Pec));
+        // A via under the strip only (y1 below the plane) has no image: refused.
+        let mut w = m.waveguide.clone().unwrap();
+        w.vias[0].y1 = b / 2.0;
+        m.set_waveguide(w).unwrap();
+        assert!(waveguide(&m, 0.001).is_err());
     }
 
     #[test]
