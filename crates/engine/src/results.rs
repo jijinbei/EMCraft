@@ -103,6 +103,18 @@ pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
         .iter()
         .map(|r| {
             let (s11, s21) = reference.s(r.frequency, modes)?;
+            // The reference is at the ports' faces: moved to the de-embedded planes as the
+            // solver moves its own (each port's first mode's γ).
+            let shift = |p: usize| -> Result<C> {
+                let d = sw.driven.ports.get(p).map_or(0.0, |x| x.deembed);
+                if d == 0.0 {
+                    return Ok(C::new(1.0, 0.0));
+                }
+                let gamma = sw.driven.port_terms(p, r.frequency)?.first().map_or(C::new(0.0, 0.0), |t| t.gamma);
+                Ok((gamma * d).exp())
+            };
+            let (a, b) = (shift(0)?, shift(1)?);
+            let (s11, s21) = (s11 * a * a, s21 * a * b);
             let (f11, f21) = (r.s.get(0, 0).unwrap_or_default(), r.s.get(1, 0).unwrap_or_default());
             let (e11, e21) = ((f11 - s11).norm(), (f21 - s21).norm());
             worst = worst.max(e11).max(e21);

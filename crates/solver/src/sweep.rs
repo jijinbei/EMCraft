@@ -234,7 +234,7 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
     }
     // S as the full solve reads it.
     let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
-    let s = d.refer(read_s(terms, &fields), &impedances)?;
+    let s = d.deembed(d.refer(read_s(terms, &fields), &impedances)?, terms);
     let seconds = t0.elapsed().as_secs_f64();
     Ok((
         FrequencyResult {

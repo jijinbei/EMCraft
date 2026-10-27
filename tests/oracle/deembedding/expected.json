@@ -1,0 +1,13 @@
+{
+ "title": "De-embedding: an empty WR-90 guide, 30 mm, its reference planes moved 10 mm in at both ports (10 mm of line left) and 5 mm out (40 mm)",
+ "kind": "theory",
+ "source": "Shifting reference planes, S′_pq = S_pq e^{γ_p d_p + γ_q d_q}: D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §4.3; TE10 propagation β = √(k0² − (π/a)²), §3.3",
+ "quantities": [
+  {"id": "in_s21_phase_10", "quantity": "phase of S21 at 10 GHz, planes 10 mm in (degrees)", "measure": {"step": "inward", "pointer": "/points/0/s21/deg"}, "value": -90.66384244245386, "tolerance": {"absolute": 0.05}, "reason": "the solve is the 30 mm guide's (its phase error about 0.02°), shifted by the exact γ of the closed-form port mode"},
+  {"id": "in_s21_mag_10", "quantity": "|S21| at 10 GHz, planes 10 mm in", "measure": {"step": "inward", "pointer": "/points/0/s21/mag"}, "value": 1.0, "tolerance": {"absolute": 1e-4}, "reason": "a lossless line: the shift only turns the phase"},
+  {"id": "in_s21_phase_12", "quantity": "phase of S21 at 12 GHz, planes 10 mm in (degrees)", "measure": {"step": "inward", "pointer": "/points/1/s21/deg"}, "value": -120.68433206539383, "tolerance": {"absolute": 0.1}, "reason": "as at 10 GHz, a shorter guide wavelength"},
+  {"id": "out_s21_phase_10", "quantity": "phase of S21 at 10 GHz, planes 5 mm out (degrees)", "measure": {"step": "outward", "pointer": "/points/0/s21/deg"}, "value": -2.6553697698154224, "tolerance": {"absolute": 0.05}, "reason": "a line added: the same shift the other way"},
+  {"id": "out_s11_mag_10", "quantity": "|S11| at 10 GHz, planes 5 mm out", "measure": {"step": "outward", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 1e-3}, "reason": "the shift turns S11's phase only; the mesh's own reflection stays below 1e-3"},
+  {"id": "compare_worst", "quantity": "worst |S − S_exact| of results.compare, planes 5 mm out", "measure": {"step": "compare", "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 2e-3}, "reason": "the comparison moves the exact line's S to the same planes"}
+ ]
+}

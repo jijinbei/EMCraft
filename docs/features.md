@@ -191,6 +191,7 @@ A waveguide port on an end face, matched to the guide's lowest modes. The first 
 | `face` | array | length | no | [z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z |
 | `mode_solver` | string |  | no | `auto` (default: closed forms where they apply) or `numeric` (the cross-section solver) |
 | `impedance` | number |  | no | the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out |
+| `deembed` | number | length | no | de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0 |
 
 ## `solve.frequency` — Frequency sweep
 

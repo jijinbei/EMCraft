@@ -152,6 +152,8 @@ pub struct PortData {
     pub modes: PortModes,
     /// The impedance S is referred to at this port (Ω), if any.
     pub reference: Option<f64>,
+    /// How far (m) inside the model the reference plane lies.
+    pub deembed: f64,
 }
 
 /// A port's modes: closed forms, or the numerical solver's on its cross-section.
@@ -190,6 +192,8 @@ pub struct PortTerm<'a> {
     pub propagating: bool,
     /// The line's characteristic impedance (Ω) for a port's first mode, where defined.
     pub impedance: Option<f64>,
+    /// The mode's propagation constant γ = α + jβ (1/m): it goes as e^{−γz} along the line.
+    pub gamma: C,
 }
 
 /// A waveguide meshed and assembled up to the frequency: the curl–curl and mass matrices and
@@ -465,7 +469,7 @@ impl Driven {
                 Some(shape) => analytic_port(model, p, shape, &mesh, &topo, &dofs, order, &port_faces[k])?,
                 None => PortModes::Numeric(Box::new(numeric_port(model, p, &mesh, &topo, &dofs, order, &port_faces[k])?)),
             };
-            ports.push(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference });
+            ports.push(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference, deembed: p.deembed });
         }
 
         // Lumped ports: their gaps' line integrals.
@@ -696,7 +700,7 @@ impl Driven {
             fields.push(x);
         }
         let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
-        let s = self.refer(read_s(&terms, &fields), &impedances)?;
+        let s = self.deembed(self.refer(read_s(&terms, &fields), &impedances)?, &terms);
         Ok(FrequencyResult {
             frequency,
             s,
@@ -868,6 +872,21 @@ impl Driven {
     /// I = (a − b)/√Z, the new waves a′ = P a + Q b, b′ = Q a + P b, P = (Z + R)/(2√(ZR)),
     /// Q = (Z − R)/(2√(ZR)), so S′ = (Q + P S)(P + Q S)⁻¹ (K. Kurokawa, *Power waves and the
     /// scattering matrix*, IEEE Trans. MTT 13(2):194–202, 1965).
+    /// S at the ports' reference planes moved `deembed` into the model along their lines: the
+    /// waves there are e^{γd} larger, so S′_pq = S_pq e^{γ_p d_p + γ_q d_q} for each port's
+    /// first mode (D. M. Pozar, *Microwave Engineering*, 4th ed., §4.3, shifting reference
+    /// planes).
+    pub(crate) fn deembed(&self, s: SMatrix, terms: &[Vec<PortTerm<'_>>]) -> SMatrix {
+        if self.ports.iter().all(|p| p.deembed == 0.0) {
+            return s;
+        }
+        let shift = |p: usize| match (self.ports.get(p), terms.get(p).and_then(|l| l.first())) {
+            (Some(port), Some(t)) => (t.gamma * port.deembed).exp(),
+            _ => C::new(1.0, 0.0),
+        };
+        SMatrix::from_fn(s.ports(), |p, q| s[(p, q)] * shift(p) * shift(q))
+    }
+
     pub(crate) fn refer(&self, s: SMatrix, impedances: &[Option<f64>]) -> Result<SMatrix> {
         let n = s.ports();
         let mut p = vec![1.0; n];
@@ -919,6 +938,7 @@ impl Driven {
                             proxy: mode.norm() * gamma.1 / mu_r,
                             propagating: gamma.1 > 0.0,
                             impedance: None,
+                            gamma: C::new(gamma.0, gamma.1),
                         })
                     })
                     .collect()
@@ -970,6 +990,7 @@ impl Driven {
                     norm: m.d,
                     proxy: if m.beta2 > 0.0 { beta.re * m.d } else { 0.0 },
                     propagating: m.beta2 > 0.0,
+                    gamma: jb,
                 }
             })
             .collect())

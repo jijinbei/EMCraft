@@ -625,6 +625,10 @@ pub struct Port {
     /// characteristic impedance (coaxial, strip); its own mode's when `None`.
     #[serde(default)]
     pub reference: Option<f64>,
+    /// De-embedding: how far (m) the reference plane S is read at lies inside the model from
+    /// the port's face, along the line (negative: outside it, a line added).
+    #[serde(default)]
+    pub deembed: f64,
 }
 
 /// Where a port's modes come from.
@@ -642,7 +646,7 @@ impl Port {
     /// A port at `end` with four modes, the closed forms' where they apply, its S-parameters
     /// in its own mode's power waves.
     pub fn new(name: impl Into<String>, end: End) -> Port {
-        Port { name: name.into(), end, modes: 4, face: None, mode_solver: ModeSolver::Auto, reference: None }
+        Port { name: name.into(), end, modes: 4, face: None, mode_solver: ModeSolver::Auto, reference: None, deembed: 0.0 }
     }
 
     /// The port with `modes` modes in its boundary condition.
@@ -657,6 +661,11 @@ impl Port {
 
     pub fn with_mode_solver(self, mode_solver: ModeSolver) -> Port {
         Port { mode_solver, ..self }
+    }
+
+    /// The port's reference plane `metres` inside the model.
+    pub fn deembedded(self, metres: f64) -> Port {
+        Port { deembed: metres, ..self }
     }
 
     /// The port's S-parameters referred to `ohms`.
@@ -1132,6 +1141,9 @@ impl Model {
         }
         if let Some(r) = p.reference {
             positive(&format!("reference impedance of port `{}`", p.name), r)?;
+        }
+        if !p.deembed.is_finite() {
+            return Err(invalid(format!("de-embedding of port `{}`", p.name), "must be finite"));
         }
         if p.modes == 0 || p.modes > MAX_PORT_MODES {
             return Err(invalid(format!("port `{}`", p.name), format!("modes must be 1 to {MAX_PORT_MODES}, got {}", p.modes)));

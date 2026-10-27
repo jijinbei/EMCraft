@@ -217,6 +217,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("face", K::Array, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z").of(L),
             opt("mode_solver", K::String, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)").one_of(&["auto", "numeric"]),
             opt("impedance", K::Number, "the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out"),
+            opt("deembed", K::Number, "de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0").of(L),
         ],
         effect: Effect::Record,
         run: crate::geometry::port,
