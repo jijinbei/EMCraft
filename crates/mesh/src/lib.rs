@@ -18,7 +18,7 @@ pub use topology::{LOCAL_EDGES, LOCAL_FACES, Topology};
 
 use emcraft_model::geom::triple;
 use emcraft_model::mesh::TETS_PER_CELL;
-use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Model, Point3, Span, positive};
+use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Model, Point3, Span, SymmetryKind, positive};
 
 /// The most tetrahedra a mesh may have (a cap on hostile sizes).
 pub const MAX_TETS: usize = 3_000_000;
@@ -163,7 +163,8 @@ pub fn waveguide(model: &Model, size: f64) -> Result<Mesh> {
 /// planes; cells outside a section's aperture are left out. Next to the re-entrant edges of a
 /// step or an iris the lines close in ([`Options`]). Faces at z = 0 and z = length are tagged as
 /// ports 0 and 1, every other boundary face (the walls, and the faces of a step or an iris) as a
-/// perfect conductor.
+/// perfect conductor. A symmetry plane of the model ([`emcraft_model::Symmetry`]) is a grid
+/// plane too: only the side below it is meshed, its faces tagged with its wall.
 pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let size = positive("element size", o.size)?;
     if !(o.edge.is_finite() && o.edge > 0.0 && o.edge <= 1.0)
@@ -248,8 +249,25 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
         }
         Ok(lines)
     };
-    let x = axis(w.width, &|i| w.aperture(i), size, &mut sharp_z, &[], &strip_x)?;
-    let y = axis(w.height, &|i| w.aperture_y(i), size_y, &mut sharp_z, &layer_y, &strip_y)?;
+    // Symmetry planes are grid planes; the lines beyond them are dropped (the half kept).
+    if let Some(why) = model.symmetry_issue() {
+        return Err(MeshError::Invalid { what: "symmetry".into(), why });
+    }
+    let cut = |d: usize| model.symmetry.iter().find(|p| p.axis.index() == d).map(|p| p.at);
+    let cuts: Vec<(usize, f64, SymmetryKind)> = model.symmetry.iter().map(|p| (p.axis.index(), p.at, p.kind)).collect();
+    let keep = |mut lines: Vec<f64>, at: Option<f64>, span: f64| {
+        if let Some(at) = at {
+            lines.retain(|v| *v <= at + 1e-9 * span);
+            if let Some(last) = lines.last_mut() {
+                *last = at;
+            }
+        }
+        lines
+    };
+    let x_planes: Vec<f64> = cut(0).into_iter().collect();
+    let y_planes: Vec<f64> = layer_y.iter().copied().chain(cut(1)).collect();
+    let x = keep(axis(w.width, &|i| w.aperture(i), size, &mut sharp_z, &x_planes, &strip_x)?, cut(0), w.width);
+    let y = keep(axis(w.height, &|i| w.aperture_y(i), size_y, &mut sharp_z, &y_planes, &strip_y)?, cut(1), w.height);
     let nx = (x.len() - 1).max(1);
     let ny = (y.len() - 1).max(1);
     let mut z = vec![0.0];
@@ -301,7 +319,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let grid = Grid { x, y, z, cells: Vec::new() };
     let ylayers =
         w.layer_tops().into_iter().zip(&w.layers).map(|(top, l)| Ok((top, model.material(&l.material)?.0 as u32))).collect::<Result<Vec<_>>>()?;
-    let mut mesh = structured(grid, &layers, &ylayers, length);
+    let mut mesh = structured(grid, &layers, &ylayers, length, &cuts);
     add_strips(&mut mesh, &w.strips, w.height);
     Ok(mesh)
 }
@@ -332,7 +350,9 @@ fn add_strips(mesh: &mut Mesh, strips: &[emcraft_model::Strip], height: f64) {
 /// are left out.
 /// `ylayers` (tops ascending, material) override the material of the cells whose centre lies
 /// below a top.
-fn structured(mut grid: Grid, layers: &[(u32, Span, Span)], ylayers: &[(f64, u32)], length: f64) -> Mesh {
+/// `cuts` (axis, position, wall) are symmetry planes the grid ends on: the faces there are tagged
+/// with their wall.
+fn structured(mut grid: Grid, layers: &[(u32, Span, Span)], ylayers: &[(f64, u32)], length: f64, cuts: &[(usize, f64, SymmetryKind)]) -> Mesh {
     let (nx, ny, nz) = (grid.x.len() - 1, grid.y.len() - 1, grid.z.len() - 1);
     let node = |i: usize, j: usize, k: usize| (i + (nx + 1) * (j + (ny + 1) * k)) as u32;
     let mut nodes = Vec::with_capacity((nx + 1) * (ny + 1) * (nz + 1));
@@ -385,6 +405,10 @@ fn structured(mut grid: Grid, layers: &[(u32, Span, Span)], ylayers: &[(f64, u32
             Boundary::Port(0)
         } else if zs.iter().all(|z| (z - length).abs() <= tol) {
             Boundary::Port(1)
+        } else if let Some(&(_, _, kind)) =
+            cuts.iter().find(|(d, at, _)| f.iter().all(|n| (mesh.nodes[*n as usize][*d] - at).abs() <= 1e-9 * at.abs().max(f64::MIN_POSITIVE)))
+        {
+            Boundary::Symmetry(kind)
         } else {
             Boundary::Pec
         };
@@ -585,6 +609,39 @@ mod tests {
             let t = mesh.tets[f.tet as usize];
             assert!(f.nodes.iter().all(|n| t.contains(n)));
         }
+    }
+
+    #[test]
+    fn symmetry_planes_keep_the_side_below_them() {
+        use emcraft_model::{Axis, Symmetry, SymmetryKind};
+        let (a, b, l) = (0.02286, 0.01016, 0.05);
+        let mut m = model();
+        let full = waveguide(&m, 0.004).unwrap();
+        m.set_symmetry(vec![Symmetry { axis: Axis::X, at: a / 2.0, kind: SymmetryKind::Magnetic }]).unwrap();
+        let half = waveguide(&m, 0.004).unwrap();
+        let area = |mesh: &Mesh, tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(mesh, &f.nodes)).sum::<f64>();
+        assert!((volumes(&half).iter().sum::<f64>() - a * b * l / 2.0).abs() < 1e-12 * a * b * l);
+        assert!((area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)) - b * l).abs() < 1e-13);
+        assert!((area(&half, Boundary::Port(0)) - a * b / 2.0).abs() < 1e-14);
+        assert!((area(&half, Boundary::Pec) - (a + b) * l).abs() < 1e-13);
+        assert!(half.nodes.iter().all(|p| p.x <= a / 2.0));
+        assert!(half.tets.len() * 2 <= full.tets.len() + full.tets.len() / 4, "{} of {}", half.tets.len(), full.tets.len());
+        // A quarter: an electric wall across y as well.
+        m.set_symmetry(vec![
+            Symmetry { axis: Axis::X, at: a / 2.0, kind: SymmetryKind::Magnetic },
+            Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Electric },
+        ])
+        .unwrap();
+        let quarter = waveguide(&m, 0.004).unwrap();
+        assert!((volumes(&quarter).iter().sum::<f64>() - a * b * l / 4.0).abs() < 1e-12 * a * b * l);
+        assert!((area(&quarter, Boundary::Symmetry(SymmetryKind::Electric)) - a / 2.0 * l).abs() < 1e-13);
+        assert!((area(&quarter, Boundary::Symmetry(SymmetryKind::Magnetic)) - b / 2.0 * l).abs() < 1e-13);
+        // A guide no longer symmetric is refused.
+        let mut w = m.waveguide.clone().unwrap();
+        w.sections[1].width = Some(0.01);
+        w.sections[1].offset = Some(0.0);
+        m.set_waveguide(w).unwrap();
+        assert!(waveguide(&m, 0.004).is_err());
     }
 
     #[test]
