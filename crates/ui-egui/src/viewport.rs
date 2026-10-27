@@ -175,144 +175,192 @@ fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     ui.allocate_rect(area, Sense::hover());
     let p = ui.painter().with_clip_rect(area);
     let half = (area.height() - 40.0) / 2.0;
-    let views = [("H-plane (x across z)", 0usize), ("E-plane (y across z)", 1usize)];
     // One scale for both views (the smaller of what each band allows), so z lines up.
-    let band_size = |k: usize| vec2(area.width() - 120.0, half - 52.0 + 0.0 * k as f32);
-    let fit = |k: usize| {
-        let (v0, v1) = if k == 0 { (lo.x, hi.x) } else { (lo.y, hi.y) };
-        let s = band_size(k);
-        (s.x as f64 / (hi.z - lo.z).max(1e-9)).min(s.y as f64 / (v1 - v0).max(1e-9))
-    };
-    let scale = fit(0).min(fit(1));
-    let mat_index = |name: &str| m.materials.iter().position(|x| x.name == name).unwrap_or(0);
-    let eps = |name: &str| m.material(name).map_or(1.0, |(_, x)| x.eps_r);
-    for (k, (title, axis)) in views.into_iter().enumerate() {
-        let band = Rect::from_min_size(pos2(area.left(), area.top() + k as f32 * (half + 40.0)), vec2(area.width(), half + 40.0));
-        p.text(band.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, title, FontId::proportional(t.font_label), t.text_dim);
-        let pad = m.open.as_ref().map_or(0.0, |o| o.thickness * 0.0);
-        let (v0, v1) = if axis == 0 { (lo.x, hi.x) } else { (lo.y, hi.y) };
-        let fr = Frame2::with_scale(band.shrink2(vec2(60.0, 26.0)).translate(vec2(0.0, 8.0)), (lo.z - pad, hi.z + pad), (v0, v1), scale);
-        let outline = Stroke::new(1.5, t.text);
+    let room = vec2(area.width() - 120.0, half - 52.0);
+    let scale = [Across::X, Across::Y]
+        .map(|a| {
+            let (v0, v1) = a.span(lo, hi);
+            (room.x as f64 / (hi.z - lo.z).max(1e-9)).min(room.y as f64 / (v1 - v0).max(1e-9))
+        })
+        .into_iter()
+        .fold(f64::INFINITY, f64::min);
+    for (k, across) in [Across::X, Across::Y].into_iter().enumerate() {
+        let band = Rect::from_min_size(pos2(area.left(), area.top() + k as f32 * (half + 20.0)), vec2(area.width(), half + 20.0));
+        p.text(band.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, across.title(), FontId::proportional(t.font_label), t.text_dim);
+        let (v0, v1) = across.span(lo, hi);
+        let fr = Frame2::with_scale(band.shrink2(vec2(60.0, 26.0)).translate(vec2(0.0, 8.0)), (lo.z, hi.z), (v0, v1), scale);
+        let sec = Section { p: &p, fr, across, t: &t, m };
         if let Some(w) = &m.waveguide {
-            let mut z = 0.0;
-            for (i, s) in w.sections.iter().enumerate() {
-                let emcraft_model::Span { start: a0, width: a } =
-                    if axis == 0 { w.aperture(i).unwrap_or(w.across_x()) } else { w.aperture_y(i).unwrap_or(w.across_y()) };
-                let full = if axis == 0 { w.width } else { w.height };
-                // Metal outside the aperture.
-                let metal = t.text_dim.gamma_multiply(0.55);
-                if a0 > 0.0 {
-                    p.rect_filled(fr.rect(z, 0.0, z + s.length, a0), 0.0, metal);
-                }
-                if a0 + a < full - 1e-12 {
-                    p.rect_filled(fr.rect(z, a0 + a, z + s.length, full), 0.0, metal);
-                }
-                p.rect_filled(fr.rect(z, a0, z + s.length, a0 + a), 0.0, material_color(mat_index(&s.material), eps(&s.material)));
-                p.vline(fr.at(z, 0.0).x, fr.at(z, full).y..=fr.at(z, 0.0).y, Stroke::new(0.5, t.border));
-                let c = fr.rect(z, a0, z + s.length, a0 + a).center();
-                p.text(c, Align2::CENTER_CENTER, &s.material, FontId::proportional(t.font_small), t.text);
-                z += s.length;
-            }
-            if axis == 1 {
-                let mut y = 0.0;
-                for layer in &w.layers {
-                    p.rect_filled(
-                        fr.rect(0.0, y, w.length(), y + layer.thickness),
-                        0.0,
-                        material_color(mat_index(&layer.material), eps(&layer.material)),
-                    );
-                    y += layer.thickness;
-                }
-                for st in &w.strips {
-                    p.line_segment([fr.at(st.z0, st.y), fr.at(st.z1, st.y)], Stroke::new(3.0, t.warning));
-                }
-            } else {
-                for st in &w.strips {
-                    p.rect_filled(fr.rect(st.z0, st.x0, st.z1, st.x0 + st.width), 0.0, t.warning.gamma_multiply(0.7));
-                }
-            }
-            p.rect_stroke(fr.rect(0.0, 0.0, w.length(), if axis == 0 { w.width } else { w.height }), 0.0, outline, egui::StrokeKind::Middle);
+            sec.waveguide(w);
         } else if let Some(solid) = &m.solid {
-            let body = fr.rect(lo.z, v0, hi.z, v1);
-            p.rect_filled(body, 0.0, material_color(mat_index(&solid.material), eps(&solid.material)));
-            match &solid.shape {
-                emcraft_model::Shape::Sphere { .. } => {
-                    p.circle_stroke(body.center(), body.width().min(body.height()) / 2.0, outline);
-                }
-                _ => {
-                    p.rect_stroke(body, 0.0, outline, egui::StrokeKind::Middle);
-                }
-            }
-            for inc in &m.inclusions {
-                let emcraft_model::Aabb { min: a, max: b } = inc.bounds();
-                let (va, vb) = if axis == 0 { (a.x, b.x) } else { (a.y, b.y) };
-                let r = fr.rect(a.z, va, b.z, vb);
-                let fill = match &inc.material {
-                    Some(name) => material_color(mat_index(name), eps(name)),
-                    None => t.text_dim.gamma_multiply(0.6),
-                };
-                if matches!(inc.shape, emcraft_model::Shape::Sphere { .. }) {
-                    p.circle_filled(r.center(), r.width().min(r.height()) / 2.0, fill);
-                } else {
-                    p.rect_filled(r, 0.0, fill);
-                }
-            }
-            for f in &m.features {
-                let emcraft_model::Aabb { min: a, max: b } = f.bounds();
-                let (va, vb) = if axis == 0 { (a.x, b.x) } else { (a.y, b.y) };
-                let r = fr.rect(a.z, va, b.z, vb);
-                let s = Stroke::new(1.2, if matches!(f.combine, emcraft_model::Combine::Subtract) { t.error } else { t.success });
-                p.rect_stroke(r, 0.0, s, egui::StrokeKind::Middle);
-            }
-            if let Some(open) = &m.open {
-                let inner = fr.rect(lo.z + open.thickness, v0 + open.thickness, hi.z - open.thickness, v1 - open.thickness);
-                for (a, b) in [
-                    (inner.left_top(), inner.right_top()),
-                    (inner.right_top(), inner.right_bottom()),
-                    (inner.right_bottom(), inner.left_bottom()),
-                    (inner.left_bottom(), inner.left_top()),
-                ] {
-                    p.extend(egui::Shape::dashed_line(&[a, b], Stroke::new(1.0, t.text_dim), 6.0, 4.0));
-                }
-            }
+            sec.solid(solid, lo, hi);
         }
-        // Ports at the ends.
-        for port in &m.ports {
-            let z = match port.end {
-                emcraft_model::End::Start => lo.z,
-                _ => hi.z,
-            };
-            let z = port.face.map_or(z, |f| f.z);
-            let c = fr.at(z, (v0 + v1) / 2.0);
-            let dir = if matches!(port.end, emcraft_model::End::Start) { 1.0 } else { -1.0 };
-            let tail = c - vec2(dir * 34.0, 0.0);
-            p.arrow(tail, vec2(dir * 26.0, 0.0), Stroke::new(2.0, t.tab_ports[0]));
-            p.text(
-                tail - vec2(dir * 4.0, 0.0),
-                if dir > 0.0 { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER },
-                &port.name,
-                FontId::proportional(t.font_label),
-                t.tab_ports[1],
-            );
-        }
-        for lp in &m.lumped {
-            let (a, b) = if axis == 0 { (lp.from.x, lp.to.x) } else { (lp.from.y, lp.to.y) };
-            p.line_segment([fr.at(lp.from.z, a), fr.at(lp.to.z, b)], Stroke::new(3.0, t.tab_ports[0]));
-        }
-        for src in &m.sources {
-            if let emcraft_model::Source::Dipole { at, .. } = src {
-                p.circle_filled(fr.at(at.z, if axis == 0 { at.x } else { at.y }), 4.0, t.error);
-            }
-        }
+        sec.drivers(lo, hi);
         // Scale: the extent along z.
-        let base = fr.at(lo.z, v0);
+        let base = sec.fr.at(lo.z, v0);
         p.text(
-            pos2(base.x, fr.rect.bottom() + 12.0),
+            pos2(base.x, sec.fr.rect.bottom() + 12.0),
             Align2::LEFT_TOP,
             format!("z: {:.3} – {:.3} {}", l.from_si(lo.z), l.from_si(hi.z), l.symbol()),
             FontId::proportional(t.font_small),
             t.text_dim,
         );
+    }
+}
+
+/// The transverse axis a 2D outline view shows across z.
+#[derive(Clone, Copy, PartialEq)]
+enum Across {
+    X,
+    Y,
+}
+
+impl Across {
+    fn title(self) -> &'static str {
+        match self {
+            Across::X => "H-plane (x across z)",
+            Across::Y => "E-plane (y across z)",
+        }
+    }
+
+    fn of(self, p: emcraft_model::Point3) -> f64 {
+        match self {
+            Across::X => p.x,
+            Across::Y => p.y,
+        }
+    }
+
+    fn span(self, lo: emcraft_model::Point3, hi: emcraft_model::Point3) -> (f64, f64) {
+        (self.of(lo), self.of(hi))
+    }
+}
+
+/// One outline view: the model drawn across z in `fr`.
+struct Section<'a> {
+    p: &'a egui::Painter,
+    fr: Frame2,
+    across: Across,
+    t: &'a Tokens,
+    m: &'a emcraft_model::Model,
+}
+
+impl Section<'_> {
+    fn fill_of(&self, material: &str) -> Color32 {
+        let index = self.m.materials.iter().position(|x| x.name == material).unwrap_or(0);
+        material_color(index, self.m.material(material).map_or(1.0, |(_, x)| x.eps_r))
+    }
+
+    fn outline(&self) -> Stroke {
+        Stroke::new(1.5, self.t.text)
+    }
+
+    /// The box `a`–`b` seen across z.
+    fn rect_of(&self, a: emcraft_model::Point3, b: emcraft_model::Point3) -> Rect {
+        self.fr.rect(a.z, self.across.of(a), b.z, self.across.of(b))
+    }
+
+    fn waveguide(&self, w: &emcraft_model::Waveguide) {
+        let (p, fr, t) = (self.p, &self.fr, self.t);
+        let full = match self.across {
+            Across::X => w.width,
+            Across::Y => w.height,
+        };
+        let metal = t.text_dim.gamma_multiply(0.55);
+        let mut z = 0.0;
+        for (i, s) in w.sections.iter().enumerate() {
+            let emcraft_model::Span { start: a0, width: a } = match self.across {
+                Across::X => w.aperture(i).unwrap_or(w.across_x()),
+                Across::Y => w.aperture_y(i).unwrap_or(w.across_y()),
+            };
+            // Metal outside the aperture.
+            if a0 > 0.0 {
+                p.rect_filled(fr.rect(z, 0.0, z + s.length, a0), 0.0, metal);
+            }
+            if a0 + a < full - 1e-12 {
+                p.rect_filled(fr.rect(z, a0 + a, z + s.length, full), 0.0, metal);
+            }
+            let open = fr.rect(z, a0, z + s.length, a0 + a);
+            p.rect_filled(open, 0.0, self.fill_of(&s.material));
+            p.vline(fr.at(z, 0.0).x, fr.at(z, full).y..=fr.at(z, 0.0).y, Stroke::new(0.5, t.border));
+            p.text(open.center(), Align2::CENTER_CENTER, &s.material, FontId::proportional(t.font_small), t.text);
+            z += s.length;
+        }
+        match self.across {
+            Across::Y => {
+                let mut y = 0.0;
+                for layer in &w.layers {
+                    p.rect_filled(fr.rect(0.0, y, w.length(), y + layer.thickness), 0.0, self.fill_of(&layer.material));
+                    y += layer.thickness;
+                }
+                for st in &w.strips {
+                    p.line_segment([fr.at(st.z0, st.y), fr.at(st.z1, st.y)], Stroke::new(3.0, t.warning));
+                }
+            }
+            Across::X => {
+                for st in &w.strips {
+                    p.rect_filled(fr.rect(st.z0, st.x0, st.z1, st.x0 + st.width), 0.0, t.warning.gamma_multiply(0.7));
+                }
+            }
+        }
+        p.rect_stroke(fr.rect(0.0, 0.0, w.length(), full), 0.0, self.outline(), egui::StrokeKind::Middle);
+    }
+
+    fn solid(&self, solid: &emcraft_model::Solid, lo: emcraft_model::Point3, hi: emcraft_model::Point3) {
+        let (p, t) = (self.p, self.t);
+        let body = self.rect_of(lo, hi);
+        p.rect_filled(body, 0.0, self.fill_of(&solid.material));
+        if matches!(solid.shape, emcraft_model::Shape::Sphere { .. }) {
+            p.circle_stroke(body.center(), body.width().min(body.height()) / 2.0, self.outline());
+        } else {
+            p.rect_stroke(body, 0.0, self.outline(), egui::StrokeKind::Middle);
+        }
+        for inc in &self.m.inclusions {
+            let emcraft_model::Aabb { min: a, max: b } = inc.bounds();
+            let r = self.rect_of(a, b);
+            let fill = inc.material.as_deref().map_or(t.text_dim.gamma_multiply(0.6), |name| self.fill_of(name));
+            if matches!(inc.shape, emcraft_model::Shape::Sphere { .. }) {
+                p.circle_filled(r.center(), r.width().min(r.height()) / 2.0, fill);
+            } else {
+                p.rect_filled(r, 0.0, fill);
+            }
+        }
+        for f in &self.m.features {
+            let emcraft_model::Aabb { min: a, max: b } = f.bounds();
+            let ink = if matches!(f.combine, emcraft_model::Combine::Subtract) { t.error } else { t.success };
+            p.rect_stroke(self.rect_of(a, b), 0.0, Stroke::new(1.2, ink), egui::StrokeKind::Middle);
+        }
+        if let Some(open) = &self.m.open {
+            let (v0, v1) = self.across.span(lo, hi);
+            let d = open.thickness;
+            let inner = self.fr.rect(lo.z + d, v0 + d, hi.z - d, v1 - d);
+            let corners = [inner.left_top(), inner.right_top(), inner.right_bottom(), inner.left_bottom(), inner.left_top()];
+            for pair in corners.windows(2) {
+                p.extend(egui::Shape::dashed_line(pair, Stroke::new(1.0, t.text_dim), 6.0, 4.0));
+            }
+        }
+    }
+
+    /// Ports, lumped ports and dipoles.
+    fn drivers(&self, lo: emcraft_model::Point3, hi: emcraft_model::Point3) {
+        let (p, fr, t) = (self.p, &self.fr, self.t);
+        let (v0, v1) = self.across.span(lo, hi);
+        for port in &self.m.ports {
+            let start = matches!(port.end, emcraft_model::End::Start);
+            let z = port.face.map_or(if start { lo.z } else { hi.z }, |f| f.z);
+            let dir = if start { 1.0 } else { -1.0 };
+            let tail = fr.at(z, (v0 + v1) / 2.0) - vec2(dir * 34.0, 0.0);
+            p.arrow(tail, vec2(dir * 26.0, 0.0), Stroke::new(2.0, t.tab_ports[0]));
+            let align = if start { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
+            p.text(tail - vec2(dir * 4.0, 0.0), align, &port.name, FontId::proportional(t.font_label), t.tab_ports[1]);
+        }
+        for lp in &self.m.lumped {
+            p.line_segment([fr.at(lp.from.z, self.across.of(lp.from)), fr.at(lp.to.z, self.across.of(lp.to))], Stroke::new(3.0, t.tab_ports[0]));
+        }
+        for src in &self.m.sources {
+            if let emcraft_model::Source::Dipole { at, .. } = src {
+                p.circle_filled(fr.at(at.z, self.across.of(*at)), 4.0, t.error);
+            }
+        }
     }
 }
 

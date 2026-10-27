@@ -9,5 +9,9 @@
   {"expect": {"inspect": {"view3d.overlay": "boundaries", "view3d.triangles": {"min": 12}}}},
   {"shot": "view3d-dipole-boundaries"},
   {"call": "ui.set", "params": {"step": "excitation"}},
-  {"shot": "view3d-dipole-excitation"}
+  {"shot": "view3d-dipole-excitation"},
+  {"note": "The outline view: the model drawn across z in the H and E planes"},
+  {"click": "view:outline"},
+  {"expect": {"view": "outline"}},
+  {"shot": "dipole-outline"}
 ]

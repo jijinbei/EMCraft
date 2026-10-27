@@ -15,5 +15,9 @@
   {"click": "row:Via 1: 1 × 2 mm, y 0 to 1"},
   {"frames": 2},
   {"expect": {"inspect": {"view3d.selected": "Via(0)"}}},
-  {"shot": "stub-and-via-selected"}
+  {"shot": "stub-and-via-selected"},
+  {"note": "The outline view: the model drawn across z in the H and E planes"},
+  {"click": "view:outline"},
+  {"expect": {"view": "outline"}},
+  {"shot": "stub-and-via-outline"}
 ]
