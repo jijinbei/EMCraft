@@ -166,9 +166,8 @@ impl Driven {
                 (Order::One, true) | (Order::Two, false) => 4,
                 (Order::Two, true) => 5,
             };
-            // (The permittivity without dispersion, unlike the box's layer: a dispersive
-            // material's poles are not evaluated in the spherical shell.)
-            let (eps, mu) = (self.media.eps(t), self.mu_of(t));
+            // A dispersive material's permittivity at the frequency, as in the box's layer.
+            let (eps, mu) = (self.eps_at(t, k0 * C0 / (2.0 * PI)), self.mu_of(t));
             local.iter_mut().for_each(|x| *x = C::new(0.0, 0.0));
             for (l, w) in el.rule(points) {
                 let p = el.point(l).to_vec();
@@ -199,7 +198,7 @@ impl Driven {
 mod tests {
     use super::super::NONE;
     use super::*;
-    use emcraft_model::{Open, OpenShape, Shape, Solid};
+    use emcraft_model::{Material, Open, OpenShape, Shape, Solid};
 
     #[test]
     fn the_spherical_stretch_is_the_closed_form() {
@@ -213,6 +212,36 @@ mod tests {
         assert!((a - (rt / 1.25) * (rt / 1.25) / s).norm() < 1e-15);
         // Beyond the outer radius the profile stays at its last value.
         assert_eq!(spherical_stretch(2.0, 1.0, 0.5, 10.0, 2.0).1, spherical_stretch(1.5, 1.0, 0.5, 10.0, 2.0).1);
+    }
+
+    /// A sphere of `material`, its spherical layer meshed, and the layer's matrix at `f`.
+    fn spherical_layer(material: Material, f: f64) -> Csr {
+        let mut m = Model::new();
+        let name = material.name.clone();
+        m.add_material(material).unwrap();
+        m.set_solid(Solid { shape: Shape::Sphere { radius: 0.012 }, material: name }).unwrap();
+        m.set_open(Some(Open { thickness: 0.004, reflection: None, shape: OpenShape::Sphere })).unwrap();
+        m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.006).unwrap());
+        let d = Driven::open(&m, Order::One).unwrap();
+        let Some(Layer { kind: LayerKind::Sphere { tets, .. }, .. }) = &d.pml else { panic!("no spherical layer") };
+        let mut a = d.pattern.zeroed();
+        d.add_spherical_pml(&mut a, 2.0 * PI * f / C0, 0.008, 0.004, 100.0, tets).unwrap();
+        a
+    }
+
+    #[test]
+    fn the_spherical_layer_takes_a_dispersive_permittivity_at_the_frequency() {
+        // A Lorentz medium and a plain lossy one of the same ε at 10 GHz give the same layer.
+        let f = 10e9;
+        let lorentz = Material::new("lorentz", 2.0, 1.0)
+            .unwrap()
+            .with_dispersion(vec![emcraft_model::Pole::Lorentz { delta_eps: 0.5, frequency: 14e9, damping: 1e9 }])
+            .unwrap();
+        let e = lorentz.eps_at(f);
+        let plain = Material::new("plain", e.re, 1.0).unwrap().with_loss_tangent(-e.im / e.re).unwrap();
+        let (a, b) = (spherical_layer(lorentz, f), spherical_layer(plain, f));
+        let diff = a.val.iter().zip(&b.val).map(|(x, y)| (x - y).norm()).fold(0.0, f64::max);
+        assert!(diff < 1e-12 * b.max_abs(), "{diff} {}", b.max_abs());
     }
 
     #[test]
