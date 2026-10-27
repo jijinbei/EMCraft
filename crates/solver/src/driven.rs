@@ -53,7 +53,7 @@ use emcraft_fem::modes::{self, Mode};
 use emcraft_fem::{Element, Order};
 use emcraft_mesh::Topology;
 use emcraft_model::units::{C0, MU0};
-use emcraft_model::{Boundary, End, Mesh, Model, Symmetry, SymmetryKind};
+use emcraft_model::{Boundary, End, Image, Mesh, Model, Symmetry, SymmetryKind};
 use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
 
@@ -936,7 +936,7 @@ impl Driven {
     /// The field (E in V/m or H in A/m) at a point for the coefficients `x` at `frequency`.
     /// Beyond a symmetry plane, the image of the field inside.
     pub fn field(&self, x: &[C], frequency: f64, which: Field, p: Point3) -> Option<CVec3> {
-        let (q, se, sh) = self.image(p);
+        let Image { point: q, e: se, h: sh } = Symmetry::image_through(&self.symmetry, p);
         let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = element(&self.mesh, &self.topo, t, self.order).ok()?;
         let v = self.field_in(&el, t, x, frequency, which, el.barycentric(q));
@@ -952,20 +952,11 @@ impl Driven {
     /// E and H at a point, `None` outside the mesh (beyond a symmetry plane, the image of the
     /// field inside).
     pub fn fields(&self, x: &[C], frequency: f64, p: Point3) -> Option<(CVec3, CVec3)> {
-        let (q, se, sh) = self.image(p);
+        let Image { point: q, e: se, h: sh } = Symmetry::image_through(&self.symmetry, p);
         let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = element(&self.mesh, &self.topo, t, self.order).ok()?;
         let l = el.barycentric(q);
         Some((flipped(self.field_in(&el, t, x, frequency, Field::E, l), se), flipped(self.field_in(&el, t, x, frequency, Field::H, l), sh)))
-    }
-
-    /// A point mirrored into the part meshed by every symmetry plane it lies beyond, and the
-    /// signs of E's and H's components there.
-    fn image(&self, p: Point3) -> (Point3, [f64; 3], [f64; 3]) {
-        self.symmetry.iter().fold((p, [1.0; 3], [1.0; 3]), |(q, se, sh), plane| {
-            let (r, e, h) = plane.image(q);
-            (r, [0, 1, 2].map(|k| se[k] * e[k]), [0, 1, 2].map(|k| sh[k] * h[k]))
-        })
     }
 
     pub(crate) fn field_in(&self, el: &Element, t: usize, x: &[C], frequency: f64, which: Field, l: [f64; 4]) -> CVec3 {

@@ -130,7 +130,7 @@ impl Surface {
 /// thickness inside r₀, or halfway between r₀ and the farthest of what radiates when that is
 /// nearer — the box's rule ([`huygens_box`]) in the radius.
 fn huygens_sphere(model: &Model) -> Result<f64> {
-    let (inner, _) = model.spherical_layer().ok_or_else(|| SolveError::NotReady("no spherical layer".into()))?;
+    let inner = model.spherical_layer().map(|l| l.inner).ok_or_else(|| SolveError::NotReady("no spherical layer".into()))?;
     let d = model.open.map_or(0.0, |o| o.thickness);
     let reach = model.radiators().map(|p| p.to_vec().norm()).fold(0.0f64, f64::max);
     if !(reach < inner - 0.1 * d) {

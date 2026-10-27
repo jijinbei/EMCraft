@@ -200,6 +200,21 @@ impl Aabb {
         (0..3).all(|i| self.min[i] <= o.max[i] && o.min[i] <= self.max[i])
     }
 
+    /// Whether `p` lies strictly inside the box, off its faces.
+    pub fn holds_inside(self, p: Point3) -> bool {
+        (0..3).all(|i| self.min[i] < p[i] && p[i] < self.max[i])
+    }
+
+    /// Whether `o` lies strictly inside the box, off its faces.
+    pub fn encloses_inside(self, o: Aabb) -> bool {
+        (0..3).all(|i| self.min[i] < o.min[i] && o.max[i] < self.max[i])
+    }
+
+    /// Whether the boxes' interiors meet (more than a face in common).
+    pub fn overlaps_inside(self, o: Aabb) -> bool {
+        (0..3).all(|i| self.min[i] < o.max[i] && o.min[i] < self.max[i])
+    }
+
     /// The two opposite corners, `min` first.
     pub fn corners(self) -> [Point3; 2] {
         [self.min, self.max]

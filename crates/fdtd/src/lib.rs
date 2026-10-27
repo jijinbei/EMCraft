@@ -35,7 +35,7 @@
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, EPS0, ETA0, MU0};
-use emcraft_model::{Model, Pole, Span};
+use emcraft_model::{Model, Pole, SecondOrder, Span};
 use std::sync::Barrier;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -317,7 +317,7 @@ impl Term {
             (Pole::Debye { delta_eps, tau }, _) => {
                 Term::Debye { ka: (2.0 * tau - dt) / (2.0 * tau + dt), kb: w * EPS0 * delta_eps * dt / (2.0 * tau + dt) }
             }
-            (_, Some((a, w0, g))) => {
+            (_, Some(SecondOrder { strength: a, omega0: w0, gamma: g })) => {
                 let d = 1.0 + 0.5 * g * dt;
                 Term::Second { c1: (2.0 - w0 * w0 * dt * dt) / d, c2: (1.0 - 0.5 * g * dt) / d, c3: w * dt * dt * EPS0 * a / d }
             }
@@ -439,7 +439,7 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
     // A second-order pole is explicit in time: stable while its frequencies stay well below
     // 1/Δt (ω₀Δt < 2 and the plasma term likewise; refused well before).
     for pole in g.poles.iter().flatten() {
-        if let Some((a, w0, _)) = pole.second_order()
+        if let Some(SecondOrder { strength: a, omega0: w0, .. }) = pole.second_order()
             && !(w0 * dt < 0.5 && a.sqrt() * dt < 0.5)
         {
             return Err(FdtdError::Unsupported(format!("a pole too fast for the time step ({dt:e} s): {pole:?}")));

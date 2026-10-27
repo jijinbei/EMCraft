@@ -7,7 +7,7 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::{Aabb, Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Point3, Shape, Vec3, positive};
+use emcraft_model::{Aabb, Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Point3, Shape, SphericalLayer, Vec3, positive};
 use emcraft_tetmesh::cdt::{CdtOptions, tetrahedralize};
 use emcraft_tetmesh::surface::{BoundarySurface, SurfaceOptions};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
@@ -744,7 +744,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
     // inclusion's) with the layer's shell, meshed as a region of its own between it and the
     // solid's sphere — so the shell's tetrahedra are a layer of their own.
     let layer = model.spherical_layer();
-    if let Some((inner, _)) = layer {
+    if let Some(SphericalLayer { inner, .. }) = layer {
         if !model.features.is_empty() {
             return Err(MeshError::Invalid { what: "spherical layer".into(), why: "not supported yet: features with a spherical layer".into() });
         }
@@ -753,7 +753,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
         }
     }
     let mut main = match layer {
-        Some((inner, _)) => {
+        Some(SphericalLayer { inner, .. }) => {
             let ball = Shape::Sphere { radius: inner };
             placed(tessellate(&ball, interface_size(&ball, size, false)), Point3::ORIGIN)
         }
