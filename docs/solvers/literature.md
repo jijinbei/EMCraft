@@ -218,6 +218,34 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   1983, §4.4 and Appendix A — the Mie series and its BHMIE test values
   (`emcraft-theory::radiation`).
 
+## Periodic structures
+- G. Floquet, *Sur les équations différentielles linéaires à coefficients périodiques*, Ann.
+  Sci. ÉNS 12:47–88, 1883 — fields of a periodic structure as E(r + L) = e^{−jψ}E(r).
+- J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, the chapter on
+  periodic structures — the unit cell with phase-shifted boundary conditions, Floquet ports and
+  the phase-shift eigenproblem (`emcraft-solver::driven::periodic`, `driven::floquet`, `bloch`).
+- D. T. McGrath, V. P. Pyati, *Phased array antenna analysis with the hybrid finite element
+  method*, IEEE Trans. Antennas Propag. 42(12):1625–1630, 1994 — master/slave elimination of the
+  periodic faces' unknowns. Ours is applied to the assembled matrix, x = T x_r, with the test
+  functions of conjugate phase (Tᴴ A T): Hermitian for a lossless cell, not complex symmetric
+  unless the phase is real, so the reduced system is factored by LU.
+- A. K. Bhattacharyya, *Phased Array Antennas: Floquet Analysis, Synthesis, BFNs, and Active
+  Array Systems*, Wiley 2006 — Floquet harmonics, their TE/TM polarizations and orthogonality
+  under the conjugate product (the Floquet ports).
+- I. S. Duff, J. K. Reid, *The multifrontal solution of unsymmetric sets of linear equations*,
+  SIAM J. Sci. Stat. Comput. 5(3):633–641, 1984 — multifrontal LU on a symmetric pattern, pivots
+  within each front's fully summed block (`emcraft-solver::lu`).
+- X. S. Li, J. W. Demmel, *Making sparse Gaussian elimination scalable by static pivoting*,
+  Proc. SC98, 1998 — tiny pivots replaced, accuracy recovered by iterative refinement.
+- J. D. Joannopoulos, S. G. Johnson, J. N. Winn, R. D. Meade, *Photonic Crystals: Molding the
+  Flow of Light*, 2nd ed., Princeton 2008 — band structures by the eigenproblem at each Bloch
+  wavevector (`solve.dispersion`).
+- References: S. J. Orfanidis, *Electromagnetic Waves and Antennas*, Rutgers 2016, ch. 7–8
+  (plane waves through layers at oblique incidence, transverse impedances); D. M. Pozar,
+  *Microwave Engineering*, 4th ed., §4.4 and §8.1, and R. E. Collin, *Foundations for Microwave
+  Engineering*, 2nd ed., periodic structures (Bloch waves of a periodically loaded line,
+  cos ψ = (A + D)/2) — `emcraft-theory::floquet`.
+
 ## Quadrature
 - A. H. Stroud, *Approximate Calculation of Multiple Integrals*, Prentice-Hall 1971; M. G. Duffy,
   *Quadrature over a pyramid or cube of integrands with a singularity at a vertex*, SIAM J.
