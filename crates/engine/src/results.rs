@@ -269,3 +269,66 @@ pub fn view_sparameters(s: &mut Session, p: &Params) -> Result<Value> {
     write_png(path, c.png())?;
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
+
+/// The reflection at port `k` over its frequencies: the frequency sweep's, else the time
+/// domain's (port 1 only).
+fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Complex64>)> {
+    if let Some(sw) = s.results.sweep.as_ref().filter(|sw| !sw.results.is_empty()) {
+        let pairs: Option<Vec<_>> = sw.results.iter().map(|r| r.s.get(k, k).map(|c| (r.frequency, c))).collect();
+        let pairs = pairs.ok_or_else(|| EngineError::Failed(format!("the sweep has no reflection at port {}", k + 1)))?;
+        return Ok(pairs.into_iter().unzip());
+    }
+    match s.results.time_domain.as_ref() {
+        Some(td) if k == 0 => Ok((td.frequencies.clone(), td.s11.clone())),
+        Some(_) => Err(EngineError::Failed("the time domain's results reflect at port 1 only".into())),
+        None => Err(EngineError::Failed("no sweep: solve.frequency (or solve.time_domain) first".into())),
+    }
+}
+
+/// The transform of port `port`'s reflection (the first port by default), in `mode` (low pass
+/// on a harmonic sweep by default, else band pass); with the port's name and reference
+/// impedance.
+pub(crate) fn tdr_of(s: &Session, p: &Params) -> Result<(crate::tdr::Tdr, String, Option<f64>)> {
+    let (k, port) = match p.string("port").optional()? {
+        Some(name) => s.model.port(name)?,
+        None => s.model.ports.iter().enumerate().next().ok_or_else(|| EngineError::Failed("no ports".into()))?,
+    };
+    let (freqs, refl) = reflection(s, k)?;
+    let mode = match p.choice::<crate::tdr::Mode>("mode").optional()? {
+        Some(m) => m,
+        None if crate::tdr::spacing(&freqs).is_some_and(|(_, harmonic)| harmonic) => crate::tdr::Mode::LowPass,
+        None => crate::tdr::Mode::BandPass,
+    };
+    Ok((crate::tdr::transform(&freqs, &refl, mode)?, port.name.clone(), port.reference))
+}
+
+/// Most points a TDR reply lists.
+const TDR_POINTS: usize = 400;
+
+pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
+    let (t, port, z0) = tdr_of(s, p)?;
+    let step = t.times.len().div_ceil(TDR_POINTS).max(1);
+    let points: Vec<Value> = t
+        .times
+        .iter()
+        .zip(&t.values)
+        .step_by(step)
+        .map(|(time, v)| {
+            let mut pt = json!({"t": time * 1e9, "value": v});
+            if let (Some(z), crate::tdr::Mode::LowPass) = (z0, t.mode) {
+                pt["impedance"] = json!(z * (1.0 + v) / (1.0 - v));
+            }
+            pt
+        })
+        .collect();
+    Ok(json!({"port": port, "mode": t.mode.name(), "time_unit": "ns", "resolution": t.resolution * 1e9, "reference": z0, "points": points}))
+}
+
+pub fn view_tdr(s: &mut Session, p: &Params) -> Result<Value> {
+    let path = p.string("path").required()?;
+    let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
+    let (t, port, z0) = tdr_of(s, p)?;
+    let c = emcraft_render::chart::draw(&view::tdr_chart(&t, &port, z0), w, h);
+    write_png(path, c.png())?;
+    Ok(json!({"path": path, "width": c.w, "height": c.h}))
+}

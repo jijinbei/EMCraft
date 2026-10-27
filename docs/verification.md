@@ -86,7 +86,11 @@ result is frozen so it cannot drift.
    its pattern, null and active resistance against the exact Hertzian array (oracle `gap-array`).
    The time domain's open problems: two gaps on a Yee grid with a CPML, their self resistance,
    mutual impedance and pattern within 0.3 % of the closed forms (oracle `time-domain-gaps`).
-10. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+10. **Time-domain reflectometry** (`crates/engine/src/tdr.rs`, engine tests): the transform of
+   a closed-form step, ρ e^{−j2πfτ}, steps to ρ at τ and stays there (low pass) and peaks at τ
+   with |ρ| (band pass); a stripline narrowing from 3 to 1 mm steps at its round trip to the ρ
+   of its two ends' cross-section impedances, 0.339 against 0.346 (heavy).
+11. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

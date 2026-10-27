@@ -426,7 +426,7 @@ pub fn for_command(id: &str) -> &'static str {
         "solve.time_domain" => "time",
         "solve.port_modes" => "port_modes",
         "solve.device" => "settings",
-        "results.sparameters" | "view.sparameters" => "chart",
+        "results.sparameters" | "view.sparameters" | "results.tdr" | "view.tdr" => "chart",
         "results.compare" | "results.field_error" => "compare",
         "results.far_field" | "view.pattern" => "pattern",
         "results.probe" => "probe",

@@ -423,6 +423,31 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::view_port_mode,
     },
     CommandSpec {
+        id: "results.tdr",
+        label: "TDR",
+        doc: "Time-domain reflectometry from the sweep's reflection at a port (the time domain's if there is no sweep): `lowpass` — on a harmonic sweep, f_k = k Δf, for lines without a cut-off — gives the step response ρ(t), a step at each change of impedance at its round-trip delay (Z = Z0 (1 + ρ)/(1 − ρ) with the port's reference impedance); `bandpass` gives |h(t)|, a peak where each reflection comes from (guides with a cut-off). Hann-windowed, over one alias period 1/Δf.",
+        params: &[
+            opt("port", K::String, "the port (default the first)"),
+            opt("mode", K::String, "`lowpass` (default on a harmonic sweep) or `bandpass`").one_of(&["lowpass", "bandpass"]),
+        ],
+        effect: Effect::None,
+        run: crate::results::tdr,
+    },
+    CommandSpec {
+        id: "view.tdr",
+        label: "TDR PNG",
+        doc: "Writes results.tdr's chart as a PNG.",
+        params: &[
+            req("path", K::String, "PNG file to write"),
+            opt("port", K::String, "the port (default the first)"),
+            opt("mode", K::String, "`lowpass` or `bandpass`").one_of(&["lowpass", "bandpass"]),
+            opt("width", K::Integer, "picture width in pixels (default 1000)"),
+            opt("height", K::Integer, "picture height in pixels (default 600)"),
+        ],
+        effect: Effect::None,
+        run: crate::results::view_tdr,
+    },
+    CommandSpec {
         id: "view.field",
         label: "Field picture",
         doc: "Writes a PNG of the fields on a plane: a component as colour and the in-plane E and H as arrows, Re(F e^jωt) at a phase.",

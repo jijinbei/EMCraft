@@ -368,6 +368,27 @@ Writes a PNG of a port mode's shape: its transverse E across the port's face, |E
 | `order` | integer |  | no | element order of the cross-section solver, 1 or 2 (default 2) |
 | `width` | integer |  | no | picture width in pixels (default 900) |
 
+## `results.tdr` — TDR
+
+Time-domain reflectometry from the sweep's reflection at a port (the time domain's if there is no sweep): `lowpass` — on a harmonic sweep, f_k = k Δf, for lines without a cut-off — gives the step response ρ(t), a step at each change of impedance at its round-trip delay (Z = Z0 (1 + ρ)/(1 − ρ) with the port's reference impedance); `bandpass` gives |h(t)|, a peak where each reflection comes from (guides with a cut-off). Hann-windowed, over one alias period 1/Δf.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `port` | string |  | no | the port (default the first) |
+| `mode` | string |  | no | `lowpass` (default on a harmonic sweep) or `bandpass` |
+
+## `view.tdr` — TDR PNG
+
+Writes results.tdr's chart as a PNG.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | PNG file to write |
+| `port` | string |  | no | the port (default the first) |
+| `mode` | string |  | no | `lowpass` or `bandpass` |
+| `width` | integer |  | no | picture width in pixels (default 1000) |
+| `height` | integer |  | no | picture height in pixels (default 600) |
+
 ## `view.field` — Field picture
 
 Writes a PNG of the fields on a plane: a component as colour and the in-plane E and H as arrows, Re(F e^jωt) at a phase.

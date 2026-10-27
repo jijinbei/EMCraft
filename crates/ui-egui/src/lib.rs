@@ -52,6 +52,8 @@ pub enum View {
     /// The model's H-plane and E-plane outlines.
     Outline,
     SParameters,
+    /// Time-domain reflectometry of a port.
+    Tdr,
     Field,
     PortModes,
     FarField,
@@ -60,14 +62,15 @@ pub enum View {
 }
 
 impl View {
-    pub const ALL: [View; 8] =
-        [View::Model, View::Outline, View::SParameters, View::Field, View::PortModes, View::FarField, View::Compare, View::Eigenmodes];
+    pub const ALL: [View; 9] =
+        [View::Model, View::Outline, View::SParameters, View::Tdr, View::Field, View::PortModes, View::FarField, View::Compare, View::Eigenmodes];
 
     pub fn id(self) -> &'static str {
         match self {
             View::Model => "model",
             View::Outline => "outline",
             View::SParameters => "sparameters",
+            View::Tdr => "tdr",
             View::Field => "field",
             View::PortModes => "port_modes",
             View::FarField => "far_field",
@@ -81,6 +84,7 @@ impl View {
             View::Model => "Model 3D",
             View::Outline => "Outline",
             View::SParameters => "S-parameters",
+            View::Tdr => "TDR",
             View::Field => "Field",
             View::PortModes => "Port modes",
             View::FarField => "Far field",
@@ -191,6 +195,9 @@ pub struct EmcraftApp {
     pub eigen_table: Option<(u64, Value)>,
     /// The picked port mode's picture (Port modes view).
     pub mode_picture: Option<Picture>,
+    /// The TDR view's port and transform (defaults when `None`), and its chart.
+    pub tdr: (Option<String>, Option<emcraft_engine::tdr::Mode>),
+    pub tdr_chart: Option<Picture>,
     pub messages: Vec<Message>,
     pub search: ribbon::Search,
     pub browser: browser::Browser,
@@ -274,6 +281,8 @@ impl EmcraftApp {
             compare: None,
             eigen_table: None,
             mode_picture: None,
+            tdr: (None, None),
+            tdr_chart: None,
             messages: vec![Message { text: "Open a sample or a project (File) or build a model from the ribbon.".into(), error: false, count: 1 }],
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),
@@ -476,6 +485,13 @@ impl EmcraftApp {
                 if self.workflow.step != Some(steps::Step::Excitation) {
                     self.view = View::PortModes;
                 }
+            }
+            "results.tdr" => {
+                self.tdr = (
+                    params.get("port").and_then(Value::as_str).map(str::to_owned),
+                    params.get("mode").and_then(|m| serde_json::from_value(m.clone()).ok()),
+                );
+                self.view = View::Tdr;
             }
             "results.compare" => {
                 self.compare = Some(reply.clone());

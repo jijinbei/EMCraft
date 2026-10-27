@@ -35,6 +35,11 @@ fn scenario_import_bodies() {
 }
 
 #[test]
+fn scenario_tdr_view() {
+    scenario("tdr_view");
+}
+
+#[test]
 fn scenario_field_view() {
     scenario("field_view");
 }

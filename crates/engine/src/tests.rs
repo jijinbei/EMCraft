@@ -1234,3 +1234,51 @@ fn a_sample_opened_with_its_solve_has_current_results() {
     s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
     assert_ne!(s.solved_revision, Some(s.revision));
 }
+
+#[test]
+fn a_guides_tdr_is_band_pass_and_low_pass_needs_a_harmonic_sweep() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    assert!(s.execute("results.tdr", &json!({})).is_err());
+    s.execute("solve.frequency", &json!({"start": 6.6, "stop": 9, "points": 13, "order": 1})).unwrap();
+    let r = s.execute("results.tdr", &json!({})).unwrap();
+    assert_eq!(r["mode"], "bandpass");
+    // The guide's reflections lie within the first nanosecond of a 5 ns period.
+    let peak = r["points"].as_array().unwrap().iter().max_by(|a, b| a["value"].as_f64().unwrap().total_cmp(&b["value"].as_f64().unwrap())).unwrap();
+    assert!(peak["t"].as_f64().unwrap() < 1.0, "{peak}");
+    assert!(s.execute("results.tdr", &json!({"mode": "lowpass"})).is_err());
+}
+
+#[test]
+#[ignore = "heavy: a minute (cargo test --release -p emcraft-engine -- --ignored)"]
+fn a_strip_narrowing_steps_the_tdr_by_its_reflection() {
+    // A stripline 3 mm wide then 1 mm wide: low-pass TDR from a harmonic sweep steps at the
+    // round trip to the step (2 × 20 mm × √2.2 / c = 0.198 ns) to ρ = (Z2 − Z1)/(Z2 + Z1), the
+    // two ends' line impedances by their cross-sections.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.2})).unwrap();
+    let strips = json!([{"y": 1, "x0": 2.5, "width": 3, "z0": 0, "z1": 20}, {"y": 1, "x0": 3.5, "width": 1, "z0": 20, "z1": 40}]);
+    s.execute("geometry.waveguide", &json!({"width": 8, "height": 2, "sections": [{"length": 40, "material": "ptfe"}], "strips": strips})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 1})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 1})).unwrap();
+    let modes = s.execute("solve.port_modes", &json!({"frequency": 2, "order": 1})).unwrap();
+    let z = |k: usize| modes["ports"][k]["modes"][0]["impedance"].as_f64().unwrap();
+    let rho = (z(1) - z(0)) / (z(1) + z(0));
+    s.execute("solve.frequency", &json!({"start": 0.4, "stop": 10, "points": 25, "order": 1})).unwrap();
+    let r = s.execute("results.tdr", &json!({})).unwrap();
+    assert_eq!(r["mode"], "lowpass");
+    let at = |t: f64| {
+        let p = r["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .min_by(|a, b| (a["t"].as_f64().unwrap() - t).abs().total_cmp(&(b["t"].as_f64().unwrap() - t).abs()))
+            .unwrap();
+        p["value"].as_f64().unwrap()
+    };
+    assert!(at(0.05).abs() < 0.02, "{}", at(0.05));
+    // Measured 0.339 against 0.346 at 0.5 mm; coarser here.
+    assert!((at(1.0) - rho).abs() < 0.03, "{} {rho}", at(1.0));
+    assert!(s.execute("results.tdr", &json!({"port": "9"})).is_err());
+}

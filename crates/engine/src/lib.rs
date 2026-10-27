@@ -10,6 +10,13 @@
 
 mod adapt;
 pub mod bodies;
+pub mod tdr;
+
+/// results.tdr's chart, for the UI.
+pub fn results_tdr_chart(s: &Session, p: &Params) -> Result<emcraft_render::chart::Chart> {
+    let (t, port, z0) = results::tdr_of(s, p)?;
+    Ok(view::tdr_chart(&t, &port, z0))
+}
 mod cmd;
 mod geometry;
 mod meshing;

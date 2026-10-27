@@ -17,12 +17,14 @@ mod fields;
 mod model;
 mod sparameters;
 mod tables;
+mod tdr;
 
 use far_field::*;
 use fields::*;
 use model::*;
 use sparameters::*;
 use tables::*;
+use tdr::*;
 
 pub(crate) use fields::{field_plots, plane_span_of};
 pub use sparameters::chart_frequency;
@@ -53,6 +55,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 View::Model => model3d(app, &mut inner),
                 View::Outline => model(app, &mut inner),
                 View::SParameters => sparameters(app, &mut inner),
+                View::Tdr => tdr(app, &mut inner),
                 View::Field => field(app, &mut inner),
                 View::PortModes => port_modes(app, &mut inner),
                 View::FarField => far_field(app, &mut inner),
@@ -67,7 +70,7 @@ pub(crate) fn available(app: &EmcraftApp, v: View) -> bool {
     let r = &app.session.results;
     match v {
         View::Model | View::Outline => true,
-        View::SParameters => r.sweep.is_some() || r.time_domain.is_some(),
+        View::SParameters | View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
         View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
         View::PortModes => app.port_modes.is_some() || (app.session.model.mesh.is_some() && !app.session.model.ports.is_empty()),
         View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),

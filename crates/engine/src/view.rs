@@ -766,3 +766,26 @@ pub fn port_mode_plot(session: &Session, port: &str, mode: usize, frequency: f64
         arrow_length: spacing * 0.9,
     })
 }
+
+/// A TDR's chart: ρ(t) (low pass, a step per change of impedance) or |h(t)| (band pass, a peak
+/// per reflection) against time in ns.
+pub fn tdr_chart(t: &crate::tdr::Tdr, port: &str, z0: Option<f64>) -> Chart {
+    let points: Vec<[f64; 2]> = t.times.iter().zip(&t.values).map(|(time, v)| [time * 1e9, *v]).collect();
+    let (lo, hi) = t.values.iter().fold((0.0f64, 0.0f64), |(a, b), v| (a.min(*v), b.max(*v)));
+    let pad = 0.1 * (hi - lo).max(1e-3);
+    let end = t.times.last().map_or(1.0, |x| x * 1e9);
+    let (title, label) = match t.mode {
+        crate::tdr::Mode::LowPass => (
+            format!("TDR at port {port}, low pass: step response{}", z0.map_or(String::new(), |z| format!(" (Z = {z} Ω · (1 + ρ)/(1 − ρ))"))),
+            "ρ (step)",
+        ),
+        crate::tdr::Mode::BandPass => (format!("TDR at port {port}, band pass: where reflections come from"), "|h| (impulse)"),
+    };
+    Chart {
+        title,
+        x: Axis::new("round-trip time (ns)", 0.0, end),
+        y: Axis::new(label, lo - pad, hi + pad),
+        series: vec![Series { label: label.into(), color: Rgb(40, 90, 200), style: Style::Line, points }],
+        marks: Vec::new(),
+    }
+}

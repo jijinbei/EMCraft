@@ -222,3 +222,9 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - A. H. Stroud, *Approximate Calculation of Multiple Integrals*, Prentice-Hall 1971; M. G. Duffy,
   *Quadrature over a pyramid or cube of integrands with a singularity at a vertex*, SIAM J.
   Numer. Anal. 19(6):1260–1262, 1982 — collapsed (conical product) rules on simplices.
+
+## Time-domain reflectometry
+
+- J. Dunsmore, *Handbook of Microwave Component Measurements*, 2nd ed., Wiley 2020, ch. 4: the
+  time-domain transforms of a network analyser — low pass on a harmonic grid with DC
+  extrapolated (step response), band pass (impulse envelope), windows. `crates/engine/src/tdr.rs`.
