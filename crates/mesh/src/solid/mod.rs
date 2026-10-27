@@ -19,7 +19,7 @@ use emcraft_tetmesh::size::{LocalSize, Region};
 use crate::{MeshError, Result, too_large};
 use curved::bend;
 use mesher::{RegionFace, RegionMesh, mesher_point, region};
-use tessellation::{Tessellation, append, combined, extract, interface_size, placed, same_triangles, tessellate};
+use tessellation::{Tessellation, append, combined, extract, interface_size, joined, placed, same_triangles, tessellate};
 
 /// The model's solid meshed with tetrahedra of about `size`: its end faces (box z0/z1, the
 /// cylinder's caps) tagged as ports 0 and 1, the rest as conducting walls. Inclusions make holes
@@ -171,7 +171,7 @@ pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refin
     if !refine.is_empty() {
         too_large(estimate + refined_estimate(&main.positions, size, refine))?;
     }
-    for (k, f) in model.features.iter().enumerate() {
+    for (k, f) in joined(&model.features, &s.shape, size)?.iter().enumerate() {
         main = combined(main, f, k, &s.shape, size)?;
     }
     let body = Body { model, shape: &s.shape, material: material as u32, size, inner_size, locals, shell: layer.is_some() };
@@ -701,6 +701,114 @@ mod tests {
         })
         .unwrap();
         assert!(solid(&w, 0.003).is_err());
+    }
+
+    /// A coaxial line's inner conductor in two pieces meeting end to end: the solid (radius
+    /// 3.5 mm, 20 mm long) less two cylinders of radius 1 mm and `r2`, at z 0..10 and 10..20 mm.
+    fn stepped_coax(r2: f64) -> Model {
+        use emcraft_model::Feature;
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.0035, length: 0.02 }, material: "vacuum".into() }).unwrap();
+        for (radius, z) in [(0.001, 0.0), (r2, 0.01)] {
+            m.add_feature(Feature {
+                combine: Combine::Subtract,
+                shape: Shape::Cylinder { radius, length: 0.01 },
+                at: Point3::new(0.0, 0.0, z),
+                axis: Axis::Z,
+            })
+            .unwrap();
+        }
+        m
+    }
+
+    /// Regression: the two cylinders' facing caps, each moved by its own millionth of the size,
+    /// left two boundary parts a nanometre apart, and boundary edge recovery split the same few
+    /// edges a hair at a time for many minutes. Combined as they are (not joined first), they
+    /// now stop at the pass cap with an error, in seconds.
+    #[test]
+    fn nearly_touching_boundaries_stop_quickly() {
+        let (m, size) = (stepped_coax(0.001), 0.0015);
+        let s = m.solid.as_ref().unwrap();
+        let mut main = tessellate(&s.shape, size);
+        for (k, f) in m.features.iter().enumerate() {
+            main = combined(main, f, k, &s.shape, size).unwrap();
+        }
+        let start = std::time::Instant::now();
+        let e = region(&main, size, Vec::new(), &[]).err().expect("nearly touching boundaries are refused");
+        assert!(e.to_string().contains("nearly touch"), "{e}");
+        assert!(start.elapsed().as_secs() < 30, "{:?}", start.elapsed());
+    }
+
+    /// The stepped coaxial line meshes within seconds, its volume the exact one but for the
+    /// flat facets on the round walls, both ends whole ports.
+    fn stepped_coax_meshes(r2: f64, size: f64) {
+        let start = std::time::Instant::now();
+        let mesh = solid(&stepped_coax(r2), size).unwrap_or_else(|e| panic!("r2 {r2}: {e}"));
+        assert!(start.elapsed().as_secs() < 60, "r2 {r2}: {:?}", start.elapsed());
+        let v: f64 = crate::volumes(&mesh).iter().sum();
+        let hole = |r: f64| PI * r * r * 0.01;
+        let exact = PI * 0.0035f64.powi(2) * 0.02 - hole(0.001) - hole(r2);
+        assert!((v - exact).abs() < 0.02 * exact, "r2 {r2}: {v} {exact}");
+        let port = |k: u32| mesh.boundary.iter().filter(|f| f.tag == Boundary::Port(k)).map(|f| area(&mesh, f)).sum::<f64>();
+        assert!(port(0) > 0.0 && port(1) > 0.0, "r2 {r2}");
+    }
+
+    /// Regression: features meeting end to end (a stepped inner conductor) used to hang the
+    /// mesher. Now with the same cross-section they are one feature; with one inside the other,
+    /// the smaller reaches into the larger; overlapping otherwise, they are refused.
+    #[test]
+    fn features_meeting_end_to_end_mesh() {
+        stepped_coax_meshes(0.0015, 0.0015);
+        // Boxes face to face: the same rectangle becomes one box.
+        use emcraft_model::Feature;
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, material: "vacuum".into() }).unwrap();
+        for z in [0.005, 0.01] {
+            let f = Feature {
+                combine: Combine::Subtract,
+                shape: Shape::Box { size: Vec3::new(0.004, 0.004, 0.005) },
+                at: Point3::new(0.008, 0.003, z),
+                axis: Axis::Z,
+            };
+            m.add_feature(f).unwrap();
+        }
+        let v: f64 = crate::volumes(&solid(&m, 0.003).unwrap()).iter().sum();
+        let exact = 0.02 * 0.01 * 0.03 - 0.004 * 0.004 * 0.01;
+        assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
+        // Cross-sections that overlap without one holding the other are refused at once.
+        let mut w = Model::new();
+        w.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, material: "vacuum".into() }).unwrap();
+        for (x, z) in [(0.008, 0.005), (0.010, 0.01)] {
+            let f = Feature {
+                combine: Combine::Subtract,
+                shape: Shape::Box { size: Vec3::new(0.004, 0.004, 0.005) },
+                at: Point3::new(x, 0.003, z),
+                axis: Axis::Z,
+            };
+            w.add_feature(f).unwrap();
+        }
+        let e = solid(&w, 0.003).expect_err("overlapping sections are refused");
+        assert!(e.to_string().contains("reach into"), "{e}");
+    }
+
+    #[test]
+    #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+    fn features_meeting_end_to_end_mesh_heavy() {
+        let size = 0.0015;
+        for r2 in [0.001, 0.0005] {
+            stepped_coax_meshes(r2, size);
+        }
+        // One radius: the same mesh as one hole 20 mm long.
+        let mut one = stepped_coax(0.001);
+        one.features.truncate(1);
+        if let Some(Shape::Cylinder { length, .. }) = one.features.first_mut().map(|f| &mut f.shape) {
+            *length = 0.02;
+        }
+        let digest = |m: &Model| {
+            let mesh = solid(m, size).unwrap();
+            (mesh.nodes.len(), mesh.tets.len(), crate::volumes(&mesh).iter().sum::<f64>())
+        };
+        assert_eq!(digest(&stepped_coax(0.001)), digest(&one));
     }
 
     #[test]
