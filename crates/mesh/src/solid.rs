@@ -9,6 +9,7 @@ use std::f64::consts::PI;
 
 use emcraft_model::{Aabb, Axis, Boundary, BoundaryFace, Buckets, Combine, Feature, Mesh, Model, Point3, Shape, Vec3, positive};
 use emcraft_tetmesh::cdt::{CdtOptions, tetrahedralize};
+use emcraft_tetmesh::size::{LocalSize, Region};
 use emcraft_tetmesh::surface::{BoundarySurface, SurfaceOptions};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 use emcraft_tetmesh::tet::{QualityOptions, quality_mesh};
@@ -519,13 +520,13 @@ struct RegionMesh {
 
 /// Meshes the region a tessellation bounds, keeping the triangles of the `frozen` faces as they
 /// are (interfaces another region shares).
-fn region(t: &Tessellation, size: f64, frozen: Vec<u32>) -> Result<RegionMesh> {
+fn region(t: &Tessellation, size: f64, frozen: Vec<u32>, locals: &[LocalSize]) -> Result<RegionMesh> {
     let fail = |e: emcraft_tetmesh::Error| MeshError::Invalid { what: "tetrahedral meshing".into(), why: e.to_string() };
     // The mesher takes and gives coordinates as arrays.
     let positions: Vec<[f64; 3]> = t.positions.iter().map(|p| p.to_array()).collect();
     let surface = BoundarySurface::new(&positions, &t.triangles, &t.tri_face, &SurfaceOptions::default()).map_err(fail)?;
     let cdt = tetrahedralize(&surface, &CdtOptions::default()).map_err(fail)?;
-    let options = QualityOptions { size: Some(size), max_tets: MAX_TETS, frozen_faces: frozen, ..QualityOptions::default() };
+    let options = QualityOptions { size: Some(size), max_tets: MAX_TETS, frozen_faces: frozen, locals: locals.to_vec(), ..QualityOptions::default() };
     let mut analytic = t.analytic.clone();
     analytic.resize(t.tri_face.iter().map(|f| *f as usize + 1).max().unwrap_or(0).max(analytic.len()), None);
     let q = quality_mesh(&surface, &cdt, analytic, &options).map_err(fail)?;
@@ -723,6 +724,64 @@ impl Sizes {
 /// outside the inclusions, each dielectric inclusion at its material's), the interfaces at the
 /// smaller of their two sides'.
 pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
+    solid_refined(model, sizes, curved, &[])
+}
+
+/// The tetrahedra local refinements add, about: the body's bounding box in voxels (at most 64
+/// a side), each at the smallest size of the balls that reach it, counted against the uniform
+/// `size`.
+fn refined_estimate(points: &[Point3], size: f64, refine: &[Refinement]) -> f64 {
+    let Some(Aabb { min: lo, max: hi }) = Aabb::around(points.iter().copied()) else { return 0.0 };
+    let ext = hi - lo;
+    let cell = (ext.x.max(ext.y).max(ext.z) / 64.0).max(f64::MIN_POSITIVE);
+    let dims = [ext.x, ext.y, ext.z].map(|e| ((e / cell).ceil() as usize).clamp(1, 64));
+    let mut h = vec![size; dims[0] * dims[1] * dims[2]];
+    let index = |v: f64, d: usize| (((v - lo[d]) / cell).floor().max(0.0) as usize).min(dims[d] - 1);
+    for r in refine {
+        let a = [0, 1, 2].map(|d| index(r.center[d] - r.radius, d));
+        let b = [0, 1, 2].map(|d| index(r.center[d] + r.radius, d));
+        for k in a[2]..=b[2] {
+            for j in a[1]..=b[1] {
+                for i in a[0]..=b[0] {
+                    if let Some(v) = h.get_mut((k * dims[1] + j) * dims[0] + i) {
+                        *v = v.min(r.size);
+                    }
+                }
+            }
+        }
+    }
+    let voxel = cell.powi(3);
+    h.iter().map(|v| voxel / (v.powi(3) / 6.0) * 1.5 - voxel / (size.powi(3) / 6.0) * 1.5).sum::<f64>().max(0.0)
+}
+
+/// The most local refinements one mesh takes.
+pub const MAX_REFINEMENTS: usize = 200_000;
+
+/// A local refinement: elements of about `size` within `radius` of `center`, the size growing
+/// away from it at the mesher's grading rate (adaptive refinement marks the tetrahedra of a
+/// previous mesh this way, [`crate::adapt`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Refinement {
+    pub center: Point3,
+    pub radius: f64,
+    pub size: f64,
+}
+
+/// [`solid_sized`] refined locally: the size field is at most each refinement's size in its ball,
+/// graded away from it.
+pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refinement]) -> Result<Mesh> {
+    if refine.len() > MAX_REFINEMENTS {
+        return Err(MeshError::Invalid { what: "refinement".into(), why: format!("{} local sizes; the limit is {MAX_REFINEMENTS}", refine.len()) });
+    }
+    let mut locals = Vec::with_capacity(refine.len());
+    for r in refine {
+        if ![r.center.x, r.center.y, r.center.z].iter().all(|v| v.is_finite()) {
+            return Err(MeshError::Invalid { what: "refinement".into(), why: "a centre is not finite".into() });
+        }
+        positive("refinement size", r.size)?;
+        positive("refinement radius", r.radius)?;
+        locals.push(LocalSize { region: Region::Sphere { center: r.center.to_array(), radius: r.radius }, size: r.size });
+    }
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
     let size = positive("element size", sizes.of(material))?;
@@ -740,6 +799,12 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
         return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
     }
     let mut main = tessellate(&s.shape, size);
+    if !refine.is_empty() {
+        let extra = refined_estimate(&main.positions, size, refine);
+        if !(estimate + extra <= MAX_TETS as f64) {
+            return Err(MeshError::TooLarge { tets: (estimate + extra).min(usize::MAX as f64) as usize, limit: MAX_TETS });
+        }
+    }
     for (k, f) in model.features.iter().enumerate() {
         main = combined(main, f, k, &s.shape, size)?;
     }
@@ -774,7 +839,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
             bases.push((next, n));
             next += n;
         }
-        let outer_mesh = region(&outer, size, (first_tag..next).collect())?;
+        let outer_mesh = region(&outer, size, (first_tag..next).collect(), &locals)?;
         let mut changed = false;
         for (k, t) in interfaces.iter_mut().enumerate() {
             let seen = extract(&outer_mesh, bases[k].0, bases[k].1, false);
@@ -788,7 +853,7 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
             let Some(name) = &inc.material else { continue };
             let (m, _) = model.material(name)?;
             let n = interfaces[k].triangles.len() as u32;
-            let inner = region(&interfaces[k], inner_size[k], (0..n).collect())?;
+            let inner = region(&interfaces[k], inner_size[k], (0..n).collect(), &locals)?;
             let seen = extract(&inner, 0, n, true);
             if !same_triangles(&seen, &interfaces[k], size) {
                 interfaces[k] = seen;
