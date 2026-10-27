@@ -151,6 +151,21 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   n + ½ (trapezoidal, solved per edge with E), Lorentz and Drude poles centred at n (explicit)
   (`emcraft-fdtd`).
 
+## Adaptive refinement
+- P. Monk, *A posteriori error indicators for Maxwell's equations*, J. Comput. Appl. Math.
+  100(2):173–190, 1998; P. Monk, *Finite Element Methods for Maxwell's Equations*, Oxford 2003,
+  ch. 12; R. Beck, R. Hiptmair, R. H. W. Hoppe, B. Wohlmuth, *Residual based a posteriori error
+  estimators for eddy current computation*, M2AN 34(1):159–182, 2000 — the residual indicator
+  for the curl–curl equation on Nédélec elements: the element residual and the face jumps of
+  tangential μ⁻¹∇×E and of normal εE, weighted by the element and face sizes
+  (`emcraft-solver::adapt`; the element divergence term left out, zero for Whitney elements).
+- W. Dörfler, *A convergent adaptive algorithm for Poisson's equation*, SIAM J. Numer. Anal.
+  33(3):1106–1124, 1996; P. Morin, R. H. Nochetto, K. G. Siebert, *Data oscillation and
+  convergence of adaptive FEM*, SIAM J. Numer. Anal. 38(2):466–488, 2000 — bulk (Dörfler)
+  marking of the fewest elements holding a fraction θ of the estimate (`emcraft-mesh::adapt`).
+  The marked tetrahedra are refined by remeshing with local sizes graded by the mesher's
+  background grid (`emcraft-tetmesh::tet::geometry::GradedSize`), not by splitting.
+
 ## Fast frequency sweeps
 - P. Benner, M. Hinze, E. J. W. ter Maten (eds.), *Model Reduction for Circuit Simulation*,
   Springer 2011, ch. 1; A. T. Patera, G. Rozza, *Reduced Basis Approximation and A Posteriori

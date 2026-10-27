@@ -137,6 +137,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
             Stop::Passes => "passes",
             Stop::Limit => "mesh or unknowns limit",
         },
+        "delta_s": rows.last().and_then(|r| r["delta_s"].as_f64()),
         "passes": rows,
         // The last pass's S-parameters.
         "s11": crate::results::complex(sm.get(0, 0).unwrap_or_default()),
