@@ -219,9 +219,11 @@ pub struct EmcraftApp {
     pub files: files::Files,
     /// The start page.
     pub home: home::Home,
-    /// The last command that failed and why, until it succeeds: the panel that asked for it
+    /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<(String, String)>,
+    /// The dialog whose OK started the running job, to open again if the job fails.
+    dialog_job: Option<dialogs::Dialog>,
 }
 
 /// What the desktop app gives the window: a file dialog and where preferences are kept.
@@ -289,6 +291,7 @@ impl EmcraftApp {
             files: files::Files::default(),
             home: home::Home::default(),
             failure: None,
+            dialog_job: None,
         }
     }
 
@@ -404,9 +407,7 @@ impl EmcraftApp {
     /// What follows a command's success: the view it calls for, its message.
     fn after(&mut self, id: &str, params: &Value, reply: &Value) {
         self.revision = self.revision.wrapping_add(1);
-        if self.failure.as_ref().is_some_and(|f| f.0 == id) {
-            self.failure = None;
-        }
+        self.failure = None;
         self.field.samples = None;
         self.field.picture = None;
         self.field.pinned = None;
@@ -526,8 +527,14 @@ impl EmcraftApp {
             Err(e) => {
                 self.failure = Some((job.command.clone(), e.to_string()));
                 self.message(format!("{}: {e}", label(&job.command)), true);
+                // The dialog that started it opens again, the error under its field.
+                if let Some(mut d) = self.dialog_job.take().filter(|d| d.command.id == job.command && self.dialog.is_none()) {
+                    d.refused(&e.to_string());
+                    self.dialog = Some(d);
+                }
             }
         }
+        self.dialog_job = None;
         let answer = match reply {
             Ok(v) => json!({"ok": true, "result": v}),
             Err(e) => json!({"ok": false, "error": e.to_string()}),
@@ -541,6 +548,7 @@ impl EmcraftApp {
     pub fn cancel_job(&mut self) -> bool {
         let Some(job) = self.job.take() else { return false };
         job.cancel();
+        self.dialog_job = None;
         self.message(format!("{} cancelled.", label(&job.command)), false);
         for w in job.waiting {
             let _ = w.send(json!({"ok": false, "error": emcraft_engine::progress::CANCELLED}));
@@ -573,12 +581,13 @@ impl EmcraftApp {
         };
         match self.run(id, params) {
             Ok(v) => {
-                self.dialog = None;
+                // A long command's dialog comes back with the error if its job fails.
+                self.dialog_job = self.dialog.take().filter(|_| worker::is_long(id));
                 Ok(v)
             }
             Err(e) => {
                 if let Some(d) = self.dialog.as_mut() {
-                    d.error = Some(e.to_string());
+                    d.refused(&e.to_string());
                 }
                 Err(e)
             }

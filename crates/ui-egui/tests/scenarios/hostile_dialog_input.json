@@ -15,7 +15,7 @@
   {"note": "Values that parse but the engine refuses: a negative width"},
   {"call": "ui.dialog", "params": {"set": {"width": -5, "height": 10.16}}},
   {"call": "ui.dialog", "params": {"ok": true}, "fail": true},
-  {"expect": {"dialog": "geometry.waveguide", "status_error": true, "inspect": {"dialog.error": "*", "model.waveguide.width": [22.86, 1e-12]}}},
+  {"expect": {"dialog": "geometry.waveguide", "status_error": true, "inspect": {"dialog.errors.width": "*", "model.waveguide.width": [22.86, 1e-12]}}},
   {"note": "An unknown material and a section without its length"},
   {"call": "ui.dialog", "params": {"set": {"width": 22.86, "sections": [{"length": 10, "material": "unobtainium"}, {"material": "vacuum"}]}}},
   {"call": "ui.dialog", "params": {"ok": true}, "fail": true},

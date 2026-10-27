@@ -626,6 +626,17 @@ fn band_diagram(app: &mut EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tok
     app.workflow.diagram = Some(json!({"cutoffs": cuts.iter().map(|c| c.1.clone()).collect::<Vec<_>>(), "solves": n}));
 }
 
+/// An error band with a heading and its details.
+fn refusal_band(ui: &mut egui::Ui, heading: &str, t: &Tokens, details: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(4.0);
+    let r = egui::Frame::NONE.fill(t.form_error_fill).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(egui::RichText::new(heading).size(t.font_body).strong().color(t.form_error));
+        details(ui);
+    });
+    scenario::publish_rect("run:error", r.response.rect);
+}
+
 /// Run: the preflight's findings and the button that starts the solve.
 fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &Tokens) {
     ui_kit::section(ui, "Preflight");
@@ -664,8 +675,35 @@ fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &
     if ui_kit::button(ui, &label, true, !busy, "run:start").clicked() {
         let _ = start_run(app);
     }
-    if let Some(e) = &app.workflow.fields.refused {
-        ui_kit::error_band(ui, e);
+    // Why Run was refused, under the button: each blocking problem with the way to its step,
+    // as long as it blocks.
+    if app.workflow.fields.refused.is_some() && pre.blocking.is_empty() {
+        app.workflow.fields.refused = None;
+    }
+    let mut go = None;
+    if app.workflow.fields.refused.is_some() {
+        refusal_band(ui, &format!("Run refused: {} problem(s) to fix first", pre.blocking.len()), t, |ui| {
+            for (i, (step, text)) in pre.blocking.iter().enumerate() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new(format!("• {} · {text}", step.label())).size(t.font_small).color(t.form_error));
+                    let r = ui.small_button(format!("Go to {}", step.label()));
+                    scenario::publish_target(&format!("run:refused:{i}"), r.rect);
+                    if r.clicked() {
+                        go = Some(*step);
+                    }
+                });
+            }
+        });
+    }
+    // A solve that started and failed says why here too.
+    if !busy && let Some((_, e)) = app.failure.as_ref().filter(|f| f.0 == solver.command()) {
+        refusal_band(ui, &format!("{} failed", crate::label(solver.command())), t, |ui| {
+            ui.label(egui::RichText::new(e).size(t.font_small).color(t.form_error));
+        });
+    }
+    if let Some(s) = go {
+        open_step(app, Some(s));
+        return;
     }
     if busy {
         ui.label(egui::RichText::new("Running — progress and Cancel below.").size(t.font_small).color(t.text_dim));
