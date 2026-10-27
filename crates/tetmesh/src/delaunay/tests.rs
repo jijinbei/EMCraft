@@ -3,6 +3,11 @@ use crate::compat::ElementKind;
 use super::*;
 use crate::quality::{GateOptions, enclosed_volume, validity_gate_elements};
 
+/// The triangulation of points given as coordinate triples.
+fn triangulation(points: &[[f64; 3]]) -> Result<Triangulation> {
+    Triangulation::new(&points.iter().map(|&p| Point3::from(p)).collect::<Vec<_>>())
+}
+
 struct Rng(u64);
 
 impl Rng {
@@ -53,7 +58,7 @@ fn tet_set(tri: &Triangulation) -> Vec<[[u64; 3]; 4]> {
 
 /// The validity gate on the finite tetrahedra, with the hull volume expected; returns the volume.
 fn gate(tri: &Triangulation, expected: f64) -> f64 {
-    let elements = tri.finite_tets().map(|(t, vs)| (t + 1, ElementKind::Tet4, vs.map(|v| tri.points()[v as usize].coords())));
+    let elements = tri.finite_tets().map(|(t, vs)| (t + 1, ElementKind::Tet4, vs.map(|v| tri.points()[v as usize].point())));
     let report = validity_gate_elements(elements, &GateOptions { expected_volume: Some(expected), volume_tolerance: 1e-9 }).unwrap();
     assert_eq!(report.checked, tri.finite_tet_count());
     report.into_result().unwrap().volume
@@ -61,7 +66,7 @@ fn gate(tri: &Triangulation, expected: f64) -> f64 {
 
 /// The volume enclosed by the hull faces, outward oriented, through the quality module.
 fn hull_volume(tri: &Triangulation) -> f64 {
-    let points: Vec<[f64; 3]> = tri.points().iter().map(ExactPoint3::coords).collect();
+    let points: Vec<Point3> = tri.points().iter().map(ExactPoint3::point).collect();
     let mut triangles = Vec::new();
     for t in 0..tri.slots() as u32 {
         let Some(vs) = tri.tet(t) else { continue };
@@ -114,7 +119,7 @@ fn brute_force(points: &[[f64; 3]]) -> Vec<[[u64; 3]; 4]> {
 
 #[test]
 fn one_tetrahedron_and_its_ghosts() {
-    let tri = Triangulation::new(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]).unwrap();
+    let tri = triangulation(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]).unwrap();
     assert_eq!(tri.dimension(), 3);
     assert_eq!(tri.finite_tet_count(), 1);
     assert_eq!((0..tri.slots() as u32).filter(|&t| tri.is_ghost(t)).count(), 4);
@@ -124,7 +129,7 @@ fn one_tetrahedron_and_its_ghosts() {
 #[test]
 fn random_points_are_delaunay_and_valid() {
     let points = random(1, 1500);
-    let tri = Triangulation::new(&points).unwrap();
+    let tri = triangulation(&points).unwrap();
     tri.verify().unwrap();
     tri.verify_empty_spheres().unwrap();
     // The tetrahedra fill the volume the hull faces (the ghosts' finite faces) enclose.
@@ -150,7 +155,7 @@ fn matches_the_definition_on_small_sets() {
         vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [2.0, 2.0, 0.0], [1.0, 1.0, 0.0], [1.0, 1.0, 1.0], [0.0, 0.0, 1.0], [2.0, 2.0, 1.0]],
     ];
     for points in sets {
-        let tri = Triangulation::new(&points).unwrap();
+        let tri = triangulation(&points).unwrap();
         tri.verify().unwrap();
         assert_eq!(tet_set(&tri), brute_force(&points), "{points:?}");
     }
@@ -159,12 +164,12 @@ fn matches_the_definition_on_small_sets() {
 #[test]
 fn the_result_does_not_depend_on_the_input_order() {
     for points in [random(2, 400), grid(5, 4, 6)] {
-        let reference = tet_set(&Triangulation::new(&points).unwrap());
+        let reference = tet_set(&triangulation(&points).unwrap());
         let mut r = Rng(99);
         for _ in 0..3 {
             let mut shuffled = points.clone();
             r.shuffle(&mut shuffled);
-            let tri = Triangulation::new(&shuffled).unwrap();
+            let tri = triangulation(&shuffled).unwrap();
             tri.verify().unwrap();
             assert_eq!(tet_set(&tri), reference);
         }
@@ -174,20 +179,20 @@ fn the_result_does_not_depend_on_the_input_order() {
 #[test]
 fn deterministic_bit_for_bit() {
     let points = random(3, 3000);
-    let a = Triangulation::new(&points).unwrap();
-    let b = Triangulation::new(&points).unwrap();
+    let a = triangulation(&points).unwrap();
+    let b = triangulation(&points).unwrap();
     assert_eq!(a.tets, b.tets);
     assert_eq!(a.adj, b.adj);
 }
 
 #[test]
 fn grids_are_cospherical_everywhere() {
-    let tri = Triangulation::new(&grid(7, 6, 5)).unwrap();
+    let tri = triangulation(&grid(7, 6, 5)).unwrap();
     check(&tri, 6.0 * 5.0 * 4.0);
     assert_eq!(hull_volume(&tri), 120.0);
     // A rotated-in-place grid with non-integer spacing.
     let skew: Vec<[f64; 3]> = grid(6, 6, 6).into_iter().map(|[x, y, z]| [0.1 * x, 0.3 * y + 1e3, 0.7 * z - 5.0]).collect();
-    let tri = Triangulation::new(&skew).unwrap();
+    let tri = triangulation(&skew).unwrap();
     tri.verify().unwrap();
     tri.verify_empty_spheres().unwrap();
 }
@@ -206,7 +211,7 @@ fn cospherical_and_cocircular_points() {
         }
     }
     assert_eq!(sphere.len(), 30);
-    let tri = Triangulation::new(&sphere).unwrap();
+    let tri = triangulation(&sphere).unwrap();
     tri.verify().unwrap();
     tri.verify_empty_spheres().unwrap();
     assert_eq!(tet_set(&tri), brute_force(&sphere));
@@ -219,7 +224,7 @@ fn cospherical_and_cocircular_points() {
             cylinder.push([3.0 * a.cos(), 3.0 * a.sin(), z]);
         }
     }
-    let tri = Triangulation::new(&cylinder).unwrap();
+    let tri = triangulation(&cylinder).unwrap();
     tri.verify().unwrap();
     tri.verify_empty_spheres().unwrap();
     assert_eq!(tet_set(&tri), brute_force(&cylinder));
@@ -227,22 +232,22 @@ fn cospherical_and_cocircular_points() {
 
 #[test]
 fn lower_dimensional_inputs_have_no_tetrahedra() {
-    assert_eq!(Triangulation::new(&[]).unwrap().dimension(), 0);
-    let one = Triangulation::new(&[[1.0, 2.0, 3.0]]).unwrap();
+    assert_eq!(triangulation(&[]).unwrap().dimension(), 0);
+    let one = triangulation(&[[1.0, 2.0, 3.0]]).unwrap();
     assert_eq!((one.dimension(), one.finite_tet_count()), (0, 0));
     let line: Vec<[f64; 3]> = (0..50).map(|i| [f64::from(i), 2.0 * f64::from(i), -f64::from(i)]).collect();
-    let tri = Triangulation::new(&line).unwrap();
+    let tri = triangulation(&line).unwrap();
     assert_eq!((tri.dimension(), tri.finite_tet_count()), (1, 0));
     tri.verify().unwrap();
 
     let plane: Vec<[f64; 3]> = grid(10, 10, 1).into_iter().map(|[x, y, _]| [x, y, x + 2.0 * y]).collect();
-    let mut tri = Triangulation::new(&plane).unwrap();
+    let mut tri = triangulation(&plane).unwrap();
     assert_eq!((tri.dimension(), tri.finite_tet_count()), (2, 0));
-    assert_eq!(tri.locate([0.0, 0.0, 0.0]).unwrap(), None);
+    assert_eq!(tri.locate(Point3::from([0.0, 0.0, 0.0])).unwrap(), None);
     // Duplicates of the planar points are still found.
-    assert_eq!(tri.insert([3.0, 4.0, 11.0]).unwrap(), Insertion::Duplicate(34));
+    assert_eq!(tri.insert(Point3::from([3.0, 4.0, 11.0])).unwrap(), Insertion::Duplicate(34));
     // One point off the plane makes it 3D: every tetrahedron has that apex.
-    let apex = match tri.insert([4.5, 4.5, 40.0]).unwrap() {
+    let apex = match tri.insert(Point3::from([4.5, 4.5, 40.0])).unwrap() {
         Insertion::Inserted(v) => v,
         other => panic!("{other:?}"),
     };
@@ -258,29 +263,29 @@ fn duplicates_merge_into_the_lowest_index() {
     let mut points = base.clone();
     points.extend(base.iter().rev());
     points.push([-0.0, 0.0, -0.0]);
-    let tri = Triangulation::new(&points).unwrap();
+    let tri = triangulation(&points).unwrap();
     tri.verify().unwrap();
     for i in 0..base.len() {
         assert_eq!(tri.duplicate_of(i as u32), None);
         assert_eq!(tri.duplicate_of((2 * base.len() - 1 - i) as u32), Some(i as u32));
     }
     assert_eq!(tri.duplicate_of(points.len() as u32 - 1), Some(0));
-    assert_eq!(tet_set(&tri), tet_set(&Triangulation::new(&base).unwrap()));
+    assert_eq!(tet_set(&tri), tet_set(&triangulation(&base).unwrap()));
 }
 
 #[test]
 fn steiner_points_insert_into_a_built_triangulation() {
-    let mut tri = Triangulation::new(&grid(4, 4, 4)).unwrap();
+    let mut tri = triangulation(&grid(4, 4, 4)).unwrap();
     let mut r = Rng(5);
     for _ in 0..200 {
         let p = [4.0 * r.unit() - 0.5, 4.0 * r.unit() - 0.5, 4.0 * r.unit() - 0.5];
-        assert!(matches!(tri.insert(p).unwrap(), Insertion::Inserted(_)));
+        assert!(matches!(tri.insert(Point3::from(p)).unwrap(), Insertion::Inserted(_)));
     }
     // On a vertex, on an edge, on a face, on the hull's plane outside it.
-    assert_eq!(tri.insert([1.0, 2.0, 3.0]).unwrap(), Insertion::Duplicate(27));
+    assert_eq!(tri.insert(Point3::from([1.0, 2.0, 3.0])).unwrap(), Insertion::Duplicate(27));
     assert_eq!(tri.duplicate_of(tri.points().len() as u32 - 1), Some(27));
     for p in [[1.5, 2.0, 3.0], [1.5, 1.5, 0.0], [5.0, 5.0, 0.0], [-1.0, 1.0, 3.0]] {
-        assert!(matches!(tri.insert(p).unwrap(), Insertion::Inserted(_)), "{p:?}");
+        assert!(matches!(tri.insert(Point3::from(p)).unwrap(), Insertion::Inserted(_)), "{p:?}");
     }
     tri.verify().unwrap();
     tri.verify_empty_spheres().unwrap();
@@ -288,32 +293,32 @@ fn steiner_points_insert_into_a_built_triangulation() {
 
 #[test]
 fn locate_finds_the_containing_tetrahedron() {
-    let tri = Triangulation::new(&grid(3, 3, 3)).unwrap();
-    match tri.locate([0.5, 0.5, 0.5]).unwrap() {
+    let tri = triangulation(&grid(3, 3, 3)).unwrap();
+    match tri.locate(Point3::from([0.5, 0.5, 0.5])).unwrap() {
         Some(Location::Inside(t)) => assert!(!tri.is_ghost(t)),
         other => panic!("{other:?}"),
     }
-    assert!(matches!(tri.locate([9.0, 0.5, 0.5]).unwrap(), Some(Location::Outside(t)) if tri.is_ghost(t)));
-    assert_eq!(tri.locate([2.0, 2.0, 2.0]).unwrap(), Some(Location::Vertex(26)));
-    assert!(tri.locate([f64::NAN, 0.0, 0.0]).is_err());
+    assert!(matches!(tri.locate(Point3::from([9.0, 0.5, 0.5])).unwrap(), Some(Location::Outside(t)) if tri.is_ghost(t)));
+    assert_eq!(tri.locate(Point3::from([2.0, 2.0, 2.0])).unwrap(), Some(Location::Vertex(26)));
+    assert!(tri.locate(Point3::from([f64::NAN, 0.0, 0.0])).is_err());
 }
 
 #[test]
 fn hostile_coordinates_are_rejected() {
     for bad in [[f64::NAN, 0.0, 0.0], [f64::INFINITY, 0.0, 0.0], [1e300, 0.0, 0.0], [1e-300, 0.0, 0.0]] {
-        assert!(matches!(Triangulation::new(&[[0.0; 3], bad]), Err(ref e) if e.kind() == Some(crate::Kind::Invalid)));
+        assert!(matches!(triangulation(&[[0.0; 3], bad]), Err(ref e) if e.kind() == Some(crate::Kind::Invalid)));
     }
-    let mut tri = Triangulation::new(&grid(2, 2, 2)).unwrap();
-    assert!(tri.insert([0.0, f64::NEG_INFINITY, 0.0]).is_err());
+    let mut tri = triangulation(&grid(2, 2, 2)).unwrap();
+    assert!(tri.insert(Point3::from([0.0, f64::NEG_INFINITY, 0.0])).is_err());
     tri.verify().unwrap();
     // Extreme but admissible magnitudes still triangulate exactly.
     let big: Vec<[f64; 3]> = random(4, 200).into_iter().map(|[x, y, z]| [x * 1e40, y * 1e-30 + 1.0, z]).collect();
-    Triangulation::new(&big).unwrap().verify().unwrap();
+    triangulation(&big).unwrap().verify().unwrap();
 }
 
 #[test]
 fn incident_tets_and_neighbors_are_consistent() {
-    let tri = Triangulation::new(&random(6, 300)).unwrap();
+    let tri = triangulation(&random(6, 300)).unwrap();
     for v in 0..300 {
         let t = tri.incident_tet(v).unwrap();
         assert!(tri.tet(t).unwrap().contains(&v));

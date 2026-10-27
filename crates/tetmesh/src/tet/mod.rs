@@ -54,7 +54,7 @@ use crate::cdt::TetMesh;
 use crate::predicates::ExactPoint3;
 use crate::quality::{GateOptions, GateReport, Metric, Validity, element_quality, enclosed_volume, validity_gate_elements};
 use crate::surface::BoundarySurface;
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 use complex::{IdMap, NONE, TetComplex, VertexKind, face_toward, sorted2, sorted3};
 use geometry::{AnalyticSurface, GradedSize, Tessellation};
@@ -159,7 +159,7 @@ pub struct TetQuality {
 
 /// The quality of tetrahedra given by corner coordinates, with the metrics `mesh.quality`
 /// reports ([`crate::quality::element_quality`]).
-pub fn tet_quality_stats(points: &[[f64; 3]], tets: &[[u32; 4]]) -> Result<TetQuality> {
+pub fn tet_quality_stats(points: &[Point3], tets: &[[u32; 4]]) -> Result<TetQuality> {
     let mut s = TetQuality { min_dihedral: 180.0, min_radius_ratio: 1.0, min_scaled_jacobian: 1.0, ..TetQuality::default() };
     let mut sum = 0.0;
     for t in tets {
@@ -235,7 +235,7 @@ pub struct QualityReport {
 #[derive(Debug, Clone, PartialEq)]
 pub struct QualityMesh {
     /// Corner vertices, then (quadratic) mid-edge nodes.
-    pub points: Vec<[f64; 3]>,
+    pub points: Vec<Point3>,
     /// Elements in the model's node order (4 or 10 nodes).
     pub elements: Vec<Vec<u32>>,
     pub kind: ElementKind,
@@ -243,16 +243,8 @@ pub struct QualityMesh {
     pub report: QualityReport,
 }
 
-fn bounds(points: &[[f64; 3]]) -> ([f64; 3], [f64; 3]) {
-    let mut lo = [f64::INFINITY; 3];
-    let mut hi = [f64::NEG_INFINITY; 3];
-    for p in points {
-        for k in 0..3 {
-            lo[k] = lo[k].min(p[k]);
-            hi[k] = hi[k].max(p[k]);
-        }
-    }
-    (lo, hi)
+fn bounds(points: &[Point3]) -> (Point3, Point3) {
+    points.iter().fold((Point3::splat(f64::INFINITY), Point3::splat(f64::NEG_INFINITY)), |(lo, hi), p| (lo.min(*p), hi.max(*p)))
 }
 
 /// The size field of a boundary: `global` limited by curvature, thin walls, edge seeds and local
@@ -297,7 +289,7 @@ pub fn size_field(surface: &BoundarySurface, geometry: &Tessellation, global: f6
 fn seed_curves(cx: &mut TetComplex, ctx: &Context, seeds: &[crate::seeds::EdgeSeed], global: f64) -> Result<()> {
     for seed in seeds {
         let tol = 2.0 * seed.tolerance + ON_EDGE * global;
-        let on = |x: [f64; 3]| crate::seeds::distance_to(&seed.points, x) <= tol;
+        let on = |x: Point3| crate::seeds::distance_to(&seed.points, x) <= tol;
         let nodes = crate::seeds::place(&seed.points, &seed.fractions(seed.count, false))?;
         for p in nodes.iter().skip(1).take(nodes.len().saturating_sub(2)) {
             // The curve edge along the seed nearest the node.
@@ -314,7 +306,7 @@ fn seed_curves(cx: &mut TetComplex, ctx: &Context, seeds: &[crate::seeds::EdgeSe
             }
             let Some((_, a, b, c)) = best else { continue };
             let gap = refine::MIN_GAP * ctx.h(*p, global);
-            let near = [a, b].into_iter().map(|v| Ok((measure::dist(cx.xyz(v)?, *p), v))).collect::<Result<Vec<_>>>()?;
+            let near = [a, b].into_iter().map(|v| Ok((cx.xyz(v)?.distance(*p), v))).collect::<Result<Vec<_>>>()?;
             if let Some(&(_, v)) = near.iter().filter(|x| x.0 <= gap).min_by(|x, y| x.0.total_cmp(&y.0)) {
                 if cx.kind(v) != VertexKind::Corner {
                     cx.set_kind(v, VertexKind::Corner);
@@ -333,7 +325,7 @@ fn seed_curves(cx: &mut TetComplex, ctx: &Context, seeds: &[crate::seeds::EdgeSe
 /// How many boundary edges of a mesh lie along each seed's edge: both ends on its polyline, and
 /// the middle within a fifth of the edge's length of it (an element edge on a curved edge cuts
 /// its chord).
-fn seed_counts(points: &[[f64; 3]], tets: &[[u32; 4]], boundary: &[TaggedFace], seeds: &[crate::seeds::EdgeSeed]) -> Vec<(String, usize, usize)> {
+fn seed_counts(points: &[Point3], tets: &[[u32; 4]], boundary: &[TaggedFace], seeds: &[crate::seeds::EdgeSeed]) -> Vec<(String, usize, usize)> {
     if seeds.is_empty() {
         return Vec::new();
     }
@@ -348,18 +340,18 @@ fn seed_counts(points: &[[f64; 3]], tets: &[[u32; 4]], boundary: &[TaggedFace], 
     edges.sort_unstable();
     edges.dedup();
     let (lo, hi) = bounds(points);
-    let eps = ON_EDGE * measure::dist(lo, hi);
+    let eps = ON_EDGE * lo.distance(hi);
     seeds
         .iter()
         .map(|seed| {
             let tol = 2.0 * seed.tolerance + eps;
-            let on = |p: [f64; 3], slack: f64| crate::seeds::distance_to(&seed.points, p) <= tol + slack;
+            let on = |p: Point3, slack: f64| crate::seeds::distance_to(&seed.points, p) <= tol + slack;
             let n = edges
                 .iter()
                 .filter(|(a, c)| {
                     let (Some(&pa), Some(&pc)) = (points.get(*a as usize), points.get(*c as usize)) else { return false };
-                    let m = [(pa[0] + pc[0]) / 2.0, (pa[1] + pc[1]) / 2.0, (pa[2] + pc[2]) / 2.0];
-                    on(pa, 0.0) && on(pc, 0.0) && on(m, 0.2 * measure::dist(pa, pc))
+                    let m = pa.midpoint(pc);
+                    on(pa, 0.0) && on(pc, 0.0) && on(m, 0.2 * pa.distance(pc))
                 })
                 .count();
             (seed.name.clone(), seed.count, n)
@@ -445,7 +437,7 @@ fn snap_to_geometry(cx: &mut TetComplex, ctx: &Context, guarded: bool) -> Result
         }
         let x = cx.xyz(v)?;
         let Some(p) = ctx.place(cx.kind(v), x) else { continue };
-        if p.coords() == x {
+        if p.point() == x {
             continue;
         }
         let star = cx.star(v)?;
@@ -467,7 +459,7 @@ fn snap_to_geometry(cx: &mut TetComplex, ctx: &Context, guarded: bool) -> Result
 }
 
 /// The volume enclosed by the boundary faces of a mesh ([`enclosed_volume`]).
-fn boundary_volume(points: &[[f64; 3]], tets: &[[u32; 4]], boundary: &[TaggedFace]) -> Result<f64> {
+fn boundary_volume(points: &[Point3], tets: &[[u32; 4]], boundary: &[TaggedFace]) -> Result<f64> {
     let mut triangles = Vec::with_capacity(boundary.len());
     for b in boundary {
         let t = tets.get(b.tet as usize).ok_or_else(|| Error::Failed("boundary face of no tetrahedron".into()))?;
@@ -489,7 +481,7 @@ pub fn quality_mesh(surface: &BoundarySurface, cdt: &TetMesh, analytic: Vec<Opti
     let global = match o.size {
         Some(h) if h > 0.0 && h.is_finite() => h,
         Some(h) => return Err(Error::invalid(crate::message!["size ", crate::message::length(h), " must be a positive number"])),
-        None => measure::dist(lo, hi) / 20.0,
+        None => lo.distance(hi) / 20.0,
     };
     if !(global > 0.0 && global.is_finite()) {
         return Err(Error::Invalid("the boundary has no extent".into()));
@@ -619,7 +611,7 @@ pub fn raw_mesh(surface: &BoundarySurface, cdt: &TetMesh) -> Result<QualityMesh>
 /// face (when there are several), no face held by more than two, the faces listed as `boundary`
 /// exactly those held by one, and the volume equal to what the boundary encloses within 1e-9
 /// (no overlap, no gap).
-pub fn linear_gate(points: &[[f64; 3]], tets: &[[u32; 4]], boundary: &[TaggedFace], boundary_volume: f64) -> Result<GateReport> {
+pub fn linear_gate(points: &[Point3], tets: &[[u32; 4]], boundary: &[TaggedFace], boundary_volume: f64) -> Result<GateReport> {
     let count = face_use(tets);
     // A mesh folded over itself: the volume check misses it when the fold is consistently
     // oriented, its two layers adding up to what the boundary encloses.
@@ -665,7 +657,7 @@ pub fn linear_gate(points: &[[f64; 3]], tets: &[[u32; 4]], boundary: &[TaggedFac
             detached.len()
         )));
     }
-    let coords = |t: &[u32; 4]| -> Result<[[f64; 3]; 4]> {
+    let coords = |t: &[u32; 4]| -> Result<[Point3; 4]> {
         let p = |v: u32| points.get(v as usize).copied().ok_or_else(|| Error::Failed("gate: vertex id".into()));
         Ok([p(t[0])?, p(t[1])?, p(t[2])?, p(t[3])?])
     };

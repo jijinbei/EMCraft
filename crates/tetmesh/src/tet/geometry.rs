@@ -16,7 +16,8 @@
 use crate::size::{LocalSize, Region, SizeField};
 use crate::surface::BoundarySurface;
 
-use super::measure::{self, P, add, cross, dot, norm, scale, sub};
+use super::measure;
+use crate::{Point3, Vec3};
 
 /// A cone's half-angle cosine is at least this.
 const MIN_COSINE: f64 = 1e-12; // unit-factors: the cosine of an angle
@@ -29,35 +30,35 @@ const MIN_TURN: f64 = 1e-6; // unit-factors: an angle in radians
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AnalyticSurface {
     Plane {
-        normal: P,
-        point: P,
+        normal: Vec3,
+        point: Point3,
     },
     Cylinder {
-        origin: P,
-        axis: P,
+        origin: Point3,
+        axis: Vec3,
         radius: f64,
     },
     /// Apex, axis pointing into the cone, half-angle in radians.
     Cone {
-        apex: P,
-        axis: P,
+        apex: Point3,
+        axis: Vec3,
         half_angle: f64,
     },
     Sphere {
-        center: P,
+        center: Point3,
         radius: f64,
     },
     Torus {
-        center: P,
-        axis: P,
+        center: Point3,
+        axis: Vec3,
         major: f64,
         minor: f64,
     },
 }
 
-fn unit(v: P) -> Option<P> {
-    let l = norm(v);
-    (l > 0.0 && l.is_finite()).then(|| scale(v, 1.0 / l))
+fn unit(v: Vec3) -> Option<Vec3> {
+    let l = v.norm();
+    (l > 0.0 && l.is_finite()).then(|| v * (1.0 / l))
 }
 
 /// `(sin x, cos x)` for `|x| ≤ π` from their Taylor series (to 20 terms, accurate to rounding),
@@ -78,50 +79,50 @@ pub fn sin_cos(x: f64) -> (f64, f64) {
 }
 
 /// Any unit vector perpendicular to `a`.
-fn perpendicular(a: P) -> P {
-    let t = if a[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
-    unit(cross(a, t)).unwrap_or([0.0, 0.0, 1.0])
+fn perpendicular(a: Vec3) -> Vec3 {
+    let t = if a.x.abs() < 0.9 { Vec3::new(1.0, 0.0, 0.0) } else { Vec3::new(0.0, 1.0, 0.0) };
+    unit(a.cross(t)).unwrap_or(Vec3::new(0.0, 0.0, 1.0))
 }
 
 impl AnalyticSurface {
     /// The closest point on the (untrimmed) surface, or `None` where it is not unique (on an
     /// axis) or the surface's data is not finite.
-    pub fn project(&self, p: P) -> Option<P> {
+    pub fn project(&self, p: Point3) -> Option<Point3> {
         let out = match *self {
             AnalyticSurface::Plane { normal, point } => {
                 let n = unit(normal)?;
-                sub(p, scale(n, dot(sub(p, point), n)))
+                p - n * (p - point).dot(n)
             }
             AnalyticSurface::Cylinder { origin, axis, radius } => {
                 let a = unit(axis)?;
-                let d = sub(p, origin);
-                let foot = add(origin, scale(a, dot(d, a)));
-                let r = unit(sub(p, foot))?;
-                add(foot, scale(r, radius))
+                let d = p - origin;
+                let foot = origin + a * d.dot(a);
+                let r = unit(p - foot)?;
+                foot + r * radius
             }
-            AnalyticSurface::Sphere { center, radius } => add(center, scale(unit(sub(p, center))?, radius)),
+            AnalyticSurface::Sphere { center, radius } => center + unit(p - center)? * radius,
             AnalyticSurface::Cone { apex, axis, half_angle } => {
                 let a = unit(axis)?;
-                let d = sub(p, apex);
-                let along = dot(d, a);
-                let radial = sub(d, scale(a, along));
+                let d = p - apex;
+                let along = d.dot(a);
+                let radial = d - a * along;
                 let r = unit(radial).unwrap_or_else(|| perpendicular(a));
                 // The generator through p's half-plane: direction g = cos·a + sin·r.
                 let (s, c) = sin_cos(half_angle);
-                let g = add(scale(a, c), scale(r, s));
-                let t = dot(d, g).max(0.0);
-                add(apex, scale(g, t))
+                let g = a * c + r * s;
+                let t = d.dot(g).max(0.0);
+                apex + g * t
             }
             AnalyticSurface::Torus { center, axis, major, minor } => {
                 let a = unit(axis)?;
-                let d = sub(p, center);
-                let radial = sub(d, scale(a, dot(d, a)));
+                let d = p - center;
+                let radial = d - a * d.dot(a);
                 let r = unit(radial)?;
-                let ring = add(center, scale(r, major));
-                add(ring, scale(unit(sub(p, ring))?, minor))
+                let ring = center + r * major;
+                ring + unit(p - ring)? * minor
             }
         };
-        out.iter().all(|x| x.is_finite()).then_some(out)
+        out.is_finite().then_some(out)
     }
 
     /// Move a point of the surface by the displacement `d` in the surface's own parameters (UV):
@@ -133,101 +134,101 @@ impl AnalyticSurface {
     /// axis (and a torus round its tube) by the arc length over the radius; a sphere follows the
     /// great circle in the direction of `d`. Angular steps are kept within half a turn. `None`
     /// where the parameters are singular (on an axis, at an apex) or the data is not finite.
-    pub fn slide(&self, p: P, d: P) -> Option<P> {
+    pub fn slide(&self, p: Point3, d: Vec3) -> Option<Point3> {
         let q = self.project(p)?;
-        let rotate = |r: P, t: P, angle: f64| {
+        let rotate = |r: Vec3, t: Vec3, angle: f64| {
             let (s, c) = sin_cos(angle.clamp(-std::f64::consts::PI, std::f64::consts::PI));
-            add(scale(r, c), scale(t, s))
+            r * c + t * s
         };
         let out = match *self {
             AnalyticSurface::Plane { normal, .. } => {
                 let n = unit(normal)?;
-                add(q, sub(d, scale(n, dot(d, n))))
+                q + (d - n * d.dot(n))
             }
             AnalyticSurface::Cylinder { origin, axis, radius } => {
                 let a = unit(axis)?;
-                let foot = add(origin, scale(a, dot(sub(q, origin), a)));
-                let r = unit(sub(q, foot))?;
-                let t = cross(a, r);
-                let radial = rotate(r, t, dot(d, t) / radius);
-                add(add(foot, scale(a, dot(d, a))), scale(radial, radius))
+                let foot = origin + a * (q - origin).dot(a);
+                let r = unit(q - foot)?;
+                let t = a.cross(r);
+                let radial = rotate(r, t, d.dot(t) / radius);
+                foot + a * d.dot(a) + radial * radius
             }
             AnalyticSurface::Sphere { center, radius } => {
-                let r = unit(sub(q, center))?;
-                let tangent = sub(d, scale(r, dot(d, r)));
+                let r = unit(q - center)?;
+                let tangent = d - r * d.dot(r);
                 let Some(t) = unit(tangent) else { return Some(q) };
-                add(center, scale(rotate(r, t, norm(tangent) / radius), radius))
+                center + rotate(r, t, tangent.norm() / radius) * radius
             }
             AnalyticSurface::Cone { apex, axis, half_angle } => {
                 let a = unit(axis)?;
-                let g0 = sub(q, apex);
-                let along = norm(g0);
+                let g0 = q - apex;
+                let along = g0.norm();
                 let g = unit(g0)?;
-                let r = unit(sub(g0, scale(a, dot(g0, a))))?;
-                let t = cross(a, r);
-                let rho = norm(sub(g0, scale(a, dot(g0, a))));
-                let s = along + dot(d, g);
+                let r = unit(g0 - a * g0.dot(a))?;
+                let t = a.cross(r);
+                let rho = (g0 - a * g0.dot(a)).norm();
+                let s = along + d.dot(g);
                 if !(s > 0.0 && rho > 0.0) {
                     return None;
                 }
-                let r2 = rotate(r, t, dot(d, t) / rho);
+                let r2 = rotate(r, t, d.dot(t) / rho);
                 let (sa, ca) = sin_cos(half_angle);
-                add(apex, scale(add(scale(a, ca), scale(r2, sa)), s))
+                apex + (a * ca + r2 * sa) * s
             }
             AnalyticSurface::Torus { center, axis, major, minor } => {
                 let a = unit(axis)?;
-                let c = sub(q, center);
-                let radial = sub(c, scale(a, dot(c, a)));
-                let rho = norm(radial);
+                let c = q - center;
+                let radial = c - a * c.dot(a);
+                let rho = radial.norm();
                 let r = unit(radial)?;
-                let ring = add(center, scale(r, major));
-                let m = unit(sub(q, ring))?;
-                let around = cross(a, r);
-                let tube = cross(around, m);
+                let ring = center + r * major;
+                let m = unit(q - ring)?;
+                let around = a.cross(r);
+                let tube = around.cross(m);
                 // Round the tube, then about the axis.
-                let m2 = rotate(m, tube, dot(d, tube) / minor);
-                let r2 = rotate(r, around, dot(d, around) / rho.max(f64::MIN_POSITIVE));
-                let m3 = add(scale(r2, dot(m2, r)), scale(a, dot(m2, a)));
-                add(add(center, scale(r2, major)), scale(m3, minor))
+                let m2 = rotate(m, tube, d.dot(tube) / minor);
+                let r2 = rotate(r, around, d.dot(around) / rho.max(f64::MIN_POSITIVE));
+                let m3 = r2 * m2.dot(r) + a * m2.dot(a);
+                center + r2 * major + m3 * minor
             }
         };
-        out.iter().all(|x| x.is_finite()).then_some(out)
+        out.is_finite().then_some(out)
     }
 
     /// The unit normal (up to sign) at a point on the surface, if defined there.
-    pub fn normal_at(&self, q: P) -> Option<P> {
+    pub fn normal_at(&self, q: Point3) -> Option<Vec3> {
         let n = match *self {
             AnalyticSurface::Plane { normal, .. } => normal,
             AnalyticSurface::Cylinder { origin, axis, .. } => {
                 let a = unit(axis)?;
-                let d = sub(q, origin);
-                sub(d, scale(a, dot(d, a)))
+                let d = q - origin;
+                d - a * d.dot(a)
             }
-            AnalyticSurface::Sphere { center, .. } => sub(q, center),
+            AnalyticSurface::Sphere { center, .. } => q - center,
             AnalyticSurface::Cone { apex, axis, .. } => {
                 // Normal to both the generator through q and the circle through q.
                 let a = unit(axis)?;
-                let g = sub(q, apex);
-                let tangent = cross(a, g);
-                cross(g, tangent)
+                let g = q - apex;
+                let tangent = a.cross(g);
+                g.cross(tangent)
             }
             AnalyticSurface::Torus { center, axis, major, .. } => {
                 let a = unit(axis)?;
-                let d = sub(q, center);
-                let r = unit(sub(d, scale(a, dot(d, a))))?;
-                sub(q, add(center, scale(r, major)))
+                let d = q - center;
+                let r = unit(d - a * d.dot(a))?;
+                q - (center + r * major)
             }
         };
         unit(n)
     }
 
     /// The smallest radius of curvature at `p` (a cone's depends on the distance to its axis).
-    pub fn radius_at(&self, p: P) -> f64 {
+    pub fn radius_at(&self, p: Point3) -> f64 {
         match *self {
             AnalyticSurface::Cone { apex, axis, half_angle } => {
                 let Some(a) = unit(axis) else { return f64::INFINITY };
-                let d = sub(p, apex);
-                let rho = norm(sub(d, scale(a, dot(d, a))));
+                let d = p - apex;
+                let rho = (d - a * d.dot(a)).norm();
                 // Normal curvature of the circle of radius rho: cos(α)/rho.
                 rho / sin_cos(half_angle).1.abs().max(MIN_COSINE)
             }
@@ -244,10 +245,10 @@ const TRANSVERSAL_SIN: f64 = 0.173_648_177_666_930_35;
 /// The projections the quality stage needs.
 pub trait BoundaryGeometry {
     /// The closest point to `p` on B-rep face `face`, near `p` (within a few element sizes).
-    fn project_face(&self, face: u32, p: P) -> Option<P>;
+    fn project_face(&self, face: u32, p: Point3) -> Option<Point3>;
     /// The closest point to `p` on the feature curve between faces `faces` (equal for a sharp
     /// edge inside one face).
-    fn project_curve(&self, faces: [u32; 2], p: P) -> Option<P>;
+    fn project_curve(&self, faces: [u32; 2], p: Point3) -> Option<Point3>;
 }
 
 /// A bounding-box tree over the boundary's triangles (or its feature segments) for
@@ -260,8 +261,8 @@ struct Tree {
 
 #[derive(Debug, Clone, Copy)]
 struct Node {
-    lo: P,
-    hi: P,
+    lo: Point3,
+    hi: Point3,
     /// Children (left; right is left + 1) or a leaf over `items[start..end]`.
     left: Option<usize>,
     start: usize,
@@ -271,18 +272,18 @@ struct Node {
 const LEAF: usize = 6;
 
 impl Tree {
-    fn build(boxes: &[(P, P)]) -> Tree {
+    fn build(boxes: &[(Point3, Point3)]) -> Tree {
         Tree::build_over(boxes, (0..boxes.len() as u32).collect())
     }
 
     /// A tree over the items `items` (indices into `boxes`) only.
-    fn build_over(boxes: &[(P, P)], mut items: Vec<u32>) -> Tree {
-        let empty = Node { lo: [0.0; 3], hi: [0.0; 3], left: None, start: 0, end: 0 };
+    fn build_over(boxes: &[(Point3, Point3)], mut items: Vec<u32>) -> Tree {
+        let empty = Node { lo: Point3::ORIGIN, hi: Point3::ORIGIN, left: None, start: 0, end: 0 };
         let mut nodes = vec![empty];
         let mut work = vec![(0usize, 0usize, items.len())];
         while let Some((ni, start, end)) = work.pop() {
             let Some(slice) = items.get_mut(start..end) else { continue };
-            let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            let (mut lo, mut hi) = (Point3::splat(f64::INFINITY), Point3::splat(f64::NEG_INFINITY));
             for &i in slice.iter() {
                 if let Some((a, b)) = boxes.get(i as usize) {
                     for k in 0..3 {
@@ -293,10 +294,10 @@ impl Tree {
             }
             let mut node = Node { lo, hi, left: None, start, end };
             if end - start > LEAF {
-                let ext = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
-                let axis = if ext[0] >= ext[1] && ext[0] >= ext[2] {
+                let ext = hi - lo;
+                let axis = if ext.x >= ext.y && ext.x >= ext.z {
                     0
-                } else if ext[1] >= ext[2] {
+                } else if ext.y >= ext.z {
                     1
                 } else {
                     2
@@ -318,9 +319,9 @@ impl Tree {
         Tree { nodes, items }
     }
 
-    /// The item nearest to `p` among those `accept` takes, by `distance` (squared, with the
-    /// point and a fourth value carried along), searching boxes closer than the best so far.
-    fn nearest4(&self, p: P, accept: &dyn Fn(u32) -> bool, distance: &dyn Fn(u32) -> (f64, [f64; 4])) -> Option<[f64; 4]> {
+    /// The item nearest to `p` among those `accept` takes, by `distance` (squared, with a point
+    /// and a value carried along), searching boxes closer than the best so far.
+    fn nearest(&self, p: Point3, accept: &dyn Fn(u32) -> bool, distance: &dyn Fn(u32) -> (f64, Point3, f64)) -> Option<(Point3, f64)> {
         let box_d2 = |n: &Node| -> f64 {
             (0..3)
                 .map(|k| {
@@ -330,7 +331,7 @@ impl Tree {
                 .sum()
         };
         // Ties go to the lowest item, so the result does not depend on how the tree is built.
-        let mut best: Option<(f64, u32, [f64; 4])> = None;
+        let mut best: Option<(f64, u32, (Point3, f64))> = None;
         let mut stack = vec![0usize];
         let mut steps = 0usize;
         while let Some(ni) = stack.pop() {
@@ -359,9 +360,9 @@ impl Tree {
                         if !accept(i) {
                             continue;
                         }
-                        let (d, q) = distance(i);
+                        let (d, q, v) = distance(i);
                         if best.is_none_or(|(b, bi, _)| d < b || (d == b && i < bi)) {
-                            best = Some((d, i, q));
+                            best = Some((d, i, (q, v)));
                         }
                     }
                 }
@@ -372,58 +373,58 @@ impl Tree {
 }
 
 /// The closest point on triangle `abc` (Ericson, *Real-Time Collision Detection*, §5.1.5).
-pub fn closest_on_triangle(p: P, a: P, b: P, c: P) -> P {
-    let (ab, ac, ap) = (sub(b, a), sub(c, a), sub(p, a));
-    let (d1, d2) = (dot(ab, ap), dot(ac, ap));
+pub fn closest_on_triangle(p: Point3, a: Point3, b: Point3, c: Point3) -> Point3 {
+    let (ab, ac, ap) = (b - a, c - a, p - a);
+    let (d1, d2) = (ab.dot(ap), ac.dot(ap));
     if d1 <= 0.0 && d2 <= 0.0 {
         return a;
     }
-    let bp = sub(p, b);
-    let (d3, d4) = (dot(ab, bp), dot(ac, bp));
+    let bp = p - b;
+    let (d3, d4) = (ab.dot(bp), ac.dot(bp));
     if d3 >= 0.0 && d4 <= d3 {
         return b;
     }
     let vc = d1 * d4 - d3 * d2;
     if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
         let v = d1 / (d1 - d3);
-        return add(a, scale(ab, v));
+        return a + ab * v;
     }
-    let cp = sub(p, c);
-    let (d5, d6) = (dot(ab, cp), dot(ac, cp));
+    let cp = p - c;
+    let (d5, d6) = (ab.dot(cp), ac.dot(cp));
     if d6 >= 0.0 && d5 <= d6 {
         return c;
     }
     let vb = d5 * d2 - d1 * d6;
     if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
         let w = d2 / (d2 - d6);
-        return add(a, scale(ac, w));
+        return a + ac * w;
     }
     let va = d3 * d6 - d5 * d4;
     if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
         let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        return add(b, scale(sub(c, b), w));
+        return b + (c - b) * w;
     }
     let den = 1.0 / (va + vb + vc);
     let (v, w) = (vb * den, vc * den);
-    let q = add(a, add(scale(ab, v), scale(ac, w)));
-    if q.iter().all(|x| x.is_finite()) { q } else { a }
+    let q = a + (ab * v + ac * w);
+    if q.is_finite() { q } else { a }
 }
 
 /// The closest point on segment `ab`.
-pub fn closest_on_segment(p: P, a: P, b: P) -> P {
-    let ab = sub(b, a);
-    let l2 = dot(ab, ab);
+pub fn closest_on_segment(p: Point3, a: Point3, b: Point3) -> Point3 {
+    let ab = b - a;
+    let l2 = ab.dot(ab);
     if !(l2 > 0.0) {
         return a;
     }
-    let t = (dot(sub(p, a), ab) / l2).clamp(0.0, 1.0);
-    measure::lerp(a, b, t)
+    let t = ((p - a).dot(ab) / l2).clamp(0.0, 1.0);
+    a.lerp(b, t)
 }
 
 /// The boundary surface as projection target, optionally with exact surfaces per face.
 #[derive(Debug, Clone)]
 pub struct Tessellation {
-    points: Vec<P>,
+    points: Vec<Point3>,
     triangles: Vec<[u32; 3]>,
     tri_face: Vec<u32>,
     tri_tree: Tree,
@@ -459,12 +460,12 @@ impl Tessellation {
         let points = surface.points().to_vec();
         let triangles = surface.triangles().to_vec();
         let tri_face = surface.tri_face().to_vec();
-        let pt = |v: u32| points.get(v as usize).copied().unwrap_or([0.0; 3]);
-        let boxes: Vec<(P, P)> = triangles
+        let pt = |v: u32| points.get(v as usize).copied().unwrap_or(Point3::ORIGIN);
+        let boxes: Vec<(Point3, Point3)> = triangles
             .iter()
             .map(|t| {
                 let (a, b, c) = (pt(t[0]), pt(t[1]), pt(t[2]));
-                ([0, 1, 2].map(|k| a[k].min(b[k]).min(c[k])), [0, 1, 2].map(|k| a[k].max(b[k]).max(c[k])))
+                (a.min(b).min(c), a.max(b).max(c))
             })
             .collect();
         let tri_tree = Tree::build(&boxes);
@@ -488,11 +489,11 @@ impl Tessellation {
                 (e.vertices, [fa.min(fb), fa.max(fb)])
             })
             .collect();
-        let seg_boxes: Vec<(P, P)> = segments
+        let seg_boxes: Vec<(Point3, Point3)> = segments
             .iter()
             .map(|(v, _)| {
                 let (a, b) = (pt(v[0]), pt(v[1]));
-                ([0, 1, 2].map(|k| a[k].min(b[k])), [0, 1, 2].map(|k| a[k].max(b[k])))
+                (a.min(b), a.max(b))
             })
             .collect();
         let seg_tree = Tree::build(&seg_boxes);
@@ -528,8 +529,8 @@ impl Tessellation {
         self
     }
 
-    fn pt(&self, v: u32) -> P {
-        self.points.get(v as usize).copied().unwrap_or([0.0; 3])
+    fn pt(&self, v: u32) -> Point3 {
+        self.points.get(v as usize).copied().unwrap_or(Point3::ORIGIN)
     }
 
     /// The exact surface of a face, if known.
@@ -553,39 +554,39 @@ impl Tessellation {
     }
 
     /// The nearest triangle of face `face` to `p` and the closest point on it.
-    fn nearest_triangle(&self, face: u32, p: P) -> Option<(P, u32)> {
+    fn nearest_triangle(&self, face: u32, p: Point3) -> Option<(Point3, u32)> {
         let accept = |t: u32| self.tri_face.get(t as usize) == Some(&face);
         let dist = |t: u32| {
             let tri = self.triangles.get(t as usize).copied().unwrap_or([0; 3]);
             let q = closest_on_triangle(p, self.pt(tri[0]), self.pt(tri[1]), self.pt(tri[2]));
-            let d = sub(q, p);
+            let d = q - p;
             // The triangle index travels through the f64 exactly (counts are capped far below
             // 2^53).
-            (dot(d, d), [q[0], q[1], q[2], f64::from(t)])
+            (d.dot(d), q, f64::from(t))
         };
-        self.face_tree(face).nearest4(p, &accept, &dist).map(|r| ([r[0], r[1], r[2]], r[3] as u32))
+        self.face_tree(face).nearest(p, &accept, &dist).map(|(q, t)| (q, t as u32))
     }
 
     /// The closest point on the face's triangles, the longest edge of the triangle it is on
     /// (the local scale of the tessellation) and that triangle.
-    fn on_tessellation(&self, face: u32, p: P) -> Option<(P, f64, u32)> {
+    fn on_tessellation(&self, face: u32, p: Point3) -> Option<(Point3, f64, u32)> {
         let (q, t) = self.nearest_triangle(face, p)?;
         let tri = self.triangles.get(t as usize).copied().unwrap_or([0; 3]);
         let (a, b, c) = (self.pt(tri[0]), self.pt(tri[1]), self.pt(tri[2]));
-        Some((q, measure::dist(a, b).max(measure::dist(b, c)).max(measure::dist(c, a)), t))
+        Some((q, a.distance(b).max(b.distance(c)).max(c.distance(a)), t))
     }
 
     /// The B-rep face whose triangles lie nearest to `p`.
-    pub fn nearest_face(&self, p: P) -> Option<u32> {
+    pub fn nearest_face(&self, p: Point3) -> Option<u32> {
         let dist = |t: u32| {
             let tri = self.triangles.get(t as usize).copied().unwrap_or([0; 3]);
-            let d = sub(closest_on_triangle(p, self.pt(tri[0]), self.pt(tri[1]), self.pt(tri[2])), p);
-            (dot(d, d), [0.0, 0.0, 0.0, f64::from(t)])
+            let d = closest_on_triangle(p, self.pt(tri[0]), self.pt(tri[1]), self.pt(tri[2])) - p;
+            (d.dot(d), Point3::ORIGIN, f64::from(t))
         };
-        let r = self.tri_tree.nearest4(p, &|_| true, &dist)?;
+        let (_, t) = self.tri_tree.nearest(p, &|_| true, &dist)?;
         // The triangle index travels through the f64 exactly (triangle counts are capped far
         // below 2^53).
-        self.tri_face.get(r[3] as usize).copied()
+        self.tri_face.get(t as usize).copied()
     }
 
     /// The tree over `face`'s triangles (the whole boundary's for a face out of range, which
@@ -595,17 +596,17 @@ impl Tessellation {
     }
 
     /// The closest point on the curve's polyline, and the length of the segment it is on.
-    fn on_polyline(&self, faces: [u32; 2], p: P) -> Option<(P, f64)> {
+    fn on_polyline(&self, faces: [u32; 2], p: Point3) -> Option<(Point3, f64)> {
         let key = [faces[0].min(faces[1]), faces[0].max(faces[1])];
         let accept = |s: u32| self.segments.get(s as usize).is_some_and(|(_, f)| *f == key);
         let dist = |s: u32| {
             let v = self.segments.get(s as usize).map_or([0; 2], |(v, _)| *v);
             let (a, b) = (self.pt(v[0]), self.pt(v[1]));
             let q = closest_on_segment(p, a, b);
-            let d = sub(q, p);
-            (dot(d, d), [q[0], q[1], q[2], measure::dist(a, b)])
+            let d = q - p;
+            (d.dot(d), q, a.distance(b))
         };
-        self.pair_trees.get(&key).unwrap_or(&self.seg_tree).nearest4(p, &accept, &dist).map(|r| ([r[0], r[1], r[2]], r[3]))
+        self.pair_trees.get(&key).unwrap_or(&self.seg_tree).nearest(p, &accept, &dist)
     }
 }
 
@@ -623,7 +624,7 @@ impl Tessellation {
     /// by a cut share their cylinder, and a point on one piece is off the others. On a merged
     /// face lying on no one surface, the surface is that of the piece its nearest triangle is
     /// on, trimmed to that piece.
-    pub fn project_trimmed(&self, face: u32, p: P) -> Option<P> {
+    pub fn project_trimmed(&self, face: u32, p: Point3) -> Option<Point3> {
         let corners = |t: u32| {
             let tri = self.triangles.get(t as usize).copied().unwrap_or([0; 3]);
             (self.pt(tri[0]), self.pt(tri[1]), self.pt(tri[2]))
@@ -635,30 +636,29 @@ impl Tessellation {
         // The nearest triangle to the surface's point, with its slack: the largest gap between
         // the triangle and the surface (at its edges' midpoints and centre: a chord's deepest
         // points), doubled, and a millionth of its size for rounding.
-        let gap = |x: P| surface.project(x).map_or(0.0, |y| measure::dist(x, y));
+        let gap = |x: Point3| surface.project(x).map_or(0.0, |y| x.distance(y));
         let dist = |t: u32| {
             let (a, b, c) = corners(t);
             let o = closest_on_triangle(q, a, b, c);
-            let d = sub(o, q);
-            let mid = |u: P, v: P| scale(add(u, v), 0.5);
-            let deepest = [mid(a, b), mid(b, c), mid(c, a), scale(add(add(a, b), c), 1.0 / 3.0)].into_iter().map(gap).fold(0.0, f64::max);
-            let size = measure::dist(a, b).max(measure::dist(b, c)).max(measure::dist(c, a));
-            (dot(d, d), [o[0], o[1], o[2], 2.0 * deepest + PLANE_SLACK * size])
+            let d = o - q;
+            let deepest = [a.midpoint(b), b.midpoint(c), c.midpoint(a), Point3::centroid3(a, b, c)].into_iter().map(gap).fold(0.0, f64::max);
+            let size = a.distance(b).max(b.distance(c)).max(c.distance(a));
+            (d.dot(d), o, 2.0 * deepest + PLANE_SLACK * size)
         };
-        let r = self.face_tree(face).nearest4(q, &accept, &dist)?;
-        Some(if measure::dist([r[0], r[1], r[2]], q) <= r[3] { q } else { near })
+        let (o, slack) = self.face_tree(face).nearest(q, &accept, &dist)?;
+        Some(if o.distance(q) <= slack { q } else { near })
     }
 
     /// The outward unit normal of B-rep face `face` near `p`: the exact surface's (oriented like
     /// the nearest triangle; on a merged face, its piece's) when known, else the nearest
     /// triangle's.
-    pub fn face_normal(&self, face: u32, p: P) -> Option<P> {
+    pub fn face_normal(&self, face: u32, p: Point3) -> Option<Vec3> {
         let (_, t) = self.nearest_triangle(face, p)?;
         let tri = self.triangles.get(t as usize).copied().unwrap_or([0; 3]);
         let (a, b, c) = (self.pt(tri[0]), self.pt(tri[1]), self.pt(tri[2]));
-        let flat = unit(cross(sub(b, a), sub(c, a)))?;
+        let flat = unit((b - a).cross(c - a))?;
         match self.exact(face, t).and_then(|s| s.normal_at(p)) {
-            Some(n) if dot(n, flat) < 0.0 => Some(scale(n, -1.0)),
+            Some(n) if n.dot(flat) < 0.0 => Some(n * -1.0),
             Some(n) => Some(n),
             None => Some(flat),
         }
@@ -666,7 +666,7 @@ impl Tessellation {
 }
 
 impl BoundaryGeometry for Tessellation {
-    fn project_face(&self, face: u32, p: P) -> Option<P> {
+    fn project_face(&self, face: u32, p: Point3) -> Option<Point3> {
         let (near, scale_len, t) = self.on_tessellation(face, p)?;
         match self.exact(face, t) {
             // The exact surface's closest point, kept when it is near the tessellation's: the
@@ -675,14 +675,14 @@ impl BoundaryGeometry for Tessellation {
             // side of a cylinder) and the tessellation's point is used.
             Some(s) => {
                 let q = s.project(p)?;
-                let tol = (0.5 * scale_len).max(2.0 * measure::dist(p, near));
-                Some(if measure::dist(q, near) <= tol { q } else { near })
+                let tol = (0.5 * scale_len).max(2.0 * p.distance(near));
+                Some(if q.distance(near) <= tol { q } else { near })
             }
             None => Some(near),
         }
     }
 
-    fn project_curve(&self, faces: [u32; 2], p: P) -> Option<P> {
+    fn project_curve(&self, faces: [u32; 2], p: Point3) -> Option<Point3> {
         let (near, seg_len) = self.on_polyline(faces, p)?;
         let (Some(a), Some(b)) = (self.analytic(faces[0]), self.analytic(faces[1])) else { return Some(near) };
         if faces[0] == faces[1] {
@@ -692,23 +692,23 @@ impl BoundaryGeometry for Tessellation {
         // projections crawl along it. There the polyline lies on both faces to the
         // tessellation's accuracy and is kept.
         let (Some(na), Some(nb)) = (a.normal_at(near), b.normal_at(near)) else { return Some(near) };
-        if norm(cross(na, nb)) < TRANSVERSAL_SIN {
+        if na.cross(nb).norm() < TRANSVERSAL_SIN {
             return Some(near);
         }
         let mut q = near;
         for _ in 0..40 {
             let Some(qa) = a.project(q) else { return Some(near) };
             let Some(qb) = b.project(qa) else { return Some(near) };
-            let step = measure::dist(qb, q);
+            let step = qb.distance(q);
             q = qb;
-            if step <= 1e-13 * (1.0 + norm(q)) {
+            if step <= 1e-13 * (1.0 + q.to_vec().norm()) {
                 break;
             }
         }
         // Both surfaces must agree at the result, and it must stay near the polyline.
-        let gap = a.project(q).map_or(f64::INFINITY, |qa| measure::dist(qa, q));
-        let tol = (0.5 * seg_len).max(2.0 * measure::dist(p, near));
-        if gap <= ROUND_OFF * (1.0 + norm(q)) && measure::dist(q, near) <= tol { Some(q) } else { Some(near) }
+        let gap = a.project(q).map_or(f64::INFINITY, |qa| qa.distance(q));
+        let tol = (0.5 * seg_len).max(2.0 * p.distance(near));
+        if gap <= ROUND_OFF * (1.0 + q.to_vec().norm()) && q.distance(near) <= tol { Some(q) } else { Some(near) }
     }
 }
 
@@ -718,12 +718,12 @@ impl Tessellation {
     /// result stays near the face's triangles (not on another part of the surface), else by
     /// projecting `p + d` onto the face's triangles (free-form faces: accurate to the
     /// tessellation's chordal tolerance, as [`BoundaryGeometry::project_face`]).
-    pub fn slide_face(&self, face: u32, p: P, d: P) -> Option<P> {
-        let target = add(p, d);
+    pub fn slide_face(&self, face: u32, p: Point3, d: Vec3) -> Option<Point3> {
+        let target = p + d;
         let (near, scale_len, t) = self.on_tessellation(face, target)?;
         if let Some(q) = self.exact(face, t).and_then(|s| s.slide(p, d)) {
-            let tol = (0.5 * scale_len).max(2.0 * measure::dist(target, near));
-            if measure::dist(q, near) <= tol {
+            let tol = (0.5 * scale_len).max(2.0 * target.distance(near));
+            if q.distance(near) <= tol {
                 return Some(q);
             }
         }
@@ -732,8 +732,8 @@ impl Tessellation {
 
     /// Move a point of the feature curve between faces `faces` by `d` and keep it on the curve
     /// (the curve's closest point to `p + d`: the move along the curve's parameter).
-    pub fn slide_curve(&self, faces: [u32; 2], p: P, d: P) -> Option<P> {
-        self.project_curve(faces, add(p, d))
+    pub fn slide_curve(&self, faces: [u32; 2], p: Point3, d: Vec3) -> Option<Point3> {
+        self.project_curve(faces, p + d)
     }
 }
 
@@ -744,19 +744,19 @@ impl Tessellation {
     /// Thin walls are this thick; elements larger than it would have to be flat.
     pub fn thickness(&self) -> Vec<f64> {
         let n = self.points.len();
-        let mut normal = vec![[0.0; 3]; n];
-        let tri_normal: Vec<P> = self
+        let mut normal = vec![Vec3::ZERO; n];
+        let tri_normal: Vec<Vec3> = self
             .triangles
             .iter()
             .map(|t| {
                 let (a, b, c) = (self.pt(t[0]), self.pt(t[1]), self.pt(t[2]));
-                cross(sub(b, a), sub(c, a))
+                (b - a).cross(c - a)
             })
             .collect();
         for (t, m) in self.triangles.iter().zip(&tri_normal) {
             for &v in t {
                 if let Some(x) = normal.get_mut(v as usize) {
-                    *x = add(*x, *m);
+                    *x += *m;
                 }
             }
         }
@@ -766,19 +766,18 @@ impl Tessellation {
                 let Some(nv) = normal.get(v as usize).and_then(|m| unit(*m)) else { return f64::INFINITY };
                 let accept = |t: u32| {
                     let Some(tri) = self.triangles.get(t as usize) else { return false };
-                    !tri.contains(&v) && tri_normal.get(t as usize).and_then(|m| unit(*m)).is_some_and(|m| dot(m, nv) < -0.5)
+                    !tri.contains(&v) && tri_normal.get(t as usize).and_then(|m| unit(*m)).is_some_and(|m| m.dot(nv) < -0.5)
                 };
                 let dist = |t: u32| {
                     let tri = self.triangles.get(t as usize).copied().unwrap_or([0; 3]);
                     let q = closest_on_triangle(p, self.pt(tri[0]), self.pt(tri[1]), self.pt(tri[2]));
-                    let d = sub(q, p);
-                    (dot(d, d), [q[0], q[1], q[2], 0.0])
+                    let d = q - p;
+                    (d.dot(d), q, 0.0)
                 };
                 // Only what lies behind the surface (inside the solid) counts.
-                self.tri_tree.nearest4(p, &accept, &dist).map_or(f64::INFINITY, |r| {
-                    let q = [r[0], r[1], r[2]];
-                    if dot(sub(q, p), nv) < 0.0 { measure::dist(q, p) } else { f64::INFINITY }
-                })
+                self.tri_tree
+                    .nearest(p, &accept, &dist)
+                    .map_or(f64::INFINITY, |(q, _)| if (q - p).dot(nv) < 0.0 { q.distance(p) } else { f64::INFINITY })
             })
             .collect()
     }
@@ -793,8 +792,8 @@ pub fn curvature_radii(surface: &BoundarySurface, geometry: &Tessellation) -> Ve
     let tris = surface.triangles();
     let faces = surface.tri_face();
     let mut radius = vec![f64::INFINITY; pts.len()];
-    let pt = |v: u32| pts.get(v as usize).copied().unwrap_or([0.0; 3]);
-    let centroid = |t: &[u32; 3]| scale(add(add(pt(t[0]), pt(t[1])), pt(t[2])), 1.0 / 3.0);
+    let pt = |v: u32| pts.get(v as usize).copied().unwrap_or(Point3::ORIGIN);
+    let centroid = |t: &[u32; 3]| Point3::centroid3(pt(t[0]), pt(t[1]), pt(t[2]));
     for (i, (t, nb)) in tris.iter().zip(surface.neighbors()).enumerate() {
         let face = faces.get(i).copied().unwrap_or(u32::MAX);
         if let Some(s) = geometry.analytic(face) {
@@ -814,8 +813,8 @@ pub fn curvature_radii(surface: &BoundarySurface, geometry: &Tessellation) -> Ve
             let m = measure::triangle_normal(pt(u[0]), pt(u[1]), pt(u[2]));
             // The chord between the unit normals: the turn angle to second order, and only
             // correctly rounded operations (the same on every platform).
-            let turn = norm(sub(n, m));
-            let d = measure::dist(centroid(t), centroid(u));
+            let turn = (n - m).norm();
+            let d = centroid(t).distance(centroid(u));
             if !(turn > MIN_TURN) || !(d > 0.0) {
                 continue;
             }
@@ -837,7 +836,7 @@ pub fn curvature_radii(surface: &BoundarySurface, geometry: &Tessellation) -> Ve
 #[derive(Debug, Clone)]
 pub struct GradedSize {
     global: f64,
-    lo: P,
+    lo: Point3,
     cell: f64,
     dims: [usize; 3],
     values: Vec<f64>,
@@ -853,8 +852,8 @@ impl GradedSize {
     /// `locals`: regions with their size ([`crate::size::LocalSize`]), seeded at every grid node
     /// within a cell of the region (boxes and balls: inside too) at the local size plus the
     /// grading times the distance, then graded with the rest.
-    pub fn new(global: f64, samples: &[(P, f64)], locals: &[LocalSize], lo: P, hi: P, grading: f64) -> GradedSize {
-        let diag = measure::dist(lo, hi).max(f64::MIN_POSITIVE);
+    pub fn new(global: f64, samples: &[(Point3, f64)], locals: &[LocalSize], lo: Point3, hi: Point3, grading: f64) -> GradedSize {
+        let diag = lo.distance(hi).max(f64::MIN_POSITIVE);
         let finest = samples.iter().map(|s| s.1).chain(locals.iter().map(|l| l.size)).filter(|h| *h > 0.0).fold(global, f64::min).max(diag * 1e-4);
         let mut cell = finest.max(diag / 64.0) * 0.5;
         let dims_for = |c: f64| [0, 1, 2].map(|k| (((hi[k] - lo[k]) / c).ceil().max(1.0) as usize) + 2);
@@ -863,7 +862,7 @@ impl GradedSize {
             cell *= 1.25;
             dims = dims_for(cell);
         }
-        let lo = [lo[0] - cell, lo[1] - cell, lo[2] - cell];
+        let lo = lo.map(|v| v - cell);
         let n = dims.iter().product::<usize>();
         let mut values = vec![global; n];
         let idx = |i: usize, j: usize, k: usize| (k * dims[1] + j) * dims[0] + i;
@@ -881,8 +880,8 @@ impl GradedSize {
                         if i >= dims[0] || j >= dims[1] || k >= dims[2] {
                             continue;
                         }
-                        let node = [lo[0] + i as f64 * cell, lo[1] + j as f64 * cell, lo[2] + k as f64 * cell];
-                        let v = h + g * measure::dist(node, x);
+                        let node = Point3::new(lo.x + i as f64 * cell, lo.y + j as f64 * cell, lo.z + k as f64 * cell);
+                        let v = h + g * node.distance(x);
                         if let Some(s) = values.get_mut(idx(i, j, k)) {
                             *s = s.min(v);
                         }
@@ -897,12 +896,12 @@ impl GradedSize {
             let last = ((b + reach - lo[k]) / cell).floor().min((dims[k] - 1) as f64);
             if first.is_finite() && last.is_finite() && first <= last { (first as usize, last as usize) } else { (1, 0) }
         };
-        let mut seed_near = |a: P, b: P, h: f64, distance: &dyn Fn(P) -> f64| {
+        let mut seed_near = |a: Point3, b: Point3, h: f64, distance: &dyn Fn(Point3) -> f64| {
             let r = [0, 1, 2].map(|k| range(a[k], b[k], k));
             for k in r[2].0..=r[2].1 {
                 for j in r[1].0..=r[1].1 {
                     for i in r[0].0..=r[0].1 {
-                        let node = [lo[0] + i as f64 * cell, lo[1] + j as f64 * cell, lo[2] + k as f64 * cell];
+                        let node = Point3::new(lo.x + i as f64 * cell, lo.y + j as f64 * cell, lo.z + k as f64 * cell);
                         let d = distance(node);
                         if d <= reach
                             && let Some(s) = values.get_mut(idx(i, j, k))
@@ -920,9 +919,9 @@ impl GradedSize {
             match &l.region {
                 Region::Triangles(tris) => {
                     for t in tris {
-                        let a = [0, 1, 2].map(|k| t[0][k].min(t[1][k]).min(t[2][k]));
-                        let b = [0, 1, 2].map(|k| t[0][k].max(t[1][k]).max(t[2][k]));
-                        seed_near(a, b, l.size, &|p| measure::dist(p, closest_on_triangle(p, t[0], t[1], t[2])));
+                        let a = t[0].min(t[1]).min(t[2]);
+                        let b = t[0].max(t[1]).max(t[2]);
+                        seed_near(a, b, l.size, &|p| p.distance(closest_on_triangle(p, t[0], t[1], t[2])));
                     }
                 }
                 region => {
@@ -977,7 +976,7 @@ impl GradedSize {
 }
 
 impl SizeField for GradedSize {
-    fn size(&self, p: [f64; 3]) -> f64 {
+    fn size(&self, p: Point3) -> f64 {
         let f = [0, 1, 2].map(|k| ((p[k] - self.lo[k]) / self.cell).clamp(0.0, (self.dims[k] - 1) as f64));
         if f.iter().any(|x| !x.is_finite()) {
             return self.global;
@@ -1005,20 +1004,20 @@ mod tests {
 
     #[test]
     fn analytic_projections() {
-        let cyl = AnalyticSurface::Cylinder { origin: [0.0; 3], axis: [0.0, 0.0, 2.0], radius: 3.0 };
-        let q = cyl.project([1.0, 1.0, 5.0]).unwrap();
-        assert!((norm([q[0], q[1], 0.0]) - 3.0).abs() < 1e-12 && (q[2] - 5.0).abs() < 1e-12);
-        let s = AnalyticSurface::Sphere { center: [1.0, 0.0, 0.0], radius: 2.0 };
-        assert!((measure::dist(s.project([5.0, 0.0, 0.0]).unwrap(), [3.0, 0.0, 0.0])) < 1e-12);
-        let pl = AnalyticSurface::Plane { normal: [0.0, 0.0, 1.0], point: [0.0, 0.0, 2.0] };
-        assert_eq!(pl.project([1.0, 2.0, 7.0]), Some([1.0, 2.0, 2.0]));
-        let t = AnalyticSurface::Torus { center: [0.0; 3], axis: [0.0, 0.0, 1.0], major: 5.0, minor: 1.0 };
-        let q = t.project([7.0, 0.0, 0.0]).unwrap();
-        assert!(measure::dist(q, [6.0, 0.0, 0.0]) < 1e-12);
-        let cone = AnalyticSurface::Cone { apex: [0.0; 3], axis: [0.0, 0.0, 1.0], half_angle: std::f64::consts::FRAC_PI_4 };
-        let q = cone.project([2.0, 0.0, 0.0]).unwrap();
+        let cyl = AnalyticSurface::Cylinder { origin: Point3::ORIGIN, axis: Vec3::new(0.0, 0.0, 2.0), radius: 3.0 };
+        let q = cyl.project(Point3::new(1.0, 1.0, 5.0)).unwrap();
+        assert!((Vec3::new(q[0], q[1], 0.0).norm() - 3.0).abs() < 1e-12 && (q[2] - 5.0).abs() < 1e-12);
+        let s = AnalyticSurface::Sphere { center: Point3::new(1.0, 0.0, 0.0), radius: 2.0 };
+        assert!((s.project(Point3::new(5.0, 0.0, 0.0)).unwrap().distance(Point3::new(3.0, 0.0, 0.0))) < 1e-12);
+        let pl = AnalyticSurface::Plane { normal: Vec3::new(0.0, 0.0, 1.0), point: Point3::new(0.0, 0.0, 2.0) };
+        assert_eq!(pl.project(Point3::new(1.0, 2.0, 7.0)), Some(Point3::new(1.0, 2.0, 2.0)));
+        let t = AnalyticSurface::Torus { center: Point3::ORIGIN, axis: Vec3::new(0.0, 0.0, 1.0), major: 5.0, minor: 1.0 };
+        let q = t.project(Point3::new(7.0, 0.0, 0.0)).unwrap();
+        assert!(q.distance(Point3::new(6.0, 0.0, 0.0)) < 1e-12);
+        let cone = AnalyticSurface::Cone { apex: Point3::ORIGIN, axis: Vec3::new(0.0, 0.0, 1.0), half_angle: std::f64::consts::FRAC_PI_4 };
+        let q = cone.project(Point3::new(2.0, 0.0, 0.0)).unwrap();
         assert!((q[0] - q[2]).abs() < 1e-12 && (q[0] - 1.0).abs() < 1e-12, "{q:?}");
-        assert!(cyl.project([0.0, 0.0, 1.0]).is_none());
+        assert!(cyl.project(Point3::new(0.0, 0.0, 1.0)).is_none());
         for x in [-3.0, -1.0, 0.0, 0.3, 1.5, 3.1] {
             let (s, c) = sin_cos(x);
             assert!((s - f64::sin(x)).abs() < 1e-15 && (c - f64::cos(x)).abs() < 1e-15, "{x}");
@@ -1027,39 +1026,42 @@ mod tests {
 
     #[test]
     fn closest_points() {
-        let (a, b, c) = ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-        assert!(measure::dist(closest_on_triangle([0.2, 0.2, 3.0], a, b, c), [0.2, 0.2, 0.0]) < 1e-15);
-        assert_eq!(closest_on_triangle([-1.0, -1.0, 0.0], a, b, c), a);
-        let q = closest_on_triangle([1.0, 1.0, 0.0], a, b, c);
-        assert!(measure::dist(q, [0.5, 0.5, 0.0]) < 1e-15);
-        assert_eq!(closest_on_segment([0.5, 2.0, 0.0], a, b), [0.5, 0.0, 0.0]);
+        let (a, b, c) = (Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0));
+        assert!(closest_on_triangle(Point3::new(0.2, 0.2, 3.0), a, b, c).distance(Point3::new(0.2, 0.2, 0.0)) < 1e-15);
+        assert_eq!(closest_on_triangle(Point3::new(-1.0, -1.0, 0.0), a, b, c), a);
+        let q = closest_on_triangle(Point3::new(1.0, 1.0, 0.0), a, b, c);
+        assert!(q.distance(Point3::new(0.5, 0.5, 0.0)) < 1e-15);
+        assert_eq!(closest_on_segment(Point3::new(0.5, 2.0, 0.0), a, b), Point3::new(0.5, 0.0, 0.0));
     }
 
     #[test]
     fn graded_size_takes_local_regions() {
-        let boxed = LocalSize { region: Region::Box { lo: [8.0; 3], hi: [12.0; 3] }, size: 2.0 };
-        let face = LocalSize { region: Region::Triangles(vec![[[0.0, 0.0, 20.0], [20.0, 0.0, 20.0], [0.0, 20.0, 20.0]]]), size: 1.0 };
-        let f = GradedSize::new(8.0, &[], &[boxed, face], [0.0; 3], [20.0, 20.0, 20.0], 0.5);
-        let inside = f.size([10.0, 10.0, 10.0]);
+        let boxed = LocalSize { region: Region::Box { lo: Point3::splat(8.0), hi: Point3::splat(12.0) }, size: 2.0 };
+        let face = LocalSize {
+            region: Region::Triangles(vec![[Point3::new(0.0, 0.0, 20.0), Point3::new(20.0, 0.0, 20.0), Point3::new(0.0, 20.0, 20.0)]]),
+            size: 1.0,
+        };
+        let f = GradedSize::new(8.0, &[], &[boxed, face], Point3::ORIGIN, Point3::new(20.0, 20.0, 20.0), 0.5);
+        let inside = f.size(Point3::new(10.0, 10.0, 10.0));
         assert!((inside - 2.0).abs() < 0.3, "{inside}");
-        let on_face = f.size([5.0, 5.0, 20.0]);
+        let on_face = f.size(Point3::new(5.0, 5.0, 20.0));
         assert!((on_face - 1.0).abs() < 0.3, "{on_face}");
         // Four units off the box: about 2 + 0.5 × 4.
-        let off = f.size([10.0, 10.0, 4.0]);
+        let off = f.size(Point3::new(10.0, 10.0, 4.0));
         assert!((off - 4.0).abs() < 0.6, "{off}");
-        assert_eq!(f.size([20.0, 20.0, 0.0]), 8.0);
+        assert_eq!(f.size(Point3::new(20.0, 20.0, 0.0)), 8.0);
     }
 
     #[test]
     fn graded_size_grows_away_from_samples() {
-        let f = GradedSize::new(10.0, &[([0.0; 3], 1.0)], &[], [0.0; 3], [20.0, 20.0, 20.0], 0.5);
-        let near = f.size([0.0; 3]);
-        let mid = f.size([4.0, 0.0, 0.0]);
-        let far = f.size([20.0, 20.0, 20.0]);
+        let f = GradedSize::new(10.0, &[(Point3::ORIGIN, 1.0)], &[], Point3::ORIGIN, Point3::new(20.0, 20.0, 20.0), 0.5);
+        let near = f.size(Point3::ORIGIN);
+        let mid = f.size(Point3::new(4.0, 0.0, 0.0));
+        let far = f.size(Point3::new(20.0, 20.0, 20.0));
         assert!((1.0..1.6).contains(&near), "{near}");
         assert!((mid - 3.0).abs() < 0.8, "{mid}");
         assert_eq!(far, 10.0);
-        assert!(f.size([f64::NAN, 0.0, 0.0]) > 0.0);
+        assert!(f.size(Point3::new(f64::NAN, 0.0, 0.0)) > 0.0);
     }
 
     /// A slide in UV keeps the point exactly on every kind of surface, moves it by the tangential
@@ -1067,30 +1069,30 @@ mod tests {
     #[test]
     fn slides_stay_on_the_surface() {
         let surfaces = [
-            AnalyticSurface::Plane { normal: [0.0, 0.0, 1.0], point: [0.0, 0.0, 2.0] },
-            AnalyticSurface::Cylinder { origin: [0.0; 3], axis: [0.0, 0.0, 1.0], radius: 3.0 },
-            AnalyticSurface::Sphere { center: [1.0, 0.0, 0.0], radius: 2.0 },
-            AnalyticSurface::Cone { apex: [0.0; 3], axis: [0.0, 0.0, 1.0], half_angle: 0.4 },
-            AnalyticSurface::Torus { center: [0.0; 3], axis: [0.0, 0.0, 1.0], major: 5.0, minor: 1.0 },
+            AnalyticSurface::Plane { normal: Vec3::new(0.0, 0.0, 1.0), point: Point3::new(0.0, 0.0, 2.0) },
+            AnalyticSurface::Cylinder { origin: Point3::ORIGIN, axis: Vec3::new(0.0, 0.0, 1.0), radius: 3.0 },
+            AnalyticSurface::Sphere { center: Point3::new(1.0, 0.0, 0.0), radius: 2.0 },
+            AnalyticSurface::Cone { apex: Point3::ORIGIN, axis: Vec3::new(0.0, 0.0, 1.0), half_angle: 0.4 },
+            AnalyticSurface::Torus { center: Point3::ORIGIN, axis: Vec3::new(0.0, 0.0, 1.0), major: 5.0, minor: 1.0 },
         ];
-        let probe = [2.5, 1.5, 2.2];
+        let probe = Point3::new(2.5, 1.5, 2.2);
         for s in surfaces {
             let q = s.project(probe).unwrap();
-            for d in [[0.01, 0.0, 0.0], [0.0, 0.02, 0.0], [0.0, 0.0, -0.015], [0.3, -0.2, 0.1]] {
+            for d in [Vec3::new(0.01, 0.0, 0.0), Vec3::new(0.0, 0.02, 0.0), Vec3::new(0.0, 0.0, -0.015), Vec3::new(0.3, -0.2, 0.1)] {
                 let moved = s.slide(q, d).unwrap();
                 let back = s.project(moved).unwrap();
-                assert!(measure::dist(moved, back) < 1e-12, "{s:?} {d:?}: {moved:?} off by {}", measure::dist(moved, back));
+                assert!(moved.distance(back) < 1e-12, "{s:?} {d:?}: {moved:?} off by {}", moved.distance(back));
                 let n = s.normal_at(q).unwrap();
-                let tangential = sub(d, scale(n, dot(d, n)));
-                if norm(d) < 0.05 {
-                    assert!(measure::dist(moved, add(q, tangential)) < 0.05 * norm(d) + 1e-12, "{s:?} {d:?}");
+                let tangential = d - n * d.dot(n);
+                if d.norm() < 0.05 {
+                    assert!(moved.distance(q + tangential) < 0.05 * d.norm() + 1e-12, "{s:?} {d:?}");
                 }
             }
         }
-        let cyl = AnalyticSurface::Cylinder { origin: [0.0; 3], axis: [0.0, 0.0, 1.0], radius: 2.0 };
-        let q = cyl.slide([2.0, 0.0, 1.0], [0.0, std::f64::consts::PI, 0.5]).unwrap();
-        assert!(measure::dist(q, [0.0, 2.0, 1.5]) < 1e-12, "{q:?}");
+        let cyl = AnalyticSurface::Cylinder { origin: Point3::ORIGIN, axis: Vec3::new(0.0, 0.0, 1.0), radius: 2.0 };
+        let q = cyl.slide(Point3::new(2.0, 0.0, 1.0), Vec3::new(0.0, std::f64::consts::PI, 0.5)).unwrap();
+        assert!(q.distance(Point3::new(0.0, 2.0, 1.5)) < 1e-12, "{q:?}");
         // On the axis the parameters are singular.
-        assert!(cyl.slide([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).is_none());
+        assert!(cyl.slide(Point3::new(0.0, 0.0, 1.0), Vec3::new(1.0, 0.0, 0.0)).is_none());
     }
 }

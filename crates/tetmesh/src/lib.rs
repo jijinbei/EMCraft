@@ -20,6 +20,7 @@ pub mod size;
 pub mod surface;
 pub mod tet;
 mod vec3;
+pub use vec3::{Point3, Vec3};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {

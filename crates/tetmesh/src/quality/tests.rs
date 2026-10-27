@@ -4,6 +4,16 @@ use crate::compat::ElementKind;
 
 use super::*;
 
+/// [`super::element_quality`] on coordinate triples.
+fn element_quality(kind: ElementKind, xyz: &[[f64; 3]]) -> Result<ElementQuality> {
+    super::element_quality(kind, &crate::vec3::points_of(xyz))
+}
+
+/// [`super::element_validity`] on coordinate triples.
+fn element_validity(kind: ElementKind, xyz: &[[f64; 3]]) -> Result<JacobianCheck> {
+    super::element_validity(kind, &crate::vec3::points_of(xyz))
+}
+
 const UNIT_CUBE: [[f64; 3]; 8] = [[0., 0., 0.], [1., 0., 0.], [1., 1., 0.], [0., 1., 0.], [0., 0., 1.], [1., 0., 1.], [1., 1., 1.], [0., 1., 1.]];
 const RIGHT_TET: [[f64; 3]; 4] = [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
 
@@ -76,7 +86,7 @@ fn dihedral_angles_and_scaled_jacobian_on_the_same_tetrahedra() {
         let (lo, hi, sj) = both(&p);
         assert!(close(metric(&tet10, Metric::MinDihedral), lo) && close(metric(&tet10, Metric::MaxDihedral), hi));
         assert!(close(metric(&tet10, Metric::ScaledJacobian), sj));
-        let r = crate::tet::tet_quality_stats(&p, &[[0, 1, 2, 3]]).unwrap();
+        let r = crate::tet::tet_quality_stats(&crate::vec3::points_of(&p), &[[0, 1, 2, 3]]).unwrap();
         assert!(close(r.min_dihedral, lo) && close(r.max_dihedral, hi) && close(r.min_scaled_jacobian, sj), "{r:?}");
     }
 }
@@ -179,9 +189,9 @@ fn inside_out_hex() -> Vec<[f64; 3]> {
 fn hex_with_positive_corners_inverted_inside_is_invalid() {
     let p = inside_out_hex();
     // Every corner Jacobian (three edge vectors in right-handed order) is positive.
-    let e = |a: usize, b: usize| shape::sub(p[b], p[a]);
+    let e = |a: usize, b: usize| Point3::from(p[b]) - Point3::from(p[a]);
     for (o, x, y, z) in [(0, 1, 3, 4), (1, 2, 0, 5), (2, 3, 1, 6), (3, 0, 2, 7), (4, 7, 5, 0), (5, 4, 6, 1), (6, 5, 7, 2), (7, 6, 4, 3)] {
-        assert!(shape::det(e(o, x), e(o, y), e(o, z)) > 0.0, "corner {o}");
+        assert!(e(o, x).det(e(o, y), e(o, z)) > 0.0, "corner {o}");
     }
     let q = element_quality(ElementKind::Hex8, &p).unwrap();
     assert!(metric(&q, Metric::ScaledJacobian) > 0.0, "corners and centre look fine");

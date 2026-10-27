@@ -20,7 +20,8 @@ use crate::Result;
 use crate::predicates::{ExactPoint3, Sign};
 
 use super::complex::{Change, EDGES, IdMap, NONE, TetComplex, VertexKind, face_toward, sorted2, sorted3, turns_over};
-use super::measure::{self, P};
+use super::measure;
+use crate::Point3;
 
 /// The quality objective of a tetrahedron given by vertex ids ([`measure::quality`]).
 pub fn tet_quality(cx: &TetComplex, vs: [u32; 4]) -> Result<f64> {
@@ -147,7 +148,7 @@ pub fn remove_edge_at(cx: &mut TetComplex, t: u32, a: u32, b: u32) -> Result<boo
         let (Some(t0), Some(t1)) = (boundary_tag(cx, first, [a, b, v0])?, boundary_tag(cx, last, [a, b, vl])?) else { return Ok(false) };
         let n0 = measure::triangle_normal(xa, xb, x(v0)?);
         let n1 = measure::triangle_normal(xa, x(vl)?, xb);
-        if t0 != t1 || !(measure::dot(n0, n1) >= BOUNDARY_FLIP_COS) {
+        if t0 != t1 || !(n0.dot(n1) >= BOUNDARY_FLIP_COS) {
             return Ok(false);
         }
         // Oriented into the mesh, as the faces of the new tetrahedra (v_0, v_l, v_k, a) and
@@ -156,7 +157,7 @@ pub fn remove_edge_at(cx: &mut TetComplex, t: u32, a: u32, b: u32) -> Result<boo
         new_boundary.push(([v0, vl, b], t0));
     }
     let before = worst(cx, &ring.tets)?;
-    let xv = v.iter().map(|&id| x(id)).collect::<Result<Vec<P>>>()?;
+    let xv = v.iter().map(|&id| x(id)).collect::<Result<Vec<Point3>>>()?;
     let mut q = |i: usize, k: usize, j: usize, b: f64| -> Result<f64> {
         let (pi, pk, pj) = match (xv.get(i), xv.get(k), xv.get(j)) {
             (Some(p), Some(q), Some(r)) => (*p, *q, *r),
@@ -416,10 +417,10 @@ pub fn insert_delaunay_apart(
         }
     }
     if min_gap > 0.0 {
-        let px = p.coords();
+        let px = p.point();
         for &t in &cavity {
             for v in cx.tet(t)? {
-                if measure::dist(cx.xyz(v)?, px) < min_gap {
+                if cx.xyz(v)?.distance(px) < min_gap {
                     return Ok(None);
                 }
             }
@@ -540,7 +541,7 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, roo
         if queue.len() != root_faces.len() {
             return Ok(Plan::Fail);
         }
-        let px = p.coords();
+        let px = p.point();
         let mut taken = vec![false; bfaces.len()];
         for &i in &queue {
             if let Some(s) = taken.get_mut(i) {
@@ -562,8 +563,8 @@ fn plan_cavity(cx: &TetComplex, cavity: &[u32], p: &ExactPoint3, site: Site, roo
                     }
                     let [ga, gb, gc] = [cx.xyz(g.0[0])?, cx.xyz(g.0[1])?, cx.xyz(g.0[2])?];
                     let Some(o) = measure::triangle_circumcenter(ga, gb, gc) else { continue };
-                    let r = measure::dist(o, ga);
-                    if measure::dist(o, px) < r {
+                    let r = o.distance(ga);
+                    if o.distance(px) < r {
                         if let Some(s) = taken.get_mut(j) {
                             *s = true;
                         }
@@ -814,7 +815,7 @@ pub fn collapse(cx: &mut TetComplex, a: u32, b: u32, max_len: f64, floor: f64) -
         }
         let moved = vs.map(|v| if v == a { b } else { v });
         for v in moved {
-            if v != b && measure::dist(cx.xyz(v)?, xb) > max_len {
+            if v != b && cx.xyz(v)?.distance(xb) > max_len {
                 return Ok(false);
             }
         }

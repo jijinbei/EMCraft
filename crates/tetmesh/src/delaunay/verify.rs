@@ -3,7 +3,6 @@
 
 use super::{DEAD, GHOST, NONE, Triangulation, volume_sign};
 use crate::predicates::{ExactPoint3, Sign, insphere, insphere_sos};
-use crate::quality::shape::{det, sub};
 use crate::{Error, Result};
 
 fn failed<T>(what: String) -> Result<T> {
@@ -12,8 +11,8 @@ fn failed<T>(what: String) -> Result<T> {
 
 /// `det[b − a, c − a, d − a] / 6` in floating point (a measure for the volume balance only).
 pub(super) fn volume(p: [&ExactPoint3; 4]) -> f64 {
-    let [a, b, c, d] = p.map(ExactPoint3::coords);
-    det(sub(b, a), sub(c, a), sub(d, a)) / 6.0
+    let [a, b, c, d] = p.map(ExactPoint3::point);
+    (b - a).det(c - a, d - a) / 6.0
 }
 
 /// Whether `e` is outside the circumsphere of the positive-volume tetrahedron `[a, b, c, d]`:

@@ -62,7 +62,7 @@ mod verify;
 mod tests;
 
 use crate::predicates::{Axis, ExactPoint3, GenericPoint, Sign, generic_orient2d, insphere_sos, orient3d, tet_volume_sign};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 /// The infinite vertex of the ghost tetrahedra that close the convex hull.
 pub const GHOST: u32 = u32::MAX;
@@ -160,8 +160,8 @@ fn collinear(a: &ExactPoint3, b: &ExactPoint3, c: &ExactPoint3) -> bool {
 }
 
 /// A coordinate triple as a [`ExactPoint3`], with `-0.0` made `+0.0` so equal points have equal bits.
-fn admit([x, y, z]: [f64; 3]) -> Result<ExactPoint3> {
-    ExactPoint3::new(x + 0.0, y + 0.0, z + 0.0)
+fn admit(p: Point3) -> Result<ExactPoint3> {
+    ExactPoint3::new(p.x + 0.0, p.y + 0.0, p.z + 0.0)
 }
 
 impl Triangulation {
@@ -185,7 +185,7 @@ impl Triangulation {
 
     /// The Delaunay tetrahedralization of `points`. Duplicates are merged into the lowest
     /// index; fewer than four affinely independent points give no tetrahedra.
-    pub fn new(points: &[[f64; 3]]) -> Result<Self> {
+    pub fn new(points: &[Point3]) -> Result<Self> {
         if points.len() > MAX_POINTS {
             return Err(Error::Limit(format!("{} points; a triangulation takes at most {MAX_POINTS}", points.len())));
         }
@@ -224,7 +224,7 @@ impl Triangulation {
 
     /// Insert one more point (a Steiner point, say). Its vertex id is its index in
     /// [`Triangulation::points`]. A point equal to an existing vertex is recorded as a duplicate.
-    pub fn insert(&mut self, p: [f64; 3]) -> Result<Insertion> {
+    pub fn insert(&mut self, p: Point3) -> Result<Insertion> {
         if self.points.len() >= MAX_POINTS {
             return Err(Error::Limit(format!("a triangulation takes at most {MAX_POINTS} points")));
         }
@@ -289,7 +289,7 @@ impl Triangulation {
     }
 
     /// Locate `p`: the walk from the last tetrahedron created.
-    pub fn locate(&self, p: [f64; 3]) -> Result<Option<Location>> {
+    pub fn locate(&self, p: Point3) -> Result<Option<Location>> {
         if self.tets.is_empty() {
             return Ok(None);
         }

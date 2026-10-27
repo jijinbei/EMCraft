@@ -6,14 +6,15 @@
 
 use super::intersect::surface_pair_intersects;
 use super::{Box3, Defect, Defects, MAX_PAIR_TESTS, Surface};
+use crate::Point3;
 use crate::{Error, Result};
 
 /// Triangles per leaf.
 const LEAF: usize = 4;
 
 /// Twice the centre of a box (no rounding from halving).
-fn centre2(b: &Box3) -> [f64; 3] {
-    [0, 1, 2].map(|k| b.lo[k] + b.hi[k])
+fn centre2(b: &Box3) -> Point3 {
+    b.lo.zip_map(b.hi, |l, h| l + h)
 }
 
 #[derive(Debug, Clone, Copy)]

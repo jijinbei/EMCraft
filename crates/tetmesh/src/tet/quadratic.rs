@@ -13,12 +13,11 @@
 use crate::compat::ElementKind;
 
 use crate::quality::{Validity, element_validity};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 use super::TaggedFace;
 use super::complex::{IdMap, NONE, face_toward, sorted2};
 use super::geometry::{BoundaryGeometry, Tessellation};
-use super::measure;
 
 /// Tet10 mid-side nodes on edges 1-2, 2-3, 3-1, 1-4, 2-4, 3-4 (the model's node order).
 use crate::quality::jacobian::TET_EDGES as MID_EDGES;
@@ -26,7 +25,7 @@ use crate::quality::jacobian::TET_EDGES as MID_EDGES;
 /// The quadratic mesh.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quadratic {
-    pub points: Vec<[f64; 3]>,
+    pub points: Vec<Point3>,
     pub elements: Vec<Vec<u32>>,
     /// Edges left straight to keep their elements valid.
     pub straightened: usize,
@@ -34,7 +33,7 @@ pub struct Quadratic {
 
 /// Tet10 elements from tet4 ones (see the module docs).
 pub fn tet10(
-    points: &[[f64; 3]],
+    points: &[Point3],
     tets: &[[u32; 4]],
     boundary: &[TaggedFace],
     curves: &IdMap<(u32, u32), u32>,
@@ -53,7 +52,7 @@ pub fn tet10(
     let p = |v: u32| points.get(v as usize).copied().ok_or_else(|| Error::Failed("tet10: vertex id".into()));
     let mut out = points.to_vec();
     // Edge -> (node, straight midpoint).
-    let mut node: IdMap<(u32, u32), (u32, [f64; 3])> = IdMap::default();
+    let mut node: IdMap<(u32, u32), (u32, Point3)> = IdMap::default();
     let mut elements = Vec::with_capacity(tets.len());
     for t in tets {
         let mut e = t.to_vec();
@@ -62,13 +61,13 @@ pub fn tet10(
             let id = match node.get(&key) {
                 Some(&(id, _)) => id,
                 None => {
-                    let m = measure::mid(p(t[i])?, p(t[j])?);
+                    let m = p(t[i])?.midpoint(p(t[j])?);
                     let curved = match curves.get(&key) {
                         Some(&c) => curve_faces.get(c as usize).and_then(|f| geometry.project_curve(*f, m)),
                         None => edge_face.get(&key).and_then(|&f| geometry.project_face(f, m)),
                     };
                     let id = u32::try_from(out.len()).map_err(|_| Error::Limit("too many nodes".into()))?;
-                    out.push(curved.filter(|q| q.iter().all(|x| x.is_finite())).unwrap_or(m));
+                    out.push(curved.filter(|q| q.is_finite()).unwrap_or(m));
                     node.insert(key, (id, m));
                     id
                 }
@@ -78,7 +77,7 @@ pub fn tet10(
         elements.push(e);
     }
     // Straighten what makes an element invalid.
-    let coords = |out: &[[f64; 3]], e: &[u32]| -> Result<Vec<[f64; 3]>> {
+    let coords = |out: &[Point3], e: &[u32]| -> Result<Vec<Point3>> {
         e.iter().map(|&v| out.get(v as usize).copied().ok_or_else(|| Error::Failed("tet10: node id".into()))).collect()
     };
     let mut straightened = 0;

@@ -23,8 +23,9 @@ use crate::{Error, Result};
 
 use super::complex::{IdMap, NONE, TetComplex, VertexKind, Walk, face_toward, sorted2, sorted4};
 use super::geometry::BoundaryGeometry;
-use super::measure::{self, P};
+use super::measure;
 use super::ops::{self, Site};
+use crate::{Point3, Vec3};
 
 /// What the boundary insertions project onto.
 pub struct Context<'a> {
@@ -36,13 +37,13 @@ pub struct Context<'a> {
 
 impl Context<'_> {
     /// The local target size, or `fallback` when the field misbehaves.
-    pub fn h(&self, p: P, fallback: f64) -> f64 {
+    pub fn h(&self, p: Point3, fallback: f64) -> f64 {
         let h = self.size.size(p);
         if h > 0.0 && h.is_finite() { h } else { fallback }
     }
 
     /// `p` moved onto the boundary entity of a vertex of `kind`, as an admissible point.
-    pub fn place(&self, kind: VertexKind, p: P) -> Option<ExactPoint3> {
+    pub fn place(&self, kind: VertexKind, p: Point3) -> Option<ExactPoint3> {
         let q = match kind {
             VertexKind::Interior => p,
             VertexKind::Face(f) => self.geometry.project_face(f, p)?,
@@ -97,7 +98,7 @@ pub const MAX_CAVITY: usize = 4096;
 const MAX_WALK: usize = 1 << 16;
 
 /// The boundary face of a tetrahedron whose diametral sphere holds `p`, if any (the largest).
-fn encroached(cx: &TetComplex, tets: &[u32], p: P) -> Result<Option<(u32, usize)>> {
+fn encroached(cx: &TetComplex, tets: &[u32], p: Point3) -> Result<Option<(u32, usize)>> {
     let mut best: Option<(f64, u32, usize)> = None;
     for &t in tets {
         let vs = cx.tet(t)?;
@@ -109,8 +110,8 @@ fn encroached(cx: &TetComplex, tets: &[u32], p: P) -> Result<Option<(u32, usize)
             let f = face_toward(vs, k);
             let (a, b, c) = (cx.xyz(f[0])?, cx.xyz(f[1])?, cx.xyz(f[2])?);
             let Some(o) = measure::triangle_circumcenter(a, b, c) else { continue };
-            let r = measure::dist(o, a);
-            if measure::dist(o, p) < r && best.is_none_or(|(br, _, _)| r > br) {
+            let r = o.distance(a);
+            if o.distance(p) < r && best.is_none_or(|(br, _, _)| r > br) {
                 best = Some((r, t, k));
             }
         }
@@ -152,16 +153,16 @@ pub fn split_face(cx: &mut TetComplex, ctx: &Context, t: u32, k: usize, min_face
     let f = face_toward(vs, k);
     let x = [cx.xyz(f[0])?, cx.xyz(f[1])?, cx.xyz(f[2])?];
     let Some(o) = measure::triangle_circumcenter(x[0], x[1], x[2]) else { return Ok(None) };
-    let r = measure::dist(o, x[0]);
-    let centroid = measure::scale(measure::add(measure::add(x[0], x[1]), x[2]), 1.0 / 3.0);
+    let r = o.distance(x[0]);
+    let centroid = Point3::centroid3(x[0], x[1], x[2]);
     if r < min_face * ctx.h(centroid, r) {
         return Ok(None);
     }
     // Barycentric coordinates of o (signed areas against the face normal).
-    let n = measure::cross(measure::sub(x[1], x[0]), measure::sub(x[2], x[0]));
+    let n = (x[1] - x[0]).cross(x[2] - x[0]);
     let inside = (0..3).all(|i| {
         let (a, b) = (x[(i + 1) % 3], x[(i + 2) % 3]);
-        measure::dot(measure::cross(measure::sub(b, a), measure::sub(o, a)), n) >= 0.0
+        (b - a).cross(o - a).dot(n) >= 0.0
     });
     if inside && tag != NONE {
         // A point inside the diametral sphere of one of the face's feature edges encroaches it:
@@ -170,7 +171,7 @@ pub fn split_face(cx: &mut TetComplex, ctx: &Context, t: u32, k: usize, min_face
             let (u, w) = (f[i], f[(i + 1) % 3]);
             if cx.curve(u, w).is_some() {
                 let (a, b) = (x[i], x[(i + 1) % 3]);
-                if measure::dist(o, measure::mid(a, b)) < 0.5 * measure::dist(a, b) {
+                if o.distance(a.midpoint(b)) < 0.5 * a.distance(b) {
                     return split_edge(cx, ctx, u, w, tag, min_face);
                 }
             }
@@ -178,8 +179,8 @@ pub fn split_face(cx: &mut TetComplex, ctx: &Context, t: u32, k: usize, min_face
         let kind = VertexKind::Face(tag);
         let Some(p) = ctx.place(kind, o) else { return Ok(None) };
         // The projection may only move the point a little, and never next to a corner.
-        let shortest = (0..3).map(|i| measure::dist(x[i], x[(i + 1) % 3])).fold(f64::INFINITY, f64::min);
-        if measure::dist(p.coords(), o) > 0.5 * r || x.iter().any(|c| measure::dist(*c, p.coords()) < 0.25 * shortest) {
+        let shortest = (0..3).map(|i| x[i].distance(x[(i + 1) % 3])).fold(f64::INFINITY, f64::min);
+        if p.point().distance(o) > 0.5 * r || x.iter().any(|c| c.distance(p.point()) < 0.25 * shortest) {
             return Ok(None);
         }
         return ops::insert_delaunay_apart(cx, p, kind, Site::Face(t, k), MAX_CAVITY, MIN_GAP * ctx.h(o, r));
@@ -187,7 +188,7 @@ pub fn split_face(cx: &mut TetComplex, ctx: &Context, t: u32, k: usize, min_face
     // The longest edge.
     let (mut u, mut w, mut len) = (f[0], f[1], -1.0);
     for i in 0..3 {
-        let l = measure::dist(x[i], x[(i + 1) % 3]);
+        let l = x[i].distance(x[(i + 1) % 3]);
         if l > len {
             (u, w, len) = (f[i], f[(i + 1) % 3], l);
         }
@@ -198,8 +199,8 @@ pub fn split_face(cx: &mut TetComplex, ctx: &Context, t: u32, k: usize, min_face
 /// Split boundary edge `uw` at its midpoint, projected onto its feature curve or onto B-rep face
 /// `tag`. An edge shorter than `2 · min_face` times the local size is not split.
 pub fn split_edge(cx: &mut TetComplex, ctx: &Context, u: u32, w: u32, tag: u32, min_face: f64) -> Result<Option<u32>> {
-    let m = measure::mid(cx.xyz(u)?, cx.xyz(w)?);
-    let len = measure::dist(cx.xyz(u)?, cx.xyz(w)?);
+    let m = cx.xyz(u)?.midpoint(cx.xyz(w)?);
+    let len = cx.xyz(u)?.distance(cx.xyz(w)?);
     if len < 2.0 * min_face * ctx.h(m, len) {
         return Ok(None);
     }
@@ -223,19 +224,19 @@ pub fn split_edge(cx: &mut TetComplex, ctx: &Context, u: u32, w: u32, tag: u32, 
     }
     let Some(p) = ctx.place(kind, m) else { return Ok(None) };
     // The projection may only move the midpoint a little (a quarter of the edge).
-    if measure::dist(p.coords(), m) > 0.25 * len {
+    if p.point().distance(m) > 0.25 * len {
         return Ok(None);
     }
     ops::insert_delaunay_apart(cx, p, kind, Site::Edge(u, w), MAX_CAVITY, MIN_GAP * ctx.h(m, len))
 }
 
 /// A feature-curve edge at one of the vertices `near` whose diametral sphere holds `p`.
-fn encroached_curve_edge(cx: &mut TetComplex, near: &[u32], p: P) -> Result<Option<(u32, u32)>> {
+fn encroached_curve_edge(cx: &mut TetComplex, near: &[u32], p: Point3) -> Result<Option<(u32, u32)>> {
     for &c in near {
         for n in cx.neighbours(c)? {
             if cx.curve(c, n).is_some() {
                 let (a, b) = (cx.xyz(c)?, cx.xyz(n)?);
-                if measure::dist(p, measure::mid(a, b)) < 0.5 * measure::dist(a, b) {
+                if p.distance(a.midpoint(b)) < 0.5 * a.distance(b) {
                     return Ok(Some((c, n)));
                 }
             }
@@ -245,9 +246,9 @@ fn encroached_curve_edge(cx: &mut TetComplex, near: &[u32], p: P) -> Result<Opti
 }
 
 /// Whether a tetrahedron is bad, and its circumcentre.
-fn badness(x: &[P; 4], ctx: &Context, o: &RefineOptions) -> Option<P> {
+fn badness(x: &[Point3; 4], ctx: &Context, o: &RefineOptions) -> Option<Point3> {
     let c = measure::circumcenter(x)?;
-    let r = measure::dist(c, x[0]);
+    let r = c.distance(x[0]);
     let (lmin, lmax) = measure::edge_range(x);
     let h = ctx.h(measure::centroid(x), lmax);
     ((r > o.radius_edge * lmin && r > o.min_shape_radius * h) || r > o.size_factor * h).then_some(c)
@@ -337,7 +338,7 @@ pub fn refine(cx: &mut TetComplex, ctx: &Context, o: &RefineOptions) -> Result<R
 /// curve table (face pairs) and the edges with their curve.
 pub fn feature_curves(cx: &TetComplex, feature_cos: f64) -> Result<(Vec<[u32; 2]>, Vec<((u32, u32), u32)>)> {
     // Boundary edge -> (tag, oriented normal) of each side.
-    let mut sides: IdMap<(u32, u32), Vec<(u32, P)>> = IdMap::default();
+    let mut sides: IdMap<(u32, u32), Vec<(u32, Vec3)>> = IdMap::default();
     for (t, vs) in cx.live_tets() {
         let ns = cx.adj(t)?;
         let tags = cx.tags(t)?;
@@ -362,7 +363,7 @@ pub fn feature_curves(cx: &TetComplex, feature_cos: f64) -> Result<(Vec<[u32; 2]
         let [(ta, na), (tb, nb)] = s else {
             return Err(Error::Failed(format!("boundary edge {e:?} has {} faces", s.len())));
         };
-        if ta != tb || measure::dot(*na, *nb) < feature_cos {
+        if ta != tb || na.dot(*nb) < feature_cos {
             let pair = [(*ta).min(*tb), (*ta).max(*tb)];
             let id = match index.get(&pair) {
                 Some(&id) => id,
@@ -395,8 +396,8 @@ pub fn coarsen(cx: &mut TetComplex, ctx: &Context, short: f64, long: f64, floor:
                     continue;
                 }
                 let (a, b) = (cx.xyz(e.0)?, cx.xyz(e.1)?);
-                let l = measure::dist(a, b);
-                let h = ctx.h(measure::mid(a, b), l);
+                let l = a.distance(b);
+                let h = ctx.h(a.midpoint(b), l);
                 if l < short * h {
                     edges.push((l / h, e.0, e.1));
                 }
@@ -409,7 +410,7 @@ pub fn coarsen(cx: &mut TetComplex, ctx: &Context, short: f64, long: f64, floor:
                 continue;
             }
             let (pa, pb) = (cx.xyz(a)?, cx.xyz(b)?);
-            let max_len = long * ctx.h(measure::mid(pa, pb), measure::dist(pa, pb));
+            let max_len = long * ctx.h(pa.midpoint(pb), pa.distance(pb));
             if ops::collapse(cx, a, b, max_len, floor)? || ops::collapse(cx, b, a, max_len, floor)? {
                 changed += 1;
             }

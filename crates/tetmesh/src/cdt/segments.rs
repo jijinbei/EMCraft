@@ -21,8 +21,8 @@
 //! and of passes is still capped.
 
 use crate::predicates::{Axis, ExactPoint3, GenericPoint, Lnc, generic_orient2d};
-use crate::vec3::{cross, dot, norm, sub};
 use crate::{Error, Result};
+use crate::{Point3, Vec3};
 
 use super::Recovery;
 
@@ -58,27 +58,23 @@ impl Segment {
     }
 }
 
-fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
-    norm(sub(a, b))
-}
-
 impl Recovery {
     /// Mark acute vertices: two segments at a vertex make an angle under 90° (floating point:
     /// this only steers where Steiner points go).
     pub(super) fn classify_acute(&mut self) -> Result<()> {
         let n = self.cx.points().len();
-        let mut dirs: Vec<Vec<[f64; 3]>> = vec![Vec::new(); n];
+        let mut dirs: Vec<Vec<Vec3>> = vec![Vec::new(); n];
         for s in &self.segments {
             let [a, b] = s.ends;
             let (pa, pb) = (self.cx.approx(a)?, self.cx.approx(b)?);
             if let Some(d) = dirs.get_mut(a as usize) {
-                d.push(sub(pb, pa));
+                d.push(pb - pa);
             }
             if let Some(d) = dirs.get_mut(b as usize) {
-                d.push(sub(pa, pb));
+                d.push(pa - pb);
             }
         }
-        let acute: Vec<bool> = dirs.iter().map(|d| d.iter().enumerate().any(|(i, x)| d.iter().skip(i + 1).any(|y| dot(*x, *y) > 0.0))).collect();
+        let acute: Vec<bool> = dirs.iter().map(|d| d.iter().enumerate().any(|(i, x)| d.iter().skip(i + 1).any(|y| x.dot(*y) > 0.0))).collect();
         for s in &mut self.segments {
             s.acute = s.ends.map(|v| acute.get(v as usize).copied().unwrap_or(false));
         }
@@ -169,7 +165,7 @@ impl Recovery {
         };
         let [a, b] = ends;
         let (pa, pb) = (self.cx.approx(a)?, self.cx.approx(b)?);
-        let length = dist(pa, pb);
+        let length = pa.distance(pb);
         let mid = 0.5 * (tu + tv);
         let r = self.reference_point(u, v)?;
         let chosen = match (r, acute) {
@@ -181,8 +177,8 @@ impl Recovery {
                 let (pu, pv) = (self.cx.approx(u)?, self.cx.approx(v)?);
                 match acute {
                     [false, false] => {
-                        let (ru, rv) = (dist(pu, pr), dist(pv, pr));
-                        let half = 0.5 * dist(pu, pv);
+                        let (ru, rv) = (pu.distance(pr), pv.distance(pr));
+                        let half = 0.5 * pu.distance(pv);
                         if ru > half && rv > half {
                             mid
                         } else if ru <= rv {
@@ -200,16 +196,16 @@ impl Recovery {
                             _ => tv <= 0.5,
                         };
                         let pw = if w_is_a { pa } else { pb };
-                        let radius = dist(pw, pr);
+                        let radius = pw.distance(pr);
                         let tp = if w_is_a { radius / length } else { 1.0 - radius / length };
                         let (t_near, t_far) = if w_is_a { (tu, tv) } else { (tv, tu) };
-                        let at = |t: f64| -> [f64; 3] { std::array::from_fn(|k| pa[k] + t * (pb[k] - pa[k])) };
+                        let at = |t: f64| -> Point3 { pa + t * (pb - pa) };
                         let p = at(tp);
-                        if dist(p, pr) < dist(p, at(t_far)) {
+                        if p.distance(pr) < p.distance(at(t_far)) {
                             tp
                         } else {
-                            let d = dist(pr, p);
-                            let near = dist(at(t_near), p);
+                            let d = pr.distance(p);
+                            let near = at(t_near).distance(p);
                             if d < 0.5 * near { if t_near < tp { tp - d / length } else { tp + d / length } } else { 0.5 * (t_near + tp) }
                         }
                     }
@@ -237,10 +233,9 @@ impl Recovery {
     /// input invalid (a segment through a vertex), which is reported.
     fn reference_point(&mut self, u: u32, v: u32) -> Result<Option<u32>> {
         let (pu, pv) = (self.cx.approx(u)?, self.cx.approx(v)?);
-        let c: [f64; 3] = std::array::from_fn(|k| 0.5 * (pu[k] + pv[k]));
-        let r2 = 0.25 * dot(sub(pu, pv), sub(pu, pv));
-        let lo: [f64; 3] = std::array::from_fn(|k| pu[k].min(pv[k]));
-        let hi: [f64; 3] = std::array::from_fn(|k| pu[k].max(pv[k]));
+        let c = pu.midpoint(pv);
+        let r2 = 0.25 * (pu - pv).dot(pu - pv);
+        let (lo, hi) = (pu.min(pv), pu.max(pv));
         let near = self.cx.tets_near(u, lo, hi, NEAR_CAP)?;
         let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let mut best: Option<(f64, u32)> = None;
@@ -250,13 +245,13 @@ impl Recovery {
                     continue;
                 }
                 let px = self.cx.approx(x)?;
-                let d = sub(px, c);
-                if dot(d, d) >= r2 {
+                let d = px - c;
+                if d.dot(d) >= r2 {
                     continue;
                 }
-                let (ea, eb) = (sub(pu, px), sub(pv, px));
-                let area2 = norm(cross(ea, eb));
-                let radius = if area2 > 0.0 { norm(ea) * norm(eb) * norm(sub(ea, eb)) / (2.0 * area2) } else { f64::INFINITY };
+                let (ea, eb) = (pu - px, pv - px);
+                let area2 = ea.cross(eb).norm();
+                let radius = if area2 > 0.0 { ea.norm() * eb.norm() * (ea - eb).norm() / (2.0 * area2) } else { f64::INFINITY };
                 if !radius.is_finite() && self.on_segment(u, v, x)? {
                     let at = self.cx.approx(x)?;
                     return Err(Error::Measured(

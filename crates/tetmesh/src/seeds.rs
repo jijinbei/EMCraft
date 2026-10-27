@@ -9,7 +9,7 @@
 
 use crate::compat::{Bias, SeedConstraint, seeds::spacing};
 
-use crate::vec3::{P, dist, lerp, sub};
+use crate::Point3;
 use crate::{Error, Result};
 
 /// A seed on one design edge.
@@ -18,7 +18,7 @@ pub struct EdgeSeed {
     /// The edge's name, for messages.
     pub name: String,
     /// The edge's polyline, start to end.
-    pub points: Vec<[f64; 3]>,
+    pub points: Vec<Point3>,
     /// How far the polyline may lie from the exact edge (its tessellation's chordal tolerance).
     pub tolerance: f64,
     /// The divisions the seed asks for.
@@ -41,47 +41,47 @@ impl EdgeSeed {
     }
 }
 
-fn length(poly: &[P]) -> f64 {
-    poly.windows(2).map(|w| dist(w[0], w[1])).sum()
+fn length(poly: &[Point3]) -> f64 {
+    poly.windows(2).map(|w| w[0].distance(w[1])).sum()
 }
 
 /// The point at fraction `t` of a polyline's arc length.
-fn at_fraction(poly: &[P], t: f64) -> Option<P> {
+fn at_fraction(poly: &[Point3], t: f64) -> Option<Point3> {
     let total = length(poly);
     let target = t.clamp(0.0, 1.0) * total;
     let mut walked = 0.0;
     for w in poly.windows(2) {
-        let l = dist(w[0], w[1]);
+        let l = w[0].distance(w[1]);
         if walked + l >= target && l > 0.0 {
-            return Some(lerp(w[0], w[1], ((target - walked) / l).clamp(0.0, 1.0)));
+            return Some(w[0].lerp(w[1], ((target - walked) / l).clamp(0.0, 1.0)));
         }
         walked += l;
     }
     poly.last().copied()
 }
 
-fn point_segment(p: P, a: P, b: P) -> f64 {
-    let ab = sub(b, a);
-    let l2 = crate::vec3::dot(ab, ab);
-    let t = if l2 > 0.0 { (crate::vec3::dot(sub(p, a), ab) / l2).clamp(0.0, 1.0) } else { 0.0 };
-    dist(p, lerp(a, b, t))
+fn point_segment(p: Point3, a: Point3, b: Point3) -> f64 {
+    let ab = b - a;
+    let l2 = ab.dot(ab);
+    let t = if l2 > 0.0 { ((p - a).dot(ab) / l2).clamp(0.0, 1.0) } else { 0.0 };
+    p.distance(a.lerp(b, t))
 }
 
 /// The distance from `p` to a polyline.
-pub(crate) fn distance_to(poly: &[P], p: P) -> f64 {
+pub(crate) fn distance_to(poly: &[Point3], p: Point3) -> f64 {
     point_polyline(p, poly)
 }
 
-fn point_polyline(p: P, poly: &[P]) -> f64 {
+fn point_polyline(p: Point3, poly: &[Point3]) -> f64 {
     match poly {
         [] => f64::INFINITY,
-        [a] => dist(p, *a),
+        [a] => p.distance(*a),
         _ => poly.windows(2).map(|w| point_segment(p, w[0], w[1])).fold(f64::INFINITY, f64::min),
     }
 }
 
 /// The points at the given arc-length fractions along `poly` (its end points exact).
-pub(crate) fn place(poly: &[P], fractions: &[f64]) -> Result<Vec<P>> {
+pub(crate) fn place(poly: &[Point3], fractions: &[f64]) -> Result<Vec<Point3>> {
     let (Some(&first), Some(&last)) = (poly.first(), poly.last()) else {
         return Err(Error::Invalid("empty polyline".into()));
     };
@@ -103,7 +103,7 @@ pub(crate) fn place(poly: &[P], fractions: &[f64]) -> Result<Vec<P>> {
 
 /// The element size a seed asks for at each of its nodes (the mean length of the elements on
 /// either side), for size fields.
-pub fn node_sizes(seed: &EdgeSeed) -> Vec<(P, f64)> {
+pub fn node_sizes(seed: &EdgeSeed) -> Vec<(Point3, f64)> {
     let f = seed.fractions(seed.count, false);
     let total = length(&seed.points);
     let Ok(pts) = place(&seed.points, &f) else { return Vec::new() };

@@ -31,6 +31,7 @@ use crate::predicates::{ExactPoint3, Sign, insphere, tet_volume_sign};
 use crate::surface::Box3;
 use crate::surface::intersect::{is_degenerate, projections_apart, surface_pair_intersects};
 use crate::{Error, Result};
+use crate::{Point3, Vec3};
 
 /// Every tetrahedron a change creates has a normalized Jacobian above this: FieldCraft's validity
 /// criterion ([`crate::compat::admissible_jacobian`]) with a margin of a thousand, so the
@@ -47,8 +48,8 @@ pub const BOUNDARY_TURN_COS: f64 = 0.866_025_403_784_438_6;
 
 /// Whether a boundary face whose unit normal was `before` turns by more than 30° to `after`
 /// ([`BOUNDARY_TURN_COS`]); a face with no area before has no orientation to keep.
-pub fn turns_over(before: [f64; 3], after: [f64; 3]) -> bool {
-    before != [0.0; 3] && !(super::measure::dot(before, after) >= BOUNDARY_TURN_COS)
+pub fn turns_over(before: Vec3, after: Vec3) -> bool {
+    before != Vec3::ZERO && !(before.dot(after) >= BOUNDARY_TURN_COS)
 }
 
 /// Marks a recycled tetrahedron slot.
@@ -107,7 +108,7 @@ impl Skin {
     /// The keys of the cells a box touches; `None` beyond [`SKIN_FACE_CELLS`] of them.
     fn keys(&self, b: &Box3) -> Option<impl Iterator<Item = u64> + use<>> {
         let cell = |x: f64| (x / self.cell).floor() as i64;
-        let (lo, hi) = (b.lo.map(cell), b.hi.map(cell));
+        let (lo, hi) = (b.lo.to_array().map(cell), b.hi.to_array().map(cell));
         let n = (0..3).fold(1i64, |n, k| n.saturating_mul(hi[k].saturating_sub(lo[k]).saturating_add(1)));
         (n <= SKIN_FACE_CELLS)
             .then(|| (lo[0]..=hi[0]).flat_map(move |x| (lo[1]..=hi[1]).flat_map(move |y| (lo[2]..=hi[2]).map(move |z| skin_key([x, y, z])))))
@@ -284,7 +285,7 @@ impl TetComplex {
     /// edges. Faces shared by two tetrahedra become neighbours; every other face must be listed
     /// in `boundary`. Caps: `max_points` vertices and `max_tets` tetrahedra at any time.
     pub fn new(
-        points: &[[f64; 3]],
+        points: &[Point3],
         kinds: Vec<VertexKind>,
         tets: &[[u32; 4]],
         boundary: &[BoundaryTag],
@@ -298,7 +299,7 @@ impl TetComplex {
     /// [`Self::new`] for a mesh that may have flat or inverted tetrahedra (a tetrahedralization
     /// rounded to doubles, to be repaired by the operations, which only create positive ones).
     pub fn with_invalid(
-        points: &[[f64; 3]],
+        points: &[Point3],
         kinds: Vec<VertexKind>,
         tets: &[[u32; 4]],
         boundary: &[BoundaryTag],
@@ -311,7 +312,7 @@ impl TetComplex {
 
     #[allow(clippy::too_many_arguments)]
     fn build(
-        points: &[[f64; 3]],
+        points: &[Point3],
         kinds: Vec<VertexKind>,
         tets: &[[u32; 4]],
         boundary: &[BoundaryTag],
@@ -401,11 +402,11 @@ impl TetComplex {
         self.pts.get(v as usize).copied().ok_or_else(|| corrupt("vertex id"))
     }
 
-    pub fn xyz(&self, v: u32) -> Result<[f64; 3]> {
-        self.point(v).map(|p| p.coords())
+    pub fn xyz(&self, v: u32) -> Result<Point3> {
+        self.point(v).map(|p| p.point())
     }
 
-    pub fn coords(&self, vs: [u32; 4]) -> Result<[[f64; 3]; 4]> {
+    pub fn coords(&self, vs: [u32; 4]) -> Result<[Point3; 4]> {
         Ok([self.xyz(vs[0])?, self.xyz(vs[1])?, self.xyz(vs[2])?, self.xyz(vs[3])?])
     }
 
@@ -920,16 +921,16 @@ impl TetComplex {
             }
             let mut x = self.coords(vs)?;
             if let Some(c) = x.get_mut(k) {
-                *c = p.coords();
+                *c = p.point();
             }
             if !(normalized_jacobian(&tet4_jacobian(&x)) > ADMISSIBLE_MARGIN) {
                 return Ok(false);
             }
             let adj = self.adj(t)?;
             for j in (0..4).filter(|&j| j != k && adj[j] == NONE) {
-                let normal = |moved| -> Result<[f64; 3]> {
+                let normal = |moved| -> Result<Vec3> {
                     let [a, b, c] = face_toward(vs, j);
-                    let x = |u| self.point_moved(u, moved).map(|q| q.coords());
+                    let x = |u| self.point_moved(u, moved).map(|q| q.point());
                     Ok(super::measure::triangle_normal(x(a)?, x(b)?, x(c)?))
                 };
                 if turns_over(normal(None)?, normal(Some((v, *p)))?) {
@@ -1368,7 +1369,7 @@ impl TetComplex {
     fn face_box(&self, f: [u32; 3], moved: Option<(u32, ExactPoint3)>) -> Result<Box3> {
         let mut b = Box3::EMPTY;
         for u in f {
-            b.add_point(self.point_moved(u, moved)?.coords());
+            b.add_point(self.point_moved(u, moved)?.point());
         }
         Ok(b)
     }
@@ -1547,7 +1548,7 @@ impl TetComplex {
                 if let Some(s) = id.get_mut(v) {
                     *s = points.len() as u32;
                 }
-                points.push(p.coords());
+                points.push(p.point());
                 source.push(v as u32);
             }
         }
@@ -1604,7 +1605,7 @@ pub struct EdgeRing {
 /// A compacted mesh ([`TetComplex::compact`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Compacted {
-    pub points: Vec<[f64; 3]>,
+    pub points: Vec<Point3>,
     pub tets: Vec<[u32; 4]>,
     pub boundary: Vec<(u32, usize, u32)>,
     pub curves: Vec<((u32, u32), u32)>,

@@ -184,5 +184,27 @@ impl TryFrom<[f64; 3]> for ExactPoint3 {
     }
 }
 
+impl TryFrom<crate::Point3> for ExactPoint3 {
+    type Error = Error;
+
+    fn try_from(p: crate::Point3) -> Result<Self> {
+        check(p.to_array()).map(Self)
+    }
+}
+
+impl From<ExactPoint3> for crate::Point3 {
+    fn from(p: ExactPoint3) -> crate::Point3 {
+        crate::Point3::from(p.0)
+    }
+}
+
+impl ExactPoint3 {
+    /// The point as a floating-point [`crate::Point3`] (the same coordinates).
+    #[inline(always)]
+    pub fn point(&self) -> crate::Point3 {
+        crate::Point3::from(self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests;

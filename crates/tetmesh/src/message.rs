@@ -45,8 +45,25 @@ pub fn volume(v: f64) -> Part {
 }
 
 /// A point (three coordinates, or two in a plane).
-pub fn point<const N: usize>(p: [f64; N]) -> Part {
-    Part::Point(p.to_vec())
+pub fn point(p: impl Coordinates) -> Part {
+    Part::Point(p.coordinates())
+}
+
+/// What [`point`] takes: a [`crate::Point3`] or a coordinate array.
+pub trait Coordinates {
+    fn coordinates(self) -> Vec<f64>;
+}
+
+impl<const N: usize> Coordinates for [f64; N] {
+    fn coordinates(self) -> Vec<f64> {
+        self.to_vec()
+    }
+}
+
+impl Coordinates for crate::Point3 {
+    fn coordinates(self) -> Vec<f64> {
+        self.to_array().to_vec()
+    }
 }
 
 /// A message whose numbers keep their quantity.

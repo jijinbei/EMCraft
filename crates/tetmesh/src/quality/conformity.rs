@@ -13,7 +13,7 @@
 
 use crate::compat::ElementKind;
 
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 /// What [`conformity`] found.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -39,7 +39,7 @@ impl Conformity {
 /// the nodes `(label, xyz)`: nodes closer than `tolerance` count as coincident. Elements that
 /// name a node missing from `nodes` are an error, as are non-finite coordinates or tolerance.
 pub fn conformity<'a>(
-    nodes: &[(u32, [f64; 3])],
+    nodes: &[(u32, Point3)],
     elements: impl IntoIterator<Item = (u32, ElementKind, &'a [u32])>,
     tolerance: f64,
 ) -> Result<Conformity> {
@@ -114,14 +114,14 @@ fn face_corners(n: usize) -> usize {
 
 /// Pairs of distinct nodes closer than `tol`: nodes are bucketed in a grid of cells `tol` wide
 /// (sorted, so the work stays O(n log n) on any input) and compared with the 27 cells around.
-fn coincident(nodes: &[(u32, [f64; 3])], tol: f64) -> Result<Vec<[u32; 2]>> {
-    if let Some((l, _)) = nodes.iter().find(|(_, p)| !p.iter().all(|v| v.is_finite())) {
+fn coincident(nodes: &[(u32, Point3)], tol: f64) -> Result<Vec<[u32; 2]>> {
+    if let Some((l, _)) = nodes.iter().find(|(_, p)| !p.is_finite()) {
         return Err(Error::Invalid(format!("node {l} has a non-finite coordinate")));
     }
     // A zero tolerance still needs a cell size; exact copies share a cell at any size.
     let h = if tol > 0.0 { tol } else { 1.0 };
-    let cell = |p: &[f64; 3]| p.map(|v| (v / h).floor() as i64);
-    let mut grid: Vec<([i64; 3], u32, [f64; 3])> = nodes.iter().map(|(l, p)| (cell(p), *l, *p)).collect();
+    let cell = |p: &Point3| p.to_array().map(|v| (v / h).floor() as i64);
+    let mut grid: Vec<([i64; 3], u32, Point3)> = nodes.iter().map(|(l, p)| (cell(p), *l, *p)).collect();
     grid.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     let mut out = Vec::new();
     for (c, la, pa) in &grid {
@@ -146,12 +146,12 @@ mod tests {
     use super::*;
 
     /// Two unit hex8 cells side by side along x (nodes 1–12), elements 1 and 2.
-    fn pair() -> (Vec<(u32, [f64; 3])>, Vec<Vec<u32>>) {
+    fn pair() -> (Vec<(u32, Point3)>, Vec<Vec<u32>>) {
         let mut nodes = Vec::new();
         for k in 0..2 {
             for j in 0..2 {
                 for i in 0..3 {
-                    nodes.push((1 + i + 3 * j + 6 * k, [f64::from(i), f64::from(j), f64::from(k)]));
+                    nodes.push((1 + i + 3 * j + 6 * k, Point3::new(f64::from(i), f64::from(j), f64::from(k))));
                 }
             }
         }
@@ -159,7 +159,7 @@ mod tests {
         (nodes, vec![hex(0), hex(1)])
     }
 
-    fn check(nodes: &[(u32, [f64; 3])], elements: &[Vec<u32>], kind: ElementKind) -> Conformity {
+    fn check(nodes: &[(u32, Point3)], elements: &[Vec<u32>], kind: ElementKind) -> Conformity {
         conformity(nodes, elements.iter().enumerate().map(|(e, n)| (e as u32 + 1, kind, n.as_slice())), 1e-9).unwrap()
     }
 
@@ -176,7 +176,7 @@ mod tests {
     fn a_duplicated_node_is_a_crack() {
         let (mut nodes, mut elements) = pair();
         // Element 2 takes its own copy of node 2 (at x = 1).
-        nodes.push((99, [1.0, 0.0, 0.0]));
+        nodes.push((99, Point3::new(1.0, 0.0, 0.0)));
         elements[1][0] = 99;
         let c = check(&nodes, &elements, ElementKind::Hex8);
         assert_eq!(c.coincident, vec![[2, 99]]);
@@ -195,7 +195,7 @@ mod tests {
                 next += 1;
                 let (a, b) = (n[edge[0]], n[edge[1]]);
                 let (pa, pb) = (nodes.iter().find(|x| x.0 == a).unwrap().1, nodes.iter().find(|x| x.0 == b).unwrap().1);
-                nodes.push((next, [0.5 * (pa[0] + pb[0]), 0.5 * (pa[1] + pb[1]), 0.5 * (pa[2] + pb[2]) + e as f64 * 1e-3]));
+                nodes.push((next, Point3::new(0.5 * (pa[0] + pb[0]), 0.5 * (pa[1] + pb[1]), 0.5 * (pa[2] + pb[2]) + e as f64 * 1e-3)));
                 q.push(next);
             }
             quadratic.push(q);
@@ -212,8 +212,8 @@ mod tests {
         assert!(conformity(&nodes, std::iter::once((1, ElementKind::Hex8, &elements[0][..4])), 0.0).is_err());
         assert!(conformity(&nodes, std::iter::once((1, ElementKind::Hex8, &[1, 2, 3, 4, 5, 6, 7, 1000][..])), 0.0).is_err());
         assert!(conformity(&nodes, std::iter::empty(), f64::NAN).is_err());
-        assert!(conformity(&[(1, [f64::INFINITY, 0.0, 0.0])], std::iter::empty(), 0.0).is_err());
-        let far = [(1, [1e300, 0.0, 0.0]), (2, [1e300, 0.0, 0.0]), (3, [-1e300, 0.0, 0.0])];
+        assert!(conformity(&[(1, Point3::new(f64::INFINITY, 0.0, 0.0))], std::iter::empty(), 0.0).is_err());
+        let far = [(1, Point3::new(1e300, 0.0, 0.0)), (2, Point3::new(1e300, 0.0, 0.0)), (3, Point3::new(-1e300, 0.0, 0.0))];
         assert_eq!(conformity(&far, std::iter::empty(), 1e-300).unwrap().coincident, vec![[1, 2]]);
     }
 }

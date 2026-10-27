@@ -20,7 +20,6 @@
 //! cheap sufficient test for them to try first.
 
 use crate::predicates::{Axis, ExactPoint3, Sign, orient2d_projected, orient3d};
-use crate::vec3::{cross, sub};
 
 type Tri<'a> = [&'a ExactPoint3; 3];
 
@@ -127,10 +126,10 @@ fn edge_enters_corner(v: &ExactPoint3, a: &ExactPoint3, side_a: Sign, c: &ExactP
 /// triangle with its third vertex on one side and every vertex of the other but that edge's
 /// strictly on the other; false when no edge tells.
 pub fn projections_apart(ids: [[u32; 3]; 2], s: Tri, t: Tri) -> bool {
-    let n = cross(sub(s[1].coords(), s[0].coords()), sub(s[2].coords(), s[0].coords())).map(f64::abs);
-    let drop = if n[0] >= n[1] && n[0] >= n[2] {
+    let n = (s[1].point() - s[0].point()).cross(s[2].point() - s[0].point()).map(f64::abs);
+    let drop = if n.x >= n.y && n.x >= n.z {
         Axis::X
-    } else if n[1] >= n[2] {
+    } else if n.y >= n.z {
         Axis::Y
     } else {
         Axis::Z

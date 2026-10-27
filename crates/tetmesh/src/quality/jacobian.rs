@@ -32,7 +32,7 @@
 use crate::compat::ElementKind;
 
 use super::bernstein::{Bernstein, Factor};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 /// Reference coordinates of the hex corners on the unit cube, in node order.
 pub(crate) const HEX_CORNERS: [[usize; 3]; 8] = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]];
@@ -112,11 +112,11 @@ fn quadratic_control(a: [f64; 3], m: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 }
 
 /// The 20-node serendipity hexahedron's shape functions at reference point `x ∈ [-1, 1]³`.
-fn serendipity(x: [f64; 3], xyz: &[[f64; 3]]) -> [f64; 3] {
+fn serendipity(x: [f64; 3], xyz: &[Point3]) -> [f64; 3] {
     let mut out = [0.0; 3];
-    let mut add = |n: f64, p: Option<&[f64; 3]>| {
+    let mut add = |n: f64, p: Option<&Point3>| {
         if let Some(p) = p {
-            for (o, c) in out.iter_mut().zip(p) {
+            for (o, c) in out.iter_mut().zip(p.iter()) {
                 *o += n * c;
             }
         }
@@ -139,7 +139,7 @@ fn serendipity(x: [f64; 3], xyz: &[[f64; 3]]) -> [f64; 3] {
 }
 
 /// The geometry map in Bernstein form: one polynomial per coordinate.
-fn geometry(kind: ElementKind, xyz: &[[f64; 3]]) -> Result<[Bernstein; 3]> {
+fn geometry(kind: ElementKind, xyz: &[Point3]) -> Result<[Bernstein; 3]> {
     let (factors, _) = domain(kind)?;
     let zero = Bernstein::zero(&factors)?;
     let mut g = [zero.clone(), zero.clone(), zero];
@@ -148,7 +148,8 @@ fn geometry(kind: ElementKind, xyz: &[[f64; 3]]) -> Result<[Bernstein; 3]> {
             poly.set(m, c);
         }
     };
-    let node = |i: usize| xyz.get(i).copied().ok_or_else(|| Error::Invalid(format!("{} needs {} nodes", kind.name(), kind.node_count())));
+    let node =
+        |i: usize| xyz.get(i).map(|p| p.to_array()).ok_or_else(|| Error::Invalid(format!("{} needs {} nodes", kind.name(), kind.node_count())));
     match kind {
         ElementKind::Tet4 => {
             for v in 0..4 {
@@ -222,8 +223,8 @@ fn geometry(kind: ElementKind, xyz: &[[f64; 3]]) -> Result<[Bernstein; 3]> {
 
 /// The pyramid's Jacobian columns (see the module docs) as bilinear polynomials on the unit
 /// square of its base.
-fn pyramid_columns(xyz: &[[f64; 3]]) -> Result<[[Bernstein; 3]; 3]> {
-    let node = |i: usize| xyz.get(i).copied().ok_or_else(|| Error::Invalid("pyramid5 needs 5 nodes".into()));
+fn pyramid_columns(xyz: &[Point3]) -> Result<[[Bernstein; 3]; 3]> {
+    let node = |i: usize| xyz.get(i).map(|p| p.to_array()).ok_or_else(|| Error::Invalid("pyramid5 needs 5 nodes".into()));
     let [p0, p1, p2, p3, apex] = [node(0)?, node(1)?, node(2)?, node(3)?, node(4)?];
     let square = [Factor { dim: 1, deg: 1 }, Factor { dim: 1, deg: 1 }];
     let zero = Bernstein::zero(&square)?;
@@ -247,7 +248,7 @@ fn pyramid_columns(xyz: &[[f64; 3]]) -> Result<[[Bernstein; 3]; 3]> {
 }
 
 /// The Jacobian of a solid element whose node coordinates are already checked.
-pub(crate) fn jacobian(kind: ElementKind, xyz: &[[f64; 3]]) -> Result<Jacobian> {
+pub(crate) fn jacobian(kind: ElementKind, xyz: &[Point3]) -> Result<Jacobian> {
     let columns = if kind == ElementKind::Pyramid5 {
         pyramid_columns(xyz)?
     } else {

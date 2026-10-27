@@ -6,21 +6,23 @@ use super::meet::{in_closed_tet, meet_properly};
 use super::*;
 use crate::predicates::{ExactPoint3, GenericPoint, Lnc};
 use crate::surface::{BoundarySurface, SurfaceOptions};
-use crate::vec3::{cross, dot, norm, sub};
+use crate::{Point3, Vec3};
 
 /// A closed surface from points and triangles, each triangle oriented outward from `centre`
 /// (the shapes here are star-shaped about it).
 pub(crate) fn surface(points: &[[f64; 3]], triangles: &[[u32; 3]], centre: [f64; 3]) -> BoundarySurface {
+    let points: Vec<Point3> = points.iter().map(|&p| Point3::from(p)).collect();
+    let centre = Point3::from(centre);
     let oriented: Vec<[u32; 3]> = triangles
         .iter()
         .map(|&[a, b, c]| {
             let (pa, pb, pc) = (points[a as usize], points[b as usize], points[c as usize]);
-            let n = cross(sub(pb, pa), sub(pc, pa));
-            if dot(n, sub(pa, centre)) > 0.0 { [a, b, c] } else { [a, c, b] }
+            let n = (pb - pa).cross(pc - pa);
+            if n.dot(pa - centre) > 0.0 { [a, b, c] } else { [a, c, b] }
         })
         .collect();
     let faces: Vec<u32> = (0..oriented.len() as u32).collect();
-    BoundarySurface::new(points, &oriented, &faces, &SurfaceOptions::default()).unwrap()
+    BoundarySurface::new(&points, &oriented, &faces, &SurfaceOptions::default()).unwrap()
 }
 
 /// The checks every result must pass: the gate (validity, volume), every input triangle covered
@@ -32,17 +34,17 @@ fn check(s: &BoundarySurface, m: &TetMesh) {
     for b in &m.boundary {
         let t = m.tets[b.tet as usize];
         let face = face_toward(t, b.opposite as usize).map(|v| m.points[v as usize]);
-        area[b.triangle as usize] += 0.5 * norm(cross(sub(face[1], face[0]), sub(face[2], face[0])));
+        area[b.triangle as usize] += 0.5 * (face[1] - face[0]).cross(face[2] - face[0]).norm();
         let tri = s.triangles()[b.triangle as usize].map(|v| s.points()[v as usize]);
-        let tn = cross(sub(tri[1], tri[0]), sub(tri[2], tri[0]));
+        let tn = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
         for p in face {
-            let d = dot(tn, sub(p, tri[0])) / norm(tn);
+            let d = tn.dot(p - tri[0]) / tn.norm();
             assert!(d.abs() < 1e-9, "{d}");
         }
     }
     for (i, t) in s.triangles().iter().enumerate() {
         let p = t.map(|v| s.points()[v as usize]);
-        let want = 0.5 * norm(cross(sub(p[1], p[0]), sub(p[2], p[0])));
+        let want = 0.5 * (p[1] - p[0]).cross(p[2] - p[0]).norm();
         assert!((area[i] - want).abs() <= 1e-9 * want.max(1e-300), "triangle {i}: {} vs {want}", area[i]);
     }
 }
@@ -104,7 +106,7 @@ fn steiner_points_stay_in_the_predicate_domain() {
     check(&s, &m);
     assert!(m.steiner.iter().any(|sp| sp.segment == [0, 4]), "{:?}", m.steiner);
     for q in &m.points {
-        assert!(q.iter().all(|x| crate::predicates::is_admissible(*x)), "{q:?}");
+        assert!(q.iter().all(crate::predicates::is_admissible), "{q:?}");
     }
 }
 
@@ -228,18 +230,19 @@ fn pierced() -> (Vec<[f64; 3]>, Vec<[u32; 3]>, Vec<[f64; 3]>) {
 
 /// Orients each triangle outward from the centre of the shell it belongs to.
 fn shells(points: &[[f64; 3]], triangles: &[[u32; 3]], centres: &[[f64; 3]], per_shell: usize) -> BoundarySurface {
+    let points: Vec<Point3> = points.iter().map(|&p| Point3::from(p)).collect();
     let oriented: Vec<[u32; 3]> = triangles
         .iter()
         .enumerate()
         .map(|(i, &[a, b, c])| {
-            let centre = centres[i / per_shell];
+            let centre = Point3::from(centres[i / per_shell]);
             let (pa, pb, pc) = (points[a as usize], points[b as usize], points[c as usize]);
-            let n = cross(sub(pb, pa), sub(pc, pa));
-            if dot(n, sub(pa, centre)) > 0.0 { [a, b, c] } else { [a, c, b] }
+            let n = (pb - pa).cross(pc - pa);
+            if n.dot(pa - centre) > 0.0 { [a, b, c] } else { [a, c, b] }
         })
         .collect();
     let faces: Vec<u32> = (0..oriented.len() as u32).collect();
-    BoundarySurface::new(points, &oriented, &faces, &SurfaceOptions::default()).unwrap()
+    BoundarySurface::new(&points, &oriented, &faces, &SurfaceOptions::default()).unwrap()
 }
 
 #[test]
@@ -273,9 +276,9 @@ fn chazelle(notches: usize, gap: f64) -> (Vec<[f64; 3]>, Vec<[u32; 3]>) {
     let mut t = Vec::new();
     let quad = |q: [u32; 4], out: [f64; 3], p: &Vec<[f64; 3]>, t: &mut Vec<[u32; 3]>| {
         for tri in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] {
-            let (a, b, c) = (p[tri[0] as usize], p[tri[1] as usize], p[tri[2] as usize]);
-            let nrm = cross(sub(b, a), sub(c, a));
-            t.push(if dot(nrm, out) > 0.0 { tri } else { [tri[0], tri[2], tri[1]] });
+            let [a, b, c] = tri.map(|v| Point3::from(p[v as usize]));
+            let nrm = (b - a).cross(c - a);
+            t.push(if nrm.dot(Vec3::from(out)) > 0.0 { tri } else { [tri[0], tri[2], tri[1]] });
         }
     };
     for i in 0..n {
@@ -313,7 +316,7 @@ fn chazelle(notches: usize, gap: f64) -> (Vec<[f64; 3]>, Vec<[u32; 3]>) {
 fn chazelle_polyhedron_conforms() {
     let (p, t) = chazelle(3, 0.02);
     let faces: Vec<u32> = (0..t.len() as u32).collect();
-    let s = BoundarySurface::new(&p, &t, &faces, &SurfaceOptions::default()).unwrap();
+    let s = BoundarySurface::new(&crate::vec3::points_of(&p), &t, &faces, &SurfaceOptions::default()).unwrap();
     assert_eq!(s.shells().len(), 1);
     let m = tetrahedralize(&s, &CdtOptions::default()).unwrap();
     check(&s, &m);
@@ -326,7 +329,7 @@ fn hostile_and_degenerate_surfaces_are_errors() {
     let p = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]];
     let t = vec![[0, 1, 2], [1, 3, 2], [0, 2, 1], [1, 2, 3]];
     let faces = vec![0; 4];
-    if let Ok(s) = BoundarySurface::new(&p, &t, &faces, &SurfaceOptions::default()) {
+    if let Ok(s) = BoundarySurface::new(&crate::vec3::points_of(&p), &t, &faces, &SurfaceOptions::default()) {
         assert!(tetrahedralize(&s, &CdtOptions::default()).is_err());
     }
 }

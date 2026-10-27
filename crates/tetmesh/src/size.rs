@@ -23,12 +23,12 @@
 //! with the size taken constant within a piece.
 //! Every function is deterministic (no transcendental functions, only `+ − × ÷ √`).
 
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 /// The target edge length at a point. Implementations return a finite, positive length; callers
 /// treat anything else as invalid input.
 pub trait SizeField {
-    fn size(&self, p: [f64; 3]) -> f64;
+    fn size(&self, p: Point3) -> f64;
 
     /// The smallest and largest size anywhere, when the field knows them (a mesher that builds
     /// from a root size, such as the octree, starts from the largest and plans its depth from
@@ -38,8 +38,8 @@ pub trait SizeField {
     }
 }
 
-impl<F: Fn([f64; 3]) -> f64> SizeField for F {
-    fn size(&self, p: [f64; 3]) -> f64 {
+impl<F: Fn(Point3) -> f64> SizeField for F {
+    fn size(&self, p: Point3) -> f64 {
         self(p)
     }
 }
@@ -49,7 +49,7 @@ impl<F: Fn([f64; 3]) -> f64> SizeField for F {
 pub struct UniformSize(pub f64);
 
 impl SizeField for UniformSize {
-    fn size(&self, _: [f64; 3]) -> f64 {
+    fn size(&self, _: Point3) -> f64 {
         self.0
     }
 
@@ -67,7 +67,7 @@ pub const SAMPLES_PER_SEGMENT: usize = 8;
 
 /// The size at `p`, or an error when the field returns something that is not a finite, positive
 /// length.
-pub fn checked_size(field: &dyn SizeField, p: [f64; 3]) -> Result<f64> {
+pub fn checked_size(field: &dyn SizeField, p: Point3) -> Result<f64> {
     let h = field.size(p);
     if h.is_finite() && h > 0.0 {
         Ok(h)
@@ -82,38 +82,29 @@ pub fn checked_size(field: &dyn SizeField, p: [f64; 3]) -> Result<f64> {
     }
 }
 
-fn check_polyline(polyline: &[[f64; 3]]) -> Result<()> {
+fn check_polyline(polyline: &[Point3]) -> Result<()> {
     if polyline.len() < 2 {
         return Err(Error::Invalid(format!("a polyline needs at least 2 points, got {}", polyline.len())));
     }
     if polyline.len() > MAX_POLYLINE_POINTS {
         return Err(Error::Limit(format!("polyline has {} points; the limit is {MAX_POLYLINE_POINTS}", polyline.len())));
     }
-    crate::compat::check_coordinates(polyline.as_flattened())?;
+    crate::compat::check_points(polyline)?;
     Ok(())
-}
-
-fn lerp(a: [f64; 3], b: [f64; 3], t: f64) -> [f64; 3] {
-    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
-}
-
-fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
-    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
 }
 
 /// The polyline cut into [`SAMPLES_PER_SEGMENT`] pieces per segment, each with its measured
 /// length `∫ ds / h` (midpoint rule): `(start, end, measure)`.
-fn pieces(field: &dyn SizeField, polyline: &[[f64; 3]]) -> Result<Vec<([f64; 3], [f64; 3], f64)>> {
+fn pieces(field: &dyn SizeField, polyline: &[Point3]) -> Result<Vec<(Point3, Point3, f64)>> {
     check_polyline(polyline)?;
     let k = SAMPLES_PER_SEGMENT as f64;
     let mut out = Vec::with_capacity(SAMPLES_PER_SEGMENT * polyline.len());
     for w in polyline.windows(2) {
         let [a, b] = w else { continue };
-        let piece = dist(*a, *b) / k;
+        let piece = b.distance(*a) / k;
         for s in 0..SAMPLES_PER_SEGMENT {
-            let (p, q) = (lerp(*a, *b, s as f64 / k), lerp(*a, *b, (s + 1) as f64 / k));
-            let m = piece / checked_size(field, lerp(*a, *b, (s as f64 + 0.5) / k))?;
+            let (p, q) = (a.lerp(*b, s as f64 / k), a.lerp(*b, (s + 1) as f64 / k));
+            let m = piece / checked_size(field, a.lerp(*b, (s as f64 + 0.5) / k))?;
             if !m.is_finite() {
                 return Err(Error::Invalid("size field is too small for this polyline".into()));
             }
@@ -125,7 +116,7 @@ fn pieces(field: &dyn SizeField, polyline: &[[f64; 3]]) -> Result<Vec<([f64; 3],
 
 /// The ideal (real) number of divisions of a polyline: its length measured in units of the size
 /// field.
-pub fn ideal_divisions(field: &dyn SizeField, polyline: &[[f64; 3]]) -> Result<f64> {
+pub fn ideal_divisions(field: &dyn SizeField, polyline: &[Point3]) -> Result<f64> {
     let total: f64 = pieces(field, polyline)?.iter().map(|p| p.2).sum();
     if total.is_finite() { Ok(total) } else { Err(Error::Invalid("size field is too small for this polyline".into())) }
 }
@@ -141,7 +132,7 @@ fn rounded(ideal: f64) -> Result<usize> {
 }
 
 /// The division count of one polyline: its ideal count rounded, at least 1.
-pub fn edge_divisions(field: &dyn SizeField, polyline: &[[f64; 3]]) -> Result<usize> {
+pub fn edge_divisions(field: &dyn SizeField, polyline: &[Point3]) -> Result<usize> {
     rounded(ideal_divisions(field, polyline)?)
 }
 
@@ -193,7 +184,7 @@ pub fn loop_divisions(ideal: &[f64]) -> Result<Vec<usize>> {
 
 /// `n + 1` points along a polyline (the first and last are its end points, copied exactly) that
 /// split it into `n` pieces of equal length measured by the size field.
-pub fn divide_polyline(field: &dyn SizeField, polyline: &[[f64; 3]], n: usize) -> Result<Vec<[f64; 3]>> {
+pub fn divide_polyline(field: &dyn SizeField, polyline: &[Point3], n: usize) -> Result<Vec<Point3>> {
     if n == 0 || n > MAX_DIVISIONS {
         return Err(Error::Invalid(format!("division count {n} is outside 1..={MAX_DIVISIONS}")));
     }
@@ -221,7 +212,7 @@ pub fn divide_polyline(field: &dyn SizeField, polyline: &[[f64; 3]], n: usize) -
         let (a, b, m) = pieces.get(piece).copied().ok_or_else(|| Error::Failed("polyline division walked off the end".into()))?;
         // The size is taken constant within a piece.
         let t = if m > 0.0 { ((target - before) / m).clamp(0.0, 1.0) } else { 0.0 };
-        out.push(lerp(a, b, t));
+        out.push(a.lerp(b, t));
     }
     out.push(last);
     Ok(out)
@@ -234,36 +225,36 @@ pub const MAX_REGION_TRIANGLES: usize = 1 << 20;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Region {
     /// An axis-aligned box.
-    Box { lo: [f64; 3], hi: [f64; 3] },
+    Box { lo: Point3, hi: Point3 },
     /// A ball.
-    Sphere { center: [f64; 3], radius: f64 },
+    Sphere { center: Point3, radius: f64 },
     /// A surface, as triangles (a B-rep face's tessellation).
-    Triangles(Vec<[[f64; 3]; 3]>),
+    Triangles(Vec<[Point3; 3]>),
 }
 
 impl Region {
     /// The distance from `p` to the region (0 inside a box or a ball, and on a surface).
-    pub fn distance(&self, p: [f64; 3]) -> f64 {
+    pub fn distance(&self, p: Point3) -> f64 {
         match self {
             Region::Box { lo, hi } => {
                 let d = [0, 1, 2].map(|k| (lo[k] - p[k]).max(p[k] - hi[k]).max(0.0));
                 (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
             }
-            Region::Sphere { center, radius } => (dist(p, *center) - radius).max(0.0),
+            Region::Sphere { center, radius } => (center.distance(p) - radius).max(0.0),
             Region::Triangles(tris) => {
-                tris.iter().map(|[a, b, c]| dist(p, crate::tet::geometry::closest_on_triangle(p, *a, *b, *c))).fold(f64::INFINITY, f64::min)
+                tris.iter().map(|[a, b, c]| crate::tet::geometry::closest_on_triangle(p, *a, *b, *c).distance(p)).fold(f64::INFINITY, f64::min)
             }
         }
     }
 
     /// The region's bounding box.
-    pub fn bounds(&self) -> ([f64; 3], [f64; 3]) {
+    pub fn bounds(&self) -> (Point3, Point3) {
         match self {
             Region::Box { lo, hi } => (*lo, *hi),
             Region::Sphere { center, radius } => (center.map(|c| c - radius), center.map(|c| c + radius)),
             Region::Triangles(tris) => {
-                let mut lo = [f64::INFINITY; 3];
-                let mut hi = [f64::NEG_INFINITY; 3];
+                let mut lo = Point3::splat(f64::INFINITY);
+                let mut hi = Point3::splat(f64::NEG_INFINITY);
                 for p in tris.iter().flatten() {
                     for k in 0..3 {
                         lo[k] = lo[k].min(p[k]);
@@ -293,7 +284,7 @@ pub struct RegionSize {
     global: f64,
     growth: f64,
     /// Each local size with its region's bounds grown by the reach of its refinement.
-    locals: Vec<(LocalSize, [f64; 3], [f64; 3])>,
+    locals: Vec<(LocalSize, Point3, Point3)>,
 }
 
 impl RegionSize {
@@ -321,12 +312,12 @@ impl RegionSize {
         for l in locals {
             positive("a local size", l.size)?;
             match &l.region {
-                Region::Box { lo, hi } => crate::compat::check_coordinates(&[lo.as_slice(), hi.as_slice()].concat())?,
+                Region::Box { lo, hi } => crate::compat::check_points([lo, hi])?,
                 Region::Sphere { center, radius } => {
-                    crate::compat::check_coordinates(center)?;
+                    crate::compat::check_points([center])?;
                     positive("a sphere's radius", *radius)?;
                 }
-                Region::Triangles(t) => crate::compat::check_coordinates(t.as_flattened().as_flattened())?,
+                Region::Triangles(t) => crate::compat::check_points(t.iter().flatten())?,
             }
             if l.size >= global {
                 continue;
@@ -366,7 +357,7 @@ impl RegionSize {
 }
 
 impl SizeField for RegionSize {
-    fn size(&self, p: [f64; 3]) -> f64 {
+    fn size(&self, p: Point3) -> f64 {
         let mut h = self.global;
         for (l, lo, hi) in &self.locals {
             if (0..3).any(|k| p[k] < lo[k] || p[k] > hi[k]) {
@@ -386,24 +377,28 @@ impl SizeField for RegionSize {
 mod tests {
     use super::*;
 
+    const fn pt(x: f64, y: f64, z: f64) -> Point3 {
+        Point3::new(x, y, z)
+    }
+
     #[test]
     fn uniform_divisions() {
-        let line = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]];
+        let line = [pt(0.0, 0.0, 0.0), pt(10.0, 0.0, 0.0)];
         assert_eq!(edge_divisions(&UniformSize(1.0), &line).unwrap(), 10);
         assert_eq!(edge_divisions(&UniformSize(3.0), &line).unwrap(), 3);
         assert_eq!(edge_divisions(&UniformSize(100.0), &line).unwrap(), 1);
         let pts = divide_polyline(&UniformSize(1.0), &line, 4).unwrap();
-        assert_eq!(pts, vec![[0.0, 0.0, 0.0], [2.5, 0.0, 0.0], [5.0, 0.0, 0.0], [7.5, 0.0, 0.0], [10.0, 0.0, 0.0]]);
+        assert_eq!(pts, vec![pt(0.0, 0.0, 0.0), pt(2.5, 0.0, 0.0), pt(5.0, 0.0, 0.0), pt(7.5, 0.0, 0.0), pt(10.0, 0.0, 0.0)]);
     }
 
     #[test]
     fn graded_division_is_finer_where_the_size_is_smaller() {
-        let field = |p: [f64; 3]| 0.5 + 0.1 * p[0];
-        let line = [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [10.0, 0.0, 0.0]];
+        let field = |p: Point3| 0.5 + 0.1 * p[0];
+        let line = [pt(0.0, 0.0, 0.0), pt(5.0, 0.0, 0.0), pt(10.0, 0.0, 0.0)];
         let pts = divide_polyline(&field, &line, 6).unwrap();
         let gaps: Vec<f64> = pts.windows(2).map(|w| w[1][0] - w[0][0]).collect();
         assert!(gaps.windows(2).all(|g| g[1] > g[0]), "{gaps:?}");
-        assert_eq!(pts.last(), Some(&[10.0, 0.0, 0.0]));
+        assert_eq!(pts.last(), Some(&pt(10.0, 0.0, 0.0)));
     }
 
     #[test]
@@ -423,14 +418,14 @@ mod tests {
 
     #[test]
     fn hostile() {
-        let line = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let line = [pt(0.0, 0.0, 0.0), pt(1.0, 0.0, 0.0)];
         assert!(edge_divisions(&UniformSize(0.0), &line).is_err());
         assert!(edge_divisions(&UniformSize(f64::NAN), &line).is_err());
         assert!(edge_divisions(&UniformSize(-1.0), &line).is_err());
         assert!(edge_divisions(&UniformSize(1e-300), &line).is_err());
-        assert!(edge_divisions(&UniformSize(1.0), &[[0.0; 3]]).is_err());
-        assert!(edge_divisions(&UniformSize(1.0), &[[0.0; 3], [f64::NAN, 0.0, 0.0]]).is_err());
-        assert!(divide_polyline(&UniformSize(1.0), &[[0.0; 3], [0.0; 3]], 2).is_err());
+        assert!(edge_divisions(&UniformSize(1.0), &[Point3::splat(0.0)]).is_err());
+        assert!(edge_divisions(&UniformSize(1.0), &[Point3::splat(0.0), pt(f64::NAN, 0.0, 0.0)]).is_err());
+        assert!(divide_polyline(&UniformSize(1.0), &[Point3::splat(0.0), Point3::splat(0.0)], 2).is_err());
         assert!(divide_polyline(&UniformSize(1.0), &line, 0).is_err());
         assert!(loop_divisions(&[]).is_err());
         assert!(loop_divisions(&[f64::INFINITY]).is_err());
@@ -439,26 +434,26 @@ mod tests {
 
     #[test]
     fn region_size_refines_inside_and_grows_away() {
-        let boxed = LocalSize { region: Region::Box { lo: [0.0; 3], hi: [2.0; 3] }, size: 0.5 };
-        let ball = LocalSize { region: Region::Sphere { center: [10.0, 0.0, 0.0], radius: 1.0 }, size: 0.25 };
-        let face = LocalSize { region: Region::Triangles(vec![[[0.0, 10.0, 0.0], [1.0, 10.0, 0.0], [0.0, 11.0, 0.0]]]), size: 1.0 };
-        let coarse = LocalSize { region: Region::Box { lo: [0.0; 3], hi: [1.0; 3] }, size: 5.0 };
+        let boxed = LocalSize { region: Region::Box { lo: Point3::splat(0.0), hi: Point3::splat(2.0) }, size: 0.5 };
+        let ball = LocalSize { region: Region::Sphere { center: pt(10.0, 0.0, 0.0), radius: 1.0 }, size: 0.25 };
+        let face = LocalSize { region: Region::Triangles(vec![[pt(0.0, 10.0, 0.0), pt(1.0, 10.0, 0.0), pt(0.0, 11.0, 0.0)]]), size: 1.0 };
+        let coarse = LocalSize { region: Region::Box { lo: Point3::splat(0.0), hi: Point3::splat(1.0) }, size: 5.0 };
         let f = RegionSize::new(2.0, 0.5, vec![boxed, ball, face, coarse]).unwrap();
         assert_eq!(f.locals().count(), 3, "the coarser control is dropped");
-        assert_eq!(f.size([1.0, 1.0, 1.0]), 0.5);
-        assert_eq!(f.size([3.0, 1.0, 1.0]), 1.0, "one unit out: 0.5 + 0.5");
-        assert_eq!(f.size([20.0, 20.0, 20.0]), 2.0);
-        assert_eq!(f.size([10.5, 0.0, 0.0]), 0.25);
-        assert_eq!(f.size([0.2, 10.2, 0.0]), 1.0);
-        assert!((f.size([0.2, 10.2, 1.0]) - 1.5).abs() < 1e-12);
+        assert_eq!(f.size(pt(1.0, 1.0, 1.0)), 0.5);
+        assert_eq!(f.size(pt(3.0, 1.0, 1.0)), 1.0, "one unit out: 0.5 + 0.5");
+        assert_eq!(f.size(pt(20.0, 20.0, 20.0)), 2.0);
+        assert_eq!(f.size(pt(10.5, 0.0, 0.0)), 0.25);
+        assert_eq!(f.size(pt(0.2, 10.2, 0.0)), 1.0);
+        assert!((f.size(pt(0.2, 10.2, 1.0)) - 1.5).abs() < 1e-12);
         assert_eq!(f.finest(), 0.25);
         // Graded: the size never changes faster than the growth rate.
-        let pts: Vec<[f64; 3]> = (0..400).map(|i| [-5.0 + 0.05 * i as f64, 1.0, 1.0]).collect();
+        let pts: Vec<Point3> = (0..400).map(|i| pt(-5.0 + 0.05 * i as f64, 1.0, 1.0)).collect();
         for w in pts.windows(2) {
             assert!((f.size(w[1]) - f.size(w[0])).abs() <= 0.5 * 0.05 + 1e-12);
         }
         // Divisions follow it: a line through the box is cut finer inside.
-        let line = [[-4.0, 1.0, 1.0], [6.0, 1.0, 1.0]];
+        let line = [pt(-4.0, 1.0, 1.0), pt(6.0, 1.0, 1.0)];
         let n = edge_divisions(&f, &line).unwrap();
         let pts = divide_polyline(&f, &line, n).unwrap();
         let inside = pts.windows(2).filter(|w| w[0][0] >= 0.0 && w[1][0] <= 2.0).map(|w| w[1][0] - w[0][0]).fold(0.0, f64::max);
@@ -467,14 +462,19 @@ mod tests {
 
     #[test]
     fn hostile_region_sizes_are_refused() {
-        let ok = || LocalSize { region: Region::Sphere { center: [0.0; 3], radius: 1.0 }, size: 0.5 };
+        let ok = || LocalSize { region: Region::Sphere { center: Point3::splat(0.0), radius: 1.0 }, size: 0.5 };
         assert!(RegionSize::new(0.0, 0.3, vec![]).is_err());
         assert!(RegionSize::new(1.0, f64::NAN, vec![]).is_err());
         assert!(RegionSize::new(1.0, 0.3, vec![LocalSize { size: -1.0, ..ok() }]).is_err());
-        assert!(RegionSize::new(1.0, 0.3, vec![LocalSize { region: Region::Sphere { center: [f64::NAN; 3], radius: 1.0 }, size: 0.5 }]).is_err());
-        assert!(RegionSize::new(1.0, 0.3, vec![LocalSize { region: Region::Triangles(vec![[[f64::INFINITY; 3]; 3]]), size: 0.5 }]).is_err());
+        assert!(
+            RegionSize::new(1.0, 0.3, vec![LocalSize { region: Region::Sphere { center: Point3::splat(f64::NAN), radius: 1.0 }, size: 0.5 }])
+                .is_err()
+        );
+        assert!(
+            RegionSize::new(1.0, 0.3, vec![LocalSize { region: Region::Triangles(vec![[Point3::splat(f64::INFINITY); 3]]), size: 0.5 }]).is_err()
+        );
         let empty = RegionSize::new(1.0, 0.3, vec![LocalSize { region: Region::Triangles(vec![]), size: 0.5 }]).unwrap();
         assert!(empty.is_uniform());
-        assert!(RegionSize::new(1.0, 0.3, vec![ok()]).unwrap().size([f64::NAN; 3]) > 0.0);
+        assert!(RegionSize::new(1.0, 0.3, vec![ok()]).unwrap().size(Point3::splat(f64::NAN)) > 0.0);
     }
 }

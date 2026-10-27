@@ -6,11 +6,10 @@ use std::collections::HashMap;
 
 use super::{Box3, MAX_RELATIVE_WELD, index};
 use crate::predicates::MIN_MAGNITUDE;
-use crate::vec3::{dot, sub};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 pub(crate) struct Welded {
-    pub points: Vec<[f64; 3]>,
+    pub points: Vec<Point3>,
     pub triangles: Vec<[u32; 3]>,
     pub source_vertex: Vec<u32>,
     pub source_triangle: Vec<u32>,
@@ -20,7 +19,7 @@ pub(crate) struct Welded {
 /// × the bounding-box diagonal and `absolute`, snap coordinates below [`MIN_MAGNITUDE`] to zero
 /// and drop triangles that collapse. A distance above [`MAX_RELATIVE_WELD`] of the diagonal is an
 /// error; one below 1e-15 of it welds identical coordinates only.
-pub(crate) fn weld(positions: &[[f64; 3]], triangles: &[[u32; 3]], relative: f64, absolute: f64) -> Result<Welded> {
+pub(crate) fn weld(positions: &[Point3], triangles: &[[u32; 3]], relative: f64, absolute: f64) -> Result<Welded> {
     let mut used = vec![false; positions.len()];
     for v in triangles.iter().flatten() {
         if let Some(u) = used.get_mut(*v as usize) {
@@ -50,7 +49,7 @@ pub(crate) fn weld(positions: &[[f64; 3]], triangles: &[[u32; 3]], relative: f64
         Lookup::Exact(HashMap::new())
     };
     let mut map = vec![u32::MAX; positions.len()];
-    let mut points: Vec<[f64; 3]> = Vec::new();
+    let mut points: Vec<Point3> = Vec::new();
     let mut source_vertex = Vec::new();
     for (v, p) in referenced() {
         let w = match lookup.find(p, &points) {
@@ -67,10 +66,8 @@ pub(crate) fn weld(positions: &[[f64; 3]], triangles: &[[u32; 3]], relative: f64
             *m = w;
         }
     }
-    for x in points.iter_mut().flatten() {
-        if x.abs() < MIN_MAGNITUDE {
-            *x = 0.0;
-        }
+    for p in &mut points {
+        *p = p.map(|x| if x.abs() < MIN_MAGNITUDE { 0.0 } else { x });
     }
 
     let mut out = Vec::with_capacity(triangles.len());
@@ -97,7 +94,7 @@ const MAX_OPEN_EDGES: usize = 100_000;
 /// it. Only edges no other triangle uses are looked at, so a closed surface is left as it is.
 /// The standard repair of tessellations whose faces are triangulated independently (Barequet and
 /// Kumar 1997, *Repairing CAD models*).
-fn split_t_junctions(points: &[[f64; 3]], triangles: &mut Vec<[u32; 3]>, source: &mut Vec<u32>, tol: f64) {
+fn split_t_junctions(points: &[Point3], triangles: &mut Vec<[u32; 3]>, source: &mut Vec<u32>, tol: f64) {
     use std::collections::{BTreeMap, BTreeSet};
     for _ in 0..T_JUNCTION_ROUNDS {
         let mut used: BTreeMap<(u32, u32), u32> = BTreeMap::new();
@@ -124,8 +121,8 @@ fn split_t_junctions(points: &[[f64; 3]], triangles: &mut Vec<[u32; 3]>, source:
                     continue;
                 }
                 let (Some(pa), Some(pb)) = (at(a), at(b)) else { continue };
-                let ab = sub(pb, pa);
-                let len2 = dot(ab, ab);
+                let ab = pb - pa;
+                let len2 = ab.dot(ab);
                 if !(len2 > 0.0) {
                     continue;
                 }
@@ -134,11 +131,11 @@ fn split_t_junctions(points: &[[f64; 3]], triangles: &mut Vec<[u32; 3]>, source:
                     .filter(|&&v| v != a && v != b && v != c)
                     .filter_map(|&v| {
                         let p = at(v)?;
-                        let t = dot(sub(p, pa), ab) / len2;
-                        let q = [pa[0] + ab[0] * t, pa[1] + ab[1] * t, pa[2] + ab[2] * t];
-                        let d = sub(p, q);
+                        let t = (p - pa).dot(ab) / len2;
+                        let q = pa + ab * t;
+                        let d = p - q;
                         let inside = t * len2.sqrt() > tol && (1.0 - t) * len2.sqrt() > tol;
-                        (inside && dot(d, d) <= tol * tol).then_some((t, v))
+                        (inside && d.dot(d) <= tol * tol).then_some((t, v))
                     })
                     .collect();
                 if !on.is_empty() {
@@ -178,18 +175,18 @@ enum Lookup {
     /// Cells of side `tol`: a vertex's representatives are in its cell or the 26 around it.
     /// Coordinates over the cell size stay below 1e15 (the distance is at least 1e-15 of the
     /// diagonal), exact in i64. Each cell keeps the head of a chain through `next`.
-    Grid { tol: f64, lo: [f64; 3], heads: HashMap<[i64; 3], u32>, next: Vec<u32> },
+    Grid { tol: f64, lo: Point3, heads: HashMap<[i64; 3], u32>, next: Vec<u32> },
 }
 
 impl Lookup {
-    fn cell(tol: f64, lo: [f64; 3], p: [f64; 3]) -> [i64; 3] {
+    fn cell(tol: f64, lo: Point3, p: Point3) -> [i64; 3] {
         [0, 1, 2].map(|k| ((p[k] - lo[k]) / tol).floor() as i64)
     }
 
     /// The earliest representative within the distance of `p`.
-    fn find(&self, p: [f64; 3], points: &[[f64; 3]]) -> Option<u32> {
+    fn find(&self, p: Point3, points: &[Point3]) -> Option<u32> {
         match self {
-            Lookup::Exact(seen) => seen.get(&p.map(|x| (x + 0.0).to_bits())).copied(),
+            Lookup::Exact(seen) => seen.get(&p.to_array().map(|x| (x + 0.0).to_bits())).copied(),
             Lookup::Grid { tol, lo, heads, next } => {
                 let c = Self::cell(*tol, *lo, p);
                 let mut best: Option<u32> = None;
@@ -199,8 +196,8 @@ impl Lookup {
                             let key = [c[0].saturating_add(dx), c[1].saturating_add(dy), c[2].saturating_add(dz)];
                             let mut w = heads.get(&key).copied().unwrap_or(u32::MAX);
                             while let Some(&q) = points.get(w as usize) {
-                                let d = sub(p, q);
-                                if dot(d, d) <= tol * tol && best.is_none_or(|b| w < b) {
+                                let d = p - q;
+                                if d.dot(d) <= tol * tol && best.is_none_or(|b| w < b) {
                                     best = Some(w);
                                 }
                                 w = next.get(w as usize).copied().unwrap_or(u32::MAX);
@@ -214,10 +211,10 @@ impl Lookup {
     }
 
     /// Record `p` as representative `w` (the next index).
-    fn insert(&mut self, p: [f64; 3], w: u32) {
+    fn insert(&mut self, p: Point3, w: u32) {
         match self {
             Lookup::Exact(seen) => {
-                seen.insert(p.map(|x| (x + 0.0).to_bits()), w);
+                seen.insert(p.to_array().map(|x| (x + 0.0).to_bits()), w);
             }
             Lookup::Grid { tol, lo, heads, next } => {
                 let head = heads.insert(Self::cell(*tol, *lo, p), w);

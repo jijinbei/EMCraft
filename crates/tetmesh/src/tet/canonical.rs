@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 use super::QualityMesh;
 use super::complex::NONE;
@@ -21,7 +21,7 @@ use super::geometry::AnalyticSurface;
 /// A triangle soup in canonical order, and the original face tag of each canonical one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanonicalSoup {
-    pub positions: Vec<[f64; 3]>,
+    pub positions: Vec<Point3>,
     pub triangles: Vec<[u32; 3]>,
     pub tri_face: Vec<u32>,
     /// `faces[c]`: the original tag of canonical tag `c`.
@@ -35,14 +35,14 @@ fn ordered(x: f64) -> u64 {
     if b >> 63 == 1 { !b } else { b | (1 << 63) }
 }
 
-fn point_key(p: [f64; 3]) -> [u64; 3] {
-    p.map(ordered)
+fn point_key(p: Point3) -> [u64; 3] {
+    p.to_array().map(ordered)
 }
 
 impl CanonicalSoup {
     /// The canonical form of `triangles` over `positions`, each triangle on face `tri_face[i]`
     /// (all on face 0 when `tri_face` is empty).
-    pub fn new(positions: &[[f64; 3]], triangles: &[[u32; 3]], tri_face: &[u32]) -> Result<CanonicalSoup> {
+    pub fn new(positions: &[Point3], triangles: &[[u32; 3]], tri_face: &[u32]) -> Result<CanonicalSoup> {
         if !tri_face.is_empty() && tri_face.len() != triangles.len() {
             return Err(Error::Invalid(format!("{} face tags for {} triangles", tri_face.len(), triangles.len())));
         }
@@ -115,11 +115,11 @@ mod tests {
     /// has one canonical form, and the tags map back.
     #[test]
     fn reordered_soups_have_one_canonical_form() {
-        let p = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let p = crate::vec3::pts([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
         let t = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
         let a = CanonicalSoup::new(&p, &t, &[10, 11, 12, 13]).unwrap();
         // Vertices reversed, triangles reversed and rotated, tags permuted.
-        let q: Vec<[f64; 3]> = p.iter().rev().copied().collect();
+        let q: Vec<Point3> = p.iter().rev().copied().collect();
         let map = |v: u32| 3 - v;
         let u: Vec<[u32; 3]> = t.iter().rev().map(|f| [map(f[1]), map(f[2]), map(f[0])]).collect();
         let b = CanonicalSoup::new(&q, &u, &[3, 2, 1, 0]).unwrap();
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn hostile_soups_are_refused() {
-        let p = [[0.0, 0.0, 0.0]];
+        let p = [Point3::ORIGIN];
         assert!(CanonicalSoup::new(&p, &[[0, 0, 7]], &[]).is_err());
         assert!(CanonicalSoup::new(&p, &[[0, 0, 0]], &[1, 2]).is_err());
         assert_eq!(CanonicalSoup::new(&p, &[], &[]).unwrap().triangles.len(), 0);

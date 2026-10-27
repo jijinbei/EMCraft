@@ -16,6 +16,27 @@ use emcraft_tetmesh::tet::{QualityOptions, quality_mesh};
 
 use crate::{MAX_TETS, MeshError, Result};
 
+/// The mesher's own point and vector types: `emcraft_tetmesh` depends on no workspace crate, so
+/// points cross into it and back here, component for component (no arithmetic).
+type MPoint = emcraft_tetmesh::Point3;
+type MVec = emcraft_tetmesh::Vec3;
+
+fn mesher_point(p: Point3) -> MPoint {
+    MPoint::new(p.x, p.y, p.z)
+}
+
+fn model_point(p: MPoint) -> Point3 {
+    Point3::new(p.x, p.y, p.z)
+}
+
+fn mesher_vec(v: Vec3) -> MVec {
+    MVec::new(v.x, v.y, v.z)
+}
+
+fn model_vec(v: MVec) -> Vec3 {
+    Vec3::new(v.x, v.y, v.z)
+}
+
 /// A tessellated body: triangles tagged by face, each face's exact surface, and which faces are
 /// the ends a port may close (z = 0, z = length).
 struct Tessellation {
@@ -64,10 +85,8 @@ fn tessellate_box(size_xyz: Vec3, h: f64) -> Tessellation {
             1 => (2, 0),
             _ => (0, 1),
         };
-        let mut normal = [0.0; 3];
-        normal[axis] = if high { 1.0 } else { -1.0 };
-        let mut point = [0.0; 3];
-        point[axis] = if high { size_xyz[axis] } else { 0.0 };
+        let normal = MVec::ZERO.with(axis, if high { 1.0 } else { -1.0 });
+        let point = MPoint::ORIGIN.with(axis, if high { size_xyz[axis] } else { 0.0 });
         t.analytic.push(Some(AnalyticSurface::Plane { normal, point }));
         for a in 0..n[u] {
             for b in 0..n[v] {
@@ -101,9 +120,9 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
         start_face: Some(1),
         end_face: Some(2),
     };
-    t.analytic.push(Some(AnalyticSurface::Cylinder { origin: [0.0; 3], axis: [0.0, 0.0, 1.0], radius: r }));
-    t.analytic.push(Some(AnalyticSurface::Plane { normal: [0.0, 0.0, -1.0], point: [0.0; 3] }));
-    t.analytic.push(Some(AnalyticSurface::Plane { normal: [0.0, 0.0, 1.0], point: [0.0, 0.0, len] }));
+    t.analytic.push(Some(AnalyticSurface::Cylinder { origin: MPoint::ORIGIN, axis: MVec::new(0.0, 0.0, 1.0), radius: r }));
+    t.analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, -1.0), point: MPoint::ORIGIN }));
+    t.analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, 1.0), point: MPoint::new(0.0, 0.0, len) }));
     let nt = divisions(2.0 * PI * r, h).max(12);
     let nz = divisions(len, h);
     let nr = divisions(r, h);
@@ -157,7 +176,7 @@ fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
 fn tessellate_sphere(r: f64, h: f64) -> Tessellation {
     let mut t =
         Tessellation { positions: Vec::new(), triangles: Vec::new(), tri_face: Vec::new(), analytic: Vec::new(), start_face: None, end_face: None };
-    t.analytic.push(Some(AnalyticSurface::Sphere { center: [0.0; 3], radius: r }));
+    t.analytic.push(Some(AnalyticSurface::Sphere { center: MPoint::ORIGIN, radius: r }));
     let g = (1.0 + 5f64.sqrt()) / 2.0;
     let raw = [
         [-1.0, g, 0.0],
@@ -258,7 +277,7 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
             continue;
         }
         let tag = analytic.len() as u32;
-        analytic.push(Some(AnalyticSurface::Plane { normal: [0.0, 0.0, n], point: [0.0, 0.0, z] }));
+        analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, n), point: MPoint::new(0.0, 0.0, z) }));
         for &i in list {
             tri_face[i] = tag;
         }
@@ -283,9 +302,9 @@ fn interface_size(shape: &Shape, size: f64, conductor: bool) -> f64 {
 /// A tessellation turned by `axis` and moved to `at`, its exact surfaces with it.
 fn transformed(t: Tessellation, axis: Axis, at: Point3) -> Tessellation {
     let place = |p: Point3| at + axis.turn(p.to_vec());
-    // The exact surfaces' points and directions are the mesher's arrays.
-    let place_a = |p: [f64; 3]| place(p.into()).to_array();
-    let turn_a = |v: [f64; 3]| axis.turn(v.into()).to_array();
+    // The exact surfaces' points and directions are the mesher's.
+    let place_a = |p: MPoint| mesher_point(place(model_point(p)));
+    let turn_a = |v: MVec| mesher_vec(axis.turn(model_vec(v)));
     let analytic = t
         .analytic
         .iter()
@@ -522,8 +541,7 @@ struct RegionMesh {
 /// are (interfaces another region shares).
 fn region(t: &Tessellation, size: f64, frozen: Vec<u32>, locals: &[LocalSize]) -> Result<RegionMesh> {
     let fail = |e: emcraft_tetmesh::Error| MeshError::Invalid { what: "tetrahedral meshing".into(), why: e.to_string() };
-    // The mesher takes and gives coordinates as arrays.
-    let positions: Vec<[f64; 3]> = t.positions.iter().map(|p| p.to_array()).collect();
+    let positions: Vec<MPoint> = t.positions.iter().map(|&p| mesher_point(p)).collect();
     let surface = BoundarySurface::new(&positions, &t.triangles, &t.tri_face, &SurfaceOptions::default()).map_err(fail)?;
     let cdt = tetrahedralize(&surface, &CdtOptions::default()).map_err(fail)?;
     let options = QualityOptions { size: Some(size), max_tets: MAX_TETS, frozen_faces: frozen, locals: locals.to_vec(), ..QualityOptions::default() };
@@ -544,7 +562,7 @@ fn region(t: &Tessellation, size: f64, frozen: Vec<u32>, locals: &[LocalSize]) -
             Some(([n[0], n[1], n[2]], b.tet, b.face))
         })
         .collect();
-    Ok(RegionMesh { points: q.points.into_iter().map(Point3::from).collect(), tets, boundary })
+    Ok(RegionMesh { points: q.points.into_iter().map(model_point).collect(), tets, boundary })
 }
 
 /// The model's solid meshed with tetrahedra of about `size`: its end faces (box z0/z1, the
@@ -780,7 +798,7 @@ pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refin
         }
         positive("refinement size", r.size)?;
         positive("refinement radius", r.radius)?;
-        locals.push(LocalSize { region: Region::Sphere { center: r.center.to_array(), radius: r.radius }, size: r.size });
+        locals.push(LocalSize { region: Region::Sphere { center: mesher_point(r.center), radius: r.radius }, size: r.size });
     }
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;

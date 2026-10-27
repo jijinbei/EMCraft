@@ -27,7 +27,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::predicates::{GenericPoint, Sign, generic_orient3d};
-use crate::{Error, Result};
+use crate::{Error, Point3, Result};
 
 use super::Recovery;
 use super::complex::{NONE, corrupt, face_toward, sorted3};
@@ -38,7 +38,7 @@ use super::meet::{in_closed_tet, meet_properly};
 const MAX_ROUNDS_PER_FACET: usize = 16;
 
 /// A box: `(lo, hi)`.
-type Bounds = ([f64; 3], [f64; 3]);
+type Bounds = (Point3, Point3);
 
 /// The open front of a half-cavity: faces, their boxes, and whether each is still open.
 type Front<'a> = (&'a [[u32; 3]], &'a [Bounds], &'a [bool]);
@@ -300,7 +300,7 @@ impl Recovery {
         skip: Option<&dyn Fn(u32) -> bool>,
     ) -> Result<(Vec<[u32; 4]>, Vec<[u32; 3]>)> {
         let mut faces: Vec<[u32; 3]> = Vec::with_capacity(front.len() * 2);
-        let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::with_capacity(front.len() * 2);
+        let mut boxes: Vec<Bounds> = Vec::with_capacity(front.len() * 2);
         let mut alive: Vec<bool> = Vec::new();
         let mut index: HashMap<[u32; 3], usize> = HashMap::new();
         let mut queue: Vec<usize> = Vec::new();

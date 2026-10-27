@@ -151,12 +151,12 @@ impl Poly {
 /// The certificate and Knupp's scaled Jacobian and shape of a hex8 with corners `p` (already
 /// translated so the first is at the origin, as the generic path does), when the first bounds of
 /// its determinant settle it; `None` when it needs subdivision or a value is not finite.
-pub(crate) fn hex8(p: &[[f64; 3]; 8]) -> Option<(JacobianCheck, f64, f64)> {
+pub(crate) fn hex8(p: &[crate::Point3; 8]) -> Option<(JacobianCheck, f64, f64)> {
     let mut g = [Poly::zero([1, 1, 1]); 3];
     for (corner, x) in HEX_CORNERS.iter().zip(p) {
-        for (poly, c) in g.iter_mut().zip(x) {
+        for (poly, c) in g.iter_mut().zip(x.iter()) {
             let s = poly.slot(*corner);
-            *poly.coef.get_mut(s)? = *c;
+            *poly.coef.get_mut(s)? = c;
         }
     }
     let columns: [[Poly; 3]; 3] = [0, 1, 2].map(|f| g.map(|q| q.derivative(f)));
@@ -188,7 +188,7 @@ pub(crate) fn hex8(p: &[[f64; 3]; 8]) -> Option<(JacobianCheck, f64, f64)> {
     };
 
     let at = |value: &dyn Fn(&Poly) -> f64| {
-        let [a, b, c] = columns.each_ref().map(|col| col.each_ref().map(value));
+        let [a, b, c] = columns.each_ref().map(|col| col.each_ref().map(value).into());
         shape::jacobian_metrics(a, b, c)
     };
     let centre = at(&|q| q.centre());
@@ -251,13 +251,14 @@ mod tests {
     fn matches_the_generic_certificate_bit_for_bit() {
         let (mut valid, mut invalid, mut deferred) = (0, 0, 0);
         for x in samples() {
+            let x = crate::vec3::pts(x);
             let fast = super::super::element_quality(ElementKind::Hex8, &x);
             let p = local(ElementKind::Hex8, &x).unwrap();
             let generic = generic_quality(ElementKind::Hex8, &x, &p);
             assert_eq!(format!("{fast:?}"), format!("{generic:?}"), "{x:?}");
             let checks = (element_validity(ElementKind::Hex8, &x).ok(), generic.as_ref().ok().and_then(|q| q.jacobian));
             assert_eq!(format!("{:?}", checks.0), format!("{:?}", checks.1), "{x:?}");
-            let c: [[f64; 3]; 8] = p.try_into().unwrap();
+            let c: [crate::Point3; 8] = p.try_into().unwrap();
             match hex8(&c).map(|r| r.0.validity) {
                 Some(Validity::Valid) => valid += 1,
                 Some(_) => invalid += 1,
