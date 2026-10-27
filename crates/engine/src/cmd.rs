@@ -402,7 +402,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("height", K::Integer, "pixels (default 600)"),
         ],
         effect: Effect::None,
-        run: crate::periodic::view,
+        run: crate::view::commands::dispersion,
     },
     CommandSpec {
         id: "results.eigenmodes",
@@ -472,7 +472,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("width", K::Integer, "picture width in pixels (default 900)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_port_mode,
+        run: crate::view::commands::port_mode,
     },
     CommandSpec {
         id: "results.tdr",
@@ -497,7 +497,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("height", K::Integer, "picture height in pixels (default 600)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_tdr,
+        run: crate::view::commands::tdr,
     },
     CommandSpec {
         id: "view.field",
@@ -516,7 +516,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("width", K::Integer, "picture width in pixels (default 1100)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_field,
+        run: crate::view::commands::field,
     },
     CommandSpec {
         id: "view.animation",
@@ -536,7 +536,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("width", K::Integer, "picture width in pixels (default 800)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_animation,
+        run: crate::view::commands::animation,
     },
     CommandSpec {
         id: "view.sparameters",
@@ -548,7 +548,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("height", K::Integer, "pixels (default 600)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_sparameters,
+        run: crate::view::commands::sparameters,
     },
     CommandSpec {
         id: "model.open",
@@ -638,7 +638,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("frequency", K::Number, "the time domain's frequency (the nearest solved)").of(F),
         ],
         effect: Effect::None,
-        run: crate::open::view_pattern,
+        run: crate::view::commands::pattern,
     },
     CommandSpec {
         id: "file.sample",
@@ -716,7 +716,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("height", K::Integer, "pixels (default 600)"),
         ],
         effect: Effect::None,
-        run: crate::study::view,
+        run: crate::view::commands::study,
     },
     CommandSpec { id: "model.summary", label: "Summary", doc: "The model, mesh and results in brief.", params: &[], effect: Effect::None, run: crate::project::summary },
 ];

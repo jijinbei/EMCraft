@@ -1,19 +1,15 @@
-//! Commands of open problems: the perfectly matched layer, sources, the radiation solve, far
-//! fields and pattern charts.
+//! Commands of open problems: the perfectly matched layer, sources, the radiation solve and far
+//! fields. Their pattern chart is `view`'s.
 
 use std::f64::consts::PI;
 use std::sync::Arc;
 
 use emcraft_model::units::{C0, MU0};
 use emcraft_model::{Open, OpenShape, Shape, Source, Vec3};
-use emcraft_render::Rgb;
-use emcraft_render::axes::Axis;
-use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_solver::radiation::{FarField, OpenResult};
 use emcraft_theory::radiation::Huygens;
 use serde_json::{Value, json};
 
-use crate::results::write_png;
 use crate::{Change, EngineError, Params, Result, Session};
 
 /// An open problem solved at one frequency.
@@ -97,7 +93,7 @@ pub fn source_clear(s: &mut Session, _: &Params) -> Result<Value> {
 }
 
 /// The plane wave driving the model, if one does.
-fn plane_wave(s: &Session) -> Option<(Vec3, Vec3)> {
+pub(crate) fn plane_wave(s: &Session) -> Option<(Vec3, Vec3)> {
     s.model.sources.iter().find_map(|x| match *x {
         Source::PlaneWave { direction, polarization } => Some((direction, polarization)),
         Source::Dipole { .. } => None,
@@ -298,7 +294,7 @@ pub enum FarSolver {
 /// Far-field rows in the directions given (radians), from the frequency-domain solve or, when
 /// asked (`solver` "time_domain") or the only one there, the time domain's at the frequency
 /// nearest `frequency` (Hz): (frequency, power, rows).
-fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolver>, frequency: Option<f64>) -> Result<(f64, f64, Vec<Value>)> {
+pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolver>, frequency: Option<f64>) -> Result<(f64, f64, Vec<Value>)> {
     let use_td = match solver {
         Some(solver) => solver == FarSolver::TimeDomain,
         None => s.results.radiation.is_none() && s.results.td_radiation.is_some(),
@@ -314,10 +310,7 @@ fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolver>, frequen
         .td_radiation
         .clone()
         .ok_or_else(|| EngineError::Failed("no time-domain open problem solved: run solve.time_domain first".into()))?;
-    let fi = match frequency {
-        Some(f) => (0..r.frequencies.len()).min_by(|&a, &b| (r.frequencies[a] - f).abs().total_cmp(&(r.frequencies[b] - f).abs())).unwrap_or(0),
-        None => 0,
-    };
+    let fi = frequency.and_then(|f| crate::numbers::nearest(&r.frequencies, f)).unwrap_or(0);
     let f = r.frequencies.get(fi).copied().ok_or_else(|| EngineError::Failed("no frequencies".into()))?;
     let power = r.radiated.get(fi).copied().unwrap_or(f64::NAN);
     let lone = lone_dipole(s);
@@ -345,48 +338,7 @@ pub fn results_far_field(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"frequency": s.show_frequency(f), "power": power, "points": points}))
 }
 
-/// The far-field pattern of the last radiation solve against θ at azimuth `phi` (degrees),
-/// `points` angles from 0 to 180°: directivity for sources, radar cross-section for a plane
-/// wave, over the closed form where it applies.
-pub fn pattern_chart(s: &Session, phi: f64, points: usize) -> Result<Chart> {
-    pattern_chart_of(s, phi, points, None, None)
-}
-
-/// [`pattern_chart`] from a chosen solver and frequency (see `results.far_field`).
-pub fn pattern_chart_of(s: &Session, phi: f64, points: usize, solver: Option<FarSolver>, frequency: Option<f64>) -> Result<Chart> {
-    let n = points.clamp(13, 721);
-    let dirs: Vec<(f64, f64)> = (0..n).map(|i| ((180.0 * i as f64 / (n - 1) as f64).to_radians(), phi.to_radians())).collect();
-    let (f, _, rows) = far_rows(s, &dirs, solver, frequency)?;
-    let scattering = plane_wave(s).is_some();
-    let (key, exact_key, label) =
-        if scattering { ("rcs_dbsm", "exact_rcs", "RCS (dBsm)") } else { ("directivity_dbi", "exact_directivity", "directivity (dBi)") };
-    let l = s.display.length.from_si(1.0);
-    let db = |v: &Value| v.as_f64().map(|x| if scattering { 10.0 * (x / (l * l)).log10() } else { 10.0 * x.log10() });
-    let ours: Vec<[f64; 2]> = rows.iter().filter_map(|row| Some([row["theta"].as_f64()?, row[key].as_f64()?])).collect();
-    let exact: Vec<[f64; 2]> = rows.iter().filter_map(|row| Some([row["theta"].as_f64()?, db(&row[exact_key])?])).collect();
-    let all: Vec<f64> = ours.iter().chain(&exact).map(|q| q[1]).filter(|v| v.is_finite()).collect();
-    let top = all.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let top = if top.is_finite() { (top / 5.0).ceil() * 5.0 } else { 0.0 };
-    let mut series = Vec::new();
-    if !exact.is_empty() {
-        let name = if scattering { "Mie series" } else { "Hertzian dipole" };
-        series.push(Series { label: name.into(), color: Rgb(120, 120, 120), style: Style::Line, points: exact });
-    }
-    series.push(Series { label: "FEM".into(), color: Rgb(200, 40, 40), style: Style::Markers, points: ours });
-    let title = format!("Far field at {} {}, φ = {phi}°", s.show_frequency(f), s.display.frequency.symbol());
-    Ok(Chart { title, x: Axis::new("θ (degrees)", 0.0, 180.0), y: Axis::new(label, top - 40.0, top), series, marks: Vec::new() })
-}
-
-pub fn view_pattern(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let phi = p.number("phi").or(0.0)?;
-    let n = p.integer("points", 13..=721).or(91)?;
-    let chart = pattern_chart_of(s, phi, n, p.choice("solver").optional()?, p.frequency("frequency").optional()?)?;
-    let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
-    let c = emcraft_render::chart::draw(&chart, w, h);
-    write_png(path, c.png())?;
-    Ok(json!({"path": path, "width": c.w, "height": c.h}))
-}
+pub use crate::view::{pattern_chart, pattern_chart_of};
 
 /// The time domain's open problem: lumped ports and dipoles on a Yee grid with a CPML.
 pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64, device: Option<&dyn emcraft_fdtd::OpenStepper>) -> Result<Value> {

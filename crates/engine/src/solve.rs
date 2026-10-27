@@ -37,7 +37,7 @@ fn frequencies(s: &Session, p: &Params) -> Result<Vec<f64>> {
         if stop < start {
             return Err(p.error("stop", "must not be below `start`"));
         }
-        (0..n).map(|k| if n == 1 { start } else { start + (stop - start) * k as f64 / (n - 1) as f64 }).collect()
+        crate::numbers::evenly_spaced(start, stop, n)
     };
     if out.is_empty() {
         return Err(EngineError::Params("no frequencies".into()));

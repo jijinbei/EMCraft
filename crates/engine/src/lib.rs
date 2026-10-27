@@ -9,18 +9,13 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod adapt;
+mod args;
 pub mod bodies;
-pub mod tdr;
-
-/// results.tdr's chart, for the UI.
-pub fn results_tdr_chart(s: &Session, p: &Params) -> Result<emcraft_render::chart::Chart> {
-    let (t, port, z0) = results::tdr_of(s, p)?;
-    Ok(view::tdr_chart(&t, &port, z0))
-}
 mod cmd;
 pub mod expr;
 mod geometry;
 mod meshing;
+mod numbers;
 pub mod open;
 pub mod params;
 pub mod periodic;
@@ -30,7 +25,7 @@ mod results;
 pub mod sample;
 mod solve;
 pub mod study;
-pub use solve::Compute;
+pub mod tdr;
 pub mod view;
 pub mod workflow;
 
@@ -46,7 +41,14 @@ use serde_json::{Value, json};
 pub use cmd::COMMANDS;
 pub use params::Params;
 pub use project::Effect;
-pub use results::field_view;
+pub use solve::Compute;
+pub use view::field_view;
+
+/// results.tdr's chart, for the UI.
+pub fn results_tdr_chart(s: &Session, p: &Params) -> Result<emcraft_render::chart::Chart> {
+    let (t, port, z0) = results::tdr_of(s, p)?;
+    Ok(view::tdr_chart(&t, &port, z0))
+}
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq)]
 pub enum EngineError {

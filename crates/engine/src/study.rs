@@ -22,14 +22,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use emcraft_model::units::decibels;
-use emcraft_render::Rgb;
-use emcraft_render::axes::Axis;
-use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Map, Value, json};
 
 use crate::expr;
 use crate::project::Effect;
+pub use crate::view::study::chart;
 use crate::{EngineError, Params, Result, Session};
 
 /// The most variables a session holds.
@@ -426,7 +424,7 @@ pub fn sweep(s: &mut Session, p: &Params) -> Result<Value> {
         let start = p.number("start").required_or("or give `values`")?;
         let stop = p.number("stop").required_or("or give `values`")?;
         let n = p.integer("points", 1..=MAX_POINTS).or(5)?;
-        (0..n).map(|k| if n == 1 { start } else { start + (stop - start) * k as f64 / (n - 1) as f64 }).collect()
+        crate::numbers::evenly_spaced(start, stop, n)
     };
     if values.is_empty() {
         return Err(p.error("values", "must hold at least one value"));
@@ -639,129 +637,6 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
     adopt(s, rebuilt);
     s.results.study = Some(Arc::new(study));
     Ok(reply)
-}
-
-// ---------------------------------------------------------------- pictures
-
-/// A colour along a ramp from blue to red, `t` from 0 to 1: a sweep's values in order.
-fn ramp(t: f64) -> Rgb {
-    let t = t.clamp(0.0, 1.0);
-    let mix = |a: f64, b: f64| (a + (b - a) * t).round() as u8;
-    Rgb(mix(30.0, 200.0), mix(80.0, 50.0), mix(200.0, 40.0))
-}
-
-fn axis_of(label: &str, values: impl Iterator<Item = f64>) -> Axis {
-    let (lo, hi) = values.filter(|v| v.is_finite()).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(v), b.max(v)));
-    if !lo.is_finite() {
-        return Axis::new(label, 0.0, 1.0);
-    }
-    let pad = if hi > lo { 0.05 * (hi - lo) } else { 0.05 * lo.abs().max(1.0) };
-    Axis::new(label, lo - pad, hi + pad)
-}
-
-/// The study as a chart: a sweep's |`parameter`| in dB against frequency, one curve per value
-/// (against the value when it solved one frequency), or its eigenmodes against the value; an
-/// optimization's goal at each evaluation with the best so far.
-pub fn chart(study: &Study, parameter: Option<&str>) -> Result<Chart> {
-    let fu = &study.frequency_unit;
-    let none = || EngineError::failed("the study has nothing to chart: no S-parameters, eigenmodes or goal values");
-    let ok: Vec<&Row> = study.rows.iter().filter(|r| r.error.is_none()).collect();
-    let name = |v: &str| study.variables.first().map_or(v.to_owned(), |n| n.clone());
-    if study.kind == Kind::Optimize {
-        let mut best = f64::INFINITY;
-        let (mut points, mut so_far) = (Vec::new(), Vec::new());
-        for (i, r) in study.rows.iter().enumerate() {
-            if let Some(o) = r.objective {
-                points.push([(i + 1) as f64, o]);
-                best = best.min(o);
-            }
-            if best.is_finite() {
-                so_far.push([(i + 1) as f64, best]);
-            }
-        }
-        if points.is_empty() {
-            return Err(none());
-        }
-        let y = axis_of("goal", points.iter().map(|p| p[1]));
-        return Ok(Chart {
-            title: format!("Optimization: {}", study.goal.clone().unwrap_or_default()),
-            x: Axis::new("evaluation", 0.5, study.rows.len().max(2) as f64 + 0.5),
-            y,
-            series: vec![
-                Series { label: "each solve".into(), color: Rgb(140, 140, 150), style: Style::Markers, points },
-                Series { label: "best so far".into(), color: Rgb(30, 90, 200), style: Style::Line, points: so_far },
-            ],
-            marks: Vec::new(),
-        });
-    }
-    let parameters = study.parameters();
-    let parameter = match parameter {
-        Some(p) => Some(
-            parameters
-                .iter()
-                .find(|n| n.eq_ignore_ascii_case(p))
-                .cloned()
-                .ok_or_else(|| EngineError::Params(format!("`parameter` must be one the study holds: {}", parameters.join(", "))))?,
-        ),
-        None => parameters.first().cloned(),
-    };
-    let tex = |p: &str| format!("$|S_{{{}}}|$", p.trim_start_matches('s'));
-    let n = ok.len();
-    if let Some(p) = parameter {
-        let label = tex(&p);
-        let one_frequency = ok.iter().all(|r| r.frequencies.len() == 1);
-        let mut series = Vec::new();
-        if one_frequency {
-            let pts: Vec<[f64; 2]> = ok.iter().filter_map(|r| Some([*r.values.first()?, *r.db(&p)?.first()?])).collect();
-            let f = ok.first().and_then(|r| r.frequencies.first()).copied().unwrap_or(f64::NAN);
-            series.push(Series { label: format!("{label} at {f} {fu}"), color: Rgb(30, 90, 200), style: Style::Line, points: pts.clone() });
-            series.push(Series { label: String::new(), color: Rgb(30, 90, 200), style: Style::Markers, points: pts });
-            let y = axis_of(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
-            let x = axis_of(&name("value"), ok.iter().filter_map(|r| r.values.first().copied()));
-            return Ok(Chart { title: format!("Sweep of {}", name("")), x, y, series, marks: Vec::new() });
-        }
-        for (i, r) in ok.iter().enumerate() {
-            let Some(db) = r.db(&p) else { continue };
-            let points: Vec<[f64; 2]> = r.frequencies.iter().zip(db).map(|(f, d)| [*f, d.max(-80.0)]).collect();
-            let v = r.values.first().copied().unwrap_or(f64::NAN);
-            let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-            series.push(Series { label: format!("{} = {v}", name("")), color: ramp(t), style: Style::Line, points });
-        }
-        if series.is_empty() {
-            return Err(none());
-        }
-        let (f0, f1) =
-            series.iter().flat_map(|s| s.points.iter().map(|q| q[0])).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), f| (a.min(f), b.max(f)));
-        let x = if f1 > f0 { Axis::new(&format!("frequency ({fu})"), f0, f1) } else { axis_of(&format!("frequency ({fu})"), [f0].into_iter()) };
-        let lowest = series.iter().flat_map(|s| s.points.iter().map(|q| q[1])).fold(0.0f64, f64::min);
-        let y = Axis::new(&format!("{label} (dB)"), ((lowest / 10.0).floor() * 10.0).clamp(-80.0, -10.0), 2.0);
-        return Ok(Chart { title: format!("{label} as {} varies", name("")), x, y, series, marks: Vec::new() });
-    }
-    let modes = ok.iter().map(|r| r.modes.len()).max().unwrap_or(0);
-    if modes == 0 {
-        return Err(none());
-    }
-    let series: Vec<Series> = (0..modes.min(12))
-        .map(|m| Series {
-            label: format!("mode {}", m + 1),
-            color: ramp(m as f64 / (modes.max(2) - 1) as f64),
-            style: Style::Line,
-            points: ok.iter().filter_map(|r| Some([*r.values.first()?, *r.modes.get(m)?])).collect(),
-        })
-        .collect();
-    let x = axis_of(&name("value"), ok.iter().filter_map(|r| r.values.first().copied()));
-    let y = axis_of(&format!("frequency ({fu})"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
-    Ok(Chart { title: format!("Eigenmodes as {} varies", name("")), x, y, series, marks: Vec::new() })
-}
-
-/// `view.study`: the last study's chart as a PNG.
-pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
-    let study = s.results.study.as_ref().ok_or_else(|| EngineError::failed("no study: run study.sweep or study.optimize first"))?;
-    let c = emcraft_render::chart::draw(&chart(study, p.string("parameter").optional()?)?, w, h);
-    crate::results::write_png(path, c.png())?;
-    Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
 
 const OUT_OF_SOLVES: &str = "the optimization ran out of solves";
