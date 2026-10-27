@@ -12,3 +12,4 @@ workspace = true
 [dependencies]
 emcraft-engine = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }

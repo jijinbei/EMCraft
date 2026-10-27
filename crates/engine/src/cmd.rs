@@ -328,7 +328,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(&["h", "e", "cross"]),
             opt("at", K::Number, "the plane's position along its normal (default the middle)").of(L),
             opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(&["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"]),
-            opt("arrows", K::Array, "vector fields drawn: `[\"e\", \"h\"]` (default both)"),
+            opt("arrows", K::Array, "vector fields drawn: `[\"e\", \"h\"]` (default: the coloured component's field; H's arrows sit between E's when both show)"),
             opt("phase", K::Number, "ωt in degrees (default 0)"),
             opt("excitation", K::String, "the excited port (default the first)"),
             opt("width", K::Integer, "picture width in pixels (default 1100)"),

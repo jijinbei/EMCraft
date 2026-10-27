@@ -286,7 +286,7 @@ Writes a PNG of the fields on a plane: a component as colour and the in-plane E 
 | `plane` | string |  | no | `h` (H-plane, default), `e` (E-plane) or `cross` (cross-section) |
 | `at` | number | length | no | the plane's position along its normal (default the middle) |
 | `component` | string |  | no | colour: ex, ey (default), ez, hx, hy, hz, |e|, |h| |
-| `arrows` | array |  | no | vector fields drawn: `["e", "h"]` (default both) |
+| `arrows` | array |  | no | vector fields drawn: `["e", "h"]` (default: the coloured component's field; H's arrows sit between E's when both show) |
 | `phase` | number |  | no | ωt in degrees (default 0) |
 | `excitation` | string |  | no | the excited port (default the first) |
 | `width` | integer |  | no | picture width in pixels (default 1100) |

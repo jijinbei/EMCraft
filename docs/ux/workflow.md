@@ -85,6 +85,12 @@ and the UI should make the same habits easy for the user's own models.
 ```
 
 The ribbon of phase 1 stays as the way to every command; the step bar is the way through a job.
+Each control is in one place: opening a step switches the ribbon to that step's tab (its
+commands), so the step panel holds only the step's checks, its own settings (the band, the
+sweep, Run) and the dialog docked there; the views over the viewport are switched by its view
+tabs, which list only views with something to show; files and samples are in the File menu and
+on the start page; the 3D view's tools are icons (fit, home, face the field's plane, projection)
+and a navigator of the six signed axes.
 
 ## 4. What the engine provides for it
 

@@ -85,8 +85,9 @@ fn go(app: &mut EmcraftApp, then: Then) {
         Then::OpenPath(path) => {
             let _ = app.run("file.open", json!({"path": path}));
         }
+        // Opened at once, not solved: Run (step 7) solves it when wanted.
         Then::Sample(name) => {
-            let _ = app.run("file.sample", json!({"name": name, "solve": true}));
+            let _ = app.run("file.sample", json!({"name": name}));
         }
     }
 }

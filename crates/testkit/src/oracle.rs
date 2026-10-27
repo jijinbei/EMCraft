@@ -21,8 +21,35 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Instant;
 
-use emcraft_engine::Session;
+use emcraft_engine::{EngineError, Session};
 use serde_json::{Value, json};
+
+/// Why a case could not be run or measured.
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum OracleError {
+    /// A file of the case could not be read, parsed or written.
+    #[error("{path}: {why}")]
+    File { path: String, why: String },
+    /// `expected.json` does not say what the oracle needs.
+    #[error("expected.json: {0}")]
+    Expected(String),
+    #[error("recipe.json: {0}")]
+    Recipe(String),
+    /// A recipe step the engine refused.
+    #[error("recipe step {step} ({command}): {error}")]
+    Step { step: usize, command: String, error: EngineError },
+    /// A quantity could not be read.
+    #[error("{0}")]
+    Measure(String),
+}
+
+impl OracleError {
+    fn file(path: &Path, why: impl std::fmt::Display) -> OracleError {
+        OracleError::File { path: path.display().to_string(), why: why.to_string() }
+    }
+}
+
+type Result<T> = std::result::Result<T, OracleError>;
 
 /// Fixture band: a result may move by this fraction of its size (plus a thousandth of the
 /// reference's absolute tolerance) before CI calls it a change. Results are deterministic; the
@@ -51,8 +78,8 @@ pub struct Tolerance {
 }
 
 impl Tolerance {
-    fn from_json(v: &Value) -> Result<Tolerance, String> {
-        let get = |k: &str| -> Result<f64, String> {
+    fn from_json(v: &Value) -> std::result::Result<Tolerance, String> {
+        let get = |k: &str| -> std::result::Result<f64, String> {
             match v.get(k) {
                 None => Ok(0.0),
                 Some(x) => x.as_f64().filter(|x| x.is_finite() && *x >= 0.0).ok_or_else(|| format!("tolerance `{k}` must be a number ≥ 0")),
@@ -107,7 +134,7 @@ pub struct Expected {
     pub quantities: Vec<Quantity>,
 }
 
-fn text(v: &Value, key: &str) -> Result<String, String> {
+fn text(v: &Value, key: &str) -> std::result::Result<String, String> {
     v.get(key)
         .and_then(Value::as_str)
         .filter(|s| !s.trim().is_empty())
@@ -116,7 +143,11 @@ fn text(v: &Value, key: &str) -> Result<String, String> {
 }
 
 impl Expected {
-    pub fn parse(v: &Value) -> Result<Expected, String> {
+    pub fn parse(v: &Value) -> Result<Expected> {
+        Expected::read(v).map_err(OracleError::Expected)
+    }
+
+    fn read(v: &Value) -> std::result::Result<Expected, String> {
         let kind = text(v, "kind")?;
         if !KINDS.contains(&kind.as_str()) {
             return Err(format!("`kind` must be one of {KINDS:?}"));
@@ -153,32 +184,32 @@ impl Expected {
 #[derive(Debug, Clone)]
 pub struct Outcome {
     pub quantity: Quantity,
-    pub value: Result<f64, String>,
+    pub value: Result<f64>,
     pub pass: bool,
     /// `Some(true)` matches the fixture, `Some(false)` moved, `None` no fixture.
     pub fixture: Option<bool>,
 }
 
-fn read_json(path: &Path) -> Result<Value, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+fn read_json(path: &Path) -> Result<Value> {
+    let text = std::fs::read_to_string(path).map_err(|e| OracleError::file(path, e))?;
+    serde_json::from_str(&text).map_err(|e| OracleError::file(path, e))
 }
 
 /// Runs one case: its recipe, then every quantity's measure.
-pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>), String> {
+pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
     let expected = Expected::parse(&read_json(&dir.join("expected.json"))?)?;
     let recipe = read_json(&dir.join("recipe.json"))?;
-    let steps = recipe.as_array().ok_or("recipe.json must be a JSON array")?;
+    let steps = recipe.as_array().ok_or_else(|| OracleError::Recipe("must be a JSON array".into()))?;
     let mut session = Session::new();
     let mut replies: BTreeMap<String, Value> = BTreeMap::new();
     for (i, step) in steps.iter().enumerate() {
-        let id = step.get("command").and_then(Value::as_str).ok_or_else(|| format!("recipe step {}: no `command`", i + 1))?;
+        let id = step.get("command").and_then(Value::as_str).ok_or_else(|| OracleError::Recipe(format!("step {}: no `command`", i + 1)))?;
         let mut params = step.get("params").cloned().unwrap_or_else(|| json!({}));
         // Files a case brings (an imported surface) are named relative to its directory.
         if let Some(path) = params.get("path").and_then(Value::as_str).filter(|p| id == "geometry.import" && Path::new(p).is_relative()) {
             params["path"] = json!(dir.join(path).to_string_lossy());
         }
-        let reply = session.execute(id, &params).map_err(|e| format!("recipe step {} ({id}): {e}", i + 1))?;
+        let reply = session.execute(id, &params).map_err(|error| OracleError::Step { step: i + 1, command: id.to_owned(), error })?;
         if let Some(name) = step.get("id").and_then(Value::as_str) {
             replies.insert(name.to_owned(), reply);
         }
@@ -189,13 +220,14 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>), String> {
         let m = &q.measure;
         let pointer = m.get("pointer").and_then(Value::as_str).unwrap_or_default();
         let reply = if let Some(step) = m.get("step").and_then(Value::as_str) {
-            replies.get(step).cloned().ok_or_else(|| format!("no recipe step with id `{step}`"))
+            replies.get(step).cloned().ok_or_else(|| OracleError::Measure(format!("no recipe step with id `{step}`")))
         } else if let Some(cmd) = m.get("command").and_then(Value::as_str) {
-            session.execute(cmd, m.get("params").unwrap_or(&json!({}))).map_err(|e| e.to_string())
+            session.execute(cmd, m.get("params").unwrap_or(&json!({}))).map_err(|e| OracleError::Measure(e.to_string()))
         } else {
-            Err("`measure` gives a `step` or a `command`".into())
+            Err(OracleError::Measure("`measure` gives a `step` or a `command`".into()))
         };
-        let value = reply.and_then(|r| r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| format!("no number at `{pointer}`")));
+        let value =
+            reply.and_then(|r| r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))));
         let pass = value.as_ref().is_ok_and(|v| q.tolerance.allows(q.reference, *v));
         let fixed = fixture.as_ref().and_then(|f| f.pointer(&format!("/values/{}", q.id)));
         let fixture = match (fixed, &value) {
@@ -216,22 +248,23 @@ fn band(q: &Quantity, v: f64) -> f64 {
 }
 
 /// Writes a case's fixture from passing outcomes.
-fn bless(dir: &Path, outcomes: &[Outcome]) -> Result<(), String> {
+fn bless(dir: &Path, outcomes: &[Outcome]) -> Result<()> {
     let mut values = serde_json::Map::new();
     for o in outcomes {
-        let v = o.value.as_ref().map_err(|e| format!("{}: {e}", o.quantity.id))?;
+        let v = o.value.as_ref().map_err(|e| OracleError::Measure(format!("{}: {e}", o.quantity.id)))?;
         values.insert(o.quantity.id.clone(), json!({"value": v, "band": band(&o.quantity, *v)}));
     }
     let doc = json!({"note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.", "values": values});
-    let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("fixture.json"), text + "\n").map_err(|e| e.to_string())
+    let path = dir.join("fixture.json");
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| OracleError::file(&path, e))?;
+    std::fs::write(&path, text + "\n").map_err(|e| OracleError::file(&path, e))
 }
 
 /// The case directories, sorted.
-pub fn cases(root: &Path) -> Result<Vec<String>, String> {
+pub fn cases(root: &Path) -> Result<Vec<String>> {
     let dir = root.join("tests/oracle");
     let mut names: Vec<String> = std::fs::read_dir(&dir)
-        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .map_err(|e| OracleError::file(&dir, e))?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().join("expected.json").exists())
         .filter_map(|e| e.file_name().into_string().ok())
@@ -242,7 +275,7 @@ pub fn cases(root: &Path) -> Result<Vec<String>, String> {
 
 /// Runs the cases; prints a line per quantity; returns whether everything passed and matched
 /// its fixture.
-pub fn run(root: &Path, opts: &Options) -> Result<bool, String> {
+pub fn run(root: &Path, opts: &Options) -> Result<bool> {
     let all = cases(root)?;
     let selected: Vec<String> = if opts.cases.is_empty() { all.clone() } else { opts.cases.clone() };
     let mut ok = true;
@@ -264,7 +297,7 @@ pub fn run(root: &Path, opts: &Options) -> Result<bool, String> {
         for o in &outcomes {
             total += 1;
             passed += usize::from(o.pass);
-            let v = o.value.as_ref().map_or_else(|e| e.clone(), |v| sig(*v));
+            let v = o.value.as_ref().map_or_else(ToString::to_string, |v| sig(*v));
             let fx = match o.fixture {
                 Some(true) => "matches",
                 Some(false) => "MOVED",
@@ -319,7 +352,8 @@ pub fn run(root: &Path, opts: &Options) -> Result<bool, String> {
         for r in &page_rows {
             let _ = writeln!(page, "{r}");
         }
-        std::fs::write(root.join("docs/oracle.md"), page).map_err(|e| e.to_string())?;
+        let path = root.join("docs/oracle.md");
+        std::fs::write(&path, page).map_err(|e| OracleError::file(&path, e))?;
         println!("wrote docs/oracle.md");
     }
     Ok(ok)

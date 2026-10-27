@@ -181,10 +181,11 @@ pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
     if let Some(c) = p.string("component").optional()? {
         v.component = c.parse()?;
     }
-    if let Some(list) = p.list("arrows", 16).optional()? {
-        v.show_e = list.iter().any(|x| x.as_str() == Some("e"));
-        v.show_h = list.iter().any(|x| x.as_str() == Some("h"));
-    }
+    // The arrows of the field coloured unless asked otherwise.
+    (v.show_e, v.show_h) = match p.list("arrows", 16).optional()? {
+        Some(list) => (list.iter().any(|x| x.as_str() == Some("e")), list.iter().any(|x| x.as_str() == Some("h"))),
+        None => (!v.component.is_magnetic(), v.component.is_magnetic()),
+    };
     v.phase = p.number("phase").or(0.0)?.to_radians();
     v.excitation = excitation(s, p)?;
     Ok(v)

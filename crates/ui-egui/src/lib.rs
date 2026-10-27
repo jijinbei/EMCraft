@@ -420,7 +420,8 @@ impl EmcraftApp {
                 self.view3d.fit_next = true;
                 self.workflow.check = None;
                 match params.get("name").and_then(Value::as_str) {
-                    Some(name) if id == "file.sample" => format!("Opened sample {name}."),
+                    Some(name) if id == "file.sample" && self.session.results.any() => format!("Opened sample {name}."),
+                    Some(name) if id == "file.sample" => format!("Opened sample {name}; Run (step 7) solves it."),
                     _ if id == "file.open" => format!("Opened {}.", params.get("path").and_then(Value::as_str).unwrap_or("the project")),
                     _ if id == "file.new" => "New project.".to_owned(),
                     _ => "Script done.".into(),
