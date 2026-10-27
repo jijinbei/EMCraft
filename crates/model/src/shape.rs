@@ -115,8 +115,9 @@ impl Shape {
                 if !positions.iter().all(|c| c.is_finite()) {
                     return Err(invalid("surface", "has a coordinate that is not a finite number"));
                 }
-                // Closed and oriented: every edge held once each way.
-                let mut half = std::collections::HashMap::new();
+                // Closed and oriented: every edge held once each way. Ordered, so the edge
+                // reported is the same each time.
+                let mut half = std::collections::BTreeMap::new();
                 for t in triangles {
                     if t.iter().any(|v| *v as usize >= positions.len()) || t[0] == t[1] || t[1] == t[2] || t[0] == t[2] {
                         return Err(invalid("surface", "has a triangle with a missing or repeated corner"));
@@ -338,7 +339,8 @@ mod tests {
         let inwards = tetrahedron(vec![[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]]);
         assert!(inwards.check().is_err());
         let open = tetrahedron(vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [0, 3, 2]]);
-        assert!(open.check().is_err());
+        let Err(e) = open.check() else { panic!("an open surface passed") };
+        assert!(e.to_string().contains("between vertices 0 and 2"), "{e}");
     }
 
     #[test]
