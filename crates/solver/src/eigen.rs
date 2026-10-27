@@ -10,6 +10,14 @@
 //! the gradients' 0, so they come first, and the few gradient vectors that enter the subspace
 //! show k² ≈ 0 and are dropped.
 //!
+//! **The gradients are projected out** of the subspace at every step (P. Arbenz, R. Geus,
+//! *Multilevel preconditioned iterative eigensolvers for Maxwell eigenvalue problems*, Appl.
+//! Numer. Math. 54(2):107–121, 2005): with Z the discrete gradients — of the nodal functions
+//! through the Whitney functions (coefficients φ_j − φ_i on edge i→j) and, at order 2, the edge
+//! gradients ∇(λ_iλ_j), each a basis function of its own — every iterate becomes
+//! x − Z (ZᵀMZ)⁻¹ ZᵀM x, M-orthogonal to them. The zero eigenvalue then cannot crowd the
+//! subspace, so modes far above the shift come as readily as those near it.
+//!
 //! **Q factors** come by perturbation (D. M. Pozar, *Microwave Engineering*, 4th ed., §6.7):
 //! with the lossless mode, Q_c = ωU/P_c from the walls' ½R_s∫|H_t|² and Q_d = ωU/P_d from the
 //! dielectrics' ½ωε₀∫ε″|E|², 1/Q = 1/Q_c + 1/Q_d.
@@ -46,6 +54,120 @@ impl Mode {
     pub fn q(&self) -> Option<f64> {
         let inv = self.q_walls.map_or(0.0, |q| 1.0 / q) + self.q_dielectric.map_or(0.0, |q| 1.0 / q);
         (inv > 0.0).then(|| 1.0 / inv)
+    }
+}
+
+/// The discrete gradients as sparse columns over the unknowns, and a point per column (for the
+/// ordering of ZᵀMZ). Only gradients that lie wholly among the unknowns: a node on a conducting
+/// wall has its gradient's tangential part eliminated.
+fn gradients(driven: &Driven) -> (Vec<Vec<(usize, f64)>>, Vec<emcraft_model::Point3>) {
+    let (topo, dofs, mesh) = (&driven.topo, &driven.dofs, &driven.mesh);
+    let pe = dofs.order.per_edge();
+    let nodes = mesh.nodes.len();
+    let mut incident: Vec<Vec<(usize, f64)>> = vec![Vec::new(); nodes];
+    let mut blocked = vec![false; nodes];
+    for (e, &[a, b]) in topo.edges.iter().enumerate() {
+        let (a, b) = (a as usize, b as usize);
+        match dofs.unknown_of(e * pe) {
+            Some(u) => {
+                // ∇φ_n = Σ_edges (φ(b) − φ(a)) w_ab: +1 where n is the edge's second node.
+                if let Some(l) = incident.get_mut(a) {
+                    l.push((u, -1.0));
+                }
+                if let Some(l) = incident.get_mut(b) {
+                    l.push((u, 1.0));
+                }
+            }
+            None => {
+                for n in [a, b] {
+                    if let Some(x) = blocked.get_mut(n) {
+                        *x = true;
+                    }
+                }
+            }
+        }
+    }
+    let mut columns = Vec::new();
+    let mut points = Vec::new();
+    for (n, list) in incident.into_iter().enumerate() {
+        if !blocked[n] && !list.is_empty() {
+            columns.push(list);
+            points.push(mesh.nodes[n]);
+        }
+    }
+    if pe > 1 {
+        for (e, &[a, b]) in topo.edges.iter().enumerate() {
+            if let Some(u) = dofs.unknown_of(e * pe + 1) {
+                columns.push(vec![(u, 1.0)]);
+                points.push(mesh.nodes[a as usize].midpoint(mesh.nodes[b as usize]));
+            }
+        }
+    }
+    (columns, points)
+}
+
+/// x ↦ x − Z (ZᵀMZ)⁻¹ ZᵀM x: the M-orthogonal projection off the discrete gradients.
+struct Deflation {
+    columns: Vec<Vec<(usize, f64)>>,
+    factor: Option<Ldlt>,
+}
+
+impl Deflation {
+    fn new(driven: &Driven, pattern: &crate::sparse::Csr, mass: &[C]) -> Result<Deflation> {
+        let (columns, points) = gradients(driven);
+        let m = columns.len();
+        if m == 0 {
+            return Ok(Deflation { columns, factor: None });
+        }
+        // Which columns hold each unknown.
+        let mut owners: Vec<Vec<(usize, f64)>> = vec![Vec::new(); pattern.n];
+        for (c, col) in columns.iter().enumerate() {
+            for &(u, z) in col {
+                if let Some(o) = owners.get_mut(u) {
+                    o.push((c, z));
+                }
+            }
+        }
+        // ZᵀMZ row by row: w = M z_a, then (ZᵀMZ)_ab = z_b · w; summed in a fixed order.
+        let mut ptr = Vec::with_capacity(m + 1);
+        ptr.push(0);
+        let (mut col, mut val) = (Vec::new(), Vec::new());
+        for za in &columns {
+            let mut w: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+            for &(i, z) in za {
+                for k in pattern.ptr[i]..pattern.ptr[i + 1] {
+                    *w.entry(pattern.col[k]).or_insert(0.0) += z * mass[k].re;
+                }
+            }
+            let mut row: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+            for (j, wj) in w {
+                for &(b, zb) in owners.get(j).map_or(&[][..], Vec::as_slice) {
+                    *row.entry(b).or_insert(0.0) += zb * wj;
+                }
+            }
+            for (b, v) in row {
+                col.push(b);
+                val.push(C::new(v, 0.0));
+            }
+            ptr.push(col.len());
+        }
+        let a = crate::sparse::Csr { n: m, ptr, col, val };
+        Ok(Deflation { columns, factor: Some(Ldlt::factor(&a, &points)?) })
+    }
+
+    /// Projects each vector in place; `my` holds M times each (as computed by the caller).
+    fn project(&self, xs: &mut [Vec<C>], mys: &[Vec<C>]) -> Result<()> {
+        let Some(f) = &self.factor else { return Ok(()) };
+        let mut rhs: Vec<Vec<C>> = mys.iter().map(|my| self.columns.iter().map(|z| z.iter().map(|&(u, c)| my[u] * c).sum()).collect()).collect();
+        f.solve_many(&mut rhs)?;
+        for (x, s) in xs.iter_mut().zip(&rhs) {
+            for (z, coef) in self.columns.iter().zip(s) {
+                for &(u, c) in z {
+                    x[u] -= *coef * c;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -151,6 +273,9 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
     let mut x: Vec<Vec<C>> = (0..q).map(|_| (0..n).map(|_| C::new(rand(), 0.0)).collect()).collect();
     let kmul = |v: &[C]| mul(pattern, |k| stiffness[k], v);
     let mmul = |v: &[C]| mul(pattern, |k| mass[k].re, v);
+    let deflation = Deflation::new(&driven, pattern, mass)?;
+    let mx: Vec<Vec<C>> = x.iter().map(|v| mmul(v)).collect();
+    deflation.project(&mut x, &mx)?;
     let null = 1e-6 * sigma;
     let mut previous: Vec<f64> = Vec::new();
     let mut lambdas = Vec::new();
@@ -163,6 +288,8 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
         for r in &mut y {
             r.iter_mut().for_each(|c| *c = C::new(c.re, 0.0));
         }
+        let my_raw: Vec<Vec<C>> = y.iter().map(|v| mmul(v)).collect();
+        deflation.project(&mut y, &my_raw)?;
         let ky: Vec<Vec<C>> = y.iter().map(|v| kmul(v)).collect();
         let my: Vec<Vec<C>> = y.iter().map(|v| mmul(v)).collect();
         let mut kr = vec![0.0; q * q];

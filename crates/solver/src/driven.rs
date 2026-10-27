@@ -128,6 +128,11 @@ impl Dofs {
         Ok(Dofs { order, edges: ne, faces: nf, unknown, unknowns: free, points })
     }
 
+    /// The unknown of global degree of freedom `slot`, `None` when it is eliminated.
+    pub(crate) fn unknown_of(&self, slot: usize) -> Option<usize> {
+        self.unknown.get(slot).copied().filter(|u| *u != NONE).map(|u| u as usize)
+    }
+
     /// The global degrees of freedom (slots, eliminated or not) of a tetrahedron's local basis
     /// functions, in the order of [`Dofs::of_tet`].
     pub(crate) fn slots_of_tet(&self, topo: &Topology, tet: usize) -> impl Iterator<Item = usize> + use<> {

@@ -31,6 +31,20 @@ fn rectangular_cavity_resonances() {
 }
 
 #[test]
+fn modes_far_above_the_shift_come_with_the_gradients_projected_out() {
+    // Twelve modes asked near 7 GHz: the higher ones (to about 20 GHz) lie beyond 2 × the
+    // shift's k², farther from it than the gradients' zero eigenvalue. With the gradients
+    // deflated they come all the same; against the closed form's twelve lowest.
+    let e = eigenmodes(&cavity(0.003), Order::Two, 12, 7.0e9).unwrap();
+    let exact: Vec<f64> = cavity_resonances(A, B, D, 1.0, 12).into_iter().map(|(f, _)| f).collect();
+    assert_eq!(e.modes.len(), 12);
+    assert!(exact[11] > 7.0e9 * 2f64.sqrt() * 1.3, "the test reaches beyond 2σ: {}", exact[11]);
+    for (m, f) in e.modes.iter().zip(&exact) {
+        assert!(((m.frequency - f) / f).abs() < 3e-3, "{} {f}", m.frequency);
+    }
+}
+
+#[test]
 fn copper_te101_q() {
     let mut m = cavity(0.003);
     m.set_wall_conductivity(Some(5.8e7)).unwrap();
