@@ -74,7 +74,12 @@ pub fn row_of(app: &EmcraftApp, pick: Pick) -> Option<(String, Row)> {
 pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let f = Fmt::new(&app.session);
     let m = &app.session.model;
-    vec![
+    let mut sections = Vec::new();
+    // A project's variables, when it has any: double-click to change one.
+    if !app.session.variables.is_empty() {
+        sections.push(("Variables", variables(&app.session)));
+    }
+    sections.extend([
         ("Geometry", geometry(m, &f)),
         ("Materials", m.materials.iter().map(|mat| row(format!("{}: {}", mat.name, mat.summary()), "material", Act::None)).collect()),
         ("Ports", ports(m)),
@@ -82,7 +87,25 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         ("Boundaries", boundaries(m, &f)),
         ("Mesh", mesh(m)),
         ("Results", results(app)),
-    ]
+    ]);
+    sections
+}
+
+fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
+    s.variables
+        .iter()
+        .map(|(name, value)| {
+            let given = s.history.iter().rev().find_map(|st| {
+                (st.get("command").and_then(serde_json::Value::as_str) == Some("project.variable")
+                    && st.pointer("/params/name").and_then(serde_json::Value::as_str) == Some(name.as_str()))
+                .then(|| st.pointer("/params/value").cloned())
+                .flatten()
+            });
+            let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
+            let edit = serde_json::json!({"name": name, "value": given.unwrap_or(serde_json::json!(value))});
+            row(format!("{name} = {value}{expression}"), "variable", Act::EditWith("project.variable", edit))
+        })
+        .collect()
 }
 
 /// Lengths in the session's display unit, trailing zeros trimmed.
@@ -220,6 +243,14 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     }
     if app.compare.is_some() {
         rows.push(row("Comparison with theory", "compare", Act::Show(View::Compare)));
+    }
+    if let Some(study) = &r.study {
+        let text = match study.kind {
+            emcraft_engine::study::Kind::Sweep => format!("Sweep of {}: {} values", study.variables.join(", "), study.rows.len()),
+            emcraft_engine::study::Kind::Optimize => format!("Optimization of {}: {} solves", study.variables.join(", "), study.rows.len()),
+        };
+        let glyph = if study.kind == emcraft_engine::study::Kind::Sweep { "param_sweep" } else { "optimize" };
+        rows.push(row(text, glyph, Act::Show(View::Study)));
     }
     rows
 }

@@ -16,16 +16,19 @@ mod field_side;
 mod fields;
 mod model;
 mod sparameters;
+mod study;
 mod tables;
 
 use far_field::*;
 use fields::*;
 use model::*;
 use sparameters::*;
+use study::*;
 use tables::*;
 
 pub(crate) use fields::{field_plots, plane_span_of};
 pub use sparameters::chart_frequency;
+pub use study::summary as study_summary;
 
 /// The central card.
 pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
@@ -58,6 +61,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 View::FarField => far_field(app, &mut inner),
                 View::Compare => compare(app, &mut inner),
                 View::Eigenmodes => eigenmodes(app, &mut inner),
+                View::Study => study(app, &mut inner),
             }
         });
 }
@@ -73,6 +77,7 @@ pub(crate) fn available(app: &EmcraftApp, v: View) -> bool {
         View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
         View::Compare => r.sweep.is_some(),
         View::Eigenmodes => r.eigen.is_some(),
+        View::Study => r.study.is_some(),
     }
 }
 

@@ -60,6 +60,16 @@ fn scenario_cancel_a_sweep() {
 }
 
 #[test]
+fn scenario_study_sweep() {
+    scenario("study_sweep");
+}
+
+#[test]
+fn scenario_study_optimize() {
+    scenario("study_optimize");
+}
+
+#[test]
 fn scenario_view3d_orbit() {
     scenario("view3d_orbit");
 }

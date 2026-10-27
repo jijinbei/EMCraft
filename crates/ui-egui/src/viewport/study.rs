@@ -1,0 +1,137 @@
+//! The last parameter study (`study.sweep`, `study.optimize`): its chart — a sweep's |S| against
+//! frequency, one curve per value, or an optimization's goal at each solve with the best so far —
+//! the S-parameter shown, and the table of its points.
+
+use emcraft_engine::study::{Kind, Study};
+
+use super::*;
+
+/// One-line account of a study.
+pub fn summary(study: &Study) -> String {
+    let names = study.variables.join(", ");
+    let failed = study.rows.iter().filter(|r| r.error.is_some()).count();
+    let failed = if failed > 0 { format!(", {failed} failed") } else { String::new() };
+    match study.kind {
+        Kind::Sweep => format!("Sweep of {names}: {} values by {}{failed}", study.rows.len(), study.solve),
+        Kind::Optimize => {
+            let best = study.best.and_then(|b| study.rows.get(b)).map(|r| {
+                let at: Vec<String> = study.variables.iter().zip(&r.values).map(|(n, v)| format!("{n} = {}", short(*v))).collect();
+                format!("best {} (goal {})", at.join(", "), r.objective.map_or("–".into(), short))
+            });
+            let state = if study.converged { "converged" } else { "stopped at its budget" };
+            format!(
+                "Optimization of {names}: {}, {} solves, {state}; {}",
+                study.goal.clone().unwrap_or_default(),
+                study.rows.len(),
+                best.unwrap_or_default()
+            )
+        }
+    }
+}
+
+fn short(v: f64) -> String {
+    let s = format!("{v:.5}");
+    s.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    let t = Tokens::get();
+    let Some(study) = app.session.results.study.clone() else {
+        empty(ui, "No study yet: define a variable, then SIMULATE › Sweep or Optimize.");
+        return;
+    };
+    ui.label(egui::RichText::new(summary(&study)).size(t.font_body).color(t.text));
+    // The S-parameter a sweep's chart shows.
+    let parameters = if study.kind == Kind::Sweep { study.parameters() } else { Vec::new() };
+    if parameters.len() > 1 {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Show").size(t.font_small).color(t.text_dim));
+            for p in &parameters {
+                let on = app.study_parameter.as_deref().unwrap_or(parameters[0].as_str()) == p.as_str();
+                let text = egui::RichText::new(format!("|{}|", p.to_uppercase())).size(t.font_small).color(if on { t.selected_ink } else { t.text });
+                let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(10));
+                scenario::publish_target(&format!("study:parameter:{p}"), r.rect);
+                if r.clicked() && !on {
+                    app.study_parameter = Some(p.clone());
+                    app.study_chart = None;
+                }
+            }
+        });
+    }
+    let parameter = app.study_parameter.clone().filter(|p| parameters.contains(p));
+    let width = picture_width(ui);
+    let key = format!("study|{}|{}|{width}|{}", app.revision, parameter.as_deref().unwrap_or(""), crate::theme::is_dark());
+    if app.study_chart.as_ref().is_none_or(|c| c.key != key) {
+        match emcraft_engine::study::chart(&study, parameter.as_deref()) {
+            Ok(chart) => {
+                let height = (ui.available_height() * 0.6).clamp(240.0, 640.0) as usize;
+                app.study_chart = Some(Picture::new(key, &emcraft_render::chart::draw(&chart, width, height)));
+            }
+            Err(e) => {
+                app.study_chart = None;
+                ui.label(egui::RichText::new(e.to_string()).size(t.font_body).color(t.text_dim));
+            }
+        }
+    }
+    if let Some(p) = app.study_chart.as_mut() {
+        picture(ui, p, "chart:study");
+    }
+    table(ui, &study, parameter.as_deref().or(parameters.first().map(String::as_str)));
+}
+
+/// The study's points: the values, the goal or the band's extremes of the S-parameter shown, and
+/// why a point failed.
+fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
+    let t = Tokens::get();
+    let optimize = study.kind == Kind::Optimize;
+    egui::ScrollArea::vertical().id_salt("study_table").show(ui, |ui| {
+        egui::Grid::new("study_grid").striped(true).show(ui, |ui| {
+            if optimize {
+                ui.label(egui::RichText::new("#").strong());
+            }
+            for n in &study.variables {
+                ui.label(egui::RichText::new(n).strong());
+            }
+            if optimize {
+                ui.label(egui::RichText::new("goal").strong());
+            } else if let Some(p) = parameter {
+                let p = p.to_uppercase();
+                ui.label(egui::RichText::new(format!("min |{p}| dB")).strong());
+                ui.label(egui::RichText::new(format!("max |{p}| dB")).strong());
+            }
+            if !study.rows.iter().all(|r| r.modes.is_empty()) {
+                ui.label(egui::RichText::new(format!("modes ({})", study.frequency_unit)).strong());
+            }
+            ui.label(egui::RichText::new("").strong());
+            ui.end_row();
+            for (i, r) in study.rows.iter().enumerate().take(500) {
+                let best = study.best == Some(i);
+                if optimize {
+                    ui.label(format!("{}", i + 1));
+                }
+                for v in &r.values {
+                    ui.label(short(*v));
+                }
+                if optimize {
+                    ui.label(r.objective.map_or("–".into(), |o| format!("{o:.4}")));
+                } else if let Some(p) = parameter {
+                    let db = r.db(p).unwrap_or_default();
+                    let lo = db.iter().copied().fold(f64::INFINITY, f64::min);
+                    let hi = db.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                    let cell = |x: f64| if x.is_finite() { format!("{x:.3}") } else { "–".into() };
+                    ui.label(cell(lo));
+                    ui.label(cell(hi));
+                }
+                if !study.rows.iter().all(|r| r.modes.is_empty()) {
+                    ui.label(r.modes.iter().take(6).map(|f| format!("{f:.4}")).collect::<Vec<_>>().join(", "));
+                }
+                match (&r.error, best) {
+                    (Some(e), _) => ui.label(egui::RichText::new(e.chars().take(120).collect::<String>()).size(t.font_small).color(t.error)),
+                    (None, true) => ui.label(egui::RichText::new("best").size(t.font_small).color(t.accent)),
+                    (None, false) => ui.label(""),
+                };
+                ui.end_row();
+            }
+        });
+    });
+}
