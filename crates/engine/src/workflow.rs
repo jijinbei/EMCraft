@@ -164,118 +164,153 @@ impl StepState {
 
 /// Where each step stands, from the model, the mesh and the results; in workflow order.
 pub fn steps(s: &Session) -> [StepState; 9] {
-    let m = &s.model;
-    let band = m.band;
-    let mut intent = StepState::new(Step::Intent);
-    if band.is_none() {
-        intent.note(
+    let (geometry, excitation, mesh) = (geometry(s), excitation(s), mesh(s));
+    let blocking = [&geometry, &excitation, &mesh].iter().any(|x| x.status == Status::Missing);
+    let (run, results) = run_and_results(s, blocking);
+    [intent(s), geometry, materials(s), excitation, boundaries(s), mesh, setup(s), run, results]
+}
+
+fn has_geometry(s: &Session) -> bool {
+    s.model.waveguide.is_some() || s.model.solid.is_some()
+}
+
+fn intent(s: &Session) -> StepState {
+    let mut st = StepState::new(Step::Intent);
+    if s.model.band.is_none() {
+        st.note(
             Status::Warning,
             "no frequency band: set the job's band first, it sets the mesh, the sweep and the port previews",
             Some("project.frequency"),
         );
     }
-    let mut geometry = StepState::new(Step::Geometry);
-    let has_geometry = m.waveguide.is_some() || m.solid.is_some();
-    if !has_geometry {
-        geometry.note(Status::Missing, "no geometry: a waveguide, a solid or an imported surface", Some("geometry.waveguide"));
+    st
+}
+
+fn geometry(s: &Session) -> StepState {
+    let mut st = StepState::new(Step::Geometry);
+    if !has_geometry(s) {
+        st.note(Status::Missing, "no geometry: a waveguide, a solid or an imported surface", Some("geometry.waveguide"));
     }
-    let mut materials = StepState::new(Step::Materials);
-    if !has_geometry {
-        materials.note(Status::Missing, "no geometry to give materials to", Some("geometry.solid"));
+    st
+}
+
+fn materials(s: &Session) -> StepState {
+    let m = &s.model;
+    let mut st = StepState::new(Step::Materials);
+    if !has_geometry(s) {
+        st.note(Status::Missing, "no geometry to give materials to", Some("geometry.solid"));
     }
     if m.ports.iter().any(|p| m.port_material(p.end).is_ok_and(|x| x.loss_tangent != 0.0 || x.is_dispersive())) {
-        materials.note(
+        st.note(
             Status::Warning,
             "a port lies in a lossy or dispersive material, which ports do not support: end the guide with a lossless, non-dispersive section",
             Some("geometry.waveguide"),
         );
     }
-    let mut excitation = StepState::new(Step::Excitation);
-    let open = m.open.is_some();
+    st
+}
+
+fn excitation(s: &Session) -> StepState {
+    let m = &s.model;
+    let mut st = StepState::new(Step::Excitation);
     if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
-        excitation.note(Status::Missing, "nothing drives the model: a waveguide port, a lumped port or a source", Some("model.port.create"));
+        st.note(Status::Missing, "nothing drives the model: a waveguide port, a lumped port or a source", Some("model.port.create"));
     }
-    if !open && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
-        excitation.note(Status::Warning, "one port: S11 only (a closed guide usually has two)", Some("model.port.create"));
+    if m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
+        st.note(Status::Warning, "one port: S11 only (a closed guide usually has two)", Some("model.port.create"));
     }
     // A closed-form port's first mode against the band's start.
-    if let Some(b) = band {
-        for p in &m.ports {
-            if let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) {
-                let cutoff = C0 / (2.0 * a * (mat.eps_r * mat.mu_r).sqrt());
-                if b.start <= cutoff {
-                    excitation.note(
-                        Status::Warning,
-                        format!(
-                            "port `{}`: the band starts at or below its TE10 cut-off ({:.4} {}): no power enters there",
-                            p.name,
-                            s.show_frequency(cutoff),
-                            s.display.frequency.symbol()
-                        ),
-                        Some("project.frequency"),
-                    );
-                }
-            }
+    let Some(b) = m.band else { return st };
+    for p in &m.ports {
+        let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
+        let cutoff = C0 / (2.0 * a * (mat.eps_r * mat.mu_r).sqrt());
+        if b.start <= cutoff {
+            st.note(
+                Status::Warning,
+                format!(
+                    "port `{}`: the band starts at or below its TE10 cut-off ({:.4} {}): no power enters there",
+                    p.name,
+                    s.show_frequency(cutoff),
+                    s.display.frequency.symbol()
+                ),
+                Some("project.frequency"),
+            );
         }
     }
-    let mut boundaries = StepState::new(Step::Boundaries);
+    st
+}
+
+fn boundaries(s: &Session) -> StepState {
+    let m = &s.model;
+    let open = m.open.is_some();
+    let mut st = StepState::new(Step::Boundaries);
     if !open && (!m.sources.is_empty() || !m.lumped.is_empty()) {
-        boundaries.note(
+        st.note(
             Status::Warning,
             "sources in a closed box: they radiate into its walls; line it with the open boundary for an antenna",
             Some("model.open"),
         );
     }
     if open && m.ports.iter().any(|p| p.face.is_none()) {
-        boundaries.note(
+        st.note(
             Status::Warning,
             "a port on an end face of an open box: ports inside an open problem go on faces (`face`)",
             Some("model.port.create"),
         );
     }
-    let mut mesh = StepState::new(Step::Mesh);
-    match &m.mesh {
-        None => mesh.note(Status::Missing, "no mesh", Some("mesh.generate")),
-        Some(me) => {
-            // Elements per wavelength at the band's top in the densest material.
-            if let Some(b) = band {
-                let index = m.materials.iter().map(|x| x.index_at(b.stop)).fold(1.0, f64::max);
-                let lambda = C0 / (b.stop * index);
-                let volume: f64 = (0..me.tets.len()).filter_map(|t| me.volume(t)).sum();
-                // The edge of a regular tetrahedron of the mean volume.
-                let h = (6.0 * std::f64::consts::SQRT_2 * volume / me.tets.len().max(1) as f64).cbrt();
-                if h > lambda / 4.0 {
-                    mesh.note(Status::Warning,
-                        format!(
-                            "elements of about {:.3} {} are coarse for the band's top (λ/4 = {:.3} {} in the densest material; second-order elements want about λ/6)",
-                            s.show_length(h),
-                            s.display.length.symbol(),
-                            s.show_length(lambda / 4.0),
-                            s.display.length.symbol()
-                        ),
-                        Some("mesh.generate"),
-                    );
-                }
-            }
-        }
+    st
+}
+
+fn mesh(s: &Session) -> StepState {
+    let m = &s.model;
+    let mut st = StepState::new(Step::Mesh);
+    let Some(me) = &m.mesh else {
+        st.note(Status::Missing, "no mesh", Some("mesh.generate"));
+        return st;
+    };
+    // Elements per wavelength at the band's top in the densest material.
+    let Some(b) = m.band else { return st };
+    let index = m.materials.iter().map(|x| x.index_at(b.stop)).fold(1.0, f64::max);
+    let lambda = C0 / (b.stop * index);
+    let volume: f64 = (0..me.tets.len()).filter_map(|t| me.volume(t)).sum();
+    // The edge of a regular tetrahedron of the mean volume.
+    let h = (6.0 * std::f64::consts::SQRT_2 * volume / me.tets.len().max(1) as f64).cbrt();
+    if h > lambda / 4.0 {
+        let unit = s.display.length.symbol();
+        st.note(
+            Status::Warning,
+            format!(
+                "elements of about {:.3} {unit} are coarse for the band's top (λ/4 = {:.3} {unit} in the densest material; second-order elements want about λ/6)",
+                s.show_length(h),
+                s.show_length(lambda / 4.0),
+            ),
+            Some("mesh.generate"),
+        );
     }
-    let mut setup = StepState::new(Step::Setup);
-    if band.is_none() {
-        setup.note(Status::Warning, "no band to sweep: give the sweep's frequencies when running, or set the band", Some("project.frequency"));
+    st
+}
+
+fn setup(s: &Session) -> StepState {
+    let mut st = StepState::new(Step::Setup);
+    if s.model.band.is_none() {
+        st.note(Status::Warning, "no band to sweep: give the sweep's frequencies when running, or set the band", Some("project.frequency"));
     }
-    let solved = s.results.any();
+    st
+}
+
+/// The Run and Results steps, `blocking` when a step above is missing.
+fn run_and_results(s: &Session, blocking: bool) -> (StepState, StepState) {
     let mut run = StepState::new(Step::Run);
     let mut results = StepState::new(Step::Results);
-    let blocking = [&geometry, &excitation, &mesh].iter().any(|x| x.status == Status::Missing);
     if blocking {
         run.note(Status::Missing, "the steps above marked missing must be done first", None);
     }
-    if !solved {
+    if !s.results.any() {
         run.note(Status::Missing, "not run yet", Some("solve.frequency"));
         results.note(Status::Missing, "no results yet", Some("solve.frequency"));
     } else if s.solved_revision.is_some_and(|r| r < s.revision) {
         results.note(Status::Stale, "the model changed since these results were solved: run again", Some("solve.frequency"));
         run.note(Status::Stale, "the model changed since the last run", Some("solve.frequency"));
     }
-    [intent, geometry, materials, excitation, boundaries, mesh, setup, run, results]
+    (run, results)
 }
