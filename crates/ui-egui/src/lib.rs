@@ -219,6 +219,9 @@ pub struct EmcraftApp {
     pub files: files::Files,
     /// The start page.
     pub home: home::Home,
+    /// The last command that failed and why, until it succeeds: the panel that asked for it
+    /// shows it there (the message log keeps every one).
+    pub failure: Option<(String, String)>,
 }
 
 /// What the desktop app gives the window: a file dialog and where preferences are kept.
@@ -285,6 +288,7 @@ impl EmcraftApp {
             prefs_written: prefs::Prefs::default(),
             files: files::Files::default(),
             home: home::Home::default(),
+            failure: None,
         }
     }
 
@@ -377,7 +381,10 @@ impl EmcraftApp {
         let r = self.session.execute(id, &params).map_err(UiError::from);
         match &r {
             Ok(reply) => self.after(id, &params, reply),
-            Err(e) => self.message(format!("{}: {e}", label(id)), true),
+            Err(e) => {
+                self.failure = Some((id.to_owned(), e.to_string()));
+                self.message(format!("{}: {e}", label(id)), true);
+            }
         }
         r
     }
@@ -397,6 +404,9 @@ impl EmcraftApp {
     /// What follows a command's success: the view it calls for, its message.
     fn after(&mut self, id: &str, params: &Value, reply: &Value) {
         self.revision = self.revision.wrapping_add(1);
+        if self.failure.as_ref().is_some_and(|f| f.0 == id) {
+            self.failure = None;
+        }
         self.field.samples = None;
         self.field.picture = None;
         self.field.pinned = None;
@@ -513,7 +523,10 @@ impl EmcraftApp {
                     m.text.push_str(&format!(" ({secs:.1} s)"));
                 }
             }
-            Err(e) => self.message(format!("{}: {e}", label(&job.command)), true),
+            Err(e) => {
+                self.failure = Some((job.command.clone(), e.to_string()));
+                self.message(format!("{}: {e}", label(&job.command)), true);
+            }
         }
         let answer = match reply {
             Ok(v) => json!({"ok": true, "result": v}),

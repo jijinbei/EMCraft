@@ -435,9 +435,100 @@ fn setup(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens) {
         let eo = e(f, "order");
         field(ui, "order", &mut f.order, "", eo.as_deref(), "setup:order");
     }
+    device(app, ui, solver, t);
     ui_kit::caption(ui, "Run (step 7) starts this solve after checking the model.");
     // The fields' errors as typed.
     let _ = run_params(app);
+}
+
+/// Where the solve runs: the devices `solve.devices` lists (those this machine cannot run
+/// disabled, with the reason on hover) and the time domain's precision, set through
+/// `solve.device` (the ribbon's SIMULATE › Device sets the same).
+fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
+    ui_kit::section(ui, "Compute device");
+    let list = match &app.workflow.devices {
+        Some(v) => v.clone(),
+        None => {
+            let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
+            app.workflow.devices = Some(v.clone());
+            v
+        }
+    };
+    let current = app.session.compute.device();
+    let precision = app.session.compute.precision.name();
+    let busy = app.busy();
+    let devices: Vec<(String, bool, Vec<String>, Option<String>)> = list
+        .get("devices")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|d| {
+            let s = |k: &str| d.get(k).and_then(Value::as_str).map(str::to_owned);
+            let precisions =
+                d.get("precisions").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
+            (s("name").unwrap_or_default(), d.get("available").and_then(Value::as_bool) == Some(true), precisions, s("problem"))
+        })
+        .collect();
+    let mut chosen: Option<(String, String)> = None;
+    ui_kit::row(ui, "device", false, |ui| {
+        for (name, available, precisions, problem) in &devices {
+            let r = ui.add_enabled(*available && !busy, egui::RadioButton::new(current == name, egui::RichText::new(name).size(t.font_small)));
+            let r = match (available, problem) {
+                (false, Some(p)) => r.on_disabled_hover_text(format!("{name} cannot run here: {p}")),
+                (false, None) => r.on_disabled_hover_text(format!("{name} cannot run here")),
+                _ => r.on_hover_text(match name.as_str() {
+                    "cpu" => "the CPU's threads",
+                    "cuda" => "an NVIDIA GPU",
+                    _ => "the GPU's kernels on the CPU (to check them without a GPU)",
+                }),
+            };
+            scenario::publish_target(&format!("setup:device:{name}"), r.rect);
+            if r.clicked() && current != name {
+                // The precision set so far where the device runs it, else its first.
+                let p = if precisions.iter().any(|p| p == precision) { Some(precision.to_owned()) } else { precisions.first().cloned() };
+                chosen = Some((name.clone(), p.unwrap_or_else(|| precision.to_owned())));
+            }
+        }
+    });
+    if let Some(e) = list.get("error").and_then(Value::as_str) {
+        ui.label(egui::RichText::new(e).size(t.font_small).color(t.form_error));
+    }
+    // The CPU's threads run in double; a device runs the precisions it lists.
+    let runs: Vec<String> = devices.iter().find(|d| d.0 == current).map(|d| d.2.clone()).unwrap_or_default();
+    ui_kit::row(ui, "precision", false, |ui| {
+        for p in ["single", "double"] {
+            let on = if current == "cpu" { p == "double" } else { precision == p };
+            let enabled = current != "cpu" && runs.iter().any(|x| x == p) && !busy;
+            let r = ui.add_enabled(enabled, egui::RadioButton::new(on, egui::RichText::new(p).size(t.font_small)));
+            let r = r.on_disabled_hover_text(if current == "cpu" { "the CPU's threads run in double" } else { "this device does not run it" });
+            scenario::publish_target(&format!("setup:precision:{p}"), r.rect);
+            if r.clicked() && !on {
+                chosen = Some((current.to_owned(), p.to_owned()));
+            }
+        }
+    });
+    if let Some((_, e)) = app.failure.as_ref().filter(|f| f.0 == "solve.device") {
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(t.form_label_width + 6.0);
+            ui.label(egui::RichText::new(e).size(t.font_small).color(t.form_error));
+        });
+    }
+    let pending = app.job.as_ref().is_some_and(|j| j.command == "solve.device");
+    let next = match solver {
+        _ if pending => "Switching the device…".to_owned(),
+        Solver::TimeDomain if current != "cpu" => format!("The next solve runs on {current} in {precision} precision."),
+        Solver::TimeDomain => "The next solve runs on the CPU's threads (double precision).".to_owned(),
+        Solver::Frequency | Solver::Eigenmodes | Solver::Radiation if current != "cpu" => {
+            format!("The next solve runs on the CPU, its factorization's large fronts on {current} (complex double).")
+        }
+        _ => "The next solve runs on the CPU's threads.".to_owned(),
+    };
+    ui.label(egui::RichText::new(next).size(t.font_small).color(t.text));
+    if let Some((device, precision)) = chosen
+        && let Err(e) = app.run("solve.device", json!({"device": device, "precision": precision}))
+    {
+        app.failure = Some(("solve.device".into(), e.to_string()));
+    }
 }
 
 /// The frequencies (display units) the solve will work at, as the panel's fields stand: the

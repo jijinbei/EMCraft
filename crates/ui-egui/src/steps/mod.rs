@@ -147,6 +147,8 @@ pub struct Workflow {
     /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
     /// frequencies.
     pub diagram: Option<Value>,
+    /// `solve.devices`' reply, asked once: what this machine can run on.
+    pub devices: Option<Value>,
 }
 
 /// A port mode picked in the Excitation panel: the Port modes view marks its row and scrolls
@@ -199,6 +201,9 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "solver": f.solver.unwrap_or_else(|| Solver::infer(&app.session.model)).id(),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": app.workflow.diagram,
+        "device": app.session.compute.device(),
+        "precision": app.session.compute.precision.name(),
+        "failure": app.failure.as_ref().map(|f| json!({"command": f.0, "error": f.1})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })
 }
