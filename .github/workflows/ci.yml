@@ -14,19 +14,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        id: toolchain
         with:
           components: rustfmt, clippy
+      # Compiled dependencies and the workspace's build, keyed on Cargo.lock and the toolchain.
+      - uses: Swatinem/rust-cache@v2
       - name: System libraries for the desktop app
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
       - run: cargo fmt --all --check
       - run: cargo xtask layers
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - run: cargo run --release -p emcraft-testkit --bin oracle -- --no-write
+      # The oracle's results are deterministic bit for bit (AGENTS.md): a pass with the same
+      # inputs proves the same results. The key hashes every crate the oracle binary is built
+      # from, the cases and the lock file, with the compiler's version; a change to the UI, the
+      # apps or the docs keeps it and skips the run.
+      - name: Oracle inputs
+        id: oracle-key
+        run: echo "key=oracle-pass-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'tests/oracle/**', 'crates/model/**', 'crates/mesh/**', 'crates/tetmesh/**', 'crates/fem/**', 'crates/theory/**', 'crates/solver/**', 'crates/fdtd/**', 'crates/io/**', 'crates/render/**', 'crates/engine/**', 'crates/testkit/**') }}" >> "$GITHUB_OUTPUT"
+      - name: Oracle passed before with these inputs
+        id: oracle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .oracle-pass
+          key: ${{ steps.oracle-key.outputs.key }}
+      - name: Oracle
+        if: steps.oracle-cache.outputs.cache-hit != 'true'
+        run: cargo run --release -p emcraft-testkit --bin oracle -- --no-write
+      - name: Record the pass
+        if: steps.oracle-cache.outputs.cache-hit != 'true'
+        run: git rev-parse HEAD > .oracle-pass
+      - uses: actions/cache/save@v4
+        if: steps.oracle-cache.outputs.cache-hit != 'true'
+        with:
+          path: .oracle-pass
+          key: ${{ steps.oracle-key.outputs.key }}
 
   heavy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test --release -p emcraft-solver -- --ignored

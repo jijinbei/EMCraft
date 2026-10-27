@@ -95,6 +95,11 @@ result is frozen so it cannot drift.
 - Each tolerance states why it is that size (mesh, element order, what converges how fast).
 - A fixture is updated only deliberately (`cargo xtask oracle --bless <case>`), in a change
   that says why the result moved, never to hide a regression.
+- The whole oracle fits a standard CI runner (4 cores, 16 GB): a case stays well under a few
+  GB and a few minutes. Since results are deterministic bit for bit, CI runs the oracle only
+  when its inputs change (every crate the oracle is built from, the cases, the lock file and
+  the compiler version, hashed into a cache key): a change to the UI, the apps or the docs
+  reuses the last pass.
 
 ```
 cargo xtask oracle                      # every case; writes docs/oracle.md
