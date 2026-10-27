@@ -698,16 +698,16 @@ fn amalgamate(starts: &[usize], rows: Vec<Vec<usize>>, parent: &[usize], n: usiz
 /// fill-reducing order, the elimination tree and the supernodes with their row structures.
 #[derive(Clone, Debug)]
 pub struct Analysis {
-    n: usize,
+    pub(crate) n: usize,
     /// The pattern it was made for.
     ptr: Vec<usize>,
     col: Vec<usize>,
-    perm: Vec<usize>,
-    inv: Vec<usize>,
-    parent: Vec<usize>,
-    starts: Vec<usize>,
-    super_rows: Vec<Vec<usize>>,
-    snode_of: Vec<usize>,
+    pub(crate) perm: Vec<usize>,
+    pub(crate) inv: Vec<usize>,
+    pub(crate) parent: Vec<usize>,
+    pub(crate) starts: Vec<usize>,
+    pub(crate) super_rows: Vec<Vec<usize>>,
+    pub(crate) snode_of: Vec<usize>,
     /// Seconds it took.
     pub seconds: f64,
 }

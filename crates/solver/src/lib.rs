@@ -9,6 +9,7 @@ pub mod dense;
 pub mod driven;
 pub mod eigen;
 pub mod ldlt;
+pub mod lu;
 pub mod ordering;
 pub mod portmode;
 pub mod radiation;
