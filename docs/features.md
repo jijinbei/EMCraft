@@ -176,7 +176,7 @@ A body inside the solid: a dielectric region (`material`) or, without one, a con
 
 ## `geometry.feature` — Combine a body
 
-Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall); the surfaces must otherwise meet cleanly. A port's end face must stay whole.
+Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall), and so are features of one kind meeting end to end when one's cross-section holds the other's (a stepped inner conductor); the surfaces must otherwise meet cleanly. A port's end face must stay whole.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

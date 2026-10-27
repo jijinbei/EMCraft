@@ -77,13 +77,18 @@ fn tessellate_box(size_xyz: Vec3, h: f64) -> Tessellation {
     t
 }
 
+/// The sides of a cylinder's tessellated polygon.
+fn cylinder_sides(r: f64, h: f64) -> usize {
+    divisions(2.0 * PI * r, h).max(12)
+}
+
 /// A cylinder about z, radius r, from z = 0 to `len`: faces side (0), bottom (1), top (2).
 fn tessellate_cylinder(r: f64, len: f64, h: f64) -> Tessellation {
     let mut t = Tessellation { start_face: Some(1), end_face: Some(2), ..Tessellation::default() };
     t.analytic.push(Some(AnalyticSurface::Cylinder { origin: MPoint::ORIGIN, axis: MVec::new(0.0, 0.0, 1.0), radius: r }));
     t.analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, -1.0), point: MPoint::ORIGIN }));
     t.analytic.push(Some(AnalyticSurface::Plane { normal: MVec::new(0.0, 0.0, 1.0), point: MPoint::new(0.0, 0.0, len) }));
-    let nt = divisions(2.0 * PI * r, h).max(12);
+    let nt = cylinder_sides(r, h);
     let nz = divisions(len, h);
     let nr = divisions(r, h);
     let ring = |t: &mut Tessellation, z: f64, rr: f64, count: usize| -> Vec<u32> {
@@ -365,6 +370,198 @@ fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)
         }
         other => (other, at),
     })
+}
+
+/// A feature's cross-section across axis `d`, in the other two coordinates ((d + 1) % 3,
+/// (d + 2) % 3): a cylinder along `d` is a disk (its tessellated polygon lies between the circles
+/// of radius `inner` and `r`), a box a rectangle.
+#[derive(Clone, Copy, Debug)]
+enum Section {
+    Disk { c: [f64; 2], r: f64, inner: f64 },
+    Rect { lo: [f64; 2], hi: [f64; 2] },
+}
+
+impl Section {
+    fn of(f: &Feature, d: usize, size: f64) -> Option<Section> {
+        let o = [(d + 1) % 3, (d + 2) % 3];
+        match f.shape {
+            Shape::Box { .. } => {
+                let b = f.bounds();
+                Some(Section::Rect { lo: o.map(|k| b.min[k]), hi: o.map(|k| b.max[k]) })
+            }
+            Shape::Cylinder { radius, .. } if f.axis.index() == d => {
+                Some(Section::Disk { c: o.map(|k| f.at[k]), r: radius, inner: radius * (PI / cylinder_sides(radius, size) as f64).cos() })
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether this section's tessellation lies strictly inside `outer`'s, more than `gap` from
+    /// its edge.
+    fn within(self, outer: Section, gap: f64) -> bool {
+        match (self, outer) {
+            (Section::Disk { c, r, .. }, Section::Disk { c: o, inner, .. }) => (c[0] - o[0]).hypot(c[1] - o[1]) + r + gap < inner,
+            (Section::Disk { c, r, .. }, Section::Rect { lo, hi }) => (0..2).all(|k| c[k] - r - gap > lo[k] && c[k] + r + gap < hi[k]),
+            (Section::Rect { lo, hi }, Section::Disk { c, inner, .. }) => {
+                [lo[0], hi[0]].iter().all(|x| [lo[1], hi[1]].iter().all(|y| (x - c[0]).hypot(y - c[1]) + gap < inner))
+            }
+            (Section::Rect { lo, hi }, Section::Rect { lo: a, hi: b }) => (0..2).all(|k| lo[k] - gap > a[k] && hi[k] + gap < b[k]),
+        }
+    }
+
+    /// Whether the two sections are the same shape and place within `tol`.
+    fn same(self, other: Section, tol: f64) -> bool {
+        let near = |a: f64, b: f64| (a - b).abs() <= tol;
+        match (self, other) {
+            (Section::Disk { c, r, .. }, Section::Disk { c: o, r: s, .. }) => near(c[0], o[0]) && near(c[1], o[1]) && near(r, s),
+            (Section::Rect { lo, hi }, Section::Rect { lo: a, hi: b }) => (0..2).all(|k| near(lo[k], a[k]) && near(hi[k], b[k])),
+            _ => false,
+        }
+    }
+
+    /// Whether the two sections share an area.
+    fn overlap(self, other: Section) -> bool {
+        match (self, other) {
+            (Section::Disk { c, r, .. }, Section::Disk { c: o, r: s, .. }) => (c[0] - o[0]).hypot(c[1] - o[1]) < r + s,
+            (Section::Rect { lo, hi }, Section::Rect { lo: a, hi: b }) => (0..2).all(|k| lo[k] < b[k] && a[k] < hi[k]),
+            (Section::Disk { c, r, .. }, Section::Rect { lo, hi }) | (Section::Rect { lo, hi }, Section::Disk { c, r, .. }) => {
+                (c[0] - c[0].clamp(lo[0], hi[0])).hypot(c[1] - c[1].clamp(lo[1], hi[1])) < r
+            }
+        }
+    }
+}
+
+/// Two features of one kind meeting end to end in a plane: the pair of faces (one of each) on
+/// it, with opposite outward normals.
+fn touching(a: &Feature, b: &Feature, tol: f64) -> Option<(FlatFace, FlatFace)> {
+    let (fa, fb) = (flat_faces(&a.shape, a.at, a.axis), flat_faces(&b.shape, b.at, b.axis));
+    fa.iter().find_map(|x| fb.iter().find(|y| x.axis == y.axis && x.outward != y.outward && (x.at - y.at).abs() <= tol).map(|y| (*x, *y)))
+}
+
+/// The two features as one when they meet end to end with the same cross-section (cylinders
+/// of one radius on one axis, boxes of one rectangle).
+fn merged(a: &Feature, b: &Feature) -> Option<Feature> {
+    match (&a.shape, &b.shape) {
+        (Shape::Cylinder { radius, length }, Shape::Cylinder { length: other, .. }) => {
+            let d = a.axis.index();
+            let lo = a.at[d].min(b.at[d]);
+            let hi = (a.at[d] + length).max(b.at[d] + other);
+            Some(Feature { shape: Shape::Cylinder { radius: *radius, length: hi - lo }, at: a.at.with(d, lo), ..a.clone() })
+        }
+        (Shape::Box { .. }, Shape::Box { .. }) => {
+            let (p, q) = (a.bounds(), b.bounds());
+            let (lo, hi) = (p.min.min(q.min), p.max.max(q.max));
+            Some(Feature { shape: Shape::Box { size: hi - lo }, at: lo, axis: Axis::Z, ..a.clone() })
+        }
+        _ => None,
+    }
+}
+
+/// `f` with its flat face `face` moved outwards by `by`.
+fn extended(f: &Feature, face: FlatFace, by: f64) -> Feature {
+    let d = face.axis;
+    let low = face.outward < 0.0;
+    let at = if low { f.at.with(d, f.at[d] - by) } else { f.at };
+    let shape = match f.shape {
+        Shape::Cylinder { radius, length } => Shape::Cylinder { radius, length: length + by },
+        Shape::Box { size } => {
+            let s = f.axis.turn(size);
+            Shape::Box { size: f.axis.unturn(s.with(d, s[d] + by)) }
+        }
+        ref other => other.clone(),
+    };
+    Feature { shape, at, ..f.clone() }
+}
+
+/// The most features one solid takes.
+pub(super) const MAX_FEATURES: usize = 1000;
+
+/// The features with those that meet end to end in a plane made to meet in general position,
+/// for the mesh Boolean: two features in a row of one kind (added or subtracted, and every
+/// feature between them too, so their order does not matter) whose flat faces touch would
+/// leave two boundaries a hair apart there (each feature is moved by its own millionth of the
+/// size). With the same cross-section they become one feature; when one's cross-section lies
+/// inside the other's, the smaller reaches into the larger by a tenth of the size (at most half
+/// the larger's length) — the same union. Other overlapping cross-sections are refused. A
+/// coaxial line whose inner conductor changes radius is two subtracted cylinders meeting so.
+pub(super) fn joined(features: &[Feature], solid: &Shape, size: f64) -> Result<Vec<Feature>> {
+    if features.len() > MAX_FEATURES {
+        return Err(MeshError::Invalid { what: "features".into(), why: format!("{}; the limit is {MAX_FEATURES}", features.len()) });
+    }
+    let scale = solid.bounds().max.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
+    let tol = 1e-9 * scale;
+    // (feature number, feature).
+    let mut out: Vec<(usize, Feature)> = features.iter().cloned().enumerate().collect();
+    // Whether features i and j (and every one between them) are all added or all subtracted.
+    let in_row = |out: &[(usize, Feature)], i: usize, j: usize| {
+        let (a, b) = (i.min(j), i.max(j));
+        let c = out.get(i).map(|(_, f)| f.combine);
+        matches!(c, Some(Combine::Add | Combine::Subtract)) && out.get(a..=b).is_some_and(|r| r.iter().all(|(_, f)| Some(f.combine) == c))
+    };
+    // Merge: each round joins one pair, so at most one round per feature.
+    for _ in 0..features.len() {
+        let mut pair = None;
+        'search: for i in 0..out.len() {
+            for j in i + 1..out.len() {
+                let (a, b) = (&out[i].1, &out[j].1);
+                let Some((x, _)) = touching(a, b, tol) else { continue };
+                let same = Section::of(a, x.axis, size).zip(Section::of(b, x.axis, size)).is_some_and(|(p, q)| p.same(q, tol));
+                if same
+                    && in_row(&out, i, j)
+                    && let Some(m) = merged(a, b)
+                {
+                    pair = Some((i, j, m));
+                    break 'search;
+                }
+            }
+        }
+        let Some((i, j, m)) = pair else { break };
+        if let Some(slot) = out.get_mut(i) {
+            slot.1 = m;
+        }
+        if j < out.len() {
+            out.remove(j);
+        }
+    }
+    // Reach into the larger: each face moves once.
+    let mut moved: Vec<Feature> = out.iter().map(|(_, f)| f.clone()).collect();
+    let mut done: Vec<(usize, usize, i64)> = Vec::new();
+    for i in 0..out.len() {
+        for j in 0..out.len() {
+            if i == j || !in_row(&out, i, j) {
+                continue;
+            }
+            let ((ni, a), (nj, b)) = (&out[i], &out[j]);
+            let Some((x, y)) = touching(a, b, tol) else { continue };
+            let (Some(p), Some(q)) = (Section::of(a, x.axis, size), Section::of(b, x.axis, size)) else { continue };
+            if !p.overlap(q) {
+                continue;
+            }
+            let key = (i, x.axis, x.outward as i64);
+            if p.within(q, tol) {
+                if !done.contains(&key) {
+                    // The larger's length across the plane.
+                    let ends: Vec<f64> = flat_faces(&b.shape, b.at, b.axis).iter().filter(|f| f.axis == y.axis).map(|f| f.at).collect();
+                    let depth = ends.iter().fold(f64::NEG_INFINITY, |m, v| m.max(*v)) - ends.iter().fold(f64::INFINITY, |m, v| m.min(*v));
+                    let by = (0.1 * size).min(0.5 * depth);
+                    if let Some(f) = moved.get_mut(i) {
+                        *f = extended(f, x, by);
+                    }
+                    done.push(key);
+                }
+            } else if !q.within(p, tol) && !p.same(q, tol) {
+                return Err(MeshError::Invalid {
+                    what: "features".into(),
+                    why: format!(
+                        "not supported yet: features {} and {} meet face to face where neither's cross-section holds the other's; let one reach into the other, or give them the same cross-section",
+                        ni.min(nj) + 1,
+                        ni.max(nj) + 1
+                    ),
+                });
+            }
+        }
+    }
+    Ok(moved)
 }
 
 /// The solid's tessellation combined with a feature: the feature's faces get tags after the
