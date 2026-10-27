@@ -23,7 +23,7 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let Some(d) = app.session.results.dispersion.as_ref() else { return };
     let (fu, lu) = (app.session.display.frequency, app.session.display.length);
     let bands = d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0);
-    note(ui, &format!("{} unknowns after the periodic reduction; period {:.4} {}", d.unknowns, lu.from_si(d.period), lu.symbol()));
+    crate::ui_kit::caption(ui, &format!("{} unknowns after the periodic reduction; period {:.4} {}", d.unknowns, lu.from_si(d.period), lu.symbol()));
     egui::ScrollArea::vertical().id_salt("dispersion_table").show(ui, |ui| {
         egui::Grid::new("dispersion_grid").striped(true).num_columns(2 + bands).show(ui, |ui| {
             ui.label(egui::RichText::new("ψ (°)").strong());

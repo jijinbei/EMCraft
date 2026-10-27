@@ -43,7 +43,7 @@ pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let parameters = if study.kind == Kind::Sweep { study.parameters() } else { Vec::new() };
     if let [first, _, ..] = parameters.as_slice() {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Show").size(t.font_small).color(t.text_dim));
+            crate::ui_kit::small(ui, "Show", t.text_dim);
             for p in &parameters {
                 let on = state.parameter.as_ref().unwrap_or(first) == p;
                 if pill(ui, &format!("|{}|", p.to_uppercase()), on, &format!("study:parameter:{p}"), 10, true) && !on {

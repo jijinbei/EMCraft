@@ -14,7 +14,7 @@ pub(super) fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let r = picture(ui, p, "chart:sparameters");
     let chart_width = p.size().x;
     frequency_marker(app, ui, &r, chart_width, &freqs);
-    note(ui, "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.");
+    crate::ui_kit::caption(ui, "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.");
     table(app, ui);
 }
 

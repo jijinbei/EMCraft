@@ -130,12 +130,6 @@ pub(super) fn cached_chart<'a, E: ToString>(
     slot.get_or_draw(key, || chart().map(|c| emcraft_render::chart::draw(&c, width, height.of(ui))))
 }
 
-/// A note under a picture, small and dim.
-pub(super) fn note(ui: &mut egui::Ui, text: &str) {
-    let t = Tokens::get();
-    ui.label(egui::RichText::new(text).size(t.font_small).color(t.text_dim));
-}
-
 pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
     let t = Tokens::get();
     ui.centered_and_justified(|ui| {

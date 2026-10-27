@@ -34,7 +34,10 @@ pub(super) fn tdr(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
         Err(e) => return empty(ui, &e),
     }
-    note(ui, "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).");
+    crate::ui_kit::caption(
+        ui,
+        "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).",
+    );
 }
 
 /// The port and the transform.

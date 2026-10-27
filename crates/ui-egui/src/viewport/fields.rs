@@ -266,7 +266,7 @@ pub(super) fn kept_planes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     ui.horizontal_wrapped(|ui| {
         let t = Tokens::get();
-        ui.label(egui::RichText::new("In 3D:").size(t.font_small).color(t.text_dim));
+        crate::ui_kit::small(ui, "In 3D:", t.text_dim);
         let unit = app.session.display.length.symbol();
         let mut drop = None;
         for (k, (plane, at)) in app.field.kept.iter().enumerate() {

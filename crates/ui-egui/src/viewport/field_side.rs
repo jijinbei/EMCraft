@@ -304,7 +304,7 @@ fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         heading(ui, what);
         match probe {
             None => {
-                ui.label(egui::RichText::new(hint).size(t.font_small).color(t.text_dim));
+                crate::ui_kit::small(ui, hint, t.text_dim);
             }
             Some(p) => {
                 let (now, amp) = p.value(comp, phase);
