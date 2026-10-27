@@ -199,6 +199,33 @@ impl Driven {
     /// The system at a frequency: the matrix bordered by the ports' modes, each port's
     /// excitation by its first mode, and the modes' terms.
     pub(crate) fn system(&self, frequency: f64) -> Result<System<'_>> {
+        let a = self.unbordered(frequency)?;
+        let terms = self.checked_terms(frequency)?;
+        // Each mode's factor·v vᵀ would couple every unknown on the port with every other; a
+        // border unknown y_m = factor·vᵀx per mode keeps the matrix sparse:
+        // [A V; Vᵀ −F⁻¹] [x; y] = [b; 0] eliminates to (A + V F Vᵀ) x = b.
+        let borders: Vec<(&[(usize, f64)], C)> = terms.iter().flatten().map(|t| (&*t.v, t.factor)).collect();
+        let border = borders.len();
+        let a = bordered(&a, &borders)?;
+        let n = self.dofs.unknowns;
+        let rhs = terms
+            .iter()
+            .map(|list| {
+                let mut b = vec![C::new(0.0, 0.0); n + border];
+                if let Some(t) = list.first() {
+                    for (i, bi) in t.excitation() {
+                        b[i] = bi;
+                    }
+                }
+                b
+            })
+            .collect();
+        Ok(System { a, rhs, terms, border })
+    }
+
+    /// The matrix at a frequency without the ports' terms: K − k₀²M, the dispersive materials,
+    /// the layer, the lumped ports and the walls' losses.
+    pub(crate) fn unbordered(&self, frequency: f64) -> Result<Csr> {
         let k0 = wavenumber(frequency);
         let mut a = self.pattern.clone();
         for (x, (s, m)) in a.val.iter_mut().zip(self.stiffness.iter().zip(&self.mass)) {
@@ -229,27 +256,7 @@ impl Driven {
                 *x += c * *wij;
             }
         }
-        let terms = self.checked_terms(frequency)?;
-        // Each mode's factor·v vᵀ would couple every unknown on the port with every other; a
-        // border unknown y_m = factor·vᵀx per mode keeps the matrix sparse:
-        // [A V; Vᵀ −F⁻¹] [x; y] = [b; 0] eliminates to (A + V F Vᵀ) x = b.
-        let borders: Vec<(&[(usize, f64)], C)> = terms.iter().flatten().map(|t| (&*t.v, t.factor)).collect();
-        let border = borders.len();
-        let a = bordered(&a, &borders)?;
-        let n = self.dofs.unknowns;
-        let rhs = terms
-            .iter()
-            .map(|list| {
-                let mut b = vec![C::new(0.0, 0.0); n + border];
-                if let Some(t) = list.first() {
-                    for (i, bi) in t.excitation() {
-                        b[i] = bi;
-                    }
-                }
-                b
-            })
-            .collect();
-        Ok(System { a, rhs, terms, border })
+        Ok(a)
     }
 }
 

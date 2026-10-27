@@ -67,9 +67,11 @@ use crate::sparse::Csr;
 mod assembly;
 mod dofs;
 mod fields;
+mod floquet;
 mod losses;
 mod lumped;
 mod media;
+mod periodic;
 mod pml;
 mod ports;
 mod sparams;
@@ -77,9 +79,11 @@ mod terms;
 
 pub(crate) use assembly::{System, rule_points};
 pub use dofs::Dofs;
+pub use floquet::{FloquetMode, FloquetPort, FloquetTerm};
 pub use losses::surface_resistance;
 pub(crate) use losses::wall_factor;
 pub use lumped::LumpedData;
+pub use periodic::Tie;
 use pml::Layer;
 pub use pml::PML_REFLECTION;
 pub use ports::{MAX_PATTERN_SIDE, ModeInfo, ModePattern, NumericPort, PortData, PortModes, kept_by, port_mode_pattern, port_modes};
@@ -160,6 +164,9 @@ pub struct Driven {
     pub lumped: Vec<LumpedData>,
     /// The model's symmetry planes: the mesh is the part below them.
     pub symmetry: Vec<Symmetry>,
+    /// The model's periodic boundaries and the reduction they make (a unit cell).
+    pub periodic: Option<emcraft_model::Periodic>,
+    pub tie: Option<Tie>,
     /// The symbolic factorization of the system's pattern, made at the first frequency and
     /// shared by the others (the pattern does not change with the frequency).
     analysis: std::sync::OnceLock<crate::ldlt::Analysis>,
@@ -241,6 +248,9 @@ struct BoundaryFaces {
 
 impl BoundaryFaces {
     fn classify(model: &Model, mesh: &Mesh, ends: Ends, perfect_walls: bool) -> Result<BoundaryFaces> {
+        // Faces on a periodic boundary are neither walls nor ports: they are tied to the
+        // opposite face.
+        let tied = |i: usize| model.periodic.as_ref().is_some_and(|p| periodic::on_tied_face(mesh, p, &mesh.boundary[i].nodes));
         let ports: Vec<Vec<usize>> = match ends {
             Ends::Ports => model.ports.iter().map(|p| ports::faces_of_port(mesh, p)).collect::<Result<_>>()?,
             Ends::Closed => Vec::new(),
@@ -248,8 +258,9 @@ impl BoundaryFaces {
         let on_port: std::collections::HashSet<usize> = ports.iter().flatten().copied().collect();
         // Symmetry planes are not walls: an electric one is fixed whatever the walls' conductivity,
         // a magnetic one left free.
-        let walls: Vec<usize> =
-            (0..mesh.boundary.len()).filter(|i| !on_port.contains(i) && !matches!(mesh.boundary[*i].tag, Boundary::Symmetry(_))).collect();
+        let walls: Vec<usize> = (0..mesh.boundary.len())
+            .filter(|i| !on_port.contains(i) && !matches!(mesh.boundary[*i].tag, Boundary::Symmetry(_)) && !tied(*i))
+            .collect();
         let electric = (0..mesh.boundary.len()).filter(|i| mesh.boundary[*i].tag == Boundary::Symmetry(SymmetryKind::Electric));
         let fixed: Vec<usize> = if perfect_walls { walls.iter().copied().chain(electric).collect() } else { electric.collect() };
         Ok(BoundaryFaces { ports, walls, fixed })
@@ -311,12 +322,35 @@ impl Driven {
         let media = Media::new(model, &mesh)?;
         let pml = Layer::of(model, &mesh)?;
         let space = Space { mesh: &mesh, topo: &topo, dofs: &dofs };
-        let ports = model.ports.iter().zip(&faces.ports).map(|(p, f)| ports::prepare(model, p, &space, f)).collect::<Result<Vec<_>>>()?;
+        let ports = model
+            .ports
+            .iter()
+            .zip(&faces.ports)
+            .map(|(p, f)| match &model.periodic {
+                Some(per) => Ok(PortData {
+                    name: p.name.clone(),
+                    end: p.end,
+                    modes: PortModes::Floquet(Box::new(floquet::prepare(model, per, p, f)?)),
+                    reference: None,
+                    deembed: 0.0,
+                }),
+                None => ports::prepare(model, p, &space, f),
+            })
+            .collect::<Result<Vec<_>>>()?;
         let lumped = model.lumped.iter().map(|lp| lumped::prepare(lp, &space)).collect::<Result<Vec<_>>>()?;
         // (The ports' rank-one terms border the matrix instead of filling it: see `system`.)
         let pattern = space.pattern(lumped.iter().map(|l| l.c.iter().map(|(u, _)| *u).collect()));
         let in_pml = pml.as_ref().map(Layer::tets).unwrap_or_default();
         let volume = space.volume_matrices(&pattern, &media, |t| !in_pml.contains(&t))?;
+        let tie = match &model.periodic {
+            Some(per) => {
+                if !lumped.is_empty() || pml.is_some() {
+                    return Err(invalid("periodic boundaries", "not supported yet: lumped ports or a matched layer in a periodic cell"));
+                }
+                Some(periodic::Tie::new(&mesh, &topo, &dofs, per, &pattern)?)
+            }
+            None => None,
+        };
         let wall = match sigma {
             Some(sigma) => Some(WallLoss { sigma, mass: space.wall_mass(&pattern, &faces.walls)? }),
             None => None,
@@ -335,6 +369,8 @@ impl Driven {
             pml,
             lumped,
             symmetry: model.symmetry.clone(),
+            periodic: model.periodic,
+            tie,
             analysis: std::sync::OnceLock::new(),
             mesh,
             topo,
@@ -364,6 +400,9 @@ impl Driven {
 
     /// Solves at one frequency (Hz).
     pub fn solve(&self, frequency: f64) -> Result<FrequencyResult> {
+        if self.tie.is_some() {
+            return self.solve_periodic(frequency);
+        }
         check_frequency(frequency)?;
         let t0 = std::time::Instant::now();
         let system = self.system(frequency)?;

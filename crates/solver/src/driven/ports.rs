@@ -41,6 +41,9 @@ pub enum PortModes {
     Analytic { eps_r: f64, mu_r: f64, modes: Vec<(Mode, Vec<(usize, f64)>)>, fraction: f64 },
     /// Any other cross-section; its modes depend on the frequency and are solved with it.
     Numeric(Box<NumericPort>),
+    /// A Floquet port on an end of a periodic cell ([`super::floquet`]): plane-wave harmonics
+    /// whose vectors depend on the frequency and the incidence.
+    Floquet(Box<super::floquet::FloquetPort>),
 }
 
 /// A port whose modes come from [`crate::portmode`].
@@ -97,7 +100,7 @@ fn refuse_lossy_or_dispersive(p: &Port, m: &Material) -> Result<()> {
 /// z = const): only the functions of the face's own edges and the face do; the others are
 /// normal to it (zero but for rounding), and keeping them would make the dense port block
 /// several times larger.
-fn tangential_trace(values: &[Vec3]) -> Vec<bool> {
+pub(super) fn tangential_trace(values: &[Vec3]) -> Vec<bool> {
     let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
     values.iter().map(|v| v.x.hypot(v.y) > 1e-9 * scale).collect()
 }
@@ -139,7 +142,7 @@ pub(super) fn prepare(model: &Model, p: &Port, space: &Space, faces: &[usize]) -
 }
 
 /// The quadrature of each of a port's faces with the port rule.
-fn port_face_rules<'a>(space: Space<'a>, faces: &'a [usize]) -> impl Iterator<Item = Result<FaceRule>> + 'a {
+pub(super) fn port_face_rules<'a>(space: Space<'a>, faces: &'a [usize]) -> impl Iterator<Item = Result<FaceRule>> + 'a {
     let n = port_rule_points(space.order());
     faces.iter().filter_map(move |&i| space.mesh.boundary.get(i)).map(move |b| space.face_rule(b, n))
 }
