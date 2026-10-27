@@ -5,7 +5,7 @@
 
 use egui::{Align2, Stroke, vec2};
 
-use crate::dialogs::{Cell, Dialog, Kind, MAX_FIELD, MAX_ROWS};
+use crate::dialogs::{Cell, Column, Dialog, Field, Kind, MAX_FIELD, MAX_ROWS};
 use crate::theme::Tokens;
 use crate::{EmcraftApp, glyphs, scenario, ui_kit};
 
@@ -137,46 +137,8 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
         let hint = f.doc;
         match &f.kind {
             Kind::Table(cols) => {
-                ui_kit::section(ui, &format!("{name}{}", if f.required { " *" } else { "" }));
-                ui_kit::caption(ui, hint);
                 let cols = *cols;
-                let mut remove = None;
-                egui::Grid::new(("table", name)).num_columns(cols.len() + 1).spacing(vec2(4.0, 3.0)).show(ui, |ui| {
-                    for c in cols {
-                        let text = if c.required { format!("{}*", c.name) } else { c.name.to_owned() };
-                        ui.label(egui::RichText::new(text).size(t.font_small).color(t.text_dim));
-                    }
-                    ui.label("");
-                    ui.end_row();
-                    for (i, r) in f.rows.iter_mut().enumerate() {
-                        for (j, (c, cell)) in cols.iter().zip(r.iter_mut()).enumerate() {
-                            let w = if c.cell == Cell::Material { 70.0 } else { 44.0 };
-                            let resp = match c.cell {
-                                Cell::Material => {
-                                    let list: Vec<String> = session.model.materials.iter().map(|m| m.name.clone()).collect();
-                                    choice(ui, (name, i, j), cell, &list, w, false)
-                                }
-                                Cell::Number => ui.add(egui::TextEdit::singleline(cell).desired_width(w).char_limit(64)),
-                            };
-                            scenario::publish_target(&format!("dialog:cell:{name}:{i}:{}", c.name), resp.rect);
-                        }
-                        let x = ui.small_button("×").on_hover_text("remove this row");
-                        scenario::publish_target(&format!("dialog:remove:{name}:{i}"), x.rect);
-                        if x.clicked() {
-                            remove = Some(i);
-                        }
-                        ui.end_row();
-                    }
-                });
-                if let Some(i) = remove {
-                    f.rows.remove(i);
-                }
-                let add = ui.add_enabled(f.rows.len() < MAX_ROWS, egui::Button::new(format!("Add {}", name.trim_end_matches('s'))));
-                scenario::publish_target(&format!("dialog:add:{name}"), add.rect);
-                if add.clicked() {
-                    let row = cols.iter().map(|c| if c.cell == Cell::Material { "vacuum".to_owned() } else { String::new() }).collect();
-                    f.rows.push(row);
-                }
+                table(ui, f, cols, session, &t);
             }
             Kind::Bool => {
                 ui_kit::row(ui, name, f.required, |ui| {
@@ -234,6 +196,48 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
                 ui.label(egui::RichText::new(e).size(t.font_small).color(t.form_error));
             });
         }
+    }
+}
+
+/// A table field: a row of cells per entry (sections, layers), each removable, and a button
+/// that adds one.
+fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], session: &emcraft_engine::Session, t: &Tokens) {
+    let name = f.name;
+    ui_kit::section(ui, &format!("{name}{}", if f.required { " *" } else { "" }));
+    ui_kit::caption(ui, f.doc);
+    let materials: Vec<String> = session.model.materials.iter().map(|m| m.name.clone()).collect();
+    let mut remove = None;
+    egui::Grid::new(("table", name)).num_columns(cols.len() + 1).spacing(vec2(4.0, 3.0)).show(ui, |ui| {
+        for c in cols {
+            let text = if c.required { format!("{}*", c.name) } else { c.name.to_owned() };
+            ui.label(egui::RichText::new(text).size(t.font_small).color(t.text_dim));
+        }
+        ui.label("");
+        ui.end_row();
+        for (i, r) in f.rows.iter_mut().enumerate() {
+            for (j, (c, cell)) in cols.iter().zip(r.iter_mut()).enumerate() {
+                let resp = match c.cell {
+                    Cell::Material => choice(ui, (name, i, j), cell, &materials, 70.0, false),
+                    Cell::Number => ui.add(egui::TextEdit::singleline(cell).desired_width(44.0).char_limit(64)),
+                };
+                scenario::publish_target(&format!("dialog:cell:{name}:{i}:{}", c.name), resp.rect);
+            }
+            let x = ui.small_button("×").on_hover_text("remove this row");
+            scenario::publish_target(&format!("dialog:remove:{name}:{i}"), x.rect);
+            if x.clicked() {
+                remove = Some(i);
+            }
+            ui.end_row();
+        }
+    });
+    if let Some(i) = remove {
+        f.rows.remove(i);
+    }
+    let add = ui.add_enabled(f.rows.len() < MAX_ROWS, egui::Button::new(format!("Add {}", name.trim_end_matches('s'))));
+    scenario::publish_target(&format!("dialog:add:{name}"), add.rect);
+    if add.clicked() {
+        let row = cols.iter().map(|c| if c.cell == Cell::Material { "vacuum".to_owned() } else { String::new() }).collect();
+        f.rows.push(row);
     }
 }
 
