@@ -21,6 +21,19 @@
 //! (jβ/D) v vᵀ with v_i = ∫ μr⁻¹ Nᵢ · (e_t + ∇φ) dS and D = ∫ μr⁻¹ e_t · (e_t + ∇φ) dS, which
 //! for a TE mode are the closed forms' (κ = jβ, D = ‖e‖²/μr).
 //!
+//! **Symmetry planes.** A model symmetric about x = a/2 or y = b/2 may be solved on the half below
+//! the plane ([`emcraft_model::Symmetry`]), closed there by an electric wall — its tangential
+//! unknowns eliminated, the essential condition, as on the conducting walls — or a magnetic wall
+//! — its unknowns kept with no surface term, the natural condition n̂ × (μr⁻¹ ∇ × E) = 0 (Jin
+//! 2014, ch. 8; image theory: R. F. Harrington, *Time-Harmonic Electromagnetic Fields*, 1961,
+//! ch. 3). The half carries the fields of one parity about the plane: a closed-form port keeps
+//! the modes of that parity (TE_m0 with m odd for a magnetic wall at x = a/2), its vectors
+//! integrated over the half face and its norms ‖e‖² over the half (exactly half the whole for a
+//! mode of definite parity), so the S-parameters are the whole model's. A numerical port's
+//! cross-section is the half, its rim free on a magnetic wall; its line impedance, by power and
+//! current, is the half's halved per magnetic plane (both halve). Fields outside the half are
+//! the images of those inside.
+//!
 //! **S-parameters.** Each port is excited in turn by a unit TE₁₀ amplitude, all from one
 //! factorization. S_pq = (c₁₀ at p − δ_pq) for excitation at q, normalised to equal power
 //! (times √(P_p/P_q), P = ‖e‖² β/μ the power of a unit wave), so S is unitary for a lossless
@@ -33,7 +46,7 @@ use emcraft_fem::modes::{self, Mode};
 use emcraft_fem::{Element, Order};
 use emcraft_mesh::Topology;
 use emcraft_model::units::{C0, MU0};
-use emcraft_model::{Boundary, End, Mesh, Model};
+use emcraft_model::{Boundary, End, Mesh, Model, Symmetry, SymmetryKind};
 use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
 
@@ -158,8 +171,10 @@ pub struct PortData {
 #[derive(Clone, Debug)]
 pub enum PortModes {
     /// A whole rectangle or circle of one material (εr, μr): each mode with its vector
-    /// v_m,i = ∫ Nᵢ · e_m dS (unknown, value).
-    Analytic { eps_r: f64, mu_r: f64, modes: Vec<(Mode, Vec<(usize, f64)>)> },
+    /// v_m,i = ∫ Nᵢ · e_m dS (unknown, value) over the faces meshed; `fraction` of the
+    /// aperture is meshed (1, or ½ per symmetry plane), so a mode's norm there is that fraction
+    /// of the whole aperture's.
+    Analytic { eps_r: f64, mu_r: f64, modes: Vec<(Mode, Vec<(usize, f64)>)>, fraction: f64 },
     /// Any other cross-section; its modes depend on the frequency and are solved with it.
     Numeric(Box<NumericPort>),
 }
@@ -218,6 +233,8 @@ pub struct Driven {
     pub(crate) pml: Option<(f64, f64, Vec<(usize, Vec3)>)>,
     /// Lumped ports: each with its vector cᵢ = ∫ Nᵢ · ŝ dl along its gap.
     pub lumped: Vec<LumpedData>,
+    /// The model's symmetry planes: the mesh is the part below them.
+    pub symmetry: Vec<Symmetry>,
     /// The symbolic factorization of the system's pattern, made at the first frequency and
     /// shared by the others (the pattern does not change with the frequency).
     analysis: std::sync::OnceLock<crate::ldlt::Analysis>,
@@ -425,9 +442,16 @@ impl Driven {
         let port_faces: Vec<Vec<usize>> =
             if with_ports { model.ports.iter().map(|p| faces_of_port(&mesh, p)).collect::<Result<_>>()? } else { Vec::new() };
         let on_port: std::collections::HashSet<usize> = port_faces.iter().flatten().copied().collect();
-        let walls: Vec<usize> = (0..mesh.boundary.len()).filter(|i| !on_port.contains(i)).collect();
-        let fixed: &[usize] = if sigma.is_none() { &walls } else { &[] };
-        let dofs = Dofs::new(order, &mesh, &topo, fixed)?;
+        // Symmetry planes are not walls: an electric one is fixed whatever the walls' conductivity,
+        // a magnetic one left free.
+        let walls: Vec<usize> =
+            (0..mesh.boundary.len()).filter(|i| !on_port.contains(i) && !matches!(mesh.boundary[*i].tag, Boundary::Symmetry(_))).collect();
+        let electric = (0..mesh.boundary.len()).filter(|i| mesh.boundary[*i].tag == Boundary::Symmetry(SymmetryKind::Electric));
+        let fixed: Vec<usize> = if sigma.is_none() { walls.iter().copied().chain(electric).collect() } else { electric.collect() };
+        if let Some(why) = model.symmetry_issue() {
+            return Err(invalid("symmetry", why));
+        }
+        let dofs = Dofs::new(order, &mesh, &topo, &fixed)?;
         let material = |t: usize| mesh.tet_material.get(t).and_then(|&m| model.materials.get(m as usize));
         let mut eps = Vec::with_capacity(mesh.tets.len());
         let mut mu = Vec::with_capacity(mesh.tets.len());
@@ -547,6 +571,7 @@ impl Driven {
             ports,
             pml,
             lumped,
+            symmetry: model.symmetry.clone(),
             analysis: std::sync::OnceLock::new(),
         })
     }
@@ -727,18 +752,38 @@ impl Driven {
     }
 
     /// The field (E in V/m or H in A/m) at a point for the coefficients `x` at `frequency`.
+    /// Beyond a symmetry plane, the image of the field inside.
     pub fn field(&self, x: &[C], frequency: f64, which: Field, p: Point3) -> Option<CVec3> {
-        let (t, _) = emcraft_mesh::locate(&self.mesh, p)?;
+        let (q, se, sh) = self.image(p);
+        let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = element(&self.mesh, &self.topo, t, self.order).ok()?;
-        Some(self.field_in(&el, t, x, frequency, which, el.barycentric(p)))
+        let v = self.field_in(&el, t, x, frequency, which, el.barycentric(q));
+        Some(flipped(
+            v,
+            match which {
+                Field::E => se,
+                Field::H => sh,
+            },
+        ))
     }
 
-    /// E and H at a point, `None` outside the mesh.
+    /// E and H at a point, `None` outside the mesh (beyond a symmetry plane, the image of the
+    /// field inside).
     pub fn fields(&self, x: &[C], frequency: f64, p: Point3) -> Option<(CVec3, CVec3)> {
-        let (t, _) = emcraft_mesh::locate(&self.mesh, p)?;
+        let (q, se, sh) = self.image(p);
+        let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = element(&self.mesh, &self.topo, t, self.order).ok()?;
-        let l = el.barycentric(p);
-        Some((self.field_in(&el, t, x, frequency, Field::E, l), self.field_in(&el, t, x, frequency, Field::H, l)))
+        let l = el.barycentric(q);
+        Some((flipped(self.field_in(&el, t, x, frequency, Field::E, l), se), flipped(self.field_in(&el, t, x, frequency, Field::H, l), sh)))
+    }
+
+    /// A point mirrored into the part meshed by every symmetry plane it lies beyond, and the
+    /// signs of E's and H's components there.
+    fn image(&self, p: Point3) -> (Point3, [f64; 3], [f64; 3]) {
+        self.symmetry.iter().fold((p, [1.0; 3], [1.0; 3]), |(q, se, sh), plane| {
+            let (r, e, h) = plane.image(q);
+            (r, [0, 1, 2].map(|k| se[k] * e[k]), [0, 1, 2].map(|k| sh[k] * h[k]))
+        })
     }
 
     pub(crate) fn field_in(&self, el: &Element, t: usize, x: &[C], frequency: f64, which: Field, l: [f64; 4]) -> CVec3 {
@@ -845,10 +890,10 @@ impl Driven {
         let port = self.ports.get(p)?;
         let omega = 2.0 * PI * frequency;
         match &port.modes {
-            PortModes::Analytic { eps_r, mu_r, modes } => {
+            PortModes::Analytic { eps_r, mu_r, modes, fraction } => {
                 let (mode, _) = modes.first()?;
                 let k = omega / C0 * (eps_r * mu_r).sqrt();
-                Some(0.5 * mode.norm() * mode.gamma(k).1 / (omega * MU0 * mu_r))
+                Some(0.5 * mode.norm() * fraction * mode.gamma(k).1 / (omega * MU0 * mu_r))
             }
             PortModes::Numeric(_) => Some(0.5 * self.port_terms(p, frequency).ok()?.first()?.proxy / (omega * MU0)),
         }
@@ -858,7 +903,7 @@ impl Driven {
     /// tell by their terms).
     fn below_cutoff(&self, p: usize, k0: f64) -> bool {
         match self.ports.get(p).map(|p| &p.modes) {
-            Some(PortModes::Analytic { eps_r, mu_r, modes }) => modes.first().is_none_or(|(m, _)| k0 * (eps_r * mu_r).sqrt() <= m.cutoff()),
+            Some(PortModes::Analytic { eps_r, mu_r, modes, .. }) => modes.first().is_none_or(|(m, _)| k0 * (eps_r * mu_r).sqrt() <= m.cutoff()),
             _ => false,
         }
     }
@@ -900,11 +945,12 @@ impl Driven {
         let port = self.ports.get(p).ok_or_else(|| invalid("port", format!("no port {p}")))?;
         let k0 = 2.0 * PI * frequency / C0;
         match &port.modes {
-            PortModes::Analytic { eps_r, mu_r, modes } => {
+            PortModes::Analytic { eps_r, mu_r, modes, fraction } => {
                 let k = k0 * (eps_r * mu_r).sqrt();
                 modes
                     .iter()
                     .map(|(mode, v)| {
+                        let norm = mode.norm() * fraction;
                         let (kr, ki) = mode.kappa(k).ok_or_else(|| {
                             invalid("frequency", format!("{} Hz is at the cut-off of mode {} at port `{}`", frequency, mode.name(), port.name))
                         })?;
@@ -913,10 +959,10 @@ impl Driven {
                         Ok(PortTerm {
                             name: mode.name(),
                             v: std::borrow::Cow::Borrowed(v.as_slice()),
-                            factor: kappa / mode.norm(),
+                            factor: kappa / norm,
                             rhs: 2.0 * kappa,
-                            norm: mode.norm(),
-                            proxy: mode.norm() * gamma.1 / mu_r,
+                            norm,
+                            proxy: norm * gamma.1 / mu_r,
                             propagating: gamma.1 > 0.0,
                             impedance: None,
                         })
@@ -951,7 +997,7 @@ impl Driven {
             }
         }
         let impedance = match modes.first() {
-            Some(m) => n.section.impedance(m, k0)?,
+            Some(m) => symmetric_impedance(&self.symmetry, n.section.impedance(m, k0)?),
             None => None,
         };
         Ok(modes
@@ -974,6 +1020,14 @@ impl Driven {
             })
             .collect())
     }
+}
+
+/// A field with its components' signs changed.
+fn flipped(mut v: CVec3, signs: [f64; 3]) -> CVec3 {
+    for (k, s) in signs.iter().enumerate() {
+        v[k] *= *s;
+    }
+    v
 }
 
 /// The part of a complex field across the unit normal n: v − (v·n) n.
@@ -1046,10 +1100,7 @@ fn analytic_port(
     if m.loss_tangent != 0.0 {
         return Err(invalid(format!("port `{}`", p.name), "not supported yet: a port in a lossy material (end the guide with a lossless section)"));
     }
-    let list: Vec<Mode> = match shape {
-        emcraft_model::PortShape::Rect { x0, y0, a, b } => modes::lowest(a, b, p.modes as usize).into_iter().map(|md| md.at(x0, y0)).collect(),
-        emcraft_model::PortShape::Circle { cx, cy, r } => modes::lowest_circular(r, p.modes as usize).into_iter().map(|md| md.at(cx, cy)).collect(),
-    };
+    let list = port_mode_list(model, p, shape)?;
     let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; dofs.unknowns]; list.len()];
     let n = if order == Order::One { 6 } else { 8 };
     let mut touched = vec![false; dofs.unknowns];
@@ -1078,7 +1129,72 @@ fn analytic_port(
     }
     let support: Vec<usize> = (0..dofs.unknowns).filter(|&u| touched[u]).collect();
     let modes = list.into_iter().zip(vectors).map(|(mode, v)| (mode, support.iter().map(|&u| (u, v[u])).collect())).collect();
-    Ok(PortModes::Analytic { eps_r: m.eps_r, mu_r: m.mu_r, modes })
+    Ok(PortModes::Analytic { eps_r: m.eps_r, mu_r: m.mu_r, modes, fraction: model.symmetry_fraction() })
+}
+
+/// A closed-form port's modes: the lowest `p.modes` of its aperture, of those the model's
+/// symmetry planes keep ([`kept_by`]).
+fn port_mode_list(model: &Model, p: &emcraft_model::Port, shape: emcraft_model::PortShape) -> Result<Vec<Mode>> {
+    let count = p.modes as usize;
+    // Each plane keeps about half the modes: enough candidates for the count wanted.
+    let candidates = if model.symmetry.is_empty() { count } else { 4 * count + 8 };
+    let all: Vec<Mode> = match shape {
+        emcraft_model::PortShape::Rect { x0, y0, a, b } => modes::lowest(a, b, candidates).into_iter().map(|md| md.at(x0, y0)).collect(),
+        emcraft_model::PortShape::Circle { cx, cy, r } => modes::lowest_circular(r, candidates).into_iter().map(|md| md.at(cx, cy)).collect(),
+    };
+    let list: Vec<Mode> = all.into_iter().filter(|md| kept_by(md, &model.symmetry)).take(count).collect();
+    if list.is_empty() {
+        return Err(invalid(format!("port `{}`", p.name), "no mode of its aperture has the symmetry the model's planes ask for"));
+    }
+    Ok(list)
+}
+
+/// Whether a mode has the parity every symmetry plane keeps: about a magnetic wall its normal E
+/// is odd and its tangential E even, about an electric wall the reverse. Tested at points of
+/// the aperture against their mirror images (the closed forms all have a definite parity about
+/// the aperture's middle).
+pub fn kept_by(mode: &Mode, planes: &[Symmetry]) -> bool {
+    let samples: Vec<(f64, f64)> = match mode.aperture {
+        modes::Aperture::Rect { a, b, x0, y0 } => {
+            [(0.13, 0.29), (0.31, 0.71), (0.07, 0.47), (0.43, 0.11), (0.21, 0.93)].iter().map(|(u, v)| (x0 + u * a, y0 + v * b)).collect()
+        }
+        modes::Aperture::Circle { r, cx, cy, .. } => {
+            [(0.13, 0.29), (0.31, -0.51), (-0.27, 0.47), (0.43, 0.11), (-0.21, -0.33)].iter().map(|(u, v)| (cx + u * r, cy + v * r)).collect()
+        }
+    };
+    planes.iter().all(|pl| {
+        let d = pl.axis.index();
+        if d > 1 {
+            return false;
+        }
+        let pairs: Vec<([f64; 2], [f64; 2])> = samples
+            .iter()
+            .map(|&(x, y)| {
+                let (rx, ry) = if d == 0 { (2.0 * pl.at - x, y) } else { (x, 2.0 * pl.at - y) };
+                (mode.field(x, y), mode.field(rx, ry))
+            })
+            .collect();
+        let scale = pairs.iter().flat_map(|(e, _)| e.iter().map(|v| v.abs())).fold(0.0, f64::max);
+        if !(scale > 0.0 && scale.is_finite()) {
+            return false;
+        }
+        // The sign the normal component takes in the image; the tangential ones take the other.
+        let normal = match pl.kind {
+            SymmetryKind::Magnetic => -1.0,
+            SymmetryKind::Electric => 1.0,
+        };
+        pairs.iter().all(|(e, r)| (0..2).all(|k| (r[k] - if k == d { normal } else { -normal } * e[k]).abs() <= 1e-9 * scale))
+    })
+}
+
+/// A half line's impedance by power and current as the whole line's: under a magnetic wall
+/// both halve, so Z = 2P/|I|² is the half's halved per plane; an electric plane separates
+/// conductors the whole line holds two of, which has no single impedance.
+fn symmetric_impedance(planes: &[Symmetry], z: Option<f64>) -> Option<f64> {
+    if planes.iter().any(|p| p.kind == SymmetryKind::Electric) {
+        return None;
+    }
+    z.map(|z| z * 0.5f64.powi(planes.len() as i32))
 }
 
 /// A port of any other cross-section: its faces as the triangles of a [`crate::portmode`]
@@ -1159,7 +1275,19 @@ fn cross_section(model: &Model, p: &emcraft_model::Port, mesh: &Mesh, order: Ord
         .flat_map(|t| emcraft_fem::tri::TRI_EDGES.map(|[i, j]| [t[i].min(t[j]), t[i].max(t[j])]))
         .filter(|[a, b]| wall_edges.contains(&[global[*a as usize], global[*b as usize]]))
         .collect();
-    crate::portmode::CrossSection::new(order, nodes, tris, eps, mu, &conductors, &curved)
+    // Its rim on a magnetic symmetry plane is free (the natural condition), not a wall.
+    let magnetic_edges: std::collections::HashSet<[u32; 2]> = mesh
+        .boundary
+        .iter()
+        .filter(|b| b.tag == Boundary::Symmetry(SymmetryKind::Magnetic))
+        .flat_map(|b| emcraft_fem::tri::TRI_EDGES.map(|[i, j]| [b.nodes[i].min(b.nodes[j]), b.nodes[i].max(b.nodes[j])]))
+        .collect();
+    let magnetic: Vec<[u32; 2]> = tris
+        .iter()
+        .flat_map(|t| emcraft_fem::tri::TRI_EDGES.map(|[i, j]| [t[i].min(t[j]), t[i].max(t[j])]))
+        .filter(|[a, b]| magnetic_edges.contains(&[global[*a as usize], global[*b as usize]]))
+        .collect();
+    crate::portmode::CrossSection::with_free_rim(order, nodes, tris, eps, mu, &conductors, &magnetic, &curved)
 }
 
 /// A port mode at a frequency: its name and β² (rad²/m²; negative when evanescent).
@@ -1194,10 +1322,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                 Some(shape) => {
                     let m = model.port_material(p.end)?;
                     let k = k0 * (m.eps_r * m.mu_r).sqrt();
-                    let modes = match shape {
-                        emcraft_model::PortShape::Rect { a, b, .. } => modes::lowest(a, b, p.modes as usize),
-                        emcraft_model::PortShape::Circle { r, .. } => modes::lowest_circular(r, p.modes as usize),
-                    };
+                    let modes = port_mode_list(model, p, shape)?;
                     modes
                         .iter()
                         .map(|md| ModeInfo { name: md.name(), beta2: k * k - md.cutoff().powi(2), closed_form: true, impedance: None })
@@ -1210,7 +1335,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                         .into_iter()
                         .enumerate()
                         .map(|(i, m)| {
-                            let impedance = section.impedance(&m, k0)?;
+                            let impedance = symmetric_impedance(&model.symmetry, section.impedance(&m, k0)?);
                             Ok(ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false, impedance })
                         })
                         .collect::<Result<Vec<_>>>()?

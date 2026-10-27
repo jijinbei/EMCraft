@@ -100,6 +100,23 @@ impl CrossSection {
         conductors: &[[u32; 2]],
         curved: &std::collections::BTreeMap<[u32; 2], Point3>,
     ) -> Result<CrossSection> {
+        CrossSection::with_free_rim(order, nodes, tris, eps, mu, conductors, &[], curved)
+    }
+
+    /// As [`CrossSection::new`], but the boundary edges in `free` (by nodes) are a magnetic wall —
+    /// a symmetry plane's — rather than a conductor: their tangential e and their φ are left free,
+    /// the natural condition (tangential H = 0) holding weakly.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_free_rim(
+        order: Order,
+        nodes: Vec<Point3>,
+        tris: Vec<[u32; 3]>,
+        eps: Vec<f64>,
+        mu: Vec<f64>,
+        conductors: &[[u32; 2]],
+        free: &[[u32; 2]],
+        curved: &std::collections::BTreeMap<[u32; 2], Point3>,
+    ) -> Result<CrossSection> {
         if tris.is_empty() || eps.len() != tris.len() || mu.len() != tris.len() {
             return Err(invalid("port cross-section", "needs triangles, each with its materials"));
         }
@@ -130,6 +147,12 @@ impl CrossSection {
         let edge_list: Vec<[u32; 2]> = edge_set.keys().copied().collect();
         let tri_edges: Vec<[u32; 3]> = tris.iter().map(|t| TRI_EDGES.map(|[i, j]| edge_set.get(&[t[i], t[j]]).map_or(0, |e| e.0 as u32))).collect();
         let mut wall_edge: Vec<bool> = edge_set.values().map(|&(_, uses)| uses == 1).collect();
+        for c in free {
+            let key = [c[0].min(c[1]), c[0].max(c[1])];
+            if let Some(&(k, _)) = edge_set.get(&key) {
+                wall_edge[k] = false;
+            }
+        }
         for c in conductors {
             let key = [c[0].min(c[1]), c[0].max(c[1])];
             if let Some(&(k, _)) = edge_set.get(&key) {
