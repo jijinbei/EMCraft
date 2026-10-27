@@ -398,6 +398,8 @@ pub fn initial(command: &str, s: &Session) -> Value {
         // With a band, the mesh follows it: elements per wavelength at its top.
         "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
         "mesh.generate" => json!({"size": 3, "curved": true}),
+        "mesh.adapt" if band.is_some() => json!({"per_wavelength": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
+        "mesh.adapt" => json!({"size": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
         "model.walls" => json!({"conductivity": 5.8e7}),
         "model.symmetry" => json!({"axis": "x", "kind": "magnetic"}),
         "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),

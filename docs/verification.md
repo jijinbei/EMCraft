@@ -52,7 +52,17 @@ result is frozen so it cannot drift.
    from STL against mode matching (oracle `imported-step`) and the readers' hostile-file tests. The curved elements' identities — duality to curved edges, gradients
    in the curl's kernel, tangential continuity across a curved face — are tested in
    `emcraft-fem`. The mesher's own 126 tests came with it (`crates/tetmesh`).
-8. **Open problems** (engine tests, the oracle): a Hertzian dipole in a box lined with a perfectly
+8. **Adaptive refinement** (`crates/solver/tests/adapt.rs`, the oracle): the residual indicator
+   falls at the elements' rate on a smooth guide (its square ×4.05 at order 1 and ×13.9 at
+   order 2 per halving, against 4 and 16), is the same bit for bit for the same input, marks
+   the tetrahedra with the most error and the remeshed solid takes their sizes; `mesh.adapt`'s
+   passes are deterministic (the same final mesh bit for bit). The inductive post against an
+   independent Nyström solution of its 2D integral equation (`emcraft-theory::post`, converged
+   to 1e-11): the passes settle within the curved surface's geometric floor of about 1e-4
+   (oracle `adaptive-post`); the Boolean iris against mode matching: from 4 mm to |S11| within
+   6e-4 in six passes, four times closer than a uniform mesh of the same unknowns, the uniform
+   1.2 mm mesh's error reached with a third of its unknowns (oracle `adaptive-iris`).
+9. **Open problems** (engine tests, the oracle): a Hertzian dipole in a box lined with a perfectly
    matched layer — radiated power within 0.2 % and directivity within 1–4 % at six elements per
    wavelength (oracle `dipole-radiation`); the same dipole at the centre of a sphere whose outer
    shell is a spherical layer, through a Huygens sphere — power within 0.8 % and directivity
@@ -70,7 +80,7 @@ result is frozen so it cannot drift.
    its pattern, null and active resistance against the exact Hertzian array (oracle `gap-array`).
    The time domain's open problems: two gaps on a Yee grid with a CPML, their self resistance,
    mutual impedance and pattern within 0.3 % of the closed forms (oracle `time-domain-gaps`).
-9. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+10. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

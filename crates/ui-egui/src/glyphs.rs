@@ -390,7 +390,7 @@ pub fn for_command(id: &str) -> &'static str {
         "source.plane_wave" => "plane_wave",
         "source.clear" => "clear",
         "model.open" => "open",
-        "mesh.generate" => "mesh",
+        "mesh.generate" | "mesh.adapt" => "mesh",
         "solve.frequency" => "sweep",
         "solve.eigenmodes" | "results.eigenmodes" => "eigen",
         "solve.radiation" => "radiation",

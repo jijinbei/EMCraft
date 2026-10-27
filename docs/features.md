@@ -175,6 +175,25 @@ Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of 
 | `size_y` | number | length | no | element size across the narrow wall (default `size`); an H-plane device's TE10 fields do not vary along y, so one layer (the height) is exact there |
 | `curved` | boolean |  | no | solids: bend the edges on curved surfaces onto them (default true; false leaves flat facets inscribed in the surface) |
 
+## `mesh.adapt` — Adaptive mesh
+
+Refines the mesh in passes until the S-parameters settle: each pass meshes, solves at `frequency` and compares S with the previous pass (ΔS, the largest change of any entry); it stops when ΔS < `tolerance`, after `passes`, or before the next mesh would pass the tetrahedra or unknowns limit (the last that fitted stays). A solid is refined where a residual error indicator is largest (the jumps of tangential μ⁻¹∇×E and normal εE across faces and the element residual, summed over the ports' excitations): the fewest tetrahedra holding `fraction` of its total are meshed again at half their size, graded smoothly. A structured waveguide grid is refined uniformly instead (the size divided by 1.4 a pass). The final mesh stays; solve it with solve.frequency. Open problems are not supported yet.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `size` | number | length | no | the first pass's element size (required without `per_wavelength`) |
+| `per_wavelength` | number |  | no | the first pass's elements per wavelength in each material at `frequency` |
+| `frequency` | number | frequency | no | the frequency to adapt at (default: the band's top) |
+| `passes` | integer |  | no | the most passes, 1 to 12 (default 6) |
+| `tolerance` | number |  | no | converged when ΔS, the largest change of any S entry from the previous pass, is below this (default 0.02) |
+| `fraction` | number |  | no | Dörfler's θ in (0, 1]: refine the fewest tetrahedra holding this share of the error (default 0.3) |
+| `order` | integer |  | no | element order: 1 or 2 (default) |
+| `curved` | boolean |  | no | solids: bend the edges on curved surfaces onto them (default true) |
+| `edge` | number |  | no | waveguides: element size at step and iris edges, as a fraction of the size (default 0.25) |
+| `growth` | number |  | no | waveguides: element growth away from those edges (default 1.5) |
+| `strip_edge` | number |  | no | waveguides: element size at strips' edges, as a fraction of the size (default 0.05) |
+| `size_y` | number | length | no | waveguides: element size across the narrow wall (default the size; kept through the passes) |
+
 ## `model.walls` — Wall conductivity
 
 The conductivity of the guide's walls, irises and steps: losses by the Leontovich surface-impedance condition (good conductors, skin depth far below the guide). Without `conductivity` the walls are perfect conductors.
