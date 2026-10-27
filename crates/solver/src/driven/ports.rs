@@ -147,6 +147,32 @@ pub(super) fn port_face_rules<'a>(space: Space<'a>, faces: &'a [usize]) -> impl 
     faces.iter().filter_map(move |&i| space.mesh.boundary.get(i)).map(move |b| space.face_rule(b, n))
 }
 
+/// Visits each point of the port rule on a port's `faces` with its position, its weight and the
+/// basis values there of the unknowns with a tangential trace on the face ([`tangential_trace`]):
+/// (unknown, value), in the element's order.
+pub(super) fn for_each_port_point(space: Space, faces: &[usize], mut visit: impl FnMut(Point3, f64, &[(usize, Vec3)])) -> Result<()> {
+    let n = space.dofs.unknowns;
+    let mut traced: Vec<(usize, Vec3)> = Vec::new();
+    for face in port_face_rules(space, faces) {
+        let FaceRule { el, unknowns, points, .. } = face?;
+        for (l, wa, _) in points {
+            let values = el.values(l);
+            let kept = tangential_trace(&values);
+            traced.clear();
+            traced.extend(
+                unknowns
+                    .iter()
+                    .zip(&values)
+                    .zip(&kept)
+                    .filter(|((u, _), t)| **u != NONE && **t && (**u as usize) < n)
+                    .map(|((u, v), _)| (*u as usize, *v)),
+            );
+            visit(el.point(l), wa, &traced);
+        }
+    }
+    Ok(())
+}
+
 /// A port of a whole rectangle or circle filled with one material: its closed-form modes and
 /// their vectors.
 fn analytic_port(model: &Model, p: &Port, shape: PortShape, space: &Space, faces: &[usize]) -> Result<PortModes> {
@@ -156,22 +182,16 @@ fn analytic_port(model: &Model, p: &Port, shape: PortShape, space: &Space, faces
     let n = space.dofs.unknowns;
     let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; n]; list.len()];
     let mut touched = vec![false; n];
-    for face in port_face_rules(*space, faces) {
-        let FaceRule { el, unknowns, points, .. } = face?;
-        for (l, wa, _) in points {
-            let x = el.point(l);
-            let values = el.values(l);
-            let traced = tangential_trace(&values);
-            for (mi, mode) in list.iter().enumerate() {
-                let e = mode.field(x.x, x.y);
-                let e = Vec3::new(e[0], e[1], 0.0);
-                for ((u, v), _) in unknowns.iter().zip(&values).zip(&traced).filter(|((u, _), t)| **u != NONE && **t) {
-                    vectors[mi][*u as usize] += wa * v.dot(e);
-                    touched[*u as usize] = true;
-                }
+    for_each_port_point(*space, faces, |x, wa, traced| {
+        for (mi, mode) in list.iter().enumerate() {
+            let e = mode.field(x.x, x.y);
+            let e = Vec3::new(e[0], e[1], 0.0);
+            for &(u, v) in traced {
+                vectors[mi][u] += wa * v.dot(e);
+                touched[u] = true;
             }
         }
-    }
+    })?;
     let support: Vec<usize> = (0..n).filter(|&u| touched[u]).collect();
     let modes = list.into_iter().zip(vectors).map(|(mode, v)| (mode, support.iter().map(|&u| (u, v[u])).collect())).collect();
     Ok(PortModes::Analytic { eps_r: m.eps_r, mu_r: m.mu_r, modes, fraction: model.symmetry_fraction() })
@@ -248,14 +268,7 @@ fn numeric_port(model: &Model, p: &Port, space: &Space, faces: &[usize]) -> Resu
     let section = cross_section(model, p, space.mesh, space.order(), faces)?;
     // The unknowns with a tangential trace on the faces (as for the closed forms).
     let mut touched = std::collections::BTreeSet::new();
-    for face in port_face_rules(*space, faces) {
-        let FaceRule { el, unknowns, points, .. } = face?;
-        for (l, _, _) in points {
-            let values = el.values(l);
-            let traced = tangential_trace(&values);
-            touched.extend(unknowns.iter().zip(&traced).filter(|(u, t)| **u != NONE && **t).map(|(u, _)| *u as usize));
-        }
-    }
+    for_each_port_point(*space, faces, |_, _, traced| touched.extend(traced.iter().map(|(u, _)| *u)))?;
     Ok(NumericPort { section, faces: faces.to_vec(), count: p.modes as usize, support: touched.into_iter().collect() })
 }
 

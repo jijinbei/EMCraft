@@ -49,18 +49,19 @@
 //! The parts, each in a module of its own: the unknowns ([`Dofs`]), the materials of the
 //! tetrahedra (`media`), the volume and wall matrices and a frequency's system (`assembly`), the
 //! perfectly matched layer (`pml`), the ports' modes (`ports`) and their terms at a frequency
-//! (`terms`), lumped ports (`lumped`), S read from the solutions (`sparams`), fields (`fields`)
-//! and losses (`losses`).
+//! (`terms`), lumped ports (`lumped`), the system factored and solved for each excitation
+//! (`solution`), S read from the solutions (`sparams`), fields (`fields`), losses (`losses`),
+//! and the periodic cell: its reduction (`periodic`) and its Floquet ports (`floquet`).
 
 use std::f64::consts::PI;
 
 use emcraft_fem::{Element, Order};
 use emcraft_mesh::Topology;
 use emcraft_model::units::C0;
-use emcraft_model::{Boundary, Mesh, Model, Point3, Symmetry, SymmetryKind};
+use emcraft_model::{Boundary, Mesh, Model, Symmetry, SymmetryKind};
 use num_complex::Complex64 as C;
 
-use crate::ldlt::{FactorError, Ldlt};
+use crate::ldlt::FactorError;
 use crate::smatrix::SMatrix;
 use crate::sparse::Csr;
 
@@ -74,6 +75,7 @@ mod media;
 mod periodic;
 mod pml;
 mod ports;
+mod solution;
 mod sparams;
 mod terms;
 
@@ -382,22 +384,6 @@ impl Driven {
         Space { mesh: &self.mesh, topo: &self.topo, dofs: &self.dofs }
     }
 
-    /// Factors a [`System`], its border last.
-    pub(crate) fn factor(&self, s: &System) -> Result<Ldlt> {
-        let budget = crate::ldlt::memory_budget();
-        if let Some(an) = self.analysis.get().filter(|an| an.fits(&s.a)) {
-            let mut f = Ldlt::factor_analysed(&s.a, an, budget)?;
-            f.analysis_seconds = 0.0;
-            return Ok(f);
-        }
-        let points: Vec<Point3> = self.dofs.points.iter().copied().chain(std::iter::repeat_n(Point3::ORIGIN, s.border)).collect();
-        let an = crate::ldlt::Analysis::new(&s.a, &points, s.border)?;
-        let f = Ldlt::factor_analysed(&s.a, &an, budget)?;
-        // Kept for the next frequencies (the first analysis stays when two race).
-        let _ = self.analysis.set(an);
-        Ok(f)
-    }
-
     /// Solves at one frequency (Hz).
     pub fn solve(&self, frequency: f64) -> Result<FrequencyResult> {
         if self.tie.is_some() {
@@ -408,28 +394,10 @@ impl Driven {
         let system = self.system(frequency)?;
         let assembly = t0.elapsed().as_secs_f64();
         let f = self.factor(&system)?;
-        let t1 = std::time::Instant::now();
         let System { a, rhs, terms, .. } = system;
-        let mut fields = Vec::with_capacity(rhs.len());
-        let mut worst: f64 = 0.0;
-        for b in &rhs {
-            let (mut x, e) = f.solve_refined(&a, b, 4)?;
-            x.truncate(self.dofs.unknowns);
-            worst = worst.max(e);
-            fields.push(x);
-        }
-        let (s, impedances) = self.s_parameters(&terms, &fields)?;
-        Ok(FrequencyResult {
-            frequency,
-            s,
-            impedances,
-            fields,
-            backward_error: worst,
-            perturbed_pivots: f.perturbed,
-            factor_entries: f.entries,
-            largest_front: f.largest_front,
-            timings: Timings { assembly, analysis: f.analysis_seconds, factor: f.numeric_seconds, solve: t1.elapsed().as_secs_f64() },
-        })
+        let solved = solution::solve_each(&f, &a, &rhs, self.dofs.unknowns, assembly)?;
+        let (s, impedances) = self.s_parameters(&terms, &solved.fields)?;
+        Ok(solved.result(frequency, s, impedances))
     }
 
     pub(crate) fn element_of(&self, t: usize) -> Result<Element> {

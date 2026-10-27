@@ -28,9 +28,10 @@ use emcraft_model::units::C0;
 use emcraft_model::{Model, Periodic, Polarization, Port, Vec3};
 use num_complex::Complex64 as C;
 
-use super::assembly::{FaceRule, Space};
-use super::ports::{port_face_rules, tangential_trace};
-use super::{Driven, FrequencyResult, NONE, Result, Timings, check_frequency, invalid, wavenumber};
+use super::assembly::{Space, border_columns};
+use super::ports::for_each_port_point;
+use super::solution::solve_each;
+use super::{Driven, FrequencyResult, Result, check_frequency, invalid, wavenumber};
 use crate::smatrix::SMatrix;
 use crate::sparse::Csr;
 
@@ -206,24 +207,17 @@ impl FloquetPort {
         let modes = self.modes(k, kx, ky);
         let [x0, y0, a, b] = self.cell;
         let norm = a * b;
-        let n = space.dofs.unknowns;
         let mut acc: Vec<std::collections::BTreeMap<usize, C>> = vec![Default::default(); modes.len()];
         let dirs: Vec<Vec3> = modes.iter().map(|m| m.direction(self.phi)).collect();
-        for face in port_face_rules(*space, &self.faces) {
-            let FaceRule { el, unknowns, points, .. } = face?;
-            for (l, wa, _) in points {
-                let x = el.point(l);
-                let values = el.values(l);
-                let traced = tangential_trace(&values);
-                for ((md, dir), map) in modes.iter().zip(&dirs).zip(acc.iter_mut()) {
-                    let arg = md.kx * (x.x - x0) + md.ky * (x.y - y0);
-                    let ph = C::new(arg.cos(), -arg.sin()) * wa;
-                    for ((u, v), _) in unknowns.iter().zip(&values).zip(&traced).filter(|((u, _), t)| **u != NONE && **t && (**u as usize) < n) {
-                        *map.entry(*u as usize).or_default() += ph * v.dot(*dir);
-                    }
+        for_each_port_point(*space, &self.faces, |x, wa, traced| {
+            for ((md, dir), map) in modes.iter().zip(&dirs).zip(acc.iter_mut()) {
+                let arg = md.kx * (x.x - x0) + md.ky * (x.y - y0);
+                let ph = C::new(arg.cos(), -arg.sin()) * wa;
+                for &(u, v) in traced {
+                    *map.entry(u).or_default() += ph * v.dot(*dir);
                 }
             }
-        }
+        })?;
         modes
             .iter()
             .zip(acc)
@@ -254,51 +248,45 @@ pub(super) fn incidence(periodic: &Periodic, first: &FloquetPort, frequency: f64
     (kt * periodic.phi.cos(), kt * periodic.phi.sin())
 }
 
-/// `a` bordered by one row and column per (column vector, row vector, f): column s·col, row
-/// s·row, diagonal −s²/f, s = √(|f|‖a‖) (as the symmetric ports' border, see `assembly`).
-fn bordered(a: &Csr, borders: &[(Vec<(usize, C)>, Vec<(usize, C)>, C)]) -> Result<Csr> {
-    let (n, m) = (a.n, borders.len());
-    let norm = a.max_abs();
-    let scale: Vec<f64> = borders.iter().map(|(_, _, f)| (f.norm() * norm).sqrt()).collect();
-    let mut extra: Vec<Vec<(usize, C)>> = vec![Vec::new(); n];
-    for (k, (col, _, _)) in borders.iter().enumerate() {
-        for &(i, vi) in col {
-            extra.get_mut(i).ok_or_else(|| invalid("port", "a mode's vector refers to a missing unknown"))?.push((n + k, vi * scale[k]));
-        }
-    }
-    let mut out = Csr { n: n + m, ptr: Vec::with_capacity(n + m + 1), col: Vec::new(), val: Vec::new() };
-    out.ptr.push(0);
-    for (i, row) in extra.iter().enumerate() {
-        let (lo, hi) = (a.ptr[i], a.ptr[i + 1]);
-        out.col.extend_from_slice(&a.col[lo..hi]);
-        out.val.extend_from_slice(&a.val[lo..hi]);
-        out.col.extend(row.iter().map(|(j, _)| *j));
-        out.val.extend(row.iter().map(|(_, v)| *v));
-        out.ptr.push(out.col.len());
-    }
-    for (k, (col, row, f)) in borders.iter().enumerate() {
-        if !(f.norm() > 0.0 && scale[k].is_finite()) {
-            return Err(invalid("port", "a mode with no coupling"));
-        }
+/// One Floquet mode's border of the reduced matrix: its column (test side, Tᴴ v), its row
+/// (trial side, Tᵀ v̄) and its factor.
+struct Border {
+    column: Vec<(usize, C)>,
+    row: Vec<(usize, C)>,
+    factor: C,
+}
+
+/// `a` bordered by one row and column per [`Border`]: column s·column, row s·row, diagonal
+/// −s²/f, s = √(|f|‖a‖) (as the symmetric ports' border, [`border_columns`]); the pattern kept
+/// symmetric with structural zeros.
+fn bordered(a: &Csr, borders: &[Border]) -> Result<Csr> {
+    let n = a.n;
+    let (mut out, scale) = border_columns(a, borders.iter().map(|b| (b.column.iter().copied(), b.factor)))?;
+    for (k, (b, s)) in borders.iter().zip(&scale).enumerate() {
         // The pattern stays symmetric: the row holds every unknown the column does.
-        let rowmap: std::collections::BTreeMap<usize, C> = row.iter().copied().collect();
-        let mut idx: Vec<usize> = col.iter().map(|(i, _)| *i).chain(row.iter().map(|(i, _)| *i)).collect();
+        let rowmap: std::collections::BTreeMap<usize, C> = b.row.iter().copied().collect();
+        let mut idx: Vec<usize> = b.column.iter().map(|(i, _)| *i).chain(b.row.iter().map(|(i, _)| *i)).collect();
         idx.sort_unstable();
         idx.dedup();
         for i in idx {
             out.col.push(i);
-            out.val.push(rowmap.get(&i).copied().unwrap_or_default() * scale[k]);
+            out.val.push(rowmap.get(&i).copied().unwrap_or_default() * *s);
         }
         out.col.push(n + k);
-        out.val.push(-(scale[k] * scale[k]) / f);
+        out.val.push(-(s * s) / b.factor);
         out.ptr.push(out.col.len());
     }
-    // Rows whose column lacked an entry of the border's row: add the structural zero.
+    Ok(with_transpose_pattern(&out, n, borders))
+}
+
+/// `out` (a bordered by `borders`) with the structural zeros its first n rows lack where a
+/// border's row has an entry its column has not, each row sorted by column.
+fn with_transpose_pattern(out: &Csr, n: usize, borders: &[Border]) -> Csr {
     let mut fixed = Csr { n: out.n, ptr: vec![0], col: Vec::new(), val: Vec::new() };
     let mut need: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (k, (col, row, _)) in borders.iter().enumerate() {
-        let have: std::collections::BTreeSet<usize> = col.iter().map(|(i, _)| *i).collect();
-        for (i, _) in row {
+    for (k, b) in borders.iter().enumerate() {
+        let have: std::collections::BTreeSet<usize> = b.column.iter().map(|(i, _)| *i).collect();
+        for (i, _) in &b.row {
             if !have.contains(i)
                 && let Some(l) = need.get_mut(*i)
             {
@@ -317,7 +305,7 @@ fn bordered(a: &Csr, borders: &[(Vec<(usize, C)>, Vec<(usize, C)>, C)]) -> Resul
         fixed.val.extend(entries.iter().map(|e| e.1));
         fixed.ptr.push(fixed.col.len());
     }
-    Ok(fixed)
+    fixed
 }
 
 impl Driven {
@@ -336,11 +324,25 @@ impl Driven {
     /// Solves the periodic cell at one frequency: Tᴴ A T bordered by the Floquet modes, by LU.
     pub(super) fn solve_periodic(&self, frequency: f64) -> Result<FrequencyResult> {
         check_frequency(frequency)?;
+        let tie = self.tie.as_ref().ok_or_else(|| invalid("periodic solve", "the model is not periodic"))?;
+        let t0 = std::time::Instant::now();
+        let PeriodicSystem { a, rhs, terms, psi, border } = self.periodic_system(frequency)?;
+        let assembly = t0.elapsed().as_secs_f64();
+        let f = self.factor_lu(&a, &tie.points, border)?;
+        let mut solved = solve_each(&f, &a, &rhs, tie.reduced, assembly)?;
+        solved.fields = solved.fields.iter().map(|x| tie.expand(x, psi)).collect();
+        let s = floquet_s(&terms, &solved.fields);
+        Ok(solved.result(frequency, s, vec![None; terms.len()]))
+    }
+
+    /// The periodic cell's system at `frequency`: Tᴴ A T bordered by every Floquet mode, the
+    /// right-hand side of each port's excitation by its first mode, the modes' terms and the
+    /// phases per period.
+    fn periodic_system(&self, frequency: f64) -> Result<PeriodicSystem> {
         let (tie, periodic) = match (&self.tie, &self.periodic) {
             (Some(t), Some(p)) => (t, p),
             _ => return Err(invalid("periodic solve", "the model is not periodic")),
         };
-        let t0 = std::time::Instant::now();
         let first = match self.ports.first().map(|p| &p.modes) {
             Some(super::PortModes::Floquet(fp)) => fp,
             _ => return Err(super::SolveError::NotReady("no Floquet ports: create them with model.port.create on the cell's ends".into())),
@@ -356,23 +358,21 @@ impl Driven {
                 ));
             }
         }
-        let a = self.unbordered(frequency)?;
-        let b = tie.reduce(&a.val, psi);
-        let borders: Vec<(Vec<(usize, C)>, Vec<(usize, C)>, C)> = terms
+        let reduced = tie.reduce(&self.unbordered(frequency)?.val, psi);
+        let borders: Vec<Border> = terms
             .iter()
             .flatten()
             .map(|t| {
                 let conj: Vec<(usize, C)> = t.v.iter().map(|(i, v)| (*i, v.conj())).collect();
-                (tie.reduce_test(&t.v, psi), tie.reduce_trial(&conj, psi), t.factor)
+                Border { column: tie.reduce_test(&t.v, psi), row: tie.reduce_trial(&conj, psi), factor: t.factor }
             })
             .collect();
         let border = borders.len();
-        let a = bordered(&b, &borders)?;
-        let nr = tie.reduced;
+        let a = bordered(&reduced, &borders)?;
         let rhs: Vec<Vec<C>> = terms
             .iter()
             .map(|list| {
-                let mut r = vec![C::new(0.0, 0.0); nr + border];
+                let mut r = vec![C::new(0.0, 0.0); tie.reduced + border];
                 if let Some(t) = list.first() {
                     for (i, v) in tie.reduce_test(&t.v, psi) {
                         r[i] = v * t.rhs;
@@ -381,49 +381,31 @@ impl Driven {
                 r
             })
             .collect();
-        let assembly = t0.elapsed().as_secs_f64();
-        let budget = crate::ldlt::memory_budget();
-        let made;
-        let an = match self.analysis.get().filter(|an| an.fits(&a)) {
-            Some(an) => an,
-            None => {
-                let points: Vec<emcraft_model::Point3> =
-                    tie.points.iter().copied().chain(std::iter::repeat_n(emcraft_model::Point3::ORIGIN, border)).collect();
-                made = crate::ldlt::Analysis::new(&a, &points, border)?;
-                // Kept for the next frequencies (the pattern does not change with them).
-                self.analysis.get_or_init(|| made.clone())
-            }
-        };
-        let f = crate::lu::Lu::factor_analysed(&a, an, budget)?;
-        let t1 = std::time::Instant::now();
-        let mut fields = Vec::with_capacity(rhs.len());
-        let mut worst: f64 = 0.0;
-        for b in &rhs {
-            let (mut x, e) = f.solve_refined(&a, b, 4)?;
-            x.truncate(nr);
-            worst = worst.max(e);
-            fields.push(tie.expand(&x, psi));
-        }
-        let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
-        let mut s = SMatrix::zeros(terms.len());
-        for (q, x) in fields.iter().enumerate() {
-            for (p, list) in terms.iter().enumerate() {
-                let Some(t) = list.first() else { continue };
-                let c = t.coefficient(x);
-                let direct = if p == q { c - 1.0 } else { c };
-                s[(p, q)] = direct * (proxy(p) / proxy(q)).sqrt();
-            }
-        }
-        Ok(FrequencyResult {
-            frequency,
-            s,
-            impedances: vec![None; terms.len()],
-            fields,
-            backward_error: worst,
-            perturbed_pivots: f.perturbed,
-            factor_entries: f.entries,
-            largest_front: f.largest_front,
-            timings: Timings { assembly, analysis: 0.0, factor: f.numeric_seconds, solve: t1.elapsed().as_secs_f64() },
-        })
+        Ok(PeriodicSystem { a, rhs, terms, psi, border })
     }
+}
+
+/// A periodic cell's linear system at one frequency (see [`Driven::periodic_system`]).
+struct PeriodicSystem {
+    a: Csr,
+    rhs: Vec<Vec<C>>,
+    terms: Vec<Vec<FloquetTerm>>,
+    psi: [f64; 3],
+    border: usize,
+}
+
+/// S from each excitation's full field: S_pq = c at port p for a unit wave from q, less the
+/// incident wave, normalised to the modes' powers.
+fn floquet_s(terms: &[Vec<FloquetTerm>], fields: &[Vec<C>]) -> SMatrix {
+    let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
+    let mut s = SMatrix::zeros(terms.len());
+    for (q, x) in fields.iter().enumerate() {
+        for (p, list) in terms.iter().enumerate() {
+            let Some(t) = list.first() else { continue };
+            let c = t.coefficient(x);
+            let direct = if p == q { c - 1.0 } else { c };
+            s[(p, q)] = direct * (proxy(p) / proxy(q)).sqrt();
+        }
+    }
+    s
 }
