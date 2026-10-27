@@ -85,6 +85,11 @@ fn scenario_symmetry_plane() {
 }
 
 #[test]
+fn scenario_stub_and_via() {
+    scenario("stub_and_via");
+}
+
+#[test]
 fn scenario_start_page() {
     scenario("start_page");
 }

@@ -1,0 +1,19 @@
+[
+  {"note": "A stripline with an open stub and a via shorting its end: the browser lists the via, the 3D view draws it"},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "model.material.create", "params": {"name": "fill", "eps_r": 2.2}},
+    {"command": "geometry.waveguide", "params": {"width": 20, "height": 2, "sections": [{"length": 30, "material": "fill"}],
+      "strips": [{"y": 1, "x0": 3, "width": 2, "z0": 0, "z1": 30}, {"y": 1, "x0": 5, "width": 10, "z0": 14, "z1": 16}],
+      "vias": [{"x0": 14, "z0": 14, "wx": 1, "wz": 2, "y0": 0, "y1": 1}]}}
+  ]}},
+  {"until": {"busy": false}},
+  {"call": "ui.set", "params": {"step": "geometry"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"handles": ["row:Via 1: 1 × 2 mm, y 0 to 1"]}},
+  {"shot": "stub-and-via"},
+  {"click": "row:Via 1: 1 × 2 mm, y 0 to 1"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.selected": "Via(0)"}}},
+  {"shot": "stub-and-via-selected"}
+]

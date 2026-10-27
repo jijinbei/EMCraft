@@ -54,6 +54,7 @@ pub enum Pick {
     Port(usize),
     /// A field plane in the Results step's view.
     Plane(usize),
+    Via(usize),
 }
 
 impl Pick {
@@ -69,6 +70,7 @@ impl Pick {
             Pick::Inclusion(i) => (7, i),
             Pick::Port(i) => (8, i),
             Pick::Plane(i) => (9, i),
+            Pick::Via(i) => (10, i),
         };
         (kind << 16) | (i.min(0xFFFF) as u32)
     }
@@ -85,6 +87,7 @@ impl Pick {
             7 => Pick::Inclusion(i),
             8 => Pick::Port(i),
             9 => Pick::Plane(i),
+            10 => Pick::Via(i),
             _ => return None,
         })
     }
@@ -542,7 +545,8 @@ fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
     let see_through = matches!(overlay, Overlay::Ports | Overlay::Boundaries | Overlay::Field);
     if let Some(w) = &m.waveguide {
         let mut z = 0.0;
-        let layered = !w.layers.is_empty();
+        // A planar circuit's conductors lie inside: its walls let them show.
+        let layered = !w.layers.is_empty() || !w.strips.is_empty() || !w.vias.is_empty();
         for (i, s) in w.sections.iter().enumerate() {
             let emcraft_model::Span { start: x0, width: a } = w.aperture(i).unwrap_or(w.across_x());
             let emcraft_model::Span { start: y0, width: b } = w.aperture_y(i).unwrap_or(w.across_y());
@@ -573,8 +577,8 @@ fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
                 )
             });
         }
-        for v in &w.vias {
-            cuboid(&mut out.scene, [v.x0, v.y0, v.z0], [v.x0 + v.wx, v.y1, v.z0 + v.wz], METAL_DARK, 255, true);
+        for (i, v) in w.vias.iter().enumerate() {
+            out.scene.tagged(Pick::Via(i).tag(), |scene| cuboid(scene, [v.x0, v.y0, v.z0], [v.x0 + v.wx, v.y1, v.z0 + v.wz], METAL_DARK, 255, true));
         }
     }
     if let Some(solid) = &m.solid {
