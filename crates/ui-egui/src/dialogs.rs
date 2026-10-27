@@ -144,6 +144,50 @@ pub struct Field {
     pub error: Option<String>,
 }
 
+impl Field {
+    /// Parameter `p`'s empty field, edited as `kind`.
+    fn of(p: &ParamSpec, kind: Kind) -> Field {
+        Field {
+            name: p.name,
+            doc: p.doc,
+            required: p.required,
+            quantity: p.quantity,
+            kind,
+            text: String::new(),
+            on: false,
+            parts: Vec::new(),
+            rows: Vec::new(),
+            error: None,
+        }
+    }
+
+    /// Fills the field with an initial value (JSON, display units); what does not fit its kind
+    /// leaves it empty.
+    fn load(&mut self, v: &Value) {
+        match &self.kind {
+            Kind::Bool => self.on = v.as_bool().unwrap_or(false),
+            Kind::Vector(names) => {
+                self.parts = (0..names.len()).map(|i| v.get(i).map(value_text).unwrap_or_default()).collect();
+            }
+            Kind::Table(cols) => {
+                self.rows = v.as_array().map(|rows| rows.iter().take(MAX_ROWS).map(|r| table_row(cols, r)).collect()).unwrap_or_default();
+            }
+            Kind::Numbers => self.text = v.as_array().map(|a| list_text(a)).unwrap_or_default(),
+            _ => self.text = bounded(&value_text(v)),
+        }
+    }
+}
+
+/// A table row's cells from a JSON record, column by column (missing ones empty).
+fn table_row(cols: &[Column], record: &Value) -> Vec<String> {
+    cols.iter().map(|c| record.get(c.name).map(value_text).unwrap_or_default()).collect()
+}
+
+/// A list of numbers as a list field's text.
+fn list_text(list: &[Value]) -> String {
+    list.iter().map(value_text).collect::<Vec<_>>().join(", ")
+}
+
 /// An open dialog.
 #[derive(Clone)]
 pub struct Dialog {
@@ -182,41 +226,8 @@ impl Dialog {
             .params
             .iter()
             .map(|p| {
-                let kind = kind_of(command.id, p, session);
-                let v = initial.get(p.name).unwrap_or(&Value::Null);
-                let mut f = Field {
-                    name: p.name,
-                    doc: p.doc,
-                    required: p.required,
-                    quantity: p.quantity,
-                    kind: kind.clone(),
-                    text: String::new(),
-                    on: false,
-                    parts: Vec::new(),
-                    rows: Vec::new(),
-                    error: None,
-                };
-                match &kind {
-                    Kind::Bool => f.on = v.as_bool().unwrap_or(false),
-                    Kind::Vector(names) => {
-                        f.parts = (0..names.len()).map(|i| v.get(i).map(value_text).unwrap_or_default()).collect();
-                    }
-                    Kind::Table(cols) => {
-                        f.rows = v
-                            .as_array()
-                            .map(|rows| {
-                                rows.iter()
-                                    .take(MAX_ROWS)
-                                    .map(|r| cols.iter().map(|c| r.get(c.name).map(value_text).unwrap_or_default()).collect())
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                    }
-                    Kind::Numbers => {
-                        f.text = v.as_array().map(|a| a.iter().map(value_text).collect::<Vec<_>>().join(", ")).unwrap_or_default();
-                    }
-                    _ => f.text = bounded(&value_text(v)),
-                }
+                let mut f = Field::of(p, kind_of(command.id, p, session));
+                f.load(initial.get(p.name).unwrap_or(&Value::Null));
                 f
             })
             .collect();
@@ -258,11 +269,11 @@ impl Dialog {
             }
             Kind::Table(cols) => {
                 let rows = v.as_array().filter(|a| a.len() <= MAX_ROWS).ok_or_else(|| format!("`{name}` takes a list of at most {MAX_ROWS} rows"))?;
-                f.rows = rows.iter().map(|r| cols.iter().map(|c| bounded(&r.get(c.name).map(value_text).unwrap_or_default())).collect()).collect();
+                f.rows = rows.iter().map(|r| table_row(cols, r).iter().map(|c| bounded(c)).collect()).collect();
             }
             Kind::Numbers => {
                 f.text = match v {
-                    Value::Array(a) => bounded(&a.iter().map(value_text).collect::<Vec<_>>().join(", ")),
+                    Value::Array(a) => bounded(&list_text(a)),
                     other => bounded(&value_text(other)),
                 }
             }
@@ -396,134 +407,148 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
 }
 
 /// What a dialog opens on: the model's own values where it has them (the waveguide being
-/// edited, the next port's name), otherwise defaults that make a working example.
+/// edited, the next port's name), otherwise defaults that make a working example. Lengths and
+/// frequencies are in the session's display units.
 pub fn initial(command: &str, s: &Session) -> Value {
     let l = s.display.length;
     let ports = s.model.ports.len();
-    // The job's band in display units.
     let fu = s.display.frequency;
+    // The job's band, and the frequency in its middle.
     let band = s.model.band.map(|b| (fu.from_si(b.start), fu.from_si(b.stop)));
+    let middle = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
     match command {
-        "geometry.waveguide" => match s.model.waveguide.as_ref() {
-            Some(w) => {
-                let opt = |v: Option<f64>| v.map(|x| json!(l.from_si(x)));
-                let sections: Vec<Value> = w
-                    .sections
-                    .iter()
-                    .map(|sec| {
-                        let mut o = json!({"length": l.from_si(sec.length), "material": sec.material});
-                        for (k, v) in
-                            [("width", opt(sec.width)), ("offset", opt(sec.offset)), ("height", opt(sec.height)), ("offset_y", opt(sec.offset_y))]
-                        {
-                            if let Some(v) = v {
-                                o[k] = v;
-                            }
-                        }
-                        o
-                    })
-                    .collect();
-                let layers: Vec<Value> = w.layers.iter().map(|x| json!({"thickness": l.from_si(x.thickness), "material": x.material})).collect();
-                let strips: Vec<Value> = w
-                    .strips
-                    .iter()
-                    .map(|x| json!({"y": l.from_si(x.y), "x0": l.from_si(x.x0), "width": l.from_si(x.width), "z0": l.from_si(x.z0), "z1": l.from_si(x.z1)}))
-                    .collect();
-                let vias: Vec<Value> = w
-                    .vias
-                    .iter()
-                    .map(|v| {
-                        json!({"x0": l.from_si(v.x0), "z0": l.from_si(v.z0), "wx": l.from_si(v.wx), "wz": l.from_si(v.wz), "y0": l.from_si(v.y0), "y1": l.from_si(v.y1)})
-                    })
-                    .collect();
-                json!({"width": l.from_si(w.width), "height": l.from_si(w.height), "sections": sections, "layers": layers, "strips": strips, "vias": vias})
-            }
-            None => json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]}),
-        },
+        // The model: its own guide or the next names, else a working example.
+        "geometry.waveguide" => waveguide(s),
         "model.material.create" => json!({"name": format!("material{}", s.model.materials.len()), "eps_r": 2.2}),
         "geometry.solid" => json!({"shape": "box", "size": [22.86, 10.16, 30]}),
         "geometry.inclusion" => json!({"shape": "sphere", "radius": 2, "at": [11.43, 5.08, 15]}),
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         "geometry.import" => json!({"angle": 30, "open": false}),
         "geometry.body" => json!({"material": "metal", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
-        // With a band, the mesh follows it: elements per wavelength at its top.
-        "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
-        "mesh.generate" => json!({"size": 3, "curved": true}),
-        "mesh.adapt" if band.is_some() => json!({"per_wavelength": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
-        "mesh.adapt" => json!({"size": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
         "model.walls" => json!({"conductivity": 5.8e7}),
         "model.symmetry" => json!({"axis": "x", "kind": "magnetic"}),
-        "model.periodic" => match &s.model.periodic {
-            Some(p) => json!({"x": p.x, "y": p.y, "z": p.z, "theta": p.theta.to_degrees(), "phi": p.phi.to_degrees(),
-                              "polarization": if p.polarization == emcraft_model::Polarization::Te { "te" } else { "tm" }}),
-            None => json!({"x": true, "y": true, "z": false, "theta": 0, "phi": 0, "polarization": "te"}),
-        },
-        "solve.dispersion" => json!({"from": 0, "to": 180, "points": 11, "bands": 4, "near": band.map_or(15.0, |(_, z)| z), "order": 2}),
-        "view.dispersion" => json!({"path": "dispersion.png"}),
+        "model.periodic" => periodic(s),
         "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),
         "model.port.lumped" => json!({"name": format!("L{}", s.model.lumped.len() + 1), "from": [0, 0, -0.5], "to": [0, 0, 0.5], "impedance": 50}),
         "source.dipole" => json!({"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1, "current": 1}),
         "source.plane_wave" => json!({"direction": [0, 0, 1], "polarization": [1, 0, 0]}),
         "model.open" => json!({"thickness": 10}),
+        // The mesh: with a band, it follows it (elements per wavelength at its top).
+        "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
+        "mesh.generate" => json!({"size": 3, "curved": true}),
+        "mesh.adapt" if band.is_some() => json!({"per_wavelength": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
+        "mesh.adapt" => json!({"size": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
+        // The solves: over the band, or at its middle or top.
         "solve.frequency" => match band {
             Some((a, z)) => json!({"start": a, "stop": z, "points": 11, "order": 2}),
             None => json!({"start": 8, "stop": 12, "points": 11, "order": 2}),
         },
-        "solve.eigenmodes" => json!({"near": band.map_or(10.0, |(a, z)| 0.5 * (a + z)), "count": 5, "order": 2}),
-        "solve.radiation" => json!({"frequency": band.map_or(10.0, |(a, z)| 0.5 * (a + z)), "order": 2}),
+        "solve.eigenmodes" => json!({"near": middle, "count": 5, "order": 2}),
+        "solve.radiation" => json!({"frequency": middle, "order": 2}),
         "solve.time_domain" => {
             let (a, z) = band.unwrap_or((8.0, 12.0));
             json!({"start": a, "stop": z, "points": 41, "cell": 1})
         }
         "solve.port_modes" => json!({"frequency": band.map_or(10.0, |(_, z)| z), "order": 2}),
+        "solve.dispersion" => json!({"from": 0, "to": 180, "points": 11, "bands": 4, "near": band.map_or(15.0, |(_, z)| z), "order": 2}),
         "solve.device" => json!({"device": s.compute.device(), "precision": s.compute.precision.name()}),
         "project.frequency" => match band {
             Some((a, z)) => json!({"start": a, "stop": z}),
             None => json!({"start": 8, "stop": 12}),
         },
-        "file.save" | "file.open" => json!({"path": "project.emcraft"}),
+        // Results and pictures.
+        "results.touchstone" => json!({"path": format!("emcraft.s{}p", ports.max(1)), "format": "ri"}),
+        "results.compare" => json!({"modes": 160}),
         // The highest solved frequency of the sweep, as the field view opens on.
         "view.animation" => {
             let f = s.results.sweep.as_ref().and_then(|sw| sw.results.last()).map(|r| fu.from_si(r.frequency));
             json!({"path": "field-animation.png", "frames": 24, "frequency": f})
         }
-        "results.touchstone" => json!({"path": format!("emcraft.s{}p", ports.max(1)), "format": "ri"}),
-        "results.compare" => json!({"modes": 160}),
+        "view.dispersion" => json!({"path": "dispersion.png"}),
+        "view.study" => json!({"path": "study.png"}),
+        // The project.
+        "file.save" | "file.open" => json!({"path": "project.emcraft"}),
         "file.sample" => json!({"name": "highpass", "solve": true}),
-        "units.set" => json!({"length": l.symbol(), "frequency": s.display.frequency.symbol()}),
+        "units.set" => json!({"length": l.symbol(), "frequency": fu.symbol()}),
         "project.variable" => {
             let name = ["l", "w", "h", "d", "er"].into_iter().map(str::to_owned).find(|n| !s.variables.contains_key(n));
             json!({"name": name.unwrap_or_else(|| format!("v{}", s.variables.len() + 1)), "value": 10})
         }
         "project.variable.delete" => json!({"name": s.variables.keys().next()}),
-        "study.sweep" | "study.optimize" => {
-            let (name, v) = s.variables.iter().next().map_or((None, 1.0), |(n, v)| (Some(n.clone()), *v));
-            let spread = |k: f64| if v == 0.0 { k } else { v * (1.0 + k) };
-            let (solve, goal) = if s.model.open.is_some() {
-                (
-                    json!({"command": "solve.radiation", "params": initial("solve.radiation", s)}),
-                    json!({"type": "maximize", "quantity": "radiated_power"}),
-                )
-            } else if s.model.ports.is_empty() {
-                let near = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
-                (
-                    json!({"command": "solve.eigenmodes", "params": {"near": near, "count": 3, "order": 2}}),
-                    json!({"type": "eigenfrequency", "mode": 1, "target": near}),
-                )
-            } else {
-                let (a, z) = band.unwrap_or((8.0, 12.0));
-                (
-                    json!({"command": "solve.frequency", "params": {"start": a, "stop": z, "points": 11, "order": 2}}),
-                    json!({"type": "min_max_db", "parameter": "s11"}),
-                )
-            };
-            if command == "study.sweep" {
-                json!({"variable": name, "start": spread(-0.2), "stop": spread(0.2), "points": 5, "solve": solve})
-            } else {
-                json!({"variables": [{"name": name, "min": spread(-0.5), "max": spread(0.5)}], "goal": goal, "solve": solve, "max_evaluations": 40})
-            }
-        }
-        "view.study" => json!({"path": "study.png"}),
+        "study.sweep" | "study.optimize" => study(command, s, band),
         _ => json!({}),
+    }
+}
+
+/// The model's waveguide as `geometry.waveguide`'s parameters, or a WR-90 section.
+fn waveguide(s: &Session) -> Value {
+    let Some(w) = s.model.waveguide.as_ref() else {
+        return json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]});
+    };
+    let l = s.display.length;
+    let opt = |v: Option<f64>| v.map(|x| json!(l.from_si(x)));
+    let sections: Vec<Value> = w
+        .sections
+        .iter()
+        .map(|sec| {
+            let mut o = json!({"length": l.from_si(sec.length), "material": sec.material});
+            for (k, v) in [("width", opt(sec.width)), ("offset", opt(sec.offset)), ("height", opt(sec.height)), ("offset_y", opt(sec.offset_y))] {
+                if let Some(v) = v {
+                    o[k] = v;
+                }
+            }
+            o
+        })
+        .collect();
+    let layers: Vec<Value> = w.layers.iter().map(|x| json!({"thickness": l.from_si(x.thickness), "material": x.material})).collect();
+    let strips: Vec<Value> = w
+        .strips
+        .iter()
+        .map(|x| json!({"y": l.from_si(x.y), "x0": l.from_si(x.x0), "width": l.from_si(x.width), "z0": l.from_si(x.z0), "z1": l.from_si(x.z1)}))
+        .collect();
+    let vias: Vec<Value> = w
+        .vias
+        .iter()
+        .map(|v| json!({"x0": l.from_si(v.x0), "z0": l.from_si(v.z0), "wx": l.from_si(v.wx), "wz": l.from_si(v.wz), "y0": l.from_si(v.y0), "y1": l.from_si(v.y1)}))
+        .collect();
+    json!({"width": l.from_si(w.width), "height": l.from_si(w.height), "sections": sections, "layers": layers, "strips": strips, "vias": vias})
+}
+
+/// The model's periodic boundaries as `model.periodic`'s parameters, or a cell tied across x
+/// and y at normal incidence.
+fn periodic(s: &Session) -> Value {
+    match &s.model.periodic {
+        Some(p) => json!({"x": p.x, "y": p.y, "z": p.z, "theta": p.theta.to_degrees(), "phi": p.phi.to_degrees(),
+                          "polarization": if p.polarization == emcraft_model::Polarization::Te { "te" } else { "tm" }}),
+        None => json!({"x": true, "y": true, "z": false, "theta": 0, "phi": 0, "polarization": "te"}),
+    }
+}
+
+/// A study of the first variable around its value: the solve the model calls for (radiation
+/// for an open problem, eigenmodes without ports, else a sweep over the band) and, for an
+/// optimization, the goal that goes with it.
+fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
+    let (name, v) = s.variables.iter().next().map_or((None, 1.0), |(n, v)| (Some(n.clone()), *v));
+    let spread = |k: f64| if v == 0.0 { k } else { v * (1.0 + k) };
+    let (solve, goal) = if s.model.open.is_some() {
+        (json!({"command": "solve.radiation", "params": initial("solve.radiation", s)}), json!({"type": "maximize", "quantity": "radiated_power"}))
+    } else if s.model.ports.is_empty() {
+        let near = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
+        (
+            json!({"command": "solve.eigenmodes", "params": {"near": near, "count": 3, "order": 2}}),
+            json!({"type": "eigenfrequency", "mode": 1, "target": near}),
+        )
+    } else {
+        let (a, z) = band.unwrap_or((8.0, 12.0));
+        (
+            json!({"command": "solve.frequency", "params": {"start": a, "stop": z, "points": 11, "order": 2}}),
+            json!({"type": "min_max_db", "parameter": "s11"}),
+        )
+    };
+    if command == "study.sweep" {
+        json!({"variable": name, "start": spread(-0.2), "stop": spread(0.2), "points": 5, "solve": solve})
+    } else {
+        json!({"variables": [{"name": name, "min": spread(-0.5), "max": spread(0.5)}], "goal": goal, "solve": solve, "max_evaluations": 40})
     }
 }
 
