@@ -89,6 +89,13 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   §2.2 — the Leontovich surface-impedance condition for walls of finite conductivity.
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, eq. 3.96 — TE10 conductor
   attenuation (the reference); §1.3 — the loss tangent.
+- A. Taflove, S. C. Hagness, *Computational Electrodynamics: The Finite-Difference Time-Domain
+  Method*, 3rd ed., Artech House 2005, ch. 9 (§9.2 Debye, §9.4 Lorentz and Drude media) — the
+  dispersive permittivities ε(ω) = ε∞ + Σ χ_k(ω), written for e^{jωt}: Debye
+  Δε/(1 + jωτ), Lorentz Δε ω₀²/(ω₀² − ω² + jωγ), Drude −ω_p²/(ω² − jωγ)
+  (`emcraft-model::Pole`). The frequency-domain solver evaluates them at each frequency, each
+  dispersive material with its own mass matrix (`emcraft-solver::driven`, and term by term in
+  the fast sweep).
 
 ## Sparse direct solution
 - A. George, *Nested dissection of a regular finite element mesh*, SIAM J. Numer. Anal.
@@ -120,6 +127,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   CFS–PML for arbitrary media*, Microw. Opt. Technol. Lett. 27(5):334–339, 2000; A. Taflove, S.
   C. Hagness, *Computational Electrodynamics: The FDTD Method*, 3rd ed., Artech House 2005,
   ch. 7 — the absorbing layers and their grading.
+- A. Taflove, S. C. Hagness, *Computational Electrodynamics*, 3rd ed., Artech House 2005, §9.4 —
+  the auxiliary differential equation (ADE) method for dispersive media: each pole's
+  polarization advanced with E on the edges it touches, D = ε₀ε∞E + ΣP; Debye poles centred at
+  n + ½ (trapezoidal, solved per edge with E), Lorentz and Drude poles centred at n (explicit)
+  (`emcraft-fdtd`).
 
 ## Fast frequency sweeps
 - P. Benner, M. Hinze, E. J. W. ter Maten (eds.), *Model Reduction for Circuit Simulation*,
