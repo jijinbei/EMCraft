@@ -30,6 +30,11 @@ fn scenario_time_domain_device() {
 }
 
 #[test]
+fn scenario_import_bodies() {
+    scenario("import_bodies");
+}
+
+#[test]
 fn scenario_field_view() {
     scenario("field_view");
 }

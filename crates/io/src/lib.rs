@@ -60,6 +60,18 @@ pub fn read(name: &str, bytes: &[u8], stl_unit: f64) -> Result<Surface> {
     Ok(s)
 }
 
+/// Reads a file's bodies, by its extension: a 3MF package's build items one body each (named
+/// after their objects, SolidCraft's bodies), an STL file one body.
+pub fn read_bodies(name: &str, bytes: &[u8], stl_unit: f64) -> Result<Vec<Surface>> {
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let file = name.rsplit(['/', '\\']).next().unwrap_or(name).to_string();
+    match ext.as_str() {
+        "stl" => Ok(vec![Surface { name: file, ..stl::read(bytes, stl_unit)? }]),
+        "3mf" => threemf::read(bytes),
+        _ => Err(Error::Invalid(format!("`{name}`: not an STL or 3MF file (by its extension)"))),
+    }
+}
+
 /// Splits each face into the regions whose neighbouring triangles turn by less than
 /// `angle_deg` (a surface's flat or gently curved patches, so its sharp edges stay edges when
 /// it is meshed); returns the number of faces.
@@ -120,5 +132,23 @@ mod tests {
         seen.dedup();
         assert_eq!(seen.len(), 6);
         assert!(read("x.obj", b"", 1e-3).is_err());
+    }
+
+    #[test]
+    fn bodies_keep_their_names_and_faces_through_a_package() {
+        let mut a = stl::tests::cube_surface(0.02, 0.01, 0.03);
+        split_faces(&mut a, 30.0);
+        a.name = "Can & lid".into();
+        let mut b = stl::tests::cube_surface(0.004, 0.004, 0.004);
+        b.name = "Puck".into();
+        let bytes = threemf::write(&[a.clone(), b]).unwrap();
+        let back = read_bodies("part.3mf", &bytes, 1e-3).unwrap();
+        assert_eq!(back.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["Can & lid", "Puck"]);
+        assert_eq!((back[0].triangles.clone(), back[0].tags.clone()), (a.triangles, a.tags));
+        for (p, q) in back[0].positions.iter().zip(&a.positions) {
+            assert!((*p - *q).norm() < 1e-15);
+        }
+        let stl = stl::write_binary(&stl::tests::cube_surface(0.01, 0.01, 0.01), 1e-3);
+        assert_eq!(read_bodies("one.stl", &stl, 1e-3).unwrap().len(), 1);
     }
 }

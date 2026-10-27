@@ -95,6 +95,14 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         (_, "strips") => return Kind::Table(STRIPS),
         (_, "vias") => return Kind::Table(VIAS),
         ("file.sample", "name") => return Kind::Choice(emcraft_engine::sample::SAMPLES.iter().map(|s| s.name.to_owned()).collect()),
+        // A body may be metal besides the materials.
+        ("geometry.body" | "geometry.body.material", "material") => {
+            let metal = std::iter::once(emcraft_engine::bodies::METAL.to_owned());
+            return Kind::Choice(metal.chain(session.model.materials.iter().map(|m| m.name.clone())).collect());
+        }
+        ("geometry.body.material", "body") => {
+            return Kind::Choice(emcraft_engine::bodies::bodies(&session.model).into_iter().map(|b| b.name).collect());
+        }
         (_, "material") => return Kind::Choice(session.model.materials.iter().map(|m| m.name.clone()).collect()),
         (_, "excitation") => return Kind::Choice(session.model.ports.iter().map(|p| p.name.clone()).collect()),
         ("results.probe", "at") => return Kind::Json,
@@ -415,6 +423,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "geometry.inclusion" => json!({"shape": "sphere", "radius": 2, "at": [11.43, 5.08, 15]}),
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         "geometry.import" => json!({"angle": 30}),
+        "geometry.body" => json!({"material": "metal", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         // With a band, the mesh follows it: elements per wavelength at its top.
         "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
         "mesh.generate" => json!({"size": 3, "curved": true}),

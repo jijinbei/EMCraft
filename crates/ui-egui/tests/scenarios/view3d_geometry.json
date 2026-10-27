@@ -8,7 +8,7 @@
     {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}}
   ]}},
   {"click": "view3d:std:iso"},
-  {"expect": {"inspect": {"view3d.triangles": {"min": 300}, "model.mesh": null}, "handles": ["row:Solid: Cylinder, ptfe", "row:Boolean 1: subtract cylinder"]}},
+  {"expect": {"inspect": {"view3d.triangles": {"min": 300}, "model.mesh": null}, "handles": ["row:Region: cylinder, ptfe", "row:body 1: metal cylinder"]}},
   {"shot": "view3d-coax-geometry"},
   {"call": "ui.set", "params": {"step": "materials"}},
   {"shot": "view3d-coax-materials"}

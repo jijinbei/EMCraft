@@ -407,7 +407,7 @@ pub fn for_command(id: &str) -> &'static str {
     match id {
         "geometry.waveguide" => "waveguide",
         "geometry.solid" => "box",
-        "geometry.feature" => "feature",
+        "geometry.feature" | "geometry.body" | "geometry.body.material" => "feature",
         "geometry.inclusion" => "inclusion",
         "geometry.import" => "import",
         "model.material.create" => "material",

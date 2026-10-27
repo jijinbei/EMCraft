@@ -16,7 +16,7 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
     (
         "MODEL",
         &[
-            ("GEOMETRY", &["geometry.waveguide", "geometry.solid", "geometry.feature", "geometry.inclusion", "geometry.import"]),
+            ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.solid", "geometry.body"]),
             ("SETTINGS", &["units.set", "project.frequency"]),
         ],
     ),
@@ -48,7 +48,9 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
 pub fn button_label(id: &str) -> &str {
     match id {
         "geometry.waveguide" => "Waveguide",
-        "geometry.solid" => "Solid",
+        "geometry.solid" => "Region",
+        "geometry.body" => "Body",
+        "geometry.body.material" => "Body material",
         "geometry.feature" => "Boolean",
         "geometry.inclusion" => "Inclusion",
         "geometry.import" => "Import",

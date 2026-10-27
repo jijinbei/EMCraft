@@ -1,7 +1,7 @@
 [
  {"command": "model.material.create", "params": {"name": "ceramic", "eps_r": 4}},
  {"command": "geometry.solid", "params": {"shape": "box", "size": [50, 50, 50]}},
- {"command": "geometry.inclusion", "params": {"shape": "sphere", "radius": 5, "at": [25, 25, 25], "material": "ceramic"}},
+ {"command": "geometry.body", "params": {"material": "ceramic", "shape": "sphere", "radius": 5, "at": [25, 25, 25]}},
  {"command": "model.open", "params": {"thickness": 12}},
  {"command": "mesh.generate", "params": {"per_wavelength": 6, "frequency": 10}},
  {"command": "source.plane_wave", "params": {"direction": [0, 0, 1], "polarization": [1, 0, 0]}},

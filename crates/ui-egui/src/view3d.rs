@@ -185,11 +185,10 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     }
     if edit.double
         && let Some((_, row)) = &picked
-        && let crate::browser::Act::Edit(id) = row.act
+        && row.act.edits()
         && !app.busy()
-        && let Err(e) = app.open_dialog(id)
     {
-        app.message(e, true);
+        row.act.clone().open(app);
     }
     // Moving pictures (an orbit, a playing field) draw on the GPU.
     let gpu = app.prefs.gpu3d || app.view3d.dragging || (overlay == Overlay::Field && app.field.player.playing);
@@ -422,7 +421,7 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
 
 /// The selection's name on a card at the top, with how to edit it.
 fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &Tokens) {
-    let hint = if matches!(row.act, crate::browser::Act::Edit(_)) { "  ·  double-click to edit" } else { "" };
+    let hint = if row.act.edits() { "  ·  double-click to edit" } else { "" };
     let g = p.layout_no_wrap(format!("{}{hint}", row.text.trim()), FontId::proportional(t.font_small), t.text);
     let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));

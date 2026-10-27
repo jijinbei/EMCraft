@@ -122,16 +122,42 @@ A body of one material with conducting walls, meshed with unstructured tetrahedr
 | `length` | number | length | no | the cylinder's length along z |
 | `material` | string |  | no | the filling (default vacuum) |
 
-## `geometry.import` — Import a surface
+## `geometry.import` — Import
 
-A body bounded by a closed triangulated surface read from an STL (binary or ASCII) or 3MF file, meshed with unstructured tetrahedra like geometry.solid. Its triangles are grouped into faces by the angle between neighbours, so its sharp edges stay edges. The faces on its lowest and highest z planes can carry ports when they are a whole rectangle or a disc. Replaces any geometry, mesh and results.
+Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's export with face tags (one body per object, named after it, its B-rep faces kept as faces). Triangles are grouped into faces also by the angle between neighbours, so sharp edges stay edges. One body alone becomes the region the fields fill, filled with `material`, and its faces on its lowest and highest z planes can carry ports. Several bodies lie in a box of air (`material`) `margin` beyond them all, or in the body `region` names; each is metal unless `materials` gives it another (geometry.body.material changes it later). Replaces any geometry, mesh and results.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | the file (`.stl` or `.3mf`) |
 | `unit` | number | length | no | an STL file's length unit in display units (default 1, i.e. the display unit); 3MF files carry their own |
 | `angle` | number |  | no | neighbouring triangles turning by more than this many degrees are on different faces (default 30) |
-| `material` | string |  | no | the filling (default vacuum) |
+| `material` | string |  | no | the region's filling (default vacuum) |
+| `region` | string |  | no | `box` (air around the bodies; the default for several) or the name of the body that is the region (the default for one) |
+| `margin` | number | length | no | the box's room around the bodies (default a quarter of their largest extent) |
+| `materials` | object |  | no | body name → material, or `metal` (the default for every body) |
+
+## `geometry.body` — Body
+
+A body in the region, by what it is made of: `metal` (a perfect conductor: the region loses its volume and its surface becomes wall; it may reach the region's boundary), the region's own material (giving back what metal took: the inside of a metal shell, an opening), or another material (a dielectric body inside the region, apart from other dielectric ones). Later bodies win where they overlap. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis` (dielectric bodies along z).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `material` | string |  | yes | `metal`, the region's material, or another material's name |
+| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `size` | array | length | no | the box's [x, y, z] (in its own axes) |
+| `radius` | number | length | no | the cylinder's or the sphere's radius |
+| `length` | number | length | no | the cylinder's length along its axis |
+| `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
+| `axis` | string |  | no | `x`, `y` or `z` (default): where its own z axis points |
+
+## `geometry.body.material` — Body material
+
+Gives a body another material (`metal`, the region's, or another): an imported part's metal body made a dielectric, say. It is placed again last, so it wins where it overlaps others.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `body` | string |  | yes | the body's name (an imported body's own, else `body <n>`) |
+| `material` | string |  | yes | `metal`, the region's material, or another material's name |
 
 ## `geometry.inclusion` — Inclusion
 

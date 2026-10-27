@@ -22,6 +22,27 @@ pub enum Act {
     None,
     Show(View),
     Edit(&'static str),
+    /// Opens a command's dialog with these values over its usual ones (a body's material).
+    EditWith(&'static str, serde_json::Value),
+}
+
+impl Act {
+    /// Whether a double-click edits.
+    pub fn edits(&self) -> bool {
+        matches!(self, Act::Edit(_) | Act::EditWith(..))
+    }
+
+    /// Opens the dialog the row edits with.
+    pub fn open(self, app: &mut EmcraftApp) {
+        let r = match self {
+            Act::Edit(id) => app.open_dialog(id),
+            Act::EditWith(id, values) => app.open_dialog_with(id, values),
+            _ => Ok(()),
+        };
+        if let Err(e) = r {
+            app.message(e, true);
+        }
+    }
 }
 
 /// A row: its text, glyph and action.
@@ -105,15 +126,21 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         }
     }
     if let Some(solid) = &m.solid {
-        rows.push(row(format!("Solid: {}, {}", solid.shape.kind(), solid.material), "box", Act::Edit("geometry.solid")).picks(Pick::Solid));
+        let what = match &solid.shape {
+            emcraft_model::Shape::Surface { name, .. } => format!("{name} (imported)"),
+            other => other.kind().to_lowercase(),
+        };
+        rows.push(row(format!("Region: {what}, {}", solid.material), "box", Act::Edit("geometry.solid")).picks(Pick::Solid));
     }
-    for (i, feat) in m.features.iter().enumerate() {
-        let text = format!("  Boolean {}: {} {}", i + 1, feat.combine.kind(), feat.shape.kind().to_lowercase());
-        rows.push(row(text, "feature", Act::Edit("geometry.feature")).picks(Pick::Feature(i)));
-    }
-    for (i, inc) in m.inclusions.iter().enumerate() {
-        let what = inc.material.as_deref().unwrap_or("conductor");
-        rows.push(row(format!("  Inclusion {}: {what}", i + 1), "inclusion", Act::Edit("geometry.inclusion")).picks(Pick::Inclusion(i)));
+    // Bodies by what they are made of; a double-click changes it.
+    for b in emcraft_engine::bodies::bodies(m) {
+        let pick = match b.at {
+            emcraft_engine::bodies::BodyRef::Feature(i) => Pick::Feature(i),
+            emcraft_engine::bodies::BodyRef::Inclusion(i) => Pick::Inclusion(i),
+        };
+        let glyph = if b.material == emcraft_engine::bodies::METAL { "feature" } else { "inclusion" };
+        let text = format!("  {}: {} {}", b.name, b.material, b.shape.to_lowercase());
+        rows.push(row(text, glyph, Act::EditWith("geometry.body.material", serde_json::json!({"body": b.name, "material": b.material}))).picks(pick));
     }
     rows
 }
@@ -291,7 +318,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                                     let _ = v;
                                 }
                             }
-                            if resp.double_clicked() && matches!(r.act, Act::Edit(_)) {
+                            if resp.double_clicked() && r.act.edits() {
                                 act = Some(r.act.clone());
                             }
                         }
@@ -299,11 +326,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 });
                 match act {
                     Some(Act::Show(v)) => crate::ribbon::show_view(app, v),
-                    Some(Act::Edit(id)) if !app.busy() => {
-                        if let Err(e) = app.open_dialog(id) {
-                            app.message(e, true);
-                        }
-                    }
+                    Some(a) if a.edits() && !app.busy() => a.open(app),
                     _ => {}
                 }
             });

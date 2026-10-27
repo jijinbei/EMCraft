@@ -113,7 +113,7 @@ pub(crate) enum Primitive {
 }
 
 /// A shape from `shape`, `size`, `radius` and `length`.
-fn shape(p: &Params) -> Result<Shape> {
+pub(crate) fn shape(p: &Params) -> Result<Shape> {
     let dimension = |name| p.positive_length(name).required_or("for this shape");
     Ok(match p.choice("shape").required()? {
         Primitive::Box => Shape::Box { size: p.point("size").required()?.to_vec() },
@@ -148,16 +148,60 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let angle = p.number("angle").check(|a| *a > 0.0 && *a < 180.0, "between 0 and 180 degrees").or(30.0)?;
     let material = p.string("material").or("vacuum")?.to_owned();
     let bytes = read_capped(path, MAX_IMPORT_BYTES)?;
-    let mut surface = emcraft_io::read(path, &bytes, unit)?;
-    let faces = emcraft_io::split_faces(&mut surface, angle);
-    let triangles = surface.triangles.len();
-    let shape = Shape::Surface { name: surface.name, positions: surface.positions, triangles: surface.triangles, tags: surface.tags };
-    s.model.set_solid(Solid { shape, material })?;
+    let mut bodies = emcraft_io::read_bodies(path, &bytes, unit)?;
+    if bodies.is_empty() {
+        return Err(EngineError::Failed(format!("`{path}` holds no body")));
+    }
+    let faces: u32 = bodies.iter_mut().map(|b| emcraft_io::split_faces(b, angle)).sum();
+    let triangles: usize = bodies.iter().map(|b| b.triangles.len()).sum();
+    let as_shape = |b: emcraft_io::Surface| Shape::Surface { name: b.name, positions: b.positions, triangles: b.triangles, tags: b.tags };
+    // The bodies' materials: metal unless named in `materials`.
+    let mut materials: Vec<(String, String)> = Vec::new();
+    if let Some(v) = p.raw("materials") {
+        let o = v.as_object().ok_or_else(|| p.error("materials", "must map body names to materials (or \"metal\")"))?;
+        for (body, m) in o {
+            let m = m.as_str().ok_or_else(|| p.error("materials", format!("`{body}`: the material must be a name")))?;
+            if !bodies.iter().any(|b| &b.name == body) {
+                return Err(p.error("materials", format!("names no body `{body}`")));
+            }
+            materials.push((body.clone(), m.to_owned()));
+        }
+    }
+    // The region the fields fill: one body alone (or the one named), else a box of air around
+    // them all.
+    let region =
+        p.string("region").optional()?.map(str::to_owned).unwrap_or_else(|| if bodies.len() == 1 { bodies[0].name.clone() } else { "box".into() });
+    let mut placed = Vec::new();
+    if region == "box" {
+        let lo = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
+        let hi = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::NEG_INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].max(q[d])));
+        let extent = (0..3).map(|d| hi[d] - lo[d]).fold(0.0f64, f64::max);
+        let margin = p.positive_length("margin").or(0.25 * extent)?;
+        // The box from the origin; the bodies moved into it.
+        let shift = emcraft_model::Vec3::new(margin - lo[0], margin - lo[1], margin - lo[2]);
+        for b in &mut bodies {
+            b.positions.iter_mut().for_each(|q| *q += shift);
+        }
+        let size = emcraft_model::Vec3::new(hi[0] - lo[0] + 2.0 * margin, hi[1] - lo[1] + 2.0 * margin, hi[2] - lo[2] + 2.0 * margin);
+        s.model.set_solid(Solid { shape: Shape::Box { size }, material: material.clone() })?;
+    } else {
+        let k = bodies.iter().position(|b| b.name == region).ok_or_else(|| p.error("region", format!("names no body `{region}` (or `box`)")))?;
+        let body = bodies.remove(k);
+        s.model.set_solid(Solid { shape: as_shape(body), material: material.clone() })?;
+    }
+    for b in bodies {
+        let m = materials.iter().find(|(n, _)| *n == b.name).map_or(crate::bodies::METAL.to_owned(), |(_, m)| m.clone());
+        let name = b.name.clone();
+        let kind = crate::bodies::place(&mut s.model, as_shape(b), Point3::ORIGIN, Axis::Z, &m)?;
+        placed.push(json!({"body": name, "material": m, "as": kind}));
+    }
     s.results.invalidate(Change::Geometry);
     let bounds = s.model.bounds().unwrap_or_default();
     Ok(json!({
         "triangles": triangles,
         "faces": faces,
+        "region": region,
+        "bodies": placed,
         "volume": s.model.solid.as_ref().map(|x| x.shape.volume()),
         "bounds": bounds.corners().map(|c| c.map(|v| s.show_length(v))),
     }))

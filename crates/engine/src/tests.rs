@@ -1,5 +1,7 @@
 use serde_json::json;
 
+use crate::bodies;
+
 use super::*;
 
 fn scratch(name: &str) -> String {
@@ -1098,4 +1100,73 @@ fn the_summary_names_the_solid_shape() {
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 5})).unwrap();
     assert_eq!(s.summary()["solid"]["shape"], json!("Sphere"));
+}
+
+/// A closed box surface [x0, x1] × … (metres), outward triangles, one face tag per side.
+fn named_box(name: &str, lo: [f64; 3], hi: [f64; 3]) -> emcraft_io::Surface {
+    let c = |i: usize| {
+        emcraft_model::Point3::new(
+            if i & 1 == 1 { hi[0] } else { lo[0] },
+            if i & 2 == 2 { hi[1] } else { lo[1] },
+            if i & 4 == 4 { hi[2] } else { lo[2] },
+        )
+    };
+    let quads: [([u32; 4], u32); 6] =
+        [([0, 2, 3, 1], 0), ([4, 5, 7, 6], 1), ([0, 1, 5, 4], 2), ([2, 6, 7, 3], 3), ([0, 4, 6, 2], 4), ([1, 3, 7, 5], 5)];
+    let mut triangles = Vec::new();
+    let mut tags = Vec::new();
+    for (q, t) in quads {
+        triangles.push([q[0], q[1], q[2]]);
+        triangles.push([q[0], q[2], q[3]]);
+        tags.extend([t, t]);
+    }
+    emcraft_io::Surface { name: name.into(), positions: (0..8).map(c).collect(), triangles, tags }
+}
+
+#[test]
+fn bodies_are_placed_by_what_they_are_made_of() {
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ceramic", "eps_r": 9.8})).unwrap();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [40, 40, 40]})).unwrap();
+    // A metal shell, the air inside it given back, a ceramic puck apart.
+    s.execute("geometry.body", &json!({"material": "metal", "shape": "box", "size": [20, 12, 16], "at": [10, 14, 0]})).unwrap();
+    s.execute("geometry.body", &json!({"material": "vacuum", "shape": "box", "size": [16, 8, 14], "at": [12, 16, 0]})).unwrap();
+    s.execute("geometry.body", &json!({"material": "ceramic", "shape": "cylinder", "radius": 3, "length": 4, "at": [20, 5, 30]})).unwrap();
+    let names = |s: &Session| bodies::bodies(&s.model).into_iter().map(|b| (b.name, b.material)).collect::<Vec<_>>();
+    assert_eq!(names(&s), [("body 1".to_owned(), "metal".to_owned()), ("body 2".into(), "vacuum".into()), ("body 3".into(), "ceramic".into())]);
+    // The puck made metal: placed again, last.
+    s.execute("geometry.body.material", &json!({"body": "body 3", "material": "metal"})).unwrap();
+    assert_eq!(s.model.features.len(), 3);
+    assert!(s.model.inclusions.is_empty());
+    for bad in [json!({"body": "nothing", "material": "metal"}), json!({"body": "body 1", "material": "unobtainium"})] {
+        assert!(s.execute("geometry.body.material", &bad).is_err(), "{bad}");
+    }
+    assert!(s.execute("geometry.body", &json!({"material": "ceramic", "shape": "box", "size": [2, 2, 2], "at": [1, 1, 1], "axis": "x"})).is_err());
+}
+
+#[test]
+fn a_part_of_several_bodies_lies_in_air_each_metal_unless_named() {
+    let path = scratch("bodies.3mf");
+    let post = named_box("Post", [0.0, 0.0, 0.0], [0.002, 0.002, 0.01]);
+    let puck = named_box("Puck", [0.006, 0.0, 0.002], [0.01, 0.004, 0.006]);
+    std::fs::write(&path, emcraft_io::threemf::write(&[post, puck]).unwrap()).unwrap();
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ceramic", "eps_r": 9.8})).unwrap();
+    let r = s.execute("geometry.import", &json!({"path": path, "margin": 5, "materials": {"Puck": "ceramic"}})).unwrap();
+    assert_eq!(r["region"], "box");
+    assert_eq!(
+        r["bodies"],
+        json!([{"body": "Post", "material": "metal", "as": "metal"}, {"body": "Puck", "material": "ceramic", "as": "dielectric"}])
+    );
+    // The box: the parts' extent and 5 mm around.
+    let Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }) = &s.model.solid else { panic!("{:?}", s.model.solid) };
+    assert!((size.x - 0.02).abs() < 1e-12 && (size.z - 0.02).abs() < 1e-12, "{size:?}");
+    // It meshes: the post a hole, the puck its own region.
+    let m = s.execute("mesh.generate", &json!({"size": 2})).unwrap();
+    assert!(m["tetrahedra"].as_u64().unwrap() > 100, "{m}");
+    let mats: std::collections::BTreeSet<u32> = s.model.mesh.as_ref().unwrap().tet_material.iter().copied().collect();
+    assert_eq!(mats.len(), 2);
+    // A body named as the region; a name that is none.
+    s.execute("geometry.import", &json!({"path": path, "region": "Post"})).unwrap_err();
+    assert!(s.execute("geometry.import", &json!({"path": path, "materials": {"Lid": "metal"}})).is_err());
 }

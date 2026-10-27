@@ -1,6 +1,6 @@
 [
  {"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 30]}},
- {"command": "geometry.feature", "params": {"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}},
+ {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}},
  {"command": "mesh.generate", "params": {"size": 3}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},

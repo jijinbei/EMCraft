@@ -1,0 +1,91 @@
+[
+ {
+  "note": "A part of two bodies from SolidCraft (3MF with face tags): air around them, each metal; a body's material changed from its row"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "model.material.create",
+   "params": {
+    "name": "ceramic",
+    "eps_r": 9.8
+   }
+  }
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "geometry.import",
+   "params": {
+    "path": "tests/fixtures/post-and-puck.3mf",
+    "margin": 5
+   }
+  }
+ },
+ {
+  "click": "step:geometry"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "expect": {
+   "handles": [
+    "row:Region: box, vacuum",
+    "row:Post: metal surface",
+    "row:Puck: metal surface"
+   ]
+  }
+ },
+ {
+  "shot": "import-bodies-metal"
+ },
+ {
+  "click": "row:Puck: metal surface",
+  "double": true
+ },
+ {
+  "frames": 2
+ },
+ {
+  "expect": {
+   "dialog": "geometry.body.material",
+   "inspect": {
+    "dialog.fields.body": "Puck",
+    "dialog.fields.material": "metal"
+   }
+  }
+ },
+ {
+  "click": "dialog:field:material"
+ },
+ {
+  "frames": 2
+ },
+ {
+  "widget": "ceramic"
+ },
+ {
+  "frames": 2
+ },
+ {
+  "shot": "import-bodies-dialog"
+ },
+ {
+  "click": "dialog:ok"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "expect": {
+   "dialog": null,
+   "handles": [
+    "row:Puck: ceramic surface"
+   ]
+  }
+ },
+ {
+  "shot": "import-bodies-ceramic"
+ }
+]

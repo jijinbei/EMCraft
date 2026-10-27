@@ -336,6 +336,53 @@ fn surface(mut o: Object, k: usize, id: u32, xf: &Xf, unit: f64) -> Result<Surfa
     Ok(Surface { name, positions: o.positions, triangles: o.triangles, tags: o.tags })
 }
 
+/// A 3MF package of `bodies` (metres), one object and build item each, named after them, in
+/// millimetres, every triangle tagged with its face (SolidCraft's face tags, version 1).
+pub fn write(bodies: &[Surface]) -> Result<Vec<u8>> {
+    use std::fmt::Write as _;
+    use std::io::Write as _;
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model unit=\"millimeter\" xml:lang=\"en-US\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\" xmlns:ft=\"",
+    );
+    xml.push_str(FACE_TAGS_NS);
+    xml.push_str("\">\n <resources>\n");
+    let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;");
+    for (k, b) in bodies.iter().enumerate() {
+        let faces = b.tags.iter().max().map_or(1, |m| m + 1);
+        let _ =
+            writeln!(xml, "  <object id=\"{}\" type=\"model\" name=\"{}\" ft:faces=\"{faces}\">\n   <mesh>\n    <vertices>", k + 1, escape(&b.name));
+        for p in &b.positions {
+            let _ = writeln!(xml, "     <vertex x=\"{}\" y=\"{}\" z=\"{}\"/>", p.x * 1e3, p.y * 1e3, p.z * 1e3);
+        }
+        xml.push_str("    </vertices>\n    <triangles>\n");
+        for (t, tri) in b.triangles.iter().enumerate() {
+            let _ = writeln!(
+                xml,
+                "     <triangle v1=\"{}\" v2=\"{}\" v3=\"{}\" ft:face=\"{}\"/>",
+                tri[0],
+                tri[1],
+                tri[2],
+                b.tags.get(t).copied().unwrap_or(0)
+            );
+        }
+        xml.push_str("    </triangles>\n   </mesh>\n  </object>\n");
+    }
+    xml.push_str(" </resources>\n <build>\n");
+    for k in 0..bodies.len() {
+        let _ = writeln!(xml, "  <item objectid=\"{}\"/>", k + 1);
+    }
+    xml.push_str(" </build>\n</model>\n");
+    let rels = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Target=\"/3D/3dmodel.model\" Id=\"rel0\" Type=\"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel\"/></Relationships>";
+    let types = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"model\" ContentType=\"application/vnd.ms-package.3dmanufacturing-3dmodel+xml\"/></Types>";
+    let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for (name, body) in [("[Content_Types].xml", types), ("_rels/.rels", rels), ("3D/3dmodel.model", xml.as_str())] {
+        out.start_file(name, opts).map_err(|e| invalid(format!("writing the package: {e}")))?;
+        out.write_all(body.as_bytes()).map_err(|e| invalid(format!("writing the package: {e}")))?;
+    }
+    Ok(out.finish().map_err(|e| invalid(format!("writing the package: {e}")))?.into_inner())
+}
+
 /// The surfaces of a 3MF package, one per build item, in metres.
 pub fn read(bytes: &[u8]) -> Result<Vec<Surface>> {
     if bytes.len() > MAX_FILE_BYTES {
