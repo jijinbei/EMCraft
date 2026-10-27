@@ -52,6 +52,11 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             let list: Vec<String> = r.list("modes").iter().filter_map(|m| m.get("frequency")?.as_f64()).map(|x| format!("{x:.4}")).collect();
             format!("Found {} eigenmodes: {} {unit}.", list.len(), list.join(", "))
         }
+        "solve.dispersion" => {
+            let points = r.list("points");
+            let bands = points.first().and_then(|p| p.get("frequencies")).and_then(Value::as_array).map_or(0, Vec::len);
+            format!("Dispersion along {}: {} phases, {bands} bands each.", r.text("axis"), points.len())
+        }
         "solve.radiation" => {
             let power = reply.get("power").or(reply.get("radiated_power")).and_then(Value::as_f64).unwrap_or(f64::NAN);
             format!("Solved the open problem: radiated power {power:.4e} W.")

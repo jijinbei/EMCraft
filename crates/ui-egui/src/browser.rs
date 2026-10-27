@@ -183,7 +183,20 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         let kind = if plane.kind == emcraft_model::SymmetryKind::Electric { "electric" } else { "magnetic" };
         rows.push(row(format!("Symmetry: {axis} = {} {}, {kind} wall", f.len(plane.at), f.unit()), "walls", Act::Edit("model.symmetry")));
     }
+    if let Some(p) = &m.periodic {
+        rows.push(row(format!("Periodic: {}", periodic_text(p)), "periodic", Act::Edit("model.periodic")));
+    }
     rows
+}
+
+/// The periodic boundaries in brief: the axes tied and, across x or y, the incident wave.
+pub(crate) fn periodic_text(p: &emcraft_model::Periodic) -> String {
+    let axes: Vec<&str> = p.axes().into_iter().map(|d| ["x", "y", "z"][d.min(2)]).collect();
+    if !(p.x || p.y) {
+        return axes.join(", ");
+    }
+    let pol = if p.polarization == emcraft_model::Polarization::Te { "TE" } else { "TM" };
+    format!("{}, θ = {:.1}°, φ = {:.1}°, {pol}", axes.join(", "), p.theta.to_degrees(), p.phi.to_degrees())
 }
 
 fn mesh(m: &emcraft_model::Model) -> Vec<Row> {
@@ -205,6 +218,9 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     }
     if let Some(e) = &r.eigen {
         rows.push(row(format!("Eigenmodes: {}", e.modes.len()), "eigen", Act::Show(View::Eigenmodes)));
+    }
+    if let Some(d) = &r.dispersion {
+        rows.push(row(format!("Dispersion: {} phases", d.points.len()), "dispersion", Act::Show(View::Dispersion)));
     }
     if let Some(td) = &r.time_domain {
         rows.push(row(format!("Time domain: {} frequencies", td.frequencies.len()), "time", Act::Show(View::SParameters)));

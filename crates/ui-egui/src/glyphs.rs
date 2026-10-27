@@ -328,6 +328,28 @@ pub fn paint(p: &Painter, r: Rect, name: &str, ink: Color32, accent: Color32) {
             pen.closed(&[(0.42, 0.2), (0.12, 0.5), (0.42, 0.8)], line);
             pen.fill(&[(0.58, 0.2), (0.88, 0.5), (0.58, 0.8)], accent.gamma_multiply(0.3), line);
         }
+        // Three cells of a lattice, the middle one's sides dashed: periodic boundaries.
+        "periodic" => {
+            for (x0, x1) in [(0.06, 0.34), (0.66, 0.94)] {
+                pen.closed(&[(x0, 0.3), (x1, 0.3), (x1, 0.7), (x0, 0.7)], line);
+            }
+            pen.fill(&[(0.36, 0.3), (0.64, 0.3), (0.64, 0.7), (0.36, 0.7)], accent.gamma_multiply(0.3), line);
+            for x in [0.36, 0.64] {
+                for k in 0..3 {
+                    let y0 = 0.16 + 0.26 * k as f32;
+                    pen.open(&[(x, y0), (x, y0 + 0.12)], bold);
+                }
+            }
+        }
+        // A dispersion diagram: two bands over the phase, and the light line.
+        "dispersion" => {
+            pen.open(&[(0.12, 0.1), (0.12, 0.88), (0.9, 0.88)], line);
+            pen.open(&[(0.12, 0.88), (0.86, 0.14)], line);
+            let lower: Vec<(f32, f32)> = (0..=8).map(|k| k as f32 / 8.0).map(|u| (0.12 + 0.76 * u, 0.72 - 0.3 * u * u)).collect();
+            let upper: Vec<(f32, f32)> = (0..=8).map(|k| k as f32 / 8.0).map(|u| (0.12 + 0.76 * u, 0.3 + 0.12 * u * u)).collect();
+            pen.open(&lower, Stroke::new(w * 1.4, accent));
+            pen.open(&upper, Stroke::new(w * 1.4, accent));
+        }
         // A house: the start page.
         "start" => {
             pen.open(&[(0.1, 0.5), (0.5, 0.14), (0.9, 0.5)], bold);
@@ -413,6 +435,8 @@ pub fn for_command(id: &str) -> &'static str {
         "model.material.create" => "material",
         "model.walls" => "walls",
         "model.symmetry" => "symmetry",
+        "model.periodic" => "periodic",
+        "solve.dispersion" | "results.dispersion" | "view.dispersion" => "dispersion",
         "model.port.create" => "port",
         "model.port.lumped" => "lumped",
         "source.dipole" => "dipole",

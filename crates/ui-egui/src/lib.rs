@@ -57,11 +57,22 @@ pub enum View {
     FarField,
     Compare,
     Eigenmodes,
+    /// A periodic cell's dispersion diagram.
+    Dispersion,
 }
 
 impl View {
-    pub const ALL: [View; 8] =
-        [View::Model, View::Outline, View::SParameters, View::Field, View::PortModes, View::FarField, View::Compare, View::Eigenmodes];
+    pub const ALL: [View; 9] = [
+        View::Model,
+        View::Outline,
+        View::SParameters,
+        View::Field,
+        View::PortModes,
+        View::FarField,
+        View::Compare,
+        View::Eigenmodes,
+        View::Dispersion,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -73,6 +84,7 @@ impl View {
             View::FarField => "far_field",
             View::Compare => "compare",
             View::Eigenmodes => "eigenmodes",
+            View::Dispersion => "dispersion",
         }
     }
 
@@ -86,6 +98,7 @@ impl View {
             View::FarField => "Far field",
             View::Compare => "Compare with theory",
             View::Eigenmodes => "Eigenmodes",
+            View::Dispersion => "Dispersion",
         }
     }
 
@@ -442,6 +455,8 @@ impl EmcraftApp {
                     View::Eigenmodes
                 } else if results.radiation.is_some() {
                     View::FarField
+                } else if results.dispersion.is_some() {
+                    View::Dispersion
                 } else {
                     View::Model
                 };
@@ -453,6 +468,7 @@ impl EmcraftApp {
                 self.view = View::SParameters;
                 self.pick_frequency();
             }
+            "solve.dispersion" => self.view = View::Dispersion,
             "solve.eigenmodes" => {
                 self.view = View::Eigenmodes;
                 self.field.view.mode = Some(0);

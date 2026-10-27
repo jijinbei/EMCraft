@@ -108,7 +108,9 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         ("results.probe", "at") => return Kind::Json,
         (_, "size" | "at" | "direction" | "polarization" | "from" | "to") if p.kind == emcraft_engine::Kind::Array => return Kind::Vector(XYZ),
         (_, "face") => return Kind::Vector(FACE),
-        (_, "frequencies" | "theta") => return Kind::Numbers,
+        (_, "frequencies") => return Kind::Numbers,
+        // A pattern's polar angles are a list; a plane wave's incidence one number.
+        (_, "theta") if p.kind == emcraft_engine::Kind::Array => return Kind::Numbers,
         _ => {}
     }
     match p.kind {
@@ -431,6 +433,13 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "mesh.adapt" => json!({"size": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
         "model.walls" => json!({"conductivity": 5.8e7}),
         "model.symmetry" => json!({"axis": "x", "kind": "magnetic"}),
+        "model.periodic" => match &s.model.periodic {
+            Some(p) => json!({"x": p.x, "y": p.y, "z": p.z, "theta": p.theta.to_degrees(), "phi": p.phi.to_degrees(),
+                              "polarization": if p.polarization == emcraft_model::Polarization::Te { "te" } else { "tm" }}),
+            None => json!({"x": true, "y": true, "z": false, "theta": 0, "phi": 0, "polarization": "te"}),
+        },
+        "solve.dispersion" => json!({"from": 0, "to": 180, "points": 11, "bands": 4, "near": band.map_or(15.0, |(_, z)| z), "order": 2}),
+        "view.dispersion" => json!({"path": "dispersion.png"}),
         "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),
         "model.port.lumped" => json!({"name": format!("L{}", s.model.lumped.len() + 1), "from": [0, 0, -0.5], "to": [0, 0, 0.5], "impedance": 50}),
         "source.dipole" => json!({"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1, "current": 1}),

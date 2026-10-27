@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use crate::theme::Tokens;
 use crate::{EmcraftApp, Picture, View, scenario};
 
+mod dispersion;
 mod far_field;
 mod field_side;
 mod fields;
@@ -18,6 +19,7 @@ mod model;
 mod sparameters;
 mod tables;
 
+use dispersion::*;
 use far_field::*;
 use fields::*;
 use model::*;
@@ -58,6 +60,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 View::FarField => far_field(app, &mut inner),
                 View::Compare => compare(app, &mut inner),
                 View::Eigenmodes => eigenmodes(app, &mut inner),
+                View::Dispersion => dispersion(app, &mut inner),
             }
         });
 }
@@ -73,6 +76,7 @@ pub(crate) fn available(app: &EmcraftApp, v: View) -> bool {
         View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
         View::Compare => r.sweep.is_some(),
         View::Eigenmodes => r.eigen.is_some(),
+        View::Dispersion => r.dispersion.is_some(),
     }
 }
 
