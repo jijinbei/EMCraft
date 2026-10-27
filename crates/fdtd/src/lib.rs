@@ -34,8 +34,8 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::Model;
 use emcraft_model::units::C0;
+use emcraft_model::{Model, Waveguide};
 use num_complex::Complex64 as C;
 
 use crate::guide::{Grid, run};
@@ -126,66 +126,112 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
         return Err(FdtdError::Unsupported("layers and strips in the time domain (its ports carry TE10 only)".into()));
     }
     // Every frequency above both ports' TE₁₀ cut-off, checked before any run.
-    for (i, &f) in [0, w.sections.len() - 1].iter().flat_map(|i| frequencies.iter().map(move |f| (*i, f))) {
-        let (x0w, s) = (w.aperture(i).map_or(w.width, |a| a.width), &w.sections[i]);
-        let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
-        if f <= C0 / (2.0 * x0w * (m.eps_r * m.mu_r).sqrt()) {
-            return Err(invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off")));
+    let below = |f: f64| invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off"));
+    let port = |i: usize| -> Result<PortGuide> {
+        let p = PortGuide::new(model, w, i)?;
+        match frequencies.iter().find(|&&f| f <= p.cutoff()) {
+            Some(&f) => Err(below(f)),
+            None => Ok(p),
         }
-    }
-    // The transforms have settled when no frequency moved by more than `decay` of the incident
-    // wave's largest since the last check.
-    let settled = |last: &mut Option<(Vec<C>, Vec<C>)>, d1: &[C], d2: &[C], scale: f64| -> bool {
-        let moved = last.as_ref().map(|(p1, p2)| {
-            let m1 = p1.iter().zip(d1).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
-            let m2 = p2.iter().zip(d2).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
-            m1.max(m2)
-        });
-        *last = Some((d1.to_vec(), d2.to_vec()));
-        moved.is_some_and(|m| m <= o.decay * scale)
     };
+    let (p1, p2) = (port(0)?, port(w.sections.len().saturating_sub(1))?);
     // The incident run: the port-1 guide throughout.
     let gr = Grid::new(model, o, true, frequencies)?;
-    let mut last = None;
-    let (reference, dt) = run(&gr, o, frequencies, |d1, _| {
-        let scale = d1.iter().fold(0.0f64, |m, c| m.max(c.norm()));
-        settled(&mut last, d1, &[], scale)
-    })?;
-    let scale = reference.d1.iter().fold(0.0f64, |m, c| m.max(c.norm()));
+    let mut settling = Settling::new(o.decay);
+    let (reference, dt) = run(&gr, o, frequencies, |d1, _| settling.settled(d1, &[], peak(d1)))?;
+    let scale = peak(&reference.d1);
     let g = Grid::new(model, o, false, frequencies)?;
-    let mut last = None;
+    let mut settling = Settling::new(o.decay);
     let mut converged = false;
     let (dut, dt2) = run(&g, o, frequencies, |d1, d2| {
-        converged = settled(&mut last, d1, d2, scale);
+        converged = settling.settled(d1, d2, scale);
         converged
     })?;
     if (dt - dt2).abs() > 1e-12 * dt {
         return Err(invalid("grid", "the incident and device runs differ in time step"));
     }
-    // Power waves: amplitude = V/‖e‖ (‖e‖ = width·height/2), power ∝ ‖e‖ β/μ.
-    let (a1, a2) = (w.aperture(0).map_or(w.width, |a| a.width), w.aperture(w.sections.len() - 1).map_or(w.width, |a| a.width));
-    let (h1, h2) = (w.aperture_y(0).map_or(w.height, |a| a.width), w.aperture_y(w.sections.len() - 1).map_or(w.height, |a| a.width));
-    let port = |i: usize| model.material(&w.sections[i].material).map(|(_, m)| (m.eps_r, m.mu_r)).map_err(|e| invalid("material", e.to_string()));
-    let ((e1, m1), (e2, m2)) = (port(0)?, port(w.sections.len() - 1)?);
+    // Power waves: amplitude = V/‖e‖, power ∝ ‖e‖ β/μ.
     let mut s11 = Vec::new();
     let mut s21 = Vec::new();
     for (fi, &f) in frequencies.iter().enumerate() {
-        let k0 = 2.0 * PI * f / C0;
-        let beta = |a: f64, e: f64, m: f64| (k0 * k0 * e * m - (PI / a).powi(2)).max(0.0).sqrt();
-        let (b1, b2) = (beta(a1, e1, m1), beta(a2, e2, m2));
+        let (b1, b2) = (p1.beta(f), p2.beta(f));
         if b1 == 0.0 || b2 == 0.0 {
-            return Err(invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off")));
+            return Err(below(f));
         }
         let inc = reference.d1[fi];
         // The transform is linear: the reflected wave's is the difference of the two runs'.
         let refl = dut.d1[fi] - inc;
         let trans = dut.d2[fi];
         s11.push(refl / inc);
-        // Amplitudes: V/‖e‖, ‖e‖ = a h/2; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)).
-        let (n1, n2) = (0.5 * a1 * h1, 0.5 * a2 * h2);
+        // Amplitudes: V/‖e‖; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)).
+        let (n1, n2) = (p1.norm(), p2.norm());
         let amp = (trans / n2) / (inc / n1);
-        s21.push(amp * ((n2 * b2 / m2) / (n1 * b1 / m1)).sqrt());
+        s21.push(amp * ((n2 * b2 / p2.mu) / (n1 * b1 / p1.mu)).sqrt());
     }
-    let cells = g.cells();
-    Ok(TdResult { frequencies: frequencies.to_vec(), s11, s21, cells, dt, steps: dut.steps, reference_steps: reference.steps, converged })
+    Ok(TdResult { frequencies: frequencies.to_vec(), s11, s21, cells: g.cells(), dt, steps: dut.steps, reference_steps: reference.steps, converged })
+}
+
+/// A port's guide: its aperture across x and y and its material.
+struct PortGuide {
+    width: f64,
+    height: f64,
+    eps: f64,
+    mu: f64,
+}
+
+impl PortGuide {
+    /// The guide of section `i`.
+    fn new(model: &Model, w: &Waveguide, i: usize) -> Result<PortGuide> {
+        let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
+        let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
+        let width = w.aperture(i).map_or(w.width, |a| a.width);
+        let height = w.aperture_y(i).map_or(w.height, |a| a.width);
+        Ok(PortGuide { width, height, eps: m.eps_r, mu: m.mu_r })
+    }
+
+    /// The TE₁₀ cut-off frequency.
+    fn cutoff(&self) -> f64 {
+        C0 / (2.0 * self.width * (self.eps * self.mu).sqrt())
+    }
+
+    /// The TE₁₀ propagation constant at `f` (0 below cut-off).
+    fn beta(&self, f: f64) -> f64 {
+        let k0 = 2.0 * PI * f / C0;
+        (k0 * k0 * self.eps * self.mu - (PI / self.width).powi(2)).max(0.0).sqrt()
+    }
+
+    /// The TE₁₀ profile's norm ‖e‖ = width·height/2.
+    fn norm(&self) -> f64 {
+        0.5 * self.width * self.height
+    }
+}
+
+/// The largest magnitude of a transform.
+fn peak(d: &[C]) -> f64 {
+    d.iter().fold(0.0f64, |m, c| m.max(c.norm()))
+}
+
+/// Whether a run's transforms have settled: no frequency moved by more than `decay` of the
+/// incident wave's largest since the last check.
+struct Settling {
+    decay: f64,
+    last: Option<(Vec<C>, Vec<C>)>,
+}
+
+impl Settling {
+    fn new(decay: f64) -> Settling {
+        Settling { decay, last: None }
+    }
+
+    /// Checks the transforms at the two planes against the last check's, `scale` the incident
+    /// wave's largest.
+    fn settled(&mut self, d1: &[C], d2: &[C], scale: f64) -> bool {
+        let moved = self.last.as_ref().map(|(p1, p2)| {
+            let m1 = p1.iter().zip(d1).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
+            let m2 = p2.iter().zip(d2).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
+            m1.max(m2)
+        });
+        self.last = Some((d1.to_vec(), d2.to_vec()));
+        moved.is_some_and(|m| m <= self.decay * scale)
+    }
 }
