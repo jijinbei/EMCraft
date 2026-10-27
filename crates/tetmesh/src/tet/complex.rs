@@ -87,13 +87,15 @@ pub type IdMap<K, V> = HashMap<K, V, BuildHasherDefault<IdHasher>>;
 const SKIN_FACE_CELLS: i64 = 512;
 
 /// The boundary faces by place ([`TetComplex::index_skin`]): per cell of a uniform grid, the
-/// tetrahedra with a boundary face whose bounding box touches it. Entries are only added, where a
-/// face is made or moved and where a rollback restores one; a lookup reads the live mesh and
-/// passes over what is stale. Rebuilt when the entries have doubled since the last rebuild.
+/// tetrahedra with a boundary face whose bounding box touches it, each with the box of its
+/// boundary faces when it was last listed. Entries are only added (or their box renewed), where a
+/// face is made or moved and where a rollback restores one; a lookup passes over the entries
+/// whose box misses it without reading the mesh, then reads the live mesh and passes over what is
+/// stale. Rebuilt when the entries have doubled since the last rebuild.
 #[derive(Debug, Clone, Default)]
 struct Skin {
     cell: f64,
-    cells: IdMap<u64, Vec<u32>>,
+    cells: IdMap<u64, Vec<(u32, Box3)>>,
     /// Tetrahedra with a face too large for [`SKIN_FACE_CELLS`].
     wide: Vec<u32>,
     entries: usize,
@@ -609,13 +611,81 @@ impl TetComplex {
         // Orient the first tetrahedron as (a, b, c, d) positive.
         let (c, d) = {
             let vs = self.tet(t0)?;
-            let others: Vec<u32> = vs.iter().copied().filter(|&v| v != a && v != b).collect();
-            let (&c, &d) = match (others.first(), others.get(1)) {
-                (Some(c), Some(d)) => (c, d),
-                _ => return Ok(None),
-            };
+            let mut others = vs.iter().copied().filter(|&v| v != a && v != b);
+            let (Some(c), Some(d)) = (others.next(), others.next()) else { return Ok(None) };
             if self.orient([a, b, c, d])? == Sign::Positive { (c, d) } else { (d, c) }
         };
+        let Some(mut ring) = self.fan_from(t0, a, b, c, d)? else { return Ok(None) };
+        self.orient_ring(&mut ring)?;
+        Ok(Some(ring))
+    }
+
+    /// The tetrahedra round edge `ab`, as [`Self::edge_ring`] finds them, in no particular
+    /// order: the same walk without the orientation tests that order the ring.
+    pub fn edge_fan(&mut self, a: u32, b: u32) -> Result<Option<Vec<u32>>> {
+        let Some(t0) = self.edge_tet(a, b)? else { return Ok(None) };
+        let vs = self.tet(t0)?;
+        let mut others = vs.iter().copied().filter(|&v| v != a && v != b);
+        let (Some(c), Some(d)) = (others.next(), others.next()) else { return Ok(None) };
+        Ok(self.fan_from(t0, a, b, c, d)?.map(|r| r.tets))
+    }
+
+    /// Whether the fan round edge `ab` walked from `t` (which holds the edge), as
+    /// [`Self::edge_ring_at`] walks it, holds every tetrahedron with the edge: then every walk
+    /// round the edge meets the same tetrahedra. False when the walk fails.
+    pub fn fan_is_whole(&self, t: u32, a: u32, b: u32) -> Result<bool> {
+        let vs = self.tet(t)?;
+        let mut others = vs.iter().copied().filter(|&v| v != a && v != b);
+        let (Some(c), Some(d)) = (others.next(), others.next()) else { return Ok(false) };
+        let cap = self.max_tets.min(1 << 16);
+        let mut count = 1usize;
+        // Forward across the face opposite c, then (for an open fan) backward from t.
+        for (first, second) in [(c, d), (d, c)] {
+            let (mut at, mut prev, mut cur) = (t, first, second);
+            loop {
+                let vs = self.tet(at)?;
+                let Some(k) = vs.iter().position(|&v| v == prev) else { return Ok(false) };
+                let n = self.adj(at)?.get(k).copied().unwrap_or(NONE);
+                if n == NONE {
+                    break;
+                }
+                if n == t {
+                    // Closed: the forward walk went all round.
+                    return Ok(self.edge_degree(a, b) == count);
+                }
+                let nv = self.tet(n)?;
+                let Some(next) = nv.iter().copied().find(|&v| v != a && v != b && v != cur) else { return Ok(false) };
+                count += 1;
+                prev = cur;
+                cur = next;
+                at = n;
+                if count > cap {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(self.edge_degree(a, b) == count)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edge_degree_for_tests(&self, a: u32, b: u32) -> usize {
+        self.edge_degree(a, b)
+    }
+
+    /// How many live tetrahedra hold edge `ab` (counted round the end with fewer).
+    fn edge_degree(&self, a: u32, b: u32) -> usize {
+        let (la, lb) = (self.vtets.get(a as usize), self.vtets.get(b as usize));
+        let (l, other) = match (la, lb) {
+            (Some(la), Some(lb)) if lb.len() < la.len() => (lb, a),
+            (Some(la), _) => (la, b),
+            _ => return 0,
+        };
+        l.iter().filter(|&&t| self.tets.get(t as usize).is_some_and(|vs| vs[0] != DEAD && vs.contains(&other))).count()
+    }
+
+    /// The walk of [`Self::edge_ring_at`] from `t0 = (a, b, c, d)`: forward across the face
+    /// opposite `c`, then (for an open ring) backward; the ring as walked, not yet oriented.
+    fn fan_from(&self, t0: u32, a: u32, b: u32, c: u32, d: u32) -> Result<Option<EdgeRing>> {
         let mut verts = vec![c, d];
         let mut tets = vec![t0];
         let cap = self.max_tets.min(1 << 16);
@@ -651,9 +721,7 @@ impl TetComplex {
             if verts.len() != tets.len() {
                 return Ok(None);
             }
-            let mut ring = EdgeRing { a, b, verts, tets, closed: true };
-            self.orient_ring(&mut ring)?;
-            return Ok(Some(ring));
+            return Ok(Some(EdgeRing { a, b, verts, tets, closed: true }));
         }
         // Backward from t0: across the face (a, b, v_0) opposite v_1.
         let (mut t, mut prev, mut cur) = (t0, d, c);
@@ -675,9 +743,7 @@ impl TetComplex {
                 return Ok(None);
             }
         }
-        let mut ring = EdgeRing { a, b, verts, tets, closed: false };
-        self.orient_ring(&mut ring)?;
-        Ok(Some(ring))
+        Ok(Some(EdgeRing { a, b, verts, tets, closed: false }))
     }
 
     /// Make the ring run so that `(a, b, v_i, v_{i+1})` is positive, judged by its first
@@ -1269,6 +1335,12 @@ impl TetComplex {
         }
         let (vs, adj) = (self.tet(t)?, self.adj(t)?);
         let boxes = (0..4).filter(|&k| adj[k] == NONE).map(|k| self.face_box(face_toward(vs, k), None)).collect::<Result<Vec<_>>>()?;
+        // Every entry of `t` carries the box of all its boundary faces as they are now: a lookup
+        // that misses it misses each of them.
+        let mut whole = Box3::EMPTY;
+        for b in &boxes {
+            whole.add(b);
+        }
         let Some(skin) = self.skin.as_mut() else { return Ok(()) };
         for b in boxes {
             let Some(keys) = skin.keys(&b) else {
@@ -1280,9 +1352,12 @@ impl TetComplex {
             };
             for key in keys {
                 let list = skin.cells.entry(key).or_default();
-                if !list.contains(&t) {
-                    list.push(t);
-                    skin.entries += 1;
+                match list.iter_mut().find(|e| e.0 == t) {
+                    Some(e) => e.1 = whole,
+                    None => {
+                        list.push((t, whole));
+                        skin.entries += 1;
+                    }
                 }
             }
         }
@@ -1317,14 +1392,17 @@ impl TetComplex {
                 None => everywhere = true,
             }
         }
+        // An entry whose box misses `all` has no boundary face that touches it (the box covers
+        // its tetrahedron's boundary faces as they are now, or the entry is stale).
         let mut near: Vec<u32> = skin.wide.clone();
+        let touching = |e: &&(u32, Box3)| e.1.touches(&all);
         if everywhere {
-            near.extend(skin.cells.values().flatten());
+            near.extend(skin.cells.values().flatten().filter(touching).map(|e| e.0));
         } else {
             keys.sort_unstable();
             keys.dedup();
             for k in keys {
-                near.extend(skin.cells.get(&k).into_iter().flatten());
+                near.extend(skin.cells.get(&k).into_iter().flatten().filter(touching).map(|e| e.0));
             }
         }
         near.sort_unstable();

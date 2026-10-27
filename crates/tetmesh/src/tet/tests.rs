@@ -642,6 +642,42 @@ fn the_skin_never_passes_through_itself() {
     }
 }
 
+/// The skin index keeps each entry's box of boundary faces as they are now: after the separate
+/// tetrahedron of [`the_skin_never_passes_through_itself`] is lowered (its bottom face from 0.1 to
+/// 0.03 above the pyramid, inside the one cell everything is listed in), lifting the apex 0.05 —
+/// harmless before — is refused, though the face's box when first listed lies clear of the lift.
+#[test]
+fn the_skin_index_follows_moved_faces() {
+    let p = [
+        [0.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [-1.0, 1.0, 0.0],
+        [-1.0, -1.0, 0.0],
+        [1.0, -1.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [-1.0, -1.0, 0.1],
+        [1.0, -1.0, 0.1],
+        [0.0, 1.0, 0.1],
+        [0.0, 0.0, 1.0],
+    ];
+    let mut tets = vec![[0, 1, 2, 5], [0, 2, 3, 5], [0, 3, 4, 5], [0, 4, 1, 5]];
+    tets.push([6, 7, 8, 9]);
+    let mut cx = complex_of(&p, &tets, vec![VertexKind::Corner; p.len()], |_| 0);
+    cx.index_skin(10.0).unwrap();
+    let to = |x: [f64; 3]| Point3::try_from(x).unwrap();
+    let star = cx.star(0).unwrap();
+    assert!(cx.move_is_valid(0, &to([0.0, 0.0, 0.05]), &star).unwrap());
+    for v in [6, 7, 8] {
+        let mut x = p[v];
+        x[2] = 0.03;
+        let s = cx.star(v as u32).unwrap();
+        assert!(cx.move_is_valid(v as u32, &to(x), &s).unwrap());
+        cx.move_point(v as u32, to(x)).unwrap();
+    }
+    assert!(!cx.move_is_valid(0, &to([0.0, 0.0, 0.05]), &star).unwrap());
+    assert!(cx.move_is_valid(0, &to([0.0, 0.0, 0.01]), &star).unwrap());
+}
+
 /// The fillet of a plate on a rib (our own recipe: a 60 × 30 × 6 mm plate on a 6 mm triangular
 /// rib, its top edges rounded at 2 mm, meshed at 3 mm), where vertex 1 has three boundary faces
 /// round it: (0, 1, 2), (0, 1, 5) and (1, 2, 5). Removing edge 0–1 ends in a 2-2 flip of the
