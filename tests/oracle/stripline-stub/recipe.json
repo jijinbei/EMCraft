@@ -1,0 +1,12 @@
+[
+ {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.2}},
+ {"command": "geometry.waveguide", "params": {"width": 21, "height": 2, "sections": [{"length": 12, "material": "ptfe"}], "strips": [{"y": 1, "x0": 4, "width": 2}, {"y": 1, "x0": 6, "width": 10, "z0": 5, "z1": 7}]}},
+ {"command": "model.symmetry", "params": {"axis": "y", "kind": "magnetic"}},
+ {"command": "mesh.generate", "params": {"size": 0.5, "strip_edge": 0.2}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2, "impedance": 44.061405060633035}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2, "impedance": 44.061405060633035}},
+ {"command": "solve.frequency", "params": {"start": 4.7, "stop": 5.1, "points": 9, "order": 2}, "id": "open"},
+ {"command": "geometry.waveguide", "params": {"width": 21, "height": 2, "sections": [{"length": 12, "material": "ptfe"}], "strips": [{"y": 1, "x0": 4, "width": 2}, {"y": 1, "x0": 6, "width": 10, "z0": 5, "z1": 7}], "vias": [{"x0": 16, "z0": 3, "wx": 1, "wz": 6}]}},
+ {"command": "mesh.generate", "params": {"size": 0.5, "strip_edge": 0.2}},
+ {"command": "solve.frequency", "params": {"start": 9.9, "stop": 10.3, "points": 9, "order": 2}, "id": "shorted"}
+]

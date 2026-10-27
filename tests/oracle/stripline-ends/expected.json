@@ -1,0 +1,46 @@
+{
+ "title": "Stripline ends: a 4 mm strip of no thickness midway between planes 2 mm apart in PTFE (εr = 2.2), 10 mm from the port to an open end inside the box, then to a via through the whole height: the reflection's phase at 6 GHz",
+ "kind": "theory",
+ "source": "TEM in one dielectric, β = k0 √εr exactly (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.7), so S11 = Γ e^{−2jβL}. A short (the via, b past the strip's edges on both sides): Γ = −1 at its face. An open end: Γ = +1 a length Δ beyond it; Δ = b ln 2/π for a wide strip, the excess width each edge adds in Cohn's exact mapping (K(k′)/K(k) → W/b + (2/π) ln 2; S. B. Cohn, IRE Trans. MTT 2(2):52–57, 1954), which the end of a wide strip shares in the quasi-static limit (A. G. Altschuler, A. A. Oliner, Discontinuities in the center conductor of symmetric strip transmission line, IRE Trans. MTT 8(3):328–339, 1960). For a strip of finite width Δ lies between Δ W/(W + 2Δ) (the end's fringing over the strip's width only, the line's charge over its effective width W + 2Δ) and Δ; the reference is the middle of that bracket, 0.4014 mm",
+ "quantities": [
+  {
+   "id": "open_phase_6",
+   "quantity": "phase of S11 at 6 GHz, open end 10 mm from the port (degrees)",
+   "measure": {
+    "step": "open",
+    "pointer": "/points/0/s11/deg"
+   },
+   "value": 137.68653041481832,
+   "tolerance": {
+    "absolute": 0.8524
+   },
+   "reason": "the open end's extension known to its bracket, 0.3615–0.4413 mm: ±0.0399 mm is ±0.85° of 2βΔ; the mesh's own error at 0.5 mm is −0.26° (Δ 0.409 mm against 0.397 mm converged)"
+  },
+  {
+   "id": "open_mag_6",
+   "quantity": "|S11| at 6 GHz, open end",
+   "measure": {
+    "step": "open",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 1.0,
+   "tolerance": {
+    "absolute": 1e-09
+   },
+   "reason": "a lossless box: nothing radiates, the region past the end is far below cutoff (the half guide's first mode beyond the strip at about 50 GHz)"
+  },
+  {
+   "id": "short_phase_6",
+   "quantity": "phase of S11 at 6 GHz, via short 10 mm from the port (degrees)",
+   "measure": {
+    "step": "short",
+    "pointer": "/points/0/s11/deg"
+   },
+   "value": -33.734379296848545,
+   "tolerance": {
+    "absolute": 0.1
+   },
+   "reason": "the via reaches b past the strip's edges, where the line's fringing field has fallen to about e^{−π}, and the gaps beside it are far below cutoff: the short is ideal at its face but for that; 0.5 mm cells, order 2"
+  }
+ ]
+}

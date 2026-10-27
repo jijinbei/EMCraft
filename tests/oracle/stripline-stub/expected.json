@@ -1,0 +1,41 @@
+{
+ "title": "Stripline stubs: a 2 mm strip of no thickness midway between planes 2 mm apart in PTFE (εr = 2.2) with a shunt stub of the same width 10 mm long branching off it, open at its end, then shorted by a via there: the frequencies of the transmission notches",
+ "kind": "theory",
+ "source": "Transmission-line theory: a shunt stub whose input impedance vanishes shorts the line, S21 = 0 — an open stub when its effective length is λ/4, a shorted one at λ/2, with λ = c/(f √εr) exactly for TEM in one dielectric (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §§3.7, 5.2). The stub's length is taken from the main line's edge, the junction a node there; the open end adds Δ, between Δ W/(W + 2Δ) and the wide-strip limit Δ = b ln 2/π (the excess width of an edge in S. B. Cohn's exact mapping, IRE Trans. MTT 2(2):52–57, 1954; the open end's quasi-static limit in A. G. Altschuler, A. A. Oliner, IRE Trans. MTT 8(3):328–339, 1960), the reference the bracket's middle, 0.3737 mm; the via, reaching b past the stub's edges, shorts it at its face. Ports referred to Cohn's Z0 = 44.06 Ω",
+ "quantities": [
+  {
+   "id": "open_notch",
+   "quantity": "frequency of the |S21| notch, open stub (GHz): λ/4 = 10.3737 mm",
+   "measure": {
+    "step": "open",
+    "pointer": "/points",
+    "minimum": {
+     "x": "/frequency",
+     "y": "/s21/mag"
+    }
+   },
+   "value": 4.870963386438512,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "the T-junction's own reactances are left out of the line model (A. A. Oliner, Equivalent circuits for discontinuities in balanced strip transmission line, IRE Trans. MTT 3(2):134–143, 1955: about the strips' width against the stub's length) and the open end is known to its bracket (±0.65 %); +0.45 % at 0.5 mm cells"
+  },
+  {
+   "id": "shorted_notch",
+   "quantity": "frequency of the |S21| notch, stub shorted by a via (GHz): λ/2 = 10 mm",
+   "measure": {
+    "step": "shorted",
+    "pointer": "/points",
+    "minimum": {
+     "x": "/frequency",
+     "y": "/s21/mag"
+    }
+   },
+   "value": 10.106001697555865,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "the T-junction's reactances, left out as for the open stub; +0.05 % at 0.5 mm cells"
+  }
+ ]
+}
