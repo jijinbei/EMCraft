@@ -739,7 +739,26 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
     if !(estimate <= MAX_TETS as f64) {
         return Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS });
     }
-    let mut main = tessellate(&s.shape, size);
+    // A spherical layer (model.open, shape sphere): the solid's region is the ball inside the
+    // layer's inner sphere, its surface an interface (tagged per triangle and frozen, like an
+    // inclusion's) with the layer's shell, meshed as a region of its own between it and the
+    // solid's sphere — so the shell's tetrahedra are a layer of their own.
+    let layer = model.spherical_layer();
+    if let Some((inner, _)) = layer {
+        if !model.features.is_empty() {
+            return Err(MeshError::Invalid { what: "spherical layer".into(), why: "not supported yet: features with a spherical layer".into() });
+        }
+        if !(inner > 0.0 && inner.is_finite()) {
+            return Err(MeshError::Invalid { what: "spherical layer".into(), why: "its inner radius must be positive".into() });
+        }
+    }
+    let mut main = match layer {
+        Some((inner, _)) => {
+            let ball = Shape::Sphere { radius: inner };
+            placed(tessellate(&ball, interface_size(&ball, size, false)), Point3::ORIGIN)
+        }
+        None => tessellate(&s.shape, size),
+    };
     for (k, f) in model.features.iter().enumerate() {
         main = combined(main, f, k, &s.shape, size)?;
     }
@@ -753,11 +772,13 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
         .zip(&inner_size)
         .map(|(inc, h)| placed(tessellate(&inc.shape, interface_size(&inc.shape, size.min(*h), inc.material.is_none())), inc.at))
         .collect();
-    // Tags: the solid's faces, then each interface's triangles in turn.
-    let first_tag = main.tri_face.iter().map(|f| f + 1).max().unwrap_or(0);
+    // Tags: the solid's faces (with a spherical layer, the inner sphere's triangles), then each
+    // interface's triangles in turn.
+    let mut first_tag = 0;
     let mut bases: Vec<(u32, u32)> = Vec::new();
     let mut regions: Vec<(RegionMesh, u32)> = Vec::new();
     for _ in 0..6 {
+        first_tag = main.tri_face.iter().map(|f| f + 1).max().unwrap_or(0);
         let mut outer = Tessellation {
             positions: main.positions.clone(),
             triangles: main.triangles.clone(),
@@ -774,7 +795,8 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
             bases.push((next, n));
             next += n;
         }
-        let outer_mesh = region(&outer, size, (first_tag..next).collect())?;
+        let frozen_from = if layer.is_some() { 0 } else { first_tag };
+        let outer_mesh = region(&outer, size, (frozen_from..next).collect())?;
         let mut changed = false;
         for (k, t) in interfaces.iter_mut().enumerate() {
             let seen = extract(&outer_mesh, bases[k].0, bases[k].1, false);
@@ -783,7 +805,29 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
                 changed = true;
             }
         }
+        // The layer's shell: the solid's sphere outside, the inner sphere as a hole (tags 1..).
+        let shell = match layer {
+            Some(_) => {
+                let seen = extract(&outer_mesh, 0, first_tag, true);
+                if !same_triangles(&seen, &main, size) {
+                    main = seen;
+                    changed = true;
+                }
+                let mut t = tessellate(&s.shape, size);
+                append(&mut t, &main, 1, false);
+                let n = main.triangles.len() as u32;
+                let shell = region(&t, size, (1..1 + n).collect())?;
+                let seen = extract(&shell, 1, n, false);
+                if !same_triangles(&seen, &main, size) {
+                    main = seen;
+                    changed = true;
+                }
+                Some(shell)
+            }
+            None => None,
+        };
         regions = vec![(outer_mesh, material as u32)];
+        regions.extend(shell.map(|m| (m, material as u32)));
         for (k, inc) in model.inclusions.iter().enumerate() {
             let Some(name) = &inc.material else { continue };
             let (m, _) = model.material(name)?;
@@ -796,14 +840,24 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
             }
             regions.push((inner, m as u32));
         }
+
         if !changed {
             break;
         }
     }
     // Join: nodes with the same coordinates (the frozen interfaces' vertices) become one.
-    // Outer-region tags on a dielectric's interface (the inner regions' tags are all interface).
-    let dielectric =
-        |r: usize, face: u32| r > 0 || bases.iter().zip(&model.inclusions).any(|((b, n), inc)| inc.material.is_some() && (*b..b + n).contains(&face));
+    // Outer-region tags on a dielectric's interface (the inner regions' tags are all interface);
+    // with a spherical layer, region 1 is its shell (tag 0 its outer wall, the rest the inner
+    // sphere) and the solid region's own faces are that inner sphere.
+    let shell = if layer.is_some() { 1 } else { usize::MAX };
+    let dielectric = |r: usize, face: u32| {
+        if r == shell {
+            return face >= 1;
+        }
+        r > 0
+            || (layer.is_some() && face < first_tag)
+            || bases.iter().zip(&model.inclusions).any(|((b, n), inc)| inc.material.is_some() && (*b..b + n).contains(&face))
+    };
     let mut index: std::collections::HashMap<[i64; 3], u32> = std::collections::HashMap::new();
     let mut nodes: Vec<Point3> = Vec::new();
     let mut tets = Vec::new();
@@ -847,6 +901,10 @@ pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
                 let mut key = n;
                 key.sort_unstable();
                 *interface_sides.entry(key).or_default() += 1;
+                continue;
+            }
+            if r == shell {
+                boundary.push(BoundaryFace { nodes: n, tet: first + tet, tag: Boundary::Pec });
                 continue;
             }
             if r > 0 {
@@ -979,6 +1037,54 @@ mod tests {
         // Flat facets of about 3 mm inscribed in a 10 mm sphere: 3.7 % short.
         assert!(v < exact && v > 0.95 * exact, "{v} {exact}");
         assert!(sphere.boundary.iter().all(|f| f.tag == Boundary::Pec));
+    }
+
+    /// A sphere with a spherical layer, a dielectric inclusion inside it if asked: its mesh
+    /// checked to fill the sphere, its shell's tetrahedra a layer of their own.
+    fn layered(with_inclusion: bool) {
+        use emcraft_model::{Inclusion, Material, Open, OpenShape};
+        let (r, d) = (0.02, 0.006);
+        let mut m = Model::new();
+        m.add_material(Material::new("alumina", 9.8, 1.0).unwrap()).unwrap();
+        m.set_solid(Solid { shape: Shape::Sphere { radius: r }, material: "vacuum".into() }).unwrap();
+        m.set_open(Some(Open { thickness: d, reflection: None, shape: OpenShape::Sphere })).unwrap();
+        if with_inclusion {
+            let ceramic = Inclusion { shape: Shape::Sphere { radius: 0.005 }, at: Point3::new(0.002, 0.0, 0.0), material: Some("alumina".into()) };
+            m.add_inclusion(ceramic).unwrap();
+        }
+        let mesh = solid(&m, 0.004).unwrap();
+        let v = crate::volumes(&mesh);
+        assert!(v.iter().all(|x| *x > 0.0));
+        let exact = 4.0 / 3.0 * PI * r.powi(3);
+        let total: f64 = v.iter().sum();
+        assert!(total < exact && total > 0.95 * exact, "{total} {exact}");
+        // No tetrahedron crosses the inner sphere: each lies wholly inside or outside it.
+        let radius = |n: u32| mesh.nodes[n as usize].to_vec().norm();
+        let tol = 1e-9 * r;
+        let mut shell = 0.0;
+        for (t, tet) in mesh.tets.iter().enumerate() {
+            let (lo, hi) = tet.iter().map(|&n| radius(n)).fold((f64::INFINITY, 0.0f64), |(a, b), x| (a.min(x), b.max(x)));
+            assert!(hi <= r - d + tol || lo >= r - d - tol, "tetrahedron {t} crosses the layer's inner sphere: {lo} {hi}");
+            if lo >= r - d - tol {
+                shell += v[t];
+            }
+        }
+        let exact_shell = 4.0 / 3.0 * PI * (r.powi(3) - (r - d).powi(3));
+        assert!((shell / exact_shell - 1.0).abs() < 0.05, "{shell} {exact_shell}");
+        // The walls are the outer sphere only; the dielectric keeps its region.
+        assert!(mesh.boundary.iter().all(|f| f.tag == Boundary::Pec && f.nodes.iter().all(|&n| (radius(n) - r).abs() < 1e-9)));
+        assert_eq!(mesh.tet_material.contains(&1), with_inclusion);
+    }
+
+    #[test]
+    fn a_spherical_layer_is_a_shell_of_its_own() {
+        layered(false);
+    }
+
+    #[test]
+    #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+    fn a_spherical_layer_holds_inclusions() {
+        layered(true);
     }
 
     #[test]
