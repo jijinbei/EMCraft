@@ -1,0 +1,112 @@
+//! The 3D scene's tests: every overlay of the samples builds, faces are told apart, ports
+//! land where they belong.
+
+use super::style::{PORT, wall_style};
+use super::surface::{Kind, Surface};
+use super::*;
+use serde_json::json;
+
+#[test]
+fn every_overlay_of_every_sample_builds() {
+    for name in ["highpass", "coaxial-line", "dipole", "loaded-sphere"] {
+        let mut s = Session::new();
+        let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find(name).unwrap().script).unwrap();
+        // Without the solves: geometry, then the mesh.
+        let steps: Vec<serde_json::Value> =
+            script.as_array().unwrap().iter().filter(|c| !c["command"].as_str().unwrap().starts_with("solve.")).cloned().collect();
+        let unmeshed: Vec<serde_json::Value> = steps.iter().filter(|c| c["command"] != json!("mesh.generate")).cloned().collect();
+        // Meshing the open and curved samples takes seconds: their meshes are drawn in the
+        // timing report and the scenarios.
+        let scripts = if name == "highpass" { vec![unmeshed, steps] } else { vec![unmeshed] };
+        for script in scripts {
+            s.run_script(&json!(script)).unwrap();
+            for o in [Overlay::Plain, Overlay::Materials, Overlay::Ports, Overlay::Boundaries, Overlay::Mesh] {
+                let b = build(&s, o);
+                assert!(!b.scene.tris.is_empty(), "{name} {o:?}");
+                assert!(b.bounds.is_some());
+            }
+            s = Session::new();
+        }
+    }
+}
+
+#[test]
+fn air_and_walls_let_what_is_inside_show() {
+    let kinds = |s: &Session| {
+        let mesh = s.model.mesh.as_ref().unwrap();
+        let surface = Surface::of(&s.model, mesh);
+        let count = |k: Kind| (0..mesh.boundary.len()).filter(|&i| surface.kind(i) == k).count();
+        (count(Kind::Air), count(Kind::Wall), count(Kind::Conductor))
+    };
+    // An open guide: the air box around it, the guide's metal inside.
+    let open = meshed("open-waveguide", Some(12.0));
+    let (air, wall, metal) = kinds(&open);
+    assert!(air > 0 && wall == 0 && metal > 0, "{air} {wall} {metal}");
+    // A coaxial line: its outer wall (curved), its inner conductor apart from it (the ends'
+    // ports join them).
+    let (air, wall, metal) = kinds(&meshed("coaxial-line", Some(3.0)));
+    assert!(air == 0 && wall > 0 && metal > 0, "{air} {wall} {metal}");
+    // Air is all but invisible; the conductors inside stay solid.
+    let m = &open.model;
+    assert!(wall_style(m, Overlay::Plain, false, 0, Kind::Air).1 < 40);
+    assert_eq!(wall_style(m, Overlay::Plain, false, 0, Kind::Conductor).1, 255);
+    assert!(wall_style(m, Overlay::Plain, false, 0, Kind::Wall).1 < 255);
+}
+
+#[test]
+fn a_port_on_a_face_inside_leaves_the_end_alone() {
+    // The open guide's feed lies on a face inside the box: no end of the box is a port.
+    let s = meshed("open-waveguide", Some(12.0));
+    let b = build(&s, Overlay::Ports);
+    assert!(b.scene.tris.iter().filter(|t| t.color == PORT).count() <= 4, "the box's end is drawn as a port");
+}
+
+fn meshed(name: &str, size: Option<f64>) -> Session {
+    let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find(name).unwrap().script).unwrap();
+    let steps: Vec<serde_json::Value> = script
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| !c["command"].as_str().unwrap().starts_with("solve."))
+        .map(|c| match (size, c["command"].as_str()) {
+            (Some(h), Some("mesh.generate")) => json!({"command": "mesh.generate", "params": {"size": h}}),
+            _ => c.clone(),
+        })
+        .collect();
+    let mut s = Session::new();
+    s.run_script(&json!(steps)).unwrap();
+    s
+}
+
+/// Milliseconds per picture of the samples' meshes at the window's 3D view size (about
+/// 1180 × 620): `cargo test --release -p emcraft-ui-egui render_timings -- --ignored --nocapture`.
+#[test]
+#[ignore = "timing report: run by hand"]
+fn render_timings() {
+    use emcraft_render::view3d::{Camera, Options, render};
+    for (name, size) in [("highpass", None), ("coaxial-line", None), ("coaxial-line", Some(0.45)), ("coaxial-line", Some(0.25))] {
+        let s = meshed(name, size);
+        let faces = s.model.mesh.as_ref().map_or(0, |m| m.boundary.len());
+        for o in [Overlay::Plain, Overlay::Mesh, Overlay::Materials] {
+            let b = build(&s, o);
+            let (lo, hi) = b.bounds.unwrap();
+            let mut c = Camera::default();
+            c.fit(lo, hi, 1180.0 / 620.0);
+            for (ss, w, h) in [(1, 1180, 620), (2, 1180, 620), (1, 590, 310)] {
+                let opt = Options { width: w, height: h, supersample: ss, ..Default::default() };
+                let t = std::time::Instant::now();
+                let n = 5;
+                for k in 0..n {
+                    c.orbit(3.0 * k as f64, 0.0);
+                    let _ = render(&b.scene, &c, &opt);
+                }
+                println!(
+                    "{name} ({faces} boundary faces) {o:?}: {} triangles, {} lines, {w}x{h} x{ss}: {:.1} ms",
+                    b.scene.tris.len(),
+                    b.scene.lines.len(),
+                    t.elapsed().as_secs_f64() * 1e3 / n as f64
+                );
+            }
+        }
+    }
+}
