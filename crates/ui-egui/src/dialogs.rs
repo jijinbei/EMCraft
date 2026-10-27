@@ -422,7 +422,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "geometry.solid" => json!({"shape": "box", "size": [22.86, 10.16, 30]}),
         "geometry.inclusion" => json!({"shape": "sphere", "radius": 2, "at": [11.43, 5.08, 15]}),
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
-        "geometry.import" => json!({"angle": 30}),
+        "geometry.import" => json!({"angle": 30, "open": false}),
         "geometry.body" => json!({"material": "metal", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         // With a band, the mesh follows it: elements per wavelength at its top.
         "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),

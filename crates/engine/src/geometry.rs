@@ -167,16 +167,40 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
             materials.push((body.clone(), m.to_owned()));
         }
     }
+    // An open problem: the box of air lined by a perfectly matched layer, a quarter of the
+    // band's longest wavelength of air between the parts and the layer and as much layer.
+    let open = p.flag("open").or(false)?;
+    let quarter = s.model.band.map(|b| emcraft_model::units::C0 / b.start / 4.0);
+    let thickness = match (open, p.positive_length("thickness").optional()?) {
+        (false, _) => None,
+        (true, Some(t)) => Some(t),
+        (true, None) => Some(quarter.ok_or_else(|| {
+            p.error("thickness", "or set the band (project.frequency): the layer and the air before it are a quarter wavelength each")
+        })?),
+    };
     // The region the fields fill: one body alone (or the one named), else a box of air around
-    // them all.
-    let region =
-        p.string("region").optional()?.map(str::to_owned).unwrap_or_else(|| if bodies.len() == 1 { bodies[0].name.clone() } else { "box".into() });
+    // them all (always for an open problem).
+    let region = p
+        .string("region")
+        .optional()?
+        .map(str::to_owned)
+        .unwrap_or_else(|| if bodies.len() == 1 && !open { bodies[0].name.clone() } else { "box".into() });
+    if open && region != "box" {
+        return Err(p.error("region", "an open problem lies in a box of air (`box`)"));
+    }
     let mut placed = Vec::new();
     if region == "box" {
         let lo = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
         let hi = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::NEG_INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].max(q[d])));
         let extent = (0..3).map(|d| hi[d] - lo[d]).fold(0.0f64, f64::max);
-        let margin = p.positive_length("margin").or(0.25 * extent)?;
+        let margin = match (p.positive_length("margin").optional()?, thickness) {
+            (Some(m), Some(t)) if m <= t => {
+                return Err(p.error("margin", "must exceed the layer's thickness: air must lie between the parts and the layer"));
+            }
+            (Some(m), _) => m,
+            (None, Some(t)) => t + quarter.unwrap_or(t),
+            (None, None) => 0.25 * extent,
+        };
         // The box from the origin; the bodies moved into it.
         let shift = emcraft_model::Vec3::new(margin - lo[0], margin - lo[1], margin - lo[2]);
         for b in &mut bodies {
@@ -195,6 +219,9 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         let kind = crate::bodies::place(&mut s.model, as_shape(b), Point3::ORIGIN, Axis::Z, &m)?;
         placed.push(json!({"body": name, "material": m, "as": kind}));
     }
+    if let Some(t) = thickness {
+        s.model.set_open(Some(emcraft_model::Open { thickness: t, reflection: None, shape: emcraft_model::OpenShape::Box }))?;
+    }
     s.results.invalidate(Change::Geometry);
     let bounds = s.model.bounds().unwrap_or_default();
     Ok(json!({
@@ -202,6 +229,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         "faces": faces,
         "region": region,
         "bodies": placed,
+        "open": thickness.map(|t| s.show_length(t)),
         "volume": s.model.solid.as_ref().map(|x| x.shape.volume()),
         "bounds": bounds.corners().map(|c| c.map(|v| s.show_length(v))),
     }))

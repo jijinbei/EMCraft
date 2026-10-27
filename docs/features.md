@@ -124,7 +124,7 @@ A body of one material with conducting walls, meshed with unstructured tetrahedr
 
 ## `geometry.import` — Import
 
-Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's export with face tags (one body per object, named after it, its B-rep faces kept as faces). Triangles are grouped into faces also by the angle between neighbours, so sharp edges stay edges. One body alone becomes the region the fields fill, filled with `material`, and its faces on its lowest and highest z planes can carry ports. Several bodies lie in a box of air (`material`) `margin` beyond them all, or in the body `region` names; each is metal unless `materials` gives it another (geometry.body.material changes it later). Replaces any geometry, mesh and results.
+Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's export with face tags (one body per object, named after it, its B-rep faces kept as faces). Triangles are grouped into faces also by the angle between neighbours, so sharp edges stay edges. One body alone becomes the region the fields fill, filled with `material`, and its faces on its lowest and highest z planes can carry ports. Several bodies lie in a box of air (`material`) `margin` beyond them all, or in the body `region` names; each is metal unless `materials` gives it another (geometry.body.material changes it later). With `open` (an antenna, a scatterer) the box is lined by a perfectly matched layer as model.open does: by default a quarter of the band's longest wavelength of air between the parts and the layer, and a layer as thick. Replaces any geometry, mesh and results.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -133,8 +133,10 @@ Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's expo
 | `angle` | number |  | no | neighbouring triangles turning by more than this many degrees are on different faces (default 30) |
 | `material` | string |  | no | the region's filling (default vacuum) |
 | `region` | string |  | no | `box` (air around the bodies; the default for several) or the name of the body that is the region (the default for one) |
-| `margin` | number | length | no | the box's room around the bodies (default a quarter of their largest extent) |
+| `margin` | number | length | no | the box's room around the bodies, the layer included (default a quarter of their largest extent; with `open`, a quarter wavelength of air and the layer) |
 | `materials` | object |  | no | body name → material, or `metal` (the default for every body) |
+| `open` | boolean |  | no | an open problem: line the box of air with a perfectly matched layer (default false) |
+| `thickness` | number | length | no | the layer's thickness with `open` (default a quarter of the band's longest wavelength) |
 
 ## `geometry.body` — Body
 

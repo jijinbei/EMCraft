@@ -1188,3 +1188,27 @@ fn a_port_mode_is_drawn_across_its_face() {
         assert!(s.execute("view.port_mode", &bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn an_open_part_gets_air_and_a_layer_a_quarter_wavelength_each() {
+    let path = scratch("open.3mf");
+    let post = named_box("Post", [0.0, 0.0, 0.0], [0.002, 0.002, 0.01]);
+    let puck = named_box("Puck", [0.006, 0.0, 0.002], [0.01, 0.004, 0.006]);
+    std::fs::write(&path, emcraft_io::threemf::write(&[post, puck]).unwrap()).unwrap();
+    let mut s = Session::new();
+    // Without the band the defaults are unknown.
+    assert!(s.execute("geometry.import", &json!({"path": path, "open": true})).is_err());
+    s.execute("project.frequency", &json!({"start": 5, "stop": 10})).unwrap();
+    let r = s.execute("geometry.import", &json!({"path": path, "open": true})).unwrap();
+    // λ at 5 GHz is 59.96 mm: 15 mm of air, 15 mm of layer, each side.
+    let t = r["open"].as_f64().unwrap();
+    assert!((t - 14.99).abs() < 0.01, "{r}");
+    let Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }) = &s.model.solid else { panic!() };
+    assert!((size.x - (0.01 + 4.0 * 0.01499)).abs() < 1e-5, "{size:?}");
+    assert_eq!(s.model.open.map(|o| o.shape), Some(emcraft_model::OpenShape::Box));
+    // Given sizes; air must lie before the layer; a body as the region is no open problem.
+    let r = s.execute("geometry.import", &json!({"path": path, "open": true, "margin": 20, "thickness": 8})).unwrap();
+    assert_eq!(r["open"], json!(8.0));
+    assert!(s.execute("geometry.import", &json!({"path": path, "open": true, "margin": 8, "thickness": 8})).is_err());
+    assert!(s.execute("geometry.import", &json!({"path": path, "open": true, "region": "Post"})).is_err());
+}
