@@ -25,6 +25,7 @@ pub mod raster;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;
+mod status;
 pub mod steps;
 pub mod theme;
 pub mod ui_kit;
@@ -399,26 +400,24 @@ impl EmcraftApp {
         self.field.pinned = None;
         self.field.kept_samples.clear();
         self.chart = None;
-        let f = |k: &str| reply.get(k).and_then(Value::as_f64);
-        let unit = self.session.display.frequency.symbol();
-        match id {
-            "file.open" | "file.save" => {
-                if let Some(path) = reply.get("path").and_then(Value::as_str) {
-                    files::opened(self, path);
-                }
-            }
-            "file.new" | "file.sample" => self.home.open = false,
-            _ => {}
+        if matches!(id, "file.open" | "file.save")
+            && let Some(path) = reply.get("path").and_then(Value::as_str)
+        {
+            files::opened(self, path);
         }
-        let text = match id {
+        let results = &self.session.results;
+        match id {
             "file.sample" | "engine.script" | "file.open" | "file.new" => {
+                if matches!(id, "file.new" | "file.sample") {
+                    self.home.open = false;
+                }
                 self.port_modes = None;
                 self.compare = None;
-                self.view = if self.session.results.sweep.is_some() {
+                self.view = if results.sweep.is_some() {
                     View::SParameters
-                } else if self.session.results.eigen.is_some() {
+                } else if results.eigen.is_some() {
                     View::Eigenmodes
-                } else if self.session.results.radiation.is_some() {
+                } else if results.radiation.is_some() {
                     View::FarField
                 } else {
                     View::Model
@@ -426,41 +425,24 @@ impl EmcraftApp {
                 self.pick_frequency();
                 self.view3d.fit_next = true;
                 self.workflow.check = None;
-                match params.get("name").and_then(Value::as_str) {
-                    Some(name) if id == "file.sample" && self.session.results.any() => format!("Opened sample {name}."),
-                    Some(name) if id == "file.sample" => format!("Opened sample {name}; Run (step 7) solves it."),
-                    _ if id == "file.open" => format!("Opened {}.", params.get("path").and_then(Value::as_str).unwrap_or("the project")),
-                    _ if id == "file.new" => "New project.".to_owned(),
-                    _ => "Script done.".into(),
-                }
             }
             "solve.frequency" => {
                 self.view = View::SParameters;
                 self.pick_frequency();
-                let n = reply.get("points").and_then(Value::as_array).map_or(0, Vec::len);
-                format!("Solved {n} frequencies, {} unknowns.", reply.get("unknowns").and_then(Value::as_u64).unwrap_or(0))
             }
             "solve.eigenmodes" => {
                 self.view = View::Eigenmodes;
                 self.field.view.mode = Some(0);
-                let list: Vec<String> = reply
-                    .get("modes")
-                    .and_then(Value::as_array)
-                    .map(|m| m.iter().filter_map(|x| x.get("frequency").and_then(Value::as_f64)).map(|x| format!("{x:.4}")).collect())
-                    .unwrap_or_default();
-                format!("Found {} eigenmodes: {} {unit}.", list.len(), list.join(", "))
             }
             "solve.radiation" => {
                 self.view = View::FarField;
                 self.field.view.mode = None;
-                if let Some(r) = &self.session.results.radiation {
+                if let Some(r) = &results.radiation {
                     self.field.view.frequency = r.result.frequency;
                 }
-                format!("Solved the open problem: radiated power {:.4e} W.", f("power").or(f("radiated_power")).unwrap_or(f64::NAN))
             }
             "solve.time_domain" => {
-                self.view = if self.session.results.td_radiation.is_some() { View::FarField } else { View::SParameters };
-                format!("Time-domain solve done in {} steps.", reply.get("steps").and_then(Value::as_u64).unwrap_or(0))
+                self.view = if results.td_radiation.is_some() { View::FarField } else { View::SParameters };
             }
             "solve.port_modes" => {
                 self.port_modes = Some(reply.clone());
@@ -468,69 +450,20 @@ impl EmcraftApp {
                 if self.workflow.step != Some(steps::Step::Excitation) {
                     self.view = View::PortModes;
                 }
-                format!("Port modes at {} {unit}.", f("frequency").unwrap_or(f64::NAN))
             }
             "results.compare" => {
                 self.compare = Some(reply.clone());
                 self.view = View::Compare;
-                format!(
-                    "Worst |S − S_ref| = {:.3e} ({}).",
-                    f("worst").unwrap_or(f64::NAN),
-                    reply.get("reference").and_then(Value::as_str).unwrap_or("")
-                )
             }
-            "edit.undo" | "edit.redo" => {
+            "edit.undo" | "edit.redo" => self.port_modes = None,
+            other if other.starts_with("geometry.") => {
+                self.view = View::Model;
                 self.port_modes = None;
-                format!(
-                    "{} ({} to undo, {} to redo).",
-                    if id == "edit.undo" { "Undone" } else { "Redone" },
-                    reply.get("undo").and_then(Value::as_u64).unwrap_or(0),
-                    reply.get("redo").and_then(Value::as_u64).unwrap_or(0)
-                )
+                self.compare = None;
             }
-            "file.save" => format!(
-                "Saved {} commands to {}.",
-                reply.get("commands").and_then(Value::as_u64).unwrap_or(0),
-                reply.get("path").and_then(Value::as_str).unwrap_or("")
-            ),
-            "project.frequency" => format!(
-                "Band {} to {} {}.",
-                f("start").unwrap_or(f64::NAN),
-                f("stop").unwrap_or(f64::NAN),
-                reply.get("unit").and_then(Value::as_str).unwrap_or(unit)
-            ),
-            "results.touchstone" => format!("Wrote {}.", reply.get("path").and_then(Value::as_str).unwrap_or("")),
-            "results.check" => format!(
-                "Largest singular value of S {:.6} ({}), reciprocity error {:.3e}.",
-                f("largest_singular_value").unwrap_or(f64::NAN),
-                if reply.get("passive").and_then(Value::as_bool) == Some(true) { "passive" } else { "not passive" },
-                f("reciprocity_error").unwrap_or(f64::NAN)
-            ),
-            "mesh.generate" => {
-                let m = self.session.model.mesh.as_ref().map_or((0, 0), |m| (m.nodes.len(), m.tets.len()));
-                format!("Meshed: {} nodes, {} tetrahedra.", m.0, m.1)
-            }
-            "mesh.adapt" => {
-                let passes = reply.get("passes").and_then(Value::as_array).map_or(0, Vec::len);
-                let last =
-                    reply.get("passes").and_then(Value::as_array).and_then(|p| p.last()).and_then(|p| p.get("delta_s")).and_then(Value::as_f64);
-                let m = self.session.model.mesh.as_ref().map_or(0, |m| m.tets.len());
-                format!(
-                    "Adaptive mesh: {passes} passes, {m} tetrahedra, last ΔS {}, {}.",
-                    last.map_or("—".to_owned(), |d| format!("{d:.2e}")),
-                    if reply.get("converged").and_then(Value::as_bool) == Some(true) { "converged" } else { "not converged" }
-                )
-            }
-            other => {
-                if other.starts_with("geometry.") {
-                    self.view = View::Model;
-                    self.port_modes = None;
-                    self.compare = None;
-                }
-                format!("{} done.", label(other))
-            }
-        };
-        self.message(text, false);
+            _ => {}
+        }
+        self.message(status::text(id, params, reply, &self.session), false);
         // A run started from the Run step goes on to Results.
         if id.starts_with("solve.") && id != "solve.port_modes" && self.workflow.step == Some(steps::Step::Run) {
             steps::open_step(self, Some(steps::Step::Results));
