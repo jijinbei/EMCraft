@@ -629,129 +629,146 @@ fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 }
 
 fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let fu = app.session.display.frequency;
     ui.horizontal_wrapped(|ui| {
-        if let Some(e) = app.session.results.eigen.as_ref()
-            && (app.field.view.mode.is_some() || app.session.results.sweep.is_none())
-        {
-            let mut idx = app.field.view.mode.unwrap_or(0);
-            let label =
-                |i: usize| e.modes.get(i).map_or(String::new(), |m| format!("mode {}: {:.4} {}", i + 1, fu.from_si(m.frequency), fu.symbol()));
-            egui::ComboBox::from_id_salt("mode").selected_text(label(idx)).show_ui(ui, |ui| {
-                for i in 0..e.modes.len() {
-                    ui.selectable_value(&mut idx, i, label(i));
-                }
-            });
-            app.field.view.mode = Some(idx);
-        }
-        let freqs = app.frequencies();
-        if !freqs.is_empty() && app.field.view.mode.is_none() {
-            let mut idx = freqs.iter().position(|f| (f - app.field.view.frequency).abs() <= 1e-9 * f).unwrap_or(0);
-            let label = |f: f64| format!("{:.4} {}", fu.from_si(f), fu.symbol());
-            let r = egui::ComboBox::from_id_salt("frequency").selected_text(label(app.field.view.frequency)).show_ui(ui, |ui| {
-                for (i, f) in freqs.iter().enumerate() {
-                    ui.selectable_value(&mut idx, i, label(*f));
-                }
-            });
-            scenario::publish_target("field:frequency", r.response.rect);
-            if let Some(f) = freqs.get(idx) {
-                app.field.view.frequency = *f;
-            }
-        }
+        field_choice(app, ui);
         ui.separator();
-        for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
-            let r = ui.selectable_label(app.field.view.plane == p, name);
-            scenario::publish_target(&format!("field:plane:{}", p.name()), r.rect);
-            if r.clicked() && app.field.view.plane != p {
-                app.field.view.plane = p;
-                app.field.at = None;
-                app.field.pinned = None;
-            }
-        }
-        if let Some((span, axis)) = plane_span(app) {
-            let mut at = app.field.at.unwrap_or(span / 2.0);
-            let unit = app.session.display.length.symbol();
-            let r = crate::ui_kit::slider(ui, &mut at, 0.0..=span, format!("{axis} ({unit})"));
-            scenario::publish_target("field:at", r.rect);
-            if r.changed() {
-                app.field.at = Some(at);
-                app.field.pinned = None;
-            }
-            // Keep this plane in the 3D view (Results), beside the one being moved.
-            let here = (app.field.view.plane, at);
-            let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
-            let t = Tokens::get();
-            if resp.hovered() {
-                ui.painter().rect_filled(r, t.radius_sm, t.hover);
-            }
-            crate::glyphs::paint(ui.painter(), r.shrink(3.0), "keep_plane", t.icon, t.accent);
-            scenario::publish_target("field:keep", r);
-            if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !app.field.kept.contains(&here) && app.field.kept.len() < MAX_KEPT {
-                app.field.kept.push(here);
-            }
-        }
+        plane_choice(app, ui);
     });
-    // The planes kept for the 3D view, each a chip that a click lets go.
-    if !app.field.kept.is_empty() {
-        ui.horizontal_wrapped(|ui| {
-            let t = Tokens::get();
-            ui.label(egui::RichText::new("In 3D:").size(t.font_small).color(t.text_dim));
-            let unit = app.session.display.length.symbol();
-            let mut drop = None;
-            for (k, (plane, at)) in app.field.kept.iter().enumerate() {
-                let name = match plane {
-                    Plane::H => "H-plane y",
-                    Plane::E => "E-plane x",
-                    Plane::Cross => "cross z",
-                };
-                let r = ui.button(egui::RichText::new(format!("{name} = {} {unit}  ✕", emcraft_render::axes::format(*at))).size(t.font_small));
-                scenario::publish_target(&format!("field:kept:{k}"), r.rect);
-                if r.on_hover_text("Remove from the 3D view").clicked() {
-                    drop = Some(k);
-                }
-            }
-            if let Some(k) = drop {
-                app.field.kept.remove(k);
-                if k < app.field.kept_samples.len() {
-                    app.field.kept_samples.remove(k);
-                }
+    kept_planes(app, ui);
+    ui.horizontal_wrapped(|ui| field_display(app, ui));
+}
+
+/// Which field: an eigenmode, or a solved frequency.
+fn field_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    let fu = app.session.display.frequency;
+    if let Some(e) = app.session.results.eigen.as_ref()
+        && (app.field.view.mode.is_some() || app.session.results.sweep.is_none())
+    {
+        let mut idx = app.field.view.mode.unwrap_or(0);
+        let label = |i: usize| e.modes.get(i).map_or(String::new(), |m| format!("mode {}: {:.4} {}", i + 1, fu.from_si(m.frequency), fu.symbol()));
+        egui::ComboBox::from_id_salt("mode").selected_text(label(idx)).show_ui(ui, |ui| {
+            for i in 0..e.modes.len() {
+                ui.selectable_value(&mut idx, i, label(i));
             }
         });
+        app.field.view.mode = Some(idx);
+    }
+    let freqs = app.frequencies();
+    if freqs.is_empty() || app.field.view.mode.is_some() {
+        return;
+    }
+    let mut idx = freqs.iter().position(|f| (f - app.field.view.frequency).abs() <= 1e-9 * f).unwrap_or(0);
+    let label = |f: f64| format!("{:.4} {}", fu.from_si(f), fu.symbol());
+    let r = egui::ComboBox::from_id_salt("frequency").selected_text(label(app.field.view.frequency)).show_ui(ui, |ui| {
+        for (i, f) in freqs.iter().enumerate() {
+            ui.selectable_value(&mut idx, i, label(*f));
+        }
+    });
+    scenario::publish_target("field:frequency", r.response.rect);
+    if let Some(f) = freqs.get(idx) {
+        app.field.view.frequency = *f;
+    }
+}
+
+/// The plane, where it cuts, and a button that keeps it in the 3D view.
+fn plane_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
+        let r = ui.selectable_label(app.field.view.plane == p, name);
+        scenario::publish_target(&format!("field:plane:{}", p.name()), r.rect);
+        if r.clicked() && app.field.view.plane != p {
+            app.field.view.plane = p;
+            app.field.at = None;
+            app.field.pinned = None;
+        }
+    }
+    let Some((span, axis)) = plane_span(app) else { return };
+    let mut at = app.field.at.unwrap_or(span / 2.0);
+    let unit = app.session.display.length.symbol();
+    let r = crate::ui_kit::slider(ui, &mut at, 0.0..=span, format!("{axis} ({unit})"));
+    scenario::publish_target("field:at", r.rect);
+    if r.changed() {
+        app.field.at = Some(at);
+        app.field.pinned = None;
+    }
+    // Keep this plane in the 3D view (Results), beside the one being moved.
+    let here = (app.field.view.plane, at);
+    let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
+    let t = Tokens::get();
+    if resp.hovered() {
+        ui.painter().rect_filled(r, t.radius_sm, t.hover);
+    }
+    crate::glyphs::paint(ui.painter(), r.shrink(3.0), "keep_plane", t.icon, t.accent);
+    scenario::publish_target("field:keep", r);
+    if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !app.field.kept.contains(&here) && app.field.kept.len() < MAX_KEPT {
+        app.field.kept.push(here);
+    }
+}
+
+/// The planes kept for the 3D view, each a chip that a click lets go.
+fn kept_planes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    if app.field.kept.is_empty() {
+        return;
     }
     ui.horizontal_wrapped(|ui| {
-        let before = app.field.view.component;
-        let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {
-            for c in emcraft_engine::view::Component::ALL {
-                ui.selectable_value(&mut app.field.view.component, c, c.label());
-            }
-        });
-        scenario::publish_target("field:component", r.response.rect);
-        // Arrows of the field coloured; the other stays a click away.
-        let now = app.field.view.component;
-        if now != before && now.is_magnetic() != before.is_magnetic() {
-            app.field.view.show_e = !now.is_magnetic();
-            app.field.view.show_h = now.is_magnetic();
-        }
-        ui.checkbox(&mut app.field.view.show_e, "E arrows");
-        ui.checkbox(&mut app.field.view.show_h, "H arrows");
-        let ports: Vec<String> = app.session.model.ports.iter().map(|p| p.name.clone()).collect();
-        if ports.len() > 1 && app.field.view.mode.is_none() {
-            ui.separator();
-            ui.label("excite");
-            for (i, n) in ports.iter().enumerate() {
-                ui.radio_value(&mut app.field.view.excitation, i, n.as_str());
+        let t = Tokens::get();
+        ui.label(egui::RichText::new("In 3D:").size(t.font_small).color(t.text_dim));
+        let unit = app.session.display.length.symbol();
+        let mut drop = None;
+        for (k, (plane, at)) in app.field.kept.iter().enumerate() {
+            let name = match plane {
+                Plane::H => "H-plane y",
+                Plane::E => "E-plane x",
+                Plane::Cross => "cross z",
+            };
+            let r = ui.button(egui::RichText::new(format!("{name} = {} {unit}  ✕", emcraft_render::axes::format(*at))).size(t.font_small));
+            scenario::publish_target(&format!("field:kept:{k}"), r.rect);
+            if r.on_hover_text("Remove from the 3D view").clicked() {
+                drop = Some(k);
             }
         }
-        ui.separator();
-        let mut deg = app.field.view.phase.to_degrees().rem_euclid(360.0);
-        let r = crate::ui_kit::slider(ui, &mut deg, 0.0..=360.0, "ωt (°)");
-        scenario::publish_target("field:phase", r.rect);
-        if r.changed() {
-            app.field.view.phase = deg.to_radians();
+        if let Some(k) = drop {
+            app.field.kept.remove(k);
+            if k < app.field.kept_samples.len() {
+                app.field.kept_samples.remove(k);
+            }
         }
-        let r = ui.checkbox(&mut app.field.animate, "Animate");
-        scenario::publish_target("field:animate", r.rect);
     });
+}
+
+/// What is drawn: the coloured component, the arrows, the excited port and the phase.
+fn field_display(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+    let before = app.field.view.component;
+    let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {
+        for c in emcraft_engine::view::Component::ALL {
+            ui.selectable_value(&mut app.field.view.component, c, c.label());
+        }
+    });
+    scenario::publish_target("field:component", r.response.rect);
+    // Arrows of the field coloured; the other stays a click away.
+    let now = app.field.view.component;
+    if now != before && now.is_magnetic() != before.is_magnetic() {
+        app.field.view.show_e = !now.is_magnetic();
+        app.field.view.show_h = now.is_magnetic();
+    }
+    ui.checkbox(&mut app.field.view.show_e, "E arrows");
+    ui.checkbox(&mut app.field.view.show_h, "H arrows");
+    let ports = &app.session.model.ports;
+    if ports.len() > 1 && app.field.view.mode.is_none() {
+        ui.separator();
+        ui.label("excite");
+        for (i, p) in ports.iter().enumerate() {
+            ui.radio_value(&mut app.field.view.excitation, i, p.name.as_str());
+        }
+    }
+    ui.separator();
+    let mut deg = app.field.view.phase.to_degrees().rem_euclid(360.0);
+    let r = crate::ui_kit::slider(ui, &mut deg, 0.0..=360.0, "ωt (°)");
+    scenario::publish_target("field:phase", r.rect);
+    if r.changed() {
+        app.field.view.phase = deg.to_radians();
+    }
+    let r = ui.checkbox(&mut app.field.animate, "Animate");
+    scenario::publish_target("field:animate", r.rect);
 }
 
 // ---- tables --------------------------------------------------------------------------------
