@@ -352,10 +352,11 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.open",
         label: "Open boundary",
-        doc: "Lines every face of a box solid with a perfectly matched layer of `thickness` (conducting walls behind it), for radiation and scattering: an anisotropic medium of stretched coordinates, s = 1 − j(σ₀/k₀)(ξ/d)², designed for 1e-6 reflection at normal incidence. A quarter to half a wavelength is typical; leave as much again between what radiates and the layer (the Huygens surface for the far field lies between them, and wants a couple of elements' distance from sources' near fields). Without `thickness`, closes the box again.",
+        doc: "Lines every face of a box solid with a perfectly matched layer of `thickness` (conducting walls behind it), for radiation and scattering: an anisotropic medium of stretched coordinates, s = 1 − j(σ₀/k₀)(ξ/d)², designed for 1e-6 reflection at normal incidence. With `shape` sphere the solid is a sphere (centred on the origin) and its outer shell of that thickness is the layer, stretched along the radius only (r̃ = r + (1/jk₀)∫σ dr; the mesh gets an interface sphere at the layer's inner radius) — less volume round a compact radiator than a box's, and the Huygens surface a sphere inside it; sources, lumped ports and inclusions inside the inner sphere, no waveguide ports or features. A quarter to half a wavelength is typical; leave as much again between what radiates and the layer (the Huygens surface for the far field lies between them, and wants a couple of elements' distance from sources' near fields). Without `thickness`, closes the box again.",
         params: &[
             opt("thickness", K::Number, "the layer's thickness").of(L),
             opt("reflection", K::Number, "the reflection at normal incidence the layer's profile is designed for, 0 to 1 (default 1e-6)"),
+            opt("shape", K::String, "`box` (default: slabs on a box solid's faces) or `sphere` (the outer shell of a sphere solid)").one_of(&["box", "sphere"]),
         ],
         effect: Effect::Record,
         run: crate::open::model_open,

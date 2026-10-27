@@ -68,7 +68,8 @@ fn hostile_parameters_are_refused_and_nothing_panics() {
         json!("x"),
         json!({"name": 1, "eps_r": "a", "width": -1, "height": f64::MAX, "sections": [{}], "size": 0, "end": "middle", "modes": 1e9,
                "frequencies": [-1, "a"], "start": 1e308, "stop": -5, "points": 1e12, "order": 7, "frequency": 1e300, "at": [[1, 2]],
-               "path": "", "plane": "q", "component": "zz", "phase": 1e308, "width_px": 3, "excitation": "nope", "solve": "yes"}),
+               "path": "", "plane": "q", "component": "zz", "phase": 1e308, "width_px": 3, "excitation": "nope", "solve": "yes",
+               "shape": "torus", "thickness": -3, "reflection": f64::MAX}),
         json!({"frequency": 8, "at": [[1e300, 0, 0]], "path": "/nonexistent-dir/x.png", "width": 1_000_000, "height": 0}),
     ];
     let solved = small();
@@ -626,6 +627,7 @@ fn every_choice_a_command_lists_is_one_its_parameter_reads() {
     reads::<crate::open::FarSolver>("results.far_field", "solver");
     reads::<crate::open::FarSolver>("view.pattern", "solver");
     reads::<crate::project::Format>("results.touchstone", "format");
+    reads::<emcraft_model::OpenShape>("model.open", "shape");
     let component = find_command("view.field").and_then(|c| c.params.iter().find(|p| p.name == "component")).unwrap();
     let names: Vec<&str> = crate::view::Component::ALL.iter().map(|c| c.name()).collect();
     assert_eq!(component.choices, names.as_slice());

@@ -489,7 +489,7 @@ impl Feature {
 }
 
 /// An open boundary: a perfectly matched layer of this thickness (m) lining every face of a box
-/// solid, the conducting walls behind it.
+/// solid, or the outer shell of a sphere solid, the conducting walls behind it.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Open {
     pub thickness: f64,
@@ -497,6 +497,22 @@ pub struct Open {
     /// strength); `None` for the default, 1e-6.
     #[serde(default)]
     pub reflection: Option<f64>,
+    /// The layer's shape: Cartesian slabs on a box's faces (the default, and what models saved
+    /// before there was a choice hold), or a spherical shell stretched along the radius.
+    #[serde(default)]
+    pub shape: OpenShape,
+}
+
+/// The shape of a perfectly matched layer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenShape {
+    /// Slabs lining every face of a box solid, stretched along x, y and z.
+    #[default]
+    Box,
+    /// The outer shell R − d < r < R of a sphere solid of radius R (centred on the origin),
+    /// stretched along r only.
+    Sphere,
 }
 
 /// What drives an open problem.
@@ -535,6 +551,13 @@ fn unit_voltage() -> [f64; 2] {
 
 fn unit(name: &str, v: Vec3) -> Result<Vec3> {
     v.normalized().ok_or_else(|| invalid(name, "must be a nonzero finite vector"))
+}
+
+/// Whether a box lies strictly inside the ball of this radius about the origin (its farthest
+/// corner does).
+fn inside_ball(b: &Aabb, radius: f64) -> bool {
+    let far = Vec3::new(b.min.x.abs().max(b.max.x.abs()), b.min.y.abs().max(b.max.y.abs()), b.min.z.abs().max(b.max.z.abs()));
+    far.norm() < radius
 }
 
 /// The solid angle a triangle subtends at the origin, its corners given relative to it (A. Van
@@ -894,6 +917,11 @@ impl Model {
         if (0..3).any(|d| lo[d] <= slo[d] || hi[d] >= shi[d]) {
             return Err(invalid("inclusion", "must lie strictly inside the solid's bounding box"));
         }
+        if let Some((inner, _)) = self.spherical_layer()
+            && !inside_ball(&inc.bounds(), inner)
+        {
+            return Err(invalid("inclusion", "must lie inside the spherical layer's inner sphere"));
+        }
         for other in &self.inclusions {
             let Aabb { min: olo, max: ohi } = other.bounds();
             if (0..3).all(|d| lo[d] < ohi[d] && olo[d] < hi[d]) {
@@ -955,6 +983,9 @@ impl Model {
         }
         if !f.bounds().overlaps(self.bounds().unwrap_or_else(|| solid.shape.bounds())) {
             return Err(invalid("feature", "must meet the solid (their bounding boxes are apart)"));
+        }
+        if self.spherical_layer().is_some() {
+            return Err(invalid("feature", "not supported yet: features combined with a sphere lined by a spherical layer"));
         }
         self.features.push(f);
         self.mesh = None;
@@ -1039,31 +1070,69 @@ impl Model {
         }
     }
 
-    /// Lines the box solid's faces with a perfectly matched layer of `thickness` (m), or closes
-    /// it again with `None`.
+    /// Lines the box solid's faces with a perfectly matched layer of `thickness` (m) — or, for a
+    /// spherical layer, makes the sphere solid's outer shell of that thickness the layer — or
+    /// closes it again with `None`.
     pub fn set_open(&mut self, open: Option<Open>) -> Result<()> {
         if let Some(o) = open {
-            let Some(Solid { shape: Shape::Box { size }, .. }) = &self.solid else {
-                return Err(invalid(
-                    "open boundary",
-                    "not supported yet: a perfectly matched layer needs a box solid (geometry.solid, shape box) to line",
-                ));
-            };
             positive("layer thickness", o.thickness)?;
             if let Some(r) = o.reflection
                 && !(r > 0.0 && r < 1.0)
             {
                 return Err(invalid("layer reflection", "must be between 0 and 1"));
             }
-            if size.iter().any(|s| 2.0 * o.thickness >= s) {
-                return Err(invalid("layer thickness", "must leave room inside the box (under half its smallest side)"));
-            }
-            if self.ports.iter().any(|p| p.face.is_none()) {
-                return Err(invalid("open boundary", "ports at the box's ends would lie under the layer: put them on faces inside it (`face`)"));
+            match (o.shape, &self.solid) {
+                (OpenShape::Box, Some(Solid { shape: Shape::Box { size }, .. })) => {
+                    if size.iter().any(|s| 2.0 * o.thickness >= s) {
+                        return Err(invalid("layer thickness", "must leave room inside the box (under half its smallest side)"));
+                    }
+                    if self.ports.iter().any(|p| p.face.is_none()) {
+                        return Err(invalid(
+                            "open boundary",
+                            "ports at the box's ends would lie under the layer: put them on faces inside it (`face`)",
+                        ));
+                    }
+                }
+                (OpenShape::Sphere, Some(Solid { shape: Shape::Sphere { radius }, .. })) => {
+                    if o.thickness >= 0.75 * radius {
+                        return Err(invalid("layer thickness", "must leave room inside the sphere (under three quarters of its radius)"));
+                    }
+                    if !self.ports.is_empty() {
+                        return Err(invalid(
+                            "open boundary",
+                            "not supported yet: waveguide ports with a spherical layer (use lumped ports or sources)",
+                        ));
+                    }
+                    if !self.features.is_empty() {
+                        return Err(invalid("open boundary", "not supported yet: features combined with a sphere lined by a spherical layer"));
+                    }
+                    if self.inclusions.iter().any(|i| !inside_ball(&i.bounds(), radius - o.thickness)) {
+                        return Err(invalid("open boundary", "the inclusions must lie inside the spherical layer's inner sphere"));
+                    }
+                }
+                (OpenShape::Box, _) => {
+                    return Err(invalid(
+                        "open boundary",
+                        "not supported yet: a perfectly matched layer needs a box solid (geometry.solid, shape box) to line, or shape sphere for a sphere solid",
+                    ));
+                }
+                (OpenShape::Sphere, _) => {
+                    return Err(invalid("open boundary", "a spherical layer needs a sphere solid (geometry.solid, shape sphere) whose shell it is"));
+                }
             }
         }
         self.open = open;
         Ok(())
+    }
+
+    /// The spherical layer's radii (inner R − d, outer R), when the model is open with one.
+    pub fn spherical_layer(&self) -> Option<(f64, f64)> {
+        match (&self.open, &self.solid) {
+            (Some(Open { shape: OpenShape::Sphere, thickness, .. }), Some(Solid { shape: Shape::Sphere { radius }, .. })) => {
+                Some((radius - thickness, *radius))
+            }
+            _ => None,
+        }
     }
 
     /// Adds a source for an open problem.
@@ -1119,6 +1188,9 @@ impl Model {
     pub fn add_port(&mut self, p: Port) -> Result<()> {
         if p.name.trim().is_empty() {
             return Err(invalid("port name", "must not be empty"));
+        }
+        if self.spherical_layer().is_some() {
+            return Err(invalid("port", "not supported yet: waveguide ports with a spherical layer (use lumped ports or sources)"));
         }
         if self.open.is_some() && p.face.is_none() {
             return Err(invalid("port", "with an open boundary a port goes on a face inside the box (`face`), the box's ends being under the layer"));
@@ -1278,6 +1350,35 @@ mod tests {
         m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
         assert!(m.port_shape(End::Start).is_err());
         assert!((Shape::Sphere { radius: 1.0 }.volume() - 4.18879).abs() < 1e-5);
+    }
+
+    #[test]
+    fn open_boundaries_match_their_solids() {
+        let open = |thickness: f64, shape: OpenShape| Some(Open { thickness, reflection: None, shape });
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Sphere { radius: 0.03 }, material: "vacuum".into() }).unwrap();
+        // A box layer needs a box; a spherical one a sphere with room inside.
+        assert!(m.set_open(open(0.01, OpenShape::Box)).is_err());
+        for d in [0.0, -0.01, f64::NAN, f64::INFINITY, 0.0225, 0.05] {
+            assert!(m.set_open(open(d, OpenShape::Sphere)).is_err(), "{d}");
+        }
+        m.set_open(open(0.01, OpenShape::Sphere)).unwrap();
+        assert_eq!(m.spherical_layer(), Some((0.03 - 0.01, 0.03)));
+        // Inclusions inside the inner sphere only; no features or waveguide ports.
+        let inc = |x: f64| Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(x, 0.0, 0.0), material: None };
+        assert!(m.add_inclusion(inc(0.018)).is_err());
+        m.add_inclusion(inc(0.0)).unwrap();
+        let f = Feature { combine: Combine::Add, shape: Shape::Box { size: Vec3::new(0.01, 0.01, 0.01) }, at: Point3::ORIGIN, axis: Axis::Z };
+        assert!(m.add_feature(f).is_err());
+        let port = Port::new("1", End::Start);
+        assert!(m.add_port(port).is_err());
+        // A box keeps its default layer; models saved before the shape existed read as boxes.
+        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.04, 0.04, 0.04) }, material: "vacuum".into() }).unwrap();
+        assert!(m.set_open(open(0.01, OpenShape::Sphere)).is_err());
+        m.set_open(open(0.01, OpenShape::Box)).unwrap();
+        let old: Open = serde_json::from_str(r#"{"thickness": 0.01, "reflection": null}"#).unwrap();
+        assert_eq!(old.shape, OpenShape::Box);
+        assert_eq!(m.spherical_layer(), None);
     }
 
     #[test]

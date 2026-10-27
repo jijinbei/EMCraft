@@ -5,7 +5,7 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 
 use emcraft_model::units::{C0, MU0};
-use emcraft_model::{Open, Shape, Source, Vec3};
+use emcraft_model::{Open, OpenShape, Shape, Source, Vec3};
 use emcraft_render::Rgb;
 use emcraft_render::axes::Axis;
 use emcraft_render::chart::{Chart, Series, Style};
@@ -29,10 +29,11 @@ pub struct Radiated {
 
 pub fn model_open(s: &mut Session, p: &Params) -> Result<Value> {
     let reflection = p.number("reflection").optional()?;
-    let open = p.positive_length("thickness").optional()?.map(|thickness| Open { thickness, reflection });
+    let shape: OpenShape = p.choice("shape").or(OpenShape::Box)?;
+    let open = p.positive_length("thickness").optional()?.map(|thickness| Open { thickness, reflection, shape });
     s.model.set_open(open)?;
     s.results.radiation = None;
-    Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.show_length(o.thickness))}))
+    Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.show_length(o.thickness)), "shape": open.map(|o| o.shape)}))
 }
 
 pub fn source_dipole(s: &mut Session, p: &Params) -> Result<Value> {

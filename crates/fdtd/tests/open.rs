@@ -8,7 +8,7 @@ use emcraft_model::{LumpedPort, Model, Open, Point3, Shape, Solid, Source, Vec3}
 fn open_box(size: f64, pml: f64) -> Model {
     let mut m = Model::new();
     m.set_solid(Solid { shape: Shape::Box { size: Vec3::from([size; 3]) }, material: "vacuum".into() }).unwrap();
-    m.set_open(Some(Open { thickness: pml, reflection: None })).unwrap();
+    m.set_open(Some(Open { thickness: pml, reflection: None, shape: emcraft_model::OpenShape::Box })).unwrap();
     m
 }
 
