@@ -1,0 +1,10 @@
+{
+ "title": "WR-90 loaded periodically (5 mm vacuum, 5 mm εr = 2.56): TE10's Bloch band at ψ = 45°, 90°, 135°",
+ "kind": "theory",
+ "source": "Bloch waves of a periodically loaded line: cos ψ = (A + D)/2 of the period's ABCD matrix, the sections TE10 lines with β_i = √(k₀²ε_i − (π/a)²) and Z_i = ωμ/β_i (R. E. Collin, Foundations for Microwave Engineering, 2nd ed., McGraw-Hill 1992, the chapter on periodic structures; D. M. Pozar, Microwave Engineering, 4th ed., §8.1), the roots in f bisected by an independent script",
+ "quantities": [
+  {"id": "band1_45", "quantity": "band 1 at ψ = 45° (GHz)", "measure": {"step": "bands", "pointer": "/points/0/frequencies/0"}, "value": 5.631118790078808, "tolerance": {"relative": 3e-4}, "reason": "second-order elements of 2.5 mm, the dielectric's faces grid planes: measured +1e-5 to +4e-5, the lines' dispersion"},
+  {"id": "band1_90", "quantity": "band 1 at ψ = 90° (GHz)", "measure": {"step": "bands", "pointer": "/points/1/frequencies/0"}, "value": 7.381273782811735, "tolerance": {"relative": 3e-4}, "reason": "as at 45°"},
+  {"id": "band1_135", "quantity": "band 1 at ψ = 135° (GHz)", "measure": {"step": "bands", "pointer": "/points/2/frequencies/0"}, "value": 9.46850998531705, "tolerance": {"relative": 3e-4}, "reason": "as at 45°; the band bends towards the stop band at the zone's edge"}
+ ]
+}

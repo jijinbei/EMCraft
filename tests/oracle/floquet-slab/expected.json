@@ -1,0 +1,16 @@
+{
+ "title": "Infinite dielectric slab (εr = 4, 5 mm) under a plane wave at 10 GHz: a periodic cell with Floquet ports, normal and 30° oblique incidence, TE and TM",
+ "kind": "theory",
+ "source": "Plane wave through plane layers: transverse wave impedances Z_TE = ωμ/k_z, Z_TM = k_z/(ωε), k_z = √(k² − k_t²), k_t = k₀ sin θ conserved, ABCD cascade of the three layers and power-wave S between the outer layers (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §4.4; S. J. Orfanidis, Electromagnetic Waves and Antennas, 2016, ch. 7–8), evaluated by an independent script",
+ "quantities": [
+  {"id": "normal_s11_mag", "quantity": "|S11| at normal incidence", "measure": {"step": "normal", "pointer": "/points/0/s11/mag"}, "value": 0.5443835687939474, "tolerance": {"absolute": 3e-3}, "reason": "second-order elements of 2.5 mm across a 10 mm cell: the plane wave's dispersion error (measured 4e-4 to 7e-4 at h = 2.5 mm, falling as h⁴: 1e-4 at 1.25 mm)"},
+  {"id": "normal_s11_deg", "quantity": "phase of S11 at normal incidence (degrees)", "measure": {"step": "normal", "pointer": "/points/0/s11/deg"}, "value": 11.035979495367018, "tolerance": {"absolute": 0.2}, "reason": "as |S11|: the phase carries 12 mm of air and the slab (measured 0.02° to 0.07°)"},
+  {"id": "normal_s21_mag", "quantity": "|S21| at normal incidence", "measure": {"step": "normal", "pointer": "/points/0/s21/mag"}, "value": 0.8388364143426092, "tolerance": {"absolute": 3e-3}, "reason": "as |S11|"},
+  {"id": "normal_s21_deg", "quantity": "phase of S21 at normal incidence (degrees)", "measure": {"step": "normal", "pointer": "/points/0/s21/deg"}, "value": 101.03597949536702, "tolerance": {"absolute": 0.2}, "reason": "as |S11|"},
+  {"id": "te30_s11_mag", "quantity": "|S11|, TE at θ = 30°, φ = 20°", "measure": {"step": "te30", "pointer": "/points/0/s11/mag"}, "value": 0.6256695123785225, "tolerance": {"absolute": 3e-3}, "reason": "as at normal incidence; the phase shift across the cell (k_x a, k_y b) enters through the periodic condition"},
+  {"id": "te30_s21_deg", "quantity": "phase of S21, TE at 30° (degrees)", "measure": {"step": "te30", "pointer": "/points/0/s21/deg"}, "value": 125.00787465397929, "tolerance": {"absolute": 0.2}, "reason": "as at normal incidence"},
+  {"id": "tm30_s11_mag", "quantity": "|S11|, TM at θ = 30°, φ = 20°", "measure": {"step": "tm30", "pointer": "/points/0/s11/mag"}, "value": 0.4828658623178417, "tolerance": {"absolute": 3e-3}, "reason": "as TE; TM reflects less (towards Brewster's angle)"},
+  {"id": "tm30_s21_mag", "quantity": "|S21|, TM at 30°", "measure": {"step": "tm30", "pointer": "/points/0/s21/mag"}, "value": 0.8756943296653502, "tolerance": {"absolute": 3e-3}, "reason": "as TE"},
+  {"id": "tm30_s21_deg", "quantity": "phase of S21, TM at 30° (degrees)", "measure": {"step": "tm30", "pointer": "/points/0/s21/deg"}, "value": 122.40182115335315, "tolerance": {"absolute": 0.2}, "reason": "as TE"}
+ ]
+}

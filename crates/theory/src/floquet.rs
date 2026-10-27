@@ -17,7 +17,7 @@
 //! sections that fill the cross-section keep TE₁₀ by itself, a cascade of lines with
 //! β_i = √(k₀² ε_i μ_i − (π/a)²) and Z_i = ωμ₀μ_i/β_i; a Bloch wave of phase ψ per period
 //! satisfies cos ψ = (A + D)/2 of the period's ABCD matrix (R. E. Collin, *Foundations for
-//! Microwave Engineering*, 2nd ed., McGraw-Hill 1992, §9.1, periodic structures). A guide of one
+//! Microwave Engineering*, 2nd ed., McGraw-Hill 1992, the chapter on periodic structures, periodic structures). A guide of one
 //! material has the closed form k² = (π/a)² + (ψ/L)² for the lowest band ([`empty_guide_bands`]
 //! gives every TE_mn and TM_mn harmonic).
 
