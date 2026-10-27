@@ -18,7 +18,11 @@
 //!
 //! Any value that falls outside the open subsegment becomes the midpoint. Termination is Si's
 //! (the spheres around acute vertices keep splits from cascading); the number of Steiner points
-//! and of passes is still capped.
+//! and of passes is still capped. Two parts of the boundary that nearly touch (closer than
+//! rounding can tell apart from touching: coplanar faces a hair apart, say) defeat the rule —
+//! each split encroaches on a segment of the other part and the two creep along each other a
+//! hair at a time, a pass each — so the pass cap is low (`MAX_PASSES`): a valid boundary
+//! needs a few dozen passes at most, and every pass rescans the segments it touched.
 
 use crate::predicates::{Axis, ExactPoint3, GenericPoint, Lnc, generic_orient2d};
 use crate::{Error, Result};
@@ -28,8 +32,10 @@ use super::Recovery;
 
 /// Most tetrahedra searched for a reference point.
 const NEAR_CAP: usize = 20_000;
-/// Most passes over the segments.
-const MAX_PASSES: usize = 10_000;
+/// Most passes over the segments: the test corpus needs at most 38; a boundary whose parts
+/// nearly touch would otherwise split the same few segments a pass at a time for minutes (each
+/// pass costing more than the last), so it stops after a few seconds instead.
+const MAX_PASSES: usize = 200;
 
 /// An input segment and its split points.
 #[derive(Debug, Clone)]
@@ -150,7 +156,16 @@ impl Recovery {
             }
             work = next;
         }
-        Err(Error::Limit(format!("segment recovery did not finish in {MAX_PASSES} passes")))
+        let near = work.first().and_then(|&s| self.segments.get(s)).map(|seg| seg.ends[0]);
+        let at = match near {
+            Some(v) => self.cx.approx(v)?,
+            None => Point3::ORIGIN,
+        };
+        Err(Error::limit(crate::message![
+            format!("boundary edge recovery did not finish in {MAX_PASSES} passes (still splitting near "),
+            crate::message::point(at),
+            "): two parts of the boundary nearly touch there, closer than they can be meshed apart — bodies meeting face to face, say; let one reach into the other or keep them apart"
+        ]))
     }
 
     pub(super) fn segment(&self, s: usize) -> Result<&Segment> {

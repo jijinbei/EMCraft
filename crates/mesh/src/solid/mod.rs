@@ -703,6 +703,42 @@ mod tests {
         assert!(solid(&w, 0.003).is_err());
     }
 
+    /// A coaxial line's inner conductor in two pieces meeting end to end: the solid (radius
+    /// 3.5 mm, 20 mm long) less two cylinders of radius 1 mm and `r2`, at z 0..10 and 10..20 mm.
+    fn stepped_coax(r2: f64) -> Model {
+        use emcraft_model::Feature;
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.0035, length: 0.02 }, material: "vacuum".into() }).unwrap();
+        for (radius, z) in [(0.001, 0.0), (r2, 0.01)] {
+            m.add_feature(Feature {
+                combine: Combine::Subtract,
+                shape: Shape::Cylinder { radius, length: 0.01 },
+                at: Point3::new(0.0, 0.0, z),
+                axis: Axis::Z,
+            })
+            .unwrap();
+        }
+        m
+    }
+
+    /// Regression: the two cylinders' facing caps, each moved by its own millionth of the size,
+    /// left two boundary parts a nanometre apart, and boundary edge recovery split the same few
+    /// edges a hair at a time for many minutes. Combined as they are (not joined first), they
+    /// now stop at the pass cap with an error, in seconds.
+    #[test]
+    fn nearly_touching_boundaries_stop_quickly() {
+        let (m, size) = (stepped_coax(0.001), 0.0015);
+        let s = m.solid.as_ref().unwrap();
+        let mut main = tessellate(&s.shape, size);
+        for (k, f) in m.features.iter().enumerate() {
+            main = combined(main, f, k, &s.shape, size).unwrap();
+        }
+        let start = std::time::Instant::now();
+        let e = region(&main, size, Vec::new(), &[]).err().expect("nearly touching boundaries are refused");
+        assert!(e.to_string().contains("nearly touch"), "{e}");
+        assert!(start.elapsed().as_secs() < 30, "{:?}", start.elapsed());
+    }
+
     #[test]
     fn points_are_located_in_unstructured_meshes() {
         let mesh = mesh_of(Shape::Cylinder { radius: 0.01, length: 0.02 }, 0.003);
