@@ -1,18 +1,12 @@
 //! Commands that read results: S-parameters, eigenmodes, the comparison with a reference,
-//! field errors and probes, and pictures of fields and S-parameters.
+//! field errors and probes, and time-domain reflectometry. Their pictures are `view`'s.
 
-use emcraft_model::units::decibels;
 use emcraft_model::{CVec3, Shape};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Map, Value, json};
 
-use crate::view::{self, FieldView, Plane};
-use crate::{EIGEN_MAX, EngineError, Params, Result, Session};
-
-/// A complex value in a reply: parts, magnitude (also in dB) and phase in degrees.
-pub(crate) fn complex(c: C) -> Value {
-    json!({"re": c.re, "im": c.im, "mag": c.norm(), "db": decibels(c.norm()), "deg": c.arg().to_degrees()})
-}
+use crate::reply::complex;
+use crate::{EngineError, Params, Result, Session, Sweep, args, view};
 
 pub fn eigenmodes(s: &mut Session, _: &Params) -> Result<Value> {
     eigenmode_table(s)
@@ -109,16 +103,8 @@ pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
         .map(|r| {
             let (s11, s21) = reference.s(r.frequency, modes)?;
             // The reference is at the ports' faces: moved to the de-embedded planes as the
-            // solver moves its own (each port's first mode's γ).
-            let shift = |p: usize| -> Result<C> {
-                let d = sw.driven.ports.get(p).map_or(0.0, |x| x.deembed);
-                if d == 0.0 {
-                    return Ok(C::new(1.0, 0.0));
-                }
-                let gamma = sw.driven.port_terms(p, r.frequency)?.first().map_or(C::new(0.0, 0.0), |t| t.gamma);
-                Ok((gamma * d).exp())
-            };
-            let (a, b) = (shift(0)?, shift(1)?);
+            // solver moves its own.
+            let (a, b) = (deembedding(sw, 0, r.frequency)?, deembedding(sw, 1, r.frequency)?);
             let (s11, s21) = (s11 * a * a, s21 * a * b);
             let (f11, f21) = (r.s.get(0, 0).unwrap_or_default(), r.s.get(1, 0).unwrap_or_default());
             let (e11, e21) = ((f11 - s11).norm(), (f21 - s21).norm());
@@ -132,6 +118,17 @@ pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({"reference": reference.label(), "points": rows, "worst": worst}))
+}
+
+/// The factor e^{γd} port `port` de-embedded by d moves a wave by at `frequency` (Hz), γ its first
+/// mode's; 1 without de-embedding.
+fn deembedding(sw: &Sweep, port: usize, frequency: f64) -> Result<C> {
+    let d = sw.driven.ports.get(port).map_or(0.0, |x| x.deembed);
+    if d == 0.0 {
+        return Ok(C::new(1.0, 0.0));
+    }
+    let gamma = sw.driven.port_terms(port, frequency)?.first().map_or(C::new(0.0, 0.0), |t| t.gamma);
+    Ok((gamma * d).exp())
 }
 
 /// The sweep's result at frequency `frequency`, which must have been solved.
@@ -153,16 +150,11 @@ pub fn field_error(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"frequency": s.show_frequency(r.frequency), "e": e / en, "h": h / hn}))
 }
 
-/// The port `excitation` names (the first by default).
-fn excitation(s: &Session, p: &Params) -> Result<usize> {
-    p.string("excitation").optional()?.map_or(Ok(0), |name| Ok(s.model.port(name)?.0))
-}
-
 /// Most points one probe reads.
 const MAX_PROBES: usize = 100_000;
 
 pub fn probe(s: &mut Session, p: &Params) -> Result<Value> {
-    let q = excitation(s, p)?;
+    let q = args::excitation(s, p)?;
     let r = solved_at(s, p)?;
     let driven = &s.results.sweep()?.driven;
     let x = r.fields.get(q).ok_or_else(|| EngineError::failed("no field for that port"))?;
@@ -177,97 +169,6 @@ pub fn probe(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({"frequency": s.show_frequency(r.frequency), "points": out}))
-}
-
-pub(crate) fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
-    if path.trim().is_empty() {
-        return Err(EngineError::Params("`path` must not be empty".into()));
-    }
-    let bytes = png.ok_or_else(|| EngineError::failed("could not encode the picture"))?;
-    std::fs::write(path, bytes).map_err(|e| EngineError::Failed(format!("cannot write {path}: {e}")))
-}
-
-/// A field view from command parameters.
-pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
-    let plane = p.choice("plane").or(Plane::H)?;
-    let mut v = match p.integer("mode", 1..=EIGEN_MAX).optional()? {
-        Some(m) => FieldView::mode(m - 1, plane),
-        None => FieldView::new(p.frequency("frequency").required_or("or `mode`")?, plane),
-    };
-    v.at = p.length("at").optional()?;
-    if let Some(c) = p.string("component").optional()? {
-        v.component = c.parse()?;
-    }
-    // The arrows of the field coloured unless asked otherwise.
-    (v.show_e, v.show_h) = match p.list("arrows", 16).optional()? {
-        Some(list) => (list.iter().any(|x| x.as_str() == Some("e")), list.iter().any(|x| x.as_str() == Some("h"))),
-        None => (!v.component.is_magnetic(), v.component.is_magnetic()),
-    };
-    v.phase = p.number("phase").or(0.0)?.to_radians();
-    v.excitation = excitation(s, p)?;
-    Ok(v)
-}
-
-pub fn view_field(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let width = p.side("width", s.limits.picture_side, 1100)?;
-    let plot = view::field_plot(s, &field_view(s, p)?)?;
-    let c = emcraft_render::plot::draw(&plot, width);
-    write_png(path, c.png())?;
-    Ok(json!({"path": path, "width": c.w, "height": c.h}))
-}
-
-/// A port mode's transverse E across the port's face as a PNG.
-pub fn view_port_mode(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let width = p.side("width", s.limits.picture_side, 900)?;
-    let port = p.string("port").required()?;
-    let mode = p.integer("mode", 1..=crate::EIGEN_MAX).or(1)?;
-    let frequency = p.frequency("frequency").or_maybe(s.model.band.map(|b| b.stop)).required_or("or set the band: project.frequency")?;
-    let plot = view::port_mode_plot(s, port, mode - 1, frequency, p.order()?.as_u8())?;
-    let c = emcraft_render::plot::draw(&plot, width);
-    write_png(path, c.png())?;
-    Ok(json!({"path": path, "width": c.w, "height": c.h, "mode": plot.title}))
-}
-
-/// The most frames an animation may have.
-pub const MAX_FRAMES: usize = 120;
-
-/// One period of the field's phase as an animated PNG: the plane sampled once, a frame at each
-/// of `frames` phases evenly spaced over 360°, looping.
-pub fn view_animation(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let width = p.side("width", s.limits.picture_side, 800)?;
-    let frames = p.integer("frames", 4..=MAX_FRAMES).or(24)?;
-    let period = p.positive("period").check(|t| *t <= 60.0, "at most 60 s").or(2.0)?;
-    let mut v = field_view(s, p)?;
-    let samples = view::sample_plane(s, &v)?;
-    let delay = (period * 1000.0 / frames as f64).round().clamp(1.0, f64::from(u16::MAX)) as u16;
-    let mut failed = None;
-    let pictures = (0..frames).map_while(|k| {
-        v.phase = std::f64::consts::TAU * k as f64 / frames as f64;
-        match samples.plot(&v) {
-            Ok(plot) => Some(emcraft_render::plot::draw(&plot, width)),
-            Err(e) => {
-                failed = Some(e);
-                None
-            }
-        }
-    });
-    let bytes = emcraft_render::apng(pictures, frames, delay);
-    if let Some(e) = failed {
-        return Err(e);
-    }
-    write_png(path, bytes)?;
-    Ok(json!({"path": path, "frames": frames, "period": period, "delay_ms": delay}))
-}
-
-pub fn view_sparameters(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
-    let c = emcraft_render::chart::draw(&view::sparameter_chart(s)?, w, h);
-    write_png(path, c.png())?;
-    Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
 
 /// The reflection at port `k` over its frequencies: the frequency sweep's, else the time
@@ -289,8 +190,8 @@ fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Co
 /// on a harmonic sweep by default, else band pass); with the port's name and reference
 /// impedance.
 pub(crate) fn tdr_of(s: &Session, p: &Params) -> Result<(crate::tdr::Tdr, String, Option<f64>)> {
-    let (k, port) = match p.string("port").optional()? {
-        Some(name) => s.model.port(name)?,
+    let (k, port) = match args::port(s, p, "port")? {
+        Some(named) => named,
         None => s.model.ports.iter().enumerate().next().ok_or_else(|| EngineError::Failed("no ports".into()))?,
     };
     let (freqs, refl) = reflection(s, k)?;
@@ -322,13 +223,4 @@ pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect();
     Ok(json!({"port": port, "mode": t.mode.name(), "time_unit": "ns", "resolution": t.resolution * 1e9, "reference": z0, "points": points}))
-}
-
-pub fn view_tdr(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
-    let (t, port, z0) = tdr_of(s, p)?;
-    let c = emcraft_render::chart::draw(&view::tdr_chart(&t, &port, z0), w, h);
-    write_png(path, c.png())?;
-    Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }

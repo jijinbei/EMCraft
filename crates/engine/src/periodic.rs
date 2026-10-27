@@ -1,17 +1,16 @@
-//! Periodic structures' commands: the model's periodic boundaries (`model.periodic`), the
-//! dispersion diagram (`solve.dispersion`, `results.dispersion`, `view.dispersion`) and its
-//! chart, with the closed forms of a guide periodic along z where they apply.
+//! Periodic structures' commands: the model's periodic boundaries (`model.periodic`) and the
+//! dispersion diagram (`solve.dispersion`, `results.dispersion`), with the closed forms of a
+//! guide periodic along z where they apply. Its chart is `view`'s.
 
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use emcraft_model::units::C0;
 use emcraft_model::{Periodic, Polarization};
-use emcraft_render::chart::{Chart, Series, Style};
-use emcraft_render::{Axis, Rgb};
 use emcraft_solver::bloch::{Dispersion, MAX_BANDS, MAX_PHASES, Sweep};
 use serde_json::{Value, json};
 
+use crate::view::AXIS_NAMES;
+pub use crate::view::dispersion_chart;
 use crate::{Change, EngineError, Params, Result, Session};
 
 /// An axis by name.
@@ -23,8 +22,18 @@ enum AxisName {
     Z,
 }
 
+impl AxisName {
+    const fn index(self) -> usize {
+        match self {
+            AxisName::X => 0,
+            AxisName::Y => 1,
+            AxisName::Z => 2,
+        }
+    }
+}
+
 fn axis_name(d: usize) -> &'static str {
-    ["x", "y", "z"].get(d).copied().unwrap_or("?")
+    AXIS_NAMES.get(d).copied().unwrap_or("?")
 }
 
 /// The model's periodic boundaries as a reply.
@@ -63,21 +72,14 @@ pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
 
 pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
     let periodic = s.model.periodic.ok_or_else(|| EngineError::failed("no periodic boundaries: set them with model.periodic"))?;
+    // Without `axis`: z when the cell is periodic along it, else x, else y.
     let axis = match p.choice::<AxisName>("axis").optional()? {
-        Some(AxisName::X) => 0,
-        Some(AxisName::Y) => 1,
-        Some(AxisName::Z) => 2,
-        None => {
-            if periodic.z {
-                2
-            } else if periodic.x {
-                0
-            } else {
-                1
-            }
-        }
+        Some(a) => a.index(),
+        None if periodic.z => 2,
+        None if periodic.x => 0,
+        None => 1,
     };
-    let near = p.frequency("near").or_maybe(s.model.band.map(|b| b.stop)).required_or("give `near`, or set the band: project.frequency")?;
+    let near = crate::args::frequency_or_band_top(s, p, "near", "give `near`, or set the band: project.frequency")?;
     let from = p.number("from").or(0.0)?;
     let to = p.number("to").or(180.0)?;
     if !(from.is_finite() && to.is_finite() && from.abs() <= 360.0 && to.abs() <= 360.0) {
@@ -103,10 +105,15 @@ pub fn results(s: &mut Session, _: &Params) -> Result<Value> {
     dispersion_table(s)
 }
 
+/// The dispersion diagram solved, or an error asking for one.
+pub(crate) fn solved(s: &Session) -> Result<&Dispersion> {
+    s.results.dispersion.as_deref().ok_or_else(|| EngineError::failed("no dispersion diagram: solve first (solve.dispersion)"))
+}
+
 /// The closed form's bands at phase `psi` for a guide periodic along z whose sections fill its
 /// cross-section (empty: every TE/TM harmonic; loaded: the TE₁₀ Bloch band roots), with what
 /// they are.
-fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f_max: f64) -> Option<(Vec<f64>, &'static str)> {
+pub(crate) fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f_max: f64) -> Option<(Vec<f64>, &'static str)> {
     let m = &s.model;
     let p = m.periodic?;
     if d.axis != 2 || p.x || p.y {
@@ -131,7 +138,7 @@ fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f_max: f64) 
 
 /// The diagram as a table: each phase's β and bands, and the closed form's where it applies.
 pub(crate) fn dispersion_table(s: &Session) -> Result<Value> {
-    let d = s.results.dispersion.as_ref().ok_or_else(|| EngineError::failed("no dispersion diagram: solve first (solve.dispersion)"))?;
+    let d = solved(s)?;
     let per_unit = s.display.length.to_si(1.0);
     let f_max = d.points.iter().flat_map(|p| p.frequencies.iter().copied()).fold(0.0, f64::max) * 1.5;
     let rows: Vec<Value> = d
@@ -159,81 +166,6 @@ pub(crate) fn dispersion_table(s: &Session) -> Result<Value> {
         "length_unit": s.display.length.symbol(),
         "points": rows,
     }))
-}
-
-/// Band colours, in order.
-const BAND_COLOURS: [Rgb; 6] = [Rgb(30, 90, 200), Rgb(200, 60, 40), Rgb(40, 150, 90), Rgb(150, 70, 180), Rgb(210, 140, 30), Rgb(60, 60, 60)];
-
-/// The dispersion diagram: frequency against the phase per period, each band's solved points,
-/// the closed form's curves where they apply and the light line f = c ψ/(2πL).
-pub fn dispersion_chart(s: &Session) -> Result<Chart> {
-    let d = s.results.dispersion.as_ref().ok_or_else(|| EngineError::failed("no dispersion diagram: solve first (solve.dispersion)"))?;
-    let fu = s.display.frequency;
-    let (p0, p1) = d.points.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| (a.min(p.psi.to_degrees()), b.max(p.psi.to_degrees())));
-    let (p0, p1) = if p1 > p0 { (p0, p1) } else { (p0 - 10.0, p0 + 10.0) };
-    let bands = d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0);
-    let f_top = d.points.iter().flat_map(|p| p.frequencies.iter().copied()).fold(0.0, f64::max);
-    let mut series = Vec::new();
-    // The closed form, finely.
-    let n = 120;
-    let mut exact: Vec<Vec<[f64; 2]>> = vec![Vec::new(); bands];
-    let mut label = None;
-    for k in 0..=n {
-        let deg = p0 + (p1 - p0) * k as f64 / n as f64;
-        if let Some((list, what)) = exact_bands(s, d, deg.to_radians(), bands, f_top * 1.5 + 1.0) {
-            label = Some(what);
-            for (b, f) in list.iter().take(bands).enumerate() {
-                exact[b].push([deg, fu.from_si(*f)]);
-            }
-        }
-    }
-    if let Some(what) = label {
-        for (b, pts) in exact.into_iter().enumerate().filter(|(_, p)| !p.is_empty()) {
-            let c = BAND_COLOURS[b % BAND_COLOURS.len()];
-            series.push(Series {
-                label: if b == 0 { what.to_owned() } else { String::new() },
-                color: Rgb(c.0 / 2 + 100, c.1 / 2 + 100, c.2 / 2 + 100),
-                style: Style::Line,
-                points: pts,
-            });
-        }
-    }
-    // The light line of the cell's slowest medium is the reference a slow-wave structure is read
-    // against: here vacuum's, f = c ψ/(2πL).
-    if d.period > 0.0 {
-        let light = |deg: f64| fu.from_si(C0 * deg.to_radians() / (2.0 * PI * d.period));
-        series.push(Series {
-            label: "light line".into(),
-            color: Rgb(120, 120, 120),
-            style: Style::Line,
-            points: vec![[p0.max(0.0), light(p0.max(0.0))], [p1, light(p1)]],
-        });
-    }
-    for b in 0..bands {
-        let pts: Vec<[f64; 2]> = d.points.iter().filter_map(|p| p.frequencies.get(b).map(|f| [p.psi.to_degrees(), fu.from_si(*f)])).collect();
-        series.push(Series {
-            label: format!("band {} (FEM)", b + 1),
-            color: BAND_COLOURS[b % BAND_COLOURS.len()],
-            style: Style::Markers,
-            points: pts,
-        });
-    }
-    let y1 = fu.from_si(f_top) * 1.1;
-    Ok(Chart {
-        title: format!("Dispersion along {}", axis_name(d.axis)),
-        x: Axis::new("phase per period ψ (°)", p0, p1),
-        y: Axis::new(&format!("frequency ({})", fu.symbol()), 0.0, if y1 > 0.0 { y1 } else { 1.0 }),
-        series,
-        marks: Vec::new(),
-    })
-}
-
-pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
-    let (w, h) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
-    let c = emcraft_render::chart::draw(&dispersion_chart(s)?, w, h);
-    crate::results::write_png(path, c.png())?;
-    Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
 
 /// The plane-wave reference of a cell periodic in x and y whose sections fill it (plane layers):

@@ -88,45 +88,57 @@ pub fn transform(freqs: &[f64], s: &[C], mode: Mode) -> Result<Tdr> {
                     freqs[n - 1]
                 )));
             }
-            // DC from the first two points, magnitude and (unwrapped) phase apart — a delay turns
-            // the phase linearly, which a straight line through the complex values would not
-            // follow — and its real part (DC is real).
-            let s0 = {
-                let (p1, mut p2) = (s[0].arg(), s[1].arg());
-                while p2 - p1 > PI {
-                    p2 -= 2.0 * PI;
-                }
-                while p1 - p2 > PI {
-                    p2 += 2.0 * PI;
-                }
-                C::from_polar((2.0 * s[0].norm() - s[1].norm()).max(0.0), 2.0 * p1 - p2).re
-            };
-            // The window falls to zero past the top.
-            let w = |k: usize| 0.5 * (1.0 + (PI * k as f64 / (n + 1) as f64).cos());
-            let mut step = 0.0;
-            let values = (0..m)
-                .map(|i| {
-                    let x = 2.0 * PI * i as f64 / m as f64;
-                    let sum: f64 = s.iter().enumerate().map(|(k, c)| w(k + 1) * (c * C::from_polar(1.0, x * (k + 1) as f64)).re).sum();
-                    step += (s0 + 2.0 * sum) / m as f64;
-                    step
-                })
-                .collect();
-            Ok(Tdr { mode, times, values, resolution: 1.0 / (2.0 * freqs[n - 1]) })
+            Ok(Tdr { mode, values: step_response(s, m), times, resolution: 1.0 / (2.0 * freqs[n - 1]) })
         }
-        Mode::BandPass => {
-            let w = |k: usize| 0.5 * (1.0 - (2.0 * PI * (k + 1) as f64 / (n + 1) as f64).cos());
-            let total: f64 = (0..n).map(w).sum();
-            let values = times
-                .iter()
-                .map(|t| {
-                    let h: C = s.iter().zip(freqs).enumerate().map(|(k, (c, f))| c * w(k) * C::from_polar(1.0, 2.0 * PI * f * t)).sum();
-                    h.norm() / total
-                })
-                .collect();
-            Ok(Tdr { mode, times, values, resolution: 1.0 / (freqs[n - 1] - freqs[0]) })
-        }
+        Mode::BandPass => Ok(Tdr { mode, values: impulse_envelope(freqs, s, &times), times, resolution: 1.0 / (freqs[n - 1] - freqs[0]) }),
     }
+}
+
+/// The reflection at DC from the first two points of a harmonic sweep, magnitude and
+/// (unwrapped) phase apart — a delay turns the phase linearly, which a straight line through
+/// the complex values would not follow — and its real part (DC is real).
+fn dc(s: &[C]) -> f64 {
+    let (p1, mut p2) = (s[0].arg(), s[1].arg());
+    while p2 - p1 > PI {
+        p2 -= 2.0 * PI;
+    }
+    while p1 - p2 > PI {
+        p2 += 2.0 * PI;
+    }
+    C::from_polar((2.0 * s[0].norm() - s[1].norm()).max(0.0), 2.0 * p1 - p2).re
+}
+
+/// ρ(t) at `m` times over the alias period: the windowed impulse response of the harmonic sweep
+/// `s` (f_k = k Δf, k = 1 … N), summed.
+fn step_response(s: &[C], m: usize) -> Vec<f64> {
+    let n = s.len();
+    let s0 = dc(s);
+    // The window falls to zero past the top.
+    let w = |k: usize| 0.5 * (1.0 + (PI * k as f64 / (n + 1) as f64).cos());
+    let mut step = 0.0;
+    (0..m)
+        .map(|i| {
+            let x = 2.0 * PI * i as f64 / m as f64;
+            let sum: f64 = s.iter().enumerate().map(|(k, c)| w(k + 1) * (c * C::from_polar(1.0, x * (k + 1) as f64)).re).sum();
+            step += (s0 + 2.0 * sum) / m as f64;
+            step
+        })
+        .collect()
+}
+
+/// |h(t)| at `times`: the envelope of the band's windowed impulse response, normalised by the
+/// window's sum.
+fn impulse_envelope(freqs: &[f64], s: &[C], times: &[f64]) -> Vec<f64> {
+    let n = freqs.len();
+    let w = |k: usize| 0.5 * (1.0 - (2.0 * PI * (k + 1) as f64 / (n + 1) as f64).cos());
+    let total: f64 = (0..n).map(w).sum();
+    times
+        .iter()
+        .map(|t| {
+            let h: C = s.iter().zip(freqs).enumerate().map(|(k, (c, f))| c * w(k) * C::from_polar(1.0, 2.0 * PI * f * t)).sum();
+            h.norm() / total
+        })
+        .collect()
 }
 
 #[cfg(test)]

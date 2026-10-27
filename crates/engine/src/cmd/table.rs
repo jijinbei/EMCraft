@@ -1,6 +1,8 @@
 //! The command table: every command's id, label, documentation, parameters and effect, and the
 //! function that runs it (in the module of its area).
 
+use Quantity::{Frequency as F, Length as L};
+
 use crate::project::Effect;
 use crate::{CommandSpec, Kind as K, ParamSpec, Quantity};
 
@@ -12,7 +14,63 @@ const fn opt(name: &'static str, kind: K, doc: &'static str) -> ParamSpec {
     ParamSpec::optional(name, kind, doc)
 }
 
-use Quantity::{Frequency as F, Length as L};
+// The parameters several commands share, so that they read and are documented alike, in groups.
+
+// A picture's file.
+const PNG: ParamSpec = req("path", K::String, "PNG file to write");
+
+// A chart's size.
+const WIDTH: ParamSpec = opt("width", K::Integer, "pixels (default 1000)");
+const HEIGHT: ParamSpec = opt("height", K::Integer, "pixels (default 600)");
+
+// A sweep's frequencies: a list, or points evenly from a start to a stop.
+const FREQUENCIES: ParamSpec = opt("frequencies", K::Array, "the frequencies").of(F);
+const START: ParamSpec = opt("start", K::Number, "first frequency").of(F);
+const STOP: ParamSpec = opt("stop", K::Number, "last frequency").of(F);
+const POINTS: ParamSpec = opt("points", K::Integer, "frequencies from start to stop (default 11)");
+
+// The finite elements' order.
+const ORDER: ParamSpec = opt("order", K::Integer, "element order: 1 or 2 (default)");
+const PORT_SOLVER_ORDER: ParamSpec = opt("order", K::Integer, "element order of the cross-section solver, 1 or 2 (default 2)");
+
+// A frequency the band's top stands in for.
+const BAND_TOP: ParamSpec = opt("frequency", K::Number, "the frequency (default: the band's top)").of(F);
+
+// A primitive body: its shape, dimensions and placement.
+const SHAPE: ParamSpec = req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&["box", "cylinder", "sphere"]);
+const SIZE: ParamSpec = opt("size", K::Array, "the box's [x, y, z]").of(L);
+const SIZE_TURNED: ParamSpec = opt("size", K::Array, "the box's [x, y, z] (in its own axes)").of(L);
+const RADIUS: ParamSpec = opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L);
+const LENGTH: ParamSpec = opt("length", K::Number, "the cylinder's length along z").of(L);
+const LENGTH_TURNED: ParamSpec = opt("length", K::Number, "the cylinder's length along its axis").of(L);
+const AT: ParamSpec = opt("at", K::Array, "where its origin goes (default [0, 0, 0])").of(L);
+const AXIS: ParamSpec = opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(&["x", "y", "z"]);
+const BODY_MATERIAL: ParamSpec = req("material", K::String, "`metal`, the region's material, or another material's name");
+
+// A driven solution: a solved frequency and the port excited.
+const SOLVED_FREQUENCY: ParamSpec = req("frequency", K::Number, "a solved frequency").of(F);
+const EXCITATION: ParamSpec = opt("excitation", K::String, "the excited port (default the first)");
+
+// A field picture: the solution, the plane and the colour.
+const FIELD_FREQUENCY: ParamSpec = opt("frequency", K::Number, "a solved frequency (the nearest is used); required unless `mode` is given").of(F);
+const FIELD_MODE: ParamSpec = opt("mode", K::Integer, "an eigenmode (1 = the lowest) instead of a driven solution");
+const PLANE: ParamSpec = opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(&["h", "e", "cross"]);
+const PLANE_AT: ParamSpec = opt("at", K::Number, "the plane's position along its normal (default the middle)").of(L);
+const COMPONENT: ParamSpec =
+    opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(&["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"]);
+
+// The port a TDR reads.
+const TDR_PORT: ParamSpec = opt("port", K::String, "the port (default the first)");
+
+// The far field read: whose, at which frequency, at which azimuth.
+const FAR_SOLVER: ParamSpec =
+    opt("solver", K::String, "`fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first")
+        .one_of(&["fem", "time_domain"]);
+const FAR_FREQUENCY: ParamSpec = opt("frequency", K::Number, "the time domain's frequency (the nearest solved)").of(F);
+const PHI: ParamSpec = opt("phi", K::Number, "the azimuth in degrees (default 0)");
+
+// The solve a study runs at each point.
+const STUDY_SOLVE: ParamSpec = req("solve", K::Object, "the solve at each point: {\"command\", \"params\"}");
 
 pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -132,10 +190,10 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Primitive body",
         doc: "A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`) or a sphere about the origin (`radius`). Its end faces (z = 0, z = length) can carry ports; a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.",
         params: &[
-            req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&["box", "cylinder", "sphere"]),
-            opt("size", K::Array, "the box's [x, y, z]").of(L),
-            opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L),
-            opt("length", K::Number, "the cylinder's length along z").of(L),
+            SHAPE,
+            SIZE,
+            RADIUS,
+            LENGTH,
             opt("material", K::String, "the filling (default vacuum)"),
         ],
         effect: Effect::Record,
@@ -164,13 +222,13 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Body",
         doc: "A body in the region, by what it is made of: `metal` (a perfect conductor: the region loses its volume and its surface becomes wall; it may reach the region's boundary), the region's own material (giving back what metal took: the inside of a metal shell, an opening), or another material (a dielectric body inside the region, apart from other dielectric ones). Later bodies win where they overlap. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis` (dielectric bodies along z).",
         params: &[
-            req("material", K::String, "`metal`, the region's material, or another material's name"),
-            req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&["box", "cylinder", "sphere"]),
-            opt("size", K::Array, "the box's [x, y, z] (in its own axes)").of(L),
-            opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L),
-            opt("length", K::Number, "the cylinder's length along its axis").of(L),
-            opt("at", K::Array, "where its origin goes (default [0, 0, 0])").of(L),
-            opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(&["x", "y", "z"]),
+            BODY_MATERIAL,
+            SHAPE,
+            SIZE_TURNED,
+            RADIUS,
+            LENGTH_TURNED,
+            AT,
+            AXIS,
         ],
         effect: Effect::Record,
         run: crate::bodies::body,
@@ -179,7 +237,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "geometry.body.material",
         label: "Body material",
         doc: "Gives a body another material (`metal`, the region's, or another): an imported part's metal body made a dielectric, say. It is placed again last, so it wins where it overlaps others.",
-        params: &[req("body", K::String, "the body's name (an imported body's own, else `body <n>`)"), req("material", K::String, "`metal`, the region's material, or another material's name")],
+        params: &[req("body", K::String, "the body's name (an imported body's own, else `body <n>`)"), BODY_MATERIAL],
         effect: Effect::Record,
         run: crate::bodies::body_material,
     },
@@ -188,11 +246,11 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Inclusion",
         doc: "A body inside the solid: a dielectric region (`material`) or, without one, a conductor. The same shapes as geometry.solid, placed with their origin at `at`; it must lie inside the solid, apart from other inclusions. The regions are meshed apart and joined node for node across the interface.",
         params: &[
-            req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&["box", "cylinder", "sphere"]),
-            opt("size", K::Array, "the box's [x, y, z]").of(L),
-            opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L),
-            opt("length", K::Number, "the cylinder's length along z").of(L),
-            opt("at", K::Array, "where its origin goes (default [0, 0, 0])").of(L),
+            SHAPE,
+            SIZE,
+            RADIUS,
+            LENGTH,
+            AT,
             opt("material", K::String, "its filling; a perfect conductor when left out"),
         ],
         effect: Effect::Record,
@@ -204,12 +262,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall), and so are features of one kind meeting end to end when one's cross-section holds the other's (a stepped inner conductor); the surfaces must otherwise meet cleanly. A port's end face must stay whole.",
         params: &[
             req("combine", K::String, "`add`, `subtract` or `intersect`").one_of(&["add", "subtract", "intersect"]),
-            req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&["box", "cylinder", "sphere"]),
-            opt("size", K::Array, "the box's [x, y, z] (in its own axes)").of(L),
-            opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L),
-            opt("length", K::Number, "the cylinder's length along its axis").of(L),
-            opt("at", K::Array, "where its origin goes (default [0, 0, 0])").of(L),
-            opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(&["x", "y", "z"]),
+            SHAPE,
+            SIZE_TURNED,
+            RADIUS,
+            LENGTH_TURNED,
+            AT,
+            AXIS,
         ],
         effect: Effect::Record,
         run: crate::geometry::feature,
@@ -242,7 +300,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("passes", K::Integer, "the most passes, 1 to 12 (default 6)"),
             opt("tolerance", K::Number, "converged when ΔS, the largest change of any S entry from the previous pass, is below this (default 0.02)"),
             opt("fraction", K::Number, "Dörfler's θ in (0, 1]: refine the fewest tetrahedra holding this share of the error (default 0.3)"),
-            opt("order", K::Integer, "element order: 1 or 2 (default)"),
+            ORDER,
             opt("curved", K::Boolean, "solids: bend the edges on curved surfaces onto them (default true)"),
             opt("edge", K::Number, "waveguides: element size at step and iris edges, as a fraction of the size (default 0.25)"),
             opt("growth", K::Number, "waveguides: element growth away from those edges (default 1.5)"),
@@ -310,10 +368,10 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Frequency sweep",
         doc: "Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full.",
         params: &[
-            opt("frequencies", K::Array, "the frequencies").of(F),
-            opt("start", K::Number, "first frequency").of(F),
-            opt("stop", K::Number, "last frequency").of(F),
-            opt("points", K::Integer, "frequencies from start to stop (default 11)"),
+            FREQUENCIES,
+            START,
+            STOP,
+            POINTS,
             opt("order", K::Integer, "element order: 1 (Whitney) or 2 (default)"),
             opt("sweep", K::String, "`fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each)").one_of(&["fast", "full"]),
         ],
@@ -325,10 +383,10 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Time-domain solve",
         doc: "The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM; lossless models only. For an open model (model.open) it solves the antenna instead: its lumped ports and dipoles on a uniform grid with a CPML on all sides, the ports' impedances and S11 and the radiated power at each frequency, the far field from a Huygens box (results.far_field and view.pattern with `solver` time_domain). Gaps and dipoles must lie along grid axes.",
         params: &[
-            opt("frequencies", K::Array, "the frequencies").of(F),
-            opt("start", K::Number, "first frequency").of(F),
-            opt("stop", K::Number, "last frequency").of(F),
-            opt("points", K::Integer, "frequencies from start to stop (default 11)"),
+            FREQUENCIES,
+            START,
+            STOP,
+            POINTS,
             opt("cell", K::Number, "the cell size (default 1 mm)").of(L),
             opt("device", K::String, "where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has").one_of(&["cpu", "cuda", "cubecl-cpu"]),
             opt("precision", K::String, "the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double").one_of(&["single", "double"]),
@@ -363,7 +421,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             req("near", K::Number, "the frequency the modes are sought around").of(F),
             opt("count", K::Integer, "modes, 1 to 50 (default 5)"),
-            opt("order", K::Integer, "element order: 1 or 2 (default)"),
+            ORDER,
         ],
         effect: Effect::Solve,
         run: crate::solve::eigenmodes,
@@ -379,7 +437,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("points", K::Integer, "phases from `from` to `to`, 1 to 201 (default 11)"),
             opt("bands", K::Integer, "eigenfrequencies per phase, 1 to 20 (default 4)"),
             opt("near", K::Number, "the shift: a little above the highest band wanted (default the band's stop)").of(F),
-            opt("order", K::Integer, "element order: 1 or 2 (default)"),
+            ORDER,
         ],
         effect: Effect::Solve,
         run: crate::periodic::dispersion,
@@ -397,12 +455,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Dispersion chart",
         doc: "Writes a PNG of the dispersion diagram: frequency against the phase per period, the solved bands as markers over the closed form's curves where they apply, and the light line.",
         params: &[
-            req("path", K::String, "PNG file to write"),
-            opt("width", K::Integer, "pixels (default 1000)"),
-            opt("height", K::Integer, "pixels (default 600)"),
+            PNG,
+            WIDTH,
+            HEIGHT,
         ],
         effect: Effect::None,
-        run: crate::periodic::view,
+        run: crate::view::commands::dispersion,
     },
     CommandSpec {
         id: "results.eigenmodes",
@@ -417,8 +475,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Port modes",
         doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with one conductor besides the ground (coaxial, strip) — the characteristic impedance by power and current (Ω) when it propagates; the attenuation (dB per length unit) when it does not.",
         params: &[
-            opt("frequency", K::Number, "the frequency (default: the band's top)").of(F),
-            opt("order", K::Integer, "element order of the cross-section solver, 1 or 2 (default 2)"),
+            BAND_TOP,
+            PORT_SOLVER_ORDER,
         ],
         effect: Effect::None,
         run: crate::solve::port_modes,
@@ -443,7 +501,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "results.field_error",
         label: "Field error against theory",
         doc: "The relative L2 errors ‖F − F_exact‖/‖F_exact‖ of E and H over the whole guide at a solved frequency, against the exact TE10 fields (port 1 excited).",
-        params: &[req("frequency", K::Number, "a solved frequency").of(F)],
+        params: &[SOLVED_FREQUENCY],
         effect: Effect::None,
         run: crate::results::field_error,
     },
@@ -452,9 +510,9 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Probe fields",
         doc: "E (V/m) and H (A/m), complex, at points, for a solved frequency and an excited port.",
         params: &[
-            req("frequency", K::Number, "a solved frequency").of(F),
+            SOLVED_FREQUENCY,
             req("at", K::Array, "points `[[x, y, z], …]`").of(L),
-            opt("excitation", K::String, "the excited port (default the first)"),
+            EXCITATION,
         ],
         effect: Effect::None,
         run: crate::results::probe,
@@ -464,22 +522,22 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Port mode picture",
         doc: "Writes a PNG of a port mode's shape: its transverse E across the port's face, |E_t| in colour and E_t as arrows, conductors grey (from the closed forms, or the port's cross-section solved as solve.port_modes does). The amplitude is arbitrary; the subtitle says whether the mode propagates.",
         params: &[
-            req("path", K::String, "PNG file to write"),
+            PNG,
             req("port", K::String, "the port's name"),
             opt("mode", K::Integer, "the mode, 1 = the lowest (default 1)"),
-            opt("frequency", K::Number, "the frequency (default: the band's top)").of(F),
-            opt("order", K::Integer, "element order of the cross-section solver, 1 or 2 (default 2)"),
+            BAND_TOP,
+            PORT_SOLVER_ORDER,
             opt("width", K::Integer, "picture width in pixels (default 900)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_port_mode,
+        run: crate::view::commands::port_mode,
     },
     CommandSpec {
         id: "results.tdr",
         label: "TDR",
         doc: "Time-domain reflectometry from the sweep's reflection at a port (the time domain's if there is no sweep): `lowpass` — on a harmonic sweep, f_k = k Δf, for lines without a cut-off — gives the step response ρ(t), a step at each change of impedance at its round-trip delay (Z = Z0 (1 + ρ)/(1 − ρ) with the port's reference impedance); `bandpass` gives |h(t)|, a peak where each reflection comes from (guides with a cut-off). Hann-windowed, over one alias period 1/Δf.",
         params: &[
-            opt("port", K::String, "the port (default the first)"),
+            TDR_PORT,
             opt("mode", K::String, "`lowpass` (default on a harmonic sweep) or `bandpass`").one_of(&["lowpass", "bandpass"]),
         ],
         effect: Effect::None,
@@ -490,33 +548,33 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "TDR PNG",
         doc: "Writes results.tdr's chart as a PNG.",
         params: &[
-            req("path", K::String, "PNG file to write"),
-            opt("port", K::String, "the port (default the first)"),
+            PNG,
+            TDR_PORT,
             opt("mode", K::String, "`lowpass` or `bandpass`").one_of(&["lowpass", "bandpass"]),
             opt("width", K::Integer, "picture width in pixels (default 1000)"),
             opt("height", K::Integer, "picture height in pixels (default 600)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_tdr,
+        run: crate::view::commands::tdr,
     },
     CommandSpec {
         id: "view.field",
         label: "Field picture",
         doc: "Writes a PNG of the fields on a plane: a component as colour and the in-plane E and H as arrows, Re(F e^jωt) at a phase.",
         params: &[
-            req("path", K::String, "PNG file to write"),
-            opt("frequency", K::Number, "a solved frequency (the nearest is used); required unless `mode` is given").of(F),
-            opt("mode", K::Integer, "an eigenmode (1 = the lowest) instead of a driven solution"),
-            opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(&["h", "e", "cross"]),
-            opt("at", K::Number, "the plane's position along its normal (default the middle)").of(L),
-            opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(&["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"]),
+            PNG,
+            FIELD_FREQUENCY,
+            FIELD_MODE,
+            PLANE,
+            PLANE_AT,
+            COMPONENT,
             opt("arrows", K::Array, "vector fields drawn: `[\"e\", \"h\"]` (default: the coloured component's field; H's arrows sit between E's when both show)"),
             opt("phase", K::Number, "ωt in degrees (default 0)"),
-            opt("excitation", K::String, "the excited port (default the first)"),
+            EXCITATION,
             opt("width", K::Integer, "picture width in pixels (default 1100)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_field,
+        run: crate::view::commands::field,
     },
     CommandSpec {
         id: "view.animation",
@@ -524,31 +582,31 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes an animated PNG of the fields on a plane over one period of ωt, looping: the view.field picture at evenly spaced phases.",
         params: &[
             req("path", K::String, "animated PNG (APNG) file to write"),
-            opt("frequency", K::Number, "a solved frequency (the nearest is used); required unless `mode` is given").of(F),
-            opt("mode", K::Integer, "an eigenmode (1 = the lowest) instead of a driven solution"),
-            opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(&["h", "e", "cross"]),
-            opt("at", K::Number, "the plane's position along its normal (default the middle)").of(L),
-            opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(&["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"]),
+            FIELD_FREQUENCY,
+            FIELD_MODE,
+            PLANE,
+            PLANE_AT,
+            COMPONENT,
             opt("arrows", K::Array, "vector fields drawn: `[\"e\", \"h\"]` (default: the coloured component's field)"),
-            opt("excitation", K::String, "the excited port (default the first)"),
+            EXCITATION,
             opt("frames", K::Integer, "frames in a period, 4 to 120 (default 24)"),
             opt("period", K::Number, "seconds a period plays for (default 2)"),
             opt("width", K::Integer, "picture width in pixels (default 800)"),
         ],
         effect: Effect::None,
-        run: crate::results::view_animation,
+        run: crate::view::commands::animation,
     },
     CommandSpec {
         id: "view.sparameters",
         label: "S-parameter chart",
         doc: "Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over the exact TE10 curves, with the cut-off frequencies marked.",
         params: &[
-            req("path", K::String, "PNG file to write"),
-            opt("width", K::Integer, "pixels (default 1000)"),
-            opt("height", K::Integer, "pixels (default 600)"),
+            PNG,
+            WIDTH,
+            HEIGHT,
         ],
         effect: Effect::None,
-        run: crate::results::view_sparameters,
+        run: crate::view::commands::sparameters,
     },
     CommandSpec {
         id: "model.open",
@@ -607,7 +665,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "solve.radiation",
         label: "Radiation",
         doc: "Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box between what radiates and the layer (a third of its thickness inside it, or halfway when that is nearer), with the closed form for a lone dipole (radiated power) or a lone dielectric or conducting sphere (the Mie series' scattering cross-section).",
-        params: &[req("frequency", K::Number, "the frequency").of(F), opt("order", K::Integer, "element order: 1 or 2 (default)")],
+        params: &[req("frequency", K::Number, "the frequency").of(F), ORDER],
         effect: Effect::Solve,
         run: crate::open::solve_radiation,
     },
@@ -617,9 +675,9 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles `theta` and azimuth `phi` (degrees), by the near-to-far transform of the Huygens box's equivalent currents: directivity for sources, radar cross-section for a plane wave, with the closed forms where they apply.",
         params: &[
             opt("theta", K::Array, "polar angles in degrees (default 0 to 180 by 10)"),
-            opt("phi", K::Number, "the azimuth in degrees (default 0)"),
-            opt("solver", K::String, "`fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first").one_of(&["fem", "time_domain"]),
-            opt("frequency", K::Number, "the time domain's frequency (the nearest solved)").of(F),
+            PHI,
+            FAR_SOLVER,
+            FAR_FREQUENCY,
         ],
         effect: Effect::None,
         run: crate::open::results_far_field,
@@ -629,16 +687,16 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Pattern chart",
         doc: "Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity in dBi for sources, radar cross-section in dBsm for a plane wave, over the closed form where it applies.",
         params: &[
-            req("path", K::String, "PNG file to write"),
-            opt("phi", K::Number, "the azimuth in degrees (default 0)"),
+            PNG,
+            PHI,
             opt("points", K::Integer, "angles from 0 to 180° (default 91)"),
-            opt("width", K::Integer, "pixels (default 1000)"),
-            opt("height", K::Integer, "pixels (default 600)"),
-            opt("solver", K::String, "`fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first").one_of(&["fem", "time_domain"]),
-            opt("frequency", K::Number, "the time domain's frequency (the nearest solved)").of(F),
+            WIDTH,
+            HEIGHT,
+            FAR_SOLVER,
+            FAR_FREQUENCY,
         ],
         effect: Effect::None,
-        run: crate::open::view_pattern,
+        run: crate::view::commands::pattern,
     },
     CommandSpec {
         id: "file.sample",
@@ -685,7 +743,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("start", K::Number, "the first value (without `values`)"),
             opt("stop", K::Number, "the last value"),
             opt("points", K::Integer, "values from start to stop (default 5, at most 101)"),
-            req("solve", K::Object, "the solve at each point: {\"command\", \"params\"}"),
+            STUDY_SOLVE,
             opt("outputs", K::Array, "the S-parameters kept, such as [\"s11\", \"s21\"] (default all)"),
         ],
         effect: Effect::None,
@@ -698,7 +756,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             req("variables", K::Array, "the variables varied: [{\"name\", \"min\", \"max\"}] (at most 8)"),
             req("goal", K::Object, "what to minimize: {\"type\", \"parameter\", \"target\", \"mode\", \"quantity\"}"),
-            req("solve", K::Object, "the solve at each point: {\"command\", \"params\"}"),
+            STUDY_SOLVE,
             opt("max_evaluations", K::Integer, "the most solves (default 50, at most 500)"),
             opt("tolerance", K::Number, "the simplex's size at which it stops, a share of each range (default 1e-3)"),
         ],
@@ -710,13 +768,13 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Study chart",
         doc: "Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve per value (against the value when it solved one frequency), or its eigenmodes against the value; an optimization's goal at each solve and the best so far.",
         params: &[
-            req("path", K::String, "PNG file to write"),
+            PNG,
             opt("parameter", K::String, "the S-parameter of a sweep, such as s21 (default the first)"),
-            opt("width", K::Integer, "pixels (default 1000)"),
-            opt("height", K::Integer, "pixels (default 600)"),
+            WIDTH,
+            HEIGHT,
         ],
         effect: Effect::None,
-        run: crate::study::view,
+        run: crate::view::commands::study,
     },
     CommandSpec { id: "model.summary", label: "Summary", doc: "The model, mesh and results in brief.", params: &[], effect: Effect::None, run: crate::project::summary },
 ];

@@ -51,7 +51,7 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
   NGSolve, deal.II, Gmsh). Permissively licensed code (MIT, BSD, Apache-2.0, MPL-2.0) may be read
   for reference; anything adapted is noted in ATTRIBUTION.md with its licence.
 - **Assets** must be original or openly licensed and have a row in ATTRIBUTION.md.
-- **Everything is a command.** User-visible behaviour = a command in the table of `crates/engine/src/cmd.rs`
+- **Everything is a command.** User-visible behaviour = a command in the table of `crates/engine/src/cmd/table.rs`
   (`CommandSpec`: dotted, lower-case id `<area>.<thing>`, label, documented parameters, JSON
   `run`) + tests. The UI, scripts and CLI all reach the same commands. Programmatic calls never
   open dialogs.
