@@ -7,11 +7,17 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The GPU crate links CubeCL's LLVM into every test binary: without debug information they
+  # still fill a runner's disk unless it is cleared first.
+  CARGO_PROFILE_RELEASE_DEBUG: "false"
+  CARGO_PROFILE_RELEASE_STRIP: "debuginfo"
 
 jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
+      - name: Free the runner's disk
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost && df -h /
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         id: toolchain
@@ -55,6 +61,8 @@ jobs:
   heavy:
     runs-on: ubuntu-latest
     steps:
+      - name: Free the runner's disk
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost && df -h /
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         id: toolchain
