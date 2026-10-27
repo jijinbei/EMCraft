@@ -25,7 +25,7 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
         "PORTS & SOURCES",
         &[("PORTS", &["model.port.create", "model.port.lumped"]), ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"])],
     ),
-    ("MESH", &[("MESH", &["mesh.generate"])]),
+    ("MESH", &[("MESH", &["mesh.generate", "mesh.adapt"])]),
     (
         "SIMULATE",
         &[

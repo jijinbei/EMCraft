@@ -510,6 +510,17 @@ impl EmcraftApp {
                 let m = self.session.model.mesh.as_ref().map_or((0, 0), |m| (m.nodes.len(), m.tets.len()));
                 format!("Meshed: {} nodes, {} tetrahedra.", m.0, m.1)
             }
+            "mesh.adapt" => {
+                let passes = reply.get("passes").and_then(Value::as_array).map_or(0, Vec::len);
+                let last =
+                    reply.get("passes").and_then(Value::as_array).and_then(|p| p.last()).and_then(|p| p.get("delta_s")).and_then(Value::as_f64);
+                let m = self.session.model.mesh.as_ref().map_or(0, |m| m.tets.len());
+                format!(
+                    "Adaptive mesh: {passes} passes, {m} tetrahedra, last ΔS {}, {}.",
+                    last.map_or("—".to_owned(), |d| format!("{d:.2e}")),
+                    if reply.get("converged").and_then(Value::as_bool) == Some(true) { "converged" } else { "not converged" }
+                )
+            }
             other => {
                 if other.starts_with("geometry.") {
                     self.view = View::Model;

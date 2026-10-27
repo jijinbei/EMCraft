@@ -95,6 +95,13 @@ pub fn is_long(id: &str) -> bool {
     id.starts_with("solve.")
         || matches!(
             id,
-            "mesh.generate" | "file.sample" | "file.open" | "geometry.import" | "results.compare" | "results.field_error" | "results.far_field"
+            "mesh.generate"
+                | "mesh.adapt"
+                | "file.sample"
+                | "file.open"
+                | "geometry.import"
+                | "results.compare"
+                | "results.field_error"
+                | "results.far_field"
         )
 }

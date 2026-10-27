@@ -7,15 +7,15 @@ use crate::{Params, Result, Session};
 
 /// The element sizes asked for: one default, and per material (by index) when sized by
 /// wavelength.
-struct Sizes {
-    default: f64,
-    per_material: Vec<Option<f64>>,
+pub(crate) struct Sizes {
+    pub default: f64,
+    pub per_material: Vec<Option<f64>>,
 }
 
 impl Sizes {
     /// `per_wavelength` elements per wavelength at `frequency` (the band's top by default) in
     /// each material, at most `size`; or `size` alone.
-    fn read(s: &Session, p: &Params) -> Result<Sizes> {
+    pub(crate) fn read(s: &Session, p: &Params) -> Result<Sizes> {
         let size = p.positive_length("size").optional()?;
         let Some(n) = p.number("per_wavelength").check(|n| (1.0..=1000.0).contains(n), "between 1 and 1000").optional()? else {
             let default = p.positive_length("size").required_or("or `per_wavelength` with `frequency`")?;
@@ -42,12 +42,35 @@ impl Sizes {
         !self.per_material.is_empty()
     }
 
+    /// A structured grid's one size: the smallest the sections' materials ask for.
+    pub(crate) fn grid_size(&self, s: &Session) -> Result<f64> {
+        match &s.model.waveguide {
+            Some(w) if self.by_wavelength() => w.sections.iter().try_fold(f64::INFINITY, |h, sec| {
+                let (m, _) = s.model.material(&sec.material)?;
+                Ok::<_, crate::EngineError>(h.min(self.per_material.get(m).copied().flatten().unwrap_or(self.default)))
+            }),
+            _ => Ok(self.default),
+        }
+    }
+
     /// Each material's size, in display units, for the reply.
     fn reply(&self, s: &Session) -> Value {
         let sizes: Map<String, Value> =
             s.model.materials.iter().zip(&self.per_material).filter_map(|(m, h)| Some((m.name.clone(), json!(s.show_length((*h)?))))).collect();
         Value::Object(sizes)
     }
+}
+
+/// A structured grid's options at `size`: its grading from the parameters.
+pub(crate) fn grid_options(p: &Params, size: f64) -> Result<emcraft_mesh::Options> {
+    let defaults = emcraft_mesh::Options::new(size);
+    Ok(emcraft_mesh::Options {
+        edge: p.number("edge").or(defaults.edge)?,
+        growth: p.number("growth").or(defaults.growth)?,
+        strip_edge: p.number("strip_edge").or(defaults.strip_edge)?,
+        size_y: p.positive_length("size_y").optional()?,
+        ..defaults
+    })
 }
 
 pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
@@ -64,23 +87,8 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
         s.results.sweep = None;
         return Ok(reply);
     }
-    // A structured grid has one size: the smallest the sections' materials ask for.
-    let size = match &s.model.waveguide {
-        Some(w) if sizes.by_wavelength() => w.sections.iter().try_fold(f64::INFINITY, |h, sec| {
-            let (m, _) = s.model.material(&sec.material)?;
-            Ok::<_, crate::EngineError>(h.min(sizes.per_material.get(m).copied().flatten().unwrap_or(sizes.default)))
-        })?,
-        _ => sizes.default,
-    };
-    let defaults = emcraft_mesh::Options::new(size);
-    let options = emcraft_mesh::Options {
-        edge: p.number("edge").or(defaults.edge)?,
-        growth: p.number("growth").or(defaults.growth)?,
-        strip_edge: p.number("strip_edge").or(defaults.strip_edge)?,
-        size_y: p.positive_length("size_y").optional()?,
-        ..defaults
-    };
-    let mesh = emcraft_mesh::waveguide_with(&s.model, &options)?;
+    let size = sizes.grid_size(s)?;
+    let mesh = emcraft_mesh::waveguide_with(&s.model, &grid_options(p, size)?)?;
     let mut reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len()});
     if sizes.by_wavelength() {
         reply["size"] = json!(s.show_length(size));
