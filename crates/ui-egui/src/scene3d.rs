@@ -344,42 +344,22 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
     let Some(mesh) = &m.mesh else { return };
     let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
     let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
-    let see_through = matches!(overlay, Overlay::Materials | Overlay::Ports | Overlay::Boundaries | Overlay::Field);
     // Faces, their keys for edges (material or tag).
     let mut faces: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.boundary.len());
     for f in &mesh.boundary {
-        let Some([a, b, c]) = f.nodes.iter().map(|n| node(*n)).collect::<Option<Vec<_>>>().and_then(|v| <[[f64; 3]; 3]>::try_from(v).ok()) else {
-            continue;
-        };
+        let (Some(a), Some(b), Some(c)) = (node(f.nodes[0]), node(f.nodes[1]), node(f.nodes[2])) else { continue };
         // An end the mesh tags as a port is a wall until a port is put there.
         let port = match f.tag {
             Boundary::Port(k) => m.ports.iter().any(|p| (p.end == End::Start) == (k == 0)),
             Boundary::Pec | Boundary::Symmetry(_) => false,
         };
-        let (color, alpha) = match overlay {
-            Overlay::Plain => (if port { PORT_SOFT } else { METAL }, 255),
-            Overlay::Mesh => (if port { PORT_SOFT } else { Rgb(214, 220, 228) }, 255),
-            Overlay::Field => (METAL, 40),
-            Overlay::Materials => (material_rgb(m, tet_mat(f.tet)), if port { 200 } else { 120 }),
-            Overlay::Ports => {
-                if port {
-                    (PORT, 255)
-                } else {
-                    (METAL, 55)
-                }
-            }
-            Overlay::Boundaries => {
-                if port {
-                    (PORT_SOFT, 200)
-                } else {
-                    (METAL_DARK, 110)
-                }
-            }
-        };
-        // A symmetry plane is no wall: its own colour in every overlay.
         let (color, alpha) = match f.tag {
-            Boundary::Symmetry(kind) => (symmetry_rgb(kind), if overlay == Overlay::Boundaries { 200 } else { alpha.min(120) }),
-            _ => (color, alpha),
+            // A symmetry plane is no wall: its own colour in every overlay.
+            Boundary::Symmetry(kind) => {
+                let (_, alpha) = wall_style(m, overlay, port, tet_mat(f.tet));
+                (symmetry_rgb(kind), if overlay == Overlay::Boundaries { 200 } else { alpha.min(120) })
+            }
+            _ => wall_style(m, overlay, port, tet_mat(f.tet)),
         };
         let pick = match f.tag {
             Boundary::Port(k) if port => m.ports.iter().position(|p| p.face.is_none() && (p.end == End::Start) == (k == 0)).map(Pick::Port),
@@ -393,37 +373,62 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         };
         faces.push((f.nodes, key));
     }
-    // Faces between materials (opaque under the see-through walls).
     if overlay == Overlay::Materials {
-        let mut keyed: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.tets.len() * 4);
-        for (t, tet) in mesh.tets.iter().enumerate() {
-            for skip in 0..4 {
-                let mut f = [0u32; 3];
-                let mut k = 0;
-                for (i, n) in tet.iter().enumerate() {
-                    if i != skip && k < 3 {
-                        f[k] = *n;
-                        k += 1;
-                    }
-                }
-                f.sort_unstable();
-                keyed.push((f, t as u32));
-            }
-        }
-        keyed.sort_unstable();
-        for w in keyed.windows(2) {
-            if w[0].0 == w[1].0 {
-                let (ma, mb) = (tet_mat(w[0].1), tet_mat(w[1].1));
-                if ma != mb {
-                    let denser = if m.materials.get(ma).map_or(1.0, |x| x.eps_r) >= m.materials.get(mb).map_or(1.0, |x| x.eps_r) { ma } else { mb };
-                    if let (Some(a), Some(b), Some(c)) = (node(w[0].0[0]), node(w[0].0[1]), node(w[0].0[2])) {
-                        out.scene.tri(a, b, c, material_rgb(m, denser), 235);
-                    }
-                }
-            }
+        material_interfaces(m, mesh, out);
+    }
+    outline_edges(mesh, &faces, overlay, out);
+}
+
+/// A boundary face's colour and opacity in an overlay, `port` whether a port lies on it.
+fn wall_style(m: &Model, overlay: Overlay, port: bool, material: usize) -> (Rgb, u8) {
+    match overlay {
+        Overlay::Plain => (if port { PORT_SOFT } else { METAL }, 255),
+        Overlay::Mesh => (if port { PORT_SOFT } else { Rgb(214, 220, 228) }, 255),
+        Overlay::Field => (METAL, 40),
+        Overlay::Materials => (material_rgb(m, material), if port { 200 } else { 120 }),
+        Overlay::Ports if port => (PORT, 255),
+        Overlay::Ports => (METAL, 55),
+        Overlay::Boundaries if port => (PORT_SOFT, 200),
+        Overlay::Boundaries => (METAL_DARK, 110),
+    }
+}
+
+/// The faces between materials, in the denser one's colour (opaque under the see-through
+/// walls): faces two tetrahedra of different materials share.
+fn material_interfaces(m: &Model, mesh: &emcraft_model::Mesh, out: &mut Built) {
+    let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
+    let eps = |i: usize| m.materials.get(i).map_or(1.0, |x| x.eps_r);
+    let mut keyed: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.tets.len() * 4);
+    for (t, tet) in mesh.tets.iter().enumerate() {
+        for skip in 0..4 {
+            let mut f = [tet[(skip + 1) % 4], tet[(skip + 2) % 4], tet[(skip + 3) % 4]];
+            f.sort_unstable();
+            keyed.push((f, t as u32));
         }
     }
-    // Edges: every one for the mesh view, else the outline (sharp folds, where tags change).
+    keyed.sort_unstable();
+    for w in keyed.windows(2) {
+        let (ma, mb) = (tet_mat(w[0].1), tet_mat(w[1].1));
+        if w[0].0 != w[1].0 || ma == mb {
+            continue;
+        }
+        let denser = if eps(ma) >= eps(mb) { ma } else { mb };
+        let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
+        if let (Some(a), Some(b), Some(c)) = (node(w[0].0[0]), node(w[0].0[1]), node(w[0].0[2])) {
+            out.scene.tri(a, b, c, material_rgb(m, denser), 235);
+        }
+    }
+}
+
+/// Edges of the boundary `faces`: every one for the mesh view, else the outline (sharp folds,
+/// and where the faces' keys change).
+fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[([u32; 3], u32)], overlay: Overlay, out: &mut Built) {
+    let node = |n: u32| mesh.nodes.get(n as usize).copied();
+    let normal = |i: usize| {
+        let f = faces.get(i)?.0;
+        let (a, b, c) = (node(f[0])?, node(f[1])?, node(f[2])?);
+        (b - a).cross(c - a).normalized()
+    };
     let mut edges: Vec<([u32; 2], usize)> = Vec::with_capacity(faces.len() * 3);
     for (i, (f, _)) in faces.iter().enumerate() {
         for (a, b) in [(f[0], f[1]), (f[1], f[2]), (f[2], f[0])] {
@@ -431,34 +436,24 @@ fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         }
     }
     edges.sort_unstable();
-    let normal = |i: usize| -> Option<[f64; 3]> {
-        let f = faces.get(i)?.0;
-        let (a, b, c) = (node(f[0])?, node(f[1])?, node(f[2])?);
-        let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
-        let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-        let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-        (l > 0.0).then(|| [n[0] / l, n[1] / l, n[2] / l])
+    let see_through = matches!(overlay, Overlay::Materials | Overlay::Ports | Overlay::Boundaries | Overlay::Field);
+    let alpha = if overlay == Overlay::Mesh {
+        150
+    } else if see_through {
+        120
+    } else {
+        200
     };
     let cos_sharp = 25f64.to_radians().cos();
-    let (edge_color, edge_alpha) = if overlay == Overlay::Mesh { (EDGE, 150) } else { (EDGE, if see_through { 120 } else { 200 }) };
-    let mut i = 0;
-    while i < edges.len() {
-        let mut j = i + 1;
-        while j < edges.len() && edges[j].0 == edges[i].0 {
-            j += 1;
-        }
-        let group = &edges[i..j];
+    for group in edges.chunk_by(|x, y| x.0 == y.0) {
         let show = overlay == Overlay::Mesh
             || group.len() != 2
             || faces.get(group[0].1).map(|f| f.1) != faces.get(group[1].1).map(|f| f.1)
-            || match (normal(group[0].1), normal(group[1].1)) {
-                (Some(a), Some(b)) => (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]).abs() < cos_sharp,
-                _ => false,
-            };
-        if show && let (Some(a), Some(b)) = (node(group[0].0[0]), node(group[0].0[1])) {
-            out.scene.line(a, b, edge_color, edge_alpha);
+            || normal(group[0].1).zip(normal(group[1].1)).is_some_and(|(a, b)| a.dot(b).abs() < cos_sharp);
+        let [a, b] = group[0].0;
+        if show && let (Some(a), Some(b)) = (node(a), node(b)) {
+            out.scene.line(p3(a), p3(b), EDGE, alpha);
         }
-        i = j;
     }
 }
 
