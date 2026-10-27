@@ -13,6 +13,7 @@ pub mod radiation;
 pub mod smatrix;
 pub mod sparse;
 pub mod sweep;
+pub mod zdense;
 
 pub use driven::{Driven, Field, FrequencyResult, SolveError};
 pub use num_complex::Complex64;

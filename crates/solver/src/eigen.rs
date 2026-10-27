@@ -18,7 +18,13 @@
 //! x − Z (ZᵀMZ)⁻¹ ZᵀM x, M-orthogonal to them. The zero eigenvalue then cannot crowd the
 //! subspace, so modes far above the shift come as readily as those near it.
 //!
-//! **Q factors** come by perturbation (D. M. Pozar, *Microwave Engineering*, 4th ed., §6.7):
+//! **Lossy dielectrics** make M complex, ε = ε′(1 − j tan δ): the eigenvalues k² are then
+//! complex, and the iteration runs in complex arithmetic — (K − σM)⁻¹ is complex symmetric,
+//! the Rayleigh–Ritz projection uses the unconjugated YᵀKY, YᵀMY, its small non-Hermitian
+//! problem goes to [`crate::zdense`]. Each mode's complex frequency ω = c√(k²) gives the
+//! dielectric's Q exactly, Q_d = Re ω / (2 Im ω), not by perturbation.
+//!
+//! **Q factors** of the walls come by perturbation (D. M. Pozar, *Microwave Engineering*, 4th ed., §6.7):
 //! with the lossless mode, Q_c = ωU/P_c from the walls' ½R_s∫|H_t|² and Q_d = ωU/P_d from the
 //! dielectrics' ½ωε₀∫ε″|E|², 1/Q = 1/Q_c + 1/Q_d.
 
@@ -113,7 +119,8 @@ struct Deflation {
 }
 
 impl Deflation {
-    fn new(driven: &Driven, pattern: &crate::sparse::Csr, mass: &[C]) -> Result<Deflation> {
+    /// `lossy`: with M's imaginary part (complex ZᵀMZ), else its real part.
+    fn new(driven: &Driven, pattern: &crate::sparse::Csr, mass: &[C], lossy: bool) -> Result<Deflation> {
         let (columns, points) = gradients(driven);
         let m = columns.len();
         if m == 0 {
@@ -128,26 +135,27 @@ impl Deflation {
                 }
             }
         }
+        let m_of = |k: usize| if lossy { mass[k] } else { C::new(mass[k].re, 0.0) };
         // ZᵀMZ row by row: w = M z_a, then (ZᵀMZ)_ab = z_b · w; summed in a fixed order.
         let mut ptr = Vec::with_capacity(m + 1);
         ptr.push(0);
         let (mut col, mut val) = (Vec::new(), Vec::new());
         for za in &columns {
-            let mut w: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+            let mut w: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
             for &(i, z) in za {
                 for k in pattern.ptr[i]..pattern.ptr[i + 1] {
-                    *w.entry(pattern.col[k]).or_insert(0.0) += z * mass[k].re;
+                    *w.entry(pattern.col[k]).or_insert(C::new(0.0, 0.0)) += m_of(k) * z;
                 }
             }
-            let mut row: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+            let mut row: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
             for (j, wj) in w {
                 for &(b, zb) in owners.get(j).map_or(&[][..], Vec::as_slice) {
-                    *row.entry(b).or_insert(0.0) += zb * wj;
+                    *row.entry(b).or_insert(C::new(0.0, 0.0)) += wj * zb;
                 }
             }
             for (b, v) in row {
                 col.push(b);
-                val.push(C::new(v, 0.0));
+                val.push(v);
             }
             ptr.push(col.len());
         }
@@ -169,6 +177,94 @@ impl Deflation {
         }
         Ok(())
     }
+}
+
+/// The `count` modes nearest σ of a cavity with lossy dielectrics (complex M), each with its
+/// complex frequency's Q.
+fn lossy_modes(model: &Model, driven: Driven, count: usize, sigma: f64, deflation: &Deflation) -> Result<Eigen> {
+    let (pattern, stiffness, mass) = driven.matrices();
+    let n = pattern.n;
+    let mut a = pattern.clone();
+    for (k, x) in a.val.iter_mut().enumerate() {
+        *x = C::new(stiffness[k], 0.0) - mass[k] * sigma;
+    }
+    let factor = Ldlt::factor(&a, &driven.dofs.points)?;
+    let q = (count + count.max(8)).min(n);
+    let kmul = |v: &[C]| -> Vec<C> { (0..n).map(|i| (pattern.ptr[i]..pattern.ptr[i + 1]).map(|k| v[pattern.col[k]] * stiffness[k]).sum()).collect() };
+    let mmul = |v: &[C]| -> Vec<C> { (0..n).map(|i| (pattern.ptr[i]..pattern.ptr[i + 1]).map(|k| mass[k] * v[pattern.col[k]]).sum()).collect() };
+    let dot = |a: &[C], b: &[C]| -> C { a.iter().zip(b).map(|(x, y)| x * y).sum() };
+    let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+    let mut rand = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+    };
+    let mut x: Vec<Vec<C>> = (0..q).map(|_| (0..n).map(|_| C::new(rand(), 0.0)).collect()).collect();
+    let mx: Vec<Vec<C>> = x.iter().map(|v| mmul(v)).collect();
+    deflation.project(&mut x, &mx)?;
+    let null = 1e-6 * sigma;
+    let (mut lambdas, mut previous): (Vec<C>, Vec<C>) = (Vec::new(), Vec::new());
+    let mut iterations = 0;
+    for it in 0..MAX_ITERATIONS {
+        iterations = it + 1;
+        let mut y: Vec<Vec<C>> = x.iter().map(|v| mmul(v)).collect();
+        factor.solve_many(&mut y)?;
+        let my: Vec<Vec<C>> = y.iter().map(|v| mmul(v)).collect();
+        deflation.project(&mut y, &my)?;
+        let ky: Vec<Vec<C>> = y.iter().map(|v| kmul(v)).collect();
+        let my: Vec<Vec<C>> = y.iter().map(|v| mmul(v)).collect();
+        // Kr z = λ Mr z ⇔ (Mr⁻¹ Kr) z = λ z.
+        let mr: Vec<Vec<C>> = (0..q).map(|i| (0..q).map(|j| dot(&y[i], &my[j])).collect()).collect();
+        let mut b = vec![C::new(0.0, 0.0); q * q];
+        for j in 0..q {
+            let col: Vec<C> = (0..q).map(|i| dot(&y[i], &ky[j])).collect();
+            let s = crate::driven::complex_solve(mr.clone(), col)
+                .ok_or_else(|| SolveError::Invalid { what: "eigen iteration".into(), why: "the subspace lost its independence".into() })?;
+            for i in 0..q {
+                b[i * q + j] = s[i];
+            }
+        }
+        let pairs = crate::zdense::eigen(&b, q)
+            .ok_or_else(|| SolveError::Invalid { what: "eigen iteration".into(), why: "the projected problem did not converge".into() })?;
+        let mut idx: Vec<usize> = (0..pairs.len()).collect();
+        idx.sort_by(|&p, &r| (pairs[p].0 - sigma).norm().total_cmp(&(pairs[r].0 - sigma).norm()).then(p.cmp(&r)));
+        x = idx
+            .iter()
+            .map(|&c| {
+                let v: Vec<C> = (0..n).map(|r| (0..q).map(|k| y[k][r] * pairs[c].1[k]).sum()).collect();
+                let norm = dot(&v, &mmul(&v)).sqrt();
+                if norm.norm() > 0.0 { v.into_iter().map(|e| e / norm).collect() } else { v }
+            })
+            .collect();
+        lambdas = idx.iter().map(|&c| pairs[c].0).collect();
+        let wanted: Vec<C> = lambdas.iter().copied().filter(|l| l.norm() > null).take(count).collect();
+        let converged =
+            wanted.len() == count && previous.len() == count && wanted.iter().zip(&previous).all(|(a, b)| (a - b).norm() <= 1e-11 * a.norm());
+        previous = wanted;
+        if converged {
+            break;
+        }
+    }
+    let mut modes = Vec::new();
+    for (vec, lam) in x.into_iter().zip(&lambdas) {
+        if lam.norm() <= null || modes.len() == count {
+            continue;
+        }
+        // ω = c k, the root with Re > 0; under e^{jωt} a decaying mode has Im ω > 0.
+        let k = lam.sqrt();
+        let k = if k.re < 0.0 { -k } else { k };
+        let omega = k * C0;
+        let frequency = omega.re / (2.0 * PI);
+        let q_dielectric = (omega.im.abs() > 0.0).then(|| omega.re / (2.0 * omega.im.abs()));
+        let q_walls = match model.wall_conductivity {
+            Some(s) => Some(2.0 * PI * frequency * driven.stored_energy(&vec, frequency)? / driven.wall_loss_perturbation(&vec, frequency, s)?),
+            None => None,
+        };
+        modes.push(Mode { frequency, vector: vec, q_walls, q_dielectric });
+    }
+    modes.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    Ok(Eigen { driven, modes, iterations })
 }
 
 /// The eigenmodes of a cavity.
@@ -273,7 +369,11 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
     let mut x: Vec<Vec<C>> = (0..q).map(|_| (0..n).map(|_| C::new(rand(), 0.0)).collect()).collect();
     let kmul = |v: &[C]| mul(pattern, |k| stiffness[k], v);
     let mmul = |v: &[C]| mul(pattern, |k| mass[k].re, v);
-    let deflation = Deflation::new(&driven, pattern, mass)?;
+    let lossy = mass.iter().any(|m| m.im != 0.0);
+    let deflation = Deflation::new(&driven, pattern, mass, lossy)?;
+    if lossy {
+        return lossy_modes(model, driven, count, sigma, &deflation);
+    }
     let mx: Vec<Vec<C>> = x.iter().map(|v| mmul(v)).collect();
     deflation.project(&mut x, &mx)?;
     let null = 1e-6 * sigma;

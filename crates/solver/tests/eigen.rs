@@ -45,6 +45,29 @@ fn modes_far_above_the_shift_come_with_the_gradients_projected_out() {
 }
 
 #[test]
+fn a_very_lossy_fill_gives_its_complex_frequency() {
+    // tan δ = 0.05 throughout: K x = k² ε′(1 − j tan δ) M₀ x, so every k² is the lossless one
+    // divided by 1 − j tan δ, ω = ω₀ (1 − j tan δ)^{−1/2} — exactly, for the discrete problem
+    // too. Q = Re ω / (2 Im ω) = 1/(2 tan(½ atan tan δ)) = 20.0125, not perturbation's 20.
+    let tan_d: f64 = 0.05;
+    let mut m = Model::new();
+    m.add_material(Material::new("fill", 2.25, 1.0).unwrap().with_loss_tangent(tan_d).unwrap()).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(D, "fill")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
+    let lossy = eigenmodes(&m, Order::Two, 2, 5.5e9).unwrap();
+    let mut lossless = m.clone();
+    lossless.materials[1] = Material::new("fill", 2.25, 1.0).unwrap();
+    let plain = eigenmodes(&lossless, Order::Two, 2, 5.5e9).unwrap();
+    let q_exact = 1.0 / (2.0 * (0.5 * tan_d.atan()).tan());
+    let shrink = (1.0 + tan_d * tan_d).powf(-0.25) * (0.5 * tan_d.atan()).cos();
+    for (l, p) in lossy.modes.iter().zip(&plain.modes) {
+        let q = l.q_dielectric.unwrap();
+        assert!((q / q_exact - 1.0).abs() < 1e-7, "{q} {q_exact}");
+        assert!((l.frequency / (p.frequency * shrink) - 1.0).abs() < 1e-9, "{} {}", l.frequency, p.frequency * shrink);
+    }
+}
+
+#[test]
 fn copper_te101_q() {
     let mut m = cavity(0.003);
     m.set_wall_conductivity(Some(5.8e7)).unwrap();
