@@ -165,6 +165,11 @@ pub fn device(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
+    if s.model.periodic.is_some() {
+        return Err(crate::EngineError::failed(
+            "not supported yet: periodic boundaries in the time domain (clear them with model.periodic, clear true)",
+        ));
+    }
     let freqs = frequencies(s, p)?;
     let cell = p.positive_length("cell").or(Length::Millimetre.to_si(1.0))?;
     let device = p.string("device").or(device_name(s.compute.backend))?;

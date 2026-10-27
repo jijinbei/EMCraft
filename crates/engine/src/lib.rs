@@ -15,6 +15,7 @@ mod geometry;
 mod meshing;
 pub mod open;
 pub mod params;
+pub mod periodic;
 pub mod progress;
 pub mod project;
 mod results;
@@ -217,6 +218,8 @@ pub struct Results {
     pub radiation: Option<Arc<open::Radiated>>,
     /// The open problem from `solve.time_domain` on an open model.
     pub td_radiation: Option<Arc<emcraft_fdtd::open::OpenRun>>,
+    /// A periodic cell's dispersion diagram from `solve.dispersion`.
+    pub dispersion: Option<Arc<emcraft_solver::bloch::Dispersion>>,
 }
 
 /// What changed in the model, which decides the results that no longer hold.
@@ -255,7 +258,12 @@ impl Results {
 
     /// Whether any solver has run.
     pub fn any(&self) -> bool {
-        self.sweep.is_some() || self.eigen.is_some() || self.time_domain.is_some() || self.radiation.is_some() || self.td_radiation.is_some()
+        self.sweep.is_some()
+            || self.eigen.is_some()
+            || self.time_domain.is_some()
+            || self.radiation.is_some()
+            || self.td_radiation.is_some()
+            || self.dispersion.is_some()
     }
 
     /// The sweep, or an error asking for one.

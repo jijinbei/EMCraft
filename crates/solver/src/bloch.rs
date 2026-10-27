@@ -422,38 +422,53 @@ fn lowest(lambdas: &[f64], null: f64, count: usize) -> Vec<f64> {
 
 /// The dispersion diagram of the model's periodic cell (its walls perfectly conducting).
 pub fn dispersion(model: &Model, order: Order, sweep: &Sweep) -> Result<Dispersion> {
+    dispersion_each(model, order, sweep, |_, _| Ok(()))
+}
+
+/// [`dispersion`], calling `each(k, points)` before phase k (its error stops the sweep: progress
+/// and cancellation).
+pub fn dispersion_each<E>(
+    model: &Model,
+    order: Order,
+    sweep: &Sweep,
+    mut each: impl FnMut(usize, usize) -> std::result::Result<(), E>,
+) -> std::result::Result<Dispersion, E>
+where
+    E: From<SolveError>,
+{
     if sweep.bands == 0 || sweep.bands > MAX_BANDS {
-        return Err(invalid("bands", format!("must be 1 to {MAX_BANDS}")));
+        return Err(invalid("bands", format!("must be 1 to {MAX_BANDS}")).into());
     }
     if sweep.points == 0 || sweep.points > MAX_PHASES {
-        return Err(invalid("phases", format!("must be 1 to {MAX_PHASES}")));
+        return Err(invalid("phases", format!("must be 1 to {MAX_PHASES}")).into());
     }
     if !(sweep.from.is_finite() && sweep.to.is_finite() && sweep.from.abs() <= 2.0 * PI && sweep.to.abs() <= 2.0 * PI) {
-        return Err(invalid("phase", "must be finite, within ±360°"));
+        return Err(invalid("phase", "must be finite, within ±360°").into());
     }
     check_frequency(sweep.near)?;
     let periodic = model.periodic.ok_or_else(|| SolveError::NotReady("no periodic boundaries: set them with model.periodic".into()))?;
     if !periodic.axes().contains(&sweep.axis) {
-        return Err(invalid("axis", "the axis swept must be periodic"));
+        return Err(invalid("axis", "the axis swept must be periodic").into());
     }
     let d = Driven::cavity(model, order)?;
     if d.is_dispersive() {
-        return Err(invalid("dispersion", "not supported yet: dispersive materials (the eigenproblem is nonlinear in the frequency)"));
+        return Err(invalid("dispersion", "not supported yet: dispersive materials (the eigenproblem is nonlinear in the frequency)").into());
     }
     let (_, _, mass) = d.matrices();
     if mass.iter().any(|m| m.im != 0.0) {
-        return Err(invalid("dispersion", "not supported yet: lossy dielectrics in a dispersion diagram (complex k²)"));
+        return Err(invalid("dispersion", "not supported yet: lossy dielectrics in a dispersion diagram (complex k²)").into());
     }
     let tie = d.tie.as_ref().ok_or_else(|| invalid("dispersion", "the cell has no periodic reduction"))?;
     if tie.reduced == 0 {
-        return Err(SolveError::NotReady("the cell has no unknowns".into()));
+        return Err(SolveError::NotReady("the cell has no unknowns".into()).into());
     }
-    let an = Analysis::new(tie.pattern(), &tie.points, 0)?;
+    let an = Analysis::new(tie.pattern(), &tie.points, 0).map_err(SolveError::from)?;
     let k_near = wavenumber(sweep.near);
     let sigma = k_near * k_near;
     let period = tie.periods[sweep.axis];
     let mut points = Vec::with_capacity(sweep.points);
     for i in 0..sweep.points {
+        each(i, sweep.points)?;
         let t = if sweep.points == 1 { 0.0 } else { i as f64 / (sweep.points - 1) as f64 };
         let psi_axis = sweep.from + (sweep.to - sweep.from) * t;
         let mut psi = [0.0; 3];

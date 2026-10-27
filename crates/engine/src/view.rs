@@ -499,6 +499,9 @@ impl ExactLine {
 
 /// The exact TE₁₀ line of a waveguide of uniform cross-section.
 pub fn te10_line(session: &Session) -> Result<ExactLine> {
+    if session.model.periodic.is_some() {
+        return Err(EngineError::Failed("not supported yet: exact fields of a periodic cell".into()));
+    }
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
     if !w.uniform() {
         return Err(EngineError::Failed(
@@ -546,6 +549,8 @@ pub enum Reference {
         cutoff: f64,
         index2: f64,
     },
+    /// A periodic cell of plane layers under a plane wave (`crate::periodic`).
+    Stack(emcraft_theory::floquet::Stack),
 }
 
 impl Reference {
@@ -553,6 +558,7 @@ impl Reference {
         match self {
             Reference::Exact(_) | Reference::Uniform { .. } => "exact",
             Reference::ModeMatching(_) | Reference::EPlane(_) => "mode matching",
+            Reference::Stack(_) => "exact (plane wave)",
         }
     }
 
@@ -562,6 +568,7 @@ impl Reference {
             Reference::Exact(l) => Ok(l.at(frequency).solve(frequency)?.s_power()),
             Reference::ModeMatching(l) => Ok(l.solve(frequency, modes)?),
             Reference::EPlane(l) => Ok(l.solve(frequency, modes)?),
+            Reference::Stack(st) => Ok(st.s(frequency)?),
             Reference::Uniform { length, cutoff, index2 } => {
                 let k = 2.0 * std::f64::consts::PI * frequency / emcraft_model::units::C0;
                 let b2 = k * k * index2 - cutoff * cutoff;
@@ -575,6 +582,9 @@ impl Reference {
 }
 
 pub fn reference(session: &Session) -> Result<Reference> {
+    if session.model.periodic.is_some() {
+        return crate::periodic::stack_reference(session).map(Reference::Stack);
+    }
     if session.model.waveguide.is_none()
         && let Some(solid) = session.model.solid.as_ref()
     {
@@ -638,6 +648,10 @@ pub fn reference(session: &Session) -> Result<Reference> {
 pub fn section_cutoffs(session: &Session) -> Vec<(f64, String)> {
     let mut out: Vec<(f64, String)> = Vec::new();
     let Some(w) = session.model.waveguide.as_ref() else { return out };
+    // A periodic cell's walls are not walls: no guide cut-offs.
+    if session.model.periodic.is_some() {
+        return out;
+    }
     let lu = session.display.length;
     for (i, sec) in w.sections.iter().enumerate() {
         let (Ok((_, m)), Some(emcraft_model::Span { width, .. })) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
@@ -673,7 +687,7 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
         // The curve: fewer modes than the comparison takes (mode matching is dense linear algebra
         // per frequency); 40 keep the curve within 10⁻² dB.
         let (n, modes) = match reference {
-            Reference::Exact(_) | Reference::Uniform { .. } => (400, 1),
+            Reference::Exact(_) | Reference::Uniform { .. } | Reference::Stack(_) => (400, 1),
             Reference::ModeMatching(_) | Reference::EPlane(_) => (160, 40),
         };
         let (mut s11, mut s21) = (Vec::new(), Vec::new());

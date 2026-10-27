@@ -183,6 +183,10 @@ const X01: f64 = 2.404_825_557_695_773;
 pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
     let m = &s.model;
     let mut out: Vec<Cutoff> = Vec::new();
+    // A periodic cell's ports are Floquet ports: no guide cut-offs.
+    if m.periodic.is_some() {
+        return out;
+    }
     let add = |frequency: f64, mode: &str, owner: String, first: bool, out: &mut Vec<Cutoff>| {
         if !(frequency.is_finite() && frequency > 0.0) {
             return;
@@ -272,7 +276,9 @@ fn materials(s: &Session) -> StepState {
 fn excitation(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Excitation);
-    if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
+    // A cell periodic along z is solved for its dispersion, with nothing driving it.
+    let bloch = m.periodic.is_some_and(|p| p.z);
+    if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() && !bloch {
         st.note(Status::Missing, "nothing drives the model: a waveguide port, a lumped port or a source", Some("model.port.create"));
     }
     if m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
@@ -280,7 +286,7 @@ fn excitation(s: &Session) -> StepState {
     }
     // A closed-form port's first mode against the band's start.
     let Some(b) = m.band else { return st };
-    for p in &m.ports {
+    for p in m.ports.iter().filter(|_| m.periodic.is_none()) {
         let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
         let cutoff = C0 / (2.0 * a * (mat.eps_r * mat.mu_r).sqrt());
         if b.start <= cutoff {
