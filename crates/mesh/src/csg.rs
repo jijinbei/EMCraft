@@ -500,6 +500,95 @@ impl Sets {
     }
 }
 
+/// A piece of a surface's triangle split along the intersection curve: its corners (ids into
+/// the combined points) and the triangle it comes from.
+#[derive(Clone, Copy, Debug)]
+struct Piece {
+    corners: [u32; 3],
+    triangle: u32,
+}
+
+/// Which pieces of surface `k` (0: a, 1: b) of `a op b` are kept: those inside the other surface
+/// or those outside it; and whether they are turned inside out (b of a difference).
+fn kept(op: Op, k: usize) -> (bool, bool) {
+    // Keep pieces outside the other (union; a of a difference) or inside it (intersection;
+    // b of a difference, turned inside out).
+    match (op, k) {
+        (Op::Union, _) => (false, false),
+        (Op::Intersection, _) => (true, false),
+        (Op::Difference, 0) => (false, false),
+        (Op::Difference, _) => (true, true),
+    }
+}
+
+/// The pieces of surface `k`'s triangles split along the intersection curve, the flat ones left
+/// out.
+fn pieces(s: &Surface, k: usize, cut: &Cut, ids: &Ids, all: &[Point3]) -> Result<Vec<Piece>> {
+    let mut out = Vec::new();
+    for t in 0..s.triangles.len() as u32 {
+        for corners in split(s, k, t, cut, ids, all)? {
+            let q = corners.map(|v| all[v as usize]);
+            if (q[1] - q[0]).cross(q[2] - q[0]).norm() != 0.0 {
+                out.push(Piece { corners, triangle: t });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Whether each piece of surface `k` lies inside the `other` surface: one inside-or-outside test
+/// per connected region of them (pieces that share an edge not on the intersection curve lie on
+/// the same side of the other surface), each region decided at its largest piece's centroid (the
+/// farthest from the curve).
+fn inside(pieces: &[Piece], k: usize, cut: &Cut, other: &Surface, all: &[Point3]) -> Vec<bool> {
+    let curve: std::collections::HashSet<[u32; 2]> = cut.segments[k].values().flatten().map(|e| [e[0].min(e[1]), e[0].max(e[1])]).collect();
+    let mut sets = Sets((0..pieces.len()).collect());
+    let mut by_edge: HashMap<[u32; 2], usize> = HashMap::new();
+    for (i, p) in pieces.iter().enumerate() {
+        let p = p.corners;
+        for (a, b) in [(p[0], p[1]), (p[1], p[2]), (p[2], p[0])] {
+            let e = [a.min(b), a.max(b)];
+            if curve.contains(&e) {
+                continue;
+            }
+            if let Some(&j) = by_edge.get(&e) {
+                sets.union(i, j);
+            } else {
+                by_edge.insert(e, i);
+            }
+        }
+    }
+    let area = |p: &Piece| {
+        let q = p.corners.map(|v| all[v as usize]);
+        (q[1] - q[0]).cross(q[2] - q[0]).norm()
+    };
+    let mut best: HashMap<usize, usize> = HashMap::new();
+    for i in 0..pieces.len() {
+        let r = sets.find(i);
+        let e = best.entry(r).or_insert(i);
+        if area(&pieces[i]) > area(&pieces[*e]) {
+            *e = i;
+        }
+    }
+    let mut region_inside: HashMap<usize, bool> = HashMap::new();
+    for (&r, &i) in &best {
+        let centroid = Point3::centroid(pieces[i].corners.map(|v| all[v as usize])).unwrap_or(Point3::ORIGIN);
+        region_inside.insert(r, winding(other, centroid) > 0.5);
+    }
+    (0..pieces.len()).map(|i| region_inside.get(&sets.find(i)).copied().unwrap_or(false)).collect()
+}
+
+/// Whether a surface is closed: every edge held once each way.
+fn closed(s: &Surface) -> bool {
+    let mut half: HashMap<[u32; 2], i32> = HashMap::new();
+    for t in &s.triangles {
+        for (i, j) in [(0, 1), (1, 2), (2, 0)] {
+            *half.entry([t[i], t[j]]).or_default() += 1;
+        }
+    }
+    !half.iter().any(|(e, n)| *n != 1 || half.get(&[e[1], e[0]]) != Some(&1))
+}
+
 /// `a op b`; b's tags are offset by `b_tags` in the result.
 pub fn combine(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface> {
     let (pa, pb) = (points(a)?, points(b)?);
@@ -509,83 +598,23 @@ pub fn combine(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface>
     let mut out = Surface::default();
     let mut used: HashMap<u32, u32> = HashMap::new();
     for (k, (s, other)) in [(a, b), (b, a)].into_iter().enumerate() {
-        // Keep pieces outside the other (union; a of a difference) or inside it (intersection;
-        // b of a difference, turned inside out).
-        let (keep_inside, flip) = match (op, k) {
-            (Op::Union, _) => (false, false),
-            (Op::Intersection, _) => (true, false),
-            (Op::Difference, 0) => (false, false),
-            (Op::Difference, _) => (true, true),
-        };
-        // The pieces, then one inside-or-outside test per connected region of them: pieces that
-        // share an edge not on the intersection curve lie on the same side of the other surface.
-        let mut pieces: Vec<([u32; 3], u32)> = Vec::new();
-        for t in 0..s.triangles.len() as u32 {
-            for piece in split(s, k, t, &cut, &ids, &all)? {
-                let q = piece.map(|v| all[v as usize]);
-                if (q[1] - q[0]).cross(q[2] - q[0]).norm() != 0.0 {
-                    pieces.push((piece, t));
-                }
-            }
-        }
-        let curve: std::collections::HashSet<[u32; 2]> = cut.segments[k].values().flatten().map(|e| [e[0].min(e[1]), e[0].max(e[1])]).collect();
-        let mut sets = Sets((0..pieces.len()).collect());
-        let mut by_edge: HashMap<[u32; 2], usize> = HashMap::new();
-        for (i, (p, _)) in pieces.iter().enumerate() {
-            for (a, b) in [(p[0], p[1]), (p[1], p[2]), (p[2], p[0])] {
-                let e = [a.min(b), a.max(b)];
-                if curve.contains(&e) {
-                    continue;
-                }
-                if let Some(&j) = by_edge.get(&e) {
-                    sets.union(i, j);
-                } else {
-                    by_edge.insert(e, i);
-                }
-            }
-        }
-        // Each region decided at its largest piece's centroid (the farthest from the curve).
-        let area = |p: &[u32; 3]| {
-            let q = p.map(|v| all[v as usize]);
-            (q[1] - q[0]).cross(q[2] - q[0]).norm()
-        };
-        let mut best: HashMap<usize, usize> = HashMap::new();
-        for i in 0..pieces.len() {
-            let r = sets.find(i);
-            let e = best.entry(r).or_insert(i);
-            if area(&pieces[i].0) > area(&pieces[*e].0) {
-                *e = i;
-            }
-        }
-        let mut inside: HashMap<usize, bool> = HashMap::new();
-        for (&r, &i) in &best {
-            let centroid = Point3::centroid(pieces[i].0.map(|v| all[v as usize])).unwrap_or(Point3::ORIGIN);
-            inside.insert(r, winding(other, centroid) > 0.5);
-        }
-        for (i, (piece, t)) in pieces.iter().enumerate() {
-            if inside.get(&sets.find(i)).copied().unwrap_or(false) != keep_inside {
-                continue;
-            }
-            let piece = if flip { [piece[0], piece[2], piece[1]] } else { *piece };
-            let mut ids3 = [0u32; 3];
-            for (o, v) in ids3.iter_mut().zip(piece) {
-                *o = *used.entry(v).or_insert_with(|| {
+        let (keep_inside, flip) = kept(op, k);
+        let pieces = pieces(s, k, &cut, &ids, &all)?;
+        let inside = inside(&pieces, k, &cut, other, &all);
+        for (piece, _) in pieces.iter().zip(inside).filter(|(_, inside)| *inside == keep_inside) {
+            let p = piece.corners;
+            let corners = if flip { [p[0], p[2], p[1]] } else { p };
+            let ids3 = corners.map(|v| {
+                *used.entry(v).or_insert_with(|| {
                     out.positions.push(all[v as usize]);
                     (out.positions.len() - 1) as u32
-                });
-            }
+                })
+            });
             out.triangles.push(ids3);
-            out.tags.push(s.tags[*t as usize] + if k == 1 { b_tags } else { 0 });
+            out.tags.push(s.tags[piece.triangle as usize] + if k == 1 { b_tags } else { 0 });
         }
     }
-    // Closed: every edge held once each way.
-    let mut half: HashMap<[u32; 2], i32> = HashMap::new();
-    for t in &out.triangles {
-        for (i, j) in [(0, 1), (1, 2), (2, 0)] {
-            *half.entry([t[i], t[j]]).or_default() += 1;
-        }
-    }
-    if half.iter().any(|(e, n)| *n != 1 || half.get(&[e[1], e[0]]) != Some(&1)) {
+    if !closed(&out) {
         return Err(fail("the combined surface does not close (the bodies meet degenerately); move or resize a body slightly"));
     }
     if out.triangles.is_empty() {
