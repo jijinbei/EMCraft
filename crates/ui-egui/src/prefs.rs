@@ -21,6 +21,9 @@ pub struct Prefs {
     pub recent: Vec<String>,
     pub dark: bool,
     pub dock_dialogs: bool,
+    /// The 3D view drawn by the window's GPU (fast, painter's order) instead of the CPU
+    /// renderer (depth-buffered, supersampled) at rest.
+    pub gpu3d: bool,
     /// The display units new projects start with.
     pub length: Length,
     pub frequency: Frequency,

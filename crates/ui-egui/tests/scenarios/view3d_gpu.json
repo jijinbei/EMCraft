@@ -1,0 +1,20 @@
+[
+  {"note": "The 3D view drawn by the window's GPU (Settings ▸ 3D drawing ▸ Fast): the same scene, projected and shaded on the CPU, rasterised by egui's painter in depth order"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "inductive-post"}}},
+  {"until": {"busy": false}},
+  {"call": "ui.set", "params": {"step": "materials"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.gpu": false}}},
+  {"shot": "view3d-cpu"},
+  {"click": "bar:settings"},
+  {"click": "settings:3d:fast"},
+  {"key": "Escape"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.gpu": true}}},
+  {"shot": "view3d-gpu"},
+  {"note": "Picking works the same"},
+  {"click": "view3d"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.selected": "*"}}}
+]

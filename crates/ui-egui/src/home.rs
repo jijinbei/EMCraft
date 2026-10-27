@@ -257,6 +257,20 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             }
         });
         ui.end_row();
+        ui.label(egui::RichText::new("3D drawing").color(t.text_dim));
+        ui.horizontal(|ui| {
+            for (gpu, name, tip) in [
+                (false, "Quality", "the CPU renderer: depth-buffered and smoothed at rest"),
+                (true, "Fast", "the GPU, every frame: for large meshes"),
+            ] {
+                let r = ui.selectable_label(app.prefs.gpu3d == gpu, name).on_hover_text(tip);
+                scenario::publish_target(&format!("settings:3d:{}", name.to_lowercase()), r.rect);
+                if r.clicked() {
+                    app.prefs.gpu3d = gpu;
+                }
+            }
+        });
+        ui.end_row();
         ui.label(egui::RichText::new("Dialogs").color(t.text_dim));
         ui.horizontal(|ui| {
             for (docked, name) in [(false, "Floating"), (true, "Docked")] {

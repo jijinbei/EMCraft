@@ -75,6 +75,11 @@ fn scenario_view3d_ports_before_mesh() {
 }
 
 #[test]
+fn scenario_view3d_gpu() {
+    scenario("view3d_gpu");
+}
+
+#[test]
 fn scenario_start_page() {
     scenario("start_page");
 }

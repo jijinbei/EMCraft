@@ -506,6 +506,52 @@ fn raster_line(t: &mut Target, a: [f64; 3], b: [f64; 3], width: f64, c: [f32; 3]
 }
 
 /// Renders `scene` through `camera`.
+/// A primitive projected for a painter that has no depth buffer (the desktop app draws these
+/// with its GPU): screen points in pixels of a w × h picture and the shaded colour with its
+/// opacity. [`flatten`] lists them farthest first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Flat {
+    Tri { p: [[f32; 2]; 3], rgba: [u8; 4] },
+    Line { a: [f32; 2], b: [f32; 2], rgba: [u8; 4] },
+}
+
+/// The scene projected and shaded as [`render`] shades it, sorted farthest first (the
+/// painter's algorithm: right for the convex, separate bodies of these scenes, approximate
+/// where faces cross).
+pub fn flatten(scene: &Scene, camera: &Camera, w: f64, h: f64) -> Vec<Flat> {
+    let cam = camera.sanitized();
+    let pr = Projector::new(&cam, w, h);
+    let b = pr.b;
+    let light = normalized([
+        -b.forward[0] + 0.35 * b.up[0] + 0.25 * b.right[0],
+        -b.forward[1] + 0.35 * b.up[1] + 0.25 * b.right[1],
+        -b.forward[2] + 0.35 * b.up[2] + 0.25 * b.right[2],
+    ])
+    .unwrap_or([0.0, 0.0, 1.0]);
+    let depth = |p: [f64; 3]| dot(sub(p, b.eye), b.forward);
+    let xy = |q: [f64; 3]| [q[0] as f32, q[1] as f32];
+    let byte = |c: f32| c.round().clamp(0.0, 255.0) as u8;
+    let nudge = cam.distance * 4e-3;
+    let mut out: Vec<(f64, usize, Flat)> = Vec::new();
+    for (i, t) in scene.tris.iter().take(MAX_PRIMITIVES).enumerate().filter(|(_, t)| t.alpha > 0) {
+        let (Some(a), Some(bb), Some(c), Some(col)) = (pr.project(t.p[0], 0.0), pr.project(t.p[1], 0.0), pr.project(t.p[2], 0.0), shade(t, light))
+        else {
+            continue;
+        };
+        let d = (depth(t.p[0]) + depth(t.p[1]) + depth(t.p[2])) / 3.0;
+        out.push((d, i, Flat::Tri { p: [xy(a), xy(bb), xy(c)], rgba: [byte(col[0]), byte(col[1]), byte(col[2]), t.alpha] }));
+    }
+    let base = scene.tris.len();
+    for (i, l) in scene.lines.iter().take(MAX_PRIMITIVES).enumerate().filter(|(_, l)| l.alpha > 0) {
+        let (Some(a), Some(z)) = (pr.project(l.a, nudge), pr.project(l.b, nudge)) else { continue };
+        let d = 0.5 * (depth(l.a) + depth(l.b)) - nudge;
+        out.push((d, base + i, Flat::Line { a: xy(a), b: xy(z), rgba: [l.color.0, l.color.1, l.color.2, l.alpha] }));
+    }
+    // Farthest first; ties keep the scene's order.
+    out.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)));
+    out.into_iter().map(|(_, _, f)| f).collect()
+}
+
 pub fn render(scene: &Scene, camera: &Camera, opt: &Options) -> Canvas {
     let (w, h) = (opt.width.clamp(1, MAX_SIDE), opt.height.clamp(1, MAX_SIDE));
     let ss = opt.supersample.clamp(1, 3);
@@ -594,6 +640,29 @@ pub fn axes_on_screen(camera: &Camera) -> [[f64; 2]; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flattened_scenes_are_sorted_far_to_near_and_shaded_as_rendered() {
+        let mut s = Scene::default();
+        s.quad([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], Rgb(200, 0, 0), 255);
+        s.quad([[-1.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0]], Rgb(0, 200, 0), 128);
+        s.line([-1.0, 0.0, 0.5], [1.0, 0.0, 0.5], Rgb(0, 0, 0), 255);
+        let mut c = Camera::default();
+        c.standard(StandardView::Front);
+        c.fit([-1.0, -1.0, 0.0], [1.0, 1.0, 1.0], 1.0);
+        let f = flatten(&s, &c, 100.0, 100.0);
+        assert_eq!(f.len(), 5);
+        let colour = |x: &Flat| match x {
+            Flat::Tri { rgba, .. } | Flat::Line { rgba, .. } => *rgba,
+        };
+        // The square nearer the eye comes last.
+        let near_is_green = c.basis().forward[2] < 0.0;
+        let last = colour(&f[4]);
+        assert_eq!(last[1] > last[0], near_is_green, "{f:?}");
+        // The line sits between the squares.
+        assert!(matches!(f[2], Flat::Line { .. }), "{f:?}");
+        assert_eq!(colour(&f[0])[3] == 128, !near_is_green);
+    }
 
     #[test]
     fn picking_finds_the_nearest_solid_tag_under_the_pixel() {

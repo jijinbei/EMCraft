@@ -47,6 +47,8 @@ pub struct View3d {
     pub fit_next: bool,
     /// What is selected (by a click in the view or on its browser row), highlighted.
     pub selected: Option<scene3d::Pick>,
+    /// Whether the last frame was drawn by the window's GPU rather than the CPU renderer.
+    pub drawn_on_gpu: bool,
 }
 
 impl Default for View3d {
@@ -61,6 +63,7 @@ impl Default for View3d {
             dragging: false,
             fit_next: false,
             selected: None,
+            drawn_on_gpu: false,
         }
     }
 }
@@ -114,6 +117,7 @@ impl View3d {
             "overlay": b.map(|x| x.0), "triangles": b.map(|x| x.1), "lines": b.map(|x| x.2),
             "ms": self.last_ms, "size": self.last_size,
             "selected": self.selected.map(|p| format!("{p:?}")),
+            "gpu": self.drawn_on_gpu,
         })
     }
 }
@@ -227,7 +231,19 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     {
         app.message(e, true);
     }
+    let gpu = app.prefs.gpu3d || app.view3d.dragging;
     let v = &mut app.view3d;
+    v.drawn_on_gpu = gpu;
+    if gpu {
+        // Projected and shaded here, rasterised by the window's GPU: every frame, at full size.
+        let began = Instant::now();
+        let p = ui.painter().with_clip_rect(rect);
+        p.add(gradient(rect, t.viewport_top, t.viewport_bottom));
+        if let Some((_, b)) = &v.built {
+            p.add(mesh_of(&view3d::flatten(&b.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height())), rect.min, 1.4));
+        }
+        v.last_ms = began.elapsed().as_secs_f64() * 1e3;
+    }
     // The picture.
     let ppp = ui.ctx().pixels_per_point() as f64;
     let mut scale = ppp;
@@ -247,7 +263,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         supersample,
         dark: crate::theme::is_dark(),
     };
-    if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
+    if !gpu && v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
         let began = Instant::now();
         let opt = view3d::Options {
             width: size[0],
@@ -265,7 +281,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         v.picture = Some((key, Picture::new("view3d".into(), &canvas)));
     }
     let p = ui.painter().with_clip_rect(rect);
-    if let Some((_, pic)) = v.picture.as_mut() {
+    if !gpu && let Some((_, pic)) = v.picture.as_mut() {
         let id = pic.texture(ui.ctx());
         p.image(id, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
@@ -449,4 +465,45 @@ fn nav_bar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, facing: Option<(
             }
         }
     }
+}
+
+/// A vertical gradient filling `rect`.
+fn gradient(rect: Rect, top: Color32, bottom: Color32) -> egui::Shape {
+    let mut m = egui::Mesh::default();
+    m.colored_vertex(rect.left_top(), top);
+    m.colored_vertex(rect.right_top(), top);
+    m.colored_vertex(rect.right_bottom(), bottom);
+    m.colored_vertex(rect.left_bottom(), bottom);
+    m.add_triangle(0, 1, 2);
+    m.add_triangle(0, 2, 3);
+    egui::Shape::mesh(m)
+}
+
+/// The projected scene as one mesh in drawing order (lines as thin quads `width` points wide),
+/// offset to `origin`.
+fn mesh_of(flat: &[view3d::Flat], origin: egui::Pos2, width: f32) -> egui::Shape {
+    let mut m = egui::Mesh::default();
+    let color = |c: [u8; 4]| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
+    let at = |q: [f32; 2]| origin + vec2(q[0], q[1]);
+    for f in flat {
+        let base = m.vertices.len() as u32;
+        match *f {
+            view3d::Flat::Tri { p, rgba } => {
+                for q in p {
+                    m.colored_vertex(at(q), color(rgba));
+                }
+                m.add_triangle(base, base + 1, base + 2);
+            }
+            view3d::Flat::Line { a, b, rgba } => {
+                let d = vec2(b[0] - a[0], b[1] - a[1]);
+                let n = if d.length() > 0.0 { vec2(-d.y, d.x).normalized() * (width / 2.0) } else { vec2(0.0, 0.0) };
+                for q in [at(a) + n, at(b) + n, at(b) - n, at(a) - n] {
+                    m.colored_vertex(q, color(rgba));
+                }
+                m.add_triangle(base, base + 1, base + 2);
+                m.add_triangle(base, base + 2, base + 3);
+            }
+        }
+    }
+    egui::Shape::mesh(m)
 }
