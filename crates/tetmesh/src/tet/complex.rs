@@ -87,13 +87,15 @@ pub type IdMap<K, V> = HashMap<K, V, BuildHasherDefault<IdHasher>>;
 const SKIN_FACE_CELLS: i64 = 512;
 
 /// The boundary faces by place ([`TetComplex::index_skin`]): per cell of a uniform grid, the
-/// tetrahedra with a boundary face whose bounding box touches it. Entries are only added, where a
-/// face is made or moved and where a rollback restores one; a lookup reads the live mesh and
-/// passes over what is stale. Rebuilt when the entries have doubled since the last rebuild.
+/// tetrahedra with a boundary face whose bounding box touches it, each with the box of its
+/// boundary faces when it was last listed. Entries are only added (or their box renewed), where a
+/// face is made or moved and where a rollback restores one; a lookup passes over the entries
+/// whose box misses it without reading the mesh, then reads the live mesh and passes over what is
+/// stale. Rebuilt when the entries have doubled since the last rebuild.
 #[derive(Debug, Clone, Default)]
 struct Skin {
     cell: f64,
-    cells: IdMap<u64, Vec<u32>>,
+    cells: IdMap<u64, Vec<(u32, Box3)>>,
     /// Tetrahedra with a face too large for [`SKIN_FACE_CELLS`].
     wide: Vec<u32>,
     entries: usize,
@@ -1269,6 +1271,12 @@ impl TetComplex {
         }
         let (vs, adj) = (self.tet(t)?, self.adj(t)?);
         let boxes = (0..4).filter(|&k| adj[k] == NONE).map(|k| self.face_box(face_toward(vs, k), None)).collect::<Result<Vec<_>>>()?;
+        // Every entry of `t` carries the box of all its boundary faces as they are now: a lookup
+        // that misses it misses each of them.
+        let mut whole = Box3::EMPTY;
+        for b in &boxes {
+            whole.add(b);
+        }
         let Some(skin) = self.skin.as_mut() else { return Ok(()) };
         for b in boxes {
             let Some(keys) = skin.keys(&b) else {
@@ -1280,9 +1288,12 @@ impl TetComplex {
             };
             for key in keys {
                 let list = skin.cells.entry(key).or_default();
-                if !list.contains(&t) {
-                    list.push(t);
-                    skin.entries += 1;
+                match list.iter_mut().find(|e| e.0 == t) {
+                    Some(e) => e.1 = whole,
+                    None => {
+                        list.push((t, whole));
+                        skin.entries += 1;
+                    }
                 }
             }
         }
@@ -1317,14 +1328,17 @@ impl TetComplex {
                 None => everywhere = true,
             }
         }
+        // An entry whose box misses `all` has no boundary face that touches it (the box covers
+        // its tetrahedron's boundary faces as they are now, or the entry is stale).
         let mut near: Vec<u32> = skin.wide.clone();
+        let touching = |e: &&(u32, Box3)| e.1.touches(&all);
         if everywhere {
-            near.extend(skin.cells.values().flatten());
+            near.extend(skin.cells.values().flatten().filter(touching).map(|e| e.0));
         } else {
             keys.sort_unstable();
             keys.dedup();
             for k in keys {
-                near.extend(skin.cells.get(&k).into_iter().flatten());
+                near.extend(skin.cells.get(&k).into_iter().flatten().filter(touching).map(|e| e.0));
             }
         }
         near.sort_unstable();
