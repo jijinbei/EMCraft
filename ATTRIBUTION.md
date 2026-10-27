@@ -46,7 +46,7 @@ SolidCraft (`../solidcraft`, MIT OR Apache-2.0, Copyright (c) 2026 SolidCraft co
 | `crates/ui-egui/src/control.rs` | SolidCraft `crates/ui-egui/src/control.rs` | EMCraft's methods; injected pointer and key events as there; replies that wait for a worker job |
 | `crates/ui-egui/src/scenario.rs` | SolidCraft `crates/ui-egui/src/scenario.rs` | the handle registry and the headless harness; EMCraft's steps and checks |
 | `crates/ui-egui/src/raster.rs` | SolidCraft `crates/ui-egui/src/ui_kit/checks_tests.rs` (`raster`, `textures_update`) | bilinear texture sampling, no panics on partial or missing textures, PNG through `emcraft-render` |
-| `crates/ui-egui/src/lib.rs` (`raw_input_hook`, screenshots) | SolidCraft `crates/ui-egui/src/lib.rs` | one pointer event per frame as there |
+| `crates/ui-egui/src/lib.rs` (`raw_input_hook`), `crates/ui-egui/src/shots.rs` (screenshots) | SolidCraft `crates/ui-egui/src/lib.rs` | one pointer event per frame as there |
 | `apps/emcraft/src/control_server.rs` | SolidCraft `apps/solidcraft/src/control_server.rs` (itself from CADCraft, MIT OR Apache-2.0) | without the pending-request bookkeeping; EMCraft's waits |
 | `apps/emcraft/src/control_auth.rs` | SolidCraft `crates/engine/src/control_auth.rs` | EMCraft's folders and variables; the token made here |
 | `docs/control-protocol.md`, the "Running and looking at the app" section of `AGENTS.md` | SolidCraft's | rewritten for EMCraft's methods |
