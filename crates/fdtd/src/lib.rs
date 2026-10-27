@@ -38,8 +38,10 @@ use emcraft_model::units::C0;
 use emcraft_model::{Model, Waveguide};
 use num_complex::Complex64 as C;
 
+pub use crate::device::{Plan, Stepper};
 use crate::guide::{Grid, run};
 
+pub mod device;
 mod dispersion;
 mod guide;
 pub mod open;
@@ -109,6 +111,11 @@ pub struct TdResult {
 
 /// The broadband S-parameters (port 1 excited) of the model's guide at `frequencies` (Hz).
 pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<TdResult> {
+    s_parameters_with(model, o, frequencies, None)
+}
+
+/// [`s_parameters`] with the leapfrog on `device` (the CPU's threads when `None`).
+pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device: Option<&dyn Stepper>) -> Result<TdResult> {
     if !(o.cell.is_finite() && o.cell > 0.0) {
         return Err(invalid("cell", "must be a finite number > 0"));
     }
@@ -138,12 +145,12 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
     // The incident run: the port-1 guide throughout.
     let gr = Grid::new(model, o, true, frequencies)?;
     let mut settling = Settling::new(o.decay);
-    let (reference, dt) = run(&gr, o, frequencies, |d1, _| settling.settled(d1, &[], peak(d1)))?;
+    let (reference, dt) = run(&gr, o, frequencies, device, |d1, _| settling.settled(d1, &[], peak(d1)))?;
     let scale = peak(&reference.d1);
     let g = Grid::new(model, o, false, frequencies)?;
     let mut settling = Settling::new(o.decay);
     let mut converged = false;
-    let (dut, dt2) = run(&g, o, frequencies, |d1, d2| {
+    let (dut, dt2) = run(&g, o, frequencies, device, |d1, d2| {
         converged = settling.settled(d1, d2, scale);
         converged
     })?;

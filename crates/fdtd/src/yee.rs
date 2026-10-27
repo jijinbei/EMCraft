@@ -43,7 +43,7 @@ impl Field {
     /// The index of point (i, j, k).
     #[inline]
     pub(crate) fn at(&self, i: usize, j: usize, k: usize) -> usize {
-        i + self.dims[0] * (j + self.dims[1] * k)
+        index(self.dims, i, j, k)
     }
 
     /// The step of the index along `axis`.
@@ -78,10 +78,22 @@ pub(crate) struct Fields {
     pub(crate) h: [Field; 3],
 }
 
+/// The lattices of the six components on a grid of `n` cells: E's and H's.
+pub(crate) fn lattices(n: [usize; 3]) -> [[[usize; 3]; 3]; 2] {
+    let along = |a: usize, on: usize, off: usize| -> [usize; 3] { [0, 1, 2].map(|d| n[d] + if d == a { on } else { off }) };
+    [[0, 1, 2].map(|a| along(a, 0, 1)), [0, 1, 2].map(|a| along(a, 1, 0))]
+}
+
+/// The index of point (i, j, k) on a lattice of `dims` points, row-major in x.
+#[inline]
+pub(crate) fn index(dims: [usize; 3], i: usize, j: usize, k: usize) -> usize {
+    i + dims[0] * (j + dims[1] * k)
+}
+
 impl Fields {
     pub(crate) fn new(n: [usize; 3]) -> Fields {
-        let along = |a: usize, on: usize, off: usize| -> [usize; 3] { [0, 1, 2].map(|d| n[d] + if d == a { on } else { off }) };
-        Fields { e: [0, 1, 2].map(|a| Field::new(along(a, 0, 1))), h: [0, 1, 2].map(|a| Field::new(along(a, 1, 0))) }
+        let [e, h] = lattices(n);
+        Fields { e: e.map(Field::new), h: h.map(Field::new) }
     }
 }
 

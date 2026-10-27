@@ -73,6 +73,11 @@ impl Dispersion {
         self.slots.push(Slot { eps, terms: start..self.terms.len() });
     }
 
+    /// Whether any edge is dispersive.
+    pub(crate) fn any(&self) -> bool {
+        !self.slots.is_empty()
+    }
+
     /// Allocates the polarizations, once every edge is added.
     pub(crate) fn finish(&mut self) {
         self.p = Field::new([self.terms.len(), 1, 1]);

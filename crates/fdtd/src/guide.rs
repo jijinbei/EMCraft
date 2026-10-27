@@ -9,8 +9,9 @@ use emcraft_model::units::{C0, EPS0, MU0};
 use emcraft_model::{Model, Pole, SecondOrder, Span, Waveguide};
 use num_complex::Complex64 as C;
 
+use crate::device::{Plan, Stepper};
 use crate::dispersion::{Dispersion, Term};
-use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, leapfrog, time_step};
+use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, index, lattices, leapfrog, time_step};
 use crate::{FdtdError, MAX_CELLS, Options, Result, invalid};
 
 /// Divisions of `len` into steps of at most `h`.
@@ -246,17 +247,18 @@ struct Coefficients {
 }
 
 impl Coefficients {
-    fn new(g: &Grid, sp: &Spacing, fields: &Fields, dt: f64) -> Coefficients {
+    /// The coefficients on the lattices `[e, h]` of the components.
+    fn new(g: &Grid, sp: &Spacing, [e_dims, h_dims]: [[[usize; 3]; 3]; 2], dt: f64) -> Coefficients {
         let mut dispersion = [Dispersion::none(), Dispersion::none(), Dispersion::none()];
         let e = [0, 1, 2].map(|a| {
-            let f = &fields.e[a];
-            let [ni, nj, nk] = f.dims();
-            let mut c = vec![0.0; f.len()];
-            for k in 0..nk {
-                for j in 0..nj {
-                    for i in 0..ni {
-                        let id = f.at(i, j, k);
-                        c[id] = edge_coef(g, sp, a, [i, j, k], dt, f.len(), id, &mut dispersion[a]);
+            let dims = e_dims[a];
+            let len = dims.iter().product();
+            let mut c = vec![0.0; len];
+            for k in 0..dims[2] {
+                for j in 0..dims[1] {
+                    for i in 0..dims[0] {
+                        let id = index(dims, i, j, k);
+                        c[id] = edge_coef(g, sp, a, [i, j, k], dt, len, id, &mut dispersion[a]);
                     }
                 }
             }
@@ -266,13 +268,12 @@ impl Coefficients {
             d.finish();
         }
         let h = [0, 1, 2].map(|a| {
-            let f = &fields.h[a];
-            let [ni, nj, nk] = f.dims();
-            let mut c = vec![0.0; f.len()];
-            for k in 0..nk {
-                for j in 0..nj {
-                    for i in 0..ni {
-                        c[f.at(i, j, k)] = face_coef(g, a, [i, j, k], dt);
+            let dims = h_dims[a];
+            let mut c = vec![0.0; dims.iter().product()];
+            for k in 0..dims[2] {
+                for j in 0..dims[1] {
+                    for i in 0..dims[0] {
+                        c[index(dims, i, j, k)] = face_coef(g, a, [i, j, k], dt);
                     }
                 }
             }
@@ -328,20 +329,14 @@ fn face_coef(g: &Grid, axis: usize, idx: [usize; 3], dt: f64) -> f64 {
 }
 
 /// The CPML at the two ends of the guide, absorbing along z: coefficients for E (at the z
-/// nodes) and H (at the cell centres), and the auxiliary variables of the four components with
-/// a z derivative.
+/// nodes) and H (at the cell centres).
 struct ZCpml {
     e: Vec<Cpml>,
     h: Vec<Cpml>,
-    /// ∂Hy/∂z in Ex, ∂Hx/∂z in Ey, ∂Ey/∂z in Hx, ∂Ex/∂z in Hy.
-    psi_ex: Field,
-    psi_ey: Field,
-    psi_hx: Field,
-    psi_hy: Field,
 }
 
 impl ZCpml {
-    fn new(g: &Grid, fields: &Fields, dt: f64, fc: f64) -> ZCpml {
+    fn new(g: &Grid, dt: f64, fc: f64) -> ZCpml {
         let (z_lo, z_hi) = (g.z[g.pml], g.z[g.nz() - g.pml]);
         let depth = (g.z[g.pml] - g.z[0]).max(f64::MIN_POSITIVE);
         let grading = Grading::new(depth / g.pml.max(1) as f64, dt, fc);
@@ -358,16 +353,24 @@ impl ZCpml {
             })
             .collect()
         };
+        ZCpml { e: profile(&mut g.z.iter().copied()), h: profile(&mut g.z.windows(2).map(|w| 0.5 * (w[0] + w[1]))) }
+    }
+}
+
+/// The CPML's auxiliary variables of the four components with a z derivative: ∂Hy/∂z in Ex,
+/// ∂Hx/∂z in Ey, ∂Ey/∂z in Hx, ∂Ex/∂z in Hy.
+struct Psi {
+    ex: Field,
+    ey: Field,
+    hx: Field,
+    hy: Field,
+}
+
+impl Psi {
+    fn new(fields: &Fields) -> Psi {
         let [ex, ey, _] = &fields.e;
         let [hx, hy, _] = &fields.h;
-        ZCpml {
-            e: profile(&mut g.z.iter().copied()),
-            h: profile(&mut g.z.windows(2).map(|w| 0.5 * (w[0] + w[1]))),
-            psi_ex: ex.zeros_like(),
-            psi_ey: ey.zeros_like(),
-            psi_hx: hx.zeros_like(),
-            psi_hy: hy.zeros_like(),
-        }
+        Psi { ex: ex.zeros_like(), ey: ey.zeros_like(), hx: hx.zeros_like(), hy: hy.zeros_like() }
     }
 }
 
@@ -376,6 +379,7 @@ struct GuideKernel<'a> {
     fields: &'a Fields,
     coef: &'a Coefficients,
     cpml: &'a ZCpml,
+    psi: &'a Psi,
     sp: &'a Spacing,
     dt: f64,
 }
@@ -386,7 +390,7 @@ impl Kernel for GuideKernel<'_> {
         let [hx, hy, hz] = &self.fields.h;
         let [chx, chy, chz] = &self.coef.h;
         let [dx, dy, dz] = &self.sp.primal;
-        let ZCpml { h: ph, psi_hx, psi_hy, .. } = self.cpml;
+        let (ph, Psi { hx: psi_hx, hy: psi_hy, .. }) = (&self.cpml.h, self.psi);
         let [nx, ny, nz] = [dx.len(), dy.len(), dz.len()];
         for k in ks.clone().filter(|&k| k < nz) {
             let ch = ph[k];
@@ -442,7 +446,7 @@ impl Kernel for GuideKernel<'_> {
         let [cex, cey, cez] = &self.coef.e;
         let [disp_x, disp_y, disp_z] = &self.coef.dispersion;
         let [dxd, dyd, dzd] = &self.sp.dual;
-        let ZCpml { e: pe, psi_ex, psi_ey, .. } = self.cpml;
+        let (pe, Psi { ex: psi_ex, ey: psi_ey, .. }) = (&self.cpml.e, self.psi);
         let [nx, ny, nz] = [dxd.len() - 1, dyd.len() - 1, dzd.len() - 1];
         let dt = self.dt;
         for k in ks.clone().filter(|&k| k >= 1 && k < nz) {
@@ -525,6 +529,19 @@ impl Te10 {
         self.w[i + (nx + 1) * j]
     }
 
+    /// The projection's weights: the profile times the area of each E_y node's dual face.
+    fn weights(&self, sp: &Spacing) -> Vec<f64> {
+        let ([dxd, _, _], [_, dy, _]) = (&sp.dual, &sp.primal);
+        let nx = dxd.len() - 1;
+        let mut w = Vec::with_capacity(self.w.len());
+        for (j, dy) in dy.iter().enumerate() {
+            for (i, dx) in dxd.iter().enumerate() {
+                w.push(self.at(nx, i, j) * dx * dy);
+            }
+        }
+        w
+    }
+
     /// The projection of E_y on plane `k` onto the profile.
     fn project(&self, ey: &Field, k: usize, sp: &Spacing) -> f64 {
         let ([dxd, _, _], [_, dy, _]) = (&sp.dual, &sp.primal);
@@ -578,45 +595,78 @@ pub(crate) struct Recording {
 const CHECK: usize = 500;
 
 /// One run: launches the pulse and transforms the TE₁₀ projections at the two planes at
-/// `freqs` on the fly. Every [`CHECK`] steps after the pulse, `stop` sees the transforms and
-/// says when they have settled (energy outside the band, near a port's cut-off, may linger
-/// long after; it does not matter). Returns the transforms and the time step.
-pub(crate) fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) -> bool) -> Result<(Recording, f64)> {
+/// `freqs` on the fly, on the CPU's threads or on `device`. Every [`CHECK`] steps after the
+/// pulse, `stop` sees the transforms and says when they have settled (energy outside the band,
+/// near a port's cut-off, may linger long after; it does not matter). Returns the transforms
+/// and the time step.
+pub(crate) fn run(
+    g: &Grid,
+    o: &Options,
+    freqs: &[f64],
+    device: Option<&dyn Stepper>,
+    mut stop: impl FnMut(&[C], &[C]) -> bool,
+) -> Result<(Recording, f64)> {
     let band = Band::of(freqs);
     let sp = Spacing::new(g);
     let dt = time_step(o.courant, sp.min());
-    let fields = Fields::new(g.n());
     check_poles(g, dt)?;
-    let coef = Coefficients::new(g, &sp, &fields, dt);
-    let cpml = ZCpml::new(g, &fields, dt, band.fc);
+    let coef = Coefficients::new(g, &sp, lattices(g.n()), dt);
+    let cpml = ZCpml::new(g, dt, band.fc);
     // Source and projections: the TE₁₀ profile of the planes' apertures.
     let (src, w1, w2) = (Te10::new(g, g.layer(g.source)), Te10::new(g, g.layer(g.plane1)), Te10::new(g, g.layer(g.plane2.saturating_sub(1))));
     let pulse = pulse(g, band);
     let t_min = first_check(g, band, pulse);
-    let kernel = GuideKernel { fields: &fields, coef: &coef, cpml: &cpml, sp: &sp, dt };
-    let (ey, cey) = (&fields.e[1], &coef.e[1]);
-    let (nx, ny) = (g.nx(), g.ny());
     let mut dft = RunningDft::<2>::new(freqs, dt);
     let mut failed = false;
-    let steps = leapfrog(&kernel, g.nz() + 1, o.max_steps, |n| {
+    let mut observe = |n: usize, [v1, v2]: [f64; 2]| {
         let t = (n + 1) as f64 * dt;
-        let s = pulse.at(t);
-        for j in 0..ny {
-            for i in 0..=nx {
-                let id = ey.at(i, j, g.source);
-                if cey[id] != 0.0 {
-                    ey.set(id, ey.get(id) + s * src.at(nx, i, j));
-                }
-            }
-        }
-        let (v1, v2) = (w1.project(ey, g.plane1, &sp), w2.project(ey, g.plane2, &sp));
         dft.push([v1, v2]);
-        let check = (n + 1) % CHECK == 0 && t > t_min;
+        let check = (n + 1).is_multiple_of(CHECK) && t > t_min;
         let [d1, d2] = dft.sums();
         let finished = n + 1 == o.max_steps || (check && stop(d1, d2));
         failed |= !(v1.is_finite() && v2.is_finite());
         if finished || failed { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
-    });
+    };
+    let steps = match device {
+        Some(device) => {
+            let plan = Plan {
+                n: g.n(),
+                dt,
+                dispersive: coef.dispersion.iter().any(Dispersion::any),
+                e: coef.e,
+                h: coef.h,
+                primal: sp.primal.clone(),
+                dual: sp.dual.clone(),
+                cpml_e: cpml.e.iter().map(|c| [c.b, c.a]).collect(),
+                cpml_h: cpml.h.iter().map(|c| [c.b, c.a]).collect(),
+                source_plane: g.source,
+                source: src.w,
+                planes: [g.plane1, g.plane2],
+                weights: [w1.weights(&sp), w2.weights(&sp)],
+                pulse,
+            };
+            device.leapfrog(&plan, o.max_steps, &mut observe)?
+        }
+        None => {
+            let fields = Fields::new(g.n());
+            let psi = Psi::new(&fields);
+            let kernel = GuideKernel { fields: &fields, coef: &coef, cpml: &cpml, psi: &psi, sp: &sp, dt };
+            let (ey, cey) = (&fields.e[1], &coef.e[1]);
+            let (nx, ny) = (g.nx(), g.ny());
+            leapfrog(&kernel, g.nz() + 1, o.max_steps, |n| {
+                let s = pulse.at((n + 1) as f64 * dt);
+                for j in 0..ny {
+                    for i in 0..=nx {
+                        let id = ey.at(i, j, g.source);
+                        if cey[id] != 0.0 {
+                            ey.set(id, ey.get(id) + s * src.at(nx, i, j));
+                        }
+                    }
+                }
+                observe(n, [w1.project(ey, g.plane1, &sp), w2.project(ey, g.plane2, &sp)])
+            })
+        }
+    };
     if failed {
         return Err(invalid("run", "the fields diverged"));
     }
