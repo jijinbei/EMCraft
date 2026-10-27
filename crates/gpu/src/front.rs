@@ -5,6 +5,7 @@
 //! consumer GPU runs f64.
 
 use std::ops::Range;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cubecl::prelude::*;
 use emcraft_solver::Complex64 as C;
@@ -12,8 +13,8 @@ use emcraft_solver::accel::{Accelerator, DeviceFront};
 
 use crate::Backend;
 use crate::buffer::{Buf, Ints};
-use crate::device::guarded;
-use crate::kernels::front::{self as kernels, BLOCK, SIDE, UNITS};
+use crate::device::{cube_units, guarded};
+use crate::kernels::front::{self as kernels, BLOCK, REACH, UNITS};
 
 /// Fronts from this many rows go to the device (smaller ones do not pay for the transfers).
 pub const MIN_ROWS: usize = 1024;
@@ -26,6 +27,10 @@ pub struct Fronts {
     backend: Backend,
     client: Client,
     min_rows: usize,
+    /// Units per side of an update cube (its square fits the device's cubes).
+    side_units: u32,
+    /// Fronts held so far.
+    taken: AtomicUsize,
 }
 
 impl Fronts {
@@ -33,7 +38,16 @@ impl Fronts {
     pub fn new(backend: Backend, min_rows: Option<usize>) -> emcraft_fdtd::Result<Fronts> {
         let device = backend.device()?;
         let client = guarded(|| Ok(device.client()))?;
-        Ok(Fronts { backend, client, min_rows: min_rows.unwrap_or(MIN_ROWS).max(1) })
+        let most = cube_units(&client, UNITS * UNITS);
+        let side_units = (1..=UNITS).rev().find(|u| u.is_power_of_two() && u * u <= most).unwrap_or(1);
+        Ok(Fronts { backend, client, min_rows: min_rows.unwrap_or(MIN_ROWS).max(1), side_units, taken: AtomicUsize::new(0) })
+    }
+}
+
+impl Fronts {
+    /// The fronts this device has held so far.
+    pub fn taken(&self) -> usize {
+        self.taken.load(Ordering::Relaxed)
     }
 }
 
@@ -60,9 +74,10 @@ impl Accelerator for Fronts {
         if f.len() != m * m || m > MAX_ROWS {
             return Err(format!("a front of {} entries is not {m} × {m}", f.len()));
         }
+        self.taken.fetch_add(1, Ordering::Relaxed);
         let client = self.client.clone();
         let front = guarded(|| Ok(Buf::<f64>::from_bytes(&client, bytes(f), 2 * f.len()))).map_err(text)?;
-        Ok(Box::new(HeldFront { client, front, m }))
+        Ok(Box::new(HeldFront { client, front, m, side_units: self.side_units }))
     }
 }
 
@@ -71,6 +86,7 @@ struct HeldFront {
     client: Client,
     front: Buf<f64>,
     m: usize,
+    side_units: u32,
 }
 
 impl DeviceFront for HeldFront {
@@ -126,13 +142,14 @@ impl DeviceFront for HeldFront {
         if nb == 0 || nb > BLOCK || w.len() != below * nb || l.len() != w.len() || k > m {
             return Err(format!("a block of {nb} pivots does not fit the device's tiles"));
         }
-        let tiles = (below as u32).div_ceil(SIDE);
+        let u = self.side_units;
+        let tiles = (below as u32).div_ceil(u * REACH as u32);
         guarded(|| {
             let (wb, lb) = (Buf::<f64>::from_bytes(&self.client, bytes(w), 2 * w.len()), Buf::<f64>::from_bytes(&self.client, bytes(l), 2 * l.len()));
             kernels::update::launch(
                 &self.client,
                 CubeCount::Static(tiles, tiles, 1),
-                CubeDim::new_2d(UNITS, UNITS),
+                CubeDim::new_2d(u, u),
                 self.front.arg(),
                 wb.arg(),
                 lb.arg(),
@@ -140,6 +157,7 @@ impl DeviceFront for HeldFront {
                 be as u32,
                 k as u32,
                 nb as u32,
+                u as usize,
             );
             Ok(())
         })

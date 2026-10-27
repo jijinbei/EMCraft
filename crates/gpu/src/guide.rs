@@ -8,6 +8,7 @@ use emcraft_fdtd::{FdtdError, Plan, Result};
 
 use crate::BATCH;
 use crate::buffer::{Buf, Ints, Real, Xyz};
+use crate::device::cube_units;
 use crate::kernels::CellsLaunch;
 use crate::kernels::guide::{self as kernels, PolesLaunch, ZCpmlLaunch};
 
@@ -97,6 +98,8 @@ impl<F: Real> Poles<F> {
 /// The run's arrays on the device.
 pub(crate) struct Run<F> {
     n: [u32; 3],
+    /// Units per cube.
+    units: u32,
     e: Xyz<F>,
     h: Xyz<F>,
     /// dt/ε and dt/μ.
@@ -117,7 +120,7 @@ pub(crate) struct Run<F> {
 /// The most units a projection's cube uses.
 const REDUCE: u32 = 256;
 
-/// Units per cube of the field kernels.
+/// The most units per cube of the field kernels.
 const UNITS: u32 = 256;
 
 impl<F: Real> Run<F> {
@@ -146,6 +149,7 @@ impl<F: Real> Run<F> {
         let weights: Vec<f64> = p.weights.iter().flatten().copied().collect();
         Ok(Run {
             n: p.n.map(|n| n as u32),
+            units: cube_units(client, UNITS),
             e: Xyz::zeros(client, lens_e),
             h: Xyz::zeros(client, lens_h),
             ce: Xyz::new(client, &p.e),
@@ -171,8 +175,8 @@ impl<F: Real> Run<F> {
         let [nx, ny, nz] = self.n;
         let nodes = (nx + 1) * (ny + 1) * (nz + 1);
         let plane = (nx + 1) * ny;
-        let cubes = |units: u32| CubeCount::Static(units.div_ceil(UNITS), 1, 1);
-        let dim = CubeDim::new_1d(UNITS);
+        let cubes = |units: u32| CubeCount::Static(units.div_ceil(self.units), 1, 1);
+        let dim = CubeDim::new_1d(self.units);
         kernels::step_h::launch::<F>(
             client,
             cubes(nodes),
@@ -234,9 +238,7 @@ impl<F: Real> Run<F> {
         max_steps: usize,
         observe: &mut dyn FnMut(usize, [f64; 2]) -> ControlFlow<()>,
     ) -> Result<usize> {
-        // A power of two the device's cubes hold.
-        let most = REDUCE.min(client.properties().hardware.max_units_per_cube).max(1);
-        let reduce = 1 << (31 - most.leading_zeros());
+        let reduce = cube_units(client, REDUCE);
         let mut n = 0;
         while n < max_steps {
             let batch = BATCH.min(max_steps - n);

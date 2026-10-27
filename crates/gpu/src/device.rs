@@ -135,3 +135,10 @@ pub(crate) fn guarded<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
         Err(FdtdError::Device(format!("the runtime stopped: {why}")))
     })
 }
+
+/// The largest power of two at most `most` units that a cube of `client`'s device holds (a CPU
+/// runtime's cube holds as many units as the machine has cores).
+pub(crate) fn cube_units(client: &cubecl::prelude::Client, most: u32) -> u32 {
+    let most = most.min(client.properties().hardware.max_units_per_cube).max(1);
+    1 << (31 - most.leading_zeros())
+}

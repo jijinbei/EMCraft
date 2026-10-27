@@ -125,6 +125,11 @@ impl Compute {
         device_name(self.backend)
     }
 
+    /// The fronts the device has held since it was set.
+    pub fn fronts_taken(&self) -> usize {
+        self.fronts.as_ref().map_or(0, |f| f.taken())
+    }
+
     /// The factorization's accelerator, if the fronts go to a device.
     pub fn accelerator(&self) -> Option<Arc<dyn Accelerator>> {
         self.fronts.clone().map(|f| f as Arc<dyn Accelerator>)

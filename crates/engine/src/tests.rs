@@ -293,22 +293,21 @@ fn the_device_is_a_setting_of_the_machine() {
 }
 
 #[test]
-#[ignore = "slow on CubeCL's CPU runtime: cargo test --release -p emcraft-engine -- --ignored"]
 fn the_factorization_hands_its_large_fronts_to_the_device() {
-    // CubeCL's CPU runtime runs the tiled update slowly (some 25 s here); CUDA is checked by
+    // Every front to the GPU's kernels, here on CubeCL's CPU runtime; CUDA is checked by
     // emcraft-gpu's ignored tests.
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     let sweep = json!({"frequencies": [7.5], "order": 1});
     let cpu = s.execute("solve.frequency", &sweep).unwrap();
-    // Fronts from 150 rows to the GPU's kernels, here on the CPU; kept across a new project.
-    let r = s.execute("solve.device", &json!({"device": "cubecl-cpu", "min_front": 250})).unwrap();
+    let r = s.execute("solve.device", &json!({"device": "cubecl-cpu", "min_front": 1})).unwrap();
     assert!(r["factorization"].as_str().unwrap().contains("complex double"), "{r}");
     s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     let on = s.execute("solve.frequency", &sweep).unwrap();
     let s21 = |r: &Value| (r["points"][0]["s21"]["re"].as_f64().unwrap(), r["points"][0]["s21"]["im"].as_f64().unwrap());
     let (a, b) = (s21(&cpu), s21(&on));
     assert!((a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9, "{a:?} {b:?}");
+    assert!(s.compute.fronts_taken() > 0);
 }
 
 #[test]

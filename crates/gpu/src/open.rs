@@ -9,10 +9,11 @@ use emcraft_fdtd::{FdtdError, OpenBatch, OpenPlan, Result};
 use num_complex::Complex64;
 
 use crate::buffer::{Buf, Ints, Real, Xyz};
+use crate::device::cube_units;
 use crate::kernels::CellsLaunch;
 use crate::kernels::open::{self as kernels, PsiLaunch, SamplesLaunch, SourcesLaunch, StepsLaunch, TransformsLaunch};
 
-/// Units per cube.
+/// The most units per cube.
 const UNITS: u32 = 256;
 
 /// Each component's two auxiliary variables.
@@ -134,6 +135,8 @@ impl Huygens {
 /// The run's arrays on the device.
 pub(crate) struct OpenRun<F> {
     n: [u32; 3],
+    /// Units per cube.
+    units: u32,
     e: Xyz<F>,
     h: Xyz<F>,
     ce: Xyz<F>,
@@ -170,6 +173,7 @@ impl<F: Real> OpenRun<F> {
         let profile = |c: &[Vec<[f64; 2]>; 3]| c.each_ref().map(|c| c.iter().flatten().copied().collect::<Vec<f64>>());
         Ok(OpenRun {
             n: p.n.map(|n| n as u32),
+            units: cube_units(client, UNITS),
             e: Xyz::zeros(client, lens_e),
             h: Xyz::zeros(client, lens_h),
             ce: Xyz::new(client, &p.ce),
@@ -191,8 +195,8 @@ impl<F: Real> OpenRun<F> {
     /// One step, `b` its slot in the batch's record and `phasors` the batch's.
     fn step(&self, client: &Client, p: &OpenPlan, n: usize, b: usize, phasors: &Buf<f64>) {
         let [nx, ny, nz] = self.n;
-        let cubes = |units: u32| CubeCount::Static(units.div_ceil(UNITS).max(1), 1, 1);
-        let dim = CubeDim::new_1d(UNITS);
+        let cubes = |units: u32| CubeCount::Static(units.div_ceil(self.units).max(1), 1, 1);
+        let dim = CubeDim::new_1d(self.units);
         let nodes = (nx + 1) * (ny + 1) * (nz + 1);
         let steps = || StepsLaunch::new(F::of(p.hs[0]), F::of(p.hs[1]), F::of(p.hs[2]));
         kernels::step_h::launch::<F>(

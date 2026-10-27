@@ -6,11 +6,10 @@ use cubecl::prelude::*;
 /// Pivots per block, as the solver's (`emcraft_solver::ldlt`'s BLOCK): the shared tiles' depth.
 pub(crate) const BLOCK: usize = 64;
 
-/// Units per side of an update cube; each unit takes REACH × REACH entries, so a cube covers a
-/// SIDE × SIDE tile.
+/// The most units per side of an update cube (a device may hold fewer); each unit takes
+/// REACH × REACH entries, so a cube of u × u units covers a tile of side u REACH.
 pub(crate) const UNITS: u32 = 16;
 pub(crate) const REACH: usize = 4;
-pub(crate) const SIDE: u32 = UNITS * REACH as u32;
 
 /// Pivots staged in shared memory at a time.
 const DEPTH: usize = 16;
@@ -37,13 +36,12 @@ pub(crate) fn swap_rows(front: &mut [f64], swaps: &[u32], pairs: u32, m: u32, fi
 
 /// F[i][j] −= Σₜ W[i − be][t] L[j − be][t] for rows and columns from `be`, on columns before `k`
 /// every row, after it the lower part; W and L are `below` × `nb` (complex, column-major). Each
-/// cube takes a SIDE × SIDE tile, staging DEPTH pivots of its rows of W and of its columns' rows
-/// of L in shared memory at a time; unit (x, y) sums the entries (x + UNITS a, y + UNITS b) of
-/// the tile in registers, each over t in order.
+/// cube of `units` × `units` takes a tile of side `units` REACH, staging DEPTH pivots of its rows
+/// of W and of its columns' rows of L in shared memory at a time; unit (x, y) sums the entries
+/// (x + units a, y + units b) of the tile in registers, each over t in order.
 #[cube(launch)]
-pub(crate) fn update(front: &mut [f64], w: &[f64], l: &[f64], m: u32, be: u32, k: u32, nb: u32) {
-    let units = UNITS as usize;
-    let side = SIDE as usize;
+pub(crate) fn update(front: &mut [f64], w: &[f64], l: &[f64], m: u32, be: u32, k: u32, nb: u32, #[comptime] units: usize) {
+    let side = units * REACH;
     let m = m as usize;
     let be = be as usize;
     let k = k as usize;
@@ -55,8 +53,8 @@ pub(crate) fn update(front: &mut [f64], w: &[f64], l: &[f64], m: u32, be: u32, k
     // of the cube agrees, before any synchronization).
     let skip = be + c0 >= k && r0 + side <= c0;
     if !skip {
-        let mut ws = Shared::<[f64]>::new_slice(2 * 64 * DEPTH);
-        let mut ls = Shared::<[f64]>::new_slice(2 * 64 * DEPTH);
+        let mut ws = Shared::<[f64]>::new_slice(2 * units * REACH * DEPTH);
+        let mut ls = Shared::<[f64]>::new_slice(2 * units * REACH * DEPTH);
         let mut acc = Array::<f64>::new(2 * REACH * REACH);
         #[unroll]
         for q in 0..2 * REACH * REACH {
