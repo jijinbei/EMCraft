@@ -39,7 +39,27 @@ impl Plane {
             Plane::Cross => "cross",
         }
     }
+
+    /// The model axes (0 x, 1 y, 2 z) along the picture's horizontal, its vertical and the
+    /// plane's normal.
+    const fn axes(self) -> [usize; 3] {
+        match self {
+            Plane::H => [2, 0, 1],
+            Plane::E => [2, 1, 0],
+            Plane::Cross => [0, 1, 2],
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Plane::H => "H",
+            Plane::E => "E",
+            Plane::Cross => "Cross-section",
+        }
+    }
 }
+
+const AXIS_NAMES: [&str; 3] = ["x", "y", "z"];
 
 /// The quantity a field picture colours: a Cartesian component of E or H, or the magnitude of
 /// one.
@@ -205,60 +225,53 @@ pub fn field_plot(session: &Session, view: &FieldView) -> Result<FieldPlot> {
     sample_plane(session, view)?.plot(view)
 }
 
+/// The field a view shows: the solution, its vector, frequency and caption.
+fn solution<'a>(session: &'a Session, view: &FieldView) -> Result<(&'a emcraft_solver::driven::Driven, &'a [C], f64, String)> {
+    let results = &session.results;
+    if let Some(i) = view.mode {
+        let e = results.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
+        let m = e.modes.get(i).ok_or_else(|| EngineError::Params(format!("no eigenmode {} (there are {})", i + 1, e.modes.len())))?;
+        let q = m.q().map_or(String::new(), |q| format!(", Q = {}", emcraft_render::axes::format(q)));
+        return Ok((&e.driven, &m.vector, m.frequency, format!("eigenmode {}{q} (arbitrary amplitude), order {}", i + 1, e.driven.order.as_u8())));
+    }
+    if results.sweep.is_none()
+        && let Some(r) = &results.radiation
+    {
+        let what = if session.model.sources.iter().any(|s| matches!(s, emcraft_model::Source::PlaneWave { .. })) {
+            "the field scattered from a 1 V/m plane wave"
+        } else {
+            "the field the sources radiate"
+        };
+        return Ok((&r.driven, &r.result.field, r.result.frequency, format!("{what}, order {}", r.driven.order.as_u8())));
+    }
+    let sweep = results.sweep()?;
+    let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
+    let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
+    let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
+    let mode = match sweep.driven.ports.get(view.excitation).map(|p| &p.modes) {
+        Some(emcraft_solver::driven::PortModes::Analytic { modes, .. }) => {
+            modes.first().map_or("TE10".to_owned(), |(m, _)| format!("1 V/m {}", m.name()))
+        }
+        _ => "its first mode".to_owned(),
+    };
+    Ok((&*sweep.driven, x, r.frequency, format!("port {port_name} excited by {mode}, order {}", sweep.order.as_u8())))
+}
+
 /// Samples the fields of a view's plane (its component, arrows and phase are not used).
 pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples> {
     let emcraft_model::Aabb { min: lo, max: hi } = session.model.bounds().ok_or_else(|| EngineError::failed("no geometry"))?;
-    // The field: a driven solution at a frequency, or an eigenmode.
-    let (driven, x, frequency, caption) = match view.mode {
-        Some(i) => {
-            let e = session.results.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
-            let m = e.modes.get(i).ok_or_else(|| EngineError::Params(format!("no eigenmode {} (there are {})", i + 1, e.modes.len())))?;
-            let q = m.q().map_or(String::new(), |q| format!(", Q = {}", emcraft_render::axes::format(q)));
-            (&e.driven, &m.vector, m.frequency, format!("eigenmode {}{q} (arbitrary amplitude), order {}", i + 1, e.driven.order.as_u8()))
-        }
-        None if session.results.sweep.is_none() && session.results.radiation.is_some() => {
-            let r = session.results.radiation.as_ref().ok_or_else(|| EngineError::Failed("no results".into()))?;
-            let what = if session.model.sources.iter().any(|s| matches!(s, emcraft_model::Source::PlaneWave { .. })) {
-                "the field scattered from a 1 V/m plane wave"
-            } else {
-                "the field the sources radiate"
-            };
-            (&r.driven, &r.result.field, r.result.frequency, format!("{what}, order {}", r.driven.order.as_u8()))
-        }
-        None => {
-            let sweep = session.results.sweep()?;
-            let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
-            let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
-            let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
-            let mode = match sweep.driven.ports.get(view.excitation).map(|p| &p.modes) {
-                Some(emcraft_solver::driven::PortModes::Analytic { modes, .. }) => {
-                    modes.first().map_or("TE10".to_owned(), |(m, _)| format!("1 V/m {}", m.name()))
-                }
-                _ => "its first mode".to_owned(),
-            };
-            (&*sweep.driven, x, r.frequency, format!("port {port_name} excited by {mode}, order {}", sweep.order.as_u8()))
-        }
-    };
-    let Vec3 { x: a, y: b, z: len } = hi - lo;
-    // (horizontal span, vertical span, normal span) and the map from plane to guide; plane
-    // coordinates run from the bounding box's low corner, `at` from its low side.
-    let (hspan, vspan, normal_span) = match view.plane {
-        Plane::H => (len, a, b),
-        Plane::E => (len, b, a),
-        Plane::Cross => (a, b, len),
-    };
-    let (h0, v0, n0) = match view.plane {
-        Plane::H => (lo.z, lo.x, lo.y),
-        Plane::E => (lo.z, lo.y, lo.x),
-        Plane::Cross => (lo.x, lo.y, lo.z),
-    };
+    let (driven, x, frequency, caption) = solution(session, view)?;
+    // Plane coordinates (u along the picture's horizontal, v its vertical) run from the bounding
+    // box's low corner, `at` from its low side along the normal.
+    let [hk, vk, nk] = view.plane.axes();
+    let (size, origin) = ((hi - lo).to_array(), lo.to_array());
+    let (hspan, vspan, normal_span) = (size[hk], size[vk], size[nk]);
+    let (h0, v0, n0) = (origin[hk], origin[vk], origin[nk]);
     let at = view.at.unwrap_or(normal_span / 2.0).clamp(0.0, normal_span);
     let point = |u: f64, v: f64| {
-        lo + match view.plane {
-            Plane::H => Vec3::new(v, at, u),
-            Plane::E => Vec3::new(at, v, u),
-            Plane::Cross => Vec3::new(u, v, at),
-        }
+        let mut c = [0.0; 3];
+        (c[hk], c[vk], c[nk]) = (u, v, at);
+        lo + Vec3::new(c[0], c[1], c[2])
     };
     let longer = hspan.max(vspan);
     let (nx, ny) =
@@ -270,19 +283,13 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     let l = session.display.length;
     let step = longer / ARROWS as f64;
     let (ax, ay) = (((hspan / step).round() as usize).max(2), ((vspan / step).round() as usize).max(2));
+    let sample = |(u, v): (f64, f64)| driven.fields(x, frequency, point(u, v)).map(|(e, h)| ([l.from_si(h0 + u), l.from_si(v0 + v)], e, h));
     let arrows = (0..ay)
         .flat_map(|j| (0..ax).map(move |i| (hspan * (i as f64 + 0.5) / ax as f64, vspan * (j as f64 + 0.5) / ay as f64)))
-        .filter_map(|(u, v)| driven.fields(x, frequency, point(u, v)).map(|(e, h)| ([l.from_si(h0 + u), l.from_si(v0 + v)], e, h)))
+        .filter_map(sample)
         .collect();
-    let corners = (1..ay)
-        .flat_map(|j| (1..ax).map(move |i| (hspan * i as f64 / ax as f64, vspan * j as f64 / ay as f64)))
-        .filter_map(|(u, v)| driven.fields(x, frequency, point(u, v)).map(|(e, h)| ([l.from_si(h0 + u), l.from_si(v0 + v)], e, h)))
-        .collect();
-    let (hlabel, vlabel, nlabel) = match view.plane {
-        Plane::H => ("z", "x", "y"),
-        Plane::E => ("z", "y", "x"),
-        Plane::Cross => ("x", "y", "z"),
-    };
+    let corners =
+        (1..ay).flat_map(|j| (1..ax).map(move |i| (hspan * i as f64 / ax as f64, vspan * j as f64 / ay as f64))).filter_map(sample).collect();
     let mut lines = Vec::new();
     if view.plane != Plane::Cross
         && let Some(w) = session.model.waveguide.as_ref()
@@ -294,12 +301,9 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     let lname = l.symbol();
     let fsym = session.display.frequency;
     let title = format!(
-        "{} plane, {nlabel} = {} {lname}   f = {} {}",
-        match view.plane {
-            Plane::H => "H",
-            Plane::E => "E",
-            Plane::Cross => "Cross-section",
-        },
+        "{} plane, {} = {} {lname}   f = {} {}",
+        view.plane.title(),
+        AXIS_NAMES[nk],
         emcraft_render::axes::format(l.from_si(n0 + at)),
         emcraft_render::axes::format(fsym.from_si(frequency)),
         fsym.symbol()
@@ -319,8 +323,8 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         lines,
         title,
         caption,
-        x: Axis::new(&format!("{hlabel} ({lname})"), l.from_si(h0), l.from_si(h0 + hspan)),
-        y: Axis::new(&format!("{vlabel} ({lname})"), l.from_si(v0), l.from_si(v0 + vspan)),
+        x: Axis::new(&format!("{} ({lname})", AXIS_NAMES[hk]), l.from_si(h0), l.from_si(h0 + hspan)),
+        y: Axis::new(&format!("{} ({lname})", AXIS_NAMES[vk]), l.from_si(v0), l.from_si(v0 + vspan)),
     })
 }
 
