@@ -154,7 +154,7 @@ impl Driven {
                     self.lift_conductors(model, k0, direction, polarization, &mut b)?;
                     let in_pml: std::collections::HashSet<usize> = self.pml.iter().flat_map(|(_, _, l)| l.iter().map(|(t, _)| *t)).collect();
                     for t in 0..self.mesh.tets.len() {
-                        let contrast = self.eps_of(t) - 1.0;
+                        let contrast = self.eps_at(t, frequency) - 1.0;
                         if contrast.norm() == 0.0 || in_pml.contains(&t) {
                             continue;
                         }
@@ -300,7 +300,7 @@ impl Driven {
             let el = self.element_of(t)?;
             let (s, mm) = (el.stiffness(1.0), el.mass(1.0));
             let n = self.order.dofs();
-            let (eps, mu) = (self.eps_of(t), self.mu_of(t));
+            let (eps, mu) = (self.eps_at(t, k0 * C0 / (2.0 * PI)), self.mu_of(t));
             for (i, u) in self.dofs_of(t).enumerate().filter(|(_, u)| *u != crate::driven::NONE) {
                 for &(j, gj) in &known {
                     let a = s[i * n + j] / mu - k0 * k0 * eps * mm[i * n + j];

@@ -85,14 +85,17 @@ Sets the units parameters are read in and replies written in.
 
 ## `model.material.create` — Create material
 
-A linear, isotropic material, lossless unless it has a loss tangent.
+A linear, isotropic material, lossless unless it has a loss tangent or dispersion. A dispersive material's permittivity is ε(ω) = εr(1 − j tan δ) + Σ χ_k(ω) over its Debye, Lorentz and Drude poles (time dependence e^{jωt}, so ε = ε′ − jε″; Taflove & Hagness, Computational Electrodynamics, 3rd ed., ch. 9); εr is then ε∞. The frequency-domain solver takes ε(ω) at each frequency, the time-domain solver its poles by auxiliary differential equations (not yet in its open problems); ports may not lie in a dispersive material, nor eigenmode cavities be filled with one.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `name` | string |  | yes | unique name |
-| `eps_r` | number |  | yes | relative permittivity εr > 0 |
+| `eps_r` | number |  | yes | relative permittivity εr > 0 (ε∞ with dispersion) |
 | `mu_r` | number |  | no | relative permeability μr > 0 (default 1) |
 | `loss_tangent` | number |  | no | dielectric loss tangent tan δ ≥ 0 (default 0): ε = εr(1 − j tan δ) |
+| `debye` | array | frequency | no | Debye poles `[{"delta_eps", "frequency"}]`: χ = Δε/(1 + jω/ω_r), Δε > 0, relaxation frequency f_r = 1/(2πτ) > 0 (frequency) |
+| `lorentz` | array | frequency | no | Lorentz poles `[{"delta_eps", "frequency", "damping"}]`: χ = Δε ω₀²/(ω₀² − ω² + jωγ), Δε > 0, resonance f₀ = ω₀/2π > 0, damping γ/2π > 0 (frequencies) |
+| `drude` | array | frequency | no | Drude poles `[{"plasma_frequency", "damping"}]`: χ = −ω_p²/(ω² − jωγ), plasma frequency ω_p/2π > 0, damping γ/2π > 0 (frequencies) |
 
 ## `geometry.waveguide` — Rectangular waveguide
 
@@ -178,6 +181,17 @@ The conductivity of the guide's walls, irises and steps: losses by the Leontovic
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `conductivity` | number |  | no | σ in S/m (copper 5.8e7); leave out for perfect conductors |
+
+## `model.symmetry` — Symmetry plane
+
+Cuts a waveguide symmetric about its middle (x = a/2 or y = b/2) on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters; ports carry only the modes of the kept parity, fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. Waveguides only; the time-domain solver refuses symmetry planes. Drops the mesh.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `axis` | string |  | no | `x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove |
+| `kind` | string |  | no | `electric` (PEC wall) or `magnetic` (PMC wall) |
+| `at` | number | length | no | the plane's position (default the guide's middle, the only one allowed) |
+| `clear` | boolean |  | no | remove the plane across `axis`, or every plane without it |
 
 ## `model.port.create` — Create port
 

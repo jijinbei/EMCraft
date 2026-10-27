@@ -1,0 +1,12 @@
+{
+ "title": "Dispersive dielectric slab in WR-90: ε∞ = 2 with a Debye and a Lorentz pole, 20 mm",
+ "kind": "theory",
+ "source": "TE10 transmission-line cascade with the complex propagation constant β = √(k0² ε(ω) − (π/a)²) in the slab (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3 and §4.4), ε(ω) = ε∞ + Δε_D/(1 + jωτ) + Δε_L ω0²/(ω0² − ω² + jωγ) for e^{jωt} (A. Taflove, S. C. Hagness, Computational Electrodynamics, 3rd ed., Artech House 2005, §9.2 and §9.4), both evaluated by ABCD matrices separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_db_10", "quantity": "|S21| at 10 GHz (dB)", "measure": {"step": "solve", "pointer": "/points/1/s21/db"}, "value": -4.532419532149637, "tolerance": {"absolute": 0.02}, "reason": "second-order elements of 3 mm, as for the lossy slab (error about 1e-3 in S, 0.01 dB here where |S21| ≈ 0.6)"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.35893118275711045, "tolerance": {"absolute": 2e-3}, "reason": "as |S21|"},
+  {"id": "s21_db_8", "quantity": "|S21| at 8 GHz (dB)", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -4.91817934719448, "tolerance": {"absolute": 0.02}, "reason": "as at 10 GHz"},
+  {"id": "s11_mag_12", "quantity": "|S11| at 12 GHz", "measure": {"step": "solve", "pointer": "/points/2/s11/mag"}, "value": 0.3457589142718396, "tolerance": {"absolute": 3e-3}, "reason": "the shortest wavelength in the slab (εr′ ≈ 3.3): about ten elements per guide wavelength"},
+  {"id": "worst", "quantity": "largest |S − S_exact| at 8, 10 and 12 GHz (complex)", "measure": {"command": "results.compare", "params": {}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 5e-3}, "reason": "the discretisation error of the lossy slab (1.8e-3 at εr = 2.2) at a higher εr′ of 3.0–3.3: a shorter wavelength at the same element size; ε(ω) enters each frequency's mass matrix exactly"}
+ ]
+}

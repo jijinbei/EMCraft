@@ -183,10 +183,10 @@ pub fn steps(s: &Session) -> [StepState; 9] {
     if !has_geometry {
         materials.note(Status::Missing, "no geometry to give materials to", Some("geometry.solid"));
     }
-    if m.ports.iter().any(|p| m.port_material(p.end).is_ok_and(|x| x.loss_tangent != 0.0)) {
+    if m.ports.iter().any(|p| m.port_material(p.end).is_ok_and(|x| x.loss_tangent != 0.0 || x.is_dispersive())) {
         materials.note(
             Status::Warning,
-            "a port lies in a lossy material, which ports do not support: end the guide with a lossless section",
+            "a port lies in a lossy or dispersive material, which ports do not support: end the guide with a lossless, non-dispersive section",
             Some("geometry.waveguide"),
         );
     }
@@ -239,7 +239,7 @@ pub fn steps(s: &Session) -> [StepState; 9] {
         Some(me) => {
             // Elements per wavelength at the band's top in the densest material.
             if let Some(b) = band {
-                let index = m.materials.iter().map(|x| (x.eps_r * x.mu_r).sqrt()).fold(1.0, f64::max);
+                let index = m.materials.iter().map(|x| x.index_at(b.stop)).fold(1.0, f64::max);
                 let lambda = C0 / (b.stop * index);
                 let volume: f64 = (0..me.tets.len()).filter_map(|t| me.volume(t)).sum();
                 // The edge of a regular tetrahedron of the mean volume.

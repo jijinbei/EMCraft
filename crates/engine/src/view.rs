@@ -10,7 +10,7 @@
 //! - `cross` (cross-section): x across, y up, at z — the TE₁₀ pattern of E (vertical) and H.
 
 use emcraft_model::units::decibels;
-use emcraft_model::{CVec3, Vec3};
+use emcraft_model::{CVec3, Material, Vec3};
 use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
 use emcraft_render::{Axis, Rgb};
@@ -447,20 +447,56 @@ impl PlaneSamples {
     }
 }
 
+/// A TE₁₀ line's section `length` long of material `m` at `frequency` (Hz): its permittivity
+/// εr(ω) = ε′ − jε″ as εr (1 − j tan δ), tan δ = ε″/ε′.
+fn layer_at(length: f64, m: &Material, frequency: f64) -> Layer {
+    if !m.is_dispersive() {
+        return Layer { length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent };
+    }
+    let e = m.eps_at(frequency);
+    Layer { length, eps_r: e.re, mu_r: m.mu_r, loss_tangent: -e.im / e.re }
+}
+
+/// A uniform guide's sections (length, material) and its width: its exact TE₁₀ line at each
+/// frequency.
+#[derive(Clone, Debug)]
+pub struct ExactLine {
+    pub a: f64,
+    pub sections: Vec<(f64, Material)>,
+}
+
+impl ExactLine {
+    /// The line at `frequency` (Hz), dispersive materials evaluated there.
+    pub fn at(&self, frequency: f64) -> Te10Line {
+        Te10Line { a: self.a, layers: self.sections.iter().map(|(l, m)| layer_at(*l, m, frequency)).collect() }
+    }
+}
+
 /// The exact TE₁₀ line of a waveguide of uniform cross-section.
-pub fn te10_line(session: &Session) -> Result<Te10Line> {
+pub fn te10_line(session: &Session) -> Result<ExactLine> {
     let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
     if !w.uniform() {
         return Err(EngineError::Failed(
             "not supported yet: exact fields of a guide whose aperture changes (the S-parameters are compared with mode matching)".into(),
         ));
     }
-    let mut layers = Vec::with_capacity(w.sections.len());
+    let mut sections = Vec::with_capacity(w.sections.len());
     for s in &w.sections {
         let (_, m) = session.model.material(&s.material)?;
-        layers.push(Layer { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent });
+        sections.push((s.length, m.clone()));
     }
-    Ok(Te10Line { a: w.width, layers })
+    Ok(ExactLine { a: w.width, sections })
+}
+
+/// Mode matching takes constant permittivities: refuses a dispersive material.
+fn constant(m: &Material) -> Result<&Material> {
+    if m.is_dispersive() {
+        return Err(EngineError::Failed(format!(
+            "not supported yet: a mode-matching reference for the dispersive material `{}` (only uniform guides have one)",
+            m.name
+        )));
+    }
+    Ok(m)
 }
 
 /// x'₁₁, the first zero of J₁' (Abramowitz & Stegun, Table 9.5): the circular guide's TE11
@@ -475,7 +511,7 @@ pub const MODE_MATCHING_MODES: usize = 160;
 /// has the full cross-section, mode matching when the aperture changes (H-plane steps, irises).
 #[derive(Clone, Debug)]
 pub enum Reference {
-    Exact(Te10Line),
+    Exact(ExactLine),
     ModeMatching(HPlaneLine),
     EPlane(EPlaneLine),
     /// A uniform guide `length` long whose first mode has cut-off wavenumber `cutoff` (0 for
@@ -498,7 +534,7 @@ impl Reference {
     /// (S11, S21), power waves, with `modes` TE_m0 modes for mode matching.
     pub fn s(&self, frequency: f64, modes: usize) -> Result<(C, C)> {
         match self {
-            Reference::Exact(l) => Ok(l.solve(frequency)?.s_power()),
+            Reference::Exact(l) => Ok(l.at(frequency).solve(frequency)?.s_power()),
             Reference::ModeMatching(l) => Ok(l.solve(frequency, modes)?),
             Reference::EPlane(l) => Ok(l.solve(frequency, modes)?),
             Reference::Uniform { length, cutoff, index2 } => {
@@ -519,13 +555,12 @@ pub fn reference(session: &Session) -> Result<Reference> {
     {
         // A box between two ports is an empty guide.
         let (_, m) = session.model.material(&solid.material)?;
-        let plain = session.model.inclusions.is_empty() && m.loss_tangent == 0.0;
+        let plain = session.model.inclusions.is_empty() && m.loss_tangent == 0.0 && !m.is_dispersive();
         let index2 = m.eps_r * m.mu_r;
         return match (&solid.shape, &session.model.features[..]) {
-            (emcraft_model::Shape::Box { size }, []) if session.model.inclusions.is_empty() => Ok(Reference::Exact(Te10Line {
-                a: size[0],
-                layers: vec![Layer { length: size[2], eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent }],
-            })),
+            (emcraft_model::Shape::Box { size }, []) if session.model.inclusions.is_empty() => {
+                Ok(Reference::Exact(ExactLine { a: size[0], sections: vec![(size[2], m.clone())] }))
+            }
             // An empty circular guide: TE11, cut off at x'₁₁/r (the first zero of J₁').
             (emcraft_model::Shape::Cylinder { radius, length }, []) if plain => {
                 Ok(Reference::Uniform { length: *length, cutoff: X11_PRIME / radius, index2 })
@@ -555,7 +590,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
     if w.full_width() {
         let mut sections = Vec::with_capacity(w.sections.len());
         for (i, s) in w.sections.iter().enumerate() {
-            let (_, m) = session.model.material(&s.material)?;
+            let m = constant(session.model.material(&s.material)?.1)?;
             let emcraft_model::Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
             sections.push(ESection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent, y0, height });
         }
@@ -566,7 +601,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
     }
     let mut sections = Vec::with_capacity(w.sections.len());
     for (i, s) in w.sections.iter().enumerate() {
-        let (_, m) = session.model.material(&s.material)?;
+        let m = constant(session.model.material(&s.material)?.1)?;
         let emcraft_model::Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
         sections.push(HSection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, x0, width, loss_tangent: m.loss_tangent });
     }

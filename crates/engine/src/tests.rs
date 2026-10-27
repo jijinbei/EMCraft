@@ -48,6 +48,68 @@ fn display_units_convert_at_the_boundary() {
 }
 
 #[test]
+fn dispersive_materials_are_read_in_display_units_and_checked() {
+    let mut s = Session::new();
+    let r = s.execute(
+        "model.material.create",
+        &json!({"name": "d", "eps_r": 2, "debye": [{"delta_eps": 0.6, "frequency": 20}],
+                "lorentz": [{"delta_eps": 0.4, "frequency": 16, "damping": 1.5}], "drude": [{"plasma_frequency": 3, "damping": 0.5}]}),
+    );
+    r.unwrap();
+    let (_, m) = s.model.material("d").unwrap();
+    let tau = 1.0 / (2.0 * std::f64::consts::PI * 20e9);
+    assert_eq!(m.dispersion.len(), 3);
+    assert!(matches!(m.dispersion[0], emcraft_model::Pole::Debye { delta_eps, tau: t } if delta_eps == 0.6 && (t - tau).abs() < 1e-24));
+    assert_eq!(m.dispersion[1], emcraft_model::Pole::Lorentz { delta_eps: 0.4, frequency: 16e9, damping: 1.5e9 });
+    assert_eq!(m.dispersion[2], emcraft_model::Pole::Drude { plasma_frequency: 3e9, damping: 0.5e9 });
+    // In MHz.
+    s.execute("units.set", &json!({"frequency": "MHz"})).unwrap();
+    s.execute("model.material.create", &json!({"name": "m", "eps_r": 1, "lorentz": [{"delta_eps": 1, "frequency": 500, "damping": 10}]})).unwrap();
+    assert_eq!(s.model.material("m").unwrap().1.dispersion[0], emcraft_model::Pole::Lorentz { delta_eps: 1.0, frequency: 5e8, damping: 1e7 });
+    // Hostile poles: refused, nothing created, nothing panics.
+    let many: Vec<_> = (0..emcraft_model::MAX_POLES + 1).map(|_| json!({"delta_eps": 1, "frequency": 1})).collect();
+    for bad in [
+        json!({"debye": [{"delta_eps": -1, "frequency": 1}]}),
+        json!({"debye": [{"delta_eps": 1}]}),
+        json!({"debye": [{"delta_eps": 1, "frequency": 0}]}),
+        json!({"debye": [{"delta_eps": 1, "frequency": 1e308}]}),
+        json!({"debye": "x"}),
+        json!({"debye": [1, 2]}),
+        json!({"lorentz": [{"delta_eps": 1, "frequency": 1, "damping": -1}]}),
+        json!({"lorentz": [{"delta_eps": "a", "frequency": 1, "damping": 1}]}),
+        json!({"drude": [{"plasma_frequency": 1, "damping": 0}]}),
+        json!({"drude": [{"plasma_frequency": f64::MAX, "damping": 1}]}),
+        json!({"debye": many}),
+        json!({"debye": many[..9], "lorentz": (0..9).map(|_| json!({"delta_eps": 1, "frequency": 1, "damping": 1})).collect::<Vec<_>>()}),
+    ] {
+        let mut p = bad.clone();
+        p["name"] = json!("bad");
+        p["eps_r"] = json!(2);
+        let r = s.execute("model.material.create", &p);
+        assert!(matches!(r, Err(EngineError::Params(_) | EngineError::Failed(_))), "{bad}: {r:?}");
+        assert!(s.model.material("bad").is_err());
+    }
+}
+
+#[test]
+fn a_dispersive_slab_solves_against_its_exact_cascade() {
+    // The comparison evaluates ε(ω) at each frequency.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "d", "eps_r": 2, "debye": [{"delta_eps": 0.6, "frequency": 20}]})).unwrap();
+    s.execute(
+        "geometry.waveguide",
+        &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum"}, {"length": 20, "material": "d"}, {"length": 10, "material": "vacuum"}]}),
+    )
+    .unwrap();
+    s.execute("mesh.generate", &json!({"size": 3.5})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    s.execute("solve.frequency", &json!({"frequencies": [8, 12], "order": 2})).unwrap();
+    let c = s.execute("results.compare", &json!({})).unwrap();
+    assert!(c["worst"].as_f64().unwrap() < 1e-2, "{c}");
+}
+
+#[test]
 fn a_failed_command_leaves_the_session_as_it_was() {
     let mut s = small();
     let before = s.model.clone();

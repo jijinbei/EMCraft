@@ -18,13 +18,24 @@
 //! uniform throughout gives the incident wave at z = 0 alone; then S₁₁ = (V₁ − V₁ʳᵉᶠ)/V₁ʳᵉᶠ
 //! and S₂₁ = V₂/V₁ʳᵉᶠ (amplitudes, then power waves), already referred to the model's end faces,
 //! with no de-embedding, and the grid's own dispersion in the feed cancels.
+//!
+//! **Dispersive materials** (Debye, Lorentz and Drude poles, [`emcraft_model::Pole`]) by the
+//! auxiliary differential equation method (A. Taflove, S. C. Hagness, *Computational
+//! Electrodynamics: The Finite-Difference Time-Domain Method*, 3rd ed., Artech House 2005, ch. 9,
+//! §9.4): each pole's polarization P on the E edges it touches, D = ε₀ε∞E + ΣP, advanced with E.
+//! A Debye pole, τ ∂ₜP + P = ε₀Δε E, is centred at n + ½ (trapezoidal), which couples P and E
+//! at n + 1 through a scalar per edge, solved in place; a second-order pole (Lorentz, Drude),
+//! ∂ₜ²P + γ∂ₜP + ω₀²P = ε₀ a E, is centred at n and gives P at n + 1 explicitly from E at n.
+//! Ampère's law then reads ε₀ε∞ (Eⁿ⁺¹ − Eⁿ)/Δt = ∇ × Hⁿ⁺½ − (Pⁿ⁺¹ − Pⁿ)/Δt. An edge between
+//! cells of different materials takes each pole weighted by the area of its cells, as it takes
+//! ε∞.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, EPS0, ETA0, MU0};
-use emcraft_model::{Model, Span};
+use emcraft_model::{Model, Pole, Span};
 use std::sync::Barrier;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -102,7 +113,13 @@ fn steps(len: f64, h: f64) -> usize {
 /// The material and aperture of a z-layer of cells.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Layer {
+    /// εr (ε∞ with dispersion).
     eps: f64,
+    /// The largest |εr(ω)| over the run's frequencies (`eps` without dispersion): sets the
+    /// slowest wave.
+    slow: f64,
+    /// The layer's dispersive material: an index into the grid's `poles` (`NO_POLES` if none).
+    disp: u32,
     mu: f64,
     x0: f64,
     width: f64,
@@ -117,6 +134,8 @@ struct Grid {
     z: Vec<f64>,
     /// Per z-layer of cells.
     layers: Vec<Layer>,
+    /// The poles of each dispersive material in the layers.
+    poles: Vec<Vec<Pole>>,
     /// z-node index of the model's planes z = 0 and z = L, and of the source.
     plane1: usize,
     plane2: usize,
@@ -147,12 +166,29 @@ impl Grid {
     }
 }
 
+/// A layer without dispersion.
+const NO_POLES: u32 = u32::MAX;
+
 /// Builds the grid of the model's guide with its two feeds; `reference` makes every layer the
-/// port-1 guide (the incident run).
-fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
+/// port-1 guide (the incident run). `freqs` are the run's frequencies (for the slowest wave).
+fn grid(model: &Model, o: &Options, reference: bool, freqs: &[f64]) -> Result<Grid> {
     let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
     if model.wall_conductivity.is_some() || model.materials.iter().any(|m| m.loss_tangent != 0.0) {
         return Err(FdtdError::Unsupported("losses in the time domain".into()));
+    }
+    // Dispersive materials in the model's order (deterministic), none at the ports.
+    let mut poles: Vec<Vec<Pole>> = Vec::new();
+    let mut disp_of = vec![NO_POLES; model.materials.len()];
+    for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
+        m.checked().map_err(|e| invalid("material", e.to_string()))?;
+        disp_of[i] = poles.len() as u32;
+        poles.push(m.dispersion.clone());
+    }
+    for i in [0, w.sections.len().saturating_sub(1)] {
+        let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
+        if model.material(&s.material).is_ok_and(|(_, m)| m.is_dispersive()) {
+            return Err(FdtdError::Unsupported("a port in a dispersive material (end the guide with a non-dispersive section)".into()));
+        }
     }
     let h = o.cell;
     let n_est = (w.width / h).ceil() * (w.height / h).ceil() * ((w.length() + 2.0 * (o.pml + 2 * o.feed) as f64 * h) / h).ceil();
@@ -161,10 +197,12 @@ fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
     }
     let layer = |i: usize| -> Result<Layer> {
         let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
-        let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
+        let (index, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
         let Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
         let Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
-        Ok(Layer { eps: m.eps_r, mu: m.mu_r, x0, width, y0, height })
+        let slow = freqs.iter().map(|f| m.eps_at(*f).norm()).fold(m.eps_r, f64::max);
+        let disp = disp_of.get(index).copied().unwrap_or(NO_POLES);
+        Ok(Layer { eps: m.eps_r, slow, disp, mu: m.mu_r, x0, width, y0, height })
     };
     let last = w.sections.len() - 1;
     let (first_layer, last_layer) = (layer(0)?, layer(last)?);
@@ -218,7 +256,7 @@ fn grid(model: &Model, o: &Options, reference: bool) -> Result<Grid> {
     let end_layer = if reference { first_layer } else { last_layer };
     z.extend((1..=o.pml + o.feed).map(|k| at + k as f64 * dz2));
     layers.extend(std::iter::repeat_n(end_layer, o.pml + o.feed));
-    let g = Grid { x, y, z, layers, plane1, plane2, source: o.pml + o.feed, pml: o.pml };
+    let g = Grid { x, y, z, layers, poles, plane1, plane2, source: o.pml + o.feed, pml: o.pml };
     let cells = g.nx() * g.ny() * g.nz();
     if cells > MAX_CELLS {
         return Err(FdtdError::TooLarge { cells, limit: MAX_CELLS });
@@ -260,6 +298,80 @@ impl Field {
 /// A scratch array of the same layout (CPML auxiliary variables).
 fn scratch(f: &Field) -> Field {
     Field { nx: f.nx, ny: f.ny, v: (0..f.len()).map(|_| AtomicU64::new(0)).collect() }
+}
+
+/// One pole's update on one edge (its weight on the edge folded in).
+#[derive(Clone, Copy, Debug)]
+enum Term {
+    /// Pⁿ⁺¹ = ka Pⁿ + kb (Eⁿ⁺¹ + Eⁿ).
+    Debye { ka: f64, kb: f64 },
+    /// Pⁿ⁺¹ = c1 Pⁿ − c2 Pⁿ⁻¹ + c3 Eⁿ.
+    Second { c1: f64, c2: f64, c3: f64 },
+}
+
+impl Term {
+    /// The pole's update for a time step `dt`, weighted by `w` (the share of the edge's area in
+    /// its cells).
+    fn new(pole: Pole, w: f64, dt: f64) -> Term {
+        match (pole, pole.second_order()) {
+            (Pole::Debye { delta_eps, tau }, _) => {
+                Term::Debye { ka: (2.0 * tau - dt) / (2.0 * tau + dt), kb: w * EPS0 * delta_eps * dt / (2.0 * tau + dt) }
+            }
+            (_, Some((a, w0, g))) => {
+                let d = 1.0 + 0.5 * g * dt;
+                Term::Second { c1: (2.0 - w0 * w0 * dt * dt) / d, c2: (1.0 - 0.5 * g * dt) / d, c3: w * dt * dt * EPS0 * a / d }
+            }
+            _ => Term::Second { c1: 0.0, c2: 0.0, c3: 0.0 },
+        }
+    }
+}
+
+/// The dispersive E edges of one component: each edge's slot, and per slot ε₀ε∞ (the edge's
+/// average) and its terms, with their polarizations now and a step before.
+struct Dispersion {
+    slot_of: Vec<u32>,
+    slots: Vec<(f64, std::ops::Range<usize>)>,
+    terms: Vec<Term>,
+    p: Field,
+    p_prev: Field,
+}
+
+impl Dispersion {
+    /// No dispersive edges.
+    fn none() -> Dispersion {
+        Dispersion { slot_of: Vec::new(), slots: Vec::new(), terms: Vec::new(), p: Field::new(0, 0, 0), p_prev: Field::new(0, 0, 0) }
+    }
+
+    /// The new E on edge `id` from E now and the bracketed curl term (∇ × H less the CPML's),
+    /// advancing the edge's polarizations; `None` for an edge without dispersion.
+    #[inline]
+    fn step(&self, id: usize, e: f64, curl: f64, dt: f64) -> Option<f64> {
+        let slot = *self.slot_of.get(id)?;
+        let (eps, range) = self.slots.get(slot as usize)?;
+        let (mut kb_sum, mut rhs) = (0.0, dt * curl);
+        for t in range.clone() {
+            let p = self.p.get(t);
+            match self.terms[t] {
+                Term::Debye { ka, kb } => {
+                    kb_sum += kb;
+                    rhs -= (ka - 1.0) * p;
+                }
+                Term::Second { c1, c2, c3 } => {
+                    let next = c1 * p - c2 * self.p_prev.get(t) + c3 * e;
+                    rhs -= next - p;
+                    self.p_prev.set(t, p);
+                    self.p.set(t, next);
+                }
+            }
+        }
+        let e_new = ((eps - kb_sum) * e + rhs) / (eps + kb_sum);
+        for t in range.clone() {
+            if let Term::Debye { ka, kb } = self.terms[t] {
+                self.p.set(t, ka * self.p.get(t) + kb * (e_new + e));
+            }
+        }
+        Some(e_new)
+    }
 }
 
 /// CPML coefficients (b, a) along z at the given positions.
@@ -324,9 +436,21 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
     let hx = Field::new(nx + 1, ny, nz);
     let hy = Field::new(nx, ny + 1, nz);
     let hz = Field::new(nx, ny, nz + 1);
+    // A second-order pole is explicit in time: stable while its frequencies stay well below
+    // 1/Δt (ω₀Δt < 2 and the plasma term likewise; refused well before).
+    for pole in g.poles.iter().flatten() {
+        if let Some((a, w0, _)) = pole.second_order()
+            && !(w0 * dt < 0.5 && a.sqrt() * dt < 0.5)
+        {
+            return Err(FdtdError::Unsupported(format!("a pole too fast for the time step ({dt:e} s): {pole:?}")));
+        }
+    }
     // Update coefficients: dt/ε per E edge (0 on conductors), dt/μ per H face.
     let ii = |v: usize| v as isize;
-    let edge_coef = |cells: [(isize, isize, isize, f64); 4]| -> f64 {
+    // Dispersive edges: each edge's poles, weighted by the share of its cells' area.
+    let mut dispersion = [Dispersion::none(), Dispersion::none(), Dispersion::none()];
+    let any_poles = !g.poles.is_empty();
+    let edge_coef = |cells: [(isize, isize, isize, f64); 4], comp: usize, id: usize, dispersion: &mut [Dispersion; 3]| -> f64 {
         let mut area = 0.0;
         let mut eps = 0.0;
         for (i, j, k, a) in cells {
@@ -336,7 +460,25 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
             area += a;
             eps += a * g.layers[k as usize].eps;
         }
-        dt / (EPS0 * eps / area)
+        let c = dt / (EPS0 * eps / area);
+        if any_poles && cells.iter().any(|(_, _, k, a)| *a > 0.0 && g.layers[*k as usize].disp != NO_POLES) {
+            let d = &mut dispersion[comp];
+            if d.slot_of.is_empty() {
+                d.slot_of = vec![u32::MAX; [ex.len(), ey.len(), ez.len()][comp]];
+            }
+            let start = d.terms.len();
+            for (_, _, k, a) in cells {
+                let l = g.layers[k as usize];
+                if let Some(list) = g.poles.get(l.disp as usize).filter(|_| a > 0.0) {
+                    d.terms.extend(list.iter().map(|p| Term::new(*p, a / area, dt)));
+                }
+            }
+            if let Some(s) = d.slot_of.get_mut(id) {
+                *s = d.slots.len() as u32;
+            }
+            d.slots.push((dt / c, start..d.terms.len()));
+        }
+        c
     };
     let mut cex = vec![0.0; ex.len()];
     for k in 0..=nz {
@@ -344,12 +486,18 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
             for i in 0..nx {
                 let a = |jj: usize, kk: usize| dy.get(jj).copied().unwrap_or(0.0) * dz.get(kk).copied().unwrap_or(0.0);
                 let (jm, km) = (j.wrapping_sub(1), k.wrapping_sub(1));
-                cex[ex.at(i, j, k)] = edge_coef([
-                    (ii(i), ii(j) - 1, ii(k) - 1, a(jm, km)),
-                    (ii(i), ii(j), ii(k) - 1, a(j, km)),
-                    (ii(i), ii(j) - 1, ii(k), a(jm, k)),
-                    (ii(i), ii(j), ii(k), a(j, k)),
-                ]);
+                let id = ex.at(i, j, k);
+                cex[id] = edge_coef(
+                    [
+                        (ii(i), ii(j) - 1, ii(k) - 1, a(jm, km)),
+                        (ii(i), ii(j), ii(k) - 1, a(j, km)),
+                        (ii(i), ii(j) - 1, ii(k), a(jm, k)),
+                        (ii(i), ii(j), ii(k), a(j, k)),
+                    ],
+                    0,
+                    id,
+                    &mut dispersion,
+                );
             }
         }
     }
@@ -359,12 +507,18 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
             for i in 0..=nx {
                 let a = |ii_: usize, kk: usize| dx.get(ii_).copied().unwrap_or(0.0) * dz.get(kk).copied().unwrap_or(0.0);
                 let (im, km) = (i.wrapping_sub(1), k.wrapping_sub(1));
-                cey[ey.at(i, j, k)] = edge_coef([
-                    (ii(i) - 1, ii(j), ii(k) - 1, a(im, km)),
-                    (ii(i), ii(j), ii(k) - 1, a(i, km)),
-                    (ii(i) - 1, ii(j), ii(k), a(im, k)),
-                    (ii(i), ii(j), ii(k), a(i, k)),
-                ]);
+                let id = ey.at(i, j, k);
+                cey[id] = edge_coef(
+                    [
+                        (ii(i) - 1, ii(j), ii(k) - 1, a(im, km)),
+                        (ii(i), ii(j), ii(k) - 1, a(i, km)),
+                        (ii(i) - 1, ii(j), ii(k), a(im, k)),
+                        (ii(i), ii(j), ii(k), a(i, k)),
+                    ],
+                    1,
+                    id,
+                    &mut dispersion,
+                );
             }
         }
     }
@@ -374,12 +528,18 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
             for i in 0..=nx {
                 let a = |ii_: usize, jj: usize| dx.get(ii_).copied().unwrap_or(0.0) * dy.get(jj).copied().unwrap_or(0.0);
                 let (im, jm) = (i.wrapping_sub(1), j.wrapping_sub(1));
-                cez[ez.at(i, j, k)] = edge_coef([
-                    (ii(i) - 1, ii(j) - 1, ii(k), a(im, jm)),
-                    (ii(i), ii(j) - 1, ii(k), a(i, jm)),
-                    (ii(i) - 1, ii(j), ii(k), a(im, j)),
-                    (ii(i), ii(j), ii(k), a(i, j)),
-                ]);
+                let id = ez.at(i, j, k);
+                cez[id] = edge_coef(
+                    [
+                        (ii(i) - 1, ii(j) - 1, ii(k), a(im, jm)),
+                        (ii(i), ii(j) - 1, ii(k), a(i, jm)),
+                        (ii(i) - 1, ii(j), ii(k), a(im, j)),
+                        (ii(i), ii(j), ii(k), a(i, j)),
+                    ],
+                    2,
+                    id,
+                    &mut dispersion,
+                );
             }
         }
     }
@@ -388,6 +548,11 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
         let mu: Vec<f64> = [a, b].iter().filter(|c| g.exists(c.0, c.1, c.2)).map(|c| g.layers[c.2 as usize].mu).collect();
         if mu.is_empty() { 0.0 } else { dt / (MU0 * mu.iter().sum::<f64>() / mu.len() as f64) }
     };
+    for d in &mut dispersion {
+        d.p = Field::new(d.terms.len(), 1, 1);
+        d.p_prev = Field::new(d.terms.len(), 1, 1);
+    }
+    let [disp_x, disp_y, disp_z] = &dispersion;
     let mut chx = vec![0.0; hx.len()];
     for k in 0..nz {
         for j in 0..ny {
@@ -471,8 +636,8 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
         .layers
         .iter()
         .filter_map(|l| {
-            let fc_l = C0 / (2.0 * l.width * (l.eps * l.mu).sqrt());
-            (f0 > fc_l).then(|| C0 / (l.eps * l.mu).sqrt() * (1.0 - (fc_l / f0).powi(2)).sqrt())
+            let fc_l = C0 / (2.0 * l.width * (l.slow * l.mu).sqrt());
+            (f0 > fc_l).then(|| C0 / (l.slow * l.mu).sqrt() * (1.0 - (fc_l / f0).powi(2)).sqrt())
         })
         .fold(C0, f64::min);
     let t_min = t0 + 4.0 * tau + 3.0 * (g.z[nz] - g.z[0]) / v_min;
@@ -550,7 +715,8 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
                     let dhy_dz = (hy.get(hy.at(i, j, k)) - hy.get(hy.at(i, j, k - 1))) / dzd[k];
                     let psi = be * psi_ex.get(id) + ae * dhy_dz;
                     psi_ex.set(id, psi);
-                    ex.set(id, ex.get(id) + c * (dhz_dy - dhy_dz - psi));
+                    let (e, curl) = (ex.get(id), dhz_dy - dhy_dz - psi);
+                    ex.set(id, disp_x.step(id, e, curl, dt).unwrap_or(e + c * curl));
                 }
             }
             for j in 0..ny {
@@ -564,7 +730,8 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
                     let dhz_dx = (hz.get(hz.at(i, j, k)) - hz.get(hz.at(i - 1, j, k))) / dxd[i];
                     let psi = be * psi_ey.get(id) + ae * dhx_dz;
                     psi_ey.set(id, psi);
-                    ey.set(id, ey.get(id) + c * (dhx_dz + psi - dhz_dx));
+                    let (e, curl) = (ey.get(id), dhx_dz + psi - dhz_dx);
+                    ey.set(id, disp_y.step(id, e, curl, dt).unwrap_or(e + c * curl));
                 }
             }
         }
@@ -578,7 +745,8 @@ fn run(g: &Grid, o: &Options, freqs: &[f64], mut stop: impl FnMut(&[C], &[C]) ->
                     }
                     let dhy_dx = (hy.get(hy.at(i, j, k)) - hy.get(hy.at(i - 1, j, k))) / dxd[i];
                     let dhx_dy = (hx.get(hx.at(i, j, k)) - hx.get(hx.at(i, j - 1, k))) / dyd[j];
-                    ez.set(id, ez.get(id) + c * (dhy_dx - dhx_dy));
+                    let (e, curl) = (ez.get(id), dhy_dx - dhx_dy);
+                    ez.set(id, disp_z.step(id, e, curl, dt).unwrap_or(e + c * curl));
                 }
             }
         }
@@ -676,14 +844,14 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
         moved.is_some_and(|m| m <= o.decay * scale)
     };
     // The incident run: the port-1 guide throughout.
-    let gr = grid(model, o, true)?;
+    let gr = grid(model, o, true, frequencies)?;
     let mut last = None;
     let (reference, dt) = run(&gr, o, frequencies, |d1, _| {
         let scale = d1.iter().fold(0.0f64, |m, c| m.max(c.norm()));
         settled(&mut last, d1, &[], scale)
     })?;
     let scale = reference.d1.iter().fold(0.0f64, |m, c| m.max(c.norm()));
-    let g = grid(model, o, false)?;
+    let g = grid(model, o, false, frequencies)?;
     let mut last = None;
     let mut converged = false;
     let (dut, dt2) = run(&g, o, frequencies, |d1, d2| {

@@ -2,7 +2,7 @@
 //! propagation constants) and the balance of power between the ports and the absorbed power.
 
 use emcraft_fem::Order;
-use emcraft_model::{End, Material, Model, Port, Section, Waveguide};
+use emcraft_model::{End, Material, Model, Pole, Port, Section, Waveguide};
 use emcraft_solver::{Driven, SolveError};
 use emcraft_theory::{Layer, Te10Line};
 
@@ -106,4 +106,86 @@ fn wall_loss_balances_the_ports() {
         let absorbed = d.wall_loss(&r.fields[0], f).unwrap() / d.incident_power(0, f).unwrap();
         assert!((lost - absorbed).abs() < 1e-9 * lost, "{f}: {lost} {absorbed}");
     }
+}
+
+/// The dispersive slab's poles: ε∞ = 2, a Debye pole Δε = 0.6 relaxing at 20 GHz, a Lorentz pole
+/// Δε = 0.4 at 16 GHz damped by 1.5 GHz.
+const TAU: f64 = 1.0 / (2.0 * std::f64::consts::PI * 20e9);
+fn poles() -> Vec<Pole> {
+    vec![Pole::Debye { delta_eps: 0.6, tau: TAU }, Pole::Lorentz { delta_eps: 0.4, frequency: 16e9, damping: 1.5e9 }]
+}
+
+/// The poles' permittivity written out here, apart from the model's (e^{jωt}: ε = ε′ − jε″).
+fn dispersive_eps(f: f64) -> emcraft_solver::Complex64 {
+    use emcraft_solver::Complex64 as C;
+    let w = 2.0 * std::f64::consts::PI * f;
+    let (w0, g) = (2.0 * std::f64::consts::PI * 16e9, 2.0 * std::f64::consts::PI * 1.5e9);
+    C::new(2.0, 0.0) + 0.6 / C::new(1.0, w * TAU) + 0.4 * w0 * w0 / C::new(w0 * w0 - w * w, w * g)
+}
+
+fn dispersive_slab(size: f64) -> Model {
+    let mut m = Model::new();
+    m.add_material(Material::new("disp", 2.0, 1.0).unwrap().with_dispersion(poles()).unwrap()).unwrap();
+    let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.02, "disp"), Section::new(0.01, "vacuum")];
+    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
+    m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m
+}
+
+#[test]
+fn dispersive_slab_matches_the_exact_cascade() {
+    let d = Driven::new(&dispersive_slab(0.003), Order::Two).unwrap();
+    assert!(d.is_dispersive());
+    for f in [8.0e9, 10.0e9, 12.0e9] {
+        // The cascade with the complex ε at this frequency, as εr (1 − j tan δ).
+        let e = dispersive_eps(f);
+        let line = Te10Line {
+            a: A,
+            layers: vec![
+                Layer::lossless(0.01, 1.0, 1.0),
+                Layer { length: 0.02, eps_r: e.re, mu_r: 1.0, loss_tangent: -e.im / e.re },
+                Layer::lossless(0.01, 1.0, 1.0),
+            ],
+        };
+        let (s11, s21) = line.solve(f).unwrap().s_power();
+        let r = d.solve(f).unwrap();
+        let err = (r.s[0][0] - s11).norm().max((r.s[1][0] - s21).norm());
+        assert!(err < 3e-3, "{f}: {err:e}");
+        // The discrete Poynting theorem with ε″(ω).
+        let lost = 1.0 - r.s[0][0].norm_sqr() - r.s[1][0].norm_sqr();
+        let absorbed = d.dielectric_loss(&r.fields[0], f).unwrap() / d.incident_power(0, f).unwrap();
+        assert!(lost > 0.01 && (lost - absorbed).abs() < 1e-9 * lost, "{f}: {lost} {absorbed}");
+    }
+}
+
+#[test]
+fn a_fast_sweep_handles_dispersion() {
+    // The reduced basis projects each dispersive mass matrix on its own: its results match the
+    // full solves to the sweep's tolerance.
+    let d = Driven::new(&dispersive_slab(0.005), Order::One).unwrap();
+    let freqs: Vec<f64> = (0..21).map(|i| 8e9 + 2e8 * i as f64).collect();
+    let fast = emcraft_solver::sweep::fast_sweep(&d, &freqs, &Default::default()).unwrap();
+    assert!(fast.full.iter().filter(|x| **x).count() < freqs.len());
+    for (f, r) in freqs.iter().zip(&fast.results) {
+        let full = d.solve(*f).unwrap();
+        let e = (r.s[0][0] - full.s[0][0]).norm().max((r.s[1][0] - full.s[1][0]).norm());
+        assert!(e < 1e-6, "{f}: {e:e}");
+    }
+}
+
+#[test]
+fn dispersive_ports_and_eigenmodes_are_refused() {
+    let mut m = Model::new();
+    let drude = Pole::Drude { plasma_frequency: 5e9, damping: 1e9 };
+    m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
+    m.set_waveguide(Waveguide { width: A, height: B, sections: vec![Section::new(0.02, "plasma")], layers: Vec::new(), strips: Vec::new() }).unwrap();
+    m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
+    let e = Driven::new(&m, Order::One).unwrap_err();
+    assert!(e.to_string().contains("dispersive"), "{e}");
+    assert!(emcraft_solver::driven::port_modes(&m, Order::One, 10e9).unwrap_err().to_string().contains("dispersive"));
+    let e = emcraft_solver::eigen::eigenmodes(&m, Order::One, 2, 10e9).unwrap_err();
+    assert!(e.to_string().contains("dispersive"), "{e}");
 }

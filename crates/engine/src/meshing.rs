@@ -30,7 +30,7 @@ impl Sizes {
             .materials
             .iter()
             .map(|m| {
-                let h = C0 / (f * (m.eps_r * m.mu_r).sqrt()) / n;
+                let h = C0 / (f * m.index_at(f)) / n;
                 Some(size.map_or(h, |c| c.min(h)))
             })
             .collect();

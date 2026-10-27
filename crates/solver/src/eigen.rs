@@ -345,6 +345,13 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
         return Err(SolveError::Invalid { what: "frequency".into(), why: format!("must be a finite number > 0, got {near}") });
     }
     let driven = Driven::cavity(model, order)?;
+    if driven.is_dispersive() {
+        // ε(ω) makes the eigenproblem nonlinear in ω.
+        return Err(SolveError::Invalid {
+            what: "eigenmodes".into(),
+            why: "not supported yet: eigenmodes of a cavity with dispersive materials (its eigenproblem is nonlinear in the frequency)".into(),
+        });
+    }
     let (pattern, stiffness, mass) = driven.matrices();
     let n = pattern.n;
     if n == 0 {

@@ -2,7 +2,8 @@
 //! inclusions and features, walls and ports.
 
 use emcraft_model::{
-    Axis, Feature, Inclusion, Layer, Material, Point3, Port, PortFace, Section, Shape, Solid, Strip, Symmetry, SymmetryKind, Waveguide,
+    Axis, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Section, Shape, Solid, Strip, Symmetry, SymmetryKind,
+    Waveguide,
 };
 use serde_json::{Value, json};
 
@@ -15,8 +16,35 @@ pub fn material(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
     let material =
         Material::new(name, p.number("eps_r").required()?, p.number("mu_r").or(1.0)?)?.with_loss_tangent(p.number("loss_tangent").or(0.0)?)?;
+    let material = material.with_dispersion(poles(p)?)?;
     s.model.add_material(material)?;
     Ok(json!({"name": name}))
+}
+
+/// A material's dispersion poles from `debye`, `lorentz` and `drude` (frequencies in display
+/// units): a Debye pole's relaxation frequency f_r gives τ = 1/(2π f_r).
+fn poles(p: &Params) -> Result<Vec<Pole>> {
+    let mut poles = Vec::new();
+    for d in p.items("debye", "Debye pole", MAX_POLES)? {
+        let delta_eps = d.positive("delta_eps").required()?;
+        let f = d.frequency("frequency").required()?;
+        poles.push(Pole::Debye { delta_eps, tau: 1.0 / (2.0 * std::f64::consts::PI * f) });
+    }
+    for l in p.items("lorentz", "Lorentz pole", MAX_POLES)? {
+        let delta_eps = l.positive("delta_eps").required()?;
+        let frequency = l.frequency("frequency").required()?;
+        let damping = l.frequency("damping").required()?;
+        poles.push(Pole::Lorentz { delta_eps, frequency, damping });
+    }
+    for d in p.items("drude", "Drude pole", MAX_POLES)? {
+        let plasma_frequency = d.frequency("plasma_frequency").required()?;
+        let damping = d.frequency("damping").required()?;
+        poles.push(Pole::Drude { plasma_frequency, damping });
+    }
+    if poles.len() > MAX_POLES {
+        return Err(EngineError::Params(format!("a material holds at most {MAX_POLES} poles, got {}", poles.len())));
+    }
+    Ok(poles)
 }
 
 pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
