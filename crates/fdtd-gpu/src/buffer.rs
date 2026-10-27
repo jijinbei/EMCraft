@@ -66,6 +66,25 @@ impl<F: Real> Buf<F> {
     }
 }
 
+/// An array of indices on the device.
+#[derive(Clone)]
+pub(crate) struct Ints {
+    handle: Handle,
+    len: usize,
+}
+
+impl Ints {
+    pub(crate) fn new(client: &Client, xs: &[u32]) -> Ints {
+        Ints { handle: client.create_from_slice(u32::as_bytes(xs)), len: xs.len() }
+    }
+
+    pub(crate) fn arg(&self) -> BufferArg {
+        TensorHandle::new_contiguous([self.len], self.handle.clone(), cubecl::ir::ElemType::UInt(cubecl::ir::UIntKind::U32))
+            .binding()
+            .into_buffer_arg()
+    }
+}
+
 /// One array per axis: a field's three components, their coefficients, the grid's steps.
 pub(crate) struct Xyz<F>(pub(crate) [Buf<F>; 3]);
 

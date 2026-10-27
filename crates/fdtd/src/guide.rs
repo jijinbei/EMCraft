@@ -9,7 +9,7 @@ use emcraft_model::units::{C0, EPS0, MU0};
 use emcraft_model::{Model, Pole, SecondOrder, Span, Waveguide};
 use num_complex::Complex64 as C;
 
-use crate::device::{Plan, Stepper};
+use crate::device::{Plan, Poles, Stepper};
 use crate::dispersion::{Dispersion, Term};
 use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, index, lattices, leapfrog, time_step};
 use crate::{FdtdError, MAX_CELLS, Options, Result, invalid};
@@ -632,7 +632,7 @@ pub(crate) fn run(
             let plan = Plan {
                 n: g.n(),
                 dt,
-                dispersive: coef.dispersion.iter().any(Dispersion::any),
+                poles: Poles::of(&coef.dispersion, coef.e.each_ref().map(Vec::len)),
                 e: coef.e,
                 h: coef.h,
                 primal: sp.primal.clone(),

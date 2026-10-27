@@ -6,6 +6,7 @@
 use std::ops::ControlFlow;
 
 use crate::Result;
+pub use crate::dispersion::{NO_SLOT, Poles};
 use crate::yee::Pulse;
 
 /// A waveguide run prepared for a device, in SI units and f64.
@@ -17,9 +18,9 @@ pub struct Plan {
     pub n: [usize; 3],
     /// The time step (s).
     pub dt: f64,
-    /// Whether some edges are dispersive; a device without the auxiliary equations refuses
-    /// such a plan.
-    pub dispersive: bool,
+    /// The dispersive edges and their poles, if any: such an edge advances its polarizations
+    /// with E (the auxiliary differential equations) instead of E += c ∇×H.
+    pub poles: Option<Poles>,
     /// dt/ε on the E edges of each component, 0 on and in conductors (the edge is not updated).
     pub e: [Vec<f64>; 3],
     /// dt/μ on the H faces of each component, 0 where neither cell exists.

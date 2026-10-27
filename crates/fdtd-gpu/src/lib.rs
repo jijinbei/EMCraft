@@ -17,7 +17,7 @@
 
 use std::ops::ControlFlow;
 
-use emcraft_fdtd::{FdtdError, Plan, Result, Stepper};
+use emcraft_fdtd::{Plan, Result, Stepper};
 
 mod buffer;
 mod device;
@@ -41,9 +41,6 @@ pub struct Gpu {
 
 impl Stepper for Gpu {
     fn leapfrog(&self, plan: &Plan, max_steps: usize, observe: &mut dyn FnMut(usize, [f64; 2]) -> ControlFlow<()>) -> Result<usize> {
-        if plan.dispersive {
-            return Err(FdtdError::Unsupported(format!("dispersive materials on {} (run on the CPU's threads)", self.backend)));
-        }
         let device = self.backend.device()?;
         guarded(|| {
             let client = device.client();

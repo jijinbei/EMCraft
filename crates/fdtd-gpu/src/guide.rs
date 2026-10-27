@@ -7,8 +7,8 @@ use cubecl::prelude::*;
 use emcraft_fdtd::{FdtdError, Plan, Result};
 
 use crate::BATCH;
-use crate::buffer::{Buf, Real, Xyz};
-use crate::kernels::{self, CellsLaunch, ZCpmlLaunch};
+use crate::buffer::{Buf, Ints, Real, Xyz};
+use crate::kernels::{self, CellsLaunch, PolesLaunch, ZCpmlLaunch};
 
 /// One half step's arrays: the CPML's ψ of the x and y components and its (b, a) along z.
 struct Cpml<F> {
@@ -27,6 +27,72 @@ impl<F: Real> Cpml<F> {
     }
 }
 
+/// The dispersive edges' slots, poles and polarizations; one-element stand-ins when there are
+/// none (the kernel, compiled without dispersion, does not read them).
+struct Poles<F> {
+    slot: [Ints; 3],
+    eps: Buf<F>,
+    start: Ints,
+    kind: Ints,
+    k: Buf<F>,
+    p: Buf<F>,
+    prev: Buf<F>,
+    dt: f64,
+    any: bool,
+}
+
+impl<F: Real> Poles<F> {
+    fn new(client: &Client, plan: &Plan) -> Poles<F> {
+        match &plan.poles {
+            Some(p) => {
+                let k: Vec<f64> = p.k.iter().flatten().copied().collect();
+                Poles {
+                    slot: p.slot.each_ref().map(|s| Ints::new(client, s)),
+                    eps: Buf::new(client, &p.eps),
+                    start: Ints::new(client, &p.start),
+                    kind: Ints::new(client, &p.kind),
+                    k: Buf::new(client, &k),
+                    p: Buf::zeros(client, p.kind.len()),
+                    prev: Buf::zeros(client, p.kind.len()),
+                    dt: plan.dt,
+                    any: true,
+                }
+            }
+            None => {
+                let none = Ints::new(client, &[u32::MAX]);
+                let zero = || Buf::zeros(client, 1);
+                Poles {
+                    slot: [none.clone(), none.clone(), none],
+                    eps: zero(),
+                    start: Ints::new(client, &[0, 0]),
+                    kind: Ints::new(client, &[0]),
+                    k: zero(),
+                    p: zero(),
+                    prev: zero(),
+                    dt: plan.dt,
+                    any: false,
+                }
+            }
+        }
+    }
+
+    fn arg(&self) -> PolesLaunch<F> {
+        let [x, y, z] = &self.slot;
+        PolesLaunch::new(
+            x.arg(),
+            y.arg(),
+            z.arg(),
+            self.eps.arg(),
+            self.start.arg(),
+            self.kind.arg(),
+            self.k.arg(),
+            self.p.arg(),
+            self.prev.arg(),
+            F::of(self.dt),
+        )
+    }
+}
+
 /// The run's arrays on the device.
 pub(crate) struct Run<F> {
     n: [u32; 3],
@@ -37,6 +103,7 @@ pub(crate) struct Run<F> {
     ch: Xyz<F>,
     cpml_e: Cpml<F>,
     cpml_h: Cpml<F>,
+    poles: Poles<F>,
     primal: Xyz<F>,
     dual: Xyz<F>,
     source: Buf<F>,
@@ -84,6 +151,7 @@ impl<F: Real> Run<F> {
             ch: Xyz::new(client, &p.h),
             cpml_e: Cpml::new(client, [lens_e[0], lens_e[1]], &p.cpml_e),
             cpml_h: Cpml::new(client, [lens_h[0], lens_h[1]], &p.cpml_h),
+            poles: Poles::new(client, p),
             primal: Xyz::new(client, &p.primal),
             dual: Xyz::new(client, &p.dual),
             source: Buf::new(client, &p.source),
@@ -125,6 +193,8 @@ impl<F: Real> Run<F> {
             self.cpml_e.arg(),
             self.dual.arg(),
             self.cells(),
+            self.poles.arg(),
+            self.poles.any,
         );
         let (ey, cey) = (&self.e.0[1], &self.ce.0[1]);
         kernels::inject::launch::<F>(

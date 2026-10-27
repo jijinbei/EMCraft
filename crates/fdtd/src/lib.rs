@@ -38,7 +38,7 @@ use emcraft_model::units::C0;
 use emcraft_model::{Model, Waveguide};
 use num_complex::Complex64 as C;
 
-pub use crate::device::{Plan, Stepper};
+pub use crate::device::{NO_SLOT, Plan, Poles, Stepper};
 use crate::guide::{Grid, run};
 
 pub mod device;

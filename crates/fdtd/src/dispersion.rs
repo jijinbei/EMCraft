@@ -52,7 +52,54 @@ pub(crate) struct Dispersion {
 }
 
 /// An edge without dispersion in `slot_of`.
-const NO_SLOT: u32 = u32::MAX;
+pub const NO_SLOT: u32 = u32::MAX;
+
+/// The dispersive E edges of the three components as plain arrays, for a device: each edge's
+/// slot, each slot's ε₀ε∞ and terms, each term's kind and coefficients. The update of an edge is
+/// [`Dispersion::step`]'s.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Poles {
+    /// Per component, each edge's slot ([`NO_SLOT`] if it is not dispersive).
+    pub slot: [Vec<u32>; 3],
+    /// Per slot: ε₀ε∞.
+    pub eps: Vec<f64>,
+    /// Slot s has the terms `start[s]..start[s + 1]`.
+    pub start: Vec<u32>,
+    /// Per term: 0 a Debye pole, k = (ka, kb, 0); 1 a second-order pole, k = (c1, c2, c3).
+    pub kind: Vec<u32>,
+    pub k: Vec<[f64; 3]>,
+}
+
+impl Poles {
+    /// The three components' dispersive edges (`edges` per component), `None` if there are none.
+    pub(crate) fn of(d: &[Dispersion; 3], edges: [usize; 3]) -> Option<Poles> {
+        if !d.iter().any(Dispersion::any) {
+            return None;
+        }
+        let mut poles = Poles { slot: [Vec::new(), Vec::new(), Vec::new()], eps: Vec::new(), start: vec![0], kind: Vec::new(), k: Vec::new() };
+        for (a, d) in d.iter().enumerate() {
+            let base = poles.eps.len() as u32;
+            poles.slot[a] = if d.slot_of.is_empty() {
+                vec![NO_SLOT; edges[a]]
+            } else {
+                d.slot_of.iter().map(|&s| if s == NO_SLOT { NO_SLOT } else { s + base }).collect()
+            };
+            for slot in &d.slots {
+                poles.eps.push(slot.eps);
+                for t in slot.terms.clone() {
+                    let (kind, k) = match d.terms[t] {
+                        Term::Debye { ka, kb } => (0, [ka, kb, 0.0]),
+                        Term::Second { c1, c2, c3 } => (1, [c1, c2, c3]),
+                    };
+                    poles.kind.push(kind);
+                    poles.k.push(k);
+                }
+                poles.start.push(poles.kind.len() as u32);
+            }
+        }
+        Some(poles)
+    }
+}
 
 impl Dispersion {
     /// No dispersive edges.
