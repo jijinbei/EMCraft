@@ -5,7 +5,7 @@ use emcraft_render::axes::Axis;
 use emcraft_render::chart::{Chart, Series, Style};
 use serde_json::Value;
 
-use crate::open::{FarSolver, far_rows, plane_wave};
+use crate::open::{FarRows, FarSolver, far_rows, plane_wave};
 use crate::{Result, Session};
 
 /// The far-field pattern of the last radiation solve against θ at azimuth `phi` (degrees),
@@ -19,7 +19,7 @@ pub fn pattern_chart(s: &Session, phi: f64, points: usize) -> Result<Chart> {
 pub fn pattern_chart_of(s: &Session, phi: f64, points: usize, solver: Option<FarSolver>, frequency: Option<f64>) -> Result<Chart> {
     let n = points.clamp(13, 721);
     let dirs: Vec<(f64, f64)> = (0..n).map(|i| ((180.0 * i as f64 / (n - 1) as f64).to_radians(), phi.to_radians())).collect();
-    let (f, _, rows) = far_rows(s, &dirs, solver, frequency)?;
+    let FarRows { frequency: f, rows, .. } = far_rows(s, &dirs, solver, frequency)?;
     let scattering = plane_wave(s).is_some();
     let (key, exact_key, label) =
         if scattering { ("rcs_dbsm", "exact_rcs", "RCS (dBsm)") } else { ("directivity_dbi", "exact_directivity", "directivity (dBi)") };

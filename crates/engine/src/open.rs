@@ -10,7 +10,12 @@ use emcraft_solver::radiation::{FarField, OpenResult};
 use emcraft_theory::radiation::Huygens;
 use serde_json::{Value, json};
 
+use crate::reply::{parts, phasor, reflection};
+pub use crate::view::{pattern_chart, pattern_chart_of};
 use crate::{Change, EngineError, Params, Result, Session};
+
+/// The impedance of free space (Ω).
+const ETA0: f64 = MU0 * C0;
 
 /// An open problem solved at one frequency.
 #[derive(Debug)]
@@ -66,13 +71,17 @@ pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"lumped_ports": s.model.lumped.len()}))
 }
 
+/// Whether the region the fields fill is vacuum, as the closed forms take it.
+fn in_vacuum(s: &Session) -> bool {
+    s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r == 1.0 && m.mu_r == 1.0))
+}
+
 /// A centre-fed wire dipole the induced-EMF closed form applies to: two coaxial conducting
 /// cylinders of one radius with the model's one lumped port across the gap between them, in
 /// vacuum: (total length, radius).
 fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
-    let vacuum = s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r == 1.0 && m.mu_r == 1.0));
     let ([a, b], [port]) = (&s.model.inclusions[..], &s.model.lumped[..]) else { return None };
-    if !vacuum || !s.model.sources.is_empty() || !s.model.features.is_empty() || a.material.is_some() || b.material.is_some() {
+    if !in_vacuum(s) || !s.model.sources.is_empty() || !s.model.features.is_empty() || a.material.is_some() || b.material.is_some() {
         return None;
     }
     let (Shape::Cylinder { radius: ra, length: la }, Shape::Cylinder { radius: rb, length: lb }) = (&a.shape, &b.shape) else { return None };
@@ -102,7 +111,7 @@ pub(crate) fn plane_wave(s: &Session) -> Option<(Vec3, Vec3)> {
 
 /// The one dipole in an empty box, whose closed form applies: (moment I·l, axis).
 fn lone_dipole(s: &Session) -> Option<(f64, Vec3)> {
-    let vacuum = s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r == 1.0 && m.mu_r == 1.0));
+    let vacuum = in_vacuum(s);
     match s.model.sources[..] {
         [Source::Dipole { direction, length, current, .. }] if vacuum && s.model.inclusions.is_empty() && s.model.features.is_empty() => {
             Some((current * length, direction))
@@ -136,17 +145,8 @@ pub fn solve_radiation(s: &mut Session, p: &Params) -> Result<Value> {
     let huygens = driven.huygens(&s.model, &result.field, f)?;
     let power = huygens.power();
     let mut reply = json!({"frequency": s.show_frequency(f), "unknowns": driven.dofs.unknowns, "backward_error": result.backward_error});
-    let eta = MU0 * C0;
     if plane_wave(s).is_some() {
-        // σ_sca = P_sca / (|E₀|²/2η), in display units of area.
-        let sigma = power * 2.0 * eta;
-        let l = s.display.length.from_si(1.0);
-        reply["scattering_cross_section"] = json!(sigma * l * l);
-        if let Some((a, er)) = lone_sphere(s) {
-            let x = 2.0 * PI * f / C0 * a;
-            let q = emcraft_theory::radiation::mie_efficiencies(x, er.map(f64::sqrt)).0;
-            reply["exact_scattering_cross_section"] = json!(q * PI * a * a * l * l);
-        }
+        scattered(s, f, power, &mut reply);
     } else {
         reply["radiated_power"] = json!(power);
         if let Some((il, _)) = lone_dipole(s) {
@@ -154,40 +154,55 @@ pub fn solve_radiation(s: &mut Session, p: &Params) -> Result<Value> {
         }
     }
     if !result.ports.is_empty() {
-        let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im});
-        let exact = wire_dipole(s).map(|(l, a)| emcraft_theory::radiation::dipole_impedance(l, a, f));
-        let ports: Vec<Value> = result
-            .ports
-            .iter()
-            .map(|pr| {
-                let mut v = json!({
-                    "name": pr.name, "impedance": c(pr.impedance), "current": c(pr.current), "voltage": c(pr.voltage),
-                    "s11": {"re": pr.s11.re, "im": pr.s11.im, "mag": pr.s11.norm(), "db": emcraft_model::units::decibels(pr.s11.norm())},
-                    "power": pr.power,
-                });
-                if let Some(z) = exact {
-                    // The thin-wire, sinusoidal-current estimate: a guide, not a reference (a
-                    // wire a sixtieth of a wavelength thick differs by tens of percent).
-                    v["induced_emf_impedance"] = c(z);
-                }
-                v
-            })
-            .collect();
-        let input: f64 = result.ports.iter().map(|pr| pr.power).sum();
-        reply["ports"] = json!(ports);
-        reply["input_power"] = json!(input);
-        reply["radiation_efficiency"] = json!(if input > 0.0 { power / input } else { f64::NAN });
+        lumped_ports(s, &result, f, power, &mut reply);
     }
     if let Some((s11, accepted)) = result.feed {
-        reply["feed"] = json!({
-            "port": s.model.ports.first().map(|p| p.name.clone()),
-            "s11": {"re": s11.re, "im": s11.im, "mag": s11.norm(), "db": emcraft_model::units::decibels(s11.norm())},
-            "accepted_power": accepted,
-        });
+        reply["feed"] = json!({"port": s.model.ports.first().map(|p| p.name.clone()), "s11": reflection(s11), "accepted_power": accepted});
         reply["radiation_efficiency"] = json!(if accepted > 0.0 { power / accepted } else { f64::NAN });
     }
     s.results.radiation = Some(Arc::new(Radiated { driven, result, huygens, power }));
     Ok(reply)
+}
+
+/// The scattering cross-section σ = P_sca / (|E₀|²/2η) of the `power` a 1 V/m plane wave's
+/// scattered field carries at `f` (Hz), in display units of area; with the Mie series' for a lone
+/// sphere.
+fn scattered(s: &Session, f: f64, power: f64, reply: &mut Value) {
+    let sigma = power * 2.0 * ETA0;
+    let l = s.display.length.from_si(1.0);
+    reply["scattering_cross_section"] = json!(sigma * l * l);
+    if let Some((a, er)) = lone_sphere(s) {
+        let x = 2.0 * PI * f / C0 * a;
+        let q = emcraft_theory::radiation::mie_efficiencies(x, er.map(f64::sqrt)).0;
+        reply["exact_scattering_cross_section"] = json!(q * PI * a * a * l * l);
+    }
+}
+
+/// The lumped ports' impedances, currents, voltages, S11 and powers at `f` (Hz), the power they
+/// put in and the share of it `power` radiates; for a wire dipole, the induced-EMF estimate of
+/// its impedance.
+fn lumped_ports(s: &Session, result: &OpenResult, f: f64, power: f64, reply: &mut Value) {
+    let exact = wire_dipole(s).map(|(l, a)| emcraft_theory::radiation::dipole_impedance(l, a, f));
+    let ports: Vec<Value> = result
+        .ports
+        .iter()
+        .map(|pr| {
+            let mut v = json!({
+                "name": pr.name, "impedance": parts(pr.impedance), "current": parts(pr.current), "voltage": parts(pr.voltage),
+                "s11": reflection(pr.s11), "power": pr.power,
+            });
+            if let Some(z) = exact {
+                // The thin-wire, sinusoidal-current estimate: a guide, not a reference (a
+                // wire a sixtieth of a wavelength thick differs by tens of percent).
+                v["induced_emf_impedance"] = parts(z);
+            }
+            v
+        })
+        .collect();
+    let input: f64 = result.ports.iter().map(|pr| pr.power).sum();
+    reply["ports"] = json!(ports);
+    reply["input_power"] = json!(input);
+    reply["radiation_efficiency"] = json!(if input > 0.0 { power / input } else { f64::NAN });
 }
 
 /// The closed form a far field is compared with, prepared once for all its directions.
@@ -226,18 +241,16 @@ impl Exact {
 /// Directivity (dBi) for sources, radar cross-section (display area, and dB of m²) for a plane
 /// wave, in one direction; with the closed form's where it applies.
 fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
-    let eta = MU0 * C0;
     let f = r.result.frequency;
     let [dir, _, _] = Vec3::spherical(ff.theta, ff.phi);
-    let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
-    let mut out = json!({"theta": ff.theta.to_degrees(), "phi": ff.phi.to_degrees(), "e_theta": c(ff.e_theta), "e_phi": c(ff.e_phi)});
+    let mut out = json!({"theta": ff.theta.to_degrees(), "phi": ff.phi.to_degrees(), "e_theta": phasor(ff.e_theta), "e_phi": phasor(ff.e_phi)});
     let l = s.display.length.from_si(1.0);
     if plane_wave(s).is_some() {
         let rcs = 4.0 * PI * ff.magnitude_squared();
         out["rcs"] = json!(rcs * l * l);
         out["rcs_dbsm"] = json!(10.0 * rcs.log10());
     } else {
-        let d = 4.0 * PI * ff.magnitude_squared() / (2.0 * eta * r.power);
+        let d = 4.0 * PI * ff.magnitude_squared() / (2.0 * ETA0 * r.power);
         out["directivity"] = json!(d);
         out["directivity_dbi"] = json!(10.0 * d.log10());
     }
@@ -291,20 +304,37 @@ pub enum FarSolver {
     TimeDomain,
 }
 
+/// The far field at one frequency in the directions asked: a row per direction.
+pub(crate) struct FarRows {
+    /// Hz.
+    pub frequency: f64,
+    /// The power (W) radiated or scattered.
+    pub power: f64,
+    pub rows: Vec<Value>,
+}
+
 /// Far-field rows in the directions given (radians), from the frequency-domain solve or, when
 /// asked (`solver` "time_domain") or the only one there, the time domain's at the frequency
-/// nearest `frequency` (Hz): (frequency, power, rows).
-pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolver>, frequency: Option<f64>) -> Result<(f64, f64, Vec<Value>)> {
+/// nearest `frequency` (Hz).
+pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolver>, frequency: Option<f64>) -> Result<FarRows> {
     let use_td = match solver {
         Some(solver) => solver == FarSolver::TimeDomain,
         None => s.results.radiation.is_none() && s.results.td_radiation.is_some(),
     };
-    if !use_td {
-        let r = solved(s)?;
-        let exact = Exact::of(s, r.result.frequency);
-        let rows = emcraft_solver::radiation::far_fields(&r.huygens, dirs).iter().map(|x| describe(s, &r, &exact, x)).collect();
-        return Ok((r.result.frequency, r.power, rows));
-    }
+    if use_td { time_domain_far_rows(s, dirs, frequency) } else { fem_far_rows(s, dirs) }
+}
+
+/// The frequency-domain solve's far field, with the closed form's where it applies.
+fn fem_far_rows(s: &Session, dirs: &[(f64, f64)]) -> Result<FarRows> {
+    let r = solved(s)?;
+    let exact = Exact::of(s, r.result.frequency);
+    let rows = emcraft_solver::radiation::far_fields(&r.huygens, dirs).iter().map(|x| describe(s, &r, &exact, x)).collect();
+    Ok(FarRows { frequency: r.result.frequency, power: r.power, rows })
+}
+
+/// The time domain's far field at its frequency nearest `frequency` (its first without one),
+/// with a lone dipole's directivity.
+fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>) -> Result<FarRows> {
     let r = s
         .results
         .td_radiation
@@ -319,8 +349,7 @@ pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolve
         .map(|&(theta, phi)| {
             let (et, ep) = r.far_field(fi, theta, phi).unwrap_or_default();
             let d = r.directivity(fi, theta, phi).unwrap_or(f64::NAN);
-            let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
-            let mut v = json!({"theta": theta.to_degrees(), "phi": phi.to_degrees(), "e_theta": c(et), "e_phi": c(ep), "directivity": d, "directivity_dbi": 10.0 * d.log10()});
+            let mut v = json!({"theta": theta.to_degrees(), "phi": phi.to_degrees(), "e_theta": phasor(et), "e_phi": phasor(ep), "directivity": d, "directivity_dbi": 10.0 * d.log10()});
             if let Some((_, axis)) = lone {
                 let cos_a = axis.dot(Vec3::spherical(theta, phi)[0]).clamp(-1.0, 1.0);
                 v["exact_directivity"] = json!(1.5 * (1.0 - cos_a * cos_a));
@@ -328,22 +357,19 @@ pub(crate) fn far_rows(s: &Session, dirs: &[(f64, f64)], solver: Option<FarSolve
             v
         })
         .collect();
-    Ok((f, power, rows))
+    Ok(FarRows { frequency: f, power, rows })
 }
 
 pub fn results_far_field(s: &mut Session, p: &Params) -> Result<Value> {
     let (theta, phi) = angles(p)?;
     let dirs: Vec<(f64, f64)> = theta.iter().map(|t| (t.to_radians(), phi.to_radians())).collect();
-    let (f, power, points) = far_rows(s, &dirs, p.choice("solver").optional()?, p.frequency("frequency").optional()?)?;
-    Ok(json!({"frequency": s.show_frequency(f), "power": power, "points": points}))
+    let far = far_rows(s, &dirs, p.choice("solver").optional()?, p.frequency("frequency").optional()?)?;
+    Ok(json!({"frequency": s.show_frequency(far.frequency), "power": far.power, "points": far.rows}))
 }
-
-pub use crate::view::{pattern_chart, pattern_chart_of};
 
 /// The time domain's open problem: lumped ports and dipoles on a Yee grid with a CPML.
 pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64, device: Option<&dyn emcraft_fdtd::OpenStepper>) -> Result<Value> {
     let r = emcraft_fdtd::open::radiate_with(&s.model, &emcraft_fdtd::open::OpenOptions::new(cell), freqs, device)?;
-    let c = |z: emcraft_solver::Complex64| json!({"re": z.re, "im": z.im, "mag": z.norm()});
     let points: Vec<Value> = r
         .frequencies
         .iter()
@@ -356,7 +382,7 @@ pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64, device:
                 .map(|(pr, lp)| {
                     let z = pr.impedance[fi];
                     let s11 = (z - lp.impedance) / (z + lp.impedance);
-                    json!({"name": pr.name, "impedance": c(z), "voltage": c(pr.voltage[fi]), "current": c(pr.current[fi]), "s11": {"re": s11.re, "im": s11.im, "mag": s11.norm(), "db": emcraft_model::units::decibels(s11.norm())}, "power": pr.power[fi]})
+                    json!({"name": pr.name, "impedance": phasor(z), "voltage": phasor(pr.voltage[fi]), "current": phasor(pr.current[fi]), "s11": reflection(s11), "power": pr.power[fi]})
                 })
                 .collect();
             let input: f64 = r.ports.iter().map(|pr| pr.power[fi]).sum();

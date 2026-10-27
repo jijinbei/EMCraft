@@ -1,17 +1,12 @@
 //! Commands that read results: S-parameters, eigenmodes, the comparison with a reference,
 //! field errors and probes, and time-domain reflectometry. Their pictures are `view`'s.
 
-use emcraft_model::units::decibels;
 use emcraft_model::{CVec3, Shape};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Map, Value, json};
 
-use crate::{EngineError, Params, Result, Session, args, view};
-
-/// A complex value in a reply: parts, magnitude (also in dB) and phase in degrees.
-pub(crate) fn complex(c: C) -> Value {
-    json!({"re": c.re, "im": c.im, "mag": c.norm(), "db": decibels(c.norm()), "deg": c.arg().to_degrees()})
-}
+use crate::reply::complex;
+use crate::{EngineError, Params, Result, Session, Sweep, args, view};
 
 pub fn eigenmodes(s: &mut Session, _: &Params) -> Result<Value> {
     eigenmode_table(s)
@@ -108,16 +103,8 @@ pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
         .map(|r| {
             let (s11, s21) = reference.s(r.frequency, modes)?;
             // The reference is at the ports' faces: moved to the de-embedded planes as the
-            // solver moves its own (each port's first mode's γ).
-            let shift = |p: usize| -> Result<C> {
-                let d = sw.driven.ports.get(p).map_or(0.0, |x| x.deembed);
-                if d == 0.0 {
-                    return Ok(C::new(1.0, 0.0));
-                }
-                let gamma = sw.driven.port_terms(p, r.frequency)?.first().map_or(C::new(0.0, 0.0), |t| t.gamma);
-                Ok((gamma * d).exp())
-            };
-            let (a, b) = (shift(0)?, shift(1)?);
+            // solver moves its own.
+            let (a, b) = (deembedding(sw, 0, r.frequency)?, deembedding(sw, 1, r.frequency)?);
             let (s11, s21) = (s11 * a * a, s21 * a * b);
             let (f11, f21) = (r.s.get(0, 0).unwrap_or_default(), r.s.get(1, 0).unwrap_or_default());
             let (e11, e21) = ((f11 - s11).norm(), (f21 - s21).norm());
@@ -131,6 +118,17 @@ pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({"reference": reference.label(), "points": rows, "worst": worst}))
+}
+
+/// The factor e^{γd} port `port` de-embedded by d moves a wave by at `frequency` (Hz), γ its first
+/// mode's; 1 without de-embedding.
+fn deembedding(sw: &Sweep, port: usize, frequency: f64) -> Result<C> {
+    let d = sw.driven.ports.get(port).map_or(0.0, |x| x.deembed);
+    if d == 0.0 {
+        return Ok(C::new(1.0, 0.0));
+    }
+    let gamma = sw.driven.port_terms(port, frequency)?.first().map_or(C::new(0.0, 0.0), |t| t.gamma);
+    Ok((gamma * d).exp())
 }
 
 /// The sweep's result at frequency `frequency`, which must have been solved.

@@ -114,10 +114,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
         return Err(EngineError::failed("nothing to mesh: create a waveguide or a solid first"));
     }
     let sizes = crate::meshing::Sizes::read(s, p)?;
-    let frequency = p
-        .frequency("frequency")
-        .or_maybe(s.model.band.map(|b| b.stop))
-        .required_or("the frequency to adapt at, or set the band: project.frequency")?;
+    let frequency = crate::args::frequency_or_band_top(s, p, "frequency", "the frequency to adapt at, or set the band: project.frequency")?;
     let passes = p.integer("passes", 1..=MAX_PASSES).or(6)?;
     let tolerance = p.positive("tolerance").check(|t| *t <= 1.0, "at most 1").or(0.02)?;
     let theta = p.positive("fraction").check(|t| *t <= 1.0, "at most 1").or(0.3)?;
@@ -166,7 +163,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
             unknowns: driven.dofs.unknowns,
             delta_s,
             marked,
-            s11: crate::results::complex(r.s.get(0, 0).unwrap_or_default()),
+            s11: crate::reply::complex(r.s.get(0, 0).unwrap_or_default()),
             seconds: t0.elapsed().as_secs_f64(),
         });
         last = Some((driven.mesh, r.s));
@@ -186,8 +183,8 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
         "delta_s": rows.last().and_then(|r| r.delta_s),
         "passes": rows,
         // The last pass's S-parameters.
-        "s11": crate::results::complex(sm.get(0, 0).unwrap_or_default()),
-        "s21": crate::results::complex(sm.get(1, 0).unwrap_or_default()),
+        "s11": crate::reply::complex(sm.get(0, 0).unwrap_or_default()),
+        "s21": crate::reply::complex(sm.get(1, 0).unwrap_or_default()),
         "nodes": mesh.nodes.len(),
         "tetrahedra": mesh.tets.len(),
     });
