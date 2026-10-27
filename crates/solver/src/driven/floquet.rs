@@ -7,7 +7,7 @@
 //! ẑ × k̂_t) and TM (E_t along k̂_t); at k_t = 0 the plane of incidence is the incident wave's
 //! (azimuth φ). Their transverse fields e_mn = ê e^{−j k_t,mn · (r − r₀)} are orthogonal under
 //! ∫ e · ē dS over the cell (A. K. Bhattacharyya, *Phased Array Antennas: Floquet Analysis,
-//! Synthesis, BFNs, and Active Array Systems*, Wiley 2006, ch. 2; Jin 2014, ch. 13).
+//! Synthesis, BFNs, and Active Array Systems*, Wiley 2006; Jin 2014, periodic structures).
 //!
 //! **The port condition** is the waveguide ports' ([`super`]), with the conjugate product for
 //! the modes' coefficients: n̂ × ∇ × E_t/μr = Σ (κ/μr) c_mn e_mn − 2(κ/μr) a e_inc, with

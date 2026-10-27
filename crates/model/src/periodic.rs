@@ -4,7 +4,7 @@
 //! Opposite faces of the cell are tied by Floquet's theorem: a field of a lattice periodic with
 //! period L along an axis, excited with the phase ψ per period, satisfies
 //! E(r + L ê) = e^{−jψ} E(r) (time dependence e^{jωt}; F. Floquet 1883; J.-M. Jin, *The Finite
-//! Element Method in Electromagnetics*, 3rd ed., Wiley 2014, ch. 13). Across x and y the phases
+//! Element Method in Electromagnetics*, 3rd ed., Wiley 2014, its chapter on periodic structures). Across x and y the phases
 //! come from the incident plane wave: ψ_x = k_x a, ψ_y = k_y b with
 //! k_t = k₁ sin θ (cos φ, sin φ), k₁ the wavenumber of the medium at the first port. Along z
 //! (a guide periodic along its axis, for its dispersion diagram) the phase is swept.

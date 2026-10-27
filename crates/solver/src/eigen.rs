@@ -527,7 +527,7 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
 
 /// Eigenvalues and vectors of a dense symmetric matrix (row-major, n × n) by cyclic Jacobi
 /// rotations (Golub & Van Loan, *Matrix Computations*, 4th ed., §8.5).
-fn jacobi(mut a: Vec<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn jacobi(mut a: Vec<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
     let mut v = vec![0.0; n * n];
     for i in 0..n {
         v[i * n + i] = 1.0;

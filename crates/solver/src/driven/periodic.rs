@@ -2,7 +2,7 @@
 //!
 //! **The condition.** A cell periodic with period L_d along axis d carries fields with
 //! E(r + L_d ê_d) = e^{−jψ_d} E(r) (J.-M. Jin, *The Finite Element Method in Electromagnetics*,
-//! 3rd ed., Wiley 2014, ch. 13, periodic structures; the master/slave elimination as in
+//! 3rd ed., Wiley 2014, the chapter on periodic structures; the master/slave elimination as in
 //! D. T. McGrath, V. P. Pyati, *Phased array antenna analysis with the hybrid finite element
 //! method*, IEEE Trans. Antennas Propag. 42(12):1625–1630, 1994). On the mesh, every unknown
 //! on a face x_d = L_d (a slave: an edge or a face whose nodes all lie there) is the master's on
@@ -66,6 +66,8 @@ pub struct Tie {
     /// dropped) with its phase's period difference and sign product.
     pattern: Csr,
     entries: Vec<(u32, [i8; 3], f64)>,
+    /// Each node's master node and the periods to it.
+    nodes: Vec<(u32, [i8; 3])>,
 }
 
 /// The faces of the cell: per axis, (low, high) coordinates of the mesh's extent.
@@ -264,7 +266,28 @@ impl Tie {
                 entries.push(e);
             }
         }
-        Ok(Tie { map, reduced, points, periods, axes, pattern: kept, entries })
+        let nodes = (0..mesh.nodes.len() as u32).map(|n| (translate(n, shift_of(n)), shift_of(n))).collect();
+        Ok(Tie { map, reduced, points, periods, axes, pattern: kept, entries, nodes })
+    }
+
+    /// Node `n`'s master node and the periods from it.
+    pub fn node_master(&self, n: usize) -> Option<(u32, [i8; 3])> {
+        self.nodes.get(n).copied()
+    }
+
+    /// The kept unknown of full unknown `u` when `u` is its own master (no periods to it).
+    pub fn master_of(&self, u: usize) -> Option<usize> {
+        self.map.get(u).copied().flatten().filter(|s| s.shift == [0; 3] && s.sign > 0.0).map(|s| s.reduced as usize)
+    }
+
+    /// The kept pattern (Tᴴ A T's).
+    pub fn pattern(&self) -> &Csr {
+        &self.pattern
+    }
+
+    /// The phase factor e^{−jψ·s}.
+    pub fn phase(psi: [f64; 3], s: [i8; 3]) -> C {
+        phase(psi, s)
     }
 
     /// The phases per period ψ_d (rad) of a wave whose transverse wavevector is (k_x, k_y), and
