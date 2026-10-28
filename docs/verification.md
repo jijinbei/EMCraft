@@ -121,7 +121,14 @@ result is frozen so it cannot drift.
    section's |S21| at the quarter wave, the inverter (Z0e − Z0o)/2 (oracle
    `coupled-line-coupler`, +0.0014); a three-resonator parallel-coupled band-pass filter
    designed by Cohn's and Matthaei–Young–Jones' equations against the ideal cascade of its
-   sections' chain matrices, band edges within 0.45 % (oracle `coupled-line-bandpass`).
+   sections' chain matrices, band edges within 0.45 % (oracle `coupled-line-bandpass`); terminal
+   ports (one S entry per strip, the modal S converted by the strips' currents and voltages):
+   a quarter-wave 10 dB stripline coupler with all four strip ends ports against the ideal TEM
+   coupler — coupling within 0.06 dB, through, isolation (−60 dB), match (−50 dB), the
+   coupled and through waves 90.0° apart, S unitary and symmetric to 3e-12 (oracle
+   `coupled-line-coupler-4port`); the conversion itself against the closed-form coupler from an
+   ideal modal S (`emcraft-solver::driven::terminals`); coupled microstrips, whose modes travel
+   apart, unitary and reciprocal after per-mode de-embedding (engine tests).
 14. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).

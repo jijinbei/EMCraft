@@ -61,7 +61,7 @@ No parameters.
 
 ## `results.touchstone` — Export Touchstone
 
-Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in GHz, the ports' reference impedance on the option line.
+Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in GHz, the ports' reference impedance on the option line; one port per entry of S (each terminal of a terminal port, in the order `ports` lists them).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -70,7 +70,7 @@ Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in
 
 ## `results.check` — Check results
 
-The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive) and reciprocity (max |S − Sᵀ|).
+The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 when lossless).
 
 No parameters.
 
@@ -260,21 +260,22 @@ Makes the model the unit cell of an infinite array: the faces x = 0 and x = a (`
 
 ## `model.port.create` — Create port
 
-A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).
+A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `name` | string |  | yes | unique name |
+| `name` | string |  | yes | unique name (without `:`) |
 | `end` | string |  | yes | `start` (z = 0) or `end` (z = length); with `face`, the side the guide lies |
 | `modes` | integer |  | no | modes in the port condition, 1 to 32 (default 4) |
 | `face` | array | length | no | [z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z |
 | `mode_solver` | string |  | no | `auto` (default: closed forms where they apply) or `numeric` (the cross-section solver) |
 | `impedance` | number |  | no | the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out |
 | `deembed` | number | length | no | de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0 |
+| `terminals` | string |  | no | `auto` (default: a cross-section holding two strips or more is one terminal per strip, named `<port>:<k>` from the lowest x, each referred to `impedance` or 50 Ω) or `modal` (the first mode only) |
 
 ## `solve.frequency` — Frequency sweep
 
-Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full.
+Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide), a terminal port by each of its strips' modes (S then has an entry per strip, `ports` names them): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

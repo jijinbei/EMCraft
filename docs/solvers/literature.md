@@ -92,6 +92,17 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   T-junction's equivalent circuit, what the stubs' line model leaves out (`stripline-stub`).
 - K. Kurokawa, *Power waves and the scattering matrix*, IEEE Trans. MTT 13(2):194–202, 1965 — S
   referred to reference impedances from the modes' power waves (`emcraft-solver::driven`).
+- D. F. Williams, L. A. Hayden, R. B. Marks, *A complete multimode equivalent-circuit theory for
+  electrical design*, J. Res. NIST 102(4):405–423, 1997 — modal voltages and currents of a
+  multiconductor port, the power-current definition V = 2 (T_Iᴴ)⁻¹ that makes the conductors'
+  power the modes'; G. Faché, F. Olyslager, D. De Zutter, *Electromagnetic and Circuit Modelling
+  of Multiconductor Transmission Lines*, Oxford 1993, ch. 4 — the modal transformation of a
+  multiconductor line to its conductors: terminal ports, one per strip, their power waves by
+  Kurokawa's definition (`emcraft-solver::driven::terminals`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §7.6 — the coupled-line
+  directional coupler by its even and odd modes, matched and isolated between ports of
+  √(Z₀ₑZ₀ₒ), coupled and through waves 90° apart (`emcraft-theory::coupled::coupler`; oracle
+  `coupled-line-coupler-4port`, the `coupler` sample).
 - J. Meixner, *The behavior of electromagnetic fields at edges*, IEEE Trans. AP 20(4):442–446,
   1972 — E ∝ r^{−1/2} at a strip's edge, why the structured mesh closes in harder there than at
   an iris' (`emcraft-mesh`, `strip_edge`).
