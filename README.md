@@ -59,7 +59,8 @@ cargo run --release -p emcraft-cli -- sample cavity --out pictures
 
 Bodies other than waveguides — boxes, cylinders, spheres, Boolean combinations of them
 (`geometry.feature`: a post through a guide, a stub on it) and closed surfaces imported from STL
-or 3MF (`geometry.import`) — are meshed with unstructured tetrahedra (a mesher ported from
+or 3MF (`geometry.import`; a part drawn as its metal gives the air it encloses, `region:
+cavity`) — are meshed with unstructured tetrahedra (a mesher ported from
 FieldCraft), with dielectric or conducting inclusions as regions of their own, the tetrahedra on
 curved walls curved, and the element size set per material from the wavelength if asked. A
 cylindrical cavity's resonances meet the Bessel zeros to 4e-5 (`sample cylinder-cavity`), and

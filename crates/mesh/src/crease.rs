@@ -7,6 +7,11 @@
 //! along the crease on a straight line through it — is collapsed into one of those neighbours
 //! (an edge collapse that keeps every triangle in its plane and facing the same way), which
 //! leaves the surface the same set of points.
+//!
+//! The edge collapse is Hoppe et al.'s (H. Hoppe, T. DeRose, T. Duchamp, J. McDonald,
+//! W. Stuetzle, *Mesh optimization*, SIGGRAPH 1993), allowed only under the link condition that
+//! keeps the surface a manifold of the same topology (T. K. Dey, H. Edelsbrunner, S. Guha,
+//! D. V. Nekhayev, *Topology preserving edge contraction*, Publ. Inst. Math. 66(80), 1999).
 
 use std::collections::BTreeSet;
 

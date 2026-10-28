@@ -61,7 +61,11 @@ result is frozen so it cannot drift.
    test keeps measuring. Bodies combined by Booleans: the mesh Boolean's volumes exact for boxes in
    general position and through-holes, a post across a guide (power, reciprocity), and an iris
    made of two subtracted plates against mode matching (oracle `boolean-iris`); an H-plane step read
-   from STL against mode matching (oracle `imported-step`) and the readers' hostile-file tests. The curved elements' identities — duality to curved edges, gradients
+   from STL against mode matching (oracle `imported-step`) and the readers' hostile-file tests; the
+   same iris imported from SolidCraft as plates touching the guide's walls (oracle
+   `imported-iris-touching`) and as the metal block around its channel, the region the air it
+   encloses (`region: cavity`, oracle `imported-iris-cavity`), both against the same mode matching;
+   every mesh checked for degenerate or inverted tetrahedra where it is made. The curved elements' identities — duality to curved edges, gradients
    in the curl's kernel, tangential continuity across a curved face — are tested in
    `emcraft-fem`. The mesher's own 126 tests came with it (`crates/tetmesh`).
 8. **Adaptive refinement** (`crates/solver/tests/adapt.rs`, the oracle): the residual indicator
