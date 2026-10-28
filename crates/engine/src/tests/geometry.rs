@@ -263,3 +263,30 @@ fn an_open_part_gets_air_and_a_layer_a_quarter_wavelength_each() {
     assert!(s.execute("geometry.import", &json!({"path": path, "open": true, "margin": 8, "thickness": 8})).is_err());
     assert!(s.execute("geometry.import", &json!({"path": path, "open": true, "region": "Post"})).is_err());
 }
+
+#[test]
+fn coupled_strips_keep_apart_and_hostile_ones_are_refused() {
+    // A parallel-coupled section: two strips side by side 0.3 mm apart over part of their length,
+    // each ending inside the box; a T where a stub meets a line edge to edge.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.2})).unwrap();
+    let guide = |strips: serde_json::Value| json!({"width": 12, "height": 2, "sections": [{"length": 16, "material": "ptfe"}], "strips": strips});
+    let a = json!({"y": 1, "x0": 4, "width": 1.5, "z0": 0, "z1": 12});
+    s.execute("geometry.waveguide", &guide(json!([a, {"y": 1, "x0": 5.8, "width": 1.5, "z0": 4, "z1": 16}]))).unwrap();
+    s.execute("geometry.waveguide", &guide(json!([a, {"y": 1, "x0": 5.5, "width": 3, "z0": 5, "z1": 6}]))).unwrap();
+    let before = s.model.clone();
+    // Overlapping, the same strip twice, a gap no mesh resolves across x and along z, NaN by an
+    // expression, an infinite width: refused, the model as it was, nothing panics.
+    for bad in [
+        json!([a, {"y": 1, "x0": 5, "width": 1.5, "z0": 4, "z1": 16}]),
+        json!([a, a]),
+        json!([a, {"y": 1, "x0": 5.500001, "width": 1.5, "z0": 4, "z1": 16}]),
+        json!([a, {"y": 1, "x0": 4, "width": 1.5, "z0": 12.0000001, "z1": 16}]),
+        json!([a, {"y": 1, "x0": "=0/0", "width": 1.5, "z0": 4, "z1": 16}]),
+        json!([a, {"y": 1, "x0": 6, "width": f64::INFINITY, "z0": 4, "z1": 16}]),
+    ] {
+        let r = s.execute("geometry.waveguide", &guide(bad.clone()));
+        assert!(r.is_err() && !matches!(r, Err(EngineError::Panicked(_))), "{bad}: {r:?}");
+        assert_eq!(s.model, before);
+    }
+}

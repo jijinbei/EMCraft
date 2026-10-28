@@ -179,7 +179,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             req("height", K::Number, "narrow wall b (y)").of(L),
             req("sections", K::Array, "`[{\"length\", \"material\", \"width\"?, \"offset\"?}]` from z = 0: a section may narrow the broad wall to an aperture `width` wide (lengths), starting at x = `offset` (centred when left out)"),
             opt("layers", K::Array, "`[{\"thickness\", \"material\"}]` from y = 0 up, across the whole guide (lengths); above them each section's material"),
-            opt("strips", K::Array, "`[{\"y\", \"x0\", \"width\", \"z0\"?, \"z1\"?}]`: conducting strips of no thickness, [x0, x0 + width] × [z0, z1] on the plane y (lengths; z0, z1 the guide's ends when left out)"),
+            opt("strips", K::Array, "`[{\"y\", \"x0\", \"width\", \"z0\"?, \"z1\"?}]`: conducting strips of no thickness, [x0, x0 + width] × [z0, z1] on the plane y (lengths; z0, z1 the guide's ends when left out); strips on one plane meet edge to edge (one conductor: a T, a step in width) or keep a gap of at least 1e-4 of the guide, never overlap: side by side a gap apart they are coupled lines (a port holding n strips has n quasi-TEM modes, even and odd for two)"),
             opt("vias", K::Array, "`[{\"x0\", \"z0\", \"wx\", \"wz\", \"y0\"?, \"y1\"?}]`: conducting rectangular posts [x0, x0 + wx] × [y0, y1] × [z0, z0 + wz], solid metal (lengths; y0 = 0 and y1 = the height when left out: a post from the ground plane, through a strip on its way, to the top); a via from the ground to a strip ends at the strip's y"),
         ],
         effect: Effect::Record,
@@ -475,7 +475,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.port_modes",
         label: "Port modes",
-        doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with one conductor besides the ground (coaxial, strip) — the characteristic impedance by power and current (Ω) when it propagates; the attenuation (dB per length unit) when it does not.",
+        doc: "Each port's modes at one frequency, from the meshed model without solving the volume: the closed forms for a whole rectangle or circle of one material, the cross-section solver elsewhere. Per mode: the propagation constant β (radians per length unit), the effective permittivity (β/k₀)² and — for a line with conductors besides the ground (coaxial, strips) — the characteristic impedance by power and current per conductor, 2P/Σ|I|² (Ω), when it propagates (several strips in one dielectric: their TEM modes split into those of orthogonal currents, the even mode then the odd for two coupled strips, Z0e and Z0o); the attenuation (dB per length unit) when it does not.",
         params: &[
             BAND_TOP,
             PORT_SOLVER_ORDER,
