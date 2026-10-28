@@ -1,0 +1,21 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "s21_high": {
+      "band": 0.000010000561694320016,
+      "value": 0.5616933200152644
+    },
+    "s21_low": {
+      "band": 0.000010000557630756258,
+      "value": 0.5574322506064783
+    },
+    "s21_quarter": {
+      "band": 0.000010000572499396039,
+      "value": 0.5724983960367871
+    },
+    "s21_quarter_deg": {
+      "band": 0.0030001495471113685,
+      "value": -149.5471103683174
+    }
+  }
+}
