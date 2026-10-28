@@ -1,6 +1,17 @@
 //! Waveguide ports prepared for solving: their faces, their modes (closed forms, or the
 //! cross-section solver's of [`crate::portmode`]) and the parity the model's symmetry planes
 //! keep.
+//!
+//! **Ports in lossy media.** A port whose cross-section is filled with one absorbing or
+//! dispersive material — a loss tangent, a magnetic loss tangent, poles — has modes of a
+//! complex k² = k₀² εr(ω) μr(1 − j tan δ_m): with one material across the aperture the modes'
+//! transverse patterns and cut-offs k_c are those of the lossless guide, and only their
+//! propagation constants γ = √(k_c² − k²) = α + jβ and the factors κ = γ (TE, TEM) or −k²/γ (TM)
+//! become complex (J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., Wiley
+//! 2014, §8.5; Pozar §3.1). Closed-form apertures take γ directly; a cross-section solved
+//! numerically is solved with a unit filling and each mode told TE (or TEM) from TM by its
+//! scalar part. A cross-section of several materials of which one absorbs has truly hybrid
+//! lossy modes, which are not supported yet.
 
 use std::collections::HashSet;
 
@@ -13,11 +24,8 @@ use super::assembly::{FaceRule, Space, port_rule_points};
 use super::{NONE, Result, SolveError, check_frequency, invalid, wavenumber};
 use crate::portmode::CrossSection;
 
-/// Why a port may not lie in a dispersive material.
-const DISPERSIVE_PORT: &str =
-    "not supported yet: a port in a dispersive material (end the guide with a section of a non-dispersive, lossless material)";
-/// Why a port may not lie in a lossy material.
-const LOSSY_PORT: &str = "not supported yet: a port in a lossy material (end the guide with a lossless section)";
+/// Why a numerically solved port may not cross several materials one of which absorbs.
+const MIXED_LOSSY_PORT: &str = "not supported yet: a port whose cross-section holds several materials, one of them lossy or dispersive (its modes are hybrid and lossy); fill the port's cross-section with one material, or end the guide with lossless sections";
 
 /// A port prepared for solving.
 #[derive(Clone, Debug)]
@@ -37,8 +45,9 @@ pub enum PortModes {
     /// A whole rectangle or circle of one material (εr, μr): each mode with its vector
     /// v_m,i = ∫ Nᵢ · e_m dS (unknown, value) over the faces meshed; `fraction` of the
     /// aperture is meshed (1, or ½ per symmetry plane), so a mode's norm there is that fraction
-    /// of the whole aperture's.
-    Analytic { eps_r: f64, mu_r: f64, modes: Vec<(Mode, Vec<(usize, f64)>)>, fraction: f64 },
+    /// of the whole aperture's. `medium` holds the material when it absorbs or disperses (its
+    /// complex εr(ω) and μr then set the modes' γ at each frequency).
+    Analytic { eps_r: f64, mu_r: f64, medium: Option<Box<Material>>, modes: Vec<(Mode, Vec<(usize, f64)>)>, fraction: f64 },
     /// Any other cross-section; its modes depend on the frequency and are solved with it.
     Numeric(Box<NumericPort>),
     /// A Floquet port on an end of a periodic cell ([`super::floquet`]): plane-wave harmonics
@@ -56,6 +65,10 @@ pub struct NumericPort {
     pub(super) count: usize,
     /// The unknowns with a tangential trace on the port, ascending.
     pub(super) support: Vec<usize>,
+    /// The one material filling the cross-section when it absorbs or disperses: the section
+    /// is then solved with a unit filling, and the modes' γ come from this material's
+    /// complex k² ([`super::terms`]).
+    pub(super) medium: Option<Material>,
 }
 
 /// A port mode at a frequency: its name and β² (rad²/m²; negative when evanescent).
@@ -68,6 +81,22 @@ pub struct ModeInfo {
     /// The characteristic impedance by power and current (Ω), for a propagating mode of a
     /// cross-section with one conductor besides the ground (a TEM or quasi-TEM line).
     pub impedance: Option<f64>,
+    /// In a lossy or dispersive medium, the complex propagation constant γ = α + jβ (1/m);
+    /// `beta2` is then −Re γ² = β² − α².
+    pub gamma: Option<num_complex::Complex64>,
+}
+
+/// k² = k₀² εr(ω) μr(1 − j tan δ_m) (1/m²) and μr(1 − j tan δ_m) of a port's lossy medium at
+/// `frequency` (Hz).
+pub(super) fn lossy_k2(m: &Material, frequency: f64) -> (num_complex::Complex64, num_complex::Complex64) {
+    let k0 = wavenumber(frequency);
+    let mu = m.mu_c();
+    (m.eps_at(frequency) * mu * (k0 * k0), mu)
+}
+
+/// A port's medium when it absorbs or disperses, `None` when it is lossless.
+fn lossy_medium(m: &Material) -> Option<Material> {
+    m.is_lossy().then(|| m.clone())
 }
 
 fn what(p: &Port) -> String {
@@ -78,22 +107,6 @@ fn what(p: &Port) -> String {
 /// gives them (asked for, or not a whole rectangle or circle of one material).
 fn closed_form_shape(model: &Model, p: &Port) -> Option<PortShape> {
     if p.mode_solver == ModeSolver::Numeric { None } else { model.port_shape_of(p).ok() }
-}
-
-fn refuse_dispersive(p: &Port, m: &Material) -> Result<()> {
-    if m.is_dispersive() {
-        return Err(invalid(what(p), DISPERSIVE_PORT));
-    }
-    Ok(())
-}
-
-/// A port's medium must be lossless and not dispersive (its modes are those of a real
-/// permittivity).
-fn refuse_lossy_or_dispersive(p: &Port, m: &Material) -> Result<()> {
-    if m.loss_tangent != 0.0 {
-        return Err(invalid(what(p), LOSSY_PORT));
-    }
-    refuse_dispersive(p, m)
 }
 
 /// Which of a port face point's basis values have a tangential trace on the face (the plane
@@ -177,7 +190,6 @@ pub(super) fn for_each_port_point(space: Space, faces: &[usize], mut visit: impl
 /// their vectors.
 fn analytic_port(model: &Model, p: &Port, shape: PortShape, space: &Space, faces: &[usize]) -> Result<PortModes> {
     let m = model.port_material(p.end)?;
-    refuse_lossy_or_dispersive(p, m)?;
     let list = port_mode_list(model, p, shape)?;
     let n = space.dofs.unknowns;
     let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; n]; list.len()];
@@ -194,7 +206,8 @@ fn analytic_port(model: &Model, p: &Port, shape: PortShape, space: &Space, faces
     })?;
     let support: Vec<usize> = (0..n).filter(|&u| touched[u]).collect();
     let modes = list.into_iter().zip(vectors).map(|(mode, v)| (mode, support.iter().map(|&u| (u, v[u])).collect())).collect();
-    Ok(PortModes::Analytic { eps_r: m.eps_r, mu_r: m.mu_r, modes, fraction: model.symmetry_fraction() })
+    let medium = lossy_medium(m).map(Box::new);
+    Ok(PortModes::Analytic { eps_r: m.eps_r, mu_r: m.mu_r, medium, modes, fraction: model.symmetry_fraction() })
 }
 
 /// A closed-form port's modes: the lowest `p.modes` of its aperture, of those the model's
@@ -265,11 +278,11 @@ pub(super) fn symmetric_impedance(planes: &[Symmetry], z: Option<f64>) -> Option
 /// A port of any other cross-section: its faces as the triangles of a [`crate::portmode`]
 /// problem, materials from the tetrahedra behind them, and the unknowns with a trace there.
 fn numeric_port(model: &Model, p: &Port, space: &Space, faces: &[usize]) -> Result<NumericPort> {
-    let section = cross_section(model, p, space.mesh, space.order(), faces)?;
+    let (section, medium) = cross_section(model, p, space.mesh, space.order(), faces)?;
     // The unknowns with a tangential trace on the faces (as for the closed forms).
     let mut touched = std::collections::BTreeSet::new();
     for_each_port_point(*space, faces, |_, _, traced| touched.extend(traced.iter().map(|(u, _)| *u)))?;
-    Ok(NumericPort { section, faces: faces.to_vec(), count: p.modes as usize, support: touched.into_iter().collect() })
+    Ok(NumericPort { section, faces: faces.to_vec(), count: p.modes as usize, support: touched.into_iter().collect(), medium })
 }
 
 /// A triangle's edges, each by its two nodes in ascending order.
@@ -278,8 +291,9 @@ fn sorted_edges(t: [u32; 3]) -> [[u32; 2]; 3] {
 }
 
 /// A port's cross-section from its faces: materials from the tetrahedra behind them, conductors
-/// where wall faces meet it, edges bent as the volume's.
-fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[usize]) -> Result<CrossSection> {
+/// where wall faces meet it, edges bent as the volume's; with the material filling it when that
+/// one absorbs or disperses (the section then has a unit filling, see the module's notes).
+fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[usize]) -> Result<(CrossSection, Option<Material>)> {
     let mut global: Vec<u32> = faces.iter().filter_map(|&f| mesh.boundary.get(f)).flat_map(|b| b.nodes).collect();
     global.sort_unstable();
     global.dedup();
@@ -287,17 +301,25 @@ fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[us
     let nodes = global.iter().map(|&g| mesh.node(g).ok_or_else(|| invalid(what(p), "a face's node is missing"))).collect::<Result<Vec<_>>>()?;
     let mut tris = Vec::with_capacity(faces.len());
     let (mut eps, mut mu) = (Vec::with_capacity(faces.len()), Vec::with_capacity(faces.len()));
+    let mut kinds = std::collections::BTreeSet::new();
     for &f in faces {
         let b = mesh.boundary.get(f).ok_or_else(|| invalid(what(p), "a face is missing from the mesh"))?;
         tris.push([local(b.nodes[0])?, local(b.nodes[1])?, local(b.nodes[2])?]);
-        let m = mesh
-            .tet_material
-            .get(b.tet as usize)
-            .and_then(|&m| model.materials.get(m as usize))
-            .ok_or_else(|| invalid(what(p), "a face has no material behind it"))?;
-        refuse_lossy_or_dispersive(p, m)?;
+        let k = mesh.tet_material.get(b.tet as usize).copied().ok_or_else(|| invalid(what(p), "a face has no material behind it"))?;
+        let m = model.materials.get(k as usize).ok_or_else(|| invalid(what(p), "a face has no material behind it"))?;
+        kinds.insert(k);
         eps.push(m.eps_r);
         mu.push(m.mu_r);
+    }
+    let lossy: Vec<&Material> = kinds.iter().filter_map(|&k| model.materials.get(k as usize)).filter(|m| m.is_lossy()).collect();
+    let medium = match (kinds.len(), lossy.first()) {
+        (_, None) => None,
+        (1, Some(m)) => Some((*m).clone()),
+        _ => return Err(invalid(what(p), MIXED_LOSSY_PORT)),
+    };
+    if medium.is_some() {
+        // One material throughout: the section's modes with a unit filling.
+        eps.iter_mut().chain(mu.iter_mut()).for_each(|v| *v = 1.0);
     }
     // Edges of the faces bent onto a curved wall, by local nodes.
     let mut curved = std::collections::BTreeMap::new();
@@ -318,7 +340,12 @@ fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[us
     let conductors = edges_on(&|i, b| !own.contains(&i) && b.tag == Boundary::Pec);
     // Its rim on a magnetic symmetry plane is free (the natural condition), not a wall.
     let magnetic = edges_on(&|_, b| b.tag == Boundary::Symmetry(SymmetryKind::Magnetic));
-    CrossSection::with_free_rim(order, nodes, tris, eps, mu, &conductors, &magnetic, &curved)
+    Ok((CrossSection::with_free_rim(order, nodes, tris, eps, mu, &conductors, &magnetic, &curved)?, medium))
+}
+
+/// The mode information of a closed-form mode in a lossy medium of k² `k2`.
+fn lossy_info(name: String, gamma: num_complex::Complex64) -> ModeInfo {
+    ModeInfo { name, beta2: -(gamma * gamma).re, closed_form: true, impedance: None, gamma: Some(gamma) }
 }
 
 /// Each port's modes at `frequency` (Hz), from the meshed model, without assembling the
@@ -337,25 +364,42 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
             let list = match closed_form_shape(model, p) {
                 Some(shape) => {
                     let m = model.port_material(p.end)?;
-                    refuse_dispersive(p, m)?;
-                    let k = k0 * (m.eps_r * m.mu_r).sqrt();
                     let modes = port_mode_list(model, p, shape)?;
-                    modes
-                        .iter()
-                        .map(|md| ModeInfo { name: md.name(), beta2: k * k - md.cutoff().powi(2), closed_form: true, impedance: None })
-                        .collect()
+                    if m.is_lossy() {
+                        let (k2, _) = lossy_k2(m, frequency);
+                        modes.iter().map(|md| lossy_info(md.name(), md.gamma_lossy(k2))).collect()
+                    } else {
+                        let k = k0 * (m.eps_r * m.mu_r).sqrt();
+                        modes
+                            .iter()
+                            .map(|md| ModeInfo {
+                                name: md.name(),
+                                beta2: k * k - md.cutoff().powi(2),
+                                closed_form: true,
+                                impedance: None,
+                                gamma: None,
+                            })
+                            .collect()
+                    }
                 }
                 None => {
-                    let section = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
-                    section
-                        .modes(k0, p.modes as usize)?
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, m)| {
-                            let impedance = symmetric_impedance(&model.symmetry, section.impedance(&m, k0)?);
-                            Ok(ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false, impedance })
-                        })
-                        .collect::<Result<Vec<_>>>()?
+                    let (section, medium) = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
+                    match medium {
+                        Some(m) => crate::driven::terms::lossy_section_modes(&section, &m, frequency, p.modes as usize)?
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, lm)| ModeInfo { closed_form: false, ..lossy_info(format!("mode {}", i + 1), lm.gamma) })
+                            .collect(),
+                        None => section
+                            .modes(k0, p.modes as usize)?
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, m)| {
+                                let impedance = symmetric_impedance(&model.symmetry, section.impedance(&m, k0)?);
+                                Ok(ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false, impedance, gamma: None })
+                            })
+                            .collect::<Result<Vec<_>>>()?,
+                    }
                 }
             };
             Ok((p.name.clone(), list))
@@ -401,7 +445,13 @@ pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usiz
         let list = port_mode_list(model, p, shape)?;
         let md = list.get(mode).ok_or_else(|| invalid(what(p), format!("has {} modes, not {}", list.len(), mode + 1)))?;
         let m = model.port_material(p.end)?;
-        let k = wavenumber(frequency) * (m.eps_r * m.mu_r).sqrt();
+        let beta2 = if m.is_lossy() {
+            let g = md.gamma_lossy(lossy_k2(m, frequency).0);
+            -(g * g).re
+        } else {
+            let k = wavenumber(frequency) * (m.eps_r * m.mu_r).sqrt();
+            k * k - md.cutoff().powi(2)
+        };
         let (x, y, inside): ((f64, f64), (f64, f64), Box<dyn Fn(f64, f64) -> bool>) = match shape {
             PortShape::Rect { x0, y0, a, b } => ((x0, x0 + a), (y0, y0 + b), Box::new(|_, _| true)),
             PortShape::Circle { cx, cy, r } => {
@@ -410,12 +460,26 @@ pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usiz
         };
         let (nx, ny, points) = grid(x, y);
         let e = points.iter().map(|&(px, py)| if inside(px, py) { md.field(px, py) } else { [f64::NAN; 2] }).collect();
-        return Ok(ModePattern { name: md.name(), beta2: k * k - md.cutoff().powi(2), x, y, nx, ny, e });
+        return Ok(ModePattern { name: md.name(), beta2, x, y, nx, ny, e });
     }
     let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
-    let section = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
-    let modes = section.modes(wavenumber(frequency), p.modes as usize)?;
+    let (section, medium) = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
+    let (modes, beta2): (Vec<crate::portmode::PortMode>, Vec<f64>) = match &medium {
+        Some(m) => crate::driven::terms::lossy_section_modes(&section, m, frequency, p.modes as usize)?
+            .into_iter()
+            .map(|lm| {
+                let b2 = -(lm.gamma * lm.gamma).re;
+                (lm.mode, b2)
+            })
+            .unzip(),
+        None => {
+            let modes = section.modes(wavenumber(frequency), p.modes as usize)?;
+            let b2 = modes.iter().map(|m| m.beta2).collect();
+            (modes, b2)
+        }
+    };
     let md = modes.get(mode).ok_or_else(|| invalid(what(p), format!("has {} modes, not {}", modes.len(), mode + 1)))?;
+    let md_beta2 = beta2.get(mode).copied().unwrap_or(md.beta2);
     let (lo, hi) = section
         .nodes
         .iter()
@@ -433,5 +497,5 @@ pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usiz
             None => [f64::NAN; 2],
         });
     }
-    Ok(ModePattern { name: format!("mode {}", mode + 1), beta2: md.beta2, x, y, nx, ny, e })
+    Ok(ModePattern { name: format!("mode {}", mode + 1), beta2: md_beta2, x, y, nx, ny, e })
 }

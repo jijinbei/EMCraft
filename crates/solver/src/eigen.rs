@@ -18,11 +18,14 @@
 //! x − Z (ZᵀMZ)⁻¹ ZᵀM x, M-orthogonal to them. The zero eigenvalue then cannot crowd the
 //! subspace, so modes far above the shift come as readily as those near it.
 //!
-//! **Lossy dielectrics** make M complex, ε = ε′(1 − j tan δ): the eigenvalues k² are then
-//! complex, and the iteration runs in complex arithmetic — (K − σM)⁻¹ is complex symmetric,
-//! the Rayleigh–Ritz projection uses the unconjugated YᵀKY, YᵀMY, its small non-Hermitian
-//! problem goes to [`crate::zdense`]. Each mode's complex frequency ω = c√(k²) gives the
-//! dielectric's Q exactly, Q_d = Re ω / (2 Im ω), not by perturbation.
+//! **Lossy dielectrics** make M complex, ε = ε′(1 − j tan δ), and **magnetic losses** K,
+//! μ = μ′(1 − j tan δ_m): the eigenvalues k² are then complex, and the iteration runs in
+//! complex arithmetic — (K − σM)⁻¹ is complex symmetric, the Rayleigh–Ritz projection uses the
+//! unconjugated YᵀKY, YᵀMY, its small non-Hermitian problem goes to [`crate::zdense`]. Each
+//! mode's complex frequency ω = c√(k²) gives the materials' Q exactly, Q = Re ω / (2 Im ω), not
+//! by perturbation. With both kinds of loss it is shared between Q_d and Q_m in proportion to
+//! the powers ½ωε₀∫ε″|E|² and ½ωμ₀∫μ″|H|² the mode's field puts into each, so that
+//! 1/Q_d + 1/Q_m = 1/Q; with one kind the exact Q is that kind's.
 //!
 //! **Q factors** of the walls come by perturbation (D. M. Pozar, *Microwave Engineering*, 4th ed., §6.7):
 //! with the lossless mode, Q_c = ωU/P_c from the walls' ½R_s∫|H_t|² and Q_d = ωU/P_d from the
@@ -51,15 +54,16 @@ pub struct Mode {
     pub frequency: f64,
     /// The field coefficients (real), of unit M-norm (xᵀMx = 1).
     pub vector: Vec<C>,
-    /// Q of the walls and of the dielectrics (`None` when lossless).
+    /// Q of the walls, of the dielectrics and of the magnetic losses (`None` when lossless).
     pub q_walls: Option<f64>,
     pub q_dielectric: Option<f64>,
+    pub q_magnetic: Option<f64>,
 }
 
 impl Mode {
-    /// The total Q, 1/Q = 1/Q_c + 1/Q_d.
+    /// The total Q, 1/Q = 1/Q_c + 1/Q_d + 1/Q_m.
     pub fn q(&self) -> Option<f64> {
-        let inv = self.q_walls.map_or(0.0, |q| 1.0 / q) + self.q_dielectric.map_or(0.0, |q| 1.0 / q);
+        let inv = [self.q_walls, self.q_dielectric, self.q_magnetic].iter().map(|q| q.map_or(0.0, |q| 1.0 / q)).sum::<f64>();
         (inv > 0.0).then(|| 1.0 / inv)
     }
 }
@@ -210,7 +214,7 @@ pub struct Eigen {
 #[derive(Clone, Copy)]
 struct Matrices<'a> {
     pattern: &'a Csr,
-    stiffness: &'a [f64],
+    stiffness: &'a [C],
     mass: &'a [C],
 }
 
@@ -240,9 +244,9 @@ trait Arithmetic {
     fn settled(now: Self::Value, before: Self::Value) -> bool;
     /// The resonant frequency (Hz).
     fn frequency(value: Self::Value) -> f64;
-    /// The dielectric's Q: exactly from the complex frequency, or by perturbation, ω U / P_d,
-    /// `omega_u` being ω U.
-    fn q_dielectric(driven: &Driven, vector: &[C], value: Self::Value, frequency: f64, omega_u: f64) -> Result<Option<f64>>;
+    /// The materials' Q (dielectric, magnetic): exactly from the complex frequency, or by
+    /// perturbation, ω U / P_d, `omega_u` being ω U.
+    fn q_materials(driven: &Driven, vector: &[C], value: Self::Value, frequency: f64, omega_u: f64) -> Result<(Option<f64>, Option<f64>)>;
 }
 
 /// A lossless cavity: everything real.
@@ -282,7 +286,7 @@ impl Arithmetic for Real {
     fn shifted(m: Matrices, sigma: f64) -> Csr {
         let mut a = m.pattern.clone();
         for (k, x) in a.val.iter_mut().enumerate() {
-            *x = C::new(m.stiffness[k] - sigma * m.mass[k].re, 0.0);
+            *x = C::new(m.stiffness[k].re - sigma * m.mass[k].re, 0.0);
         }
         a
     }
@@ -292,7 +296,7 @@ impl Arithmetic for Real {
     }
 
     fn kmul(m: Matrices, v: &[C]) -> Vec<C> {
-        mul_real(m.pattern, |k| m.stiffness[k], v)
+        mul_real(m.pattern, |k| m.stiffness[k].re, v)
     }
 
     fn mmul(m: Matrices, v: &[C]) -> Vec<C> {
@@ -327,9 +331,9 @@ impl Arithmetic for Real {
         value.sqrt() * C0 / (2.0 * PI)
     }
 
-    fn q_dielectric(driven: &Driven, vector: &[C], _: f64, frequency: f64, omega_u: f64) -> Result<Option<f64>> {
+    fn q_materials(driven: &Driven, vector: &[C], _: f64, frequency: f64, omega_u: f64) -> Result<(Option<f64>, Option<f64>)> {
         let pd = driven.dielectric_loss(vector, frequency)?;
-        Ok((pd > 0.0).then(|| omega_u / pd))
+        Ok(((pd > 0.0).then(|| omega_u / pd), None))
     }
 }
 
@@ -339,7 +343,7 @@ impl Arithmetic for Complex {
     fn shifted(m: Matrices, sigma: f64) -> Csr {
         let mut a = m.pattern.clone();
         for (k, x) in a.val.iter_mut().enumerate() {
-            *x = C::new(m.stiffness[k], 0.0) - m.mass[k] * sigma;
+            *x = m.stiffness[k] - m.mass[k] * sigma;
         }
         a
     }
@@ -399,9 +403,19 @@ impl Arithmetic for Complex {
         complex_omega(value).re / (2.0 * PI)
     }
 
-    fn q_dielectric(_: &Driven, _: &[C], value: C, _: f64, _: f64) -> Result<Option<f64>> {
+    fn q_materials(driven: &Driven, vector: &[C], value: C, frequency: f64, _: f64) -> Result<(Option<f64>, Option<f64>)> {
         let omega = complex_omega(value);
-        Ok((omega.im.abs() > 0.0).then(|| omega.re / (2.0 * omega.im.abs())))
+        if !(omega.im.abs() > 0.0) {
+            return Ok((None, None));
+        }
+        let q = omega.re / (2.0 * omega.im.abs());
+        let (pd, pm) = (driven.dielectric_loss(vector, frequency)?, driven.magnetic_loss(vector, frequency)?);
+        Ok(match (pd > 0.0, pm > 0.0) {
+            (true, false) => (Some(q), None),
+            (false, true) => (None, Some(q)),
+            (true, true) => (Some(q * (pd + pm) / pd), Some(q * (pd + pm) / pm)),
+            (false, false) => (Some(q), None),
+        })
     }
 }
 
@@ -531,8 +545,8 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
             Some(s) => Some(omega * u / driven.wall_loss_perturbation(&vector, frequency, s)?),
             None => None,
         };
-        let q_dielectric = A::q_dielectric(driven, &vector, lambda, frequency, omega * u)?;
-        modes.push(Mode { frequency, vector, q_walls, q_dielectric });
+        let (q_dielectric, q_magnetic) = A::q_materials(driven, &vector, lambda, frequency, omega * u)?;
+        modes.push(Mode { frequency, vector, q_walls, q_dielectric, q_magnetic });
     }
     modes.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
     Ok((modes, iterations))
@@ -602,13 +616,13 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
             "not supported yet: eigenmodes of a cavity with dispersive materials (its eigenproblem is nonlinear in the frequency)",
         ));
     }
-    let (pattern, _, mass) = driven.matrices();
+    let (pattern, stiffness, mass) = driven.matrices();
     if pattern.n == 0 {
         return Err(SolveError::NotReady("the cavity has no unknowns".into()));
     }
     let k_near = wavenumber(near);
     let sigma = k_near * k_near;
-    let lossy = mass.iter().any(|m| m.im != 0.0);
+    let lossy = mass.iter().any(|m| m.im != 0.0) || stiffness.iter().any(|k| k.im != 0.0);
     let (modes, iterations) = if lossy { iterate::<Complex>(model, &driven, count, sigma)? } else { iterate::<Real>(model, &driven, count, sigma)? };
     Ok(Eigen { driven, modes, iterations })
 }

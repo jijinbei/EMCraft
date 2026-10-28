@@ -102,7 +102,7 @@ impl Grid {
     /// wave).
     pub(crate) fn new(model: &Model, o: &Options, reference: bool, freqs: &[f64]) -> Result<Grid> {
         let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
-        if model.wall_conductivity.is_some() || model.materials.iter().any(|m| m.loss_tangent != 0.0) {
+        if model.wall_conductivity.is_some() || model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.is_magnetically_lossy()) {
             return Err(FdtdError::Unsupported("losses in the time domain".into()));
         }
         // Dispersive materials in the model's order (deterministic), none at the ports.

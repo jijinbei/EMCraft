@@ -33,6 +33,18 @@ impl Driven {
         Ok(0.5 * omega * eps0() * total)
     }
 
+    /// The power (W) the magnetically lossy materials absorb for the coefficients `x`:
+    /// ½ ω μ₀ ∫ μ″ |H|² dV, μ = μ′ − jμ″ (fields in peak values).
+    pub fn magnetic_loss(&self, x: &[C], frequency: f64) -> Result<f64> {
+        if !self.media.magnetically_lossy() {
+            return Ok(0.0);
+        }
+        let omega = 2.0 * PI * frequency;
+        let loss = |t: usize| -self.mu_of(t).im;
+        let total = self.integrate_field(x, frequency, Field::H, |t| loss(t) != 0.0, |t, h| loss(t) * h.norm_sqr())?;
+        Ok(0.5 * omega * MU0 * total)
+    }
+
     /// The power (W) walls of conductivity `sigma` would absorb for a field computed with
     /// perfectly conducting walls: ½ R_s ∫ |H_t|² dS (the perturbation estimate).
     pub fn wall_loss_perturbation(&self, x: &[C], frequency: f64, sigma: f64) -> Result<f64> {

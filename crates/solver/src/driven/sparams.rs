@@ -11,15 +11,25 @@ use crate::smatrix::SMatrix;
 /// S read from the solutions of each port's excitation (`fields[q]`): the first mode's
 /// coefficient at each port, less the incident wave, as power waves of the modes (scaled by
 /// the ports' power proxies).
+///
+/// In lossy port media the proxies are complex (the modes' unconjugated powers, see
+/// [`PortTerm::proxy`]) and √(P_p/P_q) is taken on the principal branch: the waves are then the
+/// pseudo-waves of R. B. Marks and D. F. Williams (*A general waveguide circuit theory*, J. Res.
+/// NIST 97(5):533–562, 1992) referred to each port's own characteristic (wave) impedance, with
+/// the normalisation that keeps S symmetric for a reciprocal structure. For lossless ports they
+/// are the power waves; for equal port media the normalisation cancels and S is the ratio of the
+/// modes' amplitudes, |S21| = e^{−αL} along a uniform line. (Power waves of a lossy line would
+/// not be reciprocal, Marks & Williams §4.)
 pub(crate) fn read_s(terms: &[Vec<PortTerm<'_>>], fields: &[Vec<C>]) -> SMatrix {
-    let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
+    let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(C::new(1.0, 0.0), |t| t.proxy);
     let mut s = SMatrix::zeros(terms.len());
     for (q, x) in fields.iter().enumerate() {
         for (p, list) in terms.iter().enumerate() {
             let Some(t) = list.first() else { continue };
             let c = t.coefficient(x);
             let direct = if p == q { c - 1.0 } else { c };
-            s[(p, q)] = direct * (proxy(p) / proxy(q)).sqrt();
+            let (pp, pq) = (proxy(p), proxy(q));
+            s[(p, q)] = if pp.im == 0.0 && pq.im == 0.0 { direct * (pp.re / pq.re).sqrt() } else { direct * (pp / pq).sqrt() };
         }
     }
     s

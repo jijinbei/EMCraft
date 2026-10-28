@@ -185,3 +185,10 @@ fn dispersion_is_refused_where_unsupported() {
     let m = with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.01, "fast"), Section::new(0.01, "vacuum")], vec![fast]);
     assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
 }
+
+#[test]
+fn magnetic_losses_are_refused_in_the_time_domain() {
+    let lossy = Material::new("ferrite", 1.0, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
+    let m = with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.01, "ferrite"), Section::new(0.01, "vacuum")], vec![lossy]);
+    assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
+}

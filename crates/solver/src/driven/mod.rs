@@ -39,6 +39,15 @@
 //! (times √(P_p/P_q), P = ‖e‖² β/μ the power of a unit wave), so S is unitary for a lossless
 //! structure even when the ports' media or apertures differ.
 //!
+//! **Losses.** A lossy dielectric makes the mass matrix complex, εr(1 − j tan δ); a magnetic
+//! loss tangent the curl–curl matrix, μr⁻¹ → (μr(1 − j tan δ_m))⁻¹, so K is complex too (the
+//! system stays complex symmetric). A port may lie in a lossy or dispersive material that fills
+//! its cross-section: its modes then have complex γ = α + jβ and κ (`ports`), and S is read
+//! as pseudo-waves referred to each port's own wave impedance (R. B. Marks, D. F. Williams,
+//! *A general waveguide circuit theory*, J. Res. NIST 97(5), 1992), normalised by the modes'
+//! unconjugated powers so that S stays reciprocal — the power waves when the ports are
+//! lossless (`sparams`). De-embedding moves the planes by the complex γ, attenuation included.
+//!
 //! **Dispersive materials.** A material with Debye, Lorentz or Drude poles
 //! ([`emcraft_model::Pole`]) has a permittivity εr(ω) of its own at each frequency. Its
 //! tetrahedra are kept out of the assembled mass matrix: each dispersive material has its own
@@ -148,7 +157,7 @@ pub struct Driven {
     /// Each tetrahedron's permittivity and permeability.
     pub(crate) media: Media,
     pub(crate) pattern: Csr,
-    pub(crate) stiffness: Vec<f64>,
+    pub(crate) stiffness: Vec<C>,
     /// The mass matrix of the non-dispersive tetrahedra, weighted by their complex permittivity.
     pub(crate) mass: Vec<C>,
     /// Per dispersive material ([`Media::dispersive_materials`], in that order), its
@@ -418,7 +427,7 @@ impl Driven {
         !self.media.dispersive_materials().is_empty()
     }
 
-    pub(crate) fn mu_of(&self, t: usize) -> f64 {
+    pub(crate) fn mu_of(&self, t: usize) -> C {
         self.media.mu(t)
     }
 
@@ -429,9 +438,9 @@ impl Driven {
         self.unbordered(frequency)
     }
 
-    /// The curl–curl matrix K, the mass matrix M (complex permittivity) and their sparsity
-    /// pattern, for eigenmode analysis.
-    pub(crate) fn matrices(&self) -> (&Csr, &[f64], &[C]) {
+    /// The curl–curl matrix K (complex permeability), the mass matrix M (complex permittivity)
+    /// and their sparsity pattern, for eigenmode analysis.
+    pub(crate) fn matrices(&self) -> (&Csr, &[C], &[C]) {
         (&self.pattern, &self.stiffness, &self.mass)
     }
 }

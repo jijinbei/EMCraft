@@ -231,7 +231,7 @@ impl Driven {
                         if contrast.norm() == 0.0 || in_pml.contains(&t) {
                             continue;
                         }
-                        if self.mu_of(t) != 1.0 {
+                        if self.mu_of(t) != C::new(1.0, 0.0) {
                             return Err(invalid("plane wave", "not supported yet: magnetic scatterers (μr ≠ 1)"));
                         }
                         let el = self.element_of(t)?;

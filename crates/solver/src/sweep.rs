@@ -60,7 +60,7 @@ pub struct FastSweep {
 struct Basis {
     v: Vec<Vec<f64>>,
     /// K v and M v (and W v for walls of finite conductivity) per basis vector.
-    kv: Vec<Vec<f64>>,
+    kv: Vec<Vec<C>>,
     mv: Vec<Vec<C>>,
     wv: Vec<Vec<f64>>,
     /// M_d v per dispersive material d, per basis vector.
@@ -217,7 +217,7 @@ impl Reduced {
             .map(|j| {
                 (0..n)
                     .map(|i| {
-                        let mut x = C::new(basis.kv[j][i], 0.0) - basis.mv[j][i] * (k0 * k0);
+                        let mut x = basis.kv[j][i] - basis.mv[j][i] * (k0 * k0);
                         for (c, dv) in dispersive.iter().zip(&basis.dv[j]) {
                             x -= c * dv[i];
                         }

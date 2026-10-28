@@ -22,14 +22,7 @@ fn slab(size: f64) -> Model {
 }
 
 fn exact(f: f64) -> (emcraft_solver::Complex64, emcraft_solver::Complex64) {
-    let line = Te10Line {
-        a: A,
-        layers: vec![
-            Layer::lossless(0.01, 1.0, 1.0),
-            Layer::lossy(0.02, 2.2, 1.0, 0.02),
-            Layer::lossless(0.01, 1.0, 1.0),
-        ],
-    };
+    let line = Te10Line { a: A, layers: vec![Layer::lossless(0.01, 1.0, 1.0), Layer::lossy(0.02, 2.2, 1.0, 0.02), Layer::lossless(0.01, 1.0, 1.0)] };
     line.solve(f).unwrap().s_power()
 }
 
@@ -60,21 +53,24 @@ fn absorbed_power_balances_the_ports() {
 }
 
 #[test]
-fn a_port_in_a_lossy_material_is_refused() {
+fn a_port_across_a_lossy_layer_and_another_material_is_refused() {
+    // A lossy substrate under air: the port's modes would be hybrid and lossy.
     let mut m = Model::new();
     m.add_material(Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
         width: A,
         height: B,
-        sections: vec![Section::new(0.02, "lossy")],
-        layers: Vec::new(),
+        sections: vec![Section::new(0.02, "vacuum")],
+        layers: vec![emcraft_model::Layer { thickness: 0.003, material: "lossy".into() }],
         strips: Vec::new(),
         vias: Vec::new(),
     })
     .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
-    assert!(matches!(Driven::new(&m, Order::One), Err(SolveError::Invalid { .. })));
+    let e = Driven::new(&m, Order::One).unwrap_err();
+    assert!(matches!(e, SolveError::Invalid { .. }) && e.to_string().contains("not supported yet"), "{e}");
+    assert!(emcraft_solver::driven::port_modes(&m, Order::One, 10e9).is_err());
 }
 
 /// An empty WR-90 guide `length` long with walls of conductivity `sigma`.
@@ -158,11 +154,7 @@ fn dispersive_slab_matches_the_exact_cascade() {
         let e = dispersive_eps(f);
         let line = Te10Line {
             a: A,
-            layers: vec![
-                Layer::lossless(0.01, 1.0, 1.0),
-                Layer::lossy(0.02, e.re, 1.0, -e.im / e.re),
-                Layer::lossless(0.01, 1.0, 1.0),
-            ],
+            layers: vec![Layer::lossless(0.01, 1.0, 1.0), Layer::lossy(0.02, e.re, 1.0, -e.im / e.re), Layer::lossless(0.01, 1.0, 1.0)],
         };
         let (s11, s21) = line.solve(f).unwrap().s_power();
         let r = d.solve(f).unwrap();
@@ -191,7 +183,7 @@ fn a_fast_sweep_handles_dispersion() {
 }
 
 #[test]
-fn dispersive_ports_and_eigenmodes_are_refused() {
+fn dispersive_ports_are_taken_and_eigenmodes_refused() {
     let mut m = Model::new();
     let drude = Pole::Drude { plasma_frequency: 5e9, damping: 1e9 };
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
@@ -206,9 +198,11 @@ fn dispersive_ports_and_eigenmodes_are_refused() {
     .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
-    let e = Driven::new(&m, Order::One).unwrap_err();
-    assert!(e.to_string().contains("dispersive"), "{e}");
-    assert!(emcraft_solver::driven::port_modes(&m, Order::One, 10e9).unwrap_err().to_string().contains("dispersive"));
+    // The port's modes in the plasma: ε(10 GHz) = 1 − 25/(100 − 10j), above the cut-off.
+    Driven::new(&m, Order::One).unwrap();
+    let modes = emcraft_solver::driven::port_modes(&m, Order::One, 10e9).unwrap();
+    let g = modes[0].1[0].gamma.unwrap();
+    assert!(g.re > 0.0 && g.im > g.re, "{g}");
     let e = emcraft_solver::eigen::eigenmodes(&m, Order::One, 2, 10e9).unwrap_err();
     assert!(e.to_string().contains("dispersive"), "{e}");
 }

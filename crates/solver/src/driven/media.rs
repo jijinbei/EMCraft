@@ -1,6 +1,6 @@
 //! The materials of the tetrahedra: each one's complex permittivity εr(1 − j tan δ) and
-//! permeability, and for a dispersive material (Debye, Lorentz or Drude poles) its εr(ω) at
-//! each frequency instead.
+//! permeability μr(1 − j tan δ_m), and for a dispersive material (Debye, Lorentz or Drude poles)
+//! its εr(ω) at each frequency instead.
 
 use emcraft_model::{Material, Mesh, Model};
 use num_complex::Complex64 as C;
@@ -11,8 +11,8 @@ use super::{NONE, Result, invalid};
 pub(crate) struct Media {
     /// Per tetrahedron, εr(1 − j tan δ) (for a dispersive one, see `dispersive_of`).
     eps: Vec<C>,
-    /// Per tetrahedron, μr.
-    mu: Vec<f64>,
+    /// Per tetrahedron, μr(1 − j tan δ_m).
+    mu: Vec<C>,
     /// Per tetrahedron, its material's index into `dispersive` ([`NONE`] if not dispersive).
     dispersive_of: Vec<u32>,
     /// The dispersive materials, in the model's order (deterministic).
@@ -34,7 +34,7 @@ impl Media {
             let k = mesh.tet_material.get(t).copied();
             let m = k.and_then(|k| model.materials.get(k as usize)).ok_or_else(|| invalid("mesh", format!("tetrahedron {t} has no material")))?;
             eps.push(C::new(m.eps_r, -m.eps_r * m.loss_tangent));
-            mu.push(m.mu_r);
+            mu.push(m.mu_c());
             dispersive_of.push(k.and_then(|k| index.get(k as usize)).copied().unwrap_or(NONE));
         }
         Ok(Media { eps, mu, dispersive_of, dispersive })
@@ -65,8 +65,18 @@ impl Media {
         }
     }
 
-    /// Tetrahedron `t`'s relative permeability.
-    pub(crate) fn mu(&self, t: usize) -> f64 {
-        self.mu.get(t).copied().unwrap_or(1.0)
+    /// Tetrahedron `t`'s complex relative permeability μr(1 − j tan δ_m).
+    pub(crate) fn mu(&self, t: usize) -> C {
+        self.mu.get(t).copied().unwrap_or(C::new(1.0, 0.0))
     }
+
+    /// Whether any tetrahedron's permeability has losses.
+    pub(crate) fn magnetically_lossy(&self) -> bool {
+        self.mu.iter().any(|m| m.im != 0.0)
+    }
+}
+
+/// s/μ for a complex μ: s/μr exactly (a real quotient) when the permeability is lossless.
+pub(crate) fn per_mu(s: f64, mu: C) -> C {
+    if mu.im == 0.0 { C::new(s / mu.re, 0.0) } else { s / mu }
 }

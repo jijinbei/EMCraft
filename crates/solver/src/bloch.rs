@@ -328,7 +328,7 @@ fn start_vectors(q: usize, n: usize) -> Vec<Vec<C>> {
 /// The `bands` eigenvalues k² nearest σ above the null space, at phases `psi`.
 fn bands_at(d: &Driven, tie: &Tie, an: &Analysis, psi: [f64; 3], bands: usize, sigma: f64) -> Result<(Vec<f64>, usize)> {
     let (pattern, stiffness, mass) = d.matrices();
-    let kval: Vec<C> = stiffness.iter().map(|s| C::new(*s, 0.0)).collect();
+    let kval: Vec<C> = stiffness.iter().map(|s| C::new(s.re, 0.0)).collect();
     let k = tie.reduce(&kval, psi);
     let m = tie.reduce(&mass.iter().map(|m| C::new(m.re, 0.0)).collect::<Vec<_>>(), psi);
     let _ = pattern;
@@ -414,9 +414,12 @@ where
     if d.is_dispersive() {
         return Err(invalid("dispersion", "not supported yet: dispersive materials (the eigenproblem is nonlinear in the frequency)").into());
     }
-    let (_, _, mass) = d.matrices();
+    let (_, stiffness, mass) = d.matrices();
     if mass.iter().any(|m| m.im != 0.0) {
         return Err(invalid("dispersion", "not supported yet: lossy dielectrics in a dispersion diagram (complex k²)").into());
+    }
+    if stiffness.iter().any(|k| k.im != 0.0) {
+        return Err(invalid("dispersion", "not supported yet: magnetically lossy materials in a dispersion diagram (complex k²)").into());
     }
     let tie = d.tie.as_ref().ok_or_else(|| invalid("dispersion", "the cell has no periodic reduction"))?;
     if tie.reduced == 0 {

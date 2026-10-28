@@ -50,7 +50,11 @@ impl Driven {
         match which {
             Field::E => field,
             // H = −∇ × E / (jωμ).
-            Field::H => -field / C::new(0.0, 2.0 * PI * frequency * MU0 * self.mu_of(t)),
+            Field::H => {
+                let mu = self.mu_of(t);
+                let omega_mu0 = 2.0 * PI * frequency * MU0;
+                if mu.im == 0.0 { -field / C::new(0.0, omega_mu0 * mu.re) } else { -field / (C::new(0.0, omega_mu0) * mu) }
+            }
         }
     }
 
@@ -71,10 +75,23 @@ impl Driven {
 
     /// ∫ f(t, E) dV over every tetrahedron `keep` admits, E the field at each point of a rule.
     pub(super) fn integrate_e(&self, x: &[C], frequency: f64, keep: impl Fn(usize) -> bool, f: impl Fn(usize, CVec3) -> f64) -> Result<f64> {
+        self.integrate_field(x, frequency, Field::E, keep, f)
+    }
+
+    /// ∫ f(t, field) dV over every tetrahedron `keep` admits, the field `which` at each point of
+    /// a rule.
+    pub(super) fn integrate_field(
+        &self,
+        x: &[C],
+        frequency: f64,
+        which: Field,
+        keep: impl Fn(usize) -> bool,
+        f: impl Fn(usize, CVec3) -> f64,
+    ) -> Result<f64> {
         let n = rule_points(self.order);
         (0..self.mesh.tets.len()).filter(|t| keep(*t)).try_fold(0.0, |total, t| {
             let el = self.element_of(t)?;
-            Ok(total + el.rule(n).into_iter().map(|(l, w)| w * f(t, self.field_in(&el, t, x, frequency, Field::E, l))).sum::<f64>())
+            Ok(total + el.rule(n).into_iter().map(|(l, w)| w * f(t, self.field_in(&el, t, x, frequency, which, l))).sum::<f64>())
         })
     }
 

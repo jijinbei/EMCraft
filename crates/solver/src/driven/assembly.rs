@@ -7,7 +7,7 @@ use emcraft_mesh::Topology;
 use emcraft_model::{BoundaryFace, Mesh, Point3, Vec3};
 use num_complex::Complex64 as C;
 
-use super::media::Media;
+use super::media::{Media, per_mu};
 use super::terms::PortTerm;
 use super::{Dofs, Driven, NONE, Result, invalid, wall_factor, wavenumber};
 use crate::sparse::Csr;
@@ -58,8 +58,8 @@ pub(super) fn couplings(unknowns: &[u32]) -> impl Iterator<Item = Coupling> + '_
 
 /// The matrices that do not depend on the frequency, on the pattern.
 pub(super) struct VolumeMatrices {
-    /// The curl–curl matrix K (μr⁻¹).
-    pub stiffness: Vec<f64>,
+    /// The curl–curl matrix K (μ⁻¹, complex with magnetic losses).
+    pub stiffness: Vec<C>,
     /// The mass matrix of the non-dispersive tetrahedra, weighted by their εr(1 − j tan δ).
     pub mass: Vec<C>,
     /// Per dispersive material, the unit-permittivity mass matrix of its tetrahedra.
@@ -112,7 +112,7 @@ impl<'a> Space<'a> {
             let n = unknowns.len();
             let (eps, mu, dispersive) = (media.eps(t), media.mu(t), media.dispersive_of(t));
             for Coupling { i, j, row, col } in couplings(&unknowns) {
-                kk.add(row, col, C::new(s[i * n + j] / mu, 0.0));
+                kk.add(row, col, per_mu(s[i * n + j], mu));
                 let (target, e) = match dispersive.and_then(|d| md.get_mut(d)) {
                     Some(d) => (d, C::new(1.0, 0.0)),
                     None => (&mut mm, eps),
@@ -120,7 +120,7 @@ impl<'a> Space<'a> {
                 target.add(row, col, e * m[i * n + j]);
             }
         }
-        Ok(VolumeMatrices { stiffness: real_parts(&kk), mass: mm.val, dispersive: md.iter().map(real_parts).collect() })
+        Ok(VolumeMatrices { stiffness: kk.val, mass: mm.val, dispersive: md.iter().map(real_parts).collect() })
     }
 
     /// The walls' tangential mass matrix ∫ N_i,t · N_j,t dS over the boundary faces `walls`.
@@ -241,7 +241,7 @@ impl Driven {
         let k0 = wavenumber(frequency);
         let mut a = self.pattern.clone();
         for (x, (s, m)) in a.val.iter_mut().zip(self.stiffness.iter().zip(&self.mass)) {
-            *x = C::new(*s, 0.0) - m * (k0 * k0);
+            *x = *s - m * (k0 * k0);
         }
         for (c, md) in self.dispersive_scales(frequency).into_iter().zip(&self.dispersive_mass) {
             for (x, m) in a.val.iter_mut().zip(md) {

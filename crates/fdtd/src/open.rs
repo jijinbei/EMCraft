@@ -114,7 +114,9 @@ impl BoxGrid {
         let Shape::Box { size } = solid.shape else {
             return Err(FdtdError::NotReady("the time domain's open problems need a box solid".into()));
         };
-        if model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.mu_r != 1.0 || m.is_dispersive()) || model.wall_conductivity.is_some() {
+        if model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.mu_r != 1.0 || m.is_magnetically_lossy() || m.is_dispersive())
+            || model.wall_conductivity.is_some()
+        {
             return Err(FdtdError::Unsupported("losses, dispersion or magnetic materials in the time domain's open problems".into()));
         }
         if !model.ports.is_empty() {
