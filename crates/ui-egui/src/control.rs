@@ -152,7 +152,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "messages": app.messages.len(),
         "search": {"open": app.search.open, "text": app.search.text},
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
-        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some(), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d},
+        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some(), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
         "chart": app.views.chart.key(),
         "variables": app.session.variables,
         "study": app.session.results.study.as_ref().map(|s| json!({

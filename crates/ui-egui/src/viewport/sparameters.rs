@@ -45,22 +45,32 @@ fn frequency_marker(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response, cha
     }
 }
 
-/// The sweep's S11 and S21 at each frequency.
+/// Most entries of S's first column the table shows.
+const TABLE_ENTRIES: usize = 8;
+
+/// The sweep's first column of S (S11, S21, and on with more ports or terminals) at each
+/// frequency.
 fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let Some(sw) = app.session.results.sweep.as_ref() else { return };
     let fu = app.session.display.frequency;
+    let entries = sw.entries();
+    let n = entries.len().clamp(2, TABLE_ENTRIES);
+    if entries.iter().any(|e| e.terminal.is_some()) {
+        let names: Vec<String> = entries.iter().enumerate().map(|(i, e)| format!("{} = {}", i + 1, e.name)).collect();
+        crate::ui_kit::caption(ui, &format!("Entries of S: {}", names.join(", ")));
+    }
     egui::ScrollArea::vertical().id_salt("s_table").show(ui, |ui| {
-        egui::Grid::new("s_grid").striped(true).num_columns(5).show(ui, |ui| {
-            for h in [format!("f ({})", fu.symbol()), "|S11| dB".into(), "arg S11 (°)".into(), "|S21| dB".into(), "arg S21 (°)".into()] {
-                ui.label(egui::RichText::new(h).strong());
+        egui::Grid::new("s_grid").striped(true).num_columns(1 + 2 * n).show(ui, |ui| {
+            ui.label(egui::RichText::new(format!("f ({})", fu.symbol())).strong());
+            for p in 1..=n {
+                ui.label(egui::RichText::new(format!("|S{p}1| dB")).strong());
+                ui.label(egui::RichText::new(format!("arg S{p}1 (°)")).strong());
             }
             ui.end_row();
             for r in &sw.results {
                 ui.label(format!("{:.4}", fu.from_si(r.frequency)));
-                let s11 = r.s.get(0, 0);
-                let s21 = r.s.get(1, 0);
-                for c in [s11, s21] {
-                    match c {
+                for p in 0..n {
+                    match r.s.get(p, 0) {
                         Some(c) => {
                             ui.label(format!("{:.3}", emcraft_model::units::decibels(c.norm())));
                             ui.label(format!("{:.2}", c.arg().to_degrees()));

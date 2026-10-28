@@ -125,6 +125,11 @@ fn scenario_stub_and_via() {
 }
 
 #[test]
+fn scenario_terminal_ports() {
+    scenario("terminal_ports");
+}
+
+#[test]
 fn scenario_start_page() {
     scenario("start_page");
 }

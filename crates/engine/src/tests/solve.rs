@@ -481,3 +481,25 @@ fn hostile_terminal_ports_are_refused() {
     let r = huge.execute("solve.frequency", &json!({"frequencies": [2], "order": 1}));
     assert!(!matches!(r, Err(EngineError::Panicked(_))), "{r:?}");
 }
+
+#[test]
+fn coupled_microstrips_convert_with_modes_of_distinct_beta() {
+    // Over a substrate the even and odd modes travel apart (ε_eff differ): each is de-embedded
+    // and converted by its own currents, and the lossless line's terminal S stays unitary and
+    // symmetric.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "fr4", "eps_r": 4.4})).unwrap();
+    let strips = json!([{"y": 0.8, "x0": 4.3, "width": 1.5}, {"y": 0.8, "x0": 6.2, "width": 1.5}]);
+    let guide = json!({"width": 12, "height": 5, "sections": [{"length": 4, "material": "vacuum"}], "layers": [{"thickness": 0.8, "material": "fr4"}], "strips": strips});
+    s.execute("geometry.waveguide", &guide).unwrap();
+    s.execute("mesh.generate", &json!({"size": 1.5, "strip_edge": 0.3})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2, "deembed": 0.5})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    let modes = s.execute("solve.port_modes", &json!({"frequency": 5})).unwrap();
+    let eps = |k: usize| modes["ports"][0]["modes"][k]["eps_eff"].as_f64().unwrap();
+    assert!((eps(0) - eps(1)).abs() > 0.1, "{modes}");
+    let r = s.execute("solve.frequency", &json!({"frequencies": [5], "order": 1})).unwrap();
+    assert_eq!(r["ports"], json!(["1:1", "1:2", "2:1", "2:2"]));
+    let check = s.execute("results.check", &json!({})).unwrap();
+    assert!(check["unitarity_error"].as_f64().unwrap() < 1e-8 && check["reciprocity_error"].as_f64().unwrap() < 1e-9, "{check}");
+}
