@@ -65,6 +65,7 @@ pub(crate) fn grid_options(p: &Params, size: f64) -> Result<emcraft_mesh::Option
         edge: p.number("edge").or(defaults.edge)?,
         growth: p.number("growth").or(defaults.growth)?,
         strip_edge: p.number("strip_edge").or(defaults.strip_edge)?,
+        strip_end: p.number("strip_end").optional()?,
         size_y: p.positive_length("size_y").optional()?,
         ..defaults
     })
