@@ -41,6 +41,11 @@ pub const SAMPLES: &[Sample] = &[
         script: include_str!("../samples/coaxial-line.json"),
     },
     Sample {
+        name: "coupled-filter",
+        label: "Parallel-coupled stripline band-pass filter: three half-wave resonators coupled edge to edge between 50 Ω feeds, PTFE between planes 4 mm apart, 4.66–5.34 GHz (Cohn 1958)",
+        script: include_str!("../samples/coupled-filter.json"),
+    },
+    Sample {
         name: "inductive-post",
         label: "A 3 mm conducting post across WR-90, wall to wall, cut from the box by a Boolean difference: a strong shunt inductance",
         script: include_str!("../samples/inductive-post.json"),
