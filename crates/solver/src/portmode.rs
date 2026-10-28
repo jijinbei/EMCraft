@@ -30,6 +30,8 @@ use crate::driven::{NONE, Result, SolveError, invalid};
 use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
 
+mod coupled;
+
 /// Iteration cap of the subspace iteration.
 const MAX_ITERATIONS: usize = 300;
 /// The most unknowns a cross-section may have.

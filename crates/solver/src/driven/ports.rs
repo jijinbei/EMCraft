@@ -252,16 +252,6 @@ pub fn kept_by(mode: &Mode, planes: &[Symmetry]) -> bool {
     })
 }
 
-/// A half line's impedance by power and current as the whole line's: under a magnetic wall
-/// both halve, so Z = 2P/|I|² is the half's halved per plane; an electric plane separates
-/// conductors the whole line holds two of, which has no single impedance.
-pub(super) fn symmetric_impedance(planes: &[Symmetry], z: Option<f64>) -> Option<f64> {
-    if planes.iter().any(|p| p.kind == SymmetryKind::Electric) {
-        return None;
-    }
-    z.map(|z| z * 0.5f64.powi(planes.len() as i32))
-}
-
 /// A port of any other cross-section: its faces as the triangles of a [`crate::portmode`]
 /// problem, materials from the tetrahedra behind them, and the unknowns with a trace there.
 fn numeric_port(model: &Model, p: &Port, space: &Space, faces: &[usize]) -> Result<NumericPort> {
@@ -348,11 +338,11 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                 None => {
                     let section = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
                     section
-                        .modes(k0, p.modes as usize)?
+                        .modes_split(k0, p.modes as usize)?
                         .into_iter()
                         .enumerate()
                         .map(|(i, m)| {
-                            let impedance = symmetric_impedance(&model.symmetry, section.impedance(&m, k0)?);
+                            let impedance = section.impedance_whole(&m, k0, &model.symmetry)?;
                             Ok(ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false, impedance })
                         })
                         .collect::<Result<Vec<_>>>()?
@@ -414,7 +404,7 @@ pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usiz
     }
     let mesh = model.mesh.as_ref().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
     let section = cross_section(model, p, mesh, order, &faces_of_port(mesh, p)?)?;
-    let modes = section.modes(wavenumber(frequency), p.modes as usize)?;
+    let modes = section.modes_split(wavenumber(frequency), p.modes as usize)?;
     let md = modes.get(mode).ok_or_else(|| invalid(what(p), format!("has {} modes, not {}", modes.len(), mode + 1)))?;
     let (lo, hi) = section
         .nodes

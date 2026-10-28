@@ -8,7 +8,7 @@ use emcraft_model::units::{C0, MU0};
 use num_complex::Complex64 as C;
 
 use super::assembly::port_rule_points;
-use super::ports::{NumericPort, PortModes, symmetric_impedance};
+use super::ports::{NumericPort, PortModes};
 use super::{Driven, Result, invalid, wavenumber};
 
 /// One mode's part of a port condition at one frequency: the matrix gains factor·v vᵀ, a unit
@@ -136,7 +136,7 @@ impl Driven {
     }
 
     fn numeric_terms(&self, n: &NumericPort, k0: f64) -> Result<Vec<PortTerm<'static>>> {
-        let modes = n.section.modes(k0, n.count)?;
+        let modes = n.section.modes_split(k0, n.count)?;
         let index: std::collections::HashMap<usize, usize> = n.support.iter().enumerate().map(|(k, &u)| (u, k)).collect();
         let mut v = vec![vec![0.0; n.support.len()]; modes.len()];
         let space = self.space();
@@ -157,7 +157,7 @@ impl Driven {
             }
         }
         let impedance = match modes.first() {
-            Some(m) => symmetric_impedance(&self.symmetry, n.section.impedance(m, k0)?),
+            Some(m) => n.section.impedance_whole(m, k0, &self.symmetry)?,
             None => None,
         };
         Ok(modes

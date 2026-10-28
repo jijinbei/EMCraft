@@ -203,6 +203,56 @@ fn strip_lines_have_their_closed_form_impedances() {
     assert!((z / fit - 1.0).abs() < 1e-2, "{z} {fit}");
 }
 
+/// Two strips `w` wide a gap `s` apart, centred midway between planes `b` apart in εr = 2.2,
+/// the side walls `side` from the strips, under the symmetry `planes`.
+fn coupled_strips(w: f64, s: f64, b: f64, side: f64, planes: &[emcraft_model::Symmetry]) -> Model {
+    let a = 2.0 * (side + w) + s;
+    let mut m = stripline(a, b, w, 0.001, 2.2, 0.002);
+    let wg = m.waveguide.clone().unwrap();
+    let strip = |x0: f64| emcraft_model::Strip { y: b / 2.0, x0, width: w, z0: 0.0, z1: 0.001 };
+    m.set_waveguide(emcraft_model::Waveguide { strips: vec![strip(side), strip(side + w + s)], ..wg }).unwrap();
+    m.set_symmetry(planes.to_vec()).unwrap();
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap());
+    m
+}
+
+#[test]
+fn coupled_strips_have_cohns_even_and_odd_impedances() {
+    // The two TEM modes of coupled strips share β = k√εr, so the eigensolver returns some basis
+    // of them; split by the conductors' currents they are the even and the odd mode, against
+    // Cohn's exact Z0e and Z0o (within 0.3 % and 0.4 % at 1 mm cells). Under a magnetic wall between
+    // the strips only the even mode is left, under an electric wall only the odd one, the same
+    // impedances from the half; and below a magnetic wall through the strips' plane, the same
+    // again from the half's half strips.
+    let (w, s, b) = (0.0015, 0.0005, 0.002);
+    let (ze, zo) = emcraft_theory::coupled::z0_even_odd(w, s, b, 2.2).unwrap();
+    let k0 = 2.0 * std::f64::consts::PI * 2e9 / emcraft_model::units::C0;
+    let a = 2.0 * (0.006 + w) + s;
+    let plane = |axis, at, kind| emcraft_model::Symmetry { axis, at, kind };
+    let (mag, ele) = (emcraft_model::SymmetryKind::Magnetic, emcraft_model::SymmetryKind::Electric);
+    let impedances = |planes: &[emcraft_model::Symmetry], count: usize| {
+        let m = coupled_strips(w, s, b, 0.006, planes);
+        let d = Driven::new(&m, Order::Two).unwrap();
+        let emcraft_solver::driven::PortModes::Numeric(n) = &d.ports[0].modes else { panic!("closed-form port") };
+        let modes = n.section.modes_split(k0, count).unwrap();
+        let z: Vec<f64> = modes.iter().map(|md| n.section.impedance_whole(md, k0, planes).unwrap().unwrap()).collect();
+        // The currents: equal on the two strips for the even mode, opposite for the odd one.
+        if n.section.conductors().len() == 2 {
+            let (ie, _) = n.section.currents(&modes[0], k0).unwrap();
+            let (io, _) = n.section.currents(&modes[1], k0).unwrap();
+            assert!((ie[0] / ie[1] - 1.0).norm() < 1e-6 && (io[0] / io[1] + 1.0).norm() < 1e-6, "{ie:?} {io:?}");
+        }
+        z
+    };
+    let z = impedances(&[], 2);
+    assert!((z[0] / ze - 1.0).abs() < 3e-3 && (z[1] / zo - 1.0).abs() < 4e-3, "{z:?} {ze} {zo}");
+    let half_y = impedances(&[plane(Axis::Y, b / 2.0, mag)], 2);
+    assert!((half_y[0] / z[0] - 1.0).abs() < 1e-3 && (half_y[1] / z[1] - 1.0).abs() < 1e-3, "{half_y:?} {z:?}");
+    let even = impedances(&[plane(Axis::X, a / 2.0, mag)], 1);
+    let odd = impedances(&[plane(Axis::X, a / 2.0, ele)], 1);
+    assert!((even[0] / z[0] - 1.0).abs() < 1e-3 && (odd[0] / z[1] - 1.0).abs() < 1e-3, "{even:?} {odd:?} {z:?}");
+}
+
 #[test]
 fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
     // The coaxial line (Z₀ = η₀ ln 3.5/(2π√2.1) = 51.8 Ω) between 50 Ω references: a mismatched
