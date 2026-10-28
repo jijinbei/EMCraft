@@ -1,0 +1,6 @@
+[
+ {"command": "model.material.create", "params": {"name": "fill", "eps_r": 1.0, "mu_r": 2.25, "magnetic_loss_tangent": 0.001}},
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 30, "material": "fill"}]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 5.5, "count": 1, "order": 2}, "id": "modes"}
+]

@@ -1,0 +1,10 @@
+{
+ "title": "WR-90 cavity 22.86 × 10.16 × 30 mm filled with μr = 2.25, tan δm = 1e-3: TE101 resonance and its magnetic Q",
+ "kind": "theory",
+ "source": "A cavity filled with one material of μ = μr(1 − j tan δm): every eigenvalue k² is the lossless cavity's divided by 1 − j tan δm, so ω = ω0 (1 − j tan δm)^{−1/2}, Q = Re ω / (2 Im ω) = 1/(2 tan(½ atan tan δm)) ≈ 1/tan δm, with ω0 of TE101 from f = c/(2√(εr μr)) √(1/a² + 1/d²) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §6.3 and §6.7); evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "f1", "quantity": "TE101 resonance, Re f (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 5.495916082721893, "tolerance": {"relative": 2e-4}, "reason": "second-order elements of 3 mm: eigenvalues converge as h⁴ (as for the copper cavity)"},
+  {"id": "q_m", "quantity": "TE101 Q of the magnetic loss", "measure": {"step": "modes", "pointer": "/modes/0/q_magnetic"}, "value": 1000.0002499999374, "tolerance": {"relative": 1e-6}, "reason": "exact for the discrete problem too: K/(1 − j tan δm) x = k² M x scales every eigenvalue alike, so only the iteration's convergence (1e-11) and rounding remain"},
+  {"id": "q", "quantity": "TE101 total Q", "measure": {"step": "modes", "pointer": "/modes/0/q"}, "value": 1000.0002499999374, "tolerance": {"relative": 1e-6}, "reason": "the walls are perfect and the permittivity lossless: Q = Q_m"}
+ ]
+}

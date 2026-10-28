@@ -31,7 +31,13 @@ result is frozen so it cannot drift.
    the discrete Poynting theorem — 1 − |S11|² − |S21|² equal to the power the dielectric or the
    walls absorb — to 1e-9; a dispersive slab (a Debye and a Lorentz pole) against the same
    cascade with ε(ω) at each frequency, its Poynting balance with ε″(ω), and the fast sweep's
-   reduced basis against full solves (oracle `dispersive-slab`).
+   reduced basis against full solves (oracle `dispersive-slab`). Ports in lossy media and
+   magnetic losses (`crates/solver/tests/lossy_ports.rs`): guides filled with a lossy dielectric
+   or a magnetically lossy material with their ports in it, closed-form and numerically solved
+   port modes alike, against S21 = e^{−γL}; a step from air into a filling lossy both ways
+   against the cascade; the Poynting balance with ½ωμ₀∫μ″|H|²; de-embedding by the complex γ;
+   the fast sweep; the Q of a magnetically lossy cavity, exact for the discrete problem (oracles
+   `lossy-line`, `magnetic-loss-line`, `lossy-step`, `cavity-magnetic-loss`).
 5. **Eigenmode tests** (`crates/solver/tests/eigen.rs`): the four lowest resonances of a
    rectangular cavity (within 1e-4), a dielectric-filled cavity (frequencies scaled by 1/√εr,
    Q_d = 1/tan δ to 1e-6), the TE101 Q of copper walls (−1.2 % at 3 mm, converging: heavy).

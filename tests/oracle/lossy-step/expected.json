@@ -1,0 +1,13 @@
+{
+ "title": "Step from air into a lossy filling in WR-90 (εr = 2, tan δ = 0.01, μr = 1.3, tan δm = 0.02): 12 mm of air, 20 mm filled, port 2 in the filling",
+ "kind": "theory",
+ "source": "TE10 transmission-line step: Γ = (Y1 − Y2)/(Y1 + Y2) with the wave admittances Y = γ/μ, γ = √((π/a)² − k0² ε μ), S11 = Γ e^{−2γ1 l1}, S21 = e^{−γ1 l1}(1 + Γ)e^{−γ2 l2} √(Y2/Y1) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3 and §4.4); the waves at the lossy port normalised as EMCraft's, by the unconjugated root of the wave admittances — pseudo-waves referred to each port's wave impedance (R. B. Marks, D. F. Williams, A general waveguide circuit theory, J. Res. NIST 97(5), 1992) — evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s11_mag_8", "quantity": "|S11| at 8 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.3018406430621274, "tolerance": {"absolute": 1e-3}, "reason": "second-order elements of 3 mm (measured 2e-5 at 8 GHz to 6.4e-4 at 12 GHz); |S11| does not depend on how the lossy port's waves are normalised"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.20027688524090292, "tolerance": {"absolute": 1e-3}, "reason": "as at 8 GHz"},
+  {"id": "s11_mag_12", "quantity": "|S11| at 12 GHz", "measure": {"step": "solve", "pointer": "/points/2/s11/mag"}, "value": 0.16435263935127575, "tolerance": {"absolute": 1e-3}, "reason": "as at 8 GHz"},
+  {"id": "s21_db_10", "quantity": "|S21| at 10 GHz (dB)", "measure": {"step": "solve", "pointer": "/points/1/s21/db"}, "value": -1.141645123769804, "tolerance": {"absolute": 0.01}, "reason": "as |S11|, with the normalisation √(Y2/Y1) of the reference"},
+  {"id": "s21_deg_10", "quantity": "arg S21 at 10 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s21/deg"}, "value": -102.61300897432824, "tolerance": {"absolute": 0.3}, "reason": "the phase error of second-order elements of 3 mm over 32 mm"},
+  {"id": "worst", "quantity": "largest |S − S_exact| at 8, 10 and 12 GHz (complex)", "measure": {"command": "results.compare", "params": {}, "pointer": "/worst"}, "value": 0.0, "tolerance": {"absolute": 4e-3}, "reason": "the phase error above: measured 2.4e-3"}
+ ]
+}

@@ -113,7 +113,21 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - T. B. A. Senior, J. L. Volakis, *Approximate Boundary Conditions in Electromagnetics*, IEE 1995,
   §2.2 — the Leontovich surface-impedance condition for walls of finite conductivity.
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, eq. 3.96 — TE10 conductor
-  attenuation (the reference); §1.3 — the loss tangent.
+  attenuation (the reference); §1.3 — the loss tangent, dielectric ε = ε′ − jε″ and magnetic
+  μ = μ′ − jμ″ alike (`emcraft-model::Material`, `magnetic_loss_tangent`); §3.3 — the modes of a
+  guide filled with a lossy medium, γ = √(k_c² − k²) with complex k² (the references of the
+  oracle cases `lossy-line`, `magnetic-loss-line`, `lossy-step`).
+- J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, §8.5 — the
+  modal port condition n̂ × ∇ × E_t = κ E_t, which holds with the complex γ and κ of a port's
+  lossy filling; magnetic loss as the complex μr⁻¹ of the curl–curl term
+  (`emcraft-solver::driven::ports`, `terms`).
+- R. B. Marks, D. F. Williams, *A general waveguide circuit theory*, J. Res. NIST 97(5):533–562,
+  1992 — pseudo-waves for lossy lines, whose characteristic impedance is complex: power waves
+  of a lossy line are not reciprocal, waves referred to the line's own characteristic
+  impedance are. EMCraft reads S at lossy ports as such waves, normalised by the modes'
+  unconjugated power ∫ e × h · ŝ dS (√(P_p/P_q) on the principal branch), so S stays
+  symmetric for a reciprocal structure and reduces to the power waves for lossless ports
+  (`emcraft-solver::driven::sparams`).
 - A. Taflove, S. C. Hagness, *Computational Electrodynamics: The Finite-Difference Time-Domain
   Method*, 3rd ed., Artech House 2005, ch. 9 (§9.2 Debye, §9.4 Lorentz and Drude media) — the
   dispersive permittivities ε(ω) = ε∞ + Σ χ_k(ω), written for e^{jωt}: Debye
