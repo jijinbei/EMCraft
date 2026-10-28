@@ -254,6 +254,12 @@ pub fn port_modes(s: &mut Session, p: &Params) -> Result<Value> {
 /// A port mode in a reply: β (per display length `per_unit` m) and the effective permittivity
 /// at free-space wavenumber `k0` when it propagates, its attenuation when it does not.
 fn port_mode_row(m: &emcraft_solver::driven::ModeInfo, k0: f64, per_unit: f64) -> Value {
+    // In a lossy medium: γ = α + jβ, propagating while β > α.
+    if let Some(g) = m.gamma {
+        let attenuation_db = 20.0 * LOG10_E * g.re * per_unit;
+        let eps_eff = -(g * g).re / (k0 * k0);
+        return json!({"name": m.name, "propagating": g.im > g.re, "beta": g.im * per_unit, "attenuation_db": attenuation_db, "eps_eff": eps_eff, "impedance": m.impedance, "closed_form": m.closed_form});
+    }
     if m.beta2 > 0.0 {
         let beta = m.beta2.sqrt();
         json!({"name": m.name, "propagating": true, "beta": beta * per_unit, "eps_eff": m.beta2 / (k0 * k0), "impedance": m.impedance, "closed_form": m.closed_form})

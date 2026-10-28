@@ -185,6 +185,9 @@ pub fn stack_reference(s: &Session) -> Result<emcraft_theory::floquet::Stack> {
             if mat.is_dispersive() {
                 return Err(EngineError::failed("not supported yet: a plane-wave reference with dispersive layers"));
             }
+            if mat.is_magnetically_lossy() {
+                return Err(EngineError::failed("not supported yet: a plane-wave reference with magnetically lossy layers"));
+            }
             Ok(emcraft_theory::floquet::StackLayer {
                 thickness: sec.length,
                 eps_r: emcraft_solver::Complex64::new(mat.eps_r, -mat.eps_r * mat.loss_tangent),

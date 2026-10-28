@@ -128,7 +128,7 @@ fn lone_sphere(s: &Session) -> Option<(f64, Option<f64>)> {
         [inc] if s.model.features.is_empty() && s.model.sources.len() == 1 => match (&inc.shape, &inc.material) {
             (Shape::Sphere { radius }, Some(name)) => {
                 let (_, m) = s.model.material(name).ok()?;
-                (m.mu_r == 1.0 && m.loss_tangent == 0.0).then_some((*radius, Some(m.eps_r)))
+                (m.mu_r == 1.0 && m.loss_tangent == 0.0 && !m.is_magnetically_lossy()).then_some((*radius, Some(m.eps_r)))
             }
             (Shape::Sphere { radius }, None) => Some((*radius, None)),
             _ => None,

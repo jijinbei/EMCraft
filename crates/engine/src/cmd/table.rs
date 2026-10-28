@@ -157,12 +157,13 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.material.create",
         label: "Create material",
-        doc: "A linear, isotropic material, lossless unless it has a loss tangent or dispersion. A dispersive material's permittivity is ε(ω) = εr(1 − j tan δ) + Σ χ_k(ω) over its Debye, Lorentz and Drude poles (time dependence e^{jωt}, so ε = ε′ − jε″; Taflove & Hagness, Computational Electrodynamics, 3rd ed., ch. 9); εr is then ε∞. The frequency-domain solver takes ε(ω) at each frequency, the time-domain solver its poles by auxiliary differential equations (not yet in its open problems); ports may not lie in a dispersive material, nor eigenmode cavities be filled with one.",
+        doc: "A linear, isotropic material, lossless unless it has a loss tangent (dielectric or magnetic) or dispersion. A dispersive material's permittivity is ε(ω) = εr(1 − j tan δ) + Σ χ_k(ω) over its Debye, Lorentz and Drude poles (time dependence e^{jωt}, so ε = ε′ − jε″; Taflove & Hagness, Computational Electrodynamics, 3rd ed., ch. 9); εr is then ε∞. Its permeability is μr(1 − j tan δm). The frequency-domain solver takes ε(ω) at each frequency, the time-domain solver its poles by auxiliary differential equations (not yet in its open problems; it takes no loss tangents). A port may lie in a lossy or dispersive material that fills its cross-section: its modes then attenuate (γ = α + jβ) and S is read as pseudo-waves referred to each port's wave impedance (Marks & Williams 1992); eigenmode cavities may not be filled with a dispersive material.",
         params: &[
             req("name", K::String, "unique name"),
             req("eps_r", K::Number, "relative permittivity εr > 0 (ε∞ with dispersion)"),
             opt("mu_r", K::Number, "relative permeability μr > 0 (default 1)"),
-            opt("loss_tangent", K::Number, "dielectric loss tangent tan δ ≥ 0 (default 0): ε = εr(1 − j tan δ)"),
+            opt("loss_tangent", K::Number, "dielectric loss tangent tan δ, 0 to 1e9 (default 0): ε = εr(1 − j tan δ)"),
+            opt("magnetic_loss_tangent", K::Number, "magnetic loss tangent tan δm, 0 to 1e9 (default 0): μ = μr(1 − j tan δm)"),
             opt("debye", K::Array, "Debye poles `[{\"delta_eps\", \"frequency\"}]`: χ = Δε/(1 + jω/ω_r), Δε > 0, relaxation frequency f_r = 1/(2πτ) > 0 (frequency)").of(F),
             opt("lorentz", K::Array, "Lorentz poles `[{\"delta_eps\", \"frequency\", \"damping\"}]`: χ = Δε ω₀²/(ω₀² − ω² + jωγ), Δε > 0, resonance f₀ = ω₀/2π > 0, damping γ/2π > 0 (frequencies)").of(F),
             opt("drude", K::Array, "Drude poles `[{\"plasma_frequency\", \"damping\"}]`: χ = −ω_p²/(ω² − jωγ), plasma frequency ω_p/2π > 0, damping γ/2π > 0 (frequencies)").of(F),

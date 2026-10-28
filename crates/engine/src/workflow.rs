@@ -263,14 +263,28 @@ fn materials(s: &Session) -> StepState {
     if !has_geometry(s) {
         st.note(Status::Missing, "no geometry to give materials to", Some("geometry.solid"));
     }
-    if m.ports.iter().any(|p| m.port_material(p.end).is_ok_and(|x| x.loss_tangent != 0.0 || x.is_dispersive())) {
+    if m.ports.iter().any(|p| port_crosses_lossy_layers(m, p.end)) {
         st.note(
             Status::Warning,
-            "a port lies in a lossy or dispersive material, which ports do not support: end the guide with a lossless, non-dispersive section",
+            "a port's cross-section holds layers of several materials, one of them lossy or dispersive, which ports do not support yet: make the layers lossless at the ports, or fill the port's cross-section with one material",
             Some("geometry.waveguide"),
         );
     }
     st
+}
+
+/// Whether a layered guide's end holds several materials, one of them lossy or dispersive (a
+/// port there would have hybrid lossy modes, not supported yet). A port filled with one lossy
+/// material is fine.
+fn port_crosses_lossy_layers(m: &emcraft_model::Model, end: emcraft_model::End) -> bool {
+    let Some(w) = &m.waveguide else { return false };
+    if w.layers.is_empty() {
+        return false;
+    }
+    let Ok(fill) = m.port_material(end) else { return false };
+    let layers: Vec<&emcraft_model::Material> = w.layers.iter().filter_map(|l| m.material(&l.material).ok().map(|(_, x)| x)).collect();
+    let several = layers.iter().any(|x| x.name != fill.name);
+    several && (fill.is_lossy() || layers.iter().any(|x| x.is_lossy()))
 }
 
 fn excitation(s: &Session) -> StepState {

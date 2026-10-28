@@ -150,7 +150,7 @@ pub(super) fn prepare(model: &Model, periodic: &Periodic, p: &Port, faces: &[usi
         return Err(invalid(what(), "a Floquet port needs the whole cell's cross-section at its end"));
     }
     let m = model.port_material(p.end)?;
-    if m.loss_tangent != 0.0 || m.is_dispersive() {
+    if m.is_lossy() {
         return Err(invalid(what(), "not supported yet: a Floquet port in a lossy or dispersive medium"));
     }
     Ok(FloquetPort {

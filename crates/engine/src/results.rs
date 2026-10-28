@@ -19,7 +19,9 @@ pub(crate) fn eigenmode_table(s: &Session) -> Result<Value> {
         .modes
         .iter()
         .enumerate()
-        .map(|(i, m)| json!({"mode": i + 1, "frequency": s.show_frequency(m.frequency), "q": m.q(), "q_walls": m.q_walls, "q_dielectric": m.q_dielectric}))
+        .map(|(i, m)| {
+            json!({"mode": i + 1, "frequency": s.show_frequency(m.frequency), "q": m.q(), "q_walls": m.q_walls, "q_dielectric": m.q_dielectric, "q_magnetic": m.q_magnetic})
+        })
         .collect();
     let mut reply =
         json!({"frequency_unit": s.display.frequency.symbol(), "unknowns": e.driven.dofs.unknowns, "iterations": e.iterations, "modes": modes});

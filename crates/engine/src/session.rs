@@ -278,7 +278,7 @@ impl Session {
         });
         json!({
             "units": {"length": l.symbol(), "frequency": self.display.frequency.symbol()},
-            "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r})).collect::<Vec<_>>(),
+            "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r, "loss_tangent": m.loss_tangent, "magnetic_loss_tangent": m.magnetic_loss_tangent})).collect::<Vec<_>>(),
             "waveguide": w,
             "solid": self.model.solid.as_ref().map(|s| json!({"shape": s.shape.kind(), "material": s.material})),
             "ports": self.model.ports.iter().map(|p| json!({"name": p.name, "end": p.end, "modes": p.modes})).collect::<Vec<_>>(),

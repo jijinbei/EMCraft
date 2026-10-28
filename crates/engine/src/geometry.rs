@@ -14,8 +14,9 @@ const MAX_ITEMS: usize = 1000;
 
 pub fn material(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
-    let material =
-        Material::new(name, p.number("eps_r").required()?, p.number("mu_r").or(1.0)?)?.with_loss_tangent(p.number("loss_tangent").or(0.0)?)?;
+    let material = Material::new(name, p.number("eps_r").required()?, p.number("mu_r").or(1.0)?)?
+        .with_loss_tangent(p.number("loss_tangent").or(0.0)?)?
+        .with_magnetic_loss_tangent(p.number("magnetic_loss_tangent").or(0.0)?)?;
     let material = material.with_dispersion(poles(p)?)?;
     s.model.add_material(material)?;
     Ok(json!({"name": name}))

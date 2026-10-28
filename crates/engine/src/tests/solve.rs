@@ -39,6 +39,41 @@ fn a_dispersive_slab_solves_against_its_exact_cascade() {
 }
 
 #[test]
+fn ports_in_a_magnetically_lossy_filling_solve_against_the_exact_line() {
+    let mut s = Session::new();
+    // Hostile loss tangents are refused, and nothing is created.
+    for bad in [json!(-0.1), json!(f64::MAX), json!(1e10), json!("x")] {
+        let r = s.execute("model.material.create", &json!({"name": "bad", "eps_r": 2, "magnetic_loss_tangent": bad}));
+        assert!(r.is_err(), "{bad}");
+        let r = s.execute("model.material.create", &json!({"name": "bad", "eps_r": 2, "loss_tangent": bad}));
+        assert!(r.is_err(), "{bad}");
+    }
+    assert!(s.model.material("bad").is_err());
+    s.execute("model.material.create", &json!({"name": "f", "eps_r": 1.5, "mu_r": 1.6, "loss_tangent": 0.01, "magnetic_loss_tangent": 0.03}))
+        .unwrap();
+    let summary = s.summary();
+    assert!(summary["materials"].as_array().unwrap().iter().any(|m| m["magnetic_loss_tangent"] == 0.03), "{summary}");
+    s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 30, "material": "f"}]})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 3.5})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    // The ports' modes attenuate.
+    let m = s.execute("solve.port_modes", &json!({"frequency": 10})).unwrap();
+    let first = &m["ports"][0]["modes"][0];
+    assert!(first["propagating"].as_bool().unwrap() && first["attenuation_db"].as_f64().unwrap() > 0.0, "{m}");
+    s.execute("solve.frequency", &json!({"frequencies": [8, 12], "order": 2})).unwrap();
+    let c = s.execute("results.compare", &json!({})).unwrap();
+    assert_eq!(c["reference"], "exact");
+    assert!(c["worst"].as_f64().unwrap() < 1e-2, "{c}");
+    // The time domain refuses it.
+    assert!(s.execute("solve.time_domain", &json!({"frequencies": [10]})).is_err());
+    // A closed cavity of it: the materials' Q split between the two loss tangents.
+    let r = s.execute("solve.eigenmodes", &json!({"near": 5, "count": 1})).unwrap();
+    let mode = &r["modes"][0];
+    assert!(mode["q_magnetic"].as_f64().is_some() && mode["q_dielectric"].as_f64().is_some(), "{r}");
+}
+
+#[test]
 fn an_iris_is_compared_with_mode_matching() {
     let mut s = Session::new();
     s.execute(
