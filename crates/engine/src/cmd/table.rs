@@ -133,7 +133,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.touchstone",
         label: "Export Touchstone",
-        doc: "Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in GHz, the ports' reference impedance on the option line.",
+        doc: "Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in GHz, the ports' reference impedance on the option line; one port per entry of S (each terminal of a terminal port, in the order `ports` lists them).",
         params: &[req("path", K::String, "the file (.s1p, .s2p, …)"), opt("format", K::String, "`ri` (default) or `ma`").one_of(&["ri", "ma"])],
         effect: Effect::None,
         run: crate::project::touchstone,
@@ -141,7 +141,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.check",
         label: "Check results",
-        doc: "The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive) and reciprocity (max |S − Sᵀ|).",
+        doc: "The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 when lossless).",
         params: &[],
         effect: Effect::None,
         run: crate::project::check,
@@ -353,15 +353,16 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.port.create",
         label: "Create port",
-        doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it).",
+        doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only.",
         params: &[
-            req("name", K::String, "unique name"),
+            req("name", K::String, "unique name (without `:`)"),
             req("end", K::String, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies").one_of(&["start", "end"]),
             opt("modes", K::Integer, "modes in the port condition, 1 to 32 (default 4)"),
             opt("face", K::Array, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z").of(L),
             opt("mode_solver", K::String, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)").one_of(&["auto", "numeric"]),
             opt("impedance", K::Number, "the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out"),
             opt("deembed", K::Number, "de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0").of(L),
+            opt("terminals", K::String, "`auto` (default: a cross-section holding two strips or more is one terminal per strip, named `<port>:<k>` from the lowest x, each referred to `impedance` or 50 Ω) or `modal` (the first mode only)").one_of(&["auto", "modal"]),
         ],
         effect: Effect::Record,
         run: crate::geometry::port,

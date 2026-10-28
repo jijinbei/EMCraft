@@ -20,6 +20,6 @@ pub mod sparse;
 pub mod sweep;
 pub mod zdense;
 
-pub use driven::{Driven, Field, FrequencyResult, SolveError};
+pub use driven::{Driven, Field, FrequencyResult, SPort, SolveError};
 pub use num_complex::Complex64;
 pub use smatrix::SMatrix;

@@ -42,7 +42,7 @@ pub(super) fn tdr(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 
 /// The port and the transform.
 fn controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let ports: Vec<String> = app.session.model.ports.iter().map(|p| p.name.clone()).collect();
+    let ports: Vec<String> = app.session.sparameter_entries().into_iter().map(|e| e.name).collect();
     let tdr = &mut app.views.tdr;
     ui.horizontal(|ui| {
         ui.label("port");

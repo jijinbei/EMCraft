@@ -67,7 +67,30 @@ pub struct Port {
     /// the port's face, along the line (negative: outside it, a line added).
     #[serde(default)]
     pub deembed: f64,
+    /// Whether a cross-section holding several conductors (coupled strips) is one terminal per
+    /// conductor, its S-parameters read per strip, or one modal port (its first mode only).
+    #[serde(default)]
+    pub terminals: Terminals,
 }
+
+/// How a port whose cross-section holds several conductors besides the ground is read.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Terminals {
+    /// One terminal per conductor when there are two or more (named `<port>:<k>`, the conductors
+    /// from the lowest x, then y), each referred to the port's reference impedance (50 Ω when
+    /// none is set); a port with one conductor or none is read in its first mode.
+    #[default]
+    Auto,
+    /// The first mode only, whatever the conductors (the even mode of two like strips).
+    Modal,
+}
+
+/// The most conductors a terminal port may hold.
+pub const MAX_TERMINALS: usize = 8;
+
+/// The reference impedance (Ω) of a terminal port's terminals when the port sets none.
+pub const DEFAULT_TERMINAL_IMPEDANCE: f64 = 50.0;
 
 /// Where a port's modes come from.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,7 +132,16 @@ impl Port {
     /// A port at `end` with four modes, the closed forms' where they apply, its S-parameters
     /// in its own mode's power waves.
     pub fn new(name: impl Into<String>, end: End) -> Port {
-        Port { name: name.into(), end, modes: 4, face: None, mode_solver: ModeSolver::Auto, reference: None, deembed: 0.0 }
+        Port {
+            name: name.into(),
+            end,
+            modes: 4,
+            face: None,
+            mode_solver: ModeSolver::Auto,
+            reference: None,
+            deembed: 0.0,
+            terminals: Terminals::Auto,
+        }
     }
 
     /// The port with `modes` modes in its boundary condition.
@@ -131,6 +163,11 @@ impl Port {
         Port { deembed: metres, ..self }
     }
 
+    /// The port read in its first mode whatever its conductors, or per conductor.
+    pub fn with_terminals(self, terminals: Terminals) -> Port {
+        Port { terminals, ..self }
+    }
+
     /// The port's S-parameters referred to `ohms`.
     pub fn referred_to(self, ohms: f64) -> Port {
         Port { reference: Some(ohms), ..self }
@@ -139,6 +176,9 @@ impl Port {
     /// Checks the port's own settings: a positive reference impedance, a finite de-embedding
     /// and 1 to [`MAX_PORT_MODES`] modes.
     pub fn check_settings(&self) -> Result<()> {
+        if self.name.contains(':') {
+            return Err(invalid(format!("port `{}`", self.name), "a port's name must not hold `:` (terminals are named `<port>:<k>`)"));
+        }
         if let Some(r) = self.reference {
             positive(&format!("reference impedance of port `{}`", self.name), r)?;
         }

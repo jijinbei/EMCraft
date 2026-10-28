@@ -281,13 +281,13 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
     let system = Reduced::new(d, basis, frequency, terms)?;
     let mut fields = Vec::with_capacity(terms.len());
     let mut worst: f64 = 0.0;
-    for t in terms.iter().filter_map(|list| list.first()) {
+    for t in d.excitations().into_iter().filter_map(|(p, m)| terms.get(p)?.get(m)) {
         let (x, residual) = system.solve(basis, t)?;
         worst = worst.max(residual);
         fields.push(x);
     }
     // S as the full solve reads it.
-    let (s, impedances) = d.s_parameters(terms, &fields)?;
+    let (s, impedances) = d.s_parameters(terms, &mut fields, frequency)?;
     let seconds = t0.elapsed().as_secs_f64();
     Ok((
         FrequencyResult {

@@ -255,14 +255,20 @@ fn solution<'a>(session: &'a Session, view: &FieldView) -> Result<Solution<'a>> 
     let sweep = results.sweep()?;
     let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
     let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
-    let port_name = session.model.ports.get(view.excitation).map_or("1", |p| p.name.as_str());
-    let mode = match sweep.driven.ports.get(view.excitation).map(|p| &p.modes) {
-        Some(emcraft_solver::driven::PortModes::Analytic { modes, .. }) => {
+    let entries = sweep.entries();
+    let entry = entries.get(view.excitation);
+    let port_name = entry.map_or("1", |e| e.name.as_str());
+    let mode = match entry.map(|e| (e.terminal, sweep.driven.ports.get(e.port).map(|p| &p.modes))) {
+        Some((Some(_), _)) => {
+            format!("a 1 W wave on its strip, the other terminals matched to {} Ω", entry.and_then(|e| e.reference).unwrap_or_default())
+        }
+        Some((None, Some(emcraft_solver::driven::PortModes::Analytic { modes, .. }))) => {
             modes.first().map_or("TE10".to_owned(), |(m, _)| format!("1 V/m {}", m.name()))
         }
         _ => "its first mode".to_owned(),
     };
-    let caption = format!("port {port_name} excited by {mode}, order {}", sweep.order.as_u8());
+    let what = if entry.is_some_and(|e| e.terminal.is_some()) { "terminal" } else { "port" };
+    let caption = format!("{what} {port_name} excited by {mode}, order {}", sweep.order.as_u8());
     Ok(Solution { driven: &sweep.driven, field: x, frequency: r.frequency, caption })
 }
 

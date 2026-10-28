@@ -86,6 +86,7 @@ mod pml;
 mod ports;
 mod solution;
 mod sparams;
+mod terminals;
 mod terms;
 
 pub(crate) use assembly::{System, rule_points};
@@ -98,6 +99,7 @@ pub use periodic::Tie;
 use pml::Layer;
 pub use pml::PML_REFLECTION;
 pub use ports::{MAX_PATTERN_SIDE, ModeInfo, ModePattern, NumericPort, PortData, PortModes, kept_by, port_mode_pattern, port_modes};
+pub use terminals::SPort;
 pub use terms::PortTerm;
 
 use assembly::Space;
@@ -344,6 +346,7 @@ impl Driven {
                     modes: PortModes::Floquet(Box::new(floquet::prepare(model, per, p, f)?)),
                     reference: None,
                     deembed: 0.0,
+                    terminals: 0,
                 }),
                 None => ports::prepare(model, p, &space, f),
             })
@@ -404,8 +407,8 @@ impl Driven {
         let assembly = t0.elapsed().as_secs_f64();
         let f = self.factor(&system)?;
         let System { a, rhs, terms, .. } = system;
-        let solved = solution::solve_each(&f, &a, &rhs, self.dofs.unknowns, assembly)?;
-        let (s, impedances) = self.s_parameters(&terms, &solved.fields)?;
+        let mut solved = solution::solve_each(&f, &a, &rhs, self.dofs.unknowns, assembly)?;
+        let (s, impedances) = self.s_parameters(&terms, &mut solved.fields, frequency)?;
         Ok(solved.result(frequency, s, impedances))
     }
 

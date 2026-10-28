@@ -6,7 +6,7 @@ use std::sync::Arc;
 use emcraft_fem::Order;
 use emcraft_model::Model;
 use emcraft_model::units::Display;
-use emcraft_solver::{Driven, FrequencyResult};
+use emcraft_solver::{Driven, FrequencyResult, SPort};
 use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, check_keys, find_command};
@@ -23,6 +23,11 @@ pub struct Sweep {
 }
 
 impl Sweep {
+    /// S's entries: each port, or each conductor of a terminal port.
+    pub fn entries(&self) -> Vec<SPort> {
+        self.driven.entries()
+    }
+
     /// The result at a frequency (Hz) solved within 10⁻⁹ of it, or the nearest when `nearest`.
     pub fn at(&self, frequency: f64, nearest: bool) -> Option<&FrequencyResult> {
         let best = self.results.iter().min_by(|a, b| (a.frequency - frequency).abs().total_cmp(&(b.frequency - frequency).abs()))?;
@@ -155,6 +160,30 @@ pub struct Session {
 }
 
 impl Session {
+    /// S's entries: the sweep's (each conductor of a terminal port its own), or before a sweep
+    /// one per waveguide port.
+    pub fn sparameter_entries(&self) -> Vec<SPort> {
+        match &self.results.sweep {
+            Some(sw) => sw.entries(),
+            None => self
+                .model
+                .ports
+                .iter()
+                .enumerate()
+                .map(|(i, p)| SPort { name: p.name.clone(), port: i, terminal: None, reference: p.reference })
+                .collect(),
+        }
+    }
+
+    /// The entry of S named `name` (a terminal `<port>:<k>`, or a port: its first entry) and its
+    /// index; `None` when nothing has that name.
+    pub fn sparameter_entry(&self, name: &str) -> Option<(usize, SPort)> {
+        let entries = self.sparameter_entries();
+        let exact = entries.iter().position(|e| e.name == name);
+        let by_port = || entries.iter().position(|e| self.model.ports.get(e.port).is_some_and(|p| p.name == name));
+        exact.or_else(by_port).and_then(|k| entries.get(k).cloned().map(|e| (k, e)))
+    }
+
     pub fn new() -> Session {
         Session::default()
     }

@@ -208,8 +208,9 @@ impl Driven {
         self.media.dispersive_materials().iter().map(|m| m.eps_at(frequency) * (k0 * k0)).collect()
     }
 
-    /// The system at a frequency: the matrix bordered by the ports' modes, each port's
-    /// excitation by its first mode, and the modes' terms.
+    /// The system at a frequency: the matrix bordered by the ports' modes, each excitation
+    /// ([`Driven::excitations`]: a port's first mode, each conductor's of a terminal port), and
+    /// the modes' terms.
     pub(crate) fn system(&self, frequency: f64) -> Result<System<'_>> {
         let a = self.unbordered(frequency)?;
         let terms = self.checked_terms(frequency)?;
@@ -220,11 +221,12 @@ impl Driven {
         let border = borders.len();
         let a = bordered(&a, &borders)?;
         let n = self.dofs.unknowns;
-        let rhs = terms
-            .iter()
-            .map(|list| {
+        let rhs = self
+            .excitations()
+            .into_iter()
+            .map(|(p, m)| {
                 let mut b = vec![C::new(0.0, 0.0); n + border];
-                if let Some(t) = list.first() {
+                if let Some(t) = terms.get(p).and_then(|l| l.get(m)) {
                     for (i, bi) in t.excitation() {
                         b[i] = bi;
                     }

@@ -1,4 +1,5 @@
-//! The S-parameter chart: |S11| and |S21| in dB against frequency, the solved points over the
+//! The S-parameter chart: |S11| and |S21| (and the rest of the first column with more ports or
+//! terminals) in dB against frequency, the solved points over the
 //! reference's curves, with the sections' cut-offs marked.
 
 use emcraft_model::units::decibels;
@@ -9,6 +10,12 @@ use emcraft_solver::Complex64 as C;
 use super::chart::{DB_FLOOR, db_axis};
 use super::reference::{reference, section_cutoffs};
 use crate::{EngineError, Result, Session};
+
+/// The most entries of S's first column the chart draws.
+const MAX_CHART_ENTRIES: usize = 8;
+
+/// Colours of the first column's entries past S₂₁.
+const MORE_COLORS: [Rgb; 3] = [Rgb(30, 130, 60), Rgb(150, 90, 10), Rgb(110, 40, 140)];
 
 /// |S| in dB, no lower than the chart reaches.
 fn db(c: C) -> f64 {
@@ -37,6 +44,11 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
             points: pts(1, 0),
         });
         series.push(Series { label: "$|S_{11}|$ FEM".into(), color: Rgb(140, 30, 20), style: Style::Markers, points: pts(0, 0) });
+        // More entries (a terminal port's conductors, more ports): the rest of the first column.
+        let n = sweep.results.first().map_or(0, |r| r.s.ports()).min(MAX_CHART_ENTRIES);
+        for (p, color) in (2..n).zip(MORE_COLORS.iter().cycle()) {
+            series.push(Series { label: format!("$|S_{{{}1}}|$ FEM", p + 1), color: *color, style: Style::Markers, points: pts(p, 0) });
+        }
     }
     if let Some(td) = td {
         let pts = |v: &[C]| td.frequencies.iter().zip(v).map(|(f, s)| [fu.from_si(*f), db(*s)]).collect();

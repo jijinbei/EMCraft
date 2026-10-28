@@ -223,12 +223,13 @@ pub fn touchstone(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
     let ma = p.choice("format").or(Format::Ri)? == Format::Ma;
     let sw = s.results.sweep()?;
-    let n = s.model.ports.len();
-    let refs: Vec<Option<f64>> = s.model.ports.iter().map(|p| p.reference).collect();
+    let entries = sw.entries();
+    let n = entries.len();
+    let refs: Vec<Option<f64>> = entries.iter().map(|e| e.reference).collect();
     let one = refs.first().copied().flatten().filter(|r| refs.iter().all(|x| *x == Some(*r)));
     let mut out = String::new();
     out.push_str("! EMCraft S-parameters\n");
-    out.push_str(&format!("! ports: {}\n", s.model.ports.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")));
+    out.push_str(&format!("! ports: {}\n", entries.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ")));
     if one.is_none() {
         out.push_str("! power waves of the ports' modes (no common reference impedance): R 50 is nominal\n");
     }
@@ -242,9 +243,12 @@ pub fn touchstone(s: &mut Session, p: &Params) -> Result<Value> {
             // Version 1's two-port order: S11 S21 S12 S22.
             2 => out.push_str(&format!("{f} {} {} {} {}\n", pair(at(0, 0)), pair(at(1, 0)), pair(at(0, 1)), pair(at(1, 1)))),
             _ => {
+                // A row of the matrix per line, at most four values to a line (continued).
                 for i in 0..n {
-                    let row: Vec<String> = (0..n).map(|j| pair(at(i, j))).collect();
-                    out.push_str(&format!("{}{}\n", if i == 0 { format!("{f} ") } else { String::new() }, row.join(" ")));
+                    for (k, chunk) in (0..n).map(|j| pair(at(i, j))).collect::<Vec<_>>().chunks(4).enumerate() {
+                        let lead = if i == 0 && k == 0 { format!("{f} ") } else { String::new() };
+                        out.push_str(&format!("{lead}{}\n", chunk.join(" ")));
+                    }
                 }
             }
         }
@@ -254,11 +258,15 @@ pub fn touchstone(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// The sweep's physics checks: passivity (the largest singular value of S, ≤ 1 for a passive
-/// structure) and reciprocity (max |S − Sᵀ|), the worst over the frequencies.
+/// structure), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 for a lossless
+/// structure), the worst over the frequencies.
 pub fn check(s: &mut Session, _: &Params) -> Result<Value> {
     let sw = s.results.sweep()?;
     let worst = |f: fn(&emcraft_solver::SMatrix) -> f64| sw.results.iter().map(|r| f(&r.s)).fold(0.0, f64::max);
     let gain = worst(emcraft_solver::SMatrix::largest_singular_value);
     let asym = worst(emcraft_solver::SMatrix::reciprocity_error);
-    Ok(json!({"largest_singular_value": gain, "passive": gain <= 1.0 + 1e-9, "reciprocity_error": asym, "frequencies": sw.results.len()}))
+    let lossless = worst(emcraft_solver::SMatrix::unitarity_error);
+    Ok(
+        json!({"largest_singular_value": gain, "passive": gain <= 1.0 + 1e-9, "reciprocity_error": asym, "unitarity_error": lossless, "frequencies": sw.results.len()}),
+    )
 }

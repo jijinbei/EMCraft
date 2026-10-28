@@ -31,7 +31,7 @@ pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepSta
         kv(ui, "max |S − S^T|", format!("{:.3e}", n("reciprocity_error")), t);
     }
     ui_kit::section(ui, "Touchstone");
-    let ports = app.session.model.ports.len().max(1);
+    let ports = app.session.sparameter_entries().len().max(1);
     let f = &mut app.workflow.fields;
     if f.touchstone.is_empty() {
         f.touchstone = format!("emcraft.s{ports}p");

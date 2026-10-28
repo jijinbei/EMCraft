@@ -20,12 +20,16 @@ use crate::smatrix::SMatrix;
 /// are the power waves; for equal port media the normalisation cancels and S is the ratio of the
 /// modes' amplitudes, |S21| = e^{−αL} along a uniform line. (Power waves of a lossy line would
 /// not be reciprocal, Marks & Williams §4.)
-pub(crate) fn read_s(terms: &[Vec<PortTerm<'_>>], fields: &[Vec<C>]) -> SMatrix {
-    let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(C::new(1.0, 0.0), |t| t.proxy);
-    let mut s = SMatrix::zeros(terms.len());
+///
+/// `excitations` lists (port, mode) per entry of S, each excited by a unit wave of its mode in
+/// `fields` (the first mode of each port, or each conductor's mode of a terminal port).
+pub(crate) fn read_s(terms: &[Vec<PortTerm<'_>>], excitations: &[(usize, usize)], fields: &[Vec<C>]) -> SMatrix {
+    let term = |e: usize| excitations.get(e).and_then(|&(p, m)| terms.get(p)?.get(m));
+    let proxy = |r: usize| term(r).map_or(C::new(1.0, 0.0), |t| t.proxy);
+    let mut s = SMatrix::zeros(excitations.len());
     for (q, x) in fields.iter().enumerate() {
-        for (p, list) in terms.iter().enumerate() {
-            let Some(t) = list.first() else { continue };
+        for p in 0..excitations.len() {
+            let Some(t) = term(p) else { continue };
             let c = t.coefficient(x);
             let direct = if p == q { c - 1.0 } else { c };
             let (pp, pq) = (proxy(p), proxy(q));
@@ -36,12 +40,25 @@ pub(crate) fn read_s(terms: &[Vec<PortTerm<'_>>], fields: &[Vec<C>]) -> SMatrix 
 }
 
 impl Driven {
-    /// S from the solutions `fields` of each port's excitation, with each port's line impedance
-    /// (where its first mode has one): read ([`read_s`]), referred to the ports' reference
-    /// impedances ([`Driven::refer`]) and de-embedded ([`Driven::deembed`]).
-    pub(crate) fn s_parameters(&self, terms: &[Vec<PortTerm<'_>>], fields: &[Vec<C>]) -> Result<(SMatrix, Vec<Option<f64>>)> {
+    /// S from the solutions `fields` of each excitation ([`Driven::excitations`]), with each
+    /// entry's line impedance (where a port's first mode has one): read ([`read_s`]), referred to
+    /// the ports' reference impedances ([`Driven::refer`]) and de-embedded
+    /// ([`Driven::deembed`]); with terminal ports, de-embedded per mode and converted to the
+    /// terminals' waves, `fields` then made the entries' ([`Driven::to_terminals`]).
+    pub(crate) fn s_parameters(&self, terms: &[Vec<PortTerm<'_>>], fields: &mut Vec<Vec<C>>, frequency: f64) -> Result<(SMatrix, Vec<Option<f64>>)> {
+        let excitations = self.excitations();
+        let modal = read_s(terms, &excitations, fields);
+        if self.has_terminals() {
+            let impedances = self
+                .entries()
+                .iter()
+                .map(|e| if e.terminal.is_some() { None } else { terms.get(e.port).and_then(|l| l.first()).and_then(|t| t.impedance) })
+                .collect();
+            let s = self.to_terminals(&modal, terms, frequency, fields)?;
+            return Ok((s, impedances));
+        }
         let impedances: Vec<Option<f64>> = terms.iter().map(|l| l.first().and_then(|t| t.impedance)).collect();
-        let s = self.deembed(self.refer(read_s(terms, fields), &impedances)?, terms);
+        let s = self.deembed(self.refer(modal, &impedances)?, terms);
         Ok((s, impedances))
     }
 

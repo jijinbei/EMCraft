@@ -341,6 +341,7 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
         mode_solver: p.choice("mode_solver").or_default()?,
         reference: p.number("impedance").optional()?,
         deembed: p.length("deembed").or(0.0)?,
+        terminals: p.choice("terminals").or_default()?,
     };
     s.model.add_port(port)?;
     s.results.invalidate(Change::Ports);

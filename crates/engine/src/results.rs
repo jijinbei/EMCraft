@@ -72,7 +72,8 @@ pub fn sparameters(s: &mut Session, _: &Params) -> Result<Value> {
 /// The sweep's S-parameters, backward errors, timings and port impedances.
 pub(crate) fn sparameter_table(s: &Session) -> Result<Value> {
     let sw = s.results.sweep()?;
-    let names: Vec<&str> = s.model.ports.iter().map(|p| p.name.as_str()).collect();
+    let entries = sw.entries();
+    let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     let rows: Vec<Value> = sw
         .results
         .iter()
@@ -91,7 +92,12 @@ pub(crate) fn sparameter_table(s: &Session) -> Result<Value> {
             Value::Object(m)
         })
         .collect();
-    Ok(json!({"ports": names, "frequency_unit": s.display.frequency.symbol(), "points": rows}))
+    let mut reply = json!({"ports": names, "frequency_unit": s.display.frequency.symbol(), "points": rows});
+    if sw.driven.has_terminals() {
+        let refs: Vec<Option<f64>> = entries.iter().map(|e| e.reference).collect();
+        reply["references"] = json!(refs);
+    }
+    Ok(reply)
 }
 
 pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
@@ -192,9 +198,9 @@ fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Co
 /// on a harmonic sweep by default, else band pass); with the port's name and reference
 /// impedance.
 pub(crate) fn tdr_of(s: &Session, p: &Params) -> Result<(crate::tdr::Tdr, String, Option<f64>)> {
-    let (k, port) = match args::port(s, p, "port")? {
+    let (k, port) = match args::entry(s, p, "port")? {
         Some(named) => named,
-        None => s.model.ports.iter().enumerate().next().ok_or_else(|| EngineError::Failed("no ports".into()))?,
+        None => s.sparameter_entries().into_iter().enumerate().next().ok_or_else(|| EngineError::Failed("no ports".into()))?,
     };
     let (freqs, refl) = reflection(s, k)?;
     let mode = match p.choice::<crate::tdr::Mode>("mode").optional()? {

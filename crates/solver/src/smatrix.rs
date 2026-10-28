@@ -56,6 +56,18 @@ impl SMatrix {
         self.entries().map(|((p, q), s)| (s - self[(q, p)]).norm()).fold(0.0, f64::max)
     }
 
+    /// max |(SᴴS − 1)_ij|: zero for a lossless structure (S unitary).
+    pub fn unitarity_error(&self) -> f64 {
+        let n = self.n;
+        (0..n * n)
+            .map(|k| {
+                let (i, j) = (k / n, k % n);
+                let v: C = (0..n).map(|r| self[(r, i)].conj() * self[(r, j)]).sum();
+                (v - if i == j { 1.0 } else { 0.0 }).norm()
+            })
+            .fold(0.0, f64::max)
+    }
+
     /// The largest singular value: ≤ 1 for a passive structure. By power iteration on SᴴS
     /// (`n` is a port count, so a few hundred products cost nothing).
     pub fn largest_singular_value(&self) -> f64 {
@@ -88,6 +100,34 @@ impl SMatrix {
         let dt: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| den[(j, i)]).collect()).collect();
         let rows = (0..n).map(|i| zdense::solve(dt.clone(), num[i].to_vec())).collect::<Option<Vec<Vec<C>>>>()?;
         Some(SMatrix { n, entries: rows.concat() })
+    }
+}
+
+impl SMatrix {
+    /// S′ = (Q + P S)(P + Q S)⁻¹ for full P and Q (n × n, row-major): the waves a′ = P a + Q b,
+    /// b′ = Q a + P b, mixing the ports (a terminal port's modes into its conductors' waves).
+    /// Also (P + Q S)⁻¹, row-major, whose column k holds the old incident waves of a unit new
+    /// incident wave at k (the others zero). `None` when P + Q S is singular or a size is wrong.
+    pub fn transformed(&self, p: &[C], q: &[C]) -> Option<(SMatrix, Vec<C>)> {
+        let n = self.n;
+        if p.len() != n * n || q.len() != n * n {
+            return None;
+        }
+        // D = P + Q S, N = Q + P S.
+        let product = |l: &[C], i: usize, j: usize| (0..n).map(|k| l[i * n + k] * self[(k, j)]).sum::<C>();
+        let den: Vec<Vec<C>> = (0..n).map(|i| (0..n).map(|j| p[i * n + j] + product(q, i, j)).collect()).collect();
+        let num: Vec<C> = (0..n * n).map(|k| q[k] + product(p, k / n, k % n)).collect();
+        // X = D⁻¹, column by column.
+        let mut inv = vec![C::new(0.0, 0.0); n * n];
+        for k in 0..n {
+            let e: Vec<C> = (0..n).map(|i| C::new(if i == k { 1.0 } else { 0.0 }, 0.0)).collect();
+            let col = zdense::solve(den.clone(), e)?;
+            for (i, x) in col.into_iter().enumerate() {
+                inv[i * n + k] = x;
+            }
+        }
+        let s = SMatrix::from_fn(n, |i, j| (0..n).map(|k| num[i * n + k] * inv[k * n + j]).sum());
+        s.entries.iter().all(|c| c.re.is_finite() && c.im.is_finite()).then_some((s, inv))
     }
 }
 

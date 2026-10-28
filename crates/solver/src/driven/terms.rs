@@ -82,7 +82,7 @@ pub(crate) fn lossy_section_modes(section: &CrossSection, m: &Material, frequenc
 /// μ the medium's complex permeability.
 fn lossy_term<'a>(name: String, v: Cow<'a, [(usize, f64)]>, norm: f64, kappa: C, gamma: C, mu: C, propagating: bool) -> PortTerm<'a> {
     let kappa = kappa / mu;
-    PortTerm { name, v, factor: kappa / norm, rhs: 2.0 * kappa, norm, proxy: -J * kappa * norm, propagating, impedance: None, gamma }
+    PortTerm { name, v, factor: kappa / norm, rhs: 2.0 * kappa, norm, proxy: -J * kappa * norm, propagating, impedance: None, gamma, current: None }
 }
 
 /// One mode's part of a port condition at one frequency: the matrix gains factor·v vᵀ, a unit
@@ -102,6 +102,10 @@ pub struct PortTerm<'a> {
     pub impedance: Option<f64>,
     /// The mode's propagation constant γ = α + jβ (1/m): it goes as e^{−γz} along the line.
     pub gamma: C,
+    /// For the first modes of a terminal port, one per conductor: the conductors' currents on
+    /// the whole line, in terminal order, of the mode carrying 1 W (A/√W): a column of T_I
+    /// ([`CrossSection::terminal_currents`]).
+    pub current: Option<Vec<C>>,
 }
 
 impl PortTerm<'_> {
@@ -217,13 +221,14 @@ impl Driven {
                             propagating: gamma.1 > 0.0,
                             impedance: None,
                             gamma: C::new(gamma.0, gamma.1),
+                            current: None,
                         })
                     })
                     .collect()
             }
             PortModes::Numeric(n) => match &n.medium {
                 Some(m) => self.lossy_numeric_terms(n, m, frequency),
-                None => self.numeric_terms(n, k0),
+                None => self.numeric_terms(n, k0, port.terminals),
             },
             PortModes::Floquet(_) => Err(invalid(
                 format!("port `{}`", port.name),
@@ -276,9 +281,13 @@ impl Driven {
             .collect())
     }
 
-    fn numeric_terms(&self, n: &NumericPort, k0: f64) -> Result<Vec<PortTerm<'static>>> {
+    /// A numerical port's terms; with `terminals` (≥ 2), its first modes carry their
+    /// conductor currents.
+    fn numeric_terms(&self, n: &NumericPort, k0: f64, terminals: usize) -> Result<Vec<PortTerm<'static>>> {
         let modes = n.section.modes_split(k0, n.count)?;
         let v = self.numeric_vectors(n, &modes, false)?;
+        let t_i = if terminals >= 2 { Some(n.section.terminal_currents(&modes, k0, &self.symmetry)?) } else { None };
+        let column = |i: usize| t_i.as_ref().filter(|_| i < terminals).map(|t| (0..terminals).map(|r| t[r * terminals + i]).collect());
         let impedance = match modes.first() {
             Some(m) => n.section.impedance_whole(m, k0, &self.symmetry)?,
             None => None,
@@ -300,6 +309,7 @@ impl Driven {
                     proxy: C::new(if m.beta2 > 0.0 { beta.re * m.d } else { 0.0 }, 0.0),
                     propagating: m.beta2 > 0.0,
                     gamma: jb,
+                    current: column(i),
                 }
             })
             .collect())

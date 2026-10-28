@@ -308,12 +308,13 @@ pub(super) fn field_display(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     ui.checkbox(&mut app.field.view.show_e, "E arrows");
     ui.checkbox(&mut app.field.view.show_h, "H arrows");
-    let ports = &app.session.model.ports;
-    if ports.len() > 1 && app.field.view.mode.is_none() {
+    // Each entry of S is an excitation: a port, or a terminal of a terminal port.
+    let entries = app.session.sparameter_entries();
+    if entries.len() > 1 && app.field.view.mode.is_none() {
         ui.separator();
         ui.label("excite");
-        for (i, p) in ports.iter().enumerate() {
-            ui.radio_value(&mut app.field.view.excitation, i, p.name.as_str());
+        for (i, e) in entries.iter().enumerate() {
+            ui.radio_value(&mut app.field.view.excitation, i, e.name.as_str());
         }
     }
     ui.separator();

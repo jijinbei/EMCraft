@@ -18,7 +18,9 @@ use std::collections::HashSet;
 use emcraft_fem::Order;
 use emcraft_fem::modes::{self, Mode};
 use emcraft_fem::tri::TRI_EDGES;
-use emcraft_model::{Boundary, BoundaryFace, End, Material, Mesh, ModeSolver, Model, Point3, Port, PortShape, Symmetry, SymmetryKind, Vec3};
+use emcraft_model::{
+    Boundary, BoundaryFace, End, MAX_TERMINALS, Material, Mesh, ModeSolver, Model, Point3, Port, PortShape, Symmetry, SymmetryKind, Terminals, Vec3,
+};
 
 use super::assembly::{FaceRule, Space, port_rule_points};
 use super::{NONE, Result, SolveError, check_frequency, invalid, wavenumber};
@@ -37,6 +39,9 @@ pub struct PortData {
     pub reference: Option<f64>,
     /// How far (m) inside the model the reference plane lies.
     pub deembed: f64,
+    /// Terminals: the conductors of a cross-section holding two or more (one S entry each,
+    /// [`super::terminals`]); 0 for a port read in its first mode.
+    pub terminals: usize,
 }
 
 /// A port's modes: closed forms, or the numerical solver's on its cross-section.
@@ -69,6 +74,8 @@ pub struct NumericPort {
     /// is then solved with a unit filling, and the modes' γ come from this material's
     /// complex k² ([`super::terms`]).
     pub(super) medium: Option<Material>,
+    /// Its terminals (0: read in its first mode).
+    pub(super) terminals: usize,
 }
 
 /// A port mode at a frequency: its name and β² (rad²/m²; negative when evanescent).
@@ -147,11 +154,41 @@ pub(super) fn faces_of_port(mesh: &Mesh, p: &Port) -> Result<Vec<usize>> {
 /// Port `p` on its boundary `faces`: the closed forms' vectors once, or the numerical modes'
 /// support (their vectors come with each frequency).
 pub(super) fn prepare(model: &Model, p: &Port, space: &Space, faces: &[usize]) -> Result<PortData> {
-    let modes = match closed_form_shape(model, p) {
-        Some(shape) => analytic_port(model, p, shape, space, faces)?,
-        None => PortModes::Numeric(Box::new(numeric_port(model, p, space, faces)?)),
+    let (modes, terminals) = match closed_form_shape(model, p) {
+        Some(shape) => (analytic_port(model, p, shape, space, faces)?, 0),
+        None => {
+            let n = numeric_port(model, p, space, faces)?;
+            let t = n.terminals;
+            (PortModes::Numeric(Box::new(n)), t)
+        }
     };
-    Ok(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference, deembed: p.deembed })
+    Ok(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference, deembed: p.deembed, terminals })
+}
+
+/// How many terminals a port whose cross-section is `section` has: its conductors when it asks
+/// for terminals and holds two or more, else 0. Refuses more than [`MAX_TERMINALS`], and terminal
+/// ports where they are not supported yet (a lossy medium, an open problem).
+fn terminal_count(model: &Model, p: &Port, section: &CrossSection, lossy: bool) -> Result<usize> {
+    if p.terminals == Terminals::Modal {
+        return Ok(0);
+    }
+    let n = section.conductors().len();
+    if n < 2 {
+        return Ok(0);
+    }
+    if n > MAX_TERMINALS {
+        return Err(invalid(
+            what(p),
+            format!("its cross-section holds {n} conductors; a terminal port takes at most {MAX_TERMINALS} (or set `terminals` modal)"),
+        ));
+    }
+    if lossy {
+        return Err(invalid(what(p), "not supported yet: a terminal port (several strips) in a lossy medium; set the port's `terminals` modal"));
+    }
+    if model.open.is_some() {
+        return Err(invalid(what(p), "not supported yet: a terminal port (several strips) in an open problem; set the port's `terminals` modal"));
+    }
+    Ok(n)
 }
 
 /// The quadrature of each of a port's faces with the port rule.
@@ -269,10 +306,12 @@ pub fn kept_by(mode: &Mode, planes: &[Symmetry]) -> bool {
 /// problem, materials from the tetrahedra behind them, and the unknowns with a trace there.
 fn numeric_port(model: &Model, p: &Port, space: &Space, faces: &[usize]) -> Result<NumericPort> {
     let (section, medium) = cross_section(model, p, space.mesh, space.order(), faces)?;
+    let terminals = terminal_count(model, p, &section, medium.is_some())?;
     // The unknowns with a tangential trace on the faces (as for the closed forms).
     let mut touched = std::collections::BTreeSet::new();
     for_each_port_point(*space, faces, |_, _, traced| touched.extend(traced.iter().map(|(u, _)| *u)))?;
-    Ok(NumericPort { section, faces: faces.to_vec(), count: p.modes as usize, support: touched.into_iter().collect(), medium })
+    let count = (p.modes as usize).max(terminals);
+    Ok(NumericPort { section, faces: faces.to_vec(), count, support: touched.into_iter().collect(), medium, terminals })
 }
 
 /// A triangle's edges, each by its two nodes in ascending order.

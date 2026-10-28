@@ -80,10 +80,11 @@ fn export_params(app: &EmcraftApp, path: &str) -> Value {
         if let Some(at) = app.field.at {
             o.insert("at".into(), json!((at * 1e4).round() / 1e4));
         }
-        if let Some(port) = app.session.model.ports.get(v.excitation)
-            && app.session.model.ports.len() > 1
+        let entries = app.session.sparameter_entries();
+        if let Some(entry) = entries.get(v.excitation)
+            && entries.len() > 1
         {
-            o.insert("excitation".into(), json!(port.name));
+            o.insert("excitation".into(), json!(entry.name));
         }
     }
     p

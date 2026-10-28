@@ -43,7 +43,7 @@ pub use model::Model;
 pub use num_complex::Complex64;
 pub use open::{LumpedPort, Open, OpenShape, Source, SphericalLayer};
 pub use periodic::{Periodic, Polarization};
-pub use port::{End, MAX_PORT_MODES, ModeSolver, Port, PortFace, PortShape};
+pub use port::{DEFAULT_TERMINAL_IMPEDANCE, End, MAX_PORT_MODES, MAX_TERMINALS, ModeSolver, Port, PortFace, PortShape, Terminals};
 pub use shape::{Axis, Combine, Feature, Inclusion, MAX_SURFACE_TRIANGLES, Shape, Solid, solid_angle};
 pub use symmetry::{Image, Symmetry, SymmetryKind};
 pub use waveguide::{Layer, Section, Span, Strip, Via, Waveguide};

@@ -144,7 +144,111 @@ impl CrossSection {
         }
         Ok(if sum > 0.0 && sum.is_finite() { Some(2.0 * power / sum) } else { None })
     }
+
+    /// The conductors (as [`CrossSection::conductors`] lists them) in terminal order: from the
+    /// lowest x, then the lowest y, of their nodes' centroids, to a millionth of the section's
+    /// size.
+    pub fn terminal_order(&self) -> Vec<usize> {
+        let conductors = self.conductors();
+        let (lo, hi) = self.bounds();
+        let size = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(f64::MIN_POSITIVE);
+        let key = |nodes: &Vec<u32>| -> (i64, i64) {
+            let n = nodes.len().max(1) as f64;
+            let (sx, sy) = nodes.iter().filter_map(|&v| self.nodes.get(v as usize)).fold((0.0, 0.0), |(a, b), p| (a + p.x, b + p.y));
+            let q = |c: f64, l: f64| ((c / n - l) / size * 1e6).round() as i64;
+            (q(sx, lo[0]), q(sy, lo[1]))
+        };
+        let keys: Vec<(i64, i64)> = conductors.iter().map(key).collect();
+        let mut order: Vec<usize> = (0..conductors.len()).collect();
+        order.sort_by(|a, b| keys[*a].cmp(&keys[*b]).then(a.cmp(b)));
+        order
+    }
+
+    /// The nodes' bounding box: lowest and highest (x, y).
+    fn bounds(&self) -> ([f64; 2], [f64; 2]) {
+        self.nodes
+            .iter()
+            .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(lo, hi), p| ([lo[0].min(p.x), lo[1].min(p.y)], [hi[0].max(p.x), hi[1].max(p.y)]))
+    }
+
+    /// The conductor currents of `modes` (one per conductor, propagating) on the whole line, in
+    /// terminal order ([`CrossSection::terminal_order`]), each mode scaled to carry 1 W: column i
+    /// of the returned row-major N × N matrix T_I is mode i's Î = I/√P (A/√W). On the part
+    /// `planes` keep, every plane must cut every conductor (a conductor beside a plane has an
+    /// image the part cannot excite on its own): the whole line's currents are then 2ⁿ the
+    /// part's and its power 2ⁿ the part's, Î = 2^{n/2} I/√P. The modes must be power-orthogonal
+    /// (cross powers within [`CROSS_POWER`] of the own), as split degenerate modes and modes of
+    /// distinct β are: with ½ T_Vᵀ T_I* = 1 the conductor voltages are then T_V = 2 (T_Iᴴ)⁻¹
+    /// (D. F. Williams, L. A. Hayden, R. B. Marks, *A complete multimode equivalent-circuit
+    /// theory for electrical design*, J. Res. NIST 102(4):405–423, 1997, the power-current
+    /// definition).
+    pub fn terminal_currents(&self, modes: &[PortMode], k0: f64, planes: &[Symmetry]) -> Result<Vec<num_complex::Complex64>> {
+        let order = self.terminal_order();
+        let n = order.len();
+        if n < 2 || modes.len() < n {
+            return Err(invalid("terminals", format!("{n} conductors need {n} modes, the port has {}", modes.len())));
+        }
+        let conductors = self.conductors();
+        let (lo, hi) = self.bounds();
+        let cut_by_all = conductors.iter().all(|nodes| {
+            planes.iter().all(|pl| {
+                let d = match pl.axis {
+                    Axis::X => 0,
+                    Axis::Y => 1,
+                    Axis::Z => return false,
+                };
+                let tol = 1e-9 * (hi[d] - lo[d]).abs().max(f64::MIN_POSITIVE);
+                nodes.iter().any(|&v| self.nodes.get(v as usize).is_some_and(|p| ((if d == 0 { p.x } else { p.y }) - pl.at).abs() <= tol))
+            })
+        });
+        if !cut_by_all {
+            return Err(invalid(
+                "terminals",
+                "not supported yet: a symmetry plane beside a conductor of a terminal port (its image would be a terminal of its own); model the whole, or set the port's `terminals` modal",
+            ));
+        }
+        let whole = 2f64.powi(planes.len() as i32);
+        let mut t = vec![num_complex::Complex64::new(0.0, 0.0); n * n];
+        for (i, mode) in modes.iter().take(n).enumerate() {
+            if mode.beta2 <= 0.0 {
+                return Err(invalid(
+                    "terminals",
+                    format!(
+                        "mode {} of a port with {n} conductors does not propagate: a terminal port needs one propagating mode per conductor",
+                        i + 1
+                    ),
+                ));
+            }
+            let (currents, power) = self.currents(mode, k0)?;
+            if !(power > 0.0 && power.is_finite()) {
+                return Err(invalid("terminals", format!("mode {} carries no power", i + 1)));
+            }
+            let scale = whole.sqrt() / power.sqrt();
+            for (row, &c) in order.iter().enumerate() {
+                t[row * n + i] = currents.get(c).copied().unwrap_or_default() * scale;
+            }
+            for (j, other) in modes.iter().take(i).enumerate() {
+                let cross = 0.5 * (self.power_form(mode, other)? + self.power_form(other, mode)?);
+                let own = (self.power_form(mode, mode)? * self.power_form(other, other)?).abs().sqrt();
+                if !(cross.abs() <= CROSS_POWER * own) {
+                    return Err(invalid(
+                        "terminals",
+                        format!(
+                            "not supported yet: modes {} and {} of a terminal port are not power-orthogonal (cross power {:.1e} of their own)",
+                            j + 1,
+                            i + 1,
+                            cross.abs() / own
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(t)
+    }
 }
+
+/// The largest cross power of two modes of a terminal port, as a fraction of their own.
+const CROSS_POWER: f64 = 1e-4;
 
 /// D = L Lᵀ for symmetric positive definite `d` (m × m, row-major); `None` otherwise.
 fn cholesky(d: &[f64], m: usize) -> Option<Vec<f64>> {
