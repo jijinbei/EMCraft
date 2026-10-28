@@ -26,7 +26,7 @@ fn exact(f: f64) -> (emcraft_solver::Complex64, emcraft_solver::Complex64) {
         a: A,
         layers: vec![
             Layer::lossless(0.01, 1.0, 1.0),
-            Layer { length: 0.02, eps_r: 2.2, mu_r: 1.0, loss_tangent: 0.02 },
+            Layer::lossy(0.02, 2.2, 1.0, 0.02),
             Layer::lossless(0.01, 1.0, 1.0),
         ],
     };
@@ -160,7 +160,7 @@ fn dispersive_slab_matches_the_exact_cascade() {
             a: A,
             layers: vec![
                 Layer::lossless(0.01, 1.0, 1.0),
-                Layer { length: 0.02, eps_r: e.re, mu_r: 1.0, loss_tangent: -e.im / e.re },
+                Layer::lossy(0.02, e.re, 1.0, -e.im / e.re),
                 Layer::lossless(0.01, 1.0, 1.0),
             ],
         };

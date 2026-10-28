@@ -185,6 +185,28 @@ impl Mode {
     }
 }
 
+impl Mode {
+    /// γ for a complex k² = ω²μ_cε_c (a lossy or dispersive filling): γ = √(k_c² − k²) on the
+    /// branch Re γ ≥ 0 (decaying along the outward normal), so γ = α + jβ with α > 0 once the
+    /// medium absorbs.
+    pub fn gamma_lossy(&self, k2: num_complex::Complex64) -> num_complex::Complex64 {
+        let g = (self.cutoff().powi(2) - k2).sqrt();
+        if g.re < 0.0 || (g.re == 0.0 && g.im < 0.0) { -g } else { g }
+    }
+
+    /// κ for a complex k²: γ (TE) or −k²/γ (TM). `None` at cut-off, where γ = 0.
+    pub fn kappa_lossy(&self, k2: num_complex::Complex64) -> Option<num_complex::Complex64> {
+        let g = self.gamma_lossy(k2);
+        if !(g.norm_sqr() > 1e-20 * k2.norm()) {
+            return None;
+        }
+        Some(match self.kind {
+            Kind::Te => g,
+            Kind::Tm => -k2 / g,
+        })
+    }
+}
+
 fn order(p: &Mode, q: &Mode) -> std::cmp::Ordering {
     p.cutoff().total_cmp(&q.cutoff()).then((p.kind == Kind::Tm).cmp(&(q.kind == Kind::Tm))).then(p.m.cmp(&q.m)).then(p.n.cmp(&q.n))
 }
@@ -311,6 +333,30 @@ mod tests {
         // −k²/(jβ) = j k²/β.
         let beta = (k * k - tm.cutoff().powi(2)).sqrt();
         assert!(kr.abs() < 1e-9 && (ki - k * k / beta).abs() < 1e-6 * ki);
+    }
+
+    #[test]
+    fn lossy_propagation_constants_decay_and_reduce_to_the_lossless_ones() {
+        use num_complex::Complex64 as C;
+        let m = Mode::te10(0.02, 0.01);
+        let kc = m.cutoff();
+        // Lossless k² gives the real constants.
+        let g = m.gamma_lossy(C::new(4.0 * kc * kc, 0.0));
+        assert!(g.re == 0.0 && (g.im - 3f64.sqrt() * kc).abs() < 1e-9);
+        let g = m.gamma_lossy(C::new(0.25 * kc * kc, 0.0));
+        assert!(g.im == 0.0 && (g.re - 0.75f64.sqrt() * kc).abs() < 1e-9);
+        // A lossy medium, k² = k′²(1 − j tan δ): α > 0, β > 0, and γ² = k_c² − k².
+        let k2 = C::new(4.0 * kc * kc, -0.04 * kc * kc);
+        let g = m.gamma_lossy(k2);
+        assert!(g.re > 0.0 && g.im > 0.0 && (g * g - (kc * kc - k2)).norm() < 1e-9 * kc * kc);
+        // α ≈ k″²/(2β) to first order.
+        assert!((g.re - 0.02 * kc * kc / (3f64.sqrt() * kc)).abs() < 1e-3 * g.re);
+        assert_eq!(m.kappa_lossy(k2), Some(g));
+        assert!(m.kappa_lossy(C::new(kc * kc, 0.0)).is_none());
+        let tm = Mode { kind: Kind::Tm, m: 1, n: 1, aperture: Aperture::Rect { a: 0.02, b: 0.01, x0: 0.0, y0: 0.0 } };
+        let k2 = C::new(4.0 * tm.cutoff().powi(2), -0.1);
+        let kappa = tm.kappa_lossy(k2).unwrap();
+        assert!((kappa + k2 / tm.gamma_lossy(k2)).norm() < 1e-12 * kappa.norm());
     }
 
     #[test]

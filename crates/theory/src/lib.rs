@@ -51,11 +51,28 @@ pub struct Layer {
     pub mu_r: f64,
     /// Dielectric loss tangent: ε = εr(1 − j tan δ).
     pub loss_tangent: f64,
+    /// Magnetic loss tangent: μ = μr(1 − j tan δ_m).
+    pub magnetic_loss_tangent: f64,
 }
 
 impl Layer {
     pub fn lossless(length: f64, eps_r: f64, mu_r: f64) -> Layer {
-        Layer { length, eps_r, mu_r, loss_tangent: 0.0 }
+        Layer { length, eps_r, mu_r, loss_tangent: 0.0, magnetic_loss_tangent: 0.0 }
+    }
+
+    /// A section with a dielectric loss tangent.
+    pub fn lossy(length: f64, eps_r: f64, mu_r: f64, loss_tangent: f64) -> Layer {
+        Layer { loss_tangent, ..Layer::lossless(length, eps_r, mu_r) }
+    }
+
+    /// z/μ, μ = μr(1 − j tan δ_m) (z/μr exactly when the permeability is lossless).
+    fn per_mu(&self, z: C) -> C {
+        if self.magnetic_loss_tangent == 0.0 { z / self.mu_r } else { z / C::new(self.mu_r, -self.mu_r * self.magnetic_loss_tangent) }
+    }
+
+    /// z μ (z μr exactly when the permeability is lossless).
+    fn times_mu(&self, z: C) -> C {
+        if self.magnetic_loss_tangent == 0.0 { z * self.mu_r } else { z * C::new(self.mu_r, -self.mu_r * self.magnetic_loss_tangent) }
     }
 }
 
@@ -142,9 +159,12 @@ pub fn te101_q_walls(a: f64, b: f64, d: f64, sigma: f64) -> f64 {
 }
 
 /// β = √(k² − (π/a)²) on the branch with Im β ≤ 0 (decaying along +z below cut-off or with
-/// losses), k² = k0² εr(1 − j tan δ) μr.
+/// losses), k² = k0² εr(1 − j tan δ) μr(1 − j tan δ_m).
 fn beta(k0: f64, a: f64, l: &Layer) -> C {
-    let k2 = C::new(1.0, -l.loss_tangent) * (k0 * k0 * l.eps_r * l.mu_r);
+    let mut k2 = C::new(1.0, -l.loss_tangent) * (k0 * k0 * l.eps_r * l.mu_r);
+    if l.magnetic_loss_tangent != 0.0 {
+        k2 *= C::new(1.0, -l.magnetic_loss_tangent);
+    }
     decaying_sqrt(k2 - (PI / a).powi(2))
 }
 
@@ -159,7 +179,9 @@ impl Te10Line {
             return Err(TheoryError::Invalid("line".into()));
         }
         for l in &self.layers {
-            if ![l.length, l.eps_r, l.mu_r].iter().all(|v| v.is_finite() && *v > 0.0) || !(l.loss_tangent.is_finite() && l.loss_tangent >= 0.0) {
+            if ![l.length, l.eps_r, l.mu_r].iter().all(|v| v.is_finite() && *v > 0.0)
+                || ![l.loss_tangent, l.magnetic_loss_tangent].iter().all(|t| t.is_finite() && *t >= 0.0)
+            {
                 return Err(TheoryError::Invalid(format!("layer {l:?}")));
             }
         }
@@ -179,8 +201,8 @@ impl Te10Line {
         for i in (0..n - 1).rev() {
             let (a1, b1) = amp[i + 1];
             let e = a1 + b1;
-            let d = beta[i + 1] / self.layers[i + 1].mu_r * (a1 - b1);
-            let r = d * self.layers[i].mu_r / beta[i];
+            let d = self.layers[i + 1].per_mu(beta[i + 1]) * (a1 - b1);
+            let r = self.layers[i].times_mu(d) / beta[i];
             let p = (-J * beta[i] * self.layers[i].length).exp();
             amp[i] = ((e + r) / (2.0 * p), (e - r) * p / 2.0);
         }
@@ -204,10 +226,13 @@ impl Te10Line {
 impl Te10Solution {
     /// (S₁₁, S₂₁) normalised to equal power at both ports: the field ratio times
     /// √((β_last/μ_last)/(β₀/μ₀)), since a TE₁₀ wave of amplitude A carries power ∝ |A|² β/μ
-    /// (the end sections lossless).
+    /// when the end sections are lossless. With lossy end sections β/μ is complex and the root
+    /// is taken unconjugated (the principal branch): the waves are then normalised by the
+    /// modes' unconjugated power ∫ e × h · ẑ dS, which keeps S reciprocal (EMCraft's choice,
+    /// docs/solvers/literature.md: pseudo-waves referred to each line's own wave impedance).
     pub fn s_power(&self) -> (C, C) {
         let n = self.layers.len() - 1;
-        let y = |i: usize| self.beta[i] / self.layers[i].mu_r;
+        let y = |i: usize| self.layers[i].per_mu(self.beta[i]);
         (self.s11, self.s21 * (y(n) / y(0)).sqrt())
     }
 
@@ -237,7 +262,7 @@ impl Te10Solution {
         let (x, z) = (p.x, p.z);
         let i = self.section(z);
         let (f, df) = self.profile(z);
-        let jwmu = J * 2.0 * PI * self.frequency * MU0 * self.layers[i].mu_r;
+        let jwmu = self.layers[i].times_mu(J * 2.0 * PI * self.frequency * MU0);
         let (s, c) = (PI * x / self.a).sin_cos();
         // ∇ × (ŷ E_y) = (−∂E_y/∂z, 0, ∂E_y/∂x).
         CVec3::new(df * s / jwmu, C::new(0.0, 0.0), -(f * c * PI / self.a) / jwmu)
@@ -329,7 +354,7 @@ mod tests {
     fn a_lossy_slab_absorbs_and_matches_the_complex_propagation_constant() {
         // A long matched-ish lossy line: |S21| ≈ e^{−Im(−β) L}.
         let f = 10.0e9;
-        let lossy = Layer { length: 0.1, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.01 };
+        let lossy = Layer::lossy(0.1, 1.0, 1.0, 0.01);
         let line = Te10Line { a: A, layers: vec![Layer::lossless(0.01, 1.0, 1.0), lossy, Layer::lossless(0.01, 1.0, 1.0)] };
         let s = line.solve(f).unwrap();
         let (r, t) = s.s_power();
@@ -374,5 +399,37 @@ mod tests {
         assert!(matches!(line.solve(te10_cutoff(A, 1.0, 1.0)), Err(TheoryError::Cutoff(1))));
         assert!(Te10Line { a: A, layers: vec![] }.solve(1e10).is_err());
         assert!(Te10Line { a: A, layers: vec![Layer { loss_tangent: -1.0, ..Layer::lossless(0.01, 1.0, 1.0) }] }.solve(1e10).is_err());
+        for bad in [-1.0, f64::NAN, f64::INFINITY] {
+            let layer = Layer { magnetic_loss_tangent: bad, ..Layer::lossless(0.01, 1.0, 1.0) };
+            assert!(Te10Line { a: A, layers: vec![layer] }.solve(1e10).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_magnetically_lossy_line_decays_by_its_complex_propagation_constant() {
+        // One section, ports in the lossy medium: S11 = 0, S21 = e^{−γL}, γ = √((π/a)² − k²),
+        // k² = k0² εr μr (1 − j tan δ_m), evaluated here by hand.
+        let f = 10.0e9;
+        let (l, tm) = (0.05, 0.03);
+        let line = Te10Line { a: A, layers: vec![Layer { magnetic_loss_tangent: tm, ..Layer::lossless(l, 2.0, 1.5) }] };
+        let s = line.solve(f).unwrap();
+        let k0 = 2.0 * PI * f / C0;
+        let k2 = C::new(k0 * k0 * 3.0, -k0 * k0 * 3.0 * tm);
+        let mut gamma = (C::new((PI / A).powi(2), 0.0) - k2).sqrt();
+        if gamma.re < 0.0 {
+            gamma = -gamma;
+        }
+        assert!(s.s11.norm() < 1e-14 && (s.s21 - (-gamma * l).exp()).norm() < 1e-12, "{} {}", s.s11, s.s21);
+        // A step from air into the lossy medium reflects by the wave admittances' ratio
+        // Γ = (Y₁ − Y₂)/(Y₁ + Y₂), Y = γ/μ, at the interface.
+        let air = Layer::lossless(0.01, 1.0, 1.0);
+        let step = Te10Line { a: A, layers: vec![air, Layer { magnetic_loss_tangent: tm, ..Layer::lossless(0.02, 2.0, 1.5) }] }.solve(f).unwrap();
+        let g1 = C::new(0.0, (k0 * k0 - (PI / A).powi(2)).sqrt());
+        let y2 = gamma / C::new(1.5, -1.5 * tm);
+        let at_interface = step.s11 * (2.0 * g1 * 0.01).exp();
+        assert!((at_interface - (g1 - y2) / (g1 + y2)).norm() < 1e-12, "{at_interface}");
+        // Dielectric and magnetic losses of equal tangent give the same k², so the same γ.
+        let d = Te10Line { a: A, layers: vec![Layer::lossy(l, 2.0, 1.5, tm)] }.solve(f).unwrap();
+        assert!((d.s21 - s.s21).norm() < 1e-12);
     }
 }

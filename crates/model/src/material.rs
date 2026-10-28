@@ -1,4 +1,5 @@
-//! Materials: linear and isotropic, optionally lossy (a loss tangent) or dispersive (poles).
+//! Materials: linear and isotropic, optionally lossy (dielectric and magnetic loss tangents) or
+//! dispersive (poles).
 
 use std::f64::consts::PI;
 
@@ -19,6 +20,10 @@ pub struct Material {
     /// e^{jωt}).
     #[serde(default)]
     pub loss_tangent: f64,
+    /// Magnetic loss tangent tan δ_m: the permeability is μr (1 − j tan δ_m) (time dependence
+    /// e^{jωt}, so μ = μ′ − jμ″ with μ″ ≥ 0).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub magnetic_loss_tangent: f64,
     /// Dispersion: poles whose susceptibilities add to the permittivity ([`Material::eps_at`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dispersion: Vec<Pole>,
@@ -26,6 +31,23 @@ pub struct Material {
 
 /// The most poles one material may carry.
 pub const MAX_POLES: usize = 16;
+
+/// The largest loss tangent a material may have (dielectric or magnetic): far beyond any
+/// dielectric's (a good conductor's σ/ωε is about 10⁸ at 10 GHz), small enough that k² stays
+/// finite.
+pub const MAX_LOSS_TANGENT: f64 = 1e9;
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
+}
+
+/// A loss tangent checked: finite, ≥ 0 and at most [`MAX_LOSS_TANGENT`].
+fn checked_loss_tangent(what: &str, tan_d: f64) -> Result<f64> {
+    if !(tan_d.is_finite() && (0.0..=MAX_LOSS_TANGENT).contains(&tan_d)) {
+        return Err(invalid(what, format!("must be a finite number from 0 to {MAX_LOSS_TANGENT:e}, got {tan_d}")));
+    }
+    Ok(tan_d)
+}
 
 /// One pole of a dispersive permittivity: a susceptibility χ(ω) added to ε∞. The forms are the
 /// standard ones (A. Taflove, S. C. Hagness, *Computational Electrodynamics: The
@@ -128,16 +150,20 @@ impl Material {
             eps_r: positive("relative permittivity", eps_r)?,
             mu_r: positive("relative permeability", mu_r)?,
             loss_tangent: 0.0,
+            magnetic_loss_tangent: 0.0,
             dispersion: Vec::new(),
         })
     }
 
-    /// The same material with a dielectric loss tangent (finite, ≥ 0).
+    /// The same material with a dielectric loss tangent (finite, 0 to [`MAX_LOSS_TANGENT`]).
     pub fn with_loss_tangent(mut self, tan_d: f64) -> Result<Material> {
-        if !(tan_d.is_finite() && tan_d >= 0.0) {
-            return Err(invalid("loss tangent", format!("must be a finite number ≥ 0, got {tan_d}")));
-        }
-        self.loss_tangent = tan_d;
+        self.loss_tangent = checked_loss_tangent("loss tangent", tan_d)?;
+        Ok(self)
+    }
+
+    /// The same material with a magnetic loss tangent (finite, 0 to [`MAX_LOSS_TANGENT`]).
+    pub fn with_magnetic_loss_tangent(mut self, tan_dm: f64) -> Result<Material> {
+        self.magnetic_loss_tangent = checked_loss_tangent("magnetic loss tangent", tan_dm)?;
         Ok(self)
     }
 
@@ -150,10 +176,13 @@ impl Material {
         Ok(self)
     }
 
-    /// The permittivity in brief for lists: "εr 2.2, μr 1, tan δ 0.01", or for a dispersive
-    /// material "ε∞ 2, 1 Debye + 1 Lorentz pole(s), μr 1".
+    /// The permittivity in brief for lists: "εr 2.2, μr 1, tan δ 0.01" (", tan δm 0.02" with
+    /// magnetic loss), or for a dispersive material "ε∞ 2, 1 Debye + 1 Lorentz pole(s), μr 1".
     pub fn summary(&self) -> String {
-        let loss = if self.loss_tangent > 0.0 { format!(", tan δ {}", self.loss_tangent) } else { String::new() };
+        let mut loss = if self.loss_tangent > 0.0 { format!(", tan δ {}", self.loss_tangent) } else { String::new() };
+        if self.magnetic_loss_tangent > 0.0 {
+            loss += &format!(", tan δm {}", self.magnetic_loss_tangent);
+        }
         if !self.is_dispersive() {
             return format!("εr {}, μr {}{loss}", self.eps_r, self.mu_r);
         }
@@ -185,16 +214,33 @@ impl Material {
         self.dispersion.iter().fold(base, |e, p| e + p.susceptibility(frequency))
     }
 
+    /// The complex relative permeability μr (1 − j tan δ_m) (μ = μ′ − jμ″).
+    pub fn mu_c(&self) -> Complex64 {
+        Complex64::new(self.mu_r, -self.mu_r * self.magnetic_loss_tangent)
+    }
+
+    /// Whether the permeability has losses.
+    pub fn is_magnetically_lossy(&self) -> bool {
+        self.magnetic_loss_tangent != 0.0
+    }
+
+    /// Whether the material absorbs (a loss tangent, dielectric or magnetic, or dispersion).
+    pub fn is_lossy(&self) -> bool {
+        self.loss_tangent != 0.0 || self.is_magnetically_lossy() || self.is_dispersive()
+    }
+
     /// Checks every field again (a model read from a file has not been through the
     /// constructors).
     pub fn checked(&self) -> Result<()> {
-        let again = Material::new(&self.name, self.eps_r, self.mu_r)?.with_loss_tangent(self.loss_tangent)?;
+        let again = Material::new(&self.name, self.eps_r, self.mu_r)?
+            .with_loss_tangent(self.loss_tangent)?
+            .with_magnetic_loss_tangent(self.magnetic_loss_tangent)?;
         again.with_dispersion(self.dispersion.clone()).map(|_| ())
     }
 
     /// Free space: εr = μr = 1.
     pub fn vacuum() -> Material {
-        Material { name: "vacuum".into(), eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, dispersion: Vec::new() }
+        Material { name: "vacuum".into(), eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, magnetic_loss_tangent: 0.0, dispersion: Vec::new() }
     }
 }
 
@@ -224,6 +270,24 @@ mod tests {
         assert!(Material::new(" ", 2.0, 1.0).is_err());
         assert!(Material::new("x", 2.0, 1.0).unwrap().with_loss_tangent(-0.1).is_err());
         assert!(Material::new("x", 2.0, 1.0).unwrap().with_loss_tangent(f64::NAN).is_err());
+        // Magnetic loss tangents: hostile values refused, as are huge ones of either kind.
+        for bad in [-0.1, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300, -1e-300] {
+            assert!(Material::new("x", 2.0, 1.0).unwrap().with_magnetic_loss_tangent(bad).is_err(), "{bad}");
+        }
+        assert!(Material::new("x", 2.0, 1.0).unwrap().with_loss_tangent(1e300).is_err());
+        let m = Material::new("ferrite", 2.0, 3.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
+        assert!((m.mu_c() - Complex64::new(3.0, -0.15)).norm() < 1e-15);
+        assert_eq!(m.summary(), "εr 2, μr 3, tan δm 0.05");
+        assert!(m.is_lossy() && m.is_magnetically_lossy());
+        m.checked().unwrap();
+        let mut bad = m.clone();
+        bad.magnetic_loss_tangent = f64::NAN;
+        assert!(bad.checked().is_err());
+        // Old models (no magnetic loss) read as lossless; new ones round-trip.
+        let old: Material = serde_json::from_str(r#"{"name":"a","eps_r":2.0,"mu_r":1.0,"loss_tangent":0.1}"#).unwrap();
+        assert_eq!(old.magnetic_loss_tangent, 0.0);
+        let back: Material = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+        assert_eq!(back, m);
     }
 
     #[test]

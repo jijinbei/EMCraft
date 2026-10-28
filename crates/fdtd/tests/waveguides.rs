@@ -126,7 +126,7 @@ fn dispersive_exact(f: f64) -> (emcraft_model::Complex64, emcraft_model::Complex
     use emcraft_model::Complex64 as C;
     let (w, w0, g, tau) = (2.0 * PI * f, 2.0 * PI * 16e9, 2.0 * PI * 1.5e9, 1.0 / (2.0 * PI * 20e9));
     let e = C::new(2.0, 0.0) + 0.6 / C::new(1.0, w * tau) + 0.4 * w0 * w0 / C::new(w0 * w0 - w * w, w * g);
-    let slab = Layer { length: 0.02, eps_r: e.re, mu_r: 1.0, loss_tangent: -e.im / e.re };
+    let slab = Layer::lossy(0.02, e.re, 1.0, -e.im / e.re);
     Te10Line { a: A, layers: vec![Layer::lossless(0.01, 1.0, 1.0), slab, Layer::lossless(0.01, 1.0, 1.0)] }.solve(f).unwrap().s_power()
 }
 

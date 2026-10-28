@@ -1965,6 +1965,7 @@ name = "emcraft-fem"
 version = "0.1.0"
 dependencies = [
  "emcraft-model",
+ "num-complex",
  "thiserror 2.0.21",
 ]
 

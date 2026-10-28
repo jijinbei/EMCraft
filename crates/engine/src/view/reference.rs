@@ -9,13 +9,14 @@ use emcraft_theory::{EPlaneLine, ESection, HPlaneLine, HSection, Layer, Te10Line
 use crate::{EngineError, Result, Session};
 
 /// A TE₁₀ line's section `length` long of material `m` at `frequency` (Hz): its permittivity
-/// εr(ω) = ε′ − jε″ as εr (1 − j tan δ), tan δ = ε″/ε′.
+/// εr(ω) = ε′ − jε″ as εr (1 − j tan δ), tan δ = ε″/ε′, and its permeability μr(1 − j tan δ_m).
 fn layer_at(length: f64, m: &Material, frequency: f64) -> Layer {
+    let magnetic_loss_tangent = m.magnetic_loss_tangent;
     if !m.is_dispersive() {
-        return Layer { length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent };
+        return Layer { length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent, magnetic_loss_tangent };
     }
     let e = m.eps_at(frequency);
-    Layer { length, eps_r: e.re, mu_r: m.mu_r, loss_tangent: -e.im / e.re }
+    Layer { length, eps_r: e.re, mu_r: m.mu_r, loss_tangent: -e.im / e.re, magnetic_loss_tangent }
 }
 
 /// A uniform guide's sections (length, material) and its width: its exact TE₁₀ line at each
@@ -54,6 +55,12 @@ pub fn te10_line(session: &Session) -> Result<ExactLine> {
 
 /// Mode matching takes constant permittivities: refuses a dispersive material.
 fn constant(m: &Material) -> Result<&Material> {
+    if m.is_magnetically_lossy() {
+        return Err(EngineError::Failed(format!(
+            "not supported yet: a mode-matching reference for the magnetically lossy material `{}` (only uniform guides have one)",
+            m.name
+        )));
+    }
     if m.is_dispersive() {
         return Err(EngineError::Failed(format!(
             "not supported yet: a mode-matching reference for the dispersive material `{}` (only uniform guides have one)",
@@ -164,7 +171,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
 /// The reference of a body between two ports: an empty box, circular guide or coaxial line.
 fn body_reference(session: &Session, solid: &emcraft_model::Solid) -> Result<Reference> {
     let (_, m) = session.model.material(&solid.material)?;
-    let plain = session.model.inclusions.is_empty() && m.loss_tangent == 0.0 && !m.is_dispersive();
+    let plain = session.model.inclusions.is_empty() && !m.is_lossy();
     let index2 = m.eps_r * m.mu_r;
     match (&solid.shape, &session.model.features[..]) {
         // A box between two ports is an empty guide.
