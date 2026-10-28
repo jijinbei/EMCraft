@@ -1,0 +1,11 @@
+{
+ "title": "The 3 mm post across WR-90 imported from SolidCraft's 3MF with face tags, its cylinder recovered from the facets: adaptive passes from 6 mm until ΔS < 3e-3, at 10 GHz",
+ "kind": "theory",
+ "source": "The full-height post is a two-dimensional problem: the parallel-plate Green's function in modes with its static part summed in closed form (Marcuvitz, Waveguide Handbook, 1951, §5.11; Lewin, Theory of Waveguides, 1975, ch. 6), the first-kind integral equation on the post solved by Kress's log-split Nyström method (Kress, Linear Integral Equations, 3rd ed., 2014, ch. 12–13), converged to 1e-11 at 32 nodes, evaluated at 128 (emcraft-theory::post, independent of the finite elements); the same reference as adaptive-post",
+ "quantities": [
+  {"id": "cylinders", "quantity": "faces recovered as cylinders on import (the post's side, in SolidCraft's two halves)", "measure": {"step": "import", "pointer": "/curved/cylinder"}, "value": 2, "tolerance": {"absolute": 0.5}, "reason": "the post's side is exactly a cylinder; the other six faces are planes"},
+  {"id": "s11_mag", "quantity": "|S11| at 10 GHz, the last pass", "measure": {"step": "adapt", "pointer": "/s11/mag"}, "value": 0.9526530943809122, "tolerance": {"absolute": 0.0001}, "reason": "the loop stops at pass 2 (133 978 unknowns, order 2): +5.6e-5. Faceted (26 facets round, before the cylinder was recovered) the same loop was 5.1e-4 off, a post 1 µm thinner; a third and fourth pass go on to +3.5e-5 and +6e-6 (181 064, 220 696 unknowns), so what is left is discretisation, not geometry"},
+  {"id": "s11_phase", "quantity": "phase of S11 at 10 GHz (degrees)", "measure": {"step": "adapt", "pointer": "/s11/deg"}, "value": -99.58644368796473, "tolerance": {"absolute": 0.03}, "reason": "as |S11|: +0.020° at pass 2 (faceted: −0.17°), +0.004° at pass 4"},
+  {"id": "s21_mag", "quantity": "|S21| at 10 GHz", "measure": {"step": "adapt", "pointer": "/s21/mag"}, "value": 0.3040593504428821, "tolerance": {"absolute": 0.0003}, "reason": "as |S11|; |S21| = √(1 − |S11|²) moves three times as fast (−1.8e-4 at pass 2)"}
+ ]
+}

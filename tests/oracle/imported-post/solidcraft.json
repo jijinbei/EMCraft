@@ -1,0 +1,1 @@
+{"commands": [{"command": "solid.box", "params": {"length": 22.86, "width": 10.16, "height": 30, "corner": [0, 0, 0], "body_name": "Guide"}}, {"command": "solid.cylinder", "params": {"diameter": 3, "height": 10.16, "base": [11.43, 0, 15], "axis": "Y", "operation": "cut", "targets": ["Guide"]}}, {"command": "file.export", "params": {"path": "post.3mf", "format": "3mf-tagged"}}]}
