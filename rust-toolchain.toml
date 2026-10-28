@@ -1,0 +1,4 @@
+# The toolchain CI builds with (.github/workflows/ci.yml): stable. A nightly compiler would turn
+# on unstable paths in some dependencies (SolidCraft's `branches`) that later nightlies break.
+[toolchain]
+channel = "stable"

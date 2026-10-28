@@ -1,0 +1,20 @@
+use solidcraft_doc::{Dir, Document, FeatureKind, Operation, point_expr};
+use solidcraft_geom::Vec3;
+
+fn main() {
+    // A WR-90 box of air 30 mm long with a metal post across it (along y) at its middle, its
+    // diameter the parameter `d`.
+    let mut doc = Document::new("Guide");
+    doc.set_param("a", "22.86", Some("mm"), None).unwrap();
+    doc.set_param("b", "10.16", Some("mm"), None).unwrap();
+    doc.set_param("l", "30", Some("mm"), None).unwrap();
+    doc.set_param("d", "3", Some("mm"), None).unwrap();
+    doc.add_feature(FeatureKind::Box { corner: point_expr(Vec3::ZERO), length: "a".into(), width: "b".into(), height: "l".into(), operation: Operation::NewBody }, None).unwrap();
+    doc.add_feature(FeatureKind::Cylinder { base: ["a/2".into(), "0".into(), "l/2".into()], axis: Dir(Vec3::Y), radius: "d/2".into(), height: "b".into(), operation: Operation::Cut, references: Vec::new() }, None).unwrap();
+    let text = doc.to_json();
+    std::fs::write(std::env::args().nth(1).unwrap(), &text).unwrap();
+    let design = solidcraft_exchange::open(text.as_bytes()).unwrap();
+    for p in design.parameters() { println!("{:?}", p.name); }
+    let snap = design.snapshot(&Default::default()).unwrap();
+    for b in &snap.bodies { println!("{} faces {}", b.name, b.faces.len()); }
+}
