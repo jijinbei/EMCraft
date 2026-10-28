@@ -591,11 +591,29 @@ fn closed(s: &Surface) -> bool {
 
 /// `a op b`; b's tags are offset by `b_tags` in the result.
 pub fn combine(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface> {
+    combine_marked(a, b, op, b_tags).map(|(s, _)| s)
+}
+
+/// [`combine`], with the points that lie inside a straight crease of the intersection collapsed
+/// away (`crate::crease`): the same surface with fewer, larger triangles.
+pub fn combine_simplified(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface> {
+    let (mut s, crossing) = combine_marked(a, b, op, b_tags)?;
+    crate::crease::simplify(&mut s, &crossing);
+    if !closed(&s) {
+        return Err(fail("the combined surface does not close after its creases were simplified"));
+    }
+    Ok(s)
+}
+
+/// [`combine`], and which of the result's points are crossings (made by the intersection).
+fn combine_marked(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<(Surface, Vec<bool>)> {
     let (pa, pb) = (points(a)?, points(b)?);
     let ids = Ids { n0: a.positions.len() as u32, n1: b.positions.len() as u32 };
     let cut = intersect([a, b], [&pa, &pb], &ids)?;
     let all: Vec<Point3> = a.positions.iter().chain(&b.positions).chain(&cut.positions).copied().collect();
     let mut out = Surface::default();
+    let mut crossing = Vec::new();
+    let first_crossing = ids.crossing(0);
     let mut used: HashMap<u32, u32> = HashMap::new();
     for (k, (s, other)) in [(a, b), (b, a)].into_iter().enumerate() {
         let (keep_inside, flip) = kept(op, k);
@@ -607,6 +625,7 @@ pub fn combine(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface>
             let ids3 = corners.map(|v| {
                 *used.entry(v).or_insert_with(|| {
                     out.positions.push(all[v as usize]);
+                    crossing.push(v >= first_crossing);
                     (out.positions.len() - 1) as u32
                 })
             });
@@ -620,7 +639,7 @@ pub fn combine(a: &Surface, b: &Surface, op: Op, b_tags: u32) -> Result<Surface>
     if out.triangles.is_empty() {
         return Err(fail("nothing is left"));
     }
-    Ok(out)
+    Ok((out, crossing))
 }
 
 #[cfg(test)]

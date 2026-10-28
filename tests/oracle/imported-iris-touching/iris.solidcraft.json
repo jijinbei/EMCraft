@@ -1,0 +1,6 @@
+{"commands": [
+  {"command": "solid.box", "params": {"length": 22.86, "width": 10.16, "height": 32, "corner": [0,0,0], "body_name": "Guide"}},
+  {"command": "solid.box", "params": {"length": 5.43, "width": 10.16, "height": 2, "corner": [0,0,15], "operation": "new", "body_name": "IrisL"}},
+  {"command": "solid.box", "params": {"length": 5.43, "width": 10.16, "height": 2, "corner": [17.43,0,15], "operation": "new", "body_name": "IrisR"}},
+  {"command": "file.export", "params": {"path": "iris-tagged.3mf", "format": "3mf-tagged"}}
+]}

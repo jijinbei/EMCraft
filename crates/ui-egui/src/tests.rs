@@ -45,6 +45,11 @@ fn scenario_import_bodies() {
 }
 
 #[test]
+fn scenario_import_cavity() {
+    scenario("import_cavity");
+}
+
+#[test]
 fn scenario_tdr_view() {
     scenario("tdr_view");
 }

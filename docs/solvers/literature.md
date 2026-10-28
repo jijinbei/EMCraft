@@ -17,7 +17,13 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Boolean splits, by flipping the edges that cross them (`emcraft-mesh::csg`).
 - A. Van Oosterom, J. Strackee, *The solid angle of a plane triangle*, IEEE Trans. Biomed. Eng.
   30(2):125–126, 1983 — the winding number that classifies a Boolean's pieces inside or outside
-  the other surface (`emcraft-mesh::csg`).
+  the other surface (`emcraft-mesh::csg`), and which pieces of a part's enclosed air are which
+  (`emcraft-mesh::cavity`).
+- H. Hoppe, T. DeRose, T. Duchamp, J. McDonald, W. Stuetzle, *Mesh optimization*, Proc. SIGGRAPH
+  1993, pp. 19–26; T. K. Dey, H. Edelsbrunner, S. Guha, D. V. Nekhayev, *Topology preserving edge
+  contraction*, Publ. Inst. Math. (Beograd) 66(80):23–45, 1999 — edge collapses under the link
+  condition, which remove the points a Boolean leaves inside straight creases without changing
+  the surface (`emcraft-mesh::crease`).
 - Exact surfaces of imported faces (`emcraft-io::fit`): G. Lukács, R. Martin, D. Marshall,
   *Faithful least-squares fitting of spheres, cylinders, cones and tori for reliable
   segmentation*, ECCV 1998, LNCS 1406:671–686 — geometric distances refined by

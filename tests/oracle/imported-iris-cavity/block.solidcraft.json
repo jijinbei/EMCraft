@@ -1,0 +1,7 @@
+{"commands": [
+  {"command": "solid.box", "params": {"length": 32.86, "width": 20.16, "height": 32, "corner": [-5,-5,0], "body_name": "Block"}},
+  {"command": "solid.box", "params": {"length": 22.86, "width": 10.16, "height": 32, "corner": [0,0,0], "operation": "cut", "targets": ["Block"]}},
+  {"command": "solid.box", "params": {"length": 5.43, "width": 10.16, "height": 2, "corner": [0,0,15], "operation": "join", "targets": ["Block"]}},
+  {"command": "solid.box", "params": {"length": 5.43, "width": 10.16, "height": 2, "corner": [17.43,0,15], "operation": "join", "targets": ["Block"]}},
+  {"command": "file.export", "params": {"path": "block.3mf", "format": "3mf-tagged"}}
+]}

@@ -181,7 +181,25 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     if open && region != "box" {
         return Err(p.error("region", "an open problem lies in a box of air (`box`)"));
     }
-    if region == "box" {
+    let keep: Option<Keep> = p.choice("keep").optional()?;
+    if region != "cavity" && keep.is_some() {
+        return Err(p.error("keep", "chooses pieces of a cavity (`region`: `cavity`)"));
+    }
+    let mut cavity = None;
+    let mut placed = Vec::new();
+    if region == "cavity" {
+        if p.has("margin") {
+            return Err(p.error("margin", "a cavity is the air inside the bodies' own bounding box: it takes no margin"));
+        }
+        cavity = Some(enclosed_air(s, &mut bodies, &materials, keep.unwrap_or_default(), &material)?);
+        // The metal bodies are the cavity's walls now; the others are placed in it.
+        let metal = |b: &emcraft_io::Surface| materials.iter().find(|(n, _)| *n == b.name).is_none_or(|(_, m)| m == crate::bodies::METAL);
+        placed.extend(bodies.iter().filter(|b| metal(b)).map(|b| json!({"body": b.name, "material": crate::bodies::METAL, "as": "walls"})));
+        let keep: Vec<bool> = bodies.iter().map(|b| !metal(b)).collect();
+        bodies.retain(|b| !metal(b));
+        let mut k = keep.iter();
+        sources.retain(|_| k.next().copied().unwrap_or(false));
+    } else if region == "box" {
         let margin = p.positive_length("margin").optional()?;
         s.model.set_solid(Solid { shape: air_box(p, &mut bodies, margin, thickness, quarter)?, material: material.clone() })?;
     } else {
@@ -190,7 +208,6 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         let source = sources.remove(k);
         s.model.set_solid(Solid { shape: surface(body, &source, fit, &mut fitted), material: material.clone() })?;
     }
-    let mut placed = Vec::new();
     for (b, source) in bodies.into_iter().zip(sources) {
         let m = materials.iter().find(|(n, _)| *n == b.name).map_or(crate::bodies::METAL.to_owned(), |(_, m)| m.clone());
         let name = b.name.clone();
@@ -202,17 +219,73 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     }
     s.results.invalidate(Change::Geometry);
     let bounds = s.model.bounds().unwrap_or_default();
+    let unit = s.display.length.to_si(1.0);
+    let pieces = cavity
+        .map(|c: emcraft_mesh::cavity::Cavity| json!({"kept": c.kept.iter().map(|v| v / unit.powi(3)).collect::<Vec<_>>(), "dropped": c.dropped}));
     Ok(json!({
         "triangles": triangles,
         "faces": faces,
         "planes": fitted.plane,
         "curved": {"cylinder": fitted.cylinder, "sphere": fitted.sphere, "cone": fitted.cone},
         "region": region,
+        "pieces": pieces,
         "bodies": placed,
         "open": thickness.map(|t| s.show_length(t)),
         "volume": s.model.solid.as_ref().map(|x| x.shape.volume()),
         "bounds": bounds.corners().map(|c| c.map(|v| s.show_length(v))),
     }))
+}
+
+/// Which pieces of a cavity's air are kept (`keep`).
+#[derive(serde::Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "lowercase")]
+enum Keep {
+    #[default]
+    Enclosed,
+    Largest,
+}
+
+/// `region: cavity`: the metal bodies' bounding box less them, the pieces of air they enclose
+/// across x and y kept (`emcraft_mesh::cavity`), made the region; the bodies (all of them, the
+/// other materials' too) moved with the box to the origin. Records the metal bodies in `placed`.
+fn enclosed_air(
+    s: &mut Session,
+    bodies: &mut [emcraft_io::Surface],
+    materials: &[(String, String)],
+    keep: Keep,
+    material: &str,
+) -> Result<emcraft_mesh::cavity::Cavity> {
+    let metal = |b: &emcraft_io::Surface| materials.iter().find(|(n, _)| *n == b.name).is_none_or(|(_, m)| m == crate::bodies::METAL);
+    let walls: Vec<&emcraft_io::Surface> = bodies.iter().filter(|b| metal(b)).collect();
+    if walls.is_empty() {
+        return Err(EngineError::Failed("a cavity is the air metal bodies enclose: every body is given another material".into()));
+    }
+    let lo = walls.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
+    let shift = emcraft_model::Vec3::new(-lo[0], -lo[1], -lo[2]);
+    for b in bodies.iter_mut() {
+        b.positions.iter_mut().for_each(|q| *q += shift);
+    }
+    let walls: Vec<(String, emcraft_mesh::csg::Surface)> = bodies
+        .iter()
+        .filter(|b| metal(b))
+        .map(|b| {
+            (b.name.clone(), emcraft_mesh::csg::Surface { positions: b.positions.clone(), triangles: b.triangles.clone(), tags: b.tags.clone() })
+        })
+        .collect();
+    let keep = match keep {
+        Keep::Enclosed => emcraft_mesh::cavity::Keep::Enclosed,
+        Keep::Largest => emcraft_mesh::cavity::Keep::Largest,
+    };
+    let c = emcraft_mesh::cavity::cavity(&walls, keep)?;
+    let shape = Shape::Surface {
+        name: "cavity".into(),
+        positions: c.surface.positions.clone(),
+        triangles: c.surface.triangles.clone(),
+        tags: c.surface.tags.clone(),
+        surfaces: Vec::new(),
+    };
+    s.model.set_solid(Solid { shape, material: material.to_owned() })?;
+    Ok(c)
 }
 
 /// How many faces of the imported bodies got each kind of exact surface.
