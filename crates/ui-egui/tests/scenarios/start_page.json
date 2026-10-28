@@ -2,7 +2,7 @@
   {"note": "The start page: New project and Open, the samples with their pictures, the settings new projects start with"},
   {"click": "bar:start"},
   {"frames": 2},
-  {"expect": {"inspect": {"home": true}, "handles": ["home:new", "home:open", "sample:highpass", "sample:iris-bandpass", "sample:coupled-filter", "settings:length:mm", "settings:theme:dark"]}},
+  {"expect": {"inspect": {"home": true}, "handles": ["home:new", "home:open", "sample:highpass", "sample:iris-bandpass", "sample:coupled-filter", "sample:coupler", "settings:length:mm", "settings:theme:dark"]}},
   {"shot": "start-page"},
   {"note": "New projects in metres and megahertz"},
   {"click": "settings:length:m"},

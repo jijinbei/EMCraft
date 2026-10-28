@@ -17,7 +17,9 @@
 //! sampled point and its two neighbours (a notch, where y ∝ |x − x₀| and y² is quadratic).
 //! With `"crossing": {"x", "y", "level", "which": "first" | "last"}` the number is the x where y
 //! first (or last) crosses `level` along the list, linear between the two points around it (a
-//! filter's band edge).
+//! filter's band edge). With `"phase_minus": "/other/pointer"` the number is the angle at the
+//! pointer less the one at the other (degrees, wrapped into (−180°, 180°]): a phase difference
+//! between two entries of S.
 //!
 //! Adapted from FieldCraft's `crates/testkit/src/oracle.rs` (MIT OR Apache-2.0), see
 //! ATTRIBUTION.md.
@@ -232,10 +234,11 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
         } else {
             Err(OracleError::Measure("`measure` gives a `step` or a `command`".into()))
         };
-        let value = reply.and_then(|r| match (m.get("minimum"), m.get("crossing")) {
-            (Some(spec), _) => minimum(&r, pointer, spec),
-            (None, Some(spec)) => crossing(&r, pointer, spec),
-            (None, None) => r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))),
+        let value = reply.and_then(|r| match (m.get("minimum"), m.get("crossing"), m.get("phase_minus")) {
+            (Some(spec), _, _) => minimum(&r, pointer, spec),
+            (None, Some(spec), _) => crossing(&r, pointer, spec),
+            (None, None, Some(other)) => phase_minus(&r, pointer, other),
+            (None, None, None) => r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))),
         });
         let pass = value.as_ref().is_ok_and(|v| q.tolerance.allows(q.reference, *v));
         let fixed = fixture.as_ref().and_then(|f| f.pointer(&format!("/values/{}", q.id)));
@@ -250,6 +253,16 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
         out.push(Outcome { quantity: q.clone(), value, pass, fixture });
     }
     Ok((expected, out))
+}
+
+/// The angle (degrees) at `pointer` less the one at `other`, wrapped into (−180°, 180°].
+fn phase_minus(reply: &Value, pointer: &str, other: &Value) -> Result<f64> {
+    let other = other.as_str().ok_or_else(|| OracleError::Measure("`phase_minus` must be a JSON pointer".into()))?;
+    let at = |p: &str| {
+        reply.pointer(p).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| OracleError::Measure(format!("no number at `{p}`")))
+    };
+    let d = (at(pointer)? - at(other)?).rem_euclid(360.0);
+    Ok(if d > 180.0 { d - 360.0 } else { d })
 }
 
 /// The x where y is least over the list at `pointer` (see the module docs): the parabola's vertex
@@ -461,6 +474,14 @@ mod tests {
         assert!(minimum(&uneven, "/points", &spec).is_err());
         assert!(minimum(&reply, "/points", &json!({"x": "/f"})).is_err());
         assert!(minimum(&reply, "/nothing", &spec).is_err());
+    }
+
+    #[test]
+    fn a_phase_difference_is_wrapped() {
+        let reply = json!({"a": 170.0, "b": -100.0, "c": "x"});
+        assert!((phase_minus(&reply, "/a", &json!("/b")).unwrap() - -90.0).abs() < 1e-12);
+        assert!((phase_minus(&reply, "/b", &json!("/a")).unwrap() - 90.0).abs() < 1e-12);
+        assert!(phase_minus(&reply, "/a", &json!("/c")).is_err() && phase_minus(&reply, "/a", &json!(3)).is_err());
     }
 
     #[test]

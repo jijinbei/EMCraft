@@ -46,6 +46,11 @@ pub const SAMPLES: &[Sample] = &[
         script: include_str!("../samples/coupled-filter.json"),
     },
     Sample {
+        name: "coupler",
+        label: "Coupled-line directional coupler in stripline: two strips a quarter wave long at 5 GHz, each end a terminal of its own (four ports, 50 Ω), 10 dB coupled backwards, the far end of the other strip isolated (Pozar §7.6)",
+        script: include_str!("../samples/coupler.json"),
+    },
+    Sample {
         name: "inductive-post",
         label: "A 3 mm conducting post across WR-90, wall to wall, cut from the box by a Boolean difference: a strong shunt inductance",
         script: include_str!("../samples/inductive-post.json"),

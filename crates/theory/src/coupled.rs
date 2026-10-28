@@ -17,6 +17,15 @@
 //! A = D = (Z₀ₑ + Z₀ₒ)/(Z₀ₑ − Z₀ₒ) cos θ, C = 2j sin θ/(Z₀ₑ − Z₀ₒ),
 //! B = j[(Z₀ₑ − Z₀ₒ)² − (Z₀ₑ + Z₀ₒ)² cos²θ]/(2(Z₀ₑ − Z₀ₒ) sin θ).
 //!
+//! **The directional coupler** (two lines coupled over their whole length, every end a port):
+//! by symmetry its four ports split into the even mode (both lines alike: a line of Z₀ₑ) and the
+//! odd mode (opposite: Z₀ₒ), each a two-port between the ports' impedance R with reflection Γ
+//! and transmission T. Port 1 driven, the reflection is (Γₑ + Γₒ)/2, the coupled port (the other
+//! line, same end) (Γₑ − Γₒ)/2, the through port (Tₑ + Tₒ)/2 and the isolated port
+//! (Tₑ − Tₒ)/2. With R = √(Z₀ₑZ₀ₒ) it is matched and isolated at every frequency, the coupled
+//! wave jC sin θ/(√(1 − C²) cos θ + j sin θ), the through √(1 − C²)/(√(1 − C²) cos θ + j sin θ),
+//! 90° apart (D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §7.6).
+//!
 //! **The filter** (S. B. Cohn, *Parallel-coupled transmission-line-resonator filters*, IRE Trans.
 //! MTT 6(2):223–231, 1958; G. L. Matthaei, L. Young, E. M. T. Jones, *Microwave Filters,
 //! Impedance-Matching Networks, and Coupling Structures*, McGraw-Hill 1964, §§4.05, 10.02):
@@ -148,6 +157,16 @@ pub fn s_params(m: &Abcd, z0: f64) -> (C, C) {
     let [[a, b], [c, d]] = *m;
     let den = a + b / z0 + c * z0 + d;
     ((a + b / z0 - c * z0 - d) / den, C::new(2.0, 0.0) / den)
+}
+
+/// The waves out of a coupled-line directional coupler (even and odd impedances `z0e`, `z0o`
+/// (Ω), electrical length `theta` (rad), every port referred to `r` (Ω)) for a unit wave into
+/// port 1: [reflected, coupled (other line, same end), through (same line, far end), isolated
+/// (other line, far end)], by the even and odd modes (module docs).
+pub fn coupler(z0e: f64, z0o: f64, theta: f64, r: f64) -> [C; 4] {
+    let (ge, te) = s_params(&line(z0e, theta), r);
+    let (go, to) = s_params(&line(z0o, theta), r);
+    [(ge + go) * 0.5, (ge - go) * 0.5, (te + to) * 0.5, (te - to) * 0.5]
 }
 
 /// The g values g₀ … g_{n+1} of the Chebyshev low-pass prototype of order `n` with passband
@@ -299,6 +318,25 @@ mod tests {
     }
 
     #[test]
+    fn the_matched_coupler_is_pozars() {
+        let (ze, zo, theta): (f64, f64, f64) = (69.37, 36.04, 1.1);
+        let z0 = (ze * zo).sqrt();
+        let [r, cpl, thr, iso] = coupler(ze, zo, theta, z0);
+        let c = coupling(ze, zo);
+        let j = C::new(0.0, 1.0);
+        let root = (1.0 - c * c).sqrt();
+        let den = root * theta.cos() + j * theta.sin();
+        assert!(r.norm() < 1e-12 && iso.norm() < 1e-12, "{r} {iso}");
+        assert!((cpl - j * c * theta.sin() / den).norm() < 1e-12 && (thr - root / den).norm() < 1e-12);
+        // |coupled| = C sin θ/√(1 − C² cos²θ); lossless.
+        assert!((cpl.norm() - c * theta.sin() / (1.0 - c * c * theta.cos().powi(2)).sqrt()).abs() < 1e-12);
+        assert!((cpl.norm_sqr() + thr.norm_sqr() - 1.0).abs() < 1e-12);
+        // Mismatched ports: still lossless, reflection and isolation no longer zero.
+        let s = coupler(ze, zo, theta, 50.0 * 1.1);
+        assert!((s.iter().map(|x| x.norm_sqr()).sum::<f64>() - 1.0).abs() < 1e-12 && s[0].norm() > 1e-3);
+    }
+
+    #[test]
     fn the_designed_filter_passes_its_band() {
         let f0 = 5e9;
         let filter = CoupledFilter::design(3, 0.1, f0, 0.1, 50.0, 2.2).unwrap();
@@ -372,5 +410,28 @@ mod tests {
         let db = |f: f64| 20.0 * filter.s(f, 0.0).1.norm().log10();
         assert!((filter.s(5e9, 0.0).1.norm() - 0.9999999986744627).abs() < 1e-9);
         assert!((db(4.4e9) - -17.61693271520208).abs() < 1e-6 && (db(5.6e9) - -17.61614833364449).abs() < 1e-6);
+    }
+
+    /// The references of the oracle case `coupled-line-coupler-4port` (its expected.json): the
+    /// strips as its recipe builds them (mm), 50 Ω terminals.
+    #[test]
+    fn the_four_port_couplers_references() {
+        let (mm, er): (f64, f64) = (1e-3, 2.2);
+        // Designed for 10 dB at Z0 = 50 Ω: Z0e,o = Z0 √((1 ± C)/(1 ∓ C)), W and S by Cohn
+        // inverted, rounded to 0.1 µm as built.
+        let c = 10f64.powf(-0.5);
+        let (de, d_o) = (50.0 * ((1.0 + c) / (1.0 - c)).sqrt(), 50.0 * ((1.0 - c) / (1.0 + c)).sqrt());
+        let (w, s) = dimensions(de, d_o, 4.0 * mm, er).unwrap();
+        assert!((w / mm - 2.6938).abs() < 1e-4 && (s / mm - 0.1762).abs() < 1e-4, "{w} {s}");
+        let (ze, zo) = z0_even_odd(2.6938 * mm, 0.1762 * mm, 4.0 * mm, er).unwrap();
+        let theta = |f: f64| 2.0 * PI * f * er.sqrt() / C0 * 10.106 * mm;
+        let db = |c: C| 20.0 * c.norm().log10();
+        let at = |f: f64| coupler(ze, zo, theta(f), 50.0);
+        let [r, cpl, thr, iso] = at(5e9);
+        assert!((db(cpl) - -10.000081297631308).abs() < 1e-9 && (db(thr) - -0.4575658735703948).abs() < 1e-9);
+        assert!((cpl.arg().to_degrees() - 0.000014341973769460684).abs() < 1e-6 && (thr.arg().to_degrees() - -89.99998565802623).abs() < 1e-6);
+        assert!((r.norm() - 0.000013239767164191834).abs() < 1e-12 && (iso.norm() - 0.000004413209825693818).abs() < 1e-12);
+        assert!(((cpl / thr).arg().to_degrees() - 90.0).abs() < 1e-9);
+        assert!((db(at(4e9)[1]) - -10.394285400787203).abs() < 1e-9 && (db(at(6e9)[1]) - -10.394284047483557).abs() < 1e-9);
     }
 }

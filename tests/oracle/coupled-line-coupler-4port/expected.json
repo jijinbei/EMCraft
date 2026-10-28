@@ -1,0 +1,95 @@
+{
+ "title": "A four-port coupled-line directional coupler in stripline: two 2.6938 mm strips 0.1762 mm apart, a quarter wavelength at 5 GHz (10.106 mm) from end to end of the box, midway between planes 4 mm apart in PTFE (εr = 2.2), both ends terminal ports (one terminal per strip, 50 Ω): coupling, through, isolation, match, the 90° between coupled and through waves, unitarity and reciprocity against the ideal TEM coupler",
+ "kind": "theory",
+ "source": "The ideal coupled-line coupler by its even and odd modes (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §7.6; E. M. T. Jones, J. T. Bolljahn, IRE Trans. MTT 4(2):75–81, 1956): each mode a line of Z0e or Z0o and length θ between the 50 Ω terminals, reflection (Γe + Γo)/2, coupled (Γe − Γo)/2, through (Te + To)/2, isolated (Te − To)/2; with 50 Ω = √(Z0e Z0o) the coupled wave is jC sin θ/(√(1 − C²) cos θ + j sin θ), 90° ahead of the through wave √(1 − C²)/(√(1 − C²) cos θ + j sin θ) at every frequency, the match and the isolation perfect. Designed for C = −10 dB: Z0e = 69.37 Ω, Z0o = 36.04 Ω, W and S by Cohn's coupled-strip mapping inverted (S. B. Cohn, IRE Trans. MTT 3(5):29–38, 1955); the reference takes Cohn's Z0e, Z0o of the strips as built (69.372, 36.039 Ω) and θ = 2πf√εr L/c. Evaluated by emcraft-theory::coupled::coupler, apart from the solver. Entries: 1:1 (input), 1:2 (coupled, same end), 2:1 (through), 2:2 (isolated)",
+ "quantities": [
+  {
+   "id": "coupling_f0",
+   "quantity": "coupling |S(1:2, 1:1)| at 5 GHz (dB): C, the section a quarter wave",
+   "measure": {"step": "coupler", "pointer": "/points/1/s21/db"},
+   "value": -10.000081297631308,
+   "tolerance": {"absolute": 0.15},
+   "reason": "set by Z0e − Z0o: the odd mode's impedance in the 0.18 mm gap converges with the grading towards the strips' edges (+0.11 dB at 0.05 mm, +0.057 dB at 0.02 mm, the error halving) and the box's side walls 7.2 mm away move Z0e, Z0o by ~1e-3; +0.057 dB measured"
+  },
+  {
+   "id": "coupling_low",
+   "quantity": "coupling at 4 GHz (dB), C sin θ/√(1 − C² cos²θ), θ = 72°",
+   "measure": {"step": "coupler", "pointer": "/points/0/s21/db"},
+   "value": -10.394285400787203,
+   "tolerance": {"absolute": 0.15},
+   "reason": "as at 5 GHz; θ is exact (TEM in one dielectric, no open ends); +0.058 dB measured"
+  },
+  {
+   "id": "coupling_high",
+   "quantity": "coupling at 6 GHz (dB), θ = 108°",
+   "measure": {"step": "coupler", "pointer": "/points/2/s21/db"},
+   "value": -10.394284047483557,
+   "tolerance": {"absolute": 0.15},
+   "reason": "as at 5 GHz; +0.056 dB measured"
+  },
+  {
+   "id": "through_f0",
+   "quantity": "through |S(2:1, 1:1)| at 5 GHz (dB): √(1 − C²)",
+   "measure": {"step": "coupler", "pointer": "/points/1/s31/db"},
+   "value": -0.4575658735703948,
+   "tolerance": {"absolute": 0.03},
+   "reason": "the power the coupling does not take (lossless): the coupling's error moves it by C²/(1 − C²) of it, −0.007 dB measured"
+  },
+  {
+   "id": "isolation_f0",
+   "quantity": "isolated port |S(2:2, 1:1)| at 5 GHz (magnitude; ≤ 0.01 is −40 dB)",
+   "measure": {"step": "coupler", "pointer": "/points/1/s41/mag"},
+   "value": 4.413209825693818e-6,
+   "tolerance": {"absolute": 0.01},
+   "reason": "an upper bound: ideal TEM lines between √(Z0e Z0o) isolate perfectly; what the FEM leaves is its Z0e Z0o off 50² (the odd impedance's error), 1.1e-3 (−59.5 dB) measured"
+  },
+  {
+   "id": "match_f0",
+   "quantity": "reflection |S(1:1, 1:1)| at 5 GHz (magnitude; ≤ 0.01 is −40 dB)",
+   "measure": {"step": "coupler", "pointer": "/points/1/s11/mag"},
+   "value": 1.3239767164191834e-5,
+   "tolerance": {"absolute": 0.01},
+   "reason": "an upper bound, as the isolation: 3.1e-3 (−50 dB) measured"
+  },
+  {
+   "id": "quadrature_f0",
+   "quantity": "phase of the coupled wave less the through wave's at 5 GHz (degrees)",
+   "measure": {"step": "coupler", "pointer": "/points/1/s21/deg", "phase_minus": "/points/1/s31/deg"},
+   "value": 90.0,
+   "tolerance": {"absolute": 0.2},
+   "reason": "90° at every frequency for TEM lines between √(Z0e Z0o) (jC sin θ over √(1 − C²) times real); the mismatch of 50 Ω to the FEM's √(Z0e Z0o) moves it by ~|S11|, 0.02° measured"
+  },
+  {
+   "id": "quadrature_high",
+   "quantity": "the same at 6 GHz (degrees)",
+   "measure": {"step": "coupler", "pointer": "/points/2/s21/deg", "phase_minus": "/points/2/s31/deg"},
+   "value": 90.0,
+   "tolerance": {"absolute": 0.2},
+   "reason": "as at 5 GHz; 0.03° measured"
+  },
+  {
+   "id": "coupled_phase_f0",
+   "quantity": "phase of the coupled wave at 5 GHz (degrees): 0 at the quarter wave",
+   "measure": {"step": "coupler", "pointer": "/points/1/s21/deg"},
+   "value": 1.4341973769460684e-5,
+   "tolerance": {"absolute": 0.5},
+   "reason": "θ = 90.001° as built; β exact in one dielectric, the FEM's dispersion error at order 2 small; −0.04° measured"
+  },
+  {
+   "id": "unitarity",
+   "quantity": "max |SᴴS − 1| over the frequencies (results.check): a lossless four-port",
+   "measure": {"command": "results.check", "pointer": "/unitarity_error"},
+   "value": 0.0,
+   "tolerance": {"absolute": 1e-7},
+   "reason": "the terminals' waves are power waves: power-orthogonal modes and T_V = 2(T_Iᴴ)⁻¹ keep the conductors' power the modes', so a lossless structure gives a unitary S to rounding; 3e-12 measured"
+  },
+  {
+   "id": "reciprocity",
+   "quantity": "max |S − Sᵀ| over the frequencies (results.check)",
+   "measure": {"command": "results.check", "pointer": "/reciprocity_error"},
+   "value": 0.0,
+   "tolerance": {"absolute": 1e-7},
+   "reason": "real T_I and real reference impedances keep the reciprocal structure's S symmetric; 3e-12 measured"
+  }
+ ]
+}

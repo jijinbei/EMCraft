@@ -382,3 +382,102 @@ fn hostile_symmetry_planes_are_refused() {
     assert!(s.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).is_err());
     assert!(s.execute("model.symmetry", &json!({"axis": "y", "kind": "electric"})).is_ok(), "symmetric across y");
 }
+
+/// Strips through a short stripline box 10 × 2 × 3 mm, meshed coarsely, ports at both ends
+/// with `port`'s settings; the half below the strips' plane when `symmetric`.
+fn coupled_strips(port: Value, strips: Value, symmetric: bool) -> Session {
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.2})).unwrap();
+    s.execute("geometry.waveguide", &json!({"width": 10, "height": 2, "sections": [{"length": 3, "material": "ptfe"}], "strips": strips})).unwrap();
+    if symmetric {
+        s.execute("model.symmetry", &json!({"axis": "y", "kind": "magnetic"})).unwrap();
+    }
+    s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap();
+    for (name, end) in [("1", "start"), ("2", "end")] {
+        let mut p = json!({"name": name, "end": end, "modes": 2});
+        if let (Some(o), Some(extra)) = (p.as_object_mut(), port.as_object()) {
+            o.extend(extra.clone());
+        }
+        s.execute("model.port.create", &p).unwrap();
+    }
+    s
+}
+
+fn two_strips() -> Value {
+    json!([{"y": 1, "x0": 3, "width": 1.5}, {"y": 1, "x0": 5, "width": 1.5}])
+}
+
+#[test]
+fn a_port_across_two_strips_is_a_terminal_per_strip() {
+    let mut s = coupled_strips(json!({}), two_strips(), true);
+    let r = s.execute("solve.frequency", &json!({"frequencies": [2, 3], "order": 1})).unwrap();
+    assert_eq!(r["ports"], json!(["1:1", "1:2", "2:1", "2:2"]), "{r}");
+    assert_eq!(r["references"], json!([50.0, 50.0, 50.0, 50.0]));
+    assert!(r["points"][0]["s44"]["mag"].is_number() && r["points"][0].get("s55").is_none());
+    // Lossless and reciprocal; the through wave far larger than the isolated one.
+    let check = s.execute("results.check", &json!({})).unwrap();
+    assert!(check["unitarity_error"].as_f64().unwrap() < 1e-8 && check["reciprocity_error"].as_f64().unwrap() < 1e-9, "{check}");
+    let mag = |r: &Value, k: &str| r["points"][1][k]["mag"].as_f64().unwrap();
+    assert!(mag(&r, "s31") > 0.9 && mag(&r, "s21") > 0.01 && mag(&r, "s41") < mag(&r, "s21"), "{r}");
+    // The terminals name excitations, the TDR's port and the Touchstone file's ports.
+    let at = json!([[5, 0.5, 1.5]]);
+    let probe = |s: &mut Session, excitation: &str| s.execute("results.probe", &json!({"frequency": 3, "at": at, "excitation": excitation}));
+    let e1 = probe(&mut s, "1:1").unwrap();
+    assert_ne!(e1["points"], probe(&mut s, "1:2").unwrap()["points"]);
+    assert_eq!(probe(&mut s, "1").unwrap()["points"], e1["points"], "a port's name is its first terminal");
+    for bad in ["1:3", "3:1", "1:", ":1"] {
+        assert!(probe(&mut s, bad).is_err(), "{bad}");
+    }
+    // (Two frequencies are too few for a transform: refused for that, not for the name.)
+    let tdr = s.execute("results.tdr", &json!({"port": "2:2"})).unwrap_err().to_string();
+    assert!(tdr.contains("at least 4 frequencies"), "{tdr}");
+    assert!(s.execute("results.tdr", &json!({"port": "2:3"})).unwrap_err().to_string().contains("no port or terminal"));
+    let ts = scratch("coupled.s4p");
+    assert_eq!(s.execute("results.touchstone", &json!({"path": ts})).unwrap()["ports"], 4);
+    let text = std::fs::read_to_string(&ts).unwrap();
+    assert!(text.contains("! ports: 1:1, 1:2, 2:1, 2:2") && text.contains("R 50"), "{text}");
+    // The whole model agrees with the half below the strips' plane.
+    let mut whole = coupled_strips(json!({}), two_strips(), false);
+    let w = whole.execute("solve.frequency", &json!({"frequencies": [2, 3], "order": 1})).unwrap();
+    for k in ["s11", "s21", "s31", "s41"] {
+        assert!((mag(&w, k) - mag(&r, k)).abs() < 0.02, "{k}: whole {} half {}", w["points"][1][k], r["points"][1][k]);
+    }
+    // Read in its first mode: one entry per port, as before, and no terminals to name.
+    let mut modal = coupled_strips(json!({"terminals": "modal"}), two_strips(), true);
+    let m = modal.execute("solve.frequency", &json!({"frequencies": [3], "order": 1})).unwrap();
+    assert_eq!(m["ports"], json!(["1", "2"]));
+    assert!(probe(&mut modal, "1:1").is_err());
+}
+
+#[test]
+fn hostile_terminal_ports_are_refused() {
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.2})).unwrap();
+    s.execute("geometry.waveguide", &json!({"width": 10, "height": 2, "sections": [{"length": 3, "material": "ptfe"}]})).unwrap();
+    for bad in [
+        json!({"name": "a:b", "end": "start"}),
+        json!({"name": "1", "end": "start", "terminals": "each"}),
+        json!({"name": "1", "end": "start", "terminals": 2}),
+        json!({"name": "1", "end": "start", "impedance": -50}),
+        json!({"name": "1", "end": "start", "impedance": 0}),
+        json!({"name": "1", "end": "start", "impedance": "NaN"}),
+    ] {
+        assert!(s.execute("model.port.create", &bad).is_err(), "{bad}");
+    }
+    // Nine strips: more conductors than a terminal port takes.
+    let nine: Vec<Value> = (0..9).map(|k| json!({"y": 1, "x0": 0.5 + f64::from(k), "width": 0.5})).collect();
+    let mut many = coupled_strips(json!({}), json!(nine), true);
+    let e = many.execute("solve.frequency", &json!({"frequencies": [2], "order": 1})).unwrap_err().to_string();
+    assert!(e.contains("at most 8"), "{e}");
+    // Four strips under a plane between them: two strips in the half, each beside the plane.
+    let four = json!([{"y": 1, "x0": 1, "width": 1}, {"y": 1, "x0": 3, "width": 1}, {"y": 1, "x0": 6, "width": 1}, {"y": 1, "x0": 8, "width": 1}]);
+    let mut beside = coupled_strips(json!({}), four, false);
+    beside.execute("model.symmetry", &json!({"axis": "x", "kind": "magnetic"})).unwrap();
+    beside.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap();
+    let e = beside.execute("solve.frequency", &json!({"frequencies": [2], "order": 1})).unwrap_err().to_string();
+    assert!(e.contains("symmetry plane beside a conductor"), "{e}");
+    // A huge reference impedance is a number like any other: refused or solved, never a panic.
+    let mut huge = coupled_strips(json!({"impedance": 1e300}), two_strips(), true);
+    let r = huge.execute("solve.frequency", &json!({"frequencies": [2], "order": 1}));
+    assert!(!matches!(r, Err(EngineError::Panicked(_))), "{r:?}");
+}
