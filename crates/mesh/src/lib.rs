@@ -354,8 +354,8 @@ mod tests {
         // Without steps, grading changes nothing.
         let uniform_guide = model();
         assert_eq!(waveguide_with(&uniform_guide, &o).unwrap(), waveguide_with(&uniform_guide, &Options::uniform(0.004)).unwrap());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5, size_y: None, strip_edge: 0.05 }).is_err());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0, size_y: None, strip_edge: 0.05 }).is_err());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5, size_y: None, strip_edge: 0.05, strip_end: None }).is_err());
+        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0, size_y: None, strip_edge: 0.05, strip_end: None }).is_err());
     }
 
     #[test]

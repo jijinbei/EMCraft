@@ -58,24 +58,30 @@ pub struct Options {
     /// The element size at the edges of strips, as a fraction of `size`: a strip of no
     /// thickness is singular there more strongly than an iris (E ∝ r^{−1/2}).
     pub strip_edge: f64,
+    /// The element size at strips' ends along z, as a fraction of `size`; `strip_edge` when
+    /// `None`. An open end's corners are weaker singularities than a strip's long edges, and
+    /// lines along z graded there cross the whole box: a long circuit of many coupled sections
+    /// meshes far lighter with its ends graded less.
+    pub strip_end: Option<f64>,
 }
 
 impl Options {
     /// Graded towards edges: a quarter of the size there, growing by half again per element.
     pub fn new(size: f64) -> Options {
-        Options { size, edge: 0.25, growth: 1.5, size_y: None, strip_edge: 0.05 }
+        Options { size, edge: 0.25, growth: 1.5, size_y: None, strip_edge: 0.05, strip_end: None }
     }
 
     pub fn uniform(size: f64) -> Options {
-        Options { size, edge: 1.0, growth: 1.5, size_y: None, strip_edge: 1.0 }
+        Options { size, edge: 1.0, growth: 1.5, size_y: None, strip_edge: 1.0, strip_end: None }
     }
 
     /// The options with a checked size and grading.
     fn checked(&self) -> Result<Options> {
         let size = positive("element size", self.size)?;
         let fraction = |f: f64| f.is_finite() && f > 0.0 && f <= 1.0;
-        if !(fraction(self.edge) && fraction(self.strip_edge) && self.growth.is_finite() && self.growth > 1.0) {
-            return Err(MeshError::Invalid { what: "grading".into(), why: "edge and strip_edge must be in (0, 1] and growth > 1".into() });
+        if !(fraction(self.edge) && fraction(self.strip_edge) && self.strip_end.is_none_or(fraction) && self.growth.is_finite() && self.growth > 1.0)
+        {
+            return Err(MeshError::Invalid { what: "grading".into(), why: "edge, strip_edge and strip_end must be in (0, 1] and growth > 1".into() });
         }
         Ok(Options { size, ..*self })
     }
@@ -90,6 +96,11 @@ impl Options {
         } else {
             1.0
         }
+    }
+
+    /// As [`Options::fraction`] along z, where a strip's edge is its end (`strip_end`).
+    fn fraction_z(&self, at_strip_end: bool, at_sharp_edge: bool) -> f64 {
+        Options { strip_edge: self.strip_end.unwrap_or(self.strip_edge), ..*self }.fraction(at_strip_end, at_sharp_edge)
     }
 }
 
@@ -337,7 +348,7 @@ fn along_z(model: &Model, w: &Waveguide, o: &Options, features: &Features, cross
     let near = |list: &[f64], z: f64| list.iter().any(|e| (e - z).abs() <= tolz);
     // A strip's end inside the guide is an edge; a section's aperture change or a via's face, a
     // step.
-    let fraction = |(z, sharp): (f64, bool)| o.fraction(near(strip_z, z) && z > tolz && z < w.length() - tolz, sharp || near(via_z, z));
+    let fraction = |(z, sharp): (f64, bool)| o.fraction_z(near(strip_z, z) && z > tolz && z < w.length() - tolz, sharp || near(via_z, z));
     let mut out = AlongZ { z: vec![0.0], layers: Vec::new(), length: 0.0 };
     let mut cells_z = 0usize;
     for (i, s) in w.sections.iter().enumerate() {

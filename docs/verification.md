@@ -114,7 +114,15 @@ result is frozen so it cannot drift.
    edge included (2e-6 to 1.3e-4; oracle `periodic-guide-dispersion`); WR-90 loaded
    periodically with a dielectric against the closed-form Bloch band cos ψ = (A + D)/2 (within
    4e-5; oracle `loaded-periodic-guide`).
-13. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
+13. **Coupled lines** (`crates/solver/tests/ports.rs`, `emcraft-theory::coupled`, the
+   oracle): two strips' degenerate TEM modes split into the even and odd modes (equal and
+   opposite currents) against Cohn's Z0e and Z0o, whole and under each symmetry plane
+   (oracle `coupled-stripline-impedance`, −0.15 % and −0.28 %); an open-circuited coupled
+   section's |S21| at the quarter wave, the inverter (Z0e − Z0o)/2 (oracle
+   `coupled-line-coupler`, +0.0014); a three-resonator parallel-coupled band-pass filter
+   designed by Cohn's and Matthaei–Young–Jones' equations against the ideal cascade of its
+   sections' chain matrices, band edges within 0.45 % (oracle `coupled-line-bandpass`).
+14. **The oracle** (`tests/oracle/<case>/`, results in [oracle.md](oracle.md)): each case is our
    own model as a command script (`recipe.json`), its reference values with source, tolerance
    and the reason for the tolerance (`expected.json`), and our accepted values (`fixture.json`).
 

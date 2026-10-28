@@ -35,6 +35,18 @@ pub fn z0(w: f64, b: f64, eps_r: f64) -> f64 {
     MU0 * C0 / (4.0 * eps_r.sqrt()) * agm(1.0, k) / agm(1.0, kp)
 }
 
+/// The open end's extension Δ (m) of a strip `w` wide between planes `b` apart: the middle of
+/// its bracket, between Δ₀ W/(W + 2Δ₀) (the end's fringing over the strip's width only, the
+/// line's charge over its effective width W + 2Δ₀) and the wide-strip limit Δ₀ = b ln 2/π (the
+/// excess width of an edge in Cohn's mapping, which the end of a wide strip shares in the
+/// quasi-static limit: A. G. Altschuler, A. A. Oliner, IRE Trans. MTT 8(3):328–339, 1960).
+/// Returns (low, middle, high).
+pub fn open_end(w: f64, b: f64) -> (f64, f64, f64) {
+    let hi = b * 2f64.ln() / PI;
+    let lo = hi * w / (w + 2.0 * hi);
+    (lo, 0.5 * (lo + hi), hi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -49,5 +61,12 @@ mod tests {
         assert!((z0(w, b, 1.0) / (MU0 * C0 * b / (4.0 * w)) - 1.0).abs() < 0.05);
         // The 50 Ω stripline on PTFE-like εr = 2.2 is about W = 0.8 b.
         assert!((z0(0.8 * 0.003, 0.003, 2.2) - 50.0).abs() < 3.0, "{}", z0(0.0024, 0.003, 2.2));
+    }
+
+    #[test]
+    fn the_open_ends_bracket() {
+        // The oracle's stripline-ends: 4 mm strip, planes 2 mm apart: 0.3615–0.4413, 0.4014 mm.
+        let (lo, mid, hi) = open_end(0.004, 0.002);
+        assert!((lo - 0.3615e-3).abs() < 1e-7 && (mid - 0.4014e-3).abs() < 1e-7 && (hi - 0.4413e-3).abs() < 1e-7, "{lo} {mid} {hi}");
     }
 }

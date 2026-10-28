@@ -15,7 +15,7 @@ use emcraft_model::units::{C0, MU0};
 use num_complex::Complex64 as C;
 
 use super::assembly::port_rule_points;
-use super::ports::{NumericPort, PortModes, lossy_k2, symmetric_impedance};
+use super::ports::{NumericPort, PortModes, lossy_k2};
 use super::{Driven, Result, invalid, wavenumber};
 use crate::portmode::{CrossSection, PortMode};
 
@@ -277,10 +277,10 @@ impl Driven {
     }
 
     fn numeric_terms(&self, n: &NumericPort, k0: f64) -> Result<Vec<PortTerm<'static>>> {
-        let modes = n.section.modes(k0, n.count)?;
+        let modes = n.section.modes_split(k0, n.count)?;
         let v = self.numeric_vectors(n, &modes, false)?;
         let impedance = match modes.first() {
-            Some(m) => symmetric_impedance(&self.symmetry, n.section.impedance(m, k0)?),
+            Some(m) => n.section.impedance_whole(m, k0, &self.symmetry)?,
             None => None,
         };
         Ok(modes

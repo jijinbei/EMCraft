@@ -346,6 +346,7 @@ impl Waveguide {
                 return Err(invalid(format!("strip {}", i + 1), "not supported yet: strips in a guide whose aperture changes"));
             }
         }
+        check_strip_pairs(&self.strips, &room)?;
         for (i, v) in self.vias.iter().enumerate() {
             v.check(i + 1, &room)?;
             if !uniform {
@@ -371,6 +372,39 @@ impl Waveguide {
         }
         Ok(())
     }
+}
+
+/// The narrowest gap between two strips on one plane, as a fraction of the guide's width (across
+/// x) or length (along z): a gap narrower is a sliver no mesh resolves.
+pub const MIN_STRIP_GAP: f64 = 1e-4;
+
+/// Checks every two strips on one plane: they may meet edge to edge (one conductor, a T or a
+/// step in width) or leave a gap of at least [`MIN_STRIP_GAP`], but not overlap.
+fn check_strip_pairs(strips: &[Strip], room: &Room) -> Result<()> {
+    let (tolx, tolz) = (room.tol, 1e-9 * room.length);
+    let (gapx, gapz) = (MIN_STRIP_GAP * room.width, MIN_STRIP_GAP * room.length);
+    for (i, a) in strips.iter().enumerate() {
+        for (j, b) in strips.iter().enumerate().skip(i + 1) {
+            if (a.y - b.y).abs() > room.toly {
+                continue;
+            }
+            // The overlap of their spans: negative is the gap between them.
+            let ox = (a.x0 + a.width).min(b.x0 + b.width) - a.x0.max(b.x0);
+            let oz = a.z1.min(b.z1) - a.z0.max(b.z0);
+            let what = || format!("strips {} and {}", i + 1, j + 1);
+            if ox > tolx && oz > tolz {
+                return Err(invalid(what(), "overlap: let them meet edge to edge, or leave a gap between them"));
+            }
+            let narrow = (oz > tolz && ox < -tolx && -ox < gapx) || (ox > tolx && oz < -tolz && -oz < gapz);
+            if narrow {
+                return Err(invalid(
+                    what(),
+                    format!("leave a gap narrower than {MIN_STRIP_GAP:e} of the guide (no mesh resolves it): widen it, or let them meet"),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The running totals of `values`, in order.
@@ -448,5 +482,27 @@ mod tests {
         assert!(via.mirrored(Axis::X, 0.02).near(&Via { x0: 0.017, ..via }, 1e-15));
         assert!(via.mirrored(Axis::Y, 0.01).near(&Via { y0: 0.008, y1: 0.01, ..via }, 1e-15));
         assert!(strip.mirrored(Axis::X, 0.02).near(&Strip { x0: 0.014, ..strip }, 1e-15));
+    }
+
+    #[test]
+    fn strips_on_one_plane_meet_or_keep_apart() {
+        let mut w = guide(vec![sec(None, None)]);
+        let a = Strip { y: 0.002, x0: 0.002, width: 0.004, z0: 0.0, z1: 0.006 };
+        // Coupled: side by side a gap apart over part of their length; a T meeting edge to edge;
+        // on another plane anything goes.
+        for ok in [
+            Strip { x0: 0.0065, z0: 0.004, z1: 0.01, ..a },
+            Strip { x0: 0.006, z0: 0.002, z1: 0.003, ..a },
+            Strip { z0: 0.006, z1: 0.01, ..a },
+            Strip { y: 0.005, ..a },
+        ] {
+            w.strips = vec![a, ok];
+            w.check(vacuum_only).unwrap_or_else(|e| panic!("{ok:?}: {e}"));
+        }
+        // Overlapping, the same strip twice, a sliver of a gap across x or along z.
+        for bad in [Strip { x0: 0.005, ..a }, a, Strip { x0: 0.006 + 1e-8, z0: 0.004, z1: 0.01, ..a }, Strip { z0: 0.006 + 1e-9, z1: 0.01, ..a }] {
+            w.strips = vec![a, bad];
+            assert!(w.check(vacuum_only).is_err(), "{bad:?}");
+        }
     }
 }

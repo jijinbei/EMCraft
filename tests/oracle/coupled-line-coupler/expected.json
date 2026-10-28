@@ -1,0 +1,59 @@
+{
+ "title": "A parallel-coupled stripline section: two 2.33 mm strips 0.18 mm apart beside each other over 8.72 mm, each running on to a port at its own end of the box and ending open at the other, midway between planes 4 mm apart in PTFE (εr = 2.2): S21 against the open-circuited coupled section's line theory, a quarter wavelength long at 5 GHz",
+ "kind": "theory",
+ "source": "The open-circuited coupled section (each line open at one end, the band-pass section): Z11 = Z22 = −j(Z0e + Z0o)/2 cot θ, Z12 = −j(Z0e − Z0o)/2 csc θ (E. M. T. Jones, J. T. Bolljahn, Coupled-strip-transmission-line filters and directional couplers, IRE Trans. MTT 4(2):75–81, 1956; D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §8.7, Table 8.8): at θ = π/2 an inverter K = (Z0e − Z0o)/2, |S21| = 2KZ/(K² + Z²), set by the coupling C = (Z0e − Z0o)/(Z0e + Z0o) = 0.3387 (−9.40 dB). Z0e = 77.13 Ω, Z0o = 38.10 Ω by Cohn's coupled-strip mapping (IRE Trans. MTT 3(5):29–38, 1955), the feeds and the ports' reference Z = 62.21 Ω by his stripline (IRE Trans. MTT 2(2):52–57, 1954); TEM in one dielectric, θ = β(ℓ + 2Δ): each strip's open end lies beside the other strip, which runs on, so its extension Δ adds to the coupled length at both ends (0.692 mm, the middle of the open end's bracket as in stripline-ends), and the feeds before and after are as much shorter. Evaluated by emcraft-theory::coupled, apart from the solver",
+ "quantities": [
+  {
+   "id": "s21_quarter",
+   "quantity": "|S21| at 5 GHz, the section a quarter wavelength long: 2C√(1 − C²) between ports of √(Z0e Z0o)",
+   "measure": {
+    "step": "section",
+    "pointer": "/points/1/s21/mag"
+   },
+   "value": 0.5710836976449547,
+   "tolerance": {
+    "absolute": 0.01
+   },
+   "reason": "stationary in θ there, so the open ends hardly matter (±5e-4 across their bracket); set by Z0e − Z0o, 0.47 per unit of its relative error: the odd impedance −1.3 % at this grading of the 0.18 mm gap (cross-section alone); +0.0014 measured"
+  },
+  {
+   "id": "s21_quarter_deg",
+   "quantity": "phase of S21 at 5 GHz (degrees)",
+   "measure": {
+    "step": "section",
+    "pointer": "/points/1/s21/deg"
+   },
+   "value": -148.91680578559536,
+   "tolerance": {
+    "absolute": 3.0
+   },
+   "reason": "−90° through the inverter and the feeds' 2β(4 mm − Δ): the open ends' extension known to its bracket (0.50–0.88 mm, ±2.3°); −0.63° measured"
+  },
+  {
+   "id": "s21_low",
+   "quantity": "|S21| at 4 GHz (θ = 72° + the ends)",
+   "measure": {
+    "step": "section",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 0.5576297562569794,
+   "tolerance": {
+    "absolute": 0.01
+   },
+   "reason": "off the quarter wave |S21| follows θ: the open ends' bracket moves it ±0.0042, the coupling's error as at 5 GHz; −0.0002 measured"
+  },
+  {
+   "id": "s21_high",
+   "quantity": "|S21| at 6 GHz (θ = 108° + the ends)",
+   "measure": {
+    "step": "section",
+    "pointer": "/points/2/s21/mag"
+   },
+   "value": 0.5576297562569795,
+   "tolerance": {
+    "absolute": 0.01
+   },
+   "reason": "as at 4 GHz, the bracket ±0.0063; +0.0041 measured"
+  }
+ ]
+}

@@ -66,6 +66,25 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   2(2):52–57, 1954 — the zero-thickness stripline's exact impedance (`emcraft-theory::stripline`);
   its wide-strip limit K(k′)/K(k) → W/b + (2/π) ln 2 gives each edge's excess width b ln 2/π,
   the open end's extension in the oracle cases `stripline-ends` and `stripline-stub`.
+- S. B. Cohn, *Shielded coupled-strip transmission line*, IRE Trans. MTT 3(5):29–38, 1955 —
+  the even and odd impedances of edge-coupled zero-thickness strips by conformal mapping,
+  kₑ = tanh(πW/2b) tanh(π(W + S)/2b), kₒ = tanh(πW/2b) coth(π(W + S)/2b), and its inversion
+  from (Z₀ₑ, Z₀ₒ) to (W, S) (`emcraft-theory::coupled`; oracle `coupled-stripline-impedance`).
+- C. R. Paul, *Analysis of Multiconductor Transmission Lines*, 2nd ed., Wiley 2008, §§5.2, 7.2 —
+  a homogeneous line's L and C share their eigenvectors: the degenerate TEM modes of several
+  strips are split along them, power-orthogonal with orthogonal conductor currents (the even and
+  odd modes), and each mode's impedance per conductor 2P/Σ|I|² is the impedance matrix's
+  eigenvalue (`emcraft-solver::portmode::coupled`).
+- E. M. T. Jones, J. T. Bolljahn, *Coupled-strip-transmission-line filters and directional
+  couplers*, IRE Trans. MTT 4(2):75–81, 1956; D. M. Pozar, *Microwave Engineering*, 4th ed.,
+  Wiley 2012, §8.7 — the open-circuited coupled section's impedance matrix and chain matrix,
+  the quarter-wave section an inverter of (Z₀ₑ − Z₀ₒ)/2 (oracle `coupled-line-coupler`).
+- S. B. Cohn, *Parallel-coupled transmission-line-resonator filters*, IRE Trans. MTT
+  6(2):223–231, 1958; G. L. Matthaei, L. Young, E. M. T. Jones, *Microwave Filters,
+  Impedance-Matching Networks, and Coupling Structures*, McGraw-Hill 1964, §§4.05, 10.02 — the
+  Chebyshev prototype's g values, the admittance inverters J of a parallel-coupled band-pass
+  filter and their even and odd impedances Z₀[1 ± JZ₀ + (JZ₀)²]; the ideal TEM cascade the
+  `coupled-filter` sample and oracle `coupled-line-bandpass` are checked against.
 - A. G. Altschuler, A. A. Oliner, *Discontinuities in the center conductor of symmetric strip
   transmission line*, IRE Trans. MTT 8(3):328–339, 1960 — the open end of a stripline, its
   quasi-static extension that of a side edge; A. A. Oliner, *Equivalent circuits for
