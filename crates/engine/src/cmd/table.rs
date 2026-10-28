@@ -203,7 +203,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.import",
         label: "Import",
-        doc: "Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's export with face tags (one body per object, named after it, its B-rep faces kept as faces). Triangles are grouped into faces also by the angle between neighbours, so sharp edges stay edges. One body alone becomes the region the fields fill, filled with `material`, and its faces on its lowest and highest z planes can carry ports. Several bodies lie in a box of air (`material`) `margin` beyond them all, or in the body `region` names; each is metal unless `materials` gives it another (geometry.body.material changes it later). With `open` (an antenna, a scatterer) the box is lined by a perfectly matched layer as model.open does: by default a quarter of the band's longest wavelength of air between the parts and the layer, and a layer as thick. Replaces any geometry, mesh and results.",
+        doc: "Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's export with face tags (one body per object, named after it, its B-rep faces kept as faces). Each face's exact surface (plane, cylinder, sphere, cone) is recovered from its vertices where one fits them to 1e-6 of the body's size, so second-order elements bend onto curved faces; the reply counts them under `curved`. Triangles are grouped into faces also by the angle between neighbours, so sharp edges stay edges. One body alone becomes the region the fields fill, filled with `material`, and its faces on its lowest and highest z planes can carry ports. Several bodies lie in a box of air (`material`) `margin` beyond them all, or in the body `region` names; each is metal unless `materials` gives it another (geometry.body.material changes it later). With `open` (an antenna, a scatterer) the box is lined by a perfectly matched layer as model.open does: by default a quarter of the band's longest wavelength of air between the parts and the layer, and a layer as thick. Replaces any geometry, mesh and results.",
         params: &[
             req("path", K::String, "the file (`.stl` or `.3mf`)"),
             opt("unit", K::Number, "an STL file's length unit in display units (default 1, i.e. the display unit); 3MF files carry their own").of(L),
@@ -214,6 +214,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("materials", K::Object, "body name → material, or `metal` (the default for every body)"),
             opt("open", K::Boolean, "an open problem: line the box of air with a perfectly matched layer (default false)"),
             opt("thickness", K::Number, "the layer's thickness with `open` (default a quarter of the band's longest wavelength)").of(L),
+            opt("fit_surfaces", K::Boolean, "recover each face's exact surface — a plane, cylinder, sphere or cone fitted to its vertices, kept when every vertex lies on it — so the mesh follows curved faces as it does native ones (default true); false keeps them faceted"),
         ],
         effect: Effect::Record,
         run: crate::geometry::import,

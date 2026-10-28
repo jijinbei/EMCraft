@@ -4,7 +4,7 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::{Aabb, Axis, Combine, Feature, Point3, Shape, Vec3};
+use emcraft_model::{Aabb, Axis, Combine, FaceSurface, Feature, Point3, Shape, Vec3};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 
 use super::mesher::{MPoint, MVec, RegionFace, RegionMesh, mesher_point, mesher_vec, model_point, model_vec};
@@ -216,14 +216,17 @@ pub(super) fn tessellate(shape: &Shape, size: f64) -> Tessellation {
     }
 }
 
-/// An imported surface as it is (the mesher refines it to the size): its faces as tagged, the
-/// triangles on its lowest and highest z planes made the end faces a port may close, with
-/// their planes as exact surfaces.
+/// An imported surface as it is (the mesher refines it to the size): its faces as tagged, each
+/// curved face with the exact surface fitted to it on import (so points the mesher adds on it go
+/// onto it, as on a native cylinder; flat faces are exact as they are), the triangles on its
+/// lowest and highest z planes made the end faces a port may close, with their planes as exact
+/// surfaces.
 fn tessellate_surface(shape: &Shape) -> Tessellation {
-    let Shape::Surface { positions, triangles, tags, .. } = shape else { return Tessellation::default() };
+    let Shape::Surface { positions, triangles, tags, surfaces, .. } = shape else { return Tessellation::default() };
     let mut tri_face = tags.clone();
     let faces = tags.iter().map(|t| t + 1).max().unwrap_or(0);
-    let mut analytic = vec![None; faces as usize];
+    let mut analytic: Vec<Option<AnalyticSurface>> =
+        (0..faces as usize).map(|f| surfaces.get(f).copied().flatten().filter(FaceSurface::is_curved).map(exact)).collect();
     let Aabb { min: lo, max: hi } = shape.bounds();
     let ends = shape.end_triangles();
     let mut tag_of = [None, None];
@@ -239,6 +242,17 @@ fn tessellate_surface(shape: &Shape) -> Tessellation {
         tag_of[k] = Some(tag);
     }
     Tessellation { positions: positions.clone(), triangles: triangles.clone(), tri_face, analytic, start_face: tag_of[0], end_face: tag_of[1] }
+}
+
+/// A fitted face's surface as the mesher's.
+fn exact(f: FaceSurface) -> AnalyticSurface {
+    let (p, v) = (mesher_point, mesher_vec);
+    match f {
+        FaceSurface::Plane { normal, point } => AnalyticSurface::Plane { normal: v(normal), point: p(point) },
+        FaceSurface::Cylinder { origin, axis, radius } => AnalyticSurface::Cylinder { origin: p(origin), axis: v(axis), radius },
+        FaceSurface::Sphere { center, radius } => AnalyticSurface::Sphere { center: p(center), radius },
+        FaceSurface::Cone { apex, axis, half_angle } => AnalyticSurface::Cone { apex: p(apex), axis: v(axis), half_angle },
+    }
 }
 
 /// The tessellation size of an inclusion: its interface is kept as tessellated (frozen), so a
@@ -569,11 +583,12 @@ pub(super) fn joined(features: &[Feature], solid: &Shape, size: f64) -> Result<V
 pub(super) fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape, size: f64) -> Result<Tessellation> {
     let (shape, at) = feature_body(f, solid, size)?;
     // General position against the solid's tessellation: a round body turned about its own
-    // axis by an odd angle (it is the same body), and every feature moved by up to a millionth of
-    // the element size (far below the mesh's resolution, far above rounding), so no vertex of one
-    // lies exactly on a grid line or plane of the other.
+    // axis by an odd angle (it is the same body; an imported one is not round, and stays as it
+    // is), and every feature moved by up to a millionth of the element size (far below the mesh's
+    // resolution, far above rounding), so no vertex of one lies exactly on a grid line or plane
+    // of the other.
     let mut own = tessellate(&shape, size);
-    if !matches!(shape, Shape::Box { .. }) {
+    if matches!(shape, Shape::Cylinder { .. } | Shape::Sphere { .. }) {
         let (sn, cs) = 0.2345f64.sin_cos();
         for p in &mut own.positions {
             *p = Point3::new(cs * p.x - sn * p.y, sn * p.x + cs * p.y, p.z);

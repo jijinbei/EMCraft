@@ -137,6 +137,44 @@ fn imported_surfaces_mesh_and_carry_ports() {
     assert!(matches!(s.model.solid.as_ref().unwrap().shape, emcraft_model::Shape::Surface { .. }));
 }
 
+/// A closed cylinder along z, radius r, length l (millimetres), `n` facets round; one tag.
+fn can_surface(r: f64, l: f64, n: u32) -> emcraft_io::Surface {
+    let mut s = emcraft_io::Surface::default();
+    for z in [0.0, l] {
+        for i in 0..n {
+            let t = 2.0 * std::f64::consts::PI * f64::from(i) / f64::from(n);
+            s.positions.push(emcraft_model::Point3::new(r * t.cos(), r * t.sin(), z));
+        }
+    }
+    s.positions.push(emcraft_model::Point3::new(0.0, 0.0, 0.0));
+    s.positions.push(emcraft_model::Point3::new(0.0, 0.0, l));
+    for i in 0..n {
+        let j = (i + 1) % n;
+        s.triangles.extend([[i, j, n + j], [i, n + j, n + i], [2 * n, j, i], [2 * n + 1, n + i, n + j]]);
+    }
+    s.tags = vec![0; s.triangles.len()];
+    s
+}
+
+#[test]
+fn imported_curved_faces_get_their_exact_surfaces() {
+    // A can read from STL (single precision): its side recovered as a cylinder, its caps as
+    // planes, and the mesh's edges on the side bent onto it.
+    let path = scratch("can.stl");
+    std::fs::write(&path, emcraft_io::stl::write_binary(&can_surface(10.0, 20.0, 26), 1.0)).unwrap();
+    let mut s = Session::new();
+    let r = s.execute("geometry.import", &json!({"path": path})).unwrap();
+    assert_eq!((r["faces"].as_u64(), r["planes"].as_u64()), (Some(3), Some(2)), "{r}");
+    assert_eq!(r["curved"], json!({"cylinder": 1, "sphere": 0, "cone": 0}));
+    let bent = s.execute("mesh.generate", &json!({"size": 4})).unwrap()["curved_edges"].as_u64().unwrap();
+    assert!(bent > 50, "{bent}");
+    // Kept faceted on request: nothing bent.
+    let r = s.execute("geometry.import", &json!({"path": path, "fit_surfaces": false})).unwrap();
+    assert_eq!((r["planes"].as_u64(), r["curved"]["cylinder"].as_u64()), (Some(0), Some(0)));
+    assert_eq!(s.execute("mesh.generate", &json!({"size": 4})).unwrap()["curved_edges"], 0);
+    assert!(s.execute("geometry.import", &json!({"path": path, "fit_surfaces": "yes"})).is_err());
+}
+
 #[test]
 fn meshes_follow_the_wavelength_in_each_material() {
     // A ceramic sphere (εr = 4) in a vacuum sphere: at 12 GHz λ is 25 mm outside, 12.5 mm inside.

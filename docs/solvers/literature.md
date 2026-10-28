@@ -18,6 +18,19 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - A. Van Oosterom, J. Strackee, *The solid angle of a plane triangle*, IEEE Trans. Biomed. Eng.
   30(2):125–126, 1983 — the winding number that classifies a Boolean's pieces inside or outside
   the other surface (`emcraft-mesh::csg`).
+- Exact surfaces of imported faces (`emcraft-io::fit`): G. Lukács, R. Martin, D. Marshall,
+  *Faithful least-squares fitting of spheres, cylinders, cones and tori for reliable
+  segmentation*, ECCV 1998, LNCS 1406:671–686 — geometric distances refined by
+  Levenberg–Marquardt from algebraic starts; D. Eberly, *Least Squares Fitting of Data by Linear
+  or Quadratic Structures*, Geometric Tools, 2021 — the total least-squares plane and the
+  cylinder through its axis; I. Kåsa, *A circle fitting procedure and its error analysis*, IEEE
+  Trans. Instrum. Meas. 25(1):8–14, 1976, and V. Pratt, *Direct least-squares fitting of
+  algebraic surfaces*, Computer Graphics 21(4):145–152, 1987 — the algebraic circle and sphere
+  fits that start them. The axes of cylinders and cones come from the Gauss map (a cylinder's
+  normals lie on a great circle, a cone's on a small one); a fit is kept only when every vertex
+  lies on it to 1e-6 of the body's size and every triangle's centroid within 0.15 of its longest
+  edge, the closest to the centroids winning, so the sphere through a cylinder's or a frustum's
+  two rims is not taken for it.
 
 ## Special functions
 - M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, 1964, §9.12 and Tables 9.5,

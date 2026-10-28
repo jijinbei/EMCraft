@@ -20,8 +20,145 @@ pub enum Shape {
     /// Centred on the origin.
     Sphere { radius: f64 },
     /// A closed triangulated surface (imported): positions (m), outward triangles and a face
-    /// tag per triangle.
-    Surface { name: String, positions: Vec<Point3>, triangles: Vec<[u32; 3]>, tags: Vec<u32> },
+    /// tag per triangle; `surfaces[tag]` the face's exact surface where one was recovered from
+    /// its vertices (a plane, cylinder, sphere or cone fitted on import), else it is faceted.
+    Surface {
+        name: String,
+        positions: Vec<Point3>,
+        triangles: Vec<[u32; 3]>,
+        tags: Vec<u32>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        surfaces: Vec<Option<FaceSurface>>,
+    },
+}
+
+/// The exact surface of an imported face, recovered by fitting its vertices (untrimmed: the
+/// face's triangles say which part of it the face is). Axes and normals are unit vectors.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FaceSurface {
+    Plane {
+        normal: Vec3,
+        point: Point3,
+    },
+    /// The points at `radius` from the line through `origin` along `axis`.
+    Cylinder {
+        origin: Point3,
+        axis: Vec3,
+        radius: f64,
+    },
+    Sphere {
+        center: Point3,
+        radius: f64,
+    },
+    /// The points whose direction from `apex` makes `half_angle` (radians, in (0, π/2)) with
+    /// `axis`, which points into the cone.
+    Cone {
+        apex: Point3,
+        axis: Vec3,
+        half_angle: f64,
+    },
+}
+
+impl FaceSurface {
+    /// The kind, for display: `plane`, `cylinder`, `sphere`, `cone`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            FaceSurface::Plane { .. } => "plane",
+            FaceSurface::Cylinder { .. } => "cylinder",
+            FaceSurface::Sphere { .. } => "sphere",
+            FaceSurface::Cone { .. } => "cone",
+        }
+    }
+
+    /// Whether the surface is curved (not a plane).
+    pub fn is_curved(&self) -> bool {
+        !matches!(self, FaceSurface::Plane { .. })
+    }
+
+    /// The closest point on the surface, or `None` where it is not unique (on a cylinder's or cone's
+    /// axis, at a sphere's centre) or the data is not finite.
+    pub fn project(&self, p: Point3) -> Option<Point3> {
+        let out = match *self {
+            FaceSurface::Plane { normal, point } => {
+                let n = normal.normalized()?;
+                p - n * (p - point).dot(n)
+            }
+            FaceSurface::Cylinder { origin, axis, radius } => {
+                let a = axis.normalized()?;
+                let d = p - origin;
+                let foot = origin + a * d.dot(a);
+                foot + (p - foot).normalized()? * radius
+            }
+            FaceSurface::Sphere { center, radius } => center + (p - center).normalized()? * radius,
+            FaceSurface::Cone { apex, axis, half_angle } => {
+                let a = axis.normalized()?;
+                let d = p - apex;
+                let r = (d - a * d.dot(a)).normalized()?;
+                // The generator through p's half-plane, from the apex.
+                let g = a * half_angle.cos() + r * half_angle.sin();
+                apex + g * d.dot(g).max(0.0)
+            }
+        };
+        out.is_finite().then_some(out)
+    }
+
+    /// The distance from `p` to the surface (infinite where [`FaceSurface::project`] has no
+    /// answer).
+    pub fn distance(&self, p: Point3) -> f64 {
+        self.project(p).map_or(f64::INFINITY, |q| q.distance(p))
+    }
+
+    /// The unit normal of the surface nearest `p` (away from a cylinder's axis or a sphere's
+    /// centre, along a plane's normal).
+    pub fn normal(&self, p: Point3) -> Option<Vec3> {
+        match *self {
+            FaceSurface::Plane { normal, .. } => normal.normalized(),
+            FaceSurface::Cylinder { origin, axis, .. } => {
+                let a = axis.normalized()?;
+                let d = p - origin;
+                (d - a * d.dot(a)).normalized()
+            }
+            FaceSurface::Sphere { center, .. } => (p - center).normalized(),
+            FaceSurface::Cone { apex, axis, half_angle } => {
+                let a = axis.normalized()?;
+                let d = p - apex;
+                let r = (d - a * d.dot(a)).normalized()?;
+                (r * half_angle.cos() - a * half_angle.sin()).normalized()
+            }
+        }
+    }
+
+    /// Finite data, unit axes, positive radii.
+    pub fn check(&self) -> Result<()> {
+        let unit = |v: Vec3| v.is_finite() && (v.norm() - 1.0).abs() <= 1e-9;
+        let ok = match *self {
+            FaceSurface::Plane { normal, point } => unit(normal) && point.is_finite(),
+            FaceSurface::Cylinder { origin, axis, radius } => unit(axis) && origin.is_finite() && radius.is_finite() && radius > 0.0,
+            FaceSurface::Sphere { center, radius } => center.is_finite() && radius.is_finite() && radius > 0.0,
+            FaceSurface::Cone { apex, axis, half_angle } => {
+                unit(axis) && apex.is_finite() && half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2
+            }
+        };
+        if ok {
+            Ok(())
+        } else {
+            Err(invalid(
+                "surface",
+                format!("a face's {} is not finite, its axis not a unit vector, or its radius or angle out of range", self.kind()),
+            ))
+        }
+    }
+
+    /// The same surface moved by `d`.
+    pub fn moved(self, d: Vec3) -> FaceSurface {
+        match self {
+            FaceSurface::Plane { normal, point } => FaceSurface::Plane { normal, point: point + d },
+            FaceSurface::Cylinder { origin, axis, radius } => FaceSurface::Cylinder { origin: origin + d, axis, radius },
+            FaceSurface::Sphere { center, radius } => FaceSurface::Sphere { center: center + d, radius },
+            FaceSurface::Cone { apex, axis, half_angle } => FaceSurface::Cone { apex: apex + d, axis, half_angle },
+        }
+    }
 }
 
 /// Most triangles an imported surface may have.
@@ -115,7 +252,13 @@ impl Shape {
             Shape::Sphere { radius } => {
                 positive("sphere radius", *radius)?;
             }
-            Shape::Surface { positions, triangles, tags, .. } => {
+            Shape::Surface { positions, triangles, tags, surfaces, .. } => {
+                if surfaces.len() > triangles.len() {
+                    return Err(invalid("surface", "has more face surfaces than triangles"));
+                }
+                for f in surfaces.iter().flatten() {
+                    f.check()?;
+                }
                 if triangles.len() < 4 || triangles.len() > MAX_SURFACE_TRIANGLES {
                     return Err(invalid("surface", format!("has {} triangles; it needs 4 to {MAX_SURFACE_TRIANGLES}", triangles.len())));
                 }
@@ -341,7 +484,7 @@ mod tests {
     fn tetrahedron(triangles: Vec<[u32; 3]>) -> Shape {
         let positions = vec![Point3::ORIGIN, Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 0.0, 1.0)];
         let tags = vec![0; triangles.len()];
-        Shape::Surface { name: "tet".into(), positions, triangles, tags }
+        Shape::Surface { name: "tet".into(), positions, triangles, tags, surfaces: Vec::new() }
     }
 
     #[test]

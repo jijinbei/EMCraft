@@ -2,8 +2,8 @@
 //! inclusions and features, walls and ports.
 
 use emcraft_model::{
-    Axis, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Section, Shape, Solid, Strip, Symmetry, SymmetryKind, Via,
-    Waveguide,
+    Axis, FaceSurface, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Section, Shape, Solid, Strip, Symmetry,
+    SymmetryKind, Via, Waveguide,
 };
 use serde_json::{Value, json};
 
@@ -153,7 +153,11 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     if bodies.is_empty() {
         return Err(EngineError::Failed(format!("`{path}` holds no body")));
     }
+    let fit = p.flag("fit_surfaces").or(true)?;
+    // Each triangle's face as read (a B-rep face), before the split by angle.
+    let mut sources: Vec<Vec<u32>> = bodies.iter().map(|b| b.tags.clone()).collect();
     let faces: u32 = bodies.iter_mut().map(|b| emcraft_io::split_faces(b, angle)).sum();
+    let mut fitted = Fitted::default();
     let triangles: usize = bodies.iter().map(|b| b.triangles.len()).sum();
     let materials = body_materials(p, &bodies)?;
     // An open problem: the box of air lined by a perfectly matched layer, a quarter of the
@@ -183,13 +187,14 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     } else {
         let k = bodies.iter().position(|b| b.name == region).ok_or_else(|| p.error("region", format!("names no body `{region}` (or `box`)")))?;
         let body = bodies.remove(k);
-        s.model.set_solid(Solid { shape: surface(body), material: material.clone() })?;
+        let source = sources.remove(k);
+        s.model.set_solid(Solid { shape: surface(body, &source, fit, &mut fitted), material: material.clone() })?;
     }
     let mut placed = Vec::new();
-    for b in bodies {
+    for (b, source) in bodies.into_iter().zip(sources) {
         let m = materials.iter().find(|(n, _)| *n == b.name).map_or(crate::bodies::METAL.to_owned(), |(_, m)| m.clone());
         let name = b.name.clone();
-        let kind = crate::bodies::place(&mut s.model, surface(b), Point3::ORIGIN, Axis::Z, &m)?;
+        let kind = crate::bodies::place(&mut s.model, surface(b, &source, fit, &mut fitted), Point3::ORIGIN, Axis::Z, &m)?;
         placed.push(json!({"body": name, "material": m, "as": kind}));
     }
     if let Some(t) = thickness {
@@ -200,6 +205,8 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({
         "triangles": triangles,
         "faces": faces,
+        "planes": fitted.plane,
+        "curved": {"cylinder": fitted.cylinder, "sphere": fitted.sphere, "cone": fitted.cone},
         "region": region,
         "bodies": placed,
         "open": thickness.map(|t| s.show_length(t)),
@@ -208,9 +215,28 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
-/// An imported body as a shape.
-fn surface(b: emcraft_io::Surface) -> Shape {
-    Shape::Surface { name: b.name, positions: b.positions, triangles: b.triangles, tags: b.tags }
+/// How many faces of the imported bodies got each kind of exact surface.
+#[derive(Default)]
+struct Fitted {
+    plane: usize,
+    cylinder: usize,
+    sphere: usize,
+    cone: usize,
+}
+
+/// An imported body as a shape, each face's exact surface fitted to its vertices (`fit`) where
+/// one fits, `source` the triangles' faces before they were split by angle.
+fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, fitted: &mut Fitted) -> Shape {
+    let surfaces = if fit { emcraft_io::fit::fit_faces(&b, source) } else { Vec::new() };
+    for f in surfaces.iter().flatten() {
+        match f {
+            FaceSurface::Plane { .. } => fitted.plane += 1,
+            FaceSurface::Cylinder { .. } => fitted.cylinder += 1,
+            FaceSurface::Sphere { .. } => fitted.sphere += 1,
+            FaceSurface::Cone { .. } => fitted.cone += 1,
+        }
+    }
+    Shape::Surface { name: b.name, positions: b.positions, triangles: b.triangles, tags: b.tags, surfaces }
 }
 
 /// The bodies' materials from `materials` (body name → material); the others are metal.
