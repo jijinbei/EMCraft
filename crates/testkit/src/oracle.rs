@@ -15,6 +15,9 @@
 //! `"minimum": {"x": "/frequency", "y": "/s21/mag"}` the pointer names a list (a sweep's points)
 //! and the number is the x where y is least: the vertex of the parabola through y² at the least
 //! sampled point and its two neighbours (a notch, where y ∝ |x − x₀| and y² is quadratic).
+//! With `"crossing": {"x", "y", "level", "which": "first" | "last"}` the number is the x where y
+//! first (or last) crosses `level` along the list, linear between the two points around it (a
+//! filter's band edge).
 //!
 //! Adapted from FieldCraft's `crates/testkit/src/oracle.rs` (MIT OR Apache-2.0), see
 //! ATTRIBUTION.md.
@@ -229,9 +232,10 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
         } else {
             Err(OracleError::Measure("`measure` gives a `step` or a `command`".into()))
         };
-        let value = reply.and_then(|r| match m.get("minimum") {
-            Some(spec) => minimum(&r, pointer, spec),
-            None => r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))),
+        let value = reply.and_then(|r| match (m.get("minimum"), m.get("crossing")) {
+            (Some(spec), _) => minimum(&r, pointer, spec),
+            (None, Some(spec)) => crossing(&r, pointer, spec),
+            (None, None) => r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))),
         });
         let pass = value.as_ref().is_ok_and(|v| q.tolerance.allows(q.reference, *v));
         let fixed = fixture.as_ref().and_then(|f| f.pointer(&format!("/values/{}", q.id)));
@@ -276,6 +280,33 @@ fn minimum(reply: &Value, pointer: &str, spec: &Value) -> Result<f64> {
         return Err(fail("no minimum between the points".into()));
     }
     Ok(x1 + 0.5 * h * (y0 - y2) / curvature)
+}
+
+/// The x where y first (or last) crosses the level over the list at `pointer` (see the module
+/// docs), linear between the two points around the crossing.
+fn crossing(reply: &Value, pointer: &str, spec: &Value) -> Result<f64> {
+    let fail = |why: String| OracleError::Measure(format!("crossing over `{pointer}`: {why}"));
+    let list = reply.pointer(pointer).and_then(Value::as_array).ok_or_else(|| fail("not a list".into()))?;
+    let key = |k: &str| spec.get(k).and_then(Value::as_str).ok_or_else(|| fail(format!("`crossing` needs a JSON pointer `{k}`")));
+    let (kx, ky) = (key("x")?, key("y")?);
+    let level =
+        spec.get("level").and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| fail("`crossing` needs a finite `level`".into()))?;
+    let last = match spec.get("which").and_then(Value::as_str) {
+        Some("first") | None => false,
+        Some("last") => true,
+        Some(other) => return Err(fail(format!("`which` is `first` or `last`, not `{other}`"))),
+    };
+    let points = list
+        .iter()
+        .map(|p| match (p.pointer(kx).and_then(Value::as_f64), p.pointer(ky).and_then(Value::as_f64)) {
+            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok((x, y)),
+            _ => Err(fail(format!("a point without numbers at `{kx}` and `{ky}`"))),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut found = points.windows(2).filter(|w| (w[0].1 - level) * (w[1].1 - level) <= 0.0 && w[0].1 != w[1].1);
+    let w = if last { found.next_back() } else { found.next() }.ok_or_else(|| fail(format!("y never crosses {level}: widen the sweep")))?;
+    let [(x0, y0), (x1, y1)] = [w[0], w[1]];
+    Ok(x0 + (level - y0) * (x1 - x0) / (y1 - y0))
 }
 
 fn band(q: &Quantity, v: f64) -> f64 {
@@ -430,6 +461,20 @@ mod tests {
         assert!(minimum(&uneven, "/points", &spec).is_err());
         assert!(minimum(&reply, "/points", &json!({"x": "/f"})).is_err());
         assert!(minimum(&reply, "/nothing", &spec).is_err());
+    }
+
+    #[test]
+    fn a_crossing_is_interpolated_between_its_points() {
+        // A band: y rises through 0.5 at x = 1.25 and falls through it at x = 3.75.
+        let points: Vec<Value> = (0..11).map(|i| f64::from(i) * 0.5).map(|x| json!({"f": x, "s": {"mag": 1.0 - (x - 2.5f64).abs() * 0.4}})).collect();
+        let reply = json!({"points": points});
+        let first = json!({"x": "/f", "y": "/s/mag", "level": 0.5});
+        let last = json!({"x": "/f", "y": "/s/mag", "level": 0.5, "which": "last"});
+        assert!((crossing(&reply, "/points", &first).unwrap() - 1.25).abs() < 1e-12);
+        assert!((crossing(&reply, "/points", &last).unwrap() - 3.75).abs() < 1e-12);
+        assert!(crossing(&reply, "/points", &json!({"x": "/f", "y": "/s/mag", "level": 2.0})).is_err());
+        assert!(crossing(&reply, "/points", &json!({"x": "/f", "y": "/s/mag", "level": 0.5, "which": "middle"})).is_err());
+        assert!(crossing(&reply, "/points", &json!({"x": "/f", "y": "/s/mag"})).is_err());
     }
 
     /// Every committed case parses and has a recipe and a README (running them is
