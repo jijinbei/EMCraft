@@ -81,6 +81,19 @@ fn overlap(a: &[[f64; 2]; 3], b: &[[f64; 2]; 3], eps: f64) -> bool {
     true
 }
 
+/// Whether point `p` lies inside the triangle (on its edges counts).
+fn covers(t: &[[f64; 2]; 3], p: [f64; 2]) -> bool {
+    let cross = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    let s = [cross(t[0], t[1]), cross(t[1], t[2]), cross(t[2], t[0])];
+    s.iter().all(|x| *x >= 0.0) || s.iter().all(|x| *x <= 0.0)
+}
+
+/// The winding number of a closed surface about `p`.
+fn winding(positions: &[Point3], triangles: &[[u32; 3]], p: Point3) -> f64 {
+    triangles.iter().filter_map(|t| corners(positions, t)).map(|q| emcraft_model::solid_angle(q.map(|x| x - p))).sum::<f64>()
+        / (4.0 * std::f64::consts::PI)
+}
+
 /// A disjoint-set forest (union by the smaller index: deterministic).
 struct Sets(Vec<usize>);
 
@@ -208,6 +221,38 @@ pub(crate) fn moved(
             return Err(fail(format!("`{name}`: one face touches surfaces on both of its sides")));
         }
         face_move.insert(r, by);
+    }
+    // A moved face must lie wholly against the other surface, or beyond it where it does not:
+    // the part of it that is not against it moves too, which changes the result when that part
+    // lies inside the other surface (for a difference or an intersection; outside it for a
+    // union). Checked at points of each triangle (its centroid, corners and edges' middles drawn
+    // a tenth towards it) that no coplanar triangle of the other surface covers.
+    let inside_matters = !matches!(combine, Combine::Add);
+    for (i, f) in body.iter().enumerate() {
+        if !face_move.contains_key(&sets.find(i)) {
+            continue;
+        }
+        let Some(q) = corners(positions, &triangles[f.tri]) else { continue };
+        let c = Point3::centroid(q).unwrap_or(q[0]);
+        let toward = |p: Point3| p + (c - p) * 0.1;
+        let samples =
+            [c, toward(q[0]), toward(q[1]), toward(q[2]), toward(q[0].midpoint(q[1])), toward(q[1].midpoint(q[2])), toward(q[2].midpoint(q[0]))];
+        let list = &other[f.axis];
+        let from = list.partition_point(|o| o.at < f.at - g.flush);
+        let plane: Vec<&Flat> = list[from..].iter().take_while(|o| o.at <= f.at + g.flush).collect();
+        let (u, v) = ((f.axis + 1) % 3, (f.axis + 2) % 3);
+        for p in samples {
+            if plane.iter().any(|o| covers(&o.uv, [p[u], p[v]])) {
+                continue;
+            }
+            if (winding(other_positions, other_triangles, p) > 0.5) == inside_matters {
+                let axis = ["x", "y", "z"][f.axis];
+                return Err(fail(format!(
+                    "`{name}`: not supported yet: its face at {axis} = {:.6} mm lies partly against another surface and partly inside the region (let the bodies overlap instead of touching, or join them into one body in the CAD tool)",
+                    f.at * g.mm
+                )));
+            }
+        }
     }
     // The vertices' moves, per axis; the triangles that move with each (its face's).
     let mut vertex_move: Vec<[f64; 3]> = vec![[0.0; 3]; positions.len()];

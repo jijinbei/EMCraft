@@ -16,6 +16,9 @@ third-party material under an open licence.
 | docs/media/cavity-te101-h.png | EMCraft contributors | Original: drawn by `emcraft-cli sample cavity` (mode1-h-90deg.png) | MIT OR Apache-2.0 |
 | docs/media/sphere-rcs-e-plane.png, docs/media/sphere-rcs-h-plane.png, docs/media/dipole-directivity.png | EMCraft contributors | Original: drawn by `view.pattern` after the dielectric-sphere-scattering and dipole-radiation oracle recipes | MIT OR Apache-2.0 |
 | docs/media/bandpass-s-parameters.png, docs/media/bandpass-h-10GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample iris-bandpass --frequency 10` | MIT OR Apache-2.0 |
+| crates/ui-egui/tests/fixtures/post-and-puck.3mf | EMCraft contributors | Original: a post and a puck modelled in SolidCraft and exported as 3MF with face tags | MIT OR Apache-2.0 |
+| tests/oracle/imported-iris-cavity/block.3mf, crates/ui-egui/tests/fixtures/waveguide-block.3mf (the same file) | EMCraft contributors | Original: a WR-90 block with its channel and two iris plates, written by SolidCraft's CLI from `tests/oracle/imported-iris-cavity/block.solidcraft.json` (3MF with face tags) | MIT OR Apache-2.0 |
+| tests/oracle/imported-iris-touching/iris.3mf | EMCraft contributors | Original: a WR-90 guide and two iris plates as three bodies, written by SolidCraft's CLI from `tests/oracle/imported-iris-touching/iris.solidcraft.json` (3MF with face tags) | MIT OR Apache-2.0 |
 
 | crates/render/fonts/DejaVuSans.ttf | Bitstream, Inc. (Vera); the DejaVu fonts team (DejaVu changes) | DejaVu fonts 2.37, https://dejavu-fonts.github.io/ (unmodified) | Bitstream Vera Fonts licence; DejaVu changes public domain — crates/render/fonts/LICENSE-DejaVu.txt |
 

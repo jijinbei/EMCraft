@@ -268,6 +268,85 @@ fn an_imported_body_touching_three_walls_is_subtracted() {
     assert!((imported - native).abs() < 0.01, "{imported} {native}");
 }
 
+/// SolidCraft's waveguide block (tests/oracle/imported-iris-cavity): a 32.86 × 20.16 × 32 mm
+/// block, the WR-90 channel through it along z, two iris plates joined to its side walls.
+fn block_3mf() -> String {
+    format!("{}/../../tests/oracle/imported-iris-cavity/block.3mf", env!("CARGO_MANIFEST_DIR"))
+}
+
+#[test]
+fn a_part_drawn_as_its_metal_gives_the_air_it_encloses() {
+    let mut s = Session::new();
+    let r = s.execute("geometry.import", &json!({"path": block_3mf(), "region": "cavity"})).unwrap();
+    assert_eq!(r["region"], "cavity");
+    assert_eq!(r["bodies"], json!([{"body": "Block", "material": "metal", "as": "walls"}]));
+    // The channel less the plates, mm³; nothing outside the block.
+    let exact = 22.86 * 10.16 * 32.0 - 2.0 * 5.43 * 10.16 * 2.0;
+    assert!((r["pieces"]["kept"][0].as_f64().unwrap() - exact).abs() < 1e-6 * exact, "{r}");
+    assert_eq!(r["pieces"]["dropped"], 0);
+    assert!(s.model.features.is_empty() && s.model.inclusions.is_empty());
+    // The ports are the channel's ends: whole rectangles, the TE modes in closed form.
+    s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    let Ok(emcraft_model::PortShape::Rect { x0, y0, a, b }) = s.model.port_shape(emcraft_model::End::Start) else { panic!() };
+    assert!((x0 - 0.005).abs() < 1e-8 && (y0 - 0.005).abs() < 1e-8 && (a - 0.02286).abs() < 1e-8 && (b - 0.01016).abs() < 1e-8);
+    let m = s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    assert!(m["tetrahedra"].as_u64().unwrap() > 100, "{m}");
+    // `keep` only with a cavity; a cavity takes no margin, and needs metal.
+    let bad = [
+        json!({"path": block_3mf(), "region": "box", "keep": "largest"}),
+        json!({"path": block_3mf(), "region": "cavity", "margin": 1}),
+        json!({"path": block_3mf(), "region": "cavity", "keep": "most"}),
+        json!({"path": block_3mf(), "region": "cavity", "materials": {"Block": "vacuum"}}),
+    ];
+    for p in bad {
+        let r = s.execute("geometry.import", &p);
+        assert!(r.is_err() && !matches!(r, Err(EngineError::Panicked(_))), "{p}: {r:?}");
+    }
+    s.execute("geometry.import", &json!({"path": block_3mf(), "region": "cavity", "keep": "largest"})).unwrap();
+}
+
+/// A ridge guide drawn as five metal bodies (walls, floor, roof and a ridge on the floor): the
+/// cavity's ends are no rectangles, so the ports' modes come from the numerical cross-section
+/// solver, and the guide passes power through without loss.
+#[test]
+fn a_cavity_with_a_ridge_takes_numerical_port_modes() {
+    let path = scratch("ridge.3mf");
+    let (a, b, l) = (0.02286, 0.01016, 0.02);
+    let parts = [
+        named_box("Left", [-0.002, -0.002, 0.0], [0.0, b + 0.002, l]),
+        named_box("Right", [a, -0.002, 0.0], [a + 0.002, b + 0.002, l]),
+        named_box("Floor", [0.0, -0.002, 0.0], [a, 0.0, l]),
+        named_box("Roof", [0.0, b, 0.0], [a, b + 0.002, l]),
+        named_box("Ridge", [0.009, 0.0, 0.0], [0.01386, 0.004, l]),
+    ];
+    std::fs::write(&path, emcraft_io::threemf::write(&parts).unwrap()).unwrap();
+    let mut s = Session::new();
+    let r = s.execute("geometry.import", &json!({"path": path, "region": "cavity"})).unwrap();
+    let exact = (22.86 * 10.16 - 4.86 * 4.0) * 20.0;
+    assert!((r["pieces"]["kept"][0].as_f64().unwrap() - exact).abs() < 1e-6 * exact, "{r}");
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 1})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 1})).unwrap();
+    assert!(s.model.port_shape(emcraft_model::End::Start).is_err(), "no closed form for a ridge");
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    let r = s.execute("solve.frequency", &json!({"frequencies": [8], "order": 1})).unwrap();
+    let p = &r["points"][0];
+    let power = p["s11"]["mag"].as_f64().unwrap().powi(2) + p["s21"]["mag"].as_f64().unwrap().powi(2);
+    assert!((power - 1.0).abs() < 1e-6, "{p}");
+}
+
+/// Regression: the block in a box of air a micrometre beyond it left a sliver of air the mesher
+/// spent minutes on (or gave up on); a gap under a tenth of the element size is now refused at
+/// once, naming it.
+#[test]
+fn a_box_of_air_too_thin_to_mesh_is_refused_at_once() {
+    let mut s = Session::new();
+    s.execute("geometry.import", &json!({"path": block_3mf(), "region": "box", "margin": 0.001})).unwrap();
+    let start = std::time::Instant::now();
+    let e = s.execute("mesh.generate", &json!({"size": 3})).unwrap_err().to_string();
+    assert!(e.contains("gap narrower than 0.300 mm"), "{e}");
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+}
+
 #[test]
 fn an_open_part_gets_air_and_a_layer_a_quarter_wavelength_each() {
     let path = scratch("open.3mf");

@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.import", "params": {"path": "block.3mf", "region": "cavity"}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"frequencies": [9, 10, 11], "order": 2}, "id": "solve"}
+]

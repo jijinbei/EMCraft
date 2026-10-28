@@ -1,0 +1,19 @@
+[
+  {"note": "A waveguide part drawn as its metal (SolidCraft's block with the channel and two iris plates): imported through the dialog with the region the air it encloses; the channel's ends take ports"},
+  {"call": "ui.start", "params": {"command": "geometry.import", "params": {"path": "tests/fixtures/waveguide-block.3mf", "region": "cavity", "keep": "enclosed"}}},
+  {"expect": {"dialog": "geometry.import", "inspect": {"dialog.fields.region": "cavity", "dialog.fields.keep": "enclosed"}}},
+  {"frames": 2},
+  {"shot": "import-cavity-dialog"},
+  {"click": "dialog:ok"},
+  {"until": {"busy": false}, "timeout": 60},
+  {"click": "step:geometry"},
+  {"frames": 3},
+  {"expect": {"dialog": null, "handles": ["row:Region: cavity (imported), vacuum"]}},
+  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "1", "end": "start"}}},
+  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "2", "end": "end"}}},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 4}}},
+  {"expect": {"inspect": {"model.mesh.tetrahedra": {"min": 100}}}},
+  {"click": "step:geometry"},
+  {"frames": 3},
+  {"shot": "import-cavity-geometry"}
+]
