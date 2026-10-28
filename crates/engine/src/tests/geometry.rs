@@ -240,6 +240,34 @@ fn a_part_of_several_bodies_lies_in_air_each_metal_unless_named() {
     assert!(s.execute("geometry.import", &json!({"path": path, "materials": {"Lid": "metal"}})).is_err());
 }
 
+/// Regression: a metal body of an imported part touching the region's side wall and both broad
+/// walls meshed "successfully" into flat tetrahedra, and the solve failed with "degenerate
+/// tetrahedron (volume -0e0)". It is now subtracted like the same box as a native feature, and
+/// the S-parameters agree.
+#[test]
+fn an_imported_body_touching_three_walls_is_subtracted() {
+    let path = scratch("touch-xy.3mf");
+    let guide = named_box("Guide", [0.0; 3], [0.02286, 0.01016, 0.032]);
+    let plate = named_box("B0", [0.0, 0.0, 0.015], [0.00543, 0.01016, 0.017]);
+    std::fs::write(&path, emcraft_io::threemf::write(&[guide, plate]).unwrap()).unwrap();
+    let s11 = |first: serde_json::Value| {
+        let mut s = Session::new();
+        s.execute(first["command"].as_str().unwrap(), &first["params"]).unwrap();
+        if s.model.solid.as_ref().is_some_and(|x| matches!(x.shape, emcraft_model::Shape::Box { .. })) {
+            let feature = json!({"combine": "subtract", "shape": "box", "size": [5.43, 10.16, 2], "at": [0, 0, 15]});
+            s.execute("geometry.feature", &feature).unwrap();
+        }
+        s.execute("mesh.generate", &json!({"size": 3})).unwrap();
+        s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+        s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+        let r = s.execute("solve.frequency", &json!({"frequencies": [10], "order": 1})).unwrap();
+        r["points"][0]["s11"]["mag"].as_f64().unwrap()
+    };
+    let imported = s11(json!({"command": "geometry.import", "params": {"path": path, "region": "Guide"}}));
+    let native = s11(json!({"command": "geometry.solid", "params": {"shape": "box", "size": [22.86, 10.16, 32]}}));
+    assert!((imported - native).abs() < 0.01, "{imported} {native}");
+}
+
 #[test]
 fn an_open_part_gets_air_and_a_layer_a_quarter_wavelength_each() {
     let path = scratch("open.3mf");

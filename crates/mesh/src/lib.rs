@@ -6,7 +6,9 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod adapt;
+mod crease;
 pub mod csg;
+mod flush;
 pub mod solid;
 mod topology;
 mod waveguide;
@@ -37,6 +39,38 @@ pub type Result<T> = std::result::Result<T, MeshError>;
 /// made.
 fn too_large(estimate: f64) -> Result<()> {
     if estimate <= MAX_TETS as f64 { Ok(()) } else { Err(MeshError::TooLarge { tets: estimate.min(usize::MAX as f64) as usize, limit: MAX_TETS }) }
+}
+
+/// The least shape a tetrahedron may have: six times its volume over the cube of its longest
+/// edge (1/√2 for the regular one). Below it, a tetrahedron is flat to rounding — no element
+/// built on it is meaningful.
+pub const MIN_TET_SHAPE: f64 = 1e-12;
+
+/// Refuses a mesh with a degenerate or inverted tetrahedron (corners missing or not finite, its
+/// volume not positive, or flat to rounding: [`MIN_TET_SHAPE`]), so it never reaches a solver.
+/// The error names the first such tetrahedron and where it lies.
+pub fn check_tetrahedra(mesh: &Mesh) -> Result<()> {
+    let bad = |t: usize, why: String| MeshError::Invalid {
+        what: "mesh".into(),
+        why: format!(
+            "tetrahedron {} {why}; the geometry probably has faces that touch or nearly touch: let bodies reach into each other or keep them apart, or try another element size",
+            t + 1
+        ),
+    };
+    for t in 0..mesh.tets.len() {
+        let c = mesh.corners(t).ok_or_else(|| bad(t, "has a missing corner".into()))?;
+        if !c.iter().all(|p| p.is_finite()) {
+            return Err(bad(t, "has a corner that is not a finite point".into()));
+        }
+        let longest = LOCAL_EDGES.iter().map(|&[i, j]| (c[j] - c[i]).norm()).fold(0.0f64, f64::max);
+        let six_v = triple(c[1] - c[0], c[2] - c[0], c[3] - c[0]);
+        if !(six_v > MIN_TET_SHAPE * longest.powi(3)) {
+            let at = Point3::centroid(c).unwrap_or(c[0]);
+            let what = if six_v < 0.0 { "is inverted" } else { "is degenerate" };
+            return Err(bad(t, format!("{what} (volume {:.3e} m³, near ({:.6e}, {:.6e}, {:.6e}) m)", six_v / 6.0, at.x, at.y, at.z)));
+        }
+    }
+    Ok(())
 }
 
 fn signed_volume(p: &[Point3; 4]) -> f64 {
@@ -199,6 +233,31 @@ mod tests {
     fn tri_area(mesh: &Mesh, f: &[u32; 3]) -> f64 {
         let p = f.map(|n| mesh.nodes[n as usize]);
         0.5 * (p[1] - p[0]).cross(p[2] - p[0]).norm()
+    }
+
+    /// Regression: a mesh with a flat tetrahedron reached the solver, which refused it with
+    /// "degenerate tetrahedron (volume -0e0)". The mesh is refused where it is made.
+    #[test]
+    fn degenerate_and_inverted_tetrahedra_are_refused() {
+        let mesh = waveguide(&model(), 0.004).unwrap();
+        assert_eq!(check_tetrahedra(&mesh), Ok(()));
+        let mut flat = mesh.clone();
+        flat.tets[3][1] = flat.tets[3][0];
+        let e = check_tetrahedra(&flat).unwrap_err().to_string();
+        assert!(e.contains("tetrahedron 4 is degenerate"), "{e}");
+        let mut inverted = mesh.clone();
+        inverted.tets[7].swap(0, 1);
+        let e = check_tetrahedra(&inverted).unwrap_err().to_string();
+        assert!(e.contains("tetrahedron 8 is inverted"), "{e}");
+        // A corner moved onto the plane of the other three, or to no place at all.
+        let mut squashed = mesh.clone();
+        let [a, b, c, d] = squashed.tets[0].map(|n| squashed.nodes[n as usize]);
+        let n = (b - a).cross(c - a).normalized().unwrap();
+        squashed.nodes[squashed.tets[0][3] as usize] = d - n * n.dot(d - a);
+        assert!(check_tetrahedra(&squashed).is_err());
+        let mut lost = mesh;
+        lost.nodes[lost.tets[0][2] as usize] = Point3::new(f64::NAN, 0.0, 0.0);
+        assert!(check_tetrahedra(&lost).is_err());
     }
 
     #[test]

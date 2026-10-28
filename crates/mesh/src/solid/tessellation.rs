@@ -568,12 +568,24 @@ pub(super) fn joined(features: &[Feature], solid: &Shape, size: f64) -> Result<V
 /// solid's, with their exact surfaces.
 pub(super) fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape, size: f64) -> Result<Tessellation> {
     let (shape, at) = feature_body(f, solid, size)?;
+    // An imported body: in place, its faces flush with the region's (or an earlier body's) moved
+    // off them (`crate::flush`).
+    let imported = matches!(shape, Shape::Surface { .. });
+    let (shape, at, axis) = match shape {
+        Shape::Surface { name, positions, triangles, tags } => {
+            let placed: Vec<Point3> = positions.iter().map(|p| at + f.axis.turn(p.to_vec())).collect();
+            let gaps = crate::flush::Gaps { step: 0.1 * size, flush: 1e-5 * size, near: 0.1 * size, mm: 1e3 };
+            let positions = crate::flush::moved(&name, &placed, &triangles, &main.positions, &main.triangles, f.combine, gaps)?;
+            (Shape::Surface { name, positions, triangles, tags }, Point3::ORIGIN, Axis::Z)
+        }
+        other => (other, at, f.axis),
+    };
     // General position against the solid's tessellation: a round body turned about its own
     // axis by an odd angle (it is the same body), and every feature moved by up to a millionth of
     // the element size (far below the mesh's resolution, far above rounding), so no vertex of one
     // lies exactly on a grid line or plane of the other.
     let mut own = tessellate(&shape, size);
-    if !matches!(shape, Shape::Box { .. }) {
+    if matches!(shape, Shape::Cylinder { .. } | Shape::Sphere { .. }) {
         let (sn, cs) = 0.2345f64.sin_cos();
         for p in &mut own.positions {
             *p = Point3::new(cs * p.x - sn * p.y, sn * p.x + cs * p.y, p.z);
@@ -582,7 +594,7 @@ pub(super) fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape,
     // Each feature by its own amount (the fractional parts of multiples of irrational numbers),
     // so two features' grids that line up exactly do not stay lined up.
     let jitter = Vec3::new(0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57).map(|v| ((k + 1) as f64 * v).fract() * 1e-6 * size);
-    let tool = transformed(own, f.axis, at + jitter);
+    let tool = transformed(own, axis, at + jitter);
     let base = main.tri_face.iter().map(|t| t + 1).max().unwrap_or(0).max(main.analytic.len() as u32);
     let op = match f.combine {
         Combine::Add => crate::csg::Op::Union,
@@ -591,7 +603,9 @@ pub(super) fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape,
     };
     let a = crate::csg::Surface { positions: main.positions, triangles: main.triangles, tags: main.tri_face };
     let b = crate::csg::Surface { positions: tool.positions, triangles: tool.triangles, tags: tool.tri_face };
-    let out = crate::csg::combine(&a, &b, op, base)?;
+    // An imported body's flat faces cross the region's in straight lines: the points its
+    // triangles' edges leave along them are collapsed away.
+    let out = if imported { crate::csg::combine_simplified(&a, &b, op, base)? } else { crate::csg::combine(&a, &b, op, base)? };
     let mut analytic = main.analytic;
     analytic.resize(base as usize, None);
     // A difference's tool faces now face the other way.

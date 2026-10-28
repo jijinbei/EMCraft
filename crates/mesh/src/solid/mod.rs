@@ -180,6 +180,7 @@ pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refin
     if curved {
         bend(&mut mesh, model, &s.shape, size);
     }
+    crate::check_tetrahedra(&mesh)?;
     mesh.buckets = Some(buckets(&mesh));
     Ok(mesh)
 }
@@ -701,6 +702,50 @@ mod tests {
         })
         .unwrap();
         assert!(solid(&w, 0.003).is_err());
+    }
+
+    /// A box [lo, hi] as an imported surface: 12 triangles, a tag per face.
+    fn imported_box(name: &str, lo: [f64; 3], hi: [f64; 3]) -> Shape {
+        let positions = (0..8).map(|i| Point3::new([lo[0], hi[0]][i & 1], [lo[1], hi[1]][(i >> 1) & 1], [lo[2], hi[2]][(i >> 2) & 1])).collect();
+        let quads = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]];
+        let triangles = quads.iter().flat_map(|q| [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]).collect();
+        Shape::Surface { name: name.into(), positions, triangles, tags: (0..12).map(|i| i / 2).collect() }
+    }
+
+    /// Regression: an imported metal body touching the region's walls (an iris plate against a
+    /// side wall and both broad walls) was moved by its millionth of the size, leaving slivers of
+    /// air a nanometre thick along the walls and flat tetrahedra the solver refused; imported
+    /// bodies were also turned about z as if they were round. Now their flush faces move out of
+    /// the walls first: the volume is exact, the ports whole, the mesh small and quick.
+    #[test]
+    fn imported_bodies_touching_the_walls_are_subtracted() {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.032);
+        for plates in [vec![0.0], vec![0.0, 0.01743]] {
+            let mut m = Model::new();
+            m.set_solid(Solid { shape: imported_box("Guide", [0.0; 3], [a, b, l]), material: "vacuum".into() }).unwrap();
+            for &x in &plates {
+                let shape = imported_box("Iris", [x, 0.0, 0.015], [x + 0.00543, b, 0.017]);
+                m.add_feature(Feature { combine: Combine::Subtract, shape, at: Point3::ORIGIN, axis: Axis::Z }).unwrap();
+            }
+            let start = std::time::Instant::now();
+            let mesh = solid(&m, 0.003).unwrap();
+            assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
+            // The crossings' points on the walls' straight creases collapsed: no tiny segments.
+            assert!(mesh.tets.len() < 4000, "{}", mesh.tets.len());
+            let v: f64 = crate::volumes(&mesh).iter().sum();
+            let exact = a * b * l - plates.len() as f64 * 0.00543 * b * 0.002;
+            assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
+            let port = |k: u32| mesh.boundary.iter().filter(|f| f.tag == Boundary::Port(k)).map(|f| area(&mesh, f)).sum::<f64>();
+            assert!((port(0) - a * b).abs() < 1e-12 && (port(1) - a * b).abs() < 1e-12);
+        }
+        // A plate a micrometre off the wall leaves a gap no mesh resolves: refused at once.
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: imported_box("Guide", [0.0; 3], [a, b, l]), material: "vacuum".into() }).unwrap();
+        let shape = imported_box("Iris", [1e-6, 0.0, 0.015], [0.00543, b, 0.017]);
+        m.add_feature(Feature { combine: Combine::Subtract, shape, at: Point3::ORIGIN, axis: Axis::Z }).unwrap();
+        let e = solid(&m, 0.003).unwrap_err().to_string();
+        assert!(e.contains("gap narrower"), "{e}");
     }
 
     /// A coaxial line's inner conductor in two pieces meeting end to end: the solid (radius

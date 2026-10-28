@@ -211,6 +211,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let mut mesh =
         structured(grid, &Cells { layers: &along.layers, ylayers: &materials, posts: &posts, length: along.length, cuts: &model.symmetry });
     add_strips(&mut mesh, &w.strips, w.height);
+    crate::check_tetrahedra(&mesh)?;
     Ok(mesh)
 }
 
