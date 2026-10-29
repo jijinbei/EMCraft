@@ -266,11 +266,9 @@ impl FrontKernel for Kernel {
 
     /// The update is full (m_u × m_u, by column).
     fn extend_add(&self, f: &mut [C], m: usize, place: &[usize], u: &[C]) {
-        let mu = place.len();
-        for b in 0..mu {
-            let cb = place[b];
-            for a in 0..mu {
-                f[cb * m + place[a]] += u[b * mu + a];
+        for (&cb, column) in place.iter().zip(u.chunks_exact(place.len().max(1))) {
+            for (&ra, &v) in place.iter().zip(column) {
+                f[cb * m + ra] += v;
             }
         }
     }
