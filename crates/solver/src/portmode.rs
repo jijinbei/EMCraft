@@ -309,7 +309,7 @@ impl CrossSection {
     /// y = M x for values `val` on the pattern.
     fn mul(&self, val: impl Fn(usize) -> f64, x: &[f64]) -> Vec<f64> {
         let p = &self.pattern;
-        (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| val(k) * x[p.col[k]]).sum()).collect()
+        (0..p.n).map(|i| p.row(i).map(|k| val(k) * x[p.col[k]]).sum()).collect()
     }
 
     /// The `count` modes with the largest β² at free-space wavenumber `k0` (rad/m), β² descending.
@@ -402,10 +402,10 @@ impl CrossSection {
         let p = &self.pattern;
         let nz = n - nt;
         let groups: Vec<Vec<usize>> =
-            (nt..n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
+            (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
         let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
         for i in nt..n {
-            for k in (p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] >= nt) {
+            for k in p.row(i).filter(|&k| p.col[k] >= nt) {
                 zz.add(i - nt, p.col[k] - nt, C::new(self.b[k] - k2 * self.t[k], 0.0));
             }
         }
@@ -413,9 +413,8 @@ impl CrossSection {
         Ok(move |v: &mut Vec<f64>| -> Result<()> {
             let Some(f) = &factor else { return Ok(()) };
             // r = −B_zt e.
-            let mut r: Vec<C> = (nt..n)
-                .map(|i| C::new(-(p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] < nt).map(|k| self.b[k] * v[p.col[k]]).sum::<f64>(), 0.0))
-                .collect();
+            let mut r: Vec<C> =
+                (nt..n).map(|i| C::new(-p.row(i).filter(|&k| p.col[k] < nt).map(|k| self.b[k] * v[p.col[k]]).sum::<f64>(), 0.0)).collect();
             f.solve(&mut r)?;
             v[nt..].iter_mut().zip(&r).for_each(|(x, c)| *x = c.re);
             Ok(())

@@ -273,14 +273,12 @@ fn bordered(a: &Csr, borders: &[Border]) -> Result<Csr> {
         idx.sort_unstable();
         idx.dedup();
         for i in idx {
-            out.col.push(i);
-            out.val.push(rowmap.get(&i).copied().unwrap_or_default() * *s);
+            out.push(i, rowmap.get(&i).copied().unwrap_or_default() * *s);
         }
-        out.col.push(n + k);
-        out.val.push(-(s * s) / b.factor);
-        out.ptr.push(out.col.len());
+        out.push(n + k, -(s * s) / b.factor);
+        out.end_row();
     }
-    Ok(out.with_symmetric_pattern())
+    Ok(out.finish().with_symmetric_pattern())
 }
 
 impl Driven {

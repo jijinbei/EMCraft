@@ -164,7 +164,7 @@ impl FrontKernel for Kernel {
 fn symmetric_scaling(a: &Csr) -> Vec<f64> {
     (0..a.n)
         .map(|i| {
-            let m = a.val[a.ptr[i]..a.ptr[i + 1]].iter().fold(0.0f64, |m, v| m.max(v.norm()));
+            let m = a.val[a.row(i)].iter().fold(0.0f64, |m, v| m.max(v.norm()));
             if m > 0.0 { 1.0 / m.sqrt() } else { 1.0 }
         })
         .collect()
@@ -176,7 +176,7 @@ fn lower_columns(a: &Csr, inv: &[usize]) -> Vec<Vec<(usize, C)>> {
     let mut a_cols: Vec<Vec<(usize, C)>> = vec![Vec::new(); a.n];
     for u in 0..a.n {
         let pu = inv[u];
-        for (&v, &x) in a.col[a.ptr[u]..a.ptr[u + 1]].iter().zip(&a.val[a.ptr[u]..a.ptr[u + 1]]) {
+        for (&v, &x) in a.col[a.row(u)].iter().zip(&a.val[a.row(u)]) {
             let pv = inv[v];
             if pu >= pv {
                 a_cols[pv].push((pu, x));
@@ -217,7 +217,7 @@ impl Ldlt {
         let scale = symmetric_scaling(a);
         let mut scaled = a.clone();
         for i in 0..scaled.n {
-            for k in scaled.ptr[i]..scaled.ptr[i + 1] {
+            for k in scaled.row(i) {
                 scaled.val[k] *= scale[i] * scale[scaled.col[k]];
             }
         }

@@ -144,7 +144,7 @@ impl CrossSection {
         let factor = Ldlt::factor(&shifted, &self.points)?;
         let mul = |val: &[C], x: &[C]| -> Vec<C> {
             let p = &self.pattern;
-            (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| val[k] * x[p.col[k]]).sum()).collect()
+            (0..p.n).map(|i| p.row(i).map(|k| val[k] * x[p.col[k]]).sum()).collect()
         };
         let project = self.constraint_lossy(&b_val)?;
         let q = (count + count.max(6)).min(n);
@@ -240,18 +240,17 @@ impl CrossSection {
         let p = &self.pattern;
         let nz = n - nt;
         let groups: Vec<Vec<usize>> =
-            (nt..n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
+            (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
         let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
         for i in nt..n {
-            for k in (p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] >= nt) {
+            for k in p.row(i).filter(|&k| p.col[k] >= nt) {
                 zz.add(i - nt, p.col[k] - nt, b_val[k]);
             }
         }
         let factor = if nz > 0 { Some(Ldlt::factor(&zz, &self.points[nt..])?) } else { None };
         Ok(move |v: &mut Vec<C>| -> Result<()> {
             let Some(f) = &factor else { return Ok(()) };
-            let mut r: Vec<C> =
-                (nt..n).map(|i| -(p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] < nt).map(|k| b_val[k] * v[p.col[k]]).sum::<C>()).collect();
+            let mut r: Vec<C> = (nt..n).map(|i| -p.row(i).filter(|&k| p.col[k] < nt).map(|k| b_val[k] * v[p.col[k]]).sum::<C>()).collect();
             f.solve(&mut r)?;
             v[nt..].copy_from_slice(&r);
             Ok(())

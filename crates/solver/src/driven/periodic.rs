@@ -275,30 +275,28 @@ fn kept_pattern(pattern: &Csr, map: &[Option<Tied>], reduced: usize) -> Result<(
     let mut rows: Vec<Vec<usize>> = vec![Vec::new(); reduced];
     for i in 0..pattern.n {
         let Some(si) = map[i] else { continue };
-        for &j in &pattern.col[pattern.ptr[i]..pattern.ptr[i + 1]] {
+        for &j in &pattern.col[pattern.row(i)] {
             if let Some(sj) = map[j] {
                 rows[si.reduced].push(sj.reduced);
             }
         }
     }
-    let mut kept = Csr { n: reduced, ptr: Vec::with_capacity(reduced + 1), col: Vec::new(), val: Vec::new() };
-    kept.ptr.push(0);
+    let mut kept = Csr::builder(reduced);
     for (i, mut r) in rows.into_iter().enumerate() {
         r.push(i);
         r.sort_unstable();
         r.dedup();
-        kept.col.extend(r);
-        kept.ptr.push(kept.col.len());
+        kept.row(r.into_iter().map(|j| (j, C::new(0.0, 0.0))));
     }
-    kept.val = vec![C::new(0.0, 0.0); kept.col.len()];
+    let kept = kept.finish();
     let mut entries = Vec::with_capacity(pattern.col.len());
     for i in 0..pattern.n {
-        for k in pattern.ptr[i]..pattern.ptr[i + 1] {
+        for k in pattern.row(i) {
             let j = pattern.col[k];
             let e = match (map[i], map[j]) {
                 (Some(si), Some(sj)) => {
                     let (r, c) = (si.reduced, sj.reduced);
-                    let row = &kept.col[kept.ptr[r]..kept.ptr[r + 1]];
+                    let row = &kept.col[kept.row(r)];
                     let at = row.binary_search(&c).map_err(|_| invalid("periodic boundaries", "an entry outside the kept pattern"))?;
                     (Slot::new(kept.ptr[r] + at), [0, 1, 2].map(|d| sj.shift[d] - si.shift[d]), si.sign * sj.sign)
                 }

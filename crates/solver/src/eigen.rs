@@ -129,7 +129,7 @@ struct Complex;
 fn mul_real(pattern: &Csr, val: impl Fn(usize) -> f64, x: &[C]) -> Vec<C> {
     (0..pattern.n)
         .map(|i| {
-            let s: f64 = (pattern.ptr[i]..pattern.ptr[i + 1]).map(|k| val(k) * x[pattern.col[k]].re).sum();
+            let s: f64 = pattern.row(i).map(|k| val(k) * x[pattern.col[k]].re).sum();
             C::new(s, 0.0)
         })
         .collect()
@@ -222,12 +222,12 @@ impl Arithmetic for Complex {
 
     fn kmul(m: Matrices, v: &[C]) -> Vec<C> {
         let p = m.pattern;
-        (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| v[p.col[k]] * m.stiffness[k]).sum()).collect()
+        (0..p.n).map(|i| p.row(i).map(|k| v[p.col[k]] * m.stiffness[k]).sum()).collect()
     }
 
     fn mmul(m: Matrices, v: &[C]) -> Vec<C> {
         let p = m.pattern;
-        (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| m.mass[k] * v[p.col[k]]).sum()).collect()
+        (0..p.n).map(|i| p.row(i).map(|k| m.mass[k] * v[p.col[k]]).sum()).collect()
     }
 
     fn ritz(m: Matrices, y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<Vec<(C, Vec<C>)>> {
