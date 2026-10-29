@@ -29,7 +29,8 @@ commands:
                   default 10; tests and the ported tetmesh left out); --loose matches lines by
                   their shape (names, numbers and strings ignored); --fail exits non-zero when
                   there are copies
-  ci              fmt --check, layers, clippy -D warnings, the tests, then the oracle
+  ci              fmt --check, layers, dupes --fail, clippy -D warnings, the tests, then the
+                  oracle
 ";
 
 fn main() -> ExitCode {
@@ -148,6 +149,7 @@ fn cmd_ci() -> Result<(), String> {
     fmt.args(["fmt", "--all", "--check"]);
     run(fmt, "fmt")?;
     cmd_layers()?;
+    dupes::run(&root(), dupes::DEFAULT_MIN, true, false)?;
     let mut clippy = cargo();
     clippy.args(["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]);
     run(clippy, "clippy")?;

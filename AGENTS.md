@@ -74,6 +74,9 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
    for each crate you touched. Regenerate what your change affects: `docs/features.md` when
    commands change (`cargo xtask features`), `docs/oracle.md` when oracle cases or solver numerics
    change (`cargo xtask oracle`).
+   Before merging, `cargo xtask dupes` (and `--loose` for code you adapted from elsewhere in the
+   workspace): factor copies into the shared building blocks of `docs/architecture.md` rather
+   than writing a helper again; look there before writing one.
 3. Fold fixes into the commit they fix (`git commit --fixup`, `git rebase -i --autosquash`).
 4. **Keep the test gate fast.** A test that takes more than a few seconds (convergence studies,
    fine meshes) is `#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]`, with a fast
