@@ -325,11 +325,43 @@ fn flat_faces(shape: &Shape, at: Point3, axis: Axis) -> Vec<FlatFace> {
     }
 }
 
+/// Whether the feature's cross-section across `d` (its flat face there) lies within the solid's
+/// flat face across `d` (the solid at the origin along z, as tessellated: a cylinder's cap is its
+/// inscribed polygon).
+fn face_within_solid(f: &Feature, d: usize, solid: &Shape, size: f64, tol: f64) -> bool {
+    let o = [(d + 1) % 3, (d + 2) % 3];
+    // The feature's section: a rectangle [lo, hi], or a disk (centre, radius) for a cylinder's cap.
+    let section = match f.shape {
+        Shape::Box { size: s } => {
+            let s = f.axis.turn(s);
+            Some((o.map(|k| f.at[k]), o.map(|k| f.at[k] + s[k]), None))
+        }
+        Shape::Cylinder { radius, .. } if f.axis.index() == d => {
+            Some((o.map(|k| f.at[k] - radius), o.map(|k| f.at[k] + radius), Some((o.map(|k| f.at[k]), radius))))
+        }
+        _ => None,
+    };
+    let Some((lo, hi, disk)) = section else { return false };
+    match *solid {
+        Shape::Box { size: s } => (0..2).all(|k| lo[k] >= -tol && hi[k] <= s[o[k]] + tol),
+        Shape::Cylinder { radius, .. } if d == 2 => {
+            let inner = radius * (PI / cylinder_sides(radius, size) as f64).cos();
+            match disk {
+                Some((c, r)) => c[0].hypot(c[1]) + r < inner - tol,
+                None => [lo[0], hi[0]].iter().all(|x| [lo[1], hi[1]].iter().all(|y| x.hypot(*y) < inner - tol)),
+            }
+        }
+        _ => false,
+    }
+}
+
 /// The feature's body with each flat face that lies in one of the solid's moved off it by a
 /// step, so the two surfaces meet in general position with the same result: a face flush with
 /// the solid's (both bodies behind it) moves outwards for a difference or an intersection (what
 /// sticks out is not kept); a face touching the solid's from outside moves into it for a union
-/// and away for a difference. A union flush with the solid's faces is refused.
+/// and away for a difference; a union's face flush with the solid's from inside moves back into
+/// the feature when the solid's face holds it (refused otherwise: the union's face there would
+/// move).
 fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)> {
     let step = 0.1 * size;
     let base = flat_faces(solid, Point3::ORIGIN, Axis::Z);
@@ -351,10 +383,14 @@ fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)
                 (Combine::Subtract | Combine::Intersect, true) => out,
                 (Combine::Subtract, false) => -out,
                 (Combine::Add, false) => out,
+                // A union flush with the solid's face from inside: the solid's face bounds the
+                // union there, so the feature's face draws back into it — when the solid's face
+                // holds all of it; elsewhere the union's face would move.
+                (Combine::Add, true) if face_within_solid(f, face.axis, solid, size, tol) => -out,
                 (Combine::Add, true) => {
                     return Err(MeshError::Invalid {
                         what: "feature".into(),
-                        why: "not supported yet: a union whose face is flush with the solid's (let it stand out of the face, or reach into the body)"
+                        why: "not supported yet: a union whose face is flush with the solid's and reaches past the solid's face (let it stand out of the face, or reach into the body)"
                             .into(),
                     });
                 }

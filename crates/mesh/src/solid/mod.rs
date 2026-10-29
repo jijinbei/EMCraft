@@ -691,7 +691,7 @@ mod tests {
         // Exact but for the features' shift by a millionth of the element size (1e-9 m here,
         // over the stub's 80 mm² foot).
         assert!((v - (a * b * l + 0.008 * 0.006 * 0.01)).abs() < 1e-7 * v, "{v}");
-        // Flush faces of a union are refused, not guessed.
+        // Flush faces of a union reaching past the solid's face are refused, not guessed.
         let mut w = Model::new();
         w.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
         w.add_feature(Feature {
@@ -702,6 +702,59 @@ mod tests {
         })
         .unwrap();
         assert!(solid(&w, 0.003).is_err());
+    }
+
+    /// A union flush with the solid's faces from inside, its faces within theirs: the solid's
+    /// faces bound the union, so it draws back from them — a block across the guide changes
+    /// nothing, a stub standing on the floor and reaching out through the roof adds only what
+    /// stands out.
+    #[test]
+    fn unions_flush_from_inside_draw_back() {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.03);
+        for (height, extra) in [(b, 0.0), (b + 0.006, 0.006)] {
+            let mut w = Model::new();
+            w.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+            w.add_feature(Feature {
+                combine: Combine::Add,
+                shape: Shape::Box { size: Vec3::new(0.008, height, 0.01) },
+                at: Point3::new(0.007, 0.0, 0.01),
+                axis: Axis::Z,
+            })
+            .unwrap();
+            let v: f64 = crate::volumes(&solid(&w, 0.003).unwrap()).iter().sum();
+            let exact = a * b * l + 0.008 * extra * 0.01;
+            assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
+        }
+    }
+
+    /// An imported ramp (a wedge across the guide) standing on the floor and against both side
+    /// walls: its foot and ends move out of the walls, its slanted face reaching past the floor
+    /// along its own plane, so the air left is exactly the guide less the ramp.
+    #[test]
+    fn an_imported_ramp_on_the_floor_keeps_its_slope() {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.032);
+        let (z0, z1, h) = (0.010, 0.020, 0.004);
+        let positions = vec![
+            Point3::new(0.0, 0.0, z0),
+            Point3::new(a, 0.0, z0),
+            Point3::new(0.0, 0.0, z1),
+            Point3::new(a, 0.0, z1),
+            Point3::new(0.0, h, z1),
+            Point3::new(a, h, z1),
+        ];
+        let triangles = vec![[0, 1, 3], [0, 3, 2], [0, 4, 5], [0, 5, 1], [2, 3, 5], [2, 5, 4], [0, 2, 4], [1, 5, 3]];
+        let shape = Shape::Surface { name: "Ramp".into(), positions, triangles, tags: vec![0, 0, 1, 1, 2, 2, 3, 4], surfaces: Vec::new() };
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: imported_box("Guide", [0.0; 3], [a, b, l]), material: "vacuum".into() }).unwrap();
+        m.add_feature(Feature { combine: Combine::Subtract, shape, at: Point3::ORIGIN, axis: Axis::Z }).unwrap();
+        let mesh = solid(&m, 0.003).unwrap();
+        let v: f64 = crate::volumes(&mesh).iter().sum();
+        let exact = a * b * l - 0.5 * (z1 - z0) * h * a;
+        assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
+        let port = |k: u32| mesh.boundary.iter().filter(|f| f.tag == Boundary::Port(k)).map(|f| area(&mesh, f)).sum::<f64>();
+        assert!((port(0) - a * b).abs() < 1e-12 && (port(1) - a * b).abs() < 1e-12);
     }
 
     /// A box [lo, hi] as an imported surface: 12 triangles, a tag per face.
