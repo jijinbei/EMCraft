@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 
 use super::MAX_VARIABLES;
 use crate::expr;
-use crate::{EngineError, Params, Result, Session};
+use crate::script::DEFINE;
+use crate::{EngineError, Params, Result, Session, Step};
 
 /// A variable's name as errors show it: no longer than a name may be.
 fn shown(name: &str) -> String {
@@ -21,13 +22,6 @@ pub(super) fn defined<'a>(s: &Session, p: &Params<'a>, param: &str) -> Result<&'
         return Err(p.error(param, format!("names no variable: `{}` (define it: project.variable)", shown(name))));
     }
     Ok(name)
-}
-
-/// The command that defines variables.
-const DEFINE: &str = "project.variable";
-
-fn is_definition(step: &Value, name: &str) -> bool {
-    step.get("command").and_then(Value::as_str) == Some(DEFINE) && step.pointer("/params/name").and_then(Value::as_str) == Some(name)
 }
 
 /// The names the expressions in `v` (a command's parameters) refer to.
@@ -46,12 +40,12 @@ fn references(v: &Value, out: &mut Vec<String>) {
 
 /// The session's history with the definitions of `set`'s variables given their values; an error
 /// naming a variable the history does not define.
-pub(super) fn history_with(s: &Session, set: &[(String, Value)]) -> Result<Vec<Value>> {
+pub(super) fn history_with(s: &Session, set: &[(String, Value)]) -> Result<Vec<Step>> {
     let mut history = s.history.clone();
     for (name, value) in set {
         let mut found = false;
-        for step in history.iter_mut().filter(|step| is_definition(step, name)) {
-            step["params"]["value"] = value.clone();
+        for params in history.iter_mut().filter(|step| step.defines(name)).filter_map(|step| step.params.as_object_mut()) {
+            params.insert("value".to_owned(), value.clone());
             found = true;
         }
         if !found {
@@ -62,9 +56,9 @@ pub(super) fn history_with(s: &Session, set: &[(String, Value)]) -> Result<Vec<V
 }
 
 /// A session of the model rebuilt by `history`.
-pub(super) fn rebuild(s: &Session, history: Vec<Value>) -> Result<Session> {
+pub(super) fn rebuild(s: &Session, history: Vec<Step>) -> Result<Session> {
     let mut fresh = s.fresh();
-    fresh.run_script(&Value::Array(history))?;
+    fresh.run_steps(&history)?;
     Ok(fresh)
 }
 
@@ -89,11 +83,11 @@ pub fn variable(s: &mut Session, p: &Params) -> Result<Value> {
         );
     }
     let value = p.number("value").required()?;
-    let step = json!({"command": DEFINE, "params": p.value()});
+    let step = Step::new(DEFINE, p.value().clone());
     if s.variables.contains_key(name) {
         // The definition changed in place: the commands after it read the new value.
         let mut history = s.history.clone();
-        for old in history.iter_mut().filter(|st| is_definition(st, name)) {
+        for old in history.iter_mut().filter(|st| st.defines(name)) {
             *old = step.clone();
         }
         let rebuilt = rebuild(s, history)?;
@@ -116,13 +110,12 @@ pub fn delete(s: &mut Session, p: &Params) -> Result<Value> {
     }
     for (i, step) in s.history.iter().enumerate() {
         let mut names = Vec::new();
-        references(step.get("params").unwrap_or(&Value::Null), &mut names);
+        references(&step.params, &mut names);
         if names.iter().any(|n| n == name) {
-            let id = step.get("command").and_then(Value::as_str).unwrap_or("?");
-            return Err(EngineError::failed(format!("`{name}` is used by step {} ({id}): change that first", i + 1)));
+            return Err(EngineError::failed(format!("`{name}` is used by step {} ({}): change that first", i + 1, step.command)));
         }
     }
-    s.history.retain(|st| !is_definition(st, name));
+    s.history.retain(|st| !st.defines(name));
     s.variables.remove(name);
     Ok(json!({"name": name, "variables": s.variables.len()}))
 }
@@ -132,7 +125,7 @@ pub fn list(s: &mut Session, _: &Params) -> Result<Value> {
     let mut uses: BTreeMap<&str, usize> = BTreeMap::new();
     for step in &s.history {
         let mut names = Vec::new();
-        references(step.get("params").unwrap_or(&Value::Null), &mut names);
+        references(&step.params, &mut names);
         names.dedup();
         for n in &names {
             if let Some((k, _)) = s.variables.get_key_value(n.as_str()) {
@@ -144,7 +137,7 @@ pub fn list(s: &mut Session, _: &Params) -> Result<Value> {
         .variables
         .iter()
         .map(|(name, value)| {
-            let given = s.history.iter().rev().find(|st| is_definition(st, name)).and_then(|st| st.pointer("/params/value"));
+            let given = s.history.iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value"));
             let mut row = json!({"name": name, "value": value, "uses": uses.get(name.as_str()).copied().unwrap_or(0)});
             if let Some(Value::String(e)) = given {
                 row["expression"] = json!(e);

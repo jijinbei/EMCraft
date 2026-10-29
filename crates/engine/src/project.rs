@@ -7,14 +7,14 @@ use emcraft_model::{Band, Model};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
 
-use crate::{EngineError, Params, Result, Session};
+use crate::{EngineError, Params, Result, Session, Step};
 
 /// A state to undo to: the model, the display units and the history that built it.
 #[derive(Clone, Debug)]
 pub struct Snapshot {
     pub model: Model,
     pub display: Display,
-    pub history: Vec<Value>,
+    pub history: Vec<Step>,
     pub variables: crate::expr::Variables,
 }
 
@@ -75,11 +75,10 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
         p.error("name", crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", crate::sample::names()))
     })?;
     let solve = p.flag("solve").or(false)?;
-    let script: Vec<Value> = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;
-    let is_solve = |step: &Value| step.get("command").and_then(Value::as_str).is_some_and(|c| c.starts_with("solve."));
-    let steps: Vec<Value> = script.into_iter().filter(|step| solve || !is_solve(step)).collect();
+    let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;
+    let steps: Vec<Step> = script.into_iter().filter(|step| solve || !step.command.starts_with("solve.")).collect();
     let mut fresh = s.fresh();
-    fresh.run_script(&Value::Array(steps))?;
+    fresh.run_steps(&steps)?;
     fresh.saved = fresh.history.clone();
     fresh.sample = Some(name.to_owned());
     *s = fresh;
@@ -125,6 +124,29 @@ pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
+/// A project file (docs/project-file.md): the history that builds the model, and the model for
+/// other tools to read (opening replays the history and does not read it).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ProjectFile<'m> {
+    format: String,
+    #[serde(default = "first_version")]
+    version: u32,
+    #[serde(default)]
+    history: Vec<Step>,
+    #[serde(skip_deserializing)]
+    model: Option<&'m Model>,
+}
+
+/// What a project file's `format` says.
+const FORMAT: &str = "emcraft-project";
+
+/// The version of project files written, the newest read.
+const VERSION: u32 = 1;
+
+fn first_version() -> u32 {
+    1
+}
+
 /// Most bytes of a project file read.
 const MAX_PROJECT_BYTES: u64 = 64 << 20;
 
@@ -138,7 +160,10 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         Some(path) => path.to_owned(),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    let doc = json!({"format": "emcraft-project", "version": 1, "history": s.history, "model": s.model});
+    let file = ProjectFile { format: FORMAT.to_owned(), version: VERSION, history: s.history.clone(), model: Some(&s.model) };
+    // Through a JSON value, whose objects keep their keys sorted: the file's text does not
+    // depend on the order the fields are declared in.
+    let doc = serde_json::to_value(&file).map_err(EngineError::failed)?;
     let text = serde_json::to_string_pretty(&doc).map_err(EngineError::failed)?;
     write_atomically(&path, text.as_bytes())?;
     s.path = Some(path.clone());
@@ -176,12 +201,18 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
     let bytes = crate::geometry::read_capped(path, MAX_PROJECT_BYTES)?;
     let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::Failed(format!("`{path}`: not a project file ({e})")))?;
-    if doc.get("format").and_then(Value::as_str) != Some("emcraft-project") {
+    if doc.get("format").and_then(Value::as_str) != Some(FORMAT) {
         return Err(EngineError::Failed(format!("`{path}`: not an EMCraft project")));
     }
-    let history = doc.get("history").cloned().unwrap_or(Value::Array(Vec::new()));
+    let file: ProjectFile<'_> = serde_json::from_value(doc).map_err(|e| EngineError::Failed(format!("`{path}`: not a project file ({e})")))?;
+    if file.version > VERSION {
+        return Err(EngineError::Failed(format!(
+            "`{path}`: a project of version {}, newer than this EMCraft reads ({VERSION}): open it with a newer EMCraft",
+            file.version
+        )));
+    }
     let mut fresh = s.fresh();
-    fresh.run_script(&history)?;
+    fresh.run_steps(&file.history)?;
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
     fresh.path = Some(path.to_owned());

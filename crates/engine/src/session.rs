@@ -7,11 +7,12 @@ use emcraft_fem::Order;
 use emcraft_model::Model;
 use emcraft_model::units::Display;
 use emcraft_solver::{Driven, FrequencyResult, SPort};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, check_keys, find_command};
 use crate::project::{self, Effect};
-use crate::{EngineError, Params, Result, expr, open, progress, solve, study};
+use crate::{EngineError, Params, Result, Step, expr, open, progress, solve, study};
 
 /// A frequency sweep's results.
 #[derive(Clone, Debug)]
@@ -137,7 +138,7 @@ pub struct Session {
     pub display: Display,
     pub limits: Limits,
     /// The commands that built the model, in order (a script that rebuilds it).
-    pub history: Vec<Value>,
+    pub history: Vec<Step>,
     /// States to go back to (`edit.undo`) and forward again (`edit.redo`).
     pub undo: Vec<project::Snapshot>,
     pub redo: Vec<project::Snapshot>,
@@ -151,7 +152,7 @@ pub struct Session {
     pub sample: Option<String>,
     /// The history as last saved or opened: the session has unsaved changes when its history
     /// differs (an undo back to it is clean again).
-    pub saved: Vec<Value>,
+    pub saved: Vec<Step>,
     /// Where the solvers run (`solve.device`).
     pub compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
@@ -247,7 +248,7 @@ impl Session {
                 project::push_undo(&mut self.undo, before.state);
                 self.redo.clear();
                 if spec.effect == Effect::Record {
-                    self.history.push(json!({"command": spec.id, "params": params}));
+                    self.history.push(Step::new(spec.id, params.clone()));
                 }
                 // (A replaced session counts its own revisions from zero.)
                 self.revision = before.revision.max(self.revision) + 1;
@@ -272,14 +273,23 @@ impl Session {
     /// Returns each step's reply.
     pub fn run_script(&mut self, script: &Value) -> Result<Vec<Value>> {
         let steps = script.as_array().ok_or_else(|| EngineError::Params("a script is a JSON array of {\"command\", \"params\"} steps".into()))?;
+        let steps = steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| Step::deserialize(step).map_err(|_| EngineError::Params(format!("step {}: no `command`", i + 1))))
+            .collect::<Result<Vec<Step>>>()?;
+        self.run_steps(&steps)
+    }
+
+    /// Runs the steps of a script in order; stops at the first error. Returns each step's
+    /// reply.
+    pub fn run_steps(&mut self, steps: &[Step]) -> Result<Vec<Value>> {
         steps
             .iter()
             .enumerate()
             .map(|(i, step)| {
-                let id = step.get("command").and_then(Value::as_str).ok_or_else(|| EngineError::Params(format!("step {}: no `command`", i + 1)))?;
-                let params = step.get("params").cloned().unwrap_or_else(|| json!({}));
-                progress::report(i, steps.len(), id)?;
-                self.execute(id, &params).map_err(|e| e.in_step(i + 1, id))
+                progress::report(i, steps.len(), &step.command)?;
+                self.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))
             })
             .collect()
     }

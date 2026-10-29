@@ -41,8 +41,8 @@ fn a_variable_rebuilds_the_model_and_undo_goes_back() {
     assert!(s.model.mesh.as_ref().unwrap().tets.len() > tets, "the mesh is rebuilt too");
     assert_eq!(s.variables["feed"], 22.5);
     // The definition changed in place; the expressions are kept.
-    assert_eq!(s.history[0]["params"]["value"], 30);
-    assert_eq!(s.history[3]["params"]["sections"][1]["length"], "=l");
+    assert_eq!(s.history[0].params["value"], 30);
+    assert_eq!(s.history[3].params["sections"][1]["length"], "=l");
     let list = s.execute("project.variables", &json!({})).unwrap();
     assert_eq!(list["variables"][0], json!({"name": "feed", "value": 22.5, "uses": 1, "expression": "=l*3/4"}));
     assert_eq!(list["variables"][1]["uses"], 2);

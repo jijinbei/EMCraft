@@ -20,6 +20,8 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
   replays the history with the definition's value replaced.
 - `model` is the model as the engine holds it (SI units), for reading by other tools; opening
   does not use it.
+- `version` is 1. A file without one is read as version 1; a file of a newer version is refused
+  rather than half read.
 
 Saving writes a temporary file beside the target and renames it over, so a crash or a full disk
 leaves the old file whole. A path without an extension gets `.emcraft`. The session remembers

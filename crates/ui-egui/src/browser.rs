@@ -95,12 +95,7 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
     s.variables
         .iter()
         .map(|(name, value)| {
-            let given = s.history.iter().rev().find_map(|st| {
-                (st.get("command").and_then(serde_json::Value::as_str) == Some("project.variable")
-                    && st.pointer("/params/name").and_then(serde_json::Value::as_str) == Some(name.as_str()))
-                .then(|| st.pointer("/params/value").cloned())
-                .flatten()
-            });
+            let given = s.history.iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
             let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
             let edit = serde_json::json!({"name": name, "value": given.unwrap_or(serde_json::json!(value))});
             row(format!("{name} = {value}{expression}"), "variable", Act::EditWith("project.variable", edit))
