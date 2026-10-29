@@ -32,10 +32,11 @@ use std::collections::HashMap;
 
 use emcraft_model::{Combine, Point3, Vec3};
 
+use crate::shared::{DisjointSets, corners, winding};
 use crate::{MeshError, Result};
 
 fn fail(why: impl Into<String>) -> MeshError {
-    MeshError::Invalid { what: "body".into(), why: why.into() }
+    MeshError::invalid("body", why)
 }
 
 /// A triangle in an axis plane: its axis, the plane's coordinate, the sign of its outward normal
@@ -68,10 +69,6 @@ fn flats(positions: &[Point3], triangles: &[[u32; 3]], tol: f64) -> Vec<Flat> {
     out
 }
 
-fn corners(positions: &[Point3], t: &[u32; 3]) -> Option<[Point3; 3]> {
-    Some([*positions.get(t[0] as usize)?, *positions.get(t[1] as usize)?, *positions.get(t[2] as usize)?])
-}
-
 /// Whether two triangles of one plane overlap with area (deeper than `eps` along every
 /// separating direction): the separating-axis test on their six edge normals.
 fn overlap(a: &[[f64; 2]; 3], b: &[[f64; 2]; 3], eps: f64) -> bool {
@@ -100,32 +97,6 @@ fn covers(t: &[[f64; 2]; 3], p: [f64; 2]) -> bool {
     let cross = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
     let s = [cross(t[0], t[1]), cross(t[1], t[2]), cross(t[2], t[0])];
     s.iter().all(|x| *x >= 0.0) || s.iter().all(|x| *x <= 0.0)
-}
-
-/// The winding number of a closed surface about `p`.
-fn winding(positions: &[Point3], triangles: &[[u32; 3]], p: Point3) -> f64 {
-    triangles.iter().filter_map(|t| corners(positions, t)).map(|q| emcraft_model::solid_angle(q.map(|x| x - p))).sum::<f64>()
-        / (4.0 * std::f64::consts::PI)
-}
-
-/// A disjoint-set forest (union by the smaller index: deterministic).
-struct Sets(Vec<usize>);
-
-impl Sets {
-    fn find(&mut self, mut i: usize) -> usize {
-        while self.0[i] != i {
-            self.0[i] = self.0[self.0[i]];
-            i = self.0[i];
-        }
-        i
-    }
-
-    fn union(&mut self, a: usize, b: usize) {
-        let (a, b) = (self.find(a), self.find(b));
-        if a != b {
-            self.0[a.max(b)] = a.min(b);
-        }
-    }
 }
 
 /// How the faces of a body (`combine` with the other surface) are moved.
@@ -199,7 +170,7 @@ pub(crate) fn moved(
         return Ok(positions.to_vec());
     }
     // Faces: the flat triangles of one plane (and orientation) joined by edges.
-    let mut sets = Sets((0..body.len()).collect());
+    let mut sets = DisjointSets::new(body.len());
     let mut by_edge: HashMap<(usize, i8, [u32; 2]), usize> = HashMap::new();
     for (i, f) in body.iter().enumerate() {
         let t = triangles[f.tri];

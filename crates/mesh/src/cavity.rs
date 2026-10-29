@@ -21,6 +21,7 @@ use emcraft_model::{Combine, Point3, Vec3};
 
 use crate::csg::{Op, Surface, combine_simplified};
 use crate::flush::{Gaps, moved};
+use crate::shared::{DisjointSets, winding};
 use crate::{MeshError, Result};
 
 /// Which of the enclosed pieces of air are kept.
@@ -44,7 +45,7 @@ pub struct Cavity {
 }
 
 fn fail(why: impl Into<String>) -> MeshError {
-    MeshError::Invalid { what: "cavity".into(), why: why.into() }
+    MeshError::invalid("cavity", why)
 }
 
 const NO_AIR: &str = "the bodies enclose no air: every piece of air between them reaches a side (x or y) of their bounding box — is the part closed around its channel?";
@@ -108,27 +109,14 @@ struct Shell {
     side: bool,
 }
 
-fn find(parent: &mut [usize], mut i: usize) -> usize {
-    while parent[i] != i {
-        parent[i] = parent[parent[i]];
-        i = parent[i];
-    }
-    i
-}
-
 /// The surface's shells (triangles joined by edges), in the order of their first triangle.
 fn shells(s: &Surface) -> Vec<Shell> {
-    let mut parent: Vec<usize> = (0..s.triangles.len()).collect();
+    let mut sets = DisjointSets::new(s.triangles.len());
     let mut by_edge: std::collections::HashMap<[u32; 2], usize> = std::collections::HashMap::new();
     for (i, t) in s.triangles.iter().enumerate() {
         for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
             match by_edge.get(&[a.min(b), a.max(b)]) {
-                Some(&j) => {
-                    let (x, y) = (find(&mut parent, i), find(&mut parent, j));
-                    if x != y {
-                        parent[x.max(y)] = x.min(y);
-                    }
-                }
+                Some(&j) => sets.union(i, j),
                 None => {
                     by_edge.insert([a.min(b), a.max(b)], i);
                 }
@@ -138,7 +126,7 @@ fn shells(s: &Surface) -> Vec<Shell> {
     let mut out: Vec<Shell> = Vec::new();
     let mut index: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
     for (i, t) in s.triangles.iter().enumerate() {
-        let r = find(&mut parent, i);
+        let r = sets.find(i);
         let k = *index.entry(r).or_insert_with(|| {
             out.push(Shell { triangles: Vec::new(), volume: 0.0, side: false });
             out.len() - 1
@@ -152,10 +140,8 @@ fn shells(s: &Surface) -> Vec<Shell> {
 }
 
 /// The winding number of a shell about `p`.
-fn winding(s: &Surface, shell: &Shell, p: Point3) -> f64 {
-    let corner = |v: u32| s.positions.get(v as usize).copied().unwrap_or(Point3::ORIGIN) - p;
-    shell.triangles.iter().filter_map(|&t| s.triangles.get(t)).map(|t| emcraft_model::solid_angle(t.map(corner))).sum::<f64>()
-        / (4.0 * std::f64::consts::PI)
+fn shell_winding(s: &Surface, shell: &Shell, p: Point3) -> f64 {
+    winding(&s.positions, shell.triangles.iter().filter_map(|&t| s.triangles.get(t)), p)
 }
 
 /// The kept pieces of the box less the bodies.
@@ -176,7 +162,7 @@ fn pieces(air: Surface, keep: Keep) -> Result<Cavity> {
         owner[k] = pieces
             .iter()
             .copied()
-            .filter(|&q| winding(&air, &shells[q], p) > 0.5)
+            .filter(|&q| shell_winding(&air, &shells[q], p) > 0.5)
             .min_by(|&a, &b| shells[a].volume.total_cmp(&shells[b].volume).then(a.cmp(&b)));
     }
     let enclosed: Vec<usize> = pieces.iter().copied().filter(|&q| !shells[q].side).collect();

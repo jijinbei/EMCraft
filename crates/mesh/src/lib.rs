@@ -10,6 +10,7 @@ pub mod cavity;
 mod crease;
 pub mod csg;
 mod flush;
+mod shared;
 pub mod solid;
 mod topology;
 mod waveguide;
@@ -32,6 +33,13 @@ pub enum MeshError {
     TooLarge { tets: usize, limit: usize },
     #[error(transparent)]
     Model(#[from] emcraft_model::ModelError),
+}
+
+impl MeshError {
+    /// An [`MeshError::Invalid`] about `what`.
+    pub(crate) fn invalid(what: &str, why: impl Into<String>) -> Self {
+        MeshError::Invalid { what: what.into(), why: why.into() }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, MeshError>;
