@@ -12,6 +12,7 @@ pub mod stl;
 pub mod threemf;
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use emcraft_model::{Point3, Vec3};
 
@@ -22,8 +23,12 @@ pub const MAX_TRIANGLES: usize = 5_000_000;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
+    /// A file whose contents are wrong.
     #[error("{0}")]
     Invalid(String),
+    /// A file whose extension names no format read here (its name).
+    #[error("`{0}`: not an STL or 3MF file (by its extension)")]
+    UnknownFormat(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -37,39 +42,52 @@ pub struct Surface {
     pub tags: Vec<u32>,
 }
 
+/// The file formats read here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    Stl,
+    ThreeMf,
+}
+
+impl Format {
+    /// The format a file's name says, by its extension (any case).
+    pub fn of(name: &str) -> Result<Format> {
+        let ext = Path::new(name).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+        match ext.as_deref() {
+            Some("stl") => Ok(Format::Stl),
+            Some("3mf") => Ok(Format::ThreeMf),
+            _ => Err(Error::UnknownFormat(name.to_owned())),
+        }
+    }
+}
+
+/// The last part of a path, `/` or `\` separated (a file chosen on another system keeps its
+/// name).
+fn file_name(name: &str) -> &str {
+    name.rsplit(['/', '\\']).next().unwrap_or(name)
+}
+
 /// Reads a surface from a file's bytes, by its extension (`stl`, `3mf`); STL lengths are in
 /// `stl_unit` metres (STL carries no units). A 3MF package's build items become one surface.
 pub fn read(name: &str, bytes: &[u8], stl_unit: f64) -> Result<Surface> {
-    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    let mut s = match ext.as_str() {
-        "stl" => stl::read(bytes, stl_unit)?,
-        "3mf" => {
-            let parts = threemf::read(bytes)?;
-            let mut all = Surface::default();
-            for p in parts {
-                let off = all.positions.len() as u32;
-                let base = all.tags.iter().map(|t| t + 1).max().unwrap_or(0);
-                all.positions.extend(p.positions);
-                all.triangles.extend(p.triangles.into_iter().map(|t| t.map(|v| v + off)));
-                all.tags.extend(p.tags.into_iter().map(|t| t + base));
-            }
-            all
-        }
-        _ => return Err(Error::Invalid(format!("`{name}`: not an STL or 3MF file (by its extension)"))),
-    };
-    s.name = name.rsplit(['/', '\\']).next().unwrap_or(name).to_string();
-    Ok(s)
+    let mut all = Surface::default();
+    for p in read_bodies(name, bytes, stl_unit)? {
+        let off = all.positions.len() as u32;
+        let base = all.tags.iter().map(|t| t + 1).max().unwrap_or(0);
+        all.positions.extend(p.positions);
+        all.triangles.extend(p.triangles.into_iter().map(|t| t.map(|v| v + off)));
+        all.tags.extend(p.tags.into_iter().map(|t| t + base));
+    }
+    all.name = file_name(name).to_owned();
+    Ok(all)
 }
 
 /// Reads a file's bodies, by its extension: a 3MF package's build items one body each (named
 /// after their objects, SolidCraft's bodies), an STL file one body.
 pub fn read_bodies(name: &str, bytes: &[u8], stl_unit: f64) -> Result<Vec<Surface>> {
-    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    let file = name.rsplit(['/', '\\']).next().unwrap_or(name).to_string();
-    match ext.as_str() {
-        "stl" => Ok(vec![Surface { name: file, ..stl::read(bytes, stl_unit)? }]),
-        "3mf" => threemf::read(bytes),
-        _ => Err(Error::Invalid(format!("`{name}`: not an STL or 3MF file (by its extension)"))),
+    match Format::of(name)? {
+        Format::Stl => Ok(vec![Surface { name: file_name(name).to_owned(), ..stl::read(bytes, stl_unit)? }]),
+        Format::ThreeMf => threemf::read(bytes),
     }
 }
 
