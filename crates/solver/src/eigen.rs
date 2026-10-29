@@ -38,9 +38,11 @@ use emcraft_model::Model;
 use emcraft_model::units::C0;
 use num_complex::Complex64 as C;
 
+use crate::dense::{Cholesky, JacobiStop, jacobi};
 use crate::driven::{Driven, Result, SolveError, check_frequency, invalid, wavenumber};
 use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
+use crate::subspace::{Deflation, gradients, start_vectors};
 
 /// The most modes one analysis may ask for.
 pub const MAX_MODES: usize = 50;
@@ -65,140 +67,6 @@ impl Mode {
     pub fn q(&self) -> Option<f64> {
         let inv = [self.q_walls, self.q_dielectric, self.q_magnetic].iter().map(|q| q.map_or(0.0, |q| 1.0 / q)).sum::<f64>();
         (inv > 0.0).then(|| 1.0 / inv)
-    }
-}
-
-/// The discrete gradients as sparse columns over the unknowns, and a point per column (for the
-/// ordering of ZᵀMZ). Only gradients that lie wholly among the unknowns: a node on a conducting
-/// wall has its gradient's tangential part eliminated.
-fn gradients(driven: &Driven) -> (Vec<Vec<(usize, f64)>>, Vec<emcraft_model::Point3>) {
-    let (topo, dofs, mesh) = (&driven.topo, &driven.dofs, &driven.mesh);
-    let pe = dofs.order.per_edge();
-    let nodes = mesh.nodes.len();
-    let mut incident: Vec<Vec<(usize, f64)>> = vec![Vec::new(); nodes];
-    let mut blocked = vec![false; nodes];
-    for (e, &[a, b]) in topo.edges.iter().enumerate() {
-        let (a, b) = (a as usize, b as usize);
-        match dofs.unknown_of(e * pe) {
-            Some(u) => {
-                // ∇φ_n = Σ_edges (φ(b) − φ(a)) w_ab: +1 where n is the edge's second node.
-                if let Some(l) = incident.get_mut(a) {
-                    l.push((u, -1.0));
-                }
-                if let Some(l) = incident.get_mut(b) {
-                    l.push((u, 1.0));
-                }
-            }
-            None => {
-                for n in [a, b] {
-                    if let Some(x) = blocked.get_mut(n) {
-                        *x = true;
-                    }
-                }
-            }
-        }
-    }
-    let mut columns = Vec::new();
-    let mut points = Vec::new();
-    for (n, list) in incident.into_iter().enumerate() {
-        if !blocked[n] && !list.is_empty() {
-            columns.push(list);
-            points.push(mesh.nodes[n]);
-        }
-    }
-    if pe > 1 {
-        for (e, &[a, b]) in topo.edges.iter().enumerate() {
-            if let Some(u) = dofs.unknown_of(e * pe + 1) {
-                columns.push(vec![(u, 1.0)]);
-                points.push(mesh.nodes[a as usize].midpoint(mesh.nodes[b as usize]));
-            }
-        }
-    }
-    (columns, points)
-}
-
-/// The small matrix Z* M Z of the sparse columns Z (each (unknown, z)) and M on `pattern`, row a
-/// by row: w = Σ_i over z_a's entries of `weigh(k, z_a,i)` into column `pattern.col[k]` for each
-/// entry k of M's row i, then entry (a, b) = Σ_j `times(w_j, z_b,j)`; both summed in a fixed
-/// order. (Z* is Zᵀ or Zᴴ as `weigh` conjugates or not.)
-pub(crate) fn galerkin<Z: Copy>(columns: &[Vec<(usize, Z)>], pattern: &Csr, weigh: impl Fn(usize, Z) -> C, times: impl Fn(C, Z) -> C) -> Csr {
-    // Which columns hold each unknown.
-    let mut owners: Vec<Vec<(usize, Z)>> = vec![Vec::new(); pattern.n];
-    for (c, col) in columns.iter().enumerate() {
-        for &(u, z) in col {
-            if let Some(o) = owners.get_mut(u) {
-                o.push((c, z));
-            }
-        }
-    }
-    let mut ptr = Vec::with_capacity(columns.len() + 1);
-    ptr.push(0);
-    let (mut col, mut val) = (Vec::new(), Vec::new());
-    for za in columns {
-        let mut w: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
-        for &(i, z) in za {
-            for k in pattern.ptr[i]..pattern.ptr[i + 1] {
-                *w.entry(pattern.col[k]).or_insert(C::new(0.0, 0.0)) += weigh(k, z);
-            }
-        }
-        let mut row: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
-        for (j, wj) in w {
-            for &(b, zb) in owners.get(j).map_or(&[][..], Vec::as_slice) {
-                *row.entry(b).or_insert(C::new(0.0, 0.0)) += times(wj, zb);
-            }
-        }
-        for (b, v) in row {
-            col.push(b);
-            val.push(v);
-        }
-        ptr.push(col.len());
-    }
-    Csr { n: columns.len(), ptr, col, val }
-}
-
-/// A deterministic sequence uniform in [−½, ½): a xorshift generator from `seed`.
-pub(crate) fn uniform(seed: u64) -> impl FnMut() -> f64 {
-    let mut state = seed;
-    move || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
-    }
-}
-
-/// x ↦ x − Z (ZᵀMZ)⁻¹ ZᵀM x: the M-orthogonal projection off the discrete gradients.
-struct Deflation {
-    columns: Vec<Vec<(usize, f64)>>,
-    factor: Option<Ldlt>,
-}
-
-impl Deflation {
-    /// `mass_entry(k)`: M's entry k on `pattern` (its real part alone for a real ZᵀMZ).
-    fn new(driven: &Driven, pattern: &Csr, mass_entry: impl Fn(usize) -> C) -> Result<Deflation> {
-        let (columns, points) = gradients(driven);
-        let m = columns.len();
-        if m == 0 {
-            return Ok(Deflation { columns, factor: None });
-        }
-        // ZᵀMZ: w = M z_a, then (ZᵀMZ)_ab = z_b · w.
-        let a = galerkin(&columns, pattern, |k, z| mass_entry(k) * z, |wj, zb| wj * zb);
-        Ok(Deflation { columns, factor: Some(Ldlt::factor(&a, &points)?) })
-    }
-
-    /// Projects each vector in place; `my` holds M times each (as computed by the caller).
-    fn project(&self, xs: &mut [Vec<C>], mys: &[Vec<C>]) -> Result<()> {
-        let Some(f) = &self.factor else { return Ok(()) };
-        let mut rhs: Vec<Vec<C>> = mys.iter().map(|my| self.columns.iter().map(|z| z.iter().map(|&(u, c)| my[u] * c).sum()).collect()).collect();
-        f.solve_many(&mut rhs)?;
-        for (x, s) in xs.iter_mut().zip(&rhs) {
-            for (z, coef) in self.columns.iter().zip(s) {
-                for &(u, c) in z {
-                    x[u] -= *coef * c;
-                }
-            }
-        }
-        Ok(())
     }
 }
 
@@ -442,58 +310,32 @@ fn symmetric_ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<(Vec<f64
         }
     }
     // Mr = L Lᵀ; C = L⁻¹ Kr L⁻ᵀ.
-    let mut l: Vec<f64> = vec![0.0; q * q];
-    for j in 0..q {
-        let d = mr[j * q + j] - (0..j).map(|k| l[j * q + k].powi(2)).sum::<f64>();
-        if !(d > 0.0) {
-            return Err(lost_independence());
-        }
-        l[j * q + j] = d.sqrt();
-        for i in j + 1..q {
-            l[i * q + j] = (mr[i * q + j] - (0..j).map(|k| l[i * q + k] * l[j * q + k]).sum::<f64>()) / l[j * q + j];
-        }
-    }
+    let l = Cholesky::new(&mr, q).ok_or_else(lost_independence)?;
     // Z = L⁻¹ Kr, then C = L⁻¹ Zᵀ (C symmetric).
-    let lsolve = |b: &[f64]| -> Vec<f64> {
-        let mut z = vec![0.0; q];
-        for i in 0..q {
-            z[i] = (b[i] - (0..i).map(|k| l[i * q + k] * z[k]).sum::<f64>()) / l[i * q + i];
-        }
-        z
-    };
     let mut z = vec![0.0; q * q];
     for j in 0..q {
         let col: Vec<f64> = (0..q).map(|i| kr[i * q + j]).collect();
-        let s = lsolve(&col);
-        for i in 0..q {
-            z[i * q + j] = s[i];
+        for (i, s) in l.lower_solve(&col).into_iter().enumerate() {
+            z[i * q + j] = s;
         }
     }
     let mut cm = vec![0.0; q * q];
     for i in 0..q {
         let row: Vec<f64> = (0..q).map(|j| z[i * q + j]).collect();
-        let s = lsolve(&row);
-        for j in 0..q {
-            cm[j * q + i] = s[j];
+        for (j, s) in l.lower_solve(&row).into_iter().enumerate() {
+            cm[j * q + i] = s;
         }
     }
-    let (lam, v) = jacobi(cm, q);
+    let (lam, v) = jacobi(cm, q, JacobiStop::Relative);
     // Φ = L⁻ᵀ V.
     let mut phi = vec![0.0; q * q];
     for c in 0..q {
-        for i in (0..q).rev() {
-            let s: f64 = (i + 1..q).map(|k| l[k * q + i] * phi[k * q + c]).sum();
-            phi[i * q + c] = (v[i * q + c] - s) / l[i * q + i];
+        let col: Vec<f64> = (0..q).map(|i| v[i * q + c]).collect();
+        for (i, s) in l.upper_solve(&col).into_iter().enumerate() {
+            phi[i * q + c] = s;
         }
     }
     Ok((lam, phi))
-}
-
-/// Deterministic starting vectors: `q` of length `n`, entries uniform in [−½, ½) from a
-/// xorshift generator with a fixed seed.
-fn start_vectors(q: usize, n: usize) -> Vec<Vec<C>> {
-    let mut rand = uniform(0x2545_f491_4f6c_dd1d);
-    (0..q).map(|_| (0..n).map(|_| C::new(rand(), 0.0)).collect()).collect()
 }
 
 /// The `count` modes nearest σ = k_near² by shift-invert subspace iteration in arithmetic `A`,
@@ -504,8 +346,11 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
     let n = pattern.n;
     let factor = Ldlt::factor(&A::shifted(m, sigma), &driven.dofs.points)?;
     let q = (count + count.max(8)).min(n);
-    let mut x = start_vectors(q, n);
-    let deflation = Deflation::new(driven, pattern, |k| A::mass_entry(m, k))?;
+    let mut x = start_vectors::<f64>(q, n, 0x2545_f491_4f6c_dd1d);
+    // The gradients of the nodal functions through the Whitney functions, those of nodes on a
+    // conducting wall left out (their tangential part is eliminated).
+    let (columns, points) = gradients::<f64>(driven, |n| Some((n, 1.0)), |slot| driven.dofs.unknown_of(slot), |_| true);
+    let deflation = Deflation::new(columns, &points, pattern, |k| A::mass_entry(m, k))?;
     let mx: Vec<Vec<C>> = x.iter().map(|v| A::mmul(m, v)).collect();
     deflation.project(&mut x, &mx)?;
     let null = 1e-6 * sigma;
@@ -550,52 +395,6 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
     }
     modes.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
     Ok((modes, iterations))
-}
-
-/// Eigenvalues and vectors of a dense symmetric matrix (row-major, n × n) by cyclic Jacobi
-/// rotations (Golub & Van Loan, *Matrix Computations*, 4th ed., §8.5).
-pub(crate) fn jacobi(mut a: Vec<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
-    let mut v = vec![0.0; n * n];
-    for i in 0..n {
-        v[i * n + i] = 1.0;
-    }
-    let norm: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    for _ in 0..100 {
-        let off: f64 =
-            (0..n).flat_map(|i| (0..n).filter(move |&j| j != i).map(move |j| (i, j))).map(|(i, j)| a[i * n + j].powi(2)).sum::<f64>().sqrt();
-        if off <= 1e-15 * norm {
-            break;
-        }
-        for p in 0..n {
-            for q in p + 1..n {
-                let apq = a[p * n + q];
-                if apq == 0.0 {
-                    continue;
-                }
-                let theta = (a[q * n + q] - a[p * n + p]) / (2.0 * apq);
-                let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
-                let t = if theta == 0.0 { 1.0 } else { t };
-                let c = 1.0 / (t * t + 1.0).sqrt();
-                let s = t * c;
-                for k in 0..n {
-                    let (akp, akq) = (a[k * n + p], a[k * n + q]);
-                    a[k * n + p] = c * akp - s * akq;
-                    a[k * n + q] = s * akp + c * akq;
-                }
-                for k in 0..n {
-                    let (apk, aqk) = (a[p * n + k], a[q * n + k]);
-                    a[p * n + k] = c * apk - s * aqk;
-                    a[q * n + k] = s * apk + c * aqk;
-                }
-                for k in 0..n {
-                    let (vkp, vkq) = (v[k * n + p], v[k * n + q]);
-                    v[k * n + p] = c * vkp - s * vkq;
-                    v[k * n + q] = s * vkp + c * vkq;
-                }
-            }
-        }
-    }
-    ((0..n).map(|i| a[i * n + i]).collect(), v)
 }
 
 /// The `count` modes of the model's guide closed into a cavity nearest above and below

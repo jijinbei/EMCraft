@@ -148,7 +148,7 @@ impl CrossSection {
         };
         let project = self.constraint_lossy(&b_val)?;
         let q = (count + count.max(6)).min(n);
-        let mut rand = crate::eigen::uniform(0x9e37_79b9_7f4a_7c15);
+        let mut rand = crate::subspace::uniform(0x9e37_79b9_7f4a_7c15);
         let mut x: Vec<Vec<C>> = (0..q).map(|_| (0..n).map(|_| C::new(rand(), 0.0)).collect()).collect();
         for v in &mut x {
             project(v)?;

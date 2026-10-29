@@ -23,15 +23,15 @@
 use std::f64::consts::PI;
 
 use emcraft_fem::Order;
+use emcraft_model::Model;
 use emcraft_model::units::C0;
-use emcraft_model::{Model, Point3};
 use num_complex::Complex64 as C;
 
+use crate::dense::{Cholesky, JacobiStop, jacobi};
 use crate::driven::{Driven, Result, SolveError, Tie, check_frequency, invalid, wavenumber};
-use crate::eigen::{galerkin, uniform};
 use crate::ldlt::Analysis;
 use crate::lu::Lu;
-use crate::sparse::Csr;
+use crate::subspace::{Deflation, gradients, start_vectors};
 
 /// The most bands one diagram may ask for.
 pub const MAX_BANDS: usize = 20;
@@ -80,135 +80,6 @@ fn dotc(x: &[C], y: &[C]) -> C {
     x.iter().zip(y).map(|(a, b)| a.conj() * b).sum()
 }
 
-/// The Bloch-periodic discrete gradients as columns over the kept unknowns (with a point
-/// each): Whitney coefficients φ(b) − φ(a) on the master edges, and at order 2 each edge's
-/// gradient function ∇(λ_iλ_j) alone. Nodes whose group touches an eliminated edge are left out.
-fn gradients(d: &Driven, tie: &Tie, psi: [f64; 3]) -> (Vec<Vec<(usize, C)>>, Vec<Point3>) {
-    let (topo, dofs, mesh) = (&d.topo, &d.dofs, &d.mesh);
-    let pe = dofs.order.per_edge();
-    let nn = mesh.nodes.len();
-    // φ of master node n at node v: e^{−jψ·s} if v's master is n.
-    let mut columns: Vec<std::collections::BTreeMap<usize, C>> = vec![Default::default(); nn];
-    let mut blocked = vec![false; nn];
-    for (e, &[a, b]) in topo.edges.iter().enumerate() {
-        let (Some((ma, sa)), Some((mb, sb))) = (tie.node_master(a as usize), tie.node_master(b as usize)) else { continue };
-        let (ma, mb) = (ma as usize, mb as usize);
-        match dofs.unknown_of(e * pe).and_then(|u| tie.master_of(u)) {
-            Some(r) => {
-                if let Some(c) = columns.get_mut(ma) {
-                    *c.entry(r).or_default() -= Tie::phase(psi, sa);
-                }
-                if let Some(c) = columns.get_mut(mb) {
-                    *c.entry(r).or_default() += Tie::phase(psi, sb);
-                }
-            }
-            None => {
-                // A slave edge repeats its master's coefficients; an eliminated or dropped one
-                // blocks its nodes' groups.
-                let kept = dofs.unknown_of(e * pe).and_then(|u| tie.coefficient(u, psi)).is_some();
-                if !kept {
-                    for m in [ma, mb] {
-                        if let Some(x) = blocked.get_mut(m) {
-                            *x = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let mut out = Vec::new();
-    let mut points = Vec::new();
-    for (n, col) in columns.into_iter().enumerate() {
-        if !blocked[n] && !col.is_empty() && col.values().any(|v| v.norm() > 1e-12) {
-            out.push(col.into_iter().filter(|(_, v)| v.norm() > 1e-14).collect());
-            points.push(mesh.nodes[n]);
-        }
-    }
-    if pe > 1 {
-        for (e, &[a, b]) in topo.edges.iter().enumerate() {
-            if let Some(r) = dofs.unknown_of(e * pe + 1).and_then(|u| tie.master_of(u)) {
-                out.push(vec![(r, C::new(1.0, 0.0))]);
-                points.push(mesh.nodes[a as usize].midpoint(mesh.nodes[b as usize]));
-            }
-        }
-    }
-    (out, points)
-}
-
-/// x ↦ x − Z (ZᴴMZ)⁻¹ ZᴴM x.
-struct Deflation {
-    columns: Vec<Vec<(usize, C)>>,
-    factor: Option<(Lu, Csr)>,
-}
-
-impl Deflation {
-    fn new(columns: Vec<Vec<(usize, C)>>, points: &[Point3], m: &Csr) -> Result<Deflation> {
-        let nz = columns.len();
-        if nz == 0 {
-            return Ok(Deflation { columns, factor: None });
-        }
-        // (ZᴴMZ)_ab = Σ conj(z_a,i) M_ij z_b,j: row i of z_aᴴM is Σ_i z̄_i M_ij.
-        let mut a = galerkin(&columns, m, |k, z: C| z.conj() * m.val[k], |wj, zb| wj * zb);
-        // A symmetric pattern for the analysis: the transpose's entries too (zero).
-        symmetrize_pattern(&mut a);
-        let an = Analysis::new(&a, points, 0)?;
-        let f = Lu::factor_analysed(&a, &an, crate::ldlt::memory_budget())?;
-        Ok(Deflation { columns, factor: Some((f, a)) })
-    }
-
-    fn project(&self, xs: &mut [Vec<C>], m: &Csr) -> Result<()> {
-        let Some((f, _)) = &self.factor else { return Ok(()) };
-        for x in xs.iter_mut() {
-            let mx = m.mul(x);
-            let mut rhs: Vec<C> = self.columns.iter().map(|z| z.iter().map(|&(u, c)| c.conj() * mx[u]).sum()).collect();
-            f.solve(&mut rhs)?;
-            for (z, coef) in self.columns.iter().zip(&rhs) {
-                for &(u, c) in z {
-                    x[u] -= *coef * c;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-/// Adds the structural zeros that make `a`'s pattern symmetric.
-fn symmetrize_pattern(a: &mut Csr) {
-    let n = a.n;
-    let mut rows: Vec<Vec<(usize, C)>> = (0..n).map(|i| (a.ptr[i]..a.ptr[i + 1]).map(|k| (a.col[k], a.val[k])).collect()).collect();
-    let mut add: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for i in 0..n {
-        for &(j, _) in &rows[i] {
-            if j != i && j < n {
-                add[j].push(i);
-            }
-        }
-    }
-    let zero = C::new(0.0, 0.0);
-    for (i, row) in rows.iter_mut().enumerate() {
-        row.extend(add[i].iter().map(|&j| (j, zero)));
-        row.push((i, zero));
-        row.sort_by_key(|e| e.0);
-        // Merge duplicates, keeping the sum.
-        let mut merged: Vec<(usize, C)> = Vec::with_capacity(row.len());
-        for &(j, v) in row.iter() {
-            match merged.last_mut() {
-                Some(last) if last.0 == j => last.1 += v,
-                _ => merged.push((j, v)),
-            }
-        }
-        *row = merged;
-    }
-    a.ptr = vec![0];
-    a.col.clear();
-    a.val.clear();
-    for row in rows {
-        a.col.extend(row.iter().map(|e| e.0));
-        a.val.extend(row.iter().map(|e| e.1));
-        a.ptr.push(a.col.len());
-    }
-}
-
 /// The Hermitian Rayleigh–Ritz step on the span of Y: the eigenvalues of (YᴴKY, YᴴMY) and the
 /// Ritz vectors Y Φ (of unit M-norm), ascending.
 fn ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<Vec<(f64, Vec<C>)>> {
@@ -233,38 +104,19 @@ fn ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<Vec<(f64, Vec<C>)>
         }
     }
     // Mr = L Lᴴ.
-    let mut l = vec![C::new(0.0, 0.0); q * q];
-    for j in 0..q {
-        let d = mr[j * q + j].re - (0..j).map(|k| l[j * q + k].norm_sqr()).sum::<f64>();
-        if !(d > 0.0) {
-            return Err(lost());
-        }
-        l[j * q + j] = C::new(d.sqrt(), 0.0);
-        for i in j + 1..q {
-            let s: C = (0..j).map(|k| l[i * q + k] * l[j * q + k].conj()).sum();
-            l[i * q + j] = (mr[i * q + j] - s) / l[j * q + j];
-        }
-    }
-    let lsolve = |b: &[C]| -> Vec<C> {
-        let mut z = vec![C::new(0.0, 0.0); q];
-        for i in 0..q {
-            let s: C = (0..i).map(|k| l[i * q + k] * z[k]).sum();
-            z[i] = (b[i] - s) / l[i * q + i];
-        }
-        z
-    };
+    let l = Cholesky::new(&mr, q).ok_or_else(lost)?;
     // C = L⁻¹ Kr L⁻ᴴ: Z = L⁻¹ Kr, then C = (L⁻¹ Zᴴ)ᴴ.
     let mut z = vec![C::new(0.0, 0.0); q * q];
     for j in 0..q {
         let col: Vec<C> = (0..q).map(|i| kr[i * q + j]).collect();
-        for (i, v) in lsolve(&col).into_iter().enumerate() {
+        for (i, v) in l.lower_solve(&col).into_iter().enumerate() {
             z[i * q + j] = v;
         }
     }
     let mut cm = vec![C::new(0.0, 0.0); q * q];
     for i in 0..q {
         let row: Vec<C> = (0..q).map(|j| z[i * q + j].conj()).collect();
-        for (j, v) in lsolve(&row).into_iter().enumerate() {
+        for (j, v) in l.lower_solve(&row).into_iter().enumerate() {
             cm[i * q + j] = v.conj();
         }
     }
@@ -280,7 +132,7 @@ fn ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<Vec<(f64, Vec<C>)>
             big[(i + q) * n2 + j] = c.im;
         }
     }
-    let (lam, v) = crate::eigen::jacobi(big, n2);
+    let (lam, v) = jacobi(big, n2, JacobiStop::Relative);
     let mut order: Vec<usize> = (0..n2).collect();
     order.sort_by(|a, b| lam[*a].total_cmp(&lam[*b]));
     // One complex vector per pair: u + jv, kept when independent of those kept.
@@ -308,21 +160,11 @@ fn ritz(y: &[Vec<C>], ky: &[Vec<C>], my: &[Vec<C>]) -> Result<Vec<(f64, Vec<C>)>
     Ok(kept
         .into_iter()
         .map(|(lambda, w)| {
-            let mut phi = vec![C::new(0.0, 0.0); q];
-            for i in (0..q).rev() {
-                let s: C = (i + 1..q).map(|k| l[k * q + i].conj() * phi[k]).sum();
-                phi[i] = (w[i] - s) / l[i * q + i].conj();
-            }
+            let phi = l.upper_solve(&w);
             let x: Vec<C> = (0..n).map(|r| (0..q).map(|k| y[k][r] * phi[k]).sum()).collect();
             (lambda, x)
         })
         .collect())
-}
-
-/// Deterministic complex starting vectors.
-fn start_vectors(q: usize, n: usize) -> Vec<Vec<C>> {
-    let mut rand = uniform(0x9e37_79b9_7f4a_7c15);
-    (0..q).map(|_| (0..n).map(|_| C::new(rand(), rand())).collect()).collect()
 }
 
 /// The `bands` eigenvalues k² nearest σ above the null space, at phases `psi`.
@@ -338,11 +180,20 @@ fn bands_at(d: &Driven, tie: &Tie, an: &Analysis, psi: [f64; 3], bands: usize, s
     }
     let f = Lu::factor_analysed(&s, an, crate::ldlt::memory_budget())?;
     let n = k.n;
-    let (columns, points) = gradients(d, tie, psi);
-    let deflation = Deflation::new(columns, &points, &m)?;
+    // The Bloch-periodic gradients: of master node n's function, 1 at n and e^{−jψ·s} at its
+    // images s periods away, on the master edges; a node whose group touches an eliminated or
+    // dropped edge is left out (a slave edge repeats its master's coefficients).
+    let (columns, points) = gradients::<C>(
+        d,
+        |n| tie.node_master(n).map(|(m, s)| (m as usize, Tie::phase(psi, s))),
+        |slot| d.dofs.unknown_of(slot).and_then(|u| tie.master_of(u)),
+        |slot| d.dofs.unknown_of(slot).and_then(|u| tie.coefficient(u, psi)).is_none(),
+    );
+    let deflation = Deflation::new(columns, &points, &m, |k| m.val[k])?;
     let q = (bands + bands.max(8)).min(n);
-    let mut x = start_vectors(q, n);
-    deflation.project(&mut x, &m)?;
+    let mut x = start_vectors::<C>(q, n, 0x9e37_79b9_7f4a_7c15);
+    let mx: Vec<Vec<C>> = x.iter().map(|v| m.mul(v)).collect();
+    deflation.project(&mut x, &mx)?;
     let null = 1e-6 * sigma;
     let mut previous: Vec<f64> = Vec::new();
     let mut lambdas: Vec<f64> = Vec::new();
@@ -355,7 +206,8 @@ fn bands_at(d: &Driven, tie: &Tie, an: &Analysis, psi: [f64; 3], bands: usize, s
             f.solve(&mut r)?;
             y.push(r);
         }
-        deflation.project(&mut y, &m)?;
+        let my_raw: Vec<Vec<C>> = y.iter().map(|v| m.mul(v)).collect();
+        deflation.project(&mut y, &my_raw)?;
         let ky: Vec<Vec<C>> = y.iter().map(|v| k.mul(v)).collect();
         let my: Vec<Vec<C>> = y.iter().map(|v| m.mul(v)).collect();
         let mut pairs = ritz(&y, &ky, &my)?;
