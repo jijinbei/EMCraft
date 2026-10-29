@@ -8,11 +8,12 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
 
+use crate::handle::{Fixed, Handle};
 use crate::picture::{Cached, PictureKey};
 use crate::state::{ChartView, FieldState, ViewState};
 use crate::theme::Tokens;
 use crate::view3d::View3d;
-use crate::{Action, Actions, EmcraftApp, Picture, View, scenario};
+use crate::{Action, Actions, EmcraftApp, Picture, UiExt, View, scenario};
 
 mod dispersion;
 mod far_field;
@@ -86,7 +87,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             ui.painter().add(egui::Shape::mesh(mesh));
             ui.painter().rect_stroke(r, t.radius_lg, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
             shown = Some(r);
-            scenario::publish_rect("viewport", r);
+            scenario::publish_rect(Fixed::Viewport, r);
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(10.0)));
             view_tabs(app, &mut inner, out);
             inner.add_space(4.0);
@@ -116,9 +117,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
 pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal(|ui| {
         for v in View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)) {
-            if pill(ui, v.label(), app.view == v, format_args!("view:{}", v.id()), 12, PillSize::Body) {
-                out.push(Action::ShowView(v));
-            }
+            ui.act(true, pill(v.label(), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
         }
     });
 }
@@ -132,17 +131,15 @@ pub(super) enum PillSize {
     Small,
 }
 
-/// A pill of a row of options: filled when `on`, its text `size`; `true` when clicked.
-pub(super) fn pill(ui: &mut egui::Ui, label: &str, on: bool, handle: impl std::fmt::Display, radius: u8, size: PillSize) -> bool {
+/// A pill of a row of options: filled when `on`, its text `size`.
+pub(super) fn pill(label: &str, on: bool, radius: u8, size: PillSize) -> egui::Button<'static> {
     let t = Tokens::get();
     let font = match size {
         PillSize::Body => t.font_body,
         PillSize::Small => t.font_small,
     };
     let text = egui::RichText::new(label).size(font).color(if on { t.selected_ink } else { t.text });
-    let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius));
-    scenario::publish_target(handle, r.rect);
-    r.clicked()
+    egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius)
 }
 
 /// A chart's height: a share of the room left in the card, within `min..=max` pixels.
@@ -173,7 +170,7 @@ pub(super) fn chart_view<V: PartialEq, E: ToString>(
     revision: u64,
     view: V,
     height: Height,
-    handle: &str,
+    handle: Fixed,
     chart: impl FnOnce() -> Result<emcraft_render::chart::Chart, E>,
 ) -> Result<(egui::Response, egui::Vec2), String> {
     let width = picture_width(ui);
@@ -190,29 +187,24 @@ pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
     });
 }
 
-/// The card's message while a view has nothing to show, with the button that makes it; `true`
-/// when the button was clicked.
-pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, button: &str, enabled: bool, handle: &str) -> bool {
+/// The card's message while a view has nothing to show, with the button (`label`, published
+/// as `handle`) that asks for `action`, the action that makes it.
+pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, label: &str, enabled: bool, handle: Fixed, action: Action, out: &mut Actions) {
     let t = Tokens::get();
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
         ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));
-        let r = ui.add_enabled(enabled, egui::Button::new(button));
-        scenario::publish_target(handle, r.rect);
-        r.clicked()
-    })
-    .inner
+        ui.act(enabled, egui::Button::new(label), handle.into(), "", || action, out);
+    });
 }
 
 /// A picture in the rest of the card, scaled down to fit; the image's response.
-pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: &str) -> egui::Response {
+pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: Fixed) -> egui::Response {
     let size = p.size();
     let avail = ui.available_size();
     let scale = (avail.x / size.x).min(avail.y / size.y).clamp(0.1, 1.0);
     let id = p.texture(ui.ctx());
-    let r = ui.add(egui::Image::new((id, size * scale)).sense(Sense::click()));
-    scenario::publish_target(handle, r.rect);
-    r
+    ui.named(egui::Image::new((id, size * scale)).sense(Sense::click()), handle.into())
 }
 
 /// A width for pictures, rounded so resizing does not redraw on every pixel.

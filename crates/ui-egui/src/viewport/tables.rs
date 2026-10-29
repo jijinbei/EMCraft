@@ -5,12 +5,8 @@ use super::*;
 pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     let Some(reply) = app.replies.port_modes.as_ref() else {
-        let make =
-            empty_with_action(ui, "No port modes yet: they need a meshed model with ports.", "Solve port modes…", !app.busy(), "port_modes:solve");
-        if make {
-            out.push(Action::dialog("solve.port_modes"));
-        }
-        return;
+        let text = "No port modes yet: they need a meshed model with ports.";
+        return empty_with_action(ui, text, "Solve port modes…", !app.busy(), Fixed::PortModesSolve, Action::dialog("solve.port_modes"), out);
     };
     let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
     let fu = app.session.display().frequency.symbol();
@@ -56,15 +52,14 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
                     ];
                     ui.end_row();
                     let row = cells.iter().fold(cells[0].rect, |r, c| r.union(c.rect)).expand2(egui::vec2(4.0, 1.0));
-                    let click = ui.interact(row, ui.id().with(("mode_row", pname, k)), Sense::click());
-                    scenario::publish_target(format_args!("port_modes:row:{pname}:{}", k + 1), row);
+                    let click = ui.hit(row, Handle::PortModesRow(pname, k + 1), Sense::click());
                     if click.on_hover_text("Show this mode's pattern").clicked() {
                         picked = Some((pname.to_owned(), k));
                     }
                     if focused {
                         let r = row;
                         ui.painter().set(back, egui::Shape::rect_filled(r, 3.0, t.accent_soft));
-                        scenario::publish_target("port_modes:focus", r);
+                        scenario::publish_target(Fixed::PortModesFocus, r);
                         if scroll {
                             ui.scroll_to_rect(r, Some(egui::Align::Center));
                         }
@@ -73,7 +68,7 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
             });
         }
     });
-    scenario::publish_rect("table:port_modes", ui.min_rect());
+    scenario::publish_rect(Fixed::TablePortModes, ui.min_rect());
     if let Some((port, mode)) = picked {
         out.push(Action::FocusMode(crate::steps::ModeFocus { port, mode, scroll: false }));
     }
@@ -99,7 +94,7 @@ fn mode_picture(
         slot.get_or_draw(key, || view::port_mode_plot(session, &f.port, f.mode, frequency, 2).map(|plot| emcraft_render::plot::draw(&plot, width)));
     match drawn {
         Ok(p) => {
-            picture(ui, p, "picture:port_mode");
+            picture(ui, p, Fixed::PicturePortMode);
         }
         Err(e) => empty(ui, &e),
     }
@@ -127,9 +122,7 @@ pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
             ui.label(format!("{}", i + 1));
             ui.label(num(&m["frequency"], 5));
             ui.label(num(&m["q"], 0));
-            let r = ui.button("Field");
-            scenario::publish_target(format_args!("eigen:field:{}", i + 1), r.rect);
-            if r.clicked() {
+            if ui.named(egui::Button::new("Field"), Handle::EigenField(i + 1)).clicked() {
                 open = Some(i);
             }
             ui.end_row();
@@ -150,10 +143,8 @@ pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     let Some(reply) = app.replies.compare.as_ref() else {
         let ready = !app.busy() && app.session.results().sweep.is_some();
-        if empty_with_action(ui, "Compare the sweep with the exact TE10 solution or mode matching.", "Compare…", ready, "compare:run") {
-            out.push(Action::run("results.compare", json!({})));
-        }
-        return;
+        let text = "Compare the sweep with the exact TE10 solution or mode matching.";
+        return empty_with_action(ui, text, "Compare…", ready, Fixed::CompareRun, Action::run("results.compare", json!({})), out);
     };
     ui.label(
         egui::RichText::new(format!("Against {} — worst |S − S_ref| = {}", reply["reference"].as_str().unwrap_or("?"), num(&reply["worst"], 6)))

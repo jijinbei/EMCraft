@@ -23,8 +23,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::EmcraftApp;
 use crate::control::{ControlRequest, Outcome, handle};
+use crate::{EmcraftApp, Handle};
 
 /// Something drawn this frame under a name (a button, a row, a field): a point to click (a
 /// handle) and the rectangle it covers, either or both. Scenarios and the control channel's
@@ -45,9 +45,8 @@ thread_local! {
 /// Most names kept per frame.
 const MAX_NAMED: usize = 40_000;
 
-/// Keeps `name` (written once, from whatever displays it: a `&str`, or `format_args!` without
-/// an allocation of its own) with its point and rectangle.
-fn publish(name: impl std::fmt::Display, at: Option<egui::Pos2>, rect: Option<egui::Rect>) {
+/// Keeps `name` (its text written once, straight from the handle) with its point and rectangle.
+fn publish(name: Handle, at: Option<egui::Pos2>, rect: Option<egui::Rect>) {
     NAMED.with(|n| {
         let mut n = n.borrow_mut();
         if n.len() < MAX_NAMED {
@@ -57,18 +56,18 @@ fn publish(name: impl std::fmt::Display, at: Option<egui::Pos2>, rect: Option<eg
 }
 
 /// A point to click, by name.
-pub fn publish_handle(name: impl std::fmt::Display, at: egui::Pos2) {
-    publish(name, Some(at), None);
+pub fn publish_handle<'a>(name: impl Into<Handle<'a>>, at: egui::Pos2) {
+    publish(name.into(), Some(at), None);
 }
 
 /// A rectangle, by name (not a handle).
-pub fn publish_rect(name: impl std::fmt::Display, r: egui::Rect) {
-    publish(name, None, Some(r));
+pub fn publish_rect<'a>(name: impl Into<Handle<'a>>, r: egui::Rect) {
+    publish(name.into(), None, Some(r));
 }
 
 /// A rectangle and its centre as a handle, under one name.
-pub fn publish_target(name: impl std::fmt::Display, r: egui::Rect) {
-    publish(name, Some(r.center()), Some(r));
+pub fn publish_target<'a>(name: impl Into<Handle<'a>>, r: egui::Rect) {
+    publish(name.into(), Some(r.center()), Some(r));
 }
 
 /// Starts a frame: this frame's handles become last frame's.

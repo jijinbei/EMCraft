@@ -5,8 +5,9 @@
 
 use egui::{Align2, Color32, FontId, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::scenario;
+use crate::handle::{Fixed, Handle, Part};
 use crate::theme::Tokens;
+use crate::{UiExt, scenario};
 
 /// A card's title band: glyph, title, optional dock toggle and a close button. Returns
 /// (close clicked, dock clicked).
@@ -16,14 +17,12 @@ pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: &str, docked: Opt
     let icon = Rect::from_center_size(pos2(rect.left() + t.space_12 + 10.0, rect.center().y), vec2(20.0, 20.0));
     crate::glyphs::paint(ui.painter(), icon, glyph, t.icon, accent);
     let close = Rect::from_center_size(pos2(rect.right() - t.space_8 - 13.0, rect.center().y), vec2(26.0, 26.0));
-    let close_r = icon_button(ui, close, "close", "Close");
-    scenario::publish_target("dialog:close", close);
+    let close_r = icon_button(ui, close, Mark::Close, "Close", Fixed::DialogClose);
     let mut right = close.left();
     let mut dock_clicked = false;
     if let Some(docked) = docked {
         let dock = Rect::from_center_size(pos2(close.left() - t.space_4 - 13.0, rect.center().y), vec2(26.0, 26.0));
-        let r = icon_button(ui, dock, if docked { "undock" } else { "dock" }, if docked { "Float" } else { "Dock" });
-        scenario::publish_target("dialog:dock", dock);
+        let r = icon_button(ui, dock, if docked { Mark::Undock } else { Mark::Dock }, if docked { "Float" } else { "Dock" }, Fixed::DialogDock);
         dock_clicked = r.clicked();
         right = dock.left();
     }
@@ -41,10 +40,18 @@ pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: &str, docked: Opt
     (close_r.clicked(), dock_clicked)
 }
 
-/// A small square button with a drawn mark (`close`, `dock`, `undock`).
-pub fn icon_button(ui: &mut Ui, r: Rect, mark: &str, label: &str) -> Response {
+/// The mark an icon button draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mark {
+    Close,
+    Dock,
+    Undock,
+}
+
+/// A small square button with a drawn mark, published as `handle`.
+pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed) -> Response {
     let t = Tokens::get();
-    let resp = ui.interact(r, ui.id().with(("icon_button", mark)), Sense::click());
+    let resp = ui.hit(r, handle.into(), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
@@ -53,15 +60,15 @@ pub fn icon_button(ui: &mut Ui, r: Rect, mark: &str, label: &str) -> Response {
     let c = r.center();
     let d = 4.5;
     match mark {
-        "close" => {
+        Mark::Close => {
             ui.painter().line_segment([c + vec2(-d, -d), c + vec2(d, d)], s);
             ui.painter().line_segment([c + vec2(d, -d), c + vec2(-d, d)], s);
         }
-        "dock" => {
+        Mark::Dock => {
             ui.painter().rect_stroke(Rect::from_center_size(c, vec2(12.0, 10.0)), 1.0, s, egui::StrokeKind::Middle);
             ui.painter().line_segment([c + vec2(2.0, -5.0), c + vec2(2.0, 5.0)], s);
         }
-        _ => {
+        Mark::Undock => {
             ui.painter().rect_stroke(Rect::from_center_size(c + vec2(-1.5, 1.5), vec2(9.0, 8.0)), 1.0, s, egui::StrokeKind::Middle);
             ui.painter().rect_stroke(Rect::from_center_size(c + vec2(2.0, -2.0), vec2(9.0, 8.0)), 1.0, s, egui::StrokeKind::Middle);
         }
@@ -113,19 +120,21 @@ pub fn error_band(ui: &mut Ui, text: &str) {
     egui::Frame::NONE.fill(t.form_error_fill).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         let r = ui.label(egui::RichText::new(text).size(t.font_body).color(t.form_error));
-        scenario::publish_rect("dialog:error", r.rect);
+        scenario::publish_rect(Fixed::DialogError, r.rect);
     });
 }
 
-/// A button: secondary, or `primary` in the accent colour. Publishes `handle` at its centre.
-pub fn button(ui: &mut Ui, label: &str, primary: bool, enabled: bool, handle: &str) -> Response {
+/// A card's button: secondary, or `primary` in the accent colour.
+pub fn styled(label: &str, primary: bool) -> egui::Button<'static> {
     let t = Tokens::get();
     let text = egui::RichText::new(label).size(t.font_button).color(if primary { t.on_accent } else { t.form_ink });
-    let mut b = egui::Button::new(text).min_size(vec2(72.0, t.control_height)).corner_radius(t.control_radius);
-    b = if primary { b.fill(t.accent) } else { b.fill(t.control_fill).stroke(Stroke::new(1.0, t.control_border)) };
-    let r = ui.add_enabled(enabled, b);
-    scenario::publish_target(handle, r.rect);
-    r
+    let b = egui::Button::new(text).min_size(vec2(72.0, t.control_height)).corner_radius(t.control_radius);
+    if primary { b.fill(t.accent) } else { b.fill(t.control_fill).stroke(Stroke::new(1.0, t.control_border)) }
+}
+
+/// A card's button ([`styled`]) whose click stays with its card, published as `handle`.
+pub fn button(ui: &mut Ui, label: &str, primary: bool, handle: Fixed) -> Response {
+    ui.named(styled(label, primary), handle.into())
 }
 
 /// A determinate (`Some`) or running (`None`) progress bar.
@@ -151,7 +160,7 @@ pub fn progress(ui: &mut Ui, fraction: Option<f64>, width: f32) -> Response {
             ui.ctx().request_repaint();
         }
     }
-    scenario::publish_rect("progress", r);
+    scenario::publish_rect(Fixed::Progress, r);
     resp
 }
 
@@ -184,7 +193,7 @@ impl Player {
 /// A video player's controls for a phase (radians): play or pause, a timeline over one period
 /// that seeks (and pauses) when dragged, and the speed. Handles `{handle}:play`, `{handle}` (the
 /// timeline) and `{handle}:speed`.
-pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: &str) {
+pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed) {
     use std::f64::consts::TAU;
     let t = Tokens::get();
     // Play / pause.
@@ -199,7 +208,7 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: &str) {
         t.icon,
         t.accent,
     );
-    scenario::publish_target(format_args!("{handle}:play"), r);
+    scenario::publish_target(Handle::Part(handle, Part::Play), r);
     let tip = if player.playing { "Pause" } else { "Play" };
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
     if resp.on_hover_text(tip).clicked() {
@@ -223,12 +232,12 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: &str) {
     }
     ui.label(egui::RichText::new(format!("ωt {:>3.0}°", phase.rem_euclid(TAU).to_degrees())).size(t.font_small).color(t.text_dim).monospace());
     // Speed.
-    let r = egui::ComboBox::from_id_salt((handle, "speed")).width(52.0).selected_text(format!("{}×", player.speed)).show_ui(ui, |ui| {
+    let r = egui::ComboBox::from_id_salt((handle.id(), "speed")).width(52.0).selected_text(format!("{}×", player.speed)).show_ui(ui, |ui| {
         for s in Player::SPEEDS {
             ui.selectable_value(&mut player.speed, s, format!("{s}×"));
         }
     });
-    scenario::publish_target(format_args!("{handle}:speed"), r.response.rect);
+    scenario::publish_target(Handle::Part(handle, Part::Speed), r.response.rect);
 }
 
 /// A slider whose track shows on the panels' colours: the track in the controls' border colour,

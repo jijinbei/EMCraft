@@ -11,8 +11,9 @@ use egui::vec2;
 use serde_json::json;
 
 use crate::action::Pref;
+use crate::handle::Fixed;
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, scenario, ui_kit};
+use crate::{Action, Actions, EmcraftApp, UiExt, scenario, ui_kit};
 
 /// A file dialog, asked without blocking: `done` is called with the path chosen, `None` when
 /// cancelled, from any thread.
@@ -222,13 +223,13 @@ fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actio
             ui.label(egui::RichText::new(title).size(t.font_label).strong().color(t.form_ink));
             ui.label(egui::RichText::new("The project file (.emcraft)").size(t.font_small).color(t.text_dim));
             let r = ui.add(egui::TextEdit::singleline(&mut p.text).desired_width(420.0).char_limit(4096));
-            scenario::publish_target("file:path", r.rect);
+            scenario::publish_target(Fixed::FilePath, r.rect);
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
             ui.horizontal(|ui| {
-                ok |= ui_kit::button(ui, if p.purpose == Purpose::Open { "Open" } else { "Save" }, true, true, "file:ok").clicked();
-                cancel = ui_kit::button(ui, "Cancel", false, true, "file:cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
+                ok |= ui_kit::button(ui, if p.purpose == Purpose::Open { "Open" } else { "Save" }, true, Fixed::FileOk).clicked();
+                cancel = ui_kit::button(ui, "Cancel", false, Fixed::FileCancel).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
             });
         });
     });
@@ -247,7 +248,6 @@ fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
         return;
     }
     let t = Tokens::get();
-    let mut answer = None;
     let at = ctx.content_rect().center_top() + vec2(-200.0, 120.0);
     egui::Area::new(egui::Id::new("emcraft_file_confirm")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {
@@ -256,21 +256,19 @@ fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
             ui.label(egui::RichText::new("They are lost otherwise.").size(t.font_small).color(t.text_dim));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui_kit::button(ui, "Save", true, true, "confirm:save").clicked() {
-                    answer = Some(Answer::Save);
+                for (label, primary, handle, a) in [
+                    ("Save", true, Fixed::ConfirmSave, Answer::Save),
+                    ("Don't save", false, Fixed::ConfirmDiscard, Answer::Discard),
+                    ("Cancel", false, Fixed::ConfirmCancel, Answer::Cancel),
+                ] {
+                    ui.act(true, ui_kit::styled(label, primary), handle.into(), "", || Action::File(FileAction::Confirm(a)), out);
                 }
-                if ui_kit::button(ui, "Don't save", false, true, "confirm:discard").clicked() {
-                    answer = Some(Answer::Discard);
-                }
-                if ui_kit::button(ui, "Cancel", false, true, "confirm:cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    answer = Some(Answer::Cancel);
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    out.push(Action::File(FileAction::Confirm(Answer::Cancel)));
                 }
             });
         });
     });
-    if let Some(a) = answer {
-        out.push(Action::File(FileAction::Confirm(a)));
-    }
 }
 
 /// Carries on after "save the changes?".
@@ -306,18 +304,12 @@ pub fn title(app: &EmcraftApp) -> String {
 pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.set_min_width(240.0);
     let busy = app.busy();
-    let item = |ui: &mut egui::Ui, text: &str, keys: &str, handle: &str, enabled: bool| {
-        let r = ui.add_enabled(enabled, egui::Button::new(text).shortcut_text(keys));
-        scenario::publish_target(handle, r.rect);
-        r.clicked()
+    let item = |ui: &mut egui::Ui, out: &mut Actions, text: &str, keys: &str, handle: Fixed, enabled: bool, action: Action| {
+        ui.act(enabled, egui::Button::new(text).shortcut_text(keys), handle.into(), "", || action, out);
     };
     let file = Action::File;
-    if item(ui, "New project", "Ctrl+N", "file:new", !busy) {
-        out.push(file(FileAction::Request(Then::New)));
-    }
-    if item(ui, "Open…", "Ctrl+O", "file:open", !busy) {
-        out.push(file(FileAction::Request(Then::Open)));
-    }
+    item(ui, out, "New project", "Ctrl+N", Fixed::FileNew, !busy, file(FileAction::Request(Then::New)));
+    item(ui, out, "Open…", "Ctrl+O", Fixed::FileOpen, !busy, file(FileAction::Request(Then::Open)));
     let recent = &app.prefs.recent;
     ui.add_enabled_ui(!busy && !recent.is_empty(), |ui| {
         ui.menu_button("Open recent", |ui| {
@@ -340,19 +332,11 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         }
     });
     ui.separator();
-    if item(ui, "Save", "Ctrl+S", "file:save", !busy) {
-        out.push(file(FileAction::Save));
-    }
-    if item(ui, "Save as…", "Ctrl+Shift+S", "file:save_as", !busy) {
-        out.push(file(FileAction::SaveAs));
-    }
+    item(ui, out, "Save", "Ctrl+S", Fixed::FileSave, !busy, file(FileAction::Save));
+    item(ui, out, "Save as…", "Ctrl+Shift+S", Fixed::FileSaveAs, !busy, file(FileAction::SaveAs));
     ui.separator();
-    if item(ui, "Export history as script…", "", "file:export", !app.session.history().is_empty()) {
-        out.push(Action::AskExport);
-    }
-    if item(ui, "Start page", "", "file:start", true) {
-        out.push(Action::SetHome(true));
-    }
+    item(ui, out, "Export history as script…", "", Fixed::FileExport, !app.session.history().is_empty(), Action::AskExport);
+    item(ui, out, "Start page", "", Fixed::FileStart, true, Action::SetHome(true));
 }
 
 /// Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S.

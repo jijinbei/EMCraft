@@ -91,7 +91,7 @@ fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         field.picture.set(key, &emcraft_render::plot::draw(&plot, width));
     }
     let Some(p) = field.picture.get_mut() else { return };
-    let r = picture(ui, p, "picture:field");
+    let r = picture(ui, p, Fixed::PictureField);
     probe_picture(field, ui, &r);
 }
 
@@ -167,9 +167,8 @@ pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut 
         ui.separator();
         plane_choice(app, field, ui);
         ui.separator();
-        let r = ui.selectable_label(field.beside_3d, "Beside 3D").on_hover_text("The model in 3D beside the picture, the plane in it");
-        scenario::publish_target("field:beside3d", r.rect);
-        if r.clicked() {
+        let r = ui.named(egui::Button::selectable(field.beside_3d, "Beside 3D"), Fixed::FieldBeside3d.into());
+        if r.on_hover_text("The model in 3D beside the picture, the plane in it").clicked() {
             field.beside_3d = !field.beside_3d;
         }
     });
@@ -203,7 +202,7 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
             ui.selectable_value(&mut idx, i, label(*f));
         }
     });
-    scenario::publish_target("field:frequency", r.response.rect);
+    scenario::publish_target(Fixed::FieldFrequency, r.response.rect);
     if let Some(f) = freqs.get(idx) {
         field.view.frequency = *f;
     }
@@ -212,8 +211,7 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
 /// The plane, where it cuts, and a button that keeps it in the 3D view.
 pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
-        let r = ui.selectable_label(field.view.plane == p, name);
-        scenario::publish_target(format_args!("field:plane:{}", p.name()), r.rect);
+        let r = ui.named(egui::Button::selectable(field.view.plane == p, name), Handle::FieldPlane(p));
         if r.clicked() && field.view.plane != p {
             field.view.plane = p;
             field.at = None;
@@ -224,7 +222,7 @@ pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
     let mut at = field.at.unwrap_or(span / 2.0);
     let unit = app.session.display().length.symbol();
     let r = crate::ui_kit::slider(ui, &mut at, 0.0..=span, format!("{axis} ({unit})"));
-    scenario::publish_target("field:at", r.rect);
+    scenario::publish_target(Fixed::FieldAt, r.rect);
     // What lies along the slider: the materials (or sections) the plane passes, as a strip under
     // its track.
     let track = Rect::from_min_size(pos2(r.rect.left() + 6.0, r.rect.bottom() - 2.0), vec2(ui.spacing().slider_width - 12.0, 4.0));
@@ -242,12 +240,12 @@ pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
     // Keep this plane in the 3D view (Results), beside the one being moved.
     let here = (field.view.plane, at);
     let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
+    scenario::publish_target(Fixed::FieldKeep, r);
     let t = Tokens::get();
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
     crate::glyphs::paint(ui.painter(), r.shrink(3.0), crate::glyphs::Glyph::KeepPlane, t.icon, t.accent);
-    scenario::publish_target("field:keep", r);
     let kept = field.kept.iter().any(|k| (k.plane, k.at) == here);
     if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !kept && field.kept.len() < MAX_KEPT {
         field.kept.push(crate::state::KeptPlane { plane: here.0, at: here.1, samples: None });
@@ -270,8 +268,8 @@ pub(super) fn kept_planes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egu
                 Plane::E => "E-plane x",
                 Plane::Cross => "cross z",
             };
-            let r = ui.button(egui::RichText::new(format!("{name} = {} {unit}  ✕", emcraft_render::axes::format(*at))).size(t.font_small));
-            scenario::publish_target(format_args!("field:kept:{k}"), r.rect);
+            let chip = egui::Button::new(egui::RichText::new(format!("{name} = {} {unit}  ✕", emcraft_render::axes::format(*at))).size(t.font_small));
+            let r = ui.named(chip, Handle::FieldKept(k));
             if r.on_hover_text("Remove from the 3D view").clicked() {
                 drop = Some(k);
             }
@@ -291,7 +289,7 @@ pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut e
             ui.selectable_value(&mut field.view.component, c, c.label());
         }
     });
-    scenario::publish_target("field:component", r.response.rect);
+    scenario::publish_target(Fixed::FieldComponent, r.response.rect);
     // Arrows of the field coloured; the other stays a click away.
     let now = field.view.component;
     if now != before && now.is_magnetic() != before.is_magnetic() {
@@ -310,5 +308,5 @@ pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut e
         }
     }
     ui.separator();
-    crate::ui_kit::player(ui, &mut field.player, &mut field.view.phase, "field:phase");
+    crate::ui_kit::player(ui, &mut field.player, &mut field.view.phase, Fixed::FieldPhase);
 }

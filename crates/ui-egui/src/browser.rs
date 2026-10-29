@@ -6,6 +6,7 @@
 use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
 
 use crate::glyphs::{self, Glyph};
+use crate::handle::{Fixed, Handle};
 use crate::scene3d::Pick;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, View, scenario};
@@ -282,7 +283,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             t.card(t.panel).inner_margin(egui::Margin::symmetric(6, 6)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_height(ui.available_height());
-                scenario::publish_rect("browser", ui.max_rect());
+                scenario::publish_rect(Fixed::Browser, ui.max_rect());
                 ui.label(egui::RichText::new("BROWSER").size(t.font_small).color(t.text_dim));
                 let tree = tree(app);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -308,7 +309,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                             FontId::proportional(t.font_small),
                             t.text_dim,
                         );
-                        scenario::publish_target(format_args!("fold:{section}"), r);
+                        scenario::publish_target(Handle::Fold(section), r);
                         if resp.clicked() {
                             out.push(Action::Fold((*section).to_owned()));
                         }
@@ -348,7 +349,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 FontId::proportional(t.font_body),
                                 ink,
                             );
-                            scenario::publish_target(format_args!("row:{text}"), rect);
+                            scenario::publish_target(Handle::Row(text), rect);
                             let resp = resp.on_hover_text(text);
                             if resp.clicked() {
                                 out.push(Action::Select { row: Some(key.clone()), pick: r.pick });

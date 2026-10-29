@@ -11,7 +11,13 @@ fn refusal_band(ui: &mut egui::Ui, heading: &str, t: &Tokens, details: impl FnOn
         ui.label(egui::RichText::new(heading).size(t.font_body).strong().color(t.form_error));
         details(ui);
     });
-    scenario::publish_rect("run:error", r.response.rect);
+    scenario::publish_rect(Fixed::RunError, r.response.rect);
+}
+
+/// A finding's way to its step; `true` when taken.
+fn go_to(ui: &mut egui::Ui, step: Step, handle: Handle, out: &mut Actions) -> bool {
+    let label = format!("Go to {}", step.label());
+    ui.act(true, egui::Button::new(label).small(), handle, "", || Action::OpenStep(Some(step)), out).clicked()
 }
 
 /// Run: the preflight's findings and the button that starts the solve.
@@ -21,21 +27,16 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     if pre.blocking.is_empty() && pre.warnings.is_empty() {
         ui_kit::small(ui, "Every step is ready.", t.success);
     }
-    let mut go = None;
+    let mut went = false;
     for (list, color, what) in [(&pre.blocking, t.error, "blocks"), (&pre.warnings, t.warning, "warning")] {
         for (i, (step, text)) in list.iter().enumerate() {
             ui.horizontal_wrapped(|ui| {
                 ui_kit::small(ui, format!("{} · {text}", step.label()), color);
-                let r = ui.small_button(format!("Go to {}", step.label()));
-                scenario::publish_target(format_args!("preflight:{what}:{i}"), r.rect);
-                if r.clicked() {
-                    go = Some(*step);
-                }
+                went |= go_to(ui, *step, Handle::Preflight(what, i), out);
             });
         }
     }
-    if let Some(s) = go {
-        out.push(Action::OpenStep(Some(s)));
+    if went {
         return;
     }
     let solver = f.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
@@ -49,25 +50,19 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
         format!("Run, accepting {} warning(s)", pre.warnings.len())
     };
     let busy = app.busy();
-    if ui_kit::button(ui, &label, true, !busy, "run:start").clicked() {
-        out.push(Action::StartRun);
-    }
+    ui.act(!busy, ui_kit::styled(&label, true), Fixed::RunStart.into(), "", || Action::StartRun, out);
     // Why Run was refused, under the button: each blocking problem with the way to its step,
     // as long as it blocks.
     if f.refused.is_some() && pre.blocking.is_empty() {
         f.refused = None;
     }
-    let mut go = None;
+    let mut went = false;
     if f.refused.is_some() {
         refusal_band(ui, &format!("Run refused: {} problem(s) to fix first", pre.blocking.len()), t, |ui| {
             for (i, (step, text)) in pre.blocking.iter().enumerate() {
                 ui.horizontal_wrapped(|ui| {
                     ui_kit::small(ui, format!("• {} · {text}", step.label()), t.form_error);
-                    let r = ui.small_button(format!("Go to {}", step.label()));
-                    scenario::publish_target(format_args!("run:refused:{i}"), r.rect);
-                    if r.clicked() {
-                        go = Some(*step);
-                    }
+                    went |= go_to(ui, *step, Handle::Refused(i), out);
                 });
             }
         });
@@ -78,8 +73,7 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
             ui_kit::small(ui, e, t.form_error);
         });
     }
-    if let Some(s) = go {
-        out.push(Action::OpenStep(Some(s)));
+    if went {
         return;
     }
     if busy {

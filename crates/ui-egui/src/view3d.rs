@@ -14,10 +14,11 @@ use emcraft_render::view3d::{self, Camera, Projection, StandardView};
 use emcraft_engine::view::{FieldView, Plane};
 
 use crate::glyphs::{self, Glyph};
+use crate::handle::{Fixed, Handle};
 use crate::scene3d::{self, Built, Overlay};
 use crate::state::FieldState;
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, Picture, scenario};
+use crate::{Action, Actions, EmcraftApp, Picture, UiExt, scenario};
 
 /// The most pixels the view is drawn with (beyond, it is drawn smaller and scaled up).
 const MAX_PIXELS: f64 = 2.4e6;
@@ -251,7 +252,7 @@ fn publish_plane(app: &EmcraftApp, cam: &Camera, field: &FieldState, rect: Rect,
     let mut c = [0, 1, 2].map(|i| 0.5 * (lo[i] + hi[i]));
     c[axis] = lo[axis] + frac * (hi[axis] - lo[axis]);
     if let Some(p) = cam.project(c, f64::from(rect.width()), f64::from(rect.height())) {
-        scenario::publish_handle("view3d:plane", rect.min + vec2(p[0] as f32, p[1] as f32));
+        scenario::publish_handle(Fixed::View3dPlane, rect.min + vec2(p[0] as f32, p[1] as f32));
     }
 }
 
@@ -334,8 +335,7 @@ struct Gesture {
 /// Orbit, pan and zoom by the pointer; a click picks what is under it (empty space clears), a
 /// double-click on nothing fits the view.
 fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f64; 3])) -> Gesture {
-    let resp = ui.interact(rect, ui.id().with("view3d"), Sense::click_and_drag());
-    scenario::publish_target("view3d", rect);
+    let resp = ui.hit(rect, Fixed::View3d.into(), Sense::click_and_drag());
     let (shift, middle, scroll) = ui.input(|i| {
         // Wheel steps: lines as they are, points and pages scaled.
         let steps: f32 = i
@@ -472,7 +472,7 @@ fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
     p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
     p.galley(r.min + vec2(10.0, 5.0), g, t.text);
-    scenario::publish_target("view3d:selected", r);
+    scenario::publish_target(Fixed::View3dSelected, r);
 }
 
 /// A field plane's box in the model (m) and the standard view that faces it.
@@ -551,7 +551,7 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
         }
         let r = Rect::from_center_size(tip, vec2(18.0, 18.0));
         let Some(view) = view_from(k, sign) else { continue };
-        let resp = ui.interact(r, ui.id().with(("navigator", k, sign as i32)), Sense::click());
+        let resp = ui.hit(r, Handle::Standard(view), Sense::click());
         let name = format!("{}{}", if sign > 0.0 { "+" } else { "−" }, ["X", "Y", "Z"][k]);
         let hover = resp.hovered();
         if sign > 0.0 {
@@ -561,7 +561,6 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
             p.circle_filled(tip, 7.0, t.panel);
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
-        scenario::publish_target(format_args!("view3d:std:{}", view.name()), r);
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.name()));
         if resp.on_hover_text(format!("View from {name} ({})", view.name())).clicked() {
             clicked = Some(view);
@@ -577,23 +576,23 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
 fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing: Option<([f64; 3], [f64; 3], StandardView)>, out: &mut Actions) {
     let t = Tokens::get();
     let ortho = v.camera.projection == Projection::Orthographic;
-    let mut items: Vec<(Glyph, &str, &str)> = vec![
-        (Glyph::Fit, "view3d:fit", "Fit the model to the view (double-click the view)"),
-        (Glyph::Home, "view3d:std:iso", "Home view (isometric)"),
+    let mut items: Vec<(Glyph, Handle, &str)> = vec![
+        (Glyph::Fit, Fixed::View3dFit.into(), "Fit the model to the view (double-click the view)"),
+        (Glyph::Home, Handle::Standard(StandardView::Iso), "Home view (isometric)"),
     ];
     if facing.is_some() {
-        items.push((Glyph::Lookat, "view3d:face", "Face the field's plane"));
+        items.push((Glyph::Lookat, Fixed::View3dFace.into(), "Face the field's plane"));
         // The field's phase, played like a video.
         items.push(if playing {
-            (Glyph::Pause, "view3d:play", "Pause the field's animation")
+            (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
         } else {
-            (Glyph::Play, "view3d:play", "Play the field's animation")
+            (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
         });
     }
     items.push(if ortho {
-        (Glyph::Orthographic, "view3d:projection", "Orthographic — click for perspective")
+        (Glyph::Orthographic, Fixed::View3dProjection.into(), "Orthographic — click for perspective")
     } else {
-        (Glyph::Perspective, "view3d:projection", "Perspective — click for orthographic")
+        (Glyph::Perspective, Fixed::View3dProjection.into(), "Perspective — click for orthographic")
     });
     let (size, pitch) = (28.0, 32.0);
     let width = pitch * items.len() as f32 + 6.0;
@@ -604,20 +603,19 @@ fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing:
     p.rect_stroke(bar, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     for (i, (glyph, handle, tip)) in items.into_iter().enumerate() {
         let r = Rect::from_center_size(pos2(bar.left() + 3.0 + pitch * (i as f32 + 0.5), bar.center().y), vec2(size, size));
-        let resp = ui.interact(r, ui.id().with(handle), Sense::click());
+        let resp = ui.hit(r, handle, Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
         if resp.hovered() {
             p.rect_filled(r, 5.0, t.hover);
         }
         let ink = if near || resp.hovered() { t.text } else { t.text.gamma_multiply(0.7) };
         glyphs::paint(&p, r.shrink(4.0), glyph, ink, t.accent);
-        scenario::publish_target(handle, r);
         if resp.on_hover_text(tip).clicked() {
             match handle {
-                "view3d:fit" => v.fit_next = true,
-                "view3d:std:iso" => out.push(Action::StandardView(StandardView::Iso)),
-                "view3d:play" => out.push(Action::SetPlaying(!playing)),
-                "view3d:face" => {
+                Handle::Fixed(Fixed::View3dFit) => v.fit_next = true,
+                Handle::Standard(side) => out.push(Action::StandardView(side)),
+                Handle::Fixed(Fixed::View3dPlay) => out.push(Action::SetPlaying(!playing)),
+                Handle::Fixed(Fixed::View3dFace) => {
                     if let Some((lo, hi, side)) = facing {
                         v.camera.standard(side);
                         v.camera.fit(lo, hi, (rect.width() / rect.height().max(1.0)) as f64);

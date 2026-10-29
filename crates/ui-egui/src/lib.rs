@@ -44,6 +44,7 @@ pub mod dialog_ui;
 pub mod dialogs;
 pub mod files;
 pub mod glyphs;
+pub mod handle;
 pub mod home;
 mod messages;
 pub mod picture;
@@ -57,6 +58,7 @@ pub mod state;
 mod status;
 pub mod steps;
 pub mod theme;
+pub mod ui_ext;
 pub mod ui_kit;
 pub mod view;
 pub mod view3d;
@@ -72,9 +74,11 @@ use serde_json::{Value, json};
 
 pub use action::{Action, Actions};
 pub use control::ControlRequest;
+pub use handle::{Fixed, Handle};
 pub use messages::Message;
 pub use picture::Picture;
 pub use state::FieldState;
+pub use ui_ext::UiExt;
 pub use view::View;
 
 pub struct EmcraftApp {

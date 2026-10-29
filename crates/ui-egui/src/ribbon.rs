@@ -9,8 +9,9 @@ use serde_json::Value;
 
 use crate::commands::{button_label, glyph};
 use crate::glyphs::{self, Glyph};
+use crate::handle::{Fixed, Handle};
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, scenario};
+use crate::{Action, Actions, EmcraftApp, UiExt, scenario};
 
 /// A ribbon tab: its id is its title (the control channel's `tab:<id>` handles, `ui.set
 /// {"tab": id}`).
@@ -97,66 +98,57 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         ui,
         |ui| {
             let r = ui.max_rect();
-            let p = ui.painter();
             // The start page's house, then the wordmark.
             let house = Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(26.0, 26.0));
-            let home = ui.interact(house, ui.id().with("bar:start"), Sense::click());
+            let home = ui.hit(house, Fixed::BarStart.into(), Sense::click());
+            let p = ui.painter();
             if home.hovered() || app.home.open {
                 p.rect_filled(house, t.radius_sm, Color32::from_white_alpha(if app.home.open { 40 } else { 28 }));
             }
             glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
-            scenario::publish_target("bar:start", house);
             if home.on_hover_text("Start page").clicked() {
                 out.push(Action::SetHome(!app.home.open));
             }
             let p = ui.painter();
             p.text(pos2(r.left() + 40.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
             let mut x = r.left() + 120.0;
-            let bar_button = |ui: &mut egui::Ui, x: &mut f32, text: &str, handle: &str| {
+            let bar_button = |ui: &mut egui::Ui, x: &mut f32, text: &str, handle: Fixed| {
                 let g = ui.painter().layout_no_wrap(text.to_owned(), FontId::proportional(t.font_button), t.app_bar_text);
                 let br = Rect::from_min_size(pos2(*x, r.top() + 4.0), vec2(g.size().x + 20.0, r.height() - 8.0));
-                let resp = ui.interact(br, ui.id().with(("bar", handle)), Sense::click());
+                let resp = ui.hit(br, handle.into(), Sense::click());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, text));
                 if resp.hovered() {
                     ui.painter().rect_filled(br, t.radius_sm, Color32::from_white_alpha(28));
                 }
                 ui.painter().galley(pos2(br.left() + 10.0, br.center().y - g.size().y / 2.0), g, t.app_bar_text);
-                scenario::publish_target(handle, br);
                 *x = br.right() + 4.0;
                 resp
             };
             let busy = app.busy();
-            let file = bar_button(ui, &mut x, "File", "menu:file");
+            let file = bar_button(ui, &mut x, "File", Fixed::MenuFile);
             egui::Popup::menu(&file).show(|ui| crate::files::menu(app, ui, out));
-            let edit = bar_button(ui, &mut x, "Edit", "menu:edit");
+            let edit = bar_button(ui, &mut x, "Edit", Fixed::MenuEdit);
             egui::Popup::menu(&edit).show(|ui| {
                 ui.set_min_width(200.0);
                 let (u, r) = (app.session.undo().len(), app.session.redo().len());
-                let undo = ui.add_enabled(u > 0 && !busy, egui::Button::new(format!("Undo  ({u})")).shortcut_text("Ctrl+Z"));
-                scenario::publish_target("edit:undo", undo.rect);
-                if undo.clicked() {
-                    out.push(Action::Undo);
-                }
-                let redo = ui.add_enabled(r > 0 && !busy, egui::Button::new(format!("Redo  ({r})")).shortcut_text("Ctrl+Y"));
-                scenario::publish_target("edit:redo", redo.rect);
-                if redo.clicked() {
-                    out.push(Action::Redo);
-                }
+                let undo = egui::Button::new(format!("Undo  ({u})")).shortcut_text("Ctrl+Z");
+                ui.act(u > 0 && !busy, undo, Fixed::EditUndo.into(), "", || Action::Undo, out);
+                let redo = egui::Button::new(format!("Redo  ({r})")).shortcut_text("Ctrl+Y");
+                ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), "", || Action::Redo, out);
             });
             // The project's name in the middle, a dot while it has unsaved changes.
             if !app.home.open {
                 let title = crate::files::title(app);
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, &title, FontId::proportional(t.font_body), t.app_bar_text);
-                scenario::publish_rect("bar:title", Rect::from_center_size(r.center(), vec2(200.0, r.height())));
+                scenario::publish_rect(Fixed::BarTitle, Rect::from_center_size(r.center(), vec2(200.0, r.height())));
             }
             // At the right: the settings.
             let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(26.0, 26.0));
-            let resp = ui.interact(gear, ui.id().with("bar:settings"), Sense::click());
+            let resp = ui.hit(gear, Fixed::BarSettings.into(), Sense::click());
             if resp.hovered() {
                 ui.painter().rect_filled(gear, t.radius_sm, Color32::from_white_alpha(28));
             }
             glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
-            scenario::publish_target("bar:settings", gear);
             let resp = resp.on_hover_text("Settings");
             egui::Popup::menu(&resp).show(|ui| {
                 ui.set_min_width(300.0);
@@ -187,7 +179,7 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
         .show(ui, |ui| {
             let card = ui.max_rect();
             ui.painter().add(t.card(t.toolbar).paint(card));
-            scenario::publish_rect("ribbon", card);
+            scenario::publish_rect(Fixed::Ribbon, card);
             let row = Rect::from_min_size(card.min, vec2(card.width(), TAB_ROW_HEIGHT));
             tabs(app, ui, row, out);
             search_field(search, ui, row, out);
@@ -206,7 +198,7 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                     let br = Rect::from_min_size(pos2(x, top), vec2(w, BUTTON_HEIGHT));
                     let enabled = !busy;
                     let active = app.dialog.as_ref().is_some_and(|d| d.command.id == id);
-                    let resp = ui.interact(br, ui.id().with(("ribbon", id)), if enabled { Sense::click() } else { Sense::hover() });
+                    let resp = ui.hit(br, Handle::Toolbar(id), if enabled { Sense::click() } else { Sense::hover() });
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
                     if active {
                         ui.painter().rect_filled(br, t.radius_sm, accent[2]);
@@ -224,7 +216,6 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                     let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
                     ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
-                    scenario::publish_target(format_args!("toolbar:{id}"), br);
                     if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked() {
                         out.push(Action::dialog(id));
                     }
@@ -233,7 +224,7 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                 // The panel's name under its buttons, and a divider after it.
                 let pr = Rect::from_min_max(pos2(x0, top + BUTTON_HEIGHT), pos2(x, top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT));
                 ui.painter().text(pr.center(), Align2::CENTER_CENTER, panel, FontId::proportional(10.5), t.text_dim);
-                scenario::publish_rect(format_args!("panel:{}:{panel}", tab.id()), pr);
+                scenario::publish_rect(Handle::Panel(tab, panel), pr);
                 x += 6.0;
                 ui.painter().vline(x, (top + 4.0)..=(top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT - 2.0), Stroke::new(1.0, t.border));
                 x += 7.0;
@@ -248,7 +239,7 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
         let name = tab.id();
         let g = ui.painter().layout_no_wrap(name.to_owned(), FontId::proportional(t.font_button), t.text);
         let tr = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(g.size().x + 24.0, TAB_ROW_HEIGHT - 8.0));
-        let resp = ui.interact(tr, ui.id().with(("tab", name)), Sense::click());
+        let resp = ui.hit(tr, Handle::Tab(tab), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
         let active = app.tab == tab;
         let accent = t.tab(tab);
@@ -262,7 +253,6 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
         ui.painter().rect_filled(tr, 4, fill);
         let ink = if active { accent[1] } else { t.text };
         ui.painter().text(tr.center(), Align2::CENTER_CENTER, name, FontId::proportional(t.font_button), ink);
-        scenario::publish_target(format_args!("tab:{name}"), tr);
         if resp.clicked() {
             out.push(Action::SetTab(tab));
         }
@@ -336,7 +326,7 @@ fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, out: &mut Act
         .desired_width(r.width())
         .margin(egui::Margin::symmetric(8, 3));
     let resp = field.add(edit);
-    scenario::publish_target("search:field", resp.rect);
+    scenario::publish_target(Fixed::SearchField, resp.rect);
     if search.focus {
         resp.request_focus();
         search.focus = false;
@@ -425,6 +415,7 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
             for (i, c) in list.iter().enumerate() {
                 let selected = i == search.selected;
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click());
+                scenario::publish_target(Handle::SearchRow(c.id), r);
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, c.label));
                 if selected || resp.hovered() {
                     ui.painter().rect_filled(r, t.radius_sm, if selected { t.accent_soft } else { t.hover });
@@ -444,14 +435,13 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
                     t.form_ink,
                 );
                 ui.painter().text(pos2(r.left() + 38.0, r.top() + 27.0), Align2::LEFT_CENTER, c.id, FontId::monospace(t.font_small), t.text_dim);
-                scenario::publish_target(format_args!("search:row:{}", c.id), r);
                 if resp.clicked() {
                     pick = Some(c.id);
                 }
             }
         });
     });
-    scenario::publish_rect("search:popup", resp.response.rect);
+    scenario::publish_rect(Fixed::SearchPopup, resp.response.rect);
     if let Some(id) = pick {
         out.extend(choose(search, Some(id)));
     } else if resp.response.clicked_elsewhere() && !ctx.memory(|m| m.has_focus(egui::Id::new("emcraft_search"))) {
@@ -475,10 +465,10 @@ pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::
                 egui::RichText::new(format!("{} commands that rebuild the model", app.session.history().len())).size(t.font_small).color(t.text_dim),
             );
             let r = ui.add(egui::TextEdit::singleline(path).desired_width(380.0).char_limit(4096));
-            scenario::publish_target("export:path", r.rect);
+            scenario::publish_target(Fixed::ExportPath, r.rect);
             ui.horizontal(|ui| {
-                ok = crate::ui_kit::button(ui, "Export", true, true, "export:ok").clicked();
-                cancel = crate::ui_kit::button(ui, "Cancel", false, true, "export:cancel").clicked();
+                ok = crate::ui_kit::button(ui, "Export", true, Fixed::ExportOk).clicked();
+                cancel = crate::ui_kit::button(ui, "Cancel", false, Fixed::ExportCancel).clicked();
             });
         });
     });

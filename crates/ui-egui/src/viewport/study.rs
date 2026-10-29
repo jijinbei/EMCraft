@@ -53,7 +53,7 @@ pub(super) fn study(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
             crate::ui_kit::small(ui, "Show", t.text_dim);
             for p in &parameters {
                 let on = state.parameter.as_ref().unwrap_or(first) == p;
-                if pill(ui, &format!("|{}|", p.to_uppercase()), on, format_args!("study:parameter:{p}"), 10, PillSize::Small) && !on {
+                if ui.named(pill(&format!("|{}|", p.to_uppercase()), on, 10, PillSize::Small), Handle::StudyParameter(p)).clicked() && !on {
                     state.parameter = Some(p.clone());
                     state.chart.clear();
                 }
@@ -66,7 +66,7 @@ pub(super) fn study(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
     let parameter = state.parameter.clone().filter(|p| parameters.contains(p));
     let slice = state.slice.clone();
     let view = (parameter.clone(), slice.clone());
-    let drawn = chart_view(ui, &mut state.chart, app.revision, view, Height::new(0.6, 240.0, 640.0), "chart:study", || {
+    let drawn = chart_view(ui, &mut state.chart, app.revision, view, Height::new(0.6, 240.0, 640.0), Fixed::ChartStudy, || {
         emcraft_engine::study::chart(study, parameter.as_deref(), &slice)
     });
     if let Err(e) = drawn {
@@ -85,7 +85,7 @@ fn slice_picker<K: PartialEq>(ui: &mut egui::Ui, study: &Study, slice: &mut Slic
         crate::ui_kit::small(ui, "Along", t.text_dim);
         for (k, n) in study.variables.iter().enumerate() {
             let on = slice.free == k;
-            if pill(ui, n, on, format_args!("study:along:{n}"), 10, PillSize::Small) && !on {
+            if ui.named(pill(n, on, 10, PillSize::Small), Handle::StudyAlong(n)).clicked() && !on {
                 slice.free = k;
                 changed = true;
             }
@@ -100,7 +100,7 @@ fn slice_picker<K: PartialEq>(ui: &mut egui::Ui, study: &Study, slice: &mut Slic
             crate::ui_kit::small(ui, format!("{n} at"), t.text_dim);
             for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
                 let on = slice.at.get(k) == Some(&i);
-                if pill(ui, &short(*v), on, format_args!("study:at:{n}:{i}"), 10, PillSize::Small)
+                if ui.named(pill(&short(*v), on, 10, PillSize::Small), Handle::StudyAt(n, i)).clicked()
                     && !on
                     && let Some(slot) = slice.at.get_mut(k)
                 {

@@ -29,19 +29,13 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     let at = band(&app.session).map(|(_, z)| format!(" at {} {fu}", fmt(z))).unwrap_or_default();
     ui_kit::caption(ui, &format!("Each port's modes{at}: propagation, effective permittivity, impedance (seconds, no full solve)."));
     let busy = app.busy();
-    if ui_kit::button(ui, "Preview port modes", true, ready && !busy, "excitation:preview")
-        .on_hover_text(if ready { "" } else { "needs a mesh (step 5)" })
-        .clicked()
-    {
-        out.push(Action::PreviewPortModes);
-    }
+    let hint = if ready { "" } else { "needs a mesh (step 5)" };
+    ui.act(ready && !busy, ui_kit::styled("Preview port modes", true), Fixed::ExcitationPreview.into(), hint, || Action::PreviewPortModes, out);
     let Some(reply) = app.replies.port_modes.as_ref() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
     ui_kit::small(ui, format!("at {} {fu}", fmt(f)), t.text_dim);
     mode_table(app, ui, reply, t, out);
-    if ui_kit::button(ui, "Show the mode patterns", false, true, "excitation:patterns").clicked() {
-        out.push(Action::SetView(View::PortModes));
-    }
+    ui.act(true, ui_kit::styled("Show the mode patterns", false), Fixed::ExcitationPatterns.into(), "", || Action::SetView(View::PortModes), out);
 }
 
 /// The port-mode preview: a row per mode. Hovering a row lights its port in the 3D view;
@@ -87,9 +81,8 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, ou
                 }
             });
             let rect = Rect::from_min_size(r.response.rect.min, vec2(w, r.response.rect.height()));
-            let resp = ui.interact(rect, ui.id().with(("port_mode_row", row)), Sense::click());
+            let resp = ui.hit(rect, Handle::PortModeRow(row), Sense::click());
             let resp = resp.on_hover_text("Lights this port in the 3D view; click for the mode in the Port modes view");
-            scenario::publish_target(format_args!("portmode:row:{row}"), rect);
             let focused = app.workflow.mode_focus.as_ref().is_some_and(|f| f.port == name && f.mode == k);
             let fill = if resp.hovered() {
                 t.hover

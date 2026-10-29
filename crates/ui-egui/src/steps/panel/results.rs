@@ -18,9 +18,7 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
     }
     ui_kit::section(ui, "Checks");
     let busy = app.busy();
-    if ui_kit::button(ui, "Passivity and reciprocity", false, !busy, "results:check").clicked() {
-        out.push(Action::CheckResults);
-    }
+    ui.act(!busy, ui_kit::styled("Passivity and reciprocity", false), Fixed::ResultsCheck.into(), "", || Action::CheckResults, out);
     if let Some((_, c)) = &app.workflow.check {
         let n = |k: &str| c.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
         let passive = c.get("passive").and_then(Value::as_bool) == Some(true);
@@ -36,17 +34,15 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
         f.format = "ri".into();
     }
     let ep = f.error("touchstone").map(str::to_owned);
-    field(ui, "path", &mut f.touchstone, "", ep.as_deref(), "results:touchstone:path");
+    field(ui, "path", &mut f.touchstone, "", ep.as_deref(), Fixed::ResultsTouchstonePath);
     ui.horizontal(|ui| {
         ui.add_space(t.form_label_width + 6.0);
         for (v, label) in [("ri", "real, imaginary"), ("ma", "magnitude, angle")] {
             let r = ui.radio_value(&mut f.format, v.to_owned(), egui::RichText::new(label).size(t.font_small));
-            scenario::publish_target(format_args!("results:touchstone:{v}"), r.rect);
+            scenario::publish_target(Handle::Touchstone(v), r.rect);
         }
     });
-    if ui_kit::button(ui, "Export", true, !busy, "results:touchstone").clicked() {
-        out.push(Action::ExportTouchstone);
-    }
+    ui.act(!busy, ui_kit::styled("Export", true), Fixed::ResultsTouchstone.into(), "", || Action::ExportTouchstone, out);
 }
 
 /// Writes the Touchstone file the Results step's fields name.

@@ -24,7 +24,7 @@ pub(super) fn tdr(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
     }
     let session = &app.session;
     let view = (tdr.port.clone(), tdr.mode);
-    let drawn = chart_view(ui, &mut tdr.chart, app.revision, view, Height::new(0.8, 260.0, 700.0), "chart:tdr", || {
+    let drawn = chart_view(ui, &mut tdr.chart, app.revision, view, Height::new(0.8, 260.0, 700.0), Fixed::ChartTdr, || {
         emcraft_engine::results_tdr_chart(session, &emcraft_engine::Params::new(&params, session.display()))
     });
     if let Err(e) = drawn {
@@ -49,11 +49,10 @@ fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrState, ui: &mut egui::U
                 }
             }
         });
-        scenario::publish_target("tdr:port", r.response.rect);
+        scenario::publish_target(Fixed::TdrPort, r.response.rect);
         ui.separator();
         for (mode, label, tip) in MODES {
-            let r = ui.selectable_label(tdr.mode == mode, label).on_hover_text(tip);
-            scenario::publish_target(format_args!("tdr:mode:{}", mode.map_or("auto", Mode::name)), r.rect);
+            let r = ui.named(egui::Button::selectable(tdr.mode == mode, label), Handle::TdrMode(mode.map_or("auto", Mode::name))).on_hover_text(tip);
             if r.clicked() {
                 tdr.mode = mode;
             }

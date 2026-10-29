@@ -6,8 +6,9 @@ pub(super) fn sparameters(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, o
     let freqs = app.frequencies();
     let session = &app.session;
     let height = Height::new(0.62, 260.0, 700.0);
-    let drawn =
-        chart_view(ui, &mut st.views.chart, app.revision, ChartView::SParameters, height, "chart:sparameters", || view::sparameter_chart(session));
+    let drawn = chart_view(ui, &mut st.views.chart, app.revision, ChartView::SParameters, height, Fixed::ChartSParameters, || {
+        view::sparameter_chart(session)
+    });
     let (r, size) = match drawn {
         Ok(shown) => shown,
         Err(e) => return empty(ui, &e),

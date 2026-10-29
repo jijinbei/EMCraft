@@ -10,10 +10,11 @@
 use egui::{Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::{Value, json};
 
+use crate::handle::{Fixed, Handle};
 use crate::ribbon::RibbonTab;
 use crate::scene3d::Overlay;
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, UiError, View, dialogs, scenario, ui_kit};
+use crate::{Action, Actions, EmcraftApp, UiError, UiExt, View, dialogs, scenario, ui_kit};
 
 pub use emcraft_engine::workflow::{Check, Status, Step, StepState};
 

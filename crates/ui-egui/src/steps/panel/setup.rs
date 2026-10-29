@@ -8,7 +8,7 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
     let mut solver = f.solver.unwrap_or(inferred);
     for s in Solver::ALL {
         let r = ui.radio_value(&mut solver, s, egui::RichText::new(s.label()).size(t.font_small));
-        scenario::publish_target(format_args!("setup:solver:{}", s.id()), r.rect);
+        scenario::publish_target(Handle::Solver(s), r.rect);
     }
     if solver != f.solver.unwrap_or(inferred) || f.solver.is_some() {
         f.solver = Some(solver);
@@ -29,22 +29,22 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
             let ep = e(f, "points");
-            field(ui, "points", &mut f.points, "", ep.as_deref(), "setup:points");
+            field(ui, "points", &mut f.points, "", ep.as_deref(), Fixed::SetupPoints);
         }
         Solver::Eigenmodes => {
             let ec = e(f, "count");
-            field(ui, "modes", &mut f.count, "", ec.as_deref(), "setup:count");
+            field(ui, "modes", &mut f.count, "", ec.as_deref(), Fixed::SetupCount);
             let ef = e(f, "frequency");
-            field(ui, "near", &mut f.frequency, fu, ef.as_deref(), "setup:frequency");
+            field(ui, "near", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
         Solver::Radiation => {
             let ef = e(f, "frequency");
-            field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), "setup:frequency");
+            field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
     }
     if solver != Solver::TimeDomain {
         let eo = e(f, "order");
-        field(ui, "order", &mut f.order, "", eo.as_deref(), "setup:order");
+        field(ui, "order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
     }
     device(app, ui, solver, t, out);
     ui_kit::caption(ui, "Run (step 7) starts this solve after checking the model.");
@@ -77,7 +77,8 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
     let mut chosen: Option<(String, String)> = None;
     ui_kit::row(ui, "device", false, |ui| {
         for (name, available, precisions, problem) in &devices {
-            let r = ui.add_enabled(*available && !busy, egui::RadioButton::new(current == name, egui::RichText::new(name).size(t.font_small)));
+            let radio = egui::RadioButton::new(current == name, egui::RichText::new(name).size(t.font_small));
+            let r = ui.named_enabled(*available && !busy, radio, Handle::Device(name));
             let r = match (available, problem) {
                 (false, Some(p)) => r.on_disabled_hover_text(format!("{name} cannot run here: {p}")),
                 (false, None) => r.on_disabled_hover_text(format!("{name} cannot run here")),
@@ -87,7 +88,6 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
                     _ => "the GPU's kernels on the CPU (to check them without a GPU)",
                 }),
             };
-            scenario::publish_target(format_args!("setup:device:{name}"), r.rect);
             if r.clicked() && current != name {
                 // The precision set so far where the device runs it, else its first.
                 let p = if precisions.iter().any(|p| p == precision) { Some(precision.to_owned()) } else { precisions.first().cloned() };
@@ -104,9 +104,8 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
         for p in ["single", "double"] {
             let on = if current == "cpu" { p == "double" } else { precision == p };
             let enabled = current != "cpu" && runs.iter().any(|x| x == p) && !busy;
-            let r = ui.add_enabled(enabled, egui::RadioButton::new(on, egui::RichText::new(p).size(t.font_small)));
+            let r = ui.named_enabled(enabled, egui::RadioButton::new(on, egui::RichText::new(p).size(t.font_small)), Handle::Precision(p));
             let r = r.on_disabled_hover_text(if current == "cpu" { "the CPU's threads run in double" } else { "this device does not run it" });
-            scenario::publish_target(format_args!("setup:precision:{p}"), r.rect);
             if r.clicked() && !on {
                 chosen = Some((current.to_owned(), p.to_owned()));
             }
@@ -178,7 +177,7 @@ fn band_diagram(app: &EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tokens)
     let pad = 0.04 * (hi - lo).max(span);
     let (lo, hi) = (lo - pad, hi + pad);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover());
-    scenario::publish_target("setup:band", rect);
+    scenario::publish_target(Fixed::SetupBand, rect);
     let p = ui.painter_at(rect);
     let (left, right) = (rect.left() + 4.0, rect.right() - 4.0);
     let x = |f: f64| left + (((f - lo) / (hi - lo)) as f32).clamp(0.0, 1.0) * (right - left);

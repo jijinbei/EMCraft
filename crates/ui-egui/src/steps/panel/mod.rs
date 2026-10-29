@@ -32,7 +32,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
             t.card(t.panel).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 22.0);
-                scenario::publish_rect("step_panel", ui.max_rect());
+                scenario::publish_rect(Fixed::StepPanel, ui.max_rect());
                 header(ui, &state, t);
                 let dialog_h = if dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
@@ -71,25 +71,18 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
         ui.add_space(6.0);
         return;
     }
-    let mut chosen = None;
     for (i, m) in s.messages.iter().enumerate() {
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(&m.text).size(t.font_small).color(status_color(s.status, t)));
             // A fix that only leads back to this step is left out.
             let here = m.command.as_deref().is_some_and(|c| c.starts_with("solve.") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
-                let r = ui.small_button(fix_label(c)).on_hover_text(format!("{c}: {}", crate::label(c)));
-                scenario::publish_target(format_args!("step:fix:{i}"), r.rect);
-                if r.clicked() {
-                    chosen = Some(c.clone());
-                }
+                let hint = format!("{c}: {}", crate::label(c));
+                ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), &hint, || Action::Fix(c.clone()), out);
             }
         });
     }
     ui.add_space(6.0);
-    if let Some(c) = chosen {
-        out.push(Action::Fix(c));
-    }
 }
 
 fn fix_label(command: &str) -> String {
@@ -101,7 +94,7 @@ fn fix_label(command: &str) -> String {
 }
 
 /// A one-line text field with its error under it; `true` when Enter was pressed in it.
-pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: &str) -> bool {
+pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: Fixed) -> bool {
     let t = Tokens::get();
     let mut enter = false;
     ui_kit::row(ui, label, false, |ui| {
@@ -109,8 +102,7 @@ pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &st
         if error.is_some() {
             edit = edit.background_color(t.form_error_fill).text_color(t.form_error);
         }
-        let r = ui.add(edit);
-        scenario::publish_target(handle, r.rect);
+        let r = ui.named(edit, handle.into());
         enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if !unit.is_empty() {
             ui_kit::small(ui, unit, t.text_dim);

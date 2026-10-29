@@ -32,21 +32,17 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
     ui.add_space(t.space_8);
     heading(ui, "SAVE");
     ui.horizontal(|ui| {
-        let r = ui.button("Picture…").on_hover_text("This picture as a PNG (view.field)");
-        scenario::publish_target("field:save:picture", r.rect);
-        if r.clicked() {
-            out.push(Action::dialog_with("view.field", export_params(app, field, "field.png")));
-        }
-        let r = ui.button("Video…").on_hover_text("A period of this view as a looping animated PNG (view.animation)");
-        scenario::publish_target("field:save:video", r.rect);
-        if r.clicked() {
+        let picture = || Action::dialog_with("view.field", export_params(app, field, "field.png"));
+        ui.action_button(Fixed::FieldSavePicture.into(), "Picture…", "This picture as a PNG (view.field)", picture, out);
+        let video = || {
             let mut p = export_params(app, field, "field-animation.png");
             if let Some(o) = p.as_object_mut() {
                 o.remove("phase");
                 o.insert("frames".into(), json!(24));
             }
-            out.push(Action::dialog_with("view.animation", p));
-        }
+            Action::dialog_with("view.animation", p)
+        };
+        ui.action_button(Fixed::FieldSaveVideo.into(), "Video…", "A period of this view as a looping animated PNG (view.animation)", video, out);
     });
 }
 
@@ -145,7 +141,7 @@ fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     let Some((span, axis_name)) = plane_span_of(app, field.view.plane) else { return };
     let size = [hi.x - lo.x, hi.y - lo.y, hi.z - lo.z].map(|s| s.max(1e-12));
     let (rect, resp) = ui.allocate_exact_size(vec2(SIDE - 8.0, 120.0), Sense::click_and_drag());
-    scenario::publish_target("field:locator", rect);
+    scenario::publish_target(Fixed::FieldLocator, rect);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, t.radius_sm, t.panel);
     // Oblique projection: z → right, y → up, x → up-right at a third.
@@ -240,7 +236,7 @@ fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         .collect();
     let (Some(f0), Some(f1)) = (points.first().map(|p| p.0), points.last().map(|p| p.0)) else { return };
     let (rect, resp) = ui.allocate_exact_size(vec2(SIDE - 8.0, 64.0), Sense::click());
-    scenario::publish_target("field:spark", rect);
+    scenario::publish_target(Fixed::FieldSpark, rect);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, t.radius_sm, t.panel);
     let plot = rect.shrink2(vec2(8.0, 8.0));
