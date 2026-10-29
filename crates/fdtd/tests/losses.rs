@@ -83,28 +83,47 @@ fn magnetic_losses_match_the_cascade_of_their_magnetic_conductivity() {
     assert!(s < 0.15 && mag < 1.2e-2, "{s:e} {mag:e}");
 }
 
-#[test]
-fn finite_conductivity_walls_attenuate_by_the_te10_conductor_loss() {
-    // 100 mm of empty guide, walls of 1e6 S/m: α_c = 0.08–0.07 Np/m over the band.
+/// The walls' attenuation over the TE10 conductor loss at each of `FREQS`, less one: 100 mm of
+/// empty guide, walls of 1e6 S/m (α_c = 0.13–0.086 Np/m over the band), the run stopped when
+/// its transforms move by less than `decay`.
+fn wall_errors(cell: f64, decay: f64) -> Vec<f64> {
     let sigma = 1e6;
     let mut m = guide(Vec::new(), vec![Section::new(0.1, "vacuum")]);
     m.set_wall_conductivity(Some(sigma)).unwrap();
-    let r = run(&m, 0.0015, &FREQS);
-    for (i, &f) in FREQS.iter().enumerate() {
-        let alpha = te10_wall_attenuation(A, B, f, sigma, 1.0);
-        let measured = -r.s21[i].norm().ln() / 0.1;
-        // The phase: β of the lossless guide, to the grid's dispersion.
-        let beta = ((2.0 * PI * f / C0).powi(2) - (PI / A).powi(2)).sqrt();
-        let phase = (r.s21[i] * C::from_polar(1.0, beta * 0.1)).arg();
-        eprintln!(
-            "{f:e}: α {measured:.5} against {alpha:.5} ({:+.2} %), phase {phase:.4}, |S11| {:.1e}",
-            100.0 * (measured / alpha - 1.0),
-            r.s11[i].norm()
-        );
-        // Measured +0.9, +0.9 and +0.8 %.
-        assert!((measured / alpha - 1.0).abs() < 0.02, "{f}: {measured} {alpha}");
-        assert!(r.s11[i].norm() < 2e-3);
-    }
+    let r = s_parameters(&m, &Options { decay, ..Options::new(cell) }, &FREQS).unwrap();
+    assert!(r.converged);
+    FREQS
+        .iter()
+        .enumerate()
+        .map(|(i, &f)| {
+            let alpha = te10_wall_attenuation(A, B, f, sigma, 1.0);
+            let measured = -r.s21[i].norm().ln() / 0.1;
+            // The phase: β of the lossless guide, to the grid's dispersion.
+            let beta = ((2.0 * PI * f / C0).powi(2) - (PI / A).powi(2)).sqrt();
+            let phase = (r.s21[i] * C::from_polar(1.0, beta * 0.1)).arg();
+            eprintln!("{cell} {f:e}: α {measured:.5} against {alpha:.5}, phase {phase:.4}, |S11| {:.1e}", r.s11[i].norm());
+            assert!(r.s11[i].norm() < 2e-3);
+            measured / alpha - 1.0
+        })
+        .collect()
+}
+
+#[test]
+fn finite_conductivity_walls_attenuate_by_the_te10_conductor_loss() {
+    // Measured +0.9, +0.9 and +0.8 % at 1.5 mm. αL is 1e-2: the transforms' settling to 1e-5
+    // leaves |S21| within some 1e-4 (an empty guide's α reads 1e-3 Np/m at 8 GHz), 1 % of it.
+    let errors = wall_errors(0.0015, 1e-5);
+    assert!(errors.iter().all(|e| e.abs() < 0.02), "{errors:?}");
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn wall_losses_converge() {
+    // Settled to 1e-7 (an empty guide's α then reads 5e-5 Np/m): −0.2, +0.8 and +1.7 % at 1.5 mm,
+    // −0.2, +0.14 and +0.38 % at 0.75 mm, second order at 10 and 12 GHz; at 8 GHz, near the
+    // cut-off, the closed form's own first-order error in R_s/η (k/β)² ≈ 1.5e-3 remains.
+    let errors = wall_errors(0.00075, 1e-7);
+    assert!(errors.iter().all(|e| e.abs() < 0.006), "{errors:?}");
 }
 
 #[test]
@@ -178,9 +197,10 @@ fn hostile_losses_are_refused_or_stay_stable() {
     }
 }
 
-/// The largest |S21| error of the lossy slab and the dispersive port at `cell`.
-fn magnitude_errors(cell: f64) -> [f64; 2] {
-    let slab = worst(&run(&lossy_slab(), cell, &FREQS), lossy_slab_exact).1;
+/// The errors at `cell`: the lossy slab's largest |S − S_exact| (complex), the dispersive
+/// port's largest |S21| error.
+fn errors(cell: f64) -> [f64; 2] {
+    let slab = worst(&run(&lossy_slab(), cell, &FREQS), lossy_slab_exact).0;
     let tau = 1.0 / (2.0 * PI * 20e9);
     let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::Debye { delta_eps: 0.6, tau }]).unwrap();
     let r = run(&guide(vec![debye], vec![Section::new(0.03, "debye")]), cell, &FREQS);
@@ -195,10 +215,13 @@ fn magnitude_errors(cell: f64) -> [f64; 2] {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn losses_converge_at_second_order() {
-    // Measured (1.5 mm → 1 mm) 3.8e-3 → 1.7e-3 and 1.38e-2 → 5.97e-3: rate 2.0 and 2.1.
-    let (coarse, fine) = (magnitude_errors(0.0015), magnitude_errors(0.001));
+    // From 1.5 to 1 mm: the slab 5.2e-2 → 2.6e-2 (rate 1.7, not yet asymptotic), the port's
+    // |S21| 1.38e-2 → 5.97e-3 (rate 2.1); from 1 to 0.7 mm 2.6e-2 → 1.2e-2 and 6.0e-3 → 2.9e-3,
+    // rates 2.15 and 2.04. (The slab's |S21|
+    // alone moves between frequencies.)
+    let (coarse, fine) = (errors(0.001), errors(0.0007));
     for (c, f) in coarse.iter().zip(&fine) {
-        let rate = (c / f).ln() / 1.5f64.ln();
+        let rate = (c / f).ln() / (0.001f64 / 0.0007).ln();
         eprintln!("{c:e} → {f:e}: rate {rate:.2}");
         assert!(rate > 1.7, "{c:e} {f:e} rate {rate}");
     }

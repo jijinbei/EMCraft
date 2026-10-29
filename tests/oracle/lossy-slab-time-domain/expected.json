@@ -1,0 +1,12 @@
+{
+ "title": "Lossy dielectric slab in WR-90 by the time-domain solver: εr = 2.2, tan δ = 0.05 matched at 10 GHz, 20 mm",
+ "kind": "theory",
+ "source": "TE10 transmission-line cascade with the complex propagation constant β = √(k0² ε(ω) − (π/a)²) in the slab (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3 and §4.4) for the material the time domain realises, the conductivity σ = 2π·10 GHz·ε0·εr·tan δ: ε(ω) = εr − jσ/(ωε0) = 2.2 (1 − j 0.05·10 GHz/f); ABCD matrices evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_db_8", "quantity": "|S21| at 8 GHz (dB)", "measure": {"step": "td", "pointer": "/points/0/s21/db"}, "value": -3.314357683972246, "tolerance": {"absolute": 0.04}, "reason": "finite integration on 1 mm cells, second order: measured 0.007, 0.015 and 0.021 dB at 8, 10 and 12 GHz (the magnitude converges at second order, `losses_converge_at_second_order`)"},
+  {"id": "s21_db_10", "quantity": "|S21| at 10 GHz (dB), where tan δ is matched", "measure": {"step": "td", "pointer": "/points/1/s21/db"}, "value": -2.079769115857804, "tolerance": {"absolute": 0.04}, "reason": "as at 8 GHz"},
+  {"id": "s21_db_12", "quantity": "|S21| at 12 GHz (dB)", "measure": {"step": "td", "pointer": "/points/2/s21/db"}, "value": -1.9313179339001376, "tolerance": {"absolute": 0.04}, "reason": "as at 8 GHz"},
+  {"id": "s21_deg_10", "quantity": "arg S21 at 10 GHz (degrees)", "measure": {"step": "td", "pointer": "/points/1/s21/deg"}, "value": -137.47880721100626, "tolerance": {"absolute": 2.0}, "reason": "the grid's phase error over the 40 mm guide (λg/30–λg/40 in the slab), second order as for the lossless high-pass filter: measured 1.1°"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "td", "pointer": "/points/1/s11/mag"}, "value": 0.3160453153467295, "tolerance": {"absolute": 0.015}, "reason": "the slab's faces on grid planes; the reflections from its two faces add with the grid's phase error between them (measured 8.8e-3)"}
+ ]
+}

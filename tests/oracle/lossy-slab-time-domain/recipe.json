@@ -1,0 +1,8 @@
+[
+ {"command": "model.material.create", "params": {"name": "lossy", "eps_r": 2.2, "loss_tangent": 0.05}},
+ {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
+   {"length": 10, "material": "vacuum"}, {"length": 20, "material": "lossy"}, {"length": 10, "material": "vacuum"}]}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}},
+ {"command": "solve.time_domain", "params": {"frequencies": [8, 10, 12], "cell": 1}, "id": "td"}
+]
