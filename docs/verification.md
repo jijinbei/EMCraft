@@ -87,7 +87,17 @@ result is frozen so it cannot drift.
    to 1e-11): the passes settle within the curved surface's geometric floor of about 1e-4
    (oracle `adaptive-post`); the Boolean iris against mode matching: from 4 mm to |S11| within
    6e-4 in six passes, four times closer than a uniform mesh of the same unknowns, the uniform
-   1.2 mm mesh's error reached with a third of its unknowns (oracle `adaptive-iris`).
+   1.2 mm mesh's error reached with a third of its unknowns (oracle `adaptive-iris`). Open
+   problems (`crates/solver/tests/adapt_open.rs`, engine tests, the oracle): the indicator is
+   zero in the perfectly matched layer and at a current element, takes a conductor's lifted
+   trace (without it the elements on a sphere read 30 times the error) and a dielectric's
+   incident-field source (without it 143 times); the layer keeps its mesh through the passes. A
+   plane wave on a conducting sphere adapted from three elements per wavelength until the far
+   field changes by under 2 %: σ within 0.51 % of the Mie series with 62 530 unknowns, where a
+   uniform mesh is 1.04 % off with 92 528 (oracle `adaptive-pec-sphere`); the half-wave wire
+   dipole fed by a lumped port until its reflection changes by under 0.02: the power balance
+   0.9974 against the uniform mesh's 0.9948 at about the same unknowns, the directivity within
+   the thick wire's 3 % of the closed form (oracle `adaptive-halfwave-dipole`).
 9. **Open problems** (engine tests, the oracle): a Hertzian dipole in a box lined with a perfectly
    matched layer — radiated power within 0.2 % and directivity within 1–4 % at six elements per
    wavelength (oracle `dipole-radiation`); the same dipole at the centre of a sphere whose outer
