@@ -30,7 +30,7 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
     let (f0, f1) = match (sweep, td) {
         (Some(sw), _) if !sw.results.is_empty() => (sw.results[0].frequency, sw.results[sw.results.len() - 1].frequency),
         (_, Some(t)) if !t.frequencies.is_empty() => (t.frequencies[0], t.frequencies[t.frequencies.len() - 1]),
-        _ => return Err(EngineError::Failed("no results: solve first (solve.frequency or solve.time_domain)".into())),
+        _ => return Err(EngineError::NotSolved { what: "results", run: "solve.frequency or solve.time_domain" }),
     };
     let pad = if f1 > f0 { 0.0 } else { 0.05 * f0 };
     let (f0, f1) = (f0 - pad, f1 + pad);

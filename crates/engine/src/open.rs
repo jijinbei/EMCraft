@@ -276,7 +276,7 @@ fn describe(s: &Session, r: &Radiated, exact: &Exact, ff: &FarField) -> Value {
 }
 
 fn solved(s: &Session) -> Result<Arc<Radiated>> {
-    s.results.radiation.clone().ok_or_else(|| EngineError::Failed("no open problem solved: run solve.radiation first".into()))
+    s.results.radiation.clone().ok_or(EngineError::NotSolved { what: "open problem", run: "solve.radiation" })
 }
 
 /// The polar angles `theta` (degrees; every 10° by default) and the azimuth `phi`.
@@ -335,11 +335,7 @@ fn fem_far_rows(s: &Session, dirs: &[(f64, f64)]) -> Result<FarRows> {
 /// The time domain's far field at its frequency nearest `frequency` (its first without one),
 /// with a lone dipole's directivity.
 fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>) -> Result<FarRows> {
-    let r = s
-        .results
-        .td_radiation
-        .clone()
-        .ok_or_else(|| EngineError::Failed("no time-domain open problem solved: run solve.time_domain first".into()))?;
+    let r = s.results.td_radiation.clone().ok_or(EngineError::NotSolved { what: "time-domain open problem", run: "solve.time_domain" })?;
     let fi = frequency.and_then(|f| crate::numbers::nearest(&r.frequencies, f)).unwrap_or(0);
     let f = r.frequencies.get(fi).copied().ok_or_else(|| EngineError::Failed("no frequencies".into()))?;
     let power = r.radiated.get(fi).copied().unwrap_or(f64::NAN);

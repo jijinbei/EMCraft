@@ -55,6 +55,13 @@ pub enum EngineError {
     Params(String),
     #[error("{0}")]
     Failed(String),
+    /// A command that reads results asked before the solve that gives them: no `what` yet,
+    /// `run` gives it.
+    #[error("no {what}: solve first ({run})")]
+    NotSolved { what: &'static str, run: &'static str },
+    /// The caller asked the command to stop ([`progress`]).
+    #[error("cancelled")]
+    Cancelled,
     #[error("internal error in `{0}` (the session was restored): please report it")]
     Panicked(String),
 }
@@ -65,6 +72,22 @@ impl EngineError {
     /// A command that could not do its work, for `why`.
     pub fn failed(why: impl fmt::Display) -> EngineError {
         EngineError::Failed(why.to_string())
+    }
+
+    /// A file that could not be written.
+    pub(crate) fn cannot_write(path: &str, e: impl fmt::Display) -> EngineError {
+        EngineError::Failed(format!("cannot write {path}: {e}"))
+    }
+
+    /// This error as step `step` (command `id`) of a script gives it: the script failed, its
+    /// text naming the step. (A step's wrong parameters are the script's failure, not the
+    /// caller's: a study point whose values make a step fail is a failed point.) A cancelled
+    /// script is cancelled, whichever step it stopped at.
+    pub fn in_step(self, step: usize, id: &str) -> EngineError {
+        match self {
+            EngineError::Cancelled => EngineError::Cancelled,
+            e => EngineError::Failed(format!("step {step} ({id}): {e}")),
+        }
     }
 }
 

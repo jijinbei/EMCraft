@@ -43,9 +43,8 @@ pub(super) fn outputs_of(p: &Params) -> Result<Vec<String>> {
 /// fail alike).
 fn stops(e: &EngineError) -> bool {
     match e {
-        EngineError::Failed(m) => m == crate::progress::CANCELLED,
-        EngineError::Params(_) | EngineError::UnknownCommand(_) => true,
-        EngineError::Panicked(_) => false,
+        EngineError::Cancelled | EngineError::Params(_) | EngineError::UnknownCommand(_) => true,
+        EngineError::Failed(_) | EngineError::NotSolved { .. } | EngineError::Panicked(_) => false,
     }
 }
 

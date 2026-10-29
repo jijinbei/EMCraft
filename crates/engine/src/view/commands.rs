@@ -13,7 +13,7 @@ pub(crate) fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
         return Err(EngineError::Params("`path` must not be empty".into()));
     }
     let bytes = png.ok_or_else(|| EngineError::failed("could not encode the picture"))?;
-    std::fs::write(path, bytes).map_err(|e| EngineError::Failed(format!("cannot write {path}: {e}")))
+    std::fs::write(path, bytes).map_err(|e| EngineError::cannot_write(path, e))
 }
 
 /// Where a chart command writes its picture: `path`, `width` (default 1000) by `height`
@@ -148,7 +148,7 @@ pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
 /// `view.study`: the last study's chart.
 pub fn study(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
-    let study = s.results.study.as_ref().ok_or_else(|| EngineError::failed("no study: run study.sweep or study.optimize first"))?;
+    let study = s.results.study.as_ref().ok_or(EngineError::NotSolved { what: "study", run: "study.sweep or study.optimize" })?;
     let at = match p.raw("at") {
         None => None,
         Some(v) => Some(v.as_object().ok_or_else(|| p.error("at", "must map the held variables to their values: {\"b\": 5}"))?),

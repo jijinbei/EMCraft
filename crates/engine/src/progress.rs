@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::{EngineError, Result};
 
-/// The error message of a cancelled command.
+/// The error message of a cancelled command ([`EngineError::Cancelled`]'s).
 pub const CANCELLED: &str = "cancelled";
 
 /// How far a command is, shared between the thread that runs it and the one that watches.
@@ -123,7 +123,7 @@ pub fn scope<R>(progress: Arc<Progress>, f: impl FnOnce() -> R) -> R {
 /// cancelled.
 pub fn report(done: usize, total: usize, stage: &str) -> Result<()> {
     CURRENT.with(|c| match c.borrow().as_ref() {
-        Some(p) if p.cancelled() => Err(EngineError::Failed(CANCELLED.into())),
+        Some(p) if p.cancelled() => Err(EngineError::Cancelled),
         Some(p) => {
             match OUTER.with(|o| o.borrow().clone()) {
                 // Each outer step counts 1000; the inner work fills its share.
@@ -142,7 +142,7 @@ pub fn report(done: usize, total: usize, stage: &str) -> Result<()> {
 /// An error once the work was cancelled.
 pub fn check() -> Result<()> {
     CURRENT.with(|c| match c.borrow().as_ref() {
-        Some(p) if p.cancelled() => Err(EngineError::Failed(CANCELLED.into())),
+        Some(p) if p.cancelled() => Err(EngineError::Cancelled),
         _ => Ok(()),
     })
 }
@@ -161,7 +161,8 @@ mod tests {
             assert_eq!((s.done, s.total, s.stage.as_str()), (3, 17, "frequency"));
             assert!((s.fraction().unwrap() - 3.0 / 17.0).abs() < 1e-12);
             p.cancel();
-            assert_eq!(report(4, 17, "frequency"), Err(EngineError::Failed(CANCELLED.into())));
+            assert_eq!(report(4, 17, "frequency"), Err(EngineError::Cancelled));
+            assert_eq!(EngineError::Cancelled.to_string(), CANCELLED);
             assert!(check().is_err());
         });
         // The scope is gone with its end.
@@ -194,7 +195,20 @@ mod tests {
         let p = Progress::new();
         p.cancel();
         let r = scope(p, || s.execute("solve.frequency", &serde_json::json!({"start": 8, "stop": 9, "points": 3, "order": 1})));
-        assert_eq!(r, Err(EngineError::Failed(CANCELLED.into())));
+        assert_eq!(r, Err(EngineError::Cancelled));
         assert!(s.results.sweep.is_none());
+    }
+
+    /// A script cancelled at any step is cancelled, not failed at that step.
+    #[test]
+    fn a_cancelled_script_is_cancelled() {
+        let p = Progress::new();
+        p.cancel();
+        let mut s = crate::Session::new();
+        let r = scope(p, || s.run_script(&serde_json::json!([{"command": "units.set", "params": {"length": "m"}}])));
+        assert_eq!(r, Err(EngineError::Cancelled));
+        // Other errors name their step.
+        let r = s.run_script(&serde_json::json!([{"command": "units.set", "params": {"length": "km"}}]));
+        assert!(matches!(&r, Err(EngineError::Failed(m)) if m.starts_with("step 1 (units.set): ")), "{r:?}");
     }
 }

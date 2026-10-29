@@ -235,7 +235,7 @@ struct Solution<'a> {
 fn solution<'a>(session: &'a Session, view: &FieldView) -> Result<Solution<'a>> {
     let results = &session.results;
     if let Some(i) = view.mode {
-        let e = results.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
+        let e = results.eigen.as_ref().ok_or(EngineError::NotSolved { what: "eigenmodes", run: "solve.eigenmodes" })?;
         let m = e.modes.get(i).ok_or_else(|| EngineError::Params(format!("no eigenmode {} (there are {})", i + 1, e.modes.len())))?;
         let q = m.q().map_or(String::new(), |q| format!(", Q = {}", emcraft_render::axes::format(q)));
         let caption = format!("eigenmode {}{q} (arbitrary amplitude), order {}", i + 1, e.driven.order.as_u8());

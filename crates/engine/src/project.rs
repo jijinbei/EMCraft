@@ -151,7 +151,7 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
 fn write_atomically(path: &str, bytes: &[u8]) -> Result<()> {
     let target = std::path::Path::new(path);
     let temp = target.with_extension(format!("{}.tmp", target.extension().and_then(|e| e.to_str()).unwrap_or(EXTENSION)));
-    let fail = |e: std::io::Error| EngineError::Failed(format!("cannot write {path}: {e}"));
+    let fail = |e: std::io::Error| EngineError::cannot_write(path, e);
     std::fs::write(&temp, bytes).map_err(fail)?;
     std::fs::rename(&temp, target).map_err(|e| {
         let _ = std::fs::remove_file(&temp);
@@ -253,7 +253,7 @@ pub fn touchstone(s: &mut Session, p: &Params) -> Result<Value> {
             }
         }
     }
-    std::fs::write(path, out).map_err(|e| EngineError::Failed(format!("cannot write {path}: {e}")))?;
+    std::fs::write(path, out).map_err(|e| EngineError::cannot_write(path, e))?;
     Ok(json!({"path": path, "ports": n, "frequencies": sw.results.len()}))
 }
 

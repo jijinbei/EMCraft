@@ -101,7 +101,7 @@ impl Results {
 
     /// The sweep, or an error asking for one.
     pub fn sweep(&self) -> Result<&Sweep> {
-        self.sweep.as_ref().ok_or_else(|| EngineError::failed("no results: solve first (solve.frequency)"))
+        self.sweep.as_ref().ok_or(EngineError::NotSolved { what: "results", run: "solve.frequency" })
     }
 }
 
@@ -279,7 +279,7 @@ impl Session {
                 let id = step.get("command").and_then(Value::as_str).ok_or_else(|| EngineError::Params(format!("step {}: no `command`", i + 1)))?;
                 let params = step.get("params").cloned().unwrap_or_else(|| json!({}));
                 progress::report(i, steps.len(), id)?;
-                self.execute(id, &params).map_err(|e| EngineError::Failed(format!("step {} ({id}): {e}", i + 1)))
+                self.execute(id, &params).map_err(|e| e.in_step(i + 1, id))
             })
             .collect()
     }

@@ -83,7 +83,7 @@ pub fn results(s: &mut Session, _: &Params) -> Result<Value> {
 
 /// The dispersion diagram solved, or an error asking for one.
 pub(crate) fn solved(s: &Session) -> Result<&Dispersion> {
-    s.results.dispersion.as_deref().ok_or_else(|| EngineError::failed("no dispersion diagram: solve first (solve.dispersion)"))
+    s.results.dispersion.as_deref().ok_or(EngineError::NotSolved { what: "dispersion diagram", run: "solve.dispersion" })
 }
 
 /// The closed form's bands at phase `psi` for a guide periodic along z whose sections fill its
