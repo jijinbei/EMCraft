@@ -8,6 +8,8 @@ use std::sync::mpsc::Sender;
 
 use serde_json::{Value, json};
 
+use emcraft_engine::text::clip;
+
 use crate::action::Pref;
 use crate::{Action, EmcraftApp, View, scenario};
 
@@ -99,7 +101,7 @@ fn button(p: &Value) -> egui::PointerButton {
 /// A point from `x`, `y`, or from `handle` (a published scenario handle).
 fn point(p: &Value, x: &str, y: &str) -> Result<egui::Pos2, String> {
     if let Some(h) = p.get("handle").and_then(Value::as_str) {
-        return scenario::handle_at(h).ok_or_else(|| format!("no handle `{}` on screen", h.chars().take(100).collect::<String>()));
+        return scenario::handle_at(h).ok_or_else(|| format!("no handle `{}` on screen", clip(h, 100)));
     }
     let f = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() <= 1e6);
     match (f(x), f(y)) {
@@ -217,11 +219,6 @@ impl<'a> Args<'a> {
 /// What a method gives: its outcome, or why it refused.
 type Handled = Result<Outcome, String>;
 
-/// At most `n` characters of hostile text, for an error.
-fn clip(text: &str, n: usize) -> String {
-    text.chars().take(n).collect()
-}
-
 /// A job to wait for, or the reply now: `r`'s value goes back when the job ends, if one runs.
 fn after_job(app: &mut EmcraftApp, req: &ControlRequest, value: Value) -> Outcome {
     match app.job.as_mut() {
@@ -252,7 +249,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
         "ui.scroll" => scroll(app, a),
         "ui.key" => key(app, a),
         "ui.text" => {
-            let text: String = a.str("text").unwrap_or("").chars().take(crate::dialogs::MAX_FIELD).collect();
+            let text: String = clip(a.str("text").unwrap_or(""), crate::dialogs::MAX_FIELD);
             push(app, vec![egui::Event::Text(text)]).map(|()| ok(Value::Null))
         }
         "ui.handles" => {

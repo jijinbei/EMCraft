@@ -28,7 +28,7 @@ impl EmcraftApp {
     }
 
     fn message(&mut self, text: impl std::fmt::Display, error: bool) {
-        let text: String = text.to_string().chars().take(2000).collect();
+        let text = emcraft_engine::text::clip(&text.to_string(), 2000);
         if let Some(last) = self.messages.last_mut()
             && last.text == text
             && last.error == error

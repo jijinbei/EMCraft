@@ -10,6 +10,7 @@
 //! Dialogs are only a way to write parameters: programmatic calls (`engine.execute`, scripts)
 //! never open them.
 
+use emcraft_engine::text::clip;
 use emcraft_engine::{CommandSpec, ParamSpec, Quantity, Session};
 use serde_json::{Map, Value, json};
 
@@ -200,7 +201,7 @@ pub struct Dialog {
 
 /// `text` cut to [`MAX_FIELD`] characters.
 pub fn bounded(text: &str) -> String {
-    text.chars().take(MAX_FIELD).collect()
+    clip(text, MAX_FIELD)
 }
 
 fn number_text(v: f64) -> String {
@@ -251,7 +252,7 @@ impl Dialog {
         });
         match named.and_then(|i| self.fields.get_mut(i)) {
             Some(f) => {
-                f.error = Some(error.chars().take(400).collect());
+                f.error = Some(clip(error, 400));
                 self.error = None;
             }
             None => self.error = Some(error.to_owned()),
@@ -260,7 +261,7 @@ impl Dialog {
 
     /// Sets a field from a JSON value, as typing it would (the control channel's `ui.dialog`).
     pub fn set(&mut self, name: &str, v: &Value) -> Result<(), String> {
-        let f = self.field_mut(name).ok_or_else(|| format!("the dialog has no field `{}`", name.chars().take(64).collect::<String>()))?;
+        let f = self.field_mut(name).ok_or_else(|| format!("the dialog has no field `{}`", clip(name, 64)))?;
         match f.kind.clone() {
             Kind::Bool => f.on = v.as_bool().ok_or_else(|| format!("`{name}` takes true or false"))?,
             Kind::Vector(names) => {
@@ -323,7 +324,7 @@ pub fn numeric(text: &str) -> Result<Value, String> {
 /// A finite number from a field's text.
 pub fn parse_number(text: &str) -> Result<f64, String> {
     let t = text.trim();
-    let v: f64 = t.parse().map_err(|_| format!("`{}` is not a number", t.chars().take(40).collect::<String>()))?;
+    let v: f64 = t.parse().map_err(|_| format!("`{}` is not a number", clip(t, 40)))?;
     if v.is_finite() { Ok(v) } else { Err("must be a finite number".into()) }
 }
 
@@ -349,7 +350,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             if t.starts_with('=') {
                 return numeric(t).map(Some);
             }
-            json!(t.parse::<i64>().map_err(|_| format!("`{}` is not a whole number", t.chars().take(40).collect::<String>()))?)
+            json!(t.parse::<i64>().map_err(|_| format!("`{}` is not a whole number", clip(t, 40)))?)
         }
         Kind::Text | Kind::Choice(_) => {
             if empty {

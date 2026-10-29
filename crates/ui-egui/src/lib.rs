@@ -569,7 +569,7 @@ fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
 
 /// The engine's command `id`, or the error naming it (cut short).
 fn find_command(id: &str) -> Result<&'static emcraft_engine::CommandSpec, UiError> {
-    emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()).into())
+    emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(emcraft_engine::text::clip(id, 100)).into())
 }
 
 /// A command's label for messages.

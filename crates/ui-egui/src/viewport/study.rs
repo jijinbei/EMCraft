@@ -189,7 +189,7 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
                     ui.label(r.modes.iter().take(6).map(|f| format!("{f:.4}")).collect::<Vec<_>>().join(", "));
                 }
                 match (&r.error, best) {
-                    (Some(e), _) => ui.label(egui::RichText::new(e.chars().take(120).collect::<String>()).size(t.font_small).color(t.error)),
+                    (Some(e), _) => ui.label(egui::RichText::new(emcraft_engine::text::clip(e, 120)).size(t.font_small).color(t.error)),
                     (None, true) => ui.label(egui::RichText::new("best").size(t.font_small).color(t.accent)),
                     (None, false) => ui.label(""),
                 };
