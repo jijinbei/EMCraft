@@ -226,7 +226,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         "triangles": triangles,
         "faces": faces,
         "planes": fitted.plane,
-        "curved": {"cylinder": fitted.cylinder, "sphere": fitted.sphere, "cone": fitted.cone},
+        "curved": {"cylinder": fitted.cylinder, "sphere": fitted.sphere, "cone": fitted.cone, "torus": fitted.torus},
         "region": region,
         "pieces": pieces,
         "bodies": placed,
@@ -295,6 +295,7 @@ struct Fitted {
     cylinder: usize,
     sphere: usize,
     cone: usize,
+    torus: usize,
 }
 
 /// An imported body as a shape, each face's exact surface fitted to its vertices (`fit`) where
@@ -307,6 +308,7 @@ fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, fitted: &mut Fitte
             FaceSurface::Cylinder { .. } => fitted.cylinder += 1,
             FaceSurface::Sphere { .. } => fitted.sphere += 1,
             FaceSurface::Cone { .. } => fitted.cone += 1,
+            FaceSurface::Torus { .. } => fitted.torus += 1,
         }
     }
     Shape::Surface { name: b.name, positions: b.positions, triangles: b.triangles, tags: b.tags, surfaces }

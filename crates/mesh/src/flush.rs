@@ -4,19 +4,33 @@
 //! face is moved off the plane by a step first, in the direction that leaves the result the same
 //! (what lies beyond it is dropped by the Boolean): outwards for a difference or an intersection
 //! when both bodies lie behind the plane, away from the other surface for a difference when they
-//! only touch from either side, into it for a union. Primitive features get the same treatment in
-//! `solid::tessellation`; here it works on any triangulated body, face by face.
+//! only touch from either side, into it for a union touching from outside, back into the body
+//! for a union flush from inside (the region's face bounds the union there). Primitive features
+//! get the same treatment in `solid::tessellation`; here it works on any triangulated body, face
+//! by face.
 //!
 //! A face is a patch of triangles in one axis plane (x, y or z constant) joined by edges; it is
 //! flush when one of its triangles overlaps (with area) a triangle of the other surface in the
-//! same plane. Its vertices move along the plane's axis, so the faces meeting it must be
-//! perpendicular to it (a box's, an extrusion's) for the body to stay the same shape: a slanted
-//! one is refused. A face parallel to the other surface's and closer than `near` without
-//! touching it (a sliver of air no mesh resolves) is refused too.
+//! same plane. Its vertices move along the plane's axis, and the faces meeting it keep their
+//! planes: a perpendicular one (a box's, an extrusion's) by its corners sliding along it, a
+//! slanted one (a wedge, a ramp, a chamfer) by each corner moving along the line where the planes
+//! it keeps meet, so the slanted face reaches past the other surface as the flush face does. A
+//! corner whose faces' planes do not meet in one line past it (more planes than a corner of a
+//! polyhedron in general position keeps), or meet at too shallow an angle (a move longer than
+//! ten steps), is refused; so is a slanted face that would reach past the other surface into
+//! the region. A face parallel to the other surface's and closer than `near` without touching it
+//! (a sliver of air no mesh resolves) is refused too.
+//!
+//! Still refused: a flush face partly against the other surface and partly inside the region
+//! (outside it for a union). There the other surface turns away along a line in the face's plane
+//! (a step in the region's floor under a plate), and no move of the face keeps the result: the
+//! part against the surface must move off it, the rest must not, and the face joining them
+//! would lie in the other surface's turned face — a coplanar overlap again. Only a Boolean that
+//! takes coplanar triangles itself could do it.
 
 use std::collections::HashMap;
 
-use emcraft_model::{Combine, Point3};
+use emcraft_model::{Combine, Point3, Vec3};
 
 use crate::{MeshError, Result};
 
@@ -209,11 +223,11 @@ pub(crate) fn moved(
             (Combine::Subtract | Combine::Intersect, true) => out,
             (Combine::Subtract, false) => -out,
             (Combine::Add, false) => out,
-            (Combine::Add, true) => {
-                return Err(fail(format!(
-                    "`{name}`: not supported yet: a body of the region's material whose face is flush with the region's (let it stand out of the face, or reach into the body)"
-                )));
-            }
+            // A union flush with the region from inside: the region's face bounds the union
+            // there, so the body's face draws back into the body (the sliver it leaves is the
+            // region's already). Where the face is not against the region it would change the
+            // union: refused below.
+            (Combine::Add, true) => -out,
             (Combine::Intersect, false) => return Err(fail(format!("`{name}`: its intersection with the region is only a face"))),
         };
         let r = sets.find(i);
@@ -247,44 +261,124 @@ pub(crate) fn moved(
             }
             if (winding(other_positions, other_triangles, p) > 0.5) == inside_matters {
                 let axis = ["x", "y", "z"][f.axis];
+                let side = if inside_matters { "inside" } else { "outside" };
                 return Err(fail(format!(
-                    "`{name}`: not supported yet: its face at {axis} = {:.6} mm lies partly against another surface and partly inside the region (let the bodies overlap instead of touching, or join them into one body in the CAD tool)",
+                    "`{name}`: not supported yet: its face at {axis} = {:.6} mm lies partly against another surface and partly {side} the region (let the bodies overlap instead of touching, or join them into one body in the CAD tool)",
                     f.at * g.mm
                 )));
             }
         }
     }
-    // The vertices' moves, per axis; the triangles that move with each (its face's).
+    // The vertices' moves, per axis; the triangles that move with each (its face's); whether a
+    // vertex's move grows the body (into the space beyond the other surface).
     let mut vertex_move: Vec<[f64; 3]> = vec![[0.0; 3]; positions.len()];
+    let mut vertex_grows: Vec<bool> = vec![false; positions.len()];
     let mut moved_with: Vec<Option<usize>> = vec![None; triangles.len()];
     for (i, f) in body.iter().enumerate() {
         let Some(&by) = face_move.get(&sets.find(i)) else { continue };
         moved_with[f.tri] = Some(f.axis);
+        // Growing: the move along the face's outward normal.
+        let outward = by * f.outward > 0.0;
         for v in triangles[f.tri] {
             let m = vertex_move.get_mut(v as usize).ok_or_else(|| fail(format!("`{name}`: a triangle has a missing corner")))?;
             if m[f.axis] != 0.0 && m[f.axis] != by {
                 return Err(fail(format!("`{name}`: a corner lies on two flush faces moving apart")));
             }
             m[f.axis] = by;
+            if let Some(gv) = vertex_grows.get_mut(v as usize) {
+                *gv |= outward;
+            }
         }
     }
-    // The faces meeting a moved one must be perpendicular to it.
+    // The faces meeting a moved one keep their planes: a face perpendicular to it already does
+    // (its corners slide along it); at a corner of a slanted one the corner moves along the
+    // line where the planes it must keep meet (`slide`), so the slanted face reaches past the
+    // other surface too.
+    let mut keep: Vec<Vec<Vec3>> = vec![Vec::new(); positions.len()];
     for (k, t) in triangles.iter().enumerate() {
         let Some(q) = corners(positions, t) else { continue };
         let n = (q[1] - q[0]).cross(q[2] - q[0]);
         for v in t {
-            for d in 0..3 {
-                if vertex_move[*v as usize][d] != 0.0 && moved_with[k] != Some(d) && n[d].abs() > 1e-6 * n.norm() {
-                    let axis = ["x", "y", "z"][d];
-                    return Err(fail(format!(
-                        "`{name}`: not supported yet: its face flush with another surface at {axis} = {:.6} mm meets a face slanted to it (let the body reach through the other surface instead)",
-                        positions[*v as usize][d] * g.mm
-                    )));
-                }
+            let m = vertex_move[*v as usize];
+            if (0..3).any(|d| m[d] != 0.0 && moved_with[k] != Some(d) && n[d].abs() > 1e-6 * n.norm())
+                && let Some(u) = n.normalized()
+                && let Some(list) = keep.get_mut(*v as usize)
+            {
+                // Every face of the corner that is not flush keeps its plane.
+                list.push(u);
             }
         }
     }
-    Ok(positions.iter().zip(&vertex_move).map(|(p, m)| Point3::new(p.x + m[0], p.y + m[1], p.z + m[2])).collect())
+    let mut out: Vec<Point3> = positions.iter().zip(&vertex_move).map(|(p, m)| Point3::new(p.x + m[0], p.y + m[1], p.z + m[2])).collect();
+    for (v, slanted) in keep.iter().enumerate() {
+        if slanted.is_empty() {
+            continue;
+        }
+        let m = vertex_move[v];
+        let p = positions[v];
+        let axis = (0..3).find(|d| m[*d] != 0.0).unwrap_or(0);
+        let at = |what: &str| {
+            fail(format!(
+                "`{name}`: not supported yet: its face flush with another surface at {} = {:.6} mm meets {what} (let the body reach through the other surface instead)",
+                ["x", "y", "z"][axis],
+                p[axis] * g.mm
+            ))
+        };
+        // The planes the corner keeps: its flush faces' (moved by their steps), and every other
+        // face at it (the perpendicular ones too, so the corner slides along them).
+        let mut rows: Vec<(Vec3, f64)> = (0..3).filter(|d| m[*d] != 0.0).map(|d| (Vec3::ZERO.with(d, 1.0), m[d])).collect();
+        for (k, t) in triangles.iter().enumerate() {
+            if !t.contains(&(v as u32)) || moved_with[k].is_some_and(|d| m[d] != 0.0) {
+                continue;
+            }
+            let Some(q) = corners(positions, t) else { continue };
+            if let Some(u) = (q[1] - q[0]).cross(q[2] - q[0]).normalized() {
+                rows.push((u, 0.0));
+            }
+        }
+        let by = slide(&rows, g.step).ok_or_else(|| at("faces whose planes do not meet in one line past it"))?;
+        if by.norm() > 10.0 * g.step {
+            return Err(at("a face at too shallow an angle to it"));
+        }
+        let q = p + by;
+        // Grown past the other surface: the corner must land where the body's part beyond it is
+        // dropped (outside the region for a difference or an intersection, inside for a union).
+        if vertex_grows[v] && (winding(other_positions, other_triangles, q) > 0.5) == inside_matters {
+            return Err(at("a slanted face that would reach past the other surface into the region"));
+        }
+        out[v] = q;
+    }
+    // No triangle turned over by the moves.
+    for t in triangles {
+        let (Some(a), Some(b)) = (corners(positions, t), corners(&out, t)) else { continue };
+        if (a[1] - a[0]).cross(a[2] - a[0]).dot((b[1] - b[0]).cross(b[2] - b[0])) <= 0.0 {
+            return Err(fail(format!("`{name}`: a face flush with another surface is too close to an opposite face of the body to move")));
+        }
+    }
+    Ok(out)
+}
+
+/// The smallest move `δ` with `n·δ = c` for every row `(n, c)` (unit normals): the rows made
+/// orthonormal one by one (modified Gram–Schmidt), a row that depends on the earlier ones
+/// checked against them instead. `None` when the rows contradict each other (planes that do
+/// not meet in a line or point), relative to `step`.
+fn slide(rows: &[(Vec3, f64)], step: f64) -> Option<Vec3> {
+    let mut basis: Vec<(Vec3, f64)> = Vec::with_capacity(3);
+    for &(n, c) in rows {
+        let (mut r, mut rhs) = (n, c);
+        for &(q, qc) in &basis {
+            let k = r.dot(q);
+            r -= q * k;
+            rhs -= k * qc;
+        }
+        let len = r.norm();
+        if len > 1e-6 {
+            basis.push((r / len, rhs / len));
+        } else if rhs.abs() > 1e-6 * step {
+            return None;
+        }
+    }
+    Some(basis.iter().fold(Vec3::ZERO, |s, (q, c)| s + *q * *c))
 }
 
 #[cfg(test)]
@@ -321,19 +415,107 @@ mod tests {
         let (op, ot) = cube([10.0, 1.0, 8.0], [12.0, 4.0, 9.0]);
         assert_eq!(moved("out", &op, &ot, &gp, &gt, Combine::Subtract, G).unwrap()[0].x, 10.1);
         assert_eq!(moved("out", &op, &ot, &gp, &gt, Combine::Add, G).unwrap()[0].x, 9.9);
-        assert!(moved("plate", &pp, &pt, &gp, &gt, Combine::Add, G).is_err());
+        // A union flush from inside draws back into itself: the region's walls bound it.
+        let q = moved("plate", &pp, &pt, &gp, &gt, Combine::Add, G).unwrap();
+        let lo = q.iter().fold([f64::INFINITY; 3], |m, p| [0, 1, 2].map(|d| m[d].min(p[d])));
+        let hi = q.iter().fold([f64::NEG_INFINITY; 3], |m, p| [0, 1, 2].map(|d| m[d].max(p[d])));
+        assert_eq!((lo, hi), ([0.1, 0.1, 8.0], [3.0, 4.9, 9.0]));
+        // Unless part of the face lies outside the region: the union's face there would move.
+        let (wp, wt) = cube([0.0, 0.0, 8.0], [12.0, 5.0, 9.0]);
+        let e = moved("wide", &wp, &wt, &gp, &gt, Combine::Add, G).unwrap_err().to_string();
+        assert!(e.contains("partly outside"), "{e}");
+    }
+
+    /// The wedge with corners (1, 0, 8), (3, 0, 8), (1, 0, 9), (1, 2, 8): its face on y = 0, a
+    /// slanted face over it.
+    fn wedge() -> (Vec<Point3>, Vec<[u32; 3]>) {
+        let positions = vec![Point3::new(1.0, 0.0, 8.0), Point3::new(3.0, 0.0, 8.0), Point3::new(1.0, 0.0, 9.0), Point3::new(1.0, 2.0, 8.0)];
+        (positions, vec![[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]])
+    }
+
+    fn plane_of(p: &[Point3], t: [u32; 3]) -> (Vec3, f64) {
+        let [a, b, c] = t.map(|v| p[v as usize]);
+        let n = (b - a).cross(c - a).normalized().unwrap();
+        (n, n.dot(a.to_vec()))
     }
 
     #[test]
-    fn nearly_flush_faces_and_slanted_neighbours_are_refused() {
+    fn slanted_faces_meeting_a_flush_one_keep_their_planes() {
+        let (gp, gt) = cube([0.0, 0.0, 0.0], [10.0, 5.0, 20.0]);
+        let (wp, wt) = wedge();
+        let q = moved("wedge", &wp, &wt, &gp, &gt, Combine::Subtract, G).unwrap();
+        // The foot moved 0.1 below the floor; every other face's plane kept.
+        assert!(q.iter().take(3).all(|p| (p.y + 0.1).abs() < 1e-12), "{q:?}");
+        assert_eq!(q[3], wp[3]);
+        for t in &wt[1..] {
+            let ((n0, d0), (n1, d1)) = (plane_of(&wp, *t), plane_of(&q, *t));
+            assert!((n0 - n1).norm() < 1e-12 && (d0 - d1).abs() < 1e-12, "{t:?}");
+        }
+        // The slanted face's corner on the foot slid along it: (3, 0, 8) to (3.1, −0.1, 8).
+        assert!((q[1] - Point3::new(3.1, -0.1, 8.0)).norm() < 1e-12, "{:?}", q[1]);
+        // A ramp across the guide, flush with the floor and both side walls.
+        let positions = vec![
+            Point3::new(0.0, 0.0, 6.0),
+            Point3::new(10.0, 0.0, 6.0),
+            Point3::new(0.0, 0.0, 10.0),
+            Point3::new(10.0, 0.0, 10.0),
+            Point3::new(0.0, 2.0, 10.0),
+            Point3::new(10.0, 2.0, 10.0),
+        ];
+        let triangles = vec![[0, 1, 3], [0, 3, 2], [0, 4, 5], [0, 5, 1], [2, 3, 5], [2, 5, 4], [0, 2, 4], [1, 5, 3]];
+        let q = moved("ramp", &positions, &triangles, &gp, &gt, Combine::Subtract, G).unwrap();
+        for t in [[0, 4, 5], [2, 3, 5]] {
+            let ((n0, d0), (n1, d1)) = (plane_of(&positions, t), plane_of(&q, t));
+            assert!((n0 - n1).norm() < 1e-12 && (d0 - d1).abs() < 1e-12, "{t:?}");
+        }
+        assert!((q[0] - Point3::new(-0.1, -0.1, 5.8)).norm() < 1e-12, "{:?}", q[0]);
+    }
+
+    #[test]
+    fn nearly_flush_faces_and_unkeepable_corners_are_refused() {
         let (gp, gt) = cube([0.0, 0.0, 0.0], [10.0, 5.0, 20.0]);
         let (pp, pt) = cube([0.001, 1.0, 8.0], [3.0, 4.0, 9.0]);
         let e = moved("plate", &pp, &pt, &gp, &gt, Combine::Subtract, G).unwrap_err();
         assert!(e.to_string().contains("gap narrower"), "{e}");
-        // A wedge on the floor: its slanted face meets the flush one.
-        let positions = vec![Point3::new(1.0, 0.0, 8.0), Point3::new(3.0, 0.0, 8.0), Point3::new(1.0, 0.0, 9.0), Point3::new(1.0, 2.0, 8.0)];
-        let triangles = vec![[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]];
-        let e = moved("wedge", &positions, &triangles, &gp, &gt, Combine::Subtract, G).unwrap_err();
-        assert!(e.to_string().contains("slanted"), "{e}");
+        // A wedge whose slanted face rises at a hair's angle: its foot would slide far.
+        let mut flat = wedge().0;
+        flat[3] = Point3::new(1.0, 0.01, 8.0);
+        let e = moved("sliver", &flat, &wedge().1, &gp, &gt, Combine::Subtract, G).unwrap_err().to_string();
+        assert!(e.contains("shallow"), "{e}");
+        // A pyramid on the floor: each corner of its foot meets two slanted faces, which slide
+        // it along their common edge.
+        let mut positions = vec![
+            Point3::new(1.0, 0.0, 8.0),
+            Point3::new(3.0, 0.0, 8.0),
+            Point3::new(3.0, 0.0, 10.0),
+            Point3::new(1.0, 0.0, 10.0),
+            Point3::new(2.0, 0.0, 9.0),
+            Point3::new(2.0, 1.0, 9.0),
+        ];
+        // The foot fanned about its middle (4): corner 0 meets two slanted faces and two of the
+        // foot's triangles; the middle point keeps nothing but the floor.
+        let mut triangles = vec![[0, 4, 1], [1, 4, 2], [2, 4, 3], [3, 4, 0], [0, 1, 5], [1, 2, 5], [2, 3, 5], [3, 0, 5]];
+        let q = moved("pyramid", &positions, &triangles, &gp, &gt, Combine::Subtract, G).unwrap();
+        assert!((q[4].y + 0.1).abs() < 1e-12 && (q[0] - Point3::new(0.9, -0.1, 7.9)).norm() < 1e-12, "{q:?}");
+        // One side bent out of its plane at a point (6): corner 0 now meets three slanted planes,
+        // which do not meet in a line through it.
+        positions.push(Point3::new(1.2, 1.0 / 3.0, 9.0));
+        triangles.pop();
+        triangles.extend([[3, 0, 6], [0, 5, 6], [5, 3, 6]]);
+        let e = moved("bent", &positions, &triangles, &gp, &gt, Combine::Subtract, G).unwrap_err().to_string();
+        assert!(e.contains("do not meet"), "{e}");
+        // The region's floor stepping down just past the wedge's foot: the slanted face's slid
+        // corner would land in the region below the step.
+        let low = cube([3.05, -1.0, -1.0], [11.0, 0.5, 21.0]);
+        let stepped = crate::csg::combine(
+            &crate::csg::Surface { positions: gp.clone(), triangles: gt.clone(), tags: vec![0; gt.len()] },
+            &crate::csg::Surface { positions: low.0, triangles: low.1.clone(), tags: vec![1; low.1.len()] },
+            crate::csg::Op::Union,
+            1,
+        )
+        .unwrap();
+        let (wp, wt) = wedge();
+        let e = moved("wedge", &wp, &wt, &stepped.positions, &stepped.triangles, Combine::Subtract, G).unwrap_err().to_string();
+        assert!(e.contains("into the region"), "{e}");
     }
 }

@@ -66,11 +66,13 @@ pub struct TdrState {
     pub chart: Cached,
 }
 
-/// The study view's chart and the S-parameter it shows (a sweep's; the first when `None`).
+/// The study view's chart, the S-parameter it shows (a sweep's; the first when `None`) and, for
+/// a grid sweep, the slice: the variable charted along and the value each other one is held at.
 #[derive(Default)]
 pub struct StudyState {
     pub chart: Cached,
     pub parameter: Option<String>,
+    pub slice: emcraft_engine::study::Slice,
 }
 
 /// What the result views keep between frames.

@@ -1,0 +1,18 @@
+{
+ "title": "Parameter sweep on a grid: a five-section filter's first empty section a = 10, 20 mm and the dielectric between its empty sections b = 5, 15 mm, every combination rebuilt, meshed and solved from the history",
+ "kind": "theory",
+ "source": "Cascade of TE10 transmission lines of one cross-section (evanescent below cut-off), ABCD matrices: D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3 and §4.4; evaluated separately for each (a, b)",
+ "quantities": [
+  {"id": "s21_db_a10_b5_6", "quantity": "|S21| at 6 GHz, a = 10, b = 5 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/0/points/0/s21/db"}, "value": -3.3853210894886105, "tolerance": {"absolute": 0.01}, "reason": "second-order elements of 3 mm, every interface a grid plane: within about 1e-3 dB, as the high-pass filter's sweep"},
+  {"id": "s21_db_a10_b5_8", "quantity": "|S21| at 8 GHz, a = 10, b = 5 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/0/points/1/s21/db"}, "value": -1.5122034955625856, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_a10_b15_6", "quantity": "|S21| at 6 GHz, a = 10, b = 15 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/1/points/0/s21/db"}, "value": -2.435180514255951, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_a10_b15_8", "quantity": "|S21| at 8 GHz, a = 10, b = 15 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/1/points/1/s21/db"}, "value": -2.9998029914730804, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_a20_b5_6", "quantity": "|S21| at 6 GHz, a = 20, b = 5 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/2/points/0/s21/db"}, "value": -6.755894305916189, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_a20_b5_8", "quantity": "|S21| at 8 GHz, a = 20, b = 5 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/2/points/1/s21/db"}, "value": -3.899268970426839, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_a20_b15_6", "quantity": "|S21| at 6 GHz, a = 20, b = 15 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/3/points/0/s21/db"}, "value": -7.170711878004099, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_db_a20_b15_8", "quantity": "|S21| at 8 GHz, a = 20, b = 15 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/3/points/1/s21/db"}, "value": -1.189398012340662, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s11_db_a10_b15_8", "quantity": "|S11| at 8 GHz, a = 10, b = 15 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/1/points/1/s11/db"}, "value": -3.0208223546185087, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s11_db_a20_b15_8", "quantity": "|S11| at 8 GHz, a = 20, b = 15 mm (dB)", "measure": {"step": "grid", "pointer": "/rows/3/points/1/s11/db"}, "value": -6.20570603925618, "tolerance": {"absolute": 0.01}, "reason": "as above"},
+  {"id": "s21_phase_a20_b15_8", "quantity": "phase of S21 at 8 GHz, a = 20, b = 15 mm (degrees)", "measure": {"step": "grid", "pointer": "/rows/3/points/1/s21/deg"}, "value": 69.24836086570483, "tolerance": {"absolute": 0.1}, "reason": "the phase accumulates over 75 mm of line: a few 0.01°"}
+ ]
+}

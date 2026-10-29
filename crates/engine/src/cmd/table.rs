@@ -203,7 +203,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.import",
         label: "Import",
-        doc: "Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's export with face tags (one body per object, named after it, its B-rep faces kept as faces). Each face's exact surface (plane, cylinder, sphere, cone) is recovered from its vertices where one fits them to 1e-6 of the body's size, so second-order elements bend onto curved faces; the reply counts them under `curved`. Triangles are grouped into faces also by the angle between neighbours, so sharp edges stay edges. One body alone becomes the region the fields fill, filled with `material`, and its faces on its lowest and highest z planes can carry ports. Several bodies lie in a box of air (`material`) `margin` beyond them all, or in the body `region` names; each is metal unless `materials` gives it another (geometry.body.material changes it later). With `region` `cavity` the part is drawn as its metal (a block with a channel milled through it): the region is the air the metal bodies enclose — their bounding box less them, split into connected pieces, each piece kept that reaches no side (x or y) of the box (it may reach the lowest and highest z, where a channel's ports go), the air around a part that is not a box dropped; `keep` `largest` keeps only the largest piece. The metal bodies become the region's walls, bodies of other materials lie in it. With `open` (an antenna, a scatterer) the box is lined by a perfectly matched layer as model.open does: by default a quarter of the band's longest wavelength of air between the parts and the layer, and a layer as thick. Replaces any geometry, mesh and results.",
+        doc: "Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's export with face tags (one body per build item, named after its object, its B-rep faces kept as faces; objects made of components flattened, their transforms composed, and objects in other model parts of the package read). Each face's exact surface (plane, cylinder, sphere, cone, torus) is recovered from its vertices where one fits them to 1e-6 of the body's size, so second-order elements bend onto curved faces; the reply counts them under `curved`. Triangles are grouped into faces also by the angle between neighbours, so sharp edges stay edges. One body alone becomes the region the fields fill, filled with `material`, and its faces on its lowest and highest z planes can carry ports. Several bodies lie in a box of air (`material`) `margin` beyond them all, or in the body `region` names; each is metal unless `materials` gives it another (geometry.body.material changes it later). With `region` `cavity` the part is drawn as its metal (a block with a channel milled through it): the region is the air the metal bodies enclose — their bounding box less them, split into connected pieces, each piece kept that reaches no side (x or y) of the box (it may reach the lowest and highest z, where a channel's ports go), the air around a part that is not a box dropped; `keep` `largest` keeps only the largest piece. The metal bodies become the region's walls, bodies of other materials lie in it. With `open` (an antenna, a scatterer) the box is lined by a perfectly matched layer as model.open does: by default a quarter of the band's longest wavelength of air between the parts and the layer, and a layer as thick. Replaces any geometry, mesh and results.",
         params: &[
             req("path", K::String, "the file (`.stl` or `.3mf`)"),
             opt("unit", K::Number, "an STL file's length unit in display units (default 1, i.e. the display unit); 3MF files carry their own").of(L),
@@ -215,7 +215,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("materials", K::Object, "body name → material, or `metal` (the default for every body)"),
             opt("open", K::Boolean, "an open problem: line the box of air with a perfectly matched layer (default false)"),
             opt("thickness", K::Number, "the layer's thickness with `open` (default a quarter of the band's longest wavelength)").of(L),
-            opt("fit_surfaces", K::Boolean, "recover each face's exact surface — a plane, cylinder, sphere or cone fitted to its vertices, kept when every vertex lies on it — so the mesh follows curved faces as it does native ones (default true); false keeps them faceted"),
+            opt("fit_surfaces", K::Boolean, "recover each face's exact surface — a plane, cylinder, sphere, cone or torus fitted to its vertices, kept when every vertex lies on it — so the mesh follows curved faces as it does native ones (default true); false keeps them faceted"),
         ],
         effect: Effect::Record,
         run: crate::geometry::import,
@@ -742,9 +742,14 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "study.sweep",
         label: "Parameter sweep",
-        doc: "Sweeps a variable: for each value the model is rebuilt from the history with it (meshed when the history meshes), solved by `solve` (`{\"command\": \"solve.frequency\", \"params\": {…}}`, any solve command) and its results collected: S-parameters at the solve's frequencies, eigenmodes' frequencies, the solve's other numbers. The session's model is left as it was. A point that cannot be built or solved is reported in its row; cancelling stops at the next point.",
+        doc: "Sweeps a variable, or several on a grid: for each value (each point of the grid: every combination of the variables' values, the last varying fastest) the model is rebuilt from the history with it (meshed when the history meshes), solved by `solve` (`{\"command\": \"solve.frequency\", \"params\": {…}}`, any solve command) and its results collected: S-parameters at the solve's frequencies, eigenmodes' frequencies, the solve's other numbers. One variable's rows carry its `value`; a grid's rows carry `values` in the order of `variables`, and the reply the grid's values of each variable. The session's model is left as it was. A point that cannot be built or solved is reported in its row; cancelling stops at the next point.",
         params: &[
-            req("variable", K::String, "the variable swept"),
+            opt("variable", K::String, "the variable swept (or give `variables`)"),
+            opt(
+                "variables",
+                K::Array,
+                "several variables swept on a grid: [{\"name\", \"values\"} or {\"name\", \"start\", \"stop\", \"points\"}] (at most 4, at most 400 points in all)",
+            ),
             opt("values", K::Array, "its values (at most 101)"),
             opt("start", K::Number, "the first value (without `values`)"),
             opt("stop", K::Number, "the last value"),
@@ -772,10 +777,15 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "view.study",
         label: "Study chart",
-        doc: "Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve per value (against the value when it solved one frequency), or its eigenmodes against the value; an optimization's goal at each solve and the best so far.",
+        doc: "Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve per value (against the value when it solved one frequency), or its eigenmodes against the value; an optimization's goal at each solve and the best so far. A grid sweep is charted along one variable with the others held (`at`); solved at one frequency, one curve per value of the next variable.",
         params: &[
             PNG,
             opt("parameter", K::String, "the S-parameter of a sweep, such as s21 (default the first)"),
+            opt(
+                "at",
+                K::Object,
+                "a grid sweep's slice: the variables held and their values ({\"b\": 5}; the nearest swept value); the chart runs along the first variable not held (default: along the first, the others at their first values)",
+            ),
             WIDTH,
             HEIGHT,
         ],

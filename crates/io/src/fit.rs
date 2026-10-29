@@ -1,4 +1,4 @@
-//! Exact surfaces recovered from an imported face's triangles: a plane, a cylinder, a sphere or a cone
+//! Exact surfaces recovered from an imported face's triangles: a plane, a cylinder, a sphere, a cone or a torus
 //! fitted to its vertices by least squares, kept only when every vertex lies on it and every
 //! triangle hugs it as a chord does; otherwise the face stays faceted.
 //!
@@ -21,6 +21,14 @@
 //!   so they lie on a plane across it —, the quadric (x − x₀)² + (y − y₀)² = k²(h − h₀)² across
 //!   it by linear least squares, then Levenberg–Marquardt on ρ cos φ − h sin φ (Lukács et al.
 //!   1998).
+//! - **torus**, tried only where none of those fits (each is a torus' limit): the axis from the
+//!   normal lines — a surface of revolution's normals all meet its axis, a linear condition on
+//!   the axis' Plücker coordinates solved by least squares (Pottmann, Randrup, "Rotational and
+//!   helical surface approximation for reverse engineering", Computing 60, 1998) —, the tube's
+//!   circle in the meridian half-plane by the algebraic fit, then Levenberg–Marquardt on the
+//!   distances √((ρ − R)² + h²) − r (Lukács et al. 1998).
+//!
+//! Free-form faces (splines) fit none of these and stay faceted.
 //!
 //! A fit is accepted when every vertex lies within [`TOLERANCE`] of the body's size of it, and
 //! every triangle's centroid within [`CHORD`] of its longest edge (a chord's sagitta is far less;
@@ -150,20 +158,46 @@ fn fit(s: &Surface, tris: &[usize], scale: &Scale) -> Option<FaceSurface> {
         Some(worst)
     };
     let mut best: Option<(f64, FaceSurface)> = None;
-    for f in [cylinder(&points, &faces, scale), sphere(&points, scale), cone(&points, &faces, scale)].into_iter().flatten() {
+    let consider = |f: FaceSurface, best: &mut Option<(f64, FaceSurface)>| {
         let shaped = match f {
             FaceSurface::Cylinder { radius, .. } | FaceSurface::Sphere { radius, .. } => radius_ok(radius),
+            FaceSurface::Torus { major, minor, .. } => radius_ok(minor) && radius_ok(major),
             // Nearly a cylinder or nearly a plane: those fit better as such.
             FaceSurface::Cone { half_angle, .. } => half_angle > MIN_CONE_ANGLE && half_angle < std::f64::consts::FRAC_PI_2 - MIN_CONE_ANGLE,
             FaceSurface::Plane { .. } => false,
         };
         if !shaped || f.check().is_err() || !fits(&f) {
-            continue;
+            return;
         }
         if let Some(h) = hug(&f)
             && best.is_none_or(|(b, _)| h < b)
         {
-            best = Some((h, f));
+            *best = Some((h, f));
+        }
+    };
+    for f in [cylinder(&points, &faces, scale), sphere(&points, scale), cone(&points, &faces, scale)].into_iter().flatten() {
+        consider(f, &mut best);
+    }
+    // A torus only where nothing simpler fits: a sphere, a cylinder or a cone is a torus' limit
+    // (a vanishing or an infinite major radius), so it would fit those too.
+    if best.is_none() {
+        // Each vertex' normal: its triangles' area-weighted normals summed.
+        let mut normals = vec![Vec3::ZERO; vertices.len()];
+        for &t in tris {
+            let Some(tri) = s.triangles.get(t) else { continue };
+            let [a, b, c] = tri.map(corner);
+            let (Some(a), Some(b), Some(c)) = (a, b, c) else { continue };
+            let n = (b - a).cross(c - a);
+            for v in tri {
+                if let Ok(k) = vertices.binary_search(v)
+                    && let Some(slot) = normals.get_mut(k)
+                {
+                    *slot += n;
+                }
+            }
+        }
+        if let Some(f) = torus(&points, &normals, scale) {
+            consider(f, &mut best);
         }
     }
     best.map(|(_, f)| f)
@@ -512,6 +546,153 @@ fn cone(points: &[Point3], faces: &[([Point3; 3], Vec3)], scale: &Scale) -> Opti
     (apex.is_finite() && angle.is_finite()).then_some(FaceSurface::Cone { apex, axis, half_angle: angle })
 }
 
+/// The torus through the points, `normals` the surface's normal at each (any length or sign).
+///
+/// The axis from the normal lines: a surface of revolution's normals all meet its axis, so the
+/// axis line (a, ā) in Plücker coordinates makes n·ā + (p × n)·a = 0 for every normal line
+/// (n, p × n); the least-squares line under |a| = 1 (Pottmann, Randrup, "Rotational and helical
+/// surface approximation for reverse engineering", Computing 60, 1998): ā = −C⁻¹Bᵀa eliminated,
+/// a the least eigenvector of the Schur complement A − B C⁻¹ Bᵀ of Σ (p × n, n)(p × n, n)ᵀ.
+/// Then the tube's circle in the meridian half-plane (ρ, h) by the algebraic fit, and
+/// Levenberg–Marquardt on the geometric distances √((ρ − R)² + h²) − r (Lukács et al. 1998).
+fn torus(points: &[Point3], normals: &[Vec3], scale: &Scale) -> Option<FaceSurface> {
+    if normals.len() != points.len() {
+        return None;
+    }
+    let c0 = Point3::centroid(points.iter().copied())?;
+    let s = points.iter().map(|p| (*p - c0).norm()).fold(0.0f64, f64::max);
+    if !(s > 0.0) {
+        return None;
+    }
+    // Centred, scaled points; the blocks of the normal lines' second moment.
+    let (mut ma, mut mb, mut mc) = ([[0.0; 3]; 3], [[0.0; 3]; 3], [[0.0; 3]; 3]);
+    for (p, n) in points.iter().zip(normals) {
+        let Some(n) = n.normalized() else { continue };
+        let m = ((*p - c0) / s).cross(n);
+        for i in 0..3 {
+            for j in 0..3 {
+                ma[i][j] += m[i] * m[j];
+                mb[i][j] += m[i] * n[j];
+                mc[i][j] += n[i] * n[j];
+            }
+        }
+    }
+    // C⁻¹Bᵀ column by column, then the Schur complement.
+    let mut cib = [[0.0; 3]; 3];
+    for k in 0..3 {
+        let col = solve(mc, [mb[k][0], mb[k][1], mb[k][2]])?;
+        for i in 0..3 {
+            cib[i][k] = col[i];
+        }
+    }
+    let mut schur = ma;
+    for i in 0..3 {
+        for j in 0..3 {
+            schur[i][j] -= (0..3).map(|k| mb[i][k] * cib[k][j]).sum::<f64>();
+        }
+    }
+    // Symmetrised against rounding.
+    for i in 0..3 {
+        for j in i + 1..3 {
+            let m = 0.5 * (schur[i][j] + schur[j][i]);
+            schur[i][j] = m;
+            schur[j][i] = m;
+        }
+    }
+    let (_, vectors) = eigen3(schur)?;
+    let mut axis = vectors[0].normalized()?;
+    let abar = Vec3::new(
+        -(0..3).map(|k| cib[0][k] * axis[k]).sum::<f64>(),
+        -(0..3).map(|k| cib[1][k] * axis[k]).sum::<f64>(),
+        -(0..3).map(|k| cib[2][k] * axis[k]).sum::<f64>(),
+    );
+    let abar = abar - axis * abar.dot(axis);
+    // The axis' point nearest the centroid, back in place.
+    let foot = c0 + axis.cross(abar) * s;
+    // The tube's circle in the meridian half-plane: ρ² + h² + D ρ + E h + F = 0.
+    let mut ata = [[0.0; 3]; 3];
+    let mut atb = [0.0; 3];
+    for p in points {
+        let d = (*p - foot) / s;
+        let h = d.dot(axis);
+        let rho = (d - axis * h).norm();
+        let row = [rho, h, 1.0];
+        let rhs = -(rho * rho + h * h);
+        for i in 0..3 {
+            for j in 0..3 {
+                ata[i][j] += row[i] * row[j];
+            }
+            atb[i] += row[i] * rhs;
+        }
+    }
+    let x = solve(ata, atb)?;
+    let (r0, h0) = (-0.5 * x[0], -0.5 * x[1]);
+    let r2 = r0 * r0 + h0 * h0 - x[2];
+    if !(r2 > 0.0 && r0 > 0.0) {
+        return None;
+    }
+    let (mut center, mut major, mut minor) = (foot + axis * (h0 * s), r0 * s, r2.sqrt() * s);
+    let residual = |center: Point3, axis: Vec3, major: f64, minor: f64, p: Point3| {
+        let d = p - center;
+        let h = d.dot(axis);
+        ((d - axis * h).norm() - major).hypot(h) - minor
+    };
+    let cost = |c: Point3, a: Vec3, big: f64, small: f64| points.iter().map(|p| residual(c, a, big, small, *p).powi(2)).sum::<f64>();
+    let mut current = cost(center, axis, major, minor);
+    let mut lambda = 1e-3;
+    // Levenberg–Marquardt; parameters: the centre moved (3), the axis turned towards u and v
+    // (2), the major and the minor radius.
+    for _ in 0..MAX_STEPS {
+        if !(current > (1e-3 * scale.tol).powi(2)) {
+            break;
+        }
+        let (u, v) = basis(axis);
+        let mut jtj = [[0.0; 7]; 7];
+        let mut jtr = [0.0; 7];
+        for p in points {
+            let d = *p - center;
+            let h = d.dot(axis);
+            let q = d - axis * h;
+            let rho = q.norm();
+            let Some(e) = q.normalized() else { continue };
+            let dist = (rho - major).hypot(h);
+            if !(dist > 0.0) {
+                continue;
+            }
+            let (sr, sh) = ((rho - major) / dist, h / dist);
+            // ∂h = d·δa − a·δc, ∂ρ = −e·δc − (h/ρ) d·δa.
+            let g = e * sr + axis * sh;
+            let turn = sh - sr * h / rho;
+            let row = [-g.x, -g.y, -g.z, d.dot(u) * turn, d.dot(v) * turn, -sr, -1.0];
+            let res = dist - minor;
+            for i in 0..7 {
+                for j in 0..7 {
+                    jtj[i][j] += row[i] * row[j];
+                }
+                jtr[i] += row[i] * res;
+            }
+        }
+        let trial = |x: [f64; 7]| {
+            let c = center + Vec3::new(x[0], x[1], x[2]);
+            let a = (axis + u * x[3] + v * x[4]).normalized().unwrap_or(axis);
+            let (big, small) = (major + x[5], minor + x[6]);
+            (cost(c, a, big, small), (c, a, big, small))
+        };
+        let Some((step, next)) = damped(jtj, jtr, &mut lambda, trial, current) else { break };
+        (center, axis, major, minor) = next.1;
+        current = next.0;
+        if step <= 1e-15 * scale.size {
+            break;
+        }
+    }
+    // The centre where the axis crosses the tube's plane; a canonical direction.
+    let k = axis.dominant_axis();
+    if axis[k] < 0.0 {
+        axis = -axis;
+    }
+    (center.is_finite() && major > 0.0 && minor > 0.0).then_some(FaceSurface::Torus { center, axis, major, minor })
+}
+
 /// One Levenberg–Marquardt step: (JᵀJ + λ diag JᵀJ) x = −Jᵀr, λ raised until the cost falls
 /// (at most a few times), lowered after. Returns the step's size and the accepted
 /// (cost, parameters), or `None` when no step lowers the cost.
@@ -734,6 +915,68 @@ mod tests {
         }
         let tags = vec![0; tris.len()];
         Surface { name: "ball".into(), positions: pts.iter().map(|p| c + *p * r).collect(), triangles: tris, tags }
+    }
+
+    /// A torus patch (centre `c`, axis `a`, radii `big` and `small`): `n` facets about the axis
+    /// over `sweep` radians, `m` round the tube over `tube` radians (from the outer equator), a
+    /// whole torus for 2π and 2π; one tag.
+    pub(crate) fn torus_surface(c: Point3, a: Vec3, big: f64, small: f64, sweep: f64, tube: f64, n: usize, m: usize) -> Surface {
+        let (u, v) = basis(a);
+        let closed = |angle: f64| (angle - 2.0 * std::f64::consts::PI).abs() < 1e-12;
+        let (ni, mj) = (if closed(sweep) { n } else { n + 1 }, if closed(tube) { m } else { m + 1 });
+        let mut s = Surface { name: "ring".into(), ..Surface::default() };
+        for i in 0..ni {
+            let phi = sweep * i as f64 / n as f64;
+            let r = u * phi.cos() + v * phi.sin();
+            for j in 0..mj {
+                let th = tube * j as f64 / m as f64;
+                s.positions.push(c + r * (big + small * th.cos()) + a * (small * th.sin()));
+            }
+        }
+        let id = |i: usize, j: usize| ((i % ni) * mj + j % mj) as u32;
+        for i in 0..n {
+            for j in 0..m {
+                s.triangles.push([id(i, j), id(i + 1, j), id(i + 1, j + 1)]);
+                s.triangles.push([id(i, j), id(i + 1, j + 1), id(i, j + 1)]);
+                s.tags.extend([0, 0]);
+            }
+        }
+        s
+    }
+
+    #[test]
+    fn a_torus_is_recovered_to_rounding() {
+        use std::f64::consts::PI;
+        let a = Vec3::new(0.2, 0.9, -0.4).normalized().unwrap();
+        let c = Point3::new(0.004, -0.002, 0.03);
+        // A whole ring, a coarse one, a fillet's quarter tube over a quarter turn, and a
+        // spindle-like fat ring (minor radius close to the major).
+        for (big, small, sweep, tube, n, m) in [
+            (0.01, 0.002, 2.0 * PI, 2.0 * PI, 32, 12),
+            (0.01, 0.002, 2.0 * PI, 2.0 * PI, 10, 6),
+            (0.008, 0.001, PI / 2.0, PI / 2.0, 12, 6),
+            (0.005, 0.004, 2.0 * PI, 2.0 * PI, 24, 16),
+        ] {
+            let s = torus_surface(c, a, big, small, sweep, tube, n, m);
+            let fits = fit_faces(&s, &s.tags);
+            let Some(FaceSurface::Torus { center, axis, major, minor }) = fits[0] else { panic!("{big} {small} {sweep}: {:?}", fits[0]) };
+            assert!((major - big).abs() < 1e-11 && (minor - small).abs() < 1e-11, "{major} {minor}");
+            assert!(axis.cross(a).norm() < 1e-9 && (center - c).norm() < 1e-10, "{axis:?} {center:?}");
+            // Every vertex on it to the fit's tolerance.
+            assert!(s.positions.iter().all(|p| fits[0].unwrap().distance(*p) < TOLERANCE * 0.02), "{big} {small}");
+            assert_eq!(fit_faces(&s, &s.tags), fits);
+        }
+        // A torus is not taken for the simpler surfaces it nears, nor they for it.
+        let ball = sphere_surface(c, 0.01, 2);
+        assert!(matches!(fit_faces(&ball, &ball.tags)[0], Some(FaceSurface::Sphere { .. })));
+        let can = cylinder_surface(c, a, 0.002, 0.01, 24, 3);
+        assert!(matches!(fit_faces(&can, &can.tags)[0], Some(FaceSurface::Cylinder { .. })));
+        // A torus' vertices pushed off it by more than the tolerance: faceted.
+        let mut rough = torus_surface(c, a, 0.01, 0.002, 2.0 * PI, 2.0 * PI, 24, 8);
+        for (i, p) in rough.positions.iter_mut().enumerate() {
+            *p += a * (1e-6 * ((i * 7919) % 13) as f64);
+        }
+        assert_eq!(fit_faces(&rough, &rough.tags)[0], None);
     }
 
     #[test]

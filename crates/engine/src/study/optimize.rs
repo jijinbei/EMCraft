@@ -184,6 +184,7 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
     let study = Study {
         kind: Kind::Optimize,
         variables: bounds.iter().map(|b| b.name.clone()).collect(),
+        grid: Vec::new(),
         solve: solve.command.to_owned(),
         frequency_unit: unit.clone(),
         goal: Some(goal.describe(&unit)),

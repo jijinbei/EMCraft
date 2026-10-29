@@ -210,10 +210,10 @@ fn the_study_is_charted() {
     let solve = json!({"command": "solve.frequency", "params": {"frequencies": [6, 7, 8], "order": 1}});
     s.execute("study.sweep", &json!({"variable": "l", "start": 15, "stop": 25, "points": 3, "solve": solve})).unwrap();
     let study = s.results.study.clone().unwrap();
-    let c = super::chart(&study, Some("S21")).unwrap();
+    let c = super::chart(&study, Some("S21"), &super::Slice::default()).unwrap();
     assert_eq!(c.series.len(), 3);
     assert_eq!(c.series[2].label, "l = 25");
-    assert!(super::chart(&study, Some("s99")).is_err());
+    assert!(super::chart(&study, Some("s99"), &super::Slice::default()).is_err());
     let path = std::env::temp_dir().join(format!("emcraft-study-{}.png", std::process::id())).to_string_lossy().into_owned();
     let r = s.execute("view.study", &json!({"path": path, "parameter": "s11", "width": 400, "height": 300})).unwrap();
     assert_eq!(r["width"], 400);
@@ -234,5 +234,106 @@ fn a_cancelled_study_stops_and_leaves_the_session() {
     });
     assert_eq!(r, Err(EngineError::Failed(crate::progress::CANCELLED.into())));
     assert_eq!(s.history, history);
+    assert!(s.results.study.is_none());
+}
+
+/// A five-section filter with its first empty section `a` and the dielectric between the empty
+/// sections `b` long (mm), both variables.
+fn grid_filter(size: f64) -> Session {
+    let mut s = Session::new();
+    s.run_script(&json!([
+        {"command": "project.variable", "params": {"name": "a", "value": 10}},
+        {"command": "project.variable", "params": {"name": "b", "value": 5}},
+        {"command": "model.material.create", "params": {"name": "ptfe-like", "eps_r": 2.0}},
+        {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
+            {"length": 15, "material": "ptfe-like"}, {"length": "=a", "material": "vacuum"}, {"length": "=b", "material": "ptfe-like"},
+            {"length": 10, "material": "vacuum"}, {"length": 15, "material": "ptfe-like"}]}},
+        {"command": "mesh.generate", "params": {"size": size}},
+        {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+        {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}}
+    ]))
+    .unwrap();
+    s
+}
+
+/// The exact |S21| of the five-section filter at `f` (GHz).
+fn exact_grid(a: f64, b: f64, f: f64) -> f64 {
+    let layer = |l: f64, er: f64| Layer::lossless(l * 1e-3, er, 1.0);
+    let line = Te10Line { a: A, layers: vec![layer(15.0, 2.0), layer(a, 1.0), layer(b, 2.0), layer(10.0, 1.0), layer(15.0, 2.0)] };
+    line.solve(f * 1e9).unwrap().s_power().1.norm()
+}
+
+#[test]
+fn a_grid_sweep_solves_every_combination() {
+    let mut s = grid_filter(5.0);
+    let history = s.history.clone();
+    let solve = json!({"command": "solve.frequency", "params": {"frequencies": [6, 8], "order": 2}});
+    let grid = json!({"variables": [{"name": "a", "values": [10, 20]}, {"name": "b", "start": 5, "stop": 15, "points": 2}], "solve": solve, "outputs": ["s21"]});
+    let r = s.execute("study.sweep", &grid).unwrap();
+    assert_eq!(r["variables"], json!(["a", "b"]));
+    assert_eq!(r["grid"], json!({"a": [10.0, 20.0], "b": [5.0, 15.0]}));
+    let rows = r["rows"].as_array().unwrap();
+    // Every combination, the last variable fastest, each row keyed by both values.
+    let keys: Vec<Value> = rows.iter().map(|row| row["values"].clone()).collect();
+    assert_eq!(keys, [json!([10.0, 5.0]), json!([10.0, 15.0]), json!([20.0, 5.0]), json!([20.0, 15.0])]);
+    for row in rows {
+        let (a, b) = (row["values"][0].as_f64().unwrap(), row["values"][1].as_f64().unwrap());
+        for pt in row["points"].as_array().unwrap() {
+            let f = pt["frequency"].as_f64().unwrap();
+            let (m, e) = (pt["s21"]["mag"].as_f64().unwrap(), exact_grid(a, b, f));
+            assert!((m - e).abs() < 5e-3, "a = {a}, b = {b}, f = {f}: {m} against {e}");
+            assert!(pt.get("s11").is_none());
+        }
+    }
+    assert_eq!(s.history, history);
+    // Charted a slice at a time: along a with b held, or along b with a held.
+    let study = s.results.study.clone().unwrap();
+    assert_eq!(study.slice(0, &[0, 1]).len(), 2);
+    let c = super::chart(&study, None, &super::Slice { free: 1, at: vec![1, 0] }).unwrap();
+    assert_eq!(c.series.iter().map(|x| x.label.as_str()).collect::<Vec<_>>(), ["b = 5", "b = 15"]);
+    assert!(c.title.ends_with("at a = 20"), "{}", c.title);
+    let at = json!({"b": 14});
+    let slice = super::Slice::named(&study, at.as_object()).unwrap();
+    assert_eq!(slice, super::Slice { free: 0, at: vec![0, 1] });
+    assert!(super::Slice::named(&study, json!({"c": 1}).as_object()).is_err());
+    let path = std::env::temp_dir().join(format!("emcraft-grid-{}.png", std::process::id())).to_string_lossy().into_owned();
+    s.execute("view.study", &json!({"path": path, "at": {"b": 15}})).unwrap();
+    assert!(s.execute("view.study", &json!({"path": path, "at": {"b": "x"}})).is_err());
+    let _ = std::fs::remove_file(&path);
+    // At one frequency: |S21| against a, one curve per value of b.
+    let one = json!({"variables": [{"name": "a", "values": [10, 15, 20]}, {"name": "b", "values": [5, 15]}],
+                     "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}});
+    s.execute("study.sweep", &one).unwrap();
+    let study = s.results.study.clone().unwrap();
+    let c = super::chart(&study, Some("s21"), &super::Slice::default()).unwrap();
+    assert_eq!(c.series.iter().filter(|x| !x.label.is_empty()).count(), 2);
+    assert!(c.series.iter().all(|x| x.points.len() == 3));
+}
+
+#[test]
+fn hostile_grids_are_refused_and_a_cancelled_one_stops() {
+    let mut s = grid_filter(8.0);
+    let solve = json!({"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}});
+    let axis = |name: &str, n: usize| json!({"name": name, "values": (0..n).map(|k| 5 + k).collect::<Vec<_>>()});
+    for bad in [
+        json!({"variables": [], "solve": solve}),
+        json!({"variables": [axis("a", 2)], "variable": "a", "solve": solve}),
+        json!({"variables": [axis("a", 2)], "values": [1], "solve": solve}),
+        json!({"variables": [axis("a", 2), axis("a", 2)], "solve": solve}),
+        json!({"variables": [axis("a", 2), axis("nope", 2)], "solve": solve}),
+        json!({"variables": [axis("a", 101), axis("b", 101)], "solve": solve}),
+        json!({"variables": [axis("a", 1), axis("b", 1), axis("a", 1), axis("b", 1), axis("a", 1)], "solve": solve}),
+        json!({"variables": [{"name": "a"}], "solve": solve}),
+        json!({"variables": [{"name": "a", "values": []}], "solve": solve}),
+        json!({"variables": [{"name": "a", "values": ["x"]}], "solve": solve}),
+        json!({"variables": "a", "solve": solve}),
+    ] {
+        let r = s.execute("study.sweep", &bad);
+        assert!(matches!(r, Err(EngineError::Params(_))), "{bad}: {r:?}");
+    }
+    let p = crate::progress::Progress::new();
+    p.cancel();
+    let r = crate::progress::scope(p, || s.execute("study.sweep", &json!({"variables": [axis("a", 2), axis("b", 2)], "solve": solve})));
+    assert_eq!(r, Err(EngineError::Failed(crate::progress::CANCELLED.into())));
     assert!(s.results.study.is_none());
 }

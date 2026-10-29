@@ -1,8 +1,11 @@
 //! The last parameter study (`study.sweep`, `study.optimize`): its chart — a sweep's |S| against
 //! frequency, one curve per value, or an optimization's goal at each solve with the best so far —
-//! the S-parameter shown, and the table of its points.
+//! the S-parameter shown, and the table of its points. A sweep over a grid of several variables
+//! is charted a slice at a time: the variable charted along picked from pills, and each other
+//! variable held at a value picked from its own row of pills (`study:along:<name>`,
+//! `study:at:<name>:<index>`).
 
-use emcraft_engine::study::{Kind, Study};
+use emcraft_engine::study::{Kind, Slice, Study};
 
 use super::*;
 
@@ -12,6 +15,10 @@ pub fn summary(study: &Study) -> String {
     let failed = study.rows.iter().filter(|r| r.error.is_some()).count();
     let failed = if failed > 0 { format!(", {failed} failed") } else { String::new() };
     match study.kind {
+        Kind::Sweep if study.is_grid() => {
+            let sizes: Vec<String> = study.grid.iter().map(|v| v.len().to_string()).collect();
+            format!("Sweep of {names} on a grid: {} = {} points by {}{failed}", sizes.join(" × "), study.rows.len(), study.solve)
+        }
         Kind::Sweep => format!("Sweep of {names}: {} values by {}{failed}", study.rows.len(), study.solve),
         Kind::Optimize => {
             let best = study.best.and_then(|b| study.rows.get(b)).map(|r| {
@@ -53,11 +60,16 @@ pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             }
         });
     }
+    if study.is_grid() {
+        slice_picker(ui, study, &mut state.slice, &mut state.chart);
+    }
     let parameter = state.parameter.clone().filter(|p| parameters.contains(p));
+    let slice = state.slice.clone();
     let width = picture_width(ui);
-    let key = format!("study|{}|{}|{width}|{}", app.revision, parameter.as_deref().unwrap_or(""), crate::theme::is_dark());
-    match cached_chart(ui, &mut state.chart, key, width, Height::new(0.6, 240.0, 640.0), || emcraft_engine::study::chart(study, parameter.as_deref()))
-    {
+    let key = format!("study|{}|{}|{:?}|{width}|{}", app.revision, parameter.as_deref().unwrap_or(""), slice, crate::theme::is_dark());
+    match cached_chart(ui, &mut state.chart, key, width, Height::new(0.6, 240.0, 640.0), || {
+        emcraft_engine::study::chart(study, parameter.as_deref(), &slice)
+    }) {
         Ok(p) => {
             picture(ui, p, "chart:study");
         }
@@ -67,6 +79,49 @@ pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     table(ui, study, parameter.as_deref().or(parameters.first().map(String::as_str)));
 }
+
+/// A grid sweep's slice: the variable charted along, and the value each other variable is held
+/// at (a row of pills each); a change redraws the chart.
+fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice, chart: &mut Cached) {
+    let t = Tokens::get();
+    slice.at.resize(study.variables.len(), 0);
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        crate::ui_kit::small(ui, "Along", t.text_dim);
+        for (k, n) in study.variables.iter().enumerate() {
+            let on = slice.free == k;
+            if pill(ui, n, on, &format!("study:along:{n}"), 10, true) && !on {
+                slice.free = k;
+                changed = true;
+            }
+        }
+    });
+    for (k, n) in study.variables.iter().enumerate() {
+        if k == slice.free {
+            continue;
+        }
+        let Some(axis) = study.grid.get(k) else { continue };
+        ui.horizontal_wrapped(|ui| {
+            crate::ui_kit::small(ui, format!("{n} at"), t.text_dim);
+            for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
+                let on = slice.at.get(k) == Some(&i);
+                if pill(ui, &short(*v), on, &format!("study:at:{n}:{i}"), 10, true)
+                    && !on
+                    && let Some(slot) = slice.at.get_mut(k)
+                {
+                    *slot = i;
+                    changed = true;
+                }
+            }
+        });
+    }
+    if changed {
+        chart.clear();
+    }
+}
+
+/// The most values offered as pills for one held variable.
+const MAX_PILLS: usize = 101;
 
 /// The study's points: the values, the goal or the band's extremes of the S-parameter shown, and
 /// why a point failed.

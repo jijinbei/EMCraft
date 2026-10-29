@@ -1,0 +1,42 @@
+[
+  {"note": "A sweep of two section lengths on a grid: charted a slice at a time — along one variable, the other held at a value picked from its pills"},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "project.variable", "params": {"name": "a", "value": 10}},
+    {"command": "project.variable", "params": {"name": "b", "value": 5}},
+    {"command": "model.material.create", "params": {"name": "ptfe-like", "eps_r": 2.0}},
+    {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
+      {"length": 15, "material": "ptfe-like"}, {"length": "=a", "material": "vacuum"}, {"length": "=b", "material": "ptfe-like"},
+      {"length": 10, "material": "vacuum"}, {"length": 15, "material": "ptfe-like"}]}},
+    {"command": "mesh.generate", "params": {"size": 8}},
+    {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
+    {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}}
+  ]}},
+  {"call": "engine.execute", "params": {"command": "study.sweep", "params": {
+    "variables": [{"name": "a", "values": [10, 20]}, {"name": "b", "values": [5, 10, 15]}],
+    "solve": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 4, "order": 1}}}}},
+  {"until": {"busy": false, "view": "study"}, "timeout": 120},
+  {"expect": {"status": "Sweep of a, b on a grid: 2 × 3 = 6 points", "status_error": false,
+    "inspect": {"study.kind": "sweep", "study.rows": 6, "study.grid": [2, 3], "study.free": "a", "study.at": [0, 0], "variables.a": [10, 1e-9]}}},
+  {"frames": 3},
+  {"expect": {"handles": ["chart:study", "study:along:a", "study:along:b", "study:at:b:0", "study:at:b:1", "study:at:b:2", "study:parameter:s21"], "inspect": {"study.chart": "*"}}},
+  {"shot": "study_grid_along_a"},
+  {"note": "Holding b at 15 redraws the curves of a there"},
+  {"click": "study:at:b:2"},
+  {"frames": 2},
+  {"expect": {"inspect": {"study.at": [0, 2], "study.free": "a", "study.chart": "*"}}},
+  {"shot": "study_grid_b_15"},
+  {"note": "Charted along b instead: a held, picked from its own pills"},
+  {"click": "study:along:b"},
+  {"frames": 2},
+  {"expect": {"handles": ["study:at:a:0", "study:at:a:1"], "inspect": {"study.free": "b", "study.chart": "*"}}},
+  {"click": "study:at:a:1"},
+  {"frames": 2},
+  {"expect": {"inspect": {"study.at": [1, 2], "study.free": "b", "study.chart": "*"}}},
+  {"shot": "study_grid_along_b"},
+  {"note": "A one-variable sweep afterwards shows no slice pills"},
+  {"call": "engine.execute", "params": {"command": "study.sweep", "params": {"variable": "a", "values": [10, 20],
+    "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}}}},
+  {"until": {"busy": false, "view": "study"}, "timeout": 120},
+  {"frames": 2},
+  {"expect": {"status": "Sweep of a: 2 values", "inspect": {"study.rows": 2, "study.grid": [2], "study.at": []}}}
+]

@@ -75,7 +75,13 @@ result is frozen so it cannot drift.
    same iris imported from SolidCraft as plates touching the guide's walls (oracle
    `imported-iris-touching`) and as the metal block around its channel, the region the air it
    encloses (`region: cavity`, oracle `imported-iris-cavity`), both against the same mode matching;
-   every mesh checked for degenerate or inverted tetrahedra where it is made. The curved elements' identities — duality to curved edges, gradients
+   every mesh checked for degenerate or inverted tetrahedra where it is made. Flush faces lifted
+   by moves that keep the result: an imported ramp standing on the floor and against both side
+   walls (its slanted face kept on its plane) leaves exactly the guide less the ramp, unions flush
+   with the region from inside leave its volume exact; a torus fitted to its tessellation to
+   rounding, the mesh's boundary nodes and bent midpoints on it, and the volume converging with
+   the elements where the faceted one stalls (heavy). 3MF components flattened with their
+   transforms composed, hostile component trees (cycles, depth, doubling) refused. The curved elements' identities — duality to curved edges, gradients
    in the curl's kernel, tangential continuity across a curved face — are tested in
    `emcraft-fem`. The mesher's own 126 tests came with it (`crates/tetmesh`).
 8. **Adaptive refinement** (`crates/solver/tests/adapt.rs`, the oracle): the residual indicator
@@ -129,6 +135,9 @@ result is frozen so it cannot drift.
    guide finds the length within 0.002 mm of the closed form's λg/4 = 11.1326 mm, |S11| 1.3e-4
    at the model it leaves (oracle `study-optimize-quarter-wave`; order 1 at 5 mm within 2 % in
    the gate); the simplex itself on a quadratic, on a minimum outside its box, on its budget.
+   A sweep on a grid of two section lengths of a five-section filter (a = 10, 20 mm, b = 5,
+   15 mm) against the cascade at each combination (oracle `study-grid-filter`); hostile grids
+   (too many points, repeated or unknown variables) refused, a cancelled one stopped.
 12. **Periodic structures** (`crates/solver/tests/periodic.rs`, `emcraft-solver::bloch`,
    `emcraft-solver::lu`, the oracle): the unsymmetric LU against random systems with zero
    diagonals; an infinite dielectric slab as a unit cell with Floquet ports at normal and

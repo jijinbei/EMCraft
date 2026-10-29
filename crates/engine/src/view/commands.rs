@@ -149,7 +149,12 @@ pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn study(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
     let study = s.results.study.as_ref().ok_or_else(|| EngineError::failed("no study: run study.sweep or study.optimize first"))?;
-    file.write(&super::study::chart(study, p.string("parameter").optional()?)?)
+    let at = match p.raw("at") {
+        None => None,
+        Some(v) => Some(v.as_object().ok_or_else(|| p.error("at", "must map the held variables to their values: {\"b\": 5}"))?),
+    };
+    let slice = super::study::Slice::named(study, at)?;
+    file.write(&super::study::chart(study, p.string("parameter").optional()?, &slice)?)
 }
 
 /// `view.pattern`: the far-field pattern.
