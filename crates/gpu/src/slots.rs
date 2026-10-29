@@ -58,20 +58,6 @@ impl<F: Real> Slots<F> {
         }
     }
 
-    /// Whether the slots fit `lens` edges per component.
-    pub(crate) fn fit(poles: Option<&emcraft_fdtd::Poles>, lens: [usize; 3]) -> bool {
-        poles.is_none_or(|p| {
-            let slots = p.eps.len();
-            let terms = p.kind.len();
-            p.slot.iter().zip(lens).all(|(s, l)| s.len() == l && s.iter().all(|&x| x == u32::MAX || (x as usize) < slots))
-                && p.loss.len() == slots
-                && p.start.len() == slots + 1
-                && p.start.iter().all(|&t| t as usize <= terms)
-                && p.start.windows(2).all(|w| w[0] <= w[1])
-                && p.k.len() == terms
-        })
-    }
-
     pub(crate) fn arg(&self) -> PolesLaunch<F> {
         let [x, y, z] = &self.slot;
         PolesLaunch::new(
@@ -102,10 +88,5 @@ impl<F: Real> Decay<F> {
             return Decay { h: Xyz::new(client, &[vec![1.0], vec![1.0], vec![1.0]]), any: false };
         }
         Decay { h: Xyz::new(client, decay), any: true }
-    }
-
-    /// Whether the decay is empty or fits `lens` faces per component.
-    pub(crate) fn fit(decay: &[Vec<f64>; 3], lens: [usize; 3]) -> bool {
-        decay.iter().all(Vec::is_empty) || decay.iter().zip(lens).all(|(d, l)| d.len() == l)
     }
 }

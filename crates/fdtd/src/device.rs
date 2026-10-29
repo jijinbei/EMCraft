@@ -5,9 +5,76 @@
 
 use std::ops::ControlFlow;
 
-use crate::Result;
 pub use crate::dispersion::{NO_SLOT, Poles};
-use crate::yee::Pulse;
+pub use crate::yee::Cpml;
+use crate::yee::{Pulse, lattice_lengths};
+use crate::{FdtdError, Result, invalid};
+
+/// A grid axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+impl Axis {
+    /// The three axes in order.
+    pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
+
+    /// The axis' component index: 0, 1 or 2.
+    pub const fn index(self) -> usize {
+        match self {
+            Axis::X => 0,
+            Axis::Y => 1,
+            Axis::Z => 2,
+        }
+    }
+
+    /// The two axes across this one, in cyclic order: x → (y, z), y → (z, x), z → (x, y).
+    pub const fn across(self) -> (Axis, Axis) {
+        match self {
+            Axis::X => (Axis::Y, Axis::Z),
+            Axis::Y => (Axis::Z, Axis::X),
+            Axis::Z => (Axis::X, Axis::Y),
+        }
+    }
+}
+
+impl From<Axis> for usize {
+    fn from(a: Axis) -> usize {
+        a.index()
+    }
+}
+
+impl From<Axis> for u32 {
+    fn from(a: Axis) -> u32 {
+        a.index() as u32
+    }
+}
+
+impl TryFrom<usize> for Axis {
+    type Error = FdtdError;
+
+    fn try_from(i: usize) -> Result<Axis> {
+        Axis::ALL.get(i).copied().ok_or_else(|| invalid("axis", format!("{i} is not 0, 1 or 2")))
+    }
+}
+
+/// Whether arrays per component have the lengths `lens`.
+fn sized(arrays: &[Vec<f64>; 3], lens: [usize; 3]) -> bool {
+    arrays.iter().zip(lens).all(|(a, l)| a.len() == l)
+}
+
+/// Whether `h_decay` is empty (no magnetic losses) or one value per H face.
+fn decay_fits(h_decay: &[Vec<f64>; 3], lens: [usize; 3]) -> bool {
+    h_decay.iter().all(Vec::is_empty) || sized(h_decay, lens)
+}
+
+/// A plan whose arrays do not match its grid.
+fn mismatch() -> FdtdError {
+    invalid("plan", "its arrays do not match its grid")
+}
 
 /// A waveguide run prepared for a device, in SI units and f64.
 ///
@@ -37,9 +104,9 @@ pub struct Plan {
     /// The steps between cell centres, half cells at the ends (n + 1 of them).
     pub dual: [Vec<f64>; 3],
     /// The CPML's (b, a) at the z nodes, for E (nz + 1 of them): ψ ← b ψ + a ∂.
-    pub cpml_e: Vec<[f64; 2]>,
+    pub cpml_e: Vec<Cpml>,
     /// The CPML's (b, a) at the cell centres along z, for H (nz of them).
-    pub cpml_h: Vec<[f64; 2]>,
+    pub cpml_h: Vec<Cpml>,
     /// The z node of the source's plane.
     pub source_plane: usize,
     /// The source's profile on the E_y nodes of a plane, (nx + 1) × ny, x fastest: after each
@@ -57,6 +124,26 @@ impl Plan {
     /// The source's amplitude s(t) injected after step `n` (from 0), at t = (n + 1) Δt.
     pub fn source_at(&self, n: usize) -> f64 {
         self.pulse.at((n + 1) as f64 * self.dt)
+    }
+
+    /// Refuses a plan whose arrays do not match its grid.
+    pub fn validate(&self) -> Result<()> {
+        let [nx, ny, nz] = self.n;
+        let [lens_e, lens_h] = lattice_lengths(self.n).ok_or_else(mismatch)?;
+        let plane = (nx + 1) * ny;
+        let agree = sized(&self.e, lens_e)
+            && sized(&self.h, lens_h)
+            && self.primal.iter().zip(self.n).all(|(d, n)| d.len() == n)
+            && self.dual.iter().zip(self.n).all(|(d, n)| d.len() == n + 1)
+            && self.cpml_e.len() == nz + 1
+            && self.cpml_h.len() == nz
+            && self.source.len() == plane
+            && self.weights.iter().all(|w| w.len() == plane)
+            && self.source_plane <= nz
+            && self.planes.iter().all(|&k| k <= nz)
+            && self.poles.as_ref().is_none_or(|p| p.fit(lens_e))
+            && decay_fits(&self.h_decay, lens_h);
+        if agree { Ok(()) } else { Err(mismatch()) }
     }
 }
 
@@ -88,8 +175,8 @@ pub struct OpenPlan {
     /// The CPML's (b, a) along each axis: at the nodes for E (n + 1), at the half cells for H
     /// (n). Component a's two auxiliary variables absorb its derivatives along u and v, the
     /// axes across it in cyclic order.
-    pub cpml_e: [Vec<[f64; 2]>; 3],
-    pub cpml_h: [Vec<[f64; 2]>; 3],
+    pub cpml_e: [Vec<Cpml>; 3],
+    pub cpml_h: [Vec<Cpml>; 3],
     pub ports: Vec<PortPlan>,
     pub currents: Vec<CurrentPlan>,
     pub samples: Vec<SamplePlan>,
@@ -104,6 +191,28 @@ impl OpenPlan {
     pub fn source_at(&self, n: usize) -> f64 {
         self.pulse.at((n as f64 + 0.5) * self.dt)
     }
+
+    /// Refuses a plan whose arrays do not match its grid, or whose ports, current elements or
+    /// samples lie off it.
+    pub fn validate(&self) -> Result<()> {
+        let n = self.n;
+        let [lens_e, lens_h] = lattice_lengths(n).ok_or_else(mismatch)?;
+        let on_edges = |axis: Axis, id: usize| id < lens_e[axis.index()];
+        let agree = sized(&self.ce, lens_e)
+            && sized(&self.ch, lens_h)
+            && self.poles.as_ref().is_none_or(|p| p.fit(lens_e))
+            && decay_fits(&self.h_decay, lens_h)
+            && self.cpml_e.iter().zip(n).all(|(c, n)| c.len() == n + 1)
+            && self.cpml_h.iter().zip(n).all(|(c, n)| c.len() == n)
+            && self.ports.iter().all(|q| !q.edges.is_empty() && q.edges.iter().all(|e| on_edges(q.axis, e.id)))
+            && self.currents.iter().all(|c| on_edges(c.axis, c.id))
+            && self.samples.iter().all(|s| {
+                let (u, v) = s.axis.across();
+                s.plane >= 1 && s.plane < n[s.axis.index()] && s.iu + 1 < n[u.index()] && s.iv + 1 < n[v.index()]
+            })
+            && self.batch > 0;
+        if agree { Ok(()) } else { Err(mismatch()) }
+    }
 }
 
 /// A lumped port: a resistive voltage source on a run of E edges along `axis` (Piket-May et
@@ -112,7 +221,7 @@ impl OpenPlan {
 /// e = (old + E)/2 the port's current sums (vs + h e)/r_edge · sign over its edges (then divided
 /// by their number) and its voltage −h e · sign, h the cell along the axis.
 pub struct PortPlan {
-    pub axis: usize,
+    pub axis: Axis,
     pub edges: Vec<PortEdgePlan>,
     pub r_edge: f64,
     pub sign: f64,
@@ -130,7 +239,7 @@ pub struct PortEdgePlan {
 /// slotted edge ([`OpenPlan::poles`]) its Debye and surface terms then gain kb times the same
 /// change (they took Eⁿ⁺¹).
 pub struct CurrentPlan {
-    pub axis: usize,
+    pub axis: Axis,
     pub id: usize,
     pub coefficient: f64,
 }
@@ -140,7 +249,7 @@ pub struct CurrentPlan {
 /// averaged over v and v + 1 and E_v over u and u + 1 at (plane, iu, iv); its H is H_u averaged
 /// over u, u + 1 and a = plane − 1, plane, and H_v over v, v + 1 and the same along a.
 pub struct SamplePlan {
-    pub axis: usize,
+    pub axis: Axis,
     pub plane: usize,
     pub iu: usize,
     pub iv: usize,

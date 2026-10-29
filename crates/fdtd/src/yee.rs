@@ -80,6 +80,15 @@ pub(crate) fn lattices(n: [usize; 3]) -> [[[usize; 3]; 3]; 2] {
     [[0, 1, 2].map(|a| along(a, 0, 1)), [0, 1, 2].map(|a| along(a, 1, 0))]
 }
 
+/// The lengths of E's three components' lattices and of H's on a grid of `n` cells, `None`
+/// when they overflow.
+pub(crate) fn lattice_lengths(n: [usize; 3]) -> Option<[[usize; 3]; 2]> {
+    let count = |dims: [usize; 3]| dims[0].checked_mul(dims[1])?.checked_mul(dims[2]);
+    let [nx, ny, nz] = n;
+    let (x, y, z) = (nx.checked_add(1)?, ny.checked_add(1)?, nz.checked_add(1)?);
+    Some([[count([nx, y, z])?, count([x, ny, z])?, count([x, y, nz])?], [count([x, ny, nz])?, count([nx, y, nz])?, count([nx, ny, z])?]])
+}
+
 /// The index of point (i, j, k) on a lattice of `dims` points, row-major in x.
 #[inline]
 pub(crate) fn index(dims: [usize; 3], i: usize, j: usize, k: usize) -> usize {
@@ -95,9 +104,16 @@ impl Fields {
 
 /// A CPML's update of one auxiliary variable: ψⁿ⁺¹ = b ψⁿ + a ∂ (b = 1, a = 0 outside it).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Cpml {
-    pub(crate) b: f64,
-    pub(crate) a: f64,
+pub struct Cpml {
+    pub b: f64,
+    pub a: f64,
+}
+
+/// (b, a), as a device lays them out.
+impl From<Cpml> for [f64; 2] {
+    fn from(c: Cpml) -> [f64; 2] {
+        [c.b, c.a]
+    }
 }
 
 impl Cpml {
@@ -188,9 +204,48 @@ pub(crate) struct Pulse {
 }
 
 impl Pulse {
+    /// The pulse over `band`: τ = 1.5/(π B/2) for the band's width B, at least `floor` times its
+    /// centre frequency; it peaks at t₀ = 4τ.
+    pub(crate) fn over(band: Band, floor: f64) -> Pulse {
+        let bw = (band.f1 - band.f0).max(floor * band.fc);
+        Pulse::with_tau(1.5 / (PI * 0.5 * bw), band.fc)
+    }
+
+    /// The pulse of width `tau` at `fc`, peaking at t₀ = 4τ.
+    pub(crate) fn with_tau(tau: f64, fc: f64) -> Pulse {
+        Pulse { t0: 4.0 * tau, tau, fc }
+    }
+
     #[inline]
     pub(crate) fn at(&self, t: f64) -> f64 {
         (-((t - self.t0) / self.tau).powi(2)).exp() * (2.0 * PI * self.fc * (t - self.t0)).sin()
+    }
+}
+
+/// The decay of H on face `id` (1 without magnetic losses).
+#[inline]
+pub(crate) fn decay(d: &[f64], id: usize) -> f64 {
+    d.get(id).copied().unwrap_or(1.0)
+}
+
+/// Whether a run's transforms have settled: none moved by more than `decay` times a scale since
+/// the last check.
+pub(crate) struct Settling {
+    decay: f64,
+    last: Option<Vec<C>>,
+}
+
+impl Settling {
+    pub(crate) fn new(decay: f64) -> Settling {
+        Settling { decay, last: None }
+    }
+
+    /// Checks the transforms `now` against the last check's and keeps them for the next.
+    pub(crate) fn settled(&mut self, now: Vec<C>, scale: f64) -> bool {
+        let limit = self.decay * scale;
+        let settled = self.last.as_ref().is_some_and(|last| last.iter().zip(&now).all(|(a, b)| (a - b).norm() <= limit));
+        self.last = Some(now);
+        settled
     }
 }
 

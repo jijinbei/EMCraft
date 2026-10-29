@@ -81,6 +81,18 @@ pub struct Poles {
 }
 
 impl Poles {
+    /// Whether the slots fit lattices of `lens` edges per component, and the terms the slots.
+    pub fn fit(&self, lens: [usize; 3]) -> bool {
+        let slots = self.eps.len();
+        let terms = self.kind.len();
+        self.slot.iter().zip(lens).all(|(s, l)| s.len() == l && s.iter().all(|&x| x == NO_SLOT || (x as usize) < slots))
+            && self.loss.len() == slots
+            && self.start.len() == slots + 1
+            && self.start.iter().all(|&t| t as usize <= terms)
+            && self.start.windows(2).all(|w| w[0] <= w[1])
+            && self.k.len() == terms
+    }
+
     /// The three components' slotted edges (`edges` per component), `None` if there are none.
     pub(crate) fn of(d: &[Dispersion; 3], edges: [usize; 3]) -> Option<Poles> {
         if !d.iter().any(Dispersion::any) {

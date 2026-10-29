@@ -11,7 +11,7 @@ use num_complex::Complex64 as C;
 
 use crate::device::{Plan, Poles, Stepper};
 use crate::dispersion::{Dispersion, Term, check_poles, exponential_fit, magnetic_update};
-use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, index, lattices, layer_profile, leapfrog, time_step};
+use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, decay, index, lattices, layer_profile, leapfrog, time_step};
 use crate::{FdtdError, Losses, MAX_CELLS, Options, Result, invalid};
 
 /// Divisions of `len` into steps of at most `h`.
@@ -546,12 +546,6 @@ impl Kernel for GuideKernel<'_> {
     }
 }
 
-/// The decay of H on face `id` (1 without magnetic losses).
-#[inline]
-fn decay(d: &[f64], id: usize) -> f64 {
-    d.get(id).copied().unwrap_or(1.0)
-}
-
 /// The TE₁₀ profile sin(π(x − x0)/a) on the E_y nodes of a z plane, over the aperture of a
 /// layer (zero outside it, across y too).
 struct Te10 {
@@ -611,15 +605,11 @@ impl Te10 {
 /// A Gaussian-modulated pulse over the band, its spectrum down to 1e-4 at the ports' TE₁₀
 /// cut-off: energy there travels ever more slowly and would linger in the feeds.
 fn pulse(g: &Grid, band: Band) -> Pulse {
-    let Band { f0, f1, fc } = band;
-    let bw = (f1 - f0).max(1e-3 * fc);
+    let fc = band.fc;
     let cutoff = g.layers.iter().map(|l| l.cutoff(l.eps)).fold(0.0f64, f64::max);
     let cutoff = [g.layer(g.plane1), g.layers[g.plane2.saturating_sub(1)]].iter().map(|l| l.cutoff(l.eps)).fold(0.0f64, f64::max).min(cutoff);
-    let mut tau = 1.5 / (PI * 0.5 * bw);
-    if fc > 1.01 * cutoff {
-        tau = tau.max((1e4f64).ln().sqrt() / (PI * (fc - cutoff)));
-    }
-    Pulse { t0: 4.0 * tau, tau, fc }
+    let pulse = Pulse::over(band, 1e-3);
+    if fc > 1.01 * cutoff { Pulse::with_tau(pulse.tau.max((1e4f64).ln().sqrt() / (PI * (fc - cutoff))), fc) } else { pulse }
 }
 
 /// When checks may begin: once the pulse has passed and the slowest in-band wave has crossed
@@ -645,6 +635,29 @@ pub(crate) struct Recording {
 
 /// Steps between checks of whether the transforms have settled.
 const CHECK: usize = 500;
+
+/// The run prepared for a device: the coefficients and the profiles moved into it, `profiles`
+/// the source's and the two planes'.
+fn plan(g: &Grid, sp: &Spacing, coef: Coefficients, cpml: &ZCpml, profiles: [Te10; 3], pulse: Pulse, dt: f64) -> Plan {
+    let [src, w1, w2] = profiles;
+    Plan {
+        n: g.n(),
+        dt,
+        poles: Poles::of(&coef.dispersion, coef.e.each_ref().map(Vec::len)),
+        e: coef.e,
+        h: coef.h,
+        h_decay: coef.h_decay,
+        primal: sp.primal.clone(),
+        dual: sp.dual.clone(),
+        cpml_e: cpml.e.clone(),
+        cpml_h: cpml.h.clone(),
+        source_plane: g.source,
+        source: src.w,
+        planes: [g.plane1, g.plane2],
+        weights: [w1.weights(sp), w2.weights(sp)],
+        pulse,
+    }
+}
 
 /// One run: launches the pulse and transforms the TE₁₀ projections at the two planes at
 /// `freqs` on the fly, on the CPU's threads or on `device`. Every [`CHECK`] steps after the
@@ -680,26 +693,7 @@ pub(crate) fn run(
         if finished || failed { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
     };
     let steps = match device {
-        Some(device) => {
-            let plan = Plan {
-                n: g.n(),
-                dt,
-                poles: Poles::of(&coef.dispersion, coef.e.each_ref().map(Vec::len)),
-                e: coef.e,
-                h: coef.h,
-                h_decay: coef.h_decay,
-                primal: sp.primal.clone(),
-                dual: sp.dual.clone(),
-                cpml_e: cpml.e.iter().map(|c| [c.b, c.a]).collect(),
-                cpml_h: cpml.h.iter().map(|c| [c.b, c.a]).collect(),
-                source_plane: g.source,
-                source: src.w,
-                planes: [g.plane1, g.plane2],
-                weights: [w1.weights(&sp), w2.weights(&sp)],
-                pulse,
-            };
-            device.leapfrog(&plan, o.max_steps, &mut observe)?
-        }
+        Some(device) => device.leapfrog(&plan(g, &sp, coef, &cpml, [src, w1, w2], pulse, dt), o.max_steps, &mut observe)?,
         None => {
             let fields = Fields::new(g.n());
             let psi = Psi::new(&fields);
