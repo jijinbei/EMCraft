@@ -9,8 +9,8 @@ use num_complex::Complex64 as C;
 
 use super::media::{Media, per_mu};
 use super::terms::PortTerm;
-use super::{Dofs, Driven, NONE, Result, invalid, wall_factor, wavenumber};
-use crate::sparse::Csr;
+use super::{Dofs, Driven, Result, Slot, invalid, present, wall_factor, wavenumber};
+use crate::sparse::{Csr, CsrBuilder};
 
 /// Gauss points per direction for integrals of fields or of two basis functions over elements
 /// and wall faces.
@@ -36,7 +36,7 @@ pub(crate) struct Space<'a> {
 pub(super) struct FaceRule {
     pub tet: usize,
     pub el: Element,
-    pub unknowns: Vec<u32>,
+    pub(crate) unknowns: Vec<Slot>,
     pub points: Vec<([f64; 4], f64, Vec3)>,
 }
 
@@ -51,9 +51,8 @@ pub(super) struct Coupling {
 }
 
 /// Every pair of a tetrahedron's local functions that are both unknowns, row by row.
-pub(super) fn couplings(unknowns: &[u32]) -> impl Iterator<Item = Coupling> + '_ {
-    let free = || unknowns.iter().enumerate().filter(|(_, u)| **u != NONE).map(|(i, u)| (i, *u as usize));
-    free().flat_map(move |(i, row)| free().map(move |(j, col)| Coupling { i, j, row, col }))
+pub(super) fn couplings(unknowns: &[Slot]) -> impl Iterator<Item = Coupling> + '_ {
+    present(unknowns).flat_map(move |(i, row)| present(unknowns).map(move |(j, col)| Coupling { i, j, row, col }))
 }
 
 /// The matrices that do not depend on the frequency, on the pattern.
@@ -76,8 +75,8 @@ impl<'a> Space<'a> {
         element(self.mesh, self.topo, t, self.order())
     }
 
-    /// The unknowns of tetrahedron `t`'s local functions ([`NONE`] for eliminated ones).
-    pub fn unknowns(&self, t: usize) -> Vec<u32> {
+    /// The unknowns of tetrahedron `t`'s local functions (none for eliminated ones).
+    pub(crate) fn unknowns(&self, t: usize) -> Vec<Slot> {
         self.dofs.of_tet(self.topo, t).collect()
     }
 
@@ -93,8 +92,7 @@ impl<'a> Space<'a> {
     /// The matrices' pattern: the element couplings and the `extra` groups of unknowns (the
     /// lumped ports' dense blocks).
     pub(super) fn pattern(&self, extra: impl Iterator<Item = Vec<usize>>) -> Csr {
-        let mut groups: Vec<Vec<usize>> =
-            (0..self.mesh.tets.len()).map(|t| self.dofs.of_tet(self.topo, t).filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
+        let mut groups: Vec<Vec<usize>> = (0..self.mesh.tets.len()).map(|t| self.dofs.of_tet(self.topo, t).filter_map(Slot::get).collect()).collect();
         groups.extend(extra);
         Csr::from_groups(self.dofs.unknowns, groups.iter().map(|g| g.as_slice()))
     }
@@ -157,7 +155,10 @@ pub(crate) struct System<'a> {
 /// s = √(|f| ‖a‖) so the border's pivots are of the matrix's size (unscaled, −1/f can be far
 /// below the factorization's static-pivot threshold); and each border's s. The x part of the
 /// solution is the same whatever s. The border's own rows are the caller's to add.
-pub(super) fn border_columns<V: IntoIterator<Item = (usize, C)>>(a: &Csr, borders: impl IntoIterator<Item = (V, C)>) -> Result<(Csr, Vec<f64>)> {
+pub(super) fn border_columns<V: IntoIterator<Item = (usize, C)>>(
+    a: &Csr,
+    borders: impl IntoIterator<Item = (V, C)>,
+) -> Result<(CsrBuilder, Vec<f64>)> {
     let n = a.n;
     let norm = a.max_abs();
     let mut scale = Vec::new();
@@ -172,15 +173,9 @@ pub(super) fn border_columns<V: IntoIterator<Item = (usize, C)>>(a: &Csr, border
         }
         scale.push(s);
     }
-    let mut out = Csr { n: n + scale.len(), ptr: Vec::with_capacity(n + scale.len() + 1), col: Vec::new(), val: Vec::new() };
-    out.ptr.push(0);
-    for (i, row) in extra.iter().enumerate() {
-        let (lo, hi) = (a.ptr[i], a.ptr[i + 1]);
-        out.col.extend_from_slice(&a.col[lo..hi]);
-        out.val.extend_from_slice(&a.val[lo..hi]);
-        out.col.extend(row.iter().map(|(j, _)| *j));
-        out.val.extend(row.iter().map(|(_, v)| *v));
-        out.ptr.push(out.col.len());
+    let mut out = Csr::builder(n + scale.len());
+    for (i, row) in extra.into_iter().enumerate() {
+        out.row(a.entries(i).chain(row));
     }
     Ok((out, scale))
 }
@@ -192,13 +187,9 @@ fn bordered(a: &Csr, borders: &[(&[(usize, C)], C)]) -> Result<Csr> {
     let columns = borders.iter().map(|(v, f)| (v.iter().copied(), *f));
     let (mut out, scale) = border_columns(a, columns)?;
     for (k, ((v, f), s)) in borders.iter().zip(scale).enumerate() {
-        out.col.extend(v.iter().map(|(i, _)| *i));
-        out.val.extend(v.iter().map(|(_, x)| x * s));
-        out.col.push(n + k);
-        out.val.push(-(s * s) / f);
-        out.ptr.push(out.col.len());
+        out.row(v.iter().map(|(i, x)| (*i, x * s)).chain([(n + k, -(s * s) / f)]));
     }
-    Ok(out)
+    Ok(out.finish())
 }
 
 impl Driven {

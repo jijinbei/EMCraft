@@ -5,7 +5,7 @@
 use emcraft_model::{Material, Mesh, Model};
 use num_complex::Complex64 as C;
 
-use super::{NONE, Result, invalid};
+use super::{Result, Slot, invalid};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Media {
@@ -13,8 +13,8 @@ pub(crate) struct Media {
     eps: Vec<C>,
     /// Per tetrahedron, μr(1 − j tan δ_m).
     mu: Vec<C>,
-    /// Per tetrahedron, its material's index into `dispersive` ([`NONE`] if not dispersive).
-    dispersive_of: Vec<u32>,
+    /// Per tetrahedron, its material's index into `dispersive` (none if not dispersive).
+    dispersive_of: Vec<Slot>,
     /// The dispersive materials, in the model's order (deterministic).
     dispersive: Vec<Material>,
 }
@@ -22,11 +22,11 @@ pub(crate) struct Media {
 impl Media {
     pub(crate) fn new(model: &Model, mesh: &Mesh) -> Result<Media> {
         let n = mesh.tets.len();
-        let mut index = vec![NONE; model.materials.len()];
+        let mut index = vec![Slot::NONE; model.materials.len()];
         let mut dispersive = Vec::new();
         for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
             m.checked()?;
-            index[i] = dispersive.len() as u32;
+            index[i] = Slot::new(dispersive.len());
             dispersive.push(m.clone());
         }
         let (mut eps, mut mu, mut dispersive_of) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
@@ -35,7 +35,7 @@ impl Media {
             let m = k.and_then(|k| model.materials.get(k as usize)).ok_or_else(|| invalid("mesh", format!("tetrahedron {t} has no material")))?;
             eps.push(C::new(m.eps_r, -m.eps_r * m.loss_tangent));
             mu.push(m.mu_c());
-            dispersive_of.push(k.and_then(|k| index.get(k as usize)).copied().unwrap_or(NONE));
+            dispersive_of.push(k.and_then(|k| index.get(k as usize)).copied().unwrap_or(Slot::NONE));
         }
         Ok(Media { eps, mu, dispersive_of, dispersive })
     }
@@ -48,7 +48,7 @@ impl Media {
     /// Tetrahedron `t`'s dispersive material (an index into [`Media::dispersive_materials`]),
     /// if it has one.
     pub(crate) fn dispersive_of(&self, t: usize) -> Option<usize> {
-        self.dispersive_of.get(t).copied().filter(|d| *d != NONE).map(|d| d as usize)
+        self.dispersive_of.get(t).and_then(|d| d.get())
     }
 
     /// Tetrahedron `t`'s εr(1 − j tan δ), whatever the frequency (a dispersive material's

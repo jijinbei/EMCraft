@@ -82,13 +82,13 @@ fn scalings(a: &Csr) -> (Vec<f64>, Vec<f64>) {
     let n = a.n;
     let row: Vec<f64> = (0..n)
         .map(|i| {
-            let m = a.val[a.ptr[i]..a.ptr[i + 1]].iter().fold(0.0f64, |m, v| m.max(v.norm()));
+            let m = a.val[a.row(i)].iter().fold(0.0f64, |m, v| m.max(v.norm()));
             if m > 0.0 { 1.0 / m } else { 1.0 }
         })
         .collect();
     let mut colmax = vec![0.0f64; n];
     for i in 0..n {
-        for k in a.ptr[i]..a.ptr[i + 1] {
+        for k in a.row(i) {
             let j = a.col[k];
             colmax[j] = colmax[j].max(a.val[k].norm() * row[i]);
         }
@@ -202,7 +202,7 @@ fn by_position(a: &Csr, inv: &[usize], row_scale: &[f64], col_scale: &[f64]) -> 
     let mut norm: f64 = 0.0;
     for u in 0..n {
         let pu = inv[u];
-        for k in a.ptr[u]..a.ptr[u + 1] {
+        for k in a.row(u) {
             let v = a.col[k];
             let pv = inv[v];
             let x = a.val[k] * (row_scale[u] * col_scale[v]);
@@ -266,11 +266,9 @@ impl FrontKernel for Kernel {
 
     /// The update is full (m_u × m_u, by column).
     fn extend_add(&self, f: &mut [C], m: usize, place: &[usize], u: &[C]) {
-        let mu = place.len();
-        for b in 0..mu {
-            let cb = place[b];
-            for a in 0..mu {
-                f[cb * m + place[a]] += u[b * mu + a];
+        for (&cb, column) in place.iter().zip(u.chunks_exact(place.len().max(1))) {
+            for (&ra, &v) in place.iter().zip(column) {
+                f[cb * m + ra] += v;
             }
         }
     }

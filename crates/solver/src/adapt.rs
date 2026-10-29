@@ -52,13 +52,11 @@
 
 use emcraft_fem::Order;
 use emcraft_fem::nedelec::LOCAL_FACES;
-use emcraft_model::units::C0;
 use emcraft_model::{Aabb, CVec3, Mesh, Model, Point3, Source, Vec3};
 use num_complex::Complex64 as C;
-use std::f64::consts::PI;
 
 use crate::Driven;
-use crate::driven::{FrequencyResult, Result, invalid};
+use crate::driven::{FrequencyResult, Result, Slot, check_frequency, invalid, wavenumber};
 use crate::radiation::OpenResult;
 
 /// Gauss points per direction of the element and face rules.
@@ -199,9 +197,7 @@ fn crossed(mesh: &Mesh, a: Point3, b: Point3) -> Vec<usize> {
 
 fn evaluate(driven: &Driven, data: &Data) -> Result<Vec<f64>> {
     let frequency = data.frequency;
-    if !(frequency.is_finite() && frequency > 0.0) {
-        return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
-    }
+    check_frequency(frequency)?;
     let tets = driven.mesh.tets.len();
     if let Some(x) = data.fields.iter().find(|x| x.len() != driven.dofs.unknowns) {
         return Err(invalid("solution", format!("{} coefficients for {} unknowns", x.len(), driven.dofs.unknowns)));
@@ -210,100 +206,17 @@ fn evaluate(driven: &Driven, data: &Data) -> Result<Vec<f64>> {
         return Err(invalid("error indicator", "needs one flag per tetrahedron"));
     }
     let skipped = |t: usize| data.skip.get(t).copied().unwrap_or(true);
-    let k0 = 2.0 * PI * frequency / C0;
-    let k2 = k0 * k0;
     let mut eta = vec![0.0; tets];
-    // Each tetrahedron's local coefficients, one list per solution.
-    let coefficients = |t: usize| -> Vec<Vec<C>> { data.fields.iter().map(|x| local(driven, t, x, data.lifted)).collect() };
-    // Element residuals.
     for t in (0..tets).filter(|&t| !skipped(t)) {
-        let el = driven.element_of(t)?;
-        let (eps, nu) = (driven.eps_at(t, frequency), 1.0 / driven.mu_of(t));
-        let h = diameter(&el.corners);
-        let corner_curls: Vec<Vec<Vec3>> = if el.order == Order::One {
-            Vec::new()
-        } else {
-            (0..4).map(|i| el.curl_values(std::array::from_fn(|k| if k == i { 1.0 } else { 0.0 }))).collect()
-        };
-        let rule = el.rule(RULE);
-        let values: Vec<Vec<Vec3>> = rule.iter().map(|(l, _)| el.values(*l)).collect();
-        // A plane wave's source k₀²(εr − 1)E_inc at the rule's points (none in vacuum).
-        let contrast = eps - 1.0;
-        let sources: Vec<CVec3> = if data.incident.is_empty() || contrast.norm() == 0.0 {
-            Vec::new()
-        } else {
-            rule.iter().map(|(l, _)| scaled(data.incident_at(k0, el.point(*l)), contrast * k2)).collect()
-        };
-        for c in coefficients(t) {
-            // ∇ × (∇ × E): the curl's gradient from its corner values (linear in the element).
-            let cc = if corner_curls.is_empty() {
-                zero()
-            } else {
-                let cv: Vec<CVec3> = corner_curls.iter().map(|v| combine(v, &c)).collect();
-                // ∂_j C_k = Σ_i C_i,k ∂_j λ_i.
-                let d = |j: usize, k: usize| -> C { cv.iter().zip(&el.grads).map(|(ci, g)| [ci.x, ci.y, ci.z][k] * [g.x, g.y, g.z][j]).sum() };
-                CVec3::new(d(1, 2) - d(2, 1), d(2, 0) - d(0, 2), d(0, 1) - d(1, 0))
-            };
-            let mut res = 0.0;
-            for (q, ((_, w), v)) in rule.iter().zip(&values).enumerate() {
-                let e = combine(v, &c);
-                let mut rr = CVec3::new(e.x * eps * k2 - cc.x * nu, e.y * eps * k2 - cc.y * nu, e.z * eps * k2 - cc.z * nu);
-                if let Some(f) = sources.get(q) {
-                    rr += *f;
-                }
-                res += w * norm2(rr);
-            }
-            eta[t] += h * h * res;
-        }
+        eta[t] = element_residual(driven, data, t)?;
     }
     // Interior faces: the tangential jump of μr⁻¹ ∇ × E and the normal jump of εr E.
-    let topo = &driven.topo;
-    for (f, pair) in topo.face_tets.iter().enumerate() {
-        let [t1, t2] = *pair;
-        if t1 == u32::MAX || t2 == u32::MAX {
-            continue;
-        }
-        let (t1, t2) = (t1 as usize, t2 as usize);
+    for (f, pair) in driven.topo.face_tets.iter().enumerate() {
+        let (Some(t1), Some(t2)) = (Slot::from(pair[0]).get(), Slot::from(pair[1]).get()) else { continue };
         if skipped(t1) || skipped(t2) {
             continue;
         }
-        let local_face = |t: usize| topo.tet_faces.get(t).and_then(|tf| tf.iter().position(|&g| g as usize == f));
-        let (Some(k1), Some(k2l)) = (local_face(t1), local_face(t2)) else {
-            return Err(invalid("mesh", format!("face {f} is not a face of its tetrahedra")));
-        };
-        let (el1, el2) = (driven.element_of(t1)?, driven.element_of(t2)?);
-        // The same physical points from both sides: the faces' corners in ascending global order.
-        let (r1, r2) = (el1.face_rule(LOCAL_FACES[k1], RULE), el2.face_rule(LOCAL_FACES[k2l], RULE));
-        let corners: Vec<Point3> = LOCAL_FACES[k1].iter().map(|&c| el1.corners[c]).collect();
-        let hf = diameter(&corners);
-        let (eps1, eps2) = (driven.eps_at(t1, frequency), driven.eps_at(t2, frequency));
-        let (nu1, nu2) = (1.0 / driven.mu_of(t1), 1.0 / driven.mu_of(t2));
-        let sides: Vec<_> = r1
-            .iter()
-            .zip(&r2)
-            .map(|((l1, w, n), (l2, _, _))| {
-                // A scattered field's flux jump gains the incident field's, (εr1 − εr2) n · E_inc.
-                let inc = if data.incident.is_empty() || eps1 == eps2 {
-                    C::new(0.0, 0.0)
-                } else {
-                    dot(data.incident_at(k0, el1.point(*l1)), *n) * (eps1 - eps2)
-                };
-                (el1.values(*l1), el1.curl_values(*l1), el2.values(*l2), el2.curl_values(*l2), *w, *n, inc)
-            })
-            .collect();
-        let (c1s, c2s) = (coefficients(t1), coefficients(t2));
-        let mut jump = 0.0;
-        for (c1, c2) in c1s.iter().zip(&c2s) {
-            for (v1, cu1, v2, cu2, w, n, inc) in &sides {
-                let (e1, e2) = (combine(v1, c1), combine(v2, c2));
-                let (h1, h2) = (combine(cu1, c1), combine(cu2, c2));
-                let dh = CVec3::new(h1.x * nu1 - h2.x * nu2, h1.y * nu1 - h2.y * nu2, h1.z * nu1 - h2.z * nu2);
-                let tangential = norm2(cross(*n, dh));
-                let normal = (dot(e1, *n) * eps1 - dot(e2, *n) * eps2 + inc).norm_sqr();
-                jump += w * (tangential + k2 * normal);
-            }
-        }
-        let share = 0.5 * hf * jump;
+        let share = face_jump(driven, data, f, [t1, t2])?;
         eta[t1] += share;
         eta[t2] += share;
     }
@@ -311,4 +224,103 @@ fn evaluate(driven: &Driven, data: &Data) -> Result<Vec<f64>> {
         return Err(invalid("error indicator", format!("not finite in tetrahedron {t}")));
     }
     Ok(eta)
+}
+
+/// Tetrahedron `t`'s local coefficients, one list per solution.
+fn coefficients(driven: &Driven, data: &Data, t: usize) -> Vec<Vec<C>> {
+    data.fields.iter().map(|x| local(driven, t, x, data.lifted)).collect()
+}
+
+/// Tetrahedron `t`'s element residual h² ‖k₀² εr E − ∇ × μr⁻¹ ∇ × E (+ the plane waves'
+/// source)‖², summed over the solutions in order.
+fn element_residual(driven: &Driven, data: &Data, t: usize) -> Result<f64> {
+    let frequency = data.frequency;
+    let k0 = wavenumber(frequency);
+    let k2 = k0 * k0;
+    let el = driven.element_of(t)?;
+    let (eps, nu) = (driven.eps_at(t, frequency), 1.0 / driven.mu_of(t));
+    let h = diameter(&el.corners);
+    let corner_curls: Vec<Vec<Vec3>> = if el.order == Order::One {
+        Vec::new()
+    } else {
+        (0..4).map(|i| el.curl_values(std::array::from_fn(|k| if k == i { 1.0 } else { 0.0 }))).collect()
+    };
+    let rule = el.rule(RULE);
+    let values: Vec<Vec<Vec3>> = rule.iter().map(|(l, _)| el.values(*l)).collect();
+    // A plane wave's source k₀²(εr − 1)E_inc at the rule's points (none in vacuum).
+    let contrast = eps - 1.0;
+    let sources: Vec<CVec3> = if data.incident.is_empty() || contrast.norm() == 0.0 {
+        Vec::new()
+    } else {
+        rule.iter().map(|(l, _)| scaled(data.incident_at(k0, el.point(*l)), contrast * k2)).collect()
+    };
+    let mut eta = 0.0;
+    for c in coefficients(driven, data, t) {
+        // ∇ × (∇ × E): the curl's gradient from its corner values (linear in the element).
+        let cc = if corner_curls.is_empty() {
+            zero()
+        } else {
+            let cv: Vec<CVec3> = corner_curls.iter().map(|v| combine(v, &c)).collect();
+            // ∂_j C_k = Σ_i C_i,k ∂_j λ_i.
+            let d = |j: usize, k: usize| -> C { cv.iter().zip(&el.grads).map(|(ci, g)| [ci.x, ci.y, ci.z][k] * [g.x, g.y, g.z][j]).sum() };
+            CVec3::new(d(1, 2) - d(2, 1), d(2, 0) - d(0, 2), d(0, 1) - d(1, 0))
+        };
+        let mut res = 0.0;
+        for (q, ((_, w), v)) in rule.iter().zip(&values).enumerate() {
+            let e = combine(v, &c);
+            let mut rr = CVec3::new(e.x * eps * k2 - cc.x * nu, e.y * eps * k2 - cc.y * nu, e.z * eps * k2 - cc.z * nu);
+            if let Some(f) = sources.get(q) {
+                rr += *f;
+            }
+            res += w * norm2(rr);
+        }
+        eta += h * h * res;
+    }
+    Ok(eta)
+}
+
+/// The share of interior face `f` between tetrahedra `t1` and `t2` for each: half of
+/// h_f ‖[μr⁻¹ ∇ × E]_t‖² + k₀² ‖[εr E]_n‖² on the face, summed over the solutions in order.
+fn face_jump(driven: &Driven, data: &Data, f: usize, [t1, t2]: [usize; 2]) -> Result<f64> {
+    let frequency = data.frequency;
+    let k0 = wavenumber(frequency);
+    let k2 = k0 * k0;
+    let topo = &driven.topo;
+    let local_face = |t: usize| topo.tet_faces.get(t).and_then(|tf| tf.iter().position(|&g| g as usize == f));
+    let (Some(k1), Some(k2l)) = (local_face(t1), local_face(t2)) else {
+        return Err(invalid("mesh", format!("face {f} is not a face of its tetrahedra")));
+    };
+    let (el1, el2) = (driven.element_of(t1)?, driven.element_of(t2)?);
+    // The same physical points from both sides: the faces' corners in ascending global order.
+    let (r1, r2) = (el1.face_rule(LOCAL_FACES[k1], RULE), el2.face_rule(LOCAL_FACES[k2l], RULE));
+    let corners: Vec<Point3> = LOCAL_FACES[k1].iter().map(|&c| el1.corners[c]).collect();
+    let hf = diameter(&corners);
+    let (eps1, eps2) = (driven.eps_at(t1, frequency), driven.eps_at(t2, frequency));
+    let (nu1, nu2) = (1.0 / driven.mu_of(t1), 1.0 / driven.mu_of(t2));
+    let sides: Vec<_> = r1
+        .iter()
+        .zip(&r2)
+        .map(|((l1, w, n), (l2, _, _))| {
+            // A scattered field's flux jump gains the incident field's, (εr1 − εr2) n · E_inc.
+            let inc = if data.incident.is_empty() || eps1 == eps2 {
+                C::new(0.0, 0.0)
+            } else {
+                dot(data.incident_at(k0, el1.point(*l1)), *n) * (eps1 - eps2)
+            };
+            (el1.values(*l1), el1.curl_values(*l1), el2.values(*l2), el2.curl_values(*l2), *w, *n, inc)
+        })
+        .collect();
+    let (c1s, c2s) = (coefficients(driven, data, t1), coefficients(driven, data, t2));
+    let mut jump = 0.0;
+    for (c1, c2) in c1s.iter().zip(&c2s) {
+        for (v1, cu1, v2, cu2, w, n, inc) in &sides {
+            let (e1, e2) = (combine(v1, c1), combine(v2, c2));
+            let (h1, h2) = (combine(cu1, c1), combine(cu2, c2));
+            let dh = CVec3::new(h1.x * nu1 - h2.x * nu2, h1.y * nu1 - h2.y * nu2, h1.z * nu1 - h2.z * nu2);
+            let tangential = norm2(cross(*n, dh));
+            let normal = (dot(e1, *n) * eps1 - dot(e2, *n) * eps2 + inc).norm_sqr();
+            jump += w * (tangential + k2 * normal);
+        }
+    }
+    Ok(0.5 * hf * jump)
 }

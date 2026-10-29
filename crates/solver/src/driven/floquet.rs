@@ -31,8 +31,8 @@ use num_complex::Complex64 as C;
 use super::assembly::{Space, border_columns};
 use super::ports::for_each_port_point;
 use super::solution::solve_each;
+use super::sparams::{ModeTerm, read_s};
 use super::{Driven, FrequencyResult, Result, check_frequency, invalid, wavenumber};
-use crate::smatrix::SMatrix;
 use crate::sparse::Csr;
 
 /// Harmonic orders searched for a port's modes: |m|, |n| up to this.
@@ -115,10 +115,14 @@ pub struct FloquetTerm {
     pub propagating: bool,
 }
 
-impl FloquetTerm {
+impl ModeTerm for FloquetTerm {
     /// The mode's coefficient c = q·x/‖e‖² in the full field `x`.
-    pub fn coefficient(&self, x: &[C]) -> C {
+    fn coefficient(&self, x: &[C]) -> C {
         self.v.iter().map(|&(i, vi)| vi.conj() * x.get(i).copied().unwrap_or_default()).sum::<C>() / self.norm
+    }
+
+    fn proxy(&self) -> C {
+        C::new(self.proxy, 0.0)
     }
 }
 
@@ -269,43 +273,12 @@ fn bordered(a: &Csr, borders: &[Border]) -> Result<Csr> {
         idx.sort_unstable();
         idx.dedup();
         for i in idx {
-            out.col.push(i);
-            out.val.push(rowmap.get(&i).copied().unwrap_or_default() * *s);
+            out.push(i, rowmap.get(&i).copied().unwrap_or_default() * *s);
         }
-        out.col.push(n + k);
-        out.val.push(-(s * s) / b.factor);
-        out.ptr.push(out.col.len());
+        out.push(n + k, -(s * s) / b.factor);
+        out.end_row();
     }
-    Ok(with_transpose_pattern(&out, n, borders))
-}
-
-/// `out` (a bordered by `borders`) with the structural zeros its first n rows lack where a
-/// border's row has an entry its column has not, each row sorted by column.
-fn with_transpose_pattern(out: &Csr, n: usize, borders: &[Border]) -> Csr {
-    let mut fixed = Csr { n: out.n, ptr: vec![0], col: Vec::new(), val: Vec::new() };
-    let mut need: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (k, b) in borders.iter().enumerate() {
-        let have: std::collections::BTreeSet<usize> = b.column.iter().map(|(i, _)| *i).collect();
-        for (i, _) in &b.row {
-            if !have.contains(i)
-                && let Some(l) = need.get_mut(*i)
-            {
-                l.push(n + k);
-            }
-        }
-    }
-    for i in 0..out.n {
-        let mut entries: Vec<(usize, C)> = (out.ptr[i]..out.ptr[i + 1]).map(|e| (out.col[e], out.val[e])).collect();
-        if let Some(l) = need.get(i) {
-            entries.extend(l.iter().map(|&j| (j, C::new(0.0, 0.0))));
-        }
-        entries.sort_by_key(|e| e.0);
-        entries.dedup_by_key(|e| e.0);
-        fixed.col.extend(entries.iter().map(|e| e.0));
-        fixed.val.extend(entries.iter().map(|e| e.1));
-        fixed.ptr.push(fixed.col.len());
-    }
-    fixed
+    Ok(out.finish().with_symmetric_pattern())
 }
 
 impl Driven {
@@ -331,7 +304,8 @@ impl Driven {
         let f = self.factor_lu(&a, &tie.points, border)?;
         let mut solved = solve_each(&f, &a, &rhs, tie.reduced, assembly)?;
         solved.fields = solved.fields.iter().map(|x| tie.expand(x, psi)).collect();
-        let s = floquet_s(&terms, &solved.fields);
+        let excitations: Vec<(usize, usize)> = (0..terms.len()).map(|p| (p, 0)).collect();
+        let s = read_s(&terms, &excitations, &solved.fields);
         Ok(solved.result(frequency, s, vec![None; terms.len()]))
     }
 
@@ -392,20 +366,4 @@ struct PeriodicSystem {
     terms: Vec<Vec<FloquetTerm>>,
     psi: [f64; 3],
     border: usize,
-}
-
-/// S from each excitation's full field: S_pq = c at port p for a unit wave from q, less the
-/// incident wave, normalised to the modes' powers.
-fn floquet_s(terms: &[Vec<FloquetTerm>], fields: &[Vec<C>]) -> SMatrix {
-    let proxy = |r: usize| terms.get(r).and_then(|l| l.first()).map_or(1.0, |t| t.proxy);
-    let mut s = SMatrix::zeros(terms.len());
-    for (q, x) in fields.iter().enumerate() {
-        for (p, list) in terms.iter().enumerate() {
-            let Some(t) = list.first() else { continue };
-            let c = t.coefficient(x);
-            let direct = if p == q { c - 1.0 } else { c };
-            s[(p, q)] = direct * (proxy(p) / proxy(q)).sqrt();
-        }
-    }
-    s
 }

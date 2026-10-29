@@ -77,7 +77,7 @@ fn lower_rows(a: &Csr, perm: &[usize], inv: &[usize]) -> Vec<Vec<usize>> {
     perm.iter()
         .enumerate()
         .map(|(k, &u)| {
-            let mut r: Vec<usize> = a.col[a.ptr[u]..a.ptr[u + 1]].iter().map(|&v| inv[v]).filter(|&i| i < k).collect();
+            let mut r: Vec<usize> = a.col[a.row(u)].iter().map(|&v| inv[v]).filter(|&i| i < k).collect();
             r.sort_unstable();
             r
         })

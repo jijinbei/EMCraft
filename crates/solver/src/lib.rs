@@ -17,6 +17,7 @@ pub mod portmode;
 pub mod radiation;
 pub mod smatrix;
 pub mod sparse;
+mod subspace;
 pub mod sweep;
 pub mod zdense;
 

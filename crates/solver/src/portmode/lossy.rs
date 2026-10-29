@@ -26,7 +26,7 @@ use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
 
 use super::{CrossSection, MAX_ITERATIONS};
-use crate::driven::{NONE, Result, invalid};
+use crate::driven::{Result, Slot, invalid};
 use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
 
@@ -144,11 +144,11 @@ impl CrossSection {
         let factor = Ldlt::factor(&shifted, &self.points)?;
         let mul = |val: &[C], x: &[C]| -> Vec<C> {
             let p = &self.pattern;
-            (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| val[k] * x[p.col[k]]).sum()).collect()
+            (0..p.n).map(|i| p.row(i).map(|k| val[k] * x[p.col[k]]).sum()).collect()
         };
         let project = self.constraint_lossy(&b_val)?;
         let q = (count + count.max(6)).min(n);
-        let mut rand = crate::eigen::uniform(0x9e37_79b9_7f4a_7c15);
+        let mut rand = crate::subspace::uniform(0x9e37_79b9_7f4a_7c15);
         let mut x: Vec<Vec<C>> = (0..q).map(|_| (0..n).map(|_| C::new(rand(), 0.0)).collect()).collect();
         for v in &mut x {
             project(v)?;
@@ -240,18 +240,17 @@ impl CrossSection {
         let p = &self.pattern;
         let nz = n - nt;
         let groups: Vec<Vec<usize>> =
-            (nt..n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
+            (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
         let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
         for i in nt..n {
-            for k in (p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] >= nt) {
+            for k in p.row(i).filter(|&k| p.col[k] >= nt) {
                 zz.add(i - nt, p.col[k] - nt, b_val[k]);
             }
         }
         let factor = if nz > 0 { Some(Ldlt::factor(&zz, &self.points[nt..])?) } else { None };
         Ok(move |v: &mut Vec<C>| -> Result<()> {
             let Some(f) = &factor else { return Ok(()) };
-            let mut r: Vec<C> =
-                (nt..n).map(|i| -(p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] < nt).map(|k| b_val[k] * v[p.col[k]]).sum::<C>()).collect();
+            let mut r: Vec<C> = (nt..n).map(|i| -p.row(i).filter(|&k| p.col[k] < nt).map(|k| b_val[k] * v[p.col[k]]).sum::<C>()).collect();
             f.solve(&mut r)?;
             v[nt..].copy_from_slice(&r);
             Ok(())
@@ -297,7 +296,7 @@ impl CrossSection {
     /// e_t and g = e_t + ∇φ at barycentric `l` of triangle `t` for complex coefficients `x`.
     fn at_lossy(&self, tri: &Triangle, t: usize, x: &[C], l: [f64; 3]) -> (CVec3, CVec3) {
         let (vt, vz) = self.unknowns_of(t);
-        let coef = |u: u32| if u == NONE { C::new(0.0, 0.0) } else { x.get(u as usize).copied().unwrap_or_default() };
+        let coef = |u: Slot| u.get().map_or(C::new(0.0, 0.0), |u| x.get(u).copied().unwrap_or_default());
         let times = |v: Vec3, c: C| CVec3::new(c * v.x, c * v.y, c * v.z);
         let e = tri.values(l).into_iter().zip(&vt).fold(CVec3::ZERO, |s, (v, u)| s + times(v, coef(*u)));
         let grad = tri.scalar_gradients(l).into_iter().zip(&vz).fold(CVec3::ZERO, |s, (g, u)| s + times(g, coef(*u)));

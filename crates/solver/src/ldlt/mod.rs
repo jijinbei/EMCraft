@@ -164,7 +164,7 @@ impl FrontKernel for Kernel {
 fn symmetric_scaling(a: &Csr) -> Vec<f64> {
     (0..a.n)
         .map(|i| {
-            let m = a.val[a.ptr[i]..a.ptr[i + 1]].iter().fold(0.0f64, |m, v| m.max(v.norm()));
+            let m = a.val[a.row(i)].iter().fold(0.0f64, |m, v| m.max(v.norm()));
             if m > 0.0 { 1.0 / m.sqrt() } else { 1.0 }
         })
         .collect()
@@ -176,7 +176,7 @@ fn lower_columns(a: &Csr, inv: &[usize]) -> Vec<Vec<(usize, C)>> {
     let mut a_cols: Vec<Vec<(usize, C)>> = vec![Vec::new(); a.n];
     for u in 0..a.n {
         let pu = inv[u];
-        for (&v, &x) in a.col[a.ptr[u]..a.ptr[u + 1]].iter().zip(&a.val[a.ptr[u]..a.ptr[u + 1]]) {
+        for (&v, &x) in a.col[a.row(u)].iter().zip(&a.val[a.row(u)]) {
             let pv = inv[v];
             if pu >= pv {
                 a_cols[pv].push((pu, x));
@@ -217,7 +217,7 @@ impl Ldlt {
         let scale = symmetric_scaling(a);
         let mut scaled = a.clone();
         for i in 0..scaled.n {
-            for k in scaled.ptr[i]..scaled.ptr[i + 1] {
+            for k in scaled.row(i) {
                 scaled.val[k] *= scale[i] * scale[scaled.col[k]];
             }
         }
@@ -334,18 +334,18 @@ mod tests {
         fn takes(&self, m: usize, _: usize) -> bool {
             m >= 40
         }
-        fn front(&self, f: &[C], m: usize) -> Result<Box<dyn crate::accel::DeviceFront>, String> {
+        fn front(&self, f: &[C], m: usize) -> Result<Box<dyn crate::accel::DeviceFront>, crate::accel::DeviceError> {
             self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(Box::new(HostFront { f: f.to_vec(), m }))
         }
     }
 
     impl crate::accel::DeviceFront for HostFront {
-        fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), String> {
+        fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), crate::accel::DeviceError> {
             out.copy_from_slice(&self.f[cols.start * self.m..cols.end * self.m]);
             Ok(())
         }
-        fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), String> {
+        fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), crate::accel::DeviceError> {
             for c in cols {
                 for &(p, q) in swaps {
                     self.f.swap(c * self.m + p, c * self.m + q);
@@ -353,7 +353,7 @@ mod tests {
             }
             Ok(())
         }
-        fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), String> {
+        fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), crate::accel::DeviceError> {
             let (m, below) = (self.m, self.m - be);
             let nb = w.len() / below;
             for j in be..m {

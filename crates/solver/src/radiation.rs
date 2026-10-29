@@ -22,7 +22,7 @@ use emcraft_model::{Model, Point3, Shape, Source, Vec3};
 use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
-use crate::driven::{Driven, Result, SolveError, invalid};
+use crate::driven::{Driven, ModeTerm, Result, SolveError, check_frequency, invalid};
 use crate::ldlt::Ldlt;
 
 /// The solution of an open problem at one frequency.
@@ -199,9 +199,7 @@ fn box_rule(lo: Point3, hi: Point3, step: f64) -> Vec<(Point3, f64, Vec3)> {
 impl Driven {
     /// Solves the open problem driven by the model's sources at `frequency` (Hz).
     pub fn solve_open(&self, model: &Model, frequency: f64) -> Result<OpenResult> {
-        if !(frequency.is_finite() && frequency > 0.0) {
-            return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
-        }
+        check_frequency(frequency)?;
         if model.sources.is_empty() && self.lumped.is_empty() && self.ports.is_empty() {
             return Err(SolveError::NotReady(
                 "no sources: add one with source.dipole, source.plane_wave, model.port.lumped or a waveguide port".into(),
@@ -224,8 +222,8 @@ impl Driven {
                     let el = self.element_of(t)?;
                     let values = el.values(el.barycentric(at));
                     let c = C::new(0.0, -omega * MU0 * current * length);
-                    for (u, v) in self.dofs_of(t).zip(&values).filter(|(u, _)| *u != crate::driven::NONE) {
-                        b[u as usize] += c * v.dot(direction);
+                    for (u, v) in self.dofs_of(t).zip(&values).filter_map(|(u, v)| Some((u.get()?, v))) {
+                        b[u] += c * v.dot(direction);
                     }
                 }
                 Source::PlaneWave { direction, polarization } => {
@@ -242,12 +240,12 @@ impl Driven {
                             return Err(invalid("plane wave", "not supported yet: magnetic scatterers (μr ≠ 1)"));
                         }
                         let el = self.element_of(t)?;
-                        let unknowns: Vec<u32> = self.dofs_of(t).collect();
+                        let unknowns: Vec<_> = self.dofs_of(t).collect();
                         for (l, w) in el.rule(crate::driven::rule_points(self.order)) {
                             let phase = C::from_polar(1.0, -k0 * direction.dot(el.point(l).to_vec()));
                             let c = k0 * k0 * contrast * phase * w;
-                            for (u, v) in unknowns.iter().zip(el.values(l)).filter(|(u, _)| **u != crate::driven::NONE) {
-                                b[*u as usize] += c * v.dot(polarization);
+                            for (u, v) in unknowns.iter().zip(el.values(l)).filter_map(|(u, v)| Some((u.get()?, v))) {
+                                b[u] += c * v.dot(polarization);
                             }
                         }
                     }
@@ -386,10 +384,10 @@ impl Driven {
             let (s, mm) = (el.stiffness(1.0), el.mass(1.0));
             let n = self.order.dofs();
             let (eps, mu) = (self.eps_at(t, k0 * C0 / (2.0 * PI)), self.mu_of(t));
-            for (i, u) in self.dofs_of(t).enumerate().filter(|(_, u)| *u != crate::driven::NONE) {
+            for (i, u) in self.dofs_of(t).enumerate().filter_map(|(i, u)| Some((i, u.get()?))) {
                 for &(j, gj) in &known {
                     let a = s[i * n + j] / mu - k0 * k0 * eps * mm[i * n + j];
-                    b[u as usize] -= a * gj;
+                    b[u] -= a * gj;
                 }
             }
         }

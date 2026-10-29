@@ -39,20 +39,37 @@ pub enum Order {
     Two,
 }
 
-impl Order {
-    pub fn from_u8(n: u8) -> Option<Order> {
+/// The order 1 or 2; the number itself back as the error otherwise.
+impl TryFrom<u8> for Order {
+    type Error = u8;
+
+    fn try_from(n: u8) -> Result<Order, u8> {
         match n {
-            1 => Some(Order::One),
-            2 => Some(Order::Two),
-            _ => None,
+            1 => Ok(Order::One),
+            2 => Ok(Order::Two),
+            _ => Err(n),
         }
     }
+}
 
-    pub fn as_u8(self) -> u8 {
-        match self {
+impl From<Order> for u8 {
+    fn from(o: Order) -> u8 {
+        match o {
             Order::One => 1,
             Order::Two => 2,
         }
+    }
+}
+
+impl Order {
+    /// [`Order::try_from`] as an option.
+    pub fn from_u8(n: u8) -> Option<Order> {
+        Order::try_from(n).ok()
+    }
+
+    /// The order as a number ([`u8::from`]).
+    pub fn as_u8(self) -> u8 {
+        u8::from(self)
     }
 
     /// Basis functions per tetrahedron.

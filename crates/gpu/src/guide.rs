@@ -4,7 +4,7 @@
 use std::ops::ControlFlow;
 
 use cubecl::prelude::*;
-use emcraft_fdtd::{FdtdError, Plan, Result};
+use emcraft_fdtd::{Cpml as Profile, Plan, Result};
 
 use crate::BATCH;
 use crate::buffer::{Buf, Real, Xyz};
@@ -20,8 +20,8 @@ struct Cpml<F> {
 }
 
 impl<F: Real> Cpml<F> {
-    fn new(client: &Client, lens: [usize; 2], ba: &[[f64; 2]]) -> Cpml<F> {
-        let flat: Vec<f64> = ba.iter().flatten().copied().collect();
+    fn new(client: &Client, lens: [usize; 2], ba: &[Profile]) -> Cpml<F> {
+        let flat: Vec<f64> = ba.iter().flat_map(|&c| <[f64; 2]>::from(c)).collect();
         Cpml { psi: lens.map(|l| Buf::zeros(client, l)), ba: Buf::new(client, &flat) }
     }
 
@@ -56,25 +56,9 @@ const REDUCE: u32 = 256;
 
 impl<F: Real> Run<F> {
     pub(crate) fn new(client: &Client, p: &Plan) -> Result<Run<F>> {
-        let [nx, ny, nz] = p.n;
-        let plane = (nx + 1) * ny;
+        p.validate()?;
         let grid = Lattice::new(client, p.n)?;
         let (lens_e, lens_h) = (grid.e, grid.h);
-        let shapes_agree = p.e.iter().zip(lens_e).all(|(c, l)| c.len() == l)
-            && p.h.iter().zip(lens_h).all(|(c, l)| c.len() == l)
-            && p.primal.iter().zip(p.n).all(|(d, n)| d.len() == n)
-            && p.dual.iter().zip(p.n).all(|(d, n)| d.len() == n + 1)
-            && p.cpml_e.len() == nz + 1
-            && p.cpml_h.len() == nz
-            && p.source.len() == plane
-            && p.weights.iter().all(|w| w.len() == plane)
-            && p.source_plane <= nz
-            && p.planes.iter().all(|&k| k <= nz)
-            && Slots::<F>::fit(p.poles.as_ref(), lens_e)
-            && Decay::<F>::fit(&p.h_decay, lens_h);
-        if !shapes_agree {
-            return Err(FdtdError::Invalid { what: "plan".into(), why: "its arrays do not match its grid".into() });
-        }
         let weights: Vec<f64> = p.weights.iter().flatten().copied().collect();
         Ok(Run {
             grid,

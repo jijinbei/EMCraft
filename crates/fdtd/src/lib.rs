@@ -59,8 +59,11 @@ use emcraft_model::units::{C0, EPS0, MU0};
 use emcraft_model::{Material, Model, Waveguide};
 use num_complex::Complex64 as C;
 
-pub use crate::device::{CurrentPlan, NO_SLOT, OpenBatch, OpenPlan, OpenStepper, Plan, Poles, PortEdgePlan, PortPlan, SamplePlan, Stepper};
+pub use crate::device::{
+    Axis, Cpml, CurrentPlan, NO_SLOT, OpenBatch, OpenPlan, OpenStepper, Plan, Poles, PortEdgePlan, PortPlan, SamplePlan, Stepper,
+};
 use crate::guide::{Grid, run};
+use crate::yee::Settling;
 
 pub mod device;
 mod dispersion;
@@ -90,8 +93,19 @@ pub enum FdtdError {
 
 pub type Result<T> = std::result::Result<T, FdtdError>;
 
-pub(crate) fn invalid(what: &str, why: impl Into<String>) -> FdtdError {
+/// An invalid `what`, for `why`.
+pub fn invalid(what: &str, why: impl Into<String>) -> FdtdError {
     FdtdError::Invalid { what: what.into(), why: why.into() }
+}
+
+/// `x` as a device's 32-bit index, refused as an invalid `what` when it does not fit.
+pub fn to_u32(x: usize, what: &str) -> Result<u32> {
+    u32::try_from(x).map_err(|_| invalid(what, format!("{x} does not fit 32 bits")))
+}
+
+/// Whether `frequencies` are some finite numbers > 0.
+fn frequencies_ok(frequencies: &[f64]) -> bool {
+    !frequencies.is_empty() && frequencies.iter().all(|f| f.is_finite() && *f > 0.0)
 }
 
 /// Run settings.
@@ -114,6 +128,24 @@ pub struct Options {
 impl Options {
     pub fn new(cell: f64) -> Options {
         Options { cell, pml: 16, feed: 12, courant: 0.99, decay: 1e-5, max_steps: 200_000 }
+    }
+
+    /// The settings checked: a finite cell > 0, a Courant number in (0, 1), at least 4 PML and
+    /// 2 feed cells, 1 to [`MAX_STEPS`] steps and a decay > 0.
+    pub fn validate(&self) -> Result<()> {
+        if !(self.cell.is_finite() && self.cell > 0.0) {
+            return Err(invalid("cell", "must be a finite number > 0"));
+        }
+        if !(self.courant > 0.0 && self.courant < 1.0)
+            || self.pml < 4
+            || self.feed < 2
+            || self.max_steps == 0
+            || self.max_steps > MAX_STEPS
+            || !(self.decay > 0.0)
+        {
+            return Err(invalid("options", format!("{self:?}")));
+        }
+        Ok(())
     }
 }
 
@@ -192,13 +224,8 @@ pub fn s_parameters(model: &Model, o: &Options, frequencies: &[f64]) -> Result<T
 
 /// [`s_parameters`] with the leapfrog on `device` (the CPU's threads when `None`).
 pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device: Option<&dyn Stepper>) -> Result<TdResult> {
-    if !(o.cell.is_finite() && o.cell > 0.0) {
-        return Err(invalid("cell", "must be a finite number > 0"));
-    }
-    if !(o.courant > 0.0 && o.courant < 1.0) || o.pml < 4 || o.feed < 2 || o.max_steps == 0 || o.max_steps > MAX_STEPS || !(o.decay > 0.0) {
-        return Err(invalid("options", format!("{o:?}")));
-    }
-    if frequencies.is_empty() || frequencies.iter().any(|f| !(f.is_finite() && *f > 0.0)) {
+    o.validate()?;
+    if !frequencies_ok(frequencies) {
         return Err(invalid("frequencies", "must be finite numbers > 0"));
     }
     let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
@@ -222,13 +249,13 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
     // The incident run: the port-1 guide throughout.
     let gr = Grid::new(model, o, true, frequencies)?;
     let mut settling = Settling::new(o.decay);
-    let (reference, dt) = run(&gr, o, frequencies, device, |d1, _| settling.settled(d1, &[], peak(d1)))?;
+    let (reference, dt) = run(&gr, o, frequencies, device, |d1, _| settling.settled(d1.to_vec(), peak(d1)))?;
     let scale = peak(&reference.d1);
     let g = Grid::new(model, o, false, frequencies)?;
     let mut settling = Settling::new(o.decay);
     let mut converged = false;
     let (dut, dt2) = run(&g, o, frequencies, device, |d1, d2| {
-        converged = settling.settled(d1, d2, scale);
+        converged = settling.settled(d1.iter().chain(d2).copied().collect(), scale);
         converged
     })?;
     if (dt - dt2).abs() > 1e-12 * dt {
@@ -319,29 +346,4 @@ impl PortGuide {
 /// The largest magnitude of a transform.
 fn peak(d: &[C]) -> f64 {
     d.iter().fold(0.0f64, |m, c| m.max(c.norm()))
-}
-
-/// Whether a run's transforms have settled: no frequency moved by more than `decay` of the
-/// incident wave's largest since the last check.
-struct Settling {
-    decay: f64,
-    last: Option<(Vec<C>, Vec<C>)>,
-}
-
-impl Settling {
-    fn new(decay: f64) -> Settling {
-        Settling { decay, last: None }
-    }
-
-    /// Checks the transforms at the two planes against the last check's, `scale` the incident
-    /// wave's largest.
-    fn settled(&mut self, d1: &[C], d2: &[C], scale: f64) -> bool {
-        let moved = self.last.as_ref().map(|(p1, p2)| {
-            let m1 = p1.iter().zip(d1).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
-            let m2 = p2.iter().zip(d2).fold(0.0f64, |m, (a, b)| m.max((a - b).norm()));
-            m1.max(m2)
-        });
-        self.last = Some((d1.to_vec(), d2.to_vec()));
-        moved.is_some_and(|m| m <= self.decay * scale)
-    }
 }

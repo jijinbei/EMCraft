@@ -3,7 +3,7 @@
 
 use std::ops::ControlFlow;
 
-use emcraft_fdtd::{Options, Plan, Stepper, s_parameters, s_parameters_with};
+use emcraft_fdtd::{Cpml, Options, Plan, Stepper, s_parameters, s_parameters_with};
 use emcraft_model::{End, Material, Model, Port, Section, Waveguide};
 
 /// The leapfrog of `Plan`'s documentation, one loop per component.
@@ -32,7 +32,7 @@ impl Stepper for Serial {
                             if p.h[0][id] != 0.0 {
                                 let dez_dy = (e[2][at(de[2], i, j + 1, k)] - e[2][at(de[2], i, j, k)]) / dy[j];
                                 let dey_dz = (e[1][at(de[1], i, j, k + 1)] - e[1][at(de[1], i, j, k)]) / dz[k];
-                                let [b, a] = p.cpml_h[k];
+                                let Cpml { b, a } = p.cpml_h[k];
                                 psi_hx[id] = b * psi_hx[id] + a * dey_dz;
                                 h[0][id] -= p.h[0][id] * (dez_dy - dey_dz - psi_hx[id]);
                             }
@@ -42,7 +42,7 @@ impl Stepper for Serial {
                             if p.h[1][id] != 0.0 {
                                 let dex_dz = (e[0][at(de[0], i, j, k + 1)] - e[0][at(de[0], i, j, k)]) / dz[k];
                                 let dez_dx = (e[2][at(de[2], i + 1, j, k)] - e[2][at(de[2], i, j, k)]) / dx[i];
-                                let [b, a] = p.cpml_h[k];
+                                let Cpml { b, a } = p.cpml_h[k];
                                 psi_hy[id] = b * psi_hy[id] + a * dex_dz;
                                 h[1][id] -= p.h[1][id] * (dex_dz + psi_hy[id] - dez_dx);
                             }
@@ -66,7 +66,7 @@ impl Stepper for Serial {
                             if p.e[0][id] != 0.0 {
                                 let dhz_dy = (h[2][at(dh[2], i, j, k)] - h[2][at(dh[2], i, j - 1, k)]) / dyd[j];
                                 let dhy_dz = (h[1][at(dh[1], i, j, k)] - h[1][at(dh[1], i, j, k - 1)]) / dzd[k];
-                                let [b, a] = p.cpml_e[k];
+                                let Cpml { b, a } = p.cpml_e[k];
                                 psi_ex[id] = b * psi_ex[id] + a * dhy_dz;
                                 e[0][id] += p.e[0][id] * (dhz_dy - dhy_dz - psi_ex[id]);
                             }
@@ -76,7 +76,7 @@ impl Stepper for Serial {
                             if p.e[1][id] != 0.0 {
                                 let dhx_dz = (h[0][at(dh[0], i, j, k)] - h[0][at(dh[0], i, j, k - 1)]) / dzd[k];
                                 let dhz_dx = (h[2][at(dh[2], i, j, k)] - h[2][at(dh[2], i - 1, j, k)]) / dxd[i];
-                                let [b, a] = p.cpml_e[k];
+                                let Cpml { b, a } = p.cpml_e[k];
                                 psi_ey[id] = b * psi_ey[id] + a * dhx_dz;
                                 e[1][id] += p.e[1][id] * (dhx_dz + psi_ey[id] - dhz_dx);
                             }

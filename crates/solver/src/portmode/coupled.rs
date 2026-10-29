@@ -16,12 +16,11 @@
 use emcraft_model::{Axis, Symmetry};
 
 use super::{CrossSection, PortMode};
+use crate::dense::{Cholesky, JacobiStop, jacobi};
 use crate::driven::{Result, invalid};
 
 /// β² within this fraction of the largest are one degenerate cluster.
 const DEGENERATE: f64 = 1e-8;
-/// Sweeps of the Jacobi eigenvalue iteration.
-const MAX_SWEEPS: usize = 64;
 
 impl CrossSection {
     /// The `count` modes with the largest β² as [`CrossSection::modes`] finds them, each cluster
@@ -69,18 +68,18 @@ impl CrossSection {
             }
         }
         // D = L Lᵀ; M = L⁻¹ G L⁻ᵀ; its eigenvectors y give q = L⁻ᵀ y.
-        let l = cholesky(&d, m).ok_or_else(|| invalid("port modes", "degenerate modes without positive power"))?;
-        let linv_g: Vec<Vec<f64>> = (0..m).map(|j| lower_solve(&l, m, &(0..m).map(|i| g[i * m + j]).collect::<Vec<_>>())).collect();
+        let l = Cholesky::new(&d, m).ok_or_else(|| invalid("port modes", "degenerate modes without positive power"))?;
+        let linv_g: Vec<Vec<f64>> = (0..m).map(|j| l.lower_solve(&(0..m).map(|i| g[i * m + j]).collect::<Vec<_>>())).collect();
         // linv_g[j] is column j of L⁻¹G; M's column j is L⁻¹ (row j of L⁻¹G)ᵀ by symmetry of G.
         let rows: Vec<Vec<f64>> = (0..m).map(|i| (0..m).map(|j| linv_g[j][i]).collect()).collect();
-        let mcols: Vec<Vec<f64>> = (0..m).map(|i| lower_solve(&l, m, &rows[i])).collect();
+        let mcols: Vec<Vec<f64>> = (0..m).map(|i| l.lower_solve(&rows[i])).collect();
         let mut mat = vec![0.0; m * m];
         for i in 0..m {
             for j in 0..m {
                 mat[i * m + j] = 0.5 * (mcols[i][j] + mcols[j][i]);
             }
         }
-        let (values, vectors) = jacobi(mat, m);
+        let (values, vectors) = jacobi(mat, m, JacobiStop::Diagonal);
         // λ = |I|²/(2P) up to a constant: the highest impedance (smallest λ) first.
         let mut order: Vec<usize> = (0..m).collect();
         order.sort_by(|a, b| values[*a].total_cmp(&values[*b]).then(a.cmp(b)));
@@ -89,7 +88,7 @@ impl CrossSection {
             .into_iter()
             .map(|k| {
                 let y: Vec<f64> = (0..m).map(|i| vectors[i * m + k]).collect();
-                let q = upper_solve(&l, m, &y);
+                let q = l.upper_solve(&y);
                 let n = cluster[0].x.len();
                 let x: Vec<f64> = (0..n).map(|r| (0..m).map(|i| q[i] * cluster[i].x.get(r).copied().unwrap_or(0.0)).sum()).collect();
                 self.finish(beta2, x)
@@ -250,84 +249,6 @@ impl CrossSection {
 /// The largest cross power of two modes of a terminal port, as a fraction of their own.
 const CROSS_POWER: f64 = 1e-4;
 
-/// D = L Lᵀ for symmetric positive definite `d` (m × m, row-major); `None` otherwise.
-fn cholesky(d: &[f64], m: usize) -> Option<Vec<f64>> {
-    let mut l = vec![0.0; m * m];
-    for j in 0..m {
-        let s = d[j * m + j] - (0..j).map(|k| l[j * m + k] * l[j * m + k]).sum::<f64>();
-        if !(s > 0.0 && s.is_finite()) {
-            return None;
-        }
-        l[j * m + j] = s.sqrt();
-        for i in j + 1..m {
-            l[i * m + j] = (d[i * m + j] - (0..j).map(|k| l[i * m + k] * l[j * m + k]).sum::<f64>()) / l[j * m + j];
-        }
-    }
-    Some(l)
-}
-
-/// L⁻¹ b.
-fn lower_solve(l: &[f64], m: usize, b: &[f64]) -> Vec<f64> {
-    let mut x = b.to_vec();
-    for i in 0..m {
-        x[i] = (x[i] - (0..i).map(|k| l[i * m + k] * x[k]).sum::<f64>()) / l[i * m + i];
-    }
-    x
-}
-
-/// L⁻ᵀ b.
-fn upper_solve(l: &[f64], m: usize, b: &[f64]) -> Vec<f64> {
-    let mut x = b.to_vec();
-    for i in (0..m).rev() {
-        x[i] = (x[i] - (i + 1..m).map(|k| l[k * m + i] * x[k]).sum::<f64>()) / l[i * m + i];
-    }
-    x
-}
-
-/// The eigenvalues and eigenvectors (columns of the row-major m × m result) of symmetric `a`
-/// by cyclic Jacobi rotations (G. H. Golub, C. F. Van Loan, *Matrix Computations*, 4th ed.,
-/// §8.5), at most [`MAX_SWEEPS`] sweeps.
-fn jacobi(mut a: Vec<f64>, m: usize) -> (Vec<f64>, Vec<f64>) {
-    let mut v = vec![0.0; m * m];
-    (0..m).for_each(|i| v[i * m + i] = 1.0);
-    for _ in 0..MAX_SWEEPS {
-        let off: f64 = (0..m).flat_map(|i| (0..m).filter(move |j| *j != i).map(move |j| (i, j))).map(|(i, j)| a[i * m + j].powi(2)).sum();
-        let diag: f64 = (0..m).map(|i| a[i * m + i].powi(2)).sum();
-        if off <= 1e-30 * diag || off == 0.0 {
-            break;
-        }
-        for p in 0..m {
-            for q in p + 1..m {
-                let apq = a[p * m + q];
-                if apq == 0.0 {
-                    continue;
-                }
-                let theta = (a[q * m + q] - a[p * m + p]) / (2.0 * apq);
-                let sign = if theta >= 0.0 { 1.0 } else { -1.0 };
-                let t = sign / (theta.abs() + (theta * theta + 1.0).sqrt());
-                let c = 1.0 / (t * t + 1.0).sqrt();
-                let s = t * c;
-                for k in 0..m {
-                    let (akp, akq) = (a[k * m + p], a[k * m + q]);
-                    a[k * m + p] = c * akp - s * akq;
-                    a[k * m + q] = s * akp + c * akq;
-                }
-                for k in 0..m {
-                    let (apk, aqk) = (a[p * m + k], a[q * m + k]);
-                    a[p * m + k] = c * apk - s * aqk;
-                    a[q * m + k] = s * apk + c * aqk;
-                }
-                for k in 0..m {
-                    let (vkp, vkq) = (v[k * m + p], v[k * m + q]);
-                    v[k * m + p] = c * vkp - s * vkq;
-                    v[k * m + q] = s * vkp + c * vkq;
-                }
-            }
-        }
-    }
-    ((0..m).map(|i| a[i * m + i]).collect(), v)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,20 +256,20 @@ mod tests {
     #[test]
     fn jacobi_diagonalises_a_symmetric_matrix() {
         let a = vec![4.0, 1.0, 0.5, 1.0, 3.0, 0.2, 0.5, 0.2, 1.0];
-        let (values, v) = jacobi(a.clone(), 3);
+        let (values, v) = jacobi(a.clone(), 3, JacobiStop::Diagonal);
         for k in 0..3 {
             for i in 0..3 {
                 let av: f64 = (0..3).map(|j| a[i * 3 + j] * v[j * 3 + k]).sum();
                 assert!((av - values[k] * v[i * 3 + k]).abs() < 1e-12);
             }
         }
-        let l = cholesky(&a, 3).unwrap();
+        let l = Cholesky::new(&a, 3).unwrap();
         let b = [1.0, 2.0, 3.0];
-        let x = upper_solve(&l, 3, &lower_solve(&l, 3, &b));
+        let x = l.upper_solve(&l.lower_solve(&b));
         for i in 0..3 {
             let ax: f64 = (0..3).map(|j| a[i * 3 + j] * x[j]).sum();
             assert!((ax - b[i]).abs() < 1e-12);
         }
-        assert!(cholesky(&[1.0, 2.0, 2.0, 1.0], 2).is_none());
+        assert!(Cholesky::new(&[1.0, 2.0, 2.0, 1.0], 2).is_none());
     }
 }

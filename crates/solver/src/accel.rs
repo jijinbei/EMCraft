@@ -14,6 +14,23 @@ use std::sync::Arc;
 
 use num_complex::Complex64 as C;
 
+/// A device's failure, in its own words.
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[error("{0}")]
+pub struct DeviceError(pub String);
+
+impl From<String> for DeviceError {
+    fn from(why: String) -> DeviceError {
+        DeviceError(why)
+    }
+}
+
+impl From<&str> for DeviceError {
+    fn from(why: &str) -> DeviceError {
+        DeviceError(why.into())
+    }
+}
+
 /// A device that factors fronts.
 pub trait Accelerator {
     /// What it is, for messages.
@@ -24,21 +41,21 @@ pub trait Accelerator {
     fn takes(&self, m: usize, k: usize) -> bool;
 
     /// Holds the front `f` (column-major m × m, full in its first columns and lower after).
-    fn front(&self, f: &[C], m: usize) -> Result<Box<dyn DeviceFront>, String>;
+    fn front(&self, f: &[C], m: usize) -> Result<Box<dyn DeviceFront>, DeviceError>;
 }
 
 /// A front held by a device.
 pub trait DeviceFront {
     /// Columns `cols` (all m rows of each, column-major) into `out`.
-    fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), String>;
+    fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), DeviceError>;
 
     /// Interchanges rows p and q of columns `cols`, for each (p, q) of `swaps` in order.
-    fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), String>;
+    fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), DeviceError>;
 
     /// The update of a block of nb pivots ending at column `be` of a front with `k` pivots:
     /// F[i][j] −= Σₜ W[i − be][t] L[j − be][t] for every column j ≥ be and row i ≥ be with
     /// j < k or i ≥ j, summed over t in order; W and L are (m − be) × nb, column-major.
-    fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), String>;
+    fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), DeviceError>;
 }
 
 thread_local! {

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cubecl::prelude::*;
 use emcraft_solver::Complex64 as C;
-use emcraft_solver::accel::{Accelerator, DeviceFront};
+use emcraft_solver::accel::{Accelerator, DeviceError, DeviceFront};
 
 use crate::Backend;
 use crate::buffer::{Buf, Ints};
@@ -61,9 +61,9 @@ fn bytes(xs: &[C]) -> &[u8] {
     bytemuck::cast_slice(xs)
 }
 
-/// A device failure as the solver's error text.
-fn text(e: emcraft_fdtd::FdtdError) -> String {
-    e.to_string()
+/// A device failure as the solver sees it.
+fn text(e: emcraft_fdtd::FdtdError) -> DeviceError {
+    DeviceError(e.to_string())
 }
 
 impl Accelerator for Fronts {
@@ -75,9 +75,9 @@ impl Accelerator for Fronts {
         m >= self.min_rows && m <= MAX_ROWS && k > 0
     }
 
-    fn front(&self, f: &[C], m: usize) -> Result<Box<dyn DeviceFront>, String> {
+    fn front(&self, f: &[C], m: usize) -> Result<Box<dyn DeviceFront>, DeviceError> {
         if f.len() != m * m || m > MAX_ROWS {
-            return Err(format!("a front of {} entries is not {m} × {m}", f.len()));
+            return Err(format!("a front of {} entries is not {m} × {m}", f.len()).into());
         }
         self.taken.fetch_add(1, Ordering::Relaxed);
         let client = self.client.clone();
@@ -95,7 +95,7 @@ struct HeldFront {
 }
 
 impl DeviceFront for HeldFront {
-    fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), String> {
+    fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), DeviceError> {
         let m = self.m;
         if cols.end > m || cols.start > cols.end || out.len() != (cols.end - cols.start) * m {
             return Err("columns outside the front".into());
@@ -109,7 +109,7 @@ impl DeviceFront for HeldFront {
         Ok(())
     }
 
-    fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), String> {
+    fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), DeviceError> {
         let m = self.m;
         if swaps.is_empty() || cols.is_empty() {
             return Ok(());
@@ -138,7 +138,7 @@ impl DeviceFront for HeldFront {
         .map_err(text)
     }
 
-    fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), String> {
+    fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), DeviceError> {
         let m = self.m;
         let below = m.saturating_sub(be);
         if below == 0 {
@@ -146,7 +146,7 @@ impl DeviceFront for HeldFront {
         }
         let nb = w.len() / below;
         if nb == 0 || nb > BLOCK || w.len() != below * nb || l.len() != w.len() || k > m {
-            return Err(format!("a block of {nb} pivots does not fit the device's tiles"));
+            return Err(format!("a block of {nb} pivots does not fit the device's tiles").into());
         }
         let u = self.side_units;
         let tiles = (below as u32).div_ceil(u * REACH as u32);

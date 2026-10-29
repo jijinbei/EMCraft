@@ -7,7 +7,7 @@ use faer::linalg::matmul::triangular::{BlockStructure, matmul};
 use faer::{Accum, MatMut, MatRef, Par};
 use num_complex::Complex64 as C;
 
-use crate::accel::Accelerator;
+use crate::accel::{Accelerator, DeviceError};
 use crate::multifrontal::FactorError;
 
 const ALPHA: f64 = 0.640_388_203_202_208; // (1 + √17)/8
@@ -97,7 +97,7 @@ pub(super) fn factor_front_on(
     rows: &mut [usize],
     tau: f64,
 ) -> Result<(Vec<Pivot>, PivotCounts), FactorError> {
-    let failed = |e: String| FactorError::Device(format!("{}: {e}", device.name()));
+    let failed = |e: DeviceError| FactorError::Device(format!("{}: {e}", device.name()));
     let mut front = device.front(f, m).map_err(failed)?;
     let mut e = Elimination::new(m, k, rows, tau);
     let mut b0 = 0;

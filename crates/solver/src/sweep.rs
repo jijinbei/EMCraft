@@ -80,7 +80,7 @@ fn product<T>(p: &Csr, val: &[T], u: &[f64]) -> Vec<T>
 where
     T: Copy + std::ops::Mul<f64, Output = T> + std::iter::Sum,
 {
-    (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| val[k] * u[p.col[k]]).sum()).collect()
+    (0..p.n).map(|i| p.row(i).map(|k| val[k] * u[p.col[k]]).sum()).collect()
 }
 
 /// A rank-one term factor · v vᵀ of the system, v sparse.

@@ -26,7 +26,7 @@ use emcraft_fem::tri::{TRI_EDGES, Triangle};
 use emcraft_model::{Point3, Vec3};
 use num_complex::Complex64 as C;
 
-use crate::driven::{NONE, Result, SolveError, invalid};
+use crate::driven::{Result, Slot, SolveError, invalid, present};
 use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
 
@@ -55,9 +55,9 @@ pub struct CrossSection {
     /// The edges on conductors (the rim and any inside), by nodes ascending.
     walls: Vec<[u32; 2]>,
     /// Unknown of each transverse slot (edge functions, then triangle functions), then of each
-    /// scalar slot (nodes, then edges); [`NONE`] on the walls.
-    t_unknown: Vec<u32>,
-    z_unknown: Vec<u32>,
+    /// scalar slot (nodes, then edges); none on the walls.
+    t_unknown: Vec<Slot>,
+    z_unknown: Vec<Slot>,
     edges: usize,
     pub unknowns: usize,
     /// Transverse unknowns come first, scalar ones after: 0..transverse, transverse..unknowns.
@@ -91,6 +91,16 @@ impl PortMode {
     }
 }
 
+/// The edges of a cross-section with conditions of their own, each by its nodes: conductors
+/// inside it, boundary edges on a magnetic wall (`free`) and edges whose midpoints lie on a
+/// curved wall (ascending nodes → the midpoint).
+#[derive(Clone, Copy, Debug)]
+pub struct Walls<'a> {
+    pub conductors: &'a [[u32; 2]],
+    pub free: &'a [[u32; 2]],
+    pub curved: &'a std::collections::BTreeMap<[u32; 2], Point3>,
+}
+
 impl CrossSection {
     /// A cross-section of triangles on `nodes` (their z ignored) with εr and μr per triangle;
     /// its boundary edges and the `conductors` edges inside it are conducting walls. Edges in
@@ -105,23 +115,22 @@ impl CrossSection {
         conductors: &[[u32; 2]],
         curved: &std::collections::BTreeMap<[u32; 2], Point3>,
     ) -> Result<CrossSection> {
-        CrossSection::with_free_rim(order, nodes, tris, eps, mu, conductors, &[], curved)
+        CrossSection::with_free_rim(order, nodes, tris, eps, mu, Walls { conductors, free: &[], curved })
     }
 
-    /// As [`CrossSection::new`], but the boundary edges in `free` (by nodes) are a magnetic wall —
-    /// a symmetry plane's — rather than a conductor: their tangential e and their φ are left free,
-    /// the natural condition (tangential H = 0) holding weakly.
-    #[allow(clippy::too_many_arguments)]
+    /// As [`CrossSection::new`] with the conductors and curved edges of `walls`, but its boundary
+    /// edges in `walls.free` are a magnetic wall — a symmetry plane's — rather than a conductor:
+    /// their tangential e and their φ are left free, the natural condition (tangential H = 0)
+    /// holding weakly.
     pub fn with_free_rim(
         order: Order,
         nodes: Vec<Point3>,
         tris: Vec<[u32; 3]>,
         eps: Vec<f64>,
         mu: Vec<f64>,
-        conductors: &[[u32; 2]],
-        free: &[[u32; 2]],
-        curved: &std::collections::BTreeMap<[u32; 2], Point3>,
+        walls: Walls<'_>,
     ) -> Result<CrossSection> {
+        let Walls { conductors, free, curved } = walls;
         if tris.is_empty() || eps.len() != tris.len() || mu.len() != tris.len() {
             return Err(invalid("port cross-section", "needs triangles, each with its materials"));
         }
@@ -170,27 +179,24 @@ impl CrossSection {
             wall_node[e[1] as usize] = true;
         }
         let ne = edge_list.len();
-        let (pe, pf) = match order {
-            Order::One => (1, 0),
-            Order::Two => (2, 2),
-        };
+        let (pe, pf) = (order.per_edge(), order.per_face());
         let mid = |e: usize| edge_list.get(e).map_or(Point3::ORIGIN, |[a, b]| nodes[*a as usize].midpoint(nodes[*b as usize]));
         let centre = |t: usize| Point3::centroid(tris[t].map(|v| nodes[v as usize])).unwrap_or(Point3::ORIGIN);
         let mut points = Vec::new();
         let mut number = |free: bool, p: Point3| {
             if free {
                 points.push(p);
-                (points.len() - 1) as u32
+                Slot::new(points.len() - 1)
             } else {
-                NONE
+                Slot::NONE
             }
         };
-        let mut t_unknown: Vec<u32> = (0..ne * pe).map(|s| number(!wall_edge[s / pe], mid(s / pe))).collect();
+        let mut t_unknown: Vec<Slot> = (0..ne * pe).map(|s| number(!wall_edge[s / pe], mid(s / pe))).collect();
         t_unknown.extend((0..tris.len() * pf).map(|s| number(true, centre(s / pf))));
         let scalar_slots = nn + if order == Order::Two { ne } else { 0 };
-        let z_unknown: Vec<u32> =
+        let z_unknown: Vec<Slot> =
             (0..scalar_slots).map(|s| if s < nn { number(!wall_node[s], nodes[s]) } else { number(!wall_edge[s - nn], mid(s - nn)) }).collect();
-        let transverse = t_unknown.iter().filter(|u| **u != NONE).count();
+        let transverse = t_unknown.iter().filter(|u| u.get().is_some()).count();
         let unknowns = points.len();
         if unknowns == 0 {
             return Err(invalid("port cross-section", "has no unknowns (every edge is on a wall)"));
@@ -235,22 +241,19 @@ impl CrossSection {
             .ok_or_else(|| invalid("port cross-section", format!("triangle {t} is degenerate or folds over")))
     }
 
-    /// The unknowns of a triangle's transverse and scalar functions ([`NONE`] on walls).
-    fn unknowns_of(&self, t: usize) -> (Vec<u32>, Vec<u32>) {
-        let get = |list: &[u32], s: usize| list.get(s).copied().unwrap_or(NONE);
+    /// The unknowns of a triangle's transverse and scalar functions (none on walls).
+    fn unknowns_of(&self, t: usize) -> (Vec<Slot>, Vec<Slot>) {
+        let get = |list: &[Slot], s: usize| list.get(s).copied().unwrap_or(Slot::NONE);
         let te = self.tri_edges[t];
-        let (pe, pf) = match self.order {
-            Order::One => (1, 0),
-            Order::Two => (2, 2),
-        };
-        let vt: Vec<u32> = (0..pe)
+        let (pe, pf) = (self.order.per_edge(), self.order.per_face());
+        let vt: Vec<Slot> = (0..pe)
             .flat_map(|j| te.map(|e| e as usize * pe + j))
             .chain((0..pf).map(|j| self.edges * pe + t * pf + j))
             .map(|s| get(&self.t_unknown, s))
             .collect();
         let nn = self.nodes.len();
         let corners = self.tris[t].map(|v| v as usize);
-        let vz: Vec<u32> = match self.order {
+        let vz: Vec<Slot> = match self.order {
             Order::One => corners.iter().map(|&s| get(&self.z_unknown, s)).collect(),
             Order::Two => corners.iter().copied().chain(te.map(|e| nn + e as usize)).map(|s| get(&self.z_unknown, s)).collect(),
         };
@@ -262,12 +265,11 @@ impl CrossSection {
         let groups: Vec<Vec<usize>> = (0..self.tris.len())
             .map(|t| {
                 let (vt, vz) = self.unknowns_of(t);
-                vt.into_iter().chain(vz).filter(|&u| u != NONE).map(|u| u as usize).collect()
+                vt.into_iter().chain(vz).filter_map(Slot::get).collect()
             })
             .collect();
         self.pattern = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
-        let (eps, mu) = (self.eps.clone(), self.mu.clone());
-        let mats = self.assemble_with(&|t| C::new(eps[t], 0.0), &|t| C::new(1.0 / mu[t], 0.0))?;
+        let mats = self.assemble_with(&|t| C::new(self.eps[t], 0.0), &|t| C::new(1.0 / self.mu[t], 0.0))?;
         let [curl, mass, b, tz] = mats.map(|m| m.into_iter().map(|c| c.re).collect::<Vec<f64>>());
         (self.curl, self.mass, self.b, self.t) = (curl, mass, b, tz);
         Ok(())
@@ -283,24 +285,22 @@ impl CrossSection {
             let (eps, inv_mu) = (eps(t), inv_mu(t));
             for (l, w) in tri.rule() {
                 let (v, c, s, g) = (tri.values(l), tri.curls(l), tri.scalars(l), tri.scalar_gradients(l));
-                for (i, ui) in vt.iter().enumerate().filter(|(_, u)| **u != NONE) {
-                    let ui = *ui as usize;
-                    for (j, uj) in vt.iter().enumerate().filter(|(_, u)| **u != NONE) {
-                        let uj = *uj as usize;
+                for (i, ui) in present(&vt) {
+                    for (j, uj) in present(&vt) {
                         mats[0].add(ui, uj, w * inv_mu * c[i] * c[j]);
                         mats[1].add(ui, uj, w * eps * v[i].dot(v[j]));
                         mats[2].add(ui, uj, w * inv_mu * v[i].dot(v[j]));
                     }
-                    for (k, uk) in vz.iter().enumerate().filter(|(_, u)| **u != NONE) {
+                    for (k, uk) in present(&vz) {
                         let x = w * inv_mu * v[i].dot(g[k]);
-                        mats[2].add(ui, *uk as usize, x);
-                        mats[2].add(*uk as usize, ui, x);
+                        mats[2].add(ui, uk, x);
+                        mats[2].add(uk, ui, x);
                     }
                 }
-                for (k, uk) in vz.iter().enumerate().filter(|(_, u)| **u != NONE) {
-                    for (m, um) in vz.iter().enumerate().filter(|(_, u)| **u != NONE) {
-                        mats[2].add(*uk as usize, *um as usize, w * inv_mu * g[k].dot(g[m]));
-                        mats[3].add(*uk as usize, *um as usize, w * eps * s[k] * s[m]);
+                for (k, uk) in present(&vz) {
+                    for (m, um) in present(&vz) {
+                        mats[2].add(uk, um, w * inv_mu * g[k].dot(g[m]));
+                        mats[3].add(uk, um, w * eps * s[k] * s[m]);
                     }
                 }
             }
@@ -311,7 +311,7 @@ impl CrossSection {
     /// y = M x for values `val` on the pattern.
     fn mul(&self, val: impl Fn(usize) -> f64, x: &[f64]) -> Vec<f64> {
         let p = &self.pattern;
-        (0..p.n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| val(k) * x[p.col[k]]).sum()).collect()
+        (0..p.n).map(|i| p.row(i).map(|k| val(k) * x[p.col[k]]).sum()).collect()
     }
 
     /// The `count` modes with the largest β² at free-space wavenumber `k0` (rad/m), β² descending.
@@ -333,7 +333,7 @@ impl CrossSection {
         let factor = Ldlt::factor(&shifted, &self.points)?;
         let project = self.constraint(k2)?;
         let q = (count + count.max(6)).min(n);
-        let mut rand = crate::eigen::uniform(0x9e37_79b9_7f4a_7c15);
+        let mut rand = crate::subspace::uniform(0x9e37_79b9_7f4a_7c15);
         let mut x: Vec<Vec<f64>> = (0..q).map(|_| (0..n).map(|_| rand()).collect()).collect();
         for v in &mut x {
             project(v)?;
@@ -404,10 +404,10 @@ impl CrossSection {
         let p = &self.pattern;
         let nz = n - nt;
         let groups: Vec<Vec<usize>> =
-            (nt..n).map(|i| (p.ptr[i]..p.ptr[i + 1]).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
+            (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
         let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
         for i in nt..n {
-            for k in (p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] >= nt) {
+            for k in p.row(i).filter(|&k| p.col[k] >= nt) {
                 zz.add(i - nt, p.col[k] - nt, C::new(self.b[k] - k2 * self.t[k], 0.0));
             }
         }
@@ -415,9 +415,8 @@ impl CrossSection {
         Ok(move |v: &mut Vec<f64>| -> Result<()> {
             let Some(f) = &factor else { return Ok(()) };
             // r = −B_zt e.
-            let mut r: Vec<C> = (nt..n)
-                .map(|i| C::new(-(p.ptr[i]..p.ptr[i + 1]).filter(|&k| p.col[k] < nt).map(|k| self.b[k] * v[p.col[k]]).sum::<f64>(), 0.0))
-                .collect();
+            let mut r: Vec<C> =
+                (nt..n).map(|i| C::new(-p.row(i).filter(|&k| p.col[k] < nt).map(|k| self.b[k] * v[p.col[k]]).sum::<f64>(), 0.0)).collect();
             f.solve(&mut r)?;
             v[nt..].iter_mut().zip(&r).for_each(|(x, c)| *x = c.re);
             Ok(())
@@ -455,7 +454,7 @@ impl CrossSection {
     /// e_t and g = e_t + ∇φ at barycentric `l` of triangle `t` for coefficients `x`.
     fn at(&self, tri: &Triangle, t: usize, x: &[f64], l: [f64; 3]) -> (Vec3, Vec3) {
         let (vt, vz) = self.unknowns_of(t);
-        let coef = |u: u32| if u == NONE { 0.0 } else { x.get(u as usize).copied().unwrap_or(0.0) };
+        let coef = |u: Slot| u.get().map_or(0.0, |u| x.get(u).copied().unwrap_or(0.0));
         let e = tri.values(l).into_iter().zip(&vt).fold(Vec3::ZERO, |s, (v, u)| s + v * coef(*u));
         let grad = tri.scalar_gradients(l).into_iter().zip(&vz).fold(Vec3::ZERO, |s, (g, u)| s + g * coef(*u));
         (e, e + grad)
@@ -552,7 +551,7 @@ impl CrossSection {
                             .scalars(l)
                             .into_iter()
                             .zip(&vz)
-                            .map(|(f, u)| if *u == NONE { 0.0 } else { f * mode.x.get(*u as usize).copied().unwrap_or(0.0) })
+                            .map(|(f, u)| u.get().map_or(0.0, |u| f * mode.x.get(u).copied().unwrap_or(0.0)))
                             .sum();
                         sum += wt * (-scale * (dw.dot(g) / self.mu[t]) - axial * (self.eps[t] * w * phi));
                     }
@@ -585,7 +584,7 @@ impl CrossSection {
     pub fn phi(&self, mode: &PortMode, t: usize, l: [f64; 3]) -> Result<f64> {
         let tri = self.triangle(t)?;
         let (_, vz) = self.unknowns_of(t);
-        Ok(tri.scalars(l).into_iter().zip(&vz).map(|(s, u)| if *u == NONE { 0.0 } else { s * mode.x.get(*u as usize).copied().unwrap_or(0.0) }).sum())
+        Ok(tri.scalars(l).into_iter().zip(&vz).map(|(s, u)| u.get().map_or(0.0, |u| s * mode.x.get(u).copied().unwrap_or(0.0))).sum())
     }
 }
 

@@ -5,7 +5,7 @@
 use std::ops::ControlFlow;
 
 use cubecl::prelude::*;
-use emcraft_fdtd::{FdtdError, OpenBatch, OpenPlan, Result};
+use emcraft_fdtd::{Cpml, OpenBatch, OpenPlan, Result, to_u32};
 use num_complex::Complex64;
 
 use crate::buffer::{Buf, Ints, Real, Xyz};
@@ -51,19 +51,19 @@ fn or_one<T: Clone>(xs: Vec<T>, fill: T) -> Vec<T> {
 
 impl<F: Real> Sources<F> {
     fn new(client: &Client, p: &OpenPlan) -> Result<Sources<F>> {
-        let small = |x: usize| u32::try_from(x).map_err(|_| FdtdError::Invalid { what: "plan".into(), why: "an index does not fit 32 bits".into() });
+        let small = |x: usize| to_u32(x, "plan");
         let (mut axis, mut id, mut k, mut start, mut port) = (Vec::new(), Vec::new(), Vec::new(), vec![0u32], Vec::new());
         for pp in &p.ports {
             for e in &pp.edges {
-                axis.push(small(pp.axis)?);
+                axis.push(u32::from(pp.axis));
                 id.push(small(e.id)?);
                 k.extend([e.ca, e.cb, e.cv]);
             }
             start.push(small(id.len())?);
-            port.extend([pp.r_edge, pp.sign, pp.voltage, p.hs.get(pp.axis).copied().unwrap_or(0.0)]);
+            port.extend([pp.r_edge, pp.sign, pp.voltage, p.hs[pp.axis.index()]]);
         }
         let edges = id.len();
-        let current_axis = p.currents.iter().map(|c| small(c.axis)).collect::<Result<Vec<_>>>()?;
+        let current_axis: Vec<u32> = p.currents.iter().map(|c| u32::from(c.axis)).collect();
         let current_id = p.currents.iter().map(|c| small(c.id)).collect::<Result<Vec<_>>>()?;
         let current: Vec<f64> = p.currents.iter().map(|c| c.coefficient).collect();
         Ok(Sources {
@@ -112,13 +112,13 @@ struct Huygens {
 
 impl Huygens {
     fn new(client: &Client, p: &OpenPlan) -> Result<Huygens> {
-        let small = |x: usize| u32::try_from(x).map_err(|_| FdtdError::Invalid { what: "plan".into(), why: "a sample does not fit 32 bits".into() });
+        let small = |x: usize| to_u32(x, "plan");
         let column = |f: fn(&emcraft_fdtd::SamplePlan) -> usize| -> Result<Ints> {
             Ok(Ints::new(client, &or_one(p.samples.iter().map(|s| small(f(s))).collect::<Result<Vec<_>>>()?, 0)))
         };
         let len = 6 * p.samples.len() * p.frequencies.len();
         Ok(Huygens {
-            axis: column(|s| s.axis)?,
+            axis: column(|s| s.axis.index())?,
             plane: column(|s| s.plane)?,
             iu: column(|s| s.iu)?,
             iv: column(|s| s.iv)?,
@@ -150,24 +150,10 @@ pub(crate) struct OpenRun<F> {
 
 impl<F: Real> OpenRun<F> {
     pub(crate) fn new(client: &Client, p: &OpenPlan) -> Result<OpenRun<F>> {
+        p.validate()?;
         let grid = Lattice::new(client, p.n)?;
         let (lens_e, lens_h) = (grid.e, grid.h);
-        let agree = p.ce.iter().zip(lens_e).all(|(c, l)| c.len() == l)
-            && p.ch.iter().zip(lens_h).all(|(c, l)| c.len() == l)
-            && Slots::<F>::fit(p.poles.as_ref(), lens_e)
-            && Decay::<F>::fit(&p.h_decay, lens_h)
-            && p.cpml_e.iter().zip(p.n).all(|(c, n)| c.len() == n + 1)
-            && p.cpml_h.iter().zip(p.n).all(|(c, n)| c.len() == n)
-            && p.ports.iter().all(|q| q.axis < 3 && q.edges.iter().all(|e| e.id < lens_e[q.axis]) && !q.edges.is_empty())
-            && p.currents.iter().all(|c| c.axis < 3 && c.id < lens_e[c.axis])
-            && p.samples
-                .iter()
-                .all(|s| s.axis < 3 && s.plane >= 1 && s.plane < p.n[s.axis] && s.iu + 1 < p.n[(s.axis + 1) % 3] && s.iv + 1 < p.n[(s.axis + 2) % 3])
-            && p.batch > 0;
-        if !agree {
-            return Err(FdtdError::Invalid { what: "plan".into(), why: "its arrays do not match its grid".into() });
-        }
-        let profile = |c: &[Vec<[f64; 2]>; 3]| c.each_ref().map(|c| c.iter().flatten().copied().collect::<Vec<f64>>());
+        let profile = |c: &[Vec<Cpml>; 3]| c.each_ref().map(|c| c.iter().flat_map(|&c| <[f64; 2]>::from(c)).collect::<Vec<f64>>());
         Ok(OpenRun {
             grid,
             e: Xyz::zeros(client, lens_e),
