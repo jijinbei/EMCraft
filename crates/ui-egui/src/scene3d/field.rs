@@ -43,7 +43,7 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
     if nx < 2 || ny < 2 || s.values.len() < nx * ny {
         return;
     }
-    let l = session.display.length;
+    let l = session.display().length;
     let (h0, h1, v0, v1) = (l.to_si(f.plot.x.min), l.to_si(f.plot.x.max), l.to_si(f.plot.y.min), l.to_si(f.plot.y.max));
     let point = |u: f64, v: f64| on_plane(f.plane, lo, f.at, u, v);
     let own = s.range.filter(|r| *r > 0.0).unwrap_or_else(|| largest_magnitude(&s.values));
@@ -79,7 +79,7 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
 /// The plot's arrows (E's, H's) on the field's plane, filled (a shaft and a head), a hair off
 /// the plane on both sides so they show from either.
 fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, out: &mut Built) {
-    let l = session.display.length;
+    let l = session.display().length;
     let normal = normal_axis(f.plane);
     let (xa, xb) = f.plot.x.span();
     let lift = 1e-3 * l.to_si(xb - xa);

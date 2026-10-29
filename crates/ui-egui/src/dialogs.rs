@@ -100,14 +100,14 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         // A body may be metal besides the materials.
         ("geometry.body" | "geometry.body.material", "material") => {
             let metal = std::iter::once(emcraft_engine::bodies::METAL.to_owned());
-            return Kind::Choice(metal.chain(session.model.materials.iter().map(|m| m.name.clone())).collect());
+            return Kind::Choice(metal.chain(session.model().materials.iter().map(|m| m.name.clone())).collect());
         }
         ("geometry.body.material", "body") => {
-            return Kind::Choice(emcraft_engine::bodies::bodies(&session.model).into_iter().map(|b| b.name).collect());
+            return Kind::Choice(emcraft_engine::bodies::bodies(session.model()).into_iter().map(|b| b.name).collect());
         }
-        (_, "material") => return Kind::Choice(session.model.materials.iter().map(|m| m.name.clone()).collect()),
-        (_, "excitation") => return Kind::Choice(session.model.ports.iter().map(|p| p.name.clone()).collect()),
-        ("study.sweep", "variable") | ("project.variable.delete", "name") => return Kind::Choice(session.variables.keys().cloned().collect()),
+        (_, "material") => return Kind::Choice(session.model().materials.iter().map(|m| m.name.clone()).collect()),
+        (_, "excitation") => return Kind::Choice(session.model().ports.iter().map(|p| p.name.clone()).collect()),
+        ("study.sweep", "variable") | ("project.variable.delete", "name") => return Kind::Choice(session.variables().keys().cloned().collect()),
         ("results.probe", "at") => return Kind::Json,
         (_, "size" | "at" | "direction" | "polarization" | "from" | "to") if p.kind == emcraft_engine::Kind::Array => return Kind::Vector(XYZ),
         (_, "face") => return Kind::Vector(FACE),
@@ -410,16 +410,16 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
 /// edited, the next port's name), otherwise defaults that make a working example. Lengths and
 /// frequencies are in the session's display units.
 pub fn initial(command: &str, s: &Session) -> Value {
-    let l = s.display.length;
-    let ports = s.model.ports.len();
-    let fu = s.display.frequency;
+    let l = s.display().length;
+    let ports = s.model().ports.len();
+    let fu = s.display().frequency;
     // The job's band, and the frequency in its middle.
-    let band = s.model.band.map(|b| (fu.from_si(b.start), fu.from_si(b.stop)));
+    let band = s.model().band.map(|b| (fu.from_si(b.start), fu.from_si(b.stop)));
     let middle = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
     match command {
         // The model: its own guide or the next names, else a working example.
         "geometry.waveguide" => waveguide(s),
-        "model.material.create" => json!({"name": format!("material{}", s.model.materials.len()), "eps_r": 2.2}),
+        "model.material.create" => json!({"name": format!("material{}", s.model().materials.len()), "eps_r": 2.2}),
         "geometry.solid" => json!({"shape": "box", "size": [22.86, 10.16, 30]}),
         "geometry.inclusion" => json!({"shape": "sphere", "radius": 2, "at": [11.43, 5.08, 15]}),
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
@@ -429,7 +429,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "model.symmetry" => json!({"axis": "x", "kind": "magnetic"}),
         "model.periodic" => periodic(s),
         "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),
-        "model.port.lumped" => json!({"name": format!("L{}", s.model.lumped.len() + 1), "from": [0, 0, -0.5], "to": [0, 0, 0.5], "impedance": 50}),
+        "model.port.lumped" => json!({"name": format!("L{}", s.model().lumped.len() + 1), "from": [0, 0, -0.5], "to": [0, 0, 0.5], "impedance": 50}),
         "source.dipole" => json!({"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1, "current": 1}),
         "source.plane_wave" => json!({"direction": [0, 0, 1], "polarization": [1, 0, 0]}),
         "model.open" => json!({"thickness": 10}),
@@ -451,7 +451,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         }
         "solve.port_modes" => json!({"frequency": band.map_or(10.0, |(_, z)| z), "order": 2}),
         "solve.dispersion" => json!({"from": 0, "to": 180, "points": 11, "bands": 4, "near": band.map_or(15.0, |(_, z)| z), "order": 2}),
-        "solve.device" => json!({"device": s.compute.device(), "precision": s.compute.precision.name()}),
+        "solve.device" => json!({"device": s.compute().device(), "precision": s.compute().precision.name()}),
         "project.frequency" => match band {
             Some((a, z)) => json!({"start": a, "stop": z}),
             None => json!({"start": 8, "stop": 12}),
@@ -461,7 +461,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "results.compare" => json!({"modes": 160}),
         // The highest solved frequency of the sweep, as the field view opens on.
         "view.animation" => {
-            let f = s.results.sweep.as_ref().and_then(|sw| sw.results.last()).map(|r| fu.from_si(r.frequency));
+            let f = s.results().sweep.as_ref().and_then(|sw| sw.results.last()).map(|r| fu.from_si(r.frequency));
             json!({"path": "field-animation.png", "frames": 24, "frequency": f})
         }
         "view.dispersion" => json!({"path": "dispersion.png"}),
@@ -471,10 +471,10 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "file.sample" => json!({"name": "highpass", "solve": true}),
         "units.set" => json!({"length": l.symbol(), "frequency": fu.symbol()}),
         "project.variable" => {
-            let name = ["l", "w", "h", "d", "er"].into_iter().map(str::to_owned).find(|n| !s.variables.contains_key(n));
-            json!({"name": name.unwrap_or_else(|| format!("v{}", s.variables.len() + 1)), "value": 10})
+            let name = ["l", "w", "h", "d", "er"].into_iter().map(str::to_owned).find(|n| !s.variables().contains_key(n));
+            json!({"name": name.unwrap_or_else(|| format!("v{}", s.variables().len() + 1)), "value": 10})
         }
-        "project.variable.delete" => json!({"name": s.variables.keys().next()}),
+        "project.variable.delete" => json!({"name": s.variables().keys().next()}),
         "study.sweep" | "study.optimize" => study(command, s, band),
         _ => json!({}),
     }
@@ -482,10 +482,10 @@ pub fn initial(command: &str, s: &Session) -> Value {
 
 /// The model's waveguide as `geometry.waveguide`'s parameters, or a WR-90 section.
 fn waveguide(s: &Session) -> Value {
-    let Some(w) = s.model.waveguide.as_ref() else {
+    let Some(w) = s.model().waveguide.as_ref() else {
         return json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]});
     };
-    let l = s.display.length;
+    let l = s.display().length;
     let opt = |v: Option<f64>| v.map(|x| json!(l.from_si(x)));
     let sections: Vec<Value> = w
         .sections
@@ -517,7 +517,7 @@ fn waveguide(s: &Session) -> Value {
 /// The model's periodic boundaries as `model.periodic`'s parameters, or a cell tied across x
 /// and y at normal incidence.
 fn periodic(s: &Session) -> Value {
-    match &s.model.periodic {
+    match &s.model().periodic {
         Some(p) => json!({"x": p.x, "y": p.y, "z": p.z, "theta": p.theta.to_degrees(), "phi": p.phi.to_degrees(),
                           "polarization": if p.polarization == emcraft_model::Polarization::Te { "te" } else { "tm" }}),
         None => json!({"x": true, "y": true, "z": false, "theta": 0, "phi": 0, "polarization": "te"}),
@@ -528,11 +528,11 @@ fn periodic(s: &Session) -> Value {
 /// for an open problem, eigenmodes without ports, else a sweep over the band) and, for an
 /// optimization, the goal that goes with it.
 fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
-    let (name, v) = s.variables.iter().next().map_or((None, 1.0), |(n, v)| (Some(n.clone()), *v));
+    let (name, v) = s.variables().iter().next().map_or((None, 1.0), |(n, v)| (Some(n.clone()), *v));
     let spread = |k: f64| if v == 0.0 { k } else { v * (1.0 + k) };
-    let (solve, goal) = if s.model.open.is_some() {
+    let (solve, goal) = if s.model().open.is_some() {
         (json!({"command": "solve.radiation", "params": initial("solve.radiation", s)}), json!({"type": "maximize", "quantity": "radiated_power"}))
-    } else if s.model.ports.is_empty() {
+    } else if s.model().ports.is_empty() {
         let near = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
         (
             json!({"command": "solve.eigenmodes", "params": {"near": near, "count": 3, "order": 2}}),
@@ -556,8 +556,8 @@ fn study(command: &str, s: &Session, band: Option<(f64, f64)>) -> Value {
 pub fn unit(q: Quantity, s: &Session) -> &'static str {
     match q {
         Quantity::None => "",
-        Quantity::Length => s.display.length.symbol(),
-        Quantity::Frequency => s.display.frequency.symbol(),
+        Quantity::Length => s.display().length.symbol(),
+        Quantity::Frequency => s.display().frequency.symbol(),
     }
 }
 
@@ -617,9 +617,9 @@ mod tests {
         s.execute("file.sample", &json!({"name": "iris-bandpass"})).unwrap();
         let mut d = Dialog::new(spec("geometry.waveguide"), &s, &initial("geometry.waveguide", &s), false);
         let p = d.params().unwrap();
-        let before = s.model.waveguide.clone();
+        let before = s.model().waveguide.clone();
         s.execute("geometry.waveguide", &p).unwrap();
-        assert_eq!(s.model.waveguide, before);
+        assert_eq!(s.model().waveguide, before);
     }
 
     /// Hostile text is refused field by field: nothing is built from it.

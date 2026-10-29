@@ -205,7 +205,7 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], session: &em
     let name = f.name;
     ui_kit::section(ui, &format!("{name}{}", if f.required { " *" } else { "" }));
     ui_kit::caption(ui, f.doc);
-    let materials: Vec<String> = session.model.materials.iter().map(|m| m.name.clone()).collect();
+    let materials: Vec<String> = session.model().materials.iter().map(|m| m.name.clone()).collect();
     let mut remove = None;
     egui::Grid::new(("table", name)).num_columns(cols.len() + 1).spacing(vec2(4.0, 3.0)).show(ui, |ui| {
         for c in cols {

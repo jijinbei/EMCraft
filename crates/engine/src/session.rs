@@ -132,34 +132,106 @@ impl Default for Limits {
     }
 }
 
-/// A session: the model, its results and the display units.
+/// A session: the model, its results and the display units. Only commands change it
+/// ([`Session::execute`]); everyone else reads it through its accessors.
 #[derive(Clone, Debug, Default)]
 pub struct Session {
-    pub model: Model,
-    pub results: Results,
-    pub display: Display,
-    pub limits: Limits,
+    pub(crate) model: Model,
+    pub(crate) results: Results,
+    pub(crate) display: Display,
+    pub(crate) limits: Limits,
     /// The commands that built the model, in order (a script that rebuilds it).
-    pub history: Vec<Step>,
+    pub(crate) history: Vec<Step>,
     /// States to go back to (`edit.undo`) and forward again (`edit.redo`), the latest last.
-    pub undo: VecDeque<project::Snapshot>,
-    pub redo: VecDeque<project::Snapshot>,
+    pub(crate) undo: VecDeque<project::Snapshot>,
+    pub(crate) redo: VecDeque<project::Snapshot>,
     /// The model's revision, raised by every command that changes it, and the revision the
     /// latest results were solved at (older results are stale).
-    pub revision: u64,
-    pub solved_revision: Option<u64>,
+    pub(crate) revision: u64,
+    pub(crate) solved_revision: Option<u64>,
     /// The project file the session was opened from or last saved to (`.emcraft`).
-    pub path: Option<String>,
+    pub(crate) path: Option<String>,
     /// The sample the session was opened from, which names it until it is saved.
-    pub sample: Option<String>,
+    pub(crate) sample: Option<String>,
     /// The history as last saved or opened: the session has unsaved changes when its history
     /// differs (an undo back to it is clean again).
-    pub saved: Vec<Step>,
+    pub(crate) saved: Vec<Step>,
     /// Where the solvers run (`solve.device`).
-    pub compute: solve::Compute,
+    pub(crate) compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
     /// commands of the history.
-    pub variables: expr::Variables,
+    pub(crate) variables: expr::Variables,
+}
+
+/// Reading the session.
+impl Session {
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
+    pub fn results(&self) -> &Results {
+        &self.results
+    }
+
+    /// The display units parameters are read in and replies written in.
+    pub fn display(&self) -> Display {
+        self.display
+    }
+
+    /// The limits on the work one command may ask for.
+    pub fn limits(&self) -> Limits {
+        self.limits
+    }
+
+    /// The session with other limits.
+    pub fn with_limits(self, limits: Limits) -> Session {
+        Session { limits, ..self }
+    }
+
+    /// The commands that built the model, in order (a script that rebuilds it).
+    pub fn history(&self) -> &[Step] {
+        &self.history
+    }
+
+    /// The states `edit.undo` goes back to, the latest last.
+    pub fn undo(&self) -> &VecDeque<project::Snapshot> {
+        &self.undo
+    }
+
+    /// The states `edit.redo` goes forward to, the latest last.
+    pub fn redo(&self) -> &VecDeque<project::Snapshot> {
+        &self.redo
+    }
+
+    /// The model's revision, raised by every command that changes it.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// The revision the latest results were solved at (older results are stale).
+    pub fn solved_revision(&self) -> Option<u64> {
+        self.solved_revision
+    }
+
+    /// The project file the session was opened from or last saved to.
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
+    /// The sample the session was opened from.
+    pub fn sample(&self) -> Option<&str> {
+        self.sample.as_deref()
+    }
+
+    /// Where the solvers run (`solve.device`).
+    pub fn compute(&self) -> &solve::Compute {
+        &self.compute
+    }
+
+    /// The named variables (`project.variable`).
+    pub fn variables(&self) -> &expr::Variables {
+        &self.variables
+    }
 }
 
 impl Session {

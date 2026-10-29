@@ -141,7 +141,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "view": app.view.id(),
         "dark": app.dark,
         "home": app.home.open,
-        "project": {"name": app.session.name(), "path": app.session.path, "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
+        "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
         "files": {"prompt": app.files.prompt.as_ref().map(|p| p.text.clone()), "confirm": app.files.confirm.is_some()},
         "recent": app.prefs.recent,
         "dock_dialogs": app.dock_dialogs,
@@ -154,8 +154,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
         "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some(), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
         "chart": app.views.chart.key(),
-        "variables": app.session.variables,
-        "study": app.session.results.study.as_ref().map(|s| json!({
+        "variables": app.session.variables(),
+        "study": app.session.results().study.as_ref().map(|s| json!({
             "kind": if s.kind == emcraft_engine::study::Kind::Sweep { "sweep" } else { "optimize" },
             "variables": s.variables, "rows": s.rows.len(), "converged": s.converged,
             "best": s.best.and_then(|b| s.rows.get(b)).map(|r| r.values.clone()),
@@ -167,9 +167,9 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "frames": app.frames,
         "workflow": crate::steps::inspect(app),
         "view3d": app.view3d.inspect(),
-        "undo": app.session.undo.len(),
-        "redo": app.session.redo.len(),
-        "history": app.session.history.len(),
+        "undo": app.session.undo().len(),
+        "redo": app.session.redo().len(),
+        "history": app.session.history().len(),
         "export": app.export,
         "model": app.session.summary(),
     })

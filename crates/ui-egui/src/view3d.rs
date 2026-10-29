@@ -164,7 +164,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         );
         return;
     };
-    let frame = focus(&app.session.model, bounds);
+    let frame = focus(app.session.model(), bounds);
     let v = &mut app.view3d;
     let aspect = (rect.width() / rect.height().max(1.0)) as f64;
     if v.fitted != Some(bounds) || v.fit_next {
@@ -200,7 +200,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     if let Some((_, row)) = &picked {
         selection_card(&p, rect, row, &t);
     }
-    let facing = layers.first().map(|(plot, plane, at)| facing_plane(app.session.display.length, bounds.0, plot, *plane, *at));
+    let facing = layers.first().map(|(plot, plane, at)| facing_plane(app.session.display().length, bounds.0, plot, *plane, *at));
     navigator(app, ui, rect);
     nav_bar(app, ui, rect, facing);
 }

@@ -33,8 +33,8 @@ fn every_overlay_of_every_sample_builds() {
 #[test]
 fn air_and_walls_let_what_is_inside_show() {
     let kinds = |s: &Session| {
-        let mesh = s.model.mesh.as_ref().unwrap();
-        let surface = Surface::of(&s.model, mesh);
+        let mesh = s.model().mesh.as_ref().unwrap();
+        let surface = Surface::of(s.model(), mesh);
         let count = |k: Kind| (0..mesh.boundary.len()).filter(|&i| surface.kind(i) == k).count();
         (count(Kind::Air), count(Kind::Wall), count(Kind::Conductor))
     };
@@ -47,7 +47,7 @@ fn air_and_walls_let_what_is_inside_show() {
     let (air, wall, metal) = kinds(&meshed("coaxial-line", Some(3.0)));
     assert!(air == 0 && wall > 0 && metal > 0, "{air} {wall} {metal}");
     // Air is all but invisible; the conductors inside stay solid.
-    let m = &open.model;
+    let m = open.model();
     assert!(wall_style(m, Overlay::Plain, false, 0, Kind::Air).1 < 40);
     assert_eq!(wall_style(m, Overlay::Plain, false, 0, Kind::Conductor).1, 255);
     assert!(wall_style(m, Overlay::Plain, false, 0, Kind::Wall).1 < 255);
@@ -86,7 +86,7 @@ fn render_timings() {
     use emcraft_render::view3d::{Camera, Options, render};
     for (name, size) in [("highpass", None), ("coaxial-line", None), ("coaxial-line", Some(0.45)), ("coaxial-line", Some(0.25))] {
         let s = meshed(name, size);
-        let faces = s.model.mesh.as_ref().map_or(0, |m| m.boundary.len());
+        let faces = s.model().mesh.as_ref().map_or(0, |m| m.boundary.len());
         for o in [Overlay::Plain, Overlay::Mesh, Overlay::Materials] {
             let b = build(&s, o);
             let (lo, hi) = b.bounds.unwrap();

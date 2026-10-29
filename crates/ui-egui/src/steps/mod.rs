@@ -198,11 +198,11 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "messages": messages,
         "errors": f.errors.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
         "refused": f.refused,
-        "solver": f.solver.unwrap_or_else(|| Solver::infer(&app.session.model)).id(),
+        "solver": f.solver.unwrap_or_else(|| Solver::infer(app.session.model())).id(),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": app.workflow.diagram,
-        "device": app.session.compute.device(),
-        "precision": app.session.compute.precision.name(),
+        "device": app.session.compute().device(),
+        "precision": app.session.compute().precision.name(),
         "failure": app.failure.as_ref().map(|f| json!({"command": f.0, "error": f.1})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })
@@ -238,11 +238,11 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
     .into();
     app.view = match step {
         Step::Results => {
-            if app.session.results.sweep.is_some() || app.session.results.time_domain.is_some() {
+            if app.session.results().sweep.is_some() || app.session.results().time_domain.is_some() {
                 View::SParameters
-            } else if app.session.results.eigen.is_some() {
+            } else if app.session.results().eigen.is_some() {
                 View::Eigenmodes
-            } else if app.session.results.radiation.is_some() || app.session.results.td_radiation.is_some() {
+            } else if app.session.results().radiation.is_some() || app.session.results().td_radiation.is_some() {
                 View::FarField
             } else {
                 View::Model
@@ -292,6 +292,6 @@ fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
 
 /// The band (display units) the session holds.
 fn band(app: &EmcraftApp) -> Option<(f64, f64)> {
-    let f = app.session.display.frequency;
-    app.session.model.band.map(|b| (f.from_si(b.start), f.from_si(b.stop)))
+    let f = app.session.display().frequency;
+    app.session.model().band.map(|b| (f.from_si(b.start), f.from_si(b.stop)))
 }

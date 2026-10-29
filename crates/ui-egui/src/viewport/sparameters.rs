@@ -51,8 +51,8 @@ const TABLE_ENTRIES: usize = 8;
 /// The sweep's first column of S (S11, S21, and on with more ports or terminals) at each
 /// frequency.
 fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
-    let Some(sw) = app.session.results.sweep.as_ref() else { return };
-    let fu = app.session.display.frequency;
+    let Some(sw) = app.session.results().sweep.as_ref() else { return };
+    let fu = app.session.display().frequency;
     let entries = sw.entries();
     let n = entries.len().clamp(2, TABLE_ENTRIES);
     if entries.iter().any(|e| e.terminal.is_some()) {

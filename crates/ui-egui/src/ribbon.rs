@@ -139,7 +139,7 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             let edit = bar_button(ui, &mut x, "Edit", "menu:edit");
             egui::Popup::menu(&edit).show(|ui| {
                 ui.set_min_width(200.0);
-                let (u, r) = (app.session.undo.len(), app.session.redo.len());
+                let (u, r) = (app.session.undo().len(), app.session.redo().len());
                 let undo = ui.add_enabled(u > 0 && !busy, egui::Button::new(format!("Undo  ({u})")).shortcut_text("Ctrl+Z"));
                 scenario::publish_target("edit:undo", undo.rect);
                 if undo.clicked() {
@@ -254,7 +254,7 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 /// Switches the viewport to `v`, solving the port modes when that view has none yet.
 pub fn show_view(app: &mut EmcraftApp, v: View) {
     app.view = v;
-    if v == View::PortModes && app.views.port_modes.is_none() && app.session.model.mesh.is_some() && !app.busy() {
+    if v == View::PortModes && app.views.port_modes.is_none() && app.session.model().mesh.is_some() && !app.busy() {
         let _ = app.open_dialog("solve.port_modes");
     }
 }
@@ -501,7 +501,7 @@ pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
             ui.set_width(400.0);
             ui.label(egui::RichText::new("Export history as script").size(t.font_label).strong().color(t.form_ink));
             ui.label(
-                egui::RichText::new(format!("{} commands that rebuild the model", app.session.history.len())).size(t.font_small).color(t.text_dim),
+                egui::RichText::new(format!("{} commands that rebuild the model", app.session.history().len())).size(t.font_small).color(t.text_dim),
             );
             let r = ui.add(egui::TextEdit::singleline(&mut path).desired_width(380.0).char_limit(4096));
             scenario::publish_target("export:path", r.rect);
@@ -515,9 +515,9 @@ pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
         return;
     }
     if ok {
-        let text = serde_json::to_string_pretty(&app.session.history).unwrap_or_else(|_| "[]".into());
+        let text = serde_json::to_string_pretty(app.session.history()).unwrap_or_else(|_| "[]".into());
         match std::fs::write(path.trim(), text) {
-            Ok(()) => app.message(format!("Exported {} commands to {}.", app.session.history.len(), path.trim()), false),
+            Ok(()) => app.message(format!("Exported {} commands to {}.", app.session.history().len(), path.trim()), false),
             Err(e) => {
                 app.message(format!("Cannot write {}: {e}", path.trim()), true);
                 app.export = Some(path);

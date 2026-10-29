@@ -15,13 +15,13 @@ pub(super) fn intent(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
         apply_band(app);
     }
     ui_kit::section(ui, "Problem");
-    let kind = match Solver::infer(&app.session.model) {
+    let kind = match Solver::infer(app.session.model()) {
         Solver::Eigenmodes => "a resonator (no excitation: its eigenmodes)",
         Solver::Radiation => "an antenna or a scatterer (an open problem)",
         _ => "a guided-wave component (S-parameters between ports)",
     };
     ui_kit::small(ui, kind, t.text);
-    let d = app.session.display;
+    let d = app.session.display();
     kv(ui, "units", format!("{}, {}", d.length.symbol(), d.frequency.symbol()), t);
 }
 

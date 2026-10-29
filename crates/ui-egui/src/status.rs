@@ -36,9 +36,9 @@ impl<'a> Reply<'a> {
 /// left it.
 pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> String {
     let (p, r) = (Reply(params), Reply(reply));
-    let unit = session.display.frequency.symbol();
+    let unit = session.display().frequency.symbol();
     match id {
-        "file.sample" if session.results.any() => format!("Opened sample {}.", p.text("name")),
+        "file.sample" if session.results().any() => format!("Opened sample {}.", p.text("name")),
         "file.sample" => format!("Opened sample {}; Run (step 7) solves it.", p.text("name")),
         "file.open" => match p.text("path") {
             "" => "Opened the project.".to_owned(),
@@ -91,7 +91,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             r.num("reciprocity_error")
         ),
         "mesh.generate" => {
-            let (nodes, tets) = session.model.mesh.as_ref().map_or((0, 0), |m| (m.nodes.len(), m.tets.len()));
+            let (nodes, tets) = session.model().mesh.as_ref().map_or((0, 0), |m| (m.nodes.len(), m.tets.len()));
             format!("Meshed: {nodes} nodes, {tets} tetrahedra.")
         }
         "mesh.adapt" => {
@@ -100,14 +100,14 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             let far = r.text("quantity") == "far_field";
             let key = if far { "delta_far_field" } else { "delta_s" };
             let last = passes.last().and_then(|p| p.get(key)?.as_f64()).map_or("—".to_owned(), |d| format!("{d:.2e}"));
-            let tets = session.model.mesh.as_ref().map_or(0, |m| m.tets.len());
+            let tets = session.model().mesh.as_ref().map_or(0, |m| m.tets.len());
             let converged = if r.flag("converged") { "converged" } else { "not converged" };
             let what = if far { "far-field change" } else { "ΔS" };
             format!("Adaptive mesh: {} passes, {tets} tetrahedra, last {what} {last}, {converged}.", passes.len())
         }
         "project.variable" => format!("{} = {}.", p.text("name"), r.num("value")),
         "project.variable.delete" => format!("Deleted variable {}.", p.text("name")),
-        "study.sweep" | "study.optimize" => match session.results.study.as_ref() {
+        "study.sweep" | "study.optimize" => match session.results().study.as_ref() {
             Some(study) => format!("{}.", crate::viewport::study_summary(study)),
             None => format!("{} done.", label(id)),
         },
