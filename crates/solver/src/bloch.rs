@@ -463,7 +463,11 @@ mod tests {
         let sweep = Sweep { axis: 2, from: 0.0, to: PI, points: 3, bands: 2, near: 15e9 };
         let d = dispersion(&m, Order::Two, &sweep).unwrap();
         for p in &d.points {
-            let exact = emcraft_theory::floquet::empty_guide_bands(0.02286, 0.01016, 0.01, 1.0, p.psi, 2);
+            let exact = emcraft_theory::floquet::empty_guide_bands(
+                &emcraft_theory::floquet::EmptyGuide { a: 0.02286, b: 0.01016, period: 0.01, eps_r: 1.0 },
+                p.psi,
+                2,
+            );
             for (f, e) in p.frequencies.iter().zip(&exact) {
                 assert!((f - e).abs() < 2e-3 * e, "ψ = {}: {f} vs {e} ({:?})", p.psi, p.frequencies);
             }

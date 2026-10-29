@@ -12,7 +12,6 @@ use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
 use emcraft_render::{Axis, Rgb};
 use emcraft_solver::Complex64 as C;
 
-use super::AXIS_NAMES;
 use crate::{EngineError, Result, Session};
 
 /// A plane through the guide a field picture shows.
@@ -336,7 +335,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     let title = format!(
         "{} plane, {} = {} {lname}   f = {} {}",
         view.plane.title(),
-        AXIS_NAMES[nk],
+        emcraft_model::Axis::name_of(nk),
         emcraft_render::axes::format(l.from_si(n0 + frame.at)),
         emcraft_render::axes::format(fsym.from_si(frequency)),
         fsym.symbol()
@@ -356,8 +355,8 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         lines: section_lines(session, view.plane, vspan),
         title,
         caption,
-        x: Axis::new(&format!("{} ({lname})", AXIS_NAMES[hk]), l.from_si(h0), l.from_si(h0 + hspan)),
-        y: Axis::new(&format!("{} ({lname})", AXIS_NAMES[vk]), l.from_si(v0), l.from_si(v0 + vspan)),
+        x: Axis::new(&format!("{} ({lname})", emcraft_model::Axis::name_of(hk)), l.from_si(h0), l.from_si(h0 + hspan)),
+        y: Axis::new(&format!("{} ({lname})", emcraft_model::Axis::name_of(vk)), l.from_si(v0), l.from_si(v0 + vspan)),
     })
 }
 

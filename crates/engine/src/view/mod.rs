@@ -32,6 +32,3 @@ pub use port_mode::port_mode_plot;
 pub use reference::{ExactLine, MODE_MATCHING_MODES, Reference, reference, section_cutoffs, te10_line};
 pub use sparameters::sparameter_chart;
 pub use tdr::tdr_chart;
-
-/// The model's axes by index.
-pub(crate) const AXIS_NAMES: [&str; 3] = ["x", "y", "z"];

@@ -679,7 +679,10 @@ mod tests {
         // equations. The interface is a grid line.
         let (a, b, er) = (0.02286, 0.01016, 2.25);
         let k0 = 2.0 * std::f64::consts::PI * 10e9 / emcraft_model::units::C0;
-        let exact = emcraft_theory::slab::slab_loaded_modes(a, b, b / 2.0, er, k0, -3.0 * k0 * k0, 6);
+        let exact = emcraft_theory::slab::slab_loaded_modes(
+            &emcraft_theory::slab::SlabGuide { a, b, d: b / 2.0, eps_r: er },
+            emcraft_theory::slab::ModeSearch { k0, lowest: -3.0 * k0 * k0, count: 6 },
+        );
         let cs = rectangle(Order::Two, a, b, 16, 8, |_, y| if y < b / 2.0 { er } else { 1.0 });
         let modes = cs.modes(k0, 6).unwrap();
         for (m, e) in modes.iter().zip(&exact) {

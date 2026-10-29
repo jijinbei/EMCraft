@@ -108,7 +108,10 @@ fn a_guide_with_a_lossy_slab_transmits_collins_complex_mode() {
     let d = Driven::new(&m, Order::Two).unwrap();
     let f = 10e9;
     let k0 = 2.0 * PI * f / C0;
-    let beta2 = emcraft_theory::slab::slab_loaded_modes_lossy(a, b, b / 2.0, C::new(2.25, -0.045), k0, 0.0, 1)[0];
+    let beta2 = emcraft_theory::slab::slab_loaded_modes_lossy(
+        &emcraft_theory::slab::SlabGuide { a, b, d: b / 2.0, eps_r: C::new(2.25, -0.045) },
+        emcraft_theory::slab::ModeSearch { k0, lowest: 0.0, count: 1 },
+    )[0];
     let g = emcraft_theory::slab::gamma_of(beta2);
     let r = d.solve(f).unwrap();
     let exact = (-g * length).exp();

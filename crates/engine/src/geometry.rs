@@ -416,12 +416,7 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     }
     s.model.set_symmetry(planes)?;
     s.results.invalidate(Change::Geometry);
-    let shown: Vec<Value> = s
-        .model
-        .symmetry
-        .iter()
-        .map(|q| json!({"axis": if q.axis == Axis::X { "x" } else { "y" }, "at": s.show_length(q.at), "kind": q.kind}))
-        .collect();
+    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.name(), "at": s.show_length(q.at), "kind": q.kind})).collect();
     Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction()}))
 }
 

@@ -45,9 +45,30 @@ fn ksin_s(s: f64, x: f64) -> f64 {
     }
 }
 
+/// The guide: a × b (m), a slab of permittivity `eps_r` (real, or complex for a lossy slab)
+/// filling 0 < y < d across its whole width.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SlabGuide<E = f64> {
+    pub a: f64,
+    pub b: f64,
+    pub d: f64,
+    pub eps_r: E,
+}
+
+/// Which modes to find: at wavenumber `k0` (rad/m), the `count` with the largest β², down to
+/// β² = `lowest` (rad²/m²; the evanescent modes to include have β² above it).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ModeSearch {
+    pub k0: f64,
+    pub lowest: f64,
+    pub count: usize,
+}
+
 /// β² (rad²/m²) of the `count` modes with the largest β² at wavenumber `k0`, descending, from
 /// k₀²εr down to `lowest` (the evanescent modes to include have β² above it).
-pub fn slab_loaded_modes(a: f64, b: f64, d: f64, eps_r: f64, k0: f64, lowest: f64, count: usize) -> Vec<f64> {
+pub fn slab_loaded_modes(guide: &SlabGuide, search: ModeSearch) -> Vec<f64> {
+    let SlabGuide { a, b, d, eps_r } = *guide;
+    let ModeSearch { k0, lowest, count } = search;
     let l = b - d;
     let k2 = k0 * k0;
     let mut roots = Vec::new();
@@ -137,7 +158,9 @@ const NEWTON: usize = 60;
 /// slab (εr = ε′) is followed as ε″ grows from 0 in [`STEPS`] steps, each refined by Newton's
 /// method (the derivative by a complex difference). Sorted by Re β², descending; the mode goes as
 /// e^{−γz}, γ = √(−β²) = α + jβ with Re γ ≥ 0 ([`gamma_of`]).
-pub fn slab_loaded_modes_lossy(a: f64, b: f64, d: f64, eps_r: C, k0: f64, lowest: f64, count: usize) -> Vec<C> {
+pub fn slab_loaded_modes_lossy(guide: &SlabGuide<C>, search: ModeSearch) -> Vec<C> {
+    let SlabGuide { a, b, d, eps_r } = *guide;
+    let ModeSearch { k0, lowest, count } = search;
     let l = b - d;
     let k2 = k0 * k0;
     let mut roots: Vec<C> = Vec::new();
@@ -213,7 +236,7 @@ mod tests {
     fn a_slab_of_air_leaves_the_empty_guide() {
         // εr = 1: TE_mn and TM_mn, β² = k² − (mπ/a)² − (nπ/b)², each pair degenerate.
         let (a, b, k0) = (0.02286, 0.01016, 2.0 * PI * 12e9 / emcraft_model::units::C0);
-        let got = slab_loaded_modes(a, b, 0.004, 1.0, k0, -1.2e5, 6);
+        let got = slab_loaded_modes(&SlabGuide { a, b, d: 0.004, eps_r: 1.0 }, ModeSearch { k0, lowest: -1.2e5, count: 6 });
         let mut want: Vec<f64> = (0..4)
             .flat_map(|m| (0..4).map(move |n| (m, n)))
             .filter(|&(m, n)| m + n > 0)
@@ -233,10 +256,10 @@ mod tests {
     fn a_full_slab_scales_the_wavenumber_and_the_dominant_mode_lies_between() {
         let (a, b, k0) = (0.02286, 0.01016, 2.0 * PI * 10e9 / emcraft_model::units::C0);
         // Filled (d = b, L = 0): TE10 with k² εr.
-        let full = slab_loaded_modes(a, b, b, 2.25, k0, 0.0, 1);
+        let full = slab_loaded_modes(&SlabGuide { a, b, d: b, eps_r: 2.25 }, ModeSearch { k0, lowest: 0.0, count: 1 });
         assert!((full[0] - (k0 * k0 * 2.25 - (PI / a).powi(2))).abs() < 1e-8 * k0 * k0, "{full:?}");
         // Half filled: the TE10-like LSM mode's β² between the empty and the full guide's.
-        let half = slab_loaded_modes(a, b, b / 2.0, 2.25, k0, 0.0, 1)[0];
+        let half = slab_loaded_modes(&SlabGuide { a, b, d: b / 2.0, eps_r: 2.25 }, ModeSearch { k0, lowest: 0.0, count: 1 })[0];
         assert!(half > k0 * k0 - (PI / a).powi(2) && half < full[0], "{half}");
     }
 
@@ -245,17 +268,18 @@ mod tests {
         let (a, b, k0) = (0.02286, 0.01016, 2.0 * PI * 10e9 / emcraft_model::units::C0);
         // Filled (d = b): TE10 with the complex k² εr exactly.
         let eps = C::new(2.25, -2.25 * 0.02);
-        let full = slab_loaded_modes_lossy(a, b, b, eps, k0, 0.0, 1);
+        let full = slab_loaded_modes_lossy(&SlabGuide { a, b, d: b, eps_r: eps }, ModeSearch { k0, lowest: 0.0, count: 1 });
         let want = k0 * k0 * eps - (PI / a).powi(2);
         assert!((full[0] - want).norm() < 1e-9 * k0 * k0, "{full:?} {want}");
         // Half filled: without loss the real roots; with it, Im β² < 0 (α > 0), and α small
         // against β, below the filled guide's (part of the field is in the air).
-        let real = slab_loaded_modes(a, b, b / 2.0, 2.25, k0, -3.0 * k0 * k0, 4);
-        let none = slab_loaded_modes_lossy(a, b, b / 2.0, C::new(2.25, 0.0), k0, -3.0 * k0 * k0, 4);
+        let real = slab_loaded_modes(&SlabGuide { a, b, d: b / 2.0, eps_r: 2.25 }, ModeSearch { k0, lowest: -3.0 * k0 * k0, count: 4 });
+        let none =
+            slab_loaded_modes_lossy(&SlabGuide { a, b, d: b / 2.0, eps_r: C::new(2.25, 0.0) }, ModeSearch { k0, lowest: -3.0 * k0 * k0, count: 4 });
         for (r, c) in real.iter().zip(&none) {
             assert!((c - r).norm() < 1e-9 * k0 * k0 && c.im == 0.0, "{r} {c}");
         }
-        let lossy = slab_loaded_modes_lossy(a, b, b / 2.0, eps, k0, 0.0, 1);
+        let lossy = slab_loaded_modes_lossy(&SlabGuide { a, b, d: b / 2.0, eps_r: eps }, ModeSearch { k0, lowest: 0.0, count: 1 });
         let g = gamma_of(lossy[0]);
         let g_full = gamma_of(full[0]);
         assert!(g.re > 0.0 && g.re < g_full.re && g.re < 0.05 * g.im, "{g} {g_full}");
@@ -282,7 +306,7 @@ mod tests {
             (12.0, 1.3057035873530582, 0.023702221207120386, -0.47404442414240805, 30.667253671338447),
         ] {
             let k0 = 2.0 * PI * f * 1e9 / emcraft_model::units::C0;
-            let g = gamma_of(slab_loaded_modes_lossy(a, b, b / 2.0, eps, k0, 0.0, 1)[0]);
+            let g = gamma_of(slab_loaded_modes_lossy(&SlabGuide { a, b, d: b / 2.0, eps_r: eps }, ModeSearch { k0, lowest: 0.0, count: 1 })[0]);
             let s21 = (-g * l).exp();
             assert!(close(-(g * g).re / (k0 * k0), eps_eff) && close(db * g.re * 1e-3, att), "{f}: {g}");
             assert!(close(db * s21.norm().ln(), s21_db) && close(s21.arg().to_degrees(), s21_deg), "{f}: {s21}");

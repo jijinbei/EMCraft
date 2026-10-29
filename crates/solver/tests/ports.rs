@@ -96,7 +96,11 @@ fn a_slab_loaded_guide_transmits_its_hybrid_mode() {
     let dr = Driven::new(&slab_guide(length, d, er, 0.002), Order::Two).unwrap();
     let f = 10e9;
     let k0 = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0;
-    let beta = emcraft_theory::slab::slab_loaded_modes(A, B, d, er, k0, 0.0, 1)[0].sqrt();
+    let beta = emcraft_theory::slab::slab_loaded_modes(
+        &emcraft_theory::slab::SlabGuide { a: A, b: B, d, eps_r: er },
+        emcraft_theory::slab::ModeSearch { k0, lowest: 0.0, count: 1 },
+    )[0]
+    .sqrt();
     let r = dr.solve(f).unwrap();
     let exact = C::from_polar(1.0, -beta * length);
     // 2 mm cells: |S11| 1e-5, S21 within 1e-4.

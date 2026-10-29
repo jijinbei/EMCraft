@@ -353,7 +353,10 @@ mod tests {
         let (a, b) = (0.02286, 0.01016);
         let eps_slab = C::new(2.25, -0.045);
         let k0 = 2.0 * std::f64::consts::PI * 10e9 / emcraft_model::units::C0;
-        let exact = emcraft_theory::slab::slab_loaded_modes_lossy(a, b, b / 2.0, eps_slab, k0, -3.0 * k0 * k0, 4);
+        let exact = emcraft_theory::slab::slab_loaded_modes_lossy(
+            &emcraft_theory::slab::SlabGuide { a, b, d: b / 2.0, eps_r: eps_slab },
+            emcraft_theory::slab::ModeSearch { k0, lowest: -3.0 * k0 * k0, count: 4 },
+        );
         let cs = rectangle(Order::Two, a, b, 16, 8, |_, y| if y < b / 2.0 { 2.25 } else { 1.0 });
         let eps: Vec<C> = cs.materials().0.iter().map(|e| if *e > 1.0 { eps_slab } else { C::new(1.0, 0.0) }).collect();
         let mu = vec![C::new(1.0, 0.0); eps.len()];

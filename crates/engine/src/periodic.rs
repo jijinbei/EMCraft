@@ -5,36 +5,12 @@
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use emcraft_model::{Periodic, Polarization};
+use emcraft_model::{Axis, Periodic, Polarization};
 use emcraft_solver::bloch::{Dispersion, MAX_BANDS, MAX_PHASES, Sweep};
 use serde_json::{Value, json};
 
-use crate::view::AXIS_NAMES;
 pub use crate::view::dispersion_chart;
 use crate::{Change, EngineError, Params, Result, Session};
-
-/// An axis by name.
-#[derive(serde::Deserialize, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
-enum AxisName {
-    X,
-    Y,
-    Z,
-}
-
-impl AxisName {
-    const fn index(self) -> usize {
-        match self {
-            AxisName::X => 0,
-            AxisName::Y => 1,
-            AxisName::Z => 2,
-        }
-    }
-}
-
-fn axis_name(d: usize) -> &'static str {
-    AXIS_NAMES.get(d).copied().unwrap_or("?")
-}
 
 /// The model's periodic boundaries as a reply.
 fn shown(p: &Option<Periodic>) -> Value {
@@ -73,7 +49,7 @@ pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
     let periodic = s.model.periodic.ok_or_else(|| EngineError::failed("no periodic boundaries: set them with model.periodic"))?;
     // Without `axis`: z when the cell is periodic along it, else x, else y.
-    let axis = match p.choice::<AxisName>("axis").optional()? {
+    let axis = match p.choice::<Axis>("axis").optional()? {
         Some(a) => a.index(),
         None if periodic.z => 2,
         None if periodic.x => 0,
@@ -127,7 +103,11 @@ pub(crate) fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f
         w.sections.iter().map(|sec| m.material(&sec.material).ok().map(|(_, mat)| (sec.length, mat.eps_r, mat.mu_r))).collect::<Option<_>>()?;
     let first = mats.first()?;
     if mats.iter().all(|x| x.1 == first.1 && x.2 == first.2) {
-        let bands = emcraft_theory::floquet::empty_guide_bands(w.width, w.height, w.length(), first.1 * first.2, psi, count);
+        let bands = emcraft_theory::floquet::empty_guide_bands(
+            &emcraft_theory::floquet::EmptyGuide { a: w.width, b: w.height, period: w.length(), eps_r: first.1 * first.2 },
+            psi,
+            count,
+        );
         return Some((bands, "exact (TE/TM harmonics)"));
     }
     if psi <= 0.0 || psi >= PI {
@@ -159,7 +139,7 @@ pub(crate) fn dispersion_table(s: &Session) -> Result<Value> {
         })
         .collect();
     Ok(json!({
-        "axis": axis_name(d.axis),
+        "axis": Axis::name_of(d.axis),
         "period": s.show_length(d.period),
         "unknowns": d.unknowns,
         "frequency_unit": s.display.frequency.symbol(),
