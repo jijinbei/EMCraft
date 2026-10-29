@@ -3,16 +3,24 @@
 
 use super::*;
 
-pub(super) fn dispersion(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
-    let session = &app.session;
-    let height = Height::new(0.62, 260.0, 700.0);
-    let drawn = chart_view(ui, &mut st.views.chart, app.revision, ChartView::Dispersion, height, Fixed::ChartDispersion, || {
-        emcraft_engine::periodic::dispersion_chart(session)
-    });
-    if let Err(e) = drawn {
-        return empty(ui, &e);
+pub(super) struct Dispersion;
+
+impl ChartView for Dispersion {
+    type Key = SharedChart;
+    const HANDLE: Fixed = Fixed::ChartDispersion;
+    const HEIGHT: Height = OVER_TABLE;
+
+    fn controls(_: &EmcraftApp, _: &mut Parts, _: &mut egui::Ui) -> Option<SharedChart> {
+        Some(SharedChart::Dispersion)
     }
-    table(app, ui);
+
+    fn chart(app: &EmcraftApp, _: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
+        emcraft_engine::periodic::dispersion_chart(&app.session).map_err(|e| e.to_string())
+    }
+
+    fn below(app: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
+        table(app, ui);
+    }
 }
 
 /// The bands' frequencies at each phase.

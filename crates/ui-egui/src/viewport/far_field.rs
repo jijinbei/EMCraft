@@ -1,23 +1,29 @@
-//! The far-field pattern.
+//! The far-field pattern at an azimuth.
 
 use super::*;
 
-pub(super) fn far_field(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
-    let mut phi = st.views.pattern_phi;
-    ui.horizontal(|ui| {
-        let r = crate::ui_kit::slider(ui, &mut phi, 0.0..=180.0, "azimuth φ (°)");
-        scenario::publish_target(Fixed::PatternPhi, r.rect);
-    });
-    if (phi - st.views.pattern_phi).abs() > 1e-9 {
-        st.views.pattern_phi = phi;
+pub(super) struct FarField;
+
+impl ChartView for FarField {
+    type Key = SharedChart;
+    const HANDLE: Fixed = Fixed::ChartPattern;
+    const HEIGHT: Height = Height::new(0.9, 260.0, 700.0);
+
+    /// The azimuth.
+    fn controls(_: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<SharedChart> {
+        let mut phi = st.views.pattern_phi;
+        ui.horizontal(|ui| {
+            let r = crate::ui_kit::slider(ui, &mut phi, 0.0..=180.0, "azimuth φ (°)");
+            scenario::publish_target(Fixed::PatternPhi, r.rect);
+        });
+        if (phi - st.views.pattern_phi).abs() > 1e-9 {
+            st.views.pattern_phi = phi;
+        }
+        Some(SharedChart::Pattern { phi: st.views.pattern_phi })
     }
-    let phi = st.views.pattern_phi;
-    let session = &app.session;
-    let height = Height::new(0.9, 260.0, 700.0);
-    let drawn = chart_view(ui, &mut st.views.chart, app.revision, ChartView::Pattern { phi }, height, Fixed::ChartPattern, || {
-        emcraft_engine::open::pattern_chart(session, phi, 91)
-    });
-    if let Err(e) = drawn {
-        empty(ui, &e);
+
+    fn chart(app: &EmcraftApp, key: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
+        let SharedChart::Pattern { phi } = key else { return Err("not a pattern".into()) };
+        emcraft_engine::open::pattern_chart(&app.session, *phi, 91).map_err(|e| e.to_string())
     }
 }

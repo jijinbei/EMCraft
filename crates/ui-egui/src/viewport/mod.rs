@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::handle::{Fixed, Handle};
 use crate::picture::{Cached, PictureKey};
-use crate::state::{ChartView, FieldState, ViewState};
+use crate::state::{FieldState, SharedChart, ViewState};
 use crate::theme::Tokens;
 use crate::view3d::View3d;
 use crate::{Action, Actions, EmcraftApp, Picture, UiExt, View, scenario};
@@ -100,15 +100,15 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             match app.view {
                 View::Model => model3d(app, st, ui, out),
                 View::Outline => model(app, ui),
-                View::SParameters => sparameters(app, st, ui, out),
-                View::Tdr => tdr(app, st, ui),
+                View::SParameters => show_chart::<SParameters>(app, st, ui, out),
+                View::Tdr => show_chart::<Tdr>(app, st, ui, out),
                 View::Field => field(app, st, ui, out),
                 View::PortModes => port_modes(app, st, ui, out),
-                View::FarField => far_field(app, st, ui),
+                View::FarField => show_chart::<FarField>(app, st, ui, out),
                 View::Compare => compare(app, ui, out),
                 View::Eigenmodes => eigenmodes(app, st, ui, out),
-                View::Study => study(app, st, ui),
-                View::Dispersion => dispersion(app, st, ui),
+                View::Study => show_chart::<StudyView>(app, st, ui, out),
+                View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
             }
         });
     shown
@@ -161,24 +161,79 @@ impl Height {
     }
 }
 
-/// A result view's chart in the rest of the card, as wide as the card allows: the one kept in
-/// `slot`, drawn again from `chart` when the session (`revision`), the width, the theme or the
-/// view's settings (`view`) changed. The picture's response and its size in pixels, or the
-/// error that kept it from being drawn.
-pub(super) fn chart_view<V: PartialEq, E: ToString>(
-    ui: &mut egui::Ui,
-    slot: &mut Cached<PictureKey<V>>,
-    revision: u64,
-    view: V,
-    height: Height,
-    handle: Fixed,
-    chart: impl FnOnce() -> Result<emcraft_render::chart::Chart, E>,
-) -> Result<(egui::Response, egui::Vec2), String> {
+/// A result view drawn around one chart (the S-parameters, TDR, dispersion, far-field and
+/// study views): its settings above the chart, which give what the chart shows (its key), the
+/// chart drawn from the session and that key, and what goes under it. [`show_chart`] draws
+/// any of them.
+pub(super) trait ChartView {
+    /// What the chart is drawn from besides the session: a change draws it again.
+    type Key: ChartKey;
+    /// The chart's name on screen.
+    const HANDLE: Fixed;
+    /// Its height in the card.
+    const HEIGHT: Height;
+
+    /// What goes over the chart (the view's settings, edited in `st`); what it shows, or `None`
+    /// when there is nothing to chart.
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<Self::Key>;
+
+    /// The chart of `key`.
+    fn chart(app: &EmcraftApp, key: &Self::Key) -> Result<emcraft_render::chart::Chart, String>;
+
+    /// What goes under the chart: `chart` is its response, `size` its size in pixels.
+    fn below(_app: &EmcraftApp, _st: &mut Parts, _ui: &mut egui::Ui, _chart: &egui::Response, _size: egui::Vec2, _out: &mut Actions) {}
+
+    /// What the card shows when the chart cannot be drawn: why, by default.
+    fn failed(_app: &EmcraftApp, _st: &mut Parts, ui: &mut egui::Ui, error: &str) {
+        empty(ui, error);
+    }
+}
+
+/// What a chart is drawn from, and where a chart drawn from it is kept between frames.
+pub(super) trait ChartKey: Clone + PartialEq {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>>;
+}
+
+/// The S-parameter, dispersion and far-field charts, one at a time.
+impl ChartKey for SharedChart {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<SharedChart>> {
+        &mut views.chart
+    }
+}
+
+impl ChartKey for crate::state::TdrParams {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>> {
+        &mut views.tdr.chart
+    }
+}
+
+impl ChartKey for (Option<String>, emcraft_engine::study::Slice) {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>> {
+        &mut views.study.chart
+    }
+}
+
+/// The height of a chart with a table under it.
+pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
+
+/// Draws a chart view: its controls, its chart in the rest of the card as wide as the card
+/// allows (the one kept, drawn again when the session, the width, the theme or the view's key
+/// changed), then what goes under it.
+pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
+    let Some(key) = V::controls(app, st, ui) else { return };
     let width = picture_width(ui);
-    let height = height.of(ui);
-    let p = slot.get_or_draw(PictureKey::new(revision, width, view), || chart().map(|c| emcraft_render::chart::draw(&c, width, height)))?;
-    let size = p.size();
-    Ok((picture(ui, p, handle), size))
+    let height = V::HEIGHT.of(ui);
+    let drawn = V::Key::slot(&mut st.views).get_or_draw(PictureKey::new(app.revision, width, key.clone()), || {
+        V::chart(app, &key).map(|c| emcraft_render::chart::draw(&c, width, height))
+    });
+    match drawn {
+        Ok(p) => {
+            let size = p.size();
+            let r = picture(ui, p, V::HANDLE);
+            V::below(app, st, ui, &r, size, out);
+        }
+        Err(e) => V::failed(app, st, ui, &e),
+    }
 }
 
 pub(super) fn empty(ui: &mut egui::Ui, text: &str) {

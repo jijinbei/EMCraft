@@ -12,21 +12,29 @@ const MODES: [(Option<Mode>, &str, &str); 3] = [
     (Some(Mode::BandPass), "Band pass", "|h(t)|: a peak where each reflection comes from (guides with a cut-off)"),
 ];
 
-pub(super) fn tdr(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
-    let tdr = &mut st.views.tdr;
-    controls(app, &mut tdr.params, ui);
-    let session = &app.session;
-    let params = tdr.params.to_params();
-    let drawn = chart_view(ui, &mut tdr.chart, app.revision, tdr.params.clone(), Height::new(0.8, 260.0, 700.0), Fixed::ChartTdr, || {
-        emcraft_engine::results_tdr_chart(session, &emcraft_engine::Params::new(&params, session.display()))
-    });
-    if let Err(e) = drawn {
-        return empty(ui, &e);
+pub(super) struct Tdr;
+
+impl ChartView for Tdr {
+    type Key = crate::state::TdrParams;
+    const HANDLE: Fixed = Fixed::ChartTdr;
+    const HEIGHT: Height = Height::new(0.8, 260.0, 700.0);
+
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<Self::Key> {
+        controls(app, &mut st.views.tdr.params, ui);
+        Some(st.views.tdr.params.clone())
     }
-    crate::ui_kit::caption(
-        ui,
-        "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).",
-    );
+
+    fn chart(app: &EmcraftApp, key: &Self::Key) -> Result<emcraft_render::chart::Chart, String> {
+        let s = &app.session;
+        emcraft_engine::results_tdr_chart(s, &emcraft_engine::Params::new(&key.to_params(), s.display())).map_err(|e| e.to_string())
+    }
+
+    fn below(_: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
+        crate::ui_kit::caption(
+            ui,
+            "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).",
+        );
+    }
 }
 
 /// The port and the transform.

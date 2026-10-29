@@ -98,7 +98,7 @@ pub struct StudyState {
 
 /// Which chart the shared chart slot of [`ViewState`] holds.
 #[derive(Clone, Debug, PartialEq)]
-pub enum ChartView {
+pub enum SharedChart {
     SParameters,
     Dispersion,
     /// The far-field pattern at an azimuth (degrees).
@@ -136,7 +136,7 @@ pub struct KeptPlane {
 #[derive(Default)]
 pub struct ViewState {
     /// The chart of the S-parameter, far-field or dispersion view (one at a time).
-    pub chart: Cached<PictureKey<ChartView>>,
+    pub chart: Cached<PictureKey<SharedChart>>,
     /// The far-field pattern's azimuth (degrees).
     pub pattern_phi: f64,
     pub tdr: TdrState,
