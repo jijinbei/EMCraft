@@ -1,11 +1,12 @@
-//! The open box's kernels: H and E on a uniform grid with a CPML on every derivative (each
+//! The open box's kernels: H and E on a uniform grid with a CPML on every derivative, the
+//! materials' dispersive and lossy edges and magnetic losses' decay (each
 //! component's two auxiliary variables absorb its derivatives along u and v, the axes across it
 //! in cyclic order), the lumped ports and current elements, and the running transforms of the
 //! tangential fields on the Huygens box (in f64 whatever the fields' precision).
 
 use cubecl::prelude::*;
 
-use super::{Cells, Xyz, at, point};
+use super::{Cells, Poles, Xyz, advance, at, follow, point};
 use crate::buffer::Real;
 
 /// Each component's two auxiliary variables: for its derivative along u, then along v.
@@ -33,10 +34,21 @@ fn absorb<F: Real>(profile: &[F], i: usize, psi: F, derivative: F) -> F {
     profile[2 * i] * psi + profile[2 * i + 1] * derivative
 }
 
-/// H from n − ½ to n + ½: ∂H_a/∂t = −(1/μ₀) (∂E_v/∂u − ∂E_u/∂v), `cpml` holding each axis's
-/// (b, a) at the half cells.
+/// H from n − ½ to n + ½: ∂H_a/∂t = −(1/μ) (∂E_v/∂u − ∂E_u/∂v), `cpml` holding each axis's
+/// (b, a) at the half cells and `ch` dt/μ per face; with `magnetic`, H decays by `decay` first.
 #[cube(launch)]
-pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, mut psi: Psi<F>, cpml: Xyz<F>, d: Steps<F>, ch: F, n: Cells) {
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn step_h<F: Real>(
+    mut h: Xyz<F>,
+    e: Xyz<F>,
+    mut psi: Psi<F>,
+    cpml: Xyz<F>,
+    d: Steps<F>,
+    ch: Xyz<F>,
+    n: Cells,
+    decay: Xyz<F>,
+    #[comptime] magnetic: bool,
+) {
     let p = point(&n);
     let (i, j, k, nx, ny, nz) = (p.i, p.j, p.k, p.nx, p.ny, p.nz);
     if k <= nz {
@@ -48,7 +60,11 @@ pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, mut psi: Psi<F>, cpml: X
             let q1 = absorb(&cpml.z, k, psi.x1[id], dey_dz);
             psi.x0[id] = q0;
             psi.x1[id] = q1;
-            h.x[id] -= ch * (dez_dy + q0 - dey_dz - q1);
+            let mut old = h.x[id];
+            if comptime![magnetic] {
+                old *= decay.x[id];
+            }
+            h.x[id] = old - ch.x[id] * (dez_dy + q0 - dey_dz - q1);
         }
         if i < nx && k < nz {
             let id = at(nx, ny + 1, i, j, k);
@@ -58,7 +74,11 @@ pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, mut psi: Psi<F>, cpml: X
             let q1 = absorb(&cpml.x, i, psi.y1[id], dez_dx);
             psi.y0[id] = q0;
             psi.y1[id] = q1;
-            h.y[id] -= ch * (dex_dz + q0 - dez_dx - q1);
+            let mut old = h.y[id];
+            if comptime![magnetic] {
+                old *= decay.y[id];
+            }
+            h.y[id] = old - ch.y[id] * (dex_dz + q0 - dez_dx - q1);
         }
         if i < nx && j < ny {
             let id = at(nx, ny, i, j, k);
@@ -68,15 +88,31 @@ pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, mut psi: Psi<F>, cpml: X
             let q1 = absorb(&cpml.y, j, psi.z1[id], dex_dy);
             psi.z0[id] = q0;
             psi.z1[id] = q1;
-            h.z[id] -= ch * (dey_dx + q0 - dex_dy - q1);
+            let mut old = h.z[id];
+            if comptime![magnetic] {
+                old *= decay.z[id];
+            }
+            h.z[id] = old - ch.z[id] * (dey_dx + q0 - dex_dy - q1);
         }
     }
 }
 
 /// E from n to n + 1: ∂E_a/∂t = (1/ε) (∂H_v/∂u − ∂H_u/∂v) on edges with a coefficient and off
-/// the low walls, `cpml` holding each axis's (b, a) at the nodes.
+/// the low walls, `cpml` holding each axis's (b, a) at the nodes; with `dispersive`, the
+/// slotted edges by the auxiliary equations.
 #[cube(launch)]
-pub(crate) fn step_e<F: Real>(mut e: Xyz<F>, h: Xyz<F>, c: Xyz<F>, mut psi: Psi<F>, cpml: Xyz<F>, d: Steps<F>, n: Cells) {
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn step_e<F: Real>(
+    mut e: Xyz<F>,
+    h: Xyz<F>,
+    c: Xyz<F>,
+    mut psi: Psi<F>,
+    cpml: Xyz<F>,
+    d: Steps<F>,
+    n: Cells,
+    mut poles: Poles<F>,
+    #[comptime] dispersive: bool,
+) {
     let p = point(&n);
     let (i, j, k, nx, ny, nz) = (p.i, p.j, p.k, p.nx, p.ny, p.nz);
     let zero = F::new(0.0_f32);
@@ -91,7 +127,15 @@ pub(crate) fn step_e<F: Real>(mut e: Xyz<F>, h: Xyz<F>, c: Xyz<F>, mut psi: Psi<
                 let q1 = absorb(&cpml.z, k, psi.x1[id], dhy_dz);
                 psi.x0[id] = q0;
                 psi.x1[id] = q1;
-                e.x[id] += cf * (dhz_dy + q0 - dhy_dz - q1);
+                let curl = dhz_dy + q0 - dhy_dz - q1;
+                let mut next = e.x[id] + cf * curl;
+                if comptime![dispersive] {
+                    let slot = poles.slot_x[id];
+                    if slot != u32::MAX {
+                        next = advance(&mut poles, slot, e.x[id], curl);
+                    }
+                }
+                e.x[id] = next;
             }
         }
         if j < ny {
@@ -104,7 +148,15 @@ pub(crate) fn step_e<F: Real>(mut e: Xyz<F>, h: Xyz<F>, c: Xyz<F>, mut psi: Psi<
                 let q1 = absorb(&cpml.x, i, psi.y1[id], dhz_dx);
                 psi.y0[id] = q0;
                 psi.y1[id] = q1;
-                e.y[id] += cf * (dhx_dz + q0 - dhz_dx - q1);
+                let curl = dhx_dz + q0 - dhz_dx - q1;
+                let mut next = e.y[id] + cf * curl;
+                if comptime![dispersive] {
+                    let slot = poles.slot_y[id];
+                    if slot != u32::MAX {
+                        next = advance(&mut poles, slot, e.y[id], curl);
+                    }
+                }
+                e.y[id] = next;
             }
         }
         if k < nz {
@@ -117,7 +169,15 @@ pub(crate) fn step_e<F: Real>(mut e: Xyz<F>, h: Xyz<F>, c: Xyz<F>, mut psi: Psi<
                 let q1 = absorb(&cpml.y, j, psi.z1[id], dhx_dy);
                 psi.z0[id] = q0;
                 psi.z1[id] = q1;
-                e.z[id] += cf * (dhy_dx + q0 - dhx_dy - q1);
+                let curl = dhy_dx + q0 - dhx_dy - q1;
+                let mut next = e.z[id] + cf * curl;
+                if comptime![dispersive] {
+                    let slot = poles.slot_z[id];
+                    if slot != u32::MAX {
+                        next = advance(&mut poles, slot, e.z[id], curl);
+                    }
+                }
+                e.z[id] = next;
             }
         }
     }
@@ -177,9 +237,20 @@ pub(crate) fn remember<F: Real>(e: Xyz<F>, mut src: Sources<F>, edges: u32) {
 
 /// After E's plain update: each port's edges redone semi-implicitly with the source at `s`,
 /// its voltage and current to `record[2 (slot ports + p)]` and the next; then the current
-/// elements. One unit, the ports in order.
+/// elements (with `dispersive`, the terms of a slotted edge following its change). One unit, the
+/// ports in order.
 #[cube(launch)]
-pub(crate) fn drive<F: Real>(mut e: Xyz<F>, c: Xyz<F>, src: Sources<F>, record: &mut [F], s: F, slot: u32) {
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn drive<F: Real>(
+    mut e: Xyz<F>,
+    c: Xyz<F>,
+    src: Sources<F>,
+    record: &mut [F],
+    s: F,
+    slot: u32,
+    mut poles: Poles<F>,
+    #[comptime] dispersive: bool,
+) {
     if ABSOLUTE_POS == 0 {
         let ports = src.ports as usize;
         let half = F::new(0.5_f32);
@@ -212,6 +283,9 @@ pub(crate) fn drive<F: Real>(mut e: Xyz<F>, c: Xyz<F>, src: Sources<F>, record: 
             let id = src.current_id[q] as usize;
             let value = get(&e, axis, id) - src.current[q] * s;
             set(&mut e, axis, id, value);
+            if comptime![dispersive] {
+                follow(&mut poles, axis, id, -(src.current[q] * s));
+            }
         }
     }
 }

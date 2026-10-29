@@ -65,8 +65,10 @@ fn ports_in_a_magnetically_lossy_filling_solve_against_the_exact_line() {
     let c = s.execute("results.compare", &json!({})).unwrap();
     assert_eq!(c["reference"], "exact");
     assert!(c["worst"].as_f64().unwrap() < 1e-2, "{c}");
-    // The time domain refuses it.
-    assert!(s.execute("solve.time_domain", &json!({"frequencies": [10]})).is_err());
+    // The time domain takes it, its loss tangents as conductivities matched at the band's centre.
+    let td = s.execute("solve.time_domain", &json!({"frequencies": [8, 12], "cell": 3})).unwrap();
+    assert_eq!(td["loss_reference"], 10.0, "{td}");
+    assert!(td["points"][0]["s21"]["mag"].as_f64().unwrap() < 0.95, "{td}");
     // A closed cavity of it: the materials' Q split between the two loss tangents.
     let r = s.execute("solve.eigenmodes", &json!({"near": 5, "count": 1})).unwrap();
     let mode = &r["modes"][0];
@@ -117,6 +119,38 @@ fn cavity_eigenmodes_and_their_pictures() {
     assert!(std::fs::read(&path).unwrap().starts_with(&[0x89, b'P', b'N', b'G']));
     assert!(s.execute("view.field", &json!({"path": path, "mode": 9})).is_err());
     assert!(s.execute("solve.eigenmodes", &json!({"near": 12, "count": 0})).is_err());
+}
+
+/// A WR-90 with a 20 mm slab of εr 2.2 and loss tangent `tan_d` between 10 mm of air.
+fn lossy_slab_session(tan_d: f64) -> Session {
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "lossy", "eps_r": 2.2, "loss_tangent": tan_d})).unwrap();
+    let sections = json!([{"length": 10, "material": "vacuum"}, {"length": 20, "material": "lossy"}, {"length": 10, "material": "vacuum"}]);
+    s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": sections})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    s
+}
+
+#[test]
+fn the_time_domain_agrees_with_the_fem_for_the_material_it_realises() {
+    // The time domain realises tan δ = 0.05 as the conductivity matched at 10 GHz, so it solves
+    // tan δ·10/f; the FEM solves that loss tangent at each frequency.
+    let mut td = lossy_slab_session(0.05);
+    let r = td.execute("solve.time_domain", &json!({"frequencies": [8, 12], "cell": 1})).unwrap();
+    assert_eq!(r["loss_reference"], 10.0);
+    for (i, f) in [8.0, 12.0].into_iter().enumerate() {
+        let mut fem = lossy_slab_session(0.05 * 10.0 / f);
+        fem.execute("mesh.generate", &json!({"size": 3.5})).unwrap();
+        let q = fem.execute("solve.frequency", &json!({"frequencies": [f], "order": 2})).unwrap();
+        let c = |v: &Value, k: &str| emcraft_solver::Complex64::new(v[k]["re"].as_f64().unwrap(), v[k]["im"].as_f64().unwrap());
+        let (t, e) = (&r["points"][i], &q["points"][0]);
+        let gap = (c(t, "s11") - c(e, "s11")).norm().max((c(t, "s21") - c(e, "s21")).norm());
+        let mag = (c(t, "s21").norm() - c(e, "s21").norm()).abs();
+        // The time domain's 1 mm grid (its phase error) against the FEM's 2e-3: measured 5.3e-3
+        // and 2.8e-2, in |S21| 4.4e-4 and 2.0e-3.
+        assert!(gap < 4e-2 && mag < 4e-3, "{f}: {gap:e} {mag:e}");
+    }
 }
 
 #[test]

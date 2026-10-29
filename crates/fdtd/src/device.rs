@@ -18,13 +18,20 @@ pub struct Plan {
     pub n: [usize; 3],
     /// The time step (s).
     pub dt: f64,
-    /// The dispersive edges and their poles, if any: such an edge advances its polarizations
-    /// with E (the auxiliary differential equations) instead of E += c ∇×H.
+    /// The dispersive and lossy edges (and the walls' edges with finite conductivity), if any:
+    /// such an edge advances its terms with E (the auxiliary differential equations) instead of
+    /// E += c ∇×H.
     pub poles: Option<Poles>,
-    /// dt/ε on the E edges of each component, 0 on and in conductors (the edge is not updated).
+    /// dt/ε on the E edges of each component, 0 on and in perfect conductors (the edge is not
+    /// updated). With finite wall conductivity the walls' edges are updated, the H beyond the
+    /// grid's outer walls taken as zero.
     pub e: [Vec<f64>; 3],
-    /// dt/μ on the H faces of each component, 0 where neither cell exists.
+    /// dt/μ on the H faces of each component, 0 where neither cell exists; with magnetic
+    /// losses, (dt/μ)/(1 + σ_m dt/2μ).
     pub h: [Vec<f64>; 3],
+    /// With magnetic losses, the decay of H on each face, H ← decay H − h ∇×E; empty (1
+    /// everywhere) without.
+    pub h_decay: [Vec<f64>; 3],
     /// The cells' steps along each axis (n of them).
     pub primal: [Vec<f64>; 3],
     /// The steps between cell centres, half cells at the ends (n + 1 of them).
@@ -72,8 +79,12 @@ pub struct OpenPlan {
     pub dt: f64,
     /// dt/ε on the E edges of each component, 0 on conductors and the box's walls.
     pub ce: [Vec<f64>; 3],
-    /// dt/μ₀ on every H face.
-    pub ch: f64,
+    /// The dispersive and lossy edges, if any, as [`Plan::poles`].
+    pub poles: Option<Poles>,
+    /// dt/μ on the H faces of each component (with magnetic losses, the exponential update's).
+    pub ch: [Vec<f64>; 3],
+    /// With magnetic losses, the decay of H on each face, as [`Plan::h_decay`]; empty without.
+    pub h_decay: [Vec<f64>; 3],
     /// The CPML's (b, a) along each axis: at the nodes for E (n + 1), at the half cells for H
     /// (n). Component a's two auxiliary variables absorb its derivatives along u and v, the
     /// axes across it in cyclic order.
@@ -115,7 +126,9 @@ pub struct PortEdgePlan {
     pub cv: f64,
 }
 
-/// A current element: after the ports, E[id] −= coefficient · s on component `axis`.
+/// A current element: after the ports, E[id] −= coefficient · s on component `axis`; on a
+/// slotted edge ([`OpenPlan::poles`]) its Debye and surface terms then gain kb times the same
+/// change (they took Eⁿ⁺¹).
 pub struct CurrentPlan {
     pub axis: usize,
     pub id: usize,

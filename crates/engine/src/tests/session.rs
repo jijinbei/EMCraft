@@ -232,6 +232,7 @@ fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
             steps: 0,
             reference_steps: 0,
             converged: true,
+            loss_reference: 0.0,
         });
     };
     filled(&mut r);

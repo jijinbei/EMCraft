@@ -90,9 +90,6 @@ fn hostile_requests_are_refused() {
     assert!(s_parameters(&m, &Options { courant: 1.5, ..Options::new(0.002) }, &[7e9]).is_err());
     // Below the ports' cut-off.
     assert!(s_parameters(&m, &Options::new(0.002), &[4e9]).is_err());
-    let mut lossy = filter();
-    lossy.set_wall_conductivity(Some(5.8e7)).unwrap();
-    assert!(s_parameters(&lossy, &Options::new(0.002), &[7e9]).is_err());
 }
 
 #[test]
@@ -165,9 +162,9 @@ fn dispersive_slab_converges_at_second_order() {
 
 #[test]
 fn dispersion_is_refused_where_unsupported() {
-    // At a port.
+    // A port below its cut-off: a plasma that lifts it above the band.
     let mut m = Model::new();
-    let drude = Pole::Drude { plasma_frequency: 5e9, damping: 1e9 };
+    let drude = Pole::Drude { plasma_frequency: 10e9, damping: 1e9 };
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
         width: A,
@@ -178,17 +175,10 @@ fn dispersion_is_refused_where_unsupported() {
         vias: Vec::new(),
     })
     .unwrap();
-    assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
+    assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Invalid { .. })));
     // A resonance far too fast for the time step.
     let fast = Pole::Lorentz { delta_eps: 1.0, frequency: 1e14, damping: 1e9 };
     let fast = Material::new("fast", 1.0, 1.0).unwrap().with_dispersion(vec![fast]).unwrap();
     let m = with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.01, "fast"), Section::new(0.01, "vacuum")], vec![fast]);
-    assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
-}
-
-#[test]
-fn magnetic_losses_are_refused_in_the_time_domain() {
-    let lossy = Material::new("ferrite", 1.0, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
-    let m = with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.01, "ferrite"), Section::new(0.01, "vacuum")], vec![lossy]);
     assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
 }

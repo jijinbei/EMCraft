@@ -1,10 +1,11 @@
-//! The guide's kernels: H and E on a tensor grid with the CPML along z and dispersive edges,
-//! one unit per E_y node of the source plane, one cube per projection. Edges and faces with a
-//! zero coefficient are not updated (conductors).
+//! The guide's kernels: H and E on a tensor grid with the CPML along z, dispersive and lossy
+//! edges, the walls' edges with finite conductivity and magnetic losses; one unit per E_y node
+//! of the source plane, one cube per projection. Edges and faces with a zero coefficient are not
+//! updated (perfect conductors).
 
 use cubecl::prelude::*;
 
-use super::{Cells, Xyz, at, point};
+use super::{Cells, Poles, Xyz, advance, at, point};
 use crate::buffer::Real;
 
 /// The CPML along z of the two components with a z derivative: their auxiliary variables ψ
@@ -16,62 +17,19 @@ pub(crate) struct ZCpml<F: Float> {
     ba: Box<[F]>,
 }
 
-/// The dispersive edges (`emcraft_fdtd::Poles`): each E edge's slot (`u32::MAX` for none) per
-/// component, each slot's ε₀ε∞ and terms, each term's kind (0 Debye, 1 second order), its three
-/// coefficients and its polarizations now and a step before.
-#[derive(CubeLaunch, CubeType)]
-pub(crate) struct Poles<F: Float> {
-    slot_x: Box<[u32]>,
-    slot_y: Box<[u32]>,
-    slot_z: Box<[u32]>,
-    eps: Box<[F]>,
-    start: Box<[u32]>,
-    kind: Box<[u32]>,
-    k: Box<[F]>,
-    p: Box<[F]>,
-    prev: Box<[F]>,
-    dt: F,
-}
-
-/// The new E on a dispersive edge of `slot` from E now and the bracketed curl term, advancing
-/// its polarizations (Taflove & Hagness §9.4, as `emcraft_fdtd`'s `Dispersion::step`).
-#[cube]
-fn advance<F: Real>(poles: &mut Poles<F>, slot: u32, e: F, curl: F) -> F {
-    let s = slot as usize;
-    let begin = poles.start[s] as usize;
-    let end = poles.start[s + 1] as usize;
-    let mut kb_sum = F::new(0.0_f32);
-    let mut rhs = poles.dt * curl;
-    let mut t = begin;
-    while t < end {
-        let p = poles.p[t];
-        if poles.kind[t] == 0 {
-            kb_sum += poles.k[3 * t + 1];
-            rhs -= (poles.k[3 * t] - F::new(1.0_f32)) * p;
-        } else {
-            let next = poles.k[3 * t] * p - poles.k[3 * t + 1] * poles.prev[t] + poles.k[3 * t + 2] * e;
-            rhs -= next - p;
-            poles.prev[t] = p;
-            poles.p[t] = next;
-        }
-        t += 1;
-    }
-    let eps = poles.eps[s];
-    let e_new = ((eps - kb_sum) * e + rhs) / (eps + kb_sum);
-    t = begin;
-    while t < end {
-        if poles.kind[t] == 0 {
-            poles.p[t] = poles.k[3 * t] * poles.p[t] + poles.k[3 * t + 1] * (e_new + e);
-        }
-        t += 1;
-    }
-    e_new
-}
-
 /// H from n − ½ to n + ½ (`c` holds dt/μ, `d` the primal steps, the CPML's (b, a) per cell
-/// centre along z).
+/// centre along z); with `magnetic`, H decays by `decay` first (magnetic losses).
 #[cube(launch)]
-pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, c: Xyz<F>, mut cpml: ZCpml<F>, d: Xyz<F>, n: Cells) {
+pub(crate) fn step_h<F: Real>(
+    mut h: Xyz<F>,
+    e: Xyz<F>,
+    c: Xyz<F>,
+    mut cpml: ZCpml<F>,
+    d: Xyz<F>,
+    n: Cells,
+    decay: Xyz<F>,
+    #[comptime] magnetic: bool,
+) {
     let p = point(&n);
     let (i, j, k, nx, ny, nz) = (p.i, p.j, p.k, p.nx, p.ny, p.nz);
     let zero = F::new(0.0_f32);
@@ -84,7 +42,11 @@ pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, c: Xyz<F>, mut cpml: ZCp
                 let dey_dz = (e.y[at(nx + 1, ny, i, j, k + 1)] - e.y[at(nx + 1, ny, i, j, k)]) / d.z[k];
                 let psi = cpml.ba[2 * k] * cpml.psi_x[id] + cpml.ba[2 * k + 1] * dey_dz;
                 cpml.psi_x[id] = psi;
-                h.x[id] -= cf * (dez_dy - dey_dz - psi);
+                let mut old = h.x[id];
+                if comptime![magnetic] {
+                    old *= decay.x[id];
+                }
+                h.x[id] = old - cf * (dez_dy - dey_dz - psi);
             }
         }
         if i < nx && k < nz {
@@ -95,7 +57,11 @@ pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, c: Xyz<F>, mut cpml: ZCp
                 let dez_dx = (e.z[at(nx + 1, ny + 1, i + 1, j, k)] - e.z[at(nx + 1, ny + 1, i, j, k)]) / d.x[i];
                 let psi = cpml.ba[2 * k] * cpml.psi_y[id] + cpml.ba[2 * k + 1] * dex_dz;
                 cpml.psi_y[id] = psi;
-                h.y[id] -= cf * (dex_dz + psi - dez_dx);
+                let mut old = h.y[id];
+                if comptime![magnetic] {
+                    old *= decay.y[id];
+                }
+                h.y[id] = old - cf * (dex_dz + psi - dez_dx);
             }
         }
         if i < nx && j < ny {
@@ -104,14 +70,41 @@ pub(crate) fn step_h<F: Real>(mut h: Xyz<F>, e: Xyz<F>, c: Xyz<F>, mut cpml: ZCp
             if cf != zero {
                 let dey_dx = (e.y[at(nx + 1, ny, i + 1, j, k)] - e.y[at(nx + 1, ny, i, j, k)]) / d.x[i];
                 let dex_dy = (e.x[at(nx, ny + 1, i, j + 1, k)] - e.x[at(nx, ny + 1, i, j, k)]) / d.y[j];
-                h.z[id] -= cf * (dey_dx - dex_dy);
+                let mut old = h.z[id];
+                if comptime![magnetic] {
+                    old *= decay.z[id];
+                }
+                h.z[id] = old - cf * (dey_dx - dex_dy);
             }
         }
     }
 }
 
-/// E from n to n + 1 on interior edges (`c` holds dt/ε, `d` the dual steps, the CPML's (b, a)
-/// per z node); with `dispersive`, the edges with poles by the auxiliary equations.
+/// The index below `i` and above it on a lattice of `n` points along an axis, clamped, and
+/// whether each lies on the lattice (H beyond the grid's outer walls is zero).
+#[derive(CubeType)]
+struct Around<F: Float> {
+    below: usize,
+    above: usize,
+    w_below: F,
+    w_above: F,
+}
+
+#[cube]
+fn around<F: Real>(i: usize, n: usize) -> Around<F> {
+    let zero = F::new(0.0_f32);
+    let one = F::new(1.0_f32);
+    Around::<F> {
+        below: if i > 0 { i - 1 } else { 0usize },
+        above: if i < n { i } else { n - 1 },
+        w_below: if i > 0 { one } else { zero },
+        w_above: if i < n { one } else { zero },
+    }
+}
+
+/// E from n to n + 1 on every edge with a coefficient (the walls' edges too, with finite
+/// conductivity; `c` holds dt/ε, `d` the dual steps, the CPML's (b, a) per z node); with
+/// `dispersive`, the slotted edges by the auxiliary equations.
 #[cube(launch)]
 pub(crate) fn step_e<F: Real>(
     mut e: Xyz<F>,
@@ -126,12 +119,14 @@ pub(crate) fn step_e<F: Real>(
     let p = point(&n);
     let (i, j, k, nx, ny, nz) = (p.i, p.j, p.k, p.nx, p.ny, p.nz);
     let zero = F::new(0.0_f32);
+    let x = around::<F>(i, nx);
+    let y = around::<F>(j, ny);
     if k <= nz {
-        if i < nx && j >= 1 && j < ny && k >= 1 && k < nz {
+        if i < nx && k >= 1 && k < nz {
             let id = at(nx, ny + 1, i, j, k);
             let cf = c.x[id];
             if cf != zero {
-                let dhz_dy = (h.z[at(nx, ny, i, j, k)] - h.z[at(nx, ny, i, j - 1, k)]) / d.y[j];
+                let dhz_dy = (y.w_above * h.z[at(nx, ny, i, y.above, k)] - y.w_below * h.z[at(nx, ny, i, y.below, k)]) / d.y[j];
                 let dhy_dz = (h.y[at(nx, ny + 1, i, j, k)] - h.y[at(nx, ny + 1, i, j, k - 1)]) / d.z[k];
                 let psi = cpml.ba[2 * k] * cpml.psi_x[id] + cpml.ba[2 * k + 1] * dhy_dz;
                 cpml.psi_x[id] = psi;
@@ -146,12 +141,12 @@ pub(crate) fn step_e<F: Real>(
                 e.x[id] = next;
             }
         }
-        if i >= 1 && i < nx && j < ny && k >= 1 && k < nz {
+        if j < ny && k >= 1 && k < nz {
             let id = at(nx + 1, ny, i, j, k);
             let cf = c.y[id];
             if cf != zero {
                 let dhx_dz = (h.x[at(nx + 1, ny, i, j, k)] - h.x[at(nx + 1, ny, i, j, k - 1)]) / d.z[k];
-                let dhz_dx = (h.z[at(nx, ny, i, j, k)] - h.z[at(nx, ny, i - 1, j, k)]) / d.x[i];
+                let dhz_dx = (x.w_above * h.z[at(nx, ny, x.above, j, k)] - x.w_below * h.z[at(nx, ny, x.below, j, k)]) / d.x[i];
                 let psi = cpml.ba[2 * k] * cpml.psi_y[id] + cpml.ba[2 * k + 1] * dhx_dz;
                 cpml.psi_y[id] = psi;
                 let curl = dhx_dz + psi - dhz_dx;
@@ -165,12 +160,12 @@ pub(crate) fn step_e<F: Real>(
                 e.y[id] = next;
             }
         }
-        if i >= 1 && i < nx && j >= 1 && j < ny && k < nz {
+        if k < nz {
             let id = at(nx + 1, ny + 1, i, j, k);
             let cf = c.z[id];
             if cf != zero {
-                let dhy_dx = (h.y[at(nx, ny + 1, i, j, k)] - h.y[at(nx, ny + 1, i - 1, j, k)]) / d.x[i];
-                let dhx_dy = (h.x[at(nx + 1, ny, i, j, k)] - h.x[at(nx + 1, ny, i, j - 1, k)]) / d.y[j];
+                let dhy_dx = (x.w_above * h.y[at(nx, ny + 1, x.above, j, k)] - x.w_below * h.y[at(nx, ny + 1, x.below, j, k)]) / d.x[i];
+                let dhx_dy = (y.w_above * h.x[at(nx + 1, ny, i, y.above, k)] - y.w_below * h.x[at(nx + 1, ny, i, y.below, k)]) / d.y[j];
                 let curl = dhy_dx - dhx_dy;
                 let mut next = e.z[id] + cf * curl;
                 if comptime![dispersive] {

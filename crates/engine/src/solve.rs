@@ -207,7 +207,11 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
         .map(|(f, (a, b))| json!({"frequency": s.show_frequency(*f), "s11": complex(*a), "s21": complex(*b)}))
         .collect();
     let precision = gpu.map_or("double", |g| g.precision.name());
-    let reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device, "precision": precision, "frequency_unit": s.display.frequency.symbol(), "points": points});
+    let mut reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device, "precision": precision, "frequency_unit": s.display.frequency.symbol(), "points": points});
+    // Where the time domain matches the loss tangents (as conductivities), when there are any.
+    if s.model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.is_magnetically_lossy()) {
+        reply["loss_reference"] = json!(s.show_frequency(r.loss_reference));
+    }
     s.results.time_domain = Some(r);
     Ok(reply)
 }

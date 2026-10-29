@@ -79,6 +79,32 @@ fn dispersive_edges_advance_their_poles_on_the_device() {
     assert!(cpu.s21.iter().all(|s| s.norm() > 0.1), "{cpu:?}");
 }
 
+/// Every loss at once: a lossy dielectric (a conductivity), a magnetically lossy ferrite and
+/// walls of finite conductivity.
+fn lossy_guide() -> Model {
+    let lossy = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.05).unwrap();
+    let ferrite = Material::new("ferrite", 1.5, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
+    let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.01, "lossy"), Section::new(0.01, "ferrite"), Section::new(0.01, "vacuum")];
+    let mut m = guide(vec![lossy, ferrite], sections);
+    m.set_wall_conductivity(Some(1e6)).unwrap();
+    m
+}
+
+#[test]
+fn losses_and_lossy_walls_on_the_device_match_the_threads() {
+    // Cut short as above: the walls' edges, their branches of surface current, the lossy edges
+    // and the magnetic faces' decay against the threads'.
+    let (m, freqs) = (lossy_guide(), [8e9, 12e9]);
+    let o = Options { max_steps: 520, ..Options::new(0.003) };
+    let cpu = s_parameters(&m, &o, &freqs).unwrap();
+    let double = on_model(&m, &freqs, Backend::Cpu, Precision::Double, &o);
+    let gap = |r: &TdResult| (0..2).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
+    assert!(gap(&double) < 1e-9, "{:e}", gap(&double));
+    let single = on_model(&m, &freqs, Backend::Cpu, Precision::Single, &o);
+    assert!(gap(&single) < 1e-4, "{:e}", gap(&single));
+    assert!(cpu.s21.iter().all(|s| s.norm() > 0.05), "{cpu:?}");
+}
+
 #[test]
 fn every_built_backend_reports_what_it_runs() {
     let list = available();
@@ -116,5 +142,13 @@ fn cuda_matches_the_threads() {
         let r = on_model(&m, &freqs, Backend::Cuda, precision, &Options::new(0.0015));
         let worst = (0..3).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
         assert!(worst < if precision == Precision::Double { 1e-9 } else { 1e-4 }, "{precision}: {worst:e}");
+    }
+    // Every loss to the end.
+    let (m, freqs) = (lossy_guide(), [8e9, 10e9, 12e9]);
+    let cpu = s_parameters(&m, &Options::new(0.0015), &freqs).unwrap();
+    for precision in Precision::ALL {
+        let r = on_model(&m, &freqs, Backend::Cuda, precision, &Options::new(0.0015));
+        let worst = (0..3).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
+        assert!(worst < if precision == Precision::Double { 1e-9 } else { 1e-4 }, "lossy {precision}: {worst:e}");
     }
 }

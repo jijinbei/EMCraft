@@ -7,10 +7,11 @@ use cubecl::prelude::*;
 use emcraft_fdtd::{FdtdError, Plan, Result};
 
 use crate::BATCH;
-use crate::buffer::{Buf, Ints, Real, Xyz};
+use crate::buffer::{Buf, Real, Xyz};
 use crate::device::cube_units;
-use crate::kernels::guide::{self as kernels, PolesLaunch, ZCpmlLaunch};
+use crate::kernels::guide::{self as kernels, ZCpmlLaunch};
 use crate::lattice::Lattice;
+use crate::slots::{Decay, Slots};
 
 /// One half step's arrays: the CPML's ψ of the x and y components and its (b, a) along z.
 struct Cpml<F> {
@@ -29,72 +30,6 @@ impl<F: Real> Cpml<F> {
     }
 }
 
-/// The dispersive edges' slots, poles and polarizations; one-element stand-ins when there are
-/// none (the kernel, compiled without dispersion, does not read them).
-struct Poles<F> {
-    slot: [Ints; 3],
-    eps: Buf<F>,
-    start: Ints,
-    kind: Ints,
-    k: Buf<F>,
-    p: Buf<F>,
-    prev: Buf<F>,
-    dt: f64,
-    any: bool,
-}
-
-impl<F: Real> Poles<F> {
-    fn new(client: &Client, plan: &Plan) -> Poles<F> {
-        match &plan.poles {
-            Some(p) => {
-                let k: Vec<f64> = p.k.iter().flatten().copied().collect();
-                Poles {
-                    slot: p.slot.each_ref().map(|s| Ints::new(client, s)),
-                    eps: Buf::new(client, &p.eps),
-                    start: Ints::new(client, &p.start),
-                    kind: Ints::new(client, &p.kind),
-                    k: Buf::new(client, &k),
-                    p: Buf::zeros(client, p.kind.len()),
-                    prev: Buf::zeros(client, p.kind.len()),
-                    dt: plan.dt,
-                    any: true,
-                }
-            }
-            None => {
-                let none = Ints::new(client, &[u32::MAX]);
-                let zero = || Buf::zeros(client, 1);
-                Poles {
-                    slot: [none.clone(), none.clone(), none],
-                    eps: zero(),
-                    start: Ints::new(client, &[0, 0]),
-                    kind: Ints::new(client, &[0]),
-                    k: zero(),
-                    p: zero(),
-                    prev: zero(),
-                    dt: plan.dt,
-                    any: false,
-                }
-            }
-        }
-    }
-
-    fn arg(&self) -> PolesLaunch<F> {
-        let [x, y, z] = &self.slot;
-        PolesLaunch::new(
-            x.arg(),
-            y.arg(),
-            z.arg(),
-            self.eps.arg(),
-            self.start.arg(),
-            self.kind.arg(),
-            self.k.arg(),
-            self.p.arg(),
-            self.prev.arg(),
-            F::of(self.dt),
-        )
-    }
-}
-
 /// The run's arrays on the device.
 pub(crate) struct Run<F> {
     grid: Lattice,
@@ -105,7 +40,8 @@ pub(crate) struct Run<F> {
     ch: Xyz<F>,
     cpml_e: Cpml<F>,
     cpml_h: Cpml<F>,
-    poles: Poles<F>,
+    poles: Slots<F>,
+    decay: Decay<F>,
     primal: Xyz<F>,
     dual: Xyz<F>,
     source: Buf<F>,
@@ -133,7 +69,9 @@ impl<F: Real> Run<F> {
             && p.source.len() == plane
             && p.weights.iter().all(|w| w.len() == plane)
             && p.source_plane <= nz
-            && p.planes.iter().all(|&k| k <= nz);
+            && p.planes.iter().all(|&k| k <= nz)
+            && Slots::<F>::fit(p.poles.as_ref(), lens_e)
+            && Decay::<F>::fit(&p.h_decay, lens_h);
         if !shapes_agree {
             return Err(FdtdError::Invalid { what: "plan".into(), why: "its arrays do not match its grid".into() });
         }
@@ -146,7 +84,8 @@ impl<F: Real> Run<F> {
             ch: Xyz::new(client, &p.h),
             cpml_e: Cpml::new(client, [lens_e[0], lens_e[1]], &p.cpml_e),
             cpml_h: Cpml::new(client, [lens_h[0], lens_h[1]], &p.cpml_h),
-            poles: Poles::new(client, p),
+            poles: Slots::new(client, p.poles.as_ref(), p.dt),
+            decay: Decay::new(client, &p.h_decay),
             primal: Xyz::new(client, &p.primal),
             dual: Xyz::new(client, &p.dual),
             source: Buf::new(client, &p.source),
@@ -169,6 +108,8 @@ impl<F: Real> Run<F> {
             self.cpml_h.arg(),
             self.primal.arg(),
             self.grid.cells(),
+            self.decay.h.arg(),
+            self.decay.any,
         );
         kernels::step_e::launch::<F>(
             client,

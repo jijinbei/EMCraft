@@ -29,13 +29,34 @@
 //! Ampère's law then reads ε₀ε∞ (Eⁿ⁺¹ − Eⁿ)/Δt = ∇ × Hⁿ⁺½ − (Pⁿ⁺¹ − Pⁿ)/Δt. An edge between
 //! cells of different materials takes each pole weighted by the area of its cells, as it takes
 //! ε∞.
+//!
+//! **Losses.** A loss tangent tan δ, constant over frequency in the frequency domain, has no
+//! causal, finite-order time-domain form; the time domain realises it as a conductivity matched
+//! at the centre f_r of the run's band, σ = 2π f_r ε₀ εr tan δ, so the material it solves is
+//! ε = εr − jσ/(ωε₀): tan δ exactly at f_r, tan δ f_r/f elsewhere ([`Losses`]; the reply of
+//! `solve.time_domain` names f_r). The conduction current is averaged over the step,
+//! σ (Eⁿ⁺¹ + Eⁿ)/2, with ε scaled by (r/2) coth(r/2), r = σΔt/ε, which makes the update the
+//! exponential one (Taflove & Hagness 2005, §3.12): second order, and a good conductor's field
+//! decays at once rather than flipping sign every step. A magnetic loss tangent likewise becomes
+//! a magnetic conductivity σ_m = 2π f_r μ₀ μr tan δ_m on the H faces, updated exponentially.
+//! Walls of finite conductivity take Leontovich's surface impedance through branches of surface
+//! current on the walls' edges (`surface`). (A causal model nearer a constant tan δ, such as
+//! Djordjevic–Sarkar's wideband Debye sum, would change ε′ with frequency; the conductivity keeps
+//! εr and is exactly what the references here are built for.)
+//!
+//! **Ports in lossy and dispersive media.** The ports' TE₁₀ propagation constant is complex
+//! there, γ = √((π/a)² − k₀² ε(ω) μ(ω)) for the ε and μ the time domain realises; S₂₁ is
+//! normalised by the modes' unconjugated powers ∝ ‖e‖ β/μ (β = −jγ), the pseudo-waves the
+//! frequency-domain solver reads (R. B. Marks, D. F. Williams, *A general waveguide circuit
+//! theory*, J. Res. NIST 97(5):533–562, 1992), so that equal port media cancel and
+//! |S₂₁| = e^{−αL} along a uniform guide.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::f64::consts::PI;
 
-use emcraft_model::units::C0;
-use emcraft_model::{Model, Waveguide};
+use emcraft_model::units::{C0, EPS0, MU0};
+use emcraft_model::{Material, Model, Waveguide};
 use num_complex::Complex64 as C;
 
 pub use crate::device::{CurrentPlan, NO_SLOT, OpenBatch, OpenPlan, OpenStepper, Plan, Poles, PortEdgePlan, PortPlan, SamplePlan, Stepper};
@@ -45,6 +66,7 @@ pub mod device;
 mod dispersion;
 mod guide;
 pub mod open;
+mod surface;
 mod yee;
 
 /// The most cells a grid may have.
@@ -109,6 +131,58 @@ pub struct TdResult {
     pub reference_steps: usize,
     /// Whether the transforms settled before `max_steps`.
     pub converged: bool,
+    /// The frequency (Hz) at which the materials' loss tangents are matched ([`Losses`]).
+    pub loss_reference: f64,
+}
+
+/// How the time domain realises the materials' loss tangents: as an electric and a magnetic
+/// conductivity matched at the `reference` frequency (Hz), the centre of the run's band.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Losses {
+    pub reference: f64,
+}
+
+/// The smallest σ/(ωε₀) at the band's top for walls of finite conductivity: Leontovich's
+/// condition holds for good conductors only.
+const GOOD_CONDUCTOR: f64 = 100.0;
+
+/// The largest wall conductivity (S/m) the time domain takes: far beyond any metal's (copper's
+/// is 5.8e7), small enough that the walls' admittance stays finite.
+pub const MAX_WALL_CONDUCTIVITY: f64 = 1e20;
+
+impl Losses {
+    pub fn new(reference: f64) -> Losses {
+        Losses { reference }
+    }
+
+    /// The conductivity σ = ω_r ε₀ εr tan δ (S/m) and magnetic conductivity σ_m = ω_r μ₀ μr
+    /// tan δ_m (Ω/m) standing for `m`'s loss tangents (εr is ε∞ with dispersion).
+    pub fn of(&self, m: &Material) -> (f64, f64) {
+        let w = 2.0 * PI * self.reference;
+        (w * EPS0 * m.eps_r * m.loss_tangent, w * MU0 * m.mu_r * m.magnetic_loss_tangent)
+    }
+
+    /// The relative permittivity and permeability the time domain realises for `m` at `f`
+    /// (Hz): ε∞ + Σ χ(ω) − jσ/(ωε₀) and μr − jσ_m/(ωμ₀).
+    pub fn eps_mu(&self, m: &Material, f: f64) -> (C, C) {
+        let r = self.reference / f;
+        let eps = m.dispersion.iter().fold(C::new(m.eps_r, -m.eps_r * m.loss_tangent * r), |e, p| e + p.susceptibility(f));
+        (eps, C::new(m.mu_r, -m.mu_r * m.magnetic_loss_tangent * r))
+    }
+
+    /// The walls' conductivity `sigma` checked: finite, > 0 and a good conductor up to `f_max`.
+    pub(crate) fn wall(&self, sigma: f64, f_max: f64) -> Result<f64> {
+        if !(sigma.is_finite() && sigma > 0.0 && sigma <= MAX_WALL_CONDUCTIVITY) {
+            return Err(invalid("wall conductivity", format!("must be a finite number from 0 to {MAX_WALL_CONDUCTIVITY:e} S/m, got {sigma}")));
+        }
+        if sigma < GOOD_CONDUCTOR * 2.0 * PI * f_max * EPS0 {
+            return Err(invalid(
+                "wall conductivity",
+                format!("{sigma} S/m is not a good conductor at {f_max:e} Hz (σ/ωε₀ < {GOOD_CONDUCTOR}): the surface-impedance condition needs one"),
+            ));
+        }
+        Ok(sigma)
+    }
 }
 
 /// The broadband S-parameters (port 1 excited) of the model's guide at `frequencies` (Hz).
@@ -136,9 +210,10 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
     }
     // Every frequency above both ports' TE₁₀ cut-off, checked before any run.
     let below = |f: f64| invalid("frequency", format!("{f} Hz is below a port's TE10 cut-off"));
+    let losses = Losses::new(yee::Band::of(frequencies).fc);
     let port = |i: usize| -> Result<PortGuide> {
-        let p = PortGuide::new(model, w, i)?;
-        match frequencies.iter().find(|&&f| f <= p.cutoff()) {
+        let p = PortGuide::new(model, w, i, losses)?;
+        match frequencies.iter().find(|&&f| !p.propagates(f)) {
             Some(&f) => Err(below(f)),
             None => Ok(p),
         }
@@ -159,12 +234,12 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
     if (dt - dt2).abs() > 1e-12 * dt {
         return Err(invalid("grid", "the incident and device runs differ in time step"));
     }
-    // Power waves: amplitude = V/‖e‖, power ∝ ‖e‖ β/μ.
+    // Power waves (pseudo-waves in lossy ports): amplitude = V/‖e‖, power ∝ ‖e‖ β/μ.
     let mut s11 = Vec::new();
     let mut s21 = Vec::new();
     for (fi, &f) in frequencies.iter().enumerate() {
-        let (b1, b2) = (p1.beta(f), p2.beta(f));
-        if b1 == 0.0 || b2 == 0.0 {
+        let (y1, y2) = (p1.admittance(f), p2.admittance(f));
+        if y1.norm() == 0.0 || y2.norm() == 0.0 {
             return Err(below(f));
         }
         let inc = reference.d1[fi];
@@ -172,41 +247,67 @@ pub fn s_parameters_with(model: &Model, o: &Options, frequencies: &[f64], device
         let refl = dut.d1[fi] - inc;
         let trans = dut.d2[fi];
         s11.push(refl / inc);
-        // Amplitudes: V/‖e‖; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)).
+        // Amplitudes: V/‖e‖; power factor √((‖e₂‖ β2/μ2)/(‖e₁‖ β1/μ1)), real for lossless ports
+        // and on the principal branch otherwise.
         let (n1, n2) = (p1.norm(), p2.norm());
         let amp = (trans / n2) / (inc / n1);
-        s21.push(amp * ((n2 * b2 / p2.mu) / (n1 * b1 / p1.mu)).sqrt());
+        let ratio = (y2 * n2) / (y1 * n1);
+        s21.push(amp * if ratio.im == 0.0 { C::new(ratio.re.sqrt(), 0.0) } else { ratio.sqrt() });
     }
-    Ok(TdResult { frequencies: frequencies.to_vec(), s11, s21, cells: g.cells(), dt, steps: dut.steps, reference_steps: reference.steps, converged })
+    Ok(TdResult {
+        frequencies: frequencies.to_vec(),
+        s11,
+        s21,
+        cells: g.cells(),
+        dt,
+        steps: dut.steps,
+        reference_steps: reference.steps,
+        converged,
+        loss_reference: losses.reference,
+    })
 }
 
-/// A port's guide: its aperture across x and y and its material.
+/// A port's guide: its aperture across x and y and its material, with its losses as the time
+/// domain realises them.
 struct PortGuide {
     width: f64,
     height: f64,
-    eps: f64,
-    mu: f64,
+    material: Material,
+    losses: Losses,
 }
 
 impl PortGuide {
     /// The guide of section `i`.
-    fn new(model: &Model, w: &Waveguide, i: usize) -> Result<PortGuide> {
+    fn new(model: &Model, w: &Waveguide, i: usize, losses: Losses) -> Result<PortGuide> {
         let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
         let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
         let width = w.aperture(i).map_or(w.width, |a| a.width);
         let height = w.aperture_y(i).map_or(w.height, |a| a.width);
-        Ok(PortGuide { width, height, eps: m.eps_r, mu: m.mu_r })
+        Ok(PortGuide { width, height, material: m.clone(), losses })
     }
 
-    /// The TE₁₀ cut-off frequency.
-    fn cutoff(&self) -> f64 {
-        C0 / (2.0 * self.width * (self.eps * self.mu).sqrt())
-    }
-
-    /// The TE₁₀ propagation constant at `f` (0 below cut-off).
-    fn beta(&self, f: f64) -> f64 {
+    /// k² − (π/a)² at `f`, k² = k₀² ε μ.
+    fn kz2(&self, f: f64) -> C {
         let k0 = 2.0 * PI * f / C0;
-        (k0 * k0 * self.eps * self.mu - (PI / self.width).powi(2)).max(0.0).sqrt()
+        let (eps, mu) = self.losses.eps_mu(&self.material, f);
+        eps * mu * (k0 * k0) - (PI / self.width).powi(2)
+    }
+
+    /// Whether TE₁₀ propagates at `f`: Re(k²) above the cut-off's (k² real without losses).
+    fn propagates(&self, f: f64) -> bool {
+        self.kz2(f).re > 0.0
+    }
+
+    /// The TE₁₀ β/μr at `f`, β = √(k² − (π/a)²) on the branch with Im β ≤ 0 (a wave that
+    /// decays along +z), 0 below cut-off without losses.
+    fn admittance(&self, f: f64) -> C {
+        let kz2 = self.kz2(f);
+        let (_, mu) = self.losses.eps_mu(&self.material, f);
+        if kz2.im == 0.0 && mu.im == 0.0 {
+            return C::new(kz2.re.max(0.0).sqrt() / mu.re, 0.0);
+        }
+        let b = kz2.sqrt();
+        (if b.im > 0.0 { -b } else { b }) / mu
     }
 
     /// The TE₁₀ profile's norm ‖e‖ = width·height/2.
