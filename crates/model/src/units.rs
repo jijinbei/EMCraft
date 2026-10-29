@@ -14,6 +14,28 @@ pub const EPS0: f64 = 1.0 / (MU0 * C0 * C0);
 /// Free-space wave impedance η₀ = μ₀c (Ω).
 pub const ETA0: f64 = MU0 * C0;
 
+/// A unit of the display system: how many SI units one of it is, and its symbol. The
+/// conversions to and from SI are written once, here.
+pub trait Unit: Copy {
+    /// SI units per unit (metres per millimetre, hertz per gigahertz).
+    fn factor(self) -> f64;
+
+    /// The unit's symbol, as parameters name it and replies show it.
+    fn symbol(self) -> &'static str;
+
+    /// A value in this unit, in SI.
+    fn to_si(self, v: f64) -> f64 {
+        v * self.factor()
+    }
+
+    /// A value in SI, in this unit.
+    // The pair to `to_si`: from SI into this unit, not a constructor.
+    #[allow(clippy::wrong_self_convention)]
+    fn from_si(self, v: f64) -> f64 {
+        v / self.factor()
+    }
+}
+
 /// A length unit of the display system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Length {
@@ -24,7 +46,7 @@ pub enum Length {
     Millimetre,
 }
 
-impl Length {
+impl Unit for Length {
     /// Metres per unit.
     fn factor(self) -> f64 {
         match self {
@@ -33,17 +55,7 @@ impl Length {
         }
     }
 
-    /// A value in this unit, in metres.
-    pub fn to_si(self, v: f64) -> f64 {
-        v * self.factor()
-    }
-
-    /// A value in metres, in this unit.
-    pub fn from_si(self, v: f64) -> f64 {
-        v / self.factor()
-    }
-
-    pub fn symbol(self) -> &'static str {
+    fn symbol(self) -> &'static str {
         match self {
             Length::Metre => "m",
             Length::Millimetre => "mm",
@@ -63,7 +75,7 @@ pub enum Frequency {
     Gigahertz,
 }
 
-impl Frequency {
+impl Unit for Frequency {
     /// Hertz per unit.
     fn factor(self) -> f64 {
         match self {
@@ -73,17 +85,7 @@ impl Frequency {
         }
     }
 
-    /// A value in this unit, in hertz.
-    pub fn to_si(self, v: f64) -> f64 {
-        v * self.factor()
-    }
-
-    /// A value in hertz, in this unit.
-    pub fn from_si(self, v: f64) -> f64 {
-        v / self.factor()
-    }
-
-    pub fn symbol(self) -> &'static str {
+    fn symbol(self) -> &'static str {
         match self {
             Frequency::Hertz => "Hz",
             Frequency::Megahertz => "MHz",
@@ -91,6 +93,29 @@ impl Frequency {
         }
     }
 }
+
+/// [`Unit`]'s conversions as the units' own methods too, so callers need not import the trait.
+macro_rules! unit_methods {
+    ($($unit:ty),*) => {$(
+        impl $unit {
+            /// A value in this unit, in SI.
+            pub fn to_si(self, v: f64) -> f64 {
+                Unit::to_si(self, v)
+            }
+
+            /// A value in SI, in this unit.
+            pub fn from_si(self, v: f64) -> f64 {
+                Unit::from_si(self, v)
+            }
+
+            pub fn symbol(self) -> &'static str {
+                Unit::symbol(self)
+            }
+        }
+    )*};
+}
+
+unit_methods!(Length, Frequency);
 
 /// The display units of a session: what parameters are read in and replies written in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
