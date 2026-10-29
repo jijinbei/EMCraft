@@ -11,11 +11,11 @@ third-party material under an open licence.
 
 | File | Author | Source | Licence |
 |---|---|---|---|
-| docs/media/s-parameters.png, docs/media/h-8GHz.png, docs/media/e-6GHz.png, docs/media/cross-8GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample highpass --out docs/media --frequency 6 --frequency 8` | MIT OR Apache-2.0 |
-| docs/media/highpass-fem-fdtd.png | EMCraft contributors | Original: drawn by `view.sparameters` after the highpass sample's sweep and `solve.time_domain` | MIT OR Apache-2.0 |
+| docs/media/app-results-3d.png, docs/media/app-start.png | EMCraft contributors | Original: drawn by the UI scenarios `view3d_field_arrows` and `start_page` (`EMCRAFT_SCENARIO_SHOTS=DIR cargo test -p emcraft-ui-egui scenario`) | MIT OR Apache-2.0 |
+| docs/media/highpass-fem-fdtd.png | EMCraft contributors | Original: drawn by `view.sparameters` after `file.sample highpass` solved and `solve.time_domain` from 5 to 9 GHz | MIT OR Apache-2.0 |
+| docs/media/bandpass-h-10GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample iris-bandpass --frequency 10` (h-10GHz.png) | MIT OR Apache-2.0 |
 | docs/media/cavity-te101-h.png | EMCraft contributors | Original: drawn by `emcraft-cli sample cavity` (mode1-h-90deg.png) | MIT OR Apache-2.0 |
-| docs/media/sphere-rcs-e-plane.png, docs/media/sphere-rcs-h-plane.png, docs/media/dipole-directivity.png | EMCraft contributors | Original: drawn by `view.pattern` after the dielectric-sphere-scattering and dipole-radiation oracle recipes | MIT OR Apache-2.0 |
-| docs/media/bandpass-s-parameters.png, docs/media/bandpass-h-10GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample iris-bandpass --frequency 10` | MIT OR Apache-2.0 |
+| docs/media/sphere-rcs-e-plane.png | EMCraft contributors | Original: drawn by `view.pattern` after the dielectric-sphere-scattering oracle recipe | MIT OR Apache-2.0 |
 | tests/oracle/imported-post/post.3mf | EMCraft contributors | Original: written by SolidCraft (MIT OR Apache-2.0) from `tests/oracle/imported-post/solidcraft.json` (`solidcraft-cli run solidcraft.json`) | MIT OR Apache-2.0 |
 | crates/ui-egui/tests/fixtures/post-and-puck.3mf | EMCraft contributors | Original: a post and a puck modelled in SolidCraft and exported as 3MF with face tags | MIT OR Apache-2.0 |
 | tests/oracle/imported-iris-cavity/block.3mf, crates/ui-egui/tests/fixtures/waveguide-block.3mf (the same file) | EMCraft contributors | Original: a WR-90 block with its channel and two iris plates, written by SolidCraft's CLI from `tests/oracle/imported-iris-cavity/block.solidcraft.json` (3MF with face tags) | MIT OR Apache-2.0 |
