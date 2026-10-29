@@ -4,10 +4,27 @@
 //! [`Params`] wraps a command's JSON object; each lookup gives an [`Arg`], which says what to do
 //! when the parameter is absent:
 //!
-//! ```ignore
-//! let width = p.positive_length("width").required()?;
-//! let mu_r = p.number("mu_r").or(1.0)?;
-//! let end: End = p.choice("end").required()?;
+//! ```
+//! use emcraft_engine::Params;
+//! use emcraft_engine::expr::Variables;
+//! use emcraft_model::End;
+//! use emcraft_model::units::Display;
+//! use serde_json::json;
+//!
+//! let given = json!({"width": "=w/2", "end": "start"});
+//! let vars = Variables::from([("w".to_owned(), 22.86)]);
+//! let p = Params::new(&given, Display::default()).with_variables(&vars);
+//!
+//! let width = p.positive_length("width").required()?; // millimetres in, metres out
+//! let mu_r = p.number("mu_r").or(1.0)?; // absent: the default
+//! let end: End = p.pick("end").required()?;
+//! assert!((width - 0.01143).abs() < 1e-15);
+//! assert_eq!((mu_r, end), (1.0, End::Start));
+//!
+//! // Absent, out of range or of the wrong kind: an error naming the parameter.
+//! assert!(p.number("height").required().is_err());
+//! assert!(p.integer("width", 1..=3).required().is_err());
+//! # Ok::<(), emcraft_engine::EngineError>(())
 //! ```
 //!
 //! Every number may also be given as an expression of the session's variables, a string

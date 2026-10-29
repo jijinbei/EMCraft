@@ -2,6 +2,18 @@
 //! metre, amperes per metre). Command parameters, replies, panels and pictures convert at the
 //! boundary through this module only (docs/units.md); no conversion factor is written anywhere
 //! else.
+//!
+//! ```
+//! use emcraft_model::units::{Display, Frequency, Length, decibels};
+//!
+//! let shown = Display::default(); // millimetres and gigahertz
+//! let a = shown.length.to_si(22.86); // metres
+//! assert!((a - 0.02286).abs() < 1e-15);
+//! assert_eq!(Length::Metre.from_si(a), a);
+//! assert_eq!(Frequency::Megahertz.from_si(6.5e9), 6500.0);
+//! assert_eq!(shown.frequency.symbol(), "GHz");
+//! assert_eq!(decibels(0.1), -20.0);
+//! ```
 
 use serde::{Deserialize, Serialize};
 
