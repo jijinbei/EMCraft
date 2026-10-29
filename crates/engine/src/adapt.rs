@@ -24,9 +24,11 @@
 
 use std::time::Instant;
 
-use emcraft_model::Mesh;
-use emcraft_solver::{Complex64 as C, Driven, SMatrix, SolveError};
-use serde_json::{Value, json};
+use emcraft_fem::Order;
+use emcraft_model::{Mesh, Model};
+use emcraft_solver::radiation::OpenResult;
+use emcraft_solver::{Complex64 as C, Driven, FrequencyResult, SMatrix, SolveError};
+use serde_json::Value;
 
 use crate::{EngineError, Params, Result, Session};
 
@@ -198,9 +200,24 @@ struct Solved {
     power: Option<f64>,
 }
 
-/// Solves the open problem on the session's mesh as `solve.radiation` does.
-fn open_pass(s: &Session, driven: &Driven, frequency: f64) -> Result<(Solved, emcraft_solver::radiation::OpenResult)> {
+/// What a pass solved, for its indicator.
+enum Solution {
+    /// A closed problem's sweep point.
+    Closed(FrequencyResult),
+    /// An open problem as `solve.radiation` solves it.
+    Open(OpenResult),
+}
+
+/// Solves the pass's problem on the session's mesh: a closed one at `frequency`, an open one as
+/// `solve.radiation` does.
+fn solve_pass(s: &Session, driven: &Driven, frequency: f64, open: bool) -> Result<(Solved, Solution)> {
     crate::progress::check()?;
+    let unknowns = driven.dofs.unknowns;
+    if !open {
+        let r = driven.solve(frequency)?;
+        let solved = Solved { unknowns, measure: Measure::S(r.s.clone()), impedance: None, power: None };
+        return Ok((solved, Solution::Closed(r)));
+    }
     let r = driven.solve_open(&s.model, frequency)?;
     let huygens = driven.huygens(&s.model, &r.field, frequency)?;
     let reflections: Vec<C> = r.ports.iter().map(|p| p.s11).chain(r.feed.map(|(s11, _)| s11)).collect();
@@ -209,11 +226,31 @@ fn open_pass(s: &Session, driven: &Driven, frequency: f64) -> Result<(Solved, em
     } else {
         Measure::Reflections(reflections)
     };
-    let solved = Solved { unknowns: driven.dofs.unknowns, measure, impedance: r.ports.first().map(|p| p.impedance), power: Some(huygens.power()) };
-    Ok((solved, r))
+    let solved = Solved { unknowns, measure, impedance: r.ports.first().map(|p| p.impedance), power: Some(huygens.power()) };
+    Ok((solved, Solution::Open(r)))
 }
 
-pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
+/// The error indicator of each tetrahedron of a pass's mesh.
+fn indicator(driven: &Driven, model: &Model, solution: &Solution) -> Result<Vec<f64>> {
+    Ok(match solution {
+        Solution::Closed(r) => emcraft_solver::adapt::indicator(driven, r)?,
+        Solution::Open(r) => emcraft_solver::adapt::open_indicator(driven, model, r)?,
+    })
+}
+
+/// What `mesh.adapt` is asked for.
+struct Options {
+    /// Whether the model is an open problem.
+    open: bool,
+    /// Hz.
+    frequency: f64,
+    passes: usize,
+    tolerance: f64,
+    order: Order,
+}
+
+/// `mesh.adapt`'s options and how its passes refine, checked against the model.
+fn options(s: &Session, p: &Params) -> Result<(Options, Refine)> {
     let open = s.model.open.is_some();
     if open {
         if s.model.sources.is_empty() && s.model.lumped.is_empty() && s.model.ports.is_empty() {
@@ -235,62 +272,92 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
     let theta = p.positive("fraction").check(|t| *t <= 1.0, "at most 1").or(0.3)?;
     let order = p.order()?;
     let curved = p.flag("curved").or(true)?;
-    let mut refine = if solid {
+    let refine = if solid {
         let sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
         let floor = sizes.per_material.iter().flatten().copied().fold(sizes.default, f64::min) / FLOOR;
         Refine::Adaptive { sizes, curved, theta, floor, balls: Vec::new() }
     } else {
         Refine::Uniform { size: sizes.grid_size(s)? }
     };
+    Ok((Options { open, frequency, passes, tolerance, order }, refine))
+}
 
+/// Pass `pass`'s mesh, set on the session, and its problem; `None` when it would pass the
+/// tetrahedra or unknowns cap and an earlier pass fitted (`fitted`).
+fn build_pass(s: &mut Session, p: &Params, refine: &Refine, opts: &Options, pass: usize, fitted: bool) -> Result<Option<Driven>> {
+    let mesh = match refine.mesh(s, p, pass)? {
+        Ok(m) => m,
+        Err(emcraft_mesh::MeshError::TooLarge { .. }) if fitted => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    s.model.mesh = Some(mesh.into());
+    let built = if opts.open { Driven::open(&s.model, opts.order) } else { Driven::new(&s.model, opts.order) };
+    match built {
+        Ok(d) => Ok(Some(d)),
+        Err(SolveError::TooLarge { .. }) if fitted => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The reply's measure: the last ΔS (null after one pass) and S-parameters, or the far
+/// field's last change.
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum Measured {
+    S { delta_s: Option<f64>, s11: Value, s21: Value },
+    Reflections { delta_s: Option<f64>, s11: Value },
+    FarField { delta_far_field: Option<f64> },
+}
+
+/// `mesh.adapt`'s reply.
+#[derive(serde::Serialize)]
+struct Reply {
+    frequency: f64,
+    order: u8,
+    refinement: &'static str,
+    quantity: &'static str,
+    tolerance: f64,
+    converged: bool,
+    stopped: &'static str,
+    passes: Vec<Pass>,
+    nodes: usize,
+    tetrahedra: usize,
+    #[serde(flatten)]
+    measured: Measured,
+    /// The last pass's first lumped port's input impedance (Ω), for an open problem.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    impedance: Option<Value>,
+    /// The last pass's power through the Huygens surface (W), for an open problem.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    power: Option<f64>,
+}
+
+pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
+    let (opts, mut refine) = options(s, p)?;
     let mut last: Option<(Mesh, Measure)> = None;
     let mut rows: Vec<Pass> = Vec::new();
     let mut stop = Stop::Passes;
-    for pass in 0..passes {
-        crate::progress::report(pass, passes, "adaptive pass")?;
+    for pass in 0..opts.passes {
+        crate::progress::report(pass, opts.passes, "adaptive pass")?;
         let t0 = Instant::now();
-        let mesh = match refine.mesh(s, p, pass)? {
-            Ok(m) => m,
-            Err(emcraft_mesh::MeshError::TooLarge { .. }) if last.is_some() => {
-                stop = Stop::Limit;
-                break;
-            }
-            Err(e) => return Err(e.into()),
+        let Some(driven) = build_pass(s, p, &refine, &opts, pass, last.is_some())? else {
+            stop = Stop::Limit;
+            break;
         };
-        let tetrahedra = mesh.tets.len();
-        s.model.mesh = Some(mesh.into());
-        let built = if open { Driven::open(&s.model, order) } else { Driven::new(&s.model, order) };
-        let driven = match built {
-            Ok(d) => d,
-            Err(SolveError::TooLarge { .. }) if last.is_some() => {
-                stop = Stop::Limit;
-                break;
-            }
-            Err(e) => return Err(e.into()),
-        };
-        let more = pass + 1 < passes;
-        let (solved, change, marked) = if open {
-            let (solved, r) = open_pass(s, &driven, frequency)?;
-            let change = last.as_ref().map(|(_, prev)| solved.measure.change(prev));
-            let mark = more && !change.is_some_and(|d| d < tolerance);
+        let (solved, solution) = solve_pass(s, &driven, opts.frequency, opts.open)?;
+        let change = last.as_ref().map(|(_, prev)| solved.measure.change(prev));
+        let converged = change.is_some_and(|d| d < opts.tolerance);
+        // A pass marks for the next unless it is the last or converged.
+        let marked = if pass + 1 < opts.passes && !converged {
             let model = &s.model;
-            let marked = if mark { refine.mark(&driven.mesh, || Ok(emcraft_solver::adapt::open_indicator(&driven, model, &r)?))? } else { 0 };
-            (solved, change, marked)
+            refine.mark(&driven.mesh, || indicator(&driven, model, &solution))?
         } else {
-            // Closed problems mark unless the pass converged (decided after the solve).
-            crate::progress::check()?;
-            let r = driven.solve(frequency)?;
-            let measure = Measure::S(r.s.clone());
-            let change = last.as_ref().map(|(_, prev)| measure.change(prev));
-            let mark = more && !change.is_some_and(|d| d < tolerance);
-            let marked = if mark { refine.mark(&driven.mesh, || Ok(emcraft_solver::adapt::indicator(&driven, &r)?))? } else { 0 };
-            (Solved { unknowns: driven.dofs.unknowns, measure, impedance: None, power: None }, change, marked)
+            0
         };
-        let converged = change.is_some_and(|d| d < tolerance);
         let far = matches!(solved.measure, Measure::FarField(_));
         rows.push(Pass {
             pass: pass + 1,
-            tetrahedra,
+            tetrahedra: driven.mesh.tets.len(),
             unknowns: solved.unknowns,
             delta_s: change.filter(|_| !far),
             delta_far_field: change.filter(|_| far),
@@ -308,41 +375,29 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
     }
     let (mesh, measure) = last.ok_or_else(|| EngineError::failed("no pass finished"))?;
     let change = rows.last().and_then(|r| r.delta_s.or(r.delta_far_field));
-    let mut reply = json!({
-        "frequency": s.show_frequency(frequency),
-        "order": order.as_u8(),
-        "refinement": refine.name(),
-        "quantity": measure.name(),
-        "tolerance": tolerance,
-        "converged": stop == Stop::Converged,
-        "stopped": stop.reason(),
-        "passes": rows,
-        "nodes": mesh.nodes.len(),
-        "tetrahedra": mesh.tets.len(),
-    });
-    match &measure {
-        Measure::S(sm) => {
-            reply["delta_s"] = json!(change);
-            // The last pass's S-parameters.
-            reply["s11"] = crate::reply::complex(sm.get(0, 0).unwrap_or_default());
-            reply["s21"] = crate::reply::complex(sm.get(1, 0).unwrap_or_default());
-        }
-        Measure::Reflections(r) => {
-            reply["delta_s"] = json!(change);
-            reply["s11"] = crate::reply::complex(r.first().copied().unwrap_or_default());
-        }
-        Measure::FarField(_) => reply["delta_far_field"] = json!(change),
-    }
-    if let Some(last) = rows.last() {
-        if let Some(z) = &last.impedance {
-            reply["impedance"] = z.clone();
-        }
-        if let Some(w) = last.power {
-            reply["power"] = json!(w);
-        }
-    }
+    let s11 = crate::reply::complex(measure.s11().unwrap_or_default());
+    let measured = match &measure {
+        Measure::S(sm) => Measured::S { delta_s: change, s11, s21: crate::reply::complex(sm.get(1, 0).unwrap_or_default()) },
+        Measure::Reflections(_) => Measured::Reflections { delta_s: change, s11 },
+        Measure::FarField(_) => Measured::FarField { delta_far_field: change },
+    };
+    let reply = Reply {
+        frequency: s.show_frequency(opts.frequency),
+        order: opts.order.as_u8(),
+        refinement: refine.name(),
+        quantity: measure.name(),
+        tolerance: opts.tolerance,
+        converged: stop == Stop::Converged,
+        stopped: stop.reason(),
+        nodes: mesh.nodes.len(),
+        tetrahedra: mesh.tets.len(),
+        impedance: rows.last().and_then(|r| r.impedance.clone()),
+        power: rows.last().and_then(|r| r.power),
+        passes: rows,
+        measured,
+    };
     s.model.mesh = Some(mesh.into());
-    Ok(reply)
+    serde_json::to_value(reply).map_err(EngineError::failed)
 }
 
 #[cfg(test)]
