@@ -33,7 +33,7 @@ use super::assembly::{FaceRule, Space, port_rule_points};
 use super::{Result, SolveError, check_frequency, invalid, wavenumber};
 use num_complex::Complex64 as C;
 
-use crate::portmode::CrossSection;
+use crate::portmode::{CrossSection, Walls};
 
 /// A port prepared for solving.
 #[derive(Clone, Debug)]
@@ -426,7 +426,7 @@ fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[us
     let conductors = edges_on(&|i, b| !own.contains(&i) && b.tag == Boundary::Pec);
     // Its rim on a magnetic symmetry plane is free (the natural condition), not a wall.
     let magnetic = edges_on(&|_, b| b.tag == Boundary::Symmetry(SymmetryKind::Magnetic));
-    Ok((CrossSection::with_free_rim(order, nodes, tris, eps, mu, &conductors, &magnetic, &curved)?, medium))
+    Ok((CrossSection::with_free_rim(order, nodes, tris, eps, mu, Walls { conductors: &conductors, free: &magnetic, curved: &curved })?, medium))
 }
 
 /// The mode information of a closed-form mode in a lossy medium of k² `k2`.

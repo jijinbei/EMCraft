@@ -91,6 +91,16 @@ impl PortMode {
     }
 }
 
+/// The edges of a cross-section with conditions of their own, each by its nodes: conductors
+/// inside it, boundary edges on a magnetic wall (`free`) and edges whose midpoints lie on a
+/// curved wall (ascending nodes → the midpoint).
+#[derive(Clone, Copy, Debug)]
+pub struct Walls<'a> {
+    pub conductors: &'a [[u32; 2]],
+    pub free: &'a [[u32; 2]],
+    pub curved: &'a std::collections::BTreeMap<[u32; 2], Point3>,
+}
+
 impl CrossSection {
     /// A cross-section of triangles on `nodes` (their z ignored) with εr and μr per triangle;
     /// its boundary edges and the `conductors` edges inside it are conducting walls. Edges in
@@ -105,23 +115,22 @@ impl CrossSection {
         conductors: &[[u32; 2]],
         curved: &std::collections::BTreeMap<[u32; 2], Point3>,
     ) -> Result<CrossSection> {
-        CrossSection::with_free_rim(order, nodes, tris, eps, mu, conductors, &[], curved)
+        CrossSection::with_free_rim(order, nodes, tris, eps, mu, Walls { conductors, free: &[], curved })
     }
 
-    /// As [`CrossSection::new`], but the boundary edges in `free` (by nodes) are a magnetic wall —
-    /// a symmetry plane's — rather than a conductor: their tangential e and their φ are left free,
-    /// the natural condition (tangential H = 0) holding weakly.
-    #[allow(clippy::too_many_arguments)]
+    /// As [`CrossSection::new`] with the conductors and curved edges of `walls`, but its boundary
+    /// edges in `walls.free` are a magnetic wall — a symmetry plane's — rather than a conductor:
+    /// their tangential e and their φ are left free, the natural condition (tangential H = 0)
+    /// holding weakly.
     pub fn with_free_rim(
         order: Order,
         nodes: Vec<Point3>,
         tris: Vec<[u32; 3]>,
         eps: Vec<f64>,
         mu: Vec<f64>,
-        conductors: &[[u32; 2]],
-        free: &[[u32; 2]],
-        curved: &std::collections::BTreeMap<[u32; 2], Point3>,
+        walls: Walls<'_>,
     ) -> Result<CrossSection> {
+        let Walls { conductors, free, curved } = walls;
         if tris.is_empty() || eps.len() != tris.len() || mu.len() != tris.len() {
             return Err(invalid("port cross-section", "needs triangles, each with its materials"));
         }
@@ -170,10 +179,7 @@ impl CrossSection {
             wall_node[e[1] as usize] = true;
         }
         let ne = edge_list.len();
-        let (pe, pf) = match order {
-            Order::One => (1, 0),
-            Order::Two => (2, 2),
-        };
+        let (pe, pf) = (order.per_edge(), order.per_face());
         let mid = |e: usize| edge_list.get(e).map_or(Point3::ORIGIN, |[a, b]| nodes[*a as usize].midpoint(nodes[*b as usize]));
         let centre = |t: usize| Point3::centroid(tris[t].map(|v| nodes[v as usize])).unwrap_or(Point3::ORIGIN);
         let mut points = Vec::new();
@@ -239,10 +245,7 @@ impl CrossSection {
     fn unknowns_of(&self, t: usize) -> (Vec<Slot>, Vec<Slot>) {
         let get = |list: &[Slot], s: usize| list.get(s).copied().unwrap_or(Slot::NONE);
         let te = self.tri_edges[t];
-        let (pe, pf) = match self.order {
-            Order::One => (1, 0),
-            Order::Two => (2, 2),
-        };
+        let (pe, pf) = (self.order.per_edge(), self.order.per_face());
         let vt: Vec<Slot> = (0..pe)
             .flat_map(|j| te.map(|e| e as usize * pe + j))
             .chain((0..pf).map(|j| self.edges * pe + t * pf + j))
@@ -266,8 +269,7 @@ impl CrossSection {
             })
             .collect();
         self.pattern = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
-        let (eps, mu) = (self.eps.clone(), self.mu.clone());
-        let mats = self.assemble_with(&|t| C::new(eps[t], 0.0), &|t| C::new(1.0 / mu[t], 0.0))?;
+        let mats = self.assemble_with(&|t| C::new(self.eps[t], 0.0), &|t| C::new(1.0 / self.mu[t], 0.0))?;
         let [curl, mass, b, tz] = mats.map(|m| m.into_iter().map(|c| c.re).collect::<Vec<f64>>());
         (self.curl, self.mass, self.b, self.t) = (curl, mass, b, tz);
         Ok(())
