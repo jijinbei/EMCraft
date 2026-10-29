@@ -14,17 +14,10 @@ const MODES: [(Option<Mode>, &str, &str); 3] = [
 
 pub(super) fn tdr(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
     let tdr = &mut st.views.tdr;
-    controls(app, tdr, ui);
-    let mut params = json!({});
-    if let Some(p) = &tdr.port {
-        params["port"] = json!(p);
-    }
-    if let Some(m) = tdr.mode {
-        params["mode"] = json!(m.name());
-    }
+    controls(app, &mut tdr.params, ui);
     let session = &app.session;
-    let view = (tdr.port.clone(), tdr.mode);
-    let drawn = chart_view(ui, &mut tdr.chart, app.revision, view, Height::new(0.8, 260.0, 700.0), Fixed::ChartTdr, || {
+    let params = tdr.params.to_params();
+    let drawn = chart_view(ui, &mut tdr.chart, app.revision, tdr.params.clone(), Height::new(0.8, 260.0, 700.0), Fixed::ChartTdr, || {
         emcraft_engine::results_tdr_chart(session, &emcraft_engine::Params::new(&params, session.display()))
     });
     if let Err(e) = drawn {
@@ -37,7 +30,7 @@ pub(super) fn tdr(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
 }
 
 /// The port and the transform.
-fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrState, ui: &mut egui::Ui) {
+fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrParams, ui: &mut egui::Ui) {
     let ports: Vec<String> = app.session.sparameter_entries().into_iter().map(|e| e.name).collect();
     ui.horizontal(|ui| {
         ui.label("port");

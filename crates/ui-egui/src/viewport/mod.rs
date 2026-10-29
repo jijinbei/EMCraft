@@ -17,6 +17,7 @@ use crate::{Action, Actions, EmcraftApp, Picture, UiExt, View, scenario};
 
 mod dispersion;
 mod far_field;
+pub mod field_params;
 mod field_side;
 mod fields;
 mod model;

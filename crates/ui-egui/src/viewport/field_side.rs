@@ -7,6 +7,8 @@ use emcraft_model::{Aabb, Point3};
 
 use crate::scene3d::{BOX_EDGES, box_corner, normal_axis};
 
+use super::field_params::FieldParams;
+
 use super::*;
 
 /// The side column's width.
@@ -32,58 +34,12 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
     ui.add_space(t.space_8);
     heading(ui, "SAVE");
     ui.horizontal(|ui| {
-        let picture = || Action::dialog_with("view.field", export_params(app, field, "field.png"));
+        let s = &app.session;
+        let picture = || Action::dialog_with("view.field", FieldParams::picture(field, s, "field.png").to_params());
         ui.action_button(Fixed::FieldSavePicture.into(), "Picture…", "This picture as a PNG (view.field)", picture, out);
-        let video = || {
-            let mut p = export_params(app, field, "field-animation.png");
-            if let Some(o) = p.as_object_mut() {
-                o.remove("phase");
-                o.insert("frames".into(), json!(24));
-            }
-            Action::dialog_with("view.animation", p)
-        };
+        let video = || Action::dialog_with("view.animation", FieldParams::animation(field, s, "field-animation.png").to_params());
         ui.action_button(Fixed::FieldSaveVideo.into(), "Video…", "A period of this view as a looping animated PNG (view.animation)", video, out);
     });
-}
-
-/// The view's settings as `view.field`'s parameters (display units), written to `path`.
-fn export_params(app: &EmcraftApp, field: &FieldState, path: &str) -> Value {
-    let v = &field.view;
-    let fu = app.session.display().frequency;
-    let mut arrows = Vec::new();
-    if v.show_e {
-        arrows.push("e");
-    }
-    if v.show_h {
-        arrows.push("h");
-    }
-    let mut p = json!({
-        "path": path,
-        "plane": v.plane.name(),
-        "component": v.component.name(),
-        "arrows": arrows,
-        "phase": (v.phase.to_degrees() * 10.0).round() / 10.0,
-    });
-    if let Some(o) = p.as_object_mut() {
-        match v.mode {
-            Some(m) => {
-                o.insert("mode".into(), json!(m + 1));
-            }
-            None => {
-                o.insert("frequency".into(), json!(fu.from_si(v.frequency)));
-            }
-        }
-        if let Some(at) = field.at {
-            o.insert("at".into(), json!((at * 1e4).round() / 1e4));
-        }
-        let entries = app.session.sparameter_entries();
-        if let Some(entry) = entries.get(v.excitation)
-            && entries.len() > 1
-        {
-            o.insert("excitation".into(), json!(entry.name));
-        }
-    }
-    p
 }
 
 /// What fills the model along the plane's normal through its middle: runs of (from, to) as

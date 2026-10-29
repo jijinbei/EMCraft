@@ -17,9 +17,7 @@ impl EmcraftApp {
             "file.sample" | "engine.script" | "file.open" | "file.new" | "file.save" => self.after_file(id, reply),
             _ if id.starts_with("solve.") => self.after_solve(id, reply),
             "results.tdr" => {
-                let tdr = &mut self.views.tdr;
-                tdr.port = params.get("port").and_then(Value::as_str).map(str::to_owned);
-                tdr.mode = params.get("mode").and_then(|m| serde_json::from_value(m.clone()).ok());
+                self.views.tdr.params = crate::state::TdrParams::of(params);
                 self.view = View::Tdr;
             }
             "results.compare" => {
