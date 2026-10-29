@@ -72,7 +72,7 @@ pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
     let sample = crate::sample::find(name).ok_or_else(|| {
-        p.error("name", format!("names no sample: `{}` (known: {})", name.chars().take(40).collect::<String>(), crate::sample::names().join(", ")))
+        p.error("name", crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", crate::sample::names()))
     })?;
     let solve = p.flag("solve").or(false)?;
     let script: Vec<Value> = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;

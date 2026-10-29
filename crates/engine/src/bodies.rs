@@ -53,9 +53,21 @@ pub fn bodies(m: &Model) -> Vec<Body> {
     out
 }
 
+/// What a body was placed as (`as` in replies).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Placed {
+    /// A perfect conductor the region loses.
+    Metal,
+    /// The region's own material, given back.
+    Region,
+    /// Another material, meshed apart.
+    Dielectric,
+}
+
 /// Places a body of `material` in the model: metal as a subtracted feature, the region's
 /// material as an added one, another material as an inclusion.
-pub(crate) fn place(m: &mut Model, shape: Shape, at: Point3, axis: Axis, material: &str) -> Result<&'static str> {
+pub(crate) fn place(m: &mut Model, shape: Shape, at: Point3, axis: Axis, material: &str) -> Result<Placed> {
     let region = m
         .solid
         .as_ref()
@@ -63,16 +75,16 @@ pub(crate) fn place(m: &mut Model, shape: Shape, at: Point3, axis: Axis, materia
         .ok_or_else(|| EngineError::Failed("a body needs a region to lie in: geometry.solid or geometry.import".into()))?;
     if material == METAL {
         m.add_feature(Feature { combine: Combine::Subtract, shape, at, axis })?;
-        Ok("metal")
+        Ok(Placed::Metal)
     } else if material == region {
         m.add_feature(Feature { combine: Combine::Add, shape, at, axis })?;
-        Ok("region")
+        Ok(Placed::Region)
     } else {
         if axis != Axis::Z {
             return Err(EngineError::Failed("not supported yet: a dielectric body turned off the z axis".into()));
         }
         m.add_inclusion(Inclusion { shape, at, material: Some(material.to_owned()) })?;
-        Ok("dielectric")
+        Ok(Placed::Dielectric)
     }
 }
 
@@ -90,8 +102,10 @@ pub fn body_material(s: &mut Session, p: &Params) -> Result<Value> {
     let wanted = p.string("body").required()?;
     let material = p.string("material").required()?;
     let list = bodies(&s.model);
-    let names: Vec<&str> = list.iter().map(|b| b.name.as_str()).collect();
-    let b = list.iter().find(|b| b.name == wanted).ok_or_else(|| p.error("body", format!("names no body (bodies: {})", names.join(", "))))?;
+    let b = list
+        .iter()
+        .find(|b| b.name == wanted)
+        .ok_or_else(|| p.error("body", crate::text::unknown("names no body", "bodies: ", list.iter().map(|b| b.name.as_str()))))?;
     let (shape, at, axis) = match b.at {
         BodyRef::Feature(i) => {
             let f = s.model.features.remove(i);

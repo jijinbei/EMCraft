@@ -141,9 +141,10 @@ impl std::str::FromStr for Component {
     /// A component by its name, in either case.
     fn from_str(s: &str) -> Result<Component> {
         let lower = s.to_ascii_lowercase();
-        Component::ALL.into_iter().find(|c| c.name() == lower).ok_or_else(|| {
-            EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", s.chars().take(20).collect::<String>()))
-        })
+        Component::ALL
+            .into_iter()
+            .find(|c| c.name() == lower)
+            .ok_or_else(|| EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", crate::text::clip(s, 20))))
     }
 }
 

@@ -11,7 +11,7 @@ use crate::{EngineError, Params, Result, Session};
 
 /// A variable's name as errors show it: no longer than a name may be.
 fn shown(name: &str) -> String {
-    name.chars().take(expr::MAX_NAME).collect()
+    crate::text::clip(name, expr::MAX_NAME)
 }
 
 /// The variable parameter `param` names, which must be defined.

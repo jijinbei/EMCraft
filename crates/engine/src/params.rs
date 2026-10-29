@@ -67,7 +67,7 @@ impl<'a> Params<'a> {
             Value::String(text) => {
                 let body = expr::body(text).ok_or_else(|| self.error(name, "must be a finite number (or an expression: \"=w/2\")"))?;
                 let vars = self.vars.ok_or_else(|| self.error(name, "cannot hold an expression here"))?;
-                expr::eval(body, vars).map_err(|e| self.error(name, format!("`{}`: {e}", text.chars().take(64).collect::<String>())))
+                expr::eval(body, vars).map_err(|e| self.error(name, format!("`{}`: {e}", crate::text::clip(text, 64))))
             }
             _ => finite(v).ok_or_else(|| self.error(name, "must be a finite number")),
         }

@@ -13,8 +13,8 @@ pub(crate) fn entry(s: &Session, p: &Params, name: &str) -> Result<Option<(usize
     match s.sparameter_entry(n) {
         Some(found) => Ok(Some(found)),
         None => {
-            let names: Vec<String> = s.sparameter_entries().into_iter().map(|e| e.name).collect();
-            Err(p.error(name, format!("no port or terminal `{n}` (there are {})", names.join(", "))))
+            let names = s.sparameter_entries().into_iter().map(|e| e.name);
+            Err(p.error(name, crate::text::unknown(format_args!("no port or terminal `{n}`"), "there are ", names)))
         }
     }
 }

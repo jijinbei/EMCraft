@@ -232,14 +232,14 @@ impl<'a> Parser<'a> {
                 "exp" => Ok(x.exp()),
                 "ln" if x <= 0.0 && self.vars.is_some() => Err("ln of a number ≤ 0".into()),
                 "ln" => Ok(x.ln()),
-                _ => Err(format!("unknown function `{}`", name.chars().take(MAX_NAME).collect::<String>())),
+                _ => Err(format!("unknown function `{}`", crate::text::clip(name, MAX_NAME))),
             };
         }
         if name == "pi" {
             return Ok(std::f64::consts::PI);
         }
         match self.vars {
-            Some(vars) => vars.get(name).copied().ok_or_else(|| format!("unknown variable `{}`", name.chars().take(MAX_NAME).collect::<String>())),
+            Some(vars) => vars.get(name).copied().ok_or_else(|| format!("unknown variable `{}`", crate::text::clip(name, MAX_NAME))),
             None => {
                 if !self.seen.iter().any(|n| n == name) {
                     self.seen.push(name.to_owned());

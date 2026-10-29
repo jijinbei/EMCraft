@@ -210,7 +210,7 @@ impl Session {
     /// session as it was.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value> {
         // An id from hostile input is not echoed in full.
-        let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
+        let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(crate::text::clip(id, 100)))?;
         check_keys(spec, params)?;
         let before = self.before(spec.effect);
         let reader = Params::new(params, self.display).with_variables(&before.state.variables);

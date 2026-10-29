@@ -97,7 +97,7 @@ impl Drop for RestoreOuter {
 /// Runs `f` as step `done` of `total` of a longer work (a study's points): the reports inside it
 /// are scaled into that step, their stage named after it.
 pub fn within<R>(done: usize, total: usize, stage: &str, f: impl FnOnce() -> R) -> R {
-    let previous = OUTER.with(|c| c.borrow_mut().replace((done, total, stage.chars().take(100).collect())));
+    let previous = OUTER.with(|c| c.borrow_mut().replace((done, total, crate::text::clip(stage, 100))));
     let _restore = RestoreOuter(previous);
     f()
 }
