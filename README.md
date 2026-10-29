@@ -73,7 +73,8 @@ near-to-far transform. A ceramic sphere's radar cross-section meets the Mie seri
 ![The bistatic RCS of a dielectric sphere in the E-plane against the Mie series](docs/media/sphere-rcs-e-plane.png)
 
 Losses: dielectrics with a loss tangent and walls of finite conductivity (surface impedance),
-checked against the exact lossy cascade and the textbook conductor attenuation.
+checked against the exact lossy cascade and the textbook conductor attenuation; ports on lossy
+substrates (a microstrip or stripline on FR-4) take hybrid lossy modes with their complex γ.
 
 A time-domain solver (finite integration on a hexahedral grid, like CST's) cross-checks the
 FEM: `solve.time_domain` puts its curves on the same chart.

@@ -263,28 +263,36 @@ fn materials(s: &Session) -> StepState {
     if !has_geometry(s) {
         st.note(Status::Missing, "no geometry to give materials to", Some("geometry.solid"));
     }
-    if m.ports.iter().any(|p| port_crosses_lossy_layers(m, p.end)) {
+    if let Some(p) = m.ports.iter().find(|p| lossy_terminal_port(m, p)) {
         st.note(
             Status::Warning,
-            "a port's cross-section holds layers of several materials, one of them lossy or dispersive, which ports do not support yet: make the layers lossless at the ports, or fill the port's cross-section with one material",
-            Some("geometry.waveguide"),
+            format!(
+                "port `{}`: several strips in a lossy or dispersive cross-section, where terminal ports are not supported yet (its lossy modes are not power-orthogonal): set the port's `terminals` modal",
+                p.name
+            ),
+            Some("model.port.create"),
         );
     }
     st
 }
 
-/// Whether a layered guide's end holds several materials, one of them lossy or dispersive (a
-/// port there would have hybrid lossy modes, not supported yet). A port filled with one lossy
-/// material is fine.
-fn port_crosses_lossy_layers(m: &emcraft_model::Model, end: emcraft_model::End) -> bool {
+/// Whether a port asks for terminals at an end of a guide where two or more strips reach it and
+/// a material of its cross-section is lossy or dispersive (refused when solving).
+fn lossy_terminal_port(m: &emcraft_model::Model, p: &emcraft_model::Port) -> bool {
     let Some(w) = &m.waveguide else { return false };
-    if w.layers.is_empty() {
+    if p.terminals != emcraft_model::Terminals::Auto {
         return false;
     }
-    let Ok(fill) = m.port_material(end) else { return false };
-    let layers: Vec<&emcraft_model::Material> = w.layers.iter().filter_map(|l| m.material(&l.material).ok().map(|(_, x)| x)).collect();
-    let several = layers.iter().any(|x| x.name != fill.name);
-    several && (fill.is_lossy() || layers.iter().any(|x| x.is_lossy()))
+    let length = w.length();
+    let at_end = |s: &&emcraft_model::Strip| match p.end {
+        emcraft_model::End::Start => s.z0 <= 0.0,
+        emcraft_model::End::End => s.z1 >= length,
+    };
+    if w.strips.iter().filter(at_end).count() < 2 {
+        return false;
+    }
+    let fill = m.port_material(p.end).is_ok_and(|x| x.is_lossy());
+    fill || w.layers.iter().filter_map(|l| m.material(&l.material).ok()).any(|(_, x)| x.is_lossy())
 }
 
 fn excitation(s: &Session) -> StepState {

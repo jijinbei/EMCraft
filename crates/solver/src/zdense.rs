@@ -2,7 +2,8 @@
 //! lossy cavity eigensolver ([`crate::eigen`]). Householder reduction to upper Hessenberg
 //! form, then the shifted QR algorithm on it with Givens rotations, the Wilkinson shift and
 //! deflation (G. H. Golub, C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins 2013,
-//! §7.4–7.5, the complex single-shift variant); eigenvectors by inverse iteration on the
+//! §7.4–7.5, the complex single-shift variant; a trailing 2 × 2 block that will not deflate — a
+//! degenerate pair coupled by rounding — solved directly); eigenvectors by inverse iteration on the
 //! original matrix (§7.6.1).
 //!
 //! Matrices are row-major `n × n` slices; [`solve`] takes a small dense system by rows (the
@@ -41,6 +42,8 @@ pub(crate) fn solve(mut a: Vec<Vec<C>>, mut b: Vec<C>) -> Option<Vec<C>> {
 
 /// QR sweeps per eigenvalue before giving up.
 const MAX_SWEEPS: usize = 80;
+/// Sweeps on a trailing 2 × 2 block before its eigenvalues are taken directly.
+const STUCK_PAIR: usize = 20;
 
 /// The eigenvalues of `a` (n × n) with unit eigenvectors; `None` when the input is not finite
 /// or the QR algorithm does not converge.
@@ -90,6 +93,17 @@ fn eigenvalues(mut h: Vec<C>, n: usize) -> Option<Vec<C>> {
         if lo == hi - 1 {
             out[hi - 1] = at(&h, hi - 1, hi - 1);
             hi -= 1;
+            sweeps = 0;
+            continue;
+        }
+        // A 2 × 2 block that will not deflate (a degenerate pair whose coupling is rounding,
+        // which the shifts cannot shrink): its two eigenvalues directly.
+        if lo + 2 == hi && sweeps >= STUCK_PAIR {
+            let (a11, a12, a21, a22) = (at(&h, lo, lo), at(&h, lo, lo + 1), at(&h, lo + 1, lo), at(&h, lo + 1, lo + 1));
+            let half = (a11 + a22) / 2.0;
+            let disc = (((a11 - a22) / 2.0).powi(2) + a12 * a21).sqrt();
+            (out[lo], out[lo + 1]) = (half + disc, half - disc);
+            hi = lo;
             sweeps = 0;
             continue;
         }
@@ -213,5 +227,16 @@ mod tests {
         assert!(eigen(&[C::new(f64::NAN, 0.0)], 1).is_none());
         assert!(eigen(&[C::new(1.0, 0.0)], 2).is_none());
         assert_eq!(eigen(&[C::new(3.0, -1.0)], 1).unwrap()[0].0, C::new(3.0, -1.0));
+    }
+
+    #[test]
+    fn a_degenerate_pair_converges() {
+        // A double eigenvalue of a diagonalisable matrix: its 2 × 2 block's coupling is rounding
+        // the shifts cannot shrink; the block's eigenvalues are taken directly.
+        let d: Vec<C> = [3e-5, 3e-5, 1e-5, -2e-6, 5e-7].iter().map(|x| C::new(*x, -0.08 * x)).collect();
+        let e = eigen(&similar(&d), d.len()).unwrap();
+        for want in &d {
+            assert!(e.iter().any(|(l, _)| (l - want).norm() < 1e-9 * 3e-5), "{want} {e:?}");
+        }
     }
 }

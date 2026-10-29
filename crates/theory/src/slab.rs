@@ -14,6 +14,8 @@
 //! Both are written without poles (sin(k x)/k and k sin(k x) are entire in k²), continued to
 //! imaginary k_y through cosh and sinh, so their roots in β² are found by bracketing.
 
+use num_complex::Complex64 as C;
+
 /// cos(√s x), continued to s < 0.
 fn cos_s(s: f64, x: f64) -> f64 {
     if s >= 0.0 { (s.sqrt() * x).cos() } else { ((-s).sqrt() * x).cosh() }
@@ -104,6 +106,104 @@ fn brackets(f: &dyn Fn(f64) -> f64, lo: f64, hi: f64) -> Vec<f64> {
     out
 }
 
+/// cos(√s x) for complex s (even in √s: either root).
+fn cos_c(s: C, x: f64) -> C {
+    (s.sqrt() * x).cos()
+}
+
+/// sin(√s x)/√s for complex s (x at s = 0, by its series near there).
+fn sinc_c(s: C, x: f64) -> C {
+    if (s * x * x).norm() < 1e-8 {
+        return x * (1.0 - s * x * x / 6.0);
+    }
+    let k = s.sqrt();
+    (k * x).sin() / k
+}
+
+/// √s sin(√s x) for complex s.
+fn ksin_c(s: C, x: f64) -> C {
+    let k = s.sqrt();
+    k * (k * x).sin()
+}
+
+/// Continuation steps from the lossless slab to the lossy one.
+const STEPS: usize = 32;
+/// Newton iterations per step.
+const NEWTON: usize = 60;
+
+/// The complex β² = −γ² (rad²/m²) of the `count` modes with the largest Re β² of the guide of
+/// [`slab_loaded_modes`] with a lossy slab, εr = ε′ − jε″ (ε″ ≥ 0, e^{jωt}): the same LSE^y and
+/// LSM^y equations, entire in β² and εr, solved in complex arithmetic. Each root of the lossless
+/// slab (εr = ε′) is followed as ε″ grows from 0 in [`STEPS`] steps, each refined by Newton's
+/// method (the derivative by a complex difference). Sorted by Re β², descending; the mode goes as
+/// e^{−γz}, γ = √(−β²) = α + jβ with Re γ ≥ 0 ([`gamma_of`]).
+pub fn slab_loaded_modes_lossy(a: f64, b: f64, d: f64, eps_r: C, k0: f64, lowest: f64, count: usize) -> Vec<C> {
+    let l = b - d;
+    let k2 = k0 * k0;
+    let mut roots: Vec<C> = Vec::new();
+    for m in 0..64u32 {
+        let kx2 = (m as f64 * std::f64::consts::PI / a).powi(2);
+        let top = k2 * eps_r.re - kx2;
+        if top < lowest {
+            break;
+        }
+        let lse = |beta2: C, e: C| {
+            let (s1, s2) = (k2 * e - kx2 - beta2, C::new(k2 - kx2, 0.0) - beta2);
+            cos_c(s1, d) * sinc_c(s2, l) + cos_c(s2, l) * sinc_c(s1, d)
+        };
+        let lsm = |beta2: C, e: C| {
+            let (s1, s2) = (k2 * e - kx2 - beta2, C::new(k2 - kx2, 0.0) - beta2);
+            ksin_c(s1, d) * cos_c(s2, l) / e + ksin_c(s2, l) * cos_c(s1, d)
+        };
+        let kinds: [&dyn Fn(C, C) -> C; 2] = [&lse, &lsm];
+        for (kind, f) in kinds.iter().enumerate() {
+            if kind == 1 && m == 0 {
+                continue;
+            }
+            let real = |beta2: f64| f(C::new(beta2, 0.0), C::new(eps_r.re, 0.0)).re;
+            for start in brackets(&real, lowest, top) {
+                if let Some(r) = follow(f, C::new(start, 0.0), eps_r, k2) {
+                    roots.push(r);
+                }
+            }
+        }
+    }
+    roots.sort_by(|p, q| q.re.total_cmp(&p.re));
+    roots.truncate(count);
+    roots
+}
+
+/// A root of f(·, εr) followed from `start` (a root at εr = Re `eps`) to `eps`.
+fn follow(f: &dyn Fn(C, C) -> C, start: C, eps: C, k2: f64) -> Option<C> {
+    let mut x = start;
+    for step in 1..=STEPS {
+        let e = C::new(eps.re, eps.im * step as f64 / STEPS as f64);
+        for _ in 0..NEWTON {
+            let h = 1e-7 * k2;
+            let fx = f(x, e);
+            let df = (f(x + h, e) - f(x - h, e)) / (2.0 * h);
+            if !(df.norm() > 0.0) {
+                return None;
+            }
+            let dx = fx / df;
+            x -= dx;
+            if !x.is_finite() {
+                return None;
+            }
+            if dx.norm() <= 1e-15 * k2 {
+                break;
+            }
+        }
+    }
+    Some(x)
+}
+
+/// γ = √(−β²) with Re γ ≥ 0 (a decaying wave e^{−γz}).
+pub fn gamma_of(beta2: C) -> C {
+    let g = (-beta2).sqrt();
+    if g.re < 0.0 { -g } else { g }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,5 +238,54 @@ mod tests {
         // Half filled: the TE10-like LSM mode's β² between the empty and the full guide's.
         let half = slab_loaded_modes(a, b, b / 2.0, 2.25, k0, 0.0, 1)[0];
         assert!(half > k0 * k0 - (PI / a).powi(2) && half < full[0], "{half}");
+    }
+
+    #[test]
+    fn a_lossy_slab_follows_the_lossless_roots() {
+        let (a, b, k0) = (0.02286, 0.01016, 2.0 * PI * 10e9 / emcraft_model::units::C0);
+        // Filled (d = b): TE10 with the complex k² εr exactly.
+        let eps = C::new(2.25, -2.25 * 0.02);
+        let full = slab_loaded_modes_lossy(a, b, b, eps, k0, 0.0, 1);
+        let want = k0 * k0 * eps - (PI / a).powi(2);
+        assert!((full[0] - want).norm() < 1e-9 * k0 * k0, "{full:?} {want}");
+        // Half filled: without loss the real roots; with it, Im β² < 0 (α > 0), and α small
+        // against β, below the filled guide's (part of the field is in the air).
+        let real = slab_loaded_modes(a, b, b / 2.0, 2.25, k0, -3.0 * k0 * k0, 4);
+        let none = slab_loaded_modes_lossy(a, b, b / 2.0, C::new(2.25, 0.0), k0, -3.0 * k0 * k0, 4);
+        for (r, c) in real.iter().zip(&none) {
+            assert!((c - r).norm() < 1e-9 * k0 * k0 && c.im == 0.0, "{r} {c}");
+        }
+        let lossy = slab_loaded_modes_lossy(a, b, b / 2.0, eps, k0, 0.0, 1);
+        let g = gamma_of(lossy[0]);
+        let g_full = gamma_of(full[0]);
+        assert!(g.re > 0.0 && g.re < g_full.re && g.re < 0.05 * g.im, "{g} {g_full}");
+        // The root satisfies the LSM equation (the dominant mode): its residual against its terms.
+        let kx2 = (PI / a).powi(2);
+        let (s1, s2) = (k0 * k0 * eps - kx2 - lossy[0], C::new(k0 * k0 - kx2, 0.0) - lossy[0]);
+        let (d, l) = (b / 2.0, b / 2.0);
+        let (p, q) = (ksin_c(s1, d) * cos_c(s2, l) / eps, ksin_c(s2, l) * cos_c(s1, d));
+        assert!((p + q).norm() < 1e-9 * p.norm().max(q.norm()), "{p} {q}");
+    }
+
+    /// The references of the oracle case `lossy-slab-guide` (its expected.json): WR-90 with
+    /// εr = 2.25, tan δ = 0.02 in its lower half, 20 mm long.
+    #[test]
+    fn the_oracles_references() {
+        let (a, b, l) = (0.02286, 0.01016, 0.02);
+        let eps = C::new(2.25, -2.25 * 0.02);
+        let db = 20.0 * std::f64::consts::LOG10_E;
+        let close = |x: f64, want: f64| (x - want).abs() <= 1e-9 * want.abs().max(1.0);
+        // (GHz, ε_eff = −Re γ²/k₀², α in dB/mm, |S21| in dB, arg S21 in degrees)
+        for (f, eps_eff, att, s21_db, s21_deg) in [
+            (8.0, 0.8036894764051563, 0.012193127248945768, -0.2438625449789154, -172.25223277210745),
+            (10.0, 1.103149042794255, 0.01686754835768551, -0.33735096715371027, 107.74151176266264),
+            (12.0, 1.3057035873530582, 0.023702221207120386, -0.47404442414240805, 30.667253671338447),
+        ] {
+            let k0 = 2.0 * PI * f * 1e9 / emcraft_model::units::C0;
+            let g = gamma_of(slab_loaded_modes_lossy(a, b, b / 2.0, eps, k0, 0.0, 1)[0]);
+            let s21 = (-g * l).exp();
+            assert!(close(-(g * g).re / (k0 * k0), eps_eff) && close(db * g.re * 1e-3, att), "{f}: {g}");
+            assert!(close(db * s21.norm().ln(), s21_db) && close(s21.arg().to_degrees(), s21_deg), "{f}: {s21}");
+        }
     }
 }

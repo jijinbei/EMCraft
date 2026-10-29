@@ -86,7 +86,7 @@ where
 /// A rank-one term factor · v vᵀ of the system, v sparse.
 struct RankOne {
     factor: C,
-    v: Vec<(usize, f64)>,
+    v: Vec<(usize, C)>,
 }
 
 impl Basis {
@@ -233,10 +233,11 @@ impl Reduced {
             })
             .collect();
         // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ and the port modes' factor v vᵀ.
-        let mut rank_one: Vec<RankOne> = d.lumped.iter().map(|l| RankOne { factor: l.factor(frequency), v: l.c.clone() }).collect();
+        let mut rank_one: Vec<RankOne> =
+            d.lumped.iter().map(|l| RankOne { factor: l.factor(frequency), v: l.c.iter().map(|&(i, x)| (i, C::new(x, 0.0))).collect() }).collect();
         rank_one.extend(terms.iter().flatten().map(|t: &PortTerm<'_>| RankOne { factor: t.factor, v: t.v.to_vec() }));
-        let project = |v: &[(usize, f64)]| -> Vec<f64> { basis.v.iter().map(|b| v.iter().map(|&(i, x)| b[i] * x).sum()).collect() };
-        let projected: Vec<(C, Vec<f64>)> = rank_one.iter().map(|r| (r.factor, project(&r.v))).collect();
+        let project = |v: &[(usize, C)]| -> Vec<C> { basis.v.iter().map(|b| v.iter().map(|&(i, x)| x * b[i]).sum()).collect() };
+        let projected: Vec<(C, Vec<C>)> = rank_one.iter().map(|r| (r.factor, project(&r.v))).collect();
         let mut ar: Vec<Vec<C>> = (0..m).map(|i| (0..m).map(|j| dot_rc(&basis.v[i], &av[j])).collect()).collect();
         for (f, u) in &projected {
             for i in 0..m {

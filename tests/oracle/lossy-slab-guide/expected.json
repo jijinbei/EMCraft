@@ -1,0 +1,63 @@
+{
+ "title": "WR-90 with a lossy dielectric layer (εr = 2.25, tan δ = 0.02) filling its lower half, 20 mm long: the hybrid lossy LSM₁₀ mode through ports solved on the layered cross-section",
+ "kind": "theory",
+ "source": "The LSE and LSM modes of a rectangular guide loaded with a dielectric slab across its width (R. E. Collin, Field Theory of Guided Waves, 2nd ed., IEEE Press 1991, §6.1; R. F. Harrington, Time-Harmonic Electromagnetic Fields, 1961, §4-7), the LSM^y equation −(k_y1/εr) tan(k_y1 d) = k_y2 tan(k_y2 (b − d)) with the complex εr = 2.25(1 − 0.02j), solved in complex arithmetic by following the lossless root as the loss grows (Newton's method; emcraft_theory::slab::slab_loaded_modes_lossy, checked against these values by its own test); S21 = e^{−γL}, S11 = 0",
+ "quantities": [
+  {
+   "id": "eps_eff_10",
+   "quantity": "−Re γ²/k0² of the LSM₁₀ port mode at 10 GHz",
+   "measure": {"step": "modes", "pointer": "/ports/0/modes/0/eps_eff"},
+   "value": 1.103149042794255,
+   "tolerance": {"absolute": 0.0001},
+   "reason": "the cross-section solver on the port's 2 mm triangles, order 2, as the lossless `slab-loaded-guide`: −7.7e-6"
+  },
+  {
+   "id": "att_10",
+   "quantity": "attenuation of the LSM₁₀ port mode at 10 GHz (dB/mm), 20 log e · α",
+   "measure": {"step": "modes", "pointer": "/ports/0/modes/0/attenuation_db"},
+   "value": 0.01686754835768551,
+   "tolerance": {"relative": 0.005},
+   "reason": "α is set by the share of the field in the slab, which the 2 mm triangles resolve as they do β: −4e-5 (relative)"
+  },
+  {
+   "id": "s21_db_8",
+   "quantity": "|S21| at 8 GHz (dB), −αL · 20 log e",
+   "measure": {"step": "solve", "pointer": "/points/0/s21/db"},
+   "value": -0.2438625449789154,
+   "tolerance": {"absolute": 0.003},
+   "reason": "2 mm hexahedral cells in tetrahedra, order 2, and the port's α: within 1.4e-4 dB at 8, 10 and 12 GHz"
+  },
+  {
+   "id": "s21_db_10",
+   "quantity": "|S21| at 10 GHz (dB)",
+   "measure": {"step": "solve", "pointer": "/points/1/s21/db"},
+   "value": -0.33735096715371027,
+   "tolerance": {"absolute": 0.003},
+   "reason": "as at 8 GHz"
+  },
+  {
+   "id": "s21_db_12",
+   "quantity": "|S21| at 12 GHz (dB)",
+   "measure": {"step": "solve", "pointer": "/points/2/s21/db"},
+   "value": -0.47404442414240805,
+   "tolerance": {"absolute": 0.003},
+   "reason": "as at 8 GHz"
+  },
+  {
+   "id": "s21_deg_10",
+   "quantity": "arg S21 at 10 GHz (degrees), −βL",
+   "measure": {"step": "solve", "pointer": "/points/1/s21/deg"},
+   "value": 107.74151176266264,
+   "tolerance": {"absolute": 0.05},
+   "reason": "as the lossless `slab-loaded-guide`: +0.006°"
+  },
+  {
+   "id": "s11_mag_12",
+   "quantity": "|S11| at 12 GHz (no discontinuity)",
+   "measure": {"step": "solve", "pointer": "/points/2/s11/mag"},
+   "value": 0.0,
+   "tolerance": {"absolute": 0.0002},
+   "reason": "the ports' hybrid lossy modes in the volume's trace space, as the lossless slab's: 1.8e-5"
+  }
+ ]
+}

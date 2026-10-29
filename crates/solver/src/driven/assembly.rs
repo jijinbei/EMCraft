@@ -187,13 +187,13 @@ pub(super) fn border_columns<V: IntoIterator<Item = (usize, C)>>(a: &Csr, border
 
 /// `a` bordered by one unknown per (v, f) ([`border_columns`]): its column and row hold s v
 /// (the matrix stays complex symmetric) and its diagonal −s²/f.
-fn bordered(a: &Csr, borders: &[(&[(usize, f64)], C)]) -> Result<Csr> {
+fn bordered(a: &Csr, borders: &[(&[(usize, C)], C)]) -> Result<Csr> {
     let n = a.n;
-    let columns = borders.iter().map(|(v, f)| (v.iter().map(|&(i, x)| (i, C::new(x, 0.0))), *f));
+    let columns = borders.iter().map(|(v, f)| (v.iter().copied(), *f));
     let (mut out, scale) = border_columns(a, columns)?;
     for (k, ((v, f), s)) in borders.iter().zip(scale).enumerate() {
         out.col.extend(v.iter().map(|(i, _)| *i));
-        out.val.extend(v.iter().map(|(_, x)| C::new(s * x, 0.0)));
+        out.val.extend(v.iter().map(|(_, x)| x * s));
         out.col.push(n + k);
         out.val.push(-(s * s) / f);
         out.ptr.push(out.col.len());
@@ -217,7 +217,7 @@ impl Driven {
         // Each mode's factor·v vᵀ would couple every unknown on the port with every other; a
         // border unknown y_m = factor·vᵀx per mode keeps the matrix sparse:
         // [A V; Vᵀ −F⁻¹] [x; y] = [b; 0] eliminates to (A + V F Vᵀ) x = b.
-        let borders: Vec<(&[(usize, f64)], C)> = terms.iter().flatten().map(|t| (&*t.v, t.factor)).collect();
+        let borders: Vec<(&[(usize, C)], C)> = terms.iter().flatten().map(|t| (&*t.v, t.factor)).collect();
         let border = borders.len();
         let a = bordered(&a, &borders)?;
         let n = self.dofs.unknowns;
