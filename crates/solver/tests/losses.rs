@@ -3,7 +3,7 @@
 
 use emcraft_fem::Order;
 use emcraft_model::{End, Material, Model, Pole, Port, Section, Waveguide};
-use emcraft_solver::{Driven, SolveError};
+use emcraft_solver::Driven;
 use emcraft_theory::{Layer, Te10Line};
 
 const A: f64 = 0.02286;
@@ -50,27 +50,6 @@ fn absorbed_power_balances_the_ports() {
         let absorbed = d.dielectric_loss(&r.fields[0], f).unwrap() / d.incident_power(0, f).unwrap();
         assert!((lost - absorbed).abs() < 1e-9 * lost.max(1e-3) + 1e-12, "{f}: {lost} {absorbed}");
     }
-}
-
-#[test]
-fn a_port_across_a_lossy_layer_and_another_material_is_refused() {
-    // A lossy substrate under air: the port's modes would be hybrid and lossy.
-    let mut m = Model::new();
-    m.add_material(Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap()).unwrap();
-    m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(0.02, "vacuum")],
-        layers: vec![emcraft_model::Layer { thickness: 0.003, material: "lossy".into() }],
-        strips: Vec::new(),
-        vias: Vec::new(),
-    })
-    .unwrap();
-    m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
-    let e = Driven::new(&m, Order::One).unwrap_err();
-    assert!(matches!(e, SolveError::Invalid { .. }) && e.to_string().contains("not supported yet"), "{e}");
-    assert!(emcraft_solver::driven::port_modes(&m, Order::One, 10e9).is_err());
 }
 
 /// An empty WR-90 guide `length` long with walls of conductivity `sigma`.

@@ -258,6 +258,32 @@ fn planar_circuits_are_layered_guides_with_strips() {
 }
 
 #[test]
+fn a_microstrip_on_a_lossy_substrate_has_lossy_ports() {
+    // FR-4 with tan δ = 0.02 under air: the port's hybrid mode has an attenuation, the line
+    // transmits less than its lossless twin; two strips there warn that terminals are refused.
+    let mut s = Session::new();
+    s.execute("model.material.create", &json!({"name": "fr4", "eps_r": 4.4, "loss_tangent": 0.02})).unwrap();
+    let guide = |strips: Value| json!({"width": 8, "height": 4, "sections": [{"length": 5, "material": "vacuum"}], "layers": [{"thickness": 0.8, "material": "fr4"}], "strips": strips});
+    s.execute("geometry.waveguide", &guide(json!([{"y": 0.8, "x0": 3.25, "width": 1.5}]))).unwrap();
+    s.execute("mesh.generate", &json!({"size": 0.8})).unwrap();
+    s.execute("model.port.create", &json!({"name": "1", "end": "start", "modes": 2})).unwrap();
+    s.execute("model.port.create", &json!({"name": "2", "end": "end", "modes": 2})).unwrap();
+    let r = s.execute("solve.port_modes", &json!({"frequency": 5})).unwrap();
+    let m = &r["ports"][0]["modes"][0];
+    let (eps, att) = (m["eps_eff"].as_f64().unwrap(), m["attenuation_db"].as_f64().unwrap());
+    assert!(m["propagating"].as_bool().unwrap() && eps > 2.7 && eps < 4.4 && att > 0.0 && att < 0.03, "{r}");
+    let sw = s.execute("solve.frequency", &json!({"frequencies": [5], "order": 1})).unwrap();
+    let s21 = sw["points"][0]["s21"]["db"].as_f64().unwrap();
+    // About −α·5 mm (order 1 on 0.8 mm cells: loosely).
+    assert!(s21 < 0.0 && (s21 + 5.0 * att).abs() < 0.2 * 5.0 * att + 0.01, "{s21} {att}");
+    let check = s.execute("results.check", &json!({})).unwrap();
+    assert!(check["passive"].as_bool().unwrap() && check["reciprocity_error"].as_f64().unwrap() < 1e-9, "{check}");
+    s.execute("geometry.waveguide", &guide(json!([{"y": 0.8, "x0": 1.5, "width": 1.5}, {"y": 0.8, "x0": 5, "width": 1.5}]))).unwrap();
+    let st = s.execute("project.status", &json!({})).unwrap();
+    assert!(st.to_string().contains("terminal ports are not supported yet"), "{st}");
+}
+
+#[test]
 fn stubs_and_vias_mesh_and_solve_and_hostile_vias_are_refused() {
     // A stripline with a short stub off it, ended by a via through the whole height: the via's
     // cells are left out of the mesh, its faces walls; the stub's open end and the T mesh and

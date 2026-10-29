@@ -5,19 +5,27 @@
 //! hold with the complex κ and μ: factor κ/(μ‖e‖²), excitation 2κ/μ, and the power proxy
 //! becomes the unconjugated ‖e‖² (−jκ/μ) = 2ωμ₀ ∫ e × h · ŝ dS of a unit wave, whose real part
 //! is 2ωμ₀ times the power the wave carries through the port plane.
+//!
+//! **Hybrid lossy modes** (a cross-section of several materials, one of them lossy, see
+//! [`crate::portmode`]'s lossy modes): the lossless hybrid modes' term with γ for jβ — factor
+//! γ/D, excitation 2γ, v_i = ∫ μr⁻¹ Nᵢ · g dS with the complex μr and mode, D the unconjugated
+//! ∫ μr⁻¹ e · g dS — and the power proxy −jγD = 2ωμ₀ ∫ e × h · ŝ dS, unconjugated, so S is read
+//! as the pseudo-waves of R. B. Marks and D. F. Williams (J. Res. NIST 97(5):533–562, 1992),
+//! reciprocal ([`super::sparams`]). The modes are orthogonal in that unconjugated form, the
+//! one the projection c = vᵀx/D needs.
 
 use std::borrow::Cow;
 use std::f64::consts::PI;
 
 use emcraft_fem::modes::Mode;
-use emcraft_model::Material;
 use emcraft_model::units::{C0, MU0};
+use emcraft_model::{CVec3, Material};
 use num_complex::Complex64 as C;
 
 use super::assembly::port_rule_points;
-use super::ports::{NumericPort, PortModes, lossy_k2};
+use super::ports::{MixedMedia, NumericPort, PortMedium, PortModes, lossy_k2};
 use super::{Driven, Result, invalid, wavenumber};
-use crate::portmode::{CrossSection, PortMode};
+use crate::portmode::{CrossSection, LossyPortMode, PortMode};
 
 const J: C = C::new(0.0, 1.0);
 
@@ -41,47 +49,80 @@ const KIND_TOLERANCE: f64 = 0.05;
 /// `m` at `frequency`. With one material across the section a mode is TE or TEM (no scalar
 /// part, D = ‖e‖² = 1) or TM (∇φ = (k_c²/β′²) e_t, so D − 1 = k_c²/β′² at the unit filling's
 /// β′²); its cut-off k_c² = k′² − β′² holds for any filling, and γ and κ follow from the
-/// material's complex k². A pair of degenerate TE and TM modes mixed by the solver is refused.
-pub(crate) fn lossy_section_modes(section: &CrossSection, m: &Material, frequency: f64, count: usize) -> Result<Vec<LossyMode>> {
+/// material's complex k². `None` when the solver mixed a pair of degenerate TE and TM modes
+/// (the port then takes the hybrid lossy modes, [`lossy_modes`]).
+pub(crate) fn lossy_section_modes(section: &CrossSection, m: &Material, frequency: f64, count: usize) -> Result<Option<Vec<LossyMode>>> {
     let (k2, _) = lossy_k2(m, frequency);
     // The unit filling solved at the medium's wavenumber magnitude: the same modes in order.
     let kp = wavenumber(frequency) * (m.eps_at(frequency) * m.mu_c()).norm().sqrt();
     let kp = if kp.is_finite() && kp > 0.0 { kp } else { wavenumber(frequency) };
     let modes = section.modes(kp, count)?;
-    modes
-        .into_iter()
-        .enumerate()
-        .map(|(i, mode)| {
-            let kc2 = kp * kp - mode.beta2;
-            let g = (C::new(kc2, 0.0) - k2).sqrt();
-            let gamma = if g.re < 0.0 || (g.re == 0.0 && g.im < 0.0) { -g } else { g };
-            if !(gamma.norm_sqr() > 1e-20 * k2.norm()) {
-                return Err(invalid("frequency", format!("{frequency} Hz is at the cut-off of mode {} of a lossy port", i + 1)));
-            }
-            let scalar = mode.d - 1.0;
-            let tm = kc2 / mode.beta2;
-            let kappa = if scalar.abs() <= 1e-6 * tm.abs().max(1.0) {
-                gamma
-            } else if (scalar - tm).abs() <= KIND_TOLERANCE * tm.abs() {
-                -k2 / gamma
-            } else {
-                return Err(invalid(
-                    "port modes",
-                    format!(
-                        "not supported yet: mode {} of a port in a lossy material mixes TE and TM modes of equal cut-off (refine the mesh, or ask for fewer modes)",
-                        i + 1
-                    ),
-                ));
-            };
-            Ok(LossyMode { mode, gamma, kappa, propagating: k2.re > kc2 })
-        })
-        .collect()
+    let mut out = Vec::with_capacity(modes.len());
+    for (i, mode) in modes.into_iter().enumerate() {
+        let kc2 = kp * kp - mode.beta2;
+        let g = (C::new(kc2, 0.0) - k2).sqrt();
+        let gamma = if g.re < 0.0 || (g.re == 0.0 && g.im < 0.0) { -g } else { g };
+        if !(gamma.norm_sqr() > 1e-20 * k2.norm()) {
+            return Err(invalid("frequency", format!("{frequency} Hz is at the cut-off of mode {} of a lossy port", i + 1)));
+        }
+        let scalar = mode.d - 1.0;
+        let tm = kc2 / mode.beta2;
+        let kappa = if scalar.abs() <= 1e-6 * tm.abs().max(1.0) {
+            gamma
+        } else if (scalar - tm).abs() <= KIND_TOLERANCE * tm.abs() {
+            -k2 / gamma
+        } else {
+            // A TE and a TM mode of equal cut-off, mixed.
+            return Ok(None);
+        };
+        out.push(LossyMode { mode, gamma, kappa, propagating: k2.re > kc2 });
+    }
+    Ok(Some(out))
+}
+
+/// A lossy numerical port's modes at a frequency.
+pub(crate) enum LossyModes {
+    /// One material: the unit filling's modes ([`lossy_section_modes`]).
+    Uniform(Vec<LossyMode>),
+    /// The hybrid lossy modes, with each triangle's μr⁻¹.
+    Hybrid(Vec<LossyPortMode>, Vec<C>),
+}
+
+impl LossyModes {
+    /// Each mode's γ.
+    pub(crate) fn gammas(&self) -> Vec<C> {
+        match self {
+            LossyModes::Uniform(l) => l.iter().map(|m| m.gamma).collect(),
+            LossyModes::Hybrid(l, _) => l.iter().map(|m| m.gamma).collect(),
+        }
+    }
+}
+
+/// The `count` modes of `section` filled with `medium` at `frequency` (Hz); `None` when it is
+/// lossless. One material: the unit filling's, unless the solver mixed a TE and a TM mode of
+/// equal cut-off; then, and for several materials, the hybrid lossy modes
+/// ([`CrossSection::modes_lossy`]).
+pub(crate) fn lossy_modes(section: &CrossSection, medium: &PortMedium, frequency: f64, count: usize) -> Result<Option<LossyModes>> {
+    let hybrid = |media: &MixedMedia| -> Result<LossyModes> {
+        let (eps, mu) = media.at(frequency);
+        let modes = section.modes_lossy(wavenumber(frequency), &eps, &mu, count)?;
+        Ok(LossyModes::Hybrid(modes, mu.iter().map(|m| 1.0 / m).collect()))
+    };
+    Ok(match medium {
+        PortMedium::Lossless => None,
+        PortMedium::Uniform(m) => match lossy_section_modes(section, m, frequency, count)? {
+            Some(l) => Some(LossyModes::Uniform(l)),
+            None => Some(hybrid(&MixedMedia::uniform(m, section.tris.len()))?),
+        },
+        PortMedium::Mixed(media) => Some(hybrid(media)?),
+    })
 }
 
 /// A lossy mode's port term: its vector `v` (∫ Nᵢ · e dS), norm ‖e‖² over the faces meshed,
 /// μ the medium's complex permeability.
-fn lossy_term<'a>(name: String, v: Cow<'a, [(usize, f64)]>, norm: f64, kappa: C, gamma: C, mu: C, propagating: bool) -> PortTerm<'a> {
+fn lossy_term<'a>(name: String, v: Cow<'a, [(usize, C)]>, norm: f64, kappa: C, gamma: C, mu: C, propagating: bool) -> PortTerm<'a> {
     let kappa = kappa / mu;
+    let norm = C::new(norm, 0.0);
     PortTerm { name, v, factor: kappa / norm, rhs: 2.0 * kappa, norm, proxy: -J * kappa * norm, propagating, impedance: None, gamma, current: None }
 }
 
@@ -90,10 +131,11 @@ fn lossy_term<'a>(name: String, v: Cow<'a, [(usize, f64)]>, norm: f64, kappa: C,
 #[derive(Clone, Debug)]
 pub struct PortTerm<'a> {
     pub name: String,
-    pub v: Cow<'a, [(usize, f64)]>,
+    pub v: Cow<'a, [(usize, C)]>,
     pub factor: C,
     pub rhs: C,
-    pub norm: f64,
+    /// D: the mode's (unconjugated) ∫ μr⁻¹ e · g dS, complex for a hybrid lossy mode.
+    pub norm: C,
     /// 2ωμ₀ times the power a unit wave of the mode carries (0 for an evanescent one); in a
     /// lossy medium the unconjugated 2ωμ₀ ∫ e × h · ŝ dS, complex, whose real part is that.
     pub proxy: C,
@@ -191,7 +233,7 @@ impl Driven {
                 let (k2, mu) = lossy_k2(m, frequency);
                 modes
                     .iter()
-                    .map(|(mode, v): &(Mode, Vec<(usize, f64)>)| {
+                    .map(|(mode, v): &(Mode, Vec<(usize, C)>)| {
                         let kappa = mode.kappa_lossy(k2).ok_or_else(|| {
                             invalid("frequency", format!("{} Hz is at the cut-off of mode {} at port `{}`", frequency, mode.name(), port.name))
                         })?;
@@ -216,7 +258,7 @@ impl Driven {
                             v: Cow::Borrowed(v.as_slice()),
                             factor: kappa / norm,
                             rhs: 2.0 * kappa,
-                            norm,
+                            norm: C::new(norm, 0.0),
                             proxy: C::new(norm * gamma.1 / mu_r, 0.0),
                             propagating: gamma.1 > 0.0,
                             impedance: None,
@@ -226,8 +268,8 @@ impl Driven {
                     })
                     .collect()
             }
-            PortModes::Numeric(n) => match &n.medium {
-                Some(m) => self.lossy_numeric_terms(n, m, frequency),
+            PortModes::Numeric(n) => match lossy_modes(&n.section, &n.medium, frequency, n.count)? {
+                Some(modes) => self.lossy_numeric_terms(n, modes, frequency),
                 None => self.numeric_terms(n, k0, port.terminals),
             },
             PortModes::Floquet(_) => Err(invalid(
@@ -237,24 +279,30 @@ impl Driven {
         }
     }
 
-    /// The vectors ∫ μr⁻¹ Nᵢ · g dS of a numerical port's `modes` on its support, g = e_t + ∇φ
-    /// (or e_t alone when `transverse`).
-    fn numeric_vectors(&self, n: &NumericPort, modes: &[PortMode], transverse: bool) -> Result<Vec<Vec<f64>>> {
+    /// The vectors ∫ μr⁻¹ Nᵢ · g dS of a numerical port's `count` modes on its support, `field`
+    /// giving mode m's g (or e_t) at a point of triangle t, `inv_mu` triangle t's μr⁻¹.
+    fn vectors_with(
+        &self,
+        n: &NumericPort,
+        count: usize,
+        field: &dyn Fn(usize, usize, emcraft_model::Point3) -> Result<CVec3>,
+        inv_mu: &dyn Fn(usize) -> C,
+    ) -> Result<Vec<Vec<C>>> {
         let index: std::collections::HashMap<usize, usize> = n.support.iter().enumerate().map(|(k, &u)| (u, k)).collect();
-        let mut v = vec![vec![0.0; n.support.len()]; modes.len()];
+        let mut v = vec![vec![C::new(0.0, 0.0); n.support.len()]; count];
         let space = self.space();
         for (t, &f) in n.faces.iter().enumerate() {
             let b = self.mesh.boundary.get(f).ok_or_else(|| invalid("port", "a face is missing from the mesh"))?;
             let face = space.face_rule(b, port_rule_points(self.order))?;
-            let inv_mu = 1.0 / n.section.mu_of(t);
+            let inv_mu = inv_mu(t);
             for (l, wa, _) in face.points {
                 let x = face.el.point(l);
                 let values = face.el.values(l);
-                let gs = modes.iter().map(|m| n.section.fields(m, t, x).map(|(e, g)| if transverse { e } else { g })).collect::<Result<Vec<_>>>()?;
+                let gs = (0..count).map(|m| field(m, t, x)).collect::<Result<Vec<_>>>()?;
                 for (u, val) in face.unknowns.iter().zip(&values) {
                     let Some(&k) = index.get(&(*u as usize)) else { continue };
                     for (vm, g) in v.iter_mut().zip(&gs) {
-                        vm[k] += wa * inv_mu * val.dot(*g);
+                        vm[k] += wa * inv_mu * g.dot_real(*val);
                     }
                 }
             }
@@ -262,23 +310,64 @@ impl Driven {
         Ok(v)
     }
 
-    /// A numerical port filled with one lossy material: the unit filling's modes, each with the
+    /// The vectors ∫ μr⁻¹ Nᵢ · g dS of a numerical port's `modes` on its support, g = e_t + ∇φ
+    /// (or e_t alone when `transverse`).
+    fn numeric_vectors(&self, n: &NumericPort, modes: &[PortMode], transverse: bool) -> Result<Vec<Vec<C>>> {
+        let field = |m: usize, t: usize, x: emcraft_model::Point3| -> Result<CVec3> {
+            let mode = modes.get(m).ok_or_else(|| invalid("port", "a mode is missing"))?;
+            let (e, g) = n.section.fields(mode, t, x)?;
+            Ok(CVec3::from_real(if transverse { e } else { g }))
+        };
+        self.vectors_with(n, modes.len(), &field, &|t| C::new(1.0 / n.section.mu_of(t), 0.0))
+    }
+
+    /// A lossy numerical port's terms. One material: the unit filling's modes, each with the
     /// closed forms' term for its kind and the material's complex γ (the cross-section is the
-    /// part meshed, so ‖e‖² = 1 there).
-    fn lossy_numeric_terms(&self, n: &NumericPort, m: &Material, frequency: f64) -> Result<Vec<PortTerm<'static>>> {
-        let modes = lossy_section_modes(&n.section, m, frequency, n.count)?;
-        let plain: Vec<PortMode> = modes.iter().map(|lm| lm.mode.clone()).collect();
-        let v = self.numeric_vectors(n, &plain, true)?;
-        let (_, mu) = lossy_k2(m, frequency);
-        Ok(modes
-            .iter()
-            .zip(v)
-            .enumerate()
-            .map(|(i, (lm, vm))| {
-                let v = Cow::Owned(n.support.iter().copied().zip(vm).collect());
-                lossy_term(format!("mode {}", i + 1), v, 1.0, lm.kappa, lm.gamma, mu, lm.propagating)
-            })
-            .collect())
+    /// part meshed, so ‖e‖² = 1 there). Hybrid lossy modes: see the module docs.
+    fn lossy_numeric_terms(&self, n: &NumericPort, modes: LossyModes, frequency: f64) -> Result<Vec<PortTerm<'static>>> {
+        match modes {
+            LossyModes::Uniform(modes) => {
+                let PortMedium::Uniform(m) = &n.medium else {
+                    return Err(invalid("port", "a lossy port's modes without its material"));
+                };
+                let plain: Vec<PortMode> = modes.iter().map(|lm| lm.mode.clone()).collect();
+                let v = self.numeric_vectors(n, &plain, true)?;
+                let (_, mu) = lossy_k2(m, frequency);
+                Ok(modes
+                    .iter()
+                    .zip(v)
+                    .enumerate()
+                    .map(|(i, (lm, vm))| {
+                        let v = Cow::Owned(n.support.iter().copied().zip(vm).collect());
+                        lossy_term(format!("mode {}", i + 1), v, 1.0, lm.kappa, lm.gamma, mu, lm.propagating)
+                    })
+                    .collect())
+            }
+            LossyModes::Hybrid(modes, inv_mu) => {
+                let field = |m: usize, t: usize, x: emcraft_model::Point3| -> Result<CVec3> {
+                    let mode = modes.get(m).ok_or_else(|| invalid("port", "a mode is missing"))?;
+                    Ok(n.section.fields_lossy(mode, t, x)?.1)
+                };
+                let v = self.vectors_with(n, modes.len(), &field, &|t| inv_mu.get(t).copied().unwrap_or(C::new(1.0, 0.0)))?;
+                Ok(modes
+                    .iter()
+                    .zip(v)
+                    .enumerate()
+                    .map(|(i, (m, vm))| PortTerm {
+                        name: format!("mode {}", i + 1),
+                        v: Cow::Owned(n.support.iter().copied().zip(vm).collect()),
+                        factor: m.gamma / m.d,
+                        rhs: 2.0 * m.gamma,
+                        norm: m.d,
+                        proxy: -J * m.gamma * m.d,
+                        propagating: m.beta2() > 0.0,
+                        impedance: None,
+                        gamma: m.gamma,
+                        current: None,
+                    })
+                    .collect())
+            }
+        }
     }
 
     /// A numerical port's terms; with `terminals` (≥ 2), its first modes carry their
@@ -305,7 +394,7 @@ impl Driven {
                     v: Cow::Owned(n.support.iter().copied().zip(vm).collect()),
                     factor: jb / m.d,
                     rhs: 2.0 * jb,
-                    norm: m.d,
+                    norm: C::new(m.d, 0.0),
                     proxy: C::new(if m.beta2 > 0.0 { beta.re * m.d } else { 0.0 }, 0.0),
                     propagating: m.beta2 > 0.0,
                     gamma: jb,
