@@ -2,6 +2,8 @@
 //! stands, an estimate of the solve, the project file (the model and the commands that built
 //! it), undo and redo, and the results' exports and checks.
 
+use std::collections::VecDeque;
+
 use emcraft_model::units::Display;
 use emcraft_model::{Band, Model};
 use emcraft_solver::Complex64 as C;
@@ -21,10 +23,11 @@ pub struct Snapshot {
 /// The most states kept to undo to.
 pub const UNDO_DEPTH: usize = 50;
 
-pub fn push_undo(stack: &mut Vec<Snapshot>, s: Snapshot) {
-    stack.push(s);
+/// Pushes a state to go back to, forgetting the oldest beyond [`UNDO_DEPTH`].
+pub fn push_undo(stack: &mut VecDeque<Snapshot>, s: Snapshot) {
+    stack.push_back(s);
     if stack.len() > UNDO_DEPTH {
-        stack.remove(0);
+        stack.pop_front();
     }
 }
 
@@ -222,7 +225,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
-    let back = s.undo.pop().ok_or_else(|| EngineError::failed("nothing to undo"))?;
+    let back = s.undo.pop_back().ok_or_else(|| EngineError::failed("nothing to undo"))?;
     let now = s.swap_snapshot(back);
     push_undo(&mut s.redo, now);
     // Results stay, marked stale.
@@ -231,7 +234,7 @@ pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
 }
 
 pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
-    let next = s.redo.pop().ok_or_else(|| EngineError::failed("nothing to redo"))?;
+    let next = s.redo.pop_back().ok_or_else(|| EngineError::failed("nothing to redo"))?;
     let now = s.swap_snapshot(next);
     push_undo(&mut s.undo, now);
     s.revision += 1;

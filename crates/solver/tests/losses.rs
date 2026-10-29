@@ -17,7 +17,7 @@ fn slab(size: f64) -> Model {
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -67,7 +67,7 @@ fn lossy_walls(length: f64, sigma: f64, size: f64) -> Model {
     m.set_wall_conductivity(Some(sigma)).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -120,7 +120,7 @@ fn dispersive_slab(size: f64) -> Model {
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -176,7 +176,7 @@ fn dispersive_ports_are_taken_and_eigenmodes_refused() {
     })
     .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap().into());
     // The port's modes in the plasma: ε(10 GHz) = 1 − 25/(100 − 10j), above the cut-off.
     Driven::new(&m, Order::One).unwrap();
     let modes = emcraft_solver::driven::port_modes(&m, Order::One, 10e9).unwrap();

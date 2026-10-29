@@ -2,6 +2,8 @@
 //! given. The port, open-boundary and symmetry setters live with their types ([`crate::port`],
 //! [`crate::open`], [`crate::symmetry`]).
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::band::Band;
@@ -55,9 +57,10 @@ pub struct Model {
     /// Periodic boundaries: the model is the unit cell of an infinite array.
     #[serde(default)]
     pub periodic: Option<Periodic>,
-    /// The mesh of the waveguide (made by `emcraft-mesh`).
+    /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
+    /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
-    pub mesh: Option<Mesh>,
+    pub mesh: Option<Arc<Mesh>>,
 }
 
 impl Default for Model {

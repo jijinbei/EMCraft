@@ -453,7 +453,7 @@ mod tests {
         m.add_material(emcraft_model::Material::new("fill", 2.56, 1.0).unwrap()).unwrap();
         m.set_waveguide(Waveguide { width: 0.02286, height: 0.01016, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
         m.set_periodic(Some(Periodic { x: false, y: false, z: true, theta: 0.0, phi: 0.0, polarization: Polarization::Te })).unwrap();
-        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
+        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
         m
     }
 

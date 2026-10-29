@@ -20,7 +20,7 @@ fn open_box() -> Model {
 
 fn meshed(mut m: Model, size: f64) -> Model {
     m.set_open(Some(Open { thickness: LAYER, reflection: None, shape: OpenShape::Box })).unwrap();
-    m.mesh = Some(solid_sized(&m, &Sizes { default: size, per_material: Vec::new() }, true).unwrap());
+    m.mesh = Some(solid_sized(&m, &Sizes { default: size, per_material: Vec::new() }, true).unwrap().into());
     m
 }
 

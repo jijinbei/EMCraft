@@ -23,7 +23,7 @@ fn guide(materials: Vec<Material>, sections: Vec<Section>, size: f64, solver: Mo
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(3).with_mode_solver(solver)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(3).with_mode_solver(solver)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -186,7 +186,7 @@ fn cavity(fill: Material) -> Model {
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
     m
 }
 

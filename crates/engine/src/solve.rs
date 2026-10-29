@@ -67,7 +67,7 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     };
     let (results, full) = if fast { fast_sweep(&driven, &freqs)? } else { full_sweep(&driven, &freqs)? };
     let unknowns = driven.dofs.unknowns;
-    s.results.sweep = Some(Sweep { order, driven: Arc::new(driven), results });
+    s.results.sweep = Some(Arc::new(Sweep { order, driven: Arc::new(driven), results }));
     let mut reply = sparameter_table(s)?;
     reply["unknowns"] = json!(unknowns);
     reply["order"] = json!(order.as_u8());
@@ -212,7 +212,7 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     if s.model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.is_magnetically_lossy()) {
         reply["loss_reference"] = json!(s.show_frequency(r.loss_reference));
     }
-    s.results.time_domain = Some(r);
+    s.results.time_domain = Some(Arc::new(r));
     Ok(reply)
 }
 

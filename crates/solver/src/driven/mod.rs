@@ -316,7 +316,7 @@ impl Driven {
         if !issues.is_empty() {
             return Err(SolveError::NotReady(issues.join("; ")));
         }
-        let mesh = model.mesh.clone().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
+        let mesh = model.mesh.as_deref().cloned().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
         let topo = Topology::new(&mesh);
         let sigma = match walls {
             Walls::Modelled => model.wall_conductivity,

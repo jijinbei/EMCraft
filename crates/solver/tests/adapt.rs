@@ -39,7 +39,7 @@ fn reference() -> C {
 /// Meshes, solves and returns (S11, S21, indicator, unknowns, tets, model).
 fn pass(size: f64, refine: &[Refinement], order: Order) -> (C, C, Vec<f64>, usize, Model) {
     let mut m = post();
-    m.mesh = Some(solid_refined(&m, &Sizes { default: size, per_material: Vec::new() }, true, refine).unwrap());
+    m.mesh = Some(solid_refined(&m, &Sizes { default: size, per_material: Vec::new() }, true, refine).unwrap().into());
     let d = Driven::new(&m, order).unwrap();
     let r = d.solve(F).unwrap();
     let eta = indicator(&d, &r).unwrap();
@@ -57,7 +57,7 @@ fn empty_total(h: f64, order: Order) -> f64 {
     m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(A, B, L) }, material: "vacuum".into() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(2)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(2)).unwrap();
-    m.mesh = Some(solid_refined(&m, &Sizes { default: h, per_material: Vec::new() }, true, &[]).unwrap());
+    m.mesh = Some(solid_refined(&m, &Sizes { default: h, per_material: Vec::new() }, true, &[]).unwrap().into());
     let d = Driven::new(&m, order).unwrap();
     indicator(&d, &d.solve(F).unwrap()).unwrap().iter().sum()
 }
@@ -114,7 +114,7 @@ fn marks_and_refines(order: Order) {
     // Meshed again, the marked places get their size (within the mesher's spread; measured 1.5).
     let refine = emcraft_mesh::adapt::refinements(mesh, &marked, 0.006 / 16.0).unwrap();
     let mut fine = post();
-    fine.mesh = Some(solid_refined(&fine, &Sizes { default: 0.006, per_material: Vec::new() }, true, &refine).unwrap());
+    fine.mesh = Some(solid_refined(&fine, &Sizes { default: 0.006, per_material: Vec::new() }, true, &refine).unwrap().into());
     let fine = fine.mesh.as_ref().unwrap();
     let edge = |t: usize| {
         let c = fine.corners(t).unwrap();

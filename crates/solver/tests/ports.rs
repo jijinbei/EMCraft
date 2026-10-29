@@ -44,7 +44,7 @@ fn coax(length: f64, size: f64) -> Model {
     m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.0035, length }, material: "ptfe".into() }).unwrap();
     m.add_feature(Feature { combine: Combine::Subtract, shape: Shape::Cylinder { radius: 0.001, length }, at: Point3::ORIGIN, axis: Axis::Z })
         .unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap().into());
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
@@ -84,7 +84,7 @@ fn slab_guide(length: f64, d: f64, er: f64, size: f64) -> Model {
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(4)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -125,7 +125,7 @@ fn stripline(a: f64, b: f64, w: f64, length: f64, er: f64, size: f64) -> Model {
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -162,7 +162,7 @@ fn microstrip(a: f64, b: f64, h: f64, w: f64, er: f64, length: f64, size: f64) -
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -216,7 +216,7 @@ fn coupled_strips(w: f64, s: f64, b: f64, side: f64, planes: &[emcraft_model::Sy
     let strip = |x0: f64| emcraft_model::Strip { y: b / 2.0, x0, width: w, z0: 0.0, z1: 0.001 };
     m.set_waveguide(emcraft_model::Waveguide { strips: vec![strip(side), strip(side + w + s)], ..wg }).unwrap();
     m.set_symmetry(planes.to_vec()).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap().into());
     m
 }
 

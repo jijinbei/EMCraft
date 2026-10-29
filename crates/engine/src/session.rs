@@ -1,6 +1,7 @@
 //! The session: the model, its results, the display units, the history that built the model and
 //! undo; [`Session::execute`] runs every command.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use emcraft_fem::Order;
@@ -36,15 +37,16 @@ impl Sweep {
     }
 }
 
-/// What the solvers made of the model, each from its own command.
+/// What the solvers made of the model, each from its own command. Each result is shared: the
+/// copy a command keeps to go back to when it fails costs no copy of the fields.
 #[derive(Clone, Debug, Default)]
 pub struct Results {
     /// The driven frequency sweep from `solve.frequency`.
-    pub sweep: Option<Sweep>,
+    pub sweep: Option<Arc<Sweep>>,
     /// The cavity's eigenmodes from `solve.eigenmodes`.
     pub eigen: Option<Arc<emcraft_solver::eigen::Eigen>>,
     /// The time-domain solver's S-parameters from `solve.time_domain`.
-    pub time_domain: Option<emcraft_fdtd::TdResult>,
+    pub time_domain: Option<Arc<emcraft_fdtd::TdResult>>,
     /// The open problem from `solve.radiation`.
     pub radiation: Option<Arc<open::Radiated>>,
     /// The open problem from `solve.time_domain` on an open model.
@@ -102,7 +104,7 @@ impl Results {
 
     /// The sweep, or an error asking for one.
     pub fn sweep(&self) -> Result<&Sweep> {
-        self.sweep.as_ref().ok_or(EngineError::NotSolved { what: "results", run: "solve.frequency" })
+        self.sweep.as_deref().ok_or(EngineError::NotSolved { what: "results", run: "solve.frequency" })
     }
 }
 
@@ -139,9 +141,9 @@ pub struct Session {
     pub limits: Limits,
     /// The commands that built the model, in order (a script that rebuilds it).
     pub history: Vec<Step>,
-    /// States to go back to (`edit.undo`) and forward again (`edit.redo`).
-    pub undo: Vec<project::Snapshot>,
-    pub redo: Vec<project::Snapshot>,
+    /// States to go back to (`edit.undo`) and forward again (`edit.redo`), the latest last.
+    pub undo: VecDeque<project::Snapshot>,
+    pub redo: VecDeque<project::Snapshot>,
     /// The model's revision, raised by every command that changes it, and the revision the
     /// latest results were solved at (older results are stale).
     pub revision: u64,

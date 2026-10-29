@@ -81,7 +81,7 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
         if sizes.by_wavelength() {
             reply["sizes"] = sizes.reply(s);
         }
-        s.model.mesh = Some(mesh);
+        s.model.mesh = Some(mesh.into());
         s.results.invalidate(Change::Geometry);
         return Ok(reply);
     }
@@ -91,7 +91,7 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
     if sizes.by_wavelength() {
         reply["size"] = json!(s.show_length(size));
     }
-    s.model.mesh = Some(mesh);
+    s.model.mesh = Some(mesh.into());
     s.results.invalidate(Change::Geometry);
     Ok(reply)
 }

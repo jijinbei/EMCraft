@@ -39,7 +39,7 @@ fn boxed(
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 

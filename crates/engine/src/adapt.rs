@@ -258,7 +258,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
             Err(e) => return Err(e.into()),
         };
         let tetrahedra = mesh.tets.len();
-        s.model.mesh = Some(mesh);
+        s.model.mesh = Some(mesh.into());
         let built = if open { Driven::open(&s.model, order) } else { Driven::new(&s.model, order) };
         let driven = match built {
             Ok(d) => d,
@@ -341,7 +341,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
             reply["power"] = json!(w);
         }
     }
-    s.model.mesh = Some(mesh);
+    s.model.mesh = Some(mesh.into());
     s.results.invalidate(Change::Geometry);
     Ok(reply)
 }

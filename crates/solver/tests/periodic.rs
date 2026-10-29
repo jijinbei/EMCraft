@@ -20,7 +20,7 @@ fn slab_cell(theta: f64, phi: f64, pol: Polarization, size: f64) -> Model {
     m.add_port(Port::new("1", End::Start).with_modes(2)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(2)).unwrap();
     m.set_periodic(Some(Periodic { x: true, y: true, z: false, theta, phi, polarization: pol })).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 

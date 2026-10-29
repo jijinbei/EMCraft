@@ -21,6 +21,20 @@ fn display_units_convert_at_the_boundary() {
     assert!((s.results.sweep.as_ref().unwrap().results[0].frequency - 9e9).abs() < 1e-3);
 }
 
+/// The states kept to undo to share the mesh rather than copy it, and the oldest go first.
+#[test]
+fn undo_states_share_the_mesh_and_are_bounded() {
+    let mut s = small();
+    let mesh = s.model.mesh.clone().unwrap();
+    for k in 0..project::UNDO_DEPTH + 5 {
+        s.execute("project.frequency", &json!({"start": 5 + k, "stop": 100})).unwrap();
+    }
+    assert_eq!(s.undo.len(), project::UNDO_DEPTH);
+    assert!(s.undo.iter().all(|u| u.model.mesh.as_ref().is_some_and(|m| std::sync::Arc::ptr_eq(m, &mesh))));
+    // The oldest left: the state before the sixth change, the fifth band.
+    assert_eq!(s.undo.front().and_then(|u| u.model.band).map(|b| b.start), Some(9e9));
+}
+
 #[test]
 fn a_failed_command_leaves_the_session_as_it_was() {
     let mut s = small();
@@ -236,7 +250,7 @@ fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
     let mut r = Results::default();
     let filled = |r: &mut Results| {
         r.radiation = None;
-        r.time_domain = Some(emcraft_fdtd::TdResult {
+        r.time_domain = Some(std::sync::Arc::new(emcraft_fdtd::TdResult {
             frequencies: Vec::new(),
             s11: Vec::new(),
             s21: Vec::new(),
@@ -246,7 +260,7 @@ fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
             reference_steps: 0,
             converged: true,
             loss_reference: 0.0,
-        });
+        }));
     };
     filled(&mut r);
     r.invalidate(Change::Open);
