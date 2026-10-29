@@ -2,6 +2,17 @@
 //! function that runs it (in the module of its area).
 
 use Quantity::{Frequency as F, Length as L};
+use emcraft_gpu::Precision;
+use emcraft_model::units::{Frequency, Length};
+use emcraft_model::{Axis, Combine, End, ModeSolver, OpenShape, Polarization, SymmetryKind, Terminals};
+
+use crate::choice::Choice;
+use crate::geometry::{Keep, PlaneAxis, Primitive};
+use crate::open::FarSolver;
+use crate::project::Format as TouchstoneFormat;
+use crate::solve::{Device, Strategy};
+use crate::tdr::Mode as TdrMode;
+use crate::view::{Component, Plane};
 
 use crate::project::Effect;
 use crate::{CommandSpec, Kind as K, ParamSpec, Quantity};
@@ -37,14 +48,14 @@ const PORT_SOLVER_ORDER: ParamSpec = opt("order", K::Integer, "element order of 
 const BAND_TOP: ParamSpec = opt("frequency", K::Number, "the frequency (default: the band's top)").of(F);
 
 // A primitive body: its shape, dimensions and placement.
-const SHAPE: ParamSpec = req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&["box", "cylinder", "sphere"]);
+const SHAPE: ParamSpec = req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(Primitive::NAMES);
 const SIZE: ParamSpec = opt("size", K::Array, "the box's [x, y, z]").of(L);
 const SIZE_TURNED: ParamSpec = opt("size", K::Array, "the box's [x, y, z] (in its own axes)").of(L);
 const RADIUS: ParamSpec = opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L);
 const LENGTH: ParamSpec = opt("length", K::Number, "the cylinder's length along z").of(L);
 const LENGTH_TURNED: ParamSpec = opt("length", K::Number, "the cylinder's length along its axis").of(L);
 const AT: ParamSpec = opt("at", K::Array, "where its origin goes (default [0, 0, 0])").of(L);
-const AXIS: ParamSpec = opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(&["x", "y", "z"]);
+const AXIS: ParamSpec = opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(Axis::NAMES);
 const BODY_MATERIAL: ParamSpec = req("material", K::String, "`metal`, the region's material, or another material's name");
 
 // A driven solution: a solved frequency and the port excited.
@@ -54,10 +65,9 @@ const EXCITATION: ParamSpec = opt("excitation", K::String, "the excited port (de
 // A field picture: the solution, the plane and the colour.
 const FIELD_FREQUENCY: ParamSpec = opt("frequency", K::Number, "a solved frequency (the nearest is used); required unless `mode` is given").of(F);
 const FIELD_MODE: ParamSpec = opt("mode", K::Integer, "an eigenmode (1 = the lowest) instead of a driven solution");
-const PLANE: ParamSpec = opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(&["h", "e", "cross"]);
+const PLANE: ParamSpec = opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(Plane::NAMES);
 const PLANE_AT: ParamSpec = opt("at", K::Number, "the plane's position along its normal (default the middle)").of(L);
-const COMPONENT: ParamSpec =
-    opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(&["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"]);
+const COMPONENT: ParamSpec = opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(Component::NAMES);
 
 // The port a TDR reads.
 const TDR_PORT: ParamSpec = opt("port", K::String, "the port (default the first)");
@@ -65,7 +75,7 @@ const TDR_PORT: ParamSpec = opt("port", K::String, "the port (default the first)
 // The far field read: whose, at which frequency, at which azimuth.
 const FAR_SOLVER: ParamSpec =
     opt("solver", K::String, "`fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first")
-        .one_of(&["fem", "time_domain"]);
+        .one_of(FarSolver::NAMES);
 const FAR_FREQUENCY: ParamSpec = opt("frequency", K::Number, "the time domain's frequency (the nearest solved)").of(F);
 const PHI: ParamSpec = opt("phi", K::Number, "the azimuth in degrees (default 0)");
 
@@ -134,7 +144,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "results.touchstone",
         label: "Export Touchstone",
         doc: "Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in GHz, the ports' reference impedance on the option line; one port per entry of S (each terminal of a terminal port, in the order `ports` lists them).",
-        params: &[req("path", K::String, "the file (.s1p, .s2p, …)"), opt("format", K::String, "`ri` (default) or `ma`").one_of(&["ri", "ma"])],
+        params: &[req("path", K::String, "the file (.s1p, .s2p, …)"), opt("format", K::String, "`ri` (default) or `ma`").one_of(TouchstoneFormat::NAMES)],
         effect: Effect::None,
         run: crate::project::touchstone,
     },
@@ -150,7 +160,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "units.set",
         label: "Display units",
         doc: "Sets the units parameters are read in and replies written in.",
-        params: &[opt("length", K::String, "`mm` or `m`").one_of(&["mm", "m"]), opt("frequency", K::String, "`GHz`, `MHz` or `Hz`").one_of(&["GHz", "MHz", "Hz"])],
+        params: &[opt("length", K::String, "`mm` or `m`").one_of(Length::NAMES), opt("frequency", K::String, "`GHz`, `MHz` or `Hz`").one_of(Frequency::NAMES)],
         effect: Effect::Record,
         run: crate::project::units,
     },
@@ -210,7 +220,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("angle", K::Number, "neighbouring triangles turning by more than this many degrees are on different faces (default 30)"),
             opt("material", K::String, "the region's filling (default vacuum)"),
             opt("region", K::String, "`box` (air around the bodies; the default for several), `cavity` (the air the metal bodies enclose) or the name of the body that is the region (the default for one)"),
-            opt("keep", K::String, "with `region` `cavity`: `enclosed` (every piece of air the metal encloses, the default) or `largest` (the largest alone)").one_of(&["enclosed", "largest"]),
+            opt("keep", K::String, "with `region` `cavity`: `enclosed` (every piece of air the metal encloses, the default) or `largest` (the largest alone)").one_of(Keep::NAMES),
             opt("margin", K::Number, "the box's room around the bodies, the layer included (default a quarter of their largest extent; with `open`, a quarter wavelength of air and the layer)").of(L),
             opt("materials", K::Object, "body name → material, or `metal` (the default for every body)"),
             opt("open", K::Boolean, "an open problem: line the box of air with a perfectly matched layer (default false)"),
@@ -264,7 +274,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Combine a body",
         doc: "Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall), and so are features of one kind meeting end to end when one's cross-section holds the other's (a stepped inner conductor); the surfaces must otherwise meet cleanly. A port's end face must stay whole.",
         params: &[
-            req("combine", K::String, "`add`, `subtract` or `intersect`").one_of(&["add", "subtract", "intersect"]),
+            req("combine", K::String, "`add`, `subtract` or `intersect`").one_of(Combine::NAMES),
             SHAPE,
             SIZE_TURNED,
             RADIUS,
@@ -328,8 +338,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Symmetry plane",
         doc: "Cuts a waveguide symmetric about its middle (x = a/2 or y = b/2) on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters; ports carry only the modes of the kept parity, fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. Waveguides only; the time-domain solver refuses symmetry planes. Drops the mesh.",
         params: &[
-            opt("axis", K::String, "`x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove").one_of(&["x", "y"]),
-            opt("kind", K::String, "`electric` (PEC wall) or `magnetic` (PMC wall)").one_of(&["electric", "magnetic"]),
+            opt("axis", K::String, "`x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove").one_of(PlaneAxis::NAMES),
+            opt("kind", K::String, "`electric` (PEC wall) or `magnetic` (PMC wall)").one_of(SymmetryKind::NAMES),
             opt("at", K::Number, "the plane's position (default the guide's middle, the only one allowed)").of(L),
             opt("clear", K::Boolean, "remove the plane across `axis`, or every plane without it"),
         ],
@@ -346,7 +356,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("z", K::Boolean, "tie z = 0 and z = length (default false; no ports then)"),
             opt("theta", K::Number, "incidence angle from the z axis in degrees, 0 to below 90 (default 0)"),
             opt("phi", K::Number, "incidence azimuth from the x axis in degrees (default 0)"),
-            opt("polarization", K::String, "`te` (E across the plane of incidence, default) or `tm`").one_of(&["te", "tm"]),
+            opt("polarization", K::String, "`te` (E across the plane of incidence, default) or `tm`").one_of(Polarization::NAMES),
             opt("clear", K::Boolean, "remove the periodic boundaries"),
         ],
         effect: Effect::Record,
@@ -358,13 +368,13 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only (and is needed in a lossy cross-section, where terminal ports are not supported yet).",
         params: &[
             req("name", K::String, "unique name (without `:`)"),
-            req("end", K::String, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies").one_of(&["start", "end"]),
+            req("end", K::String, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies").one_of(End::NAMES),
             opt("modes", K::Integer, "modes in the port condition, 1 to 32 (default 4)"),
             opt("face", K::Array, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z").of(L),
-            opt("mode_solver", K::String, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)").one_of(&["auto", "numeric"]),
+            opt("mode_solver", K::String, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)").one_of(ModeSolver::NAMES),
             opt("impedance", K::Number, "the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out"),
             opt("deembed", K::Number, "de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0").of(L),
-            opt("terminals", K::String, "`auto` (default: a cross-section holding two strips or more is one terminal per strip, named `<port>:<k>` from the lowest x, each referred to `impedance` or 50 Ω) or `modal` (the first mode only)").one_of(&["auto", "modal"]),
+            opt("terminals", K::String, "`auto` (default: a cross-section holding two strips or more is one terminal per strip, named `<port>:<k>` from the lowest x, each referred to `impedance` or 50 Ω) or `modal` (the first mode only)").one_of(Terminals::NAMES),
         ],
         effect: Effect::Record,
         run: crate::geometry::port,
@@ -379,7 +389,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             STOP,
             POINTS,
             opt("order", K::Integer, "element order: 1 (Whitney) or 2 (default)"),
-            opt("sweep", K::String, "`fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each)").one_of(&["fast", "full"]),
+            opt("sweep", K::String, "`fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each)").one_of(Strategy::NAMES),
         ],
         effect: Effect::Solve,
         run: crate::solve::frequency,
@@ -394,8 +404,8 @@ pub static COMMANDS: &[CommandSpec] = &[
             STOP,
             POINTS,
             opt("cell", K::Number, "the cell size (default 1 mm)").of(L),
-            opt("device", K::String, "where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has").one_of(&["cpu", "cuda", "cubecl-cpu"]),
-            opt("precision", K::String, "the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double").one_of(&["single", "double"]),
+            opt("device", K::String, "where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has").one_of(Device::NAMES),
+            opt("precision", K::String, "the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double").one_of(Precision::NAMES),
         ],
         effect: Effect::Solve,
         run: crate::solve::time_domain,
@@ -405,8 +415,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Device",
         doc: "Where the solvers run from now on: `cpu` (the CPU's threads, the default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them). On a device the time domain steps its fields in `precision`, and the frequency domain's factorizations hand their large fronts (from `min_front` rows) to it in complex double; the CPU still pivots each block and solves. Consumer GPUs run double precision slowly: on an RTX 3080 the factorization runs at about the CPU's pace. A setting of this machine, kept across projects and never saved with them.",
         params: &[
-            req("device", K::String, "`cpu`, `cuda` or `cubecl-cpu`").one_of(&["cpu", "cuda", "cubecl-cpu"]),
-            opt("precision", K::String, "the time domain's fields: `single` (default) or `double`").one_of(&["single", "double"]),
+            req("device", K::String, "`cpu`, `cuda` or `cubecl-cpu`").one_of(Device::NAMES),
+            opt("precision", K::String, "the time domain's fields: `single` (default) or `double`").one_of(Precision::NAMES),
             opt("min_front", K::Integer, "the factorization's fronts from this many rows go to the device (default: as before, at first 1024)"),
         ],
         effect: Effect::None,
@@ -437,7 +447,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Dispersion diagram",
         doc: "The Bloch modes of the periodic cell (model.periodic), its walls perfectly conducting and its ports left out: at each phase per period ψ from `from` to `to` along `axis` (the other periodic axes at phase 0), the `bands` lowest eigenfrequencies, by shift-invert subspace iteration on the phase-shifted (Hermitian) eigenproblem. Put `near` a little above the highest band wanted: modes up to about √2 times it are found. For a guide periodic along z whose sections fill its cross-section, results.dispersion adds the closed form (TE/TM harmonics of an empty guide; TE10's Bloch bands of a loaded one).",
         params: &[
-            opt("axis", K::String, "the periodic axis swept: `x`, `y` or `z` (default z if periodic, else x)").one_of(&["x", "y", "z"]),
+            opt("axis", K::String, "the periodic axis swept: `x`, `y` or `z` (default z if periodic, else x)").one_of(Axis::NAMES),
             opt("from", K::Number, "first phase per period in degrees (default 0)"),
             opt("to", K::Number, "last phase per period in degrees (default 180: the zone's edge)"),
             opt("points", K::Integer, "phases from `from` to `to`, 1 to 201 (default 11)"),
@@ -544,7 +554,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Time-domain reflectometry from the sweep's reflection at a port (the time domain's if there is no sweep): `lowpass` — on a harmonic sweep, f_k = k Δf, for lines without a cut-off — gives the step response ρ(t), a step at each change of impedance at its round-trip delay (Z = Z0 (1 + ρ)/(1 − ρ) with the port's reference impedance); `bandpass` gives |h(t)|, a peak where each reflection comes from (guides with a cut-off). Hann-windowed, over one alias period 1/Δf.",
         params: &[
             TDR_PORT,
-            opt("mode", K::String, "`lowpass` (default on a harmonic sweep) or `bandpass`").one_of(&["lowpass", "bandpass"]),
+            opt("mode", K::String, "`lowpass` (default on a harmonic sweep) or `bandpass`").one_of(TdrMode::NAMES),
         ],
         effect: Effect::None,
         run: crate::results::tdr,
@@ -556,7 +566,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             PNG,
             TDR_PORT,
-            opt("mode", K::String, "`lowpass` or `bandpass`").one_of(&["lowpass", "bandpass"]),
+            opt("mode", K::String, "`lowpass` or `bandpass`").one_of(TdrMode::NAMES),
             opt("width", K::Integer, "picture width in pixels (default 1000)"),
             opt("height", K::Integer, "picture height in pixels (default 600)"),
         ],
@@ -621,7 +631,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             opt("thickness", K::Number, "the layer's thickness").of(L),
             opt("reflection", K::Number, "the reflection at normal incidence the layer's profile is designed for, 0 to 1 (default 1e-6)"),
-            opt("shape", K::String, "`box` (default: slabs on a box solid's faces) or `sphere` (the outer shell of a sphere solid)").one_of(&["box", "sphere"]),
+            opt("shape", K::String, "`box` (default: slabs on a box solid's faces) or `sphere` (the outer shell of a sphere solid)").one_of(OpenShape::NAMES),
         ],
         effect: Effect::Record,
         run: crate::open::model_open,

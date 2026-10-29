@@ -14,6 +14,13 @@ fn pictures_are_written() {
         let bytes = std::fs::read(&path).unwrap();
         assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']), "{r}");
     }
+    // The arrows drawn are `e` and `h`; anything else is refused, not passed over.
+    let path = scratch("arrows.png");
+    s.execute("view.field", &json!({"path": path, "frequency": 8, "arrows": ["e", "h"], "width": 300})).unwrap();
+    for bad in [json!(["e", "b"]), json!([1])] {
+        let r = s.execute("view.field", &json!({"path": path, "frequency": 8, "arrows": bad, "width": 300}));
+        assert!(matches!(&r, Err(EngineError::Params(m)) if m.starts_with("`arrows` holds `e` or `h`")), "{r:?}");
+    }
     let path = scratch("s.png");
     s.execute("view.sparameters", &json!({"path": path, "width": 600, "height": 400})).unwrap();
     assert!(std::fs::read(&path).unwrap().len() > 1000);

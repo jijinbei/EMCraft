@@ -28,11 +28,7 @@ pub enum Plane {
 
 impl Plane {
     pub fn name(self) -> &'static str {
-        match self {
-            Plane::H => "h",
-            Plane::E => "e",
-            Plane::Cross => "cross",
-        }
+        crate::Choice::name(self)
     }
 
     /// The model axes (0 x, 1 y, 2 z) along the picture's horizontal, its vertical and the
@@ -71,22 +67,22 @@ pub enum Component {
     H,
 }
 
+crate::choice::choices! {
+    Plane { Plane::H => "h", Plane::E => "e", Plane::Cross => "cross" }
+    Component {
+        Component::Ex => "ex", Component::Ey => "ey", Component::Ez => "ez",
+        Component::Hx => "hx", Component::Hy => "hy", Component::Hz => "hz",
+        Component::E => "|e|", Component::H => "|h|",
+    }
+}
+
 impl Component {
     pub const ALL: [Component; 8] =
         [Component::Ex, Component::Ey, Component::Ez, Component::Hx, Component::Hy, Component::Hz, Component::E, Component::H];
 
     /// The name commands use: `ex` … `hz`, `|e|`, `|h|`.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Component::Ex => "ex",
-            Component::Ey => "ey",
-            Component::Ez => "ez",
-            Component::Hx => "hx",
-            Component::Hy => "hy",
-            Component::Hz => "hz",
-            Component::E => "|e|",
-            Component::H => "|h|",
-        }
+    pub fn name(self) -> &'static str {
+        crate::Choice::name(self)
     }
 
     /// The name in text: `Ey`, `|H|`.

@@ -168,34 +168,43 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
 
 #[test]
 fn every_choice_a_command_lists_is_one_its_parameter_reads() {
-    use serde::de::DeserializeOwned;
-    fn reads<T: DeserializeOwned>(id: &str, name: &str) -> usize {
-        let spec = find_command(id).and_then(|c| c.params.iter().find(|p| p.name == name)).unwrap();
-        assert!(!spec.choices.is_empty(), "{id} {name}");
-        for c in spec.choices {
-            assert!(serde_json::from_value::<T>(json!(c)).is_ok(), "{id} {name}: {c}");
-        }
-        spec.choices.len()
+    use crate::choice::tests::reads_as_serde;
+    use emcraft_model as m;
+    // The table lists each choice's names (`one_of(T::NAMES)`); the types serde reads name
+    // their values alike.
+    reads_as_serde::<m::units::Length>();
+    reads_as_serde::<m::units::Frequency>();
+    reads_as_serde::<m::Axis>();
+    reads_as_serde::<m::Combine>();
+    reads_as_serde::<m::End>();
+    reads_as_serde::<m::ModeSolver>();
+    reads_as_serde::<m::Terminals>();
+    reads_as_serde::<m::SymmetryKind>();
+    reads_as_serde::<m::Polarization>();
+    reads_as_serde::<m::OpenShape>();
+    reads_as_serde::<crate::geometry::Primitive>();
+    reads_as_serde::<crate::geometry::Keep>();
+    reads_as_serde::<crate::geometry::PlaneAxis>();
+    reads_as_serde::<crate::solve::Strategy>();
+    reads_as_serde::<crate::view::Plane>();
+    reads_as_serde::<crate::open::FarSolver>();
+    reads_as_serde::<crate::project::Format>();
+    reads_as_serde::<crate::tdr::Mode>();
+    // The component is read by name in either case.
+    for c in crate::view::Component::ALL {
+        assert_eq!(c.name().parse::<crate::view::Component>(), Ok(c));
+        assert_eq!(c.name().to_uppercase().parse::<crate::view::Component>(), Ok(c));
     }
-    reads::<emcraft_model::units::Length>("units.set", "length");
-    reads::<emcraft_model::units::Frequency>("units.set", "frequency");
-    for id in ["geometry.solid", "geometry.inclusion", "geometry.feature"] {
-        reads::<crate::geometry::Primitive>(id, "shape");
-    }
-    reads::<emcraft_model::Combine>("geometry.feature", "combine");
-    reads::<emcraft_model::Axis>("geometry.feature", "axis");
-    reads::<emcraft_model::End>("model.port.create", "end");
-    reads::<emcraft_model::ModeSolver>("model.port.create", "mode_solver");
-    reads::<crate::solve::Strategy>("solve.frequency", "sweep");
-    reads::<crate::view::Plane>("view.field", "plane");
-    reads::<crate::open::FarSolver>("results.far_field", "solver");
-    reads::<crate::open::FarSolver>("view.pattern", "solver");
-    reads::<crate::project::Format>("results.touchstone", "format");
-    reads::<emcraft_model::OpenShape>("model.open", "shape");
-    let component = find_command("view.field").and_then(|c| c.params.iter().find(|p| p.name == "component")).unwrap();
-    let names: Vec<&str> = crate::view::Component::ALL.iter().map(|c| c.name()).collect();
-    assert_eq!(component.choices, names.as_slice());
-    assert!(component.choices.iter().all(|c| c.parse::<crate::view::Component>().is_ok()));
+    // Every listed choice is one of these lists, and every command reads its choices.
+    let shapes = find_command("geometry.solid").and_then(|c| c.params.iter().find(|p| p.name == "shape")).unwrap();
+    assert_eq!(shapes.choices, <crate::geometry::Primitive as Choice>::NAMES);
+    let mut s = Session::new();
+    assert!(
+        matches!(s.execute("solve.device", &json!({"device": "tpu"})), Err(EngineError::Params(m)) if m == "`device` must be cpu, cuda or cubecl-cpu")
+    );
+    assert!(
+        matches!(s.execute("solve.device", &json!({"device": "cpu", "precision": "half"})), Err(EngineError::Params(m)) if m == "`precision` must be single or double")
+    );
 }
 
 #[test]

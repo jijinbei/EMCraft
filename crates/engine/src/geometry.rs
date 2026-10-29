@@ -105,12 +105,18 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// A primitive shape (`shape`).
-#[derive(serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Primitive {
     Box,
     Cylinder,
     Sphere,
+}
+
+crate::choice::choices! {
+    Primitive { Primitive::Box => "box", Primitive::Cylinder => "cylinder", Primitive::Sphere => "sphere" }
+    Keep { Keep::Enclosed => "enclosed", Keep::Largest => "largest" }
+    PlaneAxis { PlaneAxis::X => "x", PlaneAxis::Y => "y" }
 }
 
 /// A shape from `shape`, `size`, `radius` and `length`.
@@ -237,9 +243,9 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// Which pieces of a cavity's air are kept (`keep`).
-#[derive(serde::Deserialize, Clone, Copy, Default)]
+#[derive(serde::Deserialize, Clone, Copy, Debug, Default, PartialEq)]
 #[serde(rename_all = "lowercase")]
-enum Keep {
+pub(crate) enum Keep {
     #[default]
     Enclosed,
     Largest,
@@ -385,9 +391,9 @@ pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 /// A plane's axis for `model.symmetry` (z is not one: the ports lie on z planes).
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
-enum PlaneAxis {
+pub(crate) enum PlaneAxis {
     X,
     Y,
 }

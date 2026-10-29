@@ -242,7 +242,7 @@ pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
 }
 
 /// How a Touchstone file writes each complex value (`format`).
-#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Format {
     /// Real and imaginary parts.
@@ -250,6 +250,8 @@ pub(crate) enum Format {
     /// Magnitude and angle in degrees.
     Ma,
 }
+
+crate::choice::choices! { Format { Format::Ri => "ri", Format::Ma => "ma" } }
 
 /// The sweep's S-parameters as a Touchstone (version 1) file: frequencies in GHz, `ri` (real,
 /// imaginary) or `ma` (magnitude, angle in degrees), the reference impedance on the option line.

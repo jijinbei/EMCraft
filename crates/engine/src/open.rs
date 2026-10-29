@@ -304,6 +304,8 @@ pub enum FarSolver {
     TimeDomain,
 }
 
+crate::choice::choices! { FarSolver { FarSolver::Fem => "fem", FarSolver::TimeDomain => "time_domain" } }
+
 /// The far field at one frequency in the directions asked: a row per direction.
 pub(crate) struct FarRows {
     /// Hz.
