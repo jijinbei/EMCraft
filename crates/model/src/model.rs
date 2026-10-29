@@ -63,6 +63,30 @@ pub struct Model {
     pub mesh: Option<Arc<Mesh>>,
 }
 
+/// What keeps a model from being solved ([`Model::check`]); its text says what to do.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Issue {
+    /// A symmetry plane the model does not allow (why).
+    Symmetry(String),
+    /// Periodic boundaries the model does not allow (why).
+    Periodic(String),
+    NoGeometry,
+    NoPorts,
+    NoMesh,
+}
+
+impl std::fmt::Display for Issue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Issue::Symmetry(why) => write!(f, "symmetry: {why} (clear it with model.symmetry, clear true)"),
+            Issue::Periodic(why) => write!(f, "periodic: {why} (clear it with model.periodic, clear true)"),
+            Issue::NoGeometry => f.write_str("no geometry: create one with geometry.waveguide or geometry.solid"),
+            Issue::NoPorts => f.write_str("no ports: create one with model.port.create"),
+            Issue::NoMesh => f.write_str("no mesh: mesh the geometry with mesh.generate"),
+        }
+    }
+}
+
 impl Default for Model {
     /// An empty model with one material, vacuum.
     fn default() -> Model {
@@ -226,22 +250,22 @@ impl Model {
     }
 
     /// Everything a frequency-domain solve needs, each problem named.
-    pub fn check(&self) -> Vec<String> {
+    pub fn check(&self) -> Vec<Issue> {
         let mut issues = Vec::new();
         if let Some(why) = self.symmetry_issue() {
-            issues.push(format!("symmetry: {why} (clear it with model.symmetry, clear true)"));
+            issues.push(Issue::Symmetry(why));
         }
         if let Some(why) = self.periodic_issue() {
-            issues.push(format!("periodic: {why} (clear it with model.periodic, clear true)"));
+            issues.push(Issue::Periodic(why));
         }
         if self.waveguide.is_none() && self.solid.is_none() {
-            issues.push("no geometry: create one with geometry.waveguide or geometry.solid".to_owned());
+            issues.push(Issue::NoGeometry);
         }
         if self.ports.is_empty() {
-            issues.push("no ports: create one with model.port.create".to_owned());
+            issues.push(Issue::NoPorts);
         }
         if self.mesh.is_none() {
-            issues.push("no mesh: mesh the geometry with mesh.generate".to_owned());
+            issues.push(Issue::NoMesh);
         }
         issues
     }
@@ -314,7 +338,8 @@ mod tests {
         assert!((m.waveguide.as_ref().unwrap().length() - 0.01).abs() < 1e-15);
         m.add_port(Port::new("1", End::Start)).unwrap();
         m.add_port(Port::new("2", End::End)).unwrap();
-        assert_eq!(m.check(), vec!["no mesh: mesh the geometry with mesh.generate".to_owned()]);
+        assert_eq!(m.check(), vec![Issue::NoMesh]);
+        assert_eq!(Issue::NoMesh.to_string(), "no mesh: mesh the geometry with mesh.generate");
         assert!(m.set_wall_conductivity(Some(-1.0)).is_err());
         m.set_wall_conductivity(Some(5.8e7)).unwrap();
     }
