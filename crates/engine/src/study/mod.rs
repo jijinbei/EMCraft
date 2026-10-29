@@ -31,12 +31,16 @@ use serde_json::{Map, Value, json};
 pub use self::optimize::optimize;
 pub use self::sweep::sweep;
 pub use self::variables::{delete, list, variable};
-pub use crate::view::study::chart;
+pub use crate::view::study::{Slice, chart};
 
 /// The most variables a session holds.
 pub const MAX_VARIABLES: usize = 200;
-/// The most points one sweep solves.
+/// The most values one variable of a sweep takes.
 pub const MAX_POINTS: usize = 101;
+/// The most variables one sweep varies on a grid.
+pub const MAX_SWEPT: usize = 4;
+/// The most points (solves) one sweep's grid holds.
+pub const MAX_GRID_POINTS: usize = 400;
 /// The most solves one optimization runs.
 pub const MAX_EVALUATIONS: usize = 500;
 /// The most variables one optimization varies.
@@ -73,11 +77,12 @@ impl Row {
         self.s.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.iter().map(|c| db(*c)).collect())
     }
 
-    fn to_json(&self, kind: Kind) -> Value {
+    /// The row in a reply: a one-variable sweep's `value`, else every variable's in `values`.
+    fn to_json(&self, kind: Kind, swept: usize) -> Value {
         let mut row = Map::new();
         match kind {
-            Kind::Sweep => row.insert("value".into(), json!(self.values.first())),
-            Kind::Optimize => row.insert("values".into(), json!(self.values)),
+            Kind::Sweep if swept == 1 => row.insert("value".into(), json!(self.values.first())),
+            Kind::Sweep | Kind::Optimize => row.insert("values".into(), json!(self.values)),
         };
         if let Some(o) = self.objective {
             row.insert("objective".into(), json!(o));
@@ -119,6 +124,9 @@ pub struct Study {
     pub kind: Kind,
     /// The variables varied, in the rows' order of values.
     pub variables: Vec<String>,
+    /// A sweep's values of each variable (the grid's axes, in `variables`' order; the rows run
+    /// over their Cartesian product, the last variable fastest); empty for an optimization.
+    pub grid: Vec<Vec<f64>>,
     /// The solve command run at each point.
     pub solve: String,
     pub frequency_unit: String,
@@ -132,6 +140,27 @@ pub struct Study {
 }
 
 impl Study {
+    /// Whether the study is a sweep over a grid of several variables.
+    pub fn is_grid(&self) -> bool {
+        self.kind == Kind::Sweep && self.variables.len() > 1
+    }
+
+    /// The rows of a grid sweep along variable `free`, every other variable at its value
+    /// `at[k]` (an index into its axis; the first where missing), in the free variable's order.
+    pub fn slice(&self, free: usize, at: &[usize]) -> Vec<&Row> {
+        let held: Vec<Option<f64>> =
+            (0..self.variables.len())
+                .map(|k| {
+                    if k == free {
+                        None
+                    } else {
+                        self.grid.get(k).and_then(|axis| axis.get(at.get(k).copied().unwrap_or(0)).or(axis.first())).copied()
+                    }
+                })
+                .collect();
+        self.rows.iter().filter(|r| held.iter().zip(&r.values).all(|(h, v)| h.is_none_or(|h| h.to_bits() == v.to_bits()))).collect()
+    }
+
     /// The S-parameters' names the rows hold.
     pub fn parameters(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
@@ -144,10 +173,14 @@ impl Study {
     }
 
     pub fn to_json(&self) -> Value {
-        let rows: Vec<Value> = self.rows.iter().map(|r| r.to_json(self.kind)).collect();
+        let rows: Vec<Value> = self.rows.iter().map(|r| r.to_json(self.kind, self.variables.len())).collect();
         let mut reply = json!({"solve": self.solve, "frequency_unit": self.frequency_unit, "rows": rows});
         match self.kind {
-            Kind::Sweep => reply["variable"] = json!(self.variables.first()),
+            Kind::Sweep if self.variables.len() == 1 => reply["variable"] = json!(self.variables.first()),
+            Kind::Sweep => {
+                reply["variables"] = json!(self.variables);
+                reply["grid"] = Value::Object(self.variables.iter().cloned().zip(self.grid.iter().map(|v| json!(v))).collect());
+            }
             Kind::Optimize => {
                 reply["variables"] = json!(self.variables);
                 reply["goal"] = json!(self.goal);

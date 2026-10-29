@@ -742,9 +742,14 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "study.sweep",
         label: "Parameter sweep",
-        doc: "Sweeps a variable: for each value the model is rebuilt from the history with it (meshed when the history meshes), solved by `solve` (`{\"command\": \"solve.frequency\", \"params\": {…}}`, any solve command) and its results collected: S-parameters at the solve's frequencies, eigenmodes' frequencies, the solve's other numbers. The session's model is left as it was. A point that cannot be built or solved is reported in its row; cancelling stops at the next point.",
+        doc: "Sweeps a variable, or several on a grid: for each value (each point of the grid: every combination of the variables' values, the last varying fastest) the model is rebuilt from the history with it (meshed when the history meshes), solved by `solve` (`{\"command\": \"solve.frequency\", \"params\": {…}}`, any solve command) and its results collected: S-parameters at the solve's frequencies, eigenmodes' frequencies, the solve's other numbers. One variable's rows carry its `value`; a grid's rows carry `values` in the order of `variables`, and the reply the grid's values of each variable. The session's model is left as it was. A point that cannot be built or solved is reported in its row; cancelling stops at the next point.",
         params: &[
-            req("variable", K::String, "the variable swept"),
+            opt("variable", K::String, "the variable swept (or give `variables`)"),
+            opt(
+                "variables",
+                K::Array,
+                "several variables swept on a grid: [{\"name\", \"values\"} or {\"name\", \"start\", \"stop\", \"points\"}] (at most 4, at most 400 points in all)",
+            ),
             opt("values", K::Array, "its values (at most 101)"),
             opt("start", K::Number, "the first value (without `values`)"),
             opt("stop", K::Number, "the last value"),
@@ -772,10 +777,15 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "view.study",
         label: "Study chart",
-        doc: "Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve per value (against the value when it solved one frequency), or its eigenmodes against the value; an optimization's goal at each solve and the best so far.",
+        doc: "Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve per value (against the value when it solved one frequency), or its eigenmodes against the value; an optimization's goal at each solve and the best so far. A grid sweep is charted along one variable with the others held (`at`); solved at one frequency, one curve per value of the next variable.",
         params: &[
             PNG,
             opt("parameter", K::String, "the S-parameter of a sweep, such as s21 (default the first)"),
+            opt(
+                "at",
+                K::Object,
+                "a grid sweep's slice: the variables held and their values ({\"b\": 5}; the nearest swept value); the chart runs along the first variable not held (default: along the first, the others at their first values)",
+            ),
             WIDTH,
             HEIGHT,
         ],

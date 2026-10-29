@@ -28,6 +28,8 @@ impl EmcraftApp {
             }
             "study.sweep" | "study.optimize" => {
                 self.views.study.chart.clear();
+                // A new study: its grid charted along its first variable, the others at their first values.
+                self.views.study.slice = emcraft_engine::study::Slice::default();
                 self.view = View::Study;
             }
             "edit.undo" | "edit.redo" => self.views.port_modes = None,

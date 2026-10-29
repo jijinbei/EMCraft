@@ -160,6 +160,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
             "variables": s.variables, "rows": s.rows.len(), "converged": s.converged,
             "best": s.best.and_then(|b| s.rows.get(b)).map(|r| r.values.clone()),
             "chart": app.views.study.chart.key(), "parameter": app.views.study.parameter,
+            "grid": s.grid.iter().map(Vec::len).collect::<Vec<_>>(), "free": s.variables.get(app.views.study.slice.free), "at": app.views.study.slice.at,
         })),
         "port_modes": app.views.port_modes.is_some(),
         "compare": app.views.compare.as_ref().and_then(|c| c.get("worst")).cloned(),

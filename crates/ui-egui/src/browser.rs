@@ -262,6 +262,7 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     }
     if let Some(study) = &r.study {
         let text = match study.kind {
+            emcraft_engine::study::Kind::Sweep if study.is_grid() => format!("Sweep of {}: {} points", study.variables.join(", "), study.rows.len()),
             emcraft_engine::study::Kind::Sweep => format!("Sweep of {}: {} values", study.variables.join(", "), study.rows.len()),
             emcraft_engine::study::Kind::Optimize => format!("Optimization of {}: {} solves", study.variables.join(", "), study.rows.len()),
         };
