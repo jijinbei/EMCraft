@@ -76,7 +76,20 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - R. E. Collin, *Field Theory of Guided Waves*, 2nd ed., IEEE Press 1991, §6.1; R. F.
   Harrington, *Time-Harmonic Electromagnetic Fields*, McGraw-Hill 1961, §4-7 — the LSE and LSM
   modes of a slab-loaded rectangular guide, the reference for hybrid port modes
-  (`emcraft-theory::slab`).
+  (`emcraft-theory::slab`); the same equations, entire in β² and εr, solved with a complex εr
+  by following each lossless root as the loss grows (Newton's method), the reference for hybrid
+  lossy port modes (`slab_loaded_modes_lossy`; oracle `lossy-slab-guide`).
+- Hybrid lossy port modes (`emcraft-solver::portmode::lossy`): Lee–Sun–Cendes with complex εr
+  and μr per triangle, a complex symmetric pencil solved by complex shift-invert subspace
+  iteration; modes of distinct γ orthogonal in the unconjugated form ∫ μr⁻¹ e_m · g_n dS (L. B.
+  Felsen, N. Marcuvitz, *Radiation and Scattering of Waves*, Prentice-Hall 1973, §2.2; Marks &
+  Williams 1992, §2), degenerate clusters made so by Gram–Schmidt in that form; the port terms
+  with γ for jβ and the unconjugated D, S as Marks–Williams pseudo-waves
+  (`emcraft-solver::driven::terms`; oracles `lossy-stripline`, `lossy-slab-guide`,
+  `lossy-microstrip`).
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §3.8 — the dielectric attenuation
+  of a quasi-TEM line, α_d = k₀ εr (ε_eff − 1) tan δ / (2 √ε_eff (εr − 1)), the benchmark for a
+  microstrip on a lossy substrate with Hammerstad–Jensen's ε_eff (oracle `lossy-microstrip`).
 - E. Hammerstad, Ø. Jensen, *Accurate models for microstrip computer-aided design*, IEEE MTT-S
   International Microwave Symposium Digest, 1980, pp. 407–409 — microstrip's quasi-static
   effective permittivity and impedance, the benchmark for strips on a substrate
@@ -250,7 +263,10 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - G. H. Golub, C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins 2013, §8.5 — the
   cyclic Jacobi method for the reduced problem; §7.4–7.6 — Householder reduction to Hessenberg
   form, the Francis double-shift QR algorithm and inverse iteration, for the nonsymmetric
-  projected problems of the port modes (`emcraft-solver::dense`).
+  projected problems of the port modes (`emcraft-solver::dense`); in complex arithmetic the
+  single-shift QR with the Wilkinson shift, a trailing 2 × 2 block that will not deflate (a
+  degenerate pair coupled by rounding) solved directly, for lossy cavities and hybrid lossy port
+  modes (`emcraft-solver::zdense`).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §6.3 and §6.7 — cavity resonances,
   Q by perturbation, the TE101 Q (eq. 6.46).
 

@@ -37,7 +37,17 @@ result is frozen so it cannot drift.
    port modes alike, against S21 = e^{−γL}; a step from air into a filling lossy both ways
    against the cascade; the Poynting balance with ½ωμ₀∫μ″|H|²; de-embedding by the complex γ;
    the fast sweep; the Q of a magnetically lossy cavity, exact for the discrete problem (oracles
-   `lossy-line`, `magnetic-loss-line`, `lossy-step`, `cavity-magnetic-loss`).
+   `lossy-line`, `magnetic-loss-line`, `lossy-step`, `cavity-magnetic-loss`). Ports across
+   several materials, one of them lossy — hybrid lossy modes
+   (`crates/solver/tests/hybrid_lossy_ports.rs`, `crates/solver/src/portmode/lossy.rs`): the
+   complex mode solver against the real one for lossless materials, a degenerate lossy pair made
+   orthogonal, the lossy slab-loaded guide against Collin's LSE/LSM equations solved in complex
+   arithmetic (`emcraft-theory::slab`); a stripline of two lossy plies against the exact TEM
+   γ = jk₀√(εr(1 − j tan δ)) (to 1e-6) and S21 = e^{−γL}; the lossy slab-loaded guide's S21
+   against Collin's γ (α within 1 %); a shielded microstrip on FR-4 decaying by its port's own α,
+   matched, reciprocal and passive; a uniform lossy filling solved by either path alike;
+   terminal ports in lossy media refused (oracles `lossy-stripline`, `lossy-slab-guide`, and
+   `lossy-microstrip` against Pozar's α_d with Hammerstad–Jensen's ε_eff).
 5. **Eigenmode tests** (`crates/solver/tests/eigen.rs`): the four lowest resonances of a
    rectangular cavity (within 1e-4), a dielectric-filled cavity (frequencies scaled by 1/√εr,
    Q_d = 1/tan δ to 1e-6), the TE101 Q of copper walls (−1.2 % at 3 mm, converging: heavy).

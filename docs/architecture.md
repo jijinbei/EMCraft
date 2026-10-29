@@ -55,7 +55,11 @@ testkit is a dev-dependency only.
    polynomials) and cached for repeated shapes; K, M (with the complex permittivity
    εr(1 − j tan δ)) and, for walls of finite conductivity, the tangential wall mass matrix are
    assembled once; each frequency adds −k₀²M, the wall term (jωμ₀/Z_s)W and the port terms
-   (κ_m/μr) v_m v_mᵀ/‖e_m‖² of every port mode.
+   (κ_m/μr) v_m v_mᵀ/‖e_m‖² of every port mode. A numerically solved port's modes come from its
+   cross-section at each frequency (`emcraft-solver::portmode`): real for lossless materials,
+   the unit filling's with a complex γ for one lossy filling, hybrid lossy modes (complex εr and
+   μr per triangle, complex γ and fields, `portmode::lossy`) for several materials one of which
+   absorbs or disperses; their terms (γ_m/D_m) v_m v_mᵀ with complex v and the unconjugated D.
 4. **Factorization.** Nested dissection, postorder, fundamental then relaxed supernodes, then
    one dense front per supernode: pivots chosen in blocks of 32 columns, each block updating the
    rest of the front at once on threads (deterministic).
