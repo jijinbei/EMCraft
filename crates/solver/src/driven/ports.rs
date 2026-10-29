@@ -30,7 +30,7 @@ use emcraft_model::{
 };
 
 use super::assembly::{FaceRule, Space, port_rule_points};
-use super::{NONE, Result, SolveError, check_frequency, invalid, wavenumber};
+use super::{Result, SolveError, check_frequency, invalid, wavenumber};
 use num_complex::Complex64 as C;
 
 use crate::portmode::CrossSection;
@@ -261,12 +261,7 @@ pub(super) fn for_each_port_point(space: Space, faces: &[usize], mut visit: impl
             let kept = tangential_trace(&values);
             traced.clear();
             traced.extend(
-                unknowns
-                    .iter()
-                    .zip(&values)
-                    .zip(&kept)
-                    .filter(|((u, _), t)| **u != NONE && **t && (**u as usize) < n)
-                    .map(|((u, v), _)| (*u as usize, *v)),
+                unknowns.iter().zip(&values).zip(&kept).filter(|(_, t)| **t).filter_map(|((u, v), _)| u.get().filter(|&u| u < n).map(|u| (u, *v))),
             );
             visit(el.point(l), wa, &traced);
         }

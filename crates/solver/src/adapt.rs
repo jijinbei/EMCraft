@@ -58,7 +58,7 @@ use num_complex::Complex64 as C;
 use std::f64::consts::PI;
 
 use crate::Driven;
-use crate::driven::{FrequencyResult, Result, invalid};
+use crate::driven::{FrequencyResult, Result, Slot, invalid};
 use crate::radiation::OpenResult;
 
 /// Gauss points per direction of the element and face rules.
@@ -259,11 +259,7 @@ fn evaluate(driven: &Driven, data: &Data) -> Result<Vec<f64>> {
     // Interior faces: the tangential jump of μr⁻¹ ∇ × E and the normal jump of εr E.
     let topo = &driven.topo;
     for (f, pair) in topo.face_tets.iter().enumerate() {
-        let [t1, t2] = *pair;
-        if t1 == u32::MAX || t2 == u32::MAX {
-            continue;
-        }
-        let (t1, t2) = (t1 as usize, t2 as usize);
+        let (Some(t1), Some(t2)) = (Slot::from(pair[0]).get(), Slot::from(pair[1]).get()) else { continue };
         if skipped(t1) || skipped(t2) {
             continue;
         }

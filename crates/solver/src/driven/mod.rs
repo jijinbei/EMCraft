@@ -134,7 +134,38 @@ pub(crate) fn invalid(what: impl Into<String>, why: impl Into<String>) -> SolveE
     SolveError::Invalid { what: what.into(), why: why.into() }
 }
 
-pub(crate) const NONE: u32 = u32::MAX;
+/// An index kept in 32 bits, or none (`u32::MAX`, as the mesh's topology marks a missing
+/// tetrahedron): a degree of freedom's unknown, none where it is eliminated.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Slot(u32);
+
+impl Slot {
+    pub(crate) const NONE: Slot = Slot(u32::MAX);
+
+    /// Index `i`; none when it does not fit 32 bits (the limits on unknowns keep every index
+    /// far below).
+    pub(crate) fn new(i: usize) -> Slot {
+        u32::try_from(i).map_or(Slot::NONE, Slot)
+    }
+
+    /// The index, `None` for none.
+    pub(crate) fn get(self) -> Option<usize> {
+        (self != Slot::NONE).then_some(self.0 as usize)
+    }
+}
+
+/// A raw 32-bit index, `u32::MAX` for none.
+impl From<u32> for Slot {
+    fn from(i: u32) -> Slot {
+        Slot(i)
+    }
+}
+
+/// The (position, index) of each slot of `slots` that is not none, in order.
+pub(crate) fn present(slots: &[Slot]) -> impl Iterator<Item = (usize, usize)> + '_ {
+    slots.iter().enumerate().filter_map(|(i, s)| Some((i, s.get()?)))
+}
 
 /// The free-space wavenumber k₀ = 2πf/c (1/m) at `frequency` (Hz).
 pub(crate) fn wavenumber(frequency: f64) -> f64 {
@@ -417,7 +448,7 @@ impl Driven {
         self.space().element(t)
     }
 
-    pub(crate) fn dofs_of(&self, t: usize) -> impl Iterator<Item = u32> + '_ {
+    pub(crate) fn dofs_of(&self, t: usize) -> impl Iterator<Item = Slot> + '_ {
         self.dofs.of_tet(&self.topo, t)
     }
 

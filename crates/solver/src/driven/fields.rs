@@ -10,7 +10,7 @@ use emcraft_model::{CVec3, Image, Point3, Symmetry, Vec3};
 use num_complex::Complex64 as C;
 
 use super::assembly::rule_points;
-use super::{Driven, Field, NONE, Result};
+use super::{Driven, Field, Result};
 
 impl Driven {
     /// The field (E in V/m or H in A/m) at a point for the coefficients `x` at `frequency`.
@@ -45,8 +45,7 @@ impl Driven {
             Field::E => el.values(l),
             Field::H => el.curl_values(l),
         };
-        let field: CVec3 =
-            self.dofs_of(t).zip(&values).filter(|(u, _)| *u != NONE).map(|(u, v)| *v * x.get(u as usize).copied().unwrap_or_default()).sum();
+        let field: CVec3 = self.dofs_of(t).zip(&values).filter_map(|(u, v)| Some(*v * x.get(u.get()?).copied().unwrap_or_default())).sum();
         match which {
             Field::E => field,
             // H = −∇ × E / (jωμ).

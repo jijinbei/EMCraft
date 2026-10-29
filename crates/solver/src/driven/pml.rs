@@ -133,7 +133,7 @@ impl Driven {
             let lambda = [s[1] * s[2] / s[0], s[2] * s[0] / s[1], s[0] * s[1] / s[2]];
             let el = self.element_of(t)?;
             let (kc, mc) = (el.stiffness_components(), el.mass_components());
-            let unknowns: Vec<u32> = self.dofs_of(t).collect();
+            let unknowns: Vec<_> = self.dofs_of(t).collect();
             let n = unknowns.len();
             let (eps, mu) = (self.eps_at(t, k0 * C0 / (2.0 * PI)), self.mu_of(t));
             for Coupling { i, j, row, col } in couplings(&unknowns) {
@@ -185,7 +185,7 @@ impl Driven {
                     }
                 }
             }
-            let unknowns: Vec<u32> = self.dofs_of(t).collect();
+            let unknowns: Vec<_> = self.dofs_of(t).collect();
             for Coupling { i, j, row, col } in couplings(&unknowns) {
                 a.add(row, col, local[i.min(j) * n + i.max(j)]);
             }
@@ -196,7 +196,6 @@ impl Driven {
 
 #[cfg(test)]
 mod tests {
-    use super::super::NONE;
     use super::*;
     use emcraft_model::{Material, Open, OpenShape, Shape, Solid};
 
@@ -263,11 +262,11 @@ mod tests {
         for t in all {
             let el = d.element_of(t).unwrap();
             let (s, mm) = (el.stiffness(1.0), el.mass(1.0));
-            let u: Vec<u32> = d.dofs_of(t).collect();
+            let u: Vec<_> = d.dofs_of(t).collect();
             let n = u.len();
-            for i in (0..n).filter(|&i| u[i] != NONE) {
-                for j in (0..n).filter(|&j| u[j] != NONE) {
-                    q.add(u[i] as usize, u[j] as usize, C::new(s[i * n + j] - k0 * k0 * mm[i * n + j], 0.0));
+            for (i, ui) in super::super::present(&u) {
+                for (j, uj) in super::super::present(&u) {
+                    q.add(ui, uj, C::new(s[i * n + j] - k0 * k0 * mm[i * n + j], 0.0));
                 }
             }
         }

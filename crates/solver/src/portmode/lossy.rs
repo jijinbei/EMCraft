@@ -26,7 +26,7 @@ use emcraft_model::{CVec3, Point3, Vec3};
 use num_complex::Complex64 as C;
 
 use super::{CrossSection, MAX_ITERATIONS};
-use crate::driven::{NONE, Result, invalid};
+use crate::driven::{Result, Slot, invalid};
 use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
 
@@ -297,7 +297,7 @@ impl CrossSection {
     /// e_t and g = e_t + ∇φ at barycentric `l` of triangle `t` for complex coefficients `x`.
     fn at_lossy(&self, tri: &Triangle, t: usize, x: &[C], l: [f64; 3]) -> (CVec3, CVec3) {
         let (vt, vz) = self.unknowns_of(t);
-        let coef = |u: u32| if u == NONE { C::new(0.0, 0.0) } else { x.get(u as usize).copied().unwrap_or_default() };
+        let coef = |u: Slot| u.get().map_or(C::new(0.0, 0.0), |u| x.get(u).copied().unwrap_or_default());
         let times = |v: Vec3, c: C| CVec3::new(c * v.x, c * v.y, c * v.z);
         let e = tri.values(l).into_iter().zip(&vt).fold(CVec3::ZERO, |s, (v, u)| s + times(v, coef(*u)));
         let grad = tri.scalar_gradients(l).into_iter().zip(&vz).fold(CVec3::ZERO, |s, (g, u)| s + times(g, coef(*u)));

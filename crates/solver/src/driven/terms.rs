@@ -307,7 +307,7 @@ impl Driven {
                 let values = face.el.values(l);
                 let gs = (0..count).map(|m| field(m, t, x)).collect::<Result<Vec<_>>>()?;
                 for (u, val) in face.unknowns.iter().zip(&values) {
-                    let Some(&k) = index.get(&(*u as usize)) else { continue };
+                    let Some(&k) = u.get().and_then(|u| index.get(&u)) else { continue };
                     for (vm, g) in v.iter_mut().zip(&gs) {
                         vm[k] += wa * inv_mu * g.dot_real(*val);
                     }

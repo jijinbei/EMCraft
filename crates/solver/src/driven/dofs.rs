@@ -6,7 +6,7 @@ use emcraft_fem::nedelec::{LOCAL_EDGES, LOCAL_FACES};
 use emcraft_mesh::Topology;
 use emcraft_model::{Mesh, Point3};
 
-use super::{MAX_UNKNOWNS, NONE, Result, SolveError, invalid};
+use super::{MAX_UNKNOWNS, Result, Slot, SolveError, invalid};
 
 /// Degrees of freedom: per edge and per face, those on conducting walls eliminated.
 #[derive(Clone, Debug)]
@@ -14,8 +14,8 @@ pub struct Dofs {
     pub order: Order,
     pub edges: usize,
     pub faces: usize,
-    /// Global DOF → unknown, [`NONE`] when eliminated.
-    unknown: Vec<u32>,
+    /// Global DOF → unknown, none when eliminated.
+    unknown: Vec<Slot>,
     pub unknowns: usize,
     /// A point per unknown (edge midpoints, face centroids), for the ordering.
     pub points: Vec<Point3>,
@@ -51,14 +51,14 @@ impl Dofs {
         if free > MAX_UNKNOWNS {
             return Err(SolveError::TooLarge { unknowns: free, limit: MAX_UNKNOWNS });
         }
-        let mut unknown = vec![NONE; total];
+        let mut unknown = vec![Slot::NONE; total];
         let mut points = Vec::with_capacity(free);
         let node = |n: u32| mesh.nodes[n as usize];
         for (g, f) in fixed.iter().enumerate() {
             if *f {
                 continue;
             }
-            unknown[g] = points.len() as u32;
+            unknown[g] = Slot::new(points.len());
             let centre =
                 if g < ne * pe { Point3::centroid(topo.edges[g / pe].map(node)) } else { Point3::centroid(topo.faces[(g - ne * pe) / pf].map(node)) };
             points.push(centre.unwrap_or(Point3::ORIGIN));
@@ -68,7 +68,7 @@ impl Dofs {
 
     /// The unknown of global degree of freedom `slot`, `None` when it is eliminated.
     pub(crate) fn unknown_of(&self, slot: usize) -> Option<usize> {
-        self.unknown.get(slot).copied().filter(|u| *u != NONE).map(|u| u as usize)
+        self.unknown.get(slot).and_then(|u| u.get())
     }
 
     /// The global degrees of freedom (slots, eliminated or not) of a tetrahedron's local basis
@@ -81,8 +81,8 @@ impl Dofs {
             .chain(tf.into_iter().flat_map(move |f| (0..pf).map(move |j| edges * pe + f as usize * pf + j)))
     }
 
-    /// The unknowns of a tetrahedron's local basis functions ([`NONE`] for eliminated ones).
-    pub(crate) fn of_tet<'a>(&'a self, topo: &Topology, tet: usize) -> impl Iterator<Item = u32> + use<'a> {
-        self.slots_of_tet(topo, tet).map(|s| self.unknown.get(s).copied().unwrap_or(NONE))
+    /// The unknowns of a tetrahedron's local basis functions (none for eliminated ones).
+    pub(crate) fn of_tet<'a>(&'a self, topo: &Topology, tet: usize) -> impl Iterator<Item = Slot> + use<'a> {
+        self.slots_of_tet(topo, tet).map(|s| self.unknown.get(s).copied().unwrap_or(Slot::NONE))
     }
 }

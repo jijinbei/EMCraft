@@ -8,7 +8,7 @@ use emcraft_model::{LumpedPort, Point3, Vec3};
 use num_complex::Complex64 as C;
 
 use super::assembly::Space;
-use super::{NONE, Result, invalid};
+use super::{Result, invalid};
 
 /// A lumped port prepared for solving.
 #[derive(Clone, Debug)]
@@ -129,8 +129,8 @@ fn line_vector(space: &Space, a: Point3, b: Point3) -> Result<Vec<(usize, f64)>>
         for (xi, wi) in x.iter().zip(&w) {
             let t = t0 + xi * (t1 - t0);
             for (u, v) in unknowns.iter().zip(el.values(el.barycentric(a + d * t))) {
-                if *u != NONE {
-                    *out.entry(*u as usize).or_default() += wi * (t1 - t0) * len * v.dot(s);
+                if let Some(u) = u.get() {
+                    *out.entry(u).or_default() += wi * (t1 - t0) * len * v.dot(s);
                 }
             }
         }

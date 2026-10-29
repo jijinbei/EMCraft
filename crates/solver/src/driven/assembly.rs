@@ -9,7 +9,7 @@ use num_complex::Complex64 as C;
 
 use super::media::{Media, per_mu};
 use super::terms::PortTerm;
-use super::{Dofs, Driven, NONE, Result, invalid, wall_factor, wavenumber};
+use super::{Dofs, Driven, Result, Slot, invalid, present, wall_factor, wavenumber};
 use crate::sparse::Csr;
 
 /// Gauss points per direction for integrals of fields or of two basis functions over elements
@@ -36,7 +36,7 @@ pub(crate) struct Space<'a> {
 pub(super) struct FaceRule {
     pub tet: usize,
     pub el: Element,
-    pub unknowns: Vec<u32>,
+    pub(crate) unknowns: Vec<Slot>,
     pub points: Vec<([f64; 4], f64, Vec3)>,
 }
 
@@ -51,9 +51,8 @@ pub(super) struct Coupling {
 }
 
 /// Every pair of a tetrahedron's local functions that are both unknowns, row by row.
-pub(super) fn couplings(unknowns: &[u32]) -> impl Iterator<Item = Coupling> + '_ {
-    let free = || unknowns.iter().enumerate().filter(|(_, u)| **u != NONE).map(|(i, u)| (i, *u as usize));
-    free().flat_map(move |(i, row)| free().map(move |(j, col)| Coupling { i, j, row, col }))
+pub(super) fn couplings(unknowns: &[Slot]) -> impl Iterator<Item = Coupling> + '_ {
+    present(unknowns).flat_map(move |(i, row)| present(unknowns).map(move |(j, col)| Coupling { i, j, row, col }))
 }
 
 /// The matrices that do not depend on the frequency, on the pattern.
@@ -76,8 +75,8 @@ impl<'a> Space<'a> {
         element(self.mesh, self.topo, t, self.order())
     }
 
-    /// The unknowns of tetrahedron `t`'s local functions ([`NONE`] for eliminated ones).
-    pub fn unknowns(&self, t: usize) -> Vec<u32> {
+    /// The unknowns of tetrahedron `t`'s local functions (none for eliminated ones).
+    pub(crate) fn unknowns(&self, t: usize) -> Vec<Slot> {
         self.dofs.of_tet(self.topo, t).collect()
     }
 
@@ -93,8 +92,7 @@ impl<'a> Space<'a> {
     /// The matrices' pattern: the element couplings and the `extra` groups of unknowns (the
     /// lumped ports' dense blocks).
     pub(super) fn pattern(&self, extra: impl Iterator<Item = Vec<usize>>) -> Csr {
-        let mut groups: Vec<Vec<usize>> =
-            (0..self.mesh.tets.len()).map(|t| self.dofs.of_tet(self.topo, t).filter(|&u| u != NONE).map(|u| u as usize).collect()).collect();
+        let mut groups: Vec<Vec<usize>> = (0..self.mesh.tets.len()).map(|t| self.dofs.of_tet(self.topo, t).filter_map(Slot::get).collect()).collect();
         groups.extend(extra);
         Csr::from_groups(self.dofs.unknowns, groups.iter().map(|g| g.as_slice()))
     }

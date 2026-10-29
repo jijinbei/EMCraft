@@ -38,13 +38,13 @@ use emcraft_mesh::Topology;
 use emcraft_model::{Mesh, Periodic, Point3};
 use num_complex::Complex64 as C;
 
-use super::{Dofs, NONE, Result, invalid};
+use super::{Dofs, Result, Slot, invalid};
 use crate::sparse::Csr;
 
 /// Where a full unknown goes: its kept unknown, its orientation and the periods to its master.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Slot {
-    reduced: u32,
+struct Tied {
+    reduced: usize,
     sign: f64,
     shift: [i8; 3],
 }
@@ -53,7 +53,7 @@ struct Slot {
 #[derive(Clone, Debug)]
 pub struct Tie {
     /// Per full unknown, `None` when dropped.
-    map: Vec<Option<Slot>>,
+    map: Vec<Option<Tied>>,
     /// Kept unknowns.
     pub reduced: usize,
     /// A point per kept unknown, for the ordering.
@@ -62,10 +62,10 @@ pub struct Tie {
     pub periods: [f64; 3],
     /// The axes tied.
     pub axes: [bool; 3],
-    /// The kept pattern and, for each entry of the full pattern, its entry there (NONE when
+    /// The kept pattern and, for each entry of the full pattern, its entry there (none when
     /// dropped) with its phase's period difference and sign product.
     pattern: Csr,
-    entries: Vec<(u32, [i8; 3], f64)>,
+    entries: Vec<(Slot, [i8; 3], f64)>,
     /// Each node's master node and the periods to it.
     nodes: Vec<(u32, [i8; 3])>,
 }
@@ -101,7 +101,7 @@ fn phase(psi: [f64; 3], s: [i8; 3]) -> C {
 /// The nodes' partners across the tied faces: per axis, each node on the high face's partner
 /// on the low face.
 struct Partners {
-    partner: [Vec<u32>; 3],
+    partner: [Vec<Slot>; 3],
     on_high: [Vec<bool>; 3],
 }
 
@@ -111,7 +111,7 @@ impl Partners {
     fn new(mesh: &Mesh, axes: [bool; 3]) -> Result<(Partners, [f64; 3])> {
         let ext = extent(mesh);
         let mut periods = [0.0; 3];
-        let mut partner: [Vec<u32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+        let mut partner: [Vec<Slot>; 3] = [Vec::new(), Vec::new(), Vec::new()];
         let mut on_high: [Vec<bool>; 3] = [Vec::new(), Vec::new(), Vec::new()];
         for d in (0..3).filter(|&d| axes[d]) {
             let (lo, hi) = ext[d];
@@ -129,7 +129,7 @@ impl Partners {
             };
             let low: HashMap<[i64; 2], u32> =
                 mesh.nodes.iter().enumerate().filter(|(_, p)| (p[d] - lo).abs() <= tol).map(|(i, p)| (key(p), i as u32)).collect();
-            let mut part = vec![NONE; mesh.nodes.len()];
+            let mut part = vec![Slot::NONE; mesh.nodes.len()];
             let mut high = vec![false; mesh.nodes.len()];
             for (i, p) in mesh.nodes.iter().enumerate() {
                 if (p[d] - hi).abs() <= tol {
@@ -142,7 +142,7 @@ impl Partners {
                             ),
                         )
                     })?;
-                    part[i] = m;
+                    part[i] = Slot::from(m);
                     high[i] = true;
                 }
             }
@@ -161,13 +161,14 @@ impl Partners {
     }
 
     /// Node `n` moved back by the periods `s`.
-    fn translate(&self, mut n: u32, s: [i8; 3]) -> u32 {
+    fn translate(&self, n: u32, s: [i8; 3]) -> u32 {
+        let mut n = Slot::from(n);
         for d in 0..3 {
             if s[d] == 1 {
-                n = self.partner[d].get(n as usize).copied().unwrap_or(NONE);
+                n = n.get().and_then(|i| self.partner[d].get(i)).copied().unwrap_or(Slot::NONE);
             }
         }
-        n
+        n.0
     }
 }
 
@@ -235,7 +236,7 @@ fn masters(topo: &Topology, dofs: &Dofs, partners: &Partners) -> Result<Vec<Mast
 
 /// Each full unknown's slot among the kept ones (`None` when dropped), and a point per kept
 /// unknown (its master's).
-fn reduction(dofs: &Dofs, master: &[Master]) -> Result<(Vec<Option<Slot>>, Vec<Point3>)> {
+fn reduction(dofs: &Dofs, master: &[Master]) -> Result<(Vec<Option<Tied>>, Vec<Point3>)> {
     let total = master.len();
     // A master slot is dead when any slot tied to it is eliminated (a wall on either face).
     let mut dead = vec![false; total];
@@ -244,7 +245,7 @@ fn reduction(dofs: &Dofs, master: &[Master]) -> Result<(Vec<Option<Slot>>, Vec<P
             dead[m.slot] = true;
         }
     }
-    let mut reduced_of = vec![NONE; total];
+    let mut reduced_of = vec![Slot::NONE; total];
     let mut points = Vec::new();
     let mut map = vec![None; dofs.unknowns];
     for (g, &Master { slot: m, sign, shift }) in master.iter().enumerate() {
@@ -252,26 +253,31 @@ fn reduction(dofs: &Dofs, master: &[Master]) -> Result<(Vec<Option<Slot>>, Vec<P
         if dead[m] {
             continue;
         }
-        if reduced_of[m] == NONE {
-            let mu = dofs.unknown_of(m).ok_or_else(|| invalid("periodic boundaries", "a master unknown was eliminated"))?;
-            reduced_of[m] = points.len() as u32;
-            points.push(dofs.points.get(mu).copied().unwrap_or(Point3::ORIGIN));
-        }
-        map[u] = Some(Slot { reduced: reduced_of[m], sign, shift });
+        let reduced = match reduced_of[m].get() {
+            Some(r) => r,
+            None => {
+                let mu = dofs.unknown_of(m).ok_or_else(|| invalid("periodic boundaries", "a master unknown was eliminated"))?;
+                let r = points.len();
+                reduced_of[m] = Slot::new(r);
+                points.push(dofs.points.get(mu).copied().unwrap_or(Point3::ORIGIN));
+                r
+            }
+        };
+        map[u] = Some(Tied { reduced, sign, shift });
     }
     Ok((map, points))
 }
 
 /// The kept pattern — every pair of kept unknowns some full entry couples — and, for each entry
-/// of the full `pattern`, its entry there (NONE when dropped) with its phase's period difference
+/// of the full `pattern`, its entry there (none when dropped) with its phase's period difference
 /// and sign product.
-fn kept_pattern(pattern: &Csr, map: &[Option<Slot>], reduced: usize) -> Result<(Csr, Vec<(u32, [i8; 3], f64)>)> {
+fn kept_pattern(pattern: &Csr, map: &[Option<Tied>], reduced: usize) -> Result<(Csr, Vec<(Slot, [i8; 3], f64)>)> {
     let mut rows: Vec<Vec<usize>> = vec![Vec::new(); reduced];
     for i in 0..pattern.n {
         let Some(si) = map[i] else { continue };
         for &j in &pattern.col[pattern.ptr[i]..pattern.ptr[i + 1]] {
             if let Some(sj) = map[j] {
-                rows[si.reduced as usize].push(sj.reduced as usize);
+                rows[si.reduced].push(sj.reduced);
             }
         }
     }
@@ -291,12 +297,12 @@ fn kept_pattern(pattern: &Csr, map: &[Option<Slot>], reduced: usize) -> Result<(
             let j = pattern.col[k];
             let e = match (map[i], map[j]) {
                 (Some(si), Some(sj)) => {
-                    let (r, c) = (si.reduced as usize, sj.reduced as usize);
+                    let (r, c) = (si.reduced, sj.reduced);
                     let row = &kept.col[kept.ptr[r]..kept.ptr[r + 1]];
                     let at = row.binary_search(&c).map_err(|_| invalid("periodic boundaries", "an entry outside the kept pattern"))?;
-                    ((kept.ptr[r] + at) as u32, [0, 1, 2].map(|d| sj.shift[d] - si.shift[d]), si.sign * sj.sign)
+                    (Slot::new(kept.ptr[r] + at), [0, 1, 2].map(|d| sj.shift[d] - si.shift[d]), si.sign * sj.sign)
                 }
-                _ => (NONE, [0; 3], 0.0),
+                _ => (Slot::NONE, [0; 3], 0.0),
             };
             entries.push(e);
         }
@@ -330,7 +336,7 @@ impl Tie {
 
     /// The kept unknown of full unknown `u` when `u` is its own master (no periods to it).
     pub fn master_of(&self, u: usize) -> Option<usize> {
-        self.map.get(u).copied().flatten().filter(|s| s.shift == [0; 3] && s.sign > 0.0).map(|s| s.reduced as usize)
+        self.map.get(u).copied().flatten().filter(|s| s.shift == [0; 3] && s.sign > 0.0).map(|s| s.reduced)
     }
 
     /// The kept pattern (Tᴴ A T's).
@@ -351,15 +357,15 @@ impl Tie {
 
     /// The coefficient c of full unknown `u` (x_u = c x_r), `None` when dropped.
     pub fn coefficient(&self, u: usize, psi: [f64; 3]) -> Option<(usize, C)> {
-        self.map.get(u).copied().flatten().map(|s| (s.reduced as usize, phase(psi, s.shift) * s.sign))
+        self.map.get(u).copied().flatten().map(|s| (s.reduced, phase(psi, s.shift) * s.sign))
     }
 
     /// Tᴴ A T for a matrix `a` on the full pattern (values `val`).
     pub fn reduce(&self, val: &[C], psi: [f64; 3]) -> Csr {
         let mut out = self.pattern.clone();
         for (&(e, s, sign), v) in self.entries.iter().zip(val) {
-            if e != NONE {
-                out.val[e as usize] += phase(psi, s) * sign * *v;
+            if let Some(e) = e.get() {
+                out.val[e] += phase(psi, s) * sign * *v;
             }
         }
         out
