@@ -81,7 +81,7 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
         if sizes.by_wavelength() {
             reply["sizes"] = sizes.reply(s);
         }
-        s.model.mesh = Some(mesh.into());
+        s.model.set_mesh(mesh);
         return Ok(reply);
     }
     let size = sizes.grid_size(s)?;
@@ -90,6 +90,6 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
     if sizes.by_wavelength() {
         reply["size"] = json!(s.show_length(size));
     }
-    s.model.mesh = Some(mesh.into());
+    s.model.set_mesh(mesh);
     Ok(reply)
 }

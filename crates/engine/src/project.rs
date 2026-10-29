@@ -57,7 +57,7 @@ pub enum Effect {
 
 pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     let (start, stop) = (p.frequency("start").required()?, p.frequency("stop").required()?);
-    s.model.band = Some(Band::new(start, stop)?);
+    s.model.set_band(Some(Band::new(start, stop)?));
     Ok(json!({"start": s.show_frequency(start), "stop": s.show_frequency(stop), "unit": s.display.frequency.symbol()}))
 }
 

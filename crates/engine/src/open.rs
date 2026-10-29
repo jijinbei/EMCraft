@@ -92,7 +92,7 @@ fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
 }
 
 pub fn source_clear(s: &mut Session, _: &Params) -> Result<Value> {
-    s.model.sources.clear();
+    s.model.clear_sources();
     Ok(json!({"sources": 0}))
 }
 

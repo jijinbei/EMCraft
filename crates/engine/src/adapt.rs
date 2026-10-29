@@ -290,7 +290,7 @@ fn build_pass(s: &mut Session, p: &Params, refine: &Refine, opts: &Options, pass
         Err(emcraft_mesh::MeshError::TooLarge { .. }) if fitted => return Ok(None),
         Err(e) => return Err(e.into()),
     };
-    s.model.mesh = Some(mesh.into());
+    s.model.set_mesh(mesh);
     let built = if opts.open { Driven::open(&s.model, opts.order) } else { Driven::new(&s.model, opts.order) };
     match built {
         Ok(d) => Ok(Some(d)),
@@ -396,7 +396,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
         passes: rows,
         measured,
     };
-    s.model.mesh = Some(mesh.into());
+    s.model.set_mesh(mesh);
     serde_json::to_value(reply).map_err(EngineError::failed)
 }
 

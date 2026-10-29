@@ -105,17 +105,17 @@ pub fn body_material(s: &mut Session, p: &Params) -> Result<Value> {
         .iter()
         .find(|b| b.name == wanted)
         .ok_or_else(|| p.error("body", crate::text::unknown("names no body", "bodies: ", list.iter().map(|b| b.name.as_str()))))?;
+    let gone = || EngineError::failed(format!("body `{wanted}` is gone from the model"));
     let (shape, at, axis) = match b.at {
         BodyRef::Feature(i) => {
-            let f = s.model.features.remove(i);
+            let f = s.model.remove_feature(i).ok_or_else(gone)?;
             (f.shape, f.at, f.axis)
         }
         BodyRef::Inclusion(i) => {
-            let inc = s.model.inclusions.remove(i);
+            let inc = s.model.remove_inclusion(i).ok_or_else(gone)?;
             (inc.shape, inc.at, Axis::Z)
         }
     };
-    s.model.mesh = None;
     let kind = place(&mut s.model, shape, at, axis, material)?;
     Ok(json!({"body": wanted, "as": kind}))
 }

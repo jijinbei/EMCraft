@@ -1,6 +1,10 @@
 //! The model: everything a solve needs, changed only through setters that check what they are
 //! given. The port, open-boundary and symmetry setters live with their types ([`crate::port`],
 //! [`crate::open`], [`crate::symmetry`]).
+//!
+//! The fields are public to read: the mesher, the solvers, the renderers and the UI read them
+//! throughout. The engine changes the model only through the setters; tests and the solvers'
+//! own fixtures may build a model field by field.
 
 use std::sync::Arc;
 
@@ -188,6 +192,37 @@ impl Model {
 
     /// Combines a primitive with the solid (after the features already there). Its box must
     /// meet the solid's; the mesher checks the surfaces meet cleanly.
+    /// Takes feature `i` out of the model; the mesh is dropped (it no longer fits).
+    pub fn remove_feature(&mut self, i: usize) -> Option<Feature> {
+        (i < self.features.len()).then(|| {
+            self.mesh = None;
+            self.features.remove(i)
+        })
+    }
+
+    /// Takes inclusion `i` out of the model; the mesh is dropped (it no longer fits).
+    pub fn remove_inclusion(&mut self, i: usize) -> Option<Inclusion> {
+        (i < self.inclusions.len()).then(|| {
+            self.mesh = None;
+            self.inclusions.remove(i)
+        })
+    }
+
+    /// Sets the job's frequency band (already checked by [`Band::new`]).
+    pub fn set_band(&mut self, band: Option<Band>) {
+        self.band = band;
+    }
+
+    /// Removes every source (the mesh stays: it does not depend on them).
+    pub fn clear_sources(&mut self) {
+        self.sources.clear();
+    }
+
+    /// Sets the mesh made of this model (`emcraft-mesh`).
+    pub fn set_mesh(&mut self, mesh: Mesh) {
+        self.mesh = Some(Arc::new(mesh));
+    }
+
     pub fn add_feature(&mut self, f: Feature) -> Result<()> {
         let solid = self.solid.as_ref().ok_or_else(|| invalid("feature", "needs a solid (geometry.solid) to combine with"))?;
         f.shape.check()?;
