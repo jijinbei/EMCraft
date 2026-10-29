@@ -24,6 +24,7 @@ use num_complex::Complex64 as C;
 
 use super::assembly::port_rule_points;
 use super::ports::{MixedMedia, NumericPort, PortMedium, PortModes, lossy_k2};
+use super::sparams::ModeTerm;
 use super::{Driven, Result, invalid, wavenumber};
 use crate::portmode::{CrossSection, LossyPortMode, PortMode};
 
@@ -150,12 +151,18 @@ pub struct PortTerm<'a> {
     pub current: Option<Vec<C>>,
 }
 
-impl PortTerm<'_> {
+impl ModeTerm for PortTerm<'_> {
     /// The mode's coefficient c = vᵀx/norm in the field coefficients `x`.
-    pub fn coefficient(&self, x: &[C]) -> C {
-        self.v.iter().map(|&(i, vi)| x[i] * vi).sum::<C>() / self.norm
+    fn coefficient(&self, x: &[C]) -> C {
+        self.v.iter().map(|&(i, vi)| x.get(i).copied().unwrap_or_default() * vi).sum::<C>() / self.norm
     }
 
+    fn proxy(&self) -> C {
+        self.proxy
+    }
+}
+
+impl PortTerm<'_> {
     /// The right-hand side of a unit incident wave of the mode: (unknown, rhs·vᵢ).
     pub(crate) fn excitation(&self) -> impl Iterator<Item = (usize, C)> + '_ {
         self.v.iter().map(|&(i, vi)| (i, self.rhs * vi))

@@ -99,6 +99,7 @@ pub use periodic::Tie;
 use pml::Layer;
 pub use pml::PML_REFLECTION;
 pub use ports::{MAX_PATTERN_SIDE, ModeInfo, ModePattern, NumericPort, PortData, PortModes, kept_by, port_mode_pattern, port_modes};
+pub use sparams::ModeTerm;
 pub use terminals::SPort;
 pub use terms::PortTerm;
 

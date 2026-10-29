@@ -22,7 +22,7 @@ use emcraft_model::{Model, Point3, Shape, Source, Vec3};
 use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
-use crate::driven::{Driven, Result, SolveError, invalid};
+use crate::driven::{Driven, ModeTerm, Result, SolveError, invalid};
 use crate::ldlt::Ldlt;
 
 /// The solution of an open problem at one frequency.

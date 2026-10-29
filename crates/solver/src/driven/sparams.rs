@@ -8,6 +8,15 @@ use super::terms::PortTerm;
 use super::{Driven, Result, invalid};
 use crate::smatrix::SMatrix;
 
+/// A mode's part of a port condition as S reads it: its coefficient in a field and its power
+/// proxy ([`PortTerm`], [`super::FloquetTerm`]).
+pub trait ModeTerm {
+    /// The mode's coefficient in the field coefficients `x`.
+    fn coefficient(&self, x: &[C]) -> C;
+    /// 2ωμ₀ times the power a unit wave of the mode carries ([`PortTerm::proxy`]).
+    fn proxy(&self) -> C;
+}
+
 /// S read from the solutions of each port's excitation (`fields[q]`): the first mode's
 /// coefficient at each port, less the incident wave, as power waves of the modes (scaled by
 /// the ports' power proxies).
@@ -23,9 +32,9 @@ use crate::smatrix::SMatrix;
 ///
 /// `excitations` lists (port, mode) per entry of S, each excited by a unit wave of its mode in
 /// `fields` (the first mode of each port, or each conductor's mode of a terminal port).
-pub(crate) fn read_s(terms: &[Vec<PortTerm<'_>>], excitations: &[(usize, usize)], fields: &[Vec<C>]) -> SMatrix {
+pub(crate) fn read_s<T: ModeTerm>(terms: &[Vec<T>], excitations: &[(usize, usize)], fields: &[Vec<C>]) -> SMatrix {
     let term = |e: usize| excitations.get(e).and_then(|&(p, m)| terms.get(p)?.get(m));
-    let proxy = |r: usize| term(r).map_or(C::new(1.0, 0.0), |t| t.proxy);
+    let proxy = |r: usize| term(r).map_or(C::new(1.0, 0.0), ModeTerm::proxy);
     let mut s = SMatrix::zeros(excitations.len());
     for (q, x) in fields.iter().enumerate() {
         for p in 0..excitations.len() {
