@@ -2,14 +2,13 @@
 
 use super::*;
 
-pub(super) fn setup(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens) {
+pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Solver");
     let inferred = Solver::infer(app.session.model());
-    let f = &mut app.workflow.fields;
     let mut solver = f.solver.unwrap_or(inferred);
     for s in Solver::ALL {
         let r = ui.radio_value(&mut solver, s, egui::RichText::new(s.label()).size(t.font_small));
-        scenario::publish_target(format_args!("setup:solver:{}", s.id()), r.rect);
+        scenario::publish_target(Handle::Solver(s), r.rect);
     }
     if solver != f.solver.unwrap_or(inferred) || f.solver.is_some() {
         f.solver = Some(solver);
@@ -24,52 +23,42 @@ pub(super) fn setup(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Token
         f.count = "5".into();
     }
     ui_kit::section(ui, "Settings");
-    let solves = solve_frequencies(app, solver);
-    band_diagram(app, ui, &solves, t);
+    let solves = solve_frequencies(app, f, solver);
+    f.diagram = band_diagram(app, ui, &solves, t);
     let e = |f: &Fields, k: &str| f.error(k).map(str::to_owned);
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
-            let f = &mut app.workflow.fields;
             let ep = e(f, "points");
-            field(ui, "points", &mut f.points, "", ep.as_deref(), "setup:points");
+            field(ui, "points", &mut f.points, "", ep.as_deref(), Fixed::SetupPoints);
         }
         Solver::Eigenmodes => {
-            let f = &mut app.workflow.fields;
             let ec = e(f, "count");
-            field(ui, "modes", &mut f.count, "", ec.as_deref(), "setup:count");
+            field(ui, "modes", &mut f.count, "", ec.as_deref(), Fixed::SetupCount);
             let ef = e(f, "frequency");
-            field(ui, "near", &mut f.frequency, fu, ef.as_deref(), "setup:frequency");
+            field(ui, "near", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
         Solver::Radiation => {
-            let f = &mut app.workflow.fields;
             let ef = e(f, "frequency");
-            field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), "setup:frequency");
+            field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
     }
     if solver != Solver::TimeDomain {
-        let f = &mut app.workflow.fields;
         let eo = e(f, "order");
-        field(ui, "order", &mut f.order, "", eo.as_deref(), "setup:order");
+        field(ui, "order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
     }
-    device(app, ui, solver, t);
+    device(app, ui, solver, t, out);
     ui_kit::caption(ui, "Run (step 7) starts this solve after checking the model.");
     // The fields' errors as typed.
-    let _ = run_params(app);
+    let _ = run_params(&app.session, f);
 }
 
 /// Where the solve runs: the devices `solve.devices` lists (those this machine cannot run
 /// disabled, with the reason on hover) and the time domain's precision, set through
 /// `solve.device` (the ribbon's SIMULATE › Device sets the same).
-fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
+fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Compute device");
-    let list = match &app.workflow.devices {
-        Some(v) => v.clone(),
-        None => {
-            let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
-            app.workflow.devices = Some(v.clone());
-            v
-        }
-    };
+    let none = json!({});
+    let list = app.workflow.devices.as_ref().unwrap_or(&none);
     let current = app.session.compute().device();
     let precision = app.session.compute().precision.name();
     let busy = app.busy();
@@ -88,7 +77,8 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
     let mut chosen: Option<(String, String)> = None;
     ui_kit::row(ui, "device", false, |ui| {
         for (name, available, precisions, problem) in &devices {
-            let r = ui.add_enabled(*available && !busy, egui::RadioButton::new(current == name, egui::RichText::new(name).size(t.font_small)));
+            let radio = egui::RadioButton::new(current == name, egui::RichText::new(name).size(t.font_small));
+            let r = ui.named_enabled(*available && !busy, radio, Handle::Device(name));
             let r = match (available, problem) {
                 (false, Some(p)) => r.on_disabled_hover_text(format!("{name} cannot run here: {p}")),
                 (false, None) => r.on_disabled_hover_text(format!("{name} cannot run here")),
@@ -98,7 +88,6 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
                     _ => "the GPU's kernels on the CPU (to check them without a GPU)",
                 }),
             };
-            scenario::publish_target(format_args!("setup:device:{name}"), r.rect);
             if r.clicked() && current != name {
                 // The precision set so far where the device runs it, else its first.
                 let p = if precisions.iter().any(|p| p == precision) { Some(precision.to_owned()) } else { precisions.first().cloned() };
@@ -115,9 +104,8 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
         for p in ["single", "double"] {
             let on = if current == "cpu" { p == "double" } else { precision == p };
             let enabled = current != "cpu" && runs.iter().any(|x| x == p) && !busy;
-            let r = ui.add_enabled(enabled, egui::RadioButton::new(on, egui::RichText::new(p).size(t.font_small)));
+            let r = ui.named_enabled(enabled, egui::RadioButton::new(on, egui::RichText::new(p).size(t.font_small)), Handle::Precision(p));
             let r = r.on_disabled_hover_text(if current == "cpu" { "the CPU's threads run in double" } else { "this device does not run it" });
-            scenario::publish_target(format_args!("setup:precision:{p}"), r.rect);
             if r.clicked() && !on {
                 chosen = Some((current.to_owned(), p.to_owned()));
             }
@@ -140,18 +128,15 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
         _ => "The next solve runs on the CPU's threads.".to_owned(),
     };
     ui_kit::small(ui, next, t.text);
-    if let Some((device, precision)) = chosen
-        && let Err(e) = app.run("solve.device", json!({"device": device, "precision": precision}))
-    {
-        app.failure = Some(crate::Failure { command: "solve.device".into(), error: e.to_string() });
+    if let Some((device, precision)) = chosen {
+        out.push(Action::SetDevice { device, precision });
     }
 }
 
 /// The frequencies (display units) the solve will work at, as the panel's fields stand: the
 /// sweep's points over the band, or the one frequency of an eigenmode or radiation solve.
-fn solve_frequencies(app: &EmcraftApp, solver: Solver) -> Vec<f64> {
-    let Some((a, z)) = band(app) else { return Vec::new() };
-    let f = &app.workflow.fields;
+fn solve_frequencies(app: &EmcraftApp, f: &Fields, solver: Solver) -> Vec<f64> {
+    let Some((a, z)) = band(&app.session) else { return Vec::new() };
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
             let Ok(n) = integer(&f.points, 1, app.session.limits().frequencies as u64) else { return Vec::new() };
@@ -173,14 +158,13 @@ const MAX_SOLVE_TICKS: usize = 400;
 /// The band as a small diagram: a frequency axis over the band (shaded), the cut-offs of the
 /// ports' modes and the guide's sections near it as dashed lines (a port's first mode in the
 /// warning colour: below it no power enters), and the frequencies the solve will work at as
-/// ticks.
-fn band_diagram(app: &mut EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tokens) {
+/// ticks. What it drew, for `ui.inspect`.
+fn band_diagram(app: &EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tokens) -> Option<Value> {
     let unit = app.session.display().frequency;
     let fu = unit.symbol();
-    let Some((a, z)) = band(app) else {
+    let Some((a, z)) = band(&app.session) else {
         ui_kit::small(ui, "band: not set (step 0)", t.error);
-        app.workflow.diagram = None;
-        return;
+        return None;
     };
     let span = (z - a).max(z.abs() * 1e-3).max(1e-12);
     let cuts: Vec<(f64, String, bool)> = emcraft_engine::workflow::cutoffs(&app.session)
@@ -193,7 +177,7 @@ fn band_diagram(app: &mut EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tok
     let pad = 0.04 * (hi - lo).max(span);
     let (lo, hi) = (lo - pad, hi + pad);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover());
-    scenario::publish_target("setup:band", rect);
+    scenario::publish_target(Fixed::SetupBand, rect);
     let p = ui.painter_at(rect);
     let (left, right) = (rect.left() + 4.0, rect.right() - 4.0);
     let x = |f: f64| left + (((f - lo) / (hi - lo)) as f32).clamp(0.0, 1.0) * (right - left);
@@ -239,5 +223,5 @@ fn band_diagram(app: &mut EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tok
         tip.push_str(&format!("\ncut-off {label}: {} {fu}", fmt((f * 1e4).round() / 1e4)));
     }
     resp.on_hover_text(tip);
-    app.workflow.diagram = Some(json!({"cutoffs": cuts.iter().map(|c| c.1.clone()).collect::<Vec<_>>(), "solves": n}));
+    Some(json!({"cutoffs": cuts.iter().map(|c| c.1.clone()).collect::<Vec<_>>(), "solves": n}))
 }

@@ -7,6 +7,8 @@ use emcraft_model::{Aabb, Point3};
 
 use crate::scene3d::{BOX_EDGES, box_corner, normal_axis};
 
+use super::field_params::FieldParams;
+
 use super::*;
 
 /// The side column's width.
@@ -18,76 +20,26 @@ fn heading(ui: &mut egui::Ui, text: &str) {
     ui.label(egui::RichText::new(text).size(t.font_small).color(t.text_dim).strong());
 }
 
-pub(super) fn side(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     heading(ui, "WHERE");
-    locator(app, ui);
+    locator(app, field, ui);
     ui.add_space(t.space_8);
-    if app.field.view.mode.is_none() && app.session.results().sweep.is_some() {
+    if field.view.mode.is_none() && app.session.results().sweep.is_some() {
         heading(ui, "FREQUENCY");
-        spark(app, ui);
+        spark(app, field, ui);
         ui.add_space(t.space_8);
     }
-    readout(app, ui);
+    readout(app, field, ui);
     ui.add_space(t.space_8);
     heading(ui, "SAVE");
     ui.horizontal(|ui| {
-        let r = ui.button("Picture…").on_hover_text("This picture as a PNG (view.field)");
-        scenario::publish_target("field:save:picture", r.rect);
-        if r.clicked() {
-            let _ = app.open_dialog_with("view.field", export_params(app, "field.png"));
-        }
-        let r = ui.button("Video…").on_hover_text("A period of this view as a looping animated PNG (view.animation)");
-        scenario::publish_target("field:save:video", r.rect);
-        if r.clicked() {
-            let mut p = export_params(app, "field-animation.png");
-            if let Some(o) = p.as_object_mut() {
-                o.remove("phase");
-                o.insert("frames".into(), json!(24));
-            }
-            let _ = app.open_dialog_with("view.animation", p);
-        }
+        let s = &app.session;
+        let picture = || Action::dialog_with("view.field", FieldParams::picture(field, s, "field.png").to_params());
+        ui.action_button(Fixed::FieldSavePicture.into(), "Picture…", "This picture as a PNG (view.field)", picture, out);
+        let video = || Action::dialog_with("view.animation", FieldParams::animation(field, s, "field-animation.png").to_params());
+        ui.action_button(Fixed::FieldSaveVideo.into(), "Video…", "A period of this view as a looping animated PNG (view.animation)", video, out);
     });
-}
-
-/// The view's settings as `view.field`'s parameters (display units), written to `path`.
-fn export_params(app: &EmcraftApp, path: &str) -> Value {
-    let v = &app.field.view;
-    let fu = app.session.display().frequency;
-    let mut arrows = Vec::new();
-    if v.show_e {
-        arrows.push("e");
-    }
-    if v.show_h {
-        arrows.push("h");
-    }
-    let mut p = json!({
-        "path": path,
-        "plane": v.plane.name(),
-        "component": v.component.name(),
-        "arrows": arrows,
-        "phase": (v.phase.to_degrees() * 10.0).round() / 10.0,
-    });
-    if let Some(o) = p.as_object_mut() {
-        match v.mode {
-            Some(m) => {
-                o.insert("mode".into(), json!(m + 1));
-            }
-            None => {
-                o.insert("frequency".into(), json!(fu.from_si(v.frequency)));
-            }
-        }
-        if let Some(at) = app.field.at {
-            o.insert("at".into(), json!((at * 1e4).round() / 1e4));
-        }
-        let entries = app.session.sparameter_entries();
-        if let Some(entry) = entries.get(v.excitation)
-            && entries.len() > 1
-        {
-            o.insert("excitation".into(), json!(entry.name));
-        }
-    }
-    p
 }
 
 /// What fills the model along the plane's normal through its middle: runs of (from, to) as
@@ -139,13 +91,13 @@ pub(super) fn bands(app: &EmcraftApp, plane: Plane) -> Vec<(f64, f64, Option<Col
 /// The model's box drawn obliquely (z to the right, y up, x receding), its sections along z,
 /// and the plane where it cuts, filled. A drag moves the plane along its normal; a click puts
 /// it there.
-fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let Some(Aabb { min: lo, max: hi }) = app.session.model().bounds() else { return };
-    let Some((span, axis_name)) = plane_span(app) else { return };
+    let Some((span, axis_name)) = plane_span_of(app, field.view.plane) else { return };
     let size = [hi.x - lo.x, hi.y - lo.y, hi.z - lo.z].map(|s| s.max(1e-12));
     let (rect, resp) = ui.allocate_exact_size(vec2(SIDE - 8.0, 120.0), Sense::click_and_drag());
-    scenario::publish_target("field:locator", rect);
+    scenario::publish_target(Fixed::FieldLocator, rect);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, t.radius_sm, t.panel);
     // Oblique projection: z → right, y → up, x → up-right at a third.
@@ -167,7 +119,7 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         painter.line_segment([to(corner(a)), to(corner(b))], edge);
     }
     // The sections (or materials) along z as faint frames at their boundaries.
-    if normal_axis(app.field.view.plane) == 2 {
+    if normal_axis(field.view.plane) == 2 {
         for (from, _, _) in bands(app, Plane::Cross).iter().skip(1) {
             let z = from * sz;
             let ring = [[0.0, 0.0, z], [sx, 0.0, z], [sx, sy, z], [0.0, sy, z]].map(to);
@@ -175,8 +127,8 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
     }
     // The plane.
-    let axis = normal_axis(app.field.view.plane);
-    let at = app.field.at.unwrap_or(span / 2.0).clamp(0.0, span);
+    let axis = normal_axis(field.view.plane);
+    let at = field.at.unwrap_or(span / 2.0).clamp(0.0, span);
     let frac = if span > 0.0 { at / span } else { 0.5 };
     let quad: Vec<Pos2> = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
         .iter()
@@ -217,8 +169,8 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         moved = Some(((pos - to(mid)).dot(along) / len2) as f64 * span);
     }
     if let Some(v) = moved {
-        app.field.at = Some(v.clamp(0.0, span));
-        app.field.pinned = None;
+        field.at = Some(v.clamp(0.0, span));
+        field.pinned = None;
     }
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -227,7 +179,7 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 
 /// |S11| and |S21| over the sweep, small, with the view's frequency marked; a click picks the
 /// nearest solved frequency.
-fn spark(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let Some(sw) = app.session.results().sweep.as_ref() else { return };
     let points: Vec<(f64, f64, f64)> = sw
@@ -240,7 +192,7 @@ fn spark(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         .collect();
     let (Some(f0), Some(f1)) = (points.first().map(|p| p.0), points.last().map(|p| p.0)) else { return };
     let (rect, resp) = ui.allocate_exact_size(vec2(SIDE - 8.0, 64.0), Sense::click());
-    scenario::publish_target("field:spark", rect);
+    scenario::publish_target(Fixed::FieldSpark, rect);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, t.radius_sm, t.panel);
     let plot = rect.shrink2(vec2(8.0, 8.0));
@@ -257,7 +209,7 @@ fn spark(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             painter.circle_filled(q, 1.8, colour);
         }
     }
-    let f = app.field.view.frequency;
+    let f = field.view.frequency;
     let x = fx(f);
     painter.line_segment([pos2(x, rect.top() + 2.0), pos2(x, rect.bottom() - 2.0)], Stroke::new(1.6, t.accent));
     let fu = app.session.display().frequency;
@@ -276,22 +228,22 @@ fn spark(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     {
         let target = f0 + ((pos.x - plot.left()) / plot.width()).clamp(0.0, 1.0) as f64 * (f1 - f0);
         if let Some(f) = crate::nearest(&app.frequencies(), target) {
-            app.field.view.frequency = f;
+            field.view.frequency = f;
         }
     }
     resp.on_hover_text("Click to show the nearest solved frequency");
 }
 
 /// The fields at the pointer and at the pinned point, one quantity a line.
-fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn readout(app: &EmcraftApp, field: &FieldState, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let Some(samples) = app.field.samples.as_ref() else { return };
+    let Some(samples) = field.samples.as_ref() else { return };
     let (xa, ya) = samples.axes();
     let name = |a: &emcraft_render::Axis| a.label.split(' ').next().unwrap_or("").to_owned();
     let (hx, vy) = (name(xa), name(ya));
     let lu = app.session.display().length.symbol();
-    let comp = app.field.view.component;
-    let phase = app.field.view.phase;
+    let comp = field.view.component;
+    let phase = field.view.phase;
     let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
     let fmt = emcraft_render::axes::format;
     let line = |ui: &mut egui::Ui, s: String, strong: bool| {
@@ -299,8 +251,8 @@ fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.label(if strong { r.strong() } else { r });
     };
     for (what, probe, hint) in [
-        ("POINTER", app.field.hover, "hover the picture to read the fields"),
-        ("PINNED", app.field.pinned.and_then(|q| samples.probe(q)), "click the picture to pin a point (right click lets it go)"),
+        ("POINTER", field.hover, "hover the picture to read the fields"),
+        ("PINNED", field.pinned.and_then(|q| samples.probe(q)), "click the picture to pin a point (right click lets it go)"),
     ] {
         heading(ui, what);
         match probe {

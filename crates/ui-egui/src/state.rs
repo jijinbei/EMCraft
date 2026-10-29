@@ -2,6 +2,7 @@
 //! the result views keep (their charts and tables, the settings they were drawn with).
 
 use emcraft_engine::view::{FieldView, Plane, PlaneSamples, Probe};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::picture::{Cached, PictureKey};
@@ -57,12 +58,33 @@ impl FieldState {
     }
 }
 
-/// The TDR view's settings (the port and the transform, defaults when `None`) and its chart.
+/// The TDR view's settings as `results.tdr`'s parameters (and `view.tdr`'s): the port and the
+/// transform, the engine's defaults when `None`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TdrParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<emcraft_engine::tdr::Mode>,
+}
+
+impl TdrParams {
+    /// The command's JSON parameters.
+    pub fn to_params(&self) -> Value {
+        serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}))
+    }
+
+    /// The settings a run of `results.tdr` asked for (the defaults where it could not say).
+    pub fn of(params: &Value) -> TdrParams {
+        serde_json::from_value(params.clone()).unwrap_or_default()
+    }
+}
+
+/// The TDR view's settings and its chart.
 #[derive(Default)]
 pub struct TdrState {
-    pub port: Option<String>,
-    pub mode: Option<emcraft_engine::tdr::Mode>,
-    pub chart: Cached<PictureKey<(Option<String>, Option<emcraft_engine::tdr::Mode>)>>,
+    pub params: TdrParams,
+    pub chart: Cached<PictureKey<TdrParams>>,
 }
 
 /// The study view's chart, the S-parameter it shows (a sweep's; the first when `None`) and, for
@@ -76,7 +98,7 @@ pub struct StudyState {
 
 /// Which chart the shared chart slot of [`ViewState`] holds.
 #[derive(Clone, Debug, PartialEq)]
-pub enum ChartView {
+pub enum SharedChart {
     SParameters,
     Dispersion,
     /// The far-field pattern at an azimuth (degrees).
@@ -93,11 +115,12 @@ pub struct ModePicture {
     pub frequency: f64,
 }
 
-/// The eigenmode table (`results.eigenmodes`' reply) and the session revision it was read at.
+/// The eigenmode table (`results.eigenmodes`' reply, or why it failed) and the session revision
+/// it was read at.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EigenTable {
     pub revision: u64,
-    pub reply: Value,
+    pub reply: Result<Value, String>,
 }
 
 /// A plane kept for the 3D view beside the field view's own: which, its position (display
@@ -113,16 +136,42 @@ pub struct KeptPlane {
 #[derive(Default)]
 pub struct ViewState {
     /// The chart of the S-parameter, far-field or dispersion view (one at a time).
-    pub chart: Cached<PictureKey<ChartView>>,
+    pub chart: Cached<PictureKey<SharedChart>>,
     /// The far-field pattern's azimuth (degrees).
     pub pattern_phi: f64,
     pub tdr: TdrState,
     pub study: StudyState,
-    /// The last port-mode solve's reply, and the picked mode's picture.
-    pub port_modes: Option<Value>,
+    /// The picked port mode's picture.
     pub mode_picture: Cached<PictureKey<ModePicture>>,
-    /// The last comparison with theory's reply.
-    pub compare: Option<Value>,
     /// The eigenmode table and the session revision it was read at.
     pub eigen_table: Option<EigenTable>,
+}
+
+/// The replies of the commands whose results the views show as they came: the last port-mode
+/// solve's, the last comparison with theory's.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Replies {
+    pub port_modes: Option<Value>,
+    pub compare: Option<Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use emcraft_engine::tdr::Mode;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn the_tdr_settings_are_results_tdr_s_parameters() {
+        let all = TdrParams { port: Some("2".into()), mode: Some(Mode::BandPass) };
+        assert_eq!(all.to_params(), json!({"port": "2", "mode": "bandpass"}));
+        assert_eq!(TdrParams::default().to_params(), json!({}));
+        for p in [all, TdrParams::default(), TdrParams { port: None, mode: Some(Mode::LowPass) }] {
+            assert_eq!(TdrParams::of(&p.to_params()), p);
+        }
+        // What the view does not hold is left out; what it cannot read leaves the defaults.
+        assert_eq!(TdrParams::of(&json!({"port": "1", "window": "hann"})).port.as_deref(), Some("1"));
+        assert_eq!(TdrParams::of(&json!({"mode": "sideways"})), TdrParams::default());
+    }
 }

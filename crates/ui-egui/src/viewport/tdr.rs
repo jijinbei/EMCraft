@@ -12,34 +12,34 @@ const MODES: [(Option<Mode>, &str, &str); 3] = [
     (Some(Mode::BandPass), "Band pass", "|h(t)|: a peak where each reflection comes from (guides with a cut-off)"),
 ];
 
-pub(super) fn tdr(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    controls(app, ui);
-    let tdr = &mut app.views.tdr;
-    let mut params = json!({});
-    if let Some(p) = &tdr.port {
-        params["port"] = json!(p);
+pub(super) struct Tdr;
+
+impl ChartView for Tdr {
+    type Key = crate::state::TdrParams;
+    const HANDLE: Fixed = Fixed::ChartTdr;
+    const HEIGHT: Height = Height::new(0.8, 260.0, 700.0);
+
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<Self::Key> {
+        controls(app, &mut st.views.tdr.params, ui);
+        Some(st.views.tdr.params.clone())
     }
-    if let Some(m) = tdr.mode {
-        params["mode"] = json!(m.name());
+
+    fn chart(app: &EmcraftApp, key: &Self::Key) -> Result<emcraft_render::chart::Chart, String> {
+        let s = &app.session;
+        emcraft_engine::results_tdr_chart(s, &emcraft_engine::Params::new(&key.to_params(), s.display())).map_err(|e| e.to_string())
     }
-    let session = &app.session;
-    let view = (tdr.port.clone(), tdr.mode);
-    let drawn = chart_view(ui, &mut tdr.chart, app.revision, view, Height::new(0.8, 260.0, 700.0), "chart:tdr", || {
-        emcraft_engine::results_tdr_chart(session, &emcraft_engine::Params::new(&params, session.display()))
-    });
-    if let Err(e) = drawn {
-        return empty(ui, &e);
+
+    fn below(_: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
+        crate::ui_kit::caption(
+            ui,
+            "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).",
+        );
     }
-    crate::ui_kit::caption(
-        ui,
-        "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).",
-    );
 }
 
 /// The port and the transform.
-fn controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrParams, ui: &mut egui::Ui) {
     let ports: Vec<String> = app.session.sparameter_entries().into_iter().map(|e| e.name).collect();
-    let tdr = &mut app.views.tdr;
     ui.horizontal(|ui| {
         ui.label("port");
         let shown = tdr.port.clone().or_else(|| ports.first().cloned()).unwrap_or_default();
@@ -50,11 +50,10 @@ fn controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 }
             }
         });
-        scenario::publish_target("tdr:port", r.response.rect);
+        scenario::publish_target(Fixed::TdrPort, r.response.rect);
         ui.separator();
         for (mode, label, tip) in MODES {
-            let r = ui.selectable_label(tdr.mode == mode, label).on_hover_text(tip);
-            scenario::publish_target(format_args!("tdr:mode:{}", mode.map_or("auto", Mode::name)), r.rect);
+            let r = ui.named(egui::Button::selectable(tdr.mode == mode, label), Handle::TdrMode(mode.map_or("auto", Mode::name))).on_hover_text(tip);
             if r.clicked() {
                 tdr.mode = mode;
             }

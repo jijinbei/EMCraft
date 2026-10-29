@@ -41,53 +41,81 @@ fn short(v: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
-pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
-    let Some(study) = app.session.results().study.as_ref() else { return };
-    let state = &mut app.views.study;
-    ui.label(egui::RichText::new(summary(study)).size(t.font_body).color(t.text));
-    // The S-parameter a sweep's chart shows.
-    let parameters = if study.kind == Kind::Sweep { study.parameters() } else { Vec::new() };
-    if let [first, _, ..] = parameters.as_slice() {
-        ui.horizontal(|ui| {
-            crate::ui_kit::small(ui, "Show", t.text_dim);
-            for p in &parameters {
-                let on = state.parameter.as_ref().unwrap_or(first) == p;
-                if pill(ui, &format!("|{}|", p.to_uppercase()), on, format_args!("study:parameter:{p}"), 10, PillSize::Small) && !on {
-                    state.parameter = Some(p.clone());
-                    state.chart.clear();
+pub(super) struct StudyView;
+
+/// The S-parameter a study's chart shows and its slice of a grid.
+type StudyKey = (Option<String>, Slice);
+
+impl ChartView for StudyView {
+    type Key = StudyKey;
+    const HANDLE: Fixed = Fixed::ChartStudy;
+    const HEIGHT: Height = Height::new(0.6, 240.0, 640.0);
+
+    /// The study in a line, the S-parameter a sweep shows, and a grid's slice.
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<StudyKey> {
+        let t = Tokens::get();
+        let study = app.session.results().study.as_ref()?;
+        let state = &mut st.views.study;
+        ui.label(egui::RichText::new(summary(study)).size(t.font_body).color(t.text));
+        let parameters = parameters(study);
+        if let [first, _, ..] = parameters.as_slice() {
+            ui.horizontal(|ui| {
+                crate::ui_kit::small(ui, "Show", t.text_dim);
+                for p in &parameters {
+                    let on = state.parameter.as_ref().unwrap_or(first) == p;
+                    if ui.named(pill(&format!("|{}|", p.to_uppercase()), on, 10, PillSize::Small), Handle::StudyParameter(p)).clicked() && !on {
+                        state.parameter = Some(p.clone());
+                    }
                 }
-            }
-        });
+            });
+        }
+        if study.is_grid() {
+            slice_picker(ui, study, &mut state.slice);
+        }
+        Some((state.parameter.clone().filter(|p| parameters.contains(p)), state.slice.clone()))
     }
-    if study.is_grid() {
-        slice_picker(ui, study, &mut state.slice, &mut state.chart);
+
+    fn chart(app: &EmcraftApp, (parameter, slice): &StudyKey) -> Result<emcraft_render::chart::Chart, String> {
+        let study = app.session.results().study.as_ref().ok_or("no study")?;
+        emcraft_engine::study::chart(study, parameter.as_deref(), slice).map_err(|e| e.to_string())
     }
-    let parameter = state.parameter.clone().filter(|p| parameters.contains(p));
-    let slice = state.slice.clone();
-    let view = (parameter.clone(), slice.clone());
-    let drawn = chart_view(ui, &mut state.chart, app.revision, view, Height::new(0.6, 240.0, 640.0), "chart:study", || {
-        emcraft_engine::study::chart(study, parameter.as_deref(), &slice)
-    });
-    if let Err(e) = drawn {
-        ui.label(egui::RichText::new(e).size(t.font_body).color(t.text_dim));
+
+    fn below(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
+        study_table(app, st, ui);
     }
-    table(ui, study, parameter.as_deref().or(parameters.first().map(String::as_str)));
+
+    /// Why, in a line over the table.
+    fn failed(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, error: &str) {
+        let t = Tokens::get();
+        ui.label(egui::RichText::new(error).size(t.font_body).color(t.text_dim));
+        study_table(app, st, ui);
+    }
+}
+
+/// The S-parameters a sweep's chart may show (none for an optimization).
+fn parameters(study: &Study) -> Vec<String> {
+    if study.kind == Kind::Sweep { study.parameters() } else { Vec::new() }
+}
+
+/// The table under the chart, of the S-parameter shown.
+fn study_table(app: &EmcraftApp, st: &Parts, ui: &mut egui::Ui) {
+    let Some(study) = app.session.results().study.as_ref() else { return };
+    let parameters = parameters(study);
+    let shown = st.views.study.parameter.as_deref().filter(|p| parameters.iter().any(|q| q == p));
+    table(ui, study, shown.or(parameters.first().map(String::as_str)));
 }
 
 /// A grid sweep's slice: the variable charted along, and the value each other variable is held
-/// at (a row of pills each); a change redraws the chart.
-fn slice_picker<K: PartialEq>(ui: &mut egui::Ui, study: &Study, slice: &mut Slice, chart: &mut Cached<K>) {
+/// at (a row of pills each).
+fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
     let t = Tokens::get();
     slice.at.resize(study.variables.len(), 0);
-    let mut changed = false;
     ui.horizontal_wrapped(|ui| {
         crate::ui_kit::small(ui, "Along", t.text_dim);
         for (k, n) in study.variables.iter().enumerate() {
             let on = slice.free == k;
-            if pill(ui, n, on, format_args!("study:along:{n}"), 10, PillSize::Small) && !on {
+            if ui.named(pill(n, on, 10, PillSize::Small), Handle::StudyAlong(n)).clicked() && !on {
                 slice.free = k;
-                changed = true;
             }
         }
     });
@@ -100,18 +128,14 @@ fn slice_picker<K: PartialEq>(ui: &mut egui::Ui, study: &Study, slice: &mut Slic
             crate::ui_kit::small(ui, format!("{n} at"), t.text_dim);
             for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
                 let on = slice.at.get(k) == Some(&i);
-                if pill(ui, &short(*v), on, format_args!("study:at:{n}:{i}"), 10, PillSize::Small)
+                if ui.named(pill(&short(*v), on, 10, PillSize::Small), Handle::StudyAt(n, i)).clicked()
                     && !on
                     && let Some(slot) = slice.at.get_mut(k)
                 {
                     *slot = i;
-                    changed = true;
                 }
             }
         });
-    }
-    if changed {
-        chart.clear();
     }
 }
 
@@ -165,7 +189,7 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
                     ui.label(r.modes.iter().take(6).map(|f| format!("{f:.4}")).collect::<Vec<_>>().join(", "));
                 }
                 match (&r.error, best) {
-                    (Some(e), _) => ui.label(egui::RichText::new(e.chars().take(120).collect::<String>()).size(t.font_small).color(t.error)),
+                    (Some(e), _) => ui.label(egui::RichText::new(emcraft_engine::text::clip(e, 120)).size(t.font_small).color(t.error)),
                     (None, true) => ui.label(egui::RichText::new("best").size(t.font_small).color(t.accent)),
                     (None, false) => ui.label(""),
                 };

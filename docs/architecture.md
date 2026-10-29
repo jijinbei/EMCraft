@@ -59,6 +59,10 @@ types changed) find what slipped through.
 | `emcraft_engine::text` | `clip` (hostile text cut short), `unknown` (the "unknown X (there are …)" message) |
 | `emcraft_engine::Step` | a script step `{command, params}` (the history, scripts, oracle recipes; `.emcraft` files hold them) |
 | `emcraft_ui_egui::commands::UI_COMMANDS` | each command's button label, glyph and whether it runs long |
+| `emcraft_ui_egui::Action`, `EmcraftApp::apply` | what a click, a key or a control request asks of the app (run, open a dialog, show a view, open a step, …): drawing pushes actions, `apply` performs them once the frame is drawn (the module docs of `lib.rs` tell what drawing may still edit in place) |
+| `emcraft_ui_egui::UiExt`, `Handle`, `Fixed` | a control that publishes its handle (`tab:MODEL`, `toolbar:<id>`, `field:save:video`, …), shows its hint and asks for an action; the handles' names are typed, the fixed ones listed once |
+| `emcraft_ui_egui` `named::named_enum!` | an enum named by text (views, tabs, glyphs, handles): `ALL`, `id`, `label`, `parse`, `Display`, its ids checked distinct when it compiles |
+| `emcraft_ui_egui` `viewport::ChartView`, `show_chart` | a result view around one chart: its key, controls, chart and what goes under it |
 
 ## The solver pipeline
 

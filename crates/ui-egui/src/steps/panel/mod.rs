@@ -11,15 +11,17 @@ mod run;
 mod setup;
 
 pub use intent::apply_band;
+pub use results::export_touchstone;
 
 use super::bar::mark;
 use super::*;
 
-/// The active step's panel at the right (with the open dialog docked in it).
-pub fn panel(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+/// The active step's panel at the right (with the open dialog docked in it): `fields` are its
+/// text fields, `dialog` the open dialog.
+pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs::Dialog>, ui: &mut egui::Ui, out: &mut Actions) {
     let Some(step) = app.workflow.step else { return };
     let t = Tokens::get();
-    let states = statuses(app);
+    let states = statuses_now(app);
     let Some(state) = states.get(step.index()).cloned() else { return };
     egui::Panel::right("emcraft_step_panel")
         .exact_size(t.form_card_width + 40.0)
@@ -30,22 +32,22 @@ pub fn panel(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             t.card(t.panel).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 22.0);
-                scenario::publish_rect("step_panel", ui.max_rect());
+                scenario::publish_rect(Fixed::StepPanel, ui.max_rect());
                 header(ui, &state, t);
-                let dialog_h = if app.dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
+                let dialog_h = if dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
                     .id_salt("step_panel_scroll")
                     .max_height((h - dialog_h - 70.0).max(120.0))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        checks(app, ui, &state, t);
-                        body(app, ui, step, &states, t);
+                        checks(ui, &state, t, out);
+                        body(app, fields, ui, step, &states, t, out);
                     });
-                if app.dialog.is_some() {
+                if let Some(d) = dialog {
                     ui.add_space(6.0);
                     t.card(t.dialog_body).show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        crate::dialog_ui::embedded(app, ui, dialog_h - 10.0);
+                        crate::dialog_ui::embedded(app, d, ui, dialog_h - 10.0, out);
                     });
                 }
             });
@@ -63,31 +65,24 @@ fn header(ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
 }
 
 /// The step's checks, each with its fix.
-fn checks(app: &mut EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
+fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
     if s.messages.is_empty() {
         ui_kit::small(ui, "Nothing to fix here.", t.success);
         ui.add_space(6.0);
         return;
     }
-    let mut chosen = None;
     for (i, m) in s.messages.iter().enumerate() {
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(&m.text).size(t.font_small).color(status_color(s.status, t)));
             // A fix that only leads back to this step is left out.
             let here = m.command.as_deref().is_some_and(|c| c.starts_with("solve.") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
-                let r = ui.small_button(fix_label(c)).on_hover_text(format!("{c}: {}", crate::label(c)));
-                scenario::publish_target(format_args!("step:fix:{i}"), r.rect);
-                if r.clicked() {
-                    chosen = Some(c.clone());
-                }
+                let hint = format!("{c}: {}", crate::label(c));
+                ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), &hint, || Action::Fix(c.clone()), out);
             }
         });
     }
     ui.add_space(6.0);
-    if let Some(c) = chosen {
-        fix(app, &c);
-    }
 }
 
 fn fix_label(command: &str) -> String {
@@ -99,7 +94,7 @@ fn fix_label(command: &str) -> String {
 }
 
 /// A one-line text field with its error under it; `true` when Enter was pressed in it.
-pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: &str) -> bool {
+pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: Fixed) -> bool {
     let t = Tokens::get();
     let mut enter = false;
     ui_kit::row(ui, label, false, |ui| {
@@ -107,8 +102,7 @@ pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &st
         if error.is_some() {
             edit = edit.background_color(t.form_error_fill).text_color(t.form_error);
         }
-        let r = ui.add(edit);
-        scenario::publish_target(handle, r.rect);
+        let r = ui.named(edit, handle.into());
         enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if !unit.is_empty() {
             ui_kit::small(ui, unit, t.text_dim);
@@ -136,28 +130,29 @@ pub(super) fn fmt(v: f64) -> String {
 }
 
 /// The step's own settings and information.
-fn body(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, states: &[StepState], t: &Tokens) {
+#[allow(clippy::too_many_arguments)]
+fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], t: &Tokens, out: &mut Actions) {
     let fu = app.session.display().frequency.symbol();
     let lu = app.session.display().length.symbol();
     // The band fields follow the session's band when it changes.
-    let b = band(app);
-    if app.workflow.fields.band_seen != b {
+    let b = band(&app.session);
+    if f.band_seen != b {
         if let Some((a, z)) = b {
-            app.workflow.fields.start = fmt(a);
-            app.workflow.fields.stop = fmt(z);
+            f.start = fmt(a);
+            f.stop = fmt(z);
         }
-        app.workflow.fields.band_seen = b;
+        f.band_seen = b;
     }
     match step {
-        Step::Intent => intent::intent(app, ui, fu, t),
+        Step::Intent => intent::intent(app, f, ui, fu, t, out),
         Step::Geometry => model::geometry(app, ui, lu, t),
         Step::Materials => model::materials(app, ui, t),
-        Step::Excitation => excitation::excitation(app, ui, fu, t),
+        Step::Excitation => excitation::excitation(app, ui, fu, t, out),
         Step::Boundaries => model::boundaries(app, ui, lu, t),
         Step::Mesh => model::mesh(app, ui, lu, t),
-        Step::Setup => setup::setup(app, ui, fu, t),
-        Step::Run => run::run_panel(app, ui, states, t),
-        Step::Results => results::results(app, ui, states, t),
+        Step::Setup => setup::setup(app, f, ui, fu, t, out),
+        Step::Run => run::run_panel(app, f, ui, states, t, out),
+        Step::Results => results::results(app, f, ui, states, t, out),
     }
 }
 

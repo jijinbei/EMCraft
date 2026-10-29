@@ -2,12 +2,11 @@
 
 use super::*;
 
-/// The solver and its parameters from the setup's fields; each bad field is marked.
-pub fn run_params(app: &mut EmcraftApp) -> Result<(Solver, Value), String> {
-    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
-    let band = band(app);
-    let limit = app.session.limits().frequencies as u64;
-    let f = &mut app.workflow.fields;
+/// The solver and its parameters from the setup's fields (`f`); each bad field is marked.
+pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver, Value), String> {
+    let solver = f.solver.unwrap_or_else(|| Solver::infer(s.model()));
+    let band = band(s);
+    let limit = s.limits().frequencies as u64;
     if f.points.is_empty() {
         f.points = "11".into();
     }
@@ -82,9 +81,9 @@ pub struct Preflight {
     pub warnings: Vec<(Step, String)>,
 }
 
-pub fn preflight(app: &mut EmcraftApp, states: &[StepState]) -> Preflight {
+pub fn preflight(s: &emcraft_engine::Session, f: &mut Fields, states: &[StepState]) -> Preflight {
     let mut out = Preflight::default();
-    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
+    let solver = f.solver.unwrap_or_else(|| Solver::infer(s.model()));
     for s in states.iter().filter(|s| s.step.index() <= Step::Setup.index()) {
         // A resonator needs no excitation.
         if s.step == Step::Excitation && solver == Solver::Eigenmodes && s.status == Status::Missing {
@@ -102,7 +101,7 @@ pub fn preflight(app: &mut EmcraftApp, states: &[StepState]) -> Preflight {
             list.push((s.step, m.text.clone()));
         }
     }
-    if let Err(e) = run_params(app) {
+    if let Err(e) = run_params(s, f) {
         out.blocking.push((Step::Setup, e));
     }
     out
@@ -110,8 +109,8 @@ pub fn preflight(app: &mut EmcraftApp, states: &[StepState]) -> Preflight {
 
 /// Run: refuses on blocking problems; warnings are accepted by pressing Run.
 pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
-    let states = statuses(app);
-    let pre = preflight(app, &states);
+    let states = statuses_now(app);
+    let pre = preflight(&app.session, &mut app.workflow.fields, &states);
     if !pre.blocking.is_empty() {
         let e = UiError::Refused(format!(
             "{} problem(s) block it — {}",
@@ -123,7 +122,7 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
         return Err(e);
     }
     app.workflow.fields.refused = None;
-    let (solver, params) = run_params(app).map_err(UiError::Input)?;
+    let (solver, params) = run_params(&app.session, &mut app.workflow.fields).map_err(UiError::Input)?;
     if !pre.warnings.is_empty() {
         app.info(format!("Running with {} accepted warning(s).", pre.warnings.len()));
     }

@@ -8,13 +8,16 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
 
+use crate::handle::{Fixed, Handle};
 use crate::picture::{Cached, PictureKey};
-use crate::state::ChartView;
+use crate::state::{FieldState, SharedChart, ViewState};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, Picture, View, scenario};
+use crate::view3d::View3d;
+use crate::{Action, Actions, EmcraftApp, Picture, UiExt, View, scenario};
 
 mod dispersion;
 mod far_field;
+pub mod field_params;
 mod field_side;
 mod fields;
 mod model;
@@ -35,9 +38,41 @@ use tdr::*;
 pub(crate) use fields::{field_plots, plane_span_of};
 pub use study::summary as study_summary;
 
-/// The central card.
-pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+/// The viewport's own state, lent out of the app while the viewport is drawn: the field view's
+/// settings and samples, the result views' charts and settings, the 3D view's camera and
+/// pictures.
+#[derive(Default)]
+pub struct Parts {
+    pub field: FieldState,
+    pub views: ViewState,
+    pub view3d: View3d,
+}
+
+impl Parts {
+    /// The parts taken out of `app`.
+    pub(crate) fn take(app: &mut EmcraftApp) -> Parts {
+        Parts { field: std::mem::take(&mut app.field), views: std::mem::take(&mut app.views), view3d: std::mem::take(&mut app.view3d) }
+    }
+
+    /// The parts put back into `app`.
+    pub(crate) fn put_back(self, app: &mut EmcraftApp) {
+        (app.field, app.views, app.view3d) = (self.field, self.views, self.view3d);
+    }
+}
+
+/// The eigenmode table (`results.eigenmodes`), read again when the session changed.
+pub(crate) fn prepare_eigenmodes(app: &mut EmcraftApp) {
+    if app.views.eigen_table.as_ref().is_some_and(|e| e.revision == app.revision) || app.session.results().eigen.is_none() {
+        return;
+    }
+    let reply = app.session.execute("results.eigenmodes", &json!({})).map_err(|e| e.to_string());
+    app.views.eigen_table = Some(crate::state::EigenTable { revision: app.revision, reply });
+}
+
+/// The central card; its rectangle.
+pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<Rect> {
     let t = Tokens::get();
+    let mut shown = None;
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(t.viewport_top).inner_margin(egui::Margin { left: 6, right: 6, top: 0, bottom: 6 }))
         .show(ui, |ui| {
@@ -52,39 +87,38 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             mesh.add_triangle(0, 2, 3);
             ui.painter().add(egui::Shape::mesh(mesh));
             ui.painter().rect_stroke(r, t.radius_lg, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-            app.viewport_rect = Some(r);
-            scenario::publish_rect("viewport", r);
+            shown = Some(r);
+            scenario::publish_rect(Fixed::Viewport, r);
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(10.0)));
-            view_tabs(app, &mut inner);
+            view_tabs(app, &mut inner, out);
             inner.add_space(4.0);
             if let Some(text) = app.view.missing(app) {
                 empty(&mut inner, text);
                 return;
             }
+            let ui = &mut inner;
             match app.view {
-                View::Model => model3d(app, &mut inner),
-                View::Outline => model(app, &mut inner),
-                View::SParameters => sparameters(app, &mut inner),
-                View::Tdr => tdr(app, &mut inner),
-                View::Field => field(app, &mut inner),
-                View::PortModes => port_modes(app, &mut inner),
-                View::FarField => far_field(app, &mut inner),
-                View::Compare => compare(app, &mut inner),
-                View::Eigenmodes => eigenmodes(app, &mut inner),
-                View::Study => study(app, &mut inner),
-                View::Dispersion => dispersion(app, &mut inner),
+                View::Model => model3d(app, st, ui, out),
+                View::Outline => model(app, ui),
+                View::SParameters => show_chart::<SParameters>(app, st, ui, out),
+                View::Tdr => show_chart::<Tdr>(app, st, ui, out),
+                View::Field => field(app, st, ui, out),
+                View::PortModes => port_modes(app, st, ui, out),
+                View::FarField => show_chart::<FarField>(app, st, ui, out),
+                View::Compare => compare(app, ui, out),
+                View::Eigenmodes => eigenmodes(app, st, ui, out),
+                View::Study => show_chart::<StudyView>(app, st, ui, out),
+                View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
             }
         });
+    shown
 }
 
 /// The views with something to show, as a row of pills.
-pub(super) fn view_tabs(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal(|ui| {
-        let shown: Vec<View> = View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)).collect();
-        for v in shown {
-            if pill(ui, v.label(), app.view == v, format_args!("view:{}", v.id()), 12, PillSize::Body) {
-                crate::ribbon::show_view(app, v);
-            }
+        for v in View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)) {
+            ui.act(true, pill(v.label(), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
         }
     });
 }
@@ -98,17 +132,15 @@ pub(super) enum PillSize {
     Small,
 }
 
-/// A pill of a row of options: filled when `on`, its text `size`; `true` when clicked.
-pub(super) fn pill(ui: &mut egui::Ui, label: &str, on: bool, handle: impl std::fmt::Display, radius: u8, size: PillSize) -> bool {
+/// A pill of a row of options: filled when `on`, its text `size`.
+pub(super) fn pill(label: &str, on: bool, radius: u8, size: PillSize) -> egui::Button<'static> {
     let t = Tokens::get();
     let font = match size {
         PillSize::Body => t.font_body,
         PillSize::Small => t.font_small,
     };
     let text = egui::RichText::new(label).size(font).color(if on { t.selected_ink } else { t.text });
-    let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius));
-    scenario::publish_target(handle, r.rect);
-    r.clicked()
+    egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius)
 }
 
 /// A chart's height: a share of the room left in the card, within `min..=max` pixels.
@@ -129,24 +161,79 @@ impl Height {
     }
 }
 
-/// A result view's chart in the rest of the card, as wide as the card allows: the one kept in
-/// `slot`, drawn again from `chart` when the session (`revision`), the width, the theme or the
-/// view's settings (`view`) changed. The picture's response and its size in pixels, or the
-/// error that kept it from being drawn.
-pub(super) fn chart_view<V: PartialEq, E: ToString>(
-    ui: &mut egui::Ui,
-    slot: &mut Cached<PictureKey<V>>,
-    revision: u64,
-    view: V,
-    height: Height,
-    handle: &str,
-    chart: impl FnOnce() -> Result<emcraft_render::chart::Chart, E>,
-) -> Result<(egui::Response, egui::Vec2), String> {
+/// A result view drawn around one chart (the S-parameters, TDR, dispersion, far-field and
+/// study views): its settings above the chart, which give what the chart shows (its key), the
+/// chart drawn from the session and that key, and what goes under it. [`show_chart`] draws
+/// any of them.
+pub(super) trait ChartView {
+    /// What the chart is drawn from besides the session: a change draws it again.
+    type Key: ChartKey;
+    /// The chart's name on screen.
+    const HANDLE: Fixed;
+    /// Its height in the card.
+    const HEIGHT: Height;
+
+    /// What goes over the chart (the view's settings, edited in `st`); what it shows, or `None`
+    /// when there is nothing to chart.
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<Self::Key>;
+
+    /// The chart of `key`.
+    fn chart(app: &EmcraftApp, key: &Self::Key) -> Result<emcraft_render::chart::Chart, String>;
+
+    /// What goes under the chart: `chart` is its response, `size` its size in pixels.
+    fn below(_app: &EmcraftApp, _st: &mut Parts, _ui: &mut egui::Ui, _chart: &egui::Response, _size: egui::Vec2, _out: &mut Actions) {}
+
+    /// What the card shows when the chart cannot be drawn: why, by default.
+    fn failed(_app: &EmcraftApp, _st: &mut Parts, ui: &mut egui::Ui, error: &str) {
+        empty(ui, error);
+    }
+}
+
+/// What a chart is drawn from, and where a chart drawn from it is kept between frames.
+pub(super) trait ChartKey: Clone + PartialEq {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>>;
+}
+
+/// The S-parameter, dispersion and far-field charts, one at a time.
+impl ChartKey for SharedChart {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<SharedChart>> {
+        &mut views.chart
+    }
+}
+
+impl ChartKey for crate::state::TdrParams {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>> {
+        &mut views.tdr.chart
+    }
+}
+
+impl ChartKey for (Option<String>, emcraft_engine::study::Slice) {
+    fn slot(views: &mut ViewState) -> &mut Cached<PictureKey<Self>> {
+        &mut views.study.chart
+    }
+}
+
+/// The height of a chart with a table under it.
+pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
+
+/// Draws a chart view: its controls, its chart in the rest of the card as wide as the card
+/// allows (the one kept, drawn again when the session, the width, the theme or the view's key
+/// changed), then what goes under it.
+pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
+    let Some(key) = V::controls(app, st, ui) else { return };
     let width = picture_width(ui);
-    let height = height.of(ui);
-    let p = slot.get_or_draw(PictureKey::new(revision, width, view), || chart().map(|c| emcraft_render::chart::draw(&c, width, height)))?;
-    let size = p.size();
-    Ok((picture(ui, p, handle), size))
+    let height = V::HEIGHT.of(ui);
+    let drawn = V::Key::slot(&mut st.views).get_or_draw(PictureKey::new(app.revision, width, key.clone()), || {
+        V::chart(app, &key).map(|c| emcraft_render::chart::draw(&c, width, height))
+    });
+    match drawn {
+        Ok(p) => {
+            let size = p.size();
+            let r = picture(ui, p, V::HANDLE);
+            V::below(app, st, ui, &r, size, out);
+        }
+        Err(e) => V::failed(app, st, ui, &e),
+    }
 }
 
 pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
@@ -156,29 +243,24 @@ pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
     });
 }
 
-/// The card's message while a view has nothing to show, with the button that makes it; `true`
-/// when the button was clicked.
-pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, button: &str, enabled: bool, handle: &str) -> bool {
+/// The card's message while a view has nothing to show, with the button (`label`, published
+/// as `handle`) that asks for `action`, the action that makes it.
+pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, label: &str, enabled: bool, handle: Fixed, action: Action, out: &mut Actions) {
     let t = Tokens::get();
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
         ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));
-        let r = ui.add_enabled(enabled, egui::Button::new(button));
-        scenario::publish_target(handle, r.rect);
-        r.clicked()
-    })
-    .inner
+        ui.act(enabled, egui::Button::new(label), handle.into(), "", || action, out);
+    });
 }
 
 /// A picture in the rest of the card, scaled down to fit; the image's response.
-pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: &str) -> egui::Response {
+pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: Fixed) -> egui::Response {
     let size = p.size();
     let avail = ui.available_size();
     let scale = (avail.x / size.x).min(avail.y / size.y).clamp(0.1, 1.0);
     let id = p.texture(ui.ctx());
-    let r = ui.add(egui::Image::new((id, size * scale)).sense(Sense::click()));
-    scenario::publish_target(handle, r.rect);
-    r
+    ui.named(egui::Image::new((id, size * scale)).sense(Sense::click()), handle.into())
 }
 
 /// A width for pictures, rounded so resizing does not redraw on every pixel.

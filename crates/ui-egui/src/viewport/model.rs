@@ -41,7 +41,7 @@ impl Frame2 {
 }
 
 /// The model in 3D, in the active step's overlay.
-pub(super) fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn model3d(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let mut overlay = app.workflow.step.map_or(crate::scene3d::Overlay::Plain, crate::steps::overlay);
@@ -49,10 +49,10 @@ pub(super) fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     if app.workflow.step == Some(crate::steps::Step::Results) && View::Field.available(app) {
         overlay = crate::scene3d::Overlay::Field;
     }
-    crate::view3d::show(app, ui, area, overlay);
+    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, area, overlay, out);
 }
 
-pub(super) fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn model(app: &EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let m = app.session.model();
     let Some(emcraft_model::Aabb { min: lo, max: hi }) = m.bounds() else {

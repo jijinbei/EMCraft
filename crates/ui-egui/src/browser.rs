@@ -6,9 +6,10 @@
 use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
 
 use crate::glyphs::{self, Glyph};
+use crate::handle::{Fixed, Handle};
 use crate::scene3d::Pick;
 use crate::theme::Tokens;
-use crate::{EmcraftApp, View, scenario};
+use crate::{Action, Actions, EmcraftApp, View, scenario};
 
 /// Folded sections and the selected row.
 #[derive(Clone, Debug, Default)]
@@ -33,15 +34,12 @@ impl Act {
         matches!(self, Act::Edit(_) | Act::EditWith(..))
     }
 
-    /// Opens the dialog the row edits with.
-    pub fn open(self, app: &mut EmcraftApp) {
-        let r = match self {
-            Act::Edit(id) => app.open_dialog(id),
-            Act::EditWith(id, values) => app.open_dialog_with(id, values),
-            _ => Ok(()),
-        };
-        if let Err(e) = r {
-            app.error(e);
+    /// What a double-click asks for: the dialog the row edits with.
+    pub fn edit(self) -> Option<Action> {
+        match self {
+            Act::Edit(id) => Some(Action::dialog(id)),
+            Act::EditWith(id, values) => Some(Action::dialog_with(id, values)),
+            _ => None,
         }
     }
 }
@@ -254,10 +252,10 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     if r.td_radiation.is_some() {
         rows.push(row("Time-domain radiation", Glyph::Radiation, Act::Show(View::FarField)));
     }
-    if app.views.port_modes.is_some() {
+    if app.replies.port_modes.is_some() {
         rows.push(row("Port modes", Glyph::PortModes, Act::Show(View::PortModes)));
     }
-    if app.views.compare.is_some() {
+    if app.replies.compare.is_some() {
         rows.push(row("Comparison with theory", Glyph::Compare, Act::Show(View::Compare)));
     }
     if let Some(study) = &r.study {
@@ -273,7 +271,7 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
 }
 
 /// The browser card.
-pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     egui::Panel::left("emcraft_browser")
         .default_size(280.0)
@@ -285,10 +283,9 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             t.card(t.panel).inner_margin(egui::Margin::symmetric(6, 6)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_height(ui.available_height());
-                scenario::publish_rect("browser", ui.max_rect());
+                scenario::publish_rect(Fixed::Browser, ui.max_rect());
                 ui.label(egui::RichText::new("BROWSER").size(t.font_small).color(t.text_dim));
                 let tree = tree(app);
-                let mut act = None;
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (section, rows) in &tree {
                         let folded = app.browser.folded.iter().any(|f| f == section);
@@ -312,13 +309,9 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                             FontId::proportional(t.font_small),
                             t.text_dim,
                         );
-                        scenario::publish_target(format_args!("fold:{section}"), r);
+                        scenario::publish_target(Handle::Fold(section), r);
                         if resp.clicked() {
-                            if folded {
-                                app.browser.folded.retain(|f| f != section);
-                            } else {
-                                app.browser.folded.push((*section).to_owned());
-                            }
+                            out.push(Action::Fold((*section).to_owned()));
                         }
                         if folded {
                             continue;
@@ -356,27 +349,20 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                                 FontId::proportional(t.font_body),
                                 ink,
                             );
-                            scenario::publish_target(format_args!("row:{text}"), rect);
+                            scenario::publish_target(Handle::Row(text), rect);
                             let resp = resp.on_hover_text(text);
                             if resp.clicked() {
-                                app.browser.selected = Some(key.clone());
-                                app.view3d.selected = r.pick;
-                                if let Act::Show(v) = &r.act {
-                                    act = Some(r.act.clone());
-                                    let _ = v;
+                                out.push(Action::Select { row: Some(key.clone()), pick: r.pick });
+                                if let Act::Show(v) = r.act {
+                                    out.push(Action::ShowView(v));
                                 }
                             }
-                            if resp.double_clicked() && r.act.edits() {
-                                act = Some(r.act.clone());
+                            if resp.double_clicked() && !app.busy() {
+                                out.extend(r.act.clone().edit());
                             }
                         }
                     }
                 });
-                match act {
-                    Some(Act::Show(v)) => crate::ribbon::show_view(app, v),
-                    Some(a) if a.edits() && !app.busy() => a.open(app),
-                    _ => {}
-                }
             });
         });
 }

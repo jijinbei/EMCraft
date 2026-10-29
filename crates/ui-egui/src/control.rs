@@ -8,7 +8,10 @@ use std::sync::mpsc::Sender;
 
 use serde_json::{Value, json};
 
-use crate::{EmcraftApp, View, scenario};
+use emcraft_engine::text::clip;
+
+use crate::action::Pref;
+use crate::{Action, EmcraftApp, View, scenario};
 
 /// A request from the control channel, with where its reply goes.
 pub struct ControlRequest {
@@ -98,7 +101,7 @@ fn button(p: &Value) -> egui::PointerButton {
 /// A point from `x`, `y`, or from `handle` (a published scenario handle).
 fn point(p: &Value, x: &str, y: &str) -> Result<egui::Pos2, String> {
     if let Some(h) = p.get("handle").and_then(Value::as_str) {
-        return scenario::handle_at(h).ok_or_else(|| format!("no handle `{}` on screen", h.chars().take(100).collect::<String>()));
+        return scenario::handle_at(h).ok_or_else(|| format!("no handle `{}` on screen", clip(h, 100)));
     }
     let f = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() <= 1e6);
     match (f(x), f(y)) {
@@ -162,8 +165,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
             "chart": app.views.study.chart.key().map(|k| format!("{k:?}")), "parameter": app.views.study.parameter,
             "grid": s.grid.iter().map(Vec::len).collect::<Vec<_>>(), "free": s.variables.get(app.views.study.slice.free), "at": app.views.study.slice.at,
         })),
-        "port_modes": app.views.port_modes.is_some(),
-        "compare": app.views.compare.as_ref().and_then(|c| c.get("worst")).cloned(),
+        "port_modes": app.replies.port_modes.is_some(),
+        "compare": app.replies.compare.as_ref().and_then(|c| c.get("worst")).cloned(),
         "frames": app.frames,
         "workflow": crate::steps::inspect(app),
         "view3d": app.view3d.inspect(),
@@ -179,7 +182,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// (`wait: false`: at once, with `{"started": id}`; follow it with `ui.inspect`).
 fn execute(app: &mut EmcraftApp, req: &ControlRequest, id: &str, params: Value, wait: bool) -> Outcome {
     let long = crate::commands::is_long(id);
-    match app.run(id, params) {
+    match app.apply(Action::run(id, params)) {
         Ok(v) if long && wait => after_job(app, req, v),
         other => wrap(other),
     }
@@ -216,11 +219,6 @@ impl<'a> Args<'a> {
 /// What a method gives: its outcome, or why it refused.
 type Handled = Result<Outcome, String>;
 
-/// At most `n` characters of hostile text, for an error.
-fn clip(text: &str, n: usize) -> String {
-    text.chars().take(n).collect()
-}
-
 /// A job to wait for, or the reply now: `r`'s value goes back when the job ends, if one runs.
 fn after_job(app: &mut EmcraftApp, req: &ControlRequest, value: Value) -> Outcome {
     match app.job.as_mut() {
@@ -243,7 +241,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
         "ui.set" => ui_set(app, a),
         "ui.start" => ui_start(app, a),
         "ui.dialog" => ui_dialog(app, a),
-        "ui.cancel" => Ok(ok(json!({"cancelled": app.cancel_job()}))),
+        "ui.cancel" => Ok(wrap(app.apply(Action::CancelJob))),
         "ui.messages" => Ok(ok(messages(app, a))),
         "ui.move" => pointer(app, a, None),
         "ui.click" => pointer(app, a, Some(a.bool("double") == Some(true))),
@@ -251,7 +249,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
         "ui.scroll" => scroll(app, a),
         "ui.key" => key(app, a),
         "ui.text" => {
-            let text: String = a.str("text").unwrap_or("").chars().take(crate::dialogs::MAX_FIELD).collect();
+            let text: String = clip(a.str("text").unwrap_or(""), crate::dialogs::MAX_FIELD);
             push(app, vec![egui::Event::Text(text)]).map(|()| ok(Value::Null))
         }
         "ui.handles" => {
@@ -311,47 +309,49 @@ fn commands() -> Value {
 }
 
 /// Sets what the window shows: tab, view, theme, docking, the field's plane position and
-/// animation, the workflow step, the 3D camera.
+/// animation, the workflow step, the 3D camera. Each is the action the window's own control
+/// asks for; all are read before any is performed.
 fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
     for k in ["tab", "view"] {
         if a.get(k).is_some_and(|v| !v.is_string()) {
             return Err(format!("`{k}` must be a string"));
         }
     }
+    let mut asked = Vec::new();
     if let Some(tab) = a.str("tab") {
-        app.tab = crate::ribbon::RibbonTab::parse(tab).ok_or_else(|| format!("unknown tab `{}`", clip(tab, 40)))?;
+        asked.push(Action::SetTab(crate::ribbon::RibbonTab::parse(tab).ok_or_else(|| format!("unknown tab `{}`", clip(tab, 40)))?));
     }
     if let Some(v) = a.str("view") {
-        app.view = View::parse(v).ok_or_else(|| format!("unknown view `{}`", clip(v, 40)))?;
+        asked.push(Action::SetView(View::parse(v).ok_or_else(|| format!("unknown view `{}`", clip(v, 40)))?));
     }
     if let Some(d) = a.bool("dark") {
-        app.dark = d;
+        asked.push(Action::Pref(Pref::Dark(d)));
     }
     if let Some(d) = a.bool("dock") {
-        app.dock_dialogs = d;
-        if let Some(dialog) = app.dialog.as_mut() {
-            dialog.docked = d;
-        }
-    }
-    if let Some(at) = a.num("field_at") {
-        app.field.at = Some(at);
+        asked.push(Action::SetDock(d));
     }
     if let Some(on) = a.bool("animate") {
-        app.field.player.playing = on;
+        asked.push(Action::SetPlaying(on));
     }
     // The workflow step (`none` closes the panel).
     match a.get("step") {
         None => {}
-        Some(Value::String(x)) if x == "none" => crate::steps::open_step(app, None),
+        Some(Value::String(x)) if x == "none" => asked.push(Action::OpenStep(None)),
         Some(Value::String(x)) => {
             let step = x.parse::<crate::steps::Step>().map_err(|_| format!("unknown step `{}`", clip(x, 40)))?;
-            crate::steps::open_step(app, Some(step));
+            asked.push(Action::OpenStep(Some(step)));
         }
         Some(_) => return Err("`step` must be a string".into()),
     }
     if let Some(v) = a.str("standard_view") {
         let view = emcraft_render::view3d::StandardView::parse(v).ok_or_else(|| format!("unknown standard view `{}`", clip(v, 40)))?;
-        app.view3d.standard(view);
+        asked.push(Action::StandardView(view));
+    }
+    for action in asked {
+        app.apply(action).map_err(|e| e.to_string())?;
+    }
+    if let Some(at) = a.num("field_at") {
+        app.field.at = Some(at);
     }
     if let Some(c) = a.get("camera") {
         let c = Args(c);
@@ -378,7 +378,7 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
 /// Opens a command's dialog with fields set, as a person would before pressing OK.
 fn ui_start(app: &mut EmcraftApp, a: Args) -> Handled {
     let id = a.str("command").ok_or("missing `command`")?;
-    app.open_dialog(id).map_err(|e| e.to_string())?;
+    app.apply(Action::dialog(id)).map_err(|e| e.to_string())?;
     if let (Some(d), Some(Value::Object(o))) = (app.dialog.as_mut(), a.get("params")) {
         for (k, v) in o {
             if let Err(e) = d.set(k, v) {
@@ -399,11 +399,10 @@ fn ui_dialog(app: &mut EmcraftApp, a: Args) -> Handled {
         }
     }
     if a.bool("cancel") == Some(true) {
-        app.dialog = None;
-        return Ok(ok(json!({"closed": true})));
+        return Ok(wrap(app.apply(Action::DialogCancel)));
     }
     if a.bool("ok") == Some(true) {
-        return Ok(wrap(app.dialog_ok()));
+        return Ok(wrap(app.apply(Action::DialogOk)));
     }
     Ok(ok(inspect(app)["dialog"].clone()))
 }

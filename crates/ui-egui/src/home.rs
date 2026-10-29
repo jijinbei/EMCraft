@@ -12,11 +12,13 @@ use emcraft_model::units::{Frequency, Length};
 use emcraft_render::view3d::{self, Camera, StandardView};
 use serde_json::Value;
 
-use crate::files::{self, Then};
+use crate::action::Pref;
+use crate::files::{FileAction, Then};
 use crate::glyphs::{self, Glyph};
+use crate::handle::{Fixed, Handle};
 use crate::scene3d::{self, Overlay};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, Picture, scenario};
+use crate::{Action, Actions, EmcraftApp, Picture, UiExt, scenario};
 
 /// A card's picture, in points.
 const THUMB: [f32; 2] = [240.0, 150.0];
@@ -25,8 +27,11 @@ const THUMB: [f32; 2] = [240.0, 150.0];
 pub struct Home {
     pub open: bool,
     /// Each sample's picture, drawn the first time the page shows it.
-    thumbs: HashMap<&'static str, Option<Picture>>,
+    pub(crate) thumbs: Thumbs,
 }
+
+/// The samples' pictures, by name (`None`: the sample could not be drawn).
+pub type Thumbs = HashMap<&'static str, Option<Picture>>;
 
 /// A sample's model without its mesh or solve, drawn from the corner.
 fn thumbnail(name: &str) -> Option<Picture> {
@@ -51,7 +56,7 @@ fn thumbnail(name: &str) -> Option<Picture> {
     Some(Picture::new(&view3d::render(&built.scene, &cam, &opt)))
 }
 
-pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::symmetric(36, 24))).show(ui, |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -61,11 +66,11 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             });
             ui.add_space(t.space_12);
             ui.horizontal(|ui| {
-                if big(ui, Glyph::New, "New project", true, "home:new") {
-                    files::request(app, Then::New);
+                if big(ui, Glyph::New, "New project", true, Fixed::HomeNew) {
+                    out.push(Action::File(FileAction::Request(Then::New)));
                 }
-                if big(ui, Glyph::OpenFile, "Open…", false, "home:open") {
-                    files::request(app, Then::Open);
+                if big(ui, Glyph::OpenFile, "Open…", false, Fixed::HomeOpen) {
+                    out.push(Action::File(FileAction::Request(Then::Open)));
                 }
             });
             ui.add_space(t.space_16);
@@ -74,15 +79,15 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let left = (ui.available_width() - right - 32.0).max(THUMB[0] + 16.0);
                 ui.vertical(|ui| {
                     ui.set_width(left);
-                    recent(app, ui);
+                    recent(app, ui, out);
                     ui.add_space(t.space_16);
-                    samples(app, ui);
+                    samples(thumbs, ui, out);
                 });
                 ui.add_space(32.0);
                 ui.vertical(|ui| {
                     ui.set_width(right);
                     heading(ui, "New projects");
-                    settings(app, ui);
+                    settings(app, ui, out);
                 });
             });
         });
@@ -96,7 +101,7 @@ fn heading(ui: &mut egui::Ui, text: &str) {
 }
 
 /// A large button: a glyph and a label; the primary one in the accent.
-fn big(ui: &mut egui::Ui, glyph: Glyph, label: &str, primary: bool, handle: &str) -> bool {
+fn big(ui: &mut egui::Ui, glyph: Glyph, label: &str, primary: bool, handle: Fixed) -> bool {
     let t = Tokens::get();
     let g = ui.painter().layout_no_wrap(label.to_owned(), FontId::proportional(t.font_heading), t.text);
     let (r, resp) = ui.allocate_exact_size(vec2((56.0 + g.size().x + 24.0).max(180.0), 60.0), Sense::click());
@@ -134,7 +139,7 @@ fn grid(ui: &mut egui::Ui, n: usize, mut each: impl FnMut(&mut egui::Ui, usize))
 }
 
 /// A card: a picture (or a glyph), a name and a line under it.
-fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, sub: &str, dim: bool, handle: &str) -> egui::Response {
+fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, sub: &str, dim: bool, handle: Handle) -> egui::Response {
     let t = Tokens::get();
     let (r, resp) = ui.allocate_exact_size(vec2(THUMB[0] + 16.0, THUMB[1] + 64.0), Sense::click());
     let p = ui.painter();
@@ -169,10 +174,10 @@ fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, 
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn recent(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     heading(ui, "Recent");
-    let list = app.prefs.recent.clone();
+    let list = &app.prefs.recent;
     if list.is_empty() {
         ui.label(egui::RichText::new("Projects you open or save appear here.").size(t.font_small).color(t.text_dim));
         return;
@@ -186,7 +191,7 @@ fn recent(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         let exists = p.exists();
         let folder = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
         let sub = if exists { folder } else { "missing".to_owned() };
-        let r = card(ui, None, Glyph::Waveguide, &name, &sub, !exists, &format!("home:recent:{i}"));
+        let r = card(ui, None, Glyph::Waveguide, &name, &sub, !exists, Handle::Recent(i));
         let r = r.on_hover_text(path.as_str());
         r.context_menu(|ui| {
             if ui.button("Remove from the list").clicked() {
@@ -198,94 +203,76 @@ fn recent(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
     });
     if let Some(i) = forget {
-        app.prefs.recent.remove(i);
+        out.push(Action::Pref(Pref::ForgetRecent(i)));
     }
     if let Some(path) = open {
-        files::request(app, Then::OpenPath(path));
+        out.push(Action::File(FileAction::Request(Then::OpenPath(path))));
     }
 }
 
-fn samples(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Samples");
     let list = emcraft_engine::sample::SAMPLES;
     let mut chosen = None;
     grid(ui, list.len(), |ui, i| {
         let s = &list[i];
-        let pic = app.home.thumbs.entry(s.name).or_insert_with(|| thumbnail(s.name));
-        if card(ui, pic.as_mut(), Glyph::Sample, s.name, s.label, false, &format!("sample:{}", s.name)).on_hover_text(s.label).clicked() {
+        let pic = thumbs.entry(s.name).or_insert_with(|| thumbnail(s.name));
+        if card(ui, pic.as_mut(), Glyph::Sample, s.name, s.label, false, Handle::Sample(s.name)).on_hover_text(s.label).clicked() {
             chosen = Some(s.name.to_owned());
         }
     });
     if let Some(name) = chosen {
-        files::request(app, Then::Sample(name));
+        out.push(Action::File(FileAction::Request(Then::Sample(name))));
     }
 }
 
+/// A setting's row of the settings grid: its name, then a selectable label per choice
+/// (`(value, label, id, hint)`, published as `settings:<group>:<id>`); a click asks for
+/// `action(value)`.
+#[allow(clippy::too_many_arguments)]
+fn setting<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    out: &mut Actions,
+    name: &str,
+    group: &'static str,
+    current: T,
+    choices: &[(T, &str, &str, &str)],
+    action: impl Fn(T) -> Action,
+) {
+    let t = Tokens::get();
+    ui.label(egui::RichText::new(name).color(t.text_dim));
+    ui.horizontal(|ui| {
+        for &(value, label, id, hint) in choices {
+            ui.act(true, egui::Button::selectable(current == value, label), Handle::Setting(group, id), hint, || action(value), out);
+        }
+    });
+    ui.end_row();
+}
+
 /// The settings new projects start with and the window's look, also under the app bar's gear.
-pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     egui::Grid::new("settings").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
-        ui.label(egui::RichText::new("Length").color(t.text_dim));
-        ui.horizontal(|ui| {
-            for (u, name) in [(Length::Millimetre, "mm"), (Length::Metre, "m")] {
-                let r = ui.selectable_label(app.prefs.length == u, name);
-                scenario::publish_target(format_args!("settings:length:{name}"), r.rect);
-                if r.clicked() {
-                    app.prefs.length = u;
-                }
-            }
+        setting(ui, out, "Length", "length", app.prefs.length, &[(Length::Millimetre, "mm", "mm", ""), (Length::Metre, "m", "m", "")], |u| {
+            Action::Pref(Pref::Length(u))
         });
-        ui.end_row();
-        ui.label(egui::RichText::new("Frequency").color(t.text_dim));
-        ui.horizontal(|ui| {
-            for (u, name) in [(Frequency::Gigahertz, "GHz"), (Frequency::Megahertz, "MHz"), (Frequency::Hertz, "Hz")] {
-                let r = ui.selectable_label(app.prefs.frequency == u, name);
-                scenario::publish_target(format_args!("settings:frequency:{name}"), r.rect);
-                if r.clicked() {
-                    app.prefs.frequency = u;
-                }
-            }
-        });
-        ui.end_row();
-        ui.label(egui::RichText::new("Theme").color(t.text_dim));
-        ui.horizontal(|ui| {
-            for (dark, name) in [(false, "Light"), (true, "Dark")] {
-                let r = ui.selectable_label(app.dark == dark, name);
-                scenario::publish_target(format_args!("settings:theme:{}", name.to_lowercase()), r.rect);
-                if r.clicked() {
-                    app.dark = dark;
-                }
-            }
-        });
-        ui.end_row();
-        ui.label(egui::RichText::new("3D drawing").color(t.text_dim));
-        ui.horizontal(|ui| {
-            for (gpu, name, tip) in [
-                (false, "Quality", "the CPU renderer: depth-buffered and smoothed at rest"),
-                (true, "Fast", "the GPU, every frame: for large meshes"),
-            ] {
-                let r = ui.selectable_label(app.prefs.gpu3d == gpu, name).on_hover_text(tip);
-                scenario::publish_target(format_args!("settings:3d:{}", name.to_lowercase()), r.rect);
-                if r.clicked() {
-                    app.prefs.gpu3d = gpu;
-                }
-            }
-        });
-        ui.end_row();
-        ui.label(egui::RichText::new("Dialogs").color(t.text_dim));
-        ui.horizontal(|ui| {
-            for (docked, name) in [(false, "Floating"), (true, "Docked")] {
-                let r = ui.selectable_label(app.dock_dialogs == docked, name);
-                scenario::publish_target(format_args!("settings:dialogs:{}", name.to_lowercase()), r.rect);
-                if r.clicked() {
-                    app.dock_dialogs = docked;
-                    if let Some(d) = app.dialog.as_mut() {
-                        d.docked = docked;
-                    }
-                }
-            }
-        });
-        ui.end_row();
+        let frequencies = [(Frequency::Gigahertz, "GHz", "GHz", ""), (Frequency::Megahertz, "MHz", "MHz", ""), (Frequency::Hertz, "Hz", "Hz", "")];
+        setting(ui, out, "Frequency", "frequency", app.prefs.frequency, &frequencies, |u| Action::Pref(Pref::Frequency(u)));
+        setting(ui, out, "Theme", "theme", app.dark, &[(false, "Light", "light", ""), (true, "Dark", "dark", "")], |d| Action::Pref(Pref::Dark(d)));
+        let drawing = [
+            (false, "Quality", "quality", "the CPU renderer: depth-buffered and smoothed at rest"),
+            (true, "Fast", "fast", "the GPU, every frame: for large meshes"),
+        ];
+        setting(ui, out, "3D drawing", "3d", app.prefs.gpu3d, &drawing, |gpu| Action::Pref(Pref::Gpu3d(gpu)));
+        setting(
+            ui,
+            out,
+            "Dialogs",
+            "dialogs",
+            app.dock_dialogs,
+            &[(false, "Floating", "floating", ""), (true, "Docked", "docked", "")],
+            Action::SetDock,
+        );
     });
     ui.add_space(t.space_4);
     ui.label(

@@ -11,9 +11,31 @@
 //! (the view it calls for, the state it resets) is in `after`. Agents and tests drive the same
 //! app through the control channel ([`control`]: `emcraft --control PORT`) and headless
 //! scenarios ([`scenario`]); [`raster`] draws a frame without a window.
+//!
+//! # A frame: read, ask, apply
+//!
+//! A frame has three phases ([`EmcraftApp::ui`]):
+//! 1. `prepare` brings the caches the drawing reads up to date (the steps' statuses, the solve's
+//!    estimate, the devices, the eigenmode table): they run engine queries, which need `&mut`.
+//! 2. Drawing reads the app through `&EmcraftApp` and asks for changes by pushing
+//!    [`Action`]s (run a command, open a dialog, show a view, open a step, select a row, undo, …)
+//!    into the frame's [`Actions`].
+//! 3. [`EmcraftApp::apply_all`] performs them, in order, through [`EmcraftApp::apply`] — the one
+//!    place the app changes on a person's request. The control channel and the keyboard
+//!    shortcuts call the same `apply` with the same actions.
+//!
+//! What egui edits in place is the exception, and it is local: a drawing function gets `&mut`
+//! to a small piece of widget state beside `&EmcraftApp` — the search field's text
+//! ([`ribbon::Search`]), the open dialog's fields ([`dialogs::Dialog`]), the step panels' fields
+//! ([`steps::Fields`]), the path fields of the file and export prompts, the start page's
+//! pictures, and the viewport's own state ([`viewport::Parts`]: the field view's settings and
+//! samples, the result views' charts and settings, the 3D view's camera and pictures). Such a
+//! piece is lent out of the app for the call ([`EmcraftApp::lend`]) and put back after it, so
+//! while a piece is lent the drawing reads it from its argument, never from the app.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod action;
 mod after;
 pub mod browser;
 pub mod commands;
@@ -22,8 +44,10 @@ pub mod dialog_ui;
 pub mod dialogs;
 pub mod files;
 pub mod glyphs;
+pub mod handle;
 pub mod home;
 mod messages;
+mod named;
 pub mod picture;
 pub mod prefs;
 pub mod raster;
@@ -35,6 +59,7 @@ pub mod state;
 mod status;
 pub mod steps;
 pub mod theme;
+pub mod ui_ext;
 pub mod ui_kit;
 pub mod view;
 pub mod view3d;
@@ -48,10 +73,13 @@ use std::sync::mpsc::Receiver;
 use emcraft_engine::{EngineError, Session};
 use serde_json::{Value, json};
 
+pub use action::{Action, Actions};
 pub use control::ControlRequest;
+pub use handle::{Fixed, Handle};
 pub use messages::Message;
 pub use picture::Picture;
 pub use state::FieldState;
+pub use ui_ext::UiExt;
 pub use view::View;
 
 pub struct EmcraftApp {
@@ -65,8 +93,10 @@ pub struct EmcraftApp {
     pub dock_dialogs: bool,
     pub view: View,
     pub field: FieldState,
-    /// What the result views keep: their charts, tables and settings.
+    /// What the result views keep: their charts and settings.
     pub views: state::ViewState,
+    /// The replies the result views show: the port modes, the comparison with theory.
+    pub replies: state::Replies,
     pub messages: Vec<Message>,
     pub search: ribbon::Search,
     pub browser: browser::Browser,
@@ -157,6 +187,7 @@ impl EmcraftApp {
             view: View::Model,
             field: FieldState::default(),
             views: state::ViewState::default(),
+            replies: state::Replies::default(),
             messages: vec![Message { text: "Open a sample or a project (File) or build a model from the ribbon.".into(), error: false, count: 1 }],
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),
@@ -395,6 +426,7 @@ impl EmcraftApp {
         theme::set_dark(self.dark);
         theme::apply(ctx);
         self.poll_job();
+        files::poll(self);
         control::serve(self, ctx);
         // The phase plays while a field is on screen: the field view, or the 3D view in Results.
         let time = ctx.input(|i| i.time);
@@ -448,47 +480,74 @@ impl EmcraftApp {
         }
     }
 
-    /// Lays out the whole window.
+    /// Lays out the whole window: the caches brought up to date, the frame drawn, then what it
+    /// asked for performed.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         scenario::clear_handles();
+        self.prepare();
         let ctx = ui.ctx().clone();
-        ribbon::app_bar(self, ui);
+        let mut out = Actions::default();
+        ribbon::app_bar(self, ui, &mut out);
         if self.home.open {
-            home::show(self, ui);
+            self.lend(|a| &mut a.home.thumbs, |app, thumbs| home::show(app, thumbs, ui, &mut out));
         } else {
-            self.workspace(ui, &ctx);
+            self.workspace(ui, &ctx, &mut out);
         }
-        files::show(self, &ctx);
-        shortcuts(self, &ctx);
+        self.lend(|a| &mut a.files.prompt, |app, prompt| files::show(app, prompt, &ctx, &mut out));
+        shortcuts(self, &ctx, &mut out);
+        self.apply_all(out);
         self.collect_screenshots(&ctx);
         self.keep_prefs();
     }
 
+    /// Brings the caches the drawing reads up to date: they come from engine queries, which
+    /// need the session mutable.
+    fn prepare(&mut self) {
+        steps::prepare(self);
+        if self.view == View::Eigenmodes {
+            viewport::prepare_eigenmodes(self);
+        }
+    }
+
+    /// Lends `self` to `draw` with a piece of its widget state (`piece`) taken out of it, and
+    /// puts the piece back after: the drawing reads the app and edits the piece.
+    pub fn lend<T: Default, R>(&mut self, piece: impl Fn(&mut Self) -> &mut T, draw: impl FnOnce(&Self, &mut T) -> R) -> R {
+        let mut lent = std::mem::take(piece(self));
+        let r = draw(self, &mut lent);
+        *piece(self) = lent;
+        r
+    }
+
     /// The window past the start page: the ribbon, the steps, the messages, the browser, the
     /// step's panel or the docked dialog, the viewport, and what floats over them.
-    fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ribbon::ribbon(self, ui);
-        steps::bar(self, ui);
-        messages::area(self, ui);
-        browser::show(self, ui);
+    fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, out: &mut Actions) {
+        self.lend(|a| &mut a.search, |app, search| ribbon::ribbon(app, search, ui, out));
+        steps::bar(self, ui, out);
+        messages::area(self, ui, out);
+        browser::show(self, ui, out);
         // With a step open, its panel holds the dialog.
         let in_step = self.workflow.step.is_some();
         if in_step {
-            steps::panel(self, ui);
+            let mut fields = std::mem::take(&mut self.workflow.fields);
+            self.lend(|a| &mut a.dialog, |app, dialog| steps::panel(app, &mut fields, dialog.as_mut(), ui, out));
+            self.workflow.fields = fields;
         } else if self.dialog.as_ref().is_some_and(|d| d.docked) {
-            dialog_ui::docked(self, ui);
+            self.lend(|a| &mut a.dialog, |app, dialog| dialog.as_mut().map(|d| dialog_ui::docked(app, d, ui, out)));
         }
-        viewport::show(self, ui);
+        let mut parts = viewport::Parts::take(self);
+        let rect = viewport::show(self, &mut parts, ui, out);
+        parts.put_back(self);
+        self.viewport_rect = rect;
         if !in_step && self.dialog.as_ref().is_some_and(|d| !d.docked) {
-            dialog_ui::floating(self, ctx);
+            self.lend(|a| &mut a.dialog, |app, dialog| dialog.as_mut().map(|d| dialog_ui::floating(app, d, ctx, out)));
         }
-        ribbon::search_popup(self, ctx);
-        ribbon::export_prompt(self, ctx);
+        ribbon::search_popup(&mut self.search, ctx, out);
+        self.lend(|a| &mut a.export, |app, export| ribbon::export_prompt(app, export, ctx, out));
     }
 }
 
-/// Undo, redo and save from the keyboard (when no field has it).
-fn shortcuts(app: &mut EmcraftApp, ctx: &egui::Context) {
+/// Undo, redo and the File menu's keys (when no field has the keyboard).
+fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
     if ctx.egui_wants_keyboard_input() || app.busy() {
         return;
     }
@@ -500,17 +559,17 @@ fn shortcuts(app: &mut EmcraftApp, ctx: &egui::Context) {
         )
     });
     if undo {
-        let _ = app.run("edit.undo", json!({}));
+        out.push(Action::Undo);
     } else if redo {
-        let _ = app.run("edit.redo", json!({}));
+        out.push(Action::Redo);
     } else if app.dialog.is_none() && app.files.prompt.is_none() && app.files.confirm.is_none() {
-        files::shortcuts(app, ctx);
+        files::shortcuts(ctx, out);
     }
 }
 
 /// The engine's command `id`, or the error naming it (cut short).
 fn find_command(id: &str) -> Result<&'static emcraft_engine::CommandSpec, UiError> {
-    emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()).into())
+    emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(emcraft_engine::text::clip(id, 100)).into())
 }
 
 /// A command's label for messages.

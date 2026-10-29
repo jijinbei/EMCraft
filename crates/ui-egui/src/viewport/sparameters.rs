@@ -2,29 +2,37 @@
 
 use super::*;
 
-pub(super) fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let freqs = app.frequencies();
-    let session = &app.session;
-    let height = Height::new(0.62, 260.0, 700.0);
-    let drawn =
-        chart_view(ui, &mut app.views.chart, app.revision, ChartView::SParameters, height, "chart:sparameters", || view::sparameter_chart(session));
-    let (r, size) = match drawn {
-        Ok(shown) => shown,
-        Err(e) => return empty(ui, &e),
-    };
-    frequency_marker(app, ui, &r, size, &freqs);
-    crate::ui_kit::caption(ui, "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.");
-    table(app, ui);
+pub(super) struct SParameters;
+
+impl ChartView for SParameters {
+    type Key = SharedChart;
+    const HANDLE: Fixed = Fixed::ChartSParameters;
+    const HEIGHT: Height = OVER_TABLE;
+
+    fn controls(_: &EmcraftApp, _: &mut Parts, _: &mut egui::Ui) -> Option<SharedChart> {
+        Some(SharedChart::SParameters)
+    }
+
+    fn chart(app: &EmcraftApp, _: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
+        view::sparameter_chart(&app.session).map_err(|e| e.to_string())
+    }
+
+    /// The field view's frequency on the chart, and the table of S.
+    fn below(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, chart: &egui::Response, size: egui::Vec2, out: &mut Actions) {
+        frequency_marker(&mut st.field, ui, chart, size, &app.frequencies(), out);
+        crate::ui_kit::caption(ui, "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.");
+        table(app, ui);
+    }
 }
 
 /// The field view's frequency, marked where the chart (`size` pixels) puts it; a click picks
 /// the nearest solved frequency for the field view and opens it.
-fn frequency_marker(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response, size: egui::Vec2, freqs: &[f64]) {
+fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, size: egui::Vec2, freqs: &[f64], out: &mut Actions) {
     let t = Tokens::get();
     let (Some(f0), Some(f1)) = (freqs.first().copied(), freqs.last().copied()) else { return };
     let layout = chart_layout(f64::from(size.x), f64::from(size.y), f0, f1);
-    let f = app.field.view.frequency;
-    if f1 > f0 && app.field.view.mode.is_none() && (f0..=f1).contains(&f) {
+    let f = field.view.frequency;
+    if f1 > f0 && field.view.mode.is_none() && (f0..=f1).contains(&f) {
         // The chart's pixels to the response's rectangle.
         let (sx, sy) = (r.rect.width() / size.x.max(1.0), r.rect.height() / size.y.max(1.0));
         let [_, y0, _, ph] = layout.plane;
@@ -40,9 +48,9 @@ fn frequency_marker(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response, siz
     {
         let fx = ((pos.x - r.rect.min.x) / r.rect.width()) as f64;
         if let Some(f) = chart_frequency(fx, f64::from(size.x), f0, f1).and_then(|f| crate::nearest(freqs, f)) {
-            app.field.view.frequency = f;
-            app.field.view.mode = None;
-            app.view = View::Field;
+            field.view.frequency = f;
+            field.view.mode = None;
+            out.push(Action::SetView(View::Field));
         }
     }
 }

@@ -5,11 +5,9 @@ use super::*;
 const BAR_HEIGHT: f32 = 40.0;
 
 /// The step bar under the ribbon.
-pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
-    // A row's hover highlight in 3D lasts one frame: the panel drawn after this sets it again.
-    app.view3d.hover = None;
-    let states = statuses(app);
+    let states = statuses_now(app);
     egui::Panel::top("emcraft_steps")
         .exact_size(BAR_HEIGHT)
         .show_separator_line(false)
@@ -17,7 +15,7 @@ pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let card = ui.max_rect();
             ui.painter().add(t.card(t.toolbar).paint(card));
-            scenario::publish_rect("steps", card);
+            scenario::publish_rect(Fixed::Steps, card);
             let font = FontId::proportional(t.font_body);
             let mut x = card.left() + 8.0;
             let mut clicked = None;
@@ -25,7 +23,7 @@ pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let text = format!("{} {}", i, s.step.label());
                 let g = ui.painter().layout_no_wrap(text.clone(), font.clone(), t.text);
                 let r = Rect::from_min_size(pos2(x, card.top() + 4.0), vec2(g.size().x + 34.0, card.height() - 8.0));
-                let resp = ui.interact(r, ui.id().with(("step", i)), Sense::click());
+                let resp = ui.hit(r, Handle::Step(s.step), Sense::click());
                 let tip = if s.messages.is_empty() {
                     format!("{}: {}", s.step.label(), s.status.id())
                 } else {
@@ -44,7 +42,6 @@ pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 ui.painter().rect_stroke(r, 12.0, Stroke::new(1.0, if active { t.accent } else { t.border }), egui::StrokeKind::Inside);
                 mark(ui.painter(), pos2(r.left() + 14.0, r.center().y), s.status, t);
                 ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, if active { t.selected_ink } else { t.text });
-                scenario::publish_target(format_args!("step:{}", s.step.id()), r);
                 if resp.on_hover_text(tip).clicked() {
                     clicked = Some(s.step);
                 }
@@ -56,7 +53,7 @@ pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             }
             if let Some(step) = clicked {
                 let again = app.workflow.step == Some(step);
-                open_step(app, if again { None } else { Some(step) });
+                out.push(Action::OpenStep(if again { None } else { Some(step) }));
             }
         });
 }
