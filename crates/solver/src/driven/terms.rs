@@ -404,3 +404,32 @@ impl Driven {
             .collect())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use emcraft_fem::Order;
+    use emcraft_model::Point3;
+
+    #[test]
+    fn one_lossy_filling_gives_the_same_modes_by_either_solver() {
+        // The fallback for TE and TM modes mixed at equal cut-off: the hybrid lossy solver on a
+        // uniform filling finds the unit filling's γ (WR-90, 12 × 6 cells, order 2).
+        let (a, b, nx, ny) = (0.02286, 0.01016, 12, 6);
+        let nodes: Vec<Point3> =
+            (0..=ny).flat_map(|j| (0..=nx).map(move |i| Point3::new(a * i as f64 / nx as f64, b * j as f64 / ny as f64, 0.0))).collect();
+        let id = |i: usize, j: usize| (j * (nx + 1) + i) as u32;
+        let tris: Vec<[u32; 3]> = (0..ny)
+            .flat_map(|j| (0..nx).flat_map(move |i| [[id(i, j), id(i + 1, j), id(i + 1, j + 1)], [id(i, j), id(i + 1, j + 1), id(i, j + 1)]]))
+            .collect();
+        let n = tris.len();
+        let cs = CrossSection::new(Order::Two, nodes, tris, vec![1.0; n], vec![1.0; n], &[], &Default::default()).unwrap();
+        let m = Material::new("lossy", 2.2, 1.3).unwrap().with_loss_tangent(0.02).unwrap().with_magnetic_loss_tangent(0.01).unwrap();
+        let f = 11e9;
+        let unit = lossy_section_modes(&cs, &m, f, 4).unwrap().unwrap();
+        let Some(LossyModes::Hybrid(hybrid, _)) = lossy_modes(&cs, &PortMedium::Mixed(MixedMedia::uniform(&m, n)), f, 4).unwrap() else { panic!() };
+        for (u, h) in unit.iter().zip(&hybrid) {
+            assert!((u.gamma - h.gamma).norm() < 1e-6 * u.gamma.norm(), "{} {}", u.gamma, h.gamma);
+        }
+    }
+}

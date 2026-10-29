@@ -143,3 +143,28 @@ fn a_terminal_port_in_a_lossy_medium_is_refused() {
     m.ports.iter_mut().for_each(|p| p.terminals = Terminals::Modal);
     assert!(Driven::new(&m, Order::One).is_ok());
 }
+
+#[test]
+fn a_lossy_filling_with_te_and_tm_modes_of_equal_cut_off_is_solved() {
+    // WR-90 filled with one lossy dielectric, its ports solved numerically with six modes: TE11
+    // and TM11 share their cut-off, and a pair the solver mixes takes the hybrid lossy modes
+    // (no longer refused); every γ is the closed form's.
+    let fill = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
+    let (a, b) = (0.02286, 0.01016);
+    let mut m = boxed(vec![fill], a, b, 0.01, "lossy", Vec::new(), &[], 0.003);
+    m.ports.iter_mut().for_each(|p| {
+        p.modes = 6;
+        p.mode_solver = emcraft_model::ModeSolver::Numeric;
+    });
+    let f = 10e9;
+    let k2 = C::new(2.2, -0.044) * (2.0 * PI * f / C0).powi(2);
+    let mut exact: Vec<C> = emcraft_fem::modes::lowest(a, b, 6).iter().map(|md| (C::new(md.cutoff().powi(2), 0.0) - k2).sqrt()).collect();
+    exact.sort_by(|p, q| (-(q * q).re).total_cmp(&-(p * p).re));
+    let modes = emcraft_solver::driven::port_modes(&m, Order::Two, f).unwrap();
+    for (got, want) in modes[0].1.iter().zip(&exact) {
+        let g = got.gamma.unwrap();
+        assert!((g - want).norm() < 2e-2 * want.norm(), "{g} {want}");
+    }
+    let r = Driven::new(&m, Order::Two).unwrap().solve(f).unwrap();
+    assert!(r.s[0][0].norm() < 5e-3 && (r.s[0][1] - r.s[1][0]).norm() < 1e-9, "{:?}", r.s);
+}
