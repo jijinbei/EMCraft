@@ -21,7 +21,7 @@ pub enum Shape {
     Sphere { radius: f64 },
     /// A closed triangulated surface (imported): positions (m), outward triangles and a face
     /// tag per triangle; `surfaces[tag]` the face's exact surface where one was recovered from
-    /// its vertices (a plane, cylinder, sphere or cone fitted on import), else it is faceted.
+    /// its vertices (a plane, cylinder, sphere, cone or torus fitted on import), else it is faceted.
     Surface {
         name: String,
         positions: Vec<Point3>,
@@ -58,16 +58,25 @@ pub enum FaceSurface {
         axis: Vec3,
         half_angle: f64,
     },
+    /// The points at `minor` from the circle of radius `major` about `axis` through `center`, in
+    /// the plane across the axis there.
+    Torus {
+        center: Point3,
+        axis: Vec3,
+        major: f64,
+        minor: f64,
+    },
 }
 
 impl FaceSurface {
-    /// The kind, for display: `plane`, `cylinder`, `sphere`, `cone`.
+    /// The kind, for display: `plane`, `cylinder`, `sphere`, `cone`, `torus`.
     pub fn kind(&self) -> &'static str {
         match self {
             FaceSurface::Plane { .. } => "plane",
             FaceSurface::Cylinder { .. } => "cylinder",
             FaceSurface::Sphere { .. } => "sphere",
             FaceSurface::Cone { .. } => "cone",
+            FaceSurface::Torus { .. } => "torus",
         }
     }
 
@@ -76,7 +85,7 @@ impl FaceSurface {
         !matches!(self, FaceSurface::Plane { .. })
     }
 
-    /// The closest point on the surface, or `None` where it is not unique (on a cylinder's or cone's
+    /// The closest point on the surface, or `None` where it is not unique (on a cylinder's, cone's or torus'
     /// axis, at a sphere's centre) or the data is not finite.
     pub fn project(&self, p: Point3) -> Option<Point3> {
         let out = match *self {
@@ -98,6 +107,10 @@ impl FaceSurface {
                 // The generator through p's half-plane, from the apex.
                 let g = a * half_angle.cos() + r * half_angle.sin();
                 apex + g * d.dot(g).max(0.0)
+            }
+            FaceSurface::Torus { center, axis, major, minor } => {
+                let ring = Self::ring(center, axis, major, p)?;
+                ring + (p - ring).normalized()? * minor
             }
         };
         out.is_finite().then_some(out)
@@ -126,7 +139,15 @@ impl FaceSurface {
                 let r = (d - a * d.dot(a)).normalized()?;
                 (r * half_angle.cos() - a * half_angle.sin()).normalized()
             }
+            FaceSurface::Torus { center, axis, major, .. } => (p - Self::ring(center, axis, major, p)?).normalized(),
         }
+    }
+
+    /// A torus' point on its central circle nearest `p` (none on the axis).
+    fn ring(center: Point3, axis: Vec3, major: f64, p: Point3) -> Option<Point3> {
+        let a = axis.normalized()?;
+        let d = p - center;
+        Some(center + (d - a * d.dot(a)).normalized()? * major)
     }
 
     /// Finite data, unit axes, positive radii.
@@ -138,6 +159,9 @@ impl FaceSurface {
             FaceSurface::Sphere { center, radius } => center.is_finite() && radius.is_finite() && radius > 0.0,
             FaceSurface::Cone { apex, axis, half_angle } => {
                 unit(axis) && apex.is_finite() && half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2
+            }
+            FaceSurface::Torus { center, axis, major, minor } => {
+                unit(axis) && center.is_finite() && major.is_finite() && minor.is_finite() && major > 0.0 && minor > 0.0
             }
         };
         if ok {
@@ -157,6 +181,7 @@ impl FaceSurface {
             FaceSurface::Cylinder { origin, axis, radius } => FaceSurface::Cylinder { origin: origin + d, axis, radius },
             FaceSurface::Sphere { center, radius } => FaceSurface::Sphere { center: center + d, radius },
             FaceSurface::Cone { apex, axis, half_angle } => FaceSurface::Cone { apex: apex + d, axis, half_angle },
+            FaceSurface::Torus { center, axis, major, minor } => FaceSurface::Torus { center: center + d, axis, major, minor },
         }
     }
 }

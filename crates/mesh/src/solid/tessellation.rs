@@ -252,6 +252,7 @@ fn exact(f: FaceSurface) -> AnalyticSurface {
         FaceSurface::Cylinder { origin, axis, radius } => AnalyticSurface::Cylinder { origin: p(origin), axis: v(axis), radius },
         FaceSurface::Sphere { center, radius } => AnalyticSurface::Sphere { center: p(center), radius },
         FaceSurface::Cone { apex, axis, half_angle } => AnalyticSurface::Cone { apex: p(apex), axis: v(axis), half_angle },
+        FaceSurface::Torus { center, axis, major, minor } => AnalyticSurface::Torus { center: p(center), axis: v(axis), major, minor },
     }
 }
 

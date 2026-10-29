@@ -36,7 +36,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   normals lie on a great circle, a cone's on a small one); a fit is kept only when every vertex
   lies on it to 1e-6 of the body's size and every triangle's centroid within 0.15 of its longest
   edge, the closest to the centroids winning, so the sphere through a cylinder's or a frustum's
-  two rims is not taken for it.
+  two rims is not taken for it. A torus' axis comes from the normal lines instead: H. Pottmann,
+  T. Randrup, *Rotational and helical surface approximation for reverse engineering*, Computing
+  60(4):307–322, 1998 — a surface of revolution's normals all meet its axis, a linear condition
+  on the axis' Plücker coordinates solved as the least eigenvector of a Schur complement; a torus
+  is tried only where no plane, cylinder, sphere or cone fits (each is a torus' limit).
 
 ## Special functions
 - M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, 1964, §9.12 and Tables 9.5,
