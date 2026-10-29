@@ -4,6 +4,11 @@
 use std::fmt::Display;
 
 /// At most `n` characters of `s`: text from hostile input is not echoed in full.
+///
+/// ```
+/// assert_eq!(emcraft_engine::text::clip("Wellenleiter", 5), "Welle");
+/// assert_eq!(emcraft_engine::text::clip("Ω", 5), "Ω"); // characters, not bytes
+/// ```
 pub fn clip(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }

@@ -17,6 +17,17 @@ pub fn eps_eff(u: f64, eps_r: f64) -> f64 {
 }
 
 /// The quasi-static characteristic impedance (Ω), u = W/h.
+///
+/// ```
+/// use emcraft_theory::microstrip;
+///
+/// // A strip as wide as its alumina substrate is thick (εr = 9.8) is close to 50 Ω.
+/// let z = microstrip::z0(1.0, 9.8);
+/// assert!((45.0..52.0).contains(&z));
+/// // Wider strips have lower impedance; air lines are faster than loaded ones.
+/// assert!(microstrip::z0(2.0, 9.8) < z);
+/// assert!(microstrip::eps_eff(1.0, 9.8) > 1.0 && microstrip::eps_eff(1.0, 9.8) < 9.8);
+/// ```
 pub fn z0(u: f64, eps_r: f64) -> f64 {
     let eta0 = MU0 * C0;
     let f = 6.0 + (2.0 * PI - 6.0) * (-(30.666 / u).powf(0.7528)).exp();

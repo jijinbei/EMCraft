@@ -7,6 +7,15 @@
 //! reference lists them; a `match` it writes makes the compiler refuse a variant left out. The
 //! types that also deserialize are checked to read their names as serde does
 //! (`tests::reads_as_serde`, from `tests::session`).
+//!
+//! ```
+//! use emcraft_engine::Choice;
+//! use emcraft_model::units::Frequency;
+//!
+//! assert_eq!(Frequency::named("MHz"), Some(Frequency::Megahertz));
+//! assert_eq!(Frequency::Gigahertz.name(), "GHz");
+//! assert_eq!(Frequency::listed(), "GHz, MHz or Hz");
+//! ```
 
 use emcraft_model::units::{Frequency, Length};
 use emcraft_model::{Axis, Combine, End, ModeSolver, OpenShape, Polarization, SymmetryKind, Terminals};

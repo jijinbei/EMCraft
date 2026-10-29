@@ -5,6 +5,22 @@
 //!
 //! Parameters and replies are in the session's display units (millimetres and gigahertz by
 //! default, [`emcraft_model::units`]); the model and the solvers are in SI.
+//!
+//! ```
+//! use emcraft_engine::Session;
+//! use serde_json::json;
+//!
+//! let mut s = Session::new();
+//! s.execute("project.variable", &json!({"name": "w", "value": 22.86}))?;
+//! s.execute("project.variable", &json!({"name": "half", "value": "=w/2"}))?;
+//! assert_eq!(s.variables().get("half"), Some(&11.43));
+//!
+//! // A command that fails leaves the session as it was.
+//! assert!(s.execute("project.variable", &json!({"name": "pi", "value": 3})).is_err());
+//! assert!(s.execute("no.such.command", &json!({})).is_err());
+//! assert_eq!(s.variables().len(), 2);
+//! # Ok::<(), emcraft_engine::EngineError>(())
+//! ```
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 

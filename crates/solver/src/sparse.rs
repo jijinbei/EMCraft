@@ -1,5 +1,36 @@
 //! A sparse complex symmetric matrix in compressed rows, both triangles stored: the pattern is
 //! made once from the element connectivity, then values are added by binary search.
+//!
+//! ```
+//! use emcraft_solver::Complex64 as C;
+//! use emcraft_solver::sparse::Csr;
+//!
+//! // Two elements sharing unknown 1: the pattern couples 0–1 and 1–2, not 0–2.
+//! let elements: [&[usize]; 2] = [&[0, 1], &[1, 2]];
+//! let mut a = Csr::from_groups(3, elements.iter().copied());
+//! for e in elements {
+//!     for &i in e {
+//!         for &j in e {
+//!             let v = if i == j { 1.0 } else { -1.0 };
+//!             assert!(a.add(i, j, C::new(v, 0.0)));
+//!         }
+//!     }
+//! }
+//! assert!(!a.add(0, 2, C::new(1.0, 0.0))); // outside the pattern: refused
+//! assert_eq!(a.get(1, 1), C::new(2.0, 0.0));
+//!
+//! // A constant is in the null space of this stiffness matrix.
+//! let ones = vec![C::new(1.0, 0.0); 3];
+//! assert!(a.mul(&ones).iter().all(|y| y.norm() == 0.0));
+//!
+//! // Or row by row.
+//! let mut b = Csr::builder(2);
+//! b.row([(0, C::new(2.0, 0.0)), (1, C::new(0.0, 1.0))]);
+//! b.row([(0, C::new(0.0, 1.0)), (1, C::new(2.0, 0.0))]);
+//! let b = b.finish();
+//! assert_eq!(b.entries(0).count(), 2);
+//! assert_eq!(b.get(1, 0), C::new(0.0, 1.0));
+//! ```
 
 use std::ops::Range;
 

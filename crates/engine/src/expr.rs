@@ -15,6 +15,20 @@
 //! `sin`, `cos`, `tan` (radians), `exp` and `ln`. The value is a plain number: the parameter's
 //! display unit applies to it as to a literal. The parser is recursive descent, bounded in the
 //! text's length and the nesting depth, and every result is checked finite.
+//!
+//! ```
+//! use emcraft_engine::expr::{self, Variables};
+//!
+//! let vars = Variables::from([("w".to_owned(), 4.0), ("er".to_owned(), 9.0)]);
+//! let body = expr::body("=w/2 + sqrt(er)").unwrap_or_default();
+//! assert_eq!(expr::eval(body, &vars), Ok(5.0));
+//! assert_eq!(expr::names(body), Ok(vec!["w".to_owned(), "er".to_owned()]));
+//!
+//! // An unknown name, a value that is not finite: errors, never a panic.
+//! assert!(expr::eval("h + 1", &vars).is_err());
+//! assert!(expr::eval("1/(w - 4)", &vars).is_err());
+//! assert!(!expr::valid_name("pi"));
+//! ```
 
 use std::collections::BTreeMap;
 

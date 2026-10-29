@@ -15,6 +15,25 @@
 //! and E_y and H_x = (1/jωμ_i) ∂E_y/∂z are continuous at each interface. The incident amplitude
 //! at z = 0 is A₀ = 1 and nothing enters at the far end (B_last = 0). The S-parameters are
 //! referred to the end faces: S₁₁ = B₀, S₂₁ = A_last e^{−jβ_last l_last}.
+//!
+//! ```
+//! use emcraft_theory::{Layer, Te10Line, te10_cutoff};
+//!
+//! // WR-90 (a = 22.86 mm): cut-off at 6.557 GHz.
+//! let a = 22.86e-3;
+//! assert!((te10_cutoff(a, 1.0, 1.0) - 6.557_140e9).abs() < 1e3);
+//!
+//! // A 10 mm slab of εr = 2.2 between two air sections: lossless, so |S₁₁|² + |S₂₁|² = 1.
+//! let line = Te10Line { a, layers: vec![Layer::lossless(0.01, 1.0, 1.0), Layer::lossless(0.01, 2.2, 1.0), Layer::lossless(0.01, 1.0, 1.0)] };
+//! let s = line.solve(10e9)?;
+//! assert!(s.s11.norm() > 0.05);
+//! assert!((s.s11.norm_sqr() + s.s21.norm_sqr() - 1.0).abs() < 1e-12);
+//!
+//! // Below cut-off the wave decays: almost nothing gets through 60 mm of air at 5 GHz.
+//! let air = Te10Line { a, layers: vec![Layer::lossless(0.06, 1.0, 1.0)] };
+//! assert!(air.solve(5e9)?.s21.norm() < 0.01);
+//! # Ok::<(), emcraft_theory::TheoryError>(())
+//! ```
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -126,6 +145,13 @@ pub fn te10_wall_attenuation(a: f64, b: f64, frequency: f64, sigma: f64, eps_r: 
 /// The resonances of an a × b × d cavity filled with εr, perfectly conducting walls, lowest
 /// first: f = c/(2√εr) √((m/a)² + (n/b)² + (p/d)²) for TE_mnp (m, n not both 0, p ≥ 1) and
 /// TM_mnp (m, n ≥ 1, p ≥ 0), with their names (Pozar §6.3).
+///
+/// ```
+/// let modes = emcraft_theory::cavity_resonances(22.86e-3, 10.16e-3, 30e-3, 1.0, 3);
+/// assert_eq!(modes[0].1, "TE101");
+/// assert!((modes[0].0 - 8.243_877e9).abs() < 1e3);
+/// assert!(modes.windows(2).all(|m| m[0].0 <= m[1].0)); // lowest first
+/// ```
 pub fn cavity_resonances(a: f64, b: f64, d: f64, eps_r: f64, count: usize) -> Vec<(f64, String)> {
     let count = count.min(1000);
     let span = 12u32;
