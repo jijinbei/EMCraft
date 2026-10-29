@@ -58,31 +58,44 @@ fn two_ply_stripline(length: f64) -> Model {
     boxed(vec![core, prepreg], 0.006, 0.003, length, "prepreg", vec![(0.0015, "core")], &[(0.0015, 0.00225, 0.0015)], 0.0015)
 }
 
-#[test]
-fn a_lossy_two_ply_stripline_carries_its_exact_tem_wave() {
+/// The two-ply stripline's ports and S at `freqs` against the exact TEM γ, at `order`: the
+/// port modes to `mode_tol` (relative), S to `tol`.
+fn check_two_ply(order: Order, freqs: &[f64], mode_tol: f64, tol: f64) {
     // Two materials in the cross-section, so the hybrid lossy solver; one dielectric in effect,
     // so the wave is TEM with γ exactly that of the dielectric whatever the shape.
     let length = 0.006;
     let m = two_ply_stripline(length);
-    for f in [5e9, 10e9] {
+    for &f in freqs {
         let exact = tem_gamma(f, 4.4, 0.02);
-        let modes = emcraft_solver::driven::port_modes(&m, Order::Two, f).unwrap();
+        let modes = emcraft_solver::driven::port_modes(&m, order, f).unwrap();
         for (_, list) in &modes {
             let g = list[0].gamma.unwrap();
-            assert!((g - exact).norm() < 1e-6 * exact.norm(), "{f}: {g} {exact}");
+            assert!((g - exact).norm() < mode_tol * exact.norm(), "{f}: {g} {exact}");
         }
     }
-    let d = Driven::new(&m, Order::Two).unwrap();
-    for f in [5e9, 10e9] {
+    let d = Driven::new(&m, order).unwrap();
+    for &f in freqs {
         let r = d.solve(f).unwrap();
         let exact = (-tem_gamma(f, 4.4, 0.02) * length).exp();
         let (s11, s21) = (r.s[0][0], r.s[1][0]);
-        // As the lossless stripline (`stripline` oracle): |S11| ~1e-4, the phase within 0.003°.
-        assert!(s11.norm() < 1e-3, "{f}: {s11}");
-        assert!((s21 - exact).norm() < 1e-3, "{f}: {s21} {exact}");
+        assert!(s11.norm() < tol, "{f}: {s11}");
+        assert!((s21 - exact).norm() < tol, "{f}: {s21} {exact}");
         assert!((r.s[0][1] - s21).norm() < 1e-9, "{f}: reciprocal");
         assert!(s11.norm_sqr() + s21.norm_sqr() < 1.0);
     }
+}
+
+#[test]
+fn a_lossy_two_ply_stripline_carries_its_exact_tem_wave() {
+    // First-order elements: the TEM mode still exact, S within 2e-2.
+    check_two_ply(Order::One, &[10e9], 1e-6, 2e-2);
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_lossy_two_ply_stripline_carries_its_exact_tem_wave_at_order_two() {
+    // As the lossless stripline (`stripline` oracle): |S11| ~1e-4, the phase within 0.005°.
+    check_two_ply(Order::Two, &[5e9, 10e9], 1e-6, 1e-3);
 }
 
 #[test]
@@ -108,27 +121,37 @@ fn a_guide_with_a_lossy_slab_transmits_collins_complex_mode() {
     assert!((alpha / g.re - 1.0).abs() < 0.01, "{alpha} {}", g.re);
 }
 
-#[test]
-fn a_shielded_lossy_microstrip_decays_by_its_own_attenuation() {
-    // FR-4 (εr = 4.4, tan δ = 0.02, 0.8 mm) under air in a 6 × 4 mm box, a 1.5 mm strip,
-    // 10 mm long: matched, reciprocal, passive, and |S21| = e^{−αL} with the port mode's α.
+/// FR-4 (εr = 4.4, tan δ = 0.02, 0.8 mm) under air in a 6 × 4 mm box, a 1.5 mm strip, `length`
+/// long, at `order`: matched, reciprocal, passive, and |S21| = e^{−αL} with the port mode's α
+/// (to `tol`).
+fn check_microstrip(order: Order, length: f64, tol: f64) {
     let fr4 = Material::new("fr4", 4.4, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
-    let length = 0.01;
     let m = boxed(vec![fr4], 0.006, 0.004, length, "vacuum", vec![(0.0008, "fr4")], &[(0.0008, 0.00225, 0.0015)], 0.001);
     let f = 5e9;
-    let modes = emcraft_solver::driven::port_modes(&m, Order::Two, f).unwrap();
+    let modes = emcraft_solver::driven::port_modes(&m, order, f).unwrap();
     let g = modes[0].1[0].gamma.unwrap();
     // Quasi-TEM: ε_eff between 1 and εr, α > 0 below the filled line's.
     let k0 = 2.0 * PI * f / C0;
     let eps_eff = -(g * g).re / (k0 * k0);
     assert!(eps_eff > 2.5 && eps_eff < 4.4 && g.re > 0.0 && g.re < tem_gamma(f, 4.4, 0.02).re, "{g} {eps_eff}");
-    let d = Driven::new(&m, Order::Two).unwrap();
+    let d = Driven::new(&m, order).unwrap();
     let r = d.solve(f).unwrap();
     let (s11, s21) = (r.s[0][0], r.s[1][0]);
-    assert!(s11.norm() < 5e-3, "{s11}");
-    assert!((s21 - (-g * length).exp()).norm() < 5e-3, "{s21} {}", (-g * length).exp());
+    assert!(s11.norm() < tol, "{s11}");
+    assert!((s21 - (-g * length).exp()).norm() < tol, "{s21} {}", (-g * length).exp());
     assert!((r.s[0][1] - s21).norm() < 1e-9);
     assert!(s11.norm_sqr() + s21.norm_sqr() < 1.0);
+}
+
+#[test]
+fn a_shielded_lossy_microstrip_decays_by_its_own_attenuation() {
+    check_microstrip(Order::One, 0.004, 2e-2);
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn a_shielded_lossy_microstrip_decays_by_its_own_attenuation_at_order_two() {
+    check_microstrip(Order::Two, 0.01, 5e-3);
 }
 
 #[test]
