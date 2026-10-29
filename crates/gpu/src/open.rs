@@ -11,6 +11,7 @@ use num_complex::Complex64;
 use crate::buffer::{Buf, Ints, Real, Xyz};
 use crate::kernels::open::{self as kernels, PsiLaunch, SamplesLaunch, SourcesLaunch, StepsLaunch, TransformsLaunch};
 use crate::lattice::Lattice;
+use crate::slots::{Decay, Slots};
 
 /// Each component's two auxiliary variables.
 struct Psi<F>([Buf<F>; 6]);
@@ -134,6 +135,9 @@ pub(crate) struct OpenRun<F> {
     e: Xyz<F>,
     h: Xyz<F>,
     ce: Xyz<F>,
+    ch: Xyz<F>,
+    poles: Slots<F>,
+    decay: Decay<F>,
     psi_e: Psi<F>,
     psi_h: Psi<F>,
     cpml_e: Xyz<F>,
@@ -149,6 +153,9 @@ impl<F: Real> OpenRun<F> {
         let grid = Lattice::new(client, p.n)?;
         let (lens_e, lens_h) = (grid.e, grid.h);
         let agree = p.ce.iter().zip(lens_e).all(|(c, l)| c.len() == l)
+            && p.ch.iter().zip(lens_h).all(|(c, l)| c.len() == l)
+            && Slots::<F>::fit(p.poles.as_ref(), lens_e)
+            && Decay::<F>::fit(&p.h_decay, lens_h)
             && p.cpml_e.iter().zip(p.n).all(|(c, n)| c.len() == n + 1)
             && p.cpml_h.iter().zip(p.n).all(|(c, n)| c.len() == n)
             && p.ports.iter().all(|q| q.axis < 3 && q.edges.iter().all(|e| e.id < lens_e[q.axis]) && !q.edges.is_empty())
@@ -166,6 +173,9 @@ impl<F: Real> OpenRun<F> {
             e: Xyz::zeros(client, lens_e),
             h: Xyz::zeros(client, lens_h),
             ce: Xyz::new(client, &p.ce),
+            ch: Xyz::new(client, &p.ch),
+            poles: Slots::new(client, p.poles.as_ref(), p.dt),
+            decay: Decay::new(client, &p.h_decay),
             psi_e: Psi::new(client, lens_e),
             psi_h: Psi::new(client, lens_h),
             cpml_e: Xyz::new(client, &profile(&p.cpml_e)),
@@ -189,8 +199,10 @@ impl<F: Real> OpenRun<F> {
             self.psi_h.arg(),
             self.cpml_h.arg(),
             steps(),
-            F::of(p.ch),
+            self.ch.arg(),
             self.grid.cells(),
+            self.decay.h.arg(),
+            self.decay.any,
         );
         if self.sources.edges > 0 {
             let (edges, dim) = self.grid.over(self.sources.edges);
@@ -207,6 +219,8 @@ impl<F: Real> OpenRun<F> {
             self.cpml_e.arg(),
             steps(),
             self.grid.cells(),
+            self.poles.arg(),
+            self.poles.any,
         );
         let single = CubeCount::Static(1, 1, 1);
         kernels::drive::launch::<F>(
@@ -219,6 +233,8 @@ impl<F: Real> OpenRun<F> {
             self.record.arg(),
             F::of(p.source_at(n)),
             b as u32,
+            self.poles.arg(),
+            self.poles.any,
         );
         let hy = &self.huygens;
         let samples = SamplesLaunch::new(hy.axis.arg(), hy.plane.arg(), hy.iu.arg(), hy.iv.arg(), hy.count);

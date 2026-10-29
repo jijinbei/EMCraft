@@ -28,6 +28,7 @@ mod guide;
 mod kernels;
 mod lattice;
 mod open;
+mod slots;
 
 pub use device::{Available, Backend, Precision, available};
 pub use front::{Fronts, MAX_ROWS, MIN_ROWS};

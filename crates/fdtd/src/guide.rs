@@ -6,13 +6,13 @@ use std::f64::consts::PI;
 use std::ops::{ControlFlow, Range};
 
 use emcraft_model::units::{C0, EPS0, MU0};
-use emcraft_model::{Model, Pole, SecondOrder, Span, Waveguide};
+use emcraft_model::{Model, Pole, Span, Waveguide};
 use num_complex::Complex64 as C;
 
 use crate::device::{Plan, Poles, Stepper};
-use crate::dispersion::{Dispersion, Term};
+use crate::dispersion::{Dispersion, Term, check_poles, exponential_fit, magnetic_update};
 use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, RunningDft, index, lattices, layer_profile, leapfrog, time_step};
-use crate::{FdtdError, MAX_CELLS, Options, Result, invalid};
+use crate::{FdtdError, Losses, MAX_CELLS, Options, Result, invalid};
 
 /// Divisions of `len` into steps of at most `h`.
 fn steps(len: f64, h: f64) -> usize {
@@ -42,6 +42,10 @@ struct Layer {
     slow: f64,
     /// The layer's dispersive material: an index into the grid's `poles` (`NO_POLES` if none).
     disp: u32,
+    /// The conductivity (S/m) and magnetic conductivity (Ω/m) that stand for the material's loss
+    /// tangents ([`crate::Losses`]).
+    sigma: f64,
+    sigma_m: f64,
     mu: f64,
     x0: f64,
     width: f64,
@@ -82,6 +86,9 @@ pub(crate) struct Grid {
     plane2: usize,
     source: usize,
     pml: usize,
+    /// The walls' conductivity (S/m) and the branches of their surface admittance, if they are
+    /// not perfect conductors.
+    wall: Option<(f64, Vec<(f64, f64)>)>,
 }
 
 /// Every aperture edge of the guide's sections across x (`y` false) or y, and the walls.
@@ -102,22 +109,21 @@ impl Grid {
     /// wave).
     pub(crate) fn new(model: &Model, o: &Options, reference: bool, freqs: &[f64]) -> Result<Grid> {
         let w = model.waveguide.as_ref().ok_or_else(|| FdtdError::NotReady("no waveguide".into()))?;
-        if model.wall_conductivity.is_some() || model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.is_magnetically_lossy()) {
-            return Err(FdtdError::Unsupported("losses in the time domain".into()));
-        }
-        // Dispersive materials in the model's order (deterministic), none at the ports.
+        let band = Band::of(freqs);
+        let losses = Losses::new(band.fc);
+        let wall = match model.wall_conductivity {
+            None => None,
+            Some(sigma) => Some((losses.wall(sigma, band.f1)?, crate::surface::inverse_sqrt(2.0 * PI * band.f0, 2.0 * PI * band.f1))),
+        };
+        // Dispersive materials in the model's order (deterministic).
         let mut poles: Vec<Vec<Pole>> = Vec::new();
         let mut disp_of = vec![NO_POLES; model.materials.len()];
-        for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
+        for m in &model.materials {
             m.checked().map_err(|e| invalid("material", e.to_string()))?;
+        }
+        for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
             disp_of[i] = poles.len() as u32;
             poles.push(m.dispersion.clone());
-        }
-        for i in [0, w.sections.len().saturating_sub(1)] {
-            let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
-            if model.material(&s.material).is_ok_and(|(_, m)| m.is_dispersive()) {
-                return Err(FdtdError::Unsupported("a port in a dispersive material (end the guide with a non-dispersive section)".into()));
-            }
         }
         let h = o.cell;
         let n_est = (w.width / h).ceil() * (w.height / h).ceil() * ((w.length() + 2.0 * (o.pml + 2 * o.feed) as f64 * h) / h).ceil();
@@ -131,7 +137,8 @@ impl Grid {
             let Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
             let slow = freqs.iter().map(|f| m.eps_at(*f).norm()).fold(m.eps_r, f64::max);
             let disp = disp_of.get(index).copied().unwrap_or(NO_POLES);
-            Ok(Layer { eps: m.eps_r, slow, disp, mu: m.mu_r, x0, width, y0, height })
+            let (sigma, sigma_m) = losses.of(m);
+            Ok(Layer { eps: m.eps_r, slow, disp, sigma, sigma_m, mu: m.mu_r, x0, width, y0, height })
         };
         let last = w.sections.len() - 1;
         let (first_layer, last_layer) = (layer(0)?, layer(last)?);
@@ -159,7 +166,7 @@ impl Grid {
         let end_layer = if reference { first_layer } else { last_layer };
         z.extend((1..=o.pml + o.feed).map(|k| at + k as f64 * dz2));
         layers.extend(std::iter::repeat_n(end_layer, o.pml + o.feed));
-        let g = Grid { x, y, z, layers, poles, plane1, plane2, source: o.pml + o.feed, pml: o.pml };
+        let g = Grid { x, y, z, layers, poles, plane1, plane2, source: o.pml + o.feed, pml: o.pml, wall };
         let cells = g.cells();
         if cells > MAX_CELLS {
             return Err(FdtdError::TooLarge { cells, limit: MAX_CELLS });
@@ -225,24 +232,13 @@ impl Spacing {
     }
 }
 
-/// A second-order pole is explicit in time: stable while its frequencies stay well below 1/Δt
-/// (ω₀Δt < 2 and the plasma term likewise; refused well before).
-fn check_poles(g: &Grid, dt: f64) -> Result<()> {
-    for pole in g.poles.iter().flatten() {
-        if let Some(SecondOrder { strength: a, omega0: w0, .. }) = pole.second_order()
-            && !(w0 * dt < 0.5 && a.sqrt() * dt < 0.5)
-        {
-            return Err(FdtdError::Unsupported(format!("a pole too fast for the time step ({dt:e} s): {pole:?}")));
-        }
-    }
-    Ok(())
-}
-
-/// The update coefficients: dt/ε per E edge (0 on conductors) with the dispersive edges'
-/// poles, dt/μ per H face.
+/// The update coefficients: dt/ε per E edge (0 on conductors) with the slots of the dispersive
+/// and lossy edges and the walls' edges; dt/μ per H face, and its decay when magnetic losses
+/// damp it (H ← decay H − c ∇×E; empty without magnetic losses).
 struct Coefficients {
     e: [Vec<f64>; 3],
     h: [Vec<f64>; 3],
+    h_decay: [Vec<f64>; 3],
     dispersion: [Dispersion; 3],
 }
 
@@ -267,25 +263,44 @@ impl Coefficients {
         for d in &mut dispersion {
             d.finish();
         }
+        let magnetic = g.layers.iter().any(|l| l.sigma_m > 0.0);
+        let mut h_decay = [Vec::new(), Vec::new(), Vec::new()];
         let h = [0, 1, 2].map(|a| {
             let dims = h_dims[a];
             let mut c = vec![0.0; dims.iter().product()];
+            let mut decay = if magnetic { vec![1.0; c.len()] } else { Vec::new() };
             for k in 0..dims[2] {
                 for j in 0..dims[1] {
                     for i in 0..dims[0] {
-                        c[index(dims, i, j, k)] = face_coef(g, a, [i, j, k], dt);
+                        let id = index(dims, i, j, k);
+                        let (cf, d) = face_coef(g, a, [i, j, k], dt);
+                        c[id] = cf;
+                        if let Some(x) = decay.get_mut(id) {
+                            *x = d;
+                        }
                     }
                 }
             }
+            h_decay[a] = decay;
             c
         });
-        Coefficients { e, h, dispersion }
+        Coefficients { e, h, h_decay, dispersion }
     }
 }
 
-/// dt/ε of the E edge along `axis` at node `idx` (component index `id` of `edges`): ε the
-/// area-weighted average of the four cells round it, 0 if any is metal. A dispersive edge's
-/// poles go into `dispersion`, each weighted by the share of its cells' area.
+/// dt/ε of the E edge along `axis` at node `idx` (component index `id` of `edges`), 0 if it is
+/// not updated (on a perfect conductor).
+///
+/// An edge with its four cells inside takes their area-weighted ε; its conductivity and poles,
+/// each weighted by the share of its cells' area, go into `dispersion`. With walls of finite
+/// conductivity, an edge with two cells inside on one side of a flat wall is the wall's
+/// ([`crate::surface`]): Ampère's law over the half of its dual face inside, the H beyond the
+/// wall replaced by the wall's surface current. The curl the kernels form divides the
+/// difference across the wall by the full dual step (half a cell on the grid's outer walls,
+/// where it is exact): the edge's ε, σ and poles are scaled by half a cell over that step, so the
+/// one term the scaling leaves approximate is the normal H's along the wall, which a good
+/// conductor all but cancels. Edges in a corner (one cell inside, or three) stay perfect
+/// conductors, as do the grid's two ends along z, which close the absorbing layers.
 #[allow(clippy::too_many_arguments)]
 fn edge_coef(g: &Grid, sp: &Spacing, axis: usize, idx: [usize; 3], dt: f64, edges: usize, id: usize, dispersion: &mut Dispersion) -> f64 {
     // The two axes across the edge, in order; the four cells at offsets −1, 0 along each, the
@@ -296,36 +311,75 @@ fn edge_coef(g: &Grid, sp: &Spacing, axis: usize, idx: [usize; 3], dt: f64, edge
         let mut c = idx.map(|x| x as isize);
         c[p] -= dp as isize;
         c[q] -= dq as isize;
-        (c, len(p, idx[p].wrapping_sub(dp)) * len(q, idx[q].wrapping_sub(dq)))
+        (c, len(p, idx[p].wrapping_sub(dp)) * len(q, idx[q].wrapping_sub(dq)), [dp, dq])
     });
-    let mut area = 0.0;
-    let mut eps = 0.0;
-    for ([i, j, k], a) in cells {
-        if !g.exists(i, j, k) {
-            return 0.0;
+    let inside: Vec<([isize; 3], f64, [usize; 2])> = cells.into_iter().filter(|(c, _, _)| g.exists(c[0], c[1], c[2])).collect();
+    // The wall's normal (an axis), its dual step there and the scale of its half cell to it.
+    let mut wall = None;
+    match (inside.as_slice(), &g.wall) {
+        ([_, _, _, _], _) => {}
+        ([(_, _, a), (_, _, b)], Some(_)) => {
+            // Two cells side by side: the wall is normal to the axis along which they agree.
+            let normal = if a[0] == b[0] {
+                p
+            } else if a[1] == b[1] {
+                q
+            } else {
+                return 0.0;
+            };
+            let off = if normal == p { a[0] } else { a[1] };
+            let n = idx[normal];
+            if normal == 2 && (n == 0 || n == g.nz()) {
+                return 0.0;
+            }
+            let half = 0.5 * len(normal, n.wrapping_sub(off));
+            let dual = sp.dual[normal].get(n).copied().unwrap_or(0.0);
+            if !(half > 0.0 && dual > 0.0) {
+                return 0.0;
+            }
+            wall = Some((dual, half / dual));
         }
-        area += a;
-        eps += a * g.layers[k as usize].eps;
+        _ => return 0.0,
     }
-    let c = dt / (EPS0 * eps / area);
-    if !g.poles.is_empty() && cells.iter().any(|(c, a)| *a > 0.0 && g.layers[c[2] as usize].disp != NO_POLES) {
-        let terms = cells.iter().flat_map(|&(c, a)| {
-            let list = g.poles.get(g.layers[c[2] as usize].disp as usize).filter(|_| a > 0.0);
-            list.into_iter().flatten().map(move |pole| Term::new(*pole, a / area, dt))
+    let scale = wall.map_or(1.0, |(_, s)| s);
+    let area: f64 = inside.iter().map(|(_, a, _)| a).sum();
+    let layer = |c: &[isize; 3]| g.layers[c[2] as usize];
+    let eps = inside.iter().map(|(c, a, _)| a * layer(c).eps).sum::<f64>() / area * scale;
+    let sigma = inside.iter().map(|(c, a, _)| a * layer(c).sigma).sum::<f64>() / area * scale;
+    // The exponential update of a lossy edge (σ on the time step's scale or beyond).
+    let eps = eps * exponential_fit(sigma * dt / (EPS0 * eps));
+    let c = dt / (EPS0 * eps);
+    let poles = !g.poles.is_empty() && inside.iter().any(|(c, a, _)| *a > 0.0 && layer(c).disp != NO_POLES);
+    if poles || sigma > 0.0 || wall.is_some() {
+        let terms = inside.iter().flat_map(|&(c, a, _)| {
+            let list = g.poles.get(layer(&c).disp as usize).filter(|_| a > 0.0);
+            list.into_iter().flatten().map(move |pole| Term::new(*pole, a / area * scale, dt))
         });
-        dispersion.add_edge(edges, id, dt / c, terms);
+        let surface = match (wall, &g.wall) {
+            (Some((dual, _)), Some((sigma_w, branches))) => crate::surface::wall_terms(branches, *sigma_w, dt, dual),
+            _ => Vec::new(),
+        };
+        dispersion.add_edge(edges, id, dt / c, 0.5 * sigma * dt, terms.chain(surface));
     }
     c
 }
 
-/// dt/μ of the H face normal to `axis` at `idx`: μ the average of the cells on either side of
-/// the face that exist (one may be metal), 0 if neither does.
-fn face_coef(g: &Grid, axis: usize, idx: [usize; 3], dt: f64) -> f64 {
+/// dt/μ of the H face normal to `axis` at `idx` and the decay of H there: μ (and the magnetic
+/// conductivity σ_m) the average of the cells on either side of the face that exist (one may be
+/// metal), with magnetic losses the exponential update ([`magnetic_update`]); (0, 1) if neither
+/// cell exists.
+fn face_coef(g: &Grid, axis: usize, idx: [usize; 3], dt: f64) -> (f64, f64) {
     let b = idx.map(|x| x as isize);
     let mut a = b;
     a[axis] -= 1;
-    let (sum, count) = [a, b].iter().filter(|c| g.exists(c[0], c[1], c[2])).fold((0.0, 0usize), |(s, n), c| (s + g.layers[c[2] as usize].mu, n + 1));
-    if count == 0 { 0.0 } else { dt / (MU0 * sum / count as f64) }
+    let (mu, sigma_m, count) = [a, b].iter().filter(|c| g.exists(c[0], c[1], c[2])).fold((0.0, 0.0, 0usize), |(m, s, n), c| {
+        let l = g.layers[c[2] as usize];
+        (m + l.mu, s + l.sigma_m, n + 1)
+    });
+    if count == 0 {
+        return (0.0, 1.0);
+    }
+    magnetic_update(dt, MU0 * mu / count as f64, sigma_m / count as f64)
 }
 
 /// The CPML at the two ends of the guide, absorbing along z: coefficients for E (at the z
@@ -377,6 +431,7 @@ impl Kernel for GuideKernel<'_> {
         let [ex, ey, ez] = &self.fields.e;
         let [hx, hy, hz] = &self.fields.h;
         let [chx, chy, chz] = &self.coef.h;
+        let [dhx, dhy, dhz] = &self.coef.h_decay;
         let [dx, dy, dz] = &self.sp.primal;
         let (ph, Psi { hx: psi_hx, hy: psi_hy, .. }) = (&self.cpml.h, self.psi);
         let [nx, ny, nz] = [dx.len(), dy.len(), dz.len()];
@@ -393,7 +448,7 @@ impl Kernel for GuideKernel<'_> {
                     let dey_dz = (ey.get(ey.at(i, j, k + 1)) - ey.get(ey.at(i, j, k))) / dz[k];
                     let psi = ch.psi(psi_hx.get(id), dey_dz);
                     psi_hx.set(id, psi);
-                    hx.set(id, hx.get(id) - c * (dez_dy - dey_dz - psi));
+                    hx.set(id, decay(dhx, id) * hx.get(id) - c * (dez_dy - dey_dz - psi));
                 }
             }
             for j in 0..=ny {
@@ -407,7 +462,7 @@ impl Kernel for GuideKernel<'_> {
                     let dez_dx = (ez.get(ez.at(i + 1, j, k)) - ez.get(ez.at(i, j, k))) / dx[i];
                     let psi = ch.psi(psi_hy.get(id), dex_dz);
                     psi_hy.set(id, psi);
-                    hy.set(id, hy.get(id) - c * (dex_dz + psi - dez_dx));
+                    hy.set(id, decay(dhy, id) * hy.get(id) - c * (dex_dz + psi - dez_dx));
                 }
             }
         }
@@ -421,13 +476,14 @@ impl Kernel for GuideKernel<'_> {
                     }
                     let dey_dx = (ey.get(ey.at(i + 1, j, k)) - ey.get(ey.at(i, j, k))) / dx[i];
                     let dex_dy = (ex.get(ex.at(i, j + 1, k)) - ex.get(ex.at(i, j, k))) / dy[j];
-                    hz.set(id, hz.get(id) - c * (dey_dx - dex_dy));
+                    hz.set(id, decay(dhz, id) * hz.get(id) - c * (dey_dx - dex_dy));
                 }
             }
         }
     }
 
-    /// Interior nodes only; edges on conductors have zero coefficients.
+    /// Every edge with a coefficient (the walls' edges too, with finite conductivity); H beyond
+    /// the grid's outer walls is zero, as in a conductor.
     fn step_e(&self, ks: Range<usize>) {
         let [ex, ey, ez] = &self.fields.e;
         let [hx, hy, hz] = &self.fields.h;
@@ -437,16 +493,18 @@ impl Kernel for GuideKernel<'_> {
         let (pe, Psi { ex: psi_ex, ey: psi_ey, .. }) = (&self.cpml.e, self.psi);
         let [nx, ny, nz] = [dxd.len() - 1, dyd.len() - 1, dzd.len() - 1];
         let dt = self.dt;
+        // H at (i, j, k) of a lattice, zero where `inside` is false (beyond an outer wall).
+        let h = |f: &Field, inside: bool, i: usize, j: usize, k: usize| if inside { f.get(f.at(i, j, k)) } else { 0.0 };
         for k in ks.clone().filter(|&k| k >= 1 && k < nz) {
             let ce = pe[k];
-            for j in 1..ny {
+            for j in 0..=ny {
                 for i in 0..nx {
                     let id = ex.at(i, j, k);
                     let c = cex[id];
                     if c == 0.0 {
                         continue;
                     }
-                    let dhz_dy = (hz.get(hz.at(i, j, k)) - hz.get(hz.at(i, j - 1, k))) / dyd[j];
+                    let dhz_dy = (h(hz, j < ny, i, j, k) - h(hz, j > 0, i, j.wrapping_sub(1), k)) / dyd[j];
                     let dhy_dz = (hy.get(hy.at(i, j, k)) - hy.get(hy.at(i, j, k - 1))) / dzd[k];
                     let psi = ce.psi(psi_ex.get(id), dhy_dz);
                     psi_ex.set(id, psi);
@@ -455,14 +513,14 @@ impl Kernel for GuideKernel<'_> {
                 }
             }
             for j in 0..ny {
-                for i in 1..nx {
+                for i in 0..=nx {
                     let id = ey.at(i, j, k);
                     let c = cey[id];
                     if c == 0.0 {
                         continue;
                     }
                     let dhx_dz = (hx.get(hx.at(i, j, k)) - hx.get(hx.at(i, j, k - 1))) / dzd[k];
-                    let dhz_dx = (hz.get(hz.at(i, j, k)) - hz.get(hz.at(i - 1, j, k))) / dxd[i];
+                    let dhz_dx = (h(hz, i < nx, i, j, k) - h(hz, i > 0, i.wrapping_sub(1), j, k)) / dxd[i];
                     let psi = ce.psi(psi_ey.get(id), dhx_dz);
                     psi_ey.set(id, psi);
                     let (e, curl) = (ey.get(id), dhx_dz + psi - dhz_dx);
@@ -471,21 +529,27 @@ impl Kernel for GuideKernel<'_> {
             }
         }
         for k in ks.filter(|&k| k < nz) {
-            for j in 1..ny {
-                for i in 1..nx {
+            for j in 0..=ny {
+                for i in 0..=nx {
                     let id = ez.at(i, j, k);
                     let c = cez[id];
                     if c == 0.0 {
                         continue;
                     }
-                    let dhy_dx = (hy.get(hy.at(i, j, k)) - hy.get(hy.at(i - 1, j, k))) / dxd[i];
-                    let dhx_dy = (hx.get(hx.at(i, j, k)) - hx.get(hx.at(i, j - 1, k))) / dyd[j];
+                    let dhy_dx = (h(hy, i < nx, i, j, k) - h(hy, i > 0, i.wrapping_sub(1), j, k)) / dxd[i];
+                    let dhx_dy = (h(hx, j < ny, i, j, k) - h(hx, j > 0, i, j.wrapping_sub(1), k)) / dyd[j];
                     let (e, curl) = (ez.get(id), dhy_dx - dhx_dy);
                     ez.set(id, disp_z.step(id, e, curl, dt).unwrap_or(e + c * curl));
                 }
             }
         }
     }
+}
+
+/// The decay of H on face `id` (1 without magnetic losses).
+#[inline]
+fn decay(d: &[f64], id: usize) -> f64 {
+    d.get(id).copied().unwrap_or(1.0)
 }
 
 /// The TE₁₀ profile sin(π(x − x0)/a) on the E_y nodes of a z plane, over the aperture of a
@@ -597,7 +661,7 @@ pub(crate) fn run(
     let band = Band::of(freqs);
     let sp = Spacing::new(g);
     let dt = time_step(o.courant, sp.min());
-    check_poles(g, dt)?;
+    check_poles(g.poles.iter().flatten(), dt)?;
     let coef = Coefficients::new(g, &sp, lattices(g.n()), dt);
     let cpml = ZCpml::new(g, dt, band.fc);
     // Source and projections: the TE₁₀ profile of the planes' apertures.
@@ -623,6 +687,7 @@ pub(crate) fn run(
                 poles: Poles::of(&coef.dispersion, coef.e.each_ref().map(Vec::len)),
                 e: coef.e,
                 h: coef.h,
+                h_decay: coef.h_decay,
                 primal: sp.primal.clone(),
                 dual: sp.dual.clone(),
                 cpml_e: cpml.e.iter().map(|c| [c.b, c.a]).collect(),

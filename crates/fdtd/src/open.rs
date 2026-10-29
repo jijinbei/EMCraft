@@ -10,6 +10,14 @@
 //! staircase; a one-cell wire behaves like one of radius about 0.135 h — K. R. Umashankar, A.
 //! Taflove, B. Beker, IEEE Trans. AP 35(11), 1987).
 //!
+//! **Materials.** Each E edge takes the average of its four cells' ε∞, conductivity and poles,
+//! each H face the average of its two cells' μ and magnetic conductivity, updated as in the
+//! guide (the crate's documentation: loss tangents as conductivities matched at the band's
+//! centre, the exponential update, dispersion by auxiliary differential equations). A current
+//! element on a lossy or dispersive edge enters its solve, the edge's terms following; lumped
+//! ports, whose semi-implicit update assumes a plain edge, are refused there. Conductors are
+//! perfect: finite wall conductivity is refused.
+//!
 //! **Sources.** A current element of moment I·l on the grid edge nearest its centre and along
 //! its axis (moment kept: the edge carries I·l/h). A lumped port is a resistive voltage source
 //! on the run of grid edges along its gap (M. Piket-May, A. Taflove, J. Baron, *FD-TD modeling
@@ -22,13 +30,14 @@ use std::f64::consts::PI;
 use std::ops::{ControlFlow, Range};
 
 use emcraft_model::units::{C0, EPS0, ETA0, MU0};
-use emcraft_model::{CVec3, Model, Point3, Shape, Source, Vec3};
+use emcraft_model::{CVec3, Material, Model, Point3, Shape, Source, Vec3};
 use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
 use crate::device::{CurrentPlan, OpenPlan, OpenStepper, PortEdgePlan, PortPlan, SamplePlan};
+use crate::dispersion::{Dispersion, Poles, Term, check_poles, exponential_fit, magnetic_update};
 use crate::yee::{Band, Cpml, Field, Fields, Grading, Kernel, Pulse, index, lattices, layer_profile, leapfrog, time_step};
-use crate::{FdtdError, MAX_CELLS, MAX_STEPS, Result, invalid};
+use crate::{FdtdError, Losses, MAX_CELLS, MAX_STEPS, Result, invalid};
 
 /// Run settings of an open problem.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -114,10 +123,10 @@ impl BoxGrid {
         let Shape::Box { size } = solid.shape else {
             return Err(FdtdError::NotReady("the time domain's open problems need a box solid".into()));
         };
-        if model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.mu_r != 1.0 || m.is_magnetically_lossy() || m.is_dispersive())
-            || model.wall_conductivity.is_some()
-        {
-            return Err(FdtdError::Unsupported("losses, dispersion or magnetic materials in the time domain's open problems".into()));
+        if model.wall_conductivity.is_some() {
+            return Err(FdtdError::Unsupported(
+                "walls of finite conductivity in the time domain's open problems (its conductors are perfect; clear model.walls)".into(),
+            ));
         }
         if !model.ports.is_empty() {
             return Err(FdtdError::Unsupported("waveguide ports in the time domain's open problems (use lumped ports)".into()));
@@ -153,31 +162,46 @@ impl BoxGrid {
         self.hs[u] * self.hs[v]
     }
 
+    /// The update coefficients of the model's box for a time step `dt`, the loss tangents
+    /// realised by `losses`.
+    ///
     /// dt/ε per E edge: 0 on conductors and the box's walls, where an edge's midpoint or any of
-    /// the four cells round it is a conductor's; ε the average of those cells'.
-    fn edge_coefficients(&self, model: &Model, dt: f64) -> [Vec<f64>; 3] {
-        let [e_dims, _] = lattices(self.n);
+    /// the four cells round it is a conductor's; ε the average of those cells', and their
+    /// conductivities and poles, a quarter each, on the edge's slot (the exponential update with
+    /// conductivity, the auxiliary equations with poles, as in the guide). dt/μ per H face: μ the
+    /// average of the cells on either side that are not conductors (μ₀ if neither), with
+    /// magnetic losses the exponential update and its decay.
+    fn coefficients(&self, model: &Model, dt: f64, losses: Losses) -> Result<BoxCoefficients> {
+        let [e_dims, h_dims] = lattices(self.n);
         let n = self.n;
-        // Materials per cell: εr, or `None` in a conductor.
-        let mut eps_cell = vec![None; self.cells()];
+        for m in &model.materials {
+            m.checked().map_err(|e| invalid("material", e.to_string()))?;
+        }
+        check_poles(model.materials.iter().flat_map(|m| m.dispersion.iter()), dt)?;
+        // Materials per cell: an index into the model's, or `None` in a conductor.
+        let mut cell_of = vec![None; self.cells()];
         for k in 0..n[2] {
             for j in 0..n[1] {
                 for i in 0..n[0] {
                     let p = Point3::new(self.node(0, i as f64 + 0.5), self.node(1, j as f64 + 0.5), self.node(2, k as f64 + 0.5));
-                    eps_cell[i + n[0] * (j + n[1] * k)] = model.material_at(p).map(|m| model.materials.get(m).map_or(1.0, |x| x.eps_r));
+                    cell_of[i + n[0] * (j + n[1] * k)] = model.material_at(p);
                 }
             }
         }
-        let cell_eps = |c: [isize; 3]| -> Option<f64> {
+        let vacuum = Material::vacuum();
+        // The material of cell c: `None` outside the grid or in a conductor.
+        let cell = |c: [isize; 3]| -> Option<&Material> {
             if (0..3).any(|d| c[d] < 0 || c[d] as usize >= n[d]) {
                 return None;
             }
-            eps_cell[c[0] as usize + n[0] * (c[1] as usize + n[1] * c[2] as usize)]
+            cell_of[c[0] as usize + n[0] * (c[1] as usize + n[1] * c[2] as usize)].map(|m| model.materials.get(m).unwrap_or(&vacuum))
         };
-        [0, 1, 2].map(|a| {
+        let mut dispersion = [Dispersion::none(), Dispersion::none(), Dispersion::none()];
+        let ce = [0, 1, 2].map(|a| {
             let (u, v) = across(a);
             let d = e_dims[a];
-            let mut ce = vec![0.0; d.iter().product()];
+            let len = d.iter().product();
+            let mut ce = vec![0.0; len];
             for k in 0..d[2] {
                 for j in 0..d[1] {
                     for i in 0..d[0] {
@@ -187,28 +211,77 @@ impl BoxGrid {
                             continue;
                         }
                         // The four cells round the edge: offsets −1, 0 along u and v.
-                        let mut eps = 0.0;
-                        let mut ok = true;
+                        let mut round = Vec::with_capacity(4);
                         for du in [-1isize, 0] {
                             for dv in [-1isize, 0] {
                                 let mut c = idx.map(|x| x as isize);
                                 c[u] += du;
                                 c[v] += dv;
-                                match cell_eps(c) {
-                                    Some(e) => eps += 0.25 * e,
-                                    None => ok = false,
-                                }
+                                round.extend(cell(c));
                             }
                         }
-                        if ok {
-                            ce[index(d, i, j, k)] = dt / (EPS0 * eps);
+                        if round.len() < 4 {
+                            continue;
+                        }
+                        let eps = 0.25 * round.iter().map(|m| m.eps_r).sum::<f64>();
+                        let sigma = 0.25 * round.iter().map(|m| losses.of(m).0).sum::<f64>();
+                        let eps = eps * exponential_fit(sigma * dt / (EPS0 * eps));
+                        let id = index(d, i, j, k);
+                        ce[id] = dt / (EPS0 * eps);
+                        if sigma > 0.0 || round.iter().any(|m| m.is_dispersive()) {
+                            let terms = round.iter().flat_map(|m| m.dispersion.iter().map(|p| Term::new(*p, 0.25, dt)));
+                            dispersion[a].add_edge(len, id, EPS0 * eps, 0.5 * sigma * dt, terms);
                         }
                     }
                 }
             }
             ce
-        })
+        });
+        for d in &mut dispersion {
+            d.finish();
+        }
+        let magnetic = model.materials.iter().any(|m| m.is_magnetically_lossy());
+        let mut h_decay = [Vec::new(), Vec::new(), Vec::new()];
+        let ch = [0, 1, 2].map(|a| {
+            let d = h_dims[a];
+            let mut ch = vec![dt / MU0; d.iter().product()];
+            let mut decay = if magnetic { vec![1.0; ch.len()] } else { Vec::new() };
+            for k in 0..d[2] {
+                for j in 0..d[1] {
+                    for i in 0..d[0] {
+                        let b = [i, j, k].map(|x| x as isize);
+                        let mut c = b;
+                        c[a] -= 1;
+                        let sides: Vec<&Material> = [c, b].into_iter().filter_map(cell).collect();
+                        if sides.is_empty() {
+                            continue;
+                        }
+                        let count = sides.len() as f64;
+                        let mu = MU0 * sides.iter().map(|m| m.mu_r).sum::<f64>() / count;
+                        let sigma_m = sides.iter().map(|m| losses.of(m).1).sum::<f64>() / count;
+                        let id = index(d, i, j, k);
+                        let (c, x) = magnetic_update(dt, mu, sigma_m);
+                        ch[id] = c;
+                        if let Some(y) = decay.get_mut(id) {
+                            *y = x;
+                        }
+                    }
+                }
+            }
+            h_decay[a] = decay;
+            ch
+        });
+        Ok(BoxCoefficients { ce, ch, h_decay, dispersion })
     }
+}
+
+/// The open box's update coefficients: dt/ε per E edge with the slots of the dispersive and
+/// lossy ones, dt/μ per H face and its decay with magnetic losses (empty without).
+struct BoxCoefficients {
+    ce: [Vec<f64>; 3],
+    ch: [Vec<f64>; 3],
+    h_decay: [Vec<f64>; 3],
+    dispersion: [Dispersion; 3],
 }
 
 /// A lumped port's edge with its semi-implicit coefficients (Piket-May et al. 1994):
@@ -236,7 +309,8 @@ struct GridPort {
 
 impl GridPort {
     /// The model's lumped port `lp` as a run of edges between grid nodes.
-    fn new(lp: &emcraft_model::LumpedPort, grid: &BoxGrid, ce: &[Vec<f64>; 3], dt: f64) -> Result<GridPort> {
+    fn new(lp: &emcraft_model::LumpedPort, grid: &BoxGrid, coef: &BoxCoefficients, dt: f64) -> Result<GridPort> {
+        let ce = &coef.ce;
         if lp.voltage[1] != 0.0 {
             return Err(FdtdError::Unsupported("lumped ports with a phase in the time domain (their voltages must be real)".into()));
         }
@@ -262,6 +336,12 @@ impl GridPort {
             .collect();
         if ids.iter().any(|&id| ce[axis][id] == 0.0) {
             return Err(invalid("lumped port", format!("`{}` crosses a conductor on the grid", lp.name)));
+        }
+        if ids.iter().any(|&id| coef.dispersion[axis].has(id)) {
+            return Err(FdtdError::Unsupported(format!(
+                "a lumped port in a lossy or dispersive material in the time domain (`{}`: put its gap in a lossless one)",
+                lp.name
+            )));
         }
         let count = ids.len() as f64;
         let r_edge = lp.impedance / count;
@@ -306,15 +386,18 @@ impl GridPort {
     }
 }
 
-/// A current element on one E edge, carrying its moment (A, per unit of source).
+/// A current element on one E edge, carrying its moment (A, per unit of source): E gains
+/// −`gain` × moment × s/area after each step (`gain` dt/ε, or on a lossy or dispersive edge the
+/// slot's [`Dispersion::gain`] times dt, its terms following).
 struct Current {
     axis: usize,
     id: usize,
     moment: f64,
+    gain: f64,
 }
 
 /// The model's current elements, each on the grid edge nearest its centre.
-fn currents(model: &Model, grid: &BoxGrid) -> Result<Vec<Current>> {
+fn currents(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients, dt: f64) -> Result<Vec<Current>> {
     let hs = grid.hs;
     let mut out = Vec::new();
     for s in &model.sources {
@@ -325,7 +408,9 @@ fn currents(model: &Model, grid: &BoxGrid) -> Result<Vec<Current>> {
             }
             let dims = lattices(grid.n)[0][axis];
             let c = [0, 1, 2].map(|q| ((at[q] / hs[q] - if q == axis { 0.5 } else { 0.0 }).round().max(0.0) as usize).min(dims[q] - 1));
-            out.push(Current { axis, id: index(dims, c[0], c[1], c[2]), moment: current * length * direction[axis].signum() / hs[axis] });
+            let id = index(dims, c[0], c[1], c[2]);
+            let gain = coef.dispersion[axis].gain(id).map_or(coef.ce[axis][id], |g| g * dt);
+            out.push(Current { axis, id, moment: current * length * direction[axis].signum() / hs[axis], gain });
         }
     }
     Ok(out)
@@ -370,12 +455,11 @@ impl BoxPsi {
 /// The leapfrog of the box: uniform steps, CPML on every derivative.
 struct OpenKernel<'a> {
     fields: &'a Fields,
-    /// dt/ε per E edge, and dt/μ₀.
-    ce: &'a [Vec<f64>; 3],
-    ch: f64,
+    coef: &'a BoxCoefficients,
     cpml: &'a BoxCpml,
     psi: &'a BoxPsi,
     hs: [f64; 3],
+    dt: f64,
 }
 
 impl OpenKernel<'_> {
@@ -386,6 +470,7 @@ impl OpenKernel<'_> {
         let [p0, p1] = &self.psi.h[A];
         let (pu, pv) = (&self.cpml.h[u], &self.cpml.h[v]);
         let (su, sv) = (ev.stride(u), eu.stride(v));
+        let (ch, decay) = (&self.coef.ch[A], &self.coef.h_decay[A]);
         let d = h.dims();
         for k in ks.start.min(d[2])..ks.end.min(d[2]) {
             for j in 0..d[1] {
@@ -399,7 +484,8 @@ impl OpenKernel<'_> {
                     let q1 = pv[idx[v]].psi(p1.get(id), deu_dv);
                     p0.set(id, q0);
                     p1.set(id, q1);
-                    h.set(id, h.get(id) - self.ch * (dev_du + q0 - deu_dv - q1));
+                    let keep = decay.get(id).copied().unwrap_or(1.0);
+                    h.set(id, keep * h.get(id) - ch[id] * (dev_du + q0 - deu_dv - q1));
                 }
             }
         }
@@ -412,7 +498,7 @@ impl OpenKernel<'_> {
         let [p0, p1] = &self.psi.e[A];
         let (pu, pv) = (&self.cpml.e[u], &self.cpml.e[v]);
         let (su, sv) = (hv.stride(u), hu.stride(v));
-        let ce = &self.ce[A];
+        let (ce, disp) = (&self.coef.ce[A], &self.coef.dispersion[A]);
         let d = e.dims();
         for k in ks.start.min(d[2])..ks.end.min(d[2]) {
             for j in 0..d[1] {
@@ -430,7 +516,8 @@ impl OpenKernel<'_> {
                     let q1 = pv[idx[v]].psi(p1.get(id), dhu_dv);
                     p0.set(id, q0);
                     p1.set(id, q1);
-                    e.set(id, e.get(id) + c * (dhv_du + q0 - dhu_dv - q1));
+                    let (old, curl) = (e.get(id), dhv_du + q0 - dhu_dv - q1);
+                    e.set(id, disp.step(id, old, curl, self.dt).unwrap_or(old + c * curl));
                 }
             }
         }
@@ -708,9 +795,10 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let grid = BoxGrid::new(model, h)?;
     let band = Band::of(frequencies);
     let dt = time_step(o.courant, grid.hs);
-    let ce = grid.edge_coefficients(model, dt);
-    let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &ce, dt)).collect::<Result<Vec<_>>>()?;
-    let currents = currents(model, &grid)?;
+    let coef = grid.coefficients(model, dt, Losses::new(band.fc))?;
+    let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &coef, dt)).collect::<Result<Vec<_>>>()?;
+    let currents = currents(model, &grid, &coef, dt)?;
+    let ce = &coef.ce;
     if ports.is_empty() && currents.is_empty() {
         return Err(FdtdError::NotReady("no sources: a dipole or a lumped port".into()));
     }
@@ -730,7 +818,9 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
                 n: grid.n,
                 hs: grid.hs,
                 dt,
-                ch: dt / MU0,
+                ch: coef.ch.clone(),
+                h_decay: coef.h_decay.clone(),
+                poles: Poles::of(&coef.dispersion, coef.ce.each_ref().map(Vec::len)),
                 cpml_e: cpml.e.each_ref().map(|c| c.iter().map(|c| [c.b, c.a]).collect()),
                 cpml_h: cpml.h.each_ref().map(|c| c.iter().map(|c| [c.b, c.a]).collect()),
                 ports: ports
@@ -745,13 +835,13 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
                     .collect(),
                 currents: currents
                     .iter()
-                    .map(|c| CurrentPlan { axis: c.axis, id: c.id, coefficient: ce[c.axis][c.id] * c.moment / grid.area(c.axis) })
+                    .map(|c| CurrentPlan { axis: c.axis, id: c.id, coefficient: c.gain * c.moment / grid.area(c.axis) })
                     .collect(),
                 samples: hbox.samples.iter().map(|x| SamplePlan { axis: x.axis, plane: x.plane, iu: x.iu, iv: x.iv }).collect(),
                 frequencies: frequencies.to_vec(),
                 batch: CHECK,
                 pulse,
-                ce,
+                ce: coef.ce.clone(),
             };
             let mut vi = Vec::with_capacity(plan.ports.len());
             device.radiate(&plan, o.max_steps, &mut |batch| {
@@ -771,7 +861,7 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
         None => {
             let fields = Fields::new(grid.n);
             let psi = BoxPsi::new(&fields);
-            let kernel = OpenKernel { fields: &fields, ce: &ce, ch: dt / MU0, cpml: &cpml, psi: &psi, hs: grid.hs };
+            let kernel = OpenKernel { fields: &fields, coef: &coef, cpml: &cpml, psi: &psi, hs: grid.hs, dt };
             let mut port_vi = Vec::with_capacity(ports.len());
             leapfrog(&kernel, grid.n[2] + 1, o.max_steps, |step| {
                 let s_now = pulse.at((step as f64 + 0.5) * dt);
@@ -780,7 +870,10 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
                 port_vi.extend(ports.iter().map(|p| p.update(&fields.e[p.axis], &ce[p.axis], grid.hs[p.axis], s_now)));
                 for c in &currents {
                     let e = &fields.e[c.axis];
-                    e.set(c.id, e.get(c.id) - ce[c.axis][c.id] * c.moment * s_now / grid.area(c.axis));
+                    let delta = -c.gain * c.moment * s_now / grid.area(c.axis);
+                    if !coef.dispersion[c.axis].inject(e, c.id, delta) {
+                        e.set(c.id, e.get(c.id) + delta);
+                    }
                 }
                 tr.add(frequencies, dt, step, s_now, &port_vi, &hbox, &fields);
                 checks.after(step, &port_vi, &tr)?;

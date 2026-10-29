@@ -55,10 +55,23 @@ result is frozen so it cannot drift.
    exact cascade (2.5e-2 at 1.5 mm cells; heavy: 1.16e-2 → 2.8e-3 from 1 to 0.5 mm, second
    order), the inductive iris against mode matching (heavy), the dispersive slab's auxiliary
    differential equations against the cascade (heavy: second order, 3.5e-2 → 1.6e-2 from 1 to
-   0.7 mm), passivity, hostile requests. On devices (`crates/gpu/tests/`): a
+   0.7 mm), passivity, hostile requests. Losses (`crates/fdtd/tests/losses.rs`): a lossy slab,
+   a magnetically lossy slab, a lossy port, a dispersive port and a step into a lossy port
+   against the cascade of the material the time domain realises (the loss tangents as
+   conductivities matched at the band's centre, ε = εr − jσ/ωε₀), |S21| converging at second
+   order (heavy); walls of finite conductivity against the TE10 conductor attenuation (+0.9 % at
+   1.5 mm; heavy: within 0.4 % at 0.75 mm); a huge loss tangent and conductivity stable, hostile
+   conductivities refused. The engine's tests check the FEM, given tan δ·f_r/f at each
+   frequency, against the time domain (5e-3 and 2.8e-2 at 1 mm, |S21| within 2e-3); the open
+   box (`crates/fdtd/tests/open_losses.rs`) a dipole in a lossy, magnetically lossy sphere and in
+   a Debye sphere against the exact spherical-wave solution (−0.6 % and +2.0 % of the radiated
+   power at 1 mm; heavy: 0.7 mm and the Debye sphere). Oracles `lossy-slab-time-domain` and
+   `wall-loss-time-domain`. On devices (`crates/gpu/tests/`): a
    serial stepper written from the plan alone matches the threads; CubeCL's CPU runtime
-   matches them to 1e-9 in double and 1e-4 in single for the guide, the dispersive slab and
-   the open box with ports and a dipole (in the gate); CUDA, on a machine with an NVIDIA GPU,
+   matches them to 1e-9 in double and 1e-4 in single for the guide, the dispersive slab, a
+   guide with every loss (lossy and magnetic sections, lossy walls) and the open box with ports
+   and a dipole, bare and in a lossy, magnetic, dispersive sphere (in the gate); CUDA, on a
+   machine with an NVIDIA GPU,
    the same, the same bits twice, and the factorization's fronts held by the device solving
    alike to 1e-9 (`cargo test -p emcraft-gpu --features cuda -- --ignored`). The solver's
    own test holds fronts in a host-side device written from `DeviceFront`'s documentation.

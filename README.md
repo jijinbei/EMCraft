@@ -77,7 +77,10 @@ checked against the exact lossy cascade and the textbook conductor attenuation; 
 substrates (a microstrip or stripline on FR-4) take hybrid lossy modes with their complex γ.
 
 A time-domain solver (finite integration on a hexahedral grid, like CST's) cross-checks the
-FEM: `solve.time_domain` puts its curves on the same chart.
+FEM: `solve.time_domain` puts its curves on the same chart. It takes dispersive and lossy
+materials (loss tangents as conductivities matched at the band's centre), magnetic losses,
+walls of finite conductivity (the surface impedance as branches of surface current) and lossy
+or dispersive ports.
 
 ![The high-pass filter: exact, FEM and time domain](docs/media/highpass-fem-fdtd.png)
 

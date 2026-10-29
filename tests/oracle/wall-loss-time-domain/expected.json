@@ -1,0 +1,11 @@
+{
+ "title": "WR-90 with walls of 1e6 S/m, 200 mm, by the time-domain solver: TE10 attenuation over the band",
+ "kind": "theory",
+ "source": "TE10 conductor attenuation α_c = R_s(2bπ² + a³k²)/(a³bβkη) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, eq. 3.96), R_s = √(ωμ0/2σ), σ = 1e6 S/m: 0.12945, 0.09503 and 0.08592 Np/m at 8, 10 and 12 GHz, |S21| = e^{−α_c L}, evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_db_8", "quantity": "|S21| at 8 GHz (dB): the loss of 200 mm", "measure": {"step": "td", "pointer": "/points/0/s21/db"}, "value": -0.2248719980096254, "tolerance": {"relative": 0.015}, "reason": "the surface-impedance condition on 1 mm cells, second order: measured +0.3, +0.3 and +0.55 % (−0.4, +0.8 and +2.3 % at 1.5 mm); the transforms settle to 1e-5, which leaves |S21| within some 1e-4 near the cut-off; the closed form is itself first order in R_s/η (k/β)² ≈ 1.5e-3"},
+  {"id": "s21_db_10", "quantity": "|S21| at 10 GHz (dB)", "measure": {"step": "td", "pointer": "/points/1/s21/db"}, "value": -0.16508762634656923, "tolerance": {"relative": 0.015}, "reason": "as at 8 GHz"},
+  {"id": "s21_db_12", "quantity": "|S21| at 12 GHz (dB)", "measure": {"step": "td", "pointer": "/points/2/s21/db"}, "value": -0.14925649358776472, "tolerance": {"relative": 0.015}, "reason": "as at 8 GHz"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "td", "pointer": "/points/1/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 1e-3}, "reason": "a uniform guide: the incident run is the same guide, so only the lossy mode's difference from the lossless one, of order R_s/η, could reflect"}
+ ]
+}

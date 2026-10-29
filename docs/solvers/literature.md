@@ -237,6 +237,32 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   polarization advanced with E on the edges it touches, D = ε₀ε∞E + ΣP; Debye poles centred at
   n + ½ (trapezoidal, solved per edge with E), Lorentz and Drude poles centred at n (explicit)
   (`emcraft-fdtd`).
+- A. Taflove, S. C. Hagness, *Computational Electrodynamics*, 3rd ed., Artech House 2005,
+  §3.12 — lossy media: the conduction current averaged over the step (semi-implicit) and the
+  exponential update; EMCraft solves the first with ε scaled by (r/2) coth(r/2), r = σΔt/ε,
+  which is the second, for electric and magnetic conductivities. A loss tangent becomes the
+  conductivity matched at the band's centre, so the material solved is εr − jσ/ω
+  (`emcraft-fdtd`, `Losses`).
+- J. G. Maloney, G. S. Smith, *The use of surface impedance concepts in the finite-difference
+  time-domain method*, IEEE Trans. Antennas Propag. 40(1):38–48, 1992; K. S. Oh, J. E.
+  Schutt-Ainé, *An efficient implementation of surface impedance boundary conditions for the
+  finite-difference time-domain method*, IEEE Trans. Antennas Propag. 43(7):660–666, 1995 —
+  surface-impedance walls in the time domain by recursive convolution with sums of
+  exponentials. EMCraft writes the Leontovich admittance √(σ/μ₀) s^{−1/2} by its Stieltjes
+  integral (1/π)∫ x^{−1/2}/(s + x) dx, discretised by the trapezoidal rule in ln x (L. N.
+  Trefethen, J. A. C. Weideman, *The exponentially convergent trapezoidal rule*, SIAM Review
+  56(3):385–458, 2014) with Euler–Maclaurin ends and moment-matched tails: some 25 passive
+  first-order branches of surface current per wall edge, each advanced by the trapezoidal rule,
+  the edge updated by Ampère's law over the half of its dual face inside (`emcraft-fdtd`,
+  `surface`).
+- R. B. Marks, D. F. Williams, *A general waveguide circuit theory*, J. Res. NIST
+  97(5):533–562, 1992 — the time domain's ports in lossy and dispersive media: S₂₁ normalised by
+  the modes' unconjugated powers ∝ β/μ with the complex TE10 β, as the frequency-domain
+  solver's pseudo-waves.
+- C. A. Balanis, *Advanced Engineering Electromagnetics*, 2nd ed., Wiley 2012, §6.8 — the
+  Hertzian dipole's field, r H_φ ∝ k ζ(kr): the reference for a dipole at the centre of a
+  lossy, magnetic or dispersive sphere in the time domain's open problems (the TM₀₁ spherical
+  wave matched at the sphere's surface).
 
 ## Adaptive refinement
 - P. Monk, *A posteriori error indicators for Maxwell's equations*, J. Comput. Appl. Math.

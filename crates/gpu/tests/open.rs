@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use emcraft_fdtd::open::{OpenOptions, OpenRun, radiate, radiate_with};
 use emcraft_gpu::{Backend, Gpu, Precision, available};
-use emcraft_model::{LumpedPort, Model, Open, Point3, Shape, Solid, Source, Vec3};
+use emcraft_model::{Inclusion, LumpedPort, Material, Model, Open, Point3, Pole, Shape, Solid, Source, Vec3};
 
 fn open_box(size: f64, pml: f64) -> Model {
     let mut m = Model::new();
@@ -30,6 +30,25 @@ fn antennas(size: f64) -> Model {
         };
         m.add_lumped_port(gap).unwrap();
     }
+    m
+}
+
+/// The antennas with the dipole inside a sphere of a lossy, magnetically lossy, dispersive
+/// material: the slotted edges, the impressed current on them, the H faces' μ and decay.
+fn loaded(size: f64) -> Model {
+    let mut m = antennas(size);
+    let poles = vec![Pole::Debye { delta_eps: 1.0, tau: 1e-11 }];
+    let x = Material::new("x", 2.0, 1.5)
+        .unwrap()
+        .with_loss_tangent(0.1)
+        .unwrap()
+        .with_magnetic_loss_tangent(0.1)
+        .unwrap()
+        .with_dispersion(poles)
+        .unwrap();
+    m.add_material(x).unwrap();
+    let c = size / 2.0;
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(c, c, c), material: Some("x".into()) }).unwrap();
     m
 }
 
@@ -70,6 +89,17 @@ fn the_cpu_backend_matches_the_threads_in_the_open() {
 }
 
 #[test]
+fn lossy_dispersive_and_magnetic_materials_in_the_open_match_the_threads() {
+    let (m, freqs) = (loaded(0.04), [9e9, 11e9]);
+    let o = OpenOptions { max_steps: 400, ..OpenOptions::new(2e-3) };
+    let cpu = radiate(&m, &o, &freqs).unwrap();
+    let double = on(&m, &o, &freqs, Backend::Cpu, Precision::Double);
+    assert!(worst(&double, &cpu) < 1e-8, "{:e}", worst(&double, &cpu));
+    let single = on(&m, &o, &freqs, Backend::Cpu, Precision::Single);
+    assert!(worst(&single, &cpu) < 1e-3, "{:e}", worst(&single, &cpu));
+}
+
+#[test]
 #[ignore = "needs an NVIDIA GPU: cargo test -p emcraft-gpu --features cuda -- --ignored"]
 fn cuda_matches_the_threads_in_the_open() {
     let cuda = available().into_iter().find(|a| a.backend == Backend::Cuda).unwrap();
@@ -85,4 +115,11 @@ fn cuda_matches_the_threads_in_the_open() {
     let single = on(&m, &o, &freqs, Backend::Cuda, Precision::Single);
     assert!(worst(&single, &cpu) < 1e-3, "{:e}", worst(&single, &cpu));
     assert_eq!(on(&m, &o, &freqs, Backend::Cuda, Precision::Single), single);
+    // Lossy, dispersive and magnetic materials to the end.
+    let m = loaded(0.05);
+    let cpu = radiate(&m, &o, &freqs).unwrap();
+    let double = on(&m, &o, &freqs, Backend::Cuda, Precision::Double);
+    assert!(worst(&double, &cpu) < 1e-8, "{:e}", worst(&double, &cpu));
+    let single = on(&m, &o, &freqs, Backend::Cuda, Precision::Single);
+    assert!(worst(&single, &cpu) < 1e-3, "{:e}", worst(&single, &cpu));
 }
