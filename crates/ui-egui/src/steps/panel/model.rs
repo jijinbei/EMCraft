@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(super) fn geometry(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
+pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     ui_kit::section(ui, "Bodies");
     let tree = crate::browser::tree(app);
     for (_, rows) in tree.iter().filter(|(s, _)| *s == "Geometry") {
@@ -16,7 +16,7 @@ pub(super) fn geometry(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &To
     }
 }
 
-pub(super) fn materials(app: &mut EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
+pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     ui_kit::section(ui, "Materials");
     let m = app.session.model();
     for (i, mat) in m.materials.iter().enumerate() {
@@ -29,7 +29,7 @@ pub(super) fn materials(app: &mut EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     }
 }
 
-pub(super) fn boundaries(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
+pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     ui_kit::section(ui, "Boundaries");
     let m = app.session.model();
     kv(ui, "walls", m.wall_conductivity.map_or("perfect conductor".into(), |s| format!("σ = {s:.3e} S/m")), t);
@@ -50,7 +50,7 @@ pub(super) fn boundaries(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &
     }
 }
 
-pub(super) fn mesh(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
+pub(super) fn mesh(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     ui_kit::section(ui, "Mesh");
     let l = app.session.display().length;
     let Some(m) = app.session.model().mesh.as_ref() else {

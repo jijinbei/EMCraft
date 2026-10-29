@@ -2,29 +2,28 @@
 
 use super::*;
 
-pub(super) fn port_modes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
-    let Some(reply) = app.views.port_modes.clone() else {
+    let Some(reply) = app.replies.port_modes.as_ref() else {
         let make =
             empty_with_action(ui, "No port modes yet: they need a meshed model with ports.", "Solve port modes…", !app.busy(), "port_modes:solve");
-        if make && let Err(e) = app.open_dialog("solve.port_modes") {
-            app.error(e);
+        if make {
+            out.push(Action::dialog("solve.port_modes"));
         }
         return;
     };
     let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
     let fu = app.session.display().frequency.symbol();
     ui.label(egui::RichText::new(format!("Port modes at {} {fu}", num(&reply["frequency"], 4))).size(t.font_heading));
-    // The mode picked (from the Excitation panel or a click here), else the first port's first.
-    if app.workflow.mode_focus.is_none()
-        && let Some(name) = reply.pointer("/ports/0/name").and_then(Value::as_str)
-    {
-        app.workflow.mode_focus = Some(crate::steps::ModeFocus { port: name.to_owned(), mode: 0, scroll: false });
-    }
-    let focus = app.workflow.mode_focus.clone();
+    // The mode picked (from the Excitation panel or a click here), else the first port's first;
+    // the table scrolls to it once.
+    let focus = app.workflow.mode_focus.clone().or_else(|| {
+        let name = reply.pointer("/ports/0/name").and_then(Value::as_str)?;
+        Some(crate::steps::ModeFocus { port: name.to_owned(), mode: 0, scroll: false })
+    });
     let scroll = focus.as_ref().is_some_and(|f| f.scroll);
-    if let Some(f) = app.workflow.mode_focus.as_mut() {
-        f.scroll = false;
+    if let Some(f) = focus.as_ref().filter(|f| f.scroll || app.workflow.mode_focus.is_none()) {
+        out.push(Action::FocusMode(crate::steps::ModeFocus { scroll: false, ..f.clone() }));
     }
     // The table on the left, the picked mode's picture on the right.
     let area = ui.available_rect_before_wrap();
@@ -76,23 +75,28 @@ pub(super) fn port_modes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     });
     scenario::publish_rect("table:port_modes", ui.min_rect());
     if let Some((port, mode)) = picked {
-        app.workflow.mode_focus = Some(crate::steps::ModeFocus { port, mode, scroll: false });
+        out.push(Action::FocusMode(crate::steps::ModeFocus { port, mode, scroll: false }));
     }
-    mode_picture(app, &mut picture_ui, &reply);
+    if let Some(f) = focus {
+        mode_picture(app, &mut st.views.mode_picture, &f, &mut picture_ui, reply);
+    }
 }
 
 /// The picked port mode's pattern: its transverse E across the port's face.
-fn mode_picture(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value) {
-    let Some(f) = app.workflow.mode_focus.clone() else { return };
+fn mode_picture(
+    app: &EmcraftApp,
+    slot: &mut Cached<PictureKey<crate::state::ModePicture>>,
+    f: &crate::steps::ModeFocus,
+    ui: &mut egui::Ui,
+    reply: &Value,
+) {
     let fu = app.session.display().frequency;
     let Some(frequency) = reply["frequency"].as_f64().map(|v| fu.to_si(v)) else { return };
     let width = picture_width(ui);
     let key = PictureKey::new(app.revision, width, crate::state::ModePicture { port: f.port.clone(), mode: f.mode, frequency });
     let session = &app.session;
-    let drawn = app
-        .views
-        .mode_picture
-        .get_or_draw(key, || view::port_mode_plot(session, &f.port, f.mode, frequency, 2).map(|plot| emcraft_render::plot::draw(&plot, width)));
+    let drawn =
+        slot.get_or_draw(key, || view::port_mode_plot(session, &f.port, f.mode, frequency, 2).map(|plot| emcraft_render::plot::draw(&plot, width)));
     match drawn {
         Ok(p) => {
             picture(ui, p, "picture:port_mode");
@@ -105,18 +109,13 @@ pub(super) fn num(v: &Value, digits: usize) -> String {
     v.as_f64().map_or("–".into(), |x| format!("{x:.digits$}"))
 }
 
-pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
-    if app.views.eigen_table.as_ref().is_none_or(|e| e.revision != app.revision) {
-        match app.session.execute("results.eigenmodes", &json!({})) {
-            Ok(reply) => app.views.eigen_table = Some(crate::state::EigenTable { revision: app.revision, reply }),
-            Err(e) => {
-                empty(ui, &e.to_string());
-                return;
-            }
-        }
-    }
-    let Some(table) = app.views.eigen_table.as_ref().map(|e| e.reply.clone()) else { return };
+    let table = match st.views.eigen_table.as_ref().filter(|e| e.revision == app.revision).map(|e| &e.reply) {
+        Some(Ok(table)) => table,
+        Some(Err(e)) => return empty(ui, e),
+        None => return,
+    };
     let fu = app.session.display().frequency.symbol();
     let mut open = None;
     egui::Grid::new("eigen_grid").striped(true).num_columns(4).show(ui, |ui| {
@@ -142,17 +141,17 @@ pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new(list.join(" · ")).size(t.font_body).color(t.text_dim));
     }
     if let Some(i) = open {
-        app.field.view.mode = Some(i);
-        app.view = View::Field;
+        st.field.view.mode = Some(i);
+        out.push(Action::SetView(View::Field));
     }
 }
 
-pub(super) fn compare(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
-    let Some(reply) = app.views.compare.clone() else {
+    let Some(reply) = app.replies.compare.as_ref() else {
         let ready = !app.busy() && app.session.results().sweep.is_some();
         if empty_with_action(ui, "Compare the sweep with the exact TE10 solution or mode matching.", "Compare…", ready, "compare:run") {
-            let _ = app.run("results.compare", json!({}));
+            out.push(Action::run("results.compare", json!({})));
         }
         return;
     };

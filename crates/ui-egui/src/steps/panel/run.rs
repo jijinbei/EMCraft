@@ -15,9 +15,9 @@ fn refusal_band(ui: &mut egui::Ui, heading: &str, t: &Tokens, details: impl FnOn
 }
 
 /// Run: the preflight's findings and the button that starts the solve.
-pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &Tokens) {
+pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, states: &[StepState], t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Preflight");
-    let pre = preflight(app, states);
+    let pre = preflight(&app.session, f, states);
     if pre.blocking.is_empty() && pre.warnings.is_empty() {
         ui_kit::small(ui, "Every step is ready.", t.success);
     }
@@ -35,10 +35,10 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
         }
     }
     if let Some(s) = go {
-        open_step(app, Some(s));
+        out.push(Action::OpenStep(Some(s)));
         return;
     }
-    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
+    let solver = f.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
     ui.add_space(6.0);
     ui_kit::small(ui, format!("Solver: {}", solver.label()), t.text);
     let label = if !pre.blocking.is_empty() {
@@ -50,15 +50,15 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
     };
     let busy = app.busy();
     if ui_kit::button(ui, &label, true, !busy, "run:start").clicked() {
-        let _ = start_run(app);
+        out.push(Action::StartRun);
     }
     // Why Run was refused, under the button: each blocking problem with the way to its step,
     // as long as it blocks.
-    if app.workflow.fields.refused.is_some() && pre.blocking.is_empty() {
-        app.workflow.fields.refused = None;
+    if f.refused.is_some() && pre.blocking.is_empty() {
+        f.refused = None;
     }
     let mut go = None;
-    if app.workflow.fields.refused.is_some() {
+    if f.refused.is_some() {
         refusal_band(ui, &format!("Run refused: {} problem(s) to fix first", pre.blocking.len()), t, |ui| {
             for (i, (step, text)) in pre.blocking.iter().enumerate() {
                 ui.horizontal_wrapped(|ui| {
@@ -79,7 +79,7 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
         });
     }
     if let Some(s) = go {
-        open_step(app, Some(s));
+        out.push(Action::OpenStep(Some(s)));
         return;
     }
     if busy {
@@ -87,7 +87,7 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
     }
     if let Some(e) = estimate(app).ok().filter(|_| solver == Solver::Frequency) {
         let n = |k: &str| e.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
-        let points = app.workflow.fields.points.trim().parse::<f64>().unwrap_or(11.0);
+        let points = f.points.trim().parse::<f64>().unwrap_or(11.0);
         ui_kit::caption(
             ui,
             &format!(

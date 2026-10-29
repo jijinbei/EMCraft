@@ -3,10 +3,10 @@
 
 use super::*;
 
-pub(super) fn dispersion(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn dispersion(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
     let session = &app.session;
     let height = Height::new(0.62, 260.0, 700.0);
-    let drawn = chart_view(ui, &mut app.views.chart, app.revision, ChartView::Dispersion, height, "chart:dispersion", || {
+    let drawn = chart_view(ui, &mut st.views.chart, app.revision, ChartView::Dispersion, height, "chart:dispersion", || {
         emcraft_engine::periodic::dispersion_chart(session)
     });
     if let Err(e) = drawn {

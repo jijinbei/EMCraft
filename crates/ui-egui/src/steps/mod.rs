@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::ribbon::RibbonTab;
 use crate::scene3d::Overlay;
 use crate::theme::Tokens;
-use crate::{EmcraftApp, UiError, View, dialogs, scenario, ui_kit};
+use crate::{Action, Actions, EmcraftApp, UiError, View, dialogs, scenario, ui_kit};
 
 pub use emcraft_engine::workflow::{Check, Status, Step, StepState};
 
@@ -22,7 +22,7 @@ mod panel;
 mod run;
 
 pub use bar::bar;
-pub use panel::{apply_band, panel};
+pub use panel::{apply_band, export_touchstone, panel};
 pub use run::{Preflight, preflight, run_params, start_run};
 
 /// What the 3D view puts forward in a step.
@@ -119,6 +119,9 @@ pub struct Fields {
     pub errors: Vec<(&'static str, String)>,
     /// Run's last refusal.
     pub refused: Option<String>,
+    /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
+    /// frequencies.
+    pub diagram: Option<Value>,
 }
 
 impl Fields {
@@ -145,9 +148,6 @@ pub struct Workflow {
     pub check: Option<(u64, Value)>,
     /// The port mode chosen in the Excitation panel's table, which the Port modes view marks.
     pub mode_focus: Option<ModeFocus>,
-    /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
-    /// frequencies.
-    pub diagram: Option<Value>,
     /// `solve.devices`' reply, asked once: what this machine can run on.
     pub devices: Option<Value>,
 }
@@ -161,20 +161,29 @@ pub struct ModeFocus {
     pub scroll: bool,
 }
 
-/// The statuses of the steps (from `project.status`, once per revision).
-pub fn statuses(app: &mut EmcraftApp) -> Vec<StepState> {
+/// Brings the workflow's caches up to date before a frame is drawn: the steps' statuses (from
+/// `project.status`, once per revision), the solve's estimate in the Mesh and Run steps, the
+/// devices in the Setup step.
+pub fn prepare(app: &mut EmcraftApp) {
     let key = app.revision;
-    if let Some((k, v)) = &app.workflow.status
-        && *k == key
-    {
-        return v.clone();
+    if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
+        app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session).to_vec()));
     }
-    let v = emcraft_engine::workflow::steps(&app.session).to_vec();
-    app.workflow.status = Some((key, v.clone()));
-    v
+    match app.workflow.step {
+        Some(Step::Mesh | Step::Run) if app.workflow.estimate.as_ref().is_none_or(|(k, _)| *k != key) => {
+            let order = app.workflow.fields.order.trim().parse::<u64>().ok().filter(|o| (1..=2).contains(o)).unwrap_or(2);
+            let v = app.session.execute("project.estimate", &json!({"order": order})).map_err(|e| e.to_string());
+            app.workflow.estimate = Some((key, v));
+        }
+        Some(Step::Setup) if app.workflow.devices.is_none() => {
+            let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
+            app.workflow.devices = Some(v);
+        }
+        _ => {}
+    }
 }
 
-/// The statuses for `ui.inspect`: the cache when it is current, else worked out on a copy.
+/// The statuses of the steps: the cache when it is current, else worked out on a copy.
 pub fn statuses_now(app: &EmcraftApp) -> Vec<StepState> {
     if let Some((k, v)) = &app.workflow.status
         && *k == app.revision
@@ -201,7 +210,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "refused": f.refused,
         "solver": f.solver.unwrap_or_else(|| Solver::infer(app.session.model())).id(),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
-        "diagram": app.workflow.diagram,
+        "diagram": f.diagram,
         "device": app.session.compute().device(),
         "precision": app.session.compute().precision.name(),
         "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
@@ -209,18 +218,12 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     })
 }
 
-/// The solve's estimate (`project.estimate`, once per revision).
-pub fn estimate(app: &mut EmcraftApp) -> Result<Value, String> {
-    let key = app.revision;
-    if let Some((k, v)) = &app.workflow.estimate
-        && *k == key
-    {
-        return v.clone();
+/// The solve's estimate (`project.estimate`), as `prepare` left it for this revision.
+pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
+    match &app.workflow.estimate {
+        Some((k, v)) if *k == app.revision => v.as_ref().map_err(String::as_str),
+        _ => Err("no estimate yet"),
     }
-    let order = app.workflow.fields.order.trim().parse::<u64>().ok().filter(|o| (1..=2).contains(o)).unwrap_or(2);
-    let v = app.session.execute("project.estimate", &json!({"order": order})).map_err(|e| e.to_string());
-    app.workflow.estimate = Some((key, v.clone()));
-    v
 }
 
 /// Opens a step: its panel and the view it calls for.
@@ -257,18 +260,16 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
 }
 
 /// What a check's Fix does: the step that owns its command, with that command's dialog.
-pub fn fix(app: &mut EmcraftApp, command: &str) {
+pub fn fix(app: &mut EmcraftApp, command: &str) -> Result<(), UiError> {
     let step = Step::of_command(command);
     if step.is_some() {
         open_step(app, step);
     }
     let runs = command.starts_with("solve.") && command != "solve.port_modes";
-    if command != "project.frequency"
-        && !runs
-        && let Err(e) = app.open_dialog(command)
-    {
-        app.error(e);
+    if command != "project.frequency" && !runs {
+        app.open_dialog(command)?;
     }
+    Ok(())
 }
 
 /// A positive finite number from a field, or why not.
@@ -291,7 +292,7 @@ fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
 }
 
 /// The band (display units) the session holds.
-fn band(app: &EmcraftApp) -> Option<(f64, f64)> {
-    let f = app.session.display().frequency;
-    app.session.model().band.map(|b| (f.from_si(b.start), f.from_si(b.stop)))
+fn band(s: &emcraft_engine::Session) -> Option<(f64, f64)> {
+    let f = s.display().frequency;
+    s.model().band.map(|b| (f.from_si(b.start), f.from_si(b.stop)))
 }

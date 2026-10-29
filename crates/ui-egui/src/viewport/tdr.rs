@@ -12,9 +12,9 @@ const MODES: [(Option<Mode>, &str, &str); 3] = [
     (Some(Mode::BandPass), "Band pass", "|h(t)|: a peak where each reflection comes from (guides with a cut-off)"),
 ];
 
-pub(super) fn tdr(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    controls(app, ui);
-    let tdr = &mut app.views.tdr;
+pub(super) fn tdr(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
+    let tdr = &mut st.views.tdr;
+    controls(app, tdr, ui);
     let mut params = json!({});
     if let Some(p) = &tdr.port {
         params["port"] = json!(p);
@@ -37,9 +37,8 @@ pub(super) fn tdr(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 }
 
 /// The port and the transform.
-fn controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrState, ui: &mut egui::Ui) {
     let ports: Vec<String> = app.session.sparameter_entries().into_iter().map(|e| e.name).collect();
-    let tdr = &mut app.views.tdr;
     ui.horizontal(|ui| {
         ui.label("port");
         let shown = tdr.port.clone().or_else(|| ports.first().cloned()).unwrap_or_default();

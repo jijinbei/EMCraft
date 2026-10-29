@@ -93,11 +93,12 @@ pub struct ModePicture {
     pub frequency: f64,
 }
 
-/// The eigenmode table (`results.eigenmodes`' reply) and the session revision it was read at.
+/// The eigenmode table (`results.eigenmodes`' reply, or why it failed) and the session revision
+/// it was read at.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EigenTable {
     pub revision: u64,
-    pub reply: Value,
+    pub reply: Result<Value, String>,
 }
 
 /// A plane kept for the 3D view beside the field view's own: which, its position (display
@@ -118,11 +119,16 @@ pub struct ViewState {
     pub pattern_phi: f64,
     pub tdr: TdrState,
     pub study: StudyState,
-    /// The last port-mode solve's reply, and the picked mode's picture.
-    pub port_modes: Option<Value>,
+    /// The picked port mode's picture.
     pub mode_picture: Cached<PictureKey<ModePicture>>,
-    /// The last comparison with theory's reply.
-    pub compare: Option<Value>,
     /// The eigenmode table and the session revision it was read at.
     pub eigen_table: Option<EigenTable>,
+}
+
+/// The replies of the commands whose results the views show as they came: the last port-mode
+/// solve's, the last comparison with theory's.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Replies {
+    pub port_modes: Option<Value>,
+    pub compare: Option<Value>,
 }

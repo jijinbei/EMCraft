@@ -1,7 +1,7 @@
 //! The message area at the bottom: the last messages (a message repeated in a row counted, not
 //! repeated), and the running job's progress with its Cancel.
 
-use crate::{EmcraftApp, label, scenario, theme, ui_kit};
+use crate::{Action, Actions, EmcraftApp, label, scenario, theme, ui_kit};
 
 /// A line of the message area.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,7 +48,7 @@ impl EmcraftApp {
 }
 
 /// The message card at the bottom: the last messages, and the running job's progress and Cancel.
-pub(crate) fn area(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(crate) fn area(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = theme::Tokens::get();
     // Taller while a job runs: its progress row sits above the messages.
     egui::Panel::bottom("emcraft_status")
@@ -62,7 +62,7 @@ pub(crate) fn area(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 ui.set_min_height(height);
                 scenario::publish_rect("status", ui.max_rect());
                 if progress(app, ui, t) {
-                    app.cancel_job();
+                    out.push(Action::CancelJob);
                 }
                 let rest = (height - if app.job.is_some() { 36.0 } else { 0.0 }).max(16.0);
                 egui::ScrollArea::vertical().stick_to_bottom(true).max_height(rest).auto_shrink([false, false]).show(ui, |ui| {

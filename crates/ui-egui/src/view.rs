@@ -87,7 +87,7 @@ impl View {
             View::Model | View::Outline => true,
             View::SParameters | View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
             View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
-            View::PortModes => app.views.port_modes.is_some() || (app.session.model().mesh.is_some() && !app.session.model().ports.is_empty()),
+            View::PortModes => app.replies.port_modes.is_some() || (app.session.model().mesh.is_some() && !app.session.model().ports.is_empty()),
             View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
             View::Compare => r.sweep.is_some(),
             View::Eigenmodes => r.eigen.is_some(),

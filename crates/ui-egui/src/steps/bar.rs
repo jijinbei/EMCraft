@@ -5,11 +5,9 @@ use super::*;
 const BAR_HEIGHT: f32 = 40.0;
 
 /// The step bar under the ribbon.
-pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
-    // A row's hover highlight in 3D lasts one frame: the panel drawn after this sets it again.
-    app.view3d.hover = None;
-    let states = statuses(app);
+    let states = statuses_now(app);
     egui::Panel::top("emcraft_steps")
         .exact_size(BAR_HEIGHT)
         .show_separator_line(false)
@@ -56,7 +54,7 @@ pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             }
             if let Some(step) = clicked {
                 let again = app.workflow.step == Some(step);
-                open_step(app, if again { None } else { Some(step) });
+                out.push(Action::OpenStep(if again { None } else { Some(step) }));
             }
         });
 }

@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(super) fn excitation(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens) {
+pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Ports and sources");
     let m = app.session.model();
     if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
@@ -26,31 +26,27 @@ pub(super) fn excitation(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &
     }
     ui_kit::section(ui, "Port modes");
     let ready = m.mesh.is_some();
-    let at = band(app).map(|(_, z)| format!(" at {} {fu}", fmt(z))).unwrap_or_default();
+    let at = band(&app.session).map(|(_, z)| format!(" at {} {fu}", fmt(z))).unwrap_or_default();
     ui_kit::caption(ui, &format!("Each port's modes{at}: propagation, effective permittivity, impedance (seconds, no full solve)."));
     let busy = app.busy();
     if ui_kit::button(ui, "Preview port modes", true, ready && !busy, "excitation:preview")
         .on_hover_text(if ready { "" } else { "needs a mesh (step 5)" })
         .clicked()
     {
-        let r =
-            if app.session.model().band.is_some() { app.run("solve.port_modes", json!({})).map(|_| ()) } else { app.open_dialog("solve.port_modes") };
-        if let Err(e) = r {
-            app.error(e);
-        }
+        out.push(Action::PreviewPortModes);
     }
-    let Some(reply) = app.views.port_modes.clone() else { return };
+    let Some(reply) = app.replies.port_modes.as_ref() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
     ui_kit::small(ui, format!("at {} {fu}", fmt(f)), t.text_dim);
-    mode_table(app, ui, &reply, t);
+    mode_table(app, ui, reply, t, out);
     if ui_kit::button(ui, "Show the mode patterns", false, true, "excitation:patterns").clicked() {
-        app.view = View::PortModes;
+        out.push(Action::SetView(View::PortModes));
     }
 }
 
 /// The port-mode preview: a row per mode. Hovering a row lights its port in the 3D view;
 /// clicking it opens the Port modes view at that mode.
-fn mode_table(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens) {
+fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, out: &mut Actions) {
     let unit = reply.get("length_unit").and_then(Value::as_str).unwrap_or("m");
     let w = ui.available_width();
     let widths = [w * 0.34, w * 0.24, w * 0.2, w * 0.2];
@@ -115,10 +111,10 @@ fn mode_table(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens
         }
     }
     if let Some(i) = hovered {
-        app.view3d.hover = Some(crate::scene3d::Pick::Port(i));
+        out.push(Action::Hover(crate::scene3d::Pick::Port(i)));
     }
     if let Some((port, mode)) = clicked {
-        app.workflow.mode_focus = Some(ModeFocus { port, mode, scroll: true });
-        app.view = View::PortModes;
+        out.push(Action::FocusMode(ModeFocus { port, mode, scroll: true }));
+        out.push(Action::SetView(View::PortModes));
     }
 }

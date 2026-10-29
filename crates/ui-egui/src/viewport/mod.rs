@@ -9,9 +9,10 @@ use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
 
 use crate::picture::{Cached, PictureKey};
-use crate::state::ChartView;
+use crate::state::{ChartView, FieldState, ViewState};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, Picture, View, scenario};
+use crate::view3d::View3d;
+use crate::{Action, Actions, EmcraftApp, Picture, View, scenario};
 
 mod dispersion;
 mod far_field;
@@ -35,9 +36,41 @@ use tdr::*;
 pub(crate) use fields::{field_plots, plane_span_of};
 pub use study::summary as study_summary;
 
-/// The central card.
-pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+/// The viewport's own state, lent out of the app while the viewport is drawn: the field view's
+/// settings and samples, the result views' charts and settings, the 3D view's camera and
+/// pictures.
+#[derive(Default)]
+pub struct Parts {
+    pub field: FieldState,
+    pub views: ViewState,
+    pub view3d: View3d,
+}
+
+impl Parts {
+    /// The parts taken out of `app`.
+    pub(crate) fn take(app: &mut EmcraftApp) -> Parts {
+        Parts { field: std::mem::take(&mut app.field), views: std::mem::take(&mut app.views), view3d: std::mem::take(&mut app.view3d) }
+    }
+
+    /// The parts put back into `app`.
+    pub(crate) fn put_back(self, app: &mut EmcraftApp) {
+        (app.field, app.views, app.view3d) = (self.field, self.views, self.view3d);
+    }
+}
+
+/// The eigenmode table (`results.eigenmodes`), read again when the session changed.
+pub(crate) fn prepare_eigenmodes(app: &mut EmcraftApp) {
+    if app.views.eigen_table.as_ref().is_some_and(|e| e.revision == app.revision) || app.session.results().eigen.is_none() {
+        return;
+    }
+    let reply = app.session.execute("results.eigenmodes", &json!({})).map_err(|e| e.to_string());
+    app.views.eigen_table = Some(crate::state::EigenTable { revision: app.revision, reply });
+}
+
+/// The central card; its rectangle.
+pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<Rect> {
     let t = Tokens::get();
+    let mut shown = None;
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(t.viewport_top).inner_margin(egui::Margin { left: 6, right: 6, top: 0, bottom: 6 }))
         .show(ui, |ui| {
@@ -52,38 +85,39 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             mesh.add_triangle(0, 2, 3);
             ui.painter().add(egui::Shape::mesh(mesh));
             ui.painter().rect_stroke(r, t.radius_lg, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-            app.viewport_rect = Some(r);
+            shown = Some(r);
             scenario::publish_rect("viewport", r);
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(10.0)));
-            view_tabs(app, &mut inner);
+            view_tabs(app, &mut inner, out);
             inner.add_space(4.0);
             if let Some(text) = app.view.missing(app) {
                 empty(&mut inner, text);
                 return;
             }
+            let ui = &mut inner;
             match app.view {
-                View::Model => model3d(app, &mut inner),
-                View::Outline => model(app, &mut inner),
-                View::SParameters => sparameters(app, &mut inner),
-                View::Tdr => tdr(app, &mut inner),
-                View::Field => field(app, &mut inner),
-                View::PortModes => port_modes(app, &mut inner),
-                View::FarField => far_field(app, &mut inner),
-                View::Compare => compare(app, &mut inner),
-                View::Eigenmodes => eigenmodes(app, &mut inner),
-                View::Study => study(app, &mut inner),
-                View::Dispersion => dispersion(app, &mut inner),
+                View::Model => model3d(app, st, ui, out),
+                View::Outline => model(app, ui),
+                View::SParameters => sparameters(app, st, ui, out),
+                View::Tdr => tdr(app, st, ui),
+                View::Field => field(app, st, ui, out),
+                View::PortModes => port_modes(app, st, ui, out),
+                View::FarField => far_field(app, st, ui),
+                View::Compare => compare(app, ui, out),
+                View::Eigenmodes => eigenmodes(app, st, ui, out),
+                View::Study => study(app, st, ui),
+                View::Dispersion => dispersion(app, st, ui),
             }
         });
+    shown
 }
 
 /// The views with something to show, as a row of pills.
-pub(super) fn view_tabs(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal(|ui| {
-        let shown: Vec<View> = View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)).collect();
-        for v in shown {
+        for v in View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)) {
             if pill(ui, v.label(), app.view == v, format_args!("view:{}", v.id()), 12, PillSize::Body) {
-                crate::ribbon::show_view(app, v);
+                out.push(Action::ShowView(v));
             }
         }
     });

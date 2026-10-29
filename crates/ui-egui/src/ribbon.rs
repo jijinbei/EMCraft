@@ -5,12 +5,12 @@
 //! EMCraft's commands.
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::commands::{button_label, glyph};
 use crate::glyphs::{self, Glyph};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, View, scenario};
+use crate::{Action, Actions, EmcraftApp, scenario};
 
 /// A ribbon tab: its id is its title (the control channel's `tab:<id>` handles, `ui.set
 /// {"tab": id}`).
@@ -91,7 +91,7 @@ const PANEL_LABEL_HEIGHT: f32 = 16.0;
 const BUTTON_MIN_WIDTH: f32 = 58.0;
 
 /// The dark application bar: the name, the samples menu, the theme switch.
-pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     egui::Panel::top("emcraft_app_bar").exact_size(APP_BAR_HEIGHT).show_separator_line(false).frame(egui::Frame::NONE.fill(t.app_bar)).show(
         ui,
@@ -107,7 +107,7 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
             scenario::publish_target("bar:start", house);
             if home.on_hover_text("Start page").clicked() {
-                app.home.open = !app.home.open;
+                out.push(Action::SetHome(!app.home.open));
             }
             let p = ui.painter();
             p.text(pos2(r.left() + 40.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
@@ -127,7 +127,7 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             };
             let busy = app.busy();
             let file = bar_button(ui, &mut x, "File", "menu:file");
-            egui::Popup::menu(&file).show(|ui| crate::files::menu(app, ui));
+            egui::Popup::menu(&file).show(|ui| crate::files::menu(app, ui, out));
             let edit = bar_button(ui, &mut x, "Edit", "menu:edit");
             egui::Popup::menu(&edit).show(|ui| {
                 ui.set_min_width(200.0);
@@ -135,12 +135,12 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let undo = ui.add_enabled(u > 0 && !busy, egui::Button::new(format!("Undo  ({u})")).shortcut_text("Ctrl+Z"));
                 scenario::publish_target("edit:undo", undo.rect);
                 if undo.clicked() {
-                    let _ = app.run("edit.undo", json!({}));
+                    out.push(Action::Undo);
                 }
                 let redo = ui.add_enabled(r > 0 && !busy, egui::Button::new(format!("Redo  ({r})")).shortcut_text("Ctrl+Y"));
                 scenario::publish_target("edit:redo", redo.rect);
                 if redo.clicked() {
-                    let _ = app.run("edit.redo", json!({}));
+                    out.push(Action::Redo);
                 }
             });
             // The project's name in the middle, a dot while it has unsaved changes.
@@ -160,7 +160,7 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             let resp = resp.on_hover_text("Settings");
             egui::Popup::menu(&resp).show(|ui| {
                 ui.set_min_width(300.0);
-                crate::home::settings(app, ui);
+                crate::home::settings(app, ui, out);
             });
             // The running job, at the right.
             if let Some(job) = &app.job {
@@ -177,7 +177,7 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 }
 
 /// The ribbon card: tab row (with command search) over the active tab's panels.
-pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     let height = TAB_ROW_HEIGHT + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT + 12.0;
     egui::Panel::top("emcraft_ribbon")
@@ -189,8 +189,8 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             ui.painter().add(t.card(t.toolbar).paint(card));
             scenario::publish_rect("ribbon", card);
             let row = Rect::from_min_size(card.min, vec2(card.width(), TAB_ROW_HEIGHT));
-            tabs(app, ui, row);
-            search_field(app, ui, row);
+            tabs(app, ui, row, out);
+            search_field(search, ui, row, out);
             let mut x = card.left() + 6.0;
             let top = row.bottom() + 4.0;
             let tab = app.tab;
@@ -225,10 +225,8 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
                     ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
                     scenario::publish_target(format_args!("toolbar:{id}"), br);
-                    if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked()
-                        && let Err(e) = app.open_dialog(id)
-                    {
-                        app.error(e);
+                    if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked() {
+                        out.push(Action::dialog(id));
                     }
                     x += w + 3.0;
                 }
@@ -243,15 +241,7 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         });
 }
 
-/// Switches the viewport to `v`, solving the port modes when that view has none yet.
-pub fn show_view(app: &mut EmcraftApp, v: View) {
-    app.view = v;
-    if v == View::PortModes && app.views.port_modes.is_none() && app.session.model().mesh.is_some() && !app.busy() {
-        let _ = app.open_dialog("solve.port_modes");
-    }
-}
-
-fn tabs(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
+fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
     let t = Tokens::get();
     let mut x = row.left() + 4.0;
     for &(tab, _) in TABS {
@@ -274,7 +264,7 @@ fn tabs(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
         ui.painter().text(tr.center(), Align2::CENTER_CENTER, name, FontId::proportional(t.font_button), ink);
         scenario::publish_target(format_args!("tab:{name}"), tr);
         if resp.clicked() {
-            app.tab = tab;
+            out.push(Action::SetTab(tab));
         }
         x = tr.right() + 2.0;
     }
@@ -336,11 +326,10 @@ pub fn direct(query: &str) -> Option<Result<(String, Value), String>> {
     Some(serde_json::from_str::<Value>(rest).map(|v| (id.to_owned(), v)).map_err(|e| format!("not JSON: {e}")))
 }
 
-fn search_field(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
-    let t = Tokens::get();
+fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
     let r = Rect::from_min_size(pos2(row.right() - 300.0, row.top() + 4.0), vec2(292.0, TAB_ROW_HEIGHT - 8.0));
     let mut field = ui.new_child(egui::UiBuilder::new().max_rect(r));
-    let edit = egui::TextEdit::singleline(&mut app.search.text)
+    let edit = egui::TextEdit::singleline(&mut search.text)
         .id(egui::Id::new("emcraft_search"))
         .hint_text("Search commands (/)")
         .char_limit(MAX_QUERY)
@@ -348,18 +337,18 @@ fn search_field(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
         .margin(egui::Margin::symmetric(8, 3));
     let resp = field.add(edit);
     scenario::publish_target("search:field", resp.rect);
-    if app.search.focus {
+    if search.focus {
         resp.request_focus();
-        app.search.focus = false;
+        search.focus = false;
     }
     if resp.changed() || resp.gained_focus() {
-        app.search.open = true;
-        app.search.selected = 0;
+        search.open = true;
+        search.selected = 0;
     }
     if resp.has_focus() {
-        app.search.open = true;
+        search.open = true;
     }
-    app.search.field = Some(resp.rect);
+    search.field = Some(resp.rect);
     // Keys while the field has focus.
     if resp.has_focus() || resp.lost_focus() {
         let (up, down, enter, esc) = ui.input(|i| {
@@ -370,64 +359,52 @@ fn search_field(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
                 i.key_pressed(egui::Key::Escape),
             )
         });
-        let n = matches(&app.search.text).len();
+        let n = matches(&search.text).len();
         if down && n > 0 {
-            app.search.selected = (app.search.selected + 1).min(n - 1);
+            search.selected = (search.selected + 1).min(n - 1);
         }
         if up {
-            app.search.selected = app.search.selected.saturating_sub(1);
+            search.selected = search.selected.saturating_sub(1);
         }
         if esc {
-            app.search.open = false;
-            app.search.text.clear();
+            search.open = false;
+            search.text.clear();
         }
-        if enter && app.search.open {
+        if enter && search.open {
             // The Enter is the search's: a dialog it opens must not take it as OK.
             ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-            choose(app, None);
+            out.extend(choose(search, None));
         }
     }
     // `/` opens search from anywhere.
     if !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Slash)) {
-        app.search.focus = true;
+        search.focus = true;
     }
-    let _ = t;
 }
 
-/// Runs the search's choice: the `command {json}` typed, or the dialog of the highlighted (or
-/// `pick`ed) command.
-pub fn choose(app: &mut EmcraftApp, pick: Option<&str>) {
-    let query = app.search.text.clone();
-    app.search.open = false;
-    app.search.text.clear();
+/// The search's choice, the search closed: the `command {json}` typed, or the dialog of the
+/// highlighted (or `pick`ed) command.
+pub fn choose(search: &mut Search, pick: Option<&str>) -> Option<Action> {
+    let query = std::mem::take(&mut search.text);
+    search.open = false;
     if pick.is_none() {
         match direct(&query) {
-            Some(Ok((id, params))) => {
-                let _ = app.run(&id, params);
-                return;
-            }
-            Some(Err(e)) => {
-                app.error(e);
-                return;
-            }
+            Some(Ok((id, params))) => return Some(Action::Run { id, params }),
+            Some(Err(e)) => return Some(Action::error(e)),
             None => {}
         }
     }
     let list = matches(&query);
-    let id = pick.map(str::to_owned).or_else(|| list.get(app.search.selected.min(list.len().saturating_sub(1))).map(|c| c.id.to_owned()));
-    if let Some(id) = id
-        && let Err(e) = app.open_dialog(&id)
-    {
-        app.error(e);
-    }
+    let id = pick.or_else(|| list.get(search.selected.min(list.len().saturating_sub(1))).map(|c| c.id))?;
+    Some(Action::dialog(id))
 }
 
 /// The search results under the field.
-pub fn search_popup(app: &mut EmcraftApp, ctx: &egui::Context) {
-    let (true, Some(field)) = (app.search.open, app.search.field) else { return };
+pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions) {
+    let (true, Some(field)) = (search.open, search.field) else { return };
     let t = Tokens::get();
-    let list = matches(&app.search.text);
-    let direct = direct(&app.search.text);
+    let list = matches(&search.text);
+    let direct = direct(&search.text);
     let mut pick = None;
     let area = egui::Area::new(egui::Id::new("emcraft_search_popup"))
         .order(egui::Order::Foreground)
@@ -446,7 +423,7 @@ pub fn search_popup(app: &mut EmcraftApp, ctx: &egui::Context) {
                 ui.label(egui::RichText::new("No command matches.").color(t.text_dim));
             }
             for (i, c) in list.iter().enumerate() {
-                let selected = i == app.search.selected;
+                let selected = i == search.selected;
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, c.label));
                 if selected || resp.hovered() {
@@ -476,16 +453,17 @@ pub fn search_popup(app: &mut EmcraftApp, ctx: &egui::Context) {
     });
     scenario::publish_rect("search:popup", resp.response.rect);
     if let Some(id) = pick {
-        choose(app, Some(id));
+        out.extend(choose(search, Some(id)));
     } else if resp.response.clicked_elsewhere() && !ctx.memory(|m| m.has_focus(egui::Id::new("emcraft_search"))) {
-        app.search.open = false;
+        search.open = false;
     }
 }
 
 /// The history's export: where to write it (the session's model-changing commands as a script
-/// that rebuilds the model, `cargo run -p emcraft-cli -- run FILE`).
-pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
-    let Some(mut path) = app.export.take() else { return };
+/// that rebuilds the model, `cargo run -p emcraft-cli -- run FILE`). `export` is the path
+/// field's text while the prompt is open.
+pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::Context, out: &mut Actions) {
+    let Some(path) = export.as_mut() else { return };
     let t = Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let at = app.viewport_rect.map_or(pos2(200.0, 200.0), |r| r.center_top() + vec2(-200.0, 40.0));
@@ -496,7 +474,7 @@ pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
             ui.label(
                 egui::RichText::new(format!("{} commands that rebuild the model", app.session.history().len())).size(t.font_small).color(t.text_dim),
             );
-            let r = ui.add(egui::TextEdit::singleline(&mut path).desired_width(380.0).char_limit(4096));
+            let r = ui.add(egui::TextEdit::singleline(path).desired_width(380.0).char_limit(4096));
             scenario::publish_target("export:path", r.rect);
             ui.horizontal(|ui| {
                 ok = crate::ui_kit::button(ui, "Export", true, true, "export:ok").clicked();
@@ -504,21 +482,12 @@ pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
             });
         });
     });
-    if cancel {
-        return;
-    }
-    if ok {
-        let text = serde_json::to_string_pretty(app.session.history()).unwrap_or_else(|_| "[]".into());
-        match std::fs::write(path.trim(), text) {
-            Ok(()) => app.info(format!("Exported {} commands to {}.", app.session.history().len(), path.trim())),
-            Err(e) => {
-                app.error(format!("Cannot write {}: {e}", path.trim()));
-                app.export = Some(path);
-            }
+    if cancel || ok {
+        let path = export.take();
+        if let (true, Some(path)) = (ok && !cancel, path) {
+            out.push(Action::ExportHistory(path));
         }
-        return;
     }
-    app.export = Some(path);
 }
 
 #[cfg(test)]

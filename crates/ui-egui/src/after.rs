@@ -23,7 +23,7 @@ impl EmcraftApp {
                 self.view = View::Tdr;
             }
             "results.compare" => {
-                self.views.compare = Some(reply.clone());
+                self.replies.compare = Some(reply.clone());
                 self.view = View::Compare;
             }
             "study.sweep" | "study.optimize" => {
@@ -32,11 +32,11 @@ impl EmcraftApp {
                 self.views.study.slice = emcraft_engine::study::Slice::default();
                 self.view = View::Study;
             }
-            "edit.undo" | "edit.redo" => self.views.port_modes = None,
+            "edit.undo" | "edit.redo" => self.replies.port_modes = None,
             _ if id.starts_with("geometry.") => {
                 self.view = View::Model;
-                self.views.port_modes = None;
-                self.views.compare = None;
+                self.replies.port_modes = None;
+                self.replies.compare = None;
             }
             _ => {}
         }
@@ -63,8 +63,8 @@ impl EmcraftApp {
         // An open problem's fields read best as |E| (a source's own component may vanish on
         // the planes through it); a guide's as Ey, its TE10 field.
         self.field.view.component = if self.session.model().open.is_some() { Component::E } else { Component::Ey };
-        self.views.port_modes = None;
-        self.views.compare = None;
+        self.replies.port_modes = None;
+        self.replies.compare = None;
         let results = self.session.results();
         self.view = if results.sweep.is_some() {
             View::SParameters
@@ -109,7 +109,7 @@ impl EmcraftApp {
                 self.view = if results.td_radiation.is_some() { View::FarField } else { View::SParameters };
             }
             "solve.port_modes" => {
-                self.views.port_modes = Some(reply.clone());
+                self.replies.port_modes = Some(reply.clone());
                 // The Excitation step tabulates them in its panel, beside the 3D view.
                 if self.workflow.step != Some(steps::Step::Excitation) {
                     self.view = View::PortModes;

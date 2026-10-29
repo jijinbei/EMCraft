@@ -12,11 +12,12 @@ use emcraft_model::units::{Frequency, Length};
 use emcraft_render::view3d::{self, Camera, StandardView};
 use serde_json::Value;
 
-use crate::files::{self, Then};
+use crate::action::Pref;
+use crate::files::{FileAction, Then};
 use crate::glyphs::{self, Glyph};
 use crate::scene3d::{self, Overlay};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, Picture, scenario};
+use crate::{Action, Actions, EmcraftApp, Picture, scenario};
 
 /// A card's picture, in points.
 const THUMB: [f32; 2] = [240.0, 150.0];
@@ -25,8 +26,11 @@ const THUMB: [f32; 2] = [240.0, 150.0];
 pub struct Home {
     pub open: bool,
     /// Each sample's picture, drawn the first time the page shows it.
-    thumbs: HashMap<&'static str, Option<Picture>>,
+    pub(crate) thumbs: Thumbs,
 }
+
+/// The samples' pictures, by name (`None`: the sample could not be drawn).
+pub type Thumbs = HashMap<&'static str, Option<Picture>>;
 
 /// A sample's model without its mesh or solve, drawn from the corner.
 fn thumbnail(name: &str) -> Option<Picture> {
@@ -51,7 +55,7 @@ fn thumbnail(name: &str) -> Option<Picture> {
     Some(Picture::new(&view3d::render(&built.scene, &cam, &opt)))
 }
 
-pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::symmetric(36, 24))).show(ui, |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -62,10 +66,10 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             ui.add_space(t.space_12);
             ui.horizontal(|ui| {
                 if big(ui, Glyph::New, "New project", true, "home:new") {
-                    files::request(app, Then::New);
+                    out.push(Action::File(FileAction::Request(Then::New)));
                 }
                 if big(ui, Glyph::OpenFile, "Open…", false, "home:open") {
-                    files::request(app, Then::Open);
+                    out.push(Action::File(FileAction::Request(Then::Open)));
                 }
             });
             ui.add_space(t.space_16);
@@ -74,15 +78,15 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let left = (ui.available_width() - right - 32.0).max(THUMB[0] + 16.0);
                 ui.vertical(|ui| {
                     ui.set_width(left);
-                    recent(app, ui);
+                    recent(app, ui, out);
                     ui.add_space(t.space_16);
-                    samples(app, ui);
+                    samples(thumbs, ui, out);
                 });
                 ui.add_space(32.0);
                 ui.vertical(|ui| {
                     ui.set_width(right);
                     heading(ui, "New projects");
-                    settings(app, ui);
+                    settings(app, ui, out);
                 });
             });
         });
@@ -169,10 +173,10 @@ fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, 
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-fn recent(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     heading(ui, "Recent");
-    let list = app.prefs.recent.clone();
+    let list = &app.prefs.recent;
     if list.is_empty() {
         ui.label(egui::RichText::new("Projects you open or save appear here.").size(t.font_small).color(t.text_dim));
         return;
@@ -198,31 +202,31 @@ fn recent(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
     });
     if let Some(i) = forget {
-        app.prefs.recent.remove(i);
+        out.push(Action::Pref(Pref::ForgetRecent(i)));
     }
     if let Some(path) = open {
-        files::request(app, Then::OpenPath(path));
+        out.push(Action::File(FileAction::Request(Then::OpenPath(path))));
     }
 }
 
-fn samples(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Samples");
     let list = emcraft_engine::sample::SAMPLES;
     let mut chosen = None;
     grid(ui, list.len(), |ui, i| {
         let s = &list[i];
-        let pic = app.home.thumbs.entry(s.name).or_insert_with(|| thumbnail(s.name));
+        let pic = thumbs.entry(s.name).or_insert_with(|| thumbnail(s.name));
         if card(ui, pic.as_mut(), Glyph::Sample, s.name, s.label, false, &format!("sample:{}", s.name)).on_hover_text(s.label).clicked() {
             chosen = Some(s.name.to_owned());
         }
     });
     if let Some(name) = chosen {
-        files::request(app, Then::Sample(name));
+        out.push(Action::File(FileAction::Request(Then::Sample(name))));
     }
 }
 
 /// The settings new projects start with and the window's look, also under the app bar's gear.
-pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     egui::Grid::new("settings").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
         ui.label(egui::RichText::new("Length").color(t.text_dim));
@@ -231,7 +235,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let r = ui.selectable_label(app.prefs.length == u, name);
                 scenario::publish_target(format_args!("settings:length:{name}"), r.rect);
                 if r.clicked() {
-                    app.prefs.length = u;
+                    out.push(Action::Pref(Pref::Length(u)));
                 }
             }
         });
@@ -242,7 +246,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let r = ui.selectable_label(app.prefs.frequency == u, name);
                 scenario::publish_target(format_args!("settings:frequency:{name}"), r.rect);
                 if r.clicked() {
-                    app.prefs.frequency = u;
+                    out.push(Action::Pref(Pref::Frequency(u)));
                 }
             }
         });
@@ -253,7 +257,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let r = ui.selectable_label(app.dark == dark, name);
                 scenario::publish_target(format_args!("settings:theme:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
-                    app.dark = dark;
+                    out.push(Action::Pref(Pref::Dark(dark)));
                 }
             }
         });
@@ -267,7 +271,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let r = ui.selectable_label(app.prefs.gpu3d == gpu, name).on_hover_text(tip);
                 scenario::publish_target(format_args!("settings:3d:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
-                    app.prefs.gpu3d = gpu;
+                    out.push(Action::Pref(Pref::Gpu3d(gpu)));
                 }
             }
         });
@@ -278,10 +282,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 let r = ui.selectable_label(app.dock_dialogs == docked, name);
                 scenario::publish_target(format_args!("settings:dialogs:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
-                    app.dock_dialogs = docked;
-                    if let Some(d) = app.dialog.as_mut() {
-                        d.docked = docked;
-                    }
+                    out.push(Action::SetDock(docked));
                 }
             }
         });

@@ -2,17 +2,16 @@
 
 use super::*;
 
-pub(super) fn intent(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens) {
+pub(super) fn intent(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Frequency band");
     ui_kit::caption(ui, "Set once, early: it sizes the mesh (elements per wavelength at its top), the sweep and the port-mode preview.");
-    let f = &mut app.workflow.fields;
     let (e0, e1) = (f.error("start").map(str::to_owned), f.error("stop").map(str::to_owned));
     let mut go = field(ui, "start", &mut f.start, fu, e0.as_deref(), "intent:start");
     go |= field(ui, "stop", &mut f.stop, fu, e1.as_deref(), "intent:stop");
     let busy = app.busy();
     go |= ui_kit::button(ui, "Apply", true, !busy, "intent:apply").clicked();
     if go && !busy {
-        apply_band(app);
+        out.push(Action::ApplyBand);
     }
     ui_kit::section(ui, "Problem");
     let kind = match Solver::infer(app.session.model()) {

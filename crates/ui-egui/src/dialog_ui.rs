@@ -7,7 +7,7 @@ use egui::{Align2, Stroke, vec2};
 
 use crate::dialogs::{Cell, Column, Dialog, Field, Kind, MAX_FIELD, MAX_ROWS};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, scenario, ui_kit};
+use crate::{Action, Actions, EmcraftApp, scenario, ui_kit};
 
 /// What the card asked for.
 #[derive(Default)]
@@ -18,7 +18,7 @@ struct Asked {
 }
 
 /// A floating dialog card over the viewport.
-pub fn floating(app: &mut EmcraftApp, ctx: &egui::Context) {
+pub fn floating(app: &EmcraftApp, d: &mut Dialog, ctx: &egui::Context, out: &mut Actions) {
     let t = Tokens::get();
     let Some(view) = app.viewport_rect else { return };
     let default = view.right_top() + vec2(-t.form_card_width - 16.0, 16.0);
@@ -33,15 +33,15 @@ pub fn floating(app: &mut EmcraftApp, ctx: &egui::Context) {
         .show(ctx, |ui| {
             t.card(t.dialog_body).corner_radius(t.radius_xl).show(ui, |ui| {
                 ui.set_width(t.form_card_width);
-                asked = card(app, ui, max_h);
+                asked = card(app, d, ui, max_h);
             });
         });
     scenario::publish_rect("dialog", resp.response.rect);
-    act(app, asked);
+    act(app, asked, out);
 }
 
 /// The dialog docked in a panel at the right.
-pub fn docked(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub fn docked(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     let mut asked = Asked::default();
     egui::Panel::right("emcraft_dialog_dock")
@@ -54,39 +54,36 @@ pub fn docked(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 2.0);
                 scenario::publish_rect("dialog", ui.max_rect());
-                asked = card(app, ui, h - 4.0);
+                asked = card(app, d, ui, h - 4.0);
             });
         });
-    act(app, asked);
+    act(app, asked, out);
 }
 
 /// The dialog inside a step's panel.
-pub fn embedded(app: &mut EmcraftApp, ui: &mut egui::Ui, max_h: f32) {
+pub fn embedded(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32, out: &mut Actions) {
     scenario::publish_rect("dialog", ui.max_rect());
-    let asked = card(app, ui, max_h);
-    act(app, asked);
+    let asked = card(app, d, ui, max_h);
+    act(app, asked, out);
 }
 
-fn act(app: &mut EmcraftApp, asked: Asked) {
+/// What the card's buttons and keys ask for: docking flips where dialogs go (the open one too).
+fn act(app: &EmcraftApp, asked: Asked, out: &mut Actions) {
     if asked.dock {
-        app.dock_dialogs = !app.dock_dialogs;
-        if let Some(d) = app.dialog.as_mut() {
-            d.docked = app.dock_dialogs;
-        }
+        out.push(Action::SetDock(!app.dock_dialogs));
     }
     if asked.cancel {
-        app.dialog = None;
+        out.push(Action::DialogCancel);
     } else if asked.ok {
-        let _ = app.dialog_ok();
+        out.push(Action::DialogOk);
     }
 }
 
-fn card(app: &mut EmcraftApp, ui: &mut egui::Ui, max_h: f32) -> Asked {
+fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Asked {
     let t = Tokens::get();
     let busy = app.busy();
     let accent = t.tab(app.tab)[0];
     let session = &app.session;
-    let Some(d) = app.dialog.as_mut() else { return Asked::default() };
     let mut asked = Asked::default();
     let (close, dock) = ui_kit::header(ui, crate::commands::glyph(d.command.id), d.command.label, Some(d.docked), accent);
     asked.cancel |= close;

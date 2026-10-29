@@ -41,10 +41,10 @@ fn short(v: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
-pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
+pub(super) fn study(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let Some(study) = app.session.results().study.as_ref() else { return };
-    let state = &mut app.views.study;
+    let state = &mut st.views.study;
     ui.label(egui::RichText::new(summary(study)).size(t.font_body).color(t.text));
     // The S-parameter a sweep's chart shows.
     let parameters = if study.kind == Kind::Sweep { study.parameters() } else { Vec::new() };

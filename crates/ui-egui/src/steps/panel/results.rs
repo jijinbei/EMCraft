@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &Tokens) {
+pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, states: &[StepState], t: &Tokens, out: &mut Actions) {
     let stale = states.get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale);
     if stale {
         ui_kit::error_band(ui, "These results belong to an earlier state of the model.");
@@ -19,10 +19,7 @@ pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepSta
     ui_kit::section(ui, "Checks");
     let busy = app.busy();
     if ui_kit::button(ui, "Passivity and reciprocity", false, !busy, "results:check").clicked() {
-        match app.run("results.check", json!({})) {
-            Ok(v) => app.workflow.check = Some((app.revision, v)),
-            Err(e) => app.error(e),
-        }
+        out.push(Action::CheckResults);
     }
     if let Some((_, c)) = &app.workflow.check {
         let n = |k: &str| c.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
@@ -32,7 +29,6 @@ pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepSta
     }
     ui_kit::section(ui, "Touchstone");
     let ports = app.session.sparameter_entries().len().max(1);
-    let f = &mut app.workflow.fields;
     if f.touchstone.is_empty() {
         f.touchstone = format!("emcraft.s{ports}p");
     }
@@ -49,14 +45,20 @@ pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepSta
         }
     });
     if ui_kit::button(ui, "Export", true, !busy, "results:touchstone").clicked() {
-        let (path, format) = (f.touchstone.trim().to_owned(), f.format.clone());
-        if path.is_empty() {
-            f.set_error("touchstone", Some("give a file".into()));
-        } else {
-            f.set_error("touchstone", None);
-            if let Err(e) = app.run("results.touchstone", json!({"path": path, "format": format})) {
-                app.workflow.fields.set_error("touchstone", Some(e.to_string()));
-            }
-        }
+        out.push(Action::ExportTouchstone);
+    }
+}
+
+/// Writes the Touchstone file the Results step's fields name.
+pub fn export_touchstone(app: &mut EmcraftApp) {
+    let f = &mut app.workflow.fields;
+    let (path, format) = (f.touchstone.trim().to_owned(), f.format.clone());
+    if path.is_empty() {
+        f.set_error("touchstone", Some("give a file".into()));
+        return;
+    }
+    f.set_error("touchstone", None);
+    if let Err(e) = app.run("results.touchstone", json!({"path": path, "format": format})) {
+        app.workflow.fields.set_error("touchstone", Some(e.to_string()));
     }
 }
