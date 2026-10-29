@@ -15,7 +15,7 @@ pub mod solid;
 mod topology;
 mod waveguide;
 
-pub use topology::{LOCAL_EDGES, LOCAL_FACES, Topology};
+pub use topology::{LOCAL_EDGES, LOCAL_FACES, NO_TET, Topology};
 pub use waveguide::{Options, waveguide, waveguide_with};
 
 use emcraft_model::geom::triple;
@@ -41,6 +41,9 @@ impl MeshError {
         MeshError::Invalid { what: what.into(), why: why.into() }
     }
 }
+
+/// The marker of a cell left out of a structured grid (`emcraft_model::mesh::Grid::cells`).
+pub(crate) const CELL_LEFT_OUT: u32 = u32::MAX;
 
 pub type Result<T> = std::result::Result<T, MeshError>;
 
@@ -140,27 +143,46 @@ pub fn locate(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
         Some(out)
     };
     let (is, js, ks) = (near(&g.x, p.x)?, near(&g.y, p.y)?, near(&g.z, p.z)?);
-    let mut best: Option<(usize, [f64; 4], f64)> = None;
+    let mut best = Best::default();
     for &k in &ks {
         for &j in &js {
             for &i in &is {
                 let first = *g.cells.get(i + nx * (j + ny * k))?;
-                if first == u32::MAX {
+                if first == CELL_LEFT_OUT {
                     continue;
                 }
                 for t in first as usize..first as usize + TETS_PER_CELL {
-                    let c = mesh.corners(t)?;
-                    let l = barycentric(&c, p);
-                    let worst = l.iter().copied().fold(f64::INFINITY, f64::min);
-                    if best.as_ref().is_none_or(|b| worst > b.2) {
-                        best = Some((t, l, worst));
-                    }
+                    best.offer(mesh, t, p)?;
                 }
             }
         }
     }
     // Inside a cell that was left out: not in the mesh.
-    best.filter(|b| b.2 >= -1e-9).map(|(t, l, _)| (t, l))
+    best.inside()
+}
+
+/// The candidate tetrahedron that holds a point best: the largest least barycentric
+/// coordinate, the first offered among equals.
+#[derive(Default)]
+struct Best(Option<(usize, [f64; 4], f64)>);
+
+impl Best {
+    /// Weighs tetrahedron `t` for `p`; `None` when its corners are missing.
+    fn offer(&mut self, mesh: &Mesh, t: usize, p: Point3) -> Option<()> {
+        let c = mesh.corners(t)?;
+        let l = barycentric(&c, p);
+        let worst = l.iter().copied().fold(f64::INFINITY, f64::min);
+        if self.0.as_ref().is_none_or(|b| worst > b.2) {
+            self.0 = Some((t, l, worst));
+        }
+        Some(())
+    }
+
+    /// The best tetrahedron and `p`'s barycentric coordinates in it, when `p` lies inside it
+    /// (within 10⁻⁹).
+    fn inside(self) -> Option<(usize, [f64; 4])> {
+        self.0.filter(|b| b.2 >= -1e-9).map(|(t, l, _)| (t, l))
+    }
 }
 
 /// The tetrahedron of an unstructured mesh containing `p` (within 10⁻⁹ in barycentric terms).
@@ -178,16 +200,11 @@ fn locate_in_buckets(mesh: &Mesh, p: Point3) -> Option<(usize, [f64; 4])> {
     let ijk = [0, 1, 2].map(|d| solid::bucket_index(b, p[d], d));
     let cell = ijk[0] + b.dims[0] * (ijk[1] + b.dims[1] * ijk[2]);
     let (s, e) = (*b.start.get(cell)? as usize, *b.start.get(cell + 1)? as usize);
-    let mut best: Option<(usize, [f64; 4], f64)> = None;
+    let mut best = Best::default();
     for &t in b.items.get(s..e)? {
-        let c = mesh.corners(t as usize)?;
-        let l = barycentric(&c, p);
-        let worst = l.iter().copied().fold(f64::INFINITY, f64::min);
-        if best.as_ref().is_none_or(|x| worst > x.2) {
-            best = Some((t as usize, l, worst));
-        }
+        best.offer(mesh, t as usize, p)?;
     }
-    best.filter(|x| x.2 >= -1e-9).map(|(t, l, _)| (t, l))
+    best.inside()
 }
 
 /// The tetrahedra whose bounding boxes meet `region`: from the buckets of an unstructured mesh,

@@ -330,7 +330,8 @@ impl Body<'_> {
     /// vertices) become one; the outer region's faces are walls or ports, the shell's outer wall
     /// a wall, and every interface triangle must be seen from both sides.
     fn join(&self, regions: &Regions) -> Result<Mesh> {
-        let shell = if self.shell { 1 } else { usize::MAX };
+        // The shell, when there is one, is region 1.
+        let shell = self.shell.then_some(1);
         let mut nodes = Nodes::new(1e-9 * self.size);
         let mut tets = Vec::new();
         let mut tet_material = Vec::new();
@@ -353,7 +354,7 @@ impl Body<'_> {
                     0 if Some(face) == regions.start_face => Boundary::Port(0),
                     0 if Some(face) == regions.end_face => Boundary::Port(1),
                     0 => Boundary::Pec,
-                    r if r == shell => Boundary::Pec,
+                    r if Some(r) == shell => Boundary::Pec,
                     _ => continue,
                 };
                 boundary.push(BoundaryFace { nodes: n, tet: first + tet, tag });
@@ -594,7 +595,7 @@ mod tests {
         // Conforming: every face of the joined mesh is held by one or two tetrahedra, and the
         // boundary is the outer sphere only.
         let topo = crate::Topology::new(&mesh);
-        let outer_faces = topo.face_tets.iter().filter(|o| o[1] == u32::MAX).count();
+        let outer_faces = topo.face_tets.iter().filter(|o| o[1] == crate::NO_TET).count();
         assert_eq!(outer_faces, mesh.boundary.len());
         assert!(mesh.boundary.iter().all(|f| f.nodes.iter().all(|n| {
             let p = mesh.nodes[*n as usize];

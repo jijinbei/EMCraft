@@ -119,8 +119,8 @@ fn surface_faces<'a>(mesh: &'a Mesh, topo: &'a crate::Topology) -> impl Iterator
     topo.face_tets
         .iter()
         .zip(&topo.faces)
-        .filter(move |(tets, _)| tets[1] == u32::MAX || material(tets[0]) != material(tets[1]))
-        .map(|(tets, f)| (*f, tets[1] != u32::MAX))
+        .filter(move |(tets, _)| tets[1] == crate::NO_TET || material(tets[0]) != material(tets[1]))
+        .map(|(tets, f)| (*f, tets[1] != crate::NO_TET))
 }
 
 /// Moves the vertices of interface triangles onto their curved surface: the points boundary
