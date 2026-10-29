@@ -1,0 +1,10 @@
+[
+ {"command": "model.material.create", "params": {"name": "core", "eps_r": 4.4, "loss_tangent": 0.02}},
+ {"command": "model.material.create", "params": {"name": "prepreg", "eps_r": 4.4, "loss_tangent": 0.02}},
+ {"command": "geometry.waveguide", "params": {"width": 6, "height": 3, "sections": [{"length": 6, "material": "prepreg"}], "layers": [{"thickness": 1.5, "material": "core"}], "strips": [{"y": 1.5, "x0": 2.25, "width": 1.5}]}},
+ {"command": "mesh.generate", "params": {"size": 1.5}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
+ {"command": "solve.port_modes", "params": {"frequency": 10}, "id": "modes"},
+ {"command": "solve.frequency", "params": {"frequencies": [5, 10], "order": 2}, "id": "solve"}
+]

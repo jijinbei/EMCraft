@@ -1,0 +1,23 @@
+{
+ "title": "Microstrip on a lossy substrate (εr = 9.8, tan δ = 0.02, h = 0.635 mm, W/h = 0.945) in a large box at 1 GHz: the quasi-TEM port mode's dielectric attenuation",
+ "kind": "benchmark",
+ "source": "The dielectric attenuation of a quasi-TEM line, α_d = k0 εr (ε_eff − 1) tan δ / (2 √ε_eff (εr − 1)) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.8), with ε_eff from E. Hammerstad and Ø. Jensen's fit (IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409, within 0.2 %); evaluated independently of the code. The formula's filling factor (ε_eff − 1)/(εr − 1) takes ε_eff linear in εr; the fit's own εr ∂ε_eff/∂εr gives an α_d 0.44 % lower here",
+ "quantities": [
+  {
+   "id": "att_1",
+   "quantity": "attenuation of the first port mode at 1 GHz (dB/mm)",
+   "measure": {"step": "modes", "pointer": "/ports/0/modes/0/attenuation_db"},
+   "value": 0.004395612793931512,
+   "tolerance": {"relative": 0.02},
+   "reason": "the formula's filling factor (0.44 % from the fit's derivative), the fit's 0.2 %, the box (as for ε_eff in `microstrip-eps-eff`: −0.2 %) and the cross-section's cells graded to 30 µm at the strip's edges: −0.55 %"
+  },
+  {
+   "id": "eps_eff",
+   "quantity": "−Re γ²/k0² of the first port mode at 1 GHz",
+   "measure": {"step": "modes", "pointer": "/ports/0/modes/0/eps_eff"},
+   "value": 6.548452971078884,
+   "tolerance": {"relative": 0.005},
+   "reason": "as the lossless `microstrip-eps-eff`, −0.20 %: the loss changes −Re γ² by (tan δ)²-small terms only"
+  }
+ ]
+}

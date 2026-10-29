@@ -1,0 +1,8 @@
+[
+ {"command": "model.material.create", "params": {"name": "lossy ceramic", "eps_r": 9.8, "loss_tangent": 0.02}},
+ {"command": "geometry.waveguide", "params": {"width": 14.4018, "height": 24, "sections": [{"length": 0.5, "material": "vacuum"}], "layers": [{"thickness": 0.635, "material": "lossy ceramic"}], "strips": [{"y": 0.635, "x0": 6.900825, "width": 0.600075}]}},
+ {"command": "mesh.generate", "params": {"size": 0.6}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}},
+ {"command": "solve.port_modes", "params": {"frequency": 1}, "id": "modes"}
+]

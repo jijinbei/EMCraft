@@ -1,0 +1,55 @@
+{
+ "title": "Stripline of two lossy plies (core and prepreg, both εr = 4.4, tan δ = 0.02): a 1.5 mm strip across the middle of a 6 × 3 mm box, 6 mm long, its ports across both materials",
+ "kind": "theory",
+ "source": "Two conductors in one homogeneous lossy dielectric carry a TEM wave with γ = jk0 √(εr(1 − j tan δ)), Re γ ≥ 0, whatever the cross-section (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §§2.7, 3.7; time dependence e^{jωt}): α = Re γ, −Re γ²/k0² = εr, S21 = e^{−γL}, S11 = 0; evaluated separately from EMCraft's code",
+ "quantities": [
+  {
+   "id": "att_10",
+   "quantity": "attenuation of the first port mode at 10 GHz (dB/mm), 20 log e · α",
+   "measure": {"step": "modes", "pointer": "/ports/0/modes/0/attenuation_db"},
+   "value": 0.03818370790800568,
+   "tolerance": {"relative": 0.0001},
+   "reason": "the port's two materials take the hybrid lossy solver; one dielectric in effect, so its TEM mode is exact in the cross-section's elements but for rounding (measured 4e-12)"
+  },
+  {
+   "id": "eps_eff_10",
+   "quantity": "−Re γ²/k0² of the first port mode at 10 GHz",
+   "measure": {"step": "modes", "pointer": "/ports/0/modes/0/eps_eff"},
+   "value": 4.4,
+   "tolerance": {"absolute": 0.00001},
+   "reason": "exact but for rounding, as the attenuation (measured 2e-12)"
+  },
+  {
+   "id": "s21_db_5",
+   "quantity": "|S21| at 5 GHz (dB), −αL · 20 log e",
+   "measure": {"step": "solve", "pointer": "/points/0/s21/db"},
+   "value": -0.11455112372401689,
+   "tolerance": {"absolute": 0.002},
+   "reason": "the volume's 1.5 mm cells graded at the strip's edges, order 2, as the lossless `stripline` case: +2e-6 dB here, +7e-5 dB at 10 GHz (|S11| about 1e-4)"
+  },
+  {
+   "id": "s21_db_10",
+   "quantity": "|S21| at 10 GHz (dB)",
+   "measure": {"step": "solve", "pointer": "/points/1/s21/db"},
+   "value": -0.22910224744803465,
+   "tolerance": {"absolute": 0.002},
+   "reason": "as at 5 GHz"
+  },
+  {
+   "id": "s21_deg_10",
+   "quantity": "arg S21 at 10 GHz (degrees), −βL",
+   "measure": {"step": "solve", "pointer": "/points/1/s21/deg"},
+   "value": -151.14058468056476,
+   "tolerance": {"absolute": 0.1},
+   "reason": "the phase error of second-order elements over 0.4 wavelengths in the dielectric (the lossless `stripline` case: 0.003° in PTFE; here, in εr = 4.4: +0.005°)"
+  },
+  {
+   "id": "s11_mag_10",
+   "quantity": "|S11| at 10 GHz",
+   "measure": {"step": "solve", "pointer": "/points/1/s11/mag"},
+   "value": 0.0,
+   "tolerance": {"absolute": 0.001},
+   "reason": "the ports' hybrid lossy modes in the volume's trace space: discretisation error only"
+  }
+ ]
+}
