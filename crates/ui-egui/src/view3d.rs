@@ -217,11 +217,11 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     // Moving pictures (an orbit, a playing field) draw on the GPU.
     let gpu = app.prefs.gpu3d || app.view3d.dragging || (overlay == Overlay::Field && app.field.player.playing);
     let p = ui.painter().with_clip_rect(rect);
-    draw(&mut app.view3d, ui, &p, rect, key, gpu, &t);
-    labels(&p, rect, &app.view3d.camera, &built.labels, &t);
-    legend(&p, rect, &built.legend, &t);
+    draw(&mut app.view3d, ui, &p, rect, key, gpu, t);
+    labels(&p, rect, &app.view3d.camera, &built.labels, t);
+    legend(&p, rect, &built.legend, t);
     if let Some((_, row)) = &picked {
-        selection_card(&p, rect, row, &t);
+        selection_card(&p, rect, row, t);
     }
     let facing = app.view3d.facing.map(|f| facing_plane(app.session.display.length, bounds.0, f));
     navigator(app, ui, rect);

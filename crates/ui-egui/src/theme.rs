@@ -4,6 +4,7 @@
 //! with EMCraft's own per-tab accents.
 
 use std::cell::Cell;
+use std::sync::LazyLock;
 
 use egui::{Color32, Stroke};
 
@@ -199,9 +200,11 @@ impl Tokens {
         t
     }
 
-    /// The tokens of the current theme.
-    pub fn get() -> Tokens {
-        if is_dark() { Tokens::dark() } else { Tokens::light() }
+    /// The tokens of the current theme (each theme's built once).
+    pub fn get() -> &'static Tokens {
+        static LIGHT_TOKENS: LazyLock<Tokens> = LazyLock::new(Tokens::light);
+        static DARK_TOKENS: LazyLock<Tokens> = LazyLock::new(Tokens::dark);
+        if is_dark() { &DARK_TOKENS } else { &LIGHT_TOKENS }
     }
 
     /// A ribbon tab's accent: (fill, ink, soft).

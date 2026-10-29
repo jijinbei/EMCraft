@@ -31,15 +31,15 @@ pub fn panel(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 22.0);
                 scenario::publish_rect("step_panel", ui.max_rect());
-                header(ui, &state, &t);
+                header(ui, &state, t);
                 let dialog_h = if app.dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
                     .id_salt("step_panel_scroll")
                     .max_height((h - dialog_h - 70.0).max(120.0))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        checks(app, ui, &state, &t);
-                        body(app, ui, step, &states, &t);
+                        checks(app, ui, &state, t);
+                        body(app, ui, step, &states, t);
                     });
                 if app.dialog.is_some() {
                     ui.add_space(6.0);

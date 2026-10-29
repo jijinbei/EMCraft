@@ -138,7 +138,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
         match &f.kind {
             Kind::Table(cols) => {
                 let cols = *cols;
-                table(ui, f, cols, session, &t);
+                table(ui, f, cols, session, t);
             }
             Kind::Bool => {
                 ui_kit::row(ui, name, f.required, |ui| {

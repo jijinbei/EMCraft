@@ -61,7 +61,7 @@ pub(crate) fn area(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(height);
                 scenario::publish_rect("status", ui.max_rect());
-                if progress(app, ui, &t) {
+                if progress(app, ui, t) {
                     app.cancel_job();
                 }
                 let rest = (height - if app.job.is_some() { 36.0 } else { 0.0 }).max(16.0);
