@@ -334,18 +334,18 @@ mod tests {
         fn takes(&self, m: usize, _: usize) -> bool {
             m >= 40
         }
-        fn front(&self, f: &[C], m: usize) -> Result<Box<dyn crate::accel::DeviceFront>, String> {
+        fn front(&self, f: &[C], m: usize) -> Result<Box<dyn crate::accel::DeviceFront>, crate::accel::DeviceError> {
             self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(Box::new(HostFront { f: f.to_vec(), m }))
         }
     }
 
     impl crate::accel::DeviceFront for HostFront {
-        fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), String> {
+        fn read(&mut self, cols: Range<usize>, out: &mut [C]) -> Result<(), crate::accel::DeviceError> {
             out.copy_from_slice(&self.f[cols.start * self.m..cols.end * self.m]);
             Ok(())
         }
-        fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), String> {
+        fn swap_rows(&mut self, cols: Range<usize>, swaps: &[(usize, usize)]) -> Result<(), crate::accel::DeviceError> {
             for c in cols {
                 for &(p, q) in swaps {
                     self.f.swap(c * self.m + p, c * self.m + q);
@@ -353,7 +353,7 @@ mod tests {
             }
             Ok(())
         }
-        fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), String> {
+        fn update(&mut self, be: usize, k: usize, w: &[C], l: &[C]) -> Result<(), crate::accel::DeviceError> {
             let (m, below) = (self.m, self.m - be);
             let nb = w.len() / below;
             for j in be..m {
