@@ -12,7 +12,6 @@ use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
 use emcraft_render::{Axis, Rgb};
 use emcraft_solver::Complex64 as C;
 
-use super::AXIS_NAMES;
 use crate::{EngineError, Result, Session};
 
 /// A plane through the guide a field picture shows.
@@ -29,11 +28,7 @@ pub enum Plane {
 
 impl Plane {
     pub fn name(self) -> &'static str {
-        match self {
-            Plane::H => "h",
-            Plane::E => "e",
-            Plane::Cross => "cross",
-        }
+        crate::Choice::name(self)
     }
 
     /// The model axes (0 x, 1 y, 2 z) along the picture's horizontal, its vertical and the
@@ -72,22 +67,22 @@ pub enum Component {
     H,
 }
 
+crate::choice::choices! {
+    Plane { Plane::H => "h", Plane::E => "e", Plane::Cross => "cross" }
+    Component {
+        Component::Ex => "ex", Component::Ey => "ey", Component::Ez => "ez",
+        Component::Hx => "hx", Component::Hy => "hy", Component::Hz => "hz",
+        Component::E => "|e|", Component::H => "|h|",
+    }
+}
+
 impl Component {
     pub const ALL: [Component; 8] =
         [Component::Ex, Component::Ey, Component::Ez, Component::Hx, Component::Hy, Component::Hz, Component::E, Component::H];
 
     /// The name commands use: `ex` … `hz`, `|e|`, `|h|`.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Component::Ex => "ex",
-            Component::Ey => "ey",
-            Component::Ez => "ez",
-            Component::Hx => "hx",
-            Component::Hy => "hy",
-            Component::Hz => "hz",
-            Component::E => "|e|",
-            Component::H => "|h|",
-        }
+    pub fn name(self) -> &'static str {
+        crate::Choice::name(self)
     }
 
     /// The name in text: `Ey`, `|H|`.
@@ -142,9 +137,10 @@ impl std::str::FromStr for Component {
     /// A component by its name, in either case.
     fn from_str(s: &str) -> Result<Component> {
         let lower = s.to_ascii_lowercase();
-        Component::ALL.into_iter().find(|c| c.name() == lower).ok_or_else(|| {
-            EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", s.chars().take(20).collect::<String>()))
-        })
+        Component::ALL
+            .into_iter()
+            .find(|c| c.name() == lower)
+            .ok_or_else(|| EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", crate::text::clip(s, 20))))
     }
 }
 
@@ -235,7 +231,7 @@ struct Solution<'a> {
 fn solution<'a>(session: &'a Session, view: &FieldView) -> Result<Solution<'a>> {
     let results = &session.results;
     if let Some(i) = view.mode {
-        let e = results.eigen.as_ref().ok_or_else(|| EngineError::Failed("no eigenmodes: solve first (solve.eigenmodes)".into()))?;
+        let e = results.eigen.as_ref().ok_or(EngineError::NotSolved { what: "eigenmodes", run: "solve.eigenmodes" })?;
         let m = e.modes.get(i).ok_or_else(|| EngineError::Params(format!("no eigenmode {} (there are {})", i + 1, e.modes.len())))?;
         let q = m.q().map_or(String::new(), |q| format!(", Q = {}", emcraft_render::axes::format(q)));
         let caption = format!("eigenmode {}{q} (arbitrary amplitude), order {}", i + 1, e.driven.order.as_u8());
@@ -336,7 +332,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     let title = format!(
         "{} plane, {} = {} {lname}   f = {} {}",
         view.plane.title(),
-        AXIS_NAMES[nk],
+        emcraft_model::Axis::name_of(nk),
         emcraft_render::axes::format(l.from_si(n0 + frame.at)),
         emcraft_render::axes::format(fsym.from_si(frequency)),
         fsym.symbol()
@@ -356,8 +352,8 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         lines: section_lines(session, view.plane, vspan),
         title,
         caption,
-        x: Axis::new(&format!("{} ({lname})", AXIS_NAMES[hk]), l.from_si(h0), l.from_si(h0 + hspan)),
-        y: Axis::new(&format!("{} ({lname})", AXIS_NAMES[vk]), l.from_si(v0), l.from_si(v0 + vspan)),
+        x: Axis::new(&format!("{} ({lname})", emcraft_model::Axis::name_of(hk)), l.from_si(h0), l.from_si(h0 + hspan)),
+        y: Axis::new(&format!("{} ({lname})", emcraft_model::Axis::name_of(vk)), l.from_si(v0), l.from_si(v0 + vspan)),
     })
 }
 

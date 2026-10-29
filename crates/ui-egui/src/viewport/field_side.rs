@@ -23,7 +23,7 @@ pub(super) fn side(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     heading(ui, "WHERE");
     locator(app, ui);
     ui.add_space(t.space_8);
-    if app.field.view.mode.is_none() && app.session.results.sweep.is_some() {
+    if app.field.view.mode.is_none() && app.session.results().sweep.is_some() {
         heading(ui, "FREQUENCY");
         spark(app, ui);
         ui.add_space(t.space_8);
@@ -53,7 +53,7 @@ pub(super) fn side(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 /// The view's settings as `view.field`'s parameters (display units), written to `path`.
 fn export_params(app: &EmcraftApp, path: &str) -> Value {
     let v = &app.field.view;
-    let fu = app.session.display.frequency;
+    let fu = app.session.display().frequency;
     let mut arrows = Vec::new();
     if v.show_e {
         arrows.push("e");
@@ -94,7 +94,7 @@ fn export_params(app: &EmcraftApp, path: &str) -> Value {
 /// fractions of the span, with a material's colour, or `None` where there is no material
 /// (conductor, outside).
 pub(super) fn bands(app: &EmcraftApp, plane: Plane) -> Vec<(f64, f64, Option<Color32>)> {
-    let m = &app.session.model;
+    let m = app.session.model();
     let Some(Aabb { min: lo, max: hi }) = m.bounds() else { return Vec::new() };
     let colour = |i: usize| {
         let c = crate::scene3d::material_rgb(m, i);
@@ -141,7 +141,7 @@ pub(super) fn bands(app: &EmcraftApp, plane: Plane) -> Vec<(f64, f64, Option<Col
 /// it there.
 fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let Some(Aabb { min: lo, max: hi }) = app.session.model.bounds() else { return };
+    let Some(Aabb { min: lo, max: hi }) = app.session.model().bounds() else { return };
     let Some((span, axis_name)) = plane_span(app) else { return };
     let size = [hi.x - lo.x, hi.y - lo.y, hi.z - lo.z].map(|s| s.max(1e-12));
     let (rect, resp) = ui.allocate_exact_size(vec2(SIDE - 8.0, 120.0), Sense::click_and_drag());
@@ -190,7 +190,7 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         })
         .collect();
     painter.add(egui::Shape::convex_polygon(quad, t.accent.gamma_multiply(0.35), Stroke::new(1.6, t.accent)));
-    let unit = app.session.display.length.symbol();
+    let unit = app.session.display().length.symbol();
     painter.text(
         rect.left_top() + vec2(8.0, 6.0),
         Align2::LEFT_TOP,
@@ -229,7 +229,7 @@ fn locator(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 /// nearest solved frequency.
 fn spark(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let Some(sw) = app.session.results.sweep.as_ref() else { return };
+    let Some(sw) = app.session.results().sweep.as_ref() else { return };
     let points: Vec<(f64, f64, f64)> = sw
         .results
         .iter()
@@ -260,7 +260,7 @@ fn spark(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let f = app.field.view.frequency;
     let x = fx(f);
     painter.line_segment([pos2(x, rect.top() + 2.0), pos2(x, rect.bottom() - 2.0)], Stroke::new(1.6, t.accent));
-    let fu = app.session.display.frequency;
+    let fu = app.session.display().frequency;
     painter.text(
         pos2((x + 4.0).min(rect.right() - 70.0), rect.top() + 3.0),
         Align2::LEFT_TOP,
@@ -289,7 +289,7 @@ fn readout(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let (xa, ya) = samples.axes();
     let name = |a: &emcraft_render::Axis| a.label.split(' ').next().unwrap_or("").to_owned();
     let (hx, vy) = (name(xa), name(ya));
-    let lu = app.session.display.length.symbol();
+    let lu = app.session.display().length.symbol();
     let comp = app.field.view.component;
     let phase = app.field.view.phase;
     let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };

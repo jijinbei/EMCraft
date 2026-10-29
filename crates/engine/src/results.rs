@@ -14,7 +14,7 @@ pub fn eigenmodes(s: &mut Session, _: &Params) -> Result<Value> {
 
 /// The eigenmodes solved, with the closed form's for a primitive cavity.
 pub(crate) fn eigenmode_table(s: &Session) -> Result<Value> {
-    let e = s.results.eigen.as_ref().ok_or_else(|| EngineError::failed("no eigenmodes: solve first (solve.eigenmodes)"))?;
+    let e = s.results.eigen.as_ref().ok_or(EngineError::NotSolved { what: "eigenmodes", run: "solve.eigenmodes" })?;
     let modes: Vec<Value> = e
         .modes
         .iter()
@@ -190,7 +190,7 @@ fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Co
     match s.results.time_domain.as_ref() {
         Some(td) if k == 0 => Ok((td.frequencies.clone(), td.s11.clone())),
         Some(_) => Err(EngineError::Failed("the time domain's results reflect at port 1 only".into())),
-        None => Err(EngineError::Failed("no sweep: solve.frequency (or solve.time_domain) first".into())),
+        None => Err(EngineError::NotSolved { what: "sweep", run: "solve.frequency or solve.time_domain" }),
     }
 }
 

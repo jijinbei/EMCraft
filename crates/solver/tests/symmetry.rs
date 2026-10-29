@@ -31,7 +31,7 @@ fn iris(modes: u32, planes: &[Symmetry], opts: &emcraft_mesh::Options) -> Model 
     m.add_port(Port::new("1", End::Start).with_modes(modes)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(modes)).unwrap();
     m.set_symmetry(planes.to_vec()).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide_with(&m, opts).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide_with(&m, opts).unwrap().into());
     m
 }
 
@@ -83,7 +83,7 @@ fn half_model_is_the_whole_mirrored_model_to_rounding() {
     // whole guide's five lowest (TE10, TE20, TE01, TE11, TM11); the odd ones are not excited.
     let half = iris(3, &[magnetic_x()], &opts);
     let mut whole = iris(5, &[], &opts);
-    whole.mesh = Some(mirrored(half.mesh.as_ref().unwrap(), A / 2.0));
+    whole.mesh = Some(mirrored(half.mesh.as_ref().unwrap(), A / 2.0).into());
     let (dh, dw) = (Driven::new(&half, Order::Two).unwrap(), Driven::new(&whole, Order::Two).unwrap());
     for f in [9e9, 10e9, 11e9] {
         let (rh, rw) = (dh.solve(f).unwrap(), dw.solve(f).unwrap());
@@ -169,7 +169,7 @@ fn empty(planes: &[Symmetry], solver: ModeSolver) -> Model {
     m.add_port(Port::new("1", End::Start).with_modes(2).with_mode_solver(solver)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(2).with_mode_solver(solver)).unwrap();
     m.set_symmetry(planes.to_vec()).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.002).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.002).unwrap().into());
     m
 }
 
@@ -225,7 +225,7 @@ fn a_half_stripline_has_the_whole_lines_impedance() {
         m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
         m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
         m.set_symmetry(planes.to_vec()).unwrap();
-        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap());
+        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap().into());
         Driven::new(&m, Order::Two).unwrap().solve(2e9).unwrap()
     };
     let (whole, half) = (line(&[]), line(&[Symmetry { axis: Axis::X, at: a / 2.0, kind: SymmetryKind::Magnetic }]));
@@ -259,7 +259,7 @@ fn a_stripline_halved_through_its_strip_plane_keeps_the_whole_lines_impedance() 
         m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
         m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
         m.set_symmetry(planes.to_vec()).unwrap();
-        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap());
+        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap().into());
         Driven::new(&m, Order::Two).unwrap().solve(2e9).unwrap()
     };
     let (whole, half) = (line(&[]), line(&[Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Magnetic }]));

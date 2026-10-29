@@ -466,7 +466,7 @@ impl Package {
         let part = c.path.as_deref().map_or_else(|| self.root.clone(), part_key);
         let mut out = Flat::default();
         self.place(&part, c.id, &c.xf, &mut out, &mut Vec::new(), budget)
-            .map_err(|Error::Invalid(m)| invalid(format!("build item {}: {}", k + 1, m.trim_start_matches("3MF: "))))?;
+            .map_err(|e| invalid(format!("build item {}: {}", k + 1, e.to_string().trim_start_matches("3MF: "))))?;
         if out.triangles.is_empty() {
             return bad(format!("build item {}: object {} has no triangles", k + 1, c.id));
         }

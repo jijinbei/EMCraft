@@ -74,10 +74,10 @@ pub fn row_of(app: &EmcraftApp, pick: Pick) -> Option<(String, Row)> {
 /// The tree's sections and rows for a session.
 pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let f = Fmt::new(&app.session);
-    let m = &app.session.model;
+    let m = app.session.model();
     let mut sections = Vec::new();
     // A project's variables, when it has any: double-click to change one.
-    if !app.session.variables.is_empty() {
+    if !app.session.variables().is_empty() {
         sections.push(("Variables", variables(&app.session)));
     }
     sections.extend([
@@ -93,15 +93,10 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
 }
 
 fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
-    s.variables
+    s.variables()
         .iter()
         .map(|(name, value)| {
-            let given = s.history.iter().rev().find_map(|st| {
-                (st.get("command").and_then(serde_json::Value::as_str) == Some("project.variable")
-                    && st.pointer("/params/name").and_then(serde_json::Value::as_str) == Some(name.as_str()))
-                .then(|| st.pointer("/params/value").cloned())
-                .flatten()
-            });
+            let given = s.history().iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
             let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
             let edit = serde_json::json!({"name": name, "value": given.unwrap_or(serde_json::json!(value))});
             row(format!("{name} = {value}{expression}"), Glyph::Variable, Act::EditWith("project.variable", edit))
@@ -116,7 +111,7 @@ struct Fmt {
 
 impl Fmt {
     fn new(s: &emcraft_engine::Session) -> Fmt {
-        Fmt { length: s.display.length }
+        Fmt { length: s.display().length }
     }
 
     fn len(&self, x: f64) -> String {
@@ -236,8 +231,8 @@ fn mesh(m: &emcraft_model::Model) -> Vec<Row> {
 }
 
 fn results(app: &EmcraftApp) -> Vec<Row> {
-    let r = &app.session.results;
-    let fu = app.session.display.frequency;
+    let r = app.session.results();
+    let fu = app.session.display().frequency;
     let mut rows = Vec::new();
     if let Some(sw) = &r.sweep {
         let text = format!("Sweep: {} frequencies, {} unknowns", sw.results.len(), sw.driven.dofs.unknowns);

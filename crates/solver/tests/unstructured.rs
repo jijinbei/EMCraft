@@ -16,7 +16,9 @@ fn body_with(shape: Shape, size: f64, curved: bool) -> Model {
     let mut m = Model::new();
     m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
     m.mesh = Some(
-        emcraft_mesh::solid::solid_with(&m, &emcraft_mesh::solid::SolidOptions { curved, ..emcraft_mesh::solid::SolidOptions::new(size) }).unwrap(),
+        emcraft_mesh::solid::solid_with(&m, &emcraft_mesh::solid::SolidOptions { curved, ..emcraft_mesh::solid::SolidOptions::new(size) })
+            .unwrap()
+            .into(),
     );
     m
 }
@@ -149,7 +151,7 @@ fn loaded_sphere_error(h: f64) -> f64 {
     m.add_material(Material::new("ceramic", 4.0, 1.0).unwrap()).unwrap();
     m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
     m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.0, 0.0, 0.0), material: Some("ceramic".into()) }).unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid(&m, h).unwrap());
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, h).unwrap().into());
     let exact = emcraft_theory::bessel::layered_sphere_resonances(0.004, 4.0, 0.01, 6);
     let near = exact[2].0 * 1.05;
     let e = eigenmodes(&m, Order::Two, 3, near).unwrap();
@@ -189,7 +191,7 @@ fn post_s(order: Order, size: f64) -> emcraft_solver::SMatrix {
         axis: Axis::Y,
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap().into());
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     let d = emcraft_solver::Driven::new(&m, order).unwrap();

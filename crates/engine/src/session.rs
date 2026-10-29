@@ -1,17 +1,19 @@
 //! The session: the model, its results, the display units, the history that built the model and
 //! undo; [`Session::execute`] runs every command.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use emcraft_fem::Order;
 use emcraft_model::Model;
 use emcraft_model::units::Display;
 use emcraft_solver::{Driven, FrequencyResult, SPort};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, check_keys, find_command};
 use crate::project::{self, Effect};
-use crate::{EngineError, Params, Result, expr, open, progress, solve, study};
+use crate::{EngineError, Params, Result, Step, expr, open, progress, solve, study};
 
 /// A frequency sweep's results.
 #[derive(Clone, Debug)]
@@ -35,15 +37,16 @@ impl Sweep {
     }
 }
 
-/// What the solvers made of the model, each from its own command.
+/// What the solvers made of the model, each from its own command. Each result is shared: the
+/// copy a command keeps to go back to when it fails costs no copy of the fields.
 #[derive(Clone, Debug, Default)]
 pub struct Results {
     /// The driven frequency sweep from `solve.frequency`.
-    pub sweep: Option<Sweep>,
+    pub sweep: Option<Arc<Sweep>>,
     /// The cavity's eigenmodes from `solve.eigenmodes`.
     pub eigen: Option<Arc<emcraft_solver::eigen::Eigen>>,
     /// The time-domain solver's S-parameters from `solve.time_domain`.
-    pub time_domain: Option<emcraft_fdtd::TdResult>,
+    pub time_domain: Option<Arc<emcraft_fdtd::TdResult>>,
     /// The open problem from `solve.radiation`.
     pub radiation: Option<Arc<open::Radiated>>,
     /// The open problem from `solve.time_domain` on an open model.
@@ -101,7 +104,7 @@ impl Results {
 
     /// The sweep, or an error asking for one.
     pub fn sweep(&self) -> Result<&Sweep> {
-        self.sweep.as_ref().ok_or_else(|| EngineError::failed("no results: solve first (solve.frequency)"))
+        self.sweep.as_deref().ok_or(EngineError::NotSolved { what: "results", run: "solve.frequency" })
     }
 }
 
@@ -129,34 +132,106 @@ impl Default for Limits {
     }
 }
 
-/// A session: the model, its results and the display units.
+/// A session: the model, its results and the display units. Only commands change it
+/// ([`Session::execute`]); everyone else reads it through its accessors.
 #[derive(Clone, Debug, Default)]
 pub struct Session {
-    pub model: Model,
-    pub results: Results,
-    pub display: Display,
-    pub limits: Limits,
+    pub(crate) model: Model,
+    pub(crate) results: Results,
+    pub(crate) display: Display,
+    pub(crate) limits: Limits,
     /// The commands that built the model, in order (a script that rebuilds it).
-    pub history: Vec<Value>,
-    /// States to go back to (`edit.undo`) and forward again (`edit.redo`).
-    pub undo: Vec<project::Snapshot>,
-    pub redo: Vec<project::Snapshot>,
+    pub(crate) history: Vec<Step>,
+    /// States to go back to (`edit.undo`) and forward again (`edit.redo`), the latest last.
+    pub(crate) undo: VecDeque<project::Snapshot>,
+    pub(crate) redo: VecDeque<project::Snapshot>,
     /// The model's revision, raised by every command that changes it, and the revision the
     /// latest results were solved at (older results are stale).
-    pub revision: u64,
-    pub solved_revision: Option<u64>,
+    pub(crate) revision: u64,
+    pub(crate) solved_revision: Option<u64>,
     /// The project file the session was opened from or last saved to (`.emcraft`).
-    pub path: Option<String>,
+    pub(crate) path: Option<String>,
     /// The sample the session was opened from, which names it until it is saved.
-    pub sample: Option<String>,
+    pub(crate) sample: Option<String>,
     /// The history as last saved or opened: the session has unsaved changes when its history
     /// differs (an undo back to it is clean again).
-    pub saved: Vec<Value>,
+    pub(crate) saved: Vec<Step>,
     /// Where the solvers run (`solve.device`).
-    pub compute: solve::Compute,
+    pub(crate) compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
     /// commands of the history.
-    pub variables: expr::Variables,
+    pub(crate) variables: expr::Variables,
+}
+
+/// Reading the session.
+impl Session {
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
+    pub fn results(&self) -> &Results {
+        &self.results
+    }
+
+    /// The display units parameters are read in and replies written in.
+    pub fn display(&self) -> Display {
+        self.display
+    }
+
+    /// The limits on the work one command may ask for.
+    pub fn limits(&self) -> Limits {
+        self.limits
+    }
+
+    /// The session with other limits.
+    pub fn with_limits(self, limits: Limits) -> Session {
+        Session { limits, ..self }
+    }
+
+    /// The commands that built the model, in order (a script that rebuilds it).
+    pub fn history(&self) -> &[Step] {
+        &self.history
+    }
+
+    /// The states `edit.undo` goes back to, the latest last.
+    pub fn undo(&self) -> &VecDeque<project::Snapshot> {
+        &self.undo
+    }
+
+    /// The states `edit.redo` goes forward to, the latest last.
+    pub fn redo(&self) -> &VecDeque<project::Snapshot> {
+        &self.redo
+    }
+
+    /// The model's revision, raised by every command that changes it.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// The revision the latest results were solved at (older results are stale).
+    pub fn solved_revision(&self) -> Option<u64> {
+        self.solved_revision
+    }
+
+    /// The project file the session was opened from or last saved to.
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
+    /// The sample the session was opened from.
+    pub fn sample(&self) -> Option<&str> {
+        self.sample.as_deref()
+    }
+
+    /// Where the solvers run (`solve.device`).
+    pub fn compute(&self) -> &solve::Compute {
+        &self.compute
+    }
+
+    /// The named variables (`project.variable`).
+    pub fn variables(&self) -> &expr::Variables {
+        &self.variables
+    }
 }
 
 impl Session {
@@ -210,7 +285,7 @@ impl Session {
     /// session as it was.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value> {
         // An id from hostile input is not echoed in full.
-        let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.chars().take(100).collect()))?;
+        let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(crate::text::clip(id, 100)))?;
         check_keys(spec, params)?;
         let before = self.before(spec.effect);
         let reader = Params::new(params, self.display).with_variables(&before.state.variables);
@@ -241,13 +316,16 @@ impl Session {
     fn commit(&mut self, spec: &CommandSpec, params: &Value, before: Before) {
         match spec.effect {
             Effect::Record | Effect::Replace => {
+                if let Some(change) = spec.invalidates {
+                    self.results.invalidate(change);
+                }
                 // A replaced session solved to its last state (a sample opened with its solve)
                 // keeps its results current.
                 let current = spec.effect == Effect::Replace && self.solved_revision == Some(self.revision);
                 project::push_undo(&mut self.undo, before.state);
                 self.redo.clear();
                 if spec.effect == Effect::Record {
-                    self.history.push(json!({"command": spec.id, "params": params}));
+                    self.history.push(Step::new(spec.id, params.clone()));
                 }
                 // (A replaced session counts its own revisions from zero.)
                 self.revision = before.revision.max(self.revision) + 1;
@@ -272,14 +350,23 @@ impl Session {
     /// Returns each step's reply.
     pub fn run_script(&mut self, script: &Value) -> Result<Vec<Value>> {
         let steps = script.as_array().ok_or_else(|| EngineError::Params("a script is a JSON array of {\"command\", \"params\"} steps".into()))?;
+        let steps = steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| Step::deserialize(step).map_err(|_| EngineError::Params(format!("step {}: no `command`", i + 1))))
+            .collect::<Result<Vec<Step>>>()?;
+        self.run_steps(&steps)
+    }
+
+    /// Runs the steps of a script in order; stops at the first error. Returns each step's
+    /// reply.
+    pub fn run_steps(&mut self, steps: &[Step]) -> Result<Vec<Value>> {
         steps
             .iter()
             .enumerate()
             .map(|(i, step)| {
-                let id = step.get("command").and_then(Value::as_str).ok_or_else(|| EngineError::Params(format!("step {}: no `command`", i + 1)))?;
-                let params = step.get("params").cloned().unwrap_or_else(|| json!({}));
-                progress::report(i, steps.len(), id)?;
-                self.execute(id, &params).map_err(|e| EngineError::Failed(format!("step {} ({id}): {e}", i + 1)))
+                progress::report(i, steps.len(), &step.command)?;
+                self.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))
             })
             .collect()
     }

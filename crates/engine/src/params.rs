@@ -23,6 +23,7 @@ use emcraft_model::{Point3, Vec3};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::choice::Choice;
 use crate::expr::{self, Variables};
 use crate::{EngineError, Result};
 
@@ -67,7 +68,7 @@ impl<'a> Params<'a> {
             Value::String(text) => {
                 let body = expr::body(text).ok_or_else(|| self.error(name, "must be a finite number (or an expression: \"=w/2\")"))?;
                 let vars = self.vars.ok_or_else(|| self.error(name, "cannot hold an expression here"))?;
-                expr::eval(body, vars).map_err(|e| self.error(name, format!("`{}`: {e}", text.chars().take(64).collect::<String>())))
+                expr::eval(body, vars).map_err(|e| self.error(name, format!("`{}`: {e}", crate::text::clip(text, 64))))
             }
             _ => finite(v).ok_or_else(|| self.error(name, "must be a finite number")),
         }
@@ -136,6 +137,11 @@ impl<'a> Params<'a> {
     /// One of the names a type deserializes from (an enum's variants: `"start"`, `"end"`).
     pub fn choice<'p, T: DeserializeOwned>(&'p self, name: &'p str) -> Arg<'p, T> {
         self.arg(name, |v| serde_json::from_value(v.clone()).map_err(|e| self.error(name, format!("is not one of the choices: {e}"))))
+    }
+
+    /// One of a [`Choice`]'s names.
+    pub fn pick<'p, T: Choice>(&'p self, name: &'p str) -> Arg<'p, T> {
+        self.arg(name, |v| v.as_str().and_then(T::named).ok_or_else(|| self.error(name, format!("must be {}", T::listed()))))
     }
 
     /// A list of at most `max` values.

@@ -21,7 +21,7 @@ fn cavity(size: f64) -> Model {
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
     m
 }
 
@@ -69,7 +69,7 @@ fn a_very_lossy_fill_gives_its_complex_frequency() {
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
     let lossy = eigenmodes(&m, Order::Two, 2, 5.5e9).unwrap();
     let mut lossless = m.clone();
     lossless.materials[1] = Material::new("fill", 2.25, 1.0).unwrap();
@@ -124,7 +124,7 @@ fn a_filled_cavity_scales_and_its_dielectric_sets_q() {
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
     let e = eigenmodes(&m, Order::Two, 1, 5.5e9).unwrap();
     let (f, _) = cavity_resonances(A, B, D, 2.25, 1)[0].clone();
     assert!(((e.modes[0].frequency - f) / f).abs() < 1e-3);

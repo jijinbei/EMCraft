@@ -28,12 +28,11 @@ pub enum Mode {
     BandPass,
 }
 
+crate::choice::choices! { Mode { Mode::LowPass => "lowpass", Mode::BandPass => "bandpass" } }
+
 impl Mode {
     pub fn name(self) -> &'static str {
-        match self {
-            Mode::LowPass => "lowpass",
-            Mode::BandPass => "bandpass",
-        }
+        crate::Choice::name(self)
     }
 }
 

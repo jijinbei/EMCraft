@@ -2,29 +2,32 @@
 //! stands, an estimate of the solve, the project file (the model and the commands that built
 //! it), undo and redo, and the results' exports and checks.
 
+use std::collections::VecDeque;
+
 use emcraft_model::units::Display;
 use emcraft_model::{Band, Model};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
 
-use crate::{EngineError, Params, Result, Session};
+use crate::{EngineError, Params, Result, Session, Step};
 
 /// A state to undo to: the model, the display units and the history that built it.
 #[derive(Clone, Debug)]
 pub struct Snapshot {
     pub model: Model,
     pub display: Display,
-    pub history: Vec<Value>,
+    pub history: Vec<Step>,
     pub variables: crate::expr::Variables,
 }
 
 /// The most states kept to undo to.
 pub const UNDO_DEPTH: usize = 50;
 
-pub fn push_undo(stack: &mut Vec<Snapshot>, s: Snapshot) {
-    stack.push(s);
+/// Pushes a state to go back to, forgetting the oldest beyond [`UNDO_DEPTH`].
+pub fn push_undo(stack: &mut VecDeque<Snapshot>, s: Snapshot) {
+    stack.push_back(s);
     if stack.len() > UNDO_DEPTH {
-        stack.remove(0);
+        stack.pop_front();
     }
 }
 
@@ -54,7 +57,7 @@ pub enum Effect {
 
 pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     let (start, stop) = (p.frequency("start").required()?, p.frequency("stop").required()?);
-    s.model.band = Some(Band::new(start, stop)?);
+    s.model.set_band(Some(Band::new(start, stop)?));
     Ok(json!({"start": s.show_frequency(start), "stop": s.show_frequency(stop), "unit": s.display.frequency.symbol()}))
 }
 
@@ -72,14 +75,13 @@ pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
     let sample = crate::sample::find(name).ok_or_else(|| {
-        p.error("name", format!("names no sample: `{}` (known: {})", name.chars().take(40).collect::<String>(), crate::sample::names().join(", ")))
+        p.error("name", crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", crate::sample::names()))
     })?;
     let solve = p.flag("solve").or(false)?;
-    let script: Vec<Value> = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;
-    let is_solve = |step: &Value| step.get("command").and_then(Value::as_str).is_some_and(|c| c.starts_with("solve."));
-    let steps: Vec<Value> = script.into_iter().filter(|step| solve || !is_solve(step)).collect();
+    let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;
+    let steps: Vec<Step> = script.into_iter().filter(|step| solve || !step.command.starts_with("solve.")).collect();
     let mut fresh = s.fresh();
-    fresh.run_script(&Value::Array(steps))?;
+    fresh.run_steps(&steps)?;
     fresh.saved = fresh.history.clone();
     fresh.sample = Some(name.to_owned());
     *s = fresh;
@@ -125,6 +127,29 @@ pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
+/// A project file (docs/project-file.md): the history that builds the model, and the model for
+/// other tools to read (opening replays the history and does not read it).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ProjectFile<'m> {
+    format: String,
+    #[serde(default = "first_version")]
+    version: u32,
+    #[serde(default)]
+    history: Vec<Step>,
+    #[serde(skip_deserializing)]
+    model: Option<&'m Model>,
+}
+
+/// What a project file's `format` says.
+const FORMAT: &str = "emcraft-project";
+
+/// The version of project files written, the newest read.
+const VERSION: u32 = 1;
+
+fn first_version() -> u32 {
+    1
+}
+
 /// Most bytes of a project file read.
 const MAX_PROJECT_BYTES: u64 = 64 << 20;
 
@@ -138,7 +163,10 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         Some(path) => path.to_owned(),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    let doc = json!({"format": "emcraft-project", "version": 1, "history": s.history, "model": s.model});
+    let file = ProjectFile { format: FORMAT.to_owned(), version: VERSION, history: s.history.clone(), model: Some(&s.model) };
+    // Through a JSON value, whose objects keep their keys sorted: the file's text does not
+    // depend on the order the fields are declared in.
+    let doc = serde_json::to_value(&file).map_err(EngineError::failed)?;
     let text = serde_json::to_string_pretty(&doc).map_err(EngineError::failed)?;
     write_atomically(&path, text.as_bytes())?;
     s.path = Some(path.clone());
@@ -151,7 +179,7 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
 fn write_atomically(path: &str, bytes: &[u8]) -> Result<()> {
     let target = std::path::Path::new(path);
     let temp = target.with_extension(format!("{}.tmp", target.extension().and_then(|e| e.to_str()).unwrap_or(EXTENSION)));
-    let fail = |e: std::io::Error| EngineError::Failed(format!("cannot write {path}: {e}"));
+    let fail = |e: std::io::Error| EngineError::cannot_write(path, e);
     std::fs::write(&temp, bytes).map_err(fail)?;
     std::fs::rename(&temp, target).map_err(|e| {
         let _ = std::fs::remove_file(&temp);
@@ -176,12 +204,18 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
     let bytes = crate::geometry::read_capped(path, MAX_PROJECT_BYTES)?;
     let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::Failed(format!("`{path}`: not a project file ({e})")))?;
-    if doc.get("format").and_then(Value::as_str) != Some("emcraft-project") {
+    if doc.get("format").and_then(Value::as_str) != Some(FORMAT) {
         return Err(EngineError::Failed(format!("`{path}`: not an EMCraft project")));
     }
-    let history = doc.get("history").cloned().unwrap_or(Value::Array(Vec::new()));
+    let file: ProjectFile<'_> = serde_json::from_value(doc).map_err(|e| EngineError::Failed(format!("`{path}`: not a project file ({e})")))?;
+    if file.version > VERSION {
+        return Err(EngineError::Failed(format!(
+            "`{path}`: a project of version {}, newer than this EMCraft reads ({VERSION}): open it with a newer EMCraft",
+            file.version
+        )));
+    }
     let mut fresh = s.fresh();
-    fresh.run_script(&history)?;
+    fresh.run_steps(&file.history)?;
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
     fresh.path = Some(path.to_owned());
@@ -191,7 +225,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
-    let back = s.undo.pop().ok_or_else(|| EngineError::failed("nothing to undo"))?;
+    let back = s.undo.pop_back().ok_or_else(|| EngineError::failed("nothing to undo"))?;
     let now = s.swap_snapshot(back);
     push_undo(&mut s.redo, now);
     // Results stay, marked stale.
@@ -200,7 +234,7 @@ pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
 }
 
 pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
-    let next = s.redo.pop().ok_or_else(|| EngineError::failed("nothing to redo"))?;
+    let next = s.redo.pop_back().ok_or_else(|| EngineError::failed("nothing to redo"))?;
     let now = s.swap_snapshot(next);
     push_undo(&mut s.undo, now);
     s.revision += 1;
@@ -208,7 +242,7 @@ pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
 }
 
 /// How a Touchstone file writes each complex value (`format`).
-#[derive(Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Format {
     /// Real and imaginary parts.
@@ -216,6 +250,8 @@ pub(crate) enum Format {
     /// Magnitude and angle in degrees.
     Ma,
 }
+
+crate::choice::choices! { Format { Format::Ri => "ri", Format::Ma => "ma" } }
 
 /// The sweep's S-parameters as a Touchstone (version 1) file: frequencies in GHz, `ri` (real,
 /// imaginary) or `ma` (magnitude, angle in degrees), the reference impedance on the option line.
@@ -253,7 +289,7 @@ pub fn touchstone(s: &mut Session, p: &Params) -> Result<Value> {
             }
         }
     }
-    std::fs::write(path, out).map_err(|e| EngineError::Failed(format!("cannot write {path}: {e}")))?;
+    std::fs::write(path, out).map_err(|e| EngineError::cannot_write(path, e))?;
     Ok(json!({"path": path, "ports": n, "frequencies": sw.results.len()}))
 }
 

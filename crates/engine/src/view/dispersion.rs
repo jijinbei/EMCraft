@@ -7,7 +7,6 @@ use emcraft_render::chart::{Chart, Series, Style};
 use emcraft_render::{Axis, Rgb};
 use emcraft_solver::bloch::Dispersion;
 
-use super::AXIS_NAMES;
 use super::chart::span;
 use crate::periodic::{exact_bands, solved};
 use crate::{Result, Session};
@@ -46,7 +45,7 @@ pub fn dispersion_chart(s: &Session) -> Result<Chart> {
     }
     let y1 = fu.from_si(f_top) * 1.1;
     Ok(Chart {
-        title: format!("Dispersion along {}", AXIS_NAMES.get(d.axis).copied().unwrap_or("?")),
+        title: format!("Dispersion along {}", emcraft_model::Axis::name_of(d.axis)),
         x: Axis::new("phase per period ψ (°)", p0, p1),
         y: Axis::new(&format!("frequency ({})", fu.symbol()), 0.0, if y1 > 0.0 { y1 } else { 1.0 }),
         series,

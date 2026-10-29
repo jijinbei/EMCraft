@@ -7,13 +7,13 @@ pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepSta
     if stale {
         ui_kit::error_band(ui, "These results belong to an earlier state of the model.");
     }
-    if !app.session.results.any() {
+    if !app.session.results().any() {
         ui.label(
             egui::RichText::new("No results yet: Run (step 7). The view tabs over the viewport show them.").size(t.font_small).color(t.text_dim),
         );
         return;
     }
-    if app.session.results.sweep.is_none() {
+    if app.session.results().sweep.is_none() {
         return;
     }
     ui_kit::section(ui, "Checks");

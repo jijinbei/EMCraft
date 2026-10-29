@@ -312,11 +312,12 @@ impl Driven {
     }
 
     fn build(model: &Model, order: Order, ends: Ends, walls: Walls) -> Result<Driven> {
-        let issues: Vec<String> = model.check().into_iter().filter(|i| ends == Ends::Ports || !i.starts_with("no ports")).collect();
+        let issues: Vec<String> =
+            model.check().into_iter().filter(|i| ends == Ends::Ports || *i != emcraft_model::Issue::NoPorts).map(|i| i.to_string()).collect();
         if !issues.is_empty() {
             return Err(SolveError::NotReady(issues.join("; ")));
         }
-        let mesh = model.mesh.clone().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
+        let mesh = model.mesh.as_deref().cloned().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
         let topo = Topology::new(&mesh);
         let sigma = match walls {
             Walls::Modelled => model.wall_conductivity,

@@ -2,12 +2,13 @@
 //! into a row.
 
 use emcraft_solver::Complex64 as C;
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::Value;
 
 use super::variables::{history_with, rebuild};
 use super::{Row, is_sparameter};
 use crate::project::Effect;
-use crate::{EngineError, Params, Result, Session};
+use crate::{EngineError, Params, Result, Session, Step};
 
 /// The solve command a study runs at each point.
 pub(super) struct Solve<'a> {
@@ -17,13 +18,11 @@ pub(super) struct Solve<'a> {
 
 pub(super) fn solve_of<'a>(p: &Params<'a>) -> Result<Solve<'a>> {
     let v = p.raw("solve").ok_or_else(|| p.error("solve", "is required: {\"command\": \"solve.frequency\", \"params\": {…}}"))?;
-    let command =
-        v.get("command").and_then(Value::as_str).ok_or_else(|| p.error("solve", "needs a `command` (solve.frequency, solve.eigenmodes, …)"))?;
-    let spec = crate::find_command(command).filter(|c| c.effect == Effect::Solve).ok_or_else(|| {
+    let Step { command, params } = Step::deserialize(v).map_err(|_| p.error("solve", "needs a `command` (solve.frequency, solve.eigenmodes, …)"))?;
+    let spec = crate::find_command(&command).filter(|c| c.effect == Effect::Solve).ok_or_else(|| {
         let solvers: Vec<&str> = crate::COMMANDS.iter().filter(|c| c.effect == Effect::Solve).map(|c| c.id).collect();
         p.error("solve", format!("`command` must be a solve: {}", solvers.join(", ")))
     })?;
-    let params = v.get("params").cloned().unwrap_or_else(|| json!({}));
     if !params.is_object() {
         return Err(p.error("solve", "`params` must be an object"));
     }
@@ -43,9 +42,8 @@ pub(super) fn outputs_of(p: &Params) -> Result<Vec<String>> {
 /// fail alike).
 fn stops(e: &EngineError) -> bool {
     match e {
-        EngineError::Failed(m) => m == crate::progress::CANCELLED,
-        EngineError::Params(_) | EngineError::UnknownCommand(_) => true,
-        EngineError::Panicked(_) => false,
+        EngineError::Cancelled | EngineError::Params(_) | EngineError::UnknownCommand(_) => true,
+        EngineError::Failed(_) | EngineError::NotSolved { .. } | EngineError::Panicked(_) => false,
     }
 }
 

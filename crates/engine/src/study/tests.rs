@@ -41,8 +41,8 @@ fn a_variable_rebuilds_the_model_and_undo_goes_back() {
     assert!(s.model.mesh.as_ref().unwrap().tets.len() > tets, "the mesh is rebuilt too");
     assert_eq!(s.variables["feed"], 22.5);
     // The definition changed in place; the expressions are kept.
-    assert_eq!(s.history[0]["params"]["value"], 30);
-    assert_eq!(s.history[3]["params"]["sections"][1]["length"], "=l");
+    assert_eq!(s.history[0].params["value"], 30);
+    assert_eq!(s.history[3].params["sections"][1]["length"], "=l");
     let list = s.execute("project.variables", &json!({})).unwrap();
     assert_eq!(list["variables"][0], json!({"name": "feed", "value": 22.5, "uses": 1, "expression": "=l*3/4"}));
     assert_eq!(list["variables"][1]["uses"], 2);
@@ -228,11 +228,11 @@ fn a_cancelled_study_stops_and_leaves_the_session() {
     p.cancel();
     let solve = json!({"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}});
     let r = crate::progress::scope(p.clone(), || s.execute("study.sweep", &json!({"variable": "l", "values": [15, 25], "solve": solve})));
-    assert_eq!(r, Err(EngineError::Failed(crate::progress::CANCELLED.into())));
+    assert_eq!(r, Err(EngineError::Cancelled));
     let r = crate::progress::scope(p, || {
         s.execute("study.optimize", &json!({"variables": [{"name": "l", "min": 10, "max": 30}], "goal": {"type": "max_min_db"}, "solve": solve}))
     });
-    assert_eq!(r, Err(EngineError::Failed(crate::progress::CANCELLED.into())));
+    assert_eq!(r, Err(EngineError::Cancelled));
     assert_eq!(s.history, history);
     assert!(s.results.study.is_none());
 }
@@ -334,6 +334,6 @@ fn hostile_grids_are_refused_and_a_cancelled_one_stops() {
     let p = crate::progress::Progress::new();
     p.cancel();
     let r = crate::progress::scope(p, || s.execute("study.sweep", &json!({"variables": [axis("a", 2), axis("b", 2)], "solve": solve})));
-    assert_eq!(r, Err(EngineError::Failed(crate::progress::CANCELLED.into())));
+    assert_eq!(r, Err(EngineError::Cancelled));
     assert!(s.results.study.is_none());
 }

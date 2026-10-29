@@ -39,7 +39,7 @@ pub use error::{ModelError, Result, positive};
 pub use geom::{Aabb, CVec3, Point3, Vec3};
 pub use material::{MAX_POLES, Material, Pole, SecondOrder};
 pub use mesh::{Boundary, BoundaryFace, Buckets, Grid, Mesh};
-pub use model::Model;
+pub use model::{Issue, Model};
 pub use num_complex::Complex64;
 pub use open::{LumpedPort, Open, OpenShape, Source, SphericalLayer};
 pub use periodic::{Periodic, Polarization};

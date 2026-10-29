@@ -24,12 +24,14 @@
 //! Adapted from FieldCraft's `crates/testkit/src/oracle.rs` (MIT OR Apache-2.0), see
 //! ATTRIBUTION.md.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Instant;
 
-use emcraft_engine::{EngineError, Session};
+use emcraft_engine::{EngineError, Session, Step};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Why a case could not be run or measured.
@@ -65,8 +67,33 @@ type Result<T> = std::result::Result<T, OracleError>;
 pub const FIXTURE_RELATIVE: f64 = 1e-9;
 const ABSOLUTE_SHARE: f64 = 1e-3;
 
-/// The kinds of reference.
-pub const KINDS: [&str; 3] = ["theory", "benchmark", "experiment"];
+/// The kind of reference a case is checked against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    /// A closed-form solution.
+    Theory,
+    /// A published benchmark.
+    Benchmark,
+    /// A measurement.
+    Experiment,
+}
+
+impl Kind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::Theory => "theory",
+            Kind::Benchmark => "benchmark",
+            Kind::Experiment => "experiment",
+        }
+    }
+}
+
+impl std::fmt::Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Options {
@@ -79,27 +106,39 @@ pub struct Options {
 }
 
 /// |ours − reference| ≤ relative·|reference| + absolute.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[serde(try_from = "ToleranceFile")]
 pub struct Tolerance {
     pub relative: f64,
     pub absolute: f64,
 }
 
-impl Tolerance {
-    fn from_json(v: &Value) -> std::result::Result<Tolerance, String> {
-        let get = |k: &str| -> std::result::Result<f64, String> {
-            match v.get(k) {
-                None => Ok(0.0),
-                Some(x) => x.as_f64().filter(|x| x.is_finite() && *x >= 0.0).ok_or_else(|| format!("tolerance `{k}` must be a number ≥ 0")),
+/// A tolerance as `expected.json` gives it: either part may be left out.
+#[derive(Deserialize)]
+struct ToleranceFile {
+    #[serde(default)]
+    relative: f64,
+    #[serde(default)]
+    absolute: f64,
+}
+
+impl TryFrom<ToleranceFile> for Tolerance {
+    type Error = String;
+
+    fn try_from(t: ToleranceFile) -> std::result::Result<Tolerance, String> {
+        for (k, v) in [("relative", t.relative), ("absolute", t.absolute)] {
+            if !(v.is_finite() && v >= 0.0) {
+                return Err(format!("tolerance `{k}` must be a number ≥ 0"));
             }
-        };
-        let t = Tolerance { relative: get("relative")?, absolute: get("absolute")? };
+        }
         if t.relative == 0.0 && t.absolute == 0.0 {
             return Err("a tolerance gives `relative` or `absolute`".into());
         }
-        Ok(t)
+        Ok(Tolerance { relative: t.relative, absolute: t.absolute })
     }
+}
 
+impl Tolerance {
     pub fn allows(&self, reference: f64, ours: f64) -> bool {
         (ours - reference).abs() <= self.relative * reference.abs() + self.absolute
     }
@@ -124,67 +163,148 @@ fn sig(v: f64) -> String {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Where a measure reads its reply.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Source {
+    /// The reply of the recipe step with this `id`.
+    Step(String),
+    /// The reply of a command run after the recipe.
+    Command { command: String, params: Value },
+}
+
+/// The x where a list's y is least, or crosses a level: the pointers to x and y in each item.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Axes {
+    pub x: String,
+    pub y: String,
+}
+
+/// Which crossing of a level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Which {
+    #[default]
+    First,
+    Last,
+}
+
+/// Where a list's y crosses `level` (see the module docs).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Crossing {
+    pub x: String,
+    pub y: String,
+    pub level: f64,
+    #[serde(default)]
+    pub which: Which,
+}
+
+/// How the number is read at the measure's pointer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Reading {
+    /// The number there.
+    Number,
+    /// The x where y is least over the list there.
+    Minimum(Axes),
+    /// The x where y crosses a level over the list there.
+    Crossing(Crossing),
+    /// The angle there less the one at this other pointer.
+    PhaseMinus(String),
+}
+
+/// How a quantity is measured (see the module docs).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "MeasureFile")]
+pub struct Measure {
+    pub source: Source,
+    pub pointer: String,
+    pub reading: Reading,
+}
+
+/// A measure as `expected.json` gives it.
+#[derive(Deserialize)]
+struct MeasureFile {
+    step: Option<String>,
+    command: Option<String>,
+    params: Option<Value>,
+    pointer: Option<String>,
+    minimum: Option<Axes>,
+    crossing: Option<Crossing>,
+    phase_minus: Option<String>,
+}
+
+impl TryFrom<MeasureFile> for Measure {
+    type Error = String;
+
+    fn try_from(m: MeasureFile) -> std::result::Result<Measure, String> {
+        let pointer = m.pointer.ok_or("`measure` needs a JSON `pointer`")?;
+        let source = match (m.step, m.command) {
+            (Some(step), None) => Source::Step(step),
+            (None, Some(command)) => Source::Command { command, params: m.params.unwrap_or_else(|| json!({})) },
+            _ => return Err("`measure` gives a `step` or a `command`".into()),
+        };
+        let reading = match (m.minimum, m.crossing, m.phase_minus) {
+            (None, None, None) => Reading::Number,
+            (Some(axes), None, None) => Reading::Minimum(axes),
+            (None, Some(c), None) => Reading::Crossing(c),
+            (None, None, Some(other)) => Reading::PhaseMinus(other),
+            _ => return Err("`measure` reads at most one of `minimum`, `crossing` and `phase_minus`".into()),
+        };
+        Ok(Measure { source, pointer, reading })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Quantity {
     pub id: String,
+    #[serde(rename = "quantity")]
     pub description: String,
-    pub measure: Value,
+    pub measure: Measure,
+    #[serde(rename = "value")]
     pub reference: f64,
     pub tolerance: Tolerance,
     pub reason: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Expected {
     pub title: String,
-    pub kind: String,
+    pub kind: Kind,
     pub source: String,
     pub quantities: Vec<Quantity>,
 }
 
-fn text(v: &Value, key: &str) -> std::result::Result<String, String> {
-    v.get(key)
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| format!("`{key}` must be a non-empty string"))
+/// `text` unless it is blank.
+fn filled(key: &str, text: &str) -> std::result::Result<(), String> {
+    if text.trim().is_empty() { Err(format!("`{key}` must be a non-empty string")) } else { Ok(()) }
 }
 
 impl Expected {
     pub fn parse(v: &Value) -> Result<Expected> {
-        Expected::read(v).map_err(OracleError::Expected)
+        let e = Expected::deserialize(v).map_err(|e| OracleError::Expected(e.to_string()))?;
+        e.check().map_err(OracleError::Expected)?;
+        Ok(e)
     }
 
-    fn read(v: &Value) -> std::result::Result<Expected, String> {
-        let kind = text(v, "kind")?;
-        if !KINDS.contains(&kind.as_str()) {
-            return Err(format!("`kind` must be one of {KINDS:?}"));
+    /// What serde does not check: text given, quantities listed once each.
+    fn check(&self) -> std::result::Result<(), String> {
+        filled("title", &self.title)?;
+        filled("source", &self.source)?;
+        if self.quantities.is_empty() {
+            return Err("`quantities` must be a non-empty list".into());
         }
-        let list = v.get("quantities").and_then(Value::as_array).filter(|q| !q.is_empty()).ok_or("`quantities` must be a non-empty list")?;
-        let mut quantities: Vec<Quantity> = Vec::with_capacity(list.len());
-        for q in list {
-            let id = text(q, "id")?;
-            let context = |e: String| format!("quantity `{id}`: {e}");
-            let reference =
-                q.get("value").and_then(Value::as_f64).filter(|x| x.is_finite()).ok_or_else(|| context("`value` must be a finite number".into()))?;
-            let tolerance = Tolerance::from_json(q.get("tolerance").unwrap_or(&Value::Null)).map_err(context)?;
-            let measure = q.get("measure").cloned().unwrap_or(Value::Null);
-            if measure.get("pointer").and_then(Value::as_str).is_none() {
-                return Err(context("`measure` needs a JSON `pointer`".into()));
+        for (i, q) in self.quantities.iter().enumerate() {
+            filled("id", &q.id)?;
+            let context = |e: String| format!("quantity `{}`: {e}", q.id);
+            filled("quantity", &q.description).map_err(context)?;
+            filled("reason", &q.reason).map_err(context)?;
+            if !q.reference.is_finite() {
+                return Err(context("`value` must be a finite number".into()));
             }
-            if quantities.iter().any(|x| x.id == id) {
-                return Err(format!("quantity `{id}` is listed twice"));
+            if self.quantities[..i].iter().any(|x| x.id == q.id) {
+                return Err(format!("quantity `{}` is listed twice", q.id));
             }
-            quantities.push(Quantity {
-                description: text(q, "quantity").map_err(context)?,
-                reason: text(q, "reason").map_err(context)?,
-                id,
-                measure,
-                reference,
-                tolerance,
-            });
         }
-        Ok(Expected { title: text(v, "title")?, kind, source: text(v, "source")?, quantities })
+        Ok(())
     }
 }
 
@@ -198,6 +318,38 @@ pub struct Outcome {
     pub fixture: Option<bool>,
 }
 
+/// A recipe step: a command, its parameters and the `id` measures read its reply by.
+#[derive(Deserialize)]
+struct RecipeStep {
+    #[serde(flatten)]
+    step: Step,
+    id: Option<String>,
+}
+
+/// A case's accepted results (`fixture.json`).
+#[derive(Serialize, Deserialize)]
+struct Fixture {
+    #[serde(default)]
+    note: String,
+    values: BTreeMap<String, Fixed>,
+}
+
+/// An accepted result and the band it may move in.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+struct Fixed {
+    #[serde(default = "not_a_number")]
+    value: f64,
+    #[serde(default)]
+    band: f64,
+}
+
+fn not_a_number() -> f64 {
+    f64::NAN
+}
+
+/// What a fixture says of itself.
+const FIXTURE_NOTE: &str = "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.";
+
 fn read_json(path: &Path) -> Result<Value> {
     let text = std::fs::read_to_string(path).map_err(|e| OracleError::file(path, e))?;
     serde_json::from_str(&text).map_err(|e| OracleError::file(path, e))
@@ -206,47 +358,30 @@ fn read_json(path: &Path) -> Result<Value> {
 /// Runs one case: its recipe, then every quantity's measure.
 pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
     let expected = Expected::parse(&read_json(&dir.join("expected.json"))?)?;
-    let recipe = read_json(&dir.join("recipe.json"))?;
-    let steps = recipe.as_array().ok_or_else(|| OracleError::Recipe("must be a JSON array".into()))?;
+    let recipe: Vec<RecipeStep> = serde_json::from_value(read_json(&dir.join("recipe.json"))?).map_err(|e| OracleError::Recipe(e.to_string()))?;
     let mut session = Session::new();
     let mut replies: BTreeMap<String, Value> = BTreeMap::new();
-    for (i, step) in steps.iter().enumerate() {
-        let id = step.get("command").and_then(Value::as_str).ok_or_else(|| OracleError::Recipe(format!("step {}: no `command`", i + 1)))?;
-        let mut params = step.get("params").cloned().unwrap_or_else(|| json!({}));
+    for (i, RecipeStep { step: Step { command, mut params }, id }) in recipe.into_iter().enumerate() {
         // Files a case brings (an imported surface) are named relative to its directory.
-        if let Some(path) = params.get("path").and_then(Value::as_str).filter(|p| id == "geometry.import" && Path::new(p).is_relative()) {
-            params["path"] = json!(dir.join(path).to_string_lossy());
+        if command == "geometry.import"
+            && let Some(obj) = params.as_object_mut()
+            && let Some(path) = obj.get("path").and_then(Value::as_str).filter(|p| Path::new(p).is_relative())
+        {
+            let path = dir.join(path).to_string_lossy().into_owned();
+            obj.insert("path".to_owned(), json!(path));
         }
-        let reply = session.execute(id, &params).map_err(|error| OracleError::Step { step: i + 1, command: id.to_owned(), error })?;
-        if let Some(name) = step.get("id").and_then(Value::as_str) {
-            replies.insert(name.to_owned(), reply);
+        let reply = session.execute(&command, &params).map_err(|error| OracleError::Step { step: i + 1, command: command.clone(), error })?;
+        if let Some(name) = id {
+            replies.insert(name, reply);
         }
     }
-    let fixture = read_json(&dir.join("fixture.json")).ok();
+    let fixture: Option<Fixture> = read_json(&dir.join("fixture.json")).ok().and_then(|f| serde_json::from_value(f).ok());
     let mut out = Vec::new();
     for q in &expected.quantities {
-        let m = &q.measure;
-        let pointer = m.get("pointer").and_then(Value::as_str).unwrap_or_default();
-        let reply = if let Some(step) = m.get("step").and_then(Value::as_str) {
-            replies.get(step).cloned().ok_or_else(|| OracleError::Measure(format!("no recipe step with id `{step}`")))
-        } else if let Some(cmd) = m.get("command").and_then(Value::as_str) {
-            session.execute(cmd, m.get("params").unwrap_or(&json!({}))).map_err(|e| OracleError::Measure(e.to_string()))
-        } else {
-            Err(OracleError::Measure("`measure` gives a `step` or a `command`".into()))
-        };
-        let value = reply.and_then(|r| match (m.get("minimum"), m.get("crossing"), m.get("phase_minus")) {
-            (Some(spec), _, _) => minimum(&r, pointer, spec),
-            (None, Some(spec), _) => crossing(&r, pointer, spec),
-            (None, None, Some(other)) => phase_minus(&r, pointer, other),
-            (None, None, None) => r.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))),
-        });
+        let value = measure(&q.measure, &mut session, &replies);
         let pass = value.as_ref().is_ok_and(|v| q.tolerance.allows(q.reference, *v));
-        let fixed = fixture.as_ref().and_then(|f| f.pointer(&format!("/values/{}", q.id)));
-        let fixture = match (fixed, &value) {
-            (Some(f), Ok(v)) => {
-                let (fv, band) = (f["value"].as_f64().unwrap_or(f64::NAN), f["band"].as_f64().unwrap_or(0.0));
-                Some((v - fv).abs() <= band)
-            }
+        let fixture = match (fixture.as_ref().and_then(|f| f.values.get(&q.id)), &value) {
+            (Some(f), Ok(v)) => Some((v - f.value).abs() <= f.band),
             (Some(_), Err(_)) => Some(false),
             (None, _) => None,
         };
@@ -255,9 +390,23 @@ pub fn run_case(dir: &Path) -> Result<(Expected, Vec<Outcome>)> {
     Ok((expected, out))
 }
 
+/// The number `m` measures: its reply read as it says.
+fn measure(m: &Measure, session: &mut Session, replies: &BTreeMap<String, Value>) -> Result<f64> {
+    let reply = match &m.source {
+        Source::Step(step) => Cow::Borrowed(replies.get(step).ok_or_else(|| OracleError::Measure(format!("no recipe step with id `{step}`")))?),
+        Source::Command { command, params } => Cow::Owned(session.execute(command, params).map_err(|e| OracleError::Measure(e.to_string()))?),
+    };
+    let pointer = m.pointer.as_str();
+    match &m.reading {
+        Reading::Number => reply.pointer(pointer).and_then(Value::as_f64).ok_or_else(|| OracleError::Measure(format!("no number at `{pointer}`"))),
+        Reading::Minimum(axes) => minimum(&reply, pointer, axes),
+        Reading::Crossing(spec) => crossing(&reply, pointer, spec),
+        Reading::PhaseMinus(other) => phase_minus(&reply, pointer, other),
+    }
+}
+
 /// The angle (degrees) at `pointer` less the one at `other`, wrapped into (−180°, 180°].
-fn phase_minus(reply: &Value, pointer: &str, other: &Value) -> Result<f64> {
-    let other = other.as_str().ok_or_else(|| OracleError::Measure("`phase_minus` must be a JSON pointer".into()))?;
+fn phase_minus(reply: &Value, pointer: &str, other: &str) -> Result<f64> {
     let at = |p: &str| {
         reply.pointer(p).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| OracleError::Measure(format!("no number at `{p}`")))
     };
@@ -265,20 +414,28 @@ fn phase_minus(reply: &Value, pointer: &str, other: &Value) -> Result<f64> {
     Ok(if d > 180.0 { d - 360.0 } else { d })
 }
 
-/// The x where y is least over the list at `pointer` (see the module docs): the parabola's vertex
-/// through y² at the least point and its neighbours, which must be evenly spaced in x.
-fn minimum(reply: &Value, pointer: &str, spec: &Value) -> Result<f64> {
-    let fail = |why: String| OracleError::Measure(format!("minimum over `{pointer}`: {why}"));
+/// The (x, y) of each item of the list at `pointer`, y mapped by `f`; `fail` says why not.
+fn points(
+    reply: &Value,
+    pointer: &str,
+    (kx, ky): (&str, &str),
+    f: impl Fn(f64) -> f64,
+    fail: impl Fn(String) -> OracleError,
+) -> Result<Vec<(f64, f64)>> {
     let list = reply.pointer(pointer).and_then(Value::as_array).ok_or_else(|| fail("not a list".into()))?;
-    let key = |k: &str| spec.get(k).and_then(Value::as_str).ok_or_else(|| fail(format!("`minimum` needs a JSON pointer `{k}`")));
-    let (kx, ky) = (key("x")?, key("y")?);
-    let points = list
-        .iter()
+    list.iter()
         .map(|p| match (p.pointer(kx).and_then(Value::as_f64), p.pointer(ky).and_then(Value::as_f64)) {
-            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok((x, y * y)),
+            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok((x, f(y))),
             _ => Err(fail(format!("a point without numbers at `{kx}` and `{ky}`"))),
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect()
+}
+
+/// The x where y is least over the list at `pointer` (see the module docs): the parabola's vertex
+/// through y² at the least point and its neighbours, which must be evenly spaced in x.
+fn minimum(reply: &Value, pointer: &str, axes: &Axes) -> Result<f64> {
+    let fail = |why: String| OracleError::Measure(format!("minimum over `{pointer}`: {why}"));
+    let points = points(reply, pointer, (&axes.x, &axes.y), |y| y * y, fail)?;
     let k = (0..points.len()).min_by(|a, b| points[*a].1.total_cmp(&points[*b].1)).ok_or_else(|| fail("no points".into()))?;
     if k == 0 || k + 1 == points.len() {
         return Err(fail(format!("the least value is at the list's end (x = {}): widen the sweep", points[k].0)));
@@ -297,27 +454,19 @@ fn minimum(reply: &Value, pointer: &str, spec: &Value) -> Result<f64> {
 
 /// The x where y first (or last) crosses the level over the list at `pointer` (see the module
 /// docs), linear between the two points around the crossing.
-fn crossing(reply: &Value, pointer: &str, spec: &Value) -> Result<f64> {
+fn crossing(reply: &Value, pointer: &str, spec: &Crossing) -> Result<f64> {
     let fail = |why: String| OracleError::Measure(format!("crossing over `{pointer}`: {why}"));
-    let list = reply.pointer(pointer).and_then(Value::as_array).ok_or_else(|| fail("not a list".into()))?;
-    let key = |k: &str| spec.get(k).and_then(Value::as_str).ok_or_else(|| fail(format!("`crossing` needs a JSON pointer `{k}`")));
-    let (kx, ky) = (key("x")?, key("y")?);
-    let level =
-        spec.get("level").and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| fail("`crossing` needs a finite `level`".into()))?;
-    let last = match spec.get("which").and_then(Value::as_str) {
-        Some("first") | None => false,
-        Some("last") => true,
-        Some(other) => return Err(fail(format!("`which` is `first` or `last`, not `{other}`"))),
-    };
-    let points = list
-        .iter()
-        .map(|p| match (p.pointer(kx).and_then(Value::as_f64), p.pointer(ky).and_then(Value::as_f64)) {
-            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok((x, y)),
-            _ => Err(fail(format!("a point without numbers at `{kx}` and `{ky}`"))),
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let level = spec.level;
+    if !level.is_finite() {
+        return Err(fail("`crossing` needs a finite `level`".into()));
+    }
+    let points = points(reply, pointer, (&spec.x, &spec.y), |y| y, fail)?;
     let mut found = points.windows(2).filter(|w| (w[0].1 - level) * (w[1].1 - level) <= 0.0 && w[0].1 != w[1].1);
-    let w = if last { found.next_back() } else { found.next() }.ok_or_else(|| fail(format!("y never crosses {level}: widen the sweep")))?;
+    let w = match spec.which {
+        Which::First => found.next(),
+        Which::Last => found.next_back(),
+    }
+    .ok_or_else(|| fail(format!("y never crosses {level}: widen the sweep")))?;
     let [(x0, y0), (x1, y1)] = [w[0], w[1]];
     Ok(x0 + (level - y0) * (x1 - x0) / (y1 - y0))
 }
@@ -328,13 +477,14 @@ fn band(q: &Quantity, v: f64) -> f64 {
 
 /// Writes a case's fixture from passing outcomes.
 fn bless(dir: &Path, outcomes: &[Outcome]) -> Result<()> {
-    let mut values = serde_json::Map::new();
+    let mut values = BTreeMap::new();
     for o in outcomes {
         let v = o.value.as_ref().map_err(|e| OracleError::Measure(format!("{}: {e}", o.quantity.id)))?;
-        values.insert(o.quantity.id.clone(), json!({"value": v, "band": band(&o.quantity, *v)}));
+        values.insert(o.quantity.id.clone(), Fixed { value: *v, band: band(&o.quantity, *v) });
     }
-    let doc = json!({"note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.", "values": values});
     let path = dir.join("fixture.json");
+    // Through a JSON value, whose objects keep their keys sorted.
+    let doc = serde_json::to_value(Fixture { note: FIXTURE_NOTE.to_owned(), values }).map_err(|e| OracleError::file(&path, e))?;
     let text = serde_json::to_string_pretty(&doc).map_err(|e| OracleError::file(&path, e))?;
     std::fs::write(&path, text + "\n").map_err(|e| OracleError::file(&path, e))
 }
@@ -446,11 +596,26 @@ mod tests {
     fn tolerances_and_parsing() {
         let t = Tolerance { relative: 0.01, absolute: 0.0 };
         assert!(t.allows(100.0, 100.9) && !t.allows(100.0, 101.1));
-        assert!(Tolerance::from_json(&json!({})).is_err());
-        assert!(Tolerance::from_json(&json!({"relative": -1})).is_err());
+        assert!(serde_json::from_value::<Tolerance>(json!({})).is_err());
+        assert!(serde_json::from_value::<Tolerance>(json!({"relative": -1})).is_err());
+        assert_eq!(serde_json::from_value::<Tolerance>(json!({"absolute": 0.5})).ok(), Some(Tolerance { relative: 0.0, absolute: 0.5 }));
         let e = json!({"title": "t", "kind": "theory", "source": "s", "quantities": [
             {"id": "a", "quantity": "q", "measure": {"step": "x", "pointer": "/v"}, "value": 1.0, "tolerance": {"absolute": 0.1}, "reason": "r"}]});
-        assert!(Expected::parse(&e).is_ok());
+        let parsed = Expected::parse(&e).unwrap();
+        assert_eq!(parsed.kind, Kind::Theory);
+        assert_eq!(parsed.quantities[0].measure, Measure { source: Source::Step("x".into()), pointer: "/v".into(), reading: Reading::Number });
+        // A measure reads one way, from one reply.
+        let measure = |m: Value| serde_json::from_value::<Measure>(m);
+        assert!(measure(json!({"pointer": "/v"})).is_err());
+        assert!(measure(json!({"step": "x", "command": "results.sparameters", "pointer": "/v"})).is_err());
+        assert!(measure(json!({"step": "x"})).is_err());
+        assert!(measure(json!({"step": "x", "pointer": "/p", "minimum": {"x": "/f"}})).is_err());
+        assert!(measure(json!({"step": "x", "pointer": "/p", "phase_minus": 3})).is_err());
+        assert!(measure(json!({"step": "x", "pointer": "/p", "crossing": {"x": "/f", "y": "/s", "level": 1, "which": "middle"}})).is_err());
+        assert!(measure(json!({"step": "x", "pointer": "/p", "minimum": {"x": "/f", "y": "/s"}, "phase_minus": "/q"})).is_err());
+        let c = measure(json!({"command": "results.sparameters", "pointer": "/p", "crossing": {"x": "/f", "y": "/s", "level": 0.5}})).unwrap();
+        assert_eq!(c.source, Source::Command { command: "results.sparameters".into(), params: json!({}) });
+        assert!(matches!(c.reading, Reading::Crossing(Crossing { which: Which::First, .. })));
         let mut bad = e.clone();
         bad["kind"] = json!("guess");
         assert!(Expected::parse(&bad).is_err());
@@ -465,23 +630,23 @@ mod tests {
         // y = |x − 2.3| sampled at 0.5 steps: y² is a parabola, its vertex exact.
         let points: Vec<Value> = (0..9).map(|i| f64::from(i) * 0.5).map(|x| json!({"f": x, "s": {"mag": (x - 2.3f64).abs()}})).collect();
         let reply = json!({"points": points});
-        let spec = json!({"x": "/f", "y": "/s/mag"});
+        let spec = Axes { x: "/f".into(), y: "/s/mag".into() };
         assert!((minimum(&reply, "/points", &spec).unwrap() - 2.3).abs() < 1e-12);
         // At the list's end, uneven, or without the keys: refused.
         let edge: Vec<Value> = (0..4).map(|i| json!({"f": f64::from(i), "s": {"mag": f64::from(i)}})).collect();
         assert!(minimum(&json!({"points": edge}), "/points", &spec).is_err());
         let uneven = json!({"points": [{"f": 0.0, "s": {"mag": 1.0}}, {"f": 1.0, "s": {"mag": 0.1}}, {"f": 3.0, "s": {"mag": 1.0}}]});
         assert!(minimum(&uneven, "/points", &spec).is_err());
-        assert!(minimum(&reply, "/points", &json!({"x": "/f"})).is_err());
+        assert!(minimum(&reply, "/points", &Axes { x: "/f".into(), y: "/nothing".into() }).is_err());
         assert!(minimum(&reply, "/nothing", &spec).is_err());
     }
 
     #[test]
     fn a_phase_difference_is_wrapped() {
         let reply = json!({"a": 170.0, "b": -100.0, "c": "x"});
-        assert!((phase_minus(&reply, "/a", &json!("/b")).unwrap() - -90.0).abs() < 1e-12);
-        assert!((phase_minus(&reply, "/b", &json!("/a")).unwrap() - 90.0).abs() < 1e-12);
-        assert!(phase_minus(&reply, "/a", &json!("/c")).is_err() && phase_minus(&reply, "/a", &json!(3)).is_err());
+        assert!((phase_minus(&reply, "/a", "/b").unwrap() - -90.0).abs() < 1e-12);
+        assert!((phase_minus(&reply, "/b", "/a").unwrap() - 90.0).abs() < 1e-12);
+        assert!(phase_minus(&reply, "/a", "/c").is_err() && phase_minus(&reply, "/a", "/d").is_err());
     }
 
     #[test]
@@ -489,13 +654,12 @@ mod tests {
         // A band: y rises through 0.5 at x = 1.25 and falls through it at x = 3.75.
         let points: Vec<Value> = (0..11).map(|i| f64::from(i) * 0.5).map(|x| json!({"f": x, "s": {"mag": 1.0 - (x - 2.5f64).abs() * 0.4}})).collect();
         let reply = json!({"points": points});
-        let first = json!({"x": "/f", "y": "/s/mag", "level": 0.5});
-        let last = json!({"x": "/f", "y": "/s/mag", "level": 0.5, "which": "last"});
-        assert!((crossing(&reply, "/points", &first).unwrap() - 1.25).abs() < 1e-12);
-        assert!((crossing(&reply, "/points", &last).unwrap() - 3.75).abs() < 1e-12);
-        assert!(crossing(&reply, "/points", &json!({"x": "/f", "y": "/s/mag", "level": 2.0})).is_err());
-        assert!(crossing(&reply, "/points", &json!({"x": "/f", "y": "/s/mag", "level": 0.5, "which": "middle"})).is_err());
-        assert!(crossing(&reply, "/points", &json!({"x": "/f", "y": "/s/mag"})).is_err());
+        let at = |level: f64, which: Which| Crossing { x: "/f".into(), y: "/s/mag".into(), level, which };
+        assert!((crossing(&reply, "/points", &at(0.5, Which::First)).unwrap() - 1.25).abs() < 1e-12);
+        assert!((crossing(&reply, "/points", &at(0.5, Which::Last)).unwrap() - 3.75).abs() < 1e-12);
+        assert!(crossing(&reply, "/points", &at(2.0, Which::First)).is_err());
+        assert!(crossing(&reply, "/points", &at(f64::NAN, Which::First)).is_err());
+        assert!(serde_json::from_value::<Crossing>(json!({"x": "/f", "y": "/s/mag"})).is_err());
     }
 
     /// Every committed case parses and has a recipe and a README (running them is

@@ -62,10 +62,10 @@ impl EmcraftApp {
         }
         // An open problem's fields read best as |E| (a source's own component may vanish on
         // the planes through it); a guide's as Ey, its TE10 field.
-        self.field.view.component = if self.session.model.open.is_some() { Component::E } else { Component::Ey };
+        self.field.view.component = if self.session.model().open.is_some() { Component::E } else { Component::Ey };
         self.views.port_modes = None;
         self.views.compare = None;
-        let results = &self.session.results;
+        let results = self.session.results();
         self.view = if results.sweep.is_some() {
             View::SParameters
         } else if results.eigen.is_some() {
@@ -84,7 +84,7 @@ impl EmcraftApp {
 
     /// A solve: the view of its results, the field view on what it solved.
     fn after_solve(&mut self, id: &str, reply: &Value) {
-        let results = &self.session.results;
+        let results = self.session.results();
         match id {
             "solve.frequency" => {
                 self.view = View::SParameters;
@@ -125,7 +125,7 @@ impl EmcraftApp {
         if let Some(f) = crate::nearest(&freqs, self.field.view.frequency) {
             self.field.view.frequency = f;
         }
-        self.field.view.mode = if self.session.results.sweep.is_none() && self.session.results.eigen.is_some() { Some(0) } else { None };
+        self.field.view.mode = if self.session.results().sweep.is_none() && self.session.results().eigen.is_some() { Some(0) } else { None };
         self.field.at = None;
     }
 }

@@ -8,8 +8,8 @@ pub(super) fn plane_span(app: &EmcraftApp) -> Option<(f64, &'static str)> {
 }
 
 pub(crate) fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'static str)> {
-    let emcraft_model::Aabb { min: lo, max: hi } = app.session.model.bounds()?;
-    let l = app.session.display.length;
+    let emcraft_model::Aabb { min: lo, max: hi } = app.session.model().bounds()?;
+    let l = app.session.display().length;
     Some(match plane {
         Plane::H => (l.from_si(hi.y - lo.y), "y"),
         Plane::E => (l.from_si(hi.x - lo.x), "x"),
@@ -20,7 +20,7 @@ pub(crate) fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'st
 /// The field view's plot: its plane sampled once (kept in `app.field.samples`), then drawn
 /// at its component and phase.
 pub(crate) fn field_plot(app: &mut EmcraftApp) -> Result<emcraft_render::plot::FieldPlot, String> {
-    let l = app.session.display.length;
+    let l = app.session.display().length;
     app.field.view.at = app.field.at.map(|v| l.to_si(v));
     let at = plane_span(app).map_or(0.0, |(span, _)| l.to_si(app.field.at.unwrap_or(span / 2.0).clamp(0.0, span)));
     if !app.field.samples.as_ref().is_some_and(|s| s.serves(&app.field.view, at)) {
@@ -39,7 +39,7 @@ pub(crate) fn field_plots(app: &mut EmcraftApp) -> Result<Vec<(emcraft_render::p
     let plot = field_plot(app)?;
     let (plane, at) = app.field.samples.as_ref().map_or((app.field.view.plane, 0.0), |s| (s.plane, s.at));
     let mut out = vec![(plot, plane, at)];
-    let l = app.session.display.length;
+    let l = app.session.display().length;
     let spans: Vec<_> = app.field.kept.iter().map(|k| plane_span_of(app, k.plane)).collect();
     for (kept, span) in app.field.kept.iter_mut().zip(spans) {
         let Some((span, _)) = span else { continue };
@@ -81,7 +81,7 @@ pub(super) fn field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 /// The field's picture, as large as its column allows, with the probe on it.
 fn picture_column(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let width = picture_width(ui);
-    let l = app.session.display.length;
+    let l = app.session.display().length;
     app.field.view.at = app.field.at.map(|v| l.to_si(v));
     let key = PictureKey::new(app.revision, width, app.field.view.clone());
     if !app.field.picture.is_fresh(&key) {
@@ -184,9 +184,9 @@ pub(super) fn field_controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 
 /// Which field: an eigenmode, or a solved frequency.
 pub(super) fn field_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let fu = app.session.display.frequency;
-    if let Some(e) = app.session.results.eigen.as_ref()
-        && (app.field.view.mode.is_some() || app.session.results.sweep.is_none())
+    let fu = app.session.display().frequency;
+    if let Some(e) = app.session.results().eigen.as_ref()
+        && (app.field.view.mode.is_some() || app.session.results().sweep.is_none())
     {
         let mut idx = app.field.view.mode.unwrap_or(0);
         let label = |i: usize| e.modes.get(i).map_or(String::new(), |m| format!("mode {}: {:.4} {}", i + 1, fu.from_si(m.frequency), fu.symbol()));
@@ -227,7 +227,7 @@ pub(super) fn plane_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     let Some((span, axis)) = plane_span(app) else { return };
     let mut at = app.field.at.unwrap_or(span / 2.0);
-    let unit = app.session.display.length.symbol();
+    let unit = app.session.display().length.symbol();
     let r = crate::ui_kit::slider(ui, &mut at, 0.0..=span, format!("{axis} ({unit})"));
     scenario::publish_target("field:at", r.rect);
     // What lies along the slider: the materials (or sections) the plane passes, as a strip under
@@ -267,7 +267,7 @@ pub(super) fn kept_planes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         let t = Tokens::get();
         crate::ui_kit::small(ui, "In 3D:", t.text_dim);
-        let unit = app.session.display.length.symbol();
+        let unit = app.session.display().length.symbol();
         let mut drop = None;
         for (k, crate::state::KeptPlane { plane, at, .. }) in app.field.kept.iter().enumerate() {
             let name = match plane {

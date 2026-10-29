@@ -274,7 +274,7 @@ impl EmcraftApp {
 
     /// The sweep's frequencies (Hz).
     pub fn frequencies(&self) -> Vec<f64> {
-        self.session.results.sweep.as_ref().map(|s| s.results.iter().map(|r| r.frequency).collect()).unwrap_or_default()
+        self.session.results().sweep.as_ref().map(|s| s.results.iter().map(|r| r.frequency).collect()).unwrap_or_default()
     }
 
     /// Takes a finished job's session and reply; answers the control requests waiting on it.

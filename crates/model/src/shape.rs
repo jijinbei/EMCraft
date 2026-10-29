@@ -413,6 +413,9 @@ pub enum Axis {
 }
 
 impl Axis {
+    /// The axes in order of their index.
+    pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
+
     /// The axis' component index: 0, 1 or 2.
     pub fn index(self) -> usize {
         match self {
@@ -420,6 +423,25 @@ impl Axis {
             Axis::Y => 1,
             Axis::Z => 2,
         }
+    }
+
+    /// The axis of component index `i`, if it is 0, 1 or 2.
+    pub fn from_index(i: usize) -> Option<Axis> {
+        Axis::ALL.get(i).copied()
+    }
+
+    /// The axis' name, as parameters and replies give it: `x`, `y` or `z`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Axis::X => "x",
+            Axis::Y => "y",
+            Axis::Z => "z",
+        }
+    }
+
+    /// The name of component index `i`, `?` for none.
+    pub fn name_of(i: usize) -> &'static str {
+        Axis::from_index(i).map_or("?", Axis::name)
     }
 
     /// A shape's own coordinates turned so its z axis lies along this one (a cyclic turn of

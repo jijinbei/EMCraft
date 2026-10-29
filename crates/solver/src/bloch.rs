@@ -453,7 +453,7 @@ mod tests {
         m.add_material(emcraft_model::Material::new("fill", 2.56, 1.0).unwrap()).unwrap();
         m.set_waveguide(Waveguide { width: 0.02286, height: 0.01016, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
         m.set_periodic(Some(Periodic { x: false, y: false, z: true, theta: 0.0, phi: 0.0, polarization: Polarization::Te })).unwrap();
-        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap());
+        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
         m
     }
 
@@ -463,7 +463,11 @@ mod tests {
         let sweep = Sweep { axis: 2, from: 0.0, to: PI, points: 3, bands: 2, near: 15e9 };
         let d = dispersion(&m, Order::Two, &sweep).unwrap();
         for p in &d.points {
-            let exact = emcraft_theory::floquet::empty_guide_bands(0.02286, 0.01016, 0.01, 1.0, p.psi, 2);
+            let exact = emcraft_theory::floquet::empty_guide_bands(
+                &emcraft_theory::floquet::EmptyGuide { a: 0.02286, b: 0.01016, period: 0.01, eps_r: 1.0 },
+                p.psi,
+                2,
+            );
             for (f, e) in p.frequencies.iter().zip(&exact) {
                 assert!((f - e).abs() < 2e-3 * e, "ψ = {}: {f} vs {e} ({:?})", p.psi, p.frequencies);
             }

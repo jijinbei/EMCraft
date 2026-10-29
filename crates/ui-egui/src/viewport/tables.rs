@@ -13,7 +13,7 @@ pub(super) fn port_modes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         return;
     };
     let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
-    let fu = app.session.display.frequency.symbol();
+    let fu = app.session.display().frequency.symbol();
     ui.label(egui::RichText::new(format!("Port modes at {} {fu}", num(&reply["frequency"], 4))).size(t.font_heading));
     // The mode picked (from the Excitation panel or a click here), else the first port's first.
     if app.workflow.mode_focus.is_none()
@@ -84,7 +84,7 @@ pub(super) fn port_modes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 /// The picked port mode's pattern: its transverse E across the port's face.
 fn mode_picture(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value) {
     let Some(f) = app.workflow.mode_focus.clone() else { return };
-    let fu = app.session.display.frequency;
+    let fu = app.session.display().frequency;
     let Some(frequency) = reply["frequency"].as_f64().map(|v| fu.to_si(v)) else { return };
     let width = picture_width(ui);
     let key = PictureKey::new(app.revision, width, crate::state::ModePicture { port: f.port.clone(), mode: f.mode, frequency });
@@ -117,7 +117,7 @@ pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         }
     }
     let Some(table) = app.views.eigen_table.as_ref().map(|e| e.reply.clone()) else { return };
-    let fu = app.session.display.frequency.symbol();
+    let fu = app.session.display().frequency.symbol();
     let mut open = None;
     egui::Grid::new("eigen_grid").striped(true).num_columns(4).show(ui, |ui| {
         for h in ["Mode", &format!("f ({fu})"), "Q", ""] {
@@ -150,7 +150,7 @@ pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 pub(super) fn compare(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let Some(reply) = app.views.compare.clone() else {
-        let ready = !app.busy() && app.session.results.sweep.is_some();
+        let ready = !app.busy() && app.session.results().sweep.is_some();
         if empty_with_action(ui, "Compare the sweep with the exact TE10 solution or mode matching.", "Compare…", ready, "compare:run") {
             let _ = app.run("results.compare", json!({}));
         }

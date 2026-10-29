@@ -10,15 +10,15 @@ pub(super) fn geometry(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &To
             ui_kit::small(ui, &r.text, t.text);
         }
     }
-    if let Some(emcraft_model::Aabb { min: lo, max: hi }) = app.session.model.bounds() {
-        let l = app.session.display.length;
+    if let Some(emcraft_model::Aabb { min: lo, max: hi }) = app.session.model().bounds() {
+        let l = app.session.display().length;
         kv(ui, "extent", format!("{} × {} × {} {lu}", fmt(l.from_si(hi.x - lo.x)), fmt(l.from_si(hi.y - lo.y)), fmt(l.from_si(hi.z - lo.z))), t);
     }
 }
 
 pub(super) fn materials(app: &mut EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     ui_kit::section(ui, "Materials");
-    let m = &app.session.model;
+    let m = app.session.model();
     for (i, mat) in m.materials.iter().enumerate() {
         ui.horizontal(|ui| {
             let c = crate::scene3d::material_rgb(m, i);
@@ -31,9 +31,9 @@ pub(super) fn materials(app: &mut EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
 
 pub(super) fn boundaries(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     ui_kit::section(ui, "Boundaries");
-    let m = &app.session.model;
+    let m = app.session.model();
     kv(ui, "walls", m.wall_conductivity.map_or("perfect conductor".into(), |s| format!("σ = {s:.3e} S/m")), t);
-    let l = app.session.display.length;
+    let l = app.session.display().length;
     let kind = |o: &emcraft_model::Open| if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" };
     kv(ui, "open", m.open.map_or("closed (no PML)".into(), |o| format!("{} {} {lu} thick", kind(&o), fmt(l.from_si(o.thickness)))), t);
     let planes: Vec<String> = m
@@ -52,8 +52,8 @@ pub(super) fn boundaries(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &
 
 pub(super) fn mesh(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     ui_kit::section(ui, "Mesh");
-    let l = app.session.display.length;
-    let Some(m) = app.session.model.mesh.as_ref() else {
+    let l = app.session.display().length;
+    let Some(m) = app.session.model().mesh.as_ref() else {
         ui_kit::small(ui, "not meshed yet", t.text_dim);
         return;
     };
@@ -63,8 +63,8 @@ pub(super) fn mesh(app: &mut EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens
     let volume: f64 = (0..m.tets.len()).filter_map(|i| m.volume(i)).sum();
     let h = (6.0 * std::f64::consts::SQRT_2 * volume / m.tets.len().max(1) as f64).cbrt();
     kv(ui, "mean element", format!("{:.3} {lu}", l.from_si(h)), t);
-    if let Some(b) = app.session.model.band {
-        let index = app.session.model.materials.iter().map(|x| (x.eps_r * x.mu_r).sqrt()).fold(1.0, f64::max);
+    if let Some(b) = app.session.model().band {
+        let index = app.session.model().materials.iter().map(|x| (x.eps_r * x.mu_r).sqrt()).fold(1.0, f64::max);
         let lambda = emcraft_model::units::C0 / (b.stop * index);
         kv(ui, "per wavelength", format!("{:.1} at the band's top", lambda / h.max(1e-300)), t);
     }

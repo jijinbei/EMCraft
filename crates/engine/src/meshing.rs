@@ -3,7 +3,7 @@
 use emcraft_model::units::C0;
 use serde_json::{Map, Value, json};
 
-use crate::{Change, Params, Result, Session};
+use crate::{Params, Result, Session};
 
 /// The element sizes asked for: one default, and per material (by index) when sized by
 /// wavelength.
@@ -82,8 +82,7 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
         if sizes.by_wavelength() {
             reply["sizes"] = sizes.reply(s);
         }
-        s.model.mesh = Some(mesh);
-        s.results.invalidate(Change::Geometry);
+        s.model.set_mesh(mesh);
         return Ok(reply);
     }
     let size = sizes.grid_size(s)?;
@@ -92,7 +91,6 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
     if sizes.by_wavelength() {
         reply["size"] = json!(s.show_length(size));
     }
-    s.model.mesh = Some(mesh);
-    s.results.invalidate(Change::Geometry);
+    s.model.set_mesh(mesh);
     Ok(reply)
 }

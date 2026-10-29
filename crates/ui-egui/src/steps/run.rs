@@ -4,9 +4,9 @@ use super::*;
 
 /// The solver and its parameters from the setup's fields; each bad field is marked.
 pub fn run_params(app: &mut EmcraftApp) -> Result<(Solver, Value), String> {
-    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(&app.session.model));
+    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
     let band = band(app);
-    let limit = app.session.limits.frequencies as u64;
+    let limit = app.session.limits().frequencies as u64;
     let f = &mut app.workflow.fields;
     if f.points.is_empty() {
         f.points = "11".into();
@@ -84,7 +84,7 @@ pub struct Preflight {
 
 pub fn preflight(app: &mut EmcraftApp, states: &[StepState]) -> Preflight {
     let mut out = Preflight::default();
-    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(&app.session.model));
+    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
     for s in states.iter().filter(|s| s.step.index() <= Step::Setup.index()) {
         // A resonator needs no excitation.
         if s.step == Step::Excitation && solver == Solver::Eigenmodes && s.status == Status::Missing {

@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) fn setup(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens) {
     ui_kit::section(ui, "Solver");
-    let inferred = Solver::infer(&app.session.model);
+    let inferred = Solver::infer(app.session.model());
     let f = &mut app.workflow.fields;
     let mut solver = f.solver.unwrap_or(inferred);
     for s in Solver::ALL {
@@ -70,8 +70,8 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
             v
         }
     };
-    let current = app.session.compute.device();
-    let precision = app.session.compute.precision.name();
+    let current = app.session.compute().device();
+    let precision = app.session.compute().precision.name();
     let busy = app.busy();
     let devices: Vec<(String, bool, Vec<String>, Option<String>)> = list
         .get("devices")
@@ -154,7 +154,7 @@ fn solve_frequencies(app: &EmcraftApp, solver: Solver) -> Vec<f64> {
     let f = &app.workflow.fields;
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
-            let Ok(n) = integer(&f.points, 1, app.session.limits.frequencies as u64) else { return Vec::new() };
+            let Ok(n) = integer(&f.points, 1, app.session.limits().frequencies as u64) else { return Vec::new() };
             (0..n).map(|k| if n == 1 { a } else { a + (z - a) * k as f64 / (n - 1) as f64 }).collect()
         }
         Solver::Eigenmodes | Solver::Radiation => {
@@ -175,7 +175,7 @@ const MAX_SOLVE_TICKS: usize = 400;
 /// warning colour: below it no power enters), and the frequencies the solve will work at as
 /// ticks.
 fn band_diagram(app: &mut EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tokens) {
-    let unit = app.session.display.frequency;
+    let unit = app.session.display().frequency;
     let fu = unit.symbol();
     let Some((a, z)) = band(app) else {
         ui_kit::small(ui, "band: not set (step 0)", t.error);

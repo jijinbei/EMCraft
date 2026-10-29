@@ -206,10 +206,23 @@ pub struct CoupledFilter {
     pub sections: Vec<CoupledSection>,
 }
 
+/// What a coupled filter is designed for: its order, Chebyshev ripple (dB), centre `f0` (Hz),
+/// fractional bandwidth, feeds of `z0` (Ω) in `eps_r`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CoupledSpec {
+    pub order: usize,
+    pub ripple_db: f64,
+    pub f0: f64,
+    pub fbw: f64,
+    pub z0: f64,
+    pub eps_r: f64,
+}
+
 impl CoupledFilter {
     /// Cohn's design: order `n`, Chebyshev ripple `ripple_db`, centre `f0` (Hz), fractional
     /// bandwidth `fbw`, feeds of `z0` (Ω) in `eps_r`; every section a quarter wavelength at f0.
-    pub fn design(n: usize, ripple_db: f64, f0: f64, fbw: f64, z0: f64, eps_r: f64) -> Result<CoupledFilter, TheoryError> {
+    pub fn design(spec: &CoupledSpec) -> Result<CoupledFilter, TheoryError> {
+        let CoupledSpec { order: n, ripple_db, f0, fbw, z0, eps_r } = *spec;
         if ![f0, fbw, z0, eps_r].iter().all(|v| v.is_finite() && *v > 0.0) || fbw >= 1.0 {
             return Err(bad("coupled filter: f0, z0 and εr finite and positive, 0 < fbw < 1"));
         }
@@ -339,7 +352,7 @@ mod tests {
     #[test]
     fn the_designed_filter_passes_its_band() {
         let f0 = 5e9;
-        let filter = CoupledFilter::design(3, 0.1, f0, 0.1, 50.0, 2.2).unwrap();
+        let filter = CoupledFilter::design(&CoupledSpec { order: 3, ripple_db: 0.1, f0, fbw: 0.1, z0: 50.0, eps_r: 2.2 }).unwrap();
         assert_eq!(filter.sections.len(), 4);
         // Symmetric: the outer sections alike, the inner ones alike.
         assert!((filter.sections[0].z0e - filter.sections[3].z0e).abs() < 1e-12);
@@ -401,7 +414,7 @@ mod tests {
                 .collect(),
         };
         // Built as designed: the design's impedances and quarter waves to rounding.
-        let design = CoupledFilter::design(3, 0.1, 5e9, 0.1, 50.0, er).unwrap();
+        let design = CoupledFilter::design(&CoupledSpec { order: 3, ripple_db: 0.1, f0: 5e9, fbw: 0.1, z0: 50.0, eps_r: er }).unwrap();
         for (a, d) in filter.sections.iter().zip(&design.sections) {
             assert!((a.z0e / d.z0e - 1.0).abs() < 1e-4 && (a.z0o / d.z0o - 1.0).abs() < 1e-4 && (a.length / d.length - 1.0).abs() < 1e-5);
         }

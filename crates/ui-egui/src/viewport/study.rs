@@ -43,7 +43,7 @@ fn short(v: f64) -> String {
 
 pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let Some(study) = app.session.results.study.as_ref() else { return };
+    let Some(study) = app.session.results().study.as_ref() else { return };
     let state = &mut app.views.study;
     ui.label(egui::RichText::new(summary(study)).size(t.font_body).color(t.text));
     // The S-parameter a sweep's chart shows.

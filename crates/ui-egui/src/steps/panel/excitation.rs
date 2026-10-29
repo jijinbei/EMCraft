@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) fn excitation(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens) {
     ui_kit::section(ui, "Ports and sources");
-    let m = &app.session.model;
+    let m = app.session.model();
     if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
         ui_kit::small(ui, "none yet", t.text_dim);
     }
@@ -34,7 +34,7 @@ pub(super) fn excitation(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &
         .clicked()
     {
         let r =
-            if app.session.model.band.is_some() { app.run("solve.port_modes", json!({})).map(|_| ()) } else { app.open_dialog("solve.port_modes") };
+            if app.session.model().band.is_some() { app.run("solve.port_modes", json!({})).map(|_| ()) } else { app.open_dialog("solve.port_modes") };
         if let Err(e) = r {
             app.error(e);
         }
@@ -73,7 +73,7 @@ fn mode_table(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens
     let mut clicked = None;
     for p in reply.get("ports").and_then(Value::as_array).into_iter().flatten() {
         let name = p.get("name").and_then(Value::as_str).unwrap_or("?");
-        let port = app.session.model.ports.iter().position(|q| q.name == name);
+        let port = app.session.model().ports.iter().position(|q| q.name == name);
         for (k, mode) in p.get("modes").and_then(Value::as_array).into_iter().flatten().take(8).enumerate() {
             let n = |key: &str| mode.get(key).and_then(Value::as_f64);
             let txt = |s: String| egui::RichText::new(s).size(t.font_small).color(t.text);

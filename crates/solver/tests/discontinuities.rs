@@ -22,7 +22,7 @@ fn model(layout: &Layout, opts: &emcraft_mesh::Options) -> Model {
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide_with(&m, opts).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide_with(&m, opts).unwrap().into());
     m
 }
 
@@ -111,7 +111,7 @@ fn e_model_with(layout: &[(f64, f64, f64)], opts: emcraft_mesh::Options) -> Mode
     m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide_with(&m, &opts).unwrap());
+    m.mesh = Some(emcraft_mesh::waveguide_with(&m, &opts).unwrap().into());
     m
 }
 

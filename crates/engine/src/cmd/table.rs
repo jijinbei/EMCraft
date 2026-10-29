@@ -2,9 +2,20 @@
 //! function that runs it (in the module of its area).
 
 use Quantity::{Frequency as F, Length as L};
+use emcraft_gpu::Precision;
+use emcraft_model::units::{Frequency, Length};
+use emcraft_model::{Axis, Combine, End, ModeSolver, OpenShape, Polarization, SymmetryKind, Terminals};
+
+use crate::choice::Choice;
+use crate::geometry::{Keep, PlaneAxis, Primitive};
+use crate::open::FarSolver;
+use crate::project::Format as TouchstoneFormat;
+use crate::solve::{Device, Strategy};
+use crate::tdr::Mode as TdrMode;
+use crate::view::{Component, Plane};
 
 use crate::project::Effect;
-use crate::{CommandSpec, Kind as K, ParamSpec, Quantity};
+use crate::{Change, CommandSpec, Kind as K, ParamSpec, Quantity};
 
 const fn req(name: &'static str, kind: K, doc: &'static str) -> ParamSpec {
     ParamSpec::required(name, kind, doc)
@@ -37,14 +48,14 @@ const PORT_SOLVER_ORDER: ParamSpec = opt("order", K::Integer, "element order of 
 const BAND_TOP: ParamSpec = opt("frequency", K::Number, "the frequency (default: the band's top)").of(F);
 
 // A primitive body: its shape, dimensions and placement.
-const SHAPE: ParamSpec = req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&["box", "cylinder", "sphere"]);
+const SHAPE: ParamSpec = req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(Primitive::NAMES);
 const SIZE: ParamSpec = opt("size", K::Array, "the box's [x, y, z]").of(L);
 const SIZE_TURNED: ParamSpec = opt("size", K::Array, "the box's [x, y, z] (in its own axes)").of(L);
 const RADIUS: ParamSpec = opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L);
 const LENGTH: ParamSpec = opt("length", K::Number, "the cylinder's length along z").of(L);
 const LENGTH_TURNED: ParamSpec = opt("length", K::Number, "the cylinder's length along its axis").of(L);
 const AT: ParamSpec = opt("at", K::Array, "where its origin goes (default [0, 0, 0])").of(L);
-const AXIS: ParamSpec = opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(&["x", "y", "z"]);
+const AXIS: ParamSpec = opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(Axis::NAMES);
 const BODY_MATERIAL: ParamSpec = req("material", K::String, "`metal`, the region's material, or another material's name");
 
 // A driven solution: a solved frequency and the port excited.
@@ -54,10 +65,9 @@ const EXCITATION: ParamSpec = opt("excitation", K::String, "the excited port (de
 // A field picture: the solution, the plane and the colour.
 const FIELD_FREQUENCY: ParamSpec = opt("frequency", K::Number, "a solved frequency (the nearest is used); required unless `mode` is given").of(F);
 const FIELD_MODE: ParamSpec = opt("mode", K::Integer, "an eigenmode (1 = the lowest) instead of a driven solution");
-const PLANE: ParamSpec = opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(&["h", "e", "cross"]);
+const PLANE: ParamSpec = opt("plane", K::String, "`h` (H-plane, default), `e` (E-plane) or `cross` (cross-section)").one_of(Plane::NAMES);
 const PLANE_AT: ParamSpec = opt("at", K::Number, "the plane's position along its normal (default the middle)").of(L);
-const COMPONENT: ParamSpec =
-    opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(&["ex", "ey", "ez", "hx", "hy", "hz", "|e|", "|h|"]);
+const COMPONENT: ParamSpec = opt("component", K::String, "colour: ex, ey (default), ez, hx, hy, hz, |e|, |h|").one_of(Component::NAMES);
 
 // The port a TDR reads.
 const TDR_PORT: ParamSpec = opt("port", K::String, "the port (default the first)");
@@ -65,7 +75,7 @@ const TDR_PORT: ParamSpec = opt("port", K::String, "the port (default the first)
 // The far field read: whose, at which frequency, at which azimuth.
 const FAR_SOLVER: ParamSpec =
     opt("solver", K::String, "`fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first")
-        .one_of(&["fem", "time_domain"]);
+        .one_of(FarSolver::NAMES);
 const FAR_FREQUENCY: ParamSpec = opt("frequency", K::Number, "the time domain's frequency (the nearest solved)").of(F);
 const PHI: ParamSpec = opt("phi", K::Number, "the azimuth in degrees (default 0)");
 
@@ -79,6 +89,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The job's frequency band: the default for meshing by wavelength (its top), for sweeps and for port-mode previews.",
         params: &[req("start", K::Number, "the band's start").of(F), req("stop", K::Number, "the band's stop").of(F)],
         effect: Effect::Record,
+        invalidates: None,
         run: crate::project::frequency,
     },
     CommandSpec {
@@ -87,6 +98,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Where each step of the workflow stands (intent, geometry, materials, excitation, boundaries, mesh, setup, run, results): done, warning, missing or stale, each with messages naming the command that fixes it. Reads the model, the mesh and the results; solves nothing.",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::project::status,
     },
     CommandSpec {
@@ -95,6 +107,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The meshed model's unknowns at `order`, the factor's memory and the time per frequency: from the session's last sweep when it has one, else from a reference machine's.",
         params: &[opt("order", K::Integer, "element order, 1 or 2 (default 2)")],
         effect: Effect::None,
+        invalidates: None,
         run: crate::project::estimate,
     },
     CommandSpec {
@@ -103,6 +116,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Saves the project as an `.emcraft` file (JSON: the model and the commands that built it, a script), to `path` or, without one, to the file it was opened from or last saved to. A path without an extension gets `.emcraft`.",
         params: &[opt("path", K::String, "the file (default: the project's own)")],
         effect: Effect::None,
+        invalidates: None,
         run: crate::project::save,
     },
     CommandSpec {
@@ -111,6 +125,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Replaces the session with an empty project (vacuum only), keeping the display units; undo goes back.",
         params: &[],
         effect: Effect::Replace,
+        invalidates: None,
         run: crate::project::new,
     },
     CommandSpec {
@@ -119,6 +134,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Opens a project saved by file.save (`.emcraft`, or a `.json` of the same form): its commands are replayed, so the mesh comes back the same; results are solved again.",
         params: &[req("path", K::String, "the file")],
         effect: Effect::Replace,
+        invalidates: None,
         run: crate::project::open,
     },
     CommandSpec {
@@ -127,15 +143,17 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Goes back to the model before the last change (results stay, marked stale).",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::project::undo,
     },
-    CommandSpec { id: "edit.redo", label: "Redo", doc: "Goes forward again after an undo.", params: &[], effect: Effect::None, run: crate::project::redo },
+    CommandSpec { id: "edit.redo", label: "Redo", doc: "Goes forward again after an undo.", params: &[], effect: Effect::None, invalidates: None, run: crate::project::redo },
     CommandSpec {
         id: "results.touchstone",
         label: "Export Touchstone",
         doc: "Writes the sweep's S-parameters as a Touchstone (version 1) file, frequencies in GHz, the ports' reference impedance on the option line; one port per entry of S (each terminal of a terminal port, in the order `ports` lists them).",
-        params: &[req("path", K::String, "the file (.s1p, .s2p, …)"), opt("format", K::String, "`ri` (default) or `ma`").one_of(&["ri", "ma"])],
+        params: &[req("path", K::String, "the file (.s1p, .s2p, …)"), opt("format", K::String, "`ri` (default) or `ma`").one_of(TouchstoneFormat::NAMES)],
         effect: Effect::None,
+        invalidates: None,
         run: crate::project::touchstone,
     },
     CommandSpec {
@@ -144,14 +162,16 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The sweep's physics checks: passivity (the largest singular value of S over the frequencies, ≤ 1 when passive), reciprocity (max |S − Sᵀ|) and unitarity (max |SᴴS − 1|, 0 when lossless).",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::project::check,
     },
     CommandSpec {
         id: "units.set",
         label: "Display units",
         doc: "Sets the units parameters are read in and replies written in.",
-        params: &[opt("length", K::String, "`mm` or `m`").one_of(&["mm", "m"]), opt("frequency", K::String, "`GHz`, `MHz` or `Hz`").one_of(&["GHz", "MHz", "Hz"])],
+        params: &[opt("length", K::String, "`mm` or `m`").one_of(Length::NAMES), opt("frequency", K::String, "`GHz`, `MHz` or `Hz`").one_of(Frequency::NAMES)],
         effect: Effect::Record,
+        invalidates: None,
         run: crate::project::units,
     },
     CommandSpec {
@@ -169,6 +189,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("drude", K::Array, "Drude poles `[{\"plasma_frequency\", \"damping\"}]`: χ = −ω_p²/(ω² − jωγ), plasma frequency ω_p/2π > 0, damping γ/2π > 0 (frequencies)").of(F),
         ],
         effect: Effect::Record,
+        invalidates: None,
         run: crate::geometry::material,
     },
     CommandSpec {
@@ -184,6 +205,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("vias", K::Array, "`[{\"x0\", \"z0\", \"wx\", \"wz\", \"y0\"?, \"y1\"?}]`: conducting rectangular posts [x0, x0 + wx] × [y0, y1] × [z0, z0 + wz], solid metal (lengths; y0 = 0 and y1 = the height when left out: a post from the ground plane, through a strip on its way, to the top); a via from the ground to a strip ends at the strip's y"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::geometry::waveguide,
     },
     CommandSpec {
@@ -198,6 +220,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("material", K::String, "the filling (default vacuum)"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::geometry::solid,
     },
     CommandSpec {
@@ -210,7 +233,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("angle", K::Number, "neighbouring triangles turning by more than this many degrees are on different faces (default 30)"),
             opt("material", K::String, "the region's filling (default vacuum)"),
             opt("region", K::String, "`box` (air around the bodies; the default for several), `cavity` (the air the metal bodies enclose) or the name of the body that is the region (the default for one)"),
-            opt("keep", K::String, "with `region` `cavity`: `enclosed` (every piece of air the metal encloses, the default) or `largest` (the largest alone)").one_of(&["enclosed", "largest"]),
+            opt("keep", K::String, "with `region` `cavity`: `enclosed` (every piece of air the metal encloses, the default) or `largest` (the largest alone)").one_of(Keep::NAMES),
             opt("margin", K::Number, "the box's room around the bodies, the layer included (default a quarter of their largest extent; with `open`, a quarter wavelength of air and the layer)").of(L),
             opt("materials", K::Object, "body name → material, or `metal` (the default for every body)"),
             opt("open", K::Boolean, "an open problem: line the box of air with a perfectly matched layer (default false)"),
@@ -218,6 +241,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("fit_surfaces", K::Boolean, "recover each face's exact surface — a plane, cylinder, sphere, cone or torus fitted to its vertices, kept when every vertex lies on it — so the mesh follows curved faces as it does native ones (default true); false keeps them faceted"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::geometry::import,
     },
     CommandSpec {
@@ -234,6 +258,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             AXIS,
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::bodies::body,
     },
     CommandSpec {
@@ -242,6 +267,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Gives a body another material (`metal`, the region's, or another): an imported part's metal body made a dielectric, say. It is placed again last, so it wins where it overlaps others.",
         params: &[req("body", K::String, "the body's name (an imported body's own, else `body <n>`)"), BODY_MATERIAL],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::bodies::body_material,
     },
     CommandSpec {
@@ -257,6 +283,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("material", K::String, "its filling; a perfect conductor when left out"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::geometry::inclusion,
     },
     CommandSpec {
@@ -264,7 +291,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Combine a body",
         doc: "Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall), and so are features of one kind meeting end to end when one's cross-section holds the other's (a stepped inner conductor); the surfaces must otherwise meet cleanly. A port's end face must stay whole.",
         params: &[
-            req("combine", K::String, "`add`, `subtract` or `intersect`").one_of(&["add", "subtract", "intersect"]),
+            req("combine", K::String, "`add`, `subtract` or `intersect`").one_of(Combine::NAMES),
             SHAPE,
             SIZE_TURNED,
             RADIUS,
@@ -273,6 +300,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             AXIS,
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::geometry::feature,
     },
     CommandSpec {
@@ -291,6 +319,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("curved", K::Boolean, "solids: bend the edges on curved surfaces onto them (default true; false leaves flat facets inscribed in the surface)"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::meshing::generate,
     },
     CommandSpec {
@@ -313,6 +342,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("size_y", K::Number, "waveguides: element size across the narrow wall (default the size; kept through the passes)").of(L),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::adapt::adapt,
     },
     CommandSpec {
@@ -321,6 +351,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The conductivity of the guide's walls, irises and steps: losses by the Leontovich surface-impedance condition (good conductors, skin depth far below the guide). Without `conductivity` the walls are perfect conductors.",
         params: &[opt("conductivity", K::Number, "σ in S/m (copper 5.8e7); leave out for perfect conductors")],
         effect: Effect::Record,
+        invalidates: Some(Change::Walls),
         run: crate::geometry::walls,
     },
     CommandSpec {
@@ -328,12 +359,13 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Symmetry plane",
         doc: "Cuts a waveguide symmetric about its middle (x = a/2 or y = b/2) on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters; ports carry only the modes of the kept parity, fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. Waveguides only; the time-domain solver refuses symmetry planes. Drops the mesh.",
         params: &[
-            opt("axis", K::String, "`x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove").one_of(&["x", "y"]),
-            opt("kind", K::String, "`electric` (PEC wall) or `magnetic` (PMC wall)").one_of(&["electric", "magnetic"]),
+            opt("axis", K::String, "`x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove").one_of(PlaneAxis::NAMES),
+            opt("kind", K::String, "`electric` (PEC wall) or `magnetic` (PMC wall)").one_of(SymmetryKind::NAMES),
             opt("at", K::Number, "the plane's position (default the guide's middle, the only one allowed)").of(L),
             opt("clear", K::Boolean, "remove the plane across `axis`, or every plane without it"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::geometry::symmetry,
     },
     CommandSpec {
@@ -346,10 +378,11 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("z", K::Boolean, "tie z = 0 and z = length (default false; no ports then)"),
             opt("theta", K::Number, "incidence angle from the z axis in degrees, 0 to below 90 (default 0)"),
             opt("phi", K::Number, "incidence azimuth from the x axis in degrees (default 0)"),
-            opt("polarization", K::String, "`te` (E across the plane of incidence, default) or `tm`").one_of(&["te", "tm"]),
+            opt("polarization", K::String, "`te` (E across the plane of incidence, default) or `tm`").one_of(Polarization::NAMES),
             opt("clear", K::Boolean, "remove the periodic boundaries"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
         run: crate::periodic::periodic,
     },
     CommandSpec {
@@ -358,15 +391,16 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only (and is needed in a lossy cross-section, where terminal ports are not supported yet).",
         params: &[
             req("name", K::String, "unique name (without `:`)"),
-            req("end", K::String, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies").one_of(&["start", "end"]),
+            req("end", K::String, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies").one_of(End::NAMES),
             opt("modes", K::Integer, "modes in the port condition, 1 to 32 (default 4)"),
             opt("face", K::Array, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z").of(L),
-            opt("mode_solver", K::String, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)").one_of(&["auto", "numeric"]),
+            opt("mode_solver", K::String, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)").one_of(ModeSolver::NAMES),
             opt("impedance", K::Number, "the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out"),
             opt("deembed", K::Number, "de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0").of(L),
-            opt("terminals", K::String, "`auto` (default: a cross-section holding two strips or more is one terminal per strip, named `<port>:<k>` from the lowest x, each referred to `impedance` or 50 Ω) or `modal` (the first mode only)").one_of(&["auto", "modal"]),
+            opt("terminals", K::String, "`auto` (default: a cross-section holding two strips or more is one terminal per strip, named `<port>:<k>` from the lowest x, each referred to `impedance` or 50 Ω) or `modal` (the first mode only)").one_of(Terminals::NAMES),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Ports),
         run: crate::geometry::port,
     },
     CommandSpec {
@@ -379,9 +413,10 @@ pub static COMMANDS: &[CommandSpec] = &[
             STOP,
             POINTS,
             opt("order", K::Integer, "element order: 1 (Whitney) or 2 (default)"),
-            opt("sweep", K::String, "`fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each)").one_of(&["fast", "full"]),
+            opt("sweep", K::String, "`fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each)").one_of(Strategy::NAMES),
         ],
         effect: Effect::Solve,
+        invalidates: None,
         run: crate::solve::frequency,
     },
     CommandSpec {
@@ -394,10 +429,11 @@ pub static COMMANDS: &[CommandSpec] = &[
             STOP,
             POINTS,
             opt("cell", K::Number, "the cell size (default 1 mm)").of(L),
-            opt("device", K::String, "where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has").one_of(&["cpu", "cuda", "cubecl-cpu"]),
-            opt("precision", K::String, "the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double").one_of(&["single", "double"]),
+            opt("device", K::String, "where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has").one_of(Device::NAMES),
+            opt("precision", K::String, "the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double").one_of(Precision::NAMES),
         ],
         effect: Effect::Solve,
+        invalidates: None,
         run: crate::solve::time_domain,
     },
     CommandSpec {
@@ -405,11 +441,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Device",
         doc: "Where the solvers run from now on: `cpu` (the CPU's threads, the default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them). On a device the time domain steps its fields in `precision`, and the frequency domain's factorizations hand their large fronts (from `min_front` rows) to it in complex double; the CPU still pivots each block and solves. Consumer GPUs run double precision slowly: on an RTX 3080 the factorization runs at about the CPU's pace. A setting of this machine, kept across projects and never saved with them.",
         params: &[
-            req("device", K::String, "`cpu`, `cuda` or `cubecl-cpu`").one_of(&["cpu", "cuda", "cubecl-cpu"]),
-            opt("precision", K::String, "the time domain's fields: `single` (default) or `double`").one_of(&["single", "double"]),
+            req("device", K::String, "`cpu`, `cuda` or `cubecl-cpu`").one_of(Device::NAMES),
+            opt("precision", K::String, "the time domain's fields: `single` (default) or `double`").one_of(Precision::NAMES),
             opt("min_front", K::Integer, "the factorization's fronts from this many rows go to the device (default: as before, at first 1024)"),
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::solve::device,
     },
     CommandSpec {
@@ -418,6 +455,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Where the time-domain solver can run on this machine: each device with the precisions it runs, or why it cannot run.",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::solve::devices,
     },
     CommandSpec {
@@ -430,6 +468,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             ORDER,
         ],
         effect: Effect::Solve,
+        invalidates: None,
         run: crate::solve::eigenmodes,
     },
     CommandSpec {
@@ -437,7 +476,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Dispersion diagram",
         doc: "The Bloch modes of the periodic cell (model.periodic), its walls perfectly conducting and its ports left out: at each phase per period ψ from `from` to `to` along `axis` (the other periodic axes at phase 0), the `bands` lowest eigenfrequencies, by shift-invert subspace iteration on the phase-shifted (Hermitian) eigenproblem. Put `near` a little above the highest band wanted: modes up to about √2 times it are found. For a guide periodic along z whose sections fill its cross-section, results.dispersion adds the closed form (TE/TM harmonics of an empty guide; TE10's Bloch bands of a loaded one).",
         params: &[
-            opt("axis", K::String, "the periodic axis swept: `x`, `y` or `z` (default z if periodic, else x)").one_of(&["x", "y", "z"]),
+            opt("axis", K::String, "the periodic axis swept: `x`, `y` or `z` (default z if periodic, else x)").one_of(Axis::NAMES),
             opt("from", K::Number, "first phase per period in degrees (default 0)"),
             opt("to", K::Number, "last phase per period in degrees (default 180: the zone's edge)"),
             opt("points", K::Integer, "phases from `from` to `to`, 1 to 201 (default 11)"),
@@ -446,6 +485,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             ORDER,
         ],
         effect: Effect::Solve,
+        invalidates: None,
         run: crate::periodic::dispersion,
     },
     CommandSpec {
@@ -454,6 +494,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The dispersion diagram's phases, Bloch wavenumbers β = ψ/L (per display length) and bands, with the closed form where it applies.",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::periodic::results,
     },
     CommandSpec {
@@ -466,6 +507,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             HEIGHT,
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::dispersion,
     },
     CommandSpec {
@@ -474,6 +516,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The eigenmodes' frequencies and Q factors; for a cavity of one uniform section, the closed-form resonances too.",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::results::eigenmodes,
     },
     CommandSpec {
@@ -485,6 +528,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             PORT_SOLVER_ORDER,
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::solve::port_modes,
     },
     CommandSpec {
@@ -493,6 +537,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The S-parameter table of the last sweep: each S[p][q] (at port p for a wave into port q) as real, imaginary, magnitude, dB and phase (degrees).",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::results::sparameters,
     },
     CommandSpec {
@@ -501,6 +546,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, mode matching (`modes` TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.",
         params: &[opt("modes", K::Integer, "TE_m0 modes in the widest section for mode matching, 10 to 1000 (default 160)")],
         effect: Effect::None,
+        invalidates: None,
         run: crate::results::compare,
     },
     CommandSpec {
@@ -509,6 +555,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The relative L2 errors ‖F − F_exact‖/‖F_exact‖ of E and H over the whole guide at a solved frequency, against the exact TE10 fields (port 1 excited).",
         params: &[SOLVED_FREQUENCY],
         effect: Effect::None,
+        invalidates: None,
         run: crate::results::field_error,
     },
     CommandSpec {
@@ -521,6 +568,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             EXCITATION,
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::results::probe,
     },
     CommandSpec {
@@ -536,6 +584,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("width", K::Integer, "picture width in pixels (default 900)"),
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::port_mode,
     },
     CommandSpec {
@@ -544,9 +593,10 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Time-domain reflectometry from the sweep's reflection at a port (the time domain's if there is no sweep): `lowpass` — on a harmonic sweep, f_k = k Δf, for lines without a cut-off — gives the step response ρ(t), a step at each change of impedance at its round-trip delay (Z = Z0 (1 + ρ)/(1 − ρ) with the port's reference impedance); `bandpass` gives |h(t)|, a peak where each reflection comes from (guides with a cut-off). Hann-windowed, over one alias period 1/Δf.",
         params: &[
             TDR_PORT,
-            opt("mode", K::String, "`lowpass` (default on a harmonic sweep) or `bandpass`").one_of(&["lowpass", "bandpass"]),
+            opt("mode", K::String, "`lowpass` (default on a harmonic sweep) or `bandpass`").one_of(TdrMode::NAMES),
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::results::tdr,
     },
     CommandSpec {
@@ -556,11 +606,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             PNG,
             TDR_PORT,
-            opt("mode", K::String, "`lowpass` or `bandpass`").one_of(&["lowpass", "bandpass"]),
+            opt("mode", K::String, "`lowpass` or `bandpass`").one_of(TdrMode::NAMES),
             opt("width", K::Integer, "picture width in pixels (default 1000)"),
             opt("height", K::Integer, "picture height in pixels (default 600)"),
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::tdr,
     },
     CommandSpec {
@@ -580,6 +631,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("width", K::Integer, "picture width in pixels (default 1100)"),
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::field,
     },
     CommandSpec {
@@ -600,6 +652,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("width", K::Integer, "picture width in pixels (default 800)"),
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::animation,
     },
     CommandSpec {
@@ -612,6 +665,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             HEIGHT,
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::sparameters,
     },
     CommandSpec {
@@ -621,9 +675,10 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             opt("thickness", K::Number, "the layer's thickness").of(L),
             opt("reflection", K::Number, "the reflection at normal incidence the layer's profile is designed for, 0 to 1 (default 1e-6)"),
-            opt("shape", K::String, "`box` (default: slabs on a box solid's faces) or `sphere` (the outer shell of a sphere solid)").one_of(&["box", "sphere"]),
+            opt("shape", K::String, "`box` (default: slabs on a box solid's faces) or `sphere` (the outer shell of a sphere solid)").one_of(OpenShape::NAMES),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Open),
         run: crate::open::model_open,
     },
     CommandSpec {
@@ -637,6 +692,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("current", K::Number, "its current in amperes, peak (default 1)"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Open),
         run: crate::open::source_dipole,
     },
     CommandSpec {
@@ -648,6 +704,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("polarization", K::Array, "its electric field's direction, across `direction` (default [1, 0, 0])"),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Open),
         run: crate::open::source_plane_wave,
     },
     CommandSpec {
@@ -664,15 +721,17 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("radius", K::Number, "spread the current round a band of this radius about the gap's line (a wire's radius, for a gap cut in a wire); default 0, the line itself").of(L),
         ],
         effect: Effect::Record,
+        invalidates: Some(Change::Open),
         run: crate::open::port_lumped,
     },
-    CommandSpec { id: "source.clear", label: "Clear sources", doc: "Removes every source.", params: &[], effect: Effect::Record, run: crate::open::source_clear },
+    CommandSpec { id: "source.clear", label: "Clear sources", doc: "Removes every source.", params: &[], effect: Effect::Record, invalidates: Some(Change::Open), run: crate::open::source_clear },
     CommandSpec {
         id: "solve.radiation",
         label: "Radiation",
         doc: "Solves the open problem at one frequency: the field the sources radiate (or the dielectrics scatter), the power through a Huygens box between what radiates and the layer (a third of its thickness inside it, or halfway when that is nearer), with the closed form for a lone dipole (radiated power) or a lone dielectric or conducting sphere (the Mie series' scattering cross-section).",
         params: &[req("frequency", K::Number, "the frequency").of(F), ORDER],
         effect: Effect::Solve,
+        invalidates: None,
         run: crate::open::solve_radiation,
     },
     CommandSpec {
@@ -686,6 +745,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             FAR_FREQUENCY,
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::open::results_far_field,
     },
     CommandSpec {
@@ -702,6 +762,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             FAR_FREQUENCY,
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::pattern,
     },
     CommandSpec {
@@ -710,6 +771,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script; `solve: true` also runs its analysis.",
         params: &[req("name", K::String, "sample name"), opt("solve", K::Boolean, "run the sample's sweep (default false)")],
         effect: Effect::Replace,
+        invalidates: None,
         run: crate::project::sample,
     },
     CommandSpec {
@@ -721,6 +783,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             req("value", K::Number, "its value, a plain number (or an expression of the variables defined before it)"),
         ],
         effect: Effect::Replace,
+        invalidates: None,
         run: crate::study::variable,
     },
     CommandSpec {
@@ -729,6 +792,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Removes a variable no command refers to.",
         params: &[req("name", K::String, "the variable")],
         effect: Effect::Replace,
+        invalidates: None,
         run: crate::study::delete,
     },
     CommandSpec {
@@ -737,6 +801,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "The project's variables: each one's value, the expression that defines it (when it is one) and how many commands use it.",
         params: &[],
         effect: Effect::None,
+        invalidates: None,
         run: crate::study::list,
     },
     CommandSpec {
@@ -758,6 +823,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("outputs", K::Array, "the S-parameters kept, such as [\"s11\", \"s21\"] (default all)"),
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::study::sweep,
     },
     CommandSpec {
@@ -772,6 +838,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("tolerance", K::Number, "the simplex's size at which it stops, a share of each range (default 1e-3)"),
         ],
         effect: Effect::Replace,
+        invalidates: None,
         run: crate::study::optimize,
     },
     CommandSpec {
@@ -790,7 +857,8 @@ pub static COMMANDS: &[CommandSpec] = &[
             HEIGHT,
         ],
         effect: Effect::None,
+        invalidates: None,
         run: crate::view::commands::study,
     },
-    CommandSpec { id: "model.summary", label: "Summary", doc: "The model, mesh and results in brief.", params: &[], effect: Effect::None, run: crate::project::summary },
+    CommandSpec { id: "model.summary", label: "Summary", doc: "The model, mesh and results in brief.", params: &[], effect: Effect::None, invalidates: None, run: crate::project::summary },
 ];

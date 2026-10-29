@@ -21,6 +21,40 @@ fn display_units_convert_at_the_boundary() {
     assert!((s.results.sweep.as_ref().unwrap().results[0].frequency - 9e9).abs() < 1e-3);
 }
 
+/// Every command that changes the model says which results the change leaves wrong, unless it
+/// changes only what no result is solved from (the band, the display units, a new material);
+/// they are dropped when it succeeds, not when it fails.
+#[test]
+fn every_model_change_drops_the_results_it_makes_wrong() {
+    let keeps = ["project.frequency", "units.set", "model.material.create"];
+    for c in COMMANDS.iter().filter(|c| c.effect == Effect::Record) {
+        assert_eq!(c.invalidates.is_none(), keeps.contains(&c.id), "{}", c.id);
+    }
+    assert!(COMMANDS.iter().filter(|c| c.effect != Effect::Record).all(|c| c.invalidates.is_none()));
+    let mut s = small();
+    // Failed: the sweep stays.
+    assert!(s.execute("geometry.body", &json!({"shape": "sphere", "radius": -1, "material": "metal"})).is_err());
+    assert!(s.results.sweep.is_some());
+    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    assert!(s.results.sweep.is_some());
+    s.execute("model.walls", &json!({"conductivity": 5.8e7})).unwrap();
+    assert!(s.results.sweep.is_none());
+}
+
+/// The states kept to undo to share the mesh rather than copy it, and the oldest go first.
+#[test]
+fn undo_states_share_the_mesh_and_are_bounded() {
+    let mut s = small();
+    let mesh = s.model.mesh.clone().unwrap();
+    for k in 0..project::UNDO_DEPTH + 5 {
+        s.execute("project.frequency", &json!({"start": 5 + k, "stop": 100})).unwrap();
+    }
+    assert_eq!(s.undo.len(), project::UNDO_DEPTH);
+    assert!(s.undo.iter().all(|u| u.model.mesh.as_ref().is_some_and(|m| std::sync::Arc::ptr_eq(m, &mesh))));
+    // The oldest left: the state before the sixth change, the fifth band.
+    assert_eq!(s.undo.front().and_then(|u| u.model.band).map(|b| b.start), Some(9e9));
+}
+
 #[test]
 fn a_failed_command_leaves_the_session_as_it_was() {
     let mut s = small();
@@ -154,34 +188,43 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
 
 #[test]
 fn every_choice_a_command_lists_is_one_its_parameter_reads() {
-    use serde::de::DeserializeOwned;
-    fn reads<T: DeserializeOwned>(id: &str, name: &str) -> usize {
-        let spec = find_command(id).and_then(|c| c.params.iter().find(|p| p.name == name)).unwrap();
-        assert!(!spec.choices.is_empty(), "{id} {name}");
-        for c in spec.choices {
-            assert!(serde_json::from_value::<T>(json!(c)).is_ok(), "{id} {name}: {c}");
-        }
-        spec.choices.len()
+    use crate::choice::tests::reads_as_serde;
+    use emcraft_model as m;
+    // The table lists each choice's names (`one_of(T::NAMES)`); the types serde reads name
+    // their values alike.
+    reads_as_serde::<m::units::Length>();
+    reads_as_serde::<m::units::Frequency>();
+    reads_as_serde::<m::Axis>();
+    reads_as_serde::<m::Combine>();
+    reads_as_serde::<m::End>();
+    reads_as_serde::<m::ModeSolver>();
+    reads_as_serde::<m::Terminals>();
+    reads_as_serde::<m::SymmetryKind>();
+    reads_as_serde::<m::Polarization>();
+    reads_as_serde::<m::OpenShape>();
+    reads_as_serde::<crate::geometry::Primitive>();
+    reads_as_serde::<crate::geometry::Keep>();
+    reads_as_serde::<crate::geometry::PlaneAxis>();
+    reads_as_serde::<crate::solve::Strategy>();
+    reads_as_serde::<crate::view::Plane>();
+    reads_as_serde::<crate::open::FarSolver>();
+    reads_as_serde::<crate::project::Format>();
+    reads_as_serde::<crate::tdr::Mode>();
+    // The component is read by name in either case.
+    for c in crate::view::Component::ALL {
+        assert_eq!(c.name().parse::<crate::view::Component>(), Ok(c));
+        assert_eq!(c.name().to_uppercase().parse::<crate::view::Component>(), Ok(c));
     }
-    reads::<emcraft_model::units::Length>("units.set", "length");
-    reads::<emcraft_model::units::Frequency>("units.set", "frequency");
-    for id in ["geometry.solid", "geometry.inclusion", "geometry.feature"] {
-        reads::<crate::geometry::Primitive>(id, "shape");
-    }
-    reads::<emcraft_model::Combine>("geometry.feature", "combine");
-    reads::<emcraft_model::Axis>("geometry.feature", "axis");
-    reads::<emcraft_model::End>("model.port.create", "end");
-    reads::<emcraft_model::ModeSolver>("model.port.create", "mode_solver");
-    reads::<crate::solve::Strategy>("solve.frequency", "sweep");
-    reads::<crate::view::Plane>("view.field", "plane");
-    reads::<crate::open::FarSolver>("results.far_field", "solver");
-    reads::<crate::open::FarSolver>("view.pattern", "solver");
-    reads::<crate::project::Format>("results.touchstone", "format");
-    reads::<emcraft_model::OpenShape>("model.open", "shape");
-    let component = find_command("view.field").and_then(|c| c.params.iter().find(|p| p.name == "component")).unwrap();
-    let names: Vec<&str> = crate::view::Component::ALL.iter().map(|c| c.name()).collect();
-    assert_eq!(component.choices, names.as_slice());
-    assert!(component.choices.iter().all(|c| c.parse::<crate::view::Component>().is_ok()));
+    // Every listed choice is one of these lists, and every command reads its choices.
+    let shapes = find_command("geometry.solid").and_then(|c| c.params.iter().find(|p| p.name == "shape")).unwrap();
+    assert_eq!(shapes.choices, <crate::geometry::Primitive as Choice>::NAMES);
+    let mut s = Session::new();
+    assert!(
+        matches!(s.execute("solve.device", &json!({"device": "tpu"})), Err(EngineError::Params(m)) if m == "`device` must be cpu, cuda or cubecl-cpu")
+    );
+    assert!(
+        matches!(s.execute("solve.device", &json!({"device": "cpu", "precision": "half"})), Err(EngineError::Params(m)) if m == "`precision` must be single or double")
+    );
 }
 
 #[test]
@@ -215,6 +258,19 @@ fn projects_save_as_emcraft_files_and_know_when_they_changed() {
     t.execute("file.new", &json!({})).unwrap();
     assert!(t.path.is_none() && !t.is_dirty() && t.model.band.is_none());
     assert_eq!(t.display.frequency, emcraft_model::units::Frequency::Megahertz);
+    // The file's text: the JSON object of the format, the version, the history and the model,
+    // its keys sorted, pretty printed.
+    let text = std::fs::read_to_string(&path).unwrap();
+    let want = json!({"format": "emcraft-project", "version": 1, "history": s.history, "model": s.model});
+    assert_eq!(text, serde_json::to_string_pretty(&want).unwrap());
+    // A newer version is refused; an older one without a version opens.
+    let newer = dir.join("newer.emcraft");
+    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 2, "history": []}).to_string()).unwrap();
+    let r = t.execute("file.open", &json!({"path": newer.to_string_lossy()}));
+    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 2")), "{r:?}");
+    std::fs::write(&newer, json!({"format": "emcraft-project", "history": [{"command": "units.set"}]}).to_string()).unwrap();
+    t.execute("file.open", &json!({"path": newer.to_string_lossy()})).unwrap();
+    assert_eq!(t.history, vec![crate::Step::new("units.set", json!({}))]);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -223,7 +279,7 @@ fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
     let mut r = Results::default();
     let filled = |r: &mut Results| {
         r.radiation = None;
-        r.time_domain = Some(emcraft_fdtd::TdResult {
+        r.time_domain = Some(std::sync::Arc::new(emcraft_fdtd::TdResult {
             frequencies: Vec::new(),
             s11: Vec::new(),
             s21: Vec::new(),
@@ -233,7 +289,7 @@ fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
             reference_steps: 0,
             converged: true,
             loss_reference: 0.0,
-        });
+        }));
     };
     filled(&mut r);
     r.invalidate(Change::Open);

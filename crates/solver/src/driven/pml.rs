@@ -221,7 +221,7 @@ mod tests {
         m.add_material(material).unwrap();
         m.set_solid(Solid { shape: Shape::Sphere { radius: 0.012 }, material: name }).unwrap();
         m.set_open(Some(Open { thickness: 0.004, reflection: None, shape: OpenShape::Sphere })).unwrap();
-        m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.006).unwrap());
+        m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.006).unwrap().into());
         let d = Driven::open(&m, Order::One).unwrap();
         let Some(Layer { kind: LayerKind::Sphere { tets, .. }, .. }) = &d.pml else { panic!("no spherical layer") };
         let mut a = d.pattern.zeroed();
@@ -251,7 +251,7 @@ mod tests {
         let mut m = Model::new();
         m.set_solid(Solid { shape: Shape::Sphere { radius: 0.012 }, material: "vacuum".into() }).unwrap();
         m.set_open(Some(Open { thickness: 0.004, reflection: None, shape: OpenShape::Sphere })).unwrap();
-        m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.006).unwrap());
+        m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.006).unwrap().into());
         let d = Driven::open(&m, Order::Two).unwrap();
         let Some(Layer { kind: LayerKind::Sphere { tets, .. }, .. }) = &d.pml else { panic!("no spherical layer") };
         assert!(!tets.is_empty() && tets.len() < d.mesh.tets.len());

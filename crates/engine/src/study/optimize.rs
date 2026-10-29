@@ -49,7 +49,7 @@ impl Goal {
             "eigenfrequency" => Goal::Eigenfrequency(g.integer("mode", 1..=crate::EIGEN_MAX).or(1)?, g.positive("target").required()?),
             "maximize" | "minimize" => {
                 let name = g.string("quantity").required_or("a number the solve gives, such as radiated_power")?;
-                Goal::Scalar(name.chars().take(64).collect(), ty == "maximize")
+                Goal::Scalar(crate::text::clip(name, 64), ty == "maximize")
             }
             _ => return Err(g.error("type", "must be min_max_db, max_min_db, target_db, eigenfrequency, maximize or minimize")),
         })

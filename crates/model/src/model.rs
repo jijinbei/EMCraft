@@ -1,6 +1,12 @@
 //! The model: everything a solve needs, changed only through setters that check what they are
 //! given. The port, open-boundary and symmetry setters live with their types ([`crate::port`],
 //! [`crate::open`], [`crate::symmetry`]).
+//!
+//! The fields are public to read: the mesher, the solvers, the renderers and the UI read them
+//! throughout. The engine changes the model only through the setters; tests and the solvers'
+//! own fixtures may build a model field by field.
+
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -55,9 +61,34 @@ pub struct Model {
     /// Periodic boundaries: the model is the unit cell of an infinite array.
     #[serde(default)]
     pub periodic: Option<Periodic>,
-    /// The mesh of the waveguide (made by `emcraft-mesh`).
+    /// The mesh of the waveguide (made by `emcraft-mesh`), shared: the copies of the model a
+    /// session keeps to undo to share it rather than copy it.
     #[serde(skip)]
-    pub mesh: Option<Mesh>,
+    pub mesh: Option<Arc<Mesh>>,
+}
+
+/// What keeps a model from being solved ([`Model::check`]); its text says what to do.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Issue {
+    /// A symmetry plane the model does not allow (why).
+    Symmetry(String),
+    /// Periodic boundaries the model does not allow (why).
+    Periodic(String),
+    NoGeometry,
+    NoPorts,
+    NoMesh,
+}
+
+impl std::fmt::Display for Issue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Issue::Symmetry(why) => write!(f, "symmetry: {why} (clear it with model.symmetry, clear true)"),
+            Issue::Periodic(why) => write!(f, "periodic: {why} (clear it with model.periodic, clear true)"),
+            Issue::NoGeometry => f.write_str("no geometry: create one with geometry.waveguide or geometry.solid"),
+            Issue::NoPorts => f.write_str("no ports: create one with model.port.create"),
+            Issue::NoMesh => f.write_str("no mesh: mesh the geometry with mesh.generate"),
+        }
+    }
 }
 
 impl Default for Model {
@@ -161,6 +192,37 @@ impl Model {
 
     /// Combines a primitive with the solid (after the features already there). Its box must
     /// meet the solid's; the mesher checks the surfaces meet cleanly.
+    /// Takes feature `i` out of the model; the mesh is dropped (it no longer fits).
+    pub fn remove_feature(&mut self, i: usize) -> Option<Feature> {
+        (i < self.features.len()).then(|| {
+            self.mesh = None;
+            self.features.remove(i)
+        })
+    }
+
+    /// Takes inclusion `i` out of the model; the mesh is dropped (it no longer fits).
+    pub fn remove_inclusion(&mut self, i: usize) -> Option<Inclusion> {
+        (i < self.inclusions.len()).then(|| {
+            self.mesh = None;
+            self.inclusions.remove(i)
+        })
+    }
+
+    /// Sets the job's frequency band (already checked by [`Band::new`]).
+    pub fn set_band(&mut self, band: Option<Band>) {
+        self.band = band;
+    }
+
+    /// Removes every source (the mesh stays: it does not depend on them).
+    pub fn clear_sources(&mut self) {
+        self.sources.clear();
+    }
+
+    /// Sets the mesh made of this model (`emcraft-mesh`).
+    pub fn set_mesh(&mut self, mesh: Mesh) {
+        self.mesh = Some(Arc::new(mesh));
+    }
+
     pub fn add_feature(&mut self, f: Feature) -> Result<()> {
         let solid = self.solid.as_ref().ok_or_else(|| invalid("feature", "needs a solid (geometry.solid) to combine with"))?;
         f.shape.check()?;
@@ -223,22 +285,22 @@ impl Model {
     }
 
     /// Everything a frequency-domain solve needs, each problem named.
-    pub fn check(&self) -> Vec<String> {
+    pub fn check(&self) -> Vec<Issue> {
         let mut issues = Vec::new();
         if let Some(why) = self.symmetry_issue() {
-            issues.push(format!("symmetry: {why} (clear it with model.symmetry, clear true)"));
+            issues.push(Issue::Symmetry(why));
         }
         if let Some(why) = self.periodic_issue() {
-            issues.push(format!("periodic: {why} (clear it with model.periodic, clear true)"));
+            issues.push(Issue::Periodic(why));
         }
         if self.waveguide.is_none() && self.solid.is_none() {
-            issues.push("no geometry: create one with geometry.waveguide or geometry.solid".to_owned());
+            issues.push(Issue::NoGeometry);
         }
         if self.ports.is_empty() {
-            issues.push("no ports: create one with model.port.create".to_owned());
+            issues.push(Issue::NoPorts);
         }
         if self.mesh.is_none() {
-            issues.push("no mesh: mesh the geometry with mesh.generate".to_owned());
+            issues.push(Issue::NoMesh);
         }
         issues
     }
@@ -311,7 +373,8 @@ mod tests {
         assert!((m.waveguide.as_ref().unwrap().length() - 0.01).abs() < 1e-15);
         m.add_port(Port::new("1", End::Start)).unwrap();
         m.add_port(Port::new("2", End::End)).unwrap();
-        assert_eq!(m.check(), vec!["no mesh: mesh the geometry with mesh.generate".to_owned()]);
+        assert_eq!(m.check(), vec![Issue::NoMesh]);
+        assert_eq!(Issue::NoMesh.to_string(), "no mesh: mesh the geometry with mesh.generate");
         assert!(m.set_wall_conductivity(Some(-1.0)).is_err());
         m.set_wall_conductivity(Some(5.8e7)).unwrap();
     }

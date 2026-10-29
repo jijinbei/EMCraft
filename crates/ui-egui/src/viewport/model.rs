@@ -54,12 +54,12 @@ pub(super) fn model3d(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 
 pub(super) fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    let m = &app.session.model;
+    let m = app.session.model();
     let Some(emcraft_model::Aabb { min: lo, max: hi }) = m.bounds() else {
         empty(ui, "No geometry yet: MODEL › Waveguide or Solid, or open a sample.");
         return;
     };
-    let l = app.session.display.length;
+    let l = app.session.display().length;
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let p = ui.painter().with_clip_rect(area);

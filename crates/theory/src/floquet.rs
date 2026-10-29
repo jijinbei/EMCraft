@@ -184,11 +184,21 @@ pub fn bloch_frequencies(a: f64, sections: &[(f64, f64, f64)], psi: f64, f_max: 
     out
 }
 
+/// An empty rectangular guide a × b (m) of `eps_r`, periodic along z with `period` (m).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EmptyGuide {
+    pub a: f64,
+    pub b: f64,
+    pub period: f64,
+    pub eps_r: f64,
+}
+
 /// The eigenfrequencies (Hz, ascending, each mode once, TE and TM counted apart) of an empty
 /// rectangular guide a × b of `eps_r`, periodic along z with period `l` and phase `psi` per
 /// period: k² = (mπ/a)² + (nπ/b)² + ((ψ + 2πq)/l)², TE_mn (m + n ≥ 1) and TM_mn (m, n ≥ 1);
 /// the lowest `count`.
-pub fn empty_guide_bands(a: f64, b: f64, l: f64, eps_r: f64, psi: f64, count: usize) -> Vec<f64> {
+pub fn empty_guide_bands(guide: &EmptyGuide, psi: f64, count: usize) -> Vec<f64> {
+    let EmptyGuide { a, b, period: l, eps_r } = *guide;
     let mut k2 = Vec::new();
     for m in 0..12u32 {
         for n in 0..12u32 {
@@ -262,7 +272,7 @@ mod tests {
             let f = bloch_frequencies(a, &[(0.004, 1.0, 1.0), (0.006, 1.0, 1.0)], psi, 30e9);
             let exact = ((PI / a).powi(2) + (psi / l).powi(2)).sqrt() * C0 / (2.0 * PI);
             assert!((f[0] - exact).abs() < 1e-9 * exact, "{f:?} {exact}");
-            let bands = empty_guide_bands(a, 0.01016, l, 1.0, psi, 1);
+            let bands = empty_guide_bands(&EmptyGuide { a, b: 0.01016, period: l, eps_r: 1.0 }, psi, 1);
             assert!((bands[0] - exact).abs() < 1e-9 * exact);
         }
     }

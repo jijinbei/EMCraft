@@ -5,7 +5,7 @@ use emcraft_render::plot::FieldPlot;
 use serde_json::{Value, json};
 
 use super::field::{FieldView, Plane};
-use crate::{EIGEN_MAX, EngineError, Params, Result, Session, args};
+use crate::{Choice, EIGEN_MAX, EngineError, Params, Result, Session, args};
 
 /// Writes a picture's PNG bytes (`None` when it could not be encoded) to `path`.
 pub(crate) fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
@@ -13,7 +13,7 @@ pub(crate) fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
         return Err(EngineError::Params("`path` must not be empty".into()));
     }
     let bytes = png.ok_or_else(|| EngineError::failed("could not encode the picture"))?;
-    std::fs::write(path, bytes).map_err(|e| EngineError::Failed(format!("cannot write {path}: {e}")))
+    std::fs::write(path, bytes).map_err(|e| EngineError::cannot_write(path, e))
 }
 
 /// Where a chart command writes its picture: `path`, `width` (default 1000) by `height`
@@ -52,6 +52,15 @@ fn write_plot(path: &str, plot: &FieldPlot, width: usize) -> Result<Value> {
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
 
+/// The fields `arrows` draws.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Arrows {
+    E,
+    H,
+}
+
+crate::choice::choices! { Arrows { Arrows::E => "e", Arrows::H => "h" } }
+
 /// A field view from command parameters.
 pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
     let plane = p.choice("plane").or(Plane::H)?;
@@ -65,7 +74,17 @@ pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
     }
     // The arrows of the field coloured unless asked otherwise.
     (v.show_e, v.show_h) = match p.list("arrows", 16).optional()? {
-        Some(list) => (list.iter().any(|x| x.as_str() == Some("e")), list.iter().any(|x| x.as_str() == Some("h"))),
+        Some(list) => {
+            let fields = list
+                .iter()
+                .map(|x| {
+                    x.as_str()
+                        .and_then(Arrows::named)
+                        .ok_or_else(|| p.error("arrows", format!("holds `e` or `h`, got {}", crate::text::clip(&x.to_string(), 40))))
+                })
+                .collect::<Result<Vec<Arrows>>>()?;
+            (fields.contains(&Arrows::E), fields.contains(&Arrows::H))
+        }
         None => (!v.component.is_magnetic(), v.component.is_magnetic()),
     };
     v.phase = p.number("phase").or(0.0)?.to_radians();
@@ -148,7 +167,7 @@ pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
 /// `view.study`: the last study's chart.
 pub fn study(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
-    let study = s.results.study.as_ref().ok_or_else(|| EngineError::failed("no study: run study.sweep or study.optimize first"))?;
+    let study = s.results.study.as_ref().ok_or(EngineError::NotSolved { what: "study", run: "study.sweep or study.optimize" })?;
     let at = match p.raw("at") {
         None => None,
         Some(v) => Some(v.as_object().ok_or_else(|| p.error("at", "must map the held variables to their values: {\"b\": 5}"))?),

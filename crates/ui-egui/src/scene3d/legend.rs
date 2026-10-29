@@ -8,8 +8,8 @@ use super::style::{METAL, PERIODIC, PML, PORT, SOURCE, material_rgb, symmetry_rg
 use super::{Built, Overlay};
 
 pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
-    let m = &session.model;
-    let l = session.display.length;
+    let m = session.model();
+    let l = session.display().length;
     match overlay {
         Overlay::Materials => {
             for (i, mat) in m.materials.iter().enumerate() {

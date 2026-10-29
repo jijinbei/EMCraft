@@ -9,6 +9,7 @@ use emcraft_solver::accel::Accelerator;
 use emcraft_solver::{Driven, FrequencyResult};
 use serde_json::{Value, json};
 
+use crate::choice::{Choice, choices};
 use crate::reply::complex;
 use crate::results::sparameter_table;
 use crate::{EIGEN_MAX, EngineError, Params, Result, Session, Sweep};
@@ -49,11 +50,44 @@ fn frequencies(s: &Session, p: &Params) -> Result<Vec<f64>> {
 }
 
 /// How a sweep solves its frequencies (`sweep`).
-#[derive(serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Strategy {
     Fast,
     Full,
+}
+
+/// Where the solvers run (`device`): the CPU's threads, or a GPU crate backend.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Device {
+    /// The CPU's threads.
+    #[default]
+    Cpu,
+    /// An NVIDIA GPU.
+    Cuda,
+    /// The GPU's kernels on the CPU (to check them without a GPU).
+    CubeclCpu,
+}
+
+choices! {
+    Strategy { Strategy::Fast => "fast", Strategy::Full => "full" }
+    Device { Device::Cpu => "cpu", Device::Cuda => "cuda", Device::CubeclCpu => "cubecl-cpu" }
+}
+
+impl Device {
+    /// The GPU crate's backend (`None` for the CPU's threads).
+    pub fn backend(self) -> Option<Backend> {
+        match self {
+            Device::Cpu => None,
+            Device::Cuda => Some(Backend::Cuda),
+            Device::CubeclCpu => Some(Backend::Cpu),
+        }
+    }
+
+    /// The device of `backend` (`None` for the CPU's threads).
+    pub fn of(backend: Option<Backend>) -> Device {
+        Device::ALL.iter().copied().find(|d| d.backend() == backend).unwrap_or_default()
+    }
 }
 
 pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
@@ -67,7 +101,7 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     };
     let (results, full) = if fast { fast_sweep(&driven, &freqs)? } else { full_sweep(&driven, &freqs)? };
     let unknowns = driven.dofs.unknowns;
-    s.results.sweep = Some(Sweep { order, driven: Arc::new(driven), results });
+    s.results.sweep = Some(Arc::new(Sweep { order, driven: Arc::new(driven), results }));
     let mut reply = sparameter_table(s)?;
     reply["unknowns"] = json!(unknowns);
     reply["order"] = json!(order.as_u8());
@@ -101,24 +135,6 @@ fn full_sweep(driven: &Driven, freqs: &[f64]) -> Result<(Vec<FrequencyResult>, V
     Ok((results, full))
 }
 
-/// The devices by the names commands use: the CPU's threads, then the GPU crate's backends.
-const DEVICES: [(&str, Option<Backend>); 3] = [("cpu", None), ("cuda", Some(Backend::Cuda)), ("cubecl-cpu", Some(Backend::Cpu))];
-
-/// The device named `name` (`None` for the CPU's threads).
-fn device_named(p: &Params, name: &str) -> Result<Option<Backend>> {
-    Ok(DEVICES.iter().find(|(n, _)| *n == name).ok_or_else(|| p.error("device", "must be cpu, cuda or cubecl-cpu"))?.1)
-}
-
-/// The precision `precision` names, if it is given.
-fn precision(p: &Params) -> Result<Option<Precision>> {
-    p.string("precision").optional()?.map(|n| Precision::parse(n).ok_or_else(|| p.error("precision", "must be single or double"))).transpose()
-}
-
-/// The name commands use for `backend`.
-fn device_name(backend: Option<Backend>) -> &'static str {
-    DEVICES.iter().find(|(_, b)| *b == backend).map_or("cpu", |(n, _)| n)
-}
-
 /// Where the solvers run: the time domain's leapfrog (in `precision`) and the factorization's
 /// large fronts (in complex double), on the CPU's threads or a GPU crate backend. The machine's,
 /// not the model's: kept across new projects, never saved with them.
@@ -131,14 +147,14 @@ pub struct Compute {
 
 impl std::fmt::Debug for Compute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Compute({}, {})", device_name(self.backend), self.precision)
+        write!(f, "Compute({}, {})", Device::of(self.backend).name(), self.precision)
     }
 }
 
 impl Compute {
     /// The device's name as commands give it.
     pub fn device(&self) -> &'static str {
-        device_name(self.backend)
+        Device::of(self.backend).name()
     }
 
     /// The fronts the device has held since it was set.
@@ -153,9 +169,9 @@ impl Compute {
 }
 
 pub fn device(s: &mut Session, p: &Params) -> Result<Value> {
-    let name = p.string("device").required()?;
-    let backend = device_named(p, name)?;
-    let precision = precision(p)?.unwrap_or(Precision::Single);
+    let device: Device = p.pick("device").required()?;
+    let (name, backend) = (device.name(), device.backend());
+    let precision = p.pick("precision").or(Precision::Single)?;
     let fronts = match backend {
         None => None,
         Some(b) => {
@@ -185,16 +201,16 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     }
     let freqs = frequencies(s, p)?;
     let cell = p.positive_length("cell").or(Length::Millimetre.to_si(1.0))?;
-    let device = p.string("device").or(device_name(s.compute.backend))?;
-    let backend = device_named(p, device)?;
-    let precision = precision(p)?.unwrap_or(s.compute.precision);
+    let device = p.pick("device").or(Device::of(s.compute.backend))?;
+    let backend = device.backend();
+    let precision = p.pick("precision").or(s.compute.precision)?;
     if backend.is_none() && p.has("precision") && precision == Precision::Single {
         return Err(p.error("precision", "the CPU's threads run in double precision (single needs a GPU device)"));
     }
     let gpu = backend.map(|backend| Gpu { backend, precision });
     if s.model.open.is_some() {
         let mut reply = crate::open::solve_time_domain_open(s, &freqs, cell, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::OpenStepper))?;
-        reply["device"] = json!(device);
+        reply["device"] = json!(device.name());
         reply["precision"] = json!(gpu.map_or("double", |g| g.precision.name()));
         return Ok(reply);
     }
@@ -207,19 +223,20 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
         .map(|(f, (a, b))| json!({"frequency": s.show_frequency(*f), "s11": complex(*a), "s21": complex(*b)}))
         .collect();
     let precision = gpu.map_or("double", |g| g.precision.name());
-    let mut reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device, "precision": precision, "frequency_unit": s.display.frequency.symbol(), "points": points});
+    let mut reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device.name(), "precision": precision, "frequency_unit": s.display.frequency.symbol(), "points": points});
     // Where the time domain matches the loss tangents (as conductivities), when there are any.
     if s.model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.is_magnetically_lossy()) {
         reply["loss_reference"] = json!(s.show_frequency(r.loss_reference));
     }
-    s.results.time_domain = Some(r);
+    s.results.time_domain = Some(Arc::new(r));
     Ok(reply)
 }
 
 pub fn devices(_: &mut Session, _: &Params) -> Result<Value> {
     let gpu = emcraft_gpu::available();
-    let list: Vec<Value> = DEVICES
+    let list: Vec<Value> = Device::ALL
         .iter()
+        .map(|d| (d.name(), d.backend()))
         .map(|(name, backend)| match backend.and_then(|b| gpu.iter().find(|a| a.backend == b)) {
             None => json!({"name": name, "available": true, "precisions": ["double"]}),
             Some(a) => {

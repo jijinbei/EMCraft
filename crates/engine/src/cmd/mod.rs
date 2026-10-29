@@ -10,7 +10,7 @@ use serde_json::Value;
 
 pub use self::table::COMMANDS;
 use crate::project::Effect;
-use crate::{EngineError, Params, Result, Session};
+use crate::{Change, EngineError, Params, Result, Session};
 
 /// The physical quantity of a numeric parameter, which decides its display unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +104,9 @@ pub struct CommandSpec {
     pub params: &'static [ParamSpec],
     /// What it does to the job: whether it joins the history, can be undone, or solves.
     pub effect: Effect,
+    /// The results a change it makes to the model leaves wrong, dropped when it succeeds
+    /// ([`crate::Results::invalidate`]).
+    pub invalidates: Option<Change>,
     pub run: fn(&mut Session, &Params) -> Result<Value>,
 }
 
@@ -126,13 +129,8 @@ pub(crate) fn check_keys(spec: &CommandSpec, params: &Value) -> Result<()> {
         _ => return Err(EngineError::Params(format!("{}: parameters must be a JSON object", spec.id))),
     };
     if let Some(k) = obj.keys().find(|k| !spec.params.iter().any(|p| p.name == k.as_str())) {
-        let known: Vec<&str> = spec.params.iter().map(|p| p.name).collect();
-        return Err(EngineError::Params(format!(
-            "{}: unknown parameter `{}` (known: {})",
-            spec.id,
-            k.chars().take(64).collect::<String>(),
-            known.join(", ")
-        )));
+        let what = format_args!("{}: unknown parameter `{}`", spec.id, crate::text::clip(k, 64));
+        return Err(EngineError::Params(crate::text::unknown(what, "known: ", spec.params.iter().map(|p| p.name))));
     }
     match spec.params.iter().find(|p| p.required && !obj.contains_key(p.name)) {
         Some(p) => Err(EngineError::Params(format!("{}: missing parameter `{}`", spec.id, p.name))),

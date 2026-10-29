@@ -137,8 +137,8 @@ pub(super) fn fmt(v: f64) -> String {
 
 /// The step's own settings and information.
 fn body(app: &mut EmcraftApp, ui: &mut egui::Ui, step: Step, states: &[StepState], t: &Tokens) {
-    let fu = app.session.display.frequency.symbol();
-    let lu = app.session.display.length.symbol();
+    let fu = app.session.display().frequency.symbol();
+    let lu = app.session.display().length.symbol();
     // The band fields follow the session's band when it changes.
     let b = band(app);
     if app.workflow.fields.band_seen != b {

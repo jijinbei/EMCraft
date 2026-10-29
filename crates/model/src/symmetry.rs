@@ -238,7 +238,7 @@ mod tests {
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
         m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic), plane(Axis::Y, 0.005, SymmetryKind::Electric)]).unwrap();
         assert_eq!(m.symmetry_fraction(), 0.25);
-        assert!(m.check().iter().all(|i| !i.starts_with("symmetry")));
+        assert!(m.check().iter().all(|i| !matches!(i, crate::Issue::Symmetry(_))));
         for bad in [
             vec![plane(Axis::X, 0.009, SymmetryKind::Magnetic)],
             vec![plane(Axis::Z, 0.01, SymmetryKind::Magnetic)],
@@ -251,7 +251,7 @@ mod tests {
         assert_eq!(m.symmetry.len(), 2, "a refused change keeps the planes");
         // An off-centre aperture breaks the symmetry; the check says so.
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), Some(0.0))])).unwrap();
-        assert!(m.check().iter().any(|i| i.starts_with("symmetry")));
+        assert!(m.check().iter().any(|i| matches!(i, crate::Issue::Symmetry(_))));
         m.set_symmetry(Vec::new()).unwrap();
         // Strips must mirror; a solid is refused.
         let mut w = guide(vec![sec(None, None)]);
@@ -262,7 +262,7 @@ mod tests {
         m.set_waveguide(w).unwrap();
         m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Electric)]).unwrap();
         m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.02, 0.01, 0.01) }, material: "vacuum".into() }).unwrap();
-        assert!(m.check().iter().any(|i| i.contains("not supported yet")));
+        assert!(m.check().iter().any(|i| i.to_string().contains("not supported yet")));
     }
 
     #[test]

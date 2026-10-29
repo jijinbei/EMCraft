@@ -151,7 +151,7 @@ pub fn build(session: &Session, overlay: Overlay) -> Built {
 /// Builds the scene, with the field's planes for [`Overlay::Field`] and what is selected
 /// highlighted.
 pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], selected: Option<Pick>) -> Built {
-    let m = &session.model;
+    let m = session.model();
     let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
         Some(_) => mesh::from_mesh(m, overlay, &mut out),

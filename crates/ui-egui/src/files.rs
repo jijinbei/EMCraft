@@ -95,7 +95,7 @@ fn go(app: &mut EmcraftApp, then: Then) {
 /// An empty project in the preferred units.
 fn new_project(app: &mut EmcraftApp) {
     let units = json!({"length": app.prefs.length, "frequency": app.prefs.frequency});
-    if app.session.display.length != app.prefs.length || app.session.display.frequency != app.prefs.frequency {
+    if app.session.display().length != app.prefs.length || app.session.display().frequency != app.prefs.frequency {
         let _ = app.run("units.set", units);
     }
     let _ = app.run("file.new", json!({}));
@@ -103,7 +103,7 @@ fn new_project(app: &mut EmcraftApp) {
 
 /// Saves to the project's own file, or asks where.
 pub fn save(app: &mut EmcraftApp) {
-    if app.session.path.is_some() {
+    if app.session.path().is_some() {
         let _ = app.run("file.save", json!({}));
     } else {
         pick(app, Purpose::SaveAs);
@@ -119,7 +119,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
     let Some(picker) = app.files.picker.clone() else {
         let text = match purpose {
             Purpose::Open => app.prefs.recent.first().cloned().unwrap_or_default(),
-            Purpose::SaveAs => app.session.path.clone().unwrap_or(suggested),
+            Purpose::SaveAs => app.session.path().map_or(suggested, str::to_owned),
         };
         app.files.prompt = Some(Prompt { purpose, text });
         return;
@@ -231,7 +231,7 @@ fn confirm(app: &mut EmcraftApp, ctx: &egui::Context) {
         go(app, then);
     } else if save {
         app.files.after_save = Some(then);
-        if app.session.path.is_some() {
+        if app.session.path().is_some() {
             let saved = app.run("file.save", json!({}));
             continue_after_save(app, saved.is_ok());
         } else {
@@ -297,7 +297,7 @@ pub fn menu(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         save_as(app);
     }
     ui.separator();
-    if item(ui, "Export history as script…", "", "file:export", !app.session.history.is_empty()) {
+    if item(ui, "Export history as script…", "", "file:export", !app.session.history().is_empty()) {
         app.export = Some("emcraft-history.json".into());
     }
     if item(ui, "Start page", "", "file:start", true) {

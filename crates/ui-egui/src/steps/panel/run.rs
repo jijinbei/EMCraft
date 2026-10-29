@@ -38,7 +38,7 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
         open_step(app, Some(s));
         return;
     }
-    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(&app.session.model));
+    let solver = app.workflow.fields.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
     ui.add_space(6.0);
     ui_kit::small(ui, format!("Solver: {}", solver.label()), t.text);
     let label = if !pre.blocking.is_empty() {

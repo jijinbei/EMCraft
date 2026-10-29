@@ -188,7 +188,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
         );
         return;
     };
-    let frame = focus(&app.session.model, bounds);
+    let frame = focus(app.session.model(), bounds);
     let v = &mut app.view3d;
     let aspect = (rect.width() / rect.height().max(1.0)) as f64;
     if v.fitted != Some(bounds) || v.fit_next {
@@ -223,7 +223,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     if let Some((_, row)) = &picked {
         selection_card(&p, rect, row, t);
     }
-    let facing = app.view3d.facing.map(|f| facing_plane(app.session.display.length, bounds.0, f));
+    let facing = app.view3d.facing.map(|f| facing_plane(app.session.display().length, bounds.0, f));
     navigator(app, ui, rect);
     nav_bar(app, ui, rect, facing);
 }
@@ -289,7 +289,7 @@ fn move_plane(app: &mut EmcraftApp, rect: Rect, (lo, hi): ([f64; 3], [f64; 3]), 
 /// What the scene for `overlay` is built from now.
 fn scene_key(app: &mut EmcraftApp, overlay: Overlay) -> SceneKey {
     let field = (overlay == Overlay::Field).then(|| {
-        let l = app.session.display.length;
+        let l = app.session.display().length;
         app.field.view.at = app.field.at.map(|v| l.to_si(v));
         FieldKey { view: app.field.view.clone(), at: app.field.at, kept: app.field.kept.iter().map(|k| (k.plane, k.at)).collect() }
     });
