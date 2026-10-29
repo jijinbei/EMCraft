@@ -47,6 +47,7 @@ pub mod glyphs;
 pub mod handle;
 pub mod home;
 mod messages;
+mod named;
 pub mod picture;
 pub mod prefs;
 pub mod raster;

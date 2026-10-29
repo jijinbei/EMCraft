@@ -17,303 +17,116 @@ use crate::View;
 use crate::ribbon::RibbonTab;
 use crate::steps::{Solver, Step};
 
-/// A name that never changes: a button, a field, a chart or a card.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Fixed {
-    // The application bar and its menus.
-    BarStart,
-    BarTitle,
-    BarSettings,
-    MenuFile,
-    MenuEdit,
-    EditUndo,
-    EditRedo,
-    FileNew,
-    FileOpen,
-    FileSave,
-    FileSaveAs,
-    FileExport,
-    FileStart,
-    // The file prompt, the question before changes are lost, the history's export.
-    FilePath,
-    FileOk,
-    FileCancel,
-    ConfirmSave,
-    ConfirmDiscard,
-    ConfirmCancel,
-    ExportPath,
-    ExportOk,
-    ExportCancel,
-    // The start page.
-    HomeNew,
-    HomeOpen,
-    // The window's cards.
-    Ribbon,
-    Steps,
-    StepPanel,
-    Browser,
-    Viewport,
-    Status,
-    Progress,
-    StatusCancel,
-    // Command search.
-    SearchField,
-    SearchPopup,
-    // The dialog card.
-    Dialog,
-    DialogOk,
-    DialogCancel,
-    DialogClose,
-    DialogDock,
-    DialogError,
-    // The step panels.
-    IntentStart,
-    IntentStop,
-    IntentApply,
-    ExcitationPreview,
-    ExcitationPatterns,
-    SetupBand,
-    SetupPoints,
-    SetupCount,
-    SetupFrequency,
-    SetupOrder,
-    RunStart,
-    RunError,
-    ResultsCheck,
-    ResultsTouchstone,
-    ResultsTouchstonePath,
-    // The result views.
-    ChartSParameters,
-    ChartTdr,
-    ChartDispersion,
-    ChartPattern,
-    ChartStudy,
-    PictureField,
-    PicturePortMode,
-    TablePortModes,
-    PortModesSolve,
-    PortModesFocus,
-    CompareRun,
-    TdrPort,
-    PatternPhi,
-    // The field view.
-    FieldFrequency,
-    FieldAt,
-    FieldKeep,
-    FieldBeside3d,
-    FieldComponent,
-    FieldPhase,
-    FieldLocator,
-    FieldSpark,
-    FieldSavePicture,
-    FieldSaveVideo,
-    // The 3D view.
-    View3d,
-    View3dSelected,
-    View3dPlane,
-    View3dFit,
-    View3dFace,
-    View3dPlay,
-    View3dProjection,
-}
-
-impl Fixed {
-    /// Every fixed name.
-    pub const ALL: [Fixed; 85] = [
-        Fixed::BarStart,
-        Fixed::BarTitle,
-        Fixed::BarSettings,
-        Fixed::MenuFile,
-        Fixed::MenuEdit,
-        Fixed::EditUndo,
-        Fixed::EditRedo,
-        Fixed::FileNew,
-        Fixed::FileOpen,
-        Fixed::FileSave,
-        Fixed::FileSaveAs,
-        Fixed::FileExport,
-        Fixed::FileStart,
-        Fixed::FilePath,
-        Fixed::FileOk,
-        Fixed::FileCancel,
-        Fixed::ConfirmSave,
-        Fixed::ConfirmDiscard,
-        Fixed::ConfirmCancel,
-        Fixed::ExportPath,
-        Fixed::ExportOk,
-        Fixed::ExportCancel,
-        Fixed::HomeNew,
-        Fixed::HomeOpen,
-        Fixed::Ribbon,
-        Fixed::Steps,
-        Fixed::StepPanel,
-        Fixed::Browser,
-        Fixed::Viewport,
-        Fixed::Status,
-        Fixed::Progress,
-        Fixed::StatusCancel,
-        Fixed::SearchField,
-        Fixed::SearchPopup,
-        Fixed::Dialog,
-        Fixed::DialogOk,
-        Fixed::DialogCancel,
-        Fixed::DialogClose,
-        Fixed::DialogDock,
-        Fixed::DialogError,
-        Fixed::IntentStart,
-        Fixed::IntentStop,
-        Fixed::IntentApply,
-        Fixed::ExcitationPreview,
-        Fixed::ExcitationPatterns,
-        Fixed::SetupBand,
-        Fixed::SetupPoints,
-        Fixed::SetupCount,
-        Fixed::SetupFrequency,
-        Fixed::SetupOrder,
-        Fixed::RunStart,
-        Fixed::RunError,
-        Fixed::ResultsCheck,
-        Fixed::ResultsTouchstone,
-        Fixed::ResultsTouchstonePath,
-        Fixed::ChartSParameters,
-        Fixed::ChartTdr,
-        Fixed::ChartDispersion,
-        Fixed::ChartPattern,
-        Fixed::ChartStudy,
-        Fixed::PictureField,
-        Fixed::PicturePortMode,
-        Fixed::TablePortModes,
-        Fixed::PortModesSolve,
-        Fixed::PortModesFocus,
-        Fixed::CompareRun,
-        Fixed::TdrPort,
-        Fixed::PatternPhi,
-        Fixed::FieldFrequency,
-        Fixed::FieldAt,
-        Fixed::FieldKeep,
-        Fixed::FieldBeside3d,
-        Fixed::FieldComponent,
-        Fixed::FieldPhase,
-        Fixed::FieldLocator,
-        Fixed::FieldSpark,
-        Fixed::FieldSavePicture,
-        Fixed::FieldSaveVideo,
-        Fixed::View3d,
-        Fixed::View3dSelected,
-        Fixed::View3dPlane,
-        Fixed::View3dFit,
-        Fixed::View3dFace,
-        Fixed::View3dPlay,
-        Fixed::View3dProjection,
-    ];
-
-    /// The name.
-    pub const fn id(self) -> &'static str {
-        match self {
-            Fixed::BarStart => "bar:start",
-            Fixed::BarTitle => "bar:title",
-            Fixed::BarSettings => "bar:settings",
-            Fixed::MenuFile => "menu:file",
-            Fixed::MenuEdit => "menu:edit",
-            Fixed::EditUndo => "edit:undo",
-            Fixed::EditRedo => "edit:redo",
-            Fixed::FileNew => "file:new",
-            Fixed::FileOpen => "file:open",
-            Fixed::FileSave => "file:save",
-            Fixed::FileSaveAs => "file:save_as",
-            Fixed::FileExport => "file:export",
-            Fixed::FileStart => "file:start",
-            Fixed::FilePath => "file:path",
-            Fixed::FileOk => "file:ok",
-            Fixed::FileCancel => "file:cancel",
-            Fixed::ConfirmSave => "confirm:save",
-            Fixed::ConfirmDiscard => "confirm:discard",
-            Fixed::ConfirmCancel => "confirm:cancel",
-            Fixed::ExportPath => "export:path",
-            Fixed::ExportOk => "export:ok",
-            Fixed::ExportCancel => "export:cancel",
-            Fixed::HomeNew => "home:new",
-            Fixed::HomeOpen => "home:open",
-            Fixed::Ribbon => "ribbon",
-            Fixed::Steps => "steps",
-            Fixed::StepPanel => "step_panel",
-            Fixed::Browser => "browser",
-            Fixed::Viewport => "viewport",
-            Fixed::Status => "status",
-            Fixed::Progress => "progress",
-            Fixed::StatusCancel => "status:cancel",
-            Fixed::SearchField => "search:field",
-            Fixed::SearchPopup => "search:popup",
-            Fixed::Dialog => "dialog",
-            Fixed::DialogOk => "dialog:ok",
-            Fixed::DialogCancel => "dialog:cancel",
-            Fixed::DialogClose => "dialog:close",
-            Fixed::DialogDock => "dialog:dock",
-            Fixed::DialogError => "dialog:error",
-            Fixed::IntentStart => "intent:start",
-            Fixed::IntentStop => "intent:stop",
-            Fixed::IntentApply => "intent:apply",
-            Fixed::ExcitationPreview => "excitation:preview",
-            Fixed::ExcitationPatterns => "excitation:patterns",
-            Fixed::SetupBand => "setup:band",
-            Fixed::SetupPoints => "setup:points",
-            Fixed::SetupCount => "setup:count",
-            Fixed::SetupFrequency => "setup:frequency",
-            Fixed::SetupOrder => "setup:order",
-            Fixed::RunStart => "run:start",
-            Fixed::RunError => "run:error",
-            Fixed::ResultsCheck => "results:check",
-            Fixed::ResultsTouchstone => "results:touchstone",
-            Fixed::ResultsTouchstonePath => "results:touchstone:path",
-            Fixed::ChartSParameters => "chart:sparameters",
-            Fixed::ChartTdr => "chart:tdr",
-            Fixed::ChartDispersion => "chart:dispersion",
-            Fixed::ChartPattern => "chart:pattern",
-            Fixed::ChartStudy => "chart:study",
-            Fixed::PictureField => "picture:field",
-            Fixed::PicturePortMode => "picture:port_mode",
-            Fixed::TablePortModes => "table:port_modes",
-            Fixed::PortModesSolve => "port_modes:solve",
-            Fixed::PortModesFocus => "port_modes:focus",
-            Fixed::CompareRun => "compare:run",
-            Fixed::TdrPort => "tdr:port",
-            Fixed::PatternPhi => "pattern:phi",
-            Fixed::FieldFrequency => "field:frequency",
-            Fixed::FieldAt => "field:at",
-            Fixed::FieldKeep => "field:keep",
-            Fixed::FieldBeside3d => "field:beside3d",
-            Fixed::FieldComponent => "field:component",
-            Fixed::FieldPhase => "field:phase",
-            Fixed::FieldLocator => "field:locator",
-            Fixed::FieldSpark => "field:spark",
-            Fixed::FieldSavePicture => "field:save:picture",
-            Fixed::FieldSaveVideo => "field:save:video",
-            Fixed::View3d => "view3d",
-            Fixed::View3dSelected => "view3d:selected",
-            Fixed::View3dPlane => "view3d:plane",
-            Fixed::View3dFit => "view3d:fit",
-            Fixed::View3dFace => "view3d:face",
-            Fixed::View3dPlay => "view3d:play",
-            Fixed::View3dProjection => "view3d:projection",
-        }
+crate::named::named_enum! {
+    /// A name that never changes: a button, a field, a chart or a card.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum Fixed {
+        // The application bar and its menus.
+        BarStart = "bar:start",
+        BarTitle = "bar:title",
+        BarSettings = "bar:settings",
+        MenuFile = "menu:file",
+        MenuEdit = "menu:edit",
+        EditUndo = "edit:undo",
+        EditRedo = "edit:redo",
+        FileNew = "file:new",
+        FileOpen = "file:open",
+        FileSave = "file:save",
+        FileSaveAs = "file:save_as",
+        FileExport = "file:export",
+        FileStart = "file:start",
+        // The file prompt, the question before changes are lost, the history's export.
+        FilePath = "file:path",
+        FileOk = "file:ok",
+        FileCancel = "file:cancel",
+        ConfirmSave = "confirm:save",
+        ConfirmDiscard = "confirm:discard",
+        ConfirmCancel = "confirm:cancel",
+        ExportPath = "export:path",
+        ExportOk = "export:ok",
+        ExportCancel = "export:cancel",
+        // The start page.
+        HomeNew = "home:new",
+        HomeOpen = "home:open",
+        // The window's cards.
+        Ribbon = "ribbon",
+        Steps = "steps",
+        StepPanel = "step_panel",
+        Browser = "browser",
+        Viewport = "viewport",
+        Status = "status",
+        Progress = "progress",
+        StatusCancel = "status:cancel",
+        // Command search.
+        SearchField = "search:field",
+        SearchPopup = "search:popup",
+        // The dialog card.
+        Dialog = "dialog",
+        DialogOk = "dialog:ok",
+        DialogCancel = "dialog:cancel",
+        DialogClose = "dialog:close",
+        DialogDock = "dialog:dock",
+        DialogError = "dialog:error",
+        // The step panels.
+        IntentStart = "intent:start",
+        IntentStop = "intent:stop",
+        IntentApply = "intent:apply",
+        ExcitationPreview = "excitation:preview",
+        ExcitationPatterns = "excitation:patterns",
+        SetupBand = "setup:band",
+        SetupPoints = "setup:points",
+        SetupCount = "setup:count",
+        SetupFrequency = "setup:frequency",
+        SetupOrder = "setup:order",
+        RunStart = "run:start",
+        RunError = "run:error",
+        ResultsCheck = "results:check",
+        ResultsTouchstone = "results:touchstone",
+        ResultsTouchstonePath = "results:touchstone:path",
+        // The result views.
+        ChartSParameters = "chart:sparameters",
+        ChartTdr = "chart:tdr",
+        ChartDispersion = "chart:dispersion",
+        ChartPattern = "chart:pattern",
+        ChartStudy = "chart:study",
+        PictureField = "picture:field",
+        PicturePortMode = "picture:port_mode",
+        TablePortModes = "table:port_modes",
+        PortModesSolve = "port_modes:solve",
+        PortModesFocus = "port_modes:focus",
+        CompareRun = "compare:run",
+        TdrPort = "tdr:port",
+        PatternPhi = "pattern:phi",
+        // The field view.
+        FieldFrequency = "field:frequency",
+        FieldAt = "field:at",
+        FieldKeep = "field:keep",
+        FieldBeside3d = "field:beside3d",
+        FieldComponent = "field:component",
+        FieldPhase = "field:phase",
+        FieldLocator = "field:locator",
+        FieldSpark = "field:spark",
+        FieldSavePicture = "field:save:picture",
+        FieldSaveVideo = "field:save:video",
+        // The 3D view.
+        View3d = "view3d",
+        View3dSelected = "view3d:selected",
+        View3dPlane = "view3d:plane",
+        View3dFit = "view3d:fit",
+        View3dFace = "view3d:face",
+        View3dPlay = "view3d:play",
+        View3dProjection = "view3d:projection",
     }
 }
 
-/// A part of a compound control (`field:phase:play`, `dialog:field:size:1`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Part {
-    /// A video player's play button.
-    Play,
-    /// A video player's speed.
-    Speed,
-}
-
-impl Part {
-    fn id(self) -> &'static str {
-        match self {
-            Part::Play => "play",
-            Part::Speed => "speed",
-        }
+crate::named::named_enum! {
+    /// A part of a compound control (`field:phase:play`).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Part {
+        /// A video player's play button.
+        Play = "play",
+        /// A video player's speed.
+        Speed = "speed",
     }
 }
 
@@ -396,12 +209,6 @@ pub enum Handle<'a> {
 impl From<Fixed> for Handle<'_> {
     fn from(f: Fixed) -> Self {
         Handle::Fixed(f)
-    }
-}
-
-impl fmt::Display for Fixed {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.id())
     }
 }
 
@@ -491,12 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn fixed_names_are_listed_once_each() {
-        let mut ids: Vec<&str> = Fixed::ALL.iter().map(|f| f.id()).collect();
-        let n = ids.len();
-        ids.sort_unstable();
-        ids.dedup();
-        assert_eq!(ids.len(), n);
+    fn a_handle_hashes_as_its_text() {
         let hash = |h: Handle| {
             let mut s = std::collections::hash_map::DefaultHasher::new();
             h.hash(&mut s);
@@ -504,5 +306,6 @@ mod tests {
         };
         assert_eq!(hash(Handle::Toolbar("a.b")), hash(Handle::Toolbar("a.b")));
         assert_ne!(hash(Handle::Toolbar("a.b")), hash(Handle::Toolbar("a.c")));
+        assert_eq!(Fixed::parse("field:save:video"), Some(Fixed::FieldSaveVideo));
     }
 }

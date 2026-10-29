@@ -47,18 +47,18 @@ fn status_color(status: Status, t: &Tokens) -> Color32 {
     }
 }
 
-/// The solver Run starts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Solver {
-    Frequency,
-    Eigenmodes,
-    Radiation,
-    TimeDomain,
+crate::named::named_enum! {
+    /// The solver Run starts: its id (the Setup step's `setup:solver:<id>`) and its label.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Solver {
+        Frequency = "frequency" => "Frequency sweep (S-parameters)",
+        Eigenmodes = "eigenmodes" => "Eigenmodes (resonances)",
+        Radiation = "radiation" => "Radiation (open problem)",
+        TimeDomain = "time_domain" => "Time domain",
+    }
 }
 
 impl Solver {
-    pub const ALL: [Solver; 4] = [Solver::Frequency, Solver::Eigenmodes, Solver::Radiation, Solver::TimeDomain];
-
     pub fn command(self) -> &'static str {
         match self {
             Solver::Frequency => "solve.frequency",
@@ -66,28 +66,6 @@ impl Solver {
             Solver::Radiation => "solve.radiation",
             Solver::TimeDomain => "solve.time_domain",
         }
-    }
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Solver::Frequency => "frequency",
-            Solver::Eigenmodes => "eigenmodes",
-            Solver::Radiation => "radiation",
-            Solver::TimeDomain => "time_domain",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Solver::Frequency => "Frequency sweep (S-parameters)",
-            Solver::Eigenmodes => "Eigenmodes (resonances)",
-            Solver::Radiation => "Radiation (open problem)",
-            Solver::TimeDomain => "Time domain",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Solver> {
-        Solver::ALL.into_iter().find(|x| x.id() == s)
     }
 
     /// The solver a model calls for: resonances without excitation, radiation with sources or

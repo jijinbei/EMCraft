@@ -13,37 +13,18 @@ use crate::handle::{Fixed, Handle};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, UiExt, scenario};
 
-/// A ribbon tab: its id is its title (the control channel's `tab:<id>` handles, `ui.set
-/// {"tab": id}`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum RibbonTab {
-    #[default]
-    Model,
-    Materials,
-    PortsSources,
-    Mesh,
-    Simulate,
-    Results,
-}
-
-impl RibbonTab {
-    /// Every tab, in the ribbon's order.
-    pub const ALL: [RibbonTab; 6] =
-        [RibbonTab::Model, RibbonTab::Materials, RibbonTab::PortsSources, RibbonTab::Mesh, RibbonTab::Simulate, RibbonTab::Results];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            RibbonTab::Model => "MODEL",
-            RibbonTab::Materials => "MATERIALS",
-            RibbonTab::PortsSources => "PORTS & SOURCES",
-            RibbonTab::Mesh => "MESH",
-            RibbonTab::Simulate => "SIMULATE",
-            RibbonTab::Results => "RESULTS",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<RibbonTab> {
-        RibbonTab::ALL.into_iter().find(|t| t.id() == s)
+crate::named::named_enum! {
+    /// A ribbon tab: its id is its title (the control channel's `tab:<id>` handles, `ui.set
+    /// {"tab": id}`).
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum RibbonTab {
+        #[default]
+        Model = "MODEL",
+        Materials = "MATERIALS",
+        PortsSources = "PORTS & SOURCES",
+        Mesh = "MESH",
+        Simulate = "SIMULATE",
+        Results = "RESULTS",
     }
 }
 
