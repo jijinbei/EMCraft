@@ -5,6 +5,7 @@
 //! ATTRIBUTION.md.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod dupes;
 mod layers;
 
 use std::path::{Path, PathBuf};
@@ -23,6 +24,11 @@ commands:
                   references and fixtures; write docs/oracle.md after a full run; --bless
                   freezes a passing case's results in its fixture.json (release build)
   features        write docs/features.md (every command with its parameters)
+  dupes [--min LINES] [--loose] [--fail]
+                  list code copied between production sources (runs of LINES normalised lines,
+                  default 10; tests and the ported tetmesh left out); --loose matches lines by
+                  their shape (names, numbers and strings ignored); --fail exits non-zero when
+                  there are copies
   ci              fmt --check, layers, clippy -D warnings, the tests, then the oracle
 ";
 
@@ -38,6 +44,7 @@ fn main() -> ExitCode {
             run(c, "oracle")
         }
         Some("features") => cmd_features(),
+        Some("dupes") => cmd_dupes(&rest),
         Some("ci") => cmd_ci(),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
@@ -115,6 +122,25 @@ fn cmd_features() -> Result<(), String> {
         return Err(format!("features: {}", String::from_utf8_lossy(&out.stderr)));
     }
     std::fs::write(root().join("docs/features.md"), &out.stdout).map_err(|e| format!("docs/features.md: {e}"))
+}
+
+fn cmd_dupes(rest: &[&str]) -> Result<(), String> {
+    let mut min = dupes::DEFAULT_MIN;
+    let mut fail = false;
+    let mut loose = false;
+    let mut it = rest.iter();
+    while let Some(a) = it.next() {
+        match *a {
+            "--fail" => fail = true,
+            "--loose" => loose = true,
+            "--min" => {
+                let v = it.next().ok_or("dupes: --min needs a number of lines")?;
+                min = v.parse().ok().filter(|n| (2..=1000).contains(n)).ok_or(format!("dupes: --min {v}: a whole number from 2 to 1000"))?;
+            }
+            other => return Err(format!("dupes: unknown argument `{other}`")),
+        }
+    }
+    dupes::run(&root(), min, fail, loose)
 }
 
 fn cmd_ci() -> Result<(), String> {
