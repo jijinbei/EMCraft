@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::reply::{parts, phasor, reflection};
 pub use crate::view::{pattern_chart, pattern_chart_of};
-use crate::{Change, EngineError, Params, Result, Session};
+use crate::{EngineError, Params, Result, Session};
 
 /// The impedance of free space (Ω).
 const ETA0: f64 = MU0 * C0;
@@ -33,7 +33,6 @@ pub fn model_open(s: &mut Session, p: &Params) -> Result<Value> {
     let shape: OpenShape = p.choice("shape").or(OpenShape::Box)?;
     let open = p.positive_length("thickness").optional()?.map(|thickness| Open { thickness, reflection, shape });
     s.model.set_open(open)?;
-    s.results.invalidate(Change::Open);
     Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.show_length(o.thickness)), "shape": open.map(|o| o.shape)}))
 }
 
@@ -45,14 +44,12 @@ pub fn source_dipole(s: &mut Session, p: &Params) -> Result<Value> {
         current: p.number("current").or(1.0)?,
     };
     s.model.add_source(dipole)?;
-    s.results.invalidate(Change::Open);
     Ok(json!({"sources": s.model.sources.len()}))
 }
 
 pub fn source_plane_wave(s: &mut Session, p: &Params) -> Result<Value> {
     let wave = Source::PlaneWave { direction: p.vector("direction").or(Vec3::unit(2))?, polarization: p.vector("polarization").or(Vec3::unit(0))? };
     s.model.add_source(wave)?;
-    s.results.invalidate(Change::Open);
     Ok(json!({"sources": s.model.sources.len()}))
 }
 
@@ -67,7 +64,6 @@ pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
         voltage: [amplitude * phase.cos(), amplitude * phase.sin()],
         radius: p.positive_length("radius").or(0.0)?,
     })?;
-    s.results.invalidate(Change::Open);
     Ok(json!({"lumped_ports": s.model.lumped.len()}))
 }
 
@@ -97,7 +93,6 @@ fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
 
 pub fn source_clear(s: &mut Session, _: &Params) -> Result<Value> {
     s.model.sources.clear();
-    s.results.invalidate(Change::Open);
     Ok(json!({"sources": 0}))
 }
 

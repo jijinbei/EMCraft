@@ -21,6 +21,26 @@ fn display_units_convert_at_the_boundary() {
     assert!((s.results.sweep.as_ref().unwrap().results[0].frequency - 9e9).abs() < 1e-3);
 }
 
+/// Every command that changes the model says which results the change leaves wrong, unless it
+/// changes only what no result is solved from (the band, the display units, a new material);
+/// they are dropped when it succeeds, not when it fails.
+#[test]
+fn every_model_change_drops_the_results_it_makes_wrong() {
+    let keeps = ["project.frequency", "units.set", "model.material.create"];
+    for c in COMMANDS.iter().filter(|c| c.effect == Effect::Record) {
+        assert_eq!(c.invalidates.is_none(), keeps.contains(&c.id), "{}", c.id);
+    }
+    assert!(COMMANDS.iter().filter(|c| c.effect != Effect::Record).all(|c| c.invalidates.is_none()));
+    let mut s = small();
+    // Failed: the sweep stays.
+    assert!(s.execute("geometry.body", &json!({"shape": "sphere", "radius": -1, "material": "metal"})).is_err());
+    assert!(s.results.sweep.is_some());
+    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
+    assert!(s.results.sweep.is_some());
+    s.execute("model.walls", &json!({"conductivity": 5.8e7})).unwrap();
+    assert!(s.results.sweep.is_none());
+}
+
 /// The states kept to undo to share the mesh rather than copy it, and the oldest go first.
 #[test]
 fn undo_states_share_the_mesh_and_are_bounded() {

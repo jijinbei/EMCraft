@@ -10,7 +10,7 @@ use serde_json::Value;
 
 pub use self::table::COMMANDS;
 use crate::project::Effect;
-use crate::{EngineError, Params, Result, Session};
+use crate::{Change, EngineError, Params, Result, Session};
 
 /// The physical quantity of a numeric parameter, which decides its display unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +104,9 @@ pub struct CommandSpec {
     pub params: &'static [ParamSpec],
     /// What it does to the job: whether it joins the history, can be undone, or solves.
     pub effect: Effect,
+    /// The results a change it makes to the model leaves wrong, dropped when it succeeds
+    /// ([`crate::Results::invalidate`]).
+    pub invalidates: Option<Change>,
     pub run: fn(&mut Session, &Params) -> Result<Value>,
 }
 

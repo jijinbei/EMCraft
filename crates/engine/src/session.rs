@@ -244,6 +244,9 @@ impl Session {
     fn commit(&mut self, spec: &CommandSpec, params: &Value, before: Before) {
         match spec.effect {
             Effect::Record | Effect::Replace => {
+                if let Some(change) = spec.invalidates {
+                    self.results.invalidate(change);
+                }
                 // A replaced session solved to its last state (a sample opened with its solve)
                 // keeps its results current.
                 let current = spec.effect == Effect::Replace && self.solved_revision == Some(self.revision);

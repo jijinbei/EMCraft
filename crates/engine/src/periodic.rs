@@ -10,7 +10,7 @@ use emcraft_solver::bloch::{Dispersion, MAX_BANDS, MAX_PHASES, Sweep};
 use serde_json::{Value, json};
 
 pub use crate::view::dispersion_chart;
-use crate::{Change, EngineError, Params, Result, Session};
+use crate::{EngineError, Params, Result, Session};
 
 /// The model's periodic boundaries as a reply.
 fn shown(p: &Option<Periodic>) -> Value {
@@ -28,7 +28,6 @@ fn shown(p: &Option<Periodic>) -> Value {
 pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
     if p.flag("clear").or(false)? {
         s.model.set_periodic(None)?;
-        s.results.invalidate(Change::Geometry);
         return Ok(shown(&s.model.periodic));
     }
     let old = s.model.periodic;
@@ -42,7 +41,6 @@ pub fn periodic(s: &mut Session, p: &Params) -> Result<Value> {
         polarization: p.choice("polarization").or(old.map_or(Polarization::Te, |o| o.polarization))?,
     };
     s.model.set_periodic(Some(next))?;
-    s.results.invalidate(Change::Geometry);
     Ok(shown(&s.model.periodic))
 }
 

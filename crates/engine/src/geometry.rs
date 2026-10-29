@@ -7,7 +7,7 @@ use emcraft_model::{
 };
 use serde_json::{Value, json};
 
-use crate::{Change, EngineError, Params, Result, Session};
+use crate::{EngineError, Params, Result, Session};
 
 /// Most items in one list parameter (sections, layers, strips, vias).
 const MAX_ITEMS: usize = 1000;
@@ -100,7 +100,6 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect::<Result<Vec<_>>>()?;
     s.model.set_waveguide(Waveguide { width, height, sections, layers, strips, vias })?;
-    s.results.invalidate(Change::Geometry);
     Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, Waveguide::length))}))
 }
 
@@ -133,7 +132,6 @@ pub fn inclusion(s: &mut Session, p: &Params) -> Result<Value> {
     let inclusion =
         Inclusion { shape: shape(p)?, at: p.point("at").or(Point3::ORIGIN)?, material: p.string("material").optional()?.map(str::to_owned) };
     s.model.add_inclusion(inclusion)?;
-    s.results.invalidate(Change::Geometry);
     Ok(json!({"inclusions": s.model.inclusions.len()}))
 }
 
@@ -223,7 +221,6 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     if let Some(t) = thickness {
         s.model.set_open(Some(emcraft_model::Open { thickness: t, reflection: None, shape: emcraft_model::OpenShape::Box }))?;
     }
-    s.results.invalidate(Change::Geometry);
     let bounds = s.model.bounds().unwrap_or_default();
     let unit = s.display.length.to_si(1.0);
     let pieces = cavity
@@ -367,7 +364,6 @@ pub fn feature(s: &mut Session, p: &Params) -> Result<Value> {
         axis: p.choice("axis").or_default()?,
     };
     s.model.add_feature(feature)?;
-    s.results.invalidate(Change::Geometry);
     Ok(json!({"features": s.model.features.len()}))
 }
 
@@ -379,14 +375,12 @@ pub fn solid(s: &mut Session, p: &Params) -> Result<Value> {
         return Err(p.error("size", "must be positive"));
     }
     s.model.set_solid(Solid { shape, material: p.string("material").or("vacuum")?.to_owned() })?;
-    s.results.invalidate(Change::Geometry);
     Ok(json!({"volume": s.model.solid.as_ref().map(|x| x.shape.volume())}))
 }
 
 pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
     let sigma = p.number("conductivity").optional()?;
     s.model.set_wall_conductivity(sigma)?;
-    s.results.invalidate(Change::Walls);
     Ok(json!({"conductivity": sigma}))
 }
 
@@ -421,7 +415,6 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
         planes.sort_by_key(|q| q.axis.index());
     }
     s.model.set_symmetry(planes)?;
-    s.results.invalidate(Change::Geometry);
     let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.name(), "at": s.show_length(q.at), "kind": q.kind})).collect();
     Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction()}))
 }
@@ -446,6 +439,5 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
         terminals: p.choice("terminals").or_default()?,
     };
     s.model.add_port(port)?;
-    s.results.invalidate(Change::Ports);
     Ok(json!({"name": name}))
 }

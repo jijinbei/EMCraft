@@ -7,7 +7,7 @@
 use emcraft_model::{Axis, Combine, Feature, Inclusion, Model, Point3, Shape};
 use serde_json::{Value, json};
 
-use crate::{Change, EngineError, Params, Result, Session};
+use crate::{EngineError, Params, Result, Session};
 
 /// The material name for a perfect conductor.
 pub const METAL: &str = "metal";
@@ -92,7 +92,6 @@ pub fn body(s: &mut Session, p: &Params) -> Result<Value> {
     let shape = crate::geometry::shape(p)?;
     let material = p.string("material").required()?;
     let kind = place(&mut s.model, shape, p.point("at").or(Point3::ORIGIN)?, p.choice("axis").or_default()?, material)?;
-    s.results.invalidate(Change::Geometry);
     Ok(json!({"bodies": bodies(&s.model).len(), "as": kind}))
 }
 
@@ -118,6 +117,5 @@ pub fn body_material(s: &mut Session, p: &Params) -> Result<Value> {
     };
     s.model.mesh = None;
     let kind = place(&mut s.model, shape, at, axis, material)?;
-    s.results.invalidate(Change::Geometry);
     Ok(json!({"body": wanted, "as": kind}))
 }
