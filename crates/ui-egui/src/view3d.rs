@@ -291,7 +291,7 @@ fn scene_key(app: &mut EmcraftApp, overlay: Overlay) -> SceneKey {
     let field = (overlay == Overlay::Field).then(|| {
         let l = app.session.display.length;
         app.field.view.at = app.field.at.map(|v| l.to_si(v));
-        FieldKey { view: app.field.view.clone(), at: app.field.at, kept: app.field.kept.clone() }
+        FieldKey { view: app.field.view.clone(), at: app.field.at, kept: app.field.kept.iter().map(|k| (k.plane, k.at)).collect() }
     });
     SceneKey { revision: app.revision, overlay, field, highlighted: app.view3d.highlighted() }
 }
@@ -301,7 +301,7 @@ fn scene_key(app: &mut EmcraftApp, overlay: Overlay) -> SceneKey {
 fn build(app: &mut EmcraftApp, overlay: Overlay, key: SceneKey) {
     let layers = if key.field.is_some() {
         crate::viewport::field_plots(app).unwrap_or_else(|e| {
-            app.message(e, true);
+            app.error(e);
             Vec::new()
         })
     } else {
@@ -564,7 +564,7 @@ fn navigator(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             p.circle_filled(tip, 7.0, t.panel);
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
-        scenario::publish_target(&format!("view3d:std:{}", view.name()), r);
+        scenario::publish_target(format_args!("view3d:std:{}", view.name()), r);
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.name()));
         if resp.on_hover_text(format!("View from {name} ({})", view.name())).clicked() {
             clicked = Some(view);

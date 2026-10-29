@@ -54,7 +54,7 @@ fn wrap(r: Result<Value, impl std::fmt::Display>) -> Outcome {
 
 /// Handles the queued requests (called once a frame).
 pub fn serve(app: &mut EmcraftApp, ctx: &egui::Context) {
-    let Some(rx) = app.control_rx.take() else { return };
+    let Some(rx) = app.control.rx.take() else { return };
     for _ in 0..MAX_PER_FRAME {
         let Ok(req) = rx.try_recv() else { break };
         if let Outcome::Done(v) = handle(app, ctx, &req) {
@@ -62,7 +62,7 @@ pub fn serve(app: &mut EmcraftApp, ctx: &egui::Context) {
         }
         ctx.request_repaint();
     }
-    app.control_rx = Some(rx);
+    app.control.rx = Some(rx);
 }
 
 fn key_from(name: &str) -> Option<egui::Key> {
@@ -80,10 +80,10 @@ fn key_from(name: &str) -> Option<egui::Key> {
 }
 
 fn push(app: &mut EmcraftApp, events: Vec<egui::Event>) -> Result<(), String> {
-    if app.synthetic.len() + events.len() > MAX_EVENTS {
+    if app.control.synthetic.len() + events.len() > MAX_EVENTS {
         return Err("too much queued input".into());
     }
-    app.synthetic.extend(events);
+    app.control.synthetic.extend(events);
     Ok(())
 }
 

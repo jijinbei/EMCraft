@@ -16,7 +16,17 @@ pub struct Message {
 const MAX_MESSAGES: usize = 200;
 
 impl EmcraftApp {
-    pub fn message(&mut self, text: impl std::fmt::Display, error: bool) {
+    /// Reports `text` in the message area.
+    pub fn info(&mut self, text: impl std::fmt::Display) {
+        self.message(text, false);
+    }
+
+    /// Reports `text` in the message area as an error.
+    pub fn error(&mut self, text: impl std::fmt::Display) {
+        self.message(text, true);
+    }
+
+    fn message(&mut self, text: impl std::fmt::Display, error: bool) {
         let text: String = text.to_string().chars().take(2000).collect();
         if let Some(last) = self.messages.last_mut()
             && last.text == text

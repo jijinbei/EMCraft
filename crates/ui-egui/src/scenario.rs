@@ -26,71 +26,85 @@ use serde_json::{Value, json};
 use crate::EmcraftApp;
 use crate::control::{ControlRequest, Outcome, handle};
 
+/// Something drawn this frame under a name (a button, a row, a field): a point to click (a
+/// handle) and the rectangle it covers, either or both. Scenarios and the control channel's
+/// `ui.handles` / `ui.at` find widgets by them.
+#[derive(Clone, Debug)]
+struct Named {
+    name: String,
+    at: Option<egui::Pos2>,
+    rect: Option<egui::Rect>,
+}
+
 thread_local! {
-    /// Named points drawn this frame (buttons, rows, fields): scenarios and the control
-    /// channel's `ui.handles` / `ui.at` find widgets by them.
-    static HANDLES: RefCell<Vec<(String, egui::Pos2)>> = const { RefCell::new(Vec::new()) };
-    static RECTS: RefCell<Vec<(String, egui::Rect)>> = const { RefCell::new(Vec::new()) };
-    /// Last frame's, read between frames.
-    static LAST: RefCell<(Vec<(String, egui::Pos2)>, Vec<(String, egui::Rect)>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+    /// This frame's, and last frame's (read between frames).
+    static NAMED: RefCell<Vec<Named>> = const { RefCell::new(Vec::new()) };
+    static LAST: RefCell<Vec<Named>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Most handles kept per frame.
-const MAX_HANDLES: usize = 20_000;
+/// Most names kept per frame.
+const MAX_NAMED: usize = 40_000;
 
-pub fn publish_handle(name: &str, at: egui::Pos2) {
-    HANDLES.with(|h| {
-        let mut h = h.borrow_mut();
-        if h.len() < MAX_HANDLES {
-            h.push((name.to_owned(), at));
+/// Keeps `name` (written once, from whatever displays it: a `&str`, or `format_args!` without
+/// an allocation of its own) with its point and rectangle.
+fn publish(name: impl std::fmt::Display, at: Option<egui::Pos2>, rect: Option<egui::Rect>) {
+    NAMED.with(|n| {
+        let mut n = n.borrow_mut();
+        if n.len() < MAX_NAMED {
+            n.push(Named { name: name.to_string(), at, rect });
         }
     });
 }
 
-pub fn publish_rect(name: &str, r: egui::Rect) {
-    RECTS.with(|h| {
-        let mut h = h.borrow_mut();
-        if h.len() < MAX_HANDLES {
-            h.push((name.to_owned(), r));
-        }
-    });
+/// A point to click, by name.
+pub fn publish_handle(name: impl std::fmt::Display, at: egui::Pos2) {
+    publish(name, Some(at), None);
+}
+
+/// A rectangle, by name (not a handle).
+pub fn publish_rect(name: impl std::fmt::Display, r: egui::Rect) {
+    publish(name, None, Some(r));
 }
 
 /// A rectangle and its centre as a handle, under one name.
-pub fn publish_target(name: &str, r: egui::Rect) {
-    publish_handle(name, r.center());
-    publish_rect(name, r);
+pub fn publish_target(name: impl std::fmt::Display, r: egui::Rect) {
+    publish(name, Some(r.center()), Some(r));
 }
 
 /// Starts a frame: this frame's handles become last frame's.
 pub fn clear_handles() {
-    let h = HANDLES.with(|h| std::mem::take(&mut *h.borrow_mut()));
-    let r = RECTS.with(|r| std::mem::take(&mut *r.borrow_mut()));
+    let now = NAMED.with(|n| std::mem::take(&mut *n.borrow_mut()));
     // A frame that drew nothing (an offscreen render's first pass) keeps the last ones.
-    if !h.is_empty() || !r.is_empty() {
-        LAST.with(|l| *l.borrow_mut() = (h, r));
+    if !now.is_empty() {
+        LAST.with(|l| *l.borrow_mut() = now);
     }
 }
 
-fn current_and_last<T>(f: impl Fn(&[(String, egui::Pos2)], &[(String, egui::Rect)]) -> Option<T>) -> Option<T> {
-    let now = HANDLES.with(|h| RECTS.with(|r| f(&h.borrow(), &r.borrow())));
-    now.or_else(|| LAST.with(|l| f(&l.borrow().0, &l.borrow().1)))
+/// The last thing named `name` with `what` of it (this frame's, else last frame's).
+fn latest<T>(name: &str, what: impl Fn(&Named) -> Option<T>) -> Option<T> {
+    let find = |list: &[Named]| list.iter().rev().filter(|n| n.name == name).find_map(&what);
+    NAMED.with(|n| find(&n.borrow())).or_else(|| LAST.with(|l| find(&l.borrow())))
 }
 
 /// Where a handle was drawn (this frame, else last frame).
 pub fn handle_at(name: &str) -> Option<egui::Pos2> {
-    current_and_last(|h, _| h.iter().rfind(|(n, _)| n == name).map(|x| x.1))
+    latest(name, |n| n.at)
 }
 
 pub fn rect_of(name: &str) -> Option<egui::Rect> {
-    current_and_last(|_, r| r.iter().rfind(|(n, _)| n == name).map(|x| x.1))
+    latest(name, |n| n.rect)
 }
 
 /// Every handle whose name starts with `prefix` (between frames: the frame just drawn).
 pub fn handles(prefix: &str) -> Vec<(String, egui::Pos2)> {
-    let list = HANDLES.with(|h| h.borrow().clone());
-    let list = if list.is_empty() { LAST.with(|l| l.borrow().0.clone()) } else { list };
-    list.into_iter().filter(|(n, _)| n.starts_with(prefix)).collect()
+    let pick = |list: &[Named]| -> Vec<(String, egui::Pos2)> {
+        list.iter().filter_map(|n| n.at.map(|at| (n.name.clone(), at))).filter(|(n, _)| n.starts_with(prefix)).collect()
+    };
+    let has_handles = |list: &[Named]| list.iter().any(|n| n.at.is_some());
+    NAMED.with(|n| {
+        let n = n.borrow();
+        if has_handles(&n) { pick(&n) } else { LAST.with(|l| pick(&l.borrow())) }
+    })
 }
 
 /// The app in a headless egui context.
@@ -157,7 +171,7 @@ impl Harness {
     /// Frames until the queued input is used up.
     pub fn settle(&mut self) {
         for _ in 0..2000 {
-            if self.app.synthetic.is_empty() {
+            if self.app.control.synthetic.is_empty() {
                 break;
             }
             self.frame();

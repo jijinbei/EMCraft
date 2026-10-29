@@ -152,7 +152,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
                     let w = ((ui.available_width() - 30.0) / parts.len() as f32 - 6.0).max(30.0);
                     for (k, (label, v)) in parts.iter().zip(f.parts.iter_mut()).enumerate() {
                         let r = ui.add(egui::TextEdit::singleline(v).desired_width(w).hint_text(*label).char_limit(64)).on_hover_text(hint);
-                        scenario::publish_target(&format!("{handle}:{k}"), r.rect);
+                        scenario::publish_target(format_args!("{handle}:{k}"), r.rect);
                         if k == 0 {
                             scenario::publish_target(&handle, r.rect);
                         }
@@ -220,10 +220,10 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], session: &em
                     Cell::Material => choice(ui, (name, i, j), cell, &materials, 70.0, false),
                     Cell::Number => ui.add(egui::TextEdit::singleline(cell).desired_width(44.0).char_limit(64)),
                 };
-                scenario::publish_target(&format!("dialog:cell:{name}:{i}:{}", c.name), resp.rect);
+                scenario::publish_target(format_args!("dialog:cell:{name}:{i}:{}", c.name), resp.rect);
             }
             let x = ui.small_button("×").on_hover_text("remove this row");
-            scenario::publish_target(&format!("dialog:remove:{name}:{i}"), x.rect);
+            scenario::publish_target(format_args!("dialog:remove:{name}:{i}"), x.rect);
             if x.clicked() {
                 remove = Some(i);
             }
@@ -234,7 +234,7 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], session: &em
         f.rows.remove(i);
     }
     let add = ui.add_enabled(f.rows.len() < MAX_ROWS, egui::Button::new(format!("Add {}", name.trim_end_matches('s'))));
-    scenario::publish_target(&format!("dialog:add:{name}"), add.rect);
+    scenario::publish_target(format_args!("dialog:add:{name}"), add.rect);
     if add.clicked() {
         let row = cols.iter().map(|c| if c.cell == Cell::Material { "vacuum".to_owned() } else { String::new() }).collect();
         f.rows.push(row);
@@ -250,7 +250,7 @@ fn choice(ui: &mut egui::Ui, id: (&str, usize, usize), text: &mut String, list: 
         }
         for v in list {
             let r = ui.selectable_value(text, v.clone(), v.as_str());
-            scenario::publish_target(&format!("choice:{}:{v}", id.0), r.rect);
+            scenario::publish_target(format_args!("choice:{}:{v}", id.0), r.rect);
         }
     });
     let _ = Align2::LEFT_CENTER;

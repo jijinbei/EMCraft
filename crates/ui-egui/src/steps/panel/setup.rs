@@ -9,7 +9,7 @@ pub(super) fn setup(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Token
     let mut solver = f.solver.unwrap_or(inferred);
     for s in Solver::ALL {
         let r = ui.radio_value(&mut solver, s, egui::RichText::new(s.label()).size(t.font_small));
-        scenario::publish_target(&format!("setup:solver:{}", s.id()), r.rect);
+        scenario::publish_target(format_args!("setup:solver:{}", s.id()), r.rect);
     }
     if solver != f.solver.unwrap_or(inferred) || f.solver.is_some() {
         f.solver = Some(solver);
@@ -98,7 +98,7 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
                     _ => "the GPU's kernels on the CPU (to check them without a GPU)",
                 }),
             };
-            scenario::publish_target(&format!("setup:device:{name}"), r.rect);
+            scenario::publish_target(format_args!("setup:device:{name}"), r.rect);
             if r.clicked() && current != name {
                 // The precision set so far where the device runs it, else its first.
                 let p = if precisions.iter().any(|p| p == precision) { Some(precision.to_owned()) } else { precisions.first().cloned() };
@@ -117,13 +117,13 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
             let enabled = current != "cpu" && runs.iter().any(|x| x == p) && !busy;
             let r = ui.add_enabled(enabled, egui::RadioButton::new(on, egui::RichText::new(p).size(t.font_small)));
             let r = r.on_disabled_hover_text(if current == "cpu" { "the CPU's threads run in double" } else { "this device does not run it" });
-            scenario::publish_target(&format!("setup:precision:{p}"), r.rect);
+            scenario::publish_target(format_args!("setup:precision:{p}"), r.rect);
             if r.clicked() && !on {
                 chosen = Some((current.to_owned(), p.to_owned()));
             }
         }
     });
-    if let Some((_, e)) = app.failure.as_ref().filter(|f| f.0 == "solve.device") {
+    if let Some(crate::Failure { error: e, .. }) = app.failure.as_ref().filter(|f| f.command == "solve.device") {
         ui.horizontal_wrapped(|ui| {
             ui.add_space(t.form_label_width + 6.0);
             ui_kit::small(ui, e, t.form_error);
@@ -143,7 +143,7 @@ fn device(app: &mut EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens) {
     if let Some((device, precision)) = chosen
         && let Err(e) = app.run("solve.device", json!({"device": device, "precision": precision}))
     {
-        app.failure = Some(("solve.device".into(), e.to_string()));
+        app.failure = Some(crate::Failure { command: "solve.device".into(), error: e.to_string() });
     }
 }
 

@@ -54,7 +54,7 @@ fn controls(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.separator();
         for (mode, label, tip) in MODES {
             let r = ui.selectable_label(tdr.mode == mode, label).on_hover_text(tip);
-            scenario::publish_target(&format!("tdr:mode:{}", mode.map_or("auto", Mode::name)), r.rect);
+            scenario::publish_target(format_args!("tdr:mode:{}", mode.map_or("auto", Mode::name)), r.rect);
             if r.clicked() {
                 tdr.mode = mode;
             }

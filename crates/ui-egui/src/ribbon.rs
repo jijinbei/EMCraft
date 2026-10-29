@@ -224,18 +224,18 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                     let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
                     ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
-                    scenario::publish_target(&format!("toolbar:{id}"), br);
+                    scenario::publish_target(format_args!("toolbar:{id}"), br);
                     if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked()
                         && let Err(e) = app.open_dialog(id)
                     {
-                        app.message(e, true);
+                        app.error(e);
                     }
                     x += w + 3.0;
                 }
                 // The panel's name under its buttons, and a divider after it.
                 let pr = Rect::from_min_max(pos2(x0, top + BUTTON_HEIGHT), pos2(x, top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT));
                 ui.painter().text(pr.center(), Align2::CENTER_CENTER, panel, FontId::proportional(10.5), t.text_dim);
-                scenario::publish_rect(&format!("panel:{}:{panel}", tab.id()), pr);
+                scenario::publish_rect(format_args!("panel:{}:{panel}", tab.id()), pr);
                 x += 6.0;
                 ui.painter().vline(x, (top + 4.0)..=(top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT - 2.0), Stroke::new(1.0, t.border));
                 x += 7.0;
@@ -272,7 +272,7 @@ fn tabs(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
         ui.painter().rect_filled(tr, 4, fill);
         let ink = if active { accent[1] } else { t.text };
         ui.painter().text(tr.center(), Align2::CENTER_CENTER, name, FontId::proportional(t.font_button), ink);
-        scenario::publish_target(&format!("tab:{name}"), tr);
+        scenario::publish_target(format_args!("tab:{name}"), tr);
         if resp.clicked() {
             app.tab = tab;
         }
@@ -407,7 +407,7 @@ pub fn choose(app: &mut EmcraftApp, pick: Option<&str>) {
                 return;
             }
             Some(Err(e)) => {
-                app.message(e, true);
+                app.error(e);
                 return;
             }
             None => {}
@@ -418,7 +418,7 @@ pub fn choose(app: &mut EmcraftApp, pick: Option<&str>) {
     if let Some(id) = id
         && let Err(e) = app.open_dialog(&id)
     {
-        app.message(e, true);
+        app.error(e);
     }
 }
 
@@ -467,7 +467,7 @@ pub fn search_popup(app: &mut EmcraftApp, ctx: &egui::Context) {
                     t.form_ink,
                 );
                 ui.painter().text(pos2(r.left() + 38.0, r.top() + 27.0), Align2::LEFT_CENTER, c.id, FontId::monospace(t.font_small), t.text_dim);
-                scenario::publish_target(&format!("search:row:{}", c.id), r);
+                scenario::publish_target(format_args!("search:row:{}", c.id), r);
                 if resp.clicked() {
                     pick = Some(c.id);
                 }
@@ -510,9 +510,9 @@ pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
     if ok {
         let text = serde_json::to_string_pretty(&app.session.history).unwrap_or_else(|_| "[]".into());
         match std::fs::write(path.trim(), text) {
-            Ok(()) => app.message(format!("Exported {} commands to {}.", app.session.history.len(), path.trim()), false),
+            Ok(()) => app.info(format!("Exported {} commands to {}.", app.session.history.len(), path.trim())),
             Err(e) => {
-                app.message(format!("Cannot write {}: {e}", path.trim()), true);
+                app.error(format!("Cannot write {}: {e}", path.trim()));
                 app.export = Some(path);
             }
         }

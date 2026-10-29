@@ -68,7 +68,7 @@ impl Default for Files {
 /// New, open, a recent project or a sample, asking first when there are unsaved changes.
 pub fn request(app: &mut EmcraftApp, then: Then) {
     if app.busy() {
-        app.message("busy: wait for the running job or cancel it first", true);
+        app.error("busy: wait for the running job or cancel it first");
         return;
     }
     if app.session.is_dirty() {

@@ -82,18 +82,30 @@ pub(super) fn view_tabs(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let shown: Vec<View> = View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)).collect();
         for v in shown {
-            if pill(ui, v.label(), app.view == v, &format!("view:{}", v.id()), 12, false) {
+            if pill(ui, v.label(), app.view == v, format_args!("view:{}", v.id()), 12, PillSize::Body) {
                 crate::ribbon::show_view(app, v);
             }
         }
     });
 }
 
-/// A pill of a row of options: filled when `on`, the body's size (`small`: the small one);
-/// `true` when clicked.
-pub(super) fn pill(ui: &mut egui::Ui, label: &str, on: bool, handle: &str, radius: u8, small: bool) -> bool {
+/// The text size of a pill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PillSize {
+    /// The body's text.
+    Body,
+    /// The small text.
+    Small,
+}
+
+/// A pill of a row of options: filled when `on`, its text `size`; `true` when clicked.
+pub(super) fn pill(ui: &mut egui::Ui, label: &str, on: bool, handle: impl std::fmt::Display, radius: u8, size: PillSize) -> bool {
     let t = Tokens::get();
-    let text = egui::RichText::new(label).size(if small { t.font_small } else { t.font_body }).color(if on { t.selected_ink } else { t.text });
+    let font = match size {
+        PillSize::Body => t.font_body,
+        PillSize::Small => t.font_small,
+    };
+    let text = egui::RichText::new(label).size(font).color(if on { t.selected_ink } else { t.text });
     let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius));
     scenario::publish_target(handle, r.rect);
     r.clicked()

@@ -199,7 +199,7 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: &str) {
         t.icon,
         t.accent,
     );
-    scenario::publish_target(&format!("{handle}:play"), r);
+    scenario::publish_target(format_args!("{handle}:play"), r);
     let tip = if player.playing { "Pause" } else { "Play" };
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
     if resp.on_hover_text(tip).clicked() {
@@ -228,7 +228,7 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: &str) {
             ui.selectable_value(&mut player.speed, s, format!("{s}×"));
         }
     });
-    scenario::publish_target(&format!("{handle}:speed"), r.response.rect);
+    scenario::publish_target(format_args!("{handle}:speed"), r.response.rect);
 }
 
 /// A slider whose track shows on the panels' colours: the track in the controls' border colour,

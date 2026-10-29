@@ -41,7 +41,7 @@ impl Act {
             _ => Ok(()),
         };
         if let Err(e) = r {
-            app.message(e, true);
+            app.error(e);
         }
     }
 }
@@ -317,7 +317,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                             FontId::proportional(t.font_small),
                             t.text_dim,
                         );
-                        scenario::publish_target(&format!("fold:{section}"), r);
+                        scenario::publish_target(format_args!("fold:{section}"), r);
                         if resp.clicked() {
                             if folded {
                                 app.browser.folded.retain(|f| f != section);
@@ -361,7 +361,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                                 FontId::proportional(t.font_body),
                                 ink,
                             );
-                            scenario::publish_target(&format!("row:{text}"), rect);
+                            scenario::publish_target(format_args!("row:{text}"), rect);
                             let resp = resp.on_hover_text(text);
                             if resp.clicked() {
                                 app.browser.selected = Some(key.clone());

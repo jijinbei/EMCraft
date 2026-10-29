@@ -27,7 +27,7 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
             ui.horizontal_wrapped(|ui| {
                 ui_kit::small(ui, format!("{} · {text}", step.label()), color);
                 let r = ui.small_button(format!("Go to {}", step.label()));
-                scenario::publish_target(&format!("preflight:{what}:{i}"), r.rect);
+                scenario::publish_target(format_args!("preflight:{what}:{i}"), r.rect);
                 if r.clicked() {
                     go = Some(*step);
                 }
@@ -64,7 +64,7 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
                 ui.horizontal_wrapped(|ui| {
                     ui_kit::small(ui, format!("• {} · {text}", step.label()), t.form_error);
                     let r = ui.small_button(format!("Go to {}", step.label()));
-                    scenario::publish_target(&format!("run:refused:{i}"), r.rect);
+                    scenario::publish_target(format_args!("run:refused:{i}"), r.rect);
                     if r.clicked() {
                         go = Some(*step);
                     }
@@ -73,7 +73,7 @@ pub(super) fn run_panel(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepS
         });
     }
     // A solve that started and failed says why here too.
-    if !busy && let Some((_, e)) = app.failure.as_ref().filter(|f| f.0 == solver.command()) {
+    if !busy && let Some(crate::Failure { error: e, .. }) = app.failure.as_ref().filter(|f| f.command == solver.command()) {
         refusal_band(ui, &format!("{} failed", crate::label(solver.command())), t, |ui| {
             ui_kit::small(ui, e, t.form_error);
         });

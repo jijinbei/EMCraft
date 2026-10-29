@@ -21,7 +21,7 @@ pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepSta
     if ui_kit::button(ui, "Passivity and reciprocity", false, !busy, "results:check").clicked() {
         match app.run("results.check", json!({})) {
             Ok(v) => app.workflow.check = Some((app.revision, v)),
-            Err(e) => app.message(e, true),
+            Err(e) => app.error(e),
         }
     }
     if let Some((_, c)) = &app.workflow.check {
@@ -45,7 +45,7 @@ pub(super) fn results(app: &mut EmcraftApp, ui: &mut egui::Ui, states: &[StepSta
         ui.add_space(t.form_label_width + 6.0);
         for (v, label) in [("ri", "real, imaginary"), ("ma", "magnitude, angle")] {
             let r = ui.radio_value(&mut f.format, v.to_owned(), egui::RichText::new(label).size(t.font_small));
-            scenario::publish_target(&format!("results:touchstone:{v}"), r.rect);
+            scenario::publish_target(format_args!("results:touchstone:{v}"), r.rect);
         }
     });
     if ui_kit::button(ui, "Export", true, !busy, "results:touchstone").clicked() {

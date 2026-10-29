@@ -36,7 +36,7 @@ pub(super) fn excitation(app: &mut EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &
         let r =
             if app.session.model.band.is_some() { app.run("solve.port_modes", json!({})).map(|_| ()) } else { app.open_dialog("solve.port_modes") };
         if let Err(e) = r {
-            app.message(e, true);
+            app.error(e);
         }
     }
     let Some(reply) = app.views.port_modes.clone() else { return };
@@ -93,7 +93,7 @@ fn mode_table(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens
             let rect = Rect::from_min_size(r.response.rect.min, vec2(w, r.response.rect.height()));
             let resp = ui.interact(rect, ui.id().with(("port_mode_row", row)), Sense::click());
             let resp = resp.on_hover_text("Lights this port in the 3D view; click for the mode in the Port modes view");
-            scenario::publish_target(&format!("portmode:row:{row}"), rect);
+            scenario::publish_target(format_args!("portmode:row:{row}"), rect);
             let focused = app.workflow.mode_focus.as_ref().is_some_and(|f| f.port == name && f.mode == k);
             let fill = if resp.hovered() {
                 t.hover

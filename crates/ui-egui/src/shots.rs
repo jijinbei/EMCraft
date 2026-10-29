@@ -24,17 +24,17 @@ pub(crate) struct Shot {
 impl EmcraftApp {
     /// Asks the window for a screenshot (answered in a later frame).
     pub(crate) fn request_screenshot(&mut self, path: Option<String>, reply: Sender<Value>) {
-        self.shot_token += 1;
-        self.shots.push(Shot { token: self.shot_token, path, reply, asked: Instant::now(), sent: false });
+        self.control.shot_token += 1;
+        self.control.shots.push(Shot { token: self.control.shot_token, path, reply, asked: Instant::now(), sent: false });
     }
 
     /// Asks for the frames of new screenshots, answers those whose frame came, and those that
     /// waited too long.
     pub(crate) fn collect_screenshots(&mut self, ctx: &egui::Context) {
-        if self.shots.is_empty() {
+        if self.control.shots.is_empty() {
             return;
         }
-        for s in self.shots.iter_mut().filter(|s| !s.sent) {
+        for s in self.control.shots.iter_mut().filter(|s| !s.sent) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(s.token)));
             s.sent = true;
         }
@@ -52,12 +52,12 @@ impl EmcraftApp {
                 .collect()
         });
         for (token, image) in events {
-            if let Some(i) = self.shots.iter().position(|s| s.token == token) {
-                let shot = self.shots.remove(i);
+            if let Some(i) = self.control.shots.iter().position(|s| s.token == token) {
+                let shot = self.control.shots.remove(i);
                 let _ = shot.reply.send(control::save_screenshot(&image, shot.path.as_deref()));
             }
         }
-        self.shots.retain(|s| {
+        self.control.shots.retain(|s| {
             if s.asked.elapsed().as_secs_f64() < PATIENCE {
                 return true;
             }

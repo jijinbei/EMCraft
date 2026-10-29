@@ -22,10 +22,8 @@ pub struct FieldState {
     /// units along the picture's axes), read again whenever the view changes.
     pub hover: Option<Probe>,
     pub pinned: Option<[f64; 2]>,
-    /// Planes kept for the 3D view beside the field view's own (plane, position in display
-    /// units), and their samples.
-    pub kept: Vec<(Plane, f64)>,
-    pub kept_samples: Vec<Option<PlaneSamples>>,
+    /// Planes kept for the 3D view beside the field view's own.
+    pub kept: Vec<KeptPlane>,
     /// The model in 3D beside the picture.
     pub beside_3d: bool,
 }
@@ -42,7 +40,6 @@ impl Default for FieldState {
             hover: None,
             pinned: None,
             kept: Vec::new(),
-            kept_samples: Vec::new(),
             beside_3d: false,
         }
     }
@@ -54,7 +51,9 @@ impl FieldState {
         self.samples = None;
         self.picture.clear();
         self.pinned = None;
-        self.kept_samples.clear();
+        for k in &mut self.kept {
+            k.samples = None;
+        }
     }
 }
 
@@ -94,6 +93,22 @@ pub struct ModePicture {
     pub frequency: f64,
 }
 
+/// The eigenmode table (`results.eigenmodes`' reply) and the session revision it was read at.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EigenTable {
+    pub revision: u64,
+    pub reply: Value,
+}
+
+/// A plane kept for the 3D view beside the field view's own: which, its position (display
+/// units), and its samples once taken.
+#[derive(Clone, Debug)]
+pub struct KeptPlane {
+    pub plane: Plane,
+    pub at: f64,
+    pub samples: Option<PlaneSamples>,
+}
+
 /// What the result views keep between frames.
 #[derive(Default)]
 pub struct ViewState {
@@ -109,5 +124,5 @@ pub struct ViewState {
     /// The last comparison with theory's reply.
     pub compare: Option<Value>,
     /// The eigenmode table and the session revision it was read at.
-    pub eigen_table: Option<(u64, Value)>,
+    pub eigen_table: Option<EigenTable>,
 }

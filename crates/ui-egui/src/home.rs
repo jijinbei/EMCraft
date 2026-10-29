@@ -229,7 +229,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (u, name) in [(Length::Millimetre, "mm"), (Length::Metre, "m")] {
                 let r = ui.selectable_label(app.prefs.length == u, name);
-                scenario::publish_target(&format!("settings:length:{name}"), r.rect);
+                scenario::publish_target(format_args!("settings:length:{name}"), r.rect);
                 if r.clicked() {
                     app.prefs.length = u;
                 }
@@ -240,7 +240,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (u, name) in [(Frequency::Gigahertz, "GHz"), (Frequency::Megahertz, "MHz"), (Frequency::Hertz, "Hz")] {
                 let r = ui.selectable_label(app.prefs.frequency == u, name);
-                scenario::publish_target(&format!("settings:frequency:{name}"), r.rect);
+                scenario::publish_target(format_args!("settings:frequency:{name}"), r.rect);
                 if r.clicked() {
                     app.prefs.frequency = u;
                 }
@@ -251,7 +251,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (dark, name) in [(false, "Light"), (true, "Dark")] {
                 let r = ui.selectable_label(app.dark == dark, name);
-                scenario::publish_target(&format!("settings:theme:{}", name.to_lowercase()), r.rect);
+                scenario::publish_target(format_args!("settings:theme:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
                     app.dark = dark;
                 }
@@ -265,7 +265,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 (true, "Fast", "the GPU, every frame: for large meshes"),
             ] {
                 let r = ui.selectable_label(app.prefs.gpu3d == gpu, name).on_hover_text(tip);
-                scenario::publish_target(&format!("settings:3d:{}", name.to_lowercase()), r.rect);
+                scenario::publish_target(format_args!("settings:3d:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
                     app.prefs.gpu3d = gpu;
                 }
@@ -276,7 +276,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (docked, name) in [(false, "Floating"), (true, "Docked")] {
                 let r = ui.selectable_label(app.dock_dialogs == docked, name);
-                scenario::publish_target(&format!("settings:dialogs:{}", name.to_lowercase()), r.rect);
+                scenario::publish_target(format_args!("settings:dialogs:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
                     app.dock_dialogs = docked;
                     if let Some(d) = app.dialog.as_mut() {

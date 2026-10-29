@@ -204,7 +204,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "diagram": app.workflow.diagram,
         "device": app.session.compute.device(),
         "precision": app.session.compute.precision.name(),
-        "failure": app.failure.as_ref().map(|f| json!({"command": f.0, "error": f.1})),
+        "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })
 }
@@ -267,7 +267,7 @@ pub fn fix(app: &mut EmcraftApp, command: &str) {
         && !runs
         && let Err(e) = app.open_dialog(command)
     {
-        app.message(e, true);
+        app.error(e);
     }
 }
 

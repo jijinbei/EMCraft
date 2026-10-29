@@ -77,7 +77,7 @@ fn checks(app: &mut EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
             let here = m.command.as_deref().is_some_and(|c| c.starts_with("solve.") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
                 let r = ui.small_button(fix_label(c)).on_hover_text(format!("{c}: {}", crate::label(c)));
-                scenario::publish_target(&format!("step:fix:{i}"), r.rect);
+                scenario::publish_target(format_args!("step:fix:{i}"), r.rect);
                 if r.clicked() {
                     chosen = Some(c.clone());
                 }

@@ -53,7 +53,7 @@ pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             crate::ui_kit::small(ui, "Show", t.text_dim);
             for p in &parameters {
                 let on = state.parameter.as_ref().unwrap_or(first) == p;
-                if pill(ui, &format!("|{}|", p.to_uppercase()), on, &format!("study:parameter:{p}"), 10, true) && !on {
+                if pill(ui, &format!("|{}|", p.to_uppercase()), on, format_args!("study:parameter:{p}"), 10, PillSize::Small) && !on {
                     state.parameter = Some(p.clone());
                     state.chart.clear();
                 }
@@ -85,7 +85,7 @@ fn slice_picker<K: PartialEq>(ui: &mut egui::Ui, study: &Study, slice: &mut Slic
         crate::ui_kit::small(ui, "Along", t.text_dim);
         for (k, n) in study.variables.iter().enumerate() {
             let on = slice.free == k;
-            if pill(ui, n, on, &format!("study:along:{n}"), 10, true) && !on {
+            if pill(ui, n, on, format_args!("study:along:{n}"), 10, PillSize::Small) && !on {
                 slice.free = k;
                 changed = true;
             }
@@ -100,7 +100,7 @@ fn slice_picker<K: PartialEq>(ui: &mut egui::Ui, study: &Study, slice: &mut Slic
             crate::ui_kit::small(ui, format!("{n} at"), t.text_dim);
             for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
                 let on = slice.at.get(k) == Some(&i);
-                if pill(ui, &short(*v), on, &format!("study:at:{n}:{i}"), 10, true)
+                if pill(ui, &short(*v), on, format_args!("study:at:{n}:{i}"), 10, PillSize::Small)
                     && !on
                     && let Some(slot) = slice.at.get_mut(k)
                 {
