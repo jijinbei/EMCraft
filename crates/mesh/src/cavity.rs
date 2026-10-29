@@ -83,7 +83,7 @@ pub fn cavity(bodies: &[(String, Surface)], keep: Keep) -> Result<Cavity> {
     let gaps = Gaps { step: 1e-4 * scale, flush: 1e-6 * scale, near: 0.0, mm: 1e3 };
     let mut air = bounding_box(Point3::from(lo), Point3::from(hi));
     for (k, (name, body)) in bodies.iter().enumerate() {
-        let positions = moved(name, &body.positions, &body.triangles, &air.positions, &air.triangles, Combine::Subtract, gaps)?;
+        let positions = moved(name, body.into(), (&air).into(), Combine::Subtract, gaps)?;
         // General position: each body moved by its own fraction of a ten-millionth of the
         // part's size (the fractional parts of multiples of irrational numbers), so that no
         // corner of one lies exactly on an edge or a diagonal of another — far below any mesh,

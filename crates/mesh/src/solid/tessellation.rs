@@ -626,7 +626,13 @@ pub(super) fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape,
         Shape::Surface { name, positions, triangles, tags, surfaces } => {
             let placed: Vec<Point3> = positions.iter().map(|p| at + f.axis.turn(p.to_vec())).collect();
             let gaps = crate::flush::Gaps { step: 0.1 * size, flush: 1e-5 * size, near: 0.1 * size, mm: 1e3 };
-            let positions = crate::flush::moved(&name, &placed, &triangles, &main.positions, &main.triangles, f.combine, gaps)?;
+            let positions = crate::flush::moved(
+                &name,
+                crate::flush::Triangles { positions: &placed, triangles: &triangles },
+                crate::flush::Triangles { positions: &main.positions, triangles: &main.triangles },
+                f.combine,
+                gaps,
+            )?;
             (Shape::Surface { name, positions, triangles, tags, surfaces }, Point3::ORIGIN, Axis::Z)
         }
         other => (other, at, f.axis),
