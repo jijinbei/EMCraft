@@ -22,7 +22,7 @@ use emcraft_model::{Model, Point3, Shape, Source, Vec3};
 use emcraft_theory::radiation::{Huygens, HuygensSample};
 use num_complex::Complex64 as C;
 
-use crate::driven::{Driven, ModeTerm, Result, SolveError, invalid};
+use crate::driven::{Driven, ModeTerm, Result, SolveError, check_frequency, invalid};
 use crate::ldlt::Ldlt;
 
 /// The solution of an open problem at one frequency.
@@ -199,9 +199,7 @@ fn box_rule(lo: Point3, hi: Point3, step: f64) -> Vec<(Point3, f64, Vec3)> {
 impl Driven {
     /// Solves the open problem driven by the model's sources at `frequency` (Hz).
     pub fn solve_open(&self, model: &Model, frequency: f64) -> Result<OpenResult> {
-        if !(frequency.is_finite() && frequency > 0.0) {
-            return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
-        }
+        check_frequency(frequency)?;
         if model.sources.is_empty() && self.lumped.is_empty() && self.ports.is_empty() {
             return Err(SolveError::NotReady(
                 "no sources: add one with source.dipole, source.plane_wave, model.port.lumped or a waveguide port".into(),
