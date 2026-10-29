@@ -74,6 +74,10 @@ testkit is a dev-dependency only.
 7. **Adaptive refinement** (`mesh.adapt`). Passes of mesh, solve at one frequency and compare S
    with the last pass, until ΔS is below a tolerance: a solid's tetrahedra marked by the residual
    indicator (Dörfler) and the solid meshed again with them at half their size; a structured
-   grid refined uniformly.
+   grid refined uniformly. Open problems adapt the same way, each pass solved as
+   `solve.radiation` does: the layer and the point and line sources' tetrahedra are left out of
+   the indicator (the layer keeps its mesh), a plane wave's incident field is the scattered
+   field's data, and the passes compare the lumped ports' and feed's reflections or, with
+   sources alone, the far field in 48 directions.
 8. **Results.** Fields at any point from the element basis (H = −∇×E/(jωμ)); field plots sample
    a plane once and draw any component at any phase.

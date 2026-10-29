@@ -96,10 +96,14 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
         }
         "mesh.adapt" => {
             let passes = r.list("passes");
-            let last = passes.last().and_then(|p| p.get("delta_s")?.as_f64()).map_or("—".to_owned(), |d| format!("{d:.2e}"));
+            // An open problem driven by sources alone converges on its far field.
+            let far = r.text("quantity") == "far_field";
+            let key = if far { "delta_far_field" } else { "delta_s" };
+            let last = passes.last().and_then(|p| p.get(key)?.as_f64()).map_or("—".to_owned(), |d| format!("{d:.2e}"));
             let tets = session.model.mesh.as_ref().map_or(0, |m| m.tets.len());
             let converged = if r.flag("converged") { "converged" } else { "not converged" };
-            format!("Adaptive mesh: {} passes, {tets} tetrahedra, last ΔS {last}, {converged}.", passes.len())
+            let what = if far { "far-field change" } else { "ΔS" };
+            format!("Adaptive mesh: {} passes, {tets} tetrahedra, last {what} {last}, {converged}.", passes.len())
         }
         "project.variable" => format!("{} = {}.", p.text("name"), r.num("value")),
         "project.variable.delete" => format!("Deleted variable {}.", p.text("name")),
@@ -126,6 +130,10 @@ mod tests {
         assert_eq!(
             text("mesh.adapt", &none, &json!({"passes": [{"delta_s": 0.5}, {"delta_s": 0.01}], "converged": true}), &s),
             "Adaptive mesh: 2 passes, 0 tetrahedra, last ΔS 1.00e-2, converged."
+        );
+        assert_eq!(
+            text("mesh.adapt", &none, &json!({"quantity": "far_field", "passes": [{"delta_far_field": 0.004}]}), &s),
+            "Adaptive mesh: 1 passes, 0 tetrahedra, last far-field change 4.00e-3, not converged."
         );
         assert_eq!(text("project.frequency", &none, &json!({"start": 5.0, "stop": 9.0}), &s), "Band 5 to 9 GHz.");
         assert_eq!(text("file.sample", &json!({"name": "highpass"}), &none, &s), "Opened sample highpass; Run (step 7) solves it.");

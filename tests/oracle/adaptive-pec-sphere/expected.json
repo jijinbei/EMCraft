@@ -1,0 +1,13 @@
+{
+ "title": "Adaptive refinement of a plane wave on a perfectly conducting sphere (radius 5 mm, ka = 1.05) at 10 GHz: passes from three elements per wavelength until the far field changes by less than 2 %",
+ "kind": "theory",
+ "source": "The Mie series of a perfectly conducting sphere, aₙ = ψₙ'(ka)/ξₙ'(ka), bₙ = ψₙ(ka)/ξₙ(ka) (J. A. Stratton, Electromagnetic Theory, 1941, §9.25; C. F. Bohren, D. R. Huffman, 1983, §4.4), evaluated by emcraft-theory::radiation independently of the finite elements",
+ "quantities": [
+  {"id": "sigma_sca", "quantity": "scattering cross-section (mm²), solved on the adapted mesh", "measure": {"step": "solve", "pointer": "/scattering_cross_section"}, "value": 168.78884549980634, "tolerance": {"relative": 0.015}, "reason": "the far field changes by 2.8e-2 and 1.4e-2 at passes 2 and 3 (19 660, 27 962, 62 530 unknowns), the loop stopping at 3: +0.51 %. Uniform meshes: +2.4 % at five elements per wavelength (53 090 unknowns), +1.0 % at six (92 528, pec-sphere-scattering): the adapted mesh halves the error with two thirds of the unknowns. A fourth pass (156 142 unknowns) stays at +0.6 %: what is left is the layer's and the Huygens box's quadrature"},
+  {"id": "rcs_forward", "quantity": "radar cross-section forwards, θ = 0 (mm²)", "measure": {"step": "e", "pointer": "/points/0/rcs"}, "value": 146.64105489312038, "tolerance": {"relative": 0.02}, "reason": "+0.66 % (+1.05 % uniform at six per wavelength)"},
+  {"id": "rcs_side_e", "quantity": "radar cross-section at θ = 90° in the E-plane (mm²)", "measure": {"step": "e", "pointer": "/points/1/rcs"}, "value": 57.13991789134818, "tolerance": {"relative": 0.02}, "reason": "+0.96 % (+1.37 % uniform)"},
+  {"id": "rcs_back", "quantity": "back-scatter (monostatic RCS), θ = 180° (mm²)", "measure": {"step": "e", "pointer": "/points/2/rcs"}, "value": 286.39280106310224, "tolerance": {"relative": 0.015}, "reason": "+0.37 % (+0.46 % uniform)"},
+  {"id": "rcs_side_h", "quantity": "radar cross-section at θ = 90° in the H-plane (mm²)", "measure": {"step": "h", "pointer": "/points/0/rcs"}, "value": 236.53233829129115, "tolerance": {"relative": 0.015}, "reason": "+0.70 % (−0.14 % uniform, its errors of either sign cancelling there)"},
+  {"id": "delta_far_field", "quantity": "the far field's relative change at the last pass", "measure": {"step": "adapt", "pointer": "/delta_far_field"}, "value": 0.0, "tolerance": {"absolute": 0.02}, "reason": "converged: the loop's own criterion"}
+ ]
+}

@@ -1,0 +1,29 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "delta_far_field": {
+      "band": 0.000020000013930634154,
+      "value": 0.013929634153275328
+    },
+    "rcs_back": {
+      "band": 2.874486469157944e-7,
+      "value": 287.4486459157944
+    },
+    "rcs_forward": {
+      "band": 1.4761139596025313e-7,
+      "value": 147.6113949602531
+    },
+    "rcs_side_e": {
+      "band": 5.768798920425136e-8,
+      "value": 57.68798820425136
+    },
+    "rcs_side_h": {
+      "band": 2.3819479368668541e-7,
+      "value": 238.1947926866854
+    },
+    "sigma_sca": {
+      "band": 1.6965499135605952e-7,
+      "value": 169.6549903560595
+    }
+  }
+}

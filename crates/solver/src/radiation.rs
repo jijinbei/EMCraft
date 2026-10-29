@@ -38,6 +38,10 @@ pub struct OpenResult {
     /// A waveguide port feeding the problem (the model's first, its TE10 of unit amplitude
     /// incident): its reflection and the power it delivers, P_inc (1 − |S11|²).
     pub feed: Option<(C, f64)>,
+    /// The values of the eliminated degrees of freedom on a plane wave's conductors (global
+    /// slot, value), ascending by slot: there the scattered field's trace is −n × E_inc, not
+    /// zero (`lift_conductors`). Empty without a plane wave.
+    pub lifted: Vec<(usize, C)>,
 }
 
 /// A lumped port's terminals: with every port's source on at once, its current, the voltage
@@ -212,6 +216,7 @@ impl Driven {
         let n = self.dofs.unknowns;
         // A waveguide port's first mode drives it (the first port's), else nothing but the sources.
         let mut b = rhs.into_iter().next().unwrap_or_else(|| vec![C::new(0.0, 0.0); n + border]);
+        let mut lifted: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
         for src in &model.sources {
             match *src {
                 Source::Dipole { at, direction, length, current } => {
@@ -224,7 +229,9 @@ impl Driven {
                     }
                 }
                 Source::PlaneWave { direction, polarization } => {
-                    self.lift_conductors(model, k0, direction, polarization, &mut b)?;
+                    for (slot, g) in self.lift_conductors(model, k0, direction, polarization, &mut b)? {
+                        *lifted.entry(slot).or_default() += g;
+                    }
                     let in_pml = self.pml_tets();
                     for t in 0..self.mesh.tets.len() {
                         let contrast = self.eps_at(t, frequency) - 1.0;
@@ -277,7 +284,7 @@ impl Driven {
             }
             _ => None,
         };
-        Ok(OpenResult { frequency, field, backward_error, ports, feed })
+        Ok(OpenResult { frequency, field, backward_error, ports, feed, lifted: lifted.into_iter().collect() })
     }
 
     /// The plane wave's conductors: on them the scattered field is n × E_s = −n × E_inc, so their
@@ -285,8 +292,8 @@ impl Driven {
     /// conducting surface: Σ_j ∫ (n × Nᵢ)·(n × Nⱼ) gⱼ = −∫ (n × Nᵢ)·(n × E_inc)), and the free
     /// ones' right-hand side loses A_IB g, element by element. Conductors are the walls not on
     /// the box's own faces or the sphere's (behind the layer, where the scattered field has died
-    /// away).
-    fn lift_conductors(&self, model: &Model, k0: f64, direction: Vec3, polarization: Vec3, b: &mut [C]) -> Result<()> {
+    /// away). Returns the eliminated degrees of freedom's values g (global slot, value).
+    fn lift_conductors(&self, model: &Model, k0: f64, direction: Vec3, polarization: Vec3, b: &mut [C]) -> Result<Vec<(usize, C)>> {
         let node = |n: u32| self.mesh.node(n).unwrap_or(Point3::new(f64::NAN, f64::NAN, f64::NAN));
         let on_box = |nodes: &[u32; 3]| match model.solid.as_ref().map(|s| &s.shape) {
             Some(Shape::Box { size }) => {
@@ -304,7 +311,7 @@ impl Driven {
             .filter_map(|f| self.topo.find_face(f.tet as usize, f.nodes).map(|(lf, _)| (f.tet as usize, lf)))
             .collect();
         if faces.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         // The local functions with a tangential trace on local face lf.
         let order = self.order;
@@ -386,7 +393,9 @@ impl Driven {
                 }
             }
         }
-        Ok(())
+        let mut values: Vec<(usize, C)> = index.iter().map(|(&slot, &k)| (slot, g.get(k).copied().unwrap_or_default())).collect();
+        values.sort_unstable_by_key(|(slot, _)| *slot);
+        Ok(values)
     }
 
     /// The fields on the Huygens box round the model's sources and bodies, for the far field

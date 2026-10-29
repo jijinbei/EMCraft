@@ -248,6 +248,16 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   marking of the fewest elements holding a fraction θ of the estimate (`emcraft-mesh::adapt`).
   The marked tetrahedra are refined by remeshing with local sizes graded by the mesher's
   background grid (`emcraft-tetmesh::tet::geometry::GradedSize`), not by splitting.
+- Z. Chen, X. Liu, *An adaptive perfectly matched layer technique for time-harmonic
+  scattering problems*, SIAM J. Numer. Anal. 43(2):645–671, 2005 — adaptivity for open
+  problems estimates the error in the physical domain and leaves the layer's own to its design;
+  `mesh.adapt` on an open problem leaves the layer's tetrahedra (and every face they touch) out
+  of the indicator, so the layer is never marked (`emcraft-solver::adapt::open_indicator`).
+- M. Ainsworth, J. T. Oden, *A Posteriori Error Estimation in Finite Element Analysis*, Wiley
+  2000, ch. 2 — residual estimators with their data: a plane wave's scattered field takes
+  k₀²(εr − 1)E_inc as the element residual's source and the incident flux jump on interfaces,
+  its conductors' lifted trace −n × E_inc as boundary data; a current element's or line gap's
+  singular field (not square-integrable) is left out with the tetrahedra holding it.
 
 ## Fast frequency sweeps
 - P. Benner, M. Hinze, E. J. W. ter Maten (eds.), *Model Reduction for Circuit Simulation*,

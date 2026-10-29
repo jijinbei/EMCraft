@@ -94,3 +94,87 @@ fn hostile_adaptive_requests_are_refused() {
     assert!(bare.execute("mesh.adapt", &json!({"size": 8, "frequency": 10})).is_err());
     assert!(Session::new().execute("mesh.adapt", &json!({"size": 8, "frequency": 10})).is_err());
 }
+
+/// A current element in a 40 mm box lined with a 10 mm layer, not meshed.
+fn dipole_unmeshed() -> Session {
+    let mut s = Session::new();
+    for (c, p) in [
+        ("geometry.solid", json!({"shape": "box", "size": [40, 40, 40]})),
+        ("model.open", json!({"thickness": 10})),
+        ("source.dipole", json!({"at": [20.1, 20.2, 19.9], "length": 1})),
+    ] {
+        s.execute(c, &p).unwrap();
+    }
+    s
+}
+
+/// The tetrahedra of a mesh of the 40 mm box whose centroids lie in its 10 mm layer.
+fn in_layer(mesh: &emcraft_model::Mesh) -> usize {
+    (0..mesh.tets.len())
+        .filter(|&t| {
+            let c = mesh.centroid(t).unwrap();
+            (0..3).any(|k| c[k] < 0.01 || c[k] > 0.03)
+        })
+        .count()
+}
+
+#[test]
+fn adaptive_passes_refine_an_open_problem_on_its_far_field() {
+    let run = || {
+        let mut s = dipole_unmeshed();
+        let r = s.execute("mesh.adapt", &json!({"per_wavelength": 4, "frequency": 10, "passes": 2, "order": 1, "tolerance": 1e-9})).unwrap();
+        (r, s)
+    };
+    let (r, mut s) = run();
+    assert_eq!(r["refinement"], "adaptive");
+    assert_eq!(r["quantity"], "far_field");
+    let passes = r["passes"].as_array().unwrap();
+    assert_eq!(passes.len(), 2, "{r}");
+    assert!(passes[0]["delta_far_field"].is_null() && passes[1]["delta_far_field"].as_f64().unwrap() > 0.0, "{r}");
+    assert!(passes[0]["delta_s"].is_null() && passes[1]["delta_s"].is_null(), "no ports, no S");
+    assert!(passes[0]["marked"].as_u64().unwrap() > 0);
+    assert!(passes[1]["tetrahedra"].as_u64() > passes[0]["tetrahedra"].as_u64(), "{r}");
+    assert!(passes.iter().all(|p| p["power"].as_f64().is_some_and(|w| w > 0.0)));
+    assert_eq!(r["delta_far_field"], passes[1]["delta_far_field"]);
+    // The layer keeps its mesh: the inside is refined, the layer only by the mesher's grading
+    // next to refined elements.
+    let mesh = s.model.mesh.clone().unwrap();
+    let mut first = dipole_unmeshed();
+    first.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 10})).unwrap();
+    let start = first.model.mesh.clone().unwrap();
+    let (layer_now, layer_start) = (in_layer(&mesh), in_layer(&start));
+    assert!(mesh.tets.len() - layer_now > start.tets.len() - layer_start, "the inside refined");
+    assert!((layer_now as f64) < 1.5 * layer_start as f64, "{layer_start} → {layer_now}");
+    // The final mesh stays and solves.
+    assert!(s.execute("solve.radiation", &json!({"frequency": 10})).is_ok());
+    // The same input, the same mesh, bit for bit.
+    let (r2, s2) = run();
+    assert_eq!(mesh.tets, s2.model.mesh.unwrap().tets);
+    assert_eq!(r["delta_far_field"], r2["delta_far_field"]);
+}
+
+#[test]
+fn hostile_open_adaptive_requests_are_refused() {
+    let mut s = dipole_unmeshed();
+    for p in [
+        json!({}),
+        json!({"per_wavelength": 0, "frequency": 10}),
+        json!({"per_wavelength": 1e6, "frequency": 10}),
+        json!({"per_wavelength": 4, "frequency": f64::MAX}),
+        json!({"per_wavelength": 4, "frequency": 10, "passes": 13}),
+        json!({"per_wavelength": 4, "frequency": 10, "tolerance": 0}),
+        json!({"per_wavelength": 4, "frequency": 10, "fraction": -1}),
+        json!({"per_wavelength": 4, "frequency": 10, "order": 7}),
+        json!({"size": 1e-9, "frequency": 10}),
+        json!({"size": f64::NAN, "frequency": 10}),
+        json!({"per_wavelength": 4, "frequency": 10, "curved": "yes"}),
+    ] {
+        let r = s.execute("mesh.adapt", &p);
+        assert!(r.is_err() && !matches!(r, Err(EngineError::Panicked(_))), "{p}: {r:?}");
+        assert!(s.model.mesh.is_none(), "a refused request leaves the session as it was");
+    }
+    // An open problem with nothing driving it.
+    s.execute("source.clear", &json!({})).unwrap();
+    let r = s.execute("mesh.adapt", &json!({"per_wavelength": 4, "frequency": 10}));
+    assert!(r.as_ref().is_err_and(|e| e.to_string().contains("source")), "{r:?}");
+}

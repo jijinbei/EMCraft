@@ -1,0 +1,11 @@
+{
+ "title": "Adaptive refinement of the half-wave wire dipole at 10 GHz fed by a lumped port: passes from three elements per wavelength until its reflection changes by less than 0.02",
+ "kind": "theory",
+ "source": "Energy conservation (the power the port delivers is the power radiated through the Huygens box, the structure being lossless) and the directivity of a half-wave dipole with a sinusoidal current, D = (4/Cin(2π)) [cos(π/2 cos θ)/sin θ]² (C. A. Balanis, Antenna Theory, 4th ed., Wiley 2016, §4.6)",
+ "quantities": [
+  {"id": "efficiency", "quantity": "radiated power over the power the port delivers, on the adapted mesh", "measure": {"step": "solve", "pointer": "/radiation_efficiency"}, "value": 1.0, "tolerance": {"absolute": 0.005}, "reason": "two independent integrals of one solution, ½ Re(V I*) at the gap and ½ Re ∮ E × H* · dS round the antenna: 0.9974 after two passes (79 554 then 124 328 unknowns), against 0.9948 for the uniform four elements per wavelength (halfwave-dipole, 109 852 unknowns): half the imbalance at about the same unknowns"},
+  {"id": "directivity_90", "quantity": "directivity broadside, θ = 90°", "measure": {"step": "ff", "pointer": "/points/0/directivity"}, "value": 1.640922376984584, "tolerance": {"relative": 0.04}, "reason": "the closed form assumes a thin wire's sinusoidal current; this one is λ/60 thick with a 1 mm gap: +2.8 % (+2.1 % uniform, +1.1 % after a third pass), the wire's physics rather than the mesh"},
+  {"id": "directivity_60", "quantity": "directivity at θ = 60°", "measure": {"step": "ff", "pointer": "/points/1/directivity"}, "value": 1.093948251323056, "tolerance": {"relative": 0.03}, "reason": "−0.2 % (+0.3 % uniform)"},
+  {"id": "delta_s", "quantity": "the feed's reflection's change at the last pass", "measure": {"step": "adapt", "pointer": "/delta_s"}, "value": 0.0, "tolerance": {"absolute": 0.02}, "reason": "converged: the loop's own criterion (8.4e-3 at pass 2; the input impedance 110.4 + j27.9 → 110.3 + j25.9 Ω, against 110.9 + j27.9 uniform)"}
+ ]
+}
