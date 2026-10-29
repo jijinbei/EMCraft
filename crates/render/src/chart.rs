@@ -28,16 +28,78 @@ pub struct Chart {
     pub marks: Vec<(f64, String)>,
 }
 
+/// The margins around a chart's plot area (pixels): left (the y axis' numbers and name), top
+/// (the title), right, bottom (the x axis and the legend).
+const LEFT: f64 = 90.0;
+const TOP: f64 = 40.0;
+const RIGHT: f64 = 30.0;
+const BOTTOM: f64 = 100.0;
+/// The least side of the plot area (pixels), however small the picture.
+const MIN_SIDE: f64 = 50.0;
+
+/// Where a chart drawn at some size puts its plot area: the picture's size, the area's
+/// rectangle in it (pixels) and the axes' ranges.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Layout {
+    pub width: usize,
+    pub height: usize,
+    /// The plot area: left, top, width, height.
+    pub plane: [f64; 4],
+    pub x: (f64, f64),
+    pub y: (f64, f64),
+}
+
+impl Layout {
+    /// A chart `width` × `height` pixels over the axes' ranges `x` and `y`.
+    pub fn new(width: usize, height: usize, x: (f64, f64), y: (f64, f64)) -> Layout {
+        let pw = (width as f64 - LEFT - RIGHT).max(MIN_SIDE);
+        let ph = (height as f64 - TOP - BOTTOM).max(MIN_SIDE);
+        Layout { width, height, plane: [LEFT, TOP, pw, ph], x, y }
+    }
+
+    /// The layout of `chart` drawn `width` × `height` pixels.
+    pub fn of(chart: &Chart, width: usize, height: usize) -> Layout {
+        Layout::new(width, height, chart.x.span(), chart.y.span())
+    }
+
+    /// A point (axis units) in pixels.
+    pub fn to_pixels(&self, p: [f64; 2]) -> [f64; 2] {
+        let [x0, y0, pw, ph] = self.plane;
+        [x0 + (p[0] - self.x.0) / (self.x.1 - self.x.0) * pw, y0 + ph - (p[1] - self.y.0) / (self.y.1 - self.y.0) * ph]
+    }
+
+    /// The point (axis units) under a pixel position; `None` off the plot area.
+    pub fn to_axes(&self, px: [f64; 2]) -> Option<[f64; 2]> {
+        let [x0, y0, pw, ph] = self.plane;
+        let (u, v) = ((px[0] - x0) / pw, 1.0 - (px[1] - y0) / ph);
+        ((0.0..=1.0).contains(&u) && (0.0..=1.0).contains(&v)).then_some([self.x.0 + u * (self.x.1 - self.x.0), self.y.0 + v * (self.y.1 - self.y.0)])
+    }
+
+    /// The x value (axis units) under the pixel column `px`; `None` left or right of the plot
+    /// area.
+    pub fn x_at(&self, px: f64) -> Option<f64> {
+        let [x0, _, pw, _] = self.plane;
+        let u = (px - x0) / pw;
+        (0.0..=1.0).contains(&u).then_some(self.x.0 + u * (self.x.1 - self.x.0))
+    }
+}
+
+/// A diamond marker of half-diagonal `r` about `q`.
+fn diamond(c: &mut Canvas, q: [f64; 2], r: f64, color: Rgb) {
+    c.triangle([[q[0], q[1] - r], [q[0] + r, q[1]], [q[0], q[1] + r]], color);
+    c.triangle([[q[0], q[1] - r], [q[0], q[1] + r], [q[0] - r, q[1]]], color);
+}
+
 /// Draws the chart.
 pub fn draw(chart: &Chart, width: usize, height: usize) -> Canvas {
     let mut c = Canvas::new(width, height, Rgb::WHITE);
     let ink = Rgb(30, 30, 30);
-    let (x0, y0) = (90.0, 40.0);
-    let pw = (c.w as f64 - x0 - 30.0).max(50.0);
-    let ph = (c.h as f64 - y0 - 100.0).max(50.0);
-    let (xa, xb) = chart.x.span();
-    let (ya, yb) = chart.y.span();
-    let to_px = |p: [f64; 2]| [x0 + (p[0] - xa) / (xb - xa) * pw, y0 + ph - (p[1].clamp(ya - (yb - ya), yb + (yb - ya)) - ya) / (yb - ya) * ph];
+    let layout = Layout::of(chart, c.w, c.h);
+    let [x0, y0, pw, ph] = layout.plane;
+    let (xa, xb) = layout.x;
+    let (ya, yb) = layout.y;
+    // Far points drawn at most a plot's height beyond it, so lines toward them keep their slope.
+    let to_px = |p: [f64; 2]| layout.to_pixels([p[0], p[1].clamp(ya - (yb - ya), yb + (yb - ya))]);
     let inside = |q: [f64; 2]| q[0] >= x0 - 1.0 && q[0] <= x0 + pw + 1.0 && q[1] >= y0 - 1.0 && q[1] <= y0 + ph + 1.0;
     c.text(x0, 12.0, &chart.title, 2, ink);
     axes::frame(&mut c, [x0, y0, pw, ph], &chart.x, &chart.y, ink, Some(Rgb(225, 225, 225)));
@@ -65,9 +127,7 @@ pub fn draw(chart: &Chart, width: usize, height: usize) -> Canvas {
             }
             Style::Markers => {
                 for q in pts.iter().filter(|q| inside(**q)) {
-                    let r = 4.0;
-                    c.triangle([[q[0], q[1] - r], [q[0] + r, q[1]], [q[0], q[1] + r]], s.color);
-                    c.triangle([[q[0], q[1] - r], [q[0], q[1] + r], [q[0] - r, q[1]]], s.color);
+                    diamond(&mut c, *q, 4.0, s.color);
                 }
             }
         }
@@ -83,11 +143,7 @@ pub fn draw(chart: &Chart, width: usize, height: usize) -> Canvas {
         }
         match s.style {
             Style::Line => c.line([lx, ly + 7.0], [lx + 26.0, ly + 7.0], 2.0, s.color),
-            Style::Markers => {
-                let q = [lx + 13.0, ly + 7.0];
-                c.triangle([[q[0], q[1] - 4.0], [q[0] + 4.0, q[1]], [q[0], q[1] + 4.0]], s.color);
-                c.triangle([[q[0], q[1] - 4.0], [q[0], q[1] + 4.0], [q[0] - 4.0, q[1]]], s.color);
-            }
+            Style::Markers => diamond(&mut c, [lx + 13.0, ly + 7.0], 4.0, s.color),
         }
         c.text(lx + 32.0, ly, &s.label, 2, ink);
         lx += item;
@@ -115,5 +171,14 @@ mod tests {
         let on = |t: f64| red((x0 + t * pw) as usize, (y0 + ph - t * ph) as usize);
         assert!(on(0.25) && on(0.5) && on(0.75));
         assert_eq!(draw(&chart, 500, 360), c);
+        // The layout says where: the plot area's corners, and back.
+        let l = Layout::of(&chart, 500, 360);
+        assert_eq!(l.plane, [x0, y0, pw, ph]);
+        assert_eq!(l.to_pixels([0.0, -30.0]), [x0, y0 + ph]);
+        assert_eq!(l.to_axes([x0 + pw, y0]), Some([10.0, 0.0]));
+        assert_eq!(l.x_at(x0 + 0.5 * pw), Some(5.0));
+        assert_eq!((l.x_at(x0 - 1.0), l.to_axes([x0, y0 - 1.0])), (None, None));
+        // A tiny picture keeps a plot area of the least side.
+        assert_eq!(Layout::new(10, 10, (0.0, 1.0), (0.0, 1.0)).plane, [90.0, 40.0, 50.0, 50.0]);
     }
 }
