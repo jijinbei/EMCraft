@@ -10,7 +10,7 @@ use crate::theme::Tokens;
 
 /// A card's title band: glyph, title, optional dock toggle and a close button. Returns
 /// (close clicked, dock clicked).
-pub fn header(ui: &mut Ui, glyph: &str, title: &str, docked: Option<bool>, accent: Color32) -> (bool, bool) {
+pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: &str, docked: Option<bool>, accent: Color32) -> (bool, bool) {
     let t = Tokens::get();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), t.form_header_height), Sense::hover());
     let icon = Rect::from_center_size(pos2(rect.left() + t.space_12 + 10.0, rect.center().y), vec2(20.0, 20.0));
@@ -192,7 +192,13 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: &str) {
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
-    crate::glyphs::paint(ui.painter(), r.shrink(3.0), if player.playing { "pause" } else { "play" }, t.icon, t.accent);
+    crate::glyphs::paint(
+        ui.painter(),
+        r.shrink(3.0),
+        if player.playing { crate::glyphs::Glyph::Pause } else { crate::glyphs::Glyph::Play },
+        t.icon,
+        t.accent,
+    );
     scenario::publish_target(&format!("{handle}:play"), r);
     let tip = if player.playing { "Pause" } else { "Play" };
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));

@@ -89,22 +89,3 @@ impl Job {
         self.started.elapsed().as_secs_f64()
     }
 }
-
-/// Commands that run on the worker thread: they may take seconds to minutes.
-pub fn is_long(id: &str) -> bool {
-    id.starts_with("solve.")
-        || matches!(
-            id,
-            "mesh.generate"
-                | "mesh.adapt"
-                | "file.sample"
-                | "file.open"
-                | "geometry.import"
-                | "results.compare"
-                | "results.field_error"
-                | "results.far_field"
-                | "project.variable"
-                | "study.sweep"
-                | "study.optimize"
-        )
-}

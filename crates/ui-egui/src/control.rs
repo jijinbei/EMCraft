@@ -137,7 +137,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         json!({"command": d.command.id, "docked": d.docked, "fields": fields, "errors": errors, "error": d.error})
     });
     json!({
-        "tab": app.tab,
+        "tab": app.tab.id(),
         "view": app.view.id(),
         "dark": app.dark,
         "home": app.home.open,
@@ -153,13 +153,13 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "search": {"open": app.search.open, "text": app.search.text},
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
         "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.name(), "component": app.field.view.component.name(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some(), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
-        "chart": app.views.chart.key(),
+        "chart": app.views.chart.key().map(|k| format!("{k:?}")),
         "variables": app.session.variables,
         "study": app.session.results.study.as_ref().map(|s| json!({
             "kind": if s.kind == emcraft_engine::study::Kind::Sweep { "sweep" } else { "optimize" },
             "variables": s.variables, "rows": s.rows.len(), "converged": s.converged,
             "best": s.best.and_then(|b| s.rows.get(b)).map(|r| r.values.clone()),
-            "chart": app.views.study.chart.key(), "parameter": app.views.study.parameter,
+            "chart": app.views.study.chart.key().map(|k| format!("{k:?}")), "parameter": app.views.study.parameter,
             "grid": s.grid.iter().map(Vec::len).collect::<Vec<_>>(), "free": s.variables.get(app.views.study.slice.free), "at": app.views.study.slice.at,
         })),
         "port_modes": app.views.port_modes.is_some(),
@@ -178,7 +178,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// Runs a command for the channel: a quick one replies now, a long one when its job ends
 /// (`wait: false`: at once, with `{"started": id}`; follow it with `ui.inspect`).
 fn execute(app: &mut EmcraftApp, req: &ControlRequest, id: &str, params: Value, wait: bool) -> Outcome {
-    let long = crate::worker::is_long(id);
+    let long = crate::commands::is_long(id);
     match app.run(id, params) {
         Ok(v) if long && wait => after_job(app, req, v),
         other => wrap(other),
@@ -305,7 +305,7 @@ fn commands() -> Value {
                 .iter()
                 .map(|q| json!({"name": q.name, "kind": q.kind.name(), "required": q.required, "doc": q.doc, "choices": q.choices}))
                 .collect();
-            json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": crate::worker::is_long(c.id)})
+            json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": crate::commands::is_long(c.id)})
         })
         .collect()
 }
@@ -319,10 +319,7 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         }
     }
     if let Some(tab) = a.str("tab") {
-        if !crate::ribbon::TABS.iter().any(|(t, _)| *t == tab) {
-            return Err(format!("unknown tab `{}`", clip(tab, 40)));
-        }
-        app.tab = tab.to_owned();
+        app.tab = crate::ribbon::RibbonTab::parse(tab).ok_or_else(|| format!("unknown tab `{}`", clip(tab, 40)))?;
     }
     if let Some(v) = a.str("view") {
         app.view = View::parse(v).ok_or_else(|| format!("unknown view `{}`", clip(v, 40)))?;

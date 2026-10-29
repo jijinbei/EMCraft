@@ -8,7 +8,8 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
 
-use crate::picture::Cached;
+use crate::picture::{Cached, PictureKey};
+use crate::state::ChartView;
 use crate::theme::Tokens;
 use crate::{EmcraftApp, Picture, View, scenario};
 
@@ -32,7 +33,6 @@ use tables::*;
 use tdr::*;
 
 pub(crate) use fields::{field_plots, plane_span_of};
-pub use sparameters::chart_frequency;
 pub use study::summary as study_summary;
 
 /// The central card.
@@ -117,17 +117,24 @@ impl Height {
     }
 }
 
-/// The chart kept in `slot`, drawn again (`width` wide, `height` high) from `chart` when `key`
-/// changed; the error that kept it from being drawn.
-pub(super) fn cached_chart<'a, E: ToString>(
-    ui: &egui::Ui,
-    slot: &'a mut Cached,
-    key: String,
-    width: usize,
+/// A result view's chart in the rest of the card, as wide as the card allows: the one kept in
+/// `slot`, drawn again from `chart` when the session (`revision`), the width, the theme or the
+/// view's settings (`view`) changed. The picture's response and its size in pixels, or the
+/// error that kept it from being drawn.
+pub(super) fn chart_view<V: PartialEq, E: ToString>(
+    ui: &mut egui::Ui,
+    slot: &mut Cached<PictureKey<V>>,
+    revision: u64,
+    view: V,
     height: Height,
+    handle: &str,
     chart: impl FnOnce() -> Result<emcraft_render::chart::Chart, E>,
-) -> Result<&'a mut Picture, String> {
-    slot.get_or_draw(key, || chart().map(|c| emcraft_render::chart::draw(&c, width, height.of(ui))))
+) -> Result<(egui::Response, egui::Vec2), String> {
+    let width = picture_width(ui);
+    let height = height.of(ui);
+    let p = slot.get_or_draw(PictureKey::new(revision, width, view), || chart().map(|c| emcraft_render::chart::draw(&c, width, height)))?;
+    let size = p.size();
+    Ok((picture(ui, p, handle), size))
 }
 
 pub(super) fn empty(ui: &mut egui::Ui, text: &str) {

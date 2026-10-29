@@ -84,7 +84,7 @@ fn picture_column(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let width = picture_width(ui);
     let l = app.session.display.length;
     app.field.view.at = app.field.at.map(|v| l.to_si(v));
-    let key = format!("{:?}|{width}|{}", app.field.view, app.revision);
+    let key = PictureKey::new(app.revision, width, app.field.view.clone());
     if !app.field.picture.is_fresh(&key) {
         let plot = match field_plot(app) {
             Ok(p) => p,
@@ -252,7 +252,7 @@ pub(super) fn plane_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
-    crate::glyphs::paint(ui.painter(), r.shrink(3.0), "keep_plane", t.icon, t.accent);
+    crate::glyphs::paint(ui.painter(), r.shrink(3.0), crate::glyphs::Glyph::KeepPlane, t.icon, t.accent);
     scenario::publish_target("field:keep", r);
     if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !app.field.kept.contains(&here) && app.field.kept.len() < MAX_KEPT {
         app.field.kept.push(here);

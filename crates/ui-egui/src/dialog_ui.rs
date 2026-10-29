@@ -7,7 +7,7 @@ use egui::{Align2, Stroke, vec2};
 
 use crate::dialogs::{Cell, Column, Dialog, Field, Kind, MAX_FIELD, MAX_ROWS};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, glyphs, scenario, ui_kit};
+use crate::{EmcraftApp, scenario, ui_kit};
 
 /// What the card asked for.
 #[derive(Default)]
@@ -84,11 +84,11 @@ fn act(app: &mut EmcraftApp, asked: Asked) {
 fn card(app: &mut EmcraftApp, ui: &mut egui::Ui, max_h: f32) -> Asked {
     let t = Tokens::get();
     let busy = app.busy();
-    let accent = t.tab(&app.tab)[0];
+    let accent = t.tab(app.tab)[0];
     let session = &app.session;
     let Some(d) = app.dialog.as_mut() else { return Asked::default() };
     let mut asked = Asked::default();
-    let (close, dock) = ui_kit::header(ui, glyphs::for_command(d.command.id), d.command.label, Some(d.docked), accent);
+    let (close, dock) = ui_kit::header(ui, crate::commands::glyph(d.command.id), d.command.label, Some(d.docked), accent);
     asked.cancel |= close;
     asked.dock |= dock;
     let body_h = (max_h - t.form_header_height - t.form_footer_height - 8.0).max(80.0);
@@ -110,7 +110,7 @@ fn card(app: &mut EmcraftApp, ui: &mut egui::Ui, max_h: f32) -> Asked {
     ui.painter().hline(r.x_range(), r.top(), Stroke::new(1.0, t.dialog_rule));
     let mut footer =
         ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(vec2(12.0, 10.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
-    let run_label = if crate::worker::is_long(d.command.id) { "Run" } else { "OK" };
+    let run_label = if crate::commands::is_long(d.command.id) { "Run" } else { "OK" };
     asked.ok |= ui_kit::button(&mut footer, run_label, true, !busy, "dialog:ok").on_hover_text(if busy { "a job is running" } else { "" }).clicked();
     asked.cancel |= ui_kit::button(&mut footer, "Cancel", false, true, "dialog:cancel").clicked();
     if busy {

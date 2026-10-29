@@ -22,17 +22,13 @@ pub(super) fn tdr(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     if let Some(m) = tdr.mode {
         params["mode"] = json!(m.name());
     }
-    let width = picture_width(ui);
-    let key = format!("tdr|{params}|{}|{width}|{}", app.revision, crate::theme::is_dark());
     let session = &app.session;
-    let chart = cached_chart(ui, &mut tdr.chart, key, width, Height::new(0.8, 260.0, 700.0), || {
+    let view = (tdr.port.clone(), tdr.mode);
+    let drawn = chart_view(ui, &mut tdr.chart, app.revision, view, Height::new(0.8, 260.0, 700.0), "chart:tdr", || {
         emcraft_engine::results_tdr_chart(session, &emcraft_engine::Params::new(&params, session.display))
     });
-    match chart {
-        Ok(p) => {
-            picture(ui, p, "chart:tdr");
-        }
-        Err(e) => return empty(ui, &e),
+    if let Err(e) = drawn {
+        return empty(ui, &e);
     }
     crate::ui_kit::caption(
         ui,

@@ -87,7 +87,7 @@ fn mode_picture(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value) {
     let fu = app.session.display.frequency;
     let Some(frequency) = reply["frequency"].as_f64().map(|v| fu.to_si(v)) else { return };
     let width = picture_width(ui);
-    let key = format!("{}|{}|{frequency}|{}|{width}|{}", f.port, f.mode, app.revision, crate::theme::is_dark());
+    let key = PictureKey::new(app.revision, width, crate::state::ModePicture { port: f.port.clone(), mode: f.mode, frequency });
     let session = &app.session;
     let drawn = app
         .views

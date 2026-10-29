@@ -16,6 +16,7 @@
 
 mod after;
 pub mod browser;
+pub mod commands;
 pub mod control;
 pub mod dialog_ui;
 pub mod dialogs;
@@ -58,7 +59,7 @@ pub struct EmcraftApp {
     /// Bumped whenever the session changes, so cached pictures and tables are redrawn.
     pub revision: u64,
     pub job: Option<worker::Job>,
-    pub tab: String,
+    pub tab: ribbon::RibbonTab,
     pub dialog: Option<dialogs::Dialog>,
     /// Dialogs open docked at the right instead of floating.
     pub dock_dialogs: bool,
@@ -126,7 +127,7 @@ impl EmcraftApp {
             session: Session::new(),
             revision: 0,
             job: None,
-            tab: "MODEL".into(),
+            tab: ribbon::RibbonTab::Model,
             dialog: None,
             dock_dialogs: false,
             view: View::Model,
@@ -224,7 +225,7 @@ impl EmcraftApp {
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, UiError> {
         self.idle()?;
         find_command(id)?;
-        if worker::is_long(id) {
+        if commands::is_long(id) {
             self.job = Some(worker::Job::start(&self.session, id, params, self.ctx.clone()));
             self.message(format!("{}…", label(id)), false);
             return Ok(json!({"started": id}));
@@ -355,7 +356,7 @@ impl EmcraftApp {
         match self.run(id, params) {
             Ok(v) => {
                 // A long command's dialog comes back with the error if its job fails.
-                self.dialog_job = self.dialog.take().filter(|_| worker::is_long(id));
+                self.dialog_job = self.dialog.take().filter(|_| commands::is_long(id));
                 Ok(v)
             }
             Err(e) => {

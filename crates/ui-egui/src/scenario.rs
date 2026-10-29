@@ -364,7 +364,7 @@ pub fn check(h: &mut Harness, e: &Value) -> Result<(), String> {
             }
             "query" => {
                 let id = v["command"].as_str().ok_or("query needs `command`")?;
-                if crate::worker::is_long(id) {
+                if crate::commands::is_long(id) {
                     return Err(format!("query: {id} is a long command"));
                 }
                 let reply = h.app.session.clone().execute(id, &v.get("params").cloned().unwrap_or(json!({}))).map_err(|e| e.to_string())?;

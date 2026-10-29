@@ -65,24 +65,19 @@ pub(super) fn study(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     }
     let parameter = state.parameter.clone().filter(|p| parameters.contains(p));
     let slice = state.slice.clone();
-    let width = picture_width(ui);
-    let key = format!("study|{}|{}|{:?}|{width}|{}", app.revision, parameter.as_deref().unwrap_or(""), slice, crate::theme::is_dark());
-    match cached_chart(ui, &mut state.chart, key, width, Height::new(0.6, 240.0, 640.0), || {
+    let view = (parameter.clone(), slice.clone());
+    let drawn = chart_view(ui, &mut state.chart, app.revision, view, Height::new(0.6, 240.0, 640.0), "chart:study", || {
         emcraft_engine::study::chart(study, parameter.as_deref(), &slice)
-    }) {
-        Ok(p) => {
-            picture(ui, p, "chart:study");
-        }
-        Err(e) => {
-            ui.label(egui::RichText::new(e).size(t.font_body).color(t.text_dim));
-        }
+    });
+    if let Err(e) = drawn {
+        ui.label(egui::RichText::new(e).size(t.font_body).color(t.text_dim));
     }
     table(ui, study, parameter.as_deref().or(parameters.first().map(String::as_str)));
 }
 
 /// A grid sweep's slice: the variable charted along, and the value each other variable is held
 /// at (a row of pills each); a change redraws the chart.
-fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice, chart: &mut Cached) {
+fn slice_picker<K: PartialEq>(ui: &mut egui::Ui, study: &Study, slice: &mut Slice, chart: &mut Cached<K>) {
     let t = Tokens::get();
     slice.at.resize(study.variables.len(), 0);
     let mut changed = false;

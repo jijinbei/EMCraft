@@ -94,7 +94,7 @@ fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
         Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => format!("Go to {}", step.label()),
         Some(Step::Intent) if command == "project.frequency" => "Set the band".into(),
-        _ => format!("Fix: {}", crate::ribbon::button_label(command)),
+        _ => format!("Fix: {}", crate::commands::button_label(command)),
     }
 }
 

@@ -581,7 +581,7 @@ mod tests {
                 // Only cheap commands are run: the point is that the keys are the command's.
                 // (Nor those that write files.)
                 let writes = c.params.iter().any(|q| q.name == "path");
-                if !crate::worker::is_long(c.id) && !c.id.starts_with("view.") && !writes {
+                if !crate::commands::is_long(c.id) && !c.id.starts_with("view.") && !writes {
                     let mut copy = s.clone();
                     let _ = copy.execute(c.id, &p);
                 }
