@@ -615,8 +615,8 @@ pub fn render(scene: &Scene, camera: &Camera, opt: &Options) -> Canvas {
             for sy in 0..ss {
                 for sx in 0..ss {
                     if let Some(p) = t.color.get((y * ss + sy) * sw + x * ss + sx) {
-                        for k in 0..3 {
-                            acc[k] += p[k];
+                        for (a, v) in acc.iter_mut().zip(p) {
+                            *a += v;
                         }
                     }
                 }

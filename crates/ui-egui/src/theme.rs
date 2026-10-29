@@ -4,8 +4,11 @@
 //! with EMCraft's own per-tab accents.
 
 use std::cell::Cell;
+use std::sync::LazyLock;
 
 use egui::{Color32, Stroke};
+
+use crate::ribbon::RibbonTab;
 
 thread_local! {
     /// The theme belongs to the thread drawing the frame, so tests that draw apps side by side
@@ -197,20 +200,22 @@ impl Tokens {
         t
     }
 
-    /// The tokens of the current theme.
-    pub fn get() -> Tokens {
-        if is_dark() { Tokens::dark() } else { Tokens::light() }
+    /// The tokens of the current theme (each theme's built once).
+    pub fn get() -> &'static Tokens {
+        static LIGHT_TOKENS: LazyLock<Tokens> = LazyLock::new(Tokens::light);
+        static DARK_TOKENS: LazyLock<Tokens> = LazyLock::new(Tokens::dark);
+        if is_dark() { &DARK_TOKENS } else { &LIGHT_TOKENS }
     }
 
     /// A ribbon tab's accent: (fill, ink, soft).
-    pub fn tab(&self, tab: &str) -> [Color32; 3] {
+    pub fn tab(&self, tab: RibbonTab) -> [Color32; 3] {
         match tab {
-            "MATERIALS" => self.tab_materials,
-            "PORTS & SOURCES" => self.tab_ports,
-            "MESH" => self.tab_mesh,
-            "SIMULATE" => self.tab_simulate,
-            "RESULTS" => self.tab_results,
-            _ => self.tab_model,
+            RibbonTab::Model => self.tab_model,
+            RibbonTab::Materials => self.tab_materials,
+            RibbonTab::PortsSources => self.tab_ports,
+            RibbonTab::Mesh => self.tab_mesh,
+            RibbonTab::Simulate => self.tab_simulate,
+            RibbonTab::Results => self.tab_results,
         }
     }
 
@@ -292,10 +297,10 @@ mod tests {
             assert!(contrast_ratio(t.text_dim, t.panel) >= 3.0);
             assert!(contrast_ratio(t.on_accent, t.accent) >= 3.0);
             assert!(contrast_ratio(t.form_error, t.form_error_fill) >= 4.5);
-            for tab in ["MODEL", "MATERIALS", "PORTS & SOURCES", "MESH", "SIMULATE", "RESULTS"] {
+            for tab in RibbonTab::ALL {
                 let [_, ink, soft] = t.tab(tab);
-                assert!(contrast_ratio(ink, soft) >= 4.5, "{tab}");
-                assert!(contrast_ratio(ink, t.toolbar) >= 4.5, "{tab}");
+                assert!(contrast_ratio(ink, soft) >= 4.5, "{tab:?}");
+                assert!(contrast_ratio(ink, t.toolbar) >= 4.5, "{tab:?}");
             }
         }
     }

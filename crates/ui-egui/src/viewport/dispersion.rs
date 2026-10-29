@@ -4,16 +4,13 @@
 use super::*;
 
 pub(super) fn dispersion(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let width = picture_width(ui);
-    let key = format!("d|{}|{width}|{}", app.revision, crate::theme::is_dark());
     let session = &app.session;
-    let drawn =
-        cached_chart(ui, &mut app.views.chart, key, width, Height::new(0.62, 260.0, 700.0), || emcraft_engine::periodic::dispersion_chart(session));
-    match drawn {
-        Ok(p) => {
-            picture(ui, p, "chart:dispersion");
-        }
-        Err(e) => return empty(ui, &e),
+    let height = Height::new(0.62, 260.0, 700.0);
+    let drawn = chart_view(ui, &mut app.views.chart, app.revision, ChartView::Dispersion, height, "chart:dispersion", || {
+        emcraft_engine::periodic::dispersion_chart(session)
+    });
+    if let Err(e) = drawn {
+        return empty(ui, &e);
     }
     table(app, ui);
 }

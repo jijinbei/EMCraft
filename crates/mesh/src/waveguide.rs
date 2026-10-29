@@ -264,11 +264,9 @@ impl Axis<'_> {
         let mut breaks = vec![0.0, span];
         breaks.extend(self.planes.iter().chain(self.strip_edges).chain(self.via_faces).copied().filter(inside));
         let mut sharp: Vec<f64> = self.via_faces.iter().copied().filter(inside).collect();
-        for i in 0..w.sections.len() {
-            if let Some(a) = aperture(i) {
-                breaks.push(a.start.clamp(0.0, span));
-                breaks.push(a.end().clamp(0.0, span));
-            }
+        for a in (0..w.sections.len()).filter_map(aperture) {
+            breaks.push(a.start.clamp(0.0, span));
+            breaks.push(a.end().clamp(0.0, span));
         }
         for (narrow, wide) in aperture_steps(w, aperture, tol).into_iter().flatten() {
             sharp.extend([narrow.start, narrow.end()].into_iter().filter(|&e| e > wide.start + tol && e < wide.end() - tol));
@@ -415,7 +413,7 @@ fn structured(mut grid: Grid, cells: &Cells) -> Mesh {
                 let c = Point3::new(0.5 * (grid.x[i] + grid.x[i + 1]), yc, 0.5 * (grid.z[k] + grid.z[k + 1]));
                 let in_post = cells.posts.iter().any(|b| (0..3).all(|d| b.min[d] < c[d] && c[d] < b.max[d]));
                 if !(layer.x.contains(c.x) && layer.y.contains(c.y)) || in_post {
-                    first_tet.push(u32::MAX);
+                    first_tet.push(crate::CELL_LEFT_OUT);
                     continue;
                 }
                 first_tet.push(tets.len() as u32);
@@ -449,7 +447,7 @@ fn tag_boundary(mesh: &Mesh, length: f64, cuts: &[Symmetry]) -> Vec<BoundaryFace
     topo.faces
         .iter()
         .zip(&topo.face_tets)
-        .filter(|(_, owners)| owners[1] == u32::MAX)
+        .filter(|(_, owners)| owners[1] == crate::NO_TET)
         .map(|(f, owners)| {
             let zs = f.map(|n| mesh.nodes[n as usize].z);
             let tag = if zs.iter().all(|z| z.abs() <= tol) {
@@ -488,7 +486,7 @@ fn add_strips(mesh: &mut Mesh, strips: &[Strip], height: f64) {
     }
     let topo = Topology::new(mesh);
     for (f, owners) in topo.faces.iter().zip(&topo.face_tets) {
-        if owners[1] != u32::MAX && on(mesh, f) {
+        if owners[1] != crate::NO_TET && on(mesh, f) {
             mesh.boundary.push(BoundaryFace { nodes: *f, tet: owners[0], tag: Boundary::Pec });
         }
     }

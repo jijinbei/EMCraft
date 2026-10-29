@@ -78,7 +78,7 @@ pub(super) fn model(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         p.text(band.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, across.title(), FontId::proportional(t.font_label), t.text_dim);
         let (v0, v1) = across.span(lo, hi);
         let fr = Frame2::with_scale(band.shrink2(vec2(60.0, 26.0)).translate(vec2(0.0, 8.0)), (lo.z, hi.z), (v0, v1), scale);
-        let sec = Section { p: &p, fr, across, t: &t, m };
+        let sec = Section { p: &p, fr, across, t, m };
         if let Some(w) = &m.waveguide {
             sec.waveguide(w);
         } else if let Some(solid) = &m.solid {

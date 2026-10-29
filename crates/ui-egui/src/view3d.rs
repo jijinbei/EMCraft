@@ -11,21 +11,51 @@ use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_render::Rgb;
 use emcraft_render::view3d::{self, Camera, Projection, StandardView};
 
-use emcraft_engine::view::Plane;
+use emcraft_engine::view::{FieldView, Plane};
 
+use crate::glyphs::{self, Glyph};
 use crate::scene3d::{self, Built, Overlay};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, Picture, glyphs, scenario};
+use crate::{EmcraftApp, Picture, scenario};
 
 /// The most pixels the view is drawn with (beyond, it is drawn smaller and scaled up).
 const MAX_PIXELS: f64 = 2.4e6;
 /// Supersampled at rest up to this many output pixels.
 const SUPERSAMPLE_PIXELS: f64 = 1.3e6;
 
+/// What the scene was built from: the session's revision, the overlay, the field's planes (in
+/// the Results step) and what is highlighted.
+#[derive(Clone, Debug, PartialEq)]
+struct SceneKey {
+    revision: u64,
+    overlay: Overlay,
+    field: Option<FieldKey>,
+    highlighted: Option<scene3d::Pick>,
+}
+
+/// The field's state the Results step's planes are drawn from: the field view, its plane's
+/// position (display units) and the planes kept beside it.
+#[derive(Clone, Debug, PartialEq)]
+struct FieldKey {
+    view: FieldView,
+    at: Option<f64>,
+    kept: Vec<(Plane, f64)>,
+}
+
+/// The field view's plane as the scene shows it: its picture's ranges (display units), the
+/// plane and its position along the normal (m from the model's low side).
+#[derive(Clone, Copy, Debug)]
+struct Facing {
+    x: (f64, f64),
+    y: (f64, f64),
+    plane: Plane,
+    at: f64,
+}
+
 /// What the picture was drawn from.
 #[derive(Clone, Debug, PartialEq)]
 struct Key {
-    scene: (u64, Overlay, String),
+    scene: SceneKey,
     camera: Camera,
     size: [usize; 2],
     supersample: usize,
@@ -37,7 +67,11 @@ pub struct View3d {
     pub camera: Camera,
     /// The box last fitted to: a new geometry is framed once.
     fitted: Option<([f64; 3], [f64; 3])>,
-    built: Option<((u64, Overlay, String), Built)>,
+    built: Option<(SceneKey, Built)>,
+    /// The field view's plane in the scene built, when it shows one.
+    facing: Option<Facing>,
+    /// The browser row of the selection, at the session's revision.
+    picked: Option<((u64, scene3d::Pick), Option<(String, crate::browser::Row)>)>,
     picture: Option<(Key, Picture)>,
     /// Milliseconds the last picture took, and its size.
     pub last_ms: f64,
@@ -62,6 +96,8 @@ impl Default for View3d {
             camera: Camera::default(),
             fitted: None,
             built: None,
+            facing: None,
+            picked: None,
             picture: None,
             last_ms: 0.0,
             last_size: [0, 0],
@@ -76,28 +112,14 @@ impl Default for View3d {
 }
 
 impl View3d {
-    /// The scene for `overlay` (built once per revision).
-    pub fn built(&mut self, app_revision: u64, session: &emcraft_engine::Session, overlay: Overlay) -> &Built {
-        self.built_with(app_revision, session, overlay, String::new(), &[])
+    /// Whether the scene held was built for `key`.
+    fn is_built(&self, key: &SceneKey) -> bool {
+        self.built.as_ref().is_some_and(|(k, _)| k == key)
     }
 
-    /// The scene with the field's planes (`field_key` names the field's state).
-    pub fn built_with(
-        &mut self,
-        app_revision: u64,
-        session: &emcraft_engine::Session,
-        overlay: Overlay,
-        field_key: String,
-        fields: &[scene3d::FieldLayer],
-    ) -> &Built {
-        let key = (app_revision, overlay, format!("{field_key}|{:?}", self.highlighted()));
-        if self.built.as_ref().is_none_or(|(k, _)| *k != key) {
-            self.built = Some((key, scene3d::build_with(session, overlay, fields, self.highlighted())));
-        }
-        match &self.built {
-            Some((_, b)) => b,
-            None => &EMPTY,
-        }
+    /// The scene held: labels, legend and bounds, without the scene itself.
+    fn built_shallow(&self) -> Built {
+        self.built.as_ref().map_or_else(|| EMPTY.clone_shallow(), |(_, b)| b.clone_shallow())
     }
 
     /// What is drawn highlighted: the hovered row's part, else the selection.
@@ -121,7 +143,7 @@ impl View3d {
     /// The state for `ui.inspect`.
     pub fn inspect(&self) -> serde_json::Value {
         let c = &self.camera;
-        let b = self.built.as_ref().map(|(k, b)| (k.1.id(), b.scene.tris.len(), b.scene.lines.len()));
+        let b = self.built.as_ref().map(|(k, b)| (k.overlay.id(), b.scene.tris.len(), b.scene.lines.len()));
         serde_json::json!({
             "yaw": c.yaw.to_degrees(), "pitch": c.pitch.to_degrees(), "distance": c.distance,
             "target": c.target,
@@ -149,11 +171,13 @@ fn color(c: Rgb) -> Color32 {
 /// Draws the 3D view in `rect` for `overlay`.
 pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overlay) {
     let t = Tokens::get();
-    let revision = app.revision;
-    // The field's planes, for the Results step: the field view's and those kept.
-    let (field_key, layers) = field_layers(app, overlay);
-    let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at }).collect();
-    let built = app.view3d.built_with(revision, &app.session, overlay, field_key.clone(), &fl).clone_shallow();
+    // The scene, built again only when what it shows changed (the field's planes, for the
+    // Results step: the field view's and those kept).
+    let key = scene_key(app, overlay);
+    if !app.view3d.is_built(&key) {
+        build(app, overlay, key.clone());
+    }
+    let built = app.view3d.built_shallow();
     let Some(bounds) = built.bounds.or_else(|| built.scene.bounds()) else {
         ui.painter().text(
             rect.center(),
@@ -179,7 +203,7 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     if overlay == Overlay::Field {
         publish_plane(app, rect, bounds);
     }
-    let picked = app.view3d.selected.and_then(|p| crate::browser::row_of(app, p));
+    let picked = picked_row(app);
     if edit.clicked {
         app.browser.selected = picked.as_ref().map(|(k, _)| k.clone());
     }
@@ -192,15 +216,14 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, overlay: Overla
     }
     // Moving pictures (an orbit, a playing field) draw on the GPU.
     let gpu = app.prefs.gpu3d || app.view3d.dragging || (overlay == Overlay::Field && app.field.player.playing);
-    let key = format!("{field_key}|{:?}", app.view3d.highlighted());
     let p = ui.painter().with_clip_rect(rect);
-    draw(&mut app.view3d, ui, &p, rect, (revision, overlay, key), gpu, &t);
-    labels(&p, rect, &app.view3d.camera, &built.labels, &t);
-    legend(&p, rect, &built.legend, &t);
+    draw(&mut app.view3d, ui, &p, rect, key, gpu, t);
+    labels(&p, rect, &app.view3d.camera, &built.labels, t);
+    legend(&p, rect, &built.legend, t);
     if let Some((_, row)) = &picked {
-        selection_card(&p, rect, row, &t);
+        selection_card(&p, rect, row, t);
     }
-    let facing = layers.first().map(|(plot, plane, at)| facing_plane(app.session.display.length, bounds.0, plot, *plane, *at));
+    let facing = app.view3d.facing.map(|f| facing_plane(app.session.display.length, bounds.0, f));
     navigator(app, ui, rect);
     nav_bar(app, ui, rect, facing);
 }
@@ -263,18 +286,42 @@ fn move_plane(app: &mut EmcraftApp, rect: Rect, (lo, hi): ([f64; 3], [f64; 3]), 
     app.field.pinned = None;
 }
 
-/// The field plots for the 3D view in the Results step, and a key naming their state.
-fn field_layers(app: &mut EmcraftApp, overlay: Overlay) -> (String, Vec<(emcraft_render::plot::FieldPlot, Plane, f64)>) {
-    if overlay != Overlay::Field {
-        return (String::new(), Vec::new());
+/// What the scene for `overlay` is built from now.
+fn scene_key(app: &mut EmcraftApp, overlay: Overlay) -> SceneKey {
+    let field = (overlay == Overlay::Field).then(|| {
+        let l = app.session.display.length;
+        app.field.view.at = app.field.at.map(|v| l.to_si(v));
+        FieldKey { view: app.field.view.clone(), at: app.field.at, kept: app.field.kept.iter().map(|k| (k.plane, k.at)).collect() }
+    });
+    SceneKey { revision: app.revision, overlay, field, highlighted: app.view3d.highlighted() }
+}
+
+/// Builds the scene for `key`, with the field's planes (sampled and plotted here) when it
+/// shows them; a field that cannot be plotted is reported once and left out.
+fn build(app: &mut EmcraftApp, overlay: Overlay, key: SceneKey) {
+    let layers = if key.field.is_some() {
+        crate::viewport::field_plots(app).unwrap_or_else(|e| {
+            app.error(e);
+            Vec::new()
+        })
+    } else {
+        Vec::new()
+    };
+    let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at }).collect();
+    let v = &mut app.view3d;
+    v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
+    v.built = Some((key, scene3d::build_with(&app.session, overlay, &fl, v.highlighted())));
+}
+
+/// The browser row of what is selected in the view (looked up again only when the selection or
+/// the session changed).
+fn picked_row(app: &mut EmcraftApp) -> Option<(String, crate::browser::Row)> {
+    let key = (app.revision, app.view3d.selected?);
+    if app.view3d.picked.as_ref().is_none_or(|(k, _)| *k != key) {
+        let row = crate::browser::row_of(app, key.1);
+        app.view3d.picked = Some((key, row));
     }
-    match crate::viewport::field_plots(app) {
-        Ok(list) => (format!("{:?}|{:?}|{:?}", app.field.view, app.field.at, app.field.kept), list),
-        Err(e) => {
-            app.message(e, true);
-            (String::new(), Vec::new())
-        }
-    }
+    app.view3d.picked.as_ref().and_then(|(_, row)| row.clone())
 }
 
 /// What the pointer asked of the view this frame.
@@ -355,7 +402,7 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
 
 /// The scene drawn into `rect`: by the window's GPU (every frame, full size) or the CPU
 /// renderer's picture (cached by `scene_key`, the camera and the size).
-fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key: (u64, Overlay, String), gpu: bool, t: &Tokens) {
+fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key: SceneKey, gpu: bool, t: &Tokens) {
     v.drawn_on_gpu = gpu;
     if gpu {
         let began = Instant::now();
@@ -390,7 +437,7 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
         };
         v.last_ms = began.elapsed().as_secs_f64() * 1e3;
         v.last_size = size;
-        v.picture = Some((key, Picture::new("view3d".into(), &canvas)));
+        v.picture = Some((key, Picture::new(&canvas)));
     }
     if let Some((_, pic)) = v.picture.as_mut() {
         let id = pic.texture(ui.ctx());
@@ -431,14 +478,8 @@ fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &
 }
 
 /// A field plane's box in the model (m) and the standard view that faces it.
-fn facing_plane(
-    l: emcraft_model::units::Length,
-    lo: [f64; 3],
-    plot: &emcraft_render::plot::FieldPlot,
-    plane: Plane,
-    at: f64,
-) -> ([f64; 3], [f64; 3], StandardView) {
-    let ((h0, h1), (v0, v1)) = (plot.x.span(), plot.y.span());
+fn facing_plane(l: emcraft_model::units::Length, lo: [f64; 3], f: Facing) -> ([f64; 3], [f64; 3], StandardView) {
+    let Facing { x: (h0, h1), y: (v0, v1), plane, at } = f;
     let (h0, h1, v0, v1) = (l.to_si(h0), l.to_si(h1), l.to_si(v0), l.to_si(v1));
     match plane {
         Plane::H => ([v0, lo[1] + at, h0], [v1, lo[1] + at, h1], StandardView::Top),
@@ -523,7 +564,7 @@ fn navigator(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             p.circle_filled(tip, 7.0, t.panel);
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
-        scenario::publish_target(&format!("view3d:std:{}", view.name()), r);
+        scenario::publish_target(format_args!("view3d:std:{}", view.name()), r);
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.name()));
         if resp.on_hover_text(format!("View from {name} ({})", view.name())).clicked() {
             clicked = Some(view);
@@ -539,21 +580,23 @@ fn navigator(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect) {
 fn nav_bar(app: &mut EmcraftApp, ui: &mut egui::Ui, rect: Rect, facing: Option<([f64; 3], [f64; 3], StandardView)>) {
     let t = Tokens::get();
     let ortho = app.view3d.camera.projection == Projection::Orthographic;
-    let mut items: Vec<(&str, &str, &str)> =
-        vec![("fit", "view3d:fit", "Fit the model to the view (double-click the view)"), ("home", "view3d:std:iso", "Home view (isometric)")];
+    let mut items: Vec<(Glyph, &str, &str)> = vec![
+        (Glyph::Fit, "view3d:fit", "Fit the model to the view (double-click the view)"),
+        (Glyph::Home, "view3d:std:iso", "Home view (isometric)"),
+    ];
     if facing.is_some() {
-        items.push(("lookat", "view3d:face", "Face the field's plane"));
+        items.push((Glyph::Lookat, "view3d:face", "Face the field's plane"));
         // The field's phase, played like a video.
         items.push(if app.field.player.playing {
-            ("pause", "view3d:play", "Pause the field's animation")
+            (Glyph::Pause, "view3d:play", "Pause the field's animation")
         } else {
-            ("play", "view3d:play", "Play the field's animation")
+            (Glyph::Play, "view3d:play", "Play the field's animation")
         });
     }
     items.push(if ortho {
-        ("orthographic", "view3d:projection", "Orthographic — click for perspective")
+        (Glyph::Orthographic, "view3d:projection", "Orthographic — click for perspective")
     } else {
-        ("perspective", "view3d:projection", "Perspective — click for orthographic")
+        (Glyph::Perspective, "view3d:projection", "Perspective — click for orthographic")
     });
     let (size, pitch) = (28.0, 32.0);
     let width = pitch * items.len() as f32 + 6.0;

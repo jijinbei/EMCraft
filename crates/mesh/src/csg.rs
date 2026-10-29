@@ -28,6 +28,7 @@ use std::collections::HashMap;
 use emcraft_model::{Aabb, Point3};
 use emcraft_tetmesh::predicates::{ExactPoint2, ExactPoint3 as Exact, Sign, orient2d, orient3d};
 
+use crate::shared::{DisjointSets, winding};
 use crate::{MeshError, Result};
 
 /// What to keep of two solids.
@@ -48,7 +49,7 @@ pub struct Surface {
 }
 
 fn fail(why: impl Into<String>) -> MeshError {
-    MeshError::Invalid { what: "Boolean combination".into(), why: why.into() }
+    MeshError::invalid("Boolean combination", why)
 }
 
 /// The two surfaces' points as exact-predicate points.
@@ -474,32 +475,6 @@ fn split(s: &Surface, k: usize, t: u32, cut: &Cut, ids: &Ids, all: &[Point3]) ->
     Ok(plane.tris.iter().map(|t| t.map(|i| local[i])).collect())
 }
 
-/// The winding number of a closed surface about p.
-fn winding(s: &Surface, p: Point3) -> f64 {
-    s.triangles.iter().map(|t| emcraft_model::solid_angle(t.map(|v| s.positions[v as usize] - p))).sum::<f64>() / (4.0 * std::f64::consts::PI)
-}
-
-/// A disjoint-set forest with path halving (union by index, so the result does not depend on
-/// the order of the unions' calls beyond their sequence).
-struct Sets(Vec<usize>);
-
-impl Sets {
-    fn find(&mut self, mut i: usize) -> usize {
-        while self.0[i] != i {
-            self.0[i] = self.0[self.0[i]];
-            i = self.0[i];
-        }
-        i
-    }
-
-    fn union(&mut self, a: usize, b: usize) {
-        let (a, b) = (self.find(a), self.find(b));
-        if a != b {
-            self.0[a.max(b)] = a.min(b);
-        }
-    }
-}
-
 /// A piece of a surface's triangle split along the intersection curve: its corners (ids into
 /// the combined points) and the triangle it comes from.
 #[derive(Clone, Copy, Debug)]
@@ -542,7 +517,7 @@ fn pieces(s: &Surface, k: usize, cut: &Cut, ids: &Ids, all: &[Point3]) -> Result
 /// farthest from the curve).
 fn inside(pieces: &[Piece], k: usize, cut: &Cut, other: &Surface, all: &[Point3]) -> Vec<bool> {
     let curve: std::collections::HashSet<[u32; 2]> = cut.segments[k].values().flatten().map(|e| [e[0].min(e[1]), e[0].max(e[1])]).collect();
-    let mut sets = Sets((0..pieces.len()).collect());
+    let mut sets = DisjointSets::new(pieces.len());
     let mut by_edge: HashMap<[u32; 2], usize> = HashMap::new();
     for (i, p) in pieces.iter().enumerate() {
         let p = p.corners;
@@ -573,7 +548,7 @@ fn inside(pieces: &[Piece], k: usize, cut: &Cut, other: &Surface, all: &[Point3]
     let mut region_inside: HashMap<usize, bool> = HashMap::new();
     for (&r, &i) in &best {
         let centroid = Point3::centroid(pieces[i].corners.map(|v| all[v as usize])).unwrap_or(Point3::ORIGIN);
-        region_inside.insert(r, winding(other, centroid) > 0.5);
+        region_inside.insert(r, winding(&other.positions, &other.triangles, centroid) > 0.5);
     }
     (0..pieces.len()).map(|i| region_inside.get(&sets.find(i)).copied().unwrap_or(false)).collect()
 }

@@ -42,9 +42,9 @@ pub fn bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 };
                 ui.painter().rect_filled(r, 12.0, fill);
                 ui.painter().rect_stroke(r, 12.0, Stroke::new(1.0, if active { t.accent } else { t.border }), egui::StrokeKind::Inside);
-                mark(ui.painter(), pos2(r.left() + 14.0, r.center().y), s.status, &t);
+                mark(ui.painter(), pos2(r.left() + 14.0, r.center().y), s.status, t);
                 ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, if active { t.selected_ink } else { t.text });
-                scenario::publish_target(&format!("step:{}", s.step.id()), r);
+                scenario::publish_target(format_args!("step:{}", s.step.id()), r);
                 if resp.on_hover_text(tip).clicked() {
                     clicked = Some(s.step);
                 }

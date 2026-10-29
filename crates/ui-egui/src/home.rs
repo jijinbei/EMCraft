@@ -13,9 +13,10 @@ use emcraft_render::view3d::{self, Camera, StandardView};
 use serde_json::Value;
 
 use crate::files::{self, Then};
+use crate::glyphs::{self, Glyph};
 use crate::scene3d::{self, Overlay};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, Picture, glyphs, scenario};
+use crate::{EmcraftApp, Picture, scenario};
 
 /// A card's picture, in points.
 const THUMB: [f32; 2] = [240.0, 150.0];
@@ -47,7 +48,7 @@ fn thumbnail(name: &str) -> Option<Picture> {
     let t = Tokens::get();
     let rgb = |c: Color32| emcraft_render::Rgb(c.r(), c.g(), c.b());
     let opt = view3d::Options { width: w, height: h, supersample: 2, background: (rgb(t.viewport_top), rgb(t.viewport_bottom)), line_width: 2.0 };
-    Some(Picture::new(format!("home:{name}"), &view3d::render(&built.scene, &cam, &opt)))
+    Some(Picture::new(&view3d::render(&built.scene, &cam, &opt)))
 }
 
 pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
@@ -60,10 +61,10 @@ pub fn show(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             });
             ui.add_space(t.space_12);
             ui.horizontal(|ui| {
-                if big(ui, "new", "New project", true, "home:new") {
+                if big(ui, Glyph::New, "New project", true, "home:new") {
                     files::request(app, Then::New);
                 }
-                if big(ui, "open_file", "Open…", false, "home:open") {
+                if big(ui, Glyph::OpenFile, "Open…", false, "home:open") {
                     files::request(app, Then::Open);
                 }
             });
@@ -95,7 +96,7 @@ fn heading(ui: &mut egui::Ui, text: &str) {
 }
 
 /// A large button: a glyph and a label; the primary one in the accent.
-fn big(ui: &mut egui::Ui, glyph: &str, label: &str, primary: bool, handle: &str) -> bool {
+fn big(ui: &mut egui::Ui, glyph: Glyph, label: &str, primary: bool, handle: &str) -> bool {
     let t = Tokens::get();
     let g = ui.painter().layout_no_wrap(label.to_owned(), FontId::proportional(t.font_heading), t.text);
     let (r, resp) = ui.allocate_exact_size(vec2((56.0 + g.size().x + 24.0).max(180.0), 60.0), Sense::click());
@@ -133,7 +134,7 @@ fn grid(ui: &mut egui::Ui, n: usize, mut each: impl FnMut(&mut egui::Ui, usize))
 }
 
 /// A card: a picture (or a glyph), a name and a line under it.
-fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: &str, name: &str, sub: &str, dim: bool, handle: &str) -> egui::Response {
+fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, sub: &str, dim: bool, handle: &str) -> egui::Response {
     let t = Tokens::get();
     let (r, resp) = ui.allocate_exact_size(vec2(THUMB[0] + 16.0, THUMB[1] + 64.0), Sense::click());
     let p = ui.painter();
@@ -185,7 +186,7 @@ fn recent(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         let exists = p.exists();
         let folder = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
         let sub = if exists { folder } else { "missing".to_owned() };
-        let r = card(ui, None, "waveguide", &name, &sub, !exists, &format!("home:recent:{i}"));
+        let r = card(ui, None, Glyph::Waveguide, &name, &sub, !exists, &format!("home:recent:{i}"));
         let r = r.on_hover_text(path.as_str());
         r.context_menu(|ui| {
             if ui.button("Remove from the list").clicked() {
@@ -211,7 +212,7 @@ fn samples(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     grid(ui, list.len(), |ui, i| {
         let s = &list[i];
         let pic = app.home.thumbs.entry(s.name).or_insert_with(|| thumbnail(s.name));
-        if card(ui, pic.as_mut(), "sample", s.name, s.label, false, &format!("sample:{}", s.name)).on_hover_text(s.label).clicked() {
+        if card(ui, pic.as_mut(), Glyph::Sample, s.name, s.label, false, &format!("sample:{}", s.name)).on_hover_text(s.label).clicked() {
             chosen = Some(s.name.to_owned());
         }
     });
@@ -228,7 +229,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (u, name) in [(Length::Millimetre, "mm"), (Length::Metre, "m")] {
                 let r = ui.selectable_label(app.prefs.length == u, name);
-                scenario::publish_target(&format!("settings:length:{name}"), r.rect);
+                scenario::publish_target(format_args!("settings:length:{name}"), r.rect);
                 if r.clicked() {
                     app.prefs.length = u;
                 }
@@ -239,7 +240,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (u, name) in [(Frequency::Gigahertz, "GHz"), (Frequency::Megahertz, "MHz"), (Frequency::Hertz, "Hz")] {
                 let r = ui.selectable_label(app.prefs.frequency == u, name);
-                scenario::publish_target(&format!("settings:frequency:{name}"), r.rect);
+                scenario::publish_target(format_args!("settings:frequency:{name}"), r.rect);
                 if r.clicked() {
                     app.prefs.frequency = u;
                 }
@@ -250,7 +251,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (dark, name) in [(false, "Light"), (true, "Dark")] {
                 let r = ui.selectable_label(app.dark == dark, name);
-                scenario::publish_target(&format!("settings:theme:{}", name.to_lowercase()), r.rect);
+                scenario::publish_target(format_args!("settings:theme:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
                     app.dark = dark;
                 }
@@ -264,7 +265,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 (true, "Fast", "the GPU, every frame: for large meshes"),
             ] {
                 let r = ui.selectable_label(app.prefs.gpu3d == gpu, name).on_hover_text(tip);
-                scenario::publish_target(&format!("settings:3d:{}", name.to_lowercase()), r.rect);
+                scenario::publish_target(format_args!("settings:3d:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
                     app.prefs.gpu3d = gpu;
                 }
@@ -275,7 +276,7 @@ pub fn settings(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (docked, name) in [(false, "Floating"), (true, "Docked")] {
                 let r = ui.selectable_label(app.dock_dialogs == docked, name);
-                scenario::publish_target(&format!("settings:dialogs:{}", name.to_lowercase()), r.rect);
+                scenario::publish_target(format_args!("settings:dialogs:{}", name.to_lowercase()), r.rect);
                 if r.clicked() {
                     app.dock_dialogs = docked;
                     if let Some(d) = app.dialog.as_mut() {

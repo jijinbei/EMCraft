@@ -4,7 +4,7 @@
 use emcraft_engine::view::{FieldView, Plane, PlaneSamples, Probe};
 use serde_json::Value;
 
-use crate::picture::Cached;
+use crate::picture::{Cached, PictureKey};
 use crate::ui_kit;
 
 /// The field view's state.
@@ -13,7 +13,7 @@ pub struct FieldState {
     /// The plane's position in display length units; the middle when `None`.
     pub at: Option<f64>,
     pub samples: Option<PlaneSamples>,
-    pub picture: Cached,
+    pub picture: Cached<PictureKey<FieldView>>,
     /// Where the picture puts the plane, for reading the pointer's position.
     pub layout: Option<emcraft_render::plot::Layout>,
     /// The phase animation, played like a video.
@@ -22,10 +22,8 @@ pub struct FieldState {
     /// units along the picture's axes), read again whenever the view changes.
     pub hover: Option<Probe>,
     pub pinned: Option<[f64; 2]>,
-    /// Planes kept for the 3D view beside the field view's own (plane, position in display
-    /// units), and their samples.
-    pub kept: Vec<(Plane, f64)>,
-    pub kept_samples: Vec<Option<PlaneSamples>>,
+    /// Planes kept for the 3D view beside the field view's own.
+    pub kept: Vec<KeptPlane>,
     /// The model in 3D beside the picture.
     pub beside_3d: bool,
 }
@@ -42,7 +40,6 @@ impl Default for FieldState {
             hover: None,
             pinned: None,
             kept: Vec::new(),
-            kept_samples: Vec::new(),
             beside_3d: false,
         }
     }
@@ -54,7 +51,9 @@ impl FieldState {
         self.samples = None;
         self.picture.clear();
         self.pinned = None;
-        self.kept_samples.clear();
+        for k in &mut self.kept {
+            k.samples = None;
+        }
     }
 }
 
@@ -63,32 +62,67 @@ impl FieldState {
 pub struct TdrState {
     pub port: Option<String>,
     pub mode: Option<emcraft_engine::tdr::Mode>,
-    pub chart: Cached,
+    pub chart: Cached<PictureKey<(Option<String>, Option<emcraft_engine::tdr::Mode>)>>,
 }
 
 /// The study view's chart, the S-parameter it shows (a sweep's; the first when `None`) and, for
 /// a grid sweep, the slice: the variable charted along and the value each other one is held at.
 #[derive(Default)]
 pub struct StudyState {
-    pub chart: Cached,
+    pub chart: Cached<PictureKey<(Option<String>, emcraft_engine::study::Slice)>>,
     pub parameter: Option<String>,
     pub slice: emcraft_engine::study::Slice,
+}
+
+/// Which chart the shared chart slot of [`ViewState`] holds.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChartView {
+    SParameters,
+    Dispersion,
+    /// The far-field pattern at an azimuth (degrees).
+    Pattern {
+        phi: f64,
+    },
+}
+
+/// A port mode's picture: the port, the mode's index and the frequency (Hz).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModePicture {
+    pub port: String,
+    pub mode: usize,
+    pub frequency: f64,
+}
+
+/// The eigenmode table (`results.eigenmodes`' reply) and the session revision it was read at.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EigenTable {
+    pub revision: u64,
+    pub reply: Value,
+}
+
+/// A plane kept for the 3D view beside the field view's own: which, its position (display
+/// units), and its samples once taken.
+#[derive(Clone, Debug)]
+pub struct KeptPlane {
+    pub plane: Plane,
+    pub at: f64,
+    pub samples: Option<PlaneSamples>,
 }
 
 /// What the result views keep between frames.
 #[derive(Default)]
 pub struct ViewState {
     /// The chart of the S-parameter, far-field or dispersion view (one at a time).
-    pub chart: Cached,
+    pub chart: Cached<PictureKey<ChartView>>,
     /// The far-field pattern's azimuth (degrees).
     pub pattern_phi: f64,
     pub tdr: TdrState,
     pub study: StudyState,
     /// The last port-mode solve's reply, and the picked mode's picture.
     pub port_modes: Option<Value>,
-    pub mode_picture: Cached,
+    pub mode_picture: Cached<PictureKey<ModePicture>>,
     /// The last comparison with theory's reply.
     pub compare: Option<Value>,
     /// The eigenmode table and the session revision it was read at.
-    pub eigen_table: Option<(u64, Value)>,
+    pub eigen_table: Option<EigenTable>,
 }

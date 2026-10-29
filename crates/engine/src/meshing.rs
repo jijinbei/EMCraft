@@ -76,7 +76,8 @@ pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
     if s.model.waveguide.is_none() && s.model.solid.is_some() {
         let curved = p.flag("curved").or(true)?;
         let solid_sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
-        let mesh = emcraft_mesh::solid::solid_sized(&s.model, &solid_sizes, curved)?;
+        let options = emcraft_mesh::solid::SolidOptions { sizes: solid_sizes, curved, refine: Vec::new() };
+        let mesh = emcraft_mesh::solid::solid_with(&s.model, &options)?;
         let mut reply = json!({"nodes": mesh.nodes.len(), "tetrahedra": mesh.tets.len(), "unstructured": true, "curved_edges": mesh.curved.len()});
         if sizes.by_wavelength() {
             reply["sizes"] = sizes.reply(s);

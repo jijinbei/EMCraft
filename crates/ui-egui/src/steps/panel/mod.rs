@@ -31,15 +31,15 @@ pub fn panel(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 22.0);
                 scenario::publish_rect("step_panel", ui.max_rect());
-                header(ui, &state, &t);
+                header(ui, &state, t);
                 let dialog_h = if app.dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
                     .id_salt("step_panel_scroll")
                     .max_height((h - dialog_h - 70.0).max(120.0))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        checks(app, ui, &state, &t);
-                        body(app, ui, step, &states, &t);
+                        checks(app, ui, &state, t);
+                        body(app, ui, step, &states, t);
                     });
                 if app.dialog.is_some() {
                     ui.add_space(6.0);
@@ -77,7 +77,7 @@ fn checks(app: &mut EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
             let here = m.command.as_deref().is_some_and(|c| c.starts_with("solve.") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
                 let r = ui.small_button(fix_label(c)).on_hover_text(format!("{c}: {}", crate::label(c)));
-                scenario::publish_target(&format!("step:fix:{i}"), r.rect);
+                scenario::publish_target(format_args!("step:fix:{i}"), r.rect);
                 if r.clicked() {
                     chosen = Some(c.clone());
                 }
@@ -94,7 +94,7 @@ fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
         Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => format!("Go to {}", step.label()),
         Some(Step::Intent) if command == "project.frequency" => "Set the band".into(),
-        _ => format!("Fix: {}", crate::ribbon::button_label(command)),
+        _ => format!("Fix: {}", crate::commands::button_label(command)),
     }
 }
 

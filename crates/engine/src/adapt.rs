@@ -131,7 +131,7 @@ impl Stop {
 /// How each pass's mesh is made.
 enum Refine {
     /// A solid: meshed again with the balls of every pass's marked tetrahedra.
-    Adaptive { sizes: emcraft_mesh::solid::Sizes, curved: bool, theta: f64, floor: f64, balls: Vec<emcraft_mesh::solid::Refinement> },
+    Adaptive { options: emcraft_mesh::solid::SolidOptions, theta: f64, floor: f64 },
     /// A waveguide grid: its size shrunk by [`UNIFORM`] a pass.
     Uniform { size: f64 },
 }
@@ -139,7 +139,7 @@ enum Refine {
 impl Refine {
     fn mesh(&self, s: &Session, p: &Params, pass: usize) -> Result<std::result::Result<Mesh, emcraft_mesh::MeshError>> {
         Ok(match self {
-            Refine::Adaptive { sizes, curved, balls, .. } => emcraft_mesh::solid::solid_refined(&s.model, sizes, *curved, balls),
+            Refine::Adaptive { options, .. } => emcraft_mesh::solid::solid_with(&s.model, options),
             Refine::Uniform { size } => {
                 let h = size / UNIFORM.powi(pass as i32);
                 emcraft_mesh::waveguide_with(&s.model, &crate::meshing::grid_options(p, h)?)
@@ -150,11 +150,11 @@ impl Refine {
     /// Marks where the error `eta` (per tetrahedron of `mesh`) is and adds its balls for the
     /// next pass; how many tetrahedra it marked (none for a uniform grid).
     fn mark(&mut self, mesh: &Mesh, eta: impl FnOnce() -> Result<Vec<f64>>) -> Result<usize> {
-        let Refine::Adaptive { theta, floor, balls, .. } = self else { return Ok(0) };
+        let Refine::Adaptive { theta, floor, options } = self else { return Ok(0) };
         crate::progress::check()?;
         let eta = eta()?;
         let marked = emcraft_mesh::adapt::dorfler(&eta, *theta)?;
-        balls.extend(emcraft_mesh::adapt::refinements(mesh, &marked, *floor)?);
+        options.refine.extend(emcraft_mesh::adapt::refinements(mesh, &marked, *floor)?);
         Ok(marked.len())
     }
 
@@ -238,7 +238,7 @@ pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
     let mut refine = if solid {
         let sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
         let floor = sizes.per_material.iter().flatten().copied().fold(sizes.default, f64::min) / FLOOR;
-        Refine::Adaptive { sizes, curved, theta, floor, balls: Vec::new() }
+        Refine::Adaptive { options: emcraft_mesh::solid::SolidOptions { sizes, curved, refine: Vec::new() }, theta, floor }
     } else {
         Refine::Uniform { size: sizes.grid_size(s)? }
     };

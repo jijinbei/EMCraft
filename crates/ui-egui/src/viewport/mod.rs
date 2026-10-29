@@ -8,7 +8,8 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
 
-use crate::picture::Cached;
+use crate::picture::{Cached, PictureKey};
+use crate::state::ChartView;
 use crate::theme::Tokens;
 use crate::{EmcraftApp, Picture, View, scenario};
 
@@ -32,7 +33,6 @@ use tables::*;
 use tdr::*;
 
 pub(crate) use fields::{field_plots, plane_span_of};
-pub use sparameters::chart_frequency;
 pub use study::summary as study_summary;
 
 /// The central card.
@@ -82,18 +82,30 @@ pub(super) fn view_tabs(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let shown: Vec<View> = View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)).collect();
         for v in shown {
-            if pill(ui, v.label(), app.view == v, &format!("view:{}", v.id()), 12, false) {
+            if pill(ui, v.label(), app.view == v, format_args!("view:{}", v.id()), 12, PillSize::Body) {
                 crate::ribbon::show_view(app, v);
             }
         }
     });
 }
 
-/// A pill of a row of options: filled when `on`, the body's size (`small`: the small one);
-/// `true` when clicked.
-pub(super) fn pill(ui: &mut egui::Ui, label: &str, on: bool, handle: &str, radius: u8, small: bool) -> bool {
+/// The text size of a pill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PillSize {
+    /// The body's text.
+    Body,
+    /// The small text.
+    Small,
+}
+
+/// A pill of a row of options: filled when `on`, its text `size`; `true` when clicked.
+pub(super) fn pill(ui: &mut egui::Ui, label: &str, on: bool, handle: impl std::fmt::Display, radius: u8, size: PillSize) -> bool {
     let t = Tokens::get();
-    let text = egui::RichText::new(label).size(if small { t.font_small } else { t.font_body }).color(if on { t.selected_ink } else { t.text });
+    let font = match size {
+        PillSize::Body => t.font_body,
+        PillSize::Small => t.font_small,
+    };
+    let text = egui::RichText::new(label).size(font).color(if on { t.selected_ink } else { t.text });
     let r = ui.add(egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(radius));
     scenario::publish_target(handle, r.rect);
     r.clicked()
@@ -117,17 +129,24 @@ impl Height {
     }
 }
 
-/// The chart kept in `slot`, drawn again (`width` wide, `height` high) from `chart` when `key`
-/// changed; the error that kept it from being drawn.
-pub(super) fn cached_chart<'a, E: ToString>(
-    ui: &egui::Ui,
-    slot: &'a mut Cached,
-    key: String,
-    width: usize,
+/// A result view's chart in the rest of the card, as wide as the card allows: the one kept in
+/// `slot`, drawn again from `chart` when the session (`revision`), the width, the theme or the
+/// view's settings (`view`) changed. The picture's response and its size in pixels, or the
+/// error that kept it from being drawn.
+pub(super) fn chart_view<V: PartialEq, E: ToString>(
+    ui: &mut egui::Ui,
+    slot: &mut Cached<PictureKey<V>>,
+    revision: u64,
+    view: V,
     height: Height,
+    handle: &str,
     chart: impl FnOnce() -> Result<emcraft_render::chart::Chart, E>,
-) -> Result<&'a mut Picture, String> {
-    slot.get_or_draw(key, || chart().map(|c| emcraft_render::chart::draw(&c, width, height.of(ui))))
+) -> Result<(egui::Response, egui::Vec2), String> {
+    let width = picture_width(ui);
+    let height = height.of(ui);
+    let p = slot.get_or_draw(PictureKey::new(revision, width, view), || chart().map(|c| emcraft_render::chart::draw(&c, width, height)))?;
+    let size = p.size();
+    Ok((picture(ui, p, handle), size))
 }
 
 pub(super) fn empty(ui: &mut egui::Ui, text: &str) {

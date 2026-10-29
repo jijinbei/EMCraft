@@ -3,32 +3,34 @@
 use super::*;
 
 pub(super) fn sparameters(app: &mut EmcraftApp, ui: &mut egui::Ui) {
-    let width = picture_width(ui);
-    let key = format!("s|{}|{width}|{}", app.revision, crate::theme::is_dark());
     let freqs = app.frequencies();
     let session = &app.session;
-    let p = match cached_chart(ui, &mut app.views.chart, key, width, Height::new(0.62, 260.0, 700.0), || view::sparameter_chart(session)) {
-        Ok(p) => p,
+    let height = Height::new(0.62, 260.0, 700.0);
+    let drawn =
+        chart_view(ui, &mut app.views.chart, app.revision, ChartView::SParameters, height, "chart:sparameters", || view::sparameter_chart(session));
+    let (r, size) = match drawn {
+        Ok(shown) => shown,
         Err(e) => return empty(ui, &e),
     };
-    let r = picture(ui, p, "chart:sparameters");
-    let chart_width = p.size().x;
-    frequency_marker(app, ui, &r, chart_width, &freqs);
+    frequency_marker(app, ui, &r, size, &freqs);
     crate::ui_kit::caption(ui, "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.");
     table(app, ui);
 }
 
-/// The field view's frequency, marked where the chart (`chart_width` pixels wide) puts it; a
-/// click picks the nearest solved frequency for the field view and opens it.
-fn frequency_marker(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response, chart_width: f32, freqs: &[f64]) {
+/// The field view's frequency, marked where the chart (`size` pixels) puts it; a click picks
+/// the nearest solved frequency for the field view and opens it.
+fn frequency_marker(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response, size: egui::Vec2, freqs: &[f64]) {
     let t = Tokens::get();
     let (Some(f0), Some(f1)) = (freqs.first().copied(), freqs.last().copied()) else { return };
+    let layout = chart_layout(f64::from(size.x), f64::from(size.y), f0, f1);
     let f = app.field.view.frequency;
     if f1 > f0 && app.field.view.mode.is_none() && (f0..=f1).contains(&f) {
-        let px = 90.0 + ((f - f0) / (f1 - f0)) as f32 * (chart_width - 120.0);
-        let x = r.rect.min.x + px / chart_width * r.rect.width();
+        // The chart's pixels to the response's rectangle.
+        let (sx, sy) = (r.rect.width() / size.x.max(1.0), r.rect.height() / size.y.max(1.0));
+        let [_, y0, _, ph] = layout.plane;
+        let x = r.rect.min.x + layout.to_pixels([f, 0.0])[0] as f32 * sx;
         let painter = ui.painter_at(r.rect);
-        let (top, bottom) = (r.rect.top() + r.rect.height() * 0.08, r.rect.bottom() - r.rect.height() * 0.22);
+        let (top, bottom) = (r.rect.top() + y0 as f32 * sy, r.rect.top() + (y0 + ph) as f32 * sy);
         painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
         let (at, align) = if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
         painter.text(at, align, "fields shown", FontId::proportional(t.font_small), t.accent);
@@ -37,7 +39,7 @@ fn frequency_marker(app: &mut EmcraftApp, ui: &egui::Ui, r: &egui::Response, cha
         && let Some(pos) = r.interact_pointer_pos()
     {
         let fx = ((pos.x - r.rect.min.x) / r.rect.width()) as f64;
-        if let Some(f) = chart_frequency(fx, chart_width as f64, f0, f1).and_then(|f| crate::nearest(freqs, f)) {
+        if let Some(f) = chart_frequency(fx, f64::from(size.x), f0, f1).and_then(|f| crate::nearest(freqs, f)) {
             app.field.view.frequency = f;
             app.field.view.mode = None;
             app.view = View::Field;
@@ -87,12 +89,16 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     });
 }
 
-/// Maps a click at fraction `fx` across the S-parameter chart to a frequency, with the chart's
-/// layout (`emcraft_render::chart::draw`: the plot runs from x = 90 to w − 30).
-pub fn chart_frequency(fx: f64, width_px: f64, f0: f64, f1: f64) -> Option<f64> {
-    let (x0, pw) = (90.0, width_px - 120.0);
-    let t = (fx * width_px - x0) / pw;
-    (pw > 0.0 && (0.0..=1.0).contains(&t)).then_some(f0 + t * (f1 - f0))
+/// The S-parameter chart's layout at `width` × `height` pixels, its x axis the sweep's
+/// frequencies `f0..=f1` (its y axis does not matter here).
+fn chart_layout(width: f64, height: f64, f0: f64, f1: f64) -> emcraft_render::chart::Layout {
+    emcraft_render::chart::Layout::new(width.max(0.0) as usize, height.max(0.0) as usize, (f0, f1), (0.0, 1.0))
+}
+
+/// Maps a click at fraction `fx` across the S-parameter chart (`width_px` wide) to a
+/// frequency, with the chart's layout.
+fn chart_frequency(fx: f64, width_px: f64, f0: f64, f1: f64) -> Option<f64> {
+    chart_layout(width_px, 0.0, f0, f1).x_at(fx * width_px)
 }
 
 #[cfg(test)]

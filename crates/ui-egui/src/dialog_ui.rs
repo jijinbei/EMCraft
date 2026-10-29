@@ -7,7 +7,7 @@ use egui::{Align2, Stroke, vec2};
 
 use crate::dialogs::{Cell, Column, Dialog, Field, Kind, MAX_FIELD, MAX_ROWS};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, glyphs, scenario, ui_kit};
+use crate::{EmcraftApp, scenario, ui_kit};
 
 /// What the card asked for.
 #[derive(Default)]
@@ -84,11 +84,11 @@ fn act(app: &mut EmcraftApp, asked: Asked) {
 fn card(app: &mut EmcraftApp, ui: &mut egui::Ui, max_h: f32) -> Asked {
     let t = Tokens::get();
     let busy = app.busy();
-    let accent = t.tab(&app.tab)[0];
+    let accent = t.tab(app.tab)[0];
     let session = &app.session;
     let Some(d) = app.dialog.as_mut() else { return Asked::default() };
     let mut asked = Asked::default();
-    let (close, dock) = ui_kit::header(ui, glyphs::for_command(d.command.id), d.command.label, Some(d.docked), accent);
+    let (close, dock) = ui_kit::header(ui, crate::commands::glyph(d.command.id), d.command.label, Some(d.docked), accent);
     asked.cancel |= close;
     asked.dock |= dock;
     let body_h = (max_h - t.form_header_height - t.form_footer_height - 8.0).max(80.0);
@@ -110,7 +110,7 @@ fn card(app: &mut EmcraftApp, ui: &mut egui::Ui, max_h: f32) -> Asked {
     ui.painter().hline(r.x_range(), r.top(), Stroke::new(1.0, t.dialog_rule));
     let mut footer =
         ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(vec2(12.0, 10.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
-    let run_label = if crate::worker::is_long(d.command.id) { "Run" } else { "OK" };
+    let run_label = if crate::commands::is_long(d.command.id) { "Run" } else { "OK" };
     asked.ok |= ui_kit::button(&mut footer, run_label, true, !busy, "dialog:ok").on_hover_text(if busy { "a job is running" } else { "" }).clicked();
     asked.cancel |= ui_kit::button(&mut footer, "Cancel", false, true, "dialog:cancel").clicked();
     if busy {
@@ -138,7 +138,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
         match &f.kind {
             Kind::Table(cols) => {
                 let cols = *cols;
-                table(ui, f, cols, session, &t);
+                table(ui, f, cols, session, t);
             }
             Kind::Bool => {
                 ui_kit::row(ui, name, f.required, |ui| {
@@ -152,7 +152,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
                     let w = ((ui.available_width() - 30.0) / parts.len() as f32 - 6.0).max(30.0);
                     for (k, (label, v)) in parts.iter().zip(f.parts.iter_mut()).enumerate() {
                         let r = ui.add(egui::TextEdit::singleline(v).desired_width(w).hint_text(*label).char_limit(64)).on_hover_text(hint);
-                        scenario::publish_target(&format!("{handle}:{k}"), r.rect);
+                        scenario::publish_target(format_args!("{handle}:{k}"), r.rect);
                         if k == 0 {
                             scenario::publish_target(&handle, r.rect);
                         }
@@ -220,10 +220,10 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], session: &em
                     Cell::Material => choice(ui, (name, i, j), cell, &materials, 70.0, false),
                     Cell::Number => ui.add(egui::TextEdit::singleline(cell).desired_width(44.0).char_limit(64)),
                 };
-                scenario::publish_target(&format!("dialog:cell:{name}:{i}:{}", c.name), resp.rect);
+                scenario::publish_target(format_args!("dialog:cell:{name}:{i}:{}", c.name), resp.rect);
             }
             let x = ui.small_button("×").on_hover_text("remove this row");
-            scenario::publish_target(&format!("dialog:remove:{name}:{i}"), x.rect);
+            scenario::publish_target(format_args!("dialog:remove:{name}:{i}"), x.rect);
             if x.clicked() {
                 remove = Some(i);
             }
@@ -234,7 +234,7 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], session: &em
         f.rows.remove(i);
     }
     let add = ui.add_enabled(f.rows.len() < MAX_ROWS, egui::Button::new(format!("Add {}", name.trim_end_matches('s'))));
-    scenario::publish_target(&format!("dialog:add:{name}"), add.rect);
+    scenario::publish_target(format_args!("dialog:add:{name}"), add.rect);
     if add.clicked() {
         let row = cols.iter().map(|c| if c.cell == Cell::Material { "vacuum".to_owned() } else { String::new() }).collect();
         f.rows.push(row);
@@ -250,7 +250,7 @@ fn choice(ui: &mut egui::Ui, id: (&str, usize, usize), text: &mut String, list: 
         }
         for v in list {
             let r = ui.selectable_value(text, v.clone(), v.as_str());
-            scenario::publish_target(&format!("choice:{}:{v}", id.0), r.rect);
+            scenario::publish_target(format_args!("choice:{}:{v}", id.0), r.rect);
         }
     });
     let _ = Align2::LEFT_CENTER;

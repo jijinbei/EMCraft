@@ -25,9 +25,12 @@ pub struct Topology {
     pub tet_edges: Vec<[u32; 6]>,
     /// Each tetrahedron's faces in [`LOCAL_FACES`] order.
     pub tet_faces: Vec<[u32; 4]>,
-    /// The (at most two) tetrahedra of each face; `u32::MAX` for none.
+    /// The (at most two) tetrahedra of each face; [`NO_TET`] for none.
     pub face_tets: Vec<[u32; 2]>,
 }
+
+/// The marker in [`Topology::face_tets`] where a face has no (second) tetrahedron.
+pub const NO_TET: u32 = u32::MAX;
 
 impl Topology {
     pub fn new(mesh: &Mesh) -> Topology {
@@ -54,11 +57,11 @@ impl Topology {
                 let next = t.faces.len() as u32;
                 let id = *face_id.entry(key).or_insert_with(|| {
                     t.faces.push(key);
-                    t.face_tets.push([u32::MAX; 2]);
+                    t.face_tets.push([NO_TET; 2]);
                     next
                 });
                 if let Some(owners) = t.face_tets.get_mut(id as usize) {
-                    if owners[0] == u32::MAX {
+                    if owners[0] == NO_TET {
                         owners[0] = ti as u32;
                     } else {
                         owners[1] = ti as u32;

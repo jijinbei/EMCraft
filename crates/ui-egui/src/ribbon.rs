@@ -7,27 +7,66 @@
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::{Value, json};
 
+use crate::commands::{button_label, glyph};
+use crate::glyphs::{self, Glyph};
 use crate::theme::Tokens;
-use crate::{EmcraftApp, View, glyphs, scenario};
+use crate::{EmcraftApp, View, scenario};
+
+/// A ribbon tab: its id is its title (the control channel's `tab:<id>` handles, `ui.set
+/// {"tab": id}`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RibbonTab {
+    #[default]
+    Model,
+    Materials,
+    PortsSources,
+    Mesh,
+    Simulate,
+    Results,
+}
+
+impl RibbonTab {
+    /// Every tab, in the ribbon's order.
+    pub const ALL: [RibbonTab; 6] =
+        [RibbonTab::Model, RibbonTab::Materials, RibbonTab::PortsSources, RibbonTab::Mesh, RibbonTab::Simulate, RibbonTab::Results];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            RibbonTab::Model => "MODEL",
+            RibbonTab::Materials => "MATERIALS",
+            RibbonTab::PortsSources => "PORTS & SOURCES",
+            RibbonTab::Mesh => "MESH",
+            RibbonTab::Simulate => "SIMULATE",
+            RibbonTab::Results => "RESULTS",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<RibbonTab> {
+        RibbonTab::ALL.into_iter().find(|t| t.id() == s)
+    }
+}
 
 /// The ribbon: tabs of panels of commands, each command in one place (views are switched
 /// from the view tabs over the viewport, files from the File menu and the start page).
-pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
+pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
     (
-        "MODEL",
+        RibbonTab::Model,
         &[
             ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.solid", "geometry.body"]),
             ("SETTINGS", &["units.set", "project.frequency"]),
         ],
     ),
-    ("MATERIALS", &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open", "model.symmetry", "model.periodic"])]),
     (
-        "PORTS & SOURCES",
+        RibbonTab::Materials,
+        &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open", "model.symmetry", "model.periodic"])],
+    ),
+    (
+        RibbonTab::PortsSources,
         &[("PORTS", &["model.port.create", "model.port.lumped"]), ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"])],
     ),
-    ("MESH", &[("MESH", &["mesh.generate", "mesh.adapt"])]),
+    (RibbonTab::Mesh, &[("MESH", &["mesh.generate", "mesh.adapt"])]),
     (
-        "SIMULATE",
+        RibbonTab::Simulate,
         &[
             ("FREQUENCY DOMAIN", &["solve.frequency", "solve.eigenmodes", "solve.dispersion", "solve.radiation"]),
             ("TIME DOMAIN", &["solve.time_domain"]),
@@ -37,60 +76,13 @@ pub const TABS: &[(&str, &[(&str, &[&str])])] = &[
         ],
     ),
     (
-        "RESULTS",
+        RibbonTab::Results,
         &[
             ("ANALYSIS", &["results.compare", "results.check", "results.tdr"]),
             ("EXPORT", &["results.touchstone", "view.sparameters", "view.field", "view.animation", "view.pattern", "view.dispersion"]),
         ],
     ),
 ];
-
-/// A button's label: the command's own, shortened where the ribbon has little room.
-pub fn button_label(id: &str) -> &str {
-    match id {
-        "geometry.waveguide" => "Waveguide",
-        "geometry.solid" => "Region",
-        "geometry.body" => "Body",
-        "geometry.body.material" => "Body material",
-        "geometry.feature" => "Boolean",
-        "geometry.inclusion" => "Inclusion",
-        "geometry.import" => "Import",
-        "file.sample" => "Sample",
-        "units.set" => "Units",
-        "project.frequency" => "Band",
-        "results.check" => "Checks",
-        "results.touchstone" => "Touchstone",
-        "model.material.create" => "Material",
-        "model.walls" => "Walls",
-        "model.open" => "Open boundary",
-        "model.symmetry" => "Symmetry",
-        "model.periodic" => "Periodic",
-        "solve.dispersion" => "Dispersion",
-        "view.dispersion" => "Dispersion PNG",
-        "model.port.create" => "Port",
-        "model.port.lumped" => "Lumped port",
-        "source.dipole" => "Dipole",
-        "source.plane_wave" => "Plane wave",
-        "source.clear" => "Clear sources",
-        "mesh.generate" => "Mesh",
-        "solve.frequency" => "Frequency sweep",
-        "solve.eigenmodes" => "Eigenmodes",
-        "solve.radiation" => "Radiation",
-        "solve.time_domain" => "Time domain",
-        "solve.port_modes" => "Port modes",
-        "solve.device" => "Device",
-        "results.tdr" => "TDR",
-        "project.variable" => "Variables",
-        "study.sweep" => "Sweep",
-        "study.optimize" => "Optimize",
-        "results.compare" => "Compare",
-        "view.sparameters" => "S-param PNG",
-        "view.field" => "Field PNG",
-        "view.animation" => "Field video",
-        "view.pattern" => "Pattern PNG",
-        other => crate::label(other),
-    }
-}
 
 const APP_BAR_HEIGHT: f32 = 34.0;
 const TAB_ROW_HEIGHT: f32 = 30.0;
@@ -112,7 +104,7 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             if home.hovered() || app.home.open {
                 p.rect_filled(house, t.radius_sm, Color32::from_white_alpha(if app.home.open { 40 } else { 28 }));
             }
-            glyphs::paint(p, house.shrink(4.0), "start", t.app_bar_text, t.accent);
+            glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
             scenario::publish_target("bar:start", house);
             if home.on_hover_text("Start page").clicked() {
                 app.home.open = !app.home.open;
@@ -163,7 +155,7 @@ pub fn app_bar(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             if resp.hovered() {
                 ui.painter().rect_filled(gear, t.radius_sm, Color32::from_white_alpha(28));
             }
-            glyphs::paint(ui.painter(), gear.shrink(4.0), "settings", t.app_bar_text, t.app_bar_text);
+            glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
             scenario::publish_target("bar:settings", gear);
             let resp = resp.on_hover_text("Settings");
             egui::Popup::menu(&resp).show(|ui| {
@@ -201,14 +193,14 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             search_field(app, ui, row);
             let mut x = card.left() + 6.0;
             let top = row.bottom() + 4.0;
-            let tab = app.tab.clone();
+            let tab = app.tab;
             let Some((_, panels)) = TABS.iter().find(|(name, _)| *name == tab) else { return };
-            let accent = t.tab(&tab);
+            let accent = t.tab(tab);
             let busy = app.busy();
             for (panel, items) in panels.iter() {
                 let x0 = x;
                 for &id in items.iter() {
-                    let (text, glyph) = (button_label(id), glyphs::for_command(id));
+                    let (text, glyph) = (button_label(id), glyph(id));
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
                     let w = (g.size().x + 14.0).max(BUTTON_MIN_WIDTH);
                     let br = Rect::from_min_size(pos2(x, top), vec2(w, BUTTON_HEIGHT));
@@ -232,18 +224,18 @@ pub fn ribbon(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                     let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
                     ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
-                    scenario::publish_target(&format!("toolbar:{id}"), br);
+                    scenario::publish_target(format_args!("toolbar:{id}"), br);
                     if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked()
                         && let Err(e) = app.open_dialog(id)
                     {
-                        app.message(e, true);
+                        app.error(e);
                     }
                     x += w + 3.0;
                 }
                 // The panel's name under its buttons, and a divider after it.
                 let pr = Rect::from_min_max(pos2(x0, top + BUTTON_HEIGHT), pos2(x, top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT));
                 ui.painter().text(pr.center(), Align2::CENTER_CENTER, panel, FontId::proportional(10.5), t.text_dim);
-                scenario::publish_rect(&format!("panel:{tab}:{panel}"), pr);
+                scenario::publish_rect(format_args!("panel:{}:{panel}", tab.id()), pr);
                 x += 6.0;
                 ui.painter().vline(x, (top + 4.0)..=(top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT - 2.0), Stroke::new(1.0, t.border));
                 x += 7.0;
@@ -262,12 +254,13 @@ pub fn show_view(app: &mut EmcraftApp, v: View) {
 fn tabs(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
     let t = Tokens::get();
     let mut x = row.left() + 4.0;
-    for (tab, _) in TABS {
-        let g = ui.painter().layout_no_wrap((*tab).to_owned(), FontId::proportional(t.font_button), t.text);
+    for &(tab, _) in TABS {
+        let name = tab.id();
+        let g = ui.painter().layout_no_wrap(name.to_owned(), FontId::proportional(t.font_button), t.text);
         let tr = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(g.size().x + 24.0, TAB_ROW_HEIGHT - 8.0));
-        let resp = ui.interact(tr, ui.id().with(("tab", *tab)), Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, *tab));
-        let active = app.tab == *tab;
+        let resp = ui.interact(tr, ui.id().with(("tab", name)), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+        let active = app.tab == tab;
         let accent = t.tab(tab);
         let fill = if active {
             accent[2]
@@ -278,10 +271,10 @@ fn tabs(app: &mut EmcraftApp, ui: &mut egui::Ui, row: Rect) {
         };
         ui.painter().rect_filled(tr, 4, fill);
         let ink = if active { accent[1] } else { t.text };
-        ui.painter().text(tr.center(), Align2::CENTER_CENTER, *tab, FontId::proportional(t.font_button), ink);
-        scenario::publish_target(&format!("tab:{tab}"), tr);
+        ui.painter().text(tr.center(), Align2::CENTER_CENTER, name, FontId::proportional(t.font_button), ink);
+        scenario::publish_target(format_args!("tab:{name}"), tr);
         if resp.clicked() {
-            app.tab = (*tab).to_owned();
+            app.tab = tab;
         }
         x = tr.right() + 2.0;
     }
@@ -414,7 +407,7 @@ pub fn choose(app: &mut EmcraftApp, pick: Option<&str>) {
                 return;
             }
             Some(Err(e)) => {
-                app.message(e, true);
+                app.error(e);
                 return;
             }
             None => {}
@@ -425,7 +418,7 @@ pub fn choose(app: &mut EmcraftApp, pick: Option<&str>) {
     if let Some(id) = id
         && let Err(e) = app.open_dialog(&id)
     {
-        app.message(e, true);
+        app.error(e);
     }
 }
 
@@ -462,7 +455,7 @@ pub fn search_popup(app: &mut EmcraftApp, ctx: &egui::Context) {
                 glyphs::paint(
                     ui.painter(),
                     Rect::from_center_size(pos2(r.left() + 18.0, r.center().y), vec2(22.0, 22.0)),
-                    glyphs::for_command(c.id),
+                    glyph(c.id),
                     t.icon,
                     t.accent,
                 );
@@ -474,7 +467,7 @@ pub fn search_popup(app: &mut EmcraftApp, ctx: &egui::Context) {
                     t.form_ink,
                 );
                 ui.painter().text(pos2(r.left() + 38.0, r.top() + 27.0), Align2::LEFT_CENTER, c.id, FontId::monospace(t.font_small), t.text_dim);
-                scenario::publish_target(&format!("search:row:{}", c.id), r);
+                scenario::publish_target(format_args!("search:row:{}", c.id), r);
                 if resp.clicked() {
                     pick = Some(c.id);
                 }
@@ -517,13 +510,29 @@ pub fn export_prompt(app: &mut EmcraftApp, ctx: &egui::Context) {
     if ok {
         let text = serde_json::to_string_pretty(&app.session.history).unwrap_or_else(|_| "[]".into());
         match std::fs::write(path.trim(), text) {
-            Ok(()) => app.message(format!("Exported {} commands to {}.", app.session.history.len(), path.trim()), false),
+            Ok(()) => app.info(format!("Exported {} commands to {}.", app.session.history.len(), path.trim())),
             Err(e) => {
-                app.message(format!("Cannot write {}: {e}", path.trim()), true);
+                app.error(format!("Cannot write {}: {e}", path.trim()));
                 app.export = Some(path);
             }
         }
         return;
     }
     app.export = Some(path);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tabs_parse_from_their_ids_in_the_ribbons_order() {
+        for (i, t) in RibbonTab::ALL.into_iter().enumerate() {
+            assert_eq!(RibbonTab::parse(t.id()), Some(t));
+            assert_eq!(TABS.get(i).map(|(tab, _)| *tab), Some(t));
+        }
+        assert_eq!(TABS.len(), RibbonTab::ALL.len());
+        assert_eq!(RibbonTab::parse("PORTS & SOURCES"), Some(RibbonTab::PortsSources));
+        assert_eq!(RibbonTab::parse("Model"), None);
+    }
 }

@@ -16,7 +16,17 @@ pub struct Message {
 const MAX_MESSAGES: usize = 200;
 
 impl EmcraftApp {
-    pub fn message(&mut self, text: impl std::fmt::Display, error: bool) {
+    /// Reports `text` in the message area.
+    pub fn info(&mut self, text: impl std::fmt::Display) {
+        self.message(text, false);
+    }
+
+    /// Reports `text` in the message area as an error.
+    pub fn error(&mut self, text: impl std::fmt::Display) {
+        self.message(text, true);
+    }
+
+    fn message(&mut self, text: impl std::fmt::Display, error: bool) {
         let text: String = text.to_string().chars().take(2000).collect();
         if let Some(last) = self.messages.last_mut()
             && last.text == text
@@ -51,7 +61,7 @@ pub(crate) fn area(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(height);
                 scenario::publish_rect("status", ui.max_rect());
-                if progress(app, ui, &t) {
+                if progress(app, ui, t) {
                     app.cancel_job();
                 }
                 let rest = (height - if app.job.is_some() { 36.0 } else { 0.0 }).max(16.0);

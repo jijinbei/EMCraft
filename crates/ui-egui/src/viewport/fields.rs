@@ -40,17 +40,16 @@ pub(crate) fn field_plots(app: &mut EmcraftApp) -> Result<Vec<(emcraft_render::p
     let (plane, at) = app.field.samples.as_ref().map_or((app.field.view.plane, 0.0), |s| (s.plane, s.at));
     let mut out = vec![(plot, plane, at)];
     let l = app.session.display.length;
-    app.field.kept_samples.resize_with(app.field.kept.len(), || None);
-    for k in 0..app.field.kept.len() {
-        let (plane, at_display) = app.field.kept[k];
-        let Some((span, _)) = plane_span_of(app, plane) else { continue };
-        let at = l.to_si(at_display.clamp(0.0, span));
-        let view = emcraft_engine::view::FieldView { plane, at: Some(at), ..app.field.view.clone() };
-        if !app.field.kept_samples[k].as_ref().is_some_and(|s| s.serves(&view, at)) {
-            app.field.kept_samples[k] = Some(view::sample_plane(&app.session, &view).map_err(|e| e.to_string())?);
+    let spans: Vec<_> = app.field.kept.iter().map(|k| plane_span_of(app, k.plane)).collect();
+    for (kept, span) in app.field.kept.iter_mut().zip(spans) {
+        let Some((span, _)) = span else { continue };
+        let at = l.to_si(kept.at.clamp(0.0, span));
+        let view = emcraft_engine::view::FieldView { plane: kept.plane, at: Some(at), ..app.field.view.clone() };
+        if !kept.samples.as_ref().is_some_and(|s| s.serves(&view, at)) {
+            kept.samples = Some(view::sample_plane(&app.session, &view).map_err(|e| e.to_string())?);
         }
-        if let Some(s) = &app.field.kept_samples[k] {
-            out.push((s.plot(&view).map_err(|e| e.to_string())?, plane, s.at));
+        if let Some(s) = &kept.samples {
+            out.push((s.plot(&view).map_err(|e| e.to_string())?, kept.plane, s.at));
         }
     }
     Ok(out)
@@ -84,7 +83,7 @@ fn picture_column(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let width = picture_width(ui);
     let l = app.session.display.length;
     app.field.view.at = app.field.at.map(|v| l.to_si(v));
-    let key = format!("{:?}|{width}|{}", app.field.view, app.revision);
+    let key = PictureKey::new(app.revision, width, app.field.view.clone());
     if !app.field.picture.is_fresh(&key) {
         let plot = match field_plot(app) {
             Ok(p) => p,
@@ -219,7 +218,7 @@ pub(super) fn field_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
 pub(super) fn plane_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
         let r = ui.selectable_label(app.field.view.plane == p, name);
-        scenario::publish_target(&format!("field:plane:{}", p.name()), r.rect);
+        scenario::publish_target(format_args!("field:plane:{}", p.name()), r.rect);
         if r.clicked() && app.field.view.plane != p {
             app.field.view.plane = p;
             app.field.at = None;
@@ -252,10 +251,11 @@ pub(super) fn plane_choice(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
-    crate::glyphs::paint(ui.painter(), r.shrink(3.0), "keep_plane", t.icon, t.accent);
+    crate::glyphs::paint(ui.painter(), r.shrink(3.0), crate::glyphs::Glyph::KeepPlane, t.icon, t.accent);
     scenario::publish_target("field:keep", r);
-    if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !app.field.kept.contains(&here) && app.field.kept.len() < MAX_KEPT {
-        app.field.kept.push(here);
+    let kept = app.field.kept.iter().any(|k| (k.plane, k.at) == here);
+    if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !kept && app.field.kept.len() < MAX_KEPT {
+        app.field.kept.push(crate::state::KeptPlane { plane: here.0, at: here.1, samples: None });
     }
 }
 
@@ -269,23 +269,20 @@ pub(super) fn kept_planes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         crate::ui_kit::small(ui, "In 3D:", t.text_dim);
         let unit = app.session.display.length.symbol();
         let mut drop = None;
-        for (k, (plane, at)) in app.field.kept.iter().enumerate() {
+        for (k, crate::state::KeptPlane { plane, at, .. }) in app.field.kept.iter().enumerate() {
             let name = match plane {
                 Plane::H => "H-plane y",
                 Plane::E => "E-plane x",
                 Plane::Cross => "cross z",
             };
             let r = ui.button(egui::RichText::new(format!("{name} = {} {unit}  ✕", emcraft_render::axes::format(*at))).size(t.font_small));
-            scenario::publish_target(&format!("field:kept:{k}"), r.rect);
+            scenario::publish_target(format_args!("field:kept:{k}"), r.rect);
             if r.on_hover_text("Remove from the 3D view").clicked() {
                 drop = Some(k);
             }
         }
         if let Some(k) = drop {
             app.field.kept.remove(k);
-            if k < app.field.kept_samples.len() {
-                app.field.kept_samples.remove(k);
-            }
         }
     });
 }

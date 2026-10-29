@@ -119,13 +119,13 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
             pre.blocking.iter().map(|(s, m)| format!("{} ({})", m, s.label())).collect::<Vec<_>>().join("; ")
         ));
         app.workflow.fields.refused = Some(e.to_string());
-        app.message(&e, true);
+        app.error(&e);
         return Err(e);
     }
     app.workflow.fields.refused = None;
     let (solver, params) = run_params(app).map_err(UiError::Input)?;
     if !pre.warnings.is_empty() {
-        app.message(format!("Running with {} accepted warning(s).", pre.warnings.len()), false);
+        app.info(format!("Running with {} accepted warning(s).", pre.warnings.len()));
     }
     app.run(solver.command(), params)
 }

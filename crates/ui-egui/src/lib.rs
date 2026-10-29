@@ -16,6 +16,7 @@
 
 mod after;
 pub mod browser;
+pub mod commands;
 pub mod control;
 pub mod dialog_ui;
 pub mod dialogs;
@@ -58,7 +59,7 @@ pub struct EmcraftApp {
     /// Bumped whenever the session changes, so cached pictures and tables are redrawn.
     pub revision: u64,
     pub job: Option<worker::Job>,
-    pub tab: String,
+    pub tab: ribbon::RibbonTab,
     pub dialog: Option<dialogs::Dialog>,
     /// Dialogs open docked at the right instead of floating.
     pub dock_dialogs: bool,
@@ -70,12 +71,8 @@ pub struct EmcraftApp {
     pub search: ribbon::Search,
     pub browser: browser::Browser,
     pub dark: bool,
-    /// Input injected by the control channel, fed to egui one pointer event per frame.
-    pub synthetic: VecDeque<egui::Event>,
-    synthetic_mods: egui::Modifiers,
-    pub control_rx: Option<Receiver<ControlRequest>>,
-    pub(crate) shots: Vec<shots::Shot>,
-    shot_token: u64,
+    /// The control channel: its requests, the input it injects, the screenshots it waits for.
+    pub(crate) control: ControlState,
     pub quit_requested: bool,
     /// The input time of the last frame (s), which the animation advances from.
     last_frame: Option<f64>,
@@ -90,19 +87,47 @@ pub struct EmcraftApp {
     pub workflow: steps::Workflow,
     /// The path asked for when exporting the history as a script.
     pub export: Option<String>,
-    /// The preferences, where they are kept (none in the headless harness) and as last written.
+    /// The preferences, and where and as what they were last written.
     pub prefs: prefs::Prefs,
-    pub prefs_path: Option<std::path::PathBuf>,
-    prefs_written: prefs::Prefs,
+    prefs_store: PrefsStore,
     /// Project files: the file dialog, the path field, the question before changes are lost.
     pub files: files::Files,
     /// The start page.
     pub home: home::Home,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
-    pub failure: Option<(String, String)>,
+    pub failure: Option<Failure>,
     /// The dialog whose OK started the running job, to open again if the job fails.
     dialog_job: Option<dialogs::Dialog>,
+}
+
+/// The control channel's state beside the app.
+#[derive(Default)]
+pub(crate) struct ControlState {
+    /// The request queue (`emcraft --control PORT`).
+    pub(crate) rx: Option<Receiver<ControlRequest>>,
+    /// Input injected by the control channel, fed to egui one pointer event per frame.
+    pub(crate) synthetic: VecDeque<egui::Event>,
+    /// The modifiers held by the injected input.
+    pub(crate) synthetic_mods: egui::Modifiers,
+    /// Screenshots asked for and not yet answered.
+    pub(crate) shots: Vec<shots::Shot>,
+    pub(crate) shot_token: u64,
+}
+
+/// Where the preferences are kept (none in the headless harness) and as what they were last
+/// written.
+#[derive(Default)]
+struct PrefsStore {
+    path: Option<std::path::PathBuf>,
+    written: prefs::Prefs,
+}
+
+/// A command's failure: the command and why.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Failure {
+    pub command: String,
+    pub error: String,
 }
 
 /// What the desktop app gives the window: a file dialog and where preferences are kept.
@@ -126,7 +151,7 @@ impl EmcraftApp {
             session: Session::new(),
             revision: 0,
             job: None,
-            tab: "MODEL".into(),
+            tab: ribbon::RibbonTab::Model,
             dialog: None,
             dock_dialogs: false,
             view: View::Model,
@@ -136,11 +161,7 @@ impl EmcraftApp {
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),
             dark: false,
-            synthetic: VecDeque::new(),
-            synthetic_mods: egui::Modifiers::NONE,
-            control_rx: None,
-            shots: Vec::new(),
-            shot_token: 0,
+            control: ControlState::default(),
             quit_requested: false,
             last_frame: None,
             frames: 0,
@@ -150,8 +171,7 @@ impl EmcraftApp {
             workflow: steps::Workflow::default(),
             export: None,
             prefs: prefs::Prefs::default(),
-            prefs_path: None,
-            prefs_written: prefs::Prefs::default(),
+            prefs_store: PrefsStore::default(),
             files: files::Files::default(),
             home: home::Home::default(),
             failure: None,
@@ -165,8 +185,7 @@ impl EmcraftApp {
         let mut app = EmcraftApp::with_sample(sample);
         if let Some(path) = host.prefs {
             app.prefs = prefs::Prefs::load(&path);
-            app.prefs_written = app.prefs.clone();
-            app.prefs_path = Some(path);
+            app.prefs_store = PrefsStore { path: Some(path), written: app.prefs.clone() };
             app.dark = app.prefs.dark;
             app.dock_dialogs = app.prefs.dock_dialogs;
         }
@@ -175,7 +194,7 @@ impl EmcraftApp {
         if let Some(path) = host.open
             && let Err(e) = app.run("file.open", json!({"path": path}))
         {
-            app.message(e, true);
+            app.error(e);
         }
         app
     }
@@ -184,14 +203,14 @@ impl EmcraftApp {
     fn keep_prefs(&mut self) {
         self.prefs.dark = self.dark;
         self.prefs.dock_dialogs = self.dock_dialogs;
-        if self.prefs == self.prefs_written {
+        if self.prefs == self.prefs_store.written {
             return;
         }
-        self.prefs_written = self.prefs.clone();
-        if let Some(path) = &self.prefs_path
+        self.prefs_store.written = self.prefs.clone();
+        if let Some(path) = &self.prefs_store.path
             && let Err(e) = self.prefs.save(path)
         {
-            self.message(format!("cannot keep the preferences in {}: {e}", path.display()), true);
+            self.error(format!("cannot keep the preferences in {}: {e}", path.display()));
         }
     }
 
@@ -201,7 +220,7 @@ impl EmcraftApp {
         if let Some(name) = name
             && let Err(e) = app.run("file.sample", json!({"name": name, "solve": true}))
         {
-            app.message(e, true);
+            app.error(e);
         }
         app
     }
@@ -224,9 +243,9 @@ impl EmcraftApp {
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, UiError> {
         self.idle()?;
         find_command(id)?;
-        if worker::is_long(id) {
+        if commands::is_long(id) {
             self.job = Some(worker::Job::start(&self.session, id, params, self.ctx.clone()));
-            self.message(format!("{}…", label(id)), false);
+            self.info(format!("{}…", label(id)));
             return Ok(json!({"started": id}));
         }
         let r = self.session.execute(id, &params).map_err(UiError::from);
@@ -239,8 +258,8 @@ impl EmcraftApp {
 
     /// A command's failure: kept for the panel that asked for it, and in the messages.
     fn failed(&mut self, id: &str, e: &impl std::fmt::Display) {
-        self.failure = Some((id.to_owned(), e.to_string()));
-        self.message(format!("{}: {e}", label(id)), true);
+        self.failure = Some(Failure { command: id.to_owned(), error: e.to_string() });
+        self.error(format!("{}: {e}", label(id)));
     }
 
     /// Runs a script (a JSON array of `{command, params}`) on the worker thread, as one job.
@@ -249,7 +268,7 @@ impl EmcraftApp {
         let n = script.as_array().map(Vec::len).ok_or_else(|| UiError::Input("a script is a JSON array of {command, params}".into()))?;
         self.job =
             Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| s.run_script(&script).map(Value::Array)));
-        self.message(format!("Running a script of {n} commands…"), false);
+        self.info(format!("Running a script of {n} commands…"));
         Ok(json!({"started": "engine.script"}))
     }
 
@@ -308,7 +327,7 @@ impl EmcraftApp {
         let Some(job) = self.job.take() else { return false };
         job.cancel();
         self.dialog_job = None;
-        self.message(format!("{} cancelled.", label(&job.command)), false);
+        self.info(format!("{} cancelled.", label(&job.command)));
         for w in job.waiting {
             let _ = w.send(json!({"ok": false, "error": emcraft_engine::progress::CANCELLED}));
         }
@@ -355,7 +374,7 @@ impl EmcraftApp {
         match self.run(id, params) {
             Ok(v) => {
                 // A long command's dialog comes back with the error if its job fails.
-                self.dialog_job = self.dialog.take().filter(|_| worker::is_long(id));
+                self.dialog_job = self.dialog.take().filter(|_| commands::is_long(id));
                 Ok(v)
             }
             Err(e) => {
@@ -398,6 +417,7 @@ impl EmcraftApp {
     /// a click is a press in one frame after a move in the one before.
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
         let n = self
+            .control
             .synthetic
             .iter()
             .position(|e| {
@@ -409,18 +429,19 @@ impl EmcraftApp {
                         | egui::Event::Key { pressed: false, .. }
                 )
             })
-            .map_or(self.synthetic.len(), |i| i + 1);
-        for event in self.synthetic.drain(..n) {
+            .map_or(self.control.synthetic.len(), |i| i + 1);
+        let control = &mut self.control;
+        for event in control.synthetic.drain(..n) {
             match &event {
-                egui::Event::ModifiersChanged(m) => self.synthetic_mods = *m,
+                egui::Event::ModifiersChanged(m) => control.synthetic_mods = *m,
                 egui::Event::PointerButton { pos, modifiers, pressed, .. } => {
                     raw.events.push(egui::Event::PointerMoved(*pos));
                     raw.events.push(egui::Event::ModifiersChanged(*modifiers));
                     // A drag keeps its press's modifiers until the release.
-                    self.synthetic_mods = if *pressed { *modifiers } else { egui::Modifiers::NONE };
+                    control.synthetic_mods = if *pressed { *modifiers } else { egui::Modifiers::NONE };
                 }
                 egui::Event::Key { modifiers, .. } => raw.events.push(egui::Event::ModifiersChanged(*modifiers)),
-                egui::Event::PointerMoved(_) => raw.events.push(egui::Event::ModifiersChanged(self.synthetic_mods)),
+                egui::Event::PointerMoved(_) => raw.events.push(egui::Event::ModifiersChanged(control.synthetic_mods)),
                 _ => {}
             }
             raw.events.push(event);
@@ -538,7 +559,7 @@ pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::
         options,
         Box::new(move |cc| {
             let mut app = EmcraftApp::for_host(sample.as_deref(), host);
-            app.control_rx = control(&cc.egui_ctx);
+            app.control.rx = control(&cc.egui_ctx);
             Ok(Box::new(Window(app)))
         }),
     )

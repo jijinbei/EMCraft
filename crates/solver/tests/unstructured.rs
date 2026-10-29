@@ -15,7 +15,9 @@ fn body(shape: Shape, size: f64) -> Model {
 fn body_with(shape: Shape, size: f64, curved: bool) -> Model {
     let mut m = Model::new();
     m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid_with(&m, size, curved).unwrap());
+    m.mesh = Some(
+        emcraft_mesh::solid::solid_with(&m, &emcraft_mesh::solid::SolidOptions { curved, ..emcraft_mesh::solid::SolidOptions::new(size) }).unwrap(),
+    );
     m
 }
 

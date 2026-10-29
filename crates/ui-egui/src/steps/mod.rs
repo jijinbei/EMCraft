@@ -10,6 +10,7 @@
 use egui::{Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::{Value, json};
 
+use crate::ribbon::RibbonTab;
 use crate::scene3d::Overlay;
 use crate::theme::Tokens;
 use crate::{EmcraftApp, UiError, View, dialogs, scenario, ui_kit};
@@ -203,7 +204,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "diagram": app.workflow.diagram,
         "device": app.session.compute.device(),
         "precision": app.session.compute.precision.name(),
-        "failure": app.failure.as_ref().map(|f| json!({"command": f.0, "error": f.1})),
+        "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })
 }
@@ -228,14 +229,13 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
     let Some(step) = step else { return };
     // The ribbon shows the step's tab.
     app.tab = match step {
-        Step::Intent | Step::Geometry => "MODEL",
-        Step::Materials | Step::Boundaries => "MATERIALS",
-        Step::Excitation => "PORTS & SOURCES",
-        Step::Mesh => "MESH",
-        Step::Setup | Step::Run => "SIMULATE",
-        Step::Results => "RESULTS",
-    }
-    .into();
+        Step::Intent | Step::Geometry => RibbonTab::Model,
+        Step::Materials | Step::Boundaries => RibbonTab::Materials,
+        Step::Excitation => RibbonTab::PortsSources,
+        Step::Mesh => RibbonTab::Mesh,
+        Step::Setup | Step::Run => RibbonTab::Simulate,
+        Step::Results => RibbonTab::Results,
+    };
     app.view = match step {
         Step::Results => {
             if app.session.results.sweep.is_some() || app.session.results.time_domain.is_some() {
@@ -267,7 +267,7 @@ pub fn fix(app: &mut EmcraftApp, command: &str) {
         && !runs
         && let Err(e) = app.open_dialog(command)
     {
-        app.message(e, true);
+        app.error(e);
     }
 }
 

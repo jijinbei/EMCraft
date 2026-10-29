@@ -40,7 +40,7 @@ impl EmcraftApp {
             }
             _ => {}
         }
-        self.message(status::text(id, params, reply, &self.session), false);
+        self.info(status::text(id, params, reply, &self.session));
         // A run started from the Run step goes on to Results.
         if id.starts_with("solve.") && id != "solve.port_modes" && self.workflow.step == Some(steps::Step::Run) {
             steps::open_step(self, Some(steps::Step::Results));

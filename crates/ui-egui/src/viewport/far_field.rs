@@ -12,15 +12,12 @@ pub(super) fn far_field(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         app.views.pattern_phi = phi;
     }
     let phi = app.views.pattern_phi;
-    let width = picture_width(ui);
-    let key = format!("p|{}|{width}|{phi:.3}", app.revision);
     let session = &app.session;
-    let drawn =
-        cached_chart(ui, &mut app.views.chart, key, width, Height::new(0.9, 260.0, 700.0), || emcraft_engine::open::pattern_chart(session, phi, 91));
-    match drawn {
-        Ok(p) => {
-            picture(ui, p, "chart:pattern");
-        }
-        Err(e) => empty(ui, &e),
+    let height = Height::new(0.9, 260.0, 700.0);
+    let drawn = chart_view(ui, &mut app.views.chart, app.revision, ChartView::Pattern { phi }, height, "chart:pattern", || {
+        emcraft_engine::open::pattern_chart(session, phi, 91)
+    });
+    if let Err(e) = drawn {
+        empty(ui, &e);
     }
 }

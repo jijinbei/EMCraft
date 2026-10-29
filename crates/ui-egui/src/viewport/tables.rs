@@ -8,7 +8,7 @@ pub(super) fn port_modes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
         let make =
             empty_with_action(ui, "No port modes yet: they need a meshed model with ports.", "Solve port modes…", !app.busy(), "port_modes:solve");
         if make && let Err(e) = app.open_dialog("solve.port_modes") {
-            app.message(e, true);
+            app.error(e);
         }
         return;
     };
@@ -58,7 +58,7 @@ pub(super) fn port_modes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
                     ui.end_row();
                     let row = cells.iter().fold(cells[0].rect, |r, c| r.union(c.rect)).expand2(egui::vec2(4.0, 1.0));
                     let click = ui.interact(row, ui.id().with(("mode_row", pname, k)), Sense::click());
-                    scenario::publish_target(&format!("port_modes:row:{pname}:{}", k + 1), row);
+                    scenario::publish_target(format_args!("port_modes:row:{pname}:{}", k + 1), row);
                     if click.on_hover_text("Show this mode's pattern").clicked() {
                         picked = Some((pname.to_owned(), k));
                     }
@@ -87,7 +87,7 @@ fn mode_picture(app: &mut EmcraftApp, ui: &mut egui::Ui, reply: &Value) {
     let fu = app.session.display.frequency;
     let Some(frequency) = reply["frequency"].as_f64().map(|v| fu.to_si(v)) else { return };
     let width = picture_width(ui);
-    let key = format!("{}|{}|{frequency}|{}|{width}|{}", f.port, f.mode, app.revision, crate::theme::is_dark());
+    let key = PictureKey::new(app.revision, width, crate::state::ModePicture { port: f.port.clone(), mode: f.mode, frequency });
     let session = &app.session;
     let drawn = app
         .views
@@ -107,16 +107,16 @@ pub(super) fn num(v: &Value, digits: usize) -> String {
 
 pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
-    if app.views.eigen_table.as_ref().is_none_or(|(rev, _)| *rev != app.revision) {
+    if app.views.eigen_table.as_ref().is_none_or(|e| e.revision != app.revision) {
         match app.session.execute("results.eigenmodes", &json!({})) {
-            Ok(v) => app.views.eigen_table = Some((app.revision, v)),
+            Ok(reply) => app.views.eigen_table = Some(crate::state::EigenTable { revision: app.revision, reply }),
             Err(e) => {
                 empty(ui, &e.to_string());
                 return;
             }
         }
     }
-    let Some((_, table)) = app.views.eigen_table.clone() else { return };
+    let Some(table) = app.views.eigen_table.as_ref().map(|e| e.reply.clone()) else { return };
     let fu = app.session.display.frequency.symbol();
     let mut open = None;
     egui::Grid::new("eigen_grid").striped(true).num_columns(4).show(ui, |ui| {
@@ -129,7 +129,7 @@ pub(super) fn eigenmodes(app: &mut EmcraftApp, ui: &mut egui::Ui) {
             ui.label(num(&m["frequency"], 5));
             ui.label(num(&m["q"], 0));
             let r = ui.button("Field");
-            scenario::publish_target(&format!("eigen:field:{}", i + 1), r.rect);
+            scenario::publish_target(format_args!("eigen:field:{}", i + 1), r.rect);
             if r.clicked() {
                 open = Some(i);
             }
