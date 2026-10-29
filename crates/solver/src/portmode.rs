@@ -31,6 +31,9 @@ use crate::ldlt::Ldlt;
 use crate::sparse::Csr;
 
 mod coupled;
+mod lossy;
+
+pub use lossy::LossyPortMode;
 
 /// Iteration cap of the subspace iteration.
 const MAX_ITERATIONS: usize = 300;
@@ -262,40 +265,47 @@ impl CrossSection {
                 vt.into_iter().chain(vz).filter(|&u| u != NONE).map(|u| u as usize).collect()
             })
             .collect();
-        let pattern = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
-        let mut mats: [Csr; 4] = std::array::from_fn(|_| pattern.clone());
+        self.pattern = Csr::from_groups(n, groups.iter().map(|g| g.as_slice()));
+        let (eps, mu) = (self.eps.clone(), self.mu.clone());
+        let mats = self.assemble_with(&|t| C::new(eps[t], 0.0), &|t| C::new(1.0 / mu[t], 0.0))?;
+        let [curl, mass, b, tz] = mats.map(|m| m.into_iter().map(|c| c.re).collect::<Vec<f64>>());
+        (self.curl, self.mass, self.b, self.t) = (curl, mass, b, tz);
+        Ok(())
+    }
+
+    /// ∫ μr⁻¹ curl curl, ∫ εr e·f, the k-free part of B and ∫ εr φ ξ on the pattern, with εr
+    /// and μr⁻¹ of each triangle from `eps` and `inv_mu` (complex for lossy materials).
+    fn assemble_with(&self, eps: &dyn Fn(usize) -> C, inv_mu: &dyn Fn(usize) -> C) -> Result<[Vec<C>; 4]> {
+        let mut mats: [Csr; 4] = std::array::from_fn(|_| self.pattern.zeroed());
         for t in 0..self.tris.len() {
             let tri = self.triangle(t)?;
             let (vt, vz) = self.unknowns_of(t);
-            let (eps, inv_mu) = (self.eps[t], 1.0 / self.mu[t]);
+            let (eps, inv_mu) = (eps(t), inv_mu(t));
             for (l, w) in tri.rule() {
                 let (v, c, s, g) = (tri.values(l), tri.curls(l), tri.scalars(l), tri.scalar_gradients(l));
                 for (i, ui) in vt.iter().enumerate().filter(|(_, u)| **u != NONE) {
                     let ui = *ui as usize;
                     for (j, uj) in vt.iter().enumerate().filter(|(_, u)| **u != NONE) {
                         let uj = *uj as usize;
-                        mats[0].add(ui, uj, C::new(w * inv_mu * c[i] * c[j], 0.0));
-                        mats[1].add(ui, uj, C::new(w * eps * v[i].dot(v[j]), 0.0));
-                        mats[2].add(ui, uj, C::new(w * inv_mu * v[i].dot(v[j]), 0.0));
+                        mats[0].add(ui, uj, w * inv_mu * c[i] * c[j]);
+                        mats[1].add(ui, uj, w * eps * v[i].dot(v[j]));
+                        mats[2].add(ui, uj, w * inv_mu * v[i].dot(v[j]));
                     }
                     for (k, uk) in vz.iter().enumerate().filter(|(_, u)| **u != NONE) {
-                        let x = C::new(w * inv_mu * v[i].dot(g[k]), 0.0);
+                        let x = w * inv_mu * v[i].dot(g[k]);
                         mats[2].add(ui, *uk as usize, x);
                         mats[2].add(*uk as usize, ui, x);
                     }
                 }
                 for (k, uk) in vz.iter().enumerate().filter(|(_, u)| **u != NONE) {
                     for (m, um) in vz.iter().enumerate().filter(|(_, u)| **u != NONE) {
-                        mats[2].add(*uk as usize, *um as usize, C::new(w * inv_mu * g[k].dot(g[m]), 0.0));
-                        mats[3].add(*uk as usize, *um as usize, C::new(w * eps * s[k] * s[m], 0.0));
+                        mats[2].add(*uk as usize, *um as usize, w * inv_mu * g[k].dot(g[m]));
+                        mats[3].add(*uk as usize, *um as usize, w * eps * s[k] * s[m]);
                     }
                 }
             }
         }
-        let [curl, mass, b, tz] = mats.map(|m| m.val.iter().map(|c| c.re).collect::<Vec<f64>>());
-        self.pattern = pattern;
-        (self.curl, self.mass, self.b, self.t) = (curl, mass, b, tz);
-        Ok(())
+        Ok(mats.map(|m| m.val))
     }
 
     /// y = M x for values `val` on the pattern.
