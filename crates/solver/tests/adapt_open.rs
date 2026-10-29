@@ -3,7 +3,7 @@
 //! incident field and lifted conductor values taken as the scattered field's data.
 
 use emcraft_fem::Order;
-use emcraft_mesh::solid::{Sizes, solid_sized};
+use emcraft_mesh::solid::{SolidOptions, solid_with};
 use emcraft_model::{Inclusion, Model, Open, OpenShape, Point3, Shape, Solid, Source, Vec3};
 use emcraft_solver::Driven;
 use emcraft_solver::adapt::open_indicator;
@@ -20,7 +20,7 @@ fn open_box() -> Model {
 
 fn meshed(mut m: Model, size: f64) -> Model {
     m.set_open(Some(Open { thickness: LAYER, reflection: None, shape: OpenShape::Box })).unwrap();
-    m.mesh = Some(solid_sized(&m, &Sizes { default: size, per_material: Vec::new() }, true).unwrap());
+    m.mesh = Some(solid_with(&m, &SolidOptions::new(size)).unwrap());
     m
 }
 

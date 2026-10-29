@@ -10,7 +10,7 @@
 //!
 //! **Refinement by remeshing.** Each marked tetrahedron K becomes a ball about its centroid that
 //! covers it, with the size h_K/2 (h_K its mean edge length) and a floor ([`refinements`]); the
-//! solid is meshed again with these balls as local sizes ([`crate::solid::solid_refined`]),
+//! solid is meshed again with these balls as local sizes ([`crate::solid::solid_with`]),
 //! which the tetrahedral mesher bakes into its background grid and grades at its growth limit.
 //! The loop keeps every pass's balls, so where an earlier pass refined the size stays as it was
 //! (the previous mesh's size) and only the newly marked parts get finer.

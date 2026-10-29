@@ -26,12 +26,28 @@ use tessellation::{Tessellation, append, combined, extract, interface_size, join
 /// in it (conductors) or regions of their own (dielectrics), each meshed on its own with the
 /// shared interface's triangles kept, the regions then joined node for node.
 pub fn solid(model: &Model, size: f64) -> Result<Mesh> {
-    solid_with(model, size, true)
+    solid_with(model, &SolidOptions::new(size))
 }
 
-/// [`solid`], with the edges on curved surfaces bent onto them (`curved`) or left straight.
-pub fn solid_with(model: &Model, size: f64, curved: bool) -> Result<Mesh> {
-    solid_sized(model, &Sizes { default: size, per_material: Vec::new() }, curved)
+/// How a solid is meshed: [`solid_with`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct SolidOptions {
+    /// The element sizes: each material region meshed at its own (the solid's own material
+    /// outside the inclusions, each dielectric inclusion at its material's), the interfaces at
+    /// the smaller of their two sides'.
+    pub sizes: Sizes,
+    /// Whether the edges on curved surfaces are bent onto them (`curved`) or left straight.
+    pub curved: bool,
+    /// Local refinements: the size field is at most each one's size in its ball, graded away
+    /// from it.
+    pub refine: Vec<Refinement>,
+}
+
+impl SolidOptions {
+    /// One size everywhere, edges bent onto curved surfaces, no local refinement.
+    pub fn new(size: f64) -> SolidOptions {
+        SolidOptions { sizes: Sizes { default: size, per_material: Vec::new() }, curved: true, refine: Vec::new() }
+    }
 }
 
 /// Element sizes: a default, and one per material (by index into the model's materials) where
@@ -46,13 +62,6 @@ impl Sizes {
     pub fn of(&self, material: usize) -> f64 {
         self.per_material.get(material).copied().flatten().unwrap_or(self.default)
     }
-}
-
-/// [`solid_with`], each material region meshed at its own size (the solid's own material
-/// outside the inclusions, each dielectric inclusion at its material's), the interfaces at the
-/// smaller of their two sides'.
-pub fn solid_sized(model: &Model, sizes: &Sizes, curved: bool) -> Result<Mesh> {
-    solid_refined(model, sizes, curved, &[])
 }
 
 /// The tetrahedra a body of `volume` meshed at `size` has, about.
@@ -146,9 +155,11 @@ fn spherical_layer(model: &Model) -> Result<Option<SphericalLayer>> {
     Ok(layer)
 }
 
-/// [`solid_sized`] refined locally: the size field is at most each refinement's size in its ball,
-/// graded away from it.
-pub fn solid_refined(model: &Model, sizes: &Sizes, curved: bool, refine: &[Refinement]) -> Result<Mesh> {
+/// [`solid`] with its [`SolidOptions`]: sizes per material, curved edges or straight, local
+/// refinements.
+pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
+    let SolidOptions { sizes, curved, refine } = options;
+    let curved = *curved;
     let locals = local_sizes(refine)?;
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
@@ -642,7 +653,7 @@ mod tests {
         // Straight on request; a box has nothing to bend.
         let mut m = Model::new();
         m.set_solid(Solid { shape: Shape::Cylinder { radius: r, length: l }, material: "vacuum".into() }).unwrap();
-        assert!(solid_with(&m, 0.003, false).unwrap().curved.is_empty());
+        assert!(solid_with(&m, &SolidOptions { curved: false, ..SolidOptions::new(0.003) }).unwrap().curved.is_empty());
         assert!(mesh_of(Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, 0.004).curved.is_empty());
     }
 
