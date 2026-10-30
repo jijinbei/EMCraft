@@ -51,6 +51,8 @@ pub struct Tokens {
     pub app_bar: Color32,
     pub app_bar_text: Color32,
     pub app_bar_hover: Color32,
+    /// The app bar's button of the page that is open.
+    pub app_bar_active: Color32,
     pub toolbar: Color32,
     pub panel: Color32,
     pub panel_header: Color32,
@@ -157,7 +159,8 @@ macro_rules! colour_names {
 }
 
 colour_names!(Tokens: Color32, TOKEN_NAMES {
-    "app_bar" => app_bar, "app_bar_text" => app_bar_text, "app_bar_hover" => app_bar_hover, "toolbar" => toolbar,
+    "app_bar" => app_bar, "app_bar_text" => app_bar_text, "app_bar_hover" => app_bar_hover, "app_bar_active" => app_bar_active,
+    "toolbar" => toolbar,
     "panel" => panel, "panel_header" => panel_header, "border" => border, "text" => text, "text_dim" => text_dim,
     "accent" => accent, "accent_soft" => accent_soft, "on_accent" => on_accent, "selected_ink" => selected_ink,
     "selected_bg" => selected_bg, "hover" => hover, "error" => error, "warning" => warning, "success" => success,
@@ -615,7 +618,7 @@ mod tests {
             assert!(t.palette.ink.contrast_ratio(t.palette.ground) >= 4.5);
             assert_eq!(t.is_dark(), base == Base::Dark);
         }
-        assert_eq!(TOKEN_NAMES.len(), 55);
+        assert_eq!(TOKEN_NAMES.len(), 56);
         assert_eq!(Tokens::sizes().colour("text"), Some(Color32::TRANSPARENT));
         assert_eq!(Tokens::sizes().colour("nope"), None);
         // The fallback stands in with readable text.

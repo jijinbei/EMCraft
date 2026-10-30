@@ -84,7 +84,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let home = ui.hit(house, Fixed::BarStart.into(), Sense::click());
             let p = ui.painter();
             if home.hovered() || app.home.open {
-                p.rect_filled(house, t.radius_sm, Color32::from_white_alpha(if app.home.open { 40 } else { 28 }));
+                p.rect_filled(house, t.radius_sm, if app.home.open { t.app_bar_active } else { t.app_bar_hover });
             }
             glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
             if home.on_hover_text("Start page").clicked() {
@@ -99,7 +99,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 let resp = ui.hit(br, handle.into(), Sense::click());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, text));
                 if resp.hovered() {
-                    ui.painter().rect_filled(br, t.radius_sm, Color32::from_white_alpha(28));
+                    ui.painter().rect_filled(br, t.radius_sm, t.app_bar_hover);
                 }
                 ui.painter().galley(pos2(br.left() + 10.0, br.center().y - g.size().y / 2.0), g, t.app_bar_text);
                 *x = br.right() + 4.0;
@@ -127,7 +127,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(26.0, 26.0));
             let resp = ui.hit(gear, Fixed::BarSettings.into(), Sense::click());
             if resp.hovered() {
-                ui.painter().rect_filled(gear, t.radius_sm, Color32::from_white_alpha(28));
+                ui.painter().rect_filled(gear, t.radius_sm, t.app_bar_hover);
             }
             glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
             let resp = resp.on_hover_text("Settings");

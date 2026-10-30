@@ -5,6 +5,7 @@
 //! ATTRIBUTION.md.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod colours;
 mod dupes;
 mod layers;
 
@@ -29,8 +30,10 @@ commands:
                   default 10; tests and the ported tetmesh left out); --loose matches lines by
                   their shape (names, numbers and strings ignored); --fail exits non-zero when
                   there are copies
-  ci              fmt --check, layers, dupes --fail, clippy -D warnings, the tests, then the
-                  oracle
+  colours         fail on colours written in production code (Rgb(30, …), Color32::from_rgb(…)
+                  with numbers): a theme's colours live in its file (docs/themes.md)
+  ci              fmt --check, layers, dupes --fail, colours, clippy -D warnings, the tests,
+                  then the oracle
 ";
 
 fn main() -> ExitCode {
@@ -46,6 +49,7 @@ fn main() -> ExitCode {
         }
         Some("features") => cmd_features(),
         Some("dupes") => cmd_dupes(&rest),
+        Some("colours" | "colors") => colours::run(&root()),
         Some("ci") => cmd_ci(),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
@@ -150,6 +154,7 @@ fn cmd_ci() -> Result<(), String> {
     run(fmt, "fmt")?;
     cmd_layers()?;
     dupes::run(&root(), dupes::DEFAULT_MIN, true, false)?;
+    colours::run(&root())?;
     let mut clippy = cargo();
     clippy.args(["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]);
     run(clippy, "clippy")?;

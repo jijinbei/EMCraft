@@ -147,7 +147,8 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
     }
     if let Some(h) = &field.hover {
         let c = to_screen(h.at);
-        let ink = Stroke::new(1.0, Color32::from_black_alpha(160));
+        let l = crate::theme::palette().line;
+        let ink = Stroke::new(1.0, Color32::from_rgba_unmultiplied(l.0, l.1, l.2, 160));
         let [x0, y0, pw, ph] = layout.plane;
         let (left, top) = (to_screen(layout.to_axes([x0, y0 + ph]).unwrap_or(h.at)), to_screen(layout.to_axes([x0 + pw, y0]).unwrap_or(h.at)));
         painter.line_segment([pos2(left.x, c.y), pos2(top.x, c.y)], ink);

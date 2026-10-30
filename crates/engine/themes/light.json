@@ -5,6 +5,7 @@
     "app_bar": "#343840",
     "app_bar_text": "#e6eaf2",
     "app_bar_hover": "#ffffff1c",
+    "app_bar_active": "#ffffff28",
     "toolbar": "#f6f7f9",
     "panel": "#fafbfc",
     "panel_header": "#eceef2",
