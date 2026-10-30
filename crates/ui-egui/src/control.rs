@@ -147,6 +147,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "themes": app.themes.names(),
         "theme_problems": app.themes.problems,
         "language": app.prefs.language(),
+        "font": {"japanese": app.fonts.in_use()},
         "languages": crate::lang::ids(),
         "home": app.home.open,
         "settings": app.settings.map(|s| s.id()),

@@ -66,10 +66,15 @@ are kept; delete that folder to remove them too.
 
 ## What the Windows build leaves out
 
-The installer's build carries no GPU kernels: CubeCL's CPU and CUDA runtimes link a prebuilt
-LLVM that has no build for the toolchain the installer is made with (MinGW-w64). The finite
-element and time-domain solvers run on the CPU as everywhere; `solve.time_domain` on a GPU
-backend reports that the backend is not built.
+The installer's build carries no GPU kernels: CubeCL's CUDA runtime links a prebuilt LLVM that
+has no build for the toolchain the installer is made with (MinGW-w64), and no released build
+carries CubeCL's CPU runtime (`cubecl-cpu`, for the tests). The finite element and time-domain
+solvers run on the CPU as everywhere; `solve.time_domain` on a GPU backend reports that the
+backend is not built.
+
+Japanese text in the window is drawn in the system's Japanese font (Yu Gothic UI, else Yu
+Gothic, Meiryo UI, Meiryo, MS UI Gothic, MS Gothic), or in the embedded subset of Noto Sans JP
+when none is found (docs/languages.md).
 
 ## Building the installer on Linux
 

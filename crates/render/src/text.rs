@@ -14,8 +14,9 @@ use ab_glyph::{Font, FontRef, GlyphId, PxScale, ScaleFont, point};
 
 use crate::{font, math};
 
-/// DejaVu Sans 2.37 (Bitstream Vera licence, crates/render/fonts/LICENSE-DejaVu.txt).
-static FACE_BYTES: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
+/// DejaVu Sans 2.37 (Bitstream Vera licence, crates/render/fonts/LICENSE-DejaVu.txt), subset by
+/// `cargo xtask font-subset` to the characters pictures write (see the tests).
+static FACE_BYTES: &[u8] = include_bytes!("../fonts/DejaVuSans-subset.ttf");
 
 /// The em of DejaVu Sans whose capitals stand `scale` × 7 pixels, about.
 const EM_PER_SCALE: f32 = 9.0;
@@ -231,6 +232,55 @@ mod tests {
         for ch in "S21 |E| (V/m) εr ωt φ θ ° µ² ₁₀ — dBi λ/4 √".chars().filter(|c| !c.is_whitespace()) {
             assert_ne!(f.glyph_id(ch).0, 0, "{ch}");
         }
+    }
+
+    /// The embedded subset draws every character the code below the UI can write (the
+    /// characters of its sources, beside ASCII) exactly as the full DejaVu Sans does: the same
+    /// outline, advance and side bearing, and the same kerning between any two of them.
+    #[test]
+    fn the_subset_draws_what_the_code_writes_as_the_full_face() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let full_bytes = std::fs::read(root.join("crates/render/fonts/full/DejaVuSans.ttf")).unwrap();
+        let full = FontRef::try_from_slice(&full_bytes).unwrap();
+        let cut = face().unwrap();
+        let mut chars: Vec<char> = (' '..='~').collect();
+        let mut dirs: Vec<_> = std::fs::read_dir(root.join("crates")).unwrap().flatten().map(|e| e.path().join("src")).collect();
+        dirs.retain(|d| !d.starts_with(root.join("crates/ui-egui")));
+        while let Some(dir) = dirs.pop() {
+            for p in std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()) {
+                if p.is_dir() {
+                    dirs.push(p);
+                } else if p.extension().is_some_and(|e| e == "rs") {
+                    chars.extend(std::fs::read_to_string(&p).unwrap().chars().filter(|c| !c.is_ascii() && !c.is_control()));
+                }
+            }
+        }
+        chars.sort();
+        chars.dedup();
+        let pairs: Vec<(GlyphId, GlyphId)> =
+            chars.iter().filter(|c| full.glyph_id(**c).0 != 0).map(|c| (full.glyph_id(*c), cut.glyph_id(*c))).collect();
+        assert!(pairs.len() > 200, "{}", pairs.len());
+        for (a, b) in &pairs {
+            assert_ne!(b.0, 0, "glyph {a:?} is not in the subset (cargo xtask font-subset)");
+            assert_eq!(format!("{:?}", full.outline(*a)), format!("{:?}", cut.outline(*b)));
+            assert_eq!(
+                (full.h_advance_unscaled(*a), full.h_side_bearing_unscaled(*a)),
+                (cut.h_advance_unscaled(*b), cut.h_side_bearing_unscaled(*b))
+            );
+        }
+        let mut kerned = 0;
+        for (la, lb) in &pairs {
+            for (ra, rb) in &pairs {
+                let k = full.kern_unscaled(*la, *ra);
+                assert_eq!(k, cut.kern_unscaled(*lb, *rb), "{la:?} {ra:?}");
+                kerned += usize::from(k != 0.0);
+            }
+        }
+        assert!(kerned > 200, "{kerned}");
+        assert_eq!(
+            (full.ascent_unscaled(), full.descent_unscaled(), full.line_gap_unscaled()),
+            (cut.ascent_unscaled(), cut.descent_unscaled(), cut.line_gap_unscaled())
+        );
     }
 
     #[test]

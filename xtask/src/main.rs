@@ -7,6 +7,8 @@
 
 mod colours;
 mod dupes;
+#[cfg(feature = "fonts")]
+mod fonts;
 mod installer;
 mod layers;
 
@@ -35,6 +37,9 @@ commands:
                   with numbers): a theme's colours live in its file (docs/themes.md)
   icon            write apps/emcraft/assets/emcraft.ico (the app icon, drawn by
                   emcraft_render::icon)
+  font-subset     write the embedded fonts' subsets from the full fonts beside them
+                  (crates/ui-egui/fonts/full, crates/render/fonts/full), checked glyph by
+                  glyph against them
   installer-windows [--out FILE]
                   build the Windows installer on Linux: release binaries cross-compiled with
                   MinGW-w64, packed by NSIS (both fetched through nix-shell when missing;
@@ -58,6 +63,7 @@ fn main() -> ExitCode {
         Some("dupes") => cmd_dupes(&rest),
         Some("colours" | "colors") => colours::run(&root()),
         Some("icon") => installer::icon(&root()),
+        Some("font-subset") => font_subset(),
         Some("installer-windows") => installer::windows(&root(), &rest),
         Some("ci") => cmd_ci(),
         Some("-h" | "--help" | "help") | None => {
@@ -155,6 +161,19 @@ fn cmd_dupes(rest: &[&str]) -> Result<(), String> {
         }
     }
     dupes::run(&root(), min, fail, loose)
+}
+
+#[cfg(feature = "fonts")]
+fn font_subset() -> Result<(), String> {
+    fonts::run(&root())
+}
+
+/// The subsets need the `fonts` feature's crates: the xtask runs again with them.
+#[cfg(not(feature = "fonts"))]
+fn font_subset() -> Result<(), String> {
+    let mut c = cargo();
+    c.args(["run", "--package", "xtask", "--features", "fonts", "--", "font-subset"]);
+    run(c, "font-subset")
 }
 
 fn cmd_ci() -> Result<(), String> {

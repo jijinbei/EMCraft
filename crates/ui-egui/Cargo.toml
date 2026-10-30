@@ -18,6 +18,9 @@ eframe = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+# Reading installed fonts' names and character maps (fonts::system; already in the build
+# through egui's ab_glyph; docs/adr/0001-libraries.md).
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 
 # The scenarios run the GPU kernels on the CPU (setup_device).
 [target.'cfg(not(all(windows, target_env = "gnu")))'.dev-dependencies]

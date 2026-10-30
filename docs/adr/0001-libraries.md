@@ -20,6 +20,8 @@ FieldCraft, so its behaviour is deterministic and fully verified.
 | `cubecl` (with its bundled LLVM, and `cudarc` for the `cuda` feature) | MIT OR Apache-2.0 | the time domain's kernels on GPUs (`emcraft-gpu`, [ADR 0002](0002-gpu.md)); the CPU runtime (`cubecl-cpu` feature) only in the tests; the Windows GNU build (the installer, docs/install-windows.md) links neither runtime, as the bundled LLVM has no build for it |
 | `winresource` (build dependency, no default features) | MIT | the icon and version resource of `emcraft.exe` on Windows (`apps/emcraft/build.rs`; calls the toolchain's `windres` or `rc.exe`) |
 | `getrandom` | MIT OR Apache-2.0 | the control channel's per-launch token (`apps/emcraft` only; already in the tree through eframe) |
+| `ttf-parser` (direct) | MIT OR Apache-2.0 | the window's search for an installed Japanese font (`emcraft-ui-egui::fonts::system`: family names, weight and character map of each face; already in the tree through `ab_glyph`) |
+| `allsorts` (pure-Rust deflate), `encoding_rs`, `ttf-parser` — xtask only, its `fonts` feature | Apache-2.0 (`allsorts`), MIT OR Apache-2.0 (`encoding_rs`: (Apache-2.0 OR MIT) AND BSD-3-Clause for its WHATWG data) | `cargo xtask font-subset`: the embedded fonts' subsets (glyphs cut by `allsorts`, the JIS X 0208 kanji list from `encoding_rs`'s EUC-JP table, checked by `ttf-parser`); never in the apps |
 
 Rejected: any GPL/LGPL/AGPL solver or mesher (Elmer, openEMS, MEEP, GetDP, NGSolve, Gmsh, …) —
 not read, not linked. External sparse solvers (MUMPS, PARDISO, SuiteSparse) are not used: they

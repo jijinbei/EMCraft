@@ -90,6 +90,8 @@ pub struct EmcraftApp {
     pub session: Session,
     /// Bumped whenever the session changes, so cached pictures and tables are redrawn.
     pub revision: u64,
+    /// The Japanese font: the embedded one, and an installed one the window finds.
+    pub fonts: fonts::Japanese,
     pub job: Option<worker::Job>,
     pub tab: ribbon::RibbonTab,
     pub dialog: Option<dialogs::Dialog>,
@@ -197,6 +199,7 @@ impl EmcraftApp {
         let mut app = EmcraftApp {
             session: Session::new(),
             revision: 0,
+            fonts: Default::default(),
             job: None,
             tab: ribbon::RibbonTab::Model,
             dialog: None,
@@ -538,7 +541,7 @@ impl EmcraftApp {
         }
         self.use_theme();
         theme::apply(ctx);
-        fonts::install(ctx);
+        self.fonts.install(ctx);
         self.poll_job();
         files::poll(self);
         control::serve(self, ctx);
@@ -755,6 +758,7 @@ pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::
         options,
         Box::new(move |cc| {
             let mut app = EmcraftApp::for_host(sample.as_deref(), host);
+            app.fonts.look_for_installed(&cc.egui_ctx);
             app.control.rx = control(&cc.egui_ctx);
             Ok(Box::new(Window(app)))
         }),
