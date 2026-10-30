@@ -44,7 +44,7 @@ const HEIGHT: ParamSpec = opt("height", K::Integer, "pixels (default 600)");
 const FREQUENCIES: ParamSpec = opt("frequencies", K::Array, "the frequencies").of(F);
 const START: ParamSpec = opt("start", K::Number, "first frequency").of(F);
 const STOP: ParamSpec = opt("stop", K::Number, "last frequency").of(F);
-const POINTS: ParamSpec = opt("points", K::Integer, "frequencies from start to stop (default 11)");
+const POINTS: ParamSpec = opt("points", K::Integer, "frequencies from start to stop (default 101)");
 
 // The finite elements' order.
 const ORDER: ParamSpec = opt("order", K::Integer, "element order: 1 or 2 (default)");
@@ -614,7 +614,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "solve.refine",
         label: "Refine sweep",
         doc: "Adds frequencies to the sweep: `points` evenly from `start` to `stop` (or `frequencies`), those not solved yet solved on the sweep's own system (its mesh and order, no assembly again; three or more by the fast sweep), referred to its reference planes and merged in order. The project's run becomes the merged sweep (solve.frequency with its frequencies listed), so running it again gives the same sweep. Needs a sweep of the model as it is.",
-        params: &[FREQUENCIES, START, STOP, opt("points", K::Integer, "frequencies from start to stop (default 11)")],
+        params: &[FREQUENCIES, START, STOP, opt("points", K::Integer, "frequencies from start to stop (default 101)")],
         effect: Effect::Solve,
         invalidates: None,
         run: crate::solve::refine,

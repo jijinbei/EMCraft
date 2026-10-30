@@ -433,7 +433,7 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 | `frequencies` | array | frequency | no | the frequencies |
 | `start` | number | frequency | no | first frequency |
 | `stop` | number | frequency | no | last frequency |
-| `points` | integer |  | no | frequencies from start to stop (default 11) |
+| `points` | integer |  | no | frequencies from start to stop (default 101) |
 | `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
 | `sweep` | string |  | no | `fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each) |
 
@@ -446,7 +446,7 @@ Adds frequencies to the sweep: `points` evenly from `start` to `stop` (or `frequ
 | `frequencies` | array | frequency | no | the frequencies |
 | `start` | number | frequency | no | first frequency |
 | `stop` | number | frequency | no | last frequency |
-| `points` | integer |  | no | frequencies from start to stop (default 11) |
+| `points` | integer |  | no | frequencies from start to stop (default 101) |
 
 ## `solve.time_domain` — Time domain
 
@@ -457,7 +457,7 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `frequencies` | array | frequency | no | the frequencies |
 | `start` | number | frequency | no | first frequency |
 | `stop` | number | frequency | no | last frequency |
-| `points` | integer |  | no | frequencies from start to stop (default 11) |
+| `points` | integer |  | no | frequencies from start to stop (default 101) |
 | `cell` | number | length | no | the cell size (default 1 mm) |
 | `device` | string |  | no | where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has |
 | `precision` | string |  | no | the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double |

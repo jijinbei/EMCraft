@@ -34,7 +34,7 @@ fn frequencies(s: &Session, p: &Params) -> Result<Vec<f64>> {
         let hint = "give `frequencies`, or `start` and `stop`, or set the band: project.frequency";
         let start = p.frequency("start").or_maybe(s.model.band.map(|b| b.start)).required_or(hint)?;
         let stop = p.frequency("stop").or_maybe(s.model.band.map(|b| b.stop)).required_or(hint)?;
-        let n = p.integer("points", 1..=s.limits.frequencies).or(11)?;
+        let n = p.integer("points", 1..=s.limits.frequencies).or(DEFAULT_POINTS)?;
         if stop < start {
             return Err(p.error("stop", "must not be below `start`"));
         }
@@ -47,6 +47,11 @@ fn frequencies(s: &Session, p: &Params) -> Result<Vec<f64>> {
     out.dedup();
     Ok(out)
 }
+
+/// The frequencies a sweep takes from `start` to `stop` when `points` is not given: enough to
+/// see a response's shape (a resonance, a cut-off); the fast sweep solves a few of them in full
+/// and the rest from their reduced model, so they cost little more than a handful.
+pub const DEFAULT_POINTS: usize = 101;
 
 emcraft_macros::named_enum! {
     /// How a sweep solves its frequencies (`sweep`).

@@ -10,6 +10,9 @@ use crate::{Canvas, Rgb};
 pub enum Style {
     Line,
     Markers,
+    /// Markers joined by a thin line: data whose points are what was computed, the line only a
+    /// guide to the eye between them.
+    Joined,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -37,7 +40,7 @@ impl Series {
     fn drawn_width(&self) -> f64 {
         let usual = match self.style {
             Style::Line => 2.0,
-            Style::Markers => 4.0,
+            Style::Markers | Style::Joined => 4.0,
         };
         self.width.filter(|w| w.is_finite()).map_or(usual, |w| w.clamp(0.5, 12.0))
     }
@@ -134,6 +137,10 @@ fn sample(c: &mut Canvas, s: &Series, at: [f64; 2], color: Rgb) {
     match s.style {
         Style::Line => c.line([lx, ly + 7.0], [lx + 26.0, ly + 7.0], s.drawn_width(), color),
         Style::Markers => diamond(c, [lx + 13.0, ly + 7.0], s.drawn_width(), color),
+        Style::Joined => {
+            c.line([lx, ly + 7.0], [lx + 26.0, ly + 7.0], 1.0, color);
+            diamond(c, [lx + 13.0, ly + 7.0], s.drawn_width(), color);
+        }
     }
 }
 
@@ -181,6 +188,18 @@ pub fn draw(chart: &Chart, width: usize, height: usize, palette: &Palette) -> Ca
             Style::Markers => {
                 for q in pts.iter().filter(|q| inside(**q)) {
                     diamond(&mut c, *q, width, color);
+                }
+            }
+            Style::Joined => {
+                for w in pts.windows(2) {
+                    if inside(w[0]) || inside(w[1]) {
+                        c.line(w[0], w[1], (width * 0.3).max(1.0), color);
+                    }
+                }
+                // Many points close together: smaller markers, so the line still reads.
+                let small = if pts.len() > 40 { width * 0.6 } else { width };
+                for q in pts.iter().filter(|q| inside(**q)) {
+                    diamond(&mut c, *q, small, color);
                 }
             }
         }

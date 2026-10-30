@@ -75,7 +75,7 @@ fn frequency_count(p: &Params, max: usize) -> Result<f64> {
     if let Some(list) = p.list("frequencies", max).optional()? {
         return Ok(list.len().max(1) as f64);
     }
-    Ok(p.integer("points", 1..=max).or(11)? as f64)
+    Ok(p.integer("points", 1..=max).or(crate::solve::DEFAULT_POINTS)? as f64)
 }
 
 /// The cost of `command` run with parameters `p`, its order `order` unless they give one.

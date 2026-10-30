@@ -137,7 +137,7 @@ impl Fields {
 
     /// Empty fields take their defaults, as the Setup panel shows them.
     fn fill_defaults(&mut self) {
-        for (field, default) in [(&mut self.points, "11"), (&mut self.order, "2"), (&mut self.count, "5")] {
+        for (field, default) in [(&mut self.points, "101"), (&mut self.order, "2"), (&mut self.count, "5")] {
             if field.is_empty() {
                 *field = default.to_owned();
             }

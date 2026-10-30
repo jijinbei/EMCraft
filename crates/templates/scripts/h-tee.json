@@ -7,5 +7,5 @@
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "x", "face": [0, 0, 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=2*l+a", 0, 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "3", "end": "end", "modes": 4, "axis": "y", "face": ["=l+a", "=l", 0, "=a", "=b"]}},
- {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 11, "order": 2}}
+ {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 101, "order": 2}}
 ]

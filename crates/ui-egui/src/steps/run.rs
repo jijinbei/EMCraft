@@ -9,7 +9,7 @@ pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver
     let band = band(s);
     let limit = s.limits().frequencies as u64;
     if f.points.is_empty() {
-        f.points = "11".into();
+        f.points = "101".into();
     }
     if f.order.is_empty() {
         f.order = "2".into();
