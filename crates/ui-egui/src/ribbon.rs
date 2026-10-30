@@ -12,6 +12,7 @@ use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
 use crate::lang::{Raw, args, command_doc, shown, tr, trf};
 use crate::theme::Tokens;
+use crate::tools3d::Tool;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
 
 emcraft_macros::named_enum! {
@@ -66,6 +67,10 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
         ],
     ),
 ];
+
+/// The 3D view's tools on the ribbon, after a panel's commands: the ports made by pointing at
+/// the model, beside the port commands.
+pub const TOOLS: &[(RibbonTab, &str, &[Tool])] = &[(RibbonTab::PortsSources, "PORTS", &[Tool::Port, Tool::Lumped])];
 
 const APP_BAR_HEIGHT: f32 = 34.0;
 const TAB_ROW_HEIGHT: f32 = 30.0;
@@ -181,33 +186,23 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             let busy = app.busy();
             for (panel, items) in panels.iter() {
                 let x0 = x;
+                let enabled = !busy;
                 for &id in items.iter() {
-                    let (text, glyph) = (button_label(id), glyph(id));
-                    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
-                    let w = (g.size().x + 14.0).max(BUTTON_MIN_WIDTH);
-                    let br = Rect::from_min_size(pos2(x, top), vec2(w, BUTTON_HEIGHT));
-                    let enabled = !busy;
                     let active = app.dialog.as_ref().is_some_and(|d| d.command.id == id);
-                    let resp = ui.hit(br, Handle::Toolbar(id), if enabled { Sense::click() } else { Sense::hover() });
-                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
-                    if active {
-                        ui.painter().rect_filled(br, t.radius_sm, accent[2]);
-                    } else if resp.hovered() && enabled {
-                        ui.painter().rect_filled(br, t.radius_sm, t.hover);
-                    }
-                    let ink = if enabled { t.icon } else { t.icon.gamma_multiply(0.4) };
-                    glyphs::paint(
-                        ui.painter(),
-                        Rect::from_center_size(pos2(br.center().x, br.top() + 18.0), vec2(26.0, 26.0)),
-                        glyph,
-                        ink,
-                        accent[0],
-                    );
-                    let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
-                    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
-                    ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
+                    let b = Button { text: button_label(id), glyph: glyph(id), handle: Handle::Toolbar(id), enabled, active };
+                    let (resp, w) = button(ui, b, pos2(x, top), accent);
                     if resp.hint(Raw(command_doc(id))).clicked() {
                         out.push(Action::dialog(id));
+                    }
+                    x += w + 3.0;
+                }
+                let tools = TOOLS.iter().filter(|(on, p, _)| *on == tab && p == panel).flat_map(|(_, _, tools)| tools.iter().copied());
+                for tool in tools {
+                    let active = app.view3d.tools.tool == Some(tool);
+                    let b = Button { text: tr(tool.label()), glyph: tool.glyph(), handle: Handle::RibbonTool(tool), enabled, active };
+                    let (resp, w) = button(ui, b, pos2(x, top), accent);
+                    if resp.hint(tool.hint()).clicked() {
+                        out.push(Action::Tool((!active).then_some(tool)));
                     }
                     x += w + 3.0;
                 }
@@ -220,6 +215,39 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                 x += 7.0;
             }
         });
+}
+
+/// A ribbon button: its label, glyph and name, whether it can be clicked and whether what it
+/// opens is open.
+struct Button<'a> {
+    text: &'a str,
+    glyph: Glyph,
+    handle: Handle<'a>,
+    enabled: bool,
+    active: bool,
+}
+
+/// Draws a ribbon button at `at` (60 pt high, its glyph over its label) in the tab's `accent`;
+/// its response and width.
+fn button(ui: &mut egui::Ui, b: Button, at: egui::Pos2, accent: [Color32; 3]) -> (egui::Response, f32) {
+    let t = &Tokens::get();
+    let Button { text, glyph, handle, enabled, active } = b;
+    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
+    let w = (g.size().x + 14.0).max(BUTTON_MIN_WIDTH);
+    let br = Rect::from_min_size(at, vec2(w, BUTTON_HEIGHT));
+    let resp = ui.hit(br, handle, if enabled { Sense::click() } else { Sense::hover() });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
+    if active {
+        ui.painter().rect_filled(br, t.radius_sm, accent[2]);
+    } else if resp.hovered() && enabled {
+        ui.painter().rect_filled(br, t.radius_sm, t.hover);
+    }
+    let ink = if enabled { t.icon } else { t.icon.gamma_multiply(0.4) };
+    glyphs::paint(ui.painter(), Rect::from_center_size(pos2(br.center().x, br.top() + 18.0), vec2(26.0, 26.0)), glyph, ink, accent[0]);
+    let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
+    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
+    ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
+    (resp, w)
 }
 
 /// The tab row's tabs; where the last one ends.

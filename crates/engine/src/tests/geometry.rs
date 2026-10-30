@@ -465,3 +465,37 @@ fn coupled_strips_keep_apart_and_hostile_ones_are_refused() {
         assert_eq!(s.model, before);
     }
 }
+
+#[test]
+fn measure_reads_and_answers_in_display_units_and_changes_nothing() {
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [10, 6, 20]})).unwrap();
+    let before = s.history().len();
+    // The box's faces x = 0 and x = 10, picked at two corners: 10 apart across, the corners
+    // further.
+    let r = s.execute("geometry.measure", &json!({"from": [0, 0, 0], "to": [10, 6, 20], "from_normal": [-1, 0, 0], "to_normal": [1, 0, 0]})).unwrap();
+    assert!((r["distance"].as_f64().unwrap() - 536f64.sqrt()).abs() < 1e-12, "{r}");
+    assert_eq!(
+        (r["delta"].clone(), r["gap"].as_f64(), r["angle"].as_f64(), r["unit"].as_str()),
+        (json!([10.0, 6.0, 20.0]), Some(10.0), Some(0.0), Some("mm"))
+    );
+    // Two points: no gap, no angle.
+    let r = s.execute("geometry.measure", &json!({"from": [0, 0, 0], "to": [0, 3, 4]})).unwrap();
+    assert_eq!((r["distance"].as_f64(), r["gap"].clone(), r["angle"].clone()), (Some(5.0), json!(null), json!(null)));
+    // In metres the same points read in metres.
+    s.execute("units.set", &json!({"length": "m"})).unwrap();
+    let r = s.execute("geometry.measure", &json!({"from": [0, 0, 0], "to": [0.5, 0, 0], "to_along": [0, 1, 0]})).unwrap();
+    assert_eq!((r["distance"].as_f64(), r["gap"].as_f64(), r["unit"].as_str()), (Some(0.5), Some(0.5), Some("m")));
+    assert_eq!(s.history().len(), before + 1, "only units.set is recorded");
+    // Hostile picks: refused.
+    for bad in [
+        json!({"from": [0, 0, 0]}),
+        json!({"from": [0, 0], "to": [0, 0, 0]}),
+        json!({"from": [0, 0, "x"], "to": [0, 0, 0]}),
+        json!({"from": [0, 0, 0], "to": [1, 0, 0], "to_normal": [0, 0, 0]}),
+        json!({"from": [0, 0, 0], "to": [1, 0, 0], "from_normal": [0, 0, 1], "from_along": [1, 0, 0]}),
+        json!({"from": [0, 0, 0], "to": [1, 0, 0], "from_along": ["a", 0, 0]}),
+    ] {
+        assert!(s.execute("geometry.measure", &bad).is_err(), "{bad}");
+    }
+}

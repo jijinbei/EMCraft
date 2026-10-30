@@ -116,6 +116,9 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
                 args!(n = passes.len(), tets = tets, what = what, last = last, converged = converged),
             )
         }
+        "geometry.measure" => {
+            trf("Distance {distance} {unit}.", args!(distance = crate::tools3d::trimmed(r.num("distance"), 4), unit = r.text("unit")))
+        }
         "project.variable" => format!("{} = {}.", p.text("name"), r.num("value")),
         "project.variable.delete" => trf("Deleted variable {name}.", args!(name = p.text("name"))),
         "study.sweep" | "study.optimize" => match session.results().study.as_ref() {

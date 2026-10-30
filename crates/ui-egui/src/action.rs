@@ -92,6 +92,11 @@ pub enum Action {
     StandardView(StandardView),
     /// The field's phase animation plays or pauses.
     SetPlaying(bool),
+    /// A tool of the 3D view on (the ports' with the Excitation step and the model in 3D), or
+    /// none.
+    Tool(Option<crate::tools3d::Tool>),
+    /// Measures between two picks (`geometry.measure`); the 3D view draws the reply.
+    Measure([crate::tools3d::Snap; 2]),
     /// A message in the message area.
     Message {
         text: String,
@@ -301,6 +306,23 @@ impl EmcraftApp {
             }
             Action::StandardView(v) => self.view3d.standard(v),
             Action::SetPlaying(on) => self.field.player.playing = on,
+            Action::Tool(tool) => {
+                self.view3d.tools.set(tool);
+                if tool.is_some() {
+                    self.view = View::Model;
+                    self.settings = None;
+                    self.home.open = false;
+                }
+                if tool.is_some_and(crate::tools3d::Tool::ports) && self.workflow.step != Some(crate::steps::Step::Excitation) {
+                    crate::steps::open_step(self, Some(crate::steps::Step::Excitation));
+                }
+            }
+            Action::Measure(picks) => {
+                let params = crate::tools3d::measure_params(self.session.display().length, picks);
+                let reply = self.run("geometry.measure", params)?;
+                self.view3d.tools.measured = Some((picks, reply.clone()));
+                return Ok(reply);
+            }
             Action::Message { text, error } => {
                 if error {
                     self.error(text);

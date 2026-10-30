@@ -15,6 +15,11 @@ impl EmcraftApp {
             Some((command, p)) => (command, p),
             None => (id, params),
         };
+        // A measurement changes nothing: the pictures and views stay.
+        if id == "geometry.measure" {
+            self.info(status::text(id, params, reply, &self.session));
+            return;
+        }
         self.revision = self.revision.wrapping_add(1);
         self.failure = None;
         self.field.forget_samples();

@@ -483,3 +483,27 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     s.model.add_port(port)?;
     Ok(json!({"name": name}))
 }
+
+/// `geometry.measure`: the distance between two picked points, with the gap and angle their
+/// faces or edges give ([`emcraft_model::measure`]), lengths in display units.
+pub fn measure(s: &mut Session, p: &Params) -> Result<Value> {
+    use emcraft_model::measure::{Kind, Mark};
+    let mark = |at: &str, normal: &str, along: &str| -> Result<Mark> {
+        let kind = match (p.vector(normal).optional()?, p.vector(along).optional()?) {
+            (Some(_), Some(_)) => return Err(p.error(normal, format!("and `{along}` cannot both be given"))),
+            (Some(n), None) => Kind::Plane(n),
+            (None, Some(d)) => Kind::Line(d),
+            (None, None) => Kind::Point,
+        };
+        Ok(Mark { at: p.point(at).required()?, kind })
+    };
+    let m = emcraft_model::measure::measure(mark("from", "from_normal", "from_along")?, mark("to", "to_normal", "to_along")?)?;
+    let l = s.display().length;
+    Ok(json!({
+        "distance": l.from_si(m.distance),
+        "delta": [l.from_si(m.delta.x), l.from_si(m.delta.y), l.from_si(m.delta.z)],
+        "gap": m.gap.map(|g| l.from_si(g)),
+        "angle": m.angle,
+        "unit": l.symbol(),
+    }))
+}

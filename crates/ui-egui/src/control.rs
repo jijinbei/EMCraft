@@ -412,6 +412,18 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
     if let Some(on) = a.bool("animate") {
         asked.push(Action::SetPlaying(on));
     }
+    // The 3D view's tool (`none` turns it off).
+    match a.get("tool") {
+        None => {}
+        Some(Value::String(x)) if x == "none" => asked.push(Action::Tool(None)),
+        Some(Value::String(x)) => {
+            let tool = crate::tools3d::Tool::parse(x).ok_or_else(|| {
+                format!("unknown tool `{}` (there are {} or none)", clip(x, 40), <crate::tools3d::Tool as emcraft_macros::Named>::listed())
+            })?;
+            asked.push(Action::Tool(Some(tool)));
+        }
+        Some(_) => return Err("`tool` must be a tool's name or `none`".into()),
+    }
     // The workflow step (`none` closes the panel).
     match a.get("step") {
         None => {}

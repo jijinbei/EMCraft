@@ -397,6 +397,22 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::geometry::feature,
     },
     CommandSpec {
+        id: "geometry.measure",
+        label: "Measure",
+        doc: "The distance between two picked points (`from`, `to`) and its components Δx, Δy, Δz. A point picked on a face may bring the face's normal (`from_normal`, `to_normal`: a plane through the point), one picked on a straight edge its direction (`from_along`, `to_along`: a line through it); then the perpendicular distance `gap` (two parallel faces, a point and a face, a point and an edge, two parallel edges, an edge along a face) and the `angle` between them (two faces, two edges, an edge and a face; degrees, 0 to 90) come too. Changes nothing.",
+        params: &[
+            req("from", K::Array, "the first point [x, y, z]").of(L),
+            req("to", K::Array, "the second point [x, y, z]").of(L),
+            opt("from_normal", K::Array, "the normal of the face the first point lies on"),
+            opt("to_normal", K::Array, "the normal of the face the second point lies on"),
+            opt("from_along", K::Array, "the direction of the edge the first point lies on"),
+            opt("to_along", K::Array, "the direction of the edge the second point lies on"),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::geometry::measure,
+    },
+    CommandSpec {
         id: "mesh.generate",
         label: "Mesh",
         doc: "Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises. A solid is meshed without structure, its tetrahedra on curved walls and interfaces curved (quadratic geometry) unless `curved` is false.",

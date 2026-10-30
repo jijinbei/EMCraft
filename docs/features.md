@@ -258,6 +258,19 @@ Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract
 | `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
 | `axis` | string |  | no | `x`, `y` or `z` (default): where its own z axis points |
 
+## `geometry.measure` — Measure
+
+The distance between two picked points (`from`, `to`) and its components Δx, Δy, Δz. A point picked on a face may bring the face's normal (`from_normal`, `to_normal`: a plane through the point), one picked on a straight edge its direction (`from_along`, `to_along`: a line through it); then the perpendicular distance `gap` (two parallel faces, a point and a face, a point and an edge, two parallel edges, an edge along a face) and the `angle` between them (two faces, two edges, an edge and a face; degrees, 0 to 90) come too. Changes nothing.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `from` | array | length | yes | the first point [x, y, z] |
+| `to` | array | length | yes | the second point [x, y, z] |
+| `from_normal` | array |  | no | the normal of the face the first point lies on |
+| `to_normal` | array |  | no | the normal of the face the second point lies on |
+| `from_along` | array |  | no | the direction of the edge the first point lies on |
+| `to_along` | array |  | no | the direction of the edge the second point lies on |
+
 ## `mesh.generate` — Mesh
 
 Meshes the waveguide with tetrahedra of about `size` on a side (six per cell of a structured grid; every section boundary and aperture wall is a grid plane), graded towards the re-entrant edges of steps and irises. A solid is meshed without structure, its tetrahedra on curved walls and interfaces curved (quadratic geometry) unless `curved` is false.

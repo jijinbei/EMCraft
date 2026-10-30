@@ -139,6 +139,15 @@ emcraft_macros::named_enum! {
         View3dSection = "view3d:section",
         View3dSectionAt = "view3d:section:at",
         View3dSectionFlip = "view3d:section:flip",
+        /// The selection card's Edit and Delete.
+        View3dSelectedEdit = "view3d:selected:edit",
+        View3dSelectedDelete = "view3d:selected:delete",
+        /// Where a tool's pick snaps to under the pointer.
+        View3dSnap = "view3d:snap",
+        /// The measurement's card.
+        View3dMeasure = "view3d:measure",
+        /// The selected port's reference plane's grip.
+        View3dRefPlane = "view3d:refplane",
     }
 }
 
@@ -230,6 +239,16 @@ pub enum Handle<'a> {
     Standard(StandardView),
     /// The axis the section view cuts across (0 x, 1 y, 2 z): `view3d:section:x`.
     SectionAxis(usize),
+    /// A tool's switch in the 3D view: `view3d:tool:measure`.
+    Tool(crate::tools3d::Tool),
+    /// A tool's button on the ribbon: `toolbar:tool:port`.
+    RibbonTool(crate::tools3d::Tool),
+    /// A tool's button in a step's panel: `step:tool:lumped`.
+    StepTool(crate::tools3d::Tool),
+    /// A corner of the face under the pointer while a tool is on: `view3d:corner:2`.
+    Corner(usize),
+    /// An end of the model while the port tool is on: `view3d:end:start`.
+    PortEnd(emcraft_model::End),
     /// The S-parameter a study's chart shows: `study:parameter:s21`.
     StudyParameter(&'a str),
     /// The variable a grid study is charted along: `study:along:a`.
@@ -287,6 +306,11 @@ impl fmt::Display for Handle<'_> {
             Handle::FieldKept(k) => write!(f, "field:kept:{k}"),
             Handle::Standard(v) => write!(f, "view3d:std:{}", v.id()),
             Handle::SectionAxis(k) => write!(f, "view3d:section:{}", AXES.get(k).copied().unwrap_or("?")),
+            Handle::Tool(t) => write!(f, "view3d:tool:{}", t.id()),
+            Handle::RibbonTool(t) => write!(f, "toolbar:tool:{}", t.id()),
+            Handle::StepTool(t) => write!(f, "step:tool:{}", t.id()),
+            Handle::Corner(i) => write!(f, "view3d:corner:{i}"),
+            Handle::PortEnd(e) => write!(f, "view3d:end:{}", e.id()),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),

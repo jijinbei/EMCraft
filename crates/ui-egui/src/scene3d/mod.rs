@@ -11,6 +11,7 @@ use emcraft_render::Rgb;
 use emcraft_render::view3d::Scene;
 
 mod extras;
+pub(crate) mod faces;
 mod field;
 mod geometry;
 mod legend;
@@ -18,6 +19,7 @@ mod mesh;
 mod style;
 mod surface;
 
+pub(crate) use extras::{port_inward, port_quad};
 pub(crate) use field::normal_axis;
 pub(crate) use geometry::{BOX_EDGES, box_corner};
 pub use style::material_rgb;
@@ -56,6 +58,8 @@ pub enum Pick {
     /// A field plane in the Results step's view.
     Plane(usize),
     Via(usize),
+    /// A lumped port's marker.
+    Lumped(usize),
 }
 
 impl Pick {
@@ -72,6 +76,7 @@ impl Pick {
             Pick::Port(i) => (8, i),
             Pick::Plane(i) => (9, i),
             Pick::Via(i) => (10, i),
+            Pick::Lumped(i) => (11, i),
         };
         (kind << 16) | (i.min(0xFFFF) as u32)
     }
@@ -89,6 +94,7 @@ impl Pick {
             8 => Pick::Port(i),
             9 => Pick::Plane(i),
             10 => Pick::Via(i),
+            11 => Pick::Lumped(i),
             _ => return None,
         })
     }

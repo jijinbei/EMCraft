@@ -17,7 +17,8 @@
 //! - [`periodic`]: periodic boundaries (unit cells of infinite arrays);
 //! - [`band`]: the frequency band;
 //! - [`model`]: the [`Model`] and its checked setters;
-//! - [`edit`]: changing and removing the model's items, each checked as a new one would be.
+//! - [`edit`]: changing and removing the model's items, each checked as a new one would be;
+//! - [`measure`]: distances, gaps and angles between picked points, faces and edges.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -26,6 +27,7 @@ pub mod edit;
 pub mod error;
 pub mod geom;
 pub mod material;
+pub mod measure;
 pub mod mesh;
 pub mod model;
 pub mod open;

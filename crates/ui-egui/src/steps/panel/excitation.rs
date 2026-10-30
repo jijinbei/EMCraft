@@ -6,6 +6,14 @@ use crate::lang::args;
 
 pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Ports and sources");
+    // The ports made by pointing at the model in 3D.
+    ui.horizontal(|ui| {
+        for tool in [crate::tools3d::Tool::Port, crate::tools3d::Tool::Lumped] {
+            let on = app.view3d.tools.tool == Some(tool);
+            let b = egui::Button::new(tr(tool.label())).selected(on);
+            ui.act(!app.busy(), b, Handle::StepTool(tool), tool.hint(), || Action::Tool((!on).then_some(tool)), out);
+        }
+    });
     let m = app.session.model();
     if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
         ui_kit::small(ui, "none yet", t.text_dim);

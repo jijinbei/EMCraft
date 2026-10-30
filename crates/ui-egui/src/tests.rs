@@ -173,6 +173,21 @@ fn scenario_view3d_ports_before_mesh() {
 }
 
 #[test]
+fn scenario_view3d_measure() {
+    scenario("view3d_measure");
+}
+
+#[test]
+fn scenario_view3d_port_tool() {
+    scenario("view3d_port_tool");
+}
+
+#[test]
+fn scenario_view3d_lumped_tool() {
+    scenario("view3d_lumped_tool");
+}
+
+#[test]
 fn scenario_view3d_gpu() {
     scenario("view3d_gpu");
 }
