@@ -159,7 +159,7 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
             return Ok(*f);
         }
         if rows.len() >= cap {
-            return Err(EngineError::Failed(OUT_OF_SOLVES.into()));
+            return Err(EngineError::failed(OUT_OF_SOLVES));
         }
         let values: Vec<f64> = bounds.iter().zip(&u).map(|(b, x)| b.value(*x)).collect();
         let set: Vec<(String, Value)> = bounds.iter().zip(&values).map(|(b, v)| (b.name.clone(), json!(v))).collect();

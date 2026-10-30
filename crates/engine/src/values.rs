@@ -24,7 +24,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
     let pt = |q: emcraft_model::Point3| json!([l(q.x), l(q.y), l(q.z)]);
     let v = match spec.id {
         "project.frequency" => m.band.map_or_else(|| json!({}), |b| json!({"start": f(b.start), "stop": f(b.stop)})),
-        "units.set" => json!({"length": s.display.length.symbol(), "frequency": s.display.frequency.symbol()}),
+        "units.set" => crate::reply::units(s.display),
         "solve.device" => json!({"device": s.compute.device(), "precision": s.compute.precision.id()}),
         "model.walls" => m.wall_conductivity.map_or_else(|| json!({}), |c| json!({"conductivity": c})),
         "model.open" => match m.open {

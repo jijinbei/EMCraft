@@ -8,6 +8,7 @@ use emcraft_model::units::C0;
 use serde::{Deserialize, Serialize};
 
 use crate::Session;
+use crate::view::X11_PRIME;
 
 emcraft_macros::named_enum! {
     /// A step of the workflow, in the order a job goes through them.
@@ -134,8 +135,7 @@ pub struct Cutoff {
     pub first: bool,
 }
 
-/// Bessel zeros for a circular port's first modes: J1′ (TE11) and J0 (TM01).
-const X11_PRIME: f64 = 1.841_183_781_340_659;
+/// The first zero of J0, for a circular port's TM01 (its TE11 takes J1′'s, [`X11_PRIME`]).
 const X01: f64 = 2.404_825_557_695_773;
 
 /// The cut-offs of the ports' first modes (closed form, from each port's cross-section and

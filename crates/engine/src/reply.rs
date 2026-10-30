@@ -1,8 +1,13 @@
 //! Complex values in replies, each in the form its readers expect.
 
-use emcraft_model::units::decibels;
+use emcraft_model::units::{Display, decibels};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
+
+/// Display units as replies give them: the length's and the frequency's symbols.
+pub(crate) fn units(d: Display) -> Value {
+    json!({"length": d.length.symbol(), "frequency": d.frequency.symbol()})
+}
 
 /// An S-parameter: parts, magnitude (also in dB) and phase in degrees.
 pub(crate) fn complex(c: C) -> Value {

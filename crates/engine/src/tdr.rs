@@ -59,7 +59,7 @@ pub fn spacing(freqs: &[f64]) -> Option<(f64, bool)> {
 
 /// The transform of the reflection `s` at `freqs` (Hz, ascending).
 pub fn transform(freqs: &[f64], s: &[C], mode: Mode) -> Result<Tdr> {
-    let bad = |why: &str| EngineError::Failed(format!("time-domain reflectometry: {why}"));
+    let bad = |why: &str| EngineError::failed(format!("time-domain reflectometry: {why}"));
     if freqs.len() != s.len() || freqs.len() < 4 {
         return Err(bad("needs a sweep of at least 4 frequencies"));
     }

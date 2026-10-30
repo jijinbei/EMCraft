@@ -37,12 +37,12 @@ impl ExactLine {
 /// The exact TE₁₀ line of a waveguide of uniform cross-section.
 pub fn te10_line(session: &Session) -> Result<ExactLine> {
     if session.model.periodic.is_some() {
-        return Err(EngineError::Failed("not supported yet: exact fields of a periodic cell".into()));
+        return Err(EngineError::failed("not supported yet: exact fields of a periodic cell"));
     }
-    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
+    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::failed("no waveguide"))?;
     if !w.uniform() {
-        return Err(EngineError::Failed(
-            "not supported yet: exact fields of a guide whose aperture changes (the S-parameters are compared with mode matching)".into(),
+        return Err(EngineError::failed(
+            "not supported yet: exact fields of a guide whose aperture changes (the S-parameters are compared with mode matching)",
         ));
     }
     let mut sections = Vec::with_capacity(w.sections.len());
@@ -56,13 +56,13 @@ pub fn te10_line(session: &Session) -> Result<ExactLine> {
 /// Mode matching takes constant permittivities: refuses a dispersive material.
 fn constant(m: &Material) -> Result<&Material> {
     if m.is_magnetically_lossy() {
-        return Err(EngineError::Failed(format!(
+        return Err(EngineError::failed(format!(
             "not supported yet: a mode-matching reference for the magnetically lossy material `{}` (only uniform guides have one)",
             m.name
         )));
     }
     if m.is_dispersive() {
-        return Err(EngineError::Failed(format!(
+        return Err(EngineError::failed(format!(
             "not supported yet: a mode-matching reference for the dispersive material `{}` (only uniform guides have one)",
             m.name
         )));
@@ -72,7 +72,7 @@ fn constant(m: &Material) -> Result<&Material> {
 
 /// x'₁₁, the first zero of J₁' (Abramowitz & Stegun, Table 9.5): the circular guide's TE11
 /// cut-off is x'₁₁/r.
-const X11_PRIME: f64 = 1.841_183_781_340_659;
+pub(crate) const X11_PRIME: f64 = 1.841_183_781_340_659;
 
 /// TE_m0 modes in the widest section when the reference is mode matching: converged to about
 /// 10⁻⁵ in S for irises and steps of a few millimetres.
@@ -122,7 +122,7 @@ impl Reference {
                 let k = 2.0 * std::f64::consts::PI * frequency / emcraft_model::units::C0;
                 let b2 = k * k * index2 - cutoff * cutoff;
                 if !(b2 > 0.0) {
-                    return Err(EngineError::Failed(format!("{frequency} Hz is below the guide's cut-off")));
+                    return Err(EngineError::failed(format!("{frequency} Hz is below the guide's cut-off")));
                 }
                 Ok((C::new(0.0, 0.0), C::from_polar(1.0, -b2.sqrt() * length)))
             }
@@ -140,9 +140,9 @@ pub fn reference(session: &Session) -> Result<Reference> {
     {
         return body_reference(session, solid);
     }
-    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::Failed("no waveguide".into()))?;
+    let w = session.model.waveguide.as_ref().ok_or_else(|| EngineError::failed("no waveguide"))?;
     if !w.plain() {
-        return Err(EngineError::Failed("not supported yet: a reference for a layered guide or one with strips".into()));
+        return Err(EngineError::failed("not supported yet: a reference for a layered guide or one with strips"));
     }
     if w.uniform() {
         return Ok(Reference::Exact(te10_line(session)?));
@@ -157,7 +157,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
         return Ok(Reference::EPlane(EPlaneLine { a: w.width, sections }));
     }
     if !w.full_height() {
-        return Err(EngineError::Failed("not supported yet: a reference for guides whose width and height both change".into()));
+        return Err(EngineError::failed("not supported yet: a reference for guides whose width and height both change"));
     }
     let mut sections = Vec::with_capacity(w.sections.len());
     for (i, s) in w.sections.iter().enumerate() {
@@ -194,7 +194,7 @@ fn body_reference(session: &Session, solid: &emcraft_model::Solid) -> Result<Ref
         {
             Ok(Reference::Uniform { length: *length, cutoff: 0.0, index2 })
         }
-        _ => Err(EngineError::Failed("not supported yet: a reference for this body's ports".into())),
+        _ => Err(EngineError::failed("not supported yet: a reference for this body's ports")),
     }
 }
 

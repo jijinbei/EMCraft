@@ -108,7 +108,7 @@ mod tests {
         let mut f = |x: &[f64]| -> Result<f64> {
             count += 1;
             if count > 5 {
-                return Err(EngineError::Failed(OUT_OF_SOLVES.into()));
+                return Err(EngineError::failed(OUT_OF_SOLVES));
             }
             Ok(x[0].sin())
         };
