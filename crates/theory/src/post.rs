@@ -218,7 +218,7 @@ fn green(a: f64, k: f64, p: (f64, f64), q: (f64, f64)) -> C {
 }
 
 /// Gaussian elimination with partial pivoting (the first largest pivot: deterministic).
-fn dense_solve(mut a: Vec<C>, mut b: Vec<C>, n: usize) -> Option<Vec<C>> {
+pub(crate) fn dense_solve(mut a: Vec<C>, mut b: Vec<C>, n: usize) -> Option<Vec<C>> {
     for c in 0..n {
         let mut piv = c;
         for r in c + 1..n {

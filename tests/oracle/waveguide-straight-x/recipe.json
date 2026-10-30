@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [30, 22.86, 10.16]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "x", "face": [0, 0, 0, 22.86, 10.16]}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": [30, 0, 0, 22.86, 10.16]}},
+ {"command": "solve.frequency", "params": {"frequencies": [8, 10, 12], "order": 2}, "id": "solve"}
+]

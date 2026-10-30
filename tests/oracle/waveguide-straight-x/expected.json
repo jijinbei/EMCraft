@@ -1,0 +1,11 @@
+{
+ "title": "Empty WR-90 waveguide along x, 30 mm, ports on its faces across x: TE10 transmission",
+ "kind": "theory",
+ "source": "TE10 propagation in a rectangular waveguide, S21 = exp(−jβL) with β = √(k0² − (π/a)²): D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3",
+ "quantities": [
+  {"id": "s21_phase_10", "quantity": "phase of S21 at 10 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/1/s21/deg"}, "value": 88.00847267263846, "tolerance": {"absolute": 0.05}, "reason": "second-order elements, 3 mm (λg/13) on an unstructured mesh: the phase error grows with the length travelled, about 0.01° here"},
+  {"id": "s21_mag_10", "quantity": "|S21| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/1/s21/mag"}, "value": 1.0, "tolerance": {"absolute": 0.0001}, "reason": "lossless: the discrete system conserves power to rounding; |S21| moves only by the reflection the mesh makes"},
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz (no discontinuity)", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 0.001}, "reason": "the only reflection is the mesh's dispersion mismatch against the exact port condition"},
+  {"id": "s21_phase_12", "quantity": "phase of S21 at 12 GHz (degrees)", "measure": {"step": "solve", "pointer": "/points/2/s21/deg"}, "value": -2.052996196181447, "tolerance": {"absolute": 0.1}, "reason": "as at 10 GHz, with a shorter guide wavelength (λg = 29.1 mm, ten elements per wavelength)"}
+ ]
+}

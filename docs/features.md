@@ -176,14 +176,15 @@ A rectangular waveguide along z (`width` × `height`, perfectly conducting walls
 
 ## `geometry.solid` — Primitive body
 
-A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`) or a sphere about the origin (`radius`). Its end faces (z = 0, z = length) can carry ports; a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.
+A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`), a sphere about the origin (`radius`) or a prism, the simple polygon `points` of the plane z = 0 extruded to z = `length` (the outline of a bend, a mitred corner or a junction of guides). Its end faces (z = 0, z = length) can carry ports, and so can its other flat faces across x, y or z (model.port.create with `face` and `axis`); a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `shape` | string |  | yes | `box`, `cylinder`, `sphere` or `prism` |
 | `size` | array | length | no | the box's [x, y, z] |
 | `radius` | number | length | no | the cylinder's or the sphere's radius |
-| `length` | number | length | no | the cylinder's length along z |
+| `length` | number | length | no | the cylinder's or the prism's length along z |
+| `points` | array | length | no | the prism's outline: its corners [x, y] in order (a simple polygon, at most 256), in its own plane z = 0 |
 | `material` | string |  | no | the filling (default vacuum) |
 
 ## `geometry.import` — Import
@@ -211,10 +212,11 @@ A body in the region, by what it is made of: `metal` (a perfect conductor: the r
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `material` | string |  | yes | `metal`, the region's material, or another material's name |
-| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `shape` | string |  | yes | `box`, `cylinder`, `sphere` or `prism` |
 | `size` | array | length | no | the box's [x, y, z] (in its own axes) |
 | `radius` | number | length | no | the cylinder's or the sphere's radius |
-| `length` | number | length | no | the cylinder's length along its axis |
+| `length` | number | length | no | the cylinder's or the prism's length along its axis |
+| `points` | array | length | no | the prism's outline: its corners [x, y] in order (a simple polygon, at most 256), in its own plane z = 0 |
 | `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
 | `axis` | string |  | no | `x`, `y` or `z` (default): where its own z axis points |
 
@@ -238,7 +240,8 @@ Changes a body (geometry.body, geometry.feature, geometry.inclusion, an imported
 | `shape` | string |  | no | `box`, `cylinder` or `sphere` |
 | `size` | array | length | no | the box's [x, y, z] (in its own axes) |
 | `radius` | number | length | no | the cylinder's or the sphere's radius |
-| `length` | number | length | no | the cylinder's length along its axis |
+| `length` | number | length | no | the cylinder's or the prism's length along its axis |
+| `points` | array | length | no | the prism's outline: its corners [x, y] in order (a simple polygon, at most 256), in its own plane z = 0 |
 | `at` | array | length | no | where its origin goes |
 | `axis` | string |  | no | `x`, `y` or `z`: where its own z axis points |
 
@@ -256,10 +259,11 @@ A body inside the solid: a dielectric region (`material`) or, without one, a con
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `shape` | string |  | yes | `box`, `cylinder`, `sphere` or `prism` |
 | `size` | array | length | no | the box's [x, y, z] |
 | `radius` | number | length | no | the cylinder's or the sphere's radius |
-| `length` | number | length | no | the cylinder's length along z |
+| `length` | number | length | no | the cylinder's or the prism's length along z |
+| `points` | array | length | no | the prism's outline: its corners [x, y] in order (a simple polygon, at most 256), in its own plane z = 0 |
 | `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
 | `material` | string |  | no | its filling; a perfect conductor when left out |
 
@@ -270,10 +274,11 @@ Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `combine` | string |  | yes | `add`, `subtract` or `intersect` |
-| `shape` | string |  | yes | `box`, `cylinder` or `sphere` |
+| `shape` | string |  | yes | `box`, `cylinder`, `sphere` or `prism` |
 | `size` | array | length | no | the box's [x, y, z] (in its own axes) |
 | `radius` | number | length | no | the cylinder's or the sphere's radius |
-| `length` | number | length | no | the cylinder's length along its axis |
+| `length` | number | length | no | the cylinder's or the prism's length along its axis |
+| `points` | array | length | no | the prism's outline: its corners [x, y] in order (a simple polygon, at most 256), in its own plane z = 0 |
 | `at` | array | length | no | where its origin goes (default [0, 0, 0]) |
 | `axis` | string |  | no | `x`, `y` or `z` (default): where its own z axis points |
 
@@ -361,14 +366,15 @@ Makes the model the unit cell of an infinite array: the faces x = 0 and x = a (`
 
 ## `model.port.create` — Create port
 
-A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only (and is needed in a lossy cross-section, where terminal ports are not supported yet).
+A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of an axis plane of a solid instead — across z by default, across x or y with `axis` (an arm of a bend or a tee ending on a side of the solid, a guide's closed end inside a body feeding an antenna in an open box); `end` then says which side of the plane the guide lies (start: above it along the axis, end: below it). Its modes are the rectangle's along its own sides, in the order x, y, z (an x face: a along y, b along z; a y face: a along x, b along z). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only (and is needed in a lossy cross-section, where terminal ports are not supported yet).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `name` | string |  | yes | unique name (without `:`) |
 | `end` | string |  | yes | `start` (z = 0) or `end` (z = length); with `face`, the side the guide lies |
 | `modes` | integer |  | no | modes in the port condition, 1 to 32 (default 4) |
-| `face` | array | length | no | [z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z |
+| `face` | array | length | no | [at, u0, v0, a, b]: the rectangle [u0, u0 + a] × [v0, v0 + b] of the plane at `at` across `axis`, u and v its other two axes in the order x, y, z (across z: [z, x0, y0, a, b]) |
+| `axis` | string |  | no | the axis `face` lies across: `x`, `y` or `z` (default) |
 | `mode_solver` | string |  | no | `auto` (default: closed forms where they apply) or `numeric` (the cross-section solver) |
 | `impedance` | number |  | no | the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out |
 | `deembed` | number | length | no | de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0 |
@@ -384,7 +390,8 @@ Changes a waveguide port: its name (`rename`), end, modes, face (`null` puts it 
 | `rename` | string |  | no | a new name, unique (without `:`) |
 | `end` | string |  | no | `start` or `end` |
 | `modes` | integer |  | no | modes in the port condition, 1 to 32 |
-| `face` | array | length | no | [z, x0, y0, a, b]: a rectangle of the plane at z; `null` for the end face |
+| `face` | array | length | no | [at, u0, v0, a, b]: a rectangle of the plane at `at` across `axis`; `null` for the end face |
+| `axis` | string |  | no | the axis the face lies across: `x`, `y` or `z` |
 | `mode_solver` | string |  | no | `auto` or `numeric` |
 | `impedance` | number |  | no | the reference impedance (Ω); `null` for the line's own |
 | `deembed` | number | length | no | the reference plane's distance inside the model |
