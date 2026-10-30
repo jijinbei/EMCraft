@@ -332,6 +332,11 @@ fn tour() -> Record {
         h.app.field.player.playing = false;
         call(&mut h, "ui.set", json!({"camera": {"projection": "orthographic"}}));
         h.frames(2);
+        // Cut open (when there is a model to cut).
+        if h.call("ui.set", json!({"section": {"axis": "x"}}))["ok"] == json!(true) {
+            h.frames(2);
+            call(&mut h, "ui.set", json!({"section": null}));
+        }
         call(&mut h, "ui.set", json!({"step": "setup"}));
         for s in Solver::ALL {
             h.app.workflow.fields.solver = Some(s);

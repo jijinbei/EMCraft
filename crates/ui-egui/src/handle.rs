@@ -135,6 +135,10 @@ emcraft_macros::named_enum! {
         View3dFace = "view3d:face",
         View3dPlay = "view3d:play",
         View3dProjection = "view3d:projection",
+        /// The section view's switch, its position slider and its flip.
+        View3dSection = "view3d:section",
+        View3dSectionAt = "view3d:section:at",
+        View3dSectionFlip = "view3d:section:flip",
     }
 }
 
@@ -148,6 +152,9 @@ emcraft_macros::named_enum! {
         Speed = "speed",
     }
 }
+
+/// The axes by name.
+pub const AXES: [&str; 3] = ["x", "y", "z"];
 
 /// A name on screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -221,6 +228,8 @@ pub enum Handle<'a> {
     FieldKept(usize),
     /// A standard view in the 3D view's navigator: `view3d:std:front`.
     Standard(StandardView),
+    /// The axis the section view cuts across (0 x, 1 y, 2 z): `view3d:section:x`.
+    SectionAxis(usize),
     /// The S-parameter a study's chart shows: `study:parameter:s21`.
     StudyParameter(&'a str),
     /// The variable a grid study is charted along: `study:along:a`.
@@ -277,6 +286,7 @@ impl fmt::Display for Handle<'_> {
             Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.id()),
             Handle::FieldKept(k) => write!(f, "field:kept:{k}"),
             Handle::Standard(v) => write!(f, "view3d:std:{}", v.id()),
+            Handle::SectionAxis(k) => write!(f, "view3d:section:{}", AXES.get(k).copied().unwrap_or("?")),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),

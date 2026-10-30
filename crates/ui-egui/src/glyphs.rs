@@ -60,6 +60,10 @@ emcraft_macros::named_enum! {
         Start = "start",
         Play = "play",
         Pause = "pause",
+        /// A box cut open, its cut face filled: the section view.
+        Section = "section",
+        /// Two arrows turning back on each other: the other side.
+        Flip = "flip",
     /// A plain rounded square: a command without a glyph of its own.
         Blank = "blank",
     }
@@ -445,6 +449,17 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
         Glyph::Pause => {
             p.rect_filled(pen.rect(0.26, 0.2, 0.42, 0.8), 1.0, accent);
             p.rect_filled(pen.rect(0.58, 0.2, 0.74, 0.8), 1.0, accent);
+        }
+        Glyph::Section => {
+            pen.open(&[(0.5, 0.35), (0.15, 0.35), (0.15, 0.85), (0.5, 0.85)], line);
+            pen.open(&[(0.15, 0.35), (0.4, 0.15), (0.75, 0.15)], line);
+            pen.fill(&[(0.5, 0.35), (0.75, 0.15), (0.75, 0.65), (0.5, 0.85)], accent.gamma_multiply(0.45), bold);
+        }
+        Glyph::Flip => {
+            pen.open(&[(0.15, 0.35), (0.85, 0.35)], line);
+            pen.open(&[(0.68, 0.2), (0.85, 0.35), (0.68, 0.5)], line);
+            pen.open(&[(0.85, 0.65), (0.15, 0.65)], bold);
+            pen.open(&[(0.32, 0.5), (0.15, 0.65), (0.32, 0.8)], bold);
         }
         Glyph::Blank => {
             pen.frame(pen.rect(0.2, 0.2, 0.8, 0.8), 3.0, line);

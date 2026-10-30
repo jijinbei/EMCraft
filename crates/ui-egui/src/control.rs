@@ -178,7 +178,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "compare": app.replies.compare.as_ref().and_then(|c| c.get("worst")).cloned(),
         "frames": app.frames,
         "workflow": crate::steps::inspect(app),
-        "view3d": app.view3d.inspect(),
+        "view3d": app.view3d.inspect(app.session.display().length),
         "undo": app.session.undo().len(),
         "redo": app.session.redo().len(),
         "history": app.session.history().len(),
@@ -421,12 +421,22 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         }
         Some(_) => return Err("`step` must be a string".into()),
     }
+    // The section view: `{"axis", "at"?, "keep"?}` (`at` in display units, the model's middle
+    // when left out), `null` off.
+    let section = match a.get("section") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(s) => Some(Some(cut_of(app, Args(s))?)),
+    };
     if let Some(v) = a.str("standard_view") {
         let view = emcraft_render::view3d::StandardView::parse(v).ok_or_else(|| format!("unknown standard view `{}`", clip(v, 40)))?;
         asked.push(Action::StandardView(view));
     }
     for action in asked {
         app.apply(action).map_err(|e| e.to_string())?;
+    }
+    if let Some(s) = section {
+        app.view3d.section = s;
     }
     if let Some(at) = a.num("field_at") {
         app.field.at = Some(at);
@@ -451,6 +461,26 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         *cam = cam.sanitized();
     }
     Ok(ok(inspect(app)))
+}
+
+/// A section view's cut from `ui.set`'s `section`.
+fn cut_of(app: &EmcraftApp, s: Args) -> Result<crate::view3d::Cut, String> {
+    let name = s.str("axis").ok_or("`section` takes {\"axis\": \"x\" | \"y\" | \"z\", \"at\"?, \"keep\"?: \"low\" | \"high\"} or null")?;
+    let axis = crate::handle::AXES.iter().position(|a| *a == name).ok_or_else(|| format!("unknown axis `{}` (x, y or z)", clip(name, 16)))?;
+    let keep = match s.str("keep") {
+        None | Some("low") => emcraft_render::view3d::Keep::Low,
+        Some("high") => emcraft_render::view3d::Keep::High,
+        Some(k) => return Err(format!("unknown side `{}` (low or high)", clip(k, 16))),
+    };
+    let l = app.session.display().length;
+    let at = match s.get("at") {
+        None => {
+            let bounds = app.view3d.bounds().ok_or("give `at`: the 3D view has no model drawn yet")?;
+            crate::view3d::Cut::middle(axis, bounds).at
+        }
+        Some(v) => l.to_si(v.as_f64().filter(|x| x.is_finite() && x.abs() <= 1e9).ok_or("`at` must be a number within ±1e9 (display units)")?),
+    };
+    Ok(crate::view3d::Cut { axis, at, keep })
 }
 
 /// Opens a command's dialog with fields set, as a person would before pressing OK.
