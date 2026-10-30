@@ -12,8 +12,15 @@
 //! front and blended without writing depth.
 //!
 //! Deterministic: one thread, a fixed order, the same input gives the same bytes.
+//!
+//! A section view (the scene cut by a plane, the far side removed and the cut bodies capped) is
+//! a scene too: [`section::section`] makes it, and both renderers draw it as any other.
 
 use crate::{Canvas, Rgb};
+
+pub mod section;
+
+pub use section::{Keep, Section, SectionError};
 
 /// The largest picture side, in pixels.
 pub const MAX_SIDE: usize = 4096;
@@ -334,6 +341,24 @@ impl Scene {
 
     pub fn line(&mut self, a: [f64; 3], b: [f64; 3], color: Rgb, alpha: u8) {
         self.lines.push(Line { a, b, color, alpha });
+    }
+
+    /// The six faces of the axis-aligned box `lo`–`hi` (a closed surface, two triangles a
+    /// face, wound outward when `lo` < `hi`), no edges.
+    pub fn cuboid(&mut self, lo: [f64; 3], hi: [f64; 3], color: Rgb, alpha: u8) {
+        for k in 0..3 {
+            let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+            for (side, out) in [(lo[k], false), (hi[k], true)] {
+                let at = |a: f64, b: f64| {
+                    let mut p = [side; 3];
+                    (p[i], p[j]) = (a, b);
+                    p
+                };
+                let (b, d) = ([hi[i], lo[j]], [lo[i], hi[j]]);
+                let (b, d) = if out { (b, d) } else { (d, b) };
+                self.quad([at(lo[i], lo[j]), at(b[0], b[1]), at(hi[i], hi[j]), at(d[0], d[1])], color, alpha);
+            }
+        }
     }
 
     /// The bounding box of everything drawn (finite points only).

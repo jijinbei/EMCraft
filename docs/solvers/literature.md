@@ -384,3 +384,18 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - J. Dunsmore, *Handbook of Microwave Component Measurements*, 2nd ed., Wiley 2020, ch. 4: the
   time-domain transforms of a network analyser — low pass on a harmonic grid with DC
   extrapolated (step response), band pass (impulse envelope), windows. `crates/engine/src/tdr.rs`.
+
+## 3D view
+
+- J. D. Foley, A. van Dam, S. K. Feiner, J. F. Hughes, *Computer Graphics: Principles and
+  Practice*, 2nd ed., ch. 3 and 15, and J. Pineda, *A parallel algorithm for polygon
+  rasterization*, SIGGRAPH 1988 — the depth-buffered scan conversion; T. Möller, B. Trumbore,
+  *Fast, minimum storage ray–triangle intersection*, J. Graphics Tools 2(1), 1997 — picking.
+  `crates/render/src/view3d.rs`.
+- Section views: I. E. Sutherland, G. W. Hodgman, *Reentrant polygon clipping*, Comm. ACM
+  17(1), 1974 — clipping against the cut plane; D. Dobkin, R. J. Lipton, *Multidimensional
+  searching problems*, SIAM J. Comput. 5(2), 1976, and F. P. Preparata, M. I. Shamos,
+  *Computational Geometry: An Introduction*, Springer 1985, §2.2.2.1 — the slab method that
+  fills the caps; E. Haines, *Point in polygon strategies*, Graphics Gems IV, 1994 — the
+  even–odd rule; J. F. Hughes, T. Möller, *Building an orthonormal basis from a unit vector*,
+  J. Graphics Tools 4(4), 1999 — the plane's coordinates. `crates/render/src/view3d/section.rs`.
