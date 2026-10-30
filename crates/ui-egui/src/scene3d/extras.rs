@@ -99,7 +99,7 @@ pub(super) fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
         if strong {
             out.labels.push(Label {
                 at: midpoint(a, b),
-                text: crate::lang::trf("Lumped {name}", args!(name = p.name)),
+                text: crate::lang::trf("Lumped port {name}", args!(name = p.name)),
                 color: sc().port,
                 facing: None,
             });

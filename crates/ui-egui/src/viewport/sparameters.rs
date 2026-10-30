@@ -10,12 +10,26 @@ impl ChartView for SParameters {
     const HANDLE: Fixed = Fixed::ChartSParameters;
     const HEIGHT: Height = OVER_TABLE;
 
-    fn controls(_: &EmcraftApp, _: &mut Parts, _: &mut egui::Ui) -> Option<SharedChart> {
-        Some(SharedChart::SParameters)
+    /// The switch between |S| in dB, its magnitude and its phase.
+    fn controls(_: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<SharedChart> {
+        ui.horizontal(|ui| {
+            ui.text(Style::SmallDim, "Show");
+            for d in view::SDisplay::ALL {
+                let on = st.views.sdisplay == d;
+                if ui.named(pill(shown(d), on, 10, PillSize::Small), Handle::SParameters(d.id())).clicked() {
+                    st.views.sdisplay = d;
+                }
+            }
+        });
+        Some(SharedChart::SParameters(st.views.sdisplay))
     }
 
-    fn chart(app: &EmcraftApp, _: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
-        view::sparameter_chart(&app.session).map_err(|e| e.to_string())
+    fn chart(app: &EmcraftApp, key: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
+        let display = match key {
+            SharedChart::SParameters(d) => *d,
+            _ => view::SDisplay::Db,
+        };
+        view::sparameter_chart_as(&app.session, display).map_err(|e| e.to_string())
     }
 
     /// The field view's frequency on the chart, and the table of S.
@@ -70,32 +84,61 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
         let names: Vec<String> = entries.iter().enumerate().map(|(i, e)| format!("{} = {}", i + 1, e.name)).collect();
         crate::ui_kit::caption(ui, trf("Entries of S: {entries}", args!(entries = names.join(", "))));
     }
+    let freqs: Vec<f64> = sw.results.iter().map(|r| fu.from_si(r.frequency)).collect();
+    let fd = frequency_decimals(&freqs);
+    // Each column's numbers right-aligned under its header, at the column's own decimals.
+    let t = &Tokens::get();
+    let font = FontId::monospace(t.font_body);
+    let width = |text: &str| ui.painter().layout_no_wrap(text.to_owned(), font.clone(), t.text).size().x;
+    let headers: Vec<String> =
+        std::iter::once(format!("f ({})", fu.symbol())).chain((1..=n).flat_map(|p| [format!("|S{p}1| (dB)"), format!("arg S{p}1 (°)")])).collect();
+    let rows: Vec<Vec<String>> = sw
+        .results
+        .iter()
+        .zip(&freqs)
+        .map(|(r, f)| {
+            let mut row = vec![format!("{f:.fd$}")];
+            for p in 0..n {
+                match r.s.get(p, 0) {
+                    Some(c) => row.extend([format!("{:.2}", emcraft_model::units::decibels(c.norm())), format!("{:.1}", c.arg().to_degrees())]),
+                    None => row.extend(["–".to_owned(), "–".to_owned()]),
+                }
+            }
+            row
+        })
+        .collect();
+    let widths: Vec<f32> =
+        (0..headers.len()).map(|k| rows.iter().map(|r| r.get(k).map_or(0.0, |c| width(c))).fold(width(&headers[k]), f32::max) + 14.0).collect();
+    let cell = |ui: &mut egui::Ui, w: f32, text: egui::RichText| {
+        ui.allocate_ui_with_layout(vec2(w, 18.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.set_min_width(w);
+            ui.label(text);
+        });
+    };
     egui::ScrollArea::vertical().id_salt("s_table").show(ui, |ui| {
-        egui::Grid::new("s_grid").striped(true).num_columns(1 + 2 * n).show(ui, |ui| {
-            ui.label(egui::RichText::new(format!("f ({})", fu.symbol())).strong());
-            for p in 1..=n {
-                ui.label(egui::RichText::new(format!("|S{p}1| dB")).strong());
-                ui.label(egui::RichText::new(format!("arg S{p}1 (°)")).strong());
+        egui::Grid::new("s_grid").striped(true).num_columns(headers.len()).spacing(vec2(0.0, 2.0)).show(ui, |ui| {
+            for (h, w) in headers.iter().zip(&widths) {
+                cell(ui, *w, egui::RichText::new(h).font(font.clone()).strong());
             }
             ui.end_row();
-            for r in &sw.results {
-                ui.label(format!("{:.4}", fu.from_si(r.frequency)));
-                for p in 0..n {
-                    match r.s.get(p, 0) {
-                        Some(c) => {
-                            ui.label(format!("{:.3}", emcraft_model::units::decibels(c.norm())));
-                            ui.label(format!("{:.2}", c.arg().to_degrees()));
-                        }
-                        None => {
-                            ui.label("–");
-                            ui.label("–");
-                        }
-                    }
+            for row in &rows {
+                for (c, w) in row.iter().zip(&widths) {
+                    cell(ui, *w, egui::RichText::new(c).font(font.clone()));
                 }
                 ui.end_row();
             }
         });
     });
+}
+
+/// The decimals that tell a sweep's frequencies (display units) apart: enough for their
+/// smallest step, from 1 to 6.
+fn frequency_decimals(freqs: &[f64]) -> usize {
+    let step = freqs.windows(2).map(|w| (w[1] - w[0]).abs()).filter(|d| *d > 0.0).fold(f64::INFINITY, f64::min);
+    if !step.is_finite() {
+        return 3;
+    }
+    (-step.log10()).ceil().clamp(1.0, 6.0) as usize
 }
 
 /// The S-parameter chart's layout at `width` × `height` pixels, its x axis the sweep's
@@ -121,5 +164,10 @@ mod tests {
         assert_eq!(chart_frequency(0.01, 1000.0, 5.0, 9.0), None);
         assert_eq!(crate::nearest(&[5.0, 6.0, 7.0], 6.4), Some(6.0));
         assert_eq!(crate::nearest(&[], 6.4), None);
+        // A sweep's frequencies with as many decimals as their step needs.
+        assert_eq!(frequency_decimals(&[6.0, 7.0, 8.0]), 1);
+        assert_eq!(frequency_decimals(&[6.0, 6.025, 6.05]), 2);
+        assert_eq!(frequency_decimals(&[9.0]), 3);
+        assert_eq!(frequency_decimals(&[1.0, 1.0 + 1e-12]), 6);
     }
 }

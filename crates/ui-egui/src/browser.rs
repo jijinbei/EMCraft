@@ -209,14 +209,28 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
 
 fn ports(m: &emcraft_model::Model) -> Vec<Row> {
     let waveguide = m.ports.iter().enumerate().map(|(i, p)| {
-        let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
-        let template =
-            if p.end == emcraft_model::End::Start { "Port {name}: Start, {n} modes{impedance}" } else { "Port {name}: End, {n} modes{impedance}" };
-        row(template, args!(name = p.name, n = p.modes, impedance = z), Glyph::Port, Act::Show(View::PortModes)).picks(Pick::Port(i))
+        let Both { en, shown } = port_text(p);
+        Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None }.picks(Pick::Port(i))
     });
     let lumped =
-        m.lumped.iter().map(|p| row("Lumped {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None));
+        m.lumped.iter().map(|p| row("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None));
     waveguide.chain(lumped).collect()
+}
+
+/// A waveguide port as the window names it everywhere (the browser, the Excitation step, the
+/// 3D view's legend says `Port 1 (start)`): `Port 1 (start): 4 modes, 50 Ω`.
+pub fn port_text(p: &emcraft_model::Port) -> Both {
+    let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
+    let template = match (p.face.is_some(), p.end) {
+        (true, _) => lang::pick(p.modes as usize, "Port {name} (on a face): {n} mode{impedance}", "Port {name} (on a face): {n} modes{impedance}"),
+        (false, emcraft_model::End::Start) => {
+            lang::pick(p.modes as usize, "Port {name} (start): {n} mode{impedance}", "Port {name} (start): {n} modes{impedance}")
+        }
+        (false, emcraft_model::End::End) => {
+            lang::pick(p.modes as usize, "Port {name} (end): {n} mode{impedance}", "Port {name} (end): {n} modes{impedance}")
+        }
+    };
+    lang::both(template, args!(name = p.name, n = p.modes, impedance = z))
 }
 
 fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
@@ -257,7 +271,7 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         rows.push(row(template, args!(axis = axis, at = f.len(plane.at), unit = f.unit()), Glyph::Walls, Act::Edit("model.symmetry")));
     }
     if let Some(p) = &m.periodic {
-        rows.push(row("Periodic: {cell}", args!(cell = periodic_text(p)), Glyph::Periodic, Act::Edit("model.periodic")));
+        rows.push(row("Periodic boundaries: {cell}", args!(cell = periodic_text(p)), Glyph::Periodic, Act::Edit("model.periodic")));
     }
     rows
 }
@@ -345,6 +359,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 scenario::publish_rect(Fixed::Browser, ui.max_rect());
                 ui.text(Style::SmallDim, "BROWSER");
                 let tree = tree(app);
+                let stale = crate::steps::results_stale(app);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (section, rows) in &tree {
                         let folded = app.browser.folded.iter().any(|f| f == section);
@@ -401,8 +416,22 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 t.icon,
                                 t.accent,
                             );
-                            let ink = if selected { t.selected_ink } else { t.text };
-                            ui.painter().with_clip_rect(rect).text(
+                            // A result of a model changed after its run: dimmed, marked at the right.
+                            let out_of_date = stale && *section == "Results";
+                            let ink = if selected {
+                                t.selected_ink
+                            } else if out_of_date {
+                                t.text_dim
+                            } else {
+                                t.text
+                            };
+                            let mut clip = rect;
+                            if out_of_date {
+                                let c = pos2(rect.right() - 12.0, rect.center().y);
+                                crate::steps::stale_mark(ui.painter(), c, t);
+                                clip.max.x -= 24.0;
+                            }
+                            ui.painter().with_clip_rect(clip).text(
                                 pos2(rect.left() + indent + 19.0, rect.center().y),
                                 Align2::LEFT_CENTER,
                                 shown,
@@ -410,7 +439,12 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 ink,
                             );
                             scenario::publish_target(Handle::Row(text), rect);
-                            let resp = resp.on_hover_text(shown);
+                            let resp = if out_of_date {
+                                let tip = lang::trf("{row} — out of date: the model changed after this run", args!(row = shown));
+                                resp.on_hover_text(tip)
+                            } else {
+                                resp.on_hover_text(shown)
+                            };
                             if resp.clicked() {
                                 out.push(Action::Select { row: Some(key.clone()), pick: r.pick });
                                 if let Act::Show(v) = r.act {

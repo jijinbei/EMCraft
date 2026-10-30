@@ -2,7 +2,7 @@
 //! repeated), and the running job's progress with its Cancel.
 
 use crate::handle::Fixed;
-use crate::lang::{args, trf};
+use crate::lang::{args, plural, tr, trf};
 
 use crate::{Action, Actions, EmcraftApp, UiExt, label, scenario, theme, ui_kit};
 
@@ -90,22 +90,49 @@ pub(crate) fn area(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 /// The running job's row: Cancel, what it does and how far it is.
 fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Actions) {
     let Some(job) = &app.job else { return };
-    let snap = job.snapshot();
     ui.horizontal(|ui| {
         // Cancel first, where it stays put while the text beside it changes.
         ui.act(true, ui_kit::styled("Cancel", false), Fixed::StatusCancel.into(), "", || Action::CancelJob, out);
         ui.spinner();
-        let (command, secs) = (label(&job.command), format!("{:.0}", job.elapsed()));
-        let what = if snap.total > 0 {
-            let (done, total) = ((snap.done + 1).min(snap.total), snap.total);
-            trf(
-                "{command} — {stage} {done} of {total} ({secs} s)",
-                args!(command = command, stage = snap.stage, done = done, total = total, secs = secs),
-            )
-        } else {
-            trf("{command} — running ({secs} s)", args!(command = command, secs = secs))
-        };
-        ui.label(egui::RichText::new(what).size(t.font_body));
-        ui_kit::progress(ui, snap.fraction(), 180.0);
+        ui.label(egui::RichText::new(job_text(job)).size(t.font_body));
+        ui_kit::progress(ui, job.snapshot().fraction(), 180.0);
     });
+}
+
+/// A running job in words: what runs, how far it is (its stage and count, from the job's
+/// progress) and for how long — `Frequency sweep — 3 / 11 frequencies, 4 s`.
+pub(crate) fn job_text(job: &crate::worker::Job) -> String {
+    let snap = job.snapshot();
+    let command = if job.command == "engine.script" { tr("Script") } else { label(&job.command) };
+    let secs = format!("{:.0}", job.elapsed());
+    let (done, total) = (snap.done.min(snap.total) as usize, snap.total as usize);
+    let what = match snap.stage.as_str() {
+        _ if total == 0 => tr("starting").to_owned(),
+        "frequency" => plural(total, "{done} / {total} frequency", "{done} / {total} frequencies", args!(done = done, total = total)),
+        "fast sweep" => plural(total, "fast sweep of {total} frequency", "fast sweep of {total} frequencies", args!(total = total)),
+        "phase" => plural(total, "{done} / {total} phase", "{done} / {total} phases", args!(done = done, total = total)),
+        "adaptive pass" => plural(total, "{done} / {total} pass", "{done} / {total} passes", args!(done = done, total = total)),
+        // A study's points (each a thousand parts) and a script's steps: the engine's stage.
+        stage if total >= 1000 => format!("{stage}, {} %", (100 * done) / total),
+        stage => format!("{stage} {done} / {total}"),
+    };
+    trf("{command} — {what}, {secs} s", args!(command = command, what = what, secs = secs))
+}
+
+/// The running job in the right column (the step panel, the docked dialog that started it): what
+/// runs and how far it is, its bar and Cancel. Escape does not cancel: Cancel is a click.
+pub(crate) fn job_card(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let Some(job) = &app.job else { return };
+    let t = &theme::Tokens::get();
+    let r = egui::Frame::NONE.fill(t.accent_soft).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.add(egui::Label::new(egui::RichText::new(job_text(job)).size(t.font_body).color(t.selected_ink)).wrap());
+        });
+        ui_kit::progress(ui, job.snapshot().fraction(), ui.available_width());
+        ui.add_space(2.0);
+        ui.act(true, ui_kit::styled("Cancel", false), Fixed::JobCancel.into(), "", || Action::CancelJob, out);
+    });
+    scenario::publish_rect(Fixed::Job, r.response.rect);
 }

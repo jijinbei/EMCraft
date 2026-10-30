@@ -179,7 +179,8 @@ pub fn study(s: &mut Session, p: &Params) -> Result<Value> {
         Some(v) => Some(v.as_object().ok_or_else(|| p.error("at", "must map the held variables to their values: {\"b\": 5}"))?),
     };
     let slice = super::study::Slice::named(study, at)?;
-    file.write(&super::study::chart(study, p.string("parameter").optional()?, &slice)?)
+    let units = super::study::variable_units(s, study);
+    file.write(&super::study::chart_with_units(study, p.string("parameter").optional()?, &slice, &units)?)
 }
 
 /// `view.pattern`: the far-field pattern.

@@ -39,7 +39,7 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
         let picture = || Action::dialog_with("view.field", FieldParams::picture(field, s, "field.png").to_params());
         ui.action_button(Fixed::FieldSavePicture.into(), "Picture…", "This picture as a PNG (view.field)", picture, out);
         let video = || Action::dialog_with("view.animation", FieldParams::animation(field, s, "field-animation.png").to_params());
-        ui.action_button(Fixed::FieldSaveVideo.into(), "Video…", "A period of this view as a looping animated PNG (view.animation)", video, out);
+        ui.action_button(Fixed::FieldSaveVideo.into(), "Animation…", "A period of this view as a looping animated PNG (view.animation)", video, out);
     });
 }
 
@@ -268,16 +268,17 @@ fn readout(app: &EmcraftApp, field: &FieldState, ui: &mut egui::Ui) {
                 line(
                     ui,
                     trf(
-                        "{component} = {now} {unit} (amplitude {amplitude})",
+                        "{component} = {now} {unit} (amplitude {amplitude} {unit})",
                         args!(component = comp.label(), now = fmt(now), unit = unit, amplitude = fmt(amp)),
                     ),
                     true,
                 );
                 if what == "PINNED" {
+                    // Each component a row with its unit.
                     for (f, v, u) in [("E", p.e, "V/m"), ("H", p.h, "A/m")] {
-                        line(ui, format!("{f}x {}", phasor(v.x)), false);
-                        line(ui, format!("{f}y {}", phasor(v.y)), false);
-                        line(ui, format!("{f}z {}  {u}", phasor(v.z)), false);
+                        for (axis, c) in [("x", v.x), ("y", v.y), ("z", v.z)] {
+                            line(ui, format!("{f}{axis} {}", phasor(c, u)), false);
+                        }
                     }
                 }
             }

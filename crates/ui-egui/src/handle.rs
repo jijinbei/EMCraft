@@ -25,6 +25,8 @@ emcraft_macros::named_enum! {
         BarStart = "bar:start",
         BarTitle = "bar:title",
         BarSettings = "bar:settings",
+        /// The running job's line, left of the settings.
+        BarJob = "bar:job",
         // The settings page.
         SettingsClose = "settings:close",
         SettingsReloadThemes = "settings:reload_themes",
@@ -62,6 +64,12 @@ emcraft_macros::named_enum! {
         Status = "status",
         Progress = "progress",
         StatusCancel = "status:cancel",
+        // The running job in the right column (the step panel, the docked dialog that ran it).
+        Job = "job",
+        JobCancel = "job:cancel",
+        // A result view of a model changed after its run: the band over it and its Re-run.
+        Stale = "stale",
+        StaleRerun = "stale:rerun",
         // Command search.
         SearchField = "search:field",
         SearchPopup = "search:popup",
@@ -149,7 +157,7 @@ pub enum Handle<'a> {
     Panel(RibbonTab, &'a str),
     /// A view's tab over the viewport: `view:field`.
     View(View),
-    /// A browser row, by its text: `row:Port 1: Start, 4 modes`.
+    /// A browser row, by its text: `row:Port 1 (start): 4 modes`.
     Row(&'a str),
     /// A browser section's heading: `fold:Geometry`.
     Fold(&'a str),
@@ -211,6 +219,8 @@ pub enum Handle<'a> {
     StudyAt(&'a str, usize),
     /// The TDR view's transform: `tdr:mode:auto`.
     TdrMode(&'a str),
+    /// What the S-parameter chart shows: `sparameters:show:phase`.
+    SParameters(&'a str),
 }
 
 impl From<Fixed> for Handle<'_> {
@@ -259,6 +269,7 @@ impl fmt::Display for Handle<'_> {
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),
             Handle::TdrMode(mode) => write!(f, "tdr:mode:{mode}"),
+            Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
         }
     }
 }
@@ -292,7 +303,7 @@ mod tests {
             (Handle::View(View::PortModes), "view:port_modes"),
             (Fixed::FieldSaveVideo.into(), "field:save:video"),
             (Handle::Part(Fixed::FieldPhase, Part::Speed), "field:phase:speed"),
-            (Handle::Row("Port 1: Start, 4 modes"), "row:Port 1: Start, 4 modes"),
+            (Handle::Row("Port 1 (start): 4 modes"), "row:Port 1 (start): 4 modes"),
             (Handle::Step(Step::Mesh), "step:mesh"),
             (Handle::DialogCell("sections", 0, "length"), "dialog:cell:sections:0:length"),
             (Handle::Solver(Solver::TimeDomain), "setup:solver:time_domain"),

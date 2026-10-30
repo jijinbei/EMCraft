@@ -1,11 +1,11 @@
 [
-  {"note": "A meshed guide without ports: Excitation shows missing with its fix, and Run's preflight refuses to start a sweep until a port exists"},
+  {"note": "A meshed guide without ports: Excitation is to do (a hollow mark, nothing wrong yet) with its fix; Run's preflight refuses to start a sweep until a port exists, and then Excitation needs attention (red) until it has one"},
   {"call": "engine.script", "params": {"commands": [
     {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": 2.1}},
     {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 30, "material": "ptfe"}]}},
     {"command": "mesh.generate", "params": {"size": 4}}
   ]}},
-  {"expect": {"inspect": {"workflow.steps.geometry": "done", "workflow.steps.mesh": "done", "workflow.steps.excitation": "missing", "workflow.messages.excitation.0.command": "model.port.create"}}},
+  {"expect": {"inspect": {"workflow.steps.geometry": "done", "workflow.steps.mesh": "done", "workflow.steps.excitation": "todo", "workflow.messages.excitation.0.command": "model.port.create"}}},
   {"click": "step:excitation"},
   {"expect": {"inspect": {"workflow.step": "excitation", "view3d.overlay": "ports"}, "handles": ["step:fix:0", "toolbar:model.port.create"]}},
   {"shot": "missing-port-excitation"},
@@ -16,7 +16,7 @@
   {"click": "step:run"},
   {"expect": {"handles": ["run:start", "preflight:blocks:0"]}},
   {"click": "run:start"},
-  {"expect": {"busy": false, "status_error": true, "status": "Run refused", "inspect": {"workflow.refused": "*", "model.results": null}}},
+  {"expect": {"busy": false, "status_error": true, "status": "Run refused", "inspect": {"workflow.refused": "*", "model.results": null, "workflow.steps.excitation": "missing", "workflow.steps.geometry": "done"}}},
   {"shot": "missing-port-run-refused"},
   {"note": "The preflight's link goes to the step that fixes it, whose fix opens the port's dialog in the panel"},
   {"click": "preflight:blocks:0"},

@@ -2,7 +2,7 @@
 //! or failed.
 
 use super::*;
-use crate::lang::args;
+use crate::lang::{args, plural};
 
 /// An error band with a heading and its details.
 fn refusal_band(ui: &mut egui::Ui, heading: &str, t: &Tokens, details: impl FnOnce(&mut egui::Ui)) {
@@ -23,6 +23,10 @@ fn go_to(ui: &mut egui::Ui, step: Step, handle: Handle, out: &mut Actions) -> bo
 
 /// Run: the preflight's findings and the button that starts the solve.
 pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, states: &[StepState], t: &Tokens, out: &mut Actions) {
+    // While a run goes on, its progress and Cancel over the panel say all there is.
+    if running(app) {
+        return;
+    }
     ui_kit::section(ui, "Preflight");
     let pre = preflight(&app.session, f, states);
     if pre.blocking.is_empty() && pre.warnings.is_empty() {
@@ -43,12 +47,13 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     let solver = f.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
     ui.add_space(6.0);
     ui_kit::small(ui, trf("Solver: {solver}", args!(solver = shown(solver))), t.text);
-    let label = if !pre.blocking.is_empty() {
-        trf("Run — {n} problem(s) to fix first", args!(n = pre.blocking.len()))
-    } else if pre.warnings.is_empty() {
+    let (nb, nw) = (pre.blocking.len(), pre.warnings.len());
+    let label = if nb > 0 {
+        plural(nb, "Run — {n} problem to fix first", "Run — {n} problems to fix first", args!(n = nb))
+    } else if nw == 0 {
         tr("Run").to_owned()
     } else {
-        trf("Run, accepting {n} warning(s)", args!(n = pre.warnings.len()))
+        plural(nw, "Run, accepting {n} warning", "Run, accepting {n} warnings", args!(n = nw))
     };
     let busy = app.busy();
     ui.act(!busy, ui_kit::styled(&label, true), Fixed::RunStart.into(), "", || Action::StartRun, out);
@@ -59,7 +64,8 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     }
     let mut went = false;
     if f.refused.is_some() {
-        refusal_band(ui, &trf("Run refused: {n} problem(s) to fix first", args!(n = pre.blocking.len())), t, |ui| {
+        let heading = plural(nb, "Run refused: {n} problem to fix first", "Run refused: {n} problems to fix first", args!(n = nb));
+        refusal_band(ui, &heading, t, |ui| {
             for (i, (step, text)) in pre.blocking.iter().enumerate() {
                 ui.horizontal_wrapped(|ui| {
                     ui_kit::small(ui, format!("• {} · {text}", shown(*step)), t.form_error);
@@ -68,17 +74,14 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
             }
         });
     }
-    // A solve that started and failed says why here too.
-    if !busy && let Some(crate::Failure { error: e, .. }) = app.failure.as_ref().filter(|f| f.command == solver.command()) {
-        refusal_band(ui, &trf("{command} failed", args!(command = crate::label(solver.command()))), t, |ui| {
+    // A run that started and failed says why here too (the reason Run's mark is red).
+    if let Some(crate::Failure { command, error: e }) = app.failure.as_ref().filter(|_| run_failure(app).is_some()) {
+        refusal_band(ui, &trf("{command} failed", args!(command = crate::label(command))), t, |ui| {
             ui_kit::small(ui, e, t.form_error);
         });
     }
     if went {
         return;
-    }
-    if busy {
-        ui_kit::small(ui, "Running — progress and Cancel below.", t.text_dim);
     }
     if let Some(e) = estimate(app).ok().filter(|_| solver == Solver::Frequency) {
         let n = |k: &str| e.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);

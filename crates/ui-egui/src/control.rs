@@ -163,6 +163,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
         "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.id(), "component": app.field.view.component.id(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some(), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
         "chart": app.views.chart.key().map(|k| format!("{k:?}")),
+        "sparameters": app.views.sdisplay.id(),
         "variables": app.session.variables(),
         "study": app.session.results().study.as_ref().map(|s| json!({
             "kind": if s.kind == emcraft_engine::study::Kind::Sweep { "sweep" } else { "optimize" },

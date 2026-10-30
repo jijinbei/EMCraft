@@ -6,7 +6,7 @@
   {"expect": {"inspect": {"home": false}}},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"expect": {"view": "model", "busy": false, "status": "Opened sample highpass", "status_error": false}},
-  {"expect": {"handles": ["fold:Geometry", "fold:Results", "row:Waveguide 22.86 × 10.16 × 50 mm", "row:Section 2: 20 mm, vacuum", "row:Port 1: Start, 4 modes", "tab:MODEL"]}},
+  {"expect": {"handles": ["fold:Geometry", "fold:Results", "row:Waveguide 22.86 × 10.16 × 50 mm", "row:Section 2: 20 mm, vacuum", "row:Port 1 (start): 4 modes", "tab:MODEL"]}},
   {"expect": {"inspect": {"model.mesh.tetrahedra": {"min": 100}, "model.ports.1.name": "2"}}},
   {"expect": {"picture": true}},
   {"shot": "open-sample"},

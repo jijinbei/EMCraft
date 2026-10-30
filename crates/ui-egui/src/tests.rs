@@ -80,6 +80,31 @@ fn scenario_cancel_a_sweep() {
 }
 
 #[test]
+fn scenario_step_status() {
+    scenario("step_status");
+}
+
+#[test]
+fn scenario_stale_results() {
+    scenario("stale_results");
+}
+
+#[test]
+fn scenario_dialog_keys() {
+    scenario("dialog_keys");
+}
+
+#[test]
+fn scenario_job_progress() {
+    scenario("job_progress");
+}
+
+#[test]
+fn scenario_sparameter_display() {
+    scenario("sparameter_display");
+}
+
+#[test]
 fn scenario_study_sweep() {
     scenario("study_sweep");
 }
@@ -288,7 +313,7 @@ fn file_and_edit_menus() {
         {"note": "Undo the band from the Edit menu, then redo it"},
         {"click": "menu:edit"},
         {"click": "edit:undo"},
-        {"expect": {"status": "Undone", "inspect": {"workflow.steps.intent": "warning"}}},
+        {"expect": {"status": "Undone", "inspect": {"workflow.steps.intent": "todo"}}},
         {"click": "menu:edit"},
         {"click": "edit:redo"},
         {"expect": {"status": "Redone", "inspect": {"workflow.steps.intent": "done"}}},

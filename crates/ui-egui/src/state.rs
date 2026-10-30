@@ -99,7 +99,8 @@ pub struct StudyState {
 /// Which chart the shared chart slot of [`ViewState`] holds.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SharedChart {
-    SParameters,
+    /// The S-parameters, in dB, as magnitudes or as phases.
+    SParameters(emcraft_engine::view::SDisplay),
     Dispersion,
     /// The far-field pattern at an azimuth (degrees).
     Pattern {
@@ -139,6 +140,8 @@ pub struct ViewState {
     pub chart: Cached<PictureKey<SharedChart>>,
     /// The far-field pattern's azimuth (degrees).
     pub pattern_phi: f64,
+    /// What the S-parameter chart shows: |S| in dB, magnitude or phase.
+    pub sdisplay: emcraft_engine::view::SDisplay,
     pub tdr: TdrState,
     pub study: StudyState,
     /// The picked port mode's picture.

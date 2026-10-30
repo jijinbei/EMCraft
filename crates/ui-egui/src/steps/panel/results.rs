@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, states: &[StepState], t: &Tokens, out: &mut Actions) {
     let stale = states.get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale);
     if stale {
-        ui_kit::error_band(ui, "These results belong to an earlier state of the model.");
+        crate::viewport::stale_band(app, ui, out);
     }
     if !app.session.results().any() {
         ui.text(crate::Style::SmallDim, "No results yet: Run (step 7). The view tabs over the viewport show them.");

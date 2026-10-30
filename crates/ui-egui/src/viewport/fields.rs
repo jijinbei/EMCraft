@@ -157,10 +157,10 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
     }
 }
 
-/// A complex component as its amplitude and phase.
-pub(super) fn phasor(c: emcraft_model::Complex64) -> String {
+/// A complex component as its amplitude in `unit` and its phase.
+pub(super) fn phasor(c: emcraft_model::Complex64, unit: &str) -> String {
     use emcraft_render::axes::format;
-    if c.norm() == 0.0 { "0".into() } else { format!("{} ({}°)", format(c.norm()), format(c.arg().to_degrees().round())) }
+    if c.norm() == 0.0 { format!("0 {unit}") } else { format!("{} {unit} ∠ {}°", format(c.norm()), format(c.arg().to_degrees().round())) }
 }
 
 pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {

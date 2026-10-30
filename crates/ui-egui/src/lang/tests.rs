@@ -290,6 +290,14 @@ fn tour() -> Record {
             call(&mut h, "ui.set", json!({"step": s.id()}));
             h.frames(2);
         }
+        // Results of a model changed after their run: out of date in their view and the browser.
+        if h.app.session.results().any() {
+            let _ = h.call("engine.execute", json!({"command": "project.frequency", "params": {"start": 7, "stop": 9.5}}));
+            if let Some(v) = View::ALL.into_iter().find(|v| v.is_result() && v.available(&h.app)) {
+                call(&mut h, "ui.set", json!({"view": v.id()}));
+                h.frames(2);
+            }
+        }
         // The Results step's 3D view, its field playing and paused, orthographic.
         call(&mut h, "ui.set", json!({"view": "model"}));
         h.frames(2);
@@ -382,7 +390,9 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Time domain: {n} frequencies", "a time-domain solve takes too long for the gate"),
     ("modes ({unit})", "a study of eigenmodes takes too long for the gate"),
     ("Entries of S: {entries}", "needs a terminal port (scenario terminal_ports)"),
-    ("on a face", "needs a port on an imported face (scenario import_cavity)"),
+    ("Port {name} (on a face)", "needs a port on an imported face (scenario import_cavity)"),
+    ("Port {name} (on a face): {n} mode{impedance}", "needs a port on an imported face (scenario import_cavity)"),
+    ("Port {name} (on a face): {n} modes{impedance}", "needs a port on an imported face (scenario import_cavity)"),
     ("Region: {name} (imported), {material}", "needs an imported file (scenario import_bodies)"),
     ("NOT passive", "needs a sweep that is not passive"),
     ("Switching the device…", "shown while `solve.device` runs, a moment"),
@@ -392,8 +402,16 @@ const UNREACHED: &[(&str, &str)] = &[
     ("{name} cannot run here: {problem}", "depends on the machine's devices"),
     ("an NVIDIA GPU", "depends on the machine's devices"),
     ("this device does not run it", "needs a device other than the CPU"),
-    ("Running with {n} accepted warning(s).", "starts a full solve"),
-    ("{command} — running ({secs} s)", "only until a job says how much work it has: a moment, timing-dependent"),
+    ("Running with {n} accepted warning.", "starts a full solve"),
+    ("Running with {n} accepted warnings.", "starts a full solve"),
+    ("starting", "only until a job says how much work it has: a moment, timing-dependent"),
+    ("{done} / {total} frequency", "a full sweep's progress: the tour's sweep is a fast one"),
+    ("{done} / {total} frequencies", "a full sweep's progress: the tour's sweep is a fast one"),
+    ("{done} / {total} phase", "a dispersion solve's progress: it ends before a frame shows it"),
+    ("{done} / {total} phases", "a dispersion solve's progress: it ends before a frame shows it"),
+    ("{done} / {total} pass", "an adaptive mesh's progress: too long for the gate"),
+    ("{done} / {total} passes", "an adaptive mesh's progress: too long for the gate"),
+    ("Script", "a script's progress: it ends before a frame shows it"),
 ];
 
 /// The texts that are looked up by name rather than written where they are shown: the views',

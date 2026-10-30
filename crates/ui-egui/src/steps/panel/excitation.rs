@@ -11,18 +11,14 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
         ui_kit::small(ui, "none yet", t.text_dim);
     }
     for p in &m.ports {
-        let at = match p.face {
-            Some(_) => "on a face",
-            None if p.end == emcraft_model::End::Start => "start end",
-            None => "far end",
-        };
-        ui_kit::small(ui, trf("Port {name}: {at}, {n} modes", args!(name = p.name, at = tr(at), n = p.modes)), t.text);
+        ui_kit::small(ui, crate::browser::port_text(p).shown, t.text);
     }
     for p in &m.lumped {
         ui_kit::small(ui, trf("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance)), t.text);
     }
     if !m.sources.is_empty() {
-        ui_kit::small(ui, trf("{n} source(s)", args!(n = m.sources.len())), t.text);
+        let n = m.sources.len();
+        ui_kit::small(ui, crate::lang::plural(n, "{n} source", "{n} sources", args!(n = n)), t.text);
     }
     if m.ports.is_empty() {
         return;

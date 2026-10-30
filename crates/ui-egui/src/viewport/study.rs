@@ -81,7 +81,8 @@ impl ChartView for StudyView {
 
     fn chart(app: &EmcraftApp, (parameter, slice): &StudyKey) -> Result<emcraft_render::chart::Chart, String> {
         let study = app.session.results().study.as_ref().ok_or("no study")?;
-        emcraft_engine::study::chart(study, parameter.as_deref(), slice).map_err(|e| e.to_string())
+        let units = emcraft_engine::view::variable_units(&app.session, study);
+        emcraft_engine::view::chart_with_units(study, parameter.as_deref(), slice, &units).map_err(|e| e.to_string())
     }
 
     fn below(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {

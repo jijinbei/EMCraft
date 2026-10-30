@@ -1,5 +1,7 @@
 //! The workflow (docs/ux/workflow.md §2–3): a step bar under the ribbon, steps 0 Intent to
-//! 8 Results each with its status (done, warning, missing, stale) from `project.status`, and the
+//! 8 Results each with its status (done, to do, waiting, warning, needs attention, out of date)
+//! from `project.status` — and from the window: a refused Run marks the steps that blocked it, a
+//! failed run marks Run, a running one shows on Run — and the
 //! active step's panel at the right: its settings (the step's commands, their dialogs docked in
 //! the panel), its checks with a button to the fix, and the 3D view in the step's overlay.
 //! Excitation previews the port modes, Mesh shows the mesh's statistics and the solve's
@@ -37,14 +39,37 @@ pub fn overlay(step: Step) -> Overlay {
     }
 }
 
-/// A status's colour in the step bar and panels.
+/// A status's colour in the step bar and panels: green done, neutral to do and waiting, amber
+/// warning, red needs attention, blue out of date.
 fn status_color(status: Status, t: &Tokens) -> Color32 {
     match status {
         Status::Done => t.success,
+        Status::Todo | Status::Waiting => t.text_dim,
         Status::Warning => t.warning,
         Status::Missing => t.error,
         Status::Stale => t.info,
     }
+}
+
+/// Whether command `id` is a run (a solve or a study, as step 7 starts one): what a failure
+/// marks on Run and what Run shows running.
+pub fn is_run(id: &str) -> bool {
+    (id.starts_with("solve.") && !matches!(id, "solve.port_modes" | "solve.device" | "solve.devices")) || id.starts_with("study.")
+}
+
+/// Whether a run is going on.
+pub fn running(app: &EmcraftApp) -> bool {
+    app.job.as_ref().is_some_and(|j| is_run(&j.command))
+}
+
+/// The mark of results out of date (a turning arrow on blue), for the views and the browser.
+pub fn stale_mark(p: &egui::Painter, c: egui::Pos2, t: &Tokens) {
+    bar::mark(p, c, Status::Stale, t);
+}
+
+/// Whether the results are older than the model (the Results step out of date).
+pub fn results_stale(app: &EmcraftApp) -> bool {
+    statuses_now(app).get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale)
 }
 
 emcraft_macros::named_enum! {
@@ -129,6 +154,9 @@ pub struct Workflow {
     pub mode_focus: Option<ModeFocus>,
     /// `solve.devices`' reply, asked once: what this machine can run on.
     pub devices: Option<Value>,
+    /// Run was refused for blocking problems: the steps still in the way show as needing
+    /// attention, until a run starts or another project opens.
+    pub blocked: bool,
 }
 
 /// A port mode picked in the Excitation panel: the Port modes view marks its row and scrolls
@@ -162,14 +190,30 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
 }
 
-/// The statuses of the steps: the cache when it is current, else worked out on a copy.
+/// The statuses of the steps: the session's (the cache when it is current, else worked out on
+/// a copy), with what the window knows on top: after a refused Run, the steps that block it
+/// need attention; after a run failed, Run does.
 pub fn statuses_now(app: &EmcraftApp) -> Vec<StepState> {
-    if let Some((k, v)) = &app.workflow.status
-        && *k == app.revision
-    {
-        return v.clone();
+    let mut states = match &app.workflow.status {
+        Some((k, v)) if *k == app.revision => v.clone(),
+        _ => emcraft_engine::workflow::steps(&app.session).to_vec(),
+    };
+    if app.workflow.blocked {
+        for s in states.iter_mut().filter(|s| run::required(s.step, None) && s.status == Status::Todo) {
+            s.status = Status::Missing;
+        }
     }
-    emcraft_engine::workflow::steps(&app.session).to_vec()
+    if run_failure(app).is_some()
+        && let Some(run) = states.get_mut(Step::Run.index())
+    {
+        run.status = run.status.min(Status::Missing);
+    }
+    states
+}
+
+/// Why the last run failed, while that is the last word (the Run panel shows it in full).
+pub fn run_failure(app: &EmcraftApp) -> Option<&str> {
+    app.failure.as_ref().filter(|f| is_run(&f.command) && app.job.is_none()).map(|f| f.error.as_str())
 }
 
 /// The workflow's state for `ui.inspect`.
@@ -184,6 +228,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     json!({
         "step": app.workflow.step.map(Step::id),
         "steps": steps,
+        "running": running(app),
+        "stale": states.get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale),
         "messages": messages,
         "errors": f.errors.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
         "refused": f.refused,
@@ -212,7 +258,8 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
     // The ribbon shows the step's tab.
     app.tab = match step {
         Step::Intent | Step::Geometry => RibbonTab::Model,
-        Step::Materials | Step::Boundaries => RibbonTab::Materials,
+        Step::Materials => RibbonTab::Materials,
+        Step::Boundaries => RibbonTab::Boundaries,
         Step::Excitation => RibbonTab::PortsSources,
         Step::Mesh => RibbonTab::Mesh,
         Step::Setup | Step::Run => RibbonTab::Simulate,
@@ -244,8 +291,7 @@ pub fn fix(app: &mut EmcraftApp, command: &str) -> Result<(), UiError> {
     if step.is_some() {
         open_step(app, step);
     }
-    let runs = command.starts_with("solve.") && command != "solve.port_modes";
-    if command != "project.frequency" && !runs {
+    if command != "project.frequency" && !is_run(command) {
         app.open_dialog(command)?;
     }
     Ok(())
