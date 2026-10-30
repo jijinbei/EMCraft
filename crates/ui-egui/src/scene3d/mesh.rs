@@ -117,3 +117,57 @@ fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, o
         }
     }
 }
+
+/// The mesh cut across `axis` (0 x, 1 y, 2 z) at `at` (m): each tetrahedron the plane crosses
+/// gives its cut (a triangle or a quadrilateral) in its material's colour, facing the removed
+/// side (`keep_low`: the high side is removed), so a section view shows every material filled,
+/// the air too, and conductors (not meshed) as holes. Tetrahedra in the mesh's order: the same
+/// mesh gives the same cut.
+pub(crate) fn slice(m: &Model, axis: usize, at: f64, keep_low: bool) -> emcraft_render::view3d::Scene {
+    let mut out = emcraft_render::view3d::Scene::default();
+    let Some(mesh) = &m.mesh else { return out };
+    let k = axis.min(2);
+    let (u, v) = ((k + 1) % 3, (k + 2) % 3);
+    let tag = if m.waveguide.is_some() { Pick::Guide.tag() } else { Pick::Solid.tag() };
+    out.tagged(tag, |s| {
+        for (t, tet) in mesh.tets.iter().enumerate() {
+            let Some(p) = tet.iter().map(|n| mesh.nodes.get(*n as usize).map(|q| p3(*q))).collect::<Option<Vec<[f64; 3]>>>() else { continue };
+            // Sides by the sign of the distance, the plane itself counted high, so a node on it
+            // is met once.
+            let d: Vec<f64> = p.iter().map(|q| q[k] - at).collect();
+            let mut pts: Vec<[f64; 3]> = Vec::with_capacity(4);
+            for i in 0..4 {
+                for j in i + 1..4 {
+                    if (d[i] < 0.0) != (d[j] < 0.0) {
+                        let s = d[i] / (d[i] - d[j]);
+                        let mut q = [0.0; 3];
+                        for c in 0..3 {
+                            q[c] = p[i][c] + s * (p[j][c] - p[i][c]);
+                        }
+                        q[k] = at;
+                        pts.push(q);
+                    }
+                }
+            }
+            // A node on the plane is met by each of its edges: once is enough.
+            pts.sort_by(|a, b| a.iter().zip(b).fold(std::cmp::Ordering::Equal, |o, (x, y)| o.then(x.total_cmp(y))));
+            pts.dedup();
+            if pts.len() < 3 {
+                continue;
+            }
+            // Around the centre in the plane, turning so the face looks at the removed side.
+            let n = pts.len() as f64;
+            let c = [pts.iter().map(|q| q[u]).sum::<f64>() / n, pts.iter().map(|q| q[v]).sum::<f64>() / n];
+            let angle = |q: &[f64; 3]| (q[v] - c[1]).atan2(q[u] - c[0]);
+            pts.sort_by(|a, b| angle(a).total_cmp(&angle(b)));
+            if !keep_low {
+                pts.reverse();
+            }
+            let colour = material_rgb(m, mesh.tet_material.get(t).copied().unwrap_or(0) as usize);
+            for w in 1..pts.len() - 1 {
+                s.tri(pts[0], pts[w], pts[w + 1], colour, 255);
+            }
+        }
+    });
+    out
+}

@@ -110,3 +110,35 @@ fn render_timings() {
         }
     }
 }
+
+/// A meshed guide cut along its length fills the whole cut, each material in its colour, the
+/// same cut twice the same; a plane outside the mesh cuts nothing.
+#[test]
+fn a_mesh_cut_fills_the_section_by_material() {
+    let mut s = Session::new();
+    let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find("highpass").unwrap().script).unwrap();
+    let steps: Vec<serde_json::Value> =
+        script.as_array().unwrap().iter().filter(|c| !c["command"].as_str().unwrap().starts_with("solve.")).cloned().collect();
+    s.run_script(&json!(steps)).unwrap();
+    let m = s.model();
+    let (lo, hi) = m.bounds().map(|b| (p3(b.min), p3(b.max))).unwrap();
+    let at = 0.5 * (lo[0] + hi[0]);
+    let cut = mesh_slice(m, 0, at, true);
+    let area = |t: &emcraft_render::view3d::Tri| {
+        let (u, v) = ([0, 1, 2].map(|k| t.p[1][k] - t.p[0][k]), [0, 1, 2].map(|k| t.p[2][k] - t.p[0][k]));
+        0.5 * ((u[1] * v[2] - u[2] * v[1]).powi(2) + (u[2] * v[0] - u[0] * v[2]).powi(2) + (u[0] * v[1] - u[1] * v[0]).powi(2)).sqrt()
+    };
+    let total: f64 = cut.tris.iter().map(area).sum();
+    let want = (hi[1] - lo[1]) * (hi[2] - lo[2]);
+    assert!((total - want).abs() < 1e-9 * want.max(1e-12) + 1e-12, "{total} vs {want}");
+    assert!(cut.tris.iter().all(|t| t.p.iter().all(|p| p[0] == at)));
+    // Facing the removed (high x) side.
+    assert!(cut.tris.iter().all(|t| {
+        let (u, v) = ([0, 1, 2].map(|k| t.p[1][k] - t.p[0][k]), [0, 1, 2].map(|k| t.p[2][k] - t.p[0][k]));
+        u[1] * v[2] - u[2] * v[1] >= 0.0
+    }));
+    let colours: std::collections::BTreeSet<_> = cut.tris.iter().map(|t| (t.color.0, t.color.1, t.color.2)).collect();
+    assert_eq!(colours.len(), 2, "vacuum and ptfe-like");
+    assert_eq!(mesh_slice(m, 0, at, true).tris, cut.tris);
+    assert!(mesh_slice(m, 0, hi[0] + 1.0, true).tris.is_empty());
+}
