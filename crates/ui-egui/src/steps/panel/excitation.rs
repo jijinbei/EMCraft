@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::Hint;
+use crate::lang::args;
 
 pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Ports and sources");
@@ -15,13 +16,13 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
             None if p.end == emcraft_model::End::Start => "start end",
             None => "far end",
         };
-        ui_kit::small(ui, trf("Port {name}: {at}, {n} modes", &[("name", &p.name), ("at", &tr(at)), ("n", &p.modes)]), t.text);
+        ui_kit::small(ui, trf("Port {name}: {at}, {n} modes", args!(name = p.name, at = tr(at), n = p.modes)), t.text);
     }
     for p in &m.lumped {
-        ui_kit::small(ui, trf("Lumped port {name}: {impedance} Ω", &[("name", &p.name), ("impedance", &p.impedance)]), t.text);
+        ui_kit::small(ui, trf("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance)), t.text);
     }
     if !m.sources.is_empty() {
-        ui_kit::small(ui, trf("{n} source(s)", &[("n", &m.sources.len())]), t.text);
+        ui_kit::small(ui, trf("{n} source(s)", args!(n = m.sources.len())), t.text);
     }
     if m.ports.is_empty() {
         return;
@@ -31,7 +32,7 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     let about = match band(&app.session) {
         Some((_, z)) => trf(
             "Each port's modes at {f} {unit}: propagation, effective permittivity, impedance (seconds, no full solve).",
-            &[("f", &fmt(z)), ("unit", &fu)],
+            args!(f = fmt(z), unit = fu),
         ),
         None => tr("Each port's modes: propagation, effective permittivity, impedance (seconds, no full solve).").to_owned(),
     };
@@ -41,7 +42,7 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     ui.act(ready && !busy, ui_kit::styled("Preview port modes", true), Fixed::ExcitationPreview.into(), hint, || Action::PreviewPortModes, out);
     let Some(reply) = app.replies.port_modes.as_ref() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
-    ui_kit::small(ui, trf("at {f} {unit}", &[("f", &fmt(f)), ("unit", &fu)]), t.text_dim);
+    ui_kit::small(ui, trf("at {f} {unit}", args!(f = fmt(f), unit = fu)), t.text_dim);
     mode_table(app, ui, reply, t, out);
     ui.act(true, ui_kit::styled("Show the mode patterns", false), Fixed::ExcitationPatterns.into(), "", || Action::SetView(View::PortModes), out);
 }
@@ -85,7 +86,7 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, ou
                     cell(ui, widths[3], txt(n("impedance").map_or("—".into(), |v| format!("{v:.2}"))));
                 } else {
                     let a = n("attenuation_db").unwrap_or(f64::NAN);
-                    ui_kit::small(ui, trf("cut off, {a} dB/{unit}", &[("a", &format!("{a:.1}")), ("unit", &unit)]), t.text_dim);
+                    ui_kit::small(ui, trf("cut off, {a} dB/{unit}", args!(a = format!("{a:.1}"), unit = unit)), t.text_dim);
                 }
             });
             let rect = Rect::from_min_size(r.response.rect.min, vec2(w, r.response.rect.height()));

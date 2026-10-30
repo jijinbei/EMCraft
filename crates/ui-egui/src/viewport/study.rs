@@ -8,31 +8,34 @@
 use emcraft_engine::study::{Kind, Slice, Study};
 
 use super::*;
+use crate::lang::args;
 
 /// One-line account of a study.
 pub fn summary(study: &Study) -> String {
     let names = study.variables.join(", ");
     let failed = study.rows.iter().filter(|r| r.error.is_some()).count();
-    let failed = if failed > 0 { trf(", {n} failed", &[("n", &failed)]) } else { String::new() };
+    let failed = if failed > 0 { trf(", {n} failed", args!(n = failed)) } else { String::new() };
     let (n, solve) = (study.rows.len(), &study.solve);
     match study.kind {
         Kind::Sweep if study.is_grid() => {
             let sizes: Vec<String> = study.grid.iter().map(|v| v.len().to_string()).collect();
-            let args: [(&str, &dyn std::fmt::Display); 5] =
-                [("names", &names), ("sizes", &sizes.join(" × ")), ("n", &n), ("solve", solve), ("failed", &failed)];
-            trf("Sweep of {names} on a grid: {sizes} = {n} points by {solve}{failed}", &args)
+            trf(
+                "Sweep of {names} on a grid: {sizes} = {n} points by {solve}{failed}",
+                args!(names = names, sizes = sizes.join(" × "), n = n, solve = solve, failed = failed),
+            )
         }
-        Kind::Sweep => trf("Sweep of {names}: {n} values by {solve}{failed}", &[("names", &names), ("n", &n), ("solve", solve), ("failed", &failed)]),
+        Kind::Sweep => trf("Sweep of {names}: {n} values by {solve}{failed}", args!(names = names, n = n, solve = solve, failed = failed)),
         Kind::Optimize => {
             let best = study.best.and_then(|b| study.rows.get(b)).map(|r| {
                 let at: Vec<String> = study.variables.iter().zip(&r.values).map(|(n, v)| format!("{n} = {}", short(*v))).collect();
-                trf("best {at} (goal {goal})", &[("at", &at.join(", ")), ("goal", &r.objective.map_or("–".into(), short))])
+                trf("best {at} (goal {goal})", args!(at = at.join(", "), goal = r.objective.map_or("–".into(), short)))
             });
             let state = tr(if study.converged { "converged" } else { "stopped at its budget" });
             let goal = study.goal.clone().unwrap_or_default();
-            let args: [(&str, &dyn std::fmt::Display); 5] =
-                [("names", &names), ("goal", &goal), ("n", &n), ("state", &state), ("best", &best.unwrap_or_default())];
-            trf("Optimization of {names}: {goal}, {n} solves, {state}; {best}", &args)
+            trf(
+                "Optimization of {names}: {goal}, {n} solves, {state}; {best}",
+                args!(names = names, goal = goal, n = n, state = state, best = best.unwrap_or_default()),
+            )
         }
     }
 }
@@ -126,7 +129,7 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
         }
         let Some(axis) = study.grid.get(k) else { continue };
         ui.horizontal_wrapped(|ui| {
-            crate::ui_kit::small(ui, trf("{name} at", &[("name", n)]), t.text_dim);
+            crate::ui_kit::small(ui, trf("{name} at", args!(name = n)), t.text_dim);
             for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
                 let on = slice.at.get(k) == Some(&i);
                 if ui.named(pill(&short(*v), on, 10, PillSize::Small), Handle::StudyAt(n, i)).clicked()
@@ -160,11 +163,11 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
                 ui.text(Style::Strong, "goal");
             } else if let Some(p) = parameter {
                 let p = p.to_uppercase();
-                ui.text(Style::Strong, trf("min |{p}| dB", &[("p", &p)]));
-                ui.text(Style::Strong, trf("max |{p}| dB", &[("p", &p)]));
+                ui.text(Style::Strong, trf("min |{p}| dB", args!(p = p)));
+                ui.text(Style::Strong, trf("max |{p}| dB", args!(p = p)));
             }
             if !study.rows.iter().all(|r| r.modes.is_empty()) {
-                ui.text(Style::Strong, trf("modes ({unit})", &[("unit", &study.frequency_unit)]));
+                ui.text(Style::Strong, trf("modes ({unit})", args!(unit = study.frequency_unit)));
             }
             ui.label(egui::RichText::new("").strong());
             ui.end_row();

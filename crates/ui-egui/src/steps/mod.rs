@@ -263,10 +263,10 @@ fn positive(text: &str) -> Result<f64, String> {
 /// An integer within `lo..=hi`.
 fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
     let s = text.trim();
-    let range: [(&str, &dyn std::fmt::Display); 2] = [("lo", &lo), ("hi", &hi)];
-    let v: u64 = s.parse().map_err(|_| crate::lang::trf("must be a whole number from {lo} to {hi}", &range))?;
+    let range = crate::lang::args!(lo = lo, hi = hi);
+    let v: u64 = s.parse().map_err(|_| crate::lang::trf("must be a whole number from {lo} to {hi}", range))?;
     if !(lo..=hi).contains(&v) {
-        return Err(crate::lang::trf("must be from {lo} to {hi}", &range));
+        return Err(crate::lang::trf("must be from {lo} to {hi}", range));
     }
     Ok(v)
 }

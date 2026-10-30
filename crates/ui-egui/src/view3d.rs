@@ -15,7 +15,7 @@ use emcraft_engine::view::{FieldView, Plane};
 
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
-use crate::lang::{self, tr, trf};
+use crate::lang::{self, args, tr, trf};
 use crate::scene3d::{self, Built, Overlay};
 use crate::state::FieldState;
 use crate::theme::Tokens;
@@ -557,7 +557,7 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.id()));
-        if resp.on_hover_text(trf("View from {side} ({view})", &[("side", &name), ("view", &view.id())])).clicked() {
+        if resp.on_hover_text(trf("View from {side} ({view})", args!(side = name, view = view.id()))).clicked() {
             clicked = Some(view);
         }
     }

@@ -1,6 +1,7 @@
 //! The port-mode, eigenmode and comparison tables.
 
 use super::*;
+use crate::lang::args;
 
 pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
@@ -10,7 +11,7 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     };
     let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
     let fu = app.session.display().frequency.symbol();
-    ui.label(egui::RichText::new(trf("Port modes at {f} {unit}", &[("f", &num(&reply["frequency"], 4)), ("unit", &fu)])).size(t.font_heading));
+    ui.label(egui::RichText::new(trf("Port modes at {f} {unit}", args!(f = num(&reply["frequency"], 4), unit = fu))).size(t.font_heading));
     // The mode picked (from the Excitation panel or a click here), else the first port's first;
     // the table scrolls to it once.
     let focus = app.workflow.mode_focus.clone().or_else(|| {
@@ -31,9 +32,9 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     let ui = &mut table_ui;
     egui::ScrollArea::vertical().id_salt("modes_table").show(ui, |ui| {
         for port in reply.get("ports").and_then(Value::as_array).into_iter().flatten() {
-            crate::ui_kit::section(ui, trf("Port {name}", &[("name", &port["name"].as_str().unwrap_or(""))]));
+            crate::ui_kit::section(ui, trf("Port {name}", args!(name = port["name"].as_str().unwrap_or(""))));
             egui::Grid::new(("modes", port["name"].as_str().unwrap_or(""))).striped(true).num_columns(6).show(ui, |ui| {
-                let attenuation = trf("Attenuation (dB/{unit})", &[("unit", &lu)]);
+                let attenuation = trf("Attenuation (dB/{unit})", args!(unit = lu));
                 for h in [tr("Mode"), tr("Propagates"), &format!("β (rad/{lu})"), "εeff", "Z (Ω)", &attenuation] {
                     ui.text(Style::Strong, Raw(h));
                 }
@@ -151,7 +152,7 @@ pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.label(
         egui::RichText::new(trf(
             "Against {reference} — worst |S − S_ref| = {worst}",
-            &[("reference", &reply["reference"].as_str().unwrap_or("?")), ("worst", &num(&reply["worst"], 6))],
+            args!(reference = reply["reference"].as_str().unwrap_or("?"), worst = num(&reply["worst"], 6)),
         ))
         .size(t.font_heading),
     );

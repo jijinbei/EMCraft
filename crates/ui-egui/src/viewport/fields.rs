@@ -1,6 +1,7 @@
 //! Fields on a plane: the picture, the probe and its readout, and the controls.
 
 use super::*;
+use crate::lang::args;
 
 pub(crate) fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'static str)> {
     let emcraft_model::Aabb { min: lo, max: hi } = app.session.model().bounds()?;
@@ -135,7 +136,7 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
         let comp = field.view.component;
         let (now, amp) = pin.value(comp, field.view.phase);
         let fmt = emcraft_render::axes::format;
-        let text = trf("{component} {now} (amp. {amplitude})", &[("component", &comp.label()), ("now", &fmt(now)), ("amplitude", &fmt(amp))]);
+        let text = trf("{component} {now} (amp. {amplitude})", args!(component = comp.label(), now = fmt(now), amplitude = fmt(amp)));
         let galley = painter.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
         let size = galley.size() + vec2(10.0, 6.0);
         let right = c.x + 12.0 + size.x < rect.right();
@@ -185,9 +186,9 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
     {
         let mut idx = field.view.mode.unwrap_or(0);
         let label = |i: usize| {
-            e.modes.get(i).map_or(String::new(), |m| {
-                trf("mode {n}: {f}", &[("n", &(i + 1)), ("f", &format!("{:.4} {}", fu.from_si(m.frequency), fu.symbol()))])
-            })
+            e.modes
+                .get(i)
+                .map_or(String::new(), |m| trf("mode {n}: {f}", args!(n = (i + 1), f = format!("{:.4} {}", fu.from_si(m.frequency), fu.symbol()))))
         };
         egui::ComboBox::from_id_salt("mode").selected_text(label(idx)).show_ui(ui, |ui| {
             for i in 0..e.modes.len() {

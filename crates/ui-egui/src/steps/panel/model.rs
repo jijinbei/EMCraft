@@ -1,6 +1,7 @@
 //! The model's steps: its bodies and extent, its materials, its boundaries, its mesh.
 
 use super::*;
+use crate::lang::args;
 
 pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     ui_kit::section(ui, "Bodies");
@@ -35,9 +36,8 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Toke
     kv(ui, "walls", m.wall_conductivity.map_or(tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")), t);
     let l = app.session.display().length;
     let kind = |o: &emcraft_model::Open| tr(if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" });
-    let thick = |o: &emcraft_model::Open| {
-        trf("{kind} {thickness} {unit} thick", &[("kind", &kind(o)), ("thickness", &fmt(l.from_si(o.thickness))), ("unit", &lu)])
-    };
+    let thick =
+        |o: &emcraft_model::Open| trf("{kind} {thickness} {unit} thick", args!(kind = kind(o), thickness = fmt(l.from_si(o.thickness)), unit = lu));
     kv(ui, "open", m.open.map_or(tr("closed (no PML)").into(), |o| thick(&o)), t);
     let planes: Vec<String> = m
         .symmetry
@@ -69,18 +69,18 @@ pub(super) fn mesh(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     if let Some(b) = app.session.model().band {
         let index = app.session.model().materials.iter().map(|x| (x.eps_r * x.mu_r).sqrt()).fold(1.0, f64::max);
         let lambda = emcraft_model::units::C0 / (b.stop * index);
-        kv(ui, "per wavelength", trf("{n} at the band's top", &[("n", &format!("{:.1}", lambda / h.max(1e-300)))]), t);
+        kv(ui, "per wavelength", trf("{n} at the band's top", args!(n = format!("{:.1}", lambda / h.max(1e-300)))), t);
     }
     ui_kit::section(ui, "Estimate");
     match estimate(app) {
         Ok(e) => {
             let n = |k: &str| e.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
             let order = e.get("order").and_then(Value::as_u64).unwrap_or(2);
-            kv(ui, "unknowns", trf("{n} (order {order})", &[("n", &format!("{:.0}", n("unknowns"))), ("order", &order)]), t);
+            kv(ui, "unknowns", trf("{n} (order {order})", args!(n = format!("{:.0}", n("unknowns")), order = order)), t);
             kv(ui, "memory", format!("{:.0} MB", n("memory_mb")), t);
             let measured = e.get("from_this_session").and_then(Value::as_bool) == Some(true);
             let template = if measured { "{secs} s per frequency" } else { "{secs} s per frequency (reference machine)" };
-            kv(ui, "time", trf(template, &[("secs", &format!("{:.2}", n("seconds_per_frequency")))]), t);
+            kv(ui, "time", trf(template, args!(secs = format!("{:.2}", n("seconds_per_frequency")))), t);
         }
         Err(e) => {
             ui_kit::small(ui, Raw(e), t.text_dim);

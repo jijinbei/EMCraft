@@ -241,6 +241,15 @@ impl Shown for Raw<'_> {
     }
 }
 
+/// The values of a text's placeholders, by name, for [`trf`], [`both`] and
+/// `EmcraftApp::info_with`: `args!(n = count, path = p)`.
+macro_rules! args {
+    ($($name:ident = $value:expr),* $(,)?) => {
+        &[$((stringify!($name), &$value as &dyn ::std::fmt::Display)),*]
+    };
+}
+pub(crate) use args;
+
 /// [`tr`] with its placeholders filled: each `{name}` by the value given for `name`.
 pub fn trf(english: &str, args: &[(&str, &dyn Display)]) -> String {
     fill(tr(english), args)

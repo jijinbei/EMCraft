@@ -5,6 +5,7 @@
 
 use emcraft_model::{Aabb, Point3};
 
+use crate::lang::args;
 use crate::scene3d::{BOX_EDGES, box_corner, normal_axis};
 
 use super::field_params::FieldParams;
@@ -268,7 +269,7 @@ fn readout(app: &EmcraftApp, field: &FieldState, ui: &mut egui::Ui) {
                     ui,
                     trf(
                         "{component} = {now} {unit} (amplitude {amplitude})",
-                        &[("component", &comp.label()), ("now", &fmt(now)), ("unit", &unit), ("amplitude", &fmt(amp))],
+                        args!(component = comp.label(), now = fmt(now), unit = unit, amplitude = fmt(amp)),
                     ),
                     true,
                 );

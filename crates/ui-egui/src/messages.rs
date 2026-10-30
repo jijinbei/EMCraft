@@ -2,7 +2,7 @@
 //! repeated), and the running job's progress with its Cancel.
 
 use crate::handle::Fixed;
-use crate::lang::trf;
+use crate::lang::{args, trf};
 
 use crate::{Action, Actions, EmcraftApp, UiExt, label, scenario, theme, ui_kit};
 
@@ -98,11 +98,12 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
         let (command, secs) = (label(&job.command), format!("{:.0}", job.elapsed()));
         let what = if snap.total > 0 {
             let (done, total) = ((snap.done + 1).min(snap.total), snap.total);
-            let args: [(&str, &dyn std::fmt::Display); 5] =
-                [("command", &command), ("stage", &snap.stage), ("done", &done), ("total", &total), ("secs", &secs)];
-            trf("{command} — {stage} {done} of {total} ({secs} s)", &args)
+            trf(
+                "{command} — {stage} {done} of {total} ({secs} s)",
+                args!(command = command, stage = snap.stage, done = done, total = total, secs = secs),
+            )
         } else {
-            trf("{command} — running ({secs} s)", &[("command", &command), ("secs", &secs)])
+            trf("{command} — running ({secs} s)", args!(command = command, secs = secs))
         };
         ui.label(egui::RichText::new(what).size(t.font_body));
         ui_kit::progress(ui, snap.fraction(), 180.0);

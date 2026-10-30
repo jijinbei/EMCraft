@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::Hint;
+use crate::lang::args;
 
 pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Solver");
@@ -81,8 +82,8 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
             let radio = egui::RadioButton::new(current == name, egui::RichText::new(name).size(t.font_small));
             let r = ui.named_enabled(*available && !busy, radio, Handle::Device(name));
             let r = match (available, problem) {
-                (false, Some(p)) => r.hint_disabled(trf("{name} cannot run here: {problem}", &[("name", name), ("problem", p)])),
-                (false, None) => r.hint_disabled(trf("{name} cannot run here", &[("name", name)])),
+                (false, Some(p)) => r.hint_disabled(trf("{name} cannot run here: {problem}", args!(name = name, problem = p))),
+                (false, None) => r.hint_disabled(trf("{name} cannot run here", args!(name = name))),
                 _ => r.hint(match name.as_str() {
                     "cpu" => "the CPU's threads",
                     "cuda" => "an NVIDIA GPU",
@@ -128,7 +129,7 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
         }
         _ => "The next solve runs on the CPU's threads.",
     };
-    let next = trf(template, &[("device", &current), ("precision", &tr(precision))]);
+    let next = trf(template, args!(device = current, precision = tr(precision)));
     ui_kit::small(ui, next, t.text);
     if let Some((device, precision)) = chosen {
         out.push(Action::SetDevice { device, precision });
@@ -225,10 +226,10 @@ fn band_diagram(app: &EmcraftApp, ui: &mut egui::Ui, solves: &[f64], t: &Tokens)
     } else {
         "band {a} to {z} {unit}; the solve works at {n} frequencies"
     };
-    let mut tip = trf(template, &[("a", &fmt(a)), ("z", &fmt(z)), ("unit", &fu), ("n", &n)]);
+    let mut tip = trf(template, args!(a = fmt(a), z = fmt(z), unit = fu, n = n));
     for (f, label, _) in &cuts {
         tip.push('\n');
-        tip.push_str(&trf("cut-off {mode}: {f} {unit}", &[("mode", label), ("f", &fmt((f * 1e4).round() / 1e4)), ("unit", &fu)]));
+        tip.push_str(&trf("cut-off {mode}: {f} {unit}", args!(mode = label, f = fmt((f * 1e4).round() / 1e4), unit = fu)));
     }
     resp.on_hover_text(tip);
     Some(json!({"cutoffs": cuts.iter().map(|c| c.1.clone()).collect::<Vec<_>>(), "solves": n}))

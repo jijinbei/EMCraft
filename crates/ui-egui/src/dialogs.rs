@@ -14,7 +14,7 @@ use emcraft_engine::text::clip;
 use emcraft_engine::{CommandSpec, ParamSpec, Quantity, Session};
 use serde_json::{Map, Value, json};
 
-use crate::lang::{tr, trf};
+use crate::lang::{args, tr, trf};
 
 /// Longest text a field keeps (characters): hostile pastes are cut, not stored.
 pub const MAX_FIELD: usize = 100_000;
@@ -316,7 +316,7 @@ pub fn numeric(text: &str) -> Result<Value, String> {
     let t = text.trim();
     if t.starts_with('=') {
         if t.len() > emcraft_engine::expr::MAX_LEN + 1 {
-            return Err(trf("an expression holds at most {n} characters", &[("n", &emcraft_engine::expr::MAX_LEN)]));
+            return Err(trf("an expression holds at most {n} characters", args!(n = emcraft_engine::expr::MAX_LEN)));
         }
         return Ok(json!(t));
     }
@@ -326,7 +326,7 @@ pub fn numeric(text: &str) -> Result<Value, String> {
 /// A finite number from a field's text.
 pub fn parse_number(text: &str) -> Result<f64, String> {
     let t = text.trim();
-    let v: f64 = t.parse().map_err(|_| trf("`{text}` is not a number", &[("text", &clip(t, 40))]))?;
+    let v: f64 = t.parse().map_err(|_| trf("`{text}` is not a number", args!(text = clip(t, 40))))?;
     if v.is_finite() { Ok(v) } else { Err(tr("must be a finite number").into()) }
 }
 
@@ -352,7 +352,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             if t.starts_with('=') {
                 return numeric(t).map(Some);
             }
-            json!(t.parse::<i64>().map_err(|_| trf("`{text}` is not a whole number", &[("text", &clip(t, 40))]))?)
+            json!(t.parse::<i64>().map_err(|_| trf("`{text}` is not a whole number", args!(text = clip(t, 40))))?)
         }
         Kind::Text | Kind::Choice(_) => {
             if empty {
@@ -386,13 +386,13 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
                     let cell = cell.trim();
                     if cell.is_empty() {
                         if c.required {
-                            return Err(trf("row {n}: `{column}` is required", &[("n", &(i + 1)), ("column", &c.name)]));
+                            return Err(trf("row {n}: `{column}` is required", args!(n = (i + 1), column = c.name)));
                         }
                         continue;
                     }
                     let v = match c.cell {
                         Cell::Number => {
-                            numeric(cell).map_err(|e| trf("row {n}, {column}: {error}", &[("n", &(i + 1)), ("column", &c.name), ("error", &e)]))?
+                            numeric(cell).map_err(|e| trf("row {n}, {column}: {error}", args!(n = (i + 1), column = c.name, error = e)))?
                         }
                         Cell::Material => json!(cell),
                     };
@@ -406,7 +406,7 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             if empty {
                 return Ok(None);
             }
-            serde_json::from_str(f.text.trim()).map_err(|e| trf("not JSON: {error}", &[("error", &e)]))?
+            serde_json::from_str(f.text.trim()).map_err(|e| trf("not JSON: {error}", args!(error = e)))?
         }
     }))
 }

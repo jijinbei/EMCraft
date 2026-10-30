@@ -1,6 +1,7 @@
 //! The S-parameter chart against the exact curves.
 
 use super::*;
+use crate::lang::args;
 
 pub(super) struct SParameters;
 
@@ -67,7 +68,7 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let n = entries.len().clamp(2, TABLE_ENTRIES);
     if entries.iter().any(|e| e.terminal.is_some()) {
         let names: Vec<String> = entries.iter().enumerate().map(|(i, e)| format!("{} = {}", i + 1, e.name)).collect();
-        crate::ui_kit::caption(ui, trf("Entries of S: {entries}", &[("entries", &names.join(", "))]));
+        crate::ui_kit::caption(ui, trf("Entries of S: {entries}", args!(entries = names.join(", "))));
     }
     egui::ScrollArea::vertical().id_salt("s_table").show(ui, |ui| {
         egui::Grid::new("s_grid").striped(true).num_columns(1 + 2 * n).show(ui, |ui| {

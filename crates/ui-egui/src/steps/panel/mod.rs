@@ -16,7 +16,7 @@ pub use results::export_touchstone;
 use super::bar::mark;
 use super::*;
 use crate::Style;
-use crate::lang::{Raw, shown, tr, trf};
+use crate::lang::{Raw, args, shown, tr, trf};
 
 /// The active step's panel at the right (with the open dialog docked in it): `fields` are its
 /// text fields, `dialog` the open dialog.
@@ -60,7 +60,7 @@ fn header(ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
         mark(ui.painter(), r.center(), s.status, t);
-        ui.text(Style::Heading, trf("Step {n} · {step}", &[("n", &s.step.index()), ("step", &shown(s.step))]));
+        ui.text(Style::Heading, trf("Step {n} · {step}", args!(n = s.step.index(), step = shown(s.step))));
         ui_kit::small(ui, Raw(shown(s.status)), status_color(s.status, t));
     });
     ui.add_space(4.0);
@@ -89,9 +89,9 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
 
 fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
-        Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => trf("Go to {step}", &[("step", &shown(step))]),
+        Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => trf("Go to {step}", args!(step = shown(step))),
         Some(Step::Intent) if command == "project.frequency" => tr("Set the band").to_owned(),
-        _ => trf("Fix: {command}", &[("command", &crate::commands::button_label(command))]),
+        _ => trf("Fix: {command}", args!(command = crate::commands::button_label(command))),
     }
 }
 

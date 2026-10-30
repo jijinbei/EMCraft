@@ -389,6 +389,7 @@ const UNREACHED: &[(&str, &str)] = &[
     ("The next solve runs on {device} in {precision} precision.", "needs a device other than the CPU"),
     ("The next solve runs on the CPU, its factorization's large fronts on {device} (complex double).", "needs a device other than the CPU"),
     ("{name} cannot run here", "depends on the machine's devices"),
+    ("{name} cannot run here: {problem}", "depends on the machine's devices"),
     ("an NVIDIA GPU", "depends on the machine's devices"),
     ("this device does not run it", "needs a device other than the CPU"),
     ("Running with {n} accepted warning(s).", "starts a full solve"),

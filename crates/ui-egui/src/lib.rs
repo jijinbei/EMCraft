@@ -73,6 +73,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
 use emcraft_engine::{EngineError, Session};
+use lang::args;
 use serde_json::{Value, json};
 
 pub use action::{Action, Actions};
@@ -341,7 +342,7 @@ impl EmcraftApp {
         let n = script.as_array().map(Vec::len).ok_or_else(|| UiError::Input("a script is a JSON array of {command, params}".into()))?;
         self.job =
             Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| s.run_script(&script).map(Value::Array)));
-        self.info_with("Running a script of {n} commands…", &[("n", &n)]);
+        self.info_with("Running a script of {n} commands…", args!(n = n));
         Ok(json!({"started": "engine.script"}))
     }
 
@@ -400,7 +401,7 @@ impl EmcraftApp {
         let Some(job) = self.job.take() else { return false };
         job.cancel();
         self.dialog_job = None;
-        self.info_with("{command} cancelled.", &[("command", &label(&job.command))]);
+        self.info_with("{command} cancelled.", args!(command = label(&job.command)));
 
         for w in job.waiting {
             let _ = w.send(json!({"ok": false, "error": emcraft_engine::progress::CANCELLED}));

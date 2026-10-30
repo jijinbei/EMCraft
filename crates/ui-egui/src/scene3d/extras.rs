@@ -6,6 +6,7 @@ use emcraft_model::{End, Model, Source};
 use super::geometry::{BOX_EDGES, ROUND, box_corner};
 use super::style::sc;
 use super::{Built, Label, Overlay, p3};
+use crate::lang::args;
 
 /// Cells across a port's face where its cross-section is sampled (a face that features reach).
 const PORT_CELLS: usize = 96;
@@ -98,7 +99,7 @@ pub(super) fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
         if strong {
             out.labels.push(Label {
                 at: midpoint(a, b),
-                text: crate::lang::trf("Lumped {name}", &[("name", &p.name)]),
+                text: crate::lang::trf("Lumped {name}", args!(name = p.name)),
                 color: sc().port,
                 facing: None,
             });
@@ -130,7 +131,7 @@ fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
             (None, End::Start) => Some([0.0, 0.0, -1.0]),
             (None, End::End) => Some([0.0, 0.0, 1.0]),
         };
-        out.labels.push(Label { at: c, text: crate::lang::trf("Port {name}", &[("name", &p.name)]), color: sc().port, facing });
+        out.labels.push(Label { at: c, text: crate::lang::trf("Port {name}", args!(name = p.name)), color: sc().port, facing });
         if overlay == Overlay::Ports {
             for (a, b) in outline(&port_face(m, p)) {
                 out.scene.line(a, b, sc().port, 255);

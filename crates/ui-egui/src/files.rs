@@ -12,7 +12,7 @@ use serde_json::json;
 
 use crate::action::Pref;
 use crate::handle::Fixed;
-use crate::lang::{Raw, sample_label, tr, trf};
+use crate::lang::{Raw, args, sample_label, tr, trf};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario, ui_kit};
 
@@ -253,7 +253,7 @@ fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
     egui::Area::new(egui::Id::new("emcraft_file_confirm")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {
             ui.set_width(400.0);
-            ui.text(Style::Prompt, trf("Save the changes to {name}?", &[("name", &app.session.name())]));
+            ui.text(Style::Prompt, trf("Save the changes to {name}?", args!(name = app.session.name())));
             ui.text(Style::SmallDim, "They are lost otherwise.");
             ui.add_space(6.0);
             ui.horizontal(|ui| {

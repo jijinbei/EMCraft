@@ -7,7 +7,7 @@ use egui::{Align2, Stroke, vec2};
 
 use crate::dialogs::{Cell, Column, Dialog, Field, Kind, MAX_FIELD, MAX_ROWS};
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, command_doc, param_doc, tr, trf};
+use crate::lang::{Raw, args, command_doc, param_doc, tr, trf};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario, ui_kit};
 
@@ -237,7 +237,7 @@ fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, s
     }
     let add = ui.named_enabled(
         f.rows.len() < MAX_ROWS,
-        egui::Button::new(trf("Add {row}", &[("row", &name.trim_end_matches('s'))])),
+        egui::Button::new(trf("Add {row}", args!(row = name.trim_end_matches('s')))),
         Handle::DialogAdd(name),
     );
     if add.clicked() {

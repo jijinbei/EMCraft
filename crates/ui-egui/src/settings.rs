@@ -11,7 +11,7 @@ use emcraft_model::units::{Frequency, Length};
 
 use crate::action::Pref;
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, Shown, shown, tr, trf};
+use crate::lang::{Raw, Shown, args, shown, tr, trf};
 use crate::theme::{Theme, Tokens};
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
 
@@ -330,12 +330,12 @@ fn dialogs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 
 fn files(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let n = app.prefs.recent.len();
-    let at_most = trf("The start page lists the projects you opened or saved last, at most {n}.", &[("n", &crate::prefs::MAX_RECENT)]);
+    let at_most = trf("The start page lists the projects you opened or saved last, at most {n}.", args!(n = crate::prefs::MAX_RECENT));
     heading(ui, "Recent projects", at_most);
     ui.horizontal(|ui| {
         let clear = crate::ui_kit::styled("Clear the list", false);
         ui.act(n > 0, clear, Fixed::SettingsClearRecent.into(), "", || Action::Pref(Pref::ClearRecent), out);
-        ui.text(Style::Dim, if n == 1 { tr("1 project").to_owned() } else { trf("{n} projects", &[("n", &n)]) });
+        ui.text(Style::Dim, if n == 1 { tr("1 project").to_owned() } else { trf("{n} projects", args!(n = n)) });
     });
 
     gap(ui);

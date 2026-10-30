@@ -1,7 +1,7 @@
 //! Starting a run: the solver's parameters from the panel's fields and the preflight checks.
 
 use super::*;
-use crate::lang::{shown, tr};
+use crate::lang::{args, shown, tr};
 
 /// The solver and its parameters from the setup's fields (`f`); each bad field is marked.
 pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver, Value), String> {
@@ -125,7 +125,7 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     app.workflow.fields.refused = None;
     let (solver, params) = run_params(&app.session, &mut app.workflow.fields).map_err(UiError::Input)?;
     if !pre.warnings.is_empty() {
-        app.info_with("Running with {n} accepted warning(s).", &[("n", &pre.warnings.len())]);
+        app.info_with("Running with {n} accepted warning(s).", args!(n = pre.warnings.len()));
     }
     app.run(solver.command(), params)
 }

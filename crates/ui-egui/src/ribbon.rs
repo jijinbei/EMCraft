@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::commands::{button_label, glyph};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, command_doc, shown, tr, trf};
+use crate::lang::{Raw, args, command_doc, shown, tr, trf};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
 
@@ -115,9 +115,9 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             egui::Popup::menu(&edit).show(|ui| {
                 ui.set_min_width(200.0);
                 let (u, r) = (app.session.undo().len(), app.session.redo().len());
-                let undo = egui::Button::new(trf("Undo  ({n})", &[("n", &u)])).shortcut_text("Ctrl+Z");
+                let undo = egui::Button::new(trf("Undo  ({n})", args!(n = u))).shortcut_text("Ctrl+Z");
                 ui.act(u > 0 && !busy, undo, Fixed::EditUndo.into(), "", || Action::Undo, out);
-                let redo = egui::Button::new(trf("Redo  ({n})", &[("n", &r)])).shortcut_text("Ctrl+Y");
+                let redo = egui::Button::new(trf("Redo  ({n})", args!(n = r))).shortcut_text("Ctrl+Y");
                 ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), "", || Action::Redo, out);
             });
             // The project's name in the middle, a dot while it has unsaved changes.
@@ -389,7 +389,7 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
             ui.set_width(420.0);
             if let Some(d) = &direct {
                 match d {
-                    Ok((id, _)) => ui.label(egui::RichText::new(trf("Enter runs {id} with these parameters", &[("id", id)])).color(t.success)),
+                    Ok((id, _)) => ui.label(egui::RichText::new(trf("Enter runs {id} with these parameters", args!(id = id))).color(t.success)),
                     Err(e) => ui.label(egui::RichText::new(e).color(t.form_error)),
                 };
             }
@@ -440,7 +440,7 @@ pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::
         t.card(t.dialog_body).inner_margin(12).show(ui, |ui| {
             ui.set_width(400.0);
             ui.text(Style::Prompt, "Export history as script");
-            ui.text(Style::SmallDim, trf("{n} commands that rebuild the model", &[("n", &app.session.history().len())]));
+            ui.text(Style::SmallDim, trf("{n} commands that rebuild the model", args!(n = app.session.history().len())));
             let r = ui.add(egui::TextEdit::singleline(path).desired_width(380.0).char_limit(4096));
             scenario::publish_target(Fixed::ExportPath, r.rect);
             ui.horizontal(|ui| {

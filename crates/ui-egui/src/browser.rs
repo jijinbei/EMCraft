@@ -9,7 +9,7 @@ use crate::glyphs::{self, Glyph};
 use std::fmt::Display;
 
 use crate::handle::{Fixed, Handle};
-use crate::lang::{self, Both};
+use crate::lang::{self, Both, args};
 use crate::scene3d::Pick;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Style, UiExt, View, scenario};
@@ -96,7 +96,7 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
             "Materials",
             m.materials
                 .iter()
-                .map(|mat| row("{name}: {summary}", &[("name", &mat.name), ("summary", &mat.summary())], Glyph::Material, Act::None))
+                .map(|mat| row("{name}: {summary}", args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None))
                 .collect(),
         ),
         ("Ports", ports(m)),
@@ -117,7 +117,7 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
             let edit = serde_json::json!({"name": name, "value": given.unwrap_or(serde_json::json!(value))});
             row(
                 "{name} = {value}{expression}",
-                &[("name", name), ("value", value), ("expression", &expression)],
+                args!(name = name, value = value, expression = expression),
                 Glyph::Variable,
                 Act::EditWith("project.variable", edit),
             )
@@ -149,44 +149,44 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     let mut rows = Vec::new();
     if let Some(w) = &m.waveguide {
         let edit = || Act::Edit("geometry.waveguide");
-        let size: [(&str, &dyn Display); 4] = [("w", &mm(w.width)), ("h", &mm(w.height)), ("l", &mm(w.length())), ("unit", &lu)];
-        rows.push(row("Waveguide {w} × {h} × {l} {unit}", &size, Glyph::Waveguide, edit()).picks(Pick::Guide));
+        rows.push(
+            row(
+                "Waveguide {w} × {h} × {l} {unit}",
+                args!(w = mm(w.width), h = mm(w.height), l = mm(w.length()), unit = lu),
+                Glyph::Waveguide,
+                edit(),
+            )
+            .picks(Pick::Guide),
+        );
         for (i, sec) in w.sections.iter().enumerate() {
-            let (n, length) = (i + 1, mm(sec.length));
-            let args: [(&str, &dyn Display); 4] = [("n", &n), ("length", &length), ("unit", &lu), ("material", &sec.material)];
-            let r = match sec.width {
-                Some(a) => row(
-                    "Section {n}: {length} {unit}, {material}, aperture {aperture}",
-                    &[&args[..], &[("aperture", &mm(a))]].concat(),
-                    Glyph::Box,
-                    edit(),
-                ),
-                None => row("Section {n}: {length} {unit}, {material}", &args, Glyph::Box, edit()),
+            let text = match sec.width {
+                Some(_) => "Section {n}: {length} {unit}, {material}, aperture {aperture}",
+                None => "Section {n}: {length} {unit}, {material}",
             };
-            rows.push(r.sub().picks(Pick::Section(i)));
+            let aperture = sec.width.map(mm).unwrap_or_default();
+            let args = args!(n = i + 1, length = mm(sec.length), unit = lu, material = sec.material, aperture = aperture);
+            rows.push(row(text, args, Glyph::Box, edit()).sub().picks(Pick::Section(i)));
         }
         for (i, layer) in w.layers.iter().enumerate() {
-            let args: [(&str, &dyn Display); 4] =
-                [("n", &(i + 1)), ("thickness", &mm(layer.thickness)), ("unit", &lu), ("material", &layer.material)];
-            rows.push(row("Layer {n}: {thickness} {unit}, {material}", &args, Glyph::Material, edit()).sub().picks(Pick::Layer(i)));
+            let args = args!(n = i + 1, thickness = mm(layer.thickness), unit = lu, material = layer.material);
+            rows.push(row("Layer {n}: {thickness} {unit}, {material}", args, Glyph::Material, edit()).sub().picks(Pick::Layer(i)));
         }
         for (i, st) in w.strips.iter().enumerate() {
-            let args: [(&str, &dyn Display); 3] = [("n", &(i + 1)), ("y", &mm(st.y)), ("width", &mm(st.width))];
-            rows.push(row("Strip {n}: y {y}, width {width}", &args, Glyph::PortModes, edit()).sub().picks(Pick::Strip(i)));
+            let args = args!(n = i + 1, y = mm(st.y), width = mm(st.width));
+            rows.push(row("Strip {n}: y {y}, width {width}", args, Glyph::PortModes, edit()).sub().picks(Pick::Strip(i)));
         }
         for (i, v) in w.vias.iter().enumerate() {
-            let args: [(&str, &dyn Display); 6] =
-                [("n", &(i + 1)), ("wx", &mm(v.wx)), ("wz", &mm(v.wz)), ("unit", &lu), ("y0", &mm(v.y0)), ("y1", &mm(v.y1))];
-            rows.push(row("Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}", &args, Glyph::Box, edit()).sub().picks(Pick::Via(i)));
+            let args = args!(n = i + 1, wx = mm(v.wx), wz = mm(v.wz), unit = lu, y0 = mm(v.y0), y1 = mm(v.y1));
+            rows.push(row("Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}", args, Glyph::Box, edit()).sub().picks(Pick::Via(i)));
         }
     }
     if let Some(solid) = &m.solid {
         let edit = Act::Edit("geometry.solid");
         let r = match &solid.shape {
             emcraft_model::Shape::Surface { name, .. } => {
-                row("Region: {name} (imported), {material}", &[("name", name), ("material", &solid.material)], Glyph::Box, edit)
+                row("Region: {name} (imported), {material}", args!(name = name, material = solid.material), Glyph::Box, edit)
             }
-            other => row("Region: {shape}, {material}", &[("shape", &other.kind().to_lowercase()), ("material", &solid.material)], Glyph::Box, edit),
+            other => row("Region: {shape}, {material}", args!(shape = other.kind().to_lowercase(), material = solid.material), Glyph::Box, edit),
         };
         rows.push(r.picks(Pick::Solid));
     }
@@ -198,8 +198,11 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         };
         let glyph = if b.material == emcraft_engine::bodies::METAL { Glyph::Feature } else { Glyph::Inclusion };
         let edit = Act::EditWith("geometry.body.material", serde_json::json!({"body": b.name, "material": b.material}));
-        let args: [(&str, &dyn Display); 3] = [("name", &b.name), ("material", &b.material), ("shape", &b.shape.to_lowercase())];
-        rows.push(row("{name}: {material} {shape}", &args, glyph, edit).sub().picks(pick));
+        rows.push(
+            row("{name}: {material} {shape}", args!(name = b.name, material = b.material, shape = b.shape.to_lowercase()), glyph, edit)
+                .sub()
+                .picks(pick),
+        );
     }
     rows
 }
@@ -209,11 +212,10 @@ fn ports(m: &emcraft_model::Model) -> Vec<Row> {
         let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
         let template =
             if p.end == emcraft_model::End::Start { "Port {name}: Start, {n} modes{impedance}" } else { "Port {name}: End, {n} modes{impedance}" };
-        let args: [(&str, &dyn Display); 3] = [("name", &p.name), ("n", &p.modes), ("impedance", &z)];
-        row(template, &args, Glyph::Port, Act::Show(View::PortModes)).picks(Pick::Port(i))
+        row(template, args!(name = p.name, n = p.modes, impedance = z), Glyph::Port, Act::Show(View::PortModes)).picks(Pick::Port(i))
     });
     let lumped =
-        m.lumped.iter().map(|p| row("Lumped {name}: {impedance} Ω", &[("name", &p.name), ("impedance", &p.impedance)], Glyph::Lumped, Act::None));
+        m.lumped.iter().map(|p| row("Lumped {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None));
     waveguide.chain(lumped).collect()
 }
 
@@ -223,12 +225,12 @@ fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         .map(|src| match src {
             emcraft_model::Source::Dipole { length, current, .. } => row(
                 "Dipole: {length} {unit}, {current} A",
-                &[("length", &f.len(*length)), ("unit", &f.unit()), ("current", current)],
+                args!(length = f.len(*length), unit = f.unit(), current = current),
                 Glyph::Dipole,
                 Act::None,
             ),
             emcraft_model::Source::PlaneWave { direction: emcraft_model::Vec3 { x, y, z }, .. } => {
-                row("Plane wave along {direction}", &[("direction", &format!("[{x:.2}, {y:.2}, {z:.2}]"))], Glyph::PlaneWave, Act::None)
+                row("Plane wave along {direction}", args!(direction = format!("[{x:.2}, {y:.2}, {z:.2}]")), Glyph::PlaneWave, Act::None)
             }
         })
         .collect()
@@ -236,14 +238,14 @@ fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
 
 fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     let walls = match m.wall_conductivity {
-        Some(sigma) => row("Walls: σ = {sigma} S/m", &[("sigma", &format!("{sigma:.3e}"))], Glyph::Walls, Act::Edit("model.walls")),
+        Some(sigma) => row("Walls: σ = {sigma} S/m", args!(sigma = format!("{sigma:.3e}")), Glyph::Walls, Act::Edit("model.walls")),
         None => row("Walls: perfect conductor", &[], Glyph::Walls, Act::Edit("model.walls")),
     };
     let mut rows = vec![walls];
     if let Some(open) = &m.open {
         let template =
             if open.shape == emcraft_model::OpenShape::Sphere { "Open: spherical PML {thickness} {unit}" } else { "Open: PML {thickness} {unit}" };
-        rows.push(row(template, &[("thickness", &f.len(open.thickness)), ("unit", &f.unit())], Glyph::Open, Act::Edit("model.open")));
+        rows.push(row(template, args!(thickness = f.len(open.thickness), unit = f.unit()), Glyph::Open, Act::Edit("model.open")));
     }
     for plane in &m.symmetry {
         let axis = if plane.axis == emcraft_model::Axis::X { "x" } else { "y" };
@@ -252,11 +254,10 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         } else {
             "Symmetry: {axis} = {at} {unit}, magnetic wall"
         };
-        let args: [(&str, &dyn Display); 3] = [("axis", &axis), ("at", &f.len(plane.at)), ("unit", &f.unit())];
-        rows.push(row(template, &args, Glyph::Walls, Act::Edit("model.symmetry")));
+        rows.push(row(template, args!(axis = axis, at = f.len(plane.at), unit = f.unit()), Glyph::Walls, Act::Edit("model.symmetry")));
     }
     if let Some(p) = &m.periodic {
-        rows.push(row("Periodic: {cell}", &[("cell", &periodic_text(p))], Glyph::Periodic, Act::Edit("model.periodic")));
+        rows.push(row("Periodic: {cell}", args!(cell = periodic_text(p)), Glyph::Periodic, Act::Edit("model.periodic")));
     }
     rows
 }
@@ -273,12 +274,9 @@ pub(crate) fn periodic_text(p: &emcraft_model::Periodic) -> String {
 
 fn mesh(m: &emcraft_model::Model) -> Vec<Row> {
     let r = match &m.mesh {
-        Some(mesh) => row(
-            "{nodes} nodes, {tets} tetrahedra",
-            &[("nodes", &mesh.nodes.len()), ("tets", &mesh.tets.len())],
-            Glyph::Mesh,
-            Act::Edit("mesh.generate"),
-        ),
+        Some(mesh) => {
+            row("{nodes} nodes, {tets} tetrahedra", args!(nodes = mesh.nodes.len(), tets = mesh.tets.len()), Glyph::Mesh, Act::Edit("mesh.generate"))
+        }
         None => row("Not meshed", &[], Glyph::Mesh, Act::Edit("mesh.generate")),
     };
     vec![r]
@@ -289,22 +287,26 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
     let fu = app.session.display().frequency;
     let mut rows = Vec::new();
     if let Some(sw) = &r.sweep {
-        let args: [(&str, &dyn Display); 2] = [("n", &sw.results.len()), ("unknowns", &sw.driven.dofs.unknowns)];
-        rows.push(row("Sweep: {n} frequencies, {unknowns} unknowns", &args, Glyph::Chart, Act::Show(View::SParameters)));
+        rows.push(row(
+            "Sweep: {n} frequencies, {unknowns} unknowns",
+            args!(n = sw.results.len(), unknowns = sw.driven.dofs.unknowns),
+            Glyph::Chart,
+            Act::Show(View::SParameters),
+        ));
         rows.push(row("Fields", &[], Glyph::Field, Act::Show(View::Field)));
     }
     if let Some(e) = &r.eigen {
-        rows.push(row("Eigenmodes: {n}", &[("n", &e.modes.len())], Glyph::Eigen, Act::Show(View::Eigenmodes)));
+        rows.push(row("Eigenmodes: {n}", args!(n = e.modes.len()), Glyph::Eigen, Act::Show(View::Eigenmodes)));
     }
     if let Some(d) = &r.dispersion {
-        rows.push(row("Dispersion: {n} phases", &[("n", &d.points.len())], Glyph::Dispersion, Act::Show(View::Dispersion)));
+        rows.push(row("Dispersion: {n} phases", args!(n = d.points.len()), Glyph::Dispersion, Act::Show(View::Dispersion)));
     }
     if let Some(td) = &r.time_domain {
-        rows.push(row("Time domain: {n} frequencies", &[("n", &td.frequencies.len())], Glyph::Time, Act::Show(View::SParameters)));
+        rows.push(row("Time domain: {n} frequencies", args!(n = td.frequencies.len()), Glyph::Time, Act::Show(View::SParameters)));
     }
     if let Some(rad) = &r.radiation {
         let at = format!("{:.4} {}", fu.from_si(rad.result.frequency), fu.symbol());
-        rows.push(row("Radiation at {frequency}", &[("frequency", &at)], Glyph::Radiation, Act::Show(View::FarField)));
+        rows.push(row("Radiation at {frequency}", args!(frequency = at), Glyph::Radiation, Act::Show(View::FarField)));
     }
     if r.td_radiation.is_some() {
         rows.push(row("Time-domain radiation", &[], Glyph::Radiation, Act::Show(View::FarField)));
@@ -322,7 +324,7 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
             emcraft_engine::study::Kind::Optimize => "Optimization of {names}: {n} solves",
         };
         let glyph = if study.kind == emcraft_engine::study::Kind::Sweep { Glyph::ParamSweep } else { Glyph::Optimize };
-        rows.push(row(template, &[("names", &study.variables.join(", ")), ("n", &study.rows.len())], glyph, Act::Show(View::Study)));
+        rows.push(row(template, args!(names = study.variables.join(", "), n = study.rows.len()), glyph, Act::Show(View::Study)));
     }
     rows
 }

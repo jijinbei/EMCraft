@@ -8,6 +8,7 @@ use emcraft_render::view3d::StandardView;
 use serde_json::{Value, json};
 
 use crate::files::FileAction;
+use crate::lang::args;
 use crate::ribbon::RibbonTab;
 use crate::scene3d::Pick;
 use crate::steps::{ModeFocus, Step};
@@ -320,10 +321,10 @@ impl EmcraftApp {
         match std::fs::write(path.trim(), text) {
             Ok(()) => {
                 let n = self.session.history().len();
-                self.info_with("Exported {n} commands to {path}.", &[("n", &n), ("path", &path.trim())]);
+                self.info_with("Exported {n} commands to {path}.", args!(n = n, path = path.trim()));
             }
             Err(e) => {
-                self.error_with("Cannot write {path}: {error}", &[("path", &path.trim()), ("error", &e)]);
+                self.error_with("Cannot write {path}: {error}", args!(path = path.trim(), error = e));
 
                 self.export = Some(path);
             }

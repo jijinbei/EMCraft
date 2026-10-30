@@ -2,6 +2,7 @@
 //! closed form where it applies and the light line, with their table.
 
 use super::*;
+use crate::lang::args;
 
 pub(super) struct Dispersion;
 
@@ -29,13 +30,13 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let (fu, lu) = (app.session.display().frequency, app.session.display().length);
     let bands = d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0);
     let period = format!("{:.4} {}", lu.from_si(d.period), lu.symbol());
-    crate::ui_kit::caption(ui, trf("{n} unknowns after the periodic reduction; period {period}", &[("n", &d.unknowns), ("period", &period)]));
+    crate::ui_kit::caption(ui, trf("{n} unknowns after the periodic reduction; period {period}", args!(n = d.unknowns, period = period)));
     egui::ScrollArea::vertical().id_salt("dispersion_table").show(ui, |ui| {
         egui::Grid::new("dispersion_grid").striped(true).num_columns(2 + bands).show(ui, |ui| {
             ui.label(egui::RichText::new("ψ (°)").strong());
             ui.label(egui::RichText::new(format!("β (rad/{})", lu.symbol())).strong());
             for b in 0..bands {
-                ui.text(Style::Strong, trf("band {n} ({unit})", &[("n", &(b + 1)), ("unit", &fu.symbol())]));
+                ui.text(Style::Strong, trf("band {n} ({unit})", args!(n = (b + 1), unit = fu.symbol())));
             }
             ui.end_row();
             for p in &d.points {
