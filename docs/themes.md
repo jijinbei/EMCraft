@@ -3,16 +3,33 @@
 A theme sets the colours of the desktop app (its panels, text and accents), of the 3D view and
 of the pictures EMCraft draws (charts and field plots, on screen and written by the `view.*`
 commands). Colours live only in theme files, JSON in the format below — the built-in themes
-too: [`crates/engine/themes/light.json`](../crates/engine/themes/light.json) and
-[`dark.json`](../crates/engine/themes/dark.json) name every colour there is (`cargo xtask
-colours` keeps colours out of the code). The scientific colour maps of field plots are the same
+too: the files of [`crates/engine/themes`](../crates/engine/themes) name every colour there is
+(`cargo xtask colours` keeps colours out of the code). The scientific colour maps of field plots are the same
 in every theme: what is drawn over them (arrows, their halo, section lines) is chosen to read on
 them.
 
+## The built-in themes
+
+| Name | Look |
+|---|---|
+| `light` | dark ink on light panels, the default |
+| `dark` | light ink on dark panels |
+| `mono` | greys only, on light panels |
+| `graphite` | greys only, on dark panels |
+| `sepia` | warm browns on cream paper |
+| `midnight` | deep blues, on dark panels |
+| `forest` | greens, on dark panels |
+
+The one-hue themes (`mono` … `forest`) keep the lightness of every colour of `light` or `dark`
+(so the same contrasts) in their own hue. What has to stay told apart keeps its own hue,
+softened: errors, warnings and success, the x, y and z axes, ports, sources and materials in 3D,
+and the curves of a chart. The ribbon's tabs share the theme's hue.
+
 ## Making one
 
-1. Copy `crates/engine/themes/dark.json` (or `light.json`): it is the complete template.
-2. Give it your `name` and set `"base": "dark"` (or `"light"`): the theme starts from that one.
+1. Copy one of `crates/engine/themes/*.json` (`dark.json`, say): it is the complete template.
+2. Give it your `name` and set `"base"` to that built-in theme (`"dark"`): the theme starts from
+   that one.
 3. Delete every colour you do not change, and change the rest.
 4. Check it: `theme.check {"path": "my-theme.json"}` (`emcraft-cli run` a script with that step,
    or `engine.execute` over the control channel) reports the palette pictures get and every
@@ -42,7 +59,8 @@ accents.
 ```
 
 Pictures written by commands take a theme too: `view.sparameters {"path": "s.png", "theme":
-"dark"}`, or the path of a theme file. Without one they are drawn light.
+"dark"}` (any built-in theme's name), or the path of a theme file. Without one they are drawn
+light.
 
 ## The format
 
@@ -50,9 +68,9 @@ A JSON object of at most 64 KiB:
 
 | Key | What |
 |---|---|
-| `name` | required: 1 to 40 characters, not `light` or `dark` (the built-in themes' names) |
+| `name` | required: 1 to 40 characters, not a built-in theme's name (`light`, `dark`, `mono`, …) |
 | `description` | optional, at most 200 characters: shown as the theme's hint in Settings |
-| `base` | `light` (default) or `dark`: the built-in theme this one changes. The built-in themes have none |
+| `base` | a built-in theme's name (`light` by default): the theme this one changes. The built-in themes have none |
 | `ui` | the app's colours by name (below), at most 256 |
 | `scene` | the 3D view's colours by name (below), opaque |
 | `picture` | the pictures' colours by name (below), opaque; `series` a list of up to 6 |

@@ -29,7 +29,11 @@ const fn opt(name: &'static str, kind: K, doc: &'static str) -> ParamSpec {
 // A picture's file.
 const PNG: ParamSpec = req("path", K::String, "PNG file to write");
 // Its colours.
-const THEME: ParamSpec = opt("theme", K::String, "`light` (default), `dark` or the path of a theme file (docs/themes.md)");
+const THEME: ParamSpec = opt(
+    "theme",
+    K::String,
+    "a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md)",
+);
 
 // A chart's size.
 const WIDTH: ParamSpec = opt("width", K::Integer, "pixels (default 1000)");
@@ -872,8 +876,8 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "theme.check",
         label: "Check a theme",
-        doc: "Reads a theme file (docs/themes.md) and reports its name, base and description, the picture palette it resolves to over its base, its `ui` and `scene` colours, and every problem found (`ok` false then): unknown keys and picture colours, bad colours, see-through picture or scene colours, a name out of bounds, ink unreadable on the ground. `light` or `dark` reports a built-in theme. The desktop app checks the `ui` and `scene` names when it loads the theme.",
-        params: &[req("path", K::String, "the theme file, or `light` or `dark`")],
+        doc: "Reads a theme file (docs/themes.md) and reports its name, base and description, the picture palette it resolves to over its base, its `ui` and `scene` colours, and every problem found (`ok` false then): unknown keys and picture colours, bad colours, see-through picture or scene colours, a name out of bounds, ink unreadable on the ground. A built-in theme's name (`light`, `dark`, `mono`, …) reports that theme. The desktop app checks the `ui` and `scene` names when it loads the theme.",
+        params: &[req("path", K::String, "the theme file, or a built-in theme's name")],
         effect: Effect::None,
         invalidates: None,
         run: crate::theme::check_command,

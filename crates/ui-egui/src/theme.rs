@@ -1,7 +1,7 @@
 //! Themes: the colours of the window ([`Tokens`]), of the 3D view ([`Scene`]) and of pictures
 //! ([`Palette`]), and the sizes and widget style that go with them. The colours are data: the
-//! built-in themes are the files `crates/engine/themes/light.json` and `dark.json` (compiled in,
-//! read by [`emcraft_engine::theme`]), and the user's own themes are files of the same format in
+//! built-in themes are the files `crates/engine/themes/*.json` (`light`, `dark` and the one-hue
+//! ones, compiled in, read by [`emcraft_engine::theme`]), and the user's own themes are files of the same format in
 //! `<config dir>/themes/*.json` (docs/themes.md), each overriding its base's colours by name.
 //! The token names and the palettes' structure are SolidCraft's (`crates/ui-egui/src/theme.rs`),
 //! reduced to what EMCraft uses, with EMCraft's own per-tab accents.
@@ -367,7 +367,7 @@ impl Theme {
     /// The last resort when the built-in theme `base` cannot be read: egui's own visuals, greys
     /// for the 3D view, black on white for pictures.
     pub fn fallback(base: Base) -> Theme {
-        let v = if base == Base::Dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+        let v = if base.is_dark() { egui::Visuals::dark() } else { egui::Visuals::light() };
         let mut tokens = Tokens::sizes();
         for name in TOKEN_NAMES {
             if let Some(c) = tokens.colour_mut(name) {
@@ -403,7 +403,7 @@ impl Theme {
     }
 
     pub fn is_dark(&self) -> bool {
-        self.base == Base::Dark
+        self.base.is_dark()
     }
 
     pub fn key(&self) -> ThemeKey {
@@ -592,13 +592,13 @@ pub fn apply(ctx: &egui::Context) {
 mod tests {
     use super::*;
 
-    /// Both built-in themes name every token and scene colour, no unknown one, and keep their
+    /// Every built-in theme names every token and scene colour, no unknown one, and keep their
     /// text and the pictures' ink readable: the fallback is never needed.
     #[test]
     fn built_in_themes_are_whole_and_hold_wcag_contrast() {
         let themes = Themes::load(None);
         assert_eq!(themes.problems, Vec::<String>::new());
-        assert_eq!(themes.names(), ["light", "dark"]);
+        assert_eq!(themes.names(), Base::IDS);
         for base in Base::ALL {
             let file = base.theme().unwrap();
             let names = |m: &std::collections::BTreeMap<String, _>| m.keys().cloned().collect::<Vec<String>>();
@@ -616,7 +616,7 @@ mod tests {
             }
             assert!(contrast_ratio(t.tokens.text, t.tokens.panel) >= 7.0);
             assert!(t.palette.ink.contrast_ratio(t.palette.ground) >= 4.5);
-            assert_eq!(t.is_dark(), base == Base::Dark);
+            assert_eq!(t.is_dark(), base.is_dark());
         }
         assert_eq!(TOKEN_NAMES.len(), 56);
         assert_eq!(Tokens::sizes().colour("text"), Some(Color32::TRANSPARENT));
@@ -647,7 +647,7 @@ mod tests {
         write("g-scene.json", r##"{"name": "Odd scene", "scene": {"glow": "#ffffff"}}"##);
         write("notes.txt", "not a theme");
         let themes = Themes::load(Some(&dir));
-        assert_eq!(themes.names(), ["light", "dark", "Night", "Paper"]);
+        assert_eq!(themes.names()[Base::COUNT..], ["Night", "Paper"]);
         let night = themes.find("Night").unwrap();
         let dark = themes.find("dark").unwrap();
         assert!(night.is_dark());
@@ -664,13 +664,13 @@ mod tests {
         }
         // Missing names fall back to the light theme; a missing folder gives the built-ins.
         assert_eq!(themes.get("gone").name, "light");
-        assert_eq!(Themes::load(Some(&dir.join("missing"))).names(), ["light", "dark"]);
+        assert_eq!(Themes::load(Some(&dir.join("missing"))).names(), Base::IDS);
         // Too many files: the first ones are read, the rest reported.
         for i in 0..MAX_THEMES + 3 {
             write(&format!("z{i:03}.json"), &format!(r#"{{"name": "z{i}"}}"#));
         }
         let many = Themes::load(Some(&dir));
-        assert_eq!(many.list.len(), 2 + 2 + (MAX_THEMES - 7));
+        assert_eq!(many.list.len(), Base::COUNT + 2 + (MAX_THEMES - 7));
         assert!(many.problems.iter().any(|p| p.contains("the first 32 are read")));
         let _ = std::fs::remove_dir_all(&dir);
     }
