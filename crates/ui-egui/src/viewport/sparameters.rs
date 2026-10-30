@@ -9,21 +9,40 @@ impl ChartView for SParameters {
     type Key = SharedChart;
     const HANDLE: Fixed = Fixed::ChartSParameters;
     const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::SParameters;
-    const HEIGHT: Height = OVER_TABLE;
+    // The table beside it, not under it: the chart takes the card's height.
+    const HEIGHT: Height = Height::new(0.86, 260.0, 900.0);
+    const SIDE: f32 = 440.0;
 
     /// The switch between |S| in dB, its magnitude and its phase.
-    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<SharedChart> {
-        ui.horizontal_wrapped(|ui| {
-            ui.text(Style::SmallDim, "Show");
-            for d in view::SDisplay::ALL {
-                let on = st.views.sdisplay == d;
-                if ui.named(pill(shown(d), on, 10, PillSize::Small), Handle::SParameters(d.id())).clicked() {
-                    st.views.sdisplay = d;
+    /// How S is shown — in dB, as a magnitude or a phase — as one small menu.
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &mut Actions) -> Option<SharedChart> {
+        ui.horizontal(|ui| {
+            let r = egui::ComboBox::from_id_salt("s_display").width(110.0).selected_text(shown(st.views.sdisplay)).show_ui(ui, |ui| {
+                for d in view::SDisplay::ALL {
+                    if ui.named(egui::Button::selectable(st.views.sdisplay == d, shown(d)), Handle::SParameters(d.id())).clicked() {
+                        st.views.sdisplay = d;
+                    }
                 }
-            }
-            history(app, &mut st.views.compare, ui, out);
+            });
+            scenario::publish_target(Fixed::SDisplay, r.response.rect);
         });
+        // A kept solve let go is drawn no more.
+        let kept: Vec<u32> = app.session.archive().iter().map(|a| a.id).collect();
+        st.views.compare.retain(|id| kept.contains(id));
         Some(SharedChart::SParameters(st.views.sdisplay, st.views.compare.clone()))
+    }
+
+    /// The analysis history (once there are two solves to compare) over the table of S.
+    fn has_side(_: &EmcraftApp) -> bool {
+        true
+    }
+
+    fn side(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
+        if app.session.archive().len() >= 2 {
+            history(app, &mut st.views.compare, ui, out);
+            ui.add_space(8.0);
+        }
+        table(app, ui);
     }
 
     fn chart(app: &EmcraftApp, key: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
@@ -44,7 +63,6 @@ impl ChartView for SParameters {
         }
         reference_planes(app, &mut st.views.deembed, ui, out);
         crate::ui_kit::caption(ui, "Click: the fields there · drag: a band to solve more finely");
-        table(app, ui);
     }
 }
 
@@ -250,36 +268,59 @@ fn frequency_decimals(freqs: &[f64]) -> usize {
     (-step.log10()).ceil().clamp(1.0, 6.0) as usize
 }
 
-/// The analysis history beside the display switch: each kept solve a chip (`#3`), a click draws
-/// it over the chart (again: takes it off), the session's own marked; its menu restores it,
-/// pins it or lets it go. What it was (its changes, its deepest |S11|) on hover.
+/// The analysis history as rows, the newest first: a swatch in the colour its curves take when
+/// drawn over the chart, its number, what changed since the one before and its deepest |S11|;
+/// a click draws it over the chart (again: takes it off), the session's own marked ●; its menu
+/// restores it, pins it (★) or lets it go.
 fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mut Actions) {
-    let rows = emcraft_engine::archive::rows(&app.session);
-    // A solve let go is drawn no more.
-    compare.retain(|id| rows.iter().any(|r| r["id"].as_u64() == Some(u64::from(*id))));
-    if rows.len() < 2 {
-        return;
-    }
     let t = &Tokens::get();
-    ui.separator();
-    ui.text(Style::SmallDim, "History");
+    let rows = emcraft_engine::archive::rows(&app.session);
+    crate::ui_kit::section(ui, "History");
     let busy = app.busy();
-    for r in &rows {
+    let palette = crate::theme::palette();
+    let font = FontId::proportional(t.font_small);
+    for r in rows.iter().rev() {
         let Some(id) = r["id"].as_u64().and_then(|n| u32::try_from(n).ok()) else { continue };
         let current = r["current"] == json!(true);
-        let on = compare.contains(&id) || current;
-        let pin = if r["pinned"] == json!(true) { "★" } else { "" };
-        let text = egui::RichText::new(format!("#{id}{pin}")).size(t.font_small).color(if on { t.selected_ink } else { t.text });
-        let chip = egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(10).stroke(if current {
-            Stroke::new(1.5, t.accent)
+        let pinned = r["pinned"] == json!(true);
+        let drawn = compare.iter().position(|c| *c == id);
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
+        let resp = ui.hit(rect, Handle::HistoryRun(id), Sense::click()).union(resp);
+        let p = ui.painter();
+        let fill = if drawn.is_some() {
+            t.accent_soft
+        } else if resp.hovered() {
+            t.hover
         } else {
-            Stroke::new(1.0, t.border)
-        });
-        let changes: Vec<&str> = r["changes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-        let mut tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
-        if !changes.is_empty() {
-            tip = format!("{tip} · {}", changes.join(", "));
+            Color32::TRANSPARENT
+        };
+        p.rect_filled(rect, t.radius_sm, fill);
+        // The swatch: its two curves' colours when drawn, the current one's ●, else a ring.
+        let c = pos2(rect.left() + 12.0, rect.center().y);
+        match (current, drawn) {
+            (true, _) => {
+                p.circle_filled(c, 5.0, t.accent);
+            }
+            (false, Some(k)) => {
+                let [a, b] = emcraft_engine::view::compare_pens(k).map(|pen| crate::theme::color32(palette.pen(pen)));
+                p.line_segment([c + vec2(-6.0, -3.0), c + vec2(6.0, -3.0)], Stroke::new(2.5, a));
+                p.line_segment([c + vec2(-6.0, 3.0), c + vec2(6.0, 3.0)], Stroke::new(2.5, b));
+            }
+            (false, None) => {
+                p.circle_stroke(c, 4.5, Stroke::new(1.2, t.text_dim));
+            }
         }
+        let ink = if current { t.text } else { t.text_dim };
+        let star = if pinned { " ★" } else { "" };
+        p.text(pos2(rect.left() + 26.0, rect.top() + 9.0), Align2::LEFT_CENTER, format!("#{id}{star}"), FontId::proportional(t.font_body), ink);
+        let changes: Vec<&str> = r["changes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        let what = if changes.is_empty() { tr("as it was").to_owned() } else { changes.join(", ") };
+        let line = p.with_clip_rect(rect.shrink2(vec2(4.0, 0.0)));
+        line.text(pos2(rect.left() + 26.0, rect.bottom() - 9.0), Align2::LEFT_CENTER, &what, font.clone(), t.text_dim);
+        if let Some(db) = r["best_s11_db"].as_f64() {
+            p.text(pos2(rect.right() - 6.0, rect.top() + 9.0), Align2::RIGHT_CENTER, format!("{db:.1} dB"), font.clone(), ink);
+        }
+        let mut tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
         if let (Some(db), Some(at)) = (r["best_s11_db"].as_f64(), r["best_at"].as_f64()) {
             tip = format!(
                 "{tip}\n{}",
@@ -289,16 +330,16 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
                 )
             );
         }
-        let resp = ui.named(chip, Handle::HistoryRun(id)).hint(Raw(&tip));
+        let resp = resp.hint(Raw(&tip));
         if resp.clicked() && !current {
-            if let Some(k) = compare.iter().position(|c| *c == id) {
-                compare.remove(k);
-            } else {
-                compare.push(id);
+            match drawn {
+                Some(k) => {
+                    compare.remove(k);
+                }
+                None => compare.push(id),
             }
         }
         resp.context_menu(|ui| {
-            let pinned = r["pinned"] == json!(true);
             let items = [
                 ("Restore", Fixed::HistoryRestore, "results.history.restore", json!({"id": id})),
                 (if pinned { "Unpin" } else { "Pin" }, Fixed::HistoryPin, "results.history.pin", json!({"id": id, "pinned": !pinned})),
@@ -312,6 +353,7 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
             }
         });
     }
+    crate::ui_kit::caption(ui, "Click: draw it over the chart · right-click: restore, pin, delete");
 }
 
 #[cfg(test)]

@@ -199,6 +199,17 @@ pub(super) trait ChartView {
     /// What goes under the chart: `chart` is its response, `size` its size in pixels.
     fn below(_app: &EmcraftApp, _st: &mut Parts, _ui: &mut egui::Ui, _chart: &egui::Response, _size: egui::Vec2, _out: &mut Actions) {}
 
+    /// The side column's width ([`ChartView::side`]).
+    const SIDE: f32 = 250.0;
+
+    /// Whether something goes beside the chart ([`ChartView::side`]).
+    fn has_side(_app: &EmcraftApp) -> bool {
+        false
+    }
+
+    /// What goes beside the chart: at its right, or under the rest when the card is narrow.
+    fn side(_app: &EmcraftApp, _st: &mut Parts, _ui: &mut egui::Ui, _out: &mut Actions) {}
+
     /// What the card shows when the chart cannot be drawn: why, by default.
     fn failed(_app: &EmcraftApp, _st: &mut Parts, ui: &mut egui::Ui, error: &str) {
         empty(ui, Raw(error));
@@ -237,6 +248,33 @@ pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
 /// the width, the theme or the view's key changed) with the gear that edits its style, then
 /// what goes under it.
 pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
+    // A column beside the chart when the card is wide enough, else under everything.
+    let side = V::has_side(app);
+    if side && ui.available_width() >= NARROW + V::SIDE {
+        // (The card's scroll bar takes the last few points.)
+        let w = ui.available_width() - V::SIDE - 28.0;
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(w);
+                chart_column::<V>(app, st, ui, out);
+            });
+            ui.add_space(12.0);
+            ui.vertical(|ui| {
+                ui.set_width(V::SIDE);
+                V::side(app, st, ui, out);
+            });
+        });
+        return;
+    }
+    chart_column::<V>(app, st, ui, out);
+    if side {
+        ui.add_space(8.0);
+        V::side(app, st, ui, out);
+    }
+}
+
+/// A chart view's controls, chart and what goes under it.
+fn chart_column<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let Some(key) = V::controls(app, st, ui, out) else { return };
     let width = picture_width(ui);
     let height = V::HEIGHT.of(ui);

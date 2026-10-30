@@ -18,6 +18,7 @@
   {"drag": ["deembed:1", {"handle": "deembed:1", "offset": [50, 0]}]},
   {"frames": 3},
   {"expect": {"busy": false, "inspect": {"deembed.0": {"min": 2, "max": 8}, "deembed.1": 0.0, "workflow.stale": false, "model.results.frequencies": {"min": 12}}}},
+  {"click": "sparameters:display"},
   {"click": "sparameters:show:phase"},
   {"frames": 2},
   {"shot": "reference-plane-moved"},

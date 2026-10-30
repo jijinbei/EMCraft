@@ -104,6 +104,11 @@ pub fn sparameter_chart_as(session: &Session, display: SDisplay) -> Result<Chart
     sparameter_chart_compared(session, display, &[])
 }
 
+/// The pens the `k`-th kept solve drawn over the chart takes: its S21's, its S11's.
+pub fn compare_pens(k: usize) -> [Pen; 2] {
+    [0, 1].map(|j| Pen::Series(MORE_PENS[(2 * k + j) % MORE_PENS.len()]))
+}
+
 /// The S-parameter chart with the sweeps of kept solves `compare` ([`crate::archive`]) drawn
 /// over it: each one's |S11| and |S21| as lines through its points, named by its id (`#3`).
 pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: &[u32]) -> Result<Chart> {
@@ -112,10 +117,9 @@ pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: 
     for (k, a) in crate::archive::picked(session, compare)?.into_iter().enumerate() {
         let Some(sw) = a.results.sweep.as_ref() else { continue };
         let pts = |p: usize, q: usize| sw.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
-        // Its S21 and S11 in two pens of their own.
-        let pen = |j: usize| Pen::Series(MORE_PENS[(2 * k + j) % MORE_PENS.len()]);
-        chart.series.extend(curve(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), pen(0), pts(1, 0), display));
-        chart.series.extend(curve(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), pen(1), pts(0, 0), display));
+        let [p21, p11] = compare_pens(k);
+        chart.series.extend(curve(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, pts(1, 0), display));
+        chart.series.extend(curve(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, pts(0, 0), display));
         // The axes take in what was added.
         for s in chart.series.iter().flat_map(|s| &s.points) {
             chart.x.min = chart.x.min.min(s[0]);

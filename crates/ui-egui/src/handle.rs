@@ -81,6 +81,7 @@ emcraft_macros::named_enum! {
         TemplatePreview = "template:preview",
         // The analysis history's menu.
         HistoryRestore = "history:restore",
+        SDisplay = "sparameters:display",
         HistoryPin = "history:pin",
         HistoryDelete = "history:delete",
         HomeBlank = "home:blank",
