@@ -206,7 +206,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
 /// that adds one.
 fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, session: &emcraft_engine::Session, t: &Tokens) {
     let name = f.name;
-    ui_kit::section(ui, &format!("{name}{}", if f.required { " *" } else { "" }));
+    ui_kit::section(ui, format!("{name}{}", if f.required { " *" } else { "" }));
     ui_kit::caption(ui, Raw(doc));
     let materials: Vec<String> = session.model().materials.iter().map(|m| m.name.clone()).collect();
     let mut remove = None;
