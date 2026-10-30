@@ -434,6 +434,8 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Port {name} (on a face): {n} modes{impedance}", "needs a port on an imported face (scenario import_cavity)"),
     ("Region: {name} (imported), {material}", "needs an imported file (scenario import_bodies)"),
     ("NOT passive", "needs a sweep that is not passive"),
+    ("More commands", "needs a window too narrow for the ribbon's buttons (scenario small_window)"),
+    ("More tabs", "needs a window too narrow for the ribbon's tabs (scenario small_window)"),
     ("Switching the device…", "shown while `solve.device` runs, a moment"),
     ("The next solve runs on {device} in {precision} precision.", "needs a device other than the CPU"),
     ("The next solve runs on the CPU, its factorization's large fronts on {device} (complex double).", "needs a device other than the CPU"),

@@ -74,6 +74,10 @@ const PANEL_LABEL_HEIGHT: f32 = 16.0;
 const BUTTON_MIN_WIDTH: f32 = 58.0;
 /// The search field's least width with its hint; with less room it shows only its key.
 const SEARCH_MIN_WIDTH: f32 = 120.0;
+/// The room the tabs leave the search field at least (its key, and the gaps).
+const SEARCH_LEAST: f32 = 60.0;
+/// The width of the button that opens what has no room.
+const MORE_WIDTH: f32 = 28.0;
 
 /// The dark application bar: the name, the samples menu, the theme switch.
 pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
@@ -171,7 +175,7 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             ui.painter().add(t.card(t.toolbar).paint(card));
             scenario::publish_rect(Fixed::Ribbon, card);
             let row = Rect::from_min_size(card.min, vec2(card.width(), TAB_ROW_HEIGHT));
-            let tabs_end = tabs(app, ui, row, out);
+            let tabs_end = tabs(app, ui, row, row.right() - SEARCH_LEAST, out);
             search_field(search, ui, row, tabs_end, out);
             let mut x = card.left() + 6.0;
             let top = row.bottom() + 4.0;
@@ -179,12 +183,24 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             let Some((_, panels)) = TABS.iter().find(|(name, _)| *name == tab) else { return };
             let accent = t.tab(tab);
             let busy = app.busy();
+            // The buttons past the card's right edge go into a menu at its end.
+            let painter = ui.painter().clone();
+            let width_of = |id: &str| {
+                let g = painter.layout(button_label(id).to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
+                (g.size().x + 14.0).max(BUTTON_MIN_WIDTH)
+            };
+            let all: f32 = panels.iter().map(|(_, items)| items.iter().map(|id| width_of(id) + 3.0).sum::<f32>() + 13.0).sum();
+            let limit = if x + all > card.right() - 4.0 { card.right() - 6.0 - MORE_WIDTH } else { f32::INFINITY };
+            let mut more: Vec<&str> = Vec::new();
             for (panel, items) in panels.iter() {
                 let x0 = x;
                 for &id in items.iter() {
+                    let w = width_of(id);
+                    if !more.is_empty() || x + w > limit {
+                        more.push(id);
+                        continue;
+                    }
                     let (text, glyph) = (button_label(id), glyph(id));
-                    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
-                    let w = (g.size().x + 14.0).max(BUTTON_MIN_WIDTH);
                     let br = Rect::from_min_size(pos2(x, top), vec2(w, BUTTON_HEIGHT));
                     let enabled = !busy;
                     let active = app.dialog.as_ref().is_some_and(|d| d.command.id == id);
@@ -211,6 +227,9 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                     }
                     x += w + 3.0;
                 }
+                if x == x0 {
+                    continue;
+                }
                 // The panel's name under its buttons, and a divider after it.
                 let pr = Rect::from_min_max(pos2(x0, top + BUTTON_HEIGHT), pos2(x, top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT));
                 ui.painter().text(pr.center(), Align2::CENTER_CENTER, tr(panel), FontId::proportional(10.5), t.text_dim);
@@ -219,17 +238,57 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                 ui.painter().vline(x, (top + 4.0)..=(top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT - 2.0), Stroke::new(1.0, t.border));
                 x += 7.0;
             }
+            if !more.is_empty() {
+                let r = Rect::from_min_size(pos2(card.right() - 4.0 - MORE_WIDTH, top), vec2(MORE_WIDTH, BUTTON_HEIGHT));
+                let resp = more_button(ui, r, Fixed::ToolbarMore, "More commands");
+                egui::Popup::menu(&resp).show(|ui| {
+                    for id in more {
+                        let r =
+                            ui.act(!busy, egui::Button::new(button_label(id)), Handle::Toolbar(id), Raw(command_doc(id)), || Action::dialog(id), out);
+                        if r.clicked() {
+                            ui.close();
+                        }
+                    }
+                });
+            }
         });
 }
 
-/// The tab row's tabs; where the last one ends.
-fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) -> f32 {
+/// The button that opens what has no room (`»`), drawn in `r`; its response.
+fn more_button(ui: &mut egui::Ui, r: Rect, handle: Fixed, hint: &str) -> egui::Response {
     let t = &Tokens::get();
+    let resp = ui.hit(r, handle.into(), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tr(hint)));
+    if resp.hovered() {
+        ui.painter().rect_filled(r, t.radius_sm, t.hover);
+    }
+    ui.painter().text(r.center(), Align2::CENTER_CENTER, "»", FontId::proportional(t.font_button + 2.0), t.text);
+    resp.hint(hint)
+}
+
+/// The tab row's tabs, up to `limit`: closer together when they are short of room, and those
+/// still without room (never the open one) in a menu at their end. Where the last one ends.
+fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, limit: f32, out: &mut Actions) -> f32 {
+    let t = &Tokens::get();
+    let text_width = |tab: RibbonTab| ui.painter().layout_no_wrap(shown(tab).to_owned(), FontId::proportional(t.font_button), t.text).size().x;
+    let widths: Vec<f32> = TABS.iter().map(|&(tab, _)| text_width(tab)).collect();
+    let room = limit - row.left() - 4.0;
+    let total = |pad: f32, shown: &[bool]| widths.iter().zip(shown).filter(|(_, s)| **s).map(|(w, _)| w + pad + 2.0).sum::<f32>();
+    let mut visible = vec![true; TABS.len()];
+    let pad = if total(24.0, &visible) <= room { 24.0 } else { 12.0 };
+    // The last tabs but the open one go into the menu until the rest fit beside its button.
+    while total(pad, &visible) > room - if visible.iter().all(|v| *v) { 0.0 } else { MORE_WIDTH } {
+        let Some(k) = (0..TABS.len()).rev().find(|&k| visible[k] && TABS[k].0 != app.tab) else { break };
+        visible[k] = false;
+        if total(pad, &visible) + MORE_WIDTH <= room {
+            break;
+        }
+    }
     let mut x = row.left() + 4.0;
-    for &(tab, _) in TABS {
+    for (&(tab, _), _) in TABS.iter().zip(&visible).filter(|(_, v)| **v) {
         let name = shown(tab);
         let g = ui.painter().layout_no_wrap(name.to_owned(), FontId::proportional(t.font_button), t.text);
-        let tr = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(g.size().x + 24.0, TAB_ROW_HEIGHT - 8.0));
+        let tr = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(g.size().x + pad, TAB_ROW_HEIGHT - 8.0));
         let resp = ui.hit(tr, Handle::Tab(tab), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
         let active = app.tab == tab;
@@ -248,6 +307,19 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) -> f3
             out.push(Action::SetTab(tab));
         }
         x = tr.right() + 2.0;
+    }
+    if visible.iter().any(|v| !*v) {
+        let r = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(MORE_WIDTH, TAB_ROW_HEIGHT - 8.0));
+        let resp = more_button(ui, r, Fixed::TabsMore, "More tabs");
+        egui::Popup::menu(&resp).show(|ui| {
+            for (&(tab, _), _) in TABS.iter().zip(&visible).filter(|(_, v)| !**v) {
+                if ui.named(egui::Button::new(shown(tab)), Handle::Tab(tab)).clicked() {
+                    out.push(Action::SetTab(tab));
+                    ui.close();
+                }
+            }
+        });
+        x = r.right() + 2.0;
     }
     ui.painter().hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, t.toolbar.lerp_to_gamma(t.border, 0.5)));
     x
@@ -317,7 +389,7 @@ fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, tabs_end: f32
     let id = egui::Id::new("emcraft_search");
     let room = row.right() - 8.0 - tabs_end - 12.0;
     let in_use = search.focus || !search.text.is_empty() || ui.memory(|m| m.has_focus(id));
-    let width = if room < SEARCH_MIN_WIDTH && in_use { 240.0 } else { room.clamp(32.0, 292.0) };
+    let width = if room < SEARCH_MIN_WIDTH && in_use { 240.0f32.min(row.width() - 16.0) } else { room.clamp(32.0, 292.0) };
     let hint = if width < SEARCH_MIN_WIDTH { "/".to_owned() } else { tr("Search commands (/)").to_owned() };
     let r = Rect::from_min_size(pos2(row.right() - 8.0 - width, row.top() + 4.0), vec2(width, TAB_ROW_HEIGHT - 8.0));
     let mut field = ui.new_child(egui::UiBuilder::new().max_rect(r));
