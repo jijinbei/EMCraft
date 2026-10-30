@@ -2,6 +2,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::error::Error;
+use std::io::Write;
 use std::process::ExitCode;
 
 use emcraft_engine::{COMMANDS, Session, features_markdown};
@@ -9,6 +10,21 @@ use serde_json::{Value, json};
 
 /// Whatever stopped a command, said once at exit.
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+/// Writes a line to stdout: a stdout that cannot take it (a pipe closed early, `| head`) ends
+/// the command with an error instead of the panic `println!` gives.
+macro_rules! out {
+    ($($t:tt)*) => {
+        writeln!(std::io::stdout().lock(), $($t)*)?
+    };
+}
+
+/// [`out!`] without the line's end.
+macro_rules! put {
+    ($($t:tt)*) => {
+        write!(std::io::stdout().lock(), $($t)*)?
+    };
+}
 
 const USAGE: &str = "\
 usage: emcraft-cli <command>
@@ -29,33 +45,38 @@ usage: emcraft-cli <command>
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result = match args.first().map(String::as_str) {
-        Some("commands") => {
-            for c in COMMANDS {
-                println!("{:<24} {}", c.id, c.label);
-                for p in c.params {
-                    println!("    {:<14} {:<8} {}{}", p.name, p.kind, if p.required { "(required) " } else { "" }, p.doc);
+    let result = (|| -> Result<()> {
+        match args.first().map(String::as_str) {
+            Some("commands") => {
+                for c in COMMANDS {
+                    out!("{:<24} {}", c.id, c.label);
+                    for p in c.params {
+                        out!("    {:<14} {:<8} {}{}", p.name, p.kind, if p.required { "(required) " } else { "" }, p.doc);
+                    }
                 }
+                Ok(())
             }
-            Ok(())
+            Some("features") => {
+                put!("{}", features_markdown());
+                Ok(())
+            }
+            Some("run") => run(args.get(1)),
+            Some("exec") => exec(args.get(1), args.get(2)),
+            Some("sample") => sample(&args[1..]),
+            Some("-h" | "--help" | "help") | None => {
+                put!("{USAGE}");
+                Ok(())
+            }
+            Some(other) => Err(format!("unknown command `{other}`\n\n{USAGE}").into()),
         }
-        Some("features") => {
-            print!("{}", features_markdown());
-            Ok(())
-        }
-        Some("run") => run(args.get(1)),
-        Some("exec") => exec(args.get(1), args.get(2)),
-        Some("sample") => sample(&args[1..]),
-        Some("-h" | "--help" | "help") | None => {
-            print!("{USAGE}");
-            Ok(())
-        }
-        Some(other) => Err(format!("unknown command `{other}`\n\n{USAGE}").into()),
-    };
+    })();
     match result {
         Ok(()) => ExitCode::SUCCESS,
+        // A reader that stopped reading (`| head`) has what it wanted.
+        Err(e) if e.downcast_ref::<std::io::Error>().is_some_and(|io| io.kind() == std::io::ErrorKind::BrokenPipe) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("error: {e}");
+            // Nothing more to do if stderr cannot take it either.
+            let _ = writeln!(std::io::stderr().lock(), "error: {e}");
             ExitCode::FAILURE
         }
     }
@@ -72,9 +93,9 @@ fn run(path: Option<&String>) -> Result<()> {
     let mut s = Session::new();
     let replies = s.run_script(&script)?;
     for r in &replies {
-        println!("{}", pretty(r));
+        out!("{}", pretty(r));
     }
-    println!("{}", pretty(&s.summary()));
+    out!("{}", pretty(&s.summary()));
     Ok(())
 }
 
@@ -86,7 +107,7 @@ fn exec(id: Option<&String>, params: Option<&String>) -> Result<()> {
     };
     let mut s = Session::new();
     let r = s.execute(id, &params)?;
-    println!("{}", pretty(&r));
+    out!("{}", pretty(&r));
     Ok(())
 }
 
@@ -95,12 +116,12 @@ fn eigen_sample(name: &str, out: &str) -> Result<()> {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": name, "solve": true}))?;
     let t = s.execute("results.eigenmodes", &json!({}))?;
-    println!("{:>5}  {:>12} {:>12} {:>8}  {:>9}", "mode", "f (GHz)", "exact", "exact", "Q");
+    out!("{:>5}  {:>12} {:>12} {:>8}  {:>9}", "mode", "f (GHz)", "exact", "exact", "Q");
     let exact = t["exact"].as_array().cloned().unwrap_or_default();
     for (i, m) in t["modes"].as_array().into_iter().flatten().enumerate() {
         let f = m["frequency"].as_f64().unwrap_or(f64::NAN);
         let x = exact.get(i);
-        println!(
+        out!(
             "{:>5}  {:>12.6} {:>12.6} {:>8}  {:>9.1}",
             i + 1,
             f,
@@ -113,13 +134,13 @@ fn eigen_sample(name: &str, out: &str) -> Result<()> {
         for plane in ["h", "e", "cross"] {
             let path = format!("{out}/mode{i}-{plane}.png");
             s.execute("view.field", &json!({"path": path, "mode": i, "plane": plane, "component": "|e|"}))?;
-            println!("wrote {path}");
+            out!("wrote {path}");
         }
         // A standing wave: H peaks a quarter period after E.
         for plane in ["h", "cross"] {
             let path = format!("{out}/mode{i}-{plane}-90deg.png");
             s.execute("view.field", &json!({"path": path, "mode": i, "plane": plane, "phase": 90, "component": "|h|"}))?;
-            println!("wrote {path}");
+            out!("wrote {path}");
         }
     }
     Ok(())
@@ -164,9 +185,9 @@ fn sample(args: &[String]) -> Result<()> {
     }
     s.execute("solve.frequency", &solve)?;
     let cmp = s.execute("results.compare", &json!({}))?;
-    println!("{:>9}  {:>10} {:>10}  {:>10} {:>10}  {:>9} {:>9}", "f (GHz)", "|S21| dB", "exact", "|S11| dB", "exact", "err S21", "err S11");
+    out!("{:>9}  {:>10} {:>10}  {:>10} {:>10}  {:>9} {:>9}", "f (GHz)", "|S21| dB", "exact", "|S11| dB", "exact", "err S21", "err S11");
     for p in cmp["points"].as_array().into_iter().flatten() {
-        println!(
+        out!(
             "{:>9.3}  {:>10.4} {:>10.4}  {:>10.4} {:>10.4}  {:>9.2e} {:>9.2e}",
             p["frequency"].as_f64().unwrap_or(f64::NAN),
             p["s21"]["db"].as_f64().unwrap_or(f64::NAN),
@@ -177,15 +198,15 @@ fn sample(args: &[String]) -> Result<()> {
             p["error_s11"].as_f64().unwrap_or(f64::NAN),
         );
     }
-    println!("worst |S - S_exact| = {:.3e}", cmp["worst"].as_f64().unwrap_or(f64::NAN));
+    out!("worst |S - S_exact| = {:.3e}", cmp["worst"].as_f64().unwrap_or(f64::NAN));
     let path = format!("{out}/s-parameters.png");
     s.execute("view.sparameters", &json!({"path": path}))?;
-    println!("wrote {path}");
+    out!("wrote {path}");
     for f in &freqs {
         for plane in ["h", "e", "cross"] {
             let path = format!("{out}/{plane}-{f}GHz.png");
             s.execute("view.field", &json!({"path": path, "frequency": f, "plane": plane}))?;
-            println!("wrote {path}");
+            out!("wrote {path}");
         }
     }
     Ok(())
