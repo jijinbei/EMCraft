@@ -580,6 +580,13 @@
         "stop": "帯域の終了"
       }
     },
+    "project.analysis": {
+      "label": "解析の種類",
+      "doc": "ジョブの解析の種類を最初に選ぶ: `frequency`（帯域にわたるポート間の S パラメータ、solve.frequency）、`eigenmodes`（何も励振しない閉じた共振器のモード、solve.eigenmodes）、`radiation`（開放境界の中のアンテナや散乱体、solve.radiation）、`time_domain`（帯域にわたるパルス、solve.time_domain）。ワークフローのチェック（project.status）はこれに従う: 共振器は励振を必要とせずポートは除かれる、放射は開放境界と波源または集中定数ポートを求める、掃引と時間領域はポートを求める。選ぶまでは種類をモデルから推定する（励振がなければ固有モード、波源・集中定数ポート・開放境界があれば放射、それ以外は掃引）。結果はそのまま残る。元に戻せる。",
+      "params": {
+        "kind": "`frequency`、`eigenmodes`、`radiation` または `time_domain`"
+      }
+    },
     "project.status": {
       "label": "ワークフローの状態",
       "doc": "ワークフローの各ステップ（目的、形状、材料、励振、境界、メッシュ、設定、実行、結果）の状況：完了、未着手（`todo`）、待機、警告、要対応（missing）、または古い（stale）。それぞれに、解決するコマンドを示すメッセージが付く。モデル、メッシュ、結果を読むだけで、解析はしない。",

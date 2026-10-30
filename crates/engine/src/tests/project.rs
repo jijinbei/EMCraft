@@ -186,3 +186,60 @@ fn autosave_copies_and_recovery() {
     assert!(u.is_dirty());
     assert!(u.execute("file.open", &json!({"path": copy, "original": " "})).is_err());
 }
+
+/// The kind of analysis chosen at the start: recorded (undo, the project file), reported, and
+/// followed by the workflow's checks; until one is chosen it is inferred and the checks are as
+/// before.
+#[test]
+fn the_analysis_kind_is_chosen_recorded_and_followed() {
+    let mut s = super::small();
+    let step = |s: &mut Session, id: &str| {
+        let st = s.execute("project.status", &json!({})).unwrap();
+        st["steps"].as_array().unwrap().iter().find(|x| x["step"] == id).cloned().unwrap()
+    };
+    // Inferred: a guide with two ports is swept; its results are current.
+    let st = s.execute("project.status", &json!({})).unwrap();
+    assert_eq!(st["analysis"], json!({"kind": "frequency", "chosen": false, "solve": "solve.frequency"}));
+    assert_eq!(step(&mut s, "excitation")["status"], "done");
+    // Eigenmodes: its ports are left out, a warning whose fix is the choice; the results stay.
+    let r = s.execute("project.analysis", &json!({"kind": "eigenmodes"})).unwrap();
+    assert_eq!(r, json!({"kind": "eigenmodes", "chosen": true, "solve": "solve.eigenmodes"}));
+    assert_eq!(s.model.analysis, Some(emcraft_model::Analysis::Eigenmodes));
+    let ex = step(&mut s, "excitation");
+    assert_eq!((ex["status"].as_str(), ex["messages"][0]["command"].as_str()), (Some("warning"), Some("project.analysis")));
+    assert_eq!(step(&mut s, "results")["status"], "done");
+    assert_eq!(s.summary()["analysis"]["kind"], "eigenmodes");
+    assert_eq!(s.execute("project.values", &json!({"command": "project.analysis"})).unwrap(), json!({"kind": "eigenmodes"}));
+    // Radiation in a closed guide: the open boundary is to do, and Run waits for it.
+    s.execute("project.analysis", &json!({"kind": "radiation"})).unwrap();
+    let b = step(&mut s, "boundaries");
+    assert_eq!((b["status"].as_str(), b["messages"][0]["command"].as_str()), (Some("todo"), Some("model.open")));
+    let run = step(&mut s, "run");
+    assert!(run["messages"][0]["text"].as_str().unwrap().contains("boundaries"), "{run}");
+    // Hostile kinds are refused and change nothing.
+    for bad in [json!("transient"), json!(5), json!(null), json!("x".repeat(10_000))] {
+        assert!(s.execute("project.analysis", &json!({"kind": bad})).is_err(), "{bad}");
+    }
+    assert!(s.execute("project.analysis", &json!({})).is_err());
+    assert_eq!(s.model.analysis, Some(emcraft_model::Analysis::Radiation));
+    // Undo goes back a choice at a time.
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.model.analysis, Some(emcraft_model::Analysis::Eigenmodes));
+    // Saved and opened: the choice comes back with the history.
+    let path = scratch("analysis.emcraft");
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    assert_eq!(t.model.analysis, Some(emcraft_model::Analysis::Eigenmodes));
+    // A resonator chosen with nothing driving it: nothing to do in Excitation; a sweep chosen
+    // instead: Run waits for a port.
+    let mut c = Session::new();
+    c.execute("geometry.waveguide", &json!({"width": 20, "height": 10, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
+    c.execute("mesh.generate", &json!({"size": 5})).unwrap();
+    assert_eq!(step(&mut c, "excitation")["status"], "todo");
+    c.execute("project.analysis", &json!({"kind": "eigenmodes"})).unwrap();
+    assert_eq!(step(&mut c, "excitation")["status"], "done");
+    assert_eq!(step(&mut c, "run")["messages"][0]["command"], "solve.eigenmodes");
+    c.execute("project.analysis", &json!({"kind": "time_domain"})).unwrap();
+    assert_eq!(step(&mut c, "run")["status"], "waiting");
+}

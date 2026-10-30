@@ -4,7 +4,7 @@
 use Quantity::{Frequency as F, Length as L};
 use emcraft_gpu::Precision;
 use emcraft_model::units::{Frequency, Length};
-use emcraft_model::{Axis, Combine, End, ModeSolver, OpenShape, Polarization, SymmetryKind, Terminals};
+use emcraft_model::{Analysis, Axis, Combine, End, ModeSolver, OpenShape, Polarization, SymmetryKind, Terminals};
 
 use crate::geometry::{Keep, PlaneAxis, Primitive};
 use crate::open::FarSolver;
@@ -100,6 +100,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::Record,
         invalidates: None,
         run: crate::project::frequency,
+    },
+    CommandSpec {
+        id: "project.analysis",
+        label: "Analysis",
+        doc: "The kind of analysis the job is set up for, chosen at its start: `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports. Until one is chosen the kind is inferred from the model (eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). The results stay as they are. Undo goes back.",
+        params: &[req("kind", K::String, "`frequency`, `eigenmodes`, `radiation` or `time_domain`").one_of(&Analysis::IDS)],
+        effect: Effect::Adjust,
+        invalidates: None,
+        run: crate::project::analysis,
     },
     CommandSpec {
         id: "project.status",
