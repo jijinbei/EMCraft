@@ -41,6 +41,10 @@ emcraft_macros::named_enum! {
         FileSaveAs = "file:save_as",
         FileExport = "file:export",
         FileStart = "file:start",
+        // A browser row's right-click menu.
+        RowMenuEdit = "row-menu:edit",
+        RowMenuDelete = "row-menu:delete",
+        RowMenuShow = "row-menu:show",
         // The file prompt, the question before changes are lost, the history's export.
         FilePath = "file:path",
         FileOk = "file:ok",

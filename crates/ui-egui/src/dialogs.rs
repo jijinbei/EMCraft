@@ -101,14 +101,20 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         (_, "vias") => return Kind::Table(VIAS),
         ("file.sample", "name") => return Kind::Choice(emcraft_engine::sample::SAMPLES.iter().map(|s| s.name.to_owned()).collect()),
         // A body may be metal besides the materials.
-        ("geometry.body" | "geometry.body.material", "material") => {
+        ("geometry.body" | "geometry.body.material" | "geometry.body.edit", "material") => {
             let metal = std::iter::once(emcraft_engine::bodies::METAL.to_owned());
             return Kind::Choice(metal.chain(session.model().materials.iter().map(|m| m.name.clone())).collect());
         }
-        ("geometry.body.material", "body") => {
+        ("geometry.body.material" | "geometry.body.edit" | "geometry.body.delete", "body") => {
             return Kind::Choice(emcraft_engine::bodies::bodies(session.model()).into_iter().map(|b| b.name).collect());
         }
-        (_, "material") => return Kind::Choice(session.model().materials.iter().map(|m| m.name.clone()).collect()),
+        (_, "material") | ("model.material.edit" | "model.material.delete", "name") => {
+            return Kind::Choice(session.model().materials.iter().map(|m| m.name.clone()).collect());
+        }
+        ("model.port.edit" | "model.port.delete", "name") => return Kind::Choice(session.model().ports.iter().map(|p| p.name.clone()).collect()),
+        ("model.port.lumped.edit" | "model.port.lumped.delete", "name") => {
+            return Kind::Choice(session.model().lumped.iter().map(|p| p.name.clone()).collect());
+        }
         (_, "excitation") => return Kind::Choice(session.model().ports.iter().map(|p| p.name.clone()).collect()),
         ("study.sweep", "variable") | ("project.variable.delete", "name") => return Kind::Choice(session.variables().keys().cloned().collect()),
         ("results.probe", "at") => return Kind::Json,
@@ -204,6 +210,9 @@ pub struct Dialog {
     /// The controls the dialog drew last, each with whether it takes text: Enter and Escape are
     /// the dialog's only while one of them (or nothing) has the keyboard.
     pub widgets: Vec<(egui::Id, bool)>,
+    /// The parameters it opened on, when they are the model's own and running them again
+    /// would change nothing: OK with these closes it without running the command.
+    pub unchanged: Option<Value>,
 }
 
 /// `text` cut to [`MAX_FIELD`] characters.
@@ -239,7 +248,14 @@ impl Dialog {
                 f
             })
             .collect();
-        Dialog { command, fields, error: None, docked, focus_first: true, widgets: Vec::new() }
+        Dialog { command, fields, error: None, docked, focus_first: true, widgets: Vec::new(), unchanged: None }
+    }
+
+    /// The dialog opened on the model's own values (`project.values`): OK with them unchanged
+    /// runs nothing.
+    pub fn on_model(mut self) -> Dialog {
+        self.unchanged = self.clone().params().ok();
+        self
     }
 
     pub fn field_mut(&mut self, name: &str) -> Option<&mut Field> {
@@ -414,6 +430,36 @@ fn field_value(f: &Field) -> Result<Option<Value>, String> {
             serde_json::from_str(f.text.trim()).map_err(|e| trf("not JSON: {error}", args!(error = e)))?
         }
     }))
+}
+
+/// The commands whose dialogs open on the model's current state (`project.values`) when it has
+/// one, before the examples of [`initial`]: the band, the units, the device, the boundaries, the
+/// geometry, the mesh and the solves (their last run).
+pub const ON_VALUES: &[&str] = &[
+    "project.frequency",
+    "units.set",
+    "solve.device",
+    "model.walls",
+    "model.open",
+    "model.symmetry",
+    "model.periodic",
+    "geometry.waveguide",
+    "geometry.solid",
+    "mesh.generate",
+    "mesh.adapt",
+    "solve.frequency",
+    "solve.eigenmodes",
+    "solve.radiation",
+    "solve.time_domain",
+    "solve.dispersion",
+    "solve.port_modes",
+];
+
+/// Whether OK on `command`'s dialog with the model's own values unchanged does nothing: the
+/// settings and the geometry, not the mesh (it may have been dropped since) or the solves (a
+/// solve again is a run).
+pub fn skips_unchanged(command: &str) -> bool {
+    !(command.starts_with("mesh.") || (command.starts_with("solve.") && command != "solve.device"))
 }
 
 /// What a dialog opens on: the model's own values where it has them (the waveguide being

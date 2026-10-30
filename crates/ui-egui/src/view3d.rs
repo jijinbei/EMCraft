@@ -210,7 +210,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         && let Some((_, row)) = &picked
         && !app.busy()
     {
-        out.extend(row.act.clone().edit());
+        out.extend(row.edit_action());
     }
     // Moving pictures (an orbit, a playing field) draw on the GPU.
     let gpu = app.prefs.gpu3d || v.dragging || (overlay == Overlay::Field && field.player.playing);
@@ -463,7 +463,7 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
 
 /// The selection's name on a card at the top, with how to edit it.
 fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &Tokens) {
-    let hint = if row.act.edits() { tr("  ·  double-click to edit") } else { "" };
+    let hint = if row.editable() { tr("  ·  double-click to edit") } else { "" };
     let g = p.layout_no_wrap(format!("{}{hint}", row.shown.trim()), FontId::proportional(t.font_small), t.text);
     let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));

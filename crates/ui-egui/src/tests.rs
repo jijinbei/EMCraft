@@ -23,6 +23,11 @@ fn scenario(name: &str) {
 }
 
 #[test]
+fn scenario_edit_items() {
+    scenario("edit_items");
+}
+
+#[test]
 fn scenario_close_and_recover() {
     scenario("close_and_recover");
 }

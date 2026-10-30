@@ -455,8 +455,32 @@ impl EmcraftApp {
         if spec.params.is_empty() {
             return self.run(id, json!({})).map(|_| ());
         }
-        let init = dialogs::initial(id, &self.session);
-        self.dialog = Some(dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs));
+        let (init, current) = self.initial(id);
+        let d = dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs);
+        self.dialog = Some(if current && dialogs::skips_unchanged(id) { d.on_model() } else { d });
+        Ok(())
+    }
+
+    /// What `id`'s dialog opens on: the model's current state (`project.values`) for the
+    /// commands that have one ([`dialogs::ON_VALUES`]; perfect walls are the empty one), else
+    /// the examples of [`dialogs::initial`]; and whether it is the model's.
+    fn initial(&mut self, id: &str) -> (Value, bool) {
+        if dialogs::ON_VALUES.contains(&id)
+            && let Ok(v) = self.session.execute("project.values", &json!({"command": id}))
+            && (v.as_object().is_some_and(|o| !o.is_empty()) || id == "model.walls")
+        {
+            return (v, true);
+        }
+        (dialogs::initial(id, &self.session), false)
+    }
+
+    /// Opens an item's edit dialog on its current values: OK unchanged runs nothing.
+    pub fn open_item_dialog(&mut self, item: &browser::Item) -> Result<(), UiError> {
+        let spec = find_command(item.edit)?;
+        let mut ask = item.params();
+        ask["command"] = json!(item.edit);
+        let values = self.session.execute("project.values", &ask)?;
+        self.dialog = Some(dialogs::Dialog::new(spec, &self.session, &values, self.dock_dialogs).on_model());
         Ok(())
     }
 
@@ -486,6 +510,11 @@ impl EmcraftApp {
                 return Err(UiError::Input(e));
             }
         };
+        // The model's own values, unchanged: nothing to run.
+        if d.unchanged.as_ref() == Some(&params) {
+            self.dialog = None;
+            return Ok(json!({"unchanged": true}));
+        }
         match self.run(id, params) {
             Ok(v) => {
                 // A long command's dialog comes back with the error if its job fails.

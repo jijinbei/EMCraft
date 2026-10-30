@@ -304,6 +304,16 @@ fn tour() -> Record {
         if let Some((row, pick)) = picked {
             (h.app.browser.selected, h.app.view3d.selected) = (Some(row), pick);
         }
+        // A row's right-click menu: Edit, Delete, Show in 3D.
+        let menu = crate::browser::tree(&h.app)
+            .into_iter()
+            .flat_map(|(_, rows)| rows)
+            .find(|r| r.item.is_some() && r.pick.is_some())
+            .map(|r| r.text.trim_start().to_owned());
+        if let Some(text) = menu {
+            step(&mut h, json!({"click": format!("row:{text}"), "button": "right"}));
+            step(&mut h, json!({"key": "Escape"}));
+        }
         for s in Step::ALL.into_iter().filter(|s| steps.is_empty() || steps.contains(&s.id())) {
             call(&mut h, "ui.set", json!({"step": s.id()}));
             h.frames(2);
