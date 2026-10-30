@@ -76,6 +76,11 @@ emcraft_macros::named_enum! {
         // A result view of a model changed after its run: the band over it and its Re-run.
         Stale = "stale",
         StaleRerun = "stale:rerun",
+        // A template's card: its preview, Open, Cancel and Reset.
+        TemplatePreview = "template:preview",
+        TemplateOpen = "template:open",
+        TemplateCancel = "template:cancel",
+        TemplateReset = "template:reset",
         // What a narrow window's ribbon has no room for: the tabs, the buttons.
         TabsMore = "tabs:more",
         ToolbarMore = "toolbar:more",
@@ -211,8 +216,8 @@ pub enum Handle<'a> {
     StepFix(usize),
     /// A search result: `search:row:mesh.generate`.
     SearchRow(&'a str),
-    /// A project variable's field in the Geometry step: `parameter:irises`.
-    Parameter(&'a str),
+    /// A parameter's field on a template's card: `template:field:irises`.
+    TemplateField(&'a str),
     /// A sample's card on the start page: `sample:highpass`.
     Sample(&'a str),
     /// A recent project's card on the start page: `home:recent:0`.
@@ -318,7 +323,7 @@ impl fmt::Display for Handle<'_> {
             Handle::Part(x, p) => write!(f, "{}:{}", x.id(), p.id()),
             Handle::Tab(t) => write!(f, "tab:{}", t.id()),
             Handle::Toolbar(id) => write!(f, "toolbar:{id}"),
-            Handle::Parameter(name) => write!(f, "parameter:{name}"),
+            Handle::TemplateField(name) => write!(f, "template:field:{name}"),
             Handle::Panel(t, name) => write!(f, "panel:{}:{name}", t.id()),
             Handle::View(v) => write!(f, "view:{}", v.id()),
             Handle::Row(text) => write!(f, "row:{text}"),

@@ -37,25 +37,30 @@ pub type Thumbs = HashMap<&'static str, (crate::theme::ThemeKey, Option<Picture>
 
 /// A sample's model without its mesh or solve, drawn from the corner.
 fn thumbnail(name: &str) -> Option<Picture> {
-    let sample = emcraft_engine::templates::find(name)?;
-    let script: Vec<Value> = serde_json::from_str(sample.script).ok()?;
-    let steps: Vec<Value> = script
+    template_picture(name, &Value::Null, [(THUMB[0] * 2.0) as usize, (THUMB[1] * 2.0) as usize]).ok()
+}
+
+/// Template `name`'s model with its parameters changed to `values`, without its mesh or solve,
+/// drawn from the corner `size` pixels; why it cannot be built.
+pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<Picture, String> {
+    let steps: Vec<emcraft_engine::Step> = emcraft_engine::template_steps(name, values)
+        .map_err(|e| e.to_string())?
         .into_iter()
-        .filter(|s| s.get("command").and_then(Value::as_str).is_some_and(|c| !c.starts_with("mesh.") && !c.starts_with("solve.")))
+        .filter(|s| !s.command.starts_with("mesh.") && !s.command.starts_with("solve."))
         .collect();
     let mut s = Session::new();
-    s.run_script(&Value::Array(steps)).ok()?;
+    s.run_steps(&steps).map_err(|e| e.to_string())?;
     let built = scene3d::build(&s, Overlay::Materials);
-    let (lo, hi) = built.bounds?;
-    let (w, h) = ((THUMB[0] * 2.0) as usize, (THUMB[1] * 2.0) as usize);
+    let (lo, hi) = built.bounds.ok_or("nothing to draw")?;
+    let [w, h] = size;
     let mut cam = Camera::default();
     cam.standard(StandardView::Iso);
-    cam.fit(lo, hi, f64::from(THUMB[0] / THUMB[1]));
+    cam.fit(lo, hi, w as f64 / h.max(1) as f64);
     cam.distance *= 0.8;
     let t = &Tokens::get();
     let rgb = crate::theme::rgb;
     let opt = view3d::Options { width: w, height: h, supersample: 2, background: (rgb(t.viewport_top), rgb(t.viewport_bottom)), line_width: 2.0 };
-    Some(Picture::new(&view3d::render(&built.scene, &cam, &opt)))
+    Ok(Picture::new(&view3d::render(&built.scene, &cam, &opt)))
 }
 
 pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
@@ -276,7 +281,7 @@ fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
         }
     });
     if let Some(name) = chosen {
-        out.push(Action::File(FileAction::Request(Then::Sample(name))));
+        out.push(Action::Template(Some(name)));
     }
 }
 

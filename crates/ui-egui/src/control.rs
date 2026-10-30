@@ -150,6 +150,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "font": {"japanese": app.fonts.in_use()},
         "languages": crate::lang::ids(),
         "home": app.home.open,
+        "template": app.template.as_ref().map(|d| d.inspect()),
         "settings": app.settings.map(|s| s.id()),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
         "files": {"prompt": app.files.prompt.as_ref().map(|p| p.text.clone()), "confirm": app.files.confirm.is_some(), "then": app.files.confirm.as_ref().map(|t| format!("{t:?}"))},

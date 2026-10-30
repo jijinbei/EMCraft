@@ -99,6 +99,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("results.far_field", None, Some(Glyph::Pattern), true),
     ui("view.pattern", Some("Pattern PNG"), Some(Glyph::Pattern), false),
     ui("file.sample", Some("Sample"), Some(Glyph::Sample), true),
+    ui("file.templates", None, Some(Glyph::Sample), false),
     ui("project.variable", Some("Variables"), Some(Glyph::Variable), true),
     ui("project.variable.delete", None, Some(Glyph::Variable), false),
     ui("project.variables", None, Some(Glyph::Variable), false),

@@ -33,12 +33,16 @@ pub enum Purpose {
 }
 
 /// What to do once the unsaved changes are dealt with.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Then {
     New,
     Open,
     OpenPath(String),
-    Sample(String),
+    /// A template, its parameters changed to `values`.
+    Sample {
+        name: String,
+        values: serde_json::Value,
+    },
     /// An autosaved copy recovered: `file.open` of the copy, the project's own file `original`.
     Recover {
         file: String,
@@ -77,7 +81,7 @@ impl Default for Files {
 
 /// What the File menu, the start page, the file dialog, the path prompt and the question
 /// before changes are lost ask for.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FileAction {
     /// New, open, a recent project or a sample, asking first when there are unsaved changes.
     Request(Then),
@@ -135,8 +139,12 @@ fn go(app: &mut EmcraftApp, then: Then) {
             let _ = app.run("file.open", json!({"path": path}));
         }
         // Opened at once, not solved: Run (step 7) solves it when wanted.
-        Then::Sample(name) => {
-            let _ = app.run("file.sample", json!({"name": name}));
+        Then::Sample { name, values } => {
+            let mut params = json!({"name": name});
+            if values.as_object().is_some_and(|v| !v.is_empty()) {
+                params["values"] = values;
+            }
+            let _ = app.run("file.sample", params);
         }
         Then::Recover { file, original } => {
             app.autosave.found.retain(|f| f.file.as_os_str() != file.as_str());
@@ -381,7 +389,7 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.menu_button(tr("Samples"), |ui| {
         for s in emcraft_engine::templates::TEMPLATES {
             if ui.add_enabled(!busy, egui::Button::new(s.name)).hint(Raw(sample_label(s.name))).clicked() {
-                out.push(file(FileAction::Request(Then::Sample(s.name.to_owned()))));
+                out.push(Action::Template(Some(s.name.to_owned())));
             }
         }
     });

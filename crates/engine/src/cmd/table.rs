@@ -1087,11 +1087,20 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "file.sample",
         label: "Open sample",
-        doc: "Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script; `solve: true` also runs its analysis.",
-        params: &[req("name", K::String, "sample name"), opt("solve", K::Boolean, "run the sample's sweep (default false)")],
+        doc: "Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script, its parameters (the variables the script defines, `file.templates`) set to `values`; `solve: true` also runs its analysis.",
+        params: &[req("name", K::String, "sample name"), opt("values", K::Object, "`{parameter: number}`: the template's parameters to change, in the display units (the others keep their values)"), opt("solve", K::Boolean, "run the sample's sweep (default false)")],
         effect: Effect::Replace,
         invalidates: None,
         run: crate::project::sample,
+    },
+    CommandSpec {
+        id: "file.templates",
+        label: "Templates",
+        doc: "The templates `file.sample` opens: each one's name, label and parameters (the variables its script defines: name, value, what it measures and its display unit).",
+        params: &[],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::project::templates,
     },
     CommandSpec {
         id: "project.variable",

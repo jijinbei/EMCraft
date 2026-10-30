@@ -59,6 +59,10 @@ pub enum Action {
     CancelJob,
     /// Shows (`true`) or leaves the start page; either leaves the settings page.
     SetHome(bool),
+    /// Opens a template's card (its parameters and preview), or closes it (`None`).
+    Template(Option<String>),
+    /// Builds the project from a template with these values changed (`file.sample`).
+    OpenTemplate(String, Value),
     /// Opens the settings page at a section (`None` closes it).
     Settings(Option<crate::settings::Section>),
     Pref(Pref),
@@ -271,6 +275,8 @@ impl EmcraftApp {
                 self.home.open = open;
                 self.settings = None;
             }
+            Action::Template(name) => self.template = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)),
+            Action::OpenTemplate(name, values) => crate::template_dialog::open(self, name, values),
             Action::Settings(section) => self.settings = section,
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
