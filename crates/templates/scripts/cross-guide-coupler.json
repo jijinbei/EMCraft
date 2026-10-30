@@ -1,0 +1,18 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "value": 10, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "t", "value": 1, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "r", "value": 3.5, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "d", "value": 7, "quantity": "length"}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": ["=2*l+a", "=a", "=b"]}},
+ {"command": "geometry.feature", "params": {"combine": "add", "shape": "cylinder", "radius": "=r", "length": "=t+b/2", "at": ["=l+a/2-d", "=a/2-d", "=3*b/4"]}},
+ {"command": "geometry.feature", "params": {"combine": "add", "shape": "cylinder", "radius": "=r", "length": "=t+b/2", "at": ["=l+a/2+d", "=a/2+d", "=3*b/4"]}},
+ {"command": "geometry.feature", "params": {"combine": "add", "shape": "box", "size": ["=a", "=2*l+a", "=b"], "at": ["=l", "=-l", "=b+t"]}},
+ {"command": "mesh.generate", "params": {"size": "=a/6"}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "x", "face": [0, 0, 0, "=a", "=b"]}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=2*l+a", 0, 0, "=a", "=b"]}},
+ {"command": "model.port.create", "params": {"name": "3", "end": "start", "modes": 4, "axis": "y", "face": ["=-l", "=l", "=b+t", "=a", "=b"]}},
+ {"command": "model.port.create", "params": {"name": "4", "end": "end", "modes": 4, "axis": "y", "face": ["=a+l", "=l", "=b+t", "=a", "=b"]}},
+ {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 11, "order": 2}}
+]

@@ -3,6 +3,7 @@
 mod adapt;
 mod geometry;
 mod items;
+mod junctions;
 mod open;
 mod project;
 mod session;
