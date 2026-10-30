@@ -470,6 +470,8 @@ const UNREACHED: &[(&str, &str)] = &[
     ("The time domain's steps on the GPU", "needs a GPU device"),
     ("CPU (no front large enough for {device})", "needs a GPU device"),
     ("The factorization on the CPU, its large fronts on the GPU", "needs a GPU device"),
+    ("Blank", "needs a purpose chosen on the start page (scenario purpose_first)"),
+    ("An empty project for this purpose", "needs a purpose chosen on the start page (scenario purpose_first)"),
     ("Parameters", "needs a template's card (scenario template_dialog)"),
     ("More commands", "needs a window too narrow for the ribbon's buttons (scenario small_window)"),
     ("More tabs", "needs a window too narrow for the ribbon's tabs (scenario small_window)"),

@@ -851,6 +851,7 @@ Replaces the session with a sample model (`highpass`: the waveguide high-pass fi
 |---|---|---|---|---|
 | `name` | string |  | yes | sample name |
 | `values` | object |  | no | `{parameter: number}`: the template's parameters to change, in the display units (the others keep their values) |
+| `analysis` | string |  | no | the kind of analysis the project is for (`project.analysis`): `frequency`, `eigenmodes`, `radiation` or `time_domain`; inferred from the model when left out |
 | `solve` | boolean |  | no | run the sample's sweep (default false) |
 
 ## `file.templates` — Templates

@@ -433,3 +433,8 @@ fn scenario_template_dialog() {
 fn scenario_analysis_kind() {
     scenario("analysis_kind");
 }
+
+#[test]
+fn scenario_purpose_first() {
+    scenario("purpose_first");
+}

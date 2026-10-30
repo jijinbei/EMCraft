@@ -27,6 +27,9 @@ const THUMB: [f32; 2] = [240.0, 150.0];
 #[derive(Default)]
 pub struct Home {
     pub open: bool,
+    /// What the job is for, chosen first: the templates shown are those made for it, and the
+    /// project opened or begun is set to it (`project.analysis`).
+    pub purpose: Option<crate::steps::Solver>,
     /// Each sample's picture, drawn the first time the page shows it.
     pub(crate) thumbs: Thumbs,
 }
@@ -89,7 +92,9 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
                     recover(app, ui, out);
                     recent(app, ui, out);
                     ui.add_space(t.space_16);
-                    samples(thumbs, ui, out);
+                    purposes(app, ui, out);
+                    ui.add_space(t.space_16);
+                    samples(app, thumbs, ui, out);
                 });
                 ui.add_space(32.0);
                 ui.vertical(|ui| {
@@ -262,12 +267,59 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     }
 }
 
-fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, "Samples");
-    let list = emcraft_engine::templates::TEMPLATES;
+/// What the job is for: the four kinds of analysis as cards, the one chosen marked; a click
+/// chooses it (again: lets it go, every template shown).
+fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let t = &Tokens::get();
+    heading(ui, "Purpose");
+    ui.horizontal(|ui| {
+        for kind in crate::steps::Solver::ALL {
+            let (glyph, name, detail) = crate::steps::kind_card(kind);
+            let on = app.home.purpose == Some(kind);
+            let (r, resp) = ui.allocate_exact_size(vec2(150.0, 76.0), Sense::click());
+            let fill = if on {
+                t.accent_soft
+            } else if resp.hovered() {
+                t.hover
+            } else {
+                t.panel_header
+            };
+            let stroke = if on { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, t.border) };
+            ui.painter().rect(r, 10.0, fill, stroke, egui::StrokeKind::Inside);
+            glyphs::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.top() + 28.0), vec2(34.0, 34.0)), glyph, t.icon, t.accent);
+            ui.painter().text(
+                pos2(r.center().x, r.bottom() - 14.0),
+                Align2::CENTER_CENTER,
+                tr(name),
+                FontId::proportional(t.font_body),
+                if on { t.text } else { t.text_dim },
+            );
+            scenario::publish_target(Handle::Purpose(kind), r);
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tr(name)));
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).hint(format!("{}\n{}", tr(name), tr(detail))).clicked() {
+                out.push(Action::Purpose((!on).then_some(kind)));
+            }
+        }
+    });
+}
+
+fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
+    heading(ui, "Templates");
+    let purpose = app.home.purpose;
+    let list: Vec<&emcraft_engine::templates::Template> =
+        emcraft_engine::templates::TEMPLATES.iter().filter(|s| purpose.is_none_or(|k| s.kinds.contains(&k))).collect();
     let mut chosen = None;
-    grid(ui, list.len(), |ui, i| {
-        let s = &list[i];
+    let mut blank = false;
+    // With a purpose, the first card begins an empty project for it.
+    let offset = usize::from(purpose.is_some());
+    grid(ui, list.len() + offset, |ui, i| {
+        if i < offset {
+            if card(ui, None, Glyph::New, tr("Blank"), tr("An empty project for this purpose"), false, Fixed::HomeBlank.into()).clicked() {
+                blank = true;
+            }
+            return;
+        }
+        let s = list[i - offset];
         // Drawn again in a new theme (the view's ground and the scene's colours are its).
         let key = crate::theme::key();
         let slot = thumbs.entry(s.name).or_insert_with(|| (key.clone(), thumbnail(s.name)));
@@ -282,6 +334,9 @@ fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     });
     if let Some(name) = chosen {
         out.push(Action::Template(Some(name)));
+    }
+    if blank {
+        out.push(Action::File(FileAction::Request(Then::New)));
     }
 }
 

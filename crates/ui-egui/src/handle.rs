@@ -79,6 +79,7 @@ emcraft_macros::named_enum! {
         StaleRerun = "stale:rerun",
         // A template's card: its preview, Open, Cancel and Reset.
         TemplatePreview = "template:preview",
+        HomeBlank = "home:blank",
         TemplateOpen = "template:open",
         TemplateCancel = "template:cancel",
         TemplateReset = "template:reset",
@@ -220,6 +221,8 @@ pub enum Handle<'a> {
     StepFix(usize),
     /// A search result: `search:row:mesh.generate`.
     SearchRow(&'a str),
+    /// A purpose on the start page: `home:purpose:eigenmodes`.
+    Purpose(crate::steps::Solver),
     /// A parameter's field on a template's card: `template:field:irises`.
     TemplateField(&'a str),
     /// A sample's card on the start page: `sample:highpass`.
@@ -330,6 +333,7 @@ impl fmt::Display for Handle<'_> {
             Handle::Tab(t) => write!(f, "tab:{}", t.id()),
             Handle::Toolbar(id) => write!(f, "toolbar:{id}"),
             Handle::TemplateField(name) => write!(f, "template:field:{name}"),
+            Handle::Purpose(k) => write!(f, "home:purpose:{}", k.id()),
             Handle::Panel(t, name) => write!(f, "panel:{}:{name}", t.id()),
             Handle::View(v) => write!(f, "view:{}", v.id()),
             Handle::Row(text) => write!(f, "row:{text}"),

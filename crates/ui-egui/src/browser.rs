@@ -164,8 +164,7 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
 }
 
 fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
-    let template: Vec<String> =
-        s.sample().and_then(emcraft_engine::template_parameters).unwrap_or_default().into_iter().map(|p| p.name).collect();
+    let template: Vec<String> = s.sample().and_then(emcraft_engine::template_parameters).unwrap_or_default().into_iter().map(|p| p.name).collect();
     s.variables()
         .iter()
         .filter(|(name, _)| !template.contains(name))

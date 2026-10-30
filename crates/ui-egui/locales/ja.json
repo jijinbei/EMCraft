@@ -19,6 +19,7 @@
     "All settings…": "すべての設定…",
     "Along": "横軸",
     "An antenna or a scatterer in an open boundary: fields and far field (solve.radiation)": "開放境界の中のアンテナや散乱体：電磁界と遠方界（solve.radiation）",
+    "An empty project for this purpose": "この目的の空のプロジェクト",
     "Analysis": "解析",
     "Analysis: {kind}.": "解析：{kind}。",
     "Animation…": "アニメーション…",
@@ -38,6 +39,7 @@
     "Band pass": "バンドパス",
     "Band {start} to {stop} {unit}.": "帯域 {start}〜{stop} {unit}。",
     "Beside 3D": "3D と並べる",
+    "Blank": "空のプロジェクト",
     "Bodies": "物体",
     "Body": "物体",
     "Body material": "物体の材料",
@@ -264,6 +266,7 @@
     "Preview port modes": "ポートモードをプレビュー",
     "Projects you open or save appear here.": "開いたり保存したりしたプロジェクトがここに表示されます。",
     "Propagates": "伝搬",
+    "Purpose": "目的",
     "Quality": "高画質",
     "RESULTS": "結果",
     "Radiation": "放射",
@@ -359,6 +362,7 @@
     "Symmetry: {axis} = {at} {unit}, magnetic wall": "対称面：{axis} = {at} {unit}、磁気壁",
     "TDR": "TDR",
     "TIME DOMAIN": "時間領域",
+    "Templates": "テンプレート",
     "The CPU's threads (Setup › Compute picks a GPU)": "CPU のスレッド（解析設定 › 計算デバイスで GPU を選べます）",
     "The colours of the window, the 3D view and the pictures. It changes at once.": "ウィンドウ、3D ビュー、画像の色。すぐに切り替わります。",
     "The engine's messages and errors, the text drawn in pictures (charts, field plots), the command and parameter ids, and the command line.": "エンジンのメッセージとエラー、画像内の文字（グラフ、電磁界図）、コマンドとパラメータの ID、コマンドライン。",
@@ -1154,7 +1158,8 @@
       "params": {
         "name": "サンプル名",
         "solve": "サンプルの掃引を実行する（既定 false）",
-        "values": "`{パラメータ: 数値}`：変更するテンプレートのパラメータ（表示単位）。他は元の値のまま"
+        "values": "`{パラメータ: 数値}`：変更するテンプレートのパラメータ（表示単位）。他は元の値のまま",
+        "analysis": "プロジェクトの解析の種類（`project.analysis`）：`frequency`、`eigenmodes`、`radiation`、`time_domain`。省略時はモデルから推定"
       }
     },
     "file.templates": {

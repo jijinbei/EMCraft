@@ -38,10 +38,11 @@ pub enum Then {
     New,
     Open,
     OpenPath(String),
-    /// A template, its parameters changed to `values`.
+    /// A template, its parameters changed to `values`, for `purpose` (the kind of analysis).
     Sample {
         name: String,
         values: serde_json::Value,
+        purpose: Option<crate::steps::Solver>,
     },
     /// An autosaved copy recovered: `file.open` of the copy, the project's own file `original`.
     Recover {
@@ -139,10 +140,13 @@ fn go(app: &mut EmcraftApp, then: Then) {
             let _ = app.run("file.open", json!({"path": path}));
         }
         // Opened at once, not solved: Run (step 7) solves it when wanted.
-        Then::Sample { name, values } => {
+        Then::Sample { name, values, purpose } => {
             let mut params = json!({"name": name});
             if values.as_object().is_some_and(|v| !v.is_empty()) {
                 params["values"] = values;
+            }
+            if let Some(kind) = purpose {
+                params["analysis"] = json!(kind.id());
             }
             let _ = app.run("file.sample", params);
         }
@@ -167,7 +171,12 @@ fn new_project(app: &mut EmcraftApp) {
     if app.session.display().length != app.prefs.length || app.session.display().frequency != app.prefs.frequency {
         let _ = app.run("units.set", units);
     }
+    // Begun from the start page for a purpose: the project is for it.
+    let purpose = app.home.purpose.filter(|_| app.home.open);
     let _ = app.run("file.new", json!({}));
+    if let Some(kind) = purpose {
+        let _ = app.run("project.analysis", json!({"kind": kind.id()}));
+    }
 }
 
 /// Whether the project has a file of its own to save to (not an autosaved copy it was
