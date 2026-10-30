@@ -203,6 +203,11 @@ pub struct Session {
     /// last, and the runs as last saved or opened.
     pub(crate) runs: Vec<Run>,
     pub(crate) saved_runs: Vec<Run>,
+    /// The analysis history: the solves kept with their models and results
+    /// ([`crate::archive`]), the last id given, and the kept solve the session was restored to.
+    pub(crate) archive: Vec<crate::archive::Archived>,
+    pub(crate) archive_next: u32,
+    pub(crate) archive_current: Option<u32>,
     /// Where the solvers run (`solve.device`).
     pub(crate) compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
@@ -323,6 +328,11 @@ impl Session {
     }
 
     /// A fresh session with this one's limits.
+    /// The analysis history ([`crate::archive`]), the oldest first.
+    pub fn archive(&self) -> &[crate::archive::Archived] {
+        &self.archive
+    }
+
     pub(crate) fn fresh(&self) -> Session {
         Session { limits: self.limits, compute: self.compute.clone(), ..Session::default() }
     }
@@ -423,6 +433,8 @@ impl Session {
                 self.solved_revision = Some(self.revision);
                 let params = if params.is_null() { json!({}) } else { params.clone() };
                 let run = self.next_run.take().unwrap_or(Run { command: spec.id.to_owned(), params, units: self.display });
+                crate::archive::keep(self, &run.command, &run.params);
+                self.archive_current = Some(self.archive_next);
                 crate::runs::record(&mut self.runs, run);
             }
             Effect::View | Effect::None => {}

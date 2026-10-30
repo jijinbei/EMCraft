@@ -158,7 +158,15 @@ pub fn animation(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn sparameters(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
     let display = p.pick("display").or(super::SDisplay::Db)?;
-    file.write(s, ChartId::SParameters, super::sparameter_chart_as(s, display)?)
+    let compare: Vec<u32> = p
+        .list("compare", crate::archive::MAX_KEPT * 4)
+        .or(&[])?
+        .iter()
+        .map(|v| {
+            v.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| p.error("compare", "must list the ids of kept solves (results.history)"))
+        })
+        .collect::<Result<_>>()?;
+    file.write(s, ChartId::SParameters, super::sparameter_chart_compared(s, display, &compare)?)
 }
 
 /// `view.tdr`.

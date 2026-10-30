@@ -443,3 +443,8 @@ fn scenario_analysis_kind() {
 fn scenario_purpose_first() {
     scenario("purpose_first");
 }
+
+#[test]
+fn scenario_run_history() {
+    scenario("run_history");
+}

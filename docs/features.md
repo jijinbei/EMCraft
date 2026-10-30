@@ -564,6 +564,37 @@ The relative L2 errors ‖F − F_exact‖/‖F_exact‖ of E and H over the who
 |---|---|---|---|---|
 | `frequency` | number | frequency | yes | a solved frequency |
 
+## `results.history` — Analysis history
+
+The solves kept this session, the oldest first: each one's id, command, frequencies, band, deepest |S11| (dB) and where, first eigenmode, what changed in the model since the one before (variables' values), whether it is pinned and whether the session's results are its own. Every solve that succeeds is kept with its model and results; at most 16 unpinned ones, the oldest let go first. They are the session's, not the project file's.
+
+No parameters.
+
+## `results.history.restore` — Restore a solve
+
+Puts back the model, units, variables and results of a kept solve (results.history), its results current again; undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `id` | integer |  | yes | the kept solve's id |
+
+## `results.history.pin` — Pin a solve
+
+Keeps a solve past the history's cap (`pinned` true, the default), or lets it go with the others again (false).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `id` | integer |  | yes | the kept solve's id |
+| `pinned` | boolean |  | no | pinned (default true) |
+
+## `results.history.delete` — Delete a solve
+
+Lets a kept solve go from the history.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `id` | integer |  | yes | the kept solve's id |
+
 ## `results.probes` — Probe values
 
 E (V/m) and H (A/m), complex, and their magnitudes at the project's named probes (view.probe.add), for a solved frequency (the nearest; default the sweep's first) and an excited port, or an eigenmode. A probe outside the mesh says so (`outside`).
@@ -719,6 +750,7 @@ Writes a PNG of |S11| and |S21| (and the rest of S's first column) against frequ
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
 | `display` | string |  | no | `db` (default), `magnitude` or `phase` |
+| `compare` | array |  | no | ids of kept solves (results.history) whose sweeps are drawn over it, each as lines named `#id` |
 
 ## `model.open` — Open boundary
 

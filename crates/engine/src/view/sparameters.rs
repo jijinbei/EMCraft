@@ -101,6 +101,34 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
 /// assert!(chart.series.iter().flat_map(|c| &c.points).all(|p| p[1].abs() <= 180.0));
 /// ```
 pub fn sparameter_chart_as(session: &Session, display: SDisplay) -> Result<Chart> {
+    sparameter_chart_compared(session, display, &[])
+}
+
+/// The S-parameter chart with the sweeps of kept solves `compare` ([`crate::archive`]) drawn
+/// over it: each one's |S11| and |S21| as lines through its points, named by its id (`#3`).
+pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: &[u32]) -> Result<Chart> {
+    let mut chart = sparameter_chart_now(session, display)?;
+    let fu = session.display.frequency;
+    for (k, a) in crate::archive::picked(session, compare)?.into_iter().enumerate() {
+        let Some(sw) = a.results.sweep.as_ref() else { continue };
+        let pts = |p: usize, q: usize| sw.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
+        // Its S21 and S11 in two pens of their own.
+        let pen = |j: usize| Pen::Series(MORE_PENS[(2 * k + j) % MORE_PENS.len()]);
+        chart.series.extend(curve(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), pen(0), pts(1, 0), display));
+        chart.series.extend(curve(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), pen(1), pts(0, 0), display));
+        // The axes take in what was added.
+        for s in chart.series.iter().flat_map(|s| &s.points) {
+            chart.x.min = chart.x.min.min(s[0]);
+            chart.x.max = chart.x.max.max(s[0]);
+        }
+    }
+    if !compare.is_empty() {
+        chart.y = display.axis(&chart.series);
+    }
+    Ok(chart)
+}
+
+fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     let sweep = session.results.sweep.as_ref();
     let td = session.results.time_domain.as_ref();
     let fu = session.display.frequency;

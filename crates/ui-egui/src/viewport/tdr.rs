@@ -20,7 +20,7 @@ impl ChartView for Tdr {
     const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::Tdr;
     const HEIGHT: Height = Height::new(0.8, 260.0, 700.0);
 
-    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<Self::Key> {
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _out: &mut Actions) -> Option<Self::Key> {
         controls(app, &mut st.views.tdr.params, ui);
         Some(st.views.tdr.params.clone())
     }

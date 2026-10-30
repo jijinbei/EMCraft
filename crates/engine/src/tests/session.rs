@@ -343,3 +343,41 @@ fn a_sample_opened_with_its_solve_has_current_results() {
     s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
     assert_ne!(s.solved_revision, Some(s.revision));
 }
+
+#[test]
+fn every_solve_is_kept_and_can_be_compared_restored_pinned_and_let_go() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let solve = json!({"start": 6.6, "stop": 9, "points": 3, "order": 1});
+    s.execute("solve.frequency", &solve).unwrap();
+    s.execute("project.variable", &json!({"name": "l_gap", "value": 24})).unwrap();
+    s.execute("solve.frequency", &solve).unwrap();
+    let h = s.execute("results.history", &json!({})).unwrap();
+    let rows = h["history"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{h}");
+    let (first, second) = (rows[0]["id"].as_u64().unwrap(), rows[1]["id"].as_u64().unwrap());
+    assert_eq!(rows[1]["changes"], json!(["l_gap 20 → 24"]));
+    assert_eq!((rows[0]["current"].as_bool(), rows[1]["current"].as_bool()), (Some(false), Some(true)));
+    assert_eq!(rows[0]["points"], 3);
+    // The first solve drawn over the second's chart: two more curves, named by its id.
+    let chart = crate::view::sparameter_chart_compared(&s, crate::view::SDisplay::Db, &[first as u32]).unwrap();
+    assert!(chart.series.iter().any(|x| x.label == format!("#{first} |S$_{{21}}$|") || x.key == format!("run{first}.s21")));
+    assert!(crate::view::sparameter_chart_compared(&s, crate::view::SDisplay::Db, &[999]).is_err());
+    // Back to the first: its model (the gap 20 mm) and results, current; undo comes back.
+    s.execute("results.history.restore", &json!({"id": first})).unwrap();
+    assert_eq!(s.variables().get("l_gap"), Some(&20.0));
+    assert!(s.results().sweep.is_some() && s.solved_revision() == Some(s.revision()));
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.variables().get("l_gap"), Some(&24.0));
+    // Pinned, a solve stays past the cap; deleted, it goes.
+    s.execute("results.history.pin", &json!({"id": first})).unwrap();
+    for _ in 0..crate::archive::MAX_KEPT + 1 {
+        s.execute("solve.frequency", &json!({"frequencies": [8], "order": 1})).unwrap();
+    }
+    let ids: Vec<u64> =
+        s.execute("results.history", &json!({})).unwrap()["history"].as_array().unwrap().iter().filter_map(|r| r["id"].as_u64()).collect();
+    assert!(ids.contains(&first) && !ids.contains(&second), "{ids:?}");
+    assert_eq!(ids.len(), crate::archive::MAX_KEPT + 1);
+    s.execute("results.history.delete", &json!({"id": first})).unwrap();
+    assert!(s.execute("results.history.restore", &json!({"id": first})).is_err());
+}

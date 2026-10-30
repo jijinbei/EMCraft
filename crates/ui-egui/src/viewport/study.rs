@@ -57,7 +57,7 @@ impl ChartView for StudyView {
     const HEIGHT: Height = Height::new(0.6, 240.0, 640.0);
 
     /// The study in a line, the S-parameter a sweep shows, and a grid's slice.
-    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<StudyKey> {
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _out: &mut Actions) -> Option<StudyKey> {
         let t = &Tokens::get();
         let study = app.session.results().study.as_ref()?;
         let state = &mut st.views.study;

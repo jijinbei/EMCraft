@@ -191,7 +191,7 @@ pub(super) trait ChartView {
 
     /// What goes over the chart (the view's settings, edited in `st`); what it shows, or `None`
     /// when there is nothing to chart.
-    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<Self::Key>;
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<Self::Key>;
 
     /// The chart of `key`.
     fn chart(app: &EmcraftApp, key: &Self::Key) -> Result<emcraft_render::chart::Chart, String>;
@@ -237,7 +237,7 @@ pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
 /// the width, the theme or the view's key changed) with the gear that edits its style, then
 /// what goes under it.
 pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-    let Some(key) = V::controls(app, st, ui) else { return };
+    let Some(key) = V::controls(app, st, ui, out) else { return };
     let width = picture_width(ui);
     let height = V::HEIGHT.of(ui);
     let mut drawn_now = None;
