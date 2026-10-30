@@ -213,6 +213,11 @@ fn scenario_view3d_side_ports() {
 }
 
 #[test]
+fn scenario_junction_templates() {
+    scenario("junction_templates");
+}
+
+#[test]
 fn scenario_view3d_lumped_tool() {
     scenario("view3d_lumped_tool");
 }
