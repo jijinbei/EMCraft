@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::analysis::Analysis;
 use crate::band::Band;
 use crate::error::{ModelError, Result, invalid, positive};
 use crate::geom::{Aabb, Point3};
@@ -54,6 +55,10 @@ pub struct Model {
     /// previews.
     #[serde(default)]
     pub band: Option<Band>,
+    /// The kind of analysis chosen for the job; `None`: inferred from the model
+    /// ([`Model::analysis`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<Analysis>,
     /// Symmetry planes (at most one across x and one across y): the model is meshed and solved
     /// on the side below them only.
     #[serde(default)]
@@ -106,6 +111,7 @@ impl Default for Model {
             sources: Vec::new(),
             lumped: Vec::new(),
             band: None,
+            analysis: None,
             symmetry: Vec::new(),
             periodic: None,
             mesh: None,
@@ -211,6 +217,17 @@ impl Model {
     /// Sets the job's frequency band (already checked by [`Band::new`]).
     pub fn set_band(&mut self, band: Option<Band>) {
         self.band = band;
+    }
+
+    /// Sets the kind of analysis chosen for the job (`None`: inferred again).
+    pub fn set_analysis(&mut self, analysis: Option<Analysis>) {
+        self.analysis = analysis;
+    }
+
+    /// The job's kind of analysis: the one chosen, else the one the model calls for
+    /// ([`Analysis::infer`]).
+    pub fn analysis(&self) -> Analysis {
+        self.analysis.unwrap_or_else(|| Analysis::infer(self))
     }
 
     /// Removes every source (the mesh stays: it does not depend on them).

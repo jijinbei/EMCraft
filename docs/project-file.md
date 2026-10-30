@@ -20,7 +20,9 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
   (`project.variable`), and the parameters that use them keep their expressions
   (`"length": "=l"`), so changing a variable, sweeping or optimizing it replays the history with
   the definition's value replaced. Edits and deletions of items (`model.port.edit`,
-  `geometry.body.delete`, …) are steps like any other.
+  `geometry.body.delete`, …) are steps like any other, and so is the kind of analysis chosen at
+  the job's start (`project.analysis`): a file without it opens with the kind inferred from the
+  model, as before.
 - `runs` (since version 2) are the project's runs: the last successful solve of each solve
   command (`solve.frequency`, `solve.eigenmodes`, `solve.time_domain`, `solve.radiation`,
   `solve.dispersion`), the latest last, each with its parameters as given (expressions kept) and

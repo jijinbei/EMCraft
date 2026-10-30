@@ -11,6 +11,14 @@ The job's frequency band: the default for meshing by wavelength (its top), for s
 | `start` | number | frequency | yes | the band's start |
 | `stop` | number | frequency | yes | the band's stop |
 
+## `project.analysis` — Analysis
+
+The kind of analysis the job is set up for, chosen at its start: `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports, the time domain no mesh (project.status lists the steps a kind does without under `not_needed`). Until one is chosen the kind is inferred from the model (eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). The results stay as they are. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `kind` | string |  | yes | `frequency`, `eigenmodes`, `radiation` or `time_domain` |
+
 ## `project.status` — Workflow status
 
 Where each step of the workflow stands (intent, geometry, materials, excitation, boundaries, mesh, setup, run, results): done, to do (`todo`), waiting, warning, missing (needs attention) or stale (out of date), each with messages naming the command that fixes it. Reads the model, the mesh and the results; solves nothing.

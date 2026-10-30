@@ -428,3 +428,8 @@ fn scenario_small_window() {
 fn scenario_template_dialog() {
     scenario("template_dialog");
 }
+
+#[test]
+fn scenario_analysis_kind() {
+    scenario("analysis_kind");
+}

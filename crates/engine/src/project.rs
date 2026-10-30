@@ -137,6 +137,13 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"start": s.show_frequency(start), "stop": s.show_frequency(stop), "unit": s.display.frequency.symbol()}))
 }
 
+/// `project.analysis`: the kind of analysis the job is set up for.
+pub fn analysis(s: &mut Session, p: &Params) -> Result<Value> {
+    let kind: emcraft_model::Analysis = p.pick("kind").required()?;
+    s.model.set_analysis(Some(kind));
+    Ok(crate::workflow::analysis_reply(&s.model))
+}
+
 pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
     if let Some(length) = p.choice("length").optional()? {
         s.display.length = length;
@@ -348,7 +355,13 @@ pub fn summary(s: &mut Session, _: &Params) -> Result<Value> {
 
 /// Where each step of the workflow stands ([`crate::workflow`]); no solve.
 pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
-    let mut reply = json!({"steps": crate::workflow::steps(s), "revision": s.revision});
+    let not_needed: Vec<&str> = crate::workflow::not_needed(s.model.analysis).iter().map(|x| x.id()).collect();
+    let mut reply = json!({
+        "steps": crate::workflow::steps(s),
+        "revision": s.revision,
+        "analysis": crate::workflow::analysis_reply(&s.model),
+        "not_needed": not_needed,
+    });
     if let Some(b) = s.model.band {
         reply["frequency"] = json!({"start": s.show_frequency(b.start), "stop": s.show_frequency(b.stop), "unit": s.display.frequency.symbol()});
     }

@@ -16,12 +16,14 @@
 //! - [`symmetry`]: symmetry planes and the images they make;
 //! - [`periodic`]: periodic boundaries (unit cells of infinite arrays);
 //! - [`band`]: the frequency band;
+//! - [`analysis`]: the kind of analysis the job is set up for;
 //! - [`model`]: the [`Model`] and its checked setters;
 //! - [`edit`]: changing and removing the model's items, each checked as a new one would be;
 //! - [`measure`]: distances, gaps and angles between picked points, faces and edges.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod analysis;
 pub mod band;
 pub mod edit;
 pub mod error;
@@ -38,6 +40,7 @@ pub mod symmetry;
 pub mod units;
 pub mod waveguide;
 
+pub use analysis::Analysis;
 pub use band::Band;
 pub use edit::MaterialUse;
 pub use error::{ModelError, Result, positive};

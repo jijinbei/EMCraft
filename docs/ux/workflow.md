@@ -48,6 +48,7 @@ and the UI should make the same habits easy for the user's own models.
    | warning | amber disc, ! | worth a look now (a coarse mesh, a band starting below a cut-off); Run may accept it |
    | needs attention | red disc, × | something is wrong or blocks Run: a step a refused Run needed, a run that failed |
    | out of date | blue disc, ↻ | results older than the model |
+   | not needed | grey ring, dash; the name dimmed | a step the chosen kind of analysis does without (a resonator's excitation, the time domain's mesh) |
 
    Run turns (an arc) while a run goes on. A to-do that only matters before a run (the band)
    ends with the run. Clicking a step opens its panel and puts the 3D view in that step's mode.
@@ -130,6 +131,12 @@ and a navigator of the six signed axes.
   results; cheap (no solve).
 - `project.frequency`: the frequency range (start, stop) of the job, stored in the model, the
   default for meshing by wavelength, sweeps and port-mode previews.
+- `project.analysis`: the kind of analysis chosen at the start (`frequency`, `eigenmodes`,
+  `radiation`, `time_domain`), stored in the model; inferred from it until one is chosen. The
+  checks follow it: a resonator needs no excitation (its ports are a warning), radiation wants
+  the open boundary, a driven kind wants its excitation before Run. Step 0 shows the four as
+  cards; Setup starts on the chosen kind's solver, SIMULATE puts its solve first and the steps a
+  kind does not need are dimmed.
 - `project.estimate`: from the mesh and the order, the unknowns, the factor's memory and a time
   estimate (from the recorded timings of earlier runs where available).
 - `file.save` / `file.open`: the project as JSON (the model with its settings, and the command

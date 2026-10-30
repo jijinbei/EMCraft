@@ -26,7 +26,7 @@ mod run;
 
 pub use bar::bar;
 pub(crate) use panel::fmt;
-pub use panel::{apply_band, export_touchstone, panel};
+pub use panel::{apply_band, export_touchstone, kind_card, not_needed, panel};
 pub use run::{Preflight, preflight, run_params, start_run};
 
 /// What the 3D view puts forward in a step.
@@ -73,38 +73,19 @@ pub fn results_stale(app: &EmcraftApp) -> bool {
     statuses_now(app).get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale)
 }
 
-emcraft_macros::named_enum! {
-    /// The solver Run starts: its id (the Setup step's `setup:solver:<id>`) and its label.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum Solver {
-        Frequency = "frequency" => "Frequency sweep (S-parameters)",
-        Eigenmodes = "eigenmodes" => "Eigenmodes (resonances)",
-        Radiation = "radiation" => "Radiation (open problem)",
-        TimeDomain = "time_domain" => "Time domain",
-    }
+/// The solver Run starts: a kind of analysis (`project.analysis`), its id the Setup step's
+/// `setup:solver:<id>` and step 0's `intent:kind:<id>`.
+pub use emcraft_engine::workflow::Analysis as Solver;
+
+/// The command that runs `solver`.
+pub const fn command(solver: Solver) -> &'static str {
+    emcraft_engine::workflow::solve_command(solver)
 }
 
-impl Solver {
-    pub fn command(self) -> &'static str {
-        match self {
-            Solver::Frequency => "solve.frequency",
-            Solver::Eigenmodes => "solve.eigenmodes",
-            Solver::Radiation => "solve.radiation",
-            Solver::TimeDomain => "solve.time_domain",
-        }
-    }
-
-    /// The solver a model calls for: resonances without excitation, radiation with sources or
-    /// lumped ports, else a sweep.
-    pub fn infer(m: &emcraft_model::Model) -> Solver {
-        if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
-            Solver::Eigenmodes
-        } else if !m.sources.is_empty() || !m.lumped.is_empty() || m.open.is_some() {
-            Solver::Radiation
-        } else {
-            Solver::Frequency
-        }
-    }
+/// The solver the Setup step starts on: the one picked there, else the job's kind of analysis
+/// (chosen at step 0, else inferred from the model).
+pub fn solver(app: &EmcraftApp) -> Solver {
+    app.workflow.fields.solver.unwrap_or_else(|| app.session.model().analysis())
 }
 
 /// The text fields of the step panels, with each one's error.
@@ -225,7 +206,7 @@ pub fn prepare(app: &mut EmcraftApp) {
             let session = &app.session;
             run::run_params(session, &mut app.workflow.fields.clone())
                 .ok()
-                .map(|(solver, params)| json!({"command": solver.command(), "params": params}))
+                .map(|(solver, params)| json!({"command": command(solver), "params": params}))
         }
         _ => None,
     };
@@ -356,7 +337,9 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "messages": messages,
         "errors": f.errors.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
         "refused": f.refused,
-        "solver": f.solver.unwrap_or_else(|| Solver::infer(app.session.model())).id(),
+        "solver": solver(app).id(),
+        "analysis": emcraft_engine::workflow::analysis_reply(app.session.model()),
+        "not_needed": Step::ALL.into_iter().filter(|s| not_needed(app, *s).is_some()).map(Step::id).collect::<Vec<_>>(),
         "setup": {"points": f.points, "order": f.order, "count": f.count, "frequency": f.frequency},
         "rerun": reruns(app),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
@@ -371,13 +354,19 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// The Setup step's fields from the project's latest run of a solver it starts
 /// (`project.runs`, in display units now), as after opening a project; none: left as they are.
 pub fn restore_setup(app: &mut EmcraftApp) {
+    let chosen = app.session.model().analysis;
     let f = &mut app.workflow.fields;
     f.from_run = None;
     let Ok(v) = app.session.execute("project.runs", &json!({})) else { return };
     let runs = v.get("runs").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
     let found = runs.iter().rev().find_map(|r| {
         let command = r.get("command").and_then(Value::as_str)?;
-        Some((Solver::ALL.into_iter().find(|s| s.command() == command)?, r.get("params")?))
+        let solver = Solver::ALL.into_iter().find(|s| self::command(*s) == command)?;
+        // A kind chosen at step 0 restores only its own solver's run.
+        if chosen.is_some_and(|c| c != solver) {
+            return None;
+        }
+        Some((solver, r.get("params")?))
     });
     let Some((solver, p)) = found else { return };
     let text = |k: &str| p.get(k).map(dialogs::value_text).unwrap_or_default();
@@ -403,7 +392,7 @@ pub fn restore_setup(app: &mut EmcraftApp) {
 /// as that run left them.
 pub fn reruns(app: &EmcraftApp) -> Option<&'static str> {
     let f = &app.workflow.fields;
-    let command = f.solver?.command();
+    let command = self::command(f.solver?);
     (f.from_run.as_ref() == Some(&f.setup()) && app.session.runs().iter().any(|r| r.command == command)).then_some(command)
 }
 
@@ -455,7 +444,7 @@ pub fn fix(app: &mut EmcraftApp, command: &str) -> Result<(), UiError> {
     if step.is_some() {
         open_step(app, step);
     }
-    if command != "project.frequency" && !is_run(command) {
+    if !matches!(command, "project.frequency" | "project.analysis") && !is_run(command) {
         app.open_dialog(command)?;
     }
     Ok(())

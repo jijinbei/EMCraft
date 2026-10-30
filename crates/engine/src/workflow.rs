@@ -1,11 +1,14 @@
 //! The steps of an electromagnetic job (docs/ux/workflow.md §1) and where each stands: worked
 //! out from the model, the mesh and the results, without solving. `project.status` replies
-//! with them; the desktop app's step bar reads them directly.
+//! with them; the desktop app's step bar reads them directly. The checks follow the job's kind
+//! of analysis (`project.analysis`) once one is chosen; until then they are as for any job.
 
 use std::str::FromStr;
 
+pub use emcraft_model::Analysis;
 use emcraft_model::units::C0;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::Session;
 use crate::view::X11_PRIME;
@@ -36,7 +39,7 @@ impl Step {
     /// The commands that do the step's work.
     pub const fn commands(self) -> &'static [&'static str] {
         match self {
-            Step::Intent => &["units.set"],
+            Step::Intent => &["project.analysis", "units.set"],
             Step::Geometry => &["geometry.waveguide", "geometry.solid", "geometry.feature", "geometry.inclusion", "geometry.import", "file.sample"],
             Step::Materials => &["model.material.create"],
             Step::Excitation => &["model.port.create", "model.port.lumped", "source.dipole", "source.plane_wave", "source.clear"],
@@ -50,7 +53,7 @@ impl Step {
     /// The step a command belongs to.
     pub fn of_command(id: &str) -> Option<Step> {
         Some(match id {
-            "project.frequency" | "units.set" => Step::Intent,
+            "project.frequency" | "project.analysis" | "units.set" => Step::Intent,
             _ if id.starts_with("geometry.") || id == "file.sample" => Step::Geometry,
             "model.material.create" => Step::Materials,
             _ if id.starts_with("model.port.") || id.starts_with("source.") || id == "solve.port_modes" => Step::Excitation,
@@ -124,6 +127,40 @@ impl StepState {
     }
 }
 
+/// The command that runs a kind of analysis.
+///
+/// ```
+/// use emcraft_engine::workflow::{Analysis, solve_command};
+/// assert_eq!(solve_command(Analysis::Eigenmodes), "solve.eigenmodes");
+/// assert!(Analysis::ALL.iter().all(|a| emcraft_engine::find_command(solve_command(*a)).is_some()));
+/// ```
+pub const fn solve_command(a: Analysis) -> &'static str {
+    match a {
+        Analysis::Frequency => "solve.frequency",
+        Analysis::Eigenmodes => "solve.eigenmodes",
+        Analysis::Radiation => "solve.radiation",
+        Analysis::TimeDomain => "solve.time_domain",
+    }
+}
+
+/// The job's kind of analysis as the replies give it: its id (`kind`), whether it was chosen
+/// (`project.analysis`) or is inferred from the model (`chosen`), and the command that runs it
+/// (`solve`).
+///
+/// ```
+/// use emcraft_model::{Analysis, Model};
+/// let mut m = Model::default();
+/// let inferred = emcraft_engine::workflow::analysis_reply(&m);
+/// assert_eq!((inferred["kind"].as_str(), inferred["chosen"].as_bool()), (Some("eigenmodes"), Some(false)));
+/// m.set_analysis(Some(Analysis::Radiation));
+/// let chosen = emcraft_engine::workflow::analysis_reply(&m);
+/// assert_eq!((chosen["solve"].as_str(), chosen["chosen"].as_bool()), (Some("solve.radiation"), Some(true)));
+/// ```
+pub fn analysis_reply(m: &emcraft_model::Model) -> Value {
+    let a = m.analysis();
+    json!({"kind": a.id(), "chosen": m.analysis.is_some(), "solve": solve_command(a)})
+}
+
 /// A cut-off frequency to mark beside the band: a port mode's or a guide section's.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Cutoff {
@@ -194,8 +231,38 @@ pub fn steps(s: &Session) -> [StepState; 9] {
     [intent, geometry, materials, excitation, boundaries, mesh, setup, run, results]
 }
 
-/// The steps a run cannot do without (a resonator needs no excitation, so that is not one).
-const REQUIRED: [Step; 2] = [Step::Geometry, Step::Mesh];
+/// The steps a run cannot do without: the geometry and the mesh; once a kind of analysis is
+/// chosen that is driven, the excitation too (a resonator needs none), for radiation the open
+/// boundary, and the time domain no mesh (it grids the model itself).
+pub fn required(chosen: Option<Analysis>) -> &'static [Step] {
+    match chosen {
+        None | Some(Analysis::Eigenmodes) => &[Step::Geometry, Step::Mesh],
+        Some(Analysis::Frequency) => &[Step::Geometry, Step::Excitation, Step::Mesh],
+        Some(Analysis::TimeDomain) => &[Step::Geometry, Step::Excitation],
+        Some(Analysis::Radiation) => &[Step::Geometry, Step::Excitation, Step::Boundaries, Step::Mesh],
+    }
+}
+
+/// The steps the chosen kind of analysis does without: a resonator's excitation, the time
+/// domain's mesh (it grids the model itself). None until a kind is chosen.
+///
+/// ```
+/// use emcraft_engine::workflow::{Analysis, Step, not_needed};
+/// assert_eq!(not_needed(Some(Analysis::Eigenmodes)), &[Step::Excitation]);
+/// assert!(not_needed(None).is_empty() && not_needed(Some(Analysis::Frequency)).is_empty());
+/// ```
+pub fn not_needed(chosen: Option<Analysis>) -> &'static [Step] {
+    match chosen {
+        Some(Analysis::Eigenmodes) => &[Step::Excitation],
+        Some(Analysis::TimeDomain) => &[Step::Mesh],
+        _ => &[],
+    }
+}
+
+/// The command that runs the job: the chosen kind's solve, else a sweep.
+fn run_command(s: &Session) -> &'static str {
+    s.model.analysis.map_or("solve.frequency", solve_command)
+}
 
 /// Whether anything was solved: a solver's results or a parameter study's.
 fn solved(s: &Session) -> bool {
@@ -270,18 +337,27 @@ fn excitation(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Excitation);
     // A cell periodic along z is solved for its dispersion, with nothing driving it.
     let bloch = m.periodic.is_some_and(|p| p.z);
+    let chosen = m.analysis;
     // A resonator's eigenmodes need nothing to drive them.
-    let resonator = s.results.eigen.is_some();
+    let resonator = s.results.eigen.is_some() || chosen == Some(Analysis::Eigenmodes);
+    let driven = !(m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty());
     if !has_geometry(s) {
         st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
-    } else if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() && !bloch && !resonator {
-        st.note(
-            Status::Todo,
-            "nothing drives the model yet: a waveguide port, a lumped port or a source (a resonator needs none: Run finds its eigenmodes)",
-            Some("model.port.create"),
-        );
+    } else if !driven && !bloch && !resonator {
+        if chosen == Some(Analysis::Radiation) {
+            st.note(Status::Todo, "nothing drives the open problem yet: a lumped port, a dipole or a plane wave", Some("model.port.lumped"));
+        } else {
+            st.note(
+                Status::Todo,
+                "nothing drives the model yet: a waveguide port, a lumped port or a source (a resonator needs none: Run finds its eigenmodes)",
+                Some("model.port.create"),
+            );
+        }
     }
-    if m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
+    if chosen == Some(Analysis::Eigenmodes) && driven {
+        st.note(Status::Warning, "eigenmodes leave the ports and sources out (closed by walls)", Some("project.analysis"));
+    }
+    if chosen != Some(Analysis::Eigenmodes) && m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
         st.note(Status::Warning, "one port: S11 only (a closed guide usually has two)", Some("model.port.create"));
     }
     // A closed-form port's first mode against the band's start: below its cut-off the wave
@@ -312,6 +388,8 @@ fn boundaries(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Boundaries);
     if !has_geometry(s) {
         st.note(Status::Waiting, "waits for the geometry: its walls are the boundaries", Some("geometry.waveguide"));
+    } else if !open && m.analysis == Some(Analysis::Radiation) {
+        st.note(Status::Todo, "radiation wants the open boundary (a perfectly matched layer) around the model", Some("model.open"));
     }
     if !open && (!m.sources.is_empty() || !m.lumped.is_empty()) {
         st.note(
@@ -334,6 +412,9 @@ fn mesh(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Mesh);
     let Some(me) = &m.mesh else {
+        if not_needed(m.analysis).contains(&Step::Mesh) {
+            return st;
+        }
         if has_geometry(s) {
             st.note(Status::Todo, "no mesh yet", Some("mesh.generate"));
         } else {
@@ -382,7 +463,9 @@ fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
     let mut results = StepState::new(Step::Results);
     let names = |pick: &dyn Fn(&StepState) -> bool| above.iter().filter(|x| pick(x)).map(|x| x.step.id()).collect::<Vec<_>>().join(", ");
     let wrong = names(&|x| x.status == Status::Missing);
-    let waiting = names(&|x| REQUIRED.contains(&x.step) && matches!(x.status, Status::Todo | Status::Waiting));
+    let required = required(s.model.analysis);
+    let waiting = names(&|x| required.contains(&x.step) && matches!(x.status, Status::Todo | Status::Waiting));
+    let command = run_command(s);
     if !wrong.is_empty() {
         run.note(Status::Missing, format!("put {wrong} right first"), None);
     } else if !waiting.is_empty() {
@@ -390,12 +473,12 @@ fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
     }
     if !solved(s) {
         if wrong.is_empty() && waiting.is_empty() {
-            run.note(Status::Todo, "not run yet", Some("solve.frequency"));
+            run.note(Status::Todo, "not run yet", Some(command));
         }
-        results.note(Status::Waiting, "no results yet: Run (step 7) makes them", Some("solve.frequency"));
+        results.note(Status::Waiting, "no results yet: Run (step 7) makes them", Some(command));
     } else if s.solved_revision.is_some_and(|r| r < s.revision) {
-        results.note(Status::Stale, "the model changed after this run: run again", Some("solve.frequency"));
-        run.note(Status::Stale, "the model changed since the last run", Some("solve.frequency"));
+        results.note(Status::Stale, "the model changed after this run: run again", Some(command));
+        run.note(Status::Stale, "the model changed since the last run", Some(command));
     }
     (run, results)
 }

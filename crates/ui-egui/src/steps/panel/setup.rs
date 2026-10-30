@@ -6,7 +6,7 @@ use crate::lang::args;
 
 pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Solver");
-    let inferred = Solver::infer(app.session.model());
+    let inferred = app.session.model().analysis();
     let mut solver = f.solver.unwrap_or(inferred);
     for s in Solver::ALL {
         let r = ui.radio_value(&mut solver, s, egui::RichText::new(shown(s)).size(t.font_small));

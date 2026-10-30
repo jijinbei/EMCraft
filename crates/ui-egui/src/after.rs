@@ -45,6 +45,8 @@ impl EmcraftApp {
                 self.view = View::Study;
             }
             "edit.undo" | "edit.redo" => self.replies.port_modes = None,
+            // A kind chosen at step 0: Setup starts on its solver.
+            "project.analysis" => self.workflow.fields.solver = None,
             _ if id.starts_with("geometry.") => {
                 self.view = View::Model;
                 self.replies.port_modes = None;

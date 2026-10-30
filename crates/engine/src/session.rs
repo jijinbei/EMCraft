@@ -487,6 +487,7 @@ impl Session {
         });
         json!({
             "units": crate::reply::units(self.display),
+            "analysis": crate::workflow::analysis_reply(&self.model),
             "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r, "loss_tangent": m.loss_tangent, "magnetic_loss_tangent": m.magnetic_loss_tangent})).collect::<Vec<_>>(),
             "waveguide": w,
             "solid": self.model.solid.as_ref().map(|s| json!({"shape": s.shape.kind(), "material": s.material})),

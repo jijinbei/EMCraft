@@ -247,6 +247,8 @@ pub enum Handle<'a> {
     Choice(&'a str, &'a str),
     /// The Setup step's solver: `setup:solver:frequency`.
     Solver(Solver),
+    /// Step 0's card of a kind of analysis: `intent:kind:eigenmodes`.
+    Kind(Solver),
     /// The Setup step's device: `setup:device:cpu`.
     Device(&'a str),
     /// The Setup step's precision: `setup:precision:double`.
@@ -347,6 +349,7 @@ impl fmt::Display for Handle<'_> {
             Handle::DialogRemove(name, row) => write!(f, "dialog:remove:{name}:{row}"),
             Handle::Choice(param, value) => write!(f, "choice:{param}:{value}"),
             Handle::Solver(s) => write!(f, "setup:solver:{}", s.id()),
+            Handle::Kind(s) => write!(f, "intent:kind:{}", s.id()),
             Handle::Device(name) => write!(f, "setup:device:{name}"),
             Handle::Precision(p) => write!(f, "setup:precision:{p}"),
             Handle::Preflight(what, i) => write!(f, "preflight:{what}:{i}"),
@@ -407,7 +410,7 @@ mod tests {
 
     #[test]
     fn handles_read_as_the_protocol_names_them() {
-        let cases: [(Handle, &str); 12] = [
+        let cases: [(Handle, &str); 13] = [
             (Handle::Tab(RibbonTab::PortsSources), "tab:PORTS & SOURCES"),
             (Handle::Toolbar("mesh.generate"), "toolbar:mesh.generate"),
             (Handle::View(View::PortModes), "view:port_modes"),
@@ -417,6 +420,7 @@ mod tests {
             (Handle::Step(Step::Mesh), "step:mesh"),
             (Handle::DialogCell("sections", 0, "length"), "dialog:cell:sections:0:length"),
             (Handle::Solver(Solver::TimeDomain), "setup:solver:time_domain"),
+            (Handle::Kind(Solver::Eigenmodes), "intent:kind:eigenmodes"),
             (Handle::FieldPlane(Plane::Cross), "field:plane:cross"),
             (Handle::Standard(StandardView::Front), "view3d:std:front"),
             (Handle::StudyAt("b", 2), "study:at:b:2"),

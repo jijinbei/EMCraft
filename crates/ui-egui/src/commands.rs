@@ -24,6 +24,7 @@ const fn ui(id: &'static str, label: Option<&'static str>, glyph: Option<Glyph>,
 /// Every engine command, in the engine's order.
 pub const UI_COMMANDS: &[UiCommand] = &[
     ui("project.frequency", Some("Band"), Some(Glyph::Band), false),
+    ui("project.analysis", None, Some(Glyph::KindSweep), false),
     ui("project.status", None, None, false),
     ui("project.estimate", None, None, false),
     ui("file.save", None, Some(Glyph::Save), false),

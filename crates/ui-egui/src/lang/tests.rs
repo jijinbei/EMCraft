@@ -82,12 +82,14 @@ type Model = (&'static str, &'static str, &'static [&'static str]);
 const MODELS: &[Model] = &[
     // Nothing yet: every view says what it needs.
     ("[]", "[]", &[]),
-    // A guide with a port and no band: the steps' errors that ask for one; a failed solve.
+    // A guide with a port and no band, chosen a resonator: the steps' errors that ask for one,
+    // its port a mismatch; a failed solve.
     (
         r#"[{"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum", "width": 20}]}},
             {"command": "model.symmetry", "params": {"axis": "y", "kind": "electric"}},
             {"command": "mesh.generate", "params": {"size": 8}},
-            {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}}]"#,
+            {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
+            {"command": "project.analysis", "params": {"kind": "eigenmodes"}}]"#,
         r#"[{"command": "solve.frequency", "params": {"points": 3}}]"#,
         &[],
     ),
