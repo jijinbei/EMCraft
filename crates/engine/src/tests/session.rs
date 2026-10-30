@@ -176,13 +176,16 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     assert_eq!(of(&st, "intent"), "todo");
     assert_eq!((of(&st, "materials"), of(&st, "boundaries"), of(&st, "mesh")), ("waiting".into(), "waiting".into(), "waiting".into()));
     assert_eq!((of(&st, "run"), of(&st, "results")), ("waiting".into(), "waiting".into()));
-    // The band below WR-90's cut-off is flagged at the port.
+    // The band below WR-90's cut-off is noted at the port (the wave decays there), the step
+    // still done.
     s.execute("project.frequency", &json!({"start": 5, "stop": 12})).unwrap();
     s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
     let st = status(&mut s);
-    assert_eq!(of(&st, "excitation"), "warning", "{st:?}");
+    assert_eq!(of(&st, "excitation"), "done", "{st:?}");
+    let r = s.execute("project.status", &json!({})).unwrap();
+    assert!(r.to_string().contains("decays (evanescent)"), "{r}");
     assert_eq!((of(&st, "mesh"), of(&st, "run")), ("todo".into(), "waiting".into()));
     s.execute("project.frequency", &json!({"start": 8, "stop": 12})).unwrap();
     s.execute("mesh.generate", &json!({"per_wavelength": 6})).unwrap();

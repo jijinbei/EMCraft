@@ -21,13 +21,15 @@ pub trait ModeTerm {
 /// coefficient at each port, less the incident wave, as power waves of the modes (scaled by
 /// the ports' power proxies).
 ///
-/// In lossy port media the proxies are complex (the modes' unconjugated powers, see
-/// [`PortTerm::proxy`]) and √(P_p/P_q) is taken on the principal branch: the waves are then the
+/// In lossy port media, and for a closed-form port mode below its cut-off (evanescent, its
+/// unconjugated power −jκD imaginary), the proxies are complex (the modes' unconjugated powers,
+/// see [`PortTerm::proxy`]) and √(P_p/P_q) is taken on the principal branch: the waves are then the
 /// pseudo-waves of R. B. Marks and D. F. Williams (*A general waveguide circuit theory*, J. Res.
 /// NIST 97(5):533–562, 1992) referred to each port's own characteristic (wave) impedance, with
 /// the normalisation that keeps S symmetric for a reciprocal structure. For lossless ports they
 /// are the power waves; for equal port media the normalisation cancels and S is the ratio of the
-/// modes' amplitudes, |S21| = e^{−αL} along a uniform line. (Power waves of a lossy line would
+/// modes' amplitudes, |S21| = e^{−αL} along a uniform line (lossy, or below cut-off: oracle
+/// `evanescent-guide`). (Power waves of a lossy line would
 /// not be reciprocal, Marks & Williams §4.)
 ///
 /// `excitations` lists (port, mode) per entry of S, each excited by a unit wave of its mode in
