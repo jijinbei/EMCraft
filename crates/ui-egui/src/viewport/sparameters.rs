@@ -115,20 +115,18 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
             ui.label(text);
         });
     };
-    egui::ScrollArea::vertical().id_salt("s_table").show(ui, |ui| {
-        egui::Grid::new("s_grid").striped(true).num_columns(headers.len()).spacing(vec2(0.0, 2.0)).show(ui, |ui| {
-            super::dim_if_stale(ui);
-            for (h, w) in headers.iter().zip(&widths) {
-                cell(ui, *w, egui::RichText::new(h).font(font.clone()).strong());
+    egui::Grid::new("s_grid").striped(true).num_columns(headers.len()).spacing(vec2(0.0, 2.0)).show(ui, |ui| {
+        super::dim_if_stale(ui);
+        for (h, w) in headers.iter().zip(&widths) {
+            cell(ui, *w, egui::RichText::new(h).font(font.clone()).strong());
+        }
+        ui.end_row();
+        for row in &rows {
+            for (c, w) in row.iter().zip(&widths) {
+                cell(ui, *w, egui::RichText::new(c).font(font.clone()));
             }
             ui.end_row();
-            for row in &rows {
-                for (c, w) in row.iter().zip(&widths) {
-                    cell(ui, *w, egui::RichText::new(c).font(font.clone()));
-                }
-                ui.end_row();
-            }
-        });
+        }
     });
 }
 

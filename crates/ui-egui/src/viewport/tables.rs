@@ -3,6 +3,10 @@
 use super::*;
 use crate::lang::args;
 
+/// Below this width the port-mode table and the pattern are stacked: the table's columns and
+/// a pattern of [`NARROW`]'s half side by side.
+const MODES_NARROW: f32 = 900.0;
+
 pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     let Some(reply) = app.replies.port_modes.as_ref() else {
@@ -22,15 +26,25 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     if let Some(f) = focus.as_ref().filter(|f| f.scroll || app.workflow.mode_focus.is_none()) {
         out.push(Action::FocusMode(crate::steps::ModeFocus { scroll: false, ..f.clone() }));
     }
-    // The table on the left, the picked mode's picture on the right.
+    // The table on the left, the picked mode's picture on the right; in a narrow card, the
+    // picture under the table, in the card's scroll.
     let area = ui.available_rect_before_wrap();
-    ui.allocate_rect(area, Sense::hover());
-    let split = area.left() + (area.width() * 0.42).round();
-    let mut table_ui = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(area.min, pos2(split - 8.0, area.max.y))));
-    let mut picture_ui = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(pos2(split + 8.0, area.min.y), area.max)));
+    let narrow = area.width() < MODES_NARROW;
+    let (mut table_ui, mut picture_ui);
+    if narrow {
+        table_ui = ui.new_child(egui::UiBuilder::new().max_rect(area));
+        picture_ui = None;
+    } else {
+        ui.allocate_rect(area, Sense::hover());
+        let split = area.left() + (area.width() * 0.42).round();
+        table_ui = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(area.min, pos2(split - 8.0, area.max.y))));
+        picture_ui = Some(ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(pos2(split + 8.0, area.min.y), area.max))));
+    }
     let mut picked = None;
+    let tall = if narrow { (area.height() * 0.5).max(160.0) } else { area.height() };
+    let outer = ui;
     let ui = &mut table_ui;
-    egui::ScrollArea::vertical().id_salt("modes_table").show(ui, |ui| {
+    egui::ScrollArea::both().id_salt("modes_table").max_height(tall).show(ui, |ui| {
         for port in reply.get("ports").and_then(Value::as_array).into_iter().flatten() {
             crate::ui_kit::section(ui, trf("Port {name}", args!(name = port["name"].as_str().unwrap_or(""))));
             egui::Grid::new(("modes", port["name"].as_str().unwrap_or(""))).striped(true).num_columns(6).show(ui, |ui| {
@@ -75,8 +89,13 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     if let Some((port, mode)) = picked {
         out.push(Action::FocusMode(crate::steps::ModeFocus { port, mode, scroll: false }));
     }
+    if narrow {
+        // The table took its place in the card's flow.
+        outer.allocate_rect(table_ui.min_rect(), Sense::hover());
+        outer.add_space(8.0);
+    }
     if let Some(f) = focus {
-        mode_picture(app, &mut st.views.mode_picture, &f, &mut picture_ui, reply);
+        mode_picture(app, &mut st.views.mode_picture, &f, picture_ui.as_mut().unwrap_or(outer), reply);
     }
 }
 

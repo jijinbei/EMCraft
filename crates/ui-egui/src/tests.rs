@@ -373,3 +373,8 @@ fn scenario_dipole_fields() {
 fn scenario_visibility_tour() {
     scenario("visibility_tour");
 }
+
+#[test]
+fn scenario_small_window() {
+    scenario("small_window");
+}

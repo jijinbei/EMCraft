@@ -25,9 +25,14 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let font = FontId::proportional(t.font_body);
             let mut x = card.left() + 8.0;
             let mut clicked = None;
+            // The steps' names when they fit, else their numbers (the names on hover).
+            let named = |i: usize, s: &StepState| format!("{} {}", i, shown(s.step));
+            let pill = |text: String| ui.painter().layout_no_wrap(text, font.clone(), t.text).size().x + 34.0 + 16.0;
+            let full: f32 = states.iter().enumerate().map(|(i, s)| pill(named(i, s))).sum();
+            let short = full > card.width() - 16.0;
             for (i, s) in states.iter().enumerate() {
-                let text = format!("{} {}", i, shown(s.step));
-                let g = ui.painter().layout_no_wrap(text.clone(), font.clone(), t.text);
+                let text = named(i, s);
+                let g = ui.painter().layout_no_wrap(if short { i.to_string() } else { text.clone() }, font.clone(), t.text);
                 let r = Rect::from_min_size(pos2(x, card.top() + 4.0), vec2(g.size().x + 34.0, card.height() - 8.0));
                 let resp = ui.hit(r, Handle::Step(s.step), Sense::click());
                 let run_going = running && s.step == Step::Run;

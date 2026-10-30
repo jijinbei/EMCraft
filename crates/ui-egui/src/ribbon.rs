@@ -72,6 +72,8 @@ const TAB_ROW_HEIGHT: f32 = 30.0;
 const BUTTON_HEIGHT: f32 = 60.0;
 const PANEL_LABEL_HEIGHT: f32 = 16.0;
 const BUTTON_MIN_WIDTH: f32 = 58.0;
+/// The search field's least width with its hint; with less room it shows only its key.
+const SEARCH_MIN_WIDTH: f32 = 120.0;
 
 /// The dark application bar: the name, the samples menu, the theme switch.
 pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
@@ -169,8 +171,8 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             ui.painter().add(t.card(t.toolbar).paint(card));
             scenario::publish_rect(Fixed::Ribbon, card);
             let row = Rect::from_min_size(card.min, vec2(card.width(), TAB_ROW_HEIGHT));
-            tabs(app, ui, row, out);
-            search_field(search, ui, row, out);
+            let tabs_end = tabs(app, ui, row, out);
+            search_field(search, ui, row, tabs_end, out);
             let mut x = card.left() + 6.0;
             let top = row.bottom() + 4.0;
             let tab = app.tab;
@@ -220,7 +222,8 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
         });
 }
 
-fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
+/// The tab row's tabs; where the last one ends.
+fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) -> f32 {
     let t = &Tokens::get();
     let mut x = row.left() + 4.0;
     for &(tab, _) in TABS {
@@ -247,6 +250,7 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
         x = tr.right() + 2.0;
     }
     ui.painter().hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, t.toolbar.lerp_to_gamma(t.border, 0.5)));
+    x
 }
 
 /// Command search: the query and the highlighted row.
@@ -306,12 +310,20 @@ pub fn direct(query: &str) -> Option<Result<(String, Value), String>> {
     Some(serde_json::from_str::<Value>(rest).map(|v| (id.to_owned(), v)).map_err(|e| format!("not JSON: {e}")))
 }
 
-fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
-    let r = Rect::from_min_size(pos2(row.right() - 300.0, row.top() + 4.0), vec2(292.0, TAB_ROW_HEIGHT - 8.0));
+/// The search field at the tab row's right, narrower where the tabs (ending at `tabs_end`)
+/// leave less room.
+fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, tabs_end: f32, out: &mut Actions) {
+    // Too little room: a small field showing only its key, wide over the tabs while in use.
+    let id = egui::Id::new("emcraft_search");
+    let room = row.right() - 8.0 - tabs_end - 12.0;
+    let in_use = search.focus || !search.text.is_empty() || ui.memory(|m| m.has_focus(id));
+    let width = if room < SEARCH_MIN_WIDTH && in_use { 240.0 } else { room.clamp(32.0, 292.0) };
+    let hint = if width < SEARCH_MIN_WIDTH { "/".to_owned() } else { tr("Search commands (/)").to_owned() };
+    let r = Rect::from_min_size(pos2(row.right() - 8.0 - width, row.top() + 4.0), vec2(width, TAB_ROW_HEIGHT - 8.0));
     let mut field = ui.new_child(egui::UiBuilder::new().max_rect(r));
     let edit = egui::TextEdit::singleline(&mut search.text)
-        .id(egui::Id::new("emcraft_search"))
-        .hint_text(tr("Search commands (/)"))
+        .id(id)
+        .hint_text(hint)
         .char_limit(MAX_QUERY)
         .desired_width(r.width())
         .margin(egui::Margin::symmetric(8, 3));
