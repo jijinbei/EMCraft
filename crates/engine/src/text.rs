@@ -21,6 +21,21 @@ pub(crate) fn unknown<S: AsRef<str>>(what: impl Display, label: &str, known: imp
     format!("{what} ({label}{})", names.join(", "))
 }
 
+/// At most `max` of `names`, each clipped to 40 characters, then "… and n more" for the rest:
+/// a list from a model or a file is not echoed in full either.
+///
+/// ```
+/// let names = ["a", "b", "c"];
+/// assert_eq!(emcraft_engine::text::listed(&names, 2), ["a", "b", "… and 1 more"]);
+/// ```
+pub fn listed<S: AsRef<str>>(names: &[S], max: usize) -> Vec<String> {
+    let mut out: Vec<String> = names.iter().take(max).map(|n| clip(n.as_ref(), 40)).collect();
+    if names.len() > max {
+        out.push(format!("… and {} more", names.len() - max));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

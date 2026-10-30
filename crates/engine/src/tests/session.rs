@@ -22,11 +22,12 @@ fn display_units_convert_at_the_boundary() {
 }
 
 /// Every command that changes the model says which results the change leaves wrong, unless it
-/// changes only what no result is solved from (the band, the display units, a new material);
-/// they are dropped when it succeeds, not when it fails.
+/// changes only what no result is solved from (the band, the display units, a new material) or
+/// decides by what it changed (a material's edit: a new name alone keeps them); they are dropped
+/// when it succeeds, not when it fails.
 #[test]
 fn every_model_change_drops_the_results_it_makes_wrong() {
-    let keeps = ["project.frequency", "units.set", "model.material.create"];
+    let keeps = ["project.frequency", "units.set", "model.material.create", "model.material.edit"];
     for c in COMMANDS.iter().filter(|c| c.effect == Effect::Record) {
         assert_eq!(c.invalidates.is_none(), keeps.contains(&c.id), "{}", c.id);
     }
@@ -241,13 +242,13 @@ fn projects_save_as_emcraft_files_and_know_when_they_changed() {
     // The file's text: the JSON object of the format, the version, the history and the model,
     // its keys sorted, pretty printed.
     let text = std::fs::read_to_string(&path).unwrap();
-    let want = json!({"format": "emcraft-project", "version": 1, "history": s.history, "model": s.model});
+    let want = json!({"format": "emcraft-project", "version": 2, "history": s.history, "runs": [], "model": s.model});
     assert_eq!(text, serde_json::to_string_pretty(&want).unwrap());
     // A newer version is refused; an older one without a version opens.
     let newer = dir.join("newer.emcraft");
-    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 2, "history": []}).to_string()).unwrap();
+    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 3, "history": []}).to_string()).unwrap();
     let r = t.execute("file.open", &json!({"path": newer.to_string_lossy()}));
-    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 2")), "{r:?}");
+    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 3")), "{r:?}");
     std::fs::write(&newer, json!({"format": "emcraft-project", "history": [{"command": "units.set"}]}).to_string()).unwrap();
     t.execute("file.open", &json!({"path": newer.to_string_lossy()})).unwrap();
     assert_eq!(t.history, vec![crate::Step::new("units.set", json!({}))]);

@@ -9,15 +9,40 @@ use emcraft_model::{Band, Model};
 use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
 
+use crate::runs::Run;
 use crate::{EngineError, Params, Result, Session, Step};
 
-/// A state to undo to: the model, the display units and the history that built it.
+/// A state to undo to: the model, the display units and the history that built it, and —
+/// before a command that replaced the project (`file.open`, `file.new`, `file.sample`) — the
+/// project the model belonged to.
 #[derive(Clone, Debug)]
 pub struct Snapshot {
     pub model: Model,
     pub display: Display,
     pub history: Vec<Step>,
     pub variables: crate::expr::Variables,
+    /// The project to go back to with the model, when the command after this state replaced it.
+    pub project: Option<Box<Identity>>,
+}
+
+/// What a project is besides its model: its file, the sample it came from, the state it was
+/// last saved or opened in, its runs and their results. Undoing a command that replaced the
+/// project brings it back whole, so a save after the undo writes the project's own file (never
+/// the one opened over it) and the dirty mark is the project's own.
+#[derive(Clone, Debug)]
+pub struct Identity {
+    pub path: Option<String>,
+    pub sample: Option<String>,
+    /// The history as last saved or opened.
+    pub saved: Vec<Step>,
+    /// The runs as last saved or opened.
+    pub saved_runs: Vec<Run>,
+    pub runs: Vec<Run>,
+    pub results: crate::Results,
+    /// The revision the results were solved at, and whether that was the model's revision then
+    /// (they come back current; else stale).
+    pub solved_revision: Option<u64>,
+    pub current: bool,
 }
 
 /// The most states kept to undo to.
@@ -32,13 +57,42 @@ pub fn push_undo(stack: &mut VecDeque<Snapshot>, s: Snapshot) {
 }
 
 impl Session {
-    /// The undoable state now, replaced by `with`.
+    /// The project the model belongs to, as it is now.
+    pub(crate) fn identity(&self) -> Identity {
+        Identity {
+            path: self.path.clone(),
+            sample: self.sample.clone(),
+            saved: self.saved.clone(),
+            saved_runs: self.saved_runs.clone(),
+            runs: self.runs.clone(),
+            results: self.results.clone(),
+            solved_revision: self.solved_revision,
+            current: self.solved_revision == Some(self.revision),
+        }
+    }
+
+    /// The undoable state now, replaced by `with`; a new revision. The results stay, marked
+    /// stale, unless `with` brings its project back: then that project's own come back.
     fn swap_snapshot(&mut self, with: Snapshot) -> Snapshot {
+        let now = self.identity();
+        self.revision += 1;
+        let project = with.project.map(|back| {
+            let back = *back;
+            self.path = back.path;
+            self.sample = back.sample;
+            self.saved = back.saved;
+            self.saved_runs = back.saved_runs;
+            self.runs = back.runs;
+            self.results = back.results;
+            self.solved_revision = if back.current { Some(self.revision) } else { back.solved_revision };
+            Box::new(now)
+        });
         Snapshot {
             model: std::mem::replace(&mut self.model, with.model),
             display: std::mem::replace(&mut self.display, with.display),
             history: std::mem::replace(&mut self.history, with.history),
             variables: std::mem::replace(&mut self.variables, with.variables),
+            project,
         }
     }
 }
@@ -48,8 +102,13 @@ impl Session {
 pub enum Effect {
     /// Changes the model: joins the history, can be undone.
     Record,
-    /// Replaces the session (a sample, a project file): can be undone, brings its own history.
+    /// Replaces the project (a sample, a project file, a new one): can be undone, back to the
+    /// project before it (its file, its saved state, its runs and results), and brings its own
+    /// history.
     Replace,
+    /// Rebuilds the model from a history of its own making (a variable changed, an
+    /// optimization's best point): can be undone; the project stays the same.
+    Rebuild,
     /// Solves: its results belong to the model's current revision.
     Solve,
     None,
@@ -79,12 +138,25 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     })?;
     let solve = p.flag("solve").or(false)?;
     let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;
-    let steps: Vec<Step> = script.into_iter().filter(|step| solve || !step.command.starts_with("solve.")).collect();
     let mut fresh = s.fresh();
-    fresh.run_steps(&steps)?;
+    // Without `solve`, the sample's solves are recorded as its runs, not run.
+    for (i, step) in script.iter().enumerate() {
+        crate::progress::report(i, script.len(), &step.command)?;
+        let spec =
+            crate::find_command(&step.command).ok_or_else(|| EngineError::Failed(format!("sample {name}: unknown command `{}`", step.command)))?;
+        if spec.effect == Effect::Solve && !solve {
+            let run = Run { command: step.command.clone(), params: step.params.clone(), units: fresh.display };
+            crate::runs::record(&mut fresh.runs, run);
+        } else {
+            fresh.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))?;
+        }
+    }
     fresh.saved = fresh.history.clone();
+    fresh.saved_runs = fresh.runs.clone();
     fresh.sample = Some(name.to_owned());
-    *s = fresh;
+    // Undo goes back to before the sample, not through the steps that built it.
+    fresh.undo.clear();
+    *s = Session { undo: std::mem::take(&mut s.undo), ..fresh };
     Ok(s.summary())
 }
 
@@ -127,8 +199,9 @@ pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
-/// A project file (docs/project-file.md): the history that builds the model, and the model for
-/// other tools to read (opening replays the history and does not read it).
+/// A project file (docs/project-file.md): the history that builds the model, the runs solved
+/// on it (their parameters, not their results), and the model for other tools to read (opening
+/// replays the history and does not read it).
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ProjectFile<'m> {
     format: String,
@@ -136,6 +209,9 @@ struct ProjectFile<'m> {
     version: u32,
     #[serde(default)]
     history: Vec<Step>,
+    /// Since version 2.
+    #[serde(default)]
+    runs: Vec<Run>,
     #[serde(skip_deserializing)]
     model: Option<&'m Model>,
 }
@@ -143,8 +219,8 @@ struct ProjectFile<'m> {
 /// What a project file's `format` says.
 const FORMAT: &str = "emcraft-project";
 
-/// The version of project files written, the newest read.
-const VERSION: u32 = 1;
+/// The version of project files written, the newest read (2: the runs).
+const VERSION: u32 = 2;
 
 fn first_version() -> u32 {
     1
@@ -156,22 +232,30 @@ const MAX_PROJECT_BYTES: u64 = 64 << 20;
 /// The extension of project files.
 pub const EXTENSION: &str = "emcraft";
 
+/// `file.save`: the project to `path` (or its own file); with `copy`, a copy that leaves the
+/// session's file, name and saved state alone (an autosave).
 pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
+    let copy = p.flag("copy").or(false)?;
     let path = match p.string("path").optional()? {
         Some(path) if path.trim().is_empty() => return Err(p.error("path", "must not be empty")),
         Some(path) if std::path::Path::new(path).extension().is_none() => format!("{path}.{EXTENSION}"),
         Some(path) => path.to_owned(),
+        None if copy => return Err(p.error("path", "is required for a copy")),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    let file = ProjectFile { format: FORMAT.to_owned(), version: VERSION, history: s.history.clone(), model: Some(&s.model) };
+    let file = ProjectFile { format: FORMAT.to_owned(), version: VERSION, history: s.history.clone(), runs: s.runs.clone(), model: Some(&s.model) };
     // Through a JSON value, whose objects keep their keys sorted: the file's text does not
     // depend on the order the fields are declared in.
     let doc = serde_json::to_value(&file).map_err(EngineError::failed)?;
     let text = serde_json::to_string_pretty(&doc).map_err(EngineError::failed)?;
     write_atomically(&path, text.as_bytes())?;
+    if copy {
+        return Ok(json!({"path": path, "copy": true, "commands": s.history.len(), "runs": s.runs.len()}));
+    }
     s.path = Some(path.clone());
     s.saved = s.history.clone();
-    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len()}))
+    s.saved_runs = s.runs.clone();
+    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len()}))
 }
 
 /// Writes `bytes` to a temporary file beside `path` and renames it over: a crash or a full
@@ -199,9 +283,8 @@ pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
     Ok(s.summary())
 }
 
-/// Opens a project: its history replayed in a fresh session (so the mesh comes back the same).
-pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
-    let path = p.string("path").required()?;
+/// A project file read and checked: its history and runs.
+fn read_project(path: &str) -> Result<(Vec<Step>, Vec<Run>)> {
     let bytes = crate::geometry::read_capped(path, MAX_PROJECT_BYTES)?;
     let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::Failed(format!("`{path}`: not a project file ({e})")))?;
     if doc.get("format").and_then(Value::as_str) != Some(FORMAT) {
@@ -214,31 +297,61 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
             file.version
         )));
     }
+    let runs = crate::runs::checked(file.runs).map_err(|e| EngineError::Failed(format!("`{path}`: {e}")))?;
+    Ok((file.history, runs))
+}
+
+/// Opens a project: its history replayed in a fresh session (so the mesh comes back the same),
+/// its runs restored without running them. With `original`, `path` is a copy of that project
+/// (an autosave being recovered): the session takes the original's file, and is clean only
+/// where it matches what that file holds.
+pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
+    let path = p.string("path").required()?;
+    let original = match p.string("original").optional()? {
+        Some(o) if o.trim().is_empty() => return Err(p.error("original", "must not be empty")),
+        o => o,
+    };
+    let (history, runs) = read_project(path)?;
     let mut fresh = s.fresh();
-    fresh.run_steps(&file.history)?;
+    fresh.run_steps(&history)?;
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
-    fresh.path = Some(path.to_owned());
-    fresh.saved = fresh.history.clone();
+    fresh.runs = runs;
+    match original {
+        None => {
+            fresh.path = Some(path.to_owned());
+            fresh.saved = fresh.history.clone();
+            fresh.saved_runs = fresh.runs.clone();
+        }
+        Some(o) => {
+            // The original as it was last saved: the copy may be ahead of it. One that cannot be
+            // read is unlike anything recovered (a baseline no history equals).
+            let (saved, saved_runs) = read_project(o).unwrap_or_else(|_| (vec![Step::new(UNREADABLE, json!({}))], Vec::new()));
+            fresh.path = Some(o.to_owned());
+            fresh.saved = saved;
+            fresh.saved_runs = saved_runs;
+        }
+    }
     *s = Session { undo: std::mem::take(&mut s.undo), ..fresh };
-    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "summary": s.summary()}))
+    Ok(json!({"path": s.path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "dirty": s.is_dirty(), "summary": s.summary()}))
 }
+
+/// The saved baseline of a recovered project whose original cannot be read: no command has this
+/// id, so no history equals it.
+const UNREADABLE: &str = "(the original could not be read)";
 
 pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
     let back = s.undo.pop_back().ok_or_else(|| EngineError::failed("nothing to undo"))?;
     let now = s.swap_snapshot(back);
     push_undo(&mut s.redo, now);
-    // Results stay, marked stale.
-    s.revision += 1;
-    Ok(json!({"undo": s.undo.len(), "redo": s.redo.len()}))
+    Ok(json!({"undo": s.undo.len(), "redo": s.redo.len(), "path": s.path, "name": s.name(), "dirty": s.is_dirty()}))
 }
 
 pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
     let next = s.redo.pop_back().ok_or_else(|| EngineError::failed("nothing to redo"))?;
     let now = s.swap_snapshot(next);
     push_undo(&mut s.undo, now);
-    s.revision += 1;
-    Ok(json!({"undo": s.undo.len(), "redo": s.redo.len()}))
+    Ok(json!({"undo": s.undo.len(), "redo": s.redo.len(), "path": s.path, "name": s.name(), "dirty": s.is_dirty()}))
 }
 
 emcraft_macros::named_enum! {
