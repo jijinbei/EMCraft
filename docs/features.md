@@ -19,11 +19,13 @@ No parameters.
 
 ## `project.estimate` — Solve estimate
 
-The meshed model's unknowns at `order`, the factor's memory and the time per frequency: from the session's last sweep when it has one, else from a reference machine's.
+How long a run will take, before it starts: `command` with `params` (a solve, mesh.adapt, study.sweep or study.optimize), else the project's latest run, else a sweep of the band. The total `seconds` (the frequencies of a sweep — a fast sweep solving a few in full —, the eigenmodes, the adaptive passes, the time domain's cells and steps, a study's points), what it counts (`what`), and for a frequency-domain solve the meshed model's unknowns at `order`, the factor's memory and the seconds of one solve. `basis` says where the numbers come from: `measured` (scaled from this session's own last sweep, on this machine) or `reference` (a reference machine's). Reads the model only: cheap, and the same set-up gives the same numbers.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `order` | integer |  | no | element order, 1 or 2 (default 2) |
+| `order` | integer |  | no | element order, 1 or 2 (default the run's, else 2) |
+| `command` | string |  | no | the run to estimate: a solve command, mesh.adapt, study.sweep or study.optimize (default the latest run) |
+| `params` | object |  | no | its parameters, as the command takes them |
 
 ## `file.save` — Save project
 
@@ -358,6 +360,15 @@ Changes a waveguide port: its name (`rename`), end, modes, face (`null` puts it 
 | `deembed` | number | length | no | the reference plane's distance inside the model |
 | `terminals` | string |  | no | `auto` or `modal` |
 
+## `model.port.deembed` — Reference plane
+
+Moves a port's reference plane: `deembed` inside the model along its line (as model.port.edit sets it), and the sweep's S-parameters re-referred to it at once, without solving again (each port's waves moved by e^{γd} of its first mode). A sweep with terminal ports or periodic boundaries is dropped instead (`rerun`: solve again). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the port |
+| `deembed` | number | length | yes | the reference plane's distance inside the model (negative: a line added outside) |
+
 ## `model.port.delete` — Delete port
 
 Removes a waveguide port (a lumped port: model.port.lumped.delete); the ports after it move up in S. Drops the sweep and the time domain's results (an open problem's too). Undo goes back.
@@ -378,6 +389,17 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 | `points` | integer |  | no | frequencies from start to stop (default 11) |
 | `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
 | `sweep` | string |  | no | `fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each) |
+
+## `solve.refine` — Refine sweep
+
+Adds frequencies to the sweep: `points` evenly from `start` to `stop` (or `frequencies`), those not solved yet solved on the sweep's own system (its mesh and order, no assembly again; three or more by the fast sweep), referred to its reference planes and merged in order. The project's run becomes the merged sweep (solve.frequency with its frequencies listed), so running it again gives the same sweep. Needs a sweep of the model as it is.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequencies` | array | frequency | no | the frequencies |
+| `start` | number | frequency | no | first frequency |
+| `stop` | number | frequency | no | last frequency |
+| `points` | integer |  | no | frequencies from start to stop (default 11) |
 
 ## `solve.time_domain` — Time domain
 
@@ -495,6 +517,67 @@ The relative L2 errors ‖F − F_exact‖/‖F_exact‖ of E and H over the who
 |---|---|---|---|---|
 | `frequency` | number | frequency | yes | a solved frequency |
 
+## `results.probes` — Probe values
+
+E (V/m) and H (A/m), complex, and their magnitudes at the project's named probes (view.probe.add), for a solved frequency (the nearest; default the sweep's first) and an excited port, or an eigenmode. A probe outside the mesh says so (`outside`).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequency` | number | frequency | no | a solved frequency (the nearest is used; default the sweep's first) |
+| `mode` | integer |  | no | an eigenmode (1 = the lowest) instead of a driven solution |
+| `excitation` | string |  | no | the excited port (default the first) |
+
+## `view.probe.add` — Add probe
+
+Adds a named probe: a point in the model where the fields are read (results.probes; the field view lists them and marks those on its plane). Saved with the project, not in its history.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `at` | array | length | yes | the point [x, y, z], inside the model's bounds |
+| `name` | string |  | no | its name, unique (default P1, P2, …) |
+
+## `view.probe.move` — Move probe
+
+Moves a probe to another point, or renames it.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the probe |
+| `at` | array | length | no | its new point [x, y, z] |
+| `rename` | string |  | no | a new name, unique |
+
+## `view.probe.delete` — Delete probe
+
+Removes a probe.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the probe |
+
+## `view.chart.style` — Chart style
+
+Changes how a result chart looks, in the window and in its PNG (view.sparameters, view.tdr, view.pattern, view.dispersion, view.study): what is given changes, the rest stays (`reset` first puts it all back to automatic). Axis ends are numbers in the axis' unit (a frequency axis in the display unit) or null for automatic; a log scale needs positive ends. Curves are named by their keys (the reply's `curves`: `s21.fem`, `s11.ref`, `band1`, …): `hidden` lists those left out, `curve` with `colour` and `width` sets one's own (null: the usual). Saved with the project, not in its history. The reply: the style and the chart's curves.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `chart` | string |  | yes | `sparameters`, `tdr`, `pattern`, `dispersion` or `study` |
+| `title` | string |  | no | the title ("" or null: automatic) |
+| `x_label` | string |  | no | the x axis' label ("" or null: automatic) |
+| `y_label` | string |  | no | the y axis' label ("" or null: automatic) |
+| `x_min` | number |  | no | the x axis' left end (null: automatic) |
+| `x_max` | number |  | no | the x axis' right end (null: automatic) |
+| `y_min` | number |  | no | the y axis' bottom (null: automatic) |
+| `y_max` | number |  | no | the y axis' top (null: automatic) |
+| `x_scale` | string |  | no | `linear` or `log` |
+| `y_scale` | string |  | no | `linear` or `log` |
+| `hidden` | array |  | no | the keys of the curves left out (all others shown) |
+| `curve` | string |  | no | the key of the curve `colour` and `width` are for |
+| `colour` | string |  | no | the curve's colour, `#rrggbb` (null: the theme's) |
+| `width` | number |  | no | the curve's line width or marker size in pixels, 0.5 to 12 (null: the usual) |
+| `grid` | boolean |  | no | draw the grid (default true) |
+| `legend` | string |  | no | where the legend goes: `below` (default), `top-left`, `top-right`, `bottom-left`, `bottom-right` or `none` |
+| `reset` | boolean |  | no | everything back to automatic first |
+
 ## `results.probe` — Probe fields
 
 E (V/m) and H (A/m), complex, at points, for a solved frequency and an excited port.
@@ -580,7 +663,7 @@ Writes an animated PNG of the fields on a plane over one period of ωt, looping:
 
 ## `view.sparameters` — S-parameter chart
 
-Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over the exact TE10 curves, with the cut-off frequencies marked.
+Writes a PNG of |S11| and |S21| (and the rest of S's first column) against frequency — in dB, as a magnitude or a phase — the solved points over the exact TE10 curves, with the cut-off frequencies marked, in the chart's style (view.chart.style).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -588,6 +671,7 @@ Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over 
 | `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
+| `display` | string |  | no | `db` (default), `magnitude` or `phase` |
 
 ## `model.open` — Open boundary
 
@@ -705,14 +789,17 @@ The far field (r e^{jkr} E_θ, E_φ) of the last radiation solve at polar angles
 
 ## `view.pattern` — Pattern chart
 
-Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity in dBi for sources, radar cross-section in dBsm for a plane wave, over the closed form where it applies.
+Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi` (`cut` phi, the default) or against φ from 0 to 360° at polar angle `theta` (`cut` theta); directivity in dBi for sources, radar cross-section in dBsm for a plane wave, all of it or one polarization's share (`component`), over the closed form (the total's) where it applies; in the chart's style (view.chart.style).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
 | `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
+| `cut` | string |  | no | `phi`: θ varies at azimuth `phi` (default); `theta`: φ varies at polar angle `theta` |
 | `phi` | number |  | no | the azimuth in degrees (default 0) |
-| `points` | integer |  | no | angles from 0 to 180° (default 91) |
+| `theta` | number |  | no | the polar angle of a θ cut in degrees, 0 to 180 (default 90) |
+| `component` | string |  | no | `total` (default), `theta` (E_θ's share) or `phi` (E_φ's) |
+| `points` | integer |  | no | angles along the cut, 13 to 721 (default 91) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
 | `solver` | string |  | no | `fem` (solve.radiation) or `time_domain` (solve.time_domain); default whichever there is, the FEM's first |
