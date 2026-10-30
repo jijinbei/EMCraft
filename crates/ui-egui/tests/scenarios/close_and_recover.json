@@ -1,6 +1,11 @@
 [
   {"note": "Unsaved work is copied aside while it waits: a copy every interval (a short one here) in the autosave folder, the project's own file untouched"},
   {"call": "app.autosave", "params": {"dir": "$TMP/autosave", "every": 0.5}},
+  {"call": "app.autosave", "params": {"every": -1}, "fail": true},
+  {"call": "app.autosave", "params": {"every": 1e300}, "fail": true},
+  {"call": "app.autosave", "params": {"dir": 5}, "fail": true},
+  {"call": "app.autosave", "params": {"dir": ""}, "fail": true},
+  {"expect": {"inspect": {"autosave.dir": "$TMP/autosave", "autosave.every": 0.5}}},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"call": "engine.execute", "params": {"command": "file.save", "params": {"path": "$TMP/filter.emcraft"}}},
   {"expect": {"inspect": {"project.dirty": false, "project.name": "filter", "autosave.file": null}}},

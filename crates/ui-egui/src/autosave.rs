@@ -26,6 +26,8 @@ pub fn default_dir() -> Option<PathBuf> {
 pub const EVERY: f64 = 60.0;
 /// Most copies looked at in the folder.
 const MAX_FOUND: usize = 64;
+/// The key that marks a note as the autosave's.
+const MARK: &str = "emcraft_autosave";
 /// Most bytes of a note read.
 const MAX_NOTE: u64 = 64 << 10;
 
@@ -94,7 +96,8 @@ pub fn inside(dir: Option<&Path>, path: &str) -> bool {
 }
 
 /// The copies in `dir` newer than their projects, the latest first; those older than their
-/// project (it was saved since) are deleted.
+/// project (it was saved since), and notes whose copy is gone, are deleted. Only the autosave's
+/// own notes (marked) are read; other files are left alone.
 pub fn scan(dir: &Path) -> Vec<Found> {
     let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
     let mut found = Vec::new();
@@ -102,13 +105,17 @@ pub fn scan(dir: &Path) -> Vec<Found> {
         entries.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "json")).take(MAX_FOUND * 4).collect();
     notes.sort();
     for note in notes {
+        // Only the autosave's own notes: anything else in the folder is left alone.
+        let read = std::fs::metadata(&note).ok().filter(|m| m.len() <= MAX_NOTE).and_then(|_| std::fs::read_to_string(&note).ok());
+        let v: Value = read.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null);
+        if v.get(MARK) != Some(&json!(1)) {
+            continue;
+        }
         let file = note.with_extension(emcraft_engine::project::EXTENSION);
         if !file.is_file() {
             let _ = std::fs::remove_file(&note);
             continue;
         }
-        let read = std::fs::metadata(&note).ok().filter(|m| m.len() <= MAX_NOTE).and_then(|_| std::fs::read_to_string(&note).ok());
-        let v: Value = read.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null);
         let name = v
             .get("name")
             .and_then(Value::as_str)
@@ -177,7 +184,7 @@ impl EmcraftApp {
         });
         let r = written.and_then(|reply| {
             let original = self.session.path().filter(|p| !inside(Some(&dir), p));
-            let note = json!({"name": name, "original": original});
+            let note = json!({MARK: 1, "name": name, "original": original});
             std::fs::write(note_of(&file), note.to_string()).map_err(|e| format!("cannot write {}: {e}", note_of(&file).display()))?;
             Ok(reply)
         });
@@ -250,15 +257,20 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         let copy = dir.join("a.emcraft");
         std::fs::write(&copy, "{}").unwrap();
-        std::fs::write(dir.join("a.json"), json!({"name": "a", "original": project.display().to_string()}).to_string()).unwrap();
+        std::fs::write(dir.join("a.json"), json!({MARK: 1, "name": "a", "original": project.display().to_string()}).to_string()).unwrap();
         std::fs::write(dir.join("b.emcraft"), "{}").unwrap();
-        std::fs::write(dir.join("b.json"), "not json").unwrap();
-        std::fs::write(dir.join("stray.json"), "{}").unwrap();
+        std::fs::write(dir.join("b.json"), json!({MARK: 1, "name": "b"}).to_string()).unwrap();
+        std::fs::write(dir.join("stray.json"), json!({MARK: 1}).to_string()).unwrap();
+        // Not the autosave's: never read as a copy, never deleted.
+        std::fs::write(dir.join("c.emcraft"), "{}").unwrap();
+        std::fs::write(dir.join("c.json"), "not json").unwrap();
+        std::fs::write(dir.join("prefs.json"), "{}").unwrap();
         let found = scan(&dir);
         assert_eq!(found.len(), 2, "{found:?}");
         assert!(found.iter().any(|f| f.name == "a" && f.original.is_some()));
         assert!(found.iter().any(|f| f.name == "b" && f.original.is_none()));
         assert!(!dir.join("stray.json").exists());
+        assert!(dir.join("prefs.json").exists() && dir.join("c.json").exists() && dir.join("c.emcraft").exists());
         // The project saved after the copy: the copy is out of date and goes.
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&project, "{}").unwrap();
