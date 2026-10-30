@@ -117,9 +117,10 @@ pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: 
     for (k, a) in crate::archive::picked(session, compare)?.into_iter().enumerate() {
         let Some(sw) = a.results.sweep.as_ref() else { continue };
         let pts = |p: usize, q: usize| sw.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
+        // Its solved points, as the session's own are drawn: data, not curves through it.
         let [p21, p11] = compare_pens(k);
-        chart.series.extend(curve(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, pts(1, 0), display));
-        chart.series.extend(curve(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, pts(0, 0), display));
+        chart.series.push(Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Markers, pts(1, 0)));
+        chart.series.push(Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Markers, pts(0, 0)));
         // The axes take in what was added.
         for s in chart.series.iter().flat_map(|s| &s.points) {
             chart.x.min = chart.x.min.min(s[0]);
@@ -143,7 +144,13 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     };
     let pad = if f1 > f0 { 0.0 } else { 0.05 * f0 };
     let (f0, f1) = (f0 - pad, f1 + pad);
-    let mut series = reference_curves(session, f0, f1, display);
+    // The data only, and a closed form when the chart's style adds it.
+    let wanted = |key: &str| crate::views::added(session, crate::views::ChartId::SParameters, key);
+    let mut series: Vec<Series> = if wanted("s21.ref") || wanted("s11.ref") {
+        reference_curves(session, f0, f1, display).into_iter().filter(|c| wanted(&c.key)).collect()
+    } else {
+        Vec::new()
+    };
     if let Some(sweep) = sweep {
         let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
         let label = format!("{} FEM (order {})", display.entry("21"), sweep.order.as_u8());

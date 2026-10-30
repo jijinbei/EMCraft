@@ -649,6 +649,7 @@ Changes how a result chart looks, in the window and in its PNG (view.sparameters
 | `x_scale` | string |  | no | `linear` or `log` |
 | `y_scale` | string |  | no | `linear` or `log` |
 | `hidden` | array |  | no | the keys of the curves left out (all others shown) |
+| `added` | array |  | no | the keys of the curves added to the data: a closed form to compare with (`s21.ref`, `s11.ref` for an S-parameter chart of a guide that has one); none by default |
 | `curve` | string |  | no | the key of the curve `colour` and `width` are for |
 | `colour` | string |  | no | the curve's colour, `#rrggbb` (null: the theme's) |
 | `width` | number |  | no | the curve's line width or marker size in pixels, 0.5 to 12 (null: the usual) |

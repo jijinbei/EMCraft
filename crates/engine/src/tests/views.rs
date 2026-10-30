@@ -20,7 +20,15 @@ fn chart_styles_apply_to_pngs_are_saved_and_refuse_bad_input() {
     let mut s = swept(3);
     let r = s.execute("view.chart.style", &json!({"chart": "sparameters"})).unwrap();
     let keys: Vec<&str> = r["curves"].as_array().unwrap().iter().filter_map(|c| c["key"].as_str()).collect();
-    assert!(keys.contains(&"s21.fem") && keys.contains(&"s11.ref"), "{keys:?}");
+    // The data only: the closed form is the guide's to add, not drawn unasked.
+    assert!(keys.contains(&"s21.fem") && !keys.contains(&"s11.ref"), "{keys:?}");
+    let optional: Vec<String> = views::optional_curves(&s, ChartId::SParameters).into_iter().map(|(k, _)| k).collect();
+    assert_eq!(optional, ["s21.ref", "s11.ref"]);
+    assert!(s.execute("view.chart.style", &json!({"chart": "sparameters", "added": ["nothing"]})).is_err());
+    s.execute("view.chart.style", &json!({"chart": "sparameters", "added": ["s21.ref", "s11.ref"]})).unwrap();
+    let with: Vec<String> = view::sparameter_chart(&s).unwrap().series.iter().map(|c| c.key.clone()).collect();
+    assert!(with.iter().any(|k| k == "s11.ref"), "{with:?}");
+    s.execute("view.chart.style", &json!({"chart": "sparameters", "reset": true})).unwrap();
     assert!(s.views().is_empty(), "asking changes nothing");
     s.mark_saved();
     let plain = scratch("style-plain.png");

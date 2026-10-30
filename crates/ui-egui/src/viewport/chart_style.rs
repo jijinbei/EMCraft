@@ -191,10 +191,39 @@ fn card(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, at: Rect, id: Chart
                 }
             });
             ui.separator();
+            added_rows(ui, &shown, &emcraft_engine::views::optional_curves(&app.session, id), id, out);
             curve_rows(ui, &shown, &curves, id, out);
         });
     });
     scenario::publish_rect(Fixed::ChartStyleCard, r.response.rect);
+}
+
+/// The curves the chart can add to its data (a closed form to compare with), each a checkbox;
+/// nothing when it has none.
+fn added_rows(ui: &mut egui::Ui, shown: &Value, optional: &[(String, String)], id: ChartId, out: &mut Actions) {
+    if optional.is_empty() {
+        return;
+    }
+    let t = &Tokens::get();
+    let added: Vec<&str> = shown["added"].as_array().map(|l| l.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    crate::ui_kit::small(ui, "Add", t.text_dim);
+    for (key, label) in optional {
+        let on = added.contains(&key.as_str());
+        ui.horizontal(|ui| {
+            let r = ui.named(egui::Checkbox::without_text(&mut on.clone()), Handle::CurveAdd(key)).hint("Draw it over the data");
+            if r.clicked() {
+                let mut list: Vec<&str> = added.clone();
+                if on {
+                    list.retain(|k| k != key);
+                } else {
+                    list.push(key);
+                }
+                out.push(style(id, json!({"added": list})));
+            }
+            ui.label(egui::RichText::new(label).size(t.font_small));
+        });
+    }
+    ui.add_space(4.0);
 }
 
 /// A row per curve: shown or not, its colour (the theme's, or one of the palette's series
