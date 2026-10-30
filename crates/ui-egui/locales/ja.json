@@ -129,6 +129,7 @@
     "In the panel at the right, beside the view.": "ビューの右のパネルに。",
     "Inclusion": "内包物",
     "Intent": "目的",
+    "Iris filter": "アイリスフィルタ",
     "Keep running": "実行を続ける",
     "Keep the other side": "反対側を残す",
     "Keep this plane in the 3D view": "この断面を 3D ビューに残す",
@@ -154,6 +155,8 @@
     "Mode": "モード",
     "Model 3D": "3D モデル",
     "Mono": "モノ",
+    "More commands": "ほかのコマンド",
+    "More tabs": "ほかのタブ",
     "NOT passive": "受動的でない",
     "New project": "新規プロジェクト",
     "New project.": "新規プロジェクト。",
@@ -197,6 +200,7 @@
     "POINTER": "ポインター",
     "PORTS": "ポート",
     "PORTS & SOURCES": "ポート・波源",
+    "Parameters": "パラメータ",
     "Passivity and reciprocity": "受動性と相反性",
     "Pattern PNG": "放射パターン PNG",
     "Pause": "一時停止",
@@ -278,8 +282,6 @@
     "Script": "スクリプト",
     "Script done.": "スクリプトが完了しました。",
     "Search commands (/)": "コマンドを検索 (/)",
-    "More commands": "ほかのコマンド",
-    "More tabs": "ほかのタブ",
     "Section view": "断面表示",
     "Section view: on": "断面表示：オン",
     "Section {n}: {length} {unit}, {material}": "区間 {n}：{length} {unit}、{material}",
@@ -614,6 +616,22 @@
         "layers": "y = 0 から上へ、導波管全幅にわたる `[{\"thickness\", \"material\"}]`（長さ）。その上は各区間の材料",
         "strips": "`[{\"y\", \"x0\", \"width\", \"z0\"?, \"z1\"?}]`：面 y 上の厚さのない導体帯 [x0, x0 + width] × [z0, z1]（長さ。z0、z1 は省略時に導波管の両端）。同じ面のストリップは端と端で接する（一つの導体：T字、幅のステップ）か、導波管の 1e-4 以上の隙間をあけ、重なってはならない。隙間をあけて並ぶものは結合線路となる（n 本のストリップを含むポートは n 個の準TEMモードを持つ。2本なら偶モードと奇モード）",
         "vias": "`[{\"x0\", \"z0\", \"wx\", \"wz\", \"y0\"?, \"y1\"?}]`：導体の角柱 [x0, x0 + wx] × [y0, y1] × [z0, z0 + wz]、中実の金属（長さ。省略時 y0 = 0、y1 = 高さ：接地面から途中のストリップを貫いて上面までの柱）。接地からストリップへのビアはストリップの y で終わる"
+      }
+    },
+    "geometry.iris_filter": {
+      "label": "アイリスフィルタ",
+      "doc": "z 方向の方形導波管（`width` × `height`、完全導体の壁）に、誘導性アイリスを `irises` 枚並べたもの：給電部、アイリス（x 方向に中央寄せの開口、それぞれ長さ `iris_length`）とその間の空洞、給電部。最初と最後のアイリスは幅 `end_width`、それに接する空洞は長さ `cavity`。その間のものは幅 `inner_width`、長さ `inner_cavity`（省略時は端のものと同じ）。既存の形状、メッシュ、結果を置き換える。",
+      "params": {
+        "width": "広壁 a（x）",
+        "height": "狭壁 b（y）",
+        "irises": "アイリスの枚数、2 〜 32",
+        "iris_length": "各アイリスの z 方向の長さ",
+        "end_width": "最初と最後のアイリスの開口幅",
+        "inner_width": "その他のアイリスの開口幅（既定は `end_width`）",
+        "cavity": "最初と最後のアイリスに接する空洞の長さ",
+        "inner_cavity": "その他の空洞の長さ（既定は `cavity`）",
+        "feed": "最初のアイリスの前と最後のアイリスの後の導波管の長さ",
+        "material": "中を満たす材料（既定は `vacuum`）"
       }
     },
     "geometry.solid": {
@@ -1053,7 +1071,8 @@
       "doc": "名前付きの変数を定義または変更する。以降のコマンドの数値パラメータには、`=` で始まる文字列で変数の式を書ける：`\"=w\"`、`\"=w/2 + 1\"`、`\"=sqrt(er)*pi\"`（+ − * / ^、括弧、`pi`、sqrt、abs、sin、cos、tan、exp、ln）。値はパラメータの表示単位でのリテラルとして読む。履歴は式を保持し、変数を変えると新しい値でコマンドを再実行してモデル（メッシュも）を組み直す。元に戻すで戻れる。",
       "params": {
         "name": "変数名：英字または `_` に続けて英字、数字または `_`",
-        "value": "値。数値（またはそれより前に定義した変数の式）"
+        "value": "値。数値（またはそれより前に定義した変数の式）",
+        "quantity": "何を測る量か（単位を付けて表示するため）：`length` または `frequency`（表示単位）。値だけを変えたときは元のものを保つ"
       }
     },
     "project.variable.delete": {

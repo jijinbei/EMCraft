@@ -183,6 +183,8 @@ pub enum Handle<'a> {
     StepFix(usize),
     /// A search result: `search:row:mesh.generate`.
     SearchRow(&'a str),
+    /// A project variable's field in the Geometry step: `parameter:irises`.
+    Parameter(&'a str),
     /// A sample's card on the start page: `sample:highpass`.
     Sample(&'a str),
     /// A recent project's card on the start page: `home:recent:0`.
@@ -258,6 +260,7 @@ impl fmt::Display for Handle<'_> {
             Handle::Part(x, p) => write!(f, "{}:{}", x.id(), p.id()),
             Handle::Tab(t) => write!(f, "tab:{}", t.id()),
             Handle::Toolbar(id) => write!(f, "toolbar:{id}"),
+            Handle::Parameter(name) => write!(f, "parameter:{name}"),
             Handle::Panel(t, name) => write!(f, "panel:{}:{name}", t.id()),
             Handle::View(v) => write!(f, "view:{}", v.id()),
             Handle::Row(text) => write!(f, "row:{text}"),

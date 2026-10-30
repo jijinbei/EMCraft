@@ -155,6 +155,23 @@ A rectangular waveguide along z with perfectly conducting walls: cross-section `
 | `strips` | array |  | no | `[{"y", "x0", "width", "z0"?, "z1"?}]`: conducting strips of no thickness, [x0, x0 + width] × [z0, z1] on the plane y (lengths; z0, z1 the guide's ends when left out); strips on one plane meet edge to edge (one conductor: a T, a step in width) or keep a gap of at least 1e-4 of the guide, never overlap: side by side a gap apart they are coupled lines (a port holding n strips has n quasi-TEM modes, even and odd for two) |
 | `vias` | array |  | no | `[{"x0", "z0", "wx", "wz", "y0"?, "y1"?}]`: conducting rectangular posts [x0, x0 + wx] × [y0, y1] × [z0, z0 + wz], solid metal (lengths; y0 = 0 and y1 = the height when left out: a post from the ground plane, through a strip on its way, to the top); a via from the ground to a strip ends at the strip's y |
 
+## `geometry.iris_filter` — Iris filter
+
+A rectangular waveguide along z (`width` × `height`, perfectly conducting walls) with a row of `irises` inductive irises: a feed, the irises (apertures centred across x, each `iris_length` long) with a cavity between each two, a feed. The first and last irises are `end_width` wide and the cavities next to them `cavity` long; those between are `inner_width` wide and `inner_cavity` long (the end ones' when left out). Replaces any geometry, mesh and results.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `width` | number | length | yes | broad wall a (x) |
+| `height` | number | length | yes | narrow wall b (y) |
+| `irises` | integer |  | yes | irises, 2 to 32 |
+| `iris_length` | number | length | yes | each iris's length along z |
+| `end_width` | number | length | yes | the first and last irises' aperture |
+| `inner_width` | number | length | no | the other irises' aperture (default `end_width`) |
+| `cavity` | number | length | yes | the cavities next to the first and last irises: their length |
+| `inner_cavity` | number | length | no | the other cavities' length (default `cavity`) |
+| `feed` | number | length | yes | the guide's length before the first iris and after the last |
+| `material` | string |  | no | what fills it (default `vacuum`) |
+
 ## `geometry.solid` — Primitive body
 
 A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`) or a sphere about the origin (`radius`). Its end faces (z = 0, z = length) can carry ports; a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.
@@ -735,6 +752,7 @@ Defines a named variable, or changes one. Any number parameter of a later comman
 |---|---|---|---|---|
 | `name` | string |  | yes | the variable's name: a letter or `_`, then letters, digits or `_` |
 | `value` | number |  | yes | its value, a plain number (or an expression of the variables defined before it) |
+| `quantity` | string |  | no | what it measures, for showing it with its unit: `length` or `frequency` (in the display units); kept when the value changes without it |
 
 ## `project.variable.delete` — Delete variable
 
@@ -746,7 +764,7 @@ Removes a variable no command refers to.
 
 ## `project.variables` — Variables
 
-The project's variables: each one's value, the expression that defines it (when it is one) and how many commands use it.
+The project's variables: each one's value, the expression that defines it (when it is one) how many commands use it, and what it measures with its unit when its definition says (`quantity`, `unit`).
 
 No parameters.
 

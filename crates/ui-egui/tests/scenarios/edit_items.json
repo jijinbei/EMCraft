@@ -36,16 +36,16 @@
   {"expect": {"dialog": null, "inspect": {"model.ports.0.modes": 2}, "handles": ["row:Port 1 (start): 2 modes"]}},
   {"note": "A dialog opened on the model's values and left as it is runs nothing: the walls are perfect conductors"},
   {"click": "row:Walls: perfect conductor", "double": true},
-  {"expect": {"dialog": "model.walls", "inspect": {"dialog.fields.conductivity": "", "history": 9, "undo": 5}}},
+  {"expect": {"dialog": "model.walls", "inspect": {"dialog.fields.conductivity": "", "history": 14, "undo": 5}}},
   {"click": "dialog:ok"},
-  {"expect": {"dialog": null, "inspect": {"history": 9, "undo": 5}, "handles": ["row:Walls: perfect conductor"]}},
+  {"expect": {"dialog": null, "inspect": {"history": 14, "undo": 5}, "handles": ["row:Walls: perfect conductor"]}},
   {"note": "The band's dialog too, once there is a band: OK unchanged leaves the model alone; a change runs"},
   {"call": "engine.execute", "params": {"command": "project.frequency", "params": {"start": 6.5, "stop": 10}}},
   {"call": "ui.start", "params": {"command": "project.frequency"}},
-  {"expect": {"inspect": {"dialog.fields.start": "6.5", "dialog.fields.stop": "10", "history": 10}}},
+  {"expect": {"inspect": {"dialog.fields.start": "6.5", "dialog.fields.stop": "10", "history": 15}}},
   {"call": "ui.dialog", "params": {"ok": true}},
-  {"expect": {"dialog": null, "inspect": {"history": 10}}},
+  {"expect": {"dialog": null, "inspect": {"history": 15}}},
   {"call": "ui.start", "params": {"command": "project.frequency", "params": {"stop": 13}}},
   {"call": "ui.dialog", "params": {"ok": true}},
-  {"expect": {"dialog": null, "inspect": {"history": 11}}}
+  {"expect": {"dialog": null, "inspect": {"history": 16}}}
 ]

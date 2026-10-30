@@ -119,6 +119,9 @@ pub struct Fields {
     pub count: String,
     pub frequency: String,
     pub touchstone: String,
+    /// The Geometry step's parameter fields by variable: the text, and the project's value it
+    /// was last filled from.
+    pub parameters: std::collections::BTreeMap<String, (String, String)>,
     pub format: String,
     pub errors: Vec<(&'static str, String)>,
     /// Run's last refusal.

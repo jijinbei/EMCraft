@@ -138,7 +138,10 @@ pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
 pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
     let sample = emcraft_templates::find(name).ok_or_else(|| {
-        p.error("name", crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", emcraft_templates::names()))
+        p.error(
+            "name",
+            crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", emcraft_templates::names()),
+        )
     })?;
     let solve = p.flag("solve").or(false)?;
     let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::failed(format!("sample {name}: {e}")))?;
