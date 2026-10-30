@@ -675,6 +675,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The example theme shipped in docs/themes loads without a problem.
+    #[test]
+    fn the_documented_example_theme_loads() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/themes");
+        let themes = Themes::load(Some(&dir));
+        assert_eq!(themes.problems, Vec::<String>::new());
+        let night = themes.find("Night shift").unwrap();
+        assert!(night.is_dark() && night.tokens.accent != themes.get("dark").tokens.accent);
+    }
+
     #[test]
     fn the_current_theme_is_the_threads_own() {
         let themes = Themes::load(None);
