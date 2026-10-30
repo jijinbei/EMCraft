@@ -147,6 +147,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "themes": app.themes.names(),
         "theme_problems": app.themes.problems,
         "home": app.home.open,
+        "settings": app.settings.map(|s| s.id()),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
         "files": {"prompt": app.files.prompt.as_ref().map(|p| p.text.clone()), "confirm": app.files.confirm.is_some()},
         "recent": app.prefs.recent,
@@ -343,6 +344,22 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
     }
     if let Some(d) = a.bool("dock") {
         asked.push(Action::SetDock(d));
+    }
+    // The settings page at a section; `none` closes it.
+    match a.get("settings") {
+        None => {}
+        Some(Value::String(x)) if x == "none" => asked.push(Action::Settings(None)),
+        Some(Value::String(x)) => {
+            let section = crate::settings::Section::parse(x).ok_or_else(|| {
+                format!(
+                    "unknown settings section `{}` (there are {} or none)",
+                    clip(x, 40),
+                    <crate::settings::Section as emcraft_macros::Named>::listed()
+                )
+            })?;
+            asked.push(Action::Settings(Some(section)));
+        }
+        Some(_) => return Err("`settings` must be a section's name or `none`".into()),
     }
     if let Some(on) = a.bool("animate") {
         asked.push(Action::SetPlaying(on));

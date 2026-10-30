@@ -289,10 +289,12 @@ fn answered(app: &mut EmcraftApp, answer: Answer) {
     }
 }
 
-/// After a successful open or save: the file joins the recent list and the start page closes.
+/// After a successful open or save: the file joins the recent list and the start page (and
+/// the settings) close.
 pub fn opened(app: &mut EmcraftApp, path: &str) {
     app.prefs.add_recent(path);
     app.home.open = false;
+    app.settings = None;
 }
 
 /// The window's title: the project's name, with a dot while it has unsaved changes.

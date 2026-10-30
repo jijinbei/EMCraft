@@ -56,8 +56,10 @@ pub enum Action {
     Redo,
     /// Cancels the running job.
     CancelJob,
-    /// Shows (`true`) or leaves the start page.
+    /// Shows (`true`) or leaves the start page; either leaves the settings page.
     SetHome(bool),
+    /// Opens the settings page at a section (`None` closes it).
+    Settings(Option<crate::settings::Section>),
     Pref(Pref),
     File(FileAction),
     /// Asks where to export the history as a script.
@@ -242,7 +244,11 @@ impl EmcraftApp {
             Action::Undo => return self.run("edit.undo", json!({})),
             Action::Redo => return self.run("edit.redo", json!({})),
             Action::CancelJob => return Ok(json!({"cancelled": self.cancel_job()})),
-            Action::SetHome(open) => self.home.open = open,
+            Action::SetHome(open) => {
+                self.home.open = open;
+                self.settings = None;
+            }
+            Action::Settings(section) => self.settings = section,
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
             Action::AskExport => self.export = Some("emcraft-history.json".into()),

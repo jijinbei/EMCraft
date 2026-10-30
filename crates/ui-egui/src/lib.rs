@@ -53,6 +53,7 @@ pub mod raster;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;
+pub mod settings;
 mod shots;
 pub mod state;
 mod status;
@@ -125,6 +126,8 @@ pub struct EmcraftApp {
     pub files: files::Files,
     /// The start page.
     pub home: home::Home,
+    /// The settings page, at its section, while it is open.
+    pub settings: Option<settings::Section>,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
@@ -209,6 +212,7 @@ impl EmcraftApp {
             prefs_store: PrefsStore::default(),
             files: files::Files::default(),
             home: home::Home::default(),
+            settings: None,
             failure: None,
             dialog_job: None,
         }
@@ -515,7 +519,9 @@ impl EmcraftApp {
         let ctx = ui.ctx().clone();
         let mut out = Actions::default();
         ribbon::app_bar(self, ui, &mut out);
-        if self.home.open {
+        if let Some(section) = self.settings {
+            settings::show(self, section, ui, &mut out);
+        } else if self.home.open {
             self.lend(|a| &mut a.home.thumbs, |app, thumbs| home::show(app, thumbs, ui, &mut out));
         } else {
             self.workspace(ui, &ctx, &mut out);
@@ -575,7 +581,14 @@ impl EmcraftApp {
 
 /// Undo, redo and the File menu's keys (when no field has the keyboard).
 fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
-    if ctx.egui_wants_keyboard_input() || app.busy() {
+    if ctx.egui_wants_keyboard_input() {
+        return;
+    }
+    // Escape leaves the settings page.
+    if app.settings.is_some() && app.files.prompt.is_none() && app.files.confirm.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        out.push(Action::Settings(None));
+    }
+    if app.busy() {
         return;
     }
     let (undo, redo) = ctx.input(|i| {
