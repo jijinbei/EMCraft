@@ -14,6 +14,8 @@ cargo run --release -p emcraft-cli -- sample highpass --out pictures  # S-parame
 cargo run --release -p emcraft-cli -- commands                      # every command and its parameters
 ```
 
+On Windows, use the installer: [docs/install-windows.md](docs/install-windows.md).
+
 Samples: `highpass`, `iris-bandpass`, `cavity`, `cylinder-cavity`, `circular-guide`,
 `coaxial-line`, `coupled-filter`, `coupler`, `inductive-post`, `loaded-sphere`, `dipole`,
 `halfwave-dipole`, `open-waveguide`, `sphere-scattering`.

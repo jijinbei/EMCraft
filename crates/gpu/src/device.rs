@@ -11,26 +11,30 @@ emcraft_macros::named_enum! {
     /// Where the kernels run; its id is the name commands use.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Backend {
-        /// The CPU, through CubeCL's SIMD compiler (always built; for tests and machines without
-        /// a GPU).
+        /// The CPU, through CubeCL's SIMD compiler (for tests and machines without a GPU; built
+        /// everywhere but the Windows GNU build, which links no LLVM).
         Cpu = "cpu",
         /// An NVIDIA GPU (the `cuda` feature).
         Cuda = "cuda",
     }
 }
 
+/// Whether CubeCL's CPU runtime is linked (crates/gpu/Cargo.toml).
+const CPU_BUILT: bool = cfg!(not(all(windows, target_env = "gnu")));
+
 impl Backend {
     /// Whether this build carries the backend.
     pub fn built(self) -> bool {
         match self {
-            Backend::Cpu => true,
+            Backend::Cpu => CPU_BUILT,
             Backend::Cuda => cfg!(feature = "cuda"),
         }
     }
 
     pub(crate) fn device(self) -> Result<cubecl::Device> {
         match self {
-            Backend::Cpu => Ok(cubecl::Device::Cpu(Default::default())),
+            Backend::Cpu if CPU_BUILT => Ok(cubecl::Device::Cpu(Default::default())),
+            Backend::Cpu => Err(FdtdError::Unsupported("the CPU kernels in this build (the Windows GNU build links no LLVM)".into())),
             #[cfg(feature = "cuda")]
             Backend::Cuda => Ok(cubecl::Device::Cuda(Default::default())),
             #[cfg(not(feature = "cuda"))]

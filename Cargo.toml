@@ -31,7 +31,9 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 num-complex = { version = "0.4", default-features = false, features = ["std"] }
 faer = "0.24"
 # GPU kernels written in Rust (docs/adr/0002-gpu.md); pinned, its API moves between releases.
-cubecl = { version = "=0.11.3", features = ["cpu"] }
+# Its CPU and CUDA runtimes link a prebuilt LLVM, turned on where one exists (crates/gpu/Cargo.toml,
+# the apps' manifests): not in the Windows GNU build cross-compiled from Linux.
+cubecl = { version = "=0.11.3" }
 rayon = "1"
 
 # geometry import: 3MF packages (zip, XML), the same lines as FieldCraft

@@ -7,6 +7,7 @@
 
 mod colours;
 mod dupes;
+mod installer;
 mod layers;
 
 use std::path::{Path, PathBuf};
@@ -32,6 +33,12 @@ commands:
                   there are copies
   colours         fail on colours written in production code (Rgb(30, …), Color32::from_rgb(…)
                   with numbers): a theme's colours live in its file (docs/themes.md)
+  icon            write apps/emcraft/assets/emcraft.ico (the app icon, drawn by
+                  emcraft_render::icon)
+  installer-windows [--out FILE]
+                  build the Windows installer on Linux: release binaries cross-compiled with
+                  MinGW-w64, packed by NSIS (both fetched through nix-shell when missing;
+                  docs/install-windows.md); default FILE target/EMCraft-VERSION-setup.exe
   ci              fmt --check, layers, dupes --fail, colours, clippy -D warnings, the tests,
                   then the oracle
 ";
@@ -50,6 +57,8 @@ fn main() -> ExitCode {
         Some("features") => cmd_features(),
         Some("dupes") => cmd_dupes(&rest),
         Some("colours" | "colors") => colours::run(&root()),
+        Some("icon") => installer::icon(&root()),
+        Some("installer-windows") => installer::windows(&root(), &rest),
         Some("ci") => cmd_ci(),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");

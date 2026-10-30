@@ -20,5 +20,10 @@ cubecl = { workspace = true }
 num-complex = { workspace = true, features = ["bytemuck"] }
 bytemuck = "1"
 
+# The CPU runtime links CubeCL's prebuilt LLVM, which has no Windows GNU build (the installer's
+# cross-compiled target, docs/install-windows.md): there the CPU backend reports "not built".
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
+cubecl = { workspace = true, features = ["cpu"] }
+
 [dev-dependencies]
 emcraft-model = { workspace = true }
