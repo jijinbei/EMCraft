@@ -679,7 +679,11 @@ pub fn run(sample: Option<String>, control: Option<Receiver<ControlRequest>>) ->
 /// the window when a request arrives).
 pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::Context) -> Option<Receiver<ControlRequest>>) -> eframe::Result {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_title("EMCraft").with_inner_size([1500.0, 960.0]).with_min_inner_size([900.0, 600.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_title("EMCraft")
+            .with_icon(egui::IconData { rgba: emcraft_render::icon::rgba(64), width: 64, height: 64 })
+            .with_inner_size([1500.0, 960.0])
+            .with_min_inner_size([900.0, 600.0]),
         ..Default::default()
     };
     eframe::run_native(

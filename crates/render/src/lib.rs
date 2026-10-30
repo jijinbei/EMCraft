@@ -11,6 +11,7 @@ pub mod canvas;
 pub mod chart;
 pub mod colormap;
 pub mod font;
+pub mod icon;
 pub mod math;
 pub mod palette;
 pub mod plot;

@@ -98,10 +98,12 @@ impl Prefs {
 }
 
 /// The user's configuration directory, when the environment names one: `$EMCRAFT_CONFIG_DIR`,
-/// else `$XDG_CONFIG_HOME/emcraft`, else `~/.config/emcraft`.
+/// else on Windows `%APPDATA%\emcraft`, else `$XDG_CONFIG_HOME/emcraft`, else `~/.config/emcraft`.
 pub fn config_dir() -> Option<PathBuf> {
     let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    let platform = if cfg!(windows) { var("APPDATA").map(|d| d.join("emcraft")) } else { None };
     var("EMCRAFT_CONFIG_DIR")
+        .or(platform)
         .or_else(|| var("XDG_CONFIG_HOME").map(|d| d.join("emcraft")))
         .or_else(|| var("HOME").map(|h| h.join(".config").join("emcraft")))
 }

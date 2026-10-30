@@ -7,14 +7,14 @@
 //!
 //! Tests (as `cargo xtask dupes` reads them: `tests/` directories, `tests.rs` files, everything
 //! from a `#[cfg(test)]` line) and comments are left out. So are the scientific colour maps of
-//! `crates/render/src/colormap.rs` (a map's colours are its meaning, the same in every theme)
-//! and the two constants of `Rgb` itself ([`ALLOWED_LINES`]). `Color32::WHITE` (an image's tint)
+//! `crates/render/src/colormap.rs` (a map's colours are its meaning, the same in every theme),
+//! the app icon's of `crates/render/src/icon.rs` (the app's mark) and the two constants of `Rgb` itself ([`ALLOWED_LINES`]). `Color32::WHITE` (an image's tint)
 //! and `Color32::TRANSPARENT` are no colour of a theme.
 
 use std::path::{Path, PathBuf};
 
 /// Files whose colours are not a theme's.
-const ALLOWED_FILES: &[&str] = &["crates/render/src/colormap.rs"];
+const ALLOWED_FILES: &[&str] = &["crates/render/src/colormap.rs", "crates/render/src/icon.rs"];
 
 /// Lines allowed as they are: `Rgb`'s white and black.
 const ALLOWED_LINES: &[(&str, &str)] = &[
