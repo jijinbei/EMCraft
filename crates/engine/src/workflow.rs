@@ -148,7 +148,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
     if m.periodic.is_some() {
         return out;
     }
-    let add = |frequency: f64, mode: &str, owner: String, first: bool, out: &mut Vec<Cutoff>| {
+    let add = |frequency: f64, mode: &str, owner: &str, first: bool, out: &mut Vec<Cutoff>| {
         if !(frequency.is_finite() && frequency > 0.0) {
             return;
         }
@@ -166,14 +166,14 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
         let owner = format!("port {}", p.name);
         match shape {
             emcraft_model::PortShape::Rect { a, b, .. } => {
-                add(C0 / (2.0 * a * n), "TE10", owner.clone(), true, &mut out);
-                add(C0 / (a * n), "TE20", owner.clone(), false, &mut out);
-                add(C0 / (2.0 * b * n), "TE01", owner, false, &mut out);
+                add(C0 / (2.0 * a * n), "TE10", &owner, true, &mut out);
+                add(C0 / (a * n), "TE20", &owner, false, &mut out);
+                add(C0 / (2.0 * b * n), "TE01", &owner, false, &mut out);
             }
             emcraft_model::PortShape::Circle { r, .. } => {
                 let k = C0 / (2.0 * std::f64::consts::PI * r * n);
-                add(X11_PRIME * k, "TE11", owner.clone(), true, &mut out);
-                add(X01 * k, "TM01", owner, false, &mut out);
+                add(X11_PRIME * k, "TE11", &owner, true, &mut out);
+                add(X01 * k, "TM01", &owner, false, &mut out);
             }
         }
     }
