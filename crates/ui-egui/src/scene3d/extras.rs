@@ -4,7 +4,7 @@
 use emcraft_model::{End, Model, Source};
 
 use super::geometry::{BOX_EDGES, ROUND, box_corner};
-use super::style::{PML, PORT, SOURCE};
+use super::style::sc;
 use super::{Built, Label, Overlay, p3};
 
 /// Cells across a port's face where its cross-section is sampled (a face that features reach).
@@ -94,9 +94,9 @@ pub(super) fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
     let strong = overlay == Overlay::Ports;
     for p in &m.lumped {
         let (a, b) = (p3(p.from), p3(p.to));
-        out.scene.line(a, b, PORT, 255);
+        out.scene.line(a, b, sc().port, 255);
         if strong {
-            out.labels.push(Label { at: midpoint(a, b), text: format!("Lumped {}", p.name), color: PORT, facing: None });
+            out.labels.push(Label { at: midpoint(a, b), text: format!("Lumped {}", p.name), color: sc().port, facing: None });
         }
     }
     for s in &m.sources {
@@ -125,14 +125,14 @@ fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
             (None, End::Start) => Some([0.0, 0.0, -1.0]),
             (None, End::End) => Some([0.0, 0.0, 1.0]),
         };
-        out.labels.push(Label { at: c, text: format!("Port {}", p.name), color: PORT, facing });
+        out.labels.push(Label { at: c, text: format!("Port {}", p.name), color: sc().port, facing });
         if overlay == Overlay::Ports {
             for (a, b) in outline(&port_face(m, p)) {
-                out.scene.line(a, b, PORT, 255);
+                out.scene.line(a, b, sc().port, 255);
             }
             // The direction into the guide.
             let dir = if p.end == End::Start { 1.0 } else { -1.0 };
-            out.scene.line(c, [c[0], c[1], c[2] + dir * 0.12 * size], PORT, 255);
+            out.scene.line(c, [c[0], c[1], c[2] + dir * 0.12 * size], sc().port, 255);
         }
     }
 }
@@ -144,9 +144,9 @@ fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
         Source::Dipole { at, direction, .. } => {
             let (a, d) = (p3(at), [direction.x, direction.y, direction.z]);
             let h = 0.08 * size;
-            out.scene.line(along(a, d, -h), along(a, d, h), SOURCE, 255);
+            out.scene.line(along(a, d, -h), along(a, d, h), sc().source, 255);
             if strong {
-                out.labels.push(Label { at: a, text: "Dipole".into(), color: SOURCE, facing: None });
+                out.labels.push(Label { at: a, text: "Dipole".into(), color: sc().source, facing: None });
             }
         }
         Source::PlaneWave { direction, .. } => {
@@ -155,9 +155,9 @@ fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
                 let d = [direction.x, direction.y, direction.z];
                 let h = 0.5 * size;
                 let a = along(c, d, -h);
-                out.scene.line(a, [c[0] - d[0] * 0.3 * h, c[1] - d[1] * 0.3 * h, c[2] - d[2] * 0.3 * h], SOURCE, 255);
+                out.scene.line(a, [c[0] - d[0] * 0.3 * h, c[1] - d[1] * 0.3 * h, c[2] - d[2] * 0.3 * h], sc().source, 255);
                 if strong {
-                    out.labels.push(Label { at: a, text: "Plane wave".into(), color: SOURCE, facing: None });
+                    out.labels.push(Label { at: a, text: "Plane wave".into(), color: sc().source, facing: None });
                 }
             }
         }
@@ -186,17 +186,17 @@ fn open_boundary(m: &Model, overlay: Overlay, out: &mut Built) {
                 let (u0, u1, v0, v1) = (lo[u], hi[u], lo[v], hi[v]);
                 let (ui0, ui1, vi0, vi1) = (u0 + t, u1 - t, v0 + t, v1 - t);
                 for (x0, x1, y0, y1) in [(u0, u1, v0, vi0), (u0, u1, vi1, v1), (u0, ui0, vi0, vi1), (ui1, u1, vi0, vi1)] {
-                    out.scene.quad([at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)], PML, 70);
+                    out.scene.quad([at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)], sc().pml, 70);
                 }
             }
         }
         for i in 0..8 {
-            out.scene.line(box_corner(lo, hi, i), box_corner(a, b, i), PML, 200);
+            out.scene.line(box_corner(lo, hi, i), box_corner(a, b, i), sc().pml, 200);
         }
         // On the band, at a corner of the outer box.
-        out.labels.push(Label { at: [hi[0], hi[1], lo[2] + 0.5 * t], text: "PML".into(), color: PML, facing: None });
+        out.labels.push(Label { at: [hi[0], hi[1], lo[2] + 0.5 * t], text: "sc().pml".into(), color: sc().pml, facing: None });
     }
     for (i, j) in BOX_EDGES {
-        out.scene.line(box_corner(a, b, i), box_corner(a, b, j), PML, 255);
+        out.scene.line(box_corner(a, b, i), box_corner(a, b, j), sc().pml, 255);
     }
 }

@@ -12,7 +12,7 @@ use serde_json::json;
 use crate::Session;
 
 /// A path in the tests' scratch directory.
-fn scratch(name: &str) -> String {
+pub(crate) fn scratch(name: &str) -> String {
     let dir = std::env::temp_dir().join(format!("emcraft-engine-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir.join(name).to_string_lossy().into_owned()

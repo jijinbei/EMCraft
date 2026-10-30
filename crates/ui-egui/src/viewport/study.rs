@@ -53,7 +53,7 @@ impl ChartView for StudyView {
 
     /// The study in a line, the S-parameter a sweep shows, and a grid's slice.
     fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<StudyKey> {
-        let t = Tokens::get();
+        let t = &Tokens::get();
         let study = app.session.results().study.as_ref()?;
         let state = &mut st.views.study;
         ui.label(egui::RichText::new(summary(study)).size(t.font_body).color(t.text));
@@ -86,7 +86,7 @@ impl ChartView for StudyView {
 
     /// Why, in a line over the table.
     fn failed(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, error: &str) {
-        let t = Tokens::get();
+        let t = &Tokens::get();
         ui.label(egui::RichText::new(error).size(t.font_body).color(t.text_dim));
         study_table(app, st, ui);
     }
@@ -108,7 +108,7 @@ fn study_table(app: &EmcraftApp, st: &Parts, ui: &mut egui::Ui) {
 /// A grid sweep's slice: the variable charted along, and the value each other variable is held
 /// at (a row of pills each).
 fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     slice.at.resize(study.variables.len(), 0);
     ui.horizontal_wrapped(|ui| {
         crate::ui_kit::small(ui, "Along", t.text_dim);
@@ -145,7 +145,7 @@ const MAX_PILLS: usize = 101;
 /// The study's points: the values, the goal or the band's extremes of the S-parameter shown, and
 /// why a point failed.
 fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let optimize = study.kind == Kind::Optimize;
     egui::ScrollArea::vertical().id_salt("study_table").show(ui, |ui| {
         egui::Grid::new("study_grid").striped(true).show(ui, |ui| {

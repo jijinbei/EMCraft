@@ -2,13 +2,12 @@
 
 use super::*;
 
+/// Material `i`'s fill, in the 3D view's colours (the theme's): vacuum faint, the others by
+/// their index.
 pub(super) fn material_color(i: usize, eps: f64) -> Color32 {
-    if eps <= 1.0 + 1e-12 {
-        return Color32::from_rgba_unmultiplied(160, 190, 230, 50);
-    }
-    const PALETTE: [(u8, u8, u8); 6] = [(214, 150, 60), (90, 170, 110), (170, 110, 200), (60, 150, 190), (200, 100, 110), (150, 150, 70)];
-    let (r, g, b) = PALETTE[i % PALETTE.len()];
-    Color32::from_rgba_unmultiplied(r, g, b, 120)
+    let scene = crate::theme::scene();
+    let (c, alpha) = if eps <= 1.0 + 1e-12 { (scene.vacuum, 50) } else { (scene.materials[i % scene.materials.len()], 120) };
+    Color32::from_rgba_unmultiplied(c.0, c.1, c.2, alpha)
 }
 
 /// A drawing frame: model coordinates (horizontal, vertical in metres) onto a screen rectangle,
@@ -53,7 +52,7 @@ pub(super) fn model3d(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: 
 }
 
 pub(super) fn model(app: &EmcraftApp, ui: &mut egui::Ui) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let m = app.session.model();
     let Some(emcraft_model::Aabb { min: lo, max: hi }) = m.bounds() else {
         empty(ui, "No geometry yet: MODEL › Waveguide or Solid, or open a sample.");

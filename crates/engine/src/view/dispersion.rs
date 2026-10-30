@@ -4,18 +4,16 @@ use std::f64::consts::PI;
 
 use emcraft_model::units::C0;
 use emcraft_render::chart::{Chart, Series, Style};
-use emcraft_render::{Axis, Rgb};
+use emcraft_render::{Axis, Pen};
 use emcraft_solver::bloch::Dispersion;
 
 use super::chart::span;
 use crate::periodic::{exact_bands, solved};
 use crate::{Result, Session};
 
-/// Band colours, in order.
-const BAND_COLOURS: [Rgb; 6] = [Rgb(30, 90, 200), Rgb(200, 60, 40), Rgb(40, 150, 90), Rgb(150, 70, 180), Rgb(210, 140, 30), Rgb(60, 60, 60)];
-
-fn band_colour(b: usize) -> Rgb {
-    BAND_COLOURS[b % BAND_COLOURS.len()]
+/// Band `b`'s series colour (the palette's, cycled).
+fn band(b: usize) -> u8 {
+    (b % emcraft_render::palette::SERIES) as u8
 }
 
 /// The dispersion diagram: frequency against the phase per period, each band's solved points,
@@ -34,14 +32,14 @@ pub fn dispersion_chart(s: &Session) -> Result<Chart> {
         let light = |deg: f64| fu.from_si(C0 * deg.to_radians() / (2.0 * PI * d.period));
         series.push(Series {
             label: "light line".into(),
-            color: Rgb(120, 120, 120),
+            pen: Pen::Muted,
             style: Style::Line,
             points: vec![[p0.max(0.0), light(p0.max(0.0))], [p1, light(p1)]],
         });
     }
     for b in 0..bands {
         let pts: Vec<[f64; 2]> = d.points.iter().filter_map(|p| p.frequencies.get(b).map(|f| [p.psi.to_degrees(), fu.from_si(*f)])).collect();
-        series.push(Series { label: format!("band {} (FEM)", b + 1), color: band_colour(b), style: Style::Markers, points: pts });
+        series.push(Series { label: format!("band {} (FEM)", b + 1), pen: Pen::Series(band(b)), style: Style::Markers, points: pts });
     }
     let y1 = fu.from_si(f_top) * 1.1;
     Ok(Chart {
@@ -72,14 +70,11 @@ fn exact_curves(s: &Session, d: &Dispersion, (p0, p1): (f64, f64), bands: usize,
         .into_iter()
         .enumerate()
         .filter(|(_, p)| !p.is_empty())
-        .map(|(b, pts)| {
-            let c = band_colour(b);
-            Series {
-                label: if b == 0 { what.to_owned() } else { String::new() },
-                color: Rgb(c.0 / 2 + 100, c.1 / 2 + 100, c.2 / 2 + 100),
-                style: Style::Line,
-                points: pts,
-            }
+        .map(|(b, pts)| Series {
+            label: if b == 0 { what.to_owned() } else { String::new() },
+            pen: Pen::Faded(band(b)),
+            style: Style::Line,
+            points: pts,
         })
         .collect()
 }

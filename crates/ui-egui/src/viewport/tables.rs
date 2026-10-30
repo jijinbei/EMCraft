@@ -3,7 +3,7 @@
 use super::*;
 
 pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let Some(reply) = app.replies.port_modes.as_ref() else {
         let text = "No port modes yet: they need a meshed model with ports.";
         return empty_with_action(ui, text, "Solve port modes…", !app.busy(), Fixed::PortModesSolve, Action::dialog("solve.port_modes"), out);
@@ -90,8 +90,9 @@ fn mode_picture(
     let width = picture_width(ui);
     let key = PictureKey::new(app.revision, width, crate::state::ModePicture { port: f.port.clone(), mode: f.mode, frequency });
     let session = &app.session;
-    let drawn =
-        slot.get_or_draw(key, || view::port_mode_plot(session, &f.port, f.mode, frequency, 2).map(|plot| emcraft_render::plot::draw(&plot, width)));
+    let drawn = slot.get_or_draw(key, || {
+        view::port_mode_plot(session, &f.port, f.mode, frequency, 2).map(|plot| emcraft_render::plot::draw(&plot, width, &crate::theme::palette()))
+    });
     match drawn {
         Ok(p) => {
             picture(ui, p, Fixed::PicturePortMode);
@@ -105,7 +106,7 @@ pub(super) fn num(v: &Value, digits: usize) -> String {
 }
 
 pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let table = match st.views.eigen_table.as_ref().filter(|e| e.revision == app.revision).map(|e| &e.reply) {
         Some(Ok(table)) => table,
         Some(Err(e)) => return empty(ui, e),
@@ -140,7 +141,7 @@ pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
 }
 
 pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let Some(reply) = app.replies.compare.as_ref() else {
         let ready = !app.busy() && app.session.results().sweep.is_some();
         let text = "Compare the sweep with the exact TE10 solution or mode matching.";

@@ -71,7 +71,7 @@ pub(crate) fn prepare_eigenmodes(app: &mut EmcraftApp) {
 
 /// The central card; its rectangle.
 pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<Rect> {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let mut shown = None;
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(t.viewport_top).inner_margin(egui::Margin { left: 6, right: 6, top: 0, bottom: 6 }))
@@ -134,7 +134,7 @@ pub(super) enum PillSize {
 
 /// A pill of a row of options: filled when `on`, its text `size`.
 pub(super) fn pill(label: &str, on: bool, radius: u8, size: PillSize) -> egui::Button<'static> {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let font = match size {
         PillSize::Body => t.font_body,
         PillSize::Small => t.font_small,
@@ -224,7 +224,7 @@ pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mu
     let width = picture_width(ui);
     let height = V::HEIGHT.of(ui);
     let drawn = V::Key::slot(&mut st.views).get_or_draw(PictureKey::new(app.revision, width, key.clone()), || {
-        V::chart(app, &key).map(|c| emcraft_render::chart::draw(&c, width, height))
+        V::chart(app, &key).map(|c| emcraft_render::chart::draw(&c, width, height, &crate::theme::palette()))
     });
     match drawn {
         Ok(p) => {
@@ -237,7 +237,7 @@ pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mu
 }
 
 pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.centered_and_justified(|ui| {
         ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));
     });
@@ -246,7 +246,7 @@ pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
 /// The card's message while a view has nothing to show, with the button (`label`, published
 /// as `handle`) that asks for `action`, the action that makes it.
 pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, label: &str, enabled: bool, handle: Fixed, action: Action, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
         ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));

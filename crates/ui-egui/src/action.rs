@@ -93,7 +93,10 @@ pub enum Action {
 /// A preference set from the settings.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pref {
-    Dark(bool),
+    /// The theme, by name.
+    Theme(String),
+    /// Reads the themes again (the user's from their folder).
+    ReloadThemes,
     /// The 3D view drawn by the window's GPU.
     Gpu3d(bool),
     Length(Length),
@@ -278,7 +281,11 @@ impl EmcraftApp {
 
     fn set_pref(&mut self, p: Pref) {
         match p {
-            Pref::Dark(on) => self.dark = on,
+            Pref::Theme(name) => match self.themes.find(&name) {
+                Some(_) => self.theme = name,
+                None => self.error(emcraft_engine::text::clip(&format!("no theme `{name}` (there are {})", self.themes.names().join(", ")), 400)),
+            },
+            Pref::ReloadThemes => self.load_themes(self.themes.dir.clone()),
             Pref::Gpu3d(on) => self.prefs.gpu3d = on,
             Pref::Length(u) => self.prefs.length = u,
             Pref::Frequency(u) => self.prefs.frequency = u,

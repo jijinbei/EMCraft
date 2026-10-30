@@ -9,7 +9,7 @@
 
 use emcraft_model::{CVec3, Point3, Vec3};
 use emcraft_render::plot::{Arrows, FieldPlot, Scalar, ScalarKind};
-use emcraft_render::{Axis, Rgb};
+use emcraft_render::{Axis, Pen};
 use emcraft_solver::Complex64 as C;
 
 use crate::{EngineError, Result, Session};
@@ -436,7 +436,7 @@ impl PlaneSamples {
     /// The in-plane arrows of E (or H, `magnetic`) on `lattice` at the phase `rot`; none when
     /// the field has (next to) nothing in the plane.
     fn arrow_set(&self, magnetic: bool, lattice: &[([f64; 2], CVec3, CVec3)], rot: C) -> Option<Arrows> {
-        let (label, color) = if magnetic { ("H (in plane)", Rgb(0, 120, 60)) } else { ("E (in plane)", Rgb(20, 20, 20)) };
+        let (label, pen) = if magnetic { ("H (in plane)", Pen::HArrows) } else { ("E (in plane)", Pen::EArrows) };
         // In-plane components of a vector: (horizontal, vertical).
         let in_plane = |f: &CVec3| match self.plane {
             Plane::H => (f.z, f.x),
@@ -458,7 +458,7 @@ impl PlaneSamples {
         // Scaled by the peak over the period, so an animation keeps one scale. A field with
         // (next to) nothing in the plane — E in the H-plane for TE10, whose in-plane part is
         // discretisation error — draws no arrows.
-        (in_peak > IN_PLANE * total).then(|| Arrows { label: label.into(), color, arrows: list, scale: Some(in_peak) })
+        (in_peak > IN_PLANE * total).then(|| Arrows { label: label.into(), pen, arrows: list, scale: Some(in_peak) })
     }
 }
 

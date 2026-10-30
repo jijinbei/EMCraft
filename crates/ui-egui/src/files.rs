@@ -210,7 +210,7 @@ pub fn show(app: &EmcraftApp, prompt: &mut Option<Prompt>, ctx: &egui::Context, 
 /// The path field, when there is no file dialog.
 fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actions) {
     let Some(p) = prompt.as_mut() else { return };
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let title = match p.purpose {
         Purpose::Open => "Open project",
@@ -247,7 +247,7 @@ fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
     if app.files.confirm.is_none() {
         return;
     }
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let at = ctx.content_rect().center_top() + vec2(-200.0, 120.0);
     egui::Area::new(egui::Id::new("emcraft_file_confirm")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {

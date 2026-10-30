@@ -1,6 +1,6 @@
 //! The far-field pattern of an open problem.
 
-use emcraft_render::Rgb;
+use emcraft_render::Pen;
 use emcraft_render::axes::Axis;
 use emcraft_render::chart::{Chart, Series, Style};
 use serde_json::Value;
@@ -32,9 +32,9 @@ pub fn pattern_chart_of(s: &Session, phi: f64, points: usize, solver: Option<Far
     let mut series = Vec::new();
     if !exact.is_empty() {
         let name = if scattering { "Mie series" } else { "Hertzian dipole" };
-        series.push(Series { label: name.into(), color: Rgb(120, 120, 120), style: Style::Line, points: exact });
+        series.push(Series { label: name.into(), pen: Pen::Muted, style: Style::Line, points: exact });
     }
-    series.push(Series { label: "FEM".into(), color: Rgb(200, 40, 40), style: Style::Markers, points: ours });
+    series.push(Series { label: "FEM".into(), pen: Pen::Series(1), style: Style::Markers, points: ours });
     let title = format!("Far field at {} {}, φ = {phi}°", s.show_frequency(f), s.display.frequency.symbol());
     Ok(Chart { title, x: Axis::new("θ (degrees)", 0.0, 180.0), y: Axis::new(label, top - 40.0, top), series, marks: Vec::new() })
 }

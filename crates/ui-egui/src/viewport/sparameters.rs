@@ -28,7 +28,7 @@ impl ChartView for SParameters {
 /// The field view's frequency, marked where the chart (`size` pixels) puts it; a click picks
 /// the nearest solved frequency for the field view and opens it.
 fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, size: egui::Vec2, freqs: &[f64], out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let (Some(f0), Some(f1)) = (freqs.first().copied(), freqs.last().copied()) else { return };
     let layout = chart_layout(f64::from(size.x), f64::from(size.y), f0, f1);
     let f = field.view.frequency;

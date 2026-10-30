@@ -5,7 +5,7 @@ use emcraft_engine::Session;
 use emcraft_engine::view::Plane;
 use emcraft_render::plot::ScalarKind;
 
-use super::style::RIM;
+use super::style::sc;
 use super::{Built, FieldLayer, plain};
 
 /// Most cells along the field plane's longer side.
@@ -95,6 +95,7 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
         if !(scale > 0.0) {
             continue;
         }
+        let color = crate::theme::palette().pen(set.pen);
         for (p, v) in &set.arrows {
             // Arrows above the scale (a source's spike) stop at the full length.
             let k = f.plot.arrow_length / scale.max(v[0].hypot(v[1]));
@@ -113,17 +114,17 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
             for side in [lift, -lift] {
                 let q = |along: f64, across: f64| point(at(along, across), 0.5 * side);
                 let (h, w) = (head + 2.0 * rim, shaft / 2.0 + rim);
-                out.scene.quad([q(-rim, -w), q(len - head, -w), q(len - head, w), q(-rim, w)], RIM, 255);
-                out.scene.tri(q(len + rim - h, -0.45 * h), q(len + rim, 0.0), q(len + rim - h, 0.45 * h), RIM, 255);
+                out.scene.quad([q(-rim, -w), q(len - head, -w), q(len - head, w), q(-rim, w)], sc().rim, 255);
+                out.scene.tri(q(len + rim - h, -0.45 * h), q(len + rim, 0.0), q(len + rim - h, 0.45 * h), sc().rim, 255);
             }
             for side in [lift, -lift] {
                 let q = |along: f64, across: f64| point(at(along, across), side);
-                out.scene.quad([q(0.0, -shaft / 2.0), q(len - head, -shaft / 2.0), q(len - head, shaft / 2.0), q(0.0, shaft / 2.0)], set.color, 255);
-                out.scene.tri(q(len - head, -0.45 * head), q(len, 0.0), q(len - head, 0.45 * head), set.color, 255);
+                out.scene.quad([q(0.0, -shaft / 2.0), q(len - head, -shaft / 2.0), q(len - head, shaft / 2.0), q(0.0, shaft / 2.0)], color, 255);
+                out.scene.tri(q(len - head, -0.45 * head), q(len, 0.0), q(len - head, 0.45 * head), color, 255);
             }
         }
         if legend {
-            out.legend.push((plain(&set.label), set.color));
+            out.legend.push((plain(&set.label), color));
         }
     }
 }

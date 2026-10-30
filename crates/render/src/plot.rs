@@ -3,7 +3,8 @@
 //! and a legend. Coordinates are in display units; the plane keeps its true aspect ratio.
 
 use crate::axes::{self, Axis};
-use crate::{Canvas, Rgb, colormap};
+use crate::palette::{Palette, Pen};
+use crate::{Canvas, colormap};
 
 /// How a scalar maps to colours.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,7 +57,8 @@ impl Scalar {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arrows {
     pub label: String,
-    pub color: Rgb,
+    /// Its colour, by role ([`Palette::pen`]).
+    pub pen: Pen,
     pub arrows: Vec<([f64; 2], [f64; 2])>,
     /// The magnitude drawn at the plot's full arrow length; the largest one when `None`.
     pub scale: Option<f64>,
@@ -75,9 +77,6 @@ pub struct FieldPlot {
     /// The length of a full arrow, in axis units.
     pub arrow_length: f64,
 }
-
-/// The colour of points outside the domain (conductor).
-pub const METAL: Rgb = Rgb(150, 150, 155);
 
 const LEFT: f64 = 80.0;
 const RIGHT: f64 = 130.0;
@@ -168,19 +167,19 @@ impl Layout {
     }
 }
 
-/// Draws the plot `width` pixels wide (the height follows the plane's aspect ratio); see
-/// [`Layout::of`].
-pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
+/// Draws the plot `width` pixels wide (the height follows the plane's aspect ratio; see
+/// [`Layout::of`]) in `palette`'s colours.
+pub fn draw(plot: &FieldPlot, width: usize, palette: &Palette) -> Canvas {
     let layout = Layout::of(plot, width);
     let [x0, y0, pw, ph] = layout.plane;
     let (xa, xb) = layout.x;
-    let mut c = Canvas::new(layout.width, layout.height, Rgb::WHITE);
-    let ink = Rgb(30, 30, 30);
+    let mut c = Canvas::new(layout.width, layout.height, palette.ground);
+    let ink = palette.ink;
     let to_px = |p: [f64; 2]| layout.to_pixels(p);
 
     // The title and the subtitle, wrapped to the picture's width.
     let (title, subtitle) = header(plot, layout.width as f64);
-    for (i, (line, colour)) in title.iter().map(|l| (l, ink)).chain(subtitle.iter().map(|l| (l, Rgb(90, 90, 90)))).enumerate() {
+    for (i, (line, colour)) in title.iter().map(|l| (l, ink)).chain(subtitle.iter().map(|l| (l, palette.ink_dim))).enumerate() {
         c.text(LEFT, 10.0 + LINE * i as f64, line, 2, colour);
     }
 
@@ -193,7 +192,7 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
                 let val = s.sample(u, v);
                 if !val.is_finite() {
                     // Outside the domain: metal (an iris, a step's wall).
-                    c.set((x0 + px as f64) as i64, (y0 + py as f64) as i64, METAL);
+                    c.set((x0 + px as f64) as i64, (y0 + py as f64) as i64, palette.metal);
                     continue;
                 }
                 let col = match s.kind {
@@ -228,7 +227,7 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
     }
 
     for l in &plot.lines {
-        c.line(to_px(l[0]), to_px(l[1]), 1.5, Rgb(60, 60, 60));
+        c.line(to_px(l[0]), to_px(l[1]), 1.5, palette.line);
     }
 
     let full = plot.arrow_length / (xb - xa) * pw;
@@ -238,6 +237,7 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
         if !(scale > 0.0) {
             continue;
         }
+        let color = palette.pen(set.pen);
         for (p, v) in &set.arrows {
             let q = to_px(*p);
             // Arrows above the scale (a source's spike) stop at the full length.
@@ -250,18 +250,20 @@ pub fn draw(plot: &FieldPlot, width: usize) -> Canvas {
             let a = [q[0] - d[0] / 2.0, q[1] - d[1] / 2.0];
             let b = [q[0] + d[0] / 2.0, q[1] + d[1] / 2.0];
             let head = (0.35 * (d[0] * d[0] + d[1] * d[1]).sqrt()).clamp(3.0, 9.0);
-            c.arrow(a, b, 3.2, head + 1.5, Rgb::WHITE);
-            c.arrow(a, b, 1.6, head, set.color);
+            c.arrow(a, b, 3.2, head + 1.5, palette.halo);
+            c.arrow(a, b, 1.6, head, color);
         }
     }
 
     axes::frame(&mut c, [x0, y0, pw, ph], &plot.x, &plot.y, ink, None);
 
-    // Legend: one sample arrow per vector field.
+    // Legend: one sample arrow per vector field, with its halo as over the field.
     let mut lx = LEFT;
     let ly = y0 + ph + 62.0;
     for set in &plot.arrows {
-        c.arrow([lx, ly + 7.0], [lx + 28.0, ly + 7.0], 1.6, 8.0, set.color);
+        let (a, b) = ([lx, ly + 7.0], [lx + 28.0, ly + 7.0]);
+        c.arrow(a, b, 3.2, 9.5, palette.halo);
+        c.arrow(a, b, 1.6, 8.0, palette.pen(set.pen));
         c.text(lx + 36.0, ly, &set.label, 2, ink);
         lx += 46.0 + Canvas::text_width(&set.label, 2) as f64 + 20.0;
     }
@@ -283,7 +285,7 @@ mod tests {
             scalar: Some(Scalar { label: "Ey".into(), nx, ny, values, kind: ScalarKind::Signed, range: None }),
             arrows: vec![Arrows {
                 label: "H".into(),
-                color: Rgb(0, 0, 0),
+                pen: Pen::EArrows,
                 arrows: vec![([5.0, 5.0], [1.0, 0.0]), ([15.0, 5.0], [0.0, -1.0])],
                 scale: None,
             }],
@@ -294,7 +296,7 @@ mod tests {
 
     #[test]
     fn colours_follow_the_field_and_arrows_point_their_way() {
-        let c = draw(&plot(), 600);
+        let c = draw(&plot(), 600, &crate::palette::samples::light());
         let pw = c.w as f64 - LEFT - RIGHT;
         let ph = c.h as f64 - TOP - BOTTOM;
         let at = |x: f64, y: f64| c.pixel((LEFT + x / 20.0 * pw) as usize, (TOP + ph - y / 10.0 * ph) as usize).unwrap();
@@ -304,7 +306,7 @@ mod tests {
         let wall = at(0.2, 8.5);
         assert!(wall.0 > 200 && wall.1 > 200 && wall.2 > 200, "{wall:?}");
         // The arrow at (5, 5) points +x: its head (dark) is right of the centre, not left.
-        let dark = |c: Rgb| c.0 < 60 && c.1 < 60 && c.2 < 60;
+        let dark = |c: crate::Rgb| c.0 < 60 && c.1 < 60 && c.2 < 60;
         assert!(dark(at(5.7, 5.0)));
         // The aspect ratio is the plane's.
         assert!((pw / ph - 2.0).abs() < 0.05);
@@ -318,12 +320,14 @@ mod tests {
 
     #[test]
     fn deterministic_and_hostile_inputs() {
-        assert_eq!(draw(&plot(), 600), draw(&plot(), 600));
+        assert_eq!(draw(&plot(), 600, &crate::palette::samples::light()), draw(&plot(), 600, &crate::palette::samples::light()));
+        let night = draw(&plot(), 600, &crate::palette::samples::dark());
+        assert_eq!(night.pixel(2, 2), Some(crate::palette::samples::dark().ground));
         let mut p = plot();
         p.x = Axis::new("x", f64::NAN, f64::INFINITY);
         p.scalar = Some(Scalar { label: "s".into(), nx: 0, ny: 0, values: vec![], kind: ScalarKind::Magnitude, range: Some(f64::NAN) });
         p.arrows[0].arrows.push(([f64::NAN, 0.0], [f64::INFINITY, 1.0]));
-        let c = draw(&p, 0);
+        let c = draw(&p, 0, &crate::palette::samples::dark());
         assert!(c.png().is_some());
     }
 

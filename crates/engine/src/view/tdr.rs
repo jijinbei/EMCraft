@@ -1,7 +1,7 @@
 //! The time-domain reflectometry chart.
 
 use emcraft_render::chart::{Chart, Series, Style};
-use emcraft_render::{Axis, Rgb};
+use emcraft_render::{Axis, Pen};
 
 use crate::tdr::{Mode, Tdr};
 
@@ -23,7 +23,7 @@ pub fn tdr_chart(t: &Tdr, port: &str, z0: Option<f64>) -> Chart {
         title,
         x: Axis::new("round-trip time (ns)", 0.0, end),
         y: Axis::new(label, lo - pad, hi + pad),
-        series: vec![Series { label: label.into(), color: Rgb(40, 90, 200), style: Style::Line, points }],
+        series: vec![Series { label: label.into(), pen: Pen::Series(0), style: Style::Line, points }],
         marks: Vec::new(),
     }
 }

@@ -272,7 +272,7 @@ fn results(app: &EmcraftApp) -> Vec<Row> {
 
 /// The browser card.
 pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     egui::Panel::left("emcraft_browser")
         .default_size(280.0)
         .size_range(200.0..=480.0)

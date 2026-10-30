@@ -46,6 +46,7 @@ mod solve;
 pub mod study;
 pub mod tdr;
 pub mod text;
+pub mod theme;
 pub mod view;
 pub mod workflow;
 

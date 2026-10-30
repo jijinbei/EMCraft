@@ -26,13 +26,14 @@ const MAX_PIXELS: f64 = 2.4e6;
 const SUPERSAMPLE_PIXELS: f64 = 1.3e6;
 
 /// What the scene was built from: the session's revision, the overlay, the field's planes (in
-/// the Results step) and what is highlighted.
+/// the Results step), what is highlighted and the theme (its colours).
 #[derive(Clone, Debug, PartialEq)]
 struct SceneKey {
     revision: u64,
     overlay: Overlay,
     field: Option<FieldKey>,
     highlighted: Option<scene3d::Pick>,
+    theme: crate::theme::ThemeKey,
 }
 
 /// The field's state the Results step's planes are drawn from: the field view, its plane's
@@ -61,7 +62,6 @@ struct Key {
     camera: Camera,
     size: [usize; 2],
     supersample: usize,
-    dark: bool,
 }
 
 /// The 3D view's state.
@@ -159,21 +159,15 @@ impl View3d {
     }
 }
 
+use crate::theme::{color32 as color, rgb};
+
 static EMPTY: Built =
     Built { scene: view3d::Scene { tris: Vec::new(), lines: Vec::new(), tag: 0 }, labels: Vec::new(), legend: Vec::new(), bounds: None };
-
-fn rgb(c: Color32) -> Rgb {
-    Rgb(c.r(), c.g(), c.b())
-}
-
-fn color(c: Rgb) -> Color32 {
-    Color32::from_rgb(c.0, c.1, c.2)
-}
 
 /// Draws the 3D view (its state `v`) in `rect` for `overlay`, the field view's planes (`field`)
 /// in it when the overlay shows them.
 pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut egui::Ui, rect: Rect, overlay: Overlay, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     // The scene, built again only when what it shows changed (the field's planes, for the
     // Results step: the field view's and those kept).
     let key = scene_key(app, v, field, overlay);
@@ -293,7 +287,7 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         field.view.at = field.at.map(|v| l.to_si(v));
         FieldKey { view: field.view.clone(), at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect() }
     });
-    SceneKey { revision: app.revision, overlay, field: planes, highlighted: v.highlighted() }
+    SceneKey { revision: app.revision, overlay, field: planes, highlighted: v.highlighted(), theme: crate::theme::key() }
 }
 
 /// Builds the scene for `key`, with the field's planes (sampled and plotted here) when it
@@ -419,7 +413,7 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
     }
     let size = [((rect.width() as f64 * scale).round() as usize).max(1), ((rect.height() as f64 * scale).round() as usize).max(1)];
     let supersample = if (size[0] * size[1]) as f64 <= SUPERSAMPLE_PIXELS { 2 } else { 1 };
-    let key = Key { scene: scene_key, camera: v.camera, size, supersample, dark: crate::theme::is_dark() };
+    let key = Key { scene: scene_key, camera: v.camera, size, supersample };
     if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
         let began = Instant::now();
         let opt = view3d::Options {
@@ -515,9 +509,6 @@ fn legend(p: &egui::Painter, rect: Rect, items: &[(String, Rgb)], t: &Tokens) {
     }
 }
 
-/// The axes' colours: x red, y green, z blue.
-const AXIS_COLORS: [Color32; 3] = [Color32::from_rgb(214, 60, 60), Color32::from_rgb(60, 160, 70), Color32::from_rgb(60, 110, 220)];
-
 /// The standard view looking from the side of axis `k` given by `sign` (its eye there).
 fn view_from(k: usize, sign: f64) -> Option<StandardView> {
     StandardView::ALL.into_iter().filter(|v| *v != StandardView::Iso).find(|v| {
@@ -532,7 +523,7 @@ fn view_from(k: usize, sign: f64) -> Option<StandardView> {
 /// positive ones filled with their letter, the negative ones rings; a click views the model
 /// from that side.
 fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let c = pos2(rect.left() + 52.0, rect.bottom() - 52.0);
     let p = ui.painter().with_clip_rect(rect);
     p.circle_filled(c, 44.0, t.panel.gamma_multiply(0.75));
@@ -545,7 +536,8 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
     for (k, sign) in tips {
         let dir = vec2(axes[k][0] as f32, axes[k][1] as f32) * sign as f32;
         let tip = c + dir * 30.0;
-        let color = AXIS_COLORS[k];
+        // The axes' colours: x red, y green, z blue.
+        let color = [t.axis_x, t.axis_y, t.axis_z][k];
         if sign > 0.0 {
             p.line_segment([c, tip], Stroke::new(2.0, color));
         }
@@ -556,7 +548,7 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
         let hover = resp.hovered();
         if sign > 0.0 {
             p.circle_filled(tip, if hover { 10.0 } else { 9.0 }, color);
-            p.text(tip, Align2::CENTER_CENTER, &name[1..], FontId::proportional(t.font_small), Color32::WHITE);
+            p.text(tip, Align2::CENTER_CENTER, &name[1..], FontId::proportional(t.font_small), t.axis_label);
         } else {
             p.circle_filled(tip, 7.0, t.panel);
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
@@ -574,7 +566,7 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
 /// The view's tools as icons in a bar at the bottom centre: fit, the home (isometric) view,
 /// facing the field's plane (in Results), perspective or orthographic.
 fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing: Option<([f64; 3], [f64; 3], StandardView)>, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let ortho = v.camera.projection == Projection::Orthographic;
     let mut items: Vec<(Glyph, Handle, &str)> = vec![
         (Glyph::Fit, Fixed::View3dFit.into(), "Fit the model to the view (double-click the view)"),

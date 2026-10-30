@@ -80,14 +80,14 @@ fn fit_within(image: &egui::ColorImage, max: usize) -> Option<egui::ColorImage> 
 pub struct PictureKey<V> {
     pub revision: u64,
     pub width: usize,
-    pub dark: bool,
+    pub theme: crate::theme::ThemeKey,
     pub view: V,
 }
 
 impl<V> PictureKey<V> {
     /// The key at the session's `revision`, `width` pixels wide, in the current theme.
     pub fn new(revision: u64, width: usize, view: V) -> Self {
-        PictureKey { revision, width, dark: crate::theme::is_dark(), view }
+        PictureKey { revision, width, theme: crate::theme::key(), view }
     }
 }
 
@@ -166,7 +166,7 @@ mod tests {
     fn a_cached_picture_is_drawn_again_only_for_another_key() {
         let canvas = emcraft_render::Canvas { w: 2, h: 2, rgba: vec![0; 16] };
         let mut c: Cached<PictureKey<u8>> = Cached::default();
-        let key = |view| PictureKey { revision: 1, width: 400, dark: false, view };
+        let key = |view| PictureKey { revision: 1, width: 400, theme: crate::theme::key(), view };
         let mut draws = 0;
         for k in [1, 1, 2, 2, 1] {
             let _ = c.get_or_draw(key(k), || {

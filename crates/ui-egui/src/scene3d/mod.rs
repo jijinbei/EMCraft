@@ -162,7 +162,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
     }
     if let Some(tag) = selected.map(Pick::tag) {
         for t in out.scene.tris.iter_mut().filter(|t| t.tag == tag) {
-            t.color = t.color.mix(style::HIGHLIGHT, 0.5);
+            t.color = t.color.mix(style::sc().highlight, 0.5);
             t.alpha = t.alpha.max(170);
         }
         highlight_outline(&mut out.scene, tag);
@@ -186,7 +186,7 @@ fn highlight_outline(scene: &mut Scene, tag: u32) {
     }
     for (a, b, n) in edges.into_values() {
         if n == 1 {
-            scene.line(a, b, style::HIGHLIGHT, 255);
+            scene.line(a, b, style::sc().highlight, 255);
         }
     }
 }

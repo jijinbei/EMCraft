@@ -28,6 +28,8 @@ const fn opt(name: &'static str, kind: K, doc: &'static str) -> ParamSpec {
 
 // A picture's file.
 const PNG: ParamSpec = req("path", K::String, "PNG file to write");
+// Its colours.
+const THEME: ParamSpec = opt("theme", K::String, "`light` (default), `dark` or the path of a theme file (docs/themes.md)");
 
 // A chart's size.
 const WIDTH: ParamSpec = opt("width", K::Integer, "pixels (default 1000)");
@@ -502,6 +504,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes a PNG of the dispersion diagram: frequency against the phase per period, the solved bands as markers over the closed form's curves where they apply, and the light line.",
         params: &[
             PNG,
+            THEME,
             WIDTH,
             HEIGHT,
         ],
@@ -576,6 +579,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes a PNG of a port mode's shape: its transverse E across the port's face, |E_t| in colour and E_t as arrows, conductors grey (from the closed forms, or the port's cross-section solved as solve.port_modes does). The amplitude is arbitrary; the subtitle says whether the mode propagates.",
         params: &[
             PNG,
+            THEME,
             req("port", K::String, "the port's name"),
             opt("mode", K::Integer, "the mode, 1 = the lowest (default 1)"),
             BAND_TOP,
@@ -604,6 +608,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes results.tdr's chart as a PNG.",
         params: &[
             PNG,
+            THEME,
             TDR_PORT,
             opt("mode", K::String, "`lowpass` or `bandpass`").one_of(&TdrMode::IDS),
             opt("width", K::Integer, "picture width in pixels (default 1000)"),
@@ -619,6 +624,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes a PNG of the fields on a plane: a component as colour and the in-plane E and H as arrows, Re(F e^jωt) at a phase.",
         params: &[
             PNG,
+            THEME,
             FIELD_FREQUENCY,
             FIELD_MODE,
             PLANE,
@@ -639,6 +645,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes an animated PNG of the fields on a plane over one period of ωt, looping: the view.field picture at evenly spaced phases.",
         params: &[
             req("path", K::String, "animated PNG (APNG) file to write"),
+            THEME,
             FIELD_FREQUENCY,
             FIELD_MODE,
             PLANE,
@@ -660,6 +667,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over the exact TE10 curves, with the cut-off frequencies marked.",
         params: &[
             PNG,
+            THEME,
             WIDTH,
             HEIGHT,
         ],
@@ -753,6 +761,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity in dBi for sources, radar cross-section in dBsm for a plane wave, over the closed form where it applies.",
         params: &[
             PNG,
+            THEME,
             PHI,
             opt("points", K::Integer, "angles from 0 to 180° (default 91)"),
             WIDTH,
@@ -846,6 +855,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         doc: "Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve per value (against the value when it solved one frequency), or its eigenmodes against the value; an optimization's goal at each solve and the best so far. A grid sweep is charted along one variable with the others held (`at`); solved at one frequency, one curve per value of the next variable.",
         params: &[
             PNG,
+            THEME,
             opt("parameter", K::String, "the S-parameter of a sweep, such as s21 (default the first)"),
             opt(
                 "at",
@@ -858,6 +868,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::None,
         invalidates: None,
         run: crate::view::commands::study,
+    },
+    CommandSpec {
+        id: "theme.check",
+        label: "Check a theme",
+        doc: "Reads a theme file (docs/themes.md) and reports its name, base and description, the picture palette it resolves to over its base, its `ui` and `scene` colours, and every problem found (`ok` false then): unknown keys and picture colours, bad colours, see-through picture or scene colours, a name out of bounds, ink unreadable on the ground. `light` or `dark` reports a built-in theme. The desktop app checks the `ui` and `scene` names when it loads the theme.",
+        params: &[req("path", K::String, "the theme file, or `light` or `dark`")],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::theme::check_command,
     },
     CommandSpec { id: "model.summary", label: "Summary", doc: "The model, mesh and results in brief.", params: &[], effect: Effect::None, invalidates: None, run: crate::project::summary },
 ];
