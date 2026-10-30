@@ -74,16 +74,20 @@ impl Session {
     /// The undoable state now, replaced by `with`; a new revision. The results stay, marked
     /// stale, unless `with` brings its project back: then that project's own come back.
     fn swap_snapshot(&mut self, with: Snapshot) -> Snapshot {
-        let now = self.identity();
+        let current = self.solved_revision == Some(self.revision);
         self.revision += 1;
         let project = with.project.map(|back| {
             let back = *back;
-            self.path = back.path;
-            self.sample = back.sample;
-            self.saved = back.saved;
-            self.saved_runs = back.saved_runs;
-            self.runs = back.runs;
-            self.results = back.results;
+            let now = Identity {
+                path: std::mem::replace(&mut self.path, back.path),
+                sample: std::mem::replace(&mut self.sample, back.sample),
+                saved: std::mem::replace(&mut self.saved, back.saved),
+                saved_runs: std::mem::replace(&mut self.saved_runs, back.saved_runs),
+                runs: std::mem::replace(&mut self.runs, back.runs),
+                results: std::mem::replace(&mut self.results, back.results),
+                solved_revision: self.solved_revision,
+                current,
+            };
             self.solved_revision = if back.current { Some(self.revision) } else { back.solved_revision };
             Box::new(now)
         });
