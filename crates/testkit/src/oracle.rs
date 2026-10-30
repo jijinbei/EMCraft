@@ -492,7 +492,7 @@ pub fn cases(root: &Path) -> Result<Vec<String>> {
 /// its fixture.
 pub fn run(root: &Path, opts: &Options) -> Result<bool> {
     let all = cases(root)?;
-    let selected: Vec<String> = if opts.cases.is_empty() { all.clone() } else { opts.cases.clone() };
+    let selected: Vec<String> = if opts.cases.is_empty() { all } else { opts.cases.clone() };
     let mut ok = true;
     let mut page_rows: Vec<String> = Vec::new();
     let (mut passed, mut total) = (0, 0);

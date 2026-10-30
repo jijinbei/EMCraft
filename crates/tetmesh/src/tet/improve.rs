@@ -164,7 +164,7 @@ fn collapse_into_crease(cx: &mut TetComplex, t: u32) -> Result<bool> {
     let edge: Vec<u32> = (0..4).filter(|&k| k != i && k != j).map(|k| vs[k]).collect();
     let (ex, longest) = {
         let x = cx.coords(vs)?;
-        (edge.clone(), measure::edge_range(&x).1)
+        (edge, measure::edge_range(&x).1)
     };
     for apex in [vs[i], vs[j]] {
         if !matches!(cx.kind(apex), VertexKind::Face(_)) {

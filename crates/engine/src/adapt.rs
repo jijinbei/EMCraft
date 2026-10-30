@@ -273,7 +273,7 @@ fn options(s: &Session, p: &Params) -> Result<(Options, Refine)> {
     let order = p.order()?;
     let curved = p.flag("curved").or(true)?;
     let refine = if solid {
-        let sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material.clone() };
+        let sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material };
         let floor = sizes.per_material.iter().flatten().copied().fold(sizes.default, f64::min) / FLOOR;
         Refine::Adaptive { options: emcraft_mesh::solid::SolidOptions { sizes, curved, refine: Vec::new() }, theta, floor }
     } else {

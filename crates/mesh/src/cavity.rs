@@ -168,7 +168,7 @@ fn pieces(air: Surface, keep: Keep) -> Result<Cavity> {
     let enclosed: Vec<usize> = pieces.iter().copied().filter(|&q| !shells[q].side).collect();
     let volume = |q: usize| -> f64 { shells.iter().zip(&owner).filter(|(_, o)| **o == Some(q)).map(|(s, _)| s.volume).sum() };
     let kept: Vec<usize> = match keep {
-        Keep::Enclosed => enclosed.clone(),
+        Keep::Enclosed => enclosed,
         Keep::Largest => enclosed.iter().copied().max_by(|&a, &b| volume(a).total_cmp(&volume(b)).then(b.cmp(&a))).into_iter().collect(),
     };
     if kept.is_empty() {

@@ -183,7 +183,7 @@ impl CrossSection {
             if done {
                 let small = cluster_vectors(&op, m, &ritz).ok_or_else(|| invalid("port modes", "the projected eigenvectors did not converge"))?;
                 let vectors = small.iter().take(count).map(|y| (0..n).map(|r| (0..m).map(|k| qb[k][r] * y[k]).sum()).collect()).collect();
-                result = Some((previous.clone(), vectors));
+                result = Some((previous, vectors));
                 break;
             }
             x = qb;

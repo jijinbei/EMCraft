@@ -194,7 +194,7 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
     };
     // The model at the optimum: the definitions given the best values, the model rebuilt.
     let set: Vec<(String, Value)> = study.variables.iter().zip(&study.rows[best].values).map(|(n, v)| (n.clone(), json!(v))).collect();
-    let rebuilt = rebuild(s, history_with(s, &set)?)?;
+    let rebuilt = rebuild(s, &history_with(s, &set)?)?;
     let reply = study.to_json();
     adopt(s, rebuilt);
     s.results.study = Some(Arc::new(study));

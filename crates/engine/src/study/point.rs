@@ -51,7 +51,7 @@ fn stops(e: &EngineError) -> bool {
 pub(super) fn solve_point(s: &Session, set: &[(String, Value)], solve: &Solve, outputs: &[String]) -> Result<Row> {
     let history = history_with(s, set)?;
     let run = || -> Result<Value> {
-        let mut fresh = rebuild(s, history)?;
+        let mut fresh = rebuild(s, &history)?;
         fresh.execute(solve.command, &solve.params)
     };
     match run() {
