@@ -16,11 +16,13 @@
 //! - [`symmetry`]: symmetry planes and the images they make;
 //! - [`periodic`]: periodic boundaries (unit cells of infinite arrays);
 //! - [`band`]: the frequency band;
-//! - [`model`]: the [`Model`] and its checked setters.
+//! - [`model`]: the [`Model`] and its checked setters;
+//! - [`edit`]: changing and removing the model's items, each checked as a new one would be.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod band;
+pub mod edit;
 pub mod error;
 pub mod geom;
 pub mod material;
@@ -35,6 +37,7 @@ pub mod units;
 pub mod waveguide;
 
 pub use band::Band;
+pub use edit::MaterialUse;
 pub use error::{ModelError, Result, positive};
 pub use geom::{Aabb, CVec3, Point3, Vec3};
 pub use material::{MAX_POLES, Material, Pole, SecondOrder};
