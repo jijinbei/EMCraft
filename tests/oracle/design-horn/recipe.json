@@ -1,0 +1,5 @@
+[
+ {"command": "file.sample", "params": {"name": "horn"}},
+ {"command": "solve.radiation", "params": {"frequency": 10}, "id": "solve"},
+ {"command": "results.far_field", "params": {"theta": [0], "phi": 0}, "id": "ff"}
+]

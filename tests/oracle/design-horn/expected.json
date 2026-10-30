@@ -1,0 +1,9 @@
+{
+ "title": "Pyramidal horn from the horn template's SolidCraft design (WR-90 feed, 40 × 30 mm mouth 30 mm past it) radiating at 10 GHz: directivity on the axis and power balance",
+ "kind": "theory",
+ "source": "The pyramidal horn's directivity D_p = (πλ²/32ab) D_E D_H through the Fresnel integrals, the aperture's TE10 field with the quadratic phase from the E- and H-plane apexes (C. A. Balanis, Antenna Theory, 3rd ed., 2005, §13.4.3), ρ1 = h b1/(b1 − b), ρ2 = h a1/(a1 − a) (emcraft-theory::horn, independent of the finite elements; `cargo run -p emcraft-theory --example design_references -- horn 40 30 30 10`); energy conservation for the power balance (Pozar, Microwave Engineering, 4th ed., §1.6)",
+ "quantities": [
+  {"id": "directivity_dbi", "quantity": "directivity on the axis (θ = 0), dBi", "measure": {"step": "ff", "pointer": "/points/0/directivity_dbi"}, "value": 11.164335796770366, "tolerance": {"absolute": 1.0}, "reason": "the formula is an approximation: Kirchhoff's aperture field alone, no diffraction at the rim, no currents outside the walls, no reflection from the throat and mouth; for a small horn (1.3λ × λ here, 11 dBi) its error is of the order of a dB. The finite elements give 11.54 dBi at four elements per wavelength and 11.56 at five: +0.4 dB"},
+  {"id": "efficiency", "quantity": "radiated power over the power the port delivers", "measure": {"step": "solve", "pointer": "/radiation_efficiency"}, "value": 1.0, "tolerance": {"absolute": 0.03}, "reason": "the port's modal projection and the Huygens box's Poynting integral, two measures of one solution of a lossless structure: 0.978 at four elements per wavelength, 1.005 at five"}
+ ]
+}

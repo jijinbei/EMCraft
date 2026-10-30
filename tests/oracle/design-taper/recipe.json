@@ -1,0 +1,5 @@
+[
+ {"command": "file.sample", "params": {"name": "taper", "values": {"l": 10}}},
+ {"command": "mesh.adapt", "params": {"size": 3, "frequency": 10, "passes": 4, "tolerance": 0.0005, "fraction": 0.3, "order": 2}, "id": "adapt"},
+ {"command": "solve.frequency", "params": {"frequencies": [10, 11, 12], "order": 2}, "id": "solve"}
+]
