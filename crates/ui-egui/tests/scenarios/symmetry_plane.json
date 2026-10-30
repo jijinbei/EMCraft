@@ -7,5 +7,15 @@
   {"click": "view3d:std:iso"},
   {"frames": 2},
   {"expect": {"handles": ["toolbar:model.symmetry"]}},
-  {"shot": "symmetry-boundaries"}
+  {"shot": "symmetry-boundaries"},
+  {"note": "Two planes: each row opens on its own plane"},
+  {"call": "engine.execute", "params": {"command": "model.symmetry", "params": {"axis": "y", "kind": "electric"}}},
+  {"frames": 2},
+  {"click": "row:Symmetry: y = 5.08 mm, electric wall", "double": true},
+  {"frames": 2},
+  {"expect": {"inspect": {"dialog.command": "model.symmetry", "dialog.fields.axis": "y", "dialog.fields.kind": "electric"}}},
+  {"call": "ui.dialog", "params": {"cancel": true}},
+  {"click": "row:Symmetry: x = 11.43 mm, magnetic wall", "double": true},
+  {"frames": 2},
+  {"expect": {"inspect": {"dialog.fields.axis": "x", "dialog.fields.kind": "magnetic"}}}
 ]
