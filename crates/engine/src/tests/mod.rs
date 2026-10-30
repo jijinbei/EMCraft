@@ -4,6 +4,7 @@ mod adapt;
 mod designs;
 mod geometry;
 mod items;
+mod junctions;
 mod open;
 mod project;
 mod session;

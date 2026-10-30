@@ -80,6 +80,42 @@ pub const TEMPLATES: &[Template] = &[
         marks: include_str!("../scripts/h-tee.marks.json"),
         kinds: &[Analysis::Frequency],
     },
+    // Junctions, radius bends and couplers (feature/junctions).
+    Template {
+        name: "h-bend-radius",
+        label: "H-plane 90° radius bend in WR-90: inner radius r (28.6 mm: a mean radius of one guide wavelength at 10 GHz), each arc drawn in 18 straight sides; ports on the arms' ends across y and x",
+        script: include_str!("../scripts/h-bend-radius.json"),
+        marks: include_str!("../scripts/h-bend-radius.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
+        name: "e-bend-radius",
+        label: "E-plane 90° radius bend in WR-90: inner radius r (35 mm: a mean radius of one guide wavelength at 10 GHz), each arc drawn in 18 straight sides; ports on the arms' ends across y and x",
+        script: include_str!("../scripts/e-bend-radius.json"),
+        marks: include_str!("../scripts/e-bend-radius.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
+        name: "e-tee",
+        label: "E-plane T-junction in WR-90: a side arm off the broad wall of a straight guide, three ports; from the side arm the two ends are fed equally in antiphase",
+        script: include_str!("../scripts/e-tee.json"),
+        marks: include_str!("../scripts/e-tee.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
+        name: "magic-tee",
+        label: "Magic tee (hybrid T) in WR-90: collinear arms 1 and 2, the H arm 3 and the E arm 4, each matched by posts at 9.5 GHz (two in the H arm, one across the E arm); 3 and 4 isolated, each split equally between 1 and 2, in phase from the H arm and in antiphase from the E arm",
+        script: include_str!("../scripts/magic-tee.json"),
+        marks: include_str!("../scripts/magic-tee.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
+        name: "cross-guide-coupler",
+        label: "Cross-guide directional coupler: two WR-90 guides crossed at right angles over a common broad wall t thick, coupled through two round holes on the diagonal of their overlap; four ports, about 30 dB coupled",
+        script: include_str!("../scripts/cross-guide-coupler.json"),
+        marks: include_str!("../scripts/cross-guide-coupler.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
     Template {
         name: "cavity",
         label: "Copper rectangular cavity, 22.86 × 10.16 × 30 mm: its four lowest resonances (TE101 at 8.24 GHz) and Q factors",
