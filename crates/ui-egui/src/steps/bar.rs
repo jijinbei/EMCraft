@@ -6,7 +6,7 @@ const BAR_HEIGHT: f32 = 40.0;
 
 /// The step bar under the ribbon.
 pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let states = statuses_now(app);
     egui::Panel::top("emcraft_steps")
         .exact_size(BAR_HEIGHT)
@@ -62,7 +62,7 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 pub(super) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
     let col = status_color(s, t);
     p.circle_filled(c, 7.0, col);
-    let ink = Stroke::new(1.8, Color32::WHITE);
+    let ink = Stroke::new(1.8, t.on_status);
     match s {
         Status::Done => {
             p.line_segment([c + vec2(-3.5, 0.2), c + vec2(-1.0, 2.8)], ink);
@@ -70,7 +70,7 @@ pub(super) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
         }
         Status::Warning => {
             p.line_segment([c + vec2(0.0, -3.8), c + vec2(0.0, 1.0)], ink);
-            p.circle_filled(c + vec2(0.0, 3.4), 1.1, Color32::WHITE);
+            p.circle_filled(c + vec2(0.0, 3.4), 1.1, t.on_status);
         }
         Status::Missing => {
             p.line_segment([c + vec2(-3.0, -3.0), c + vec2(3.0, 3.0)], ink);

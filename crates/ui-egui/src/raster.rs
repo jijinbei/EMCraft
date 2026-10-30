@@ -175,7 +175,7 @@ pub fn render_app(app: &mut crate::EmcraftApp, size: egui::Vec2, ppp: f32) -> em
             ..Default::default()
         };
         ctx.set_pixels_per_point(ppp);
-        crate::theme::set_dark(app.dark);
+        app.use_theme();
         crate::theme::apply(&ctx);
         let mut out = ctx.run_ui(raw, |ui| app.ui(ui));
         textures.update(&out.textures_delta);

@@ -88,7 +88,7 @@ fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
             }
         };
         field.layout = Some(emcraft_render::plot::Layout::of(&plot, width));
-        field.picture.set(key, &emcraft_render::plot::draw(&plot, width));
+        field.picture.set(key, &emcraft_render::plot::draw(&plot, width, &crate::theme::palette()));
     }
     let Some(p) = field.picture.get_mut() else { return };
     let r = picture(ui, p, Fixed::PictureField);
@@ -125,10 +125,10 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
         field.pinned = None;
     }
     let painter = ui.painter_at(rect);
-    let t = Tokens::get();
+    let t = &Tokens::get();
     if let Some(pin) = field.pinned.and_then(|q| samples.probe(q)) {
         let c = to_screen(pin.at);
-        painter.circle_stroke(c, 7.0, Stroke::new(3.0, Color32::WHITE));
+        painter.circle_stroke(c, 7.0, Stroke::new(3.0, crate::theme::color32(crate::theme::palette().halo)));
         painter.circle_stroke(c, 7.0, Stroke::new(1.6, t.accent));
         painter.circle_filled(c, 2.0, t.accent);
         // The value beside the pin, on the side with room.
@@ -147,7 +147,8 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
     }
     if let Some(h) = &field.hover {
         let c = to_screen(h.at);
-        let ink = Stroke::new(1.0, Color32::from_black_alpha(160));
+        let l = crate::theme::palette().line;
+        let ink = Stroke::new(1.0, Color32::from_rgba_unmultiplied(l.0, l.1, l.2, 160));
         let [x0, y0, pw, ph] = layout.plane;
         let (left, top) = (to_screen(layout.to_axes([x0, y0 + ph]).unwrap_or(h.at)), to_screen(layout.to_axes([x0 + pw, y0]).unwrap_or(h.at)));
         painter.line_segment([pos2(left.x, c.y), pos2(top.x, c.y)], ink);
@@ -231,7 +232,7 @@ pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
             pos2(track.left() + from as f32 * track.width(), track.top()),
             pos2(track.left() + to as f32 * track.width(), track.bottom()),
         );
-        ui.painter().rect_filled(band, 0.0, colour.unwrap_or(Color32::from_gray(110)));
+        ui.painter().rect_filled(band, 0.0, colour.unwrap_or_else(|| crate::theme::color32(crate::theme::scene().metal_dark)));
     }
     if r.changed() {
         field.at = Some(at);
@@ -241,7 +242,7 @@ pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
     let here = (field.view.plane, at);
     let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
     scenario::publish_target(Fixed::FieldKeep, r);
-    let t = Tokens::get();
+    let t = &Tokens::get();
     if resp.hovered() {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
@@ -258,7 +259,7 @@ pub(super) fn kept_planes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egu
         return;
     }
     ui.horizontal_wrapped(|ui| {
-        let t = Tokens::get();
+        let t = &Tokens::get();
         crate::ui_kit::small(ui, "In 3D:", t.text_dim);
         let unit = app.session.display().length.symbol();
         let mut drop = None;

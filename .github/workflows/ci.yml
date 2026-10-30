@@ -30,6 +30,7 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo xtask layers
       - run: cargo xtask dupes --fail
+      - run: cargo xtask colours
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # In release, sharing the build with the oracle below (debug assertions are left to local
       # runs).

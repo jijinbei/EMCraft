@@ -7,7 +7,7 @@ use emcraft_render::Rgb;
 use emcraft_render::view3d::Scene;
 
 use super::extras::port_face;
-use super::style::{EDGE, METAL, METAL_DARK, PORT, PORT_SOFT, material_rgb};
+use super::style::{material_rgb, sc};
 use super::{Built, Overlay, Pick, p3};
 
 /// Segments round a circle.
@@ -32,7 +32,7 @@ fn box_shape(s: &mut Scene, corner: impl Fn(usize) -> [f64; 3], color: Rgb, alph
     }
     if edges {
         for (a, b) in BOX_EDGES {
-            s.line(corner(a), corner(b), EDGE, 200);
+            s.line(corner(a), corner(b), sc().edge, 200);
         }
     }
 }
@@ -57,8 +57,8 @@ fn shape(s: &mut Scene, sh: &Shape, place: &dyn Fn([f64; 3]) -> [f64; 3], color:
                 s.quad([a0, a1, b1, b0], color, alpha);
                 s.tri(place([0.0, 0.0, 0.0]), a1, a0, color, alpha);
                 s.tri(place([0.0, 0.0, *length]), b0, b1, color, alpha);
-                s.line(a0, a1, EDGE, 200);
-                s.line(b0, b1, EDGE, 200);
+                s.line(a0, a1, sc().edge, 200);
+                s.line(b0, b1, sc().edge, 200);
             }
         }
         Shape::Sphere { radius: r } => {
@@ -71,7 +71,7 @@ fn shape(s: &mut Scene, sh: &Shape, place: &dyn Fn([f64; 3]) -> [f64; 3], color:
                 for j in 0..nv {
                     s.quad([at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)], color, alpha);
                 }
-                s.line(at(i, nv / 2), at(i + 1, nv / 2), EDGE, 160);
+                s.line(at(i, nv / 2), at(i + 1, nv / 2), sc().edge, 160);
             }
         }
         Shape::Surface { positions, triangles, .. } => {
@@ -96,7 +96,7 @@ fn turned(axis: Axis, at: emcraft_model::geom::Point3) -> impl Fn([f64; 3]) -> [
 /// The geometry before meshing.
 pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
     let mat = |name: &str| m.materials.iter().position(|x| x.name == name).unwrap_or(0);
-    let tint = |name: &str| if overlay == Overlay::Materials { material_rgb(m, mat(name)) } else { METAL };
+    let tint = |name: &str| if overlay == Overlay::Materials { material_rgb(m, mat(name)) } else { sc().metal };
     let see_through = matches!(overlay, Overlay::Ports | Overlay::Boundaries | Overlay::Field);
     if let Some(w) = &m.waveguide {
         let mut z = 0.0;
@@ -127,13 +127,14 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             out.scene.tagged(Pick::Strip(i).tag(), |scene| {
                 scene.quad(
                     [[st.x0, st.y, st.z0], [st.x0 + st.width, st.y, st.z0], [st.x0 + st.width, st.y, st.z1], [st.x0, st.y, st.z1]],
-                    PORT_SOFT.mix(Rgb(200, 160, 40), 0.6),
+                    sc().strip,
                     255,
                 )
             });
         }
         for (i, v) in w.vias.iter().enumerate() {
-            out.scene.tagged(Pick::Via(i).tag(), |scene| cuboid(scene, [v.x0, v.y0, v.z0], [v.x0 + v.wx, v.y1, v.z0 + v.wz], METAL_DARK, 255, true));
+            out.scene
+                .tagged(Pick::Via(i).tag(), |scene| cuboid(scene, [v.x0, v.y0, v.z0], [v.x0 + v.wx, v.y1, v.z0 + v.wz], sc().metal_dark, 255, true));
         }
     }
     if let Some(solid) = &m.solid {
@@ -152,21 +153,21 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
         for (i, f) in m.features.iter().enumerate() {
             let (color, alpha) = match f.combine {
                 Combine::Add => (tint(&solid.material), alpha),
-                Combine::Subtract => (METAL_DARK, 255),
-                Combine::Intersect => (Rgb(120, 160, 200), 60),
+                Combine::Subtract => (sc().metal_dark, 255),
+                Combine::Intersect => (sc().intersect, 60),
             };
             out.scene.tagged(Pick::Feature(i).tag(), |scene| shape(scene, &f.shape, &turned(f.axis, f.at), color, alpha));
         }
         for (i, inc) in m.inclusions.iter().enumerate() {
             let color = match &inc.material {
                 Some(name) => material_rgb(m, mat(name)),
-                None => METAL_DARK,
+                None => sc().metal_dark,
             };
             out.scene.tagged(Pick::Inclusion(i).tag(), |scene| shape(scene, &inc.shape, &turned(Axis::Z, inc.at), color, 255));
         }
     }
     // Ports on the ends (the mesh tags them once meshed).
-    let (color, alpha) = if overlay == Overlay::Ports { (PORT, 255) } else { (PORT_SOFT, 220) };
+    let (color, alpha) = if overlay == Overlay::Ports { (sc().port, 255) } else { (sc().port_soft, 220) };
     for (i, p) in m.ports.iter().enumerate() {
         let face = port_face(m, p);
         out.scene.tagged(Pick::Port(i).tag(), |scene| {

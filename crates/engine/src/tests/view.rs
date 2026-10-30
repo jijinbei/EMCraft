@@ -26,6 +26,50 @@ fn pictures_are_written() {
     assert!(std::fs::read(&path).unwrap().len() > 1000);
 }
 
+/// A picture's `theme`: light by default, dark, or a theme file; a bad one is refused before
+/// anything is drawn. `theme.check` reports a theme file's palette and problems.
+#[test]
+fn pictures_follow_their_theme_and_theme_files_are_checked() {
+    let mut s = small();
+    let write = |s: &mut Session, name: &str, theme: Option<&str>| {
+        let path = scratch(name);
+        let mut p = json!({"path": path, "width": 400, "height": 300});
+        if let Some(t) = theme {
+            p["theme"] = json!(t);
+        }
+        s.execute("view.sparameters", &p).map(|_| std::fs::read(&path).unwrap())
+    };
+    let plain = write(&mut s, "plain.png", None).unwrap();
+    assert_eq!(write(&mut s, "light.png", Some("light")).unwrap(), plain);
+    assert_ne!(write(&mut s, "dark.png", Some("dark")).unwrap(), plain);
+    let file = scratch("night.json");
+    std::fs::write(&file, r##"{"name": "Night", "base": "dark", "picture": {"ground": "#101418"}}"##).unwrap();
+    let night = write(&mut s, "night.png", Some(&file)).unwrap();
+    assert_ne!(night, plain);
+    let r = s.execute("theme.check", &json!({"path": file})).unwrap();
+    assert_eq!((r["ok"].as_bool(), r["name"].as_str(), r["base"].as_str()), (Some(true), Some("Night"), Some("dark")));
+    assert_eq!(r["picture"]["ground"], "#101418");
+    assert_eq!(r["picture"]["series"].as_array().map(Vec::len), Some(6));
+    // A field plot and an animation take it too.
+    let path = scratch("dark-field.png");
+    s.execute("view.field", &json!({"path": path, "frequency": 8, "width": 300, "theme": "dark"})).unwrap();
+    s.execute("view.animation", &json!({"path": path, "frequency": 8, "width": 200, "frames": 4, "theme": &file})).unwrap();
+    // The built-in themes check by name.
+    for b in ["light", "dark"] {
+        let r = s.execute("theme.check", &json!({"path": b})).unwrap();
+        assert_eq!((r["ok"].as_bool(), r["name"].as_str()), (Some(true), Some(b)), "{r}");
+    }
+    // Bad themes: the problems listed by theme.check, the picture refused.
+    std::fs::write(&file, r##"{"name": "Night", "picture": {"paper": "#000000", "ink": "#fefefe"}}"##).unwrap();
+    let r = s.execute("theme.check", &json!({"path": file})).unwrap();
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["problems"].as_array().map(Vec::len), Some(2), "{r}");
+    assert!(matches!(write(&mut s, "bad.png", Some(&file)), Err(EngineError::Params(m)) if m.contains("no colour `paper`")));
+    assert!(write(&mut s, "bad.png", Some(&scratch("missing.json"))).is_err());
+    assert!(s.execute("theme.check", &json!({"path": scratch("missing.json")})).is_err());
+    assert!(s.execute("theme.check", &json!({})).is_err());
+}
+
 /// `view.animation` writes one period as a looping APNG; frames and period are bounded.
 #[test]
 fn an_animation_is_written() {

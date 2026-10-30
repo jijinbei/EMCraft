@@ -1,7 +1,7 @@
 //! The 3D scene's tests: every overlay of the samples builds, faces are told apart, ports
 //! land where they belong.
 
-use super::style::{PORT, wall_style};
+use super::style::{sc, wall_style};
 use super::surface::{Kind, Surface};
 use super::*;
 use serde_json::json;
@@ -58,7 +58,7 @@ fn a_port_on_a_face_inside_leaves_the_end_alone() {
     // The open guide's feed lies on a face inside the box: no end of the box is a port.
     let s = meshed("open-waveguide", Some(12.0));
     let b = build(&s, Overlay::Ports);
-    assert!(b.scene.tris.iter().filter(|t| t.color == PORT).count() <= 4, "the box's end is drawn as a port");
+    assert!(b.scene.tris.iter().filter(|t| t.color == sc().port).count() <= 4, "the box's end is drawn as a port");
 }
 
 fn meshed(name: &str, size: Option<f64>) -> Session {

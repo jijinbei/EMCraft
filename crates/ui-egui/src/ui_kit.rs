@@ -12,7 +12,7 @@ use crate::{UiExt, scenario};
 /// A card's title band: glyph, title, optional dock toggle and a close button. Returns
 /// (close clicked, dock clicked).
 pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: &str, docked: Option<bool>, accent: Color32) -> (bool, bool) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), t.form_header_height), Sense::hover());
     let icon = Rect::from_center_size(pos2(rect.left() + t.space_12 + 10.0, rect.center().y), vec2(20.0, 20.0));
     crate::glyphs::paint(ui.painter(), icon, glyph, t.icon, accent);
@@ -50,7 +50,7 @@ pub enum Mark {
 
 /// A small square button with a drawn mark, published as `handle`.
 pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed) -> Response {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let resp = ui.hit(r, handle.into(), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     if resp.hovered() {
@@ -79,7 +79,7 @@ pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed)
 /// A form row: the label in the label column, the control after it. The label's text is the
 /// row's accessible name.
 pub fn row<R>(ui: &mut Ui, label: &str, required: bool, add: impl FnOnce(&mut Ui) -> R) -> R {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.horizontal(|ui| {
         ui.set_min_height(t.control_height);
         let (r, _) = ui.allocate_exact_size(vec2(t.form_label_width, t.control_height), Sense::hover());
@@ -99,13 +99,13 @@ pub fn caption(ui: &mut Ui, text: &str) {
 
 /// Small text in `color`.
 pub fn small(ui: &mut Ui, text: impl Into<String>, color: Color32) -> Response {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.label(egui::RichText::new(text).size(t.font_small).color(color))
 }
 
 /// A section heading in small capitals with a hairline after it.
 pub fn section(ui: &mut Ui, text: &str) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.add_space(t.space_4);
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
     let g = ui.painter().layout_no_wrap(text.to_uppercase(), FontId::proportional(t.font_small), t.text_dim);
@@ -116,7 +116,7 @@ pub fn section(ui: &mut Ui, text: &str) {
 
 /// A full-width error band.
 pub fn error_band(ui: &mut Ui, text: &str) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     egui::Frame::NONE.fill(t.form_error_fill).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         let r = ui.label(egui::RichText::new(text).size(t.font_body).color(t.form_error));
@@ -126,7 +126,7 @@ pub fn error_band(ui: &mut Ui, text: &str) {
 
 /// A card's button: secondary, or `primary` in the accent colour.
 pub fn styled(label: &str, primary: bool) -> egui::Button<'static> {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let text = egui::RichText::new(label).size(t.font_button).color(if primary { t.on_accent } else { t.form_ink });
     let b = egui::Button::new(text).min_size(vec2(72.0, t.control_height)).corner_radius(t.control_radius);
     if primary { b.fill(t.accent) } else { b.fill(t.control_fill).stroke(Stroke::new(1.0, t.control_border)) }
@@ -139,7 +139,7 @@ pub fn button(ui: &mut Ui, label: &str, primary: bool, handle: Fixed) -> Respons
 
 /// A determinate (`Some`) or running (`None`) progress bar.
 pub fn progress(ui: &mut Ui, fraction: Option<f64>, width: f32) -> Response {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let (r, resp) = ui.allocate_exact_size(vec2(width, 6.0), Sense::hover());
     ui.painter().rect_filled(r, 3, t.dialog_rule);
     match fraction {
@@ -195,7 +195,7 @@ impl Player {
 /// timeline) and `{handle}:speed`.
 pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed) {
     use std::f64::consts::TAU;
-    let t = Tokens::get();
+    let t = &Tokens::get();
     // Play / pause.
     let (r, resp) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
     if resp.hovered() {
@@ -243,7 +243,7 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed) 
 /// A slider whose track shows on the panels' colours: the track in the controls' border colour,
 /// the part up to the handle in the accent.
 pub fn slider(ui: &mut Ui, value: &mut f64, range: std::ops::RangeInclusive<f64>, text: impl Into<egui::WidgetText>) -> Response {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.scope(|ui| {
         let v = ui.visuals_mut();
         v.widgets.inactive.bg_fill = t.border;

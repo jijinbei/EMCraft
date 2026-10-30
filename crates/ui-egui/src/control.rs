@@ -142,7 +142,10 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     json!({
         "tab": app.tab.id(),
         "view": app.view.id(),
-        "dark": app.dark,
+        "theme": app.theme,
+        "dark": app.themes.get(&app.theme).is_dark(),
+        "themes": app.themes.names(),
+        "theme_problems": app.themes.problems,
         "home": app.home.open,
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
         "files": {"prompt": app.files.prompt.as_ref().map(|p| p.text.clone()), "confirm": app.files.confirm.is_some()},
@@ -324,8 +327,19 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
     if let Some(v) = a.str("view") {
         asked.push(Action::SetView(View::parse(v).ok_or_else(|| format!("unknown view `{}`", clip(v, 40)))?));
     }
+    // The theme by name; `dark` names the built-in ones by a switch. A reload reads the user's
+    // theme files again before a theme is chosen.
+    if a.bool("reload_themes") == Some(true) {
+        app.apply(Action::Pref(Pref::ReloadThemes)).map_err(|e| e.to_string())?;
+    }
     if let Some(d) = a.bool("dark") {
-        asked.push(Action::Pref(Pref::Dark(d)));
+        asked.push(Action::Pref(Pref::Theme(if d { "dark" } else { "light" }.into())));
+    }
+    match a.get("theme") {
+        None => {}
+        Some(Value::String(name)) if app.themes.find(name).is_some() => asked.push(Action::Pref(Pref::Theme(name.clone()))),
+        Some(Value::String(name)) => return Err(format!("no theme `{}` (there are {})", clip(name, 40), app.themes.names().join(", "))),
+        Some(_) => return Err("`theme` must be a theme's name".into()),
     }
     if let Some(d) = a.bool("dock") {
         asked.push(Action::SetDock(d));

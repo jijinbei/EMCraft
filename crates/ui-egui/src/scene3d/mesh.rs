@@ -4,7 +4,7 @@
 use emcraft_model::mesh::Boundary;
 use emcraft_model::{End, Model};
 
-use super::style::{EDGE, PERIODIC, material_rgb, plane_alpha, symmetry_rgb, wall_style};
+use super::style::{material_rgb, plane_alpha, sc, symmetry_rgb, wall_style};
 use super::surface::{Kind, PeriodicPlanes, Surface};
 use super::{Built, Overlay, Pick, p3};
 
@@ -32,7 +32,7 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         let kind = surface.kind(i);
         let (color, alpha) = match f.tag {
             // A periodic boundary is no wall either: tied to the opposite face.
-            _ if port.is_none() && periodic.holds(mesh, &f.nodes) => (PERIODIC, plane_alpha(m, overlay, tet_mat(f.tet))),
+            _ if port.is_none() && periodic.holds(mesh, &f.nodes) => (sc().periodic, plane_alpha(m, overlay, tet_mat(f.tet))),
             // A symmetry plane is no wall: its own colour in every overlay.
             Boundary::Symmetry(kind) => (symmetry_rgb(kind), plane_alpha(m, overlay, tet_mat(f.tet))),
             _ => wall_style(m, overlay, port.is_some(), tet_mat(f.tet), kind),
@@ -113,7 +113,7 @@ fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, o
         let air = group.iter().all(|e| faces.get(e.1).is_some_and(|f| f.2));
         let [a, b] = group[0].0;
         if show && let (Some(a), Some(b)) = (node(a), node(b)) {
-            out.scene.line(p3(a), p3(b), EDGE, if air { alpha / 3 } else { alpha });
+            out.scene.line(p3(a), p3(b), sc().edge, if air { alpha / 3 } else { alpha });
         }
     }
 }

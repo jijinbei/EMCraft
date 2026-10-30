@@ -50,7 +50,7 @@ impl EmcraftApp {
 
 /// The message card at the bottom: the last messages, and the running job's progress and Cancel.
 pub(crate) fn area(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = theme::Tokens::get();
+    let t = &theme::Tokens::get();
     // Taller while a job runs: its progress row sits above the messages.
     egui::Panel::bottom("emcraft_status")
         .exact_size(if app.job.is_some() { 130.0 } else { 96.0 })

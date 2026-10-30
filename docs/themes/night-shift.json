@@ -1,0 +1,30 @@
+{
+  "name": "Night shift",
+  "description": "Dark, with warm amber accents for late solves.",
+  "base": "dark",
+  "ui": {
+    "app_bar": "#15181f",
+    "toolbar": "#1d2129",
+    "panel": "#1d2129",
+    "panel_header": "#262b35",
+    "control_fill": "#1d2129",
+    "viewport_top": "#20252e",
+    "viewport_bottom": "#151920",
+    "text": "#ebe6dc",
+    "accent": "#b5621a",
+    "accent_soft": "#4a3420",
+    "selected_bg": "#4a3420",
+    "selected_ink": "#f2c38f",
+    "hover": "#30363f"
+  },
+  "scene": {
+    "highlight": "#ffb347"
+  },
+  "picture": {
+    "ground": "#1d2129",
+    "ink": "#ebe6dc",
+    "ink_dim": "#aaa496",
+    "grid": "#333944",
+    "series": ["#e0a050", "#6fa8f0", "#7cc98f", "#c79be8", "#f07a6a", "#b4b8c2"]
+  }
+}

@@ -43,7 +43,7 @@ fn status_color(status: Status, t: &Tokens) -> Color32 {
         Status::Done => t.success,
         Status::Warning => t.warning,
         Status::Missing => t.error,
-        Status::Stale => Color32::from_rgb(70, 130, 210),
+        Status::Stale => t.info,
     }
 }
 

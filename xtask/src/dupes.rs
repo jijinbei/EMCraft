@@ -132,14 +132,15 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
-/// The production sources of every crate under `root/crates` and of the apps and xtask.
-fn sources(root: &Path, loose: bool) -> Result<Vec<Source>, String> {
+/// The `.rs` files of every crate under `root/crates` and of the apps and xtask, sorted, without
+/// tests (`tests/` directories, `tests.rs` files).
+pub fn production_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut dirs = Vec::new();
     for parent in ["crates", "apps"] {
         let Ok(rd) = std::fs::read_dir(root.join(parent)) else { continue };
         let mut found: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
         found.sort();
-        dirs.extend(found.into_iter().filter(|d| d.file_name().and_then(|n| n.to_str()).is_some_and(|n| !SKIP_CRATES.contains(&n))));
+        dirs.extend(found);
     }
     dirs.push(root.join("xtask"));
     let mut files = Vec::new();
@@ -149,8 +150,15 @@ fn sources(root: &Path, loose: bool) -> Result<Vec<Source>, String> {
             rust_files(&src, &mut files)?;
         }
     }
-    files
+    Ok(files)
+}
+
+/// The production sources of every crate under `root/crates` and of the apps and xtask.
+fn sources(root: &Path, loose: bool) -> Result<Vec<Source>, String> {
+    let skipped = |p: &Path| SKIP_CRATES.iter().any(|c| p.starts_with(root.join("crates").join(c)));
+    production_files(root)?
         .into_iter()
+        .filter(|p| !skipped(p))
         .filter(|p| !SKIP_FILES.iter().any(|f| p.strip_prefix(root).is_ok_and(|r| r == Path::new(f))))
         .map(|p| {
             let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;

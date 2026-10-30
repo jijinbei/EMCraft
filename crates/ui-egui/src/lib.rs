@@ -99,7 +99,9 @@ pub struct EmcraftApp {
     pub messages: Vec<Message>,
     pub search: ribbon::Search,
     pub browser: browser::Browser,
-    pub dark: bool,
+    /// The current theme's name, and the themes there are (built-in and the user's).
+    pub theme: String,
+    pub themes: theme::Themes,
     /// The control channel: its requests, the input it injects, the screenshots it waits for.
     pub(crate) control: ControlState,
     pub quit_requested: bool,
@@ -164,6 +166,8 @@ pub struct Failure {
 pub struct Host {
     pub picker: Option<Arc<dyn files::Picker>>,
     pub prefs: Option<std::path::PathBuf>,
+    /// The folder of the user's themes (`theme::default_dir`).
+    pub themes: Option<std::path::PathBuf>,
     /// A project file to open at once.
     pub open: Option<String>,
 }
@@ -190,7 +194,8 @@ impl EmcraftApp {
             messages: vec![Message { text: "Open a sample or a project (File) or build a model from the ribbon.".into(), error: false, count: 1 }],
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),
-            dark: false,
+            theme: "light".into(),
+            themes: theme::Themes::load(None),
             control: ControlState::default(),
             quit_requested: false,
             last_frame: None,
@@ -216,9 +221,10 @@ impl EmcraftApp {
         if let Some(path) = host.prefs {
             app.prefs = prefs::Prefs::load(&path);
             app.prefs_store = PrefsStore { path: Some(path), written: app.prefs.clone() };
-            app.dark = app.prefs.dark;
+            app.theme = app.prefs.theme().to_owned();
             app.dock_dialogs = app.prefs.dock_dialogs;
         }
+        app.load_themes(host.themes);
         app.files.picker = host.picker;
         app.home.open = sample.is_none() && host.open.is_none();
         if let Some(path) = host.open
@@ -229,9 +235,31 @@ impl EmcraftApp {
         app
     }
 
+    /// Reads the themes again: the built-in ones and the user's in `dir` (none without one).
+    /// Each file left out is reported once in the messages; a current theme that is gone gives
+    /// way to the light one.
+    pub fn load_themes(&mut self, dir: Option<std::path::PathBuf>) {
+        self.themes = theme::Themes::load(dir.as_deref());
+        for p in self.themes.problems.clone() {
+            self.error(p);
+        }
+        if self.themes.find(&self.theme).is_none() {
+            self.error(format!("no theme `{}`: using the light theme", emcraft_engine::text::clip(&self.theme, 40)));
+            self.theme = "light".into();
+        }
+        self.use_theme();
+    }
+
+    /// Makes the app's theme the thread's current one.
+    pub fn use_theme(&self) {
+        theme::set(self.themes.get(&self.theme));
+    }
+
     /// Keeps the preferences in step with the window and writes them when they change.
     fn keep_prefs(&mut self) {
-        self.prefs.dark = self.dark;
+        if self.prefs.theme() != self.theme {
+            self.prefs.theme.clone_from(&self.theme);
+        }
         self.prefs.dock_dialogs = self.dock_dialogs;
         if self.prefs == self.prefs_store.written {
             return;
@@ -422,7 +450,7 @@ impl EmcraftApp {
         if self.ctx.as_ref() != Some(ctx) {
             self.ctx = Some(ctx.clone());
         }
-        theme::set_dark(self.dark);
+        self.use_theme();
         theme::apply(ctx);
         self.poll_job();
         files::poll(self);

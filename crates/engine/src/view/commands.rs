@@ -1,5 +1,7 @@
-//! The `view.*` commands: each reads its parameters, builds its picture and writes it as a PNG.
+//! The `view.*` commands: each reads its parameters, builds its picture and writes it as a PNG,
+//! in the colours of its `theme` (`light` by default, `dark` or a theme file: [`crate::theme`]).
 
+use emcraft_render::Palette;
 use emcraft_render::chart::Chart;
 use emcraft_render::plot::FieldPlot;
 use serde_json::{Value, json};
@@ -17,37 +19,38 @@ pub(crate) fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
 }
 
 /// Where a chart command writes its picture: `path`, `width` (default 1000) by `height`
-/// (default 600) pixels.
+/// (default 600) pixels, in the colours of `theme`.
 struct ChartFile<'a> {
     path: &'a str,
     width: usize,
     height: usize,
+    palette: Palette,
 }
 
 impl<'a> ChartFile<'a> {
-    /// `path`, then the size.
+    /// `path`, then the size and the theme.
     fn read(s: &Session, p: &Params<'a>) -> Result<ChartFile<'a>> {
         let path = p.string("path").required()?;
         ChartFile::sized(s, p, path)
     }
 
-    /// The size, for a chart to `path`.
+    /// The size and the theme, for a chart to `path`.
     fn sized(s: &Session, p: &Params, path: &'a str) -> Result<ChartFile<'a>> {
         let (width, height) = (p.side("width", s.limits.picture_side, 1000)?, p.side("height", s.limits.picture_side, 600)?);
-        Ok(ChartFile { path, width, height })
+        Ok(ChartFile { path, width, height, palette: crate::theme::palette_of(p)? })
     }
 
     /// Draws `chart` and writes it: the reply.
     fn write(&self, chart: &Chart) -> Result<Value> {
-        let c = emcraft_render::chart::draw(chart, self.width, self.height);
+        let c = emcraft_render::chart::draw(chart, self.width, self.height, &self.palette);
         write_png(self.path, c.png())?;
         Ok(json!({"path": self.path, "width": c.w, "height": c.h}))
     }
 }
 
 /// Draws `plot` `width` pixels wide and writes it to `path`: the reply.
-fn write_plot(path: &str, plot: &FieldPlot, width: usize) -> Result<Value> {
-    let c = emcraft_render::plot::draw(plot, width);
+fn write_plot(path: &str, plot: &FieldPlot, width: usize, palette: &Palette) -> Result<Value> {
+    let c = emcraft_render::plot::draw(plot, width, palette);
     write_png(path, c.png())?;
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
@@ -96,8 +99,9 @@ pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
 pub fn field(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
     let width = p.side("width", s.limits.picture_side, 1100)?;
+    let palette = crate::theme::palette_of(p)?;
     let plot = super::field_plot(s, &field_view(s, p)?)?;
-    write_plot(path, &plot, width)
+    write_plot(path, &plot, width, &palette)
 }
 
 /// `view.port_mode`: a port mode's transverse E across the port's face.
@@ -107,8 +111,9 @@ pub fn port_mode(s: &mut Session, p: &Params) -> Result<Value> {
     let port = p.string("port").required()?;
     let mode = p.integer("mode", 1..=EIGEN_MAX).or(1)?;
     let frequency = args::frequency_or_band_top(s, p, "frequency", args::SET_THE_BAND)?;
+    let palette = crate::theme::palette_of(p)?;
     let plot = super::port_mode_plot(s, port, mode - 1, frequency, p.order()?.as_u8())?;
-    let mut reply = write_plot(path, &plot, width)?;
+    let mut reply = write_plot(path, &plot, width, &palette)?;
     reply["mode"] = json!(plot.title);
     Ok(reply)
 }
@@ -123,6 +128,7 @@ pub fn animation(s: &mut Session, p: &Params) -> Result<Value> {
     let width = p.side("width", s.limits.picture_side, 800)?;
     let frames = p.integer("frames", 4..=MAX_FRAMES).or(24)?;
     let period = p.positive("period").check(|t| *t <= 60.0, "at most 60 s").or(2.0)?;
+    let palette = crate::theme::palette_of(p)?;
     let mut v = field_view(s, p)?;
     let samples = super::sample_plane(s, &v)?;
     let delay = (period * 1000.0 / frames as f64).round().clamp(1.0, f64::from(u16::MAX)) as u16;
@@ -130,7 +136,7 @@ pub fn animation(s: &mut Session, p: &Params) -> Result<Value> {
     let pictures = (0..frames).map_while(|k| {
         v.phase = std::f64::consts::TAU * k as f64 / frames as f64;
         match samples.plot(&v) {
-            Ok(plot) => Some(emcraft_render::plot::draw(&plot, width)),
+            Ok(plot) => Some(emcraft_render::plot::draw(&plot, width, &palette)),
             Err(e) => {
                 failed = Some(e);
                 None

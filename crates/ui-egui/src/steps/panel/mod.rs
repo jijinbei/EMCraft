@@ -20,7 +20,7 @@ use super::*;
 /// text fields, `dialog` the open dialog.
 pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs::Dialog>, ui: &mut egui::Ui, out: &mut Actions) {
     let Some(step) = app.workflow.step else { return };
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let states = statuses_now(app);
     let Some(state) = states.get(step.index()).cloned() else { return };
     egui::Panel::right("emcraft_step_panel")
@@ -95,7 +95,7 @@ fn fix_label(command: &str) -> String {
 
 /// A one-line text field with its error under it; `true` when Enter was pressed in it.
 pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: Fixed) -> bool {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let mut enter = false;
     ui_kit::row(ui, label, false, |ui| {
         let mut edit = egui::TextEdit::singleline(text).desired_width((ui.available_width() - 44.0).max(60.0)).char_limit(64);

@@ -366,7 +366,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Options { width: 800, height: 600, supersample: 1, background: (Rgb(246, 248, 251), Rgb(222, 228, 236)), line_width: 1.0 }
+        Options { width: 800, height: 600, supersample: 1, background: (Rgb::WHITE, Rgb::WHITE), line_width: 1.0 }
     }
 }
 

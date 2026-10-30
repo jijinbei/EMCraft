@@ -4,7 +4,7 @@
 
 use emcraft_model::units::decibels;
 use emcraft_render::chart::{Chart, Series, Style};
-use emcraft_render::{Axis, Rgb};
+use emcraft_render::{Axis, Pen};
 use emcraft_solver::Complex64 as C;
 
 use super::chart::{DB_FLOOR, db_axis};
@@ -14,8 +14,8 @@ use crate::{EngineError, Result, Session};
 /// The most entries of S's first column the chart draws.
 const MAX_CHART_ENTRIES: usize = 8;
 
-/// Colours of the first column's entries past S₂₁.
-const MORE_COLORS: [Rgb; 3] = [Rgb(30, 130, 60), Rgb(150, 90, 10), Rgb(110, 40, 140)];
+/// The series colours of the first column's entries past S₂₁ (green, orange, purple).
+const MORE_PENS: [u8; 3] = [2, 4, 3];
 
 /// |S| in dB, no lower than the chart reaches.
 fn db(c: C) -> f64 {
@@ -39,21 +39,21 @@ pub fn sparameter_chart(session: &Session) -> Result<Chart> {
         let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), db(s)])).collect();
         series.push(Series {
             label: format!("$|S_{{21}}|$ FEM (order {})", sweep.order.as_u8()),
-            color: Rgb(20, 40, 120),
+            pen: Pen::Strong(0),
             style: Style::Markers,
             points: pts(1, 0),
         });
-        series.push(Series { label: "$|S_{11}|$ FEM".into(), color: Rgb(140, 30, 20), style: Style::Markers, points: pts(0, 0) });
+        series.push(Series { label: "$|S_{11}|$ FEM".into(), pen: Pen::Strong(1), style: Style::Markers, points: pts(0, 0) });
         // More entries (a terminal port's conductors, more ports): the rest of the first column.
         let n = sweep.results.first().map_or(0, |r| r.s.ports()).min(MAX_CHART_ENTRIES);
-        for (p, color) in (2..n).zip(MORE_COLORS.iter().cycle()) {
-            series.push(Series { label: format!("$|S_{{{}1}}|$ FEM", p + 1), color: *color, style: Style::Markers, points: pts(p, 0) });
+        for (p, k) in (2..n).zip(MORE_PENS.iter().cycle()) {
+            series.push(Series { label: format!("$|S_{{{}1}}|$ FEM", p + 1), pen: Pen::Strong(*k), style: Style::Markers, points: pts(p, 0) });
         }
     }
     if let Some(td) = td {
         let pts = |v: &[C]| td.frequencies.iter().zip(v).map(|(f, s)| [fu.from_si(*f), db(*s)]).collect();
-        series.push(Series { label: "$|S_{21}|$ time domain".into(), color: Rgb(40, 150, 90), style: Style::Line, points: pts(&td.s21) });
-        series.push(Series { label: "$|S_{11}|$ time domain".into(), color: Rgb(210, 140, 30), style: Style::Line, points: pts(&td.s11) });
+        series.push(Series { label: "$|S_{21}|$ time domain".into(), pen: Pen::Series(2), style: Style::Line, points: pts(&td.s21) });
+        series.push(Series { label: "$|S_{11}|$ time domain".into(), pen: Pen::Series(4), style: Style::Line, points: pts(&td.s11) });
     }
     let marks = section_cutoffs(session).into_iter().map(|(fc, name)| (fu.from_si(fc), format!("$f_c$ {name}"))).collect();
     Ok(Chart {
@@ -81,7 +81,7 @@ fn reference_curves(session: &Session, f0: f64, f1: f64) -> Vec<Series> {
     }
     let label = reference.label();
     vec![
-        Series { label: format!("$|S_{{21}}|$ {label}"), color: Rgb(30, 90, 200), style: Style::Line, points: s21 },
-        Series { label: format!("$|S_{{11}}|$ {label}"), color: Rgb(200, 60, 40), style: Style::Line, points: s11 },
+        Series { label: format!("$|S_{{21}}|$ {label}"), pen: Pen::Series(0), style: Style::Line, points: s21 },
+        Series { label: format!("$|S_{{11}}|$ {label}"), pen: Pen::Series(1), style: Style::Line, points: s11 },
     ]
 }

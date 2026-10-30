@@ -184,6 +184,11 @@ fn scenario_hostile_step_input() {
     scenario("hostile_step_input");
 }
 
+#[test]
+fn scenario_themes() {
+    scenario("themes");
+}
+
 /// Every scenario file has a test above.
 #[test]
 fn every_scenario_file_runs() {
@@ -230,7 +235,7 @@ fn hostile_control_requests_are_refused() {
 fn ui_render_draws_both_themes() {
     let mut h = Harness::new();
     let light = crate::raster::render_app(&mut h.app, egui::vec2(800.0, 600.0), 1.0);
-    h.app.dark = true;
+    h.app.theme = "dark".into();
     let dark = crate::raster::render_app(&mut h.app, egui::vec2(800.0, 600.0), 1.0);
     assert_eq!((light.w, light.h), (800, 600));
     let mean = |c: &emcraft_render::Canvas| {

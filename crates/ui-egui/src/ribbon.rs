@@ -74,7 +74,7 @@ const BUTTON_MIN_WIDTH: f32 = 58.0;
 
 /// The dark application bar: the name, the samples menu, the theme switch.
 pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     egui::Panel::top("emcraft_app_bar").exact_size(APP_BAR_HEIGHT).show_separator_line(false).frame(egui::Frame::NONE.fill(t.app_bar)).show(
         ui,
         |ui| {
@@ -84,7 +84,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let home = ui.hit(house, Fixed::BarStart.into(), Sense::click());
             let p = ui.painter();
             if home.hovered() || app.home.open {
-                p.rect_filled(house, t.radius_sm, Color32::from_white_alpha(if app.home.open { 40 } else { 28 }));
+                p.rect_filled(house, t.radius_sm, if app.home.open { t.app_bar_active } else { t.app_bar_hover });
             }
             glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
             if home.on_hover_text("Start page").clicked() {
@@ -99,7 +99,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 let resp = ui.hit(br, handle.into(), Sense::click());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, text));
                 if resp.hovered() {
-                    ui.painter().rect_filled(br, t.radius_sm, Color32::from_white_alpha(28));
+                    ui.painter().rect_filled(br, t.radius_sm, t.app_bar_hover);
                 }
                 ui.painter().galley(pos2(br.left() + 10.0, br.center().y - g.size().y / 2.0), g, t.app_bar_text);
                 *x = br.right() + 4.0;
@@ -127,7 +127,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(26.0, 26.0));
             let resp = ui.hit(gear, Fixed::BarSettings.into(), Sense::click());
             if resp.hovered() {
-                ui.painter().rect_filled(gear, t.radius_sm, Color32::from_white_alpha(28));
+                ui.painter().rect_filled(gear, t.radius_sm, t.app_bar_hover);
             }
             glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
             let resp = resp.on_hover_text("Settings");
@@ -151,7 +151,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 
 /// The ribbon card: tab row (with command search) over the active tab's panels.
 pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let height = TAB_ROW_HEIGHT + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT + 12.0;
     egui::Panel::top("emcraft_ribbon")
         .exact_size(height + 12.0)
@@ -214,7 +214,7 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
 }
 
 fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let mut x = row.left() + 4.0;
     for &(tab, _) in TABS {
         let name = tab.id();
@@ -373,7 +373,7 @@ pub fn choose(search: &mut Search, pick: Option<&str>) -> Option<Action> {
 /// The search results under the field.
 pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions) {
     let (true, Some(field)) = (search.open, search.field) else { return };
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let list = matches(&search.text);
     let direct = direct(&search.text);
     let mut pick = None;
@@ -435,7 +435,7 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
 /// field's text while the prompt is open.
 pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::Context, out: &mut Actions) {
     let Some(path) = export.as_mut() else { return };
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let at = app.viewport_rect.map_or(pos2(200.0, 200.0), |r| r.center_top() + vec2(-200.0, 40.0));
     egui::Area::new(egui::Id::new("emcraft_export")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {

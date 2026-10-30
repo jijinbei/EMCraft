@@ -19,6 +19,10 @@ const MAX_BYTES: u64 = 1 << 20;
 pub struct Prefs {
     /// Project files opened or saved, the newest first.
     pub recent: Vec<String>,
+    /// The theme's name (`light` when empty).
+    pub theme: String,
+    /// Older preferences' theme switch, read as the theme `dark` and never written.
+    #[serde(skip_serializing)]
     pub dark: bool,
     pub dock_dialogs: bool,
     /// The 3D view drawn by the window's GPU (fast, painter's order) instead of the CPU
@@ -42,7 +46,16 @@ impl Prefs {
         let fits = std::fs::metadata(path).is_ok_and(|m| m.len() <= MAX_BYTES);
         let mut p: Prefs = fits.then(|| std::fs::read(path).ok()).flatten().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         p.recent.truncate(MAX_RECENT);
+        if p.theme.is_empty() && std::mem::take(&mut p.dark) {
+            p.theme = "dark".into();
+        }
+        p.theme = p.theme.chars().take(emcraft_engine::theme::MAX_NAME).collect();
         p
+    }
+
+    /// The theme's name.
+    pub fn theme(&self) -> &str {
+        if self.theme.is_empty() { "light" } else { &self.theme }
     }
 
     /// Writes the preferences to `path` (its directory made when missing), through a
@@ -58,13 +71,18 @@ impl Prefs {
     }
 }
 
+/// The user's configuration directory, when the environment names one: `$EMCRAFT_CONFIG_DIR`,
+/// else `$XDG_CONFIG_HOME/emcraft`, else `~/.config/emcraft`.
+pub fn config_dir() -> Option<PathBuf> {
+    let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    var("EMCRAFT_CONFIG_DIR")
+        .or_else(|| var("XDG_CONFIG_HOME").map(|d| d.join("emcraft")))
+        .or_else(|| var("HOME").map(|h| h.join(".config").join("emcraft")))
+}
+
 /// Where the preferences live, when the environment names a home.
 pub fn default_path() -> Option<PathBuf> {
-    let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
-    let dir = var("EMCRAFT_CONFIG_DIR")
-        .or_else(|| var("XDG_CONFIG_HOME").map(|d| d.join("emcraft")))
-        .or_else(|| var("HOME").map(|h| h.join(".config").join("emcraft")))?;
-    Some(dir.join("prefs.json"))
+    Some(config_dir()?.join("prefs.json"))
 }
 
 #[cfg(test)]
@@ -75,7 +93,7 @@ mod tests {
     fn preferences_round_trip_and_survive_bad_files() {
         let dir = std::env::temp_dir().join(format!("emcraft-prefs-{}", std::process::id()));
         let path = dir.join("sub").join("prefs.json");
-        let mut p = Prefs { dark: true, length: Length::Metre, ..Prefs::default() };
+        let mut p = Prefs { theme: "Night shift".into(), length: Length::Metre, ..Prefs::default() };
         for k in 0..20 {
             p.add_recent(&format!("/tmp/{k}.emcraft"));
         }
@@ -88,7 +106,12 @@ mod tests {
         std::fs::write(&path, "{ not json").unwrap();
         assert_eq!(Prefs::load(&path), Prefs::default());
         std::fs::write(&path, r#"{"dark": true}"#).unwrap();
-        assert!(Prefs::load(&path).dark);
+        // Older preferences named the dark theme by a switch.
+        assert_eq!(Prefs::load(&path).theme(), "dark");
+        std::fs::write(&path, r#"{"dark": false}"#).unwrap();
+        assert_eq!(Prefs::load(&path).theme(), "light");
+        std::fs::write(&path, format!(r#"{{"theme": "{}"}}"#, "x".repeat(5000))).unwrap();
+        assert_eq!(Prefs::load(&path).theme.len(), emcraft_engine::theme::MAX_NAME);
         assert_eq!(Prefs::load(&dir.join("missing.json")), Prefs::default());
         let _ = std::fs::remove_dir_all(&dir);
     }

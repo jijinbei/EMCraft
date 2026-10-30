@@ -16,12 +16,12 @@ pub(super) const SIDE: f32 = 230.0;
 
 /// A small heading.
 fn heading(ui: &mut egui::Ui, text: &str) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.label(egui::RichText::new(text).size(t.font_small).color(t.text_dim).strong());
 }
 
 pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     heading(ui, "WHERE");
     locator(app, field, ui);
     ui.add_space(t.space_8);
@@ -92,7 +92,7 @@ pub(super) fn bands(app: &EmcraftApp, plane: Plane) -> Vec<(f64, f64, Option<Col
 /// and the plane where it cuts, filled. A drag moves the plane along its normal; a click puts
 /// it there.
 fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let Some(Aabb { min: lo, max: hi }) = app.session.model().bounds() else { return };
     let Some((span, axis_name)) = plane_span_of(app, field.view.plane) else { return };
     let size = [hi.x - lo.x, hi.y - lo.y, hi.z - lo.z].map(|s| s.max(1e-12));
@@ -180,7 +180,7 @@ fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
 /// |S11| and |S21| over the sweep, small, with the view's frequency marked; a click picks the
 /// nearest solved frequency.
 fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let Some(sw) = app.session.results().sweep.as_ref() else { return };
     let points: Vec<(f64, f64, f64)> = sw
         .results
@@ -198,8 +198,10 @@ fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     let plot = rect.shrink2(vec2(8.0, 8.0));
     let fx = |f: f64| if f1 > f0 { plot.left() + ((f - f0) / (f1 - f0)) as f32 * plot.width() } else { plot.center().x };
     let sy = |m: f64| plot.bottom() - (m.clamp(0.0, 1.0) as f32) * plot.height();
-    let s11 = Color32::from_rgb(200, 60, 50);
-    let s21 = Color32::from_rgb(40, 90, 200);
+    // In the charts' colours: S11 red, S21 blue.
+    let pens = crate::theme::palette();
+    let s11 = crate::theme::color32(pens.pen(emcraft_render::Pen::Series(1)));
+    let s21 = crate::theme::color32(pens.pen(emcraft_render::Pen::Series(0)));
     for (pick, colour) in [(1usize, s11), (2, s21)] {
         let line: Vec<Pos2> = points.iter().map(|p| pos2(fx(p.0), sy(if pick == 1 { p.1 } else { p.2 }))).collect();
         if line.len() > 1 {
@@ -236,7 +238,7 @@ fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
 
 /// The fields at the pointer and at the pinned point, one quantity a line.
 fn readout(app: &EmcraftApp, field: &FieldState, ui: &mut egui::Ui) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let Some(samples) = field.samples.as_ref() else { return };
     let (xa, ya) = samples.axes();
     let name = |a: &emcraft_render::Axis| a.label.split(' ').next().unwrap_or("").to_owned();

@@ -37,6 +37,7 @@ fn main() -> ExitCode {
     let host = emcraft_ui_egui::Host {
         picker: Some(std::sync::Arc::new(picker::SystemPicker)),
         prefs: emcraft_ui_egui::prefs::default_path(),
+        themes: emcraft_ui_egui::theme::default_dir(),
         open: project,
     };
     // The token file lives as long as the app.

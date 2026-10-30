@@ -83,6 +83,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("study.sweep", Some("Sweep"), Some(Glyph::ParamSweep), true),
     ui("study.optimize", Some("Optimize"), Some(Glyph::Optimize), true),
     ui("view.study", None, Some(Glyph::Chart), false),
+    ui("theme.check", None, None, false),
     ui("model.summary", None, Some(Glyph::Summary), false),
 ];
 

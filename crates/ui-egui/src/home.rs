@@ -30,8 +30,9 @@ pub struct Home {
     pub(crate) thumbs: Thumbs,
 }
 
-/// The samples' pictures, by name (`None`: the sample could not be drawn).
-pub type Thumbs = HashMap<&'static str, Option<Picture>>;
+/// The samples' pictures, by name, with the theme they were drawn in (`None`: the sample
+/// could not be drawn).
+pub type Thumbs = HashMap<&'static str, (crate::theme::ThemeKey, Option<Picture>)>;
 
 /// A sample's model without its mesh or solve, drawn from the corner.
 fn thumbnail(name: &str) -> Option<Picture> {
@@ -50,14 +51,14 @@ fn thumbnail(name: &str) -> Option<Picture> {
     cam.standard(StandardView::Iso);
     cam.fit(lo, hi, f64::from(THUMB[0] / THUMB[1]));
     cam.distance *= 0.8;
-    let t = Tokens::get();
-    let rgb = |c: Color32| emcraft_render::Rgb(c.r(), c.g(), c.b());
+    let t = &Tokens::get();
+    let rgb = crate::theme::rgb;
     let opt = view3d::Options { width: w, height: h, supersample: 2, background: (rgb(t.viewport_top), rgb(t.viewport_bottom)), line_width: 2.0 };
     Some(Picture::new(&view3d::render(&built.scene, &cam, &opt)))
 }
 
 pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::symmetric(36, 24))).show(ui, |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -95,14 +96,14 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.label(egui::RichText::new(text).size(t.font_heading).strong().color(t.text));
     ui.add_space(t.space_4);
 }
 
 /// A large button: a glyph and a label; the primary one in the accent.
 fn big(ui: &mut egui::Ui, glyph: Glyph, label: &str, primary: bool, handle: Fixed) -> bool {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let g = ui.painter().layout_no_wrap(label.to_owned(), FontId::proportional(t.font_heading), t.text);
     let (r, resp) = ui.allocate_exact_size(vec2((56.0 + g.size().x + 24.0).max(180.0), 60.0), Sense::click());
     let (fill, ink) = if primary {
@@ -140,7 +141,7 @@ fn grid(ui: &mut egui::Ui, n: usize, mut each: impl FnMut(&mut egui::Ui, usize))
 
 /// A card: a picture (or a glyph), a name and a line under it.
 fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, sub: &str, dim: bool, handle: Handle) -> egui::Response {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let (r, resp) = ui.allocate_exact_size(vec2(THUMB[0] + 16.0, THUMB[1] + 64.0), Sense::click());
     let p = ui.painter();
     p.rect(
@@ -175,7 +176,7 @@ fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, 
 }
 
 fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     heading(ui, "Recent");
     let list = &app.prefs.recent;
     if list.is_empty() {
@@ -216,7 +217,13 @@ fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     let mut chosen = None;
     grid(ui, list.len(), |ui, i| {
         let s = &list[i];
-        let pic = thumbs.entry(s.name).or_insert_with(|| thumbnail(s.name));
+        // Drawn again in a new theme (the view's ground and the scene's colours are its).
+        let key = crate::theme::key();
+        let slot = thumbs.entry(s.name).or_insert_with(|| (key.clone(), thumbnail(s.name)));
+        if slot.0 != key {
+            *slot = (key, thumbnail(s.name));
+        }
+        let pic = &mut slot.1;
         if card(ui, pic.as_mut(), Glyph::Sample, s.name, s.label, false, Handle::Sample(s.name)).on_hover_text(s.label).clicked() {
             chosen = Some(s.name.to_owned());
         }
@@ -239,9 +246,9 @@ fn setting<T: Copy + PartialEq>(
     choices: &[(T, &str, &str, &str)],
     action: impl Fn(T) -> Action,
 ) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     ui.label(egui::RichText::new(name).color(t.text_dim));
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for &(value, label, id, hint) in choices {
             ui.act(true, egui::Button::selectable(current == value, label), Handle::Setting(group, id), hint, || action(value), out);
         }
@@ -249,16 +256,35 @@ fn setting<T: Copy + PartialEq>(
     ui.end_row();
 }
 
+/// A theme's name as its button reads: the built-in ones capitalised.
+fn theme_label(name: &str) -> &str {
+    match name {
+        "light" => "Light",
+        "dark" => "Dark",
+        other => other,
+    }
+}
+
 /// The settings new projects start with and the window's look, also under the app bar's gear.
 pub fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     egui::Grid::new("settings").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
         setting(ui, out, "Length", "length", app.prefs.length, &[(Length::Millimetre, "mm", "mm", ""), (Length::Metre, "m", "m", "")], |u| {
             Action::Pref(Pref::Length(u))
         });
         let frequencies = [(Frequency::Gigahertz, "GHz", "GHz", ""), (Frequency::Megahertz, "MHz", "MHz", ""), (Frequency::Hertz, "Hz", "Hz", "")];
         setting(ui, out, "Frequency", "frequency", app.prefs.frequency, &frequencies, |u| Action::Pref(Pref::Frequency(u)));
-        setting(ui, out, "Theme", "theme", app.dark, &[(false, "Light", "light", ""), (true, "Dark", "dark", "")], |d| Action::Pref(Pref::Dark(d)));
+        // Every theme there is: the built-in ones, then the user's (docs/themes.md).
+        let names = app.themes.names();
+        let themes: Vec<(usize, &str, &str, &str)> = app
+            .themes
+            .list
+            .iter()
+            .enumerate()
+            .map(|(i, th)| (i, if th.fallback { th.name.as_str() } else { theme_label(&th.name) }, th.name.as_str(), th.description.as_str()))
+            .collect();
+        let current = names.iter().position(|n| *n == app.theme).unwrap_or(0);
+        setting(ui, out, "Theme", "theme", current, &themes, |i| Action::Pref(Pref::Theme(names.get(i).copied().unwrap_or("light").to_owned())));
         let drawing = [
             (false, "Quality", "quality", "the CPU renderer: depth-buffered and smoothed at rest"),
             (true, "Fast", "fast", "the GPU, every frame: for large meshes"),

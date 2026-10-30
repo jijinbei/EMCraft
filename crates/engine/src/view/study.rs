@@ -3,7 +3,7 @@
 //! time: along one variable (its values the curves, or the x axis), every other held at one of
 //! its values ([`Slice`]).
 
-use emcraft_render::Rgb;
+use emcraft_render::Pen;
 use emcraft_render::axes::Axis;
 use emcraft_render::chart::{Chart, Series, Style};
 
@@ -11,11 +11,10 @@ use super::chart::{DB_FLOOR, db_axis, padded_axis, span};
 use crate::study::{Kind, Row, Study};
 use crate::{EngineError, Result};
 
-/// A colour along a ramp from blue to red, `t` from 0 to 1: a sweep's values in order.
-fn ramp(t: f64) -> Rgb {
-    let t = t.clamp(0.0, 1.0);
-    let mix = |a: f64, b: f64| (a + (b - a) * t).round() as u8;
-    Rgb(mix(30.0, 200.0), mix(80.0, 50.0), mix(200.0, 40.0))
+/// A colour along the ramp from the first series colour (blue) to the second (red), `t` from
+/// 0 to 1: a sweep's values in order.
+fn ramp(t: f64) -> Pen {
+    Pen::Ramp(t.clamp(0.0, 1.0))
 }
 
 fn nothing_to_chart() -> EngineError {
@@ -144,8 +143,8 @@ fn optimization_chart(study: &Study) -> Result<Chart> {
         x: Axis::new("evaluation", 0.5, study.rows.len().max(2) as f64 + 0.5),
         y,
         series: vec![
-            Series { label: "each solve".into(), color: Rgb(140, 140, 150), style: Style::Markers, points },
-            Series { label: "best so far".into(), color: Rgb(30, 90, 200), style: Style::Line, points: so_far },
+            Series { label: "each solve".into(), pen: Pen::Muted, style: Style::Markers, points },
+            Series { label: "best so far".into(), pen: Pen::Series(0), style: Style::Line, points: so_far },
         ],
         marks: Vec::new(),
     })
@@ -169,8 +168,8 @@ fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice)
         let rows = study.slice(free, &at);
         let points: Vec<[f64; 2]> = rows.iter().filter(|r| r.error.is_none()).filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-        series.push(Series { label: format!("{} = {v}", variable(study, other, "")), color: ramp(t), style: Style::Line, points: points.clone() });
-        series.push(Series { label: String::new(), color: ramp(t), style: Style::Markers, points });
+        series.push(Series { label: format!("{} = {v}", variable(study, other, "")), pen: ramp(t), style: Style::Line, points: points.clone() });
+        series.push(Series { label: String::new(), pen: ramp(t), style: Style::Markers, points });
     }
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     let x = padded_axis(&variable(study, free, "value"), all.iter().filter_map(|r| value(r, free)));
@@ -191,8 +190,8 @@ fn one_frequency_chart(study: &Study, ok: &[&Row], p: &str, free: usize) -> Char
     let pts: Vec<[f64; 2]> = ok.iter().filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
     let f = ok.first().and_then(|r| r.frequencies.first()).copied().unwrap_or(f64::NAN);
     let series = vec![
-        Series { label: format!("{label} at {f} {}", study.frequency_unit), color: Rgb(30, 90, 200), style: Style::Line, points: pts.clone() },
-        Series { label: String::new(), color: Rgb(30, 90, 200), style: Style::Markers, points: pts },
+        Series { label: format!("{label} at {f} {}", study.frequency_unit), pen: Pen::Series(0), style: Style::Line, points: pts.clone() },
+        Series { label: String::new(), pen: Pen::Series(0), style: Style::Markers, points: pts },
     ];
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     let x = padded_axis(&variable(study, free, "value"), ok.iter().filter_map(|r| value(r, free)));
@@ -210,7 +209,7 @@ fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize) -> Result<Chart
         let points: Vec<[f64; 2]> = r.frequencies.iter().zip(db).map(|(f, d)| [*f, d.max(DB_FLOOR)]).collect();
         let v = value(r, free).unwrap_or(f64::NAN);
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-        series.push(Series { label: format!("{} = {v}", variable(study, free, "")), color: ramp(t), style: Style::Line, points });
+        series.push(Series { label: format!("{} = {v}", variable(study, free, "")), pen: ramp(t), style: Style::Line, points });
     }
     if series.is_empty() {
         return Err(nothing_to_chart());
@@ -231,7 +230,7 @@ fn modes_chart(study: &Study, ok: &[&Row], free: usize) -> Result<Chart> {
     let series: Vec<Series> = (0..modes.min(12))
         .map(|m| Series {
             label: format!("mode {}", m + 1),
-            color: ramp(m as f64 / (modes.max(2) - 1) as f64),
+            pen: ramp(m as f64 / (modes.max(2) - 1) as f64),
             style: Style::Line,
             points: ok.iter().filter_map(|r| Some([value(r, free)?, *r.modes.get(m)?])).collect(),
         })

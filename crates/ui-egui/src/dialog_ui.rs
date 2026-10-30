@@ -20,7 +20,7 @@ struct Asked {
 
 /// A floating dialog card over the viewport.
 pub fn floating(app: &EmcraftApp, d: &mut Dialog, ctx: &egui::Context, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let Some(view) = app.viewport_rect else { return };
     let default = view.right_top() + vec2(-t.form_card_width - 16.0, 16.0);
     let mut asked = Asked::default();
@@ -43,7 +43,7 @@ pub fn floating(app: &EmcraftApp, d: &mut Dialog, ctx: &egui::Context, out: &mut
 
 /// The dialog docked in a panel at the right.
 pub fn docked(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let mut asked = Asked::default();
     egui::Panel::right("emcraft_dialog_dock")
         .exact_size(t.form_card_width + 12.0)
@@ -81,7 +81,7 @@ fn act(app: &EmcraftApp, asked: Asked, out: &mut Actions) {
 }
 
 fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Asked {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     let busy = app.busy();
     let accent = t.tab(app.tab)[0];
     let session = &app.session;
@@ -127,7 +127,7 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
 }
 
 fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) {
-    let t = Tokens::get();
+    let t = &Tokens::get();
     for f in d.fields.iter_mut() {
         let unit = crate::dialogs::unit(f.quantity, session);
         let name = f.name;
