@@ -246,7 +246,7 @@ impl fmt::Display for Handle<'_> {
             Handle::EigenField(n) => write!(f, "eigen:field:{n}"),
             Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.name()),
             Handle::FieldKept(k) => write!(f, "field:kept:{k}"),
-            Handle::Standard(v) => write!(f, "view3d:std:{}", v.name()),
+            Handle::Standard(v) => write!(f, "view3d:std:{}", v.id()),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),

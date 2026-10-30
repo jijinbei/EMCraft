@@ -452,7 +452,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         }
         "solve.port_modes" => json!({"frequency": band.map_or(10.0, |(_, z)| z), "order": 2}),
         "solve.dispersion" => json!({"from": 0, "to": 180, "points": 11, "bands": 4, "near": band.map_or(15.0, |(_, z)| z), "order": 2}),
-        "solve.device" => json!({"device": s.compute().device(), "precision": s.compute().precision.name()}),
+        "solve.device" => json!({"device": s.compute().device(), "precision": s.compute().precision.id()}),
         "project.frequency" => match band {
             Some((a, z)) => json!({"start": a, "stop": z}),
             None => json!({"start": 8, "stop": 12}),

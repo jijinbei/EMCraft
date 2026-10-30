@@ -1940,6 +1940,7 @@ dependencies = [
  "emcraft-fem",
  "emcraft-gpu",
  "emcraft-io",
+ "emcraft-macros",
  "emcraft-mesh",
  "emcraft-model",
  "emcraft-render",
@@ -1976,6 +1977,7 @@ dependencies = [
  "bytemuck",
  "cubecl",
  "emcraft-fdtd",
+ "emcraft-macros",
  "emcraft-model",
  "emcraft-solver",
  "num-complex",
@@ -2020,6 +2022,7 @@ name = "emcraft-render"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
+ "emcraft-macros",
  "png",
 ]
 
@@ -2042,6 +2045,7 @@ name = "emcraft-testkit"
 version = "0.1.0"
 dependencies = [
  "emcraft-engine",
+ "emcraft-macros",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

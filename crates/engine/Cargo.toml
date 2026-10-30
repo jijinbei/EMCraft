@@ -9,6 +9,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+emcraft-macros = { workspace = true }
 emcraft-model = { workspace = true }
 emcraft-mesh = { workspace = true }
 emcraft-fem = { workspace = true }

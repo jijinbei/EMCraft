@@ -67,31 +67,17 @@ type Result<T> = std::result::Result<T, OracleError>;
 pub const FIXTURE_RELATIVE: f64 = 1e-9;
 const ABSOLUTE_SHARE: f64 = 1e-3;
 
-/// The kind of reference a case is checked against.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Kind {
-    /// A closed-form solution.
-    Theory,
-    /// A published benchmark.
-    Benchmark,
-    /// A measurement.
-    Experiment,
-}
-
-impl Kind {
-    pub fn name(self) -> &'static str {
-        match self {
-            Kind::Theory => "theory",
-            Kind::Benchmark => "benchmark",
-            Kind::Experiment => "experiment",
-        }
-    }
-}
-
-impl std::fmt::Display for Kind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
+emcraft_macros::named_enum! {
+    /// The kind of reference a case is checked against.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Kind {
+        /// A closed-form solution.
+        Theory = "theory",
+        /// A published benchmark.
+        Benchmark = "benchmark",
+        /// A measurement.
+        Experiment = "experiment",
     }
 }
 

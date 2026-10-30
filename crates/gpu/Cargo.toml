@@ -13,6 +13,7 @@ workspace = true
 cuda = ["cubecl/cuda"]
 
 [dependencies]
+emcraft-macros = { workspace = true }
 emcraft-fdtd = { workspace = true }
 emcraft-solver = { workspace = true }
 cubecl = { workspace = true }

@@ -1,38 +1,25 @@
 //! The devices: which backends this build carries, what each runs on this machine, and a guard
 //! that turns a panic inside a runtime into an error.
 
-use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use emcraft_fdtd::{FdtdError, Result};
 
 use crate::kernels;
 
-/// Where the kernels run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Backend {
-    /// The CPU, through CubeCL's SIMD compiler (always built; for tests and machines without a
-    /// GPU).
-    Cpu,
-    /// An NVIDIA GPU (the `cuda` feature).
-    Cuda,
+emcraft_macros::named_enum! {
+    /// Where the kernels run; its id is the name commands use.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Backend {
+        /// The CPU, through CubeCL's SIMD compiler (always built; for tests and machines without
+        /// a GPU).
+        Cpu = "cpu",
+        /// An NVIDIA GPU (the `cuda` feature).
+        Cuda = "cuda",
+    }
 }
 
 impl Backend {
-    pub const ALL: [Backend; 2] = [Backend::Cpu, Backend::Cuda];
-
-    /// The name commands use.
-    pub fn name(self) -> &'static str {
-        match self {
-            Backend::Cpu => "cpu",
-            Backend::Cuda => "cuda",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Backend> {
-        Backend::ALL.into_iter().find(|b| b.name() == s)
-    }
-
     /// Whether this build carries the backend.
     pub fn built(self) -> bool {
         match self {
@@ -52,40 +39,15 @@ impl Backend {
     }
 }
 
-impl fmt::Display for Backend {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
-/// The floating-point type of the fields on the device.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Precision {
-    /// f32: half the memory and traffic of double; ample for S-parameters to 1e-4.
-    #[default]
-    Single,
-    /// f64: for checking single against.
-    Double,
-}
-
-impl Precision {
-    pub const ALL: [Precision; 2] = [Precision::Single, Precision::Double];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Precision::Single => "single",
-            Precision::Double => "double",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Precision> {
-        Precision::ALL.into_iter().find(|p| p.name() == s)
-    }
-}
-
-impl fmt::Display for Precision {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
+emcraft_macros::named_enum! {
+    /// The floating-point type of the fields on the device.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum Precision {
+        /// f32: half the memory and traffic of double; ample for S-parameters to 1e-4.
+        #[default]
+        Single = "single",
+        /// f64: for checking single against.
+        Double = "double",
     }
 }
 

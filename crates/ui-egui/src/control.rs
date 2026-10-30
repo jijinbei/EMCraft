@@ -301,7 +301,7 @@ fn commands() -> Value {
             let params: Vec<Value> = c
                 .params
                 .iter()
-                .map(|q| json!({"name": q.name, "kind": q.kind.name(), "required": q.required, "doc": q.doc, "choices": q.choices}))
+                .map(|q| json!({"name": q.name, "kind": q.kind.id(), "required": q.required, "doc": q.doc, "choices": q.choices}))
                 .collect();
             json!({"id": c.id, "label": c.label, "doc": c.doc, "params": params, "long": crate::commands::is_long(c.id)})
         })
