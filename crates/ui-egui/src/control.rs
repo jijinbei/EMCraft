@@ -119,7 +119,7 @@ fn mods(p: &Value) -> egui::Modifiers {
 pub fn inspect(app: &EmcraftApp) -> Value {
     let progress = app.job.as_ref().map(|j| {
         let s = j.snapshot();
-        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining()})
+        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining(), "device": j.place().map(|w| json!({"device": w.device, "gpu": w.gpu, "fronts": w.fronts}))})
     });
     let dialog = app.dialog.as_ref().map(|d| {
         let fields: serde_json::Map<String, Value> = d

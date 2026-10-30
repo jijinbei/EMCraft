@@ -70,6 +70,7 @@ emcraft_macros::named_enum! {
         Status = "status",
         Progress = "progress",
         StatusCancel = "status:cancel",
+        JobDevice = "status:device",
         // The running job in the right column (the step panel, the docked dialog that ran it).
         Job = "job",
         JobCancel = "job:cancel",

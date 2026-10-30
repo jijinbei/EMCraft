@@ -4,7 +4,7 @@
 use crate::handle::Fixed;
 use crate::lang::{args, tr, trf};
 
-use crate::{Action, Actions, EmcraftApp, UiExt, label, scenario, theme, ui_kit};
+use crate::{Action, Actions, EmcraftApp, Hint, UiExt, label, scenario, theme, ui_kit};
 
 /// A line of the message area.
 #[derive(Clone, Debug, PartialEq)]
@@ -102,9 +102,43 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
         // Cancel first, where it stays put while the text beside it changes.
         ui.act(true, ui_kit::styled("Cancel", false), Fixed::StatusCancel.into(), "", || Action::CancelJob, out);
         ui.spinner();
+        if let Some(w) = job.place() {
+            device_chip(ui, &w, t);
+        }
         ui.label(egui::RichText::new(job_text(job)).size(t.font_body));
         ui_kit::progress(ui, job.snapshot().fraction(), 180.0);
     });
+}
+
+/// Where a solve runs, in brief: `CPU`, or `GPU cuda` (and the fronts it has taken).
+pub(crate) fn place_text(w: &crate::worker::Where) -> String {
+    // The GPU's kernels run on the CPU's SIMD there: no GPU at all.
+    if w.device == "cubecl-cpu" {
+        return trf("CPU kernels ({device})", args!(device = w.device));
+    }
+    match (w.gpu, w.stepped) {
+        (false, _) => tr("CPU").to_owned(),
+        (true, true) => trf("GPU {device}", args!(device = w.device)),
+        (true, false) if w.fronts > 0 => trf("GPU {device}: {n} fronts", args!(device = w.device, n = w.fronts)),
+        (true, false) => trf("CPU (no front large enough for {device})", args!(device = w.device)),
+    }
+}
+
+/// The solve's device as a chip: the accent's while a GPU works, dim on the CPU.
+fn device_chip(ui: &mut egui::Ui, w: &crate::worker::Where, t: &theme::Tokens) {
+    let on = w.gpu && (w.stepped || w.fronts > 0);
+    let text = place_text(w);
+    let (fill, ink) = if on { (t.accent, t.on_accent) } else { (t.panel_header, t.text_dim) };
+    let hint = match (w.gpu, w.stepped) {
+        (false, _) => "The CPU's threads (Setup › Compute picks a GPU)",
+        (true, true) => "The time domain's steps on the GPU",
+        (true, false) => "The factorization on the CPU, its large fronts on the GPU",
+    };
+    let r = egui::Frame::NONE.fill(fill).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
+        ui.label(egui::RichText::new(text).size(t.font_small).color(ink));
+    });
+    scenario::publish_target(Fixed::JobDevice, r.response.rect);
+    r.response.hint(hint);
 }
 
 /// A running job in brief: what runs, how far it is (its count, from the job's progress) and

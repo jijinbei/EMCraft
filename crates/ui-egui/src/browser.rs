@@ -132,9 +132,11 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let f = Fmt::new(&app.session);
     let m = app.session.model();
     let mut sections = Vec::new();
-    // A project's variables, when it has any: double-click to change one.
-    if !app.session.variables().is_empty() {
-        sections.push(("Variables", variables(&app.session)));
+    // The variables the job defined (a study's), not a template's own dimensions: double-click
+    // to change one.
+    let own = variables(&app.session);
+    if !own.is_empty() {
+        sections.push(("Variables", own));
     }
     sections.extend([
         ("Geometry", geometry(m, &f)),
@@ -162,8 +164,11 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
 }
 
 fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
+    let template: Vec<String> =
+        s.sample().and_then(emcraft_engine::template_parameters).unwrap_or_default().into_iter().map(|p| p.name).collect();
     s.variables()
         .iter()
+        .filter(|(name, _)| !template.contains(name))
         .map(|(name, value)| {
             let given = s.history().iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
             let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();

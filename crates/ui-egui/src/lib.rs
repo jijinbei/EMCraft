@@ -408,7 +408,10 @@ impl EmcraftApp {
                     self.view = v;
                 }
                 if let Some(m) = self.messages.last_mut() {
-                    m.text.push_str(&format!(" ({secs:.1} s)"));
+                    match job.place() {
+                        Some(w) => m.text.push_str(&format!(" ({secs:.1} s · {})", messages::place_text(&w))),
+                        None => m.text.push_str(&format!(" ({secs:.1} s)")),
+                    }
                 }
             }
             Err(e) => {

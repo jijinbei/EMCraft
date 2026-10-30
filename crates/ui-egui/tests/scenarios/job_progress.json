@@ -6,6 +6,7 @@
   {"until": {"inspect": {"progress.stage": "frequency", "progress.done": {"min": 1}}}, "timeout": 120},
   {"expect": {"busy": true, "inspect": {"workflow.step": "run", "workflow.running": true, "progress.total": 400}, "handles": ["job:cancel", "status:cancel", "bar:job"]}},
   {"shot": "job-progress-run-step"},
+  {"expect": {"inspect": {"progress.device.device": "cpu", "progress.device.gpu": false}, "handles": ["status:device"]}},
   {"note": "Escape does not cancel: Cancel is a click"},
   {"key": "Escape"},
   {"frames": 2},
