@@ -88,7 +88,7 @@ fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
                 return empty(ui, &e);
             }
         };
-        field.layout = Some(emcraft_render::plot::Layout::of(&plot, width));
+        field.layout = Some(emcraft_render::plot::layout_of(&plot, width));
         field.picture.set(key, &emcraft_render::plot::draw(&plot, width, &crate::theme::palette()));
     }
     let Some(p) = field.picture.get_mut() else { return };

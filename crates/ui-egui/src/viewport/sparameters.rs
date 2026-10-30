@@ -144,7 +144,7 @@ fn frequency_decimals(freqs: &[f64]) -> usize {
 /// The S-parameter chart's layout at `width` × `height` pixels, its x axis the sweep's
 /// frequencies `f0..=f1` (its y axis does not matter here).
 fn chart_layout(width: f64, height: f64, f0: f64, f1: f64) -> emcraft_render::chart::Layout {
-    emcraft_render::chart::Layout::new(width.max(0.0) as usize, height.max(0.0) as usize, (f0, f1), (0.0, 1.0))
+    emcraft_render::chart::layout(width.max(0.0) as usize, height.max(0.0) as usize, (f0, f1), (0.0, 1.0))
 }
 
 /// Maps a click at fraction `fx` across the S-parameter chart (`width_px` wide) to a

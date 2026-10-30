@@ -39,48 +39,18 @@ const BOTTOM: f64 = 100.0;
 /// The least side of the plot area (pixels), however small the picture.
 const MIN_SIDE: f64 = 50.0;
 
-/// Where a chart drawn at some size puts its plot area: the picture's size, the area's
-/// rectangle in it (pixels) and the axes' ranges.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Layout {
-    pub width: usize,
-    pub height: usize,
-    /// The plot area: left, top, width, height.
-    pub plane: [f64; 4],
-    pub x: (f64, f64),
-    pub y: (f64, f64),
+pub use crate::axes::Layout;
+
+/// A chart's layout `width` × `height` pixels over the axes' ranges `x` and `y`.
+pub fn layout(width: usize, height: usize, x: (f64, f64), y: (f64, f64)) -> Layout {
+    let pw = (width as f64 - LEFT - RIGHT).max(MIN_SIDE);
+    let ph = (height as f64 - TOP - BOTTOM).max(MIN_SIDE);
+    Layout { width, height, plane: [LEFT, TOP, pw, ph], x, y }
 }
 
-impl Layout {
-    /// A chart `width` × `height` pixels over the axes' ranges `x` and `y`.
-    pub fn new(width: usize, height: usize, x: (f64, f64), y: (f64, f64)) -> Layout {
-        let pw = (width as f64 - LEFT - RIGHT).max(MIN_SIDE);
-        let ph = (height as f64 - TOP - BOTTOM).max(MIN_SIDE);
-        Layout { width, height, plane: [LEFT, TOP, pw, ph], x, y }
-    }
-
-    /// The layout of `chart` drawn `width` × `height` pixels.
-    pub fn of(chart: &Chart, width: usize, height: usize) -> Layout {
-        Layout::new(width, height, chart.x.span(), chart.y.span())
-    }
-
-    /// A point (axis units) in pixels.
-    pub fn to_pixels(&self, p: [f64; 2]) -> [f64; 2] {
-        axes::to_pixels(self.plane, self.x, self.y, p)
-    }
-
-    /// The point (axis units) under a pixel position; `None` off the plot area.
-    pub fn to_axes(&self, px: [f64; 2]) -> Option<[f64; 2]> {
-        axes::to_axes(self.plane, self.x, self.y, px)
-    }
-
-    /// The x value (axis units) under the pixel column `px`; `None` left or right of the plot
-    /// area.
-    pub fn x_at(&self, px: f64) -> Option<f64> {
-        let [x0, _, pw, _] = self.plane;
-        let u = (px - x0) / pw;
-        (0.0..=1.0).contains(&u).then_some(self.x.0 + u * (self.x.1 - self.x.0))
-    }
+/// The layout of `chart` drawn `width` × `height` pixels.
+pub fn layout_of(chart: &Chart, width: usize, height: usize) -> Layout {
+    layout(width, height, chart.x.span(), chart.y.span())
 }
 
 /// A diamond marker of half-diagonal `r` about `q`.
@@ -93,7 +63,7 @@ fn diamond(c: &mut Canvas, q: [f64; 2], r: f64, color: Rgb) {
 pub fn draw(chart: &Chart, width: usize, height: usize, palette: &Palette) -> Canvas {
     let mut c = Canvas::new(width, height, palette.ground);
     let ink = palette.ink;
-    let layout = Layout::of(chart, c.w, c.h);
+    let layout = layout_of(chart, c.w, c.h);
     let [x0, y0, pw, ph] = layout.plane;
     let (xa, xb) = layout.x;
     let (ya, yb) = layout.y;
@@ -176,13 +146,13 @@ mod tests {
         let dark = draw(&chart, 500, 360, &crate::palette::samples::dark());
         assert_eq!(dark.pixel(2, 2), Some(crate::palette::samples::dark().ground));
         // The layout says where: the plot area's corners, and back.
-        let l = Layout::of(&chart, 500, 360);
+        let l = layout_of(&chart, 500, 360);
         assert_eq!(l.plane, [x0, y0, pw, ph]);
         assert_eq!(l.to_pixels([0.0, -30.0]), [x0, y0 + ph]);
         assert_eq!(l.to_axes([x0 + pw, y0]), Some([10.0, 0.0]));
         assert_eq!(l.x_at(x0 + 0.5 * pw), Some(5.0));
         assert_eq!((l.x_at(x0 - 1.0), l.to_axes([x0, y0 - 1.0])), (None, None));
         // A tiny picture keeps a plot area of the least side.
-        assert_eq!(Layout::new(10, 10, (0.0, 1.0), (0.0, 1.0)).plane, [90.0, 40.0, 50.0, 50.0]);
+        assert_eq!(layout(10, 10, (0.0, 1.0), (0.0, 1.0)).plane, [90.0, 40.0, 50.0, 50.0]);
     }
 }
