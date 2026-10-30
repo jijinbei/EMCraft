@@ -8,30 +8,33 @@ use crate::model::Model;
 use crate::shape::Axis;
 use crate::waveguide::{Strip, Via, Waveguide};
 
-/// What a symmetry plane is: the wall that stands in for the half of the model it cuts away.
-///
-/// A model symmetric about a plane carries fields of two parities about it, and each parity is
-/// the field of the half model closed on the plane by a wall (J.-M. Jin, *The Finite Element
-/// Method in Electromagnetics*, 3rd ed., Wiley 2014: ch. 1 on the boundary conditions, ch. 8 on
-/// their essential and natural imposition with edge elements; R. F. Harrington, *Time-Harmonic
-/// Electromagnetic Fields*, McGraw-Hill 1961, ch. 3 on duality and images):
-/// - an electric wall (perfect electric conductor): tangential E = 0 on the plane — the field
-///   whose tangential E is odd and normal E even about it (TE20 about x = a/2 in a rectangular
-///   guide; TE10 about y = b/2, its E being normal to that plane);
-/// - a magnetic wall (perfect magnetic conductor): tangential H = 0, so normal E = 0 — the field
-///   whose tangential E is even and normal E odd (TE10 about x = a/2).
-///
-/// With edge elements the electric wall is the essential condition (the tangential unknowns on
-/// the plane are eliminated, as on the conducting walls) and the magnetic wall the natural one
-/// (the unknowns are kept and no surface term is added): n̂ × (μr⁻¹ ∇ × E) = 0 holds weakly.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SymmetryKind {
-    /// A perfect electric conductor on the plane: tangential E = 0.
-    Electric,
-    /// A perfect magnetic conductor on the plane: tangential H = 0.
-    Magnetic,
+emcraft_macros::named_enum! {
+    /// What a symmetry plane is: the wall that stands in for the half of the model it cuts away.
+    ///
+    /// A model symmetric about a plane carries fields of two parities about it, and each parity is
+    /// the field of the half model closed on the plane by a wall (J.-M. Jin, *The Finite Element
+    /// Method in Electromagnetics*, 3rd ed., Wiley 2014: ch. 1 on the boundary conditions, ch. 8 on
+    /// their essential and natural imposition with edge elements; R. F. Harrington, *Time-Harmonic
+    /// Electromagnetic Fields*, McGraw-Hill 1961, ch. 3 on duality and images):
+    /// - an electric wall (perfect electric conductor): tangential E = 0 on the plane — the field
+    ///   whose tangential E is odd and normal E even about it (TE20 about x = a/2 in a rectangular
+    ///   guide; TE10 about y = b/2, its E being normal to that plane);
+    /// - a magnetic wall (perfect magnetic conductor): tangential H = 0, so normal E = 0 — the field
+    ///   whose tangential E is even and normal E odd (TE10 about x = a/2).
+    ///
+    /// With edge elements the electric wall is the essential condition (the tangential unknowns on
+    /// the plane are eliminated, as on the conducting walls) and the magnetic wall the natural one
+    /// (the unknowns are kept and no surface term is added): n̂ × (μr⁻¹ ∇ × E) = 0 holds weakly.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SymmetryKind {
+        /// A perfect electric conductor on the plane: tangential E = 0.
+        Electric = "electric",
+        /// A perfect magnetic conductor on the plane: tangential H = 0.
+        Magnetic = "magnetic",
+    }
 }
+
+emcraft_macros::named_serde!(SymmetryKind);
 
 /// A plane of symmetry `axis` = `at` (m) through the model: only the side below it is meshed and
 /// solved, the plane closed by the wall of `kind`.

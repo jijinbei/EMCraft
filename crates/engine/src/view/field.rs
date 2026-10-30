@@ -14,23 +14,19 @@ use emcraft_solver::Complex64 as C;
 
 use crate::{EngineError, Result, Session};
 
-/// A plane through the guide a field picture shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Plane {
-    #[serde(alias = "h-plane")]
-    H,
-    #[serde(alias = "e-plane")]
-    E,
-    #[serde(alias = "cross-section")]
-    Cross,
+emcraft_macros::named_enum! {
+    /// A plane through the guide a field picture shows.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Plane {
+        H = "h" | "h-plane" => "H",
+        E = "e" | "e-plane" => "E",
+        Cross = "cross" | "cross-section" => "Cross-section",
+    }
 }
 
-impl Plane {
-    pub fn name(self) -> &'static str {
-        crate::Choice::name(self)
-    }
+emcraft_macros::named_serde!(Plane);
 
+impl Plane {
     /// The model axes (0 x, 1 y, 2 z) along the picture's horizontal, its vertical and the
     /// plane's normal.
     const fn axes(self) -> [usize; 3] {
@@ -40,56 +36,30 @@ impl Plane {
             Plane::Cross => [0, 1, 2],
         }
     }
+}
 
-    fn title(self) -> &'static str {
-        match self {
-            Plane::H => "H",
-            Plane::E => "E",
-            Plane::Cross => "Cross-section",
-        }
+emcraft_macros::named_enum! {
+    /// The quantity a field picture colours: a Cartesian component of E or H, or the magnitude of
+    /// one.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    pub enum Component {
+        Ex = "ex" => "Ex",
+        #[default]
+        Ey = "ey" => "Ey",
+        Ez = "ez" => "Ez",
+        Hx = "hx" => "Hx",
+        Hy = "hy" => "Hy",
+        Hz = "hz" => "Hz",
+        /// |E|.
+        E = "|e|" => "|E|",
+        /// |H|.
+        H = "|h|" => "|H|",
     }
 }
 
-/// The quantity a field picture colours: a Cartesian component of E or H, or the magnitude of
-/// one.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum Component {
-    Ex,
-    #[default]
-    Ey,
-    Ez,
-    Hx,
-    Hy,
-    Hz,
-    /// |E|.
-    E,
-    /// |H|.
-    H,
-}
-
-crate::choice::choices! {
-    Plane { Plane::H => "h", Plane::E => "e", Plane::Cross => "cross" }
-    Component {
-        Component::Ex => "ex", Component::Ey => "ey", Component::Ez => "ez",
-        Component::Hx => "hx", Component::Hy => "hy", Component::Hz => "hz",
-        Component::E => "|e|", Component::H => "|h|",
-    }
-}
+emcraft_macros::named_serde!(Component);
 
 impl Component {
-    pub const ALL: [Component; 8] =
-        [Component::Ex, Component::Ey, Component::Ez, Component::Hx, Component::Hy, Component::Hz, Component::E, Component::H];
-
-    /// The name commands use: `ex` … `hz`, `|e|`, `|h|`.
-    pub fn name(self) -> &'static str {
-        crate::Choice::name(self)
-    }
-
-    /// The name in text: `Ey`, `|H|`.
-    pub fn label(self) -> String {
-        self.name().replace('e', "E").replace('h', "H")
-    }
-
     /// The name as TeX math, for pictures: `$E_y$`, `$|H|$`.
     pub fn tex(self) -> String {
         match self {
@@ -125,21 +95,12 @@ impl Component {
     }
 }
 
-impl std::fmt::Display for Component {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
 impl std::str::FromStr for Component {
     type Err = EngineError;
 
     /// A component by its name, in either case.
     fn from_str(s: &str) -> Result<Component> {
-        let lower = s.to_ascii_lowercase();
-        Component::ALL
-            .into_iter()
-            .find(|c| c.name() == lower)
+        Component::parse(&s.to_ascii_lowercase())
             .ok_or_else(|| EngineError::Params(format!("`component` must be ex, ey, ez, hx, hy, hz, |e| or |h|, got `{}`", crate::text::clip(s, 20))))
     }
 }
@@ -331,7 +292,7 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
     let fsym = session.display.frequency;
     let title = format!(
         "{} plane, {} = {} {lname}   f = {} {}",
-        view.plane.title(),
+        view.plane.label(),
         emcraft_model::Axis::name_of(nk),
         emcraft_render::axes::format(l.from_si(n0 + frame.at)),
         emcraft_render::axes::format(fsym.from_si(frequency)),

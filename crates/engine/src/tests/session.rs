@@ -188,36 +188,16 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
 
 #[test]
 fn every_choice_a_command_lists_is_one_its_parameter_reads() {
-    use crate::choice::tests::reads_as_serde;
-    use emcraft_model as m;
-    // The table lists each choice's names (`one_of(T::NAMES)`); the types serde reads name
-    // their values alike.
-    reads_as_serde::<m::units::Length>();
-    reads_as_serde::<m::units::Frequency>();
-    reads_as_serde::<m::Axis>();
-    reads_as_serde::<m::Combine>();
-    reads_as_serde::<m::End>();
-    reads_as_serde::<m::ModeSolver>();
-    reads_as_serde::<m::Terminals>();
-    reads_as_serde::<m::SymmetryKind>();
-    reads_as_serde::<m::Polarization>();
-    reads_as_serde::<m::OpenShape>();
-    reads_as_serde::<crate::geometry::Primitive>();
-    reads_as_serde::<crate::geometry::Keep>();
-    reads_as_serde::<crate::geometry::PlaneAxis>();
-    reads_as_serde::<crate::solve::Strategy>();
-    reads_as_serde::<crate::view::Plane>();
-    reads_as_serde::<crate::open::FarSolver>();
-    reads_as_serde::<crate::project::Format>();
-    reads_as_serde::<crate::tdr::Mode>();
+    // The table lists each choice's ids (`one_of(&T::IDS)`), which serde reads too
+    // (`named_serde!`): one list for both.
     // The component is read by name in either case.
     for c in crate::view::Component::ALL {
-        assert_eq!(c.name().parse::<crate::view::Component>(), Ok(c));
-        assert_eq!(c.name().to_uppercase().parse::<crate::view::Component>(), Ok(c));
+        assert_eq!(c.id().parse::<crate::view::Component>(), Ok(c));
+        assert_eq!(c.id().to_uppercase().parse::<crate::view::Component>(), Ok(c));
     }
     // Every listed choice is one of these lists, and every command reads its choices.
     let shapes = find_command("geometry.solid").and_then(|c| c.params.iter().find(|p| p.name == "shape")).unwrap();
-    assert_eq!(shapes.choices, <crate::geometry::Primitive as Choice>::NAMES);
+    assert_eq!(shapes.choices, &crate::geometry::Primitive::IDS[..]);
     let mut s = Session::new();
     assert!(
         matches!(s.execute("solve.device", &json!({"device": "tpu"})), Err(EngineError::Params(m)) if m == "`device` must be cpu, cuda or cubecl-cpu")

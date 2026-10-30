@@ -48,15 +48,17 @@ pub trait Unit: Copy {
     }
 }
 
-/// A length unit of the display system.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum Length {
-    #[serde(rename = "m")]
-    Metre,
-    #[default]
-    #[serde(rename = "mm")]
-    Millimetre,
+emcraft_macros::named_enum! {
+    /// A length unit of the display system.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+    pub enum Length {
+        #[default]
+        Millimetre = "mm",
+        Metre = "m",
+    }
 }
+
+emcraft_macros::named_serde!(Length);
 
 impl Unit for Length {
     /// Metres per unit.
@@ -68,24 +70,22 @@ impl Unit for Length {
     }
 
     fn symbol(self) -> &'static str {
-        match self {
-            Length::Metre => "m",
-            Length::Millimetre => "mm",
-        }
+        self.id()
     }
 }
 
-/// A frequency unit of the display system.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum Frequency {
-    #[serde(rename = "Hz")]
-    Hertz,
-    #[serde(rename = "MHz")]
-    Megahertz,
-    #[default]
-    #[serde(rename = "GHz")]
-    Gigahertz,
+emcraft_macros::named_enum! {
+    /// A frequency unit of the display system.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+    pub enum Frequency {
+        #[default]
+        Gigahertz = "GHz",
+        Megahertz = "MHz",
+        Hertz = "Hz",
+    }
 }
+
+emcraft_macros::named_serde!(Frequency);
 
 impl Unit for Frequency {
     /// Hertz per unit.
@@ -98,11 +98,7 @@ impl Unit for Frequency {
     }
 
     fn symbol(self) -> &'static str {
-        match self {
-            Frequency::Hertz => "Hz",
-            Frequency::Megahertz => "MHz",
-            Frequency::Gigahertz => "GHz",
-        }
+        self.id()
     }
 }
 

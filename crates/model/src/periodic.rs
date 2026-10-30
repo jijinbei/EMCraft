@@ -14,17 +14,20 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Result, invalid};
 use crate::model::Model;
 
-/// The polarization of the Floquet ports' excited and read mode, relative to the plane of
-/// incidence (z and k_t).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Polarization {
-    /// E normal to the plane of incidence (s, transverse electric to z).
-    #[default]
-    Te,
-    /// H normal to the plane of incidence (p, transverse magnetic to z).
-    Tm,
+emcraft_macros::named_enum! {
+    /// The polarization of the Floquet ports' excited and read mode, relative to the plane of
+    /// incidence (z and k_t).
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum Polarization {
+        /// E normal to the plane of incidence (s, transverse electric to z).
+        #[default]
+        Te = "te",
+        /// H normal to the plane of incidence (p, transverse magnetic to z).
+        Tm = "tm",
+    }
 }
+
+emcraft_macros::named_serde!(Polarization);
 
 /// The model's periodic boundaries.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

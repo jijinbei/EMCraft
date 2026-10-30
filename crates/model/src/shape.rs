@@ -402,20 +402,20 @@ impl Inclusion {
     }
 }
 
-/// A coordinate axis.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Axis {
-    X,
-    Y,
-    #[default]
-    Z,
+emcraft_macros::named_enum! {
+    /// A coordinate axis.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum Axis {
+        X = "x",
+        Y = "y",
+        #[default]
+        Z = "z",
+    }
 }
 
-impl Axis {
-    /// The axes in order of their index.
-    pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
+emcraft_macros::named_serde!(Axis);
 
+impl Axis {
     /// The axis' component index: 0, 1 or 2.
     pub fn index(self) -> usize {
         match self {
@@ -430,18 +430,9 @@ impl Axis {
         Axis::ALL.get(i).copied()
     }
 
-    /// The axis' name, as parameters and replies give it: `x`, `y` or `z`.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Axis::X => "x",
-            Axis::Y => "y",
-            Axis::Z => "z",
-        }
-    }
-
     /// The name of component index `i`, `?` for none.
     pub fn name_of(i: usize) -> &'static str {
-        Axis::from_index(i).map_or("?", Axis::name)
+        Axis::from_index(i).map_or("?", Axis::id)
     }
 
     /// A shape's own coordinates turned so its z axis lies along this one (a cyclic turn of
@@ -464,18 +455,21 @@ impl Axis {
     }
 }
 
-/// How a feature combines with the solid.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Combine {
-    /// The union: the body grows (a stub, a probe's housing).
-    Add,
-    /// The difference: the body loses the feature's volume, which becomes conductor (a post, a
-    /// screw, a notch).
-    Subtract,
-    /// The intersection: only what both hold remains.
-    Intersect,
+emcraft_macros::named_enum! {
+    /// How a feature combines with the solid.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Combine {
+        /// The union: the body grows (a stub, a probe's housing).
+        Add = "add",
+        /// The difference: the body loses the feature's volume, which becomes conductor (a post, a
+        /// screw, a notch).
+        Subtract = "subtract",
+        /// The intersection: only what both hold remains.
+        Intersect = "intersect",
+    }
 }
+
+emcraft_macros::named_serde!(Combine);
 
 impl Combine {
     /// The operation's name, for display.

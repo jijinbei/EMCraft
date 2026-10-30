@@ -40,9 +40,9 @@ use emcraft_model::{Point3, Vec3};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::choice::Choice;
 use crate::expr::{self, Variables};
 use crate::{EngineError, Result};
+use emcraft_macros::Named;
 
 /// The parameters of a command, or of one item of a list inside them.
 #[derive(Clone, Debug)]
@@ -156,9 +156,9 @@ impl<'a> Params<'a> {
         self.arg(name, |v| serde_json::from_value(v.clone()).map_err(|e| self.error(name, format!("is not one of the choices: {e}"))))
     }
 
-    /// One of a [`Choice`]'s names.
-    pub fn pick<'p, T: Choice>(&'p self, name: &'p str) -> Arg<'p, T> {
-        self.arg(name, |v| v.as_str().and_then(T::named).ok_or_else(|| self.error(name, format!("must be {}", T::listed()))))
+    /// One of a [`Named`] enum's ids.
+    pub fn pick<'p, T: Named>(&'p self, name: &'p str) -> Arg<'p, T> {
+        self.arg(name, |v| v.as_str().and_then(T::parse).ok_or_else(|| self.error(name, format!("must be {}", T::listed()))))
     }
 
     /// A list of at most `max` values.

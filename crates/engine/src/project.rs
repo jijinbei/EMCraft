@@ -241,17 +241,18 @@ pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
     Ok(json!({"undo": s.undo.len(), "redo": s.redo.len()}))
 }
 
-/// How a Touchstone file writes each complex value (`format`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Format {
-    /// Real and imaginary parts.
-    Ri,
-    /// Magnitude and angle in degrees.
-    Ma,
+emcraft_macros::named_enum! {
+    /// How a Touchstone file writes each complex value (`format`).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(crate) enum Format {
+        /// Real and imaginary parts.
+        Ri = "ri",
+        /// Magnitude and angle in degrees.
+        Ma = "ma",
+    }
 }
 
-crate::choice::choices! { Format { Format::Ri => "ri", Format::Ma => "ma" } }
+emcraft_macros::named_serde!(Format);
 
 /// The sweep's S-parameters as a Touchstone (version 1) file: frequencies in GHz, `ri` (real,
 /// imaginary) or `ma` (magnitude, angle in degrees), the reference impedance on the option line.

@@ -22,33 +22,22 @@ pub(crate) use field::normal_axis;
 pub(crate) use geometry::{BOX_EDGES, box_corner};
 pub use style::material_rgb;
 
-/// What the view puts forward (the active workflow step's subject).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Overlay {
-    /// The geometry, walls opaque.
-    Plain,
-    /// Bodies coloured by material, the outer walls see-through.
-    Materials,
-    /// Ports, lumped ports and sources highlighted.
-    Ports,
-    /// Walls and the open boundary's layer shaded.
-    Boundaries,
-    /// The mesh's edges.
-    Mesh,
-    /// The field on its plane, inside see-through walls.
-    Field,
-}
-
-impl Overlay {
-    pub fn id(self) -> &'static str {
-        match self {
-            Overlay::Plain => "plain",
-            Overlay::Materials => "materials",
-            Overlay::Ports => "ports",
-            Overlay::Boundaries => "boundaries",
-            Overlay::Mesh => "mesh",
-            Overlay::Field => "field",
-        }
+emcraft_macros::named_enum! {
+    /// What the view puts forward (the active workflow step's subject).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum Overlay {
+        /// The geometry, walls opaque.
+        Plain = "plain",
+        /// Bodies coloured by material, the outer walls see-through.
+        Materials = "materials",
+        /// Ports, lumped ports and sources highlighted.
+        Ports = "ports",
+        /// Walls and the open boundary's layer shaded.
+        Boundaries = "boundaries",
+        /// The mesh's edges.
+        Mesh = "mesh",
+        /// The field on its plane, inside see-through walls.
+        Field = "field",
     }
 }
 
