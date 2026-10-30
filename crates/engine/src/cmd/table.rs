@@ -569,7 +569,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "solve.device",
         label: "Device",
-        doc: "Where the solvers run from now on: `cpu` (the CPU's threads, the default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them). On a device the time domain steps its fields in `precision`, and the frequency domain's factorizations hand their large fronts (from `min_front` rows) to it in complex double; the CPU still pivots each block and solves. Consumer GPUs run double precision slowly: on an RTX 3080 the factorization runs at about the CPU's pace. A setting of this machine, kept across projects and never saved with them.",
+        doc: "Where the solvers run from now on: `cpu` (the CPU's threads, the default), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them: in builds with the `cubecl-cpu` feature, which the released apps leave out). On a device the time domain steps its fields in `precision`, and the frequency domain's factorizations hand their large fronts (from `min_front` rows) to it in complex double; the CPU still pivots each block and solves. Consumer GPUs run double precision slowly: on an RTX 3080 the factorization runs at about the CPU's pace. A setting of this machine, kept across projects and never saved with them.",
         params: &[
             req("device", K::String, "`cpu`, `cuda` or `cubecl-cpu`").one_of(&Device::IDS),
             opt("precision", K::String, "the time domain's fields: `single` (default) or `double`").one_of(&Precision::IDS),

@@ -18,3 +18,7 @@ eframe = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+
+# The scenarios run the GPU kernels on the CPU (setup_device).
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dev-dependencies]
+emcraft-gpu = { workspace = true, features = ["cubecl-cpu"] }

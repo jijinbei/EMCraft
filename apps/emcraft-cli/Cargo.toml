@@ -12,6 +12,11 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[features]
+# The GPU kernels on the CPU (solve.device `cubecl-cpu`), off in shipped builds
+# (crates/gpu/Cargo.toml).
+cubecl-cpu = ["emcraft-engine/cubecl-cpu"]
+
 [dependencies]
 emcraft-engine = { workspace = true }
 serde_json = { workspace = true }
