@@ -12,53 +12,28 @@ pub use self::table::COMMANDS;
 use crate::project::Effect;
 use crate::{Change, EngineError, Params, Result, Session};
 
-/// The physical quantity of a numeric parameter, which decides its display unit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Quantity {
-    /// A plain number.
-    None,
-    Length,
-    Frequency,
-}
-
-impl Quantity {
-    /// The unit's kind as the command reference names it ("" for a plain number).
-    pub const fn name(self) -> &'static str {
-        match self {
-            Quantity::None => "",
-            Quantity::Length => "length",
-            Quantity::Frequency => "frequency",
-        }
+emcraft_macros::named_enum! {
+    /// The physical quantity of a numeric parameter, which decides its display unit; its id is
+    /// the unit's kind as the command reference names it ("" for a plain number).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Quantity {
+        /// A plain number.
+        None = "",
+        Length = "length",
+        Frequency = "frequency",
     }
 }
 
-/// The JSON type of a parameter.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Number,
-    Integer,
-    String,
-    Array,
-    Object,
-    Boolean,
-}
-
-impl Kind {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Kind::Number => "number",
-            Kind::Integer => "integer",
-            Kind::String => "string",
-            Kind::Array => "array",
-            Kind::Object => "object",
-            Kind::Boolean => "boolean",
-        }
-    }
-}
-
-impl fmt::Display for Kind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
+emcraft_macros::named_enum! {
+    /// The JSON type of a parameter.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Kind {
+        Number = "number",
+        Integer = "integer",
+        String = "string",
+        Array = "array",
+        Object = "object",
+        Boolean = "boolean",
     }
 }
 
@@ -152,7 +127,7 @@ pub fn features_markdown() -> String {
         s.push_str("| Parameter | Type | Unit | Required | Description |\n|---|---|---|---|---|\n");
         for p in c.params {
             let required = if p.required { "yes" } else { "no" };
-            s.push_str(&format!("| `{}` | {} | {} | {} | {} |\n", p.name, p.kind, p.quantity.name(), required, p.doc));
+            s.push_str(&format!("| `{}` | {} | {} | {} | {} |\n", p.name, p.kind, p.quantity.id(), required, p.doc));
         }
     }
     s

@@ -41,6 +41,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("mesh", Class::Layer(1)),
     // L0, no workspace dependencies: the unstructured tetrahedral mesher.
     ("tetmesh", Class::Standalone),
+    // L0, no workspace dependencies: declarative macros every crate may use.
+    ("macros", Class::Standalone),
     ("fem", Class::Layer(1)),
     ("theory", Class::Layer(1)),
     ("render", Class::Layer(1)),

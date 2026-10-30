@@ -47,7 +47,7 @@ fn status_color(status: Status, t: &Tokens) -> Color32 {
     }
 }
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// The solver Run starts: its id (the Setup step's `setup:solver:<id>`) and its label.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Solver {
@@ -191,7 +191,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": f.diagram,
         "device": app.session.compute().device(),
-        "precision": app.session.compute().precision.name(),
+        "precision": app.session.compute().precision.id(),
         "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })

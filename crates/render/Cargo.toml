@@ -9,5 +9,6 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+emcraft-macros = { workspace = true }
 png = { workspace = true }
 ab_glyph = { workspace = true }

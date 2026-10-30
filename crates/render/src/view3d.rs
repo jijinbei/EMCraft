@@ -26,45 +26,21 @@ pub enum Projection {
     Orthographic,
 }
 
-/// The standard views. The vertical is +y; the front view looks from +z.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StandardView {
-    Front,
-    Back,
-    Top,
-    Bottom,
-    Left,
-    Right,
-    Iso,
+emcraft_macros::named_enum! {
+    /// The standard views. The vertical is +y; the front view looks from +z.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum StandardView {
+        Iso = "iso",
+        Front = "front",
+        Back = "back",
+        Top = "top",
+        Bottom = "bottom",
+        Left = "left",
+        Right = "right",
+    }
 }
 
 impl StandardView {
-    pub const ALL: [StandardView; 7] = [
-        StandardView::Iso,
-        StandardView::Front,
-        StandardView::Back,
-        StandardView::Top,
-        StandardView::Bottom,
-        StandardView::Left,
-        StandardView::Right,
-    ];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            StandardView::Front => "front",
-            StandardView::Back => "back",
-            StandardView::Top => "top",
-            StandardView::Bottom => "bottom",
-            StandardView::Left => "left",
-            StandardView::Right => "right",
-            StandardView::Iso => "iso",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<StandardView> {
-        StandardView::ALL.into_iter().find(|v| v.name() == s)
-    }
-
     /// (yaw, pitch) in radians.
     pub fn angles(self) -> (f64, f64) {
         use std::f64::consts::{FRAC_PI_2, PI};

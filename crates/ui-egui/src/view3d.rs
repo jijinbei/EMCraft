@@ -561,8 +561,8 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
             p.circle_filled(tip, 7.0, t.panel);
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.name()));
-        if resp.on_hover_text(format!("View from {name} ({})", view.name())).clicked() {
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.id()));
+        if resp.on_hover_text(format!("View from {name} ({})", view.id())).clicked() {
             clicked = Some(view);
         }
     }

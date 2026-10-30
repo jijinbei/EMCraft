@@ -1,0 +1,9 @@
+[package]
+name = "emcraft-macros"
+description = "EMCraft's declarative macros shared by its crates: enums named by text (named_enum!)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

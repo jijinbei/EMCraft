@@ -2,7 +2,6 @@
 //! out from the model, the mesh and the results, without solving. `project.status` replies
 //! with them; the desktop app's step bar reads them directly.
 
-use std::fmt;
 use std::str::FromStr;
 
 use emcraft_model::units::C0;
@@ -10,53 +9,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::Session;
 
-/// A step of the workflow, in the order a job goes through them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Step {
-    Intent,
-    Geometry,
-    Materials,
-    Excitation,
-    Boundaries,
-    Mesh,
-    Setup,
-    Run,
-    Results,
+emcraft_macros::named_enum! {
+    /// A step of the workflow, in the order a job goes through them.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Step {
+        Intent = "intent" => "Intent",
+        Geometry = "geometry" => "Geometry",
+        Materials = "materials" => "Materials",
+        Excitation = "excitation" => "Excitation",
+        Boundaries = "boundaries" => "Boundaries",
+        Mesh = "mesh" => "Mesh",
+        Setup = "setup" => "Setup",
+        Run = "run" => "Run",
+        Results = "results" => "Results",
+    }
 }
 
 impl Step {
-    pub const ALL: [Step; 9] =
-        [Step::Intent, Step::Geometry, Step::Materials, Step::Excitation, Step::Boundaries, Step::Mesh, Step::Setup, Step::Run, Step::Results];
-
-    pub const fn id(self) -> &'static str {
-        match self {
-            Step::Intent => "intent",
-            Step::Geometry => "geometry",
-            Step::Materials => "materials",
-            Step::Excitation => "excitation",
-            Step::Boundaries => "boundaries",
-            Step::Mesh => "mesh",
-            Step::Setup => "setup",
-            Step::Run => "run",
-            Step::Results => "results",
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Step::Intent => "Intent",
-            Step::Geometry => "Geometry",
-            Step::Materials => "Materials",
-            Step::Excitation => "Excitation",
-            Step::Boundaries => "Boundaries",
-            Step::Mesh => "Mesh",
-            Step::Setup => "Setup",
-            Step::Run => "Run",
-            Step::Results => "Results",
-        }
-    }
-
     /// The step's place in the workflow, from 0.
     pub const fn index(self) -> usize {
         self as usize
@@ -92,12 +62,6 @@ impl Step {
     }
 }
 
-impl fmt::Display for Step {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.id())
-    }
-}
-
 /// A name that is not a step's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnknownStep;
@@ -106,31 +70,22 @@ impl FromStr for Step {
     type Err = UnknownStep;
 
     fn from_str(s: &str) -> Result<Step, UnknownStep> {
-        Step::ALL.into_iter().find(|x| x.id() == s).ok_or(UnknownStep)
+        Step::parse(s).ok_or(UnknownStep)
     }
 }
 
-/// Where a step stands, from worst to best.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Status {
-    /// Blocks a run.
-    Missing,
-    /// Results older than the model.
-    Stale,
-    /// Needs attention.
-    Warning,
-    Done,
-}
-
-impl Status {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Status::Missing => "missing",
-            Status::Stale => "stale",
-            Status::Warning => "warning",
-            Status::Done => "done",
-        }
+emcraft_macros::named_enum! {
+    /// Where a step stands, from worst to best.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Status {
+        /// Blocks a run.
+        Missing = "missing",
+        /// Results older than the model.
+        Stale = "stale",
+        /// Needs attention.
+        Warning = "warning",
+        Done = "done",
     }
 }
 

@@ -17,7 +17,7 @@ use crate::View;
 use crate::ribbon::RibbonTab;
 use crate::steps::{Solver, Step};
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// A name that never changes: a button, a field, a chart or a card.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub enum Fixed {
@@ -119,7 +119,7 @@ crate::named::named_enum! {
     }
 }
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// A part of a compound control (`field:phase:play`).
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Part {
@@ -246,7 +246,7 @@ impl fmt::Display for Handle<'_> {
             Handle::EigenField(n) => write!(f, "eigen:field:{n}"),
             Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.name()),
             Handle::FieldKept(k) => write!(f, "field:kept:{k}"),
-            Handle::Standard(v) => write!(f, "view3d:std:{}", v.name()),
+            Handle::Standard(v) => write!(f, "view3d:std:{}", v.id()),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),

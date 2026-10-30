@@ -60,7 +60,7 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
     let none = json!({});
     let list = app.workflow.devices.as_ref().unwrap_or(&none);
     let current = app.session.compute().device();
-    let precision = app.session.compute().precision.name();
+    let precision = app.session.compute().precision.id();
     let busy = app.busy();
     let devices: Vec<(String, bool, Vec<String>, Option<String>)> = list
         .get("devices")

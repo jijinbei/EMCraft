@@ -3,7 +3,7 @@
 
 use crate::EmcraftApp;
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// What the viewport shows: its id (the control channel's and the scenarios' `view:<id>`
     /// handles) and its tab's label.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
