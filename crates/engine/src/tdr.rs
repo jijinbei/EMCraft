@@ -20,21 +20,16 @@ use emcraft_solver::Complex64 as C;
 
 use crate::{EngineError, Result};
 
-/// The transform's kind.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    LowPass,
-    BandPass,
-}
-
-crate::choice::choices! { Mode { Mode::LowPass => "lowpass", Mode::BandPass => "bandpass" } }
-
-impl Mode {
-    pub fn name(self) -> &'static str {
-        crate::Choice::name(self)
+emcraft_macros::named_enum! {
+    /// The transform's kind.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Mode {
+        LowPass = "lowpass",
+        BandPass = "bandpass",
     }
 }
+
+emcraft_macros::named_serde!(Mode);
 
 /// A transform: times (s) from 0 over one alias period and the response at each.
 #[derive(Clone, Debug, PartialEq)]

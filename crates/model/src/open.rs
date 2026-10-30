@@ -23,17 +23,20 @@ pub struct Open {
     pub shape: OpenShape,
 }
 
-/// The shape of a perfectly matched layer.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum OpenShape {
-    /// Slabs lining every face of a box solid, stretched along x, y and z.
-    #[default]
-    Box,
-    /// The outer shell R − d < r < R of a sphere solid of radius R (centred on the origin),
-    /// stretched along r only.
-    Sphere,
+emcraft_macros::named_enum! {
+    /// The shape of a perfectly matched layer.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum OpenShape {
+        /// Slabs lining every face of a box solid, stretched along x, y and z.
+        #[default]
+        Box = "box",
+        /// The outer shell R − d < r < R of a sphere solid of radius R (centred on the origin),
+        /// stretched along r only.
+        Sphere = "sphere",
+    }
 }
+
+emcraft_macros::named_serde!(OpenShape);
 
 /// A spherical perfectly matched layer: the shell `inner` < r < `outer` (m) about the origin.
 #[derive(Clone, Copy, Debug, PartialEq)]

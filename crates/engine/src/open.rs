@@ -289,17 +289,18 @@ fn angles(p: &Params) -> Result<(Vec<f64>, f64)> {
     Ok((theta, p.number("phi").or(0.0)?))
 }
 
-/// Which solver's far field to read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FarSolver {
-    /// The frequency domain's (`solve.radiation`).
-    Fem,
-    /// The time domain's (`solve.time_domain` on an open model).
-    TimeDomain,
+emcraft_macros::named_enum! {
+    /// Which solver's far field to read.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum FarSolver {
+        /// The frequency domain's (`solve.radiation`).
+        Fem = "fem",
+        /// The time domain's (`solve.time_domain` on an open model).
+        TimeDomain = "time_domain",
+    }
 }
 
-crate::choice::choices! { FarSolver { FarSolver::Fem => "fem", FarSolver::TimeDomain => "time_domain" } }
+emcraft_macros::named_serde!(FarSolver);
 
 /// The far field at one frequency in the directions asked: a row per direction.
 pub(crate) struct FarRows {

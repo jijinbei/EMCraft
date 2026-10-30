@@ -27,7 +27,6 @@
 mod adapt;
 mod args;
 pub mod bodies;
-pub mod choice;
 mod cmd;
 pub mod expr;
 mod geometry;
@@ -52,7 +51,6 @@ pub mod workflow;
 
 use std::fmt;
 
-pub use choice::Choice;
 pub use cmd::{COMMANDS, CommandSpec, Kind, ParamSpec, Quantity, features_markdown, find_command};
 pub use params::Params;
 pub use project::Effect;

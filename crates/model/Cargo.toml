@@ -9,6 +9,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+emcraft-macros = { workspace = true }
 num-complex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

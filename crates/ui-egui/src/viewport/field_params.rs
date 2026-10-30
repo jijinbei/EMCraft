@@ -4,29 +4,30 @@
 //! typed form lives here, on the UI's side: [`FieldParams`] serializes to exactly the JSON
 //! the dialogs take, and reads back from it.
 
+use emcraft_engine::Session;
 use emcraft_engine::view::{Component, Plane};
-use emcraft_engine::{Choice, Session};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::state::FieldState;
 
-/// A vector field drawn as arrows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Arrow {
-    E,
-    H,
+emcraft_macros::named_enum! {
+    /// A vector field drawn as arrows.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Arrow {
+        E = "e",
+        H = "h",
+    }
 }
+
+emcraft_macros::named_serde!(Arrow);
 
 /// `view.field`'s parameters (`view.animation`'s without `phase`, with `frames`), in display
 /// units.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FieldParams {
     pub path: String,
-    #[serde(serialize_with = "by_name", deserialize_with = "plane_named")]
     pub plane: Plane,
-    #[serde(serialize_with = "by_name", deserialize_with = "component_named")]
     pub component: Component,
     pub arrows: Vec<Arrow>,
     /// ωt in degrees, to a tenth; none for an animation, which plays a whole period.
@@ -82,23 +83,6 @@ impl FieldParams {
     }
 }
 
-fn by_name<S: Serializer, C: Choice>(v: &C, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(v.name())
-}
-
-fn named<'de, D: Deserializer<'de>, C: Choice>(d: D, what: &str) -> Result<C, D::Error> {
-    let name = String::deserialize(d)?;
-    C::named(&name).ok_or_else(|| serde::de::Error::custom(format!("unknown {what} `{}`", emcraft_engine::text::clip(&name, 40))))
-}
-
-fn plane_named<'de, D: Deserializer<'de>>(d: D) -> Result<Plane, D::Error> {
-    named(d, "plane")
-}
-
-fn component_named<'de, D: Deserializer<'de>>(d: D) -> Result<Component, D::Error> {
-    named(d, "component")
-}
-
 #[cfg(test)]
 mod tests {
     use emcraft_engine::Params;
@@ -116,7 +100,7 @@ mod tests {
         if v.show_h {
             arrows.push("h");
         }
-        let mut p = json!({"path": path, "plane": v.plane.name(), "component": v.component.name(), "arrows": arrows,
+        let mut p = json!({"path": path, "plane": v.plane.id(), "component": v.component.id(), "arrows": arrows,
             "phase": (v.phase.to_degrees() * 10.0).round() / 10.0});
         match v.mode {
             Some(m) => p["mode"] = json!(m + 1),

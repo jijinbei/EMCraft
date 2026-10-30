@@ -230,5 +230,5 @@ pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
             pt
         })
         .collect();
-    Ok(json!({"port": port, "mode": t.mode.name(), "time_unit": "ns", "resolution": t.resolution * 1e9, "reference": z0, "points": points}))
+    Ok(json!({"port": port, "mode": t.mode.id(), "time_unit": "ns", "resolution": t.resolution * 1e9, "reference": z0, "points": points}))
 }

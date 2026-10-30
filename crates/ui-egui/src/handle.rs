@@ -244,7 +244,7 @@ impl fmt::Display for Handle<'_> {
             Handle::PortModeRow(row) => write!(f, "portmode:row:{row}"),
             Handle::PortModesRow(port, mode) => write!(f, "port_modes:row:{port}:{mode}"),
             Handle::EigenField(n) => write!(f, "eigen:field:{n}"),
-            Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.name()),
+            Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.id()),
             Handle::FieldKept(k) => write!(f, "field:kept:{k}"),
             Handle::Standard(v) => write!(f, "view3d:std:{}", v.id()),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),

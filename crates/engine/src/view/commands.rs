@@ -5,7 +5,7 @@ use emcraft_render::plot::FieldPlot;
 use serde_json::{Value, json};
 
 use super::field::{FieldView, Plane};
-use crate::{Choice, EIGEN_MAX, EngineError, Params, Result, Session, args};
+use crate::{EIGEN_MAX, EngineError, Params, Result, Session, args};
 
 /// Writes a picture's PNG bytes (`None` when it could not be encoded) to `path`.
 pub(crate) fn write_png(path: &str, png: Option<Vec<u8>>) -> Result<()> {
@@ -52,14 +52,14 @@ fn write_plot(path: &str, plot: &FieldPlot, width: usize) -> Result<Value> {
     Ok(json!({"path": path, "width": c.w, "height": c.h}))
 }
 
-/// The fields `arrows` draws.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Arrows {
-    E,
-    H,
+emcraft_macros::named_enum! {
+    /// The fields `arrows` draws.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Arrows {
+        E = "e",
+        H = "h",
+    }
 }
-
-crate::choice::choices! { Arrows { Arrows::E => "e", Arrows::H => "h" } }
 
 /// A field view from command parameters.
 pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
@@ -79,7 +79,7 @@ pub fn field_view(s: &Session, p: &Params) -> Result<FieldView> {
                 .iter()
                 .map(|x| {
                     x.as_str()
-                        .and_then(Arrows::named)
+                        .and_then(Arrows::parse)
                         .ok_or_else(|| p.error("arrows", format!("holds `e` or `h`, got {}", crate::text::clip(&x.to_string(), 40))))
                 })
                 .collect::<Result<Vec<Arrows>>>()?;

@@ -53,7 +53,7 @@ fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrParams, ui: &mut egui::
         scenario::publish_target(Fixed::TdrPort, r.response.rect);
         ui.separator();
         for (mode, label, tip) in MODES {
-            let r = ui.named(egui::Button::selectable(tdr.mode == mode, label), Handle::TdrMode(mode.map_or("auto", Mode::name))).on_hover_text(tip);
+            let r = ui.named(egui::Button::selectable(tdr.mode == mode, label), Handle::TdrMode(mode.map_or("auto", Mode::id))).on_hover_text(tip);
             if r.clicked() {
                 tdr.mode = mode;
             }

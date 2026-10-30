@@ -103,20 +103,17 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, Waveguide::length))}))
 }
 
-/// A primitive shape (`shape`).
-#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Primitive {
-    Box,
-    Cylinder,
-    Sphere,
+emcraft_macros::named_enum! {
+    /// A primitive shape (`shape`).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(crate) enum Primitive {
+        Box = "box",
+        Cylinder = "cylinder",
+        Sphere = "sphere",
+    }
 }
 
-crate::choice::choices! {
-    Primitive { Primitive::Box => "box", Primitive::Cylinder => "cylinder", Primitive::Sphere => "sphere" }
-    Keep { Keep::Enclosed => "enclosed", Keep::Largest => "largest" }
-    PlaneAxis { PlaneAxis::X => "x", PlaneAxis::Y => "y" }
-}
+emcraft_macros::named_serde!(Primitive);
 
 /// A shape from `shape`, `size`, `radius` and `length`.
 pub(crate) fn shape(p: &Params) -> Result<Shape> {
@@ -239,14 +236,17 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
-/// Which pieces of a cavity's air are kept (`keep`).
-#[derive(serde::Deserialize, Clone, Copy, Debug, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Keep {
-    #[default]
-    Enclosed,
-    Largest,
+emcraft_macros::named_enum! {
+    /// Which pieces of a cavity's air are kept (`keep`).
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub(crate) enum Keep {
+        #[default]
+        Enclosed = "enclosed",
+        Largest = "largest",
+    }
 }
+
+emcraft_macros::named_serde!(Keep);
 
 /// `region: cavity`: the metal bodies' bounding box less them, the pieces of air they enclose
 /// across x and y kept (`emcraft_mesh::cavity`), made the region; the bodies (all of them, the
@@ -384,13 +384,16 @@ pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"conductivity": sigma}))
 }
 
-/// A plane's axis for `model.symmetry` (z is not one: the ports lie on z planes).
-#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum PlaneAxis {
-    X,
-    Y,
+emcraft_macros::named_enum! {
+    /// A plane's axis for `model.symmetry` (z is not one: the ports lie on z planes).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(crate) enum PlaneAxis {
+        X = "x",
+        Y = "y",
+    }
 }
+
+emcraft_macros::named_serde!(PlaneAxis);
 
 pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     let clear = p.flag("clear").or(false)?;
@@ -415,7 +418,7 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
         planes.sort_by_key(|q| q.axis.index());
     }
     s.model.set_symmetry(planes)?;
-    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.name(), "at": s.show_length(q.at), "kind": q.kind})).collect();
+    let shown: Vec<Value> = s.model.symmetry.iter().map(|q| json!({"axis": q.axis.id(), "at": s.show_length(q.at), "kind": q.kind})).collect();
     Ok(json!({"planes": shown, "fraction": s.model.symmetry_fraction()}))
 }
 

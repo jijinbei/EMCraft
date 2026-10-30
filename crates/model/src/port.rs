@@ -16,16 +16,18 @@ pub enum PortShape {
     Circle { cx: f64, cy: f64, r: f64 },
 }
 
-/// Which end of the waveguide a port closes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum End {
-    /// z = 0, outward normal −z.
-    #[serde(rename = "start")]
-    Start,
-    /// z = length, outward normal +z.
-    #[serde(rename = "end")]
-    End,
+emcraft_macros::named_enum! {
+    /// Which end of the waveguide a port closes.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum End {
+        /// z = 0, outward normal −z.
+        Start = "start",
+        /// z = length, outward normal +z.
+        End = "end",
+    }
 }
+
+emcraft_macros::named_serde!(End);
 
 impl End {
     /// The outward normal's z component.
@@ -73,18 +75,21 @@ pub struct Port {
     pub terminals: Terminals,
 }
 
-/// How a port whose cross-section holds several conductors besides the ground is read.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Terminals {
-    /// One terminal per conductor when there are two or more (named `<port>:<k>`, the conductors
-    /// from the lowest x, then y), each referred to the port's reference impedance (50 Ω when
-    /// none is set); a port with one conductor or none is read in its first mode.
-    #[default]
-    Auto,
-    /// The first mode only, whatever the conductors (the even mode of two like strips).
-    Modal,
+emcraft_macros::named_enum! {
+    /// How a port whose cross-section holds several conductors besides the ground is read.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum Terminals {
+        /// One terminal per conductor when there are two or more (named `<port>:<k>`, the conductors
+        /// from the lowest x, then y), each referred to the port's reference impedance (50 Ω when
+        /// none is set); a port with one conductor or none is read in its first mode.
+        #[default]
+        Auto = "auto",
+        /// The first mode only, whatever the conductors (the even mode of two like strips).
+        Modal = "modal",
+    }
 }
+
+emcraft_macros::named_serde!(Terminals);
 
 /// The most conductors a terminal port may hold.
 pub const MAX_TERMINALS: usize = 8;
@@ -92,16 +97,19 @@ pub const MAX_TERMINALS: usize = 8;
 /// The reference impedance (Ω) of a terminal port's terminals when the port sets none.
 pub const DEFAULT_TERMINAL_IMPEDANCE: f64 = 50.0;
 
-/// Where a port's modes come from.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ModeSolver {
-    /// The closed forms where they apply, the numerical solver elsewhere.
-    #[default]
-    Auto,
-    /// The numerical cross-section solver everywhere.
-    Numeric,
+emcraft_macros::named_enum! {
+    /// Where a port's modes come from.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum ModeSolver {
+        /// The closed forms where they apply, the numerical solver elsewhere.
+        #[default]
+        Auto = "auto",
+        /// The numerical cross-section solver everywhere.
+        Numeric = "numeric",
+    }
 }
+
+emcraft_macros::named_serde!(ModeSolver);
 
 /// A port's rectangle: [x0, x0 + a] × [y0, y0 + b] at height z (m).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
