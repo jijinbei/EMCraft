@@ -34,6 +34,24 @@ fn ports_across_x_and_y_carry_a_straight_guide() {
 }
 
 #[test]
+fn the_cross_section_solver_works_on_a_face_across_y() {
+    // Across y the port's axes are (x, z, −y): the numerical modes, turned back, carry the
+    // guide as the closed forms do.
+    let mut s = Session::new();
+    s.execute("geometry.solid", &json!({"shape": "box", "size": [22.86, 30, 10.16]})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    for (name, end, at) in [("1", "start", 0.0), ("2", "end", 30.0)] {
+        let p = json!({"name": name, "end": end, "axis": "y", "face": [at, 0, 0, 22.86, 10.16], "mode_solver": "numeric", "modes": 2});
+        s.execute("model.port.create", &p).unwrap();
+    }
+    let modes = s.execute("solve.port_modes", &json!({"frequency": 10, "order": 2})).unwrap();
+    assert!(modes.to_string().contains("mode 1"), "{modes}");
+    let r = s.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
+    let (m21, p21) = entry(&r, 0, "s21");
+    assert!((m21 - 1.0).abs() < 1e-3 && (p21 - 88.008).abs() < 0.3, "{m21} {p21}");
+}
+
+#[test]
 fn side_ports_and_prisms_refuse_what_they_cannot_be() {
     let mut s = Session::new();
     s.execute("geometry.solid", &json!({"shape": "box", "size": [30, 22.86, 10.16]})).unwrap();

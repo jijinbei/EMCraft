@@ -44,11 +44,14 @@ pub fn port_mode_plot(session: &Session, port: &str, mode: usize, frequency: f64
     } else {
         format!("cut off, {:.3} dB/{lu}", decibels((-(-pat.beta2).sqrt() * l.to_si(1.0)).exp()).abs())
     };
+    // The face's own axes: x and y on a z face, y and z on an x face, x and z on a y face.
+    let (u, v, _) = p.frame().axes();
+    let (u, v) = (emcraft_model::Axis::name_of(u), emcraft_model::Axis::name_of(v));
     Ok(FieldPlot {
         title: format!("Port {}, {}  f = {:.4} {}", p.name, pat.name, fu.from_si(frequency), fu.symbol()),
         subtitle: format!("transverse E of the mode (its shape: the amplitude is arbitrary); {state}"),
-        x: Axis::new(&format!("x ({lu})"), l.from_si(pat.x.0), l.from_si(pat.x.1)),
-        y: Axis::new(&format!("y ({lu})"), l.from_si(pat.y.0), l.from_si(pat.y.1)),
+        x: Axis::new(&format!("{u} ({lu})"), l.from_si(pat.x.0), l.from_si(pat.x.1)),
+        y: Axis::new(&format!("{v} ({lu})"), l.from_si(pat.y.0), l.from_si(pat.y.1)),
         scalar: Some(Scalar { label: "$|E_t|$".into(), nx, ny, values: magnitude, kind: ScalarKind::Magnitude, range: None }),
         arrows: vec![Arrows { label: "E (in plane)".into(), pen: Pen::EArrows, arrows, scale: None }],
         lines: Vec::new(),
