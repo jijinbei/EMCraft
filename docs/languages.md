@@ -29,10 +29,23 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   mode`, `settings:language:ja`) are made from the English and the ids whatever is shown, so
   scenarios and agents work in any language. A browser row keeps its English (`Row::text`, its
   handle and key) beside what is shown (`Row::shown`).
-- **The font**: egui's own fonts have no Japanese, so Noto Sans JP Regular
-  (`crates/ui-egui/fonts/`, SIL Open Font License 1.1) is installed after them as a fallback in
-  every context the app draws in — the window, the headless harness and `ui.render` — in both
-  languages, so Japanese file and project names show too.
+- **The font**: egui's own fonts have no Japanese, so a Japanese font is installed after them
+  as a fallback (both families, both languages, so Japanese file and project names show too).
+  The window looks on a thread at start for one installed on the system
+  (`crates/ui-egui/src/fonts/system.rs`): by family — Windows "Yu Gothic UI", "Yu Gothic",
+  "Meiryo UI", "Meiryo", "MS UI Gothic", "MS Gothic"; macOS "Hiragino Sans", "Hiragino Kaku
+  Gothic ProN"; Linux "Noto Sans CJK JP", "Noto Sans JP", "IPAexGothic", "IPAGothic",
+  "TakaoGothic", "VL Gothic" — regular weight first, else any face that shows "設定日本語";
+  collections (`.ttc`) by face. The search reads only each file's table directory, names and
+  `OS/2`, within caps on folders, files and bytes (about 25 ms for 400 font files). Until it
+  ends, and where it finds nothing, the window uses the embedded subset of Noto Sans JP Regular
+  (`crates/ui-egui/fonts/`, SIL Open Font License 1.1, under 1 MB): ASCII, Latin-1, general
+  punctuation, kana and half-width forms, CJK symbols and full-width forms, JIS X 0208's
+  symbols and first-level kanji, and every character of `ja.json` (a test fails otherwise;
+  `cargo xtask font-subset` remakes it from the full font in `fonts/full/`). The headless
+  harness and `ui.render` use the embedded subset alone, so their pictures are the same on
+  every machine; `ui.inspect`'s `font.japanese` names the font in use (an installed family, or
+  `embedded subset`).
 - **The current language belongs to the thread** drawing the frame (`lang::set`, as the theme
   does), so tests drawing apps on threads of their own keep their own.
 

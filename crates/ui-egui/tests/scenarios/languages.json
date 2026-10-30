@@ -1,6 +1,6 @@
 [
-  {"note": "Languages: English by default; Japanese picked on the settings page changes the window at once (its messages too); handles stay the English ones; ui.set switches back and refuses an unknown language"},
-  {"expect": {"inspect": {"language": "en", "languages": ["en", "ja"]}}},
+  {"note": "Languages: English by default (the harness draws Japanese in the embedded font subset, never an installed one, so shots match on every machine); Japanese picked on the settings page changes the window at once (its messages too); handles stay the English ones; ui.set switches back and refuses an unknown language"},
+  {"expect": {"inspect": {"language": "en", "languages": ["en", "ja"], "font.japanese": "embedded subset"}}},
   {"click": "bar:settings"},
   {"click": "settings:section:language"},
   {"frames": 2},

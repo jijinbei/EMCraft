@@ -32,8 +32,10 @@ num-complex = { version = "0.4", default-features = false, features = ["std"] }
 faer = "0.24"
 # GPU kernels written in Rust (docs/adr/0002-gpu.md); pinned, its API moves between releases.
 # Its CPU and CUDA runtimes link a prebuilt LLVM, turned on where one exists (crates/gpu/Cargo.toml,
-# the apps' manifests): not in the Windows GNU build cross-compiled from Linux.
-cubecl = { version = "=0.11.3" }
+# the apps' manifests): not in the Windows GNU build cross-compiled from Linux. Without its
+# default `persistence`, which caches autotune results and compiled kernels on disk in an embedded
+# SQLite (turso): the kernels compile again in each run.
+cubecl = { version = "=0.11.3", default-features = false, features = ["std", "stdlib"] }
 rayon = "1"
 
 # geometry import: 3MF packages (zip, XML), the same lines as FieldCraft
@@ -87,8 +89,37 @@ opt-level = 3
 [profile.dev.package.emcraft-gpu]
 opt-level = 3
 
+# The shipped binaries: whole-program optimisation in one unit and no symbols make them about a
+# third smaller than thin LTO in 16 units with line tables, with the same numbers bit for bit
+# (Rust does not contract or reassociate floating point); CI's tests build with thin LTO
+# (.github/workflows/ci.yml). The window's crates are optimised for size: their speed is
+# egui's layout, far from the solvers' loops, which stay at opt-level 3.
 [profile.release]
 opt-level = 3
-lto = "thin"
-codegen-units = 16
-debug = "line-tables-only"
+lto = "fat"
+codegen-units = 1
+strip = true
+
+[profile.release.package.egui]
+opt-level = "s"
+
+[profile.release.package.epaint]
+opt-level = "s"
+
+[profile.release.package.eframe]
+opt-level = "s"
+
+[profile.release.package.egui_glow]
+opt-level = "s"
+
+[profile.release.package.glow]
+opt-level = "s"
+
+[profile.release.package.winit]
+opt-level = "s"
+
+[profile.release.package.rfd]
+opt-level = "s"
+
+[profile.release.package.emcraft-ui-egui]
+opt-level = "s"

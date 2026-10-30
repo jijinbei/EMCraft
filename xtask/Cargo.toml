@@ -5,10 +5,19 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+# `cargo xtask font-subset`, which runs the xtask again with it (the other commands build
+# without these crates).
+fonts = ["dep:allsorts", "dep:encoding_rs", "dep:ttf-parser"]
+
 [dependencies]
 serde_json = { workspace = true }
 # The app icon (`cargo xtask icon`).
 emcraft-render = { workspace = true }
+# The embedded fonts' subsets (`cargo xtask font-subset`, docs/adr/0001-libraries.md).
+allsorts = { version = "0.17", default-features = false, features = ["flate2_rust"], optional = true }
+encoding_rs = { version = "0.8", optional = true }
+ttf-parser = { version = "0.25", optional = true }
 
 [lints]
 workspace = true

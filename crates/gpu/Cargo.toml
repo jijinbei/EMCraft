@@ -11,6 +11,11 @@ workspace = true
 [features]
 # NVIDIA GPUs (the driver is loaded at run time: a build without CUDA installed still runs).
 cuda = ["cubecl/cuda"]
+# CubeCL's CPU runtime: the kernels on the CPU's SIMD, to check them on machines without a GPU.
+# It links CubeCL's prebuilt LLVM and runs slower than the CPU's threads, so the apps leave it
+# out; the tests of this crate, the engine and the UI turn it on (their dev-dependencies). It has
+# no Windows GNU build (the installer's cross-compiled target, docs/install-windows.md).
+cubecl-cpu = ["cubecl/cpu"]
 
 [dependencies]
 emcraft-macros = { workspace = true }
@@ -20,10 +25,9 @@ cubecl = { workspace = true }
 num-complex = { workspace = true, features = ["bytemuck"] }
 bytemuck = "1"
 
-# The CPU runtime links CubeCL's prebuilt LLVM, which has no Windows GNU build (the installer's
-# cross-compiled target, docs/install-windows.md): there the CPU backend reports "not built".
-[target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
-cubecl = { workspace = true, features = ["cpu"] }
-
 [dev-dependencies]
 emcraft-model = { workspace = true }
+
+# The tests run the kernels on CubeCL's CPU runtime.
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dev-dependencies]
+emcraft-gpu = { path = ".", features = ["cubecl-cpu"] }

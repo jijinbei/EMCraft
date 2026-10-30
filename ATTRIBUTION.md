@@ -21,16 +21,17 @@ third-party material under an open licence.
 | crates/ui-egui/tests/fixtures/post-and-puck.3mf | EMCraft contributors | Original: a post and a puck modelled in SolidCraft and exported as 3MF with face tags | MIT OR Apache-2.0 |
 | tests/oracle/imported-iris-cavity/block.3mf, crates/ui-egui/tests/fixtures/waveguide-block.3mf (the same file) | EMCraft contributors | Original: a WR-90 block with its channel and two iris plates, written by SolidCraft's CLI from `tests/oracle/imported-iris-cavity/block.solidcraft.json` (3MF with face tags) | MIT OR Apache-2.0 |
 | tests/oracle/imported-iris-touching/iris.3mf | EMCraft contributors | Original: a WR-90 guide and two iris plates as three bodies, written by SolidCraft's CLI from `tests/oracle/imported-iris-touching/iris.solidcraft.json` (3MF with face tags) | MIT OR Apache-2.0 |
-| crates/ui-egui/fonts/NotoSansJP-Regular.otf | Adobe (Source Han Sans), Google (Noto) | Noto Sans JP 2.004, the SubsetOTF JP build of https://github.com/notofonts/noto-cjk (unmodified) | SIL Open Font License 1.1 — crates/ui-egui/fonts/OFL.txt |
+| crates/ui-egui/fonts/full/NotoSansJP-Regular.otf; crates/ui-egui/fonts/NotoSansJP-Regular-subset.otf (embedded) | Adobe (Source Han Sans), Google (Noto) | Noto Sans JP 2.004, the SubsetOTF JP build of https://github.com/notofonts/noto-cjk (unmodified, kept as the source); the embedded file is its subset (kana, JIS X 0208 symbols and first-level kanji, the translation's characters; outlines and names unchanged) made by `cargo xtask font-subset` — the OFL allows it, Noto has no Reserved Font Name | SIL Open Font License 1.1 — crates/ui-egui/fonts/OFL.txt |
 | apps/emcraft/assets/emcraft.ico (and the window icon) | EMCraft contributors | Original: drawn by `emcraft_render::icon` (`cargo xtask icon`) | MIT OR Apache-2.0 |
 | apps/emcraft/installer/emcraft.nsi | EMCraft contributors | Original: the Windows installer script, written for NSIS 3's Modern UI (NSIS itself is a build tool, not shipped; its installer stub is under the zlib/libpng licence) | MIT OR Apache-2.0 |
 | crates/ui-egui/locales/ja.json | EMCraft contributors | Original: the window's Japanese translation | MIT OR Apache-2.0 |
 
-| crates/render/fonts/DejaVuSans.ttf | Bitstream, Inc. (Vera); the DejaVu fonts team (DejaVu changes) | DejaVu fonts 2.37, https://dejavu-fonts.github.io/ (unmodified) | Bitstream Vera Fonts licence; DejaVu changes public domain — crates/render/fonts/LICENSE-DejaVu.txt |
+| crates/render/fonts/full/DejaVuSans.ttf; crates/render/fonts/DejaVuSans-subset.ttf (embedded) | Bitstream, Inc. (Vera); the DejaVu fonts team (DejaVu changes) | DejaVu fonts 2.37, https://dejavu-fonts.github.io/ (unmodified, kept as the source); the embedded file is its subset (Latin, Greek, Cyrillic, symbols, the characters of the sources; outlines, metrics, kerning, names and copyright unchanged) made by `cargo xtask font-subset` — the licence allows modified copies under a name without "Bitstream" or "Vera", as DejaVu Sans is | Bitstream Vera Fonts licence; DejaVu changes public domain — crates/render/fonts/LICENSE-DejaVu.txt |
 
 Text in pictures is set in DejaVu Sans (above). EMCraft's 5 × 7 bitmap font, drawn only if the
 face cannot be read, is FieldCraft's (below). The window's Japanese (and any Japanese name)
-is set in Noto Sans JP (above), a fallback after egui's own fonts (docs/languages.md).
+is set in a Japanese font installed on the system when the window finds one, else in the
+embedded subset of Noto Sans JP (above), a fallback after egui's own fonts (docs/languages.md).
 
 ## Code adapted from sibling projects
 

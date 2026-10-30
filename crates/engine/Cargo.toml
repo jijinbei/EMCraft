@@ -26,3 +26,10 @@ thiserror = { workspace = true }
 [features]
 # The time-domain solver on NVIDIA GPUs (solve.time_domain `device` cuda).
 cuda = ["emcraft-gpu/cuda"]
+# The GPU kernels on the CPU (solve.device `cubecl-cpu`): opt-in, as it links CubeCL's LLVM
+# (crates/gpu/Cargo.toml).
+cubecl-cpu = ["emcraft-gpu/cubecl-cpu"]
+
+# The tests run the GPU kernels on the CPU.
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dev-dependencies]
+emcraft-gpu = { workspace = true, features = ["cubecl-cpu"] }
