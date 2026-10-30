@@ -9,11 +9,8 @@ impl ChartView for SParameters {
     type Key = SharedChart;
     const HANDLE: Fixed = Fixed::ChartSParameters;
     const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::SParameters;
-    // The table beside it, not under it: the chart takes the card's height.
-    const HEIGHT: Height = Height::new(0.86, 260.0, 900.0);
-    const SIDE: f32 = 440.0;
+    const HEIGHT: Height = OVER_TABLE;
 
-    /// The switch between |S| in dB, its magnitude and its phase.
     /// How S is shown — in dB, as a magnitude or a phase — as one small menu.
     fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &mut Actions) -> Option<SharedChart> {
         ui.horizontal(|ui| {
@@ -32,17 +29,22 @@ impl ChartView for SParameters {
         Some(SharedChart::SParameters(st.views.sdisplay, st.views.compare.clone()))
     }
 
-    /// The analysis history (once there are two solves to compare) over the table of S.
-    fn has_side(_: &EmcraftApp) -> bool {
-        true
+    /// The history (once there are two solves to compare), the table of S and the ports'
+    /// reference planes, packed round the chart.
+    fn blocks(app: &EmcraftApp, _: &Parts) -> Vec<egui::Vec2> {
+        parts(app).iter().map(|p| p.wants(app)).collect()
     }
 
-    fn side(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-        if app.session.archive().len() >= 2 {
-            history(app, &mut st.views.compare, ui, out);
-            ui.add_space(8.0);
+    fn block(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, k: usize, out: &mut Actions) {
+        match parts(app).get(k) {
+            Some(Part::History) => history(app, &mut st.views.compare, ui, out),
+            Some(Part::Table) => table(app, ui),
+            Some(Part::Planes) => {
+                reference_planes(app, &mut st.views.deembed, ui, out);
+                crate::ui_kit::caption(ui, "Click: the fields there · drag: a band to solve more finely");
+            }
+            None => {}
         }
-        table(app, ui);
     }
 
     fn chart(app: &EmcraftApp, key: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
@@ -61,8 +63,42 @@ impl ChartView for SParameters {
             frequency_marker(&mut st.field, ui, chart, &map, &app.frequencies(), out);
             refine_band(app, &mut st.views.refine, ui, chart, &map, out);
         }
-        reference_planes(app, &mut st.views.deembed, ui, out);
-        crate::ui_kit::caption(ui, "Click: the fields there · drag: a band to solve more finely");
+    }
+}
+
+/// What is packed round the S-parameter chart.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Part {
+    History,
+    Table,
+    Planes,
+}
+
+/// The parts the session has, in the order they go.
+fn parts(app: &EmcraftApp) -> Vec<Part> {
+    let mut out = Vec::new();
+    if app.session.archive().len() >= 2 {
+        out.push(Part::History);
+    }
+    out.extend([Part::Table, Part::Planes]);
+    out
+}
+
+impl Part {
+    /// The size it wants (points): from what it shows, not measured.
+    fn wants(self, app: &EmcraftApp) -> egui::Vec2 {
+        let sweep = app.session.results().sweep.as_ref();
+        match self {
+            // A heading, a row per kept solve, a caption.
+            Part::History => vec2(300.0, 30.0 + 34.0 * app.session.archive().len() as f32 + 34.0),
+            // A header and a row per frequency; a frequency column and two per entry of S.
+            Part::Table => {
+                let rows = sweep.map_or(0, |s| s.results.len()) as f32;
+                let entries = sweep.map_or(2, |s| s.entries().len().clamp(2, TABLE_ENTRIES)) as f32;
+                vec2(80.0 + 170.0 * entries, 26.0 + 22.0 * rows)
+            }
+            Part::Planes => vec2(80.0 + 110.0 * app.session.model().ports.len() as f32, 46.0),
+        }
     }
 }
 

@@ -199,16 +199,14 @@ pub(super) trait ChartView {
     /// What goes under the chart: `chart` is its response, `size` its size in pixels.
     fn below(_app: &EmcraftApp, _st: &mut Parts, _ui: &mut egui::Ui, _chart: &egui::Response, _size: egui::Vec2, _out: &mut Actions) {}
 
-    /// The side column's width ([`ChartView::side`]).
-    const SIDE: f32 = 250.0;
-
-    /// Whether something goes beside the chart ([`ChartView::side`]).
-    fn has_side(_app: &EmcraftApp) -> bool {
-        false
+    /// The blocks packed round the chart ([`crate::pack`]): each one's size as it wants it, in
+    /// the order they go; none by default (the chart and what goes under it).
+    fn blocks(_app: &EmcraftApp, _st: &Parts) -> Vec<egui::Vec2> {
+        Vec::new()
     }
 
-    /// What goes beside the chart: at its right, or under the rest when the card is narrow.
-    fn side(_app: &EmcraftApp, _st: &mut Parts, _ui: &mut egui::Ui, _out: &mut Actions) {}
+    /// Block `k` of [`ChartView::blocks`], in its rectangle.
+    fn block(_app: &EmcraftApp, _st: &mut Parts, _ui: &mut egui::Ui, _k: usize, _out: &mut Actions) {}
 
     /// What the card shows when the chart cannot be drawn: why, by default.
     fn failed(_app: &EmcraftApp, _st: &mut Parts, ui: &mut egui::Ui, error: &str) {
@@ -248,38 +246,48 @@ pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
 /// the width, the theme or the view's key changed) with the gear that edits its style, then
 /// what goes under it.
 pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-    // A column beside the chart when the card is wide enough, else under everything.
-    let side = V::has_side(app);
-    if side && ui.available_width() >= NARROW + V::SIDE {
-        // (The card's scroll bar takes the last few points.)
-        let w = ui.available_width() - V::SIDE - 28.0;
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_width(w);
-                chart_column::<V>(app, st, ui, out);
-            });
-            ui.add_space(12.0);
-            ui.vertical(|ui| {
-                ui.set_width(V::SIDE);
-                V::side(app, st, ui, out);
-            });
-        });
-        return;
+    let wants = V::blocks(app, st);
+    if wants.is_empty() {
+        return chart_column::<V>(app, st, ui, out);
     }
-    chart_column::<V>(app, st, ui, out);
-    if side {
-        ui.add_space(8.0);
-        V::side(app, st, ui, out);
+    let Some(key) = V::controls(app, st, ui, out) else { return };
+    // The chart and its blocks packed into the rest of the card (the card's scroll bar takes
+    // the last few points); what does not fit scrolls.
+    let area = vec2(ui.available_width() - 16.0, ui.available_height());
+    let a = crate::pack::arrange(area, LEAST_CHART, &wants);
+    let (whole, _) = ui.allocate_exact_size(vec2(area.x, a.height), Sense::hover());
+    let at = |r: Rect| r.translate(whole.min.to_vec2());
+    let mut main = ui.new_child(egui::UiBuilder::new().max_rect(at(a.main)));
+    // Under the chart, in its rectangle, the view's own overlays (they need the chart's response).
+    let under = 40.0;
+    let size = [a.main.width(), (a.main.height() - under).max(LEAST_CHART.y)];
+    draw_chart::<V>(app, st, &mut main, key, Some(size), out);
+    for (k, r) in a.blocks.iter().enumerate() {
+        let mut b = ui.new_child(egui::UiBuilder::new().max_rect(at(*r)));
+        V::block(app, st, &mut b, k, out);
     }
 }
+
+/// The least size a chart is drawn at among its blocks.
+const LEAST_CHART: egui::Vec2 = egui::vec2(360.0, 260.0);
 
 /// A chart view's controls, chart and what goes under it.
 fn chart_column<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let Some(key) = V::controls(app, st, ui, out) else { return };
-    let width = picture_width(ui);
-    let height = V::HEIGHT.of(ui);
+    draw_chart::<V>(app, st, ui, key, None, out);
+}
+
+/// The chart of `key`, `size` points (else as wide as `ui` and [`ChartView::HEIGHT`] high),
+/// with its gear and what goes under it.
+fn draw_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, key: V::Key, size: Option<[f32; 2]>, out: &mut Actions) {
+    let (width, height) = match size {
+        Some([w, h]) => (((w / 10.0).floor() * 10.0).clamp(200.0, 2400.0) as usize, ((h / 10.0).floor() * 10.0).clamp(150.0, 1600.0) as usize),
+        None => (picture_width(ui), V::HEIGHT.of(ui)),
+    };
     let mut drawn_now = None;
-    let drawn = V::Key::slot(&mut st.views).get_or_draw(PictureKey::new(app.revision, width, key.clone()), || {
+    let mut pk = PictureKey::new(app.revision, width, key.clone());
+    pk.height = height;
+    let drawn = V::Key::slot(&mut st.views).get_or_draw(pk, || {
         V::chart(app, &key).map(|c| {
             let curves: Vec<(String, String)> = c.curves().into_iter().map(|(k, l)| (k.to_owned(), chart_style::plain(l))).collect();
             let c = emcraft_engine::views::style_chart(&app.session, V::CHART, c);

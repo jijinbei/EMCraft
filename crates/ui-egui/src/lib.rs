@@ -50,6 +50,7 @@ pub mod handle;
 pub mod home;
 pub mod lang;
 mod messages;
+pub mod pack;
 pub mod picture;
 pub mod prefs;
 pub mod raster;
