@@ -355,7 +355,7 @@ Writes a PNG of the dispersion diagram: frequency against the phase per period, 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
 
@@ -413,7 +413,7 @@ Writes a PNG of a port mode's shape: its transverse E across the port's face, |E
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `port` | string |  | yes | the port's name |
 | `mode` | integer |  | no | the mode, 1 = the lowest (default 1) |
 | `frequency` | number | frequency | no | the frequency (default: the band's top) |
@@ -436,7 +436,7 @@ Writes results.tdr's chart as a PNG.
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `port` | string |  | no | the port (default the first) |
 | `mode` | string |  | no | `lowpass` or `bandpass` |
 | `width` | integer |  | no | picture width in pixels (default 1000) |
@@ -449,7 +449,7 @@ Writes a PNG of the fields on a plane: a component as colour and the in-plane E 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `frequency` | number | frequency | no | a solved frequency (the nearest is used); required unless `mode` is given |
 | `mode` | integer |  | no | an eigenmode (1 = the lowest) instead of a driven solution |
 | `plane` | string |  | no | `h` (H-plane, default), `e` (E-plane) or `cross` (cross-section) |
@@ -467,7 +467,7 @@ Writes an animated PNG of the fields on a plane over one period of ωt, looping:
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | animated PNG (APNG) file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `frequency` | number | frequency | no | a solved frequency (the nearest is used); required unless `mode` is given |
 | `mode` | integer |  | no | an eigenmode (1 = the lowest) instead of a driven solution |
 | `plane` | string |  | no | `h` (H-plane, default), `e` (E-plane) or `cross` (cross-section) |
@@ -486,7 +486,7 @@ Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `width` | integer |  | no | pixels (default 1000) |
 | `height` | integer |  | no | pixels (default 600) |
 
@@ -567,7 +567,7 @@ Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity i
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `phi` | number |  | no | the azimuth in degrees (default 0) |
 | `points` | integer |  | no | angles from 0 to 180° (default 91) |
 | `width` | integer |  | no | pixels (default 1000) |
@@ -641,7 +641,7 @@ Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | PNG file to write |
-| `theme` | string |  | no | `light` (default), `dark` or the path of a theme file (docs/themes.md) |
+| `theme` | string |  | no | a built-in theme (`light`, the default, `dark`, `mono`, `graphite`, `sepia`, `midnight`, `forest`) or the path of a theme file (docs/themes.md) |
 | `parameter` | string |  | no | the S-parameter of a sweep, such as s21 (default the first) |
 | `at` | object |  | no | a grid sweep's slice: the variables held and their values ({"b": 5}; the nearest swept value); the chart runs along the first variable not held (default: along the first, the others at their first values) |
 | `width` | integer |  | no | pixels (default 1000) |
@@ -649,11 +649,11 @@ Writes a PNG of the last study: a sweep's |S| in dB against frequency, one curve
 
 ## `theme.check` — Check a theme
 
-Reads a theme file (docs/themes.md) and reports its name, base and description, the picture palette it resolves to over its base, its `ui` and `scene` colours, and every problem found (`ok` false then): unknown keys and picture colours, bad colours, see-through picture or scene colours, a name out of bounds, ink unreadable on the ground. `light` or `dark` reports a built-in theme. The desktop app checks the `ui` and `scene` names when it loads the theme.
+Reads a theme file (docs/themes.md) and reports its name, base and description, the picture palette it resolves to over its base, its `ui` and `scene` colours, and every problem found (`ok` false then): unknown keys and picture colours, bad colours, see-through picture or scene colours, a name out of bounds, ink unreadable on the ground. A built-in theme's name (`light`, `dark`, `mono`, …) reports that theme. The desktop app checks the `ui` and `scene` names when it loads the theme.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `path` | string |  | yes | the theme file, or `light` or `dark` |
+| `path` | string |  | yes | the theme file, or a built-in theme's name |
 
 ## `model.summary` — Summary
 

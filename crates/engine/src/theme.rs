@@ -1,7 +1,9 @@
 //! Themes as files: the format a theme is written in (docs/themes.md), read and checked, and
-//! the [`Palette`] pictures are drawn in (`view.*`'s `theme`: `light`, `dark` or a theme file).
-//! The built-in themes are files of the same format (`crates/engine/themes/light.json` and
-//! `dark.json`, compiled in), naming every colour there is: no theme colour lives in code.
+//! the [`Palette`] pictures are drawn in (`view.*`'s `theme`: a built-in theme's name or a theme
+//! file).
+//! The built-in themes are files of the same format (`crates/engine/themes/*.json`, compiled
+//! in: `light`, `dark` and the one-hue `mono`, `graphite`, `sepia`, `midnight` and `forest`),
+//! naming every colour there is: no theme colour lives in code.
 //!
 //! A theme file is a JSON object:
 //!
@@ -13,7 +15,7 @@
 //! ```
 //!
 //! Every colour is `#rrggbb` or `#rrggbbaa` (straight, not premultiplied, alpha). A user's
-//! theme starts from its `base` (light or dark) and overrides the colours it names; a built-in
+//! theme starts from its `base` (a built-in theme) and overrides the colours it names; a built-in
 //! one has no base and names every colour. The `picture` part is resolved here onto the base's
 //! palette and checked (its names, opaque colours, the ink readable on the ground); the `ui` and
 //! `scene` parts are kept as colours by name, whose names the desktop app checks when it loads
@@ -53,30 +55,37 @@ emcraft_macros::named_enum! {
         #[default]
         Light = "light",
         Dark = "dark",
+        Mono = "mono",
+        Graphite = "graphite",
+        Sepia = "sepia",
+        Midnight = "midnight",
+        Forest = "forest",
     }
 }
-
-/// The built-in themes' files.
-const LIGHT_FILE: &str = include_str!("../themes/light.json");
-const DARK_FILE: &str = include_str!("../themes/dark.json");
 
 impl Base {
     /// The built-in theme's file.
     pub const fn text(self) -> &'static str {
         match self {
-            Base::Light => LIGHT_FILE,
-            Base::Dark => DARK_FILE,
+            Base::Light => include_str!("../themes/light.json"),
+            Base::Dark => include_str!("../themes/dark.json"),
+            Base::Mono => include_str!("../themes/mono.json"),
+            Base::Graphite => include_str!("../themes/graphite.json"),
+            Base::Sepia => include_str!("../themes/sepia.json"),
+            Base::Midnight => include_str!("../themes/midnight.json"),
+            Base::Forest => include_str!("../themes/forest.json"),
         }
+    }
+
+    /// Whether its panels are dark (light ink on them).
+    pub const fn is_dark(self) -> bool {
+        matches!(self, Base::Dark | Base::Graphite | Base::Midnight | Base::Forest)
     }
 
     /// The built-in theme read (once) and checked.
     pub fn checked(self) -> &'static Checked {
-        static LIGHT: LazyLock<Checked> = LazyLock::new(|| check_as(LIGHT_FILE, Some(Base::Light)));
-        static DARK: LazyLock<Checked> = LazyLock::new(|| check_as(DARK_FILE, Some(Base::Dark)));
-        match self {
-            Base::Light => &LIGHT,
-            Base::Dark => &DARK,
-        }
+        static ALL: LazyLock<[Checked; Base::COUNT]> = LazyLock::new(|| Base::ALL.map(|b| check_as(b.text(), Some(b))));
+        &ALL[self as usize]
     }
 
     /// The built-in theme; refused with its problems should its file be broken.
@@ -355,7 +364,7 @@ pub fn read(path: &str) -> Result<ThemeFile> {
     parse(&read_text(path)?).map_err(|e| EngineError::Params(format!("theme `{}`: {e}", clip(path, 200))))
 }
 
-/// A picture palette by name: `light`, `dark` (the built-in themes) or the path of a theme
+/// A picture palette by name: a built-in theme's (`light`, `dark`, …) or the path of a theme
 /// file.
 pub fn palette_named(theme: &str) -> Result<Palette> {
     match Base::parse(theme) {
@@ -415,7 +424,7 @@ mod tests {
         "picture": {"ground": "#20242c", "series": ["#5a96f0", "#f06e5a"], "h_arrows": "#008040"}
     }"##;
 
-    /// Both built-in themes read without a problem, name every picture colour and keep their
+    /// Every built-in theme reads without a problem, names every picture colour and keeps its
     /// inks readable: the fallback is never needed.
     #[test]
     fn the_built_in_themes_are_whole_and_readable() {
@@ -430,7 +439,14 @@ mod tests {
                 assert!(s.contrast_ratio(c.theme.picture.ground) >= 2.0, "{b}: {s:?}");
             }
             assert!(!c.theme.ui.is_empty() && !c.theme.scene.is_empty());
+            // A dark one has dark panels and pictures, a light one light.
+            let ground = c.theme.picture.ground;
+            assert_eq!(ground.contrast_ratio(Rgb::BLACK) < ground.contrast_ratio(Rgb::WHITE), b.is_dark(), "{b}");
         }
+        assert_eq!(Base::IDS, ["light", "dark", "mono", "graphite", "sepia", "midnight", "forest"]);
+        // Any built-in theme is a base.
+        let t = parse(r#"{"name": "Paper", "base": "sepia"}"#).unwrap();
+        assert_eq!((t.base, t.picture), (Base::Sepia, Base::Sepia.palette()));
         assert_ne!(Base::Light.palette(), Base::Dark.palette());
         assert_eq!(Base::Light.palette().ground, Rgb::WHITE);
         // A built-in theme's rules: its own name, no base, every picture colour.
@@ -478,7 +494,7 @@ mod tests {
         one(&format!(r#"{{"name": "{}"}}"#, "x".repeat(41)), "`name` must be 1 to 40");
         one(r#"{"name": "a\u0007b"}"#, "no control characters");
         one(r#"{"name": "Dark"}"#, "is a built-in theme's");
-        one(r#"{"name": "t", "base": "sepia"}"#, "`base` must be light or dark");
+        one(r#"{"name": "t", "base": "paper"}"#, "`base` must be light, dark, mono, graphite, sepia, midnight or forest");
         one(r#"{"name": "t", "colours": {}}"#, "unknown key `colours` (a theme has name, description, base, ui, scene, picture)");
         one(r#"{"name": "t", "ui": {"accent": "blue"}}"#, "`ui.accent` must be a colour `#rrggbb` or `#rrggbbaa`, got \"blue\"");
         one(r##"{"name": "t", "ui": {"accent": "#12345"}}"##, "`ui.accent` must be a colour");
