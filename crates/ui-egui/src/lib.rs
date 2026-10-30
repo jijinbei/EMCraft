@@ -455,18 +455,21 @@ impl EmcraftApp {
         if spec.params.is_empty() {
             return self.run(id, json!({})).map(|_| ());
         }
-        let (init, current) = self.initial(id);
+        let (init, current) = self.initial(id, &json!({}));
         let d = dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs);
         self.dialog = Some(if current && dialogs::skips_unchanged(id) { d.on_model() } else { d });
         Ok(())
     }
 
-    /// What `id`'s dialog opens on: the model's current state (`project.values`) for the
-    /// commands that have one ([`dialogs::ON_VALUES`]; perfect walls are the empty one), else
-    /// the examples of [`dialogs::initial`]; and whether it is the model's.
-    fn initial(&mut self, id: &str) -> (Value, bool) {
+    /// What `id`'s dialog opens on: the model's current state (`project.values`, asked with
+    /// `select`'s parameters, a symmetry plane's `axis` say) for the commands that have one
+    /// ([`dialogs::ON_VALUES`]; perfect walls are the empty one), else the examples of
+    /// [`dialogs::initial`]; and whether it is the model's.
+    fn initial(&mut self, id: &str, select: &Value) -> (Value, bool) {
+        let mut ask = select.as_object().cloned().unwrap_or_default();
+        ask.insert("command".into(), json!(id));
         if dialogs::ON_VALUES.contains(&id)
-            && let Ok(v) = self.session.execute("project.values", &json!({"command": id}))
+            && let Ok(v) = self.session.execute("project.values", &Value::Object(ask))
             && (v.as_object().is_some_and(|o| !o.is_empty()) || id == "model.walls")
         {
             return (v, true);
@@ -488,13 +491,14 @@ impl EmcraftApp {
     /// for an export, say).
     pub fn open_dialog_with(&mut self, id: &str, values: Value) -> Result<(), UiError> {
         let spec = find_command(id)?;
-        let mut init = dialogs::initial(id, &self.session);
+        let (mut init, current) = self.initial(id, &values);
         if let (Some(o), Some(v)) = (init.as_object_mut(), values.as_object()) {
             o.extend(v.clone());
         } else {
             init = values;
         }
-        self.dialog = Some(dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs));
+        let d = dialogs::Dialog::new(spec, &self.session, &init, self.dock_dialogs);
+        self.dialog = Some(if current && dialogs::skips_unchanged(id) { d.on_model() } else { d });
         Ok(())
     }
 

@@ -33,6 +33,7 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     crate::ui_kit::caption(ui, trf("{n} unknowns after the periodic reduction; period {period}", args!(n = d.unknowns, period = period)));
     egui::ScrollArea::vertical().id_salt("dispersion_table").show(ui, |ui| {
         egui::Grid::new("dispersion_grid").striped(true).num_columns(2 + bands).show(ui, |ui| {
+            super::dim_if_stale(ui);
             ui.label(egui::RichText::new("ψ (°)").strong());
             ui.label(egui::RichText::new(format!("β (rad/{})", lu.symbol())).strong());
             for b in 0..bands {

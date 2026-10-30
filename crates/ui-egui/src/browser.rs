@@ -328,7 +328,9 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         } else {
             "Symmetry: {axis} = {at} {unit}, magnetic wall"
         };
-        rows.push(row(template, args!(axis = axis, at = f.len(plane.at), unit = f.unit()), Glyph::Walls, Act::Edit("model.symmetry")));
+        // Its own plane's values, not the first one's.
+        let edit = Act::EditWith("model.symmetry", serde_json::json!({"axis": axis}));
+        rows.push(row(template, args!(axis = axis, at = f.len(plane.at), unit = f.unit()), Glyph::Walls, edit));
     }
     if let Some(p) = &m.periodic {
         rows.push(row("Periodic boundaries: {cell}", args!(cell = periodic_text(p)), Glyph::Periodic, Act::Edit("model.periodic")));

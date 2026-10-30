@@ -91,10 +91,11 @@ pub struct Tokens {
     pub axis_z: Color32,
     pub axis_label: Color32,
     /// Per-tab accents (fill, ink on light grounds, soft tint): geometry, materials, ports and
-    /// sources, mesh, simulation, results.
+    /// sources, boundaries, mesh, simulation, results.
     pub tab_model: [Color32; 3],
     pub tab_materials: [Color32; 3],
     pub tab_ports: [Color32; 3],
+    pub tab_boundaries: [Color32; 3],
     pub tab_mesh: [Color32; 3],
     pub tab_simulate: [Color32; 3],
     pub tab_results: [Color32; 3],
@@ -172,6 +173,7 @@ colour_names!(Tokens: Color32, TOKEN_NAMES {
     "tab_model_fill" => tab_model[0], "tab_model_ink" => tab_model[1], "tab_model_soft" => tab_model[2],
     "tab_materials_fill" => tab_materials[0], "tab_materials_ink" => tab_materials[1], "tab_materials_soft" => tab_materials[2],
     "tab_ports_fill" => tab_ports[0], "tab_ports_ink" => tab_ports[1], "tab_ports_soft" => tab_ports[2],
+    "tab_boundaries_fill" => tab_boundaries[0], "tab_boundaries_ink" => tab_boundaries[1], "tab_boundaries_soft" => tab_boundaries[2],
     "tab_mesh_fill" => tab_mesh[0], "tab_mesh_ink" => tab_mesh[1], "tab_mesh_soft" => tab_mesh[2],
     "tab_simulate_fill" => tab_simulate[0], "tab_simulate_ink" => tab_simulate[1], "tab_simulate_soft" => tab_simulate[2],
     "tab_results_fill" => tab_results[0], "tab_results_ink" => tab_results[1], "tab_results_soft" => tab_results[2],
@@ -225,7 +227,8 @@ impl Tokens {
         match tab {
             RibbonTab::Model => self.tab_model,
             // The walls take the materials' accent: they were under MATERIALS before.
-            RibbonTab::Materials | RibbonTab::Boundaries => self.tab_materials,
+            RibbonTab::Materials => self.tab_materials,
+            RibbonTab::Boundaries => self.tab_boundaries,
             RibbonTab::PortsSources => self.tab_ports,
             RibbonTab::Mesh => self.tab_mesh,
             RibbonTab::Simulate => self.tab_simulate,
@@ -619,7 +622,7 @@ mod tests {
             assert!(t.palette.ink.contrast_ratio(t.palette.ground) >= 4.5);
             assert_eq!(t.is_dark(), base.is_dark());
         }
-        assert_eq!(TOKEN_NAMES.len(), 56);
+        assert_eq!(TOKEN_NAMES.len(), 59);
         assert_eq!(Tokens::sizes().colour("text"), Some(Color32::TRANSPARENT));
         assert_eq!(Tokens::sizes().colour("nope"), None);
         // The fallback stands in with readable text.
