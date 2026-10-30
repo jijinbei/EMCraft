@@ -412,6 +412,7 @@ const UNREACHED: &[(&str, &str)] = &[
     ("{done} / {total} pass", "an adaptive mesh's progress: too long for the gate"),
     ("{done} / {total} passes", "an adaptive mesh's progress: too long for the gate"),
     ("Script", "a script's progress: it ends before a frame shows it"),
+    ("goal", "an optimization of a number the solve gives (maximize, minimize): the tour's goal is in dB"),
 ];
 
 /// The texts that are looked up by name rather than written where they are shown: the views',

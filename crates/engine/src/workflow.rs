@@ -197,6 +197,11 @@ pub fn steps(s: &Session) -> [StepState; 9] {
 /// The steps a run cannot do without (a resonator needs no excitation, so that is not one).
 const REQUIRED: [Step; 2] = [Step::Geometry, Step::Mesh];
 
+/// Whether anything was solved: a solver's results or a parameter study's.
+fn solved(s: &Session) -> bool {
+    s.results.any() || s.results.study.is_some()
+}
+
 fn has_geometry(s: &Session) -> bool {
     s.model.waveguide.is_some() || s.model.solid.is_some()
 }
@@ -204,7 +209,7 @@ fn has_geometry(s: &Session) -> bool {
 fn intent(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Intent);
     // Once something is solved, the band has done its work.
-    if s.model.band.is_none() && !s.results.any() {
+    if s.model.band.is_none() && !solved(s) {
         st.note(
             Status::Todo,
             "no frequency band yet: set the job's band first, it sets the mesh, the sweep and the port previews",
@@ -362,7 +367,7 @@ fn setup(s: &Session) -> StepState {
     if !has_geometry(s) {
         st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
     }
-    if s.model.band.is_none() && !s.results.any() {
+    if s.model.band.is_none() && !solved(s) {
         st.note(Status::Todo, "no band to sweep yet: set the band, or give the sweep's frequencies when running", Some("project.frequency"));
     }
     st
@@ -382,7 +387,7 @@ fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
     } else if !waiting.is_empty() {
         run.note(Status::Waiting, format!("waits for {waiting}"), None);
     }
-    if !s.results.any() {
+    if !solved(s) {
         if wrong.is_empty() && waiting.is_empty() {
             run.note(Status::Todo, "not run yet", Some("solve.frequency"));
         }

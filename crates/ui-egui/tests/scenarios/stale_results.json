@@ -6,6 +6,9 @@
   {"click": "setup:points"},
   {"key": "A", "cmd": true},
   {"text": "3"},
+  {"click": "setup:order"},
+  {"key": "A", "cmd": true},
+  {"text": "1"},
   {"click": "step:run"},
   {"click": "run:start"},
   {"until": {"busy": false, "inspect": {"model.results.frequencies": 3}}, "timeout": 120},
@@ -21,6 +24,10 @@
   {"frames": 2},
   {"expect": {"handles": ["stale:rerun", "picture:field"]}},
   {"shot": "stale-field"},
+  {"call": "ui.set", "params": {"dark": true}},
+  {"frames": 2},
+  {"shot": "stale-field-dark"},
+  {"call": "ui.set", "params": {"dark": false}},
   {"call": "ui.set", "params": {"view": "tdr"}},
   {"frames": 2},
   {"expect": {"handles": ["stale:rerun"]}},
@@ -35,6 +42,7 @@
   {"call": "ui.set", "params": {"view": "sparameters"}},
   {"click": "stale:rerun"},
   {"until": {"busy": false, "inspect": {"workflow.stale": false}}, "timeout": 120},
+  {"frames": 2},
   {"expect": {"view": "sparameters", "hidden": ["stale:rerun"], "inspect": {"model.results.frequencies": 3, "workflow.steps.results": "done"}}},
   {"shot": "stale-rerun-done"}
 ]

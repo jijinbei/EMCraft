@@ -136,7 +136,11 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
         let comp = field.view.component;
         let (now, amp) = pin.value(comp, field.view.phase);
         let fmt = emcraft_render::axes::format;
-        let text = trf("{component} {now} (amp. {amplitude})", args!(component = comp.label(), now = fmt(now), amplitude = fmt(amp)));
+        let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
+        let text = trf(
+            "{component} {now} {unit} (amp. {amplitude} {unit})",
+            args!(component = comp.label(), now = fmt(now), amplitude = fmt(amp), unit = unit),
+        );
         let galley = painter.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
         let size = galley.size() + vec2(10.0, 6.0);
         let right = c.x + 12.0 + size.x < rect.right();

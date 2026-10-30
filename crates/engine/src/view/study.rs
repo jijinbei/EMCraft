@@ -142,7 +142,7 @@ fn valued(study: &Study, units: &[Option<String>], k: usize, v: f64) -> String {
 
 /// The unit of an optimization's goal, from what it reads: dB for an S-parameter's, the
 /// frequency unit for an eigenfrequency's, none for a number the solve gives.
-fn goal_unit(study: &Study) -> Option<&str> {
+pub fn goal_unit(study: &Study) -> Option<&str> {
     let goal = study.goal.as_deref()?;
     if goal.contains("(dB)") || goal.ends_with(" dB") {
         Some("dB")
