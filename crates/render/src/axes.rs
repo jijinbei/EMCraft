@@ -61,19 +61,39 @@ pub fn format(v: f64) -> String {
     if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s }
 }
 
-/// A point `p` (axis units) in pixels, on a plot area `area` (left, top, width, height) over
-/// the axes' ranges `x` and `y` (y upwards).
-pub(crate) fn to_pixels(area: [f64; 4], x: (f64, f64), y: (f64, f64), p: [f64; 2]) -> [f64; 2] {
-    let [x0, y0, pw, ph] = area;
-    [x0 + (p[0] - x.0) / (x.1 - x.0) * pw, y0 + ph - (p[1] - y.0) / (y.1 - y.0) * ph]
+/// Where a chart or a field plot drawn at some size puts its plot area: the picture's size, the
+/// area's rectangle in it (pixels) and the axes' ranges (`chart::layout`, `plot::layout_of`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Layout {
+    pub width: usize,
+    pub height: usize,
+    /// The plot area: left, top, width, height.
+    pub plane: [f64; 4],
+    pub x: (f64, f64),
+    pub y: (f64, f64),
 }
 
-/// The point (axis units) under the pixel position `px` of a plot area as [`to_pixels`] takes
-/// it; `None` off the area.
-pub(crate) fn to_axes(area: [f64; 4], x: (f64, f64), y: (f64, f64), px: [f64; 2]) -> Option<[f64; 2]> {
-    let [x0, y0, pw, ph] = area;
-    let (u, v) = ((px[0] - x0) / pw, 1.0 - (px[1] - y0) / ph);
-    ((0.0..=1.0).contains(&u) && (0.0..=1.0).contains(&v)).then_some([x.0 + u * (x.1 - x.0), y.0 + v * (y.1 - y.0)])
+impl Layout {
+    /// A point (axis units) in pixels (y upwards).
+    pub fn to_pixels(&self, p: [f64; 2]) -> [f64; 2] {
+        let ([x0, y0, pw, ph], (x, y)) = (self.plane, (self.x, self.y));
+        [x0 + (p[0] - x.0) / (x.1 - x.0) * pw, y0 + ph - (p[1] - y.0) / (y.1 - y.0) * ph]
+    }
+
+    /// The point (axis units) under a pixel position; `None` off the plot area.
+    pub fn to_axes(&self, px: [f64; 2]) -> Option<[f64; 2]> {
+        let ([x0, y0, pw, ph], (x, y)) = (self.plane, (self.x, self.y));
+        let (u, v) = ((px[0] - x0) / pw, 1.0 - (px[1] - y0) / ph);
+        ((0.0..=1.0).contains(&u) && (0.0..=1.0).contains(&v)).then_some([x.0 + u * (x.1 - x.0), y.0 + v * (y.1 - y.0)])
+    }
+
+    /// The x value (axis units) under the pixel column `px`; `None` left or right of the plot
+    /// area.
+    pub fn x_at(&self, px: f64) -> Option<f64> {
+        let [x0, _, pw, _] = self.plane;
+        let u = (px - x0) / pw;
+        (0.0..=1.0).contains(&u).then_some(self.x.0 + u * (self.x.1 - self.x.0))
+    }
 }
 
 /// Draws a frame, tick marks and labels for a plot area (x0, y0, w, h) in pixels.

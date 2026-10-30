@@ -128,16 +128,21 @@ fn a_mesh_cut_fills_the_section_by_material() {
         let (u, v) = ([0, 1, 2].map(|k| t.p[1][k] - t.p[0][k]), [0, 1, 2].map(|k| t.p[2][k] - t.p[0][k]));
         0.5 * ((u[1] * v[2] - u[2] * v[1]).powi(2) + (u[2] * v[0] - u[0] * v[2]).powi(2) + (u[0] * v[1] - u[1] * v[0]).powi(2)).sqrt()
     };
-    let total: f64 = cut.tris.iter().map(area).sum();
+    // The metal backing: two triangles behind the cut, as large as the mesh's box there.
+    let metal = super::style::sc().metal;
+    let (backing, caps): (Vec<&emcraft_render::view3d::Tri>, Vec<_>) = cut.tris.iter().partition(|t| t.p.iter().all(|p| p[0] < at));
+    assert_eq!(backing.len(), 2);
+    assert!(backing.iter().all(|t| t.color == metal));
+    let total: f64 = caps.iter().map(|t| area(t)).sum();
     let want = (hi[1] - lo[1]) * (hi[2] - lo[2]);
     assert!((total - want).abs() < 1e-9 * want.max(1e-12) + 1e-12, "{total} vs {want}");
-    assert!(cut.tris.iter().all(|t| t.p.iter().all(|p| p[0] == at)));
+    assert!(caps.iter().all(|t| t.p.iter().all(|p| p[0] == at)));
     // Facing the removed (high x) side.
     assert!(cut.tris.iter().all(|t| {
         let (u, v) = ([0, 1, 2].map(|k| t.p[1][k] - t.p[0][k]), [0, 1, 2].map(|k| t.p[2][k] - t.p[0][k]));
         u[1] * v[2] - u[2] * v[1] >= 0.0
     }));
-    let colours: std::collections::BTreeSet<_> = cut.tris.iter().map(|t| (t.color.0, t.color.1, t.color.2)).collect();
+    let colours: std::collections::BTreeSet<_> = caps.iter().map(|t| (t.color.0, t.color.1, t.color.2)).collect();
     assert_eq!(colours.len(), 2, "vacuum and ptfe-like");
     assert_eq!(mesh_slice(m, 0, at, true).tris, cut.tris);
     assert!(mesh_slice(m, 0, hi[0] + 1.0, true).tris.is_empty());

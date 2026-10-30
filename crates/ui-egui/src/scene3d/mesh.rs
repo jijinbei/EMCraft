@@ -121,7 +121,7 @@ fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, o
 /// The mesh cut across `axis` (0 x, 1 y, 2 z) at `at` (m): each tetrahedron the plane crosses
 /// gives its cut (a triangle or a quadrilateral) in its material's colour, facing the removed
 /// side (`keep_low`: the high side is removed), so a section view shows every material filled,
-/// the air too, and conductors (not meshed) as holes. Tetrahedra in the mesh's order: the same
+/// the air too, and conductors (not meshed) in metal behind. Tetrahedra in the mesh's order: the same
 /// mesh gives the same cut.
 pub(crate) fn slice(m: &Model, axis: usize, at: f64, keep_low: bool) -> emcraft_render::view3d::Scene {
     let mut out = emcraft_render::view3d::Scene::default();
@@ -129,7 +129,32 @@ pub(crate) fn slice(m: &Model, axis: usize, at: f64, keep_low: bool) -> emcraft_
     let k = axis.min(2);
     let (u, v) = ((k + 1) % 3, (k + 2) % 3);
     let tag = if m.waveguide.is_some() { Pick::Guide.tag() } else { Pick::Solid.tag() };
+    // Conductors are not meshed: the mesh's box on the plane, in metal and a hair behind the
+    // cut, shows through where no tetrahedron is.
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for q in mesh.nodes.iter().map(|q| p3(*q)) {
+        for c in 0..3 {
+            lo[c] = lo[c].min(q[c]);
+            hi[c] = hi[c].max(q[c]);
+        }
+    }
+    if !(lo[k] < at && at < hi[k]) {
+        return out;
+    }
     out.tagged(tag, |s| {
+        let size = (0..3).map(|c| hi[c] - lo[c]).fold(0.0, f64::max);
+        let behind = at + if keep_low { -1e-6 } else { 1e-6 } * size;
+        let corner = |a: f64, b: f64| {
+            let mut q = [0.0; 3];
+            (q[k], q[u], q[v]) = (behind, a, b);
+            q
+        };
+        let mut rect = [corner(lo[u], lo[v]), corner(hi[u], lo[v]), corner(hi[u], hi[v]), corner(lo[u], hi[v])];
+        if !keep_low {
+            rect.reverse();
+        }
+        s.tri(rect[0], rect[1], rect[2], sc().metal, 255);
+        s.tri(rect[0], rect[2], rect[3], sc().metal, 255);
         for (t, tet) in mesh.tets.iter().enumerate() {
             let Some(p) = tet.iter().map(|n| mesh.nodes.get(*n as usize).map(|q| p3(*q))).collect::<Option<Vec<[f64; 3]>>>() else { continue };
             // Sides by the sign of the distance, the plane itself counted high, so a node on it

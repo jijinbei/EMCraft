@@ -51,7 +51,7 @@ types changed) find what slipped through.
 | `emcraft_model::units` | `Unit` (lengths and frequencies to and from SI), the display units |
 | `emcraft_model::shape::Axis` | x, y, z with `ALL`, `index`, `from_index`, `name` |
 | `emcraft_mesh::shared` | `DisjointSets` (root at the smaller index), `winding` of a closed surface |
-| `emcraft_render::chart::Layout`, `plot::Layout` | a chart's or plot's area and the pixel ↔ axis maps |
+| `emcraft_render::axes::Layout` (`chart::layout`, `plot::layout_of`) | a chart's or field plot's area and the pixel ↔ axis maps, one type for both |
 | `emcraft_render::view3d` | `Scene` (`tri`, `quad`, `cuboid`, `line`, `tagged`, `bounds`), `render` (CPU, depth buffer), `flatten` (painter's order for the GPU), `pick`; `section::section` with `Section` (`across`, `new`, `flipped`, `keeps`): a section view as a scene |
 | `emcraft_render::palette` | `Palette` (a picture's colours: ground, inks, grid, series, …) and `Pen` (a series' or arrows' colour by role, resolved when drawn); `Rgb::contrast_ratio` (WCAG) |
 | `emcraft_engine::theme` | theme files (docs/themes.md): `Colour` (`#rrggbb[aa]`), `check`/`parse` with their caps, the built-in themes (`Base::theme`, `Base::palette`), `palette_named` for a command's `theme` |

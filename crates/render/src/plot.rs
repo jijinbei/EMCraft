@@ -128,46 +128,24 @@ fn top(lines: usize) -> f64 {
 }
 const BOTTOM: f64 = 90.0;
 
-/// Where a plot drawn at some width puts its plane: the picture's size and the plane's
-/// rectangle in it (pixels), and the axes' ranges.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Layout {
-    pub width: usize,
-    pub height: usize,
-    /// The plane's rectangle: left, top, width, height.
-    pub plane: [f64; 4],
-    pub x: (f64, f64),
-    pub y: (f64, f64),
-}
+pub use crate::axes::Layout;
 
-impl Layout {
-    /// The plot of `plot` drawn `width` pixels wide (the height follows the plane's aspect
-    /// ratio).
-    pub fn of(plot: &FieldPlot, width: usize) -> Layout {
-        let (x, y) = (plot.x.span(), plot.y.span());
-        let pw = (width as f64 - LEFT - RIGHT).max(100.0);
-        let ph = (pw * (y.1 - y.0) / (x.1 - x.0)).clamp(60.0, 3000.0);
-        let pw = if ph >= 3000.0 { 3000.0 * (x.1 - x.0) / (y.1 - y.0) } else { pw };
-        let (title, subtitle) = header(plot, pw + LEFT + RIGHT);
-        let top = top(title.len() + subtitle.len());
-        Layout { width: (pw + LEFT + RIGHT).ceil() as usize, height: (ph + top + BOTTOM).ceil() as usize, plane: [LEFT, top, pw, ph], x, y }
-    }
-
-    /// A point of the plane (axis units) in pixels.
-    pub fn to_pixels(&self, p: [f64; 2]) -> [f64; 2] {
-        axes::to_pixels(self.plane, self.x, self.y, p)
-    }
-
-    /// The point of the plane (axis units) under a pixel position; `None` off the plane.
-    pub fn to_axes(&self, px: [f64; 2]) -> Option<[f64; 2]> {
-        axes::to_axes(self.plane, self.x, self.y, px)
-    }
+/// The layout of `plot` drawn `width` pixels wide (the height follows the plane's aspect
+/// ratio).
+pub fn layout_of(plot: &FieldPlot, width: usize) -> Layout {
+    let (x, y) = (plot.x.span(), plot.y.span());
+    let pw = (width as f64 - LEFT - RIGHT).max(100.0);
+    let ph = (pw * (y.1 - y.0) / (x.1 - x.0)).clamp(60.0, 3000.0);
+    let pw = if ph >= 3000.0 { 3000.0 * (x.1 - x.0) / (y.1 - y.0) } else { pw };
+    let (title, subtitle) = header(plot, pw + LEFT + RIGHT);
+    let top = top(title.len() + subtitle.len());
+    Layout { width: (pw + LEFT + RIGHT).ceil() as usize, height: (ph + top + BOTTOM).ceil() as usize, plane: [LEFT, top, pw, ph], x, y }
 }
 
 /// Draws the plot `width` pixels wide (the height follows the plane's aspect ratio; see
-/// [`Layout::of`]) in `palette`'s colours.
+/// [`layout_of`]) in `palette`'s colours.
 pub fn draw(plot: &FieldPlot, width: usize, palette: &Palette) -> Canvas {
-    let layout = Layout::of(plot, width);
+    let layout = layout_of(plot, width);
     let [x0, y0, pw, ph] = layout.plane;
     let (xa, xb) = layout.x;
     let mut c = Canvas::new(layout.width, layout.height, palette.ground);
@@ -308,7 +286,7 @@ mod tests {
         // The aspect ratio is the plane's.
         assert!((pw / ph - 2.0).abs() < 0.05);
         // Pixels and axes map back and forth.
-        let l = Layout::of(&plot(), 600);
+        let l = layout_of(&plot(), 600);
         let q = l.to_axes(l.to_pixels([7.5, 2.5])).unwrap();
         assert!((q[0] - 7.5).abs() < 1e-9 && (q[1] - 2.5).abs() < 1e-9);
         assert_eq!(l.to_axes([0.0, 0.0]), None);
