@@ -61,6 +61,7 @@ mod shots;
 pub mod state;
 mod status;
 pub mod steps;
+pub mod template_dialog;
 pub mod theme;
 pub mod tools3d;
 pub mod ui_ext;
@@ -135,6 +136,8 @@ pub struct EmcraftApp {
     pub files: files::Files,
     /// The start page.
     pub home: home::Home,
+    /// The template being set up before it is opened (start page, File ▸ Samples).
+    pub template: Option<template_dialog::TemplateDialog>,
     /// The settings page, at its section, while it is open.
     pub settings: Option<settings::Section>,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
@@ -228,6 +231,7 @@ impl EmcraftApp {
             prefs_store: PrefsStore::default(),
             files: files::Files::default(),
             home: home::Home::default(),
+            template: None,
             settings: None,
             failure: None,
             dialog_job: None,
@@ -628,6 +632,7 @@ impl EmcraftApp {
             self.workspace(ui, &ctx, &mut out);
         }
         self.lend(|a| &mut a.files.prompt, |app, prompt| files::show(app, prompt, &ctx, &mut out));
+        self.lend(|a| &mut a.template, |app, d| d.as_mut().map(|d| template_dialog::show(app, d, &ctx, &mut out)));
         shortcuts(self, &ctx, &mut out);
         self.apply_all(out);
         self.collect_screenshots(&ctx);

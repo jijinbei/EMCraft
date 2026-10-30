@@ -147,17 +147,120 @@ pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(crate::reply::units(s.display))
 }
 
-/// Replaces the session with a sample's model (and its results, when `solve`).
+/// A template's parameters: the variables its script defines, in order, each with its value
+/// and what it measures (`length`, `frequency` or none).
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct TemplateParameter {
+    pub name: String,
+    pub value: f64,
+    pub quantity: Option<String>,
+}
+
+/// The parameters of template `name` (`None`: no such template).
+///
+/// ```
+/// let p = emcraft_engine::template_parameters("iris-bandpass").unwrap_or_default();
+/// assert!(p.iter().any(|v| v.name == "irises" && v.value == 4.0 && v.quantity.is_none()));
+/// assert!(emcraft_engine::template_parameters("nothing").is_none());
+/// ```
+pub fn template_parameters(name: &str) -> Option<Vec<TemplateParameter>> {
+    let script: Vec<Step> = serde_json::from_str(emcraft_templates::find(name)?.script).ok()?;
+    Some(
+        script
+            .iter()
+            .filter(|st| st.command == crate::script::DEFINE)
+            .filter_map(|st| {
+                let name = st.param("name")?.as_str()?.to_owned();
+                let value = st.param("value")?.as_f64()?;
+                Some(TemplateParameter { name, value, quantity: st.param("quantity").and_then(Value::as_str).map(str::to_owned) })
+            })
+            .collect(),
+    )
+}
+
+/// Template `name`'s script with its parameters set to `values` (name → number, in the display
+/// units); an error naming a value that is not a finite number or a parameter the template does
+/// not have.
+///
+/// ```
+/// use serde_json::json;
+/// let steps = emcraft_engine::template_steps("iris-bandpass", &json!({"irises": 5})).unwrap_or_default();
+/// assert!(steps.iter().any(|s| s.defines("irises") && s.param("value") == Some(&json!(5.0))));
+/// assert!(emcraft_engine::template_steps("iris-bandpass", &json!({"wings": 2})).is_err());
+/// assert!(emcraft_engine::template_steps("iris-bandpass", &json!({"irises": "many"})).is_err());
+/// ```
+pub fn template_steps(name: &str, values: &Value) -> Result<Vec<Step>> {
+    let template = emcraft_templates::find(name).ok_or_else(|| {
+        EngineError::Params(crate::text::unknown(
+            format_args!("names no sample: `{}`", crate::text::clip(name, 40)),
+            "known: ",
+            emcraft_templates::names(),
+        ))
+    })?;
+    let mut script: Vec<Step> = serde_json::from_str(template.script).map_err(|e| EngineError::failed(format!("sample {name}: {e}")))?;
+    let given = match values {
+        Value::Null => return Ok(script),
+        Value::Object(map) => map,
+        _ => return Err(EngineError::Params("values: must be an object of numbers by parameter".into())),
+    };
+    if given.len() > crate::study::MAX_VARIABLES {
+        return Err(EngineError::Params(format!("values: at most {} parameters", crate::study::MAX_VARIABLES)));
+    }
+    for (key, v) in given {
+        let number = v
+            .as_f64()
+            .filter(|x| x.is_finite())
+            .ok_or_else(|| EngineError::Params(format!("values.{}: must be a finite number", crate::text::clip(key, crate::expr::MAX_NAME))))?;
+        let mut found = false;
+        for params in script.iter_mut().filter(|st| st.defines(key)).filter_map(|st| st.params.as_object_mut()) {
+            params.insert("value".to_owned(), json!(number));
+            found = true;
+        }
+        if !found {
+            let known: Vec<String> = template_parameters(name).unwrap_or_default().into_iter().map(|p| p.name).collect();
+            return Err(EngineError::Params(crate::text::unknown(
+                format_args!("values: `{}` is no parameter of {name}", crate::text::clip(key, crate::expr::MAX_NAME)),
+                "its parameters: ",
+                known,
+            )));
+        }
+    }
+    Ok(script)
+}
+
+/// `file.templates`: the templates, each with its label and parameters.
+pub fn templates(s: &mut Session, _: &Params) -> Result<Value> {
+    let d = s.display;
+    let list: Vec<Value> = emcraft_templates::TEMPLATES
+        .iter()
+        .map(|t| {
+            let parameters: Vec<Value> = template_parameters(t.name)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|p| {
+                    let unit = match p.quantity.as_deref() {
+                        Some("length") => d.length.symbol(),
+                        Some("frequency") => d.frequency.symbol(),
+                        _ => "",
+                    };
+                    json!({"name": p.name, "value": p.value, "quantity": p.quantity, "unit": unit})
+                })
+                .collect();
+            json!({"name": t.name, "label": t.label, "parameters": parameters})
+        })
+        .collect();
+    Ok(json!({"templates": list}))
+}
+
+/// Replaces the session with a sample's model (and its results, when `solve`), its parameters
+/// set to `values`.
 pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
-    let sample = emcraft_templates::find(name).ok_or_else(|| {
-        p.error(
-            "name",
-            crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", emcraft_templates::names()),
-        )
-    })?;
     let solve = p.flag("solve").or(false)?;
-    let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::failed(format!("sample {name}: {e}")))?;
+    let script = template_steps(name, p.value().get("values").unwrap_or(&Value::Null)).map_err(|e| match e {
+        EngineError::Params(m) if m.starts_with("names no sample") => p.error("name", m),
+        e => e,
+    })?;
     let mut fresh = s.fresh();
     // Without `solve`, the sample's solves are recorded as its runs, not run.
     for (i, step) in script.iter().enumerate() {

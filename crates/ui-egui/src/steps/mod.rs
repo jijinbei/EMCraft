@@ -25,6 +25,7 @@ mod panel;
 mod run;
 
 pub use bar::bar;
+pub(crate) use panel::fmt;
 pub use panel::{apply_band, export_touchstone, panel};
 pub use run::{Preflight, preflight, run_params, start_run};
 
@@ -119,9 +120,6 @@ pub struct Fields {
     pub count: String,
     pub frequency: String,
     pub touchstone: String,
-    /// The Geometry step's parameter fields by variable: the text, and the project's value it
-    /// was last filled from.
-    pub parameters: std::collections::BTreeMap<String, (String, String)>,
     pub format: String,
     pub errors: Vec<(&'static str, String)>,
     /// Run's last refusal.

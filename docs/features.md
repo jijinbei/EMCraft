@@ -837,12 +837,19 @@ Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi`
 
 ## `file.sample` — Open sample
 
-Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script; `solve: true` also runs its analysis.
+Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script, its parameters (the variables the script defines, `file.templates`) set to `values`; `solve: true` also runs its analysis.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `name` | string |  | yes | sample name |
+| `values` | object |  | no | `{parameter: number}`: the template's parameters to change, in the display units (the others keep their values) |
 | `solve` | boolean |  | no | run the sample's sweep (default false) |
+
+## `file.templates` — Templates
+
+The templates `file.sample` opens: each one's name, label and parameters (the variables its script defines: name, value, what it measures and its display unit).
+
+No parameters.
 
 ## `project.variable` — Variable
 

@@ -115,6 +115,28 @@ fn every_sample_is_a_script_of_known_commands() {
 }
 
 #[test]
+fn a_template_opens_with_its_parameters_changed_and_refuses_unknown_ones() {
+    let mut s = Session::new();
+    let list = s.execute("file.templates", &json!({})).unwrap();
+    let iris = list["templates"].as_array().unwrap().iter().find(|t| t["name"] == "iris-bandpass").unwrap();
+    let irises = iris["parameters"].as_array().unwrap().iter().find(|p| p["name"] == "irises").unwrap();
+    assert_eq!((irises["value"].as_f64(), irises["unit"].as_str()), (Some(4.0), Some("")));
+    let w = iris["parameters"].as_array().unwrap().iter().find(|p| p["name"] == "w_end").unwrap();
+    assert_eq!(w["unit"], "mm");
+    // Five irises: one more iris and one more inner cavity than the four of the template.
+    let r = s.execute("file.sample", &json!({"name": "iris-bandpass", "values": {"irises": 5}})).unwrap();
+    assert!((r["waveguide"]["length"].as_f64().unwrap() - 103.5).abs() < 1e-9, "{r}");
+    assert_eq!(s.variables().get("irises"), Some(&5.0));
+    for bad in [json!({"wings": 2}), json!({"irises": "many"}), json!([1]), json!({"irises": 1})] {
+        let before = s.summary();
+        assert!(s.execute("file.sample", &json!({"name": "iris-bandpass", "values": bad})).is_err(), "{bad}");
+        assert_eq!(s.summary(), before);
+    }
+    // An aperture wider than the guide: the template's own command refuses it.
+    assert!(s.execute("file.sample", &json!({"name": "iris-bandpass", "values": {"w_end": 30}})).is_err());
+}
+
+#[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn every_sample_opens() {
     // Without their solve steps: the geometry, mesh, ports and sources of each.

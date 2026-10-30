@@ -425,6 +425,6 @@ fn scenario_small_window() {
 }
 
 #[test]
-fn scenario_template_parameters() {
-    scenario("template_parameters");
+fn scenario_template_dialog() {
+    scenario("template_dialog");
 }
