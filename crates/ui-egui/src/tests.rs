@@ -188,6 +188,11 @@ fn scenario_view3d_lumped_tool() {
 }
 
 #[test]
+fn scenario_view3d_tools_ja() {
+    scenario("view3d_tools_ja");
+}
+
+#[test]
 fn scenario_view3d_gpu() {
     scenario("view3d_gpu");
 }
