@@ -97,9 +97,10 @@ pub fn is_long(id: &str) -> bool {
     find(id).is_some_and(|c| c.long)
 }
 
-/// A ribbon button's label: the command's own, shortened where the ribbon has little room.
+/// A ribbon button's label in the current language: the command's own, shortened where the
+/// ribbon has little room.
 pub fn button_label(id: &str) -> &str {
-    find(id).and_then(|c| c.label).unwrap_or_else(|| crate::label(id))
+    find(id).and_then(|c| c.label).map_or_else(|| crate::label(id), crate::lang::tr)
 }
 
 /// The glyph of command `id`.

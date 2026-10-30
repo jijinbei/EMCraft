@@ -5,6 +5,7 @@
 
 use emcraft_model::{Aabb, Point3};
 
+use crate::lang::args;
 use crate::scene3d::{BOX_EDGES, box_corner, normal_axis};
 
 use super::field_params::FieldParams;
@@ -17,7 +18,7 @@ pub(super) const SIDE: f32 = 230.0;
 /// A small heading.
 fn heading(ui: &mut egui::Ui, text: &str) {
     let t = &Tokens::get();
-    ui.label(egui::RichText::new(text).size(t.font_small).color(t.text_dim).strong());
+    ui.label(egui::RichText::new(tr(text)).size(t.font_small).color(t.text_dim).strong());
 }
 
 pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
@@ -150,7 +151,7 @@ fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         FontId::proportional(t.font_small),
         t.text,
     );
-    painter.text(rect.right_bottom() - vec2(8.0, 6.0), Align2::RIGHT_BOTTOM, "drag to move", FontId::proportional(t.font_small), t.text_dim);
+    painter.text(rect.right_bottom() - vec2(8.0, 6.0), Align2::RIGHT_BOTTOM, tr("drag to move"), FontId::proportional(t.font_small), t.text_dim);
     // Dragging along the normal's direction on the drawing moves the plane.
     let mut unit_axis = [0.0; 3];
     unit_axis[axis] = size[axis];
@@ -233,7 +234,7 @@ fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
             field.view.frequency = f;
         }
     }
-    resp.on_hover_text("Click to show the nearest solved frequency");
+    resp.hint("Click to show the nearest solved frequency");
 }
 
 /// The fields at the pointer and at the pinned point, one quantity a line.
@@ -264,7 +265,14 @@ fn readout(app: &EmcraftApp, field: &FieldState, ui: &mut egui::Ui) {
             Some(p) => {
                 let (now, amp) = p.value(comp, phase);
                 line(ui, format!("{hx} {} {lu}, {vy} {} {lu}", fmt(p.at[0]), fmt(p.at[1])), false);
-                line(ui, format!("{} = {} {unit} (amplitude {})", comp.label(), fmt(now), fmt(amp)), true);
+                line(
+                    ui,
+                    trf(
+                        "{component} = {now} {unit} (amplitude {amplitude})",
+                        args!(component = comp.label(), now = fmt(now), unit = unit, amplitude = fmt(amp)),
+                    ),
+                    true,
+                );
                 if what == "PINNED" {
                     for (f, v, u) in [("E", p.e, "V/m"), ("H", p.h, "A/m")] {
                         line(ui, format!("{f}x {}", phasor(v.x)), false);

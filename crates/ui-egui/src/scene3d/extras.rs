@@ -6,6 +6,7 @@ use emcraft_model::{End, Model, Source};
 use super::geometry::{BOX_EDGES, ROUND, box_corner};
 use super::style::sc;
 use super::{Built, Label, Overlay, p3};
+use crate::lang::args;
 
 /// Cells across a port's face where its cross-section is sampled (a face that features reach).
 const PORT_CELLS: usize = 96;
@@ -96,7 +97,12 @@ pub(super) fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
         let (a, b) = (p3(p.from), p3(p.to));
         out.scene.line(a, b, sc().port, 255);
         if strong {
-            out.labels.push(Label { at: midpoint(a, b), text: format!("Lumped {}", p.name), color: sc().port, facing: None });
+            out.labels.push(Label {
+                at: midpoint(a, b),
+                text: crate::lang::trf("Lumped {name}", args!(name = p.name)),
+                color: sc().port,
+                facing: None,
+            });
         }
     }
     for s in &m.sources {
@@ -125,7 +131,7 @@ fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
             (None, End::Start) => Some([0.0, 0.0, -1.0]),
             (None, End::End) => Some([0.0, 0.0, 1.0]),
         };
-        out.labels.push(Label { at: c, text: format!("Port {}", p.name), color: sc().port, facing });
+        out.labels.push(Label { at: c, text: crate::lang::trf("Port {name}", args!(name = p.name)), color: sc().port, facing });
         if overlay == Overlay::Ports {
             for (a, b) in outline(&port_face(m, p)) {
                 out.scene.line(a, b, sc().port, 255);
@@ -146,7 +152,7 @@ fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
             let h = 0.08 * size;
             out.scene.line(along(a, d, -h), along(a, d, h), sc().source, 255);
             if strong {
-                out.labels.push(Label { at: a, text: "Dipole".into(), color: sc().source, facing: None });
+                out.labels.push(Label { at: a, text: crate::lang::tr("Dipole").into(), color: sc().source, facing: None });
             }
         }
         Source::PlaneWave { direction, .. } => {
@@ -157,7 +163,7 @@ fn sources(s: &Source, strong: bool, size: f64, out: &mut Built) {
                 let a = along(c, d, -h);
                 out.scene.line(a, [c[0] - d[0] * 0.3 * h, c[1] - d[1] * 0.3 * h, c[2] - d[2] * 0.3 * h], sc().source, 255);
                 if strong {
-                    out.labels.push(Label { at: a, text: "Plane wave".into(), color: sc().source, facing: None });
+                    out.labels.push(Label { at: a, text: crate::lang::tr("Plane wave").into(), color: sc().source, facing: None });
                 }
             }
         }
@@ -194,7 +200,7 @@ fn open_boundary(m: &Model, overlay: Overlay, out: &mut Built) {
             out.scene.line(box_corner(lo, hi, i), box_corner(a, b, i), sc().pml, 200);
         }
         // On the band, at a corner of the outer box.
-        out.labels.push(Label { at: [hi[0], hi[1], lo[2] + 0.5 * t], text: "sc().pml".into(), color: sc().pml, facing: None });
+        out.labels.push(Label { at: [hi[0], hi[1], lo[2] + 0.5 * t], text: "PML".into(), color: sc().pml, facing: None });
     }
     for (i, j) in BOX_EDGES {
         out.scene.line(box_corner(a, b, i), box_corner(a, b, j), sc().pml, 255);

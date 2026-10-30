@@ -84,6 +84,9 @@ pub trait Named: Copy + 'static {
     /// Its id.
     fn id(self) -> &'static str;
 
+    /// Its label (its id unless given).
+    fn label(self) -> &'static str;
+
     /// The one with id (or alias) `s`.
     fn parse(s: &str) -> Option<Self>;
 
@@ -153,6 +156,10 @@ macro_rules! named_enum {
 
             fn id(self) -> &'static str {
                 $name::id(self)
+            }
+
+            fn label(self) -> &'static str {
+                $name::label(self)
             }
 
             fn parse(s: &str) -> Option<Self> {

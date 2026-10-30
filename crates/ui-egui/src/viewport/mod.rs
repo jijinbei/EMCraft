@@ -9,11 +9,12 @@ use emcraft_engine::view::{self, Plane};
 use serde_json::{Value, json};
 
 use crate::handle::{Fixed, Handle};
+use crate::lang::{Raw, Shown, shown, tr, trf};
 use crate::picture::{Cached, PictureKey};
 use crate::state::{FieldState, SharedChart, ViewState};
 use crate::theme::Tokens;
 use crate::view3d::View3d;
-use crate::{Action, Actions, EmcraftApp, Picture, UiExt, View, scenario};
+use crate::{Action, Actions, EmcraftApp, Hint, Picture, Style, UiExt, View, scenario};
 
 mod dispersion;
 mod far_field;
@@ -118,7 +119,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
 pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal(|ui| {
         for v in View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)) {
-            ui.act(true, pill(v.label(), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
+            ui.act(true, pill(shown(v), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
         }
     });
 }
@@ -185,7 +186,7 @@ pub(super) trait ChartView {
 
     /// What the card shows when the chart cannot be drawn: why, by default.
     fn failed(_app: &EmcraftApp, _st: &mut Parts, ui: &mut egui::Ui, error: &str) {
-        empty(ui, error);
+        empty(ui, Raw(error));
     }
 }
 
@@ -236,21 +237,17 @@ pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mu
     }
 }
 
-pub(super) fn empty(ui: &mut egui::Ui, text: &str) {
-    let t = &Tokens::get();
-    ui.centered_and_justified(|ui| {
-        ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));
-    });
+pub(super) fn empty(ui: &mut egui::Ui, text: impl Shown) {
+    ui.centered_and_justified(|ui| ui.text(Style::HeadingDim, text));
 }
 
 /// The card's message while a view has nothing to show, with the button (`label`, published
 /// as `handle`) that asks for `action`, the action that makes it.
 pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, label: &str, enabled: bool, handle: Fixed, action: Action, out: &mut Actions) {
-    let t = &Tokens::get();
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
-        ui.label(egui::RichText::new(text).size(t.font_heading).color(t.text_dim));
-        ui.act(enabled, egui::Button::new(label), handle.into(), "", || action, out);
+        ui.text(Style::HeadingDim, text);
+        ui.act(enabled, egui::Button::new(tr(label)), handle.into(), "", || action, out);
     });
 }
 

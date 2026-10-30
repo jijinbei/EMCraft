@@ -43,9 +43,11 @@ pub mod control;
 pub mod dialog_ui;
 pub mod dialogs;
 pub mod files;
+mod fonts;
 pub mod glyphs;
 pub mod handle;
 pub mod home;
+pub mod lang;
 mod messages;
 pub mod picture;
 pub mod prefs;
@@ -71,6 +73,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
 use emcraft_engine::{EngineError, Session};
+use lang::args;
 use serde_json::{Value, json};
 
 pub use action::{Action, Actions};
@@ -79,7 +82,7 @@ pub use handle::{Fixed, Handle};
 pub use messages::Message;
 pub use picture::Picture;
 pub use state::FieldState;
-pub use ui_ext::UiExt;
+pub use ui_ext::{Hint, Style, UiExt};
 pub use view::View;
 
 pub struct EmcraftApp {
@@ -183,7 +186,7 @@ impl Default for EmcraftApp {
 
 impl EmcraftApp {
     pub fn new() -> EmcraftApp {
-        EmcraftApp {
+        let mut app = EmcraftApp {
             session: Session::new(),
             revision: 0,
             job: None,
@@ -194,7 +197,7 @@ impl EmcraftApp {
             field: FieldState::default(),
             views: state::ViewState::default(),
             replies: state::Replies::default(),
-            messages: vec![Message { text: "Open a sample or a project (File) or build a model from the ribbon.".into(), error: false, count: 1 }],
+            messages: Vec::new(),
             search: ribbon::Search::default(),
             browser: browser::Browser::default(),
             theme: "light".into(),
@@ -215,20 +218,28 @@ impl EmcraftApp {
             settings: None,
             failure: None,
             dialog_job: None,
-        }
+        };
+        app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
+        app
     }
 
     /// The app of the desktop window: the host's file dialog and preferences, and the start
     /// page unless a sample is opened.
     pub fn for_host(sample: Option<&str>, host: Host) -> EmcraftApp {
+        let prefs = host.prefs.map(|path| (prefs::Prefs::load(&path), path));
+        // The first messages are in the preferred language.
+        lang::set(prefs.as_ref().map_or(lang::ENGLISH, |(p, _)| p.language()));
         let mut app = EmcraftApp::with_sample(sample);
-        if let Some(path) = host.prefs {
-            app.prefs = prefs::Prefs::load(&path);
+        if let Some((loaded, path)) = prefs {
+            app.prefs = loaded;
             app.prefs_store = PrefsStore { path: Some(path), written: app.prefs.clone() };
             app.theme = app.prefs.theme().to_owned();
             app.dock_dialogs = app.prefs.dock_dialogs;
         }
         app.load_themes(host.themes);
+        for p in lang::problems() {
+            app.error(p);
+        }
         app.files.picker = host.picker;
         app.home.open = sample.is_none() && host.open.is_none();
         if let Some(path) = host.open
@@ -254,9 +265,10 @@ impl EmcraftApp {
         self.use_theme();
     }
 
-    /// Makes the app's theme the thread's current one.
+    /// Makes the app's theme and language the thread's current ones.
     pub fn use_theme(&self) {
         theme::set(self.themes.get(&self.theme));
+        lang::set(self.prefs.language());
     }
 
     /// Keeps the preferences in step with the window and writes them when they change.
@@ -330,7 +342,7 @@ impl EmcraftApp {
         let n = script.as_array().map(Vec::len).ok_or_else(|| UiError::Input("a script is a JSON array of {command, params}".into()))?;
         self.job =
             Some(worker::Job::spawn(&self.session, "engine.script", json!({}), self.ctx.clone(), move |s| s.run_script(&script).map(Value::Array)));
-        self.info(format!("Running a script of {n} commands…"));
+        self.info_with("Running a script of {n} commands…", args!(n = n));
         Ok(json!({"started": "engine.script"}))
     }
 
@@ -389,7 +401,8 @@ impl EmcraftApp {
         let Some(job) = self.job.take() else { return false };
         job.cancel();
         self.dialog_job = None;
-        self.info(format!("{} cancelled.", label(&job.command)));
+        self.info_with("{command} cancelled.", args!(command = label(&job.command)));
+
         for w in job.waiting {
             let _ = w.send(json!({"ok": false, "error": emcraft_engine::progress::CANCELLED}));
         }
@@ -456,6 +469,7 @@ impl EmcraftApp {
         }
         self.use_theme();
         theme::apply(ctx);
+        fonts::install(ctx);
         self.poll_job();
         files::poll(self);
         control::serve(self, ctx);
@@ -612,9 +626,9 @@ fn find_command(id: &str) -> Result<&'static emcraft_engine::CommandSpec, UiErro
     emcraft_engine::find_command(id).ok_or_else(|| EngineError::UnknownCommand(emcraft_engine::text::clip(id, 100)).into())
 }
 
-/// A command's label for messages.
+/// A command's label in the current language (ribbon, search, dialogs, messages).
 pub fn label(id: &str) -> &str {
-    emcraft_engine::find_command(id).map_or(id, |c| c.label)
+    lang::command_label(id)
 }
 
 /// The solved frequency nearest `f`.

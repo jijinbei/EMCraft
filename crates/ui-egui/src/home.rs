@@ -15,10 +15,11 @@ use crate::action::Pref;
 use crate::files::{FileAction, Then};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
+use crate::lang::{Raw, sample_label, tr};
 use crate::scene3d::{self, Overlay};
 use crate::settings::Section;
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, Picture, UiExt, scenario};
+use crate::{Action, Actions, EmcraftApp, Hint, Picture, Style, UiExt, scenario};
 
 /// A card's picture, in points.
 const THUMB: [f32; 2] = [240.0, 150.0];
@@ -62,8 +63,8 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::symmetric(36, 24))).show(ui, |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("EMCraft").size(30.0).strong().color(t.text));
-                ui.label(egui::RichText::new("Start").size(30.0).color(t.text_dim));
+                ui.text(Style::Title, Raw("EMCraft"));
+                ui.label(egui::RichText::new(tr("Start")).size(30.0).color(t.text_dim));
             });
             ui.add_space(t.space_12);
             ui.horizontal(|ui| {
@@ -96,14 +97,14 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) {
-    let t = &Tokens::get();
-    ui.label(egui::RichText::new(text).size(t.font_heading).strong().color(t.text));
-    ui.add_space(t.space_4);
+    ui.text(Style::Heading, text);
+    ui.add_space(Tokens::get().space_4);
 }
 
 /// A large button: a glyph and a label; the primary one in the accent.
 fn big(ui: &mut egui::Ui, glyph: Glyph, label: &str, primary: bool, handle: Fixed) -> bool {
     let t = &Tokens::get();
+    let label = tr(label);
     let g = ui.painter().layout_no_wrap(label.to_owned(), FontId::proportional(t.font_heading), t.text);
     let (r, resp) = ui.allocate_exact_size(vec2((56.0 + g.size().x + 24.0).max(180.0), 60.0), Sense::click());
     let (fill, ink) = if primary {
@@ -176,11 +177,10 @@ fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, 
 }
 
 fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = &Tokens::get();
     heading(ui, "Recent");
     let list = &app.prefs.recent;
     if list.is_empty() {
-        ui.label(egui::RichText::new("Projects you open or save appear here.").size(t.font_small).color(t.text_dim));
+        ui.text(Style::SmallDim, "Projects you open or save appear here.");
         return;
     }
     let mut open = None;
@@ -191,11 +191,11 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         let name = p.file_stem().map_or_else(|| path.clone(), |s| s.to_string_lossy().into_owned());
         let exists = p.exists();
         let folder = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
-        let sub = if exists { folder } else { "missing".to_owned() };
+        let sub = if exists { folder } else { tr("missing").to_owned() };
         let r = card(ui, None, Glyph::Waveguide, &name, &sub, !exists, Handle::Recent(i));
         let r = r.on_hover_text(path.as_str());
         r.context_menu(|ui| {
-            if ui.button("Remove from the list").clicked() {
+            if ui.button(tr("Remove from the list")).clicked() {
                 forget = Some(i);
             }
         });
@@ -224,7 +224,8 @@ fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
             *slot = (key, thumbnail(s.name));
         }
         let pic = &mut slot.1;
-        if card(ui, pic.as_mut(), Glyph::Sample, s.name, s.label, false, Handle::Sample(s.name)).on_hover_text(s.label).clicked() {
+        let about = sample_label(s.name);
+        if card(ui, pic.as_mut(), Glyph::Sample, s.name, about, false, Handle::Sample(s.name)).hint(Raw(about)).clicked() {
             chosen = Some(s.name.to_owned());
         }
     });
@@ -238,9 +239,7 @@ fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     crate::settings::unit_choices(app, ui, out);
     ui.add_space(t.space_4);
-    ui.label(
-        egui::RichText::new("Units apply to new projects; an open one changes its own with MODEL › Units.").size(t.font_small).color(t.text_dim),
-    );
+    ui.text(Style::SmallDim, "Units apply to new projects; an open one changes its own with MODEL › Units.");
     ui.add_space(t.space_12);
     let all = crate::ui_kit::styled("All settings…", false);
     ui.act(true, all, Fixed::HomeSettings.into(), "The theme, the 3D view, dialogs and files", || Action::Settings(Some(Section::Appearance)), out);

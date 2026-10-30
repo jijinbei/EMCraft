@@ -2,6 +2,8 @@
 //! repeated), and the running job's progress with its Cancel.
 
 use crate::handle::Fixed;
+use crate::lang::{args, trf};
+
 use crate::{Action, Actions, EmcraftApp, UiExt, label, scenario, theme, ui_kit};
 
 /// A line of the message area.
@@ -25,6 +27,16 @@ impl EmcraftApp {
     /// Reports `text` in the message area as an error.
     pub fn error(&mut self, text: impl std::fmt::Display) {
         self.message(text, true);
+    }
+
+    /// Reports `template` in the current language, its placeholders filled with `args`.
+    pub fn info_with(&mut self, template: &str, args: &[(&str, &dyn std::fmt::Display)]) {
+        self.message(crate::lang::trf(template, args), false);
+    }
+
+    /// [`EmcraftApp::info_with`] as an error.
+    pub fn error_with(&mut self, template: &str, args: &[(&str, &dyn std::fmt::Display)]) {
+        self.message(crate::lang::trf(template, args), true);
     }
 
     fn message(&mut self, text: impl std::fmt::Display, error: bool) {
@@ -83,12 +95,17 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
         // Cancel first, where it stays put while the text beside it changes.
         ui.act(true, ui_kit::styled("Cancel", false), Fixed::StatusCancel.into(), "", || Action::CancelJob, out);
         ui.spinner();
+        let (command, secs) = (label(&job.command), format!("{:.0}", job.elapsed()));
         let what = if snap.total > 0 {
-            format!("{} — {} {} of {}", label(&job.command), snap.stage, (snap.done + 1).min(snap.total), snap.total)
+            let (done, total) = ((snap.done + 1).min(snap.total), snap.total);
+            trf(
+                "{command} — {stage} {done} of {total} ({secs} s)",
+                args!(command = command, stage = snap.stage, done = done, total = total, secs = secs),
+            )
         } else {
-            format!("{} — running", label(&job.command))
+            trf("{command} — running ({secs} s)", args!(command = command, secs = secs))
         };
-        ui.label(egui::RichText::new(format!("{what} ({:.0} s)", job.elapsed())).size(t.font_body));
+        ui.label(egui::RichText::new(what).size(t.font_body));
         ui_kit::progress(ui, snap.fraction(), 180.0);
     });
 }

@@ -32,7 +32,7 @@ pub fn apply_band(app: &mut EmcraftApp) {
     f.set_error("stop", z.as_ref().err().cloned());
     let (Ok(a), Ok(z)) = (a, z) else { return };
     if z < a {
-        f.set_error("stop", Some("must not be below the start".into()));
+        f.set_error("stop", Some(crate::lang::tr("must not be below the start").into()));
         return;
     }
     if let Err(e) = app.run("project.frequency", json!({"start": a, "stop": z})) {

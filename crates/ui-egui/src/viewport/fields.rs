@@ -1,6 +1,7 @@
 //! Fields on a plane: the picture, the probe and its readout, and the controls.
 
 use super::*;
+use crate::lang::args;
 
 pub(crate) fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'static str)> {
     let emcraft_model::Aabb { min: lo, max: hi } = app.session.model().bounds()?;
@@ -135,7 +136,7 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
         let comp = field.view.component;
         let (now, amp) = pin.value(comp, field.view.phase);
         let fmt = emcraft_render::axes::format;
-        let text = format!("{} {} (amp. {})", comp.label(), fmt(now), fmt(amp));
+        let text = trf("{component} {now} (amp. {amplitude})", args!(component = comp.label(), now = fmt(now), amplitude = fmt(amp)));
         let galley = painter.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
         let size = galley.size() + vec2(10.0, 6.0);
         let right = c.x + 12.0 + size.x < rect.right();
@@ -168,8 +169,8 @@ pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut 
         ui.separator();
         plane_choice(app, field, ui);
         ui.separator();
-        let r = ui.named(egui::Button::selectable(field.beside_3d, "Beside 3D"), Fixed::FieldBeside3d.into());
-        if r.on_hover_text("The model in 3D beside the picture, the plane in it").clicked() {
+        let r = ui.named(egui::Button::selectable(field.beside_3d, tr("Beside 3D")), Fixed::FieldBeside3d.into());
+        if r.hint("The model in 3D beside the picture, the plane in it").clicked() {
             field.beside_3d = !field.beside_3d;
         }
     });
@@ -184,7 +185,11 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
         && (field.view.mode.is_some() || app.session.results().sweep.is_none())
     {
         let mut idx = field.view.mode.unwrap_or(0);
-        let label = |i: usize| e.modes.get(i).map_or(String::new(), |m| format!("mode {}: {:.4} {}", i + 1, fu.from_si(m.frequency), fu.symbol()));
+        let label = |i: usize| {
+            e.modes
+                .get(i)
+                .map_or(String::new(), |m| trf("mode {n}: {f}", args!(n = (i + 1), f = format!("{:.4} {}", fu.from_si(m.frequency), fu.symbol()))))
+        };
         egui::ComboBox::from_id_salt("mode").selected_text(label(idx)).show_ui(ui, |ui| {
             for i in 0..e.modes.len() {
                 ui.selectable_value(&mut idx, i, label(i));
@@ -212,7 +217,7 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
 /// The plane, where it cuts, and a button that keeps it in the 3D view.
 pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     for (p, name) in [(Plane::H, "H-plane"), (Plane::E, "E-plane"), (Plane::Cross, "Cross-section")] {
-        let r = ui.named(egui::Button::selectable(field.view.plane == p, name), Handle::FieldPlane(p));
+        let r = ui.named(egui::Button::selectable(field.view.plane == p, tr(name)), Handle::FieldPlane(p));
         if r.clicked() && field.view.plane != p {
             field.view.plane = p;
             field.at = None;
@@ -248,7 +253,7 @@ pub(super) fn plane_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
     }
     crate::glyphs::paint(ui.painter(), r.shrink(3.0), crate::glyphs::Glyph::KeepPlane, t.icon, t.accent);
     let kept = field.kept.iter().any(|k| (k.plane, k.at) == here);
-    if resp.on_hover_text("Keep this plane in the 3D view").clicked() && !kept && field.kept.len() < MAX_KEPT {
+    if resp.hint("Keep this plane in the 3D view").clicked() && !kept && field.kept.len() < MAX_KEPT {
         field.kept.push(crate::state::KeptPlane { plane: here.0, at: here.1, samples: None });
     }
 }
@@ -269,9 +274,10 @@ pub(super) fn kept_planes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egu
                 Plane::E => "E-plane x",
                 Plane::Cross => "cross z",
             };
-            let chip = egui::Button::new(egui::RichText::new(format!("{name} = {} {unit}  ✕", emcraft_render::axes::format(*at))).size(t.font_small));
+            let chip =
+                egui::Button::new(egui::RichText::new(format!("{} = {} {unit}  ✕", tr(name), emcraft_render::axes::format(*at))).size(t.font_small));
             let r = ui.named(chip, Handle::FieldKept(k));
-            if r.on_hover_text("Remove from the 3D view").clicked() {
+            if r.hint("Remove from the 3D view").clicked() {
                 drop = Some(k);
             }
         }
@@ -297,13 +303,13 @@ pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut e
         field.view.show_e = !now.is_magnetic();
         field.view.show_h = now.is_magnetic();
     }
-    ui.checkbox(&mut field.view.show_e, "E arrows");
-    ui.checkbox(&mut field.view.show_h, "H arrows");
+    ui.checkbox(&mut field.view.show_e, tr("E arrows"));
+    ui.checkbox(&mut field.view.show_h, tr("H arrows"));
     // Each entry of S is an excitation: a port, or a terminal of a terminal port.
     let entries = app.session.sparameter_entries();
     if entries.len() > 1 && field.view.mode.is_none() {
         ui.separator();
-        ui.label("excite");
+        ui.text(Style::Body, "excite");
         for (i, e) in entries.iter().enumerate() {
             ui.radio_value(&mut field.view.excitation, i, e.name.as_str());
         }

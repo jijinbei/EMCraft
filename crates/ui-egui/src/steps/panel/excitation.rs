@@ -1,6 +1,8 @@
 //! The Excitation step: the ports and sources, and the port-mode preview.
 
 use super::*;
+use crate::Hint;
+use crate::lang::args;
 
 pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Ports and sources");
@@ -10,30 +12,37 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     }
     for p in &m.ports {
         let at = match p.face {
-            Some(_) => "on a face".to_owned(),
-            None => format!("{} end", if p.end == emcraft_model::End::Start { "start" } else { "far" }),
+            Some(_) => "on a face",
+            None if p.end == emcraft_model::End::Start => "start end",
+            None => "far end",
         };
-        ui_kit::small(ui, format!("Port {}: {at}, {} modes", p.name, p.modes), t.text);
+        ui_kit::small(ui, trf("Port {name}: {at}, {n} modes", args!(name = p.name, at = tr(at), n = p.modes)), t.text);
     }
     for p in &m.lumped {
-        ui_kit::small(ui, format!("Lumped port {}: {} Ω", p.name, p.impedance), t.text);
+        ui_kit::small(ui, trf("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance)), t.text);
     }
     if !m.sources.is_empty() {
-        ui_kit::small(ui, format!("{} source(s)", m.sources.len()), t.text);
+        ui_kit::small(ui, trf("{n} source(s)", args!(n = m.sources.len())), t.text);
     }
     if m.ports.is_empty() {
         return;
     }
     ui_kit::section(ui, "Port modes");
     let ready = m.mesh.is_some();
-    let at = band(&app.session).map(|(_, z)| format!(" at {} {fu}", fmt(z))).unwrap_or_default();
-    ui_kit::caption(ui, &format!("Each port's modes{at}: propagation, effective permittivity, impedance (seconds, no full solve)."));
+    let about = match band(&app.session) {
+        Some((_, z)) => trf(
+            "Each port's modes at {f} {unit}: propagation, effective permittivity, impedance (seconds, no full solve).",
+            args!(f = fmt(z), unit = fu),
+        ),
+        None => tr("Each port's modes: propagation, effective permittivity, impedance (seconds, no full solve).").to_owned(),
+    };
+    ui_kit::caption(ui, about);
     let busy = app.busy();
     let hint = if ready { "" } else { "needs a mesh (step 5)" };
     ui.act(ready && !busy, ui_kit::styled("Preview port modes", true), Fixed::ExcitationPreview.into(), hint, || Action::PreviewPortModes, out);
     let Some(reply) = app.replies.port_modes.as_ref() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
-    ui_kit::small(ui, format!("at {} {fu}", fmt(f)), t.text_dim);
+    ui_kit::small(ui, trf("at {f} {unit}", args!(f = fmt(f), unit = fu)), t.text_dim);
     mode_table(app, ui, reply, t, out);
     ui.act(true, ui_kit::styled("Show the mode patterns", false), Fixed::ExcitationPatterns.into(), "", || Action::SetView(View::PortModes), out);
 }
@@ -54,8 +63,8 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, ou
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         let per = format!("β (rad/{unit})");
-        for (h, width) in ["port / mode", per.as_str(), "εeff", "Z (Ω)"].into_iter().zip(widths) {
-            cell(ui, width, egui::RichText::new(h).size(t.font_small).color(t.text_dim));
+        for (h, width) in [tr("port / mode"), per.as_str(), "εeff", "Z (Ω)"].into_iter().zip(widths) {
+            cell(ui, width, Style::SmallDim.rich(h));
         }
     });
     let mut row = 0usize;
@@ -77,12 +86,12 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, ou
                     cell(ui, widths[3], txt(n("impedance").map_or("—".into(), |v| format!("{v:.2}"))));
                 } else {
                     let a = n("attenuation_db").unwrap_or(f64::NAN);
-                    ui_kit::small(ui, format!("cut off, {a:.1} dB/{unit}"), t.text_dim);
+                    ui_kit::small(ui, trf("cut off, {a} dB/{unit}", args!(a = format!("{a:.1}"), unit = unit)), t.text_dim);
                 }
             });
             let rect = Rect::from_min_size(r.response.rect.min, vec2(w, r.response.rect.height()));
             let resp = ui.hit(rect, Handle::PortModeRow(row), Sense::click());
-            let resp = resp.on_hover_text("Lights this port in the 3D view; click for the mode in the Port modes view");
+            let resp = resp.hint("Lights this port in the 3D view; click for the mode in the Port modes view");
             let focused = app.workflow.mode_focus.as_ref().is_some_and(|f| f.port == name && f.mode == k);
             let fill = if resp.hovered() {
                 t.hover

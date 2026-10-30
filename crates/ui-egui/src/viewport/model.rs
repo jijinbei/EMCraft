@@ -74,7 +74,7 @@ pub(super) fn model(app: &EmcraftApp, ui: &mut egui::Ui) {
         .fold(f64::INFINITY, f64::min);
     for (k, across) in [Across::X, Across::Y].into_iter().enumerate() {
         let band = Rect::from_min_size(pos2(area.left(), area.top() + k as f32 * (half + 20.0)), vec2(area.width(), half + 20.0));
-        p.text(band.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, across.title(), FontId::proportional(t.font_label), t.text_dim);
+        p.text(band.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, tr(across.title()), FontId::proportional(t.font_label), t.text_dim);
         let (v0, v1) = across.span(lo, hi);
         let fr = Frame2::with_scale(band.shrink2(vec2(60.0, 26.0)).translate(vec2(0.0, 8.0)), (lo.z, hi.z), (v0, v1), scale);
         let sec = Section { p: &p, fr, across, t, m };

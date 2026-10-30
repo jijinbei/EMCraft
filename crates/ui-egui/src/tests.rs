@@ -190,6 +190,11 @@ fn scenario_themes() {
 }
 
 #[test]
+fn scenario_languages() {
+    scenario("languages");
+}
+
+#[test]
 fn scenario_settings() {
     scenario("settings");
 }

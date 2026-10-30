@@ -15,6 +15,7 @@ use emcraft_engine::view::{FieldView, Plane};
 
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
+use crate::lang::{self, args, tr, trf};
 use crate::scene3d::{self, Built, Overlay};
 use crate::state::FieldState;
 use crate::theme::Tokens;
@@ -34,6 +35,8 @@ struct SceneKey {
     field: Option<FieldKey>,
     highlighted: Option<scene3d::Pick>,
     theme: crate::theme::ThemeKey,
+    /// The language its labels and legend are in.
+    language: &'static str,
 }
 
 /// The field's state the Results step's planes are drawn from: the field view, its plane's
@@ -179,7 +182,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         ui.painter().text(
             rect.center(),
             Align2::CENTER_CENTER,
-            "No geometry yet: open a sample or start at step 1, Geometry.",
+            tr("No geometry yet: open a sample or start at step 1, Geometry."),
             FontId::proportional(t.font_heading),
             t.text_dim,
         );
@@ -287,7 +290,7 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         field.view.at = field.at.map(|v| l.to_si(v));
         FieldKey { view: field.view.clone(), at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect() }
     });
-    SceneKey { revision: app.revision, overlay, field: planes, highlighted: v.highlighted(), theme: crate::theme::key() }
+    SceneKey { revision: app.revision, overlay, field: planes, highlighted: v.highlighted(), theme: crate::theme::key(), language: lang::current() }
 }
 
 /// Builds the scene for `key`, with the field's planes (sampled and plotted here) when it
@@ -460,8 +463,8 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
 
 /// The selection's name on a card at the top, with how to edit it.
 fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &Tokens) {
-    let hint = if row.act.edits() { "  ·  double-click to edit" } else { "" };
-    let g = p.layout_no_wrap(format!("{}{hint}", row.text.trim()), FontId::proportional(t.font_small), t.text);
+    let hint = if row.act.edits() { tr("  ·  double-click to edit") } else { "" };
+    let g = p.layout_no_wrap(format!("{}{hint}", row.shown.trim()), FontId::proportional(t.font_small), t.text);
     let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
     p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
@@ -554,7 +557,7 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
             p.circle_stroke(tip, if hover { 8.0 } else { 7.0 }, Stroke::new(2.0, color));
         }
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, view.id()));
-        if resp.on_hover_text(format!("View from {name} ({})", view.id())).clicked() {
+        if resp.on_hover_text(trf("View from {side} ({view})", args!(side = name, view = view.id()))).clicked() {
             clicked = Some(view);
         }
     }
@@ -594,6 +597,7 @@ fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing:
     p.rect_filled(bar, 8.0, t.panel.gamma_multiply(if near { 0.95 } else { 0.6 }));
     p.rect_stroke(bar, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     for (i, (glyph, handle, tip)) in items.into_iter().enumerate() {
+        let tip = tr(tip);
         let r = Rect::from_center_size(pos2(bar.left() + 3.0 + pitch * (i as f32 + 0.5), bar.center().y), vec2(size, size));
         let resp = ui.hit(r, handle, Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));

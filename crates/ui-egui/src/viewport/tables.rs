@@ -1,6 +1,7 @@
 //! The port-mode, eigenmode and comparison tables.
 
 use super::*;
+use crate::lang::args;
 
 pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
@@ -10,7 +11,7 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     };
     let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
     let fu = app.session.display().frequency.symbol();
-    ui.label(egui::RichText::new(format!("Port modes at {} {fu}", num(&reply["frequency"], 4))).size(t.font_heading));
+    ui.label(egui::RichText::new(trf("Port modes at {f} {unit}", args!(f = num(&reply["frequency"], 4), unit = fu))).size(t.font_heading));
     // The mode picked (from the Excitation panel or a click here), else the first port's first;
     // the table scrolls to it once.
     let focus = app.workflow.mode_focus.clone().or_else(|| {
@@ -31,10 +32,11 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     let ui = &mut table_ui;
     egui::ScrollArea::vertical().id_salt("modes_table").show(ui, |ui| {
         for port in reply.get("ports").and_then(Value::as_array).into_iter().flatten() {
-            crate::ui_kit::section(ui, &format!("Port {}", port["name"].as_str().unwrap_or("")));
+            crate::ui_kit::section(ui, trf("Port {name}", args!(name = port["name"].as_str().unwrap_or(""))));
             egui::Grid::new(("modes", port["name"].as_str().unwrap_or(""))).striped(true).num_columns(6).show(ui, |ui| {
-                for h in ["Mode", "Propagates", &format!("β (rad/{lu})"), "εeff", "Z (Ω)", &format!("Attenuation (dB/{lu})")] {
-                    ui.label(egui::RichText::new(h).strong());
+                let attenuation = trf("Attenuation (dB/{unit})", args!(unit = lu));
+                for h in [tr("Mode"), tr("Propagates"), &format!("β (rad/{lu})"), "εeff", "Z (Ω)", &attenuation] {
+                    ui.text(Style::Strong, Raw(h));
                 }
                 ui.end_row();
                 let pname = port["name"].as_str().unwrap_or("");
@@ -44,7 +46,7 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
                     let back = ui.painter().add(egui::Shape::Noop);
                     let cells = [
                         ui.label(m["name"].as_str().unwrap_or("?")),
-                        ui.label(if m["propagating"] == json!(true) { "yes" } else { "no" }),
+                        ui.label(tr(if m["propagating"] == json!(true) { "yes" } else { "no" })),
                         ui.label(num(&m["beta"], 5)),
                         ui.label(num(&m["eps_eff"], 5)),
                         ui.label(num(&m["impedance"], 3)),
@@ -53,7 +55,7 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
                     ui.end_row();
                     let row = cells.iter().fold(cells[0].rect, |r, c| r.union(c.rect)).expand2(egui::vec2(4.0, 1.0));
                     let click = ui.hit(row, Handle::PortModesRow(pname, k + 1), Sense::click());
-                    if click.on_hover_text("Show this mode's pattern").clicked() {
+                    if click.hint("Show this mode's pattern").clicked() {
                         picked = Some((pname.to_owned(), k));
                     }
                     if focused {
@@ -115,15 +117,15 @@ pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     let fu = app.session.display().frequency.symbol();
     let mut open = None;
     egui::Grid::new("eigen_grid").striped(true).num_columns(4).show(ui, |ui| {
-        for h in ["Mode", &format!("f ({fu})"), "Q", ""] {
-            ui.label(egui::RichText::new(h).strong());
+        for h in [tr("Mode"), &format!("f ({fu})"), "Q", ""] {
+            ui.text(Style::Strong, Raw(h));
         }
         ui.end_row();
         for (i, m) in table.get("modes").and_then(Value::as_array).into_iter().flatten().enumerate() {
             ui.label(format!("{}", i + 1));
             ui.label(num(&m["frequency"], 5));
             ui.label(num(&m["q"], 0));
-            if ui.named(egui::Button::new("Field"), Handle::EigenField(i + 1)).clicked() {
+            if ui.named(egui::Button::new(tr("Field")), Handle::EigenField(i + 1)).clicked() {
                 open = Some(i);
             }
             ui.end_row();
@@ -148,13 +150,16 @@ pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         return empty_with_action(ui, text, "Compare…", ready, Fixed::CompareRun, Action::run("results.compare", json!({})), out);
     };
     ui.label(
-        egui::RichText::new(format!("Against {} — worst |S − S_ref| = {}", reply["reference"].as_str().unwrap_or("?"), num(&reply["worst"], 6)))
-            .size(t.font_heading),
+        egui::RichText::new(trf(
+            "Against {reference} — worst |S − S_ref| = {worst}",
+            args!(reference = reply["reference"].as_str().unwrap_or("?"), worst = num(&reply["worst"], 6)),
+        ))
+        .size(t.font_heading),
     );
     egui::ScrollArea::vertical().id_salt("compare_table").show(ui, |ui| {
         egui::Grid::new("compare_grid").striped(true).num_columns(5).show(ui, |ui| {
-            for h in ["f", "|S11|", "|S11| ref", "|S21|", "|S21| ref", "error S11", "error S21"] {
-                ui.label(egui::RichText::new(h).strong());
+            for h in ["f", "|S11|", tr("|S11| ref"), "|S21|", tr("|S21| ref"), tr("error S11"), tr("error S21")] {
+                ui.text(Style::Strong, Raw(h));
             }
             ui.end_row();
             for r in reply.get("points").and_then(Value::as_array).into_iter().flatten() {

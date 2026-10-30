@@ -1,5 +1,5 @@
-//! The app's preferences, kept between launches: the recent projects, the theme, where dialogs
-//! go and the display units of new projects. A JSON file in the user's configuration directory
+//! The app's preferences, kept between launches: the recent projects, the theme, the language,
+//! where dialogs go and the display units of new projects. A JSON file in the user's configuration directory
 //! (`$EMCRAFT_CONFIG_DIR`, else `$XDG_CONFIG_HOME/emcraft`, else `~/.config/emcraft`); the
 //! headless harness keeps none.
 
@@ -24,6 +24,8 @@ pub struct Prefs {
     /// Older preferences' theme switch, read as the theme `dark` and never written.
     #[serde(skip_serializing)]
     pub dark: bool,
+    /// The window's language (`en` when empty or unknown).
+    pub language: String,
     pub dock_dialogs: bool,
     /// The 3D view drawn by the window's GPU (fast, painter's order) instead of the CPU
     /// renderer (depth-buffered, supersampled) at rest.
@@ -50,7 +52,13 @@ impl Prefs {
             p.theme = "dark".into();
         }
         p.theme = p.theme.chars().take(emcraft_engine::theme::MAX_NAME).collect();
+        p.language = crate::lang::clip_id(&p.language);
         p
+    }
+
+    /// The language's id: the one kept, English when it is empty or unknown.
+    pub fn language(&self) -> &str {
+        crate::lang::find(&self.language).map_or(crate::lang::ENGLISH, |l| l.id)
     }
 
     /// The theme's name.
@@ -112,6 +120,13 @@ mod tests {
         assert_eq!(Prefs::load(&path).theme(), "light");
         std::fs::write(&path, format!(r#"{{"theme": "{}"}}"#, "x".repeat(5000))).unwrap();
         assert_eq!(Prefs::load(&path).theme.len(), emcraft_engine::theme::MAX_NAME);
+        // The language: an unknown or overlong one reads as English.
+        std::fs::write(&path, r#"{"language": "ja"}"#).unwrap();
+        assert_eq!(Prefs::load(&path).language(), "ja");
+        std::fs::write(&path, format!(r#"{{"language": "{}"}}"#, "x".repeat(5000))).unwrap();
+        let odd = Prefs::load(&path);
+        assert_eq!((odd.language.len(), odd.language()), (crate::lang::MAX_ID, "en"));
+        assert_eq!(Prefs::default().language(), "en");
         assert_eq!(Prefs::load(&dir.join("missing.json")), Prefs::default());
         let _ = std::fs::remove_dir_all(&dir);
     }

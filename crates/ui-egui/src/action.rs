@@ -8,6 +8,7 @@ use emcraft_render::view3d::StandardView;
 use serde_json::{Value, json};
 
 use crate::files::FileAction;
+use crate::lang::args;
 use crate::ribbon::RibbonTab;
 use crate::scene3d::Pick;
 use crate::steps::{ModeFocus, Step};
@@ -97,6 +98,8 @@ pub enum Action {
 pub enum Pref {
     /// The theme, by name.
     Theme(String),
+    /// The window's language, by id (`en`, `ja`).
+    Language(String),
     /// Reads the themes again (the user's from their folder).
     ReloadThemes,
     /// The 3D view drawn by the window's GPU.
@@ -291,6 +294,13 @@ impl EmcraftApp {
                 Some(_) => self.theme = name,
                 None => self.error(emcraft_engine::text::clip(&format!("no theme `{name}` (there are {})", self.themes.names().join(", ")), 400)),
             },
+            Pref::Language(id) => match crate::lang::find(&id) {
+                Some(l) => {
+                    self.prefs.language = l.id.to_owned();
+                    self.use_theme();
+                }
+                None => self.error(format!("no language `{}` (there are {})", crate::lang::clip_id(&id), crate::lang::ids().join(", "))),
+            },
             Pref::ReloadThemes => self.load_themes(self.themes.dir.clone()),
             Pref::Gpu3d(on) => self.prefs.gpu3d = on,
             Pref::Length(u) => self.prefs.length = u,
@@ -309,9 +319,13 @@ impl EmcraftApp {
     fn export_history(&mut self, path: String) {
         let text = serde_json::to_string_pretty(self.session.history()).unwrap_or_else(|_| "[]".into());
         match std::fs::write(path.trim(), text) {
-            Ok(()) => self.info(format!("Exported {} commands to {}.", self.session.history().len(), path.trim())),
+            Ok(()) => {
+                let n = self.session.history().len();
+                self.info_with("Exported {n} commands to {path}.", args!(n = n, path = path.trim()));
+            }
             Err(e) => {
-                self.error(format!("Cannot write {}: {e}", path.trim()));
+                self.error_with("Cannot write {path}: {error}", args!(path = path.trim(), error = e));
+
                 self.export = Some(path);
             }
         }

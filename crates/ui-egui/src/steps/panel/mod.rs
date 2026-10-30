@@ -15,6 +15,8 @@ pub use results::export_touchstone;
 
 use super::bar::mark;
 use super::*;
+use crate::Style;
+use crate::lang::{Raw, args, shown, tr, trf};
 
 /// The active step's panel at the right (with the open dialog docked in it): `fields` are its
 /// text fields, `dialog` the open dialog.
@@ -58,8 +60,8 @@ fn header(ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
         mark(ui.painter(), r.center(), s.status, t);
-        ui.label(egui::RichText::new(format!("Step {} · {}", s.step.index(), s.step.label())).size(t.font_heading).strong().color(t.text));
-        ui.label(egui::RichText::new(s.status.id()).size(t.font_small).color(status_color(s.status, t)));
+        ui.text(Style::Heading, trf("Step {n} · {step}", args!(n = s.step.index(), step = shown(s.step))));
+        ui_kit::small(ui, Raw(shown(s.status)), status_color(s.status, t));
     });
     ui.add_space(4.0);
 }
@@ -87,9 +89,9 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
 
 fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
-        Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => format!("Go to {}", step.label()),
-        Some(Step::Intent) if command == "project.frequency" => "Set the band".into(),
-        _ => format!("Fix: {}", crate::commands::button_label(command)),
+        Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => trf("Go to {step}", args!(step = shown(step))),
+        Some(Step::Intent) if command == "project.frequency" => tr("Set the band").to_owned(),
+        _ => trf("Fix: {command}", args!(command = crate::commands::button_label(command))),
     }
 }
 
@@ -105,13 +107,13 @@ pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &st
         let r = ui.named(edit, handle.into());
         enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if !unit.is_empty() {
-            ui_kit::small(ui, unit, t.text_dim);
+            ui_kit::small(ui, Raw(unit), t.text_dim);
         }
     });
     if let Some(e) = error {
         ui.horizontal(|ui| {
             ui.add_space(t.form_label_width + 6.0);
-            ui_kit::small(ui, e, t.form_error);
+            ui_kit::small(ui, Raw(e), t.form_error);
         });
     }
     enter
@@ -119,7 +121,7 @@ pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &st
 
 pub(super) fn kv(ui: &mut egui::Ui, k: &str, v: String, t: &Tokens) {
     ui.horizontal(|ui| {
-        ui.add_sized(vec2(t.form_label_width, 16.0), egui::Label::new(egui::RichText::new(k).size(t.font_small).color(t.text_dim)));
+        ui.add_sized(vec2(t.form_label_width, 16.0), egui::Label::new(Style::SmallDim.rich(tr(k))));
         ui_kit::small(ui, v, t.text);
     });
 }
