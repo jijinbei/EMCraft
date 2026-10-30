@@ -26,26 +26,60 @@ pub fn material(s: &mut Session, p: &Params) -> Result<Value> {
 /// units): a Debye pole's relaxation frequency f_r gives τ = 1/(2π f_r).
 fn poles(p: &Params) -> Result<Vec<Pole>> {
     let mut poles = Vec::new();
-    for d in p.items("debye", "Debye pole", MAX_POLES)? {
-        let delta_eps = d.positive("delta_eps").required()?;
-        let f = d.frequency("frequency").required()?;
-        poles.push(Pole::Debye { delta_eps, tau: 1.0 / (2.0 * std::f64::consts::PI * f) });
+    for kind in POLE_KINDS {
+        poles.extend(poles_of(p, kind)?);
     }
-    for l in p.items("lorentz", "Lorentz pole", MAX_POLES)? {
-        let delta_eps = l.positive("delta_eps").required()?;
-        let frequency = l.frequency("frequency").required()?;
-        let damping = l.frequency("damping").required()?;
-        poles.push(Pole::Lorentz { delta_eps, frequency, damping });
-    }
-    for d in p.items("drude", "Drude pole", MAX_POLES)? {
-        let plasma_frequency = d.frequency("plasma_frequency").required()?;
-        let damping = d.frequency("damping").required()?;
-        poles.push(Pole::Drude { plasma_frequency, damping });
-    }
+    pole_count(poles)
+}
+
+/// `poles`, refused when there are more than a material holds.
+pub(crate) fn pole_count(poles: Vec<Pole>) -> Result<Vec<Pole>> {
     if poles.len() > MAX_POLES {
         return Err(EngineError::Params(format!("a material holds at most {MAX_POLES} poles, got {}", poles.len())));
     }
     Ok(poles)
+}
+
+/// The parameters poles are given in, in the order a material keeps them.
+pub(crate) const POLE_KINDS: [&str; 3] = ["debye", "lorentz", "drude"];
+
+/// The poles of parameter `kind` (`debye`, `lorentz` or `drude`).
+pub(crate) fn poles_of(p: &Params, kind: &str) -> Result<Vec<Pole>> {
+    let mut poles = Vec::new();
+    match kind {
+        "debye" => {
+            for d in p.items("debye", "Debye pole", MAX_POLES)? {
+                let delta_eps = d.positive("delta_eps").required()?;
+                let f = d.frequency("frequency").required()?;
+                poles.push(Pole::Debye { delta_eps, tau: 1.0 / (2.0 * std::f64::consts::PI * f) });
+            }
+        }
+        "lorentz" => {
+            for l in p.items("lorentz", "Lorentz pole", MAX_POLES)? {
+                let delta_eps = l.positive("delta_eps").required()?;
+                let frequency = l.frequency("frequency").required()?;
+                let damping = l.frequency("damping").required()?;
+                poles.push(Pole::Lorentz { delta_eps, frequency, damping });
+            }
+        }
+        _ => {
+            for d in p.items("drude", "Drude pole", MAX_POLES)? {
+                let plasma_frequency = d.frequency("plasma_frequency").required()?;
+                let damping = d.frequency("damping").required()?;
+                poles.push(Pole::Drude { plasma_frequency, damping });
+            }
+        }
+    }
+    Ok(poles)
+}
+
+/// The parameter a pole is given in.
+pub(crate) fn pole_kind(pole: &Pole) -> &'static str {
+    match pole {
+        Pole::Debye { .. } => "debye",
+        Pole::Lorentz { .. } => "lorentz",
+        Pole::Drude { .. } => "drude",
+    }
 }
 
 pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {

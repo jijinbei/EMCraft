@@ -2,7 +2,9 @@
 
 mod adapt;
 mod geometry;
+mod items;
 mod open;
+mod project;
 mod session;
 mod solve;
 mod view;

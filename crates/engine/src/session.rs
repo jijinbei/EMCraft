@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, check_keys, find_command};
 use crate::project::{self, Effect};
+use crate::runs::Run;
 use crate::{EngineError, Params, Result, Step, expr, open, progress, solve, study};
 
 /// A frequency sweep's results.
@@ -156,6 +157,10 @@ pub struct Session {
     /// The history as last saved or opened: the session has unsaved changes when its history
     /// differs (an undo back to it is clean again).
     pub(crate) saved: Vec<Step>,
+    /// The project's runs: the last solve of each solve command ([`crate::runs`]), the latest
+    /// last, and the runs as last saved or opened.
+    pub(crate) runs: Vec<Run>,
+    pub(crate) saved_runs: Vec<Run>,
     /// Where the solvers run (`solve.device`).
     pub(crate) compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
@@ -268,9 +273,15 @@ impl Session {
         Session { limits: self.limits, compute: self.compute.clone(), ..Session::default() }
     }
 
-    /// Whether the model changed since it was last saved or opened.
+    /// Whether the project changed since it was last saved or opened: its model's history or
+    /// its runs (a solve with other parameters than the saved run's).
     pub fn is_dirty(&self) -> bool {
-        self.history != self.saved
+        self.history != self.saved || self.runs != self.saved_runs
+    }
+
+    /// The project's runs, the latest last ([`crate::runs`]).
+    pub fn runs(&self) -> &[Run] {
+        &self.runs
     }
 
     /// The project's name: its file's stem, the sample's name, or "Untitled".
@@ -307,7 +318,9 @@ impl Session {
     /// What a command with `effect` may change, as it is now.
     fn before(&self, effect: Effect) -> Before {
         let history = if effect == Effect::None { Vec::new() } else { self.history.clone() };
-        let state = project::Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone() };
+        // A command that replaces the project keeps the project to undo back to.
+        let project = (effect == Effect::Replace).then(|| Box::new(self.identity()));
+        let state = project::Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone(), project };
         Before { state, results: self.results.clone(), revision: self.revision }
     }
 
@@ -315,13 +328,13 @@ impl Session {
     /// state before it to undo to and joins the history; a solve's results are current.
     fn commit(&mut self, spec: &CommandSpec, params: &Value, before: Before) {
         match spec.effect {
-            Effect::Record | Effect::Replace => {
+            Effect::Record | Effect::Replace | Effect::Rebuild => {
                 if let Some(change) = spec.invalidates {
                     self.results.invalidate(change);
                 }
                 // A replaced session solved to its last state (a sample opened with its solve)
                 // keeps its results current.
-                let current = spec.effect == Effect::Replace && self.solved_revision == Some(self.revision);
+                let current = spec.effect != Effect::Record && self.solved_revision == Some(self.revision);
                 project::push_undo(&mut self.undo, before.state);
                 self.redo.clear();
                 if spec.effect == Effect::Record {
@@ -333,7 +346,11 @@ impl Session {
                     self.solved_revision = Some(self.revision);
                 }
             }
-            Effect::Solve => self.solved_revision = Some(self.revision),
+            Effect::Solve => {
+                self.solved_revision = Some(self.revision);
+                let params = if params.is_null() { json!({}) } else { params.clone() };
+                crate::runs::record(&mut self.runs, Run { command: spec.id.to_owned(), params, units: self.display });
+            }
             Effect::None => {}
         }
     }

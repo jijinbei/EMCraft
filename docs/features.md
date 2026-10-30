@@ -27,11 +27,12 @@ The meshed model's unknowns at `order`, the factor's memory and the time per fre
 
 ## `file.save` — Save project
 
-Saves the project as an `.emcraft` file (JSON: the model and the commands that built it, a script), to `path` or, without one, to the file it was opened from or last saved to. A path without an extension gets `.emcraft`.
+Saves the project as an `.emcraft` file (JSON: the commands that built the model, a script; the last run of each solve command with its parameters, not its results; and the model), to `path` or, without one, to the file it was opened from or last saved to. A path without an extension gets `.emcraft`. With `copy` it writes a copy to `path` and leaves the project's own file, name and unsaved state as they were (an autosave).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `path` | string |  | no | the file (default: the project's own) |
+| `path` | string |  | no | the file (default: the project's own; required with `copy`) |
+| `copy` | boolean |  | no | write a copy only: the project keeps its file and stays unsaved (default false) |
 
 ## `file.new` — New project
 
@@ -41,15 +42,34 @@ No parameters.
 
 ## `file.open` — Open project
 
-Opens a project saved by file.save (`.emcraft`, or a `.json` of the same form): its commands are replayed, so the mesh comes back the same; results are solved again.
+Opens a project saved by file.save (`.emcraft`, or a `.json` of the same form): its commands are replayed, so the mesh comes back the same; its runs (project.runs) come back without running, and results are solved again (solve.rerun). With `original`, `path` is a copy of that project (an autosave being recovered): the project takes the original's file, unsaved where it differs from what that file holds. Undo goes back to the project before, its file included.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | the file |
+| `original` | string |  | no | the project file `path` is a copy of: the project's own file from now on |
+
+## `project.runs` — Runs
+
+The project's runs: the last solve of each solve command that succeeded, the latest last, each with its parameters in the display units now (as the command takes them: they reproduce the run) and the units it was given in. Saved with the project and restored by file.open without running them; a run with other parameters than the saved one leaves the project unsaved.
+
+No parameters.
+
+## `project.values` — Current values
+
+The parameters that reproduce the model's current state for `command`, in the display units now, for an edit dialog to open on: the band, the units, the device, the walls, the open boundary, a symmetry plane (`axis`, default the first), the periodic boundaries, the waveguide, a primitive solid; an item's for its edit command (`name` a material's or a port's, `body` a body's, `index` a source's); the mesh commands' as the history last ran them; a solve command's as its last run (project.runs). Running the command with them leaves the model as it is (an item edit to the last bit). A command with no current state gives an empty object.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `command` | string |  | yes | the command, such as `model.walls` or `model.port.edit` |
+| `name` | string |  | no | the item of an item's edit command: a material's or a port's name |
+| `body` | string |  | no | geometry.body.edit's body |
+| `index` | integer |  | no | source.edit's source, 1 = the first |
+| `axis` | string |  | no | model.symmetry's plane: `x` or `y` (default the first there is) |
 
 ## `edit.undo` — Undo
 
-Goes back to the model before the last change (results stay, marked stale).
+Goes back to the model before the last change (results stay, marked stale). Undoing file.open, file.new or file.sample brings the project before it back whole: its file, its unsaved state, its runs and their results.
 
 No parameters.
 
@@ -97,6 +117,30 @@ A linear, isotropic material, lossless unless it has a loss tangent (dielectric 
 | `debye` | array | frequency | no | Debye poles `[{"delta_eps", "frequency"}]`: χ = Δε/(1 + jω/ω_r), Δε > 0, relaxation frequency f_r = 1/(2πτ) > 0 (frequency) |
 | `lorentz` | array | frequency | no | Lorentz poles `[{"delta_eps", "frequency", "damping"}]`: χ = Δε ω₀²/(ω₀² − ω² + jωγ), Δε > 0, resonance f₀ = ω₀/2π > 0, damping γ/2π > 0 (frequencies) |
 | `drude` | array | frequency | no | Drude poles `[{"plasma_frequency", "damping"}]`: χ = −ω_p²/(ω² − jωγ), plasma frequency ω_p/2π > 0, damping γ/2π > 0 (frequencies) |
+
+## `model.material.edit` — Edit material
+
+Changes a material: its properties (as model.material.create takes them; `debye`, `lorentz` or `drude` given replace that kind of pole, `null` or `[]` removes them) or its name (`rename`: the sections, layers, region and bodies using it follow; vacuum keeps its name). Changes only the parameters given and checks the material again; a new name alone keeps every result, any other change drops them (the mesh stays: mesh again when it was sized by wavelength). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the material |
+| `rename` | string |  | no | a new name, unique |
+| `eps_r` | number |  | no | relative permittivity εr > 0 (ε∞ with dispersion) |
+| `mu_r` | number |  | no | relative permeability μr > 0 |
+| `loss_tangent` | number |  | no | dielectric loss tangent tan δ, 0 to 1e9 |
+| `magnetic_loss_tangent` | number |  | no | magnetic loss tangent tan δm, 0 to 1e9 |
+| `debye` | array | frequency | no | Debye poles `[{"delta_eps", "frequency"}]`, replacing the material's (frequency) |
+| `lorentz` | array | frequency | no | Lorentz poles `[{"delta_eps", "frequency", "damping"}]`, replacing the material's (frequencies) |
+| `drude` | array | frequency | no | Drude poles `[{"plasma_frequency", "damping"}]`, replacing the material's (frequencies) |
+
+## `model.material.delete` — Delete material
+
+Removes a material nothing uses; one in use is refused with its users listed (sections, layers, the region, bodies). Vacuum stays. The mesh's materials are renumbered; results are dropped. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the material |
 
 ## `geometry.waveguide` — Rectangular waveguide
 
@@ -163,6 +207,29 @@ Gives a body another material (`metal`, the region's, or another): an imported p
 |---|---|---|---|---|
 | `body` | string |  | yes | the body's name (an imported body's own, else `body <n>`) |
 | `material` | string |  | yes | `metal`, the region's material, or another material's name |
+
+## `geometry.body.edit` — Edit body
+
+Changes a body (geometry.body, geometry.feature, geometry.inclusion, an imported body): its shape and dimensions (a primitive's; the same kind keeps the dimensions not given, another kind takes its own), its placement `at`, its `axis` and its `material`. Changes only the parameters given; the body is checked again against the solid and the other bodies and keeps its place among them, unless its new material makes it another kind of body (metal, the region's, a dielectric): then it is placed again last, as geometry.body.material does. Drops the mesh and results. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `body` | string |  | yes | the body's name (an imported body's own, else `body <n>`) |
+| `material` | string |  | no | `metal`, the region's material, or another material's name |
+| `shape` | string |  | no | `box`, `cylinder` or `sphere` |
+| `size` | array | length | no | the box's [x, y, z] (in its own axes) |
+| `radius` | number | length | no | the cylinder's or the sphere's radius |
+| `length` | number | length | no | the cylinder's length along its axis |
+| `at` | array | length | no | where its origin goes |
+| `axis` | string |  | no | `x`, `y` or `z`: where its own z axis points |
+
+## `geometry.body.delete` — Delete body
+
+Removes a body (geometry.body, geometry.feature, geometry.inclusion, an imported body); the bodies after it numbered `body <n>` are numbered again. Drops the mesh and results. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `body` | string |  | yes | the body's name (an imported body's own, else `body <n>`) |
 
 ## `geometry.inclusion` — Inclusion
 
@@ -275,6 +342,30 @@ A waveguide port on an end face, matched to the guide's lowest modes. The first 
 | `deembed` | number | length | no | de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0 |
 | `terminals` | string |  | no | `auto` (default: a cross-section holding two strips or more is one terminal per strip, named `<port>:<k>` from the lowest x, each referred to `impedance` or 50 Ω) or `modal` (the first mode only) |
 
+## `model.port.edit` — Edit port
+
+Changes a waveguide port: its name (`rename`), end, modes, face (`null` puts it back on its end), mode solver, reference impedance (`null`: the line's own again), de-embedding or terminals, as model.port.create takes them. Changes only the parameters given; the port is checked again against the model (a port per end, unique names) and keeps its place in S. Drops the sweep and the time domain's results (an open problem's too). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the port |
+| `rename` | string |  | no | a new name, unique (without `:`) |
+| `end` | string |  | no | `start` or `end` |
+| `modes` | integer |  | no | modes in the port condition, 1 to 32 |
+| `face` | array | length | no | [z, x0, y0, a, b]: a rectangle of the plane at z; `null` for the end face |
+| `mode_solver` | string |  | no | `auto` or `numeric` |
+| `impedance` | number |  | no | the reference impedance (Ω); `null` for the line's own |
+| `deembed` | number | length | no | the reference plane's distance inside the model |
+| `terminals` | string |  | no | `auto` or `modal` |
+
+## `model.port.delete` — Delete port
+
+Removes a waveguide port (a lumped port: model.port.lumped.delete); the ports after it move up in S. Drops the sweep and the time domain's results (an open problem's too). Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the port |
+
 ## `solve.frequency` — Frequency sweep
 
 Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide), a terminal port by each of its strips' modes (S then has an entry per strip, `ports` names them): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full.
@@ -301,6 +392,14 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `cell` | number | length | no | the cell size (default 1 mm) |
 | `device` | string |  | no | where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has |
 | `precision` | string |  | no | the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double |
+
+## `solve.rerun` — Run again
+
+Runs a recorded run again (project.runs): the latest, or the one of `command`, with its parameters in the display units now, as that command runs (its reply, with `rerun` naming the command and parameters).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `command` | string |  | no | the solve command whose run to repeat (default the latest run) |
 
 ## `solve.device` — Device
 
@@ -534,11 +633,55 @@ A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usu
 | `phase` | number |  | no | the source's phase in degrees (default 0) |
 | `radius` | number | length | no | spread the current round a band of this radius about the gap's line (a wire's radius, for a gap cut in a wire); default 0, the line itself |
 
+## `model.port.lumped.edit` — Edit lumped port
+
+Changes a lumped port: its name (`rename`, unique among all ports), gap, impedance, source voltage and phase, or radius, as model.port.lumped takes them. Changes only the parameters given; the port is checked again (inside the geometry) and keeps its place. Drops the open problem's results. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the port |
+| `rename` | string |  | no | a new name, unique |
+| `from` | array | length | no | the gap's start [x, y, z] |
+| `to` | array | length | no | the gap's end [x, y, z] |
+| `impedance` | number |  | no | the source's internal impedance in ohms |
+| `voltage` | number |  | no | the source's voltage in volts, peak |
+| `phase` | number |  | no | the source's phase in degrees |
+| `radius` | number | length | no | the current's band radius about the gap's line |
+
+## `model.port.lumped.delete` — Delete lumped port
+
+Removes a lumped port (a waveguide port: model.port.delete). Drops the open problem's results. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the port |
+
 ## `source.clear` — Clear sources
 
 Removes every source.
 
 No parameters.
+
+## `source.edit` — Edit source
+
+Changes a source, by its number in the order they were added (1 = the first; model.summary and project.values list them): a dipole's `at`, `direction`, `length` and `current`, a plane wave's `direction` and `polarization`. Changes only the parameters given; the source is checked again (a dipole inside the geometry, a polarization across the direction). Drops the open problem's results. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `index` | integer |  | yes | the source's number, 1 = the first |
+| `at` | array | length | no | a dipole's position [x, y, z] |
+| `direction` | array |  | no | a dipole's axis, or the plane wave's direction of travel |
+| `length` | number | length | no | a dipole's length |
+| `current` | number |  | no | a dipole's current in amperes, peak |
+| `polarization` | array |  | no | the plane wave's electric field's direction |
+
+## `source.delete` — Delete source
+
+Removes a source by its number (1 = the first); the sources after it are numbered again. Drops the open problem's results. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `index` | integer |  | yes | the source's number, 1 = the first |
 
 ## `solve.radiation` — Radiation
 

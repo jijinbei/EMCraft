@@ -228,6 +228,59 @@ impl<'a> Params<'a> {
         self.positive(name).map(|v| unit.to_si(v))
     }
 
+    /// Whether parameter `name` is given as `null`: an edit's way of clearing an optional
+    /// setting (a port's own reference impedance again, say).
+    pub fn cleared(&self, name: &str) -> bool {
+        self.value.get(name).is_some_and(Value::is_null)
+    }
+
+    /// An edit's length `name` (display units in, metres out): `old` when left out, and `old`
+    /// exactly when given as it shows in display units (as `project.values` gives it), so an
+    /// edit that changes nothing changes nothing, not even a last bit through the unit.
+    ///
+    /// ```
+    /// use emcraft_engine::Params;
+    /// use emcraft_model::units::Display;
+    /// use serde_json::json;
+    ///
+    /// let old = 0.022_86;
+    /// let shown = Display::default().length.from_si(old); // 22.86 mm
+    /// let given = json!({"width": shown, "height": 5, "bad": -1});
+    /// let p = Params::new(&given, Display::default());
+    /// assert_eq!(p.edit_positive_length("width", old)?, old);
+    /// assert_eq!(p.edit_positive_length("height", 0.01)?, 0.005);
+    /// assert_eq!(p.edit_positive_length("depth", 0.01)?, 0.01); // left out: kept
+    /// assert!(p.edit_positive_length("bad", 0.01).is_err());
+    /// # Ok::<(), emcraft_engine::EngineError>(())
+    /// ```
+    pub fn edit_length(&self, name: &str, old: f64) -> Result<f64> {
+        self.edited(name, old, self.display.length.from_si(old), |p| p.length(name).required())
+    }
+
+    /// An edit's positive length, as [`Params::edit_length`].
+    pub fn edit_positive_length(&self, name: &str, old: f64) -> Result<f64> {
+        self.edited(name, old, self.display.length.from_si(old), |p| p.positive_length(name).required())
+    }
+
+    /// An edit's point `[x, y, z]` of lengths, as [`Params::edit_length`] coordinate by
+    /// coordinate.
+    pub fn edit_point(&self, name: &str, old: Point3) -> Result<Point3> {
+        let Some(v) = self.raw(name) else { return Ok(old) };
+        let given = self.triple(name, v)?;
+        let unit = self.display.length;
+        let [x, y, z] = [(given[0], old.x), (given[1], old.y), (given[2], old.z)].map(|(g, o)| if g == unit.from_si(o) { o } else { unit.to_si(g) });
+        Ok(Point3::new(x, y, z))
+    }
+
+    /// `old` when `name` is left out or given as `shown`, else `read` of it.
+    fn edited(&self, name: &str, old: f64, shown: f64, read: impl FnOnce(&Self) -> Result<f64>) -> Result<f64> {
+        match self.number(name).optional()? {
+            None => Ok(old),
+            Some(v) if v == shown => Ok(old),
+            Some(_) => read(self),
+        }
+    }
+
     /// The element order `order`, 1 or 2 (default 2).
     pub fn order(&self) -> Result<Order> {
         self.integer("order", 1..=2).map(|n| if n == 1 { Order::One } else { Order::Two }).or(Order::Two)

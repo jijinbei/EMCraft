@@ -63,12 +63,14 @@ pub(super) fn rebuild(s: &Session, history: Vec<Step>) -> Result<Session> {
 }
 
 /// Makes `rebuilt` the session, keeping what belongs to the job rather than the model: undo, the
-/// file, the saved state, the last study.
+/// file, the saved state, the runs, the last study.
 pub(super) fn adopt(s: &mut Session, mut rebuilt: Session) {
     rebuilt.undo = std::mem::take(&mut s.undo);
     rebuilt.path = s.path.take();
     rebuilt.sample = s.sample.take();
     rebuilt.saved = std::mem::take(&mut s.saved);
+    rebuilt.runs = std::mem::take(&mut s.runs);
+    rebuilt.saved_runs = std::mem::take(&mut s.saved_runs);
     rebuilt.results.study = s.results.study.take();
     rebuilt.solved_revision = None;
     *s = rebuilt;
