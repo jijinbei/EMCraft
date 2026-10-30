@@ -155,6 +155,7 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>, units: &[Opt
     let optimize = study.kind == Kind::Optimize;
     egui::ScrollArea::vertical().id_salt("study_table").show(ui, |ui| {
         egui::Grid::new("study_grid").striped(true).show(ui, |ui| {
+            super::dim_if_stale(ui);
             if optimize {
                 ui.label(egui::RichText::new("#").strong());
             }

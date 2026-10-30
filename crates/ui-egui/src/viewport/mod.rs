@@ -293,6 +293,14 @@ pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: Fixed) -> egui
     ui.named(image, handle.into())
 }
 
+/// Dims what `ui` draws from here on while the view's results are out of date (a result
+/// table, as [`picture`] dims pictures).
+pub(super) fn dim_if_stale(ui: &mut egui::Ui) {
+    if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new(STALE))).unwrap_or(false) {
+        ui.multiply_opacity(0.55);
+    }
+}
+
 /// A width for pictures, rounded so resizing does not redraw on every pixel.
 pub(super) fn picture_width(ui: &egui::Ui) -> usize {
     (((ui.available_width().max(400.0)) / 50.0).floor() * 50.0).min(2400.0) as usize

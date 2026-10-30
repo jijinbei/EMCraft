@@ -34,6 +34,7 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
         for port in reply.get("ports").and_then(Value::as_array).into_iter().flatten() {
             crate::ui_kit::section(ui, trf("Port {name}", args!(name = port["name"].as_str().unwrap_or(""))));
             egui::Grid::new(("modes", port["name"].as_str().unwrap_or(""))).striped(true).num_columns(6).show(ui, |ui| {
+                super::dim_if_stale(ui);
                 let attenuation = trf("Attenuation (dB/{unit})", args!(unit = lu));
                 for h in [tr("Mode"), tr("Propagates"), &format!("β (rad/{lu})"), "εeff", "Z (Ω)", &attenuation] {
                     ui.text(Style::Strong, Raw(h));
@@ -117,6 +118,7 @@ pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
     let fu = app.session.display().frequency.symbol();
     let mut open = None;
     egui::Grid::new("eigen_grid").striped(true).num_columns(4).show(ui, |ui| {
+        super::dim_if_stale(ui);
         for h in [tr("Mode"), &format!("f ({fu})"), "Q", ""] {
             ui.text(Style::Strong, Raw(h));
         }
@@ -158,6 +160,7 @@ pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     );
     egui::ScrollArea::vertical().id_salt("compare_table").show(ui, |ui| {
         egui::Grid::new("compare_grid").striped(true).num_columns(5).show(ui, |ui| {
+            super::dim_if_stale(ui);
             for h in ["f", "|S11|", tr("|S11| ref"), "|S21|", tr("|S21| ref"), tr("error S11"), tr("error S21")] {
                 ui.text(Style::Strong, Raw(h));
             }
