@@ -341,6 +341,10 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
             fresh.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))?;
         }
     }
+    // The kind of analysis the job was chosen for (the start page's purpose).
+    if let Some(kind) = p.string("analysis").optional()? {
+        fresh.execute("project.analysis", &json!({"kind": kind})).map_err(|e| p.error("analysis", e))?;
+    }
     fresh.mark_saved();
     fresh.sample = Some(name.to_owned());
     // Undo goes back to before the sample, not through the steps that built it.

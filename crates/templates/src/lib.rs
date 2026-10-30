@@ -17,6 +17,7 @@
 
 mod iris;
 
+pub use emcraft_model::Analysis;
 pub use iris::{IrisFilter, MAX_IRISES, iris_sections};
 
 /// A template.
@@ -29,6 +30,9 @@ pub struct Template {
     /// z]}}`, a dimension between two points in the display units, each coordinate a number or
     /// an expression of the parameters (`"=(a+w)/2"`); `{}` for none.
     pub marks: &'static str,
+    /// The kinds of analysis it is made for, the first its own (the start page lists it under
+    /// each).
+    pub kinds: &'static [Analysis],
 }
 
 pub const TEMPLATES: &[Template] = &[
@@ -37,90 +41,115 @@ pub const TEMPLATES: &[Template] = &[
         label: "Waveguide high-pass filter: WR-90 filled with εr = 2 on both sides of a 20 mm empty section, cut off below 6.56 GHz",
         script: include_str!("../scripts/highpass.json"),
         marks: include_str!("../scripts/highpass.marks.json"),
+        kinds: &[Analysis::Frequency, Analysis::TimeDomain],
     },
     Template {
         name: "iris-bandpass",
         label: "Inductive-iris band-pass filter: three WR-90 cavities between four 2 mm irises (12.75, 9.25, 9.25, 12.75 mm), passband 9.75–10.25 GHz",
         script: include_str!("../scripts/iris-bandpass.json"),
         marks: include_str!("../scripts/iris-bandpass.marks.json"),
+        kinds: &[Analysis::Frequency, Analysis::TimeDomain],
     },
     Template {
         name: "cavity",
         label: "Copper rectangular cavity, 22.86 × 10.16 × 30 mm: its four lowest resonances (TE101 at 8.24 GHz) and Q factors",
         script: include_str!("../scripts/cavity.json"),
         marks: include_str!("../scripts/cavity.marks.json"),
+        kinds: &[Analysis::Eigenmodes],
     },
     Template {
         name: "cylinder-cavity",
         label: "Copper cylindrical cavity, radius 10 mm, 30 mm long, meshed with unstructured tetrahedra: TE111 and TM010 against the Bessel zeros",
         script: include_str!("../scripts/cylinder-cavity.json"),
         marks: include_str!("../scripts/cylinder-cavity.marks.json"),
+        kinds: &[Analysis::Eigenmodes],
     },
     Template {
         name: "circular-guide",
         label: "Circular waveguide, radius 10 mm, 30 mm long, on an unstructured mesh: TE11 (cut-off 8.79 GHz) through ports closed by the Bessel modes",
         script: include_str!("../scripts/circular-guide.json"),
         marks: include_str!("../scripts/circular-guide.marks.json"),
+        kinds: &[Analysis::Frequency],
     },
     Template {
         name: "coaxial-line",
         label: "PTFE coaxial line, conductors of radii 1 and 3.5 mm, 20 mm long: TEM through ports whose modes are solved on the annulus",
         script: include_str!("../scripts/coaxial-line.json"),
         marks: include_str!("../scripts/coaxial-line.marks.json"),
+        kinds: &[Analysis::Frequency],
     },
     Template {
         name: "coupled-filter",
         label: "Parallel-coupled stripline band-pass filter: three half-wave resonators coupled edge to edge between 50 Ω feeds, PTFE between planes 4 mm apart, 4.66–5.34 GHz (Cohn 1958)",
         script: include_str!("../scripts/coupled-filter.json"),
         marks: "{}",
+        kinds: &[Analysis::Frequency],
     },
     Template {
         name: "coupler",
         label: "Coupled-line directional coupler in stripline: two strips a quarter wave long at 5 GHz, each end a terminal of its own (four ports, 50 Ω), 10 dB coupled backwards, the far end of the other strip isolated (Pozar §7.6)",
         script: include_str!("../scripts/coupler.json"),
         marks: include_str!("../scripts/coupler.marks.json"),
+        kinds: &[Analysis::Frequency],
     },
     Template {
         name: "inductive-post",
         label: "A 3 mm conducting post across WR-90, wall to wall, cut from the box by a Boolean difference: a strong shunt inductance",
         script: include_str!("../scripts/inductive-post.json"),
         marks: include_str!("../scripts/inductive-post.marks.json"),
+        kinds: &[Analysis::Frequency],
     },
     Template {
         name: "loaded-sphere",
         label: "Spherical cavity, radius 10 mm, around a concentric ceramic sphere (εr = 4, radius 4 mm): two material regions joined node for node, the TM11 triplet at 11.26 GHz",
         script: include_str!("../scripts/loaded-sphere.json"),
         marks: include_str!("../scripts/loaded-sphere.marks.json"),
+        kinds: &[Analysis::Eigenmodes],
     },
     Template {
         name: "dipole",
         label: "A 1 mm current element at 10 GHz in a box lined with a perfectly matched layer: radiated power and directivity against the Hertzian dipole",
         script: include_str!("../scripts/dipole.json"),
         marks: "{}",
+        kinds: &[Analysis::Radiation],
     },
     Template {
         name: "halfwave-dipole",
         label: "A half-wave wire dipole at 10 GHz (radius 0.5 mm, 1 mm gap) fed by a lumped port: input impedance, S11, power balance and pattern",
         script: include_str!("../scripts/halfwave-dipole.json"),
         marks: include_str!("../scripts/halfwave-dipole.marks.json"),
+        kinds: &[Analysis::Radiation],
     },
     Template {
         name: "open-waveguide",
         label: "An open-ended WR-90 channel in a metal block radiating at 10 GHz, fed by a waveguide port on the channel's closed end: S11, gain and pattern",
         script: include_str!("../scripts/open-waveguide.json"),
         marks: "{}",
+        kinds: &[Analysis::Radiation],
     },
     Template {
         name: "sphere-scattering",
         label: "A plane wave on a ceramic sphere (εr = 4, radius 5 mm) at 10 GHz: the scattered field and the radar cross-section against the Mie series",
         script: include_str!("../scripts/sphere-scattering.json"),
         marks: include_str!("../scripts/sphere-scattering.marks.json"),
+        kinds: &[Analysis::Radiation],
     },
 ];
 
 /// The template called `name`.
 pub fn find(name: &str) -> Option<&'static Template> {
     TEMPLATES.iter().find(|t| t.name == name)
+}
+
+/// The templates made for `kind`, in [`TEMPLATES`]' order.
+///
+/// ```
+/// use emcraft_templates::{Analysis, made_for};
+/// assert!(made_for(Analysis::Eigenmodes).any(|t| t.name == "cavity"));
+/// assert!(!made_for(Analysis::Eigenmodes).any(|t| t.name == "dipole"));
+/// ```
+pub fn made_for(kind: Analysis) -> impl Iterator<Item = &'static Template> {
+    TEMPLATES.iter().filter(move |t| t.kinds.contains(&kind))
 }
 
 /// The templates' names, in [`TEMPLATES`]' order.

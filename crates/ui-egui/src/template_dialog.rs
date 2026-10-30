@@ -189,7 +189,8 @@ pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out
 /// Opens the template: its project built from the values (after asking about unsaved changes).
 pub fn open(app: &mut EmcraftApp, name: String, values: Value) {
     app.template = None;
-    crate::files::apply(app, FileAction::Request(Then::Sample { name, values }));
+    let purpose = app.home.purpose;
+    crate::files::apply(app, FileAction::Request(Then::Sample { name, values, purpose }));
 }
 
 /// A parameter's dimension on the preview: a line between its two points with a head at each

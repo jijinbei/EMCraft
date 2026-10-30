@@ -603,6 +603,11 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
         }
         let away = l.facing.is_some_and(|n| n[0] * (b.eye[0] - l.at[0]) + n[1] * (b.eye[1] - l.at[1]) + n[2] * (b.eye[2] - l.at[2]) < 0.0);
         let ink = if away { t.text_dim } else { color(l.color) };
+        if let Some(q) = l.anchor.and_then(|a| cam.project(a, rect.width() as f64, rect.height() as f64)) {
+            let to = rect.min + vec2(q[0] as f32, q[1] as f32);
+            p.line_segment([at, to], Stroke::new(1.0, ink));
+            p.circle_filled(to, 2.5, ink);
+        }
         let g = p.layout_no_wrap(l.text.clone(), font.clone(), ink);
         let r = Rect::from_center_size(at, g.size() + vec2(8.0, 4.0));
         if !away {

@@ -736,16 +736,22 @@ fn arrow(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke) {
     }
     let u = d / len;
     let n = vec2(-u.y, u.x);
-    let head = (len * 0.35).min(12.0);
-    p.line_segment([a, b], s);
-    p.add(egui::Shape::convex_polygon(vec![b, b - u * head + n * head * 0.45, b - u * head - n * head * 0.45], s.color, Stroke::NONE));
+    let head = (len * 0.35).min(14.0);
+    // A dark rim keeps it off a background of its own colour (a port's face, a field plot).
+    let rim = Stroke::new(s.width + 3.0, crate::theme::color32(crate::theme::scene().edge));
+    let tip = [b, b - u * head + n * head * 0.5, b - u * head - n * head * 0.5];
+    let shaft = b - u * head * 0.8;
+    p.line_segment([a, shaft], rim);
+    p.add(egui::Shape::convex_polygon(tip.to_vec(), rim.color, rim));
+    p.line_segment([a, shaft], s);
+    p.add(egui::Shape::convex_polygon(tip.to_vec(), s.color, Stroke::NONE));
 }
 
 /// Which way each port sends its wave: from a waveguide port's face into the model, along a
 /// lumped port's gap from `from` to `to`.
 fn arrows(m: &emcraft_model::Model, p: &egui::Painter, cam: &Camera, rect: Rect) {
     let ink = crate::theme::color32(crate::theme::scene().port);
-    let s = Stroke::new(2.5, ink);
+    let s = Stroke::new(3.0, ink);
     let span = m.bounds().map_or(0.0, |b| (b.max.z - b.min.z).abs());
     for port in &m.ports {
         let Some(q) = crate::scene3d::port_quad(m, port) else { continue };

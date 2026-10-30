@@ -119,7 +119,7 @@ fn mods(p: &Value) -> egui::Modifiers {
 pub fn inspect(app: &EmcraftApp) -> Value {
     let progress = app.job.as_ref().map(|j| {
         let s = j.snapshot();
-        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining()})
+        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining(), "device": j.place().map(|w| json!({"device": w.device, "gpu": w.gpu, "fronts": w.fronts}))})
     });
     let dialog = app.dialog.as_ref().map(|d| {
         let fields: serde_json::Map<String, Value> = d
@@ -193,6 +193,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         e.and_then(|e| e.as_ref().ok()).map(|e| json!({"seconds": e["seconds"], "basis": e["basis"], "command": e["command"]}))
     };
     let s = &app.session;
+    v["purpose"] = json!(app.home.purpose.map(|k| k.id()));
     v["chart_style"] = chart_style(app);
     v["refine"] = json!(app.views.refine.band.map(|(a, b)| [s.show_frequency(a), s.show_frequency(b)]));
     v["deembed"] = json!(s.model().ports.iter().map(|p| s.show_length(p.deembed)).collect::<Vec<_>>());

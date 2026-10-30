@@ -108,6 +108,8 @@ pub struct Label {
     pub color: Rgb,
     /// The outward normal of the face it names: the label dims when that face looks away.
     pub facing: Option<[f64; 3]>,
+    /// The point it names when it stands off from it, joined to it by a leader line.
+    pub anchor: Option<[f64; 3]>,
 }
 
 /// A scene with its labels and legend.

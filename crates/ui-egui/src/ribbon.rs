@@ -192,7 +192,8 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             let enabled = !busy;
             // A panel's items: its commands, then the 3D view's tools it holds.
             let items_of = |panel: &str, items: &[&'static str]| -> Vec<Item> {
-                let tools = TOOLS.iter().filter(|(on, p, _)| *on == tab && *p == panel).flat_map(|(_, _, tools)| tools.iter().copied());
+                let ports = app.session.model().analysis.is_none_or(|k| fits(k, "model.port.create"));
+                let tools = TOOLS.iter().filter(|(on, p, _)| *on == tab && *p == panel && ports).flat_map(|(_, _, tools)| tools.iter().copied());
                 items.iter().map(|&id| Item::Command(id)).chain(tools.map(Item::Tool)).collect()
             };
             // The buttons past the card's right edge go into a menu at its end.
@@ -251,8 +252,14 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
 /// The tab's panels and their commands; SIMULATE's with the solve of the kind of analysis chosen
 /// at step 0 first (its panel first, the solve first in it).
 fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<(&'static str, Vec<&'static str>)> {
-    let mut out: Vec<(&'static str, Vec<&'static str>)> = panels.iter().map(|(p, items)| (*p, items.to_vec())).collect();
-    let Some(kind) = app.session.model().analysis.filter(|_| tab == RibbonTab::Simulate) else { return out };
+    let chosen = app.session.model().analysis;
+    // A job of a chosen kind sees only its commands (the search still finds the others).
+    let mut out: Vec<(&'static str, Vec<&'static str>)> = panels
+        .iter()
+        .map(|(p, items)| (*p, items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id))).collect::<Vec<_>>()))
+        .filter(|(_, items)| !items.is_empty())
+        .collect();
+    let Some(kind) = chosen.filter(|_| tab == RibbonTab::Simulate) else { return out };
     let first = crate::steps::command(kind);
     if let Some(i) = out.iter().position(|(_, items)| items.contains(&first)) {
         let mut panel = out.remove(i);
@@ -261,6 +268,25 @@ fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'
         out.insert(0, panel);
     }
     out
+}
+
+/// Whether a ribbon command belongs to a job of this kind of analysis: those of the other kinds
+/// are left out of the ribbon once a kind is chosen (the search still finds them).
+pub fn fits(kind: crate::steps::Solver, id: &str) -> bool {
+    use crate::steps::Solver::{Eigenmodes, Frequency, Radiation, TimeDomain};
+    match id {
+        "solve.frequency" => kind == Frequency,
+        "solve.eigenmodes" | "solve.dispersion" | "view.dispersion" => kind == Eigenmodes,
+        "solve.radiation" => kind == Radiation,
+        "solve.time_domain" => kind == TimeDomain,
+        // Open problems: the layer, sources and the far field.
+        "model.open" | "view.pattern" | "source.dipole" | "source.plane_wave" | "source.clear" => matches!(kind, Radiation | TimeDomain),
+        // S-parameters between ports.
+        "results.touchstone" | "view.sparameters" | "results.tdr" | "results.compare" | "results.check" => matches!(kind, Frequency | TimeDomain),
+        // Nothing drives a resonator.
+        "model.port.create" | "model.port.lumped" | "solve.port_modes" => kind != Eigenmodes,
+        _ => true,
+    }
 }
 
 /// What a ribbon panel holds: a command (its dialog) or a tool of the 3D view.
@@ -369,10 +395,12 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, limit: f32, out: &mut Ac
     let widths: Vec<f32> = TABS.iter().map(|&(tab, _)| text_width(tab)).collect();
     let room = limit - row.left() - 4.0;
     let total = |pad: f32, shown: &[bool]| widths.iter().zip(shown).filter(|(_, s)| **s).map(|(w, _)| w + pad + 2.0).sum::<f32>();
-    let mut visible = vec![true; TABS.len()];
+    // A tab with nothing for the job's kind of analysis is left out (unless it is open).
+    let present: Vec<bool> = TABS.iter().map(|&(tab, panels)| tab == app.tab || !ordered(app, tab, panels).is_empty()).collect();
+    let mut visible = present.clone();
     let pad = if total(24.0, &visible) <= room { 24.0 } else { 12.0 };
     // The last tabs but the open one go into the menu until the rest fit beside its button.
-    while total(pad, &visible) > room - if visible.iter().all(|v| *v) { 0.0 } else { MORE_WIDTH } {
+    while total(pad, &visible) > room - if visible == present { 0.0 } else { MORE_WIDTH } {
         let Some(k) = (0..TABS.len()).rev().find(|&k| visible[k] && TABS[k].0 != app.tab) else { break };
         visible[k] = false;
         if total(pad, &visible) + MORE_WIDTH <= room {
@@ -403,11 +431,11 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, limit: f32, out: &mut Ac
         }
         x = tr.right() + 2.0;
     }
-    if visible.iter().any(|v| !*v) {
+    if visible != present {
         let r = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(MORE_WIDTH, TAB_ROW_HEIGHT - 8.0));
         let resp = more_button(ui, r, Fixed::TabsMore, "More tabs");
         egui::Popup::menu(&resp).show(|ui| {
-            for (&(tab, _), _) in TABS.iter().zip(&visible).filter(|(_, v)| !**v) {
+            for (&(tab, _), _) in TABS.iter().zip(visible.iter().zip(&present)).filter(|(_, (v, p))| **p && !**v) {
                 if ui.named(egui::Button::new(shown(tab)), Handle::Tab(tab)).clicked() {
                     out.push(Action::SetTab(tab));
                     ui.close();
@@ -668,11 +696,12 @@ mod tests {
         h.app.session.execute("project.analysis", &serde_json::json!({"kind": "time_domain"})).unwrap();
         let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
         assert_eq!((moved[0].0, moved[0].1.as_slice()), ("TIME DOMAIN", &["solve.time_domain"][..]));
-        assert_eq!(moved[1].0, "FREQUENCY DOMAIN");
-        assert_eq!(moved.iter().map(|p| p.1.len()).sum::<usize>(), listed.iter().map(|p| p.1.len()).sum::<usize>());
+        // The other kinds' solves are left out; the rest stays.
+        let all: Vec<&str> = moved.iter().flat_map(|p| p.1.iter().copied()).collect();
+        assert!(!all.contains(&"solve.frequency") && !all.contains(&"solve.eigenmodes") && all.contains(&"study.sweep"), "{all:?}");
         h.app.session.execute("project.analysis", &serde_json::json!({"kind": "radiation"})).unwrap();
         let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
-        assert_eq!(moved[0].1, ["solve.radiation", "solve.frequency", "solve.eigenmodes", "solve.dispersion"]);
+        assert_eq!(moved[0].1, ["solve.radiation"]);
         let model = TABS.iter().find(|(t, _)| *t == RibbonTab::Model).map(|(_, p)| *p).unwrap_or(&[]);
         assert_eq!(ordered(&h.app, RibbonTab::Model, model).len(), model.len());
     }

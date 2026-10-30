@@ -61,6 +61,8 @@ pub enum Action {
     SetHome(bool),
     /// Opens a template's card (its parameters and preview), or closes it (`None`).
     Template(Option<String>),
+    /// The start page's purpose: the templates shown, what a project begun there is for.
+    Purpose(Option<crate::steps::Solver>),
     /// Builds the project from a template with these values changed (`file.sample`).
     OpenTemplate(String, Value),
     /// Opens the settings page at a section (`None` closes it).
@@ -275,6 +277,7 @@ impl EmcraftApp {
                 self.home.open = open;
                 self.settings = None;
             }
+            Action::Purpose(kind) => self.home.purpose = kind,
             Action::Template(name) => self.template = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)),
             Action::OpenTemplate(name, values) => crate::template_dialog::open(self, name, values),
             Action::Settings(section) => self.settings = section,
