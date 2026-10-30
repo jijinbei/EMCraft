@@ -6,6 +6,7 @@ mod items;
 mod open;
 mod project;
 mod session;
+mod sides;
 mod solve;
 mod view;
 mod views;

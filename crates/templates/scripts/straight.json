@@ -1,0 +1,10 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "value": 50, "quantity": "length"}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": ["=a", "=b", "=l"]}},
+ {"command": "mesh.generate", "params": {"size": "=a/8"}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 11, "order": 2}}
+]

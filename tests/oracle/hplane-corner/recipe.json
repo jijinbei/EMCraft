@@ -1,0 +1,7 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "prism", "points": [[0, 0], [22.86, 0], [22.86, 20], [42.86, 20], [42.86, 42.86], [0, 42.86]], "length": 10.16}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "y", "face": [0, 0, 0, 22.86, 10.16]}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": [42.86, 20, 0, 22.86, 10.16]}},
+ {"command": "solve.frequency", "params": {"frequencies": [8, 10], "order": 2}, "id": "solve"}
+]

@@ -3,8 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ModelError, Result, all_finite, invalid, named, positive};
+use crate::geom::{CVec3, Point3, Vec3};
 use crate::material::Material;
 use crate::model::Model;
+use crate::shape::Axis;
 use crate::waveguide::Span;
 
 /// The cross-section of a port: the mode functions it carries.
@@ -17,7 +19,8 @@ pub enum PortShape {
 }
 
 emcraft_macros::named_enum! {
-    /// Which end of the waveguide a port closes.
+    /// Which end of the waveguide a port closes (for a port on a face, which side of its plane
+    /// the guide lies: start above it along the face's axis, end below it).
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum End {
         /// z = 0, outward normal −z.
@@ -51,9 +54,10 @@ pub struct Port {
     pub end: End,
     /// Modes in the port's boundary condition (the lowest cut-off first).
     pub modes: u32,
-    /// A port on a rectangle of a z plane inside the geometry instead of at one of its ends (a
-    /// guide's closed end inside a body, feeding an antenna); `end` then says which side the
-    /// guide lies (start: above the plane, its outward normal −z; end: below it).
+    /// A port on a rectangle of an axis plane (x, y or z) instead of at one of the geometry's z
+    /// ends (a guide's closed end inside a body feeding an antenna, an arm of a bend or a tee
+    /// ending on a side of the solid); `end` then says which side the guide lies (start: above
+    /// the plane along its axis, its outward normal −axis; end: below it).
     #[serde(default)]
     pub face: Option<PortFace>,
     /// Where the modes come from: the closed forms where they apply (a whole rectangle or
@@ -111,28 +115,135 @@ emcraft_macros::named_enum! {
 
 emcraft_macros::named_serde!(ModeSolver);
 
-/// A port's rectangle: [x0, x0 + a] × [y0, y0 + b] at height z (m).
+/// A port's rectangle on the plane `at` across `axis` (m): [u0, u0 + a] × [v0, v0 + b] in the
+/// plane's other two coordinates, in the order x, y, z (an x plane: y then z; a y plane: x then
+/// z; a z plane: x then y). Files written before side ports name `at` `z` and have no axis.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PortFace {
-    pub z: f64,
-    pub x0: f64,
-    pub y0: f64,
+    #[serde(default)]
+    pub axis: Axis,
+    #[serde(alias = "z")]
+    pub at: f64,
+    #[serde(alias = "x0")]
+    pub u0: f64,
+    #[serde(alias = "y0")]
+    pub v0: f64,
     pub a: f64,
     pub b: f64,
 }
 
 impl PortFace {
+    /// The rectangle [x0, x0 + a] × [y0, y0 + b] of the z plane at `z`.
+    pub fn across_z(z: f64, x0: f64, y0: f64, a: f64, b: f64) -> PortFace {
+        PortFace { axis: Axis::Z, at: z, u0: x0, v0: y0, a, b }
+    }
+
     /// Checks the rectangle: finite, with positive sides.
     pub fn check(&self) -> Result<()> {
-        all_finite("port face", &[self.z, self.x0, self.y0])?;
+        all_finite("port face", &[self.at, self.u0, self.v0])?;
         positive("port face width", self.a)?;
         positive("port face height", self.b)?;
         Ok(())
     }
 
-    /// The rectangle as a port's cross-section.
+    /// The rectangle as a port's cross-section, in the face's own coordinates (u, v: [`Frame`]).
     pub fn shape(&self) -> PortShape {
-        PortShape::Rect { x0: self.x0, y0: self.y0, a: self.a, b: self.b }
+        PortShape::Rect { x0: self.u0, y0: self.v0, a: self.a, b: self.b }
+    }
+
+    /// Whether `q` lies on the rectangle, to `tol` (m).
+    pub fn holds(&self, q: Point3, tol: f64) -> bool {
+        let (u, v, _) = Frame::new(self.axis).axes();
+        (q[self.axis.index()] - self.at).abs() <= tol
+            && q[u] >= self.u0 - tol
+            && q[u] <= self.u0 + self.a + tol
+            && q[v] >= self.v0 - tol
+            && q[v] <= self.v0 + self.b + tol
+    }
+
+    /// The rectangle's corners in the model's coordinates, counter-clockwise in (u, v).
+    pub fn corners(&self) -> [Point3; 4] {
+        let f = Frame::new(self.axis);
+        let (_, _, s) = f.axes();
+        let w = s * self.at;
+        [(0.0, 0.0), (self.a, 0.0), (self.a, self.b), (0.0, self.b)].map(|(du, dv)| f.global(Point3::new(self.u0 + du, self.v0 + dv, w)))
+    }
+}
+
+/// A port's own axes: u and v across its face, in the order x, y, z of the two that are not its
+/// normal axis, and w = u × v along the normal (right-handed, so the cross-section's modes are
+/// those of a z port turned onto the face): an x face has (y, z, x), a y face (x, z, −y), a z face
+/// (x, y, z). A port's closed-form modes are evaluated, and its cross-section solved, in (u, v).
+///
+/// ```
+/// use emcraft_model::{Axis, Point3, Vec3, port::Frame};
+/// let f = Frame::new(Axis::Y);
+/// let q = Point3::new(1.0, 2.0, 3.0);
+/// assert_eq!(f.local(q), Point3::new(1.0, 3.0, -2.0));
+/// assert_eq!(f.global(f.local(q)), q);
+/// // u × v = w: the frame keeps handedness.
+/// let (u, v) = (f.global_vec(Vec3::new(1.0, 0.0, 0.0)), f.global_vec(Vec3::new(0.0, 1.0, 0.0)));
+/// assert_eq!(u.cross(v), f.global_vec(Vec3::new(0.0, 0.0, 1.0)));
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Frame {
+    pub axis: Axis,
+}
+
+impl Frame {
+    pub fn new(axis: Axis) -> Frame {
+        Frame { axis }
+    }
+
+    /// The global components of u and v, and the sign of w along the axis.
+    pub fn axes(self) -> (usize, usize, f64) {
+        match self.axis {
+            Axis::X => (1, 2, 1.0),
+            Axis::Y => (0, 2, -1.0),
+            Axis::Z => (0, 1, 1.0),
+        }
+    }
+
+    /// A point in the face's own coordinates (u, v, w).
+    pub fn local(self, p: Point3) -> Point3 {
+        let (u, v, s) = self.axes();
+        Point3::new(p[u], p[v], s * p[self.axis.index()])
+    }
+
+    /// A point given in the face's own coordinates, in the model's.
+    pub fn global(self, q: Point3) -> Point3 {
+        let mut p = Point3::ORIGIN;
+        let (u, v, s) = self.axes();
+        p[u] = q.x;
+        p[v] = q.y;
+        p[self.axis.index()] = s * q.z;
+        p
+    }
+
+    /// A vector in the face's own components.
+    pub fn local_vec(self, p: Vec3) -> Vec3 {
+        self.local(Point3::ORIGIN + p).to_vec()
+    }
+
+    /// A vector given in the face's own components, in the model's.
+    pub fn global_vec(self, q: Vec3) -> Vec3 {
+        self.global(Point3::ORIGIN + q).to_vec()
+    }
+
+    /// A complex vector given in the face's own components, in the model's.
+    pub fn global_cvec(self, q: CVec3) -> CVec3 {
+        let mut p = CVec3::ZERO;
+        let (u, v, s) = self.axes();
+        p[u] = q.x;
+        p[v] = q.y;
+        p[self.axis.index()] = q.z * s;
+        p
+    }
+
+    /// The length of a vector's part across the face (its normal component dropped).
+    pub fn across(self, p: Vec3) -> f64 {
+        let (u, v, _) = self.axes();
+        p[u].hypot(p[v])
     }
 }
 
@@ -160,6 +271,11 @@ impl Port {
     /// The port on a rectangle inside the geometry instead of an end face.
     pub fn on_face(self, face: PortFace) -> Port {
         Port { face: Some(face), ..self }
+    }
+
+    /// The port's own axes: its face's, or a z end's.
+    pub fn frame(&self) -> Frame {
+        Frame::new(self.face.map_or(Axis::Z, |f| f.axis))
     }
 
     pub fn with_mode_solver(self, mode_solver: ModeSolver) -> Port {
@@ -319,8 +435,22 @@ mod tests {
         assert_eq!(m.port("2").unwrap().0, 1);
         assert_eq!(m.port_material(End::End).unwrap().name, "vacuum");
         assert_eq!(m.port_shape(End::End).unwrap(), PortShape::Rect { x0: 0.0, y0: 0.0, a: 0.02286, b: 0.01016 });
-        let face = PortFace { z: 0.0, x0: 0.0, y0: 0.0, a: 0.01, b: f64::INFINITY };
+        let face = PortFace::across_z(0.0, 0.0, 0.0, 0.01, f64::INFINITY);
         assert!(face.check().is_err());
         assert!(m.add_port(Port::new("3", End::End).on_face(PortFace { b: 0.01, ..face })).is_err(), "a face needs a solid");
+    }
+
+    #[test]
+    fn faces_written_before_side_ports_read_across_z() {
+        let old: PortFace = serde_json::from_str(r#"{"z": 0.025, "x0": 0.001, "y0": 0.002, "a": 0.02, "b": 0.01}"#).unwrap();
+        assert_eq!(old, PortFace::across_z(0.025, 0.001, 0.002, 0.02, 0.01));
+        let side = PortFace { axis: Axis::X, ..old };
+        let back: PortFace = serde_json::from_str(&serde_json::to_string(&side).unwrap()).unwrap();
+        assert_eq!(back, side);
+        // On an x face (u, v) = (y, z): the rectangle's corners in the model's axes.
+        let c = side.corners();
+        assert_eq!((c[0].x, c[0].y, c[0].z), (0.025, 0.001, 0.002));
+        assert!((c[2].y - 0.021).abs() < 1e-15 && (c[2].z - 0.012).abs() < 1e-15);
+        assert!(side.holds(Point3::new(0.025, 0.01, 0.005), 1e-9) && !side.holds(Point3::new(0.026, 0.01, 0.005), 1e-9));
     }
 }

@@ -291,9 +291,10 @@ impl Driven {
             let face = space.face_rule(b, port_rule_points(self.order))?;
             let inv_mu = inv_mu(t);
             for (l, wa, _) in face.points {
-                let x = face.el.point(l);
+                // The section lies in the port's own axes: the point taken there, the field back.
+                let x = n.frame.local(face.el.point(l));
                 let values = face.el.values(l);
-                let gs = (0..count).map(|m| field(m, t, x)).collect::<Result<Vec<_>>>()?;
+                let gs = (0..count).map(|m| field(m, t, x).map(|g| n.frame.global_cvec(g))).collect::<Result<Vec<_>>>()?;
                 for (u, val) in face.unknowns.iter().zip(&values) {
                     let Some(&k) = u.get().and_then(|u| index.get(&u)) else { continue };
                     for (vm, g) in v.iter_mut().zip(&gs) {

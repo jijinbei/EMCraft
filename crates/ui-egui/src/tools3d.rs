@@ -1,8 +1,9 @@
 //! The 3D view's tools, worked by pointing at the model:
 //! - **Face port**: hovering lights the face under the pointer; a face across z at an end of the
 //!   model takes a waveguide port at a click (`model.port.create`, the next free name, the
-//!   default modes), a face across z inside a solid opens the port dialog on that rectangle
-//!   (the side the guide lies on to choose), a port's own face selects it.
+//!   default modes), any other flat face across x, y or z of a solid (a bend's or a tee's arm
+//!   ending on a side, a guide's end inside a body) opens the port dialog on that rectangle and
+//!   axis (the side the guide lies on to choose), a port's own face selects it.
 //! - **Gap port**: two clicks, each snapped to a corner, an edge's middle, a face's centre, an
 //!   edge or a face, give a lumped port's `from` and `to` (`model.port.lumped`).
 //! - **Measure**: two clicks, snapped the same way, measured by `geometry.measure` (a face
@@ -54,7 +55,7 @@ impl Tool {
     /// What it does, on hover.
     pub fn hint(self) -> &'static str {
         match self {
-            Tool::Port => "Click a face across z: a port there",
+            Tool::Port => "Click a flat face: a port there",
             Tool::Lumped => "Click two points: a lumped port between them",
             Tool::Measure => "Click two points, edges or faces: the distance (Esc clears)",
         }
@@ -102,9 +103,10 @@ pub enum PortTarget {
     Existing(usize),
     /// A free end of the model: a port there at once.
     End(End),
-    /// A face across z inside a solid: the port dialog on its rectangle (m), the guide's side
-    /// guessed from where the body lies.
-    Inside { z: f64, x0: f64, y0: f64, a: f64, b: f64, end: End },
+    /// A face across `axis` of a solid, not a free end: the port dialog on its rectangle (m:
+    /// `face` as `model.port.create` takes it), the guide's side guessed from where the body
+    /// lies.
+    Inside { axis: emcraft_model::Axis, face: [f64; 5], end: End },
     /// No port goes here: why.
     No(&'static str),
 }
@@ -274,13 +276,11 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
     if let Some(Pick::Port(i)) = Pick::from_tag(face.tag) {
         return PortTarget::Existing(i);
     }
-    if !face.across_z() {
-        return PortTarget::No("Ports lie on faces across z");
-    }
-    let Some(b) = m.bounds() else { return PortTarget::No("Ports lie on faces across z") };
+    let Some(axis) = face.axis() else { return PortTarget::No("Ports lie on flat faces across x, y or z") };
+    let Some(b) = m.bounds() else { return PortTarget::No("Ports lie on flat faces across x, y or z") };
     let z = face.centre[2];
     let tol = 1e-6 * (b.max.z - b.min.z).abs().max(1e-9);
-    if m.open.is_none() {
+    if m.open.is_none() && axis == emcraft_model::Axis::Z {
         let end = if (z - b.min.z.min(0.0)).abs() <= tol {
             Some(End::Start)
         } else if (z - b.max.z).abs() <= tol {
@@ -298,12 +298,21 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
     if m.solid.is_none() {
         return PortTarget::No("A port inside the model needs a solid");
     }
-    // The guide lies where the body is: above the face, or below it.
-    let h = 1e-4 * (b.max.z - b.min.z).abs().max(1e-9);
-    let (cx, cy) = (face.centre[0], face.centre[1]);
-    let above = m.material_at(emcraft_model::Point3::new(cx, cy, z + h)).is_some();
-    let end = if above { End::Start } else { End::End };
-    PortTarget::Inside { z, x0: face.lo[0], y0: face.lo[1], a: face.hi[0] - face.lo[0], b: face.hi[1] - face.lo[1], end }
+    // A port's own face, where the body's face is found in front of the port's.
+    let k = axis.index();
+    let centre = emcraft_model::Point3::new(face.centre[0], face.centre[1], face.centre[2]);
+    let near = 1e-6 * (0..3).map(|d| (b.max[d] - b.min[d]).abs()).fold(1e-9, f64::max);
+    if let Some(i) = m.ports.iter().position(|p| p.face.is_some_and(|f| f.axis == axis && f.holds(centre, near))) {
+        return PortTarget::Existing(i);
+    }
+    // The guide lies where the body is: above the face along its axis, or below it.
+    let (u, v, _) = emcraft_model::Frame::new(axis).axes();
+    let h = 1e-4 * (b.max[k] - b.min[k]).abs().max(1e-9);
+    let mut ahead = emcraft_model::Point3::new(face.centre[0], face.centre[1], face.centre[2]);
+    ahead[k] += h;
+    let end = if m.material_at(ahead).is_some() { End::Start } else { End::End };
+    let face = [face.centre[k], face.lo[u], face.lo[v], face.hi[u] - face.lo[u], face.hi[v] - face.lo[v]];
+    PortTarget::Inside { axis, face, end }
 }
 
 /// Finds what the pointer (`at`, in `rect`) is over while a tool is on.
@@ -397,9 +406,9 @@ pub fn click(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
                 out.push(Action::Select { row, pick: Some(Pick::Port(i)) });
             }
             Some(PortTarget::End(end)) => out.push(Action::run("model.port.create", json!({"name": next_name(m), "end": end.id()}))),
-            Some(PortTarget::Inside { z, x0, y0, a, b, end }) => {
-                let face = [z, x0, y0, a, b].map(|c| neat(l, c));
-                out.push(Action::dialog_with("model.port.create", json!({"name": next_name(m), "end": end.id(), "face": face})));
+            Some(PortTarget::Inside { axis, face, end }) => {
+                let face = face.map(|c| neat(l, c));
+                out.push(Action::dialog_with("model.port.create", json!({"name": next_name(m), "end": end.id(), "face": face, "axis": axis.id()})));
             }
             Some(PortTarget::No(why)) => out.push(Action::error(tr(why))),
             None => {}
@@ -438,18 +447,18 @@ pub fn measure_params(l: emcraft_model::units::Length, [a, b]: [Snap; 2]) -> Val
 }
 
 /// A selected port's reference plane: the port, its face moved by its de-embedding along its
-/// line, and the line's direction.
+/// line, and the line's direction (a unit vector into the model along the port's axis).
 pub struct RefPlane {
     pub port: usize,
     pub name: String,
     pub deembed: f64,
     pub face: [[f64; 3]; 4],
-    pub inward: f64,
+    pub inward: [f64; 3],
 }
 
 impl RefPlane {
     fn at(&self) -> [[f64; 3]; 4] {
-        self.face.map(|p| [p[0], p[1], p[2] + self.inward * self.deembed])
+        self.face.map(|p| [0, 1, 2].map(|k| p[k] + self.inward[k] * self.deembed))
     }
 
     fn centre(&self) -> [f64; 3] {
@@ -465,7 +474,7 @@ pub fn ref_plane(app: &EmcraftApp, v: &View3d) -> Option<RefPlane> {
     let p = m.ports.get(i)?;
     let face = crate::scene3d::port_quad(m, p)?;
     let deembed = v.tools.drag.as_ref().filter(|d| d.port == i).map_or(p.deembed, |d| d.deembed);
-    Some(RefPlane { port: i, name: p.name.clone(), deembed, face, inward: crate::scene3d::port_inward(p) })
+    Some(RefPlane { port: i, name: p.name.clone(), deembed, face, inward: crate::scene3d::port_normal(p) })
 }
 
 /// The reference plane's grip on screen.
@@ -482,9 +491,9 @@ pub fn start_drag(app: &EmcraftApp, v: &mut View3d) {
 /// line on screen, over the model's length.
 pub fn drag(app: &EmcraftApp, v: &mut View3d, rect: Rect, d: egui::Vec2) {
     let (Some(r), Some(b)) = (ref_plane(app, v), app.session.model().bounds()) else { return };
-    let span = (b.max.z - b.min.z).abs().max(1e-9);
+    let span = (0..3).map(|k| (b.max[k] - b.min[k]).abs() * r.inward[k].abs()).sum::<f64>().max(1e-9);
     let c = r.centre();
-    let (Some(a), Some(e)) = (screen(&v.camera, rect, c), screen(&v.camera, rect, [c[0], c[1], c[2] + r.inward * span])) else { return };
+    let (Some(a), Some(e)) = (screen(&v.camera, rect, c), screen(&v.camera, rect, [0, 1, 2].map(|k| c[k] + r.inward[k] * span))) else { return };
     let along = e - a;
     if along.length_sq() < 4.0 {
         return;
@@ -756,9 +765,10 @@ fn arrows(m: &emcraft_model::Model, p: &egui::Painter, cam: &Camera, rect: Rect)
     for port in &m.ports {
         let Some(q) = crate::scene3d::port_quad(m, port) else { continue };
         let c = [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]));
-        let size = (q[2][0] - q[0][0]).abs().max((q[2][1] - q[0][1]).abs());
+        let size = (0..3).map(|k| (q[2][k] - q[0][k]).abs()).fold(0.0, f64::max);
         let len = (0.6 * size).min(0.3 * span).max(1e-9);
-        let tip = [c[0], c[1], c[2] + crate::scene3d::port_inward(port) * len];
+        let n = crate::scene3d::port_normal(port);
+        let tip = [0, 1, 2].map(|k| c[k] + n[k] * len);
         if let (Some(a), Some(b)) = (screen(cam, rect, c), screen(cam, rect, tip)) {
             arrow(p, a, b, s);
         }

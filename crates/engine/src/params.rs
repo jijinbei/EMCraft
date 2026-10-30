@@ -199,6 +199,23 @@ impl<'a> Params<'a> {
         })
     }
 
+    /// At most `max` pairs `[x, y]` of lengths in display units (a polygon's corners), in metres.
+    pub fn pairs<'p>(&'p self, name: &'p str, max: usize) -> Arg<'p, Vec<[f64; 2]>> {
+        let unit = self.display.length;
+        self.arg(name, move |v| {
+            let list = v.as_array().ok_or_else(|| self.error(name, "must be a list of [x, y]"))?;
+            if list.len() > max {
+                return Err(self.error(name, format!("holds at most {max} items, got {}", list.len())));
+            }
+            list.iter()
+                .map(|v| match v.as_array().map(Vec::as_slice) {
+                    Some([x, y]) => Ok([unit.to_si(self.number_of(name, x)?), unit.to_si(self.number_of(name, y)?)]),
+                    _ => Err(self.error(name, "must be a list of [x, y]")),
+                })
+                .collect()
+        })
+    }
+
     /// A point `[x, y, z]` of lengths in display units, in metres.
     pub fn point<'p>(&'p self, name: &'p str) -> Arg<'p, Point3> {
         self.arg(name, |v| self.point_of(name, v))

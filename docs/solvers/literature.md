@@ -164,6 +164,25 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Acoustic and Electromagnetic Scattering Theory*, 3rd ed., Springer 2013, §3.6 — the Nyström
   method with logarithmic-split weights, exponentially convergent on a smooth boundary
   (`emcraft-theory::post`, the reference of the oracle's inductive post).
+- A. Sieverding, F. Arndt, *Field theoretic CAD of open or aperture matched T-junction coupled
+  rectangular waveguide structures*, IEEE Trans. MTT 40(2):353–362, 1992; J. Uher, J.
+  Bornemann, U. Rosenberg, *Waveguide Components for Antenna Feed Systems: Theory and CAD*,
+  Artech House 1993 — field superposition in a junction's region: its field the sum of
+  expansions each closed by one of its walls, matched to the guides' modes on its open sides
+  (`emcraft-theory::bend`, the square-cornered H-plane and E-plane bends, references of the
+  oracle's `hplane-corner` and `eplane-corner`). The E-plane corner as a 2D Neumann problem of
+  the LSE modes: R. E. Collin, *Field Theory of Guided Waves*, 2nd ed., IEEE Press 1991; N.
+  Marcuvitz, *Waveguide Handbook*, McGraw-Hill 1951, ch. 5 — right-angle corners.
+
+## Ports on any axis
+- A port's modes and cross-section live in its own axes (u, v, w): the face's two other axes in
+  the order x, y, z and w = u × v, a proper rotation of a z port, so the closed forms and the
+  cross-section solver (J.-F. Lee, D.-K. Sun, Z. J. Cendes, IEEE Trans. MTT 39(8), 1991) apply
+  unchanged; the modal port condition is the same on any face (Jin 2014, §8.5)
+  (`emcraft-model::port::Frame`, `emcraft-solver::driven::ports`).
+- G. H. Meisters, *Polygons have ears*, Amer. Math. Monthly 82(6):648–651, 1975; D. Eberly,
+  *Triangulation by Ear Clipping*, Geometric Tools, 2002 — a prism's caps cut into triangles
+  (`emcraft-model::prism`, the outlines of bends, mitred corners and tees).
 
 ## Symmetry planes
 - J.-M. Jin, *The Finite Element Method in Electromagnetics*, 3rd ed., Wiley 2014, ch. 1 and

@@ -43,7 +43,12 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
   colours, probes named once); otherwise the file is refused. Opening restores them, and a
   change to them leaves the project unsaved.
 - `model` is the model as the engine holds it (SI units), for reading by other tools; opening
-  does not use it.
+  does not use it. A port on a face holds `face` as `{"axis", "at", "u0", "v0", "a", "b"}` (its
+  plane across x, y or z and its rectangle in the plane's other two axes, in the order x, y, z);
+  files written before ports across x and y name them `z`, `x0`, `y0` without an axis, and read
+  as a z face.
+- Histories written before ports across x and y replay unchanged: `model.port.create`'s `face`
+  `[z, x0, y0, a, b]` is the same list with `axis` left out (z).
 - `version` is 3 for a project with views, else 2 (which older EMCraft reads). A file without
   one is read as version 1; version 1 files (no `runs`) open as they always did, with no runs.
   A file of a newer version is refused rather than half read.

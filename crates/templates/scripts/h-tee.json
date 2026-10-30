@@ -1,0 +1,11 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "value": 20, "quantity": "length"}},
+ {"command": "geometry.solid", "params": {"shape": "prism", "points": [[0, 0], ["=2*l+a", 0], ["=2*l+a", "=a"], ["=l+a", "=a"], ["=l+a", "=l+a"], ["=l", "=l+a"], ["=l", "=a"], [0, "=a"]], "length": "=b"}},
+ {"command": "mesh.generate", "params": {"size": "=a/8"}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "x", "face": [0, 0, 0, "=a", "=b"]}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=2*l+a", 0, 0, "=a", "=b"]}},
+ {"command": "model.port.create", "params": {"name": "3", "end": "end", "modes": 4, "axis": "y", "face": ["=l+a", "=l", 0, "=a", "=b"]}},
+ {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 11, "order": 2}}
+]

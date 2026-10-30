@@ -234,12 +234,30 @@ impl Section<'_> {
         let (v0, v1) = self.across.span(lo, hi);
         for port in &self.m.ports {
             let start = matches!(port.end, emcraft_model::End::Start);
-            let z = port.face.map_or(if start { lo.z } else { hi.z }, |f| f.z);
-            let dir = if start { 1.0 } else { -1.0 };
-            let tail = fr.at(z, (v0 + v1) / 2.0) - vec2(dir * 34.0, 0.0);
-            p.arrow(tail, vec2(dir * 26.0, 0.0), Stroke::new(2.0, t.tab_ports[0]));
-            let align = if start { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
-            p.text(tail - vec2(dir * 4.0, 0.0), align, &port.name, FontId::proportional(t.font_label), t.tab_ports[1]);
+            let sign: f32 = if start { 1.0 } else { -1.0 };
+            // The face's middle and the way into the model, as this view shows them; a port
+            // across the axis this view looks along has no arrow here.
+            let (at, dir) = match port.face {
+                Some(f) if f.axis != emcraft_model::Axis::Z => {
+                    let c = f.corners();
+                    let mid = emcraft_model::Point3::new(0.5 * (c[0].x + c[2].x), 0.5 * (c[0].y + c[2].y), 0.5 * (c[0].z + c[2].z));
+                    let mut ahead = mid;
+                    ahead[f.axis.index()] += f64::from(sign) * (hi[f.axis.index()] - lo[f.axis.index()]).abs().max(1e-9);
+                    let (a, b) = (fr.at(mid.z, self.across.of(mid)), fr.at(ahead.z, self.across.of(ahead)));
+                    let Some(d) = Some(b - a).filter(|d| d.length() > 1.0) else { continue };
+                    (a, d.normalized())
+                }
+                f => (fr.at(f.map_or(if start { lo.z } else { hi.z }, |f| f.at), (v0 + v1) / 2.0), vec2(sign, 0.0)),
+            };
+            let tail = at - dir * 34.0;
+            p.arrow(tail, dir * 26.0, Stroke::new(2.0, t.tab_ports[0]));
+            let align = match (dir.x, dir.y) {
+                (x, _) if x > 0.5 => Align2::RIGHT_CENTER,
+                (x, _) if x < -0.5 => Align2::LEFT_CENTER,
+                (_, y) if y > 0.0 => Align2::CENTER_BOTTOM,
+                _ => Align2::CENTER_TOP,
+            };
+            p.text(tail - dir * 4.0, align, &port.name, FontId::proportional(t.font_label), t.tab_ports[1]);
         }
         for lp in &self.m.lumped {
             p.line_segment([fr.at(lp.from.z, self.across.of(lp.from)), fr.at(lp.to.z, self.across.of(lp.to))], Stroke::new(3.0, t.tab_ports[0]));

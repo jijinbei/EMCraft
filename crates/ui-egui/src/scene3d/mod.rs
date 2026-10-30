@@ -19,7 +19,7 @@ mod mesh;
 mod style;
 mod surface;
 
-pub(crate) use extras::{port_inward, port_quad};
+pub(crate) use extras::{port_normal, port_quad};
 pub(crate) use field::normal_axis;
 pub(crate) use geometry::{BOX_EDGES, box_corner};
 pub use style::material_rgb;

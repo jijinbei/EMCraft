@@ -213,7 +213,7 @@ impl FloquetPort {
         let norm = a * b;
         let mut acc: Vec<std::collections::BTreeMap<usize, C>> = vec![Default::default(); modes.len()];
         let dirs: Vec<Vec3> = modes.iter().map(|m| m.direction(self.phi)).collect();
-        for_each_port_point(*space, &self.faces, |x, wa, traced| {
+        for_each_port_point(*space, &self.faces, emcraft_model::Frame::new(emcraft_model::Axis::Z), |x, wa, traced| {
             for ((md, dir), map) in modes.iter().zip(&dirs).zip(acc.iter_mut()) {
                 let arg = md.kx * (x.x - x0) + md.ky * (x.y - y0);
                 let ph = C::new(arg.cos(), -arg.sin()) * wa;

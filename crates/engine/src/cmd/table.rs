@@ -54,12 +54,14 @@ const PORT_SOLVER_ORDER: ParamSpec = opt("order", K::Integer, "element order of 
 const BAND_TOP: ParamSpec = opt("frequency", K::Number, "the frequency (default: the band's top)").of(F);
 
 // A primitive body: its shape, dimensions and placement.
-const SHAPE: ParamSpec = req("shape", K::String, "`box`, `cylinder` or `sphere`").one_of(&Primitive::IDS);
+const SHAPE: ParamSpec = req("shape", K::String, "`box`, `cylinder`, `sphere` or `prism`").one_of(&Primitive::IDS);
 const SIZE: ParamSpec = opt("size", K::Array, "the box's [x, y, z]").of(L);
 const SIZE_TURNED: ParamSpec = opt("size", K::Array, "the box's [x, y, z] (in its own axes)").of(L);
 const RADIUS: ParamSpec = opt("radius", K::Number, "the cylinder's or the sphere's radius").of(L);
-const LENGTH: ParamSpec = opt("length", K::Number, "the cylinder's length along z").of(L);
-const LENGTH_TURNED: ParamSpec = opt("length", K::Number, "the cylinder's length along its axis").of(L);
+const LENGTH: ParamSpec = opt("length", K::Number, "the cylinder's or the prism's length along z").of(L);
+const LENGTH_TURNED: ParamSpec = opt("length", K::Number, "the cylinder's or the prism's length along its axis").of(L);
+const PRISM_POINTS: ParamSpec =
+    opt("points", K::Array, "the prism's outline: its corners [x, y] in order (a simple polygon, at most 256), in its own plane z = 0").of(L);
 const AT: ParamSpec = opt("at", K::Array, "where its origin goes (default [0, 0, 0])").of(L);
 const AXIS: ParamSpec = opt("axis", K::String, "`x`, `y` or `z` (default): where its own z axis points").one_of(&Axis::IDS);
 const BODY_MATERIAL: ParamSpec = req("material", K::String, "`metal`, the region's material, or another material's name");
@@ -311,12 +313,13 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.solid",
         label: "Primitive body",
-        doc: "A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`) or a sphere about the origin (`radius`). Its end faces (z = 0, z = length) can carry ports; a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.",
+        doc: "A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`), a sphere about the origin (`radius`) or a prism, the simple polygon `points` of the plane z = 0 extruded to z = `length` (the outline of a bend, a mitred corner or a junction of guides). Its end faces (z = 0, z = length) can carry ports, and so can its other flat faces across x, y or z (model.port.create with `face` and `axis`); a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.",
         params: &[
             SHAPE,
             SIZE,
             RADIUS,
             LENGTH,
+            PRISM_POINTS,
             opt("material", K::String, "the filling (default vacuum)"),
         ],
         effect: Effect::Record,
@@ -356,6 +359,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             SIZE_TURNED,
             RADIUS,
             LENGTH_TURNED,
+            PRISM_POINTS,
             AT,
             AXIS,
         ],
@@ -383,6 +387,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             SIZE_TURNED,
             RADIUS,
             LENGTH_TURNED,
+            PRISM_POINTS,
             opt("at", K::Array, "where its origin goes").of(L),
             opt("axis", K::String, "`x`, `y` or `z`: where its own z axis points").one_of(&Axis::IDS),
         ],
@@ -408,6 +413,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             SIZE,
             RADIUS,
             LENGTH,
+            PRISM_POINTS,
             AT,
             opt("material", K::String, "its filling; a perfect conductor when left out"),
         ],
@@ -425,6 +431,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             SIZE_TURNED,
             RADIUS,
             LENGTH_TURNED,
+            PRISM_POINTS,
             AT,
             AXIS,
         ],
@@ -533,12 +540,13 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.port.create",
         label: "Create port",
-        doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of a z plane inside a solid instead — a guide's closed end inside a body, say, feeding an antenna in an open box; `end` then says which side of the plane the guide lies (start: above it, end: below it). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only (and is needed in a lossy cross-section, where terminal ports are not supported yet).",
+        doc: "A waveguide port on an end face, matched to the guide's lowest modes. The first mode (TE10 in a rectangular guide, TEM in a coaxial line) is excited and read; the other modes absorb what else reaches the port. A whole rectangle or circle of one material takes the closed-form modes; any other cross-section — a coaxial line, a ridged guide, an imported polygon — has its modes solved on its triangles at each frequency (`mode_solver` numeric forces that everywhere). With `face` the port is a rectangle of an axis plane of a solid instead — across z by default, across x or y with `axis` (an arm of a bend or a tee ending on a side of the solid, a guide's closed end inside a body feeding an antenna in an open box); `end` then says which side of the plane the guide lies (start: above it along the axis, end: below it). Its modes are the rectangle's along its own sides, in the order x, y, z (an x face: a along y, b along z; a y face: a along x, b along z). A cross-section holding several strips (coupled lines) is a terminal port: one S entry per strip, `<port>:1`, `<port>:2`, … from the lowest x, its quasi-TEM modes (one per strip, all excited) converted to the strips' voltages and currents and their waves referred to `impedance` (50 Ω by default); `terminals` modal reads its first mode only (and is needed in a lossy cross-section, where terminal ports are not supported yet).",
         params: &[
             req("name", K::String, "unique name (without `:`)"),
             req("end", K::String, "`start` (z = 0) or `end` (z = length); with `face`, the side the guide lies").one_of(&End::IDS),
             opt("modes", K::Integer, "modes in the port condition, 1 to 32 (default 4)"),
-            opt("face", K::Array, "[z, x0, y0, a, b]: the rectangle [x0, x0 + a] × [y0, y0 + b] of the plane at z").of(L),
+            opt("face", K::Array, "[at, u0, v0, a, b]: the rectangle [u0, u0 + a] × [v0, v0 + b] of the plane at `at` across `axis`, u and v its other two axes in the order x, y, z (across z: [z, x0, y0, a, b])").of(L),
+            opt("axis", K::String, "the axis `face` lies across: `x`, `y` or `z` (default)").one_of(&Axis::IDS),
             opt("mode_solver", K::String, "`auto` (default: closed forms where they apply) or `numeric` (the cross-section solver)").one_of(&ModeSolver::IDS),
             opt("impedance", K::Number, "the reference impedance (Ω) S is referred to here, for a line with one (coaxial, strip); the line's own when left out"),
             opt("deembed", K::Number, "de-embedding: how far inside the model S's reference plane lies from the port's face, along its line (negative: a line added outside); default 0").of(L),
@@ -557,7 +565,8 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("rename", K::String, "a new name, unique (without `:`)"),
             opt("end", K::String, "`start` or `end`").one_of(&End::IDS),
             opt("modes", K::Integer, "modes in the port condition, 1 to 32"),
-            opt("face", K::Array, "[z, x0, y0, a, b]: a rectangle of the plane at z; `null` for the end face").of(L),
+            opt("face", K::Array, "[at, u0, v0, a, b]: a rectangle of the plane at `at` across `axis`; `null` for the end face").of(L),
+            opt("axis", K::String, "the axis the face lies across: `x`, `y` or `z`").one_of(&Axis::IDS),
             opt("mode_solver", K::String, "`auto` or `numeric`").one_of(&ModeSolver::IDS),
             opt("impedance", K::Number, "the reference impedance (Ω); `null` for the line's own"),
             opt("deembed", K::Number, "the reference plane's distance inside the model").of(L),

@@ -363,9 +363,13 @@ fn tour() -> Record {
         }
         call(&mut h, "ui.set", json!({"step": "none", "camera": {"projection": "perspective"}}));
     }
-    // The 3D view's tools: no port on a face along z, nor across a guide inside it; a
-    // measurement between two faces, with their gap.
+    // The 3D view's tools: no port on a curved face, nor on a guide's side wall without a solid,
+    // nor across a guide inside it; a measurement between two faces, with their gap.
     call(&mut h, "engine.execute", json!({"command": "file.new"}));
+    call(&mut h, "engine.execute", json!({"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}}));
+    call(&mut h, "ui.set", json!({"view": "model", "tool": "port"}));
+    call(&mut h, "ui.set", json!({"step": "none", "standard_view": "top"}));
+    step(&mut h, json!({"move": "view3d"}));
     let guide = json!({"width": 20, "height": 10, "sections": [{"length": 10, "material": "vacuum"}, {"length": 10, "material": "vacuum"}]});
     call(&mut h, "engine.execute", json!({"command": "geometry.waveguide", "params": guide}));
     call(&mut h, "ui.set", json!({"view": "model", "tool": "port"}));
