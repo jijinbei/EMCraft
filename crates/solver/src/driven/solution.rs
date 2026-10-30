@@ -33,37 +33,28 @@ pub(super) trait Factor {
     fn report(&self) -> FactorReport;
 }
 
-impl Factor for Ldlt {
-    fn solve_refined(&self, a: &Csr, b: &[C], steps: usize) -> std::result::Result<(Vec<C>, f64), FactorError> {
-        Ldlt::solve_refined(self, a, b, steps)
-    }
+/// The LDLᵀ and the LU report alike.
+macro_rules! factor {
+    ($($t:ty),*) => {$(
+        impl Factor for $t {
+            fn solve_refined(&self, a: &Csr, b: &[C], steps: usize) -> std::result::Result<(Vec<C>, f64), FactorError> {
+                <$t>::solve_refined(self, a, b, steps)
+            }
 
-    fn report(&self) -> FactorReport {
-        FactorReport {
-            perturbed: self.perturbed,
-            entries: self.entries,
-            largest_front: self.largest_front,
-            analysis: self.analysis_seconds,
-            factor: self.numeric_seconds,
+            fn report(&self) -> FactorReport {
+                FactorReport {
+                    perturbed: self.perturbed,
+                    entries: self.entries,
+                    largest_front: self.largest_front,
+                    analysis: self.analysis_seconds,
+                    factor: self.numeric_seconds,
+                }
+            }
         }
-    }
+    )*};
 }
 
-impl Factor for Lu {
-    fn solve_refined(&self, a: &Csr, b: &[C], steps: usize) -> std::result::Result<(Vec<C>, f64), FactorError> {
-        Lu::solve_refined(self, a, b, steps)
-    }
-
-    fn report(&self) -> FactorReport {
-        FactorReport {
-            perturbed: self.perturbed,
-            entries: self.entries,
-            largest_front: self.largest_front,
-            analysis: self.analysis_seconds,
-            factor: self.numeric_seconds,
-        }
-    }
-}
+factor!(Ldlt, Lu);
 
 impl Driven {
     /// The symbolic analysis of `a`, whose unknowns are at `points` and then its `border`

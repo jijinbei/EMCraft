@@ -128,7 +128,7 @@ pub fn list(s: &mut Session, _: &Params) -> Result<Value> {
     let rows = s
         .runs
         .iter()
-        .map(|r| Ok(json!({"command": r.command, "params": shown(s, r)?, "units": {"length": r.units.length.symbol(), "frequency": r.units.frequency.symbol()}})))
+        .map(|r| Ok(json!({"command": r.command, "params": shown(s, r)?, "units": crate::reply::units(r.units)})))
         .collect::<Result<Vec<Value>>>()?;
     Ok(json!({"runs": rows, "latest": s.runs.last().map(|r| r.command.as_str())}))
 }

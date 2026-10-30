@@ -8,6 +8,7 @@ use emcraft_model::units::C0;
 use serde::{Deserialize, Serialize};
 
 use crate::Session;
+use crate::view::X11_PRIME;
 
 emcraft_macros::named_enum! {
     /// A step of the workflow, in the order a job goes through them.
@@ -134,8 +135,7 @@ pub struct Cutoff {
     pub first: bool,
 }
 
-/// Bessel zeros for a circular port's first modes: J1′ (TE11) and J0 (TM01).
-const X11_PRIME: f64 = 1.841_183_781_340_659;
+/// The first zero of J0, for a circular port's TM01 (its TE11 takes J1′'s, [`X11_PRIME`]).
 const X01: f64 = 2.404_825_557_695_773;
 
 /// The cut-offs of the ports' first modes (closed form, from each port's cross-section and
@@ -148,7 +148,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
     if m.periodic.is_some() {
         return out;
     }
-    let add = |frequency: f64, mode: &str, owner: String, first: bool, out: &mut Vec<Cutoff>| {
+    let add = |frequency: f64, mode: &str, owner: &str, first: bool, out: &mut Vec<Cutoff>| {
         if !(frequency.is_finite() && frequency > 0.0) {
             return;
         }
@@ -166,14 +166,14 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
         let owner = format!("port {}", p.name);
         match shape {
             emcraft_model::PortShape::Rect { a, b, .. } => {
-                add(C0 / (2.0 * a * n), "TE10", owner.clone(), true, &mut out);
-                add(C0 / (a * n), "TE20", owner.clone(), false, &mut out);
-                add(C0 / (2.0 * b * n), "TE01", owner, false, &mut out);
+                add(C0 / (2.0 * a * n), "TE10", &owner, true, &mut out);
+                add(C0 / (a * n), "TE20", &owner, false, &mut out);
+                add(C0 / (2.0 * b * n), "TE01", &owner, false, &mut out);
             }
             emcraft_model::PortShape::Circle { r, .. } => {
                 let k = C0 / (2.0 * std::f64::consts::PI * r * n);
-                add(X11_PRIME * k, "TE11", owner.clone(), true, &mut out);
-                add(X01 * k, "TM01", owner, false, &mut out);
+                add(X11_PRIME * k, "TE11", &owner, true, &mut out);
+                add(X01 * k, "TM01", &owner, false, &mut out);
             }
         }
     }

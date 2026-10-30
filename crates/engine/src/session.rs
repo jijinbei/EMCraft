@@ -273,6 +273,18 @@ impl Session {
         Session { limits: self.limits, compute: self.compute.clone(), ..Session::default() }
     }
 
+    /// This session replaced by `fresh` (a sample, a project file, a new one), its undo kept:
+    /// it goes back to before the replacement.
+    pub(crate) fn replace_with(&mut self, fresh: Session) {
+        *self = Session { undo: std::mem::take(&mut self.undo), ..fresh };
+    }
+
+    /// The history and the runs as they are now count as saved.
+    pub(crate) fn mark_saved(&mut self) {
+        self.saved = self.history.clone();
+        self.saved_runs = self.runs.clone();
+    }
+
     /// Whether the project changed since it was last saved or opened: its model's history or
     /// its runs (a solve with other parameters than the saved run's).
     pub fn is_dirty(&self) -> bool {
@@ -410,7 +422,7 @@ impl Session {
             })
         });
         json!({
-            "units": {"length": l.symbol(), "frequency": self.display.frequency.symbol()},
+            "units": crate::reply::units(self.display),
             "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r, "loss_tangent": m.loss_tangent, "magnetic_loss_tangent": m.magnetic_loss_tangent})).collect::<Vec<_>>(),
             "waveguide": w,
             "solid": self.model.solid.as_ref().map(|s| json!({"shape": s.shape.kind(), "material": s.material})),

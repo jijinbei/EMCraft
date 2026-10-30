@@ -213,6 +213,35 @@ impl Plane {
         p
     }
 
+    /// Sutherland–Hodgman against the plane: the kept part of the triangle `p` whose corners
+    /// are `kept` or not (a triangle or a quad: its corners and their count) and the points the
+    /// plane cuts its edges at (and their count).
+    fn clip(&self, p: [[f64; 3]; 3], kept: [bool; 3]) -> ([[f64; 3]; 4], usize, [[f64; 3]; 2], usize) {
+        let (mut poly, mut n) = ([[0.0; 3]; 4], 0);
+        let (mut cuts, mut m) = ([[0.0; 3]; 2], 0);
+        for i in 0..3 {
+            let j = (i + 1) % 3;
+            let mut put = |q: [f64; 3]| {
+                if let Some(slot) = poly.get_mut(n) {
+                    *slot = q;
+                    n += 1;
+                }
+            };
+            if kept[i] {
+                put(p[i]);
+            }
+            if kept[i] != kept[j] {
+                let c = if kept[i] { self.cut(p[i], p[j]) } else { self.cut(p[j], p[i]) };
+                put(c);
+                if let Some(slot) = cuts.get_mut(m) {
+                    *slot = c;
+                    m += 1;
+                }
+            }
+        }
+        (poly, n, cuts, m)
+    }
+
     /// `p`'s coordinates on the plane (`+ 0.0` makes -0 into 0, so equal points have equal
     /// bits).
     fn uv(&self, p: [f64; 3]) -> [f64; 2] {
@@ -329,29 +358,7 @@ fn section_with(scene: &Scene, s: &Section, lim: Limits) -> Result<Scene, Sectio
             0 => continue,
             _ => {}
         }
-        // Sutherland–Hodgman against one plane: a triangle or a quad, and the two points cut.
-        let (mut poly, mut n) = ([[0.0; 3]; 4], 0);
-        let (mut cuts, mut m) = ([[0.0; 3]; 2], 0);
-        for i in 0..3 {
-            let j = (i + 1) % 3;
-            let mut put = |p: [f64; 3]| {
-                if let Some(slot) = poly.get_mut(n) {
-                    *slot = p;
-                    n += 1;
-                }
-            };
-            if kept[i] {
-                put(t.p[i]);
-            }
-            if kept[i] != kept[j] {
-                let c = if kept[i] { plane.cut(t.p[i], t.p[j]) } else { plane.cut(t.p[j], t.p[i]) };
-                put(c);
-                if let Some(slot) = cuts.get_mut(m) {
-                    *slot = c;
-                    m += 1;
-                }
-            }
-        }
+        let (poly, n, cuts, m) = plane.clip(t.p, kept);
         let poly = &poly[..n];
         if !poly.iter().all(finite) {
             continue;
@@ -399,17 +406,22 @@ fn section_with(scene: &Scene, s: &Section, lim: Limits) -> Result<Scene, Sectio
     }
     let capped = if caps(&plane, &capped, lim.work, &mut out) { capped } else { Vec::new() };
     if let Some(color) = s.outline {
-        let mut seen: BTreeSet<[[u64; 2]; 2]> = BTreeSet::new();
-        for b in &capped {
-            for p in &b.pieces {
-                let k = if bits(p[0]) <= bits(p[1]) { [bits(p[0]), bits(p[1])] } else { [bits(p[1]), bits(p[0])] };
-                if seen.insert(k) {
-                    out.lines.push(Line { a: plane.lift(p[0]), b: plane.lift(p[1]), color, alpha: 230 });
-                }
+        outline(&plane, &capped, color, &mut out);
+    }
+    Ok(out)
+}
+
+/// The capped bodies' outlines as lines in `color`, each piece once.
+fn outline(plane: &Plane, capped: &[&Body], color: Rgb, out: &mut Scene) {
+    let mut seen: BTreeSet<[[u64; 2]; 2]> = BTreeSet::new();
+    for b in capped {
+        for p in &b.pieces {
+            let k = if bits(p[0]) <= bits(p[1]) { [bits(p[0]), bits(p[1])] } else { [bits(p[1]), bits(p[0])] };
+            if seen.insert(k) {
+                out.lines.push(Line { a: plane.lift(p[0]), b: plane.lift(p[1]), color, alpha: 230 });
             }
         }
     }
-    Ok(out)
 }
 
 /// A piece of outline that is not along the sweep's direction: x0 < x1.

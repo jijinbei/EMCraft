@@ -402,16 +402,7 @@ impl CrossSection {
     fn constraint(&self, k2: f64) -> Result<impl Fn(&mut Vec<f64>) -> Result<()> + '_> {
         let (nt, n) = (self.transverse, self.unknowns);
         let p = &self.pattern;
-        let nz = n - nt;
-        let groups: Vec<Vec<usize>> =
-            (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
-        let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
-        for i in nt..n {
-            for k in p.row(i).filter(|&k| p.col[k] >= nt) {
-                zz.add(i - nt, p.col[k] - nt, C::new(self.b[k] - k2 * self.t[k], 0.0));
-            }
-        }
-        let factor = if nz > 0 { Some(Ldlt::factor(&zz, &self.points[nt..])?) } else { None };
+        let factor = self.scalar_block(|k| C::new(self.b[k] - k2 * self.t[k], 0.0))?;
         Ok(move |v: &mut Vec<f64>| -> Result<()> {
             let Some(f) = &factor else { return Ok(()) };
             // r = −B_zt e.
@@ -421,6 +412,23 @@ impl CrossSection {
             v[nt..].iter_mut().zip(&r).for_each(|(x, c)| *x = c.re);
             Ok(())
         })
+    }
+
+    /// B_zz, the scalar rows' block of B (its entries `value(k)`, k an entry of the pattern),
+    /// factored; `None` without scalar rows.
+    fn scalar_block(&self, value: impl Fn(usize) -> C) -> Result<Option<Ldlt>> {
+        let (nt, n) = (self.transverse, self.unknowns);
+        let p = &self.pattern;
+        let nz = n - nt;
+        let groups: Vec<Vec<usize>> =
+            (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
+        let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
+        for i in nt..n {
+            for k in p.row(i).filter(|&k| p.col[k] >= nt) {
+                zz.add(i - nt, p.col[k] - nt, value(k));
+            }
+        }
+        Ok(if nz > 0 { Some(Ldlt::factor(&zz, &self.points[nt..])?) } else { None })
     }
 
     /// Scales a mode to ∫ |e_t|² = 1, signs it, and computes D.

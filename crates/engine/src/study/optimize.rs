@@ -159,7 +159,7 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
             return Ok(*f);
         }
         if rows.len() >= cap {
-            return Err(EngineError::Failed(OUT_OF_SOLVES.into()));
+            return Err(EngineError::failed(OUT_OF_SOLVES));
         }
         let values: Vec<f64> = bounds.iter().zip(&u).map(|(b, x)| b.value(*x)).collect();
         let set: Vec<(String, Value)> = bounds.iter().zip(&values).map(|(b, v)| (b.name.clone(), json!(v))).collect();
@@ -194,7 +194,7 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
     };
     // The model at the optimum: the definitions given the best values, the model rebuilt.
     let set: Vec<(String, Value)> = study.variables.iter().zip(&study.rows[best].values).map(|(n, v)| (n.clone(), json!(v))).collect();
-    let rebuilt = rebuild(s, history_with(s, &set)?)?;
+    let rebuilt = rebuild(s, &history_with(s, &set)?)?;
     let reply = study.to_json();
     adopt(s, rebuilt);
     s.results.study = Some(Arc::new(study));

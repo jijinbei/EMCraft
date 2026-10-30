@@ -335,7 +335,7 @@ fn fem_far_rows(s: &Session, dirs: &[(f64, f64)]) -> Result<FarRows> {
 fn time_domain_far_rows(s: &Session, dirs: &[(f64, f64)], frequency: Option<f64>) -> Result<FarRows> {
     let r = s.results.td_radiation.clone().ok_or(EngineError::NotSolved { what: "time-domain open problem", run: "solve.time_domain" })?;
     let fi = frequency.and_then(|f| crate::numbers::nearest(&r.frequencies, f)).unwrap_or(0);
-    let f = r.frequencies.get(fi).copied().ok_or_else(|| EngineError::Failed("no frequencies".into()))?;
+    let f = r.frequencies.get(fi).copied().ok_or_else(|| EngineError::failed("no frequencies"))?;
     let power = r.radiated.get(fi).copied().unwrap_or(f64::NAN);
     let lone = lone_dipole(s);
     let rows = dirs

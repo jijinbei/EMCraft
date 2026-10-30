@@ -56,9 +56,9 @@ pub(super) fn history_with(s: &Session, set: &[(String, Value)]) -> Result<Vec<S
 }
 
 /// A session of the model rebuilt by `history`.
-pub(super) fn rebuild(s: &Session, history: Vec<Step>) -> Result<Session> {
+pub(super) fn rebuild(s: &Session, history: &[Step]) -> Result<Session> {
     let mut fresh = s.fresh();
-    fresh.run_steps(&history)?;
+    fresh.run_steps(history)?;
     Ok(fresh)
 }
 
@@ -92,7 +92,7 @@ pub fn variable(s: &mut Session, p: &Params) -> Result<Value> {
         for old in history.iter_mut().filter(|st| st.defines(name)) {
             *old = step.clone();
         }
-        let rebuilt = rebuild(s, history)?;
+        let rebuilt = rebuild(s, &history)?;
         adopt(s, rebuilt);
     } else {
         if s.variables.len() >= MAX_VARIABLES {

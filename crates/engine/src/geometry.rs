@@ -171,11 +171,11 @@ const MAX_IMPORT_BYTES: u64 = 512 << 20;
 
 /// A file's bytes, refusing one over `max` bytes before reading it.
 pub(crate) fn read_capped(path: &str, max: u64) -> Result<Vec<u8>> {
-    let len = std::fs::metadata(path).map_err(|e| EngineError::Failed(format!("`{path}`: {e}")))?.len();
+    let len = std::fs::metadata(path).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?.len();
     if len > max {
-        return Err(EngineError::Failed(format!("`{path}` is {} MB; at most {} MB are read", len >> 20, max >> 20)));
+        return Err(EngineError::failed(format!("`{path}` is {} MB; at most {} MB are read", len >> 20, max >> 20)));
     }
-    std::fs::read(path).map_err(|e| EngineError::Failed(format!("`{path}`: {e}")))
+    std::fs::read(path).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))
 }
 
 pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
@@ -186,7 +186,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let bytes = read_capped(path, MAX_IMPORT_BYTES)?;
     let mut bodies = emcraft_io::read_bodies(path, &bytes, unit)?;
     if bodies.is_empty() {
-        return Err(EngineError::Failed(format!("`{path}` holds no body")));
+        return Err(EngineError::failed(format!("`{path}` holds no body")));
     }
     let fit = p.flag("fit_surfaces").or(true)?;
     // Each triangle's face as read (a B-rep face), before the split by angle.
@@ -228,7 +228,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         }
         cavity = Some(enclosed_air(s, &mut bodies, &materials, keep.unwrap_or_default(), &material)?);
         // The metal bodies are the cavity's walls now; the others are placed in it.
-        let metal = |b: &emcraft_io::Surface| materials.iter().find(|(n, _)| *n == b.name).is_none_or(|(_, m)| m == crate::bodies::METAL);
+        let metal = |b: &emcraft_io::Surface| material_of(&materials, &b.name) == crate::bodies::METAL;
         placed.extend(bodies.iter().filter(|b| metal(b)).map(|b| json!({"body": b.name, "material": crate::bodies::METAL, "as": "walls"})));
         let keep: Vec<bool> = bodies.iter().map(|b| !metal(b)).collect();
         bodies.retain(|b| !metal(b));
@@ -244,7 +244,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         s.model.set_solid(Solid { shape: surface(body, &source, fit, &mut fitted), material: material.clone() })?;
     }
     for (b, source) in bodies.into_iter().zip(sources) {
-        let m = materials.iter().find(|(n, _)| *n == b.name).map_or(crate::bodies::METAL.to_owned(), |(_, m)| m.clone());
+        let m = material_of(&materials, &b.name).to_owned();
         let name = b.name.clone();
         let kind = crate::bodies::place(&mut s.model, surface(b, &source, fit, &mut fitted), Point3::ORIGIN, Axis::Z, &m)?;
         placed.push(json!({"body": name, "material": m, "as": kind}));
@@ -270,6 +270,11 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
+/// The material `materials` (body name, material) give the body `name`: metal unless named.
+fn material_of<'m>(materials: &'m [(String, String)], name: &str) -> &'m str {
+    materials.iter().find(|(n, _)| n == name).map_or(crate::bodies::METAL, |(_, m)| m.as_str())
+}
+
 emcraft_macros::named_enum! {
     /// Which pieces of a cavity's air are kept (`keep`).
     #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -292,10 +297,10 @@ fn enclosed_air(
     keep: Keep,
     material: &str,
 ) -> Result<emcraft_mesh::cavity::Cavity> {
-    let metal = |b: &emcraft_io::Surface| materials.iter().find(|(n, _)| *n == b.name).is_none_or(|(_, m)| m == crate::bodies::METAL);
+    let metal = |b: &emcraft_io::Surface| material_of(materials, &b.name) == crate::bodies::METAL;
     let walls: Vec<&emcraft_io::Surface> = bodies.iter().filter(|b| metal(b)).collect();
     if walls.is_empty() {
-        return Err(EngineError::Failed("a cavity is the air metal bodies enclose: every body is given another material".into()));
+        return Err(EngineError::failed("a cavity is the air metal bodies enclose: every body is given another material"));
     }
     let lo = walls.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
     let shift = emcraft_model::Vec3::new(-lo[0], -lo[1], -lo[2]);

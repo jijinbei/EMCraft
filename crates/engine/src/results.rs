@@ -184,12 +184,12 @@ pub fn probe(s: &mut Session, p: &Params) -> Result<Value> {
 fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Complex64>)> {
     if let Some(sw) = s.results.sweep.as_ref().filter(|sw| !sw.results.is_empty()) {
         let pairs: Option<Vec<_>> = sw.results.iter().map(|r| r.s.get(k, k).map(|c| (r.frequency, c))).collect();
-        let pairs = pairs.ok_or_else(|| EngineError::Failed(format!("the sweep has no reflection at port {}", k + 1)))?;
+        let pairs = pairs.ok_or_else(|| EngineError::failed(format!("the sweep has no reflection at port {}", k + 1)))?;
         return Ok(pairs.into_iter().unzip());
     }
     match s.results.time_domain.as_ref() {
         Some(td) if k == 0 => Ok((td.frequencies.clone(), td.s11.clone())),
-        Some(_) => Err(EngineError::Failed("the time domain's results reflect at port 1 only".into())),
+        Some(_) => Err(EngineError::failed("the time domain's results reflect at port 1 only")),
         None => Err(EngineError::NotSolved { what: "sweep", run: "solve.frequency or solve.time_domain" }),
     }
 }
@@ -200,7 +200,7 @@ fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Co
 pub(crate) fn tdr_of(s: &Session, p: &Params) -> Result<(crate::tdr::Tdr, String, Option<f64>)> {
     let (k, port) = match args::entry(s, p, "port")? {
         Some(named) => named,
-        None => s.sparameter_entries().into_iter().enumerate().next().ok_or_else(|| EngineError::Failed("no ports".into()))?,
+        None => s.sparameter_entries().into_iter().enumerate().next().ok_or_else(|| EngineError::failed("no ports"))?,
     };
     let (freqs, refl) = reflection(s, k)?;
     let mode = match p.choice::<crate::tdr::Mode>("mode").optional()? {

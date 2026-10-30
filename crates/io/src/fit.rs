@@ -215,12 +215,8 @@ fn plane(points: &[Point3], faces: &[([Point3; 3], Vec3)]) -> Option<FaceSurface
             }
         }
     }
-    let (values, vectors) = eigen3(m)?;
     // Collinear points (two vanishing spreads) span no plane.
-    if !(values[1] > 1e-20 * values[2]) {
-        return None;
-    }
-    let mut n = vectors[0];
+    let mut n = least_axis(m, 1e-20)?;
     let area: Vec3 = faces.iter().map(|(_, a)| *a).sum();
     if n.dot(area) < 0.0 {
         n = -n;
@@ -230,75 +226,32 @@ fn plane(points: &[Point3], faces: &[([Point3; 3], Vec3)]) -> Option<FaceSurface
 
 /// The sphere through the points: the algebraic fit, refined geometrically.
 fn sphere(points: &[Point3], scale: &Scale) -> Option<FaceSurface> {
-    let c0 = Point3::centroid(points.iter().copied())?;
     // Centred and scaled coordinates condition the normal equations.
-    let s = points.iter().map(|p| (*p - c0).norm()).fold(0.0f64, f64::max);
-    if !(s > 0.0) {
-        return None;
-    }
+    let (c0, s) = spread(points)?;
     // |q|² + D·q + G = 0: rows [q, 1], right-hand side −|q|².
-    let mut ata = [[0.0; 4]; 4];
-    let mut atb = [0.0; 4];
-    for p in points {
+    let x = least_squares(points.iter().map(|p| {
         let q = (*p - c0) / s;
-        let row = [q.x, q.y, q.z, 1.0];
-        let rhs = -q.norm_sqr();
-        for i in 0..4 {
-            for j in 0..4 {
-                ata[i][j] += row[i] * row[j];
-            }
-            atb[i] += row[i] * rhs;
-        }
-    }
-    let x = solve(ata, atb)?;
+        ([q.x, q.y, q.z, 1.0], -q.norm_sqr())
+    }))?;
     let centre = Vec3::new(-0.5 * x[0], -0.5 * x[1], -0.5 * x[2]);
     let r2 = centre.norm_sqr() - x[3];
     if !(r2 > 0.0) {
         return None;
     }
-    let mut c = c0 + centre * s;
-    let mut r = r2.sqrt() * s;
     // Levenberg–Marquardt on |p − c| − R; parameters (c, R).
-    let cost = |c: Point3, r: f64| points.iter().map(|p| ((*p - c).norm() - r).powi(2)).sum::<f64>();
-    let mut current = cost(c, r);
-    let mut lambda = 1e-3;
-    for _ in 0..MAX_STEPS {
-        if !(current > (1e-3 * scale.tol).powi(2)) {
-            break;
-        }
-        let mut jtj = [[0.0; 4]; 4];
-        let mut jtr = [0.0; 4];
-        for p in points {
-            let d = *p - c;
-            let rho = d.norm();
-            let Some(e) = d.normalized() else { continue };
-            let row = [-e.x, -e.y, -e.z, -1.0];
-            let res = rho - r;
-            for i in 0..4 {
-                for j in 0..4 {
-                    jtj[i][j] += row[i] * row[j];
-                }
-                jtr[i] += row[i] * res;
-            }
-        }
-        let Some((step, next)) = damped(
-            jtj,
-            jtr,
-            &mut lambda,
-            |x| {
-                let (c2, r2) = (c + Vec3::new(x[0], x[1], x[2]), r + x[3]);
-                (cost(c2, r2), (c2, r2))
-            },
-            current,
-        ) else {
-            break;
-        };
-        (c, r) = next.1;
-        current = next.0;
-        if step <= 1e-15 * scale.size {
-            break;
-        }
-    }
+    let (c, r) = refine(
+        points,
+        scale,
+        (c0 + centre * s, r2.sqrt() * s),
+        |(c, r)| points.iter().map(|p| ((*p - c).norm() - r).powi(2)).sum::<f64>(),
+        |_| (),
+        |(c, r), (), p| {
+            let d = p - c;
+            let e = d.normalized()?;
+            Some(([-e.x, -e.y, -e.z, -1.0], d.norm() - r))
+        },
+        |(c, r), (), x| (c + Vec3::new(x[0], x[1], x[2]), r + x[3]),
+    );
     (r > 0.0 && c.is_finite()).then_some(FaceSurface::Sphere { center: c, radius: r })
 }
 
@@ -318,94 +271,49 @@ fn cylinder(points: &[Point3], faces: &[([Point3; 3], Vec3)], scale: &Scale) -> 
             }
         }
     }
-    let (values, vectors) = eigen3(m)?;
     // Normals all alike (a flat patch) leave the axis undetermined.
-    if !(values[1] > 1e-12 * values[2]) {
-        return None;
-    }
-    let mut axis = vectors[0].normalized()?;
-    let c0 = Point3::centroid(points.iter().copied())?;
+    let axis = least_axis(m, 1e-12)?.normalized()?;
     let (u, v) = basis(axis);
     // The circle across the axis: x² + y² + D x + E y + F = 0 on centred, scaled coordinates.
-    let s = points.iter().map(|p| (*p - c0).norm()).fold(0.0f64, f64::max);
-    if !(s > 0.0) {
-        return None;
-    }
-    let mut ata = [[0.0; 3]; 3];
-    let mut atb = [0.0; 3];
-    for p in points {
+    let (c0, s) = spread(points)?;
+    let x = least_squares(points.iter().map(|p| {
         let d = (*p - c0) / s;
         let (x, y) = (d.dot(u), d.dot(v));
-        let row = [x, y, 1.0];
-        let rhs = -(x * x + y * y);
-        for i in 0..3 {
-            for j in 0..3 {
-                ata[i][j] += row[i] * row[j];
-            }
-            atb[i] += row[i] * rhs;
-        }
-    }
-    let x = solve(ata, atb)?;
+        ([x, y, 1.0], -(x * x + y * y))
+    }))?;
     let (cx, cy) = (-0.5 * x[0], -0.5 * x[1]);
     let r2 = cx * cx + cy * cy - x[2];
     if !(r2 > 0.0) {
         return None;
     }
-    let mut origin = c0 + (u * cx + v * cy) * s;
-    let mut r = r2.sqrt() * s;
     let distance = |origin: Point3, axis: Vec3, p: Point3| {
         let w = p - origin;
         (w - axis * w.dot(axis)).norm()
     };
-    let cost = |origin: Point3, axis: Vec3, r: f64| points.iter().map(|p| (distance(origin, axis, *p) - r).powi(2)).sum::<f64>();
-    let mut current = cost(origin, axis, r);
-    let mut lambda = 1e-3;
     // Levenberg–Marquardt on the distance to the axis minus R; parameters: the axis turned by
     // (α, β) towards u and v, the origin moved by (γ, δ) along them, and R.
-    for _ in 0..MAX_STEPS {
-        if !(current > (1e-3 * scale.tol).powi(2)) {
-            break;
-        }
-        let (u, v) = basis(axis);
-        let mut jtj = [[0.0; 5]; 5];
-        let mut jtr = [0.0; 5];
-        for p in points {
-            let w = *p - origin;
+    let (origin, axis, r) = refine(
+        points,
+        scale,
+        (c0 + (u * cx + v * cy) * s, axis, r2.sqrt() * s),
+        |(origin, axis, r)| points.iter().map(|p| (distance(origin, axis, *p) - r).powi(2)).sum::<f64>(),
+        |(_, axis, _)| basis(axis),
+        |(origin, axis, r), (u, v), p| {
+            let w = p - origin;
             let along = w.dot(axis);
             let q = w - axis * along;
-            let rho = q.norm();
-            let Some(e) = q.normalized() else { continue };
+            let e = q.normalized()?;
             let (eu, ev) = (e.dot(u), e.dot(v));
-            let row = [-along * eu, -along * ev, -eu, -ev, -1.0];
-            let res = rho - r;
-            for i in 0..5 {
-                for j in 0..5 {
-                    jtj[i][j] += row[i] * row[j];
-                }
-                jtr[i] += row[i] * res;
-            }
-        }
-        let trial = |x: [f64; 5]| {
+            Some(([-along * eu, -along * ev, -eu, -ev, -1.0], q.norm() - r))
+        },
+        |(origin, axis, r), (u, v), x| {
             let a = (axis + u * x[0] + v * x[1]).normalized().unwrap_or(axis);
             let o = origin + u * x[2] + v * x[3];
             // The origin kept on the plane through the centroid across the axis.
-            let o = o - a * (o - c0).dot(a);
-            let r2 = r + x[4];
-            (cost(o, a, r2), (o, a, r2))
-        };
-        let Some((step, next)) = damped(jtj, jtr, &mut lambda, trial, current) else { break };
-        (origin, axis, r) = next.1;
-        current = next.0;
-        if step <= 1e-15 * scale.size {
-            break;
-        }
-    }
-    // A canonical direction: the largest component positive.
-    let k = axis.dominant_axis();
-    if axis[k] < 0.0 {
-        axis = -axis;
-    }
-    (r > 0.0 && origin.is_finite()).then_some(FaceSurface::Cylinder { origin, axis, radius: r })
+            (o - a * (o - c0).dot(a), a, r + x[4])
+        },
+    );
+    (r > 0.0 && origin.is_finite()).then_some(FaceSurface::Cylinder { origin, axis: canonical(axis), radius: r })
 }
 
 /// The cone through the points: its axis from the triangles' normals (a cone's normals make one
@@ -439,17 +347,9 @@ fn cone(points: &[Point3], faces: &[([Point3; 3], Vec3)], scale: &Scale) -> Opti
             }
         }
     }
-    let (values, vectors) = eigen3(m)?;
-    if !(values[1] > 1e-12 * values[2]) {
-        return None;
-    }
-    let mut axis = vectors[0].normalized()?;
-    let c0 = Point3::centroid(points.iter().copied())?;
+    let mut axis = least_axis(m, 1e-12)?.normalized()?;
     let (u, v) = basis(axis);
-    let s = points.iter().map(|p| (*p - c0).norm()).fold(0.0f64, f64::max);
-    if !(s > 0.0) {
-        return None;
-    }
+    let (c0, s) = spread(points)?;
     // The axis' foot (x₀, y₀) from x² + y² + D x + E y + F + G h = 0 (ρ² taken linear in h:
     // exact through two rings, a start otherwise), then ρ = k h + b by least squares.
     let local: Vec<[f64; 3]> = points
@@ -459,93 +359,47 @@ fn cone(points: &[Point3], faces: &[([Point3; 3], Vec3)], scale: &Scale) -> Opti
             [d.dot(u), d.dot(v), d.dot(axis)]
         })
         .collect();
-    let mut ata = [[0.0; 4]; 4];
-    let mut atb = [0.0; 4];
-    for &[x, y, h] in &local {
-        let row = [x, y, 1.0, h];
-        let rhs = -(x * x + y * y);
-        for i in 0..4 {
-            for j in 0..4 {
-                ata[i][j] += row[i] * row[j];
-            }
-            atb[i] += row[i] * rhs;
-        }
-    }
-    let foot = solve(ata, atb)?;
+    let foot = least_squares(local.iter().map(|&[x, y, h]| ([x, y, 1.0, h], -(x * x + y * y))))?;
     let (x0, y0) = (-0.5 * foot[0], -0.5 * foot[1]);
-    let mut line = [[0.0; 2]; 2];
-    let mut rhs = [0.0; 2];
-    for &[x, y, h] in &local {
-        let rho = ((x - x0).powi(2) + (y - y0).powi(2)).sqrt();
-        let row = [h, 1.0];
-        for i in 0..2 {
-            for j in 0..2 {
-                line[i][j] += row[i] * row[j];
-            }
-            rhs[i] += row[i] * rho;
-        }
-    }
-    let [k, b] = solve(line, rhs)?;
+    let [k, b] = least_squares(local.iter().map(|&[x, y, h]| ([h, 1.0], ((x - x0).powi(2) + (y - y0).powi(2)).sqrt())))?;
     if !(k != 0.0) {
         return None;
     }
-    let mut apex = c0 + (u * x0 + v * y0 + axis * (-b / k)) * s;
+    let apex = c0 + (u * x0 + v * y0 + axis * (-b / k)) * s;
     // The axis points from the apex into the cone, towards the points.
     if points.iter().map(|p| (*p - apex).dot(axis)).sum::<f64>() < 0.0 {
         axis = -axis;
     }
-    let mut angle = k.abs().atan();
     let residual = |apex: Point3, axis: Vec3, angle: f64, p: Point3| {
         let d = p - apex;
         let h = d.dot(axis);
         (d - axis * h).norm() * angle.cos() - h * angle.sin()
     };
-    let cost = |apex: Point3, axis: Vec3, angle: f64| points.iter().map(|p| residual(apex, axis, angle, *p).powi(2)).sum::<f64>();
-    let mut current = cost(apex, axis, angle);
-    let mut lambda = 1e-3;
     // Levenberg–Marquardt on ρ cos φ − h sin φ; parameters: the apex moved (3), the axis turned
     // towards u and v (2), and the half-angle φ.
-    for _ in 0..MAX_STEPS {
-        if !(current > (1e-3 * scale.tol).powi(2)) {
-            break;
-        }
-        let (u, v) = basis(axis);
-        let (sn, cs) = angle.sin_cos();
-        let mut jtj = [[0.0; 6]; 6];
-        let mut jtr = [0.0; 6];
-        for p in points {
-            let d = *p - apex;
+    let (apex, axis, angle) = refine(
+        points,
+        scale,
+        (apex, axis, k.abs().atan()),
+        |(apex, axis, angle)| points.iter().map(|p| residual(apex, axis, angle, *p).powi(2)).sum::<f64>(),
+        |(_, axis, angle)| (basis(axis), angle.sin_cos()),
+        |(apex, axis, _), ((u, v), (sn, cs)), p| {
+            let d = p - apex;
             let h = d.dot(axis);
             let q = d - axis * h;
             let rho = q.norm();
-            let Some(e) = q.normalized() else { continue };
+            let e = q.normalized()?;
             let g = axis * sn - e * cs;
             let (eu, ev) = (e.dot(u), e.dot(v));
             let row = [g.x, g.y, g.z, -cs * h * eu - sn * d.dot(u), -cs * h * ev - sn * d.dot(v), -rho * sn - h * cs];
-            let res = rho * cs - h * sn;
-            for i in 0..6 {
-                for j in 0..6 {
-                    jtj[i][j] += row[i] * row[j];
-                }
-                jtr[i] += row[i] * res;
-            }
-        }
-        let trial = |x: [f64; 6]| {
-            let o = apex + Vec3::new(x[0], x[1], x[2]);
-            let a = (axis + u * x[3] + v * x[4]).normalized().unwrap_or(axis);
-            let phi = angle + x[5];
-            (cost(o, a, phi), (o, a, phi))
-        };
-        let Some((step, next)) = damped(jtj, jtr, &mut lambda, trial, current) else { break };
-        (apex, axis, angle) = next.1;
-        current = next.0;
-        if step <= 1e-15 * scale.size {
-            break;
-        }
-    }
+            Some((row, rho * cs - h * sn))
+        },
+        |(apex, axis, angle), ((u, v), _), x| {
+            (apex + Vec3::new(x[0], x[1], x[2]), (axis + u * x[3] + v * x[4]).normalized().unwrap_or(axis), angle + x[5])
+        },
+    );
     (apex.is_finite() && angle.is_finite()).then_some(FaceSurface::Cone { apex, axis, half_angle: angle })
 }
-
 /// The torus through the points, `normals` the surface's normal at each (any length or sign).
 ///
 /// The axis from the normal lines: a surface of revolution's normals all meet its axis, so the
@@ -559,11 +413,7 @@ fn torus(points: &[Point3], normals: &[Vec3], scale: &Scale) -> Option<FaceSurfa
     if normals.len() != points.len() {
         return None;
     }
-    let c0 = Point3::centroid(points.iter().copied())?;
-    let s = points.iter().map(|p| (*p - c0).norm()).fold(0.0f64, f64::max);
-    if !(s > 0.0) {
-        return None;
-    }
+    let (c0, s) = spread(points)?;
     // Centred, scaled points; the blocks of the normal lines' second moment.
     let (mut ma, mut mb, mut mc) = ([[0.0; 3]; 3], [[0.0; 3]; 3], [[0.0; 3]; 3]);
     for (p, n) in points.iter().zip(normals) {
@@ -600,7 +450,7 @@ fn torus(points: &[Point3], normals: &[Vec3], scale: &Scale) -> Option<FaceSurfa
         }
     }
     let (_, vectors) = eigen3(schur)?;
-    let mut axis = vectors[0].normalized()?;
+    let axis = vectors[0].normalized()?;
     let abar = Vec3::new(
         -(0..3).map(|k| cib[0][k] * axis[k]).sum::<f64>(),
         -(0..3).map(|k| cib[1][k] * axis[k]).sum::<f64>(),
@@ -610,89 +460,131 @@ fn torus(points: &[Point3], normals: &[Vec3], scale: &Scale) -> Option<FaceSurfa
     // The axis' point nearest the centroid, back in place.
     let foot = c0 + axis.cross(abar) * s;
     // The tube's circle in the meridian half-plane: ρ² + h² + D ρ + E h + F = 0.
-    let mut ata = [[0.0; 3]; 3];
-    let mut atb = [0.0; 3];
-    for p in points {
+    let x = least_squares(points.iter().map(|p| {
         let d = (*p - foot) / s;
         let h = d.dot(axis);
         let rho = (d - axis * h).norm();
-        let row = [rho, h, 1.0];
-        let rhs = -(rho * rho + h * h);
-        for i in 0..3 {
-            for j in 0..3 {
-                ata[i][j] += row[i] * row[j];
-            }
-            atb[i] += row[i] * rhs;
-        }
-    }
-    let x = solve(ata, atb)?;
+        ([rho, h, 1.0], -(rho * rho + h * h))
+    }))?;
     let (r0, h0) = (-0.5 * x[0], -0.5 * x[1]);
     let r2 = r0 * r0 + h0 * h0 - x[2];
     if !(r2 > 0.0 && r0 > 0.0) {
         return None;
     }
-    let (mut center, mut major, mut minor) = (foot + axis * (h0 * s), r0 * s, r2.sqrt() * s);
     let residual = |center: Point3, axis: Vec3, major: f64, minor: f64, p: Point3| {
         let d = p - center;
         let h = d.dot(axis);
         ((d - axis * h).norm() - major).hypot(h) - minor
     };
-    let cost = |c: Point3, a: Vec3, big: f64, small: f64| points.iter().map(|p| residual(c, a, big, small, *p).powi(2)).sum::<f64>();
-    let mut current = cost(center, axis, major, minor);
-    let mut lambda = 1e-3;
     // Levenberg–Marquardt; parameters: the centre moved (3), the axis turned towards u and v
     // (2), the major and the minor radius.
-    for _ in 0..MAX_STEPS {
-        if !(current > (1e-3 * scale.tol).powi(2)) {
-            break;
-        }
-        let (u, v) = basis(axis);
-        let mut jtj = [[0.0; 7]; 7];
-        let mut jtr = [0.0; 7];
-        for p in points {
-            let d = *p - center;
+    let (center, axis, major, minor) = refine(
+        points,
+        scale,
+        (foot + axis * (h0 * s), axis, r0 * s, r2.sqrt() * s),
+        |(c, a, big, small)| points.iter().map(|p| residual(c, a, big, small, *p).powi(2)).sum::<f64>(),
+        |(_, axis, _, _)| basis(axis),
+        |(center, axis, major, minor), (u, v), p| {
+            let d = p - center;
             let h = d.dot(axis);
             let q = d - axis * h;
             let rho = q.norm();
-            let Some(e) = q.normalized() else { continue };
+            let e = q.normalized()?;
             let dist = (rho - major).hypot(h);
             if !(dist > 0.0) {
-                continue;
+                return None;
             }
             let (sr, sh) = ((rho - major) / dist, h / dist);
             // ∂h = d·δa − a·δc, ∂ρ = −e·δc − (h/ρ) d·δa.
             let g = e * sr + axis * sh;
             let turn = sh - sr * h / rho;
-            let row = [-g.x, -g.y, -g.z, d.dot(u) * turn, d.dot(v) * turn, -sr, -1.0];
-            let res = dist - minor;
-            for i in 0..7 {
-                for j in 0..7 {
-                    jtj[i][j] += row[i] * row[j];
-                }
-                jtr[i] += row[i] * res;
-            }
-        }
-        let trial = |x: [f64; 7]| {
-            let c = center + Vec3::new(x[0], x[1], x[2]);
+            Some(([-g.x, -g.y, -g.z, d.dot(u) * turn, d.dot(v) * turn, -sr, -1.0], dist - minor))
+        },
+        |(center, axis, major, minor), (u, v), x| {
             let a = (axis + u * x[3] + v * x[4]).normalized().unwrap_or(axis);
-            let (big, small) = (major + x[5], minor + x[6]);
-            (cost(c, a, big, small), (c, a, big, small))
+            (center + Vec3::new(x[0], x[1], x[2]), a, major + x[5], minor + x[6])
+        },
+    );
+    // The centre where the axis crosses the tube's plane; a canonical direction.
+    (center.is_finite() && major > 0.0 && minor > 0.0).then_some(FaceSurface::Torus { center, axis: canonical(axis), major, minor })
+}
+
+/// The least squares solution of the rows (aᵢ, bᵢ) through the normal equations, summed in order.
+fn least_squares<const N: usize>(rows: impl IntoIterator<Item = ([f64; N], f64)>) -> Option<[f64; N]> {
+    let (ata, atb) = normal_equations(rows);
+    solve(ata, atb)
+}
+
+/// AᵀA and Aᵀb of the rows (aᵢ, bᵢ), summed in order.
+fn normal_equations<const N: usize>(rows: impl IntoIterator<Item = ([f64; N], f64)>) -> ([[f64; N]; N], [f64; N]) {
+    let mut ata = [[0.0; N]; N];
+    let mut atb = [0.0; N];
+    for (row, rhs) in rows {
+        for i in 0..N {
+            for j in 0..N {
+                ata[i][j] += row[i] * row[j];
+            }
+            atb[i] += row[i] * rhs;
+        }
+    }
+    (ata, atb)
+}
+
+/// The points' centroid and their largest distance from it, to centre and scale coordinates by;
+/// `None` when they all coincide.
+fn spread(points: &[Point3]) -> Option<(Point3, f64)> {
+    let c0 = Point3::centroid(points.iter().copied())?;
+    let s = points.iter().map(|p| (*p - c0).norm()).fold(0.0f64, f64::max);
+    (s > 0.0).then_some((c0, s))
+}
+
+/// The least eigenvector of a scatter matrix, when its middle eigenvalue exceeds `ratio` times
+/// its largest (else the direction is undetermined).
+fn least_axis(m: [[f64; 3]; 3], ratio: f64) -> Option<Vec3> {
+    let (values, vectors) = eigen3(m)?;
+    (values[1] > ratio * values[2]).then_some(vectors[0])
+}
+
+/// An axis' canonical direction: its largest component positive.
+fn canonical(axis: Vec3) -> Vec3 {
+    if axis[axis.dominant_axis()] < 0.0 { -axis } else { axis }
+}
+
+/// Levenberg–Marquardt on the geometric residuals of the points from `start`, until their cost
+/// is below the vertices' tolerance, a step is tiny, no step lowers the cost, or after
+/// [`MAX_STEPS`] steps. Each step linearises at the state: `frame` gives what its parameter
+/// steps are measured in (the axis' basis), `row` a point's Jacobian row and residual (`None`
+/// leaves the point out), `apply` the state a parameter step leads to.
+fn refine<const N: usize, S: Copy, F: Copy>(
+    points: &[Point3],
+    scale: &Scale,
+    start: S,
+    cost: impl Fn(S) -> f64,
+    frame: impl Fn(S) -> F,
+    row: impl Fn(S, F, Point3) -> Option<([f64; N], f64)>,
+    apply: impl Fn(S, F, [f64; N]) -> S,
+) -> S {
+    let mut state = start;
+    let mut current = cost(state);
+    let mut lambda = 1e-3;
+    for _ in 0..MAX_STEPS {
+        if !(current > (1e-3 * scale.tol).powi(2)) {
+            break;
+        }
+        let f = frame(state);
+        let (jtj, jtr) = normal_equations(points.iter().filter_map(|p| row(state, f, *p)));
+        let trial = |x: [f64; N]| {
+            let next = apply(state, f, x);
+            (cost(next), next)
         };
-        let Some((step, next)) = damped(jtj, jtr, &mut lambda, trial, current) else { break };
-        (center, axis, major, minor) = next.1;
-        current = next.0;
+        let Some((step, (c, next))) = damped(jtj, jtr, &mut lambda, trial, current) else { break };
+        (state, current) = (next, c);
         if step <= 1e-15 * scale.size {
             break;
         }
     }
-    // The centre where the axis crosses the tube's plane; a canonical direction.
-    let k = axis.dominant_axis();
-    if axis[k] < 0.0 {
-        axis = -axis;
-    }
-    (center.is_finite() && major > 0.0 && minor > 0.0).then_some(FaceSurface::Torus { center, axis, major, minor })
+    state
 }
-
 /// One Levenberg–Marquardt step: (JᵀJ + λ diag JᵀJ) x = −Jᵀr, λ raised until the cost falls
 /// (at most a few times), lowered after. Returns the step's size and the accepted
 /// (cost, parameters), or `None` when no step lowers the cost.

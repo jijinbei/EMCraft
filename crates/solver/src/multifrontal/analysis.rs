@@ -16,16 +16,7 @@ fn etree(lower_rows_of: &[Vec<usize>]) -> Vec<usize> {
     let mut ancestor = vec![usize::MAX; n];
     for k in 0..n {
         for &i in &lower_rows_of[k] {
-            let mut r = i;
-            while ancestor[r] != usize::MAX && ancestor[r] != k {
-                let next = ancestor[r];
-                ancestor[r] = k;
-                r = next;
-            }
-            if ancestor[r] == usize::MAX {
-                ancestor[r] = k;
-                parent[r] = k;
-            }
+            crate::ordering::etree_link(&mut parent, &mut ancestor, i, k);
         }
     }
     parent

@@ -210,7 +210,7 @@ fn solution<'a>(session: &'a Session, view: &FieldView) -> Result<Solution<'a>> 
         return Ok(Solution { driven: &r.driven, field: &r.result.field, frequency: r.result.frequency, caption });
     }
     let sweep = results.sweep()?;
-    let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::Failed("no results".into()))?;
+    let r = sweep.at(view.frequency, true).ok_or_else(|| EngineError::failed("no results"))?;
     let x = r.fields.get(view.excitation).ok_or_else(|| EngineError::Params(format!("no excitation {}", view.excitation + 1)))?;
     let entries = sweep.entries();
     let entry = entries.get(view.excitation);

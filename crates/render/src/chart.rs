@@ -66,15 +66,12 @@ impl Layout {
 
     /// A point (axis units) in pixels.
     pub fn to_pixels(&self, p: [f64; 2]) -> [f64; 2] {
-        let [x0, y0, pw, ph] = self.plane;
-        [x0 + (p[0] - self.x.0) / (self.x.1 - self.x.0) * pw, y0 + ph - (p[1] - self.y.0) / (self.y.1 - self.y.0) * ph]
+        axes::to_pixels(self.plane, self.x, self.y, p)
     }
 
     /// The point (axis units) under a pixel position; `None` off the plot area.
     pub fn to_axes(&self, px: [f64; 2]) -> Option<[f64; 2]> {
-        let [x0, y0, pw, ph] = self.plane;
-        let (u, v) = ((px[0] - x0) / pw, 1.0 - (px[1] - y0) / ph);
-        ((0.0..=1.0).contains(&u) && (0.0..=1.0).contains(&v)).then_some([self.x.0 + u * (self.x.1 - self.x.0), self.y.0 + v * (self.y.1 - self.y.0)])
+        axes::to_axes(self.plane, self.x, self.y, px)
     }
 
     /// The x value (axis units) under the pixel column `px`; `None` left or right of the plot

@@ -165,7 +165,7 @@ fn hessenberg(a: &mut [C], n: usize) {
             continue;
         }
         let phase = if x[0].norm() > 0.0 { x[0] / x[0].norm() } else { C::new(1.0, 0.0) };
-        let mut v = x.clone();
+        let mut v = x;
         v[0] += phase * alpha;
         let vn = v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
         if vn == 0.0 {

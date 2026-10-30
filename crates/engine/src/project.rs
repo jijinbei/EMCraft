@@ -131,7 +131,7 @@ pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
     if let Some(frequency) = p.choice("frequency").optional()? {
         s.display.frequency = frequency;
     }
-    Ok(json!({"length": s.display.length.symbol(), "frequency": s.display.frequency.symbol()}))
+    Ok(crate::reply::units(s.display))
 }
 
 /// Replaces the session with a sample's model (and its results, when `solve`).
@@ -141,13 +141,13 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
         p.error("name", crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", crate::sample::names()))
     })?;
     let solve = p.flag("solve").or(false)?;
-    let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::Failed(format!("sample {name}: {e}")))?;
+    let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::failed(format!("sample {name}: {e}")))?;
     let mut fresh = s.fresh();
     // Without `solve`, the sample's solves are recorded as its runs, not run.
     for (i, step) in script.iter().enumerate() {
         crate::progress::report(i, script.len(), &step.command)?;
         let spec =
-            crate::find_command(&step.command).ok_or_else(|| EngineError::Failed(format!("sample {name}: unknown command `{}`", step.command)))?;
+            crate::find_command(&step.command).ok_or_else(|| EngineError::failed(format!("sample {name}: unknown command `{}`", step.command)))?;
         if spec.effect == Effect::Solve && !solve {
             let run = Run { command: step.command.clone(), params: step.params.clone(), units: fresh.display };
             crate::runs::record(&mut fresh.runs, run);
@@ -155,12 +155,11 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
             fresh.execute(&step.command, &step.params).map_err(|e| e.in_step(i + 1, &step.command))?;
         }
     }
-    fresh.saved = fresh.history.clone();
-    fresh.saved_runs = fresh.runs.clone();
+    fresh.mark_saved();
     fresh.sample = Some(name.to_owned());
     // Undo goes back to before the sample, not through the steps that built it.
     fresh.undo.clear();
-    *s = Session { undo: std::mem::take(&mut s.undo), ..fresh };
+    s.replace_with(fresh);
     Ok(s.summary())
 }
 
@@ -183,7 +182,7 @@ pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
 /// machine's: the coaxial line's 45 000 unknowns, 24 million entries, 1.2 s).
 pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
     let order = p.integer("order", 1..=2).or(2)?;
-    let mesh = s.model.mesh.as_ref().ok_or_else(|| EngineError::Failed("no mesh: mesh the model first (mesh.generate)".into()))?;
+    let mesh = s.model.mesh.as_ref().ok_or_else(|| EngineError::failed("no mesh: mesh the model first (mesh.generate)"))?;
     let topo = emcraft_mesh::Topology::new(mesh);
     let (edges, faces) = (topo.edges.len() as f64, topo.faces.len() as f64);
     let unknowns = if order == 1 { edges } else { 2.0 * edges + 2.0 * faces };
@@ -257,8 +256,7 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         return Ok(json!({"path": path, "copy": true, "commands": s.history.len(), "runs": s.runs.len()}));
     }
     s.path = Some(path.clone());
-    s.saved = s.history.clone();
-    s.saved_runs = s.runs.clone();
+    s.mark_saved();
     Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len()}))
 }
 
@@ -279,29 +277,28 @@ fn write_atomically(path: &str, bytes: &[u8]) -> Result<()> {
 pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
     let mut fresh = s.fresh();
     if s.display != fresh.display {
-        let units = json!({"length": s.display.length.symbol(), "frequency": s.display.frequency.symbol()});
-        fresh.execute("units.set", &units)?;
-        fresh.saved = fresh.history.clone();
+        fresh.execute("units.set", &crate::reply::units(s.display))?;
+        fresh.mark_saved();
     }
-    *s = Session { undo: std::mem::take(&mut s.undo), ..fresh };
+    s.replace_with(fresh);
     Ok(s.summary())
 }
 
 /// A project file read and checked: its history and runs.
 fn read_project(path: &str) -> Result<(Vec<Step>, Vec<Run>)> {
     let bytes = crate::geometry::read_capped(path, MAX_PROJECT_BYTES)?;
-    let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::Failed(format!("`{path}`: not a project file ({e})")))?;
+    let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
     if doc.get("format").and_then(Value::as_str) != Some(FORMAT) {
-        return Err(EngineError::Failed(format!("`{path}`: not an EMCraft project")));
+        return Err(EngineError::failed(format!("`{path}`: not an EMCraft project")));
     }
-    let file: ProjectFile<'_> = serde_json::from_value(doc).map_err(|e| EngineError::Failed(format!("`{path}`: not a project file ({e})")))?;
+    let file: ProjectFile<'_> = serde_json::from_value(doc).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
     if file.version > VERSION {
-        return Err(EngineError::Failed(format!(
+        return Err(EngineError::failed(format!(
             "`{path}`: a project of version {}, newer than this EMCraft reads ({VERSION}): open it with a newer EMCraft",
             file.version
         )));
     }
-    let runs = crate::runs::checked(file.runs).map_err(|e| EngineError::Failed(format!("`{path}`: {e}")))?;
+    let runs = crate::runs::checked(file.runs).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     Ok((file.history, runs))
 }
 
@@ -324,8 +321,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     match original {
         None => {
             fresh.path = Some(path.to_owned());
-            fresh.saved = fresh.history.clone();
-            fresh.saved_runs = fresh.runs.clone();
+            fresh.mark_saved();
         }
         Some(o) => {
             // The original as it was last saved: the copy may be ahead of it. One that cannot be
@@ -336,7 +332,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
             fresh.saved_runs = saved_runs;
         }
     }
-    *s = Session { undo: std::mem::take(&mut s.undo), ..fresh };
+    s.replace_with(fresh);
     Ok(json!({"path": s.path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "dirty": s.is_dirty(), "summary": s.summary()}))
 }
 
@@ -348,14 +344,19 @@ pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
     let back = s.undo.pop_back().ok_or_else(|| EngineError::failed("nothing to undo"))?;
     let now = s.swap_snapshot(back);
     push_undo(&mut s.redo, now);
-    Ok(json!({"undo": s.undo.len(), "redo": s.redo.len(), "path": s.path, "name": s.name(), "dirty": s.is_dirty()}))
+    Ok(stacks(s))
 }
 
 pub fn redo(s: &mut Session, _: &Params) -> Result<Value> {
     let next = s.redo.pop_back().ok_or_else(|| EngineError::failed("nothing to redo"))?;
     let now = s.swap_snapshot(next);
     push_undo(&mut s.undo, now);
-    Ok(json!({"undo": s.undo.len(), "redo": s.redo.len(), "path": s.path, "name": s.name(), "dirty": s.is_dirty()}))
+    Ok(stacks(s))
+}
+
+/// Undo's and redo's reply: the states left on each side and the project now.
+fn stacks(s: &Session) -> Value {
+    json!({"undo": s.undo.len(), "redo": s.redo.len(), "path": s.path, "name": s.name(), "dirty": s.is_dirty()})
 }
 
 emcraft_macros::named_enum! {

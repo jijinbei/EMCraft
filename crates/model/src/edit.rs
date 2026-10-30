@@ -53,6 +53,14 @@ fn no_item(kind: &'static str, i: usize, n: usize) -> ModelError {
     invalid(kind, format!("there is no {kind} {} (the model has {n})", i + 1))
 }
 
+/// Takes item `i` of `list` out.
+fn take_out<T>(list: &mut Vec<T>, i: usize, kind: &'static str) -> Result<T> {
+    if i >= list.len() {
+        return Err(no_item(kind, i, list.len()));
+    }
+    Ok(list.remove(i))
+}
+
 /// Takes item `i` of `list(m)` out, adds `new` with `add` (which checks it against the rest of
 /// the model and pushes it last) and moves it back to `i`; on a refusal the old item goes back
 /// where it was.
@@ -64,11 +72,7 @@ fn replace_in<T>(
     list: fn(&mut Model) -> &mut Vec<T>,
     add: fn(&mut Model, T) -> Result<()>,
 ) -> Result<()> {
-    let n = list(m).len();
-    if i >= n {
-        return Err(no_item(kind, i, n));
-    }
-    let old = list(m).remove(i);
+    let old = take_out(list(m), i, kind)?;
     match add(m, new) {
         Ok(()) => {
             let items = list(m);
@@ -162,10 +166,7 @@ impl Model {
 
     /// Takes waveguide port `i` out of the model.
     pub fn remove_port(&mut self, i: usize) -> Result<Port> {
-        if i >= self.ports.len() {
-            return Err(no_item("port", i, self.ports.len()));
-        }
-        Ok(self.ports.remove(i))
+        take_out(&mut self.ports, i, "port")
     }
 
     /// Replaces waveguide port `i` with `p`, checked as [`Model::add_port`] checks a new one; it
@@ -176,10 +177,7 @@ impl Model {
 
     /// Takes lumped port `i` out of the model.
     pub fn remove_lumped_port(&mut self, i: usize) -> Result<LumpedPort> {
-        if i >= self.lumped.len() {
-            return Err(no_item("lumped port", i, self.lumped.len()));
-        }
-        Ok(self.lumped.remove(i))
+        take_out(&mut self.lumped, i, "lumped port")
     }
 
     /// Replaces lumped port `i` with `p`, checked as [`Model::add_lumped_port`] checks a new one.
@@ -189,10 +187,7 @@ impl Model {
 
     /// Takes source `i` out of the model.
     pub fn remove_source(&mut self, i: usize) -> Result<Source> {
-        if i >= self.sources.len() {
-            return Err(no_item("source", i, self.sources.len()));
-        }
-        Ok(self.sources.remove(i))
+        take_out(&mut self.sources, i, "source")
     }
 
     /// Replaces source `i` with `s`, checked as [`Model::add_source`] checks a new one.

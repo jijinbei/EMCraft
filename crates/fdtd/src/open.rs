@@ -618,44 +618,27 @@ impl BoxSample {
         let (a, plane, iu, iv) = (self.axis.index(), self.plane, self.iu, self.iv);
         let (u, v) = across(a);
         // E_u at (u half, v node) → average over v and v + 1; E_v likewise.
-        let mut e_idx = [0usize; 3];
-        e_idx[a] = plane;
-        e_idx[u] = iu;
-        e_idx[v] = iv;
-        let eu = interp_e(&f.e[u], e_idx, &[v]);
-        let ev = interp_e(&f.e[v], e_idx, &[u]);
+        let mut e_idx = [0isize; 3];
+        e_idx[a] = plane as isize;
+        e_idx[u] = iu as isize;
+        e_idx[v] = iv as isize;
+        let eu = interp(&f.e[u], e_idx, &[v]);
+        let ev = interp(&f.e[v], e_idx, &[u]);
         // H_u at (u node, v half, a half) → average over u and a; H_v likewise; H at a ± ½
         // straddles the plane.
         let mut h_idx = [0isize; 3];
         h_idx[a] = plane as isize - 1;
         h_idx[u] = iu as isize;
         h_idx[v] = iv as isize;
-        let hu = interp_h(&f.h[u], h_idx, &[u, a]);
-        let hv = interp_h(&f.h[v], h_idx, &[v, a]);
+        let hu = interp(&f.h[u], h_idx, &[u, a]);
+        let hv = interp(&f.h[v], h_idx, &[v, a]);
         (Vec3::ZERO.with(u, eu).with(v, ev), Vec3::ZERO.with(u, hu).with(v, hv))
     }
 }
 
-/// E at a point of a component's lattice, averaged over the positions straddling it along
-/// `dirs` (the staggering to the cell-face centre).
-fn interp_e(e: &Field, idx: [usize; 3], dirs: &[usize]) -> f64 {
-    let mut sum = 0.0;
-    let mut count = 0.0;
-    for mask in 0..1usize << dirs.len() {
-        let mut c = idx;
-        for (b, &d) in dirs.iter().enumerate() {
-            if mask >> b & 1 == 1 {
-                c[d] += 1;
-            }
-        }
-        sum += e.get(e.at(c[0], c[1], c[2]));
-        count += 1.0;
-    }
-    sum / count
-}
-
-/// H likewise, skipping positions off the lattice's low end.
-fn interp_h(h: &Field, idx: [isize; 3], dirs: &[usize]) -> f64 {
+/// A field at a point of a component's lattice, averaged over the positions straddling it along
+/// `dirs` (the staggering to the cell-face centre), skipping positions off the lattice's low end.
+fn interp(h: &Field, idx: [isize; 3], dirs: &[usize]) -> f64 {
     let mut sum = 0.0;
     let mut count = 0.0;
     for mask in 0..1usize << dirs.len() {

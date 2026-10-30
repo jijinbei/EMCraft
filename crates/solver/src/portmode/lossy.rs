@@ -28,7 +28,6 @@ use num_complex::Complex64 as C;
 use super::{CrossSection, MAX_ITERATIONS};
 use crate::driven::{Result, Slot, invalid};
 use crate::ldlt::Ldlt;
-use crate::sparse::Csr;
 
 /// Eigenvalues γ² within this fraction of the largest |γ²| asked for are one degenerate cluster.
 const DEGENERATE: f64 = 1e-8;
@@ -183,7 +182,7 @@ impl CrossSection {
             if done {
                 let small = cluster_vectors(&op, m, &ritz).ok_or_else(|| invalid("port modes", "the projected eigenvectors did not converge"))?;
                 let vectors = small.iter().take(count).map(|y| (0..n).map(|r| (0..m).map(|k| qb[k][r] * y[k]).sum()).collect()).collect();
-                result = Some((previous.clone(), vectors));
+                result = Some((previous, vectors));
                 break;
             }
             x = qb;
@@ -238,16 +237,7 @@ impl CrossSection {
     fn constraint_lossy<'a>(&'a self, b_val: &'a [C]) -> Result<impl Fn(&mut Vec<C>) -> Result<()> + 'a> {
         let (nt, n) = (self.transverse, self.unknowns);
         let p = &self.pattern;
-        let nz = n - nt;
-        let groups: Vec<Vec<usize>> =
-            (nt..n).map(|i| p.row(i).map(|k| p.col[k]).filter(|&j| j >= nt).map(|j| j - nt).chain([i - nt]).collect()).collect();
-        let mut zz = Csr::from_groups(nz, groups.iter().map(|g| g.as_slice()));
-        for i in nt..n {
-            for k in p.row(i).filter(|&k| p.col[k] >= nt) {
-                zz.add(i - nt, p.col[k] - nt, b_val[k]);
-            }
-        }
-        let factor = if nz > 0 { Some(Ldlt::factor(&zz, &self.points[nt..])?) } else { None };
+        let factor = self.scalar_block(|k| b_val[k])?;
         Ok(move |v: &mut Vec<C>| -> Result<()> {
             let Some(f) = &factor else { return Ok(()) };
             let mut r: Vec<C> = (nt..n).map(|i| -p.row(i).filter(|&k| p.col[k] < nt).map(|k| b_val[k] * v[p.col[k]]).sum::<C>()).collect();
