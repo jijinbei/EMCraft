@@ -378,3 +378,8 @@ fn scenario_visibility_tour() {
 fn scenario_small_window() {
     scenario("small_window");
 }
+
+#[test]
+fn scenario_template_parameters() {
+    scenario("template_parameters");
+}

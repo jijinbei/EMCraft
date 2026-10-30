@@ -1,0 +1,8 @@
+[
+ {"command": "project.variable", "params": {"name": "r", "value": 10, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "value": 30, "quantity": "length"}},
+ {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": "=r", "length": "=l"}},
+ {"command": "model.walls", "params": {"conductivity": 58000000.0}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 11, "count": 3, "order": 2}}
+]

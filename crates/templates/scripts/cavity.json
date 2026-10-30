@@ -1,0 +1,9 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "d", "value": 30, "quantity": "length"}},
+ {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=d", "material": "vacuum"}]}},
+ {"command": "model.walls", "params": {"conductivity": 58000000.0}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 12, "count": 4, "order": 2}}
+]

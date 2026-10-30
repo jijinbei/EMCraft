@@ -10,6 +10,9 @@ use crate::expr;
 use crate::script::DEFINE;
 use crate::{EngineError, Params, Result, Session, Step};
 
+/// What a variable may measure (`quantity`).
+const QUANTITIES: [&str; 2] = ["length", "frequency"];
+
 /// A variable's name as errors show it: no longer than a name may be.
 fn shown(name: &str) -> String {
     crate::text::clip(name, expr::MAX_NAME)
@@ -85,7 +88,19 @@ pub fn variable(s: &mut Session, p: &Params) -> Result<Value> {
         );
     }
     let value = p.number("value").required()?;
-    let step = Step::new(DEFINE, p.value().clone());
+    let quantity = p.string("quantity").optional()?;
+    if quantity.is_some_and(|q| !QUANTITIES.contains(&q)) {
+        return Err(p.error("quantity", "must be `length` or `frequency`"));
+    }
+    let mut params = p.value().clone();
+    // A change without a quantity keeps the one the definition had.
+    if quantity.is_none()
+        && let Some(q) = s.history.iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("quantity").cloned())
+        && let Some(map) = params.as_object_mut()
+    {
+        map.insert("quantity".to_owned(), q);
+    }
+    let step = Step::new(DEFINE, params);
     if s.variables.contains_key(name) {
         // The definition changed in place: the commands after it read the new value.
         let mut history = s.history.clone();
@@ -143,6 +158,12 @@ pub fn list(s: &mut Session, _: &Params) -> Result<Value> {
             let mut row = json!({"name": name, "value": value, "uses": uses.get(name.as_str()).copied().unwrap_or(0)});
             if let Some(Value::String(e)) = given {
                 row["expression"] = json!(e);
+            }
+            let quantity = s.history.iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("quantity")).and_then(Value::as_str);
+            if let Some(q) = quantity {
+                let d = s.display();
+                row["quantity"] = json!(q);
+                row["unit"] = json!(if q == "length" { d.length.symbol() } else { d.frequency.symbol() });
             }
             row
         })

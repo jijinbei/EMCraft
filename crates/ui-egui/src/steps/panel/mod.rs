@@ -6,6 +6,7 @@
 mod excitation;
 mod intent;
 mod model;
+mod parameters;
 mod results;
 mod run;
 mod setup;
@@ -166,7 +167,10 @@ fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states:
     }
     match step {
         Step::Intent => intent::intent(app, f, ui, fu, t, out),
-        Step::Geometry => model::geometry(app, ui, lu, t),
+        Step::Geometry => {
+            parameters::parameters(app, f, ui, t, out);
+            model::geometry(app, ui, lu, t)
+        }
         Step::Materials => model::materials(app, ui, t),
         Step::Excitation => excitation::excitation(app, ui, fu, t, out),
         Step::Boundaries => model::boundaries(app, ui, lu, t),

@@ -275,6 +275,26 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::geometry::waveguide,
     },
     CommandSpec {
+        id: "geometry.iris_filter",
+        label: "Iris filter",
+        doc: "A rectangular waveguide along z (`width` × `height`, perfectly conducting walls) with a row of `irises` inductive irises: a feed, the irises (apertures centred across x, each `iris_length` long) with a cavity between each two, a feed. The first and last irises are `end_width` wide and the cavities next to them `cavity` long; those between are `inner_width` wide and `inner_cavity` long (the end ones' when left out). Replaces any geometry, mesh and results.",
+        params: &[
+            req("width", K::Number, "broad wall a (x)").of(L),
+            req("height", K::Number, "narrow wall b (y)").of(L),
+            req("irises", K::Integer, "irises, 2 to 32"),
+            req("iris_length", K::Number, "each iris's length along z").of(L),
+            req("end_width", K::Number, "the first and last irises' aperture").of(L),
+            opt("inner_width", K::Number, "the other irises' aperture (default `end_width`)").of(L),
+            req("cavity", K::Number, "the cavities next to the first and last irises: their length").of(L),
+            opt("inner_cavity", K::Number, "the other cavities' length (default `cavity`)").of(L),
+            req("feed", K::Number, "the guide's length before the first iris and after the last").of(L),
+            opt("material", K::String, "what fills it (default `vacuum`)"),
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
+        run: crate::geometry::iris_filter,
+    },
+    CommandSpec {
         id: "geometry.solid",
         label: "Primitive body",
         doc: "A body of one material with conducting walls, meshed with unstructured tetrahedra: a box [0, x] × [0, y] × [0, z] (`size`), a cylinder about z from z = 0 (`radius`, `length`) or a sphere about the origin (`radius`). Its end faces (z = 0, z = length) can carry ports; a closed body is a cavity for `solve.eigenmodes`. Replaces any geometry, mesh and results.",
@@ -970,6 +990,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             req("name", K::String, "the variable's name: a letter or `_`, then letters, digits or `_`"),
             req("value", K::Number, "its value, a plain number (or an expression of the variables defined before it)"),
+            opt("quantity", K::String, "what it measures, for showing it with its unit: `length` or `frequency` (in the display units); kept when the value changes without it").one_of(&["length", "frequency"]),
         ],
         effect: Effect::Rebuild,
         invalidates: None,
@@ -987,7 +1008,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "project.variables",
         label: "Variables",
-        doc: "The project's variables: each one's value, the expression that defines it (when it is one) and how many commands use it.",
+        doc: "The project's variables: each one's value, the expression that defines it (when it is one) how many commands use it, and what it measures with its unit when its definition says (`quantity`, `unit`).",
         params: &[],
         effect: Effect::None,
         invalidates: None,

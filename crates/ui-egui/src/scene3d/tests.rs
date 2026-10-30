@@ -10,7 +10,7 @@ use serde_json::json;
 fn every_overlay_of_every_sample_builds() {
     for name in ["highpass", "coaxial-line", "dipole", "loaded-sphere"] {
         let mut s = Session::new();
-        let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find(name).unwrap().script).unwrap();
+        let script: serde_json::Value = serde_json::from_str(emcraft_engine::templates::find(name).unwrap().script).unwrap();
         // Without the solves: geometry, then the mesh.
         let steps: Vec<serde_json::Value> =
             script.as_array().unwrap().iter().filter(|c| !c["command"].as_str().unwrap().starts_with("solve.")).cloned().collect();
@@ -62,7 +62,7 @@ fn a_port_on_a_face_inside_leaves_the_end_alone() {
 }
 
 fn meshed(name: &str, size: Option<f64>) -> Session {
-    let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find(name).unwrap().script).unwrap();
+    let script: serde_json::Value = serde_json::from_str(emcraft_engine::templates::find(name).unwrap().script).unwrap();
     let steps: Vec<serde_json::Value> = script
         .as_array()
         .unwrap()
@@ -116,7 +116,7 @@ fn render_timings() {
 #[test]
 fn a_mesh_cut_fills_the_section_by_material() {
     let mut s = Session::new();
-    let script: serde_json::Value = serde_json::from_str(emcraft_engine::sample::find("highpass").unwrap().script).unwrap();
+    let script: serde_json::Value = serde_json::from_str(emcraft_engine::templates::find("highpass").unwrap().script).unwrap();
     let steps: Vec<serde_json::Value> =
         script.as_array().unwrap().iter().filter(|c| !c["command"].as_str().unwrap().starts_with("solve.")).cloned().collect();
     s.run_script(&json!(steps)).unwrap();

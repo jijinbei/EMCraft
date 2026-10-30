@@ -2021,6 +2021,7 @@ dependencies = [
  "emcraft-model",
  "emcraft-render",
  "emcraft-solver",
+ "emcraft-templates",
  "emcraft-theory",
  "serde",
  "serde_json",
@@ -2120,6 +2121,13 @@ dependencies = [
  "num-complex",
  "rayon",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "emcraft-templates"
+version = "0.1.0"
+dependencies = [
+ "emcraft-model",
 ]
 
 [[package]]

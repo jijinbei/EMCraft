@@ -47,6 +47,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("theory", Class::Layer(1)),
     ("render", Class::Layer(1)),
     ("io", Class::Layer(1)),
+    // L1: the templates (sample scripts and the builders they call).
+    ("templates", Class::Layer(1)),
     // L2: solvers.
     ("solver", Class::Layer(2)),
     ("fdtd", Class::Layer(2)),

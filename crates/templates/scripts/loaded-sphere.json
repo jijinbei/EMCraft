@@ -1,0 +1,10 @@
+[
+ {"command": "project.variable", "params": {"name": "er", "value": 4.0}},
+ {"command": "project.variable", "params": {"name": "r_cavity", "value": 10, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "r_core", "value": 4, "quantity": "length"}},
+ {"command": "model.material.create", "params": {"name": "ceramic", "eps_r": "=er"}},
+ {"command": "geometry.solid", "params": {"shape": "sphere", "radius": "=r_cavity"}},
+ {"command": "geometry.body", "params": {"material": "ceramic", "shape": "sphere", "radius": "=r_core", "at": [0, 0, 0]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 11.8, "count": 3, "order": 2}}
+]

@@ -20,6 +20,7 @@ emcraft-solver = { path = "crates/solver" }
 emcraft-fdtd = { path = "crates/fdtd" }
 emcraft-gpu = { path = "crates/gpu" }
 emcraft-io = { path = "crates/io" }
+emcraft-templates = { path = "crates/templates" }
 emcraft-engine = { path = "crates/engine" }
 emcraft-ui-egui = { path = "crates/ui-egui" }
 

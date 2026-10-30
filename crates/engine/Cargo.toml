@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 emcraft-macros = { workspace = true }
 emcraft-model = { workspace = true }
+emcraft-templates = { workspace = true }
 emcraft-mesh = { workspace = true }
 emcraft-fem = { workspace = true }
 emcraft-io = { workspace = true }

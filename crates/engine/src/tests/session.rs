@@ -105,7 +105,7 @@ fn features_page_lists_every_command() {
 
 #[test]
 fn every_sample_is_a_script_of_known_commands() {
-    for smp in crate::sample::SAMPLES {
+    for smp in emcraft_templates::TEMPLATES {
         let script: serde_json::Value = serde_json::from_str(smp.script).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
         for step in script.as_array().unwrap() {
             let id = step["command"].as_str().unwrap();
@@ -118,7 +118,7 @@ fn every_sample_is_a_script_of_known_commands() {
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn every_sample_opens() {
     // Without their solve steps: the geometry, mesh, ports and sources of each.
-    for smp in crate::sample::SAMPLES {
+    for smp in emcraft_templates::TEMPLATES {
         let mut s = Session::new();
         s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
         assert!(s.model.mesh.is_some(), "{}", smp.name);

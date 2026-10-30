@@ -41,7 +41,6 @@ pub mod project;
 mod reply;
 mod results;
 pub mod runs;
-pub mod sample;
 pub mod script;
 mod session;
 mod solve;
@@ -56,6 +55,7 @@ pub mod workflow;
 use std::fmt;
 
 pub use cmd::{COMMANDS, CommandSpec, Kind, ParamSpec, Quantity, features_markdown, find_command};
+pub use emcraft_templates as templates;
 pub use params::Params;
 pub use project::Effect;
 pub use script::Step;
