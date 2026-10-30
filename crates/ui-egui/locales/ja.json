@@ -278,6 +278,8 @@
     "Script": "スクリプト",
     "Script done.": "スクリプトが完了しました。",
     "Search commands (/)": "コマンドを検索 (/)",
+    "More commands": "ほかのコマンド",
+    "More tabs": "ほかのタブ",
     "Section view": "断面表示",
     "Section view: on": "断面表示：オン",
     "Section {n}: {length} {unit}, {material}": "区間 {n}：{length} {unit}、{material}",

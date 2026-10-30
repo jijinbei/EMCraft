@@ -76,6 +76,9 @@ emcraft_macros::named_enum! {
         // A result view of a model changed after its run: the band over it and its Re-run.
         Stale = "stale",
         StaleRerun = "stale:rerun",
+        // What a narrow window's ribbon has no room for: the tabs, the buttons.
+        TabsMore = "tabs:more",
+        ToolbarMore = "toolbar:more",
         // Command search.
         SearchField = "search:field",
         SearchPopup = "search:popup",
