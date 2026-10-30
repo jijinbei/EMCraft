@@ -1,0 +1,20 @@
+[
+  {"note": "The S-parameter chart shows |S| in dB, its magnitude or its phase in degrees; the table under it keeps its numbers in right-aligned columns"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 8, "points": 5, "order": 1}}},
+  {"until": {"busy": false, "inspect": {"model.results.frequencies": 5}}, "timeout": 120},
+  {"expect": {"view": "sparameters", "inspect": {"sparameters": "db"}, "handles": ["sparameters:show:db", "sparameters:show:magnitude", "sparameters:show:phase", "chart:sparameters"]}},
+  {"shot": "sparameters-db"},
+  {"click": "sparameters:show:phase"},
+  {"frames": 2},
+  {"expect": {"inspect": {"sparameters": "phase", "chart": "*"}, "handles": ["chart:sparameters"]}},
+  {"shot": "sparameters-phase"},
+  {"click": "sparameters:show:magnitude"},
+  {"frames": 2},
+  {"expect": {"inspect": {"sparameters": "magnitude"}, "handles": ["chart:sparameters"]}},
+  {"shot": "sparameters-magnitude"},
+  {"note": "The choice stays with the view"},
+  {"call": "ui.set", "params": {"view": "outline"}},
+  {"call": "ui.set", "params": {"view": "sparameters"}},
+  {"expect": {"inspect": {"sparameters": "magnitude"}}}
+]

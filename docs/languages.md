@@ -25,8 +25,8 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   `{"name": "日本語", "strings": {English: 日本語}, "commands": {id: {label, doc, params:
   {name: doc}}}, "samples": {name: description}}`. A text without a translation shows in
   English.
-- **Handles never change**: the control channel's names (`tab:MODEL`, `row:Port 1: Start, 1
-  modes`, `settings:language:ja`) are made from the English and the ids whatever is shown, so
+- **Handles never change**: the control channel's names (`tab:MODEL`, `row:Port 1 (start): 1
+  mode`, `settings:language:ja`) are made from the English and the ids whatever is shown, so
   scenarios and agents work in any language. A browser row keeps its English (`Row::text`, its
   handle and key) beside what is shown (`Row::shown`).
 - **The font**: egui's own fonts have no Japanese, so Noto Sans JP Regular

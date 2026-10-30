@@ -75,17 +75,23 @@ impl FromStr for Step {
 }
 
 emcraft_macros::named_enum! {
-    /// Where a step stands, from worst to best.
+    /// Where a step stands, from worst to best: something wrong that blocks a run, results
+    /// older than the model, a warning that matters now, waiting on an earlier step, not done
+    /// yet, done.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
     #[serde(rename_all = "lowercase")]
     pub enum Status {
-        /// Blocks a run.
-        Missing = "missing",
+        /// Something is wrong: it blocks a run until put right.
+        Missing = "missing" => "needs attention",
         /// Results older than the model.
-        Stale = "stale",
-        /// Needs attention.
-        Warning = "warning",
-        Done = "done",
+        Stale = "stale" => "out of date",
+        /// Worth a look now (a run may accept it).
+        Warning = "warning" => "warning",
+        /// Waits on an earlier step (the geometry, a run).
+        Waiting = "waiting" => "waiting",
+        /// Not done yet: the next thing to do, nothing wrong.
+        Todo = "todo" => "to do",
+        Done = "done" => "done",
     }
 }
 
@@ -182,10 +188,18 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
 
 /// Where each step stands, from the model, the mesh and the results; in workflow order.
 pub fn steps(s: &Session) -> [StepState; 9] {
-    let (geometry, excitation, mesh) = (geometry(s), excitation(s), mesh(s));
-    let blocking = [&geometry, &excitation, &mesh].iter().any(|x| x.status == Status::Missing);
-    let (run, results) = run_and_results(s, blocking);
-    [intent(s), geometry, materials(s), excitation, boundaries(s), mesh, setup(s), run, results]
+    let above = [intent(s), geometry(s), materials(s), excitation(s), boundaries(s), mesh(s), setup(s)];
+    let (run, results) = run_and_results(s, &above);
+    let [intent, geometry, materials, excitation, boundaries, mesh, setup] = above;
+    [intent, geometry, materials, excitation, boundaries, mesh, setup, run, results]
+}
+
+/// The steps a run cannot do without (a resonator needs no excitation, so that is not one).
+const REQUIRED: [Step; 2] = [Step::Geometry, Step::Mesh];
+
+/// Whether anything was solved: a solver's results or a parameter study's.
+fn solved(s: &Session) -> bool {
+    s.results.any() || s.results.study.is_some()
 }
 
 fn has_geometry(s: &Session) -> bool {
@@ -194,10 +208,11 @@ fn has_geometry(s: &Session) -> bool {
 
 fn intent(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Intent);
-    if s.model.band.is_none() {
+    // Once something is solved, the band has done its work.
+    if s.model.band.is_none() && !solved(s) {
         st.note(
-            Status::Warning,
-            "no frequency band: set the job's band first, it sets the mesh, the sweep and the port previews",
+            Status::Todo,
+            "no frequency band yet: set the job's band first, it sets the mesh, the sweep and the port previews",
             Some("project.frequency"),
         );
     }
@@ -207,7 +222,7 @@ fn intent(s: &Session) -> StepState {
 fn geometry(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Geometry);
     if !has_geometry(s) {
-        st.note(Status::Missing, "no geometry: a waveguide, a solid or an imported surface", Some("geometry.waveguide"));
+        st.note(Status::Todo, "no geometry yet: a waveguide, a solid or an imported surface", Some("geometry.waveguide"));
     }
     st
 }
@@ -216,7 +231,7 @@ fn materials(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Materials);
     if !has_geometry(s) {
-        st.note(Status::Missing, "no geometry to give materials to", Some("geometry.solid"));
+        st.note(Status::Waiting, "waits for the geometry: no bodies to give materials to yet", Some("geometry.solid"));
     }
     if let Some(p) = m.ports.iter().find(|p| lossy_terminal_port(m, p)) {
         st.note(
@@ -255,8 +270,16 @@ fn excitation(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Excitation);
     // A cell periodic along z is solved for its dispersion, with nothing driving it.
     let bloch = m.periodic.is_some_and(|p| p.z);
-    if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() && !bloch {
-        st.note(Status::Missing, "nothing drives the model: a waveguide port, a lumped port or a source", Some("model.port.create"));
+    // A resonator's eigenmodes need nothing to drive them.
+    let resonator = s.results.eigen.is_some();
+    if !has_geometry(s) {
+        st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
+    } else if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() && !bloch && !resonator {
+        st.note(
+            Status::Todo,
+            "nothing drives the model yet: a waveguide port, a lumped port or a source (a resonator needs none: Run finds its eigenmodes)",
+            Some("model.port.create"),
+        );
     }
     if m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
         st.note(Status::Warning, "one port: S11 only (a closed guide usually has two)", Some("model.port.create"));
@@ -286,6 +309,9 @@ fn boundaries(s: &Session) -> StepState {
     let m = &s.model;
     let open = m.open.is_some();
     let mut st = StepState::new(Step::Boundaries);
+    if !has_geometry(s) {
+        st.note(Status::Waiting, "waits for the geometry: its walls are the boundaries", Some("geometry.waveguide"));
+    }
     if !open && (!m.sources.is_empty() || !m.lumped.is_empty()) {
         st.note(
             Status::Warning,
@@ -307,7 +333,11 @@ fn mesh(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Mesh);
     let Some(me) = &m.mesh else {
-        st.note(Status::Missing, "no mesh", Some("mesh.generate"));
+        if has_geometry(s) {
+            st.note(Status::Todo, "no mesh yet", Some("mesh.generate"));
+        } else {
+            st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
+        }
         return st;
     };
     // Elements per wavelength at the band's top in the densest material.
@@ -334,24 +364,36 @@ fn mesh(s: &Session) -> StepState {
 
 fn setup(s: &Session) -> StepState {
     let mut st = StepState::new(Step::Setup);
-    if s.model.band.is_none() {
-        st.note(Status::Warning, "no band to sweep: give the sweep's frequencies when running, or set the band", Some("project.frequency"));
+    if !has_geometry(s) {
+        st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
+    }
+    if s.model.band.is_none() && !solved(s) {
+        st.note(Status::Todo, "no band to sweep yet: set the band, or give the sweep's frequencies when running", Some("project.frequency"));
     }
     st
 }
 
-/// The Run and Results steps, `blocking` when a step above is missing.
-fn run_and_results(s: &Session, blocking: bool) -> (StepState, StepState) {
+/// The Run and Results steps after the steps `above` them: Run needs attention while a step
+/// above does, waits while a step it cannot do without is not done, and is to do until it ran;
+/// Results wait for Run, and are out of date once the model changed after it.
+fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
     let mut run = StepState::new(Step::Run);
     let mut results = StepState::new(Step::Results);
-    if blocking {
-        run.note(Status::Missing, "the steps above marked missing must be done first", None);
+    let names = |pick: &dyn Fn(&StepState) -> bool| above.iter().filter(|x| pick(x)).map(|x| x.step.id()).collect::<Vec<_>>().join(", ");
+    let wrong = names(&|x| x.status == Status::Missing);
+    let waiting = names(&|x| REQUIRED.contains(&x.step) && matches!(x.status, Status::Todo | Status::Waiting));
+    if !wrong.is_empty() {
+        run.note(Status::Missing, format!("put {wrong} right first"), None);
+    } else if !waiting.is_empty() {
+        run.note(Status::Waiting, format!("waits for {waiting}"), None);
     }
-    if !s.results.any() {
-        run.note(Status::Missing, "not run yet", Some("solve.frequency"));
-        results.note(Status::Missing, "no results yet", Some("solve.frequency"));
+    if !solved(s) {
+        if wrong.is_empty() && waiting.is_empty() {
+            run.note(Status::Todo, "not run yet", Some("solve.frequency"));
+        }
+        results.note(Status::Waiting, "no results yet: Run (step 7) makes them", Some("solve.frequency"));
     } else if s.solved_revision.is_some_and(|r| r < s.revision) {
-        results.note(Status::Stale, "the model changed since these results were solved: run again", Some("solve.frequency"));
+        results.note(Status::Stale, "the model changed after this run: run again", Some("solve.frequency"));
         run.note(Status::Stale, "the model changed since the last run", Some("solve.frequency"));
     }
     (run, results)

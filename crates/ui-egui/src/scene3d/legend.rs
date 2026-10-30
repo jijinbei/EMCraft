@@ -6,7 +6,7 @@ use emcraft_model::{Axis, End};
 
 use super::style::{material_rgb, sc, symmetry_rgb};
 use super::{Built, Overlay};
-use crate::lang::{args, tr, trf};
+use crate::lang::{args, plural, tr, trf};
 
 pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
     let m = session.model();
@@ -18,15 +18,21 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
             }
         }
         Overlay::Ports => {
+            // Ports named as the browser and the Excitation step name them.
             for p in &m.ports {
-                let template = if p.end == End::Start { "port {name} (start)" } else { "port {name} (end)" };
+                let template = match (p.face.is_some(), p.end) {
+                    (true, _) => "Port {name} (on a face)",
+                    (false, End::Start) => "Port {name} (start)",
+                    (false, End::End) => "Port {name} (end)",
+                };
                 out.legend.push((trf(template, args!(name = p.name)), sc().port));
             }
             for p in &m.lumped {
-                out.legend.push((trf("lumped port {name}", args!(name = p.name)), sc().port));
+                out.legend.push((trf("Lumped port {name}", args!(name = p.name)), sc().port));
             }
             if !m.sources.is_empty() {
-                out.legend.push((trf("{n} source(s)", args!(n = m.sources.len())), sc().source));
+                let n = m.sources.len();
+                out.legend.push((plural(n, "{n} source", "{n} sources", args!(n = n)), sc().source));
             }
         }
         Overlay::Boundaries => {
@@ -42,7 +48,7 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
             if let Some(p) = &m.periodic {
                 let axes: Vec<&str> = p.axes().into_iter().map(|d| ["x", "y", "z"][d.min(2)]).collect();
                 let angles = if p.x || p.y { format!(", θ {:.1}°, φ {:.1}°", p.theta.to_degrees(), p.phi.to_degrees()) } else { String::new() };
-                out.legend.push((trf("periodic: {cell}", args!(cell = format!("{}{angles}", axes.join(", ")))), sc().periodic));
+                out.legend.push((trf("periodic boundaries: {cell}", args!(cell = format!("{}{angles}", axes.join(", ")))), sc().periodic));
             }
             let walls = match m.wall_conductivity {
                 Some(s) => trf("walls σ = {sigma} S/m", args!(sigma = format!("{s:.3e}"))),

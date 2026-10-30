@@ -97,6 +97,13 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 empty(&mut inner, text);
                 return;
             }
+            // Results of a model changed after their run say so over the view, which is dimmed.
+            let stale = app.view.is_result() && crate::steps::results_stale(app);
+            if stale {
+                stale_band(app, &mut inner, out);
+                inner.add_space(4.0);
+            }
+            inner.ctx().data_mut(|d| d.insert_temp(egui::Id::new(STALE), stale));
             let ui = &mut inner;
             match app.view {
                 View::Model => model3d(app, st, ui, out),
@@ -251,13 +258,39 @@ pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, label: &str, enab
     });
 }
 
-/// A picture in the rest of the card, scaled down to fit; the image's response.
+/// Where the frame notes that the view's results are out of date (its pictures are dimmed).
+const STALE: &str = "emcraft_view_stale";
+
+/// The band over a result view whose model changed after its run: what happened, and Re-run —
+/// the run the Setup step sets up, as step 7's Run starts it.
+pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let t = &Tokens::get();
+    let r = egui::Frame::NONE.fill(t.accent_soft).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            let (m, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+            crate::steps::stale_mark(ui.painter(), m.center(), t);
+            ui.label(egui::RichText::new(tr("Results are out of date: the model changed after this run.")).color(t.selected_ink));
+            let busy = app.busy();
+            let hint = if busy { "a job is running" } else { "Runs the Setup step's solve again (as step 7 does)" };
+            ui.act(!busy, crate::ui_kit::styled("Re-run", true), Fixed::StaleRerun.into(), hint, || Action::StartRun, out);
+        });
+    });
+    scenario::publish_rect(Fixed::Stale, r.response.rect);
+}
+
+/// A picture in the rest of the card, scaled down to fit (dimmed while out of date); the
+/// image's response.
 pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: Fixed) -> egui::Response {
     let size = p.size();
     let avail = ui.available_size();
     let scale = (avail.x / size.x).min(avail.y / size.y).clamp(0.1, 1.0);
     let id = p.texture(ui.ctx());
-    ui.named(egui::Image::new((id, size * scale)).sense(Sense::click()), handle.into())
+    let mut image = egui::Image::new((id, size * scale)).sense(Sense::click());
+    if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new(STALE))).unwrap_or(false) {
+        image = image.tint(Color32::WHITE.gamma_multiply(0.55));
+    }
+    ui.named(image, handle.into())
 }
 
 /// A width for pictures, rounded so resizing does not redraw on every pixel.

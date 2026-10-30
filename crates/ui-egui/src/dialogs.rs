@@ -199,6 +199,11 @@ pub struct Dialog {
     /// The engine's refusal of the last OK, or the first field error.
     pub error: Option<String>,
     pub docked: bool,
+    /// The first field takes the keyboard when the dialog is first drawn.
+    pub focus_first: bool,
+    /// The controls the dialog drew last, each with whether it takes text: Enter and Escape are
+    /// the dialog's only while one of them (or nothing) has the keyboard.
+    pub widgets: Vec<(egui::Id, bool)>,
 }
 
 /// `text` cut to [`MAX_FIELD`] characters.
@@ -234,7 +239,7 @@ impl Dialog {
                 f
             })
             .collect();
-        Dialog { command, fields, error: None, docked }
+        Dialog { command, fields, error: None, docked, focus_first: true, widgets: Vec::new() }
     }
 
     pub fn field_mut(&mut self, name: &str) -> Option<&mut Field> {

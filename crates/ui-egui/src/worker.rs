@@ -27,6 +27,8 @@ pub struct Job {
     rx: Receiver<Done>,
     /// Control-channel requests waiting for this job's reply.
     pub waiting: Vec<Sender<Value>>,
+    /// The view the window showed when the job started: one chosen since is kept when it ends.
+    pub view: Option<crate::View>,
 }
 
 /// What [`Job::poll`] found.
@@ -64,7 +66,7 @@ impl Job {
                 ctx.request_repaint();
             }
         });
-        Job { command: command.to_owned(), params, started: Instant::now(), progress, rx, waiting: Vec::new() }
+        Job { command: command.to_owned(), params, started: Instant::now(), progress, rx, waiting: Vec::new(), view: None }
     }
 
     pub fn poll(&self) -> Poll {

@@ -14,7 +14,7 @@ pub const MAX_RECENT: usize = 12;
 /// Largest preferences file read.
 const MAX_BYTES: u64 = 1 << 20;
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
     /// Project files opened or saved, the newest first.
@@ -26,6 +26,7 @@ pub struct Prefs {
     pub dark: bool,
     /// The window's language (`en` when empty or unknown).
     pub language: String,
+    /// Dialogs dock at the right, beside what they edit (new preferences; a file keeps its own).
     pub dock_dialogs: bool,
     /// The 3D view drawn by the window's GPU (fast, painter's order) instead of the CPU
     /// renderer (depth-buffered, supersampled) at rest.
@@ -33,6 +34,23 @@ pub struct Prefs {
     /// The display units new projects start with.
     pub length: Length,
     pub frequency: Frequency,
+}
+
+/// New preferences: dialogs docked, so they do not cover what they edit; the rest empty, the
+/// light theme, English, the CPU's 3D view, millimetres and gigahertz.
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs {
+            recent: Vec::new(),
+            theme: String::new(),
+            dark: false,
+            language: String::new(),
+            dock_dialogs: true,
+            gpu3d: false,
+            length: Length::default(),
+            frequency: Frequency::default(),
+        }
+    }
 }
 
 impl Prefs {
@@ -127,6 +145,12 @@ mod tests {
         let odd = Prefs::load(&path);
         assert_eq!((odd.language.len(), odd.language()), (crate::lang::MAX_ID, "en"));
         assert_eq!(Prefs::default().language(), "en");
+        // Dialogs dock by default; preferences that chose floating keep it.
+        assert!(Prefs::default().dock_dialogs);
+        std::fs::write(&path, r#"{"dock_dialogs": false, "theme": "dark"}"#).unwrap();
+        assert!(!Prefs::load(&path).dock_dialogs);
+        std::fs::write(&path, r#"{"theme": "dark"}"#).unwrap();
+        assert!(Prefs::load(&path).dock_dialogs);
         assert_eq!(Prefs::load(&dir.join("missing.json")), Prefs::default());
         let _ = std::fs::remove_dir_all(&dir);
     }

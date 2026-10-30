@@ -81,7 +81,8 @@ impl ChartView for StudyView {
 
     fn chart(app: &EmcraftApp, (parameter, slice): &StudyKey) -> Result<emcraft_render::chart::Chart, String> {
         let study = app.session.results().study.as_ref().ok_or("no study")?;
-        emcraft_engine::study::chart(study, parameter.as_deref(), slice).map_err(|e| e.to_string())
+        let units = emcraft_engine::view::variable_units(&app.session, study);
+        emcraft_engine::view::chart_with_units(study, parameter.as_deref(), slice, &units).map_err(|e| e.to_string())
     }
 
     fn below(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
@@ -106,7 +107,8 @@ fn study_table(app: &EmcraftApp, st: &Parts, ui: &mut egui::Ui) {
     let Some(study) = app.session.results().study.as_ref() else { return };
     let parameters = parameters(study);
     let shown = st.views.study.parameter.as_deref().filter(|p| parameters.iter().any(|q| q == p));
-    table(ui, study, shown.or(parameters.first().map(String::as_str)));
+    let units = emcraft_engine::view::variable_units(&app.session, study);
+    table(ui, study, shown.or(parameters.first().map(String::as_str)), &units);
 }
 
 /// A grid sweep's slice: the variable charted along, and the value each other variable is held
@@ -148,7 +150,7 @@ const MAX_PILLS: usize = 101;
 
 /// The study's points: the values, the goal or the band's extremes of the S-parameter shown, and
 /// why a point failed.
-fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
+fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>, units: &[Option<String>]) {
     let t = &Tokens::get();
     let optimize = study.kind == Kind::Optimize;
     egui::ScrollArea::vertical().id_salt("study_table").show(ui, |ui| {
@@ -156,11 +158,16 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
             if optimize {
                 ui.label(egui::RichText::new("#").strong());
             }
-            for n in &study.variables {
-                ui.label(egui::RichText::new(n).strong());
+            // Each variable with its unit, where the model says it.
+            for (n, u) in study.variables.iter().zip(units.iter().chain(std::iter::repeat(&None))) {
+                let head = u.as_ref().map_or_else(|| n.clone(), |u| format!("{n} ({u})"));
+                ui.label(egui::RichText::new(head).strong());
             }
             if optimize {
-                ui.text(Style::Strong, "goal");
+                match emcraft_engine::view::goal_unit(study) {
+                    Some(u) => ui.text(Style::Strong, trf("goal ({unit})", args!(unit = u))),
+                    None => ui.text(Style::Strong, "goal"),
+                };
             } else if let Some(p) = parameter {
                 let p = p.to_uppercase();
                 ui.text(Style::Strong, trf("min |{p}| dB", args!(p = p)));

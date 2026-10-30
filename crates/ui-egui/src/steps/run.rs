@@ -1,7 +1,7 @@
 //! Starting a run: the solver's parameters from the panel's fields and the preflight checks.
 
 use super::*;
-use crate::lang::{args, shown, tr};
+use crate::lang::{args, plural, shown, tr};
 
 /// The solver and its parameters from the setup's fields (`f`); each bad field is marked.
 pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver, Value), String> {
@@ -82,18 +82,31 @@ pub struct Preflight {
     pub warnings: Vec<(Step, String)>,
 }
 
+/// Whether a run of `solver` (any, when `None`) cannot go without step `step` done: the
+/// geometry, the mesh and, but for a resonator's eigenmodes, the excitation.
+pub fn required(step: Step, solver: Option<Solver>) -> bool {
+    match step {
+        Step::Geometry | Step::Mesh => true,
+        Step::Excitation => solver != Some(Solver::Eigenmodes),
+        _ => false,
+    }
+}
+
+/// What Run checks first: a step that needs attention, or one the solver cannot go without left
+/// to do, blocks it; warnings and out-of-date results are accepted by pressing Run; other steps
+/// left to do and steps waiting on another are not problems.
 pub fn preflight(s: &emcraft_engine::Session, f: &mut Fields, states: &[StepState]) -> Preflight {
     let mut out = Preflight::default();
     let solver = f.solver.unwrap_or_else(|| Solver::infer(s.model()));
     for s in states.iter().filter(|s| s.step.index() <= Step::Setup.index()) {
-        // A resonator needs no excitation.
-        if s.step == Step::Excitation && solver == Solver::Eigenmodes && s.status == Status::Missing {
-            continue;
-        }
+        let needed = required(s.step, Some(solver));
         let list = match s.status {
             Status::Missing => &mut out.blocking,
+            Status::Todo if needed => &mut out.blocking,
             Status::Warning | Status::Stale => &mut out.warnings,
-            Status::Done => continue,
+            // Left to do but not needed (a resonator's excitation; the band, which the solver's
+            // own parameters ask for when they need it), or waiting on a step listed already.
+            Status::Todo | Status::Waiting | Status::Done => continue,
         };
         if s.messages.is_empty() {
             list.push((s.step, format!("{}: {}", shown(s.step), shown(s.status))));
@@ -113,19 +126,24 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     let states = statuses_now(app);
     let pre = preflight(&app.session, &mut app.workflow.fields, &states);
     if !pre.blocking.is_empty() {
+        let n = pre.blocking.len();
         let e = UiError::Refused(format!(
-            "{} problem(s) block it — {}",
-            pre.blocking.len(),
+            "{n} {} {} it — {}",
+            if n == 1 { "problem" } else { "problems" },
+            if n == 1 { "blocks" } else { "block" },
             pre.blocking.iter().map(|(s, m)| format!("{} ({})", m, s.label())).collect::<Vec<_>>().join("; ")
         ));
         app.workflow.fields.refused = Some(e.to_string());
+        app.workflow.blocked = true;
         app.error(&e);
         return Err(e);
     }
     app.workflow.fields.refused = None;
+    app.workflow.blocked = false;
     let (solver, params) = run_params(&app.session, &mut app.workflow.fields).map_err(UiError::Input)?;
-    if !pre.warnings.is_empty() {
-        app.info_with("Running with {n} accepted warning(s).", args!(n = pre.warnings.len()));
+    let n = pre.warnings.len();
+    if n > 0 {
+        app.info(plural(n, "Running with {n} accepted warning.", "Running with {n} accepted warnings.", args!(n = n)));
     }
     app.run(solver.command(), params)
 }

@@ -39,7 +39,7 @@ impl View {
             View::FarField => Some("No far field yet: SIMULATE › Radiation (an open model with sources or lumped ports)."),
             View::Eigenmodes => Some("No eigenmodes yet: SIMULATE › Eigenmodes."),
             View::Study => Some("No study yet: define a variable, then SIMULATE › Sweep or Optimize."),
-            View::Dispersion => Some("No dispersion diagram yet: MATERIALS › Periodic, then SIMULATE › Dispersion."),
+            View::Dispersion => Some("No dispersion diagram yet: BOUNDARIES › Periodic boundaries, then SIMULATE › Dispersion."),
         }
     }
 
@@ -57,6 +57,12 @@ impl View {
             View::Study => r.study.is_some(),
             View::Dispersion => r.dispersion.is_some(),
         }
+    }
+
+    /// Whether the view shows results (which go out of date when the model changes after its
+    /// run), not the model.
+    pub fn is_result(self) -> bool {
+        !matches!(self, View::Model | View::Outline)
     }
 
     /// What the card says instead of the view while it has nothing to show, for the views that

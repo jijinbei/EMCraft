@@ -136,7 +136,11 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
         let comp = field.view.component;
         let (now, amp) = pin.value(comp, field.view.phase);
         let fmt = emcraft_render::axes::format;
-        let text = trf("{component} {now} (amp. {amplitude})", args!(component = comp.label(), now = fmt(now), amplitude = fmt(amp)));
+        let unit = if comp.is_magnetic() { "A/m" } else { "V/m" };
+        let text = trf(
+            "{component} {now} {unit} (amp. {amplitude} {unit})",
+            args!(component = comp.label(), now = fmt(now), amplitude = fmt(amp), unit = unit),
+        );
         let galley = painter.layout_no_wrap(text, FontId::proportional(t.font_small), t.text);
         let size = galley.size() + vec2(10.0, 6.0);
         let right = c.x + 12.0 + size.x < rect.right();
@@ -157,10 +161,10 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
     }
 }
 
-/// A complex component as its amplitude and phase.
-pub(super) fn phasor(c: emcraft_model::Complex64) -> String {
+/// A complex component as its amplitude in `unit` and its phase.
+pub(super) fn phasor(c: emcraft_model::Complex64, unit: &str) -> String {
     use emcraft_render::axes::format;
-    if c.norm() == 0.0 { "0".into() } else { format!("{} ({}°)", format(c.norm()), format(c.arg().to_degrees().round())) }
+    if c.norm() == 0.0 { format!("0 {unit}") } else { format!("{} {unit} ∠ {}°", format(c.norm()), format(c.arg().to_degrees().round())) }
 }
 
 pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {

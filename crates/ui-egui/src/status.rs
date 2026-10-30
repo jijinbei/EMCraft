@@ -63,9 +63,9 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             trf("Solved the open problem: radiated power {power} W.", args!(power = format!("{power:.4e}")))
         }
         "solve.time_domain" => match r.text("device") {
-            "" | "cpu" => trf("Time-domain solve done in {n} steps.", args!(n = r.count("steps"))),
+            "" | "cpu" => trf("Time domain: solved in {n} steps.", args!(n = r.count("steps"))),
             device => trf(
-                "Time-domain solve done in {n} steps on {device} ({precision} precision).",
+                "Time domain: solved in {n} steps on {device} ({precision} precision).",
                 args!(n = r.count("steps"), device = device, precision = tr(r.text("precision"))),
             ),
         },

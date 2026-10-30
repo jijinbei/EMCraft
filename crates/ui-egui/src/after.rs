@@ -79,6 +79,7 @@ impl EmcraftApp {
         self.pick_frequency();
         self.view3d.fit_next = true;
         self.workflow.check = None;
+        self.workflow.blocked = false;
     }
 
     /// A solve: the view of its results, the field view on what it solved.

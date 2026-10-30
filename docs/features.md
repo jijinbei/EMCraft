@@ -13,7 +13,7 @@ The job's frequency band: the default for meshing by wavelength (its top), for s
 
 ## `project.status` — Workflow status
 
-Where each step of the workflow stands (intent, geometry, materials, excitation, boundaries, mesh, setup, run, results): done, warning, missing or stale, each with messages naming the command that fixes it. Reads the model, the mesh and the results; solves nothing.
+Where each step of the workflow stands (intent, geometry, materials, excitation, boundaries, mesh, setup, run, results): done, to do (`todo`), waiting, warning, missing (needs attention) or stale (out of date), each with messages naming the command that fixes it. Reads the model, the mesh and the results; solves nothing.
 
 No parameters.
 
@@ -379,7 +379,7 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 | `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
 | `sweep` | string |  | no | `fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each) |
 
-## `solve.time_domain` — Time-domain solve
+## `solve.time_domain` — Time domain
 
 The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM. Losses: a loss tangent (dielectric or magnetic) becomes a conductivity matched at the band's centre (`loss_reference` in the reply), so the material solved is εr − jσ/ω, tan δ exactly there and tan δ·f_ref/f elsewhere; walls of finite conductivity (model.walls) take the surface-impedance condition; ports may be lossy or dispersive (their complex propagation constant normalises S). For an open model (model.open) it solves the antenna instead: its lumped ports and dipoles on a uniform grid with a CPML on all sides, the ports' impedances and S11 and the radiated power at each frequency, the far field from a Huygens box (results.far_field and view.pattern with `solver` time_domain), with lossy, dispersive and magnetic bodies but perfect conductors. Gaps and dipoles must lie along grid axes; gaps in lossy or dispersive materials are refused.
 

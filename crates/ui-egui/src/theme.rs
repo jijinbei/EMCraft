@@ -224,7 +224,8 @@ impl Tokens {
     pub fn tab(&self, tab: RibbonTab) -> [Color32; 3] {
         match tab {
             RibbonTab::Model => self.tab_model,
-            RibbonTab::Materials => self.tab_materials,
+            // The walls take the materials' accent: they were under MATERIALS before.
+            RibbonTab::Materials | RibbonTab::Boundaries => self.tab_materials,
             RibbonTab::PortsSources => self.tab_ports,
             RibbonTab::Mesh => self.tab_mesh,
             RibbonTab::Simulate => self.tab_simulate,

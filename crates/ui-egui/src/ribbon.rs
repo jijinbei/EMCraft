@@ -23,6 +23,7 @@ emcraft_macros::named_enum! {
         Model = "MODEL",
         Materials = "MATERIALS",
         PortsSources = "PORTS & SOURCES",
+        Boundaries = "BOUNDARIES",
         Mesh = "MESH",
         Simulate = "SIMULATE",
         Results = "RESULTS",
@@ -39,14 +40,13 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
             ("SETTINGS", &["units.set", "project.frequency"]),
         ],
     ),
-    (
-        RibbonTab::Materials,
-        &[("MATERIALS", &["model.material.create"]), ("BOUNDARIES", &["model.walls", "model.open", "model.symmetry", "model.periodic"])],
-    ),
+    (RibbonTab::Materials, &[("MATERIALS", &["model.material.create"])]),
     (
         RibbonTab::PortsSources,
         &[("PORTS", &["model.port.create", "model.port.lumped"]), ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"])],
     ),
+    // The tabs follow the step bar: the boundaries are step 4, after the ports (step 3).
+    (RibbonTab::Boundaries, &[("BOUNDARIES", &["model.walls", "model.open", "model.symmetry", "model.periodic"])]),
     (RibbonTab::Mesh, &[("MESH", &["mesh.generate", "mesh.adapt"])]),
     (
         RibbonTab::Simulate,
@@ -121,9 +121,11 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), "", || Action::Redo, out);
             });
             // The project's name in the middle, a dot while it has unsaved changes.
+            let mut title_right = x;
             if !app.home.open {
                 let title = crate::files::title(app);
-                ui.painter().text(r.center(), Align2::CENTER_CENTER, &title, FontId::proportional(t.font_body), t.app_bar_text);
+                let shape = ui.painter().text(r.center(), Align2::CENTER_CENTER, &title, FontId::proportional(t.font_body), t.app_bar_text);
+                title_right = title_right.max(shape.right());
                 scenario::publish_rect(Fixed::BarTitle, Rect::from_center_size(r.center(), vec2(200.0, r.height())));
             }
             // At the right: the settings.
@@ -136,15 +138,19 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             if resp.hint("Settings").clicked() {
                 out.push(Action::Settings(if app.settings.is_some() { None } else { Some(crate::settings::Section::default()) }));
             }
-            // The running job, at the right.
+            // The running job, left of the gear, cut short with an ellipsis where the title
+            // leaves no room.
             if let Some(job) = &app.job {
-                ui.painter().text(
-                    pos2(r.right() - 12.0, r.center().y),
-                    Align2::RIGHT_CENTER,
-                    format!("{} …", crate::label(&job.command)),
-                    FontId::proportional(t.font_body),
-                    t.app_bar_text,
-                );
+                let (left, right) = (title_right + 24.0, gear.left() - 10.0);
+                if right - left > 40.0 {
+                    let mut lay =
+                        egui::text::LayoutJob::simple_singleline(crate::messages::job_text(job), FontId::proportional(t.font_small), t.app_bar_text);
+                    lay.wrap = egui::text::TextWrapping::truncate_at_width(right - left);
+                    let g = ui.painter().layout_job(lay);
+                    let at = pos2(right - g.size().x, r.center().y - g.size().y / 2.0);
+                    scenario::publish_target(Fixed::BarJob, Rect::from_min_size(at, g.size()));
+                    ui.painter().galley(at, g, t.app_bar_text);
+                }
             }
         },
     );

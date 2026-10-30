@@ -36,10 +36,22 @@ and the UI should make the same habits easy for the user's own models.
 
 ## 2. UX principles
 
-1. **The workflow is visible.** A step bar shows steps 0–8 in order, each with a status: done,
-   needs attention (a warning), missing (blocks a run), or stale (results older than the model).
-   Clicking a step opens its panel and puts the 3D view in that step's mode. Users can work in
-   any order; the bar only tells them what is missing.
+1. **The workflow is visible.** A step bar shows steps 0–8 in order, each with a status of its
+   own look, told apart by shape as well as colour, each mark meaning one thing so none is
+   learned to be ignored:
+
+   | Status | Look | Means |
+   |---|---|---|
+   | done | green disc, tick | nothing to do |
+   | to do | hollow ring | not done yet, nothing wrong (a new project's geometry, a run not made) |
+   | waiting | grey disc, dots; the name dimmed | waits on an earlier step (materials, boundaries and mesh on the geometry; results on a run) |
+   | warning | amber disc, ! | worth a look now (a coarse mesh, a band starting below a cut-off); Run may accept it |
+   | needs attention | red disc, × | something is wrong or blocks Run: a step a refused Run needed, a run that failed |
+   | out of date | blue disc, ↻ | results older than the model |
+
+   Run turns (an arc) while a run goes on. A to-do that only matters before a run (the band)
+   ends with the run. Clicking a step opens its panel and puts the 3D view in that step's mode.
+   Users can work in any order; the bar only tells them what is left.
 2. **One model, one 3D view.** The geometry is always on screen; each step overlays what it is
    about: materials coloured (2), ports and their faces highlighted with their modes'
    arrows (3), walls and the PML shaded (4), the mesh's edges and its size (5), fields and
@@ -84,7 +96,13 @@ and the UI should make the same habits easy for the user's own models.
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The ribbon of phase 1 stays as the way to every command; the step bar is the way through a job.
+The ribbon of phase 1 stays as the way to every command; the step bar is the way through a job,
+and the ribbon's tabs follow it (MODEL, MATERIALS, PORTS & SOURCES, BOUNDARIES, MESH, SIMULATE,
+RESULTS). A result view of a model changed after its run carries a band that says so, with
+Re-run, its picture dimmed; the browser marks those results too. A running job shows its stage
+and count ("Frequency sweep — 3 / 11 frequencies, 4 s") in the messages, at the top of the open
+step's panel (or where the docked dialog that started it was) with Cancel, and left of the
+settings in the app bar; the right column stays put while it runs.
 Each control is in one place: opening a step switches the ribbon to that step's tab (its
 commands), so the step panel holds only the step's checks, its own settings (the band, the
 sweep, Run) and the dialog docked there; the views over the viewport are switched by its view
@@ -94,7 +112,9 @@ and a navigator of the six signed axes.
 
 ## 4. What the engine provides for it
 
-- `project.status`: per step, its status (`done`, `warning`, `missing`, `stale`) and messages,
+- `project.status`: per step, its status (`done`, `todo`, `waiting`, `warning`, `missing`, `stale`;
+  the window adds what it knows: a refused Run marks the steps in its way `missing`, a failed
+  run marks Run) and messages,
   each naming the command or field that fixes it. Computed from the model, the mesh and the
   results; cheap (no solve).
 - `project.frequency`: the frequency range (start, stop) of the job, stored in the model, the

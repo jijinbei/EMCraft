@@ -133,11 +133,13 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
         r["steps"].as_array().unwrap().iter().map(|x| (x["step"].as_str().unwrap().to_owned(), x["status"].as_str().unwrap().to_owned())).collect()
     };
     let of = |v: &[(String, String)], step: &str| v.iter().find(|(n, _)| n == step).map(|x| x.1.clone()).unwrap();
-    // An empty session: geometry, excitation and mesh missing; no band yet.
+    // An empty session: the geometry and the band to do, the steps after the geometry and
+    // Run waiting for it, nothing wrong.
     let st = status(&mut s);
-    assert_eq!(of(&st, "geometry"), "missing");
-    assert_eq!(of(&st, "intent"), "warning");
-    assert_eq!(of(&st, "run"), "missing");
+    assert_eq!(of(&st, "geometry"), "todo");
+    assert_eq!(of(&st, "intent"), "todo");
+    assert_eq!((of(&st, "materials"), of(&st, "boundaries"), of(&st, "mesh")), ("waiting".into(), "waiting".into(), "waiting".into()));
+    assert_eq!((of(&st, "run"), of(&st, "results")), ("waiting".into(), "waiting".into()));
     // The band below WR-90's cut-off is flagged at the port.
     s.execute("project.frequency", &json!({"start": 5, "stop": 12})).unwrap();
     s.execute("geometry.waveguide", &json!({"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
@@ -145,12 +147,13 @@ fn the_workflow_status_guides_a_job_and_undo_saves_and_exports_work() {
     s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
     let st = status(&mut s);
     assert_eq!(of(&st, "excitation"), "warning", "{st:?}");
-    assert_eq!(of(&st, "mesh"), "missing");
+    assert_eq!((of(&st, "mesh"), of(&st, "run")), ("todo".into(), "waiting".into()));
     s.execute("project.frequency", &json!({"start": 8, "stop": 12})).unwrap();
     s.execute("mesh.generate", &json!({"per_wavelength": 6})).unwrap();
     let st = status(&mut s);
     assert_eq!(of(&st, "excitation"), "done", "{st:?}");
     assert_eq!(of(&st, "mesh"), "done", "{st:?}");
+    assert_eq!(of(&st, "run"), "todo", "{st:?}");
     let est = s.execute("project.estimate", &json!({"order": 1})).unwrap();
     assert!(est["unknowns"].as_f64().unwrap() > 100.0 && est["memory_mb"].as_f64().is_some());
     // A sweep over the band by default; then results are done, and stale after a change.

@@ -9,7 +9,7 @@ use emcraft_render::chart::{Chart, Series, Style};
 
 use super::chart::{DB_FLOOR, db_axis, padded_axis, span};
 use crate::study::{Kind, Row, Study};
-use crate::{EngineError, Result};
+use crate::{EngineError, Quantity, Result, Session};
 
 /// A colour along the ramp from the first series colour (blue) to the second (red), `t` from
 /// 0 to 1: a sweep's values in order.
@@ -53,16 +53,16 @@ impl Slice {
         Ok(slice)
     }
 
-    /// The held variables in words: `b = 5, c = 2`.
-    fn held(&self, study: &Study) -> String {
+    /// The held variables in words: `b = 5 mm, c = 2`.
+    fn held(&self, study: &Study, units: &[Option<String>]) -> String {
         study
             .variables
             .iter()
             .enumerate()
             .filter(|(k, _)| *k != self.free)
-            .filter_map(|(k, n)| {
+            .filter_map(|(k, _)| {
                 let axis = study.grid.get(k)?;
-                Some(format!("{n} = {}", axis.get(self.at.get(k).copied().unwrap_or(0)).or(axis.first())?))
+                Some(valued(study, units, k, *axis.get(self.at.get(k).copied().unwrap_or(0)).or(axis.first())?))
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -75,6 +75,12 @@ impl Slice {
 /// curves along its free variable with the others held, or — solved at one frequency — |S|
 /// against the free variable, one curve per value of the next variable.
 pub fn chart(study: &Study, parameter: Option<&str>, slice: &Slice) -> Result<Chart> {
+    chart_with_units(study, parameter, slice, &[])
+}
+
+/// [`chart`] with each variable's display unit (`units`, in the study's variables' order; none
+/// where missing), on its axis and beside its values: `l = 15 mm`.
+pub fn chart_with_units(study: &Study, parameter: Option<&str>, slice: &Slice, units: &[Option<String>]) -> Result<Chart> {
     if study.kind == Kind::Optimize {
         return optimization_chart(study);
     }
@@ -95,13 +101,13 @@ pub fn chart(study: &Study, parameter: Option<&str>, slice: &Slice) -> Result<Ch
     let one_frequency = all.iter().all(|r| r.frequencies.len() == 1);
     let ok: Vec<&Row> = if study.is_grid() { study.slice(free, &slice.at).into_iter().filter(|r| r.error.is_none()).collect() } else { all.clone() };
     let mut chart = match parameter {
-        Some(p) if one_frequency && study.is_grid() => return Ok(one_frequency_grid_chart(study, &all, &p, &slice)),
-        Some(p) if one_frequency => one_frequency_chart(study, &ok, &p, free),
-        Some(p) => sweep_chart(study, &ok, &p, free)?,
-        None => modes_chart(study, &ok, free)?,
+        Some(p) if one_frequency && study.is_grid() => return Ok(one_frequency_grid_chart(study, &all, &p, &slice, units)),
+        Some(p) if one_frequency => one_frequency_chart(study, &ok, &p, free, units),
+        Some(p) => sweep_chart(study, &ok, &p, free, units)?,
+        None => modes_chart(study, &ok, free, units)?,
     };
     if study.is_grid() {
-        chart.title = format!("{} at {}", chart.title, slice.held(study));
+        chart.title = format!("{} at {}", chart.title, slice.held(study, units));
     }
     Ok(chart)
 }
@@ -109,6 +115,116 @@ pub fn chart(study: &Study, parameter: Option<&str>, slice: &Slice) -> Result<Ch
 /// The name of the sweep's variable `free`, or `otherwise`.
 fn variable(study: &Study, free: usize, otherwise: &str) -> String {
     study.variables.get(free).map_or(otherwise.to_owned(), |n| n.clone())
+}
+
+/// Variable `k`'s unit, when known.
+fn unit_of(units: &[Option<String>], k: usize) -> Option<&str> {
+    units.get(k).and_then(Option::as_deref).filter(|u| !u.is_empty())
+}
+
+/// An axis along variable `k`: its name and unit, `l (mm)`.
+fn axis_name(study: &Study, units: &[Option<String>], k: usize) -> String {
+    let name = variable(study, k, "value");
+    match unit_of(units, k) {
+        Some(u) => format!("{name} ({u})"),
+        None => name,
+    }
+}
+
+/// Variable `k` at value `v` in words: `l = 15 mm`.
+fn valued(study: &Study, units: &[Option<String>], k: usize, v: f64) -> String {
+    let name = variable(study, k, "");
+    match unit_of(units, k) {
+        Some(u) => format!("{name} = {v} {u}"),
+        None => format!("{name} = {v}"),
+    }
+}
+
+/// The unit of an optimization's goal, from what it reads: dB for an S-parameter's, the
+/// frequency unit for an eigenfrequency's, none for a number the solve gives.
+pub fn goal_unit(study: &Study) -> Option<&str> {
+    let goal = study.goal.as_deref()?;
+    if goal.contains("(dB)") || goal.ends_with(" dB") {
+        Some("dB")
+    } else if goal.starts_with("mode ") {
+        Some(&study.frequency_unit)
+    } else {
+        None
+    }
+}
+
+/// Each of the study's variables' display unit (see [`variable_unit`]).
+pub fn variable_units(s: &Session, study: &Study) -> Vec<Option<String>> {
+    study.variables.iter().map(|n| variable_unit(s, n)).collect()
+}
+
+/// The display unit variable `name` stands for, from where the history writes it: a length's
+/// or a frequency's when every number it goes into is one (`"=l"`, `"=l/2 + 1"` in a length);
+/// none when it goes into plain numbers, both kinds, or nowhere.
+///
+/// ```
+/// use emcraft_engine::view::variable_unit;
+///
+/// let mut s = emcraft_engine::Session::new();
+/// s.run_script(&serde_json::json!([
+///     {"command": "project.variable", "params": {"name": "l", "value": 20}},
+///     {"command": "project.variable", "params": {"name": "er", "value": 2}},
+///     {"command": "model.material.create", "params": {"name": "fill", "eps_r": "=er"}},
+///     {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16,
+///         "sections": [{"length": "=l", "material": "fill"}]}}
+/// ])).unwrap();
+/// assert_eq!(variable_unit(&s, "l").as_deref(), Some("mm"));
+/// assert_eq!(variable_unit(&s, "er"), None);
+/// assert_eq!(variable_unit(&s, "nobody"), None);
+/// ```
+pub fn variable_unit(s: &Session, name: &str) -> Option<String> {
+    let mut found: Option<Quantity> = None;
+    for step in s.history.iter().filter(|st| !st.command.starts_with("project.variable")) {
+        let Some(spec) = crate::find_command(&step.command) else { continue };
+        let mut keys = Vec::new();
+        uses(&step.params, "", name, 0, &mut keys);
+        for key in keys {
+            let q = quantity_of(spec, key);
+            match found {
+                None => found = Some(q),
+                Some(f) if f != q => return None,
+                Some(_) => {}
+            }
+        }
+    }
+    match found? {
+        Quantity::Length => Some(s.display.length.symbol().to_owned()),
+        Quantity::Frequency => Some(s.display.frequency.symbol().to_owned()),
+        Quantity::None => None,
+    }
+}
+
+/// The keys under which `v` holds an expression naming variable `name` (nested no deeper than
+/// a few levels: a table's rows).
+fn uses<'a>(v: &'a serde_json::Value, key: &'a str, name: &str, depth: usize, out: &mut Vec<&'a str>) {
+    match v {
+        serde_json::Value::String(e) if e.starts_with('=') => {
+            if e.split(|c: char| !(c.is_alphanumeric() || c == '_')).any(|w| w == name) {
+                out.push(key);
+            }
+        }
+        serde_json::Value::Array(items) if depth < 4 => items.iter().for_each(|x| uses(x, key, name, depth + 1, out)),
+        serde_json::Value::Object(map) if depth < 4 => map.iter().for_each(|(k, x)| uses(x, k, name, depth + 1, out)),
+        _ => {}
+    }
+}
+
+/// What a number under `key` of command `spec` is: its parameter's quantity, or for a key
+/// inside a table (a section's `length`) the quantity a parameter of that name has elsewhere.
+fn quantity_of(spec: &crate::CommandSpec, key: &str) -> Quantity {
+    if let Some(p) = spec.params.iter().find(|p| p.name == key) {
+        return p.quantity;
+    }
+    crate::COMMANDS
+        .iter()
+        .flat_map(|c| c.params.iter())
+        .find(|p| p.name == key && p.quantity != Quantity::None)
+        .map_or(Quantity::None, |p| p.quantity)
 }
 
 /// A row's value of variable `free`.
@@ -137,7 +253,11 @@ fn optimization_chart(study: &Study) -> Result<Chart> {
     if points.is_empty() {
         return Err(nothing_to_chart());
     }
-    let y = padded_axis("goal", points.iter().map(|p| p[1]));
+    let label = match goal_unit(study) {
+        Some(u) => format!("goal ({u})"),
+        None => "goal".to_owned(),
+    };
+    let y = padded_axis(&label, points.iter().map(|p| p[1]));
     Ok(Chart {
         title: format!("Optimization: {}", study.goal.clone().unwrap_or_default()),
         x: Axis::new("evaluation", 0.5, study.rows.len().max(2) as f64 + 0.5),
@@ -152,7 +272,7 @@ fn optimization_chart(study: &Study) -> Result<Chart> {
 
 /// A grid sweep that solved one frequency: |S_p| in dB against the free variable, one curve per
 /// value of the next variable, any others held.
-fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice) -> Chart {
+fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice, units: &[Option<String>]) -> Chart {
     let free = slice.free;
     let label = tex(p);
     let other = (0..study.variables.len()).find(|k| *k != free).unwrap_or(0);
@@ -168,15 +288,15 @@ fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice)
         let rows = study.slice(free, &at);
         let points: Vec<[f64; 2]> = rows.iter().filter(|r| r.error.is_none()).filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-        series.push(Series { label: format!("{} = {v}", variable(study, other, "")), pen: ramp(t), style: Style::Line, points: points.clone() });
+        series.push(Series { label: valued(study, units, other, *v), pen: ramp(t), style: Style::Line, points: points.clone() });
         series.push(Series { label: String::new(), pen: ramp(t), style: Style::Markers, points });
     }
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
-    let x = padded_axis(&variable(study, free, "value"), all.iter().filter_map(|r| value(r, free)));
+    let x = padded_axis(&axis_name(study, units, free), all.iter().filter_map(|r| value(r, free)));
     let mut title = format!("{label} at {f} {} as {} varies", study.frequency_unit, variable(study, free, ""));
     let held: Vec<String> = (0..study.variables.len())
         .filter(|k| *k != free && *k != other)
-        .filter_map(|k| Some(format!("{} = {}", study.variables.get(k)?, study.grid.get(k)?.get(slice.at.get(k).copied().unwrap_or(0))?)))
+        .filter_map(|k| Some(valued(study, units, k, *study.grid.get(k)?.get(slice.at.get(k).copied().unwrap_or(0))?)))
         .collect();
     if !held.is_empty() {
         title = format!("{title} at {}", held.join(", "));
@@ -185,7 +305,7 @@ fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice)
 }
 
 /// A sweep that solved one frequency: |S_p| in dB against the variable.
-fn one_frequency_chart(study: &Study, ok: &[&Row], p: &str, free: usize) -> Chart {
+fn one_frequency_chart(study: &Study, ok: &[&Row], p: &str, free: usize, units: &[Option<String>]) -> Chart {
     let label = tex(p);
     let pts: Vec<[f64; 2]> = ok.iter().filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
     let f = ok.first().and_then(|r| r.frequencies.first()).copied().unwrap_or(f64::NAN);
@@ -194,12 +314,12 @@ fn one_frequency_chart(study: &Study, ok: &[&Row], p: &str, free: usize) -> Char
         Series { label: String::new(), pen: Pen::Series(0), style: Style::Markers, points: pts },
     ];
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
-    let x = padded_axis(&variable(study, free, "value"), ok.iter().filter_map(|r| value(r, free)));
+    let x = padded_axis(&axis_name(study, units, free), ok.iter().filter_map(|r| value(r, free)));
     Chart { title: format!("Sweep of {}", variable(study, free, "")), x, y, series, marks: Vec::new() }
 }
 
 /// A sweep's |S_p| in dB against frequency, one curve per value.
-fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize) -> Result<Chart> {
+fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize, units: &[Option<String>]) -> Result<Chart> {
     let fu = &study.frequency_unit;
     let label = tex(p);
     let n = ok.len();
@@ -209,7 +329,7 @@ fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize) -> Result<Chart
         let points: Vec<[f64; 2]> = r.frequencies.iter().zip(db).map(|(f, d)| [*f, d.max(DB_FLOOR)]).collect();
         let v = value(r, free).unwrap_or(f64::NAN);
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-        series.push(Series { label: format!("{} = {v}", variable(study, free, "")), pen: ramp(t), style: Style::Line, points });
+        series.push(Series { label: valued(study, units, free, v), pen: ramp(t), style: Style::Line, points });
     }
     if series.is_empty() {
         return Err(nothing_to_chart());
@@ -221,7 +341,7 @@ fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize) -> Result<Chart
 }
 
 /// A sweep's eigenmodes against the variable.
-fn modes_chart(study: &Study, ok: &[&Row], free: usize) -> Result<Chart> {
+fn modes_chart(study: &Study, ok: &[&Row], free: usize, units: &[Option<String>]) -> Result<Chart> {
     let fu = &study.frequency_unit;
     let modes = ok.iter().map(|r| r.modes.len()).max().unwrap_or(0);
     if modes == 0 {
@@ -235,7 +355,7 @@ fn modes_chart(study: &Study, ok: &[&Row], free: usize) -> Result<Chart> {
             points: ok.iter().filter_map(|r| Some([value(r, free)?, *r.modes.get(m)?])).collect(),
         })
         .collect();
-    let x = padded_axis(&variable(study, free, "value"), ok.iter().filter_map(|r| value(r, free)));
+    let x = padded_axis(&axis_name(study, units, free), ok.iter().filter_map(|r| value(r, free)));
     let y = padded_axis(&format!("frequency ({fu})"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     Ok(Chart { title: format!("Eigenmodes as {} varies", variable(study, free, "")), x, y, series, marks: Vec::new() })
 }

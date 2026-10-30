@@ -255,6 +255,27 @@ pub fn trf(english: &str, args: &[(&str, &dyn Display)]) -> String {
     fill(tr(english), args)
 }
 
+/// [`trf`] of `one` when `n` is 1, else of `many` (English's singular and plural; a language
+/// without plurals translates both alike). Both are looked up whichever is shown, so the checks
+/// ask for a translation of each.
+///
+/// ```
+/// use emcraft_ui_egui::lang::plural;
+///
+/// assert_eq!(plural(1, "{n} source", "{n} sources", &[("n", &1)]), "1 source");
+/// assert_eq!(plural(3, "{n} source", "{n} sources", &[("n", &3)]), "3 sources");
+/// ```
+pub fn plural(n: usize, one: &str, many: &str, args: &[(&str, &dyn Display)]) -> String {
+    trf(pick(n, one, many), args)
+}
+
+/// The English of `one` when `n` is 1, else of `many`, both looked up (see [`plural`]): for a
+/// text built by hand ([`both`]).
+pub fn pick<'a>(n: usize, one: &'a str, many: &'a str) -> &'a str {
+    let _ = (tr(one), tr(many));
+    if n == 1 { one } else { many }
+}
+
 /// A text in English and as the current language shows it, placeholders filled in both: the
 /// English names what is shown (a browser row's handle), the other is drawn.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

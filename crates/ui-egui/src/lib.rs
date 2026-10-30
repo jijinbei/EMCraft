@@ -1,7 +1,7 @@
 //! EMCraft's desktop UI, in the style of SolidCraft's: an application bar; a ribbon of tabs
-//! (MODEL, MATERIALS, PORTS & SOURCES, MESH, SIMULATE, RESULTS) whose panels hold the engine's
-//! commands, with command search; a browser of the model and its results on the left; the
-//! viewport in the middle (the model's outline, S-parameter charts, fields on planes with a phase
+//! (MODEL, MATERIALS, PORTS & SOURCES, BOUNDARIES, MESH, SIMULATE, RESULTS, in the step bar's
+//! order) whose panels hold the engine's commands, with command search; a browser of the model
+//! and its results on the left; the viewport in the middle (the model's outline, S-parameter charts, fields on planes with a phase
 //! animation, port-mode and eigenmode tables, far-field patterns, the comparison with theory, all
 //! drawn by `emcraft-render` or egui, no GPU rendering); command dialogs as floating or docked
 //! cards; messages, progress and Cancel at the bottom.
@@ -136,6 +136,9 @@ pub struct EmcraftApp {
     pub failure: Option<Failure>,
     /// The dialog whose OK started the running job, to open again if the job fails.
     dialog_job: Option<dialogs::Dialog>,
+    /// The widget that had the keyboard at the end of the last frame: who a key pressed since
+    /// was meant for (egui lets go of the keyboard on Escape before a frame is drawn).
+    pub(crate) focus_last: Option<egui::Id>,
 }
 
 /// The control channel's state beside the app.
@@ -192,7 +195,7 @@ impl EmcraftApp {
             job: None,
             tab: ribbon::RibbonTab::Model,
             dialog: None,
-            dock_dialogs: false,
+            dock_dialogs: prefs::Prefs::default().dock_dialogs,
             view: View::Model,
             field: FieldState::default(),
             views: state::ViewState::default(),
@@ -218,6 +221,7 @@ impl EmcraftApp {
             settings: None,
             failure: None,
             dialog_job: None,
+            focus_last: None,
         };
         app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
         app
@@ -318,7 +322,9 @@ impl EmcraftApp {
         self.idle()?;
         find_command(id)?;
         if commands::is_long(id) {
-            self.job = Some(worker::Job::start(&self.session, id, params, self.ctx.clone()));
+            let mut job = worker::Job::start(&self.session, id, params, self.ctx.clone());
+            job.view = Some(self.view);
+            self.job = Some(job);
             self.info(format!("{}…", label(id)));
             return Ok(json!({"started": id}));
         }
@@ -370,9 +376,14 @@ impl EmcraftApp {
             }
             None => Err(EngineError::failed("the worker stopped without an answer")),
         };
+        // A view chosen while the job ran stays: the job's end does not take it away.
+        let chosen = job.view.filter(|v| *v != self.view).map(|_| self.view);
         match &reply {
             Ok(v) => {
                 self.after(&job.command, &job.params, v);
+                if let Some(v) = chosen {
+                    self.view = v;
+                }
                 if let Some(m) = self.messages.last_mut() {
                     m.text.push_str(&format!(" ({secs:.1} s)"));
                 }
@@ -545,6 +556,7 @@ impl EmcraftApp {
         self.apply_all(out);
         self.collect_screenshots(&ctx);
         self.keep_prefs();
+        self.focus_last = ctx.memory(|m| m.focused());
     }
 
     /// Brings the caches the drawing reads up to date: they come from engine queries, which
@@ -580,6 +592,9 @@ impl EmcraftApp {
             self.workflow.fields = fields;
         } else if self.dialog.as_ref().is_some_and(|d| d.docked) {
             self.lend(|a| &mut a.dialog, |app, dialog| dialog.as_mut().map(|d| dialog_ui::docked(app, d, ui, out)));
+        } else if let Some(d) = self.dialog_job.as_ref().filter(|d| d.docked && self.job.is_some()) {
+            // The docked dialog that started the running job keeps its place with its progress.
+            dialog_ui::docked_running(self, d, ui, out);
         }
         let mut parts = viewport::Parts::take(self);
         let rect = viewport::show(self, &mut parts, ui, out);

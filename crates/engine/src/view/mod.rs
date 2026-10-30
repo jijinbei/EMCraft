@@ -30,5 +30,6 @@ pub use field::{Component, FieldView, Plane, PlaneSamples, Probe, field_plot, ro
 pub use pattern::{pattern_chart, pattern_chart_of};
 pub use port_mode::port_mode_plot;
 pub use reference::{ExactLine, MODE_MATCHING_MODES, Reference, reference, section_cutoffs, te10_line};
-pub use sparameters::sparameter_chart;
+pub use sparameters::{SDisplay, sparameter_chart, sparameter_chart_as};
+pub use study::{chart_with_units, goal_unit, variable_unit, variable_units};
 pub use tdr::tdr_chart;

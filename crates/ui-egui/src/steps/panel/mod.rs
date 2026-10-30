@@ -35,14 +35,22 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 22.0);
                 scenario::publish_rect(Fixed::StepPanel, ui.max_rect());
-                header(ui, &state, t);
+                header(app, ui, &state, t);
+                // A running job stays in view here, whichever step is open.
+                if app.job.is_some() {
+                    crate::messages::job_card(app, ui, out);
+                    ui.add_space(6.0);
+                }
                 let dialog_h = if dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
                     .id_salt("step_panel_scroll")
                     .max_height((h - dialog_h - 70.0).max(120.0))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        checks(ui, &state, t, out);
+                        // Run's checks are about starting one, not the one going on.
+                        if !(step == Step::Run && running(app)) {
+                            checks(ui, &state, t, out);
+                        }
                         body(app, fields, ui, step, &states, t, out);
                     });
                 if let Some(d) = dialog {
@@ -56,12 +64,21 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
         });
 }
 
-fn header(ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
+fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-        mark(ui.painter(), r.center(), s.status, t);
+        let run_going = s.step == Step::Run && running(app);
+        if run_going {
+            super::bar::running_mark(ui, r.center(), t);
+        } else {
+            mark(ui.painter(), r.center(), s.status, t);
+        }
         ui.text(Style::Heading, trf("Step {n} · {step}", args!(n = s.step.index(), step = shown(s.step))));
-        ui_kit::small(ui, Raw(shown(s.status)), status_color(s.status, t));
+        if run_going {
+            ui_kit::small(ui, "running", t.accent);
+        } else {
+            ui_kit::small(ui, Raw(shown(s.status)), status_color(s.status, t));
+        }
     });
     ui.add_space(4.0);
 }
@@ -69,8 +86,10 @@ fn header(ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
 /// The step's checks, each with its fix.
 fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
     if s.messages.is_empty() {
-        ui_kit::small(ui, "Nothing to fix here.", t.success);
-        ui.add_space(6.0);
+        if s.status == Status::Done {
+            ui_kit::small(ui, "Nothing to fix here.", t.success);
+            ui.add_space(6.0);
+        }
         return;
     }
     for (i, m) in s.messages.iter().enumerate() {
