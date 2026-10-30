@@ -267,9 +267,11 @@ fn ports(m: &emcraft_model::Model) -> Vec<Row> {
         let item = Item::new("model.port.edit", "model.port.delete", "name", serde_json::json!(p.name));
         Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None, item: None }.picks(Pick::Port(i)).item(item)
     });
-    let lumped = m.lumped.iter().map(|p| {
+    let lumped = m.lumped.iter().enumerate().map(|(i, p)| {
         let item = Item::new("model.port.lumped.edit", "model.port.lumped.delete", "name", serde_json::json!(p.name));
-        row("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None).item(item)
+        row("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None)
+            .picks(Pick::Lumped(i))
+            .item(item)
     });
     waveguide.chain(lumped).collect()
 }

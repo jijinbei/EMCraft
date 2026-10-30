@@ -64,6 +64,16 @@ emcraft_macros::named_enum! {
         Section = "section",
         /// Two arrows turning back on each other: the other side.
         Flip = "flip",
+        /// A ruler with its ticks: measure.
+        Ruler = "ruler",
+        /// A pencil: edit.
+        Edit = "edit",
+        /// A bin: delete.
+        Delete = "delete",
+        /// A face picked by a pointer: a port on a face.
+        PickFace = "pick_face",
+        /// Two points joined across a gap: a lumped port by two points.
+        PickGap = "pick_gap",
     /// A plain rounded square: a command without a glyph of its own.
         Blank = "blank",
     }
@@ -460,6 +470,40 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
             pen.open(&[(0.68, 0.2), (0.85, 0.35), (0.68, 0.5)], line);
             pen.open(&[(0.85, 0.65), (0.15, 0.65)], bold);
             pen.open(&[(0.32, 0.5), (0.15, 0.65), (0.32, 0.8)], bold);
+        }
+        Glyph::Ruler => {
+            pen.closed(&[(0.08, 0.62), (0.62, 0.08), (0.92, 0.38), (0.38, 0.92)], line);
+            for k in 0..5 {
+                let (x, y) = (0.22 + 0.11 * k as f32, 0.48 - 0.11 * k as f32);
+                let len = if k % 2 == 0 { 0.16 } else { 0.09 };
+                pen.open(&[(x, y), (x + len, y + len)], bold);
+            }
+        }
+        Glyph::Edit => {
+            pen.closed(&[(0.18, 0.66), (0.62, 0.22), (0.78, 0.38), (0.34, 0.82)], line);
+            pen.fill(&[(0.18, 0.66), (0.34, 0.82), (0.12, 0.88)], accent, bold);
+            pen.open(&[(0.54, 0.3), (0.7, 0.46)], line);
+        }
+        Glyph::Delete => {
+            pen.open(&[(0.16, 0.26), (0.84, 0.26)], bold);
+            pen.open(&[(0.4, 0.26), (0.42, 0.14), (0.58, 0.14), (0.6, 0.26)], line);
+            pen.open(&[(0.24, 0.26), (0.3, 0.88), (0.7, 0.88), (0.76, 0.26)], line);
+            pen.open(&[(0.42, 0.4), (0.43, 0.76)], line);
+            pen.open(&[(0.58, 0.4), (0.57, 0.76)], line);
+        }
+        // A face in perspective, a pointer on it.
+        Glyph::PickFace => {
+            pen.fill(&[(0.1, 0.42), (0.52, 0.42), (0.78, 0.16), (0.36, 0.16)], accent.gamma_multiply(0.45), line);
+            pen.closed(&[(0.1, 0.42), (0.1, 0.84), (0.52, 0.84), (0.52, 0.42)], line);
+            pen.fill(&[(0.5, 0.3), (0.5, 0.86), (0.86, 0.66)], ink, line);
+            pen.open(&[(0.66, 0.72), (0.8, 0.94)], line);
+        }
+        // Two dots and the gap's line between them.
+        Glyph::PickGap => {
+            pen.open(&[(0.22, 0.78), (0.78, 0.22)], line);
+            p.circle_filled(pen.at(0.22, 0.78), 0.11 * s, accent);
+            p.circle_filled(pen.at(0.78, 0.22), 0.11 * s, accent);
+            pen.open(&[(0.42, 0.46), (0.54, 0.58)], bold);
         }
         Glyph::Blank => {
             pen.frame(pen.rect(0.2, 0.2, 0.8, 0.8), 3.0, line);

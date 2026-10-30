@@ -49,6 +49,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("geometry.body.delete", None, Some(Glyph::Feature), false),
     ui("geometry.inclusion", Some("Inclusion"), Some(Glyph::Inclusion), false),
     ui("geometry.feature", Some("Boolean"), Some(Glyph::Feature), false),
+    ui("geometry.measure", None, Some(Glyph::Ruler), false),
     ui("mesh.generate", Some("Mesh"), Some(Glyph::Mesh), true),
     ui("mesh.adapt", None, Some(Glyph::Mesh), true),
     ui("model.walls", Some("Walls"), Some(Glyph::Walls), false),

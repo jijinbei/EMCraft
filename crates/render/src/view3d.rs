@@ -234,18 +234,41 @@ fn hit(origin: [f64; 3], dir: [f64; 3], t: &Tri) -> Option<f64> {
     ((0.0..=1.0).contains(&u) && v >= 0.0 && u + v <= 1.0 && d > 0.0).then_some(d)
 }
 
-/// The tag under pixel (x, y): the nearest tagged triangle the ray through it meets, the
-/// nearer of the solid ones (opacity ≥ 200) if any, so see-through walls let what is inside be
-/// picked.
-pub fn pick(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
+/// A tagged triangle a ray through a pixel meets: its index in the scene, where (m) and its tag.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hit {
+    pub index: usize,
+    pub at: [f64; 3],
+    pub tag: u32,
+}
+
+/// The tagged triangles under pixel (x, y): the nearest the ray through it meets, and the
+/// nearest of the solid ones (opacity ≥ 200).
+///
+/// ```
+/// use emcraft_render::view3d::{Camera, Scene, StandardView, hits};
+/// use emcraft_render::Rgb;
+/// let mut s = Scene::default();
+/// s.tagged(7, |s| s.quad([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], Rgb(200, 200, 200), 255));
+/// let mut cam = Camera::default();
+/// cam.standard(StandardView::Front);
+/// cam.fit([-1.0, -1.0, 0.0], [1.0, 1.0, 0.0], 1.0);
+/// // The middle pixel of a 100 × 100 picture looks at the quad's middle.
+/// let (near, solid) = hits(&s, &cam, 50.0, 50.0, 100.0, 100.0).unwrap();
+/// assert_eq!((near.tag, solid.map(|h| h.tag)), (7, Some(7)));
+/// assert!(near.at.iter().all(|c| c.abs() < 1e-9));
+/// // Off the quad, nothing.
+/// assert!(hits(&s, &cam, 1.0, 1.0, 100.0, 100.0).is_none());
+/// ```
+pub fn hits(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
     let (origin, dir) = camera.ray(x, y, w, h)?;
-    let mut solid: Option<(f64, u32)> = None;
-    let mut any: Option<(f64, u32)> = None;
-    for t in scene.tris.iter().filter(|t| t.tag != 0) {
+    let mut solid: Option<(f64, usize)> = None;
+    let mut any: Option<(f64, usize)> = None;
+    for (i, t) in scene.tris.iter().enumerate().filter(|(_, t)| t.tag != 0) {
         let Some(d) = hit(origin, dir, t) else { continue };
-        let keep = |best: &mut Option<(f64, u32)>| {
+        let keep = |best: &mut Option<(f64, usize)>| {
             if best.is_none_or(|(b, _)| d < b) {
-                *best = Some((d, t.tag));
+                *best = Some((d, i));
             }
         };
         keep(&mut any);
@@ -253,7 +276,18 @@ pub fn pick(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> O
             keep(&mut solid);
         }
     }
-    solid.or(any).map(|(_, tag)| tag)
+    let at = |(d, i): (f64, usize)| {
+        let tag = scene.tris.get(i).map_or(0, |t| t.tag);
+        Hit { index: i, at: [origin[0] + dir[0] * d, origin[1] + dir[1] * d, origin[2] + dir[2] * d], tag }
+    };
+    any.map(|a| (at(a), solid.map(at)))
+}
+
+/// The tag under pixel (x, y): the nearest tagged triangle the ray through it meets, the
+/// nearer of the solid ones (opacity ≥ 200) if any, so see-through walls let what is inside be
+/// picked.
+pub fn pick(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
+    hits(scene, camera, x, y, w, h).map(|(any, solid)| solid.unwrap_or(any).tag)
 }
 
 /// A camera's projection onto one picture size.

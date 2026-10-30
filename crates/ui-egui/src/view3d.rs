@@ -127,6 +127,12 @@ pub struct View3d {
     pub drawn_on_gpu: bool,
     /// A drag that began on the field view's plane moves it instead of orbiting.
     moving_plane: bool,
+    /// A drag that began on the selected port's reference plane moves it.
+    moving_ref: bool,
+    /// The tools: face and gap ports, the ruler, the reference plane's drag.
+    pub tools: crate::tools3d::Tools,
+    /// Bumped whenever the scene picked from is built or cut again.
+    generation: u64,
 }
 
 impl Default for View3d {
@@ -148,6 +154,9 @@ impl Default for View3d {
             hover: None,
             drawn_on_gpu: false,
             moving_plane: false,
+            moving_ref: false,
+            tools: crate::tools3d::Tools::default(),
+            generation: 0,
         }
     }
 }
@@ -163,8 +172,14 @@ impl View3d {
         self.built.as_ref().and_then(|(_, b)| b.bounds.or_else(|| b.scene.bounds()))
     }
 
+    /// Which scene [`View3d::shown`] gives: it changes whenever that scene does.
+    pub(crate) fn scene_gen(&self) -> u64 {
+        let cut = matches!((&self.cut, self.section), (Some((_, c, _)), Some(now)) if *c == now);
+        self.generation.wrapping_mul(2).wrapping_add(u64::from(cut))
+    }
+
     /// The scene drawn and picked: the built one, cut when the section view is on.
-    fn shown(&self) -> Option<&Built> {
+    pub(crate) fn shown(&self) -> Option<&Built> {
         match (&self.cut, self.section) {
             (Some((k, c, b)), Some(now)) if *c == now && self.built.as_ref().is_some_and(|(bk, _)| bk == k) => Some(b),
             _ => self.built.as_ref().map(|(_, b)| b),
@@ -199,6 +214,7 @@ impl View3d {
                 let labels = full.labels.iter().filter(|l| s.keeps(l.at)).cloned().collect();
                 let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds };
                 self.cut = Some((key.clone(), now, built));
+                self.generation = self.generation.wrapping_add(1);
             }
             Err(e) => {
                 out.push(Action::error(e));
@@ -240,6 +256,7 @@ impl View3d {
             "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
             "section": self.section.map(|s| s.inspect(l)),
+            "tools": self.tools.inspect(l),
         })
     }
 }
@@ -278,10 +295,25 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         v.fitted = Some(bounds);
         v.fit_next = false;
     }
-    let edit = navigate(v, ui, rect, frame);
+    let grip = crate::tools3d::grip(app, v, rect).filter(|_| !app.busy());
+    let edit = navigate(v, ui, rect, frame, grip);
     if let Some(d) = edit.plane_drag {
         move_plane(app, &v.camera, field, rect, bounds, d);
     }
+    if edit.ref_started {
+        crate::tools3d::start_drag(app, v);
+    }
+    if let Some(d) = edit.ref_drag {
+        crate::tools3d::drag(app, v, rect, d);
+    }
+    if edit.ref_released {
+        crate::tools3d::end_drag(app, v, out);
+    }
+    crate::tools3d::hover(app, v, rect, ui.input(|i| i.pointer.hover_pos()));
+    if edit.tool_click && !app.busy() {
+        crate::tools3d::click(app, v, out);
+    }
+    escape(app, v, ui);
     if overlay == Overlay::Field {
         publish_plane(app, &v.camera, field, rect, bounds);
     }
@@ -301,12 +333,13 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     draw(v, ui, &p, rect, key, gpu, t);
     labels(&p, rect, &v.camera, &built.labels, t);
     legend(&p, rect, &built.legend, t);
+    crate::tools3d::draw(app, v, &p, rect);
     if let Some((_, row)) = &picked {
-        selection_card(&p, rect, row, t);
+        selection_card(ui, &p, rect, row, !app.busy(), t, out);
     }
     let facing = v.facing.map(|f| facing_plane(app.session.display().length, bounds.0, f));
     navigator(&v.camera, ui, rect, out);
-    nav_bar(v, field.player.playing, ui, rect, facing, bounds, out);
+    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, out);
     if v.section.is_some() {
         section_bar(v, ui, rect, bounds, app.session.display().length);
     }
@@ -393,6 +426,7 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at }).collect();
     v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
     v.built = Some((key, scene3d::build_with(&app.session, overlay, &fl, v.highlighted())));
+    v.generation = v.generation.wrapping_add(1);
 }
 
 /// The browser row of what is selected in the view (looked up again only when the selection or
@@ -413,11 +447,27 @@ struct Gesture {
     double: bool,
     /// The pointer's move this frame while dragging the field view's plane.
     plane_drag: Option<egui::Vec2>,
+    /// A drag began on the reference plane's grip, moved it this frame, or let it go.
+    ref_started: bool,
+    ref_drag: Option<egui::Vec2>,
+    ref_released: bool,
+    /// A click with a tool on: the tool takes it.
+    tool_click: bool,
+}
+
+/// Escape clears what a tool picked, then turns it off (while no dialog or field takes the key).
+fn escape(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui) {
+    let idle = app.dialog.is_none() && app.settings.is_none() && app.files.prompt.is_none() && !ui.ctx().text_edit_focused();
+    let any = v.tools.tool.is_some() || v.tools.measured.is_some();
+    if idle && any && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        v.tools.escape();
+    }
 }
 
 /// Orbit, pan and zoom by the pointer; a click picks what is under it (empty space clears), a
-/// double-click on nothing fits the view.
-fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f64; 3])) -> Gesture {
+/// double-click on nothing fits the view. With a tool on, a click is the tool's; a drag from the
+/// reference plane's `grip` moves the plane.
+fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f64; 3]), grip: Option<egui::Pos2>) -> Gesture {
     let resp = ui.hit(rect, Fixed::View3d.into(), Sense::click_and_drag());
     let (shift, middle, scroll) = ui.input(|i| {
         // Wheel steps: lines as they are, points and pages scaled.
@@ -437,8 +487,16 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
         (i.modifiers.shift, i.pointer.middle_down(), steps)
     });
     let d = resp.drag_delta();
-    // A drag starting on the field view's own plane (the first) moves it.
+    // A drag starting on the reference plane's grip moves that plane.
+    let mut ref_started = false;
     if resp.drag_started_by(egui::PointerButton::Primary) && !shift {
+        let press = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos());
+        v.moving_ref = grip.zip(press).is_some_and(|(g, p)| g.distance(p) <= crate::tools3d::GRIP_PX);
+        ref_started = v.moving_ref;
+    }
+    let ref_released = v.moving_ref && !resp.dragged();
+    // A drag starting on the field view's own plane (the first) moves it.
+    if resp.drag_started_by(egui::PointerButton::Primary) && !shift && !v.moving_ref {
         v.moving_plane = resp.interact_pointer_pos().is_some_and(|pos| {
             let at = pos - rect.min;
             let tag = v
@@ -449,9 +507,11 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
     }
     if !resp.dragged() {
         v.moving_plane = false;
+        v.moving_ref = false;
     }
     let plane_drag = (v.moving_plane && resp.dragged()).then_some(d);
-    if resp.dragged() && (d.x != 0.0 || d.y != 0.0) && !v.moving_plane {
+    let ref_drag = (v.moving_ref && resp.dragged()).then_some(d);
+    if resp.dragged() && (d.x != 0.0 || d.y != 0.0) && !v.moving_plane && !v.moving_ref {
         if middle || shift || resp.dragged_by(egui::PointerButton::Middle) {
             v.camera.pan(d.x as f64, d.y as f64, rect.height() as f64);
         } else if resp.dragged_by(egui::PointerButton::Primary) {
@@ -463,6 +523,10 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
         v.camera.zoom(scroll as f64);
     }
     let mut double = false;
+    if v.tools.tool.is_some() {
+        let tool_click = resp.clicked();
+        return Gesture { clicked: false, double, plane_drag, ref_started, ref_drag, ref_released, tool_click };
+    }
     if (resp.clicked() || resp.double_clicked())
         && let Some(pos) = resp.interact_pointer_pos()
     {
@@ -478,7 +542,7 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
             }
         }
     }
-    Gesture { clicked: resp.clicked(), double, plane_drag }
+    Gesture { clicked: resp.clicked(), double, plane_drag, ref_started, ref_drag, ref_released, tool_click: false }
 }
 
 /// The scene drawn into `rect`: by the window's GPU (every frame, full size) or the CPU
@@ -547,15 +611,34 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
     }
 }
 
-/// The selection's name on a card at the top, with how to edit it.
-fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &Tokens) {
-    let hint = if row.editable() { tr("  ·  double-click to edit") } else { "" };
+/// The selection's name on a card at the top, with how to edit it; an item of the model (a
+/// port, a body) gets Edit and Delete beside its name.
+fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate::browser::Row, enabled: bool, t: &Tokens, out: &mut Actions) {
+    let item = row.item.clone();
+    let hint = if row.editable() && item.is_none() { tr("  ·  double-click to edit") } else { "" };
     let g = p.layout_no_wrap(format!("{}{hint}", row.shown.trim()), FontId::proportional(t.font_small), t.text);
-    let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
+    let (size, pitch) = (20.0, 24.0);
+    let buttons = if item.is_some() { 2.0 * pitch + 4.0 } else { 0.0 };
+    let width = g.size().x + 20.0 + buttons;
+    let r = Rect::from_min_size(pos2(rect.center().x - width / 2.0, rect.top() + 10.0), vec2(width, g.size().y.max(size) + 10.0));
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
     p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
-    p.galley(r.min + vec2(10.0, 5.0), g, t.text);
+    p.galley(pos2(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, t.text);
     scenario::publish_target(Fixed::View3dSelected, r);
+    let Some(item) = item else { return };
+    let mut x = r.right() - buttons;
+    for (glyph, handle, tip) in [(Glyph::Edit, Fixed::View3dSelectedEdit, "Edit"), (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete")] {
+        let b = Rect::from_center_size(pos2(x + pitch / 2.0, r.center().y), vec2(size, size));
+        let resp = ui.hit(b, handle.into(), if enabled { Sense::click() } else { Sense::hover() });
+        if resp.hovered() && enabled {
+            p.rect_filled(b, 4.0, t.hover);
+        }
+        glyphs::paint(p, b.shrink(2.0), glyph, if enabled { t.text } else { t.text_dim }, t.accent);
+        if resp.hint(tip).clicked() && enabled {
+            out.push(if handle == Fixed::View3dSelectedEdit { Action::EditItem(item.clone()) } else { Action::DeleteItem(item.clone()) });
+        }
+        x += pitch;
+    }
 }
 
 /// A field plane's box in the model (m) and the standard view that faces it.
@@ -661,6 +744,7 @@ fn nav_bar(
     rect: Rect,
     facing: Option<([f64; 3], [f64; 3], StandardView)>,
     bounds: ([f64; 3], [f64; 3]),
+    overlay: Overlay,
     out: &mut Actions,
 ) {
     let t = &Tokens::get();
@@ -684,6 +768,11 @@ fn nav_bar(
     } else {
         (Glyph::Perspective, Fixed::View3dProjection.into(), "Perspective — click for orthographic")
     });
+    // The tools: the ports' where ports are the subject, the ruler everywhere.
+    use crate::tools3d::Tool;
+    for tool in Tool::ALL.into_iter().filter(|tool| !tool.ports() || overlay == Overlay::Ports) {
+        items.push((tool.glyph(), Handle::Tool(tool), tool.hint()));
+    }
     let (size, pitch) = (28.0, 32.0);
     let width = pitch * items.len() as f32 + 6.0;
     let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 26.0), vec2(width, size + 8.0));
@@ -696,7 +785,8 @@ fn nav_bar(
         let r = Rect::from_center_size(pos2(bar.left() + 3.0 + pitch * (i as f32 + 0.5), bar.center().y), vec2(size, size));
         let resp = ui.hit(r, handle, Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
-        let on = handle == Handle::Fixed(Fixed::View3dSection) && v.section.is_some();
+        let on = (handle == Handle::Fixed(Fixed::View3dSection) && v.section.is_some())
+            || matches!(handle, Handle::Tool(tool) if v.tools.tool == Some(tool));
         if resp.hovered() || on {
             p.rect_filled(r, 5.0, if on { t.accent_soft } else { t.hover });
         }
@@ -708,6 +798,7 @@ fn nav_bar(
                 Handle::Standard(side) => out.push(Action::StandardView(side)),
                 Handle::Fixed(Fixed::View3dPlay) => out.push(Action::SetPlaying(!playing)),
                 Handle::Fixed(Fixed::View3dSection) => v.section = v.section.is_none().then(|| Cut::middle(0, bounds)),
+                Handle::Tool(tool) => out.push(Action::Tool((v.tools.tool != Some(tool)).then_some(tool))),
                 Handle::Fixed(Fixed::View3dFace) => {
                     if let Some((lo, hi, side)) = facing {
                         v.camera.standard(side);

@@ -200,7 +200,7 @@ impl Port {
 
 impl Model {
     /// Whether a waveguide or lumped port is named `name`.
-    pub(crate) fn has_port_named(&self, name: &str) -> bool {
+    pub fn has_port_named(&self, name: &str) -> bool {
         self.ports.iter().any(|x| x.name == name) || self.lumped.iter().any(|x| x.name == name)
     }
 

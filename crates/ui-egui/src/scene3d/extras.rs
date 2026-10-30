@@ -5,7 +5,7 @@ use emcraft_model::{End, Model, Source};
 
 use super::geometry::{BOX_EDGES, ROUND, box_corner};
 use super::style::sc;
-use super::{Built, Label, Overlay, p3};
+use super::{Built, Label, Overlay, Pick, p3};
 use crate::lang::args;
 
 /// Cells across a port's face where its cross-section is sampled (a face that features reach).
@@ -72,8 +72,14 @@ fn port_z(m: &Model, p: &emcraft_model::Port) -> Option<f64> {
     })
 }
 
+/// The direction from a port's face into the model, along z: up from a port at the start (or
+/// on a face with the guide above it), down from one at the end.
+pub(crate) fn port_inward(p: &emcraft_model::Port) -> f64 {
+    if p.end == End::Start { 1.0 } else { -1.0 }
+}
+
 /// A port's face's bounding rectangle in 3D.
-fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
+pub(crate) fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
     let face = port_face(m, p);
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
     for q in face.iter().flatten() {
@@ -93,9 +99,12 @@ pub(super) fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
         ports(m, overlay, size, out);
     }
     let strong = overlay == Overlay::Ports;
-    for p in &m.lumped {
+    for (i, p) in m.lumped.iter().enumerate() {
         let (a, b) = (p3(p.from), p3(p.to));
         out.scene.line(a, b, sc().port, 255);
+        // A small box round the gap's middle to pick it by.
+        let (c, h) = (midpoint(a, b), 0.012 * size);
+        out.scene.tagged(Pick::Lumped(i).tag(), |s| s.cuboid(c.map(|v| v - h), c.map(|v| v + h), sc().port, 255));
         if strong {
             out.labels.push(Label {
                 at: midpoint(a, b),
@@ -137,7 +146,7 @@ fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
                 out.scene.line(a, b, sc().port, 255);
             }
             // The direction into the guide.
-            let dir = if p.end == End::Start { 1.0 } else { -1.0 };
+            let dir = port_inward(p);
             out.scene.line(c, [c[0], c[1], c[2] + dir * 0.12 * size], sc().port, 255);
         }
     }

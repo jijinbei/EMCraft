@@ -62,6 +62,7 @@ pub mod state;
 mod status;
 pub mod steps;
 pub mod theme;
+pub mod tools3d;
 pub mod ui_ext;
 pub mod ui_kit;
 pub mod view;

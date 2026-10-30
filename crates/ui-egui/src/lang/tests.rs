@@ -349,6 +349,21 @@ fn tour() -> Record {
         }
         call(&mut h, "ui.set", json!({"step": "none", "camera": {"projection": "perspective"}}));
     }
+    // The 3D view's tools: no port on a face along z, nor across a guide inside it; a
+    // measurement between two faces, with their gap.
+    call(&mut h, "engine.execute", json!({"command": "file.new"}));
+    let guide = json!({"width": 20, "height": 10, "sections": [{"length": 10, "material": "vacuum"}, {"length": 10, "material": "vacuum"}]});
+    call(&mut h, "engine.execute", json!({"command": "geometry.waveguide", "params": guide}));
+    call(&mut h, "ui.set", json!({"view": "model", "tool": "port"}));
+    call(&mut h, "ui.set", json!({"step": "none", "standard_view": "top"}));
+    step(&mut h, json!({"move": "view3d"}));
+    call(&mut h, "ui.set", json!({"standard_view": "front", "section": {"axis": "z", "at": 5}}));
+    step(&mut h, json!({"move": {"handle": "view3d", "offset": [1, 0]}}));
+    call(&mut h, "ui.set", json!({"section": null, "tool": "measure"}));
+    let face = |z: f64| crate::tools3d::Snap { at: [0.0, 0.0, z], kind: crate::tools3d::SnapKind::Face, dir: Some([0.0, 0.0, 1.0]) };
+    apply(&mut h, [Action::Measure([face(0.0), face(0.01)])]);
+    h.frames(2);
+    call(&mut h, "ui.set", json!({"tool": "none"}));
     // The command search.
     for text in ["zzzz", "mesh.generate {}", "mesh"] {
         h.app.search.text = text.into();
@@ -464,6 +479,7 @@ fn named() -> BTreeSet<String> {
     crate::steps::Step::ALL.iter().for_each(|v| add(v.label()));
     crate::steps::Status::ALL.iter().for_each(|v| add(v.label()));
     crate::steps::Solver::ALL.iter().for_each(|v| add(v.label()));
+    crate::tools3d::Tool::ALL.iter().for_each(|v| add(v.label()));
     for (_, panels) in crate::ribbon::TABS {
         panels.iter().for_each(|(p, _)| add(p));
     }
