@@ -79,6 +79,10 @@ emcraft_macros::named_enum! {
         StaleRerun = "stale:rerun",
         // A template's card: its preview, Open, Cancel and Reset.
         TemplatePreview = "template:preview",
+        // The analysis history's menu.
+        HistoryRestore = "history:restore",
+        HistoryPin = "history:pin",
+        HistoryDelete = "history:delete",
         HomeBlank = "home:blank",
         TemplateOpen = "template:open",
         TemplateCancel = "template:cancel",
@@ -221,6 +225,8 @@ pub enum Handle<'a> {
     StepFix(usize),
     /// A search result: `search:row:mesh.generate`.
     SearchRow(&'a str),
+    /// A kept solve's chip over the S-parameter chart: `history:run:3`.
+    HistoryRun(u32),
     /// A purpose on the start page: `home:purpose:eigenmodes`.
     Purpose(crate::steps::Solver),
     /// A parameter's field on a template's card: `template:field:irises`.
@@ -334,6 +340,7 @@ impl fmt::Display for Handle<'_> {
             Handle::Toolbar(id) => write!(f, "toolbar:{id}"),
             Handle::TemplateField(name) => write!(f, "template:field:{name}"),
             Handle::Purpose(k) => write!(f, "home:purpose:{}", k.id()),
+            Handle::HistoryRun(id) => write!(f, "history:run:{id}"),
             Handle::Panel(t, name) => write!(f, "panel:{}:{name}", t.id()),
             Handle::View(v) => write!(f, "view:{}", v.id()),
             Handle::Row(text) => write!(f, "row:{text}"),

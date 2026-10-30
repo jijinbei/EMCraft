@@ -15,7 +15,7 @@ impl ChartView for FarField {
     const HEIGHT: Height = Height::new(0.9, 260.0, 700.0);
 
     /// The cut, its angle and the component.
-    fn controls(_: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<SharedChart> {
+    fn controls(_: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _out: &mut Actions) -> Option<SharedChart> {
         let p = &mut st.views.pattern;
         ui.horizontal_wrapped(|ui| {
             for (cut, hint) in [(Cut::Phi, "θ varies at an azimuth φ"), (Cut::Theta, "φ varies at a polar angle θ")] {

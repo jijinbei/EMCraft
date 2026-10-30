@@ -149,6 +149,7 @@
     "H-plane": "H 面",
     "H-plane (x across z)": "H 面（z に対する x）",
     "H-plane y": "H 面 y",
+    "History": "履歴",
     "Home view (isometric)": "ホームビュー（等角）",
     "How the 3D view of the model, its mesh and fields is drawn.": "モデル、メッシュ、電磁界の 3D ビューの描き方。",
     "Import": "読み込み",
@@ -240,6 +241,7 @@
     "Periodic boundaries: {cell}": "周期境界：{cell}",
     "Perspective — click for orthographic": "透視投影 — クリックで平行投影",
     "Picture…": "画像…",
+    "Pin": "ピン留め",
     "Plane wave": "平面波",
     "Plane wave along {direction}": "平面波 方向 {direction}",
     "Play": "再生",
@@ -290,6 +292,7 @@
     "Remove from the list": "一覧から削除",
     "Remove this probe": "このプローブを削除",
     "Reset": "リセット",
+    "Restore": "復元",
     "Results": "結果",
     "Run": "実行",
     "Run (step 7) starts this solve after checking the model.": "実行（ステップ 7）でモデルをチェックしてからこの解析を開始します。",
@@ -394,6 +397,7 @@
     "Undone ({undo} to undo, {redo} to redo).": "元に戻しました（元に戻す {undo}、やり直し {redo}）。",
     "Units": "単位",
     "Units apply to new projects; an open one changes its own with MODEL › Units.": "単位は新規プロジェクトに適用されます。開いているプロジェクトは モデル › 単位 で変更します。",
+    "Unpin": "ピン留めを外す",
     "Variables": "変数",
     "Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}": "ビア {n}：{wx} × {wz} {unit}、y {y0}〜{y1}",
     "View from {side} ({view})": "{side} から見る ({view})",
@@ -432,6 +436,7 @@
     "cut off, {a} dB/{unit}": "遮断、{a} dB/{unit}",
     "cut-off {mode}: {f} {unit}": "遮断 {mode}：{f} {unit}",
     "dark": "ダーク",
+    "deepest |S11| {db} dB at {f} {unit}": "|S11| 最小 {db} dB（{f} {unit}）",
     "default": "既定",
     "device": "デバイス",
     "done": "完了",
@@ -566,6 +571,7 @@
     "{n} at the band's top": "帯域上端で {n}",
     "{n} commands that rebuild the model": "モデルを再構築する {n} 個のコマンド",
     "{n} d ago": "{n} 日前",
+    "{n} frequencies": "{n} 周波数",
     "{n} h ago": "{n} 時間前",
     "{n} min ago": "{n} 分前",
     "{n} projects": "{n} 件のプロジェクト",
@@ -1076,7 +1082,8 @@
         "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
         "width": "ピクセル（既定 1000）",
         "height": "ピクセル（既定 600）",
-        "display": "`db`（既定）、`magnitude` または `phase`"
+        "display": "`db`（既定）、`magnitude` または `phase`",
+        "compare": "重ねて描く残した解析（results.history）の ID。それぞれ `#id` の名前の線で描く"
       }
     },
     "model.open": {
@@ -1382,6 +1389,33 @@
         "start": "最初の周波数",
         "stop": "最後の周波数",
         "points": "start から stop までの周波数の数（既定 11）"
+      }
+    },
+    "results.history": {
+      "label": "解析の履歴",
+      "doc": "このセッションで残した解析（古い順）：それぞれの ID、コマンド、周波数、帯域、|S11| の最小値（dB）とその周波数、最初の固有モード、前の回からのモデルの変更（変数の値）、ピン留めの有無、いまの結果がその回のものか。成功した解析はモデルと結果ごと残る。ピン留めしていないものは最大 16 件で、古いものから消える。プロジェクトファイルではなくセッションのもの。",
+      "params": {}
+    },
+    "results.history.restore": {
+      "label": "解析を復元",
+      "doc": "残した解析（results.history）のモデル、単位、変数、結果を戻し、その結果を最新にする。元に戻すで戻れる。",
+      "params": {
+        "id": "残した解析の ID"
+      }
+    },
+    "results.history.pin": {
+      "label": "解析をピン留め",
+      "doc": "解析を履歴の上限を超えて残す（`pinned` true、既定）か、他と同様に消えるよう戻す（false）。",
+      "params": {
+        "id": "残した解析の ID",
+        "pinned": "ピン留め（既定 true）"
+      }
+    },
+    "results.history.delete": {
+      "label": "解析を削除",
+      "doc": "残した解析を履歴から消す。",
+      "params": {
+        "id": "残した解析の ID"
       }
     },
     "results.probes": {

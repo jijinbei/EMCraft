@@ -12,7 +12,7 @@ impl ChartView for Dispersion {
     const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::Dispersion;
     const HEIGHT: Height = OVER_TABLE;
 
-    fn controls(_: &EmcraftApp, _: &mut Parts, _: &mut egui::Ui) -> Option<SharedChart> {
+    fn controls(_: &EmcraftApp, _: &mut Parts, _: &mut egui::Ui, _: &mut Actions) -> Option<SharedChart> {
         Some(SharedChart::Dispersion)
     }
 

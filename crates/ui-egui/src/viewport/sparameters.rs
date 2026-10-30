@@ -12,8 +12,8 @@ impl ChartView for SParameters {
     const HEIGHT: Height = OVER_TABLE;
 
     /// The switch between |S| in dB, its magnitude and its phase.
-    fn controls(_: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<SharedChart> {
-        ui.horizontal(|ui| {
+    fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) -> Option<SharedChart> {
+        ui.horizontal_wrapped(|ui| {
             ui.text(Style::SmallDim, "Show");
             for d in view::SDisplay::ALL {
                 let on = st.views.sdisplay == d;
@@ -21,16 +21,17 @@ impl ChartView for SParameters {
                     st.views.sdisplay = d;
                 }
             }
+            history(app, &mut st.views.compare, ui, out);
         });
-        Some(SharedChart::SParameters(st.views.sdisplay))
+        Some(SharedChart::SParameters(st.views.sdisplay, st.views.compare.clone()))
     }
 
     fn chart(app: &EmcraftApp, key: &SharedChart) -> Result<emcraft_render::chart::Chart, String> {
-        let display = match key {
-            SharedChart::SParameters(d) => *d,
-            _ => view::SDisplay::Db,
+        let (display, compare) = match key {
+            SharedChart::SParameters(d, c) => (*d, c.as_slice()),
+            _ => (view::SDisplay::Db, &[][..]),
         };
-        view::sparameter_chart_as(&app.session, display).map_err(|e| e.to_string())
+        view::sparameter_chart_compared(&app.session, display, compare).map_err(|e| e.to_string())
     }
 
     /// The field view's frequency on the chart, the band to refine, the ports' reference
@@ -247,6 +248,70 @@ fn frequency_decimals(freqs: &[f64]) -> usize {
         return 3;
     }
     (-step.log10()).ceil().clamp(1.0, 6.0) as usize
+}
+
+/// The analysis history beside the display switch: each kept solve a chip (`#3`), a click draws
+/// it over the chart (again: takes it off), the session's own marked; its menu restores it,
+/// pins it or lets it go. What it was (its changes, its deepest |S11|) on hover.
+fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mut Actions) {
+    let rows = emcraft_engine::archive::rows(&app.session);
+    // A solve let go is drawn no more.
+    compare.retain(|id| rows.iter().any(|r| r["id"].as_u64() == Some(u64::from(*id))));
+    if rows.len() < 2 {
+        return;
+    }
+    let t = &Tokens::get();
+    ui.separator();
+    ui.text(Style::SmallDim, "History");
+    let busy = app.busy();
+    for r in &rows {
+        let Some(id) = r["id"].as_u64().and_then(|n| u32::try_from(n).ok()) else { continue };
+        let current = r["current"] == json!(true);
+        let on = compare.contains(&id) || current;
+        let pin = if r["pinned"] == json!(true) { "★" } else { "" };
+        let text = egui::RichText::new(format!("#{id}{pin}")).size(t.font_small).color(if on { t.selected_ink } else { t.text });
+        let chip = egui::Button::new(text).fill(if on { t.accent_soft } else { Color32::TRANSPARENT }).corner_radius(10).stroke(if current {
+            Stroke::new(1.5, t.accent)
+        } else {
+            Stroke::new(1.0, t.border)
+        });
+        let changes: Vec<&str> = r["changes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        let mut tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
+        if !changes.is_empty() {
+            tip = format!("{tip} · {}", changes.join(", "));
+        }
+        if let (Some(db), Some(at)) = (r["best_s11_db"].as_f64(), r["best_at"].as_f64()) {
+            tip = format!(
+                "{tip}\n{}",
+                trf(
+                    "deepest |S11| {db} dB at {f} {unit}",
+                    args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = app.session.display().frequency.symbol())
+                )
+            );
+        }
+        let resp = ui.named(chip, Handle::HistoryRun(id)).hint(Raw(&tip));
+        if resp.clicked() && !current {
+            if let Some(k) = compare.iter().position(|c| *c == id) {
+                compare.remove(k);
+            } else {
+                compare.push(id);
+            }
+        }
+        resp.context_menu(|ui| {
+            let pinned = r["pinned"] == json!(true);
+            let items = [
+                ("Restore", Fixed::HistoryRestore, "results.history.restore", json!({"id": id})),
+                (if pinned { "Unpin" } else { "Pin" }, Fixed::HistoryPin, "results.history.pin", json!({"id": id, "pinned": !pinned})),
+                ("Delete", Fixed::HistoryDelete, "results.history.delete", json!({"id": id})),
+            ];
+            for (label, handle, command, params) in items {
+                if ui.named_enabled(!busy, egui::Button::new(tr(label)), handle.into()).clicked() {
+                    out.push(Action::run(command, params));
+                    ui.close();
+                }
+            }
+        });
+    }
 }
 
 #[cfg(test)]
