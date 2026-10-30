@@ -25,6 +25,10 @@ emcraft_macros::named_enum! {
         BarStart = "bar:start",
         BarTitle = "bar:title",
         BarSettings = "bar:settings",
+        // The settings page.
+        SettingsClose = "settings:close",
+        SettingsReloadThemes = "settings:reload_themes",
+        SettingsClearRecent = "settings:clear_recent",
         MenuFile = "menu:file",
         MenuEdit = "menu:edit",
         EditUndo = "edit:undo",
@@ -48,6 +52,7 @@ emcraft_macros::named_enum! {
         // The start page.
         HomeNew = "home:new",
         HomeOpen = "home:open",
+        HomeSettings = "home:settings",
         // The window's cards.
         Ribbon = "ribbon",
         Steps = "steps",
@@ -160,6 +165,8 @@ pub enum Handle<'a> {
     Recent(usize),
     /// A setting's choice: `settings:length:mm`.
     Setting(&'static str, &'a str),
+    /// A section of the settings page: `settings:section:units`.
+    SettingsSection(crate::settings::Section),
     /// A dialog's field: `dialog:field:width`.
     DialogField(&'a str),
     /// A part of a vector field: `dialog:field:at:1`.
@@ -229,6 +236,7 @@ impl fmt::Display for Handle<'_> {
             Handle::Sample(name) => write!(f, "sample:{name}"),
             Handle::Recent(i) => write!(f, "home:recent:{i}"),
             Handle::Setting(group, name) => write!(f, "settings:{group}:{name}"),
+            Handle::SettingsSection(s) => write!(f, "settings:section:{}", s.id()),
             Handle::DialogField(name) => write!(f, "dialog:field:{name}"),
             Handle::DialogPart(name, k) => write!(f, "dialog:field:{name}:{k}"),
             Handle::DialogCell(name, row, column) => write!(f, "dialog:cell:{name}:{row}:{column}"),

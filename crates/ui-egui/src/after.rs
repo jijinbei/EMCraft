@@ -57,6 +57,7 @@ impl EmcraftApp {
         }
         if matches!(id, "file.new" | "file.sample") {
             self.home.open = false;
+            self.settings = None;
         }
         // An open problem's fields read best as |E| (a source's own component may vanish on
         // the planes through it); a guide's as Ey, its TE10 field.

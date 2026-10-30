@@ -189,6 +189,11 @@ fn scenario_themes() {
     scenario("themes");
 }
 
+#[test]
+fn scenario_settings() {
+    scenario("settings");
+}
+
 /// Every scenario file has a test above.
 #[test]
 fn every_scenario_file_runs() {

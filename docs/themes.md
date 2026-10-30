@@ -35,7 +35,7 @@ and the curves of a chart. The ribbon's tabs share the theme's hue.
    or `engine.execute` over the control channel) reports the palette pictures get and every
    problem.
 5. Put it in the `themes` folder of the configuration directory and choose it in Settings ›
-   Theme (the gear on the app bar, or the start page), or with `ui.set {"theme": "<name>"}`.
+   Appearance (the gear on the app bar, or All settings… on the start page), or with `ui.set {"theme": "<name>"}`.
 
 The configuration directory is `$EMCRAFT_CONFIG_DIR`, else `$XDG_CONFIG_HOME/emcraft`, else
 `~/.config/emcraft` (where `prefs.json` lives), so themes go in e.g.

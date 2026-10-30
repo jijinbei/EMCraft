@@ -1,14 +1,13 @@
 //! The start page, after SolidCraft's (`crates/ui-egui/src/home.rs`: New and Open, the recent
 //! designs and the samples, each a card with a picture), written anew for EMCraft: New
-//! project and Open, the recent projects, the samples drawn by the 3D view, and the settings
-//! new projects start with. Shown on launch without a sample and from the app bar's house;
+//! project and Open, the recent projects, the samples drawn by the 3D view, and the units new
+//! projects start with (the rest on the settings page). Shown on launch without a sample and from the app bar's house;
 //! anything opened leaves it.
 
 use std::collections::HashMap;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::Session;
-use emcraft_model::units::{Frequency, Length};
 use emcraft_render::view3d::{self, Camera, StandardView};
 use serde_json::Value;
 
@@ -17,6 +16,7 @@ use crate::files::{FileAction, Then};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
 use crate::scene3d::{self, Overlay};
+use crate::settings::Section;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Picture, UiExt, scenario};
 
@@ -233,75 +233,15 @@ fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     }
 }
 
-/// A setting's row of the settings grid: its name, then a selectable label per choice
-/// (`(value, label, id, hint)`, published as `settings:<group>:<id>`); a click asks for
-/// `action(value)`.
-#[allow(clippy::too_many_arguments)]
-fn setting<T: Copy + PartialEq>(
-    ui: &mut egui::Ui,
-    out: &mut Actions,
-    name: &str,
-    group: &'static str,
-    current: T,
-    choices: &[(T, &str, &str, &str)],
-    action: impl Fn(T) -> Action,
-) {
+/// The units new projects start with, and the way to every other setting.
+fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
-    ui.label(egui::RichText::new(name).color(t.text_dim));
-    ui.horizontal_wrapped(|ui| {
-        for &(value, label, id, hint) in choices {
-            ui.act(true, egui::Button::selectable(current == value, label), Handle::Setting(group, id), hint, || action(value), out);
-        }
-    });
-    ui.end_row();
-}
-
-/// A theme's name as its button reads: the built-in ones capitalised.
-fn theme_label(name: &str) -> &str {
-    match name {
-        "light" => "Light",
-        "dark" => "Dark",
-        other => other,
-    }
-}
-
-/// The settings new projects start with and the window's look, also under the app bar's gear.
-pub fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = &Tokens::get();
-    egui::Grid::new("settings").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
-        setting(ui, out, "Length", "length", app.prefs.length, &[(Length::Millimetre, "mm", "mm", ""), (Length::Metre, "m", "m", "")], |u| {
-            Action::Pref(Pref::Length(u))
-        });
-        let frequencies = [(Frequency::Gigahertz, "GHz", "GHz", ""), (Frequency::Megahertz, "MHz", "MHz", ""), (Frequency::Hertz, "Hz", "Hz", "")];
-        setting(ui, out, "Frequency", "frequency", app.prefs.frequency, &frequencies, |u| Action::Pref(Pref::Frequency(u)));
-        // Every theme there is: the built-in ones, then the user's (docs/themes.md).
-        let names = app.themes.names();
-        let themes: Vec<(usize, &str, &str, &str)> = app
-            .themes
-            .list
-            .iter()
-            .enumerate()
-            .map(|(i, th)| (i, if th.fallback { th.name.as_str() } else { theme_label(&th.name) }, th.name.as_str(), th.description.as_str()))
-            .collect();
-        let current = names.iter().position(|n| *n == app.theme).unwrap_or(0);
-        setting(ui, out, "Theme", "theme", current, &themes, |i| Action::Pref(Pref::Theme(names.get(i).copied().unwrap_or("light").to_owned())));
-        let drawing = [
-            (false, "Quality", "quality", "the CPU renderer: depth-buffered and smoothed at rest"),
-            (true, "Fast", "fast", "the GPU, every frame: for large meshes"),
-        ];
-        setting(ui, out, "3D drawing", "3d", app.prefs.gpu3d, &drawing, |gpu| Action::Pref(Pref::Gpu3d(gpu)));
-        setting(
-            ui,
-            out,
-            "Dialogs",
-            "dialogs",
-            app.dock_dialogs,
-            &[(false, "Floating", "floating", ""), (true, "Docked", "docked", "")],
-            Action::SetDock,
-        );
-    });
+    crate::settings::unit_choices(app, ui, out);
     ui.add_space(t.space_4);
     ui.label(
         egui::RichText::new("Units apply to new projects; an open one changes its own with MODEL › Units.").size(t.font_small).color(t.text_dim),
     );
+    ui.add_space(t.space_12);
+    let all = crate::ui_kit::styled("All settings…", false);
+    ui.act(true, all, Fixed::HomeSettings.into(), "The theme, the 3D view, dialogs and files", || Action::Settings(Some(Section::Appearance)), out);
 }

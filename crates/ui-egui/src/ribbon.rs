@@ -83,12 +83,13 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let house = Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(26.0, 26.0));
             let home = ui.hit(house, Fixed::BarStart.into(), Sense::click());
             let p = ui.painter();
-            if home.hovered() || app.home.open {
-                p.rect_filled(house, t.radius_sm, if app.home.open { t.app_bar_active } else { t.app_bar_hover });
+            let at_home = app.home.open && app.settings.is_none();
+            if home.hovered() || at_home {
+                p.rect_filled(house, t.radius_sm, if at_home { t.app_bar_active } else { t.app_bar_hover });
             }
             glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
             if home.on_hover_text("Start page").clicked() {
-                out.push(Action::SetHome(!app.home.open));
+                out.push(Action::SetHome(!at_home));
             }
             let p = ui.painter();
             p.text(pos2(r.left() + 40.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
@@ -126,15 +127,13 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             // At the right: the settings.
             let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(26.0, 26.0));
             let resp = ui.hit(gear, Fixed::BarSettings.into(), Sense::click());
-            if resp.hovered() {
-                ui.painter().rect_filled(gear, t.radius_sm, t.app_bar_hover);
+            if resp.hovered() || app.settings.is_some() {
+                ui.painter().rect_filled(gear, t.radius_sm, if app.settings.is_some() { t.app_bar_active } else { t.app_bar_hover });
             }
             glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
-            let resp = resp.on_hover_text("Settings");
-            egui::Popup::menu(&resp).show(|ui| {
-                ui.set_min_width(300.0);
-                crate::home::settings(app, ui, out);
-            });
+            if resp.on_hover_text("Settings").clicked() {
+                out.push(Action::Settings(if app.settings.is_some() { None } else { Some(crate::settings::Section::default()) }));
+            }
             // The running job, at the right.
             if let Some(job) = &app.job {
                 ui.painter().text(
