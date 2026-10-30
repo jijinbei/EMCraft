@@ -6,13 +6,15 @@
 use egui::{Align2, Color32, FontId, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::handle::{Fixed, Handle, Part};
+use crate::lang::{Shown, tr};
 use crate::theme::Tokens;
 use crate::{UiExt, scenario};
 
 /// A card's title band: glyph, title, optional dock toggle and a close button. Returns
 /// (close clicked, dock clicked).
-pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: &str, docked: Option<bool>, accent: Color32) -> (bool, bool) {
+pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: impl Shown, docked: Option<bool>, accent: Color32) -> (bool, bool) {
     let t = &Tokens::get();
+    let title = title.shown();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), t.form_header_height), Sense::hover());
     let icon = Rect::from_center_size(pos2(rect.left() + t.space_12 + 10.0, rect.center().y), vec2(20.0, 20.0));
     crate::glyphs::paint(ui.painter(), icon, glyph, t.icon, accent);
@@ -51,6 +53,7 @@ pub enum Mark {
 /// A small square button with a drawn mark, published as `handle`.
 pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed) -> Response {
     let t = &Tokens::get();
+    let label = tr(label);
     let resp = ui.hit(r, handle.into(), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     if resp.hovered() {
@@ -78,8 +81,9 @@ pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed)
 
 /// A form row: the label in the label column, the control after it. The label's text is the
 /// row's accessible name.
-pub fn row<R>(ui: &mut Ui, label: &str, required: bool, add: impl FnOnce(&mut Ui) -> R) -> R {
+pub fn row<R>(ui: &mut Ui, label: impl Shown, required: bool, add: impl FnOnce(&mut Ui) -> R) -> R {
     let t = &Tokens::get();
+    let label = label.shown();
     ui.horizontal(|ui| {
         ui.set_min_height(t.control_height);
         let (r, _) = ui.allocate_exact_size(vec2(t.form_label_width, t.control_height), Sense::hover());
@@ -93,19 +97,20 @@ pub fn row<R>(ui: &mut Ui, label: &str, required: bool, add: impl FnOnce(&mut Ui
 }
 
 /// A caption: small dim wrapping text.
-pub fn caption(ui: &mut Ui, text: &str) {
+pub fn caption(ui: &mut Ui, text: impl Shown) {
     small(ui, text, Tokens::get().text_dim);
 }
 
 /// Small text in `color`.
-pub fn small(ui: &mut Ui, text: impl Into<String>, color: Color32) -> Response {
+pub fn small(ui: &mut Ui, text: impl Shown, color: Color32) -> Response {
     let t = &Tokens::get();
-    ui.label(egui::RichText::new(text).size(t.font_small).color(color))
+    ui.label(egui::RichText::new(text.shown()).size(t.font_small).color(color))
 }
 
 /// A section heading in small capitals with a hairline after it.
-pub fn section(ui: &mut Ui, text: &str) {
+pub fn section(ui: &mut Ui, text: impl Shown) {
     let t = &Tokens::get();
+    let text = text.shown();
     ui.add_space(t.space_4);
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
     let g = ui.painter().layout_no_wrap(text.to_uppercase(), FontId::proportional(t.font_small), t.text_dim);
@@ -115,25 +120,25 @@ pub fn section(ui: &mut Ui, text: &str) {
 }
 
 /// A full-width error band.
-pub fn error_band(ui: &mut Ui, text: &str) {
+pub fn error_band(ui: &mut Ui, text: impl Shown) {
     let t = &Tokens::get();
     egui::Frame::NONE.fill(t.form_error_fill).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        let r = ui.label(egui::RichText::new(text).size(t.font_body).color(t.form_error));
+        let r = ui.label(egui::RichText::new(text.shown()).size(t.font_body).color(t.form_error));
         scenario::publish_rect(Fixed::DialogError, r.rect);
     });
 }
 
 /// A card's button: secondary, or `primary` in the accent colour.
-pub fn styled(label: &str, primary: bool) -> egui::Button<'static> {
+pub fn styled(label: impl Shown, primary: bool) -> egui::Button<'static> {
     let t = &Tokens::get();
-    let text = egui::RichText::new(label).size(t.font_button).color(if primary { t.on_accent } else { t.form_ink });
+    let text = egui::RichText::new(label.shown()).size(t.font_button).color(if primary { t.on_accent } else { t.form_ink });
     let b = egui::Button::new(text).min_size(vec2(72.0, t.control_height)).corner_radius(t.control_radius);
     if primary { b.fill(t.accent) } else { b.fill(t.control_fill).stroke(Stroke::new(1.0, t.control_border)) }
 }
 
 /// A card's button ([`styled`]) whose click stays with its card, published as `handle`.
-pub fn button(ui: &mut Ui, label: &str, primary: bool, handle: Fixed) -> Response {
+pub fn button(ui: &mut Ui, label: impl Shown, primary: bool, handle: Fixed) -> Response {
     ui.named(styled(label, primary), handle.into())
 }
 
@@ -209,7 +214,7 @@ pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed) 
         t.accent,
     );
     scenario::publish_target(Handle::Part(handle, Part::Play), r);
-    let tip = if player.playing { "Pause" } else { "Play" };
+    let tip = tr(if player.playing { "Pause" } else { "Play" });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
     if resp.on_hover_text(tip).clicked() {
         player.playing = !player.playing;

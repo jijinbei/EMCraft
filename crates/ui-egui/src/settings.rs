@@ -1,6 +1,7 @@
 //! The settings page: every preference in one place, by section — the look (the themes, each
-//! a card drawn in its own colours, and the user's theme folder), the units new projects start
-//! with, how the 3D view is drawn, where dialogs open, and the files the app keeps. Opened from
+//! a card drawn in its own colours, and the user's theme folder), the window's language, the
+//! units new projects start with, how the 3D view is drawn, where dialogs open, and the files
+//! the app keeps. Opened from
 //! the app bar's gear or the start page; it takes the window until Done or Escape, and every
 //! change applies at once and is kept with the preferences.
 
@@ -10,8 +11,9 @@ use emcraft_model::units::{Frequency, Length};
 
 use crate::action::Pref;
 use crate::handle::{Fixed, Handle};
+use crate::lang::{Raw, Shown, shown, tr, trf};
 use crate::theme::{Theme, Tokens};
-use crate::{Action, Actions, EmcraftApp, UiExt, scenario};
+use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
 
 emcraft_macros::named_enum! {
     /// A section of the settings page.
@@ -19,6 +21,7 @@ emcraft_macros::named_enum! {
     pub enum Section {
         #[default]
         Appearance = "appearance" => "Appearance",
+        Language = "language" => "Language",
         Units = "units" => "Units",
         View3d = "3d" => "3D view",
         Dialogs = "dialogs" => "Dialogs",
@@ -38,7 +41,7 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
     let t = &Tokens::get();
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.panel).inner_margin(egui::Margin::symmetric(36, 24))).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Settings").size(30.0).strong().color(t.text));
+            ui.text(Style::Title, "Settings");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let done = crate::ui_kit::styled("Done", true);
                 ui.act(true, done, Fixed::SettingsClose.into(), "Back (Escape)", || Action::Settings(None), out);
@@ -49,7 +52,7 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
             ui.vertical(|ui| {
                 ui.set_width(NAV);
                 for s in Section::ALL {
-                    let button = egui::Button::selectable(s == section, egui::RichText::new(s.label()).size(t.font_button))
+                    let button = egui::Button::selectable(s == section, egui::RichText::new(shown(s)).size(t.font_button))
                         .min_size(vec2(NAV, t.control_height));
                     ui.act(true, button, Handle::SettingsSection(s), "", || Action::Settings(Some(s)), out);
                 }
@@ -58,10 +61,11 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
             ui.vertical(|ui| {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     ui.set_max_width(CONTENT);
-                    ui.label(egui::RichText::new(section.label()).size(t.font_heading + 4.0).strong().color(t.text));
+                    ui.label(egui::RichText::new(shown(section)).size(t.font_heading + 4.0).strong().color(t.text));
                     ui.add_space(t.space_12);
                     match section {
                         Section::Appearance => appearance(app, ui, out),
+                        Section::Language => language(app, ui, out),
                         Section::Units => units(app, ui, out),
                         Section::View3d => view3d(app, ui, out),
                         Section::Dialogs => dialogs(app, ui, out),
@@ -74,11 +78,11 @@ pub fn show(app: &EmcraftApp, section: Section, ui: &mut egui::Ui, out: &mut Act
 }
 
 /// A setting's heading and what it does.
-fn heading(ui: &mut egui::Ui, title: &str, about: &str) {
+fn heading(ui: &mut egui::Ui, title: &str, about: impl Shown) {
     let t = &Tokens::get();
-    ui.label(egui::RichText::new(title).size(t.font_button).strong().color(t.text));
-    if !about.is_empty() {
-        ui.label(egui::RichText::new(about).size(t.font_small).color(t.text_dim));
+    ui.label(egui::RichText::new(tr(title)).size(t.font_button).strong().color(t.text));
+    if !about.shown().is_empty() {
+        ui.text(Style::SmallDim, about);
     }
     ui.add_space(t.space_6);
 }
@@ -89,7 +93,8 @@ fn gap(ui: &mut egui::Ui) {
 }
 
 /// A setting's choices, side by side: each `(value, label, id)`, published as
-/// `settings:<group>:<id>`; a click asks for `action(value)`.
+/// `settings:<group>:<id>`; a click asks for `action(value)`. The labels are names (units,
+/// languages), shown as they are.
 fn choices<T: Copy + PartialEq>(
     ui: &mut egui::Ui,
     out: &mut Actions,
@@ -109,7 +114,8 @@ fn choices<T: Copy + PartialEq>(
     });
 }
 
-/// A setting's choices one under another, each with what it means: `(value, label, id, about)`.
+/// A setting's choices one under another, each with what it means: `(value, label, id, about)`,
+/// in the current language.
 fn options<T: Copy + PartialEq>(
     ui: &mut egui::Ui,
     out: &mut Actions,
@@ -121,21 +127,23 @@ fn options<T: Copy + PartialEq>(
     let t = &Tokens::get();
     egui::Grid::new(group).num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
         for &(value, label, id, about) in list {
-            let b = egui::Button::selectable(current == value, egui::RichText::new(label).size(t.font_button))
+            let b = egui::Button::selectable(current == value, egui::RichText::new(tr(label)).size(t.font_button))
                 .min_size(vec2(96.0, t.control_height))
                 .frame_when_inactive(true);
             ui.act(true, b, Handle::Setting(group, id), "", || action(value), out);
-            ui.label(egui::RichText::new(about).color(t.text_dim));
+            ui.text(Style::Dim, about);
             ui.end_row();
         }
     });
 }
 
-/// A theme's name as its card reads: the built-in ones capitalised.
+/// A theme's name as its card reads: the built-in ones capitalised (in the current language).
 pub fn theme_label(th: &Theme) -> String {
     let name = th.name.as_str();
     match name.chars().next() {
-        Some(first) if !th.fallback && Base::parse(name).is_some() => first.to_uppercase().chain(name.chars().skip(1)).collect(),
+        Some(first) if !th.fallback && Base::parse(name).is_some() => {
+            tr(&first.to_uppercase().chain(name.chars().skip(1)).collect::<String>()).to_owned()
+        }
         _ => name.to_owned(),
     }
 }
@@ -152,7 +160,7 @@ fn appearance(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         "Theme files (JSON) in the folder below, each changing a built-in theme's colours (docs/themes.md). Read again after you edit them.",
     );
     if yours.is_empty() {
-        ui.label(egui::RichText::new("None yet.").color(t.text_dim));
+        ui.text(Style::Dim, "None yet.");
         ui.add_space(t.space_8);
     } else {
         theme_cards(app, ui, &yours, out);
@@ -163,8 +171,20 @@ fn appearance(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         path_label(ui, app.themes.dir.as_deref());
     });
     for problem in &app.themes.problems {
-        ui.label(egui::RichText::new(problem).size(t.font_small).color(t.error));
+        crate::ui_kit::small(ui, problem, t.error);
     }
+}
+
+fn language(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    heading(ui, "Language", "The language of the window. It changes at once.");
+    let list: Vec<(&str, &str, &str)> = crate::lang::languages().iter().map(|l| (l.id, l.name.as_str(), l.id)).collect();
+    choices(ui, out, "language", app.prefs.language(), &list, |id| Action::Pref(Pref::Language(id.to_owned())));
+    gap(ui);
+    heading(
+        ui,
+        "What stays in English",
+        "The engine's messages and errors, the text drawn in pictures (charts, field plots), the command and parameter ids, and the command line.",
+    );
 }
 
 /// A path as a label (its full text on hover), or that there is none.
@@ -176,7 +196,7 @@ fn path_label(ui: &mut egui::Ui, path: Option<&std::path::Path>) {
             ui.add(egui::Label::new(egui::RichText::new(&text).monospace().size(t.font_small).color(t.text_dim)).truncate()).on_hover_text(text);
         }
         None => {
-            ui.label(egui::RichText::new("no configuration folder").size(t.font_small).color(t.text_dim));
+            ui.text(Style::SmallDim, "no configuration folder");
         }
     }
 }
@@ -251,7 +271,7 @@ fn theme_card(ui: &mut egui::Ui, th: &Theme, current: bool) -> egui::Response {
     let name_at = pos2(r.left() + 12.0, win.bottom() + 20.0);
     let clip = p.with_clip_rect(r.shrink(6.0));
     clip.text(name_at, Align2::LEFT_CENTER, theme_label(th), FontId::proportional(t.font_body), t.text);
-    let kind = if th.is_dark() { "dark" } else { "light" };
+    let kind = tr(if th.is_dark() { "dark" } else { "light" });
     clip.text(pos2(r.right() - 12.0, name_at.y), Align2::RIGHT_CENTER, kind, FontId::proportional(t.font_small), t.text_dim);
     if current {
         let dot = pos2(r.right() - 14.0, r.top() + 14.0);
@@ -262,19 +282,19 @@ fn theme_card(ui: &mut egui::Ui, th: &Theme, current: bool) -> egui::Response {
     scenario::publish_target(Handle::Setting("theme", &th.name), r);
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, current, th.name.as_str()));
-    if th.description.is_empty() { resp } else { resp.on_hover_text(th.description.as_str()) }
+    resp.hint(Raw(&th.description))
 }
 
 /// The units new projects start with.
 pub fn unit_choices(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     egui::Grid::new("units").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
-        ui.label(egui::RichText::new("Length").color(t.text_dim));
+        ui.text(Style::Dim, "Length");
         choices(ui, out, "length", app.prefs.length, &[(Length::Millimetre, "mm", "mm"), (Length::Metre, "m", "m")], |u| {
             Action::Pref(Pref::Length(u))
         });
         ui.end_row();
-        ui.label(egui::RichText::new("Frequency").color(t.text_dim));
+        ui.text(Style::Dim, "Frequency");
         let frequencies = [(Frequency::Gigahertz, "GHz", "GHz"), (Frequency::Megahertz, "MHz", "MHz"), (Frequency::Hertz, "Hz", "Hz")];
         choices(ui, out, "frequency", app.prefs.frequency, &frequencies, |u| Action::Pref(Pref::Frequency(u)));
         ui.end_row();
@@ -309,14 +329,15 @@ fn dialogs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 fn files(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = &Tokens::get();
     let n = app.prefs.recent.len();
-    heading(ui, "Recent projects", &format!("The start page lists the projects you opened or saved last, at most {}.", crate::prefs::MAX_RECENT));
+    let at_most = trf("The start page lists the projects you opened or saved last, at most {n}.", &[("n", &crate::prefs::MAX_RECENT)]);
+    heading(ui, "Recent projects", at_most);
     ui.horizontal(|ui| {
         let clear = crate::ui_kit::styled("Clear the list", false);
         ui.act(n > 0, clear, Fixed::SettingsClearRecent.into(), "", || Action::Pref(Pref::ClearRecent), out);
-        ui.label(egui::RichText::new(if n == 1 { "1 project".to_owned() } else { format!("{n} projects") }).color(t.text_dim));
+        ui.text(Style::Dim, if n == 1 { tr("1 project").to_owned() } else { trf("{n} projects", &[("n", &n)]) });
     });
+
     gap(ui);
     heading(ui, "Preferences file", "Where these settings are kept between launches.");
     path_label(ui, app.prefs_store.path.as_deref());

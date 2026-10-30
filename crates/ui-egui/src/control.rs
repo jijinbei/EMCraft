@@ -146,6 +146,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "dark": app.themes.get(&app.theme).is_dark(),
         "themes": app.themes.names(),
         "theme_problems": app.themes.problems,
+        "language": app.prefs.language(),
+        "languages": crate::lang::ids(),
         "home": app.home.open,
         "settings": app.settings.map(|s| s.id()),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
@@ -312,8 +314,8 @@ fn commands() -> Value {
         .collect()
 }
 
-/// Sets what the window shows: tab, view, theme, docking, the field's plane position and
-/// animation, the workflow step, the 3D camera. Each is the action the window's own control
+/// Sets what the window shows: tab, view, theme, language, docking, the field's plane
+/// position and animation, the workflow step, the 3D camera. Each is the action the window's own control
 /// asks for; all are read before any is performed.
 fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
     for k in ["tab", "view"] {
@@ -341,6 +343,12 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         Some(Value::String(name)) if app.themes.find(name).is_some() => asked.push(Action::Pref(Pref::Theme(name.clone()))),
         Some(Value::String(name)) => return Err(format!("no theme `{}` (there are {})", clip(name, 40), app.themes.names().join(", "))),
         Some(_) => return Err("`theme` must be a theme's name".into()),
+    }
+    match a.get("language") {
+        None => {}
+        Some(Value::String(id)) if crate::lang::find(id).is_some() => asked.push(Action::Pref(Pref::Language(id.clone()))),
+        Some(Value::String(id)) => return Err(format!("no language `{}` (there are {})", clip(id, 16), crate::lang::ids().join(", "))),
+        Some(_) => return Err("`language` must be a language's id".into()),
     }
     if let Some(d) = a.bool("dock") {
         asked.push(Action::SetDock(d));

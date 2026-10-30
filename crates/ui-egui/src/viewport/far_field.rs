@@ -13,7 +13,7 @@ impl ChartView for FarField {
     fn controls(_: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<SharedChart> {
         let mut phi = st.views.pattern_phi;
         ui.horizontal(|ui| {
-            let r = crate::ui_kit::slider(ui, &mut phi, 0.0..=180.0, "azimuth φ (°)");
+            let r = crate::ui_kit::slider(ui, &mut phi, 0.0..=180.0, tr("azimuth φ (°)"));
             scenario::publish_target(Fixed::PatternPhi, r.rect);
         });
         if (phi - st.views.pattern_phi).abs() > 1e-9 {

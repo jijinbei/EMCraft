@@ -13,25 +13,26 @@ use super::*;
 pub fn summary(study: &Study) -> String {
     let names = study.variables.join(", ");
     let failed = study.rows.iter().filter(|r| r.error.is_some()).count();
-    let failed = if failed > 0 { format!(", {failed} failed") } else { String::new() };
+    let failed = if failed > 0 { trf(", {n} failed", &[("n", &failed)]) } else { String::new() };
+    let (n, solve) = (study.rows.len(), &study.solve);
     match study.kind {
         Kind::Sweep if study.is_grid() => {
             let sizes: Vec<String> = study.grid.iter().map(|v| v.len().to_string()).collect();
-            format!("Sweep of {names} on a grid: {} = {} points by {}{failed}", sizes.join(" × "), study.rows.len(), study.solve)
+            let args: [(&str, &dyn std::fmt::Display); 5] =
+                [("names", &names), ("sizes", &sizes.join(" × ")), ("n", &n), ("solve", solve), ("failed", &failed)];
+            trf("Sweep of {names} on a grid: {sizes} = {n} points by {solve}{failed}", &args)
         }
-        Kind::Sweep => format!("Sweep of {names}: {} values by {}{failed}", study.rows.len(), study.solve),
+        Kind::Sweep => trf("Sweep of {names}: {n} values by {solve}{failed}", &[("names", &names), ("n", &n), ("solve", solve), ("failed", &failed)]),
         Kind::Optimize => {
             let best = study.best.and_then(|b| study.rows.get(b)).map(|r| {
                 let at: Vec<String> = study.variables.iter().zip(&r.values).map(|(n, v)| format!("{n} = {}", short(*v))).collect();
-                format!("best {} (goal {})", at.join(", "), r.objective.map_or("–".into(), short))
+                trf("best {at} (goal {goal})", &[("at", &at.join(", ")), ("goal", &r.objective.map_or("–".into(), short))])
             });
-            let state = if study.converged { "converged" } else { "stopped at its budget" };
-            format!(
-                "Optimization of {names}: {}, {} solves, {state}; {}",
-                study.goal.clone().unwrap_or_default(),
-                study.rows.len(),
-                best.unwrap_or_default()
-            )
+            let state = tr(if study.converged { "converged" } else { "stopped at its budget" });
+            let goal = study.goal.clone().unwrap_or_default();
+            let args: [(&str, &dyn std::fmt::Display); 5] =
+                [("names", &names), ("goal", &goal), ("n", &n), ("state", &state), ("best", &best.unwrap_or_default())];
+            trf("Optimization of {names}: {goal}, {n} solves, {state}; {best}", &args)
         }
     }
 }
@@ -125,7 +126,7 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
         }
         let Some(axis) = study.grid.get(k) else { continue };
         ui.horizontal_wrapped(|ui| {
-            crate::ui_kit::small(ui, format!("{n} at"), t.text_dim);
+            crate::ui_kit::small(ui, trf("{name} at", &[("name", n)]), t.text_dim);
             for (i, v) in axis.iter().enumerate().take(MAX_PILLS) {
                 let on = slice.at.get(k) == Some(&i);
                 if ui.named(pill(&short(*v), on, 10, PillSize::Small), Handle::StudyAt(n, i)).clicked()
@@ -156,14 +157,14 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
                 ui.label(egui::RichText::new(n).strong());
             }
             if optimize {
-                ui.label(egui::RichText::new("goal").strong());
+                ui.text(Style::Strong, "goal");
             } else if let Some(p) = parameter {
                 let p = p.to_uppercase();
-                ui.label(egui::RichText::new(format!("min |{p}| dB")).strong());
-                ui.label(egui::RichText::new(format!("max |{p}| dB")).strong());
+                ui.text(Style::Strong, trf("min |{p}| dB", &[("p", &p)]));
+                ui.text(Style::Strong, trf("max |{p}| dB", &[("p", &p)]));
             }
             if !study.rows.iter().all(|r| r.modes.is_empty()) {
-                ui.label(egui::RichText::new(format!("modes ({})", study.frequency_unit)).strong());
+                ui.text(Style::Strong, trf("modes ({unit})", &[("unit", &study.frequency_unit)]));
             }
             ui.label(egui::RichText::new("").strong());
             ui.end_row();
@@ -190,7 +191,7 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>) {
                 }
                 match (&r.error, best) {
                     (Some(e), _) => ui.label(egui::RichText::new(emcraft_engine::text::clip(e, 120)).size(t.font_small).color(t.error)),
-                    (None, true) => ui.label(egui::RichText::new("best").size(t.font_small).color(t.accent)),
+                    (None, true) => crate::ui_kit::small(ui, "best", t.accent),
                     (None, false) => ui.label(""),
                 };
                 ui.end_row();

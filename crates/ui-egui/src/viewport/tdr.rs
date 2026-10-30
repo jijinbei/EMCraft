@@ -41,7 +41,7 @@ impl ChartView for Tdr {
 fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrParams, ui: &mut egui::Ui) {
     let ports: Vec<String> = app.session.sparameter_entries().into_iter().map(|e| e.name).collect();
     ui.horizontal(|ui| {
-        ui.label("port");
+        ui.text(Style::Body, "port");
         let shown = tdr.port.clone().or_else(|| ports.first().cloned()).unwrap_or_default();
         let r = egui::ComboBox::from_id_salt("tdr:port").selected_text(shown.as_str()).show_ui(ui, |ui| {
             for p in &ports {
@@ -53,7 +53,7 @@ fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrParams, ui: &mut egui::
         scenario::publish_target(Fixed::TdrPort, r.response.rect);
         ui.separator();
         for (mode, label, tip) in MODES {
-            let r = ui.named(egui::Button::selectable(tdr.mode == mode, label), Handle::TdrMode(mode.map_or("auto", Mode::id))).on_hover_text(tip);
+            let r = ui.named(egui::Button::selectable(tdr.mode == mode, tr(label)), Handle::TdrMode(mode.map_or("auto", Mode::id))).hint(tip);
             if r.clicked() {
                 tdr.mode = mode;
             }

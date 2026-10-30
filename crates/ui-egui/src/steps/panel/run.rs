@@ -16,7 +16,7 @@ fn refusal_band(ui: &mut egui::Ui, heading: &str, t: &Tokens, details: impl FnOn
 
 /// A finding's way to its step; `true` when taken.
 fn go_to(ui: &mut egui::Ui, step: Step, handle: Handle, out: &mut Actions) -> bool {
-    let label = format!("Go to {}", step.label());
+    let label = trf("Go to {step}", &[("step", &shown(step))]);
     ui.act(true, egui::Button::new(label).small(), handle, "", || Action::OpenStep(Some(step)), out).clicked()
 }
 
@@ -31,7 +31,7 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     for (list, color, what) in [(&pre.blocking, t.error, "blocks"), (&pre.warnings, t.warning, "warning")] {
         for (i, (step, text)) in list.iter().enumerate() {
             ui.horizontal_wrapped(|ui| {
-                ui_kit::small(ui, format!("{} · {text}", step.label()), color);
+                ui_kit::small(ui, format!("{} · {text}", shown(*step)), color);
                 went |= go_to(ui, *step, Handle::Preflight(what, i), out);
             });
         }
@@ -41,13 +41,13 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     }
     let solver = f.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
     ui.add_space(6.0);
-    ui_kit::small(ui, format!("Solver: {}", solver.label()), t.text);
+    ui_kit::small(ui, trf("Solver: {solver}", &[("solver", &shown(solver))]), t.text);
     let label = if !pre.blocking.is_empty() {
-        format!("Run — {} problem(s) to fix first", pre.blocking.len())
+        trf("Run — {n} problem(s) to fix first", &[("n", &pre.blocking.len())])
     } else if pre.warnings.is_empty() {
-        "Run".to_owned()
+        tr("Run").to_owned()
     } else {
-        format!("Run, accepting {} warning(s)", pre.warnings.len())
+        trf("Run, accepting {n} warning(s)", &[("n", &pre.warnings.len())])
     };
     let busy = app.busy();
     ui.act(!busy, ui_kit::styled(&label, true), Fixed::RunStart.into(), "", || Action::StartRun, out);
@@ -58,10 +58,10 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     }
     let mut went = false;
     if f.refused.is_some() {
-        refusal_band(ui, &format!("Run refused: {} problem(s) to fix first", pre.blocking.len()), t, |ui| {
+        refusal_band(ui, &trf("Run refused: {n} problem(s) to fix first", &[("n", &pre.blocking.len())]), t, |ui| {
             for (i, (step, text)) in pre.blocking.iter().enumerate() {
                 ui.horizontal_wrapped(|ui| {
-                    ui_kit::small(ui, format!("• {} · {text}", step.label()), t.form_error);
+                    ui_kit::small(ui, format!("• {} · {text}", shown(*step)), t.form_error);
                     went |= go_to(ui, *step, Handle::Refused(i), out);
                 });
             }
@@ -69,7 +69,7 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     }
     // A solve that started and failed says why here too.
     if !busy && let Some(crate::Failure { error: e, .. }) = app.failure.as_ref().filter(|f| f.command == solver.command()) {
-        refusal_band(ui, &format!("{} failed", crate::label(solver.command())), t, |ui| {
+        refusal_band(ui, &trf("{command} failed", &[("command", &crate::label(solver.command()))]), t, |ui| {
             ui_kit::small(ui, e, t.form_error);
         });
     }
@@ -82,14 +82,9 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     if let Some(e) = estimate(app).ok().filter(|_| solver == Solver::Frequency) {
         let n = |k: &str| e.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
         let points = f.points.trim().parse::<f64>().unwrap_or(11.0);
-        ui_kit::caption(
-            ui,
-            &format!(
-                "About {:.0} unknowns, {:.0} MB, {:.1} s for {points} frequencies (fast sweep: less).",
-                n("unknowns"),
-                n("memory_mb"),
-                n("seconds_per_frequency") * points
-            ),
-        );
+        let (unknowns, mb, secs) =
+            (format!("{:.0}", n("unknowns")), format!("{:.0}", n("memory_mb")), format!("{:.1}", n("seconds_per_frequency") * points));
+        let args: [(&str, &dyn std::fmt::Display); 4] = [("unknowns", &unknowns), ("mb", &mb), ("secs", &secs), ("points", &points)];
+        ui_kit::caption(ui, trf("About {unknowns} unknowns, {mb} MB, {secs} s for {points} frequencies (fast sweep: less).", &args));
     }
 }

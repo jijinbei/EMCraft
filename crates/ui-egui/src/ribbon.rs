@@ -10,8 +10,9 @@ use serde_json::Value;
 use crate::commands::{button_label, glyph};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
+use crate::lang::{Raw, command_doc, shown, tr, trf};
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, UiExt, scenario};
+use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario};
 
 emcraft_macros::named_enum! {
     /// A ribbon tab: its id is its title (the control channel's `tab:<id>` handles, `ui.set
@@ -88,13 +89,14 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 p.rect_filled(house, t.radius_sm, if at_home { t.app_bar_active } else { t.app_bar_hover });
             }
             glyphs::paint(p, house.shrink(4.0), Glyph::Start, t.app_bar_text, t.accent);
-            if home.on_hover_text("Start page").clicked() {
+            if home.hint("Start page").clicked() {
                 out.push(Action::SetHome(!at_home));
             }
             let p = ui.painter();
             p.text(pos2(r.left() + 40.0, r.center().y), Align2::LEFT_CENTER, "EMCraft", FontId::proportional(15.0), t.app_bar_text);
             let mut x = r.left() + 120.0;
             let bar_button = |ui: &mut egui::Ui, x: &mut f32, text: &str, handle: Fixed| {
+                let text = tr(text);
                 let g = ui.painter().layout_no_wrap(text.to_owned(), FontId::proportional(t.font_button), t.app_bar_text);
                 let br = Rect::from_min_size(pos2(*x, r.top() + 4.0), vec2(g.size().x + 20.0, r.height() - 8.0));
                 let resp = ui.hit(br, handle.into(), Sense::click());
@@ -113,9 +115,9 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             egui::Popup::menu(&edit).show(|ui| {
                 ui.set_min_width(200.0);
                 let (u, r) = (app.session.undo().len(), app.session.redo().len());
-                let undo = egui::Button::new(format!("Undo  ({u})")).shortcut_text("Ctrl+Z");
+                let undo = egui::Button::new(trf("Undo  ({n})", &[("n", &u)])).shortcut_text("Ctrl+Z");
                 ui.act(u > 0 && !busy, undo, Fixed::EditUndo.into(), "", || Action::Undo, out);
-                let redo = egui::Button::new(format!("Redo  ({r})")).shortcut_text("Ctrl+Y");
+                let redo = egui::Button::new(trf("Redo  ({n})", &[("n", &r)])).shortcut_text("Ctrl+Y");
                 ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), "", || Action::Redo, out);
             });
             // The project's name in the middle, a dot while it has unsaved changes.
@@ -131,7 +133,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.painter().rect_filled(gear, t.radius_sm, if app.settings.is_some() { t.app_bar_active } else { t.app_bar_hover });
             }
             glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
-            if resp.on_hover_text("Settings").clicked() {
+            if resp.hint("Settings").clicked() {
                 out.push(Action::Settings(if app.settings.is_some() { None } else { Some(crate::settings::Section::default()) }));
             }
             // The running job, at the right.
@@ -196,14 +198,14 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                     let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
                     let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
                     ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
-                    if resp.on_hover_text(emcraft_engine::find_command(id).map_or("", |c| c.doc)).clicked() {
+                    if resp.hint(Raw(command_doc(id))).clicked() {
                         out.push(Action::dialog(id));
                     }
                     x += w + 3.0;
                 }
                 // The panel's name under its buttons, and a divider after it.
                 let pr = Rect::from_min_max(pos2(x0, top + BUTTON_HEIGHT), pos2(x, top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT));
-                ui.painter().text(pr.center(), Align2::CENTER_CENTER, panel, FontId::proportional(10.5), t.text_dim);
+                ui.painter().text(pr.center(), Align2::CENTER_CENTER, tr(panel), FontId::proportional(10.5), t.text_dim);
                 scenario::publish_rect(Handle::Panel(tab, panel), pr);
                 x += 6.0;
                 ui.painter().vline(x, (top + 4.0)..=(top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT - 2.0), Stroke::new(1.0, t.border));
@@ -216,7 +218,7 @@ fn tabs(app: &EmcraftApp, ui: &mut egui::Ui, row: Rect, out: &mut Actions) {
     let t = &Tokens::get();
     let mut x = row.left() + 4.0;
     for &(tab, _) in TABS {
-        let name = tab.id();
+        let name = shown(tab);
         let g = ui.painter().layout_no_wrap(name.to_owned(), FontId::proportional(t.font_button), t.text);
         let tr = Rect::from_min_size(pos2(x, row.top() + 4.0), vec2(g.size().x + 24.0, TAB_ROW_HEIGHT - 8.0));
         let resp = ui.hit(tr, Handle::Tab(tab), Sense::click());
@@ -258,21 +260,23 @@ const MAX_QUERY: usize = 4096;
 /// Most rows shown.
 const MAX_RESULTS: usize = 12;
 
-/// The commands matching a query, best first: id or label prefix, then substring.
+/// The commands matching a query, best first: id or label prefix, then substring (the label and
+/// description in English and in the current language).
 pub fn matches(query: &str) -> Vec<&'static emcraft_engine::CommandSpec> {
     let q = query.trim().to_lowercase();
     let q = q.split_whitespace().next().unwrap_or("");
     let mut scored: Vec<(u8, &'static emcraft_engine::CommandSpec)> = emcraft_engine::COMMANDS
         .iter()
         .filter_map(|c| {
-            let (id, label) = (c.id.to_lowercase(), c.label.to_lowercase());
+            let (id, label, shown) = (c.id.to_lowercase(), c.label.to_lowercase(), crate::label(c.id).to_lowercase());
+            let doc = |d: &str| d.to_lowercase().contains(q);
             let score = if q.is_empty() {
                 3
             } else if id == q {
                 0
-            } else if id.starts_with(q) || label.starts_with(q) {
+            } else if id.starts_with(q) || label.starts_with(q) || shown.starts_with(q) {
                 1
-            } else if id.contains(q) || label.contains(q) || c.doc.to_lowercase().contains(q) {
+            } else if id.contains(q) || label.contains(q) || shown.contains(q) || doc(c.doc) || doc(command_doc(c.id)) {
                 2
             } else {
                 return None;
@@ -301,7 +305,7 @@ fn search_field(search: &mut Search, ui: &mut egui::Ui, row: Rect, out: &mut Act
     let mut field = ui.new_child(egui::UiBuilder::new().max_rect(r));
     let edit = egui::TextEdit::singleline(&mut search.text)
         .id(egui::Id::new("emcraft_search"))
-        .hint_text("Search commands (/)")
+        .hint_text(tr("Search commands (/)"))
         .char_limit(MAX_QUERY)
         .desired_width(r.width())
         .margin(egui::Margin::symmetric(8, 3));
@@ -385,18 +389,19 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
             ui.set_width(420.0);
             if let Some(d) = &direct {
                 match d {
-                    Ok((id, _)) => ui.label(egui::RichText::new(format!("Enter runs {id} with these parameters")).color(t.success)),
+                    Ok((id, _)) => ui.label(egui::RichText::new(trf("Enter runs {id} with these parameters", &[("id", id)])).color(t.success)),
                     Err(e) => ui.label(egui::RichText::new(e).color(t.form_error)),
                 };
             }
             if list.is_empty() {
-                ui.label(egui::RichText::new("No command matches.").color(t.text_dim));
+                ui.text(Style::Dim, "No command matches.");
             }
             for (i, c) in list.iter().enumerate() {
                 let selected = i == search.selected;
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click());
                 scenario::publish_target(Handle::SearchRow(c.id), r);
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, c.label));
+                let label = crate::label(c.id);
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
                 if selected || resp.hovered() {
                     ui.painter().rect_filled(r, t.radius_sm, if selected { t.accent_soft } else { t.hover });
                 }
@@ -407,13 +412,7 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
                     t.icon,
                     t.accent,
                 );
-                ui.painter().text(
-                    pos2(r.left() + 38.0, r.top() + 11.0),
-                    Align2::LEFT_CENTER,
-                    c.label,
-                    FontId::proportional(t.font_label),
-                    t.form_ink,
-                );
+                ui.painter().text(pos2(r.left() + 38.0, r.top() + 11.0), Align2::LEFT_CENTER, label, FontId::proportional(t.font_label), t.form_ink);
                 ui.painter().text(pos2(r.left() + 38.0, r.top() + 27.0), Align2::LEFT_CENTER, c.id, FontId::monospace(t.font_small), t.text_dim);
                 if resp.clicked() {
                     pick = Some(c.id);
@@ -440,10 +439,8 @@ pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::
     egui::Area::new(egui::Id::new("emcraft_export")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(12).show(ui, |ui| {
             ui.set_width(400.0);
-            ui.label(egui::RichText::new("Export history as script").size(t.font_label).strong().color(t.form_ink));
-            ui.label(
-                egui::RichText::new(format!("{} commands that rebuild the model", app.session.history().len())).size(t.font_small).color(t.text_dim),
-            );
+            ui.text(Style::Prompt, "Export history as script");
+            ui.text(Style::SmallDim, trf("{n} commands that rebuild the model", &[("n", &app.session.history().len())]));
             let r = ui.add(egui::TextEdit::singleline(path).desired_width(380.0).char_limit(4096));
             scenario::publish_target(Fixed::ExportPath, r.rect);
             ui.horizontal(|ui| {

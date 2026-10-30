@@ -1,6 +1,7 @@
 //! The step bar under the ribbon: each step with its status mark.
 
 use super::*;
+use crate::lang::shown;
 
 const BAR_HEIGHT: f32 = 40.0;
 
@@ -20,16 +21,16 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let mut x = card.left() + 8.0;
             let mut clicked = None;
             for (i, s) in states.iter().enumerate() {
-                let text = format!("{} {}", i, s.step.label());
+                let text = format!("{} {}", i, shown(s.step));
                 let g = ui.painter().layout_no_wrap(text.clone(), font.clone(), t.text);
                 let r = Rect::from_min_size(pos2(x, card.top() + 4.0), vec2(g.size().x + 34.0, card.height() - 8.0));
                 let resp = ui.hit(r, Handle::Step(s.step), Sense::click());
                 let tip = if s.messages.is_empty() {
-                    format!("{}: {}", s.step.label(), s.status.id())
+                    format!("{}: {}", shown(s.step), shown(s.status))
                 } else {
                     s.messages.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join("\n")
                 };
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, s.step.label()));
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, shown(s.step)));
                 let active = app.workflow.step == Some(s.step);
                 let fill = if active {
                     t.accent_soft

@@ -255,7 +255,7 @@ pub fn fix(app: &mut EmcraftApp, command: &str) -> Result<(), UiError> {
 fn positive(text: &str) -> Result<f64, String> {
     let v = dialogs::parse_number(text)?;
     if !(v > 0.0) {
-        return Err("must be greater than 0".into());
+        return Err(crate::lang::tr("must be greater than 0").into());
     }
     Ok(v)
 }
@@ -263,9 +263,10 @@ fn positive(text: &str) -> Result<f64, String> {
 /// An integer within `lo..=hi`.
 fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
     let s = text.trim();
-    let v: u64 = s.parse().map_err(|_| format!("must be a whole number from {lo} to {hi}"))?;
+    let range: [(&str, &dyn std::fmt::Display); 2] = [("lo", &lo), ("hi", &hi)];
+    let v: u64 = s.parse().map_err(|_| crate::lang::trf("must be a whole number from {lo} to {hi}", &range))?;
     if !(lo..=hi).contains(&v) {
-        return Err(format!("must be from {lo} to {hi}"));
+        return Err(crate::lang::trf("must be from {lo} to {hi}", &range));
     }
     Ok(v)
 }

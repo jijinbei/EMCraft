@@ -7,7 +7,7 @@ pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens
     let tree = crate::browser::tree(app);
     for (_, rows) in tree.iter().filter(|(s, _)| *s == "Geometry") {
         for r in rows {
-            ui_kit::small(ui, &r.text, t.text);
+            ui_kit::small(ui, &r.shown, t.text);
         }
     }
     if let Some(emcraft_model::Aabb { min: lo, max: hi }) = app.session.model().bounds() {
@@ -32,19 +32,22 @@ pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
 pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     ui_kit::section(ui, "Boundaries");
     let m = app.session.model();
-    kv(ui, "walls", m.wall_conductivity.map_or("perfect conductor".into(), |s| format!("σ = {s:.3e} S/m")), t);
+    kv(ui, "walls", m.wall_conductivity.map_or(tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")), t);
     let l = app.session.display().length;
-    let kind = |o: &emcraft_model::Open| if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" };
-    kv(ui, "open", m.open.map_or("closed (no PML)".into(), |o| format!("{} {} {lu} thick", kind(&o), fmt(l.from_si(o.thickness)))), t);
+    let kind = |o: &emcraft_model::Open| tr(if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" });
+    let thick = |o: &emcraft_model::Open| {
+        trf("{kind} {thickness} {unit} thick", &[("kind", &kind(o)), ("thickness", &fmt(l.from_si(o.thickness))), ("unit", &lu)])
+    };
+    kv(ui, "open", m.open.map_or(tr("closed (no PML)").into(), |o| thick(&o)), t);
     let planes: Vec<String> = m
         .symmetry
         .iter()
         .map(|s| {
-            let wall = if s.kind == emcraft_model::SymmetryKind::Electric { "electric" } else { "magnetic" };
+            let wall = tr(if s.kind == emcraft_model::SymmetryKind::Electric { "electric" } else { "magnetic" });
             format!("{} = {} {lu}, {wall}", if s.axis == emcraft_model::Axis::X { "x" } else { "y" }, fmt(l.from_si(s.at)))
         })
         .collect();
-    kv(ui, "symmetry", if planes.is_empty() { "none (the whole model)".into() } else { planes.join("; ") }, t);
+    kv(ui, "symmetry", if planes.is_empty() { tr("none (the whole model)").into() } else { planes.join("; ") }, t);
     if let Some(p) = &m.periodic {
         kv(ui, "periodic", crate::browser::periodic_text(p), t);
     }
@@ -66,19 +69,21 @@ pub(super) fn mesh(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     if let Some(b) = app.session.model().band {
         let index = app.session.model().materials.iter().map(|x| (x.eps_r * x.mu_r).sqrt()).fold(1.0, f64::max);
         let lambda = emcraft_model::units::C0 / (b.stop * index);
-        kv(ui, "per wavelength", format!("{:.1} at the band's top", lambda / h.max(1e-300)), t);
+        kv(ui, "per wavelength", trf("{n} at the band's top", &[("n", &format!("{:.1}", lambda / h.max(1e-300)))]), t);
     }
     ui_kit::section(ui, "Estimate");
     match estimate(app) {
         Ok(e) => {
             let n = |k: &str| e.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
-            kv(ui, "unknowns", format!("{:.0} (order {})", n("unknowns"), e.get("order").and_then(Value::as_u64).unwrap_or(2)), t);
+            let order = e.get("order").and_then(Value::as_u64).unwrap_or(2);
+            kv(ui, "unknowns", trf("{n} (order {order})", &[("n", &format!("{:.0}", n("unknowns"))), ("order", &order)]), t);
             kv(ui, "memory", format!("{:.0} MB", n("memory_mb")), t);
             let measured = e.get("from_this_session").and_then(Value::as_bool) == Some(true);
-            kv(ui, "time", format!("{:.2} s per frequency{}", n("seconds_per_frequency"), if measured { "" } else { " (reference machine)" }), t);
+            let template = if measured { "{secs} s per frequency" } else { "{secs} s per frequency (reference machine)" };
+            kv(ui, "time", trf(template, &[("secs", &format!("{:.2}", n("seconds_per_frequency")))]), t);
         }
         Err(e) => {
-            ui_kit::small(ui, e, t.text_dim);
+            ui_kit::small(ui, Raw(e), t.text_dim);
         }
     }
 }

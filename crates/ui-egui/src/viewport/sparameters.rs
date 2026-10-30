@@ -41,7 +41,7 @@ fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, s
         let (top, bottom) = (r.rect.top() + y0 as f32 * sy, r.rect.top() + (y0 + ph) as f32 * sy);
         painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
         let (at, align) = if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
-        painter.text(at, align, "fields shown", FontId::proportional(t.font_small), t.accent);
+        painter.text(at, align, tr("fields shown"), FontId::proportional(t.font_small), t.accent);
     }
     if r.clicked()
         && let Some(pos) = r.interact_pointer_pos()
@@ -67,7 +67,7 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let n = entries.len().clamp(2, TABLE_ENTRIES);
     if entries.iter().any(|e| e.terminal.is_some()) {
         let names: Vec<String> = entries.iter().enumerate().map(|(i, e)| format!("{} = {}", i + 1, e.name)).collect();
-        crate::ui_kit::caption(ui, &format!("Entries of S: {}", names.join(", ")));
+        crate::ui_kit::caption(ui, trf("Entries of S: {entries}", &[("entries", &names.join(", "))]));
     }
     egui::ScrollArea::vertical().id_salt("s_table").show(ui, |ui| {
         egui::Grid::new("s_grid").striped(true).num_columns(1 + 2 * n).show(ui, |ui| {

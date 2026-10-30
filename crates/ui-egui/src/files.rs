@@ -12,8 +12,9 @@ use serde_json::json;
 
 use crate::action::Pref;
 use crate::handle::Fixed;
+use crate::lang::{Raw, sample_label, tr, trf};
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, UiExt, scenario, ui_kit};
+use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario, ui_kit};
 
 /// A file dialog, asked without blocking: `done` is called with the path chosen, `None` when
 /// cancelled, from any thread.
@@ -102,7 +103,7 @@ pub(crate) fn apply(app: &mut EmcraftApp, a: FileAction) {
 
 fn request(app: &mut EmcraftApp, then: Then) {
     if app.busy() {
-        app.error("busy: wait for the running job or cancel it first");
+        app.error_with("busy: wait for the running job or cancel it first", &[]);
         return;
     }
     if app.session.is_dirty() {
@@ -220,8 +221,8 @@ fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actio
     egui::Area::new(egui::Id::new("emcraft_file_prompt")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {
             ui.set_width(440.0);
-            ui.label(egui::RichText::new(title).size(t.font_label).strong().color(t.form_ink));
-            ui.label(egui::RichText::new("The project file (.emcraft)").size(t.font_small).color(t.text_dim));
+            ui.text(Style::Prompt, title);
+            ui.text(Style::SmallDim, "The project file (.emcraft)");
             let r = ui.add(egui::TextEdit::singleline(&mut p.text).desired_width(420.0).char_limit(4096));
             scenario::publish_target(Fixed::FilePath, r.rect);
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -252,8 +253,8 @@ fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
     egui::Area::new(egui::Id::new("emcraft_file_confirm")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {
             ui.set_width(400.0);
-            ui.label(egui::RichText::new(format!("Save the changes to {}?", app.session.name())).size(t.font_label).strong().color(t.form_ink));
-            ui.label(egui::RichText::new("They are lost otherwise.").size(t.font_small).color(t.text_dim));
+            ui.text(Style::Prompt, trf("Save the changes to {name}?", &[("name", &app.session.name())]));
+            ui.text(Style::SmallDim, "They are lost otherwise.");
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 for (label, primary, handle, a) in [
@@ -307,28 +308,28 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.set_min_width(240.0);
     let busy = app.busy();
     let item = |ui: &mut egui::Ui, out: &mut Actions, text: &str, keys: &str, handle: Fixed, enabled: bool, action: Action| {
-        ui.act(enabled, egui::Button::new(text).shortcut_text(keys), handle.into(), "", || action, out);
+        ui.act(enabled, egui::Button::new(tr(text)).shortcut_text(keys), handle.into(), "", || action, out);
     };
     let file = Action::File;
     item(ui, out, "New project", "Ctrl+N", Fixed::FileNew, !busy, file(FileAction::Request(Then::New)));
     item(ui, out, "Open…", "Ctrl+O", Fixed::FileOpen, !busy, file(FileAction::Request(Then::Open)));
     let recent = &app.prefs.recent;
     ui.add_enabled_ui(!busy && !recent.is_empty(), |ui| {
-        ui.menu_button("Open recent", |ui| {
+        ui.menu_button(tr("Open recent"), |ui| {
             for path in recent {
                 if ui.button(path).clicked() {
                     out.push(file(FileAction::Request(Then::OpenPath(path.clone()))));
                 }
             }
             ui.separator();
-            if ui.button("Clear the list").clicked() {
+            if ui.button(tr("Clear the list")).clicked() {
                 out.push(Action::Pref(Pref::ClearRecent));
             }
         });
     });
-    ui.menu_button("Samples", |ui| {
+    ui.menu_button(tr("Samples"), |ui| {
         for s in emcraft_engine::sample::SAMPLES {
-            if ui.add_enabled(!busy, egui::Button::new(s.name)).on_hover_text(s.label).clicked() {
+            if ui.add_enabled(!busy, egui::Button::new(s.name)).hint(Raw(sample_label(s.name))).clicked() {
                 out.push(file(FileAction::Request(Then::Sample(s.name.to_owned()))));
             }
         }

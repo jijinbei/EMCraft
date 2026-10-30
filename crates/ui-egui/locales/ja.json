@@ -1,0 +1,1093 @@
+{
+  "name": "日本語",
+  "strings": {
+    "  ·  double-click to edit": "  ·  ダブルクリックで編集",
+    ", {n} failed": "、失敗 {n} 件",
+    "1 project": "1 件のプロジェクト",
+    "3D view": "3D ビュー",
+    "A card over the view, which you can move.": "ビューの上に浮かぶカード。移動できます。",
+    "A command's dialog, opened from the ribbon, the browser or the search.": "リボン、ブラウザー、検索から開くコマンドのダイアログ。",
+    "A period of this view as a looping animated PNG (view.animation)": "このビューの 1 周期をループするアニメーション PNG に (view.animation)",
+    "ANALYSIS": "解析",
+    "About {unknowns} unknowns, {mb} MB, {secs} s for {points} frequencies (fast sweep: less).": "未知数 約 {unknowns}、{mb} MB、{points} 周波数で {secs} 秒（高速掃引ならそれ以下）。",
+    "Adaptive mesh: {n} passes, {tets} tetrahedra, last {what} {last}, {converged}.": "適応メッシュ：{n} パス、四面体 {tets}、最後の {what} {last}、{converged}。",
+    "Add {row}": "{row} を追加",
+    "Against {reference} — worst |S − S_ref| = {worst}": "{reference} との比較 — 最大 |S − S_ref| = {worst}",
+    "All settings…": "すべての設定…",
+    "Along": "横軸",
+    "Appearance": "外観",
+    "Apply": "適用",
+    "Attenuation (dB/{unit})": "減衰 (dB/{unit})",
+    "Auto": "自動",
+    "BOUNDARIES": "境界",
+    "BROWSER": "ブラウザー",
+    "Back (Escape)": "戻る (Escape)",
+    "Band": "帯域",
+    "Band pass": "バンドパス",
+    "Band {start} to {stop} {unit}.": "帯域 {start}〜{stop} {unit}。",
+    "Beside 3D": "3D と並べる",
+    "Bodies": "物体",
+    "Body": "物体",
+    "Body material": "物体の材料",
+    "Boolean": "ブール演算",
+    "Boundaries": "境界",
+    "COMPUTE": "計算",
+    "Cancel": "キャンセル",
+    "Cannot write {path}: {error}": "{path} に書き込めません：{error}",
+    "Checks": "チェック",
+    "Clear sources": "波源をクリア",
+    "Clear the list": "一覧をクリア",
+    "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.": "グラフをクリックすると、最も近い解析済み周波数の電磁界を開きます。青い線は表示中の周波数です。",
+    "Click to show the nearest solved frequency": "クリックで最も近い解析済み周波数を表示",
+    "Close": "閉じる",
+    "Closed form": "厳密解",
+    "Compare": "比較",
+    "Compare the sweep with the exact TE10 solution or mode matching.": "掃引結果を TE10 の厳密解またはモード整合法と比較します。",
+    "Compare with theory": "理論との比較",
+    "Compare…": "比較…",
+    "Comparison with theory": "理論との比較",
+    "Compute device": "計算デバイス",
+    "Cross-section": "断面",
+    "Dark": "ダーク",
+    "Deleted variable {name}.": "変数 {name} を削除しました。",
+    "Device": "デバイス",
+    "Dialogs": "ダイアログ",
+    "Dipole": "ダイポール",
+    "Dipole: {length} {unit}, {current} A": "ダイポール：{length} {unit}、{current} A",
+    "Dispersion": "分散",
+    "Dispersion PNG": "分散 PNG",
+    "Dispersion along {axis}: {n} phases, {bands} bands each.": "{axis} 方向の分散：位相 {n} 点、各 {bands} バンド。",
+    "Dispersion: {n} phases": "分散：位相 {n} 点",
+    "Dock": "ドック",
+    "Docked": "ドック",
+    "Don't save": "保存しない",
+    "Done": "完了",
+    "Drawing": "描画",
+    "Drawn by the GPU every frame: for large meshes, where the CPU picture takes long.": "毎フレーム GPU で描画。CPU での描画に時間がかかる大きなメッシュ向け。",
+    "Drawn on the CPU with a depth buffer and smoothed edges when the view rests; the GPU while you drag.": "静止時は CPU で深度バッファーと滑らかなエッジで描画し、ドラッグ中は GPU で描画。",
+    "E arrows": "E 矢印",
+    "E-plane": "E 面",
+    "E-plane (y across z)": "E 面（z に対する y）",
+    "E-plane x": "E 面 x",
+    "EXPORT": "書き出し",
+    "Each port's modes at {f} {unit}: propagation, effective permittivity, impedance (seconds, no full solve).": "{f} {unit} での各ポートのモード：伝搬、実効誘電率、インピーダンス（数秒、全体解析なし）。",
+    "Each port's modes: propagation, effective permittivity, impedance (seconds, no full solve).": "各ポートのモード：伝搬、実効誘電率、インピーダンス（数秒、全体解析なし）。",
+    "Edit": "編集",
+    "Eigenmodes": "固有モード",
+    "Eigenmodes (resonances)": "固有モード（共振）",
+    "Eigenmodes: {n}": "固有モード：{n}",
+    "End": "終端",
+    "Enter runs {id} with these parameters": "Enter で {id} をこのパラメータで実行",
+    "Entries of S: {entries}": "S の要素：{entries}",
+    "Estimate": "見積もり",
+    "Every step is ready.": "すべてのステップの準備ができています。",
+    "Excitation": "励振",
+    "Export": "書き出し",
+    "Export history as script": "履歴をスクリプトとして書き出し",
+    "Export history as script…": "履歴をスクリプトとして書き出し…",
+    "Exported {n} commands to {path}.": "{n} 個のコマンドを {path} に書き出しました。",
+    "FREQUENCY": "周波数",
+    "FREQUENCY DOMAIN": "周波数領域",
+    "Face the field's plane": "電磁界の断面を正面に",
+    "Far field": "遠方界",
+    "Fast": "高速",
+    "Field": "電磁界",
+    "Field PNG": "電磁界 PNG",
+    "Field video": "電磁界動画",
+    "Fields": "電磁界",
+    "File": "ファイル",
+    "Files": "ファイル",
+    "Fit the model to the view (double-click the view)": "モデルをビューに合わせる（ビューをダブルクリック）",
+    "Fix: {command}": "修正：{command}",
+    "Float": "フロート",
+    "Floating": "フロート",
+    "Forest": "フォレスト",
+    "Found {n} eigenmodes: {list} {unit}.": "固有モードを {n} 個見つけました：{list} {unit}。",
+    "Frequency": "周波数",
+    "Frequency band": "周波数帯域",
+    "Frequency sweep": "周波数掃引",
+    "Frequency sweep (S-parameters)": "周波数掃引（Sパラメータ）",
+    "GEOMETRY": "形状",
+    "Geometry": "形状",
+    "Go to {step}": "{step} へ",
+    "Graphite": "グラファイト",
+    "H arrows": "H 矢印",
+    "H-plane": "H 面",
+    "H-plane (x across z)": "H 面（z に対する x）",
+    "H-plane y": "H 面 y",
+    "Home view (isometric)": "ホームビュー（等角）",
+    "How the 3D view of the model, its mesh and fields is drawn.": "モデル、メッシュ、電磁界の 3D ビューの描き方。",
+    "Import": "読み込み",
+    "In 3D:": "3D 表示：",
+    "In the panel at the right, beside the view.": "ビューの右のパネルに。",
+    "Inclusion": "内包物",
+    "Intent": "目的",
+    "Keep this plane in the 3D view": "この断面を 3D ビューに残す",
+    "Language": "言語",
+    "Largest singular value of S {largest} ({passive}), reciprocity error {error}.": "S の最大特異値 {largest}（{passive}）、相反性誤差 {error}。",
+    "Layer {n}: {thickness} {unit}, {material}": "層 {n}：{thickness} {unit}、{material}",
+    "Length": "長さ",
+    "Light": "ライト",
+    "Lights this port in the 3D view; click for the mode in the Port modes view": "3D ビューでこのポートを強調表示。クリックでポートモードビューのこのモードへ",
+    "Low pass": "ローパス",
+    "Low pass on a harmonic sweep (f = k Δf), else band pass": "調和掃引（f = k Δf）ならローパス、それ以外はバンドパス",
+    "Lumped port": "集中定数ポート",
+    "Lumped port {name}: {impedance} Ω": "集中定数ポート {name}：{impedance} Ω",
+    "Lumped {name}": "集中定数 {name}",
+    "Lumped {name}: {impedance} Ω": "集中定数 {name}：{impedance} Ω",
+    "MATERIALS": "材料",
+    "MESH": "メッシュ",
+    "MODEL": "モデル",
+    "Material": "材料",
+    "Materials": "材料",
+    "Mesh": "メッシュ",
+    "Meshed: {nodes} nodes, {tets} tetrahedra.": "メッシュ生成：節点 {nodes}、四面体 {tets}。",
+    "Midnight": "ミッドナイト",
+    "Mode": "モード",
+    "Model 3D": "3D モデル",
+    "Mono": "モノ",
+    "NOT passive": "受動的でない",
+    "New project": "新規プロジェクト",
+    "New project.": "新規プロジェクト。",
+    "New projects": "新規プロジェクト",
+    "No S-parameters yet: SIMULATE › Frequency sweep.": "Sパラメータはまだありません：シミュレーション › 周波数掃引。",
+    "No command matches.": "一致するコマンドはありません。",
+    "No dispersion diagram yet: MATERIALS › Periodic, then SIMULATE › Dispersion.": "分散図はまだありません：材料 › 周期 の後、シミュレーション › 分散。",
+    "No eigenmodes yet: SIMULATE › Eigenmodes.": "固有モードはまだありません：シミュレーション › 固有モード。",
+    "No far field yet: SIMULATE › Radiation (an open model with sources or lumped ports).": "遠方界はまだありません：シミュレーション › 放射（波源または集中定数ポートのある開放モデル）。",
+    "No fields yet: solve a sweep, eigenmodes or an open problem first.": "電磁界はまだありません：まず掃引、固有モード、開放問題のいずれかを解析してください。",
+    "No geometry yet: MODEL › Waveguide or Solid, or open a sample.": "形状はまだありません：モデル › 導波管または領域、またはサンプルを開いてください。",
+    "No geometry yet: open a sample or start at step 1, Geometry.": "形状はまだありません：サンプルを開くか、ステップ 1「形状」から始めてください。",
+    "No port modes yet: they need a meshed model with ports.": "ポートモードはまだありません：ポートのあるメッシュ済みモデルが必要です。",
+    "No results yet: Run (step 7). The view tabs over the viewport show them.": "結果はまだありません：実行（ステップ 7）。ビューポート上のビュータブで表示します。",
+    "No study yet: define a variable, then SIMULATE › Sweep or Optimize.": "スタディはまだありません：変数を定義し、シミュレーション › 掃引 または 最適化。",
+    "No sweep yet: SIMULATE › Frequency sweep (a harmonic one, f = k Δf, for low pass).": "掃引はまだありません：シミュレーション › 周波数掃引（ローパスには調和掃引 f = k Δf）。",
+    "None yet.": "まだありません。",
+    "Not meshed": "メッシュなし",
+    "Nothing to fix here.": "修正が必要な項目はありません。",
+    "OK": "OK",
+    "Open": "開く",
+    "Open a sample or a project (File) or build a model from the ribbon.": "サンプルかプロジェクトを開く（ファイル）か、リボンからモデルを作成してください。",
+    "Open boundary": "開放境界",
+    "Open project": "プロジェクトを開く",
+    "Open recent": "最近使ったファイル",
+    "Open: PML {thickness} {unit}": "開放：PML {thickness} {unit}",
+    "Open: spherical PML {thickness} {unit}": "開放：球状 PML {thickness} {unit}",
+    "Opened sample {name}.": "サンプル {name} を開きました。",
+    "Opened sample {name}; Run (step 7) solves it.": "サンプル {name} を開きました。実行（ステップ 7）で解析します。",
+    "Opened the project.": "プロジェクトを開きました。",
+    "Opened {path}.": "{path} を開きました。",
+    "Open…": "開く…",
+    "Optimization of {names}: {goal}, {n} solves, {state}; {best}": "{names} の最適化：{goal}、解析 {n} 回、{state}。{best}",
+    "Optimization of {names}: {n} solves": "{names} の最適化：解析 {n} 回",
+    "Optimize": "最適化",
+    "Orthographic — click for perspective": "平行投影 — クリックで透視投影",
+    "Outline": "輪郭",
+    "PINNED": "固定点",
+    "PML": "PML",
+    "POINTER": "ポインター",
+    "PORTS": "ポート",
+    "PORTS & SOURCES": "ポート・波源",
+    "Passivity and reciprocity": "受動性と相反性",
+    "Pattern PNG": "放射パターン PNG",
+    "Pause": "一時停止",
+    "Pause the field's animation": "電磁界のアニメーションを一時停止",
+    "Periodic": "周期",
+    "Periodic: {cell}": "周期：{cell}",
+    "Perspective — click for orthographic": "透視投影 — クリックで平行投影",
+    "Picture…": "画像…",
+    "Plane wave": "平面波",
+    "Plane wave along {direction}": "平面波 方向 {direction}",
+    "Play": "再生",
+    "Play the field's animation": "電磁界のアニメーションを再生",
+    "Port": "ポート",
+    "Port modes": "ポートモード",
+    "Port modes at {f} {unit}": "{f} {unit} のポートモード",
+    "Port modes at {f} {unit}.": "{f} {unit} のポートモード。",
+    "Port {name}": "ポート {name}",
+    "Port {name}: {at}, {n} modes": "ポート {name}：{at}、{n} モード",
+    "Port {name}: {end}, {n} modes{impedance}": "ポート {name}：{end}、{n} モード{impedance}",
+    "Ports": "ポート",
+    "Ports and sources": "ポートと波源",
+    "Preferences file": "設定ファイル",
+    "Preflight": "事前チェック",
+    "Preview port modes": "ポートモードをプレビュー",
+    "Problem": "問題の種類",
+    "Projects you open or save appear here.": "開いたり保存したりしたプロジェクトがここに表示されます。",
+    "Propagates": "伝搬",
+    "Quality": "高画質",
+    "RESULTS": "結果",
+    "Radiation": "放射",
+    "Radiation (open problem)": "放射（開放問題）",
+    "Radiation at {frequency}": "{frequency} の放射",
+    "Read the themes again": "テーマを再読み込み",
+    "Recent": "最近",
+    "Recent projects": "最近のプロジェクト",
+    "Redo  ({n})": "やり直し  ({n})",
+    "Redone ({undo} to undo, {redo} to redo).": "やり直しました（元に戻す {undo}、やり直し {redo}）。",
+    "Region": "領域",
+    "Region: {name} (imported), {material}": "領域：{name}（読み込み）、{material}",
+    "Region: {shape}, {material}": "領域：{shape}、{material}",
+    "Remove from the 3D view": "3D ビューから外す",
+    "Remove from the list": "一覧から削除",
+    "Results": "結果",
+    "Run": "実行",
+    "Run (step 7) starts this solve after checking the model.": "実行（ステップ 7）でモデルをチェックしてからこの解析を開始します。",
+    "Run refused: {n} problem(s) to fix first": "実行を拒否：先に修正が必要な問題 {n} 件",
+    "Run — {n} problem(s) to fix first": "実行 — 先に修正が必要な問題 {n} 件",
+    "Run, accepting {n} warning(s)": "実行（警告 {n} 件を承知）",
+    "Running a script of {n} commands…": "{n} 個のコマンドのスクリプトを実行中…",
+    "Running with {n} accepted warning(s).": "警告 {n} 件を承知で実行します。",
+    "Running — progress and Cancel below.": "実行中 — 進捗とキャンセルは下にあります。",
+    "S-param PNG": "Sパラメータ PNG",
+    "S-parameters": "Sパラメータ",
+    "SAVE": "保存",
+    "SETTINGS": "設定",
+    "SIMULATE": "シミュレーション",
+    "SOURCES": "波源",
+    "STUDY": "スタディ",
+    "Sample": "サンプル",
+    "Samples": "サンプル",
+    "Save": "保存",
+    "Save as…": "名前を付けて保存…",
+    "Save project as": "名前を付けてプロジェクトを保存",
+    "Save the changes to {name}?": "{name} の変更を保存しますか？",
+    "Saved {n} commands to {path}.": "{n} 個のコマンドを {path} に保存しました。",
+    "Script done.": "スクリプトが完了しました。",
+    "Search commands (/)": "コマンドを検索 (/)",
+    "Section {n}: {length} {unit}, {material}": "区間 {n}：{length} {unit}、{material}",
+    "Section {n}: {length} {unit}, {material}, aperture {aperture}": "区間 {n}：{length} {unit}、{material}、開口 {aperture}",
+    "Sepia": "セピア",
+    "Set once, early: it sizes the mesh (elements per wavelength at its top), the sweep and the port-mode preview.": "早めに一度設定してください：メッシュの大きさ（上端での波長あたりの要素数）、掃引、ポートモードのプレビューに使います。",
+    "Set the band": "帯域を設定",
+    "Settings": "設定",
+    "Setup": "解析設定",
+    "Show": "表示",
+    "Show the mode patterns": "モードパターンを表示",
+    "Show this mode's pattern": "このモードのパターンを表示",
+    "Solve port modes…": "ポートモードを解析…",
+    "Solved the open problem: radiated power {power} W.": "開放問題を解析しました：放射電力 {power} W。",
+    "Solved {n} frequencies, {unknowns} unknowns.": "{n} 周波数を解析しました、未知数 {unknowns}。",
+    "Solver": "ソルバー",
+    "Solver: {solver}": "ソルバー：{solver}",
+    "Sources": "波源",
+    "Start": "始端",
+    "Start page": "スタートページ",
+    "Step {n} · {step}": "ステップ {n} · {step}",
+    "Strip {n}: y {y}, width {width}": "ストリップ {n}：y {y}、幅 {width}",
+    "Study": "スタディ",
+    "Sweep": "掃引",
+    "Sweep of {names} on a grid: {sizes} = {n} points by {solve}{failed}": "{names} の格子掃引：{sizes} = {n} 点、{solve} で解析{failed}",
+    "Sweep of {names}: {n} points": "{names} の掃引：{n} 点",
+    "Sweep of {names}: {n} values": "{names} の掃引：{n} 値",
+    "Sweep of {names}: {n} values by {solve}{failed}": "{names} の掃引：{n} 値、{solve} で解析{failed}",
+    "Sweep: {n} frequencies, {unknowns} unknowns": "掃引：{n} 周波数、未知数 {unknowns}",
+    "Switching the device…": "デバイスを切り替え中…",
+    "Symmetry": "対称面",
+    "Symmetry: {axis} = {at} {unit}, electric wall": "対称面：{axis} = {at} {unit}、電気壁",
+    "Symmetry: {axis} = {at} {unit}, magnetic wall": "対称面：{axis} = {at} {unit}、磁気壁",
+    "TDR": "TDR",
+    "TIME DOMAIN": "時間領域",
+    "The colours of the window, the 3D view and the pictures. It changes at once.": "ウィンドウ、3D ビュー、画像の色。すぐに切り替わります。",
+    "The engine's messages and errors, the text drawn in pictures (charts, field plots), the command and parameter ids, and the command line.": "エンジンのメッセージとエラー、画像内の文字（グラフ、電磁界図）、コマンドとパラメータの ID、コマンドライン。",
+    "The language of the window. It changes at once.": "ウィンドウの言語。すぐに切り替わります。",
+    "The model in 3D beside the picture, the plane in it": "画像の横に 3D モデルとその中の断面を表示",
+    "The next solve runs on the CPU's threads (double precision).": "次の解析は CPU のスレッドで実行します（倍精度）。",
+    "The next solve runs on the CPU's threads.": "次の解析は CPU のスレッドで実行します。",
+    "The next solve runs on the CPU, its factorization's large fronts on {device} (complex double).": "次の解析は CPU で実行し、分解の大きなフロントは {device} で実行します（複素倍精度）。",
+    "The next solve runs on {device} in {precision} precision.": "次の解析は {device} で {precision}で実行します。",
+    "The project file (.emcraft)": "プロジェクトファイル (.emcraft)",
+    "The solvers run on {device} ({precision} precision in the time domain; factorization: {factorization}).": "ソルバーは {device} で実行します（時間領域は {precision}、分解：{factorization}）。",
+    "The start page lists the projects you opened or saved last, at most {n}.": "スタートページには最近開いたり保存したりしたプロジェクトが最大 {n} 件表示されます。",
+    "The step response: a step at each change of impedance (lines without a cut-off)": "ステップ応答：インピーダンスが変わるたびに段差（遮断のない線路向け）",
+    "The theme, the 3D view, dialogs and files": "テーマ、3D ビュー、ダイアログ、ファイル",
+    "The units new projects start with: what dialogs, tables and pictures show and commands read. An open project changes its own with MODEL › Units.": "新規プロジェクトの単位：ダイアログ、表、画像の表示とコマンドの読み取りに使います。開いているプロジェクトの単位は モデル › 単位 で変更します。",
+    "Theme": "テーマ",
+    "Theme files (JSON) in the folder below, each changing a built-in theme's colours (docs/themes.md). Read again after you edit them.": "下のフォルダーにあるテーマファイル（JSON）。それぞれ組み込みテーマの色を変更します（docs/themes.md）。編集したら再読み込みしてください。",
+    "They are lost otherwise.": "保存しないと失われます。",
+    "This picture as a PNG (view.field)": "この画像を PNG に (view.field)",
+    "Time domain": "時間領域",
+    "Time domain: {n} frequencies": "時間領域：{n} 周波数",
+    "Time-domain radiation": "時間領域の放射",
+    "Time-domain solve done in {n} steps on {device} ({precision} precision).": "時間領域解析が {n} ステップで完了しました（{device}、{precision}）。",
+    "Time-domain solve done in {n} steps.": "時間領域解析が {n} ステップで完了しました。",
+    "Touchstone": "Touchstone",
+    "Undo  ({n})": "元に戻す  ({n})",
+    "Undone ({undo} to undo, {redo} to redo).": "元に戻しました（元に戻す {undo}、やり直し {redo}）。",
+    "Units": "単位",
+    "Units apply to new projects; an open one changes its own with MODEL › Units.": "単位は新規プロジェクトに適用されます。開いているプロジェクトは モデル › 単位 で変更します。",
+    "Variables": "変数",
+    "Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}": "ビア {n}：{wx} × {wz} {unit}、y {y0}〜{y1}",
+    "Video…": "動画…",
+    "View from {side} ({view})": "{side} から見る ({view})",
+    "WHERE": "位置",
+    "Walls": "壁",
+    "Walls: perfect conductor": "壁：完全導体",
+    "Walls: σ = {sigma} S/m": "壁：σ = {sigma} S/m",
+    "Waveguide": "導波管",
+    "Waveguide {w} × {h} × {l} {unit}": "導波管 {w} × {h} × {l} {unit}",
+    "What stays in English": "英語のままのもの",
+    "Where dialogs open": "ダイアログを開く場所",
+    "Where these settings are kept between launches.": "起動の間これらの設定を保存する場所。",
+    "Worst |S − S_ref| = {worst} ({reference}).": "最大 |S − S_ref| = {worst}（{reference}）。",
+    "Wrote {path}.": "{path} を書き出しました。",
+    "Your themes": "ユーザーテーマ",
+    "`{text}` is not a number": "`{text}` は数値ではありません",
+    "`{text}` is not a whole number": "`{text}` は整数ではありません",
+    "a guided-wave component (S-parameters between ports)": "導波部品（ポート間の Sパラメータ）",
+    "a job is running": "ジョブを実行中です",
+    "a resonator (no excitation: its eigenmodes)": "共振器（励振なし：固有モード）",
+    "an NVIDIA GPU": "NVIDIA GPU",
+    "an antenna or a scatterer (an open problem)": "アンテナまたは散乱体（開放問題）",
+    "an expression holds at most {n} characters": "式は最大 {n} 文字です",
+    "at {f} {unit}": "{f} {unit}",
+    "azimuth φ (°)": "方位角 φ (°)",
+    "band {a} to {z} {unit}; the solve works at {n} frequencies": "帯域 {a}〜{z} {unit}。{n} 周波数で解析します",
+    "band {a} to {z} {unit}; the solve works at {n} frequency": "帯域 {a}〜{z} {unit}。{n} 周波数で解析します",
+    "band {n} ({unit})": "バンド {n} ({unit})",
+    "band: not set (step 0)": "帯域：未設定（ステップ 0）",
+    "best": "最良",
+    "best {at} (goal {goal})": "最良 {at}（目的関数 {goal}）",
+    "boundary faces": "境界面",
+    "busy: wait for the running job or cancel it first": "実行中：ジョブの終了を待つか、先にキャンセルしてください",
+    "busy…": "実行中…",
+    "click the picture to pin a point (right click lets it go)": "画像をクリックして点を固定（右クリックで解除）",
+    "closed (no PML)": "閉じている（PML なし）",
+    "converged": "収束",
+    "cut off, {a} dB/{unit}": "遮断、{a} dB/{unit}",
+    "cut-off {mode}: {f} {unit}": "遮断 {mode}：{f} {unit}",
+    "dark": "ダーク",
+    "default": "既定",
+    "device": "デバイス",
+    "done": "完了",
+    "double": "倍精度",
+    "drag to move": "ドラッグで移動",
+    "electric": "電気壁",
+    "electric wall": "電気壁",
+    "error S11": "S11 誤差",
+    "error S21": "S21 誤差",
+    "excite": "励振",
+    "extent": "寸法",
+    "far end": "終端側",
+    "far-field change": "遠方界の変化",
+    "fields shown": "表示中の電磁界",
+    "frequency": "周波数",
+    "give a file": "ファイルを指定してください",
+    "give a frequency (or set the band, step 0)": "周波数を指定してください（またはステップ 0 で帯域を設定）",
+    "goal": "目的関数",
+    "hover the picture to read the fields": "画像にポインターを置くと電磁界を読み取れます",
+    "light": "ライト",
+    "lumped port {name}": "集中定数ポート {name}",
+    "magnetic": "磁気壁",
+    "magnetic wall": "磁気壁",
+    "magnitude, angle": "振幅、位相",
+    "max |{p}| dB": "最大 |{p}| dB",
+    "mean element": "平均要素",
+    "memory": "メモリー",
+    "min |{p}| dB": "最小 |{p}| dB",
+    "missing": "不足",
+    "mode {n}: {f}": "モード {n}：{f}",
+    "modes": "モード数",
+    "modes ({unit})": "モード ({unit})",
+    "must be a finite number": "有限の数値にしてください",
+    "must be a whole number from {lo} to {hi}": "{lo}〜{hi} の整数にしてください",
+    "must be from {lo} to {hi}": "{lo}〜{hi} にしてください",
+    "must be greater than 0": "0 より大きくしてください",
+    "must not be below the start": "開始より小さくできません",
+    "near": "目安周波数",
+    "no": "いいえ",
+    "no configuration folder": "設定フォルダーなし",
+    "no frequency band: set it in step 0 (Intent)": "周波数帯域がありません：ステップ 0（目的）で設定してください",
+    "nodes": "節点",
+    "none": "なし",
+    "none (the whole model)": "なし（モデル全体）",
+    "none yet": "まだありません",
+    "not JSON: {error}": "JSON ではありません：{error}",
+    "not converged": "未収束",
+    "not meshed yet": "まだメッシュがありません",
+    "not passive": "受動的でない",
+    "on a face": "面上",
+    "open": "開放",
+    "open boundary: PML {thickness}": "開放境界：PML {thickness}",
+    "order": "次数",
+    "passive": "受動的",
+    "path": "パス",
+    "per wavelength": "波長あたり",
+    "perfect conductor": "完全導体",
+    "periodic": "周期",
+    "periodic: {cell}": "周期：{cell}",
+    "points": "点数",
+    "port": "ポート",
+    "port / mode": "ポート / モード",
+    "port {name} (end)": "ポート {name}（終端）",
+    "port {name} (start)": "ポート {name}（始端）",
+    "precision": "精度",
+    "real, imaginary": "実部、虚部",
+    "remove this row": "この行を削除",
+    "required": "必須",
+    "row {n}, {column}: {error}": "{n} 行目、{column}：{error}",
+    "row {n}: `{column}` is required": "{n} 行目：`{column}` は必須です",
+    "single": "単精度",
+    "spherical PML": "球状 PML",
+    "stale": "古い",
+    "start": "開始",
+    "start end": "始端側",
+    "stop": "終了",
+    "stopped at its budget": "上限で停止",
+    "symmetry": "対称面",
+    "symmetry: {wall}, {at}": "対称面：{wall}、{at}",
+    "tetrahedra": "四面体",
+    "the CPU's threads": "CPU のスレッド",
+    "the CPU's threads run in double": "CPU のスレッドは倍精度で実行します",
+    "the GPU's kernels on the CPU (to check them without a GPU)": "GPU のカーネルを CPU で（GPU なしで確認するため）",
+    "this device does not run it": "このデバイスでは実行できません",
+    "time": "時間",
+    "units": "単位",
+    "unknowns": "未知数",
+    "walls": "壁",
+    "walls σ = {sigma} S/m": "壁 σ = {sigma} S/m",
+    "walls: perfect conductor": "壁：完全導体",
+    "warning": "警告",
+    "yes": "はい",
+    "{command} cancelled.": "{command} をキャンセルしました。",
+    "{command} done.": "{command} が完了しました。",
+    "{command} failed": "{command} が失敗しました",
+    "{command} — running ({secs} s)": "{command} — 実行中（{secs} 秒）",
+    "{command} — {stage} {done} of {total} ({secs} s)": "{command} — {stage} {done}/{total}（{secs} 秒）",
+    "{component} = {now} {unit} (amplitude {amplitude})": "{component} = {now} {unit}（振幅 {amplitude}）",
+    "{component} {now} (amp. {amplitude})": "{component} {now}（振幅 {amplitude}）",
+    "{kind} {thickness} {unit} thick": "{kind} 厚さ {thickness} {unit}",
+    "{name} at": "{name} の値",
+    "{name} cannot run here": "{name} はこの環境では実行できません",
+    "{name} cannot run here: {problem}": "{name} はこの環境では実行できません：{problem}",
+    "{nodes} nodes, {tets} tetrahedra": "節点 {nodes}、四面体 {tets}",
+    "{n} (order {order})": "{n}（次数 {order}）",
+    "{n} at the band's top": "帯域上端で {n}",
+    "{n} commands that rebuild the model": "モデルを再構築する {n} 個のコマンド",
+    "{n} projects": "{n} 件のプロジェクト",
+    "{n} source(s)": "波源 {n} 個",
+    "{n} unknowns after the periodic reduction; period {period}": "周期縮約後の未知数 {n}、周期 {period}",
+    "{secs} s per frequency": "1 周波数あたり {secs} 秒",
+    "{secs} s per frequency (reference machine)": "1 周波数あたり {secs} 秒（基準マシン）",
+    "{summary}.": "{summary}",
+    "|S11| ref": "|S11| 参照",
+    "|S21| ref": "|S21| 参照",
+    "|h(t)|: a peak where each reflection comes from (guides with a cut-off)": "|h(t)|：各反射の位置にピーク（遮断のある導波路向け）",
+    "ΔS": "ΔS"
+  },
+  "commands": {
+    "project.frequency": {
+      "label": "周波数帯域",
+      "doc": "解析対象の周波数帯域。波長基準のメッシュ分割（その上端）、掃引、ポートモードのプレビューの既定値になる。",
+      "params": {
+        "start": "帯域の開始",
+        "stop": "帯域の終了"
+      }
+    },
+    "project.status": {
+      "label": "ワークフローの状態",
+      "doc": "ワークフローの各ステップ（目的、形状、材料、励振、境界、メッシュ、設定、実行、結果）の状況：完了、警告、未設定、または古い。それぞれに、解決するコマンドを示すメッセージが付く。モデル、メッシュ、結果を読むだけで、解析はしない。",
+      "params": {}
+    },
+    "project.estimate": {
+      "label": "解析の見積もり",
+      "doc": "メッシュ分割済みモデルの `order` での未知数、分解に要するメモリ、1周波数あたりの時間。セッションに直前の掃引があればそこから、なければ基準マシンの値から見積もる。",
+      "params": {
+        "order": "要素次数、1 または 2（既定 2）"
+      }
+    },
+    "file.save": {
+      "label": "プロジェクトを保存",
+      "doc": "プロジェクトを `.emcraft` ファイル（JSON：モデルとそれを作ったコマンド、つまりスクリプト）として `path` に保存する。`path` がなければ、開いたファイルか最後に保存したファイルに保存する。拡張子のないパスには `.emcraft` を付ける。",
+      "params": {
+        "path": "ファイル（既定：プロジェクト自身のファイル）"
+      }
+    },
+    "file.new": {
+      "label": "新規プロジェクト",
+      "doc": "セッションを空のプロジェクト（真空のみ）に置き換える。表示単位はそのまま。元に戻すで戻せる。",
+      "params": {}
+    },
+    "file.open": {
+      "label": "プロジェクトを開く",
+      "doc": "file.save で保存したプロジェクト（`.emcraft`、または同じ形式の `.json`）を開く。コマンドを再実行するのでメッシュは同じものに戻る。結果は解析し直す。",
+      "params": {
+        "path": "ファイル"
+      }
+    },
+    "edit.undo": {
+      "label": "元に戻す",
+      "doc": "直前の変更の前のモデルに戻す（結果は残り、古いものとして印が付く）。",
+      "params": {}
+    },
+    "edit.redo": {
+      "label": "やり直し",
+      "doc": "元に戻した操作をもう一度進める。",
+      "params": {}
+    },
+    "results.touchstone": {
+      "label": "Touchstone 書き出し",
+      "doc": "掃引のSパラメータを Touchstone（バージョン 1）ファイルとして書き出す。周波数は GHz、ポートの基準インピーダンスはオプション行に書く。S の各要素に1ポート（端子ポートは各端子ごと、`ports` に並ぶ順）。",
+      "params": {
+        "path": "ファイル（.s1p、.s2p、…）",
+        "format": "`ri`（既定）または `ma`"
+      }
+    },
+    "results.check": {
+      "label": "結果のチェック",
+      "doc": "掃引の物理チェック：受動性（全周波数での S の最大特異値。受動なら ≤ 1）、相反性（max |S − Sᵀ|）、ユニタリ性（max |SᴴS − 1|。無損失なら 0）。",
+      "params": {}
+    },
+    "units.set": {
+      "label": "表示単位",
+      "doc": "パラメータを読む単位と応答を書く単位を設定する。",
+      "params": {
+        "length": "`mm` または `m`",
+        "frequency": "`GHz`、`MHz` または `Hz`"
+      }
+    },
+    "model.material.create": {
+      "label": "材料の作成",
+      "doc": "線形・等方性の材料。損失正接（誘電または磁性）か分散を持たない限り無損失。分散性材料の誘電率は ε(ω) = εr(1 − j tan δ) + Σ χ_k(ω)（Debye、Lorentz、Drude の各極の和。時間依存は e^{jωt} なので ε = ε′ − jε″。Taflove & Hagness, Computational Electrodynamics, 3rd ed., ch. 9）で、このとき εr は ε∞ となる。透磁率は μr(1 − j tan δm)。周波数領域ソルバーは各周波数で ε(ω) を用い、時間領域ソルバーは極を補助微分方程式で、損失正接を帯域中心で一致させた導電率として扱う（そこで厳密、他では tan δ·f_ref/f）。ポートは、断面を満たす損失性・分散性の材料の中にあってもよく、そのうち一つが損失性・分散性である複数の材料をまたいでもよい（損失のある基板上のマイクロストリップやストリップライン：各周波数で断面上に損失を含むハイブリッドモードを解く）。このときモードは減衰し（γ = α + jβ）、S は各ポートの波動インピーダンスを基準とする擬似波として読む（Marks & Williams 1992）。固有モードの共振器を分散性材料で満たすことはできない。",
+      "params": {
+        "name": "一意の名前",
+        "eps_r": "比誘電率 εr > 0（分散があれば ε∞）",
+        "mu_r": "比透磁率 μr > 0（既定 1）",
+        "loss_tangent": "誘電損失正接 tan δ、0〜1e9（既定 0）：ε = εr(1 − j tan δ)",
+        "magnetic_loss_tangent": "磁性損失正接 tan δm、0〜1e9（既定 0）：μ = μr(1 − j tan δm)",
+        "debye": "Debye 極 `[{\"delta_eps\", \"frequency\"}]`：χ = Δε/(1 + jω/ω_r)、Δε > 0、緩和周波数 f_r = 1/(2πτ) > 0（周波数）",
+        "lorentz": "Lorentz 極 `[{\"delta_eps\", \"frequency\", \"damping\"}]`：χ = Δε ω₀²/(ω₀² − ω² + jωγ)、Δε > 0、共振周波数 f₀ = ω₀/2π > 0、減衰 γ/2π > 0（周波数）",
+        "drude": "Drude 極 `[{\"plasma_frequency\", \"damping\"}]`：χ = −ω_p²/(ω² − jωγ)、プラズマ周波数 ω_p/2π > 0、減衰 γ/2π > 0（周波数）"
+      }
+    },
+    "geometry.waveguide": {
+      "label": "方形導波管",
+      "doc": "完全導体の壁を持つ z 方向の方形導波管。断面は原点から `width`（x）× `height`（y）。z 方向に区間ごとに材料を満たし、各区間は x 方向に独自の開口を持てる（H面ステップ、誘導性アイリス。隣り合う開口は入れ子でなければならない）。シールドされた平面回路もこれで表す：`layers` は y = 0 から上へ積む層（基板）、`strips` は y = 一定の面上の厚さのない導体帯（基板上面のマイクロストリップ、2層間のストリップライン。ストリップは箱の内部で終わってもよい：開放スタブ、線路から分岐するスタブ）、`vias` は導体の柱（接地ビア、短絡ピン）。このときポートのモードは断面ソルバーで求める。既存の形状、メッシュ、結果を置き換える。",
+      "params": {
+        "width": "広壁 a（x）",
+        "height": "狭壁 b（y）",
+        "sections": "z = 0 からの `[{\"length\", \"material\", \"width\"?, \"offset\"?}]`：区間は広壁を幅 `width` の開口に狭めてもよい（長さ）。開口は x = `offset` から始まる（省略時は中央）",
+        "layers": "y = 0 から上へ、導波管全幅にわたる `[{\"thickness\", \"material\"}]`（長さ）。その上は各区間の材料",
+        "strips": "`[{\"y\", \"x0\", \"width\", \"z0\"?, \"z1\"?}]`：面 y 上の厚さのない導体帯 [x0, x0 + width] × [z0, z1]（長さ。z0、z1 は省略時に導波管の両端）。同じ面のストリップは端と端で接する（一つの導体：T字、幅のステップ）か、導波管の 1e-4 以上の隙間をあけ、重なってはならない。隙間をあけて並ぶものは結合線路となる（n 本のストリップを含むポートは n 個の準TEMモードを持つ。2本なら偶モードと奇モード）",
+        "vias": "`[{\"x0\", \"z0\", \"wx\", \"wz\", \"y0\"?, \"y1\"?}]`：導体の角柱 [x0, x0 + wx] × [y0, y1] × [z0, z0 + wz]、中実の金属（長さ。省略時 y0 = 0、y1 = 高さ：接地面から途中のストリップを貫いて上面までの柱）。接地からストリップへのビアはストリップの y で終わる"
+      }
+    },
+    "geometry.solid": {
+      "label": "基本形状の物体",
+      "doc": "導体の壁を持つ単一材料の物体。非構造の四面体でメッシュ分割する：箱 [0, x] × [0, y] × [0, z]（`size`）、z = 0 から z 軸まわりの円柱（`radius`、`length`）、または原点まわりの球（`radius`）。端面（z = 0、z = length）にポートを置ける。閉じた物体は `solve.eigenmodes` の共振器になる。既存の形状、メッシュ、結果を置き換える。",
+      "params": {
+        "shape": "`box`、`cylinder` または `sphere`",
+        "size": "箱の [x, y, z]",
+        "radius": "円柱または球の半径",
+        "length": "円柱の z 方向の長さ",
+        "material": "充填材料（既定は真空）"
+      }
+    },
+    "geometry.import": {
+      "label": "読み込み",
+      "doc": "部品を読み込む：STL ファイル（1物体）または 3MF パッケージ。たとえば面タグ付きの SolidCraft の書き出し（ビルド項目ごとに1物体、名前はオブジェクトから、B-rep の面は面として保持。コンポーネントからなるオブジェクトは展開して変換を合成し、パッケージ内の他のモデル部分のオブジェクトも読む）。各面の厳密な曲面（平面、円柱、球、円錐、トーラス）は、物体の大きさの 1e-6 以内で頂点に当てはまるものがあれば頂点から復元するので、2次要素は曲面に沿って曲がる。応答では `curved` にその数が入る。三角形は隣同士の角度でも面にまとめるので、鋭い稜は稜のまま残る。物体が一つだけなら、それが界の満たす領域となり、`material` で満たされる。その最小・最大 z の平面上の面にポートを置ける。複数の物体は、すべてから `margin` 離れた空気（`material`）の箱の中、または `region` が名指す物体の中に置かれる。`materials` で別の材料を与えない限り各物体は金属（後で geometry.body.material で変更できる）。`region` が `cavity` のとき、部品はその金属（溝を彫った金属ブロック）として描かれる：領域は金属物体が囲む空気、つまり外接箱から物体を除き、連結な部分に分け、箱の側面（x または y）に届かない部分を残したもの（最小・最大 z には届いてよい。溝のポートはそこに置く）。箱でない部品の周りの空気は捨てる。`keep` が `largest` なら最大の部分だけを残す。金属物体は領域の壁となり、他の材料の物体は領域内に置かれる。`open`（アンテナ、散乱体）では、model.open と同様に箱の内側に完全整合層 (PML) を張る：既定では部品と層の間に帯域の最長波長の4分の1の空気、層の厚さも同じ。既存の形状、メッシュ、結果を置き換える。",
+      "params": {
+        "path": "ファイル（`.stl` または `.3mf`）",
+        "unit": "STL ファイルの長さ単位（表示単位で。既定 1、つまり表示単位）。3MF ファイルは自身の単位を持つ",
+        "angle": "隣り合う三角形がこの角度（度）を超えて曲がれば別の面とする（既定 30）",
+        "material": "領域の充填材料（既定は真空）",
+        "region": "`box`（物体の周りの空気。複数物体の既定）、`cavity`（金属物体が囲む空気）、または領域となる物体の名前（1物体の既定）",
+        "keep": "`region` が `cavity` のとき：`enclosed`（金属が囲む空気のすべての部分。既定）または `largest`（最大の部分のみ）",
+        "margin": "物体の周りの箱の余白。層を含む（既定は物体の最大寸法の4分の1。`open` では空気の4分の1波長と層）",
+        "materials": "物体名 → 材料、または `metal`（全物体の既定）",
+        "open": "開放問題：空気の箱の内側に完全整合層 (PML) を張る（既定 false）",
+        "thickness": "`open` のときの層の厚さ（既定は帯域の最長波長の4分の1）",
+        "fit_surfaces": "各面の厳密な曲面を復元する。頂点に当てはめた平面、円柱、球、円錐、トーラスを、全頂点がその上にあれば採用し、メッシュがネイティブ形状と同様に曲面に沿う（既定 true）。false で多面体のまま"
+      }
+    },
+    "geometry.body": {
+      "label": "物体",
+      "doc": "領域内の物体を、その材料で指定する：`metal`（完全導体。領域はその体積を失い、表面が壁になる。領域の境界に達してもよい）、領域自身の材料（金属が取った部分を戻す：金属殻の内側、開口）、または他の材料（領域内の誘電体。他の誘電体とは離す）。重なる部分では後の物体が優先される。形状は geometry.solid と同じで、原点を `at` に置き、z 軸を `axis` に向ける（誘電体は z 方向）。",
+      "params": {
+        "material": "`metal`、領域の材料、または他の材料の名前",
+        "shape": "`box`、`cylinder` または `sphere`",
+        "size": "箱の [x, y, z]（自身の軸で）",
+        "radius": "円柱または球の半径",
+        "length": "円柱の軸方向の長さ",
+        "at": "原点の位置（既定 [0, 0, 0]）",
+        "axis": "`x`、`y` または `z`（既定）：自身の z 軸の向き"
+      }
+    },
+    "geometry.body.material": {
+      "label": "物体の材料",
+      "doc": "物体に別の材料（`metal`、領域の材料、その他）を与える。たとえば読み込んだ部品の金属物体を誘電体にする。最後に置き直されるので、他と重なる部分では優先される。",
+      "params": {
+        "body": "物体の名前（読み込んだ物体は自身の名前、他は `body <n>`）",
+        "material": "`metal`、領域の材料、または他の材料の名前"
+      }
+    },
+    "geometry.inclusion": {
+      "label": "内包物",
+      "doc": "ソリッド内部の物体：誘電体領域（`material`）、または材料を省けば導体。形状は geometry.solid と同じで、原点を `at` に置く。ソリッドの内部にあり、他の内包物と離れていなければならない。各領域は別々にメッシュ分割し、界面で節点ごとに接合する。",
+      "params": {
+        "shape": "`box`、`cylinder` または `sphere`",
+        "size": "箱の [x, y, z]",
+        "radius": "円柱または球の半径",
+        "length": "円柱の z 方向の長さ",
+        "at": "原点の位置（既定 [0, 0, 0]）",
+        "material": "充填材料。省略時は完全導体"
+      }
+    },
+    "geometry.feature": {
+      "label": "物体の結合",
+      "doc": "基本形状をソリッドと結合する：`add`（和：スタブ、ハウジング）、`subtract`（差：ポスト、ねじ、切り欠き。その表面は導体壁になる）、または `intersect`。形状は geometry.solid と同じで、原点を `at` に置き、z 軸を `axis` に向ける。ソリッドの面と同一面になる面は扱える（ポストは壁から壁まで通せる）。同じ種類のフィーチャーが端と端で接し、一方の断面が他方を含む場合も扱える（段付きの内導体）。それ以外では面はきれいに交わらなければならない。ポートの端面は欠けてはならない。",
+      "params": {
+        "combine": "`add`、`subtract` または `intersect`",
+        "shape": "`box`、`cylinder` または `sphere`",
+        "size": "箱の [x, y, z]（自身の軸で）",
+        "radius": "円柱または球の半径",
+        "length": "円柱の軸方向の長さ",
+        "at": "原点の位置（既定 [0, 0, 0]）",
+        "axis": "`x`、`y` または `z`（既定）：自身の z 軸の向き"
+      }
+    },
+    "mesh.generate": {
+      "label": "メッシュ",
+      "doc": "導波管を一辺約 `size` の四面体でメッシュ分割する（構造格子の1セルあたり6個。各区間の境界と開口の壁は格子面になる）。ステップやアイリスの入隅の稜に向かって細かくする。ソリッドは非構造でメッシュ分割し、`curved` が false でない限り、曲がった壁や界面上の四面体を曲げる（2次の形状）。",
+      "params": {
+        "size": "目標要素サイズ（`per_wavelength` がなければ必須。あれば最大サイズ）",
+        "per_wavelength": "`frequency` での各材料内の1波長あたりの要素数（λ = c/(f√(εr μr))）。ソリッドの各領域はそれぞれのサイズ、導波管は最小のもの",
+        "frequency": "メッシュが分解すべき最高周波数（`per_wavelength` と併用）",
+        "edge": "ステップやアイリスの稜での要素サイズ、`size` に対する比（既定 0.25。1 = 一様）",
+        "growth": "その稜から離れるときの要素の成長率（既定 1.5）",
+        "strip_edge": "ストリップの縁での要素サイズ、`size` に対する比（既定 0.05：そこでは E ∝ r^{−1/2}。1 = 一様）",
+        "strip_end": "ストリップの z 方向の端での要素サイズ、`size` に対する比（既定 `strip_edge`）。そこで細かくした格子線は箱全体を横切るので、結合区間の多い長い回路は端の細分を弱めると軽くなる",
+        "size_y": "狭壁方向の要素サイズ（既定 `size`）。H面デバイスの TE10 の界は y 方向に変化しないので、1層（高さ）でそこは厳密",
+        "curved": "ソリッド：曲面上の稜を曲面に沿わせて曲げる（既定 true。false なら曲面に内接する平らな面のまま）"
+      }
+    },
+    "mesh.adapt": {
+      "label": "適応メッシュ",
+      "doc": "Sパラメータ（開放問題では遠方界）が落ち着くまで、パスを重ねてメッシュを細分化する。各パスでメッシュを生成し、`frequency` で解析し、前のパスのSと比較する（ΔS：いずれかの要素の最大変化）。ΔS < `tolerance` となるか、`passes` に達するか、次のメッシュが四面体数または未知数の上限を超える手前で止まる（収まった最後のメッシュが残る）。ソリッドは残差誤差指標が最大の箇所で細分化する（面をまたぐ接線方向 μ⁻¹∇×E と法線方向 εE の跳びおよび要素残差を、各ポートの励振について合計したもの）：総量の `fraction` を占める最少の四面体を半分のサイズで再メッシュし、滑らかにグレーディングする。構造格子の導波管は代わりに一様に細分化する（1パスごとにサイズを1.4で割る）。開放問題（model.open）も適応でき、各パスは solve.radiation と同じく解析する：指標は完全整合層（細分化しないため、厚さとメッシュ生成時のサイズを保つ）と、電流素子や線ギャップの四面体を除き、平面波の入射界を散乱界のデータとする。集中定数ポートや導波管給電がある場合はパス間でその反射（ΔS）を比較し、波源のみの場合は遠方界を比較する（応答の `quantity` が far_field）。最終メッシュが残るので、solve.frequency で解析する（開放問題は solve.radiation）。",
+      "params": {
+        "size": "最初のパスの要素サイズ（`per_wavelength` がなければ必須）",
+        "per_wavelength": "最初のパスの、`frequency` における各材料中の1波長あたりの要素数",
+        "frequency": "適応を行う周波数（既定：帯域の上端）",
+        "passes": "最大パス数、1〜12（既定 6）",
+        "tolerance": "前のパスからの変化がこれを下回れば収束（既定 0.02）：ΔS はいずれかのS要素の最大変化（開放問題では集中定数ポートと給電の反射の変化）。波源のみ（ダイポール、平面波）で駆動する開放問題では、48方向（θ 15°〜165°を30°ごと、φ を45°ごと）にわたる r e^{jkr}(E_θ, E_φ) の遠方界の相対変化 ‖F − F′‖/‖F′‖ で、放射または散乱電力とパターンを追跡する",
+        "fraction": "Dörfler の θ、(0, 1] の範囲：誤差のこの割合を占める最少の四面体を細分化する（既定 0.3）",
+        "order": "要素次数：1 または 2（既定）",
+        "curved": "ソリッド：曲面上の辺を曲面に沿わせる（既定 true）",
+        "edge": "導波管：段差とアイリスの縁での要素サイズ、サイズに対する比（既定 0.25）",
+        "growth": "導波管：それらの縁から離れる方向の要素成長率（既定 1.5）",
+        "strip_edge": "導波管：ストリップの縁での要素サイズ、サイズに対する比（既定 0.05）",
+        "strip_end": "導波管：z方向のストリップ端での要素サイズ、サイズに対する比（既定 `strip_edge`）",
+        "size_y": "導波管：狭壁方向の要素サイズ（既定はサイズ。パスを通じて保持）"
+      }
+    },
+    "model.walls": {
+      "label": "壁の導電率",
+      "doc": "導波管の壁、アイリス、段差の導電率：Leontovich の表面インピーダンス条件による損失（良導体、表皮深さが導波管より十分小さい場合）。`conductivity` がなければ壁は完全導体。",
+      "params": {
+        "conductivity": "σ（S/m、銅は 5.8e7）。完全導体にするには省略"
+      }
+    },
+    "model.symmetry": {
+      "label": "対称面",
+      "doc": "中央（x = a/2 または y = b/2）について対称な導波管をその面で切る：面の下側だけをメッシュ化・解析し、面を電気壁（完全導体：接線方向 E = 0、面について接線方向 E が奇の界）または磁気壁（接線方向 H = 0、法線方向 E = 0：接線方向 E が偶の界）で閉じる。TE10 は x = a/2 の磁気壁と y = b/2 の電気壁で保たれるので、Hプレーンのアイリスやフィルタはモデル全体のSパラメータのまま1/4で解析できる。ポートは保持した対称性のモードだけを持ち、面の向こうの界は内側の界の鏡像として表示する。軸ごとに1面（新しい面が古い面を置き換える）。`clear` は1面（`axis`）またはすべてを削除する。導波管のみ。時間領域ソルバーは対称面を受け付けない。メッシュは破棄される。",
+      "params": {
+        "axis": "`x`（x = 一定の面）または `y`（y = 一定）。`clear` と併用すると削除する面",
+        "kind": "`electric`（PEC壁）または `magnetic`（PMC壁）",
+        "at": "面の位置（既定は導波管の中央。これのみ可）",
+        "clear": "`axis` を横切る面を削除。`axis` がなければすべての面を削除"
+      }
+    },
+    "model.periodic": {
+      "label": "周期境界",
+      "doc": "モデルを無限配列の単位セルにする：面 x = 0 と x = a（`x`）、y = 0 と y = b（`y`）、または z = 0 と z = length（`z`）を Floquet 条件 E(r + L) = e^{−jψ}E(r) で結ぶ（マスター／スレーブ消去。系は複素対称ではなくエルミートになるため LU で解く）。x と y 方向の位相は、最初のポートの媒質中で z 軸から `theta`、x から方位角 `phi` で入射する平面波から決まる。セル両端のポートは Floquet ポートになる（TE と TM の高調波 (m, n)。`polarization` の (0, 0) を励振して読み取り、残りは吸収）。z 方向では、セルは導波路の1周期となり、その分散を `solve.dispersion` が求める（ポートなし）。導波管形状のみ（構造メッシュの対向面が一致する）。対称面、開放境界、集中定数ポート、時間領域とは併用不可。`clear` で削除する。",
+      "params": {
+        "x": "x = 0 と x = a を結ぶ（既定 true。設定済みなら従前どおり）",
+        "y": "y = 0 と y = b を結ぶ（既定 true）",
+        "z": "z = 0 と z = length を結ぶ（既定 false。その場合ポートなし）",
+        "theta": "z 軸からの入射角（度）、0 以上 90 未満（既定 0）",
+        "phi": "x 軸からの入射方位角（度）（既定 0）",
+        "polarization": "`te`（入射面に垂直な E、既定）または `tm`",
+        "clear": "周期境界を削除"
+      }
+    },
+    "model.port.create": {
+      "label": "ポート作成",
+      "doc": "端面上の導波管ポートで、導波管の低次モードに整合する。第1モード（矩形導波管では TE10、同軸線路では TEM）を励振して読み取り、他のモードはポートに届くそれ以外の波を吸収する。単一材料の矩形全体や円全体は閉形式のモードを使い、それ以外の断面（同軸線路、リッジ導波管、読み込んだ多角形など）は各周波数でその三角形上でモードを解く（`mode_solver` を numeric にすると常にこちら）。`face` を指定すると、ポートはソリッド内部の z 面上の矩形になる（たとえば物体内部の導波管の閉端で、開放ボックス内のアンテナを給電する）。このとき `end` は導波管が面のどちら側にあるかを示す（start：上側、end：下側）。複数のストリップ（結合線路）を含む断面は端子ポートとなる：ストリップごとに1つのS要素を持ち、x の小さい順に `<port>:1`、`<port>:2`、… と名付け、その準TEMモード（ストリップごとに1つ、すべて励振）をストリップの電圧と電流に変換し、波は `impedance`（既定 50 Ω）を基準とする。`terminals` を modal にすると第1モードのみを読む（損失のある断面では必要。端子ポートはまだ未対応）。",
+      "params": {
+        "name": "一意の名前（`:` は不可）",
+        "end": "`start`（z = 0）または `end`（z = length）。`face` 指定時は導波管がある側",
+        "modes": "ポート条件のモード数、1〜32（既定 4）",
+        "face": "[z, x0, y0, a, b]：z の面上の矩形 [x0, x0 + a] × [y0, y0 + b]",
+        "mode_solver": "`auto`（既定：適用できる所は閉形式）または `numeric`（断面ソルバー）",
+        "impedance": "ここでSの基準とするインピーダンス（Ω）。特性インピーダンスを持つ線路（同軸、ストリップ）用。省略時は線路自身の値",
+        "deembed": "ディエンベディング：Sの基準面がポート面から線路に沿ってモデル内側へどれだけ入った位置にあるか（負：外側に線路を追加）。既定 0",
+        "terminals": "`auto`（既定：ストリップを2本以上含む断面はストリップごとに1端子とし、x の小さい順に `<port>:<k>` と名付け、それぞれ `impedance` または 50 Ω を基準とする）または `modal`（第1モードのみ）"
+      }
+    },
+    "solve.frequency": {
+      "label": "周波数掃引",
+      "doc": "各周波数で駆動問題を解く。各ポートを順に第1モード（矩形導波管では TE10）の単位波で励振し、端子ポートは各ストリップのモードで励振する（Sはストリップごとに要素を持ち、`ports` がその名前を示す）：Sパラメータと電磁界。周波数は `frequencies`、または `start` から `stop` まで等間隔の `points` 点。3点以上は高速掃引する：いくつかを完全に解き、その界で基底を張り、残りをその基底で解き、すべての残差が 1e-4 以内になるまで最も精度の悪い点を完全解として追加する（Sは完全解析と約 1e-10 以内で一致）。`sweep` を full にすると各点を完全に解く。",
+      "params": {
+        "frequencies": "周波数",
+        "start": "最初の周波数",
+        "stop": "最後の周波数",
+        "points": "start から stop までの周波数点数（既定 11）",
+        "order": "要素次数：1（Whitney）または 2（既定）",
+        "sweep": "`fast`（既定：3点以上で縮約基底掃引）または `full`（各点で完全解析）"
+      }
+    },
+    "solve.time_domain": {
+      "label": "時間領域解析",
+      "doc": "時間領域ソルバーによるSパラメータ（ポート1を励振）：一辺約 `cell` のセルからなる六面体格子上の有限積分法、帯域にわたる TE10 パルス、PML終端の給電、各周波数でのフーリエ変換。周波数領域FEMの独立した検証となる。損失：損失正接（誘電体または磁性体）は帯域中心で一致させた導電率に置き換える（応答の `loss_reference`）。そのため解く材料は εr − jσ/ω で、そこでは正確に tan δ、それ以外では tan δ·f_ref/f となる。有限導電率の壁（model.walls）は表面インピーダンス条件をとる。ポートは損失や分散があってもよい（その複素伝搬定数でSを正規化）。開放モデル（model.open）ではアンテナを解く：一様格子上で全側面をCPMLとし、集中定数ポートとダイポールについて、各周波数でのポートのインピーダンス、S11、放射電力、およびホイヘンス箱からの遠方界（`solver` を time_domain とした results.far_field と view.pattern）を求める。損失・分散・磁性のある物体を扱えるが、導体は完全導体のみ。ギャップとダイポールは格子軸に沿う必要がある。損失または分散のある材料中のギャップは受け付けない。",
+      "params": {
+        "frequencies": "周波数",
+        "start": "最初の周波数",
+        "stop": "最後の周波数",
+        "points": "start から stop までの周波数点数（既定 11）",
+        "cell": "セルサイズ（既定 1 mm）",
+        "device": "リープフロッグを実行する場所：`cpu`（CPUのスレッド）、`cuda`（NVIDIA GPU）、`cubecl-cpu`（GPUのカーネルをCPUで実行。GPUなしで検証用）。既定は solve.device の設定。このマシンで使えるものは solve.devices が示す",
+        "precision": "GPUデバイス上の界の浮動小数点：`single` または `double`。既定は solve.device の設定。CPUのスレッドは倍精度で実行"
+      }
+    },
+    "solve.device": {
+      "label": "デバイス",
+      "doc": "以後ソルバーを実行する場所：`cpu`（CPUのスレッド、既定）、`cuda`（NVIDIA GPU）、`cubecl-cpu`（GPUのカーネルをCPUで実行、検証用）。デバイス上では、時間領域は界を `precision` で時間発展させ、周波数領域の分解は大きなフロント（`min_front` 行以上）を複素倍精度でデバイスに渡す。各ブロックのピボット選択と求解は引き続きCPUが行う。民生用GPUは倍精度が遅い：RTX 3080 では分解はCPUとほぼ同じ速度になる。このマシンの設定で、プロジェクトをまたいで保持され、プロジェクトには保存されない。",
+      "params": {
+        "device": "`cpu`、`cuda`、または `cubecl-cpu`",
+        "precision": "時間領域の界：`single`（既定）または `double`",
+        "min_front": "この行数以上の分解フロントをデバイスに送る（既定：従前どおり、初期値 1024）"
+      }
+    },
+    "solve.devices": {
+      "label": "デバイス一覧",
+      "doc": "このマシンで時間領域ソルバーを実行できる場所：各デバイスと実行できる精度、または実行できない理由。",
+      "params": {}
+    },
+    "solve.eigenmodes": {
+      "label": "固有モード",
+      "doc": "両端を導体壁で閉じた導波管（空洞。ポートは除外）の共振：`near` に最も近い `count` 個のモードと、壁の導電率と誘電体の損失正接から摂動法で求めたQ値。`near` は求めたいモードより少し上に置く：回転の零空間より前に、その約 √2 倍までのモードが求まる。",
+      "params": {
+        "near": "モードを探す中心周波数",
+        "count": "モード数、1〜50（既定 5）",
+        "order": "要素次数：1 または 2（既定）"
+      }
+    },
+    "solve.dispersion": {
+      "label": "分散ダイアグラム",
+      "doc": "周期セル（model.periodic）のブロッホモード。壁は完全導体、ポートは除外：`axis` に沿って1周期あたりの位相 ψ を `from` から `to` まで変え（他の周期軸は位相 0）、各位相で最低次の `bands` 個の固有周波数を、位相シフトした（エルミート）固有値問題のシフト・インバート部分空間反復で求める。`near` は求めたい最高バンドより少し上に置く：その約 √2 倍までのモードが求まる。z 方向に周期的で各区間が断面を満たす導波路では、results.dispersion が閉形式を追加する（空の導波管の TE/TM 高調波、装荷導波管の TE10 のブロッホバンド）。",
+      "params": {
+        "axis": "掃引する周期軸：`x`、`y`、または `z`（既定は周期的なら z、そうでなければ x）",
+        "from": "1周期あたりの最初の位相（度）（既定 0）",
+        "to": "1周期あたりの最後の位相（度）（既定 180：ゾーン端）",
+        "points": "`from` から `to` までの位相点数、1〜201（既定 11）",
+        "bands": "位相あたりの固有周波数の数、1〜20（既定 4）",
+        "near": "シフト：求めたい最高バンドより少し上（既定は帯域の上端）",
+        "order": "要素次数：1 または 2（既定）"
+      }
+    },
+    "results.dispersion": {
+      "label": "分散の表",
+      "doc": "分散ダイアグラムの位相、ブロッホ波数 β = ψ/L（表示長さあたり）とバンド。適用できる場合は閉形式も示す。",
+      "params": {}
+    },
+    "view.dispersion": {
+      "label": "分散グラフ",
+      "doc": "分散ダイアグラムのPNGを書き出す：1周期あたりの位相に対する周波数。解いたバンドをマーカーで、適用できる場合は閉形式の曲線に重ねて示し、光線（ライトライン）も描く。",
+      "params": {
+        "path": "書き出すPNGファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "width": "ピクセル（既定 1000）",
+        "height": "ピクセル（既定 600）"
+      }
+    },
+    "results.eigenmodes": {
+      "label": "固有モードの表",
+      "doc": "固有モードの周波数とQ値。一様な1区間の空洞では閉形式の共振も示す。",
+      "params": {}
+    },
+    "solve.port_modes": {
+      "label": "ポートモード",
+      "doc": "1つの周波数での各ポートのモード。体積は解かず、メッシュ化したモデルから求める：単一材料の矩形全体や円全体は閉形式、それ以外は断面ソルバー。モードごとに：伝搬定数 β（長さ単位あたりのラジアン）、実効誘電率 (β/k₀)²、そしてグラウンド以外に導体を持つ線路（同軸、ストリップ）では、伝搬する場合に導体ごとの電力と電流による特性インピーダンス 2P/Σ|I|²（Ω）（1つの誘電体中の複数のストリップ：TEMモードは直交する電流のモードに分かれ、2本の結合ストリップでは偶モード、次に奇モード、Z0e と Z0o）。伝搬しない場合は減衰量（長さ単位あたりの dB）。",
+      "params": {
+        "frequency": "周波数（既定：帯域の上端）",
+        "order": "断面ソルバーの要素次数、1 または 2（既定 2）"
+      }
+    },
+    "results.sparameters": {
+      "label": "Sパラメータ",
+      "doc": "最後の掃引のSパラメータ表：各 S[p][q]（ポート q への入射波に対するポート p での値）を実部、虚部、振幅、dB、位相（度）で示す。",
+      "params": {}
+    },
+    "results.compare": {
+      "label": "理論との比較",
+      "doc": "掃引の S11 と S21 を参照解と比較する：すべての区間が断面全体を持つ場合は TE10 の厳密解、開口が変わる場合はモード整合法（最も広い区間で `modes` 個の TE_m0 モード）。周波数ごとの誤差と最悪値。",
+      "params": {
+        "modes": "モード整合法で最も広い区間に用いる TE_m0 モード数、10〜1000（既定 160）"
+      }
+    },
+    "results.field_error": {
+      "label": "理論に対する界の誤差",
+      "doc": "解析済みの周波数で、導波管全体にわたる E と H の相対 L2 誤差 ‖F − F_exact‖/‖F_exact‖。TE10 の厳密な界（ポート1を励振）と比較する。",
+      "params": {
+        "frequency": "解析済みの周波数"
+      }
+    },
+    "results.probe": {
+      "label": "界のプローブ",
+      "doc": "解析済みの周波数と励振ポートについて、各点での複素数の E（V/m）と H（A/m）。",
+      "params": {
+        "frequency": "解析済みの周波数",
+        "at": "点 `[[x, y, z], …]`",
+        "excitation": "励振するポート（既定は最初のポート）"
+      }
+    },
+    "view.port_mode": {
+      "label": "ポートモード画像",
+      "doc": "ポートモードの形状のPNGを書き出す：ポート面上の横方向 E。|E_t| を色、E_t を矢印で示し、導体は灰色（閉形式から、または solve.port_modes と同様にポートの断面を解いて求める）。振幅は任意。サブタイトルにモードが伝搬するかどうかを示す。",
+      "params": {
+        "path": "書き出すPNGファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "port": "ポートの名前",
+        "mode": "モード、1 = 最低次（既定 1）",
+        "frequency": "周波数（既定：帯域の上端）",
+        "order": "断面ソルバーの要素次数、1 または 2（既定 2）",
+        "width": "画像の幅（ピクセル）（既定 900）"
+      }
+    },
+    "results.tdr": {
+      "label": "TDR",
+      "doc": "ポートでの掃引の反射（掃引がなければ時間領域の反射）からの時間領域反射測定：`lowpass` は高調波掃引 f_k = k Δf 上で（遮断のない線路向け）ステップ応答 ρ(t) を与え、インピーダンスが変わるごとにその往復遅延の位置にステップが現れる（Z = Z0 (1 + ρ)/(1 − ρ)、ポートの基準インピーダンスを使用）。`bandpass` は |h(t)| を与え、各反射の発生位置にピークが現れる（遮断のある導波管向け）。ハン窓を掛け、エイリアス周期 1/Δf の1周期にわたる。",
+      "params": {
+        "port": "ポート（既定は最初のポート）",
+        "mode": "`lowpass`（高調波掃引での既定）または `bandpass`"
+      }
+    },
+    "view.tdr": {
+      "label": "TDR PNG",
+      "doc": "results.tdr のチャートを PNG に書き出す。",
+      "params": {
+        "path": "書き出す PNG ファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "port": "ポート（既定は最初のポート）",
+        "mode": "`lowpass` または `bandpass`",
+        "width": "画像の幅（ピクセル、既定 1000）",
+        "height": "画像の高さ（ピクセル、既定 600）"
+      }
+    },
+    "view.field": {
+      "label": "電磁界の画像",
+      "doc": "平面上の電磁界を PNG に書き出す。1 成分を色で、面内の E と H を矢印で示す。ある位相での Re(F e^jωt)。",
+      "params": {
+        "path": "書き出す PNG ファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "frequency": "解析済みの周波数（最も近いものを使う）。`mode` を指定しない場合は必須",
+        "mode": "励振解の代わりに表示する固有モード（1 = 最低次）",
+        "plane": "`h`（H 面、既定）、`e`（E 面）または `cross`（断面）",
+        "at": "法線方向の平面の位置（既定は中央）",
+        "component": "色で示す成分：ex、ey（既定）、ez、hx、hy、hz",
+        "arrows": "描くベクトル界：`[\"e\", \"h\"]`（既定は色で示す成分の界。両方を表示するとき H の矢印は E の矢印の間に描く）",
+        "phase": "ωt（度、既定 0）",
+        "excitation": "励振するポート（既定は最初のポート）",
+        "width": "画像の幅（ピクセル、既定 1100）"
+      }
+    },
+    "view.animation": {
+      "label": "電磁界アニメーション",
+      "doc": "平面上の電磁界の ωt 1 周期分をループするアニメーション PNG に書き出す。等間隔の位相での view.field の画像を並べたもの。",
+      "params": {
+        "path": "書き出すアニメーション PNG（APNG）ファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "frequency": "解析済みの周波数（最も近いものを使う）。`mode` を指定しない場合は必須",
+        "mode": "励振解の代わりに表示する固有モード（1 = 最低次）",
+        "plane": "`h`（H 面、既定）、`e`（E 面）または `cross`（断面）",
+        "at": "法線方向の平面の位置（既定は中央）",
+        "component": "色で示す成分：ex、ey（既定）、ez、hx、hy、hz",
+        "arrows": "描くベクトル界：`[\"e\", \"h\"]`（既定は色で示す成分の界）",
+        "excitation": "励振するポート（既定は最初のポート）",
+        "frames": "1 周期のフレーム数、4〜120（既定 24）",
+        "period": "1 周期の再生秒数（既定 2）",
+        "width": "画像の幅（ピクセル、既定 800）"
+      }
+    },
+    "view.sparameters": {
+      "label": "Sパラメータのチャート",
+      "doc": "|S11| と |S21| を dB で周波数に対して描いた PNG を書き出す。解析点を TE10 の厳密解の曲線に重ね、遮断周波数を示す。",
+      "params": {
+        "path": "書き出す PNG ファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "width": "ピクセル（既定 1000）",
+        "height": "ピクセル（既定 600）"
+      }
+    },
+    "model.open": {
+      "label": "開放境界",
+      "doc": "放射と散乱のため、直方体ソリッドの全面に厚さ `thickness` の完全整合層（PML）を張る（その背後は導体壁）。座標伸長による異方性媒質で、s = 1 − j(σ₀/k₀)(ξ/d)²、垂直入射で反射 1e-6 となるよう設計する。`shape` が sphere の場合、ソリッドは原点中心の球で、その厚さの外殻を層とし、半径方向にのみ伸長する（r̃ = r + (1/jk₀)∫σ dr。メッシュには層の内半径に界面球が入る）。小形の放射体の周りでは直方体より体積が少なく、Huygens 面はその内側の球になる。波源、集中定数ポート、介在物は内球の内側に置き、導波管ポートやフィーチャは使えない。厚さは 1/4〜1/2 波長が目安。放射体と層の間にも同程度の間隔を取る（遠方界用の Huygens 面がその間にあり、波源の近傍界から要素 2 個分ほど離す必要がある）。`thickness` を省くと直方体を再び閉じる。",
+      "params": {
+        "thickness": "層の厚さ",
+        "reflection": "層のプロファイルの設計値とする垂直入射での反射、0〜1（既定 1e-6）",
+        "shape": "`box`（既定：直方体ソリッドの各面に板状の層）または `sphere`（球ソリッドの外殻）"
+      }
+    },
+    "source.dipole": {
+      "label": "ダイポール波源",
+      "doc": "開放問題を駆動する短い電流素子（ヘルツダイポール）：位置 `at` で方向 `direction` に沿った長さ `length` を流れる電流 `current`（A、ピーク値）。",
+      "params": {
+        "at": "位置 [x, y, z]",
+        "direction": "軸の向き（既定 [0, 0, 1]）",
+        "length": "長さ（モーメントは電流 × 長さ）",
+        "current": "電流（アンペア、ピーク値、既定 1）"
+      }
+    },
+    "source.plane_wave": {
+      "label": "平面波",
+      "doc": "モデルの誘電体や導体に入射する 1 V/m の平面波。解析でそれらが散乱する界（導体上で n × E_s = −n × E_inc）、レーダー断面積、運び去る電力を求める。",
+      "params": {
+        "direction": "進行方向（既定 [0, 0, 1]）",
+        "polarization": "電界の向き、`direction` に垂直（既定 [1, 0, 0]）"
+      }
+    },
+    "model.port.lumped": {
+      "label": "集中定数ポート",
+      "doc": "集中定数（離散）ポート：アンテナの給電点。`from` から `to` までのギャップ（通常は 2 導体の間）で、`impedance` と直列の電圧 `voltage`・位相 `phase` の電源が `from` から `to` へ電流を流す。solve.radiation はその入力インピーダンス（複数のポートが有効なときはアクティブインピーダンス）、`impedance` を基準とした S11、供給電力を報告する。",
+      "params": {
+        "name": "ポート名",
+        "from": "ギャップの始点 [x, y, z]",
+        "to": "ギャップの終点 [x, y, z]",
+        "impedance": "電源の内部インピーダンス（Ω、既定 50）",
+        "voltage": "電源の電圧（V、ピーク値、既定 1）",
+        "phase": "電源の位相（度、既定 0）",
+        "radius": "ギャップの線の周りのこの半径の帯に電流を広げる（ワイヤに切ったギャップではワイヤの半径）。既定 0 で線そのもの"
+      }
+    },
+    "source.clear": {
+      "label": "波源をクリア",
+      "doc": "すべての波源を削除する。",
+      "params": {}
+    },
+    "solve.radiation": {
+      "label": "放射",
+      "doc": "開放問題を 1 周波数で解く：波源が放射する（または誘電体が散乱する）界と、放射体と層の間にある Huygens 箱を通る電力（層の厚さの 1/3 内側、そのほうが近ければ中間）。単独のダイポール（放射電力）や単独の誘電体球・導体球（Mie 級数の散乱断面積）では閉形式解と比べる。",
+      "params": {
+        "frequency": "周波数",
+        "order": "要素次数：1 または 2（既定）"
+      }
+    },
+    "results.far_field": {
+      "label": "遠方界",
+      "doc": "直近の放射解析の遠方界（r e^{jkr} E_θ, E_φ）を極角 `theta`、方位角 `phi`（度）で求める。Huygens 箱の等価電流からの近傍界–遠方界変換による。波源では指向性、平面波ではレーダー断面積を、適用できる場合は閉形式解とともに示す。",
+      "params": {
+        "theta": "極角（度、既定 0〜180 を 10 刻み）",
+        "phi": "方位角（度、既定 0）",
+        "solver": "`fem`（solve.radiation）または `time_domain`（solve.time_domain）。既定はある方、両方あれば FEM",
+        "frequency": "時間領域の周波数（最も近い解析済みのもの）"
+      }
+    },
+    "view.pattern": {
+      "label": "放射パターンのチャート",
+      "doc": "方位角 `phi` での θ に対する遠方界の放射パターンを PNG に書き出す。波源では指向性（dBi）、平面波ではレーダー断面積（dBsm）を、適用できる場合は閉形式解に重ねる。",
+      "params": {
+        "path": "書き出す PNG ファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "phi": "方位角（度、既定 0）",
+        "points": "0〜180° の角度の点数（既定 91）",
+        "width": "ピクセル（既定 1000）",
+        "height": "ピクセル（既定 600）",
+        "solver": "`fem`（solve.radiation）または `time_domain`（solve.time_domain）。既定はある方、両方あれば FEM",
+        "frequency": "時間領域の周波数（最も近い解析済みのもの）"
+      }
+    },
+    "file.sample": {
+      "label": "サンプルを開く",
+      "doc": "セッションをサンプルモデルで置き換える（`highpass`：導波管ハイパスフィルタ、`iris-bandpass`：誘導性アイリスのバンドパスフィルタ、`cavity`：銅の空洞共振器の固有モード）。モデルはそのスクリプトで組み立てる。`solve: true` で解析も実行する。",
+      "params": {
+        "name": "サンプル名",
+        "solve": "サンプルの掃引を実行する（既定 false）"
+      }
+    },
+    "project.variable": {
+      "label": "変数",
+      "doc": "名前付きの変数を定義または変更する。以降のコマンドの数値パラメータには、`=` で始まる文字列で変数の式を書ける：`\"=w\"`、`\"=w/2 + 1\"`、`\"=sqrt(er)*pi\"`（+ − * / ^、括弧、`pi`、sqrt、abs、sin、cos、tan、exp、ln）。値はパラメータの表示単位でのリテラルとして読む。履歴は式を保持し、変数を変えると新しい値でコマンドを再実行してモデル（メッシュも）を組み直す。元に戻すで戻れる。",
+      "params": {
+        "name": "変数名：英字または `_` に続けて英字、数字または `_`",
+        "value": "値。数値（またはそれより前に定義した変数の式）"
+      }
+    },
+    "project.variable.delete": {
+      "label": "変数を削除",
+      "doc": "どのコマンドも参照していない変数を削除する。",
+      "params": {
+        "name": "変数"
+      }
+    },
+    "project.variables": {
+      "label": "変数一覧",
+      "doc": "プロジェクトの変数：それぞれの値、定義する式（式の場合）、使っているコマンドの数。",
+      "params": {}
+    },
+    "study.sweep": {
+      "label": "パラメータ掃引",
+      "doc": "変数を 1 つ、または複数をグリッド上で掃引する。各値（グリッドの各点：変数の値のすべての組み合わせ、最後の変数が最も速く変わる）ごとに、その値で履歴からモデルを組み直し（履歴にメッシュ生成があればメッシュも）、`solve`（`{\"command\": \"solve.frequency\", \"params\": {…}}`、任意の解析コマンド）で解いて結果を集める：解析周波数での Sパラメータ、固有モードの周波数、解析のその他の数値。1 変数の行には `value`、グリッドの行には `variables` の順の `values` が入り、応答には各変数のグリッドの値が入る。セッションのモデルは元のまま残る。組み立てや解析ができない点はその行で報告し、キャンセルすると次の点で止まる。",
+      "params": {
+        "variable": "掃引する変数（または `variables` を指定）",
+        "variables": "グリッド上で掃引する複数の変数：[{\"name\", \"values\"} または {\"name\", \"start\", \"stop\", \"points\"}]（最大 4 個、全体で最大 400 点）",
+        "values": "値（最大 101 個）",
+        "start": "最初の値（`values` を使わない場合）",
+        "stop": "最後の値",
+        "points": "start から stop までの値の数（既定 5、最大 101）",
+        "solve": "各点での解析：{\"command\", \"params\"}",
+        "outputs": "保持する Sパラメータ、例 [\"s11\", \"s21\"]（既定はすべて）"
+      }
+    },
+    "study.optimize": {
+      "label": "最適化",
+      "doc": "目標を最小にする変数の値を範囲内で探す。範囲を [0, 1] に正規化し、現在の値から Nelder–Mead シンプレックス法（Comput. J. 7(4):308–313, 1965）で探索する。各点では履歴からモデルを組み直し `solve` で解く。目標（`type`）：`min_max_db`（周波数にわたる最大の |S|、既定 s11：反射）、`max_min_db`（最小の |S|、既定 s21：透過）、`target_db`（|S| を `target` dB に）、`eigenfrequency`（モード `mode`、既定 1、を表示単位で `target` に）、`maximize` または `minimize`（解析が返す数値：`quantity`）。モデルは最良点のまま残り（元に戻すで戻れる）、すべての評価を保持する。",
+      "params": {
+        "variables": "変化させる変数：[{\"name\", \"min\", \"max\"}]（最大 8 個）",
+        "goal": "最小化する対象：{\"type\", \"parameter\", \"target\", \"mode\", \"quantity\"}",
+        "solve": "各点での解析：{\"command\", \"params\"}",
+        "max_evaluations": "最大の解析回数（既定 50、最大 500）",
+        "tolerance": "停止するシンプレックスの大きさ、各範囲に対する割合（既定 1e-3）"
+      }
+    },
+    "view.study": {
+      "label": "スタディのチャート",
+      "doc": "直近のスタディを PNG に書き出す。掃引では |S|（dB）を周波数に対して値ごとに 1 曲線（1 周波数で解いた場合は値に対して）、または固有モードを値に対して描く。最適化では各解析での目標値とそれまでの最良値を描く。グリッド掃引は他の変数を固定（`at`）して 1 つの変数に沿って描き、1 周波数で解いた場合は次の変数の値ごとに 1 曲線とする。",
+      "params": {
+        "path": "書き出す PNG ファイル",
+        "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
+        "parameter": "掃引の Sパラメータ、例 s21（既定は最初のもの）",
+        "at": "グリッド掃引の断面：固定する変数とその値（{\"b\": 5}。最も近い掃引値）。チャートは固定していない最初の変数に沿う（既定：最初の変数に沿い、他は最初の値）",
+        "width": "ピクセル（既定 1000）",
+        "height": "ピクセル（既定 600）"
+      }
+    },
+    "theme.check": {
+      "label": "テーマを検査",
+      "doc": "テーマファイル（docs/themes.md）を読み、名前、ベース、説明、ベースに重ねて得られる画像パレット、`ui` と `scene` の色、見つかったすべての問題（そのとき `ok` は false）を報告する：未知のキーや画像の色、不正な色、透ける画像やシーンの色、範囲外の名前、地の上で読めないインク。組み込みテーマの名前（`light`、`dark`、`mono`、…）ではそのテーマを報告する。デスクトップアプリはテーマを読み込むときに `ui` と `scene` の名前を検査する。",
+      "params": {
+        "path": "テーマファイル、または組み込みテーマの名前"
+      }
+    },
+    "model.summary": {
+      "label": "概要",
+      "doc": "モデル、メッシュ、結果の概要。",
+      "params": {}
+    }
+  },
+  "samples": {
+    "highpass": "導波管ハイパスフィルタ：20 mm の空の区間の両側を εr = 2 で満たした WR-90、6.56 GHz 以下で遮断",
+    "iris-bandpass": "誘導性アイリスのバンドパスフィルタ：4 枚の 2 mm アイリス（12.75、9.25、9.25、12.75 mm）で区切った 3 つの WR-90 空洞、通過帯域 9.75–10.25 GHz",
+    "cavity": "銅の方形空洞共振器 22.86 × 10.16 × 30 mm：最低次の 4 つの共振（TE101 は 8.24 GHz）と Q 値",
+    "cylinder-cavity": "銅の円筒空洞共振器、半径 10 mm、長さ 30 mm、非構造四面体メッシュ：TE111 と TM010 をベッセル関数の零点と比較",
+    "circular-guide": "円形導波管、半径 10 mm、長さ 30 mm、非構造メッシュ：ベッセルモードで閉じたポートを通る TE11（遮断 8.79 GHz）",
+    "coaxial-line": "PTFE 同軸線路、導体半径 1 mm と 3.5 mm、長さ 20 mm：環状断面で解いたモードのポートを通る TEM",
+    "coupled-filter": "平行結合ストリップ線路バンドパスフィルタ：50 Ω の給電線の間で端どうしを結合した 3 つの半波長共振器、4 mm 間隔の導体板の間に PTFE、4.66–5.34 GHz（Cohn 1958）",
+    "coupler": "ストリップ線路の結合線路形方向性結合器：5 GHz で 1/4 波長の 2 本のストリップ、各端がそれぞれ端子（4 ポート、50 Ω）、後方に 10 dB 結合し、もう一方のストリップの遠端はアイソレーション（Pozar §7.6）",
+    "inductive-post": "WR-90 を壁から壁まで貫く 3 mm の導体ポスト、ブール差で箱から切り抜く：強い並列インダクタンス",
+    "loaded-sphere": "半径 10 mm の球形空洞共振器と同心のセラミック球（εr = 4、半径 4 mm）：節点どうしで接合した 2 つの材料領域、11.26 GHz の TM11 三重縮退",
+    "dipole": "完全整合層で内張りした箱の中の 10 GHz、1 mm の電流素子：放射電力と指向性をヘルツダイポールと比較",
+    "halfwave-dipole": "集中定数ポートで給電する 10 GHz の半波長ワイヤダイポール（半径 0.5 mm、ギャップ 1 mm）：入力インピーダンス、S11、電力収支、放射パターン",
+    "open-waveguide": "金属ブロックに開けた開口端 WR-90 溝から 10 GHz で放射、溝の閉じた端の導波管ポートで給電：S11、利得、放射パターン",
+    "sphere-scattering": "10 GHz の平面波がセラミック球（εr = 4、半径 5 mm）に入射：散乱界とレーダー断面積を Mie 級数と比較"
+  }
+}

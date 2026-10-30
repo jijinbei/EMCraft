@@ -1,6 +1,7 @@
 //! Starting a run: the solver's parameters from the panel's fields and the preflight checks.
 
 use super::*;
+use crate::lang::{shown, tr};
 
 /// The solver and its parameters from the setup's fields (`f`); each bad field is marked.
 pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver, Value), String> {
@@ -32,7 +33,7 @@ pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver
     // A frequency field left empty takes the band's middle.
     let freq = |text: &str| {
         if text.trim().is_empty() {
-            band.map(|(a, z)| 0.5 * (a + z)).ok_or_else(|| "give a frequency (or set the band, step 0)".to_owned())
+            band.map(|(a, z)| 0.5 * (a + z)).ok_or_else(|| tr("give a frequency (or set the band, step 0)").to_owned())
         } else {
             positive(text)
         }
@@ -42,7 +43,7 @@ pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver
             let points = take("points", integer(&f.points.clone(), 1, limit).map(|v| json!(v)), f);
             let order = if solver == Solver::Frequency { take("order", order.map(|v| json!(v)), f) } else { Some(Value::Null) };
             if band.is_none() {
-                bad.push("no frequency band: set it in step 0 (Intent)".into());
+                bad.push(tr("no frequency band: set it in step 0 (Intent)").into());
             }
             match (points, order) {
                 (Some(p), Some(o)) if solver == Solver::Frequency => json!({"points": p, "order": o}),
@@ -95,7 +96,7 @@ pub fn preflight(s: &emcraft_engine::Session, f: &mut Fields, states: &[StepStat
             Status::Done => continue,
         };
         if s.messages.is_empty() {
-            list.push((s.step, format!("{}: {}", s.step.label(), s.status.id())));
+            list.push((s.step, format!("{}: {}", shown(s.step), shown(s.status))));
         }
         for m in &s.messages {
             list.push((s.step, m.text.clone()));
@@ -124,7 +125,7 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     app.workflow.fields.refused = None;
     let (solver, params) = run_params(&app.session, &mut app.workflow.fields).map_err(UiError::Input)?;
     if !pre.warnings.is_empty() {
-        app.info(format!("Running with {} accepted warning(s).", pre.warnings.len()));
+        app.info_with("Running with {n} accepted warning(s).", &[("n", &pre.warnings.len())]);
     }
     app.run(solver.command(), params)
 }

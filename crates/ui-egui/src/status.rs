@@ -4,6 +4,7 @@ use emcraft_engine::Session;
 use serde_json::Value;
 
 use crate::label;
+use crate::lang::{tr, trf};
 
 /// A command's JSON reply, read leniently: a missing or mistyped field reads as a placeholder
 /// (NaN, 0, empty), so the text never fails.
@@ -38,61 +39,69 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
     let (p, r) = (Reply(params), Reply(reply));
     let unit = session.display().frequency.symbol();
     match id {
-        "file.sample" if session.results().any() => format!("Opened sample {}.", p.text("name")),
-        "file.sample" => format!("Opened sample {}; Run (step 7) solves it.", p.text("name")),
+        "file.sample" if session.results().any() => trf("Opened sample {name}.", &[("name", &p.text("name"))]),
+        "file.sample" => trf("Opened sample {name}; Run (step 7) solves it.", &[("name", &p.text("name"))]),
         "file.open" => match p.text("path") {
-            "" => "Opened the project.".to_owned(),
-            path => format!("Opened {path}."),
+            "" => tr("Opened the project.").to_owned(),
+            path => trf("Opened {path}.", &[("path", &path)]),
         },
-        "file.new" => "New project.".to_owned(),
-        "engine.script" => "Script done.".to_owned(),
-        "file.save" => format!("Saved {} commands to {}.", r.count("commands"), r.text("path")),
-        "solve.frequency" => format!("Solved {} frequencies, {} unknowns.", r.list("points").len(), r.count("unknowns")),
+        "file.new" => tr("New project.").to_owned(),
+        "engine.script" => tr("Script done.").to_owned(),
+        "file.save" => trf("Saved {n} commands to {path}.", &[("n", &r.count("commands")), ("path", &r.text("path"))]),
+        "solve.frequency" => {
+            trf("Solved {n} frequencies, {unknowns} unknowns.", &[("n", &r.list("points").len()), ("unknowns", &r.count("unknowns"))])
+        }
         "solve.eigenmodes" => {
             let list: Vec<String> = r.list("modes").iter().filter_map(|m| m.get("frequency")?.as_f64()).map(|x| format!("{x:.4}")).collect();
-            format!("Found {} eigenmodes: {} {unit}.", list.len(), list.join(", "))
+            trf("Found {n} eigenmodes: {list} {unit}.", &[("n", &list.len()), ("list", &list.join(", ")), ("unit", &unit)])
         }
         "solve.dispersion" => {
             let points = r.list("points");
             let bands = points.first().and_then(|p| p.get("frequencies")).and_then(Value::as_array).map_or(0, Vec::len);
-            format!("Dispersion along {}: {} phases, {bands} bands each.", r.text("axis"), points.len())
+            trf("Dispersion along {axis}: {n} phases, {bands} bands each.", &[("axis", &r.text("axis")), ("n", &points.len()), ("bands", &bands)])
         }
         "solve.radiation" => {
             let power = reply.get("power").or(reply.get("radiated_power")).and_then(Value::as_f64).unwrap_or(f64::NAN);
-            format!("Solved the open problem: radiated power {power:.4e} W.")
+            trf("Solved the open problem: radiated power {power} W.", &[("power", &format!("{power:.4e}"))])
         }
         "solve.time_domain" => match r.text("device") {
-            "" | "cpu" => format!("Time-domain solve done in {} steps.", r.count("steps")),
-            device => format!("Time-domain solve done in {} steps on {device} ({} precision).", r.count("steps"), r.text("precision")),
+            "" | "cpu" => trf("Time-domain solve done in {n} steps.", &[("n", &r.count("steps"))]),
+            device => trf(
+                "Time-domain solve done in {n} steps on {device} ({precision} precision).",
+                &[("n", &r.count("steps")), ("device", &device), ("precision", &tr(r.text("precision")))],
+            ),
         },
-        "solve.port_modes" => format!("Port modes at {} {unit}.", r.num("frequency")),
-        "solve.device" => format!(
-            "The solvers run on {} ({} precision in the time domain; factorization: {}).",
-            r.text("device"),
-            r.text("precision"),
-            r.text("factorization")
+        "solve.port_modes" => trf("Port modes at {f} {unit}.", &[("f", &r.num("frequency")), ("unit", &unit)]),
+        "solve.device" => trf(
+            "The solvers run on {device} ({precision} precision in the time domain; factorization: {factorization}).",
+            &[("device", &r.text("device")), ("precision", &tr(r.text("precision"))), ("factorization", &r.text("factorization"))],
         ),
-        "results.compare" => format!("Worst |S − S_ref| = {:.3e} ({}).", r.num("worst"), r.text("reference")),
+        "results.compare" => {
+            trf("Worst |S − S_ref| = {worst} ({reference}).", &[("worst", &format!("{:.3e}", r.num("worst"))), ("reference", &r.text("reference"))])
+        }
         "edit.undo" | "edit.redo" => {
-            format!("{} ({} to undo, {} to redo).", if id == "edit.undo" { "Undone" } else { "Redone" }, r.count("undo"), r.count("redo"))
+            let template = if id == "edit.undo" { "Undone ({undo} to undo, {redo} to redo)." } else { "Redone ({undo} to undo, {redo} to redo)." };
+            trf(template, &[("undo", &r.count("undo")), ("redo", &r.count("redo"))])
         }
         "project.frequency" => {
             let unit = match r.text("unit") {
                 "" => unit,
                 u => u,
             };
-            format!("Band {} to {} {unit}.", r.num("start"), r.num("stop"))
+            trf("Band {start} to {stop} {unit}.", &[("start", &r.num("start")), ("stop", &r.num("stop")), ("unit", &unit)])
         }
-        "results.touchstone" => format!("Wrote {}.", r.text("path")),
-        "results.check" => format!(
-            "Largest singular value of S {:.6} ({}), reciprocity error {:.3e}.",
-            r.num("largest_singular_value"),
-            if r.flag("passive") { "passive" } else { "not passive" },
-            r.num("reciprocity_error")
-        ),
+        "results.touchstone" => trf("Wrote {path}.", &[("path", &r.text("path"))]),
+        "results.check" => {
+            let passive = tr(if r.flag("passive") { "passive" } else { "not passive" });
+            let (largest, error) = (format!("{:.6}", r.num("largest_singular_value")), format!("{:.3e}", r.num("reciprocity_error")));
+            trf(
+                "Largest singular value of S {largest} ({passive}), reciprocity error {error}.",
+                &[("largest", &largest), ("passive", &passive), ("error", &error)],
+            )
+        }
         "mesh.generate" => {
             let (nodes, tets) = session.model().mesh.as_ref().map_or((0, 0), |m| (m.nodes.len(), m.tets.len()));
-            format!("Meshed: {nodes} nodes, {tets} tetrahedra.")
+            trf("Meshed: {nodes} nodes, {tets} tetrahedra.", &[("nodes", &nodes), ("tets", &tets)])
         }
         "mesh.adapt" => {
             let passes = r.list("passes");
@@ -101,17 +110,19 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             let key = if far { "delta_far_field" } else { "delta_s" };
             let last = passes.last().and_then(|p| p.get(key)?.as_f64()).map_or("—".to_owned(), |d| format!("{d:.2e}"));
             let tets = session.model().mesh.as_ref().map_or(0, |m| m.tets.len());
-            let converged = if r.flag("converged") { "converged" } else { "not converged" };
-            let what = if far { "far-field change" } else { "ΔS" };
-            format!("Adaptive mesh: {} passes, {tets} tetrahedra, last {what} {last}, {converged}.", passes.len())
+            let converged = tr(if r.flag("converged") { "converged" } else { "not converged" });
+            let what = tr(if far { "far-field change" } else { "ΔS" });
+            let args: [(&str, &dyn std::fmt::Display); 5] =
+                [("n", &passes.len()), ("tets", &tets), ("what", &what), ("last", &last), ("converged", &converged)];
+            trf("Adaptive mesh: {n} passes, {tets} tetrahedra, last {what} {last}, {converged}.", &args)
         }
         "project.variable" => format!("{} = {}.", p.text("name"), r.num("value")),
-        "project.variable.delete" => format!("Deleted variable {}.", p.text("name")),
+        "project.variable.delete" => trf("Deleted variable {name}.", &[("name", &p.text("name"))]),
         "study.sweep" | "study.optimize" => match session.results().study.as_ref() {
-            Some(study) => format!("{}.", crate::viewport::study_summary(study)),
-            None => format!("{} done.", label(id)),
+            Some(study) => trf("{summary}.", &[("summary", &crate::viewport::study_summary(study))]),
+            None => trf("{command} done.", &[("command", &label(id))]),
         },
-        other => format!("{} done.", label(other)),
+        other => trf("{command} done.", &[("command", &label(other))]),
     }
 }
 
