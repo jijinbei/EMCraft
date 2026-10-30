@@ -8,5 +8,5 @@
  {"command": "mesh.generate", "params": {"size": "=(a1+a2-abs(a1-a2))/16"}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
- {"command": "solve.frequency", "params": {"start": "=374.74/(a1+a2-abs(a1-a2))", "stop": "=566.6/(a1+a2+abs(a1-a2))", "points": 11, "order": 2}}
+ {"command": "solve.frequency", "params": {"start": "=374.74/(a1+a2-abs(a1-a2))", "stop": "=566.6/(a1+a2+abs(a1-a2))", "points": 101, "order": 2}}
 ]
