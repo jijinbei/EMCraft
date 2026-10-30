@@ -2,7 +2,8 @@
 //! as well as colour: done (a green disc with a tick), to do (a hollow ring), waiting on an
 //! earlier step (a grey disc with dots, the step's name dimmed), a warning (an amber disc with
 //! an exclamation), needs attention (a red disc with a cross), out of date (a blue disc with a
-//! turning arrow); and Run while a run goes on (a turning arc).
+//! turning arrow); and Run while a run goes on (a turning arc). A step the chosen kind of
+//! analysis does without, with nothing in it, shows a grey ring with a dash, its name dimmed.
 
 use super::*;
 use crate::lang::shown;
@@ -42,6 +43,10 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                     checks
                         .insert(0, crate::lang::trf("the last run failed: {error}", crate::lang::args!(error = emcraft_engine::text::clip(e, 300))));
                 }
+                let unneeded = not_needed(app, s.step);
+                if let Some(why) = &unneeded {
+                    checks.insert(0, why.clone());
+                }
                 let tip = if checks.is_empty() || run_going {
                     format!("{}: {status}", shown(s.step))
                 } else {
@@ -62,12 +67,14 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 let c = pos2(r.left() + 14.0, r.center().y);
                 if run_going {
                     running_mark(ui, c, t);
+                } else if unneeded.is_some() && s.status == Status::Done {
+                    skip_mark(ui.painter(), c, t);
                 } else {
                     mark(ui.painter(), c, s.status, t);
                 }
                 let ink = if active {
                     t.selected_ink
-                } else if s.status == Status::Waiting && !run_going {
+                } else if (s.status == Status::Waiting && !run_going) || unneeded.is_some() {
                     t.text_dim
                 } else {
                     t.text
@@ -126,6 +133,12 @@ pub(super) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
             p.line_segment([end, end + vec2(2.6, 0.4)], ink);
         }
     }
+}
+
+/// The mark of a step the job's kind of analysis does without: a grey ring with a dash.
+fn skip_mark(p: &egui::Painter, c: egui::Pos2, t: &Tokens) {
+    p.circle_stroke(c, 6.0, Stroke::new(1.4, t.text_dim));
+    p.line_segment([c + vec2(-3.0, 0.0), c + vec2(3.0, 0.0)], Stroke::new(1.6, t.text_dim));
 }
 
 /// Run's mark while a run goes on: an arc of the accent turning on a faint ring.

@@ -47,6 +47,10 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             path => trf("Opened {path}.", args!(path = path)),
         },
         "file.new" => tr("New project.").to_owned(),
+        "project.analysis" => {
+            let kind = emcraft_engine::workflow::Analysis::parse(r.text("kind")).map_or("", crate::lang::shown);
+            trf("Analysis: {kind}.", args!(kind = kind))
+        }
         "engine.script" => tr("Script done.").to_owned(),
         "file.save" => trf("Saved {n} commands to {path}.", args!(n = r.count("commands"), path = r.text("path"))),
         "solve.frequency" => trf("Solved {n} frequencies, {unknowns} unknowns.", args!(n = r.list("points").len(), unknowns = r.count("unknowns"))),

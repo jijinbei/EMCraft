@@ -74,6 +74,14 @@ emcraft_macros::named_enum! {
         PickFace = "pick_face",
         /// Two points joined across a gap: a lumped port by two points.
         PickGap = "pick_gap",
+        /// A two-port block, a wave in and out, its pass band over it: a frequency sweep.
+        KindSweep = "kind_sweep",
+        /// A closed box holding a standing wave: a resonator's eigenmodes.
+        KindResonator = "kind_resonator",
+        /// A dipole radiating inside a dashed layer: an open problem.
+        KindAntenna = "kind_antenna",
+        /// A wave packet running along a line: the time domain.
+        KindPulse = "kind_pulse",
     /// A plain rounded square: a command without a glyph of its own.
         Blank = "blank",
     }
@@ -504,6 +512,45 @@ pub fn paint(p: &Painter, r: Rect, glyph: Glyph, ink: Color32, accent: Color32) 
             p.circle_filled(pen.at(0.22, 0.78), 0.11 * s, accent);
             p.circle_filled(pen.at(0.78, 0.22), 0.11 * s, accent);
             pen.open(&[(0.42, 0.46), (0.54, 0.58)], bold);
+        }
+        Glyph::KindSweep => {
+            pen.frame(pen.rect(0.34, 0.44, 0.66, 0.76), 2.0, line);
+            pen.open(&[(0.06, 0.6), (0.3, 0.6)], bold);
+            pen.open(&[(0.22, 0.53), (0.3, 0.6), (0.22, 0.67)], bold);
+            pen.open(&[(0.7, 0.6), (0.94, 0.6)], line);
+            pen.open(&[(0.86, 0.53), (0.94, 0.6), (0.86, 0.67)], line);
+            pen.open(&[(0.14, 0.34), (0.3, 0.33), (0.4, 0.16), (0.6, 0.16), (0.7, 0.33), (0.86, 0.34)], bold);
+        }
+        Glyph::KindResonator => {
+            pen.frame(pen.rect(0.1, 0.22, 0.9, 0.78), 2.0, Stroke::new(w * 1.2, ink));
+            let wave = |sign: f32| -> Vec<(f32, f32)> {
+                (0..=24).map(|k| k as f32 / 24.0).map(|u| (0.14 + 0.72 * u, 0.5 - sign * 0.18 * (2.0 * std::f32::consts::PI * u).sin())).collect()
+            };
+            pen.open(&wave(-1.0), Stroke::new(w, accent.gamma_multiply(0.45)));
+            pen.open(&wave(1.0), bold);
+        }
+        Glyph::KindAntenna => {
+            let pml: [(f32, f32); 5] = [(0.06, 0.06), (0.94, 0.06), (0.94, 0.94), (0.06, 0.94), (0.06, 0.06)];
+            p.add(Shape::dashed_line(&pen.points(&pml), Stroke::new(w * 0.8, ink.gamma_multiply(0.6)), 0.06 * s, 0.05 * s));
+            pen.open(&[(0.5, 0.24), (0.5, 0.45)], Stroke::new(w * 1.3, ink));
+            pen.open(&[(0.5, 0.55), (0.5, 0.76)], Stroke::new(w * 1.3, ink));
+            for r in [0.17, 0.3] {
+                p.add(Shape::line(arc(c, r * s, -0.7, 0.7), bold));
+                p.add(Shape::line(arc(c, r * s, std::f32::consts::PI - 0.7, std::f32::consts::PI + 0.7), bold));
+            }
+        }
+        Glyph::KindPulse => {
+            let packet: Vec<(f32, f32)> = (0..=40)
+                .map(|k| 0.06 + 0.88 * k as f32 / 40.0)
+                .map(|x| {
+                    let u = (x - 0.46) / 0.13;
+                    (x, 0.46 - 0.3 * (-u * u).exp() * (2.0 * std::f32::consts::PI * (x - 0.46) / 0.15).cos())
+                })
+                .collect();
+            pen.open(&packet, bold);
+            pen.open(&[(0.06, 0.88), (0.94, 0.88)], line);
+            pen.open(&[(0.62, 0.88), (0.84, 0.88)], Stroke::new(w * 1.3, ink));
+            pen.open(&[(0.76, 0.81), (0.84, 0.88), (0.76, 0.95)], Stroke::new(w * 1.3, ink));
         }
         Glyph::Blank => {
             pen.frame(pen.rect(0.2, 0.2, 0.8, 0.8), 3.0, line);

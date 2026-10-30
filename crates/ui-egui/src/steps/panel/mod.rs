@@ -10,7 +10,7 @@ mod results;
 mod run;
 mod setup;
 
-pub use intent::apply_band;
+pub use intent::{apply_band, kind_card};
 pub use results::export_touchstone;
 
 use super::bar::mark;
@@ -36,11 +36,16 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                 ui.set_min_height(h - 22.0);
                 scenario::publish_rect(Fixed::StepPanel, ui.max_rect());
                 header(app, ui, &state, t);
+                if let Some(why) = not_needed(app, step) {
+                    ui_kit::small(ui, why, t.text_dim);
+                    ui.add_space(4.0);
+                }
                 // A running job stays in view here, whichever step is open.
                 if app.job.is_some() {
                     crate::messages::job_card(app, ui, out);
                     ui.add_space(6.0);
                 }
+                let docked = dialog.is_some();
                 let dialog_h = if dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
                     .id_salt("step_panel_scroll")
@@ -51,7 +56,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                         if !(step == Step::Run && running(app)) {
                             checks(ui, &state, t, out);
                         }
-                        body(app, fields, ui, step, &states, t, out);
+                        body(app, fields, ui, step, &states, docked, t, out);
                     });
                 if let Some(d) = dialog {
                     ui.add_space(6.0);
@@ -62,6 +67,12 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                 }
             });
         });
+}
+
+/// Why step `step` does nothing for the job's kind of analysis, when it does nothing for it.
+pub fn not_needed(app: &EmcraftApp, step: Step) -> Option<String> {
+    let chosen = app.session.model().analysis?;
+    emcraft_engine::workflow::not_needed(Some(chosen)).contains(&step).then(|| trf("Not needed for {kind}", args!(kind = tr(kind_card(chosen).1))))
 }
 
 fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
@@ -110,6 +121,7 @@ fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
         Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => trf("Go to {step}", args!(step = shown(step))),
         Some(Step::Intent) if command == "project.frequency" => tr("Set the band").to_owned(),
+        Some(Step::Intent) if command == "project.analysis" => tr("Choose the analysis").to_owned(),
         _ => trf("Fix: {command}", args!(command = crate::commands::button_label(command))),
     }
 }
@@ -150,9 +162,9 @@ pub(crate) fn fmt(v: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
-/// The step's own settings and information.
+/// The step's own settings and information; `docked`: a dialog shares the panel.
 #[allow(clippy::too_many_arguments)]
-fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], t: &Tokens, out: &mut Actions) {
+fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], docked: bool, t: &Tokens, out: &mut Actions) {
     let fu = app.session.display().frequency.symbol();
     let lu = app.session.display().length.symbol();
     // The band fields follow the session's band when it changes.
@@ -165,7 +177,7 @@ fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states:
         f.band_seen = b;
     }
     match step {
-        Step::Intent => intent::intent(app, f, ui, fu, t, out),
+        Step::Intent => intent::intent(app, f, ui, fu, docked, t, out),
         Step::Geometry => model::geometry(app, ui, lu, t),
         Step::Materials => model::materials(app, ui, t),
         Step::Excitation => excitation::excitation(app, ui, fu, t, out),

@@ -44,7 +44,7 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     if went {
         return;
     }
-    let solver = f.solver.unwrap_or_else(|| Solver::infer(app.session.model()));
+    let solver = f.solver.unwrap_or_else(|| app.session.model().analysis());
     ui.add_space(6.0);
     ui_kit::small(ui, trf("Solver: {solver}", args!(solver = shown(solver))), t.text);
     let (nb, nw) = (pre.blocking.len(), pre.warnings.len());

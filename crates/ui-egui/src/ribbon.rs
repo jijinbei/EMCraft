@@ -186,11 +186,12 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             let top = row.bottom() + 4.0;
             let tab = app.tab;
             let Some((_, panels)) = TABS.iter().find(|(name, _)| *name == tab) else { return };
+            let panels = ordered(app, tab, panels);
             let accent = t.tab(tab);
             let busy = app.busy();
             let enabled = !busy;
             // A panel's items: its commands, then the 3D view's tools it holds.
-            let items_of = |panel: &str, items: &'static [&'static str]| -> Vec<Item> {
+            let items_of = |panel: &str, items: &[&'static str]| -> Vec<Item> {
                 let tools = TOOLS.iter().filter(|(on, p, _)| *on == tab && *p == panel).flat_map(|(_, _, tools)| tools.iter().copied());
                 items.iter().map(|&id| Item::Command(id)).chain(tools.map(Item::Tool)).collect()
             };
@@ -201,12 +202,12 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                 (g.size().x + 14.0).max(BUTTON_MIN_WIDTH)
             };
             let all: f32 =
-                panels.iter().map(|(panel, items)| items_of(panel, items).into_iter().map(|i| width_of(i) + 3.0).sum::<f32>() + 13.0).sum();
+                panels.iter().map(|(panel, items)| items_of(panel, &items[..]).into_iter().map(|i| width_of(i) + 3.0).sum::<f32>() + 13.0).sum();
             let limit = if x + all > card.right() - 4.0 { card.right() - 6.0 - MORE_WIDTH } else { f32::INFINITY };
             let mut more: Vec<Item> = Vec::new();
             for (panel, items) in panels.iter() {
                 let x0 = x;
-                for item in items_of(panel, items) {
+                for item in items_of(panel, &items[..]) {
                     if !more.is_empty() || x + width_of(item) > limit {
                         more.push(item);
                         continue;
@@ -245,6 +246,21 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
                 });
             }
         });
+}
+
+/// The tab's panels and their commands; SIMULATE's with the solve of the kind of analysis chosen
+/// at step 0 first (its panel first, the solve first in it).
+fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<(&'static str, Vec<&'static str>)> {
+    let mut out: Vec<(&'static str, Vec<&'static str>)> = panels.iter().map(|(p, items)| (*p, items.to_vec())).collect();
+    let Some(kind) = app.session.model().analysis.filter(|_| tab == RibbonTab::Simulate) else { return out };
+    let first = crate::steps::command(kind);
+    if let Some(i) = out.iter().position(|(_, items)| items.contains(&first)) {
+        let mut panel = out.remove(i);
+        panel.1.retain(|c| *c != first);
+        panel.1.insert(0, first);
+        out.insert(0, panel);
+    }
+    out
 }
 
 /// What a ribbon panel holds: a command (its dialog) or a tool of the 3D view.
@@ -639,5 +655,25 @@ mod tests {
         assert_eq!(TABS.len(), RibbonTab::ALL.len());
         assert_eq!(RibbonTab::parse("PORTS & SOURCES"), Some(RibbonTab::PortsSources));
         assert_eq!(RibbonTab::parse("Model"), None);
+    }
+
+    /// SIMULATE puts the chosen kind's solve first (its panel first); nothing else moves, and
+    /// with no kind chosen the tab is as listed.
+    #[test]
+    fn simulate_puts_the_chosen_kinds_solve_first() {
+        let mut h = crate::scenario::Harness::new();
+        let simulate = TABS.iter().find(|(t, _)| *t == RibbonTab::Simulate).map(|(_, p)| *p).unwrap_or(&[]);
+        let listed = ordered(&h.app, RibbonTab::Simulate, simulate);
+        assert_eq!(listed.first().and_then(|p| p.1.first()), Some(&"solve.frequency"));
+        h.app.session.execute("project.analysis", &serde_json::json!({"kind": "time_domain"})).unwrap();
+        let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
+        assert_eq!((moved[0].0, moved[0].1.as_slice()), ("TIME DOMAIN", &["solve.time_domain"][..]));
+        assert_eq!(moved[1].0, "FREQUENCY DOMAIN");
+        assert_eq!(moved.iter().map(|p| p.1.len()).sum::<usize>(), listed.iter().map(|p| p.1.len()).sum::<usize>());
+        h.app.session.execute("project.analysis", &serde_json::json!({"kind": "radiation"})).unwrap();
+        let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
+        assert_eq!(moved[0].1, ["solve.radiation", "solve.frequency", "solve.eigenmodes", "solve.dispersion"]);
+        let model = TABS.iter().find(|(t, _)| *t == RibbonTab::Model).map(|(_, p)| *p).unwrap_or(&[]);
+        assert_eq!(ordered(&h.app, RibbonTab::Model, model).len(), model.len());
     }
 }
