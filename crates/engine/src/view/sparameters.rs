@@ -119,8 +119,8 @@ pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: 
         let pts = |p: usize, q: usize| sw.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
         // Its solved points, as the session's own are drawn: data, not curves through it.
         let [p21, p11] = compare_pens(k);
-        chart.series.push(Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Markers, pts(1, 0)));
-        chart.series.push(Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Markers, pts(0, 0)));
+        chart.series.push(Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Joined, pts(1, 0)));
+        chart.series.push(Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Joined, pts(0, 0)));
         // The axes take in what was added.
         for s in chart.series.iter().flat_map(|s| &s.points) {
             chart.x.min = chart.x.min.min(s[0]);
@@ -154,13 +154,13 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     if let Some(sweep) = sweep {
         let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
         let label = format!("{} FEM (order {})", display.entry("21"), sweep.order.as_u8());
-        series.push(Series::new("s21.fem", label, Pen::Strong(0), Style::Markers, pts(1, 0)));
-        series.push(Series::new("s11.fem", format!("{} FEM", display.entry("11")), Pen::Strong(1), Style::Markers, pts(0, 0)));
+        series.push(Series::new("s21.fem", label, Pen::Strong(0), Style::Joined, pts(1, 0)));
+        series.push(Series::new("s11.fem", format!("{} FEM", display.entry("11")), Pen::Strong(1), Style::Joined, pts(0, 0)));
         // More entries (a terminal port's conductors, more ports): the rest of the first column.
         let n = sweep.results.first().map_or(0, |r| r.s.ports()).min(MAX_CHART_ENTRIES);
         for (p, k) in (2..n).zip(MORE_PENS.iter().cycle()) {
             let label = format!("{} FEM", display.entry(&format!("{}1", p + 1)));
-            series.push(Series::new(&format!("s{}1.fem", p + 1), label, Pen::Strong(*k), Style::Markers, pts(p, 0)));
+            series.push(Series::new(&format!("s{}1.fem", p + 1), label, Pen::Strong(*k), Style::Joined, pts(p, 0)));
         }
     }
     if let Some(td) = td {

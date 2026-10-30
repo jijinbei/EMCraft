@@ -16,7 +16,7 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
         f.solver = Some(solver);
     }
     if f.points.is_empty() {
-        f.points = "11".into();
+        f.points = "101".into();
     }
     if f.order.is_empty() {
         f.order = "2".into();

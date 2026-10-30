@@ -7,5 +7,5 @@
  {"command": "mesh.generate", "params": {"size": "=a/8"}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "y", "face": [0, 0, 0, "=b", "=a"]}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=l+b", "=l", 0, "=b", "=a"]}},
- {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 11, "order": 2}}
+ {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 101, "order": 2}}
 ]

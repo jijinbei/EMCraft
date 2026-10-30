@@ -900,7 +900,7 @@
         "frequencies": "周波数",
         "start": "最初の周波数",
         "stop": "最後の周波数",
-        "points": "start から stop までの周波数点数（既定 11）",
+        "points": "start から stop までの周波数点数（既定 101）",
         "order": "要素次数：1（Whitney）または 2（既定）",
         "sweep": "`fast`（既定：3点以上で縮約基底掃引）または `full`（各点で完全解析）"
       }
@@ -912,7 +912,7 @@
         "frequencies": "周波数",
         "start": "最初の周波数",
         "stop": "最後の周波数",
-        "points": "start から stop までの周波数点数（既定 11）",
+        "points": "start から stop までの周波数点数（既定 101）",
         "cell": "セルサイズ（既定 1 mm）",
         "device": "リープフロッグを実行する場所：`cpu`（CPUのスレッド）、`cuda`（NVIDIA GPU）、`cubecl-cpu`（GPUのカーネルをCPUで実行。GPUなしで検証用）。既定は solve.device の設定。このマシンで使えるものは solve.devices が示す",
         "precision": "GPUデバイス上の界の浮動小数点：`single` または `double`。既定は solve.device の設定。CPUのスレッドは倍精度で実行"
@@ -1392,7 +1392,7 @@
         "frequencies": "周波数",
         "start": "最初の周波数",
         "stop": "最後の周波数",
-        "points": "start から stop までの周波数の数（既定 11）"
+        "points": "start から stop までの周波数の数（既定 101）"
       }
     },
     "results.history": {

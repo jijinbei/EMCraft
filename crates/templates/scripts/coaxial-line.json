@@ -9,5 +9,5 @@
  {"command": "mesh.generate", "params": {"size": 2}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
- {"command": "solve.frequency", "params": {"start": 1, "stop": 10, "points": 4, "order": 2}}
+ {"command": "solve.frequency", "params": {"start": 1, "stop": 10, "points": 101, "order": 2}}
 ]

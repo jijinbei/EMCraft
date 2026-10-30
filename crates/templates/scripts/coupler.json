@@ -7,5 +7,5 @@
  {"command": "mesh.generate", "params": {"size": 2, "strip_edge": 0.05, "growth": 2}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
- {"command": "solve.frequency", "params": {"start": 3.0, "stop": 7.0, "points": 41, "order": 2}}
+ {"command": "solve.frequency", "params": {"start": 3.0, "stop": 7.0, "points": 101, "order": 2}}
 ]
