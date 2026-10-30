@@ -232,13 +232,30 @@ pub fn steps(s: &Session) -> [StepState; 9] {
 }
 
 /// The steps a run cannot do without: the geometry and the mesh; once a kind of analysis is
-/// chosen that is driven, the excitation too (a resonator needs none), and for radiation the
-/// open boundary.
+/// chosen that is driven, the excitation too (a resonator needs none), for radiation the open
+/// boundary, and the time domain no mesh (it grids the model itself).
 pub fn required(chosen: Option<Analysis>) -> &'static [Step] {
     match chosen {
         None | Some(Analysis::Eigenmodes) => &[Step::Geometry, Step::Mesh],
-        Some(Analysis::Frequency | Analysis::TimeDomain) => &[Step::Geometry, Step::Excitation, Step::Mesh],
+        Some(Analysis::Frequency) => &[Step::Geometry, Step::Excitation, Step::Mesh],
+        Some(Analysis::TimeDomain) => &[Step::Geometry, Step::Excitation],
         Some(Analysis::Radiation) => &[Step::Geometry, Step::Excitation, Step::Boundaries, Step::Mesh],
+    }
+}
+
+/// The steps the chosen kind of analysis does without: a resonator's excitation, the time
+/// domain's mesh (it grids the model itself). None until a kind is chosen.
+///
+/// ```
+/// use emcraft_engine::workflow::{Analysis, Step, not_needed};
+/// assert_eq!(not_needed(Some(Analysis::Eigenmodes)), &[Step::Excitation]);
+/// assert!(not_needed(None).is_empty() && not_needed(Some(Analysis::Frequency)).is_empty());
+/// ```
+pub fn not_needed(chosen: Option<Analysis>) -> &'static [Step] {
+    match chosen {
+        Some(Analysis::Eigenmodes) => &[Step::Excitation],
+        Some(Analysis::TimeDomain) => &[Step::Mesh],
+        _ => &[],
     }
 }
 
@@ -394,6 +411,9 @@ fn mesh(s: &Session) -> StepState {
     let m = &s.model;
     let mut st = StepState::new(Step::Mesh);
     let Some(me) = &m.mesh else {
+        if not_needed(m.analysis).contains(&Step::Mesh) {
+            return st;
+        }
         if has_geometry(s) {
             st.note(Status::Todo, "no mesh yet", Some("mesh.generate"));
         } else {

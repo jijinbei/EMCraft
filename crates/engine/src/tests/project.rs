@@ -240,6 +240,17 @@ fn the_analysis_kind_is_chosen_recorded_and_followed() {
     c.execute("project.analysis", &json!({"kind": "eigenmodes"})).unwrap();
     assert_eq!(step(&mut c, "excitation")["status"], "done");
     assert_eq!(step(&mut c, "run")["messages"][0]["command"], "solve.eigenmodes");
+    assert_eq!(c.execute("project.status", &json!({})).unwrap()["not_needed"], json!(["excitation"]));
     c.execute("project.analysis", &json!({"kind": "time_domain"})).unwrap();
     assert_eq!(step(&mut c, "run")["status"], "waiting");
+    // The time domain grids the model itself: no mesh wanted.
+    let mut td = Session::new();
+    td.execute("geometry.waveguide", &json!({"width": 20, "height": 10, "sections": [{"length": 20, "material": "vacuum"}]})).unwrap();
+    td.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
+    td.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
+    assert_eq!(step(&mut td, "mesh")["status"], "todo");
+    td.execute("project.analysis", &json!({"kind": "time_domain"})).unwrap();
+    assert_eq!(step(&mut td, "mesh")["status"], "done");
+    assert_eq!(step(&mut td, "run")["status"], "todo");
+    assert_eq!(step(&mut td, "run")["messages"][0]["command"], "solve.time_domain");
 }

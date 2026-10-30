@@ -48,6 +48,7 @@ and the UI should make the same habits easy for the user's own models.
    | warning | amber disc, ! | worth a look now (a coarse mesh, a band starting below a cut-off); Run may accept it |
    | needs attention | red disc, × | something is wrong or blocks Run: a step a refused Run needed, a run that failed |
    | out of date | blue disc, ↻ | results older than the model |
+   | not needed | grey ring, dash; the name dimmed | a step the chosen kind of analysis does without (a resonator's excitation, the time domain's mesh) |
 
    Run turns (an arc) while a run goes on. A to-do that only matters before a run (the band)
    ends with the run. Clicking a step opens its panel and puts the 3D view in that step's mode.

@@ -295,7 +295,13 @@ pub fn summary(s: &mut Session, _: &Params) -> Result<Value> {
 
 /// Where each step of the workflow stands ([`crate::workflow`]); no solve.
 pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
-    let mut reply = json!({"steps": crate::workflow::steps(s), "revision": s.revision, "analysis": crate::workflow::analysis_reply(&s.model)});
+    let not_needed: Vec<&str> = crate::workflow::not_needed(s.model.analysis).iter().map(|x| x.id()).collect();
+    let mut reply = json!({
+        "steps": crate::workflow::steps(s),
+        "revision": s.revision,
+        "analysis": crate::workflow::analysis_reply(&s.model),
+        "not_needed": not_needed,
+    });
     if let Some(b) = s.model.band {
         reply["frequency"] = json!({"start": s.show_frequency(b.start), "stop": s.show_frequency(b.stop), "unit": s.display.frequency.symbol()});
     }
