@@ -13,10 +13,15 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-emcraft-engine = { workspace = true, features = ["cuda"] }
+emcraft-engine = { workspace = true }
 emcraft-ui-egui = { workspace = true }
 serde_json = { workspace = true }
 # The control channel's per-launch token (docs/adr/0001-libraries.md).
 getrandom = "0.3"
 # The system's file dialog for projects (docs/adr/0001-libraries.md).
 rfd = "0.17"
+
+# CUDA links CubeCL's prebuilt LLVM, which has no Windows GNU build (the installer's
+# cross-compiled target, docs/install-windows.md).
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
+emcraft-engine = { workspace = true, features = ["cuda"] }
