@@ -31,6 +31,6 @@ pub use pattern::{Cut, FarComponent, PatternView, pattern_chart, pattern_chart_i
 pub use port_mode::port_mode_plot;
 pub(crate) use reference::X11_PRIME;
 pub use reference::{ExactLine, MODE_MATCHING_MODES, Reference, reference, section_cutoffs, te10_line};
-pub use sparameters::{SDisplay, sparameter_chart, sparameter_chart_as, sparameter_chart_compared};
+pub use sparameters::{SDisplay, compare_pens, sparameter_chart, sparameter_chart_as, sparameter_chart_compared};
 pub use study::{chart_with_units, goal_unit, variable_unit, variable_units};
 pub use tdr::tdr_chart;
