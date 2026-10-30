@@ -1,0 +1,65 @@
+// Writes crates/templates/designs/taper.solidcraft with SolidCraft's document API: a linear
+// taper between two rectangular guides, the air inside it as one body (a ruled loft between
+// the two apertures), its sizes parameters.
+//
+// Run outside the EMCraft workspace, in a crate depending on solidcraft-doc, solidcraft-geom
+// and solidcraft-exchange at the commit EMCraft pins (Cargo.toml):
+//   cargo run --bin taper -- crates/templates/designs/taper.solidcraft
+use solidcraft_doc::sketch::{PointExprs, Sketch};
+use solidcraft_doc::{Document, Expr, FeatureKind, LoftSection, Operation, PlaneRef, ProfileSel, SketchId};
+use solidcraft_geom::{Vec2, Vec3};
+
+/// A closed polygon whose corners are placed by expressions of the parameters (x, y in the
+/// sketch's plane; `at` their values as saved).
+fn polygon(corners: &[(&str, &str, [f64; 2])]) -> Sketch {
+    let mut sk = Sketch::new();
+    let ids: Vec<usize> = corners
+        .iter()
+        .map(|(x, y, at)| {
+            let i = sk.add_point(Vec2 { x: at[0], y: at[1] }, None).unwrap();
+            sk.points[i].exprs = Some(Box::new(PointExprs { x: Some((*x).into()), y: Some((*y).into()) }));
+            sk.points[i].fixed = true;
+            i
+        })
+        .collect();
+    for k in 0..ids.len() {
+        sk.add_line_pts(ids[k], ids[(k + 1) % ids.len()], None).unwrap();
+    }
+    sk
+}
+
+fn plane_at(z: &str) -> PlaneRef {
+    PlaneRef::Placed { origin: [Expr::new("0"), Expr::new("0"), Expr::new(z)], x_dir: Vec3::X, y_dir: Vec3::Y }
+}
+
+fn main() {
+    let mut doc = Document::new("Taper");
+    // WR-90 at z = 0 to WR-75 at z = l, on one axis.
+    for (name, v) in [("a1", "22.86"), ("b1", "10.16"), ("a2", "19.05"), ("b2", "9.525"), ("l", "40")] {
+        doc.set_param(name, v, Some("mm"), None).unwrap();
+    }
+    let start = polygon(&[("0", "0", [0.0, 0.0]), ("a1", "0", [22.86, 0.0]), ("a1", "b1", [22.86, 10.16]), ("0", "b1", [0.0, 10.16])]);
+    let (x0, x1, y0, y1) = ("(a1 - a2) / 2", "(a1 + a2) / 2", "(b1 - b2) / 2", "(b1 + b2) / 2");
+    let end = polygon(&[(x0, y0, [1.905, 0.3175]), (x1, y0, [20.955, 0.3175]), (x1, y1, [20.955, 9.8425]), (x0, y1, [1.905, 9.8425])]);
+    let s1 = doc.add_feature(FeatureKind::Sketch { plane: plane_at("0"), sketch: start }, Some("Start")).unwrap();
+    let s2 = doc.add_feature(FeatureKind::Sketch { plane: plane_at("l"), sketch: end }, Some("End")).unwrap();
+    let section = |id| LoftSection { sketch: SketchId(id), profiles: ProfileSel::All, point: None };
+    doc.add_feature(
+        FeatureKind::Loft { sections: vec![section(s1), section(s2)], operation: Operation::NewBody, targets: Vec::new(), rails: Vec::new(), rail_fit: Default::default() },
+        Some("Taper"),
+    )
+    .unwrap();
+    let text = doc.to_json();
+    std::fs::write(std::env::args().nth(1).unwrap(), &text).unwrap();
+    let design = solidcraft_exchange::open(text.as_bytes()).unwrap();
+    for p in design.parameters() {
+        println!("{:?}", p.name);
+    }
+    let snap = design.snapshot(&Default::default()).unwrap();
+    for b in &snap.bodies {
+        println!("{} faces {}", b.name, b.faces.len());
+        for f in &b.faces {
+            println!("  {} {}", f.name, format!("{:?}", f.surface).chars().take(90).collect::<String>());
+        }
+    }
+}

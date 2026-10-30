@@ -435,6 +435,11 @@ fn scenario_template_dialog() {
 }
 
 #[test]
+fn scenario_template_design() {
+    scenario("template_design");
+}
+
+#[test]
 fn scenario_analysis_kind() {
     scenario("analysis_kind");
 }

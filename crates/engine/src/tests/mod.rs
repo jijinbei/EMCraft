@@ -1,6 +1,7 @@
 //! The session's tests through its commands, by topic.
 
 mod adapt;
+mod designs;
 mod geometry;
 mod items;
 mod open;

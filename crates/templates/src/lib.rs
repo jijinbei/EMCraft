@@ -5,7 +5,9 @@
 //!
 //! A template is added here and nowhere else: its script in `scripts/`, where its parameters
 //! show on the model in `scripts/<name>.marks.json`, a row in [`TEMPLATES`], and a builder
-//! module when its shape needs one.
+//! module when its shape needs one. A template whose shape is a SolidCraft design carries the
+//! design in `designs/` (a row in [`DESIGNS`]); its script opens it by `geometry.import` with
+//! `path` `template:<file>` ([`design`]), the template's parameters passed to the design's.
 //!
 //! ```
 //! let t = emcraft_templates::find("iris-bandpass").map(|t| t.name);
@@ -156,6 +158,27 @@ pub const TEMPLATES: &[Template] = &[
         kinds: &[Analysis::Radiation],
     },
     Template {
+        name: "taper",
+        label: "Linear taper from WR-90 to WR-75 (22.86 × 10.16 to 19.05 × 9.525 mm) over 40 mm, a SolidCraft design: its small reflection over the band both guides share, against the theory of small reflections",
+        script: include_str!("../scripts/taper.json"),
+        marks: include_str!("../scripts/taper.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
+        name: "termination",
+        label: "Matched load: a lossy wedge (εr = 1.5, tan δ = 0.5) 90 mm long, 1 mm clear of the walls, against the short at the end of a WR-90 guide; one port: |S11| below 0.06 over the band",
+        script: include_str!("../scripts/termination.json"),
+        marks: include_str!("../scripts/termination.marks.json"),
+        kinds: &[Analysis::Frequency],
+    },
+    Template {
+        name: "horn",
+        label: "Pyramidal horn fed by WR-90, a SolidCraft design: an A × B mouth h past a feed f long, walls t thick, radiating at 10 GHz in an open box: S11, gain and pattern",
+        script: include_str!("../scripts/horn.json"),
+        marks: include_str!("../scripts/horn.marks.json"),
+        kinds: &[Analysis::Radiation],
+    },
+    Template {
         name: "sphere-scattering",
         label: "A plane wave on a ceramic sphere (εr = 4, radius 5 mm) at 10 GHz: the scattered field and the radar cross-section against the Mie series",
         script: include_str!("../scripts/sphere-scattering.json"),
@@ -163,6 +186,38 @@ pub const TEMPLATES: &[Template] = &[
         kinds: &[Analysis::Radiation],
     },
 ];
+
+/// A SolidCraft design a template is built from, compiled in: no file is read when a template
+/// opens it.
+pub struct Design {
+    /// Its file name, `<name>.solidcraft`.
+    pub file: &'static str,
+    pub bytes: &'static [u8],
+}
+
+/// How a script names a template's design: `template:<file>` (`geometry.import`'s `path`).
+pub const DESIGN_SCHEME: &str = "template:";
+
+/// The designs templates are built from, each written with SolidCraft's document API by the
+/// program kept beside it (`designs/make-<name>.rs.txt`).
+pub const DESIGNS: &[Design] = &[
+    Design { file: "taper.solidcraft", bytes: include_bytes!("../designs/taper.solidcraft") },
+    Design { file: "horn.solidcraft", bytes: include_bytes!("../designs/horn.solidcraft") },
+];
+
+/// The design a path names, `template:<file>`; `None` for any other path (a file of the
+/// user's) or a design no template has.
+///
+/// ```
+/// let taper = emcraft_templates::design("template:taper.solidcraft");
+/// assert!(taper.is_some_and(|b| !b.is_empty()));
+/// assert!(emcraft_templates::design("taper.solidcraft").is_none());
+/// assert!(emcraft_templates::design("template:nothing.solidcraft").is_none());
+/// ```
+pub fn design(path: &str) -> Option<&'static [u8]> {
+    let file = path.strip_prefix(DESIGN_SCHEME)?;
+    DESIGNS.iter().find(|d| d.file == file).map(|d| d.bytes)
+}
 
 /// The template called `name`.
 pub fn find(name: &str) -> Option<&'static Template> {

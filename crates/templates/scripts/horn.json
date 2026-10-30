@@ -1,0 +1,11 @@
+[
+ {"command": "project.variable", "params": {"name": "A", "value": 40, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "B", "value": 30, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "h", "value": 30, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "f", "value": 5, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "t", "value": 2, "quantity": "length"}},
+ {"command": "geometry.import", "params": {"path": "template:horn.solidcraft", "parameters": {"A": "=A", "B": "=B", "h": "=h", "f": "=f", "t": "=t"}, "materials": {"inside": "vacuum"}, "open": true, "thickness": 10, "margin": 18}},
+ {"command": "mesh.generate", "params": {"per_wavelength": 4, "frequency": 10}},
+ {"command": "model.port.create", "params": {"name": "feed", "end": "start", "modes": 4, "face": ["=18+t", "=18+t+A/2-11.43", "=18+t+B/2-5.08", 22.86, 10.16]}},
+ {"command": "solve.radiation", "params": {"frequency": 10}}
+]
