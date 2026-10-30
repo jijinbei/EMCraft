@@ -173,6 +173,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   oracle's `hplane-corner` and `eplane-corner`). The E-plane corner as a 2D Neumann problem of
   the LSE modes: R. E. Collin, *Field Theory of Guided Waves*, 2nd ed., IEEE Press 1991; N.
   Marcuvitz, *Waveguide Handbook*, McGraw-Hill 1951, ch. 5 — right-angle corners.
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §5.8–5.9; R. E. Collin,
+  *Foundations for Microwave Engineering*, 2nd ed., McGraw-Hill 1992, §5.10 — the theory of
+  small reflections, Γ = ½ ∫ (d ln Z/dz) e^{−2jθ} dz, here for a linear taper between
+  rectangular guides with the TE10 line's Z ∝ b/β and θ in closed form (`emcraft-theory::taper`,
+  the reference of the oracle's `design-taper`).
 
 ## Ports on any axis
 - A port's modes and cross-section live in its own axes (u, v, w): the face's two other axes in
@@ -355,6 +360,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - C. F. Bohren, D. R. Huffman, *Absorption and Scattering of Light by Small Particles*, Wiley
   1983, §4.4 and Appendix A — the Mie series and its BHMIE test values
   (`emcraft-theory::radiation`).
+- C. A. Balanis, *Antenna Theory*, 3rd ed., Wiley 2005, §13.2–13.4 — the sectoral and
+  pyramidal horns' directivity from the aperture's quadratic phase, D_p = (πλ²/32ab) D_E D_H,
+  through the Fresnel integrals (M. Abramowitz, I. A. Stegun, *Handbook of Mathematical
+  Functions*, 1964, §7.3, table 7.7 for their test values) (`emcraft-theory::horn`, the
+  reference of the oracle's `design-horn`).
 
 ## Parameter studies
 - J. A. Nelder, R. Mead, *A simplex method for function minimization*, Comput. J. 7(4):308–313,

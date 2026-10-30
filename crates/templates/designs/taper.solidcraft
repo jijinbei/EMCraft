@@ -1,0 +1,300 @@
+{
+  "format": "solidcraft/43",
+  "name": "Taper",
+  "units": "mm",
+  "params": [
+    {
+      "name": "a1",
+      "expr": "22.86",
+      "unit": "mm",
+      "model": false
+    },
+    {
+      "name": "b1",
+      "expr": "10.16",
+      "unit": "mm",
+      "model": false
+    },
+    {
+      "name": "a2",
+      "expr": "19.05",
+      "unit": "mm",
+      "model": false
+    },
+    {
+      "name": "b2",
+      "expr": "9.525",
+      "unit": "mm",
+      "model": false
+    },
+    {
+      "name": "l",
+      "expr": "40",
+      "unit": "mm",
+      "model": false
+    }
+  ],
+  "features": [
+    {
+      "id": 1,
+      "name": "Start",
+      "suppressed": false,
+      "type": "sketch",
+      "plane": {
+        "type": "placed",
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "x_dir": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "y_dir": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "sketch": {
+        "points": [
+          {
+            "id": "origin",
+            "pos": [
+              0.0,
+              0.0
+            ],
+            "fixed": true
+          },
+          {
+            "id": "p1",
+            "pos": [
+              0.0,
+              0.0
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "0",
+              "y": "0"
+            }
+          },
+          {
+            "id": "p2",
+            "pos": [
+              22.86,
+              0.0
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "a1",
+              "y": "0"
+            }
+          },
+          {
+            "id": "p3",
+            "pos": [
+              22.86,
+              10.16
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "a1",
+              "y": "b1"
+            }
+          },
+          {
+            "id": "p4",
+            "pos": [
+              0.0,
+              10.16
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "0",
+              "y": "b1"
+            }
+          }
+        ],
+        "curves": [
+          {
+            "id": "l1",
+            "type": "line",
+            "a": 1,
+            "b": 2,
+            "construction": false
+          },
+          {
+            "id": "l2",
+            "type": "line",
+            "a": 2,
+            "b": 3,
+            "construction": false
+          },
+          {
+            "id": "l3",
+            "type": "line",
+            "a": 3,
+            "b": 4,
+            "construction": false
+          },
+          {
+            "id": "l4",
+            "type": "line",
+            "a": 4,
+            "b": 1,
+            "construction": false
+          }
+        ],
+        "constraints": [],
+        "counters": {
+          "l": 4,
+          "p": 4
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "End",
+      "suppressed": false,
+      "type": "sketch",
+      "plane": {
+        "type": "placed",
+        "origin": [
+          0.0,
+          0.0,
+          "l"
+        ],
+        "x_dir": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "y_dir": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "sketch": {
+        "points": [
+          {
+            "id": "origin",
+            "pos": [
+              0.0,
+              0.0
+            ],
+            "fixed": true
+          },
+          {
+            "id": "p1",
+            "pos": [
+              1.905,
+              0.3175
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "(a1 - a2) / 2",
+              "y": "(b1 - b2) / 2"
+            }
+          },
+          {
+            "id": "p2",
+            "pos": [
+              20.955,
+              0.3175
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "(a1 + a2) / 2",
+              "y": "(b1 - b2) / 2"
+            }
+          },
+          {
+            "id": "p3",
+            "pos": [
+              20.955,
+              9.8425
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "(a1 + a2) / 2",
+              "y": "(b1 + b2) / 2"
+            }
+          },
+          {
+            "id": "p4",
+            "pos": [
+              1.905,
+              9.8425
+            ],
+            "fixed": true,
+            "exprs": {
+              "x": "(a1 - a2) / 2",
+              "y": "(b1 + b2) / 2"
+            }
+          }
+        ],
+        "curves": [
+          {
+            "id": "l1",
+            "type": "line",
+            "a": 1,
+            "b": 2,
+            "construction": false
+          },
+          {
+            "id": "l2",
+            "type": "line",
+            "a": 2,
+            "b": 3,
+            "construction": false
+          },
+          {
+            "id": "l3",
+            "type": "line",
+            "a": 3,
+            "b": 4,
+            "construction": false
+          },
+          {
+            "id": "l4",
+            "type": "line",
+            "a": 4,
+            "b": 1,
+            "construction": false
+          }
+        ],
+        "constraints": [],
+        "counters": {
+          "l": 4,
+          "p": 4
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Taper",
+      "suppressed": false,
+      "type": "loft",
+      "sections": [
+        {
+          "sketch": 1,
+          "profiles": {
+            "type": "all"
+          }
+        },
+        {
+          "sketch": 2,
+          "profiles": {
+            "type": "all"
+          }
+        }
+      ],
+      "operation": "new_body"
+    }
+  ],
+  "next_id": 4,
+  "next_component_color_index": 0
+}

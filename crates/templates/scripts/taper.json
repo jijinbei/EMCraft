@@ -1,0 +1,12 @@
+[
+ {"command": "project.variable", "params": {"name": "a1", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b1", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "a2", "value": 19.05, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b2", "value": 9.525, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "value": 40, "quantity": "length"}},
+ {"command": "geometry.import", "params": {"path": "template:taper.solidcraft", "parameters": {"a1": "=a1", "b1": "=b1", "a2": "=a2", "b2": "=b2", "l": "=l"}}},
+ {"command": "mesh.generate", "params": {"size": "=(a1+a2-abs(a1-a2))/16"}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"start": "=374.74/(a1+a2-abs(a1-a2))", "stop": "=566.6/(a1+a2+abs(a1-a2))", "points": 11, "order": 2}}
+]

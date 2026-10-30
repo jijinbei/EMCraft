@@ -41,12 +41,14 @@ pub mod bend;
 pub mod bessel;
 pub mod coupled;
 pub mod floquet;
+pub mod horn;
 pub mod microstrip;
 pub mod modematch;
 pub mod post;
 pub mod radiation;
 pub mod slab;
 pub mod stripline;
+pub mod taper;
 
 pub use modematch::{EPlaneLine, ESection, HPlaneLine, HSection};
 

@@ -1,0 +1,10 @@
+{
+ "title": "Linear taper from WR-90 to WR-75 over 10 mm, the taper template's SolidCraft design opened with its length set: |S11| at 10, 11 and 12 GHz",
+ "kind": "theory",
+ "source": "The theory of small reflections, Γ = ½ ∫ (d ln Z/dz) e^{−2jθ(z)} dz with θ = ∫ β dz (D. M. Pozar, Microwave Engineering, 4th ed., 2012, §5.8–5.9; R. E. Collin, Foundations for Microwave Engineering, 2nd ed., 1992, §5.10), the TE10 line's impedance taken as Z ∝ b/β (the wave impedance ωμ/β times the height b) and θ in closed form for the linear width (emcraft-theory::taper, independent of the finite elements; `cargo run -p emcraft-theory --example design_references -- taper 10 10 11 12`)",
+ "quantities": [
+  {"id": "s11_mag_10", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.04917564488986562, "tolerance": {"absolute": 0.004}, "reason": "the theory is first order and its impedance model approximate (the walls' slope also couples to higher modes, which it leaves out): the finite elements, converged to 5e-4, lie 1.4e-3 to 1.7e-3 below it at all three frequencies"},
+  {"id": "s11_mag_11", "quantity": "|S11| at 11 GHz", "measure": {"step": "solve", "pointer": "/points/1/s11/mag"}, "value": 0.023348441822134903, "tolerance": {"absolute": 0.004}, "reason": "as at 10 GHz"},
+  {"id": "s11_mag_12", "quantity": "|S11| at 12 GHz", "measure": {"step": "solve", "pointer": "/points/2/s11/mag"}, "value": 0.011502252704762227, "tolerance": {"absolute": 0.004}, "reason": "as at 10 GHz"}
+ ]
+}

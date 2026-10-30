@@ -201,7 +201,7 @@ Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's expo
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `path` | string |  | yes | the file (`.stl` or `.3mf`) |
+| `path` | string |  | yes | the file (`.stl`, `.3mf`, a SolidCraft design `.sc` or `.solidcraft`), or `template:<file>`: a design a template is built from, compiled in |
 | `unit` | number | length | no | an STL file's length unit in display units (default 1, i.e. the display unit); 3MF files carry their own |
 | `angle` | number |  | no | neighbouring triangles turning by more than this many degrees are on different faces (default 30) |
 | `material` | string |  | no | the region's filling (default vacuum) |
@@ -212,7 +212,7 @@ Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's expo
 | `open` | boolean |  | no | an open problem: line the box of air with a perfectly matched layer (default false) |
 | `thickness` | number | length | no | the layer's thickness with `open` (default a quarter of the band's longest wavelength) |
 | `fit_surfaces` | boolean |  | no | recover each face's exact surface — a plane, cylinder, sphere, cone or torus fitted to its vertices, kept when every vertex lies on it — so the mesh follows curved faces as it does native ones (default true); false keeps them faceted |
-| `parameters` | object |  | no | a SolidCraft design (.sc, .solidcraft) only: its parameters set before it is evaluated, name → a number in the unit the design shows it in or an expression ("3 mm"); its faces then carry the design's exact surfaces, not fitted ones |
+| `parameters` | object |  | no | a SolidCraft design (.sc, .solidcraft) only: its parameters set before it is evaluated, name → a number in the unit the design shows it in, an expression of the project's variables read as such a number ("=a"), or an expression the design evaluates ("3 mm"); its faces then carry the design's exact surfaces, not fitted ones |
 | `tolerance` | number | length | no | a SolidCraft design only: the chord tolerance of its tessellation (default 2e-4 of each body's size) |
 
 ## `geometry.body` — Body

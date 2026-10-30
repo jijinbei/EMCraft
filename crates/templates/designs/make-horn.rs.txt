@@ -1,0 +1,109 @@
+// Writes crates/templates/designs/horn.solidcraft with SolidCraft's document API: a pyramidal
+// horn fed by a rectangular guide, as two bodies: `walls` (the metal, solid, round the outside
+// of the feed and the flare) and `inside` (the air of the feed and the flare, reaching 1 mm
+// beyond the mouth), each of ruled lofts between rectangles. The horn's axis is z, the feed's closed end at z = t, the mouth at
+// z = t + f + h; the walls' bounding box starts at the origin.
+//
+// Run outside the EMCraft workspace, in a crate depending on solidcraft-doc, solidcraft-geom
+// and solidcraft-exchange at the commit EMCraft pins (Cargo.toml):
+//   cargo run --bin horn -- crates/templates/designs/horn.solidcraft
+use solidcraft_doc::sketch::{PointExprs, Sketch};
+use solidcraft_doc::{BodyName, Document, Expr, FeatureKind, LoftSection, Operation, PlaneRef, ProfileSel, SketchId};
+use solidcraft_geom::{Vec2, Vec3};
+
+const DEFAULTS: [(&str, f64); 7] = [("a", 22.86), ("b", 10.16), ("A", 40.0), ("B", 30.0), ("f", 5.0), ("h", 30.0), ("t", 2.0)];
+
+fn value(name: &str) -> f64 {
+    DEFAULTS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v).unwrap()
+}
+
+/// A rectangle about the horn's axis (x = A/2 + t, y = B/2 + t): half-sides `u`, `v` as
+/// expressions and their values as saved.
+fn rectangle(u: &str, v: &str, at: [f64; 2]) -> Sketch {
+    let (cx, cy) = ("A / 2 + t", "B / 2 + t");
+    let (x0, y0) = (value("A") / 2.0 + value("t"), value("B") / 2.0 + value("t"));
+    let mut sk = Sketch::new();
+    let corners = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)];
+    let ids: Vec<usize> = corners
+        .iter()
+        .map(|&(sx, sy)| {
+            let i = sk.add_point(Vec2 { x: x0 + sx * at[0], y: y0 + sy * at[1] }, None).unwrap();
+            let sign = |s: f64| if s < 0.0 { "-" } else { "+" };
+            let x = format!("{cx} {} ({u})", sign(sx));
+            let y = format!("{cy} {} ({v})", sign(sy));
+            sk.points[i].exprs = Some(Box::new(PointExprs { x: Some(x), y: Some(y) }));
+            sk.points[i].fixed = true;
+            i
+        })
+        .collect();
+    for k in 0..4 {
+        sk.add_line_pts(ids[k], ids[(k + 1) % 4], None).unwrap();
+    }
+    sk
+}
+
+fn plane_at(z: &str) -> PlaneRef {
+    PlaneRef::Placed { origin: [Expr::new("0"), Expr::new("0"), Expr::new(z)], x_dir: Vec3::X, y_dir: Vec3::Y }
+}
+
+/// A body of ruled pieces: each pair of neighbouring rectangles (z, half-sides) lofted, the
+/// first piece a new body called `name`, the others joined to it (a loft through more than two
+/// sections would be smooth, not ruled, across the middle ones).
+fn body(doc: &mut Document, name: &str, sections: &[(&str, &str, &str, [f64; 2])]) {
+    let mut ids = Vec::new();
+    for (k, (z, u, v, at)) in sections.iter().enumerate() {
+        let id = doc.add_feature(FeatureKind::Sketch { plane: plane_at(z), sketch: rectangle(u, v, *at) }, Some(&format!("{name} {}", k + 1))).unwrap();
+        ids.push(id);
+    }
+    for (k, pair) in ids.windows(2).enumerate() {
+        let section = |id| LoftSection { sketch: SketchId(id), profiles: ProfileSel::All, point: None };
+        let (operation, targets) = if k == 0 { (Operation::NewBody, Vec::new()) } else { (Operation::Join, vec![BodyName::from(name)]) };
+        doc.add_feature(
+            FeatureKind::Loft { sections: vec![section(pair[0]), section(pair[1])], operation, targets, rails: Vec::new(), rail_fit: Default::default() },
+            Some(&format!("{name} piece {}", k + 1)),
+        )
+        .unwrap();
+        if k == 0 {
+            doc.features.last_mut().unwrap().body_names = vec![name.to_owned()];
+        }
+    }
+}
+
+fn main() {
+    let mut doc = Document::new("Horn");
+    for (name, v) in DEFAULTS {
+        doc.set_param(name, &v.to_string(), Some("mm"), None).unwrap();
+    }
+    let (a, b, aa, bb, t) = (value("a"), value("b"), value("A"), value("B"), value("t"));
+    let feed = [a / 2.0 + t, b / 2.0 + t];
+    let mouth = [aa / 2.0 + t, bb / 2.0 + t];
+    body(
+        &mut doc,
+        "walls",
+        &[("0", "a / 2 + t", "b / 2 + t", feed), ("t + f", "a / 2 + t", "b / 2 + t", feed), ("t + f + h", "A / 2 + t", "B / 2 + t", mouth)],
+    );
+    let (feed, mouth) = ([a / 2.0, b / 2.0], [aa / 2.0, bb / 2.0]);
+    body(
+        &mut doc,
+        "inside",
+        &[
+            ("t", "a / 2", "b / 2", feed),
+            ("t + f", "a / 2", "b / 2", feed),
+            ("t + f + h", "A / 2", "B / 2", mouth),
+            ("t + f + h + 1", "A / 2", "B / 2", mouth),
+        ],
+    );
+    let text = doc.to_json();
+    std::fs::write(std::env::args().nth(1).unwrap(), &text).unwrap();
+    let design = solidcraft_exchange::open(text.as_bytes()).unwrap();
+    for p in design.parameters() {
+        println!("{:?}", p.name);
+    }
+    let snap = design.snapshot(&Default::default()).unwrap();
+    for b in &snap.bodies {
+        println!("{} faces {}", b.name, b.faces.len());
+        for f in &b.faces {
+            println!("  {} {}", f.name, format!("{:?}", f.surface).chars().take(90).collect::<String>());
+        }
+    }
+}

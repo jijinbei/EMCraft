@@ -204,12 +204,27 @@ pub(crate) fn read_capped(path: &str, max: u64) -> Result<Vec<u8>> {
     std::fs::read(path).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))
 }
 
+/// The bytes of the geometry file `path` names: a template's design (`template:<file>`,
+/// compiled in, [`emcraft_templates::design`]) or a file read from disk.
+fn geometry_file(p: &Params, path: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
+    if let Some(bytes) = emcraft_templates::design(path) {
+        return Ok(std::borrow::Cow::Borrowed(bytes));
+    }
+    if path.starts_with(emcraft_templates::DESIGN_SCHEME) {
+        let known = emcraft_templates::DESIGNS.iter().map(|d| format!("{}{}", emcraft_templates::DESIGN_SCHEME, d.file));
+        return Err(
+            p.error("path", crate::text::unknown(format_args!("names no template's design: `{}`", crate::text::clip(path, 64)), "designs: ", known))
+        );
+    }
+    read_capped(path, MAX_IMPORT_BYTES).map(std::borrow::Cow::Owned)
+}
+
 pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
     let unit = s.display.length.to_si(p.positive("unit").or(1.0)?);
     let angle = p.number("angle").check(|a| *a > 0.0 && *a < 180.0, "between 0 and 180 degrees").or(30.0)?;
     let material = p.string("material").or("vacuum")?.to_owned();
-    let bytes = read_capped(path, MAX_IMPORT_BYTES)?;
+    let bytes = geometry_file(p, path)?;
     // A SolidCraft design: its bodies at the parameters given, each face's exact surface from the
     // design; any other file: its triangles, surfaces fitted.
     let (mut bodies, mut exact) = if emcraft_io::solidcraft::is_design(path) {
@@ -416,7 +431,8 @@ fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, known: Option<&[Op
 }
 
 /// A design's parameter overrides from `parameters` (name → a number in the unit the design
-/// shows it in, or an expression), refused for a name the design lacks.
+/// shows it in, an expression of the project's variables (`"=a"`) read as such a number, or an
+/// expression the design evaluates (`"3 mm"`)), refused for a name the design lacks.
 fn design_overrides(p: &Params, bytes: &[u8]) -> Result<Vec<(String, String)>> {
     let Some(v) = p.raw("parameters") else { return Ok(Vec::new()) };
     let o = v.as_object().ok_or_else(|| p.error("parameters", "must map the design's parameter names to values"))?;
@@ -426,6 +442,9 @@ fn design_overrides(p: &Params, bytes: &[u8]) -> Result<Vec<(String, String)>> {
             let q = known.iter().find(|q| q.name == *name).ok_or_else(|| p.error("parameters", format!("the design has no parameter `{name}`")))?;
             let expression = match value {
                 Value::Number(n) => format!("{} {}", n, q.unit),
+                // An expression of the project's variables (`"=a/2"`): its number, in the
+                // design's unit as a number given is (a template passes its parameters so).
+                Value::String(e) if crate::expr::body(e).is_some() => format!("{} {}", p.number_of("parameters", value)?, q.unit),
                 Value::String(e) => e.clone(),
                 _ => return Err(p.error("parameters", format!("`{name}`: a number or an expression"))),
             };
