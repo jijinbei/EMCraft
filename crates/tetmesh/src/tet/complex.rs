@@ -984,6 +984,15 @@ impl TetComplex {
     /// replacement; nothing is changed then. `Ok(Some(ids))`: the new tetrahedra's ids, in the
     /// order of `change.new`.
     pub fn replace(&mut self, change: &Change) -> Result<Option<Vec<u32>>> {
+        match self.matched(change)? {
+            Some(m) => self.commit(change, m).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// How `change`'s new tetrahedra fit the mesh, checked; `None` when the change is not a valid
+    /// replacement. Changes nothing but the visit marks.
+    fn matched(&mut self, change: &Change) -> Result<Option<Matched>> {
         let old = &change.old;
         if old.is_empty() || change.new.is_empty() {
             return Ok(None);
@@ -1159,7 +1168,13 @@ impl TetComplex {
                 return Ok(None);
             }
         }
-        // Commit (saving what it overwrites when the journal records).
+        Ok(Some(Matched { links, neighbours }))
+    }
+
+    /// Makes the replacement [`Self::matched`] checked: the old tetrahedra out, the new ones in,
+    /// linked as matched (saving what it overwrites when the journal records).
+    fn commit(&mut self, change: &Change, Matched { links, neighbours }: Matched) -> Result<Vec<u32>> {
+        let old = &change.old;
         let raw = if self.journal.recording {
             let mut slots: Vec<u32> = old.clone();
             slots.extend(neighbours.iter().copied());
@@ -1216,7 +1231,7 @@ impl TetComplex {
         for &t in &ids {
             self.skin_add(t)?;
         }
-        Ok(Some(ids))
+        Ok(ids)
     }
 
     /// Delete a tetrahedron that has exactly two boundary faces with the same tag meeting at an
@@ -1590,6 +1605,13 @@ enum Link {
     New(usize),
     Old(u32, usize),
     Boundary(u32),
+}
+
+/// A replacement checked: each new tetrahedron's face (new tetrahedron, face) and its link, and
+/// the old region's neighbours outside it.
+struct Matched {
+    links: Vec<(usize, usize, Link)>,
+    neighbours: Vec<u32>,
 }
 
 /// The ring around an edge ([`TetComplex::edge_ring`]).
