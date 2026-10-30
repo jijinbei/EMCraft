@@ -23,6 +23,31 @@ fn scenario(name: &str) {
 }
 
 #[test]
+fn scenario_chart_style() {
+    scenario("chart_style");
+}
+
+#[test]
+fn scenario_refine_and_planes() {
+    scenario("refine_and_planes");
+}
+
+#[test]
+fn scenario_field_probes() {
+    scenario("field_probes");
+}
+
+#[test]
+fn scenario_far_field_cuts() {
+    scenario("far_field_cuts");
+}
+
+#[test]
+fn scenario_run_estimate() {
+    scenario("run_estimate");
+}
+
+#[test]
 fn scenario_section_view() {
     scenario("section_view");
 }

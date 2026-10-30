@@ -27,6 +27,21 @@ pub struct FieldState {
     pub kept: Vec<KeptPlane>,
     /// The model in 3D beside the picture.
     pub beside_3d: bool,
+    /// The fields at the project's probes for the view's solution, and what they were read for.
+    pub probe_values: Option<(ProbeKey, Vec<Option<(emcraft_model::CVec3, emcraft_model::CVec3)>>)>,
+    /// A probe being dragged on the picture: its index and where it is now (picture axes).
+    pub dragging: Option<(usize, [f64; 2])>,
+}
+
+/// What the probes' values were read for: the session's revision, the solution (frequency,
+/// mode, excitation) and the probes' points.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProbeKey {
+    pub revision: u64,
+    pub frequency: f64,
+    pub mode: Option<usize>,
+    pub excitation: usize,
+    pub points: Vec<[f64; 3]>,
 }
 
 impl Default for FieldState {
@@ -42,6 +57,8 @@ impl Default for FieldState {
             pinned: None,
             kept: Vec::new(),
             beside_3d: false,
+            probe_values: None,
+            dragging: None,
         }
     }
 }
@@ -102,10 +119,48 @@ pub enum SharedChart {
     /// The S-parameters, in dB, as magnitudes or as phases.
     SParameters(emcraft_engine::view::SDisplay),
     Dispersion,
-    /// The far-field pattern at an azimuth (degrees).
-    Pattern {
-        phi: f64,
-    },
+    /// A cut through the far-field pattern.
+    Pattern(PatternSettings),
+}
+
+/// The far-field view's cut, its angle (degrees: φ of a φ cut, θ of a θ cut) and component.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PatternSettings {
+    pub cut: emcraft_engine::view::Cut,
+    pub angle: f64,
+    pub component: emcraft_engine::view::FarComponent,
+}
+
+impl Default for PatternSettings {
+    fn default() -> Self {
+        PatternSettings { cut: emcraft_engine::view::Cut::Phi, angle: 0.0, component: emcraft_engine::view::FarComponent::Total }
+    }
+}
+
+/// The chart style card: which chart's is open, its text fields as typed, and the style (as
+/// `view.chart.style` shows it) they were filled from.
+#[derive(Clone, Debug, Default)]
+pub struct StyleEdit {
+    pub open: Option<emcraft_engine::views::ChartId>,
+    pub title: String,
+    /// Each axis' label, min and max as typed.
+    pub axes: [[String; 3]; 2],
+    pub seen: Option<Value>,
+}
+
+/// A band of the S-parameter chart picked by dragging across it, to solve more points in
+/// (`solve.refine`): its ends (Hz), where a drag began, the points asked.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Refine {
+    pub band: Option<(f64, f64)>,
+    pub from: Option<f64>,
+    pub points: usize,
+}
+
+impl Default for Refine {
+    fn default() -> Self {
+        Refine { band: None, from: None, points: 11 }
+    }
 }
 
 /// A port mode's picture: the port, the mode's index and the frequency (Hz).
@@ -138,8 +193,17 @@ pub struct KeptPlane {
 pub struct ViewState {
     /// The chart of the S-parameter, far-field or dispersion view (one at a time).
     pub chart: Cached<PictureKey<SharedChart>>,
-    /// The far-field pattern's azimuth (degrees).
-    pub pattern_phi: f64,
+    /// Where the chart last drawn put its plot area, and its curves (keys and plain labels,
+    /// those hidden too).
+    pub layout: Option<emcraft_render::axes::Layout>,
+    pub curves: Vec<(String, String)>,
+    /// The chart style card.
+    pub style: StyleEdit,
+    /// The S-parameter chart's band to refine, and each port's reference plane as edited.
+    pub refine: Refine,
+    pub deembed: Vec<f64>,
+    /// The far-field pattern's cut.
+    pub pattern: PatternSettings,
     /// What the S-parameter chart shows: |S| in dB, magnitude or phase.
     pub sdisplay: emcraft_engine::view::SDisplay,
     pub tdr: TdrState,

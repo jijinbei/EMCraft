@@ -22,7 +22,10 @@ impl EmcraftApp {
         }
         self.revision = self.revision.wrapping_add(1);
         self.failure = None;
-        self.field.forget_samples();
+        // How results are looked at changes no result: the field's samples stay.
+        if !id.starts_with("view.probe.") && id != "view.chart.style" {
+            self.field.forget_samples();
+        }
         self.views.chart.clear();
         match id {
             "file.sample" | "engine.script" | "file.open" | "file.new" | "file.save" => self.after_file(id, reply),

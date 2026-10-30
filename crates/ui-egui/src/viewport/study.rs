@@ -53,6 +53,7 @@ type StudyKey = (Option<String>, Slice);
 impl ChartView for StudyView {
     type Key = StudyKey;
     const HANDLE: Fixed = Fixed::ChartStudy;
+    const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::Study;
     const HEIGHT: Height = Height::new(0.6, 240.0, 640.0);
 
     /// The study in a line, the S-parameter a sweep shows, and a grid's slice.

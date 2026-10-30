@@ -16,6 +16,7 @@ use crate::theme::Tokens;
 use crate::view3d::View3d;
 use crate::{Action, Actions, EmcraftApp, Hint, Picture, Style, UiExt, View, scenario};
 
+mod chart_style;
 mod dispersion;
 mod far_field;
 pub mod field_params;
@@ -183,6 +184,8 @@ pub(super) trait ChartView {
     type Key: ChartKey;
     /// The chart's name on screen.
     const HANDLE: Fixed;
+    /// Whose style it is drawn in (`view.chart.style`).
+    const CHART: emcraft_engine::views::ChartId;
     /// Its height in the card.
     const HEIGHT: Height;
 
@@ -229,20 +232,31 @@ impl ChartKey for (Option<String>, emcraft_engine::study::Slice) {
 /// The height of a chart with a table under it.
 pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
 
-/// Draws a chart view: its controls, its chart in the rest of the card as wide as the card
-/// allows (the one kept, drawn again when the session, the width, the theme or the view's key
-/// changed), then what goes under it.
+/// Draws a chart view: its controls, its chart in the project's style (`view.chart.style`) in
+/// the rest of the card as wide as the card allows (the one kept, drawn again when the session,
+/// the width, the theme or the view's key changed) with the gear that edits its style, then
+/// what goes under it.
 pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let Some(key) = V::controls(app, st, ui) else { return };
     let width = picture_width(ui);
     let height = V::HEIGHT.of(ui);
+    let mut drawn_now = None;
     let drawn = V::Key::slot(&mut st.views).get_or_draw(PictureKey::new(app.revision, width, key.clone()), || {
-        V::chart(app, &key).map(|c| emcraft_render::chart::draw(&c, width, height, &crate::theme::palette()))
+        V::chart(app, &key).map(|c| {
+            let curves: Vec<(String, String)> = c.curves().into_iter().map(|(k, l)| (k.to_owned(), chart_style::plain(l))).collect();
+            let c = emcraft_engine::views::style_chart(&app.session, V::CHART, c);
+            drawn_now = Some((emcraft_render::chart::layout_of(&c, width, height), curves));
+            emcraft_render::chart::draw(&c, width, height, &crate::theme::palette())
+        })
     });
     match drawn {
         Ok(p) => {
             let size = p.size();
             let r = picture(ui, p, V::HANDLE);
+            if let Some((layout, curves)) = drawn_now {
+                (st.views.layout, st.views.curves) = (Some(layout), curves);
+            }
+            chart_style::gear(app, st, ui, &r, V::CHART, out);
             V::below(app, st, ui, &r, size, out);
         }
         Err(e) => V::failed(app, st, ui, &e),
@@ -295,7 +309,7 @@ pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: Fixed) -> egui
     let tall = avail.y.max(MIN_PICTURE_HEIGHT.min(size.y));
     let scale = (avail.x / size.x).min(tall / size.y).clamp(0.1, 1.0);
     let id = p.texture(ui.ctx());
-    let mut image = egui::Image::new((id, size * scale)).sense(Sense::click());
+    let mut image = egui::Image::new((id, size * scale)).sense(Sense::click_and_drag());
     if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new(STALE))).unwrap_or(false) {
         image = image.tint(Color32::WHITE.gamma_multiply(0.55));
     }

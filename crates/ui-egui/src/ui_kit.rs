@@ -63,10 +63,7 @@ pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed)
     let c = r.center();
     let d = 4.5;
     match mark {
-        Mark::Close => {
-            ui.painter().line_segment([c + vec2(-d, -d), c + vec2(d, d)], s);
-            ui.painter().line_segment([c + vec2(d, -d), c + vec2(-d, d)], s);
-        }
+        Mark::Close => cross(ui.painter(), c, d, s),
         Mark::Dock => {
             ui.painter().rect_stroke(Rect::from_center_size(c, vec2(12.0, 10.0)), 1.0, s, egui::StrokeKind::Middle);
             ui.painter().line_segment([c + vec2(2.0, -5.0), c + vec2(2.0, 5.0)], s);
@@ -77,6 +74,21 @@ pub fn icon_button(ui: &mut Ui, r: Rect, mark: Mark, label: &str, handle: Fixed)
         }
     }
     resp.on_hover_text(label)
+}
+
+/// A cross of half-side `d` about `c`.
+fn cross(p: &egui::Painter, c: egui::Pos2, d: f32, s: Stroke) {
+    p.line_segment([c + vec2(-d, -d), c + vec2(d, d)], s);
+    p.line_segment([c + vec2(d, -d), c + vec2(-d, d)], s);
+}
+
+/// A small close mark in `r` (a control the caller senses), on the hover tint when `hovered`.
+pub fn close_mark(ui: &Ui, r: Rect, hovered: bool) {
+    let t = &Tokens::get();
+    if hovered {
+        ui.painter().rect_filled(r, t.radius_sm, t.hover);
+    }
+    cross(ui.painter(), r.center(), 3.5, Stroke::new(1.3, t.form_dim));
 }
 
 /// A form row: the label in the label column, the control after it. The label's text is the

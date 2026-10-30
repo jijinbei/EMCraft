@@ -9,8 +9,8 @@
     "A command's dialog, opened from the ribbon, the browser or the search.": "リボン、ブラウザー、検索から開くコマンドのダイアログ。",
     "A period of this view as a looping animated PNG (view.animation)": "このビューの 1 周期をループするアニメーション PNG に (view.animation)",
     "A port inside the model needs a solid": "モデル内部のポートにはソリッドが必要",
+    "A probe at the pinned point (the plane's middle without one)": "固定した点にプローブを置く（なければ面の中央）",
     "ANALYSIS": "解析",
-    "About {unknowns} unknowns, {mb} MB, {secs} s for {points} frequencies (fast sweep: less).": "未知数 約 {unknowns}、{mb} MB、{points} 周波数で {secs} 秒（高速掃引ならそれ以下）。",
     "Adaptive mesh: {n} passes, {tets} tetrahedra, last {what} {last}, {converged}.": "適応メッシュ：{n} パス、四面体 {tets}、最後の {what} {last}、{converged}。",
     "Add {row}": "{row} を追加",
     "Against {reference} — worst |S − S_ref| = {worst}": "{reference} との比較 — 最大 |S − S_ref| = {worst}",
@@ -24,6 +24,7 @@
     "Autosave failed: {error}": "自動保存に失敗しました：{error}",
     "Autosaved copy of a project never saved\n{file}": "一度も保存されていないプロジェクトの自動保存コピー\n{file}",
     "Autosaved copy of {project}\n{file}": "{project} の自動保存コピー\n{file}",
+    "Axes and looks": "軸と見た目",
     "BOUNDARIES": "境界",
     "BROWSER": "ブラウザー",
     "Back (Escape)": "戻る (Escape)",
@@ -41,12 +42,13 @@
     "Cannot write {path}: {error}": "{path} に書き込めません：{error}",
     "Checks": "チェック",
     "Clear sources": "波源をクリア",
+    "Clear the band": "帯域を解除",
     "Clear the list": "一覧をクリア",
     "Click a face across z: a port there": "z に垂直な面をクリック：そこにポート",
-    "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.": "グラフをクリックすると、最も近い解析済み周波数の電磁界を開きます。青い線は表示中の周波数です。",
     "Click to show the nearest solved frequency": "クリックで最も近い解析済み周波数を表示",
     "Click two points, edges or faces: the distance (Esc clears)": "2 つの点・辺・面をクリック：距離（Esc で消去）",
     "Click two points: a lumped port between them": "2 点をクリック：その間に集中ポート",
+    "Click: the fields there · drag: a band to solve more finely": "クリック：その周波数の電磁界 · ドラッグ：細かく解く帯域",
     "Close": "閉じる",
     "Closed form": "厳密解",
     "Compare": "比較",
@@ -84,6 +86,7 @@
     "EXPORT": "書き出し",
     "Each port's modes at {f} {unit}: propagation, effective permittivity, impedance (seconds, no full solve).": "{f} {unit} での各ポートのモード：伝搬、実効誘電率、インピーダンス（数秒、全体解析なし）。",
     "Each port's modes: propagation, effective permittivity, impedance (seconds, no full solve).": "各ポートのモード：伝搬、実効誘電率、インピーダンス（数秒、全体解析なし）。",
+    "Each port's reference plane: its distance inside the model (de-embedding)": "各ポートの基準面：モデル内側への距離（ディエンベディング）",
     "Edit": "編集",
     "Edit…": "編集…",
     "Eigenmodes": "固有モード",
@@ -93,11 +96,14 @@
     "Entries of S: {entries}": "S の要素：{entries}",
     "Estimate": "見積もり",
     "Every step is ready.": "すべてのステップの準備ができています。",
+    "Everything automatic again": "すべて自動に戻す",
     "Excitation": "励振",
     "Export": "書き出し",
     "Export history as script": "履歴をスクリプトとして書き出し",
     "Export history as script…": "履歴をスクリプトとして書き出し…",
     "Exported {n} commands to {path}.": "{n} 個のコマンドを {path} に書き出しました。",
+    "Eθ": "Eθ",
+    "Eφ": "Eφ",
     "FREQUENCY": "周波数",
     "FREQUENCY DOMAIN": "周波数領域",
     "Face port": "面ポート",
@@ -146,6 +152,7 @@
     "Length": "長さ",
     "Light": "ライト",
     "Lights this port in the 3D view; click for the mode in the Port modes view": "3D ビューでこのポートを強調表示。クリックでポートモードビューのこのモードへ",
+    "Logarithmic scale": "対数目盛",
     "Low pass": "ローパス",
     "Low pass on a harmonic sweep (f = k Δf), else band pass": "調和掃引（f = k Δf）ならローパス、それ以外はバンドパス",
     "Lumped port": "集中定数ポート",
@@ -208,6 +215,7 @@
     "POINTER": "ポインター",
     "PORTS": "ポート",
     "PORTS & SOURCES": "ポート・波源",
+    "PROBES": "プローブ",
     "Parameters": "パラメータ",
     "Passivity and reciprocity": "受動性と相反性",
     "Pattern PNG": "放射パターン PNG",
@@ -257,11 +265,16 @@
     "Recovered {name}.": "{name} を復元しました。",
     "Redo  ({n})": "やり直し  ({n})",
     "Redone ({undo} to undo, {redo} to redo).": "やり直しました（元に戻す {undo}、やり直し {redo}）。",
+    "Ref. plane": "基準面",
+    "Refine": "細分化",
+    "Refine sweep": "掃引の細分化",
     "Region": "領域",
     "Region: {name} (imported), {material}": "領域：{name}（読み込み）、{material}",
     "Region: {shape}, {material}": "領域：{shape}、{material}",
     "Remove from the 3D view": "3D ビューから外す",
     "Remove from the list": "一覧から削除",
+    "Remove this probe": "このプローブを削除",
+    "Reset": "リセット",
     "Results": "結果",
     "Run": "実行",
     "Run (step 7) starts this solve after checking the model.": "実行（ステップ 7）でモデルをチェックしてからこの解析を開始します。",
@@ -274,6 +287,7 @@
     "Running a script of {n} commands…": "{n} 個のコマンドのスクリプトを実行中…",
     "Running with {n} accepted warning.": "警告 {n} 件を承知で実行します。",
     "Running with {n} accepted warnings.": "警告 {n} 件を承知で実行します。",
+    "S follows at once (a phase shift of the port's mode)": "S はすぐに追従します（ポートのモードの位相シフト）",
     "S-param PNG": "Sパラメータ PNG",
     "S-parameters": "Sパラメータ",
     "SAVE": "保存",
@@ -303,10 +317,12 @@
     "Show": "表示",
     "Show in 3D": "3D で表示",
     "Show the mode patterns": "モードパターンを表示",
+    "Show this curve": "この曲線を表示",
     "Show this mode's pattern": "このモードのパターンを表示",
     "Solve": "解析",
     "Solve again (the Setup step's run)": "もう一度解析（設定ステップの実行）",
     "Solve port modes…": "ポートモードを解析…",
+    "Solve these frequencies and merge them into the sweep (solve.refine)": "これらの周波数を解いて掃引に加える (solve.refine)",
     "Solved the open problem: radiated power {power} W.": "開放問題を解析しました：放射電力 {power} W。",
     "Solved {n} frequencies, {unknowns} unknowns.": "{n} 周波数を解析しました、未知数 {unknowns}。",
     "Solver": "ソルバー",
@@ -383,7 +399,7 @@
     "an antenna or a scatterer (an open problem)": "アンテナまたは散乱体（開放問題）",
     "an expression holds at most {n} characters": "式は最大 {n} 文字です",
     "at {f} {unit}": "{f} {unit}",
-    "azimuth φ (°)": "方位角 φ (°)",
+    "auto": "自動",
     "band {a} to {z} {unit}; the solve works at {n} frequencies": "帯域 {a}〜{z} {unit}。{n} 周波数で解析します",
     "band {a} to {z} {unit}; the solve works at {n} frequency": "帯域 {a}〜{z} {unit}。{n} 周波数で解析します",
     "band {n} ({unit})": "バンド {n} ({unit})",
@@ -413,15 +429,27 @@
     "far-field change": "遠方界の変化",
     "fast": "高速",
     "fields shown": "表示中の電磁界",
+    "frequencies in the band": "帯域内の周波数の数",
     "frequency": "周波数",
+    "from a reference machine; a sweep here measures this one": "基準マシンの値。ここで掃引すればこのマシンで測ります",
     "gap {gap} {unit}": "間隔 {gap} {unit}",
     "give a file": "ファイルを指定してください",
     "give a frequency (or set the band, step 0)": "周波数を指定してください（またはステップ 0 で帯域を設定）",
     "goal": "目的関数",
     "goal ({unit})": "目的関数 ({unit})",
+    "grid": "グリッド",
+    "high end (empty: automatic)": "上端（空欄：自動）",
     "hover the picture to read the fields": "画像にポインターを置くと電磁界を読み取れます",
     "just now": "たった今",
+    "label": "ラベル",
+    "legend below the chart": "凡例をグラフの下に",
+    "legend bottom left": "凡例を左下に",
+    "legend bottom right": "凡例を右下に",
+    "legend top left": "凡例を左上に",
+    "legend top right": "凡例を右上に",
     "light": "ライト",
+    "line width (pixels); again: the usual": "線の太さ（ピクセル）。もう一度で既定",
+    "low end (empty: automatic)": "下端（空欄：自動）",
     "magnetic": "磁気壁",
     "magnetic wall": "磁気壁",
     "magnitude, angle": "振幅、位相",
@@ -443,6 +471,7 @@
     "no": "いいえ",
     "no configuration folder": "設定フォルダーなし",
     "no frequency band: set it in step 0 (Intent)": "周波数帯域がありません：ステップ 0（目的）で設定してください",
+    "no legend": "凡例なし",
     "nodes": "節点",
     "none": "なし",
     "none (the whole model)": "なし（モデル全体）",
@@ -467,11 +496,13 @@
     "port / mode": "ポート / モード",
     "precision": "精度",
     "real, imaginary": "実部、虚部",
+    "ref.": "基準機",
     "remove this row": "この行を削除",
     "required": "必須",
     "row {n}, {column}: {error}": "{n} 行目、{column}：{error}",
     "row {n}: `{column}` is required": "{n} 行目：`{column}` は必須です",
     "running": "実行中",
+    "scaled from this machine's last sweep": "このマシンの直前の掃引から換算",
     "single": "単精度",
     "spherical PML": "球状 PML",
     "start": "開始",
@@ -480,14 +511,19 @@
     "stopped at its budget": "上限で停止",
     "symmetry": "対称面",
     "symmetry: {wall}, {at}": "対称面：{wall}、{at}",
+    "terminal ports: solved again": "端子ポート：解き直します",
     "tetrahedra": "四面体",
     "the CPU's threads": "CPU のスレッド",
     "the CPU's threads run in double": "CPU のスレッドは倍精度で実行します",
     "the GPU's kernels on the CPU (to check them without a GPU)": "GPU のカーネルを CPU で（GPU なしで確認するため）",
     "the last run failed: {error}": "前回の実行は失敗しました：{error}",
+    "the theme's colour": "テーマの色",
+    "the total, or one polarization's share": "全体、または一方の偏波の分",
     "this device does not run it": "このデバイスでは実行できません",
     "time": "時間",
+    "title (automatic)": "タイトル（自動）",
     "to do": "未着手",
+    "total": "全体",
     "units": "単位",
     "unknowns": "未知数",
     "waiting": "待機中",
@@ -501,6 +537,7 @@
     "{command} failed": "{command} が失敗しました",
     "{command} is running": "{command} を実行中",
     "{command} · {what} · {secs} s": "{command} · {what} · {secs} 秒",
+    "{command} · {what} · {secs} s · {left} left": "{command} · {what} · {secs} 秒 · 残り {left}",
     "{component} = {now} {unit} (amplitude {amplitude} {unit})": "{component} = {now} {unit}（振幅 {amplitude} {unit}）",
     "{component} {now} {unit} (amp. {amplitude} {unit})": "{component} {now} {unit}（振幅 {amplitude} {unit}）",
     "{kind} {thickness} {unit} thick": "{kind} 厚さ {thickness} {unit}",
@@ -518,6 +555,7 @@
     "{n} source": "波源 {n} 個",
     "{n} sources": "波源 {n} 個",
     "{n} unknowns after the periodic reduction; period {period}": "周期縮約後の未知数 {n}、周期 {period}",
+    "{n} unknowns, {mb} MB": "未知数 {n}、{mb} MB",
     "{row} — out of date": "{row} — 古い結果",
     "{secs} s per frequency": "1 周波数あたり {secs} 秒",
     "{secs} s per frequency (reference machine)": "1 周波数あたり {secs} 秒（基準マシン）",
@@ -527,7 +565,11 @@
     "|S| (dB)": "|S| (dB)",
     "|S| (linear)": "|S| (線形)",
     "|h(t)|: a peak where each reflection comes from (guides with a cut-off)": "|h(t)|：各反射の位置にピーク（遮断のある導波路向け）",
-    "ΔS": "ΔS"
+    "ΔS": "ΔS",
+    "θ cut": "θ カット",
+    "θ varies at an azimuth φ": "方位角 φ で θ を変える",
+    "φ cut": "φ カット",
+    "φ varies at a polar angle θ": "天頂角 θ で φ を変える"
   },
   "commands": {
     "project.frequency": {
@@ -545,9 +587,11 @@
     },
     "project.estimate": {
       "label": "解析の見積もり",
-      "doc": "メッシュ分割済みモデルの `order` での未知数、分解に要するメモリ、1周波数あたりの時間。セッションに直前の掃引があればそこから、なければ基準マシンの値から見積もる。",
+      "doc": "実行の所要時間を開始前に見積もる：`params` を与えた `command`（解析、mesh.adapt、study.sweep または study.optimize）、なければプロジェクトの最新の実行、それもなければ帯域の掃引。合計の `seconds`（掃引の周波数 — 高速掃引は一部だけを完全に解く —、固有モード、適応パス、時間領域のセル数とステップ数、パラメータスタディの点数）、何を数えたか（`what`）、周波数領域の解析ではメッシュの `order` での未知数、分解のメモリ、1回の解析の秒数。`basis` は数値の出所：`measured`（このセッションの直前の掃引、このマシンから換算）または `reference`（基準マシン）。モデルを読むだけで軽く、同じ設定なら同じ値。",
       "params": {
-        "order": "要素次数、1 または 2（既定 2）"
+        "order": "要素次数、1 または 2（既定は実行のもの、なければ 2）",
+        "command": "見積もる実行：解析コマンド、mesh.adapt、study.sweep または study.optimize（既定は最新の実行）",
+        "params": "そのパラメータ（コマンドが受け取る形で）"
       }
     },
     "file.save": {
@@ -995,12 +1039,13 @@
     },
     "view.sparameters": {
       "label": "Sパラメータのチャート",
-      "doc": "|S11| と |S21| を dB で周波数に対して描いた PNG を書き出す。解析点を TE10 の厳密解の曲線に重ね、遮断周波数を示す。",
+      "doc": "|S11| と |S21|（と S の第1列の残り）を周波数に対して dB、振幅または位相で描いた PNG を書き出す。解析点を TE10 の厳密解の曲線に重ね、遮断周波数を示す。グラフのスタイル（view.chart.style）で描く。",
       "params": {
         "path": "書き出す PNG ファイル",
         "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
         "width": "ピクセル（既定 1000）",
-        "height": "ピクセル（既定 600）"
+        "height": "ピクセル（既定 600）",
+        "display": "`db`（既定）、`magnitude` または `phase`"
       }
     },
     "model.open": {
@@ -1068,16 +1113,19 @@
     },
     "view.pattern": {
       "label": "放射パターンのチャート",
-      "doc": "方位角 `phi` での θ に対する遠方界の放射パターンを PNG に書き出す。波源では指向性（dBi）、平面波ではレーダー断面積（dBsm）を、適用できる場合は閉形式解に重ねる。",
+      "doc": "遠方界の放射パターンの断面を PNG に書き出す：方位角 `phi` での θ に対する断面（`cut` phi、既定）、または天頂角 `theta` での 0〜360° の φ に対する断面（`cut` theta）。波源では指向性（dBi）、平面波ではレーダー断面積（dBsm）を、全体または一方の偏波の分（`component`）で、適用できる場合は（全体の）閉形式解に重ねる。グラフのスタイル（view.chart.style）で描く。",
       "params": {
         "path": "書き出す PNG ファイル",
         "theme": "組み込みテーマ（`light`（既定）、`dark`、`mono`、`graphite`、`sepia`、`midnight`、`forest`）またはテーマファイルのパス（docs/themes.md）",
         "phi": "方位角（度、既定 0）",
-        "points": "0〜180° の角度の点数（既定 91）",
+        "points": "断面に沿った角度の点数、13〜721（既定 91）",
         "width": "ピクセル（既定 1000）",
         "height": "ピクセル（既定 600）",
         "solver": "`fem`（solve.radiation）または `time_domain`（solve.time_domain）。既定はある方、両方あれば FEM",
-        "frequency": "時間領域の周波数（最も近い解析済みのもの）"
+        "frequency": "時間領域の周波数（最も近い解析済みのもの）",
+        "cut": "`phi`：方位角 `phi` で θ を変える（既定）。`theta`：天頂角 `theta` で φ を変える",
+        "theta": "θ カットの天頂角（度、0〜180、既定 90）",
+        "component": "`total`（既定）、`theta`（E_θ の分）または `phi`（E_φ の分）"
       }
     },
     "file.sample": {
@@ -1284,6 +1332,80 @@
       "doc": "番号（1 が最初）で指定した波源を削除する。後ろの波源は番号が振り直される。開放問題の結果は破棄される。元に戻せる。",
       "params": {
         "index": "波源の番号。1 が最初"
+      }
+    },
+    "solve.refine": {
+      "label": "掃引の細分化",
+      "doc": "掃引に周波数を加える：`start` から `stop` までの均等な `points` 点（または `frequencies`）のうち未解析のものを、掃引自身の系（同じメッシュと次数、組み立て直しなし。3点以上は高速掃引）で解き、基準面をそろえて順に併合する。プロジェクトの実行は併合した掃引（周波数を列挙した solve.frequency）になり、再実行で同じ掃引が得られる。今のモデルの掃引が必要。",
+      "params": {
+        "frequencies": "周波数",
+        "start": "最初の周波数",
+        "stop": "最後の周波数",
+        "points": "start から stop までの周波数の数（既定 11）"
+      }
+    },
+    "results.probes": {
+      "label": "プローブの値",
+      "doc": "プロジェクトの名前付きプローブ（view.probe.add）での E（V/m）と H（A/m）の複素値と大きさ。解析済みの周波数（最も近いもの、既定は掃引の最初）と励振ポート、または固有モードについて。メッシュの外のプローブはそう示す（`outside`）。",
+      "params": {
+        "frequency": "解析済みの周波数（最も近いものを使う、既定は掃引の最初）",
+        "mode": "駆動解の代わりの固有モード（1 = 最低次）",
+        "excitation": "励振するポート（既定は最初）"
+      }
+    },
+    "view.probe.add": {
+      "label": "プローブを追加",
+      "doc": "名前付きプローブを追加する：電磁界を読むモデル内の点（results.probes。電磁界ビューは一覧にし、その面上のものに印を付ける）。プロジェクトと一緒に保存され、履歴には入らない。",
+      "params": {
+        "at": "点 [x, y, z]（モデルの範囲内）",
+        "name": "名前、一意（既定 P1、P2、…）"
+      }
+    },
+    "view.probe.move": {
+      "label": "プローブを移動",
+      "doc": "プローブを別の点へ動かす、または名前を変える。",
+      "params": {
+        "name": "プローブ",
+        "at": "新しい点 [x, y, z]",
+        "rename": "新しい名前、一意"
+      }
+    },
+    "view.probe.delete": {
+      "label": "プローブを削除",
+      "doc": "プローブを取り除く。",
+      "params": {
+        "name": "プローブ"
+      }
+    },
+    "view.chart.style": {
+      "label": "グラフのスタイル",
+      "doc": "結果のグラフの見た目を、ウィンドウでも PNG（view.sparameters、view.tdr、view.pattern、view.dispersion、view.study）でも変える：与えたものだけを変え、残りは保つ（`reset` で先にすべて自動に戻す）。軸の端は軸の単位の数値（周波数軸は表示単位）、`null` で自動。対数目盛には正の端が必要。曲線はキー（応答の `curves`：`s21.fem`、`s11.ref`、`band1`、…）で指定する：`hidden` は隠す曲線、`curve` と `colour`・`width` でその曲線だけの色と太さ（`null`：既定）。プロジェクトと一緒に保存され、履歴には入らない。応答はスタイルとグラフの曲線。",
+      "params": {
+        "chart": "`sparameters`、`tdr`、`pattern`、`dispersion` または `study`",
+        "title": "タイトル（\"\" または null：自動）",
+        "x_label": "x 軸のラベル（\"\" または null：自動）",
+        "y_label": "y 軸のラベル（\"\" または null：自動）",
+        "x_min": "x 軸の左端（null：自動）",
+        "x_max": "x 軸の右端（null：自動）",
+        "y_min": "y 軸の下端（null：自動）",
+        "y_max": "y 軸の上端（null：自動）",
+        "x_scale": "`linear` または `log`",
+        "y_scale": "`linear` または `log`",
+        "hidden": "隠す曲線のキー（他はすべて表示）",
+        "curve": "`colour` と `width` を当てる曲線のキー",
+        "colour": "曲線の色 `#rrggbb`（null：テーマの色）",
+        "width": "曲線の線の太さまたはマーカーの大きさ（ピクセル、0.5〜12。null：既定）",
+        "grid": "グリッドを描く（既定 true）",
+        "legend": "凡例の位置：`below`（既定）、`top-left`、`top-right`、`bottom-left`、`bottom-right` または `none`",
+        "reset": "先にすべて自動に戻す"
+      }
+    },
+    "model.port.deembed": {
+      "label": "基準面",
+      "doc": "ポートの基準面を動かす：線路に沿ってモデル内側へ `deembed`（model.port.edit と同じ）。掃引の S パラメータは解き直さずにすぐ新しい基準面に換算される（各ポートの第1モードの e^{γd} で波を動かす）。端子ポートや周期境界のある掃引は代わりに破棄される（`rerun`：解き直す）。元に戻せる。",
+      "params": {
+        "name": "ポート",
+        "deembed": "基準面のモデル内側への距離（負：外側に線路を足す）"
       }
     }
   },

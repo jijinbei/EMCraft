@@ -33,6 +33,18 @@ fn open_problems_radiate_and_scatter() {
     let path = scratch("pattern.png");
     s.execute("view.pattern", &json!({"path": path, "points": 37})).unwrap();
     assert!(std::fs::read(&path).unwrap().len() > 1000);
+    // The cut through the equator (θ = 90°, φ varying) is flat; the z dipole's field is E_θ,
+    // E_φ's share far below it.
+    let cut = |component| view::PatternView { cut: view::Cut::Theta, angle: 90.0, component, points: 37, ..Default::default() };
+    let fem = |c: emcraft_render::chart::Chart| c.series.into_iter().find(|x| x.key == "fem").unwrap().points;
+    let theta = fem(view::pattern_chart_in(&s, &cut(view::FarComponent::Theta)).unwrap());
+    let phi = fem(view::pattern_chart_in(&s, &cut(view::FarComponent::Phi)).unwrap());
+    let (lo, hi) = theta.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| (a.min(p[1]), b.max(p[1])));
+    assert!(hi - lo < 1.5 && (theta[36][0] - 360.0).abs() < 1e-9, "{lo} {hi}");
+    assert!(phi.iter().all(|p| p[1] < lo - 10.0), "E_φ is small");
+    s.execute("view.pattern", &json!({"path": path, "cut": "theta", "theta": 90, "component": "phi", "points": 37})).unwrap();
+    assert!(s.execute("view.pattern", &json!({"path": path, "cut": "theta", "theta": 200})).is_err());
+    assert!(s.execute("view.pattern", &json!({"path": path, "component": "z"})).is_err());
     // A plane wave on a conducting sphere: the Mie series' cross-section comes with it.
     s.execute("source.clear", &json!({})).unwrap();
     assert!(s.execute("source.plane_wave", &json!({"direction": [0, 0, 1], "polarization": [0, 0, 1]})).is_err(), "not transverse");

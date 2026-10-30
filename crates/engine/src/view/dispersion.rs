@@ -30,25 +30,19 @@ pub fn dispersion_chart(s: &Session) -> Result<Chart> {
     // against: here vacuum's, f = c ψ/(2πL).
     if d.period > 0.0 {
         let light = |deg: f64| fu.from_si(C0 * deg.to_radians() / (2.0 * PI * d.period));
-        series.push(Series {
-            label: "light line".into(),
-            pen: Pen::Muted,
-            style: Style::Line,
-            points: vec![[p0.max(0.0), light(p0.max(0.0))], [p1, light(p1)]],
-        });
+        series.push(Series::new("light", "light line", Pen::Muted, Style::Line, vec![[p0.max(0.0), light(p0.max(0.0))], [p1, light(p1)]]));
     }
     for b in 0..bands {
         let pts: Vec<[f64; 2]> = d.points.iter().filter_map(|p| p.frequencies.get(b).map(|f| [p.psi.to_degrees(), fu.from_si(*f)])).collect();
-        series.push(Series { label: format!("band {} (FEM)", b + 1), pen: Pen::Series(band(b)), style: Style::Markers, points: pts });
+        series.push(Series::new(&format!("band{}", b + 1), format!("band {} (FEM)", b + 1), Pen::Series(band(b)), Style::Markers, pts));
     }
     let y1 = fu.from_si(f_top) * 1.1;
-    Ok(Chart {
-        title: format!("Dispersion along {}", emcraft_model::Axis::name_of(d.axis)),
-        x: Axis::new("phase per period ψ (°)", p0, p1),
-        y: Axis::new(&format!("frequency ({})", fu.symbol()), 0.0, if y1 > 0.0 { y1 } else { 1.0 }),
+    Ok(Chart::new(
+        format!("Dispersion along {}", emcraft_model::Axis::name_of(d.axis)),
+        Axis::new("phase per period ψ (°)", p0, p1),
+        Axis::new(&format!("frequency ({})", fu.symbol()), 0.0, if y1 > 0.0 { y1 } else { 1.0 }),
         series,
-        marks: Vec::new(),
-    })
+    ))
 }
 
 /// The closed form's bands from phase `p0` to `p1` (degrees), finely, each in its band's colour
@@ -70,11 +64,6 @@ fn exact_curves(s: &Session, d: &Dispersion, (p0, p1): (f64, f64), bands: usize,
         .into_iter()
         .enumerate()
         .filter(|(_, p)| !p.is_empty())
-        .map(|(b, pts)| Series {
-            label: if b == 0 { what.to_owned() } else { String::new() },
-            pen: Pen::Faded(band(b)),
-            style: Style::Line,
-            points: pts,
-        })
+        .map(|(b, pts)| Series::new("exact", if b == 0 { what.to_owned() } else { String::new() }, Pen::Faded(band(b)), Style::Line, pts))
         .collect()
 }

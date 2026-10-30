@@ -17,6 +17,7 @@ pub(super) struct Tdr;
 impl ChartView for Tdr {
     type Key = crate::state::TdrParams;
     const HANDLE: Fixed = Fixed::ChartTdr;
+    const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::Tdr;
     const HEIGHT: Height = Height::new(0.8, 260.0, 700.0);
 
     fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui) -> Option<Self::Key> {

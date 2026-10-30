@@ -122,7 +122,13 @@ pub(crate) fn job_text(job: &crate::worker::Job) -> String {
         stage if total >= 1000 => format!("{stage}, {} %", (100 * done) / total),
         stage => format!("{stage} {done} / {total}"),
     };
-    trf("{command} · {what} · {secs} s", args!(command = command, what = what, secs = secs))
+    match job.remaining() {
+        Some(left) => trf(
+            "{command} · {what} · {secs} s · {left} left",
+            args!(command = command, what = what, secs = secs, left = crate::steps::duration(left)),
+        ),
+        None => trf("{command} · {what} · {secs} s", args!(command = command, what = what, secs = secs)),
+    }
 }
 
 /// The running job in the right column (the step panel, the docked dialog that started it): what

@@ -7,6 +7,7 @@ use emcraft_render::plot::FieldPlot;
 use serde_json::{Value, json};
 
 use super::field::{FieldView, Plane};
+use crate::views::ChartId;
 use crate::{EIGEN_MAX, EngineError, Params, Result, Session, args};
 
 /// Writes a picture's PNG bytes (`None` when it could not be encoded) to `path`.
@@ -40,9 +41,11 @@ impl<'a> ChartFile<'a> {
         Ok(ChartFile { path, width, height, palette: crate::theme::palette_of(p)? })
     }
 
-    /// Draws `chart` and writes it: the reply.
-    fn write(&self, chart: &Chart) -> Result<Value> {
-        let c = emcraft_render::chart::draw(chart, self.width, self.height, &self.palette);
+    /// Draws `chart` in the project's style for chart `id` (`view.chart.style`) and writes it:
+    /// the reply.
+    fn write(&self, s: &Session, id: crate::views::ChartId, chart: Chart) -> Result<Value> {
+        let chart = crate::views::style_chart(s, id, chart);
+        let c = emcraft_render::chart::draw(&chart, self.width, self.height, &self.palette);
         write_png(self.path, c.png())?;
         Ok(json!({"path": self.path, "width": c.w, "height": c.h}))
     }
@@ -154,20 +157,21 @@ pub fn animation(s: &mut Session, p: &Params) -> Result<Value> {
 /// `view.sparameters`.
 pub fn sparameters(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
-    file.write(&super::sparameter_chart(s)?)
+    let display = p.pick("display").or(super::SDisplay::Db)?;
+    file.write(s, ChartId::SParameters, super::sparameter_chart_as(s, display)?)
 }
 
 /// `view.tdr`.
 pub fn tdr(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
     let (t, port, z0) = crate::results::tdr_of(s, p)?;
-    file.write(&super::tdr_chart(&t, &port, z0))
+    file.write(s, ChartId::Tdr, super::tdr_chart(&t, &port, z0))
 }
 
 /// `view.dispersion`.
 pub fn dispersion(s: &mut Session, p: &Params) -> Result<Value> {
     let file = ChartFile::read(s, p)?;
-    file.write(&super::dispersion_chart(s)?)
+    file.write(s, ChartId::Dispersion, super::dispersion_chart(s)?)
 }
 
 /// `view.study`: the last study's chart.
@@ -180,14 +184,32 @@ pub fn study(s: &mut Session, p: &Params) -> Result<Value> {
     };
     let slice = super::study::Slice::named(study, at)?;
     let units = super::study::variable_units(s, study);
-    file.write(&super::study::chart_with_units(study, p.string("parameter").optional()?, &slice, &units)?)
+    let chart = super::study::chart_with_units(study, p.string("parameter").optional()?, &slice, &units)?;
+    file.write(s, ChartId::Study, chart)
+}
+
+/// A far-field pattern's settings from command parameters: the cut (`phi`, the default, or
+/// `theta`) at its angle (`phi` or `theta`, degrees), the component, the angles drawn, the
+/// solver and frequency.
+pub fn pattern_view(p: &Params) -> Result<super::PatternView> {
+    let cut = p.pick("cut").or(super::Cut::Phi)?;
+    let angle = match cut {
+        super::Cut::Phi => p.number("phi").or(0.0)?,
+        super::Cut::Theta => p.number("theta").check(|t| (0.0..=180.0).contains(t), "0 to 180").or(90.0)?,
+    };
+    Ok(super::PatternView {
+        cut,
+        angle,
+        component: p.pick("component").or(super::FarComponent::Total)?,
+        points: p.integer("points", 13..=721).or(91)?,
+        solver: p.choice("solver").optional()?,
+        frequency: p.frequency("frequency").optional()?,
+    })
 }
 
 /// `view.pattern`: the far-field pattern.
 pub fn pattern(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
-    let phi = p.number("phi").or(0.0)?;
-    let n = p.integer("points", 13..=721).or(91)?;
-    let chart = super::pattern_chart_of(s, phi, n, p.choice("solver").optional()?, p.frequency("frequency").optional()?)?;
-    ChartFile::sized(s, p, path)?.write(&chart)
+    let chart = super::pattern_chart_in(s, &pattern_view(p)?)?;
+    ChartFile::sized(s, p, path)?.write(s, ChartId::Pattern, chart)
 }

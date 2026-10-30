@@ -63,21 +63,21 @@ impl SDisplay {
 
 /// A curve as series: one, or for a phase one per stretch between its wraps from +180° to
 /// −180° (the first labelled), so no line crosses the chart at a wrap.
-fn curve(label: String, pen: Pen, points: Vec<[f64; 2]>, display: SDisplay) -> Vec<Series> {
+fn curve(key: &str, label: String, pen: Pen, points: Vec<[f64; 2]>, display: SDisplay) -> Vec<Series> {
     if display != SDisplay::Phase {
-        return vec![Series { label, pen, style: Style::Line, points }];
+        return vec![Series::new(key, label, pen, Style::Line, points)];
     }
     let mut out: Vec<Series> = Vec::new();
     let mut run: Vec<[f64; 2]> = Vec::new();
     for p in points {
         if run.last().is_some_and(|q| (p[1] - q[1]).abs() > 180.0) {
             let label = if out.is_empty() { label.clone() } else { String::new() };
-            out.push(Series { label, pen, style: Style::Line, points: std::mem::take(&mut run) });
+            out.push(Series::new(key, label, pen, Style::Line, std::mem::take(&mut run)));
         }
         run.push(p);
     }
     let label = if out.is_empty() { label } else { String::new() };
-    out.push(Series { label, pen, style: Style::Line, points: run });
+    out.push(Series::new(key, label, pen, Style::Line, run));
     out
 }
 
@@ -114,33 +114,26 @@ pub fn sparameter_chart_as(session: &Session, display: SDisplay) -> Result<Chart
     let mut series = reference_curves(session, f0, f1, display);
     if let Some(sweep) = sweep {
         let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
-        series.push(Series {
-            label: format!("{} FEM (order {})", display.entry("21"), sweep.order.as_u8()),
-            pen: Pen::Strong(0),
-            style: Style::Markers,
-            points: pts(1, 0),
-        });
-        series.push(Series { label: format!("{} FEM", display.entry("11")), pen: Pen::Strong(1), style: Style::Markers, points: pts(0, 0) });
+        let label = format!("{} FEM (order {})", display.entry("21"), sweep.order.as_u8());
+        series.push(Series::new("s21.fem", label, Pen::Strong(0), Style::Markers, pts(1, 0)));
+        series.push(Series::new("s11.fem", format!("{} FEM", display.entry("11")), Pen::Strong(1), Style::Markers, pts(0, 0)));
         // More entries (a terminal port's conductors, more ports): the rest of the first column.
         let n = sweep.results.first().map_or(0, |r| r.s.ports()).min(MAX_CHART_ENTRIES);
         for (p, k) in (2..n).zip(MORE_PENS.iter().cycle()) {
             let label = format!("{} FEM", display.entry(&format!("{}1", p + 1)));
-            series.push(Series { label, pen: Pen::Strong(*k), style: Style::Markers, points: pts(p, 0) });
+            series.push(Series::new(&format!("s{}1.fem", p + 1), label, Pen::Strong(*k), Style::Markers, pts(p, 0)));
         }
     }
     if let Some(td) = td {
         let pts = |v: &[C]| td.frequencies.iter().zip(v).map(|(f, s)| [fu.from_si(*f), display.of(*s)]).collect();
-        series.extend(curve(format!("{} time domain", display.entry("21")), Pen::Series(2), pts(&td.s21), display));
-        series.extend(curve(format!("{} time domain", display.entry("11")), Pen::Series(4), pts(&td.s11), display));
+        series.extend(curve("s21.td", format!("{} time domain", display.entry("21")), Pen::Series(2), pts(&td.s21), display));
+        series.extend(curve("s11.td", format!("{} time domain", display.entry("11")), Pen::Series(4), pts(&td.s11), display));
     }
     let marks = section_cutoffs(session).into_iter().map(|(fc, name)| (fu.from_si(fc), format!("$f_c$ {name}"))).collect();
-    Ok(Chart {
-        title: "S-parameters".into(),
-        x: Axis::new(&format!("frequency ({})", fu.symbol()), fu.from_si(f0), fu.from_si(f1)),
-        y: display.axis(&series),
-        series,
-        marks,
-    })
+    let y = display.axis(&series);
+    let mut chart = Chart::new("S-parameters", Axis::new(&format!("frequency ({})", fu.symbol()), fu.from_si(f0), fu.from_si(f1)), y, series);
+    chart.marks = marks;
+    Ok(chart)
 }
 
 /// The reference's S21 and S11 from `f0` to `f1` (Hz), finely, as `display` asks; none without
@@ -152,14 +145,21 @@ fn reference_curves(session: &Session, f0: f64, f1: f64, display: SDisplay) -> V
     // per frequency); 40 keep the curve within 10⁻² dB.
     let (n, modes) = if reference.is_mode_matching() { (160, 40) } else { (400, 1) };
     let (mut s11, mut s21) = (Vec::new(), Vec::new());
+    // The reference is at the ports' faces: moved to the sweep's reference planes as the solver
+    // moves its own (results.compare does the same).
+    let sweep = session.results.sweep.as_deref().filter(|sw| sw.deembed.iter().any(|d| *d != 0.0));
+    let one = C::new(1.0, 0.0);
+    let moved = |port: usize, f: f64| sweep.and_then(|sw| crate::results::deembedding(sw, port, f).ok()).unwrap_or(one);
     for f in crate::numbers::evenly_spaced(f0, f1, n + 1) {
         if let Ok((r, t)) = reference.s(f, modes) {
+            let (a, b) = (moved(0, f), moved(1, f));
+            let (r, t) = (r * a * a, t * a * b);
             s11.push([fu.from_si(f), display.of(r)]);
             s21.push([fu.from_si(f), display.of(t)]);
         }
     }
     let label = reference.label();
-    let mut out = curve(format!("{} {label}", display.entry("21")), Pen::Series(0), s21, display);
-    out.extend(curve(format!("{} {label}", display.entry("11")), Pen::Series(1), s11, display));
+    let mut out = curve("s21.ref", format!("{} {label}", display.entry("21")), Pen::Series(0), s21, display);
+    out.extend(curve("s11.ref", format!("{} {label}", display.entry("11")), Pen::Series(1), s11, display));
     out
 }

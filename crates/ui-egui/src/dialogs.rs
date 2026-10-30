@@ -306,6 +306,23 @@ impl Dialog {
         Ok(())
     }
 
+    /// The command's parameters as the fields stand, without marking errors; `None` when one
+    /// does not parse or a required one is empty.
+    pub fn quiet_params(&self) -> Option<Value> {
+        let mut out = Map::new();
+        for f in &self.fields {
+            match field_value(f) {
+                Ok(Some(v)) => {
+                    out.insert(f.name.to_owned(), v);
+                }
+                Ok(None) if f.required => return None,
+                Ok(None) => {}
+                Err(_) => return None,
+            }
+        }
+        Some(Value::Object(out))
+    }
+
     /// The command's parameters, or what does not parse. Marks each field's error.
     pub fn params(&mut self) -> Result<Value, String> {
         let mut out = Map::new();

@@ -11,7 +11,8 @@ use crate::open::FarSolver;
 use crate::project::Format as TouchstoneFormat;
 use crate::solve::{Device, Strategy};
 use crate::tdr::Mode as TdrMode;
-use crate::view::{Component, Plane};
+use crate::view::{Component, Cut, FarComponent, Plane, SDisplay};
+use crate::views::{ChartId, LegendAt, Scale};
 
 use crate::project::Effect;
 use crate::{Change, CommandSpec, Kind as K, ParamSpec, Quantity};
@@ -112,11 +113,15 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "project.estimate",
         label: "Solve estimate",
-        doc: "The meshed model's unknowns at `order`, the factor's memory and the time per frequency: from the session's last sweep when it has one, else from a reference machine's.",
-        params: &[opt("order", K::Integer, "element order, 1 or 2 (default 2)")],
+        doc: "How long a run will take, before it starts: `command` with `params` (a solve, mesh.adapt, study.sweep or study.optimize), else the project's latest run, else a sweep of the band. The total `seconds` (the frequencies of a sweep — a fast sweep solving a few in full —, the eigenmodes, the adaptive passes, the time domain's cells and steps, a study's points), what it counts (`what`), and for a frequency-domain solve the meshed model's unknowns at `order`, the factor's memory and the seconds of one solve. `basis` says where the numbers come from: `measured` (scaled from this session's own last sweep, on this machine) or `reference` (a reference machine's). Reads the model only: cheap, and the same set-up gives the same numbers.",
+        params: &[
+            opt("order", K::Integer, "element order, 1 or 2 (default the run's, else 2)"),
+            opt("command", K::String, "the run to estimate: a solve command, mesh.adapt, study.sweep or study.optimize (default the latest run)"),
+            opt("params", K::Object, "its parameters, as the command takes them"),
+        ],
         effect: Effect::None,
         invalidates: None,
-        run: crate::project::estimate,
+        run: crate::estimate::estimate,
     },
     CommandSpec {
         id: "file.save",
@@ -552,6 +557,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::items::port_edit,
     },
     CommandSpec {
+        id: "model.port.deembed",
+        label: "Reference plane",
+        doc: "Moves a port's reference plane: `deembed` inside the model along its line (as model.port.edit sets it), and the sweep's S-parameters re-referred to it at once, without solving again (each port's waves moved by e^{γd} of its first mode). A sweep with terminal ports or periodic boundaries is dropped instead (`rerun`: solve again). Undo goes back.",
+        params: &[req("name", K::String, "the port"), req("deembed", K::Number, "the reference plane's distance inside the model (negative: a line added outside)").of(L)],
+        effect: Effect::Adjust,
+        invalidates: None,
+        run: crate::items::port_deembed,
+    },
+    CommandSpec {
         id: "model.port.delete",
         label: "Delete port",
         doc: "Removes a waveguide port (a lumped port: model.port.lumped.delete); the ports after it move up in S. Drops the sweep and the time domain's results (an open problem's too). Undo goes back.",
@@ -575,6 +589,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::Solve,
         invalidates: None,
         run: crate::solve::frequency,
+    },
+    CommandSpec {
+        id: "solve.refine",
+        label: "Refine sweep",
+        doc: "Adds frequencies to the sweep: `points` evenly from `start` to `stop` (or `frequencies`), those not solved yet solved on the sweep's own system (its mesh and order, no assembly again; three or more by the fast sweep), referred to its reference planes and merged in order. The project's run becomes the merged sweep (solve.frequency with its frequencies listed), so running it again gives the same sweep. Needs a sweep of the model as it is.",
+        params: &[FREQUENCIES, START, STOP, opt("points", K::Integer, "frequencies from start to stop (default 11)")],
+        effect: Effect::Solve,
+        invalidates: None,
+        run: crate::solve::refine,
     },
     CommandSpec {
         id: "solve.time_domain",
@@ -726,6 +749,73 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::field_error,
     },
     CommandSpec {
+        id: "results.probes",
+        label: "Probe values",
+        doc: "E (V/m) and H (A/m), complex, and their magnitudes at the project's named probes (view.probe.add), for a solved frequency (the nearest; default the sweep's first) and an excited port, or an eigenmode. A probe outside the mesh says so (`outside`).",
+        params: &[
+            opt("frequency", K::Number, "a solved frequency (the nearest is used; default the sweep's first)").of(F),
+            FIELD_MODE,
+            EXCITATION,
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::views::probes,
+    },
+    CommandSpec {
+        id: "view.probe.add",
+        label: "Add probe",
+        doc: "Adds a named probe: a point in the model where the fields are read (results.probes; the field view lists them and marks those on its plane). Saved with the project, not in its history.",
+        params: &[req("at", K::Array, "the point [x, y, z], inside the model's bounds").of(L), opt("name", K::String, "its name, unique (default P1, P2, …)")],
+        effect: Effect::View,
+        invalidates: None,
+        run: crate::views::probe_add,
+    },
+    CommandSpec {
+        id: "view.probe.move",
+        label: "Move probe",
+        doc: "Moves a probe to another point, or renames it.",
+        params: &[req("name", K::String, "the probe"), opt("at", K::Array, "its new point [x, y, z]").of(L), RENAME],
+        effect: Effect::View,
+        invalidates: None,
+        run: crate::views::probe_move,
+    },
+    CommandSpec {
+        id: "view.probe.delete",
+        label: "Delete probe",
+        doc: "Removes a probe.",
+        params: &[req("name", K::String, "the probe")],
+        effect: Effect::View,
+        invalidates: None,
+        run: crate::views::probe_delete,
+    },
+    CommandSpec {
+        id: "view.chart.style",
+        label: "Chart style",
+        doc: "Changes how a result chart looks, in the window and in its PNG (view.sparameters, view.tdr, view.pattern, view.dispersion, view.study): what is given changes, the rest stays (`reset` first puts it all back to automatic). Axis ends are numbers in the axis' unit (a frequency axis in the display unit) or null for automatic; a log scale needs positive ends. Curves are named by their keys (the reply's `curves`: `s21.fem`, `s11.ref`, `band1`, …): `hidden` lists those left out, `curve` with `colour` and `width` sets one's own (null: the usual). Saved with the project, not in its history. The reply: the style and the chart's curves.",
+        params: &[
+            req("chart", K::String, "`sparameters`, `tdr`, `pattern`, `dispersion` or `study`").one_of(&ChartId::IDS),
+            opt("title", K::String, "the title (\"\" or null: automatic)"),
+            opt("x_label", K::String, "the x axis' label (\"\" or null: automatic)"),
+            opt("y_label", K::String, "the y axis' label (\"\" or null: automatic)"),
+            opt("x_min", K::Number, "the x axis' left end (null: automatic)"),
+            opt("x_max", K::Number, "the x axis' right end (null: automatic)"),
+            opt("y_min", K::Number, "the y axis' bottom (null: automatic)"),
+            opt("y_max", K::Number, "the y axis' top (null: automatic)"),
+            opt("x_scale", K::String, "`linear` or `log`").one_of(&Scale::IDS),
+            opt("y_scale", K::String, "`linear` or `log`").one_of(&Scale::IDS),
+            opt("hidden", K::Array, "the keys of the curves left out (all others shown)"),
+            opt("curve", K::String, "the key of the curve `colour` and `width` are for"),
+            opt("colour", K::String, "the curve's colour, `#rrggbb` (null: the theme's)"),
+            opt("width", K::Number, "the curve's line width or marker size in pixels, 0.5 to 12 (null: the usual)"),
+            opt("grid", K::Boolean, "draw the grid (default true)"),
+            opt("legend", K::String, "where the legend goes: `below` (default), `top-left`, `top-right`, `bottom-left`, `bottom-right` or `none`").one_of(&LegendAt::IDS),
+            opt("reset", K::Boolean, "everything back to automatic first"),
+        ],
+        effect: Effect::View,
+        invalidates: None,
+        run: crate::views::chart_style,
+    },
+    CommandSpec {
         id: "results.probe",
         label: "Probe fields",
         doc: "E (V/m) and H (A/m), complex, at points, for a solved frequency and an excited port.",
@@ -829,12 +919,13 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "view.sparameters",
         label: "S-parameter chart",
-        doc: "Writes a PNG of |S11| and |S21| in dB against frequency, the solved points over the exact TE10 curves, with the cut-off frequencies marked.",
+        doc: "Writes a PNG of |S11| and |S21| (and the rest of S's first column) against frequency — in dB, as a magnitude or a phase — the solved points over the exact TE10 curves, with the cut-off frequencies marked, in the chart's style (view.chart.style).",
         params: &[
             PNG,
             THEME,
             WIDTH,
             HEIGHT,
+            opt("display", K::String, "`db` (default), `magnitude` or `phase`").one_of(&SDisplay::IDS),
         ],
         effect: Effect::None,
         invalidates: None,
@@ -975,12 +1066,15 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "view.pattern",
         label: "Pattern chart",
-        doc: "Writes a PNG of the far-field pattern against θ at azimuth `phi`: directivity in dBi for sources, radar cross-section in dBsm for a plane wave, over the closed form where it applies.",
+        doc: "Writes a PNG of a cut through the far-field pattern: against θ at azimuth `phi` (`cut` phi, the default) or against φ from 0 to 360° at polar angle `theta` (`cut` theta); directivity in dBi for sources, radar cross-section in dBsm for a plane wave, all of it or one polarization's share (`component`), over the closed form (the total's) where it applies; in the chart's style (view.chart.style).",
         params: &[
             PNG,
             THEME,
+            opt("cut", K::String, "`phi`: θ varies at azimuth `phi` (default); `theta`: φ varies at polar angle `theta`").one_of(&Cut::IDS),
             PHI,
-            opt("points", K::Integer, "angles from 0 to 180° (default 91)"),
+            opt("theta", K::Number, "the polar angle of a θ cut in degrees, 0 to 180 (default 90)"),
+            opt("component", K::String, "`total` (default), `theta` (E_θ's share) or `phi` (E_φ's)").one_of(&FarComponent::IDS),
+            opt("points", K::Integer, "angles along the cut, 13 to 721 (default 91)"),
             WIDTH,
             HEIGHT,
             FAR_SOLVER,

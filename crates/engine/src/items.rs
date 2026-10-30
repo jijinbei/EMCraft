@@ -180,6 +180,33 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"name": name, "ports": s.model.ports.len()}))
 }
 
+/// `model.port.deembed`: port `name`'s reference plane `deembed` inside the model (as
+/// `model.port.edit` sets it), the sweep's S-parameters re-referred to it at once — no solve —
+/// where its ports allow (each port's first mode's e^{γΔd}); a sweep with terminal ports or
+/// periodic boundaries is dropped instead, to be solved again.
+pub fn port_deembed(s: &mut Session, p: &Params) -> Result<Value> {
+    let (i, old) = port_named(&s.model, p, "name").map(|(i, x)| (i, x.clone()))?;
+    let deembed = p.edit_length("deembed", old.deembed)?;
+    let name = old.name.clone();
+    s.model.replace_port(i, Port { deembed, ..old })?;
+    let mut rerun = false;
+    if let Some(sw) = s.results.sweep.clone() {
+        if sw.driven.has_terminals() || sw.driven.periodic.is_some() || i >= sw.deembed.len() {
+            s.results.sweep = None;
+            rerun = true;
+        } else {
+            let mut to = sw.deembed.clone();
+            if let Some(d) = to.get_mut(i) {
+                *d = deembed;
+            }
+            let results = crate::session::rereference(&sw.driven, sw.results.clone(), &sw.deembed, &to)?;
+            s.results.sweep = Some(std::sync::Arc::new(crate::Sweep { results, deembed: to, ..(*sw).clone() }));
+        }
+    }
+    let l = s.display.length;
+    Ok(json!({"name": name, "deembed": l.from_si(deembed), "rerun": rerun}))
+}
+
 /// `model.port.delete`.
 pub fn port_delete(s: &mut Session, p: &Params) -> Result<Value> {
     let (i, _) = port_named(&s.model, p, "name")?;

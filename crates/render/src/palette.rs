@@ -29,6 +29,8 @@ pub enum Pen {
     EArrows,
     /// The magnetic field's arrows.
     HArrows,
+    /// A colour of its own, the same in every theme (one a person picked for a curve).
+    Custom(Rgb),
 }
 
 /// The number of series colours.
@@ -132,6 +134,7 @@ impl Palette {
             Pen::Ink => self.ink,
             Pen::EArrows => self.e_arrows,
             Pen::HArrows => self.h_arrows,
+            Pen::Custom(c) => c,
         }
     }
 

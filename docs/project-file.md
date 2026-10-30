@@ -6,9 +6,10 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
 ```json
 {
   "format": "emcraft-project",
-  "version": 2,
+  "version": 3,
   "history": [{"command": "units.set", "params": {"length": "mm"}}, …],
   "runs": [{"command": "solve.frequency", "params": {"start": 8, "stop": 12, "points": 41}, "units": {"length": "mm", "frequency": "GHz"}}],
+  "views": {"charts": {"sparameters": {"x": {"min": 6.5e9, "max": 7.5e9}, "hidden": ["s11.ref"]}}, "probes": [{"name": "P1", "at": [0.0114, 0.005, 0.01]}]},
   "model": { … }
 }
 ```
@@ -29,17 +30,29 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
   stored**: not the S-parameters, fields, eigenmodes or far fields; they are solved again. On
   reading, each run must name a solve command, once, with parameters that command knows (the
   file is not trusted to name any other command); otherwise the file is refused.
+- `views` (since version 3) is how the project's results are looked at, set by
+  `view.chart.style` and `view.probe.*` (never by the history, so changing them leaves the
+  model and its results alone): `charts`, each chart's style by its id (`sparameters`, `tdr`,
+  `pattern`, `dispersion`, `study`) — `title`, `x` and `y` (`label`, `min`, `max`, `log`),
+  `hidden` (curves' keys), `curves` (a key's `colour` `#rrggbb` and `width` in pixels), `grid`,
+  `legend` — with a frequency axis' ends in hertz; and `probes`, each a `name` and a point `at`
+  in metres. Only what differs from automatic is written. On reading they are checked like
+  everything else (known charts, texts and lists within their caps, finite numbers, valid
+  colours, probes named once); otherwise the file is refused. Opening restores them, and a
+  change to them leaves the project unsaved.
 - `model` is the model as the engine holds it (SI units), for reading by other tools; opening
   does not use it.
-- `version` is 2. A file without one is read as version 1; version 1 files (no `runs`) open as
-  they always did, with no runs. A file of a newer version is refused rather than half read.
+- `version` is 3 for a project with views, else 2 (which older EMCraft reads). A file without
+  one is read as version 1; version 1 files (no `runs`) open as they always did, with no runs.
+  A file of a newer version is refused rather than half read.
 
 Saving writes a temporary file beside the target and renames it over, so a crash or a full disk
 leaves the old file whole. A path without an extension gets `.emcraft`. The session remembers
 the file it was opened from or saved to (`file.save` without a path writes there) and whether
-the project changed since (`Session::is_dirty`): its history differs from the saved one, or its
-runs do (a solve with other parameters than the saved run's; one with the same parameters
-writes the same file, so it changes nothing). An undo back to the saved state is clean.
+the project changed since (`Session::is_dirty`): its history differs from the saved one, its
+views do, or its runs do (a solve with other parameters than the saved run's; one with the same
+parameters writes the same file, so it changes nothing). An undo back to the saved state is
+clean; the views have no undo of their own.
 
 Undo reaches across projects: undoing `file.open`, `file.new` or `file.sample` brings back the
 project before it whole — its file, its sample, its saved state (so the dirty mark is its own),

@@ -100,7 +100,7 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     };
     let (results, full) = if fast { fast_sweep(&driven, &freqs)? } else { full_sweep(&driven, &freqs)? };
     let unknowns = driven.dofs.unknowns;
-    s.results.sweep = Some(Arc::new(Sweep { order, driven: Arc::new(driven), results }));
+    s.results.sweep = Some(Arc::new(Sweep::new(order, Arc::new(driven), results)));
     let mut reply = sparameter_table(s)?;
     reply["unknowns"] = json!(unknowns);
     reply["order"] = json!(order.as_u8());
@@ -110,6 +110,48 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
             pt["full"] = json!(f);
         }
     }
+    Ok(reply)
+}
+
+/// `solve.refine`: more frequencies in the sweep — `points` evenly from `start` to `stop`, or
+/// `frequencies` — solved on the sweep's own system (its mesh and order, no assembly again),
+/// referred to its reference planes and merged with it. The run recorded is the merged sweep's
+/// (`solve.frequency` with its frequencies), so running it again gives the same sweep.
+pub fn refine(s: &mut Session, p: &Params) -> Result<Value> {
+    let sw = s.results.sweep.clone().ok_or(EngineError::NotSolved { what: "sweep", run: "solve.frequency" })?;
+    if s.solved_revision != Some(s.revision) {
+        return Err(EngineError::failed("the model changed since the sweep: run the sweep again (solve.frequency)"));
+    }
+    let new: Vec<f64> = frequencies(s, p)?.into_iter().filter(|f| sw.at(*f, false).is_none()).collect();
+    let total = sw.results.len() + new.len();
+    if total > s.limits.frequencies {
+        return Err(EngineError::Params(format!("the sweep would hold {total} frequencies, more than {}", s.limits.frequencies)));
+    }
+    let (results, full) = match new.len() {
+        0 => (Vec::new(), Vec::new()),
+        n if n >= 3 => fast_sweep(&sw.driven, &new)?,
+        _ => full_sweep(&sw.driven, &new)?,
+    };
+    let mut all = sw.results.clone();
+    all.extend(sw.referred(results)?);
+    all.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
+    let merged = Sweep { results: all, ..(*sw).clone() };
+    // The run as the merged sweep: the last sweep's settings, its frequencies listed.
+    let fu = s.display.frequency;
+    let mut params = s.runs.iter().rev().find(|r| r.command == "solve.frequency").map_or_else(|| json!({}), |r| r.params.clone());
+    if let Some(o) = params.as_object_mut() {
+        for k in ["start", "stop", "points", "frequencies"] {
+            o.remove(k);
+        }
+    }
+    params["frequencies"] = json!(merged.results.iter().map(|r| fu.from_si(r.frequency)).collect::<Vec<f64>>());
+    params["order"] = json!(merged.order.as_u8());
+    s.next_run = Some(crate::runs::Run { command: "solve.frequency".into(), params, units: s.display });
+    s.results.sweep = Some(Arc::new(merged));
+    let mut reply = sparameter_table(s)?;
+    reply["added"] = json!(new.iter().map(|f| fu.from_si(*f)).collect::<Vec<f64>>());
+    reply["solved_in_full"] = json!(full.iter().filter(|f| **f).count());
+    reply["order"] = json!(sw.order.as_u8());
     Ok(reply)
 }
 
