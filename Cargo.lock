@@ -1992,6 +1992,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "emcraft-macros"
+version = "0.1.0"
+
+[[package]]
 name = "emcraft-mesh"
 version = "0.1.0"
 dependencies = [
@@ -2071,6 +2075,7 @@ dependencies = [
  "eframe",
  "egui",
  "emcraft-engine",
+ "emcraft-macros",
  "emcraft-model",
  "emcraft-render",
  "serde",

@@ -13,7 +13,7 @@ use crate::handle::{Fixed, Handle};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, UiExt, scenario};
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// A ribbon tab: its id is its title (the control channel's `tab:<id>` handles, `ui.set
     /// {"tab": id}`).
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

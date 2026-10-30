@@ -3,7 +3,7 @@
 
 use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// A glyph; its id names it (a picture sheet, a test).
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Glyph {

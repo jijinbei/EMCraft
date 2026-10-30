@@ -17,7 +17,7 @@ use crate::View;
 use crate::ribbon::RibbonTab;
 use crate::steps::{Solver, Step};
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// A name that never changes: a button, a field, a chart or a card.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub enum Fixed {
@@ -119,7 +119,7 @@ crate::named::named_enum! {
     }
 }
 
-crate::named::named_enum! {
+emcraft_macros::named_enum! {
     /// A part of a compound control (`field:phase:play`).
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Part {

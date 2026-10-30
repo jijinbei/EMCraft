@@ -1,22 +1,45 @@
-//! Enums whose variants each have a text id (and a label): views, ribbon tabs, glyphs, the
-//! fixed handles, the solvers. [`named_enum!`] writes the enum from one list of its variants,
-//! with `ALL` (in the list's order), `id()`, `label()` (the id unless given), `parse()` and
-//! `Display` (the id). The ids are checked distinct when the crate compiles, so `parse`
-//! finds each variant by its own id.
+//! EMCraft's declarative macros, shared by its crates. No workspace dependencies: any crate may
+//! use them (docs/architecture.md).
 //!
-//! ```ignore
-//! named_enum! {
+//! [`named_enum!`] writes an enum whose variants each have a text id (and a label) — views,
+//! ribbon tabs, workflow steps, backends, the names commands give — from one list of its
+//! variants, with `ALL` (in the list's order), `COUNT`, `id()`, `label()` (the id unless
+//! given), `parse()` and `Display` (the id). The ids are checked distinct when the crate
+//! compiles, so `parse` finds each variant by its own id. The enum must be `Copy`.
+//!
+//! ```
+//! emcraft_macros::named_enum! {
 //!     /// A view.
 //!     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 //!     pub enum View {
 //!         Model = "model" => "Model 3D",
 //!         Field = "field" => "Field",
+//!         Mesh = "mesh",
+//!     }
+//! }
+//!
+//! assert_eq!(View::ALL, [View::Model, View::Field, View::Mesh]);
+//! assert_eq!((View::Model.id(), View::Model.label(), View::Mesh.label()), ("model", "Model 3D", "mesh"));
+//! assert_eq!((View::parse("field"), View::parse("Field")), (Some(View::Field), None));
+//! assert_eq!(View::Field.to_string(), "field");
+//! ```
+//!
+//! Two variants with one id stop the build:
+//!
+//! ```compile_fail
+//! emcraft_macros::named_enum! {
+//!     #[derive(Clone, Copy)]
+//!     enum Twins {
+//!         A = "a",
+//!         B = "a",
 //!     }
 //! }
 //! ```
 
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
 /// Whether two texts are the same, in a constant.
-pub(crate) const fn same(a: &str, b: &str) -> bool {
+pub const fn same(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() != b.len() {
         return false;
@@ -32,7 +55,7 @@ pub(crate) const fn same(a: &str, b: &str) -> bool {
 }
 
 /// Whether any two of `ids` are the same, in a constant.
-pub(crate) const fn has_twins(ids: &[&str]) -> bool {
+pub const fn has_twins(ids: &[&str]) -> bool {
     let mut i = 0;
     while i < ids.len() {
         let mut j = i + 1;
@@ -48,7 +71,8 @@ pub(crate) const fn has_twins(ids: &[&str]) -> bool {
 }
 
 /// Writes an enum from its variants and their ids (`Variant = "id"`, or `Variant = "id" =>
-/// "Label"`), see the [module](self).
+/// "Label"`), see the [crate docs](crate).
+#[macro_export]
 macro_rules! named_enum {
     (
         $(#[$meta:meta])*
@@ -79,7 +103,7 @@ macro_rules! named_enum {
             #[allow(dead_code)]
             pub const fn label(self) -> &'static str {
                 match self {
-                    $($name::$variant => $crate::named::named_enum!(@label $id $($label)?)),+
+                    $($name::$variant => $crate::named_enum!(@label $id $($label)?)),+
                 }
             }
 
@@ -97,7 +121,7 @@ macro_rules! named_enum {
         }
 
         // Every id is its variant's own: a repeated one stops the build.
-        const _: () = assert!(!$crate::named::has_twins(&[$($id),+]), concat!("two variants of ", stringify!($name), " share an id"));
+        const _: () = assert!(!$crate::has_twins(&[$($id),+]), concat!("two variants of ", stringify!($name), " share an id"));
     };
     (@label $id:literal $label:literal) => {
         $label
@@ -106,8 +130,6 @@ macro_rules! named_enum {
         $id
     };
 }
-
-pub(crate) use named_enum;
 
 #[cfg(test)]
 mod tests {
@@ -124,9 +146,7 @@ mod tests {
     #[test]
     fn a_named_enum_reads_and_writes_its_ids() {
         assert_eq!(Fruit::ALL, [Fruit::Apple, Fruit::Pear]);
-        assert_eq!((Fruit::Apple.id(), Fruit::Apple.label(), Fruit::Pear.label()), ("apple", "An apple", "pear"));
-        assert_eq!((Fruit::parse("pear"), Fruit::parse("Pear")), (Some(Fruit::Pear), None));
-        assert_eq!(Fruit::Pear.to_string(), "pear");
+        assert_eq!(Fruit::COUNT, 2);
         for f in Fruit::ALL {
             assert_eq!(Fruit::parse(f.id()), Some(f));
         }
