@@ -1,0 +1,9 @@
+{
+ "title": "A post across WR-90 from a SolidCraft design, its diameter set to 4 mm when opened (the design's parameter `d`, 3 mm as saved): adaptive passes from 6 mm until ΔS < 3e-3, at 10 GHz",
+ "kind": "theory",
+ "source": "The full-height post is a two-dimensional problem: the parallel-plate Green's function in modes with its static part summed in closed form (Marcuvitz, Waveguide Handbook, 1951, §5.11; Lewin, Theory of Waveguides, 1975, ch. 6), the first-kind integral equation on the post solved by Kress's log-split Nyström method (Kress, Linear Integral Equations, 3rd ed., 2014, ch. 12–13), evaluated at 128 nodes for a 4 mm post (emcraft-theory::post, independent of the finite elements; `cargo run -p emcraft-theory --example post_reference -- 4`)",
+ "quantities": [
+  {"id": "s11_mag", "quantity": "|S11| at 10 GHz, the last pass", "measure": {"step": "adapt", "pointer": "/s11/mag"}, "value": 0.9812126547923777, "tolerance": {"absolute": 0.0001}, "reason": "the design's exact cylinder and the same adaptive recipe as imported-post; what is left is discretisation"},
+  {"id": "s11_phase", "quantity": "phase of S11 at 10 GHz (degrees)", "measure": {"step": "adapt", "pointer": "/s11/deg"}, "value": -86.11123264296376, "tolerance": {"absolute": 0.03}, "reason": "as |S11|"}
+ ]
+}

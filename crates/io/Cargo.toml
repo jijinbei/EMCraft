@@ -13,3 +13,4 @@ emcraft-model = { workspace = true }
 thiserror = { workspace = true }
 zip = { workspace = true }
 quick-xml = { workspace = true }
+solidcraft-exchange = { workspace = true }

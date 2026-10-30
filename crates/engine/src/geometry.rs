@@ -208,7 +208,20 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let angle = p.number("angle").check(|a| *a > 0.0 && *a < 180.0, "between 0 and 180 degrees").or(30.0)?;
     let material = p.string("material").or("vacuum")?.to_owned();
     let bytes = read_capped(path, MAX_IMPORT_BYTES)?;
-    let mut bodies = emcraft_io::read_bodies(path, &bytes, unit)?;
+    // A SolidCraft design: its bodies at the parameters given, each face's exact surface from the
+    // design; any other file: its triangles, surfaces fitted.
+    let (mut bodies, mut exact) = if emcraft_io::solidcraft::is_design(path) {
+        let overrides = design_overrides(p, &bytes)?;
+        let tolerance = p.positive_length("tolerance").optional()?.map(|t| t * 1e3);
+        let read = emcraft_io::solidcraft::read(&bytes, &overrides, tolerance)?;
+        let exact: Vec<Vec<Option<FaceSurface>>> = read.iter().map(|b| b.surfaces.clone()).collect();
+        (read.into_iter().map(|b| b.surface).collect::<Vec<_>>(), Some(exact))
+    } else {
+        if p.has("parameters") {
+            return Err(p.error("parameters", "only a SolidCraft design (.sc, .solidcraft) has parameters"));
+        }
+        (emcraft_io::read_bodies(path, &bytes, unit)?, None)
+    };
     if bodies.is_empty() {
         return Err(EngineError::failed(format!("`{path}` holds no body")));
     }
@@ -258,6 +271,10 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         bodies.retain(|b| !metal(b));
         let mut k = keep.iter();
         sources.retain(|_| k.next().copied().unwrap_or(false));
+        if let Some(e) = exact.as_mut() {
+            let mut k = keep.iter();
+            e.retain(|_| k.next().copied().unwrap_or(false));
+        }
     } else if region == "box" {
         let margin = p.positive_length("margin").optional()?;
         s.model.set_solid(Solid { shape: air_box(p, &mut bodies, margin, thickness, quarter)?, material: material.clone() })?;
@@ -265,12 +282,15 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         let k = bodies.iter().position(|b| b.name == region).ok_or_else(|| p.error("region", format!("names no body `{region}` (or `box`)")))?;
         let body = bodies.remove(k);
         let source = sources.remove(k);
-        s.model.set_solid(Solid { shape: surface(body, &source, fit, &mut fitted), material: material.clone() })?;
+        let known = exact.as_mut().map(|e| e.remove(k));
+        s.model.set_solid(Solid { shape: surface(body, &source, fit, known.as_deref(), &mut fitted), material: material.clone() })?;
     }
+    let mut exact = exact.map(Vec::into_iter);
     for (b, source) in bodies.into_iter().zip(sources) {
         let m = material_of(&materials, &b.name).to_owned();
         let name = b.name.clone();
-        let kind = crate::bodies::place(&mut s.model, surface(b, &source, fit, &mut fitted), Point3::ORIGIN, Axis::Z, &m)?;
+        let known = exact.as_mut().and_then(Iterator::next);
+        let kind = crate::bodies::place(&mut s.model, surface(b, &source, fit, known.as_deref(), &mut fitted), Point3::ORIGIN, Axis::Z, &m)?;
         placed.push(json!({"body": name, "material": m, "as": kind}));
     }
     if let Some(t) = thickness {
@@ -365,9 +385,22 @@ struct Fitted {
 }
 
 /// An imported body as a shape, each face's exact surface fitted to its vertices (`fit`) where
-/// one fits, `source` the triangles' faces before they were split by angle.
-fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, fitted: &mut Fitted) -> Shape {
-    let surfaces = if fit { emcraft_io::fit::fit_faces(&b, source) } else { Vec::new() };
+/// one fits, `source` the triangles' faces before they were split by angle. With `known` (a
+/// design's exact surfaces by source face) each face takes its source face's instead.
+fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, known: Option<&[Option<FaceSurface>]>, fitted: &mut Fitted) -> Shape {
+    let surfaces = match known {
+        Some(known) => {
+            let mut out = vec![None; b.tags.iter().map(|t| *t as usize + 1).max().unwrap_or(0)];
+            for (tag, src) in b.tags.iter().zip(source) {
+                if let (Some(slot), Some(f)) = (out.get_mut(*tag as usize), known.get(*src as usize)) {
+                    *slot = *f;
+                }
+            }
+            out
+        }
+        None if fit => emcraft_io::fit::fit_faces(&b, source),
+        None => Vec::new(),
+    };
     for f in surfaces.iter().flatten() {
         match f {
             FaceSurface::Plane { .. } => fitted.plane += 1,
@@ -378,6 +411,25 @@ fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, fitted: &mut Fitte
         }
     }
     Shape::Surface { name: b.name, positions: b.positions, triangles: b.triangles, tags: b.tags, surfaces }
+}
+
+/// A design's parameter overrides from `parameters` (name → a number in the unit the design
+/// shows it in, or an expression), refused for a name the design lacks.
+fn design_overrides(p: &Params, bytes: &[u8]) -> Result<Vec<(String, String)>> {
+    let Some(v) = p.raw("parameters") else { return Ok(Vec::new()) };
+    let o = v.as_object().ok_or_else(|| p.error("parameters", "must map the design's parameter names to values"))?;
+    let known = emcraft_io::solidcraft::parameters(bytes)?;
+    o.iter()
+        .map(|(name, value)| {
+            let q = known.iter().find(|q| q.name == *name).ok_or_else(|| p.error("parameters", format!("the design has no parameter `{name}`")))?;
+            let expression = match value {
+                Value::Number(n) => format!("{} {}", n, q.unit),
+                Value::String(e) => e.clone(),
+                _ => return Err(p.error("parameters", format!("`{name}`: a number or an expression"))),
+            };
+            Ok((name.clone(), expression.trim().to_owned()))
+        })
+        .collect()
 }
 
 /// The bodies' materials from `materials` (body name → material); the others are metal.

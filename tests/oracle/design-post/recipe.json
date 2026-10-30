@@ -1,0 +1,6 @@
+[
+ {"command": "geometry.import", "params": {"path": "post.solidcraft", "parameters": {"d": 4}}, "id": "import"},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "mesh.adapt", "params": {"size": 6, "frequency": 10, "passes": 3, "tolerance": 0.003, "fraction": 0.3, "order": 2}, "id": "adapt"}
+]

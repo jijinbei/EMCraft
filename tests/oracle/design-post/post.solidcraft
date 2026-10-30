@@ -1,0 +1,78 @@
+{
+  "format": "solidcraft/43",
+  "name": "Guide",
+  "units": "mm",
+  "params": [
+    {
+      "name": "a",
+      "expr": "22.86",
+      "unit": "mm",
+      "model": false
+    },
+    {
+      "name": "b",
+      "expr": "10.16",
+      "unit": "mm",
+      "model": false
+    },
+    {
+      "name": "l",
+      "expr": "30",
+      "unit": "mm",
+      "model": false
+    },
+    {
+      "name": "d",
+      "expr": "3",
+      "unit": "mm",
+      "model": false
+    }
+  ],
+  "features": [
+    {
+      "id": 1,
+      "name": "Box1",
+      "suppressed": false,
+      "param_names": [
+        "d1",
+        "d2",
+        "d3"
+      ],
+      "type": "box",
+      "corner": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "length": "a",
+      "width": "b",
+      "height": "l",
+      "operation": "new_body"
+    },
+    {
+      "id": 2,
+      "name": "Cylinder1",
+      "suppressed": false,
+      "param_names": [
+        "d4",
+        "d5"
+      ],
+      "type": "cylinder",
+      "base": [
+        "a/2",
+        0.0,
+        "l/2"
+      ],
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "radius": "d/2",
+      "height": "b",
+      "operation": "cut"
+    }
+  ],
+  "next_id": 3,
+  "next_component_color_index": 0
+}
