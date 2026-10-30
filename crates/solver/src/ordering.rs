@@ -262,6 +262,22 @@ pub fn graph_dissection(adjacency: &[Vec<usize>]) -> Vec<usize> {
     order
 }
 
+/// One step of Liu's elimination-tree algorithm with path compression: row k's entry in
+/// column i < k links the root of i's subtree to k (`parent`), every node on the way pointed at
+/// k (`ancestor`; `usize::MAX` for none yet).
+pub(crate) fn etree_link(parent: &mut [usize], ancestor: &mut [usize], i: usize, k: usize) {
+    let mut r = i;
+    while ancestor[r] != usize::MAX && ancestor[r] != k {
+        let next = ancestor[r];
+        ancestor[r] = k;
+        r = next;
+    }
+    if ancestor[r] == usize::MAX {
+        ancestor[r] = k;
+        parent[r] = k;
+    }
+}
+
 /// The entries of the Cholesky factor (lower triangle with the diagonal) of the graph
 /// `adjacency` eliminated in `order`: for each row k, the row's structure is the union of the
 /// elimination-tree paths from its earlier neighbours up to k (J. W. H. Liu, *A compact row
@@ -287,17 +303,7 @@ pub fn fill(adjacency: &[Vec<usize>], order: &[usize]) -> usize {
             if i >= k {
                 continue;
             }
-            // The elimination tree (Liu's algorithm with path compression).
-            let mut r = i;
-            while ancestor[r] != usize::MAX && ancestor[r] != k {
-                let next = ancestor[r];
-                ancestor[r] = k;
-                r = next;
-            }
-            if ancestor[r] == usize::MAX {
-                ancestor[r] = k;
-                parent[r] = k;
-            }
+            etree_link(&mut parent, &mut ancestor, i, k);
             // Row k's structure: from i up the tree until a node already counted for k.
             let mut j = i;
             while j != usize::MAX && j < k && mark[j] != k {
