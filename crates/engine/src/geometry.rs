@@ -487,13 +487,17 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
 
 pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
+    let axis: Option<Axis> = p.choice("axis").optional()?;
     let face = p
         .lengths("face")
         .and_then(|f| match f[..] {
-            [z, x0, y0, a, b] => Ok(PortFace { z, x0, y0, a, b }),
-            _ => Err(p.error("face", "must be [z, x0, y0, a, b]")),
+            [at, u0, v0, a, b] => Ok(PortFace { axis: axis.unwrap_or_default(), at, u0, v0, a, b }),
+            _ => Err(p.error("face", "must be [at, u0, v0, a, b]")),
         })
         .optional()?;
+    if face.is_none() && axis.is_some_and(|a| a != Axis::Z) {
+        return Err(p.error("axis", "x or y needs `face` (a port's end lies across z)"));
+    }
     let port = Port {
         name: name.to_owned(),
         end: p.choice("end").required()?,

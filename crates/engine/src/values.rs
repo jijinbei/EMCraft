@@ -82,7 +82,8 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
                 "deembed": l(port.deembed), "terminals": port.terminals,
             });
             if let Some(face) = port.face {
-                v["face"] = json!([l(face.z), l(face.x0), l(face.y0), l(face.a), l(face.b)]);
+                v["face"] = json!([l(face.at), l(face.u0), l(face.v0), l(face.a), l(face.b)]);
+                v["axis"] = json!(face.axis.id());
             }
             if let Some(r) = port.reference {
                 v["impedance"] = json!(r);

@@ -145,24 +145,29 @@ fn drop_open_results(s: &mut Session) {
 /// `model.port.edit`.
 pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
     let (i, old) = port_named(&s.model, p, "name").map(|(i, x)| (i, x.clone()))?;
+    let axis: Option<emcraft_model::Axis> = p.choice("axis").optional()?;
     let face = if p.cleared("face") {
         None
     } else if p.has("face") {
-        let old = old.face.map_or([0.0; 5], |f| [f.z, f.x0, f.y0, f.a, f.b]);
+        let was = old.face.map_or([0.0; 5], |f| [f.at, f.u0, f.v0, f.a, f.b]);
         let list = p.list("face", 5).required()?;
         if list.len() != 5 {
-            return Err(p.error("face", "must be [z, x0, y0, a, b]"));
+            return Err(p.error("face", "must be [at, u0, v0, a, b]"));
         }
         // Each coordinate kept exactly when given as it shows.
         let unit = s.display.length;
         let mut v = [0.0; 5];
         for (k, x) in list.iter().enumerate() {
             let given = p.number_of("face", x)?;
-            v[k] = if given == unit.from_si(old[k]) { old[k] } else { unit.to_si(given) };
+            v[k] = if given == unit.from_si(was[k]) { was[k] } else { unit.to_si(given) };
         }
-        Some(PortFace { z: v[0], x0: v[1], y0: v[2], a: v[3], b: v[4] })
+        Some(PortFace { axis: axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), at: v[0], u0: v[1], v0: v[2], a: v[3], b: v[4] })
     } else {
-        old.face
+        match (old.face, axis) {
+            (Some(f), Some(axis)) => Some(PortFace { axis, ..f }),
+            (None, Some(a)) if a != emcraft_model::Axis::Z => return Err(p.error("axis", "x or y needs `face` (a port's end lies across z)")),
+            (f, _) => f,
+        }
     };
     let port = Port {
         name: p.string("rename").optional()?.unwrap_or(&old.name).to_owned(),

@@ -13,20 +13,24 @@ const PORT_CELLS: usize = 96;
 
 /// A port's face as triangles: its rectangle, its circle, or — where Boolean features reach the
 /// end face, so no closed form describes it — the cells of a grid over the end whose centres lie
-/// in the body (a coaxial line's annulus).
+/// in the body (a coaxial line's annulus). Shapes are in the port's own axes (u, v), turned onto
+/// its face.
 pub(super) fn port_face(m: &Model, p: &emcraft_model::Port) -> Vec<[[f64; 3]; 3]> {
     let Some(z) = port_z(m, p) else { return Vec::new() };
+    let frame = p.frame();
+    let w = frame.axes().2 * z;
+    let on = |u: f64, v: f64| p3(frame.global(emcraft_model::Point3::new(u, v, w)));
     match m.port_shape_of(p) {
         Ok(emcraft_model::PortShape::Rect { x0, y0, a, b }) => {
-            let q = [[x0, y0, z], [x0 + a, y0, z], [x0 + a, y0 + b, z], [x0, y0 + b, z]];
+            let q = [on(x0, y0), on(x0 + a, y0), on(x0 + a, y0 + b), on(x0, y0 + b)];
             vec![[q[0], q[1], q[2]], [q[0], q[2], q[3]]]
         }
         Ok(emcraft_model::PortShape::Circle { cx, cy, r }) => {
             let at = |k: usize| {
                 let a = std::f64::consts::TAU * k as f64 / ROUND as f64;
-                [cx + r * a.cos(), cy + r * a.sin(), z]
+                on(cx + r * a.cos(), cy + r * a.sin())
             };
-            (0..ROUND).map(|k| [[cx, cy, z], at(k), at(k + 1)]).collect()
+            (0..ROUND).map(|k| [on(cx, cy), at(k), at(k + 1)]).collect()
         }
         Err(_) => {
             let Some(b) = m.bounds() else { return Vec::new() };
@@ -63,33 +67,48 @@ fn outline(tris: &[[[f64; 3]; 3]]) -> Vec<([f64; 3], [f64; 3])> {
     edges.chunk_by(|x, y| (x.0, x.1) == (y.0, y.1)).filter(|g| g.len() == 1).map(|g| (g[0].2, g[0].3)).collect()
 }
 
-/// The plane of a port's face.
+/// The plane of a port's face: its coordinate along the port's axis.
 fn port_z(m: &Model, p: &emcraft_model::Port) -> Option<f64> {
     Some(match (p.face, p.end) {
-        (Some(f), _) => f.z,
+        (Some(f), _) => f.at,
         (None, End::Start) => m.bounds()?.min.z.min(0.0),
         (None, End::End) => m.bounds()?.max.z,
     })
 }
 
-/// The direction from a port's face into the model, along z: up from a port at the start (or
-/// on a face with the guide above it), down from one at the end.
+/// The direction from a port's face into the model along its axis: up from a port at the start
+/// (or on a face with the guide above it), down from one at the end.
 pub(crate) fn port_inward(p: &emcraft_model::Port) -> f64 {
     if p.end == End::Start { 1.0 } else { -1.0 }
 }
 
-/// A port's face's bounding rectangle in 3D.
+/// The unit vector from a port's face into the model (its axis, signed by [`port_inward`]).
+pub(crate) fn port_normal(p: &emcraft_model::Port) -> [f64; 3] {
+    let mut n = [0.0; 3];
+    n[p.frame().axis.index()] = port_inward(p);
+    n
+}
+
+/// A port's face's bounding rectangle in 3D, counter-clockwise in its own axes (u, v).
 pub(crate) fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3]; 4]> {
     let face = port_face(m, p);
+    let frame = p.frame();
+    let (u, v, _) = frame.axes();
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
     for q in face.iter().flatten() {
-        for k in 0..2 {
-            lo[k] = lo[k].min(q[k]);
-            hi[k] = hi[k].max(q[k]);
+        for (k, c) in [u, v].into_iter().enumerate() {
+            lo[k] = lo[k].min(q[c]);
+            hi[k] = hi[k].max(q[c]);
         }
     }
-    let z = face.first()?[0][2];
-    Some([[lo[0], lo[1], z], [hi[0], lo[1], z], [hi[0], hi[1], z], [lo[0], hi[1], z]])
+    let first = face.first()?[0];
+    let corner = |a: f64, b: f64| {
+        let mut q = first;
+        q[u] = a;
+        q[v] = b;
+        q
+    };
+    Some([corner(lo[0], lo[1]), corner(hi[0], lo[1]), corner(hi[0], hi[1]), corner(lo[0], hi[1])])
 }
 
 /// Ports' labels, lumped ports, sources and the open boundary's layer.
@@ -134,11 +153,10 @@ fn along(a: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
 fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
     for p in &m.ports {
         let Some(q) = port_quad(m, p) else { continue };
-        let c = [0.25 * (q[0][0] + q[1][0] + q[2][0] + q[3][0]), 0.25 * (q[0][1] + q[1][1] + q[2][1] + q[3][1]), q[0][2]];
-        let facing = match (p.face, p.end) {
-            (Some(_), _) => None,
-            (None, End::Start) => Some([0.0, 0.0, -1.0]),
-            (None, End::End) => Some([0.0, 0.0, 1.0]),
+        let c = [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]));
+        let facing = match p.face {
+            Some(f) if f.axis == emcraft_model::Axis::Z => None,
+            _ => Some(port_normal(p).map(|x| -x)),
         };
         out.labels.push(Label { at: c, text: crate::lang::trf("Port {name}", args!(name = p.name)), color: sc().port, facing });
         if overlay == Overlay::Ports {
@@ -146,8 +164,8 @@ fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
                 out.scene.line(a, b, sc().port, 255);
             }
             // The direction into the guide.
-            let dir = port_inward(p);
-            out.scene.line(c, [c[0], c[1], c[2] + dir * 0.12 * size], sc().port, 255);
+            let n = port_normal(p);
+            out.scene.line(c, along(c, n, 0.12 * size), sc().port, 255);
         }
     }
 }

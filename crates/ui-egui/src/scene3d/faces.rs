@@ -121,7 +121,12 @@ impl Face {
 
     /// Whether it lies in a plane z = const.
     pub fn across_z(&self) -> bool {
-        self.normal[2].abs() > 1.0 - 1e-9
+        self.axis() == Some(emcraft_model::Axis::Z)
+    }
+
+    /// The axis it lies across, when it is flat and in a plane x, y or z = const.
+    pub fn axis(&self) -> Option<emcraft_model::Axis> {
+        (0..3).find(|&k| self.normal[k].abs() > 1.0 - 1e-9 && (self.hi[k] - self.lo[k]).abs() <= 1e-9 * norm(sub(self.hi, self.lo))).and_then(emcraft_model::Axis::from_index)
     }
 }
 

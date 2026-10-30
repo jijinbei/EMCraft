@@ -26,7 +26,8 @@ use emcraft_fem::Order;
 use emcraft_fem::modes::{self, Mode};
 use emcraft_fem::tri::TRI_EDGES;
 use emcraft_model::{
-    Boundary, BoundaryFace, End, MAX_TERMINALS, Material, Mesh, ModeSolver, Model, Point3, Port, PortShape, Symmetry, SymmetryKind, Terminals, Vec3,
+    Boundary, BoundaryFace, End, Frame, MAX_TERMINALS, Material, Mesh, ModeSolver, Model, Point3, Port, PortShape, Symmetry, SymmetryKind, Terminals,
+    Vec3,
 };
 
 use super::assembly::{FaceRule, Space, port_rule_points};
@@ -76,6 +77,8 @@ pub struct NumericPort {
     pub(super) count: usize,
     /// The unknowns with a tangential trace on the port, ascending.
     pub(super) support: Vec<usize>,
+    /// The port's own axes: the section is solved in (u, v), its fields turned back with them.
+    pub(super) frame: Frame,
     /// What fills the cross-section: lossless materials, one lossy or dispersive material
     /// (the section is then solved with a unit filling, and the modes' γ come from its complex
     /// k², [`super::terms`]), or several, one of them lossy or dispersive (hybrid lossy modes).
@@ -162,13 +165,13 @@ fn closed_form_shape(model: &Model, p: &Port) -> Option<PortShape> {
     if p.mode_solver == ModeSolver::Numeric { None } else { model.port_shape_of(p).ok() }
 }
 
-/// Which of a port face point's basis values have a tangential trace on the face (the plane
-/// z = const): only the functions of the face's own edges and the face do; the others are
+/// Which of a port face point's basis values have a tangential trace on the face (a plane across
+/// `frame`'s axis): only the functions of the face's own edges and the face do; the others are
 /// normal to it (zero but for rounding), and keeping them would make the dense port block
 /// several times larger.
-pub(super) fn tangential_trace(values: &[Vec3]) -> Vec<bool> {
+pub(super) fn tangential_trace(values: &[Vec3], frame: Frame) -> Vec<bool> {
     let scale = values.iter().map(|v| v.norm()).fold(0.0, f64::max);
-    values.iter().map(|v| v.x.hypot(v.y) > 1e-9 * scale).collect()
+    values.iter().map(|v| frame.across(*v) > 1e-9 * scale).collect()
 }
 
 /// A port's boundary faces: those tagged for its end, or those on its face's rectangle (all
@@ -184,10 +187,8 @@ pub(super) fn faces_of_port(mesh: &Mesh, p: &Port) -> Result<Vec<usize>> {
         }
         Some(f) => {
             let tol = 1e-6 * f.a.max(f.b);
-            let inside =
-                |q: Point3| (q.z - f.z).abs() <= tol && q.x >= f.x0 - tol && q.x <= f.x0 + f.a + tol && q.y >= f.y0 - tol && q.y <= f.y0 + f.b + tol;
             (0..mesh.boundary.len())
-                .filter(|&i| mesh.boundary[i].nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| inside(*q))))
+                .filter(|&i| mesh.boundary[i].nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| f.holds(*q, tol))))
                 .collect()
         }
     };
@@ -248,17 +249,17 @@ pub(super) fn port_face_rules<'a>(space: Space<'a>, faces: &'a [usize]) -> impl 
     faces.iter().filter_map(move |&i| space.mesh.boundary.get(i)).map(move |b| space.face_rule(b, n))
 }
 
-/// Visits each point of the port rule on a port's `faces` with its position, its weight and the
-/// basis values there of the unknowns with a tangential trace on the face ([`tangential_trace`]):
-/// (unknown, value), in the element's order.
-pub(super) fn for_each_port_point(space: Space, faces: &[usize], mut visit: impl FnMut(Point3, f64, &[(usize, Vec3)])) -> Result<()> {
+/// Visits each point of the port rule on a port's `faces` (across `frame`'s axis) with its
+/// position, its weight and the basis values there of the unknowns with a tangential trace on the
+/// face ([`tangential_trace`]): (unknown, value), in the element's order.
+pub(super) fn for_each_port_point(space: Space, faces: &[usize], frame: Frame, mut visit: impl FnMut(Point3, f64, &[(usize, Vec3)])) -> Result<()> {
     let n = space.dofs.unknowns;
     let mut traced: Vec<(usize, Vec3)> = Vec::new();
     for face in port_face_rules(space, faces) {
         let FaceRule { el, unknowns, points, .. } = face?;
         for (l, wa, _) in points {
             let values = el.values(l);
-            let kept = tangential_trace(&values);
+            let kept = tangential_trace(&values, frame);
             traced.clear();
             traced.extend(
                 unknowns.iter().zip(&values).zip(&kept).filter(|(_, t)| **t).filter_map(|((u, v), _)| u.get().filter(|&u| u < n).map(|u| (u, *v))),
@@ -270,17 +271,19 @@ pub(super) fn for_each_port_point(space: Space, faces: &[usize], mut visit: impl
 }
 
 /// A port of a whole rectangle or circle filled with one material: its closed-form modes and
-/// their vectors.
+/// their vectors. The modes are those of the face's own axes (u, v), turned onto the face.
 fn analytic_port(model: &Model, p: &Port, shape: PortShape, space: &Space, faces: &[usize]) -> Result<PortModes> {
     let m = model.port_material(p.end)?;
     let list = port_mode_list(model, p, shape)?;
     let n = space.dofs.unknowns;
     let mut vectors: Vec<Vec<f64>> = vec![vec![0.0; n]; list.len()];
     let mut touched = vec![false; n];
-    for_each_port_point(*space, faces, |x, wa, traced| {
+    let frame = p.frame();
+    for_each_port_point(*space, faces, frame, |x, wa, traced| {
+        let q = frame.local(x);
         for (mi, mode) in list.iter().enumerate() {
-            let e = mode.field(x.x, x.y);
-            let e = Vec3::new(e[0], e[1], 0.0);
+            let e = mode.field(q.x, q.y);
+            let e = frame.global_vec(Vec3::new(e[0], e[1], 0.0));
             for &(u, v) in traced {
                 vectors[mi][u] += wa * v.dot(e);
                 touched[u] = true;
@@ -355,9 +358,10 @@ fn numeric_port(model: &Model, p: &Port, space: &Space, faces: &[usize]) -> Resu
     let terminals = terminal_count(model, p, &section, medium.is_lossy())?;
     // The unknowns with a tangential trace on the faces (as for the closed forms).
     let mut touched = std::collections::BTreeSet::new();
-    for_each_port_point(*space, faces, |_, _, traced| touched.extend(traced.iter().map(|(u, _)| *u)))?;
+    let frame = p.frame();
+    for_each_port_point(*space, faces, frame, |_, _, traced| touched.extend(traced.iter().map(|(u, _)| *u)))?;
     let count = (p.modes as usize).max(terminals);
-    Ok(NumericPort { section, faces: faces.to_vec(), count, support: touched.into_iter().collect(), medium, terminals })
+    Ok(NumericPort { section, faces: faces.to_vec(), count, support: touched.into_iter().collect(), frame, medium, terminals })
 }
 
 /// A triangle's edges, each by its two nodes in ascending order.
@@ -368,13 +372,16 @@ fn sorted_edges(t: [u32; 3]) -> [[u32; 2]; 3] {
 /// A port's cross-section from its faces: materials from the tetrahedra behind them, conductors
 /// where wall faces meet it, edges bent as the volume's; with the material filling it when that
 /// one absorbs or disperses (the section then has a unit filling, see the module's notes), or
-/// each triangle's materials when several fill it and one of them absorbs or disperses.
+/// each triangle's materials when several fill it and one of them absorbs or disperses. Its
+/// nodes are in the port's own axes ([`Port::frame`]).
 fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[usize]) -> Result<(CrossSection, PortMedium)> {
+    let frame = p.frame();
     let mut global: Vec<u32> = faces.iter().filter_map(|&f| mesh.boundary.get(f)).flat_map(|b| b.nodes).collect();
     global.sort_unstable();
     global.dedup();
     let local = |g: u32| global.binary_search(&g).map(|k| k as u32).map_err(|_| invalid(what(p), "a face's node is missing"));
-    let nodes = global.iter().map(|&g| mesh.node(g).ok_or_else(|| invalid(what(p), "a face's node is missing"))).collect::<Result<Vec<_>>>()?;
+    let nodes =
+        global.iter().map(|&g| mesh.node(g).map(|q| frame.local(q)).ok_or_else(|| invalid(what(p), "a face's node is missing"))).collect::<Result<Vec<_>>>()?;
     let mut tris = Vec::with_capacity(faces.len());
     let (mut eps, mut mu) = (Vec::with_capacity(faces.len()), Vec::with_capacity(faces.len()));
     let mut kinds = std::collections::BTreeSet::new();
@@ -411,7 +418,7 @@ fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[us
     let mut curved = std::collections::BTreeMap::new();
     for [a, b] in tris.iter().flat_map(|t| sorted_edges(*t)) {
         if let Some(m) = mesh.midpoint(global[a as usize], global[b as usize]) {
-            curved.insert([a, b], m);
+            curved.insert([a, b], frame.local(m));
         }
     }
     // The section's edges (by local nodes) that also bound one of the boundary faces `on`
@@ -500,7 +507,8 @@ pub struct ModePattern {
     pub name: String,
     /// β² (rad²/m²): positive for a propagating mode.
     pub beta2: f64,
-    /// The grid's span (model x and y, m) and size.
+    /// The grid's span (the face's own u and v, [`Frame`]: model x and y on a z face, m) and
+    /// size.
     pub x: (f64, f64),
     pub y: (f64, f64),
     pub nx: usize,
