@@ -119,7 +119,7 @@ fn mods(p: &Value) -> egui::Modifiers {
 pub fn inspect(app: &EmcraftApp) -> Value {
     let progress = app.job.as_ref().map(|j| {
         let s = j.snapshot();
-        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "fraction": s.fraction(), "elapsed": j.elapsed()})
+        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining()})
     });
     let dialog = app.dialog.as_ref().map(|d| {
         let fields: serde_json::Map<String, Value> = d
@@ -139,7 +139,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
             d.fields.iter().filter_map(|f| f.error.as_ref().map(|e| (f.name.to_owned(), json!(e)))).collect();
         json!({"command": d.command.id, "docked": d.docked, "fields": fields, "errors": errors, "error": d.error})
     });
-    json!({
+    let mut v = json!({
         "tab": app.tab.id(),
         "view": app.view.id(),
         "theme": app.theme,
@@ -185,6 +185,40 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "history": app.session.history().len(),
         "export": app.export,
         "model": app.session.summary(),
+    });
+    // How results are looked at: the chart's style, the band to refine, the reference planes,
+    // the probes, the far field's cut, the run's estimates.
+    let estimate = |e: Option<&Result<Value, String>>| {
+        e.and_then(|e| e.as_ref().ok()).map(|e| json!({"seconds": e["seconds"], "basis": e["basis"], "command": e["command"]}))
+    };
+    let s = &app.session;
+    v["chart_style"] = chart_style(app);
+    v["refine"] = json!(app.views.refine.band.map(|(a, b)| [s.show_frequency(a), s.show_frequency(b)]));
+    v["deembed"] = json!(s.model().ports.iter().map(|p| s.show_length(p.deembed)).collect::<Vec<_>>());
+    v["probes"] = json!(s.views().probes.iter().map(|p| json!({"name": p.name, "at": p.at.map(|x| s.show_length(x))})).collect::<Vec<_>>());
+    v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
+    v["estimate"] =
+        json!({"run": estimate(crate::steps::run_estimate(app)), "dialog": estimate(app.workflow.dialog_estimate.as_ref().map(|(_, _, e)| e))});
+    v
+}
+
+/// The chart view's style (`view.chart.style`'s, as it replies it), whether its card is open,
+/// and the curves of the chart drawn; null away from a chart view.
+fn chart_style(app: &EmcraftApp) -> Value {
+    use emcraft_engine::views::ChartId;
+    let id = match app.view {
+        View::SParameters => ChartId::SParameters,
+        View::Tdr => ChartId::Tdr,
+        View::FarField => ChartId::Pattern,
+        View::Dispersion => ChartId::Dispersion,
+        View::Study => ChartId::Study,
+        _ => return Value::Null,
+    };
+    json!({
+        "chart": id.id(),
+        "style": emcraft_engine::views::shown_style(&app.session, id),
+        "open": app.views.style.open == Some(id),
+        "curves": app.views.curves.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
     })
 }
 

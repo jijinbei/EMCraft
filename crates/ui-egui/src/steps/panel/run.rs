@@ -83,17 +83,7 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     if went {
         return;
     }
-    if let Some(e) = estimate(app).ok().filter(|_| solver == Solver::Frequency) {
-        let n = |k: &str| e.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
-        let points = f.points.trim().parse::<f64>().unwrap_or(11.0);
-        let (unknowns, mb, secs) =
-            (format!("{:.0}", n("unknowns")), format!("{:.0}", n("memory_mb")), format!("{:.1}", n("seconds_per_frequency") * points));
-        ui_kit::caption(
-            ui,
-            trf(
-                "About {unknowns} unknowns, {mb} MB, {secs} s for {points} frequencies (fast sweep: less).",
-                args!(unknowns = unknowns, mb = mb, secs = secs, points = points),
-            ),
-        );
+    if let Some(e) = run_estimate(app) {
+        super::super::estimate_line(ui, e, Fixed::RunEstimate);
     }
 }

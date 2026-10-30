@@ -99,6 +99,10 @@ emcraft_macros::named_enum! {
         SetupOrder = "setup:order",
         RunStart = "run:start",
         RunError = "run:error",
+        /// The run's estimate in the Setup and Run steps and under a solve's dialog.
+        SetupEstimate = "setup:estimate",
+        RunEstimate = "run:estimate",
+        DialogEstimate = "dialog:estimate",
         ResultsCheck = "results:check",
         ResultsTouchstone = "results:touchstone",
         ResultsTouchstonePath = "results:touchstone:path",
@@ -115,7 +119,22 @@ emcraft_macros::named_enum! {
         PortModesFocus = "port_modes:focus",
         CompareRun = "compare:run",
         TdrPort = "tdr:port",
+        /// The far-field cut's angle (φ or θ).
         PatternPhi = "pattern:phi",
+        // A chart's style: the button on the chart, its card and the card's controls.
+        ChartStyle = "chart:style",
+        ChartStyleCard = "chart:style:card",
+        ChartStyleTitle = "chart:style:title",
+        ChartStyleGrid = "chart:style:grid",
+        ChartStyleReset = "chart:style:reset",
+        ChartStyleClose = "chart:style:close",
+        // The S-parameter chart's band to refine and the reference planes.
+        RefineBand = "refine:band",
+        RefinePoints = "refine:points",
+        RefineStart = "refine:start",
+        RefineClear = "refine:clear",
+        // The field view's probes.
+        ProbeAdd = "probe:add",
         // The field view.
         FieldFrequency = "field:frequency",
         FieldAt = "field:at",
@@ -240,6 +259,26 @@ pub enum Handle<'a> {
     TdrMode(&'a str),
     /// What the S-parameter chart shows: `sparameters:show:phase`.
     SParameters(&'a str),
+    /// A chart style's axis field (`label`, `min`, `max`, `log`): `chart:style:x:min`.
+    StyleAxis(&'static str, &'static str),
+    /// Where a chart's legend goes: `chart:legend:top-right`.
+    Legend(&'a str),
+    /// A curve's switch in the style card: `chart:curve:s21.fem`.
+    Curve(&'a str),
+    /// A curve's colour swatch (0: the theme's): `chart:colour:s21.fem:2`.
+    CurveColour(&'a str, usize),
+    /// A curve's width: `chart:width:s21.fem:3`.
+    CurveWidth(&'a str, u8),
+    /// A port's reference plane in the S-parameter view: `deembed:1`.
+    Deembed(&'a str),
+    /// A probe's row, its delete and its mark on the field picture: `probe:0`,
+    /// `probe:delete:0`, `probe:mark:0`.
+    Probe(usize),
+    ProbeDelete(usize),
+    ProbeMark(usize),
+    /// The far-field cut and component: `pattern:cut:theta`, `pattern:component:phi`.
+    PatternCut(&'a str),
+    PatternComponent(&'a str),
 }
 
 impl From<Fixed> for Handle<'_> {
@@ -292,6 +331,17 @@ impl fmt::Display for Handle<'_> {
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),
             Handle::TdrMode(mode) => write!(f, "tdr:mode:{mode}"),
             Handle::SParameters(what) => write!(f, "sparameters:show:{what}"),
+            Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),
+            Handle::Legend(at) => write!(f, "chart:legend:{at}"),
+            Handle::Curve(key) => write!(f, "chart:curve:{key}"),
+            Handle::CurveColour(key, i) => write!(f, "chart:colour:{key}:{i}"),
+            Handle::CurveWidth(key, w) => write!(f, "chart:width:{key}:{w}"),
+            Handle::Deembed(port) => write!(f, "deembed:{port}"),
+            Handle::Probe(i) => write!(f, "probe:{i}"),
+            Handle::ProbeDelete(i) => write!(f, "probe:delete:{i}"),
+            Handle::ProbeMark(i) => write!(f, "probe:mark:{i}"),
+            Handle::PatternCut(cut) => write!(f, "pattern:cut:{cut}"),
+            Handle::PatternComponent(c) => write!(f, "pattern:component:{c}"),
         }
     }
 }

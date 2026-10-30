@@ -113,6 +113,7 @@ const MODELS: &[Model] = &[
             {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
             {"command": "solve.frequency", "params": {"start": 7, "stop": 9, "points": 3, "order": 1}}]"#,
         r#"[{"command": "solve.port_modes", "params": {"frequency": 9, "order": 1}},
+            {"command": "view.probe.add", "params": {"at": [5, 5, 10]}},
             {"command": "results.compare", "params": {}},
             {"command": "results.check", "params": {}}]"#,
         &[],
@@ -259,6 +260,17 @@ fn tour() -> Record {
         for v in views {
             call(&mut h, "ui.set", json!({"view": v.id(), "step": "none"}));
             h.frames(3);
+            // A chart's style card, and a band of the S-parameters dragged to refine.
+            if crate::scenario::handle_at("chart:style").is_some() {
+                step(&mut h, json!({"click": "chart:style"}));
+                step(&mut h, json!({"click": "chart:style"}));
+            }
+            if crate::scenario::handle_at("chart:sparameters").is_some() {
+                step(
+                    &mut h,
+                    json!({"drag": [{"handle": "chart:sparameters", "offset": [-60, 0]}, {"handle": "chart:sparameters", "offset": [40, 0]}]}),
+                );
+            }
             for at in ["picture:field", "chart:sparameters"] {
                 if crate::scenario::handle_at(at).is_some() {
                     step(&mut h, json!({"click": at}));
@@ -446,6 +458,8 @@ const UNREACHED: &[(&str, &str)] = &[
     ("starting", "only until a job says how much work it has: a moment, timing-dependent"),
     ("Script", "a script's progress: it ends before a frame shows it"),
     ("goal", "an optimization of a number the solve gives (maximize, minimize): the tour's goal is in dB"),
+    ("{command} · {what} · {secs} s", "a job whose run cannot be estimated (opening a file): it ends before a frame shows it"),
+    ("terminal ports: solved again", "needs a sweep with terminal ports (scenario terminal_ports)"),
 ];
 
 /// The texts that are looked up by name rather than written where they are shown: the views',

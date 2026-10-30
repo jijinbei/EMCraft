@@ -23,6 +23,46 @@ pub struct Sweep {
     pub driven: Arc<Driven>,
     /// Ascending frequency.
     pub results: Vec<FrequencyResult>,
+    /// Each port's de-embedding (m) the S-parameters are referred to: the ports' as solved, or as
+    /// `model.port.deembed` moved them since.
+    pub deembed: Vec<f64>,
+}
+
+impl Sweep {
+    /// A sweep's results as `driven` solved them (its ports' de-embedding).
+    pub fn new(order: Order, driven: Arc<Driven>, results: Vec<FrequencyResult>) -> Sweep {
+        let deembed = driven.ports.iter().map(|p| p.deembed).collect();
+        Sweep { order, driven, results, deembed }
+    }
+
+    /// `results` (solved by this sweep's system) with their S referred to this sweep's
+    /// reference planes: each port's waves moved by e^{γΔd} from the plane its system solved
+    /// at (D. M. Pozar, *Microwave Engineering*, 4th ed., §4.3).
+    pub(crate) fn referred(&self, results: Vec<FrequencyResult>) -> crate::Result<Vec<FrequencyResult>> {
+        let solved: Vec<f64> = self.driven.ports.iter().map(|p| p.deembed).collect();
+        rereference(&self.driven, results, &solved, &self.deembed)
+    }
+}
+
+/// `results` (solved by `driven`) with each port's reference plane moved from de-embedding
+/// `from` to `to` (m): S_pq e^{γ_p Δd_p + γ_q Δd_q}, γ the port's first mode's.
+pub(crate) fn rereference(driven: &Driven, mut results: Vec<FrequencyResult>, from: &[f64], to: &[f64]) -> crate::Result<Vec<FrequencyResult>> {
+    let moved: Vec<(usize, f64)> = from.iter().zip(to).enumerate().filter(|(_, (a, b))| a != b).map(|(k, (a, b))| (k, b - a)).collect();
+    if moved.is_empty() {
+        return Ok(results);
+    }
+    for r in &mut results {
+        let mut shift = vec![emcraft_solver::Complex64::new(1.0, 0.0); r.s.ports()];
+        for (k, d) in &moved {
+            let gamma = driven.port_terms(*k, r.frequency)?.first().map_or(emcraft_solver::Complex64::new(0.0, 0.0), |t| t.gamma);
+            if let Some(slot) = shift.get_mut(*k) {
+                *slot = (gamma * *d).exp();
+            }
+        }
+        let s = &r.s;
+        r.s = emcraft_solver::SMatrix::from_fn(s.ports(), |p, q| s[(p, q)] * shift[p] * shift[q]);
+    }
+    Ok(results)
 }
 
 impl Sweep {
@@ -116,6 +156,8 @@ struct Before {
     state: project::Snapshot,
     results: Results,
     revision: u64,
+    /// How the results are looked at (small: kept for every command).
+    views: crate::views::Views,
 }
 
 /// Limits on the work one command may ask for.
@@ -166,6 +208,13 @@ pub struct Session {
     /// The named variables expressions in parameters read (`project.variable`), defined by
     /// commands of the history.
     pub(crate) variables: expr::Variables,
+    /// How the project's results are looked at (charts' styles, probes: [`crate::views`]), and
+    /// as last saved or opened.
+    pub(crate) views: crate::views::Views,
+    pub(crate) saved_views: crate::views::Views,
+    /// The run a solve command records in place of its own (`solve.refine` records the merged
+    /// sweep as `solve.frequency`); taken when it succeeds.
+    pub(crate) next_run: Option<Run>,
 }
 
 /// Reading the session.
@@ -237,6 +286,11 @@ impl Session {
     pub fn variables(&self) -> &expr::Variables {
         &self.variables
     }
+
+    /// How the project's results are looked at: the charts' styles and the probes.
+    pub fn views(&self) -> &crate::views::Views {
+        &self.views
+    }
 }
 
 impl Session {
@@ -283,12 +337,14 @@ impl Session {
     pub(crate) fn mark_saved(&mut self) {
         self.saved = self.history.clone();
         self.saved_runs = self.runs.clone();
+        self.saved_views = self.views.clone();
     }
 
     /// Whether the project changed since it was last saved or opened: its model's history or
-    /// its runs (a solve with other parameters than the saved run's).
+    /// its runs (a solve with other parameters than the saved run's) or how its results are
+    /// looked at (a chart's style, a probe).
     pub fn is_dirty(&self) -> bool {
-        self.history != self.saved || self.runs != self.saved_runs
+        self.history != self.saved || self.runs != self.saved_runs || self.views != self.saved_views
     }
 
     /// The project's runs, the latest last ([`crate::runs`]).
@@ -329,27 +385,32 @@ impl Session {
 
     /// What a command with `effect` may change, as it is now.
     fn before(&self, effect: Effect) -> Before {
-        let history = if effect == Effect::None { Vec::new() } else { self.history.clone() };
+        let history = if matches!(effect, Effect::None | Effect::View) { Vec::new() } else { self.history.clone() };
         // A command that replaces the project keeps the project to undo back to.
         let project = (effect == Effect::Replace).then(|| Box::new(self.identity()));
         let state = project::Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone(), project };
-        Before { state, results: self.results.clone(), revision: self.revision }
+        Before { state, results: self.results.clone(), revision: self.revision, views: self.views.clone() }
     }
 
     /// Records a command that succeeded by its effect: one that changed the model leaves the
     /// state before it to undo to and joins the history; a solve's results are current.
     fn commit(&mut self, spec: &CommandSpec, params: &Value, before: Before) {
         match spec.effect {
-            Effect::Record | Effect::Replace | Effect::Rebuild => {
+            Effect::Record | Effect::Adjust | Effect::Replace | Effect::Rebuild => {
                 if let Some(change) = spec.invalidates {
                     self.results.invalidate(change);
                 }
                 // A replaced session solved to its last state (a sample opened with its solve)
-                // keeps its results current.
-                let current = spec.effect != Effect::Record && self.solved_revision == Some(self.revision);
+                // keeps its results current, as does a change the command brought its results
+                // along with.
+                let current = match spec.effect {
+                    Effect::Record => false,
+                    Effect::Adjust => self.solved_revision == Some(before.revision),
+                    _ => self.solved_revision == Some(self.revision),
+                };
                 project::push_undo(&mut self.undo, before.state);
                 self.redo.clear();
-                if spec.effect == Effect::Record {
+                if matches!(spec.effect, Effect::Record | Effect::Adjust) {
                     self.history.push(Step::new(spec.id, params.clone()));
                 }
                 // (A replaced session counts its own revisions from zero.)
@@ -361,9 +422,10 @@ impl Session {
             Effect::Solve => {
                 self.solved_revision = Some(self.revision);
                 let params = if params.is_null() { json!({}) } else { params.clone() };
-                crate::runs::record(&mut self.runs, Run { command: spec.id.to_owned(), params, units: self.display });
+                let run = self.next_run.take().unwrap_or(Run { command: spec.id.to_owned(), params, units: self.display });
+                crate::runs::record(&mut self.runs, run);
             }
-            Effect::None => {}
+            Effect::View | Effect::None => {}
         }
     }
 
@@ -373,6 +435,8 @@ impl Session {
         self.display = before.state.display;
         self.variables = before.state.variables;
         self.results = before.results;
+        self.views = before.views;
+        self.next_run = None;
     }
 
     /// Runs a script: a JSON array of `{"command", "params"}` steps; stops at the first error.

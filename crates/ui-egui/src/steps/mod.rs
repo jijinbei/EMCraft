@@ -179,7 +179,11 @@ impl Fields {
 pub struct Workflow {
     pub step: Option<Step>,
     status: Option<(u64, Vec<StepState>)>,
-    estimate: Option<(u64, Result<Value, String>)>,
+    /// `project.estimate`'s reply for the step's run (the Mesh step: one solve at an order;
+    /// Setup and Run: the run as set up), with the revision and the parameters it was asked for.
+    estimate: Option<(u64, Value, Result<Value, String>)>,
+    /// The estimate of the run the open dialog would start, likewise.
+    pub dialog_estimate: Option<(u64, Value, Result<Value, String>)>,
     pub fields: Fields,
     /// `results.check`'s last reply, and the revision it was made at.
     pub check: Option<(u64, Value)>,
@@ -209,18 +213,103 @@ pub fn prepare(app: &mut EmcraftApp) {
     if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
         app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session).to_vec()));
     }
-    match app.workflow.step {
-        Some(Step::Mesh | Step::Run) if app.workflow.estimate.as_ref().is_none_or(|(k, _)| *k != key) => {
+    // What the step's estimate is of: one solve at the Setup's order (Mesh), the run as set up
+    // (Setup, Run).
+    let asked = match app.workflow.step {
+        Some(Step::Mesh) => {
             let order = app.workflow.fields.order.trim().parse::<u64>().ok().filter(|o| (1..=2).contains(o)).unwrap_or(2);
-            let v = app.session.execute("project.estimate", &json!({"order": order})).map_err(|e| e.to_string());
-            app.workflow.estimate = Some((key, v));
+            Some(json!({"command": "solve.frequency", "params": {"points": 1}, "order": order}))
         }
-        Some(Step::Setup) if app.workflow.devices.is_none() => {
-            let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
-            app.workflow.devices = Some(v);
+        Some(Step::Setup | Step::Run) => {
+            let session = &app.session;
+            run::run_params(session, &mut app.workflow.fields.clone())
+                .ok()
+                .map(|(solver, params)| json!({"command": solver.command(), "params": params}))
         }
-        _ => {}
+        _ => None,
+    };
+    if let Some(asked) = asked
+        && app.workflow.estimate.as_ref().is_none_or(|(k, p, _)| *k != key || *p != asked)
+    {
+        let v = app.session.execute("project.estimate", &asked).map_err(|e| e.to_string());
+        app.workflow.estimate = Some((key, asked, v));
     }
+    if app.workflow.step == Some(Step::Setup) && app.workflow.devices.is_none() {
+        let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
+        app.workflow.devices = Some(v);
+    }
+    // The open dialog's run, when it starts one.
+    let dialog = app
+        .dialog
+        .as_ref()
+        .filter(|d| ESTIMATED.contains(&d.command.id))
+        .and_then(|d| Some(json!({"command": d.command.id, "params": d.quiet_params()?})));
+    match dialog {
+        Some(asked) if app.workflow.dialog_estimate.as_ref().is_none_or(|(k, p, _)| *k != key || *p != asked) => {
+            let v = app.session.execute("project.estimate", &asked).map_err(|e| e.to_string());
+            app.workflow.dialog_estimate = Some((key, asked, v));
+        }
+        Some(_) => {}
+        None => app.workflow.dialog_estimate = None,
+    }
+}
+
+/// The commands whose dialogs show how long their run will take (`project.estimate`).
+pub const ESTIMATED: [&str; 9] = [
+    "solve.frequency",
+    "solve.refine",
+    "solve.eigenmodes",
+    "solve.radiation",
+    "solve.dispersion",
+    "solve.time_domain",
+    "mesh.adapt",
+    "study.sweep",
+    "study.optimize",
+];
+
+/// A duration in brief: `0.4 s`, `12 s`, `3 min`, `1.5 h`.
+pub fn duration(seconds: f64) -> String {
+    match seconds {
+        s if !s.is_finite() || s < 0.0 => "–".to_owned(),
+        s if s < 10.0 => format!("{s:.1} s"),
+        s if s < 90.0 => format!("{s:.0} s"),
+        s if s < 5400.0 => format!("{:.0} min", s / 60.0),
+        s => format!("{:.1} h", s / 3600.0),
+    }
+}
+
+/// A run's estimate (`project.estimate`'s reply) in a line — its time, `ref.` when it is the
+/// reference machine's — with what it counts on hover, published as `handle`.
+pub fn estimate_line(ui: &mut egui::Ui, e: &Result<Value, String>, handle: crate::Fixed) {
+    let t = &crate::theme::Tokens::get();
+    let r = match e {
+        Ok(e) => {
+            let n = |k: &str| e.get(k).and_then(Value::as_f64);
+            let measured = e.get("basis").and_then(Value::as_str) == Some("measured");
+            let time = duration(n("seconds").unwrap_or(f64::NAN));
+            let text = if measured { format!("⏱ ≈ {time}") } else { format!("⏱ ≈ {time} ({})", crate::lang::tr("ref.")) };
+            let mut detail = vec![e.get("what").and_then(Value::as_str).unwrap_or("").to_owned()];
+            if let (Some(u), Some(mb)) = (n("unknowns"), n("memory_mb")) {
+                detail.push(crate::lang::trf("{n} unknowns, {mb} MB", crate::lang::args!(n = format!("{u:.0}"), mb = format!("{mb:.0}"))));
+            }
+            detail.push(
+                crate::lang::tr(if measured {
+                    "scaled from this machine's last sweep"
+                } else {
+                    "from a reference machine; a sweep here measures this one"
+                })
+                .to_owned(),
+            );
+            ui.label(egui::RichText::new(text).size(t.font_small).color(t.text)).on_hover_text(detail.join("\n"))
+        }
+        Err(e) => ui.label(egui::RichText::new(format!("⏱ {e}")).size(t.font_small).color(t.text_dim)),
+    };
+    crate::scenario::publish_target(handle, r.rect);
+}
+
+/// The step's estimate as `prepare` left it for this revision.
+pub fn run_estimate(app: &EmcraftApp) -> Option<&Result<Value, String>> {
+    app.workflow.estimate.as_ref().filter(|(k, _, _)| *k == app.revision).map(|(_, _, v)| v)
 }
 
 /// The statuses of the steps: the session's (the cache when it is current, else worked out on
@@ -320,7 +409,7 @@ pub fn reruns(app: &EmcraftApp) -> Option<&'static str> {
 /// The solve's estimate (`project.estimate`), as `prepare` left it for this revision.
 pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
     match &app.workflow.estimate {
-        Some((k, v)) if *k == app.revision => v.as_ref().map_err(String::as_str),
+        Some((k, _, v)) if *k == app.revision => v.as_ref().map_err(String::as_str),
         _ => Err("no estimate yet"),
     }
 }

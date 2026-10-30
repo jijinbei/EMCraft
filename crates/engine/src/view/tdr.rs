@@ -23,11 +23,10 @@ pub fn tdr_chart(t: &Tdr, port: &str, z0: Option<f64>) -> Chart {
             (format!("TDR at port {port}, band pass: where reflections come from"), "|h| (impulse)", "|h|, impulse response (unitless)")
         }
     };
-    Chart {
+    Chart::new(
         title,
-        x: Axis::new("round-trip time (ns)", 0.0, end),
-        y: Axis::new(axis, lo - pad, hi + pad),
-        series: vec![Series { label: label.into(), pen: Pen::Series(0), style: Style::Line, points }],
-        marks: Vec::new(),
-    }
+        Axis::new("round-trip time (ns)", 0.0, end),
+        Axis::new(axis, lo - pad, hi + pad),
+        vec![Series::new("tdr", label, Pen::Series(0), Style::Line, points)],
+    )
 }

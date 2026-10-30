@@ -249,9 +249,9 @@ fn projects_save_as_emcraft_files_and_know_when_they_changed() {
     assert_eq!(text, serde_json::to_string_pretty(&want).unwrap());
     // A newer version is refused; an older one without a version opens.
     let newer = dir.join("newer.emcraft");
-    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 3, "history": []}).to_string()).unwrap();
+    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 4, "history": []}).to_string()).unwrap();
     let r = t.execute("file.open", &json!({"path": newer.to_string_lossy()}));
-    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 3")), "{r:?}");
+    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 4")), "{r:?}");
     std::fs::write(&newer, json!({"format": "emcraft-project", "history": [{"command": "units.set"}]}).to_string()).unwrap();
     t.execute("file.open", &json!({"path": newer.to_string_lossy()})).unwrap();
     assert_eq!(t.history, vec![crate::Step::new("units.set", json!({}))]);

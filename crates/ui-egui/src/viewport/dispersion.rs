@@ -9,6 +9,7 @@ pub(super) struct Dispersion;
 impl ChartView for Dispersion {
     type Key = SharedChart;
     const HANDLE: Fixed = Fixed::ChartDispersion;
+    const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::Dispersion;
     const HEIGHT: Height = OVER_TABLE;
 
     fn controls(_: &EmcraftApp, _: &mut Parts, _: &mut egui::Ui) -> Option<SharedChart> {

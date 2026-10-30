@@ -29,6 +29,8 @@ pub struct Job {
     pub waiting: Vec<Sender<Value>>,
     /// The view the window showed when the job started: one chosen since is kept when it ends.
     pub view: Option<crate::View>,
+    /// How long it was expected to take (s, `project.estimate`), when that could be said.
+    pub estimate: Option<f64>,
 }
 
 /// What [`Job::poll`] found.
@@ -66,7 +68,7 @@ impl Job {
                 ctx.request_repaint();
             }
         });
-        Job { command: command.to_owned(), params, started: Instant::now(), progress, rx, waiting: Vec::new(), view: None }
+        Job { command: command.to_owned(), params, started: Instant::now(), progress, rx, waiting: Vec::new(), view: None, estimate: None }
     }
 
     pub fn poll(&self) -> Poll {
@@ -89,5 +91,33 @@ impl Job {
     /// Seconds since it started.
     pub fn elapsed(&self) -> f64 {
         self.started.elapsed().as_secs_f64()
+    }
+
+    /// Seconds left: from how far it is once that says enough (a tenth done), else from the
+    /// estimate; `None` when neither says.
+    pub fn remaining(&self) -> Option<f64> {
+        remaining(self.snapshot().fraction(), self.elapsed(), self.estimate)
+    }
+}
+
+/// Seconds left of a job `fraction` done after `elapsed` seconds that was expected to take
+/// `estimate`: the rate so far once a tenth is done, else what is left of the estimate.
+pub fn remaining(fraction: Option<f64>, elapsed: f64, estimate: Option<f64>) -> Option<f64> {
+    match fraction {
+        Some(f) if (0.1..1.0).contains(&f) => Some(elapsed * (1.0 - f) / f),
+        Some(f) if f >= 1.0 => Some(0.0),
+        _ => estimate.filter(|e| e.is_finite()).map(|e| (e - elapsed).max(0.0)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn time_left_follows_the_progress_then_the_estimate() {
+        assert_eq!(super::remaining(Some(0.5), 10.0, Some(100.0)), Some(10.0));
+        assert_eq!(super::remaining(Some(0.05), 10.0, Some(100.0)), Some(90.0));
+        assert_eq!(super::remaining(None, 120.0, Some(100.0)), Some(0.0));
+        assert_eq!(super::remaining(None, 1.0, None), None);
+        assert_eq!(super::remaining(Some(1.0), 5.0, None), Some(0.0));
     }
 }

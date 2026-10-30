@@ -31,6 +31,8 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
         spark(app, field, ui);
         ui.add_space(t.space_8);
     }
+    probes(app, field, ui, out);
+    ui.add_space(t.space_8);
     readout(app, field, ui);
     ui.add_space(t.space_8);
     heading(ui, "SAVE");
@@ -235,6 +237,76 @@ fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         }
     }
     resp.hint("Click to show the nearest solved frequency");
+}
+
+/// The project's probes (`view.probe.*`): + adds one at the pinned point (the plane's middle
+/// without one); each row its name and the coloured field's magnitude there (its point on
+/// hover), ✕ removes it.
+fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
+    let t = &Tokens::get();
+    let probes = &app.session.views().probes;
+    let unit = app.session.display().length;
+    ui.horizontal(|ui| {
+        heading(ui, "PROBES");
+        let at = field.samples.as_ref().and_then(|s| {
+            let q = field.pinned.or_else(|| {
+                let (x, y) = s.axes();
+                Some([0.5 * (x.min + x.max), 0.5 * (y.min + y.max)])
+            })?;
+            Some(s.model_point(q, unit).to_array().map(|v| unit.from_si(v)))
+        });
+        let hint = "A probe at the pinned point (the plane's middle without one)";
+        let busy = app.busy();
+        if let Some(at) = at {
+            ui.act(
+                !busy,
+                egui::Button::new("+").small(),
+                Fixed::ProbeAdd.into(),
+                hint,
+                || Action::run("view.probe.add", serde_json::json!({"at": at})),
+                out,
+            );
+        }
+    });
+    if probes.is_empty() {
+        return;
+    }
+    // Their fields for this view's solution, read again when it or they change.
+    let key = crate::state::ProbeKey {
+        revision: app.revision,
+        frequency: field.view.frequency,
+        mode: field.view.mode,
+        excitation: field.view.excitation,
+        points: probes.iter().map(|p| p.at).collect(),
+    };
+    if field.probe_values.as_ref().is_none_or(|(k, _)| *k != key) {
+        let points: Vec<Point3> = probes.iter().map(|p| p.point()).collect();
+        let values = view::fields_at(&app.session, &field.view, &points).map(|(_, v)| v).unwrap_or_default();
+        field.probe_values = Some((key, values));
+    }
+    let magnetic = field.view.component.is_magnetic();
+    let (name, unit_name) = if magnetic { ("|H|", "A/m") } else { ("|E|", "V/m") };
+    let norm = |v: &emcraft_model::CVec3| v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
+    let values = field.probe_values.as_ref().map(|(_, v)| v.as_slice()).unwrap_or(&[]);
+    for (i, p) in probes.iter().enumerate() {
+        let value = match values.get(i).copied().flatten() {
+            Some((e, h)) => format!("{name} {} {unit_name}", emcraft_render::axes::format(norm(if magnetic { &h } else { &e }))),
+            None => "–".to_owned(),
+        };
+        ui.horizontal(|ui| {
+            let at = p.at.map(|v| emcraft_render::axes::format(unit.from_si(v))).join(", ");
+            let row = egui::Label::new(egui::RichText::new(format!("◆ {}  {value}", p.name)).size(t.font_small).color(t.text)).sense(Sense::hover());
+            let r = ui.add(row).on_hover_text(format!("({at}) {}", unit.symbol()));
+            scenario::publish_target(Handle::Probe(i), r.rect);
+            let del = || Action::run("view.probe.delete", serde_json::json!({"name": p.name}));
+            let (x, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+            let r = ui.hit(x, Handle::ProbeDelete(i), Sense::click());
+            crate::ui_kit::close_mark(ui, x, r.hovered());
+            if r.hint("Remove this probe").clicked() && !app.busy() {
+                out.push(del());
+            }
+        });
+    }
 }
 
 /// The fields at the pointer and at the pinned point, one quantity a line.

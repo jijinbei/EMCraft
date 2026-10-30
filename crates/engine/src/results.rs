@@ -130,8 +130,8 @@ pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// The factor e^{γd} port `port` de-embedded by d moves a wave by at `frequency` (Hz), γ its first
 /// mode's; 1 without de-embedding.
-fn deembedding(sw: &Sweep, port: usize, frequency: f64) -> Result<C> {
-    let d = sw.driven.ports.get(port).map_or(0.0, |x| x.deembed);
+pub(crate) fn deembedding(sw: &Sweep, port: usize, frequency: f64) -> Result<C> {
+    let d = sw.deembed.get(port).copied().unwrap_or(0.0);
     if d == 0.0 {
         return Ok(C::new(1.0, 0.0));
     }

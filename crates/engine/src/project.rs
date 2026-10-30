@@ -38,6 +38,9 @@ pub struct Identity {
     /// The runs as last saved or opened.
     pub saved_runs: Vec<Run>,
     pub runs: Vec<Run>,
+    /// How its results were looked at, and as last saved or opened.
+    pub views: crate::views::Views,
+    pub saved_views: crate::views::Views,
     pub results: crate::Results,
     /// The revision the results were solved at, and whether that was the model's revision then
     /// (they come back current; else stale).
@@ -65,6 +68,8 @@ impl Session {
             saved: self.saved.clone(),
             saved_runs: self.saved_runs.clone(),
             runs: self.runs.clone(),
+            views: self.views.clone(),
+            saved_views: self.saved_views.clone(),
             results: self.results.clone(),
             solved_revision: self.solved_revision,
             current: self.solved_revision == Some(self.revision),
@@ -84,6 +89,8 @@ impl Session {
                 saved: std::mem::replace(&mut self.saved, back.saved),
                 saved_runs: std::mem::replace(&mut self.saved_runs, back.saved_runs),
                 runs: std::mem::replace(&mut self.runs, back.runs),
+                views: std::mem::replace(&mut self.views, back.views),
+                saved_views: std::mem::replace(&mut self.saved_views, back.saved_views),
                 results: std::mem::replace(&mut self.results, back.results),
                 solved_revision: self.solved_revision,
                 current,
@@ -106,6 +113,9 @@ impl Session {
 pub enum Effect {
     /// Changes the model: joins the history, can be undone.
     Record,
+    /// Changes the model and brings its results along (a port's reference plane moved, its
+    /// S-parameters re-referenced): as `Record`, the results current if they were.
+    Adjust,
     /// Replaces the project (a sample, a project file, a new one): can be undone, back to the
     /// project before it (its file, its saved state, its runs and results), and brings its own
     /// history.
@@ -115,6 +125,9 @@ pub enum Effect {
     Rebuild,
     /// Solves: its results belong to the model's current revision.
     Solve,
+    /// Changes how the results are looked at (a chart's style, a probe): saved with the
+    /// project, not in its history; no undo.
+    View,
     None,
 }
 
@@ -176,32 +189,6 @@ pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
     Ok(reply)
 }
 
-/// Unknowns, the factor's memory and the time per frequency of a solve of the meshed model at
-/// `order`: counted from the mesh's edges and faces, the factor's size scaled as n^(4/3) and
-/// its time as n² from the session's own last sweep when it has one (else from a reference
-/// machine's: the coaxial line's 45 000 unknowns, 24 million entries, 1.2 s).
-pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
-    let order = p.integer("order", 1..=2).or(2)?;
-    let mesh = s.model.mesh.as_ref().ok_or_else(|| EngineError::failed("no mesh: mesh the model first (mesh.generate)"))?;
-    let topo = emcraft_mesh::Topology::new(mesh);
-    let (edges, faces) = (topo.edges.len() as f64, topo.faces.len() as f64);
-    let unknowns = if order == 1 { edges } else { 2.0 * edges + 2.0 * faces };
-    let (n0, entries0, seconds0, measured) =
-        match s.results.sweep.as_ref().and_then(|sw| sw.results.iter().find(|r| r.timings.factor > 0.0).map(|r| (sw, r))) {
-            Some((sw, r)) => (sw.driven.dofs.unknowns as f64, r.factor_entries as f64, r.timings.factor + r.timings.solve, true),
-            None => (44_910.0, 24.0e6, 1.6, false),
-        };
-    let ratio = unknowns / n0.max(1.0);
-    let entries = entries0 * ratio.powf(4.0 / 3.0);
-    Ok(json!({
-        "order": order,
-        "unknowns": unknowns.round(),
-        "memory_mb": (entries * 16.0 / 1.0e6).round(),
-        "seconds_per_frequency": seconds0 * ratio * ratio,
-        "from_this_session": measured,
-    }))
-}
-
 /// A project file (docs/project-file.md): the history that builds the model, the runs solved
 /// on it (their parameters, not their results), and the model for other tools to read (opening
 /// replays the history and does not read it).
@@ -215,6 +202,9 @@ struct ProjectFile<'m> {
     /// Since version 2.
     #[serde(default)]
     runs: Vec<Run>,
+    /// Since version 3: how the results are looked at.
+    #[serde(default, skip_serializing_if = "crate::views::Views::is_empty")]
+    views: crate::views::Views,
     #[serde(skip_deserializing)]
     model: Option<&'m Model>,
 }
@@ -222,8 +212,9 @@ struct ProjectFile<'m> {
 /// What a project file's `format` says.
 const FORMAT: &str = "emcraft-project";
 
-/// The version of project files written, the newest read (2: the runs).
-const VERSION: u32 = 2;
+/// The newest version of project files read (2: the runs; 3: the views). A project without
+/// views is written as version 2, which older EMCraft reads.
+const VERSION: u32 = 3;
 
 fn first_version() -> u32 {
     1
@@ -246,7 +237,15 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         None if copy => return Err(p.error("path", "is required for a copy")),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    let file = ProjectFile { format: FORMAT.to_owned(), version: VERSION, history: s.history.clone(), runs: s.runs.clone(), model: Some(&s.model) };
+    let version = if s.views.is_empty() { 2 } else { VERSION };
+    let file = ProjectFile {
+        format: FORMAT.to_owned(),
+        version,
+        history: s.history.clone(),
+        runs: s.runs.clone(),
+        views: s.views.clone(),
+        model: Some(&s.model),
+    };
     // Through a JSON value, whose objects keep their keys sorted: the file's text does not
     // depend on the order the fields are declared in.
     let doc = serde_json::to_value(&file).map_err(EngineError::failed)?;
@@ -284,8 +283,8 @@ pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
     Ok(s.summary())
 }
 
-/// A project file read and checked: its history and runs.
-fn read_project(path: &str) -> Result<(Vec<Step>, Vec<Run>)> {
+/// A project file read and checked: its history, runs and views.
+fn read_project(path: &str) -> Result<(Vec<Step>, Vec<Run>, crate::views::Views)> {
     let bytes = crate::geometry::read_capped(path, MAX_PROJECT_BYTES)?;
     let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
     if doc.get("format").and_then(Value::as_str) != Some(FORMAT) {
@@ -299,7 +298,8 @@ fn read_project(path: &str) -> Result<(Vec<Step>, Vec<Run>)> {
         )));
     }
     let runs = crate::runs::checked(file.runs).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
-    Ok((file.history, runs))
+    let views = file.views.checked().map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
+    Ok((file.history, runs, views))
 }
 
 /// Opens a project: its history replayed in a fresh session (so the mesh comes back the same),
@@ -312,12 +312,13 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         Some(o) if o.trim().is_empty() => return Err(p.error("original", "must not be empty")),
         o => o,
     };
-    let (history, runs) = read_project(path)?;
+    let (history, runs, views) = read_project(path)?;
     let mut fresh = s.fresh();
     fresh.run_steps(&history)?;
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
     fresh.runs = runs;
+    fresh.views = views;
     match original {
         None => {
             fresh.path = Some(path.to_owned());
@@ -326,10 +327,12 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         Some(o) => {
             // The original as it was last saved: the copy may be ahead of it. One that cannot be
             // read is unlike anything recovered (a baseline no history equals).
-            let (saved, saved_runs) = read_project(o).unwrap_or_else(|_| (vec![Step::new(UNREADABLE, json!({}))], Vec::new()));
+            let (saved, saved_runs, saved_views) =
+                read_project(o).unwrap_or_else(|_| (vec![Step::new(UNREADABLE, json!({}))], Vec::new(), crate::views::Views::default()));
             fresh.path = Some(o.to_owned());
             fresh.saved = saved;
             fresh.saved_runs = saved_runs;
+            fresh.saved_views = saved_views;
         }
     }
     s.replace_with(fresh);

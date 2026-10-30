@@ -8,6 +8,7 @@ mod project;
 mod session;
 mod solve;
 mod view;
+mod views;
 
 use serde_json::json;
 

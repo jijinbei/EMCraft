@@ -28,6 +28,7 @@ mod adapt;
 mod args;
 pub mod bodies;
 mod cmd;
+mod estimate;
 pub mod expr;
 mod geometry;
 mod items;
@@ -51,6 +52,7 @@ pub mod text;
 pub mod theme;
 mod values;
 pub mod view;
+pub mod views;
 pub mod workflow;
 
 use std::fmt;

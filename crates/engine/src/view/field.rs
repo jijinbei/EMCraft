@@ -154,6 +154,10 @@ pub struct PlaneSamples {
     pub at: f64,
     pub excitation: usize,
     pub mode: Option<usize>,
+    /// The model axes along the picture's horizontal, its vertical and the normal, and the
+    /// plane's coordinate along the normal (m).
+    axes: [usize; 3],
+    normal: f64,
     nx: usize,
     ny: usize,
     /// (E, H) on an nx × ny grid over the plane, row 0 at the bottom; `None` outside the mesh.
@@ -169,6 +173,29 @@ pub struct PlaneSamples {
     caption: String,
     x: Axis,
     y: Axis,
+}
+
+/// E (V/m) and H (A/m) at model points (m) for a view's solution (its eigenmode, or its
+/// frequency — the nearest solved — and excitation): `None` where a point is outside the mesh;
+/// with the frequency (Hz) solved.
+///
+/// ```
+/// use emcraft_engine::view::{FieldView, Plane, fields_at};
+/// use emcraft_model::Point3;
+///
+/// let mut s = emcraft_engine::Session::new();
+/// s.execute("file.sample", &serde_json::json!({"name": "highpass"})).unwrap();
+/// // Nothing solved yet: an error, not a panic.
+/// assert!(fields_at(&s, &FieldView::new(7e9, Plane::H), &[Point3::new(0.0, 0.0, 0.0)]).is_err());
+/// s.execute("solve.frequency", &serde_json::json!({"frequencies": [7], "order": 1})).unwrap();
+/// let inside = Point3::new(0.011, 0.005, 0.01);
+/// let (f, values) = fields_at(&s, &FieldView::new(7e9, Plane::H), &[inside, Point3::new(1.0, 1.0, 1.0)]).unwrap();
+/// assert_eq!(f, 7e9);
+/// assert!(values[0].is_some() && values[1].is_none());
+/// ```
+pub fn fields_at(session: &Session, view: &FieldView, points: &[Point3]) -> Result<(f64, Vec<Option<(CVec3, CVec3)>>)> {
+    let Solution { driven, field, frequency, .. } = solution(session, view)?;
+    Ok((frequency, points.iter().map(|p| driven.fields(field, frequency, *p)).collect()))
 }
 
 /// The field plot of a view.
@@ -304,6 +331,8 @@ pub fn sample_plane(session: &Session, view: &FieldView) -> Result<PlaneSamples>
         at: frame.at,
         excitation: view.excitation,
         mode: view.mode,
+        axes: frame.axes,
+        normal: n0 + frame.at,
         nx,
         ny,
         grid,
@@ -372,6 +401,24 @@ impl PlaneSamples {
         let (e, h) = (*self.grid.get(j * self.nx + i)?)?;
         let at = [xa + (xb - xa) * i as f64 / (self.nx - 1) as f64, ya + (yb - ya) * j as f64 / (self.ny - 1) as f64];
         Some(Probe { at, e, h })
+    }
+
+    /// The model point (m) at `point` on the plane (display units `unit` along the picture's
+    /// axes).
+    pub fn model_point(&self, point: [f64; 2], unit: emcraft_model::units::Length) -> Point3 {
+        let [hk, vk, nk] = self.axes;
+        let mut c = [0.0; 3];
+        (c[hk], c[vk], c[nk]) = (unit.to_si(point[0]), unit.to_si(point[1]), self.normal);
+        Point3::new(c[0], c[1], c[2])
+    }
+
+    /// Where model point `p` (m) lies on the plane (display units `unit` along the picture's
+    /// axes); `None` when it lies off the plane.
+    pub fn plane_point(&self, p: Point3, unit: emcraft_model::units::Length) -> Option<[f64; 2]> {
+        let [hk, vk, nk] = self.axes;
+        let c = p.to_array();
+        let tolerance = 1e-9 * (1.0 + self.normal.abs()) + 1e-6 * unit.to_si(1.0);
+        ((c[nk] - self.normal).abs() <= tolerance).then(|| [unit.from_si(c[hk]), unit.from_si(c[vk])])
     }
 
     /// Whether these samples serve a view (same frequency, plane, position and excitation).

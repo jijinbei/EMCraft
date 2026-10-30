@@ -8,6 +8,7 @@ pub(super) struct SParameters;
 impl ChartView for SParameters {
     type Key = SharedChart;
     const HANDLE: Fixed = Fixed::ChartSParameters;
+    const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::SParameters;
     const HEIGHT: Height = OVER_TABLE;
 
     /// The switch between |S| in dB, its magnitude and its phase.
@@ -32,42 +33,150 @@ impl ChartView for SParameters {
         view::sparameter_chart_as(&app.session, display).map_err(|e| e.to_string())
     }
 
-    /// The field view's frequency on the chart, and the table of S.
+    /// The field view's frequency on the chart, the band to refine, the ports' reference
+    /// planes and the table of S.
     fn below(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, chart: &egui::Response, size: egui::Vec2, out: &mut Actions) {
-        frequency_marker(&mut st.field, ui, chart, size, &app.frequencies(), out);
-        crate::ui_kit::caption(ui, "Click the chart to open the fields at the nearest solved frequency; the blue line marks the one they show.");
+        if let Some(layout) = st.views.layout {
+            let map = ChartMap { rect: chart.rect, size, layout, unit: app.session.display().frequency };
+            frequency_marker(&mut st.field, ui, chart, &map, &app.frequencies(), out);
+            refine_band(app, &mut st.views.refine, ui, chart, &map, out);
+        }
+        reference_planes(app, &mut st.views.deembed, ui, out);
+        crate::ui_kit::caption(ui, "Click: the fields there · drag: a band to solve more finely");
         table(app, ui);
     }
 }
 
-/// The field view's frequency, marked where the chart (`size` pixels) puts it; a click picks
-/// the nearest solved frequency for the field view and opens it.
-fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, size: egui::Vec2, freqs: &[f64], out: &mut Actions) {
+/// Where the S-parameter chart's frequencies are on screen: the picture's rectangle and size
+/// (pixels), the chart's layout (its x axis in the display unit `unit`).
+struct ChartMap {
+    rect: Rect,
+    size: egui::Vec2,
+    layout: emcraft_render::axes::Layout,
+    unit: emcraft_model::units::Frequency,
+}
+
+impl ChartMap {
+    /// The frequency (Hz) under a screen x; `None` off the plot area.
+    fn frequency(&self, x: f32) -> Option<f64> {
+        let px = f64::from((x - self.rect.min.x) / self.rect.width().max(1.0) * self.size.x);
+        self.layout.x_at(px).map(|f| self.unit.to_si(f))
+    }
+
+    /// The screen x of frequency `f` (Hz).
+    fn x(&self, f: f64) -> f32 {
+        let [px, _] = self.layout.to_pixels([self.unit.from_si(f), self.layout.y.0]);
+        self.rect.min.x + px as f32 / self.size.x.max(1.0) * self.rect.width()
+    }
+
+    /// The plot area's top and bottom on screen.
+    fn rows(&self) -> (f32, f32) {
+        let [_, y0, _, ph] = self.layout.plane;
+        let sy = self.rect.height() / self.size.y.max(1.0);
+        (self.rect.top() + y0 as f32 * sy, self.rect.top() + (y0 + ph) as f32 * sy)
+    }
+}
+
+/// The field view's frequency, marked where the chart puts it; a click picks the nearest solved
+/// frequency for the field view and opens it.
+fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, map: &ChartMap, freqs: &[f64], out: &mut Actions) {
     let t = &Tokens::get();
     let (Some(f0), Some(f1)) = (freqs.first().copied(), freqs.last().copied()) else { return };
-    let layout = chart_layout(f64::from(size.x), f64::from(size.y), f0, f1);
     let f = field.view.frequency;
     if f1 > f0 && field.view.mode.is_none() && (f0..=f1).contains(&f) {
-        // The chart's pixels to the response's rectangle.
-        let (sx, sy) = (r.rect.width() / size.x.max(1.0), r.rect.height() / size.y.max(1.0));
-        let [_, y0, _, ph] = layout.plane;
-        let x = r.rect.min.x + layout.to_pixels([f, 0.0])[0] as f32 * sx;
-        let painter = ui.painter_at(r.rect);
-        let (top, bottom) = (r.rect.top() + y0 as f32 * sy, r.rect.top() + (y0 + ph) as f32 * sy);
-        painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
-        let (at, align) = if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
-        painter.text(at, align, tr("fields shown"), FontId::proportional(t.font_small), t.accent);
+        let x = map.x(f);
+        let (top, bottom) = map.rows();
+        if (r.rect.left()..=r.rect.right()).contains(&x) {
+            let painter = ui.painter_at(r.rect);
+            painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
+            let (at, align) =
+                if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
+            painter.text(at, align, tr("fields shown"), FontId::proportional(t.font_small), t.accent);
+        }
     }
     if r.clicked()
         && let Some(pos) = r.interact_pointer_pos()
+        && let Some(f) = map.frequency(pos.x).and_then(|f| crate::nearest(freqs, f))
     {
-        let fx = ((pos.x - r.rect.min.x) / r.rect.width()) as f64;
-        if let Some(f) = chart_frequency(fx, f64::from(size.x), f0, f1).and_then(|f| crate::nearest(freqs, f)) {
-            field.view.frequency = f;
-            field.view.mode = None;
-            out.push(Action::SetView(View::Field));
+        field.view.frequency = f;
+        field.view.mode = None;
+        out.push(Action::SetView(View::Field));
+    }
+}
+
+/// Most points a band adds.
+const MAX_REFINE: usize = 201;
+
+/// A drag across the chart picks a band (shaded); under the chart, its ends, the points to add
+/// and Refine (`solve.refine`), or ✕.
+fn refine_band(app: &EmcraftApp, refine: &mut crate::state::Refine, ui: &mut egui::Ui, r: &egui::Response, map: &ChartMap, out: &mut Actions) {
+    let t = &Tokens::get();
+    if r.drag_started()
+        && let Some(pos) = r.interact_pointer_pos()
+    {
+        refine.from = map.frequency(pos.x);
+    }
+    if let (Some(a), Some(pos)) = (refine.from, r.interact_pointer_pos().filter(|_| r.dragged())) {
+        let b = map.frequency(pos.x.clamp(map.x(map.unit.to_si(map.layout.x.0)), map.x(map.unit.to_si(map.layout.x.1)))).unwrap_or(a);
+        refine.band = Some((a.min(b), a.max(b)));
+    }
+    if r.drag_stopped() {
+        refine.from = None;
+        if refine.band.is_some_and(|(a, b)| (map.x(b) - map.x(a)).abs() < 4.0) {
+            refine.band = None;
         }
     }
+    let Some((a, b)) = refine.band else { return };
+    let (top, bottom) = map.rows();
+    let band = Rect::from_min_max(pos2(map.x(a), top), pos2(map.x(b), bottom)).intersect(r.rect);
+    ui.painter().rect_filled(band, 0.0, t.accent.gamma_multiply(0.18));
+    scenario::publish_target(Fixed::RefineBand, band);
+    let fu = app.session.display().frequency;
+    ui.horizontal(|ui| {
+        let ends = format!("{} – {} {}", emcraft_render::axes::format(fu.from_si(a)), emcraft_render::axes::format(fu.from_si(b)), fu.symbol());
+        ui.text(Style::Small, ends);
+        let r = ui.named(egui::DragValue::new(&mut refine.points).range(2..=MAX_REFINE).suffix(" pts"), Fixed::RefinePoints.into());
+        r.hint("frequencies in the band");
+        let params = json!({"start": fu.from_si(a), "stop": fu.from_si(b), "points": refine.points});
+        let busy = app.busy();
+        let hint = if busy { "a job is running" } else { "Solve these frequencies and merge them into the sweep (solve.refine)" };
+        let r = ui.act(!busy, crate::ui_kit::styled("Refine", true), Fixed::RefineStart.into(), hint, || Action::run("solve.refine", params), out);
+        let (x, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
+        if crate::ui_kit::icon_button(ui, x, crate::ui_kit::Mark::Close, "Clear the band", Fixed::RefineClear).clicked() || r.clicked() {
+            refine.band = None;
+        }
+    });
+}
+
+/// Each port's reference plane (its de-embedding, display units): dragged or typed, the
+/// S-parameters follow at once (`model.port.deembed`); with terminal ports, a new solve.
+fn reference_planes(app: &EmcraftApp, edits: &mut Vec<f64>, ui: &mut egui::Ui, out: &mut Actions) {
+    let s = &app.session;
+    let ports = &s.model().ports;
+    let Some(sw) = s.results().sweep.as_ref() else { return };
+    if ports.is_empty() {
+        return;
+    }
+    let l = s.display().length;
+    edits.resize(ports.len(), 0.0);
+    let instant = !sw.driven.has_terminals() && sw.driven.periodic.is_none();
+    let busy = app.busy();
+    ui.horizontal_wrapped(|ui| {
+        ui.text(Style::SmallDim, "Ref. plane").on_hover_text(tr("Each port's reference plane: its distance inside the model (de-embedding)"));
+        for (i, port) in ports.iter().enumerate() {
+            let Some(value) = edits.get_mut(i) else { continue };
+            let now = l.from_si(port.deembed);
+            ui.text(Style::Small, port.name.clone());
+            let drag = egui::DragValue::new(value).speed(0.1).suffix(format!(" {}", l.symbol())).max_decimals(4);
+            let r = ui.named_enabled(!busy, drag, Handle::Deembed(&port.name));
+            let r = if instant { r.hint("S follows at once (a phase shift of the port's mode)") } else { r.hint("terminal ports: solved again") };
+            if (r.drag_stopped() || r.lost_focus()) && (*value - now).abs() > 1e-12 {
+                out.push(Action::run("model.port.deembed", json!({"name": port.name, "deembed": *value})));
+            } else if !(r.dragged() || r.has_focus()) {
+                *value = now;
+            }
+        }
+    });
 }
 
 /// Most entries of S's first column the table shows.
@@ -140,27 +249,20 @@ fn frequency_decimals(freqs: &[f64]) -> usize {
     (-step.log10()).ceil().clamp(1.0, 6.0) as usize
 }
 
-/// The S-parameter chart's layout at `width` × `height` pixels, its x axis the sweep's
-/// frequencies `f0..=f1` (its y axis does not matter here).
-fn chart_layout(width: f64, height: f64, f0: f64, f1: f64) -> emcraft_render::chart::Layout {
-    emcraft_render::chart::layout(width.max(0.0) as usize, height.max(0.0) as usize, (f0, f1), (0.0, 1.0))
-}
-
-/// Maps a click at fraction `fx` across the S-parameter chart (`width_px` wide) to a
-/// frequency, with the chart's layout.
-fn chart_frequency(fx: f64, width_px: f64, f0: f64, f1: f64) -> Option<f64> {
-    chart_layout(width_px, 0.0, f0, f1).x_at(fx * width_px)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn chart_clicks_map_to_frequencies() {
-        assert_eq!(chart_frequency(90.0 / 1000.0, 1000.0, 5.0, 9.0), Some(5.0));
-        assert!((chart_frequency(530.0 / 1000.0, 1000.0, 5.0, 9.0).unwrap_or(0.0) - 7.0).abs() < 1e-12);
-        assert_eq!(chart_frequency(0.01, 1000.0, 5.0, 9.0), None);
+        let layout = emcraft_render::chart::layout(1000, 600, (5.0, 9.0), (0.0, 1.0));
+        let map =
+            ChartMap { rect: Rect::from_min_size(pos2(100.0, 0.0), vec2(500.0, 300.0)), size: vec2(1000.0, 600.0), layout, unit: Default::default() };
+        // 90 px of the picture's 1000 is the plot's left (5 GHz); half-scale on screen.
+        assert_eq!(map.frequency(145.0), Some(5e9));
+        assert!((map.frequency(365.0).unwrap_or(0.0) - 7e9).abs() < 1.0);
+        assert_eq!(map.frequency(101.0), None);
+        assert!((map.x(7e9) - 365.0).abs() < 1e-3);
         assert_eq!(crate::nearest(&[5.0, 6.0, 7.0], 6.4), Some(6.0));
         assert_eq!(crate::nearest(&[], 6.4), None);
         // A sweep's frequencies with as many decimals as their step needs.

@@ -48,6 +48,9 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
         let eo = e(f, "order");
         field(ui, "order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
     }
+    if let Some(e) = run_estimate(app) {
+        super::super::estimate_line(ui, e, Fixed::SetupEstimate);
+    }
     device(app, ui, solver, t, out);
     ui_kit::caption(ui, "Run (step 7) starts this solve after checking the model.");
     // The fields' errors as typed.

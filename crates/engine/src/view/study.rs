@@ -258,16 +258,15 @@ fn optimization_chart(study: &Study) -> Result<Chart> {
         None => "goal".to_owned(),
     };
     let y = padded_axis(&label, points.iter().map(|p| p[1]));
-    Ok(Chart {
-        title: format!("Optimization: {}", study.goal.clone().unwrap_or_default()),
-        x: Axis::new("evaluation", 0.5, study.rows.len().max(2) as f64 + 0.5),
+    Ok(Chart::new(
+        format!("Optimization: {}", study.goal.clone().unwrap_or_default()),
+        Axis::new("evaluation", 0.5, study.rows.len().max(2) as f64 + 0.5),
         y,
-        series: vec![
-            Series { label: "each solve".into(), pen: Pen::Muted, style: Style::Markers, points },
-            Series { label: "best so far".into(), pen: Pen::Series(0), style: Style::Line, points: so_far },
+        vec![
+            Series::new("each", "each solve", Pen::Muted, Style::Markers, points),
+            Series::new("best", "best so far", Pen::Series(0), Style::Line, so_far),
         ],
-        marks: Vec::new(),
-    })
+    ))
 }
 
 /// A grid sweep that solved one frequency: |S_p| in dB against the free variable, one curve per
@@ -288,8 +287,9 @@ fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice,
         let rows = study.slice(free, &at);
         let points: Vec<[f64; 2]> = rows.iter().filter(|r| r.error.is_none()).filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-        series.push(Series { label: valued(study, units, other, *v), pen: ramp(t), style: Style::Line, points: points.clone() });
-        series.push(Series { label: String::new(), pen: ramp(t), style: Style::Markers, points });
+        let key = format!("value{}", i + 1);
+        series.push(Series::new(&key, valued(study, units, other, *v), ramp(t), Style::Line, points.clone()));
+        series.push(Series::new(&key, String::new(), ramp(t), Style::Markers, points));
     }
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     let x = padded_axis(&axis_name(study, units, free), all.iter().filter_map(|r| value(r, free)));
@@ -301,7 +301,7 @@ fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice,
     if !held.is_empty() {
         title = format!("{title} at {}", held.join(", "));
     }
-    Chart { title, x, y, series, marks: Vec::new() }
+    Chart::new(title, x, y, series)
 }
 
 /// A sweep that solved one frequency: |S_p| in dB against the variable.
@@ -310,12 +310,12 @@ fn one_frequency_chart(study: &Study, ok: &[&Row], p: &str, free: usize, units: 
     let pts: Vec<[f64; 2]> = ok.iter().filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
     let f = ok.first().and_then(|r| r.frequencies.first()).copied().unwrap_or(f64::NAN);
     let series = vec![
-        Series { label: format!("{label} at {f} {}", study.frequency_unit), pen: Pen::Series(0), style: Style::Line, points: pts.clone() },
-        Series { label: String::new(), pen: Pen::Series(0), style: Style::Markers, points: pts },
+        Series::new("s", format!("{label} at {f} {}", study.frequency_unit), Pen::Series(0), Style::Line, pts.clone()),
+        Series::new("s", String::new(), Pen::Series(0), Style::Markers, pts),
     ];
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     let x = padded_axis(&axis_name(study, units, free), ok.iter().filter_map(|r| value(r, free)));
-    Chart { title: format!("Sweep of {}", variable(study, free, "")), x, y, series, marks: Vec::new() }
+    Chart::new(format!("Sweep of {}", variable(study, free, "")), x, y, series)
 }
 
 /// A sweep's |S_p| in dB against frequency, one curve per value.
@@ -329,7 +329,7 @@ fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize, units: &[Option
         let points: Vec<[f64; 2]> = r.frequencies.iter().zip(db).map(|(f, d)| [*f, d.max(DB_FLOOR)]).collect();
         let v = value(r, free).unwrap_or(f64::NAN);
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-        series.push(Series { label: valued(study, units, free, v), pen: ramp(t), style: Style::Line, points });
+        series.push(Series::new(&format!("value{}", i + 1), valued(study, units, free, v), ramp(t), Style::Line, points));
     }
     if series.is_empty() {
         return Err(nothing_to_chart());
@@ -337,7 +337,7 @@ fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize, units: &[Option
     let (f0, f1) = span(series.iter().flat_map(|s| s.points.iter().map(|q| q[0])));
     let x = if f1 > f0 { Axis::new(&format!("frequency ({fu})"), f0, f1) } else { padded_axis(&format!("frequency ({fu})"), [f0].into_iter()) };
     let y = db_axis(&format!("{label} (dB)"), &series);
-    Ok(Chart { title: format!("{label} as {} varies", variable(study, free, "")), x, y, series, marks: Vec::new() })
+    Ok(Chart::new(format!("{label} as {} varies", variable(study, free, "")), x, y, series))
 }
 
 /// A sweep's eigenmodes against the variable.
@@ -348,14 +348,12 @@ fn modes_chart(study: &Study, ok: &[&Row], free: usize, units: &[Option<String>]
         return Err(nothing_to_chart());
     }
     let series: Vec<Series> = (0..modes.min(12))
-        .map(|m| Series {
-            label: format!("mode {}", m + 1),
-            pen: ramp(m as f64 / (modes.max(2) - 1) as f64),
-            style: Style::Line,
-            points: ok.iter().filter_map(|r| Some([value(r, free)?, *r.modes.get(m)?])).collect(),
+        .map(|m| {
+            let points = ok.iter().filter_map(|r| Some([value(r, free)?, *r.modes.get(m)?])).collect();
+            Series::new(&format!("mode{}", m + 1), format!("mode {}", m + 1), ramp(m as f64 / (modes.max(2) - 1) as f64), Style::Line, points)
         })
         .collect();
     let x = padded_axis(&axis_name(study, units, free), ok.iter().filter_map(|r| value(r, free)));
     let y = padded_axis(&format!("frequency ({fu})"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
-    Ok(Chart { title: format!("Eigenmodes as {} varies", variable(study, free, "")), x, y, series, marks: Vec::new() })
+    Ok(Chart::new(format!("Eigenmodes as {} varies", variable(study, free, "")), x, y, series))
 }

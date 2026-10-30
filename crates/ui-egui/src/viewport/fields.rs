@@ -63,7 +63,7 @@ pub(super) fn field(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &m
             crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, r, crate::scene3d::Overlay::Field, out);
             ui.add_space(gap);
         }
-        picture_column(app, &mut st.field, ui);
+        picture_column(app, &mut st.field, ui, out);
         ui.add_space(gap);
         return field_side::side(app, &mut st.field, ui, out);
     }
@@ -81,13 +81,13 @@ pub(super) fn field(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &m
     let side_rect = Rect::from_min_max(pos2(rest.max.x - field_side::SIDE, rest.min.y), rest.max);
     let pic_rect = Rect::from_min_max(rest.min, pos2(side_rect.min.x - gap, rest.max.y));
     let mut pic_ui = ui.new_child(egui::UiBuilder::new().max_rect(pic_rect));
-    picture_column(app, &mut st.field, &mut pic_ui);
+    picture_column(app, &mut st.field, &mut pic_ui, out);
     let mut side_ui = ui.new_child(egui::UiBuilder::new().max_rect(side_rect));
     egui::ScrollArea::vertical().id_salt("field:side").show(&mut side_ui, |ui| field_side::side(app, &mut st.field, ui, out));
 }
 
-/// The field's picture, as large as its column allows, with the probe on it.
-fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
+/// The field's picture, as large as its column allows, with the probes on it.
+fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     let width = picture_width(ui);
     let l = app.session.display().length;
     field.view.at = field.at.map(|v| l.to_si(v));
@@ -105,15 +105,16 @@ fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     }
     let Some(p) = field.picture.get_mut() else { return };
     let r = picture(ui, p, Fixed::PictureField);
-    probe_picture(field, ui, &r);
+    probe_picture(app, field, ui, &r, out);
 }
 
 /// Most planes kept for the 3D view.
 pub(super) const MAX_KEPT: usize = 8;
 
 /// The pointer over the field picture: the fields under it, a click pins a point (a right click
-/// lets it go); both are marked on the picture.
-pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response) {
+/// lets it go); both are marked on the picture, with the project's probes on its plane — a drag
+/// moves one (`view.probe.move`).
+pub(super) fn probe_picture(app: &EmcraftApp, field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, out: &mut Actions) {
     field.hover = None;
     let (Some(layout), Some(samples)) = (field.layout, field.samples.as_ref()) else { return };
     let rect = r.rect;
@@ -129,6 +130,32 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
     if let Some(q) = r.hover_pos().and_then(to_plane) {
         field.hover = samples.probe(q);
     }
+    // The probes on this plane: marked, and dragged to move.
+    let unit = app.session.display().length;
+    let probes = &app.session.views().probes;
+    let marks: Vec<(usize, Pos2)> = probes
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| samples.plane_point(p.point(), unit).map(|q| (i, to_screen(field.dragging.filter(|d| d.0 == i).map_or(q, |d| d.1)))))
+        .collect();
+    if r.drag_started()
+        && let Some(pos) = r.interact_pointer_pos()
+        && let Some((i, _)) = marks.iter().filter(|(_, m)| m.distance(pos) < 12.0).min_by(|a, b| a.1.distance(pos).total_cmp(&b.1.distance(pos)))
+    {
+        field.dragging = to_plane(pos).map(|q| (*i, q));
+    }
+    if let Some((i, _)) = field.dragging
+        && let Some(q) = r.interact_pointer_pos().and_then(to_plane)
+    {
+        field.dragging = Some((i, q));
+    }
+    if r.drag_stopped()
+        && let Some((i, q)) = field.dragging.take()
+        && let Some(p) = probes.get(i)
+    {
+        let at = samples.model_point(q, unit).to_array().map(|v| unit.from_si(v));
+        out.push(Action::run("view.probe.move", serde_json::json!({"name": p.name, "at": at})));
+    }
     if r.clicked()
         && let Some(q) = r.interact_pointer_pos().and_then(to_plane)
     {
@@ -139,6 +166,16 @@ pub(super) fn probe_picture(field: &mut FieldState, ui: &egui::Ui, r: &egui::Res
     }
     let painter = ui.painter_at(rect);
     let t = &Tokens::get();
+    let halo = crate::theme::color32(crate::theme::palette().halo);
+    for (i, c) in &marks {
+        let c = field.dragging.filter(|d| d.0 == *i).map_or(*c, |d| to_screen(d.1));
+        let diamond = vec![c + vec2(0.0, -7.0), c + vec2(7.0, 0.0), c + vec2(0.0, 7.0), c + vec2(-7.0, 0.0)];
+        painter.add(egui::Shape::convex_polygon(diamond, t.accent, Stroke::new(2.0, halo)));
+        if let Some(p) = probes.get(*i) {
+            painter.text(c + vec2(9.0, -9.0), Align2::LEFT_BOTTOM, &p.name, FontId::proportional(t.font_small), t.accent);
+        }
+        scenario::publish_handle(Handle::ProbeMark(*i), c);
+    }
     if let Some(pin) = field.pinned.and_then(|q| samples.probe(q)) {
         let c = to_screen(pin.at);
         painter.circle_stroke(c, 7.0, Stroke::new(3.0, crate::theme::color32(crate::theme::palette().halo)));
