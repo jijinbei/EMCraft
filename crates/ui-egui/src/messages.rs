@@ -2,7 +2,7 @@
 //! repeated), and the running job's progress with its Cancel.
 
 use crate::handle::Fixed;
-use crate::lang::{args, plural, tr, trf};
+use crate::lang::{args, tr, trf};
 
 use crate::{Action, Actions, EmcraftApp, UiExt, label, scenario, theme, ui_kit};
 
@@ -99,8 +99,8 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
     });
 }
 
-/// A running job in words: what runs, how far it is (its stage and count, from the job's
-/// progress) and for how long — `Frequency sweep — 3 / 11 frequencies, 4 s`.
+/// A running job in brief: what runs, how far it is (its count, from the job's progress) and
+/// for how long — `Frequency sweep · 3/11 · 4 s`.
 pub(crate) fn job_text(job: &crate::worker::Job) -> String {
     let snap = job.snapshot();
     let command = if job.command == "engine.script" { tr("Script") } else { label(&job.command) };
@@ -108,15 +108,13 @@ pub(crate) fn job_text(job: &crate::worker::Job) -> String {
     let (done, total) = (snap.done.min(snap.total) as usize, snap.total as usize);
     let what = match snap.stage.as_str() {
         _ if total == 0 => tr("starting").to_owned(),
-        "frequency" => plural(total, "{done} / {total} frequency", "{done} / {total} frequencies", args!(done = done, total = total)),
-        "fast sweep" => plural(total, "fast sweep of {total} frequency", "fast sweep of {total} frequencies", args!(total = total)),
-        "phase" => plural(total, "{done} / {total} phase", "{done} / {total} phases", args!(done = done, total = total)),
-        "adaptive pass" => plural(total, "{done} / {total} pass", "{done} / {total} passes", args!(done = done, total = total)),
+        "fast sweep" => tr("fast").to_owned(),
+        "frequency" | "phase" | "adaptive pass" => format!("{done}/{total}"),
         // A study's points (each a thousand parts) and a script's steps: the engine's stage.
         stage if total >= 1000 => format!("{stage}, {} %", (100 * done) / total),
         stage => format!("{stage} {done} / {total}"),
     };
-    trf("{command} — {what}, {secs} s", args!(command = command, what = what, secs = secs))
+    trf("{command} · {what} · {secs} s", args!(command = command, what = what, secs = secs))
 }
 
 /// The running job in the right column (the step panel, the docked dialog that started it): what

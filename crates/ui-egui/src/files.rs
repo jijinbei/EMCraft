@@ -39,6 +39,13 @@ pub enum Then {
     Open,
     OpenPath(String),
     Sample(String),
+    /// An autosaved copy recovered: `file.open` of the copy, the project's own file `original`.
+    Recover {
+        file: String,
+        original: Option<String>,
+    },
+    /// The window closes.
+    Quit,
 }
 
 /// The path field shown when there is no file dialog.
@@ -88,6 +95,8 @@ pub enum Answer {
     Save,
     Discard,
     Cancel,
+    /// A job runs when the window would close: stop it and carry on.
+    StopJob,
 }
 
 /// Performs a file action.
@@ -102,6 +111,11 @@ pub(crate) fn apply(app: &mut EmcraftApp, a: FileAction) {
 }
 
 fn request(app: &mut EmcraftApp, then: Then) {
+    // Closing asks about a running job first, then about the changes.
+    if then == Then::Quit && (app.busy() || app.session.is_dirty()) {
+        app.files.confirm = Some(then);
+        return;
+    }
     if app.busy() {
         app.error_with("busy: wait for the running job or cancel it first", &[]);
         return;
@@ -124,6 +138,18 @@ fn go(app: &mut EmcraftApp, then: Then) {
         Then::Sample(name) => {
             let _ = app.run("file.sample", json!({"name": name}));
         }
+        Then::Recover { file, original } => {
+            app.autosave.found.retain(|f| f.file.as_os_str() != file.as_str());
+            let mut params = json!({"path": file});
+            if let Some(o) = original {
+                params["original"] = json!(o);
+            }
+            if app.run("file.open", params).is_ok() {
+                // The copy is this project's from now on: a save deletes it.
+                app.autosave.file = Some(file.into());
+            }
+        }
+        Then::Quit => app.quit_now(),
     }
 }
 
@@ -136,9 +162,15 @@ fn new_project(app: &mut EmcraftApp) {
     let _ = app.run("file.new", json!({}));
 }
 
+/// Whether the project has a file of its own to save to (not an autosaved copy it was
+/// recovered from).
+fn has_file(app: &EmcraftApp) -> bool {
+    app.session.path().is_some_and(|p| !crate::autosave::inside(app.autosave.dir.as_deref(), p))
+}
+
 /// Saves to the project's own file, or asks where.
 fn save(app: &mut EmcraftApp) {
-    if app.session.path().is_some() {
+    if has_file(app) {
         let _ = app.run("file.save", json!({}));
     } else {
         pick(app, Purpose::SaveAs);
@@ -150,7 +182,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
     let Some(picker) = app.files.picker.clone() else {
         let text = match purpose {
             Purpose::Open => app.prefs.recent.first().cloned().unwrap_or_default(),
-            Purpose::SaveAs => app.session.path().map_or(suggested, str::to_owned),
+            Purpose::SaveAs => app.session.path().filter(|_| has_file(app)).map_or(suggested, str::to_owned),
         };
         app.files.prompt = Some(Prompt { purpose, text });
         return;
@@ -243,25 +275,33 @@ fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actio
     }
 }
 
-/// "Save the changes to … first?": Save, Don't save, Cancel.
+/// "Save the changes to … first?": Save, Don't save, Cancel. Closing while a job runs asks
+/// first whether to stop it.
 fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
-    if app.files.confirm.is_none() {
-        return;
-    }
+    let Some(then) = &app.files.confirm else { return };
     let t = &Tokens::get();
+    let job = app.job.as_ref().filter(|_| *then == Then::Quit);
     let at = ctx.content_rect().center_top() + vec2(-200.0, 120.0);
     egui::Area::new(egui::Id::new("emcraft_file_confirm")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {
             ui.set_width(400.0);
-            ui.text(Style::Prompt, trf("Save the changes to {name}?", args!(name = app.session.name())));
-            ui.text(Style::SmallDim, "They are lost otherwise.");
+            let answers: &[(&str, bool, Fixed, Answer)] = match job {
+                Some(job) => {
+                    ui.text(Style::Prompt, trf("{command} is running", args!(command = crate::label(&job.command))));
+                    &[("Stop it", true, Fixed::ConfirmStopJob, Answer::StopJob), ("Keep running", false, Fixed::ConfirmCancel, Answer::Cancel)]
+                }
+                None => {
+                    ui.text(Style::Prompt, trf("Save the changes to {name}?", args!(name = app.session.name())));
+                    &[
+                        ("Save", true, Fixed::ConfirmSave, Answer::Save),
+                        ("Don't save", false, Fixed::ConfirmDiscard, Answer::Discard),
+                        ("Cancel", false, Fixed::ConfirmCancel, Answer::Cancel),
+                    ]
+                }
+            };
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                for (label, primary, handle, a) in [
-                    ("Save", true, Fixed::ConfirmSave, Answer::Save),
-                    ("Don't save", false, Fixed::ConfirmDiscard, Answer::Discard),
-                    ("Cancel", false, Fixed::ConfirmCancel, Answer::Cancel),
-                ] {
+                for &(label, primary, handle, a) in answers {
                     ui.act(true, ui_kit::styled(label, primary), handle.into(), "", || Action::File(FileAction::Confirm(a)), out);
                 }
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -277,10 +317,18 @@ fn answered(app: &mut EmcraftApp, answer: Answer) {
     let Some(then) = app.files.confirm.take() else { return };
     match answer {
         Answer::Cancel => {}
-        Answer::Discard => go(app, then),
+        Answer::StopJob => {
+            app.cancel_job();
+            request(app, then);
+        }
+        // The changes let go: their autosaved copy too.
+        Answer::Discard => {
+            app.autosave_drop();
+            go(app, then);
+        }
         Answer::Save => {
             app.files.after_save = Some(then);
-            if app.session.path().is_some() {
+            if has_file(app) {
                 let saved = app.run("file.save", json!({}));
                 continue_after_save(app, saved.is_ok());
             } else {
@@ -293,7 +341,10 @@ fn answered(app: &mut EmcraftApp, answer: Answer) {
 /// After a successful open or save: the file joins the recent list and the start page (and
 /// the settings) close.
 pub fn opened(app: &mut EmcraftApp, path: &str) {
-    app.prefs.add_recent(path);
+    // An autosaved copy is not a project of the recent list.
+    if !crate::autosave::inside(app.autosave.dir.as_deref(), path) {
+        app.prefs.add_recent(path);
+    }
     app.home.open = false;
     app.settings = None;
 }

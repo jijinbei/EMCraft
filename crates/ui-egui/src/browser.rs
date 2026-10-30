@@ -1,7 +1,10 @@
 //! The browser: the session's model and results as a tree (Geometry, Materials, Ports, Sources,
 //! Boundaries, Mesh, Results) on a floating card at the left, after SolidCraft's browser. Rows
 //! are read from the session every frame; clicking a result shows it, double-clicking a
-//! geometry, mesh or boundary row opens its command's dialog on the model's values.
+//! geometry, mesh or boundary row opens its command's dialog on the model's values. A row that
+//! names an item of the model (a material, a port, a body, a source) edits and deletes it: its
+//! right-click menu (Edit, Delete, Show in 3D), a double-click (Edit) and the Delete key on the
+//! selected row (undoable; a refusal shows as an error).
 
 use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
 
@@ -47,6 +50,30 @@ impl Act {
     }
 }
 
+/// An item of the model a row names, with the commands that edit and delete it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Item {
+    /// Its edit command (its dialog opens on `project.values`).
+    pub edit: &'static str,
+    pub delete: &'static str,
+    /// The parameter naming it in both (`name`, `body`, `index`) and its value.
+    pub key: &'static str,
+    pub value: serde_json::Value,
+}
+
+impl Item {
+    fn new(edit: &'static str, delete: &'static str, key: &'static str, value: serde_json::Value) -> Item {
+        Item { edit, delete, key, value }
+    }
+
+    /// The parameters naming it: `{"name": "ptfe"}`.
+    pub fn params(&self) -> serde_json::Value {
+        let mut o = serde_json::Map::new();
+        o.insert(self.key.to_owned(), self.value.clone());
+        serde_json::Value::Object(o)
+    }
+}
+
 /// A row: its text (in English: its handle and key) as shown, glyph and action.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
@@ -57,17 +84,36 @@ pub struct Row {
     pub act: Act,
     /// What the row is in the 3D view (selecting one selects the other).
     pub pick: Option<Pick>,
+    /// The item of the model it names, which it edits and deletes.
+    pub item: Option<Item>,
 }
 
 /// A row of `template` (looked up in the current language) with its values.
 fn row(template: &str, args: &[(&str, &dyn Display)], glyph: Glyph, act: Act) -> Row {
     let Both { en, shown } = lang::both(template, args);
-    Row { text: en, shown, glyph, act, pick: None }
+    Row { text: en, shown, glyph, act, pick: None, item: None }
 }
 
 impl Row {
     fn picks(self, pick: Pick) -> Row {
         Row { pick: Some(pick), ..self }
+    }
+
+    fn item(self, item: Item) -> Row {
+        Row { item: Some(item), ..self }
+    }
+
+    /// Whether a double-click edits it.
+    pub fn editable(&self) -> bool {
+        self.item.is_some() || self.act.edits()
+    }
+
+    /// What a double-click (or Edit) asks for: its item's edit dialog, else its command's.
+    pub fn edit_action(&self) -> Option<Action> {
+        match &self.item {
+            Some(item) => Some(Action::EditItem(item.clone())),
+            None => self.act.clone().edit(),
+        }
     }
 
     /// The row indented under the one before.
@@ -96,7 +142,14 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
             "Materials",
             m.materials
                 .iter()
-                .map(|mat| row("{name}: {summary}", args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None))
+                .map(|mat| {
+                    row("{name}: {summary}", args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None).item(Item::new(
+                        "model.material.edit",
+                        "model.material.delete",
+                        "name",
+                        serde_json::json!(mat.name),
+                    ))
+                })
                 .collect(),
         ),
         ("Ports", ports(m)),
@@ -197,11 +250,12 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
             emcraft_engine::bodies::BodyRef::Inclusion(i) => Pick::Inclusion(i),
         };
         let glyph = if b.material == emcraft_engine::bodies::METAL { Glyph::Feature } else { Glyph::Inclusion };
-        let edit = Act::EditWith("geometry.body.material", serde_json::json!({"body": b.name, "material": b.material}));
+        let item = Item::new("geometry.body.edit", "geometry.body.delete", "body", serde_json::json!(b.name));
         rows.push(
-            row("{name}: {material} {shape}", args!(name = b.name, material = b.material, shape = b.shape.to_lowercase()), glyph, edit)
+            row("{name}: {material} {shape}", args!(name = b.name, material = b.material, shape = b.shape.to_lowercase()), glyph, Act::None)
                 .sub()
-                .picks(pick),
+                .picks(pick)
+                .item(item),
         );
     }
     rows
@@ -210,10 +264,13 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
 fn ports(m: &emcraft_model::Model) -> Vec<Row> {
     let waveguide = m.ports.iter().enumerate().map(|(i, p)| {
         let Both { en, shown } = port_text(p);
-        Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None }.picks(Pick::Port(i))
+        let item = Item::new("model.port.edit", "model.port.delete", "name", serde_json::json!(p.name));
+        Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None, item: None }.picks(Pick::Port(i)).item(item)
     });
-    let lumped =
-        m.lumped.iter().map(|p| row("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None));
+    let lumped = m.lumped.iter().map(|p| {
+        let item = Item::new("model.port.lumped.edit", "model.port.lumped.delete", "name", serde_json::json!(p.name));
+        row("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance), Glyph::Lumped, Act::None).item(item)
+    });
     waveguide.chain(lumped).collect()
 }
 
@@ -236,15 +293,18 @@ pub fn port_text(p: &emcraft_model::Port) -> Both {
 fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     m.sources
         .iter()
-        .map(|src| match src {
+        .enumerate()
+        .map(|(i, src)| (Item::new("source.edit", "source.delete", "index", serde_json::json!(i + 1)), src))
+        .map(|(item, src)| match src {
             emcraft_model::Source::Dipole { length, current, .. } => row(
                 "Dipole: {length} {unit}, {current} A",
                 args!(length = f.len(*length), unit = f.unit(), current = current),
                 Glyph::Dipole,
                 Act::None,
-            ),
+            )
+            .item(item),
             emcraft_model::Source::PlaneWave { direction: emcraft_model::Vec3 { x, y, z }, .. } => {
-                row("Plane wave along {direction}", args!(direction = format!("[{x:.2}, {y:.2}, {z:.2}]")), Glyph::PlaneWave, Act::None)
+                row("Plane wave along {direction}", args!(direction = format!("[{x:.2}, {y:.2}, {z:.2}]")), Glyph::PlaneWave, Act::None).item(item)
             }
         })
         .collect()
@@ -359,6 +419,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 scenario::publish_rect(Fixed::Browser, ui.max_rect());
                 ui.text(Style::SmallDim, "BROWSER");
                 let tree = tree(app);
+                delete_key(app, ui, &tree, out);
                 let stale = crate::steps::results_stale(app);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (section, rows) in &tree {
@@ -440,7 +501,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                             );
                             scenario::publish_target(Handle::Row(text), rect);
                             let resp = if out_of_date {
-                                let tip = lang::trf("{row} — out of date: the model changed after this run", args!(row = shown));
+                                let tip = lang::trf("{row} — out of date", args!(row = shown));
                                 resp.on_hover_text(tip)
                             } else {
                                 resp.on_hover_text(shown)
@@ -452,13 +513,49 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 }
                             }
                             if resp.double_clicked() && !app.busy() {
-                                out.extend(r.act.clone().edit());
+                                out.extend(r.edit_action());
+                            }
+                            if r.editable() || r.pick.is_some() {
+                                resp.context_menu(|ui| row_menu(app, r, &key, ui, out));
                             }
                         }
                     }
                 });
             });
         });
+}
+
+/// A row's right-click menu: Edit, Delete (its item's), Show in 3D (what it is there).
+fn row_menu(app: &EmcraftApp, r: &Row, key: &str, ui: &mut egui::Ui, out: &mut Actions) {
+    let idle = !app.busy();
+    if let Some(edit) = r.edit_action() {
+        ui.act(idle, egui::Button::new(lang::tr("Edit…")), Fixed::RowMenuEdit.into(), "", || edit, out);
+    }
+    if let Some(item) = &r.item {
+        let delete = egui::Button::new(lang::tr("Delete")).shortcut_text("Del");
+        ui.act(idle, delete, Fixed::RowMenuDelete.into(), "", || Action::DeleteItem(item.clone()), out);
+    }
+    if let Some(pick) = r.pick {
+        let show = egui::Button::new(lang::tr("Show in 3D"));
+        if ui.act(true, show, Fixed::RowMenuShow.into(), "", || Action::Select { row: Some(key.to_owned()), pick: Some(pick) }, out).clicked() {
+            out.push(Action::SetView(View::Model));
+        }
+    }
+}
+
+/// Delete on the selected row deletes its item (when no field takes the key and nothing asks).
+fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)], out: &mut Actions) {
+    let Some(selected) = &app.browser.selected else { return };
+    if app.busy() || app.dialog.is_some() || app.files.confirm.is_some() || app.files.prompt.is_some() || ui.ctx().text_edit_focused() {
+        return;
+    }
+    if !ui.input(|i| i.key_pressed(egui::Key::Delete)) {
+        return;
+    }
+    let item = tree.iter().flat_map(|(s, rows)| rows.iter().map(move |r| (s, r))).find(|(s, r)| format!("{s}/{}", r.text) == *selected);
+    if let Some(item) = item.and_then(|(_, r)| r.item.clone()) {
+        out.push(Action::DeleteItem(item));
+    }
 }
 
 /// A disclosure chevron: down when open, right when closed.

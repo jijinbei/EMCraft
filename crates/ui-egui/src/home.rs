@@ -15,7 +15,7 @@ use crate::action::Pref;
 use crate::files::{FileAction, Then};
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
-use crate::lang::{Raw, sample_label, tr};
+use crate::lang::{Raw, args, sample_label, tr, trf};
 use crate::scene3d::{self, Overlay};
 use crate::settings::Section;
 use crate::theme::Tokens;
@@ -81,6 +81,7 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
                 let left = (ui.available_width() - right - 32.0).max(THUMB[0] + 16.0);
                 ui.vertical(|ui| {
                     ui.set_width(left);
+                    recover(app, ui, out);
                     recent(app, ui, out);
                     ui.add_space(t.space_16);
                     samples(thumbs, ui, out);
@@ -174,6 +175,51 @@ fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, 
     clip.text(pos2(r.left() + 10.0, pr.bottom() + 40.0), Align2::LEFT_CENTER, sub, FontId::proportional(t.font_small), t.text_dim);
     scenario::publish_target(handle, r);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// The autosaved copies found on start, newer than their projects: each a compact card — a
+/// glyph, the project's name and how old the copy is (the files on hover) — with Recover and a
+/// dismiss that deletes it.
+fn recover(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let found = &app.autosave.found;
+    if found.is_empty() {
+        return;
+    }
+    let t = &Tokens::get();
+    for (i, f) in found.iter().enumerate() {
+        let tip = match &f.original {
+            Some(o) => trf("Autosaved copy of {project}\n{file}", args!(project = o, file = f.file.display())),
+            None => trf("Autosaved copy of a project never saved\n{file}", args!(file = f.file.display())),
+        };
+        let r = t.card(t.accent_soft).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+            ui.set_width(ui.available_width().min(520.0));
+            ui.horizontal(|ui| {
+                let (g, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
+                glyphs::paint(ui.painter(), g, Glyph::Save, t.icon, t.accent);
+                ui.text(Style::Strong, Raw(&f.name));
+                ui.text(Style::SmallDim, crate::autosave::ago(f.modified));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let x = ui.add(egui::Button::new("×").frame(false));
+                    scenario::publish_target(Handle::RecoverDismiss(i), x.rect);
+                    if x.hint("Discard the copy").clicked() {
+                        out.push(Action::DismissRecovery(i));
+                    }
+                    let then = Then::Recover { file: f.file.display().to_string(), original: f.original.clone() };
+                    ui.act(
+                        !app.busy(),
+                        crate::ui_kit::styled("Recover", true),
+                        Handle::Recover(i),
+                        "",
+                        || Action::File(FileAction::Request(then)),
+                        out,
+                    );
+                });
+            });
+        });
+        r.response.hint(Raw(&tip));
+        ui.add_space(t.space_4);
+    }
+    ui.add_space(t.space_12);
 }
 
 fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {

@@ -3,13 +3,15 @@
 //! drag), zoom (wheel), fit (double click or Fit), the standard views, perspective or
 //! orthographic projection, labels, a legend and an orientation indicator. While dragging the
 //! picture is drawn at half resolution; at rest at full resolution, supersampled when small
-//! enough.
+//! enough. A section view cuts the scene across an axis (`emcraft_render::view3d::section`: the
+//! far side removed, the cut faces capped in each body's colour); both renderers draw, and
+//! picking reads, the cut scene, cached per scene and cut.
 
 use std::time::Instant;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_render::Rgb;
-use emcraft_render::view3d::{self, Camera, Projection, StandardView};
+use emcraft_render::view3d::{self, Camera, Keep, Projection, StandardView};
 
 use emcraft_engine::view::{FieldView, Plane};
 
@@ -19,7 +21,7 @@ use crate::lang::{self, args, tr, trf};
 use crate::scene3d::{self, Built, Overlay};
 use crate::state::FieldState;
 use crate::theme::Tokens;
-use crate::{Action, Actions, EmcraftApp, Picture, UiExt, scenario};
+use crate::{Action, Actions, EmcraftApp, Hint, Picture, UiExt, scenario};
 
 /// The most pixels the view is drawn with (beyond, it is drawn smaller and scaled up).
 const MAX_PIXELS: f64 = 2.4e6;
@@ -58,10 +60,38 @@ struct Facing {
     at: f64,
 }
 
+/// A section view's cut: across `axis` (0 x, 1 y, 2 z) at `at` (m), the `keep` side kept.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cut {
+    pub axis: usize,
+    pub at: f64,
+    pub keep: Keep,
+}
+
+impl Cut {
+    /// The cut through the middle of `bounds` (m) across `axis`, the low side kept.
+    pub fn middle(axis: usize, (lo, hi): ([f64; 3], [f64; 3])) -> Cut {
+        let k = axis.min(2);
+        Cut { axis: k, at: 0.5 * (lo[k] + hi[k]), keep: Keep::Low }
+    }
+
+    /// The render's section, outlined in the theme's scene edge colour.
+    fn section(self) -> view3d::Section {
+        view3d::Section { outline: Some(crate::theme::scene().edge), ..view3d::Section::across(self.axis, self.at, self.keep) }
+    }
+
+    /// The cut for `ui.inspect`, `at` in display units.
+    pub fn inspect(self, l: emcraft_model::units::Length) -> serde_json::Value {
+        let axis = crate::handle::AXES.get(self.axis).copied().unwrap_or("x");
+        serde_json::json!({"axis": axis, "at": l.from_si(self.at), "keep": if self.keep == Keep::Low { "low" } else { "high" }})
+    }
+}
+
 /// What the picture was drawn from.
 #[derive(Clone, Debug, PartialEq)]
 struct Key {
     scene: SceneKey,
+    section: Option<Cut>,
     camera: Camera,
     size: [usize; 2],
     supersample: usize,
@@ -73,6 +103,10 @@ pub struct View3d {
     /// The box last fitted to: a new geometry is framed once.
     fitted: Option<([f64; 3], [f64; 3])>,
     built: Option<(SceneKey, Built)>,
+    /// The section view's cut, when it is on.
+    pub section: Option<Cut>,
+    /// The built scene cut, for the scene and the cut it was made from.
+    cut: Option<(SceneKey, Cut, Built)>,
     /// The field view's plane in the scene built, when it shows one.
     facing: Option<Facing>,
     /// The browser row of the selection, at the session's revision.
@@ -101,6 +135,8 @@ impl Default for View3d {
             camera: Camera::default(),
             fitted: None,
             built: None,
+            section: None,
+            cut: None,
             facing: None,
             picked: None,
             picture: None,
@@ -122,9 +158,51 @@ impl View3d {
         self.built.as_ref().is_some_and(|(k, _)| k == key)
     }
 
-    /// The scene held: labels, legend and bounds, without the scene itself.
+    /// The model's box (m) as last built.
+    pub fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
+        self.built.as_ref().and_then(|(_, b)| b.bounds.or_else(|| b.scene.bounds()))
+    }
+
+    /// The scene drawn and picked: the built one, cut when the section view is on.
+    fn shown(&self) -> Option<&Built> {
+        match (&self.cut, self.section) {
+            (Some((k, c, b)), Some(now)) if *c == now && self.built.as_ref().is_some_and(|(bk, _)| bk == k) => Some(b),
+            _ => self.built.as_ref().map(|(_, b)| b),
+        }
+    }
+
+    /// The scene shown: labels, legend and bounds (the whole model's), without the scene.
     fn built_shallow(&self) -> Built {
-        self.built.as_ref().map_or_else(|| EMPTY.clone_shallow(), |(_, b)| b.clone_shallow())
+        let mut b = self.shown().map_or_else(|| EMPTY.clone_shallow(), Built::clone_shallow);
+        if let Some((_, full)) = &self.built {
+            b.bounds = full.bounds.or_else(|| full.scene.bounds());
+        }
+        b
+    }
+
+    /// Cuts the built scene when the section view is on and the cut held is not of this scene
+    /// and cut; a cut the renderer refuses turns the view off and says why.
+    fn update_cut(&mut self, out: &mut Actions) {
+        let (Some(now), Some((key, full))) = (self.section, &self.built) else {
+            self.cut = None;
+            return;
+        };
+        if self.cut.as_ref().is_some_and(|(k, c, _)| k == key && *c == now) {
+            return;
+        }
+        let s = now.section();
+        match view3d::section::section(&full.scene, &s) {
+            Ok(scene) => {
+                let labels = full.labels.iter().filter(|l| s.keeps(l.at)).cloned().collect();
+                let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds };
+                self.cut = Some((key.clone(), now, built));
+            }
+            Err(e) => {
+                out.push(Action::error(e));
+                self.section = None;
+                self.cut = None;
+            }
+        }
     }
 
     /// What is drawn highlighted: the hovered row's part, else the selection.
@@ -145,10 +223,10 @@ impl View3d {
         self.fit_next = true;
     }
 
-    /// The state for `ui.inspect`.
-    pub fn inspect(&self) -> serde_json::Value {
+    /// The state for `ui.inspect` (lengths in `l`).
+    pub fn inspect(&self, l: emcraft_model::units::Length) -> serde_json::Value {
         let c = &self.camera;
-        let b = self.built.as_ref().map(|(k, b)| (k.overlay.id(), b.scene.tris.len(), b.scene.lines.len()));
+        let b = self.built.as_ref().zip(self.shown()).map(|((k, _), b)| (k.overlay.id(), b.scene.tris.len(), b.scene.lines.len()));
         serde_json::json!({
             "yaw": c.yaw.to_degrees(), "pitch": c.pitch.to_degrees(), "distance": c.distance,
             "target": c.target,
@@ -158,6 +236,7 @@ impl View3d {
             "selected": self.selected.map(|p| format!("{p:?}")),
             "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
+            "section": self.section.map(|s| s.inspect(l)),
         })
     }
 }
@@ -177,6 +256,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     if !v.is_built(&key) {
         build(app, v, field, overlay, key.clone(), out);
     }
+    v.update_cut(out);
     let built = v.built_shallow();
     let Some(bounds) = built.bounds.or_else(|| built.scene.bounds()) else {
         ui.painter().text(
@@ -210,7 +290,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         && let Some((_, row)) = &picked
         && !app.busy()
     {
-        out.extend(row.act.clone().edit());
+        out.extend(row.edit_action());
     }
     // Moving pictures (an orbit, a playing field) draw on the GPU.
     let gpu = app.prefs.gpu3d || v.dragging || (overlay == Overlay::Field && field.player.playing);
@@ -223,7 +303,10 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     }
     let facing = v.facing.map(|f| facing_plane(app.session.display().length, bounds.0, f));
     navigator(&v.camera, ui, rect, out);
-    nav_bar(v, field.player.playing, ui, rect, facing, out);
+    nav_bar(v, field.player.playing, ui, rect, facing, bounds, out);
+    if v.section.is_some() {
+        section_bar(v, ui, rect, bounds, app.session.display().length);
+    }
 }
 
 /// What a fit frames: an open problem's structure (its bodies, ports and sources) with room
@@ -355,9 +438,9 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
     if resp.drag_started_by(egui::PointerButton::Primary) && !shift {
         v.moving_plane = resp.interact_pointer_pos().is_some_and(|pos| {
             let at = pos - rect.min;
-            let tag = v.built.as_ref().and_then(|(_, b)| {
-                view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()))
-            });
+            let tag = v
+                .shown()
+                .and_then(|b| view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
             tag.and_then(scene3d::Pick::from_tag) == Some(scene3d::Pick::Plane(0))
         });
     }
@@ -381,9 +464,9 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let at = pos - rect.min;
-        let tag = v.built.as_ref().and_then(|(_, b)| {
-            view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()))
-        });
+        let tag = v
+            .shown()
+            .and_then(|b| view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
         v.selected = tag.and_then(scene3d::Pick::from_tag);
         if resp.double_clicked() {
             match v.selected {
@@ -402,7 +485,7 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
     if gpu {
         let began = Instant::now();
         p.add(gradient(rect, t.viewport_top, t.viewport_bottom));
-        if let Some((_, b)) = &v.built {
+        if let Some(b) = v.shown() {
             p.add(mesh_of(&view3d::flatten(&b.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height())), rect.min, 1.4));
         }
         v.last_ms = began.elapsed().as_secs_f64() * 1e3;
@@ -416,7 +499,7 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
     }
     let size = [((rect.width() as f64 * scale).round() as usize).max(1), ((rect.height() as f64 * scale).round() as usize).max(1)];
     let supersample = if (size[0] * size[1]) as f64 <= SUPERSAMPLE_PIXELS { 2 } else { 1 };
-    let key = Key { scene: scene_key, camera: v.camera, size, supersample };
+    let key = Key { scene: scene_key, section: v.section, camera: v.camera, size, supersample };
     if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
         let began = Instant::now();
         let opt = view3d::Options {
@@ -426,8 +509,8 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
             background: (rgb(t.viewport_top), rgb(t.viewport_bottom)),
             line_width: (scale / ppp).clamp(0.5, 2.0) * ppp.max(1.0),
         };
-        let canvas = match &v.built {
-            Some((_, b)) => view3d::render(&b.scene, &v.camera, &opt),
+        let canvas = match v.shown() {
+            Some(b) => view3d::render(&b.scene, &v.camera, &opt),
             None => emcraft_render::Canvas::new(size[0], size[1], rgb(t.viewport_top)),
         };
         v.last_ms = began.elapsed().as_secs_f64() * 1e3;
@@ -463,7 +546,7 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
 
 /// The selection's name on a card at the top, with how to edit it.
 fn selection_card(p: &egui::Painter, rect: Rect, row: &crate::browser::Row, t: &Tokens) {
-    let hint = if row.act.edits() { tr("  ·  double-click to edit") } else { "" };
+    let hint = if row.editable() { tr("  ·  double-click to edit") } else { "" };
     let g = p.layout_no_wrap(format!("{}{hint}", row.shown.trim()), FontId::proportional(t.font_small), t.text);
     let r = Rect::from_min_size(pos2(rect.center().x - g.size().x / 2.0 - 10.0, rect.top() + 10.0), g.size() + vec2(20.0, 10.0));
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
@@ -567,8 +650,16 @@ fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) {
 }
 
 /// The view's tools as icons in a bar at the bottom centre: fit, the home (isometric) view,
-/// facing the field's plane (in Results), perspective or orthographic.
-fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing: Option<([f64; 3], [f64; 3], StandardView)>, out: &mut Actions) {
+/// facing the field's plane (in Results), the section view, perspective or orthographic.
+fn nav_bar(
+    v: &mut View3d,
+    playing: bool,
+    ui: &mut egui::Ui,
+    rect: Rect,
+    facing: Option<([f64; 3], [f64; 3], StandardView)>,
+    bounds: ([f64; 3], [f64; 3]),
+    out: &mut Actions,
+) {
     let t = &Tokens::get();
     let ortho = v.camera.projection == Projection::Orthographic;
     let mut items: Vec<(Glyph, Handle, &str)> = vec![
@@ -584,6 +675,7 @@ fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing:
             (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
         });
     }
+    items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
     items.push(if ortho {
         (Glyph::Orthographic, Fixed::View3dProjection.into(), "Orthographic — click for perspective")
     } else {
@@ -601,16 +693,18 @@ fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing:
         let r = Rect::from_center_size(pos2(bar.left() + 3.0 + pitch * (i as f32 + 0.5), bar.center().y), vec2(size, size));
         let resp = ui.hit(r, handle, Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
-        if resp.hovered() {
-            p.rect_filled(r, 5.0, t.hover);
+        let on = handle == Handle::Fixed(Fixed::View3dSection) && v.section.is_some();
+        if resp.hovered() || on {
+            p.rect_filled(r, 5.0, if on { t.accent_soft } else { t.hover });
         }
-        let ink = if near || resp.hovered() { t.text } else { t.text.gamma_multiply(0.7) };
+        let ink = if near || resp.hovered() || on { t.text } else { t.text.gamma_multiply(0.7) };
         glyphs::paint(&p, r.shrink(4.0), glyph, ink, t.accent);
         if resp.on_hover_text(tip).clicked() {
             match handle {
                 Handle::Fixed(Fixed::View3dFit) => v.fit_next = true,
                 Handle::Standard(side) => out.push(Action::StandardView(side)),
                 Handle::Fixed(Fixed::View3dPlay) => out.push(Action::SetPlaying(!playing)),
+                Handle::Fixed(Fixed::View3dSection) => v.section = v.section.is_none().then(|| Cut::middle(0, bounds)),
                 Handle::Fixed(Fixed::View3dFace) => {
                     if let Some((lo, hi, side)) = facing {
                         v.camera.standard(side);
@@ -621,6 +715,66 @@ fn nav_bar(v: &mut View3d, playing: bool, ui: &mut egui::Ui, rect: Rect, facing:
             }
         }
     }
+}
+
+/// The section view's controls in a bar over the tools: the axis it cuts across (x, y, z), where
+/// along it (a slider over the model's extent, the value in display units `l`) and which side
+/// stays (flip).
+fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi): ([f64; 3], [f64; 3]), l: emcraft_model::units::Length) {
+    let Some(mut cut) = v.section else { return };
+    let t = &Tokens::get();
+    let k = cut.axis.min(2);
+    let (size, pitch, slider_w, value_w) = (24.0, 28.0, 170.0, 84.0);
+    let width = 3.0 * pitch + slider_w + value_w + pitch + 16.0;
+    let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 70.0), vec2(width, size + 8.0));
+    let p = ui.painter().with_clip_rect(rect);
+    p.rect_filled(bar, 8.0, t.panel.gamma_multiply(0.95));
+    p.rect_stroke(bar, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    let font = FontId::proportional(t.font_label);
+    let mut x = bar.left() + 6.0;
+    for (axis, name) in crate::handle::AXES.into_iter().enumerate() {
+        let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
+        let resp = ui.hit(r, Handle::SectionAxis(axis), Sense::click());
+        let tip = trf("Cut across {axis}", args!(axis = name));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &tip));
+        let chosen = axis == k;
+        if chosen || resp.hovered() {
+            p.rect_filled(r, 5.0, if chosen { t.accent_soft } else { t.hover });
+        }
+        let ink = [t.axis_x, t.axis_y, t.axis_z][axis];
+        p.text(r.center(), Align2::CENTER_CENTER, name, font.clone(), if chosen { ink } else { t.text_dim });
+        if resp.on_hover_text(tip).clicked() && !chosen {
+            cut = Cut { axis, ..Cut::middle(axis, (lo, hi)) };
+        }
+        x += pitch;
+    }
+    // The position, in display units over the model's extent on the axis.
+    let (a, b) = (l.from_si(lo[cut.axis]), l.from_si(hi[cut.axis]));
+    let mut at = l.from_si(cut.at).clamp(a.min(b), a.max(b));
+    let sr = Rect::from_min_size(pos2(x + 4.0, bar.center().y - 10.0), vec2(slider_w - 8.0, 20.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(sr).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    child.spacing_mut().slider_width = sr.width();
+    let s = child.add(egui::Slider::new(&mut at, a.min(b)..=a.max(b)).show_value(false));
+    scenario::publish_target(Fixed::View3dSectionAt, s.rect);
+    if s.hint("Where the cut lies").changed() && at.is_finite() {
+        cut.at = l.to_si(at);
+    }
+    x += slider_w;
+    let value = format!("{} {}", format!("{at:.3}").trim_end_matches('0').trim_end_matches('.'), l.symbol());
+    p.text(pos2(x, bar.center().y), Align2::LEFT_CENTER, value, font, t.text);
+    x += value_w;
+    let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
+    let resp = ui.hit(r, Fixed::View3dSectionFlip.into(), Sense::click());
+    let tip = tr("Keep the other side");
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
+    if resp.hovered() {
+        p.rect_filled(r, 5.0, t.hover);
+    }
+    glyphs::paint(&p, r.shrink(3.0), Glyph::Flip, t.text, t.accent);
+    if resp.on_hover_text(tip).clicked() {
+        cut.keep = if cut.keep == Keep::Low { Keep::High } else { Keep::Low };
+    }
+    v.section = Some(cut);
 }
 
 /// A vertical gradient filling `rect`.

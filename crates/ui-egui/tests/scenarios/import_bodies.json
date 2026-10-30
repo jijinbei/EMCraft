@@ -49,7 +49,7 @@
  },
  {
   "expect": {
-   "dialog": "geometry.body.material",
+   "dialog": "geometry.body.edit",
    "inspect": {
     "dialog.fields.body": "Puck",
     "dialog.fields.material": "metal"

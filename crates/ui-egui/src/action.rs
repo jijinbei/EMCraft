@@ -63,6 +63,12 @@ pub enum Action {
     Settings(Option<crate::settings::Section>),
     Pref(Pref),
     File(FileAction),
+    /// Opens an item's edit dialog on its current values (`project.values`).
+    EditItem(crate::browser::Item),
+    /// Deletes an item (undoable); a refusal shows as an error.
+    DeleteItem(crate::browser::Item),
+    /// Lets an autosaved copy found on start go (it is deleted).
+    DismissRecovery(usize),
     /// Asks where to export the history as a script.
     AskExport,
     /// Writes the history as a script to a path.
@@ -136,7 +142,16 @@ impl Action {
     /// report it where it arises (a command's failure, by `run`) or show it in place (a
     /// dialog's refusal, under its field; a step's field errors).
     fn reports_errors(&self) -> bool {
-        matches!(self, Action::OpenDialog { .. } | Action::ShowView(_) | Action::Fix(_) | Action::PreviewPortModes | Action::CheckResults)
+        matches!(
+            self,
+            Action::OpenDialog { .. }
+                | Action::EditItem(_)
+                | Action::DeleteItem(_)
+                | Action::ShowView(_)
+                | Action::Fix(_)
+                | Action::PreviewPortModes
+                | Action::CheckResults
+        )
     }
 }
 
@@ -254,6 +269,15 @@ impl EmcraftApp {
             Action::Settings(section) => self.settings = section,
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
+            Action::EditItem(item) => self.open_item_dialog(&item)?,
+            Action::DeleteItem(item) => {
+                let r = self.run(item.delete, item.params())?;
+                // What was selected is gone.
+                self.browser.selected = None;
+                self.view3d.selected = None;
+                return Ok(r);
+            }
+            Action::DismissRecovery(i) => self.dismiss_recovery(i),
             Action::AskExport => self.export = Some("emcraft-history.json".into()),
             Action::ExportHistory(path) => self.export_history(path),
             Action::ApplyBand => crate::steps::apply_band(self),

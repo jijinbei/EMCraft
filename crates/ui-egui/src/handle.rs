@@ -41,6 +41,10 @@ emcraft_macros::named_enum! {
         FileSaveAs = "file:save_as",
         FileExport = "file:export",
         FileStart = "file:start",
+        // A browser row's right-click menu.
+        RowMenuEdit = "row-menu:edit",
+        RowMenuDelete = "row-menu:delete",
+        RowMenuShow = "row-menu:show",
         // The file prompt, the question before changes are lost, the history's export.
         FilePath = "file:path",
         FileOk = "file:ok",
@@ -48,6 +52,8 @@ emcraft_macros::named_enum! {
         ConfirmSave = "confirm:save",
         ConfirmDiscard = "confirm:discard",
         ConfirmCancel = "confirm:cancel",
+        /// Closing while a job runs: stop it.
+        ConfirmStopJob = "confirm:stop_job",
         ExportPath = "export:path",
         ExportOk = "export:ok",
         ExportCancel = "export:cancel",
@@ -129,6 +135,10 @@ emcraft_macros::named_enum! {
         View3dFace = "view3d:face",
         View3dPlay = "view3d:play",
         View3dProjection = "view3d:projection",
+        /// The section view's switch, its position slider and its flip.
+        View3dSection = "view3d:section",
+        View3dSectionAt = "view3d:section:at",
+        View3dSectionFlip = "view3d:section:flip",
     }
 }
 
@@ -142,6 +152,9 @@ emcraft_macros::named_enum! {
         Speed = "speed",
     }
 }
+
+/// The axes by name.
+pub const AXES: [&str; 3] = ["x", "y", "z"];
 
 /// A name on screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -171,6 +184,10 @@ pub enum Handle<'a> {
     Sample(&'a str),
     /// A recent project's card on the start page: `home:recent:0`.
     Recent(usize),
+    /// An autosaved copy's Recover on the start page: `home:recover:0`.
+    Recover(usize),
+    /// An autosaved copy's dismiss (it is deleted): `home:recover:dismiss:0`.
+    RecoverDismiss(usize),
     /// A setting's choice: `settings:length:mm`.
     Setting(&'static str, &'a str),
     /// A section of the settings page: `settings:section:units`.
@@ -211,6 +228,8 @@ pub enum Handle<'a> {
     FieldKept(usize),
     /// A standard view in the 3D view's navigator: `view3d:std:front`.
     Standard(StandardView),
+    /// The axis the section view cuts across (0 x, 1 y, 2 z): `view3d:section:x`.
+    SectionAxis(usize),
     /// The S-parameter a study's chart shows: `study:parameter:s21`.
     StudyParameter(&'a str),
     /// The variable a grid study is charted along: `study:along:a`.
@@ -245,6 +264,8 @@ impl fmt::Display for Handle<'_> {
             Handle::SearchRow(id) => write!(f, "search:row:{id}"),
             Handle::Sample(name) => write!(f, "sample:{name}"),
             Handle::Recent(i) => write!(f, "home:recent:{i}"),
+            Handle::Recover(i) => write!(f, "home:recover:{i}"),
+            Handle::RecoverDismiss(i) => write!(f, "home:recover:dismiss:{i}"),
             Handle::Setting(group, name) => write!(f, "settings:{group}:{name}"),
             Handle::SettingsSection(s) => write!(f, "settings:section:{}", s.id()),
             Handle::DialogField(name) => write!(f, "dialog:field:{name}"),
@@ -265,6 +286,7 @@ impl fmt::Display for Handle<'_> {
             Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.id()),
             Handle::FieldKept(k) => write!(f, "field:kept:{k}"),
             Handle::Standard(v) => write!(f, "view3d:std:{}", v.id()),
+            Handle::SectionAxis(k) => write!(f, "view3d:section:{}", AXES.get(k).copied().unwrap_or("?")),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),
             Handle::StudyAlong(name) => write!(f, "study:along:{name}"),
             Handle::StudyAt(name, i) => write!(f, "study:at:{name}:{i}"),

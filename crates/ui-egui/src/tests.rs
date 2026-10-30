@@ -4,14 +4,42 @@ use serde_json::{Value, json};
 
 use crate::scenario::Harness;
 
+/// Runs `tests/scenarios/<name>.json`; `$TMP` in it is a folder of its own, emptied first and
+/// removed after.
 fn scenario(name: &str) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios").join(format!("{name}.json"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let tmp = std::env::temp_dir().join(format!("emcraft-scenario-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap_or_else(|e| panic!("{}: {e}", tmp.display()));
+    let text = text.replace("$TMP", tmp.to_str().unwrap_or_else(|| panic!("{}: not UTF-8", tmp.display())));
     let steps: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
     let mut h = Harness::new();
-    if let Err(e) = h.run(&steps) {
+    let r = h.run(&steps);
+    let _ = std::fs::remove_dir_all(&tmp);
+    if let Err(e) = r {
         panic!("scenario {name}: {e}\nlast messages: {:?}", h.app.messages.iter().rev().take(5).collect::<Vec<_>>());
     }
+}
+
+#[test]
+fn scenario_section_view() {
+    scenario("section_view");
+}
+
+#[test]
+fn scenario_setup_restore() {
+    scenario("setup_restore");
+}
+
+#[test]
+fn scenario_edit_items() {
+    scenario("edit_items");
+}
+
+#[test]
+fn scenario_close_and_recover() {
+    scenario("close_and_recover");
 }
 
 #[test]

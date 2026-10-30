@@ -145,5 +145,9 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     if n > 0 {
         app.info(plural(n, "Running with {n} accepted warning.", "Running with {n} accepted warnings.", args!(n = n)));
     }
+    // The fields as the project's last run left them: that run again, its parameters whole.
+    if let Some(command) = reruns(app) {
+        return app.run("solve.rerun", json!({"command": command}));
+    }
     app.run(solver.command(), params)
 }

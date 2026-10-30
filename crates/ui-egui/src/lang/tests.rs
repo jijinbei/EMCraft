@@ -229,6 +229,20 @@ fn tour() -> Record {
     h.app.files.confirm = Some(Then::New);
     h.frames(2);
     h.app.files.confirm = None;
+    // Autosaved copies to recover, of every age, of a saved project and of one never saved.
+    let now = std::time::SystemTime::now();
+    h.app.autosave.found = [0, 300, 7200, 200_000]
+        .into_iter()
+        .enumerate()
+        .map(|(i, secs)| crate::autosave::Found {
+            file: format!("/no/such/{i}.emcraft").into(),
+            name: format!("p{i}"),
+            original: (i % 2 == 0).then(|| "/no/such/p.emcraft".to_owned()),
+            modified: now.checked_sub(std::time::Duration::from_secs(secs)),
+        })
+        .collect();
+    h.frames(2);
+    h.app.autosave.found.clear();
     h.app.home.open = false;
     // Each model: its views, its steps (each solver in Setup), the menus, the search.
     for (i, &(script, then, steps)) in MODELS.iter().enumerate() {
@@ -275,6 +289,10 @@ fn tour() -> Record {
             }
             h.frames(1);
             assert!(h.app.busy(), "the job ended before the tour saw it run");
+            // Closing while it runs.
+            h.app.files.confirm = Some(Then::Quit);
+            h.frames(2);
+            h.app.files.confirm = None;
             apply(&mut h, [Action::File(FileAction::Request(Then::New))]);
             call(&mut h, "ui.cancel", json!({}));
             call(&mut h, "ui.set", json!({"step": "none"}));
@@ -285,6 +303,16 @@ fn tour() -> Record {
             .find_map(|(s, rows)| rows.into_iter().find(|r| r.pick.is_some()).map(|r| (format!("{s}/{}", r.text), r.pick)));
         if let Some((row, pick)) = picked {
             (h.app.browser.selected, h.app.view3d.selected) = (Some(row), pick);
+        }
+        // A row's right-click menu: Edit, Delete, Show in 3D.
+        let menu = crate::browser::tree(&h.app)
+            .into_iter()
+            .flat_map(|(_, rows)| rows)
+            .find(|r| r.item.is_some() && r.pick.is_some())
+            .map(|r| r.text.trim_start().to_owned());
+        if let Some(text) = menu {
+            step(&mut h, json!({"click": format!("row:{text}"), "button": "right"}));
+            step(&mut h, json!({"key": "Escape"}));
         }
         for s in Step::ALL.into_iter().filter(|s| steps.is_empty() || steps.contains(&s.id())) {
             call(&mut h, "ui.set", json!({"step": s.id()}));
@@ -304,6 +332,11 @@ fn tour() -> Record {
         h.app.field.player.playing = false;
         call(&mut h, "ui.set", json!({"camera": {"projection": "orthographic"}}));
         h.frames(2);
+        // Cut open (when there is a model to cut).
+        if h.call("ui.set", json!({"section": {"axis": "x"}}))["ok"] == json!(true) {
+            h.frames(2);
+            call(&mut h, "ui.set", json!({"section": null}));
+        }
         call(&mut h, "ui.set", json!({"step": "setup"}));
         for s in Solver::ALL {
             h.app.workflow.fields.solver = Some(s);
@@ -369,6 +402,7 @@ fn tour() -> Record {
     }
     for (id, params, reply) in [
         ("file.open", json!({"path": "a.emcraft"}), json!({})),
+        ("file.open", json!({"path": "a.emcraft", "original": "b.emcraft"}), json!({"name": "b"})),
         ("solve.time_domain", json!({}), json!({"device": "cuda", "precision": "single"})),
         ("edit.redo", json!({}), json!({})),
         ("results.check", json!({}), json!({"passive": true})),
@@ -376,6 +410,11 @@ fn tour() -> Record {
     ] {
         let _ = crate::status::text(id, &params, &reply, &session);
     }
+    // An autosave that cannot be written.
+    h.app.autosave.dir = Some("/dev/null/autosave".into());
+    let _ = h.call("engine.execute", json!({"command": "model.material.create", "params": {"name": "tour", "eps_r": 3}}));
+    assert!(h.app.autosave_now().is_err());
+    h.app.autosave.dir = None;
     h.app.export = Some("history.json".into());
     h.frames(2);
     let written = std::env::temp_dir().join(format!("emcraft-tour-{}.json", std::process::id()));
@@ -405,12 +444,6 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Running with {n} accepted warning.", "starts a full solve"),
     ("Running with {n} accepted warnings.", "starts a full solve"),
     ("starting", "only until a job says how much work it has: a moment, timing-dependent"),
-    ("{done} / {total} frequency", "a full sweep's progress: the tour's sweep is a fast one"),
-    ("{done} / {total} frequencies", "a full sweep's progress: the tour's sweep is a fast one"),
-    ("{done} / {total} phase", "a dispersion solve's progress: it ends before a frame shows it"),
-    ("{done} / {total} phases", "a dispersion solve's progress: it ends before a frame shows it"),
-    ("{done} / {total} pass", "an adaptive mesh's progress: too long for the gate"),
-    ("{done} / {total} passes", "an adaptive mesh's progress: too long for the gate"),
     ("Script", "a script's progress: it ends before a frame shows it"),
     ("goal", "an optimization of a number the solve gives (maximize, minimize): the tour's goal is in dB"),
 ];

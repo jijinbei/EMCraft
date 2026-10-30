@@ -9,6 +9,12 @@ use crate::{EmcraftApp, View, files, status, steps};
 impl EmcraftApp {
     /// What follows a command's success: the view it calls for, its message.
     pub(crate) fn after(&mut self, id: &str, params: &Value, reply: &Value) {
+        // A run again is the run it repeats.
+        let rerun = reply.get("rerun").filter(|_| id == "solve.rerun");
+        let (id, params) = match rerun.and_then(|r| Some((r.get("command")?.as_str()?, r.get("params")?))) {
+            Some((command, p)) => (command, p),
+            None => (id, params),
+        };
         self.revision = self.revision.wrapping_add(1);
         self.failure = None;
         self.field.forget_samples();
@@ -53,11 +59,19 @@ impl EmcraftApp {
             files::opened(self, path);
         }
         if id == "file.save" {
+            // A real save (not an autosaved copy): the copy goes.
+            if reply.get("copy").and_then(Value::as_bool) != Some(true) {
+                self.autosave_drop();
+            }
             return;
         }
         if matches!(id, "file.new" | "file.sample") {
             self.home.open = false;
             self.settings = None;
+        }
+        // The Setup step as the project's last run left it.
+        if matches!(id, "file.open" | "file.sample" | "file.new") {
+            steps::restore_setup(self);
         }
         // An open problem's fields read best as |E| (a source's own component may vanish on
         // the planes through it); a guide's as Ey, its TE10 field.

@@ -41,6 +41,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
     match id {
         "file.sample" if session.results().any() => trf("Opened sample {name}.", args!(name = p.text("name"))),
         "file.sample" => trf("Opened sample {name}; Run (step 7) solves it.", args!(name = p.text("name"))),
+        "file.open" if !p.text("original").is_empty() => trf("Recovered {name}.", args!(name = r.text("name"))),
         "file.open" => match p.text("path") {
             "" => tr("Opened the project.").to_owned(),
             path => trf("Opened {path}.", args!(path = path)),
