@@ -228,7 +228,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         }
         cavity = Some(enclosed_air(s, &mut bodies, &materials, keep.unwrap_or_default(), &material)?);
         // The metal bodies are the cavity's walls now; the others are placed in it.
-        let metal = |b: &emcraft_io::Surface| materials.iter().find(|(n, _)| *n == b.name).is_none_or(|(_, m)| m == crate::bodies::METAL);
+        let metal = |b: &emcraft_io::Surface| material_of(&materials, &b.name) == crate::bodies::METAL;
         placed.extend(bodies.iter().filter(|b| metal(b)).map(|b| json!({"body": b.name, "material": crate::bodies::METAL, "as": "walls"})));
         let keep: Vec<bool> = bodies.iter().map(|b| !metal(b)).collect();
         bodies.retain(|b| !metal(b));
@@ -244,7 +244,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         s.model.set_solid(Solid { shape: surface(body, &source, fit, &mut fitted), material: material.clone() })?;
     }
     for (b, source) in bodies.into_iter().zip(sources) {
-        let m = materials.iter().find(|(n, _)| *n == b.name).map_or(crate::bodies::METAL.to_owned(), |(_, m)| m.clone());
+        let m = material_of(&materials, &b.name).to_owned();
         let name = b.name.clone();
         let kind = crate::bodies::place(&mut s.model, surface(b, &source, fit, &mut fitted), Point3::ORIGIN, Axis::Z, &m)?;
         placed.push(json!({"body": name, "material": m, "as": kind}));
@@ -270,6 +270,11 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
+/// The material `materials` (body name, material) give the body `name`: metal unless named.
+fn material_of<'m>(materials: &'m [(String, String)], name: &str) -> &'m str {
+    materials.iter().find(|(n, _)| n == name).map_or(crate::bodies::METAL, |(_, m)| m.as_str())
+}
+
 emcraft_macros::named_enum! {
     /// Which pieces of a cavity's air are kept (`keep`).
     #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -292,7 +297,7 @@ fn enclosed_air(
     keep: Keep,
     material: &str,
 ) -> Result<emcraft_mesh::cavity::Cavity> {
-    let metal = |b: &emcraft_io::Surface| materials.iter().find(|(n, _)| *n == b.name).is_none_or(|(_, m)| m == crate::bodies::METAL);
+    let metal = |b: &emcraft_io::Surface| material_of(materials, &b.name) == crate::bodies::METAL;
     let walls: Vec<&emcraft_io::Surface> = bodies.iter().filter(|b| metal(b)).collect();
     if walls.is_empty() {
         return Err(EngineError::failed("a cavity is the air metal bodies enclose: every body is given another material"));
