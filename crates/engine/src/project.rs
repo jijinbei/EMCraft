@@ -137,8 +137,8 @@ pub fn units(s: &mut Session, p: &Params) -> Result<Value> {
 /// Replaces the session with a sample's model (and its results, when `solve`).
 pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
-    let sample = crate::sample::find(name).ok_or_else(|| {
-        p.error("name", crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", crate::sample::names()))
+    let sample = emcraft_templates::find(name).ok_or_else(|| {
+        p.error("name", crate::text::unknown(format_args!("names no sample: `{}`", crate::text::clip(name, 40)), "known: ", emcraft_templates::names()))
     })?;
     let solve = p.flag("solve").or(false)?;
     let script: Vec<Step> = serde_json::from_str(sample.script).map_err(|e| EngineError::failed(format!("sample {name}: {e}")))?;

@@ -163,7 +163,7 @@ fn sample(args: &[String]) -> Result<()> {
     }
     std::fs::create_dir_all(&out).map_err(|e| format!("{out}: {e}"))?;
     let mut s = Session::new();
-    let script: Value = emcraft_engine::sample::find(name).and_then(|x| serde_json::from_str(x.script).ok()).unwrap_or(Value::Null);
+    let script: Value = emcraft_engine::templates::find(name).and_then(|x| serde_json::from_str(x.script).ok()).unwrap_or(Value::Null);
     if script.as_array().is_some_and(|steps| steps.iter().any(|st| st["command"] == "solve.eigenmodes")) {
         return eigen_sample(name, &out);
     }

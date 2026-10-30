@@ -1,0 +1,12 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "value": 30, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "r_post", "value": 1.5, "quantity": "length"}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": ["=a", "=b", "=l"]}},
+ {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": "=r_post", "length": "=b", "at": ["=a/2", 0, "=l/2"], "axis": "y"}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"start": 8, "stop": 12, "points": 5, "order": 2}}
+]

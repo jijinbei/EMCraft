@@ -372,7 +372,7 @@ pub fn param_doc(id: &str, name: &str) -> &'static str {
 pub fn sample_label(name: &str) -> &'static str {
     match translation().and_then(|l| l.samples.get(name)) {
         Some(s) if !s.is_empty() => s,
-        _ => emcraft_engine::sample::find(name).map_or("", |s| s.label),
+        _ => emcraft_engine::templates::find(name).map_or("", |s| s.label),
     }
 }
 

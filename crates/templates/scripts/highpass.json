@@ -1,0 +1,13 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "er", "value": 2.0}},
+ {"command": "project.variable", "params": {"name": "l_fill", "value": 15, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_gap", "value": 20, "quantity": "length"}},
+ {"command": "model.material.create", "params": {"name": "ptfe-like", "eps_r": "=er"}},
+ {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=l_fill", "material": "ptfe-like"}, {"length": "=l_gap", "material": "vacuum"}, {"length": "=l_fill", "material": "ptfe-like"}]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},
+ {"command": "solve.frequency", "params": {"start": 5.0, "stop": 9.0, "points": 17, "order": 2}}
+]

@@ -1,6 +1,0 @@
-[
- {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": 10, "length": 30}},
- {"command": "model.walls", "params": {"conductivity": 5.8e7}},
- {"command": "mesh.generate", "params": {"size": 3}},
- {"command": "solve.eigenmodes", "params": {"near": 11, "count": 3, "order": 2}}
-]

@@ -379,7 +379,7 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         });
     });
     ui.menu_button(tr("Samples"), |ui| {
-        for s in emcraft_engine::sample::SAMPLES {
+        for s in emcraft_engine::templates::TEMPLATES {
             if ui.add_enabled(!busy, egui::Button::new(s.name)).hint(Raw(sample_label(s.name))).clicked() {
                 out.push(file(FileAction::Request(Then::Sample(s.name.to_owned()))));
             }

@@ -1,0 +1,12 @@
+[
+ {"command": "project.variable", "params": {"name": "arm", "value": 7.0, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "gap", "value": 1.0, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "r_wire", "value": 0.5, "quantity": "length"}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [60, 60, 60]}},
+ {"command": "geometry.inclusion", "params": {"shape": "cylinder", "radius": "=r_wire", "length": "=arm", "at": [30.0, 30.0, "=30 - gap/2 - arm"]}},
+ {"command": "geometry.inclusion", "params": {"shape": "cylinder", "radius": "=r_wire", "length": "=arm", "at": [30.0, 30.0, "=30 + gap/2"]}},
+ {"command": "model.open", "params": {"thickness": 15}},
+ {"command": "mesh.generate", "params": {"per_wavelength": 4, "frequency": 10}},
+ {"command": "model.port.lumped", "params": {"name": "feed", "from": [30.0, 30.0, "=30 - gap/2"], "to": [30.0, 30.0, "=30 + gap/2"], "impedance": 73, "radius": "=r_wire"}},
+ {"command": "solve.radiation", "params": {"frequency": 10}}
+]

@@ -35,11 +35,11 @@ fn every_command_and_sample_is_translated_and_nothing_else() {
     for id in ja.commands.keys() {
         assert!(emcraft_engine::find_command(id).is_some(), "no command `{id}`");
     }
-    for s in emcraft_engine::sample::SAMPLES {
+    for s in emcraft_engine::templates::TEMPLATES {
         assert!(ja.samples.get(s.name).is_some_and(|l| !l.is_empty()), "sample {}: no Japanese", s.name);
     }
     for name in ja.samples.keys() {
-        assert!(emcraft_engine::sample::find(name).is_some(), "no sample `{name}`");
+        assert!(emcraft_engine::templates::find(name).is_some(), "no sample `{name}`");
     }
 }
 

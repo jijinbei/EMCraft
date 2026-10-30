@@ -99,7 +99,7 @@ pub fn kind_of(command: &str, p: &ParamSpec, session: &Session) -> Kind {
         (_, "layers") => return Kind::Table(LAYERS),
         (_, "strips") => return Kind::Table(STRIPS),
         (_, "vias") => return Kind::Table(VIAS),
-        ("file.sample", "name") => return Kind::Choice(emcraft_engine::sample::SAMPLES.iter().map(|s| s.name.to_owned()).collect()),
+        ("file.sample", "name") => return Kind::Choice(emcraft_engine::templates::TEMPLATES.iter().map(|s| s.name.to_owned()).collect()),
         // A body may be metal besides the materials.
         ("geometry.body" | "geometry.body.material" | "geometry.body.edit", "material") => {
             let metal = std::iter::once(emcraft_engine::bodies::METAL.to_owned());

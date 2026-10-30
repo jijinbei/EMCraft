@@ -17,7 +17,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let usage_text =
-        || format!("usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT]   (samples: {})", emcraft_engine::sample::names().join(", "));
+        || format!("usage: emcraft [PROJECT.emcraft] [--sample NAME] [--control PORT]   (samples: {})", emcraft_engine::templates::names().join(", "));
     let usage = || {
         eprintln!("{}", usage_text());
         ExitCode::FAILURE
@@ -37,7 +37,7 @@ fn main() -> ExitCode {
                 return ExitCode::SUCCESS;
             }
             "--sample" => match it.next() {
-                Some(name) if emcraft_engine::sample::find(name).is_some() => sample = Some(name.clone()),
+                Some(name) if emcraft_engine::templates::find(name).is_some() => sample = Some(name.clone()),
                 _ => return usage(),
             },
             "--control" => match it.next().map(|p| p.parse::<u16>()) {

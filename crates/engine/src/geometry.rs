@@ -137,6 +137,30 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, Waveguide::length))}))
 }
 
+/// `geometry.iris_filter`: a rectangular waveguide with a row of inductive irises.
+pub fn iris_filter(s: &mut Session, p: &Params) -> Result<Value> {
+    let width = p.positive_length("width").required()?;
+    let height = p.positive_length("height").required()?;
+    let end_width = p.positive_length("end_width").required()?;
+    let cavity = p.positive_length("cavity").required()?;
+    let f = emcraft_templates::IrisFilter {
+        irises: p.integer("irises", 2..=emcraft_templates::MAX_IRISES).required()?,
+        iris_length: p.positive_length("iris_length").required()?,
+        end_width,
+        inner_width: p.positive_length("inner_width").or(end_width)?,
+        cavity,
+        inner_cavity: p.positive_length("inner_cavity").or(cavity)?,
+        feed: p.positive_length("feed").required()?,
+        material: p.string("material").or("vacuum")?.to_owned(),
+    };
+    if f.end_width.max(f.inner_width) > width {
+        return Err(p.error("end_width", "an iris's aperture must not be wider than the guide"));
+    }
+    let sections = emcraft_templates::iris_sections(&f);
+    s.model.set_waveguide(Waveguide { width, height, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() })?;
+    Ok(json!({"length": s.show_length(s.model.waveguide.as_ref().map_or(0.0, Waveguide::length)), "irises": f.irises}))
+}
+
 emcraft_macros::named_enum! {
     /// A primitive shape (`shape`).
     #[derive(Clone, Copy, Debug, PartialEq)]

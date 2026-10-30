@@ -37,7 +37,7 @@ pub type Thumbs = HashMap<&'static str, (crate::theme::ThemeKey, Option<Picture>
 
 /// A sample's model without its mesh or solve, drawn from the corner.
 fn thumbnail(name: &str) -> Option<Picture> {
-    let sample = emcraft_engine::sample::find(name)?;
+    let sample = emcraft_engine::templates::find(name)?;
     let script: Vec<Value> = serde_json::from_str(sample.script).ok()?;
     let steps: Vec<Value> = script
         .into_iter()
@@ -259,7 +259,7 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 
 fn samples(thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Samples");
-    let list = emcraft_engine::sample::SAMPLES;
+    let list = emcraft_engine::templates::TEMPLATES;
     let mut chosen = None;
     grid(ui, list.len(), |ui, i| {
         let s = &list[i];
