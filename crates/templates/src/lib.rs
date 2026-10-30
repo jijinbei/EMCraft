@@ -45,6 +45,30 @@ pub const TEMPLATES: &[Template] = &[
         marks: include_str!("../scripts/iris-bandpass.marks.json"),
     },
     Template {
+        name: "straight",
+        label: "Straight rectangular waveguide, WR-90 (a × b = 22.86 × 10.16 mm) by default, 50 mm long, swept over its band (1.25 to 1.89 times the TE10 cut-off): set a and b to another EIA size (WR-62: 15.80 × 7.90)",
+        script: include_str!("../scripts/straight.json"),
+        marks: include_str!("../scripts/straight.marks.json"),
+    },
+    Template {
+        name: "h-bend",
+        label: "H-plane 90° bend in WR-90, its outer corner mitred by m on each wall (0: a square corner); ports on the arms' ends across y and x",
+        script: include_str!("../scripts/h-bend.json"),
+        marks: include_str!("../scripts/h-bend.marks.json"),
+    },
+    Template {
+        name: "e-bend",
+        label: "E-plane 90° bend in WR-90, its outer corner mitred by m on each wall (0: a square corner); ports on the arms' ends across y and x",
+        script: include_str!("../scripts/e-bend.json"),
+        marks: include_str!("../scripts/e-bend.marks.json"),
+    },
+    Template {
+        name: "h-tee",
+        label: "H-plane T-junction in WR-90: a side arm off the middle of a straight guide, three ports",
+        script: include_str!("../scripts/h-tee.json"),
+        marks: include_str!("../scripts/h-tee.marks.json"),
+    },
+    Template {
         name: "cavity",
         label: "Copper rectangular cavity, 22.86 × 10.16 × 30 mm: its four lowest resonances (TE101 at 8.24 GHz) and Q factors",
         script: include_str!("../scripts/cavity.json"),

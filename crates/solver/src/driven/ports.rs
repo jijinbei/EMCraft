@@ -380,8 +380,10 @@ fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[us
     global.sort_unstable();
     global.dedup();
     let local = |g: u32| global.binary_search(&g).map(|k| k as u32).map_err(|_| invalid(what(p), "a face's node is missing"));
-    let nodes =
-        global.iter().map(|&g| mesh.node(g).map(|q| frame.local(q)).ok_or_else(|| invalid(what(p), "a face's node is missing"))).collect::<Result<Vec<_>>>()?;
+    let nodes = global
+        .iter()
+        .map(|&g| mesh.node(g).map(|q| frame.local(q)).ok_or_else(|| invalid(what(p), "a face's node is missing")))
+        .collect::<Result<Vec<_>>>()?;
     let mut tris = Vec::with_capacity(faces.len());
     let (mut eps, mut mu) = (Vec::with_capacity(faces.len()), Vec::with_capacity(faces.len()));
     let mut kinds = std::collections::BTreeSet::new();

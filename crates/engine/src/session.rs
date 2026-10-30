@@ -490,7 +490,13 @@ impl Session {
             "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r, "loss_tangent": m.loss_tangent, "magnetic_loss_tangent": m.magnetic_loss_tangent})).collect::<Vec<_>>(),
             "waveguide": w,
             "solid": self.model.solid.as_ref().map(|s| json!({"shape": s.shape.kind(), "material": s.material})),
-            "ports": self.model.ports.iter().map(|p| json!({"name": p.name, "end": p.end, "modes": p.modes})).collect::<Vec<_>>(),
+            "ports": self.model.ports.iter().map(|p| {
+                let mut v = json!({"name": p.name, "end": p.end, "modes": p.modes});
+                if let Some(f) = p.face {
+                    v["axis"] = json!(f.axis.id());
+                }
+                v
+            }).collect::<Vec<_>>(),
             "mesh": self.model.mesh.as_ref().map(|m| json!({"nodes": m.nodes.len(), "tetrahedra": m.tets.len()})),
             "results": self.results.sweep.as_ref().map(|s| json!({"order": s.order.as_u8(), "unknowns": s.driven.dofs.unknowns, "frequencies": s.results.len()})),
             "eigenmodes": self.results.eigen.as_ref().map(|e| e.modes.len()),

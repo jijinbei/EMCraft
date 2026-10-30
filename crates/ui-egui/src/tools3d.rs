@@ -298,8 +298,14 @@ fn port_target(m: &emcraft_model::Model, face: &Face) -> PortTarget {
     if m.solid.is_none() {
         return PortTarget::No("A port inside the model needs a solid");
     }
-    // The guide lies where the body is: above the face along its axis, or below it.
+    // A port's own face, where the body's face is found in front of the port's.
     let k = axis.index();
+    let centre = emcraft_model::Point3::new(face.centre[0], face.centre[1], face.centre[2]);
+    let near = 1e-6 * (0..3).map(|d| (b.max[d] - b.min[d]).abs()).fold(1e-9, f64::max);
+    if let Some(i) = m.ports.iter().position(|p| p.face.is_some_and(|f| f.axis == axis && f.holds(centre, near))) {
+        return PortTarget::Existing(i);
+    }
+    // The guide lies where the body is: above the face along its axis, or below it.
     let (u, v, _) = emcraft_model::Frame::new(axis).axes();
     let h = 1e-4 * (b.max[k] - b.min[k]).abs().max(1e-9);
     let mut ahead = emcraft_model::Point3::new(face.centre[0], face.centre[1], face.centre[2]);

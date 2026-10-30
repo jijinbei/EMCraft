@@ -208,6 +208,11 @@ fn scenario_view3d_port_tool() {
 }
 
 #[test]
+fn scenario_view3d_side_ports() {
+    scenario("view3d_side_ports");
+}
+
+#[test]
 fn scenario_view3d_lumped_tool() {
     scenario("view3d_lumped_tool");
 }

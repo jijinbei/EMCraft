@@ -168,18 +168,20 @@ emcraft_macros::named_enum! {
         Box = "box",
         Cylinder = "cylinder",
         Sphere = "sphere",
+        Prism = "prism",
     }
 }
 
 emcraft_macros::named_serde!(Primitive);
 
-/// A shape from `shape`, `size`, `radius` and `length`.
+/// A shape from `shape`, `size`, `radius`, `length` and `points`.
 pub(crate) fn shape(p: &Params) -> Result<Shape> {
     let dimension = |name| p.positive_length(name).required_or("for this shape");
     Ok(match p.choice("shape").required()? {
         Primitive::Box => Shape::Box { size: p.point("size").required()?.to_vec() },
         Primitive::Cylinder => Shape::Cylinder { radius: dimension("radius")?, length: dimension("length")? },
         Primitive::Sphere => Shape::Sphere { radius: dimension("radius")? },
+        Primitive::Prism => Shape::prism(&p.pairs("points", emcraft_model::MAX_PRISM_POINTS).required_or("for a prism")?, dimension("length")?)?,
     })
 }
 
