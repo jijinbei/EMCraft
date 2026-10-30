@@ -272,6 +272,15 @@ impl Harness {
             return Ok(());
         } else if s.get("note").is_some() {
             return Ok(());
+        } else if let Some(size) = s.get("size") {
+            // The window resized, as a person drags its corner.
+            let side = |i: usize| size.get(i).and_then(Value::as_f64).filter(|v| v.is_finite()).map(|v| v.clamp(200.0, 4000.0) as f32);
+            let (Some(w), Some(h)) = (side(0), side(1)) else {
+                return Err(format!("not a size: {size}"));
+            };
+            self.size = egui::vec2(w, h);
+            self.frames(3);
+            return Ok(());
         } else if let Some(name) = s.get("shot").and_then(Value::as_str) {
             if let Some(dir) = std::env::var_os("EMCRAFT_SCENARIO_SHOTS") {
                 let pic = self.picture().ok_or("no frame drawn yet")?;
@@ -328,7 +337,8 @@ pub fn at_path<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
 /// - `busy`: whether a job runs
 /// - `status`: a substring of the last message, or null for none; `status_error`: whether it is
 ///   an error
-/// - `handles`: handles that must be on screen; `hidden`: handles that must not
+/// - `handles`: handles that must be on screen; `hidden`: handles that must not; `inside`:
+///   handles whose centre lies in the window (not run past its edge)
 /// - `inspect`: `{path: value}` in `ui.inspect`'s reply (a number may be `[value, rel tol]`;
 ///   `{"min": a, "max": b}` bounds it; `"*"` only asks that it is there and not null)
 /// - `query`: `{command, params?, path, value}`: a quick command's reply at a path
@@ -366,6 +376,14 @@ pub fn check(h: &mut Harness, e: &Value) -> Result<(), String> {
                 for n in v.as_array().into_iter().flatten().filter_map(Value::as_str) {
                     if handle_at(n).is_some() != (k == "handles") {
                         return Err(format!("{n}: want {}", if k == "handles" { "shown" } else { "hidden" }));
+                    }
+                }
+            }
+            "inside" => {
+                for n in v.as_array().into_iter().flatten().filter_map(Value::as_str) {
+                    let p = handle_at(n).ok_or_else(|| format!("{n}: not shown"))?;
+                    if !egui::Rect::from_min_size(egui::Pos2::ZERO, h.size).contains(p) {
+                        return Err(format!("{n}: at {p:?}, past the window's edge {:?}", h.size));
                     }
                 }
             }

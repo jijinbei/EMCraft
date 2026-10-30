@@ -199,6 +199,23 @@ impl Player {
 /// that seeks (and pauses) when dragged, and the speed. Handles `{handle}:play`, `{handle}` (the
 /// timeline) and `{handle}:speed`.
 pub fn player(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed) {
+    // One piece in a row that wraps.
+    wrap_before(ui, PLAYER_WIDTH);
+    ui.horizontal(|ui| player_parts(ui, player, phase, handle));
+}
+
+/// The player's width: play, the timeline, the phase and the speed.
+const PLAYER_WIDTH: f32 = 380.0;
+
+/// In a row that wraps, a new row unless `width` more fits in this one (a group of widgets
+/// that a row would otherwise run past the card's edge with).
+pub fn wrap_before(ui: &mut Ui, width: f32) {
+    if ui.available_size_before_wrap().x < width && ui.cursor().min.x > ui.max_rect().min.x + 1.0 {
+        ui.end_row();
+    }
+}
+
+fn player_parts(ui: &mut Ui, player: &mut Player, phase: &mut f64, handle: Fixed) {
     use std::f64::consts::TAU;
     let t = &Tokens::get();
     // Play / pause.

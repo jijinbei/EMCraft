@@ -104,8 +104,8 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 inner.add_space(4.0);
             }
             inner.ctx().data_mut(|d| d.insert_temp(egui::Id::new(STALE), stale));
-            let ui = &mut inner;
-            match app.view {
+            // The drawings fill the card; the results scroll when the window is too small for them.
+            let body = |ui: &mut egui::Ui, st: &mut Parts, out: &mut Actions| match app.view {
                 View::Model => model3d(app, st, ui, out),
                 View::Outline => model(app, ui),
                 View::SParameters => show_chart::<SParameters>(app, st, ui, out),
@@ -117,6 +117,11 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 View::Eigenmodes => eigenmodes(app, st, ui, out),
                 View::Study => show_chart::<StudyView>(app, st, ui, out),
                 View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
+            };
+            if matches!(app.view, View::Model | View::Outline) {
+                body(&mut inner, st, out);
+            } else {
+                egui::ScrollArea::both().id_salt(("view", app.view.id())).auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
             }
         });
     shown
@@ -124,7 +129,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
 
 /// The views with something to show, as a row of pills.
 pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for v in View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)) {
             ui.act(true, pill(shown(v), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
         }
@@ -279,12 +284,16 @@ pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
     scenario::publish_rect(Fixed::Stale, r.response.rect);
 }
 
-/// A picture in the rest of the card, scaled down to fit (dimmed while out of date); the
-/// image's response.
+/// The least height a picture is shrunk to so it fits the card's height: a smaller card scrolls.
+const MIN_PICTURE_HEIGHT: f32 = 220.0;
+
+/// A picture in the rest of the card, scaled down to its width and, down to
+/// [`MIN_PICTURE_HEIGHT`], its height (dimmed while out of date); the image's response.
 pub(super) fn picture(ui: &mut egui::Ui, p: &mut Picture, handle: Fixed) -> egui::Response {
     let size = p.size();
     let avail = ui.available_size();
-    let scale = (avail.x / size.x).min(avail.y / size.y).clamp(0.1, 1.0);
+    let tall = avail.y.max(MIN_PICTURE_HEIGHT.min(size.y));
+    let scale = (avail.x / size.x).min(tall / size.y).clamp(0.1, 1.0);
     let id = p.texture(ui.ctx());
     let mut image = egui::Image::new((id, size * scale)).sense(Sense::click());
     if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new(STALE))).unwrap_or(false) {
@@ -301,7 +310,14 @@ pub(super) fn dim_if_stale(ui: &mut egui::Ui) {
     }
 }
 
+/// The least width pictures are drawn at (a narrower card shows them scaled down).
+const MIN_PICTURE_WIDTH: f32 = 300.0;
+
+/// Below this width a view stacks what it puts side by side (the field's picture and its
+/// column, the port-mode table and its pattern).
+pub(super) const NARROW: f32 = 640.0;
+
 /// A width for pictures, rounded so resizing does not redraw on every pixel.
 pub(super) fn picture_width(ui: &egui::Ui) -> usize {
-    (((ui.available_width().max(400.0)) / 50.0).floor() * 50.0).min(2400.0) as usize
+    (((ui.available_width().max(MIN_PICTURE_WIDTH)) / 50.0).floor() * 50.0).min(2400.0) as usize
 }

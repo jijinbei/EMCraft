@@ -60,12 +60,17 @@ impl EmcraftApp {
     }
 }
 
+/// In a window less tall than this, the message card shows two lines.
+const SHORT: f32 = 720.0;
+
 /// The message card at the bottom: the last messages, and the running job's progress and Cancel.
 pub(crate) fn area(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &theme::Tokens::get();
-    // Taller while a job runs: its progress row sits above the messages.
+    // Taller while a job runs: its progress row sits above the messages; two lines of them in a
+    // short window, which leaves the room to the views.
+    let lines = if ui.ctx().content_rect().height() < SHORT { 36.0 } else { 72.0 };
     egui::Panel::bottom("emcraft_status")
-        .exact_size(if app.job.is_some() { 130.0 } else { 96.0 })
+        .exact_size(lines + if app.job.is_some() { 58.0 } else { 24.0 })
         .show_separator_line(false)
         .frame(egui::Frame::NONE.fill(t.viewport_bottom).inner_margin(egui::Margin { left: 6, right: 6, top: 0, bottom: 6 }))
         .show(ui, |ui| {
@@ -76,13 +81,16 @@ pub(crate) fn area(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 scenario::publish_rect(Fixed::Status, ui.max_rect());
                 progress(app, ui, t, out);
                 let rest = (height - if app.job.is_some() { 36.0 } else { 0.0 }).max(16.0);
-                egui::ScrollArea::vertical().stick_to_bottom(true).max_height(rest).auto_shrink([false, false]).show(ui, |ui| {
-                    let start = app.messages.len().saturating_sub(40);
-                    for m in &app.messages[start..] {
-                        let text = if m.count > 1 { format!("{} (×{})", m.text, m.count) } else { m.text.clone() };
-                        ui.label(egui::RichText::new(text).size(t.font_body).color(if m.error { t.error } else { t.text }));
-                    }
-                });
+                egui::ScrollArea::vertical().stick_to_bottom(true).max_height(rest).min_scrolled_height(rest).auto_shrink([false, false]).show(
+                    ui,
+                    |ui| {
+                        let start = app.messages.len().saturating_sub(40);
+                        for m in &app.messages[start..] {
+                            let text = if m.count > 1 { format!("{} (×{})", m.text, m.count) } else { m.text.clone() };
+                            ui.label(egui::RichText::new(text).size(t.font_body).color(if m.error { t.error } else { t.text }));
+                        }
+                    },
+                );
             });
         });
 }
