@@ -182,7 +182,7 @@ impl View3d {
 
     /// Cuts the built scene when the section view is on and the cut held is not of this scene
     /// and cut; a cut the renderer refuses turns the view off and says why.
-    fn update_cut(&mut self, out: &mut Actions) {
+    fn update_cut(&mut self, model: &emcraft_model::Model, out: &mut Actions) {
         let (Some(now), Some((key, full))) = (self.section, &self.built) else {
             self.cut = None;
             return;
@@ -192,7 +192,10 @@ impl View3d {
         }
         let s = now.section();
         match view3d::section::section(&full.scene, &s) {
-            Ok(scene) => {
+            Ok(mut scene) => {
+                // A meshed model's cut is the mesh's: every material filled, the air too.
+                let caps = scene3d::mesh_slice(model, now.axis, now.at, now.keep == Keep::Low);
+                scene.tris.extend(caps.tris);
                 let labels = full.labels.iter().filter(|l| s.keeps(l.at)).cloned().collect();
                 let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds };
                 self.cut = Some((key.clone(), now, built));
@@ -256,7 +259,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     if !v.is_built(&key) {
         build(app, v, field, overlay, key.clone(), out);
     }
-    v.update_cut(out);
+    v.update_cut(app.session.model(), out);
     let built = v.built_shallow();
     let Some(bounds) = built.bounds.or_else(|| built.scene.bounds()) else {
         ui.painter().text(

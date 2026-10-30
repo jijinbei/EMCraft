@@ -132,6 +132,12 @@ pub struct FieldLayer<'a> {
     pub at: f64,
 }
 
+/// A meshed model's cut across `axis` at `at` (m), every material filled ([`mesh::slice`]);
+/// empty without a mesh.
+pub fn mesh_slice(m: &emcraft_model::Model, axis: usize, at: f64, keep_low: bool) -> Scene {
+    mesh::slice(m, axis, at, keep_low)
+}
+
 /// Builds the scene of `session` for `overlay`.
 pub fn build(session: &Session, overlay: Overlay) -> Built {
     build_with(session, overlay, &[], None)
