@@ -81,6 +81,7 @@ emcraft_macros::named_enum! {
         TemplateOpen = "template:open",
         TemplateCancel = "template:cancel",
         TemplateReset = "template:reset",
+        TemplateMark = "template:mark",
         // What a narrow window's ribbon has no room for: the tabs, the buttons.
         TabsMore = "tabs:more",
         ToolbarMore = "toolbar:more",
@@ -175,6 +176,8 @@ emcraft_macros::named_enum! {
         View3dMeasure = "view3d:measure",
         /// The selected port's reference plane's grip.
         View3dRefPlane = "view3d:refplane",
+        View3dRefField = "view3d:refplane:field",
+        View3dRefZero = "view3d:refplane:zero",
     }
 }
 

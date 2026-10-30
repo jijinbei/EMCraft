@@ -1,0 +1,50 @@
+{
+ "a": {
+  "from": [
+   0,
+   0,
+   "=(2*l_fill+l_gap)"
+  ],
+  "to": [
+   "=a",
+   0,
+   "=(2*l_fill+l_gap)"
+  ]
+ },
+ "b": {
+  "from": [
+   "=a",
+   0,
+   "=(2*l_fill+l_gap)"
+  ],
+  "to": [
+   "=a",
+   "=b",
+   "=(2*l_fill+l_gap)"
+  ]
+ },
+ "l_fill": {
+  "from": [
+   "=a",
+   "=b",
+   "=(2*l_fill+l_gap)-l_fill"
+  ],
+  "to": [
+   "=a",
+   "=b",
+   "=(2*l_fill+l_gap)"
+  ]
+ },
+ "l_gap": {
+  "from": [
+   "=a",
+   "=b",
+   "=l_fill"
+  ],
+  "to": [
+   "=a",
+   "=b",
+   "=l_fill+l_gap"
+  ]
+ }
+}
