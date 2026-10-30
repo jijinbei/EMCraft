@@ -310,6 +310,8 @@ pub enum Handle<'a> {
     Legend(&'a str),
     /// A curve's switch in the style card: `chart:curve:s21.fem`.
     Curve(&'a str),
+    /// A curve a chart can add to its data, in its style card: `chart:add:s21.ref`.
+    CurveAdd(&'a str),
     /// A curve's colour swatch (0: the theme's): `chart:colour:s21.fem:2`.
     CurveColour(&'a str, usize),
     /// A curve's width: `chart:width:s21.fem:3`.
@@ -388,6 +390,7 @@ impl fmt::Display for Handle<'_> {
             Handle::StyleAxis(axis, part) => write!(f, "chart:style:{axis}:{part}"),
             Handle::Legend(at) => write!(f, "chart:legend:{at}"),
             Handle::Curve(key) => write!(f, "chart:curve:{key}"),
+            Handle::CurveAdd(k) => write!(f, "chart:add:{k}"),
             Handle::CurveColour(key, i) => write!(f, "chart:colour:{key}:{i}"),
             Handle::CurveWidth(key, w) => write!(f, "chart:width:{key}:{w}"),
             Handle::Deembed(port) => write!(f, "deembed:{port}"),

@@ -14,6 +14,7 @@
     "A pulse over the band: S-parameters by finite integration (solve.time_domain)": "帯域にわたるパルス：有限積分法による Sパラメータ（solve.time_domain）",
     "ANALYSIS": "解析",
     "Adaptive mesh: {n} passes, {tets} tetrahedra, last {what} {last}, {converged}.": "適応メッシュ：{n} パス、四面体 {tets}、最後の {what} {last}、{converged}。",
+    "Add": "追加",
     "Add {row}": "{row} を追加",
     "Against {reference} — worst |S − S_ref| = {worst}": "{reference} との比較 — 最大 |S − S_ref| = {worst}",
     "All settings…": "すべての設定…",
@@ -89,6 +90,7 @@
     "Docked": "ドック",
     "Don't save": "保存しない",
     "Done": "完了",
+    "Draw it over the data": "データに重ねて描く",
     "Drawing": "描画",
     "Drawn by the GPU every frame: for large meshes, where the CPU picture takes long.": "毎フレーム GPU で描画。CPU での描画に時間がかかる大きなメッシュ向け。",
     "Drawn on the CPU with a depth buffer and smoothed edges when the view rests; the GPU while you drag.": "静止時は CPU で深度バッファーと滑らかなエッジで描画し、ドラッグ中は GPU で描画。",
@@ -1473,7 +1475,8 @@
         "width": "曲線の線の太さまたはマーカーの大きさ（ピクセル、0.5〜12。null：既定）",
         "grid": "グリッドを描く（既定 true）",
         "legend": "凡例の位置：`below`（既定）、`top-left`、`top-right`、`bottom-left`、`bottom-right` または `none`",
-        "reset": "先にすべて自動に戻す"
+        "reset": "先にすべて自動に戻す",
+        "added": "データに追加して描く曲線のキー：比べる理論値（理論のある導波管の S パラメータ図では `s21.ref`、`s11.ref`）。既定はなし"
       }
     },
     "model.port.deembed": {

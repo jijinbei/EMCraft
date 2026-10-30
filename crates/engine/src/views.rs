@@ -133,6 +133,10 @@ pub struct ChartStyle {
     /// The keys of the curves left out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden: Vec<String>,
+    /// The keys of the curves added to the data ([`optional_curves`]: a closed form to compare
+    /// with); none by default, a chart shows what was solved.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added: Vec<String>,
     /// Curves' own colours and widths, by key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub curves: BTreeMap<String, CurveStyle>,
@@ -282,6 +286,27 @@ fn is_frequency(id: ChartId, axis: AxisId) -> bool {
 /// assert!(s.execute("view.chart.style", &serde_json::json!({"chart": "study", "width": 99, "curve": "a"})).is_err());
 /// assert!(s.execute("view.chart.style", &serde_json::json!({"chart": "nope"})).is_err());
 /// ```
+/// The curves chart `id` can add to its data ([`ChartStyle::added`]), each with its key and
+/// label: for the S-parameters, the closed form or mode matching the model's guide has
+/// (`view::reference`), none otherwise.
+pub fn optional_curves(s: &Session, id: ChartId) -> Vec<(String, String)> {
+    match id {
+        ChartId::SParameters => match crate::view::reference(s) {
+            Ok(r) => {
+                let label = r.label();
+                vec![("s21.ref".to_owned(), format!("|S21| {label}")), ("s11.ref".to_owned(), format!("|S11| {label}"))]
+            }
+            Err(_) => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// Whether chart `id`'s style adds curve `key`.
+pub fn added(s: &Session, id: ChartId, key: &str) -> bool {
+    s.views.charts.get(id.id()).is_some_and(|st| st.added.iter().any(|k| k == key))
+}
+
 pub fn style_chart(s: &Session, id: ChartId, mut chart: Chart) -> Chart {
     let Some(style) = s.views.charts.get(id.id()) else { return chart };
     if let Some(t) = style.title.as_ref().filter(|t| !t.is_empty()) {
@@ -418,6 +443,18 @@ pub fn chart_style(s: &mut Session, p: &Params) -> Result<Value> {
         if style.axis(a).log && [style.axis(a).min, style.axis(a).max].iter().flatten().any(|v| *v <= 0.0) {
             return Err(p.error(&format!("{a}_scale"), "log needs the axis' fixed ends above 0"));
         }
+    }
+    if let Some(list) = p.list("added", MAX_CURVES).optional()? {
+        let known: Vec<String> = optional_curves(s, id).into_iter().map(|(k, _)| k).collect();
+        style.added = list
+            .iter()
+            .map(|k| {
+                k.as_str()
+                    .filter(|k| known.iter().any(|q| q == k))
+                    .map(str::to_owned)
+                    .ok_or_else(|| p.error("added", format!("holds the keys of curves this chart can add: {}", known.join(", "))))
+            })
+            .collect::<Result<Vec<String>>>()?;
     }
     if let Some(list) = p.list("hidden", MAX_CURVES).optional()? {
         style.hidden = list
