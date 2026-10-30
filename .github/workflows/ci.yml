@@ -11,6 +11,11 @@ env:
   # still fill a runner's disk unless it is cleared first.
   CARGO_PROFILE_RELEASE_DEBUG: "false"
   CARGO_PROFILE_RELEASE_STRIP: "debuginfo"
+  # The shipped binaries' whole-program optimisation (Cargo.toml) would link each of the dozens
+  # of test binaries in one slow thread: the tests build with thin LTO in 16 units instead. The
+  # results are the same bit for bit (the oracle's fixtures, blessed under both, are identical).
+  CARGO_PROFILE_RELEASE_LTO: "thin"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
 
 jobs:
   gate:

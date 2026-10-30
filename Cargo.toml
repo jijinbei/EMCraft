@@ -89,8 +89,37 @@ opt-level = 3
 [profile.dev.package.emcraft-gpu]
 opt-level = 3
 
+# The shipped binaries: whole-program optimisation in one unit and no symbols make them about a
+# third smaller than thin LTO in 16 units with line tables, with the same numbers bit for bit
+# (Rust does not contract or reassociate floating point); CI's tests build with thin LTO
+# (.github/workflows/ci.yml). The window's crates are optimised for size: their speed is
+# egui's layout, far from the solvers' loops, which stay at opt-level 3.
 [profile.release]
 opt-level = 3
-lto = "thin"
-codegen-units = 16
-debug = "line-tables-only"
+lto = "fat"
+codegen-units = 1
+strip = true
+
+[profile.release.package.egui]
+opt-level = "s"
+
+[profile.release.package.epaint]
+opt-level = "s"
+
+[profile.release.package.eframe]
+opt-level = "s"
+
+[profile.release.package.egui_glow]
+opt-level = "s"
+
+[profile.release.package.glow]
+opt-level = "s"
+
+[profile.release.package.winit]
+opt-level = "s"
+
+[profile.release.package.rfd]
+opt-level = "s"
+
+[profile.release.package.emcraft-ui-egui]
+opt-level = "s"
