@@ -335,7 +335,8 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     legend(&p, rect, &built.legend, t);
     crate::tools3d::draw(app, v, &p, rect);
     if let Some((_, row)) = &picked {
-        selection_card(ui, &p, rect, row, !app.busy(), t, out);
+        let card = selection_card(ui, &p, rect, row, !app.busy(), t, out);
+        crate::tools3d::ref_field(app, v, ui, card.center_bottom(), out);
     }
     let facing = v.facing.map(|f| facing_plane(app.session.display().length, bounds.0, f));
     navigator(&v.camera, ui, rect, out);
@@ -613,7 +614,7 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
 
 /// The selection's name on a card at the top, with how to edit it; an item of the model (a
 /// port, a body) gets Edit and Delete beside its name.
-fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate::browser::Row, enabled: bool, t: &Tokens, out: &mut Actions) {
+fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate::browser::Row, enabled: bool, t: &Tokens, out: &mut Actions) -> Rect {
     let item = row.item.clone();
     let hint = if row.editable() && item.is_none() { tr("  ·  double-click to edit") } else { "" };
     let g = p.layout_no_wrap(format!("{}{hint}", row.shown.trim()), FontId::proportional(t.font_small), t.text);
@@ -625,7 +626,7 @@ fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate:
     p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
     p.galley(pos2(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, t.text);
     scenario::publish_target(Fixed::View3dSelected, r);
-    let Some(item) = item else { return };
+    let Some(item) = item else { return r };
     let mut x = r.right() - buttons;
     for (glyph, handle, tip) in [(Glyph::Edit, Fixed::View3dSelectedEdit, "Edit"), (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete")] {
         let b = Rect::from_center_size(pos2(x + pitch / 2.0, r.center().y), vec2(size, size));
@@ -639,6 +640,7 @@ fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate:
         }
         x += pitch;
     }
+    r
 }
 
 /// A field plane's box in the model (m) and the standard view that faces it.

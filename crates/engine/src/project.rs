@@ -228,6 +228,66 @@ pub fn template_steps(name: &str, values: &Value) -> Result<Vec<Step>> {
     Ok(script)
 }
 
+/// Where a template's parameter shows on its model: a dimension from `from` to `to` (m).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TemplateMark {
+    pub name: String,
+    pub from: [f64; 3],
+    pub to: [f64; 3],
+}
+
+/// Where template `name`'s parameters show on its model built with `values` (as
+/// [`template_steps`] takes them), each a dimension in metres, in the template's order of
+/// parameters; the default display units (mm) read its coordinates.
+///
+/// ```
+/// use serde_json::json;
+/// let marks = emcraft_engine::template_marks("iris-bandpass", &json!({"w_end": 14})).unwrap_or_default();
+/// let w = marks.iter().find(|m| m.name == "w_end").map(|m| m.to[0] - m.from[0]);
+/// assert!(w.is_some_and(|w| (w - 14e-3).abs() < 1e-12));
+/// assert!(emcraft_engine::template_marks("iris-bandpass", &json!({"wings": 1})).is_err());
+/// ```
+pub fn template_marks(name: &str, values: &Value) -> Result<Vec<TemplateMark>> {
+    let steps = template_steps(name, values)?;
+    let template = emcraft_templates::find(name).ok_or_else(|| EngineError::failed(format!("no template `{name}`")))?;
+    // The parameters' values, each read in order as the script defines it.
+    let mut vars = crate::expr::Variables::new();
+    for st in steps.iter().filter(|st| st.command == crate::script::DEFINE) {
+        if let (Some(n), Some(v)) = (st.param("name").and_then(Value::as_str), st.param("value")) {
+            let x = match v {
+                Value::String(e) => crate::expr::body(e).ok_or_else(|| EngineError::failed(format!("{n}: not an expression")))?.to_owned(),
+                v => v.to_string(),
+            };
+            let value = crate::expr::eval(&x, &vars).map_err(|e| EngineError::failed(format!("{n}: {e}")))?;
+            vars.insert(n.to_owned(), value);
+        }
+    }
+    let marks: serde_json::Map<String, Value> =
+        serde_json::from_str(template.marks).map_err(|e| EngineError::failed(format!("marks of {name}: {e}")))?;
+    let l = Display::default().length;
+    let point = |v: &Value| -> Result<[f64; 3]> {
+        let list = v.as_array().filter(|a| a.len() == 3).ok_or_else(|| EngineError::failed(format!("marks of {name}: a point is [x, y, z]")))?;
+        let mut out = [0.0; 3];
+        for (o, c) in out.iter_mut().zip(list) {
+            let x = match c {
+                Value::String(e) => crate::expr::body(e).map_or_else(|| Err(format!("`{e}` is no expression")), |b| crate::expr::eval(b, &vars)),
+                c => c.as_f64().ok_or_else(|| format!("{c} is no number")),
+            }
+            .map_err(|e| EngineError::failed(format!("marks of {name}: {e}")))?;
+            *o = l.to_si(x);
+        }
+        Ok(out)
+    };
+    let order: Vec<String> = template_parameters(name).unwrap_or_default().into_iter().map(|p| p.name).collect();
+    let mut out = Vec::new();
+    for n in &order {
+        if let Some(m) = marks.get(n) {
+            out.push(TemplateMark { name: n.clone(), from: point(&m["from"])?, to: point(&m["to"])? });
+        }
+    }
+    Ok(out)
+}
+
 /// `file.templates`: the templates, each with its label and parameters.
 pub fn templates(s: &mut Session, _: &Params) -> Result<Value> {
     let d = s.display;

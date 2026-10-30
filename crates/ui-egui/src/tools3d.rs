@@ -22,12 +22,12 @@ use serde_json::{Value, json};
 
 use crate::glyphs::Glyph;
 use crate::handle::{Fixed, Handle};
-use crate::lang::{args, tr, trf};
+use crate::lang::{Raw, args, tr, trf};
 use crate::scene3d::Pick;
 use crate::scene3d::faces::{Face, dot, lerp, norm, sub};
 use crate::theme::Tokens;
 use crate::view3d::View3d;
-use crate::{Action, Actions, EmcraftApp, scenario};
+use crate::{Action, Actions, EmcraftApp, Hint, UiExt, scenario};
 
 emcraft_macros::named_enum! {
     /// A tool of the 3D view.
@@ -122,8 +122,10 @@ pub struct Hover {
 pub struct RefDrag {
     pub port: usize,
     pub name: String,
-    /// The de-embedding (m) it shows now.
+    /// The de-embedding (m) it shows now: where the pointer put it, at 0 when that is near.
     pub deembed: f64,
+    /// Where the pointer put it (m).
+    pub raw: f64,
 }
 
 /// The tools' state.
@@ -139,6 +141,9 @@ pub struct Tools {
     /// The last measurement: its picks and `geometry.measure`'s reply.
     pub measured: Option<([Snap; 2], Value)>,
     pub drag: Option<RefDrag>,
+    /// The reference plane's field under the selection card: the port, its text, and the value
+    /// (display units) it was filled from.
+    pub ref_text: Option<(usize, String, f64)>,
 }
 
 impl Tools {
@@ -470,7 +475,7 @@ pub fn grip(app: &EmcraftApp, v: &View3d, rect: Rect) -> Option<Pos2> {
 
 /// Starts dragging the reference plane.
 pub fn start_drag(app: &EmcraftApp, v: &mut View3d) {
-    v.tools.drag = ref_plane(app, v).map(|r| RefDrag { port: r.port, name: r.name, deembed: r.deembed });
+    v.tools.drag = ref_plane(app, v).map(|r| RefDrag { port: r.port, name: r.name, deembed: r.deembed, raw: r.deembed });
 }
 
 /// Moves the dragged reference plane by the pointer's move `d`: the move's share of the port's
@@ -485,7 +490,10 @@ pub fn drag(app: &EmcraftApp, v: &mut View3d, rect: Rect, d: egui::Vec2) {
         return;
     }
     if let Some(drag) = v.tools.drag.as_mut() {
-        drag.deembed = (drag.deembed + f64::from(d.dot(along) / along.length_sq()) * span).clamp(-span, span);
+        drag.raw = (drag.raw + f64::from(d.dot(along) / along.length_sq()) * span).clamp(-span, span);
+        // The port's face holds it within a snap's pixels.
+        let near = f64::from(SNAP_PX / along.length()) * span;
+        drag.deembed = if drag.raw.abs() < near { 0.0 } else { drag.raw };
     }
 }
 
@@ -507,6 +515,7 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
     let cam = &v.camera;
     let at = |q: [f64; 3]| screen(cam, rect, q);
     let l = app.session.display().length;
+    arrows(app.session.model(), p, cam, rect);
     if let Some(r) = ref_plane(app, v) {
         reference(p, &r, cam, rect, l, t);
     }
@@ -716,4 +725,84 @@ fn reference(p: &egui::Painter, r: &RefPlane, cam: &Camera, rect: Rect, l: emcra
     let box_ = Rect::from_min_size(g + vec2(10.0, -gal.size().y - 8.0), gal.size() + vec2(10.0, 4.0));
     p.rect_filled(box_, 4.0, t.panel.gamma_multiply(0.9));
     p.galley(box_.min + vec2(5.0, 2.0), gal, t.text);
+}
+
+/// An arrow (`a` to `b` on screen) with its head at `b`.
+fn arrow(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke) {
+    let d = b - a;
+    let len = d.length();
+    if len < 4.0 {
+        return;
+    }
+    let u = d / len;
+    let n = vec2(-u.y, u.x);
+    let head = (len * 0.35).min(12.0);
+    p.line_segment([a, b], s);
+    p.add(egui::Shape::convex_polygon(vec![b, b - u * head + n * head * 0.45, b - u * head - n * head * 0.45], s.color, Stroke::NONE));
+}
+
+/// Which way each port sends its wave: from a waveguide port's face into the model, along a
+/// lumped port's gap from `from` to `to`.
+fn arrows(m: &emcraft_model::Model, p: &egui::Painter, cam: &Camera, rect: Rect) {
+    let ink = crate::theme::color32(crate::theme::scene().port);
+    let s = Stroke::new(2.5, ink);
+    let span = m.bounds().map_or(0.0, |b| (b.max.z - b.min.z).abs());
+    for port in &m.ports {
+        let Some(q) = crate::scene3d::port_quad(m, port) else { continue };
+        let c = [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]));
+        let size = (q[2][0] - q[0][0]).abs().max((q[2][1] - q[0][1]).abs());
+        let len = (0.6 * size).min(0.3 * span).max(1e-9);
+        let tip = [c[0], c[1], c[2] + crate::scene3d::port_inward(port) * len];
+        if let (Some(a), Some(b)) = (screen(cam, rect, c), screen(cam, rect, tip)) {
+            arrow(p, a, b, s);
+        }
+    }
+    for lp in &m.lumped {
+        let (f, t) = ([lp.from.x, lp.from.y, lp.from.z], [lp.to.x, lp.to.y, lp.to.z]);
+        if let (Some(a), Some(b)) = (screen(cam, rect, f), screen(cam, rect, t)) {
+            arrow(p, a, b, s);
+        }
+    }
+}
+
+/// The selected waveguide port's reference plane as a number under the selection card: Enter
+/// sets it, 0 puts it back on the port's face (`model.port.edit {deembed}`).
+pub fn ref_field(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, at: Pos2, out: &mut Actions) {
+    let Some(r) = ref_plane(app, v) else {
+        v.tools.ref_text = None;
+        return;
+    };
+    let t = &Tokens::get();
+    let l = app.session.display().length;
+    let now = (l.from_si(r.deembed) * 1e3).round() / 1e3;
+    // The text follows the port (and a drag) until it is edited.
+    let fresh = match &v.tools.ref_text {
+        Some((port, _, seen)) => *port != r.port || *seen != now,
+        None => true,
+    };
+    if fresh {
+        v.tools.ref_text = Some((r.port, trimmed(now, 3), now));
+    }
+    let Some((_, text, _)) = v.tools.ref_text.as_mut() else { return };
+    let busy = app.busy();
+    let area = Rect::from_center_size(at + vec2(0.0, 14.0), vec2(220.0, 26.0));
+    ui.painter().rect_filled(area, 6.0, t.panel.gamma_multiply(0.92));
+    let mut child =
+        ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(vec2(8.0, 2.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    crate::ui_kit::small(&mut child, "Ref. plane", t.text_dim);
+    let edit = egui::TextEdit::singleline(text).desired_width(64.0).char_limit(24);
+    let resp = child.add_enabled_ui(!busy, |ui| ui.named(edit, Fixed::View3dRefField.into())).inner;
+    crate::ui_kit::small(&mut child, Raw(l.symbol()), t.text_dim);
+    let enter = resp.lost_focus() && child.input(|i| i.key_pressed(egui::Key::Enter));
+    let set = |value: f64, out: &mut Actions| out.push(Action::run("model.port.edit", json!({"name": r.name, "deembed": value})));
+    if enter {
+        match text.trim().parse::<f64>() {
+            Ok(x) if x.is_finite() && x != now => set(x, out),
+            _ => *text = trimmed(now, 3),
+        }
+    }
+    let zero = child.add_enabled_ui(!busy && now != 0.0, |ui| ui.named(egui::Button::new("0").small(), Fixed::View3dRefZero.into())).inner;
+    if zero.hint("Back to the port's face").clicked() {
+        set(0.0, out);
+    }
 }

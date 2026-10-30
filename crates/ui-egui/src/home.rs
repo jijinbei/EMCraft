@@ -37,12 +37,12 @@ pub type Thumbs = HashMap<&'static str, (crate::theme::ThemeKey, Option<Picture>
 
 /// A sample's model without its mesh or solve, drawn from the corner.
 fn thumbnail(name: &str) -> Option<Picture> {
-    template_picture(name, &Value::Null, [(THUMB[0] * 2.0) as usize, (THUMB[1] * 2.0) as usize]).ok()
+    template_picture(name, &Value::Null, [(THUMB[0] * 2.0) as usize, (THUMB[1] * 2.0) as usize]).ok().map(|(p, _)| p)
 }
 
 /// Template `name`'s model with its parameters changed to `values`, without its mesh or solve,
-/// drawn from the corner `size` pixels; why it cannot be built.
-pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<Picture, String> {
+/// drawn from the corner `size` pixels, with the camera it was drawn from; why it cannot be built.
+pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<(Picture, Camera), String> {
     let steps: Vec<emcraft_engine::Step> = emcraft_engine::template_steps(name, values)
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -60,7 +60,7 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
     let t = &Tokens::get();
     let rgb = crate::theme::rgb;
     let opt = view3d::Options { width: w, height: h, supersample: 2, background: (rgb(t.viewport_top), rgb(t.viewport_bottom)), line_width: 2.0 };
-    Ok(Picture::new(&view3d::render(&built.scene, &cam, &opt)))
+    Ok((Picture::new(&view3d::render(&built.scene, &cam, &opt)), cam))
 }
 
 pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {

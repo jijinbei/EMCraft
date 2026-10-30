@@ -115,6 +115,20 @@ fn every_sample_is_a_script_of_known_commands() {
 }
 
 #[test]
+fn every_template_mark_is_a_parameter_and_reads_as_a_dimension() {
+    for t in emcraft_templates::TEMPLATES {
+        let marks = crate::template_marks(t.name, &serde_json::Value::Null).unwrap_or_else(|e| panic!("{}: {e}", t.name));
+        let given: serde_json::Map<String, serde_json::Value> = serde_json::from_str(t.marks).unwrap();
+        // Every mark names a parameter (none is left out for a typo).
+        assert_eq!(marks.len(), given.len(), "{}", t.name);
+        for m in &marks {
+            let d: f64 = (0..3).map(|k| (m.to[k] - m.from[k]).powi(2)).sum::<f64>().sqrt();
+            assert!(d > 0.0 && d < 1.0, "{} {}: {d}", t.name, m.name);
+        }
+    }
+}
+
+#[test]
 fn a_template_opens_with_its_parameters_changed_and_refuses_unknown_ones() {
     let mut s = Session::new();
     let list = s.execute("file.templates", &json!({})).unwrap();
