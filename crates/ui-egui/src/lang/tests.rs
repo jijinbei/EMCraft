@@ -74,18 +74,22 @@ fn the_language_is_the_threads_own() {
     assert_eq!(param_doc("no.such", "x"), "");
 }
 
-/// The models the tour draws, each with results of a kind (coarse, to keep it fast), and the
-/// commands run after each one's script (one by one: the views keep their replies).
-const MODELS: &[(&str, &str)] = &[
+/// The models the tour draws, each with results of a kind (coarse, to keep it fast): the
+/// commands run after each one's script (one by one: the views keep their replies), and the
+/// steps visited (all when none are named).
+type Model = (&'static str, &'static str, &'static [&'static str]);
+
+const MODELS: &[Model] = &[
     // Nothing yet: every view says what it needs.
-    ("[]", "[]"),
+    ("[]", "[]", &[]),
     // A guide with a port and no band: the steps' errors that ask for one; a failed solve.
     (
-        r#"[{"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum"}]}},
+        r#"[{"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum", "width": 20}]}},
             {"command": "model.symmetry", "params": {"axis": "y", "kind": "electric"}},
             {"command": "mesh.generate", "params": {"size": 8}},
             {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}}]"#,
         r#"[{"command": "solve.frequency", "params": {"points": 3}}]"#,
+        &[],
     ),
     // A layered guide with strips and a via (not meshed).
     (
@@ -94,13 +98,14 @@ const MODELS: &[(&str, &str)] = &[
               "layers": [{"thickness": 0.5, "material": "fill"}],
               "strips": [{"y": 1, "x0": 3, "width": 2, "z0": 0, "z1": 30}], "vias": [{"x0": 14, "z0": 14, "wx": 1, "wz": 2, "y0": 0, "y1": 1}]}}]"#,
         "[]",
+        &["geometry"],
     ),
     // A filter: S-parameters, fields, port modes, the comparison with theory, TDR, studies.
     (
         r#"[{"command": "project.variable", "params": {"name": "l", "value": 20}},
             {"command": "model.material.create", "params": {"name": "ptfe-like", "eps_r": 2.0}},
             {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
-              {"length": 15, "material": "ptfe-like"}, {"length": "=l", "material": "vacuum", "width": 20}, {"length": 15, "material": "ptfe-like"}]}},
+              {"length": 15, "material": "ptfe-like"}, {"length": "=l", "material": "vacuum"}, {"length": 15, "material": "ptfe-like"}]}},
             {"command": "project.frequency", "params": {"start": 7, "stop": 9}},
             {"command": "model.symmetry", "params": {"axis": "x", "kind": "magnetic"}},
             {"command": "mesh.generate", "params": {"size": 8}},
@@ -110,12 +115,14 @@ const MODELS: &[(&str, &str)] = &[
         r#"[{"command": "solve.port_modes", "params": {"frequency": 9, "order": 1}},
             {"command": "results.compare", "params": {}},
             {"command": "results.check", "params": {}}]"#,
+        &[],
     ),
     // The filter optimized.
     (
         "[]",
         r#"[{"command": "study.optimize", "params": {"variables": [{"name": "l", "min": 18, "max": 22}], "goal": {"type": "min_max_db", "parameter": "s11"},
               "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}, "max_evaluations": 2}}]"#,
+        &["run", "results"],
     ),
     // The filter swept: one variable (a point that fails), then on a grid.
     (
@@ -124,6 +131,7 @@ const MODELS: &[(&str, &str)] = &[
             {"command": "study.sweep", "params": {"variable": "l", "values": [-5, 20], "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}}},
             {"command": "study.sweep", "params": {"variables": [{"name": "l", "values": [18, 22]}, {"name": "w", "values": [20]}],
               "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}}}]"#,
+        &["run", "results"],
     ),
     // A cavity with an electric wall: eigenmodes.
     (
@@ -132,6 +140,7 @@ const MODELS: &[(&str, &str)] = &[
             {"command": "mesh.generate", "params": {"size": 8}},
             {"command": "solve.eigenmodes", "params": {"near": 12, "count": 2, "order": 1}}]"#,
         "[]",
+        &["boundaries", "setup", "run", "results"],
     ),
     // An open box with a dipole: radiation and the far field.
     (
@@ -144,19 +153,22 @@ const MODELS: &[(&str, &str)] = &[
             {"command": "project.frequency", "params": {"start": 9, "stop": 11}},
             {"command": "solve.radiation", "params": {"frequency": 10, "order": 1}}]"#,
         "[]",
+        &["intent", "excitation", "boundaries", "run"],
     ),
     // A sphere in a spherical layer (not meshed).
     (
         r#"[{"command": "geometry.solid", "params": {"shape": "sphere", "radius": 30}}, {"command": "model.open", "params": {"thickness": 10, "shape": "sphere"}}]"#,
         "[]",
+        &["boundaries", "run"],
     ),
     // A periodic guide: the dispersion diagram.
     (
         r#"[{"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 10, "material": "vacuum"}]}},
             {"command": "mesh.generate", "params": {"size": 5}},
-            {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}},
+            {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}}, {"command": "project.frequency", "params": {"start": 5, "stop": 6}},
             {"command": "solve.dispersion", "params": {"from": 0, "to": 180, "points": 3, "bands": 1, "near": 15, "order": 1}}]"#,
         "[]",
+        &["boundaries", "run"],
     ),
 ];
 
@@ -192,6 +204,8 @@ fn tour() -> Record {
     let mut h = Harness::new();
     call(&mut h, "ui.set", json!({"language": "ja"}));
     record(true);
+    // The 3D view drawn by egui's meshes, not the CPU's pictures: the words are the same.
+    h.app.prefs.gpu3d = true;
     h.app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
     // The start page, empty and with a project missing from the recent list, the settings
     // (Files with no recent project too), the prompts.
@@ -217,7 +231,7 @@ fn tour() -> Record {
     h.app.files.confirm = None;
     h.app.home.open = false;
     // Each model: its views, its steps (each solver in Setup), the menus, the search.
-    for (i, (script, then)) in MODELS.iter().enumerate() {
+    for (i, &(script, then, steps)) in MODELS.iter().enumerate() {
         if script.len() > 2 {
             call(&mut h, "engine.execute", json!({"command": "file.new"}));
             call(&mut h, "engine.script", json!({"commands": json(script)}));
@@ -272,7 +286,7 @@ fn tour() -> Record {
         if let Some((row, pick)) = picked {
             (h.app.browser.selected, h.app.view3d.selected) = (Some(row), pick);
         }
-        for s in Step::ALL {
+        for s in Step::ALL.into_iter().filter(|s| steps.is_empty() || steps.contains(&s.id())) {
             call(&mut h, "ui.set", json!({"step": s.id()}));
             h.frames(2);
         }
@@ -326,6 +340,8 @@ fn tour() -> Record {
     // The steps' fields refused, and Run refused.
     call(&mut h, "engine.execute", json!({"command": "file.new"}));
     call(&mut h, "engine.script", json!({"commands": json(MODELS[1].0)}));
+    h.app.workflow.step = Some(Step::Intent);
+    h.frames(1);
     let f = &mut h.app.workflow.fields;
     (f.start, f.stop, f.points, f.order, f.solver, f.frequency) =
         ("x".into(), "0".into(), "many".into(), "7".into(), Some(Solver::Radiation), String::new());

@@ -207,15 +207,10 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
 fn ports(m: &emcraft_model::Model) -> Vec<Row> {
     let waveguide = m.ports.iter().enumerate().map(|(i, p)| {
         let z = p.reference.map(|z| format!(", {z} Ω")).unwrap_or_default();
-        let end = if p.end == emcraft_model::End::Start { "Start" } else { "End" };
-        let args: [(&str, &dyn Display); 4] = [("name", &p.name), ("end", &lang::tr(end)), ("n", &p.modes), ("impedance", &z)];
-        // The English names the end as the model does (`Start`, `End`).
-        let mut r = row("Port {name}: {end}, {n} modes{impedance}", &args, Glyph::Port, Act::Show(View::PortModes)).picks(Pick::Port(i));
-        r.text = lang::fill(
-            "Port {name}: {end}, {n} modes{impedance}",
-            &[("name", &p.name), ("end", &format!("{:?}", p.end)), ("n", &p.modes), ("impedance", &z)],
-        );
-        r
+        let template =
+            if p.end == emcraft_model::End::Start { "Port {name}: Start, {n} modes{impedance}" } else { "Port {name}: End, {n} modes{impedance}" };
+        let args: [(&str, &dyn Display); 3] = [("name", &p.name), ("n", &p.modes), ("impedance", &z)];
+        row(template, &args, Glyph::Port, Act::Show(View::PortModes)).picks(Pick::Port(i))
     });
     let lumped =
         m.lumped.iter().map(|p| row("Lumped {name}: {impedance} Ω", &[("name", &p.name), ("impedance", &p.impedance)], Glyph::Lumped, Act::None));
