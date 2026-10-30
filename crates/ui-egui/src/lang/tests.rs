@@ -439,12 +439,6 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Running with {n} accepted warning.", "starts a full solve"),
     ("Running with {n} accepted warnings.", "starts a full solve"),
     ("starting", "only until a job says how much work it has: a moment, timing-dependent"),
-    ("{done} / {total} frequency", "a full sweep's progress: the tour's sweep is a fast one"),
-    ("{done} / {total} frequencies", "a full sweep's progress: the tour's sweep is a fast one"),
-    ("{done} / {total} phase", "a dispersion solve's progress: it ends before a frame shows it"),
-    ("{done} / {total} phases", "a dispersion solve's progress: it ends before a frame shows it"),
-    ("{done} / {total} pass", "an adaptive mesh's progress: too long for the gate"),
-    ("{done} / {total} passes", "an adaptive mesh's progress: too long for the gate"),
     ("Script", "a script's progress: it ends before a frame shows it"),
     ("goal", "an optimization of a number the solve gives (maximize, minimize): the tour's goal is in dB"),
 ];

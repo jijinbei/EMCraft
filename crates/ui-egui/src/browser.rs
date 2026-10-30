@@ -501,7 +501,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                             );
                             scenario::publish_target(Handle::Row(text), rect);
                             let resp = if out_of_date {
-                                let tip = lang::trf("{row} — out of date: the model changed after this run", args!(row = shown));
+                                let tip = lang::trf("{row} — out of date", args!(row = shown));
                                 resp.on_hover_text(tip)
                             } else {
                                 resp.on_hover_text(shown)

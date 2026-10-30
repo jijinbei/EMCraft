@@ -23,6 +23,11 @@ fn scenario(name: &str) {
 }
 
 #[test]
+fn scenario_setup_restore() {
+    scenario("setup_restore");
+}
+
+#[test]
 fn scenario_edit_items() {
     scenario("edit_items");
 }

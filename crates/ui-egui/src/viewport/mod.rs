@@ -261,8 +261,8 @@ pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, label: &str, enab
 /// Where the frame notes that the view's results are out of date (its pictures are dimmed).
 const STALE: &str = "emcraft_view_stale";
 
-/// The band over a result view whose model changed after its run: what happened, and Re-run —
-/// the run the Setup step sets up, as step 7's Run starts it.
+/// The band over a result view whose model changed after its run: its mark, "Out of date" (why
+/// on hover) and Re-run — the run the Setup step sets up, as step 7's Run starts it.
 pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
     let r = egui::Frame::NONE.fill(t.accent_soft).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
@@ -270,9 +270,9 @@ pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
         ui.horizontal(|ui| {
             let (m, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
             crate::steps::stale_mark(ui.painter(), m.center(), t);
-            ui.label(egui::RichText::new(tr("Results are out of date: the model changed after this run.")).color(t.selected_ink));
+            ui.label(egui::RichText::new(tr("Out of date")).color(t.selected_ink)).hint("The model changed after this run.");
             let busy = app.busy();
-            let hint = if busy { "a job is running" } else { "Runs the Setup step's solve again (as step 7 does)" };
+            let hint = if busy { "a job is running" } else { "Solve again (the Setup step's run)" };
             ui.act(!busy, crate::ui_kit::styled("Re-run", true), Fixed::StaleRerun.into(), hint, || Action::StartRun, out);
         });
     });

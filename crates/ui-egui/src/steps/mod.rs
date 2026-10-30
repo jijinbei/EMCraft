@@ -126,9 +126,42 @@ pub struct Fields {
     /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
     /// frequencies.
     pub diagram: Option<Value>,
+    /// The fields as the project's last run left them (restored on opening it): while they
+    /// stay so, Run runs that run again (`solve.rerun`), its parameters whole.
+    pub from_run: Option<Setup>,
+}
+
+/// The Setup step's fields that make a run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Setup {
+    solver: Option<Solver>,
+    points: String,
+    order: String,
+    count: String,
+    frequency: String,
 }
 
 impl Fields {
+    /// The fields that make a run, as they stand.
+    pub fn setup(&self) -> Setup {
+        Setup {
+            solver: self.solver,
+            points: self.points.clone(),
+            order: self.order.clone(),
+            count: self.count.clone(),
+            frequency: self.frequency.clone(),
+        }
+    }
+
+    /// Empty fields take their defaults, as the Setup panel shows them.
+    fn fill_defaults(&mut self) {
+        for (field, default) in [(&mut self.points, "11"), (&mut self.order, "2"), (&mut self.count, "5")] {
+            if field.is_empty() {
+                *field = default.to_owned();
+            }
+        }
+    }
+
     fn error(&self, name: &str) -> Option<&str> {
         self.errors.iter().find(|(n, _)| *n == name).map(|(_, e)| e.as_str())
     }
@@ -234,6 +267,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "errors": f.errors.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
         "refused": f.refused,
         "solver": f.solver.unwrap_or_else(|| Solver::infer(app.session.model())).id(),
+        "setup": {"points": f.points, "order": f.order, "count": f.count, "frequency": f.frequency},
+        "rerun": reruns(app),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": f.diagram,
         "device": app.session.compute().device(),
@@ -241,6 +276,45 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
     })
+}
+
+/// The Setup step's fields from the project's latest run of a solver it starts
+/// (`project.runs`, in display units now), as after opening a project; none: left as they are.
+pub fn restore_setup(app: &mut EmcraftApp) {
+    let f = &mut app.workflow.fields;
+    f.from_run = None;
+    let Ok(v) = app.session.execute("project.runs", &json!({})) else { return };
+    let runs = v.get("runs").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
+    let found = runs.iter().rev().find_map(|r| {
+        let command = r.get("command").and_then(Value::as_str)?;
+        Some((Solver::ALL.into_iter().find(|s| s.command() == command)?, r.get("params")?))
+    });
+    let Some((solver, p)) = found else { return };
+    let text = |k: &str| p.get(k).map(dialogs::value_text).unwrap_or_default();
+    f.solver = Some(solver);
+    f.order = text("order");
+    match solver {
+        Solver::Frequency | Solver::TimeDomain => {
+            let listed = p.get("frequencies").and_then(Value::as_array).map(Vec::len);
+            f.points = listed.map_or_else(|| text("points"), |n| n.to_string());
+        }
+        Solver::Eigenmodes => {
+            f.count = text("count");
+            f.frequency = text("near");
+        }
+        Solver::Radiation => f.frequency = text("frequency"),
+    }
+    f.fill_defaults();
+    f.errors.clear();
+    f.from_run = Some(f.setup());
+}
+
+/// Whether Run runs the project's last run again (`solve.rerun`): the Setup step's fields are
+/// as that run left them.
+pub fn reruns(app: &EmcraftApp) -> Option<&'static str> {
+    let f = &app.workflow.fields;
+    let command = f.solver?.command();
+    (f.from_run.as_ref() == Some(&f.setup()) && app.session.runs().iter().any(|r| r.command == command)).then_some(command)
 }
 
 /// The solve's estimate (`project.estimate`), as `prepare` left it for this revision.

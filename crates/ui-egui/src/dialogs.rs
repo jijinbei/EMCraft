@@ -227,7 +227,7 @@ fn number_text(v: f64) -> String {
 }
 
 /// A JSON value as a field's text.
-fn value_text(v: &Value) -> String {
+pub(crate) fn value_text(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => s.clone(),

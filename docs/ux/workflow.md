@@ -98,11 +98,22 @@ and the UI should make the same habits easy for the user's own models.
 
 The ribbon of phase 1 stays as the way to every command; the step bar is the way through a job,
 and the ribbon's tabs follow it (MODEL, MATERIALS, PORTS & SOURCES, BOUNDARIES, MESH, SIMULATE,
-RESULTS). A result view of a model changed after its run carries a band that says so, with
-Re-run, its picture dimmed; the browser marks those results too. A running job shows its stage
-and count ("Frequency sweep — 3 / 11 frequencies, 4 s") in the messages, at the top of the open
-step's panel (or where the docked dialog that started it was) with Cancel, and left of the
-settings in the app bar; the right column stays put while it runs.
+RESULTS). A result view of a model changed after its run carries a band — ↻ "Out of date" (why
+on hover) and Re-run — its picture dimmed; the browser marks those results too. A running job
+shows its count ("Frequency sweep · 3/11 · 4 s") in the messages, at the top of the open step's
+panel (or where the docked dialog that started it was) with Cancel, and left of the settings in
+the app bar; the right column stays put while it runs.
+What was built is changed where it is listed: a browser row of a material, a port, a body or a
+source has a right-click menu (Edit, Delete, Show in 3D); a double-click edits, Delete deletes the
+selected row's item (undoable; a refusal is an error message). Every dialog of something the
+model already has opens on its values (`project.values`), and OK with them unchanged runs
+nothing. An opened project's Setup step shows its last run (`project.runs`); while the fields
+stay so, Run and Re-run repeat that run whole (`solve.rerun`).
+Work is not lost: closing the window with unsaved changes asks Save / Don't save / Cancel (with a
+job running, whether to stop it first); unsaved changes are copied aside every minute and
+offered on the start page after a crash (Recover, or dismiss).
+The 3D view cuts the model open: a section across x, y or z at a position along it, either side
+kept, the cut faces filled in each body's colour.
 Each control is in one place: opening a step switches the ribbon to that step's tab (its
 commands), so the step panel holds only the step's checks, its own settings (the band, the
 sweep, Run) and the dialog docked there; the views over the viewport are switched by its view
