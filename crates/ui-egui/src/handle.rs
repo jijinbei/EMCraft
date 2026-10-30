@@ -48,6 +48,8 @@ emcraft_macros::named_enum! {
         ConfirmSave = "confirm:save",
         ConfirmDiscard = "confirm:discard",
         ConfirmCancel = "confirm:cancel",
+        /// Closing while a job runs: stop it.
+        ConfirmStopJob = "confirm:stop_job",
         ExportPath = "export:path",
         ExportOk = "export:ok",
         ExportCancel = "export:cancel",
@@ -171,6 +173,10 @@ pub enum Handle<'a> {
     Sample(&'a str),
     /// A recent project's card on the start page: `home:recent:0`.
     Recent(usize),
+    /// An autosaved copy's Recover on the start page: `home:recover:0`.
+    Recover(usize),
+    /// An autosaved copy's dismiss (it is deleted): `home:recover:dismiss:0`.
+    RecoverDismiss(usize),
     /// A setting's choice: `settings:length:mm`.
     Setting(&'static str, &'a str),
     /// A section of the settings page: `settings:section:units`.
@@ -245,6 +251,8 @@ impl fmt::Display for Handle<'_> {
             Handle::SearchRow(id) => write!(f, "search:row:{id}"),
             Handle::Sample(name) => write!(f, "sample:{name}"),
             Handle::Recent(i) => write!(f, "home:recent:{i}"),
+            Handle::Recover(i) => write!(f, "home:recover:{i}"),
+            Handle::RecoverDismiss(i) => write!(f, "home:recover:dismiss:{i}"),
             Handle::Setting(group, name) => write!(f, "settings:{group}:{name}"),
             Handle::SettingsSection(s) => write!(f, "settings:section:{}", s.id()),
             Handle::DialogField(name) => write!(f, "dialog:field:{name}"),

@@ -37,6 +37,7 @@
 
 pub mod action;
 mod after;
+pub mod autosave;
 pub mod browser;
 pub mod commands;
 pub mod control;
@@ -109,6 +110,8 @@ pub struct EmcraftApp {
     /// The control channel: its requests, the input it injects, the screenshots it waits for.
     pub(crate) control: ControlState,
     pub quit_requested: bool,
+    /// Autosave and recovery: where copies go, the copy written, the copies found on start.
+    pub autosave: autosave::Autosave,
     /// The input time of the last frame (s), which the animation advances from.
     last_frame: Option<f64>,
     pub frames: u64,
@@ -179,6 +182,8 @@ pub struct Host {
     pub themes: Option<std::path::PathBuf>,
     /// A project file to open at once.
     pub open: Option<String>,
+    /// Where autosaved copies go (`autosave::default_dir`); none: no autosave.
+    pub autosave: Option<std::path::PathBuf>,
 }
 
 impl Default for EmcraftApp {
@@ -207,6 +212,7 @@ impl EmcraftApp {
             themes: theme::Themes::load(None),
             control: ControlState::default(),
             quit_requested: false,
+            autosave: autosave::Autosave::default(),
             last_frame: None,
             frames: 0,
             viewport_rect: None,
@@ -245,7 +251,12 @@ impl EmcraftApp {
             app.error(p);
         }
         app.files.picker = host.picker;
-        app.home.open = sample.is_none() && host.open.is_none();
+        if let Some(dir) = host.autosave {
+            app.autosave.found = autosave::scan(&dir);
+            app.autosave.dir = Some(dir);
+        }
+        // The start page shows on launch, and whenever there is work to recover.
+        app.home.open = (sample.is_none() && host.open.is_none()) || !app.autosave.found.is_empty();
         if let Some(path) = host.open
             && let Err(e) = app.run("file.open", json!({"path": path}))
         {
@@ -407,6 +418,24 @@ impl EmcraftApp {
         }
     }
 
+    /// The window closes now: the changes were saved or let go (their autosaved copy goes),
+    /// the running job stops.
+    pub fn quit_now(&mut self) {
+        self.cancel_job();
+        self.autosave_drop();
+        self.quit_requested = true;
+    }
+
+    /// The window closes without asking (`app.quit {"force": true}`): the running job stops;
+    /// unsaved changes are kept in an autosaved copy, recovered on the next start.
+    pub fn quit_forced(&mut self) {
+        self.cancel_job();
+        if self.session.is_dirty() {
+            let _ = self.autosave_now();
+        }
+        self.quit_requested = true;
+    }
+
     /// Stops the running job: the session stays as it was before it.
     pub fn cancel_job(&mut self) -> bool {
         let Some(job) = self.job.take() else { return false };
@@ -484,6 +513,12 @@ impl EmcraftApp {
         self.poll_job();
         files::poll(self);
         control::serve(self, ctx);
+        // Closing the window asks first when work would be lost.
+        if ctx.input(|i| i.viewport().close_requested()) && !self.quit_requested {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            files::apply(self, files::FileAction::Request(files::Then::Quit));
+        }
+        self.autosave_tick(ctx.input(|i| i.time));
         // The phase plays while a field is on screen: the field view, or the 3D view in Results.
         let time = ctx.input(|i| i.time);
         let showing = self.view == View::Field || (self.view == View::Model && self.workflow.step == Some(steps::Step::Results));

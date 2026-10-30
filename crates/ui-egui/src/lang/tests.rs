@@ -229,6 +229,20 @@ fn tour() -> Record {
     h.app.files.confirm = Some(Then::New);
     h.frames(2);
     h.app.files.confirm = None;
+    // Autosaved copies to recover, of every age, of a saved project and of one never saved.
+    let now = std::time::SystemTime::now();
+    h.app.autosave.found = [0, 300, 7200, 200_000]
+        .into_iter()
+        .enumerate()
+        .map(|(i, secs)| crate::autosave::Found {
+            file: format!("/no/such/{i}.emcraft").into(),
+            name: format!("p{i}"),
+            original: (i % 2 == 0).then(|| "/no/such/p.emcraft".to_owned()),
+            modified: now.checked_sub(std::time::Duration::from_secs(secs)),
+        })
+        .collect();
+    h.frames(2);
+    h.app.autosave.found.clear();
     h.app.home.open = false;
     // Each model: its views, its steps (each solver in Setup), the menus, the search.
     for (i, &(script, then, steps)) in MODELS.iter().enumerate() {
@@ -275,6 +289,10 @@ fn tour() -> Record {
             }
             h.frames(1);
             assert!(h.app.busy(), "the job ended before the tour saw it run");
+            // Closing while it runs.
+            h.app.files.confirm = Some(Then::Quit);
+            h.frames(2);
+            h.app.files.confirm = None;
             apply(&mut h, [Action::File(FileAction::Request(Then::New))]);
             call(&mut h, "ui.cancel", json!({}));
             call(&mut h, "ui.set", json!({"step": "none"}));
@@ -369,6 +387,7 @@ fn tour() -> Record {
     }
     for (id, params, reply) in [
         ("file.open", json!({"path": "a.emcraft"}), json!({})),
+        ("file.open", json!({"path": "a.emcraft", "original": "b.emcraft"}), json!({"name": "b"})),
         ("solve.time_domain", json!({}), json!({"device": "cuda", "precision": "single"})),
         ("edit.redo", json!({}), json!({})),
         ("results.check", json!({}), json!({"passive": true})),
@@ -376,6 +395,11 @@ fn tour() -> Record {
     ] {
         let _ = crate::status::text(id, &params, &reply, &session);
     }
+    // An autosave that cannot be written.
+    h.app.autosave.dir = Some("/dev/null/autosave".into());
+    let _ = h.call("engine.execute", json!({"command": "model.material.create", "params": {"name": "tour", "eps_r": 3}}));
+    assert!(h.app.autosave_now().is_err());
+    h.app.autosave.dir = None;
     h.app.export = Some("history.json".into());
     h.frames(2);
     let written = std::env::temp_dir().join(format!("emcraft-tour-{}.json", std::process::id()));

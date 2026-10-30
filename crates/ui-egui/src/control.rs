@@ -151,7 +151,9 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "home": app.home.open,
         "settings": app.settings.map(|s| s.id()),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
-        "files": {"prompt": app.files.prompt.as_ref().map(|p| p.text.clone()), "confirm": app.files.confirm.is_some()},
+        "files": {"prompt": app.files.prompt.as_ref().map(|p| p.text.clone()), "confirm": app.files.confirm.is_some(), "then": app.files.confirm.as_ref().map(|t| format!("{t:?}"))},
+        "quitting": app.quit_requested,
+        "autosave": app.autosave_inspect(),
         "recent": app.prefs.recent,
         "dock_dialogs": app.dock_dialogs,
         "dialog": dialog,
@@ -276,13 +278,49 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
             Ok(ok(Value::Null))
         }
         "app.quit" => {
-            app.quit_requested = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            Ok(ok(json!({"quitting": true})))
+            // As the window's close: unsaved work or a running job asks first, unless forced.
+            if a.bool("force") == Some(true) {
+                app.quit_forced();
+            } else {
+                crate::files::apply(app, crate::files::FileAction::Request(crate::files::Then::Quit));
+            }
+            if app.quit_requested {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Ok(ok(json!({"quitting": app.quit_requested, "asking": app.files.confirm.is_some()})))
         }
+        "app.autosave" => autosave(app, a),
         other => Err(format!("unknown method `{}`", clip(other, 64))),
     };
     handled.unwrap_or_else(err)
+}
+
+/// The autosave: its folder (`dir`, `null` for none: the copies found there are offered on the
+/// start page, as on launch), its interval (`every`, s) and a copy written at once (`now`).
+fn autosave(app: &mut EmcraftApp, a: Args) -> Handled {
+    match a.get("dir") {
+        None => {}
+        Some(Value::Null) => {
+            app.autosave.dir = None;
+            app.autosave.found.clear();
+        }
+        Some(Value::String(d)) if !d.trim().is_empty() && d.len() <= 4096 => {
+            let dir = std::path::PathBuf::from(d);
+            app.autosave.found = crate::autosave::scan(&dir);
+            app.autosave.dir = Some(dir);
+            if !app.autosave.found.is_empty() {
+                app.apply(Action::SetHome(true)).map_err(|e| e.to_string())?;
+            }
+        }
+        Some(_) => return Err("`dir` must be a folder's path (at most 4096 bytes) or null".into()),
+    }
+    if let Some(v) = a.get("every") {
+        app.autosave.every = v.as_f64().filter(|s| s.is_finite() && (0.0..=86_400.0).contains(s)).ok_or("`every` must be 0 to 86400 s")?;
+    }
+    if a.bool("now") == Some(true) {
+        app.autosave_now()?;
+    }
+    Ok(ok(app.autosave_inspect()))
 }
 
 fn engine_execute(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled {

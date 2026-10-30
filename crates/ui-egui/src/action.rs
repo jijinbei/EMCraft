@@ -63,6 +63,8 @@ pub enum Action {
     Settings(Option<crate::settings::Section>),
     Pref(Pref),
     File(FileAction),
+    /// Lets an autosaved copy found on start go (it is deleted).
+    DismissRecovery(usize),
     /// Asks where to export the history as a script.
     AskExport,
     /// Writes the history as a script to a path.
@@ -254,6 +256,7 @@ impl EmcraftApp {
             Action::Settings(section) => self.settings = section,
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
+            Action::DismissRecovery(i) => self.dismiss_recovery(i),
             Action::AskExport => self.export = Some("emcraft-history.json".into()),
             Action::ExportHistory(path) => self.export_history(path),
             Action::ApplyBand => crate::steps::apply_band(self),

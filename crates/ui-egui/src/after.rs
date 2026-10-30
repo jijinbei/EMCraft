@@ -53,6 +53,10 @@ impl EmcraftApp {
             files::opened(self, path);
         }
         if id == "file.save" {
+            // A real save (not an autosaved copy): the copy goes.
+            if reply.get("copy").and_then(Value::as_bool) != Some(true) {
+                self.autosave_drop();
+            }
             return;
         }
         if matches!(id, "file.new" | "file.sample") {

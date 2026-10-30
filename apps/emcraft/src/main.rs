@@ -39,6 +39,7 @@ fn main() -> ExitCode {
         prefs: emcraft_ui_egui::prefs::default_path(),
         themes: emcraft_ui_egui::theme::default_dir(),
         open: project,
+        autosave: emcraft_ui_egui::autosave::default_dir(),
     };
     // The token file lives as long as the app.
     let mut token_file = None;
