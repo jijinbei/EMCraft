@@ -1,0 +1,11 @@
+{
+ "title": "WR-90, 30 mm of air, below its TE10 cut-off (6.557 GHz): the wave decays from port to port",
+ "kind": "theory",
+ "source": "A uniform guide below cut-off with its ports in it: TE10 goes as e^{−αz}, α = √((π/a)² − k0²); in the pseudo-waves of R. B. Marks and D. F. Williams (A general waveguide circuit theory, J. Res. NIST 97(5):533–562, 1992) referred to the ports' own mode, S11 = 0 and S21 = e^{−αL}, real (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.3), evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_db_5", "quantity": "|S21| at 5 GHz (dB), −αL·20 log e", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -23.167747127791134, "tolerance": {"absolute": 0.005}, "reason": "second-order elements of 3 mm: the decay over 30 mm is a steep exponential (α ≈ 89/m at 5 GHz); measured within 3e-4 dB"},
+  {"id": "s21_db_6", "quantity": "|S21| at 6 GHz (dB)", "measure": {"step": "solve", "pointer": "/points/1/s21/db"}, "value": -14.445162051578592, "tolerance": {"absolute": 0.005}, "reason": "second-order elements of 3 mm: the decay over 30 mm is a steep exponential (α ≈ 89/m at 5 GHz); measured within 3e-4 dB"},
+  {"id": "s21_deg_5", "quantity": "arg S21 at 5 GHz (degrees): 0, a decay without a phase", "measure": {"step": "solve", "pointer": "/points/0/s21/deg"}, "value": 0.0, "tolerance": {"absolute": 0.1}, "reason": "the port condition below cut-off is exact for the closed-form mode: the phase is the discretisation's"},
+  {"id": "s11_mag_5", "quantity": "|S11| at 5 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 0.001}, "reason": "a matched uniform guide: what reflects is discretisation error only (about 3e-5)"}
+ ]
+}

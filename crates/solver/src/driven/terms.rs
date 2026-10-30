@@ -170,16 +170,14 @@ impl PortTerm<'_> {
 }
 
 impl Driven {
-    /// Every port's terms at `frequency`, refusing it where a port's first mode does not
-    /// propagate.
+    /// Every port's terms at `frequency`, refusing it where a port's first mode carries no wave
+    /// S can be read in: below its cut-off, a mode without an unconjugated power (a closed form
+    /// below its cut-off has one: S is then read in pseudo-waves, [`super::sparams::read_s`]).
     pub(crate) fn checked_terms(&self, frequency: f64) -> Result<Vec<Vec<PortTerm<'_>>>> {
-        let k0 = wavenumber(frequency);
         let mut terms = Vec::with_capacity(self.ports.len());
         for p in 0..self.ports.len() {
-            // (A closed-form mode is refused before its κ, singular at the cut-off.)
-            let below = self.below_cutoff(p, k0);
-            let list = if below { Vec::new() } else { self.port_terms(p, frequency)? };
-            if below || !list.first().is_some_and(|t| t.propagating) {
+            let list = self.port_terms(p, frequency)?;
+            if !list.first().is_some_and(|t| t.propagating || t.proxy != C::new(0.0, 0.0)) {
                 return Err(invalid(
                     "frequency",
                     format!(
@@ -215,19 +213,6 @@ impl Driven {
         }
     }
 
-    /// Whether a closed-form port's first mode is at or below its cut-off at k₀ (numerical ports
-    /// tell by their terms).
-    fn below_cutoff(&self, p: usize, k0: f64) -> bool {
-        match self.ports.get(p).map(|p| &p.modes) {
-            Some(PortModes::Analytic { medium: Some(m), modes, .. }) => {
-                let (k2, _) = lossy_k2(m, k0 * C0 / (2.0 * PI));
-                modes.first().is_none_or(|(md, _)| !(k2.re > md.cutoff().powi(2)))
-            }
-            Some(PortModes::Analytic { eps_r, mu_r, modes, .. }) => modes.first().is_none_or(|(m, _)| k0 * (eps_r * mu_r).sqrt() <= m.cutoff()),
-            _ => false,
-        }
-    }
-
     /// Port `p`'s modes as terms of its condition at `frequency` (the first is the one excited and
     /// read). Closed forms: n̂ × ∇ × E_t = κ E_t, factor κ/(μr‖e‖²); numerical modes: H_t =
     /// ŝ × g β/(ωμ), factor jβ/D, with v_i = ∫ μr⁻¹ Nᵢ · g dS and D = ∫ μr⁻¹ e · g dS
@@ -260,13 +245,16 @@ impl Driven {
                         })?;
                         let kappa = C::new(kr, ki) / mu_r;
                         let gamma = mode.gamma(k);
+                        // Below its cut-off a mode carries no power: its proxy is the
+                        // unconjugated one, −jκD, imaginary (the pseudo-waves of `read_s`).
+                        let proxy = if gamma.1 > 0.0 { C::new(norm * gamma.1 / mu_r, 0.0) } else { -J * kappa * norm };
                         Ok(PortTerm {
                             name: mode.name(),
                             v: Cow::Borrowed(v.as_slice()),
                             factor: kappa / norm,
                             rhs: 2.0 * kappa,
                             norm: C::new(norm, 0.0),
-                            proxy: C::new(norm * gamma.1 / mu_r, 0.0),
+                            proxy,
                             propagating: gamma.1 > 0.0,
                             impedance: None,
                             gamma: C::new(gamma.0, gamma.1),

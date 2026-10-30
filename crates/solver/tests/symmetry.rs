@@ -178,7 +178,11 @@ fn an_electric_wall_keeps_te20_and_a_numeric_port_frees_its_rim() {
     // An electric wall at x = a/2 leaves TE20 the first mode (cut-off c/a = 13.1 GHz).
     let m = empty(&[Symmetry { axis: Axis::X, at: A / 2.0, kind: SymmetryKind::Electric }], ModeSolver::Auto);
     let d = Driven::new(&m, Order::Two).unwrap();
-    assert!(d.solve(12e9).is_err(), "below TE20's cut-off");
+    // Below TE20's cut-off the wave decays from port to port: S21 = e^{−αL} in pseudo-waves.
+    let below = d.solve(12e9).unwrap();
+    let k = 2.0 * std::f64::consts::PI * 12e9 / C0;
+    let alpha = ((2.0 * std::f64::consts::PI / A).powi(2) - k * k).sqrt();
+    assert!((below.s[1][0].norm() - (-alpha * 0.03).exp()).abs() < 2e-3 && below.s[0][0].norm() < 1e-2, "{:?}", below.s);
     let f = 16e9;
     let k = 2.0 * std::f64::consts::PI * f / C0;
     let beta = (k * k - (2.0 * std::f64::consts::PI / A).powi(2)).sqrt();

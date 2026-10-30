@@ -141,8 +141,10 @@ fn hostile_requests_are_refused() {
     for f in [f64::NAN, -1.0, 0.0, f64::INFINITY] {
         assert!(matches!(d.solve(f), Err(SolveError::Invalid { .. })), "{f}");
     }
-    // Below the ports' TE10 cut-off (4.64 GHz in the fill) no power can enter.
-    assert!(matches!(d.solve(4.0e9), Err(SolveError::Invalid { .. })));
+    // Below the ports' TE10 cut-off (4.64 GHz in the fill) the wave decays: S is read in
+    // pseudo-waves (oracle `evanescent-guide`), not refused.
+    let below = d.solve(4.0e9).unwrap();
+    assert!(below.s[1][0].norm() < 1.0 && below.s[1][0].norm().is_finite());
     let mut m = guide(&FILTER, 0.004, 2);
     m.mesh = None;
     assert!(matches!(Driven::new(&m, Order::One), Err(SolveError::NotReady(_))));

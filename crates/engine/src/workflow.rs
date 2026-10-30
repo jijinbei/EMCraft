@@ -284,21 +284,22 @@ fn excitation(s: &Session) -> StepState {
     if m.open.is_none() && m.ports.len() == 1 && m.sources.is_empty() && m.lumped.is_empty() {
         st.note(Status::Warning, "one port: S11 only (a closed guide usually has two)", Some("model.port.create"));
     }
-    // A closed-form port's first mode against the band's start.
+    // A closed-form port's first mode against the band's start: below its cut-off the wave
+    // decays (an experiment may want just that), a note that leaves the step's standing.
     let Some(b) = m.band else { return st };
     for p in m.ports.iter().filter(|_| m.periodic.is_none()) {
         let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
         let cutoff = C0 / (2.0 * a * (mat.eps_r * mat.mu_r).sqrt());
         if b.start <= cutoff {
             st.note(
-                Status::Warning,
+                Status::Done,
                 format!(
-                    "port `{}`: the band starts at or below its TE10 cut-off ({:.4} {}): no power enters there",
+                    "port `{}`: below its TE10 cut-off ({:.4} {}) the wave decays (evanescent): S there shows the decay",
                     p.name,
                     s.show_frequency(cutoff),
                     s.display.frequency.symbol()
                 ),
-                Some("project.frequency"),
+                None,
             );
         }
     }

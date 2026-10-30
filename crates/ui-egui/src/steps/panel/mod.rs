@@ -94,7 +94,11 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
     }
     for (i, m) in s.messages.iter().enumerate() {
         ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(&m.text).size(t.font_small).color(status_color(s.status, t)));
+            ui.label(egui::RichText::new(&m.text).size(t.font_small).color(if s.status == Status::Done {
+                t.text_dim
+            } else {
+                status_color(s.status, t)
+            }));
             // A fix that only leads back to this step is left out.
             let here = m.command.as_deref().is_some_and(|c| c.starts_with("solve.") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
