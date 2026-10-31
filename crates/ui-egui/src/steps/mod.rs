@@ -26,7 +26,7 @@ mod run;
 
 pub use bar::bar;
 pub(crate) use panel::fmt;
-pub use panel::{apply_band, export_touchstone, kind_card, not_needed, panel};
+pub use panel::{KindCard, apply_band, export_touchstone, kind_card, not_needed, panel};
 pub use run::{Preflight, preflight, run_params, start_run};
 
 /// What the 3D view puts forward in a step.
@@ -55,7 +55,13 @@ fn status_color(status: Status, t: &Tokens) -> Color32 {
 /// Whether command `id` is a run (a solve or a study, as step 7 starts one): what a failure
 /// marks on Run and what Run shows running.
 pub fn is_run(id: &str) -> bool {
-    (id.starts_with("solve.") && !matches!(id, "solve.port_modes" | "solve.device" | "solve.devices")) || id.starts_with("study.")
+    is_solve(id) || id.starts_with("study.")
+}
+
+/// Whether command `id` is a solve: a `solve.` command other than the port modes' and those that
+/// pick or list the devices.
+pub fn is_solve(id: &str) -> bool {
+    id.starts_with("solve.") && !matches!(id, "solve.port_modes" | "solve.device" | "solve.devices")
 }
 
 /// Whether a run is going on.
@@ -161,11 +167,11 @@ impl Fields {
 pub struct Workflow {
     pub step: Option<Step>,
     status: Option<(u64, Vec<StepState>)>,
-    /// `project.estimate`'s reply for the step's run (the Mesh step: one solve at an order;
-    /// Setup and Run: the run as set up), with the revision and the parameters it was asked for.
-    estimate: Option<(u64, Value, Result<Value, String>)>,
-    /// The estimate of the run the open dialog would start, likewise.
-    pub dialog_estimate: Option<(u64, Value, Result<Value, String>)>,
+    /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the
+    /// run as set up).
+    estimate: Option<Estimate>,
+    /// The estimate of the run the open dialog would start.
+    pub dialog_estimate: Option<Estimate>,
     pub fields: Fields,
     /// `results.check`'s last reply, and the revision it was made at.
     pub check: Option<(u64, Value)>,
@@ -176,6 +182,25 @@ pub struct Workflow {
     /// Run was refused for blocking problems: the steps still in the way show as needing
     /// attention, until a run starts or another project opens.
     pub blocked: bool,
+}
+
+/// `project.estimate`'s reply, with the revision and the request it was asked for.
+#[derive(Clone, Debug)]
+pub struct Estimate {
+    pub revision: u64,
+    pub asked: Value,
+    pub reply: Result<Value, String>,
+}
+
+impl Estimate {
+    /// `slot` made to answer `asked` at `revision`: asked of the session again unless it does.
+    fn refresh(slot: &mut Option<Estimate>, session: &mut emcraft_engine::Session, revision: u64, asked: Value) {
+        if slot.as_ref().is_some_and(|e| e.revision == revision && e.asked == asked) {
+            return;
+        }
+        let reply = session.execute("project.estimate", &asked).map_err(|e| e.to_string());
+        *slot = Some(Estimate { revision, asked, reply });
+    }
 }
 
 /// A port mode picked in the Excitation panel: the Port modes view marks its row and scrolls
@@ -210,11 +235,8 @@ pub fn prepare(app: &mut EmcraftApp) {
         }
         _ => None,
     };
-    if let Some(asked) = asked
-        && app.workflow.estimate.as_ref().is_none_or(|(k, p, _)| *k != key || *p != asked)
-    {
-        let v = app.session.execute("project.estimate", &asked).map_err(|e| e.to_string());
-        app.workflow.estimate = Some((key, asked, v));
+    if let Some(asked) = asked {
+        Estimate::refresh(&mut app.workflow.estimate, &mut app.session, key, asked);
     }
     if app.workflow.step == Some(Step::Setup) && app.workflow.devices.is_none() {
         let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
@@ -227,11 +249,7 @@ pub fn prepare(app: &mut EmcraftApp) {
         .filter(|d| ESTIMATED.contains(&d.command.id))
         .and_then(|d| Some(json!({"command": d.command.id, "params": d.quiet_params()?})));
     match dialog {
-        Some(asked) if app.workflow.dialog_estimate.as_ref().is_none_or(|(k, p, _)| *k != key || *p != asked) => {
-            let v = app.session.execute("project.estimate", &asked).map_err(|e| e.to_string());
-            app.workflow.dialog_estimate = Some((key, asked, v));
-        }
-        Some(_) => {}
+        Some(asked) => Estimate::refresh(&mut app.workflow.dialog_estimate, &mut app.session, key, asked),
         None => app.workflow.dialog_estimate = None,
     }
 }
@@ -291,7 +309,7 @@ pub fn estimate_line(ui: &mut egui::Ui, e: &Result<Value, String>, handle: crate
 
 /// The step's estimate as `prepare` left it for this revision.
 pub fn run_estimate(app: &EmcraftApp) -> Option<&Result<Value, String>> {
-    app.workflow.estimate.as_ref().filter(|(k, _, _)| *k == app.revision).map(|(_, _, v)| v)
+    app.workflow.estimate.as_ref().filter(|e| e.revision == app.revision).map(|e| &e.reply)
 }
 
 /// The statuses of the steps: the session's (the cache when it is current, else worked out on
@@ -398,10 +416,7 @@ pub fn reruns(app: &EmcraftApp) -> Option<&'static str> {
 
 /// The solve's estimate (`project.estimate`), as `prepare` left it for this revision.
 pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
-    match &app.workflow.estimate {
-        Some((k, _, v)) if *k == app.revision => v.as_ref().map_err(String::as_str),
-        _ => Err("no estimate yet"),
-    }
+    run_estimate(app).ok_or("no estimate yet")?.as_ref().map_err(String::as_str)
 }
 
 /// Opens a step: its panel and the view it calls for.

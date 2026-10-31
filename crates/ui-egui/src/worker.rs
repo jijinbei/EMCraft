@@ -31,12 +31,20 @@ pub struct Job {
     pub view: Option<crate::View>,
     /// How long it was expected to take (s, `project.estimate`), when that could be said.
     pub estimate: Option<f64>,
-    /// Where a solve runs: the device it names (`cpu`, `cuda`, …), and the fronts the
-    /// device had taken when it started (the factorization's share on a GPU is the difference).
-    pub device: Option<(String, usize)>,
+    /// Where a solve runs; `None` for a job that is not a solve.
+    device: Option<Device>,
+}
+
+/// The device a solve runs on.
+struct Device {
+    /// Its name (`cpu`, `cuda`, …).
+    name: String,
+    /// The fronts the device had taken when the job started (the factorization's share on a
+    /// GPU is the difference).
+    fronts_before: usize,
     /// The session's device as the job started (its count of fronts is shared with the
     /// worker's copy).
-    compute: Option<emcraft_engine::Compute>,
+    compute: emcraft_engine::Compute,
 }
 
 /// Where a solve runs, as the job row and its message say it.
@@ -90,33 +98,20 @@ impl Job {
             }
         });
         // A solve's device: the time domain names its own, else the session's.
-        let solve = command.starts_with("solve.") && !matches!(command, "solve.device" | "solve.devices" | "solve.port_modes");
-        let device = solve.then(|| {
-            let named = params.get("device").and_then(Value::as_str).map(str::to_owned);
-            let device = if command == "solve.time_domain" { named } else { None }.unwrap_or_else(|| session.compute().device().to_owned());
-            (device, session.compute().fronts_taken())
+        let device = crate::steps::is_solve(command).then(|| {
+            let compute = session.compute();
+            let named = params.get("device").and_then(Value::as_str).filter(|_| command == "solve.time_domain");
+            Device { name: named.unwrap_or(compute.device()).to_owned(), fronts_before: compute.fronts_taken(), compute: compute.clone() }
         });
-        let compute = device.as_ref().map(|_| session.compute().clone());
-        Job {
-            command: command.to_owned(),
-            params,
-            started: Instant::now(),
-            progress,
-            rx,
-            waiting: Vec::new(),
-            view: None,
-            estimate: None,
-            device,
-            compute,
-        }
+        Job { command: command.to_owned(), params, started: Instant::now(), progress, rx, waiting: Vec::new(), view: None, estimate: None, device }
     }
 
     /// Where the job's solve runs, and how much of it the GPU has taken so far.
     pub fn place(&self) -> Option<Where> {
-        let (device, start) = self.device.as_ref()?;
+        let d = self.device.as_ref()?;
         let stepped = self.command == "solve.time_domain";
-        let fronts = self.compute.as_ref().map_or(0, |c| c.fronts_taken().saturating_sub(*start));
-        Some(Where { device: device.clone(), gpu: device != "cpu", fronts, stepped })
+        let fronts = d.compute.fronts_taken().saturating_sub(d.fronts_before);
+        Some(Where { device: d.name.clone(), gpu: d.name != "cpu", fronts, stepped })
     }
 
     pub fn poll(&self) -> Poll {

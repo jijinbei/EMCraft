@@ -91,6 +91,11 @@ impl<V> PictureKey<V> {
     pub fn new(revision: u64, width: usize, view: V) -> Self {
         PictureKey { revision, width, height: 0, theme: crate::theme::key(), view }
     }
+
+    /// The key drawn `height` pixels high.
+    pub fn with_height(self, height: usize) -> Self {
+        PictureKey { height, ..self }
+    }
 }
 
 /// A picture kept until its key changes: a view's chart or plot, drawn again only when the

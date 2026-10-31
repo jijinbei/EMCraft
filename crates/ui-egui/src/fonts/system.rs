@@ -75,21 +75,16 @@ pub fn find() -> Option<Found> {
 pub fn find_in(folders: &[PathBuf], families: &[&str]) -> Option<Found> {
     let faces: Vec<Face> = font_files(folders).iter().flat_map(|p| read_faces(p).unwrap_or_default()).collect();
     let wanted: Vec<String> = families.iter().map(|f| f.to_lowercase()).collect();
-    let mut ranked: Vec<(usize, u16, bool, &Face)> = faces
-        .iter()
-        .filter_map(|f| {
-            let rank = wanted.iter().position(|w| f.families.iter().any(|n| n.to_lowercase() == *w))?;
-            Some((rank, f.weight.abs_diff(400), f.italic, f))
-        })
-        .collect();
-    ranked.sort_by_key(|(rank, weight, italic, _)| (*rank, *weight, *italic));
-    for (rank, _, _, face) in ranked.iter().take(MAX_TRIES) {
-        if let Some(found) = families.get(*rank).and_then(|family| load(face, family)) {
-            return Some(found);
-        }
+    // Each face of a wanted family with the family's place in `families`.
+    let mut ranked: Vec<(usize, &Face)> =
+        faces.iter().filter_map(|f| Some((wanted.iter().position(|w| f.families.iter().any(|n| n.to_lowercase() == *w))?, f))).collect();
+    ranked.sort_by_key(|(rank, f)| (*rank, f.plainness()));
+    let preferred = ranked.iter().take(MAX_TRIES).find_map(|(rank, face)| families.get(*rank).and_then(|family| load(face, family)));
+    if preferred.is_some() {
+        return preferred;
     }
     let mut rest: Vec<&Face> = faces.iter().filter(|f| f.cmap.is_some()).collect();
-    rest.sort_by_key(|f| (f.weight.abs_diff(400), f.italic));
+    rest.sort_by_key(|f| f.plainness());
     rest.into_iter().take(MAX_COVERAGE).filter(|f| covers_sample(f)).find_map(|f| load(f, f.families.first().map_or("", String::as_str)))
 }
 
@@ -115,13 +110,14 @@ pub fn folders() -> Vec<PathBuf> {
         out.push("/usr/local/share/fonts".into());
         out.push("/run/current-system/sw/share/X11/fonts".into());
     }
-    let mut seen = Vec::new();
-    out.retain(|p| {
-        let new = !seen.contains(p);
-        seen.push(p.clone());
-        new
-    });
-    out
+    // Each folder once, where it first comes.
+    let mut unique: Vec<PathBuf> = Vec::with_capacity(out.len());
+    for p in out {
+        if !unique.contains(&p) {
+            unique.push(p);
+        }
+    }
+    unique
 }
 
 /// What a face says of itself.
@@ -134,8 +130,30 @@ struct Face {
     /// `OS/2` usWeightClass (400 when missing).
     weight: u16,
     italic: bool,
-    /// Where its `cmap` lies in the file (offset, length).
-    cmap: Option<(u32, u32)>,
+    /// Where its `cmap` lies in the file.
+    cmap: Option<Span>,
+}
+
+impl Face {
+    /// How far it is from a plain face, least first: its weight's distance from regular, then
+    /// slanted after upright.
+    fn plainness(&self) -> (u16, bool) {
+        (self.weight.abs_diff(400), self.italic)
+    }
+}
+
+/// Where a table lies in a font file: its offset and length (bytes).
+#[derive(Clone, Copy, Debug)]
+struct Span {
+    at: u32,
+    len: u32,
+}
+
+impl Span {
+    /// Its bytes in `file`, at most `most` of them.
+    fn read(self, file: &mut File, most: u32) -> Option<Vec<u8>> {
+        read_at(file, u64::from(self.at), self.len.min(most) as usize)
+    }
 }
 
 /// The font files under `folders` (`.ttf`, `.otf`, `.ttc`, `.otc`), within the caps.
@@ -216,17 +234,16 @@ fn read_face(file: &mut File, len: u64, path: &Path, index: u32, offset: u32) ->
     let head = read_at(file, u64::from(offset), 12)?;
     let tables = be16(&head, 4)?.min(MAX_TABLES);
     let records = read_at(file, u64::from(offset) + 12, usize::from(tables) * 16)?;
-    let find = |tag: &[u8; 4], most: u32| -> Option<(u32, u32)> {
-        (0..usize::from(tables)).find_map(|i| {
-            let r = records.get(i * 16..i * 16 + 16)?;
+    // A table of at most `most` bytes, lying inside the file.
+    let find = |tag: &[u8; 4], most: u32| -> Option<Span> {
+        records.chunks_exact(16).find_map(|r| {
             let (at, size) = (be32(r, 8)?, be32(r, 12)?);
-            (r.get(..4)? == tag && size <= most && u64::from(at) + u64::from(size) <= len).then_some((at, size))
+            (r.get(..4)? == tag && size <= most && u64::from(at) + u64::from(size) <= len).then_some(Span { at, len: size })
         })
     };
-    let (name_at, name_len) = find(b"name", MAX_NAME)?;
+    let name = find(b"name", MAX_NAME)?.read(file, MAX_NAME)?;
     let os2 = find(b"OS/2", 1 << 16);
     let cmap = find(b"cmap", MAX_CMAP);
-    let name = read_at(file, u64::from(name_at), name_len as usize)?;
     let mut families: Vec<String> = Vec::new();
     for n in ttf_parser::name::Table::parse(&name)?.names {
         let family = n.name_id == ttf_parser::name_id::FAMILY || n.name_id == ttf_parser::name_id::TYPOGRAPHIC_FAMILY;
@@ -234,7 +251,7 @@ fn read_face(file: &mut File, len: u64, path: &Path, index: u32, offset: u32) ->
             families.push(s);
         }
     }
-    let os2 = os2.and_then(|(at, size)| read_at(file, u64::from(at), size.min(64) as usize));
+    let os2 = os2.and_then(|s| s.read(file, 64));
     let weight = os2.as_deref().and_then(|b| be16(b, 4)).filter(|w| (1..=1000).contains(w)).unwrap_or(400);
     let italic = os2.as_deref().and_then(|b| be16(b, 62)).is_some_and(|s| s & 1 == 1);
     Some(Face { path: path.to_owned(), index, families, weight, italic, cmap })
@@ -242,8 +259,8 @@ fn read_face(file: &mut File, len: u64, path: &Path, index: u32, offset: u32) ->
 
 /// Whether the face's character map holds every character of [`SAMPLE`].
 fn covers_sample(face: &Face) -> bool {
-    let Some((at, size)) = face.cmap else { return false };
-    let Some(bytes) = File::open(&face.path).ok().and_then(|mut f| read_at(&mut f, u64::from(at), size as usize)) else { return false };
+    let Some(span) = face.cmap else { return false };
+    let Some(bytes) = File::open(&face.path).ok().and_then(|mut f| span.read(&mut f, MAX_CMAP)) else { return false };
     let Some(cmap) = ttf_parser::cmap::Table::parse(&bytes) else { return false };
     SAMPLE.chars().all(|c| cmap.subtables.into_iter().any(|t| t.is_unicode() && t.glyph_index(u32::from(c)).is_some_and(|g| g.0 != 0)))
 }

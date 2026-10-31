@@ -202,7 +202,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     v["probes"] = json!(s.views().probes.iter().map(|p| json!({"name": p.name, "at": p.at.map(|x| s.show_length(x))})).collect::<Vec<_>>());
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
     v["estimate"] =
-        json!({"run": estimate(crate::steps::run_estimate(app)), "dialog": estimate(app.workflow.dialog_estimate.as_ref().map(|(_, _, e)| e))});
+        json!({"run": estimate(crate::steps::run_estimate(app)), "dialog": estimate(app.workflow.dialog_estimate.as_ref().map(|e| &e.reply))});
     v
 }
 
