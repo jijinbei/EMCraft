@@ -153,6 +153,11 @@ fn scenario_job_progress() {
 }
 
 #[test]
+fn scenario_time_left() {
+    scenario("time_left");
+}
+
+#[test]
 fn scenario_sparameter_display() {
     scenario("sparameter_display");
 }

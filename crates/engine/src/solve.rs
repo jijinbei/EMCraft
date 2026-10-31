@@ -163,8 +163,9 @@ fn in_full(results: &[FrequencyResult]) -> usize {
 
 /// The results at `freqs` by the reduced-basis sweep, each saying whether it was solved in full.
 fn fast_sweep(driven: &Driven, freqs: &[f64]) -> Result<Vec<FrequencyResult>> {
-    crate::progress::report(0, freqs.len(), "fast sweep")?;
-    Ok(emcraft_solver::sweep::fast_sweep(driven, freqs, &Default::default())?.results)
+    // Its full solves are not known in advance: an open count, with the residual's trend.
+    let each = |s: emcraft_solver::sweep::SweepStep| crate::progress::report_open(s.full, s.max_full, "fast sweep", s.residual);
+    Ok(emcraft_solver::sweep::fast_sweep_each::<crate::EngineError>(driven, freqs, &Default::default(), each)?.results)
 }
 
 /// The results at `freqs`, each solved in full.
