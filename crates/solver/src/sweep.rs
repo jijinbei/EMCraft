@@ -22,7 +22,7 @@
 
 use num_complex::Complex64 as C;
 
-use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, invalid, wall_factor, wavenumber};
+use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, check_frequency, invalid, wall_factor, wavenumber};
 use crate::sparse::Csr;
 use crate::zdense;
 
@@ -125,8 +125,8 @@ impl Basis {
 /// Solves `d` at `frequencies` (Hz) by the reduced-basis sweep: the lowest and highest in full,
 /// then the worst-resolved one in full until every residual is within `o.tolerance`.
 pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<FastSweep> {
-    if frequencies.iter().any(|f| !(f.is_finite() && *f > 0.0)) {
-        return Err(invalid("frequency", "must be finite numbers > 0"));
+    for &f in frequencies {
+        check_frequency(f)?;
     }
     if !(o.tolerance.is_finite() && o.tolerance > 0.0) || o.max_solves < 2 {
         return Err(invalid("sweep options", "the tolerance must be > 0 and at least two frequencies solved in full"));

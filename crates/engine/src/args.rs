@@ -27,5 +27,5 @@ pub(crate) fn excitation(s: &Session, p: &Params) -> Result<usize> {
 /// The frequency parameter `name` (Hz), the band's top when it is absent; `hint` says what else
 /// would do when there is no band either.
 pub(crate) fn frequency_or_band_top(s: &Session, p: &Params, name: &str, hint: &str) -> Result<f64> {
-    p.frequency(name).or_maybe(s.model.band.map(|b| b.stop)).required_or(hint)
+    p.frequency(name).or_maybe(s.model.band.map(|b| b.stop.get())).required_or(hint)
 }

@@ -36,7 +36,7 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Toke
     kv(ui, "walls", m.wall_conductivity.map_or(tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")), t);
     let l = app.session.display().length;
     if let Some(w) = m.wall_thickness {
-        kv(ui, "wall thickness", format!("{} {lu}", fmt(l.from_si(w))), t);
+        kv(ui, "wall thickness", format!("{} {lu}", fmt(l.from_si(w.get()))), t);
     }
     let kind = |o: &emcraft_model::Open| tr(if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" });
     let thick =
@@ -70,8 +70,8 @@ pub(super) fn mesh(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
     let h = (6.0 * std::f64::consts::SQRT_2 * volume / m.tets.len().max(1) as f64).cbrt();
     kv(ui, "mean element", format!("{:.3} {lu}", l.from_si(h)), t);
     if let Some(b) = app.session.model().band {
-        let index = app.session.model().materials.iter().map(|x| (x.eps_r * x.mu_r).sqrt()).fold(1.0, f64::max);
-        let lambda = emcraft_model::units::C0 / (b.stop * index);
+        let index = app.session.model().materials.iter().map(|x| (x.eps_r.get() * x.mu_r.get()).sqrt()).fold(1.0, f64::max);
+        let lambda = emcraft_model::units::C0 / (b.stop.get() * index);
         kv(ui, "per wavelength", trf("{n} at the band's top", args!(n = format!("{:.1}", lambda / h.max(1e-300)))), t);
     }
     ui_kit::section(ui, "Estimate");

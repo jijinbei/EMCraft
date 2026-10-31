@@ -64,7 +64,7 @@ fn lossy_walls(length: f64, sigma: f64, size: f64) -> Model {
         vias: Vec::new(),
     })
     .unwrap();
-    m.set_wall_conductivity(Some(sigma)).unwrap();
+    m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(sigma).unwrap()));
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
@@ -102,7 +102,7 @@ fn wall_loss_balances_the_ports() {
 /// Δε = 0.4 at 16 GHz damped by 1.5 GHz.
 const TAU: f64 = 1.0 / (2.0 * std::f64::consts::PI * 20e9);
 fn poles() -> Vec<Pole> {
-    vec![Pole::Debye { delta_eps: 0.6, tau: TAU }, Pole::Lorentz { delta_eps: 0.4, frequency: 16e9, damping: 1.5e9 }]
+    vec![Pole::debye(0.6, TAU).unwrap(), Pole::lorentz(0.4, 16e9, 1.5e9).unwrap()]
 }
 
 /// The poles' permittivity written out here, apart from the model's (e^{jωt}: ε = ε′ − jε″).
@@ -164,7 +164,7 @@ fn a_fast_sweep_handles_dispersion() {
 #[test]
 fn dispersive_ports_are_taken_and_eigenmodes_refused() {
     let mut m = Model::new();
-    let drude = Pole::Drude { plasma_frequency: 5e9, damping: 1e9 };
+    let drude = Pole::drude(5e9, 1e9).unwrap();
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
         width: A,

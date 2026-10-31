@@ -487,7 +487,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
     let ports = s.model().ports.len();
     let fu = s.display().frequency;
     // The job's band, and the frequency in its middle.
-    let band = s.model().band.map(|b| (fu.from_si(b.start), fu.from_si(b.stop)));
+    let band = s.model().band.map(|b| (fu.from_si(b.start.get()), fu.from_si(b.stop.get())));
     let middle = band.map_or(10.0, |(a, z)| 0.5 * (a + z));
     match command {
         // The model: its own guide or the next names, else a working example.

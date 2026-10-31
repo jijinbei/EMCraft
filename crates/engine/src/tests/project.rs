@@ -29,7 +29,7 @@ fn undoing_an_open_brings_the_project_before_it_back() {
     let r = s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!((s.path(), s.is_dirty()), (Some(a.as_str()), true));
     assert_eq!((r["path"].as_str(), r["dirty"].as_bool()), (Some(a.as_str()), Some(true)));
-    assert_eq!(s.model.band.map(|x| x.start), Some(5e9));
+    assert_eq!(s.model.band.map(|x| x.start.get()), Some(5e9));
     // The save after the undo writes A's file; B's is untouched.
     let b_text = std::fs::read_to_string(&b).unwrap();
     s.execute("file.save", &json!({})).unwrap();
@@ -38,7 +38,7 @@ fn undoing_an_open_brings_the_project_before_it_back() {
     assert_eq!(std::fs::read_to_string(&b).unwrap(), b_text);
     // Redo: B again, clean, its own file.
     s.execute("edit.redo", &json!({})).unwrap();
-    assert_eq!((s.path(), s.is_dirty(), s.model.band.map(|x| x.start)), (Some(b.as_str()), false, Some(7e9)));
+    assert_eq!((s.path(), s.is_dirty(), s.model.band.map(|x| x.start.get())), (Some(b.as_str()), false, Some(7e9)));
     // Undo again: A, now clean (it was saved after the first undo).
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!((s.path(), s.is_dirty()), (Some(a.as_str()), false));

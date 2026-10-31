@@ -32,8 +32,8 @@ fn frequencies(s: &Session, p: &Params) -> Result<Vec<f64>> {
     } else {
         // The job's band when neither is given.
         let hint = "give `frequencies`, or `start` and `stop`, or set the band: project.frequency";
-        let start = p.frequency("start").or_maybe(s.model.band.map(|b| b.start)).required_or(hint)?;
-        let stop = p.frequency("stop").or_maybe(s.model.band.map(|b| b.stop)).required_or(hint)?;
+        let start = p.frequency("start").or_maybe(s.model.band.map(|b| b.start.get())).required_or(hint)?;
+        let stop = p.frequency("stop").or_maybe(s.model.band.map(|b| b.stop.get())).required_or(hint)?;
         let n = p.integer("points", 1..=s.limits.frequencies).or(DEFAULT_POINTS)?;
         if stop < start {
             return Err(p.error("stop", "must not be below `start`"));
@@ -270,7 +270,7 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     let precision = gpu.map_or("double", |g| g.precision.id());
     let mut reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device.id(), "precision": precision, "frequency_unit": s.display.frequency.symbol(), "points": points});
     // Where the time domain matches the loss tangents (as conductivities), when there are any.
-    if s.model.materials.iter().any(|m| m.loss_tangent != 0.0 || m.is_magnetically_lossy()) {
+    if s.model.materials.iter().any(|m| m.loss_tangent.get() != 0.0 || m.is_magnetically_lossy()) {
         reply["loss_reference"] = json!(s.show_frequency(r.loss_reference));
     }
     s.results.time_domain = Some(Arc::new(r));

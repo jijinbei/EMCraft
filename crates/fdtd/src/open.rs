@@ -189,9 +189,7 @@ impl BoxGrid {
     fn coefficients(&self, model: &Model, dt: f64, losses: Losses) -> Result<BoxCoefficients> {
         let [e_dims, h_dims] = lattices(self.n);
         let n = self.n;
-        for m in &model.materials {
-            m.checked().map_err(|e| invalid("material", e.to_string()))?;
-        }
+
         check_poles(model.materials.iter().flat_map(|m| m.dispersion.iter()), dt)?;
         // Materials per cell: an index into the model's, or `None` in a conductor.
         let mut cell_of = vec![None; self.cells()];
@@ -238,7 +236,7 @@ impl BoxGrid {
                         if round.len() < 4 {
                             continue;
                         }
-                        let eps = 0.25 * round.iter().map(|m| m.eps_r).sum::<f64>();
+                        let eps = 0.25 * round.iter().map(|m| m.eps_r.get()).sum::<f64>();
                         let sigma = 0.25 * round.iter().map(|m| losses.of(m).0).sum::<f64>();
                         let eps = eps * exponential_fit(sigma * dt / (EPS0 * eps));
                         let id = index(d, i, j, k);
@@ -272,7 +270,7 @@ impl BoxGrid {
                             continue;
                         }
                         let count = sides.len() as f64;
-                        let mu = MU0 * sides.iter().map(|m| m.mu_r).sum::<f64>() / count;
+                        let mu = MU0 * sides.iter().map(|m| m.mu_r.get()).sum::<f64>() / count;
                         let sigma_m = sides.iter().map(|m| losses.of(m).1).sum::<f64>() / count;
                         let id = index(d, i, j, k);
                         let (c, x) = magnetic_update(dt, mu, sigma_m);

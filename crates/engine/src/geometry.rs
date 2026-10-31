@@ -2,8 +2,8 @@
 //! inclusions and features, walls and ports.
 
 use emcraft_model::{
-    Axis, FaceSurface, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Section, Shape, Solid, Strip, Symmetry,
-    SymmetryKind, Via, Waveguide,
+    Axis, Conductivity, FaceSurface, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Positive, Section, Shape, Solid,
+    Strip, Symmetry, SymmetryKind, Via, Waveguide,
 };
 use serde_json::{Value, json};
 
@@ -49,23 +49,26 @@ pub(crate) fn poles_of(p: &Params, kind: &str) -> Result<Vec<Pole>> {
     match kind {
         "debye" => {
             for d in p.items("debye", "Debye pole", MAX_POLES)? {
-                let delta_eps = d.positive("delta_eps").required()?;
+                let delta_eps = d.checked("delta_eps").required()?;
                 let f = d.frequency("frequency").required()?;
-                poles.push(Pole::Debye { delta_eps, tau: 1.0 / (2.0 * std::f64::consts::PI * f) });
+                // τ = 1/(2π f_r) is computed: a frequency near 0 makes it infinite.
+                let tau = Positive::new(1.0 / (2.0 * std::f64::consts::PI * f))
+                    .map_err(|_| d.error("frequency", format!("gives no finite relaxation time, got {f}")))?;
+                poles.push(Pole::Debye { delta_eps, tau });
             }
         }
         "lorentz" => {
             for l in p.items("lorentz", "Lorentz pole", MAX_POLES)? {
-                let delta_eps = l.positive("delta_eps").required()?;
-                let frequency = l.frequency("frequency").required()?;
-                let damping = l.frequency("damping").required()?;
+                let delta_eps = l.checked("delta_eps").required()?;
+                let frequency = l.hertz("frequency").required()?;
+                let damping = l.hertz("damping").required()?;
                 poles.push(Pole::Lorentz { delta_eps, frequency, damping });
             }
         }
         _ => {
             for d in p.items("drude", "Drude pole", MAX_POLES)? {
-                let plasma_frequency = d.frequency("plasma_frequency").required()?;
-                let damping = d.frequency("damping").required()?;
+                let plasma_frequency = d.hertz("plasma_frequency").required()?;
+                let damping = d.hertz("damping").required()?;
                 poles.push(Pole::Drude { plasma_frequency, damping });
             }
         }
@@ -252,7 +255,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     // An open problem: the box of air lined by a perfectly matched layer, a quarter of the
     // band's longest wavelength of air between the parts and the layer and as much layer.
     let open = p.flag("open").or(false)?;
-    let quarter = s.model.band.map(|b| emcraft_model::units::C0 / b.start / 4.0);
+    let quarter = s.model.band.map(|b| emcraft_model::units::C0 / b.start.get() / 4.0);
     let thickness = match (open, p.positive_length("thickness").optional()?) {
         (false, _) => None,
         (true, Some(t)) => Some(t),
@@ -508,22 +511,16 @@ pub fn feature(s: &mut Session, p: &Params) -> Result<Value> {
 }
 
 pub fn solid(s: &mut Session, p: &Params) -> Result<Value> {
-    let shape = shape(p)?;
-    if let Shape::Box { size } = shape
-        && size.iter().any(|v| !(v > 0.0))
-    {
-        return Err(p.error("size", "must be positive"));
-    }
-    s.model.set_solid(Solid { shape, material: p.string("material").or("vacuum")?.to_owned() })?;
+    s.model.set_solid(Solid { shape: shape(p)?, material: p.string("material").or("vacuum")?.to_owned() })?;
     Ok(json!({"volume": s.model.solid.as_ref().map(|x| x.shape.volume())}))
 }
 
 pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
-    let sigma = p.number("conductivity").optional()?;
-    let thickness = p.positive_length("thickness").optional()?;
+    let sigma = p.checked::<Conductivity>("conductivity").optional()?;
+    let thickness = p.metres("thickness").optional()?;
     s.model.set_wall_thickness(thickness)?;
-    s.model.set_wall_conductivity(sigma)?;
-    Ok(json!({"conductivity": sigma, "thickness": thickness.map(|t| s.show_length(t))}))
+    s.model.set_wall_conductivity(sigma);
+    Ok(json!({"conductivity": sigma, "thickness": thickness.map(|t| s.show_length(t.get()))}))
 }
 
 emcraft_macros::named_enum! {
@@ -583,7 +580,7 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
         modes: p.integer("modes", 1..=emcraft_model::MAX_PORT_MODES as usize).or(4)? as u32,
         face,
         mode_solver: p.choice("mode_solver").or_default()?,
-        reference: p.number("impedance").optional()?,
+        reference: p.positive("impedance").optional()?,
         deembed: p.length("deembed").or(0.0)?,
         terminals: p.choice("terminals").or_default()?,
     };

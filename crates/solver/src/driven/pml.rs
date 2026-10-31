@@ -232,10 +232,8 @@ mod tests {
     fn the_spherical_layer_takes_a_dispersive_permittivity_at_the_frequency() {
         // A Lorentz medium and a plain lossy one of the same ε at 10 GHz give the same layer.
         let f = 10e9;
-        let lorentz = Material::new("lorentz", 2.0, 1.0)
-            .unwrap()
-            .with_dispersion(vec![emcraft_model::Pole::Lorentz { delta_eps: 0.5, frequency: 14e9, damping: 1e9 }])
-            .unwrap();
+        let lorentz =
+            Material::new("lorentz", 2.0, 1.0).unwrap().with_dispersion(vec![emcraft_model::Pole::lorentz(0.5, 14e9, 1e9).unwrap()]).unwrap();
         let e = lorentz.eps_at(f);
         let plain = Material::new("plain", e.re, 1.0).unwrap().with_loss_tangent(-e.im / e.re).unwrap();
         let (a, b) = (spherical_layer(lorentz, f), spherical_layer(plain, f));

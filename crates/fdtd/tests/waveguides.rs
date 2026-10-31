@@ -120,7 +120,7 @@ fn an_e_plane_step_reflects_as_mode_matching_says() {
 /// (Δε = 0.4 at 16 GHz, damping 1.5 GHz) between 10 mm of empty guide.
 fn dispersive_slab() -> Model {
     let tau = 1.0 / (2.0 * PI * 20e9);
-    let poles = vec![Pole::Debye { delta_eps: 0.6, tau }, Pole::Lorentz { delta_eps: 0.4, frequency: 16e9, damping: 1.5e9 }];
+    let poles = vec![Pole::debye(0.6, tau).unwrap(), Pole::lorentz(0.4, 16e9, 1.5e9).unwrap()];
     let disp = Material::new("disp", 2.0, 1.0).unwrap().with_dispersion(poles).unwrap();
     with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.02, "disp"), Section::new(0.01, "vacuum")], vec![disp])
 }
@@ -171,7 +171,7 @@ fn dispersive_slab_converges_at_second_order() {
 fn dispersion_is_refused_where_unsupported() {
     // A port below its cut-off: a plasma that lifts it above the band.
     let mut m = Model::new();
-    let drude = Pole::Drude { plasma_frequency: 10e9, damping: 1e9 };
+    let drude = Pole::drude(10e9, 1e9).unwrap();
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
         width: A,
@@ -184,7 +184,7 @@ fn dispersion_is_refused_where_unsupported() {
     .unwrap();
     assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Invalid { .. })));
     // A resonance far too fast for the time step.
-    let fast = Pole::Lorentz { delta_eps: 1.0, frequency: 1e14, damping: 1e9 };
+    let fast = Pole::lorentz(1.0, 1e14, 1e9).unwrap();
     let fast = Material::new("fast", 1.0, 1.0).unwrap().with_dispersion(vec![fast]).unwrap();
     let m = with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.01, "fast"), Section::new(0.01, "vacuum")], vec![fast]);
     assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));

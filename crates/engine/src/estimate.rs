@@ -184,7 +184,7 @@ fn time_domain(s: &Session, p: &Params) -> Result<Cost> {
     let cells: f64 = (0..3).map(|k| (size[k] / cell).ceil().max(1.0) + pad[k]).product();
     let low = match p.list("frequencies", s.limits.frequencies).optional()? {
         Some(list) => list.iter().filter_map(|v| p.number_of("frequencies", v).ok()).fold(f64::INFINITY, f64::min) * s.display.frequency.to_si(1.0),
-        None => p.frequency("start").or_maybe(s.model.band.map(|b| b.start)).required_or("set the band (project.frequency) or give `start`")?,
+        None => p.frequency("start").or_maybe(s.model.band.map(|b| b.start.get())).required_or("set the band (project.frequency) or give `start`")?,
     };
     if !(low.is_finite() && low > 0.0) {
         return Err(p.error("frequencies", "must be above 0"));

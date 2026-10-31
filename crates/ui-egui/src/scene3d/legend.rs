@@ -14,7 +14,7 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
     match overlay {
         Overlay::Materials => {
             for (i, mat) in m.materials.iter().enumerate() {
-                out.legend.push((format!("{} (εr {})", mat.name, mat.eps_r), material_rgb(m, i)));
+                out.legend.push((format!("{} (εr {})", mat.name, mat.eps_r.get()), material_rgb(m, i)));
             }
         }
         Overlay::Ports => {

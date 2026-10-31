@@ -53,7 +53,7 @@ fn undo_states_share_the_mesh_and_are_bounded() {
     assert_eq!(s.undo.len(), project::UNDO_DEPTH);
     assert!(s.undo.iter().all(|u| u.model.mesh.as_ref().is_some_and(|m| std::sync::Arc::ptr_eq(m, &mesh))));
     // The oldest left: the state before the sixth change, the fifth band.
-    assert_eq!(s.undo.front().and_then(|u| u.model.band).map(|b| b.start), Some(9e9));
+    assert_eq!(s.undo.front().and_then(|u| u.model.band).map(|b| b.start.get()), Some(9e9));
 }
 
 #[test]

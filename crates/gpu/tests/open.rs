@@ -37,7 +37,7 @@ fn antennas(size: f64) -> Model {
 /// material: the slotted edges, the impressed current on them, the H faces' μ and decay.
 fn loaded(size: f64) -> Model {
     let mut m = antennas(size);
-    let poles = vec![Pole::Debye { delta_eps: 1.0, tau: 1e-11 }];
+    let poles = vec![Pole::debye(1.0, 1e-11).unwrap()];
     let x = Material::new("x", 2.0, 1.5)
         .unwrap()
         .with_loss_tangent(0.1)

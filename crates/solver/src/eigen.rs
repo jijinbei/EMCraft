@@ -387,7 +387,7 @@ fn iterate<A: Arithmetic>(model: &Model, driven: &Driven, count: usize, sigma: f
         let omega = 2.0 * PI * frequency;
         let u = driven.stored_energy(&vector, frequency)?;
         let q_walls = match model.wall_conductivity {
-            Some(s) => Some(omega * u / driven.wall_loss_perturbation(&vector, frequency, s, model.wall_thickness)?),
+            Some(s) => Some(omega * u / driven.wall_loss_perturbation(&vector, frequency, s.get(), model.wall_thickness.map(|t| t.get()))?),
             None => None,
         };
         let (q_dielectric, q_magnetic) = A::q_materials(driven, &vector, lambda, frequency, omega * u)?;

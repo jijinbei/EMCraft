@@ -11,12 +11,12 @@ use crate::{EngineError, Result, Session};
 /// A TE₁₀ line's section `length` long of material `m` at `frequency` (Hz): its permittivity
 /// εr(ω) = ε′ − jε″ as εr (1 − j tan δ), tan δ = ε″/ε′, and its permeability μr(1 − j tan δ_m).
 fn layer_at(length: f64, m: &Material, frequency: f64) -> Layer {
-    let magnetic_loss_tangent = m.magnetic_loss_tangent;
+    let magnetic_loss_tangent = m.magnetic_loss_tangent.get();
     if !m.is_dispersive() {
-        return Layer { length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent, magnetic_loss_tangent };
+        return Layer { length, eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), loss_tangent: m.loss_tangent.get(), magnetic_loss_tangent };
     }
     let e = m.eps_at(frequency);
-    Layer { length, eps_r: e.re, mu_r: m.mu_r, loss_tangent: -e.im / e.re, magnetic_loss_tangent }
+    Layer { length, eps_r: e.re, mu_r: m.mu_r.get(), loss_tangent: -e.im / e.re, magnetic_loss_tangent }
 }
 
 /// A uniform guide's sections (length, material) and its width: its exact TE₁₀ line at each
@@ -152,7 +152,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
         for (i, s) in w.sections.iter().enumerate() {
             let m = constant(session.model.material(&s.material)?.1)?;
             let emcraft_model::Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
-            sections.push(ESection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, loss_tangent: m.loss_tangent, y0, height });
+            sections.push(ESection { length: s.length, eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), loss_tangent: m.loss_tangent.get(), y0, height });
         }
         return Ok(Reference::EPlane(EPlaneLine { a: w.width, sections }));
     }
@@ -163,7 +163,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
     for (i, s) in w.sections.iter().enumerate() {
         let m = constant(session.model.material(&s.material)?.1)?;
         let emcraft_model::Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
-        sections.push(HSection { length: s.length, eps_r: m.eps_r, mu_r: m.mu_r, x0, width, loss_tangent: m.loss_tangent });
+        sections.push(HSection { length: s.length, eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), x0, width, loss_tangent: m.loss_tangent.get() });
     }
     Ok(Reference::ModeMatching(HPlaneLine { sections }))
 }
@@ -172,7 +172,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
 fn body_reference(session: &Session, solid: &emcraft_model::Solid) -> Result<Reference> {
     let (_, m) = session.model.material(&solid.material)?;
     let plain = session.model.inclusions.is_empty() && !m.is_lossy();
-    let index2 = m.eps_r * m.mu_r;
+    let index2 = m.eps_r.get() * m.mu_r.get();
     match (&solid.shape, &session.model.features[..]) {
         // A box between two ports is an empty guide.
         (emcraft_model::Shape::Box { size }, []) if session.model.inclusions.is_empty() => {
@@ -210,7 +210,7 @@ pub fn section_cutoffs(session: &Session) -> Vec<(f64, String)> {
     let lu = session.display.length;
     for (i, sec) in w.sections.iter().enumerate() {
         let (Ok((_, m)), Some(emcraft_model::Span { width, .. })) = (session.model.material(&sec.material), w.aperture(i)) else { continue };
-        let fc = te10_cutoff(width, m.eps_r, m.mu_r);
+        let fc = te10_cutoff(width, m.eps_r.get(), m.mu_r.get());
         if !out.iter().any(|(x, _)| (x - fc).abs() < 1e-6 * fc) {
             let name = if (width - w.width).abs() <= 1e-9 * w.width {
                 sec.material.clone()

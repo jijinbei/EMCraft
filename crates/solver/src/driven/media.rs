@@ -25,7 +25,6 @@ impl Media {
         let mut index = vec![Slot::NONE; model.materials.len()];
         let mut dispersive = Vec::new();
         for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
-            m.checked()?;
             index[i] = Slot::new(dispersive.len());
             dispersive.push(m.clone());
         }
@@ -33,7 +32,7 @@ impl Media {
         for t in 0..n {
             let k = mesh.tet_material.get(t).copied();
             let m = k.and_then(|k| model.materials.get(k as usize)).ok_or_else(|| invalid("mesh", format!("tetrahedron {t} has no material")))?;
-            eps.push(C::new(m.eps_r, -m.eps_r * m.loss_tangent));
+            eps.push(C::new(m.eps_r.get(), -m.eps_r.get() * m.loss_tangent.get()));
             mu.push(m.mu_c());
             dispersive_of.push(k.and_then(|k| index.get(k as usize)).copied().unwrap_or(Slot::NONE));
         }

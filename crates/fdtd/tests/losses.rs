@@ -89,7 +89,7 @@ fn magnetic_losses_match_the_cascade_of_their_magnetic_conductivity() {
 fn wall_errors(cell: f64, decay: f64) -> Vec<f64> {
     let sigma = 1e6;
     let mut m = guide(Vec::new(), vec![Section::new(0.1, "vacuum")]);
-    m.set_wall_conductivity(Some(sigma)).unwrap();
+    m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(sigma).unwrap()));
     let r = s_parameters(&m, &Options { decay, ..Options::new(cell) }, &FREQS).unwrap();
     assert!(r.converged);
     FREQS
@@ -150,7 +150,7 @@ fn a_lossy_port_carries_the_complex_propagation_constant() {
 #[test]
 fn a_dispersive_port_carries_its_complex_propagation_constant() {
     let tau = 1.0 / (2.0 * PI * 20e9);
-    let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::Debye { delta_eps: 0.6, tau }]).unwrap();
+    let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::debye(0.6, tau).unwrap()]).unwrap();
     let m = guide(vec![debye], vec![Section::new(0.03, "debye")]);
     let r = run(&m, 0.0015, &FREQS);
     let exact = |f: f64| {
@@ -164,27 +164,17 @@ fn a_dispersive_port_carries_its_complex_propagation_constant() {
 
 #[test]
 fn hostile_losses_are_refused_or_stay_stable() {
+    // (Hostile conductivities and loss tangents cannot reach a model: their types refuse them.)
     let air = || guide(Vec::new(), vec![Section::new(0.02, "vacuum")]);
-    for bad in [f64::NAN, f64::INFINITY, -1.0, 0.0, f64::MAX, 1e21] {
-        let mut m = air();
-        m.wall_conductivity = Some(bad);
-        assert!(s_parameters(&m, &Options::new(0.003), &[10e9]).is_err(), "{bad}");
-    }
     // Not a good conductor at the band's top.
     let mut m = air();
-    m.wall_conductivity = Some(1.0);
+    m.wall_conductivity = Some(emcraft_model::Conductivity::new(1.0).unwrap());
     assert!(s_parameters(&m, &Options::new(0.003), &[10e9]).is_err());
-    // A huge conductivity: the walls all but perfect.
+    // The largest conductivity: the walls all but perfect.
     let mut m = air();
-    m.wall_conductivity = Some(emcraft_fdtd::MAX_WALL_CONDUCTIVITY);
+    m.wall_conductivity = Some(emcraft_model::Conductivity::new(emcraft_model::MAX_CONDUCTIVITY).unwrap());
     let r = s_parameters(&m, &Options::new(0.003), &[9e9, 11e9]).unwrap();
     assert!((r.s21[0].norm() - 1.0).abs() < 1e-3, "{:?}", r.s21);
-    // Loss tangents read from a file unchecked: refused.
-    let mut m = lossy_slab();
-    m.materials[1].loss_tangent = f64::NAN;
-    assert!(s_parameters(&m, &Options::new(0.003), &[10e9]).is_err());
-    m.materials[1].loss_tangent = -0.1;
-    assert!(s_parameters(&m, &Options::new(0.003), &[10e9]).is_err());
     // The largest loss tangent the model takes: a slab all but metal, stable at the usual step
     // (the field it lets in diffuses for a long time on the grid: a run cut short, at 10 000
     // steps, long past where an unstable update would have grown without bound).
@@ -203,7 +193,7 @@ fn hostile_losses_are_refused_or_stay_stable() {
 fn errors(cell: f64) -> [f64; 2] {
     let slab = worst(&run(&lossy_slab(), cell, &FREQS), lossy_slab_exact).0;
     let tau = 1.0 / (2.0 * PI * 20e9);
-    let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::Debye { delta_eps: 0.6, tau }]).unwrap();
+    let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::debye(0.6, tau).unwrap()]).unwrap();
     let r = run(&guide(vec![debye], vec![Section::new(0.03, "debye")]), cell, &FREQS);
     let port = worst(&r, |f| {
         let e = C::new(2.0, 0.0) + 0.6 / C::new(1.0, 2.0 * PI * f * tau);

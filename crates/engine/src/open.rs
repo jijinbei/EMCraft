@@ -60,7 +60,7 @@ pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
         name: p.string("name").required()?.to_owned(),
         from: p.point("from").required()?,
         to: p.point("to").required()?,
-        impedance: p.number("impedance").or(50.0)?,
+        impedance: p.positive("impedance").or(50.0)?,
         voltage: [amplitude * phase.cos(), amplitude * phase.sin()],
         radius: p.positive_length("radius").or(0.0)?,
     })?;
@@ -69,7 +69,7 @@ pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// Whether the region the fields fill is vacuum, as the closed forms take it.
 fn in_vacuum(s: &Session) -> bool {
-    s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r == 1.0 && m.mu_r == 1.0))
+    s.model.solid.as_ref().is_some_and(|x| s.model.material(&x.material).is_ok_and(|(_, m)| m.eps_r.get() == 1.0 && m.mu_r.get() == 1.0))
 }
 
 /// A centre-fed wire dipole the induced-EMF closed form applies to: two coaxial conducting
@@ -123,7 +123,7 @@ fn lone_sphere(s: &Session) -> Option<(f64, Option<f64>)> {
         [inc] if s.model.features.is_empty() && s.model.sources.len() == 1 => match (&inc.shape, &inc.material) {
             (Shape::Sphere { radius }, Some(name)) => {
                 let (_, m) = s.model.material(name).ok()?;
-                (m.mu_r == 1.0 && m.loss_tangent == 0.0 && !m.is_magnetically_lossy()).then_some((*radius, Some(m.eps_r)))
+                (m.mu_r.get() == 1.0 && m.loss_tangent.get() == 0.0 && !m.is_magnetically_lossy()).then_some((*radius, Some(m.eps_r.get())))
             }
             (Shape::Sphere { radius }, None) => Some((*radius, None)),
             _ => None,

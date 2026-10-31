@@ -12,13 +12,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::analysis::Analysis;
 use crate::band::Band;
-use crate::error::{ModelError, Result, invalid, positive};
+use crate::error::{ModelError, Result, invalid};
 use crate::geom::{Aabb, Point3};
 use crate::material::Material;
 use crate::mesh::Mesh;
 use crate::open::{LumpedPort, Open, Source, inside_ball};
 use crate::periodic::Periodic;
 use crate::port::Port;
+use crate::quantity::{Conductivity, Metres};
 use crate::shape::{Combine, Feature, Inclusion, Solid};
 use crate::symmetry::Symmetry;
 use crate::waveguide::Waveguide;
@@ -44,11 +45,11 @@ pub struct Model {
     /// The conductivity (S/m) of the guide's walls (and its irises and steps); perfectly
     /// conducting when `None`.
     #[serde(default)]
-    pub wall_conductivity: Option<f64>,
+    pub wall_conductivity: Option<Conductivity>,
     /// The walls' thickness (m): drawn round the guide, and with a conductivity the layer the
     /// surface impedance sees through (never meshed); infinitely thick when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wall_thickness: Option<f64>,
+    pub wall_thickness: Option<Metres>,
     /// An open boundary (radiation into free space through a PML).
     #[serde(default)]
     pub open: Option<Open>,
@@ -265,23 +266,19 @@ impl Model {
         Ok(())
     }
 
-    /// Sets the walls' conductivity (S/m), or perfect conductors with `None`.
-    pub fn set_wall_conductivity(&mut self, sigma: Option<f64>) -> Result<()> {
-        if let Some(s) = sigma {
-            positive("wall conductivity", s)?;
-        }
+    /// Sets the walls' conductivity (S/m, checked by its type), or perfect conductors with
+    /// `None`.
+    pub fn set_wall_conductivity(&mut self, sigma: Option<Conductivity>) {
         self.wall_conductivity = sigma;
-        Ok(())
     }
 
     /// Sets the walls' thickness (m, at most [`MAX_WALL_THICKNESS`]), or infinitely thick walls
     /// with `None`.
-    pub fn set_wall_thickness(&mut self, thickness: Option<f64>) -> Result<()> {
-        if let Some(t) = thickness {
-            positive("wall thickness", t)?;
-            if t > MAX_WALL_THICKNESS {
-                return Err(invalid("wall thickness", format!("must be at most {MAX_WALL_THICKNESS} m, got {t}")));
-            }
+    pub fn set_wall_thickness(&mut self, thickness: Option<Metres>) -> Result<()> {
+        if let Some(t) = thickness
+            && t.get() > MAX_WALL_THICKNESS
+        {
+            return Err(invalid("wall thickness", format!("must be at most {MAX_WALL_THICKNESS} m, got {t}")));
         }
         self.wall_thickness = thickness;
         Ok(())
@@ -413,13 +410,10 @@ mod tests {
         m.add_port(Port::new("2", End::End)).unwrap();
         assert_eq!(m.check(), vec![Issue::NoMesh]);
         assert_eq!(Issue::NoMesh.to_string(), "no mesh: mesh the geometry with mesh.generate");
-        assert!(m.set_wall_conductivity(Some(-1.0)).is_err());
-        m.set_wall_conductivity(Some(5.8e7)).unwrap();
-        for bad in [0.0, -1e-3, f64::NAN, f64::INFINITY, 2.0] {
-            assert!(m.set_wall_thickness(Some(bad)).is_err(), "{bad}");
-        }
-        m.set_wall_thickness(Some(1e-3)).unwrap();
-        assert_eq!(m.wall_thickness, Some(1e-3));
+        let mm = |t: f64| Some(Metres::new(t * 1e-3).unwrap());
+        assert!(m.set_wall_thickness(mm(2000.0)).is_err(), "thicker than a metre");
+        m.set_wall_thickness(mm(1.0)).unwrap();
+        assert_eq!(m.wall_thickness, mm(1.0));
     }
 
     #[test]

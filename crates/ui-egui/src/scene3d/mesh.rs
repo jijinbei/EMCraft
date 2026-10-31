@@ -50,7 +50,7 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
     if let Some(t) = m.wall_thickness
         && m.open.is_none()
     {
-        super::shell::draw(m, overlay, &inside(m, mesh, &surface, &periodic), t, out);
+        super::shell::draw(m, overlay, &inside(m, mesh, &surface, &periodic), t.get(), out);
     }
     // Dielectric bodies inside show through the see-through surfaces in every view but the
     // field's.
@@ -88,7 +88,7 @@ fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &P
 /// walls): faces two tetrahedra of different materials share.
 fn material_interfaces(m: &Model, mesh: &emcraft_model::Mesh, out: &mut Built) {
     let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
-    let eps = |i: usize| m.materials.get(i).map_or(1.0, |x| x.eps_r);
+    let eps = |i: usize| m.materials.get(i).map_or(1.0, |x| x.eps_r.get());
     let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
     let mut keyed: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.tets.len() * 4);
     for (t, tet) in mesh.tets.iter().enumerate() {

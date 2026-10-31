@@ -3,33 +3,31 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, invalid};
+use crate::quantity::Hertz;
 
-/// A frequency band [start, stop] (Hz).
+/// A frequency band [start, stop] (Hz), start ≤ stop (each frequency finite and > 0 by its
+/// type).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Band {
-    pub start: f64,
-    pub stop: f64,
+    pub start: Hertz,
+    pub stop: Hertz,
 }
 
 impl Band {
-    /// The band, checked: finite, 0 < start ≤ stop.
-    pub fn new(start: f64, stop: f64) -> Result<Band> {
-        if !(start.is_finite() && stop.is_finite() && start > 0.0 && stop >= start) {
-            return Err(invalid("frequency band", format!("must be finite with 0 < start ≤ stop, got {start} to {stop}")));
+    /// The band from `start` to `stop`, checked: start ≤ stop.
+    ///
+    /// ```
+    /// use emcraft_model::{Band, Hertz};
+    ///
+    /// let (f6, f9) = (Hertz::new(6e9)?, Hertz::new(9e9)?); // Hz
+    /// assert_eq!(Band::new(f6, f9)?.stop.get(), 9e9);
+    /// assert!(Band::new(f9, f6).is_err());
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn new(start: Hertz, stop: Hertz) -> Result<Band> {
+        if stop < start {
+            return Err(invalid("frequency band", format!("must have start ≤ stop, got {start} to {stop}")));
         }
         Ok(Band { start, stop })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bands_run_upwards_from_above_zero() {
-        assert_eq!(Band::new(1e9, 1e9), Ok(Band { start: 1e9, stop: 1e9 }));
-        for (start, stop) in [(0.0, 1e9), (2e9, 1e9), (1e9, f64::INFINITY), (f64::NAN, 1e9)] {
-            assert!(Band::new(start, stop).is_err(), "{start} to {stop}");
-        }
     }
 }
