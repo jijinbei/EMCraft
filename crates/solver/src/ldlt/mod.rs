@@ -295,6 +295,27 @@ mod tests {
     }
 
     #[test]
+    fn several_right_hand_sides_solve_together() {
+        // Three right-hand sides in one pass over the factor (each supernode's rows below its
+        // block as one product) and with refinement: each as accurate as alone.
+        let mut rng = Rng(0x2545f4914f6cdd1d);
+        let (a, xyz) = grid_matrix(7, 6, 5, C::new(0.0, 0.0), &mut rng);
+        let f = Ldlt::factor(&a, &xyz).unwrap();
+        let truths: Vec<Vec<C>> = (0..3).map(|_| (0..a.n).map(|_| rng.c()).collect()).collect();
+        let bs: Vec<Vec<C>> = truths.iter().map(|x| a.mul(x)).collect();
+        let mut xs = bs.clone();
+        f.solve_many(&mut xs).unwrap();
+        for (x, b) in xs.iter().zip(&bs) {
+            assert!(residual(&a, x, b) < 1e-11, "{}", residual(&a, x, b));
+        }
+        for ((xr, berr), truth) in f.solve_refined_many(&a, &bs, 5).unwrap().iter().zip(&truths) {
+            assert!(*berr < 1e-14, "{berr}");
+            let err = xr.iter().zip(truth).fold(0.0f64, |m, (p, q)| m.max((p - q).norm()));
+            assert!(err < 1e-8, "{err}");
+        }
+    }
+
+    #[test]
     fn needs_two_by_two_pivots() {
         // A zero diagonal with the largest entries inside one supernode: [[0, 1], [1, 0]] blocks
         // coupled densely, all in one front.

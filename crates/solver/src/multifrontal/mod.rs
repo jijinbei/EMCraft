@@ -304,32 +304,62 @@ pub(crate) fn factor_tree<K: FrontKernel>(kernel: &K, an: &Analysis) -> Result<(
 /// ‖b − A x‖∞ / (‖A‖ ‖x‖∞ + ‖b‖∞) stops falling (at most `steps` corrections); returns x and
 /// that error.
 pub(crate) fn refine(a: &Csr, b: &[C], steps: usize, solve: impl Fn(&mut [C]) -> Result<(), FactorError>) -> Result<(Vec<C>, f64), FactorError> {
-    let mut x = b.to_vec();
-    solve(&mut x)?;
+    let mut one = refine_many(a, std::slice::from_ref(&b.to_vec()), steps, |bs| bs.iter_mut().try_for_each(|b| solve(b)))?;
+    one.pop().ok_or(FactorError::Dimension("a refined solve returned nothing".into()))
+}
+
+/// [`refine`] for several right-hand sides at once: each pass of `solve_many` serves every one
+/// whose refinement goes on (each stopping as the single refinement would), so a pass over the
+/// factor serves them all rather than each in turn.
+pub(crate) fn refine_many(
+    a: &Csr,
+    bs: &[Vec<C>],
+    steps: usize,
+    solve_many: impl Fn(&mut [Vec<C>]) -> Result<(), FactorError>,
+) -> Result<Vec<(Vec<C>, f64)>, FactorError> {
     let norm_a = a.max_abs();
     let inf = |v: &[C]| v.iter().fold(0.0f64, |m, z| m.max(z.norm()));
-    let berr = |x: &[C]| -> (Vec<C>, f64) {
+    let berr = |b: &[C], x: &[C]| -> (Vec<C>, f64) {
         let ax = a.mul(x);
         let r: Vec<C> = b.iter().zip(&ax).map(|(b, a)| b - a).collect();
         let e = inf(&r) / (norm_a * inf(x) + inf(b)).max(f64::MIN_POSITIVE);
         (r, e)
     };
-    let (mut r, mut err) = berr(&x);
+    let mut xs: Vec<Vec<C>> = bs.to_vec();
+    solve_many(&mut xs)?;
+    // Per right-hand side: its solution, residual, error and whether it is still refined.
+    let mut state: Vec<(Vec<C>, Vec<C>, f64, bool)> = xs
+        .into_iter()
+        .zip(bs)
+        .map(|(x, b)| {
+            let (r, e) = berr(b, &x);
+            (x, r, e, true)
+        })
+        .collect();
     for _ in 0..steps.min(20) {
-        if err < 4.0 * f64::EPSILON {
+        for s in &mut state {
+            s.3 &= s.2 >= 4.0 * f64::EPSILON;
+        }
+        let active: Vec<usize> = (0..state.len()).filter(|&j| state[j].3).collect();
+        if active.is_empty() {
             break;
         }
-        solve(&mut r)?;
-        let trial: Vec<C> = x.iter().zip(&r).map(|(x, d)| x + d).collect();
-        let (r2, e2) = berr(&trial);
-        if !(e2 < err) {
-            break;
+        let mut corrections: Vec<Vec<C>> = active.iter().map(|&j| state[j].1.clone()).collect();
+        solve_many(&mut corrections)?;
+        for (&j, d) in active.iter().zip(corrections) {
+            let (x, r, err, going) = &mut state[j];
+            let trial: Vec<C> = x.iter().zip(&d).map(|(x, d)| x + d).collect();
+            let (r2, e2) = berr(&bs[j], &trial);
+            if !(e2 < *err) {
+                *going = false;
+                continue;
+            }
+            *x = trial;
+            *r = r2;
+            *err = e2;
         }
-        x = trial;
-        r = r2;
-        err = e2;
     }
-    Ok((x, err))
+    Ok(state.into_iter().map(|(x, _, e, _)| (x, e)).collect())
 }
 
 /// Shared by the factorizations' tests: a deterministic pseudo-random sequence and matrices on

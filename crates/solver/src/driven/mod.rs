@@ -69,6 +69,7 @@ use emcraft_mesh::Topology;
 use emcraft_model::units::C0;
 use emcraft_model::{Boundary, Hertz, Mesh, Model, Quantity, Symmetry, SymmetryKind};
 use num_complex::Complex64 as C;
+use rayon::prelude::*;
 
 use crate::ldlt::FactorError;
 use crate::smatrix::SMatrix;
@@ -111,6 +112,9 @@ use media::Media;
 pub const MAX_UNKNOWNS: usize = 2_000_000;
 /// The most frequencies one sweep may solve.
 pub const MAX_FREQUENCIES: usize = 2001;
+/// The most moments a full solve adds to a fast sweep's basis per excitation
+/// ([`Driven::solve_spanning`]).
+pub const MAX_MOMENTS: usize = 4;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum SolveError {
@@ -427,18 +431,71 @@ impl Driven {
 
     /// Solves at one frequency (Hz).
     pub fn solve(&self, frequency: f64) -> Result<FrequencyResult> {
+        Ok(self.solve_spanning(frequency, 0)?.0)
+    }
+
+    /// Solves at one frequency (Hz) as [`Driven::solve`] does, and from the same factorization
+    /// the next `moments` vectors of each excitation's Krylov sequence y_{j+1} = A⁻¹ M y_j,
+    /// y₀ = x: the field's derivatives in k₀² up to the ports' (A = K − k₀² M + …, so
+    /// ∂x/∂k₀² = A⁻¹ M x when the ports' terms are held), for a reduced basis to span the
+    /// frequencies around this one (multi-point moment matching: R. D. Slone, R. Lee, J.-F. Lee,
+    /// *Multipoint Galerkin asymptotic waveform evaluation for model order reduction of
+    /// frequency domain FEM electromagnetic radiation problems*, IEEE Trans. Antennas Propag.
+    /// 49(10):1504–1513, 2001). Each extra vector costs a solve, not a factorization; at most
+    /// [`MAX_MOMENTS`]. A periodic cell gives none.
+    pub(crate) fn solve_spanning(&self, frequency: f64, moments: usize) -> Result<(FrequencyResult, Vec<Vec<C>>)> {
         check_frequency(frequency)?;
         if self.tie.is_some() {
-            return self.solve_periodic(frequency);
+            return Ok((self.solve_periodic(frequency)?, Vec::new()));
         }
         let t0 = std::time::Instant::now();
         let system = self.system(frequency)?;
         let assembly = t0.elapsed().as_secs_f64();
         let f = self.factor(&system)?;
-        let System { a, rhs, terms, .. } = system;
-        let mut solved = solution::solve_each(&f, &a, &rhs, self.dofs.unknowns, assembly)?;
+        let System { a, rhs, terms, border } = system;
+        let n = self.dofs.unknowns;
+        let mut solved = solution::solve_each(&f, &a, &rhs, n, assembly)?;
+        let dispersive = self.dispersive_scales(frequency);
+        let k2 = wavenumber(frequency).powi(2);
+        let mut extra: Vec<Vec<C>> = Vec::new();
+        let mut last: Vec<Vec<C>> = if moments > 0 { solved.fields.clone() } else { Vec::new() };
+        for _ in 0..moments.min(MAX_MOMENTS) {
+            // M y with the permittivities at this frequency (k₀² εr,d M_d scaled back by k₀²).
+            let rhs: Vec<Vec<C>> = last
+                .iter()
+                .map(|y| {
+                    let mut b: Vec<C> = (0..n)
+                        .into_par_iter()
+                        .map(|i| {
+                            self.pattern
+                                .row(i)
+                                .map(|k| {
+                                    let mut m = self.mass[k];
+                                    for (c, md) in dispersive.iter().zip(&self.dispersive_mass) {
+                                        m += c / k2 * md[k];
+                                    }
+                                    m * y[self.pattern.col[k]]
+                                })
+                                .sum()
+                        })
+                        .collect();
+                    b.resize(n + border, C::new(0.0, 0.0));
+                    b
+                })
+                .collect();
+            // Unrefined: the vectors only span the basis, whose residual is checked in full.
+            last = f
+                .solve_refined_many(&a, &rhs, 0)?
+                .into_iter()
+                .map(|(mut y, _)| {
+                    y.truncate(n);
+                    y
+                })
+                .collect();
+            extra.extend(last.iter().cloned());
+        }
         let (s, impedances) = self.s_parameters(&terms, &mut solved.fields, frequency)?;
-        Ok(solved.result(frequency, s, impedances))
+        Ok((solved.result(frequency, s, impedances), extra))
     }
 
     pub(crate) fn element_of(&self, t: usize) -> Result<Element> {

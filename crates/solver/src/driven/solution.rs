@@ -29,7 +29,7 @@ pub(super) struct FactorReport {
 
 /// A factorization a frequency's system is solved with.
 pub(super) trait Factor {
-    fn solve_refined(&self, a: &Csr, b: &[C], steps: usize) -> std::result::Result<(Vec<C>, f64), FactorError>;
+    fn solve_refined_many(&self, a: &Csr, bs: &[Vec<C>], steps: usize) -> std::result::Result<Vec<(Vec<C>, f64)>, FactorError>;
     fn report(&self) -> FactorReport;
 }
 
@@ -37,8 +37,8 @@ pub(super) trait Factor {
 macro_rules! factor {
     ($($t:ty),*) => {$(
         impl Factor for $t {
-            fn solve_refined(&self, a: &Csr, b: &[C], steps: usize) -> std::result::Result<(Vec<C>, f64), FactorError> {
-                <$t>::solve_refined(self, a, b, steps)
+            fn solve_refined_many(&self, a: &Csr, bs: &[Vec<C>], steps: usize) -> std::result::Result<Vec<(Vec<C>, f64)>, FactorError> {
+                <$t>::solve_refined_many(self, a, bs, steps)
             }
 
             fn report(&self) -> FactorReport {
@@ -114,13 +114,12 @@ pub(super) struct Solved {
 
 /// Solves `a` x = b for each of `rhs` with `f` and iterative refinement, keeping the first `keep`
 /// unknowns of each solution (the border's are the ports' auxiliaries); `assembly`: the
-/// seconds the system took.
+/// seconds the system took. The right-hand sides share each pass over the factor.
 pub(super) fn solve_each(f: &impl Factor, a: &Csr, rhs: &[Vec<C>], keep: usize, assembly: f64) -> Result<Solved> {
     let started = Instant::now();
     let mut fields = Vec::with_capacity(rhs.len());
     let mut worst: f64 = 0.0;
-    for b in rhs {
-        let (mut x, e) = f.solve_refined(a, b, 4)?;
+    for (mut x, e) in f.solve_refined_many(a, rhs, 4)? {
         x.truncate(keep);
         worst = worst.max(e);
         fields.push(x);

@@ -251,7 +251,8 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 ## Sparse direct solution
 - A. George, *Nested dissection of a regular finite element mesh*, SIAM J. Numer. Anal.
   10(2):345–363, 1973; H. D. Simon, *Partitioning of unstructured problems for parallel
-  processing*, Computing Systems in Engineering 2:135–148, 1991 — the ordering.
+  processing*, Computing Systems in Engineering 2:135–148, 1991 — the ordering (planes across
+  each axis at several cuts near the median, the smallest separator kept).
 - J. W. H. Liu, *The role of elimination trees in sparse factorization*, SIAM J. Matrix Anal.
   Appl. 11(1):134–172, 1990 — elimination trees and postorders.
 - I. S. Duff, J. K. Reid, *The multifrontal solution of indefinite sparse symmetric linear
@@ -341,6 +342,10 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Error Estimation for Parametrized Partial Differential Equations*, MIT 2007 — the greedy
   reduced basis: solved fields span the basis, the residual chooses the next frequency to solve
   (`emcraft-solver::sweep`).
+- R. D. Slone, R. Lee, J.-F. Lee, *Multipoint Galerkin asymptotic waveform evaluation for model
+  order reduction of frequency domain FEM electromagnetic radiation problems*, IEEE Trans.
+  Antennas Propag. 49(10):1504–1513, 2001 — each frequency solved in full adds its fields'
+  derivatives (moments, A⁻¹ M x) to the basis from the same factorization.
 
 ## Eigenvalues
 - K.-J. Bathe, E. L. Wilson, *Large eigenvalue problems in dynamic analysis*, J. Eng. Mech. Div.

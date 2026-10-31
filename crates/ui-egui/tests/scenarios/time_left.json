@@ -1,7 +1,7 @@
 [
-  {"note": "A run past its estimate never counts down to 0: a fast sweep (its full solves not known in advance) says its full solves and residual with the time run and an open bar; a counted sweep says the time left from its own rate"},
+  {"note": "A run past its estimate never counts down to 0: a fast sweep (its full solves not known in advance; a wide band in many points, so it makes several and passes in its basis long enough to watch) says its full solves and residual with the time run and an open bar; a counted sweep says the time left from its own rate"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
-  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 9, "points": 400, "order": 2}, "wait": false}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 4.8, "stop": 15, "points": 2001, "order": 2}, "wait": false}},
   {"until": {"inspect": {"progress.stage": "fast sweep", "progress.done": {"min": 2}, "progress.residual": "*"}}, "timeout": 120},
   {"note": "The test hook: an estimate long passed"},
   {"call": "ui.set", "params": {"job_estimate": 0.001}},
