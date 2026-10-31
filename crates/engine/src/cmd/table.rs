@@ -350,6 +350,18 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::geometry::import,
     },
     CommandSpec {
+        id: "geometry.import.inspect",
+        label: "Inspect a part",
+        doc: "Reads a part as geometry.import would and says what it holds, without importing it: its `format` (`solidcraft`, `3mf` or `stl`), its `bodies` (each one's name and triangles), their `size` (x, y, z extent in display units), whether the file carries its own `units` (`file`: 3MF and SolidCraft designs) or is read in `unit` (`display`: STL), and a SolidCraft design's `parameters` (name, value as saved, unit). Changes nothing.",
+        params: &[
+            req("path", K::String, "the file (`.stl`, `.3mf`, a SolidCraft design `.sc` or `.solidcraft`), or `template:<file>`"),
+            opt("unit", K::Number, "an STL file's length unit in display units (default 1)").of(L),
+        ],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::geometry::import_inspect,
+    },
+    CommandSpec {
         id: "geometry.body",
         label: "Body",
         doc: "A body in the region, by what it is made of: `metal` (a perfect conductor: the region loses its volume and its surface becomes wall; it may reach the region's boundary), the region's own material (giving back what metal took: the inside of a metal shell, an opening), or another material (a dielectric body inside the region, apart from other dielectric ones). Later bodies win where they overlap. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis` (dielectric bodies along z).",

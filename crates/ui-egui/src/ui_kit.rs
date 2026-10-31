@@ -168,6 +168,39 @@ pub fn button(ui: &mut Ui, label: impl Shown, primary: bool, handle: Fixed) -> R
     ui.named(styled(label, primary), handle.into())
 }
 
+/// A button `size` points (the row's width when its width is 0) with `glyph` before `label`,
+/// the primary one in the accent; greyed out and deaf unless `enabled`. Published as `handle`.
+pub fn glyph_button(
+    ui: &mut Ui,
+    glyph: crate::glyphs::Glyph,
+    label: impl Shown,
+    size: egui::Vec2,
+    primary: bool,
+    enabled: bool,
+    handle: Handle,
+) -> Response {
+    let t = &Tokens::get();
+    let width = if size.x > 0.0 { size.x } else { ui.available_width() };
+    let (r, _) = ui.allocate_exact_size(vec2(width, size.y), Sense::hover());
+    let resp = ui.hit(r, handle, if enabled { Sense::click() } else { Sense::hover() });
+    let hover = enabled && resp.hovered();
+    let (fill, ink) = match (primary, enabled) {
+        (true, true) => (if hover { t.accent.gamma_multiply(0.85) } else { t.accent }, t.on_accent),
+        (false, true) => (if hover { t.hover } else { t.control_fill }, t.form_ink),
+        (_, false) => (t.control_fill, t.text_dim),
+    };
+    let p = ui.painter();
+    p.rect(r, t.control_radius, fill, Stroke::new(1.0, if primary && enabled { t.accent } else { t.control_border }), egui::StrokeKind::Inside);
+    let icon = (size.y - 14.0).clamp(14.0, 30.0);
+    let g = p.layout_no_wrap(label.shown().to_owned(), FontId::proportional(t.font_button), ink);
+    let left = (r.center().x - (icon + 8.0 + g.size().x) / 2.0).max(r.left() + 6.0);
+    let accent = if primary { ink } else { t.accent };
+    crate::glyphs::paint(p, Rect::from_min_size(pos2(left, r.center().y - icon / 2.0), vec2(icon, icon)), glyph, ink, accent);
+    p.with_clip_rect(r).galley(pos2(left + icon + 8.0, r.center().y - g.size().y / 2.0), g, ink);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label.shown()));
+    resp
+}
+
 /// A determinate (`Some`) or running (`None`) progress bar.
 pub fn progress(ui: &mut Ui, fraction: Option<f64>, width: f32) -> Response {
     let t = &Tokens::get();

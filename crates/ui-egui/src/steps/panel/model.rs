@@ -3,7 +3,22 @@
 use super::*;
 use crate::lang::args;
 
-pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
+pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, has_dialog: bool, t: &Tokens, out: &mut Actions) {
+    // No geometry yet: the two ways to begin, a guide or a design from SolidCraft.
+    if app.session.model().bounds().is_none() && !has_dialog {
+        let enabled = !app.busy();
+        use crate::glyphs::Glyph;
+        for (glyph, label, handle, command) in [
+            (Glyph::Import, "Import a SolidCraft design", Fixed::StepImport, "geometry.import"),
+            (Glyph::Waveguide, "Waveguide", Fixed::StepWaveguide, "geometry.waveguide"),
+        ] {
+            if ui_kit::glyph_button(ui, glyph, label, vec2(0.0, 40.0), handle == Fixed::StepImport, enabled, handle.into()).clicked() {
+                out.push(Action::Fix(command.to_owned()));
+            }
+            ui.add_space(4.0);
+        }
+        ui.add_space(6.0);
+    }
     ui_kit::section(ui, "Bodies");
     let tree = crate::browser::tree(app);
     for (_, rows) in tree.iter().filter(|(s, _)| *s == "Geometry") {

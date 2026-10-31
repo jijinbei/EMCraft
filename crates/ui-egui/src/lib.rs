@@ -48,6 +48,7 @@ mod fonts;
 pub mod glyphs;
 pub mod handle;
 pub mod home;
+mod import_ui;
 pub mod kinds;
 pub mod lang;
 pub mod math;
@@ -165,6 +166,8 @@ pub(crate) struct ControlState {
     pub(crate) synthetic: VecDeque<egui::Event>,
     /// The modifiers held by the injected input.
     pub(crate) synthetic_mods: egui::Modifiers,
+    /// Files dropped by the control channel (`ui.drop`), given to egui on the next frame.
+    pub(crate) dropped: Vec<std::path::PathBuf>,
     /// Screenshots asked for and not yet answered.
     pub(crate) shots: Vec<shots::Shot>,
     pub(crate) shot_token: u64,
@@ -608,6 +611,7 @@ impl EmcraftApp {
             })
             .map_or(self.control.synthetic.len(), |i| i + 1);
         let control = &mut self.control;
+        raw.dropped_files.extend(control.dropped.drain(..).map(|path| -> egui::DroppedFileHandle { std::sync::Arc::new(files::Dropped(path)) }));
         for event in control.synthetic.drain(..n) {
             match &event {
                 egui::Event::ModifiersChanged(m) => control.synthetic_mods = *m,
@@ -629,8 +633,9 @@ impl EmcraftApp {
     /// asked for performed.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         scenario::clear_handles();
-        self.prepare();
         let ctx = ui.ctx().clone();
+        files::dropped(self, &ctx);
+        self.prepare();
         let mut out = Actions::default();
         ribbon::app_bar(self, ui, &mut out);
         if let Some(section) = self.settings {
@@ -655,6 +660,7 @@ impl EmcraftApp {
         // The field views show the driven port's excitation (`view.driven`).
         self.field.view.excitation = self.session.driven_entry();
         steps::prepare(self);
+        import_ui::prepare(self);
         if self.view == View::Eigenmodes {
             viewport::prepare_eigenmodes(self);
         }

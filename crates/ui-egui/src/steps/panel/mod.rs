@@ -48,7 +48,10 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                     crate::messages::job_card(app, ui, out);
                     ui.add_space(6.0);
                 }
-                let dialog_h = if dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
+                let has_dialog = dialog.is_some();
+                // The import dialog takes most of the column: its file and what it holds.
+                let share = if dialog.as_ref().is_some_and(|d| d.command.id == crate::import_ui::ID) { 0.8 } else { 0.58 };
+                let dialog_h = if has_dialog { (h * share).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
                     .id_salt("step_panel_scroll")
                     .max_height((h - dialog_h - 70.0).max(120.0))
@@ -58,7 +61,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                         if !(step == Step::Run && running(app)) {
                             checks(ui, &state, t, out);
                         }
-                        body(app, fields, ui, step, &states, t, out);
+                        body(app, fields, ui, step, &states, has_dialog, t, out);
                     });
                 if let Some(d) = dialog {
                     ui.add_space(6.0);
@@ -171,14 +174,14 @@ pub(crate) fn fmt(v: f64) -> String {
 }
 
 /// The step's own settings and information.
-fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], t: &Tokens, out: &mut Actions) {
+fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], has_dialog: bool, t: &Tokens, out: &mut Actions) {
     let fu = app.session.display().frequency.symbol();
     let lu = app.session.display().length.symbol();
     follow_band(app, f);
     match step {
         // On the Home view.
         Step::Intent => {}
-        Step::Geometry => model::geometry(app, ui, lu, t),
+        Step::Geometry => model::geometry(app, ui, lu, has_dialog, t, out),
         Step::Materials => model::materials(app, ui, t),
         Step::Excitation => excitation::excitation(app, ui, fu, t, out),
         Step::Boundaries => model::boundaries(app, ui, lu, t),

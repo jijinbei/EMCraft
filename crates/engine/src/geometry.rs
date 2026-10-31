@@ -332,6 +332,37 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     }))
 }
 
+/// `geometry.import.inspect`: what a part holds — its format, bodies, size, units and a
+/// design's parameters — read as `geometry.import` reads it, nothing imported.
+pub fn import_inspect(s: &mut Session, p: &Params) -> Result<Value> {
+    let path = p.string("path").required()?;
+    let unit = s.display.length.to_si(p.positive("unit").or(1.0)?);
+    let bytes = geometry_file(p, path)?;
+    let design = emcraft_io::solidcraft::is_design(path);
+    let (format, bodies, parameters) = if design {
+        let parameters = emcraft_io::solidcraft::parameters(&bytes)?;
+        let bodies = emcraft_io::solidcraft::read(&bytes, &[], None)?.into_iter().map(|b| b.surface).collect::<Vec<_>>();
+        let parameters: Vec<Value> = parameters.into_iter().map(|q| json!({"name": q.name, "value": q.value, "unit": q.unit})).collect();
+        ("solidcraft", bodies, parameters)
+    } else {
+        let format = match emcraft_io::Format::of(path)? {
+            emcraft_io::Format::Stl => "stl",
+            emcraft_io::Format::ThreeMf => "3mf",
+        };
+        (format, emcraft_io::read_bodies(path, &bytes, unit)?, Vec::new())
+    };
+    let lo = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].min(q[d])));
+    let hi = bodies.iter().flat_map(|b| b.positions.iter()).fold([f64::NEG_INFINITY; 3], |m, q| [0, 1, 2].map(|d| m[d].max(q[d])));
+    let size = (lo[0] <= hi[0]).then(|| [0, 1, 2].map(|d| s.show_length(hi[d] - lo[d])));
+    Ok(json!({
+        "format": format,
+        "bodies": bodies.iter().map(|b| json!({"name": b.name, "triangles": b.triangles.len()})).collect::<Vec<_>>(),
+        "size": size,
+        "units": if format == "stl" { "display" } else { "file" },
+        "parameters": parameters,
+    }))
+}
+
 /// The material `materials` (body name, material) give the body `name`: metal unless named.
 fn material_of<'m>(materials: &'m [(String, String)], name: &str) -> &'m str {
     materials.iter().find(|(n, _)| n == name).map_or(crate::bodies::METAL, |(_, m)| m.as_str())

@@ -20,7 +20,7 @@ pitfalls they name: skipping the mesh convergence check, and wrong boundary cond
 | # | Step | What the engineer decides | What goes wrong |
 |---|---|---|---|
 | 0 | **Home** (the job's intent) | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units, **the frequency range** | a range that does not match the ports' cut-offs or the mesh |
-| 1 | **Geometry** | shapes, Booleans, imported surfaces, layers and strips | non-closed or overlapping bodies, features flush with walls |
+| 1 | **Geometry** | shapes, Booleans, imported surfaces (a SolidCraft design with its parameters, 3MF, STL: chosen, dropped on the window or begun from the start page and the empty step; the dialog shows the file's bodies, size and parameters, and what importing makes of them), layers and strips | non-closed or overlapping bodies, features flush with walls |
 | 2 | **Materials** | εr, μr, loss tangent per body; wall conductivity | lossy material at a port; wrong units |
 | 3 | **Excitation** | waveguide ports (and how many modes), lumped ports and their impedance, plane waves, dipoles; reference impedances | a port off its face, the first mode cut off in the band, too few modes near a discontinuity |
 | 4 | **Boundaries** | conducting walls (perfect or finite σ), the open boundary (PML thickness, reflection), symmetry | the bodies touching the PML, the Huygens box crossing them |

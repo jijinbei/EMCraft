@@ -1,4 +1,4 @@
-//! The system's file dialog for projects (`rfd`), each asked on its own thread so the window
+//! The system's file dialog for projects and parts (`rfd`), each asked on its own thread so the window
 //! keeps drawing; the answer goes back through the callback the window gave.
 
 use emcraft_ui_egui::files::Picker;
@@ -21,6 +21,19 @@ impl Picker for SystemPicker {
         let name = suggested.to_owned();
         std::thread::spawn(move || {
             let path = filters(rfd::FileDialog::new()).set_title("Save project").set_file_name(name).save_file();
+            done(path.map(|p| p.to_string_lossy().into_owned()));
+        });
+    }
+
+    fn import(&self, done: Box<dyn FnOnce(Option<String>) + Send>) {
+        std::thread::spawn(move || {
+            let path = rfd::FileDialog::new()
+                .set_title("Import a part")
+                .add_filter("Parts (SolidCraft, 3MF, STL)", emcraft_ui_egui::files::PART_EXTENSIONS)
+                .add_filter("SolidCraft design", &["solidcraft", "sc"])
+                .add_filter("3MF", &["3mf"])
+                .add_filter("STL", &["stl"])
+                .pick_file();
             done(path.map(|p| p.to_string_lossy().into_owned()));
         });
     }

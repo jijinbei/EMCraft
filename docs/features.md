@@ -215,6 +215,15 @@ Reads a part: an STL file (one body) or a 3MF package, such as SolidCraft's expo
 | `parameters` | object |  | no | a SolidCraft design (.sc, .solidcraft) only: its parameters set before it is evaluated, name → a number in the unit the design shows it in, an expression of the project's variables read as such a number ("=a"), or an expression the design evaluates ("3 mm"); its faces then carry the design's exact surfaces, not fitted ones |
 | `tolerance` | number | length | no | a SolidCraft design only: the chord tolerance of its tessellation (default 2e-4 of each body's size) |
 
+## `geometry.import.inspect` — Inspect a part
+
+Reads a part as geometry.import would and says what it holds, without importing it: its `format` (`solidcraft`, `3mf` or `stl`), its `bodies` (each one's name and triangles), their `size` (x, y, z extent in display units), whether the file carries its own `units` (`file`: 3MF and SolidCraft designs) or is read in `unit` (`display`: STL), and a SolidCraft design's `parameters` (name, value as saved, unit). Changes nothing.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `path` | string |  | yes | the file (`.stl`, `.3mf`, a SolidCraft design `.sc` or `.solidcraft`), or `template:<file>` |
+| `unit` | number | length | no | an STL file's length unit in display units (default 1) |
+
 ## `geometry.body` — Body
 
 A body in the region, by what it is made of: `metal` (a perfect conductor: the region loses its volume and its surface becomes wall; it may reach the region's boundary), the region's own material (giving back what metal took: the inside of a metal shell, an opening), or another material (a dielectric body inside the region, apart from other dielectric ones). Later bodies win where they overlap. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis` (dielectric bodies along z).

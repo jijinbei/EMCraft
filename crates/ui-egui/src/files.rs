@@ -23,6 +23,17 @@ pub trait Picker: Send + Sync {
     fn open(&self, done: Box<dyn FnOnce(Option<String>) + Send>);
     /// Where to save a project, `suggested` the file name offered.
     fn save(&self, suggested: &str, done: Box<dyn FnOnce(Option<String>) + Send>);
+    /// A part to import: a SolidCraft design, a 3MF package or an STL file.
+    fn import(&self, done: Box<dyn FnOnce(Option<String>) + Send>);
+}
+
+/// The extensions of the parts `geometry.import` reads.
+pub const PART_EXTENSIONS: &[&str] = &["solidcraft", "sc", "3mf", "stl"];
+
+/// Whether `path` names a part to import, by its extension.
+pub fn is_part(path: &str) -> bool {
+    let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    ext.is_some_and(|e| PART_EXTENSIONS.contains(&e.as_str()))
 }
 
 /// What a path asked for is for.
@@ -30,6 +41,8 @@ pub trait Picker: Send + Sync {
 pub enum Purpose {
     Open,
     SaveAs,
+    /// A part for the import dialog.
+    Import,
 }
 
 /// What to do once the unsaved changes are dealt with.
@@ -49,6 +62,8 @@ pub enum Then {
         file: String,
         original: Option<String>,
     },
+    /// A new project with the import dialog open in step 1 (the start page's Import).
+    Import,
     /// The window closes.
     Quit,
 }
@@ -92,6 +107,8 @@ pub enum FileAction {
     Chosen(Purpose, Option<String>),
     /// The answer to "save the changes?".
     Confirm(Answer),
+    /// The import dialog's file, chosen in the file dialog (or the path prompt without one).
+    PickPart,
 }
 
 /// An answer to "save the changes?".
@@ -112,6 +129,7 @@ pub(crate) fn apply(app: &mut EmcraftApp, a: FileAction) {
         FileAction::SaveAs => pick(app, Purpose::SaveAs),
         FileAction::Chosen(purpose, path) => chosen(app, purpose, path),
         FileAction::Confirm(answer) => answered(app, answer),
+        FileAction::PickPart => pick(app, Purpose::Import),
     }
 }
 
@@ -167,6 +185,13 @@ fn go(app: &mut EmcraftApp, then: Then) {
                 land(app, true);
             }
         }
+        Then::Import => {
+            new_project(app);
+            app.home.open = false;
+            if let Err(e) = crate::steps::fix(app, "geometry.import") {
+                app.error(e);
+            }
+        }
         Then::Quit => app.quit_now(),
     }
 }
@@ -214,6 +239,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
         let text = match purpose {
             Purpose::Open => app.prefs.recent.first().cloned().unwrap_or_default(),
             Purpose::SaveAs => app.session.path().filter(|_| has_file(app)).map_or(suggested, str::to_owned),
+            Purpose::Import => String::new(),
         };
         app.files.prompt = Some(Prompt { purpose, text });
         return;
@@ -229,6 +255,50 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
     match purpose {
         Purpose::Open => picker.open(done),
         Purpose::SaveAs => picker.save(&suggested, done),
+        Purpose::Import => picker.import(done),
+    }
+}
+
+/// `path` for import: into the open import dialog, else the dialog opened on it in step 1.
+pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
+    app.home.open = false;
+    app.settings = None;
+    if let Some(d) = app.dialog.as_mut().filter(|d| d.command.id == "geometry.import") {
+        let _ = d.set("path", &json!(path));
+        return;
+    }
+    crate::steps::open_step(app, Some(crate::steps::Step::Geometry));
+    if let Err(e) = app.open_dialog_with("geometry.import", json!({"path": path})) {
+        app.error(e);
+    }
+}
+
+/// A file dropped by the control channel (`ui.drop`): only its path.
+#[derive(Debug)]
+pub(crate) struct Dropped(pub std::path::PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+}
+
+/// Files dropped on the window: a part opens the import dialog on it, anything else is opened
+/// as a project.
+pub(crate) fn dropped(app: &mut EmcraftApp, ctx: &egui::Context) {
+    let paths: Vec<String> =
+        ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_string_lossy().into_owned()).filter(|p| !p.is_empty()).collect());
+    let Some(path) = paths.into_iter().next() else { return };
+    if app.busy() {
+        app.error_with("busy: wait for the running job or cancel it first", &[]);
+    } else if is_part(&path) {
+        import_part(app, &path);
+    } else {
+        request(app, Then::OpenPath(path));
     }
 }
 
@@ -248,6 +318,7 @@ fn chosen(app: &mut EmcraftApp, purpose: Purpose, path: Option<String>) {
             let saved = app.run("file.save", json!({"path": path}));
             continue_after_save(app, saved.is_ok());
         }
+        Purpose::Import => import_part(app, &path),
     }
 }
 
@@ -270,6 +341,29 @@ pub(crate) fn poll(app: &mut EmcraftApp) {
 pub fn show(app: &EmcraftApp, prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actions) {
     path_prompt(prompt, ctx, out);
     confirm(app, ctx, out);
+    drop_hint(ctx);
+}
+
+/// While a file is dragged over the window: what a drop does, over everything.
+fn drop_hint(ctx: &egui::Context) {
+    if ctx.input(|i| i.raw.hovered_files.is_empty()) {
+        return;
+    }
+    let name = ctx.input(|i| i.raw.hovered_files.iter().find_map(|f| f.path.as_ref()?.file_name().map(|n| n.to_string_lossy().into_owned())));
+    let t = &Tokens::get();
+    let screen = ctx.content_rect();
+    let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("emcraft_drop")));
+    p.rect_filled(screen, 0.0, t.panel.gamma_multiply(0.6));
+    let card = egui::Rect::from_center_size(screen.center(), vec2(320.0, 150.0));
+    p.rect_filled(card, t.radius_xl, t.dialog_body);
+    p.rect_stroke(card, t.radius_xl, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
+    let icon = egui::Rect::from_center_size(card.center() - vec2(0.0, 26.0), vec2(48.0, 48.0));
+    crate::glyphs::paint(&p, icon, crate::glyphs::Glyph::Import, t.text, t.accent);
+    let text = if name.as_deref().is_none_or(is_part) { tr("Drop to import") } else { tr("Drop to open") };
+    p.text(card.center() + vec2(0.0, 22.0), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(t.font_heading), t.text);
+    if let Some(n) = name {
+        p.text(card.center() + vec2(0.0, 48.0), egui::Align2::CENTER_CENTER, n, egui::FontId::proportional(t.font_small), t.text_dim);
+    }
 }
 
 /// The path field, when there is no file dialog.
@@ -277,23 +371,29 @@ fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actio
     let Some(p) = prompt.as_mut() else { return };
     let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
-    let title = match p.purpose {
-        Purpose::Open => "Open project",
-        Purpose::SaveAs => "Save project as",
+    let (title, what) = match p.purpose {
+        Purpose::Open => ("Open project", "The project file (.emcraft)"),
+        Purpose::SaveAs => ("Save project as", "The project file (.emcraft)"),
+        Purpose::Import => ("Import a part", "A SolidCraft design (.solidcraft), 3MF or STL"),
     };
     let at = ctx.content_rect().center_top() + vec2(-220.0, 120.0);
     egui::Area::new(egui::Id::new("emcraft_file_prompt")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
         t.card(t.dialog_body).inner_margin(14).show(ui, |ui| {
             ui.set_width(440.0);
             ui.text(Style::Prompt, title);
-            ui.text(Style::SmallDim, "The project file (.emcraft)");
+            ui.text(Style::SmallDim, what);
             let r = ui.add(egui::TextEdit::singleline(&mut p.text).desired_width(420.0).char_limit(4096));
             scenario::publish_target(Fixed::FilePath, r.rect);
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 ok = true;
             }
             ui.horizontal(|ui| {
-                ok |= ui_kit::button(ui, if p.purpose == Purpose::Open { "Open" } else { "Save" }, true, Fixed::FileOk).clicked();
+                let label = match p.purpose {
+                    Purpose::Open => "Open",
+                    Purpose::SaveAs => "Save",
+                    Purpose::Import => "Choose",
+                };
+                ok |= ui_kit::button(ui, label, true, Fixed::FileOk).clicked();
                 cancel = ui_kit::button(ui, "Cancel", false, Fixed::FileCancel).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
             });
         });
