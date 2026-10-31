@@ -1,6 +1,7 @@
 //! `study.sweep`: the model rebuilt and solved at each value of a variable, or at each point of
 //! a grid of several variables' values (their Cartesian product, the last variable varying
-//! fastest).
+//! fastest). With a `surrogate` budget only that many points are solved, the rest predicted
+//! ([`super::adaptive`]).
 
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::point::{frequency_unit, outputs_of, solve_of, solve_point};
 use super::variables::defined;
-use super::{Kind, MAX_GRID_POINTS, MAX_POINTS, MAX_SWEPT, Row, Study};
+use super::{Kind, MAX_GRID_POINTS, MAX_POINTS, MAX_SWEPT, Row, Study, adaptive};
 use crate::{Params, Result, Session};
 
 /// `study.sweep`: the model rebuilt and solved at each value of a variable, or at each point of
@@ -21,7 +22,8 @@ pub fn sweep(s: &mut Session, p: &Params) -> Result<Value> {
         let sizes: Vec<String> = axes.iter().map(|(_, v)| v.len().to_string()).collect();
         p.error("variables", format!("a grid of {} points is too many; the limit is {MAX_GRID_POINTS}", sizes.join(" × ")))
     })?;
-    let rows = (0..n)
+    let budget = budget(p, n)?;
+    let points: Vec<Vec<f64>> = (0..n)
         .map(|i| {
             // The point's index along each axis, the last varying fastest.
             let mut rest = i;
@@ -30,13 +32,33 @@ pub fn sweep(s: &mut Session, p: &Params) -> Result<Value> {
                 values[k] = v.get(rest % v.len()).copied().unwrap_or(f64::NAN);
                 rest /= v.len().max(1);
             }
-            let label = axes.iter().zip(&values).map(|((name, _), v)| format!("{name} = {v}")).collect::<Vec<_>>().join(", ");
-            crate::progress::report(i * 1000, n * 1000, &label)?;
-            let set: Vec<(String, Value)> = axes.iter().zip(&values).map(|((name, _), v)| (name.clone(), json!(v))).collect();
-            let row = crate::progress::within(i, n, &format!("point {} of {n}: {label}", i + 1), || solve_point(s, &set, &solve, &outputs))?;
-            Ok(Row { values, ..row })
+            values
         })
-        .collect::<Result<Vec<Row>>>()?;
+        .collect();
+    // Grid point `i`, the `k`-th of `total` solves.
+    let session: &Session = s;
+    let solve_at = |i: usize, k: usize, total: usize| -> Result<Row> {
+        let values = points.get(i).cloned().unwrap_or_default();
+        let label = axes.iter().zip(&values).map(|((name, _), v)| format!("{name} = {v}")).collect::<Vec<_>>().join(", ");
+        crate::progress::report(k * 1000, total * 1000, &label)?;
+        let set: Vec<(String, Value)> = axes.iter().zip(&values).map(|((name, _), v)| (name.clone(), json!(v))).collect();
+        let what = if budget.is_some() { "solve" } else { "point" };
+        let row =
+            crate::progress::within(k, total, &format!("{what} {} of {total}: {label}", k + 1), || solve_point(session, &set, &solve, &outputs))?;
+        Ok(Row { values, ..row })
+    };
+    let (rows, surrogate) = match budget {
+        None => ((0..n).map(|i| solve_at(i, i, n)).collect::<Result<Vec<Row>>>()?, None),
+        Some(b) => {
+            let grid: Vec<Vec<f64>> = axes.iter().map(|(_, v)| v.clone()).collect();
+            let u = adaptive::scaled(&points, &grid);
+            if (0..n).any(|i| (0..i).any(|j| u[i] == u[j])) {
+                return Err(p.error("surrogate", "needs each point of the grid once: a variable's values repeat"));
+            }
+            let (rows, g) = adaptive::fill(&points, &grid, b, &mut |i, k| solve_at(i, k, b))?;
+            (rows, Some(g))
+        }
+    };
     let study = Study {
         kind: Kind::Sweep,
         variables: axes.iter().map(|(n, _)| n.clone()).collect(),
@@ -47,10 +69,25 @@ pub fn sweep(s: &mut Session, p: &Params) -> Result<Value> {
         rows,
         best: None,
         converged: true,
+        surrogate,
     };
     let reply = study.to_json();
     s.results.study = Some(Arc::new(study));
     Ok(reply)
+}
+
+/// The solves of a surrogate sweep (`surrogate`: {"budget": N}, 2 to the grid's points), none
+/// for a sweep solving every point.
+fn budget(p: &Params, n: usize) -> Result<Option<usize>> {
+    let Some(v) = p.raw("surrogate") else { return Ok(None) };
+    if !v.is_object() {
+        return Err(p.error("surrogate", "must be an object: {\"budget\": 10}"));
+    }
+    if n < 3 {
+        return Err(p.error("surrogate", format!("needs a sweep of 3 points or more, this one has {n}")));
+    }
+    let g = p.nested(v, "surrogate");
+    Ok(Some(g.integer("budget", 2..=n).required()?))
 }
 
 /// The variables swept and their values: `variable` with `values` or a range, or `variables`,

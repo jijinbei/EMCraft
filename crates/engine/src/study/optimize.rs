@@ -1,15 +1,17 @@
-//! `study.optimize`: the variables that minimize a goal, by the Nelder–Mead simplex.
+//! `study.optimize`: the variables that minimize a goal, by the Nelder–Mead simplex or by
+//! Bayesian optimization (`method`).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use super::bayes::bayesian;
 use super::point::{frequency_unit, solve_of, solve_point};
 use super::simplex::{OUT_OF_SOLVES, nelder_mead};
 use super::variables::defined;
 use super::variables::{adopt, history_with, rebuild};
-use super::{Kind, MAX_EVALUATIONS, MAX_OPTIMIZED, Row, Study, is_sparameter};
+use super::{Kind, MAX_EVALUATIONS, MAX_OPTIMIZED, Row, Study, Surrogate, is_sparameter};
 use crate::{EngineError, Params, Result, Session};
 
 /// What an optimization minimizes.
@@ -146,6 +148,11 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
     let solve = solve_of(p)?;
     let cap = p.integer("max_evaluations", 2..=MAX_EVALUATIONS).or(50)?;
     let tolerance = p.number("tolerance").check(|t| (1e-9..=0.5).contains(t), "from 1e-9 to 0.5").or(1e-3)?;
+    let bayes = match p.string("method").or("simplex")? {
+        "simplex" => false,
+        "bayesian" => true,
+        _ => return Err(p.error("method", "must be simplex or bayesian")),
+    };
 
     // The search, in [0, 1] per variable from the current values.
     let start: Vec<f64> = bounds.iter().map(|b| b.position(s.variables.get(&b.name).copied())).collect();
@@ -174,10 +181,16 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
         seen.insert(key, f);
         Ok(f)
     };
-    let converged = match nelder_mead(&mut evaluate, &start, tolerance, cap) {
-        Ok(c) => c,
-        Err(EngineError::Failed(m)) if m == OUT_OF_SOLVES => false,
-        Err(e) => return Err(e),
+    let (converged, surrogate) = if bayes {
+        let out = bayesian(&mut evaluate, &start, tolerance, cap)?;
+        (out.converged, Some(Surrogate { solves: rows.len(), lengths: out.lengths, at_best: out.at_best }))
+    } else {
+        let converged = match nelder_mead(&mut evaluate, &start, tolerance, cap) {
+            Ok(c) => c,
+            Err(EngineError::Failed(m)) if m == OUT_OF_SOLVES => false,
+            Err(e) => return Err(e),
+        };
+        (converged, None)
     };
     let best = best_row(&rows)?;
     let unit = frequency_unit(s);
@@ -191,6 +204,7 @@ pub fn optimize(s: &mut Session, p: &Params) -> Result<Value> {
         rows,
         best: Some(best),
         converged,
+        surrogate,
     };
     // The model at the optimum: the definitions given the best values, the model rebuilt.
     let set: Vec<(String, Value)> = study.variables.iter().zip(&study.rows[best].values).map(|(n, v)| (n.clone(), json!(v))).collect();

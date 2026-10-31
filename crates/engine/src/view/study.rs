@@ -1,7 +1,8 @@
 //! A parameter study's chart: a sweep's S-parameters or eigenmodes as the variable varies, an
 //! optimization's progress. A sweep over a grid of several variables is charted a slice at a
 //! time: along one variable (its values the curves, or the x axis), every other held at one of
-//! its values ([`Slice`]).
+//! its values ([`Slice`]). Points a surrogate predicted rather than solved are drawn apart: hollow
+//! markers or dashed curves, over a band of ± σ.
 
 use emcraft_render::Pen;
 use emcraft_render::axes::Axis;
@@ -227,6 +228,34 @@ fn quantity_of(spec: &crate::CommandSpec, key: &str) -> Quantity {
         .map_or(Quantity::None, |p| p.quantity)
 }
 
+/// The predicted pieces of a curve (key `key`, colour `pen`) through `pts` — each point's x, y,
+/// σ and whether it was predicted: hollow markers at the predicted points (named `label` in the
+/// legend) and the band y ± σ along the whole curve; nothing when no point was predicted.
+fn predicted_pieces(key: &str, label: &str, pen: Pen, pts: &[(f64, f64, f64, bool)]) -> Vec<Series> {
+    if !pts.iter().any(|p| p.3) {
+        return Vec::new();
+    }
+    let hollow: Vec<[f64; 2]> = pts.iter().filter(|p| p.3).map(|p| [p.0, p.1]).collect();
+    vec![Series::new(key, label, pen, Style::Hollow, hollow), band(key, pen, pts.iter().map(|p| (p.0, p.1, p.2)))]
+}
+
+/// The band y ± σ along points (x, y, σ), in x's order.
+fn band(key: &str, pen: Pen, pts: impl Iterator<Item = (f64, f64, f64)>) -> Series {
+    let mut pts: Vec<(f64, f64, f64)> = pts.filter(|p| p.0.is_finite() && p.1.is_finite() && p.2.is_finite()).collect();
+    pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let upper = pts.iter().map(|p| [p.0, p.1 + p.2]);
+    let lower = pts.iter().rev().map(|p| [p.0, p.1 - p.2]);
+    Series::new(key, String::new(), pen, Style::Band, upper.chain(lower).collect())
+}
+
+/// A row's |S_p| in dB at its first frequency with its σ (0 where solved) and whether it was
+/// predicted.
+fn first_db(r: &Row, p: &str) -> Option<(f64, f64, bool)> {
+    let db = *r.db(p)?.first()?;
+    let sigma = r.db_sigma(p).and_then(|s| s.first().copied()).unwrap_or(0.0);
+    Some((db, sigma, r.is_predicted()))
+}
+
 /// A row's value of variable `free`.
 fn value(r: &Row, free: usize) -> Option<f64> {
     r.values.get(free).copied()
@@ -285,11 +314,21 @@ fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice,
             *slot = i;
         }
         let rows = study.slice(free, &at);
-        let points: Vec<[f64; 2]> = rows.iter().filter(|r| r.error.is_none()).filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
+        let pts: Vec<(f64, f64, f64, bool)> = rows
+            .iter()
+            .filter(|r| r.error.is_none())
+            .filter_map(|r| {
+                let (y, sigma, predicted) = first_db(r, p)?;
+                Some((value(r, free)?, y, sigma, predicted))
+            })
+            .collect();
+        let points: Vec<[f64; 2]> = pts.iter().map(|q| [q.0, q.1]).collect();
+        let solved: Vec<[f64; 2]> = pts.iter().filter(|q| !q.3).map(|q| [q.0, q.1]).collect();
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
         let key = format!("value{}", i + 1);
-        series.push(Series::new(&key, valued(study, units, other, *v), ramp(t), Style::Line, points.clone()));
-        series.push(Series::new(&key, String::new(), ramp(t), Style::Markers, points));
+        series.push(Series::new(&key, valued(study, units, other, *v), ramp(t), Style::Line, points));
+        series.push(Series::new(&key, String::new(), ramp(t), Style::Markers, solved));
+        series.extend(predicted_pieces(&key, "", ramp(t), &pts));
     }
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     let x = padded_axis(&axis_name(study, units, free), all.iter().filter_map(|r| value(r, free)));
@@ -307,12 +346,21 @@ fn one_frequency_grid_chart(study: &Study, all: &[&Row], p: &str, slice: &Slice,
 /// A sweep that solved one frequency: |S_p| in dB against the variable.
 fn one_frequency_chart(study: &Study, ok: &[&Row], p: &str, free: usize, units: &[Option<String>]) -> Chart {
     let label = tex(p);
-    let pts: Vec<[f64; 2]> = ok.iter().filter_map(|r| Some([value(r, free)?, *r.db(p)?.first()?])).collect();
+    let all: Vec<(f64, f64, f64, bool)> = ok
+        .iter()
+        .filter_map(|r| {
+            let (y, sigma, predicted) = first_db(r, p)?;
+            Some((value(r, free)?, y, sigma, predicted))
+        })
+        .collect();
+    let pts: Vec<[f64; 2]> = all.iter().map(|q| [q.0, q.1]).collect();
+    let solved: Vec<[f64; 2]> = all.iter().filter(|q| !q.3).map(|q| [q.0, q.1]).collect();
     let f = ok.first().and_then(|r| r.frequencies.first()).copied().unwrap_or(f64::NAN);
-    let series = vec![
-        Series::new("s", format!("{label} at {f} {}", study.frequency_unit), Pen::Series(0), Style::Line, pts.clone()),
-        Series::new("s", String::new(), Pen::Series(0), Style::Markers, pts),
+    let mut series = vec![
+        Series::new("s", format!("{label} at {f} {}", study.frequency_unit), Pen::Series(0), Style::Line, pts),
+        Series::new("s", String::new(), Pen::Series(0), Style::Markers, solved),
     ];
+    series.extend(predicted_pieces("s", "predicted ± σ", Pen::Series(0), &all));
     let y = padded_axis(&format!("{label} (dB)"), series.iter().flat_map(|s| s.points.iter().map(|q| q[1])));
     let x = padded_axis(&axis_name(study, units, free), ok.iter().filter_map(|r| value(r, free)));
     Chart::new(format!("Sweep of {}", variable(study, free, "")), x, y, series)
@@ -326,10 +374,18 @@ fn sweep_chart(study: &Study, ok: &[&Row], p: &str, free: usize, units: &[Option
     let mut series = Vec::new();
     for (i, r) in ok.iter().enumerate() {
         let Some(db) = r.db(p) else { continue };
-        let points: Vec<[f64; 2]> = r.frequencies.iter().zip(db).map(|(f, d)| [*f, d.max(DB_FLOOR)]).collect();
+        let points: Vec<[f64; 2]> = r.frequencies.iter().zip(&db).map(|(f, d)| [*f, d.max(DB_FLOOR)]).collect();
         let v = value(r, free).unwrap_or(f64::NAN);
         let t = if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 };
-        series.push(Series::new(&format!("value{}", i + 1), valued(study, units, free, v), ramp(t), Style::Line, points));
+        let key = format!("value{}", i + 1);
+        match r.db_sigma(p) {
+            // Predicted: dashed, over its band.
+            Some(sigma) => {
+                series.push(band(&key, ramp(t), r.frequencies.iter().zip(&db).zip(&sigma).map(|((f, d), s)| (*f, d.max(DB_FLOOR), *s))));
+                series.push(Series::new(&key, format!("{} (predicted)", valued(study, units, free, v)), ramp(t), Style::Dashed, points));
+            }
+            None => series.push(Series::new(&key, valued(study, units, free, v), ramp(t), Style::Line, points)),
+        }
     }
     if series.is_empty() {
         return Err(nothing_to_chart());
@@ -348,9 +404,17 @@ fn modes_chart(study: &Study, ok: &[&Row], free: usize, units: &[Option<String>]
         return Err(nothing_to_chart());
     }
     let series: Vec<Series> = (0..modes.min(12))
-        .map(|m| {
-            let points = ok.iter().filter_map(|r| Some([value(r, free)?, *r.modes.get(m)?])).collect();
-            Series::new(&format!("mode{}", m + 1), format!("mode {}", m + 1), ramp(m as f64 / (modes.max(2) - 1) as f64), Style::Line, points)
+        .flat_map(|m| {
+            let pts: Vec<(f64, f64, f64, bool)> = ok
+                .iter()
+                .filter_map(|r| {
+                    let sigma = r.prediction.as_ref().and_then(|p| p.modes_sigma.get(m).copied()).unwrap_or(0.0);
+                    Some((value(r, free)?, *r.modes.get(m)?, sigma, r.is_predicted()))
+                })
+                .collect();
+            let (key, pen) = (format!("mode{}", m + 1), ramp(m as f64 / (modes.max(2) - 1) as f64));
+            let line = Series::new(&key, format!("mode {}", m + 1), pen, Style::Line, pts.iter().map(|q| [q.0, q.1]).collect());
+            std::iter::once(line).chain(predicted_pieces(&key, "", pen, &pts))
         })
         .collect();
     let x = padded_axis(&axis_name(study, units, free), ok.iter().filter_map(|r| value(r, free)));

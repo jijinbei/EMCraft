@@ -17,7 +17,15 @@
 //! rules). The variables are scaled to [0, 1] over their bounds and every trial point clamped
 //! into the box; the vertices are ordered by value, ties by age, so the search is the same for
 //! the same input. Solves are counted and capped, and points already solved are not solved again.
+//!
+//! Surrogates cut the solves: `study.optimize` `method: bayesian` lets a Gaussian process of the
+//! values solved choose each next solve by its expected improvement (`bayes`, [`gp`]), and
+//! `study.sweep` `surrogate` solves a budget of the grid's points and predicts the others with
+//! their σ (`adaptive`). Every value reported as solved is a solve.
 
+mod adaptive;
+mod bayes;
+pub mod gp;
 mod optimize;
 mod point;
 mod simplex;
@@ -69,12 +77,50 @@ pub struct Row {
     pub objective: Option<f64>,
     /// Why this point could not be solved.
     pub error: Option<String>,
+    /// A surrogate sweep's prediction where it did not solve: |S| in dB and the σs (the modes'
+    /// and numbers' means are in `modes` and `scalars`).
+    pub prediction: Option<Predicted>,
+}
+
+/// What a surrogate predicted at a point it did not solve, with its standard deviations.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Predicted {
+    /// Each S-parameter's |S| in dB and its σ at each frequency.
+    pub db: Vec<(String, Vec<f64>, Vec<f64>)>,
+    /// The σ of each eigenmode's frequency.
+    pub modes_sigma: Vec<f64>,
+    /// The σ of each of the solve's numbers.
+    pub scalars_sigma: Vec<(String, f64)>,
+}
+
+/// The Gaussian-process surrogate a study chose its points by.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Surrogate {
+    /// The points solved.
+    pub solves: usize,
+    /// Its length scales, a share of each variable's range.
+    pub lengths: Vec<f64>,
+    /// An optimization's prediction at its best point: the goal's mean and σ.
+    pub at_best: Option<(f64, f64)>,
 }
 
 impl Row {
     /// |`name`| in dB at each frequency.
     pub fn db(&self, name: &str) -> Option<Vec<f64>> {
+        if let Some(p) = &self.prediction {
+            return p.db.iter().find(|(n, _, _)| n.eq_ignore_ascii_case(name)).map(|(_, m, _)| m.clone());
+        }
         self.s.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.iter().map(|c| db(*c)).collect())
+    }
+
+    /// The σ of a predicted |`name`| in dB at each frequency (none for a row solved).
+    pub fn db_sigma(&self, name: &str) -> Option<Vec<f64>> {
+        self.prediction.as_ref()?.db.iter().find(|(n, _, _)| n.eq_ignore_ascii_case(name)).map(|(_, _, s)| s.clone())
+    }
+
+    /// Whether the row is a surrogate's prediction rather than a solve.
+    pub fn is_predicted(&self) -> bool {
+        self.prediction.is_some()
     }
 
     /// The row in a reply: a one-variable sweep's `value`, else every variable's in `values`.
@@ -89,6 +135,10 @@ impl Row {
         }
         if let Some(e) = &self.error {
             row.insert("error".into(), json!(e));
+        }
+        if let Some(p) = &self.prediction {
+            p.to_json(self, &mut row);
+            return Value::Object(row);
         }
         if !self.frequencies.is_empty() {
             let points: Vec<Value> = self
@@ -118,6 +168,40 @@ impl Row {
     }
 }
 
+impl Predicted {
+    /// A predicted row's reply: `predicted` true, each point's |S| as `db` with its `sigma_db`,
+    /// the modes and numbers with their σs.
+    fn to_json(&self, row: &Row, out: &mut Map<String, Value>) {
+        out.insert("predicted".into(), json!(true));
+        if !row.frequencies.is_empty() && !self.db.is_empty() {
+            let points: Vec<Value> = row
+                .frequencies
+                .iter()
+                .enumerate()
+                .map(|(k, f)| {
+                    let mut pt = Map::new();
+                    pt.insert("frequency".into(), json!(f));
+                    for (name, m, s) in &self.db {
+                        if let (Some(m), Some(s)) = (m.get(k), s.get(k)) {
+                            pt.insert(name.clone(), json!({"db": m, "sigma_db": s}));
+                        }
+                    }
+                    Value::Object(pt)
+                })
+                .collect();
+            out.insert("points".into(), json!(points));
+        }
+        if !row.modes.is_empty() {
+            out.insert("modes".into(), json!(row.modes));
+            out.insert("modes_sigma".into(), json!(self.modes_sigma));
+        }
+        if !row.scalars.is_empty() {
+            out.insert("scalars".into(), Value::Object(row.scalars.iter().map(|(k, v)| (k.clone(), json!(v))).collect()));
+            out.insert("scalars_sigma".into(), Value::Object(self.scalars_sigma.iter().map(|(k, v)| (k.clone(), json!(v))).collect()));
+        }
+    }
+}
+
 /// A parameter study's results.
 #[derive(Clone, Debug)]
 pub struct Study {
@@ -137,6 +221,8 @@ pub struct Study {
     pub best: Option<usize>,
     /// Whether the optimization's simplex shrank within its tolerance (else it ran out of solves).
     pub converged: bool,
+    /// The surrogate that chose the points: a sweep's `surrogate`, a Bayesian optimization.
+    pub surrogate: Option<Surrogate>,
 }
 
 impl Study {
@@ -164,7 +250,8 @@ impl Study {
     /// The S-parameters' names the rows hold.
     pub fn parameters(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for (n, _) in self.rows.iter().flat_map(|r| &r.s) {
+        let predicted = self.rows.iter().flat_map(|r| r.prediction.iter().flat_map(|p| p.db.iter().map(|(n, _, _)| n)));
+        for n in self.rows.iter().flat_map(|r| r.s.iter().map(|(n, _)| n)).chain(predicted) {
             if !names.contains(n) {
                 names.push(n.clone());
             }
@@ -182,6 +269,7 @@ impl Study {
                 reply["grid"] = Value::Object(self.variables.iter().cloned().zip(self.grid.iter().map(|v| json!(v))).collect());
             }
             Kind::Optimize => {
+                reply["method"] = json!(if self.surrogate.is_some() { "bayesian" } else { "simplex" });
                 reply["variables"] = json!(self.variables);
                 reply["goal"] = json!(self.goal);
                 reply["evaluations"] = json!(self.rows.len());
@@ -190,6 +278,18 @@ impl Study {
                     reply["best"] = json!({"values": b.values, "objective": b.objective});
                 }
             }
+        }
+        if let Some(g) = &self.surrogate {
+            let mut out = json!({"length_scales": g.lengths});
+            if self.kind == Kind::Sweep {
+                out["solved"] = json!(g.solves);
+                out["predicted"] = json!(self.rows.iter().filter(|r| r.is_predicted()).count());
+            }
+            if let Some((m, s)) = g.at_best {
+                // The surrogate's goal at the best point, beside the solve's.
+                reply["best"]["predicted"] = json!({"objective": m, "sigma": s});
+            }
+            reply["surrogate"] = out;
         }
         reply
     }
@@ -204,5 +304,7 @@ fn is_sparameter(name: &str) -> bool {
     name.len() >= 3 && name.starts_with('s') && name[1..].bytes().all(|b| b.is_ascii_digit())
 }
 
+#[cfg(test)]
+mod surrogate_tests;
 #[cfg(test)]
 mod tests;
