@@ -39,11 +39,12 @@ fn cylinder_error(h: f64, curved: bool) -> f64 {
 
 #[test]
 fn cylindrical_cavity_resonances() {
-    // Curved elements: 4.0e-5 at 3 mm. Straight ones, flat facets inscribed in the wall, shrink
-    // the cavity: an O(h²) error of the geometry, 5.6e-3.
-    let w = cylinder_error(0.003, true);
+    // Curved elements: 1.1e-4 at 4 mm (4.0e-5 at 3 mm, curved_cavities_converge and the oracle's
+    // cylinder-cavity). Straight ones, flat facets inscribed in the wall, shrink the cavity: an
+    // O(h²) error of the geometry, 8.2e-3 (5.6e-3 at 3 mm).
+    let w = cylinder_error(0.004, true);
     assert!(w < 2e-4, "{w:e}");
-    let straight = cylinder_error(0.003, false);
+    let straight = cylinder_error(0.004, false);
     assert!(straight > 3e-3 && straight < 1e-2, "{straight:e}");
 }
 
