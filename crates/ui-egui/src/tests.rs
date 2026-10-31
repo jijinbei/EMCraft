@@ -468,3 +468,8 @@ fn scenario_purpose_first() {
 fn scenario_run_history() {
     scenario("run_history");
 }
+
+#[test]
+fn scenario_saved_history() {
+    scenario("saved_history");
+}

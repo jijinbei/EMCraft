@@ -98,7 +98,8 @@ fn runs_belong_to_the_project() {
     assert!(!s.is_dirty());
     let text = std::fs::read_to_string(&path).unwrap();
     let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(doc["version"], 2);
+    // Version 4: the solves are kept in the analysis history.
+    assert_eq!(doc["version"], 4);
     assert_eq!(
         doc["runs"],
         json!([{"command": "solve.frequency", "params": {"frequencies": [8.0], "order": 1}, "units": {"length": "mm", "frequency": "GHz"}}])

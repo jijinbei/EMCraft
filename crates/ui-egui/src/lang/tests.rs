@@ -501,6 +501,7 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Restore", "needs two solves kept (scenario run_history)"),
     ("{n} frequencies", "needs two solves kept (scenario run_history)"),
     ("deepest |S11| {db} dB at {f} {unit}", "needs two solves kept (scenario run_history)"),
+    ("Saved: restore solves it again", "a tip of a solve read back from a project file (scenario saved_history)"),
     ("Parameters", "needs a template's card (scenario template_dialog)"),
     ("More commands", "needs a window too narrow for the ribbon's buttons (scenario small_window)"),
     ("More tabs", "needs a window too narrow for the ribbon's tabs (scenario small_window)"),

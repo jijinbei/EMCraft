@@ -282,15 +282,16 @@ fn projects_save_as_emcraft_files_and_know_when_they_changed() {
     assert!(t.path.is_none() && !t.is_dirty() && t.model.band.is_none());
     assert_eq!(t.display.frequency, emcraft_model::units::Frequency::Megahertz);
     // The file's text: the JSON object of the format, the version, the history and the model,
-    // its keys sorted, pretty printed.
+    // its keys sorted, pretty printed (lists of numbers on one line).
     let text = std::fs::read_to_string(&path).unwrap();
     let want = json!({"format": "emcraft-project", "version": 2, "history": s.history, "runs": [], "model": s.model});
-    assert_eq!(text, serde_json::to_string_pretty(&want).unwrap());
+    assert_eq!(text, crate::project::pretty(&want).unwrap());
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&text).unwrap(), want);
     // A newer version is refused; an older one without a version opens.
     let newer = dir.join("newer.emcraft");
-    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 4, "history": []}).to_string()).unwrap();
+    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 5, "history": []}).to_string()).unwrap();
     let r = t.execute("file.open", &json!({"path": newer.to_string_lossy()}));
-    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 4")), "{r:?}");
+    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 5")), "{r:?}");
     std::fs::write(&newer, json!({"format": "emcraft-project", "history": [{"command": "units.set"}]}).to_string()).unwrap();
     t.execute("file.open", &json!({"path": newer.to_string_lossy()})).unwrap();
     assert_eq!(t.history, vec![crate::Step::new("units.set", json!({}))]);
@@ -374,8 +375,8 @@ fn every_solve_is_kept_and_can_be_compared_restored_pinned_and_let_go() {
     assert_eq!(s.variables().get("l_gap"), Some(&24.0));
     // Pinned, a solve stays past the cap; deleted, it goes.
     s.execute("results.history.pin", &json!({"id": first})).unwrap();
-    for _ in 0..crate::archive::MAX_KEPT + 1 {
-        s.execute("solve.frequency", &json!({"frequencies": [8], "order": 1})).unwrap();
+    for i in 0..crate::archive::MAX_KEPT + 1 {
+        s.execute("solve.frequency", &json!({"frequencies": [8.0 + 0.01 * i as f64], "order": 1})).unwrap();
     }
     let ids: Vec<u64> =
         s.execute("results.history", &json!({})).unwrap()["history"].as_array().unwrap().iter().filter_map(|r| r["id"].as_u64()).collect();

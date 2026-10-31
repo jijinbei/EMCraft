@@ -774,7 +774,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.history",
         label: "Analysis history",
-        doc: "The solves kept this session, the oldest first: each one's id, command, frequencies, band, deepest |S11| (dB) and where, first eigenmode, what changed in the model since the one before (variables' values), whether it is pinned and whether the session's results are its own. Every solve that succeeds is kept with its model and results; at most 16 unpinned ones, the oldest let go first. They are the session's, not the project file's.",
+        doc: "The project's solves kept, the oldest first: each one's id, when (`when`, seconds since 1970 UTC), command, label, frequencies, band, deepest |S11| (dB) and where, first eigenmode, what changed in the model since the one before (variables' values), whether it is pinned and whether the session's results are its own. Every solve that succeeds is kept with its model and results (one that repeats a kept one exactly is that one); at most 16 unpinned ones, the oldest let go first, and 32 pinned. The project file keeps them with their S-parameters, eigenmodes and time domain's S, not their models or fields.",
         params: &[],
         effect: Effect::None,
         invalidates: None,
@@ -783,8 +783,8 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.history.restore",
         label: "Restore a solve",
-        doc: "Puts back the model, units, variables and results of a kept solve (results.history), its results current again; undo goes back.",
-        params: &[req("id", K::Integer, "the kept solve's id")],
+        doc: "Puts back the model, units, variables and results of a kept solve (results.history), its results current again; undo goes back. A solve read back from a project file is rebuilt from its history and solved again (`solved_again`, and `same_as_saved` whether its results are the saved ones); with `solve` false only its model comes back.",
+        params: &[req("id", K::Integer, "the kept solve's id"), opt("solve", K::Boolean, "solve a solve read back from a file again (default true)")],
         effect: Effect::Replace,
         invalidates: None,
         run: crate::archive::restore,
@@ -797,6 +797,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::None,
         invalidates: None,
         run: crate::archive::pin,
+    },
+    CommandSpec {
+        id: "results.history.label",
+        label: "Label a solve",
+        doc: "Names a kept solve (at most 80 characters; empty takes the name away). Saved with the project.",
+        params: &[req("id", K::Integer, "the kept solve's id"), req("label", K::String, "its label (empty: none)")],
+        effect: Effect::None,
+        invalidates: None,
+        run: crate::archive::label,
     },
     CommandSpec {
         id: "results.history.delete",

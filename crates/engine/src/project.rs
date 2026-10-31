@@ -41,6 +41,12 @@ pub struct Identity {
     /// How its results were looked at, and as last saved or opened.
     pub views: crate::views::Views,
     pub saved_views: crate::views::Views,
+    /// Its analysis history ([`crate::archive`]): the solves kept, the last id given, the one
+    /// restored, and as last saved or opened.
+    pub archive: Vec<crate::archive::Archived>,
+    pub archive_next: u32,
+    pub archive_current: Option<u32>,
+    pub saved_archive: Vec<crate::archive::Mark>,
     pub results: crate::Results,
     /// The revision the results were solved at, and whether that was the model's revision then
     /// (they come back current; else stale).
@@ -75,6 +81,10 @@ impl Session {
             runs: self.runs.clone(),
             views: self.views.clone(),
             saved_views: self.saved_views.clone(),
+            archive: self.archive.clone(),
+            archive_next: self.archive_next,
+            archive_current: self.archive_current,
+            saved_archive: self.saved_archive.clone(),
             results: self.results.clone(),
             solved_revision: self.solved_revision,
             current: self.solved_revision == Some(self.revision),
@@ -96,6 +106,10 @@ impl Session {
                 runs: std::mem::replace(&mut self.runs, back.runs),
                 views: std::mem::replace(&mut self.views, back.views),
                 saved_views: std::mem::replace(&mut self.saved_views, back.saved_views),
+                archive: std::mem::replace(&mut self.archive, back.archive),
+                archive_next: std::mem::replace(&mut self.archive_next, back.archive_next),
+                archive_current: std::mem::replace(&mut self.archive_current, back.archive_current),
+                saved_archive: std::mem::replace(&mut self.saved_archive, back.saved_archive),
                 results: std::mem::replace(&mut self.results, back.results),
                 solved_revision: self.solved_revision,
                 current,
@@ -391,6 +405,10 @@ struct ProjectFile<'m> {
     /// Since version 3: how the results are looked at.
     #[serde(default, skip_serializing_if = "crate::views::Views::is_empty")]
     views: crate::views::Views,
+    /// Since version 4: the analysis history (its solves' identities and results, not their
+    /// models: [`crate::archive::file::StoredHistory`]), read only from a file of that version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    analysis_history: Option<Value>,
     #[serde(skip_deserializing)]
     model: Option<&'m Model>,
 }
@@ -398,9 +416,11 @@ struct ProjectFile<'m> {
 /// What a project file's `format` says.
 const FORMAT: &str = "emcraft-project";
 
-/// The newest version of project files read (2: the runs; 3: the views). A project without
-/// views is written as version 2 ([`VERSION_WITHOUT_VIEWS`]), which older EMCraft reads.
-const VERSION: u32 = 3;
+/// The newest version of project files read (2: the runs; 3: the views; 4: the analysis
+/// history). A project is written in the oldest version that holds it: without an analysis
+/// history as version 3, without views either as version 2, which older EMCraft reads.
+const VERSION: u32 = 4;
+const VERSION_WITHOUT_HISTORY: u32 = 3;
 const VERSION_WITHOUT_VIEWS: u32 = 2;
 
 fn first_version() -> u32 {
@@ -424,26 +444,88 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         None if copy => return Err(p.error("path", "is required for a copy")),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    let version = if s.views.is_empty() { VERSION_WITHOUT_VIEWS } else { VERSION };
+    let version = match (s.archive.is_empty(), s.views.is_empty()) {
+        (false, _) => VERSION,
+        (true, false) => VERSION_WITHOUT_HISTORY,
+        (true, true) => VERSION_WITHOUT_VIEWS,
+    };
+    let analysis_history = match s.archive.is_empty() {
+        true => None,
+        false => Some(serde_json::to_value(crate::archive::file::stored(&s.archive, s.archive_next)).map_err(EngineError::failed)?),
+    };
     let file = ProjectFile {
         format: FORMAT.to_owned(),
         version,
         history: s.history.clone(),
         runs: s.runs.clone(),
         views: s.views.clone(),
+        analysis_history,
         model: Some(&s.model),
     };
     // Through a JSON value, whose objects keep their keys sorted: the file's text does not
     // depend on the order the fields are declared in.
     let doc = serde_json::to_value(&file).map_err(EngineError::failed)?;
-    let text = serde_json::to_string_pretty(&doc).map_err(EngineError::failed)?;
+    let text = pretty(&doc)?;
     write_atomically(&path, text.as_bytes())?;
+    let kept = s.archive.len();
     if copy {
-        return Ok(json!({"path": path, "copy": true, "commands": s.history.len(), "runs": s.runs.len()}));
+        return Ok(json!({"path": path, "copy": true, "commands": s.history.len(), "runs": s.runs.len(), "kept": kept}));
     }
     s.path = Some(path.clone());
     s.mark_saved();
-    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len()}))
+    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "kept": kept}))
+}
+
+/// `doc` as a project file writes it: pretty printed, two spaces a level, with each list of
+/// numbers on one line (an S matrix, a point), so a kept sweep's thousands of numbers do not
+/// take a line each.
+///
+/// ```
+/// let text = emcraft_engine::project::pretty(&serde_json::json!({"b": [1, 2.5], "a": [{"c": []}]}))?;
+/// assert_eq!(text, "{\n  \"a\": [\n    {\n      \"c\": []\n    }\n  ],\n  \"b\": [1, 2.5]\n}");
+/// # Ok::<(), emcraft_engine::EngineError>(())
+/// ```
+pub fn pretty(doc: &Value) -> Result<String> {
+    fn pad(out: &mut String, depth: usize) {
+        out.extend(std::iter::repeat_n("  ", depth));
+    }
+    fn write(v: &Value, depth: usize, out: &mut String) -> Result<()> {
+        match v {
+            Value::Array(list) if !list.is_empty() && list.iter().all(Value::is_number) => {
+                let items: Vec<String> = list.iter().map(Value::to_string).collect();
+                out.push('[');
+                out.push_str(&items.join(", "));
+                out.push(']');
+            }
+            Value::Array(list) if !list.is_empty() => {
+                out.push_str("[\n");
+                for (i, x) in list.iter().enumerate() {
+                    pad(out, depth + 1);
+                    write(x, depth + 1, out)?;
+                    out.push_str(if i + 1 < list.len() { ",\n" } else { "\n" });
+                }
+                pad(out, depth);
+                out.push(']');
+            }
+            Value::Object(map) if !map.is_empty() => {
+                out.push_str("{\n");
+                for (i, (k, x)) in map.iter().enumerate() {
+                    pad(out, depth + 1);
+                    out.push_str(&serde_json::to_string(k).map_err(EngineError::failed)?);
+                    out.push_str(": ");
+                    write(x, depth + 1, out)?;
+                    out.push_str(if i + 1 < map.len() { ",\n" } else { "\n" });
+                }
+                pad(out, depth);
+                out.push('}');
+            }
+            v => out.push_str(&serde_json::to_string(v).map_err(EngineError::failed)?),
+        }
+        Ok(())
+    }
+    let mut out = String::new();
+    write(doc, 0, &mut out)?;
+    Ok(out)
 }
 
 /// Writes `bytes` to a temporary file beside `path` and renames it over: a crash or a full
@@ -470,11 +552,14 @@ pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
     Ok(s.summary())
 }
 
-/// What a project file holds besides its model: the history, the runs and the views.
+/// What a project file holds besides its model: the history, the runs, the views and the
+/// analysis history (its solves and the last id given).
 struct Stored {
     history: Vec<Step>,
     runs: Vec<Run>,
     views: crate::views::Views,
+    archive: Vec<crate::archive::Archived>,
+    archive_next: u32,
 }
 
 /// A project file read and checked.
@@ -493,7 +578,16 @@ fn read_project(path: &str) -> Result<Stored> {
     }
     let runs = crate::runs::checked(file.runs).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     let views = file.views.checked().map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
-    Ok(Stored { history: file.history, runs, views })
+    // Older versions hold no analysis history.
+    let (archive, archive_next) = match file.analysis_history.filter(|_| file.version >= VERSION) {
+        Some(h) => {
+            let h: crate::archive::file::StoredHistory =
+                serde_json::from_value(h).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
+            crate::archive::file::read(h).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?
+        }
+        None => (Vec::new(), 0),
+    };
+    Ok(Stored { history: file.history, runs, views, archive, archive_next })
 }
 
 /// Opens a project: its history replayed in a fresh session (so the mesh comes back the same),
@@ -513,6 +607,8 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     fresh.undo.clear();
     fresh.runs = stored.runs;
     fresh.views = stored.views;
+    fresh.archive = stored.archive;
+    fresh.archive_next = stored.archive_next;
     match original {
         None => {
             fresh.path = Some(path.to_owned());
@@ -525,15 +621,20 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
                 history: vec![Step::new(UNREADABLE, json!({}))],
                 runs: Vec::new(),
                 views: crate::views::Views::default(),
+                archive: Vec::new(),
+                archive_next: 0,
             });
             fresh.path = Some(o.to_owned());
             fresh.saved = saved.history;
             fresh.saved_runs = saved.runs;
             fresh.saved_views = saved.views;
+            fresh.saved_archive = crate::archive::marks(&saved.archive);
         }
     }
     s.replace_with(fresh);
-    Ok(json!({"path": s.path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "dirty": s.is_dirty(), "summary": s.summary()}))
+    Ok(
+        json!({"path": s.path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "kept": s.archive.len(), "dirty": s.is_dirty(), "summary": s.summary()}),
+    )
 }
 
 /// The saved baseline of a recovered project whose original cannot be read: no command has this

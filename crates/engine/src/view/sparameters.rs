@@ -111,18 +111,29 @@ pub fn compare_pens(k: usize) -> [Pen; 2] {
 
 /// The S-parameter chart with the sweeps of kept solves `compare` ([`crate::archive`]) drawn
 /// over it: each one's |S11| and |S21| as lines through its points, named by its id (`#3`).
+/// With nothing solved now (a project just opened), the kept solves' alone.
 pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: &[u32]) -> Result<Chart> {
-    let mut chart = sparameter_chart_now(session, display)?;
     let fu = session.display.frequency;
+    let (mut chart, own) = match sparameter_chart_now(session, display) {
+        Ok(chart) => (chart, true),
+        Err(e) if compare.is_empty() => return Err(e),
+        Err(_) => {
+            let x = Axis::new(&format!("frequency ({})", fu.symbol()), f64::INFINITY, f64::NEG_INFINITY);
+            (Chart::new("S-parameters", x, display.axis(&[]), Vec::new()), false)
+        }
+    };
     let mut added = false;
     for (k, a) in crate::archive::picked(session, compare)?.into_iter().enumerate() {
-        let Some(sw) = a.results.sweep.as_ref() else { continue };
+        let Some(sw) = a.kept.sweep.as_ref() else { continue };
         added = true;
-        let pts = |p: usize, q: usize| sw.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
+        let pts = |p: usize, q: usize| sw.curve(p, q).into_iter().map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
         // Its solved points, as the session's own are drawn: data, not curves through it.
         let [p21, p11] = compare_pens(k);
         chart.series.push(Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Joined, pts(1, 0)));
         chart.series.push(Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Joined, pts(0, 0)));
+    }
+    if !own && !added {
+        return Err(EngineError::NotSolved { what: "results", run: "solve.frequency or solve.time_domain" });
     }
     // The axes take in what was added.
     if added {
@@ -130,6 +141,13 @@ pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: 
             chart.x.min = chart.x.min.min(s[0]);
             chart.x.max = chart.x.max.max(s[0]);
         }
+    }
+    // One frequency alone: a little either side of it, as the session's own chart.
+    if !own && !(chart.x.min.is_finite() && chart.x.max.is_finite()) {
+        (chart.x.min, chart.x.max) = (0.0, 1.0);
+    } else if !own && chart.x.max <= chart.x.min {
+        let pad = 0.05 * chart.x.min.abs().max(f64::MIN_POSITIVE);
+        (chart.x.min, chart.x.max) = (chart.x.min - pad, chart.x.max + pad);
     }
     if !compare.is_empty() {
         chart.y = display.axis(&chart.series);
