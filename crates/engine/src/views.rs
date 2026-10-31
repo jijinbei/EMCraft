@@ -47,9 +47,9 @@ emcraft_macros::named_enum! {
 
 emcraft_macros::named_serde!(LegendAt);
 
-impl LegendAt {
-    fn legend(self) -> Legend {
-        match self {
+impl From<LegendAt> for Legend {
+    fn from(at: LegendAt) -> Legend {
+        match at {
             LegendAt::Below => Legend::Below,
             LegendAt::TopLeft => Legend::TopLeft,
             LegendAt::TopRight => Legend::TopRight,
@@ -108,6 +108,11 @@ pub struct AxisStyle {
 impl AxisStyle {
     fn is_auto(&self) -> bool {
         *self == AxisStyle::default()
+    }
+
+    /// The axis' fixed ends, each with its name (`min`, `max`).
+    fn ends_mut(&mut self) -> [(&'static str, &mut Option<f64>); 2] {
+        [("min", &mut self.min), ("max", &mut self.max)]
     }
 }
 
@@ -259,6 +264,27 @@ fn is_frequency(id: ChartId, axis: AxisId) -> bool {
     matches!((id, axis), (ChartId::SParameters, AxisId::X) | (ChartId::Dispersion, AxisId::Y))
 }
 
+/// The curves chart `id` can add to its data ([`ChartStyle::added`]), each with its key and
+/// label: for the S-parameters, the closed form or mode matching the model's guide has
+/// (`view::reference`), none otherwise.
+pub fn optional_curves(s: &Session, id: ChartId) -> Vec<(String, String)> {
+    match id {
+        ChartId::SParameters => match crate::view::reference(s) {
+            Ok(r) => {
+                let label = r.label();
+                vec![("s21.ref".to_owned(), format!("|S21| {label}")), ("s11.ref".to_owned(), format!("|S11| {label}"))]
+            }
+            Err(_) => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// Whether chart `id`'s style adds curve `key`.
+pub fn added(s: &Session, id: ChartId, key: &str) -> bool {
+    s.views.charts.get(id.id()).is_some_and(|st| st.added.iter().any(|k| k == key))
+}
+
 /// `chart` in the project's style for chart `id`: its title and labels, its axes' ranges and
 /// scales, the curves left out, the curves' own colours and widths, the grid and the legend.
 /// A logarithmic axis over a range through zero takes the positive points' range instead.
@@ -286,27 +312,6 @@ fn is_frequency(id: ChartId, axis: AxisId) -> bool {
 /// assert!(s.execute("view.chart.style", &serde_json::json!({"chart": "study", "width": 99, "curve": "a"})).is_err());
 /// assert!(s.execute("view.chart.style", &serde_json::json!({"chart": "nope"})).is_err());
 /// ```
-/// The curves chart `id` can add to its data ([`ChartStyle::added`]), each with its key and
-/// label: for the S-parameters, the closed form or mode matching the model's guide has
-/// (`view::reference`), none otherwise.
-pub fn optional_curves(s: &Session, id: ChartId) -> Vec<(String, String)> {
-    match id {
-        ChartId::SParameters => match crate::view::reference(s) {
-            Ok(r) => {
-                let label = r.label();
-                vec![("s21.ref".to_owned(), format!("|S21| {label}")), ("s11.ref".to_owned(), format!("|S11| {label}"))]
-            }
-            Err(_) => Vec::new(),
-        },
-        _ => Vec::new(),
-    }
-}
-
-/// Whether chart `id`'s style adds curve `key`.
-pub fn added(s: &Session, id: ChartId, key: &str) -> bool {
-    s.views.charts.get(id.id()).is_some_and(|st| st.added.iter().any(|k| k == key))
-}
-
 pub fn style_chart(s: &Session, id: ChartId, mut chart: Chart) -> Chart {
     let Some(style) = s.views.charts.get(id.id()) else { return chart };
     if let Some(t) = style.title.as_ref().filter(|t| !t.is_empty()) {
@@ -359,7 +364,7 @@ pub fn style_chart(s: &Session, id: ChartId, mut chart: Chart) -> Chart {
         chart.look.grid = g;
     }
     if let Some(l) = style.legend {
-        chart.look.legend = l.legend();
+        chart.look.legend = l.into();
     }
     chart
 }
@@ -399,50 +404,97 @@ pub fn shown_style(s: &Session, id: ChartId) -> Value {
     shown_of(s, id, &s.views.style(id))
 }
 
+/// A title or label given (`Some(Some(text))`, `Some(None)` for blank or cleared), or `None`
+/// when not given.
+fn text_param(p: &Params, name: &str) -> Result<Option<Option<String>>> {
+    match p.string(name).optional()? {
+        Some(t) if t.chars().count() > MAX_TEXT => Err(p.error(name, format!("is longer than {MAX_TEXT} characters"))),
+        Some(t) => Ok(Some((!t.trim().is_empty()).then(|| t.to_owned()))),
+        None => Ok(p.cleared(name).then_some(None)),
+    }
+}
+
+/// What `view.chart.style` gives of axis `a`: its label, its fixed ends (a frequency axis' in
+/// hertz) and its scale.
+fn set_axis(s: &Session, p: &Params, id: ChartId, a: AxisId, style: &mut AxisStyle) -> Result<()> {
+    if let Some(t) = text_param(p, &format!("{a}_label"))? {
+        style.label = t;
+    }
+    for (end, slot) in style.ends_mut() {
+        let name = format!("{a}_{end}");
+        if p.cleared(&name) {
+            *slot = None;
+        } else if let Some(v) = p.number(&name).optional()? {
+            *slot = Some(if is_frequency(id, a) { s.display.frequency.to_si(v) } else { v });
+        }
+    }
+    if let (Some(lo), Some(hi)) = (style.min, style.max)
+        && lo >= hi
+    {
+        return Err(p.error(&format!("{a}_max"), "must be above the axis' min"));
+    }
+    if let Some(scale) = p.pick::<Scale>(&format!("{a}_scale")).optional()? {
+        style.log = scale == Scale::Log;
+    }
+    if style.log && [style.min, style.max].iter().flatten().any(|v| *v <= 0.0) {
+        return Err(p.error(&format!("{a}_scale"), "log needs the axis' fixed ends above 0"));
+    }
+    Ok(())
+}
+
+/// What `view.chart.style` gives of a curve's own look: `colour` and `width` for the curve
+/// `curve` names, which must be one of `chart`'s when it can be drawn now.
+fn set_curve(p: &Params, chart: Option<&Chart>, style: &mut ChartStyle) -> Result<()> {
+    let Some(key) = p.string("curve").optional()? else {
+        if p.has("colour") || p.cleared("colour") || p.has("width") || p.cleared("width") {
+            return Err(p.error("curve", "is needed with `colour` or `width`: the curve's key"));
+        }
+        return Ok(());
+    };
+    if key.chars().count() > MAX_NAME {
+        return Err(p.error("curve", "is too long"));
+    }
+    if let Some(c) = chart
+        && !c.series.iter().any(|x| x.key == key)
+    {
+        let what = format_args!("names no curve of the chart: `{}`", crate::text::clip(key, 40));
+        return Err(p.error("curve", crate::text::unknown(what, "curves: ", c.curves().into_iter().map(|(k, _)| k))));
+    }
+    let mut cs = style.curves.get(key).cloned().unwrap_or_default();
+    if p.cleared("colour") {
+        cs.colour = None;
+    } else if let Some(c) = p.string("colour").optional()? {
+        let colour = Colour::parse(c).filter(|c| c.a == 255).ok_or_else(|| p.error("colour", "must be #rrggbb"))?;
+        cs.colour = Some(colour.hex());
+    }
+    if p.cleared("width") {
+        cs.width = None;
+    } else if let Some(w) = p.number("width").optional()? {
+        if !WIDTHS.contains(&w) {
+            return Err(p.error("width", format!("must be {} to {} pixels", WIDTHS.start(), WIDTHS.end())));
+        }
+        cs.width = Some(w);
+    }
+    if cs == CurveStyle::default() {
+        style.curves.remove(key);
+    } else if style.curves.len() >= MAX_CURVES && !style.curves.contains_key(key) {
+        return Err(p.error("curve", format!("at most {MAX_CURVES} curves have styles of their own")));
+    } else {
+        style.curves.insert(key.to_owned(), cs);
+    }
+    Ok(())
+}
+
 /// `view.chart.style`: changes what is given of a chart's style (all of it back to automatic
 /// first with `reset`); the style and the chart's curves (when it can be drawn now).
 pub fn chart_style(s: &mut Session, p: &Params) -> Result<Value> {
     let id: ChartId = p.pick("chart").required()?;
     let mut style = if p.flag("reset").or(false)? { ChartStyle::default() } else { s.views.style(id) };
-    let text = |name: &str| -> Result<Option<Option<String>>> {
-        match p.string(name).optional()? {
-            Some(t) if t.chars().count() > MAX_TEXT => Err(p.error(name, format!("is longer than {MAX_TEXT} characters"))),
-            Some(t) => Ok(Some((!t.trim().is_empty()).then(|| t.to_owned()))),
-            None => Ok(p.cleared(name).then_some(None)),
-        }
-    };
-    if let Some(t) = text("title")? {
+    if let Some(t) = text_param(p, "title")? {
         style.title = t;
     }
     for a in AxisId::ALL {
-        if let Some(t) = text(&format!("{a}_label"))? {
-            style.axis_mut(a).label = t;
-        }
-        for (end, which) in [("min", 0), ("max", 1)] {
-            let name = format!("{a}_{end}");
-            let value = if p.cleared(&name) {
-                Some(None)
-            } else if is_frequency(id, a) {
-                p.number(&name).optional()?.map(|v| Some(s.display.frequency.to_si(v)))
-            } else {
-                p.number(&name).optional()?.map(Some)
-            };
-            if let Some(v) = value {
-                let axis = style.axis_mut(a);
-                if which == 0 { axis.min = v } else { axis.max = v }
-            }
-        }
-        if let (Some(lo), Some(hi)) = (style.axis(a).min, style.axis(a).max)
-            && lo >= hi
-        {
-            return Err(p.error(&format!("{a}_max"), "must be above the axis' min"));
-        }
-        if let Some(scale) = p.pick::<Scale>(&format!("{a}_scale")).optional()? {
-            style.axis_mut(a).log = scale == Scale::Log;
-        }
-        if style.axis(a).log && [style.axis(a).min, style.axis(a).max].iter().flatten().any(|v| *v <= 0.0) {
-            return Err(p.error(&format!("{a}_scale"), "log needs the axis' fixed ends above 0"));
-        }
+        set_axis(s, p, id, a, style.axis_mut(a))?;
     }
     if let Some(list) = p.list("added", MAX_CURVES).optional()? {
         let known: Vec<String> = optional_curves(s, id).into_iter().map(|(k, _)| k).collect();
@@ -469,51 +521,15 @@ pub fn chart_style(s: &mut Session, p: &Params) -> Result<Value> {
         style.legend = Some(l);
     }
     let chart = chart_of(s, id).ok();
-    let curve = p.string("curve").optional()?;
-    if (p.has("colour") || p.cleared("colour") || p.has("width") || p.cleared("width")) && curve.is_none() {
-        return Err(p.error("curve", "is needed with `colour` or `width`: the curve's key"));
-    }
-    if let Some(key) = curve {
-        if key.chars().count() > MAX_NAME {
-            return Err(p.error("curve", "is too long"));
-        }
-        if let Some(c) = &chart
-            && !c.series.iter().any(|x| x.key == key)
-        {
-            let what = format_args!("names no curve of the chart: `{}`", crate::text::clip(key, 40));
-            return Err(p.error("curve", crate::text::unknown(what, "curves: ", c.curves().into_iter().map(|(k, _)| k))));
-        }
-        let mut cs = style.curves.get(key).cloned().unwrap_or_default();
-        if p.cleared("colour") {
-            cs.colour = None;
-        } else if let Some(c) = p.string("colour").optional()? {
-            let colour = Colour::parse(c).filter(|c| c.a == 255).ok_or_else(|| p.error("colour", "must be #rrggbb"))?;
-            cs.colour = Some(colour.hex());
-        }
-        if p.cleared("width") {
-            cs.width = None;
-        } else if let Some(w) = p.number("width").optional()? {
-            if !WIDTHS.contains(&w) {
-                return Err(p.error("width", format!("must be {} to {} pixels", WIDTHS.start(), WIDTHS.end())));
-            }
-            cs.width = Some(w);
-        }
-        if cs == CurveStyle::default() {
-            style.curves.remove(key);
-        } else if style.curves.len() >= MAX_CURVES && !style.curves.contains_key(key) {
-            return Err(p.error("curve", format!("at most {MAX_CURVES} curves have styles of their own")));
-        } else {
-            style.curves.insert(key.to_owned(), cs);
-        }
+    set_curve(p, chart.as_ref(), &mut style)?;
+    let mut reply = json!({"chart": id.id(), "style": shown_of(s, id, &style)});
+    if let Some(c) = chart {
+        reply["curves"] = json!(c.curves().iter().map(|(k, l)| json!({"key": k, "label": l})).collect::<Vec<_>>());
     }
     if style == ChartStyle::default() {
         s.views.charts.remove(id.id());
     } else {
-        s.views.charts.insert(id.id().to_owned(), style.clone());
-    }
-    let mut reply = json!({"chart": id.id(), "style": shown_of(s, id, &style)});
-    if let Some(c) = chart {
-        reply["curves"] = json!(c.curves().iter().map(|(k, l)| json!({"key": k, "label": l})).collect::<Vec<_>>());
+        s.views.charts.insert(id.id().to_owned(), style);
     }
     Ok(reply)
 }
@@ -535,7 +551,8 @@ fn probe_point(s: &Session, p: &Params) -> Result<[f64; 3]> {
     let at = p.point("at").required()?;
     let b = s.model.bounds().ok_or_else(|| EngineError::failed("no geometry to probe"))?;
     let slack = 1e-9 * (b.max - b.min).to_array().iter().fold(1.0f64, |m, v| m.max(v.abs()));
-    let inside = (0..3).all(|k| at.to_array()[k] >= b.min.to_array()[k] - slack && at.to_array()[k] <= b.max.to_array()[k] + slack);
+    let (lo, hi) = (b.min.to_array(), b.max.to_array());
+    let inside = at.to_array().iter().zip(lo.iter().zip(hi)).all(|(v, (lo, hi))| (lo - slack..=hi + slack).contains(v));
     if !inside {
         return Err(p.error("at", "lies outside the model"));
     }
