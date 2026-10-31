@@ -1,7 +1,9 @@
 //! The 3D view in the viewport: the session's scene ([`crate::scene3d`]) drawn by
-//! `emcraft-render`'s CPU renderer into a texture, with orbit (left drag), pan (middle or shift
-//! drag), zoom (wheel), fit (double click or Fit), the standard views, perspective or
-//! orthographic projection, labels, a legend and an orientation indicator. While dragging the
+//! `emcraft-render`'s CPU renderer into a texture, navigated as in SolidCraft
+//! ([`crate::navigation`]: the mouse mapping's orbit, pan and zoom, the wheel and pinch toward
+//! the cursor, the keys, animated view changes), fit (double click or Fit), the standard views,
+//! perspective or orthographic projection, labels, a legend and a view cube
+//! ([`crate::view_cube`]) or the axes. While dragging or animating the
 //! picture is drawn at half resolution; at rest at full resolution, supersampled when small
 //! enough. A section view cuts the scene across an axis (`emcraft_render::view3d::section`: the
 //! far side removed, the cut faces capped in each body's colour); both renderers draw, and
