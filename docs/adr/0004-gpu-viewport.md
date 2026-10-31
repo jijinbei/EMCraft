@@ -55,24 +55,23 @@ pictures (`ui.render`, the scenarios, the CLI) and every fallback draw with it.
 
 ## Licences
 
-eframe's `wgpu` feature brings in no crate under a licence other than MIT, Apache-2.0, BSD,
-Zlib or their combinations. The crates new to the desktop app's tree:
+eframe's `wgpu` feature adds these crates to the desktop app's tree (`cargo tree -p emcraft -e
+normal` with and without it, for `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-gnu`), each
+read from its manifest; no other licence than MIT, Apache-2.0 or both:
 
 | Crate | Licence | Why |
 |---|---|---|
-| `wgpu`, `wgpu-core`, `wgpu-hal`, `wgpu-types`, `naga` | MIT OR Apache-2.0 | the GPU API, its backends and the WGSL compiler |
-| `egui-wgpu` | MIT OR Apache-2.0 | egui's wgpu renderer and paint callbacks |
-| `ash` | MIT OR Apache-2.0 | Vulkan bindings (Linux, Windows) |
-| `gpu-allocator`, `gpu-descriptor`, `gpu-alloc` | MIT OR Apache-2.0 | device memory and descriptors |
-| `windows` (DirectX 12 headers), `range-alloc`, `hassle-rs`-free DXC loading | MIT OR Apache-2.0 | DirectX 12 (Windows) |
-| `khronos-egl`, `glow`, `glutin_wgl_sys` | MIT OR Apache-2.0 / Apache-2.0 | OpenGL ES backend (already in the tree for glow) |
-| `codespan-reporting` | Apache-2.0 | naga's error messages |
-| `spirv`, `rspirv`-free `spirv` headers | Apache-2.0 | naga's SPIR-V output for Vulkan |
-| `pollster` | Apache-2.0 OR MIT | egui-wgpu waits for the adapter |
-| `bit-set`, `bit-vec`, `hexf-parse`, `unicode-xid`, `indexmap`, `arrayvec`, `profiling`, `document-features`, `litrs`, `cfg_aliases`, `raw-window-metal`, `objc2-*` | MIT and/or Apache-2.0 (`hexf-parse` CC0-1.0) | their dependencies |
-
-The full list is checked with `cargo tree -p emcraft -e normal` against the tree before this
-change; `cargo deny`-style licence checks are by reading each crate's manifest.
+| `wgpu`, `wgpu-core`, `wgpu-hal`, `wgpu-types`, `wgpu-naga-bridge`, `wgpu-core-deps-windows-linux-android` 30.0.1 | MIT OR Apache-2.0 | the GPU API and its backends |
+| `naga`, `naga-types` 30.0.1 | MIT OR Apache-2.0 | the WGSL compiler (to SPIR-V, HLSL, GLSL) |
+| `egui-wgpu` 0.36.2 | MIT OR Apache-2.0 | egui's wgpu renderer and paint callbacks |
+| `ash` 0.38 | MIT OR Apache-2.0 | Vulkan |
+| `gpu-allocator` 0.28, `presser`, `range-alloc` (Windows) | MIT OR Apache-2.0 | device memory |
+| `khronos-egl` 6, `as-raw-xcb-connection` (Linux) | MIT OR Apache-2.0 | OpenGL ES through EGL |
+| `windows` 0.62 and its `windows-*` crates (Windows) | MIT OR Apache-2.0 | DirectX 12 |
+| `renderdoc-sys` | MIT OR Apache-2.0 | RenderDoc's capture API (loaded only when RenderDoc is) |
+| `spirv` 0.4, `codespan-reporting` 0.13 | Apache-2.0 | naga's SPIR-V output, its error messages |
+| `ordered-float` 5 | MIT | naga |
+| `bit-set`, `bit-vec`, `rustc-hash` 1, `type-map`, `unicode-width`, `pollster` | MIT OR Apache-2.0 | their small helpers |
 
 ## Binary size and drivers
 
