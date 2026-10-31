@@ -1,9 +1,11 @@
-//! Variables, sweeps and optimization through the session, against closed forms.
+//! Variables, sweeps and optimization through the session: their replies, the model they leave,
+//! undo, charts and refusals. Their numbers against closed forms are the oracle's
+//! (`study-sweep-highpass`, `study-grid-filter`, `study-optimize-quarter-wave`), so the solves
+//! here are coarse.
 
 use std::f64::consts::PI;
 
 use emcraft_model::units::C0;
-use emcraft_theory::{Layer, Te10Line};
 use serde_json::{Value, json};
 
 use crate::{EngineError, Session};
@@ -77,33 +79,19 @@ fn a_variable_rebuilds_the_model_and_undo_goes_back() {
     assert_eq!(lengths(&t), lengths(&s));
 }
 
-/// The exact (S11, S21) of the filter with middle length `l` (mm) at `f` (GHz).
-fn exact(l: f64, f: f64) -> (f64, f64) {
-    let line = Te10Line {
-        a: A,
-        layers: vec![Layer::lossless(0.75 * l * 1e-3, 2.0, 1.0), Layer::lossless(l * 1e-3, 1.0, 1.0), Layer::lossless(0.015, 2.0, 1.0)],
-    };
-    let (s11, s21) = line.solve(f * 1e9).unwrap().s_power();
-    (s11.norm(), s21.norm())
-}
-
 #[test]
-fn a_sweep_follows_the_exact_cascade_and_leaves_the_model() {
-    let mut s = filter(5.0);
+fn a_sweep_solves_each_value_and_leaves_the_model() {
+    let mut s = filter(8.0);
     let history = s.history.clone();
-    let solve = json!({"command": "solve.frequency", "params": {"frequencies": [6, 8], "order": 2}});
+    let solve = json!({"command": "solve.frequency", "params": {"frequencies": [6, 8], "order": 1}});
     let r = s.execute("study.sweep", &json!({"variable": "l", "values": [12, 24], "solve": solve})).unwrap();
     let rows = r["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
-    for row in rows {
-        let l = row["value"].as_f64().unwrap();
-        for pt in row["points"].as_array().unwrap() {
-            let f = pt["frequency"].as_f64().unwrap();
-            let (e11, e21) = exact(l, f);
-            let (m11, m21) = (pt["s11"]["mag"].as_f64().unwrap(), pt["s21"]["mag"].as_f64().unwrap());
-            assert!((m11 - e11).abs() < 5e-3 && (m21 - e21).abs() < 5e-3, "l = {l}, f = {f}: {m11} {m21} against {e11} {e21}");
-        }
-    }
+    // Each row its own model: the two lengths transmit differently.
+    let s21 = |row: &Value| row["points"][1]["s21"]["mag"].as_f64().unwrap();
+    assert_eq!(rows.iter().map(|row| row["value"].as_f64().unwrap()).collect::<Vec<_>>(), [12.0, 24.0]);
+    assert!(rows.iter().all(|row| row["points"].as_array().unwrap().len() == 2));
+    assert_ne!(s21(&rows[0]), s21(&rows[1]), "{r}");
     // The session is as it was; the study is kept.
     assert_eq!(s.history, history);
     assert_eq!(lengths(&s), vec![0.015, 0.020, 0.015]);
@@ -157,8 +145,11 @@ pub(crate) fn quarter_wave() -> (f64, f64) {
     (er, PI / (2.0 * bm) * 1e3)
 }
 
-/// The optimizer's length within `within` of λg/4 (relative), solving at `order` on `size` mm.
-fn quarter_wave_found(size: f64, order: u8, within: f64, deepest: f64) {
+#[test]
+fn the_optimizer_converges_and_leaves_the_model_at_its_best() {
+    // On 8 mm first-order elements, for speed: how close it comes to λg/4 is the oracle's
+    // study-optimize-quarter-wave (3 mm, second order).
+    let (size, order) = (8.0, 1);
     let (er, quarter) = quarter_wave();
     let mut s = Session::new();
     s.run_script(&json!([
@@ -180,8 +171,10 @@ fn quarter_wave_found(size: f64, order: u8, within: f64, deepest: f64) {
         )
         .unwrap();
     let best = r["best"]["values"][0].as_f64().unwrap();
-    assert!((best - quarter).abs() < within * quarter, "{best} mm against λg/4 = {quarter} mm: {r}");
-    assert!(r["best"]["objective"].as_f64().unwrap() < deepest, "{r}");
+    // Somewhere near the match, far from the start's 8 mm.
+    assert!((best - quarter).abs() < 0.2 * quarter, "{best} mm against λg/4 = {quarter} mm: {r}");
+    let objectives: Vec<f64> = r["rows"].as_array().unwrap().iter().map(|row| row["objective"].as_f64().unwrap()).collect();
+    assert_eq!(r["best"]["objective"].as_f64().unwrap(), objectives.iter().copied().fold(f64::INFINITY, f64::min), "{r}");
     assert_eq!(r["converged"], true);
     // The model is left at the optimum, as one step undo takes back.
     assert_eq!(s.variables["l"], best);
@@ -190,17 +183,6 @@ fn quarter_wave_found(size: f64, order: u8, within: f64, deepest: f64) {
     assert_eq!(s.variables["l"], 8.0);
     let evaluations: Vec<&Value> = r["rows"].as_array().unwrap().iter().collect();
     assert!(evaluations.len() <= 50 && evaluations.len() == r["evaluations"].as_u64().unwrap() as usize);
-}
-
-#[test]
-fn the_optimizer_finds_the_quarter_wave_match() {
-    quarter_wave_found(5.0, 1, 0.03, -25.0);
-}
-
-#[test]
-#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
-fn the_optimizer_finds_the_quarter_wave_match_closely() {
-    quarter_wave_found(3.0, 2, 0.01, -35.0);
 }
 
 #[test]
@@ -256,18 +238,11 @@ fn grid_filter(size: f64) -> Session {
     s
 }
 
-/// The exact |S21| of the five-section filter at `f` (GHz).
-fn exact_grid(a: f64, b: f64, f: f64) -> f64 {
-    let layer = |l: f64, er: f64| Layer::lossless(l * 1e-3, er, 1.0);
-    let line = Te10Line { a: A, layers: vec![layer(15.0, 2.0), layer(a, 1.0), layer(b, 2.0), layer(10.0, 1.0), layer(15.0, 2.0)] };
-    line.solve(f * 1e9).unwrap().s_power().1.norm()
-}
-
 #[test]
 fn a_grid_sweep_solves_every_combination() {
-    let mut s = grid_filter(5.0);
+    let mut s = grid_filter(8.0);
     let history = s.history.clone();
-    let solve = json!({"command": "solve.frequency", "params": {"frequencies": [6, 8], "order": 2}});
+    let solve = json!({"command": "solve.frequency", "params": {"frequencies": [6, 8], "order": 1}});
     let grid = json!({"variables": [{"name": "a", "values": [10, 20]}, {"name": "b", "start": 5, "stop": 15, "points": 2}], "solve": solve, "outputs": ["s21"]});
     let r = s.execute("study.sweep", &grid).unwrap();
     assert_eq!(r["variables"], json!(["a", "b"]));
@@ -276,15 +251,14 @@ fn a_grid_sweep_solves_every_combination() {
     // Every combination, the last variable fastest, each row keyed by both values.
     let keys: Vec<Value> = rows.iter().map(|row| row["values"].clone()).collect();
     assert_eq!(keys, [json!([10.0, 5.0]), json!([10.0, 15.0]), json!([20.0, 5.0]), json!([20.0, 15.0])]);
+    // Only the outputs asked for, each combination its own model.
     for row in rows {
-        let (a, b) = (row["values"][0].as_f64().unwrap(), row["values"][1].as_f64().unwrap());
         for pt in row["points"].as_array().unwrap() {
-            let f = pt["frequency"].as_f64().unwrap();
-            let (m, e) = (pt["s21"]["mag"].as_f64().unwrap(), exact_grid(a, b, f));
-            assert!((m - e).abs() < 5e-3, "a = {a}, b = {b}, f = {f}: {m} against {e}");
-            assert!(pt.get("s11").is_none());
+            assert!(pt["s21"]["mag"].is_number() && pt.get("s11").is_none(), "{pt}");
         }
     }
+    let s21: Vec<f64> = rows.iter().map(|row| row["points"][1]["s21"]["mag"].as_f64().unwrap()).collect();
+    assert!(s21.windows(2).all(|w| w[0] != w[1]), "{s21:?}");
     assert_eq!(s.history, history);
     // Charted a slice at a time: along a with b held, or along b with a held.
     let study = s.results.study.clone().unwrap();
