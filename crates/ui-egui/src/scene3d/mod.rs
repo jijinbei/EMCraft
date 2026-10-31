@@ -8,8 +8,11 @@
 
 use emcraft_engine::Session;
 use emcraft_render::Rgb;
-use emcraft_render::view3d::Scene;
+use emcraft_render::view3d::{Camera, Hit, Scene};
 
+pub use cache::Cache;
+
+mod cache;
 mod extras;
 pub(crate) mod faces;
 mod field;
@@ -121,6 +124,28 @@ pub struct Built {
     pub legend: Vec<(String, Rgb)>,
     /// The model's box (m).
     pub bounds: Option<([f64; 3], [f64; 3])>,
+    /// Its picking index and coarser copy, made once ([`Cache`]).
+    pub cache: Cache,
+}
+
+impl Built {
+    /// [`emcraft_render::view3d::hits`] on its scene, through its index once made.
+    pub fn hits(&self, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
+        match self.cache.index(&self.scene) {
+            Some(index) => index.hits(&self.scene, camera, x, y, w, h),
+            None => emcraft_render::view3d::hits(&self.scene, camera, x, y, w, h),
+        }
+    }
+
+    /// [`emcraft_render::view3d::pick`] on its scene, through its index once made.
+    pub fn pick(&self, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
+        self.hits(camera, x, y, w, h).map(|(any, solid)| solid.unwrap_or(any).tag)
+    }
+
+    /// What a moving picture draws: its coarser copy when it has one made, else its scene.
+    pub fn moving(&self) -> &Scene {
+        self.cache.coarse(&self.scene).unwrap_or(&self.scene)
+    }
 }
 
 /// A picture's label as plain text for the legend: TeX math in Unicode, subscripts written on

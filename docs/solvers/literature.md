@@ -470,3 +470,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   fills the caps; E. Haines, *Point in polygon strategies*, Graphics Gems IV, 1994 — the
   even–odd rule; J. F. Hughes, T. Möller, *Building an orthonormal basis from a unit vector*,
   J. Graphics Tools 4(4), 1999 — the plane's coordinates. `crates/render/src/view3d/section.rs`.
+- Picking through a bounding volume hierarchy: I. Wald, S. Boulos, P. Shirley, *Ray tracing
+  deformable scenes using dynamic bounding volume hierarchies*, ACM Trans. Graphics 26(1), 2007
+  — the median split and the nearest-first traversal; A. Williams, S. Barrus, R. K. Morley,
+  P. Shirley, *An efficient and robust ray–box intersection algorithm*, J. Graphics Tools
+  10(1), 2005 — the slab test. `crates/render/src/view3d/bvh.rs`.
+- Levels of detail while the view moves: M. Garland, P. S. Heckbert, *Surface simplification
+  using quadric error metrics*, SIGGRAPH 1997 — edge collapse ordered by quadric error, open
+  boundaries held by planes across them. `crates/render/src/view3d/simplify.rs`.

@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use emcraft_model::geom::{Point3, Vec3};
-use emcraft_render::view3d::Scene;
+use emcraft_render::view3d::{Scene, SceneIndex};
 
 /// Most triangles a face is looked for among (a fine mesh's wall).
 const MAX_TRIS: usize = 400_000;
@@ -55,11 +55,21 @@ impl Weld {
 impl Face {
     /// The face of `scene`'s triangle `index`; `None` for a degenerate or missing triangle.
     pub fn of(scene: &Scene, index: usize) -> Option<Face> {
-        let t0 = scene.tris.get(index)?;
+        Face::of_indexed(scene, None, index)
+    }
+
+    /// [`Face::of`], the triangles in its plane looked up through the scene's `index` when given
+    /// (the same face).
+    pub fn of_indexed(scene: &Scene, index: Option<&SceneIndex>, at: usize) -> Option<Face> {
+        let t0 = scene.tris.get(at)?;
         let n = unit_normal(t0.p.map(Point3::from))?;
-        let (blo, bhi) = scene.bounds()?;
+        let (blo, bhi) = index.map_or_else(|| scene.bounds(), SceneIndex::bounds)?;
         let weld = Weld(1e-7 * Point3::from(blo).distance(Point3::from(bhi)).max(1e-12));
-        let tris = joined(scene, index, &in_plane(scene, t0.tag, n, n.dot(Point3::from(t0.p[0]).to_vec()), weld), weld);
+        let d = n.dot(Point3::from(t0.p[0]).to_vec());
+        // Through the index, only the triangles near the plane are tried (in the scene's order,
+        // as the scan tries them), while every triangle is within the scan's cap.
+        let near = index.filter(|_| t0.tag != 0 && scene.tris.len() <= MAX_TRIS).and_then(|i| i.near_plane(scene, n.to_array(), d, weld.0 * 10.0));
+        let tris = joined(scene, at, &in_plane(scene, near.as_deref(), t0.tag, n, d, weld), weld);
         let corners_of = |i: &usize| scene.tris.get(*i).map(|t| t.p);
         let (centre, lo, hi) = centre_and_box(tris.iter().filter_map(corners_of));
         let outline = outline(tris.iter().filter_map(corners_of), weld);
@@ -81,10 +91,15 @@ impl Face {
     }
 }
 
-/// The triangles tagged `tag` that lie in the plane n · p = `d`, by their welded corners.
-fn in_plane(scene: &Scene, tag: u32, n: Vec3, d: f64, weld: Weld) -> BTreeMap<Key, Vec<usize>> {
+/// The triangles tagged `tag` that lie in the plane n · p = `d`, by their welded corners: of
+/// `near` (in order) when given, else of the whole scene.
+fn in_plane(scene: &Scene, near: Option<&[usize]>, tag: u32, n: Vec3, d: f64, weld: Weld) -> BTreeMap<Key, Vec<usize>> {
     let mut by_vertex: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
-    for (i, t) in scene.tris.iter().enumerate().filter(|(_, t)| t.tag == tag).take(MAX_TRIS) {
+    let tried: Box<dyn Iterator<Item = (usize, &emcraft_render::view3d::Tri)>> = match near {
+        Some(near) => Box::new(near.iter().filter_map(|&i| scene.tris.get(i).map(|t| (i, t)))),
+        None => Box::new(scene.tris.iter().enumerate()),
+    };
+    for (i, t) in tried.filter(|(_, t)| t.tag == tag).take(MAX_TRIS) {
         let flat = t.p.iter().all(|p| (n.dot(Point3::from(*p).to_vec()) - d).abs() <= weld.0 * 10.0);
         if flat && unit_normal(t.p.map(Point3::from)).is_some() {
             for p in t.p {

@@ -13,7 +13,7 @@
 //!   dragged along the port's line by its grip; the drag ends in `model.port.edit {deembed}`.
 //!
 //! What the pointer is over is found on the drawn scene: the nearest tagged triangle under it
-//! ([`emcraft_render::view3d::hits`]) and its face ([`crate::scene3d::faces::Face`]). Every
+//! ([`crate::scene3d::Built::hits`], through the scene's index) and its face ([`crate::scene3d::faces::Face`]). Every
 //! change goes through a command; a tool never edits the model itself.
 
 use egui::{FontId, Pos2, Rect, Stroke, pos2, vec2};
@@ -171,7 +171,7 @@ struct FaceCache(Vec<((u64, usize), Face)>);
 
 impl FaceCache {
     /// The face of `scene`'s triangle `index` in generation `now`, looked up or found.
-    fn find(&mut self, scene: &emcraft_render::view3d::Scene, now: u64, index: usize) -> Option<Face> {
+    fn find(&mut self, built: &crate::scene3d::Built, now: u64, index: usize) -> Option<Face> {
         let key = (now, index);
         if let Some(i) = self.0.iter().position(|(k, _)| *k == key) {
             // The latest last.
@@ -180,7 +180,7 @@ impl FaceCache {
             self.0.push(found);
             return Some(f);
         }
-        let f = Face::of(scene, index)?;
+        let f = Face::of_indexed(&built.scene, built.cache.index(&built.scene), index)?;
         self.0.push((key, f.clone()));
         if self.0.len() > CACHED_FACES {
             self.0.remove(0);
@@ -397,8 +397,8 @@ fn over(app: &EmcraftApp, v: &View3d, tool: Tool, rect: Rect, at: Option<Pos2>, 
     {
         return Some(Hover { face: last.clone(), snap: s, port: None });
     }
-    let hits = view3d::hits(&scene.scene, &v.camera, f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h);
-    let mut face_of = |hit: &view3d::Hit| faces.find(&scene.scene, now, hit.index);
+    let hits = scene.hits(&v.camera, f64::from(p.x - rect.left()), f64::from(p.y - rect.top()), w, h);
+    let mut face_of = |hit: &view3d::Hit| faces.find(scene, now, hit.index);
     // Points are picked through see-through walls, on what they show inside, as a click selects.
     // A port goes on the face in front when one may go there (a free end, a port's face), else
     // on what shows through it (a body's face inside an open box).

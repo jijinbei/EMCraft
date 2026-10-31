@@ -19,9 +19,12 @@
 
 use crate::{Canvas, Rgb};
 
+pub mod bvh;
 pub mod navigate;
 pub mod section;
+pub mod simplify;
 
+pub use bvh::SceneIndex;
 pub use navigate::{CameraAnim, Drag, cube_directions, ease_in_out};
 pub use section::{Keep, Section, SectionError};
 
