@@ -311,13 +311,6 @@ fn units(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    heading(ui, "Drawing", "How the 3D view of the model, its mesh and fields is drawn.");
-    let drawing = [
-        (false, "Quality", "quality", "Drawn on the CPU with a depth buffer and smoothed edges when the view rests; the GPU while you drag."),
-        (true, "Fast", "fast", "Drawn by the GPU every frame: for large meshes, where the CPU picture takes long."),
-    ];
-    options(ui, out, "3d", app.prefs.gpu3d, &drawing, |gpu| Action::Pref(Pref::Gpu3d(gpu)));
-    gap(ui);
     // The mouse mappings, SolidCraft's: the same hands work in both apps.
     let nav = app.prefs.nav();
     heading(ui, "Mouse", nav.help);
@@ -340,6 +333,29 @@ fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Navigator", "");
     let navigators: Vec<(Navigator, &str, &str)> = Navigator::ALL.iter().map(|n| (*n, shown(*n), n.id())).collect();
     choices(ui, out, "navigator", app.prefs.navigator(), &navigators, |n| Action::Pref(Pref::Navigator(n)));
+    gap(ui);
+    heading(ui, "Drawing", "What the 3D view adds to the plain picture, each its own switch.");
+    let l = app.prefs.gpu_look;
+    let switches: [(&str, &str, bool, fn(&mut crate::prefs::GpuLook) -> &mut bool, &str); 5] = [
+        ("Edges", "edges", l.edges, |l| &mut l.edges, "Lines where surfaces crease or end, found per pixel."),
+        ("Shadows", "ao", l.ao, |l| &mut l.ao, "Ambient occlusion: corners and creases darkened."),
+        ("Outline", "outline", l.outline, |l| &mut l.outline, "A ring round what is selected and what is under the pointer."),
+        ("GPU picking", "pick", l.pick, |l| &mut l.pick, "Clicks read what the GPU drew under the pointer."),
+        ("GPU field", "field", l.field, |l| &mut l.field, "The field's colour map drawn by the GPU: its phase plays without rebuilding the scene."),
+    ];
+    let t = &Tokens::get();
+    egui::Grid::new("3d_gpu").num_columns(2).spacing(vec2(t.space_12, t.space_8)).show(ui, |ui| {
+        for (label, id, on, field, about) in switches {
+            let b = egui::Button::selectable(on, egui::RichText::new(tr(label)).size(t.font_button))
+                .min_size(vec2(96.0, t.control_height))
+                .frame_when_inactive(true);
+            let mut next = l;
+            *field(&mut next) = !on;
+            ui.act(true, b, Handle::Setting("3d", id), "", || Action::Pref(Pref::GpuLook(next)), out);
+            ui.text(Style::Dim, about);
+            ui.end_row();
+        }
+    });
 }
 
 fn dialogs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {

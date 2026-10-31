@@ -14,6 +14,29 @@ pub const MAX_RECENT: usize = 12;
 /// Largest preferences file read.
 const MAX_BYTES: u64 = 1 << 20;
 
+/// What the 3D view adds to the plain picture, each its own switch (Settings ▸ 3D view ▸ Drawing).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GpuLook {
+    /// Edges where surfaces crease or end, found per pixel.
+    pub edges: bool,
+    /// Ambient occlusion: corners and creases darkened.
+    pub ao: bool,
+    /// A ring round what is selected and what is under the pointer.
+    pub outline: bool,
+    /// Picking reads what the GPU drew under the pointer (the CPU's rays otherwise).
+    pub pick: bool,
+    /// The field's colour map on its plane evaluated by the GPU, its phase stepped without
+    /// building the scene again.
+    pub field: bool,
+}
+
+impl Default for GpuLook {
+    fn default() -> Self {
+        GpuLook { edges: true, ao: false, outline: true, pick: true, field: true }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
@@ -28,9 +51,6 @@ pub struct Prefs {
     pub language: String,
     /// Dialogs dock at the right, beside what they edit (new preferences; a file keeps its own).
     pub dock_dialogs: bool,
-    /// The 3D view drawn by the window's GPU (fast, painter's order) instead of the CPU
-    /// renderer (depth-buffered, supersampled) at rest.
-    pub gpu3d: bool,
     /// The 3D view's mouse mapping, by id (`crate::navigation::NAV_PRESETS`; the default
     /// when unknown).
     pub navigation: String,
@@ -38,13 +58,15 @@ pub struct Prefs {
     pub orbit_around: String,
     /// The 3D view's orientation control, by id (`crate::navigation::Navigator`).
     pub navigator: String,
+    /// What the GPU's view draws beyond the CPU's picture.
+    pub gpu_look: GpuLook,
     /// The display units new projects start with.
     pub length: Length,
     pub frequency: Frequency,
 }
 
 /// New preferences: dialogs docked, so they do not cover what they edit; the rest empty, the
-/// light theme, English, the CPU's 3D view, millimetres and gigahertz.
+/// light theme, English, millimetres and gigahertz.
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
@@ -53,10 +75,10 @@ impl Default for Prefs {
             dark: false,
             language: String::new(),
             dock_dialogs: true,
-            gpu3d: false,
             navigation: crate::navigation::FUSION.into(),
             orbit_around: String::new(),
             navigator: String::new(),
+            gpu_look: GpuLook::default(),
             length: Length::default(),
             frequency: Frequency::default(),
         }

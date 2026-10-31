@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_engine::Session;
-use emcraft_render::view3d::{self, Camera, StandardView};
+use emcraft_render::view3d::{Camera, StandardView};
 use serde_json::Value;
 
 use crate::action::Pref;
@@ -62,8 +62,9 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
     cam.distance *= 0.8;
     let t = &Tokens::get();
     let rgb = crate::theme::rgb;
-    let opt = view3d::Options { width: w, height: h, supersample: 2, background: (rgb(t.viewport_top), rgb(t.viewport_bottom)), line_width: 2.0 };
-    Ok((Picture::new(&view3d::render(&built.scene, &cam, &opt)), cam))
+    let ground = (rgb(t.viewport_top), rgb(t.viewport_bottom));
+    let canvas = crate::gpu3d::scene_picture(&built.scene, &cam, [w as u32, h as u32], ground).map_err(|e| e.to_string())?;
+    Ok((Picture::new(&canvas), cam))
 }
 
 pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {

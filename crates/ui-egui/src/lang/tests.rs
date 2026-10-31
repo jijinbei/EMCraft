@@ -220,8 +220,6 @@ fn tour() -> Record {
     let mut h = Harness::new();
     call(&mut h, "ui.set", json!({"language": "ja"}));
     record(true);
-    // The 3D view drawn by egui's meshes, not the CPU's pictures: the words are the same.
-    h.app.prefs.gpu3d = true;
     h.app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
     // The start page, empty and with a project missing from the recent list, the settings
     // (Files with no recent project too), the prompts.
@@ -299,6 +297,10 @@ fn tour() -> Record {
         }
         if i == 3 {
             // A job running: its progress, a dialog that waits, Run's panel, a refused request.
+            // The field's animation stopped first: each of its frames is a new 3D picture, which
+            // a short job could outrun.
+            call(&mut h, "ui.set", json!({"animate": false}));
+            h.frames(2);
             call(
                 &mut h,
                 "engine.execute",
@@ -507,6 +509,10 @@ fn tour() -> Record {
 const UNREACHED: &[(&str, &str)] = &[
     ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
     ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),
+    (
+        "No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).",
+        "shown only on a machine without any wgpu adapter",
+    ),
     ("Time-domain radiation", "a time-domain solve with sources takes too long for the gate"),
     ("Time domain: {n} frequencies", "a time-domain solve takes too long for the gate"),
     ("modes ({unit})", "a study of eigenmodes takes too long for the gate"),

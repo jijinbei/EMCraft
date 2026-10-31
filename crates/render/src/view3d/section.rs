@@ -606,7 +606,7 @@ fn caps(plane: &Plane, bodies: &[&Body], budget: usize, out: &mut Scene) -> bool
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Camera, Options, Projection, StandardView, flatten, pick, render};
+    use super::super::{Camera, Projection, StandardView, pick};
     use super::*;
 
     fn area(t: &Tri) -> f64 {
@@ -883,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sectioned_guide_renders_its_insides_the_same_every_time() {
+    fn a_sectioned_guide_caps_its_insides_the_same_every_time() {
         let s = guide();
         let sec = Section { outline: Some(Rgb(30, 30, 30)), ..Section::across(0, 0.5 * 0.02286, Keep::Low) };
         let cut = section(&s, &sec).unwrap();
@@ -905,23 +905,8 @@ mod tests {
         cam.standard(StandardView::Iso);
         cam.yaw = 1.1;
         cam.fit(lo, hi, 4.0 / 3.0);
-        let opt = Options { width: 640, height: 480, supersample: 2, background: (Rgb(250, 250, 252), Rgb(225, 228, 235)), line_width: 1.2 };
-        let pic = render(&cut, &cam, &opt);
-        assert_eq!(pic, render(&cut, &cam, &opt));
         // The middle of the cut shows the post, picked as itself.
         let c = cam.project([0.5 * 0.02286, 0.005, 0.0275], 640.0, 480.0).unwrap();
         assert_eq!(pick(&cut, &cam, c[0], c[1], 640.0, 480.0), Some(20));
-        let px = pic.pixel(c[0] as usize, c[1] as usize).unwrap();
-        assert!(px.0.abs_diff(px.1) < 20 && px.1.abs_diff(px.2) < 30, "the post is grey: {px:?}");
-        // The GPU path gets the same primitives.
-        assert!(!flatten(&cut, &cam, 640.0, 480.0).is_empty());
-        if let Some(dir) = std::env::var_os("EMCRAFT_RENDER_SHOTS") {
-            let dir = std::path::PathBuf::from(dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("section-guide.png"), pic.png().unwrap()).unwrap();
-            std::fs::write(dir.join("section-guide-whole.png"), render(&s, &cam, &opt).png().unwrap()).unwrap();
-            let z = section(&s, &Section { outline: Some(Rgb(30, 30, 30)), ..Section::across(2, 0.0275, Keep::Low) }).unwrap();
-            std::fs::write(dir.join("section-guide-z.png"), render(&z, &cam, &opt).png().unwrap()).unwrap();
-        }
     }
 }

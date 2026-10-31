@@ -431,6 +431,42 @@ impl PlaneSamples {
     }
 
     /// The plot of a view's component and arrows at its phase.
+    /// The phasor `component` reads, at each point of the plot's nx × ny grid (row 0 at the
+    /// bottom): the real and imaginary parts of E (V/m) or H (A/m), `None` outside the mesh. The
+    /// value [`PlaneSamples::plot`] draws at phase φ is, for a Cartesian component k,
+    /// re[k] cos φ − im[k] sin φ, and for |E| or |H| the length of re cos φ − im sin φ: what a GPU
+    /// evaluates for every phase from one upload.
+    ///
+    /// ```
+    /// use emcraft_engine::view::{Component, FieldView, Plane, sample_plane};
+    /// let mut s = emcraft_engine::Session::new();
+    /// s.execute("file.sample", &serde_json::json!({"name": "highpass"})).unwrap();
+    /// s.execute("solve.frequency", &serde_json::json!({"frequencies": [7], "order": 1})).unwrap();
+    /// let view = FieldView::new(7e9, Plane::H);
+    /// let samples = sample_plane(&s, &view).unwrap();
+    /// let (nx, ny, grid) = samples.phasors(Component::Ey);
+    /// assert_eq!(grid.len(), nx * ny);
+    /// // The plot at phase 0 reads the real parts.
+    /// let plot = samples.plot(&FieldView { component: Component::Ey, ..view }).unwrap();
+    /// let values = plot.scalar.unwrap().values;
+    /// let (re, _) = grid.iter().flatten().next().unwrap();
+    /// let first = grid.iter().position(|g| g.is_some()).unwrap();
+    /// assert!((values[first] - re[1]).abs() <= 1e-9 * re[1].abs().max(1.0));
+    /// ```
+    pub fn phasors(&self, component: Component) -> (usize, usize, Vec<Option<([f64; 3], [f64; 3])>>) {
+        let grid = self
+            .grid
+            .iter()
+            .map(|g| {
+                g.as_ref().map(|(e, h)| {
+                    let f = if component.is_magnetic() { h } else { e };
+                    ([f.x.re, f.y.re, f.z.re], [f.x.im, f.y.im, f.z.im])
+                })
+            })
+            .collect();
+        (self.nx, self.ny, grid)
+    }
+
     pub fn plot(&self, view: &FieldView) -> Result<FieldPlot> {
         let rot = C::from_polar(1.0, view.phase);
         let comp = view.component;

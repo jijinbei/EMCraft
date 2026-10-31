@@ -78,39 +78,6 @@ fn meshed(name: &str, size: Option<f64>) -> Session {
     s
 }
 
-/// Milliseconds per picture of the samples' meshes at the window's 3D view size (about
-/// 1180 × 620): `cargo test --release -p emcraft-ui-egui render_timings -- --ignored --nocapture`.
-#[test]
-#[ignore = "timing report: run by hand"]
-fn render_timings() {
-    use emcraft_render::view3d::{Camera, Options, render};
-    for (name, size) in [("highpass", None), ("coaxial-line", None), ("coaxial-line", Some(0.45)), ("coaxial-line", Some(0.25))] {
-        let s = meshed(name, size);
-        let faces = s.model().mesh.as_ref().map_or(0, |m| m.boundary.len());
-        for o in [Overlay::Plain, Overlay::Mesh, Overlay::Materials] {
-            let b = build(&s, o);
-            let (lo, hi) = b.bounds.unwrap();
-            let mut c = Camera::default();
-            c.fit(lo, hi, 1180.0 / 620.0);
-            for (ss, w, h) in [(1, 1180, 620), (2, 1180, 620), (1, 590, 310)] {
-                let opt = Options { width: w, height: h, supersample: ss, ..Default::default() };
-                let t = std::time::Instant::now();
-                let n = 5;
-                for k in 0..n {
-                    c.orbit(3.0 * k as f64, 0.0);
-                    let _ = render(&b.scene, &c, &opt);
-                }
-                println!(
-                    "{name} ({faces} boundary faces) {o:?}: {} triangles, {} lines, {w}x{h} x{ss}: {:.1} ms",
-                    b.scene.tris.len(),
-                    b.scene.lines.len(),
-                    t.elapsed().as_secs_f64() * 1e3 / n as f64
-                );
-            }
-        }
-    }
-}
-
 /// A meshed guide cut along its length fills the whole cut, each material in its colour, the
 /// same cut twice the same; a plane outside the mesh cuts nothing.
 #[test]
@@ -267,7 +234,7 @@ fn a_large_scene_moves_coarser_and_is_picked_in_full() {
 #[test]
 #[ignore = "timing report: run by hand"]
 fn pick_timings() {
-    use emcraft_render::view3d::{flatten, hits};
+    use emcraft_render::view3d::hits;
     let size: f64 = std::env::var("EMCRAFT_PICK_MESH").ok().and_then(|v| v.parse().ok()).unwrap_or(1.2);
     let t = std::time::Instant::now();
     let s = meshed("magic-tee", Some(size));
@@ -303,14 +270,15 @@ fn pick_timings() {
             t.elapsed().as_secs_f64() * 1e3 / under.len().max(1) as f64
         };
         let (face_scan, face_indexed) = (face(None), face(Some(&index)));
+        // Packing a scene for the GPU (the CPU's share of a new picture).
         let draw = |scene: &Scene| {
             let t = std::time::Instant::now();
-            std::hint::black_box(flatten(scene, &c, w, h));
+            std::hint::black_box(crate::gpu3d::Packed::new(scene, 0));
             t.elapsed().as_secs_f64() * 1e3
         };
         let moving = b.moving();
         println!(
-            "{o:?}: {} triangles ({} lines); index {built:.1} ms (with the coarser copy {filled:.0} ms); pick {scan:.3} ms scanned, {indexed:.4} ms indexed; face {face_scan:.2} ms scanned, {face_indexed:.2} ms indexed; moving picture {:.1} ms full, {:.1} ms from {} triangles",
+            "{o:?}: {} triangles ({} lines); index {built:.1} ms (with the coarser copy {filled:.0} ms); pick {scan:.3} ms scanned, {indexed:.4} ms indexed; face {face_scan:.2} ms scanned, {face_indexed:.2} ms indexed; packed for the GPU {:.1} ms full, {:.1} ms from {} triangles",
             b.scene.tris.len(),
             b.scene.lines.len(),
             draw(&b.scene),

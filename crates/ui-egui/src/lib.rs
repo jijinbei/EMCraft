@@ -3,7 +3,8 @@
 //! order) whose panels hold the engine's commands, with command search; a browser of the model
 //! and its results on the left; the viewport in the middle (the model in 3D with its section view, S-parameter charts, fields on planes with a phase
 //! animation, port-mode and eigenmode tables, far-field patterns, the comparison with theory, all
-//! drawn by `emcraft-render` or egui, no GPU rendering); command dialogs as floating or docked
+//! drawn by `emcraft-render` or egui; the 3D view by the window's GPU where it has one,
+//! [`gpu3d`]); command dialogs as floating or docked
 //! cards; messages, progress and Cancel at the bottom.
 //!
 //! Everything the UI does goes through engine commands ([`EmcraftApp::run`]); long ones run on a
@@ -46,6 +47,7 @@ pub mod dialogs;
 pub mod files;
 mod fonts;
 pub mod glyphs;
+pub mod gpu3d;
 pub mod handle;
 pub mod home;
 mod import_ui;
@@ -777,24 +779,43 @@ pub fn run(sample: Option<String>, control: Option<Receiver<ControlRequest>>) ->
 /// Like [`run`], with the control queue made from the window's context (so the server can wake
 /// the window when a request arrives).
 pub fn run_with(sample: Option<String>, host: Host, control: impl FnOnce(&egui::Context) -> Option<Receiver<ControlRequest>>) -> eframe::Result {
-    let options = eframe::NativeOptions {
+    // The app is made once, by whichever renderer opens the window.
+    let start = std::cell::RefCell::new(Some((sample, host, control)));
+    let options = |renderer| eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("EMCraft")
             .with_icon(egui::IconData { rgba: emcraft_render::icon::rgba(64), width: 64, height: 64 })
             .with_inner_size([1500.0, 960.0])
             .with_min_inner_size([900.0, 600.0]),
+        renderer,
+        // The window's pass: one sample, no depth (the 3D view draws offscreen, gpu3d).
+        multisampling: 0,
+        depth_buffer: 0,
         ..Default::default()
     };
-    eframe::run_native(
-        "EMCraft",
-        options,
-        Box::new(move |cc| {
-            let mut app = EmcraftApp::for_host(sample.as_deref(), host);
-            app.fonts.look_for_installed(&cc.egui_ctx);
-            app.control.rx = control(&cc.egui_ctx);
-            Ok(Box::new(Window(app)))
-        }),
-    )
+    let create = |cc: &eframe::CreationContext<'_>| -> Result<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>> {
+        let (sample, host, control) = start.borrow_mut().take().ok_or("the window was already made")?;
+        let mut app = EmcraftApp::for_host(sample.as_deref(), host);
+        app.fonts.look_for_installed(&cc.egui_ctx);
+        app.control.rx = control(&cc.egui_ctx);
+        if let Some(rs) = &cc.wgpu_render_state
+            && let Err(e) = gpu3d::install(rs, &cc.egui_ctx)
+        {
+            eprintln!("emcraft: {e}; the 3D view draws on the CPU");
+        }
+        Ok(Box::new(Window(app)))
+    };
+    // wgpu first (Vulkan, Metal, DirectX 12, OpenGL ES 3); where it cannot open the window, the
+    // OpenGL 2 renderer, with the 3D view on the CPU (docs/adr/0004-gpu-viewport.md).
+    let wgpu = std::env::var("EMCRAFT_RENDERER").map_or(true, |r| r != "glow");
+    if wgpu {
+        match eframe::run_native("EMCraft", options(eframe::Renderer::Wgpu), Box::new(|cc| create(cc))) {
+            Ok(()) => return Ok(()),
+            Err(e) if start.borrow().is_some() => eprintln!("emcraft: the window cannot draw with wgpu ({e}); trying OpenGL"),
+            Err(e) => return Err(e),
+        }
+    }
+    eframe::run_native("EMCraft", options(eframe::Renderer::Glow), Box::new(|cc| create(cc)))
 }
 
 /// The app inside eframe.

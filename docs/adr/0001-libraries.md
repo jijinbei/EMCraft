@@ -14,7 +14,7 @@ FieldCraft, so its behaviour is deterministic and fully verified.
 | `png` | MIT OR Apache-2.0 | PNG pictures |
 | `ab_glyph` (with `ab_glyph_rasterizer`, `owned_ttf_parser`) | Apache-2.0 (`owned_ttf_parser`, `ttf-parser` MIT OR Apache-2.0) | text in pictures (`emcraft-render::text`): reads the embedded DejaVu Sans and rasterises its outlines with exact-area anti-aliasing, deterministically |
 | `zip` (deflate only), `quick-xml` | MIT | reading 3MF packages (`emcraft-io`), the same lines as FieldCraft's |
-| `egui`, `eframe` (glow backend) | MIT OR Apache-2.0 | the desktop UI (L7 and apps only) |
+| `egui`, `eframe` (wgpu and glow backends) | MIT OR Apache-2.0 | the desktop UI (L7 and apps only); wgpu and what it brings in: [ADR 0004](0004-gpu-viewport.md) |
 | `faer` (with its `gemm`, `pulp`, `rayon`) | MIT (`rayon` MIT OR Apache-2.0) | the dense matrix products inside the multifrontal factorization (`emcraft-solver::ldlt`): pure Rust, SIMD chosen at run time, its sums in an order independent of the threads (checked bit for bit); the factorization, ordering and pivoting stay ours |
 | `rfd` (with its xdg-portal backend) | MIT | the system's file dialog for opening and saving projects (`apps/emcraft` only; the window takes it through `emcraft_ui_egui::files::Picker`, so the UI crate and the headless harness need none) |
 | `cubecl` (with its bundled LLVM, and `cudarc` for the `cuda` feature) | MIT OR Apache-2.0 | the time domain's kernels on GPUs (`emcraft-gpu`, [ADR 0002](0002-gpu.md)); the CPU runtime (`cubecl-cpu` feature) only in the tests; the Windows GNU build (the installer, docs/install-windows.md) links neither runtime, as the bundled LLVM has no build for it |

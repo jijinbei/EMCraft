@@ -121,12 +121,12 @@ pub enum Pref {
     Language(String),
     /// Reads the themes again (the user's from their folder).
     ReloadThemes,
-    /// The 3D view drawn by the window's GPU.
-    Gpu3d(bool),
     /// The 3D view's mouse mapping, by id.
     Navigation(String),
     OrbitAround(crate::navigation::OrbitAround),
     Navigator(crate::navigation::Navigator),
+    /// What the GPU's view adds.
+    GpuLook(crate::prefs::GpuLook),
     Length(Length),
     Frequency(Frequency),
     /// Drops a project from the recent list.
@@ -368,13 +368,13 @@ impl EmcraftApp {
                 None => self.error(format!("no language `{}` (there are {})", crate::lang::clip_id(&id), crate::lang::ids().join(", "))),
             },
             Pref::ReloadThemes => self.load_themes(self.themes.dir.clone()),
-            Pref::Gpu3d(on) => self.prefs.gpu3d = on,
             Pref::Navigation(id) => match crate::navigation::NAV_PRESETS.iter().find(|p| p.id == id) {
                 Some(p) => self.prefs.navigation = p.id.into(),
                 None => self.error(format!("no mouse mapping `{}`", id.chars().take(32).collect::<String>())),
             },
             Pref::OrbitAround(o) => self.prefs.orbit_around = o.id().into(),
             Pref::Navigator(n) => self.prefs.navigator = n.id().into(),
+            Pref::GpuLook(l) => self.prefs.gpu_look = l,
             Pref::Length(u) => self.prefs.length = u,
             Pref::Frequency(u) => self.prefs.frequency = u,
             Pref::ForgetRecent(i) => {

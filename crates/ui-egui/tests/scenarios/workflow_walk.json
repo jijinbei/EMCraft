@@ -59,7 +59,7 @@
   {"click": "dialog:cancel"},
   {"note": "The field on its plane inside the model"},
   {"click": "view:model"},
-  {"expect": {"view": "model", "inspect": {"view3d.overlay": "field", "view3d.triangles": {"min": 2000}}}},
+  {"expect": {"view": "model", "inspect": {"view3d.overlay": "field", "view3d.gpu_field": true, "view3d.triangles": {"min": 500}}}},
   {"shot": "workflow-8-field-3d"},
   {"note": "The field's phase plays in 3D too; the nav bar pauses it"},
   {"frames": 20},

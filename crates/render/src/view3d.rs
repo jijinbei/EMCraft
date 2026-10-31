@@ -1,23 +1,14 @@
-//! 3D pictures without a GPU: flat-shaded triangles (Lambert, lit from beside the eye, both
-//! sides) and lines with a depth buffer, seen through an orbit camera (yaw, pitch, distance and
-//! target; perspective or orthographic). The desktop app shows the same picture as a texture, so
-//! headless renders (`ui.render`, the scenarios) and the window agree.
+//! The 3D view's scene and camera, without drawing it: triangles (colour, opacity, tag) and
+//! lines, an orbit camera (yaw, pitch, distance and target; perspective or orthographic) with its
+//! projection and rays, picking by ray (Möller–Trumbore, through the scene's bounding-volume
+//! hierarchy, [`bvh`]), the view changes ([`navigate`]), the coarser copy drawn while moving
+//! ([`simplify`]) and the section view ([`section::section`]: the scene cut by a plane, the far
+//! side removed and the cut bodies capped). The window's GPU draws it (`emcraft-ui-egui`'s
+//! `gpu3d`, docs/adr/0004-gpu-viewport.md).
 //!
-//! The method is the classic scan-conversion pipeline (see e.g. Foley, van Dam, Feiner and
-//! Hughes, *Computer Graphics: Principles and Practice*, ch. 3 and 15; Pineda, "A parallel
-//! algorithm for polygon rasterization", SIGGRAPH 1988, for the edge functions): vertices to
-//! camera space, the projection, edge-function coverage at pixel centres, a depth buffer of
-//! inverse depth (linear in screen space under perspective). Opaque triangles first, then
-//! translucent triangles and lines together sorted back to front (lines nudged towards the eye so
-//! edges on a face show), blended without writing depth — the order the GPU path's `flatten`
-//! draws them in, so a still picture and a dragged one show the same edges.
-//!
-//! Deterministic: one thread, a fixed order, the same input gives the same bytes.
-//!
-//! A section view (the scene cut by a plane, the far side removed and the cut bodies capped) is
-//! a scene too: [`section::section`] makes it, and both renderers draw it as any other.
+//! Deterministic: one thread, a fixed order, the same input gives the same scene and picks.
 
-use crate::{Canvas, Rgb};
+use crate::Rgb;
 
 pub mod bvh;
 pub mod navigate;
@@ -28,8 +19,6 @@ pub use bvh::SceneIndex;
 pub use navigate::{CameraAnim, Drag, cube_directions, ease_in_out};
 pub use section::{Keep, Section, SectionError};
 
-/// The largest picture side, in pixels.
-pub const MAX_SIDE: usize = 4096;
 /// Most triangles or lines drawn from one scene (the rest are left out).
 pub const MAX_PRIMITIVES: usize = 4_000_000;
 
@@ -473,273 +462,6 @@ impl Scene {
     }
 }
 
-/// How a picture is made.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Options {
-    pub width: usize,
-    pub height: usize,
-    /// Samples per pixel along each side (1–3): 2 smooths edges at four times the work.
-    pub supersample: usize,
-    /// The ground's colour at the top and at the bottom.
-    pub background: (Rgb, Rgb),
-    /// Line width in output pixels.
-    pub line_width: f64,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Options { width: 800, height: 600, supersample: 1, background: (Rgb::WHITE, Rgb::WHITE), line_width: 1.0 }
-    }
-}
-
-/// The working buffers.
-struct Target {
-    w: usize,
-    h: usize,
-    color: Vec<[f32; 3]>,
-    depth: Vec<f32>,
-}
-
-impl Target {
-    fn fill(&mut self, x: usize, y: usize, key: f32, c: [f32; 3], alpha: f32, write: bool) {
-        let i = y * self.w + x;
-        let (Some(d), Some(px)) = (self.depth.get_mut(i), self.color.get_mut(i)) else { return };
-        if key < *d {
-            return;
-        }
-        if write {
-            *d = key;
-        }
-        if alpha >= 1.0 {
-            *px = c;
-        } else {
-            for k in 0..3 {
-                px[k] += (c[k] - px[k]) * alpha;
-            }
-        }
-    }
-}
-
-fn rgbf(c: Rgb) -> [f32; 3] {
-    [f32::from(c.0), f32::from(c.1), f32::from(c.2)]
-}
-
-/// The shade of a triangle: ambient plus Lambert from a light just above and right of the eye,
-/// both sides lit alike.
-fn shade(t: &Tri, light: [f64; 3]) -> Option<[f32; 3]> {
-    let n = normalized(cross(sub(t.p[1], t.p[0]), sub(t.p[2], t.p[0])))?;
-    let k = (0.42 + 0.58 * dot(n, light).abs()) as f32;
-    let c = rgbf(t.color);
-    Some([c[0] * k, c[1] * k, c[2] * k])
-}
-
-/// Fills a screen triangle: `s` are (x, y, key) corners.
-fn raster_tri(t: &mut Target, s: [[f64; 3]; 3], c: [f32; 3], alpha: f32, write: bool) {
-    let area = (s[1][0] - s[0][0]) * (s[2][1] - s[0][1]) - (s[2][0] - s[0][0]) * (s[1][1] - s[0][1]);
-    if !(area.abs() > 1e-12) || !area.is_finite() {
-        return;
-    }
-    let lim = 1e7;
-    if s.iter().any(|p| p[0].abs() > lim || p[1].abs() > lim) {
-        return;
-    }
-    let xs = [s[0][0], s[1][0], s[2][0]];
-    let ys = [s[0][1], s[1][1], s[2][1]];
-    let x0 = xs.iter().copied().fold(f64::INFINITY, f64::min).floor().max(0.0) as usize;
-    let x1 = (xs.iter().copied().fold(f64::NEG_INFINITY, f64::max).ceil().min(t.w as f64)) as usize;
-    let y0 = ys.iter().copied().fold(f64::INFINITY, f64::min).floor().max(0.0) as usize;
-    let y1 = (ys.iter().copied().fold(f64::NEG_INFINITY, f64::max).ceil().min(t.h as f64)) as usize;
-    if x0 >= x1 || y0 >= y1 {
-        return;
-    }
-    let (inv, sign) = (1.0 / area.abs(), area.signum());
-    // Edge functions e_k(x, y) = a x + b y + c over the edge opposite corner k, times the
-    // orientation: positive inside, their sum the area. The same edge of a neighbour gives
-    // exactly the negated value, so a pixel centre on a shared edge goes to the one triangle the
-    // top-left rule picks.
-    let edge = |i: usize, j: usize| {
-        let (a, b) = (s[i][1] - s[j][1], s[j][0] - s[i][0]);
-        let c = s[i][0] * s[j][1] - s[j][0] * s[i][1];
-        (a * sign, b * sign, c * sign)
-    };
-    let e = [edge(1, 2), edge(2, 0), edge(0, 1)];
-    let owns = e.map(|(a, b, _)| a > 0.0 || (a == 0.0 && b > 0.0));
-    let z = [s[0][2], s[1][2], s[2][2]];
-    for py in y0..y1 {
-        let y = py as f64 + 0.5;
-        for px in x0..x1 {
-            let x = px as f64 + 0.5;
-            let w = [e[0].0 * x + e[0].1 * y + e[0].2, e[1].0 * x + e[1].1 * y + e[1].2, e[2].0 * x + e[2].1 * y + e[2].2];
-            if (0..3).any(|k| w[k] < 0.0 || (w[k] == 0.0 && !owns[k])) {
-                continue;
-            }
-            let key = ((w[0] * z[0] + w[1] * z[1] + w[2] * z[2]) * inv) as f32;
-            t.fill(px, py, key, c, alpha, write);
-        }
-    }
-}
-
-/// Draws a screen segment `width` pixels wide, depth-tested.
-fn raster_line(t: &mut Target, a: [f64; 3], b: [f64; 3], width: f64, c: [f32; 3], alpha: f32) {
-    let lim = 1e6;
-    if [a[0], a[1], b[0], b[1]].iter().any(|v| !(v.abs() < lim)) {
-        return;
-    }
-    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-    let n = dx.abs().max(dy.abs()).ceil().clamp(1.0, 4.0 * MAX_SIDE as f64) as usize;
-    let r = (0.5 * width).max(0.5);
-    let (lo, hi) = ((0.5 - r).round() as i64, (r - 0.5).round() as i64);
-    let steep = dy.abs() > dx.abs();
-    for k in 0..=n {
-        let f = k as f64 / n as f64;
-        let (x, y) = (a[0] + dx * f, a[1] + dy * f);
-        let key = (a[2] + (b[2] - a[2]) * f) as f32;
-        for o in lo..=hi {
-            let (px, py) = if steep { (x.floor() as i64 + o, y.floor() as i64) } else { (x.floor() as i64, y.floor() as i64 + o) };
-            if px >= 0 && py >= 0 && (px as usize) < t.w && (py as usize) < t.h {
-                t.fill(px as usize, py as usize, key, c, alpha, false);
-            }
-        }
-    }
-}
-
-/// Renders `scene` through `camera`.
-/// A primitive projected for a painter that has no depth buffer (the desktop app draws these
-/// with its GPU): screen points in pixels of a w × h picture and the shaded colour with its
-/// opacity. [`flatten`] lists them farthest first.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Flat {
-    Tri { p: [[f32; 2]; 3], rgba: [u8; 4] },
-    Line { a: [f32; 2], b: [f32; 2], rgba: [u8; 4] },
-}
-
-/// The scene projected and shaded as [`render`] shades it, sorted farthest first (the
-/// painter's algorithm: right for the convex, separate bodies of these scenes, approximate
-/// where faces cross).
-pub fn flatten(scene: &Scene, camera: &Camera, w: f64, h: f64) -> Vec<Flat> {
-    let cam = camera.sanitized();
-    let pr = Projector::new(&cam, w, h);
-    let b = pr.b;
-    let light = normalized([
-        -b.forward[0] + 0.35 * b.up[0] + 0.25 * b.right[0],
-        -b.forward[1] + 0.35 * b.up[1] + 0.25 * b.right[1],
-        -b.forward[2] + 0.35 * b.up[2] + 0.25 * b.right[2],
-    ])
-    .unwrap_or([0.0, 0.0, 1.0]);
-    let depth = |p: [f64; 3]| dot(sub(p, b.eye), b.forward);
-    let xy = |q: [f64; 3]| [q[0] as f32, q[1] as f32];
-    let byte = |c: f32| c.round().clamp(0.0, 255.0) as u8;
-    let nudge = cam.distance * 4e-3;
-    let mut out: Vec<(f64, usize, Flat)> = Vec::new();
-    for (i, t) in scene.tris.iter().take(MAX_PRIMITIVES).enumerate().filter(|(_, t)| t.alpha > 0) {
-        let (Some(a), Some(bb), Some(c), Some(col)) = (pr.project(t.p[0], 0.0), pr.project(t.p[1], 0.0), pr.project(t.p[2], 0.0), shade(t, light))
-        else {
-            continue;
-        };
-        let d = (depth(t.p[0]) + depth(t.p[1]) + depth(t.p[2])) / 3.0;
-        out.push((d, i, Flat::Tri { p: [xy(a), xy(bb), xy(c)], rgba: [byte(col[0]), byte(col[1]), byte(col[2]), t.alpha] }));
-    }
-    let base = scene.tris.len();
-    for (i, l) in scene.lines.iter().take(MAX_PRIMITIVES).enumerate().filter(|(_, l)| l.alpha > 0) {
-        let (Some(a), Some(z)) = (pr.project(l.a, nudge), pr.project(l.b, nudge)) else { continue };
-        let d = 0.5 * (depth(l.a) + depth(l.b)) - nudge;
-        out.push((d, base + i, Flat::Line { a: xy(a), b: xy(z), rgba: [l.color.0, l.color.1, l.color.2, l.alpha] }));
-    }
-    // Farthest first; ties keep the scene's order.
-    out.sort_by(|x, y| y.0.total_cmp(&x.0).then(x.1.cmp(&y.1)));
-    out.into_iter().map(|(_, _, f)| f).collect()
-}
-
-/// A translucent triangle or a line, by its index, in the back-to-front pass.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Layer {
-    Tri(usize),
-    Line(usize),
-}
-
-pub fn render(scene: &Scene, camera: &Camera, opt: &Options) -> Canvas {
-    let (w, h) = (opt.width.clamp(1, MAX_SIDE), opt.height.clamp(1, MAX_SIDE));
-    let ss = opt.supersample.clamp(1, 3);
-    let (sw, sh) = (w * ss, h * ss);
-    let mut t = Target { w: sw, h: sh, color: Vec::with_capacity(sw * sh), depth: vec![f32::NEG_INFINITY; sw * sh] };
-    let (top, bottom) = (rgbf(opt.background.0), rgbf(opt.background.1));
-    for y in 0..sh {
-        let f = y as f32 / (sh.max(2) - 1) as f32;
-        let c = [top[0] + (bottom[0] - top[0]) * f, top[1] + (bottom[1] - top[1]) * f, top[2] + (bottom[2] - top[2]) * f];
-        t.color.extend(std::iter::repeat_n(c, sw));
-    }
-    let cam = camera.sanitized();
-    let pr = Projector::new(&cam, sw as f64, sh as f64);
-    let b = pr.b;
-    let light = normalized([
-        -b.forward[0] + 0.35 * b.up[0] + 0.25 * b.right[0],
-        -b.forward[1] + 0.35 * b.up[1] + 0.25 * b.right[1],
-        -b.forward[2] + 0.35 * b.up[2] + 0.25 * b.right[2],
-    ])
-    .unwrap_or([0.0, 0.0, 1.0]);
-    let tris = &scene.tris[..scene.tris.len().min(MAX_PRIMITIVES)];
-    let lines = &scene.lines[..scene.lines.len().min(MAX_PRIMITIVES)];
-    let screen = |tri: &Tri| -> Option<[[f64; 3]; 3]> { Some([pr.project(tri.p[0], 0.0)?, pr.project(tri.p[1], 0.0)?, pr.project(tri.p[2], 0.0)?]) };
-    // Opaque triangles.
-    for tri in tris.iter().filter(|t| t.alpha == 255) {
-        if let (Some(s), Some(c)) = (screen(tri), shade(tri, light)) {
-            raster_tri(&mut t, s, c, 1.0, true);
-        }
-    }
-    // Translucent triangles and lines together, farthest first (ties by their order in the
-    // scene, triangles before lines), as `flatten` orders them: a line in front of a
-    // see-through face is drawn over it, not washed out by it. Lines a little towards the eye
-    // so edges lying on faces win the depth test against opaque ones.
-    let nudge = cam.distance * 4e-3;
-    let lw = opt.line_width.clamp(0.5, 8.0) * ss as f64;
-    let along = |p: [f64; 3]| dot(sub(p, b.eye), b.forward);
-    let glass = tris.iter().enumerate().filter(|(_, t)| t.alpha > 0 && t.alpha < 255).map(|(i, t)| {
-        let c = [(t.p[0][0] + t.p[1][0] + t.p[2][0]) / 3.0, (t.p[0][1] + t.p[1][1] + t.p[2][1]) / 3.0, (t.p[0][2] + t.p[1][2] + t.p[2][2]) / 3.0];
-        (along(c), Layer::Tri(i))
-    });
-    let edges = lines.iter().enumerate().filter(|(_, l)| l.alpha > 0).map(|(i, l)| (0.5 * (along(l.a) + along(l.b)) - nudge, Layer::Line(i)));
-    let mut layers: Vec<(f64, Layer)> = glass.chain(edges).collect();
-    layers.sort_by(|a, z| z.0.total_cmp(&a.0).then(a.1.cmp(&z.1)));
-    for (_, layer) in layers {
-        match layer {
-            Layer::Tri(i) => {
-                let Some(tri) = tris.get(i) else { continue };
-                if let (Some(s), Some(c)) = (screen(tri), shade(tri, light)) {
-                    raster_tri(&mut t, s, c, f32::from(tri.alpha) / 255.0, false);
-                }
-            }
-            Layer::Line(i) => {
-                let Some(l) = lines.get(i) else { continue };
-                if let (Some(a), Some(z)) = (pr.project(l.a, nudge), pr.project(l.b, nudge)) {
-                    raster_line(&mut t, a, z, lw, rgbf(l.color), f32::from(l.alpha) / 255.0);
-                }
-            }
-        }
-    }
-    // Down to the output size, a box filter over each pixel's samples.
-    let mut rgba = Vec::with_capacity(w * h * 4);
-    let norm = 1.0 / (ss * ss) as f32;
-    for y in 0..h {
-        for x in 0..w {
-            let mut acc = [0f32; 3];
-            for sy in 0..ss {
-                for sx in 0..ss {
-                    if let Some(p) = t.color.get((y * ss + sy) * sw + x * ss + sx) {
-                        for (a, v) in acc.iter_mut().zip(p) {
-                            *a += v;
-                        }
-                    }
-                }
-            }
-            for v in acc {
-                rgba.push((v * norm).round().clamp(0.0, 255.0) as u8);
-            }
-            rgba.push(255);
-        }
-    }
-    Canvas { w, h, rgba }
-}
-
 /// The three axes' directions on screen (x right, y down; unit length for an axis across the
 /// picture, shorter for one pointing at the eye), for an orientation indicator.
 pub fn axes_on_screen(camera: &Camera) -> [[f64; 2]; 3] {
@@ -750,29 +472,6 @@ pub fn axes_on_screen(camera: &Camera) -> [[f64; 2]; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn flattened_scenes_are_sorted_far_to_near_and_shaded_as_rendered() {
-        let mut s = Scene::default();
-        s.quad([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], Rgb(200, 0, 0), 255);
-        s.quad([[-1.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0]], Rgb(0, 200, 0), 128);
-        s.line([-1.0, 0.0, 0.5], [1.0, 0.0, 0.5], Rgb(0, 0, 0), 255);
-        let mut c = Camera::default();
-        c.standard(StandardView::Front);
-        c.fit([-1.0, -1.0, 0.0], [1.0, 1.0, 1.0], 1.0);
-        let f = flatten(&s, &c, 100.0, 100.0);
-        assert_eq!(f.len(), 5);
-        let colour = |x: &Flat| match x {
-            Flat::Tri { rgba, .. } | Flat::Line { rgba, .. } => *rgba,
-        };
-        // The square nearer the eye comes last.
-        let near_is_green = c.basis().forward[2] < 0.0;
-        let last = colour(&f[4]);
-        assert_eq!(last[1] > last[0], near_is_green, "{f:?}");
-        // The line sits between the squares.
-        assert!(matches!(f[2], Flat::Line { .. }), "{f:?}");
-        assert_eq!(colour(&f[0])[3] == 128, !near_is_green);
-    }
 
     #[test]
     fn picking_finds_the_nearest_solid_tag_under_the_pixel() {
@@ -803,12 +502,6 @@ mod tests {
         assert!(Camera::default().ray(f64::NAN, 0.0, 10.0, 10.0).is_none());
     }
 
-    fn square(z: f64, c: Rgb) -> Scene {
-        let mut s = Scene::default();
-        s.quad([[-1.0, -1.0, z], [1.0, -1.0, z], [1.0, 1.0, z], [-1.0, 1.0, z]], c, 255);
-        s
-    }
-
     fn front(projection: Projection) -> Camera {
         Camera { target: [0.0; 3], yaw: 0.0, pitch: 0.0, distance: 10.0, fov: 30f64.to_radians(), projection }
     }
@@ -833,86 +526,6 @@ mod tests {
         c.standard(StandardView::Top);
         let q = c.project([0.0, 0.0, -1.0], 100.0, 100.0).unwrap();
         assert!(q[1] < 50.0 && (q[0] - 50.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn the_nearer_triangle_wins_whatever_the_order() {
-        let (red, blue) = (Rgb(255, 0, 0), Rgb(0, 0, 255));
-        let mut a = square(1.0, red);
-        a.tris.extend(square(-1.0, blue).tris);
-        let mut b = square(-1.0, blue);
-        b.tris.extend(square(1.0, red).tris);
-        for projection in [Projection::Perspective, Projection::Orthographic] {
-            let opt = Options { width: 64, height: 48, ..Default::default() };
-            let (pa, pb) = (render(&a, &front(projection), &opt), render(&b, &front(projection), &opt));
-            assert_eq!(pa, pb);
-            let px = pa.pixel(32, 24).unwrap();
-            assert!(px.0 > 100 && px.2 == 0, "{px:?}");
-        }
-    }
-
-    #[test]
-    fn an_edge_on_a_see_through_face_is_drawn_over_it() {
-        // A light, see-through square with a black edge across it, and one behind it: the edge
-        // on the face shows black (the face is not blended over it), the one behind is dimmed.
-        let mut s = Scene::default();
-        s.quad([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], Rgb(230, 230, 230), 110);
-        s.line([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], Rgb(0, 0, 0), 255);
-        s.line([0.0, -1.0, -2.0], [0.0, 1.0, -2.0], Rgb(0, 0, 0), 255);
-        let opt = Options { width: 81, height: 61, background: (Rgb(40, 40, 60), Rgb(40, 40, 60)), ..Default::default() };
-        let c = render(&s, &front(Projection::Orthographic), &opt);
-        let (on, behind) = (c.pixel(34, 30).unwrap(), c.pixel(40, 25).unwrap());
-        assert!(on.0 < 10, "the edge on the face: {on:?}");
-        assert!(behind.0 > 60, "the edge behind it, through the face: {behind:?}");
-    }
-
-    #[test]
-    fn rendering_is_deterministic_and_lines_show_on_faces() {
-        let mut s = square(0.0, Rgb(200, 200, 200));
-        s.line([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], Rgb(0, 0, 0), 255);
-        // A line behind the square is hidden.
-        s.line([0.0, -1.0, -2.0], [0.0, 1.0, -2.0], Rgb(255, 0, 0), 255);
-        let mut c = front(Projection::Perspective);
-        let opt = Options { width: 81, height: 61, supersample: 2, ..Default::default() };
-        let one = render(&s, &c, &opt);
-        assert_eq!(one.png(), render(&s, &c, &opt).png());
-        assert_eq!(one.pixel(35, 30), Some(Rgb(0, 0, 0)));
-        let col: Vec<Rgb> = (22..39).filter_map(|y| one.pixel(40, y)).collect();
-        assert!(col.iter().all(|p| p.0 == p.1), "the hidden red line shows: {col:?}");
-        // Orbiting changes the picture; hostile cameras draw the ground only, no panic.
-        c.orbit(40.0, 10.0);
-        assert_ne!(one, render(&s, &c, &opt));
-        let bad =
-            Camera { target: [f64::NAN; 3], yaw: f64::INFINITY, pitch: f64::NAN, distance: -1.0, fov: 0.0, projection: Projection::Orthographic };
-        let _ = render(&s, &bad, &opt);
-        let mut tri = Scene::default();
-        tri.tri([f64::NAN, 0.0, 0.0], [1e300, 0.0, 0.0], [0.0, 1.0, 0.0], Rgb::BLACK, 255);
-        tri.line([f64::INFINITY; 3], [0.0; 3], Rgb::BLACK, 255);
-        let p = render(&tri, &front(Projection::Perspective), &Options { width: 0, height: 100_000, ..Default::default() });
-        assert_eq!((p.w, p.h), (1, MAX_SIDE));
-    }
-
-    #[test]
-    fn translucent_faces_blend_over_what_is_behind() {
-        let mut s = square(-1.0, Rgb(0, 0, 255));
-        s.quad([[-1.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0]], Rgb(255, 0, 0), 128);
-        let p = render(&s, &front(Projection::Orthographic), &Options { width: 40, height: 40, ..Default::default() });
-        let c = p.pixel(20, 20).unwrap();
-        assert!(c.0 > 40 && c.2 > 40, "{c:?}");
-    }
-
-    #[test]
-    fn shared_edges_are_filled_once() {
-        // A translucent quad over a flat ground: a pixel on its diagonal blended twice (or not at
-        // all) would differ from the rest.
-        let mut s = Scene::default();
-        s.quad([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], Rgb(0, 0, 0), 128);
-        let opt = Options { width: 64, height: 64, background: (Rgb::WHITE, Rgb::WHITE), ..Default::default() };
-        let mut c = front(Projection::Orthographic);
-        c.distance = 1.0 / (15f64.to_radians()).tan();
-        let p = render(&s, &c, &opt);
-        let inside: Vec<Rgb> = (2..62).flat_map(|y| (2..62).map(move |x| (x, y))).filter_map(|(x, y)| p.pixel(x, y)).collect();
-        assert!(inside.iter().all(|q| *q == inside[0]), "{:?}", inside.iter().find(|q| **q != inside[0]));
     }
 
     #[test]
