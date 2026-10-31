@@ -69,7 +69,8 @@ fn solids_mesh_unstructured_and_their_modes_meet_the_bessel_zeros() {
     // A dielectric rod along the axis's middle third.
     s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.1})).unwrap();
     s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 3, "length": 10, "at": [0, 0, 10], "material": "ptfe"})).unwrap();
-    let m = s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    // 6 mm: the rod's curved faces set the mesh still, in half the time of 4 mm.
+    let m = s.execute("mesh.generate", &json!({"size": 6})).unwrap();
     assert!(m["tetrahedra"].as_u64().unwrap() > 0);
     assert!(s.model.mesh.as_ref().unwrap().tet_material.contains(&1));
     assert!(s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 20})).is_err());
@@ -212,12 +213,13 @@ fn meshes_follow_the_wavelength_in_each_material() {
     s.execute("model.material.create", &json!({"name": "ceramic", "eps_r": 4})).unwrap();
     s.execute("geometry.solid", &json!({"shape": "sphere", "radius": 10})).unwrap();
     s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 5, "at": [0, 0, 0], "material": "ceramic"})).unwrap();
-    let r = s.execute("mesh.generate", &json!({"per_wavelength": 8, "frequency": 12})).unwrap();
+    // Four per wavelength, for speed: 6.25 mm outside, 3.1 mm in the ceramic.
+    let r = s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 12})).unwrap();
     let lambda = emcraft_model::units::C0 / 12e9 * 1e3;
-    assert!((r["sizes"]["vacuum"].as_f64().unwrap() - lambda / 8.0).abs() < 1e-9);
-    assert!((r["sizes"]["ceramic"].as_f64().unwrap() - lambda / 16.0).abs() < 1e-9);
+    assert!((r["sizes"]["vacuum"].as_f64().unwrap() - lambda / 4.0).abs() < 1e-9);
+    assert!((r["sizes"]["ceramic"].as_f64().unwrap() - lambda / 8.0).abs() < 1e-9);
     // The ceramic's tetrahedra are about half the size: an eighth of the volume, less near the
-    // interface, whose triangles the vacuum's tetrahedra share (3.9 measured).
+    // interface, whose triangles the vacuum's tetrahedra share (3.9 measured, at 8 per wavelength too).
     let mesh = s.model.mesh.as_ref().unwrap();
     let v = emcraft_mesh::volumes(mesh);
     let mean = |m: u32| {
@@ -227,8 +229,8 @@ fn meshes_follow_the_wavelength_in_each_material() {
     let ratio = mean(0) / mean(1);
     assert!(ratio > 2.5 && ratio < 16.0, "{ratio}");
     // A cap on the size; and a structured guide takes its smallest material's size.
-    let r = s.execute("mesh.generate", &json!({"per_wavelength": 8, "frequency": 12, "size": 2})).unwrap();
-    assert_eq!(r["sizes"]["vacuum"], 2.0);
+    let r = s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 12, "size": 4})).unwrap();
+    assert_eq!(r["sizes"]["vacuum"], 4.0);
     let mut w = Session::new();
     w.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     let r = w.execute("mesh.generate", &json!({"per_wavelength": 10, "frequency": 9})).unwrap();
@@ -299,7 +301,7 @@ fn a_part_of_several_bodies_lies_in_air_each_metal_unless_named() {
     let Some(emcraft_model::Solid { shape: emcraft_model::Shape::Box { size }, .. }) = &s.model.solid else { panic!("{:?}", s.model.solid) };
     assert!((size.x - 0.02).abs() < 1e-12 && (size.z - 0.02).abs() < 1e-12, "{size:?}");
     // It meshes: the post a hole, the puck its own region.
-    let m = s.execute("mesh.generate", &json!({"size": 2})).unwrap();
+    let m = s.execute("mesh.generate", &json!({"size": 4})).unwrap();
     assert!(m["tetrahedra"].as_u64().unwrap() > 100, "{m}");
     let mats: std::collections::BTreeSet<u32> = s.model.mesh.as_ref().unwrap().tet_material.iter().copied().collect();
     assert_eq!(mats.len(), 2);

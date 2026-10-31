@@ -186,12 +186,13 @@ fn hostile_losses_are_refused_or_stay_stable() {
     m.materials[1].loss_tangent = -0.1;
     assert!(s_parameters(&m, &Options::new(0.003), &[10e9]).is_err());
     // The largest loss tangent the model takes: a slab all but metal, stable at the usual step
-    // (the field it lets in diffuses for a long time on the grid: a run cut short).
+    // (the field it lets in diffuses for a long time on the grid: a run cut short, at 10 000
+    // steps, long past where an unstable update would have grown without bound).
     let metal = Material::new("metal", 1.0, 1.0).unwrap().with_loss_tangent(emcraft_model::material::MAX_LOSS_TANGENT).unwrap();
     let metal_m = Material::new("metal_m", 1.0, 1.0).unwrap().with_magnetic_loss_tangent(emcraft_model::material::MAX_LOSS_TANGENT).unwrap();
     for (name, x) in [("metal", metal), ("metal_m", metal_m)] {
         let m = guide(vec![x], vec![Section::new(0.01, "vacuum"), Section::new(0.006, name), Section::new(0.01, "vacuum")]);
-        let r = s_parameters(&m, &Options { max_steps: 20_000, ..Options::new(0.003) }, &[9e9, 11e9]).unwrap();
+        let r = s_parameters(&m, &Options { max_steps: 10_000, ..Options::new(0.003) }, &[9e9, 11e9]).unwrap();
         // |S11| within the coarse grid's error of 1 (0.99 at 1.5 mm).
         assert!(r.s21.iter().all(|s| s.norm() < 1e-3) && r.s11.iter().all(|s| s.norm() < 1.05), "{name}: {r:?}");
     }

@@ -68,35 +68,52 @@ fn worst(a: &OpenRun, b: &OpenRun) -> f64 {
     w.max(((fx.0 - fy.0).norm() + (fx.1 - fy.1).norm()) / (fy.0.norm() + fy.1.norm()))
 }
 
+/// One device run at a time: CubeCL's CPU runtime keeps threads of its own, and runs side by
+/// side oversubscribe the machine (as in tests/guide.rs).
+static DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn on(m: &Model, o: &OpenOptions, freqs: &[f64], backend: Backend, precision: Precision) -> OpenRun {
+    let _one = DEVICE.lock().unwrap_or_else(|e| e.into_inner());
     let t = Instant::now();
     let r = radiate_with(m, o, freqs, Some(&Gpu { backend, precision })).unwrap();
     eprintln!("{backend} {precision}: {} steps in {:.2?}", r.steps, t.elapsed());
     r
 }
 
+/// `m` on CubeCL's CPU runtime in `precision` against the threads, cut short (the runtime
+/// launches slowly: 400 steps, two batches, of a coarse box). The largest difference, and
+/// whether the steps were the same. Each precision is a test of its own.
+fn gap(m: &Model, precision: Precision) -> (f64, bool) {
+    let freqs = [9e9, 11e9];
+    let o = OpenOptions { max_steps: 400, ..OpenOptions::new(2e-3) };
+    let cpu = radiate(m, &o, &freqs).unwrap();
+    let r = on(m, &o, &freqs, Backend::Cpu, precision);
+    (worst(&r, &cpu), r.steps == cpu.steps)
+}
+
 #[test]
 fn the_cpu_backend_matches_the_threads_in_the_open() {
-    // CubeCL's CPU runtime launches slowly: 400 steps (two batches) of a coarse box.
-    let (m, freqs) = (antennas(0.04), [9e9, 11e9]);
-    let o = OpenOptions { max_steps: 400, ..OpenOptions::new(2e-3) };
-    let cpu = radiate(&m, &o, &freqs).unwrap();
-    let double = on(&m, &o, &freqs, Backend::Cpu, Precision::Double);
-    assert_eq!(double.steps, cpu.steps);
-    assert!(worst(&double, &cpu) < 1e-8, "{:e}", worst(&double, &cpu));
-    let single = on(&m, &o, &freqs, Backend::Cpu, Precision::Single);
-    assert!(worst(&single, &cpu) < 1e-3, "{:e}", worst(&single, &cpu));
+    let (w, same_steps) = gap(&antennas(0.04), Precision::Double);
+    assert!(same_steps);
+    assert!(w < 1e-8, "{w:e}");
+}
+
+#[test]
+fn the_cpu_backend_in_single_precision_matches_the_threads_in_the_open_to_its_precision() {
+    let (w, _) = gap(&antennas(0.04), Precision::Single);
+    assert!(w < 1e-3, "{w:e}");
 }
 
 #[test]
 fn lossy_dispersive_and_magnetic_materials_in_the_open_match_the_threads() {
-    let (m, freqs) = (loaded(0.04), [9e9, 11e9]);
-    let o = OpenOptions { max_steps: 400, ..OpenOptions::new(2e-3) };
-    let cpu = radiate(&m, &o, &freqs).unwrap();
-    let double = on(&m, &o, &freqs, Backend::Cpu, Precision::Double);
-    assert!(worst(&double, &cpu) < 1e-8, "{:e}", worst(&double, &cpu));
-    let single = on(&m, &o, &freqs, Backend::Cpu, Precision::Single);
-    assert!(worst(&single, &cpu) < 1e-3, "{:e}", worst(&single, &cpu));
+    let (w, _) = gap(&loaded(0.04), Precision::Double);
+    assert!(w < 1e-8, "{w:e}");
+}
+
+#[test]
+fn lossy_dispersive_and_magnetic_materials_in_single_precision_match_the_threads_to_its_precision() {
+    let (w, _) = gap(&loaded(0.04), Precision::Single);
+    assert!(w < 1e-3, "{w:e}");
 }
 
 #[test]

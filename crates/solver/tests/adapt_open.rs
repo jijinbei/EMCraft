@@ -92,7 +92,8 @@ fn a_dielectric_scatterers_incident_field_is_its_source() {
     m.add_material(emcraft_model::Material::new("glass", 4.0, 1.0).unwrap()).unwrap();
     m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.02, 0.02, 0.02), material: Some("glass".into()) }).unwrap();
     m.add_source(Source::PlaneWave { direction: Vec3::unit(2), polarization: Vec3::unit(0) }).unwrap();
-    let m = meshed(m, 0.006);
+    // 8 mm cells, for speed: half the tetrahedra of 6 mm, the gap still wide.
+    let m = meshed(m, 0.008);
     let d = Driven::open(&m, Order::Two).unwrap();
     let r = d.solve_open(&m, F).unwrap();
     assert!(r.lifted.is_empty(), "no conductor");
@@ -107,6 +108,6 @@ fn a_dielectric_scatterers_incident_field_is_its_source() {
     let near = |e: &[f64]| {
         (0..mesh.tets.len()).filter(|&t| mesh.centroid(t).unwrap().distance(Point3::new(0.02, 0.02, 0.02)) < 0.005).map(|t| e[t]).sum::<f64>()
     };
-    // Measured 143 times.
+    // Measured 51 times (143 at 6 mm).
     assert!(near(&unforced) > 30.0 * near(&eta), "{:e} {:e}", near(&eta), near(&unforced));
 }

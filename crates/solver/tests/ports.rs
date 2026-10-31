@@ -56,9 +56,10 @@ fn a_coaxial_line_transmits_its_tem_wave() {
     // No closed form covers the annulus, so its ports take the numerical modes: TEM first,
     // S21 = e^{−jk√εr L}, nothing reflected. The cross-section's triangles bend with the
     // volume's onto the conductors (straight ones, a polygon in a curved guide, reflect 5e-3):
-    // |S11| 6e-5, the phase within 7e-5 rad at 2 mm.
-    let length = 0.01;
-    let d = Driven::new(&coax(length, 0.002), Order::Two).unwrap();
+    // |S11| 6e-5, the phase within 7e-5 rad at 2 mm over 10 mm; 2e-5 and 2e-5 over the 4 mm
+    // at 2.5 mm cells here, half the time (the accuracy at length is the oracle's coaxial-line).
+    let length = 0.004;
+    let d = Driven::new(&coax(length, 0.0025), Order::Two).unwrap();
     let f = 3.0e9;
     let r = d.solve(f).unwrap();
     let beta = 2.0 * std::f64::consts::PI * f / emcraft_model::units::C0 * 2.1f64.sqrt();
@@ -167,7 +168,10 @@ fn microstrip(a: f64, b: f64, h: f64, w: f64, er: f64, length: f64, size: f64) -
 }
 
 #[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn a_microstrip_has_hammerstad_and_jensens_effective_permittivity() {
+    // Heavy: three fine cross-sections. In the gate, the 50 Ω strip's port mode is
+    // strip_lines_have_their_closed_form_impedances; its ε_eff is the oracle's microstrip-eps-eff.
     // Alumina (εr = 9.8, h = 0.635 mm) at 1 GHz (quasi-static) in a box far from the strip (the
     // cover 38 substrates up, the side walls 12 strip widths away each side): the quasi-TEM
     // mode's (β/k₀)² against the fit (itself within 0.2 %), for a narrow, a 50 Ω and a wide
@@ -261,9 +265,10 @@ fn coupled_strips_have_cohns_even_and_odd_impedances() {
 fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
     // The coaxial line (Z₀ = η₀ ln 3.5/(2π√2.1) = 51.8 Ω) between 50 Ω references: a mismatched
     // line, S11 = Γ(1 − e^{−2jβL})/(1 − Γ²e^{−2jβL}), S21 = (1 − Γ²)e^{−jβL}/(1 − Γ²e^{−2jβL}),
-    // Γ = (Z₀ − 50)/(Z₀ + 50).
-    let length = 0.01;
-    let mut m = coax(length, 0.002);
+    // Γ = (Z₀ − 50)/(Z₀ + 50). A 4 mm line at 2.5 mm cells, for speed (10 mm at 2 mm: the
+    // oracle's coaxial-line-50-ohm).
+    let length = 0.004;
+    let mut m = coax(length, 0.0025);
     m.ports.iter_mut().for_each(|p| p.reference = Some(50.0));
     let d = Driven::new(&m, Order::Two).unwrap();
     let f = 6e9;
@@ -287,10 +292,10 @@ fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
 
 #[test]
 fn a_fast_sweep_matches_the_full_one() {
-    // The high-pass filter over 5–9 GHz in 41 points: the reduced-basis sweep against a full solve
+    // The high-pass filter over 5–9 GHz in 21 points: the reduced-basis sweep against a full solve
     // at every point, with fewer factorisations.
     let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::Two).unwrap();
-    let freqs: Vec<f64> = (0..41).map(|i| 5e9 + 4e9 * i as f64 / 40.0).collect();
+    let freqs: Vec<f64> = (0..21).map(|i| 5e9 + 4e9 * i as f64 / 20.0).collect();
     let fast = emcraft_solver::sweep::fast_sweep(&d, &freqs, &Default::default()).unwrap();
     let solved = fast.full.iter().filter(|f| **f).count();
     let mut worst: f64 = 0.0;
@@ -302,8 +307,8 @@ fn a_fast_sweep_matches_the_full_one() {
             }
         }
     }
-    // Measured: 6 full solves, |ΔS| 5e-11 (the error goes about as the residual squared: 8 solves
-    // and 4e-14 at a residual of 1e-6).
+    // Measured: 6 full solves, |ΔS| 6e-11 (5e-11 in 41 points; the error goes about as the
+    // residual squared: 8 solves and 4e-14 at a residual of 1e-6).
     assert!(worst < 1e-8, "{worst:e}");
     assert!(solved <= 8, "{solved}");
 }
