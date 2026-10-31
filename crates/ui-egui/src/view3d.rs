@@ -22,6 +22,7 @@ use crate::handle::{Fixed, Handle};
 use crate::lang::{self, args, tr, trf};
 use crate::navigation::{NavMode, Navigator, OrbitAround};
 use crate::scene3d::{self, Built, Overlay};
+use crate::selection::{self, BoxSel};
 use crate::state::FieldState;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Picture, UiExt, scenario};
@@ -38,7 +39,7 @@ struct SceneKey {
     revision: u64,
     overlay: Overlay,
     field: Option<FieldKey>,
-    highlighted: Option<scene3d::Pick>,
+    highlighted: Vec<scene3d::Pick>,
     theme: crate::theme::ThemeKey,
     /// The language its labels and legend are in.
     language: &'static str,
@@ -112,8 +113,8 @@ pub struct View3d {
     cut: Option<(SceneKey, Cut, Built)>,
     /// The field view's plane in the scene built, when it shows one.
     facing: Option<Facing>,
-    /// The browser row of the selection, at the session's revision.
-    picked: Option<((u64, scene3d::Pick), Option<(String, crate::browser::Row)>)>,
+    /// The browser rows of the selection, for the session's revision and the selection.
+    picked: Option<((u64, Vec<scene3d::Pick>), Vec<(String, crate::browser::Row)>)>,
     picture: Option<(Key, Picture)>,
     /// Milliseconds the last picture took, and its size.
     pub last_ms: f64,
@@ -121,8 +122,11 @@ pub struct View3d {
     pub dragging: bool,
     /// Fit on the next frame.
     pub fit_next: bool,
-    /// What is selected (by a click in the view or on its browser row), highlighted.
-    pub selected: Option<scene3d::Pick>,
+    /// What is selected (by a click or a box in the view, or on its browser rows), in the order
+    /// it was, highlighted; the last is the one a click took last.
+    pub selected: Vec<scene3d::Pick>,
+    /// The box being dragged (a plain left drag), in screen points.
+    pub boxsel: Option<BoxSel>,
     /// What a row elsewhere (the port-mode table) points at while hovered: highlighted for one
     /// frame instead of the selection, which it leaves alone.
     pub hover: Option<scene3d::Pick>,
@@ -166,7 +170,8 @@ impl Default for View3d {
             last_size: [0, 0],
             dragging: false,
             fit_next: false,
-            selected: None,
+            selected: Vec::new(),
+            boxsel: None,
             hover: None,
             drawn_on_gpu: false,
             left: None,
@@ -255,8 +260,16 @@ impl View3d {
     }
 
     /// What is drawn highlighted: the hovered row's part, else the selection.
-    pub fn highlighted(&self) -> Option<scene3d::Pick> {
-        self.hover.or(self.selected)
+    pub fn highlighted(&self) -> Vec<scene3d::Pick> {
+        self.hover.map_or_else(|| self.selected.clone(), |h| vec![h])
+    }
+
+    /// The only part selected, when one is.
+    pub fn single(&self) -> Option<scene3d::Pick> {
+        match self.selected[..] {
+            [p] => Some(p),
+            _ => None,
+        }
     }
 
     /// Turns to a standard view (animated); the home (isometric) view also frames the model.
@@ -329,7 +342,9 @@ impl View3d {
             "projection": match c.projection { Projection::Perspective => "perspective", Projection::Orthographic => "orthographic" },
             "overlay": b.map(|x| x.0), "triangles": b.map(|x| x.1), "lines": b.map(|x| x.2),
             "ms": self.last_ms, "size": self.last_size,
-            "selected": self.selected.map(|p| format!("{p:?}")),
+            "selected": self.selected.last().map(|p| format!("{p:?}")),
+            "selection": self.selected.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>(),
+            "box": self.boxsel.map(|b| serde_json::json!({"crossing": b.crossing, "rect": [b.rect.min.x, b.rect.min.y, b.rect.max.x, b.rect.max.y]})),
             "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
             "animating": self.animating(),
@@ -403,12 +418,13 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     if overlay == Overlay::Field {
         publish_plane(app, &v.camera, field, rect, bounds);
     }
-    let picked = picked_row(app, v);
-    if edit.clicked {
-        out.push(Action::Select { row: picked.as_ref().map(|(k, _)| k.clone()), pick: v.selected });
+    let picked = picked_rows(app, v);
+    if edit.select {
+        out.push(Action::Select { row: picked.last().map(|(k, _)| k.clone()), picks: v.selected.clone() });
     }
+    let single = picked.first().filter(|_| v.single().is_some());
     if edit.double
-        && let Some((_, row)) = &picked
+        && let Some((_, row)) = single
         && !app.busy()
     {
         out.extend(row.edit_action());
@@ -420,9 +436,22 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     labels(&p, rect, &v.camera, &built.labels, t);
     legend(&p, rect, &built.legend, t);
     crate::tools3d::draw(app, v, &p, rect);
-    if let Some((_, row)) = &picked {
-        let card = selection_card(ui, &p, rect, row, !app.busy(), t, out);
+    if let Some(b) = v.boxsel {
+        paint_box(&p, b, t);
+    }
+    if let Some((_, row)) = single {
+        let hint = if row.editable() && row.item.is_none() { tr("  ·  double-click to edit") } else { "" };
+        let text = format!("{}{hint}", row.shown.trim());
+        let item = row.item.clone();
+        let card = Card { edit: item.clone().map(Action::EditItem), delete: item.map(|i| Action::DeleteItems(vec![i])) };
+        let card = selection_card(ui, &p, rect, &text, card, !app.busy(), t, out);
         crate::tools3d::ref_field(app, v, ui, card.center_bottom(), out);
+    } else if v.selected.len() > 1 {
+        // Several parts: how many, and Delete for those that are items of the model.
+        let items: Vec<crate::browser::Item> = picked.iter().filter_map(|(_, r)| r.item.clone()).collect();
+        let text = trf("{n} selected", args!(n = v.selected.len()));
+        let card = Card { edit: None, delete: (!items.is_empty()).then_some(Action::DeleteItems(items)) };
+        selection_card(ui, &p, rect, &text, card, !app.busy(), t, out);
     }
     let facing = v.facing.map(|f| facing_plane(app.session.display().length, bounds.0, f));
     match app.prefs.navigator() {
@@ -515,24 +544,29 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     };
     let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at }).collect();
     v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
-    v.built = Some((key, scene3d::build_with(&app.session, overlay, &fl, v.highlighted())));
+    let built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
+    v.built = Some((key, built));
     v.generation = v.generation.wrapping_add(1);
 }
 
-/// The browser row of what is selected in the view (looked up again only when the selection or
-/// the session changed).
-fn picked_row(app: &EmcraftApp, v: &mut View3d) -> Option<(String, crate::browser::Row)> {
-    let key = (app.revision, v.selected?);
-    if v.picked.as_ref().is_none_or(|(k, _)| *k != key) {
-        let row = crate::browser::row_of(app, key.1);
-        v.picked = Some((key, row));
+/// The browser rows of what is selected in the view, in its order (looked up again only when the
+/// selection or the session changed).
+fn picked_rows(app: &EmcraftApp, v: &mut View3d) -> Vec<(String, crate::browser::Row)> {
+    if v.selected.is_empty() {
+        return Vec::new();
     }
-    v.picked.as_ref().and_then(|(_, row)| row.clone())
+    let key = (app.revision, v.selected.clone());
+    if v.picked.as_ref().is_none_or(|(k, _)| *k != key) {
+        let rows = crate::browser::rows_of(app, &key.1);
+        v.picked = Some((key, rows));
+    }
+    v.picked.as_ref().map(|(_, rows)| rows.clone()).unwrap_or_default()
 }
 
 /// What the pointer asked of the view this frame.
 struct Gesture {
-    clicked: bool,
+    /// The selection changed (a click or a box).
+    select: bool,
     /// A double-click on something picked: edit it.
     double: bool,
     /// The pointer's move this frame while dragging the field view's plane.
@@ -566,15 +600,23 @@ fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Ges
     if edit.tool_click && !app.busy() {
         crate::tools3d::click(app, v, out);
     }
-    escape(app, v, ui);
+    escape(app, v, ui, out);
 }
 
-/// Escape clears what a tool picked, then turns it off (while no dialog or field takes the key).
-fn escape(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui) {
+/// Escape drops a box being dragged, clears what a tool picked, then turns it off; with no tool
+/// on it clears the selection (while no dialog, menu or field takes the key).
+fn escape(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, out: &mut Actions) {
     let idle = app.dialog.is_none() && app.settings.is_none() && app.files.prompt.is_none() && !ui.ctx().text_edit_focused();
-    let any = v.tools.tool.is_some() || v.tools.measured.is_some();
-    if idle && any && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if !idle || !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        return;
+    }
+    if v.boxsel.take().is_some() {
+        v.left = None;
+    } else if v.tools.tool.is_some() || v.tools.measured.is_some() {
         v.tools.escape();
+    } else if (!v.selected.is_empty() || app.browser.selected.is_some()) && !egui::Popup::is_any_open(ui.ctx()) {
+        v.selected.clear();
+        out.push(Action::Select { row: None, picks: Vec::new() });
     }
 }
 
@@ -604,6 +646,9 @@ enum LeftDrag {
     Plane,
     /// Navigates; `shift` when the press needed Shift (so Shift does not also snap).
     Nav(NavMode, bool),
+    /// Draws a selection box (on empty space or on the model, no navigation bound); `add` when
+    /// Shift was held at the press (adds to what is selected).
+    Box { add: bool },
 }
 
 /// An arrow key turning the view that is still down.
@@ -773,15 +818,29 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
             Some(LeftDrag::Nav(m, mods.shift))
         } else if ctrl && !mods.shift && !mods.alt {
             Some(LeftDrag::Nav(NavMode::Orbit, false))
+        } else if v.tools.tool.is_none() {
+            Some(LeftDrag::Box { add: mods.shift })
         } else {
             None
         };
         grip_drag.started = v.left == Some(LeftDrag::Grip);
     }
     grip_drag.released = v.left == Some(LeftDrag::Grip) && !resp.dragged();
+    // The box follows the pointer from the press; let go, it selects.
+    let mut select = false;
+    if let Some(LeftDrag::Box { add }) = v.left {
+        if resp.dragged() {
+            v.boxsel = press.zip(latest).map(|(a, b)| BoxSel::from_drag(a, b)).filter(|b| b.rect.is_finite());
+        } else if let Some(b) = v.boxsel.take() {
+            box_select(v, rect, b, add);
+            select = true;
+        }
+    }
     if !resp.dragged() {
         v.left = None;
+        v.boxsel = None;
     }
+    let boxing = matches!(v.left, Some(LeftDrag::Box { .. }));
     let d = resp.drag_delta();
     let plane_drag = (v.left == Some(LeftDrag::Plane) && resp.dragged()).then_some(d);
     grip_drag.moved = (v.left == Some(LeftDrag::Grip) && resp.dragged()).then_some(d);
@@ -871,26 +930,62 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
     if !orbiting && !(v.gesture && v.orbit.is_some()) {
         v.orbit = None;
     }
-    v.dragging = resp.dragged() || orbiting;
+    // A box leaves the picture as it is.
+    v.dragging = (resp.dragged() && !boxing) || orbiting;
     if resp.double_clicked_by(egui::PointerButton::Middle) && inside {
         v.goal = Some(if nav.middle_double_fits { Goal::Fit } else { Goal::Home });
     }
     let mut double = false;
     if v.tools.tool.is_some() {
-        return Gesture { clicked: false, double, plane_drag, grip: grip_drag, tool_click: resp.clicked() };
+        return Gesture { select: false, double, plane_drag, grip: grip_drag, tool_click: resp.clicked() };
     }
     if (resp.clicked() || resp.double_clicked())
         && let Some(pos) = resp.interact_pointer_pos()
     {
-        v.selected = v.pick_at(rect, pos);
+        let pick = v.pick_at(rect, pos);
         if resp.double_clicked() {
-            match v.selected {
+            v.selected = pick.into_iter().collect();
+            match pick {
                 Some(_) => double = true,
                 None => v.goal = Some(Goal::Fit),
             }
+        } else if mods.shift || ctrl {
+            // Shift or Ctrl toggles the part (on nothing, the selection stays), as in SolidCraft.
+            if let Some(p) = pick {
+                selection::toggle(&mut v.selected, p);
+            }
+        } else {
+            v.selected = pick.into_iter().collect();
         }
     }
-    Gesture { clicked: resp.clicked(), double, plane_drag, grip: grip_drag, tool_click: false }
+    Gesture { select: select || resp.clicked(), double, plane_drag, grip: grip_drag, tool_click: false }
+}
+
+/// Selects the parts the box `b` (screen points over the view in `rect`) takes, added to what is
+/// selected when `add` (Shift held), else instead of it.
+fn box_select(v: &mut View3d, rect: Rect, b: BoxSel, add: bool) {
+    let local = BoxSel { rect: b.rect.translate(-rect.min.to_vec2()), crossing: b.crossing };
+    let picks =
+        v.shown().map(|s| selection::boxed(&s.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height()), local)).unwrap_or_default();
+    if !add {
+        v.selected.clear();
+    }
+    selection::add(&mut v.selected, &picks);
+}
+
+/// The selection box: by window a solid outline, by crossing a dashed one in another colour, as
+/// SolidCraft draws them.
+fn paint_box(p: &egui::Painter, b: BoxSel, t: &Tokens) {
+    let ink = if b.crossing { t.success } else { t.accent };
+    p.rect_filled(b.rect, 0.0, ink.gamma_multiply(0.12));
+    if b.crossing {
+        let c = [b.rect.left_top(), b.rect.right_top(), b.rect.right_bottom(), b.rect.left_bottom()];
+        for i in 0..4 {
+            p.extend(egui::Shape::dashed_line(&[c[i], c[(i + 1) % 4]], Stroke::new(1.2, ink), 6.0, 4.0));
+        }
+    } else {
+        p.rect_stroke(b.rect, 0.0, Stroke::new(1.2, ink), egui::StrokeKind::Inside);
+    }
 }
 
 /// Whether the keys are the 3D view's: no field, menu, dialog card's field, search or page
@@ -1036,26 +1131,32 @@ fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]
     }
 }
 
-/// The selection's name on a card at the top, with how to edit it; an item of the model (a
-/// port, a body) gets Edit and Delete beside its name.
-fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate::browser::Row, enabled: bool, t: &Tokens, out: &mut Actions) -> Rect {
-    let item = row.item.clone();
-    let hint = if row.editable() && item.is_none() { tr("  ·  double-click to edit") } else { "" };
-    let g = p.layout_no_wrap(format!("{}{hint}", row.shown.trim()), FontId::proportional(t.font_small), t.text);
+/// What a selection card's buttons do: Edit (one item of the model), Delete (its items).
+struct Card {
+    edit: Option<Action>,
+    delete: Option<Action>,
+}
+
+/// The selection on a card at the top: its name (or how many parts), with Edit and Delete beside
+/// it for items of the model (a port, a body).
+fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, text: &str, card: Card, enabled: bool, t: &Tokens, out: &mut Actions) -> Rect {
+    let g = p.layout_no_wrap(text.to_owned(), FontId::proportional(t.font_small), t.text);
     let (size, pitch) = (20.0, 24.0);
-    let buttons = if item.is_some() { 2.0 * pitch + 4.0 } else { 0.0 };
+    let actions: Vec<(Glyph, Fixed, &str, Action)> = [
+        card.edit.map(|a| (Glyph::Edit, Fixed::View3dSelectedEdit, "Edit", a)),
+        card.delete.map(|a| (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete", a)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let buttons = if actions.is_empty() { 0.0 } else { actions.len() as f32 * pitch + 4.0 };
     let width = g.size().x + 20.0 + buttons;
     let r = Rect::from_min_size(pos2(rect.center().x - width / 2.0, rect.top() + 10.0), vec2(width, g.size().y.max(size) + 10.0));
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
     p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
     p.galley(pos2(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, t.text);
     scenario::publish_target(Fixed::View3dSelected, r);
-    let Some(item) = item else { return r };
     let mut x = r.right() - buttons;
-    let actions: [(Glyph, Fixed, &str, fn(crate::browser::Item) -> Action); 2] = [
-        (Glyph::Edit, Fixed::View3dSelectedEdit, "Edit", Action::EditItem),
-        (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete", Action::DeleteItem),
-    ];
     for (glyph, handle, tip, action) in actions {
         let b = Rect::from_center_size(pos2(x + pitch / 2.0, r.center().y), vec2(size, size));
         let resp = ui.hit(b, handle.into(), if enabled { Sense::click() } else { Sense::hover() });
@@ -1064,7 +1165,7 @@ fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate:
         }
         glyphs::paint(p, b.shrink(2.0), glyph, if enabled { t.text } else { t.text_dim }, t.accent);
         if resp.hint(tip).clicked() && enabled {
-            out.push(action(item.clone()));
+            out.push(action);
         }
         x += pitch;
     }

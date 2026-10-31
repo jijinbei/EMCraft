@@ -453,7 +453,7 @@ pub fn click(app: &EmcraftApp, v: &mut View3d, out: &mut Actions) {
         Tool::Port => match hover.port {
             Some(PortTarget::Existing(i)) => {
                 let row = crate::browser::row_of(app, Pick::Port(i)).map(|(k, _)| k);
-                out.push(Action::Select { row, pick: Some(Pick::Port(i)) });
+                out.push(Action::Select { row, picks: vec![Pick::Port(i)] });
             }
             Some(PortTarget::End(end)) => out.push(Action::run("model.port.create", json!({"name": next_name(m), "end": end.id()}))),
             Some(PortTarget::Inside { axis, face, end }) => {
@@ -518,7 +518,7 @@ impl RefPlane {
 
 /// The reference plane of the selected port (as dragged, while it is).
 pub fn ref_plane(app: &EmcraftApp, v: &View3d) -> Option<RefPlane> {
-    let Some(Pick::Port(i)) = v.selected else { return None };
+    let [Pick::Port(i)] = v.selected[..] else { return None };
     let m = app.session.model();
     let p = m.ports.get(i)?;
     let face = crate::scene3d::port_quad(m, p)?;

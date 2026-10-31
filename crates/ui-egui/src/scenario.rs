@@ -7,7 +7,8 @@
 //! - `{"call": "ui.start", "params": {…}, "fail"?: true}`: any control request (`fail`: it must
 //!   be refused)
 //! - `{"click": AT, "double"?: true}`, `{"move": AT}`, `{"drag": [AT, AT], "button"?, "ctrl"?,
-//!   "shift"?, "alt"?}` where AT is `[x, y]`
+//!   "shift"?, "alt"?, "press"?, "release"?}` (false: the button already down, left down) where
+//!   AT is `[x, y]`
 //!   or a published handle's name (`"toolbar:mesh.generate"`, `"tab:SIMULATE"`, `"row:…"`), or
 //!   `{"handle": name, "offset": [dx, dy]}`
 //! - `{"widget": "Label"}`: click the widget whose accessible label is that text
@@ -268,7 +269,7 @@ impl Harness {
             let [x0, y0] = self.at(d.get(0).unwrap_or(&Value::Null))?;
             let [x1, y1] = self.at(d.get(1).unwrap_or(&Value::Null))?;
             let button = s.get("button").cloned().unwrap_or(json!("left"));
-            self.call("ui.drag", json!({"x0": x0, "y0": y0, "x1": x1, "y1": y1, "steps": 8, "button": button, "ctrl": flag("ctrl"), "shift": flag("shift"), "alt": flag("alt")}))
+            self.call("ui.drag", json!({"x0": x0, "y0": y0, "x1": x1, "y1": y1, "steps": 8, "button": button, "ctrl": flag("ctrl"), "shift": flag("shift"), "alt": flag("alt"), "press": s.get("press").cloned().unwrap_or(json!(true)), "release": s.get("release").cloned().unwrap_or(json!(true))}))
         } else if let Some(text) = s.get("widget").and_then(Value::as_str) {
             let [x, y] = self.widget(text).ok_or_else(|| format!("no widget `{text}` on screen"))?;
             self.call("ui.move", json!({"x": x, "y": y}));

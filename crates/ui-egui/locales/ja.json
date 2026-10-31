@@ -589,6 +589,7 @@
     "{n} h ago": "{n} 時間前",
     "{n} min ago": "{n} 分前",
     "{n} projects": "{n} 件のプロジェクト",
+    "{n} selected": "{n} 個を選択中",
     "{n} source": "波源 {n} 個",
     "{n} sources": "波源 {n} 個",
     "{n} unknowns after the periodic reduction; period {period}": "周期縮約後の未知数 {n}、周期 {period}",

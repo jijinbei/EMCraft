@@ -42,10 +42,11 @@ pub enum Action {
     OpenStep(Option<Step>),
     /// A check's fix: the step that owns `command`, with its dialog.
     Fix(String),
-    /// A browser row (its key `section/text`) or a part in 3D selected; `None` clears.
+    /// A browser row (its key `section/text`) or parts in 3D selected (in order, the last the
+    /// row's); none clears.
     Select {
         row: Option<String>,
-        pick: Option<Pick>,
+        picks: Vec<Pick>,
     },
     /// Folds or unfolds a browser section.
     Fold(String),
@@ -71,8 +72,9 @@ pub enum Action {
     File(FileAction),
     /// Opens an item's edit dialog on its current values (`project.values`).
     EditItem(crate::browser::Item),
-    /// Deletes an item (undoable); a refusal shows as an error.
-    DeleteItem(crate::browser::Item),
+    /// Deletes items, each by its command in turn (each undoable); a refusal stops there and
+    /// shows as an error.
+    DeleteItems(Vec<crate::browser::Item>),
     /// Lets an autosaved copy found on start go (it is deleted).
     DismissRecovery(usize),
     /// Asks where to export the history as a script.
@@ -161,7 +163,7 @@ impl Action {
             self,
             Action::OpenDialog { .. }
                 | Action::EditItem(_)
-                | Action::DeleteItem(_)
+                | Action::DeleteItems(_)
                 | Action::ShowView(_)
                 | Action::Fix(_)
                 | Action::PreviewPortModes
@@ -261,9 +263,9 @@ impl EmcraftApp {
             Action::SetTab(t) => self.tab = t,
             Action::OpenStep(step) => crate::steps::open_step(self, step),
             Action::Fix(command) => crate::steps::fix(self, &command)?,
-            Action::Select { row, pick } => {
+            Action::Select { row, picks } => {
                 self.browser.selected = row;
-                self.view3d.selected = pick;
+                self.view3d.selected = picks;
             }
             Action::Fold(section) => {
                 if self.browser.folded.contains(&section) {
@@ -288,12 +290,15 @@ impl EmcraftApp {
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
             Action::EditItem(item) => self.open_item_dialog(&item)?,
-            Action::DeleteItem(item) => {
-                let r = self.run(item.delete, item.params())?;
-                // What was selected is gone.
+            Action::DeleteItems(items) => {
+                // What was selected is going.
                 self.browser.selected = None;
-                self.view3d.selected = None;
-                return Ok(r);
+                self.view3d.selected.clear();
+                let mut replies = Vec::with_capacity(items.len());
+                for item in items {
+                    replies.push(self.run(item.delete, item.params())?);
+                }
+                return Ok(if replies.len() == 1 { replies.swap_remove(0) } else { Value::Array(replies) });
             }
             Action::DismissRecovery(i) => self.dismiss_recovery(i),
             Action::AskExport => self.export = Some("emcraft-history.json".into()),
