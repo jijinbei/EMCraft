@@ -50,7 +50,7 @@ types changed) find what slipped through.
 |---|---|
 | `emcraft_macros::named_enum!`, `named_serde!`, `Named` | an enum named by text, its ids written once (views, tabs, units, axes, the choices command parameters take, backends): `ALL`, `IDS`, `id`, `label`, `parse` (aliases too), `Display`, its ids checked distinct when it compiles; `named_serde!` reads and writes it by id; `Named` is what generic code knows of one (`Params::pick`, `ParamSpec::one_of(&T::IDS)`) |
 | `emcraft_model::units` | `Unit` (lengths and frequencies to and from SI), the display units |
-| `emcraft_model::quantity` | checked numbers, parsed once where they enter and stored as their type: `Positive`, `Hertz`, `Metres`, `Conductivity` (`MAX_CONDUCTIVITY`), `LossTangent`; `new`, `named`, `TryFrom<f64>`, `get`/`Deref`, serialized as plain numbers; read from command parameters by `Params::checked`, `hertz`, `metres` |
+| `emcraft_model::quantity` | checked numbers, parsed once where they enter and stored as their type: `Positive`, `Hertz`, `Metres`, `Ohms`, `Conductivity` (`MAX_CONDUCTIVITY`), `LossTangent`; `new`, `named`, `TryFrom<f64>`, `get`/`Deref`, arithmetic giving `f64`, serialized as plain numbers; read from command parameters by `Params::checked`, `hertz`, `metres`, `edit_metres`. A box's sides: `shape::BoxSize` (a checked `Vec3`) |
 | `emcraft_model::shape::Axis` | x, y, z with `ALL`, `index`, `from_index`, `name` |
 | `emcraft_model::port::Frame` | a port face's own axes (u, v across it in the order x, y, z; w = u × v): `local`, `global`, `global_vec`, `global_cvec`, `axes`, `across` |
 | `emcraft_model::measure` | `measure(Mark, Mark)`: distance, Δ, the gap and angle between picked points, planes and lines (`geometry.measure`) |

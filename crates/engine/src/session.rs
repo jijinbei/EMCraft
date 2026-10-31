@@ -309,7 +309,7 @@ impl Session {
                 .ports
                 .iter()
                 .enumerate()
-                .map(|(i, p)| SPort { name: p.name.clone(), port: i, terminal: None, reference: p.reference })
+                .map(|(i, p)| SPort { name: p.name.clone(), port: i, terminal: None, reference: p.reference.map(f64::from) })
                 .collect(),
         }
     }
@@ -489,10 +489,10 @@ impl Session {
         let l = self.display.length;
         let w = self.model.waveguide.as_ref().map(|w| {
             json!({
-                "width": l.from_si(w.width), "height": l.from_si(w.height), "length": l.from_si(w.length()),
+                "width": l.from_si(w.width.get()), "height": l.from_si(w.height.get()), "length": l.from_si(w.length()),
                 "sections": w.sections.iter().enumerate().map(|(i, s)| {
                     let a = w.aperture(i).unwrap_or(w.across_x());
-                    json!({"length": l.from_si(s.length), "material": s.material, "aperture": [l.from_si(a.start), l.from_si(a.width)]})
+                    json!({"length": l.from_si(s.length.get()), "material": s.material, "aperture": [l.from_si(a.start), l.from_si(a.width)]})
                 }).collect::<Vec<_>>(),
             })
         });

@@ -163,7 +163,7 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
             let given = p.number_of("face", x)?;
             v[k] = if given == unit.from_si(was[k]) { was[k] } else { unit.to_si(given) };
         }
-        Some(PortFace::from_values(axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), v))
+        Some(PortFace::from_values(axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), v)?)
     } else {
         match (old.face, axis) {
             (Some(f), Some(axis)) => Some(PortFace { axis, ..f }),
@@ -177,7 +177,7 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
         modes: p.integer("modes", 1..=emcraft_model::MAX_PORT_MODES as usize).optional()?.map_or(old.modes, |n| n as u32),
         face,
         mode_solver: p.choice("mode_solver").or(old.mode_solver)?,
-        reference: if p.cleared("impedance") { None } else { p.positive("impedance").optional()?.or(old.reference) },
+        reference: if p.cleared("impedance") { None } else { p.checked("impedance").optional()?.or(old.reference) },
         deembed: p.edit_length("deembed", old.deembed)?,
         terminals: p.choice("terminals").or(old.terminals)?,
     };
@@ -238,7 +238,7 @@ pub fn lumped_edit(s: &mut Session, p: &Params) -> Result<Value> {
         name: p.string("rename").optional()?.unwrap_or(&old.name).to_owned(),
         from: p.edit_point("from", old.from)?,
         to: p.edit_point("to", old.to)?,
-        impedance: p.positive("impedance").or(old.impedance)?,
+        impedance: p.checked("impedance").or(old.impedance)?,
         voltage,
         radius: p.edit_length("radius", old.radius)?,
     };
@@ -276,7 +276,7 @@ pub fn source_edit(s: &mut Session, p: &Params) -> Result<Value> {
             Source::Dipole {
                 at: p.edit_point("at", at)?,
                 direction: p.vector("direction").or(direction)?,
-                length: p.edit_positive_length("length", length)?,
+                length: p.edit_metres("length", length)?,
                 current: p.number("current").or(current)?,
             }
         }

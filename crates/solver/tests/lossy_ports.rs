@@ -12,6 +12,11 @@ use emcraft_model::{End, Material, ModeSolver, Model, Port, Section, Waveguide};
 use emcraft_solver::{Complex64 as C, Driven};
 use emcraft_theory::{Layer, Te10Line};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 
@@ -20,10 +25,10 @@ fn guide(materials: Vec<Material>, sections: Vec<Section>, size: f64, solver: Mo
     for mat in materials {
         m.add_material(mat).unwrap();
     }
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(3).with_mode_solver(solver)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(3).with_mode_solver(solver)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -41,7 +46,7 @@ fn gamma(f: f64, eps_r: f64, tan_d: f64, mu_r: f64, tan_m: f64) -> C {
 fn check_uniform(fill: Material, l: f64, freqs: &[f64], tol: f64) {
     let (er, td, mr, tm) = (fill.eps_r.get(), fill.loss_tangent.get(), fill.mu_r.get(), fill.magnetic_loss_tangent.get());
     for solver in [ModeSolver::Auto, ModeSolver::Numeric] {
-        let m = guide(vec![fill.clone()], vec![Section::new(l, &fill.name)], 0.003, solver);
+        let m = guide(vec![fill.clone()], vec![Section::new(metres(l), &fill.name)], 0.003, solver);
         let d = Driven::new(&m, Order::Two).unwrap();
         for &f in freqs {
             let r = d.solve(f).unwrap();
@@ -83,7 +88,7 @@ fn a_step_from_air_into_a_lossy_filling_matches_the_cascade() {
     // Port 1 in air, port 2 in the lossy filling (both kinds of loss): the TE10 cascade with
     // its waves normalised as the solver's (the unconjugated root of the wave admittances).
     let fill = Material::new("lossy", 2.0, 1.3).unwrap().with_loss_tangent(0.01).unwrap().with_magnetic_loss_tangent(0.02).unwrap();
-    let m = guide(vec![fill], vec![Section::new(0.012, "vacuum"), Section::new(0.02, "lossy")], 0.003, ModeSolver::Auto);
+    let m = guide(vec![fill], vec![Section::new(metres(0.012), "vacuum"), Section::new(metres(0.02), "lossy")], 0.003, ModeSolver::Auto);
     let d = Driven::new(&m, Order::Two).unwrap();
     for f in [8.0e9, 10.0e9, 12.0e9] {
         let line = Te10Line {
@@ -102,8 +107,12 @@ fn a_step_from_air_into_a_lossy_filling_matches_the_cascade() {
 fn magnetic_losses_balance_the_ports() {
     // A slab with magnetic loss between air ports: 1 − |S11|² − |S21|² = ½ωμ₀∫μ″|H|² / P_inc.
     let slab = Material::new("ferrite", 1.0, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
-    let m =
-        guide(vec![slab], vec![Section::new(0.01, "vacuum"), Section::new(0.015, "ferrite"), Section::new(0.01, "vacuum")], 0.004, ModeSolver::Auto);
+    let m = guide(
+        vec![slab],
+        vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.015), "ferrite"), Section::new(metres(0.01), "vacuum")],
+        0.004,
+        ModeSolver::Auto,
+    );
     let d = Driven::new(&m, Order::Two).unwrap();
     for f in [9.0e9, 11.0e9] {
         let r = d.solve(f).unwrap();
@@ -129,7 +138,7 @@ fn magnetic_losses_balance_the_ports() {
 #[test]
 fn a_fast_sweep_handles_lossy_ports_and_magnetic_losses() {
     let fill = Material::new("lossy", 2.0, 1.2).unwrap().with_loss_tangent(0.01).unwrap().with_magnetic_loss_tangent(0.02).unwrap();
-    let m = guide(vec![fill], vec![Section::new(0.01, "vacuum"), Section::new(0.02, "lossy")], 0.005, ModeSolver::Auto);
+    let m = guide(vec![fill], vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "lossy")], 0.005, ModeSolver::Auto);
     let d = Driven::new(&m, Order::One).unwrap();
     let freqs: Vec<f64> = (0..21).map(|i| 8e9 + 2e8 * i as f64).collect();
     let fast = emcraft_solver::sweep::fast_sweep(&d, &freqs, &Default::default()).unwrap();
@@ -146,7 +155,7 @@ fn de_embedding_a_lossy_line_uses_its_attenuation() {
     // Moving both reference planes in by d along the lossy line: S21′ = S21 e^{2γd} = e^{−γ(L − 2d)}.
     let fill = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.05).unwrap();
     let (l, dz) = (0.03, 0.005);
-    let mut m = guide(vec![fill], vec![Section::new(l, "lossy")], 0.003, ModeSolver::Auto);
+    let mut m = guide(vec![fill], vec![Section::new(metres(l), "lossy")], 0.003, ModeSolver::Auto);
     for p in &mut m.ports {
         p.deembed = dz;
     }
@@ -162,7 +171,7 @@ fn de_embedding_a_lossy_line_uses_its_attenuation() {
 fn port_modes_report_the_complex_propagation_constant() {
     let fill = Material::new("lossy", 2.2, 1.4).unwrap().with_magnetic_loss_tangent(0.01).unwrap().with_loss_tangent(0.02).unwrap();
     for solver in [ModeSolver::Auto, ModeSolver::Numeric] {
-        let m = guide(vec![fill.clone()], vec![Section::new(0.02, "lossy")], 0.003, solver);
+        let m = guide(vec![fill.clone()], vec![Section::new(metres(0.02), "lossy")], 0.003, solver);
         let f = 10.0e9;
         let modes = emcraft_solver::driven::port_modes(&m, Order::Two, f).unwrap();
         let g = modes[0].1[0].gamma.unwrap();
@@ -178,15 +187,15 @@ fn cavity(fill: Material) -> Model {
     let name = fill.name.clone();
     m.add_material(fill).unwrap();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(0.03, &name)],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(0.03), &name)],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.003)).unwrap().into());
     m
 }
 

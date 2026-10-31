@@ -293,6 +293,7 @@ impl<'a> Params<'a> {
     ///
     /// ```
     /// use emcraft_engine::Params;
+    /// use emcraft_model::Metres;
     /// use emcraft_model::units::Display;
     /// use serde_json::json;
     ///
@@ -300,19 +301,21 @@ impl<'a> Params<'a> {
     /// let shown = Display::default().length.from_si(old); // 22.86 mm
     /// let given = json!({"width": shown, "height": 5, "bad": -1});
     /// let p = Params::new(&given, Display::default());
-    /// assert_eq!(p.edit_positive_length("width", old)?, old);
-    /// assert_eq!(p.edit_positive_length("height", 0.01)?, 0.005);
-    /// assert_eq!(p.edit_positive_length("depth", 0.01)?, 0.01); // left out: kept
-    /// assert!(p.edit_positive_length("bad", 0.01).is_err());
-    /// # Ok::<(), emcraft_engine::EngineError>(())
+    /// assert_eq!(p.edit_length("width", old)?, old);
+    /// assert_eq!(p.edit_length("bad", 0.01)?, -0.001); // any sign
+    /// let cm = Metres::new(0.01)?;
+    /// assert_eq!(p.edit_metres("height", cm)?.get(), 0.005);
+    /// assert_eq!(p.edit_metres("depth", cm)?, cm); // left out: kept
+    /// assert!(p.edit_metres("bad", cm).is_err());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn edit_length(&self, name: &str, old: f64) -> Result<f64> {
         self.edited(name, old, self.display.length.from_si(old), |p| p.length(name).required())
     }
 
     /// An edit's positive length, as [`Params::edit_length`].
-    pub fn edit_positive_length(&self, name: &str, old: f64) -> Result<f64> {
-        self.edited(name, old, self.display.length.from_si(old), |p| p.positive_length(name).required())
+    pub fn edit_metres(&self, name: &str, old: Metres) -> Result<Metres> {
+        self.edited(name, old, self.display.length.from_si(old.get()), |p| p.metres(name).required())
     }
 
     /// An edit's point `[x, y, z]` of lengths, as [`Params::edit_length`] coordinate by
@@ -326,7 +329,7 @@ impl<'a> Params<'a> {
     }
 
     /// `old` when `name` is left out or given as `shown`, else `read` of it.
-    fn edited(&self, name: &str, old: f64, shown: f64, read: impl FnOnce(&Self) -> Result<f64>) -> Result<f64> {
+    fn edited<T>(&self, name: &str, old: T, shown: f64, read: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
         match self.number(name).optional()? {
             None => Ok(old),
             Some(v) if v == shown => Ok(old),

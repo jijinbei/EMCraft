@@ -13,7 +13,7 @@ mod curved;
 mod mesher;
 mod tessellation;
 
-use emcraft_model::{Aabb, Boundary, BoundaryFace, Buckets, Mesh, Model, Point3, Shape, SphericalLayer, Vec3, positive};
+use emcraft_model::{Aabb, Boundary, BoundaryFace, Buckets, Mesh, Metres, Model, Point3, Shape, SphericalLayer, Vec3, positive};
 use emcraft_tetmesh::size::{LocalSize, Region};
 
 use crate::{MeshError, Result, too_large};
@@ -25,7 +25,7 @@ use tessellation::{Tessellation, append, combined, extract, interface_size, join
 /// cylinder's caps) tagged as ports 0 and 1, the rest as conducting walls. Inclusions make holes
 /// in it (conductors) or regions of their own (dielectrics), each meshed on its own with the
 /// shared interface's triangles kept, the regions then joined node for node.
-pub fn solid(model: &Model, size: f64) -> Result<Mesh> {
+pub fn solid(model: &Model, size: Metres) -> Result<Mesh> {
     solid_with(model, &SolidOptions::new(size))
 }
 
@@ -45,7 +45,7 @@ pub struct SolidOptions {
 
 impl SolidOptions {
     /// One size everywhere, edges bent onto curved surfaces, no local refinement.
-    pub fn new(size: f64) -> SolidOptions {
+    pub fn new(size: Metres) -> SolidOptions {
         SolidOptions { sizes: Sizes { default: size, per_material: Vec::new() }, curved: true, refine: Vec::new() }
     }
 }
@@ -54,12 +54,12 @@ impl SolidOptions {
 /// given — a fixed number of elements per wavelength in each material, say.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sizes {
-    pub default: f64,
-    pub per_material: Vec<Option<f64>>,
+    pub default: Metres,
+    pub per_material: Vec<Option<Metres>>,
 }
 
 impl Sizes {
-    pub fn of(&self, material: usize) -> f64 {
+    pub fn of(&self, material: usize) -> Metres {
         self.per_material.get(material).copied().flatten().unwrap_or(self.default)
     }
 }
@@ -134,7 +134,7 @@ fn inclusion_sizes(model: &Model, sizes: &Sizes, size: f64) -> Result<Vec<f64>> 
         .inclusions
         .iter()
         .map(|inc| match &inc.material {
-            Some(name) => Ok(positive("element size", sizes.of(model.material(name)?.0))?),
+            Some(name) => Ok(sizes.of(model.material(name)?.0).get()),
             None => Ok(size),
         })
         .collect()
@@ -163,7 +163,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     let locals = local_sizes(refine)?;
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
-    let size = positive("element size", sizes.of(material))?;
+    let size = sizes.of(material).get();
     let inner_size = inclusion_sizes(model, sizes, size)?;
     let estimate = model.inclusions.iter().zip(&inner_size).fold(tets_in(s.shape.volume(), size), |e, (inc, h)| e + tets_in(inc.shape.volume(), *h));
     too_large(estimate)?;
@@ -174,7 +174,7 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     let layer = spherical_layer(model)?;
     let mut main = match layer {
         Some(SphericalLayer { inner, .. }) => {
-            let ball = Shape::Sphere { radius: inner };
+            let ball = Shape::Sphere { radius: Metres::new(inner)? };
             placed(tessellate(&ball, interface_size(&ball, size, false)), Point3::ORIGIN)
         }
         None => tessellate(&s.shape, size),
@@ -478,10 +478,20 @@ mod tests {
     use emcraft_model::{Axis, Combine};
     use std::f64::consts::PI;
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> emcraft_model::Metres {
+        emcraft_model::Metres::new(v).unwrap()
+    }
+
+    /// A box's sides (m), checked.
+    fn box_size(v: emcraft_model::Vec3) -> emcraft_model::BoxSize {
+        emcraft_model::BoxSize::new(v).unwrap()
+    }
+
     fn mesh_of(shape: Shape, size: f64) -> Mesh {
         let mut m = Model::new();
         m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
-        solid(&m, size).unwrap()
+        solid(&m, metres(size)).unwrap()
     }
 
     fn area(mesh: &Mesh, f: &BoundaryFace) -> f64 {
@@ -494,7 +504,7 @@ mod tests {
 
     #[test]
     fn a_box_is_filled_exactly_with_its_ports_tagged() {
-        let mesh = mesh_of(Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, 0.004);
+        let mesh = mesh_of(Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.03)) }, 0.004);
         let v = crate::volumes(&mesh);
         assert!(v.iter().all(|x| *x > 0.0));
         assert!((v.iter().sum::<f64>() - 6e-6).abs() < 1e-12 * 6e-6 + 1e-15);
@@ -508,7 +518,7 @@ mod tests {
     #[test]
     fn a_cylinder_and_a_sphere_approach_their_volumes() {
         let (r, l) = (0.01, 0.02);
-        let mesh = mesh_of(Shape::Cylinder { radius: r, length: l }, 0.0025);
+        let mesh = mesh_of(Shape::Cylinder { radius: metres(r), length: metres(l) }, 0.0025);
         let v: f64 = crate::volumes(&mesh).iter().sum();
         let exact = PI * r * r * l;
         // Flat facets inscribed in the wall: a few tenths of a percent short.
@@ -521,7 +531,7 @@ mod tests {
                 assert!((rho - r).abs() < 1e-9 || p[2].abs() < 1e-12 || (p[2] - l).abs() < 1e-12, "{p:?}");
             }
         }
-        let sphere = mesh_of(Shape::Sphere { radius: r }, 0.003);
+        let sphere = mesh_of(Shape::Sphere { radius: metres(r) }, 0.003);
         let v: f64 = crate::volumes(&sphere).iter().sum();
         let exact = 4.0 / 3.0 * PI * r.powi(3);
         // Flat facets of about 3 mm inscribed in a 10 mm sphere: 3.7 % short.
@@ -536,13 +546,14 @@ mod tests {
         let (r, d) = (0.02, 0.006);
         let mut m = Model::new();
         m.add_material(Material::new("alumina", 9.8, 1.0).unwrap()).unwrap();
-        m.set_solid(Solid { shape: Shape::Sphere { radius: r }, material: "vacuum".into() }).unwrap();
-        m.set_open(Some(Open { thickness: d, reflection: None, shape: OpenShape::Sphere })).unwrap();
+        m.set_solid(Solid { shape: Shape::Sphere { radius: metres(r) }, material: "vacuum".into() }).unwrap();
+        m.set_open(Some(Open { thickness: metres(d), reflection: None, shape: OpenShape::Sphere })).unwrap();
         if with_inclusion {
-            let ceramic = Inclusion { shape: Shape::Sphere { radius: 0.005 }, at: Point3::new(0.002, 0.0, 0.0), material: Some("alumina".into()) };
+            let ceramic =
+                Inclusion { shape: Shape::Sphere { radius: metres(0.005) }, at: Point3::new(0.002, 0.0, 0.0), material: Some("alumina".into()) };
             m.add_inclusion(ceramic).unwrap();
         }
-        let mesh = solid(&m, 0.004).unwrap();
+        let mesh = solid(&m, metres(0.004)).unwrap();
         let v = crate::volumes(&mesh);
         assert!(v.iter().all(|x| *x > 0.0));
         let exact = 4.0 / 3.0 * PI * r.powi(3);
@@ -582,10 +593,14 @@ mod tests {
         use emcraft_model::{Inclusion, Material};
         let mut m = Model::new();
         m.add_material(Material::new("alumina", 9.8, 1.0).unwrap()).unwrap();
-        m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
-        m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.0, 0.0, 0.0), material: Some("alumina".into()) })
-            .unwrap();
-        let mesh = solid(&m, 0.0025).unwrap();
+        m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.01) }, material: "vacuum".into() }).unwrap();
+        m.add_inclusion(Inclusion {
+            shape: Shape::Sphere { radius: metres(0.004) },
+            at: Point3::new(0.0, 0.0, 0.0),
+            material: Some("alumina".into()),
+        })
+        .unwrap();
+        let mesh = solid(&m, metres(0.0025)).unwrap();
         let v = crate::volumes(&mesh);
         assert!(v.iter().all(|x| *x > 0.0));
         let inner: f64 = v.iter().zip(&mesh.tet_material).filter(|(_, m)| **m == 1).map(|(v, _)| v).sum();
@@ -604,18 +619,20 @@ mod tests {
         // A conductor instead: a hole, its surface a wall.
         let mut c = m.clone();
         c.inclusions[0].material = None;
-        let hole = solid(&c, 0.0025).unwrap();
+        let hole = solid(&c, metres(0.0025)).unwrap();
         assert!(hole.tet_material.iter().all(|m| *m == 0));
         let walls = hole.boundary.len();
         assert!(walls > mesh.boundary.len());
         // Inclusions must lie inside.
-        assert!(m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.008, 0.0, 0.0), material: None }).is_err());
+        assert!(
+            m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: metres(0.004) }, at: Point3::new(0.008, 0.0, 0.0), material: None }).is_err()
+        );
     }
 
     #[test]
     fn edges_on_curved_walls_are_bent_onto_them() {
         let (r, l) = (0.01, 0.02);
-        let mesh = mesh_of(Shape::Cylinder { radius: r, length: l }, 0.003);
+        let mesh = mesh_of(Shape::Cylinder { radius: metres(r), length: metres(l) }, 0.003);
         assert!(!mesh.curved.is_empty() && mesh.curved.windows(2).all(|w| w[0].0 < w[1].0));
         let boundary_edges: std::collections::HashSet<[u32; 2]> = mesh
             .boundary
@@ -653,9 +670,9 @@ mod tests {
         }
         // Straight on request; a box has nothing to bend.
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Cylinder { radius: r, length: l }, material: "vacuum".into() }).unwrap();
-        assert!(solid_with(&m, &SolidOptions { curved: false, ..SolidOptions::new(0.003) }).unwrap().curved.is_empty());
-        assert!(mesh_of(Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, 0.004).curved.is_empty());
+        m.set_solid(Solid { shape: Shape::Cylinder { radius: metres(r), length: metres(l) }, material: "vacuum".into() }).unwrap();
+        assert!(solid_with(&m, &SolidOptions { curved: false, ..SolidOptions::new(metres(0.003)) }).unwrap().curved.is_empty());
+        assert!(mesh_of(Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.03)) }, 0.004).curved.is_empty());
     }
 
     #[test]
@@ -663,17 +680,17 @@ mod tests {
         use emcraft_model::Feature;
         let (a, b, l) = (0.02286, 0.01016, 0.03);
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
         // A post across the guide, flush with both broad walls.
         let r = 0.0015;
         m.add_feature(Feature {
             combine: Combine::Subtract,
-            shape: Shape::Cylinder { radius: r, length: b },
+            shape: Shape::Cylinder { radius: metres(r), length: metres(b) },
             at: Point3::new(a / 2.0, 0.0, l / 2.0),
             axis: Axis::Y,
         })
         .unwrap();
-        let mesh = solid(&m, 0.003).unwrap();
+        let mesh = solid(&m, metres(0.003)).unwrap();
         let v: f64 = crate::volumes(&mesh).iter().sum();
         let exact = a * b * l - PI * r * r * b;
         // Flat facets on the post (12 round): the hole a little smaller than the circle.
@@ -691,29 +708,29 @@ mod tests {
         assert!(mesh.curved.iter().any(|(_, p)| ((p[0] - a / 2.0).hypot(p[2] - l / 2.0) - r).abs() < 1e-12));
         // A stub added on the broad wall: a box standing on it (its foot moved into the guide).
         let mut u = Model::new();
-        u.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        u.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
         u.add_feature(Feature {
             combine: Combine::Add,
-            shape: Shape::Box { size: Vec3::new(0.008, 0.006, 0.01) },
+            shape: Shape::Box { size: box_size(Vec3::new(0.008, 0.006, 0.01)) },
             at: Point3::new(0.007, b, 0.01),
             axis: Axis::Z,
         })
         .unwrap();
-        let v: f64 = crate::volumes(&solid(&u, 0.003).unwrap()).iter().sum();
+        let v: f64 = crate::volumes(&solid(&u, metres(0.003)).unwrap()).iter().sum();
         // Exact but for the features' shift by a millionth of the element size (1e-9 m here,
         // over the stub's 80 mm² foot).
         assert!((v - (a * b * l + 0.008 * 0.006 * 0.01)).abs() < 1e-7 * v, "{v}");
         // Flush faces of a union reaching past the solid's face are refused, not guessed.
         let mut w = Model::new();
-        w.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        w.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
         w.add_feature(Feature {
             combine: Combine::Add,
-            shape: Shape::Box { size: Vec3::new(0.03, b, 0.01) },
+            shape: Shape::Box { size: box_size(Vec3::new(0.03, b, 0.01)) },
             at: Point3::new(0.0, 0.0, 0.01),
             axis: Axis::Z,
         })
         .unwrap();
-        assert!(solid(&w, 0.003).is_err());
+        assert!(solid(&w, metres(0.003)).is_err());
     }
 
     /// A union flush with the solid's faces from inside, its faces within theirs: the solid's
@@ -726,15 +743,15 @@ mod tests {
         let (a, b, l) = (0.02286, 0.01016, 0.03);
         for (height, extra) in [(b, 0.0), (b + 0.006, 0.006)] {
             let mut w = Model::new();
-            w.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+            w.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
             w.add_feature(Feature {
                 combine: Combine::Add,
-                shape: Shape::Box { size: Vec3::new(0.008, height, 0.01) },
+                shape: Shape::Box { size: box_size(Vec3::new(0.008, height, 0.01)) },
                 at: Point3::new(0.007, 0.0, 0.01),
                 axis: Axis::Z,
             })
             .unwrap();
-            let v: f64 = crate::volumes(&solid(&w, 0.003).unwrap()).iter().sum();
+            let v: f64 = crate::volumes(&solid(&w, metres(0.003)).unwrap()).iter().sum();
             let exact = a * b * l + 0.008 * extra * 0.01;
             assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
         }
@@ -761,7 +778,7 @@ mod tests {
         let mut m = Model::new();
         m.set_solid(Solid { shape: imported_box("Guide", [0.0; 3], [a, b, l]), material: "vacuum".into() }).unwrap();
         m.add_feature(Feature { combine: Combine::Subtract, shape, at: Point3::ORIGIN, axis: Axis::Z }).unwrap();
-        let mesh = solid(&m, 0.003).unwrap();
+        let mesh = solid(&m, metres(0.003)).unwrap();
         let v: f64 = crate::volumes(&mesh).iter().sum();
         let exact = a * b * l - 0.5 * (z1 - z0) * h * a;
         assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
@@ -794,7 +811,7 @@ mod tests {
                 m.add_feature(Feature { combine: Combine::Subtract, shape, at: Point3::ORIGIN, axis: Axis::Z }).unwrap();
             }
             let start = std::time::Instant::now();
-            let mesh = solid(&m, 0.003).unwrap();
+            let mesh = solid(&m, metres(0.003)).unwrap();
             assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
             // The crossings' points on the walls' straight creases collapsed: no tiny segments.
             assert!(mesh.tets.len() < 4000, "{}", mesh.tets.len());
@@ -809,7 +826,7 @@ mod tests {
         m.set_solid(Solid { shape: imported_box("Guide", [0.0; 3], [a, b, l]), material: "vacuum".into() }).unwrap();
         let shape = imported_box("Iris", [1e-6, 0.0, 0.015], [0.00543, b, 0.017]);
         m.add_feature(Feature { combine: Combine::Subtract, shape, at: Point3::ORIGIN, axis: Axis::Z }).unwrap();
-        let e = solid(&m, 0.003).unwrap_err().to_string();
+        let e = solid(&m, metres(0.003)).unwrap_err().to_string();
         assert!(e.contains("gap narrower"), "{e}");
     }
 
@@ -818,11 +835,11 @@ mod tests {
     fn stepped_coax(r2: f64) -> Model {
         use emcraft_model::Feature;
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.0035, length: 0.02 }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Cylinder { radius: metres(0.0035), length: metres(0.02) }, material: "vacuum".into() }).unwrap();
         for (radius, z) in [(0.001, 0.0), (r2, 0.01)] {
             m.add_feature(Feature {
                 combine: Combine::Subtract,
-                shape: Shape::Cylinder { radius, length: 0.01 },
+                shape: Shape::Cylinder { radius: metres(radius), length: metres(0.01) },
                 at: Point3::new(0.0, 0.0, z),
                 axis: Axis::Z,
             })
@@ -853,7 +870,7 @@ mod tests {
     /// flat facets on the round walls, both ends whole ports.
     fn stepped_coax_meshes(r2: f64, size: f64) {
         let start = std::time::Instant::now();
-        let mesh = solid(&stepped_coax(r2), size).unwrap_or_else(|e| panic!("r2 {r2}: {e}"));
+        let mesh = solid(&stepped_coax(r2), metres(size)).unwrap_or_else(|e| panic!("r2 {r2}: {e}"));
         assert!(start.elapsed().as_secs() < 60, "r2 {r2}: {:?}", start.elapsed());
         let v: f64 = crate::volumes(&mesh).iter().sum();
         let hole = |r: f64| PI * r * r * 0.01;
@@ -872,32 +889,32 @@ mod tests {
         // Boxes face to face: the same rectangle becomes one box.
         use emcraft_model::Feature;
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.03)) }, material: "vacuum".into() }).unwrap();
         for z in [0.005, 0.01] {
             let f = Feature {
                 combine: Combine::Subtract,
-                shape: Shape::Box { size: Vec3::new(0.004, 0.004, 0.005) },
+                shape: Shape::Box { size: box_size(Vec3::new(0.004, 0.004, 0.005)) },
                 at: Point3::new(0.008, 0.003, z),
                 axis: Axis::Z,
             };
             m.add_feature(f).unwrap();
         }
-        let v: f64 = crate::volumes(&solid(&m, 0.003).unwrap()).iter().sum();
+        let v: f64 = crate::volumes(&solid(&m, metres(0.003)).unwrap()).iter().sum();
         let exact = 0.02 * 0.01 * 0.03 - 0.004 * 0.004 * 0.01;
         assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
         // Cross-sections that overlap without one holding the other are refused at once.
         let mut w = Model::new();
-        w.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.02, 0.01, 0.03) }, material: "vacuum".into() }).unwrap();
+        w.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.03)) }, material: "vacuum".into() }).unwrap();
         for (x, z) in [(0.008, 0.005), (0.010, 0.01)] {
             let f = Feature {
                 combine: Combine::Subtract,
-                shape: Shape::Box { size: Vec3::new(0.004, 0.004, 0.005) },
+                shape: Shape::Box { size: box_size(Vec3::new(0.004, 0.004, 0.005)) },
                 at: Point3::new(x, 0.003, z),
                 axis: Axis::Z,
             };
             w.add_feature(f).unwrap();
         }
-        let e = solid(&w, 0.003).expect_err("overlapping sections are refused");
+        let e = solid(&w, metres(0.003)).expect_err("overlapping sections are refused");
         assert!(e.to_string().contains("reach into"), "{e}");
     }
 
@@ -912,10 +929,10 @@ mod tests {
         let mut one = stepped_coax(0.001);
         one.features.truncate(1);
         if let Some(Shape::Cylinder { length, .. }) = one.features.first_mut().map(|f| &mut f.shape) {
-            *length = 0.02;
+            *length = metres(0.02);
         }
         let digest = |m: &Model| {
-            let mesh = solid(m, size).unwrap();
+            let mesh = solid(m, metres(size)).unwrap();
             (mesh.nodes.len(), mesh.tets.len(), crate::volumes(&mesh).iter().sum::<f64>())
         };
         assert_eq!(digest(&stepped_coax(0.001)), digest(&one));
@@ -923,7 +940,7 @@ mod tests {
 
     #[test]
     fn points_are_located_in_unstructured_meshes() {
-        let mesh = mesh_of(Shape::Cylinder { radius: 0.01, length: 0.02 }, 0.003);
+        let mesh = mesh_of(Shape::Cylinder { radius: metres(0.01), length: metres(0.02) }, 0.003);
         for p in [[0.0, 0.0, 0.01], [0.007, 0.0, 0.001], [-0.003, 0.004, 0.019]].map(Point3::from) {
             let (t, l) = crate::locate(&mesh, p).unwrap();
             assert!(l.iter().all(|x| *x >= -1e-9), "{l:?}");
@@ -941,10 +958,10 @@ mod tests {
         use emcraft_model::Feature;
         let (a, b, l) = (0.02286, 0.01016, 0.03);
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
         m.add_feature(Feature {
             combine: Combine::Subtract,
-            shape: Shape::Cylinder { radius: 0.0015, length: b },
+            shape: Shape::Cylinder { radius: metres(0.0015), length: metres(b) },
             at: Point3::new(a / 2.0, 0.0, l / 2.0),
             axis: Axis::Y,
         })
@@ -989,7 +1006,7 @@ mod tests {
         let m = post_model();
         for h in [0.004, 0.003] {
             let (t, c) = (std::time::Instant::now(), cpu());
-            let mesh = solid(&m, h).unwrap();
+            let mesh = solid(&m, metres(h)).unwrap();
             let (s, c) = (t.elapsed().as_secs_f64(), cpu() - c);
             eprintln!(
                 "post at {} mm: {s:.2} s ({c:.2} s CPU), {} tetrahedra, {} nodes, digest {:016x}",

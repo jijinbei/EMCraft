@@ -54,10 +54,10 @@ fn shape(s: &mut Scene, sh: &Shape, place: &dyn Fn([f64; 3]) -> [f64; 3], color:
                 place([r * a.cos(), r * a.sin(), z])
             };
             for k in 0..ROUND {
-                let (a0, a1, b0, b1) = (at(k, 0.0), at(k + 1, 0.0), at(k, *length), at(k + 1, *length));
+                let (a0, a1, b0, b1) = (at(k, 0.0), at(k + 1, 0.0), at(k, length.get()), at(k + 1, length.get()));
                 s.quad([a0, a1, b1, b0], color, alpha);
                 s.tri(place([0.0, 0.0, 0.0]), a1, a0, color, alpha);
-                s.tri(place([0.0, 0.0, *length]), b0, b1, color, alpha);
+                s.tri(place([0.0, 0.0, length.get()]), b0, b1, color, alpha);
                 s.line(a0, a1, sc().edge, 200);
                 s.line(b0, b1, sc().edge, 200);
             }
@@ -119,7 +119,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
         let mut y = 0.0;
         for (i, layer) in w.layers.iter().enumerate() {
             out.scene.tagged(Pick::Layer(i).tag(), |scene| {
-                cuboid(scene, [0.0, y, 0.0], [w.width, y + layer.thickness, w.length()], tint(&layer.material), 200, true)
+                cuboid(scene, [0.0, y, 0.0], [w.width.get(), y + layer.thickness, w.length()], tint(&layer.material), 200, true)
             });
             y += layer.thickness;
         }

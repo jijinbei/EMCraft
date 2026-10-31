@@ -30,8 +30,8 @@ impl Curved {
     fn of(shape: &Shape, at: Point3, axis: Axis) -> Vec<Curved> {
         match shape {
             Shape::Box { .. } => Vec::new(),
-            Shape::Cylinder { radius, .. } => vec![Curved::Cylinder { c: at, axis: axis.index(), r: *radius }],
-            Shape::Sphere { radius } => vec![Curved::Sphere { c: at, r: *radius }],
+            Shape::Cylinder { radius, .. } => vec![Curved::Cylinder { c: at, axis: axis.index(), r: radius.get() }],
+            Shape::Sphere { radius } => vec![Curved::Sphere { c: at, r: radius.get() }],
             Shape::Surface { .. } => fitted(shape, at, axis),
         }
     }
@@ -227,6 +227,16 @@ mod tests {
 
     use crate::solid::{SolidOptions, solid_with};
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> emcraft_model::Metres {
+        emcraft_model::Metres::new(v).unwrap()
+    }
+
+    /// A box's sides (m), checked.
+    fn box_size(v: emcraft_model::Vec3) -> emcraft_model::BoxSize {
+        emcraft_model::BoxSize::new(v).unwrap()
+    }
+
     /// An imported closed cylinder (axis z through (cx, cy), radius r, z from 0 to l): `n`
     /// facets round, the side in two halves (tags 0, 1) as a CAD kernel splits it at its seam,
     /// the caps tags 2 and 3; with the fitted surfaces when `fitted`.
@@ -269,7 +279,7 @@ mod tests {
         let mesh_of = |fitted: bool| {
             let mut m = Model::new();
             m.set_solid(Solid { shape: imported_cylinder([0.0, 0.0], r, l, 26, fitted), material: "vacuum".into() }).unwrap();
-            solid_with(&m, &SolidOptions::new(size)).unwrap()
+            solid_with(&m, &SolidOptions::new(metres(size))).unwrap()
         };
         let mesh = mesh_of(true);
         // Every boundary node off the caps on the cylinder (the mesher's added ones too), every
@@ -287,8 +297,8 @@ mod tests {
         assert!(mesh.curved.iter().all(|(_, p)| (rho(*p) - r).abs() < 1e-12 * r));
         // As the native cylinder's: about the same edges bent.
         let mut native = Model::new();
-        native.set_solid(Solid { shape: Shape::Cylinder { radius: r, length: l }, material: "vacuum".into() }).unwrap();
-        let native = solid_with(&native, &SolidOptions::new(size)).unwrap();
+        native.set_solid(Solid { shape: Shape::Cylinder { radius: metres(r), length: metres(l) }, material: "vacuum".into() }).unwrap();
+        let native = solid_with(&native, &SolidOptions::new(metres(size))).unwrap();
         let ratio = mesh.curved.len() as f64 / native.curved.len() as f64;
         assert!(ratio > 0.7 && ratio < 1.4, "{} curved edges against {}", mesh.curved.len(), native.curved.len());
         // Faceted without the fit: nothing bent, and the mesher's points on the facets.
@@ -332,7 +342,7 @@ mod tests {
         let mesh_of = |fitted: bool, size: f64| {
             let mut m = Model::new();
             m.set_solid(Solid { shape: imported_torus(big, small, 40, 16, fitted), material: "vacuum".into() }).unwrap();
-            solid_with(&m, &SolidOptions::new(size)).unwrap()
+            solid_with(&m, &SolidOptions::new(metres(size))).unwrap()
         };
         let mesh = mesh_of(true, 0.003);
         let on: Vec<Point3> = mesh.boundary.iter().flat_map(|f| f.nodes).map(|n| mesh.nodes[n as usize]).collect();
@@ -358,7 +368,7 @@ mod tests {
         let error = |fitted: bool, size: f64| {
             let mut m = Model::new();
             m.set_solid(Solid { shape: imported_torus(big, small, 40, 16, fitted), material: "vacuum".into() }).unwrap();
-            let v: f64 = crate::volumes(&solid_with(&m, &SolidOptions::new(size)).unwrap()).iter().sum();
+            let v: f64 = crate::volumes(&solid_with(&m, &SolidOptions::new(metres(size))).unwrap()).iter().sum();
             ((v - exact) / exact).abs()
         };
         let (coarse, fine) = (error(true, 0.002), error(true, 0.001));
@@ -372,14 +382,14 @@ mod tests {
         // WR-90 with an imported post (a feature) subtracted, standing along z away from the ends.
         let (a, b, l, r) = (0.02286, 0.01016, 0.03, 0.0015);
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
         let mut post = imported_cylinder([a / 2.0, b / 2.0], r, 0.01, 26, true);
         if let Shape::Surface { positions, surfaces, .. } = &mut post {
             positions.iter_mut().for_each(|p| p.z += 0.01);
             *surfaces = surfaces.iter().map(|f| f.map(|f| f.moved(Vec3::new(0.0, 0.0, 0.01)))).collect();
         }
         m.add_feature(Feature { combine: Combine::Subtract, shape: post, at: Point3::ORIGIN, axis: emcraft_model::Axis::Z }).unwrap();
-        let mesh = solid_with(&m, &SolidOptions::new(0.003)).unwrap();
+        let mesh = solid_with(&m, &SolidOptions::new(metres(0.003))).unwrap();
         let rho = |p: Point3| (p.x - a / 2.0).hypot(p.y - b / 2.0);
         assert!(mesh.curved.len() > 20);
         assert!(mesh.curved.iter().all(|(_, p)| (rho(*p) - r).abs() < 1e-9), "a midpoint off the post");

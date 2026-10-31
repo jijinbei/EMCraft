@@ -56,7 +56,7 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
             };
             out.legend.push((walls, sc().metal));
             if let Some(o) = &m.open {
-                let thickness = format!("{} {}", l.from_si(o.thickness), l.symbol());
+                let thickness = format!("{} {}", l.from_si(o.thickness.get()), l.symbol());
                 out.legend.push((trf("open boundary: PML {thickness}", args!(thickness = thickness)), sc().pml));
             }
         }

@@ -8,6 +8,16 @@ use emcraft_model::{Model, Point3, Shape, Solid, Vec3};
 use emcraft_solver::eigen::eigenmodes;
 use emcraft_theory::bessel::{cylinder_cavity_resonances, sphere_cavity_resonances};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
+/// A box's sides (m), checked.
+fn box_size(v: emcraft_model::Vec3) -> emcraft_model::BoxSize {
+    emcraft_model::BoxSize::new(v).unwrap()
+}
+
 fn body(shape: Shape, size: f64) -> Model {
     body_with(shape, size, true)
 }
@@ -16,7 +26,7 @@ fn body_with(shape: Shape, size: f64, curved: bool) -> Model {
     let mut m = Model::new();
     m.set_solid(Solid { shape, material: "vacuum".into() }).unwrap();
     m.mesh = Some(
-        emcraft_mesh::solid::solid_with(&m, &emcraft_mesh::solid::SolidOptions { curved, ..emcraft_mesh::solid::SolidOptions::new(size) })
+        emcraft_mesh::solid::solid_with(&m, &emcraft_mesh::solid::SolidOptions { curved, ..emcraft_mesh::solid::SolidOptions::new(metres(size)) })
             .unwrap()
             .into(),
     );
@@ -31,7 +41,7 @@ fn worst(found: &[f64], exact: &[(f64, String)]) -> f64 {
 /// The cylinder's three lowest modes at element size `h`: the largest relative error.
 fn cylinder_error(h: f64, curved: bool) -> f64 {
     // r = 10 mm, d = 30 mm: TE111 (a degenerate pair) at 10.1 GHz, then TM010 at 11.5 GHz.
-    let m = body_with(Shape::Cylinder { radius: 0.01, length: 0.03 }, h, curved);
+    let m = body_with(Shape::Cylinder { radius: metres(0.01), length: metres(0.03) }, h, curved);
     let e = eigenmodes(&m, Order::Two, 3, 11.0e9).unwrap();
     let f: Vec<f64> = e.modes.iter().map(|x| x.frequency).collect();
     worst(&f, &cylinder_cavity_resonances(0.01, 0.03, 1.0, 3))
@@ -50,7 +60,7 @@ fn cylindrical_cavity_resonances() {
 
 fn sphere_error(h: f64) -> f64 {
     // r = 10 mm: TM11, three-fold, at 13.1 GHz.
-    let m = body(Shape::Sphere { radius: 0.01 }, h);
+    let m = body(Shape::Sphere { radius: metres(0.01) }, h);
     let e = eigenmodes(&m, Order::Two, 3, 14.0e9).unwrap();
     let f: Vec<f64> = e.modes.iter().map(|x| x.frequency).collect();
     worst(&f, &sphere_cavity_resonances(0.01, 1.0, 3))
@@ -77,7 +87,7 @@ fn curved_cavities_converge() {
 
 #[test]
 fn unstructured_box_cavity() {
-    let m = body(Shape::Box { size: Vec3::new(0.02286, 0.01016, 0.03) }, 0.003);
+    let m = body(Shape::Box { size: box_size(Vec3::new(0.02286, 0.01016, 0.03)) }, 0.003);
     let e = eigenmodes(&m, Order::Two, 3, 12.0e9).unwrap();
     let f: Vec<f64> = e.modes.iter().map(|x| x.frequency).collect();
     let exact = emcraft_theory::cavity_resonances(0.02286, 0.01016, 0.03, 1.0, 3);
@@ -90,7 +100,7 @@ fn unstructured_box_cavity() {
 fn unstructured_waveguide_transmits_with_the_te10_phase() {
     use emcraft_model::{End, Port};
     // A 30 mm length of WR-90 as a box with ports on its ends, meshed without structure.
-    let mut m = body(Shape::Box { size: Vec3::new(0.02286, 0.01016, 0.03) }, 0.003);
+    let mut m = body(Shape::Box { size: box_size(Vec3::new(0.02286, 0.01016, 0.03)) }, 0.003);
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
@@ -114,7 +124,7 @@ fn circular_s21(r: f64, len: f64, f: f64) -> num_complex::Complex64 {
 fn circular_guide_error(h: f64) -> f64 {
     use emcraft_model::{End, Port};
     // r = 10 mm: TE11 above 8.79 GHz, TM01 above 11.47 GHz, TE21 above 14.58 GHz.
-    let mut m = body(Shape::Cylinder { radius: 0.01, length: 0.03 }, h);
+    let mut m = body(Shape::Cylinder { radius: metres(0.01), length: metres(0.03) }, h);
     m.add_port(Port::new("1", End::Start).with_modes(3)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(3)).unwrap();
     let d = emcraft_solver::Driven::new(&m, Order::Two).unwrap();
@@ -150,9 +160,10 @@ fn loaded_sphere_error(h: f64) -> f64 {
     use emcraft_model::{Inclusion, Material};
     let mut m = Model::new();
     m.add_material(Material::new("ceramic", 4.0, 1.0).unwrap()).unwrap();
-    m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
-    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.0, 0.0, 0.0), material: Some("ceramic".into()) }).unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid(&m, h).unwrap().into());
+    m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.01) }, material: "vacuum".into() }).unwrap();
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: metres(0.004) }, at: Point3::new(0.0, 0.0, 0.0), material: Some("ceramic".into()) })
+        .unwrap();
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, metres(h)).unwrap().into());
     let exact = emcraft_theory::bessel::layered_sphere_resonances(0.004, 4.0, 0.01, 6);
     let near = exact[2].0 * 1.05;
     let e = eigenmodes(&m, Order::Two, 3, near).unwrap();
@@ -184,15 +195,15 @@ fn post_s(order: Order, size: f64) -> emcraft_solver::SMatrix {
     use emcraft_model::{Axis, Combine, End, Feature, Port};
     let (a, b, l) = (0.02286, 0.01016, 0.03);
     let mut m = Model::new();
-    m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(a, b, l) }, material: "vacuum".into() }).unwrap();
+    m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
     m.add_feature(Feature {
         combine: Combine::Subtract,
-        shape: Shape::Cylinder { radius: 0.0015, length: b },
+        shape: Shape::Cylinder { radius: metres(0.0015), length: metres(b) },
         at: Point3::new(a / 2.0, 0.0, l / 2.0),
         axis: Axis::Y,
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, metres(size)).unwrap().into());
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     let d = emcraft_solver::Driven::new(&m, order).unwrap();

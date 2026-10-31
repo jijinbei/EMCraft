@@ -12,16 +12,28 @@ use emcraft_model::{Axis, Boundary, BoundaryFace, End, Mesh, ModeSolver, Model, 
 use emcraft_solver::Driven;
 use emcraft_theory::{HPlaneLine, HSection};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 
 /// A 2 mm thick centred inductive iris, 12 mm wide, 15 mm from each port.
 fn iris(modes: u32, planes: &[Symmetry], opts: &emcraft_mesh::Options) -> Model {
     let mut m = Model::new();
-    let sec = |l: f64, w: Option<f64>| Section { length: l, material: "vacuum".into(), width: w, ..Default::default() };
+    let sec = |l: f64, w: Option<f64>| Section {
+        length: metres(l),
+        material: "vacuum".into(),
+        width: (w).map(metres),
+        offset: None,
+        height: None,
+        offset_y: None,
+    };
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
+        width: metres(A),
+        height: metres(B),
         sections: vec![sec(0.015, None), sec(0.002, Some(0.012)), sec(0.015, None)],
         layers: Vec::new(),
         strips: Vec::new(),
@@ -78,7 +90,7 @@ fn reference() -> HPlaneLine {
 
 #[test]
 fn half_model_is_the_whole_mirrored_model_to_rounding() {
-    let opts = emcraft_mesh::Options { size_y: Some(B), ..emcraft_mesh::Options::new(0.004) };
+    let opts = emcraft_mesh::Options { size_y: Some(metres(B)), ..emcraft_mesh::Options::new(metres(0.004)) };
     // Three modes even about x = a/2 on the half (TE10, TE11, TM11) are the even ones of the
     // whole guide's five lowest (TE10, TE20, TE01, TE11, TM11); the odd ones are not excited.
     let half = iris(3, &[magnetic_x()], &opts);
@@ -113,7 +125,7 @@ fn half_and_quarter_iris_match_the_whole_and_mode_matching() {
     // Measured (order 2, 4 mm, three frequencies): whole 16 676 unknowns in 3.9 s, half 8 520 in
     // 1.2 s, quarter 3 616 in 0.27 s; |S − S_mm| 6.3e-3, 6.5e-3, 6.5e-3.
     // Two layers across y, so the quarter's one is the same lines.
-    let opts = emcraft_mesh::Options { size_y: Some(B / 2.0), ..emcraft_mesh::Options::new(0.004) };
+    let opts = emcraft_mesh::Options { size_y: Some(metres(B / 2.0)), ..emcraft_mesh::Options::new(metres(0.004)) };
     let freqs = [9e9, 10e9, 11e9];
     let line = reference();
     let electric_y = Symmetry { axis: Axis::Y, at: B / 2.0, kind: SymmetryKind::Electric };
@@ -158,9 +170,9 @@ fn half_and_quarter_iris_match_the_whole_and_mode_matching() {
 fn empty(planes: &[Symmetry], solver: ModeSolver) -> Model {
     let mut m = Model::new();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(0.03, "vacuum")],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(0.03), "vacuum")],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
@@ -169,7 +181,7 @@ fn empty(planes: &[Symmetry], solver: ModeSolver) -> Model {
     m.add_port(Port::new("1", End::Start).with_modes(2).with_mode_solver(solver)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(2).with_mode_solver(solver)).unwrap();
     m.set_symmetry(planes.to_vec()).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.002).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.002)).unwrap().into());
     m
 }
 
@@ -216,11 +228,11 @@ fn a_half_stripline_has_the_whole_lines_impedance() {
     let line = |planes: &[Symmetry]| {
         let mut m = Model::new();
         m.add_material(emcraft_model::Material::new("fill", er, 1.0).unwrap()).unwrap();
-        let strips = vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }];
+        let strips = vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: metres(w), z0: 0.0, z1: length }];
         m.set_waveguide(Waveguide {
-            width: a,
-            height: b,
-            sections: vec![Section::new(length, "fill")],
+            width: metres(a),
+            height: metres(b),
+            sections: vec![Section::new(metres(length), "fill")],
             layers: Vec::new(),
             strips,
             vias: Vec::new(),
@@ -229,7 +241,7 @@ fn a_half_stripline_has_the_whole_lines_impedance() {
         m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
         m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
         m.set_symmetry(planes.to_vec()).unwrap();
-        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap().into());
+        m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.001)).unwrap().into());
         Driven::new(&m, Order::Two).unwrap().solve(2e9).unwrap()
     };
     let (whole, half) = (line(&[]), line(&[Symmetry { axis: Axis::X, at: a / 2.0, kind: SymmetryKind::Magnetic }]));
@@ -250,11 +262,11 @@ fn a_stripline_halved_through_its_strip_plane_keeps_the_whole_lines_impedance() 
     let line = |planes: &[Symmetry]| {
         let mut m = Model::new();
         m.add_material(emcraft_model::Material::new("fill", er, 1.0).unwrap()).unwrap();
-        let strips = vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }];
+        let strips = vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: metres(w), z0: 0.0, z1: length }];
         m.set_waveguide(Waveguide {
-            width: a,
-            height: b,
-            sections: vec![Section::new(length, "fill")],
+            width: metres(a),
+            height: metres(b),
+            sections: vec![Section::new(metres(length), "fill")],
             layers: Vec::new(),
             strips,
             vias: Vec::new(),
@@ -263,7 +275,7 @@ fn a_stripline_halved_through_its_strip_plane_keeps_the_whole_lines_impedance() 
         m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
         m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
         m.set_symmetry(planes.to_vec()).unwrap();
-        m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap().into());
+        m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.001)).unwrap().into());
         Driven::new(&m, Order::Two).unwrap().solve(2e9).unwrap()
     };
     let (whole, half) = (line(&[]), line(&[Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Magnetic }]));

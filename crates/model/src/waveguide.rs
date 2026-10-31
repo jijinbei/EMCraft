@@ -4,8 +4,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::Axis;
-use crate::error::{Result, all_finite, invalid, near, positive};
+use crate::error::{Result, all_finite, invalid, near};
 use crate::geom::{Aabb, Point3};
+use crate::quantity::Metres;
 
 /// A rectangular waveguide along z: x ∈ [0, a], y ∈ [0, b], z from 0 through its sections. A
 /// section may narrow the broad wall to an aperture of its own (an H-plane step, an inductive
@@ -19,9 +20,9 @@ use crate::geom::{Aabb, Point3};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Waveguide {
     /// Broad wall width a (m), along x: the widest aperture.
-    pub width: f64,
+    pub width: Metres,
     /// Narrow wall height b (m), along y.
-    pub height: f64,
+    pub height: Metres,
     pub sections: Vec<Section>,
     /// Layers from y = 0 up; above the last, each section's own material.
     #[serde(default)]
@@ -34,22 +35,22 @@ pub struct Waveguide {
 }
 
 /// A length of the waveguide filled with one material, with its own aperture across x.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Section {
     /// Length along z (m).
-    pub length: f64,
+    pub length: Metres,
     /// The material's name.
     pub material: String,
     /// The aperture's width along x (m); the guide's width when `None`.
     #[serde(default)]
-    pub width: Option<f64>,
+    pub width: Option<Metres>,
     /// Where the aperture starts along x (m); centred in the guide when `None`.
     #[serde(default)]
     pub offset: Option<f64>,
     /// The aperture's height along y (m); the guide's height when `None` (an E-plane step or a
     /// capacitive iris when smaller).
     #[serde(default)]
-    pub height: Option<f64>,
+    pub height: Option<Metres>,
     /// Where the aperture starts along y (m); centred when `None`.
     #[serde(default)]
     pub offset_y: Option<f64>,
@@ -59,7 +60,7 @@ pub struct Section {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     /// Thickness along y (m).
-    pub thickness: f64,
+    pub thickness: Metres,
     pub material: String,
 }
 
@@ -68,7 +69,7 @@ pub struct Layer {
 pub struct Strip {
     pub y: f64,
     pub x0: f64,
-    pub width: f64,
+    pub width: Metres,
     pub z0: f64,
     pub z1: f64,
 }
@@ -81,8 +82,8 @@ pub struct Strip {
 pub struct Via {
     pub x0: f64,
     pub z0: f64,
-    pub wx: f64,
-    pub wz: f64,
+    pub wx: Metres,
+    pub wz: Metres,
     pub y0: f64,
     pub y1: f64,
 }
@@ -121,23 +122,16 @@ impl Span {
 
 impl Section {
     /// A full-aperture section `length` (m) long of `material`.
-    pub fn new(length: f64, material: &str) -> Section {
-        Section { length, material: material.to_owned(), ..Default::default() }
+    pub fn new(length: Metres, material: &str) -> Section {
+        Section { length, material: material.to_owned(), width: None, offset: None, height: None, offset_y: None }
     }
 
-    /// Checks section `n` (counted from 1) on its own: a positive length and aperture, finite
-    /// offsets, a material `known` names.
+    /// Checks section `n` (counted from 1) on its own (its length and aperture are positive
+    /// by type): finite offsets, a material `known` names.
     fn check(&self, n: usize, known: &impl Fn(&str) -> Result<()>) -> Result<()> {
-        positive(&format!("length of section {n}"), self.length)?;
         known(&self.material)?;
-        if let Some(a) = self.width {
-            positive(&format!("aperture width of section {n}"), a)?;
-        }
         if let Some(o) = self.offset {
             all_finite(format!("aperture offset of section {n}"), &[o])?;
-        }
-        if let Some(h) = self.height {
-            positive(&format!("aperture height of section {n}"), h)?;
         }
         if let Some(o) = self.offset_y {
             all_finite(format!("aperture y offset of section {n}"), &[o])?;
@@ -147,9 +141,8 @@ impl Section {
 }
 
 impl Layer {
-    /// Checks layer `n` (counted from 1): a positive thickness, a material `known` names.
-    fn check(&self, n: usize, known: &impl Fn(&str) -> Result<()>) -> Result<()> {
-        positive(&format!("thickness of layer {n}"), self.thickness)?;
+    /// Checks the layer (its thickness is positive by type): a material `known` names.
+    fn check(&self, known: &impl Fn(&str) -> Result<()>) -> Result<()> {
         known(&self.material)
     }
 }
@@ -167,7 +160,7 @@ struct Room {
 
 impl Room {
     fn of(w: &Waveguide) -> Room {
-        Room { width: w.width, height: w.height, length: w.length(), tol: 1e-9 * w.width, toly: 1e-9 * w.height }
+        Room { width: w.width.get(), height: w.height.get(), length: w.length(), tol: 1e-9 * w.width.get(), toly: 1e-9 * w.height.get() }
     }
 
     /// Whether [x0, x0 + wx] lies within the width.
@@ -185,12 +178,11 @@ impl Strip {
     /// Checks strip `n` (counted from 1) lies inside the guide.
     fn check(&self, n: usize, room: &Room) -> Result<()> {
         let what = || format!("strip {n}");
-        all_finite(what(), &[self.y, self.x0, self.width, self.z0, self.z1])?;
-        positive(&format!("width of strip {n}"), self.width)?;
+        all_finite(what(), &[self.y, self.x0, self.z0, self.z1])?;
         if !(self.y > room.toly && self.y < room.height - room.toly) {
             return Err(invalid(what(), "must lie inside the guide (0 < y < height)"));
         }
-        if !(room.holds_x(self.x0, self.width) && room.holds_z(self.z0, self.z1) && self.z1 > self.z0) {
+        if !(room.holds_x(self.x0, self.width.get()) && room.holds_z(self.z0, self.z1) && self.z1 > self.z0) {
             return Err(invalid(what(), "must lie within the guide's width and length, z0 < z1"));
         }
         Ok(())
@@ -199,38 +191,37 @@ impl Strip {
     /// The strip mirrored about the plane `axis` = `span` / 2 (x or y).
     pub fn mirrored(self, axis: Axis, span: f64) -> Strip {
         match axis {
-            Axis::X => Strip { x0: span - self.x0 - self.width, ..self },
+            Axis::X => Strip { x0: span - self.x0 - self.width.get(), ..self },
             _ => Strip { y: span - self.y, ..self },
         }
     }
 
     /// Whether the two are the same within `tol`.
     pub fn near(&self, o: &Strip, tol: f64) -> bool {
-        near([self.y, self.x0, self.width, self.z0, self.z1], [o.y, o.x0, o.width, o.z0, o.z1], tol)
+        near([self.y, self.x0, self.width.get(), self.z0, self.z1], [o.y, o.x0, o.width.get(), o.z0, o.z1], tol)
     }
 }
 
 impl Via {
     /// The post as a box.
     pub fn bounds(&self) -> Aabb {
-        Aabb::new(Point3::new(self.x0, self.y0, self.z0), Point3::new(self.x0 + self.wx, self.y1, self.z0 + self.wz))
+        Aabb::new(Point3::new(self.x0, self.y0, self.z0), Point3::new(self.x0 + self.wx.get(), self.y1, self.z0 + self.wz.get()))
     }
 
     /// Checks via `n` (counted from 1) runs inside the guide and leaves its ports' faces open.
     fn check(&self, n: usize, room: &Room) -> Result<()> {
         let what = || format!("via {n}");
-        all_finite(what(), &[self.x0, self.z0, self.wx, self.wz, self.y0, self.y1])?;
-        positive(&format!("x width of via {n}"), self.wx)?;
-        positive(&format!("z width of via {n}"), self.wz)?;
+        all_finite(what(), &[self.x0, self.z0, self.y0, self.y1])?;
+        let (wx, wz) = (self.wx.get(), self.wz.get());
         let toly = room.toly;
         if !(self.y0 >= -toly && self.y1 <= room.height + toly && self.y1 > self.y0 + toly) {
             return Err(invalid(what(), "must run within the guide's height, 0 ≤ y0 < y1 ≤ height"));
         }
-        if !(room.holds_x(self.x0, self.wx) && room.holds_z(self.z0, self.z0 + self.wz)) {
+        if !(room.holds_x(self.x0, wx) && room.holds_z(self.z0, self.z0 + wz)) {
             return Err(invalid(what(), "must lie within the guide's width and length"));
         }
-        let (z1, length) = (self.z0 + self.wz, room.length);
-        let across = self.wx >= room.width - room.tol && self.y0 <= toly && self.y1 >= room.height - toly;
+        let (z1, length) = (self.z0 + wz, room.length);
+        let across = wx >= room.width - room.tol && self.y0 <= toly && self.y1 >= room.height - toly;
         if across && (self.z0 <= 1e-9 * length || z1 >= length * (1.0 - 1e-9)) {
             return Err(invalid(what(), "fills a port's whole face: end the guide there instead"));
         }
@@ -240,54 +231,54 @@ impl Via {
     /// The post mirrored about the plane `axis` = `span` / 2 (x or y).
     pub fn mirrored(self, axis: Axis, span: f64) -> Via {
         match axis {
-            Axis::X => Via { x0: span - self.x0 - self.wx, ..self },
+            Axis::X => Via { x0: span - self.x0 - self.wx.get(), ..self },
             _ => Via { y0: span - self.y1, y1: span - self.y0, ..self },
         }
     }
 
     /// Whether the two are the same within `tol`.
     pub fn near(&self, o: &Via, tol: f64) -> bool {
-        near([self.x0, self.z0, self.wx, self.wz, self.y0, self.y1], [o.x0, o.z0, o.wx, o.wz, o.y0, o.y1], tol)
+        near([self.x0, self.z0, self.wx.get(), self.wz.get(), self.y0, self.y1], [o.x0, o.z0, o.wx.get(), o.wz.get(), o.y0, o.y1], tol)
     }
 }
 
 impl Waveguide {
     pub fn length(&self) -> f64 {
-        self.sections.iter().map(|s| s.length).sum()
+        self.sections.iter().map(|s| s.length.get()).sum()
     }
 
     /// Section i's aperture across x.
     pub fn aperture(&self, i: usize) -> Option<Span> {
         let s = self.sections.get(i)?;
-        let w = s.width.unwrap_or(self.width);
-        Some(Span::new(s.offset.unwrap_or((self.width - w) / 2.0), w))
+        let w = s.width.unwrap_or(self.width).get();
+        Some(Span::new(s.offset.unwrap_or((self.width.get() - w) / 2.0), w))
     }
 
     /// Section i's aperture across y.
     pub fn aperture_y(&self, i: usize) -> Option<Span> {
         let s = self.sections.get(i)?;
-        let h = s.height.unwrap_or(self.height);
-        Some(Span::new(s.offset_y.unwrap_or((self.height - h) / 2.0), h))
+        let h = s.height.unwrap_or(self.height).get();
+        Some(Span::new(s.offset_y.unwrap_or((self.height.get() - h) / 2.0), h))
     }
 
     /// The whole width, [0, a].
     pub fn across_x(&self) -> Span {
-        Span::new(0.0, self.width)
+        Span::new(0.0, self.width.get())
     }
 
     /// The whole height, [0, b].
     pub fn across_y(&self) -> Span {
-        Span::new(0.0, self.height)
+        Span::new(0.0, self.height.get())
     }
 
     /// Whether every section has the full width (no H-plane change).
     pub fn full_width(&self) -> bool {
-        (0..self.sections.len()).all(|i| self.aperture(i).is_some_and(|a| a.same(self.across_x(), 1e-12 * self.width)))
+        (0..self.sections.len()).all(|i| self.aperture(i).is_some_and(|a| a.same(self.across_x(), 1e-12 * self.width.get())))
     }
 
     /// Whether every section has the full height (no E-plane change).
     pub fn full_height(&self) -> bool {
-        (0..self.sections.len()).all(|i| self.aperture_y(i).is_some_and(|a| a.same(self.across_y(), 1e-12 * self.height)))
+        (0..self.sections.len()).all(|i| self.aperture_y(i).is_some_and(|a| a.same(self.across_y(), 1e-12 * self.height.get())))
     }
 
     /// Whether every section has the full cross-section.
@@ -307,19 +298,17 @@ impl Waveguide {
 
     /// The planes y = const between layers.
     pub fn layer_tops(&self) -> Vec<f64> {
-        running_sum(self.layers.iter().map(|l| l.thickness))
+        running_sum(self.layers.iter().map(|l| l.thickness.get()))
     }
 
     /// The z coordinates of the section boundaries, from 0 to the length.
     pub fn interfaces(&self) -> Vec<f64> {
-        std::iter::once(0.0).chain(running_sum(self.sections.iter().map(|s| s.length))).collect()
+        std::iter::once(0.0).chain(running_sum(self.sections.iter().map(|s| s.length.get()))).collect()
     }
 
-    /// Checks the whole guide: its box, every section (with materials `known` names), layer,
-    /// strip and via, and that neighbouring apertures nest.
+    /// Checks the whole guide (its box and lengths are positive by type): every section (with
+    /// materials `known` names), layer, strip and via, and that neighbouring apertures nest.
     pub fn check(&self, known: impl Fn(&str) -> Result<()>) -> Result<()> {
-        positive("waveguide width", self.width)?;
-        positive("waveguide height", self.height)?;
         if self.sections.is_empty() {
             return Err(invalid("waveguide", "needs at least one section"));
         }
@@ -333,10 +322,10 @@ impl Waveguide {
                 return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's height"));
             }
         }
-        for (i, l) in self.layers.iter().enumerate() {
-            l.check(i + 1, &known)?;
+        for l in &self.layers {
+            l.check(&known)?;
         }
-        if self.layers.iter().map(|l| l.thickness).sum::<f64>() > self.height + room.toly {
+        if self.layers.iter().map(|l| l.thickness.get()).sum::<f64>() > room.height + room.toly {
             return Err(invalid("layers", "are thicker than the guide is high"));
         }
         let uniform = self.uniform();
@@ -389,7 +378,7 @@ fn check_strip_pairs(strips: &[Strip], room: &Room) -> Result<()> {
                 continue;
             }
             // The overlap of their spans: negative is the gap between them.
-            let ox = (a.x0 + a.width).min(b.x0 + b.width) - a.x0.max(b.x0);
+            let ox = (a.x0 + a.width.get()).min(b.x0 + b.width.get()) - a.x0.max(b.x0);
             let oz = a.z1.min(b.z1) - a.z0.max(b.z0);
             let what = || format!("strips {} and {}", i + 1, j + 1);
             if ox > tolx && oz > tolz {
@@ -421,12 +410,21 @@ fn running_sum(values: impl Iterator<Item = f64>) -> Vec<f64> {
 mod tests {
     use super::*;
 
+    /// A length (m), checked.
+    fn m(v: f64) -> Metres {
+        Metres::new(v).unwrap()
+    }
+
     fn sec(width: Option<f64>, offset: Option<f64>) -> Section {
-        Section { length: 0.01, material: "vacuum".into(), width, offset, ..Default::default() }
+        Section { width: width.map(m), offset, ..Section::new(m(0.01), "vacuum") }
     }
 
     fn guide(sections: Vec<Section>) -> Waveguide {
-        Waveguide { width: 0.02, height: 0.01, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }
+        Waveguide { width: m(0.02), height: m(0.01), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }
+    }
+
+    fn layer(thickness: f64, material: &str) -> Layer {
+        Layer { thickness: m(thickness), material: material.into() }
     }
 
     fn vacuum_only(name: &str) -> Result<()> {
@@ -447,35 +445,35 @@ mod tests {
 
     #[test]
     fn layers_stack_and_sections_meet() {
-        let mut w = guide(vec![sec(None, None), Section::new(0.02, "vacuum")]);
-        w.layers = vec![Layer { thickness: 0.002, material: "vacuum".into() }, Layer { thickness: 0.003, material: "vacuum".into() }];
+        let mut w = guide(vec![sec(None, None), Section::new(m(0.02), "vacuum")]);
+        w.layers = vec![layer(0.002, "vacuum"), layer(0.003, "vacuum")];
         assert_eq!(w.interfaces(), vec![0.0, 0.01, 0.03]);
         assert_eq!(w.layer_tops(), vec![0.002, 0.005]);
-        assert_eq!(w.layer_at(0.001).map(|l| l.thickness), Some(0.002));
-        assert_eq!(w.layer_at(0.004).map(|l| l.thickness), Some(0.003));
+        assert_eq!(w.layer_at(0.001).map(|l| l.thickness), Some(m(0.002)));
+        assert_eq!(w.layer_at(0.004).map(|l| l.thickness), Some(m(0.003)));
         assert!(w.layer_at(0.006).is_none());
         w.check(vacuum_only).unwrap();
-        w.layers.push(Layer { thickness: 0.01, material: "vacuum".into() });
+        w.layers.push(layer(0.01, "vacuum"));
         assert!(w.check(vacuum_only).is_err(), "thicker than the guide");
-        w.layers[2] = Layer { thickness: 0.001, material: "glass".into() };
+        w.layers[2] = layer(0.001, "glass");
         assert!(matches!(w.check(vacuum_only), Err(crate::ModelError::Unknown { .. })));
     }
 
     #[test]
     fn strips_and_vias_lie_inside_the_guide() {
         let mut w = guide(vec![sec(None, None)]);
-        let strip = Strip { y: 0.002, x0: 0.002, width: 0.004, z0: 0.0, z1: 0.01 };
-        let via = Via { x0: 0.002, z0: 0.004, wx: 0.001, wz: 0.001, y0: 0.0, y1: 0.002 };
+        let strip = Strip { y: 0.002, x0: 0.002, width: m(0.004), z0: 0.0, z1: 0.01 };
+        let via = Via { x0: 0.002, z0: 0.004, wx: m(0.001), wz: m(0.001), y0: 0.0, y1: 0.002 };
         w.strips = vec![strip];
         w.vias = vec![via];
         w.check(vacuum_only).unwrap();
-        for bad in [Strip { y: 0.0, ..strip }, Strip { z1: 0.0, ..strip }, Strip { x0: 0.018, ..strip }, Strip { width: f64::NAN, ..strip }] {
+        for bad in [Strip { y: 0.0, ..strip }, Strip { z1: 0.0, ..strip }, Strip { x0: 0.018, ..strip }, Strip { y: f64::NAN, ..strip }] {
             w.strips = vec![bad];
             assert!(w.check(vacuum_only).is_err(), "{bad:?}");
         }
         w.strips.clear();
-        let across = Via { x0: 0.0, z0: 0.0, wx: 0.02, wz: 0.001, y0: 0.0, y1: 0.01 };
-        for bad in [Via { y1: 0.0, ..via }, Via { z0: 0.0095, ..via }, Via { wx: 0.0, ..via }, across] {
+        let across = Via { x0: 0.0, z0: 0.0, wx: m(0.02), wz: m(0.001), y0: 0.0, y1: 0.01 };
+        for bad in [Via { y1: 0.0, ..via }, Via { z0: 0.0095, ..via }, Via { x0: f64::INFINITY, ..via }, across] {
             w.vias = vec![bad];
             assert!(w.check(vacuum_only).is_err(), "{bad:?}");
         }
@@ -487,7 +485,7 @@ mod tests {
     #[test]
     fn strips_on_one_plane_meet_or_keep_apart() {
         let mut w = guide(vec![sec(None, None)]);
-        let a = Strip { y: 0.002, x0: 0.002, width: 0.004, z0: 0.0, z1: 0.006 };
+        let a = Strip { y: 0.002, x0: 0.002, width: m(0.004), z0: 0.0, z1: 0.006 };
         // Coupled: side by side a gap apart over part of their length; a T meeting edge to edge;
         // on another plane anything goes.
         for ok in [

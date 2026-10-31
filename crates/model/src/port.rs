@@ -2,10 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ModelError, Result, all_finite, invalid, named, positive};
+use crate::error::{ModelError, Result, all_finite, invalid, named};
 use crate::geom::{CVec3, Point3, Vec3};
 use crate::material::Material;
 use crate::model::Model;
+use crate::quantity::{Metres, Ohms, Quantity};
 use crate::shape::Axis;
 use crate::waveguide::Span;
 
@@ -68,7 +69,7 @@ pub struct Port {
     /// The impedance (Ω) the S-parameters are referred to at this port, for a line with a
     /// characteristic impedance (coaxial, strip); its own mode's when `None`.
     #[serde(default)]
-    pub reference: Option<f64>,
+    pub reference: Option<Ohms>,
     /// De-embedding: how far (m) the reference plane S is read at lies inside the model from
     /// the port's face, along the line (negative: outside it, a line added).
     #[serde(default)]
@@ -128,44 +129,51 @@ pub struct PortFace {
     pub u0: f64,
     #[serde(alias = "y0")]
     pub v0: f64,
-    pub a: f64,
-    pub b: f64,
+    pub a: Metres,
+    pub b: Metres,
 }
 
 impl PortFace {
     /// The rectangle [x0, x0 + a] × [y0, y0 + b] of the z plane at `z`.
-    pub fn across_z(z: f64, x0: f64, y0: f64, a: f64, b: f64) -> PortFace {
+    pub fn across_z(z: f64, x0: f64, y0: f64, a: Metres, b: Metres) -> PortFace {
         PortFace { axis: Axis::Z, at: z, u0: x0, v0: y0, a, b }
     }
 
     /// The rectangle from its numbers in the order files and commands give them:
-    /// `[at, u0, v0, a, b]`.
-    pub fn from_values(axis: Axis, [at, u0, v0, a, b]: [f64; 5]) -> PortFace {
-        PortFace { axis, at, u0, v0, a, b }
+    /// `[at, u0, v0, a, b]`, its sides checked.
+    ///
+    /// ```
+    /// use emcraft_model::{Axis, PortFace};
+    ///
+    /// let f = PortFace::from_values(Axis::Z, [0.0, 0.001, 0.002, 0.02, 0.01])?; // m
+    /// assert_eq!(f.values(), [0.0, 0.001, 0.002, 0.02, 0.01]);
+    /// let e = PortFace::from_values(Axis::Z, [0.0, 0.0, 0.0, 0.02, 0.0]).unwrap_err();
+    /// assert_eq!(e.to_string(), "invalid port face height: must be a finite number > 0, got 0");
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    pub fn from_values(axis: Axis, [at, u0, v0, a, b]: [f64; 5]) -> Result<PortFace> {
+        Ok(PortFace { axis, at, u0, v0, a: Metres::named("port face width", a)?, b: Metres::named("port face height", b)? })
     }
 
     /// The rectangle's numbers `[at, u0, v0, a, b]` ([`PortFace::from_values`]).
     pub fn values(&self) -> [f64; 5] {
-        [self.at, self.u0, self.v0, self.a, self.b]
+        [self.at, self.u0, self.v0, self.a.get(), self.b.get()]
     }
 
-    /// Checks the rectangle: finite, with positive sides.
+    /// Checks the rectangle is finite (its sides are positive by type).
     pub fn check(&self) -> Result<()> {
-        all_finite("port face", &[self.at, self.u0, self.v0])?;
-        positive("port face width", self.a)?;
-        positive("port face height", self.b)?;
-        Ok(())
+        all_finite("port face", &[self.at, self.u0, self.v0])
     }
 
     /// The rectangle as a port's cross-section, in the face's own coordinates (u, v: [`Frame`]).
     pub fn shape(&self) -> PortShape {
-        PortShape::Rect { x0: self.u0, y0: self.v0, a: self.a, b: self.b }
+        PortShape::Rect { x0: self.u0, y0: self.v0, a: self.a.get(), b: self.b.get() }
     }
 
     /// Whether `q` lies on the rectangle, to `tol` (m).
     pub fn holds(&self, q: Point3, tol: f64) -> bool {
         let (u, v, _) = Frame::new(self.axis).axes();
-        let within = |x: f64, lo: f64, side: f64| (lo - tol..=lo + side + tol).contains(&x);
+        let within = |x: f64, lo: f64, side: Metres| (lo - tol..=lo + side.get() + tol).contains(&x);
         (q[self.axis.index()] - self.at).abs() <= tol && within(q[u], self.u0, self.a) && within(q[v], self.v0, self.b)
     }
 
@@ -174,7 +182,8 @@ impl PortFace {
         let f = Frame::new(self.axis);
         let (_, _, s) = f.axes();
         let w = s * self.at;
-        [(0.0, 0.0), (self.a, 0.0), (self.a, self.b), (0.0, self.b)].map(|(du, dv)| f.global(Point3::new(self.u0 + du, self.v0 + dv, w)))
+        [(0.0, 0.0), (self.a.get(), 0.0), (self.a.get(), self.b.get()), (0.0, self.b.get())]
+            .map(|(du, dv)| f.global(Point3::new(self.u0 + du, self.v0 + dv, w)))
     }
 }
 
@@ -301,18 +310,15 @@ impl Port {
     }
 
     /// The port's S-parameters referred to `ohms`.
-    pub fn referred_to(self, ohms: f64) -> Port {
+    pub fn referred_to(self, ohms: Ohms) -> Port {
         Port { reference: Some(ohms), ..self }
     }
 
-    /// Checks the port's own settings: a positive reference impedance, a finite de-embedding
-    /// and 1 to [`MAX_PORT_MODES`] modes.
+    /// Checks the port's own settings (its reference impedance is positive by type): a finite
+    /// de-embedding and 1 to [`MAX_PORT_MODES`] modes.
     pub fn check_settings(&self) -> Result<()> {
         if self.name.contains(':') {
             return Err(invalid(format!("port `{}`", self.name), "a port's name must not hold `:` (terminals are named `<port>:<k>`)"));
-        }
-        if let Some(r) = self.reference {
-            positive(&format!("reference impedance of port `{}`", self.name), r)?;
         }
         all_finite(format!("de-embedding of port `{}`", self.name), &[self.deembed])?;
         if self.modes == 0 || self.modes > MAX_PORT_MODES {
@@ -419,13 +425,17 @@ mod tests {
     use super::*;
     use crate::{Section, Waveguide};
 
+    fn metres(v: f64) -> Metres {
+        Metres::new(v).unwrap()
+    }
+
     #[test]
     fn ports_are_checked() {
         let mut m = Model::new();
         m.set_waveguide(Waveguide {
-            width: 0.02286,
-            height: 0.01016,
-            sections: vec![Section::new(0.01, "vacuum")],
+            width: metres(0.02286),
+            height: metres(0.01016),
+            sections: vec![Section::new(metres(0.01), "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
             vias: Vec::new(),
@@ -436,22 +446,22 @@ mod tests {
         assert!(m.add_port(Port::new("2", End::End).with_modes(0)).is_err());
         assert!(m.add_port(Port::new("2", End::End).with_modes(1000)).is_err());
         assert!(m.add_port(Port::new("2", End::End).deembedded(f64::NAN)).is_err());
-        assert!(m.add_port(Port::new("2", End::End).referred_to(-50.0)).is_err());
         assert!(matches!(m.add_port(Port::new("1", End::End)), Err(ModelError::Duplicate { .. })));
         assert!(m.add_port(Port::new(" ", End::End)).is_err());
         m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
         assert_eq!(m.port("2").unwrap().0, 1);
         assert_eq!(m.port_material(End::End).unwrap().name, "vacuum");
         assert_eq!(m.port_shape(End::End).unwrap(), PortShape::Rect { x0: 0.0, y0: 0.0, a: 0.02286, b: 0.01016 });
-        let face = PortFace::across_z(0.0, 0.0, 0.0, 0.01, f64::INFINITY);
+        assert!(PortFace::from_values(Axis::Z, [0.0, 0.0, 0.0, 0.01, f64::INFINITY]).is_err());
+        let face = PortFace::across_z(f64::NAN, 0.0, 0.0, metres(0.01), metres(0.01));
         assert!(face.check().is_err());
-        assert!(m.add_port(Port::new("3", End::End).on_face(PortFace { b: 0.01, ..face })).is_err(), "a face needs a solid");
+        assert!(m.add_port(Port::new("3", End::End).on_face(PortFace { at: 0.0, ..face })).is_err(), "a face needs a solid");
     }
 
     #[test]
     fn faces_written_before_side_ports_read_across_z() {
         let old: PortFace = serde_json::from_str(r#"{"z": 0.025, "x0": 0.001, "y0": 0.002, "a": 0.02, "b": 0.01}"#).unwrap();
-        assert_eq!(old, PortFace::across_z(0.025, 0.001, 0.002, 0.02, 0.01));
+        assert_eq!(old, PortFace::across_z(0.025, 0.001, 0.002, metres(0.02), metres(0.01)));
         let side = PortFace { axis: Axis::X, ..old };
         let back: PortFace = serde_json::from_str(&serde_json::to_string(&side).unwrap()).unwrap();
         assert_eq!(back, side);

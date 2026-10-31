@@ -25,7 +25,7 @@
 use std::time::Instant;
 
 use emcraft_fem::Order;
-use emcraft_model::{Mesh, Model};
+use emcraft_model::{Mesh, Metres, Model, Quantity};
 use emcraft_solver::radiation::OpenResult;
 use emcraft_solver::{Complex64 as C, Driven, FrequencyResult, SMatrix, SolveError};
 use serde_json::Value;
@@ -135,7 +135,7 @@ enum Refine {
     /// A solid: meshed again with the balls of every pass's marked tetrahedra.
     Adaptive { options: emcraft_mesh::solid::SolidOptions, theta: f64, floor: f64 },
     /// A waveguide grid: its size shrunk by [`UNIFORM`] a pass.
-    Uniform { size: f64 },
+    Uniform { size: Metres },
 }
 
 impl Refine {
@@ -143,7 +143,7 @@ impl Refine {
         Ok(match self {
             Refine::Adaptive { options, .. } => emcraft_mesh::solid::solid_with(&s.model, options),
             Refine::Uniform { size } => {
-                let h = size / UNIFORM.powi(pass as i32);
+                let h = Metres::named("element size", *size / UNIFORM.powi(pass as i32))?;
                 emcraft_mesh::waveguide_with(&s.model, &crate::meshing::grid_options(p, h)?)
             }
         })
@@ -274,7 +274,7 @@ fn options(s: &Session, p: &Params) -> Result<(Options, Refine)> {
     let curved = p.flag("curved").or(true)?;
     let refine = if solid {
         let sizes = emcraft_mesh::solid::Sizes { default: sizes.default, per_material: sizes.per_material };
-        let floor = sizes.per_material.iter().flatten().copied().fold(sizes.default, f64::min) / FLOOR;
+        let floor = sizes.per_material.iter().flatten().map(|h| h.get()).fold(sizes.default.get(), f64::min) / FLOOR;
         Refine::Adaptive { options: emcraft_mesh::solid::SolidOptions { sizes, curved, refine: Vec::new() }, theta, floor }
     } else {
         Refine::Uniform { size: sizes.grid_size(s)? }

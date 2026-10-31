@@ -8,6 +8,21 @@ use std::f64::consts::PI;
 use emcraft_fdtd::open::{OpenOptions, radiate};
 use emcraft_model::{Complex64 as C, Inclusion, LumpedPort, Material, Model, Open, Point3, Pole, Shape, Solid, Source, Vec3};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
+/// An impedance (Ω), checked.
+fn ohms(v: f64) -> emcraft_model::Ohms {
+    emcraft_model::Ohms::new(v).unwrap()
+}
+
+/// A box's sides (m), checked.
+fn box_size(v: emcraft_model::Vec3) -> emcraft_model::BoxSize {
+    emcraft_model::BoxSize::new(v).unwrap()
+}
+
 const J: C = C::new(0.0, 1.0);
 
 /// ψ(x) = x j₁(x) and its derivative.
@@ -48,10 +63,10 @@ fn sphere_model(material: Material) -> Model {
     let mut m = Model::new();
     let name = material.name.clone();
     m.add_material(material).unwrap();
-    m.set_solid(Solid { shape: Shape::Box { size: Vec3::from([0.05; 3]) }, material: "vacuum".into() }).unwrap();
-    m.set_open(Some(Open { thickness: 0.01, reflection: None, shape: emcraft_model::OpenShape::Box })).unwrap();
-    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.01 }, at: CENTRE, material: Some(name) }).unwrap();
-    m.add_source(Source::Dipole { at: CENTRE, direction: Vec3::new(0.0, 0.0, 1.0), length: 1e-3, current: 1.0 }).unwrap();
+    m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::from([0.05; 3])) }, material: "vacuum".into() }).unwrap();
+    m.set_open(Some(Open { thickness: metres(0.01), reflection: None, shape: emcraft_model::OpenShape::Box })).unwrap();
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: metres(0.01) }, at: CENTRE, material: Some(name) }).unwrap();
+    m.add_source(Source::Dipole { at: CENTRE, direction: Vec3::new(0.0, 0.0, 1.0), length: metres(1e-3), current: 1.0 }).unwrap();
     m
 }
 
@@ -116,7 +131,8 @@ fn lumped_ports_in_lossy_materials_and_lossy_walls_are_refused() {
     let (material, _, _) = lossy();
     let mut m = sphere_model(material);
     m.sources.clear();
-    let gap = LumpedPort { name: "1".into(), from: CENTRE, to: Point3::new(0.025, 0.025, 0.027), impedance: 50.0, voltage: [1.0, 0.0], radius: 0.0 };
+    let gap =
+        LumpedPort { name: "1".into(), from: CENTRE, to: Point3::new(0.025, 0.025, 0.027), impedance: ohms(50.0), voltage: [1.0, 0.0], radius: 0.0 };
     m.add_lumped_port(gap).unwrap();
     assert!(matches!(radiate(&m, &OpenOptions::new(2e-3), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
     let (material, _, _) = lossy();

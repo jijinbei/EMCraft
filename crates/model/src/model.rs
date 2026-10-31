@@ -313,7 +313,7 @@ impl Model {
     /// The bounding box of the geometry.
     pub fn bounds(&self) -> Option<Aabb> {
         if let Some(w) = &self.waveguide {
-            return Some(Aabb::new(Point3::ORIGIN, Point3::new(w.width, w.height, w.length())));
+            return Some(Aabb::new(Point3::ORIGIN, Point3::new(w.width.get(), w.height.get(), w.length())));
         }
         let s = self.solid.as_ref()?;
         Some(self.features.iter().filter(|f| f.combine == Combine::Add).map(Feature::bounds).fold(s.shape.bounds(), Aabb::union))
@@ -346,11 +346,21 @@ mod tests {
     use super::*;
     use crate::{Axis, End, PortShape, Section, Shape, Vec3};
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> crate::Metres {
+        crate::Metres::new(v).unwrap()
+    }
+
+    /// A box's sides (m), checked.
+    fn box_size(v: crate::Vec3) -> crate::BoxSize {
+        crate::BoxSize::new(v).unwrap()
+    }
+
     fn guide() -> Waveguide {
         Waveguide {
-            width: 0.02286,
-            height: 0.01016,
-            sections: vec![Section::new(0.01, "vacuum")],
+            width: metres(0.02286),
+            height: metres(0.01016),
+            sections: vec![Section::new(metres(0.01), "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
             vias: Vec::new(),
@@ -361,14 +371,22 @@ mod tests {
     fn points_are_classified() {
         let mut m = Model::new();
         m.add_material(Material::new("ceramic", 4.0, 1.0).unwrap()).unwrap();
-        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.04, 0.04, 0.04) }, material: "vacuum".into() }).unwrap();
-        m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.005 }, at: Point3::new(0.02, 0.02, 0.02), material: Some("ceramic".into()) })
-            .unwrap();
-        m.add_inclusion(Inclusion { shape: Shape::Cylinder { radius: 0.001, length: 0.01 }, at: Point3::new(0.03, 0.03, 0.01), material: None })
-            .unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.04, 0.04, 0.04)) }, material: "vacuum".into() }).unwrap();
+        m.add_inclusion(Inclusion {
+            shape: Shape::Sphere { radius: metres(0.005) },
+            at: Point3::new(0.02, 0.02, 0.02),
+            material: Some("ceramic".into()),
+        })
+        .unwrap();
+        m.add_inclusion(Inclusion {
+            shape: Shape::Cylinder { radius: metres(0.001), length: metres(0.01) },
+            at: Point3::new(0.03, 0.03, 0.01),
+            material: None,
+        })
+        .unwrap();
         m.add_feature(Feature {
             combine: Combine::Subtract,
-            shape: Shape::Cylinder { radius: 0.002, length: 0.04 },
+            shape: Shape::Cylinder { radius: metres(0.002), length: metres(0.04) },
             at: Point3::new(0.005, 0.0, 0.005),
             axis: Axis::Y,
         })
@@ -379,9 +397,9 @@ mod tests {
         assert_eq!(m.material_at(Point3::new(0.006, 0.02, 0.006)), None, "the post along y");
         assert_eq!(m.material_at(Point3::new(0.05, 0.02, 0.02)), None, "outside");
         // Inclusions stay strictly inside the solid and apart from each other.
-        let touching = Inclusion { shape: Shape::Sphere { radius: 0.005 }, at: Point3::new(0.035, 0.02, 0.02), material: None };
+        let touching = Inclusion { shape: Shape::Sphere { radius: metres(0.005) }, at: Point3::new(0.035, 0.02, 0.02), material: None };
         assert!(m.add_inclusion(touching).is_err());
-        let overlapping = Inclusion { shape: Shape::Sphere { radius: 0.002 }, at: Point3::new(0.024, 0.02, 0.02), material: None };
+        let overlapping = Inclusion { shape: Shape::Sphere { radius: metres(0.002) }, at: Point3::new(0.024, 0.02, 0.02), material: None };
         assert!(m.add_inclusion(overlapping).is_err());
         assert_eq!(m.radiators().count(), 6, "two corners per inclusion and feature");
     }
@@ -399,7 +417,7 @@ mod tests {
     fn waveguides_are_checked() {
         let mut m = Model::new();
         let mut w = guide();
-        w.width = f64::INFINITY;
+        w.sections.clear();
         assert!(m.set_waveguide(w).is_err());
         let mut w = guide();
         w.sections[0].material = "nothing".into();
@@ -420,13 +438,12 @@ mod tests {
     fn solids_are_checked_and_replace_the_waveguide() {
         let mut m = Model::new();
         m.set_waveguide(guide()).unwrap();
-        assert!(m.set_solid(Solid { shape: Shape::Cylinder { radius: -1.0, length: 1.0 }, material: "vacuum".into() }).is_err());
-        assert!(m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "nothing".into() }).is_err());
-        m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.01, length: 0.03 }, material: "vacuum".into() }).unwrap();
+        assert!(m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.01) }, material: "nothing".into() }).is_err());
+        m.set_solid(Solid { shape: Shape::Cylinder { radius: metres(0.01), length: metres(0.03) }, material: "vacuum".into() }).unwrap();
         assert!(m.waveguide.is_none());
         assert_eq!(m.bounds(), Some(Aabb::new(Point3::new(-0.01, -0.01, 0.0), Point3::new(0.01, 0.01, 0.03))));
         assert_eq!(m.port_shape(End::End).unwrap(), PortShape::Circle { cx: 0.0, cy: 0.0, r: 0.01 });
-        m.set_solid(Solid { shape: Shape::Sphere { radius: 0.01 }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.01) }, material: "vacuum".into() }).unwrap();
         assert!(m.port_shape(End::Start).is_err());
     }
 }

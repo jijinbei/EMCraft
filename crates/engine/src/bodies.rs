@@ -4,7 +4,7 @@
 //! material (a dielectric body, meshed apart and joined to the region). Later bodies win where
 //! they overlap. Underneath they are the solid's features and inclusions.
 
-use emcraft_model::{Axis, Combine, Feature, Inclusion, Model, Point3, Shape};
+use emcraft_model::{Axis, BoxSize, Combine, Feature, Inclusion, Model, Point3, Shape};
 use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session};
@@ -152,12 +152,12 @@ fn edited_shape(p: &Params, old: &Shape) -> Result<Shape> {
     Ok(match (kind, old) {
         (None | Some(Primitive::Box), Shape::Box { size }) => {
             let given = p.edit_point("size", Point3::new(size.x, size.y, size.z))?;
-            Shape::Box { size: given.to_vec() }
+            Shape::Box { size: BoxSize::new(given.to_vec())? }
         }
         (None | Some(Primitive::Cylinder), Shape::Cylinder { radius, length }) => {
-            Shape::Cylinder { radius: p.edit_positive_length("radius", *radius)?, length: p.edit_positive_length("length", *length)? }
+            Shape::Cylinder { radius: p.edit_metres("radius", *radius)?, length: p.edit_metres("length", *length)? }
         }
-        (None | Some(Primitive::Sphere), Shape::Sphere { radius }) => Shape::Sphere { radius: p.edit_positive_length("radius", *radius)? },
+        (None | Some(Primitive::Sphere), Shape::Sphere { radius }) => Shape::Sphere { radius: p.edit_metres("radius", *radius)? },
         (None, Shape::Surface { .. }) => {
             if let Some(k) = ["size", "radius", "length"].into_iter().find(|k| p.has(k)) {
                 return Err(p.error(k, "is a primitive's: an imported body's shape is its file's (its `at`, `axis` and `material` change)"));

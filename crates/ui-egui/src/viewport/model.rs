@@ -165,11 +165,11 @@ impl Section<'_> {
                 p.rect_filled(fr.rect(z, 0.0, z + s.length, a0), 0.0, metal);
             }
             if a0 + a < full - 1e-12 {
-                p.rect_filled(fr.rect(z, a0 + a, z + s.length, full), 0.0, metal);
+                p.rect_filled(fr.rect(z, a0 + a, z + s.length, full.get()), 0.0, metal);
             }
             let open = fr.rect(z, a0, z + s.length, a0 + a);
             p.rect_filled(open, 0.0, self.fill_of(&s.material));
-            p.vline(fr.at(z, 0.0).x, fr.at(z, full).y..=fr.at(z, 0.0).y, Stroke::new(0.5, t.border));
+            p.vline(fr.at(z, 0.0).x, fr.at(z, full.get()).y..=fr.at(z, 0.0).y, Stroke::new(0.5, t.border));
             p.text(open.center(), Align2::CENTER_CENTER, &s.material, FontId::proportional(t.font_small), t.text);
             z += s.length;
         }
@@ -190,7 +190,7 @@ impl Section<'_> {
                 }
             }
         }
-        p.rect_stroke(fr.rect(0.0, 0.0, w.length(), full), 0.0, self.outline(), egui::StrokeKind::Middle);
+        p.rect_stroke(fr.rect(0.0, 0.0, w.length(), full.get()), 0.0, self.outline(), egui::StrokeKind::Middle);
     }
 
     fn solid(&self, solid: &emcraft_model::Solid, lo: emcraft_model::Point3, hi: emcraft_model::Point3) {

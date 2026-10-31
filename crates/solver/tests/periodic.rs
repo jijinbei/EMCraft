@@ -7,6 +7,11 @@ use emcraft_solver::Driven;
 use emcraft_theory::floquet::{Polarization as Pol, Stack, StackLayer};
 use num_complex::Complex64 as C;
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const CELL: f64 = 0.01;
 const AIR: f64 = 0.006;
 const SLAB: f64 = 0.005;
@@ -15,12 +20,13 @@ const EPS: f64 = 4.0;
 fn slab_cell(theta: f64, phi: f64, pol: Polarization, size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("slab", EPS, 1.0).unwrap()).unwrap();
-    let sections = vec![Section::new(AIR, "vacuum"), Section::new(SLAB, "slab"), Section::new(AIR, "vacuum")];
-    m.set_waveguide(Waveguide { width: CELL, height: CELL, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    let sections = vec![Section::new(metres(AIR), "vacuum"), Section::new(metres(SLAB), "slab"), Section::new(metres(AIR), "vacuum")];
+    m.set_waveguide(Waveguide { width: metres(CELL), height: metres(CELL), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() })
+        .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(2)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(2)).unwrap();
     m.set_periodic(Some(Periodic { x: true, y: true, z: false, theta, phi, polarization: pol })).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 

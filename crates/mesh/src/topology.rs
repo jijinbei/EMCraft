@@ -93,19 +93,24 @@ mod tests {
     use super::*;
     use emcraft_model::{Model, Section, Waveguide};
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> emcraft_model::Metres {
+        emcraft_model::Metres::new(v).unwrap()
+    }
+
     #[test]
     fn euler_characteristic_and_sharing() {
         let mut m = Model::new();
         m.set_waveguide(Waveguide {
-            width: 0.02,
-            height: 0.01,
-            sections: vec![Section::new(0.03, "vacuum")],
+            width: metres(0.02),
+            height: metres(0.01),
+            sections: vec![Section::new(metres(0.03), "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
             vias: Vec::new(),
         })
         .unwrap();
-        let mesh = crate::waveguide(&m, 0.005).unwrap();
+        let mesh = crate::waveguide(&m, metres(0.005)).unwrap();
         let t = Topology::new(&mesh);
         // A ball: V − E + F − T = 1.
         let chi = mesh.nodes.len() as i64 - t.edges.len() as i64 + t.faces.len() as i64 - mesh.tets.len() as i64;

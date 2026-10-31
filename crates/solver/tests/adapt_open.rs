@@ -8,19 +8,29 @@ use emcraft_model::{Inclusion, Model, Open, OpenShape, Point3, Shape, Solid, Sou
 use emcraft_solver::Driven;
 use emcraft_solver::adapt::open_indicator;
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
+/// A box's sides (m), checked.
+fn box_size(v: emcraft_model::Vec3) -> emcraft_model::BoxSize {
+    emcraft_model::BoxSize::new(v).unwrap()
+}
+
 const SIDE: f64 = 0.04;
 const LAYER: f64 = 0.01;
 const F: f64 = 10.0e9;
 
 fn open_box() -> Model {
     let mut m = Model::new();
-    m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(SIDE, SIDE, SIDE) }, material: "vacuum".into() }).unwrap();
+    m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(SIDE, SIDE, SIDE)) }, material: "vacuum".into() }).unwrap();
     m
 }
 
 fn meshed(mut m: Model, size: f64) -> Model {
-    m.set_open(Some(Open { thickness: LAYER, reflection: None, shape: OpenShape::Box })).unwrap();
-    m.mesh = Some(solid_with(&m, &SolidOptions::new(size)).unwrap().into());
+    m.set_open(Some(Open { thickness: metres(LAYER), reflection: None, shape: OpenShape::Box })).unwrap();
+    m.mesh = Some(solid_with(&m, &SolidOptions::new(metres(size))).unwrap().into());
     m
 }
 
@@ -33,7 +43,7 @@ fn in_layer(p: Point3) -> bool {
 fn the_layer_and_a_dipoles_neighbourhood_are_left_out() {
     let mut m = open_box();
     let at = Point3::new(0.0201, 0.0202, 0.0199);
-    m.add_source(Source::Dipole { at, direction: Vec3::unit(2), length: 0.001, current: 1.0 }).unwrap();
+    m.add_source(Source::Dipole { at, direction: Vec3::unit(2), length: metres(0.001), current: 1.0 }).unwrap();
     let m = meshed(m, 0.006);
     let d = Driven::open(&m, Order::One).unwrap();
     let r = d.solve_open(&m, F).unwrap();
@@ -65,7 +75,7 @@ fn the_layer_and_a_dipoles_neighbourhood_are_left_out() {
 #[test]
 fn a_conductors_lifted_trace_is_the_scattered_fields_data() {
     let mut m = open_box();
-    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.02, 0.02, 0.02), material: None }).unwrap();
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: metres(0.004) }, at: Point3::new(0.02, 0.02, 0.02), material: None }).unwrap();
     m.add_source(Source::PlaneWave { direction: Vec3::unit(2), polarization: Vec3::unit(0) }).unwrap();
     let m = meshed(m, 0.005);
     let d = Driven::open(&m, Order::One).unwrap();
@@ -90,7 +100,8 @@ fn a_conductors_lifted_trace_is_the_scattered_fields_data() {
 fn a_dielectric_scatterers_incident_field_is_its_source() {
     let mut m = open_box();
     m.add_material(emcraft_model::Material::new("glass", 4.0, 1.0).unwrap()).unwrap();
-    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(0.02, 0.02, 0.02), material: Some("glass".into()) }).unwrap();
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: metres(0.004) }, at: Point3::new(0.02, 0.02, 0.02), material: Some("glass".into()) })
+        .unwrap();
     m.add_source(Source::PlaneWave { direction: Vec3::unit(2), polarization: Vec3::unit(0) }).unwrap();
     // 8 mm cells, for speed: half the tetrahedra of 6 mm, the gap still wide.
     let m = meshed(m, 0.008);

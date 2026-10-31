@@ -5,20 +5,21 @@ use std::f64::consts::PI;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Result, invalid, positive};
+use crate::error::{ModelError, Result, invalid};
 use crate::geom::{self, Aabb, Point3, Vec3};
 use crate::port::{End, PortShape};
+use crate::quantity::{Metres, Quantity};
 
 /// A primitive body, meshed with unstructured tetrahedra.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Shape {
     /// [0, x] × [0, y] × [0, z].
-    Box { size: Vec3 },
+    Box { size: BoxSize },
     /// Axis z through the origin, from z = 0 to `length`.
-    Cylinder { radius: f64, length: f64 },
+    Cylinder { radius: Metres, length: Metres },
     /// Centred on the origin.
-    Sphere { radius: f64 },
+    Sphere { radius: Metres },
     /// A closed triangulated surface (imported): positions (m), outward triangles and a face
     /// tag per triangle; `surfaces[tag]` the face's exact surface where one was recovered from
     /// its vertices (a plane, cylinder, sphere, cone or torus fitted on import), else it is faceted.
@@ -30,6 +31,64 @@ pub enum Shape {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         surfaces: Vec<Option<FaceSurface>>,
     },
+}
+
+/// A box's sides (m): each finite and > 0, read as a [`Vec3`] (through `Deref`), serialized as
+/// one (`[x, y, z]`).
+///
+/// ```
+/// use emcraft_model::{shape::BoxSize, Vec3};
+///
+/// let size = BoxSize::new(Vec3::new(0.02, 0.01, 0.03))?; // m
+/// assert_eq!(size.x * size.y * size.z, 0.02 * 0.01 * 0.03);
+/// let e = BoxSize::new(Vec3::new(0.02, 0.0, 0.03)).unwrap_err();
+/// assert_eq!(e.to_string(), "invalid box size y: must be a finite number > 0, got 0");
+/// # Ok::<(), emcraft_model::ModelError>(())
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec3", into = "Vec3")]
+pub struct BoxSize(Vec3);
+
+impl BoxSize {
+    /// The sides `v` (m), each checked.
+    pub fn new(v: Vec3) -> Result<BoxSize> {
+        for (x, axis) in v.iter().zip(["x", "y", "z"]) {
+            Metres::named(&format!("box size {axis}"), x)?;
+        }
+        Ok(BoxSize(v))
+    }
+
+    /// The sides from three checked lengths.
+    pub fn of(x: Metres, y: Metres, z: Metres) -> BoxSize {
+        BoxSize(Vec3::new(x.get(), y.get(), z.get()))
+    }
+
+    /// The sides as a vector.
+    pub fn get(self) -> Vec3 {
+        self.0
+    }
+}
+
+impl TryFrom<Vec3> for BoxSize {
+    type Error = ModelError;
+
+    fn try_from(v: Vec3) -> Result<BoxSize> {
+        BoxSize::new(v)
+    }
+}
+
+impl From<BoxSize> for Vec3 {
+    fn from(s: BoxSize) -> Vec3 {
+        s.0
+    }
+}
+
+impl std::ops::Deref for BoxSize {
+    type Target = Vec3;
+
+    fn deref(&self) -> &Vec3 {
+        &self.0
+    }
 }
 
 /// The exact surface of an imported face, recovered by fitting its vertices (untrimmed: the
@@ -216,8 +275,14 @@ impl Shape {
     pub fn bounds(&self) -> Aabb {
         match *self {
             Shape::Box { size } => Aabb::new(Point3::ORIGIN, size.to_point()),
-            Shape::Cylinder { radius: r, length } => Aabb::new(Point3::new(-r, -r, 0.0), Point3::new(r, r, length)),
-            Shape::Sphere { radius: r } => Aabb::new(Point3::new(-r, -r, -r), Point3::new(r, r, r)),
+            Shape::Cylinder { radius, length } => {
+                let r = radius.get();
+                Aabb::new(Point3::new(-r, -r, 0.0), Point3::new(r, r, length.get()))
+            }
+            Shape::Sphere { radius } => {
+                let r = radius.get();
+                Aabb::new(Point3::new(-r, -r, -r), Point3::new(r, r, r))
+            }
             Shape::Surface { ref positions, .. } => Aabb::around(positions.iter().copied()).unwrap_or_default(),
         }
     }
@@ -227,8 +292,8 @@ impl Shape {
     pub fn contains(&self, p: Point3) -> bool {
         match *self {
             Shape::Box { size } => (0..3).all(|d| p[d] > 0.0 && p[d] < size[d]),
-            Shape::Cylinder { radius, length } => p.z > 0.0 && p.z < length && p.x * p.x + p.y * p.y < radius * radius,
-            Shape::Sphere { radius } => p.to_vec().norm_sqr() < radius * radius,
+            Shape::Cylinder { radius, length } => p.z > 0.0 && p.z < *length && p.x * p.x + p.y * p.y < *radius * *radius,
+            Shape::Sphere { radius } => p.to_vec().norm_sqr() < *radius * *radius,
             Shape::Surface { ref positions, ref triangles, .. } => {
                 let total: f64 = triangles.iter().map(|t| solid_angle(t.map(|v| corner(positions, v) - p))).sum();
                 total / (4.0 * PI) > 0.5
@@ -249,7 +314,7 @@ impl Shape {
     pub fn volume(&self) -> f64 {
         match *self {
             Shape::Box { size } => size.x * size.y * size.z,
-            Shape::Cylinder { radius, length } => PI * radius * radius * length,
+            Shape::Cylinder { radius, length } => PI * *radius * *radius * *length,
             Shape::Sphere { radius } => 4.0 / 3.0 * PI * radius.powi(3),
             Shape::Surface { ref positions, ref triangles, .. } => triangles
                 .iter()
@@ -261,22 +326,11 @@ impl Shape {
         }
     }
 
-    /// Checks the dimensions are finite and positive; an imported surface must be closed,
-    /// consistently oriented and enclose a volume.
+    /// Checks an imported surface is closed, consistently oriented and encloses a volume (the
+    /// primitives' dimensions are finite and positive by type).
     pub fn check(&self) -> Result<()> {
         match self {
-            Shape::Box { size } => {
-                for (v, axis) in size.iter().zip(["x", "y", "z"]) {
-                    positive(&format!("box size {axis}"), v)?;
-                }
-            }
-            Shape::Cylinder { radius, length } => {
-                positive("cylinder radius", *radius)?;
-                positive("cylinder length", *length)?;
-            }
-            Shape::Sphere { radius } => {
-                positive("sphere radius", *radius)?;
-            }
+            Shape::Box { .. } | Shape::Cylinder { .. } | Shape::Sphere { .. } => {}
             Shape::Surface { positions, triangles, tags, surfaces, .. } => {
                 if surfaces.len() > triangles.len() {
                     return Err(invalid("surface", "has more face surfaces than triangles"));
@@ -326,7 +380,7 @@ impl Shape {
     pub fn end_face(&self, end: End) -> Result<PortShape> {
         match self {
             Shape::Box { size } => Ok(PortShape::Rect { x0: 0.0, y0: 0.0, a: size.x, b: size.y }),
-            Shape::Cylinder { radius, .. } => Ok(PortShape::Circle { cx: 0.0, cy: 0.0, r: *radius }),
+            Shape::Cylinder { radius, .. } => Ok(PortShape::Circle { cx: 0.0, cy: 0.0, r: radius.get() }),
             Shape::Sphere { .. } => Err(invalid("port", "a sphere has no flat end faces for ports")),
             Shape::Surface { positions, triangles, .. } => {
                 let [start, stop] = self.end_triangles();
@@ -530,9 +584,12 @@ mod tests {
 
     #[test]
     fn shapes_are_checked() {
-        assert!((Shape::Sphere { radius: 1.0 }.volume() - 4.18879).abs() < 1e-5);
-        assert!(Shape::Box { size: Vec3::new(1.0, 0.0, 1.0) }.check().is_err());
-        assert!(Shape::Cylinder { radius: 1.0, length: f64::NAN }.check().is_err());
+        assert!((Shape::Sphere { radius: Metres::new(1.0).unwrap() }.volume() - 4.18879).abs() < 1e-5);
+        assert!(BoxSize::new(Vec3::new(1.0, 0.0, 1.0)).is_err());
+        let file = r#"{"type": "cylinder", "radius": 1.0, "length": -1.0}"#;
+        assert!(serde_json::from_str::<Shape>(file).is_err(), "a file is checked as the types are");
+        let bx = Shape::Box { size: BoxSize::new(Vec3::new(1.0, 2.0, 3.0)).unwrap() };
+        assert_eq!(serde_json::to_string(&bx).unwrap(), r#"{"type":"box","size":[1.0,2.0,3.0]}"#);
         let closed = tetrahedron(vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]);
         closed.check().unwrap();
         assert!((closed.volume() - 1.0 / 6.0).abs() < 1e-15);
@@ -549,7 +606,12 @@ mod tests {
     #[test]
     fn features_turn_onto_their_axis() {
         // A box turned onto y: its own (x, y, z) lie along global (y, z, x).
-        let f = Feature { combine: Combine::Add, shape: Shape::Box { size: Vec3::new(1.0, 2.0, 3.0) }, at: Point3::ORIGIN, axis: Axis::Y };
+        let f = Feature {
+            combine: Combine::Add,
+            shape: Shape::Box { size: BoxSize::new(Vec3::new(1.0, 2.0, 3.0)).unwrap() },
+            at: Point3::ORIGIN,
+            axis: Axis::Y,
+        };
         let b = f.bounds();
         assert_eq!(b.max, Point3::new(2.0, 3.0, 1.0));
         assert!(f.contains(b.center()) && !f.contains(b.center().with(0, b.max.x + 0.1)));

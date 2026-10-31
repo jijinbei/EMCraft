@@ -49,7 +49,7 @@ impl Layer {
                 let mut list = Vec::new();
                 for t in 0..mesh.tets.len() {
                     let centroid = mesh.centroid(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
-                    let depth = centroid.to_vec().zip_map(*size, |c, l| ((d - c).max(c - (l - d)).max(0.0) / d).min(1.0));
+                    let depth = centroid.to_vec().zip_map(size.get(), |c, l| ((d - c).max(c - (l - d)).max(0.0) / d).min(1.0));
                     if depth.iter().any(|x| x > 0.0) {
                         list.push((t, depth));
                     }
@@ -59,8 +59,8 @@ impl Layer {
             (Some(Solid { shape: Shape::Sphere { radius }, .. }), OpenShape::Sphere) => {
                 // The shell's tetrahedra: a corner outside the inner sphere (the mesh's interface
                 // there keeps the others wholly inside it, where the tensor is the identity).
-                let inner = radius - o.thickness;
-                let tol = 1e-9 * radius;
+                let inner = *radius - o.thickness;
+                let tol = 1e-9 * *radius;
                 let mut tets = Vec::new();
                 for t in 0..mesh.tets.len() {
                     let corners = mesh.corners(t).ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
@@ -77,7 +77,7 @@ impl Layer {
                 ));
             }
         };
-        Ok(Some(Layer { thickness: o.thickness, reflection, kind }))
+        Ok(Some(Layer { thickness: o.thickness.get(), reflection, kind }))
     }
 
     /// The layer's tetrahedra.
@@ -199,6 +199,11 @@ mod tests {
     use super::*;
     use emcraft_model::{Material, Open, OpenShape, Shape, Solid};
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> emcraft_model::Metres {
+        emcraft_model::Metres::new(v).unwrap()
+    }
+
     #[test]
     fn the_spherical_stretch_is_the_closed_form() {
         // Inside the inner sphere: no stretch.
@@ -218,9 +223,9 @@ mod tests {
         let mut m = Model::new();
         let name = material.name.clone();
         m.add_material(material).unwrap();
-        m.set_solid(Solid { shape: Shape::Sphere { radius: 0.012 }, material: name }).unwrap();
-        m.set_open(Some(Open { thickness: 0.004, reflection: None, shape: OpenShape::Sphere })).unwrap();
-        m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.006).unwrap().into());
+        m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.012) }, material: name }).unwrap();
+        m.set_open(Some(Open { thickness: metres(0.004), reflection: None, shape: OpenShape::Sphere })).unwrap();
+        m.mesh = Some(emcraft_mesh::solid::solid(&m, metres(0.006)).unwrap().into());
         let d = Driven::open(&m, Order::One).unwrap();
         let Some(Layer { kind: LayerKind::Sphere { tets, .. }, .. }) = &d.pml else { panic!("no spherical layer") };
         let mut a = d.pattern.zeroed();
@@ -246,9 +251,9 @@ mod tests {
         // With the layer's inner radius beyond the mesh (Λ = I everywhere) its quadrature gives
         // the ordinary element matrices, curved elements on the sphere's wall included.
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Sphere { radius: 0.012 }, material: "vacuum".into() }).unwrap();
-        m.set_open(Some(Open { thickness: 0.004, reflection: None, shape: OpenShape::Sphere })).unwrap();
-        m.mesh = Some(emcraft_mesh::solid::solid(&m, 0.006).unwrap().into());
+        m.set_solid(Solid { shape: Shape::Sphere { radius: metres(0.012) }, material: "vacuum".into() }).unwrap();
+        m.set_open(Some(Open { thickness: metres(0.004), reflection: None, shape: OpenShape::Sphere })).unwrap();
+        m.mesh = Some(emcraft_mesh::solid::solid(&m, metres(0.006)).unwrap().into());
         let d = Driven::open(&m, Order::Two).unwrap();
         let Some(Layer { kind: LayerKind::Sphere { tets, .. }, .. }) = &d.pml else { panic!("no spherical layer") };
         assert!(!tets.is_empty() && tets.len() < d.mesh.tets.len());

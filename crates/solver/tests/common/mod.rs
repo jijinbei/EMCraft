@@ -4,6 +4,11 @@
 use emcraft_model::{End, Material, Model, Port, Section, Waveguide};
 use emcraft_theory::{Layer, Te10Line};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 /// WR-90: a = 22.86 mm, b = 10.16 mm.
 pub const A: f64 = 0.02286;
 pub const B: f64 = 0.01016;
@@ -19,11 +24,11 @@ pub fn guide(sections: &[(f64, f64)], size: f64, modes: u32) -> Model {
         }
         names.push(name);
     }
-    let sections = sections.iter().zip(&names).map(|((l, _), n)| Section::new(*l, n)).collect();
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    let sections = sections.iter().zip(&names).map(|((l, _), n)| Section::new(metres(*l), n)).collect();
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(modes)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(modes)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 

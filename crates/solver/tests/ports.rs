@@ -8,6 +8,16 @@ use emcraft_fem::Order;
 use emcraft_model::{Axis, Combine, End, Feature, Material, Model, Point3, Port, Shape, Solid};
 use emcraft_solver::{Complex64 as C, Driven};
 
+/// An impedance (Ω), checked.
+fn ohms(v: f64) -> emcraft_model::Ohms {
+    emcraft_model::Ohms::new(v).unwrap()
+}
+
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 /// The high-pass filter with its ports' modes solved numerically.
 fn numeric_filter() -> Model {
     let mut m = guide(&FILTER, 0.004, 4);
@@ -38,10 +48,15 @@ fn numerical_port_modes_give_the_closed_forms_s_parameters() {
 fn coax(length: f64, size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("ptfe", 2.1, 1.0).unwrap()).unwrap();
-    m.set_solid(Solid { shape: Shape::Cylinder { radius: 0.0035, length }, material: "ptfe".into() }).unwrap();
-    m.add_feature(Feature { combine: Combine::Subtract, shape: Shape::Cylinder { radius: 0.001, length }, at: Point3::ORIGIN, axis: Axis::Z })
-        .unwrap();
-    m.mesh = Some(emcraft_mesh::solid::solid(&m, size).unwrap().into());
+    m.set_solid(Solid { shape: Shape::Cylinder { radius: metres(0.0035), length: metres(length) }, material: "ptfe".into() }).unwrap();
+    m.add_feature(Feature {
+        combine: Combine::Subtract,
+        shape: Shape::Cylinder { radius: metres(0.001), length: metres(length) },
+        at: Point3::ORIGIN,
+        axis: Axis::Z,
+    })
+    .unwrap();
+    m.mesh = Some(emcraft_mesh::solid::solid(&m, metres(size)).unwrap().into());
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
@@ -72,10 +87,10 @@ fn slab_guide(length: f64, d: f64, er: f64, size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("slab", er, 1.0).unwrap()).unwrap();
     let w = emcraft_model::Waveguide {
-        width: A,
-        height: B,
-        sections: vec![emcraft_model::Section::new(length, "vacuum")],
-        layers: vec![emcraft_model::Layer { thickness: d, material: "slab".into() }],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![emcraft_model::Section::new(metres(length), "vacuum")],
+        layers: vec![emcraft_model::Layer { thickness: metres(d), material: "slab".into() }],
         strips: Vec::new(),
         vias: Vec::new(),
     };
@@ -83,7 +98,7 @@ fn slab_guide(length: f64, d: f64, er: f64, size: f64) -> Model {
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(4)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -113,18 +128,18 @@ fn stripline(a: f64, b: f64, w: f64, length: f64, er: f64, size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("fill", er, 1.0).unwrap()).unwrap();
     let wg = emcraft_model::Waveguide {
-        width: a,
-        height: b,
-        sections: vec![emcraft_model::Section::new(length, "fill")],
+        width: metres(a),
+        height: metres(b),
+        sections: vec![emcraft_model::Section::new(metres(length), "fill")],
         layers: Vec::new(),
-        strips: vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }],
+        strips: vec![emcraft_model::Strip { y: b / 2.0, x0: (a - w) / 2.0, width: metres(w), z0: 0.0, z1: length }],
         vias: Vec::new(),
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -150,18 +165,18 @@ fn microstrip(a: f64, b: f64, h: f64, w: f64, er: f64, length: f64, size: f64) -
     let mut m = Model::new();
     m.add_material(Material::new("substrate", er, 1.0).unwrap()).unwrap();
     let wg = emcraft_model::Waveguide {
-        width: a,
-        height: b,
-        sections: vec![emcraft_model::Section::new(length, "vacuum")],
-        layers: vec![emcraft_model::Layer { thickness: h, material: "substrate".into() }],
-        strips: vec![emcraft_model::Strip { y: h, x0: (a - w) / 2.0, width: w, z0: 0.0, z1: length }],
+        width: metres(a),
+        height: metres(b),
+        sections: vec![emcraft_model::Section::new(metres(length), "vacuum")],
+        layers: vec![emcraft_model::Layer { thickness: metres(h), material: "substrate".into() }],
+        strips: vec![emcraft_model::Strip { y: h, x0: (a - w) / 2.0, width: metres(w), z0: 0.0, z1: length }],
         vias: Vec::new(),
     };
     m.set_waveguide(wg).unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -215,10 +230,10 @@ fn coupled_strips(w: f64, s: f64, b: f64, side: f64, planes: &[emcraft_model::Sy
     let a = 2.0 * (side + w) + s;
     let mut m = stripline(a, b, w, 0.001, 2.2, 0.002);
     let wg = m.waveguide.clone().unwrap();
-    let strip = |x0: f64| emcraft_model::Strip { y: b / 2.0, x0, width: w, z0: 0.0, z1: 0.001 };
+    let strip = |x0: f64| emcraft_model::Strip { y: b / 2.0, x0, width: metres(w), z0: 0.0, z1: 0.001 };
     m.set_waveguide(emcraft_model::Waveguide { strips: vec![strip(side), strip(side + w + s)], ..wg }).unwrap();
     m.set_symmetry(planes.to_vec()).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.001).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.001)).unwrap().into());
     m
 }
 
@@ -267,7 +282,7 @@ fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
     // oracle's coaxial-line-50-ohm).
     let length = 0.004;
     let mut m = coax(length, 0.0025);
-    m.ports.iter_mut().for_each(|p| p.reference = Some(50.0));
+    m.ports.iter_mut().for_each(|p| p.reference = Some(ohms(50.0)));
     let d = Driven::new(&m, Order::Two).unwrap();
     let f = 6e9;
     let r = d.solve(f).unwrap();
@@ -284,7 +299,7 @@ fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
     assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-9);
     // A reference on a port without a line impedance (a waveguide) is refused.
     let mut wg = guide(&FILTER, 0.004, 2);
-    wg.ports[0].reference = Some(50.0);
+    wg.ports[0].reference = Some(ohms(50.0));
     assert!(Driven::new(&wg, Order::One).unwrap().solve(8e9).is_err());
 }
 

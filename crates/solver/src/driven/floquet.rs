@@ -148,8 +148,8 @@ pub(super) fn prepare(model: &Model, periodic: &Periodic, p: &Port, faces: &[usi
         emcraft_model::End::End => w.sections.last(),
     }
     .ok_or_else(|| invalid("waveguide", "has no sections"))?;
-    if !(full(sec.width) || sec.width.is_some_and(|x| (x - w.width).abs() <= 1e-9 * w.width))
-        || !(full(sec.height) || sec.height.is_some_and(|y| (y - w.height).abs() <= 1e-9 * w.height))
+    if !(full(sec.width.map(f64::from)) || sec.width.is_some_and(|x| (x - w.width).abs() <= 1e-9 * w.width))
+        || !(full(sec.height.map(f64::from)) || sec.height.is_some_and(|y| (y - w.height).abs() <= 1e-9 * w.height))
     {
         return Err(invalid(what(), "a Floquet port needs the whole cell's cross-section at its end"));
     }
@@ -161,7 +161,7 @@ pub(super) fn prepare(model: &Model, periodic: &Periodic, p: &Port, faces: &[usi
         eps_r: m.eps_r.get(),
         mu_r: m.mu_r.get(),
         faces: faces.to_vec(),
-        cell: [0.0, 0.0, w.width, w.height],
+        cell: [0.0, 0.0, w.width.get(), w.height.get()],
         count: p.modes as usize,
         polarization: periodic.polarization,
         phi: periodic.phi,

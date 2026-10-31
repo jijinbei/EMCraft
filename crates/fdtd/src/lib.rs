@@ -303,8 +303,8 @@ impl PortGuide {
     fn new(model: &Model, w: &Waveguide, i: usize, losses: Losses) -> Result<PortGuide> {
         let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
         let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
-        let width = w.aperture(i).map_or(w.width, |a| a.width);
-        let height = w.aperture_y(i).map_or(w.height, |a| a.width);
+        let width = w.aperture(i).map_or(w.width.get(), |a| a.width);
+        let height = w.aperture_y(i).map_or(w.height.get(), |a| a.width);
         Ok(PortGuide { width, height, material: m.clone(), losses })
     }
 

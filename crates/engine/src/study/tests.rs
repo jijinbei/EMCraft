@@ -30,7 +30,7 @@ fn filter(size: f64) -> Session {
 }
 
 fn lengths(s: &Session) -> Vec<f64> {
-    s.model.waveguide.as_ref().unwrap().sections.iter().map(|x| x.length).collect()
+    s.model.waveguide.as_ref().unwrap().sections.iter().map(|x| x.length.get()).collect()
 }
 
 #[test]

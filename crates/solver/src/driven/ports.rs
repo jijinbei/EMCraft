@@ -186,7 +186,7 @@ pub(super) fn faces_of_port(mesh: &Mesh, p: &Port) -> Result<Vec<usize>> {
             (0..mesh.boundary.len()).filter(|&i| mesh.boundary[i].tag == tag).collect()
         }
         Some(f) => {
-            let tol = 1e-6 * f.a.max(f.b);
+            let tol = 1e-6 * f.a.max(f.b.get());
             (0..mesh.boundary.len())
                 .filter(|&i| mesh.boundary[i].nodes.iter().all(|n| mesh.nodes.get(*n as usize).is_some_and(|q| f.holds(*q, tol))))
                 .collect()
@@ -209,7 +209,7 @@ pub(super) fn prepare(model: &Model, p: &Port, space: &Space, faces: &[usize]) -
             (PortModes::Numeric(Box::new(n)), t)
         }
     };
-    Ok(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference, deembed: p.deembed, terminals })
+    Ok(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference.map(f64::from), deembed: p.deembed, terminals })
 }
 
 /// How many terminals a port whose cross-section is `section` has: its conductors when it asks
