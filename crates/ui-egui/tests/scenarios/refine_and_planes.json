@@ -1,6 +1,7 @@
 [
   {"note": "Where S is measured: a band dragged on the chart solved more finely and merged into the sweep; a port's reference plane moved, S following at once"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 6}}},
   {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6, "stop": 8, "points": 3, "order": 1}}},
   {"until": {"busy": false, "inspect": {"model.results.frequencies": 3}}, "timeout": 120},
   {"expect": {"view": "sparameters", "inspect": {"refine": null}, "hidden": ["refine:start"], "handles": ["deembed:1", "deembed:2"]}},

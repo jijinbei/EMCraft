@@ -1,6 +1,7 @@
 [
   {"note": "Time-domain reflectometry of a sweep: band pass on a waveguide's band (no DC), low pass refused there with the harmonic grid it needs"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 6}}},
   {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 6.6, "stop": 9, "points": 25, "order": 1}}},
   {"click": "tab:RESULTS"},
   {"click": "toolbar:results.tdr"},

@@ -1,12 +1,12 @@
 [
-  {"note": "Optimize finds a quarter-wave matching section's length (λg/4 = 11.13 mm at 8 GHz) from 8 mm, charts its progress and leaves the model there; undo goes back"},
+  {"note": "Optimize runs on a quarter-wave matching section's length from 8 mm, charts its progress and leaves the model at its best point; undo goes back. A budget of five solves on a coarse mesh: the wiring, not the optimum (the oracle's study-optimize-quarter-wave and the engine's study tests find λg/4)"},
   {"call": "engine.script", "params": {"commands": [
     {"command": "project.variable", "params": {"name": "l", "value": 8}},
     {"command": "model.material.create", "params": {"name": "match", "eps_r": 1.380001328637192}},
     {"command": "model.material.create", "params": {"name": "load", "eps_r": 2.2}},
     {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
       {"length": 8, "material": "vacuum"}, {"length": "=l", "material": "match"}, {"length": 8, "material": "load"}]}},
-    {"command": "mesh.generate", "params": {"size": 5}},
+    {"command": "mesh.generate", "params": {"size": 8}},
     {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
     {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}}
   ]}},
@@ -16,13 +16,14 @@
   {"call": "ui.dialog", "params": {"set": {
     "variables": [{"name": "l", "min": 4, "max": 18}],
     "goal": {"type": "min_max_db", "parameter": "s11"},
-    "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}}}},
+    "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}},
+    "max_evaluations": 5}}},
   {"click": "dialog:ok"},
   {"expect": {"dialog": null}},
   {"until": {"busy": false, "view": "study"}, "timeout": 120},
-  {"expect": {"status": "Optimization of l", "status_error": false, "inspect": {"study.kind": "optimize", "study.converged": true, "variables.l": {"min": 10.8, "max": 11.5}}}},
+  {"expect": {"status": "Optimization of l", "status_error": false, "inspect": {"study.kind": "optimize", "study.rows": 5, "study.converged": false, "variables.l": {"min": 4, "max": 18}}}},
   {"frames": 3},
-  {"expect": {"handles": ["chart:study", "fold:Variables"], "inspect": {"study.chart": "*", "model.waveguide.sections.1.length": {"min": 10.8, "max": 11.5}}}},
+  {"expect": {"handles": ["chart:study", "fold:Variables"], "inspect": {"study.chart": "*", "model.waveguide.sections.1.length": {"min": 4, "max": 18}}}},
   {"shot": "study_optimize"},
   {"call": "engine.execute", "params": {"command": "edit.undo", "params": {}}},
   {"expect": {"inspect": {"variables.l": [8, 1e-9], "model.waveguide.sections.1.length": [8, 1e-9]}}}

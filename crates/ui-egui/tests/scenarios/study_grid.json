@@ -7,7 +7,7 @@
     {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [
       {"length": 15, "material": "ptfe-like"}, {"length": "=a", "material": "vacuum"}, {"length": "=b", "material": "ptfe-like"},
       {"length": 10, "material": "vacuum"}, {"length": 15, "material": "ptfe-like"}]}},
-    {"command": "mesh.generate", "params": {"size": 8}},
+    {"command": "mesh.generate", "params": {"size": 10}},
     {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
     {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}}
   ]}},
