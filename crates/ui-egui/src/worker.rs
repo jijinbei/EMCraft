@@ -136,31 +136,116 @@ impl Job {
         self.started.elapsed().as_secs_f64()
     }
 
-    /// Seconds left: from how far it is once that says enough (a tenth done), else from the
-    /// estimate; `None` when neither says.
+    /// Seconds left ([`remaining`]); `None` when nothing can honestly say (the job row then shows
+    /// only the time it has run).
     pub fn remaining(&self) -> Option<f64> {
         remaining(self.snapshot().fraction(), self.elapsed(), self.estimate)
     }
 }
 
-/// Seconds left of a job `fraction` done after `elapsed` seconds that was expected to take
-/// `estimate`: the rate so far once a tenth is done, else what is left of the estimate.
+/// The share done at which the rate so far has replaced the estimate entirely.
+const TRUST_RATE: f64 = 0.25;
+/// Below this many seconds left, the time left is not said (a count of whole steps cannot say
+/// the last step's end that finely, and `0.0 s` while work remains would be false).
+const LEAST_LEFT: f64 = 1.0;
+
+/// Seconds left of a job `fraction` done (`None`: how much work there is is not known, as a fast
+/// sweep's full solves) after `elapsed` seconds, expected to take `estimate`:
+/// - from the run's own rate, `elapsed (1 − f)/f`, blended with what is left of the estimate
+///   while little is done (the rate alone from a quarter on, or once the estimate is passed);
+/// - without a share done, what is left of the estimate;
+/// - `None` once nothing can say (the estimate passed with no share, everything counted done
+///   while the job still runs) or under a second: never a countdown at 0 while work remains.
+///
+/// ```
+/// use emcraft_ui_egui::worker::remaining;
+/// // Half done in 10 s: 10 s more.
+/// assert_eq!(remaining(Some(0.5), 10.0, Some(100.0)), Some(10.0));
+/// // Past its estimate with no count to go by: only the elapsed time is said.
+/// assert_eq!(remaining(None, 658.0, Some(300.0)), None);
+/// ```
 pub fn remaining(fraction: Option<f64>, elapsed: f64, estimate: Option<f64>) -> Option<f64> {
-    match fraction {
-        Some(f) if (0.1..1.0).contains(&f) => Some(elapsed * (1.0 - f) / f),
-        Some(f) if f >= 1.0 => Some(0.0),
-        _ => estimate.filter(|e| e.is_finite()).map(|e| (e - elapsed).max(0.0)),
+    if !(elapsed.is_finite() && elapsed >= 0.0) {
+        return None;
     }
+    let by_estimate = estimate.filter(|e| e.is_finite()).map(|e| e - elapsed).filter(|left| *left > 0.0);
+    let left = match fraction.filter(|f| f.is_finite()) {
+        Some(f) if f >= 1.0 => None,
+        Some(f) if f > 0.0 => {
+            let by_rate = elapsed * (1.0 - f) / f;
+            match by_estimate {
+                Some(e) => {
+                    let w = (f / TRUST_RATE).min(1.0);
+                    Some(w * by_rate + (1.0 - w) * e)
+                }
+                None => Some(by_rate),
+            }
+        }
+        _ => by_estimate,
+    };
+    left.filter(|l| l.is_finite() && *l >= LEAST_LEFT)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::remaining;
+
     #[test]
     fn time_left_follows_the_progress_then_the_estimate() {
-        assert_eq!(super::remaining(Some(0.5), 10.0, Some(100.0)), Some(10.0));
-        assert_eq!(super::remaining(Some(0.05), 10.0, Some(100.0)), Some(90.0));
-        assert_eq!(super::remaining(None, 120.0, Some(100.0)), Some(0.0));
-        assert_eq!(super::remaining(None, 1.0, None), None);
-        assert_eq!(super::remaining(Some(1.0), 5.0, None), Some(0.0));
+        // A quarter done or more: the rate alone.
+        assert_eq!(remaining(Some(0.5), 10.0, Some(100.0)), Some(10.0));
+        assert_eq!(remaining(Some(0.25), 10.0, None), Some(30.0));
+        // Early: mostly the estimate (a twentieth done, 10 s in: 190 s by the rate, 90 s by the
+        // estimate).
+        let early = remaining(Some(0.05), 10.0, Some(100.0)).unwrap();
+        assert!((early - (0.2 * 190.0 + 0.8 * 90.0)).abs() < 1e-9, "{early}");
+        // No share: the estimate, while it lasts.
+        assert_eq!(remaining(None, 40.0, Some(100.0)), Some(60.0));
+        assert_eq!(remaining(None, 1.0, None), None);
+    }
+
+    #[test]
+    fn time_left_is_never_zero_while_work_remains() {
+        // Past the estimate with no share: nothing to count down (elapsed only).
+        assert_eq!(remaining(None, 120.0, Some(100.0)), None);
+        assert_eq!(remaining(None, 99.5, Some(100.0)), None);
+        // Past the estimate with a share: the rate says it.
+        assert_eq!(remaining(Some(0.1), 200.0, Some(100.0)), Some(1800.0));
+        // Everything counted while the job still runs: not 0.
+        assert_eq!(remaining(Some(1.0), 5.0, Some(4.0)), None);
+        // Nothing done yet past the estimate: unknown.
+        assert_eq!(remaining(Some(0.0), 500.0, Some(100.0)), None);
+        // Hostile numbers say nothing.
+        assert_eq!(remaining(Some(f64::NAN), f64::INFINITY, Some(f64::NAN)), None);
+        // Whatever the inputs, a time left said is at least a second.
+        for f in [None, Some(0.0), Some(0.01), Some(0.3), Some(0.99), Some(1.0)] {
+            for t in [0.0, 0.5, 10.0, 99.0, 101.0, 1e4] {
+                for e in [None, Some(0.0), Some(1.0), Some(100.0)] {
+                    assert!(remaining(f, t, e).is_none_or(|l| l >= 1.0), "{f:?} {t} {e:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn time_left_falls_as_a_steady_run_goes_on() {
+        // A run of 100 equal steps, a second each. Estimated right (or high), the time left falls
+        // step by step; estimated at half, it climbs to the truth as the rate takes over (by a
+        // quarter done) and falls from there, never 0 before the end.
+        for estimate in [100.0, 150.0, 50.0] {
+            let mut last = f64::INFINITY;
+            for k in 1..99 {
+                let t = k as f64;
+                let left = remaining(Some(k as f64 / 100.0), t, Some(estimate)).unwrap_or(0.0);
+                assert!(left >= 1.0, "{estimate} s, step {k}: {left}");
+                if estimate >= 100.0 || k > 25 {
+                    assert!(left <= last + 1e-9, "{estimate} s, step {k}: {left} after {last}");
+                }
+                if k >= 25 {
+                    assert!((left - (100.0 - t)).abs() < 1e-9, "{estimate} s, step {k}: {left}");
+                }
+                last = left;
+            }
+        }
     }
 }

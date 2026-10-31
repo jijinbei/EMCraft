@@ -119,7 +119,7 @@ fn mods(p: &Value) -> egui::Modifiers {
 pub fn inspect(app: &EmcraftApp) -> Value {
     let progress = app.job.as_ref().map(|j| {
         let s = j.snapshot();
-        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining(), "device": j.place().map(|w| json!({"device": w.device, "gpu": w.gpu, "fronts": w.fronts}))})
+        json!({"command": j.command, "done": s.done, "total": s.total, "stage": s.stage, "open": s.open, "residual": s.residual, "fraction": s.fraction(), "elapsed": j.elapsed(), "estimate": j.estimate, "remaining": j.remaining(), "text": crate::messages::job_text(j), "device": j.place().map(|w| json!({"device": w.device, "gpu": w.gpu, "fronts": w.fronts}))})
     });
     let dialog = app.dialog.as_ref().map(|d| {
         let fields: serde_json::Map<String, Value> = d
@@ -457,6 +457,11 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
     }
     if let Some(on) = a.bool("animate") {
         asked.push(Action::SetPlaying(on));
+    }
+    // A test hook: the running job's estimate (s), to see the job past it on a small model.
+    if a.get("job_estimate").is_some() {
+        let e = a.num("job_estimate").filter(|e| e.is_finite() && *e >= 0.0).ok_or("`job_estimate` must be seconds, ≥ 0")?;
+        app.job.as_mut().ok_or("`job_estimate`: no job runs")?.estimate = Some(e);
     }
     // The 3D view's tool (`none` turns it off).
     match a.get("tool") {

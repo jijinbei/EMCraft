@@ -353,7 +353,8 @@ pub fn at_path<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
 /// - `handles`: handles that must be on screen; `hidden`: handles that must not; `inside`:
 ///   handles whose centre lies in the window (not run past its edge)
 /// - `inspect`: `{path: value}` in `ui.inspect`'s reply (a number may be `[value, rel tol]`;
-///   `{"min": a, "max": b}` bounds it; `"*"` only asks that it is there and not null)
+///   `{"min": a, "max": b}` bounds it; `{"includes": s, "excludes": t}` asks a text to hold `s`
+///   and not `t`; `"*"` only asks that it is there and not null)
 /// - `query`: `{command, params?, path, value}`: a quick command's reply at a path
 /// - `picture`: the last frame has pixels other than its background (a drawn UI)
 pub fn check(h: &mut Harness, e: &Value) -> Result<(), String> {
@@ -440,6 +441,15 @@ fn compare(got: &Value, want: &Value) -> Result<(), String> {
             let (w, tol, g) = (a[0].as_f64().unwrap_or(f64::NAN), a[1].as_f64().unwrap_or(1e-3), got.as_f64().unwrap_or(f64::NAN));
             if !((g - w).abs() <= tol * w.abs().max(1.0)) {
                 return Err(format!("got {g}, want {w} (±{tol} rel)"));
+            }
+        }
+        Value::Object(o) if o.contains_key("includes") || o.contains_key("excludes") => {
+            let g = got.as_str().ok_or_else(|| format!("got {got}, want a text"))?;
+            if let Some(w) = o.get("includes").and_then(Value::as_str).filter(|w| !g.contains(w)) {
+                return Err(format!("`{g}` does not contain `{w}`"));
+            }
+            if let Some(w) = o.get("excludes").and_then(Value::as_str).filter(|w| g.contains(w)) {
+                return Err(format!("`{g}` contains `{w}`"));
             }
         }
         Value::Object(o) if o.contains_key("min") || o.contains_key("max") => {

@@ -150,7 +150,12 @@ pub(crate) fn job_text(job: &crate::worker::Job) -> String {
     let (done, total) = (snap.done.min(snap.total) as usize, snap.total as usize);
     let what = match snap.stage.as_str() {
         _ if total == 0 => tr("starting").to_owned(),
-        "fast sweep" => tr("fast").to_owned(),
+        // Its full solves are added until the residuals are small: how many so far, and the
+        // worst residual of the last pass in the basis (falling to the tolerance, 1e-4).
+        "fast sweep" => match snap.residual {
+            Some(r) => trf("fast: {n} in full, residual {r}", args!(n = done, r = format!("{r:.0e}"))),
+            None => trf("fast: {n} in full", args!(n = done)),
+        },
         "frequency" | "phase" | "adaptive pass" => format!("{done}/{total}"),
         // A study's points (each a thousand parts) and a script's steps: the engine's stage.
         stage if total >= 1000 => format!("{stage}, {} %", (100 * done) / total),

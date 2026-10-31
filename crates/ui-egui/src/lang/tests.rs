@@ -516,6 +516,7 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Running with {n} accepted warnings.", "starts a full solve"),
     ("starting", "only until a job says how much work it has: a moment, timing-dependent"),
     ("Script", "a script's progress: it ends before a frame shows it"),
+    ("fast: {n} in full, residual {r}", "a fast sweep after its first pass in the basis, timing-dependent (scenario time_left)"),
     ("goal", "an optimization of a number the solve gives (maximize, minimize): the tour's goal is in dB"),
     ("{command} · {what} · {secs} s", "a job whose run cannot be estimated (opening a file): it ends before a frame shows it"),
     ("terminal ports: solved again", "needs a sweep with terminal ports (scenario terminal_ports)"),
