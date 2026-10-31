@@ -567,17 +567,18 @@ The relative L2 errors ‖F − F_exact‖/‖F_exact‖ of E and H over the who
 
 ## `results.history` — Analysis history
 
-The solves kept this session, the oldest first: each one's id, command, frequencies, band, deepest |S11| (dB) and where, first eigenmode, what changed in the model since the one before (variables' values), whether it is pinned and whether the session's results are its own. Every solve that succeeds is kept with its model and results; at most 16 unpinned ones, the oldest let go first. They are the session's, not the project file's.
+The project's solves kept, the oldest first: each one's id, when (`when`, seconds since 1970 UTC), command, label, frequencies, band, deepest |S11| (dB) and where, first eigenmode, what changed in the model since the one before (variables' values), whether it is pinned and whether the session's results are its own. Every solve that succeeds is kept with its model and results; at most 16 unpinned ones, the oldest let go first, and 32 pinned. The project file keeps them with their S-parameters, eigenmodes and time domain's S, not their models or fields.
 
 No parameters.
 
 ## `results.history.restore` — Restore a solve
 
-Puts back the model, units, variables and results of a kept solve (results.history), its results current again; undo goes back.
+Puts back the model, units, variables and results of a kept solve (results.history), its results current again; undo goes back. A solve read back from a project file is rebuilt from its history and solved again (`solved_again`, and `same_as_saved` whether its results are the saved ones); with `solve` false only its model comes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `id` | integer |  | yes | the kept solve's id |
+| `solve` | boolean |  | no | solve a solve read back from a file again (default true) |
 
 ## `results.history.pin` — Pin a solve
 
@@ -587,6 +588,15 @@ Keeps a solve past the history's cap (`pinned` true, the default), or lets it go
 |---|---|---|---|---|
 | `id` | integer |  | yes | the kept solve's id |
 | `pinned` | boolean |  | no | pinned (default true) |
+
+## `results.history.label` — Label a solve
+
+Names a kept solve (at most 80 characters; empty takes the name away). Saved with the project.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `id` | integer |  | yes | the kept solve's id |
+| `label` | string |  | yes | its label (empty: none) |
 
 ## `results.history.delete` — Delete a solve
 
