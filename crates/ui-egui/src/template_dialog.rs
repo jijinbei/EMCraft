@@ -22,6 +22,13 @@ pub struct Field {
     pub default: f64,
 }
 
+impl Field {
+    /// Its text as a value: `None` unless a finite number.
+    fn value(&self) -> Option<f64> {
+        self.text.trim().parse::<f64>().ok().filter(|v| v.is_finite())
+    }
+}
+
 /// The open template.
 pub struct TemplateDialog {
     pub name: String,
@@ -63,7 +70,7 @@ impl TemplateDialog {
     pub fn values(&self) -> Result<Value, String> {
         let mut map = Map::new();
         for f in &self.fields {
-            let v = f.text.trim().parse::<f64>().ok().filter(|v| v.is_finite()).ok_or_else(|| format!("{}: not a number", f.name))?;
+            let v = f.value().ok_or_else(|| format!("{}: not a number", f.name))?;
             if v != f.default {
                 map.insert(f.name.clone(), json!(v));
             }
@@ -101,6 +108,7 @@ impl TemplateDialog {
     }
 }
 
+/// The template's card: its parameters, its preview and Open, Cancel and Reset.
 pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out: &mut Actions) {
     dlg.refresh();
     let t = &Tokens::get();
@@ -113,56 +121,8 @@ pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out
         });
         ui.add_space(8.0);
         ui.horizontal_top(|ui| {
-            // The parameters.
-            ui.vertical(|ui| {
-                ui.set_width(250.0);
-                ui_kit::section(ui, "Parameters");
-                egui::ScrollArea::vertical().id_salt("template_fields").max_height(PREVIEW[1]).show(ui, |ui| {
-                    if dlg.fields.is_empty() {
-                        ui_kit::caption(ui, "none");
-                    }
-                    let (mut hovered, mut focused) = (None, None);
-                    for f in &mut dlg.fields {
-                        let (focus, over) = ui_kit::row(ui, Raw(&f.name), false, |ui| {
-                            let bad = f.text.trim().parse::<f64>().map_or(true, |v| !v.is_finite());
-                            let mut edit = egui::TextEdit::singleline(&mut f.text).desired_width(90.0).char_limit(32);
-                            if bad {
-                                edit = edit.background_color(t.form_error_fill).text_color(t.form_error);
-                            }
-                            let r = ui.named(edit, Handle::TemplateField(&f.name));
-                            ui_kit::small(ui, Raw(f.unit), t.text_dim);
-                            (r.has_focus(), ui.rect_contains_pointer(ui.min_rect()))
-                        });
-                        if over {
-                            hovered = Some(f.name.clone());
-                        }
-                        if focus {
-                            focused = Some(f.name.clone());
-                        }
-                    }
-                    // The field under the pointer, else the one being typed in.
-                    dlg.active = hovered.or(focused);
-                });
-            });
-            // The model as the fields make it.
-            let (r, _) = ui.allocate_exact_size(vec2(PREVIEW[0], PREVIEW[1]), Sense::hover());
-            scenario::publish_target(Fixed::TemplatePreview, r);
-            if let Some(p) = dlg.preview.as_mut() {
-                let id = p.texture(ui.ctx());
-                let mut image = egui::Image::new((id, vec2(PREVIEW[0], PREVIEW[1])));
-                if dlg.error.is_some() {
-                    image = image.tint(egui::Color32::WHITE.gamma_multiply(0.45));
-                }
-                image.paint_at(ui, r);
-            }
-            if let (Some(cam), Some(name)) = (&dlg.camera, &dlg.active)
-                && let Some(m) = dlg.marks.iter().find(|m| &m.name == name)
-                && dlg.error.is_none()
-            {
-                let unit = dlg.fields.iter().find(|f| &f.name == name).map_or("", |f| f.unit);
-                let value = dlg.fields.iter().find(|f| &f.name == name).map_or("", |f| f.text.as_str());
-                mark(ui.painter(), cam, r, m, &format!("{name} = {value} {unit}"), t);
-            }
+            fields(ui, dlg);
+            preview(ui, dlg);
         });
         if let Some(e) = &dlg.error {
             ui_kit::small(ui, Raw(e), t.form_error);
@@ -183,6 +143,63 @@ pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out
     });
     if modal.should_close() {
         out.push(Action::Template(None));
+    }
+}
+
+/// The parameters' fields; the one under the pointer, else the one being typed in, is the
+/// dialog's active one.
+fn fields(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
+    let t = &Tokens::get();
+    ui.vertical(|ui| {
+        ui.set_width(250.0);
+        ui_kit::section(ui, "Parameters");
+        egui::ScrollArea::vertical().id_salt("template_fields").max_height(PREVIEW[1]).show(ui, |ui| {
+            if dlg.fields.is_empty() {
+                ui_kit::caption(ui, "none");
+            }
+            let (mut hovered, mut focused) = (None, None);
+            for f in &mut dlg.fields {
+                let bad = f.value().is_none();
+                let (focus, over) = ui_kit::row(ui, Raw(&f.name), false, |ui| {
+                    let mut edit = egui::TextEdit::singleline(&mut f.text).desired_width(90.0).char_limit(32);
+                    if bad {
+                        edit = edit.background_color(t.form_error_fill).text_color(t.form_error);
+                    }
+                    let r = ui.named(edit, Handle::TemplateField(&f.name));
+                    ui_kit::small(ui, Raw(f.unit), t.text_dim);
+                    (r.has_focus(), ui.rect_contains_pointer(ui.min_rect()))
+                });
+                if over {
+                    hovered = Some(f.name.clone());
+                }
+                if focus {
+                    focused = Some(f.name.clone());
+                }
+            }
+            dlg.active = hovered.or(focused);
+        });
+    });
+}
+
+/// The model as the fields make it (dimmed when they do not make one), with the active
+/// parameter's dimension on it.
+fn preview(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
+    let t = &Tokens::get();
+    let (r, _) = ui.allocate_exact_size(vec2(PREVIEW[0], PREVIEW[1]), Sense::hover());
+    scenario::publish_target(Fixed::TemplatePreview, r);
+    if let Some(p) = dlg.preview.as_mut() {
+        let id = p.texture(ui.ctx());
+        let mut image = egui::Image::new((id, vec2(PREVIEW[0], PREVIEW[1])));
+        if dlg.error.is_some() {
+            image = image.tint(egui::Color32::WHITE.gamma_multiply(0.45));
+        }
+        image.paint_at(ui, r);
+    }
+    if let (Some(cam), Some(name), None) = (&dlg.camera, &dlg.active, &dlg.error)
+        && let Some(m) = dlg.marks.iter().find(|m| &m.name == name)
+    {
+        let (value, unit) = dlg.fields.iter().find(|f| &f.name == name).map_or(("", ""), |f| (f.text.as_str(), f.unit));
+        mark(ui.painter(), cam, r, m, &format!("{name} = {value} {unit}"), t);
     }
 }
 

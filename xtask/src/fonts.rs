@@ -21,13 +21,22 @@ use allsorts::binary::read::ReadScope;
 use allsorts::font_data::FontData;
 use allsorts::subset::{CmapTarget, SubsetProfile, subset};
 
+/// What a subset does with the source's kerning.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kerning {
+    /// Left out of the subset.
+    Dropped,
+    /// Its `kern` table rebuilt for the subset's glyph ids (pictures kern by it).
+    Rebuilt,
+}
+
 pub fn run(root: &Path) -> Result<(), String> {
     let ui = root.join("crates/ui-egui/fonts");
     let mut jp = ranges(&[(0x20, 0x7E), (0xA0, 0xFF), (0x2000, 0x206F), (0x3000, 0x30FF), (0x31F0, 0x31FF), (0xFF00, 0xFFEF)]);
     jp.extend(jis_x_0208());
     let ja = std::fs::read_to_string(root.join("crates/ui-egui/locales/ja.json")).map_err(|e| format!("ja.json: {e}"))?;
     jp.extend(ja.chars().filter(|c| !c.is_control()));
-    write(&ui.join("full/NotoSansJP-Regular.otf"), &ui.join("NotoSansJP-Regular-subset.otf"), jp, false)?;
+    write(&ui.join("full/NotoSansJP-Regular.otf"), &ui.join("NotoSansJP-Regular-subset.otf"), jp, Kerning::Dropped)?;
 
     let render = root.join("crates/render/fonts");
     let mut dv = ranges(&[
@@ -46,7 +55,7 @@ pub fn run(root: &Path) -> Result<(), String> {
         (0x25A0, 0x25FF),
     ]);
     dv.extend(source_chars(root)?);
-    write(&render.join("full/DejaVuSans.ttf"), &render.join("DejaVuSans-subset.ttf"), dv, true)
+    write(&render.join("full/DejaVuSans.ttf"), &render.join("DejaVuSans-subset.ttf"), dv, Kerning::Rebuilt)
 }
 
 fn ranges(r: &[(u32, u32)]) -> Vec<char> {
@@ -94,7 +103,7 @@ fn source_chars(root: &Path) -> Result<Vec<char>, String> {
 }
 
 /// Subsets `source` to `chars` (those it has) and writes `out`, after checking the subset.
-fn write(source: &Path, out: &Path, mut chars: Vec<char>, kern: bool) -> Result<(), String> {
+fn write(source: &Path, out: &Path, mut chars: Vec<char>, kern: Kerning) -> Result<(), String> {
     let src = std::fs::read(source).map_err(|e| format!("{}: {e}", source.display()))?;
     chars.sort();
     chars.dedup();
@@ -105,7 +114,7 @@ fn write(source: &Path, out: &Path, mut chars: Vec<char>, kern: bool) -> Result<
 }
 
 /// The subset of `src` holding `chars` (those it has), checked against it.
-fn cut(src: &[u8], chars: &[char], kern: bool) -> Result<Vec<u8>, String> {
+fn cut(src: &[u8], chars: &[char], kern: Kerning) -> Result<Vec<u8>, String> {
     let face = ttf_parser::Face::parse(src, 0).map_err(|e| format!("not a font: {e}"))?;
     let kept: Vec<char> = chars.iter().copied().filter(|c| face.glyph_index(*c).is_some_and(|g| g.0 != 0)).collect();
     let mut glyphs: Vec<u16> = std::iter::once(0).chain(kept.iter().filter_map(|c| face.glyph_index(*c)).map(|g| g.0)).collect();
@@ -114,7 +123,7 @@ fn cut(src: &[u8], chars: &[char], kern: bool) -> Result<Vec<u8>, String> {
     let data = ReadScope::new(src).read::<FontData>().map_err(|e| format!("allsorts: {e}"))?;
     let provider = data.table_provider(0).map_err(|e| format!("allsorts: {e}"))?;
     let mut bytes = subset(&provider, &glyphs, &SubsetProfile::Minimal, CmapTarget::Unicode).map_err(|e| format!("subset: {e}"))?;
-    if kern {
+    if kern == Kerning::Rebuilt {
         let cut = ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("the subset does not parse: {e}"))?;
         let table = kern_table(&face, &cut, &kept)?;
         bytes = with_table(&bytes, *b"kern", &table)?;
@@ -146,44 +155,57 @@ fn kern_table(src: &ttf_parser::Face, cut: &ttf_parser::Face, kept: &[char]) -> 
             }
         }
     }
-    let pairs: Vec<(u16, u16, i16)> = found.into_iter().map(|((l, r), v)| (l, r, v)).collect();
-    let mut chunks: Vec<&[(u16, u16, i16)]> = Vec::new();
-    let mut rest = pairs.as_slice();
-    while !rest.is_empty() {
-        // Split where the first glyph changes, so each glyph's pairs stay in one subtable.
-        let mut at = rest.len().min(10_000);
-        while at < rest.len() && at > 0 && rest[at - 1].0 == rest[at].0 {
-            at -= 1;
-        }
-        if at == 0 {
-            at = rest.len().min(10_000);
-        }
-        let (a, b) = rest.split_at(at);
-        chunks.push(a);
-        rest = b;
-    }
+    let pairs: Vec<KernPair> = found.into_iter().map(|((left, right), value)| KernPair { left, right, value }).collect();
+    let chunks = subtables(&pairs);
     let mut out = Vec::new();
-    out.extend(0u16.to_be_bytes());
-    out.extend(u16::try_from(chunks.len()).map_err(|_| "too many kern subtables")?.to_be_bytes());
+    let put = |out: &mut Vec<u8>, v: u16| out.extend(v.to_be_bytes());
+    put(&mut out, 0);
+    put(&mut out, u16::try_from(chunks.len()).map_err(|_| "too many kern subtables")?);
     for chunk in chunks {
         let n = u16::try_from(chunk.len()).map_err(|_| "kern subtable too long")?;
         let len = u16::try_from(14 + 6 * chunk.len()).map_err(|_| "kern subtable too long")?;
         let power = 1u16 << (15 - n.leading_zeros()).min(15);
         let search = power * 6;
-        out.extend(0u16.to_be_bytes());
-        out.extend(len.to_be_bytes());
-        out.extend(1u16.to_be_bytes()); // horizontal, format 0
-        out.extend(n.to_be_bytes());
-        out.extend(search.to_be_bytes());
-        out.extend((15 - power.leading_zeros() as u16).to_be_bytes());
-        out.extend((n * 6 - search).to_be_bytes());
-        for (l, r, v) in chunk {
-            out.extend(l.to_be_bytes());
-            out.extend(r.to_be_bytes());
-            out.extend(v.to_be_bytes());
+        put(&mut out, 0);
+        put(&mut out, len);
+        put(&mut out, 1); // horizontal, format 0
+        put(&mut out, n);
+        put(&mut out, search);
+        put(&mut out, 15 - power.leading_zeros() as u16);
+        put(&mut out, n * 6 - search);
+        for p in chunk {
+            put(&mut out, p.left);
+            put(&mut out, p.right);
+            out.extend(p.value.to_be_bytes());
         }
     }
     Ok(out)
+}
+
+/// Kerning between two glyphs (the subset's ids, font units).
+#[derive(Clone, Copy)]
+struct KernPair {
+    left: u16,
+    right: u16,
+    value: i16,
+}
+
+/// Most pairs a `kern` subtable holds here.
+const MAX_SUBTABLE: usize = 10_000;
+
+/// `pairs` (sorted) cut into subtables of at most [`MAX_SUBTABLE`], split where the first glyph
+/// changes so each glyph's pairs stay in one subtable (unless one glyph has more than fit).
+fn subtables(pairs: &[KernPair]) -> Vec<&[KernPair]> {
+    let mut chunks = Vec::new();
+    let mut rest = pairs;
+    while !rest.is_empty() {
+        let most = rest.len().min(MAX_SUBTABLE);
+        let at = (1..=most).rev().find(|&at| at == rest.len() || rest[at - 1].left != rest[at].left).unwrap_or(most);
+        let (a, b) = rest.split_at(at);
+        chunks.push(a);
+        rest = b;
+    }
+    chunks
 }
 
 fn be16(b: &[u8], at: usize) -> Result<u16, String> {
@@ -280,7 +302,7 @@ fn outline(face: &ttf_parser::Face, g: ttf_parser::GlyphId) -> String {
 /// The subset maps every kept character to a glyph of the same outline, advance and side
 /// bearing as the source's, with the same vertical metrics and (with `kern`) the same kerning
 /// between every two kept characters.
-fn check(src: &ttf_parser::Face, bytes: &[u8], kept: &[char], kern: bool) -> Result<(), String> {
+fn check(src: &ttf_parser::Face, bytes: &[u8], kept: &[char], kern: Kerning) -> Result<(), String> {
     let cut = ttf_parser::Face::parse(bytes, 0).map_err(|e| format!("the subset does not parse: {e}"))?;
     let metrics =
         |f: &ttf_parser::Face| (f.units_per_em(), f.ascender(), f.descender(), f.line_gap(), f.typographic_ascender(), f.typographic_descender());
@@ -298,7 +320,7 @@ fn check(src: &ttf_parser::Face, bytes: &[u8], kept: &[char], kern: bool) -> Res
         }
         ids.push((a, b));
     }
-    if kern {
+    if kern == Kerning::Rebuilt {
         let pairs = |f: &ttf_parser::Face, l, r| {
             f.tables().kern.and_then(|k| k.subtables.into_iter().filter(|s| s.horizontal).find_map(|s| s.glyphs_kerning(l, r)))
         };
