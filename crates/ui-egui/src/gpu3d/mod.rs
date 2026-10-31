@@ -24,6 +24,7 @@
 //! the offscreen frame shown by a paint callback, OIT targets and composite; the shaders and
 //! this code are written for EMCraft's scene.
 
+mod field;
 mod gbuffer;
 mod pack;
 mod renderer;
@@ -34,6 +35,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use eframe::{egui_wgpu, wgpu};
 use emcraft_render::view3d::Scene;
 
+pub use field::{FieldFrame, FieldGrid};
 pub use pack::{LINE, MAX_BYTES, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
 pub use renderer::Caps;
 use renderer::Renderer;
@@ -167,6 +169,8 @@ pub struct Frame {
     pub hover_color: [f32; 4],
     /// The window's pixels per point (the occlusion's radius and the outline's width follow it).
     pub ppp: f32,
+    /// The field's plane coloured by the GPU (the scene marks it, [`Packed::with_field`]).
+    pub field: Option<FieldFrame>,
 }
 
 impl Frame {
@@ -184,6 +188,7 @@ impl Frame {
             outline: [0.0; 4],
             hover_color: [0.0; 4],
             ppp: 1.0,
+            field: None,
         }
     }
 
@@ -195,6 +200,9 @@ impl Frame {
         self.packed.id.hash(&mut h);
         self.uniforms.bytes().hash(&mut h);
         self.out.hash(&mut h);
+        if let Some(f) = &self.field {
+            (f.grid.id, f.phase.to_bits(), f.peak.to_bits()).hash(&mut h);
+        }
         h.finish()
     }
 
@@ -231,17 +239,22 @@ impl Frame {
 /// The scene packed for the GPU, made again when the scene changes.
 #[derive(Default)]
 pub struct Cache {
-    packed: Option<Arc<Packed>>,
+    packed: Option<(Arc<Packed>, Option<(u32, usize, f64)>)>,
 }
 
 impl Cache {
     /// `scene` packed, from the cache when `id` (the scene's generation) is unchanged.
     pub fn packed(&mut self, scene: &Scene, id: u64) -> Arc<Packed> {
+        self.packed_with(scene, id, None)
+    }
+
+    /// As [`Cache::packed`], the field's plane marked ([`Packed::with_field`]).
+    pub fn packed_with(&mut self, scene: &Scene, id: u64, field: Option<(u32, usize, f64)>) -> Arc<Packed> {
         match &self.packed {
-            Some(p) if p.id == id => p.clone(),
+            Some((p, f)) if p.id == id && *f == field => p.clone(),
             _ => {
-                let p = Arc::new(Packed::new(scene, id));
-                self.packed = Some(p.clone());
+                let p = Arc::new(Packed::with_field(scene, id, field));
+                self.packed = Some((p.clone(), field));
                 p
             }
         }

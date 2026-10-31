@@ -52,6 +52,9 @@ struct FieldKey {
     view: FieldView,
     at: Option<f64>,
     kept: Vec<(Plane, f64)>,
+    /// The GPU colours the plane (`gpu3d::field`); without arrows the phase is left out, as
+    /// the scene does not change with it.
+    gpu: bool,
 }
 
 /// The field view's plane as the scene shows it: its picture's ranges (display units), the
@@ -163,6 +166,9 @@ pub struct View3d {
     pointer_tag: Option<([u32; 2], u64, u32)>,
     /// How the last pick was made: `gpu` or `cpu`.
     pub picked_by: &'static str,
+    /// The field's plane for the GPU to colour this frame, and the grid uploaded last.
+    field_frame: Option<crate::gpu3d::FieldFrame>,
+    field_grid: Option<std::sync::Arc<crate::gpu3d::FieldGrid>>,
     /// The tools: face and gap ports, the ruler, the reference plane's drag.
     pub tools: crate::tools3d::Tools,
     /// Bumped whenever the scene picked from is built or cut again.
@@ -203,6 +209,8 @@ impl Default for View3d {
             gpu_frame: None,
             pointer_tag: None,
             picked_by: "cpu",
+            field_frame: None,
+            field_grid: None,
             tools: crate::tools3d::Tools::default(),
             generation: 0,
         }
@@ -381,6 +389,7 @@ impl View3d {
             "renderer": self.drawn_by.id(),
             "gpu_adapter": self.gpu_adapter,
             "picked_by": self.picked_by,
+            "gpu_field": self.field_frame.is_some(),
             "section": self.section.map(|s| s.inspect(l)),
             "section_dims": self.section_dims,
             "tools": self.tools.inspect(l),
@@ -404,11 +413,17 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     let t = &Tokens::get();
     // The scene, built again only when what it shows changed (the field's planes, for the
     // Results step: the field view's and those kept).
-    let key = scene_key(app, v, field, overlay);
+    let gpu_field = overlay == Overlay::Field
+        && app.prefs.drawing == crate::prefs::Drawing3d::Gpu
+        && app.prefs.gpu_look.field
+        && field.kept.is_empty()
+        && crate::gpu3d::available(ui.ctx()).is_some();
+    let key = scene_key(app, v, field, overlay, gpu_field);
     if !v.is_built(&key) {
         build(app, v, field, overlay, key.clone(), out);
     }
     v.update_cut(app.session.model(), out);
+    v.field_frame = if gpu_field { field_frame(app, v, field) } else { None };
     let built = v.built_shallow();
     let Some(bounds) = built.bounds.or_else(|| built.scene.bounds()) else {
         ui.painter().text(
@@ -570,11 +585,15 @@ fn move_plane(app: &EmcraftApp, cam: &Camera, field: &mut FieldState, rect: Rect
 }
 
 /// What the scene for `overlay` is built from now.
-fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Overlay) -> SceneKey {
+fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Overlay, gpu: bool) -> SceneKey {
     let planes = (overlay == Overlay::Field).then(|| {
         let l = app.session.display().length;
         field.view.at = field.at.map(|v| l.to_si(v));
-        FieldKey { view: field.view.clone(), at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect() }
+        let mut view = field.view.clone();
+        if gpu && !view.show_e && !view.show_h {
+            view.phase = 0.0;
+        }
+        FieldKey { view, at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect(), gpu }
     });
     SceneKey { revision: app.revision, overlay, field: planes, highlighted: v.highlighted(), theme: crate::theme::key(), language: lang::current() }
 }
@@ -590,7 +609,8 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     } else {
         Vec::new()
     };
-    let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at }).collect();
+    let gpu = key.field.as_ref().is_some_and(|f| f.gpu);
+    let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at, gpu }).collect();
     v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
     let built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
     v.built = Some((key, built));
@@ -1214,8 +1234,14 @@ fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving
     let size = [out[0] * supersample, out[1] * supersample];
     let id = v.scene_gen();
     let mut cache = std::mem::take(&mut v.gpu);
+    let field_plane = v.field_frame.as_ref().map(|f| {
+        let g = &f.grid;
+        let n = [g.u_end, g.v_end].map(|e| [e[0] - g.corner[0], e[1] - g.corner[1], e[2] - g.corner[2]]);
+        let axis = (0..3).find(|&k| n[0][k] == 0.0 && n[1][k] == 0.0).unwrap_or(0);
+        (scene3d::Pick::Plane(0).tag(), axis, g.corner[axis])
+    });
     let packed = match v.shown() {
-        Some(b) => cache.packed(&b.scene, id),
+        Some(b) => cache.packed_with(&b.scene, id, field_plane),
         None => cache.packed(&EMPTY.scene, u64::MAX),
     };
     v.gpu = cache;
@@ -1231,12 +1257,45 @@ fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving
         outline: rgba(t.accent, 1.0),
         hover_color: rgba(t.accent, 0.5),
         ppp: ppp as f32,
+        field: v.field_frame.clone(),
         ..crate::gpu3d::Frame::plain(packed, uniforms, size, out, supersample)
     };
     v.gpu_frame = look.pick.then(|| frame.key());
     crate::gpu3d::paint(p, rect, frame);
     v.last_ms = began.elapsed().as_secs_f64() * 1e3;
     v.last_size = size.map(|s| s as usize);
+}
+
+/// The field view's plane for the GPU to colour: its phasors (uploaded again only when the
+/// samples change) and this frame's phase and scale; `None` when there is nothing to colour.
+fn field_frame(app: &EmcraftApp, v: &mut View3d, field: &FieldState) -> Option<crate::gpu3d::FieldFrame> {
+    use std::hash::{Hash, Hasher};
+    let s = field.samples.as_ref()?;
+    let lo = v.bounds()?.0;
+    let component = field.view.component;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (app.revision, format!("{:?}", FieldView { phase: 0.0, ..field.view.clone() }), s.at.to_bits(), lo.map(f64::to_bits)).hash(&mut h);
+    let id = h.finish();
+    let grid = match &v.field_grid {
+        Some(g) if g.id == id => g.clone(),
+        _ => {
+            let (nx, ny, phasors) = s.phasors(component);
+            let (x, y) = s.axes();
+            let [c, u, w] = scene3d::field_frame_of(&app.session, s.plane, s.at, x.span(), y.span(), lo);
+            let axis = match component {
+                emcraft_engine::view::Component::Ex | emcraft_engine::view::Component::Hx => 0,
+                emcraft_engine::view::Component::Ey | emcraft_engine::view::Component::Hy => 1,
+                emcraft_engine::view::Component::Ez | emcraft_engine::view::Component::Hz => 2,
+                _ => 3,
+            };
+            let g = std::sync::Arc::new(crate::gpu3d::FieldGrid::new(id, nx, ny, axis, &phasors, c, u, w));
+            v.field_grid = Some(g.clone());
+            g
+        }
+    };
+    let phase = field.view.phase;
+    let peak = grid.peak(phase);
+    Some(crate::gpu3d::FieldFrame { grid, phase, peak })
 }
 
 /// The window pixel under `at` (points from the view's corner).

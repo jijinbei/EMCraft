@@ -36,7 +36,17 @@ pub(super) fn largest_magnitude(values: &[f64]) -> f64 {
     values.iter().filter(|v| v.is_finite()).fold(0.0, |a: f64, b| a.max(b.abs()))
 }
 
-/// The field's colour map on its plane, cell by cell (cells outside the mesh left out).
+/// A field plane's corners (m): at the picture's low corner, at its far end along the
+/// picture's horizontal axis and along its vertical one; `x` and `y` the picture's spans (display
+/// units), `lo` the model's low corner.
+pub(crate) fn plane_frame(session: &Session, plane: Plane, at: f64, x: (f64, f64), y: (f64, f64), lo: [f64; 3]) -> [[f64; 3]; 3] {
+    let l = session.display().length;
+    let (h0, h1, v0, v1) = (l.to_si(x.0), l.to_si(x.1), l.to_si(y.0), l.to_si(y.1));
+    [on_plane(plane, lo, at, h0, v0), on_plane(plane, lo, at, h1, v0), on_plane(plane, lo, at, h0, v1)]
+}
+
+/// The field's colour map on its plane, cell by cell (cells outside the mesh left out); one
+/// quad over the plane when the GPU colours it ([`FieldLayer::gpu`]).
 pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, legend: bool, out: &mut Built) {
     let (Some(s), Some((lo, _))) = (f.plot.scalar.as_ref(), out.bounds) else { return };
     let (nx, ny) = (s.nx, s.ny);
@@ -52,6 +62,16 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
         ScalarKind::Signed => emcraft_render::colormap::diverging(v / peak.max(1e-300)),
         ScalarKind::Magnitude => emcraft_render::colormap::sequential(v / peak.max(1e-300)),
     };
+    if f.gpu {
+        let [c, u, v] = plane_frame(session, f.plane, f.at, f.plot.x.span(), f.plot.y.span(), lo);
+        let far = [u[0] + v[0] - c[0], u[1] + v[1] - c[1], u[2] + v[2] - c[2]];
+        out.scene.quad([c, u, far, v], emcraft_render::Rgb(128, 128, 128), 255);
+        if legend {
+            out.legend.push((plain(&s.label), color(peak)));
+        }
+        field_arrows(session, f, lo, legend, out);
+        return;
+    }
     let step = nx.max(ny).div_ceil(FIELD_CELLS).max(1);
     let at = |i: usize, j: usize| s.values.get(j * nx + i).copied().unwrap_or(f64::NAN);
     let (mut j, du, dv) = (0, (h1 - h0) / (nx - 1) as f64, (v1 - v0) / (ny - 1) as f64);

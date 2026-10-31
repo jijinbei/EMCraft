@@ -312,3 +312,79 @@ fn the_gpu_additions_draw_where_they_should() {
         }
     }
 }
+
+/// The field plane coloured by the GPU from its phasors is the CPU's cell by cell colouring
+/// (scene3d::field: each cell the mean of its corners, cells with a corner outside left out),
+/// at several phases, for a component and for a length.
+#[test]
+fn the_gpu_field_is_the_cpus_cells() {
+    let Some((adapter, device, queue)) = device() else { return };
+    let mut r = Renderer::new(&device, Caps::of(&adapter, &device), FRAME).unwrap();
+    let (nx, ny) = (37usize, 23usize);
+    // A standing wave across, travelling along, with a hole (outside the mesh).
+    let phasors: Vec<Option<([f64; 3], [f64; 3])>> = (0..nx * ny)
+        .map(|k| {
+            let (i, j) = ((k % nx) as f64 / (nx - 1) as f64, (k / nx) as f64 / (ny - 1) as f64);
+            if (i - 0.7).abs() < 0.08 && (j - 0.4).abs() < 0.15 {
+                return None;
+            }
+            let a = (std::f64::consts::PI * j).sin() * 120.0;
+            let th = 2.0 * std::f64::consts::PI * i * 1.5;
+            Some(([0.3 * a, a * th.cos(), 0.0], [0.0, a * th.sin(), 0.2 * a]))
+        })
+        .collect();
+    let (c, u, v) = ([-0.02, 0.0, -0.01], [0.02, 0.0, -0.01], [-0.02, 0.0, 0.01]);
+    for axis in [1u32, 3] {
+        let grid = Arc::new(FieldGrid::new(axis as u64 + 40, nx, ny, axis, &phasors, c, u, v));
+        for phase in [0.0, 1.1, 2.5] {
+            let peak = grid.peak(phase);
+            let (s_, c_) = (phase as f64).sin_cos();
+            let value = |i: usize, j: usize| grid.value(j * nx + i, c_, s_);
+            let color =
+                |x: f64| if axis < 3 { emcraft_render::colormap::diverging(x / peak) } else { emcraft_render::colormap::sequential(x / peak) };
+            let at = |i: usize, j: usize| {
+                let (a, b) = (i as f64 / (nx - 1) as f64, j as f64 / (ny - 1) as f64);
+                [c[0] + (u[0] - c[0]) * a + (v[0] - c[0]) * b, c[1], c[2] + (u[2] - c[2]) * a + (v[2] - c[2]) * b]
+            };
+            let mut cpu = Scene::default();
+            let step = grid.step;
+            let mut j = 0;
+            while j + 1 < ny {
+                let j1 = (j + step).min(ny - 1);
+                let mut i = 0;
+                while i + 1 < nx {
+                    let i1 = (i + step).min(nx - 1);
+                    let corners = [value(i, j), value(i1, j), value(i1, j1), value(i, j1)];
+                    if corners.iter().all(|x| x.is_finite()) {
+                        let mean = corners.iter().sum::<f64>() / 4.0;
+                        cpu.tagged(9 << 16, |s| s.quad([at(i, j), at(i1, j), at(i1, j1), at(i, j1)], color(mean), 255));
+                    }
+                    i = i1;
+                }
+                j = j1;
+            }
+            let mut gpu = Scene::default();
+            let far = [u[0] + v[0] - c[0], 0.0, u[2] + v[2] - c[2]];
+            gpu.tagged(9 << 16, |s| s.quad([c, u, far, v], Rgb(128, 128, 128), 255));
+            let mut cam = Camera::default();
+            cam.standard(StandardView::Top);
+            cam.fit([-0.02, 0.0, -0.01], [0.02, 0.0, 0.01], 1.5);
+            let (w, h) = (240u32, 160u32);
+            let ground = (Rgb(235, 238, 242), Rgb(200, 205, 214));
+            let packed = Arc::new(Packed::with_field(&gpu, 100 + axis as u64, Some((9 << 16, 1, 0.0))));
+            let uniforms = Uniforms::new(&packed, &cam, [w, h], 1.0, ground);
+            let frame = Frame { field: Some(FieldFrame { grid: grid.clone(), phase, peak }), ..Frame::plain(packed, uniforms, [w, h], [w, h], 1) };
+            let g = gpu_picture(&device, &queue, &mut r, &frame);
+            let opt = view3d::Options { width: w as usize, height: h as usize, supersample: 1, background: ground, line_width: 1.0 };
+            let cpu = view3d::render(&cpu, &cam, &opt).rgba;
+            let differ = g.chunks(4).zip(cpu.chunks(4)).filter(|(a, b)| (0..3).any(|k| a[k].abs_diff(b[k]) > 6)).count();
+            eprintln!("field axis {axis} phase {phase}: {differ} of {} differ", w * h);
+            if std::env::var_os("EMCRAFT_GPU_SHOTS").is_some() {
+                let png = |rgba: &[u8]| emcraft_render::Canvas { w: w as usize, h: h as usize, rgba: rgba.to_vec() }.png().unwrap_or_default();
+                let _ = std::fs::write(std::env::temp_dir().join(format!("gpu3d-field-{axis}-gpu.png")), png(&g));
+                let _ = std::fs::write(std::env::temp_dir().join(format!("gpu3d-field-{axis}-cpu.png")), png(&cpu));
+            }
+            assert!(differ * 100 < (w * h) as usize * 2, "axis {axis} phase {phase}: {differ} differ");
+        }
+    }
+}

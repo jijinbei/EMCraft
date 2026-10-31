@@ -76,6 +76,13 @@ impl Packed {
     /// assert_eq!((p.opaque.len(), p.glass.len()), (3 * TRI_VERTEX, 3 * TRI_VERTEX));
     /// ```
     pub fn new(scene: &Scene, id: u64) -> Packed {
+        Packed::with_field(scene, id, None)
+    }
+
+    /// As [`Packed::new`], with the opaque triangles tagged `field.0` lying in the plane where
+    /// coordinate `field.1` is `field.2` (m) marked as the field's plane: the GPU colours them
+    /// from the field's phasors (`gpu3d::field`).
+    pub fn with_field(scene: &Scene, id: u64, field: Option<(u32, usize, f64)>) -> Packed {
         let (origin, radius) = match scene.bounds() {
             Some((lo, hi)) => {
                 let o = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2])];
@@ -100,7 +107,14 @@ impl Packed {
                 continue;
             }
             let n = n.map(|c| c / len);
-            let rank = if t.alpha == 255 {
+            let on_field = field.is_some_and(|(tag, axis, at)| {
+                t.tag == tag
+                    && t.alpha == 255
+                    && t.p.iter().all(|q| q.get(axis).is_some_and(|c| (c - at).abs() <= 1e-9 * (1.0 + at.abs()) + radius * 1e-7))
+            });
+            let rank = if on_field {
+                -1.0
+            } else if t.alpha == 255 {
                 // The plane, its normal turned one way.
                 let flip = n.iter().find(|c| c.abs() > 1e-9).is_some_and(|c| *c < 0.0);
                 let u = if flip { n.map(|c| -c) } else { n };

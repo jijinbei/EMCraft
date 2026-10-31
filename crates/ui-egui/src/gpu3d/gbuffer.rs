@@ -98,6 +98,7 @@ impl Pipelines {
         encoder: &mut wgpu::CommandEncoder,
         t: &Targets,
         uniforms: &wgpu::BindGroup,
+        field: &wgpu::BindGroup,
         normals: bool,
         ids: bool,
         draw: &dyn Fn(&mut wgpu::RenderPass<'_>, bool),
@@ -137,6 +138,7 @@ impl Pipelines {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, uniforms, &[]);
+            pass.set_bind_group(1, field, &[]);
             pass.set_pipeline(pipeline);
             draw(&mut pass, opaque_only);
         }

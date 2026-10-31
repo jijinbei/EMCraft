@@ -106,6 +106,44 @@ pub struct Renderer {
     show_bind: Option<([u32; 4], wgpu::BindGroup)>,
     /// The frame drawn last ([`Frame::key`]), which the per-pixel targets hold.
     pub last: Option<u64>,
+    field_layout: wgpu::BindGroupLayout,
+    field_uniform: wgpu::Buffer,
+    /// The field's uniform and phasor textures (1 × 1 without a field).
+    field_bind: wgpu::BindGroup,
+    /// The field grid uploaded, and its textures.
+    field_grid: Option<(u64, wgpu::Texture, wgpu::Texture)>,
+}
+
+/// The field's bind group with new phasor textures of `size`.
+fn field_textures(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    uniform: &wgpu::Buffer,
+    size: [u32; 2],
+) -> ((wgpu::Texture, wgpu::Texture), wgpu::BindGroup) {
+    let texture = |label| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d { width: size[0].max(1), height: size[1].max(1), depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        })
+    };
+    let (re, im) = (texture("emcraft_view3d_field_re"), texture("emcraft_view3d_field_im"));
+    let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("emcraft_view3d_field"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&re.create_view(&Default::default())) },
+            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&im.create_view(&Default::default())) },
+        ],
+    });
+    ((re, im), bind)
 }
 
 /// Runs `make` under error scopes: a validation or out-of-memory error is returned, not raised.
@@ -197,9 +235,20 @@ impl Renderer {
             layout: &uniform_layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() }],
         });
+        let field_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("emcraft_view3d_field"),
+            entries: &[uniform_entry(0, wgpu::ShaderStages::FRAGMENT, super::field::FIELD_BYTES as u64), texture_entry(1), texture_entry(2)],
+        });
+        let field_uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("emcraft_view3d_field"),
+            size: super::field::FIELD_BYTES as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let field_bind = field_textures(device, &field_layout, &field_uniform, [1, 1]).1;
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("emcraft_view3d"),
-            bind_group_layouts: &[Some(&uniform_layout)],
+            bind_group_layouts: &[Some(&uniform_layout), Some(&field_layout)],
             immediate_size: 0,
         });
         let multisample = wgpu::MultisampleState { count: caps.samples, mask: !0, alpha_to_coverage_enabled: false };
@@ -360,6 +409,10 @@ impl Renderer {
         });
         let g = gbuffer::Pipelines::new(device, &scene, &layout, &[Some(tri_layout())]);
         Renderer {
+            field_layout,
+            field_uniform,
+            field_bind,
+            field_grid: None,
             g,
             g_targets: None,
             show_bind: None,
@@ -493,6 +546,34 @@ impl Renderer {
         Ok(())
     }
 
+    /// The field's uniform for this frame, and its phasors when the grid changed.
+    fn upload_field(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: &Frame) -> Result<(), Gpu3dError> {
+        let Some(f) = &frame.field else { return Ok(()) };
+        let g = &f.grid;
+        let size = [g.nx as u32, g.ny as u32];
+        if size[0] < 2 || size[1] < 2 || size[0] > self.caps.max_side || size[1] > self.caps.max_side {
+            return Ok(());
+        }
+        if self.field_grid.as_ref().is_none_or(|(id, _, _)| *id != g.id) {
+            let ((re, im), bind) =
+                scoped(device, || field_textures(device, &self.field_layout, &self.field_uniform, size)).map_err(Gpu3dError::Frame)?;
+            let (re_bytes, im_bytes) = g.texels();
+            let extent = wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 };
+            for (tex, bytes) in [(&re, &re_bytes), (&im, &im_bytes)] {
+                queue.write_texture(
+                    tex.as_image_copy(),
+                    bytes,
+                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(16 * size[0]), rows_per_image: Some(size[1]) },
+                    extent,
+                );
+            }
+            self.field_bind = bind;
+            self.field_grid = Some((g.id, re, im));
+        }
+        queue.write_buffer(&self.field_uniform, 0, &f.bytes(frame.packed.origin));
+        Ok(())
+    }
+
     /// The tags under pixel `px` of the frame drawn last, if that frame was `key` and drew them.
     pub fn tags_at(&self, device: &wgpu::Device, queue: &wgpu::Queue, key: u64, px: [u32; 2]) -> Option<(u32, u32)> {
         if self.last != Some(key) {
@@ -516,6 +597,7 @@ impl Renderer {
         self.upload(device, &frame.packed)?;
         self.targets(device, size)?;
         self.g_targets(device, out)?;
+        self.upload_field(device, queue, frame)?;
         let (Some(t), Some(s), Some(g)) = (&self.targets, &self.scene, &self.g_targets) else { return Err(Gpu3dError::Frame("no targets".into())) };
         let u = Uniforms { viewport: [size[0] as f32, size[1] as f32, frame.uniforms.viewport[2], frame.uniforms.viewport[3]], ..frame.uniforms };
         queue.write_buffer(&self.uniform, 0, &u.bytes());
@@ -530,7 +612,7 @@ impl Renderer {
                     pass.draw(0..*n, 0..1);
                 }
             };
-            self.g.record(encoder, g, &self.uniform_bind, look.edges || look.ao, look.outline || look.pick, &draw);
+            self.g.record(encoder, g, &self.uniform_bind, &self.field_bind, look.edges || look.ao, look.outline || look.pick, &draw);
         }
         let color = |load| {
             Some(wgpu::RenderPassColorAttachment {
@@ -577,6 +659,7 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, &self.uniform_bind, &[]);
+            pass.set_bind_group(1, &self.field_bind, &[]);
             pass.set_pipeline(&self.ground);
             pass.draw(0..3, 0..1);
             tris(&mut pass, &self.opaque, s.opaque.as_ref());
@@ -616,6 +699,7 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, &self.uniform_bind, &[]);
+            pass.set_bind_group(1, &self.field_bind, &[]);
             tris(&mut pass, &self.glass, glass);
         }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -630,6 +714,7 @@ impl Renderer {
         pass.set_bind_group(0, bind, &[]);
         pass.draw(0..3, 0..1);
         pass.set_bind_group(0, &self.uniform_bind, &[]);
+        pass.set_bind_group(1, &self.field_bind, &[]);
         pass.set_stencil_reference(1);
         tris(&mut pass, &self.glass_depth, glass);
         lines(&mut pass, &self.front_lines);

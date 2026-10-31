@@ -14,9 +14,71 @@ struct U {
 
 @group(0) @binding(0) var<uniform> u: U;
 
+// The field's plane (field.rs): its frame from the scene's origin (u = (p − origin) · ua), the
+// grid (nx, ny, samples per cell, component: 0–2 or 3 for the length), the phase (cos, sin),
+// 1 / the colour scale, 1 for a signed map; the map's five stops.
+struct F {
+    origin: vec4<f32>,
+    ua: vec4<f32>,
+    va: vec4<f32>,
+    grid: vec4<f32>,
+    phase: vec4<f32>,
+    stops: array<vec4<f32>, 5>,
+};
+
+@group(1) @binding(0) var<uniform> f: F;
+@group(1) @binding(1) var re_t: texture_2d<f32>;
+@group(1) @binding(2) var im_t: texture_2d<f32>;
+
+// The value at sample (i, j) at the phase, and whether it lies inside the mesh.
+fn field_value(i: i32, j: i32) -> vec2<f32> {
+    let re = textureLoad(re_t, vec2<i32>(i, j), 0);
+    let im = textureLoad(im_t, vec2<i32>(i, j), 0).xyz;
+    let v = re.xyz * f.phase.x - im * f.phase.y;
+    var x = length(v);
+    let axis = i32(f.grid.w);
+    if (axis == 0) {
+        x = v.x;
+    } else if (axis == 1) {
+        x = v.y;
+    } else if (axis == 2) {
+        x = v.z;
+    }
+    return vec2<f32>(x, re.w);
+}
+
+// The colour of the field's cell at `p` (as scene3d::field paints it: the mean of the cell's
+// corners, the cell left out with a corner outside the mesh: alpha 0).
+fn field_colour(p: vec3<f32>) -> vec4<f32> {
+    let d = p - f.origin.xyz;
+    let n = vec2<f32>(f.grid.x, f.grid.y) - vec2<f32>(1.0);
+    let x = clamp(vec2<f32>(dot(d, f.ua.xyz), dot(d, f.va.xyz)), vec2<f32>(0.0), vec2<f32>(1.0)) * n;
+    let step = max(f.grid.z, 1.0);
+    let c0 = floor(min(x, n - vec2<f32>(1e-3)) / step) * step;
+    let c1 = min(c0 + vec2<f32>(step), n);
+    let a = field_value(i32(c0.x), i32(c0.y));
+    let b = field_value(i32(c1.x), i32(c0.y));
+    let c = field_value(i32(c1.x), i32(c1.y));
+    let e = field_value(i32(c0.x), i32(c1.y));
+    if (min(min(a.y, b.y), min(c.y, e.y)) < 0.5) {
+        return vec4<f32>(0.0);
+    }
+    let mean = 0.25 * (a.x + b.x + c.x + e.x) * f.phase.z;
+    var t = mean;
+    if (f.phase.w > 0.5) {
+        t = 0.5 * (mean + 1.0);
+    }
+    let s = clamp(t, 0.0, 1.0) * 4.0;
+    let k = min(i32(floor(s)), 3);
+    return vec4<f32>(mix(f.stops[k].rgb, f.stops[k + 1].rgb, s - f32(k)), 1.0);
+}
+
 struct V {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
+    // From the scene's origin; the field's plane when `flag` is −1.
+    @location(1) world: vec3<f32>,
+    @location(2) flag: f32,
 };
 
 // The ground: a full-screen triangle, top to bottom by pixel row as the CPU fills it.
@@ -45,14 +107,26 @@ fn placed(p: vec3<f32>, rank: f32) -> vec4<f32> {
 @vertex
 fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>) -> V {
     var o: V;
-    o.pos = placed(p, n.w);
+    o.pos = placed(p, max(n.w, 0.0));
     let k = 0.42 + 0.58 * abs(dot(n.xyz, u.light.xyz));
     o.color = vec4<f32>(c.rgb * k, c.a);
+    o.world = p;
+    o.flag = n.w;
+    if (n.w < -0.5) {
+        o.color = vec4<f32>(k, k, k, c.a);
+    }
     return o;
 }
 
 @fragment
 fn fs_opaque(i: V) -> @location(0) vec4<f32> {
+    if (i.flag < -0.5) {
+        let fc = field_colour(i.world);
+        if (fc.a < 0.5) {
+            discard;
+        }
+        return vec4<f32>(fc.rgb * i.color.rgb, 1.0);
+    }
     return vec4<f32>(i.color.rgb, 1.0);
 }
 
@@ -92,6 +166,8 @@ fn fs_none(i: V) -> @location(0) vec4<f32> {
 fn vs_line(@builtin(vertex_index) vi: u32, @location(0) a: vec3<f32>, @location(1) b: vec3<f32>, @location(2) c: vec4<f32>) -> V {
     var o: V;
     o.color = c;
+    o.world = vec3<f32>(0.0);
+    o.flag = 0.0;
     let toward = u.forward_nudge.xyz * u.forward_nudge.w;
     var pa = u.view_proj * vec4<f32>(a - toward, 1.0);
     var pb = u.view_proj * vec4<f32>(b - toward, 1.0);
@@ -143,15 +219,24 @@ struct G {
     @location(0) n: vec3<f32>,
     @location(1) @interpolate(flat) tag: u32,
     @location(2) alpha: f32,
+    @location(3) world: vec3<f32>,
+    @location(4) flag: f32,
 };
+
+// The field's plane has no triangles where its cells are left out: neither has it pixels here.
+fn hole(i: G) -> bool {
+    return i.flag < -0.5 && field_colour(i.world).a < 0.5;
+}
 
 @vertex
 fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(3) tag: u32) -> G {
     var o: G;
-    o.pos = placed(p, n.w);
+    o.pos = placed(p, max(n.w, 0.0));
     o.n = n.xyz;
     o.tag = tag;
     o.alpha = c.a;
+    o.world = p;
+    o.flag = n.w;
     return o;
 }
 
@@ -162,6 +247,9 @@ struct Normals {
 
 @fragment
 fn fs_g_normals(i: G) -> Normals {
+    if (hole(i)) {
+        discard;
+    }
     var n = normalize(i.n);
     if (dot(n, u.forward_nudge.xyz) > 0.0) {
         n = -n;
@@ -174,7 +262,7 @@ fn fs_g_normals(i: G) -> Normals {
 
 @fragment
 fn fs_g_any(i: G) -> @location(0) vec4<u32> {
-    if (i.tag == 0u) {
+    if (i.tag == 0u || hole(i)) {
         discard;
     }
     return vec4<u32>(i.tag, 0u, 0u, 0u);
@@ -183,7 +271,7 @@ fn fs_g_any(i: G) -> @location(0) vec4<u32> {
 // Solid: an opacity of 200 or more (the CPU's picking counts them so).
 @fragment
 fn fs_g_solid(i: G) -> @location(0) vec4<u32> {
-    if (i.tag == 0u || i.alpha * 255.0 < 199.5) {
+    if (i.tag == 0u || i.alpha * 255.0 < 199.5 || hole(i)) {
         discard;
     }
     return vec4<u32>(i.tag, 0u, 0u, 0u);

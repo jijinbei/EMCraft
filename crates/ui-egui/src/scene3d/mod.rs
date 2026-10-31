@@ -164,6 +164,15 @@ pub struct FieldLayer<'a> {
     pub plot: &'a emcraft_render::plot::FieldPlot,
     pub plane: emcraft_engine::view::Plane,
     pub at: f64,
+    /// The colour map is the GPU's (`gpu3d::field`): the plane is one quad here.
+    pub gpu: bool,
+}
+
+/// A field plane's corners (m) — the picture's low corner and its far ends along the picture's
+/// axes — for a plane `at` (m from the model's low corner `lo`) with picture spans `x`, `y`
+/// (display units).
+pub fn field_frame_of(session: &Session, plane: emcraft_engine::view::Plane, at: f64, x: (f64, f64), y: (f64, f64), lo: [f64; 3]) -> [[f64; 3]; 3] {
+    field::plane_frame(session, plane, at, x, y, lo)
 }
 
 /// A meshed model's cut across `axis` at `at` (m), every material filled ([`mesh::slice`]);
