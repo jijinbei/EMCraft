@@ -44,6 +44,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("geometry.iris_filter", Some("Iris filter"), Some(Glyph::Waveguide), false),
     ui("geometry.solid", Some("Region"), Some(Glyph::Box), false),
     ui("geometry.import", Some("Import"), Some(Glyph::Import), true),
+    ui("geometry.import.inspect", None, Some(Glyph::Import), false),
     ui("geometry.body", Some("Body"), Some(Glyph::Feature), false),
     ui("geometry.body.material", Some("Body material"), Some(Glyph::Feature), false),
     ui("geometry.body.edit", None, Some(Glyph::Feature), false),

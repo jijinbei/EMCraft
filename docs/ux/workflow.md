@@ -20,7 +20,7 @@ pitfalls they name: skipping the mesh convergence check, and wrong boundary cond
 | # | Step | What the engineer decides | What goes wrong |
 |---|---|---|---|
 | 0 | **Home** (the job's intent) | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units, **the frequency range** | a range that does not match the ports' cut-offs or the mesh |
-| 1 | **Geometry** | shapes, Booleans, imported surfaces, layers and strips | non-closed or overlapping bodies, features flush with walls |
+| 1 | **Geometry** | shapes, Booleans, imported surfaces (a SolidCraft design with its parameters, 3MF, STL: chosen, dropped on the window or begun from the start page and the empty step; the dialog shows the file's bodies, size and parameters, and what importing makes of them), layers and strips | non-closed or overlapping bodies, features flush with walls |
 | 2 | **Materials** | εr, μr, loss tangent per body; wall conductivity | lossy material at a port; wrong units |
 | 3 | **Excitation** | waveguide ports (and how many modes), lumped ports and their impedance, plane waves, dipoles; reference impedances | a port off its face, the first mode cut off in the band, too few modes near a discontinuity |
 | 4 | **Boundaries** | conducting walls (perfect or finite σ), the open boundary (PML thickness, reflection), symmetry | the bodies touching the PML, the Huygens box crossing them |
@@ -126,7 +126,10 @@ Work is not lost: closing the window with unsaved changes asks Save / Don't save
 job running, whether to stop it first); unsaved changes are copied aside every minute and
 offered on the start page after a crash (Recover, or dismiss).
 The 3D view cuts the model open: a section across x, y or z at a position along it, either side
-kept, the cut faces filled in each body's colour.
+kept, the cut faces filled in each body's colour; a guide's H-plane (y = b/2) and E-plane (x = a/2) cuts
+are one click each, a button turns the camera straight at the cut (orthographic), and the cut
+carries its dimensions (the outline's extents, the irises' and steps' apertures) and the ports
+where they meet it, named and sized. There is no separate 2D outline view: the section view is it.
 Each control is in one place: opening a step switches the ribbon to that step's tab (its
 commands), so the step panel holds only the step's checks, its own settings (the band, the
 sweep, Run) and the dialog docked there; the views over the viewport are switched by its view

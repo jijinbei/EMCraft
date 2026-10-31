@@ -137,7 +137,14 @@ pub fn inspect(app: &EmcraftApp) -> Value {
             .collect();
         let errors: serde_json::Map<String, Value> =
             d.fields.iter().filter_map(|f| f.error.as_ref().map(|e| (f.name.to_owned(), json!(e)))).collect();
-        json!({"command": d.command.id, "docked": d.docked, "fields": fields, "errors": errors, "error": d.error})
+        // The import dialog: what the chosen file holds (`geometry.import.inspect`'s reply or why
+        // it cannot be read) and whether its options are unfolded.
+        let detected = app.replies.import.as_ref().map(|p| match &p.reply {
+            Ok(v) => v.clone(),
+            Err(e) => json!({"error": e}),
+        });
+        json!({"command": d.command.id, "docked": d.docked, "fields": fields, "errors": errors, "error": d.error,
+               "detected": detected, "options": d.options, "help": d.help})
     });
     let mut v = json!({
         "tab": app.tab.id(),
@@ -311,6 +318,14 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
         "ui.text" => {
             let text: String = clip(a.str("text").unwrap_or(""), crate::dialogs::MAX_FIELD);
             push(app, vec![egui::Event::Text(text)]).map(|()| ok(Value::Null))
+        }
+        "ui.drop" => {
+            let Some(path) = a.str("path").filter(|p| !p.trim().is_empty()) else { return err("give `path`: the file dropped on the window") };
+            if app.control.dropped.len() >= 16 {
+                return err("too many files dropped at once");
+            }
+            app.control.dropped.push(clip(path, 4096).into());
+            Ok(ok(Value::Null))
         }
         "ui.handles" => {
             let list = scenario::handles(a.str("prefix").unwrap_or(""));

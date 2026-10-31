@@ -213,6 +213,10 @@ pub struct Dialog {
     /// The parameters it opened on, when they are the model's own and running them again
     /// would change nothing: OK with these closes it without running the command.
     pub unchanged: Option<Value>,
+    /// The fields past the first ones folded away are shown (the import dialog's Options).
+    pub options: bool,
+    /// The command's description is shown (its "?").
+    pub help: bool,
 }
 
 /// `text` cut to [`MAX_FIELD`] characters.
@@ -248,7 +252,7 @@ impl Dialog {
                 f
             })
             .collect();
-        Dialog { command, fields, error: None, docked, focus_first: true, widgets: Vec::new(), unchanged: None }
+        Dialog { command, fields, error: None, docked, focus_first: true, widgets: Vec::new(), unchanged: None, options: false, help: false }
     }
 
     /// The dialog opened on the model's own values (`project.values`): OK with them unchanged

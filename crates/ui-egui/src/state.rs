@@ -233,6 +233,15 @@ pub struct ViewState {
 pub struct Replies {
     pub port_modes: Option<Value>,
     pub compare: Option<Value>,
+    /// What the import dialog's file holds (`geometry.import.inspect`).
+    pub import: Option<ImportProbe>,
+}
+
+/// `geometry.import.inspect`'s reply for the file (and STL unit) `key` names, or why not.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportProbe {
+    pub key: String,
+    pub reply: Result<Value, String>,
 }
 
 #[cfg(test)]

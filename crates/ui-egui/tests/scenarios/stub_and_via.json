@@ -16,8 +16,11 @@
   {"frames": 2},
   {"expect": {"inspect": {"view3d.selected": "Via(0)"}}},
   {"shot": "stub-and-via-selected"},
-  {"note": "The outline view: the model drawn across z in the H and E planes"},
-  {"click": "view:outline"},
-  {"expect": {"view": "outline"}},
-  {"shot": "stub-and-via-outline"}
+  {"note": "Cut in its E-plane: the stub and the via on the cut, with their dimensions"},
+  {"call": "ui.set", "params": {"view": "model", "section": {"axis": "x"}}},
+  {"click": "view3d:section:e_plane"},
+  {"click": "view3d:section:look"},
+  {"frames": 30},
+  {"expect": {"inspect": {"view3d.section.axis": "x", "view3d.projection": "orthographic"}, "handles": ["view3d:section:dim:0"]}},
+  {"shot": "stub-and-via-section"}
 ]

@@ -10,8 +10,10 @@
   {"shot": "view3d-dipole-boundaries"},
   {"call": "ui.set", "params": {"step": "excitation"}},
   {"shot": "view3d-dipole-excitation"},
-  {"note": "The outline view: the model drawn across z in the H and E planes"},
-  {"click": "view:outline"},
-  {"expect": {"view": "outline"}},
-  {"shot": "dipole-outline"}
+  {"note": "Cut across y through the middle: the dipole in its box of air and the layer, sized"},
+  {"call": "ui.set", "params": {"view": "model", "section": {"axis": "y"}}},
+  {"click": "view3d:section:look"},
+  {"frames": 30},
+  {"expect": {"inspect": {"view3d.section.axis": "y"}, "handles": ["view3d:section:dim:0"]}},
+  {"shot": "dipole-section"}
 ]

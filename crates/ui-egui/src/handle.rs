@@ -61,6 +61,7 @@ emcraft_macros::named_enum! {
         // The start page.
         HomeNew = "home:new",
         HomeOpen = "home:open",
+        HomeImport = "home:import",
         HomeSettings = "home:settings",
         HomeBlank = "home:blank",
         // The window's cards.
@@ -103,6 +104,15 @@ emcraft_macros::named_enum! {
         DialogClose = "dialog:close",
         DialogDock = "dialog:dock",
         DialogError = "dialog:error",
+        // The import dialog: its file button, what the file holds, its options and its help.
+        DialogPick = "dialog:pick",
+        DialogDetected = "dialog:detected",
+        DialogOptions = "dialog:options",
+        DialogHelp = "dialog:help",
+        /// Step 1's import of a SolidCraft design when there is no geometry yet.
+        StepImport = "step:import",
+        /// Step 1's waveguide when there is no geometry yet.
+        StepWaveguide = "step:waveguide",
         // The step panels.
         /// The project's Home view (its rectangle) and its next step's button.
         ProjectHome = "project:home",
@@ -182,6 +192,12 @@ emcraft_macros::named_enum! {
         View3dSection = "view3d:section",
         View3dSectionAt = "view3d:section:at",
         View3dSectionFlip = "view3d:section:flip",
+        /// The section view's camera straight at the cut, its dimensions' switch and its
+        /// presets (H-plane y = b/2, E-plane x = a/2).
+        View3dSectionLook = "view3d:section:look",
+        View3dSectionDims = "view3d:section:dims",
+        View3dSectionHPlane = "view3d:section:h_plane",
+        View3dSectionEPlane = "view3d:section:e_plane",
         // The selection card's Edit and Delete.
         View3dSelectedEdit = "view3d:selected:edit",
         View3dSelectedDelete = "view3d:selected:delete",
@@ -264,6 +280,8 @@ pub enum Handle<'a> {
     DialogAdd(&'a str),
     /// A table row's remove: `dialog:remove:sections:1`.
     DialogRemove(&'a str, usize),
+    /// A SolidCraft design's parameter in the import dialog: `dialog:param:d`.
+    DialogParam(&'a str),
     /// A choice in a dialog's drop-down: `choice:material:vacuum`.
     Choice(&'a str, &'a str),
     /// The Setup step's solver: `setup:solver:frequency`.
@@ -307,6 +325,9 @@ pub enum Handle<'a> {
     CubeButton(&'static str),
     /// The axis the section view cuts across (0 x, 1 y, 2 z): `view3d:section:x`.
     SectionAxis(usize),
+    /// A dimension's or a port's label on the section view's cut: `view3d:section:dim:0`,
+    /// `view3d:section:port:1`.
+    SectionNote(&'static str, usize),
     /// A tool's switch in the 3D view: `view3d:tool:measure`.
     Tool(crate::tools3d::Tool),
     /// A tool's button on the ribbon: `toolbar:tool:port`.
@@ -386,6 +407,7 @@ impl fmt::Display for Handle<'_> {
             Handle::DialogCell(name, row, column) => write!(f, "dialog:cell:{name}:{row}:{column}"),
             Handle::DialogAdd(name) => write!(f, "dialog:add:{name}"),
             Handle::DialogRemove(name, row) => write!(f, "dialog:remove:{name}:{row}"),
+            Handle::DialogParam(name) => write!(f, "dialog:param:{name}"),
             Handle::Choice(param, value) => write!(f, "choice:{param}:{value}"),
             Handle::Solver(s) => write!(f, "setup:solver:{}", s.id()),
             Handle::Kind(s) => write!(f, "intent:kind:{}", s.id()),
@@ -415,6 +437,7 @@ impl fmt::Display for Handle<'_> {
             }
             Handle::CubeButton(b) => write!(f, "view3d:cube:{b}"),
             Handle::SectionAxis(k) => write!(f, "view3d:section:{}", AXES.get(k).copied().unwrap_or("?")),
+            Handle::SectionNote(kind, i) => write!(f, "view3d:section:{kind}:{i}"),
             Handle::Tool(t) => write!(f, "view3d:tool:{}", t.id()),
             Handle::RibbonTool(t) => write!(f, "toolbar:tool:{}", t.id()),
             Handle::StepTool(t) => write!(f, "step:tool:{}", t.id()),

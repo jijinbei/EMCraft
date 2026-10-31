@@ -103,6 +103,11 @@ fn scenario_import_cavity() {
 }
 
 #[test]
+fn scenario_import_design() {
+    scenario("import_design");
+}
+
+#[test]
 fn scenario_tdr_view() {
     scenario("tdr_view");
 }

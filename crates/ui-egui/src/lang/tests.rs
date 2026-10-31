@@ -237,7 +237,7 @@ fn tour() -> Record {
         h.frames(2);
     }
     call(&mut h, "ui.set", json!({"settings": "none"}));
-    for purpose in [Purpose::Open, Purpose::SaveAs] {
+    for purpose in [Purpose::Open, Purpose::SaveAs, Purpose::Import] {
         h.app.files.prompt = Some(Prompt { purpose, text: String::new() });
         h.frames(2);
     }
@@ -368,6 +368,10 @@ fn tour() -> Record {
         // Cut open (when there is a model to cut).
         if h.call("ui.set", json!({"section": {"axis": "x"}}))["ok"] == json!(true) {
             h.frames(2);
+            // Its dimensions off, then on again.
+            h.app.view3d.section_dims = false;
+            h.frames(2);
+            h.app.view3d.section_dims = true;
             call(&mut h, "ui.set", json!({"section": null}));
         }
         call(&mut h, "ui.set", json!({"step": "setup"}));
@@ -414,6 +418,30 @@ fn tour() -> Record {
         call(&mut h, "ui.start", json!({"command": c.id}));
         h.frames(2);
     }
+    // The import dialog on a design (its parameters), a 3MF package (its bodies) and an STL file
+    // (its units), its options and help unfolded, the line of each kind of region.
+    let stl = std::env::temp_dir().join(format!("emcraft-tour-{}.stl", std::process::id()));
+    let facet = |a: &str, b: &str, c: &str| format!("facet normal 0 0 0\nouter loop\nvertex {a}\nvertex {b}\nvertex {c}\nendloop\nendfacet\n");
+    let (o, x, y, z) = ("0 0 0", "1 0 0", "0 1 0", "0 0 1");
+    let text = format!("solid t\n{}{}{}{}endsolid t\n", facet(o, y, x), facet(o, x, z), facet(o, z, y), facet(x, y, z));
+    std::fs::write(&stl, text).unwrap_or_else(|e| panic!("{}: {e}", stl.display()));
+    call(&mut h, "ui.start", json!({"command": "geometry.import", "params": {"path": "../../tests/oracle/design-post/post.solidcraft"}}));
+    h.frames(2);
+    if let Some(d) = h.app.dialog.as_mut() {
+        (d.options, d.help) = (true, true);
+    }
+    for set in [
+        json!({"region": "box"}),
+        json!({"region": "cavity"}),
+        json!({"region": "guide"}),
+        json!({"region": "", "open": true}),
+        json!({"open": false, "path": "tests/fixtures/post-and-puck.3mf"}),
+        json!({"path": stl.display().to_string()}),
+    ] {
+        call(&mut h, "ui.dialog", json!({"set": set}));
+        h.frames(2);
+    }
+    let _ = std::fs::remove_file(&stl);
     call(&mut h, "ui.set", json!({"dock": true}));
     let sections = json!([{"length": "", "material": "vacuum"}, {"length": "x", "material": "vacuum"}]);
     call(&mut h, "ui.start", json!({"command": "geometry.waveguide", "params": {"width": "wide", "height": "", "sections": sections}}));
@@ -477,6 +505,8 @@ fn tour() -> Record {
 
 /// Texts a tour of the window cannot reach, with why.
 const UNREACHED: &[(&str, &str)] = &[
+    ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
+    ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),
     ("Time-domain radiation", "a time-domain solve with sources takes too long for the gate"),
     ("Time domain: {n} frequencies", "a time-domain solve takes too long for the gate"),
     ("modes ({unit})", "a study of eigenmodes takes too long for the gate"),

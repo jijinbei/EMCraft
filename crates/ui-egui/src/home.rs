@@ -82,6 +82,9 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
                 if big(ui, Glyph::OpenFile, "Open…", false, Fixed::HomeOpen) {
                     out.push(Action::File(FileAction::Request(Then::Open)));
                 }
+                if big(ui, Glyph::Import, "Import a SolidCraft design…", false, Fixed::HomeImport) {
+                    out.push(Action::File(FileAction::Request(Then::Import)));
+                }
             });
             ui.add_space(t.space_16);
             let right = 300.0;

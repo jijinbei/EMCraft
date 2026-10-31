@@ -13,10 +13,12 @@ use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario, ui_kit};
 
 /// What the card asked for.
 #[derive(Default)]
-struct Asked {
-    ok: bool,
-    cancel: bool,
-    dock: bool,
+pub(crate) struct Asked {
+    pub ok: bool,
+    pub cancel: bool,
+    pub dock: bool,
+    /// The import dialog's file is to be chosen in the file dialog.
+    pub pick: bool,
 }
 
 /// A floating dialog card over the viewport.
@@ -99,6 +101,9 @@ fn act(app: &EmcraftApp, asked: Asked, out: &mut Actions) {
     if asked.dock {
         out.push(Action::SetDock(!app.dock_dialogs));
     }
+    if asked.pick {
+        out.push(Action::File(crate::files::FileAction::PickPart));
+    }
     if asked.cancel {
         out.push(Action::DialogCancel);
     } else if asked.ok {
@@ -120,9 +125,13 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
     egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
         egui::ScrollArea::vertical().max_height(body_h).auto_shrink([false, true]).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui_kit::caption(ui, Raw(command_doc(id)));
-            ui.add_space(t.space_6);
-            fields(ui, d, session);
+            if id == crate::import_ui::ID {
+                d.widgets = crate::import_ui::body(app, d, ui, &mut asked);
+            } else {
+                ui_kit::caption(ui, Raw(command_doc(id)));
+                ui.add_space(t.space_6);
+                d.widgets = fields(ui, d, session, &|_| true, &|name| Raw(name));
+            }
             if let Some(e) = app.workflow.dialog_estimate.as_ref().filter(|e| e.asked["command"] == id) {
                 ui.add_space(t.space_6);
                 crate::steps::estimate_line(ui, &e.reply, Fixed::DialogEstimate);
@@ -189,9 +198,16 @@ pub fn ok_label(id: &str) -> &'static str {
     }
 }
 
-/// The fields, each labelled by its parameter's name (an id, as scripts write it), its
-/// description on hover.
-fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) {
+/// The fields `shown` picks, each labelled by `label` (its parameter's name — an id, as scripts
+/// write it — for most dialogs), its description on hover; the controls drawn, each with
+/// whether it takes text.
+pub(crate) fn fields<L: crate::lang::Shown>(
+    ui: &mut egui::Ui,
+    d: &mut Dialog,
+    session: &emcraft_engine::Session,
+    shown: &dyn Fn(&str) -> bool,
+    label: &dyn Fn(&'static str) -> L,
+) -> Vec<(egui::Id, bool)> {
     let t = &Tokens::get();
     let id = d.command.id;
     // The controls drawn, each with whether it takes text; the first text field takes the
@@ -204,7 +220,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
             r.request_focus();
         }
     };
-    for f in d.fields.iter_mut() {
+    for f in d.fields.iter_mut().filter(|f| shown(f.name)) {
         let unit = crate::dialogs::unit(f.quantity, session);
         let name = f.name;
         let handle = Handle::DialogField(name);
@@ -216,14 +232,14 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
                 drawn.extend(table(ui, f, cols, hint, session, t));
             }
             Kind::Bool => {
-                ui_kit::row(ui, Raw(name), f.required, |ui| {
+                ui_kit::row(ui, label(name), f.required, |ui| {
                     let r = crate::math::tip(ui.named(egui::Checkbox::new(&mut f.on, ""), handle), hint);
                     drawn.push((r.id, false));
                 });
             }
             Kind::Vector(parts) => {
                 let parts = *parts;
-                ui_kit::row(ui, Raw(name), f.required, |ui| {
+                ui_kit::row(ui, label(name), f.required, |ui| {
                     let w = ((ui.available_width() - 30.0) / parts.len() as f32 - 6.0).max(30.0);
                     for (k, (label, v)) in parts.iter().zip(f.parts.iter_mut()).enumerate() {
                         let r =
@@ -241,7 +257,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
             }
             Kind::Choice(list) => {
                 let list = list.clone();
-                ui_kit::row(ui, Raw(name), f.required, |ui| {
+                ui_kit::row(ui, label(name), f.required, |ui| {
                     let r = crate::math::tip(choice(ui, (name, 0, 0), &mut f.text, &list, ui.available_width() - 8.0, !f.required), hint);
                     scenario::publish_target(handle, r.rect);
                     drawn.push((r.id, false));
@@ -254,7 +270,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
                     _ if f.required => "",
                     _ => tr("default"),
                 };
-                ui_kit::row(ui, Raw(name), f.required, |ui| {
+                ui_kit::row(ui, label(name), f.required, |ui| {
                     let w = ui.available_width() - if unit.is_empty() { 8.0 } else { 40.0 };
                     let mut edit = egui::TextEdit::singleline(&mut f.text).desired_width(w).hint_text(placeholder).char_limit(MAX_FIELD);
                     if invalid {
@@ -275,7 +291,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
             });
         }
     }
-    d.widgets = drawn;
+    drawn
 }
 
 /// A table field: a row of cells per entry (sections, layers), each removable, and a button
