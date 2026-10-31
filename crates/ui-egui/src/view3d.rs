@@ -129,7 +129,7 @@ pub struct View3d {
     /// What a row elsewhere (the port-mode table) points at while hovered: highlighted for one
     /// frame instead of the selection, which it leaves alone.
     pub hover: Option<scene3d::Pick>,
-    /// Whether the last frame was drawn by the window's GPU rather than the CPU renderer.
+    /// Whether the last frame was drawn (by the GPU; not when there is no adapter).
     pub drawn_on_gpu: bool,
     /// What the left button's drag does, chosen when it was pressed: move the field view's plane
     /// or the selected port's reference plane (pressed on them), or navigate.
