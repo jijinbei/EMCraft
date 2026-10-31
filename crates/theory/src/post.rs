@@ -218,7 +218,16 @@ fn green(a: f64, k: f64, p: (f64, f64), q: (f64, f64)) -> C {
 }
 
 /// Gaussian elimination with partial pivoting (the first largest pivot: deterministic).
-pub(crate) fn dense_solve(mut a: Vec<C>, mut b: Vec<C>, n: usize) -> Option<Vec<C>> {
+pub(crate) fn dense_solve(a: Vec<C>, b: Vec<C>, n: usize) -> Option<Vec<C>> {
+    dense_solve_many(a, b, n, 1)
+}
+
+/// [`dense_solve`] for `k` right-hand sides at once: `b` is n × k, row-major, and so is the
+/// solution. Each column is reduced by the same operations in the same order as alone.
+pub(crate) fn dense_solve_many(mut a: Vec<C>, mut b: Vec<C>, n: usize, k: usize) -> Option<Vec<C>> {
+    if a.len() != n * n || b.len() != n * k {
+        return None;
+    }
     for c in 0..n {
         let mut piv = c;
         for r in c + 1..n {
@@ -233,7 +242,9 @@ pub(crate) fn dense_solve(mut a: Vec<C>, mut b: Vec<C>, n: usize) -> Option<Vec<
             for j in 0..n {
                 a.swap(c * n + j, piv * n + j);
             }
-            b.swap(c, piv);
+            for j in 0..k {
+                b.swap(c * k + j, piv * k + j);
+            }
         }
         for r in c + 1..n {
             let f = a[r * n + c] / a[c * n + c];
@@ -244,17 +255,21 @@ pub(crate) fn dense_solve(mut a: Vec<C>, mut b: Vec<C>, n: usize) -> Option<Vec<
                 let x = a[c * n + j];
                 a[r * n + j] -= f * x;
             }
-            let x = b[c];
-            b[r] -= f * x;
+            for j in 0..k {
+                let x = b[c * k + j];
+                b[r * k + j] -= f * x;
+            }
         }
     }
-    let mut x = vec![C::new(0.0, 0.0); n];
+    let mut x = vec![C::new(0.0, 0.0); n * k];
     for r in (0..n).rev() {
-        let mut s = b[r];
-        for j in r + 1..n {
-            s -= a[r * n + j] * x[j];
+        for col in 0..k {
+            let mut s = b[r * k + col];
+            for j in r + 1..n {
+                s -= a[r * n + j] * x[j * k + col];
+            }
+            x[r * k + col] = s / a[r * n + r];
         }
-        x[r] = s / a[r * n + r];
     }
     x.iter().all(|v| v.re.is_finite() && v.im.is_finite()).then_some(x)
 }
