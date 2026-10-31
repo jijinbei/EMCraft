@@ -239,6 +239,9 @@ fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
 #[derive(Clone, Copy)]
 struct Candidate {
     cost: f64,
+    /// The edge's squared length: of equal costs (a flat face's collapses cost nothing), the
+    /// shortest goes first, so a face comes down evenly rather than into one vertex's fan.
+    len2: f64,
     u: u32,
     v: u32,
     stamps: (u32, u32),
@@ -256,10 +259,10 @@ impl PartialOrd for Candidate {
     }
 }
 impl Ord for Candidate {
-    /// The cheapest first (the heap pops the greatest), ties by the ends, so the result never
-    /// depends on the heap's order.
+    /// The cheapest first (the heap pops the greatest), ties by the shorter edge, then by the
+    /// ends, so the result never depends on the heap's order.
     fn cmp(&self, o: &Self) -> Ordering {
-        o.cost.total_cmp(&self.cost).then_with(|| (o.u, o.v).cmp(&(self.u, self.v)))
+        o.cost.total_cmp(&self.cost).then_with(|| o.len2.total_cmp(&self.len2)).then_with(|| (o.u, o.v).cmp(&(self.u, self.v)))
     }
 }
 
@@ -427,13 +430,16 @@ impl Collapser {
         // The best point when it lies near the edge; else the best of its ends and middle.
         let reach = dot(sub(pu, pv), sub(pu, pv)) * 4.0;
         let best = q.best().filter(|p| dot(sub(*p, mid), sub(*p, mid)) <= reach);
-        best.into_iter().chain([pu, pv, mid]).map(|p| (p, q.at(p))).min_by(|a, b| a.1.total_cmp(&b.1))
+        // Of equal costs the middle (a flat face's vertices merge halfway, keeping it even).
+        best.into_iter().chain([mid, pu, pv]).map(|p| (p, q.at(p))).min_by(|a, b| a.1.total_cmp(&b.1))
     }
 
     fn offer(&mut self, u: u32, v: u32) {
         let Some((_, cost)) = self.target(u, v) else { return };
+        let (Some(pu), Some(pv)) = (self.pos.get(u as usize), self.pos.get(v as usize)) else { return };
+        let len2 = dot(sub(*pu, *pv), sub(*pu, *pv));
         let stamps = (self.stamp.get(u as usize).copied().unwrap_or(0), self.stamp.get(v as usize).copied().unwrap_or(0));
-        self.heap.push(Candidate { cost, u, v, stamps });
+        self.heap.push(Candidate { cost, len2, u, v, stamps });
     }
 
     /// The live vertices sharing a live triangle with `v`.
@@ -584,5 +590,5 @@ impl Collapser {
 }
 
 #[cfg(test)]
-#[path = "simplify_tests.rs"]
+#[path = "tests/simplify.rs"]
 mod tests;

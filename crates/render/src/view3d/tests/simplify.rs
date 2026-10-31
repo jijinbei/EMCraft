@@ -171,5 +171,26 @@ fn simplify_timing() {
     });
     let started = std::time::Instant::now();
     let c = coarser(&s, 40_000).map_or(0, |c| c.tris.len());
-    eprintln!("{} triangles to {c} in {:.0} ms", s.tris.len(), started.elapsed().as_secs_f64() * 1e3);
+    eprintln!("sphere: {} triangles to {c} in {:.0} ms", s.tris.len(), started.elapsed().as_secs_f64() * 1e3);
+    // Flat walls, where every collapse inside a face costs nothing: a box of 6 × 2 × 129².
+    let mut s = Scene::default();
+    let n = 129;
+    for k in 0..3 {
+        let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+        for side in [0.0, 1.0] {
+            for a in 0..n {
+                for b in 0..n {
+                    let at = |u: usize, v: usize| {
+                        let mut p = [side; 3];
+                        (p[i], p[j]) = (u as f64 / n as f64, v as f64 / n as f64);
+                        p
+                    };
+                    s.tagged(1, |s| s.quad([at(a, b), at(a + 1, b), at(a + 1, b + 1), at(a, b + 1)], Rgb(9, 9, 9), 255));
+                }
+            }
+        }
+    }
+    let started = std::time::Instant::now();
+    let c = coarser(&s, 40_000).map_or(0, |c| c.tris.len());
+    eprintln!("box: {} triangles to {c} in {:.0} ms", s.tris.len(), started.elapsed().as_secs_f64() * 1e3);
 }

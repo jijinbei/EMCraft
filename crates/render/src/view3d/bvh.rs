@@ -344,5 +344,5 @@ fn grown(mut b: Aabb) -> Aabb {
 }
 
 #[cfg(test)]
-#[path = "bvh_tests.rs"]
+#[path = "tests/bvh.rs"]
 mod tests;
