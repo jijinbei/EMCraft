@@ -115,8 +115,8 @@ impl Symmetry {
     /// aperture, its layers, strips and vias.
     fn check_guide(&self, w: &Waveguide) -> std::result::Result<(), String> {
         let (span, name) = match self.axis {
-            Axis::X => (w.width, "x = a/2"),
-            _ => (w.height, "y = b/2"),
+            Axis::X => (w.width.get(), "x = a/2"),
+            _ => (w.height.get(), "y = b/2"),
         };
         let tol = 1e-9 * span;
         let mid = span / 2.0;
@@ -136,7 +136,7 @@ impl Symmetry {
         }
         // Strips and vias: each mirrored by one (itself when it straddles the plane; a strip on
         // a y plane, or a post through the whole height about y = b/2, is its own image).
-        let t = 1e-9 * w.width.max(w.height).max(w.length());
+        let t = 1e-9 * w.width.max(w.height.get()).max(w.length());
         if let Some(k) = unmirrored(&w.strips, self.axis, span, t) {
             return Err(format!("strip {} has no mirror image about the plane: the guide is not symmetric about it", k + 1));
         }
@@ -228,6 +228,16 @@ mod tests {
     use super::*;
     use crate::{Section, Shape, Solid, Vec3};
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> crate::Metres {
+        crate::Metres::new(v).unwrap()
+    }
+
+    /// A box's sides (m), checked.
+    fn box_size(v: crate::Vec3) -> crate::BoxSize {
+        crate::BoxSize::new(v).unwrap()
+    }
+
     fn plane(axis: Axis, at: f64, kind: SymmetryKind) -> Symmetry {
         Symmetry { axis, at, kind }
     }
@@ -236,8 +246,22 @@ mod tests {
     fn symmetry_planes_need_a_symmetric_guide() {
         let mut m = Model::new();
         assert!(m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic)]).is_err(), "no geometry");
-        let sec = |w: Option<f64>, o: Option<f64>| Section { length: 0.01, material: "vacuum".into(), width: w, offset: o, ..Default::default() };
-        let guide = |s: Vec<Section>| Waveguide { width: 0.02, height: 0.01, sections: s, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() };
+        let sec = |w: Option<f64>, o: Option<f64>| Section {
+            length: metres(0.01),
+            material: "vacuum".into(),
+            width: w.map(metres),
+            offset: o,
+            height: None,
+            offset_y: None,
+        };
+        let guide = |s: Vec<Section>| Waveguide {
+            width: metres(0.02),
+            height: metres(0.01),
+            sections: s,
+            layers: Vec::new(),
+            strips: Vec::new(),
+            vias: Vec::new(),
+        };
         m.set_waveguide(guide(vec![sec(None, None), sec(Some(0.01), None), sec(None, None)])).unwrap();
         m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic), plane(Axis::Y, 0.005, SymmetryKind::Electric)]).unwrap();
         assert_eq!(m.symmetry_fraction(), 0.25);
@@ -258,24 +282,24 @@ mod tests {
         m.set_symmetry(Vec::new()).unwrap();
         // Strips must mirror; a solid is refused.
         let mut w = guide(vec![sec(None, None)]);
-        w.strips = vec![Strip { y: 0.002, x0: 0.002, width: 0.004, z0: 0.0, z1: 0.01 }];
+        w.strips = vec![Strip { y: 0.002, x0: 0.002, width: metres(0.004), z0: 0.0, z1: 0.01 }];
         m.set_waveguide(w.clone()).unwrap();
         assert!(m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic)]).is_err());
-        w.strips.push(Strip { y: 0.002, x0: 0.014, width: 0.004, z0: 0.0, z1: 0.01 });
+        w.strips.push(Strip { y: 0.002, x0: 0.014, width: metres(0.004), z0: 0.0, z1: 0.01 });
         m.set_waveguide(w).unwrap();
         m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Electric)]).unwrap();
-        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.02, 0.01, 0.01) }, material: "vacuum".into() }).unwrap();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.01)) }, material: "vacuum".into() }).unwrap();
         assert!(m.check().iter().any(|i| i.to_string().contains("not supported yet")));
     }
 
     #[test]
     fn vias_must_mirror() {
         let mut m = Model::new();
-        let via = Via { x0: 0.002, z0: 0.004, wx: 0.001, wz: 0.001, y0: 0.0, y1: 0.01 };
+        let via = Via { x0: 0.002, z0: 0.004, wx: metres(0.001), wz: metres(0.001), y0: 0.0, y1: 0.01 };
         let mut w = Waveguide {
-            width: 0.02,
-            height: 0.01,
-            sections: vec![Section::new(0.01, "vacuum")],
+            width: metres(0.02),
+            height: metres(0.01),
+            sections: vec![Section::new(metres(0.01), "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
             vias: vec![via],

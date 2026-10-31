@@ -5,7 +5,7 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 
 use emcraft_model::units::{C0, MU0};
-use emcraft_model::{Open, OpenShape, Shape, Source, Vec3};
+use emcraft_model::{Ohms, Open, OpenShape, Shape, Source, Vec3};
 use emcraft_solver::radiation::{FarField, OpenResult};
 use emcraft_theory::radiation::Huygens;
 use serde_json::{Value, json};
@@ -31,16 +31,16 @@ pub struct Radiated {
 pub fn model_open(s: &mut Session, p: &Params) -> Result<Value> {
     let reflection = p.number("reflection").optional()?;
     let shape: OpenShape = p.choice("shape").or(OpenShape::Box)?;
-    let open = p.positive_length("thickness").optional()?.map(|thickness| Open { thickness, reflection, shape });
+    let open = p.metres("thickness").optional()?.map(|thickness| Open { thickness, reflection, shape });
     s.model.set_open(open)?;
-    Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.show_length(o.thickness)), "shape": open.map(|o| o.shape)}))
+    Ok(json!({"open": open.is_some(), "thickness": open.map(|o| s.show_length(o.thickness.get())), "shape": open.map(|o| o.shape)}))
 }
 
 pub fn source_dipole(s: &mut Session, p: &Params) -> Result<Value> {
     let dipole = Source::Dipole {
         at: p.point("at").required()?,
         direction: p.vector("direction").or(Vec3::unit(2))?,
-        length: p.positive_length("length").required()?,
+        length: p.metres("length").required()?,
         current: p.number("current").or(1.0)?,
     };
     s.model.add_source(dipole)?;
@@ -60,7 +60,7 @@ pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
         name: p.string("name").required()?.to_owned(),
         from: p.point("from").required()?,
         to: p.point("to").required()?,
-        impedance: p.positive("impedance").or(50.0)?,
+        impedance: p.checked("impedance").or(Ohms::FIFTY)?,
         voltage: [amplitude * phase.cos(), amplitude * phase.sin()],
         radius: p.positive_length("radius").or(0.0)?,
     })?;
@@ -80,7 +80,7 @@ fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
     if !in_vacuum(s) || !s.model.sources.is_empty() || !s.model.features.is_empty() || a.material.is_some() || b.material.is_some() {
         return None;
     }
-    let (Shape::Cylinder { radius: ra, length: la }, Shape::Cylinder { radius: rb, length: lb }) = (&a.shape, &b.shape) else { return None };
+    let (&Shape::Cylinder { radius: ra, length: la }, &Shape::Cylinder { radius: rb, length: lb }) = (&a.shape, &b.shape) else { return None };
     let tol = 1e-9 * (la + lb);
     let on_axis = |q: emcraft_model::Point3| (q.x - a.at.x).abs() < tol && (q.y - a.at.y).abs() < tol;
     if !(on_axis(b.at) && (ra - rb).abs() < tol && on_axis(port.from) && on_axis(port.to)) {
@@ -88,7 +88,7 @@ fn wire_dipole(s: &Session) -> Option<(f64, f64)> {
     }
     let lo = a.at.z.min(b.at.z);
     let hi = (a.at.z + la).max(b.at.z + lb);
-    Some((hi - lo, *ra))
+    Some((hi - lo, ra.get()))
 }
 
 pub fn source_clear(s: &mut Session, _: &Params) -> Result<Value> {
@@ -123,9 +123,9 @@ fn lone_sphere(s: &Session) -> Option<(f64, Option<f64>)> {
         [inc] if s.model.features.is_empty() && s.model.sources.len() == 1 => match (&inc.shape, &inc.material) {
             (Shape::Sphere { radius }, Some(name)) => {
                 let (_, m) = s.model.material(name).ok()?;
-                (m.mu_r.get() == 1.0 && m.loss_tangent.get() == 0.0 && !m.is_magnetically_lossy()).then_some((*radius, Some(m.eps_r.get())))
+                (m.mu_r.get() == 1.0 && m.loss_tangent.get() == 0.0 && !m.is_magnetically_lossy()).then_some((radius.get(), Some(m.eps_r.get())))
             }
-            (Shape::Sphere { radius }, None) => Some((*radius, None)),
+            (Shape::Sphere { radius }, None) => Some((radius.get(), None)),
             _ => None,
         },
         _ => None,
@@ -375,7 +375,7 @@ pub fn solve_time_domain_open(s: &mut Session, freqs: &[f64], cell: f64, device:
                 .zip(&s.model.lumped)
                 .map(|(pr, lp)| {
                     let z = pr.impedance[fi];
-                    let s11 = (z - lp.impedance) / (z + lp.impedance);
+                    let s11 = (z - lp.impedance.get()) / (z + lp.impedance.get());
                     json!({"name": pr.name, "impedance": phasor(z), "voltage": phasor(pr.voltage[fi]), "current": phasor(pr.current[fi]), "s11": reflection(s11), "power": pr.power[fi]})
                 })
                 .collect();

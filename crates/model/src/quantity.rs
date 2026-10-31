@@ -5,13 +5,15 @@
 //!
 //! Each type is built only through `new` (or `named`, which says what the value is in its
 //! error) and `TryFrom<f64>`, both refusing a value that breaks its rule with
-//! [`ModelError::Invalid`]; it reads back as an `f64` through `get()` or `Deref`. They
+//! [`ModelError::Invalid`]; it reads back as an `f64` through `get()` or `Deref`, and
+//! arithmetic on it (`+ − × ÷` with its own type or an `f64`, negation) gives an `f64`. They
 //! serialize as plain numbers (`#[serde(try_from = "f64", into = "f64")]`), so files are the
 //! same as with `f64` fields, and a value read from a file is checked as one given to `new`.
 //!
 //! - [`Positive`]: finite, > 0 (a relative permittivity, a pole's Δε, a time);
 //! - [`Hertz`]: a frequency (Hz), finite, > 0;
 //! - [`Metres`]: a length (m), finite, > 0;
+//! - [`Ohms`]: an impedance (Ω), finite, > 0;
 //! - [`Conductivity`]: S/m, finite, > 0, at most [`MAX_CONDUCTIVITY`];
 //! - [`LossTangent`]: finite, 0 to [`MAX_LOSS_TANGENT`].
 //!
@@ -21,6 +23,7 @@
 //! let f = Hertz::new(9e9)?; // Hz, SI
 //! assert_eq!(f.get(), 9e9);
 //! assert_eq!(*f * 2.0, 1.8e10); // reads as an f64
+//! assert_eq!(1.0 / f, 1.0 / 9e9); // and computes as one
 //! let copper = Conductivity::named("wall conductivity", 5.8e7)?; // S/m
 //! assert_eq!(f64::from(copper), 5.8e7);
 //!
@@ -32,7 +35,7 @@
 //! ```
 
 use std::fmt;
-use std::ops::Deref;
+use std::ops::{Add, AddAssign, Deref, Div, Mul, Neg, Sub};
 
 use serde::{Deserialize, Serialize};
 
@@ -136,7 +139,69 @@ macro_rules! quantity {
                 fmt::LowerExp::fmt(&self.0, f)
             }
         }
+
+        arithmetic!($name, Add add, Sub sub, Mul mul, Div div);
+
+        impl AddAssign<$name> for f64 {
+            fn add_assign(&mut self, o: $name) {
+                *self += o.0;
+            }
+        }
+
+        impl Neg for $name {
+            type Output = f64;
+
+            fn neg(self) -> f64 {
+                -self.0
+            }
+        }
     };
+}
+
+/// Arithmetic on a checked number, with another of its type or an `f64` on either side: a
+/// plain `f64` (what it gives is not checked; checking it again is the reader's choice).
+macro_rules! arithmetic {
+    ($name:ident, $($op:ident $f:ident),*) => {$(
+        impl $op for $name {
+            type Output = f64;
+
+            fn $f(self, o: $name) -> f64 {
+                $op::$f(self.0, o.0)
+            }
+        }
+
+        impl $op<f64> for $name {
+            type Output = f64;
+
+            fn $f(self, o: f64) -> f64 {
+                $op::$f(self.0, o)
+            }
+        }
+
+        impl $op<$name> for f64 {
+            type Output = f64;
+
+            fn $f(self, o: $name) -> f64 {
+                $op::$f(self, o.0)
+            }
+        }
+
+        impl $op<f64> for &$name {
+            type Output = f64;
+
+            fn $f(self, o: f64) -> f64 {
+                $op::$f(self.0, o)
+            }
+        }
+
+        impl $op<&$name> for f64 {
+            type Output = f64;
+
+            fn $f(self, o: &$name) -> f64 {
+                $op::$f(self, o.0)
+            }
+        }
+    )*};
 }
 
 quantity! {
@@ -179,6 +244,19 @@ quantity! {
 }
 
 quantity! {
+    /// An impedance (Ω): finite, > 0 (a lumped port's, a port's reference).
+    ///
+    /// ```
+    /// use emcraft_model::Ohms;
+    ///
+    /// assert_eq!(Ohms::new(50.0)?.get(), 50.0);
+    /// assert!(Ohms::new(0.0).is_err() && Ohms::new(f64::NAN).is_err());
+    /// # Ok::<(), emcraft_model::ModelError>(())
+    /// ```
+    Ohms, "impedance", "> 0", |v| v > 0.0
+}
+
+quantity! {
     /// A conductivity (S/m): finite, > 0 and at most [`MAX_CONDUCTIVITY`].
     ///
     /// ```
@@ -208,6 +286,11 @@ quantity! {
 impl Positive {
     /// One (vacuum's εr and μr).
     pub const ONE: Positive = Positive(1.0);
+}
+
+impl Ohms {
+    /// 50 Ω, the usual reference impedance.
+    pub const FIFTY: Ohms = Ohms(50.0);
 }
 
 impl LossTangent {
@@ -245,6 +328,7 @@ mod tests {
         refuses::<Positive>(&hostile);
         refuses::<Hertz>(&hostile);
         refuses::<Metres>(&hostile);
+        refuses::<Ohms>(&hostile);
         refuses::<Conductivity>(&[&hostile[..], &[1e21, f64::MAX]].concat());
         refuses::<LossTangent>(&[f64::NAN, f64::INFINITY, -1.0, -1e-300, 1e10, 1e300]);
         assert_eq!(Positive::new(f64::MIN_POSITIVE).map(Positive::get), Ok(f64::MIN_POSITIVE));

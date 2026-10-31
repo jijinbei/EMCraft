@@ -48,9 +48,9 @@ pub fn te10_line(session: &Session) -> Result<ExactLine> {
     let mut sections = Vec::with_capacity(w.sections.len());
     for s in &w.sections {
         let (_, m) = session.model.material(&s.material)?;
-        sections.push((s.length, m.clone()));
+        sections.push((s.length.get(), m.clone()));
     }
-    Ok(ExactLine { a: w.width, sections })
+    Ok(ExactLine { a: w.width.get(), sections })
 }
 
 /// Mode matching takes constant permittivities: refuses a dispersive material.
@@ -152,9 +152,16 @@ pub fn reference(session: &Session) -> Result<Reference> {
         for (i, s) in w.sections.iter().enumerate() {
             let m = constant(session.model.material(&s.material)?.1)?;
             let emcraft_model::Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
-            sections.push(ESection { length: s.length, eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), loss_tangent: m.loss_tangent.get(), y0, height });
+            sections.push(ESection {
+                length: s.length.get(),
+                eps_r: m.eps_r.get(),
+                mu_r: m.mu_r.get(),
+                loss_tangent: m.loss_tangent.get(),
+                y0,
+                height,
+            });
         }
-        return Ok(Reference::EPlane(EPlaneLine { a: w.width, sections }));
+        return Ok(Reference::EPlane(EPlaneLine { a: w.width.get(), sections }));
     }
     if !w.full_height() {
         return Err(EngineError::failed("not supported yet: a reference for guides whose width and height both change"));
@@ -163,7 +170,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
     for (i, s) in w.sections.iter().enumerate() {
         let m = constant(session.model.material(&s.material)?.1)?;
         let emcraft_model::Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
-        sections.push(HSection { length: s.length, eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), x0, width, loss_tangent: m.loss_tangent.get() });
+        sections.push(HSection { length: s.length.get(), eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), x0, width, loss_tangent: m.loss_tangent.get() });
     }
     Ok(Reference::ModeMatching(HPlaneLine { sections }))
 }
@@ -180,7 +187,7 @@ fn body_reference(session: &Session, solid: &emcraft_model::Solid) -> Result<Ref
         }
         // An empty circular guide: TE11, cut off at x'₁₁/r (the first zero of J₁').
         (emcraft_model::Shape::Cylinder { radius, length }, []) if plain => {
-            Ok(Reference::Uniform { length: *length, cutoff: X11_PRIME / radius, index2 })
+            Ok(Reference::Uniform { length: length.get(), cutoff: X11_PRIME / radius.get(), index2 })
         }
         // A coaxial line: a cylinder through the whole length on the axis, subtracted: TEM.
         (emcraft_model::Shape::Cylinder { radius, length }, [f])
@@ -190,9 +197,9 @@ fn body_reference(session: &Session, solid: &emcraft_model::Solid) -> Result<Ref
                 && f.at.x == 0.0
                 && f.at.y == 0.0
                 && f.at.z <= 0.0
-                && matches!(f.shape, emcraft_model::Shape::Cylinder { radius: r, length: l } if r < *radius && f.at.z + l >= *length) =>
+                && matches!(f.shape, emcraft_model::Shape::Cylinder { radius: r, length: l } if r < *radius && f.at.z + l >= length.get()) =>
         {
-            Ok(Reference::Uniform { length: *length, cutoff: 0.0, index2 })
+            Ok(Reference::Uniform { length: length.get(), cutoff: 0.0, index2 })
         }
         _ => Err(EngineError::failed("not supported yet: a reference for this body's ports")),
     }

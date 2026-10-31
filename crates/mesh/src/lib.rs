@@ -240,13 +240,18 @@ mod tests {
     use super::*;
     use emcraft_model::{Boundary, Material, Model, Section, Waveguide};
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> emcraft_model::Metres {
+        emcraft_model::Metres::new(v).unwrap()
+    }
+
     fn model() -> Model {
         let mut m = Model::new();
         m.add_material(Material::new("ptfe", 2.0, 1.0).unwrap()).unwrap();
-        let s = |l: f64, m: &str| Section::new(l, m);
+        let s = |l: f64, m: &str| Section::new(metres(l), m);
         m.set_waveguide(Waveguide {
-            width: 0.02286,
-            height: 0.01016,
+            width: metres(0.02286),
+            height: metres(0.01016),
             sections: vec![s(0.015, "ptfe"), s(0.02, "vacuum"), s(0.015, "ptfe")],
             layers: Vec::new(),
             strips: Vec::new(),
@@ -265,7 +270,7 @@ mod tests {
     /// "degenerate tetrahedron (volume -0e0)". The mesh is refused where it is made.
     #[test]
     fn degenerate_and_inverted_tetrahedra_are_refused() {
-        let mesh = waveguide(&model(), 0.004).unwrap();
+        let mesh = waveguide(&model(), metres(0.004)).unwrap();
         assert_eq!(check_tetrahedra(&mesh), Ok(()));
         let mut flat = mesh.clone();
         flat.tets[3][1] = flat.tets[3][0];
@@ -289,7 +294,7 @@ mod tests {
     #[test]
     fn volume_is_the_guide_and_every_tet_is_positive() {
         let m = model();
-        let mesh = waveguide(&m, 0.003).unwrap();
+        let mesh = waveguide(&m, metres(0.003)).unwrap();
         let v = volumes(&mesh);
         assert!(v.iter().all(|&x| x > 0.0));
         let total: f64 = v.iter().sum();
@@ -309,7 +314,7 @@ mod tests {
     #[test]
     fn boundary_tags_and_areas() {
         let m = model();
-        let mesh = waveguide(&m, 0.004).unwrap();
+        let mesh = waveguide(&m, metres(0.004)).unwrap();
         let (a, b, l) = (0.02286, 0.01016, 0.05);
         let area = |tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(&mesh, &f.nodes)).sum::<f64>();
         assert!((area(Boundary::Port(0)) - a * b).abs() < 1e-14);
@@ -327,9 +332,9 @@ mod tests {
         use emcraft_model::{Axis, Symmetry, SymmetryKind};
         let (a, b, l) = (0.02286, 0.01016, 0.05);
         let mut m = model();
-        let full = waveguide(&m, 0.004).unwrap();
+        let full = waveguide(&m, metres(0.004)).unwrap();
         m.set_symmetry(vec![Symmetry { axis: Axis::X, at: a / 2.0, kind: SymmetryKind::Magnetic }]).unwrap();
-        let half = waveguide(&m, 0.004).unwrap();
+        let half = waveguide(&m, metres(0.004)).unwrap();
         let area = |mesh: &Mesh, tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(mesh, &f.nodes)).sum::<f64>();
         assert!((volumes(&half).iter().sum::<f64>() - a * b * l / 2.0).abs() < 1e-12 * a * b * l);
         assert!((area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)) - b * l).abs() < 1e-13);
@@ -343,22 +348,22 @@ mod tests {
             Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Electric },
         ])
         .unwrap();
-        let quarter = waveguide(&m, 0.004).unwrap();
+        let quarter = waveguide(&m, metres(0.004)).unwrap();
         assert!((volumes(&quarter).iter().sum::<f64>() - a * b * l / 4.0).abs() < 1e-12 * a * b * l);
         assert!((area(&quarter, Boundary::Symmetry(SymmetryKind::Electric)) - a / 2.0 * l).abs() < 1e-13);
         assert!((area(&quarter, Boundary::Symmetry(SymmetryKind::Magnetic)) - b / 2.0 * l).abs() < 1e-13);
         // A guide no longer symmetric is refused.
         let mut w = m.waveguide.clone().unwrap();
-        w.sections[1].width = Some(0.01);
+        w.sections[1].width = Some(metres(0.01));
         w.sections[1].offset = Some(0.0);
         m.set_waveguide(w).unwrap();
-        assert!(waveguide(&m, 0.004).is_err());
+        assert!(waveguide(&m, metres(0.004)).is_err());
     }
 
     #[test]
     fn locate_finds_the_containing_tet() {
         let m = model();
-        let mesh = waveguide(&m, 0.004).unwrap();
+        let mesh = waveguide(&m, metres(0.004)).unwrap();
         for p in [[0.011, 0.005, 0.025], [0.0, 0.0, 0.0], [0.02286, 0.01016, 0.05], [0.001, 0.009, 0.0349]].map(Point3::from) {
             let (t, l) = locate(&mesh, p).unwrap();
             assert!(l.iter().all(|&x| x >= -1e-12), "{l:?}");
@@ -377,17 +382,18 @@ mod tests {
     fn an_iris_leaves_its_cells_out_and_walls_its_faces() {
         // A 22.86 mm guide with a 2 mm thick, 10 mm wide centred iris.
         let mut m = Model::new();
-        let iris = Section { length: 0.002, material: "vacuum".into(), width: Some(0.01), offset: None, ..Default::default() };
+        let iris =
+            Section { length: metres(0.002), material: "vacuum".into(), width: Some(metres(0.01)), offset: None, height: None, offset_y: None };
         m.set_waveguide(Waveguide {
-            width: 0.02286,
-            height: 0.01016,
-            sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
+            width: metres(0.02286),
+            height: metres(0.01016),
+            sections: vec![Section::new(metres(0.01), "vacuum"), iris, Section::new(metres(0.01), "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
             vias: Vec::new(),
         })
         .unwrap();
-        let mesh = waveguide(&m, 0.003).unwrap();
+        let mesh = waveguide(&m, metres(0.003)).unwrap();
         let (a, b) = (0.02286, 0.01016);
         let total: f64 = volumes(&mesh).iter().sum();
         let exact = a * b * 0.02 + 0.01 * b * 0.002;
@@ -411,17 +417,18 @@ mod tests {
     #[test]
     fn lines_close_in_on_the_edges_of_an_iris_only() {
         let mut m = Model::new();
-        let iris = Section { length: 0.002, material: "vacuum".into(), width: Some(0.01), offset: None, ..Default::default() };
+        let iris =
+            Section { length: metres(0.002), material: "vacuum".into(), width: Some(metres(0.01)), offset: None, height: None, offset_y: None };
         m.set_waveguide(Waveguide {
-            width: 0.02286,
-            height: 0.01016,
-            sections: vec![Section::new(0.01, "vacuum"), iris, Section::new(0.01, "vacuum")],
+            width: metres(0.02286),
+            height: metres(0.01016),
+            sections: vec![Section::new(metres(0.01), "vacuum"), iris, Section::new(metres(0.01), "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
             vias: Vec::new(),
         })
         .unwrap();
-        let o = Options::new(0.004);
+        let o = Options::new(metres(0.004));
         let g = waveguide_with(&m, &o).unwrap().grid.unwrap();
         let spacing_at = |lines: &[f64], v: f64| {
             lines.windows(2).filter(|w| (w[0] - v).abs() < 1e-12 || (w[1] - v).abs() < 1e-12).map(|w| w[1] - w[0]).fold(f64::INFINITY, f64::min)
@@ -438,9 +445,13 @@ mod tests {
         assert!(g.x.windows(2).chain(g.z.windows(2)).all(|w| w[1] > w[0] && w[1] - w[0] <= o.size * 1.2));
         // Without steps, grading changes nothing.
         let uniform_guide = model();
-        assert_eq!(waveguide_with(&uniform_guide, &o).unwrap(), waveguide_with(&uniform_guide, &Options::uniform(0.004)).unwrap());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.0, growth: 1.5, size_y: None, strip_edge: 0.05, strip_end: None }).is_err());
-        assert!(waveguide_with(&m, &Options { size: 0.004, edge: 0.5, growth: 1.0, size_y: None, strip_edge: 0.05, strip_end: None }).is_err());
+        assert_eq!(waveguide_with(&uniform_guide, &o).unwrap(), waveguide_with(&uniform_guide, &Options::uniform(metres(0.004))).unwrap());
+        assert!(
+            waveguide_with(&m, &Options { size: metres(0.004), edge: 0.0, growth: 1.5, size_y: None, strip_edge: 0.05, strip_end: None }).is_err()
+        );
+        assert!(
+            waveguide_with(&m, &Options { size: metres(0.004), edge: 0.5, growth: 1.0, size_y: None, strip_edge: 0.05, strip_end: None }).is_err()
+        );
     }
 
     #[test]
@@ -448,18 +459,18 @@ mod tests {
         use emcraft_model::{Axis, Strip, Symmetry, SymmetryKind, Via};
         let (a, b, l) = (0.012, 0.002, 0.006);
         let mut m = Model::new();
-        let strip = Strip { y: b / 2.0, x0: 0.002, width: 0.002, z0: 0.0, z1: l };
-        let via = Via { x0: 0.0071, z0: 0.0023, wx: 0.0013, wz: 0.0017, y0: 0.0, y1: b };
+        let strip = Strip { y: b / 2.0, x0: 0.002, width: metres(0.002), z0: 0.0, z1: l };
+        let via = Via { x0: 0.0071, z0: 0.0023, wx: metres(0.0013), wz: metres(0.0017), y0: 0.0, y1: b };
         m.set_waveguide(Waveguide {
-            width: a,
-            height: b,
-            sections: vec![Section::new(l, "vacuum")],
+            width: metres(a),
+            height: metres(b),
+            sections: vec![Section::new(metres(l), "vacuum")],
             layers: Vec::new(),
             strips: vec![strip],
             vias: vec![via],
         })
         .unwrap();
-        let mesh = waveguide(&m, 0.001).unwrap();
+        let mesh = waveguide(&m, metres(0.001)).unwrap();
         // The post's faces are grid planes, its cells gone, its four sides walls.
         let g = mesh.grid.as_ref().unwrap();
         for (lines, v) in [(&g.x, 0.0071), (&g.x, 0.0084), (&g.z, 0.0023), (&g.z, 0.004)] {
@@ -476,7 +487,7 @@ mod tests {
         // Halved on the strip's plane by a magnetic wall: the strip's faces there are conductor,
         // the rest of the plane the wall.
         m.set_symmetry(vec![Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Magnetic }]).unwrap();
-        let half = waveguide(&m, 0.001).unwrap();
+        let half = waveguide(&m, metres(0.001)).unwrap();
         let plane = a * l - via.wx * via.wz;
         assert!((area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)) - (plane - strip.width * l)).abs() < 1e-12);
         let half_walls = (2.0 * b / 2.0 + a) * l - via.wx * via.wz + 2.0 * (via.wx + via.wz) * b / 2.0;
@@ -485,16 +496,15 @@ mod tests {
         let mut w = m.waveguide.clone().unwrap();
         w.vias[0].y1 = b / 2.0;
         m.set_waveguide(w).unwrap();
-        assert!(waveguide(&m, 0.001).is_err());
+        assert!(waveguide(&m, metres(0.001)).is_err());
     }
 
     #[test]
     fn hostile_sizes_are_refused() {
         let m = model();
-        assert!(waveguide(&m, 0.0).is_err());
-        assert!(waveguide(&m, f64::NAN).is_err());
-        assert!(waveguide(&m, -1.0).is_err());
-        assert!(matches!(waveguide(&m, 1e-6), Err(MeshError::TooLarge { .. })));
-        assert!(waveguide(&Model::new(), 0.001).is_err());
+        // A size of zero, below or not finite is no `Metres`: it cannot reach the mesher.
+        assert!([0.0, f64::NAN, -1.0].into_iter().all(|h| emcraft_model::Metres::new(h).is_err()));
+        assert!(matches!(waveguide(&m, metres(1e-6)), Err(MeshError::TooLarge { .. })));
+        assert!(waveguide(&Model::new(), metres(0.001)).is_err());
     }
 }

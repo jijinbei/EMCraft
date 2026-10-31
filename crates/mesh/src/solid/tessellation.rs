@@ -4,7 +4,7 @@
 
 use std::f64::consts::PI;
 
-use emcraft_model::{Aabb, Axis, Combine, FaceSurface, Feature, Point3, Shape, Vec3};
+use emcraft_model::{Aabb, Axis, BoxSize, Combine, FaceSurface, Feature, Metres, Point3, Shape, Vec3};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 
 use super::mesher::{MPoint, MVec, RegionFace, RegionMesh, mesher_point, mesher_vec, model_point, model_vec};
@@ -209,9 +209,9 @@ fn tessellate_sphere(r: f64, h: f64) -> Tessellation {
 
 pub(super) fn tessellate(shape: &Shape, size: f64) -> Tessellation {
     match *shape {
-        Shape::Box { size: xyz } => tessellate_box(xyz, size),
-        Shape::Cylinder { radius, length } => tessellate_cylinder(radius, length, size),
-        Shape::Sphere { radius } => tessellate_sphere(radius, size),
+        Shape::Box { size: xyz } => tessellate_box(xyz.get(), size),
+        Shape::Cylinder { radius, length } => tessellate_cylinder(radius.get(), length.get(), size),
+        Shape::Sphere { radius } => tessellate_sphere(radius.get(), size),
         Shape::Surface { .. } => tessellate_surface(shape),
     }
 }
@@ -315,7 +315,7 @@ impl FlatFace {
 fn flat_faces(shape: &Shape, at: Point3, axis: Axis) -> Vec<FlatFace> {
     match *shape {
         Shape::Box { size } => {
-            let s = axis.turn(size);
+            let s = axis.turn(size.get());
             (0..3).flat_map(|d| FlatFace::pair(d, at[d], at[d] + s[d])).collect()
         }
         Shape::Cylinder { length, .. } => {
@@ -334,11 +334,11 @@ fn face_within_solid(f: &Feature, d: usize, solid: &Shape, size: f64, tol: f64) 
     // The feature's section: a rectangle [lo, hi], or a disk (centre, radius) for a cylinder's cap.
     let section = match f.shape {
         Shape::Box { size: s } => {
-            let s = f.axis.turn(s);
+            let s = f.axis.turn(s.get());
             Some((o.map(|k| f.at[k]), o.map(|k| f.at[k] + s[k]), None))
         }
         Shape::Cylinder { radius, .. } if f.axis.index() == d => {
-            Some((o.map(|k| f.at[k] - radius), o.map(|k| f.at[k] + radius), Some((o.map(|k| f.at[k]), radius))))
+            Some((o.map(|k| f.at[k] - radius), o.map(|k| f.at[k] + radius), Some((o.map(|k| f.at[k]), radius.get()))))
         }
         _ => None,
     };
@@ -346,7 +346,7 @@ fn face_within_solid(f: &Feature, d: usize, solid: &Shape, size: f64, tol: f64) 
     match *solid {
         Shape::Box { size: s } => (0..2).all(|k| lo[k] >= -tol && hi[k] <= s[o[k]] + tol),
         Shape::Cylinder { radius, .. } if d == 2 => {
-            let inner = radius * (PI / cylinder_sides(radius, size) as f64).cos();
+            let inner = radius * (PI / cylinder_sides(radius.get(), size) as f64).cos();
             match disk {
                 Some((c, r)) => c[0].hypot(c[1]) + r < inner - tol,
                 None => [lo[0], hi[0]].iter().all(|x| [lo[1], hi[1]].iter().all(|y| x.hypot(*y) < inner - tol)),
@@ -412,12 +412,12 @@ fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)
             // Back in the feature's own frame: the box is axis-aligned whatever the turn.
             let lo = Point3::new(x.0, y.0, z.0);
             let size = Vec3::new(x.1 - x.0, y.1 - y.0, z.1 - z.0);
-            (Shape::Box { size: f.axis.unturn(size) }, lo)
+            (Shape::Box { size: BoxSize::new(f.axis.unturn(size))? }, lo)
         }
         Shape::Cylinder { radius, .. } => {
             let d = f.axis.index();
             let (a, b) = span(d).unwrap_or((at[d], at[d]));
-            (Shape::Cylinder { radius, length: b - a }, at.with(d, a))
+            (Shape::Cylinder { radius, length: Metres::new(b - a)? }, at.with(d, a))
         }
         other => (other, at),
     })
@@ -441,7 +441,7 @@ impl Section {
                 Some(Section::Rect { lo: o.map(|k| b.min[k]), hi: o.map(|k| b.max[k]) })
             }
             Shape::Cylinder { radius, .. } if f.axis.index() == d => {
-                Some(Section::Disk { c: o.map(|k| f.at[k]), r: radius, inner: radius * (PI / cylinder_sides(radius, size) as f64).cos() })
+                Some(Section::Disk { c: o.map(|k| f.at[k]), r: radius.get(), inner: radius * (PI / cylinder_sides(radius.get(), size) as f64).cos() })
             }
             _ => None,
         }
@@ -496,32 +496,32 @@ fn merged(a: &Feature, b: &Feature) -> Option<Feature> {
         (Shape::Cylinder { radius, length }, Shape::Cylinder { length: other, .. }) => {
             let d = a.axis.index();
             let lo = a.at[d].min(b.at[d]);
-            let hi = (a.at[d] + length).max(b.at[d] + other);
-            Some(Feature { shape: Shape::Cylinder { radius: *radius, length: hi - lo }, at: a.at.with(d, lo), ..a.clone() })
+            let hi = (a.at[d] + *length).max(b.at[d] + *other);
+            Some(Feature { shape: Shape::Cylinder { radius: *radius, length: Metres::new(hi - lo).ok()? }, at: a.at.with(d, lo), ..a.clone() })
         }
         (Shape::Box { .. }, Shape::Box { .. }) => {
             let (p, q) = (a.bounds(), b.bounds());
             let (lo, hi) = (p.min.min(q.min), p.max.max(q.max));
-            Some(Feature { shape: Shape::Box { size: hi - lo }, at: lo, axis: Axis::Z, ..a.clone() })
+            Some(Feature { shape: Shape::Box { size: BoxSize::new(hi - lo).ok()? }, at: lo, axis: Axis::Z, ..a.clone() })
         }
         _ => None,
     }
 }
 
 /// `f` with its flat face `face` moved outwards by `by`.
-fn extended(f: &Feature, face: FlatFace, by: f64) -> Feature {
+fn extended(f: &Feature, face: FlatFace, by: f64) -> Result<Feature> {
     let d = face.axis;
     let low = face.outward < 0.0;
     let at = if low { f.at.with(d, f.at[d] - by) } else { f.at };
     let shape = match f.shape {
-        Shape::Cylinder { radius, length } => Shape::Cylinder { radius, length: length + by },
+        Shape::Cylinder { radius, length } => Shape::Cylinder { radius, length: Metres::new(length + by)? },
         Shape::Box { size } => {
-            let s = f.axis.turn(size);
-            Shape::Box { size: f.axis.unturn(s.with(d, s[d] + by)) }
+            let s = f.axis.turn(size.get());
+            Shape::Box { size: BoxSize::new(f.axis.unturn(s.with(d, s[d] + by)))? }
         }
         ref other => other.clone(),
     };
-    Feature { shape, at, ..f.clone() }
+    Ok(Feature { shape, at, ..f.clone() })
 }
 
 /// The most features one solid takes.
@@ -596,7 +596,7 @@ pub(super) fn joined(features: &[Feature], solid: &Shape, size: f64) -> Result<V
                     let depth = ends.iter().fold(f64::NEG_INFINITY, |m, v| m.max(*v)) - ends.iter().fold(f64::INFINITY, |m, v| m.min(*v));
                     let by = (0.1 * size).min(0.5 * depth);
                     if let Some(f) = moved.get_mut(i) {
-                        *f = extended(f, x, by);
+                        *f = extended(f, x, by)?;
                     }
                     done.push(key);
                 }

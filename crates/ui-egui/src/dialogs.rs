@@ -564,8 +564,13 @@ fn waveguide(s: &Session) -> Value {
         .sections
         .iter()
         .map(|sec| {
-            let mut o = json!({"length": l.from_si(sec.length), "material": sec.material});
-            for (k, v) in [("width", opt(sec.width)), ("offset", opt(sec.offset)), ("height", opt(sec.height)), ("offset_y", opt(sec.offset_y))] {
+            let mut o = json!({"length": l.from_si(sec.length.get()), "material": sec.material});
+            for (k, v) in [
+                ("width", opt(sec.width.map(f64::from))),
+                ("offset", opt(sec.offset)),
+                ("height", opt(sec.height.map(f64::from))),
+                ("offset_y", opt(sec.offset_y)),
+            ] {
                 if let Some(v) = v {
                     o[k] = v;
                 }
@@ -573,18 +578,18 @@ fn waveguide(s: &Session) -> Value {
             o
         })
         .collect();
-    let layers: Vec<Value> = w.layers.iter().map(|x| json!({"thickness": l.from_si(x.thickness), "material": x.material})).collect();
+    let layers: Vec<Value> = w.layers.iter().map(|x| json!({"thickness": l.from_si(x.thickness.get()), "material": x.material})).collect();
     let strips: Vec<Value> = w
         .strips
         .iter()
-        .map(|x| json!({"y": l.from_si(x.y), "x0": l.from_si(x.x0), "width": l.from_si(x.width), "z0": l.from_si(x.z0), "z1": l.from_si(x.z1)}))
+        .map(|x| json!({"y": l.from_si(x.y), "x0": l.from_si(x.x0), "width": l.from_si(x.width.get()), "z0": l.from_si(x.z0), "z1": l.from_si(x.z1)}))
         .collect();
     let vias: Vec<Value> = w
         .vias
         .iter()
-        .map(|v| json!({"x0": l.from_si(v.x0), "z0": l.from_si(v.z0), "wx": l.from_si(v.wx), "wz": l.from_si(v.wz), "y0": l.from_si(v.y0), "y1": l.from_si(v.y1)}))
+        .map(|v| json!({"x0": l.from_si(v.x0), "z0": l.from_si(v.z0), "wx": l.from_si(v.wx.get()), "wz": l.from_si(v.wz.get()), "y0": l.from_si(v.y0), "y1": l.from_si(v.y1)}))
         .collect();
-    json!({"width": l.from_si(w.width), "height": l.from_si(w.height), "sections": sections, "layers": layers, "strips": strips, "vias": vias})
+    json!({"width": l.from_si(w.width.get()), "height": l.from_si(w.height.get()), "sections": sections, "layers": layers, "strips": strips, "vias": vias})
 }
 
 /// The model's periodic boundaries as `model.periodic`'s parameters, or a cell tied across x

@@ -10,6 +10,11 @@ use emcraft_model::units::C0;
 use emcraft_model::{Complex64 as C, End, Material, Model, Pole, Port, Section, Waveguide};
 use emcraft_theory::{Layer, Te10Line, te10_wall_attenuation};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 const FREQS: [f64; 3] = [8e9, 10e9, 12e9];
@@ -21,7 +26,7 @@ fn guide(materials: Vec<Material>, sections: Vec<Section>) -> Model {
     for x in materials {
         m.add_material(x).unwrap();
     }
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
     m
@@ -52,7 +57,7 @@ fn worst(r: &TdResult, exact: impl Fn(f64) -> (C, C)) -> (f64, f64) {
 /// A 20 mm slab of εr = 2.2, tan δ = 0.05 between 10 mm of empty guide.
 fn lossy_slab() -> Model {
     let lossy = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.05).unwrap();
-    guide(vec![lossy], vec![Section::new(0.01, "vacuum"), Section::new(0.02, "lossy"), Section::new(0.01, "vacuum")])
+    guide(vec![lossy], vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "lossy"), Section::new(metres(0.01), "vacuum")])
 }
 
 fn lossy_slab_exact(f: f64) -> (C, C) {
@@ -75,7 +80,8 @@ fn a_lossy_slab_matches_the_cascade_of_its_conductivity() {
 #[test]
 fn magnetic_losses_match_the_cascade_of_their_magnetic_conductivity() {
     let ferrite = Material::new("ferrite", 1.5, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
-    let m = guide(vec![ferrite], vec![Section::new(0.01, "vacuum"), Section::new(0.02, "ferrite"), Section::new(0.01, "vacuum")]);
+    let m =
+        guide(vec![ferrite], vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "ferrite"), Section::new(metres(0.01), "vacuum")]);
     let r = run(&m, 0.0015, &FREQS);
     let air = Layer::lossless(0.01, 1.0, 1.0);
     let (s, mag) = worst(&r, |f| Te10Line { a: A, layers: vec![air, conducting(0.02, 1.5, 2.0, 0.0, 0.05, f), air] }.solve(f).unwrap().s_power());
@@ -88,7 +94,7 @@ fn magnetic_losses_match_the_cascade_of_their_magnetic_conductivity() {
 /// its transforms move by less than `decay`.
 fn wall_errors(cell: f64, decay: f64) -> Vec<f64> {
     let sigma = 1e6;
-    let mut m = guide(Vec::new(), vec![Section::new(0.1, "vacuum")]);
+    let mut m = guide(Vec::new(), vec![Section::new(metres(0.1), "vacuum")]);
     m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(sigma).unwrap()));
     let r = s_parameters(&m, &Options { decay, ..Options::new(cell) }, &FREQS).unwrap();
     assert!(r.converged);
@@ -130,14 +136,14 @@ fn wall_losses_converge() {
 fn a_lossy_port_carries_the_complex_propagation_constant() {
     // The whole guide lossy: S21 = e^{−γL} with γ the realised material's, S11 ≈ 0.
     let lossy = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
-    let m = guide(vec![lossy], vec![Section::new(0.05, "lossy")]);
+    let m = guide(vec![lossy], vec![Section::new(metres(0.05), "lossy")]);
     let r = run(&m, 0.0015, &FREQS);
     let (s, mag) = worst(&r, |f| Te10Line { a: A, layers: vec![conducting(0.05, 2.2, 1.0, 0.02, 0.0, f)] }.solve(f).unwrap().s_power());
     // Measured 0.135 (the phase over 50 mm, 12 rad) and 4.0e-3 (α to 3 %), second order.
     assert!(s < 0.2 && mag < 6e-3, "{s:e} {mag:e}");
     // One lossy port and one empty: the pseudo-waves of the cascade.
     let lossy = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
-    let m = guide(vec![lossy], vec![Section::new(0.02, "vacuum"), Section::new(0.02, "lossy")]);
+    let m = guide(vec![lossy], vec![Section::new(metres(0.02), "vacuum"), Section::new(metres(0.02), "lossy")]);
     let r = run(&m, 0.0015, &FREQS);
     let exact = |f: f64| {
         Te10Line { a: A, layers: vec![Layer::lossless(0.02, 1.0, 1.0), conducting(0.02, 2.2, 1.0, 0.02, 0.0, f)] }.solve(f).unwrap().s_power()
@@ -151,7 +157,7 @@ fn a_lossy_port_carries_the_complex_propagation_constant() {
 fn a_dispersive_port_carries_its_complex_propagation_constant() {
     let tau = 1.0 / (2.0 * PI * 20e9);
     let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::debye(0.6, tau).unwrap()]).unwrap();
-    let m = guide(vec![debye], vec![Section::new(0.03, "debye")]);
+    let m = guide(vec![debye], vec![Section::new(metres(0.03), "debye")]);
     let r = run(&m, 0.0015, &FREQS);
     let exact = |f: f64| {
         let e = C::new(2.0, 0.0) + 0.6 / C::new(1.0, 2.0 * PI * f * tau);
@@ -165,7 +171,7 @@ fn a_dispersive_port_carries_its_complex_propagation_constant() {
 #[test]
 fn hostile_losses_are_refused_or_stay_stable() {
     // (Hostile conductivities and loss tangents cannot reach a model: their types refuse them.)
-    let air = || guide(Vec::new(), vec![Section::new(0.02, "vacuum")]);
+    let air = || guide(Vec::new(), vec![Section::new(metres(0.02), "vacuum")]);
     // Not a good conductor at the band's top.
     let mut m = air();
     m.wall_conductivity = Some(emcraft_model::Conductivity::new(1.0).unwrap());
@@ -181,7 +187,7 @@ fn hostile_losses_are_refused_or_stay_stable() {
     let metal = Material::new("metal", 1.0, 1.0).unwrap().with_loss_tangent(emcraft_model::material::MAX_LOSS_TANGENT).unwrap();
     let metal_m = Material::new("metal_m", 1.0, 1.0).unwrap().with_magnetic_loss_tangent(emcraft_model::material::MAX_LOSS_TANGENT).unwrap();
     for (name, x) in [("metal", metal), ("metal_m", metal_m)] {
-        let m = guide(vec![x], vec![Section::new(0.01, "vacuum"), Section::new(0.006, name), Section::new(0.01, "vacuum")]);
+        let m = guide(vec![x], vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.006), name), Section::new(metres(0.01), "vacuum")]);
         let r = s_parameters(&m, &Options { max_steps: 10_000, ..Options::new(0.003) }, &[9e9, 11e9]).unwrap();
         // |S11| within the coarse grid's error of 1 (0.99 at 1.5 mm).
         assert!(r.s21.iter().all(|s| s.norm() < 1e-3) && r.s11.iter().all(|s| s.norm() < 1.05), "{name}: {r:?}");
@@ -194,7 +200,7 @@ fn errors(cell: f64) -> [f64; 2] {
     let slab = worst(&run(&lossy_slab(), cell, &FREQS), lossy_slab_exact).0;
     let tau = 1.0 / (2.0 * PI * 20e9);
     let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::debye(0.6, tau).unwrap()]).unwrap();
-    let r = run(&guide(vec![debye], vec![Section::new(0.03, "debye")]), cell, &FREQS);
+    let r = run(&guide(vec![debye], vec![Section::new(metres(0.03), "debye")]), cell, &FREQS);
     let port = worst(&r, |f| {
         let e = C::new(2.0, 0.0) + 0.6 / C::new(1.0, 2.0 * PI * f * tau);
         Te10Line { a: A, layers: vec![Layer::lossy(0.03, e.re, 1.0, -e.im / e.re)] }.solve(f).unwrap().s_power()

@@ -9,20 +9,22 @@
 //! Ear Clipping*, Geometric Tools, 2002). The mesher refines the faces to its size.
 //!
 //! ```
-//! use emcraft_model::Shape;
+//! use emcraft_model::{Metres, Shape};
 //! // An L: 3 × 1 along x, then up 2 more along y at its end.
-//! let l = Shape::prism(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [2.0, 3.0], [2.0, 1.0], [0.0, 1.0]], 0.5)?;
+//! let l = Shape::prism(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [2.0, 3.0], [2.0, 1.0], [0.0, 1.0]], Metres::new(0.5)?)?;
+//! let length = Metres::new(1.0)?;
 //! assert!((l.volume() - 2.5).abs() < 1e-12);
 //! assert!(l.contains(emcraft_model::Point3::new(2.5, 2.5, 0.25)));
 //! assert!(!l.contains(emcraft_model::Point3::new(1.0, 2.0, 0.25)));
 //! // Self-crossing outlines and too few corners are refused.
-//! assert!(Shape::prism(&[[0.0, 0.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0]], 1.0).is_err());
-//! assert!(Shape::prism(&[[0.0, 0.0], [1.0, 0.0]], 1.0).is_err());
+//! assert!(Shape::prism(&[[0.0, 0.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0]], length).is_err());
+//! assert!(Shape::prism(&[[0.0, 0.0], [1.0, 0.0]], length).is_err());
 //! # Ok::<(), emcraft_model::ModelError>(())
 //! ```
 
-use crate::error::{Result, invalid, positive};
+use crate::error::{Result, invalid};
 use crate::geom::{Point3, Vec3};
+use crate::quantity::Metres;
 use crate::shape::{FaceSurface, Shape};
 
 /// The most corners a prism's polygon may have.
@@ -132,8 +134,8 @@ impl Shape {
     /// plane z = 0 extruded to z = `length`. Face tags: 0 the bottom cap, 1 the top, 2 + i the
     /// side from corner i to the next (after straight corners are dropped and the outline is
     /// turned anticlockwise).
-    pub fn prism(points: &[[f64; 2]], length: f64) -> Result<Shape> {
-        positive("prism length", length)?;
+    pub fn prism(points: &[[f64; 2]], length: Metres) -> Result<Shape> {
+        let length = length.get();
         let p = simple(points)?;
         let n = p.len();
         let caps = ears(&p)?;
@@ -172,6 +174,10 @@ impl Shape {
 mod tests {
     use super::*;
 
+    fn m(v: f64) -> Metres {
+        Metres::new(v).unwrap()
+    }
+
     #[test]
     fn prisms_are_closed_and_hold_their_area() {
         // A tee: a bar 4 × 1 with a stem 1 × 2 below its middle, given clockwise.
@@ -179,21 +185,20 @@ mod tests {
         let mut cw = tee;
         cw.reverse();
         for pts in [tee, cw] {
-            let s = Shape::prism(&pts, 2.0).unwrap();
+            let s = Shape::prism(&pts, m(2.0)).unwrap();
             assert!((s.volume() - 12.0).abs() < 1e-12);
             let Shape::Surface { triangles, tags, .. } = &s else { panic!() };
             assert_eq!(triangles.len(), 2 * 6 + 2 * 8);
             assert_eq!(tags.iter().max(), Some(&9));
         }
         // A straight corner on a side is dropped.
-        let s = Shape::prism(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]], 1.0).unwrap();
+        let s = Shape::prism(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]], m(1.0)).unwrap();
         let Shape::Surface { triangles, .. } = &s else { panic!() };
         assert_eq!(triangles.len(), 2 * 2 + 2 * 4);
-        assert!(Shape::prism(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], 0.0).is_err());
-        assert!(Shape::prism(&[[0.0, 0.0], [1.0, 0.0], [f64::NAN, 1.0]], 1.0).is_err());
-        assert!(Shape::prism(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]], 1.0).is_err());
-        assert!(Shape::prism(&vec![[0.0, 0.0]; MAX_PRISM_POINTS + 1], 1.0).is_err());
+        assert!(Shape::prism(&[[0.0, 0.0], [1.0, 0.0], [f64::NAN, 1.0]], m(1.0)).is_err());
+        assert!(Shape::prism(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]], m(1.0)).is_err());
+        assert!(Shape::prism(&vec![[0.0, 0.0]; MAX_PRISM_POINTS + 1], m(1.0)).is_err());
         // Two sides touching at a point.
-        assert!(Shape::prism(&[[0.0, 0.0], [2.0, 0.0], [1.0, 1.0], [2.0, 2.0], [0.0, 2.0], [1.0, 1.0]], 1.0).is_err());
+        assert!(Shape::prism(&[[0.0, 0.0], [2.0, 0.0], [1.0, 1.0], [2.0, 2.0], [0.0, 2.0], [1.0, 1.0]], m(1.0)).is_err());
     }
 }

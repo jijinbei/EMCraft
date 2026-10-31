@@ -12,7 +12,7 @@
 //! without any search.
 
 use emcraft_model::mesh::TETS_PER_CELL;
-use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Model, Point3, Span, Strip, Symmetry, Via, Waveguide, positive};
+use emcraft_model::{Aabb, Boundary, BoundaryFace, Grid, Mesh, Metres, Model, Point3, Span, Strip, Symmetry, Via, Waveguide};
 
 use crate::{MAX_TETS, MeshError, Result, Topology, signed_volume, too_large};
 
@@ -45,7 +45,7 @@ const KUHN: [[usize; 4]; TETS_PER_CELL] = {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Options {
     /// The element size away from edges (m).
-    pub size: f64,
+    pub size: Metres,
     /// The element size at the re-entrant edges of steps and irises, as a fraction of `size`
     /// (1: no grading).
     pub edge: f64,
@@ -54,7 +54,7 @@ pub struct Options {
     /// The element size across the narrow wall (y), when it differs from `size`. An H-plane
     /// device (steps and irises across x only) excited by TE10 has fields that do not vary
     /// along y, so one layer of elements represents them exactly there.
-    pub size_y: Option<f64>,
+    pub size_y: Option<Metres>,
     /// The element size at the edges of strips, as a fraction of `size`: a strip of no
     /// thickness is singular there more strongly than an iris (E ∝ r^{−1/2}).
     pub strip_edge: f64,
@@ -67,23 +67,22 @@ pub struct Options {
 
 impl Options {
     /// Graded towards edges: a quarter of the size there, growing by half again per element.
-    pub fn new(size: f64) -> Options {
+    pub fn new(size: Metres) -> Options {
         Options { size, edge: 0.25, growth: 1.5, size_y: None, strip_edge: 0.05, strip_end: None }
     }
 
-    pub fn uniform(size: f64) -> Options {
+    pub fn uniform(size: Metres) -> Options {
         Options { size, edge: 1.0, growth: 1.5, size_y: None, strip_edge: 1.0, strip_end: None }
     }
 
-    /// The options with a checked size and grading.
+    /// The options with a checked grading (the sizes are positive by type).
     fn checked(&self) -> Result<Options> {
-        let size = positive("element size", self.size)?;
         let fraction = |f: f64| f.is_finite() && f > 0.0 && f <= 1.0;
         if !(fraction(self.edge) && fraction(self.strip_edge) && self.strip_end.is_none_or(fraction) && self.growth.is_finite() && self.growth > 1.0)
         {
             return Err(MeshError::Invalid { what: "grading".into(), why: "edge, strip_edge and strip_end must be in (0, 1] and growth > 1".into() });
         }
-        Ok(Options { size, ..*self })
+        Ok(*self)
     }
 
     /// The element size at a grid line: `strip_edge` at a strip's edge, `edge` at a re-entrant
@@ -114,17 +113,17 @@ impl Options {
 ///
 /// `left` and `right` are the ends' element sizes as fractions of the size (1: not graded).
 fn graded(u: f64, v: f64, o: &Options, left: f64, right: f64) -> Vec<f64> {
-    let len = v - u;
+    let (len, size) = (v - u, o.size.get());
     let (fine_left, fine_right) = (left < 1.0, right < 1.0);
     if !(fine_left || fine_right) {
-        let n = divisions(len, o.size, 1);
+        let n = divisions(len, size, 1);
         return line(u, len, n).skip(1).collect();
     }
     // Geometric steps h0, h0·g, … from each fine end while below the size; the middle evenly.
     let ramp = |edge: f64| {
         let mut v = Vec::new();
-        let mut h = edge.max(1e-3) * o.size;
-        while h < o.size && v.len() < 200 {
+        let mut h = edge.max(1e-3) * size;
+        while h < size && v.len() < 200 {
             v.push(h);
             h *= o.growth;
         }
@@ -136,8 +135,8 @@ fn graded(u: f64, v: f64, o: &Options, left: f64, right: f64) -> Vec<f64> {
     let gap = len - graded_len;
     let mut steps: Vec<f64> = left.clone();
     if gap > 0.0 {
-        let last = left.last().into_iter().chain(right.last()).fold(o.size, |m, h| m.min(*h));
-        let n = (gap / o.size).ceil() as usize;
+        let last = left.last().into_iter().chain(right.last()).fold(size, |m, h| m.min(*h));
+        let n = (gap / size).ceil() as usize;
         if gap < last {
             // A gap too short for an element: the ramps stretch over it.
             steps.extend(right.iter().rev());
@@ -164,7 +163,7 @@ fn graded(u: f64, v: f64, o: &Options, left: f64, right: f64) -> Vec<f64> {
 
 /// Meshes the model's waveguide with tetrahedra of about `size` (m) on a side, graded towards
 /// the edges of steps and irises ([`Options::new`]).
-pub fn waveguide(model: &Model, size: f64) -> Result<Mesh> {
+pub fn waveguide(model: &Model, size: Metres) -> Result<Mesh> {
     waveguide_with(model, &Options::new(size))
 }
 
@@ -183,10 +182,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let estimate = [w.width / o.size, w.height / o.size_y.unwrap_or(o.size), w.length() / o.size].iter().map(|n| n.ceil().max(1.0)).product::<f64>()
         * TETS_PER_CELL as f64;
     too_large(estimate)?;
-    let size_y = match o.size_y {
-        Some(h) => positive("element size across y", h)?,
-        None => o.size,
-    };
+    let size_y = o.size_y.unwrap_or(o.size);
     if let Some(why) = model.symmetry_issue() {
         return Err(MeshError::Invalid { what: "symmetry".into(), why });
     }
@@ -195,10 +191,10 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let cut = |d: usize| model.symmetry.iter().find(|p| p.axis.index() == d).map(|p| p.at);
     let x_planes: Vec<f64> = cut(0).into_iter().collect();
     let y_planes: Vec<f64> = features.layer_tops.iter().copied().chain(cut(1)).collect();
-    let across_x = Axis { span: w.width, step: o.size, planes: &x_planes, strip_edges: &features.strip_x, via_faces: &features.via_x };
-    let across_y = Axis { span: w.height, step: size_y, planes: &y_planes, strip_edges: &features.strip_y, via_faces: &features.via_y };
-    let x = below(across_x.lines(w, &|i| w.aperture(i), &o)?, cut(0), w.width);
-    let y = below(across_y.lines(w, &|i| w.aperture_y(i), &o)?, cut(1), w.height);
+    let across_x = Axis { span: w.width.get(), step: o.size, planes: &x_planes, strip_edges: &features.strip_x, via_faces: &features.via_x };
+    let across_y = Axis { span: w.height.get(), step: size_y, planes: &y_planes, strip_edges: &features.strip_y, via_faces: &features.via_y };
+    let x = below(across_x.lines(w, &|i| w.aperture(i), &o)?, cut(0), w.width.get());
+    let y = below(across_y.lines(w, &|i| w.aperture_y(i), &o)?, cut(1), w.height.get());
     let along = along_z(model, w, &o, &features, [x.len() - 1, y.len() - 1].map(|n| n.max(1)))?;
     let grid = Grid { x, y, z: along.z, cells: Vec::new() };
     let materials = features
@@ -210,7 +206,7 @@ pub fn waveguide_with(model: &Model, o: &Options) -> Result<Mesh> {
     let posts: Vec<Aabb> = w.vias.iter().map(Via::bounds).collect();
     let mut mesh =
         structured(grid, &Cells { layers: &along.layers, ylayers: &materials, posts: &posts, length: along.length, cuts: &model.symmetry });
-    add_strips(&mut mesh, &w.strips, w.height);
+    add_strips(&mut mesh, &w.strips, w.height.get());
     crate::check_tetrahedra(&mesh)?;
     Ok(mesh)
 }
@@ -231,12 +227,12 @@ impl Features {
     fn of(w: &Waveguide) -> Features {
         Features {
             layer_tops: w.layer_tops(),
-            strip_x: w.strips.iter().flat_map(|s| [s.x0, s.x0 + s.width]).collect(),
+            strip_x: w.strips.iter().flat_map(|s| [s.x0, s.x0 + s.width.get()]).collect(),
             strip_y: w.strips.iter().map(|s| s.y).collect(),
             strip_z: w.strips.iter().flat_map(|s| [s.z0, s.z1]).collect(),
-            via_x: w.vias.iter().flat_map(|v| [v.x0, v.x0 + v.wx]).collect(),
+            via_x: w.vias.iter().flat_map(|v| [v.x0, v.x0 + v.wx.get()]).collect(),
             via_y: w.vias.iter().flat_map(|v| [v.y0, v.y1]).collect(),
-            via_z: w.vias.iter().flat_map(|v| [v.z0, v.z0 + v.wz]).collect(),
+            via_z: w.vias.iter().flat_map(|v| [v.z0, v.z0 + v.wz.get()]).collect(),
         }
     }
 }
@@ -244,7 +240,7 @@ impl Features {
 /// One axis of the cross-section: its span, the element size along it, and the planes on it.
 struct Axis<'a> {
     span: f64,
-    step: f64,
+    step: Metres,
     /// Planes the lines pass through (layers' tops, symmetry planes).
     planes: &'a [f64],
     /// Strips' edges: planes the lines close in on (the field is singular at a strip's edge).
@@ -370,7 +366,7 @@ fn along_z(model: &Model, w: &Waveguide, o: &Options, features: &Features, cross
             out.z.extend(zs);
             out.layers.extend(std::iter::repeat_n(layer, n));
         }
-        out.length += s.length;
+        out.length += s.length.get();
     }
     let tets = cross[0].saturating_mul(cross[1]).saturating_mul(cells_z).saturating_mul(TETS_PER_CELL);
     if tets > MAX_TETS {

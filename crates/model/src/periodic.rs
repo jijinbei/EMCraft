@@ -121,12 +121,17 @@ mod tests {
     use super::*;
     use crate::{End, Port, Section, Waveguide};
 
+    /// A length (m), checked.
+    fn metres(v: f64) -> crate::Metres {
+        crate::Metres::new(v).unwrap()
+    }
+
     fn cell() -> Model {
         let mut m = Model::new();
         m.set_waveguide(Waveguide {
-            width: 0.01,
-            height: 0.01,
-            sections: vec![Section::new(0.01, "vacuum")],
+            width: metres(0.01),
+            height: metres(0.01),
+            sections: vec![Section::new(metres(0.01), "vacuum")],
             layers: Vec::new(),
             strips: Vec::new(),
             vias: Vec::new(),

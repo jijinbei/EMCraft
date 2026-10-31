@@ -6,6 +6,11 @@ use std::ops::ControlFlow;
 use emcraft_fdtd::{Cpml, Options, Plan, Stepper, s_parameters, s_parameters_with};
 use emcraft_model::{End, Material, Model, Port, Section, Waveguide};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 /// The leapfrog of `Plan`'s documentation, one loop per component.
 struct Serial;
 
@@ -114,8 +119,16 @@ impl Stepper for Serial {
 fn a_plan_holds_the_whole_run() {
     let mut m = Model::new();
     m.add_material(Material::new("ptfe", 2.0, 1.0).unwrap()).unwrap();
-    let sections = vec![Section::new(0.015, "ptfe"), Section::new(0.02, "vacuum"), Section::new(0.015, "ptfe")];
-    m.set_waveguide(Waveguide { width: 0.02286, height: 0.01016, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    let sections = vec![Section::new(metres(0.015), "ptfe"), Section::new(metres(0.02), "vacuum"), Section::new(metres(0.015), "ptfe")];
+    m.set_waveguide(Waveguide {
+        width: metres(0.02286),
+        height: metres(0.01016),
+        sections,
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
     let (o, freqs) = (Options::new(0.003), [6.5e9, 8.5e9]);

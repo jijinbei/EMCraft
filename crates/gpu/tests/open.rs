@@ -7,10 +7,25 @@ use emcraft_fdtd::open::{OpenOptions, OpenRun, radiate, radiate_with};
 use emcraft_gpu::{Backend, Gpu, Precision, available};
 use emcraft_model::{Inclusion, LumpedPort, Material, Model, Open, Point3, Pole, Shape, Solid, Source, Vec3};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
+/// An impedance (Ω), checked.
+fn ohms(v: f64) -> emcraft_model::Ohms {
+    emcraft_model::Ohms::new(v).unwrap()
+}
+
+/// A box's sides (m), checked.
+fn box_size(v: emcraft_model::Vec3) -> emcraft_model::BoxSize {
+    emcraft_model::BoxSize::new(v).unwrap()
+}
+
 fn open_box(size: f64, pml: f64) -> Model {
     let mut m = Model::new();
-    m.set_solid(Solid { shape: Shape::Box { size: Vec3::from([size; 3]) }, material: "vacuum".into() }).unwrap();
-    m.set_open(Some(Open { thickness: pml, reflection: None, shape: emcraft_model::OpenShape::Box })).unwrap();
+    m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::from([size; 3])) }, material: "vacuum".into() }).unwrap();
+    m.set_open(Some(Open { thickness: metres(pml), reflection: None, shape: emcraft_model::OpenShape::Box })).unwrap();
     m
 }
 
@@ -18,13 +33,13 @@ fn open_box(size: f64, pml: f64) -> Model {
 fn antennas(size: f64) -> Model {
     let mut m = open_box(size, 0.01);
     let c = size / 2.0;
-    m.add_source(Source::Dipole { at: Point3::new(c, c, c), direction: Vec3::new(0.0, 0.0, 1.0), length: 1e-3, current: 1.0 }).unwrap();
+    m.add_source(Source::Dipole { at: Point3::new(c, c, c), direction: Vec3::new(0.0, 0.0, 1.0), length: metres(1e-3), current: 1.0 }).unwrap();
     for (name, x) in [("1", c - 0.006), ("2", c + 0.006)] {
         let gap = LumpedPort {
             name: name.into(),
             from: Point3::new(x, c, c - 0.002),
             to: Point3::new(x, c, c + 0.002),
-            impedance: 50.0,
+            impedance: ohms(50.0),
             voltage: [1.0, 0.0],
             radius: 0.0,
         };
@@ -48,7 +63,7 @@ fn loaded(size: f64) -> Model {
         .unwrap();
     m.add_material(x).unwrap();
     let c = size / 2.0;
-    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: 0.004 }, at: Point3::new(c, c, c), material: Some("x".into()) }).unwrap();
+    m.add_inclusion(Inclusion { shape: Shape::Sphere { radius: metres(0.004) }, at: Point3::new(c, c, c), material: Some("x".into()) }).unwrap();
     m
 }
 

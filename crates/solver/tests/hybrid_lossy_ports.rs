@@ -11,6 +11,11 @@ use emcraft_model::units::C0;
 use emcraft_model::{End, Layer, Material, Model, Port, Section, Strip, Terminals, Waveguide};
 use emcraft_solver::{Complex64 as C, Driven};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 /// A box `a` × `b`, `length` long: `layers` from the floor up, the rest `fill`; `strips` across
 /// it at (y, x0, width); a port at each end.
 fn boxed(
@@ -28,18 +33,18 @@ fn boxed(
         m.add_material(mat).unwrap();
     }
     m.set_waveguide(Waveguide {
-        width: a,
-        height: b,
-        sections: vec![Section::new(length, fill)],
-        layers: layers.into_iter().map(|(thickness, material)| Layer { thickness, material: material.into() }).collect(),
-        strips: strips.iter().map(|&(y, x0, width)| Strip { y, x0, width, z0: 0.0, z1: length }).collect(),
+        width: metres(a),
+        height: metres(b),
+        sections: vec![Section::new(metres(length), fill)],
+        layers: layers.into_iter().map(|(thickness, material)| Layer { thickness: metres(thickness), material: material.into() }).collect(),
+        strips: strips.iter().map(|&(y, x0, width)| Strip { y, x0, width: metres(width), z0: 0.0, z1: length }).collect(),
         vias: Vec::new(),
     })
     .unwrap();
     for (name, end) in [("1", End::Start), ("2", End::End)] {
         m.add_port(Port::new(name, end).with_modes(2)).unwrap();
     }
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 

@@ -209,7 +209,7 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         rows.push(
             row(
                 "Waveguide {w} × {h} × {l} {unit}",
-                args!(w = mm(w.width), h = mm(w.height), l = mm(w.length()), unit = lu),
+                args!(w = mm(w.width.get()), h = mm(w.height.get()), l = mm(w.length()), unit = lu),
                 Glyph::Waveguide,
                 edit(),
             )
@@ -220,20 +220,20 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
                 Some(_) => "Section {n}: {length} {unit}, {material}, aperture {aperture}",
                 None => "Section {n}: {length} {unit}, {material}",
             };
-            let aperture = sec.width.map(mm).unwrap_or_default();
-            let args = args!(n = i + 1, length = mm(sec.length), unit = lu, material = sec.material, aperture = aperture);
+            let aperture = sec.width.map(|a| mm(a.get())).unwrap_or_default();
+            let args = args!(n = i + 1, length = mm(sec.length.get()), unit = lu, material = sec.material, aperture = aperture);
             rows.push(row(text, args, Glyph::Box, edit()).sub().picks(Pick::Section(i)));
         }
         for (i, layer) in w.layers.iter().enumerate() {
-            let args = args!(n = i + 1, thickness = mm(layer.thickness), unit = lu, material = layer.material);
+            let args = args!(n = i + 1, thickness = mm(layer.thickness.get()), unit = lu, material = layer.material);
             rows.push(row("Layer {n}: {thickness} {unit}, {material}", args, Glyph::Material, edit()).sub().picks(Pick::Layer(i)));
         }
         for (i, st) in w.strips.iter().enumerate() {
-            let args = args!(n = i + 1, y = mm(st.y), width = mm(st.width));
+            let args = args!(n = i + 1, y = mm(st.y), width = mm(st.width.get()));
             rows.push(row("Strip {n}: y {y}, width {width}", args, Glyph::PortModes, edit()).sub().picks(Pick::Strip(i)));
         }
         for (i, v) in w.vias.iter().enumerate() {
-            let args = args!(n = i + 1, wx = mm(v.wx), wz = mm(v.wz), unit = lu, y0 = mm(v.y0), y1 = mm(v.y1));
+            let args = args!(n = i + 1, wx = mm(v.wx.get()), wz = mm(v.wz.get()), unit = lu, y0 = mm(v.y0), y1 = mm(v.y1));
             rows.push(row("Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}", args, Glyph::Box, edit()).sub().picks(Pick::Via(i)));
         }
     }
@@ -304,7 +304,7 @@ fn sources(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         .map(|(item, src)| match src {
             emcraft_model::Source::Dipole { length, current, .. } => row(
                 "Dipole: {length} {unit}, {current} A",
-                args!(length = f.len(*length), unit = f.unit(), current = current),
+                args!(length = f.len(length.get()), unit = f.unit(), current = current),
                 Glyph::Dipole,
                 Act::None,
             )
@@ -333,7 +333,7 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     if let Some(open) = &m.open {
         let template =
             if open.shape == emcraft_model::OpenShape::Sphere { "Open: spherical PML {thickness} {unit}" } else { "Open: PML {thickness} {unit}" };
-        rows.push(row(template, args!(thickness = f.len(open.thickness), unit = f.unit()), Glyph::Open, Act::Edit("model.open")));
+        rows.push(row(template, args!(thickness = f.len(open.thickness.get()), unit = f.unit()), Glyph::Open, Act::Edit("model.open")));
     }
     for plane in &m.symmetry {
         let axis = if plane.axis == emcraft_model::Axis::X { "x" } else { "y" };

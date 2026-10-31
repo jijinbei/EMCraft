@@ -2,8 +2,8 @@
 //! inclusions and features, walls and ports.
 
 use emcraft_model::{
-    Axis, Conductivity, FaceSurface, Feature, Inclusion, Layer, MAX_POLES, Material, Point3, Pole, Port, PortFace, Positive, Section, Shape, Solid,
-    Strip, Symmetry, SymmetryKind, Via, Waveguide,
+    Axis, BoxSize, Conductivity, FaceSurface, Feature, Inclusion, Layer, MAX_POLES, Material, Metres, Point3, Pole, Port, PortFace, Positive,
+    Section, Shape, Solid, Strip, Symmetry, SymmetryKind, Via, Waveguide,
 };
 use serde_json::{Value, json};
 
@@ -86,28 +86,28 @@ pub(crate) fn pole_kind(pole: &Pole) -> &'static str {
 }
 
 pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
-    let width = p.positive_length("width").required()?;
-    let height = p.positive_length("height").required()?;
+    let width = p.metres("width").required()?;
+    let height = p.metres("height").required()?;
     p.list("sections", MAX_ITEMS).required()?;
     let sections = p
         .items("sections", "section", MAX_ITEMS)?
         .iter()
         .map(|sec| {
             Ok(Section {
-                length: sec.positive_length("length").required()?,
+                length: sec.metres("length").required()?,
                 material: sec.string("material").required()?.to_owned(),
-                width: sec.positive_length("width").optional()?,
+                width: sec.metres("width").optional()?,
                 offset: sec.length("offset").optional()?,
-                height: sec.positive_length("height").optional()?,
+                height: sec.metres("height").optional()?,
                 offset_y: sec.length("offset_y").optional()?,
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let total: f64 = sections.iter().map(|x| x.length).sum();
+    let total: f64 = sections.iter().map(|x| x.length.get()).sum();
     let layers = p
         .items("layers", "layer", MAX_ITEMS)?
         .iter()
-        .map(|l| Ok(Layer { thickness: l.positive_length("thickness").required()?, material: l.string("material").required()?.to_owned() }))
+        .map(|l| Ok(Layer { thickness: l.metres("thickness").required()?, material: l.string("material").required()?.to_owned() }))
         .collect::<Result<Vec<_>>>()?;
     let strips = p
         .items("strips", "strip", MAX_ITEMS)?
@@ -116,7 +116,7 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
             Ok(Strip {
                 y: st.length("y").required()?,
                 x0: st.length("x0").required()?,
-                width: st.positive_length("width").required()?,
+                width: st.metres("width").required()?,
                 z0: st.length("z0").or(0.0)?,
                 z1: st.length("z1").or(total)?,
             })
@@ -129,10 +129,10 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
             Ok(Via {
                 x0: v.length("x0").required()?,
                 z0: v.length("z0").required()?,
-                wx: v.positive_length("wx").required()?,
-                wz: v.positive_length("wz").required()?,
+                wx: v.metres("wx").required()?,
+                wz: v.metres("wz").required()?,
                 y0: v.length("y0").or(0.0)?,
-                y1: v.length("y1").or(height)?,
+                y1: v.length("y1").or(height.get())?,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -142,21 +142,21 @@ pub fn waveguide(s: &mut Session, p: &Params) -> Result<Value> {
 
 /// `geometry.iris_filter`: a rectangular waveguide with a row of inductive irises.
 pub fn iris_filter(s: &mut Session, p: &Params) -> Result<Value> {
-    let width = p.positive_length("width").required()?;
-    let height = p.positive_length("height").required()?;
-    let end_width = p.positive_length("end_width").required()?;
-    let cavity = p.positive_length("cavity").required()?;
+    let width = p.metres("width").required()?;
+    let height = p.metres("height").required()?;
+    let end_width = p.metres("end_width").required()?;
+    let cavity = p.metres("cavity").required()?;
     let f = emcraft_templates::IrisFilter {
         irises: p.integer("irises", 2..=emcraft_templates::MAX_IRISES).required()?,
-        iris_length: p.positive_length("iris_length").required()?,
+        iris_length: p.metres("iris_length").required()?,
         end_width,
-        inner_width: p.positive_length("inner_width").or(end_width)?,
+        inner_width: p.metres("inner_width").or(end_width)?,
         cavity,
-        inner_cavity: p.positive_length("inner_cavity").or(cavity)?,
-        feed: p.positive_length("feed").required()?,
+        inner_cavity: p.metres("inner_cavity").or(cavity)?,
+        feed: p.metres("feed").required()?,
         material: p.string("material").or("vacuum")?.to_owned(),
     };
-    if f.end_width.max(f.inner_width) > width {
+    if f.end_width.max(f.inner_width.get()) > width.get() {
         return Err(p.error("end_width", "an iris's aperture must not be wider than the guide"));
     }
     let sections = emcraft_templates::iris_sections(&f);
@@ -179,9 +179,9 @@ emcraft_macros::named_serde!(Primitive);
 
 /// A shape from `shape`, `size`, `radius`, `length` and `points`.
 pub(crate) fn shape(p: &Params) -> Result<Shape> {
-    let dimension = |name| p.positive_length(name).required_or("for this shape");
+    let dimension = |name| p.metres(name).required_or("for this shape");
     Ok(match p.choice("shape").required()? {
-        Primitive::Box => Shape::Box { size: p.point("size").required()?.to_vec() },
+        Primitive::Box => Shape::Box { size: BoxSize::new(p.point("size").required()?.to_vec())? },
         Primitive::Cylinder => Shape::Cylinder { radius: dimension("radius")?, length: dimension("length")? },
         Primitive::Sphere => Shape::Sphere { radius: dimension("radius")? },
         Primitive::Prism => Shape::prism(&p.pairs("points", emcraft_model::MAX_PRISM_POINTS).required_or("for a prism")?, dimension("length")?)?,
@@ -256,10 +256,10 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     // band's longest wavelength of air between the parts and the layer and as much layer.
     let open = p.flag("open").or(false)?;
     let quarter = s.model.band.map(|b| emcraft_model::units::C0 / b.start.get() / 4.0);
-    let thickness = match (open, p.positive_length("thickness").optional()?) {
+    let thickness = match (open, p.metres("thickness").optional()?) {
         (false, _) => None,
         (true, Some(t)) => Some(t),
-        (true, None) => Some(quarter.ok_or_else(|| {
+        (true, None) => Some(quarter.and_then(|q| Metres::new(q).ok()).ok_or_else(|| {
             p.error("thickness", "or set the band (project.frequency): the layer and the air before it are a quarter wavelength each")
         })?),
     };
@@ -295,7 +295,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         }
     } else if region == "box" {
         let margin = p.positive_length("margin").optional()?;
-        s.model.set_solid(Solid { shape: air_box(p, &mut bodies, margin, thickness, quarter)?, material: material.clone() })?;
+        s.model.set_solid(Solid { shape: air_box(p, &mut bodies, margin, thickness.map(Metres::get), quarter)?, material: material.clone() })?;
     } else {
         let k = bodies.iter().position(|b| b.name == region).ok_or_else(|| p.error("region", format!("names no body `{region}` (or `box`)")))?;
         let body = bodies.remove(k);
@@ -326,7 +326,7 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         "region": region,
         "pieces": pieces,
         "bodies": placed,
-        "open": thickness.map(|t| s.show_length(t)),
+        "open": thickness.map(|t| s.show_length(t.get())),
         "volume": s.model.solid.as_ref().map(|x| x.shape.volume()),
         "bounds": bounds.corners().map(|c| c.map(|v| s.show_length(v))),
     }))
@@ -496,7 +496,7 @@ fn air_box(p: &Params, bodies: &mut [emcraft_io::Surface], margin: Option<f64>, 
         b.positions.iter_mut().for_each(|q| *q += shift);
     }
     let size = emcraft_model::Vec3::new(hi[0] - lo[0] + 2.0 * margin, hi[1] - lo[1] + 2.0 * margin, hi[2] - lo[2] + 2.0 * margin);
-    Ok(Shape::Box { size })
+    Ok(Shape::Box { size: BoxSize::new(size)? })
 }
 
 pub fn feature(s: &mut Session, p: &Params) -> Result<Value> {
@@ -568,7 +568,7 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
         .lengths("face")
         .and_then(|f| {
             let values: [f64; 5] = f.try_into().map_err(|_| p.error("face", "must be [at, u0, v0, a, b]"))?;
-            Ok(PortFace::from_values(axis.unwrap_or_default(), values))
+            Ok(PortFace::from_values(axis.unwrap_or_default(), values)?)
         })
         .optional()?;
     if face.is_none() && axis.is_some_and(|a| a != Axis::Z) {
@@ -580,7 +580,7 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
         modes: p.integer("modes", 1..=emcraft_model::MAX_PORT_MODES as usize).or(4)? as u32,
         face,
         mode_solver: p.choice("mode_solver").or_default()?,
-        reference: p.positive("impedance").optional()?,
+        reference: p.checked("impedance").optional()?,
         deembed: p.length("deembed").or(0.0)?,
         terminals: p.choice("terminals").or_default()?,
     };

@@ -40,7 +40,8 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         "model.open" => match m.open {
             None => json!({}),
             Some(o) => {
-                let mut v = json!({"thickness": l(o.thickness), "shape": match o.shape { OpenShape::Box => "box", OpenShape::Sphere => "sphere" }});
+                let mut v =
+                    json!({"thickness": l(o.thickness.get()), "shape": match o.shape { OpenShape::Box => "box", OpenShape::Sphere => "sphere" }});
                 if let Some(r) = o.reflection {
                     v["reflection"] = json!(r);
                 }
@@ -112,7 +113,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
             let (i, src) = source_numbered(m, p)?;
             match src {
                 Source::Dipole { at, direction, length, current } => {
-                    json!({"index": i + 1, "at": pt(at), "direction": [direction.x, direction.y, direction.z], "length": l(length), "current": current})
+                    json!({"index": i + 1, "at": pt(at), "direction": [direction.x, direction.y, direction.z], "length": l(length.get()), "current": current})
                 }
                 Source::PlaneWave { direction, polarization } => json!({
                     "index": i + 1, "direction": [direction.x, direction.y, direction.z],
@@ -152,8 +153,8 @@ fn shape(shape: &Shape, d: Display) -> Value {
     let l = |x: f64| d.length.from_si(x);
     match shape {
         Shape::Box { size } => json!({"shape": "box", "size": [l(size.x), l(size.y), l(size.z)]}),
-        Shape::Cylinder { radius, length } => json!({"shape": "cylinder", "radius": l(*radius), "length": l(*length)}),
-        Shape::Sphere { radius } => json!({"shape": "sphere", "radius": l(*radius)}),
+        Shape::Cylinder { radius, length } => json!({"shape": "cylinder", "radius": l(radius.get()), "length": l(length.get())}),
+        Shape::Sphere { radius } => json!({"shape": "sphere", "radius": l(radius.get())}),
         Shape::Surface { .. } => json!({}),
     }
 }
@@ -167,9 +168,11 @@ fn waveguide(m: &Model, d: Display) -> Value {
         .iter()
         .map(|sec| {
             let mut o = Map::new();
-            o.insert("length".into(), json!(l(sec.length)));
+            o.insert("length".into(), json!(l(sec.length.get())));
             o.insert("material".into(), json!(sec.material));
-            for (k, v) in [("width", sec.width), ("offset", sec.offset), ("height", sec.height), ("offset_y", sec.offset_y)] {
+            for (k, v) in
+                [("width", sec.width.map(f64::from)), ("offset", sec.offset), ("height", sec.height.map(f64::from)), ("offset_y", sec.offset_y)]
+            {
                 if let Some(v) = v {
                     o.insert(k.into(), json!(l(v)));
                 }
@@ -177,16 +180,19 @@ fn waveguide(m: &Model, d: Display) -> Value {
             Value::Object(o)
         })
         .collect();
-    let mut v = json!({"width": l(w.width), "height": l(w.height), "sections": sections});
+    let mut v = json!({"width": l(w.width.get()), "height": l(w.height.get()), "sections": sections});
     if !w.layers.is_empty() {
-        v["layers"] = w.layers.iter().map(|x| json!({"thickness": l(x.thickness), "material": x.material})).collect();
+        v["layers"] = w.layers.iter().map(|x| json!({"thickness": l(x.thickness.get()), "material": x.material})).collect();
     }
     if !w.strips.is_empty() {
-        v["strips"] = w.strips.iter().map(|x| json!({"y": l(x.y), "x0": l(x.x0), "width": l(x.width), "z0": l(x.z0), "z1": l(x.z1)})).collect();
+        v["strips"] = w.strips.iter().map(|x| json!({"y": l(x.y), "x0": l(x.x0), "width": l(x.width.get()), "z0": l(x.z0), "z1": l(x.z1)})).collect();
     }
     if !w.vias.is_empty() {
-        v["vias"] =
-            w.vias.iter().map(|x| json!({"x0": l(x.x0), "z0": l(x.z0), "wx": l(x.wx), "wz": l(x.wz), "y0": l(x.y0), "y1": l(x.y1)})).collect();
+        v["vias"] = w
+            .vias
+            .iter()
+            .map(|x| json!({"x0": l(x.x0), "z0": l(x.z0), "wx": l(x.wx.get()), "wz": l(x.wz.get()), "y0": l(x.y0), "y1": l(x.y1)}))
+            .collect();
     }
     v
 }

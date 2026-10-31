@@ -9,19 +9,32 @@ use std::f64::consts::PI;
 
 use emcraft_model::{End, Material, Model, Pole, Port, Section, Waveguide};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 fn guide(materials: Vec<Material>, sections: Vec<Section>) -> Model {
     let mut m = Model::new();
     for x in materials {
         m.add_material(x).unwrap();
     }
-    m.set_waveguide(Waveguide { width: 0.02286, height: 0.01016, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide {
+        width: metres(0.02286),
+        height: metres(0.01016),
+        sections,
+        layers: Vec::new(),
+        strips: Vec::new(),
+        vias: Vec::new(),
+    })
+    .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
     m
 }
 
 fn filter() -> Model {
-    let sections = vec![Section::new(0.015, "ptfe"), Section::new(0.02, "vacuum"), Section::new(0.015, "ptfe")];
+    let sections = vec![Section::new(metres(0.015), "ptfe"), Section::new(metres(0.02), "vacuum"), Section::new(metres(0.015), "ptfe")];
     guide(vec![Material::new("ptfe", 2.0, 1.0).unwrap()], sections)
 }
 
@@ -29,7 +42,7 @@ fn filter() -> Model {
 fn dispersive_slab() -> Model {
     let poles = vec![Pole::debye(0.6, 1.0 / (2.0 * PI * 20e9)).unwrap(), Pole::lorentz(0.4, 16e9, 1.5e9).unwrap()];
     let disp = Material::new("disp", 2.0, 1.0).unwrap().with_dispersion(poles).unwrap();
-    guide(vec![disp], vec![Section::new(0.01, "vacuum"), Section::new(0.02, "disp"), Section::new(0.01, "vacuum")])
+    guide(vec![disp], vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "disp"), Section::new(metres(0.01), "vacuum")])
 }
 
 const FREQS: [f64; 3] = [5.5e9, 7.5e9, 8.5e9];
@@ -99,7 +112,12 @@ fn dispersive_edges_advance_their_poles_on_the_device() {
 fn lossy_guide() -> Model {
     let lossy = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.05).unwrap();
     let ferrite = Material::new("ferrite", 1.5, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
-    let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.01, "lossy"), Section::new(0.01, "ferrite"), Section::new(0.01, "vacuum")];
+    let sections = vec![
+        Section::new(metres(0.01), "vacuum"),
+        Section::new(metres(0.01), "lossy"),
+        Section::new(metres(0.01), "ferrite"),
+        Section::new(metres(0.01), "vacuum"),
+    ];
     let mut m = guide(vec![lossy, ferrite], sections);
     m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(1e6).unwrap()));
     m

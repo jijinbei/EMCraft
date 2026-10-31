@@ -35,7 +35,7 @@ pub(super) fn prepare(lp: &LumpedPort, space: &Space) -> Result<LumpedData> {
     if c.is_empty() {
         return Err(invalid(format!("lumped port `{}`", lp.name), "its gap lies outside the mesh (inside a conductor?)"));
     }
-    Ok(LumpedData { name: lp.name.clone(), impedance: lp.impedance, voltage: C::new(lp.voltage[0], lp.voltage[1]), c })
+    Ok(LumpedData { name: lp.name.clone(), impedance: lp.impedance.get(), voltage: C::new(lp.voltage[0], lp.voltage[1]), c })
 }
 
 /// The port's vector: the line integral along the gap, or for a band of radius r its average

@@ -100,12 +100,12 @@ pub(crate) fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f
     let mats: Vec<(f64, f64, f64)> = w
         .sections
         .iter()
-        .map(|sec| m.material(&sec.material).ok().map(|(_, mat)| (sec.length, mat.eps_r.get(), mat.mu_r.get())))
+        .map(|sec| m.material(&sec.material).ok().map(|(_, mat)| (sec.length.get(), mat.eps_r.get(), mat.mu_r.get())))
         .collect::<Option<_>>()?;
     let first = mats.first()?;
     if mats.iter().all(|x| x.1 == first.1 && x.2 == first.2) {
         let bands = emcraft_theory::floquet::empty_guide_bands(
-            &emcraft_theory::floquet::EmptyGuide { a: w.width, b: w.height, period: w.length(), eps_r: first.1 * first.2 },
+            &emcraft_theory::floquet::EmptyGuide { a: w.width.get(), b: w.height.get(), period: w.length(), eps_r: first.1 * first.2 },
             psi,
             count,
         );
@@ -114,7 +114,7 @@ pub(crate) fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f
     if psi <= 0.0 || psi >= PI {
         return None;
     }
-    Some((emcraft_theory::floquet::bloch_frequencies(w.width, &mats, psi, f_max), "exact TE₁₀ Bloch"))
+    Some((emcraft_theory::floquet::bloch_frequencies(w.width.get(), &mats, psi, f_max), "exact TE₁₀ Bloch"))
 }
 
 /// The diagram as a table: each phase's β and bands, and the closed form's where it applies.
@@ -170,7 +170,7 @@ pub fn stack_reference(s: &Session) -> Result<emcraft_theory::floquet::Stack> {
                 return Err(EngineError::failed("not supported yet: a plane-wave reference with magnetically lossy layers"));
             }
             Ok(emcraft_theory::floquet::StackLayer {
-                thickness: sec.length,
+                thickness: sec.length.get(),
                 eps_r: emcraft_solver::Complex64::new(mat.eps_r.get(), -mat.eps_r.get() * mat.loss_tangent.get()),
                 mu_r: mat.mu_r.get(),
             })

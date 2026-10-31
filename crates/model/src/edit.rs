@@ -8,10 +8,12 @@
 //! S and the features theirs. A change that is refused leaves the model as it was.
 //!
 //! ```
-//! use emcraft_model::{End, Model, Port, Section, Waveguide};
+//! use emcraft_model::{End, Metres, Model, Port, Section, Waveguide};
 //!
 //! let mut m = Model::new();
-//! let guide = Waveguide { width: 0.02286, height: 0.01016, sections: vec![Section::new(0.02, "vacuum")], layers: vec![], strips: vec![], vias: vec![] };
+//! let (width, height) = (Metres::new(0.02286)?, Metres::new(0.01016)?);
+//! let sections = vec![Section::new(Metres::new(0.02)?, "vacuum")];
+//! let guide = Waveguide { width, height, sections, layers: vec![], strips: vec![], vias: vec![] };
 //! m.set_waveguide(guide)?;
 //! m.add_port(Port::new("1", End::Start))?;
 //! m.add_port(Port::new("2", End::End))?;
@@ -213,11 +215,26 @@ mod tests {
     use super::*;
     use crate::{Axis, Combine, End, Point3, Section, Shape, Solid, Vec3, Waveguide};
 
+    /// An impedance (Ω), checked.
+    fn ohms(v: f64) -> crate::Ohms {
+        crate::Ohms::new(v).unwrap()
+    }
+
+    /// A length (m), checked.
+    fn metres(v: f64) -> crate::Metres {
+        crate::Metres::new(v).unwrap()
+    }
+
+    /// A box's sides (m), checked.
+    fn box_size(v: crate::Vec3) -> crate::BoxSize {
+        crate::BoxSize::new(v).unwrap()
+    }
+
     fn guide(m: &mut Model) {
         m.add_material(Material::new("ptfe", 2.1, 1.0).unwrap()).unwrap();
         m.add_material(Material::new("glass", 4.0, 1.0).unwrap()).unwrap();
-        let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.01, "ptfe")];
-        m.set_waveguide(Waveguide { width: 0.02, height: 0.01, sections, layers: vec![], strips: vec![], vias: vec![] }).unwrap();
+        let sections = vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.01), "ptfe")];
+        m.set_waveguide(Waveguide { width: metres(0.02), height: metres(0.01), sections, layers: vec![], strips: vec![], vias: vec![] }).unwrap();
     }
 
     #[test]
@@ -247,8 +264,8 @@ mod tests {
     #[test]
     fn items_are_replaced_in_place_or_not_at_all() {
         let mut m = Model::new();
-        m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(0.04, 0.04, 0.04) }, material: "vacuum".into() }).unwrap();
-        let sphere = |x: f64| Inclusion { shape: Shape::Sphere { radius: 0.003 }, at: Point3::new(x, 0.02, 0.02), material: None };
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.04, 0.04, 0.04)) }, material: "vacuum".into() }).unwrap();
+        let sphere = |x: f64| Inclusion { shape: Shape::Sphere { radius: metres(0.003) }, at: Point3::new(x, 0.02, 0.02), material: None };
         m.add_inclusion(sphere(0.01)).unwrap();
         m.add_inclusion(sphere(0.03)).unwrap();
         // Onto the other one: refused, both stay as they were.
@@ -259,7 +276,7 @@ mod tests {
         assert!(m.replace_inclusion(2, sphere(0.02)).is_err());
         let post = |x: f64| Feature {
             combine: Combine::Subtract,
-            shape: Shape::Cylinder { radius: 0.001, length: 0.04 },
+            shape: Shape::Cylinder { radius: metres(0.001), length: metres(0.04) },
             at: Point3::new(x, 0.0, 0.005),
             axis: Axis::Y,
         };
@@ -277,7 +294,7 @@ mod tests {
         assert_eq!(m.ports.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["c", "b"]);
         assert_eq!(m.remove_port(0).unwrap().name, "c");
         assert!(m.remove_port(5).is_err());
-        let dipole = |x: f64| Source::Dipole { at: Point3::new(x, 0.02, 0.02), direction: Vec3::unit(2), length: 0.001, current: 1.0 };
+        let dipole = |x: f64| Source::Dipole { at: Point3::new(x, 0.02, 0.02), direction: Vec3::unit(2), length: metres(0.001), current: 1.0 };
         m.add_source(dipole(0.02)).unwrap();
         assert!(m.replace_source(0, dipole(1.0)).is_err());
         m.replace_source(0, dipole(0.021)).unwrap();
@@ -286,7 +303,7 @@ mod tests {
             name: name.into(),
             from: Point3::new(0.02, 0.02, 0.019),
             to: Point3::new(0.02, 0.02, 0.021),
-            impedance: 50.0,
+            impedance: ohms(50.0),
             voltage: [1.0, 0.0],
             radius: 0.0,
         };

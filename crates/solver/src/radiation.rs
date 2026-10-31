@@ -85,7 +85,7 @@ fn huygens_box(model: &Model) -> Result<(Point3, Point3)> {
     if o.shape != emcraft_model::OpenShape::Box {
         return Err(invalid("open boundary", "a spherical layer on a box solid"));
     }
-    let d = o.thickness;
+    let d = o.thickness.get();
     let (inner_lo, inner_hi) = (Point3::new(d, d, d), size.to_point() - Vec3::new(d, d, d));
     // Nothing placed (a plane wave on nothing): the middle of the box.
     let centre = inner_lo.midpoint(inner_hi);
@@ -135,7 +135,7 @@ impl Surface {
 /// nearer — the box's rule ([`huygens_box`]) in the radius.
 fn huygens_sphere(model: &Model) -> Result<f64> {
     let inner = model.spherical_layer().map(|l| l.inner).ok_or_else(|| SolveError::NotReady("no spherical layer".into()))?;
-    let d = model.open.map_or(0.0, |o| o.thickness);
+    let d = model.open.map_or(0.0, |o| o.thickness.get());
     let reach = model.radiators().map(|p| p.to_vec().norm()).fold(0.0f64, f64::max);
     if !(reach < inner - 0.1 * d) {
         return Err(invalid("open boundary", "the bodies and sources reach into or up to the spherical layer; enlarge the sphere"));
@@ -298,7 +298,7 @@ impl Driven {
                 let tol = 1e-9 * size.iter().fold(0.0f64, f64::max);
                 (0..3).any(|d| [0.0, size[d]].iter().any(|c| nodes.iter().all(|n| (node(*n)[d] - c).abs() <= tol)))
             }
-            Some(Shape::Sphere { radius }) => nodes.iter().all(|n| (node(*n).to_vec().norm() - radius).abs() <= 1e-9 * radius),
+            Some(Shape::Sphere { radius }) => nodes.iter().all(|n| (node(*n).to_vec().norm() - *radius).abs() <= 1e-9 * *radius),
             _ => true,
         };
         let faces: Vec<(usize, usize)> = self

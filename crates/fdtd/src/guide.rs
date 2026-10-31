@@ -93,7 +93,7 @@ pub(crate) struct Grid {
 
 /// Every aperture edge of the guide's sections across x (`y` false) or y, and the walls.
 fn aperture_breaks(w: &Waveguide, y: bool) -> Vec<f64> {
-    let mut breaks = vec![0.0, if y { w.height } else { w.width }];
+    let mut breaks = vec![0.0, if y { w.height.get() } else { w.width.get() }];
     for i in 0..w.sections.len() {
         if let Some(a) = if y { w.aperture_y(i) } else { w.aperture(i) } {
             breaks.push(a.start);
@@ -141,12 +141,12 @@ impl Grid {
         let last = w.sections.len() - 1;
         let (first_layer, last_layer) = (layer(0)?, layer(last)?);
         // x and y: through every aperture edge.
-        let x = lines(aperture_breaks(w, false), w.width, h);
-        let y = lines(aperture_breaks(w, true), w.height, h);
+        let x = lines(aperture_breaks(w, false), w.width.get(), h);
+        let y = lines(aperture_breaks(w, true), w.height.get(), h);
         // z: feed 1, the sections, feed 2.
-        let first_len = w.sections[0].length;
+        let first_len = w.sections[0].length.get();
         let dz1 = first_len / steps(first_len, h) as f64;
-        let last_len = w.sections[last].length;
+        let last_len = w.sections[last].length.get();
         let dz2 = last_len / steps(last_len, h) as f64;
         let ext = o.pml + 2 * o.feed;
         let mut z: Vec<f64> = (0..=ext).map(|k| -((ext - k) as f64) * dz1).collect();
@@ -154,11 +154,11 @@ impl Grid {
         let plane1 = ext;
         let mut at = 0.0;
         for (i, s) in w.sections.iter().enumerate() {
-            let n = steps(s.length, h);
+            let n = steps(s.length.get(), h);
             z.extend((1..=n).map(|k| at + s.length * k as f64 / n as f64));
             let l = if reference { first_layer } else { layer(i)? };
             layers.extend(std::iter::repeat_n(l, n));
-            at += s.length;
+            at += s.length.get();
         }
         let plane2 = z.len() - 1;
         let end_layer = if reference { first_layer } else { last_layer };

@@ -6,6 +6,11 @@ use emcraft_model::{End, Material, Model, Pole, Port, Section, Waveguide};
 use emcraft_solver::Driven;
 use emcraft_theory::{Layer, Te10Line};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 
@@ -13,11 +18,11 @@ const B: f64 = 0.01016;
 fn slab(size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap()).unwrap();
-    let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.02, "lossy"), Section::new(0.01, "vacuum")];
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    let sections = vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "lossy"), Section::new(metres(0.01), "vacuum")];
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -56,9 +61,9 @@ fn absorbed_power_balances_the_ports() {
 fn lossy_walls(length: f64, sigma: f64, size: f64) -> Model {
     let mut m = Model::new();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(length, "vacuum")],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(length), "vacuum")],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
@@ -67,7 +72,7 @@ fn lossy_walls(length: f64, sigma: f64, size: f64) -> Model {
     m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(sigma).unwrap()));
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -116,11 +121,11 @@ fn dispersive_eps(f: f64) -> emcraft_solver::Complex64 {
 fn dispersive_slab(size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("disp", 2.0, 1.0).unwrap().with_dispersion(poles()).unwrap()).unwrap();
-    let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.02, "disp"), Section::new(0.01, "vacuum")];
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    let sections = vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "disp"), Section::new(metres(0.01), "vacuum")];
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -167,16 +172,16 @@ fn dispersive_ports_are_taken_and_eigenmodes_refused() {
     let drude = Pole::drude(5e9, 1e9).unwrap();
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(0.02, "plasma")],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(0.02), "plasma")],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
     })
     .unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.005).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.005)).unwrap().into());
     // The port's modes in the plasma: ε(10 GHz) = 1 − 25/(100 − 10j), above the cut-off.
     Driven::new(&m, Order::One).unwrap();
     let modes = emcraft_solver::driven::port_modes(&m, Order::One, 10e9).unwrap();

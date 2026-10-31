@@ -159,7 +159,7 @@ impl BoxGrid {
         if (0..3).any(|d| 2 * npml + 4 > n[d]) {
             return Err(invalid("open boundary", "the layer leaves no room inside the box at this cell size"));
         }
-        Ok(BoxGrid { size, n, hs, npml })
+        Ok(BoxGrid { size: size.get(), n, hs, npml })
     }
 
     fn cells(&self) -> usize {

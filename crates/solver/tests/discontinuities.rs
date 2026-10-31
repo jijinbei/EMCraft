@@ -7,6 +7,11 @@ use emcraft_model::{End, Model, Port, Section, Waveguide};
 use emcraft_solver::Driven;
 use emcraft_theory::{HPlaneLine, HSection};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 
@@ -17,9 +22,16 @@ fn model(layout: &Layout, opts: &emcraft_mesh::Options) -> Model {
     let mut m = Model::new();
     let sections = layout
         .iter()
-        .map(|&(l, x0, w)| Section { length: l, material: "vacuum".into(), width: Some(w), offset: Some(x0), ..Default::default() })
+        .map(|&(l, x0, w)| Section {
+            length: metres(l),
+            material: "vacuum".into(),
+            width: Some(metres(w)),
+            offset: Some(x0),
+            height: None,
+            offset_y: None,
+        })
         .collect();
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide_with(&m, opts).unwrap().into());
@@ -51,7 +63,7 @@ const STEP: [(f64, f64, f64); 2] = [(0.015, 0.0, A), (0.018, 0.0, 0.016)];
 
 #[test]
 fn inductive_iris_matches_mode_matching() {
-    let d = Driven::new(&model(&IRIS, &emcraft_mesh::Options::new(0.004)), Order::Two).unwrap();
+    let d = Driven::new(&model(&IRIS, &emcraft_mesh::Options::new(metres(0.004))), Order::Two).unwrap();
     let w = worst(&d, &reference(&IRIS), &[9.0e9, 11.0e9]);
     // Measured 6.6e-3: the iris' edges are singular (E ∝ r^{-1/3}); grading recovers most of
     // what a uniform mesh loses there.
@@ -62,7 +74,7 @@ fn inductive_iris_matches_mode_matching() {
 fn offset_step_matches_mode_matching() {
     // (Power conserved across ports of different aperture: the engine's invariants.rs, the
     // taper among its templates.)
-    let d = Driven::new(&model(&STEP, &emcraft_mesh::Options::new(0.004)), Order::Two).unwrap();
+    let d = Driven::new(&model(&STEP, &emcraft_mesh::Options::new(metres(0.004))), Order::Two).unwrap();
     // The 16 mm guide's TE10 cut-off is 9.37 GHz: above it both ports propagate.
     let freqs = [10.0e9, 12.0e9];
     let w = worst(&d, &reference(&STEP), &freqs);
@@ -74,8 +86,8 @@ fn offset_step_matches_mode_matching() {
 fn grading_towards_the_edges_beats_a_uniform_mesh() {
     // The same element size: graded towards the iris' edges, then uniform.
     let line = reference(&IRIS);
-    let graded = worst(&Driven::new(&model(&IRIS, &emcraft_mesh::Options::new(0.004)), Order::Two).unwrap(), &line, &[10.0e9]);
-    let uniform = worst(&Driven::new(&model(&IRIS, &emcraft_mesh::Options::uniform(0.004)), Order::Two).unwrap(), &line, &[10.0e9]);
+    let graded = worst(&Driven::new(&model(&IRIS, &emcraft_mesh::Options::new(metres(0.004))), Order::Two).unwrap(), &line, &[10.0e9]);
+    let uniform = worst(&Driven::new(&model(&IRIS, &emcraft_mesh::Options::uniform(metres(0.004))), Order::Two).unwrap(), &line, &[10.0e9]);
     assert!(graded < 0.5 * uniform, "{graded:e} {uniform:e}");
 }
 
@@ -86,23 +98,30 @@ fn iris_converges_with_graded_meshes() {
     let line = reference(&IRIS);
     let errors: Vec<f64> = [0.004, 0.003, 0.002]
         .iter()
-        .map(|&h| worst(&Driven::new(&model(&IRIS, &emcraft_mesh::Options::new(h)), Order::Two).unwrap(), &line, &[10.0e9]))
+        .map(|&h| worst(&Driven::new(&model(&IRIS, &emcraft_mesh::Options::new(metres(h))), Order::Two).unwrap(), &line, &[10.0e9]))
         .collect();
     assert!(errors[0] > errors[1] && errors[1] > errors[2] && errors[2] < 5e-3, "{errors:?}");
 }
 
 /// (length, aperture start along y, aperture height), all vacuum, full width.
 fn e_model(layout: &[(f64, f64, f64)], size: f64) -> Model {
-    e_model_with(layout, emcraft_mesh::Options::new(size))
+    e_model_with(layout, emcraft_mesh::Options::new(metres(size)))
 }
 
 fn e_model_with(layout: &[(f64, f64, f64)], opts: emcraft_mesh::Options) -> Model {
     let mut m = Model::new();
     let sections = layout
         .iter()
-        .map(|&(l, y0, h)| Section { length: l, material: "vacuum".into(), height: Some(h), offset_y: Some(y0), ..Default::default() })
+        .map(|&(l, y0, h)| Section {
+            length: metres(l),
+            material: "vacuum".into(),
+            height: Some(metres(h)),
+            offset_y: Some(y0),
+            width: None,
+            offset: None,
+        })
         .collect();
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(4)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(4)).unwrap();
     m.mesh = Some(emcraft_mesh::waveguide_with(&m, &opts).unwrap().into());
@@ -130,7 +149,7 @@ fn e_plane_step_and_capacitive_iris_match_mode_matching() {
     // Measured 1.1e-3 (step, 4 mm graded to 1 mm) and 1.9e-2 (iris, 4 mm graded only to 2 mm,
     // for speed: its four edges are singular).
     for (layout, edge, tol) in [(&E_STEP[..], 0.25, 3e-3), (&CAP_IRIS[..], 0.5, 3e-2)] {
-        let d = Driven::new(&e_model_with(layout, emcraft_mesh::Options { edge, ..emcraft_mesh::Options::new(0.004) }), Order::Two).unwrap();
+        let d = Driven::new(&e_model_with(layout, emcraft_mesh::Options { edge, ..emcraft_mesh::Options::new(metres(0.004)) }), Order::Two).unwrap();
         let r = d.solve(10.0e9).unwrap();
         let (s11, s21) = e_reference(layout).solve(10.0e9, 160).unwrap();
         let e = (r.s[0][0] - s11).norm().max((r.s[1][0] - s21).norm());

@@ -39,8 +39,9 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Toke
         kv(ui, "wall thickness", format!("{} {lu}", fmt(l.from_si(w.get()))), t);
     }
     let kind = |o: &emcraft_model::Open| tr(if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" });
-    let thick =
-        |o: &emcraft_model::Open| trf("{kind} {thickness} {unit} thick", args!(kind = kind(o), thickness = fmt(l.from_si(o.thickness)), unit = lu));
+    let thick = |o: &emcraft_model::Open| {
+        trf("{kind} {thickness} {unit} thick", args!(kind = kind(o), thickness = fmt(l.from_si(o.thickness.get())), unit = lu))
+    };
     kv(ui, "open", m.open.map_or(tr("closed (no PML)").into(), |o| thick(&o)), t);
     let planes: Vec<String> = m
         .symmetry

@@ -6,6 +6,11 @@ use emcraft_model::{Material, Model, Section, Waveguide};
 use emcraft_solver::eigen::eigenmodes;
 use emcraft_theory::{cavity_resonances, te101_q_walls};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 const D: f64 = 0.03;
@@ -13,15 +18,15 @@ const D: f64 = 0.03;
 fn cavity(size: f64) -> Model {
     let mut m = Model::new();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(D, "vacuum")],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(D), "vacuum")],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, size).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(size)).unwrap().into());
     m
 }
 
@@ -61,15 +66,15 @@ fn a_very_lossy_fill_gives_its_complex_frequency() {
     let mut m = Model::new();
     m.add_material(Material::new("fill", 2.25, 1.0).unwrap().with_loss_tangent(tan_d).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(D, "fill")],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(D), "fill")],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.003)).unwrap().into());
     let lossy = eigenmodes(&m, Order::Two, 2, 5.5e9).unwrap();
     let mut lossless = m.clone();
     lossless.materials[1] = Material::new("fill", 2.25, 1.0).unwrap();
@@ -116,15 +121,15 @@ fn a_filled_cavity_scales_and_its_dielectric_sets_q() {
     let mut m = Model::new();
     m.add_material(Material::new("fill", 2.25, 1.0).unwrap().with_loss_tangent(1e-3).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(D, "fill")],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(D), "fill")],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
     })
     .unwrap();
-    m.mesh = Some(emcraft_mesh::waveguide(&m, 0.003).unwrap().into());
+    m.mesh = Some(emcraft_mesh::waveguide(&m, metres(0.003)).unwrap().into());
     let e = eigenmodes(&m, Order::Two, 1, 5.5e9).unwrap();
     let (f, _) = cavity_resonances(A, B, D, 2.25, 1)[0].clone();
     assert!(((e.modes[0].frequency - f) / f).abs() < 1e-3);

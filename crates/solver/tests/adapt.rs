@@ -11,6 +11,16 @@ use emcraft_solver::adapt::indicator;
 use emcraft_theory::post::InductivePost;
 use num_complex::Complex64 as C;
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
+/// A box's sides (m), checked.
+fn box_size(v: emcraft_model::Vec3) -> emcraft_model::BoxSize {
+    emcraft_model::BoxSize::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 const L: f64 = 0.03;
@@ -19,10 +29,10 @@ const F: f64 = 10.0e9;
 
 fn post() -> Model {
     let mut m = Model::new();
-    m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(A, B, L) }, material: "vacuum".into() }).unwrap();
+    m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(A, B, L)) }, material: "vacuum".into() }).unwrap();
     m.add_feature(Feature {
         combine: Combine::Subtract,
-        shape: Shape::Cylinder { radius: R, length: B },
+        shape: Shape::Cylinder { radius: metres(R), length: metres(B) },
         at: Point3::new(A / 2.0, 0.0, L / 2.0),
         axis: Axis::Y,
     })
@@ -39,7 +49,7 @@ fn reference() -> C {
 /// Meshes, solves and returns (S11, S21, indicator, unknowns, tets, model).
 fn pass(size: f64, refine: &[Refinement], order: Order) -> (C, C, Vec<f64>, usize, Model) {
     let mut m = post();
-    m.mesh = Some(solid_with(&m, &SolidOptions { refine: refine.to_vec(), ..SolidOptions::new(size) }).unwrap().into());
+    m.mesh = Some(solid_with(&m, &SolidOptions { refine: refine.to_vec(), ..SolidOptions::new(metres(size)) }).unwrap().into());
     let d = Driven::new(&m, order).unwrap();
     let r = d.solve(F).unwrap();
     let eta = indicator(&d, &r).unwrap();
@@ -54,10 +64,10 @@ fn from_post(p: Point3) -> f64 {
 /// The indicator's total on the empty guide (the post's box without it) at element size `h`.
 fn empty_total(h: f64, order: Order) -> f64 {
     let mut m = Model::new();
-    m.set_solid(Solid { shape: Shape::Box { size: Vec3::new(A, B, L) }, material: "vacuum".into() }).unwrap();
+    m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(A, B, L)) }, material: "vacuum".into() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(2)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(2)).unwrap();
-    m.mesh = Some(solid_with(&m, &SolidOptions::new(h)).unwrap().into());
+    m.mesh = Some(solid_with(&m, &SolidOptions::new(metres(h))).unwrap().into());
     let d = Driven::new(&m, order).unwrap();
     indicator(&d, &d.solve(F).unwrap()).unwrap().iter().sum()
 }
@@ -114,7 +124,7 @@ fn marks_and_refines(order: Order) {
     // Meshed again, the marked places get their size (within the mesher's spread; measured 1.5).
     let refine = emcraft_mesh::adapt::refinements(mesh, &marked, 0.006 / 16.0).unwrap();
     let mut fine = post();
-    fine.mesh = Some(solid_with(&fine, &SolidOptions { refine: refine.clone(), ..SolidOptions::new(0.006) }).unwrap().into());
+    fine.mesh = Some(solid_with(&fine, &SolidOptions { refine: refine.clone(), ..SolidOptions::new(metres(0.006)) }).unwrap().into());
     let fine = fine.mesh.as_ref().unwrap();
     let edge = |t: usize| {
         let c = fine.corners(t).unwrap();

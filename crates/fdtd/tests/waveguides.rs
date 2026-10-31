@@ -8,6 +8,11 @@ use emcraft_fdtd::{Options, s_parameters};
 use emcraft_model::{End, Material, Model, Pole, Port, Section, Waveguide};
 use emcraft_theory::{HPlaneLine, HSection, Layer, Te10Line};
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 const A: f64 = 0.02286;
 const B: f64 = 0.01016;
 
@@ -20,14 +25,14 @@ fn with_materials(sections: Vec<Section>, materials: Vec<Material>) -> Model {
     for x in materials {
         m.add_material(x).unwrap();
     }
-    m.set_waveguide(Waveguide { width: A, height: B, sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
+    m.set_waveguide(Waveguide { width: metres(A), height: metres(B), sections, layers: Vec::new(), strips: Vec::new(), vias: Vec::new() }).unwrap();
     m.add_port(Port::new("1", End::Start).with_modes(1)).unwrap();
     m.add_port(Port::new("2", End::End).with_modes(1)).unwrap();
     m
 }
 
 fn filter() -> Model {
-    model(vec![Section::new(0.015, "ptfe"), Section::new(0.02, "vacuum"), Section::new(0.015, "ptfe")], &[("ptfe", 2.0)])
+    model(vec![Section::new(metres(0.015), "ptfe"), Section::new(metres(0.02), "vacuum"), Section::new(metres(0.015), "ptfe")], &[("ptfe", 2.0)])
 }
 
 fn filter_error(cell: f64, freqs: &[f64]) -> f64 {
@@ -70,8 +75,8 @@ fn high_pass_filter_converges_at_second_order() {
 #[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn inductive_iris_matches_mode_matching() {
-    let iris = Section { length: 0.002, material: "vacuum".into(), width: Some(0.012), offset: None, ..Default::default() };
-    let m = model(vec![Section::new(0.015, "vacuum"), iris, Section::new(0.015, "vacuum")], &[]);
+    let iris = Section { length: metres(0.002), material: "vacuum".into(), width: Some(metres(0.012)), offset: None, height: None, offset_y: None };
+    let m = model(vec![Section::new(metres(0.015), "vacuum"), iris, Section::new(metres(0.015), "vacuum")], &[]);
     let freqs = [9.0e9, 11.0e9];
     let r = s_parameters(&m, &Options::new(0.001), &freqs).unwrap();
     let full = |l: f64| HSection { length: l, eps_r: 1.0, mu_r: 1.0, x0: 0.0, width: A, loss_tangent: 0.0 };
@@ -104,8 +109,9 @@ fn an_e_plane_step_reflects_as_mode_matching_says() {
     // sections' heights on 2.54 mm cells (|S11| 3 % and 7 % high): how close it comes to mode
     // matching is the oracle's eplane-step (1 mm cells, 1.0e-2 and 1.7e-2 in S); a step left
     // out would be off by its whole reflection.
-    let low = Section { length: 0.015, material: "vacuum".into(), height: Some(B / 2.0), offset_y: Some(0.0), ..Default::default() };
-    let m = model(vec![Section::new(0.012, "vacuum"), low], &[]);
+    let low =
+        Section { length: metres(0.015), material: "vacuum".into(), height: Some(metres(B / 2.0)), offset_y: Some(0.0), width: None, offset: None };
+    let m = model(vec![Section::new(metres(0.012), "vacuum"), low], &[]);
     let freqs = [9.0e9, 11.0e9];
     let r = s_parameters(&m, &Options::new(0.00254), &freqs).unwrap();
     let full = emcraft_theory::ESection { length: 0.012, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, y0: 0.0, height: B };
@@ -122,7 +128,7 @@ fn dispersive_slab() -> Model {
     let tau = 1.0 / (2.0 * PI * 20e9);
     let poles = vec![Pole::debye(0.6, tau).unwrap(), Pole::lorentz(0.4, 16e9, 1.5e9).unwrap()];
     let disp = Material::new("disp", 2.0, 1.0).unwrap().with_dispersion(poles).unwrap();
-    with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.02, "disp"), Section::new(0.01, "vacuum")], vec![disp])
+    with_materials(vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.02), "disp"), Section::new(metres(0.01), "vacuum")], vec![disp])
 }
 
 /// The cascade with the poles' permittivity written out here, apart from the model's.
@@ -174,9 +180,9 @@ fn dispersion_is_refused_where_unsupported() {
     let drude = Pole::drude(10e9, 1e9).unwrap();
     m.add_material(Material::new("plasma", 1.0, 1.0).unwrap().with_dispersion(vec![drude]).unwrap()).unwrap();
     m.set_waveguide(Waveguide {
-        width: A,
-        height: B,
-        sections: vec![Section::new(0.02, "plasma")],
+        width: metres(A),
+        height: metres(B),
+        sections: vec![Section::new(metres(0.02), "plasma")],
         layers: Vec::new(),
         strips: Vec::new(),
         vias: Vec::new(),
@@ -186,6 +192,9 @@ fn dispersion_is_refused_where_unsupported() {
     // A resonance far too fast for the time step.
     let fast = Pole::lorentz(1.0, 1e14, 1e9).unwrap();
     let fast = Material::new("fast", 1.0, 1.0).unwrap().with_dispersion(vec![fast]).unwrap();
-    let m = with_materials(vec![Section::new(0.01, "vacuum"), Section::new(0.01, "fast"), Section::new(0.01, "vacuum")], vec![fast]);
+    let m = with_materials(
+        vec![Section::new(metres(0.01), "vacuum"), Section::new(metres(0.01), "fast"), Section::new(metres(0.01), "vacuum")],
+        vec![fast],
+    );
     assert!(matches!(s_parameters(&m, &Options::new(0.002), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
 }

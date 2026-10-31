@@ -4,6 +4,11 @@ use serde_json::{Value, json};
 
 use crate::*;
 
+/// A length (m), checked.
+fn metres(v: f64) -> emcraft_model::Metres {
+    emcraft_model::Metres::new(v).unwrap()
+}
+
 /// A box of air with a metal post, a dielectric sphere, a dipole, a plane wave and a lumped
 /// port: every kind of item an open problem holds.
 fn open_box() -> Session {
@@ -81,7 +86,7 @@ fn ports_are_edited_in_place_and_deleted() {
     s.execute("model.port.edit", &json!({"name": "1", "rename": "in", "modes": 2, "impedance": 50})).unwrap();
     assert!(s.results.sweep.is_none(), "the sweep was of the old ports");
     let p = &s.model.ports[0];
-    assert_eq!((p.name.as_str(), p.modes, p.reference), ("in", 2, Some(50.0)));
+    assert_eq!((p.name.as_str(), p.modes, p.reference), ("in", 2, Some(emcraft_model::Ohms::FIFTY)));
     // `null` clears the reference impedance; the other settings stay.
     s.execute("model.port.edit", &json!({"name": "in", "impedance": null})).unwrap();
     assert_eq!((s.model.ports[0].reference, s.model.ports[0].modes), (None, 2));
@@ -114,7 +119,7 @@ fn lumped_ports_sources_and_bodies_are_edited_and_deleted() {
     assert!(refused(&mut s, "model.port.edit", json!({"name": "L1"})).contains("model.port.lumped.edit"));
     s.execute("model.port.lumped.edit", &json!({"name": "L1", "rename": "feed", "impedance": 75})).unwrap();
     let l = &s.model.lumped[0];
-    assert_eq!((l.name.as_str(), l.impedance), ("feed", 75.0));
+    assert_eq!((l.name.as_str(), l.impedance.get()), ("feed", 75.0));
     assert!((l.voltage[1] - 0.5).abs() < 1e-12, "the phase stays");
     assert!(refused(&mut s, "model.port.lumped.edit", json!({"name": "feed", "to": [99, 0, 0]})).contains("inside the geometry"));
     refused(&mut s, "model.port.lumped.edit", json!({"name": "feed", "from": [30, 10, 20.5]}));
@@ -132,7 +137,9 @@ fn lumped_ports_sources_and_bodies_are_edited_and_deleted() {
     assert!(matches!(s.model.sources[..], [emcraft_model::Source::PlaneWave { .. }]));
     // Bodies by name: the post's radius, then the sphere a dielectric of glass, in place.
     s.execute("geometry.body.edit", &json!({"body": "body 1", "radius": 1})).unwrap();
-    assert!(matches!(s.model.features[0].shape, emcraft_model::Shape::Cylinder { radius, length } if radius == 0.001 && length == 0.04));
+    assert!(
+        matches!(s.model.features[0].shape, emcraft_model::Shape::Cylinder { radius, length } if radius == metres(0.001) && length == metres(0.04))
+    );
     s.execute("geometry.body.edit", &json!({"body": "body 2", "material": "glass", "at": [21, 20, 20]})).unwrap();
     assert_eq!(s.model.inclusions[0].material.as_deref(), Some("glass"));
     assert!(s.model.mesh.is_none());
