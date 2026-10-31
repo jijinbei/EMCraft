@@ -67,9 +67,11 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
 - **Rust only.**
 
 ## Workflow for every change
-1. Work on a branch. While you work: `cargo check` and the tests of the crates you touch
-   (`cargo test -p <crate>`). Commit after each working step; every commit builds and passes its
-   tests.
+1. Work on a branch. While you work: `cargo check` and the tests your change can break,
+   `cargo xtask test --changed` (the packages changed since main and those built on them, in
+   one pool with cargo-nextest when installed: `cargo binstall cargo-nextest`). Commit after
+   each working step; every commit builds and passes its tests. The whole gate
+   (`cargo xtask test`) runs before merging and on CI.
 2. When the change is done: `cargo fmt --all`, `cargo clippy -p <crate> --all-targets -- -D warnings`
    for each crate you touched. Regenerate what your change affects: `docs/features.md` when
    commands change (`cargo xtask features`), `docs/oracle.md` when oracle cases or solver numerics

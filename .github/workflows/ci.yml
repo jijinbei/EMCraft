@@ -5,6 +5,11 @@ on:
     branches: [develop, main]
   pull_request:
 
+# A newer push to the same branch or pull request makes the running checks moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   # The GPU crate links CubeCL's LLVM into every test binary: without debug information they
@@ -28,8 +33,13 @@ jobs:
         id: toolchain
         with:
           components: rustfmt, clippy
-      # Compiled dependencies and the workspace's build, keyed on Cargo.lock and the toolchain.
+      # Compiled dependencies (and the git ones' checkouts), keyed on Cargo.lock, the toolchain and
+      # the job. Saved from main only, so branches restore main's and do not crowd it out of the
+      # repository's 10 GB; saved when a test fails too, as the build itself was good.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       - name: System libraries for the desktop app
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
       - run: cargo fmt --all --check
@@ -37,9 +47,12 @@ jobs:
       - run: cargo xtask dupes --fail
       - run: cargo xtask colours
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       # In release, sharing the build with the oracle below (debug assertions are left to local
-      # runs).
-      - run: cargo test --workspace --release
+      # runs); every test in one pool (.config/nextest.toml), then the doctests.
+      - run: cargo xtask test --release
       # The oracle's results are deterministic bit for bit (AGENTS.md): a pass with the same
       # inputs proves the same results. The key hashes every crate the oracle binary is built
       # from, the cases and the lock file, with the compiler's version; a change to the UI, the
@@ -73,11 +86,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         id: toolchain
-      # As the oracle: the convergence studies rerun only when the crates they are built from
-      # change.
+      # As the oracle: the heavy tests rerun only when the code they are built from changes.
       - name: Heavy test inputs
         id: heavy-key
-        run: echo "key=heavy-pass-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/model/**', 'crates/mesh/**', 'crates/tetmesh/**', 'crates/fem/**', 'crates/theory/**', 'crates/solver/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=heavy-pass-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '.config/**', 'crates/**', 'apps/**') }}" >> "$GITHUB_OUTPUT"
       - name: Heavy tests passed before with these inputs
         id: heavy-cache
         uses: actions/cache/restore@v4
@@ -86,9 +98,20 @@ jobs:
           key: ${{ steps.heavy-key.outputs.key }}
       - uses: Swatinem/rust-cache@v2
         if: steps.heavy-cache.outputs.cache-hit != 'true'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+      - name: System libraries for the desktop app
+        if: steps.heavy-cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      - uses: taiki-e/install-action@v2
+        if: steps.heavy-cache.outputs.cache-hit != 'true'
+        with:
+          tool: cargo-nextest
+      # Every package's ignored tests (the slow ones the gate leaves out, AGENTS.md).
       - name: Heavy tests
         if: steps.heavy-cache.outputs.cache-hit != 'true'
-        run: cargo test --release -p emcraft-solver -- --ignored
+        run: cargo xtask test --heavy --release
       - name: Record the pass
         if: steps.heavy-cache.outputs.cache-hit != 'true'
         run: git rev-parse HEAD > .heavy-pass

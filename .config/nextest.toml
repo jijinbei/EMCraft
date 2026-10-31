@@ -1,0 +1,15 @@
+# cargo nextest: every test in one pool across the workspace's test binaries.
+[profile.default]
+# Each test takes RAYON_NUM_THREADS threads of its own: a few tests at once keep the machine's
+# memory and cores from being oversubscribed.
+test-threads = 8
+slow-timeout = { period = "60s" }
+
+[test-groups]
+# CubeCL's CPU runtime threads each launch across every core: two at once slow both several
+# times over.
+cubecl = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "package(emcraft-gpu)"
+test-group = "cubecl"
