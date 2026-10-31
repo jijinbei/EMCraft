@@ -57,7 +57,7 @@ fn swept(name: &str) -> (Session, Value) {
 /// Whether anything in the model absorbs: a lossy or dispersive material, lossy walls.
 fn lossy(s: &Session) -> bool {
     let m = &s.model;
-    m.wall_conductivity.is_some() || m.materials.iter().any(|x| x.loss_tangent != 0.0 || x.magnetic_loss_tangent != 0.0 || !x.dispersion.is_empty())
+    m.wall_conductivity.is_some() || m.materials.iter().any(|x| x.loss_tangent.get() != 0.0 || x.magnetic_loss_tangent.get() != 0.0 || !x.dispersion.is_empty())
 }
 
 /// Templates whose S, read on their first port modes, leaks to modes the ports carry but S does
