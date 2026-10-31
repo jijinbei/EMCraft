@@ -57,6 +57,34 @@ pictures (`ui.render`, the scenarios, the CLI) and every fallback draw with it.
   painter always). `ui.inspect`'s `view3d.renderer` names what drew the last frame (`gpu`,
   `cpu`, `painter`).
 
+## What the GPU adds (shaders, each switched)
+
+WGSL is the one language besides Rust (AGENTS.md): the viewport's rendering shaders, compiled by
+naga at run time; a unit test validates every `.wgsl` file with naga, no GPU needed. Beyond the
+CPU's picture the GPU's view draws, each with a switch in Settings ▸ Drawing ▸ On the GPU
+(`prefs.gpu_look`) and the CPU's way as the fallback:
+
+- **Per-pixel targets** at the window's resolution (`gpu3d::gbuffer`): the opaque surface's
+  normal and window depth, and the tags of the nearest tagged and the nearest solid triangle.
+- **Edges** (on): where the surface ends against the ground, its depth jumps (the second
+  difference of the window depth, which vanishes on a plane) or its normal turns past ~25°.
+- **Ambient occlusion** (off): twelve samples on a spiral, each compared with the pixel's own
+  plane continued there, darkening by up to 60 %; cheap enough for every frame.
+- **Outline** (on): a two-pixel ring round what is selected and, fainter, what is under the
+  pointer (read from the tags), in the accent colour; the scene's own highlight stays.
+- **Picking** (on): a click reads the two tags under the pointer back (one pixel, at once) and
+  takes the solid one, else the nearest, as `emcraft_render::view3d::pick` does; untagged
+  triangles hide nothing, as for the CPU's rays. Only when the frame shown is the one asked
+  about (scene, camera and size; `Frame::key`), else the CPU's rays; the tools' snapping and
+  headless picking stay on the CPU. Checked against the CPU's rays pixel by pixel.
+- **The field's colour map** (on): the plane's phasors (`PlaneSamples::phasors`: Re and Im of E
+  or H at each sample) uploaded once; the fragment shader evaluates Re(F e^{jφ}) (a component
+  or the length), averages each cell's corners and colours it with the theme's map as
+  `scene3d::field` does — the same picture, checked cell by cell. The scene keeps the plane as one
+  quad (picking, outline); without arrows the phase leaves the scene's key, so playing the phase
+  rebuilds nothing on the CPU. With arrows shown the arrows are still built per phase; with kept
+  planes the CPU colours them all.
+
 ## A library instead of our own pipelines?
 
 What the view must do is narrow: draw one list of coloured triangles (opaque and see-through,

@@ -65,7 +65,7 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
     if f.gpu {
         let [c, u, v] = plane_frame(session, f.plane, f.at, f.plot.x.span(), f.plot.y.span(), lo);
         let far = [u[0] + v[0] - c[0], u[1] + v[1] - c[1], u[2] + v[2] - c[2]];
-        out.scene.quad([c, u, far, v], emcraft_render::Rgb(128, 128, 128), 255);
+        out.scene.quad([c, u, far, v], color(0.0), 255);
         if legend {
             out.legend.push((plain(&s.label), color(peak)));
         }

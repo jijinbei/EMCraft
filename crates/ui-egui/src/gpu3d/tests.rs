@@ -338,7 +338,7 @@ fn the_gpu_field_is_the_cpus_cells() {
         let grid = Arc::new(FieldGrid::new(axis as u64 + 40, nx, ny, axis, &phasors, c, u, v));
         for phase in [0.0, 1.1, 2.5] {
             let peak = grid.peak(phase);
-            let (s_, c_) = (phase as f64).sin_cos();
+            let (s_, c_) = phase.sin_cos();
             let value = |i: usize, j: usize| grid.value(j * nx + i, c_, s_);
             let color =
                 |x: f64| if axis < 3 { emcraft_render::colormap::diverging(x / peak) } else { emcraft_render::colormap::sequential(x / peak) };
