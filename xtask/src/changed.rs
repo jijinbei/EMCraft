@@ -40,7 +40,8 @@ pub fn affected(meta: &Value, root: &Path, changed: &[String]) -> Result<Affecte
         })
         .collect();
     dirs.sort_by_key(|(d, _)| std::cmp::Reverse(d.len()));
-    let mut hit: BTreeSet<String> = changed.iter().filter_map(|f| dirs.iter().find(|(d, _)| f.starts_with(d.as_str())).map(|(_, n)| n.clone())).collect();
+    let mut hit: BTreeSet<String> =
+        changed.iter().filter_map(|f| dirs.iter().find(|(d, _)| f.starts_with(d.as_str())).map(|(_, n)| n.clone())).collect();
     // Who depends on whom, within the workspace.
     let mut users: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for c in &crates {
