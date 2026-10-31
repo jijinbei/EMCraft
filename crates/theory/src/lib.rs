@@ -40,6 +40,7 @@
 pub mod bend;
 pub mod bessel;
 pub mod coupled;
+pub mod curved;
 pub mod floquet;
 pub mod horn;
 pub mod microstrip;
