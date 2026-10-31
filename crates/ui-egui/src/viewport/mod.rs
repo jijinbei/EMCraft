@@ -23,6 +23,7 @@ pub mod field_params;
 mod field_side;
 mod fields;
 mod model;
+mod project;
 mod sparameters;
 mod study;
 mod tables;
@@ -32,6 +33,7 @@ use dispersion::*;
 use far_field::*;
 use fields::*;
 use model::*;
+use project::*;
 use sparameters::*;
 use study::*;
 use tables::*;
@@ -42,23 +44,29 @@ pub use study::summary as study_summary;
 
 /// The viewport's own state, lent out of the app while the viewport is drawn: the field view's
 /// settings and samples, the result views' charts and settings, the 3D view's camera and
-/// pictures.
+/// pictures, the step panels' fields (the Home view's band).
 #[derive(Default)]
 pub struct Parts {
     pub field: FieldState,
     pub views: ViewState,
     pub view3d: View3d,
+    pub fields: crate::steps::Fields,
 }
 
 impl Parts {
     /// The parts taken out of `app`.
     pub(crate) fn take(app: &mut EmcraftApp) -> Parts {
-        Parts { field: std::mem::take(&mut app.field), views: std::mem::take(&mut app.views), view3d: std::mem::take(&mut app.view3d) }
+        Parts {
+            field: std::mem::take(&mut app.field),
+            views: std::mem::take(&mut app.views),
+            view3d: std::mem::take(&mut app.view3d),
+            fields: std::mem::take(&mut app.workflow.fields),
+        }
     }
 
     /// The parts put back into `app`.
     pub(crate) fn put_back(self, app: &mut EmcraftApp) {
-        (app.field, app.views, app.view3d) = (self.field, self.views, self.view3d);
+        (app.field, app.views, app.view3d, app.workflow.fields) = (self.field, self.views, self.view3d, self.fields);
     }
 }
 
@@ -107,6 +115,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             inner.ctx().data_mut(|d| d.insert_temp(egui::Id::new(STALE), stale));
             // The drawings fill the card; the results scroll when the window is too small for them.
             let body = |ui: &mut egui::Ui, st: &mut Parts, out: &mut Actions| match app.view {
+                View::Home => project_home(app, &mut st.fields, ui, out),
                 View::Model => model3d(app, st, ui, out),
                 View::Outline => model(app, ui),
                 View::SParameters => show_chart::<SParameters>(app, st, ui, out),
@@ -121,6 +130,8 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             };
             if matches!(app.view, View::Model | View::Outline) {
                 body(&mut inner, st, out);
+            } else if app.view == View::Home {
+                egui::ScrollArea::vertical().id_salt("view_home").auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
             } else {
                 egui::ScrollArea::both().id_salt(("view", app.view.id())).auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
             }

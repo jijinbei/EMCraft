@@ -496,7 +496,7 @@ const UNREACHED: &[(&str, &str)] = &[
     ("CPU (no front large enough for {device})", "needs a GPU device"),
     ("The factorization on the CPU, its large fronts on the GPU", "needs a GPU device"),
     ("Blank", "needs a purpose chosen on the start page (scenario purpose_first)"),
-    ("An empty project for this purpose", "needs a purpose chosen on the start page (scenario purpose_first)"),
+    ("An empty project for this analysis", "needs an analysis chosen on the start page (scenario purpose_first)"),
     ("as it was", "needs two solves kept (scenario run_history)"),
     ("Click: draw it over the chart · right-click: restore, pin, delete", "needs two solves kept (scenario run_history)"),
     ("|S| (linear)", "in the S-parameter display menu, open (scenario sparameter_display)"),

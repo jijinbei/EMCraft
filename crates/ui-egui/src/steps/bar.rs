@@ -97,7 +97,7 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 /// A status mark: a tick, a hollow ring, dots, an exclamation, a cross or a turning arrow.
-pub(super) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
+pub(crate) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
     let col = status_color(s, t);
     let ink = Stroke::new(1.8, t.on_status);
     match s {
@@ -136,7 +136,7 @@ pub(super) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
 }
 
 /// The mark of a step the job's kind of analysis does without: a grey ring with a dash.
-fn skip_mark(p: &egui::Painter, c: egui::Pos2, t: &Tokens) {
+pub(crate) fn skip_mark(p: &egui::Painter, c: egui::Pos2, t: &Tokens) {
     p.circle_stroke(c, 6.0, Stroke::new(1.4, t.text_dim));
     p.line_segment([c + vec2(-3.0, 0.0), c + vec2(3.0, 0.0)], Stroke::new(1.6, t.text_dim));
 }

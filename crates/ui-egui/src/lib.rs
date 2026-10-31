@@ -48,6 +48,7 @@ mod fonts;
 pub mod glyphs;
 pub mod handle;
 pub mod home;
+pub mod kinds;
 pub mod lang;
 mod messages;
 pub mod navigation;

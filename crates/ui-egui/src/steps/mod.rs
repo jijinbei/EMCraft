@@ -1,4 +1,4 @@
-//! The workflow (docs/ux/workflow.md §2–3): a step bar under the ribbon, steps 0 Intent to
+//! The workflow (docs/ux/workflow.md §2–3): a step bar under the ribbon, steps 0 Home to
 //! 8 Results each with its status (done, to do, waiting, warning, needs attention, out of date)
 //! from `project.status` — and from the window: a refused Run marks the steps that blocked it, a
 //! failed run marks Run, a running one shows on Run — and the
@@ -25,8 +25,10 @@ mod panel;
 mod run;
 
 pub use bar::bar;
+pub(crate) use bar::{mark, skip_mark};
+pub(crate) use panel::field;
 pub(crate) use panel::fmt;
-pub use panel::{KindCard, apply_band, export_touchstone, kind_card, not_needed, panel};
+pub use panel::{export_touchstone, not_needed, panel};
 pub use run::{Preflight, preflight, run_params, start_run};
 
 /// What the 3D view puts forward in a step.
@@ -80,7 +82,7 @@ pub fn results_stale(app: &EmcraftApp) -> bool {
 }
 
 /// The solver Run starts: a kind of analysis (`project.analysis`), its id the Setup step's
-/// `setup:solver:<id>` and step 0's `intent:kind:<id>`.
+/// `setup:solver:<id>` and Home's `intent:kind:<id>`.
 pub use emcraft_engine::workflow::Analysis as Solver;
 
 /// The command that runs `solver`.
@@ -89,7 +91,7 @@ pub const fn command(solver: Solver) -> &'static str {
 }
 
 /// The solver the Setup step starts on: the one picked there, else the job's kind of analysis
-/// (chosen at step 0, else inferred from the model).
+/// (chosen on Home, else inferred from the model).
 pub fn solver(app: &EmcraftApp) -> Solver {
     app.workflow.fields.solver.unwrap_or_else(|| app.session.model().analysis())
 }
@@ -150,7 +152,7 @@ impl Fields {
         }
     }
 
-    fn error(&self, name: &str) -> Option<&str> {
+    pub(crate) fn error(&self, name: &str) -> Option<&str> {
         self.errors.iter().find(|(n, _)| *n == name).map(|(_, e)| e.as_str())
     }
 
@@ -434,6 +436,7 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
         Step::Results => RibbonTab::Results,
     };
     app.view = match step {
+        Step::Intent => View::Home,
         Step::Results => {
             if app.session.results().sweep.is_some() || app.session.results().time_domain.is_some() {
                 View::SParameters
@@ -483,6 +486,34 @@ fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
         return Err(crate::lang::trf("must be from {lo} to {hi}", range));
     }
     Ok(v)
+}
+
+/// The band's fields follow the session's band when it changes.
+pub(crate) fn follow_band(app: &EmcraftApp, f: &mut Fields) {
+    let b = band(&app.session);
+    if f.band_seen != b {
+        if let Some((a, z)) = b {
+            f.start = fmt(a);
+            f.stop = fmt(z);
+        }
+        f.band_seen = b;
+    }
+}
+
+/// Checks the band's fields one by one and sets the band (`project.frequency`).
+pub fn apply_band(app: &mut EmcraftApp) {
+    let f = &mut app.workflow.fields;
+    let (a, z) = (positive(&f.start), positive(&f.stop));
+    f.set_error("start", a.as_ref().err().cloned());
+    f.set_error("stop", z.as_ref().err().cloned());
+    let (Ok(a), Ok(z)) = (a, z) else { return };
+    if z < a {
+        f.set_error("stop", Some(crate::lang::tr("must not be below the start").into()));
+        return;
+    }
+    if let Err(e) = app.run("project.frequency", json!({"start": a, "stop": z})) {
+        app.workflow.fields.set_error("stop", Some(e.to_string()));
+    }
 }
 
 /// The band (display units) the session holds.

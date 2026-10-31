@@ -480,6 +480,11 @@ fn scenario_purpose_first() {
 }
 
 #[test]
+fn scenario_project_home() {
+    scenario("project_home");
+}
+
+#[test]
 fn scenario_run_history() {
     scenario("run_history");
 }

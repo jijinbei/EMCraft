@@ -32,6 +32,7 @@ mod cmd;
 mod estimate;
 pub mod expr;
 mod geometry;
+pub mod guides;
 mod items;
 mod meshing;
 mod numbers;

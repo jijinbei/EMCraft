@@ -134,10 +134,14 @@ fn request(app: &mut EmcraftApp, then: Then) {
 
 fn go(app: &mut EmcraftApp, then: Then) {
     match then {
-        Then::New => new_project(app),
+        Then::New => {
+            new_project(app);
+            land(app, true);
+        }
         Then::Open => pick(app, Purpose::Open),
         Then::OpenPath(path) => {
-            let _ = app.run("file.open", json!({"path": path}));
+            let opened = app.run("file.open", json!({"path": path}));
+            land(app, opened.is_ok());
         }
         // Opened at once, not solved: Run (step 7) solves it when wanted.
         Then::Sample { name, values, purpose } => {
@@ -148,7 +152,8 @@ fn go(app: &mut EmcraftApp, then: Then) {
             if let Some(kind) = purpose {
                 params["analysis"] = json!(kind.id());
             }
-            let _ = app.run("file.sample", params);
+            let opened = app.run("file.sample", params);
+            land(app, opened.is_ok());
         }
         Then::Recover { file, original } => {
             app.autosave.found.retain(|f| f.file.as_os_str() != file.as_str());
@@ -159,9 +164,18 @@ fn go(app: &mut EmcraftApp, then: Then) {
             if app.run("file.open", params).is_ok() {
                 // The copy is this project's from now on: a save deletes it.
                 app.autosave.file = Some(file.into());
+                land(app, true);
             }
         }
         Then::Quit => app.quit_now(),
+    }
+}
+
+/// A project the window opened (`opened`) shows its Home first, unless it has results to show.
+fn land(app: &mut EmcraftApp, opened: bool) {
+    let r = app.session.results();
+    if opened && !r.any() && r.study.is_none() {
+        crate::steps::open_step(app, Some(crate::steps::Step::Intent));
     }
 }
 
@@ -227,7 +241,8 @@ fn chosen(app: &mut EmcraftApp, purpose: Purpose, path: Option<String>) {
     };
     match purpose {
         Purpose::Open => {
-            let _ = app.run("file.open", json!({"path": path}));
+            let opened = app.run("file.open", json!({"path": path}));
+            land(app, opened.is_ok());
         }
         Purpose::SaveAs => {
             let saved = app.run("file.save", json!({"path": path}));

@@ -267,36 +267,15 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     }
 }
 
-/// What the job is for: the four kinds of analysis as cards, the one chosen marked; a click
-/// chooses it (again: lets it go, every template shown).
+/// What the job is for: the four kinds of analysis as cards (drawn as Home's are), the one
+/// chosen marked; a click chooses it (again: lets it go, every template shown).
 fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    let t = &Tokens::get();
-    heading(ui, "Purpose");
+    heading(ui, "Analysis");
     ui.horizontal(|ui| {
         for kind in crate::steps::Solver::ALL {
-            let crate::steps::KindCard { glyph, name, detail } = crate::steps::kind_card(kind);
             let on = app.home.purpose == Some(kind);
-            let (r, resp) = ui.allocate_exact_size(vec2(150.0, 76.0), Sense::click());
-            let fill = if on {
-                t.accent_soft
-            } else if resp.hovered() {
-                t.hover
-            } else {
-                t.panel_header
-            };
-            let stroke = if on { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, t.border) };
-            ui.painter().rect(r, 10.0, fill, stroke, egui::StrokeKind::Inside);
-            glyphs::paint(ui.painter(), Rect::from_center_size(pos2(r.center().x, r.top() + 28.0), vec2(34.0, 34.0)), glyph, t.icon, t.accent);
-            ui.painter().text(
-                pos2(r.center().x, r.bottom() - 14.0),
-                Align2::CENTER_CENTER,
-                tr(name),
-                FontId::proportional(t.font_body),
-                if on { t.text } else { t.text_dim },
-            );
-            scenario::publish_target(Handle::Purpose(kind), r);
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tr(name)));
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).hint(format!("{}\n{}", tr(name), tr(detail))).clicked() {
+            let look = crate::kinds::Look { large: false, on, auto: false, enabled: true };
+            if crate::kinds::tile(ui, kind, vec2(150.0, 76.0), look, Handle::Purpose(kind)).clicked() {
                 out.push(Action::Purpose((!on).then_some(kind)));
             }
         }
@@ -314,7 +293,7 @@ fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut A
     let offset = usize::from(purpose.is_some());
     grid(ui, list.len() + offset, |ui, i| {
         if i < offset {
-            if card(ui, None, Glyph::New, tr("Blank"), tr("An empty project for this purpose"), false, Fixed::HomeBlank.into()).clicked() {
+            if card(ui, None, Glyph::New, tr("Blank"), tr("An empty project for this analysis"), false, Fixed::HomeBlank.into()).clicked() {
                 blank = true;
             }
             return;

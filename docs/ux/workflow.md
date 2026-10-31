@@ -19,7 +19,7 @@ pitfalls they name: skipping the mesh convergence check, and wrong boundary cond
 
 | # | Step | What the engineer decides | What goes wrong |
 |---|---|---|---|
-| 0 | **Intent** | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units, **the frequency range** | a range that does not match the ports' cut-offs or the mesh |
+| 0 | **Home** (the job's intent) | the kind of problem (guided-wave component, planar circuit, antenna, scatterer, resonator), units, **the frequency range** | a range that does not match the ports' cut-offs or the mesh |
 | 1 | **Geometry** | shapes, Booleans, imported surfaces, layers and strips | non-closed or overlapping bodies, features flush with walls |
 | 2 | **Materials** | εr, μr, loss tangent per body; wall conductivity | lossy material at a port; wrong units |
 | 3 | **Excitation** | waveguide ports (and how many modes), lumped ports and their impedance, plane waves, dipoles; reference impedances | a port off its face, the first mode cut off in the band, too few modes near a discontinuity |
@@ -59,22 +59,34 @@ and the UI should make the same habits easy for the user's own models.
    patterns on the model (8). Standard views, orbit, pan, zoom, fit.
 3. **The frequency range is set once, early,** and drives defaults: the mesh size by elements
    per wavelength at its top, the sweep, the port-mode preview frequency.
-4. **See before solving.** Port modes (patterns, β, ε_eff, impedance, cut-offs) show as soon as
+4. **A project opens on its Home** (step 0, the viewport's first tab, "Home"): what the job is
+   for, said in plain words rather than as an "intent". Four large cards, one per kind of
+   analysis, each with a small picture of what it gives (an S-parameter chart, resonance peaks,
+   a radiation pattern, a pulse and its echo) and a line saying it; the band's start and stop
+   with Apply and, for a rectangular port, its guide's standard band as a preset (WR-90:
+   8.2–12.4 GHz; a guide of no standard width, or a filled one, its TE10 band, 1.25–1.9 × the
+   cut-off; `emcraft_engine::guides`); the project's units; and the project at a glance —
+   geometry, excitation, mesh and results, each with its step's mark (a click opens the step) —
+   with the next step's button. Each choice runs the same command as elsewhere
+   (`project.analysis`, `project.frequency`, `units.set`). A template, a new project or one
+   opened without results lands here; one with results opens on them. Home takes the whole
+   viewport: the step panel shows beside it only for a dialog docked there.
+5. **See before solving.** Port modes (patterns, β, ε_eff, impedance, cut-offs) show as soon as
    a port and a mesh exist (`solve.port_modes`, seconds); the mesh's size, its element count and
    an estimate of the solve's unknowns, memory and time show before running.
-5. **Preflight.** Run checks the model first and lists every problem with the step that fixes
+6. **Preflight.** Run checks the model first and lists every problem with the step that fixes
    it (a link), refusing to start on blocking ones; warnings can be accepted.
-6. **Never block.** Runs go to the background with progress (stage, frequency, solves done)
+7. **Never block.** Runs go to the background with progress (stage, frequency, solves done)
    and Cancel; the UI stays live. A finished run is kept with the model state it solved, and
    results of a changed model are marked stale, not thrown away.
-7. **Everything is a command.** Each action is an engine command, recorded in the session's
+8. **Everything is a command.** Each action is an engine command, recorded in the session's
    history; the history saves as a script that reproduces the model and its runs (the same
    scripts the CLI and the oracle run). Undo and redo step through it.
-8. **Verification is one click.** Results offer: rerun at order 1 (or a finer mesh) and
+9. **Verification is one click.** Results offer: rerun at order 1 (or a finer mesh) and
    compare, show |S11|² + |S21|² and S12 − S21, compare with the closed form where one exists.
-9. **Units everywhere.** Every field shows its unit; the session's display units (mm, GHz) are
+10. **Units everywhere.** Every field shows its unit; the session's display units (mm, GHz) are
    switchable.
-10. **Hostile input is refused field by field,** with the reason next to the field; nothing
+11. **Hostile input is refused field by field,** with the reason next to the field; nothing
    panics (the engine's rule).
 
 ## 3. Screen layout
@@ -82,7 +94,7 @@ and the UI should make the same habits easy for the user's own models.
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ EMCraft   File  Edit  View  Help                              [search commands  /]   │
-│ [0 Intent ✓]─[1 Geometry ✓]─[2 Materials ✓]─[3 Excitation !]─[4 Boundaries ✓]─      │
+│ [0 Home ✓]─[1 Geometry ✓]─  [2 Materials ✓]─[3 Excitation !]─[4 Boundaries ✓]─      │
 │ [5 Mesh ✓]─[6 Setup ✓]─[7 Run ▶]─[8 Results ⟳ stale]                                │
 ├──────────────┬───────────────────────────────────────────────────┬───────────────────┤
 │ Browser      │                                                   │ Step panel        │
@@ -164,7 +176,7 @@ their frames', and `Harness::settle` waits for the end).
 - `project.analysis`: the kind of analysis chosen at the start (`frequency`, `eigenmodes`,
   `radiation`, `time_domain`), stored in the model; inferred from it until one is chosen. The
   checks follow it: a resonator needs no excitation (its ports are a warning), radiation wants
-  the open boundary, a driven kind wants its excitation before Run. Step 0 shows the four as
+  the open boundary, a driven kind wants its excitation before Run. Home (step 0) shows the four as
   cards; Setup starts on the chosen kind's solver, SIMULATE puts its solve first and the steps a
   kind does not need are dimmed.
 - `project.estimate`: from the mesh and the order, the unknowns, the factor's memory and a time
