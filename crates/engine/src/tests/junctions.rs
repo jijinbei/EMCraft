@@ -44,17 +44,26 @@ fn phase(z: C, w: C) -> f64 {
     (z / w).arg().to_degrees()
 }
 
+/// The radius bend `name` lossless, reciprocal and matched.
+fn radius_bend(name: &str) {
+    // 8 mm cells, for speed (a fifth of the H bend's tetrahedra at 5 mm, two thirds of the E
+    // bend's): S is unitary and symmetric to rounding on any mesh, and the reflection stays well
+    // below the bound.
+    let r = solved(name, 8.0, &[10.0]);
+    lossless_and_reciprocal(&r, 0, 2, 1e-6);
+    // A mean radius of one guide wavelength: a smooth bend reflects little (|S11| about 0.002 at
+    // 10 GHz on the template's mesh, 0.005 at 8 mm).
+    assert!(s(&r, 0, "s11").norm() < 0.02, "{name}: {}", s(&r, 0, "s11"));
+}
+
 #[test]
-fn radius_bends_are_lossless_reciprocal_and_matched() {
-    for name in ["h-bend-radius", "e-bend-radius"] {
-        // 8 mm cells, a fifth of the tetrahedra at 5 mm: S is unitary and symmetric to rounding
-        // on any mesh, and the bend's reflection stays well below the bound.
-        let r = solved(name, 8.0, &[10.0]);
-        lossless_and_reciprocal(&r, 0, 2, 1e-6);
-        // A mean radius of one guide wavelength: a smooth bend reflects little (|S11| about 0.002
-        // at 10 GHz on the template's mesh, 0.005 at 8 mm).
-        assert!(s(&r, 0, "s11").norm() < 0.02, "{name}: {}", s(&r, 0, "s11"));
-    }
+fn the_h_plane_radius_bend_is_lossless_reciprocal_and_matched() {
+    radius_bend("h-bend-radius");
+}
+
+#[test]
+fn the_e_plane_radius_bend_is_lossless_reciprocal_and_matched() {
+    radius_bend("e-bend-radius");
 }
 
 #[test]
