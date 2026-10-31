@@ -74,7 +74,6 @@ impl Inside {
     }
 
     /// A quadrilateral through these points, in order round it.
-    #[cfg(test)]
     pub(super) fn quad(&mut self, q: [[f64; 3]; 4], side: Side) {
         self.tri([q[0], q[1], q[2]], side);
         self.tri([q[0], q[2], q[3]], side);
@@ -203,6 +202,7 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
         out.outer.push(t.map(to));
     }
     let cos_sharp = 25f64.to_radians().cos();
+    let mut rims: Vec<[u32; 2]> = Vec::new();
     for faces in inside.edges().values() {
         let walls: Vec<&(usize, [u32; 2])> = faces.iter().filter(|(i, _)| inside.wall(*i)).collect();
         let opens = faces.iter().any(|(i, _)| inside.side(*i) == Some(Side::Open));
@@ -213,8 +213,7 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
                 out.rim.push([at(*a), at(*b), to(*b)]);
                 out.rim.push([at(*a), to(*b), to(*a)]);
                 out.edges.push((to(*a), to(*b)));
-                out.edges.push((at(*a), to(*a)));
-                out.edges.push((at(*b), to(*b)));
+                rims.push([*a, *b]);
             }
             [(i, [a, b]), (j, _)] => {
                 let normal = |k: usize| normals.get(k).copied().flatten();
@@ -223,6 +222,22 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
                 }
             }
             _ => {}
+        }
+    }
+    // Across the rim only where its edge turns (a corner of the port), not at every vertex the
+    // mesh put along it.
+    let mut ends: BTreeMap<u32, Vec<Vec3>> = BTreeMap::new();
+    for [a, b] in &rims {
+        let d = inside.at(*b) - inside.at(*a);
+        if let Some(d) = d.normalized() {
+            ends.entry(*a).or_default().push(d);
+            ends.entry(*b).or_default().push(-d);
+        }
+    }
+    for (v, dirs) in ends {
+        let straight = matches!(dirs.as_slice(), [p, q] if p.dot(*q) < -cos_sharp);
+        if !straight {
+            out.edges.push((at(v), to(v)));
         }
     }
     out
@@ -266,21 +281,36 @@ pub(super) fn interior(m: &Model) -> impl Fn([[f64; 3]; 3]) -> bool + '_ {
     }
 }
 
-/// Whether a point lies inside the model's guide or region.
+/// Whether a point lies inside the model's region.
 fn inside(m: &Model, p: Point3) -> bool {
-    if let Some(w) = &m.waveguide {
-        let mut z = 0.0;
-        for (i, s) in w.sections.iter().enumerate() {
-            let end = z + s.length.get();
-            if p.z > z && p.z < end {
-                let (x, y) = (w.aperture(i).unwrap_or(w.across_x()), w.aperture_y(i).unwrap_or(w.across_y()));
-                return p.x > x.start && p.x < x.end() && p.y > y.start && p.y < y.end();
-            }
-            z = end;
-        }
-        return false;
-    }
     m.material_at(p).is_some()
+}
+
+/// A waveguide's box from `lo` to `hi` (m): its four sides walls (open on a symmetry plane, where
+/// the other half is cut away), its ends open where a port lies on them. The irises and steps
+/// inside are metal of the walls' own, so the walls' outer surface is the box's, whatever the
+/// sections' apertures.
+pub(super) fn guide_box(m: &Model, lo: [f64; 3], hi: [f64; 3]) -> Inside {
+    let mut out = Inside::default();
+    let on_port = on_ports(m);
+    let symmetric =
+        |axis: emcraft_model::Axis, at: f64| m.symmetry.iter().any(|q| q.axis == axis && (q.at - at).abs() <= 1e-9 * (hi[0] - lo[0]).abs().max(1e-9));
+    let (x0, y0, z0, x1, y1, z1) = (lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+    let side = |open: bool| Side::open_if(open);
+    // Outward: −y, +y, −x, +x.
+    let walls = [
+        ([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], symmetric(emcraft_model::Axis::Y, y0)),
+        ([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], symmetric(emcraft_model::Axis::Y, y1)),
+        ([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], symmetric(emcraft_model::Axis::X, x0)),
+        ([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], symmetric(emcraft_model::Axis::X, x1)),
+    ];
+    for (q, open) in walls {
+        out.quad(q, side(open));
+    }
+    let (cx, cy) = (0.5 * (x0 + x1), 0.5 * (y0 + y1));
+    out.quad([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], side(on_port([cx, cy, z0])));
+    out.quad([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], side(on_port([cx, cy, z1])));
+    out
 }
 
 /// Whether a point lies on one of the model's ports' faces (within a micrometre of its plane).

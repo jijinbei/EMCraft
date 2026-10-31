@@ -50,7 +50,16 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
     if let Some(t) = m.wall_thickness
         && m.open.is_none()
     {
-        super::shell::draw(m, overlay, &inside(m, mesh, &surface, &periodic), t.get(), out);
+        let inside = match &m.waveguide {
+            Some(_) => {
+                let (lo, hi) = mesh.nodes.iter().fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(lo, hi), q| {
+                    (std::array::from_fn(|k| lo[k].min(q[k])), std::array::from_fn(|k| hi[k].max(q[k])))
+                });
+                super::shell::guide_box(m, lo, hi)
+            }
+            None => inside(m, mesh, &surface, &periodic),
+        };
+        super::shell::draw(m, overlay, &inside, t.get(), out);
     }
     // Dielectric bodies inside show through the see-through surfaces in every view but the
     // field's.

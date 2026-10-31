@@ -7,11 +7,11 @@
   ]}},
   {"click": "view3d:std:iso"},
   {"frames": 2},
-  {"expect": {"inspect": {"view3d.triangles": {"max": 50}}, "hidden": ["row:Wall thickness: 2 mm"]}},
+  {"expect": {"inspect": {"view3d.triangles": {"max": 45}}, "hidden": ["row:Wall thickness: 2 mm"]}},
   {"call": "engine.execute", "params": {"command": "model.walls", "params": {"thickness": 2}}},
   {"frames": 2},
   {"expect": {"query": {"command": "project.values", "params": {"command": "model.walls"}, "path": "thickness", "value": 2.0}}},
-  {"until": {"inspect": {"view3d.triangles": {"min": 70}}}, "timeout": 20},
+  {"until": {"inspect": {"view3d.triangles": {"min": 55}}}, "timeout": 20},
   {"expect": {"inspect": {"model.mesh": null}, "handles": ["row:Wall thickness: 2 mm"]}},
   {"shot": "walls-thick-geometry"},
   {"note": "Meshing keeps the inside alone: the walls are drawn from its surface"},
@@ -32,5 +32,9 @@
   {"call": "ui.set", "params": {"theme": "dark"}},
   {"click": "view3d:std:iso"},
   {"frames": 2},
-  {"shot": "walls-thick-iris-dark"}
+  {"shot": "walls-thick-iris-dark"},
+  {"note": "Close on a port: the rim's outline at its corners only, not along the mesh"},
+  {"click": "view3d:std:front"},
+  {"frames": 2},
+  {"shot": "walls-thick-iris-front"}
 ]

@@ -2,7 +2,7 @@
 //! vias; a solid's primitive (box, cylinder, sphere, imported surface), its Boolean features and
 //! inclusions; and the ports on its ends.
 
-use emcraft_model::{Axis, Combine, Model, Shape, Span, Waveguide};
+use emcraft_model::{Axis, Combine, Model, Shape};
 use emcraft_render::Rgb;
 use emcraft_render::view3d::Scene;
 
@@ -110,9 +110,9 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             255
         };
         for (i, s) in w.sections.iter().enumerate() {
-            let a = Aperture::of(w, i);
+            let (x, y) = (w.aperture(i).unwrap_or(w.across_x()), w.aperture_y(i).unwrap_or(w.across_y()));
             out.scene.tagged(Pick::Section(i).tag(), |scene| {
-                cuboid(scene, [a.x.start, a.y.start, z], [a.x.end(), a.y.end(), z + s.length], tint(&s.material), alpha, true)
+                cuboid(scene, [x.start, y.start, z], [x.end(), y.end(), z + s.length], tint(&s.material), alpha, true)
             });
             z += s.length;
         }
@@ -184,30 +184,22 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
     }
 }
 
-/// The inside's surface before meshing, its faces on ports open: a waveguide's sections (no
-/// planar circuit) on the grid of their apertures' sides, so the faces meet edge to edge where
-/// one aperture steps to the next; a solid's own faces (no Boolean features). `None` for the
-/// rest, whose walls are drawn thick once meshed.
+/// The inside's surface before meshing, its faces on ports open: a waveguide's box
+/// ([`super::shell::guide_box`]: its outer walls, the irises and steps inside them metal of
+/// its own); a solid's own faces (no Boolean features). `None` for the rest, whose walls are
+/// drawn thick once meshed.
 fn inside(m: &Model) -> Option<Inside> {
-    let mut out = Inside::default();
-    let on_port = super::shell::on_ports(m);
-    let interior = super::shell::interior(m);
     if let Some(w) = &m.waveguide {
-        if !w.plain() {
-            return None;
-        }
-        guide_inside(w, |q| {
-            let c = [0, 1, 2].map(|k| q.iter().map(|p| p[k]).sum::<f64>() / 4.0);
-            let side = Side::open_if(on_port(c));
-            out.wall_or_inner([q[0], q[1], q[2]], side, &interior);
-            out.wall_or_inner([q[0], q[2], q[3]], side, &interior);
-        });
-        return Some(out);
+        let b = m.bounds()?;
+        return w.plain().then(|| super::shell::guide_box(m, b.min.to_array(), b.max.to_array()));
     }
     let solid = m.solid.as_ref()?;
     if !m.features.is_empty() {
         return None;
     }
+    let mut out = Inside::default();
+    let on_port = super::shell::on_ports(m);
+    let interior = super::shell::interior(m);
     let mut scene = Scene::default();
     shape(&mut scene, &solid.shape, &|q| q, sc().metal, 255);
     for t in &scene.tris {
@@ -215,87 +207,4 @@ fn inside(m: &Model) -> Option<Inside> {
         out.wall_or_inner(t.p, Side::open_if(on_port(c)), &interior);
     }
     Some(out)
-}
-
-/// A section's aperture: its spans across x and y (m).
-#[derive(Clone, Copy)]
-struct Aperture {
-    x: Span,
-    y: Span,
-}
-
-impl Aperture {
-    /// Section `i`'s (the guide's whole width and height where it has none of its own).
-    fn of(w: &Waveguide, i: usize) -> Aperture {
-        Aperture { x: w.aperture(i).unwrap_or(w.across_x()), y: w.aperture_y(i).unwrap_or(w.across_y()) }
-    }
-
-    /// Whether it holds the point (x, y), its sides included.
-    fn holds(self, x: f64, y: f64) -> bool {
-        self.x.start <= x && x <= self.x.end() && self.y.start <= y && y <= self.y.end()
-    }
-}
-
-/// The values sorted and each once: where the grid's lines lie.
-fn breaks(v: impl Iterator<Item = f64>) -> Vec<f64> {
-    let mut v: Vec<f64> = v.collect();
-    v.sort_by(f64::total_cmp);
-    v.dedup();
-    v
-}
-
-/// The cells of the grid `v` between `lo` and `hi`.
-fn cells(v: &[f64], lo: f64, hi: f64) -> impl Iterator<Item = (f64, f64)> + '_ {
-    v.windows(2).filter(move |p| p[0] >= lo && p[1] <= hi).map(|p| (p[0], p[1]))
-}
-
-/// A plain guide's inside as quadrilaterals to `put`, turned outward: each section's four
-/// sides, the steps where one aperture meets the next, and the two ends — all cut on the grid
-/// of every aperture's sides.
-fn guide_inside(w: &Waveguide, mut put: impl FnMut([[f64; 3]; 4])) {
-    let apertures: Vec<Aperture> = (0..w.sections.len()).map(|i| Aperture::of(w, i)).collect();
-    let xs = breaks(apertures.iter().flat_map(|a| [a.x.start, a.x.end()]));
-    let ys = breaks(apertures.iter().flat_map(|a| [a.y.start, a.y.end()]));
-    let mut z = 0.0;
-    for (i, (s, a)) in w.sections.iter().zip(&apertures).enumerate() {
-        let (z0, z1) = (z, z + s.length);
-        sides(*a, &xs, &ys, z0, z1, &mut put);
-        let before = i.checked_sub(1).and_then(|k| apertures.get(k)).copied();
-        let last = i + 1 == apertures.len();
-        steps(before, *a, last, &xs, &ys, (z0, z1), &mut put);
-        z = z1;
-    }
-}
-
-/// A section's four sides from `z0` to `z1`, outward, cut where any aperture's side lies.
-fn sides(a: Aperture, xs: &[f64], ys: &[f64], z0: f64, z1: f64, put: &mut impl FnMut([[f64; 3]; 4])) {
-    let (x0, x1, y0, y1) = (a.x.start, a.x.end(), a.y.start, a.y.end());
-    for (u0, u1) in cells(xs, x0, x1) {
-        put([[u0, y0, z0], [u1, y0, z0], [u1, y0, z1], [u0, y0, z1]]);
-        put([[u0, y1, z0], [u0, y1, z1], [u1, y1, z1], [u1, y1, z0]]);
-    }
-    for (v0, v1) in cells(ys, y0, y1) {
-        put([[x0, v0, z0], [x0, v0, z1], [x0, v1, z1], [x0, v1, z0]]);
-        put([[x1, v0, z0], [x1, v1, z0], [x1, v1, z1], [x1, v0, z1]]);
-    }
-}
-
-/// Where section `a` (from `z0` to `z1`) starts: the cells of one aperture and not the other's
-/// (`before`, none for the first: all of its own), each facing out of the section it belongs
-/// to; and, for the `last`, its end.
-fn steps(before: Option<Aperture>, a: Aperture, last: bool, xs: &[f64], ys: &[f64], (z0, z1): (f64, f64), put: &mut impl FnMut([[f64; 3]; 4])) {
-    for (x0, x1) in xs.windows(2).map(|p| (p[0], p[1])) {
-        for (y0, y1) in ys.windows(2).map(|p| (p[0], p[1])) {
-            let (cx, cy) = (0.5 * (x0 + x1), 0.5 * (y0 + y1));
-            let (low, high) = (before.is_some_and(|b| b.holds(cx, cy)), a.holds(cx, cy));
-            if high && !low {
-                put([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]]);
-            } else if low && !high {
-                put([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]]);
-            }
-            if last && high {
-                put([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]);
-            }
-        }
-    }
 }
