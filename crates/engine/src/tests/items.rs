@@ -50,7 +50,7 @@ fn materials_are_edited_renamed_and_deleted_unless_in_use() {
     // Its permittivity: the results go, the mesh stays.
     s.execute("model.material.edit", &json!({"name": "ptfe", "eps_r": 2.1})).unwrap();
     assert!(s.results.sweep.is_none() && s.model.mesh.is_some());
-    assert_eq!(s.model.material("ptfe").unwrap().1.eps_r, 2.1);
+    assert_eq!(s.model.material("ptfe").unwrap().1.eps_r.get(), 2.1);
     // Hostile edits are refused whole.
     for bad in [
         json!({"name": "ptfe", "eps_r": -1}),

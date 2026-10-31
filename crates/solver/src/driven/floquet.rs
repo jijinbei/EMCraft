@@ -32,7 +32,7 @@ use super::assembly::{Space, border_columns};
 use super::ports::for_each_port_point;
 use super::solution::solve_each;
 use super::sparams::{ModeTerm, read_s};
-use super::{Driven, FrequencyResult, Result, check_frequency, invalid, wavenumber};
+use super::{Driven, FrequencyResult, Result, invalid, wavenumber};
 use crate::sparse::Csr;
 
 /// Harmonic orders searched for a port's modes: |m|, |n| up to this.
@@ -158,8 +158,8 @@ pub(super) fn prepare(model: &Model, periodic: &Periodic, p: &Port, faces: &[usi
         return Err(invalid(what(), "not supported yet: a Floquet port in a lossy or dispersive medium"));
     }
     Ok(FloquetPort {
-        eps_r: m.eps_r,
-        mu_r: m.mu_r,
+        eps_r: m.eps_r.get(),
+        mu_r: m.mu_r.get(),
         faces: faces.to_vec(),
         cell: [0.0, 0.0, w.width, w.height],
         count: p.modes as usize,
@@ -294,9 +294,9 @@ impl Driven {
             .collect()
     }
 
-    /// Solves the periodic cell at one frequency: Tᴴ A T bordered by the Floquet modes, by LU.
+    /// Solves the periodic cell at one frequency (checked by [`Driven::solve`]): Tᴴ A T
+    /// bordered by the Floquet modes, by LU.
     pub(super) fn solve_periodic(&self, frequency: f64) -> Result<FrequencyResult> {
-        check_frequency(frequency)?;
         let tie = self.tie.as_ref().ok_or_else(|| invalid("periodic solve", "the model is not periodic"))?;
         let t0 = std::time::Instant::now();
         let PeriodicSystem { a, rhs, terms, psi, border } = self.periodic_system(frequency)?;

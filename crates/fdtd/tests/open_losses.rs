@@ -106,7 +106,7 @@ fn spheres_converge_on_finer_grids() {
     eprintln!("{errors:?}");
     assert!(errors.iter().all(|e| e.abs() < 0.02), "{errors:?}");
     let tau = 1.0 / (2.0 * PI * 20e9);
-    let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::Debye { delta_eps: 1.0, tau }]).unwrap();
+    let debye = Material::new("debye", 2.0, 1.0).unwrap().with_dispersion(vec![Pole::debye(1.0, tau).unwrap()]).unwrap();
     let errors = sphere_errors(debye, 1e-3, |f| C::new(2.0, 0.0) + 1.0 / C::new(1.0, 2.0 * PI * f * tau), |_| C::new(1.0, 0.0));
     assert!(errors.iter().all(|e| e.abs() < 0.03), "{errors:?}");
 }
@@ -121,11 +121,6 @@ fn lumped_ports_in_lossy_materials_and_lossy_walls_are_refused() {
     assert!(matches!(radiate(&m, &OpenOptions::new(2e-3), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
     let (material, _, _) = lossy();
     let mut m = sphere_model(material);
-    m.wall_conductivity = Some(5.8e7);
+    m.wall_conductivity = Some(emcraft_model::Conductivity::new(5.8e7).unwrap());
     assert!(matches!(radiate(&m, &OpenOptions::new(2e-3), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
-    // A loss tangent read unchecked from a file.
-    let (material, _, _) = lossy();
-    let mut m = sphere_model(material);
-    m.materials[1].loss_tangent = f64::INFINITY;
-    assert!(radiate(&m, &OpenOptions::new(2e-3), &[10e9]).is_err());
 }

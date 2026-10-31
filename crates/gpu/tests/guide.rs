@@ -27,7 +27,7 @@ fn filter() -> Model {
 
 /// A slab with a Debye and a Lorentz pole (the CPU's `dispersive_slab`).
 fn dispersive_slab() -> Model {
-    let poles = vec![Pole::Debye { delta_eps: 0.6, tau: 1.0 / (2.0 * PI * 20e9) }, Pole::Lorentz { delta_eps: 0.4, frequency: 16e9, damping: 1.5e9 }];
+    let poles = vec![Pole::debye(0.6, 1.0 / (2.0 * PI * 20e9)).unwrap(), Pole::lorentz(0.4, 16e9, 1.5e9).unwrap()];
     let disp = Material::new("disp", 2.0, 1.0).unwrap().with_dispersion(poles).unwrap();
     guide(vec![disp], vec![Section::new(0.01, "vacuum"), Section::new(0.02, "disp"), Section::new(0.01, "vacuum")])
 }
@@ -101,7 +101,7 @@ fn lossy_guide() -> Model {
     let ferrite = Material::new("ferrite", 1.5, 2.0).unwrap().with_magnetic_loss_tangent(0.05).unwrap();
     let sections = vec![Section::new(0.01, "vacuum"), Section::new(0.01, "lossy"), Section::new(0.01, "ferrite"), Section::new(0.01, "vacuum")];
     let mut m = guide(vec![lossy, ferrite], sections);
-    m.set_wall_conductivity(Some(1e6)).unwrap();
+    m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(1e6).unwrap()));
     m
 }
 

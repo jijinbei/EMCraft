@@ -30,6 +30,7 @@ impl Term {
     pub(crate) fn new(pole: Pole, w: f64, dt: f64) -> Term {
         match (pole, pole.second_order()) {
             (Pole::Debye { delta_eps, tau }, _) => {
+                let (delta_eps, tau) = (delta_eps.get(), tau.get());
                 Term::Debye { ka: (2.0 * tau - dt) / (2.0 * tau + dt), kb: w * EPS0 * delta_eps * dt / (2.0 * tau + dt) }
             }
             (_, Some(SecondOrder { strength: a, omega0: w0, gamma: g })) => {

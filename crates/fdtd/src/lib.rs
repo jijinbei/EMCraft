@@ -56,7 +56,7 @@
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, EPS0, MU0};
-use emcraft_model::{Material, Model, Waveguide};
+use emcraft_model::{Conductivity, Hertz, Material, Model, Quantity, Waveguide};
 use num_complex::Complex64 as C;
 
 pub use crate::device::{
@@ -105,7 +105,7 @@ pub fn to_u32(x: usize, what: &str) -> Result<u32> {
 
 /// Whether `frequencies` are some finite numbers > 0.
 fn frequencies_ok(frequencies: &[f64]) -> bool {
-    !frequencies.is_empty() && frequencies.iter().all(|f| f.is_finite() && *f > 0.0)
+    !frequencies.is_empty() && frequencies.iter().all(|f| Hertz::keeps(*f))
 }
 
 /// Run settings.
@@ -178,10 +178,6 @@ pub struct Losses {
 /// condition holds for good conductors only.
 const GOOD_CONDUCTOR: f64 = 100.0;
 
-/// The largest wall conductivity (S/m) the time domain takes: far beyond any metal's (copper's
-/// is 5.8e7), small enough that the walls' admittance stays finite.
-pub const MAX_WALL_CONDUCTIVITY: f64 = 1e20;
-
 impl Losses {
     pub fn new(reference: f64) -> Losses {
         Losses { reference }
@@ -191,22 +187,21 @@ impl Losses {
     /// tan δ_m (Ω/m) standing for `m`'s loss tangents (εr is ε∞ with dispersion).
     pub fn of(&self, m: &Material) -> (f64, f64) {
         let w = 2.0 * PI * self.reference;
-        (w * EPS0 * m.eps_r * m.loss_tangent, w * MU0 * m.mu_r * m.magnetic_loss_tangent)
+        (w * EPS0 * m.eps_r.get() * m.loss_tangent.get(), w * MU0 * m.mu_r.get() * m.magnetic_loss_tangent.get())
     }
 
     /// The relative permittivity and permeability the time domain realises for `m` at `f`
     /// (Hz): ε∞ + Σ χ(ω) − jσ/(ωε₀) and μr − jσ_m/(ωμ₀).
     pub fn eps_mu(&self, m: &Material, f: f64) -> (C, C) {
         let r = self.reference / f;
-        let eps = m.dispersion.iter().fold(C::new(m.eps_r, -m.eps_r * m.loss_tangent * r), |e, p| e + p.susceptibility(f));
-        (eps, C::new(m.mu_r, -m.mu_r * m.magnetic_loss_tangent * r))
+        let eps = m.dispersion.iter().fold(C::new(m.eps_r.get(), -m.eps_r.get() * m.loss_tangent.get() * r), |e, p| e + p.susceptibility(f));
+        (eps, C::new(m.mu_r.get(), -m.mu_r.get() * m.magnetic_loss_tangent.get() * r))
     }
 
-    /// The walls' conductivity `sigma` checked: finite, > 0 and a good conductor up to `f_max`.
-    pub(crate) fn wall(&self, sigma: f64, f_max: f64) -> Result<f64> {
-        if !(sigma.is_finite() && sigma > 0.0 && sigma <= MAX_WALL_CONDUCTIVITY) {
-            return Err(invalid("wall conductivity", format!("must be a finite number from 0 to {MAX_WALL_CONDUCTIVITY:e} S/m, got {sigma}")));
-        }
+    /// The walls' conductivity `sigma` (S/m, in range by its type) checked against the band: a
+    /// good conductor up to `f_max`.
+    pub(crate) fn wall(&self, sigma: Conductivity, f_max: f64) -> Result<f64> {
+        let sigma = sigma.get();
         if sigma < GOOD_CONDUCTOR * 2.0 * PI * f_max * EPS0 {
             return Err(invalid(
                 "wall conductivity",

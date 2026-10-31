@@ -47,14 +47,14 @@ fn exact_resonances(s: &Session) -> Vec<(f64, String)> {
         && w.uniform()
         && let Ok((_, mat)) = m.material(&w.sections[0].material)
     {
-        return emcraft_theory::cavity_resonances(w.width, w.height, w.length(), mat.eps_r * mat.mu_r, 12);
+        return emcraft_theory::cavity_resonances(w.width, w.height, w.length(), mat.eps_r.get() * mat.mu_r.get(), 12);
     }
     if let Some(solid) = m.solid.as_ref()
         && m.inclusions.is_empty()
         && m.features.is_empty()
         && let Ok((_, mat)) = m.material(&solid.material)
     {
-        let er = mat.eps_r * mat.mu_r;
+        let er = mat.eps_r.get() * mat.mu_r.get();
         return match solid.shape {
             Shape::Box { size } => emcraft_theory::cavity_resonances(size[0], size[1], size[2], er, 12),
             Shape::Cylinder { radius, length } => emcraft_theory::bessel::cylinder_cavity_resonances(radius, length, er, 12),

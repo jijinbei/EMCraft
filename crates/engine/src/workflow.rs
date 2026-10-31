@@ -199,7 +199,7 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
     };
     for p in m.ports.iter().take(64) {
         let (Ok(shape), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
-        let n = (mat.eps_r * mat.mu_r).sqrt();
+        let n = (mat.eps_r.get() * mat.mu_r.get()).sqrt();
         let owner = format!("port {}", p.name);
         match shape {
             emcraft_model::PortShape::Rect { a, b, .. } => {
@@ -362,11 +362,11 @@ fn excitation(s: &Session) -> StepState {
     }
     // A closed-form port's first mode against the band's start: below its cut-off the wave
     // decays (an experiment may want just that), a note that leaves the step's standing.
-    let Some(b) = m.band else { return st };
+    let Some(start) = m.band.map(|b| b.start.get()) else { return st };
     for p in m.ports.iter().filter(|_| m.periodic.is_none()) {
         let (Ok(emcraft_model::PortShape::Rect { a, .. }), Ok(mat)) = (m.port_shape_of(p), m.port_material(p.end)) else { continue };
-        let cutoff = C0 / (2.0 * a * (mat.eps_r * mat.mu_r).sqrt());
-        if b.start <= cutoff {
+        let cutoff = C0 / (2.0 * a * (mat.eps_r.get() * mat.mu_r.get()).sqrt());
+        if start <= cutoff {
             st.note(
                 Status::Done,
                 format!(
@@ -423,9 +423,9 @@ fn mesh(s: &Session) -> StepState {
         return st;
     };
     // Elements per wavelength at the band's top in the densest material.
-    let Some(b) = m.band else { return st };
-    let index = m.materials.iter().map(|x| x.index_at(b.stop)).fold(1.0, f64::max);
-    let lambda = C0 / (b.stop * index);
+    let Some(stop) = m.band.map(|b| b.stop.get()) else { return st };
+    let index = m.materials.iter().map(|x| x.index_at(stop)).fold(1.0, f64::max);
+    let lambda = C0 / (stop * index);
     let volume: f64 = (0..me.tets.len()).filter_map(|t| me.volume(t)).sum();
     // The edge of a regular tetrahedron of the mean volume.
     let h = (6.0 * std::f64::consts::SQRT_2 * volume / me.tets.len().max(1) as f64).cbrt();

@@ -39,7 +39,7 @@ fn gamma(f: f64, eps_r: f64, tan_d: f64, mu_r: f64, tan_m: f64) -> C {
 /// A uniform guide `l` long filled with `fill`, its ports in it: S11 ≈ 0, S21 = e^{−γL} (within
 /// `tol`: the phase error of second-order elements of 3 mm, about 2e-3 at 11 GHz).
 fn check_uniform(fill: Material, l: f64, freqs: &[f64], tol: f64) {
-    let (er, td, mr, tm) = (fill.eps_r, fill.loss_tangent, fill.mu_r, fill.magnetic_loss_tangent);
+    let (er, td, mr, tm) = (fill.eps_r.get(), fill.loss_tangent.get(), fill.mu_r.get(), fill.magnetic_loss_tangent.get());
     for solver in [ModeSolver::Auto, ModeSolver::Numeric] {
         let m = guide(vec![fill.clone()], vec![Section::new(l, &fill.name)], 0.003, solver);
         let d = Driven::new(&m, Order::Two).unwrap();

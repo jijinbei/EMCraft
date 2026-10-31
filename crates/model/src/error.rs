@@ -13,14 +13,16 @@ pub enum ModelError {
 
 pub type Result<T> = std::result::Result<T, ModelError>;
 
+use crate::quantity::{Positive, Quantity};
+
 /// An [`ModelError::Invalid`] naming `what` and `why`.
 pub(crate) fn invalid(what: impl Into<String>, why: impl Into<String>) -> ModelError {
     ModelError::Invalid { what: what.into(), why: why.into() }
 }
 
-/// A finite number > 0.
+/// A finite number > 0: [`Positive`]'s rule, for a field kept as an `f64`.
 pub fn positive(what: &str, v: f64) -> Result<f64> {
-    if v.is_finite() && v > 0.0 { Ok(v) } else { Err(invalid(what, format!("must be a finite number > 0, got {v}"))) }
+    Positive::named(what, v).map(Positive::get)
 }
 
 /// Every value finite, else "`what` must be finite".

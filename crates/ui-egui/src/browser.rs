@@ -323,7 +323,12 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     };
     let mut rows = vec![walls];
     if let Some(t) = m.wall_thickness {
-        rows.push(row("Wall thickness: {thickness} {unit}", args!(thickness = f.len(t), unit = f.unit()), Glyph::Walls, Act::Edit("model.walls")));
+        rows.push(row(
+            "Wall thickness: {thickness} {unit}",
+            args!(thickness = f.len(t.get()), unit = f.unit()),
+            Glyph::Walls,
+            Act::Edit("model.walls"),
+        ));
     }
     if let Some(open) = &m.open {
         let template =

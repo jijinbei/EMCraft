@@ -36,7 +36,7 @@ use std::ops::RangeInclusive;
 
 use emcraft_fem::Order;
 use emcraft_model::units::Display;
-use emcraft_model::{Point3, Vec3};
+use emcraft_model::{Hertz, Metres, Point3, Positive, Quantity, Vec3};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -124,7 +124,45 @@ impl<'a> Params<'a> {
 
     /// A finite number > 0.
     pub fn positive<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
-        self.number(name).and_then(|x| if x > 0.0 { Ok(x) } else { Err(self.error(name, format!("must be > 0, got {x}"))) })
+        self.checked::<Positive>(name).map(Positive::get)
+    }
+
+    /// A number checked into the model's type `T` (its rule, its caps), as given (no unit).
+    ///
+    /// ```
+    /// use emcraft_engine::Params;
+    /// use emcraft_model::Conductivity;
+    /// use emcraft_model::units::Display;
+    /// use serde_json::json;
+    ///
+    /// let given = json!({"sigma": 5.8e7, "bad": 1e30});
+    /// let p = Params::new(&given, Display::default());
+    /// let sigma: Conductivity = p.checked("sigma").required()?; // S/m
+    /// assert_eq!(sigma.get(), 5.8e7);
+    /// let e = p.checked::<Conductivity>("bad").required().unwrap_err();
+    /// assert_eq!(e.to_string(), "`bad` must be > 0, at most 1e20 S/m, got 1000000000000000000000000000000");
+    /// # Ok::<(), emcraft_engine::EngineError>(())
+    /// ```
+    pub fn checked<'p, T: Quantity>(&'p self, name: &'p str) -> Arg<'p, T> {
+        self.quantity(name, |v| v)
+    }
+
+    /// A number in display units, in SI by `to_si`, checked into the model's type `T`; an
+    /// error shows the number as given.
+    fn quantity<'p, T: Quantity>(&'p self, name: &'p str, to_si: impl FnOnce(f64) -> f64) -> Arg<'p, T> {
+        self.number(name).and_then(|v| T::try_from(to_si(v)).map_err(|_| self.error(name, format!("must be {}, got {v}", T::MUST))))
+    }
+
+    /// A length in display units, as [`Metres`].
+    pub fn metres<'p>(&'p self, name: &'p str) -> Arg<'p, Metres> {
+        let unit = self.display.length;
+        self.quantity(name, move |v| unit.to_si(v))
+    }
+
+    /// A frequency in display units, as [`Hertz`].
+    pub fn hertz<'p>(&'p self, name: &'p str) -> Arg<'p, Hertz> {
+        let unit = self.display.frequency;
+        self.quantity(name, move |v| unit.to_si(v))
     }
 
     /// A whole number in `range`.
@@ -233,16 +271,14 @@ impl<'a> Params<'a> {
         self.number(name).map(|v| unit.to_si(v))
     }
 
-    /// A positive length in metres.
+    /// A positive length in metres ([`Params::metres`] as a number).
     pub fn positive_length<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
-        let unit = self.display.length;
-        self.positive(name).map(|v| unit.to_si(v))
+        self.metres(name).map(Metres::get)
     }
 
-    /// A positive frequency in hertz.
+    /// A positive frequency in hertz ([`Params::hertz`] as a number).
     pub fn frequency<'p>(&'p self, name: &'p str) -> Arg<'p, f64> {
-        let unit = self.display.frequency;
-        self.positive(name).map(|v| unit.to_si(v))
+        self.hertz(name).map(Hertz::get)
     }
 
     /// Whether parameter `name` is given as `null`: an edit's way of clearing an optional

@@ -233,7 +233,8 @@ mod tests {
         m.replace_material(i, Material { name: "teflon".into(), ..ptfe.clone() }).unwrap();
         assert_eq!(m.waveguide.as_ref().unwrap().sections[1].material, "teflon");
         assert!(matches!(m.replace_material(i, Material { name: "glass".into(), ..ptfe.clone() }), Err(ModelError::Duplicate { .. })));
-        assert!(m.replace_material(i, Material { eps_r: f64::NAN, ..ptfe.clone() }).is_err());
+        let poles = vec![crate::Pole::debye(1.0, 1e-11).unwrap(); crate::MAX_POLES + 1];
+        assert!(m.replace_material(i, Material { dispersion: poles, ..ptfe.clone() }).is_err());
         assert!(m.replace_material(0, Material { name: "air".into(), ..Material::vacuum() }).is_err());
         assert!(m.replace_material(9, ptfe).is_err());
         // An unused one goes, and the mesh's materials after it move down.

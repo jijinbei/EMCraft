@@ -137,9 +137,9 @@ pub enum Effect {
 }
 
 pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
-    let (start, stop) = (p.frequency("start").required()?, p.frequency("stop").required()?);
+    let (start, stop) = (p.hertz("start").required()?, p.hertz("stop").required()?);
     s.model.set_band(Some(Band::new(start, stop)?));
-    Ok(json!({"start": s.show_frequency(start), "stop": s.show_frequency(stop), "unit": s.display.frequency.symbol()}))
+    Ok(json!({"start": s.show_frequency(start.get()), "stop": s.show_frequency(stop.get()), "unit": s.display.frequency.symbol()}))
 }
 
 /// `project.analysis`: the kind of analysis the job is set up for.
@@ -369,7 +369,8 @@ pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
         "not_needed": not_needed,
     });
     if let Some(b) = s.model.band {
-        reply["frequency"] = json!({"start": s.show_frequency(b.start), "stop": s.show_frequency(b.stop), "unit": s.display.frequency.symbol()});
+        reply["frequency"] =
+            json!({"start": s.show_frequency(b.start.get()), "stop": s.show_frequency(b.stop.get()), "unit": s.display.frequency.symbol()});
     }
     Ok(reply)
 }

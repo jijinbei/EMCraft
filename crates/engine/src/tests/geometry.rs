@@ -17,13 +17,13 @@ fn dispersive_materials_are_read_in_display_units_and_checked() {
     let (_, m) = s.model.material("d").unwrap();
     let tau = 1.0 / (2.0 * std::f64::consts::PI * 20e9);
     assert_eq!(m.dispersion.len(), 3);
-    assert!(matches!(m.dispersion[0], emcraft_model::Pole::Debye { delta_eps, tau: t } if delta_eps == 0.6 && (t - tau).abs() < 1e-24));
-    assert_eq!(m.dispersion[1], emcraft_model::Pole::Lorentz { delta_eps: 0.4, frequency: 16e9, damping: 1.5e9 });
-    assert_eq!(m.dispersion[2], emcraft_model::Pole::Drude { plasma_frequency: 3e9, damping: 0.5e9 });
+    assert!(matches!(m.dispersion[0], emcraft_model::Pole::Debye { delta_eps, tau: t } if delta_eps.get() == 0.6 && (t.get() - tau).abs() < 1e-24));
+    assert_eq!(m.dispersion[1], emcraft_model::Pole::lorentz(0.4, 16e9, 1.5e9).unwrap());
+    assert_eq!(m.dispersion[2], emcraft_model::Pole::drude(3e9, 0.5e9).unwrap());
     // In MHz.
     s.execute("units.set", &json!({"frequency": "MHz"})).unwrap();
     s.execute("model.material.create", &json!({"name": "m", "eps_r": 1, "lorentz": [{"delta_eps": 1, "frequency": 500, "damping": 10}]})).unwrap();
-    assert_eq!(s.model.material("m").unwrap().1.dispersion[0], emcraft_model::Pole::Lorentz { delta_eps: 1.0, frequency: 5e8, damping: 1e7 });
+    assert_eq!(s.model.material("m").unwrap().1.dispersion[0], emcraft_model::Pole::lorentz(1.0, 5e8, 1e7).unwrap());
     // Hostile poles: refused, nothing created, nothing panics.
     let many: Vec<_> = (0..emcraft_model::MAX_POLES + 1).map(|_| json!({"delta_eps": 1, "frequency": 1})).collect();
     for bad in [

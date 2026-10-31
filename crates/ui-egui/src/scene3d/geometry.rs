@@ -170,7 +170,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
         && m.open.is_none()
         && let Some(inside) = inside(m)
     {
-        super::shell::draw(m, overlay, &inside, t, out);
+        super::shell::draw(m, overlay, &inside, t.get(), out);
     }
     // Ports on the ends (the mesh tags them once meshed).
     let (color, alpha) = if overlay == Overlay::Ports { (sc().port, 255) } else { (sc().port_soft, 220) };

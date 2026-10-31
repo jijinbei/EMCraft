@@ -17,7 +17,7 @@ pub(super) fn sc() -> Scene {
 pub fn material_rgb(model: &Model, index: usize) -> Rgb {
     let s = sc();
     match model.materials.get(index) {
-        Some(m) if m.eps_r <= 1.0 + 1e-12 && m.mu_r <= 1.0 + 1e-12 => s.vacuum,
+        Some(m) if m.eps_r.get() <= 1.0 + 1e-12 && m.mu_r.get() <= 1.0 + 1e-12 => s.vacuum,
         _ => s.materials[index.saturating_sub(1) % s.materials.len()],
     }
 }

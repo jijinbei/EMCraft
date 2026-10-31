@@ -97,8 +97,11 @@ pub(crate) fn exact_bands(s: &Session, d: &Dispersion, psi: f64, count: usize, f
     if !(w.uniform() && w.plain() && m.symmetry.is_empty()) {
         return None;
     }
-    let mats: Vec<(f64, f64, f64)> =
-        w.sections.iter().map(|sec| m.material(&sec.material).ok().map(|(_, mat)| (sec.length, mat.eps_r, mat.mu_r))).collect::<Option<_>>()?;
+    let mats: Vec<(f64, f64, f64)> = w
+        .sections
+        .iter()
+        .map(|sec| m.material(&sec.material).ok().map(|(_, mat)| (sec.length, mat.eps_r.get(), mat.mu_r.get())))
+        .collect::<Option<_>>()?;
     let first = mats.first()?;
     if mats.iter().all(|x| x.1 == first.1 && x.2 == first.2) {
         let bands = emcraft_theory::floquet::empty_guide_bands(
@@ -168,8 +171,8 @@ pub fn stack_reference(s: &Session) -> Result<emcraft_theory::floquet::Stack> {
             }
             Ok(emcraft_theory::floquet::StackLayer {
                 thickness: sec.length,
-                eps_r: emcraft_solver::Complex64::new(mat.eps_r, -mat.eps_r * mat.loss_tangent),
-                mu_r: mat.mu_r,
+                eps_r: emcraft_solver::Complex64::new(mat.eps_r.get(), -mat.eps_r.get() * mat.loss_tangent.get()),
+                mu_r: mat.mu_r.get(),
             })
         })
         .collect::<Result<Vec<_>>>()?;

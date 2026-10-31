@@ -488,5 +488,5 @@ fn integer(text: &str, lo: u64, hi: u64) -> Result<u64, String> {
 /// The band (display units) the session holds.
 fn band(s: &emcraft_engine::Session) -> Option<(f64, f64)> {
     let f = s.display().frequency;
-    s.model().band.map(|b| (f.from_si(b.start), f.from_si(b.stop)))
+    s.model().band.map(|b| (f.from_si(b.start.get()), f.from_si(b.stop.get())))
 }

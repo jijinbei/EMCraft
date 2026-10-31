@@ -8,6 +8,8 @@
 //!
 //! The modules, each re-exported here:
 //! - [`error`]: [`ModelError`] and the checks the setters share;
+//! - [`quantity`]: checked numbers ([`Positive`], [`Hertz`], [`Metres`], [`Conductivity`],
+//!   [`LossTangent`]): a value is checked once, where it enters, and stored as its type;
 //! - [`material`]: materials and their dispersion poles;
 //! - [`waveguide`]: the rectangular guide, its sections and planar circuit (layers, strips, vias);
 //! - [`shape`]: solids, the inclusions inside them and the features combined with them;
@@ -36,6 +38,7 @@ pub mod open;
 pub mod periodic;
 pub mod port;
 pub mod prism;
+pub mod quantity;
 pub mod shape;
 pub mod symmetry;
 pub mod units;
@@ -54,6 +57,7 @@ pub use open::{LumpedPort, Open, OpenShape, Source, SphericalLayer};
 pub use periodic::{Periodic, Polarization};
 pub use port::{DEFAULT_TERMINAL_IMPEDANCE, End, Frame, MAX_PORT_MODES, MAX_TERMINALS, ModeSolver, Port, PortFace, PortShape, Terminals};
 pub use prism::MAX_PRISM_POINTS;
+pub use quantity::{Conductivity, Hertz, LossTangent, MAX_CONDUCTIVITY, MAX_LOSS_TANGENT, Metres, Positive, Quantity};
 pub use shape::{Axis, Combine, FaceSurface, Feature, Inclusion, MAX_SURFACE_TRIANGLES, Shape, Solid, solid_angle};
 pub use symmetry::{Image, Symmetry, SymmetryKind};
 pub use waveguide::{Layer, Section, Span, Strip, Via, Waveguide};

@@ -40,9 +40,11 @@ pub(crate) fn shown_poles(m: &Material, kind: &str, d: Display) -> Vec<Value> {
         .iter()
         .filter(|pole| pole_kind(pole) == kind)
         .map(|pole| match *pole {
-            Pole::Debye { delta_eps, tau } => json!({"delta_eps": delta_eps, "frequency": f(1.0 / (2.0 * std::f64::consts::PI * tau))}),
-            Pole::Lorentz { delta_eps, frequency, damping } => json!({"delta_eps": delta_eps, "frequency": f(frequency), "damping": f(damping)}),
-            Pole::Drude { plasma_frequency, damping } => json!({"plasma_frequency": f(plasma_frequency), "damping": f(damping)}),
+            Pole::Debye { delta_eps, tau } => json!({"delta_eps": delta_eps, "frequency": f(1.0 / (2.0 * std::f64::consts::PI * tau.get()))}),
+            Pole::Lorentz { delta_eps, frequency, damping } => {
+                json!({"delta_eps": delta_eps, "frequency": f(frequency.get()), "damping": f(damping.get())})
+            }
+            Pole::Drude { plasma_frequency, damping } => json!({"plasma_frequency": f(plasma_frequency.get()), "damping": f(damping.get())}),
         })
         .collect()
 }
@@ -76,9 +78,9 @@ pub fn material_edit(s: &mut Session, p: &Params) -> Result<Value> {
             dispersion.extend(poles_of(p, kind)?);
         }
     }
-    let material = Material::new(name, p.number("eps_r").or(old.eps_r)?, p.number("mu_r").or(old.mu_r)?)?
-        .with_loss_tangent(p.number("loss_tangent").or(old.loss_tangent)?)?
-        .with_magnetic_loss_tangent(p.number("magnetic_loss_tangent").or(old.magnetic_loss_tangent)?)?
+    let material = Material::new(name, p.number("eps_r").or(old.eps_r.get())?, p.number("mu_r").or(old.mu_r.get())?)?
+        .with_loss_tangent(p.number("loss_tangent").or(old.loss_tangent.get())?)?
+        .with_magnetic_loss_tangent(p.number("magnetic_loss_tangent").or(old.magnetic_loss_tangent.get())?)?
         .with_dispersion(pole_count(dispersion)?)?;
     // A new name alone changes no result; anything else every one.
     let physics = Material { name: old.name.clone(), ..material.clone() } != old;
@@ -175,7 +177,7 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
         modes: p.integer("modes", 1..=emcraft_model::MAX_PORT_MODES as usize).optional()?.map_or(old.modes, |n| n as u32),
         face,
         mode_solver: p.choice("mode_solver").or(old.mode_solver)?,
-        reference: if p.cleared("impedance") { None } else { p.number("impedance").optional()?.or(old.reference) },
+        reference: if p.cleared("impedance") { None } else { p.positive("impedance").optional()?.or(old.reference) },
         deembed: p.edit_length("deembed", old.deembed)?,
         terminals: p.choice("terminals").or(old.terminals)?,
     };
@@ -236,7 +238,7 @@ pub fn lumped_edit(s: &mut Session, p: &Params) -> Result<Value> {
         name: p.string("rename").optional()?.unwrap_or(&old.name).to_owned(),
         from: p.edit_point("from", old.from)?,
         to: p.edit_point("to", old.to)?,
-        impedance: p.number("impedance").or(old.impedance)?,
+        impedance: p.positive("impedance").or(old.impedance)?,
         voltage,
         radius: p.edit_length("radius", old.radius)?,
     };

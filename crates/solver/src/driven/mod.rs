@@ -67,7 +67,7 @@ use std::f64::consts::PI;
 use emcraft_fem::{Element, Order};
 use emcraft_mesh::Topology;
 use emcraft_model::units::C0;
-use emcraft_model::{Boundary, Mesh, Model, Symmetry, SymmetryKind};
+use emcraft_model::{Boundary, Hertz, Mesh, Model, Quantity, Symmetry, SymmetryKind};
 use num_complex::Complex64 as C;
 
 use crate::ldlt::FactorError;
@@ -172,12 +172,10 @@ pub(crate) fn wavenumber(frequency: f64) -> f64 {
     2.0 * PI * frequency / C0
 }
 
-/// Refuses a frequency that is not a finite number > 0.
+/// Refuses a frequency that breaks [`Hertz`]'s rule (finite, > 0): for the public calls that
+/// take a frequency as an `f64` (the model's own frequencies are [`Hertz`] already).
 pub(crate) fn check_frequency(frequency: f64) -> Result<()> {
-    if !(frequency.is_finite() && frequency > 0.0) {
-        return Err(invalid("frequency", format!("must be a finite number > 0, got {frequency}")));
-    }
-    Ok(())
+    if Hertz::keeps(frequency) { Ok(()) } else { Err(invalid("frequency", format!("must be a finite number {}, got {frequency}", Hertz::MUST))) }
 }
 
 /// A waveguide meshed and assembled up to the frequency: the curl–curl and mass matrices and
@@ -351,15 +349,11 @@ impl Driven {
         }
         let mesh = model.mesh.as_deref().cloned().ok_or_else(|| SolveError::NotReady("no mesh".into()))?;
         let topo = Topology::new(&mesh);
+        // The conductivity and thickness are checked by their types.
         let sigma = match walls {
-            Walls::Modelled => model.wall_conductivity,
+            Walls::Modelled => model.wall_conductivity.map(|c| c.get()),
             Walls::Perfect => None,
         };
-        if let Some(c) = sigma
-            && !(c.is_finite() && c > 0.0)
-        {
-            return Err(invalid("wall conductivity", format!("must be a finite number > 0, got {c}")));
-        }
         let faces = BoundaryFaces::classify(model, &mesh, ends, sigma.is_none())?;
         if let Some(why) = model.symmetry_issue() {
             return Err(invalid("symmetry", why));
@@ -399,7 +393,7 @@ impl Driven {
             None => None,
         };
         let wall = match sigma {
-            Some(sigma) => Some(WallLoss { sigma, thickness: model.wall_thickness, mass: space.wall_mass(&pattern, &faces.walls)? }),
+            Some(sigma) => Some(WallLoss { sigma, thickness: model.wall_thickness.map(|t| t.get()), mass: space.wall_mass(&pattern, &faces.walls)? }),
             None => None,
         };
         Ok(Driven {
@@ -431,10 +425,10 @@ impl Driven {
 
     /// Solves at one frequency (Hz).
     pub fn solve(&self, frequency: f64) -> Result<FrequencyResult> {
+        check_frequency(frequency)?;
         if self.tie.is_some() {
             return self.solve_periodic(frequency);
         }
-        check_frequency(frequency)?;
         let t0 = std::time::Instant::now();
         let system = self.system(frequency)?;
         let assembly = t0.elapsed().as_secs_f64();

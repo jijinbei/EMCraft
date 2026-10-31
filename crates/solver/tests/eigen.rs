@@ -86,7 +86,7 @@ fn a_very_lossy_fill_gives_its_complex_frequency() {
 #[test]
 fn copper_te101_q() {
     let mut m = cavity(0.003);
-    m.set_wall_conductivity(Some(5.8e7)).unwrap();
+    m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(5.8e7).unwrap()));
     let e = eigenmodes(&m, Order::Two, 1, 8.0e9).unwrap();
     let q = e.modes[0].q_walls.unwrap();
     let exact = te101_q_walls(A, B, D, 5.8e7);
@@ -102,7 +102,7 @@ fn copper_te101_q_converges() {
         .iter()
         .map(|&h| {
             let mut m = cavity(h);
-            m.set_wall_conductivity(Some(5.8e7)).unwrap();
+            m.set_wall_conductivity(Some(emcraft_model::Conductivity::new(5.8e7).unwrap()));
             let q = eigenmodes(&m, Order::Two, 1, 8.0e9).unwrap().modes[0].q_walls.unwrap();
             ((q - te101_q_walls(A, B, D, 5.8e7)) / te101_q_walls(A, B, D, 5.8e7)).abs()
         })

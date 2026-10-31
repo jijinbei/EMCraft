@@ -293,7 +293,7 @@ fn analytic_port(model: &Model, p: &Port, shape: PortShape, space: &Space, faces
     let support: Vec<usize> = (0..n).filter(|&u| touched[u]).collect();
     let modes = list.into_iter().zip(vectors).map(|(mode, v)| (mode, support.iter().map(|&u| (u, C::new(v[u], 0.0))).collect())).collect();
     let medium = lossy_medium(m).map(Box::new);
-    Ok(PortModes::Analytic { eps_r: m.eps_r, mu_r: m.mu_r, medium, modes, fraction: model.symmetry_fraction() })
+    Ok(PortModes::Analytic { eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), medium, modes, fraction: model.symmetry_fraction() })
 }
 
 /// A closed-form port's modes: the lowest `p.modes` of its aperture, of those the model's
@@ -395,8 +395,8 @@ fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[us
         let m = model.materials.get(k as usize).ok_or_else(|| invalid(what(p), "a face has no material behind it"))?;
         kinds.insert(k);
         of.push(k);
-        eps.push(m.eps_r);
-        mu.push(m.mu_r);
+        eps.push(m.eps_r.get());
+        mu.push(m.mu_r.get());
     }
     let lossy: Vec<&Material> = kinds.iter().filter_map(|&k| model.materials.get(k as usize)).filter(|m| m.is_lossy()).collect();
     let medium = match (kinds.len(), lossy.first()) {
@@ -464,7 +464,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                         let (k2, _) = lossy_k2(m, frequency);
                         modes.iter().map(|md| lossy_info(md.name(), md.gamma_lossy(k2))).collect()
                     } else {
-                        let k = k0 * (m.eps_r * m.mu_r).sqrt();
+                        let k = k0 * (m.eps_r.get() * m.mu_r.get()).sqrt();
                         modes
                             .iter()
                             .map(|md| ModeInfo {
@@ -546,7 +546,7 @@ pub fn port_mode_pattern(model: &Model, order: Order, frequency: f64, port: usiz
             let g = md.gamma_lossy(lossy_k2(m, frequency).0);
             -(g * g).re
         } else {
-            let k = wavenumber(frequency) * (m.eps_r * m.mu_r).sqrt();
+            let k = wavenumber(frequency) * (m.eps_r.get() * m.mu_r.get()).sqrt();
             k * k - md.cutoff().powi(2)
         };
         let (x, y, inside): ((f64, f64), (f64, f64), Box<dyn Fn(f64, f64) -> bool>) = match shape {

@@ -135,7 +135,7 @@ pub(super) struct Section<'a> {
 impl Section<'_> {
     fn fill_of(&self, material: &str) -> Color32 {
         let index = self.m.materials.iter().position(|x| x.name == material).unwrap_or(0);
-        material_color(index, self.m.material(material).map_or(1.0, |(_, x)| x.eps_r))
+        material_color(index, self.m.material(material).map_or(1.0, |(_, x)| x.eps_r.get()))
     }
 
     fn outline(&self) -> Stroke {

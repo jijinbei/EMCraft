@@ -118,9 +118,7 @@ impl Grid {
         // Dispersive materials in the model's order (deterministic).
         let mut poles: Vec<Vec<Pole>> = Vec::new();
         let mut disp_of = vec![NO_POLES; model.materials.len()];
-        for m in &model.materials {
-            m.checked().map_err(|e| invalid("material", e.to_string()))?;
-        }
+
         for (i, m) in model.materials.iter().enumerate().filter(|(_, m)| m.is_dispersive()) {
             disp_of[i] = poles.len() as u32;
             poles.push(m.dispersion.clone());
@@ -135,10 +133,10 @@ impl Grid {
             let (index, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
             let Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
             let Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
-            let slow = freqs.iter().map(|f| m.eps_at(*f).norm()).fold(m.eps_r, f64::max);
+            let slow = freqs.iter().map(|f| m.eps_at(*f).norm()).fold(m.eps_r.get(), f64::max);
             let disp = disp_of.get(index).copied().unwrap_or(NO_POLES);
             let (sigma, sigma_m) = losses.of(m);
-            Ok(Layer { eps: m.eps_r, slow, disp, sigma, sigma_m, mu: m.mu_r, x0, width, y0, height })
+            Ok(Layer { eps: m.eps_r.get(), slow, disp, sigma, sigma_m, mu: m.mu_r.get(), x0, width, y0, height })
         };
         let last = w.sections.len() - 1;
         let (first_layer, last_layer) = (layer(0)?, layer(last)?);
