@@ -11,6 +11,12 @@ result is frozen so it cannot drift.
 
 ## Three levels of tests
 
+Each layer checks its own job: the oracle and the solver tests pin the numbers against
+independent references; the engine's tests check the commands' plumbing (replies, units, the
+model they leave, pictures, refusals) on coarse meshes; the UI scenarios check the wiring
+(handles, dialogs, charts) on the smallest solves that draw them. A number one layer pins is
+not asserted again by another; a test that leaves one out names the layer that holds it.
+
 1. **Unit tests** in each crate: element functions dual to their edges, exact element matrices
    against the closed form and against quadrature, curls against finite differences, gradients
    in the kernel of the curl–curl matrix (the discrete de Rham property), tangential continuity
@@ -18,14 +24,18 @@ result is frozen so it cannot drift.
    residuals (with 2 × 2 pivots), determinism, hostile inputs.
 2. **Solver tests** (`crates/solver/tests/waveguide.rs`): the driven solver against the exact TE₁₀
    solutions — empty guide, dielectric step, the high-pass filter at both orders, E and H in L²
-   and at points, |S11|² + |S21|² = 1, S12 = S21 and S11 = S22 to rounding; and, as heavy tests,
+   and at points, S11 = S22 to rounding for the symmetric filter; and, as heavy tests,
    the convergence rates: order 1 S-parameters at O(h²) or better and E at O(h), order 2 at
    O(h⁴) and O(h²) (measured 3.0 / 0.91 and 4.1 / 1.85).
 3. **Discontinuity tests** (`crates/solver/tests/discontinuities.rs`): an inductive iris and an
    asymmetric H-plane step, an E-plane step and a capacitive iris against converged mode
-   matching (TE_m0 modes, or the LSE^x_1n modes for E-plane changes), power conservation and reciprocity
-   across ports of different aperture, the gain of grading towards edges (5× smaller error at the
-   same element size), and (heavy) convergence with graded meshes.
+   matching (TE_m0 modes, or the LSE^x_1n modes for E-plane changes), the gain of grading
+   towards edges (5× smaller error at the same element size), and (heavy) convergence with
+   graded meshes. Power conservation, reciprocity and determinism are checked once for every
+   template (`crates/engine/src/tests/invariants.rs`): each S-parameter template built by its
+   script on a coarse first-order mesh is passive and reciprocal, unitary when nothing in it
+   absorbs (to 1e-9, ports of different aperture and media, numerical and terminal ports
+   alike), and built again gives the same mesh and S bit for bit.
 4. **Loss tests** (`crates/solver/tests/losses.rs`): a lossy slab against the complex TE₁₀
    cascade; walls of finite conductivity against the conductor attenuation α_c (within 0.2 %);
    the discrete Poynting theorem — 1 − |S11|² − |S21|² equal to the power the dielectric or the
@@ -52,7 +62,7 @@ result is frozen so it cannot drift.
    rectangular cavity (within 1e-4), a dielectric-filled cavity (frequencies scaled by 1/√εr,
    Q_d = 1/tan δ to 1e-6), the TE101 Q of copper walls (−1.2 % at 3 mm, converging: heavy).
 6. **Time-domain tests** (`crates/fdtd/tests/waveguides.rs`): the high-pass filter against the
-   exact cascade (2.5e-2 at 1.5 mm cells; heavy: 1.16e-2 → 2.8e-3 from 1 to 0.5 mm, second
+   exact cascade (oracle `highpass-time-domain` at 1 mm; heavy: 1.16e-2 → 2.8e-3 from 1 to 0.5 mm, second
    order), the inductive iris against mode matching (heavy), the dispersive slab's auxiliary
    differential equations against the cascade (heavy: second order, 3.5e-2 → 1.6e-2 from 1 to
    0.7 mm), passivity, hostile requests. Losses (`crates/fdtd/tests/losses.rs`): a lossy slab,
@@ -146,8 +156,9 @@ result is frozen so it cannot drift.
    TE₁₀ cascade at each length (within 5e-4 dB of |S21|; oracle `study-sweep-highpass`); the
    Nelder–Mead optimizer on a quarter-wave matching section between an empty and an εr = 2.2
    guide finds the length within 0.002 mm of the closed form's λg/4 = 11.1326 mm, |S11| 1.3e-4
-   at the model it leaves (oracle `study-optimize-quarter-wave`; order 1 at 5 mm within 2 % in
-   the gate); the simplex itself on a quadratic, on a minimum outside its box, on its budget.
+   at the model it leaves (oracle `study-optimize-quarter-wave`; the gate's engine tests check
+   the replies, the model left and undo on coarse meshes); the simplex itself on a quadratic, on
+   a minimum outside its box, on its budget.
    A sweep on a grid of two section lengths of a five-section filter (a = 10, 20 mm, b = 5,
    15 mm) against the cascade at each combination (oracle `study-grid-filter`); hostile grids
    (too many points, repeated or unknown variables) refused, a cancelled one stopped.

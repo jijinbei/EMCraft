@@ -24,7 +24,7 @@
   {"click": "view3d:std:iso"},
   {"frames": 2},
   {"shot": "periodic-boundaries"},
-  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 8, "stop": 12, "points": 3, "order": 2}}},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 8, "stop": 12, "points": 3, "order": 1}}},
   {"call": "ui.set", "params": {"view": "sparameters"}},
   {"frames": 3},
   {"expect": {"inspect": {"chart": "*"}, "handles": ["chart:sparameters"]}},

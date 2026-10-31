@@ -45,10 +45,16 @@ fn filter_error(cell: f64, freqs: &[f64]) -> f64 {
 }
 
 #[test]
-fn high_pass_filter_matches_the_exact_cascade() {
-    // Second order in the cell: 2.5e-2 at 1.5 mm (λg/20 to λg/40), mostly phase.
-    let worst = filter_error(0.0015, &[5.5e9, 6.5e9, 7.5e9, 8.5e9]);
-    assert!(worst < 4e-2, "{worst:e}");
+fn high_pass_filter_runs_passive_and_passes_above_its_cut_off() {
+    // A smoke test of the path on 2.54 mm cells (whole cells across the guide): how close the
+    // filter comes to the exact cascade is the oracle's highpass-time-domain (1 mm) and,
+    // converging at second order, the heavy test below. Measured |S21| 0.52 and 0.90.
+    let r = s_parameters(&filter(), &Options::new(0.00254), &[6.0e9, 8.5e9]).unwrap();
+    assert!(r.converged);
+    for i in 0..2 {
+        assert!(r.s11[i].norm_sqr() + r.s21[i].norm_sqr() < 1.0 + 2e-2, "{i}: {} {}", r.s11[i], r.s21[i]);
+    }
+    assert!(r.s21[0].norm() < 0.6 && r.s21[1].norm() > 0.85, "{:?}", r.s21);
 }
 
 #[test]
@@ -93,19 +99,20 @@ fn hostile_requests_are_refused() {
 }
 
 #[test]
-fn e_plane_step_matches_mode_matching() {
-    // The guide steps down to half its height against the y = 0 wall.
+fn an_e_plane_step_reflects_as_mode_matching_says() {
+    // The guide steps down to half its height against the y = 0 wall. A smoke test of the
+    // sections' heights on 2.54 mm cells (|S11| 3 % and 7 % high): how close it comes to mode
+    // matching is the oracle's eplane-step (1 mm cells, 1.0e-2 and 1.7e-2 in S); a step left
+    // out would be off by its whole reflection.
     let low = Section { length: 0.015, material: "vacuum".into(), height: Some(B / 2.0), offset_y: Some(0.0), ..Default::default() };
     let m = model(vec![Section::new(0.012, "vacuum"), low], &[]);
     let freqs = [9.0e9, 11.0e9];
-    let r = s_parameters(&m, &Options::new(0.001), &freqs).unwrap();
+    let r = s_parameters(&m, &Options::new(0.00254), &freqs).unwrap();
     let full = emcraft_theory::ESection { length: 0.012, eps_r: 1.0, mu_r: 1.0, loss_tangent: 0.0, y0: 0.0, height: B };
     let line = emcraft_theory::EPlaneLine { a: A, sections: vec![full, emcraft_theory::ESection { length: 0.015, height: B / 2.0, ..full }] };
     for (i, f) in freqs.iter().enumerate() {
-        let (e11, e21) = line.solve(*f, 160).unwrap();
-        let err = (r.s11[i] - e11).norm().max((r.s21[i] - e21).norm());
-        // Measured 1.0e-2 and 1.7e-2 at 1 mm cells.
-        assert!(err < 3e-2, "{f}: {err:e}");
+        let (e11, _) = line.solve(*f, 160).unwrap();
+        assert!((r.s11[i].norm() - e11.norm()).abs() < 0.2 * e11.norm(), "{f}: {} {e11}", r.s11[i]);
     }
 }
 

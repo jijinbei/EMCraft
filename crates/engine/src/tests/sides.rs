@@ -81,12 +81,11 @@ fn side_ports_and_prisms_refuse_what_they_cannot_be() {
 }
 
 #[test]
-fn a_mitred_bend_is_lossless_reciprocal_and_the_same_turned_round() {
+fn a_mitred_bend_is_the_same_turned_round() {
+    // (Lossless and reciprocal, as every template: invariants.rs.)
     let (a, b, l, m) = (22.86, 10.16, 20.0, 14.6);
     let w = l + a;
-    let mut s = Session::new();
-    s.execute("file.sample", &json!({"name": "h-bend"})).unwrap();
-    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    let mut s = super::template_meshed("h-bend", 4.0);
     let r = s.execute("solve.frequency", &json!({"frequencies": [9, 11], "order": 2})).unwrap();
     // The same bend turned a quarter round about z, (x, y) → (w − y, x): its ports swap axes.
     let turned: Vec<[f64; 2]> = [[0.0, 0.0], [a, 0.0], [a, l], [w, l], [w, w], [m, w], [0.0, w - m]].iter().map(|p| [w - p[1], p[0]]).collect();
@@ -97,9 +96,7 @@ fn a_mitred_bend_is_lossless_reciprocal_and_the_same_turned_round() {
     t.execute("model.port.create", &json!({"name": "2", "end": "end", "axis": "y", "face": [w, 0, 0, a, b]})).unwrap();
     let q = t.execute("solve.frequency", &json!({"frequencies": [9, 11], "order": 2})).unwrap();
     for i in 0..2 {
-        let ((m11, p11), (m21, p21), (m12, p12)) = (entry(&r, i, "s11"), entry(&r, i, "s21"), entry(&r, i, "s12"));
-        assert!((m11 * m11 + m21 * m21 - 1.0).abs() < 1e-6, "lossless: {m11} {m21}");
-        assert!((m21 - m12).abs() < 1e-9 && (p21 - p12).abs() < 1e-6, "reciprocal");
+        let ((m11, p11), (m21, p21)) = (entry(&r, i, "s11"), entry(&r, i, "s21"));
         let ((n11, q11), (n21, q21)) = (entry(&q, i, "s11"), entry(&q, i, "s21"));
         assert!((m11 - n11).abs() < 0.01 && (m21 - n21).abs() < 0.01, "{m11} {n11} {m21} {n21}");
         // TE10 is even across its face and E stays along z, so the phases agree too.
@@ -111,14 +108,11 @@ fn a_mitred_bend_is_lossless_reciprocal_and_the_same_turned_round() {
 }
 
 #[test]
-fn the_tee_splits_evenly_and_conserves_power() {
-    let mut s = Session::new();
-    s.execute("file.sample", &json!({"name": "h-tee"})).unwrap();
-    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+fn the_tee_splits_evenly() {
+    // (Its power conserved, as every lossless template's: invariants.rs.)
+    let mut s = super::template_meshed("h-tee", 4.0);
     let r = s.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
     let (m31, p31) = entry(&r, 0, "s31");
     let (m32, p32) = entry(&r, 0, "s32");
     assert!((m31 - m32).abs() < 5e-3 && (p31 - p32).abs() < 1.0, "the side arm sees both ends alike: {m31} {m32}");
-    let row: f64 = ["s11", "s21", "s31"].iter().map(|k| entry(&r, 0, k).0.powi(2)).sum();
-    assert!((row - 1.0).abs() < 1e-6, "{row}");
 }

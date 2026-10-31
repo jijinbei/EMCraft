@@ -84,17 +84,12 @@ fn high_pass_filter_order_two() {
 }
 
 #[test]
-fn lossless_reciprocal_and_symmetric() {
+fn symmetric_and_solved_to_rounding() {
+    // The filter being symmetric, S11 = S22: a property of the discrete system itself, to
+    // rounding. (Lossless and reciprocal, as every template's S: the engine's invariants.rs.)
     let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::Two).unwrap();
     for f in [5.5e9, 8.5e9] {
         let r = d.solve(f).unwrap();
-        // |S11|² + |S21|² = 1 column by column, S12 = S21 and, the filter being symmetric,
-        // S11 = S22: properties of the discrete system itself, to rounding.
-        for q in 0..2 {
-            let p = r.s[0][q].norm_sqr() + r.s[1][q].norm_sqr();
-            assert!((p - 1.0).abs() < 1e-12, "{f}: {p}");
-        }
-        assert!((r.s[0][1] - r.s[1][0]).norm() < 1e-12);
         assert!((r.s[0][0] - r.s[1][1]).norm() < 1e-10);
         assert!(r.backward_error < 1e-14);
         assert_eq!(r.perturbed_pivots, 0);
@@ -127,12 +122,6 @@ fn port_modes_beyond_te10_change_nothing_here() {
     let one = Driven::new(&guide(&FILTER, 0.004, 1), Order::Two).unwrap().solve(7.0e9).unwrap();
     let many = Driven::new(&guide(&FILTER, 0.004, 8), Order::Two).unwrap().solve(7.0e9).unwrap();
     assert!((one.s[1][0] - many.s[1][0]).norm() < 1e-4, "{} {}", one.s[1][0], many.s[1][0]);
-}
-
-#[test]
-fn deterministic_bit_for_bit() {
-    let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::One).unwrap();
-    assert_eq!(d.solve(7.0e9).unwrap(), d.solve(7.0e9).unwrap());
 }
 
 #[test]

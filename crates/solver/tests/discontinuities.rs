@@ -59,21 +59,15 @@ fn inductive_iris_matches_mode_matching() {
 }
 
 #[test]
-fn offset_step_matches_mode_matching_and_conserves_power() {
+fn offset_step_matches_mode_matching() {
+    // (Power conserved across ports of different aperture: the engine's invariants.rs, the
+    // taper among its templates.)
     let d = Driven::new(&model(&STEP, &emcraft_mesh::Options::new(0.004)), Order::Two).unwrap();
     // The 16 mm guide's TE10 cut-off is 9.37 GHz: above it both ports propagate.
     let freqs = [10.0e9, 12.0e9];
     let w = worst(&d, &reference(&STEP), &freqs);
     // Measured 3.1e-3.
     assert!(w < 6e-3, "{w:e}");
-    for f in freqs {
-        let r = d.solve(f).unwrap();
-        for q in 0..2 {
-            let p = r.s[0][q].norm_sqr() + r.s[1][q].norm_sqr();
-            assert!((p - 1.0).abs() < 1e-10, "{f}: {p}");
-        }
-        assert!((r.s[0][1] - r.s[1][0]).norm() < 1e-10);
-    }
 }
 
 #[test]
@@ -141,7 +135,6 @@ fn e_plane_step_and_capacitive_iris_match_mode_matching() {
         let (s11, s21) = e_reference(layout).solve(10.0e9, 160).unwrap();
         let e = (r.s[0][0] - s11).norm().max((r.s[1][0] - s21).norm());
         assert!(e < tol, "{e:e}");
-        assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-10);
     }
 }
 
