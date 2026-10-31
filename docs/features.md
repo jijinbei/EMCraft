@@ -427,7 +427,7 @@ Removes a waveguide port (a lumped port: model.port.lumped.delete); the ports af
 
 ## `solve.frequency` — Frequency sweep
 
-Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide), a terminal port by each of its strips' modes (S then has an entry per strip, `ports` names them): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full.
+Solves the driven problem at each frequency, every port excited in turn by a unit wave of its first mode (TE10 in a rectangular guide), a terminal port by each of its strips' modes (S then has an entry per strip, `ports` names them): S-parameters and fields. Frequencies are `frequencies`, or `points` evenly from `start` to `stop`. Three or more are swept fast: a few are solved in full, their fields span a basis, the others are solved in it, and the worst-resolved one is added in full until every residual is within 1e-4 (S then within about 1e-10 of a full solve); `sweep` full solves each in full. Each point's `full` says whether it was solved in full, `solved_in_full` counts them.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -440,7 +440,7 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 
 ## `solve.refine` — Refine sweep
 
-Adds frequencies to the sweep: `points` evenly from `start` to `stop` (or `frequencies`), those not solved yet solved on the sweep's own system (its mesh and order, no assembly again; three or more by the fast sweep), referred to its reference planes and merged in order. The project's run becomes the merged sweep (solve.frequency with its frequencies listed), so running it again gives the same sweep. Needs a sweep of the model as it is.
+Adds frequencies to the sweep: `points` evenly from `start` to `stop` (or `frequencies`), those not solved yet solved on the sweep's own system (its mesh and order, no assembly again; three or more by the fast sweep), referred to its reference planes and merged in order (`solved_in_full`: how many of the added were solved in full; each point keeps its `full`). The project's run becomes the merged sweep (solve.frequency with its frequencies listed), so running it again gives the same sweep. Needs a sweep of the model as it is.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -545,7 +545,7 @@ Each port's modes at one frequency, from the meshed model without solving the vo
 
 ## `results.sparameters` — S-parameters
 
-The S-parameter table of the last sweep: each S[p][q] (at port p for a wave into port q) as real, imaginary, magnitude, dB and phase (degrees).
+The S-parameter table of the last sweep: each S[p][q] (at port p for a wave into port q) as real, imaginary, magnitude, dB and phase (degrees), and whether the point was solved in full (`full`) or in a fast sweep's reduced basis.
 
 No parameters.
 

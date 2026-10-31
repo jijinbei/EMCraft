@@ -28,6 +28,12 @@ impl Arrangement {
     pub fn empty(&self, width: f32) -> f32 {
         (width * self.height - self.main.area() - self.content).max(0.0)
     }
+
+    /// How many blocks went beside the main picture, and how many under it.
+    pub fn counts(&self) -> [usize; 2] {
+        let beside = self.blocks.iter().filter(|b| b.left() >= self.main.right()).count();
+        [beside, self.blocks.len() - beside]
+    }
 }
 
 /// What blocks of these sizes fill.
@@ -157,7 +163,7 @@ mod tests {
         let a = arrange(area, vec2(360.0, 260.0), &[vec2(440.0, 120.0), vec2(440.0, 230.0), vec2(300.0, 40.0)]);
         // All three fit beside (120 + 230 + 40 and the gaps): the main picture is the card's height.
         assert!(a.blocks.iter().all(|b| b.left() > a.main.right()));
-        assert_eq!((a.main.height(), a.height), (600.0, 600.0));
+        assert_eq!((a.main.height(), a.height, a.counts()), (600.0, 600.0, [3, 0]));
         // Little is left empty: under a third of the card (the column's foot).
         assert!(a.empty(area.x) < area.x * area.y / 3.0, "{}", a.empty(area.x));
     }
@@ -167,6 +173,7 @@ mod tests {
         let a = arrange(vec2(1200.0, 400.0), vec2(360.0, 200.0), &[vec2(440.0, 300.0), vec2(440.0, 150.0)]);
         assert!(a.blocks[0].left() > a.main.right());
         assert!(a.blocks[1].top() >= a.main.bottom() && a.blocks[1].right() <= a.main.right() + 1e-3);
+        assert_eq!(a.counts(), [1, 1]);
     }
 
     #[test]
@@ -174,5 +181,6 @@ mod tests {
         let a = arrange(vec2(600.0, 400.0), vec2(360.0, 260.0), &[vec2(440.0, 300.0)]);
         assert!(a.blocks[0].top() >= a.main.bottom());
         assert!(a.height > 400.0);
+        assert_eq!(a.counts(), [0, 1]);
     }
 }

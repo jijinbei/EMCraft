@@ -301,6 +301,7 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
             factor_entries: 0,
             largest_front: 0,
             timings: Timings { assembly: seconds, analysis: 0.0, factor: 0.0, solve: 0.0 },
+            full: false,
         },
         worst,
     ))

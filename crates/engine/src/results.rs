@@ -84,6 +84,7 @@ pub(crate) fn sparameter_table(s: &Session) -> Result<Value> {
                 m.insert(format!("s{}{}", i + 1, j + 1), complex(v));
             }
             m.insert("backward_error".into(), json!(r.backward_error));
+            m.insert("full".into(), json!(r.full));
             let t = &r.timings;
             m.insert("seconds".into(), json!({"assembly": t.assembly, "analysis": t.analysis, "factor": t.factor, "solve": t.solve}));
             if r.impedances.iter().any(Option::is_some) {

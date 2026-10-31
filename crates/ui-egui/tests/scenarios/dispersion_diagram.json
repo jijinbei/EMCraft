@@ -22,6 +22,6 @@
   {"until": {"busy": false, "view": "dispersion"}, "timeout": 120},
   {"expect": {"status": "Dispersion along z: 5 phases, 2 bands each", "status_error": false}},
   {"frames": 3},
-  {"expect": {"inspect": {"chart": "*"}, "handles": ["chart:dispersion", "row:Dispersion: 5 phases"]}},
+  {"expect": {"inspect": {"chart": "*", "packed.beside": {"min": 0}}, "handles": ["chart:dispersion", "chart:block:0", "row:Dispersion: 5 phases"]}},
   {"shot": "dispersion"}
 ]

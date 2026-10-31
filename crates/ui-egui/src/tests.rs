@@ -440,6 +440,11 @@ fn scenario_visibility_tour() {
 }
 
 #[test]
+fn scenario_chart_packing() {
+    scenario("chart_packing");
+}
+
+#[test]
 fn scenario_small_window() {
     scenario("small_window");
 }

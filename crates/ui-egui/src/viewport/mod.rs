@@ -188,6 +188,9 @@ pub(super) trait ChartView {
     const CHART: emcraft_engine::views::ChartId;
     /// Its height in the card.
     const HEIGHT: Height;
+    /// The room kept under the chart for [`ChartView::below`] when its blocks are packed round
+    /// it (points).
+    const BELOW: f32 = 0.0;
 
     /// What goes over the chart (the view's settings, edited in `st`); what it shows, or `None`
     /// when there is nothing to chart.
@@ -201,7 +204,7 @@ pub(super) trait ChartView {
 
     /// The blocks packed round the chart ([`crate::pack`]): each one's size as it wants it, in
     /// the order they go; none by default (the chart and what goes under it).
-    fn blocks(_app: &EmcraftApp, _st: &Parts) -> Vec<egui::Vec2> {
+    fn blocks(_app: &EmcraftApp, _st: &Parts, _ui: &egui::Ui) -> Vec<egui::Vec2> {
         Vec::new()
     }
 
@@ -246,8 +249,9 @@ pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
 /// the width, the theme or the view's key changed) with the gear that edits its style, then
 /// what goes under it.
 pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-    let wants = V::blocks(app, st);
+    let wants = V::blocks(app, st, ui);
     if wants.is_empty() {
+        st.views.packed = None;
         return chart_column::<V>(app, st, ui, out);
     }
     let Some(key) = V::controls(app, st, ui, out) else { return };
@@ -255,17 +259,34 @@ pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mu
     // the last few points); what does not fit scrolls.
     let area = vec2(ui.available_width() - 16.0, ui.available_height());
     let a = crate::pack::arrange(area, LEAST_CHART, &wants);
+    st.views.packed = Some(a.counts());
     let (whole, _) = ui.allocate_exact_size(vec2(area.x, a.height), Sense::hover());
     let at = |r: Rect| r.translate(whole.min.to_vec2());
     let mut main = ui.new_child(egui::UiBuilder::new().max_rect(at(a.main)));
     // Under the chart, in its rectangle, the view's own overlays (they need the chart's response).
-    let under = 40.0;
-    let size = [a.main.width(), (a.main.height() - under).max(LEAST_CHART.y)];
+    let size = [a.main.width(), (a.main.height() - V::BELOW).max(LEAST_CHART.y)];
     draw_chart::<V>(app, st, &mut main, key, Some(size), out);
     for (k, r) in a.blocks.iter().enumerate() {
         let mut b = ui.new_child(egui::UiBuilder::new().max_rect(at(*r)));
+        scenario::publish_target(Handle::ChartBlock(k), at(*r));
         V::block(app, st, &mut b, k, out);
     }
+}
+
+/// Each column's width (points) of a table of `headers` over `rows` set in `font`: its widest
+/// text as drawn.
+pub(super) fn column_widths(ui: &egui::Ui, font: &FontId, headers: &[String], rows: &[Vec<String>]) -> Vec<f32> {
+    let width = |text: &str| ui.painter().layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER).size().x;
+    (0..headers.len())
+        .map(|k| rows.iter().map(|r| r.get(k).map_or(0.0, |c| width(c))).fold(headers.get(k).map_or(0.0, |h| width(h)), f32::max))
+        .collect()
+}
+
+/// The width a grid of columns `widths` wide takes, `gap` between them, with room for a scroll
+/// bar beside it (points).
+pub(super) fn grid_width(ui: &egui::Ui, widths: &[f32], gap: f32) -> f32 {
+    let s = &ui.spacing().scroll;
+    widths.iter().sum::<f32>() + gap * widths.len().saturating_sub(1) as f32 + s.bar_width + s.bar_inner_margin + s.bar_outer_margin
 }
 
 /// The least size a chart is drawn at among its blocks.
@@ -379,4 +400,53 @@ pub(super) const NARROW: f32 = 640.0;
 /// A width for pictures, rounded so resizing does not redraw on every pixel.
 pub(super) fn picture_width(ui: &egui::Ui) -> usize {
     (((ui.available_width().max(MIN_PICTURE_WIDTH)) / 50.0).floor() * 50.0).min(2400.0) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_chart_view_packs_its_blocks_alike() {
+        // Each view's blocks as it sizes them: in a wide card a tall table beside the chart, a
+        // short one or the TDR's note under it (less left empty); in a small one all under it;
+        // the same sizes the same rectangles, at every size.
+        let views = [
+            ("tdr", vec![tdr::NOTE], [0, 1]),
+            ("dispersion", vec![dispersion::table_size(510.0, 19)], [1, 0]),
+            ("study", vec![study::points_size(480.0, 9)], [0, 1]),
+            ("study grid", vec![study::points_size(880.0, 27)], [1, 0]),
+        ];
+        for (name, wants, wide) in &views {
+            assert_eq!(crate::pack::arrange(vec2(1500.0, 800.0), LEAST_CHART, wants).counts(), *wide, "{name}");
+            assert_eq!(crate::pack::arrange(vec2(560.0, 480.0), LEAST_CHART, wants).counts(), [0, 1], "{name}");
+            for w in (400..=2400).step_by(100) {
+                for h in (300..=1400).step_by(100) {
+                    let area = vec2(w as f32, h as f32);
+                    let a = crate::pack::arrange(area, LEAST_CHART, wants);
+                    assert_eq!(a, crate::pack::arrange(area, LEAST_CHART, wants), "{name}");
+                    assert!(a.main.width() >= LEAST_CHART.x && a.main.height() >= LEAST_CHART.y, "{name} {area:?}");
+                    assert!(a.blocks.iter().all(|b| b.right() <= area.x + 1e-3 && !b.intersects(a.main.shrink(0.5))), "{name} {area:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tables_are_as_wide_as_their_text_and_a_scroll_bar() {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let font = FontId::monospace(14.0);
+            let headers = vec!["f".to_owned(), "arg S21 (°)".to_owned()];
+            let rows = vec![vec!["6.600".to_owned(), "1".to_owned()], vec!["10.000000".to_owned(), "-177.0".to_owned()]];
+            let w = column_widths(ui, &font, &headers, &rows);
+            // Each column its widest text: the long number, the header.
+            let width = |t: &str| ui.painter().layout_no_wrap(t.to_owned(), font.clone(), Color32::PLACEHOLDER).size().x;
+            assert_eq!(w, vec![width("10.000000"), width("arg S21 (°)")]);
+            let g = grid_width(ui, &w, 8.0);
+            assert!(g >= w[0] + w[1] + 8.0 + ui.spacing().scroll.bar_width, "{g}");
+            assert_eq!(column_widths(ui, &font, &[], &rows), Vec::<f32>::new());
+        });
+        out.textures_delta.clear();
+    }
 }

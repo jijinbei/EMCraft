@@ -30,13 +30,21 @@ impl ChartView for Tdr {
         emcraft_engine::results_tdr_chart(s, &emcraft_engine::Params::new(&key.to_params(), s.display())).map_err(|e| e.to_string())
     }
 
-    fn below(_: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
+    /// How to read the chart, packed beside or under it.
+    fn blocks(_: &EmcraftApp, _: &Parts, _: &egui::Ui) -> Vec<egui::Vec2> {
+        vec![NOTE]
+    }
+
+    fn block(_: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: usize, _: &mut Actions) {
         crate::ui_kit::caption(
             ui,
             "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).",
         );
     }
 }
+
+/// The size the note on reading the chart wants (points): a few lines of small text.
+pub(super) const NOTE: egui::Vec2 = egui::vec2(300.0, 64.0);
 
 /// The port and the transform.
 fn controls(app: &EmcraftApp, tdr: &mut crate::state::TdrParams, ui: &mut egui::Ui) {
