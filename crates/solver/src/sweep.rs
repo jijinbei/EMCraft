@@ -7,12 +7,25 @@
 //! al., and the "adaptive frequency sweep" of commercial solvers; P. Benner, M. Hinze, E. J. W.
 //! ter Maten (eds.), *Model Reduction for Circuit Simulation*, Springer 2011, ch. 1).
 //!
+//! **Moments.** Each frequency solved in full adds, beside its fields x, the next few vectors of
+//! their Krylov sequences A⁻¹ M x, A⁻¹ M A⁻¹ M x, … — the fields' derivatives in k₀² with the
+//! ports' terms held — from the same factorization, a triangular solve each (multi-point moment
+//! matching: R. D. Slone, R. Lee, J.-F. Lee, IEEE Trans. Antennas Propag. 49(10):1504–1513,
+//! 2001). They make each factorization span a wider band: on the junction templates' 101 points,
+//! 2 to 3 frequencies solved in full rather than 6 to 9, S within 3e-9 of the sweep without them.
+//!
 //! **Projection.** V holds the real and imaginary parts of the solved fields, orthonormalised,
 //! so it is real and Vᵀ A V keeps A's complex symmetry. The parts of the system that do not
 //! depend on the frequency — the curl–curl and mass matrices, the walls' and lumped ports'
-//! matrices up to a scalar — are projected once per basis; the layer (its stretches depend on
-//! k₀) and the ports' modes (they can) are formed at each frequency. Port modes enter through
-//! their rank-one terms, factor · (Vᵀv)(vᵀV), not the bordered matrix of the full solve.
+//! matrices up to a scalar — are projected once, a row and column as each vector joins the
+//! basis, so a frequency's reduced matrix costs O(m²) and its field and residual O(m n); the
+//! layer (its stretches depend on k₀) and the ports' modes (they can) are formed at each
+//! frequency. Port modes enter through their rank-one terms, factor · (Vᵀv)(vᵀV), not the
+//! bordered matrix of the full solve. The frequencies in the basis are solved in parallel, each
+//! on its own, and the basis' products in parallel, each entry summed in one fixed order, so
+//! the sweep is the same whatever the threads. The fields of the frequencies in the basis are
+//! dropped before each new factorization (the next pass solves them again), so they never sit
+//! in memory beside a factor.
 //!
 //! **Dispersive materials.** Their permittivities εr,d(ω) are not affine in ω², but the system
 //! stays a sum of fixed matrices with scalar coefficients, K − k₀² (M + Σ_d εr,d(ω) M_d): each
@@ -21,6 +34,7 @@
 //! frequencies are solved in full.
 
 use num_complex::Complex64 as C;
+use rayon::prelude::*;
 
 use crate::driven::{Driven, FrequencyResult, PortTerm, Result, Timings, check_frequency, invalid, wall_factor, wavenumber};
 use crate::sparse::Csr;
@@ -35,11 +49,15 @@ pub struct SweepOptions {
     pub tolerance: f64,
     /// The most frequencies solved in full.
     pub max_solves: usize,
+    /// The derivative vectors each full solve adds to the basis per excitation, beside its
+    /// field ([`Driven::solve_spanning`]): each a solve with the frequency's factorization, so
+    /// fewer frequencies need one of their own.
+    pub moments: usize,
 }
 
 impl Default for SweepOptions {
     fn default() -> Self {
-        SweepOptions { tolerance: 1e-4, max_solves: 64 }
+        SweepOptions { tolerance: 1e-4, max_solves: 64, moments: 3 }
     }
 }
 
@@ -65,6 +83,12 @@ struct Basis {
     wv: Vec<Vec<f64>>,
     /// M_d v per dispersive material d, per basis vector.
     dv: Vec<Vec<Vec<f64>>>,
+    /// The frequency's fixed parts projected: Vᵀ K V, Vᵀ M V, Vᵀ W V and Vᵀ M_d V (by row),
+    /// grown with the basis so each frequency's reduced matrix costs O(m²), not O(m² n).
+    kk: Vec<Vec<C>>,
+    mm: Vec<Vec<C>>,
+    ww: Vec<Vec<f64>>,
+    dd: Vec<Vec<Vec<f64>>>,
 }
 
 fn dot_rr(a: &[f64], b: &[f64]) -> f64 {
@@ -75,13 +99,17 @@ fn dot_rc(a: &[f64], b: &[C]) -> C {
     a.iter().zip(b).map(|(x, y)| y * *x).sum()
 }
 
-/// A u for a real vector u, A's values `val` on the pattern `p`.
+/// A u for a real vector u, A's values `val` on the pattern `p`: the rows in parallel, each
+/// summed in its own order.
 fn product<T>(p: &Csr, val: &[T], u: &[f64]) -> Vec<T>
 where
-    T: Copy + std::ops::Mul<f64, Output = T> + std::iter::Sum,
+    T: Copy + Send + Sync + std::ops::Mul<f64, Output = T> + std::iter::Sum,
 {
-    (0..p.n).map(|i| p.row(i).map(|k| val[k] * u[p.col[k]]).sum()).collect()
+    (0..p.n).into_par_iter().map(|i| p.row(i).map(|k| val[k] * u[p.col[k]]).sum()).collect()
 }
+
+/// Entries per task of the basis' vector updates.
+const CHUNK: usize = 4096;
 
 /// A rank-one term factor · v vᵀ of the system, v sparse.
 struct RankOne {
@@ -98,12 +126,18 @@ impl Basis {
             if !(start > 0.0 && start.is_finite()) {
                 continue;
             }
+            // Classical Gram–Schmidt, twice (as stable as the modified one, and each pass's
+            // products independent: in parallel, each summed in its own order).
             let mut u = part;
             for _ in 0..2 {
-                for b in &self.v {
-                    let c = dot_rr(&u, b);
-                    u.iter_mut().zip(b).for_each(|(p, q)| *p -= c * q);
-                }
+                let c: Vec<f64> = self.v.par_iter().map(|b| dot_rr(&u, b)).collect();
+                let v = &self.v;
+                u.par_chunks_mut(CHUNK).enumerate().for_each(|(chunk, part)| {
+                    for (k, p) in part.iter_mut().enumerate() {
+                        let i = chunk * CHUNK + k;
+                        *p -= c.iter().zip(v).map(|(c, b)| c * b[i]).sum::<f64>();
+                    }
+                });
             }
             let len = dot_rr(&u, &u).sqrt();
             if !(len > 1e-10 * start) {
@@ -118,6 +152,51 @@ impl Basis {
             }
             self.dv.push(d.dispersive_mass.iter().map(|md| product(p, md, &u)).collect());
             self.v.push(u);
+            self.project_last();
+        }
+    }
+
+    fn empty(dispersive: usize) -> Basis {
+        Basis {
+            v: Vec::new(),
+            kv: Vec::new(),
+            mv: Vec::new(),
+            wv: Vec::new(),
+            dv: Vec::new(),
+            kk: Vec::new(),
+            mm: Vec::new(),
+            ww: Vec::new(),
+            dd: vec![Vec::new(); dispersive],
+        }
+    }
+
+    /// The projections' new row and column for the last basis vector: vᵢᵀ A v_j for each fixed
+    /// matrix A, symmetric as A is.
+    fn project_last(&mut self) {
+        let Some(j) = self.v.len().checked_sub(1) else {
+            return;
+        };
+        let grow = |g: &mut Vec<Vec<C>>, av: &[C], v: &[Vec<f64>]| {
+            let col: Vec<C> = v.par_iter().map(|vi| dot_rc(vi, av)).collect();
+            for (row, c) in g.iter_mut().zip(&col) {
+                row.push(*c);
+            }
+            g.push(col);
+        };
+        let grow_real = |g: &mut Vec<Vec<f64>>, av: &[f64], v: &[Vec<f64>]| {
+            let col: Vec<f64> = v.par_iter().map(|vi| dot_rr(vi, av)).collect();
+            for (row, c) in g.iter_mut().zip(&col) {
+                row.push(*c);
+            }
+            g.push(col);
+        };
+        grow(&mut self.kk, &self.kv[j], &self.v);
+        grow(&mut self.mm, &self.mv[j], &self.v);
+        if let Some(wv) = self.wv.get(j) {
+            grow_real(&mut self.ww, wv, &self.v);
+        }
+        for (dd, dv) in self.dd.iter_mut().zip(&self.dv[j]) {
+            grow_real(dd, dv, &self.v);
         }
     }
 }
@@ -188,10 +267,10 @@ where
     let mut full = vec![false; nf];
     let mut solved = 0;
     let mut last: Option<f64> = None;
-    let mut basis = Basis { v: Vec::new(), kv: Vec::new(), mv: Vec::new(), wv: Vec::new(), dv: Vec::new() };
+    let mut basis = Basis::empty(d.dispersive_mass.len());
     let solve_full = |i: usize, basis: &mut Basis, results: &mut Vec<Option<FrequencyResult>>, full: &mut Vec<bool>| -> Result<()> {
-        let r = d.solve(frequencies[i])?;
-        for x in &r.fields {
+        let (r, extra) = d.solve_spanning(frequencies[i], o.moments)?;
+        for x in r.fields.iter().chain(&extra) {
             basis.add(d, x);
         }
         results[i] = Some(r);
@@ -211,25 +290,43 @@ where
     // The ports' terms at each frequency do not depend on the basis: made once.
     let mut terms: Vec<Option<Vec<Vec<PortTerm<'_>>>>> = (0..nf).map(|_| None).collect();
     let worst_residual = loop {
-        // Every frequency not solved in full, in the basis.
-        let mut worst: Option<(usize, f64)> = None;
-        let pass: Vec<usize> = (0..nf).filter(|&i| !full[i]).collect();
-        for (k, &i) in pass.iter().enumerate() {
-            each(step(solved, k, pass.len(), last))?;
+        // Every frequency not solved in full, in the basis: each on its own, in parallel in
+        // chunks (`each` hears between them), the worst then found in the frequencies' order, so
+        // the result is the serial one's.
+        let pending: Vec<usize> = (0..nf).filter(|&i| !full[i]).collect();
+        for &i in &pending {
             if terms[i].is_none() {
                 terms[i] = Some(d.checked_terms(frequencies[i])?);
             }
-            let t = terms[i].as_ref().ok_or_else(|| invalid("sweep", "a frequency's port terms are missing"))?;
-            let (r, residual) = reduced(d, &basis, frequencies[i], t)?;
-            if worst.is_none_or(|(_, w)| residual > w) {
-                worst = Some((i, residual));
+        }
+        let mut worst: Option<(usize, f64)> = None;
+        let chunk = 4 * rayon::current_num_threads().max(1);
+        for (c, part) in pending.chunks(chunk).enumerate() {
+            each(step(solved, c * chunk, pending.len(), last))?;
+            let pass: Vec<Result<(FrequencyResult, f64)>> = part
+                .par_iter()
+                .map(|&i| {
+                    let t = terms[i].as_ref().ok_or_else(|| invalid("sweep", "a frequency's port terms are missing"))?;
+                    reduced(d, &basis, frequencies[i], t)
+                })
+                .collect();
+            for (&i, r) in part.iter().zip(pass) {
+                let (r, residual) = r?;
+                if worst.is_none_or(|(_, w)| residual > w) {
+                    worst = Some((i, residual));
+                }
+                results[i] = Some(r);
             }
-            results[i] = Some(r);
         }
         last = worst.map(|(_, w)| w);
         match worst {
             Some((i, w)) if w > o.tolerance && solved < o.max_solves => {
                 each(step(solved, 0, 0, last))?;
+                // The next pass solves them again in the larger basis: their fields are not
+                // kept beside the factorization.
+                for (r, _) in results.iter_mut().zip(&full).filter(|(_, f)| !**f) {
+                    *r = None;
+                }
                 solve_full(i, &mut basis, &mut results, &mut full)?;
                 solved += 1;
             }
@@ -240,12 +337,17 @@ where
     Ok(FastSweep { results, full, basis: basis.v.len(), worst_residual })
 }
 
-/// The system at one frequency in the basis V: A V by columns (all but the rank-one terms),
-/// the rank-one terms, and Vᵀ A V with them.
+/// The system at one frequency in the basis V: the coefficients of its fixed parts, the layer's
+/// P V (when there is a layer), the rank-one terms, and Vᵀ A V with them.
 struct Reduced {
     /// The unknowns of the full equations.
     n: usize,
-    av: Vec<Vec<C>>,
+    /// k₀², each dispersive material's k₀² εr,d(ω), the walls' factor.
+    k2: f64,
+    dispersive: Vec<C>,
+    wall: Option<C>,
+    /// P v per basis vector, the layer's matrix at this k₀.
+    pv: Option<Vec<Vec<C>>>,
     rank_one: Vec<RankOne>,
     ar: Vec<Vec<C>>,
 }
@@ -254,6 +356,7 @@ impl Reduced {
     fn new(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>]) -> Result<Reduced> {
         let k0 = wavenumber(frequency);
         let (n, m) = (d.dofs.unknowns, basis.v.len());
+        let k2 = k0 * k0;
         let wall = d.wall.as_ref().map(|w| wall_factor(frequency, w.sigma, w.thickness));
         // k₀² εr,d(ω) per dispersive material.
         let dispersive = d.dispersive_scales(frequency);
@@ -265,34 +368,33 @@ impl Reduced {
         } else {
             None
         };
-        // A V, column by column: K v − k₀² (M v + Σ εr,d M_d v) + c W v + P v (the rank-one terms
-        // come after).
-        let av: Vec<Vec<C>> = (0..m)
-            .map(|j| {
-                (0..n)
-                    .map(|i| {
-                        let mut x = basis.kv[j][i] - basis.mv[j][i] * (k0 * k0);
-                        for (c, dv) in dispersive.iter().zip(&basis.dv[j]) {
-                            x -= c * dv[i];
-                        }
-                        if let Some(c) = wall {
-                            x += c * basis.wv[j][i];
-                        }
-                        if let Some(p) = &pv {
-                            x += p[j][i];
-                        }
-                        x
-                    })
-                    .collect()
-            })
-            .collect();
         // Rank-one terms: lumped ports' (jωμ₀/R) c cᵀ and the port modes' factor v vᵀ.
         let mut rank_one: Vec<RankOne> =
             d.lumped.iter().map(|l| RankOne { factor: l.factor(frequency), v: l.c.iter().map(|&(i, x)| (i, C::new(x, 0.0))).collect() }).collect();
         rank_one.extend(terms.iter().flatten().map(|t: &PortTerm<'_>| RankOne { factor: t.factor, v: t.v.to_vec() }));
         let project = |v: &[(usize, C)]| -> Vec<C> { basis.v.iter().map(|b| v.iter().map(|&(i, x)| x * b[i]).sum()).collect() };
         let projected: Vec<(C, Vec<C>)> = rank_one.iter().map(|r| (r.factor, project(&r.v))).collect();
-        let mut ar: Vec<Vec<C>> = (0..m).map(|i| (0..m).map(|j| dot_rc(&basis.v[i], &av[j])).collect()).collect();
+        // Vᵀ A V from the projections the basis keeps: Vᵀ K V − k₀² (Vᵀ M V + Σ εr,d Vᵀ M_d V)
+        // + c Vᵀ W V, then the layer's and the rank-one terms'.
+        let mut ar: Vec<Vec<C>> = (0..m)
+            .map(|i| {
+                (0..m)
+                    .map(|j| {
+                        let mut x = basis.kk[i][j] - basis.mm[i][j] * k2;
+                        for (c, dd) in dispersive.iter().zip(&basis.dd) {
+                            x -= c * dd[i][j];
+                        }
+                        if let Some(c) = wall {
+                            x += c * basis.ww[i][j];
+                        }
+                        if let Some(p) = &pv {
+                            x += dot_rc(&basis.v[i], &p[j]);
+                        }
+                        x
+                    })
+                    .collect()
+            })
+            .collect();
         for (f, u) in &projected {
             for i in 0..m {
                 for j in 0..m {
@@ -300,7 +402,7 @@ impl Reduced {
                 }
             }
         }
-        Ok(Reduced { n, av, rank_one, ar })
+        Ok(Reduced { n, k2, dispersive, wall, pv, rank_one, ar })
     }
 
     /// The field of a unit incident wave of the mode `t`, solved in the basis, and its relative
@@ -312,8 +414,30 @@ impl Reduced {
         let br: Vec<C> = basis.v.iter().map(|v| b.iter().map(|&(i, x)| x * v[i]).sum()).collect();
         let z = zdense::solve(self.ar.clone(), br).ok_or_else(|| invalid("sweep", "a singular reduced system"))?;
         let x: Vec<C> = (0..n).map(|i| (0..m).map(|j| z[j] * basis.v[j][i]).sum()).collect();
+        // A V z from the fixed parts' products, each basis vector's coefficients folded in once:
+        // K V z − k₀² M V z − Σ k₀² εr,d M_d V z + c W V z + P V z.
+        let mz: Vec<C> = z.iter().map(|zj| zj * self.k2).collect();
+        let dz: Vec<Vec<C>> = self.dispersive.iter().map(|c| z.iter().map(|zj| zj * c).collect()).collect();
+        let wz: Option<Vec<C>> = self.wall.map(|c| z.iter().map(|zj| zj * c).collect());
         // r = b − A x.
-        let mut r: Vec<C> = (0..n).map(|i| -(0..m).map(|j| z[j] * self.av[j][i]).sum::<C>()).collect();
+        let mut r: Vec<C> = (0..n)
+            .map(|i| {
+                let mut ax = C::new(0.0, 0.0);
+                for j in 0..m {
+                    ax += z[j] * basis.kv[j][i] - mz[j] * basis.mv[j][i];
+                    for (dzd, dvj) in dz.iter().zip(&basis.dv[j]) {
+                        ax -= dzd[j] * dvj[i];
+                    }
+                    if let Some(wz) = &wz {
+                        ax += wz[j] * basis.wv[j][i];
+                    }
+                    if let Some(p) = &self.pv {
+                        ax += z[j] * p[j][i];
+                    }
+                }
+                -ax
+            })
+            .collect();
         for &(i, bi) in &b {
             r[i] += bi;
         }

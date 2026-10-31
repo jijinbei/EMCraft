@@ -6,6 +6,7 @@ mod common;
 use common::*;
 use emcraft_fem::Order;
 use emcraft_model::{Axis, Combine, End, Feature, Material, Model, Point3, Port, Shape, Solid};
+use emcraft_solver::sweep::SweepOptions;
 use emcraft_solver::{Complex64 as C, Driven};
 
 /// An impedance (Ω), checked.
@@ -306,11 +307,14 @@ fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
 #[test]
 fn a_fast_sweep_matches_the_full_one() {
     // The high-pass filter over 5–9 GHz in 21 points: the reduced-basis sweep against a full solve
-    // at every point, with fewer factorisations.
+    // at every point, with fewer factorisations, and fewer still with each one's moments.
     let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::Two).unwrap();
     let freqs: Vec<f64> = (0..21).map(|i| 5e9 + 4e9 * i as f64 / 20.0).collect();
     let fast = emcraft_solver::sweep::fast_sweep(&d, &freqs, &Default::default()).unwrap();
     let solved = fast.full.iter().filter(|f| **f).count();
+    // Without the moments each factorization adds only its fields.
+    let plain = emcraft_solver::sweep::fast_sweep(&d, &freqs, &SweepOptions { moments: 0, ..Default::default() }).unwrap();
+    let plain_solved = plain.full.iter().filter(|f| **f).count();
     let mut worst: f64 = 0.0;
     for (f, r) in freqs.iter().zip(&fast.results) {
         let exact = d.solve(*f).unwrap();
@@ -320,10 +324,10 @@ fn a_fast_sweep_matches_the_full_one() {
             }
         }
     }
-    // Measured: 6 full solves, |ΔS| 6e-11 (5e-11 in 41 points; the error goes about as the
-    // residual squared: 8 solves and 4e-14 at a residual of 1e-6).
+    // Measured: 2 full solves with the moments (the band's ends), 6 without; |ΔS| 3.6e-9 (6e-11
+    // with 6 solves: the error goes about as the residual squared, 1e-4 at most).
     assert!(worst < 1e-8, "{worst:e}");
-    assert!(solved <= 8, "{solved}");
+    assert!(solved <= 3 && solved < plain_solved, "{solved} {plain_solved}");
     // Each result says how it was solved: the band's ends in full, the rest mostly in the basis.
     assert_eq!(fast.results.iter().map(|r| r.full).collect::<Vec<_>>(), fast.full);
     assert!(fast.full[0] && fast.full[20]);

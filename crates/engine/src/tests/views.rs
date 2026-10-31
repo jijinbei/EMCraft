@@ -209,7 +209,7 @@ fn the_run_is_estimated_from_its_settings() {
         s.execute("project.estimate", &json!({"command": command, "params": params})).unwrap()
     };
     let sweep = est(&mut s, "solve.frequency", json!({"points": 11, "order": 1}));
-    assert_eq!((sweep["basis"].as_str(), sweep["solves"].as_f64()), (Some("reference"), Some(6.0)));
+    assert_eq!((sweep["basis"].as_str(), sweep["solves"].as_f64()), (Some("reference"), Some(2.0)));
     let full = est(&mut s, "solve.frequency", json!({"points": 11, "order": 1, "sweep": "full"}));
     assert!(full["seconds"].as_f64() > sweep["seconds"].as_f64());
     let order2 = est(&mut s, "solve.frequency", json!({"points": 11}));

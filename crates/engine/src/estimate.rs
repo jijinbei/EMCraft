@@ -9,9 +9,9 @@
 //! measured on this machine — else from a reference machine's (the coaxial line's 45 000
 //! unknowns, 24 million entries, 1.6 s). The run multiplies it: the frequencies (a fast sweep
 //! solves a few in full and the rest in its reduced basis: after each full solve, a pass over
-//! the others, each forming its m × m system from the basis' m vectors of n unknowns, about
-//! m² n multiply-adds, so a sweep of many frequencies over a large model is dominated by them;
-//! measured on the cross-guide coupler's 112 000 unknowns, see [`BASIS_MAC`]), the
+//! the others, each forming its m × m system from the basis' projections and each excitation's
+//! field and residual from its m vectors of n unknowns, about 3 m n multiply-adds per
+//! excitation; measured on the cross-guide coupler, see [`BASIS_MAC`]), the
 //! eigenmodes' subspace iterations, the adaptive passes (each refined mesh about 1.6 times the
 //! unknowns of the last), the phases of a dispersion diagram, a study's points. The time
 //! domain's cost is its cells times its steps (the Courant limit over the run's time, the band's
@@ -37,9 +37,10 @@ const REFERENCE: Basis = Basis { unknowns: 44_910.0, entries: 24.0e6, seconds: 1
 /// The reference machine's time-domain cost per cell and step (s).
 const CELL_STEP: f64 = 2.0e-8;
 /// The reference machine's seconds per multiply-add of a fast sweep's work in its basis (each
-/// frequency's Vᵀ A V and residuals, memory-bound on one thread). Measured on the cross-guide
-/// coupler (112 306 unknowns at order 2, four ports, six full solves): 13 s in the basis at 41
-/// frequencies, 26 s at 101 — 0.4 and 0.3 ns by [`basis_work`].
+/// frequency's fields and residuals, memory-bound, the frequencies on four threads). Measured on
+/// the cross-guide coupler (91 178 unknowns at order 2, four ports, three full solves at 101
+/// frequencies): 25 s of the frequencies' own time, about 6 s on four threads — 0.35 ns by
+/// [`basis_work`].
 const BASIS_MAC: f64 = 0.35e-9;
 /// The most full solves a fast sweep makes (the solver's `SweepOptions::max_solves`).
 const MAX_FULL: f64 = 64.0;
@@ -88,23 +89,26 @@ struct Cost {
 }
 
 /// Full solves a fast sweep of `n` frequencies makes (the rest in its basis). They follow what
-/// the band holds, not the count: the coupler made six at 11, 41 and 101 frequencies, the
-/// high-pass filter six at 21; a little more with more frequencies.
+/// the band holds, not the count: with each full solve's moments the junction templates made two
+/// or three at 101 frequencies, the high-pass filter two at 21; a little more with more
+/// frequencies.
 fn full_solves(n: f64) -> f64 {
-    if n < 3.0 { n } else { (4.0 + (n.log2() / 2.0).ceil()).min(n) }
+    if n < 3.0 { n } else { (2.0 + (n.log2() / 4.0).floor()).min(n) }
 }
 
 /// The multiply-adds of a fast sweep's work in its basis: `n` frequencies, `full` of them solved
 /// in full (the band's ends, then one per pass), each full solve adding two vectors (its real
-/// and imaginary parts) per excitation; the pass after the k-th full solve solves the other
-/// n − k in a basis of m = 2 · excitations · k vectors of `unknowns`, each forming Vᵀ A V
-/// (m² n) and each excitation's field and residual (2 m n).
+/// and imaginary parts) per excitation and per moment beside its field; the pass after the
+/// k-th full solve solves the other n − k in a basis of m vectors of `unknowns`, each forming
+/// its m × m system from the basis' projections (m²) and each excitation's field and residual
+/// (3 m n).
 fn basis_work(n: f64, full: f64, excitations: f64, unknowns: f64) -> f64 {
-    let per_solve = 2.0 * excitations.max(1.0);
+    let e = excitations.max(1.0);
+    let per_solve = 2.0 * e * (1 + emcraft_solver::sweep::SweepOptions::default().moments) as f64;
     (2..=full.clamp(0.0, MAX_FULL) as usize)
         .map(|k| {
             let m = per_solve * k as f64;
-            (n - k as f64).max(0.0) * unknowns * (m * m + 2.0 * excitations.max(1.0) * m)
+            (n - k as f64).max(0.0) * (m * m + 3.0 * e * m * unknowns)
         })
         .sum()
 }
@@ -288,16 +292,16 @@ pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
 mod tests {
     #[test]
     fn a_fast_sweeps_basis_work_grows_with_its_frequencies_and_solves() {
-        // The coupler at 41 frequencies: six full solves, four ports (measured 13 s).
-        let w = super::basis_work(41.0, 6.0, 4.0, 112_306.0);
-        assert!((w * super::BASIS_MAC - 13.0).abs() < 3.0, "{w:e}");
-        assert!(super::basis_work(101.0, 6.0, 4.0, 112_306.0) > 2.0 * w);
-        assert!(super::basis_work(41.0, 9.0, 4.0, 112_306.0) > 2.0 * w);
+        // The coupler at 101 frequencies: three full solves, four ports (measured about 6 s).
+        let w = super::basis_work(101.0, 3.0, 4.0, 91_178.0);
+        assert!((w * super::BASIS_MAC - 6.0).abs() < 2.0, "{w:e}");
+        assert!(super::basis_work(201.0, 3.0, 4.0, 91_178.0) > 1.9 * w);
+        assert!(super::basis_work(101.0, 5.0, 4.0, 91_178.0) > 2.0 * w);
         // No pass without two full solves; hostile counts give nothing or the cap, not a panic.
         assert_eq!(super::basis_work(41.0, 1.0, 4.0, 1e5), 0.0);
         assert_eq!(super::basis_work(f64::NAN, f64::NAN, 4.0, 1e5), 0.0);
         assert!(super::basis_work(1e4, f64::INFINITY, 4.0, 1e5).is_finite());
         assert_eq!(super::full_solves(2.0), 2.0);
-        assert_eq!((super::full_solves(11.0), super::full_solves(101.0)), (6.0, 8.0));
+        assert_eq!((super::full_solves(11.0), super::full_solves(101.0)), (2.0, 3.0));
     }
 }
