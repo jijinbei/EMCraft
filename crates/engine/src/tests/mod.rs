@@ -3,6 +3,7 @@
 mod adapt;
 mod designs;
 mod geometry;
+mod invariants;
 mod items;
 mod junctions;
 mod open;

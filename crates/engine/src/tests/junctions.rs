@@ -3,10 +3,10 @@
 //! No published reference gives these components' S-parameters to a tolerance an oracle case
 //! could hold them to (Marcuvitz's equivalent circuits for E-plane tees and the small-hole
 //! theory of cross-guide couplers are approximations of a few per cent at best, and radius bends
-//! have no closed form), so they are checked here by what every lossless reciprocal junction
-//! obeys — S unitary and symmetric, to rounding — and by what their symmetry makes exact (the
-//! tees' equal splits, the magic tee's isolated arms), within tolerances for the unstructured
-//! mesh, which is not itself symmetric.
+//! have no closed form), so they are checked here by what their symmetry makes exact (the tees'
+//! equal splits, the magic tee's isolated arms), within tolerances for the unstructured mesh,
+//! which is not itself symmetric, and by their match. What every lossless reciprocal junction
+//! obeys — S unitary and symmetric, to rounding — is `invariants.rs`', for every template.
 
 use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
@@ -25,51 +25,34 @@ fn solved(name: &str, size: f64, frequencies: &[f64]) -> Value {
     s.execute("solve.frequency", &json!({"frequencies": frequencies, "order": 2})).unwrap()
 }
 
-/// S unitary (each column of unit power, columns orthogonal) and symmetric, at point `i` of an
-/// `n`-port sweep, to `tol`.
-fn lossless_and_reciprocal(r: &Value, i: usize, n: usize, tol: f64) {
-    for p in 1..=n {
-        for q in 1..=n {
-            let d = s(r, i, &format!("s{p}{q}")) - s(r, i, &format!("s{q}{p}"));
-            assert!(d.norm() < tol, "reciprocal: s{p}{q} {d}");
-            let dot: C = (1..=n).map(|k| s(r, i, &format!("s{k}{p}")).conj() * s(r, i, &format!("s{k}{q}"))).sum();
-            let want = if p == q { 1.0 } else { 0.0 };
-            assert!((dot - want).norm() < tol, "unitary: columns {p}, {q}: {dot}");
-        }
-    }
-}
-
 /// The phase of `z` relative to `w`, in degrees within (−180, 180].
 fn phase(z: C, w: C) -> f64 {
     (z / w).arg().to_degrees()
 }
 
-/// The radius bend `name` lossless, reciprocal and matched.
+/// The radius bend `name` matched.
 fn radius_bend(name: &str) {
     // 8 mm cells, for speed (a fifth of the H bend's tetrahedra at 5 mm, two thirds of the E
-    // bend's): S is unitary and symmetric to rounding on any mesh, and the reflection stays well
-    // below the bound.
+    // bend's): the reflection stays well below the bound.
     let r = solved(name, 8.0, &[10.0]);
-    lossless_and_reciprocal(&r, 0, 2, 1e-6);
     // A mean radius of one guide wavelength: a smooth bend reflects little (|S11| about 0.002 at
     // 10 GHz on the template's mesh, 0.005 at 8 mm).
     assert!(s(&r, 0, "s11").norm() < 0.02, "{name}: {}", s(&r, 0, "s11"));
 }
 
 #[test]
-fn the_h_plane_radius_bend_is_lossless_reciprocal_and_matched() {
+fn the_h_plane_radius_bend_is_matched() {
     radius_bend("h-bend-radius");
 }
 
 #[test]
-fn the_e_plane_radius_bend_is_lossless_reciprocal_and_matched() {
+fn the_e_plane_radius_bend_is_matched() {
     radius_bend("e-bend-radius");
 }
 
 #[test]
 fn the_e_plane_tee_splits_equally_in_antiphase() {
     let r = solved("e-tee", 5.0, &[10.0]);
-    lossless_and_reciprocal(&r, 0, 3, 1e-6);
     // The side arm's TE10 (E across its narrow side, along x) is odd under the mirror across
     // its middle plane x = l + b/2, so it feeds the two ends equally and in antiphase.
     let (s13, s23) = (s(&r, 0, "s13"), s(&r, 0, "s23"));
@@ -78,11 +61,10 @@ fn the_e_plane_tee_splits_equally_in_antiphase() {
     assert!((s(&r, 0, "s11").norm() - s(&r, 0, "s22").norm()).abs() < 5e-3);
 }
 
-/// The magic tee's checks at point `i`: lossless and reciprocal, the E and H arms (4 and 3)
-/// isolated, each splitting equally between the collinear arms 1 and 2 — in phase from the H
-/// arm, in antiphase from the E arm — as its mirror plane x = l + a/2 makes exact.
+/// The magic tee's checks at point `i`: the E and H arms (4 and 3) isolated, each splitting
+/// equally between the collinear arms 1 and 2 — in phase from the H arm, in antiphase from the
+/// E arm — as its mirror plane x = l + a/2 makes exact.
 fn magic_tee_ideal(r: &Value, i: usize, tol: f64) {
-    lossless_and_reciprocal(r, i, 4, 1e-6);
     assert!(s(r, i, "s34").norm() < tol, "isolation: {}", s(r, i, "s34"));
     let (s13, s23, s14, s24) = (s(r, i, "s13"), s(r, i, "s23"), s(r, i, "s14"), s(r, i, "s24"));
     assert!((s13.norm() - s23.norm()).abs() < tol && phase(s13, s23).abs() < 1.0, "H arm: {s13} {s23}");
@@ -115,7 +97,6 @@ fn the_cross_guide_coupler_couples_one_way() {
     let mut session = Session::new();
     session.execute("file.sample", &json!({"name": "cross-guide-coupler"})).unwrap();
     let r = session.execute("solve.frequency", &json!({"frequencies": [10], "order": 2})).unwrap();
-    lossless_and_reciprocal(&r, 0, 4, 1e-6);
     // About 30 dB coupled to port 3, the other end of the crossing guide isolated by about
     // 12 dB more (its directivity); the through arm and its mirror alike.
     let db = |k: &str| 20.0 * s(&r, 0, k).norm().log10();
