@@ -16,7 +16,7 @@
   {"expect": {"inspect": {"sparameters": "magnitude"}, "handles": ["chart:sparameters"]}},
   {"shot": "sparameters-magnitude"},
   {"note": "The choice stays with the view"},
-  {"call": "ui.set", "params": {"view": "outline"}},
+  {"call": "ui.set", "params": {"view": "model"}},
   {"call": "ui.set", "params": {"view": "sparameters"}},
   {"expect": {"inspect": {"sparameters": "magnitude"}}}
 ]

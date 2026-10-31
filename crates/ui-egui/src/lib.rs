@@ -1,7 +1,7 @@
 //! EMCraft's desktop UI, in the style of SolidCraft's: an application bar; a ribbon of tabs
 //! (MODEL, MATERIALS, PORTS & SOURCES, BOUNDARIES, MESH, SIMULATE, RESULTS, in the step bar's
 //! order) whose panels hold the engine's commands, with command search; a browser of the model
-//! and its results on the left; the viewport in the middle (the model's outline, S-parameter charts, fields on planes with a phase
+//! and its results on the left; the viewport in the middle (the model in 3D with its section view, S-parameter charts, fields on planes with a phase
 //! animation, port-mode and eigenmode tables, far-field patterns, the comparison with theory, all
 //! drawn by `emcraft-render` or egui, no GPU rendering); command dialogs as floating or docked
 //! cards; messages, progress and Cancel at the bottom.
@@ -61,6 +61,7 @@ pub mod raster;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;
+pub mod section3d;
 pub mod selection;
 pub mod settings;
 mod shots;

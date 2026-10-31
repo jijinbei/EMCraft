@@ -1,5 +1,5 @@
-//! The viewport card: the model's outline (H-plane and E-plane views of the guide or the
-//! solid's bounding views, with materials, apertures, ports and sources), and the results — the
+//! The viewport card: the project's Home, the model in 3D (its section view carries what a 2D
+//! outline would: the cut, its dimensions and the ports on it), and the results — the
 //! S-parameter chart against the exact curves, fields on a plane with a phase animation, the
 //! port-mode and eigenmode tables, the far-field pattern and the comparison with theory. Charts
 //! and fields are `emcraft-render`'s CPU pictures, shown as textures.
@@ -117,7 +117,6 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             let body = |ui: &mut egui::Ui, st: &mut Parts, out: &mut Actions| match app.view {
                 View::Home => project_home(app, &mut st.fields, ui, out),
                 View::Model => model3d(app, st, ui, out),
-                View::Outline => model(app, ui),
                 View::SParameters => show_chart::<SParameters>(app, st, ui, out),
                 View::Tdr => show_chart::<Tdr>(app, st, ui, out),
                 View::Field => field(app, st, ui, out),
@@ -128,7 +127,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 View::Study => show_chart::<StudyView>(app, st, ui, out),
                 View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
             };
-            if matches!(app.view, View::Model | View::Outline) {
+            if app.view == View::Model {
                 body(&mut inner, st, out);
             } else if app.view == View::Home {
                 egui::ScrollArea::vertical().id_salt("view_home").auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));

@@ -368,6 +368,10 @@ fn tour() -> Record {
         // Cut open (when there is a model to cut).
         if h.call("ui.set", json!({"section": {"axis": "x"}}))["ok"] == json!(true) {
             h.frames(2);
+            // Its dimensions off, then on again.
+            h.app.view3d.section_dims = false;
+            h.frames(2);
+            h.app.view3d.section_dims = true;
             call(&mut h, "ui.set", json!({"section": null}));
         }
         call(&mut h, "ui.set", json!({"step": "setup"}));

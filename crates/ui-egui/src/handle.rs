@@ -325,6 +325,9 @@ pub enum Handle<'a> {
     CubeButton(&'static str),
     /// The axis the section view cuts across (0 x, 1 y, 2 z): `view3d:section:x`.
     SectionAxis(usize),
+    /// A dimension's or a port's label on the section view's cut: `view3d:section:dim:0`,
+    /// `view3d:section:port:1`.
+    SectionNote(&'static str, usize),
     /// A tool's switch in the 3D view: `view3d:tool:measure`.
     Tool(crate::tools3d::Tool),
     /// A tool's button on the ribbon: `toolbar:tool:port`.
@@ -434,6 +437,7 @@ impl fmt::Display for Handle<'_> {
             }
             Handle::CubeButton(b) => write!(f, "view3d:cube:{b}"),
             Handle::SectionAxis(k) => write!(f, "view3d:section:{}", AXES.get(k).copied().unwrap_or("?")),
+            Handle::SectionNote(kind, i) => write!(f, "view3d:section:{kind}:{i}"),
             Handle::Tool(t) => write!(f, "view3d:tool:{}", t.id()),
             Handle::RibbonTool(t) => write!(f, "toolbar:tool:{}", t.id()),
             Handle::StepTool(t) => write!(f, "step:tool:{}", t.id()),

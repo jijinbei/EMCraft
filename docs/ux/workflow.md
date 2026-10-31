@@ -126,7 +126,10 @@ Work is not lost: closing the window with unsaved changes asks Save / Don't save
 job running, whether to stop it first); unsaved changes are copied aside every minute and
 offered on the start page after a crash (Recover, or dismiss).
 The 3D view cuts the model open: a section across x, y or z at a position along it, either side
-kept, the cut faces filled in each body's colour.
+kept, the cut faces filled in each body's colour; a guide's H-plane (y = b/2) and E-plane (x = a/2) cuts
+are one click each, a button turns the camera straight at the cut (orthographic), and the cut
+carries its dimensions (the outline's extents, the irises' and steps' apertures) and the ports
+where they meet it, named and sized. There is no separate 2D outline view: the section view is it.
 Each control is in one place: opening a step switches the ribbon to that step's tab (its
 commands), so the step panel holds only the step's checks, its own settings (the band, the
 sweep, Run) and the dialog docked there; the views over the viewport are switched by its view

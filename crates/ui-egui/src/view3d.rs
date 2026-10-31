@@ -109,6 +109,8 @@ pub struct View3d {
     built: Option<(SceneKey, Built)>,
     /// The section view's cut, when it is on.
     pub section: Option<Cut>,
+    /// The cut's dimensions and ports drawn on it (`crate::section3d`).
+    pub section_dims: bool,
     /// The built scene cut, for the scene and the cut it was made from.
     cut: Option<(SceneKey, Cut, Built)>,
     /// The field view's plane in the scene built, when it shows one.
@@ -162,6 +164,7 @@ impl Default for View3d {
             fitted: None,
             built: None,
             section: None,
+            section_dims: true,
             cut: None,
             facing: None,
             picked: None,
@@ -349,6 +352,7 @@ impl View3d {
             "gpu": self.drawn_on_gpu,
             "animating": self.animating(),
             "section": self.section.map(|s| s.inspect(l)),
+            "section_dims": self.section_dims,
             "tools": self.tools.inspect(l),
         })
     }
@@ -434,6 +438,9 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     let p = ui.painter().with_clip_rect(rect);
     draw(v, ui, &p, rect, key, gpu, t);
     labels(&p, rect, &v.camera, &built.labels, t);
+    if let (Some(cut), true, Some(b)) = (v.section, v.section_dims, v.shown()) {
+        crate::section3d::annotate(app, &b.scene, &v.camera, &p, rect, cut, bounds);
+    }
     legend(&p, rect, &built.legend, t);
     crate::tools3d::draw(app, v, &p, rect);
     if let Some(b) = v.boxsel {
@@ -1220,7 +1227,7 @@ fn legend(p: &egui::Painter, rect: Rect, items: &[(String, Rgb)], t: &Tokens) {
 }
 
 /// The standard view looking from the side of axis `k` given by `sign` (its eye there).
-fn view_from(k: usize, sign: f64) -> Option<StandardView> {
+pub(crate) fn view_from(k: usize, sign: f64) -> Option<StandardView> {
     StandardView::ALL.into_iter().filter(|v| *v != StandardView::Iso).find(|v| {
         let mut c = Camera::default();
         c.standard(*v);
@@ -1348,21 +1355,35 @@ fn nav_bar(
     }
 }
 
-/// The section view's controls in a bar over the tools: the axis it cuts across (x, y, z), where
-/// along it (a slider over the model's extent, the value in display units `l`) and which side
-/// stays (flip).
+/// The section view's controls in a bar over the tools: a guide's H-plane and E-plane cuts, the
+/// axis it cuts across (x, y, z), where along it (a slider over the model's extent, the value in
+/// display units `l`), which side stays (flip), the camera straight at the cut and the cut's
+/// dimensions on or off.
 fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi): ([f64; 3], [f64; 3]), l: emcraft_model::units::Length) {
     let Some(mut cut) = v.section else { return };
     let t = &Tokens::get();
     let k = cut.axis.min(2);
     let (size, pitch, slider_w, value_w) = (24.0, 28.0, 170.0, 84.0);
-    let width = 3.0 * pitch + slider_w + value_w + pitch + 16.0;
+    let width = 5.0 * pitch + 8.0 + slider_w + value_w + 3.0 * pitch + 16.0;
     let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 70.0), vec2(width, size + 8.0));
     let p = ui.painter().with_clip_rect(rect);
     p.rect_filled(bar, 8.0, t.panel.gamma_multiply(0.95));
     p.rect_stroke(bar, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     let font = FontId::proportional(t.font_label);
     let mut x = bar.left() + 6.0;
+    use crate::section3d::{Mark, Preset, button};
+    for (preset, handle, letter, tip) in [
+        (Preset::HPlane, Fixed::View3dSectionHPlane, "H", "H-plane cut (y = b/2)"),
+        (Preset::EPlane, Fixed::View3dSectionEPlane, "E", "E-plane cut (x = a/2)"),
+    ] {
+        let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
+        if button(ui, &p, r, handle, Mark::Text(letter), tip, preset.is(cut, (lo, hi))) {
+            cut = preset.cut((lo, hi));
+        }
+        x += pitch;
+    }
+    p.vline(x + 1.0, (bar.top() + 6.0)..=(bar.bottom() - 6.0), Stroke::new(1.0, t.border));
+    x += 8.0;
     for (axis, name) in crate::handle::AXES.into_iter().enumerate() {
         let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
         let resp = ui.hit(r, Handle::SectionAxis(axis), Sense::click());
@@ -1404,6 +1425,19 @@ fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi): ([f64; 3
     glyphs::paint(&p, r.shrink(3.0), Glyph::Flip, t.text, t.accent);
     if resp.on_hover_text(tip).clicked() {
         cut.keep = if cut.keep == Keep::Low { Keep::High } else { Keep::Low };
+    }
+    x += pitch;
+    let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
+    if button(ui, &p, r, Fixed::View3dSectionLook, Mark::Glyph(Glyph::Lookat), "Look straight at the cut", false) {
+        let outline = v.shown().map_or_else(|| crate::section3d::flat(cut, (lo, hi)), |b| crate::section3d::outline(&b.scene, cut, (lo, hi)));
+        v.camera.projection = Projection::Orthographic;
+        v.goal = crate::section3d::look(cut, outline);
+    }
+    x += pitch;
+    let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
+    let dims = v.section_dims;
+    if button(ui, &p, r, Fixed::View3dSectionDims, Mark::Glyph(Glyph::Ruler), if dims { "Dimensions: on" } else { "Dimensions: off" }, dims) {
+        v.section_dims = !dims;
     }
     v.section = Some(cut);
 }

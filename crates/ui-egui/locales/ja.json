@@ -113,7 +113,6 @@
     "Drawn on the CPU with a depth buffer and smoothed edges when the view rests; the GPU while you drag.": "静止時は CPU で深度バッファーと滑らかなエッジで描画し、ドラッグ中は GPU で描画。",
     "E arrows": "E 矢印",
     "E-plane": "E 面",
-    "E-plane (y across z)": "E 面（z に対する y）",
     "E-plane x": "E 面 x",
     "EXPORT": "書き出し",
     "Each port's modes at {f} {unit}: propagation, effective permittivity, impedance (seconds, no full solve).": "{f} {unit} での各ポートのモード：伝搬、実効誘電率、インピーダンス（数秒、全体解析なし）。",
@@ -167,7 +166,6 @@
     "Graphite": "グラファイト",
     "H arrows": "H 矢印",
     "H-plane": "H 面",
-    "H-plane (x across z)": "H 面（z に対する x）",
     "H-plane y": "H 面 y",
     "History": "履歴",
     "Home view (isometric)": "ホームビュー（等角）",
@@ -216,7 +214,6 @@
     "No eigenmodes yet: SIMULATE › Eigenmodes.": "固有モードはまだありません：シミュレーション › 固有モード。",
     "No far field yet: SIMULATE › Radiation (an open model with sources or lumped ports).": "遠方界はまだありません：シミュレーション › 放射（波源または集中定数ポートのある開放モデル）。",
     "No fields yet: solve a sweep, eigenmodes or an open problem first.": "電磁界はまだありません：まず掃引、固有モード、開放問題のいずれかを解析してください。",
-    "No geometry yet: MODEL › Waveguide or Solid, or open a sample.": "形状はまだありません：モデル › 導波管または領域、またはサンプルを開いてください。",
     "No geometry yet: open a sample or start at step 1, Geometry.": "形状はまだありません：サンプルを開くか、ステップ 1「形状」から始めてください。",
     "No port modes yet: they need a meshed model with ports.": "ポートモードはまだありません：ポートのあるメッシュ済みモデルが必要です。",
     "No results yet: Run (step 7). The view tabs over the viewport show them.": "結果はまだありません：実行（ステップ 7）。ビューポート上のビュータブで表示します。",
@@ -244,7 +241,6 @@
     "Optimize": "最適化",
     "Orthographic — click for perspective": "平行投影 — クリックで透視投影",
     "Out of date": "古い結果",
-    "Outline": "輪郭",
     "PINNED": "固定点",
     "PML": "PML",
     "POINTER": "ポインター",
@@ -683,7 +679,14 @@
     "Metal bodies in a box of air lined by a PML": "PML を張った空気の箱の中に金属の物体",
     "Metal bodies in a box of air: the air is the region": "空気の箱の中に金属の物体：空気が領域",
     "The body is the region; its z ends take ports": "物体が領域。z の両端にポートを置ける",
-    "The named body is the region; the others metal in it": "指定した物体が領域。他はその中の金属"
+    "The named body is the region; the others metal in it": "指定した物体が領域。他はその中の金属",
+    "H-plane cut (y = b/2)": "H 面で切る（y = b/2）",
+    "E-plane cut (x = a/2)": "E 面で切る（x = a/2）",
+    "Look straight at the cut": "断面を正面から見る",
+    "Dimensions: on": "寸法：表示",
+    "Dimensions: off": "寸法：非表示",
+    "{name} · in · {size}": "{name} 入力 · {size}",
+    "{name} · out · {size}": "{name} 出力 · {size}"
   },
   "commands": {
     "project.frequency": {
