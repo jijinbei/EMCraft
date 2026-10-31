@@ -4,13 +4,16 @@ name: Windows installer
 # (`cargo xtask installer-windows`, docs/install-windows.md): cross-compiled with MinGW-w64 and
 # packed by NSIS, both from Nix. A Windows runner then installs it silently and runs it.
 
+# A `v*` tag builds, smoke-tests and attaches the installer to that release; any branch can be
+# built by hand (Actions tab, or `gh workflow run release-windows.yml --ref BRANCH`): the
+# installer is then the run's `emcraft-windows-installer` artifact.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -42,6 +45,7 @@ jobs:
           name: emcraft-windows-installer
           path: dist/*.exe
           if-no-files-found: error
+          retention-days: 30
 
   smoke:
     needs: build
@@ -51,7 +55,7 @@ jobs:
         with:
           name: emcraft-windows-installer
           path: dist
-      - name: Install, run the CLI and the app's --version, uninstall
+      - name: Install, run the CLI (commands, a script, the high-pass sample) and the app's --version, uninstall
         shell: pwsh
         run: |
           $setup = (Get-ChildItem dist\EMCraft-*-setup.exe | Select-Object -First 1).FullName
@@ -60,6 +64,14 @@ jobs:
           $commands = & "$dir\emcraft-cli.exe" commands
           if ($LASTEXITCODE -ne 0) { throw "emcraft-cli commands failed" }
           $commands | Select-Object -First 5
+          $script = Join-Path $env:RUNNER_TEMP 'cavity.json'
+          Set-Content -Path $script -Value '[{"command":"geometry.waveguide","params":{"width":22.86,"height":10.16,"sections":[{"length":30,"material":"vacuum"}]}},{"command":"mesh.generate","params":{"size":5}},{"command":"solve.eigenmodes","params":{"near":8,"count":2,"order":1}}]'
+          & "$dir\emcraft-cli.exe" run $script | Select-Object -Last 5
+          if ($LASTEXITCODE -ne 0) { throw "emcraft-cli run failed" }
+          $out = Join-Path $env:RUNNER_TEMP 'highpass'
+          & "$dir\emcraft-cli.exe" sample highpass --out $out | Select-Object -Last 3
+          if ($LASTEXITCODE -ne 0) { throw "emcraft-cli sample highpass failed" }
+          if (-not (Test-Path "$out\s-parameters.png")) { throw "the sample wrote no s-parameters.png" }
           $app = Start-Process -Wait -PassThru -FilePath "$dir\emcraft.exe" -ArgumentList '--version' -RedirectStandardOutput version.txt
           Get-Content version.txt
           if ($app.ExitCode -ne 0) { throw "emcraft --version failed" }
@@ -72,6 +84,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build, smoke]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

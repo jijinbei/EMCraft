@@ -72,6 +72,14 @@ carries CubeCL's CPU runtime (`cubecl-cpu`, for the tests). The finite element a
 solvers run on the CPU as everywhere; `solve.time_domain` on a GPU backend reports that the
 backend is not built.
 
+What is in: the whole engine (every command, the finite element and time-domain solvers, the
+importers, SolidCraft designs through `solidcraft-exchange`), the desktop app drawn with OpenGL
+(eframe's glow backend), the system's file dialogs. What is out: CUDA and CubeCL's CPU runtime.
+
+The window needs an OpenGL 2 driver. Windows' own fallback (OpenGL 1.1, as in a virtual machine
+without a graphics driver, or some remote desktops) is not enough: the app then shows a message
+box ("EMCraft could not open its window") and exits; `emcraft-cli` works there all the same.
+
 Japanese text in the window is drawn in the system's Japanese font (Yu Gothic UI, else Yu
 Gothic, Meiryo UI, Meiryo, MS UI Gothic, MS Gothic), or in the embedded subset of Noto Sans JP
 when none is found (docs/languages.md).
@@ -98,8 +106,26 @@ It writes `target/EMCraft-VERSION-setup.exe` (or FILE). What it does:
 4. `makensis` packs them with `apps/emcraft/installer/emcraft.nsi`, the version from Cargo.toml.
 
 The release workflow runs the same command on an Ubuntu runner, then installs the result on a
-Windows runner, runs `emcraft-cli commands` and `emcraft --version`, checks the `.emcraft`
-association and uninstalls.
+Windows runner, runs `emcraft-cli commands`, a small eigenmode script (`emcraft-cli run`), the
+high-pass sample (`emcraft-cli sample highpass --out DIR`) and `emcraft --version`, checks the
+`.emcraft` association and uninstalls. It runs on a `v*` tag (and then attaches the installer to
+that release) or by hand (`workflow_dispatch`: the installer is the run's
+`emcraft-windows-installer` artifact).
+
+## How the Windows build is checked
+
+| Check | How | Last result (2026-10-31, 0.1.0) |
+|---|---|---|
+| Cross build, lints | `cargo xtask installer-windows`; `cargo clippy --release --target x86_64-pc-windows-gnu -p emcraft -p emcraft-cli -- -D warnings` with MinGW's GCC as `CC` | builds, no warnings; installer 23.6 MB (`emcraft.exe` 42 MB, `emcraft-cli.exe` 35 MB) |
+| CLI | Wine 10 on Linux (Nix's `wineWow64Packages.stable`): `emcraft-cli commands`, `run` on an eigenmode script, `sample highpass --out DIR` | all run; the sample's worst \|S − S_exact\| = 1.0e-3, its pictures written |
+| Installer | Wine: `setup.exe /S`, the `.emcraft` association in the registry, `uninstall.exe /S` | installs to `%LOCALAPPDATA%\Programs\EMCraft`, association set, uninstall removes both |
+| Window | Wine on Xvfb with Mesa's software OpenGL (llvmpipe): `emcraft --sample highpass --control PORT`, then `ui.inspect` and `ui.render` over the control channel | the window opens, solves the sample (about 10 s), draws its S-parameters |
+| Install and run on Windows | the release workflow's `smoke` job on `windows-latest` | each tagged or hand-started run |
+
+What only a real Windows machine shows: SmartScreen and code signing; the window on real graphics
+drivers (OpenGL 2 on Intel, AMD, NVIDIA; HiDPI scaling; a remote desktop); the system's file
+dialogs and fonts as Windows draws them; opening a `.emcraft` file from Explorer; GPU kernels
+(not in this build).
 
 The app icon is drawn by code (`emcraft_render::icon`); after changing it, `cargo xtask icon`
 rewrites `apps/emcraft/assets/emcraft.ico` (a test fails while the file is stale).
