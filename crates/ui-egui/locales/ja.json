@@ -74,6 +74,7 @@
     "How an antenna radiates: its far-field pattern": "アンテナの放射：遠方界パターン",
     "Next: {step}": "次へ：{step}",
     "No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).": "GPU がありません：3D ビューにはグラフィックスアダプター（または Mesa の llvmpipe などのソフトウェア版）が必要です。",
+    "Outline": "輪郭",
     "Project": "プロジェクト",
     "Make the input": "入力にする",
     "Port {name} is the input.": "ポート {name} を入力にしました。",
