@@ -34,11 +34,15 @@ fn fs_ground(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 }
 
 // Triangles: ambient plus Lambert from a light above and right of the eye, both sides alike.
+// `n.w` ranks coplanar faces: each rank moves the face towards the eye by 1/40 of the lines'
+// nudge, so the later of two faces in one plane is drawn as on the CPU, not whichever the depth
+// buffer's rounding picks; the lines, nudged further than 15 ranks, stay in front.
 @vertex
-fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c: vec4<f32>) -> V {
+fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>) -> V {
     var o: V;
-    o.pos = u.view_proj * vec4<f32>(p, 1.0);
-    let k = 0.42 + 0.58 * abs(dot(n, u.light.xyz));
+    let toward = u.forward_nudge.xyz * (u.forward_nudge.w * 0.025 * n.w);
+    o.pos = u.view_proj * vec4<f32>(p - toward, 1.0);
+    let k = 0.42 + 0.58 * abs(dot(n.xyz, u.light.xyz));
     o.color = vec4<f32>(c.rgb * k, c.a);
     return o;
 }

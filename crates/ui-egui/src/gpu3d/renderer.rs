@@ -118,7 +118,7 @@ pub fn scoped<T>(device: &wgpu::Device, make: impl FnOnce() -> T) -> Result<T, S
 }
 
 fn tri_layout() -> wgpu::VertexBufferLayout<'static> {
-    const A: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4];
+    const A: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4, 2 => Unorm8x4];
     wgpu::VertexBufferLayout { array_stride: TRI_VERTEX as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &A }
 }
 

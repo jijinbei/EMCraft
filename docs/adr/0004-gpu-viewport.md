@@ -53,6 +53,37 @@ pictures (`ui.render`, the scenarios, the CLI) and every fallback draw with it.
   painter always). `ui.inspect`'s `view3d.renderer` names what drew the last frame (`gpu`,
   `cpu`, `painter`).
 
+## A library instead of our own pipelines?
+
+What the view must do is narrow: draw one list of coloured triangles (opaque and see-through,
+each with a tag) and lines, as the CPU renderer draws them, with a depth buffer. The scene, the
+section and its caps, the field's colour maps (vertex colours), the highlight and picking (rays
+against the scene) are ours already and stay on the CPU, because the headless pictures and the
+tools need them there. So a library would only replace the drawing of that list — about 900
+lines here (`gpu3d`: packing, projection, five passes, three small WGSL shaders).
+
+| Option | Licence | Size | What we would still write | CPU parity | Windows (MinGW cross build) |
+|---|---|---|---|---|---|
+| **wgpu offscreen + paint callback (chosen)** | MIT OR Apache-2.0 | +7 MB (Linux, stripped) | everything above, once; no `unsafe` | exact by construction: our projection, shading, line width and nudge, checked pixel by pixel | builds (`cargo xtask installer-windows`); DirectX 12, Vulkan, GL |
+| glow paint callback with a depth buffer (eframe's current backend) | MIT OR Apache-2.0 | +0 | the same, in GLSL | the same | builds |
+| `three-d` 0.19 (glow, egui integration) | MIT | +1–2 MB | the scene's packing, see-through ordering (it blends in draw order, no OIT), wide lines with the nudge (its lines are meshes), our shading as a custom material, caps, colour maps, picking | only after matching its materials to our shading | builds (glow) |
+| `truck-platform` / `truck-rendimpl` (wgpu) | Apache-2.0 | wgpu and more | caps, lines, transparency, colour maps, picking; it draws B-rep shapes and polygon meshes with its own lighting | no: its own PBR-like shading | as wgpu; not in our tree (SolidCraft brings only truck's kernel crates) |
+| `bevy`, `kiss3d` | MIT OR Apache-2.0 / BSD-3-Clause | tens of MB (bevy) | — | — | ruled out: an engine with its own window and loop (bevy), or its own window (kiss3d); neither lives inside an egui panel |
+
+- **glow is out** because every glow call is `unsafe` and the workspace forbids `unsafe`; with
+  wgpu the same renderer is safe Rust and its errors are values.
+- **three-d is not taken.** It would not remove the hard parts (the CPU's look, see-through
+  faces, lines on faces, caps, picking), it ties our glow and egui versions to its own (it must
+  use eframe's GL context, so its `glow` must be eframe's), and it is slowing: its latest
+  release on crates.io is 0.19.0 (2026-04-17), the last change 2026-06-24 (winit 0.30), one
+  maintainer and one or two releases a year — it could hold back an egui upgrade. wgpu is
+  maintained by a large group, released every quarter, and is what egui's own wgpu backend and
+  SolidCraft use.
+- **truck's renderer** draws CAD shapes with its own shading; it shares nothing with our scene
+  and is not in our tree.
+- **The choice:** our own small renderer on wgpu, the approach SolidCraft (the sibling app)
+  takes, so fixes and techniques move between the two.
+
 ## Licences
 
 eframe's `wgpu` feature adds these crates to the desktop app's tree (`cargo tree -p emcraft -e

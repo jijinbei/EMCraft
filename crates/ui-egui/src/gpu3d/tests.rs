@@ -112,27 +112,58 @@ fn gpu_picture(device: &wgpu::Device, queue: &wgpu::Queue, r: &mut Renderer, fra
     (0..h as usize).flat_map(|y| data[y * row as usize..y * row as usize + 4 * w as usize].to_vec()).collect()
 }
 
+/// A headless device, or `None` (printed) on a machine without an adapter; EMCRAFT_REQUIRE_GPU
+/// makes that a failure.
+fn device() -> Option<(wgpu::Adapter, wgpu::Device, wgpu::Queue)> {
+    match headless(wgpu::Backends::all()) {
+        Ok(d) => Some(d),
+        Err(e) if std::env::var_os("EMCRAFT_REQUIRE_GPU").is_none() => {
+            eprintln!("skipping: {e}");
+            None
+        }
+        Err(e) => panic!("{e}"),
+    }
+}
+
+/// `s` drawn by both renderers through `cam`, at one and two samples a side: the share of pixels
+/// that differ by more than 24 in a channel (asserted under `share`) and the mean difference
+/// (under `mean`).
+fn compare(device: &wgpu::Device, queue: &wgpu::Queue, r: &mut Renderer, s: &Scene, id: u64, cam: &Camera, name: &str, limits: (f64, f64)) {
+    let packed = Arc::new(Packed::new(s, id));
+    let (w, h) = (240u32, 160u32);
+    let ground = (Rgb(235, 238, 242), Rgb(200, 205, 214));
+    for supersample in [1, 2] {
+        let uniforms = Uniforms::new(&packed, cam, [w * supersample, h * supersample], f64::from(supersample), ground);
+        let frame = Frame { packed: packed.clone(), uniforms, size: [w * supersample, h * supersample], out: [w, h], supersample };
+        let gpu = gpu_picture(device, queue, r, &frame);
+        let opt = view3d::Options { width: w as usize, height: h as usize, supersample: supersample as usize, background: ground, line_width: 1.0 };
+        let cpu = view3d::render(s, cam, &opt).rgba;
+        assert_eq!(gpu.len(), cpu.len());
+        let differ = gpu.chunks(4).zip(cpu.chunks(4)).filter(|(g, c)| (0..3).any(|i| g[i].abs_diff(c[i]) > 24)).count();
+        let mean = gpu.chunks(4).zip(cpu.chunks(4)).map(|(g, c)| (0..3).map(|i| f64::from(g[i].abs_diff(c[i]))).sum::<f64>()).sum::<f64>()
+            / f64::from(3 * w * h);
+        eprintln!("{name} ×{supersample}: {differ} of {} pixels differ, mean {mean:.2}", w * h);
+        if std::env::var_os("EMCRAFT_GPU_SHOTS").is_some() {
+            let dir = std::env::temp_dir();
+            let png = |rgba: &[u8]| emcraft_render::Canvas { w: w as usize, h: h as usize, rgba: rgba.to_vec() }.png().unwrap_or_default();
+            let _ = std::fs::write(dir.join(format!("gpu3d-{name}-{supersample}-gpu.png")), png(&gpu));
+            let _ = std::fs::write(dir.join(format!("gpu3d-{name}-{supersample}-cpu.png")), png(&cpu));
+        }
+        assert!((differ as f64) < limits.0 * f64::from(w * h), "{name} ×{supersample}: {differ} pixels differ");
+        assert!(mean < limits.1, "{name} ×{supersample}: mean difference {mean}");
+    }
+}
+
 /// The GPU draws what the CPU renderer draws: the same scene from several views, with opaque and
 /// see-through faces and edges, differs only along edges (multisampled there) and where
 /// see-through faces overlap (averaged rather than sorted). Skips on a machine without an
 /// adapter (set EMCRAFT_REQUIRE_GPU to fail instead).
 #[test]
 fn the_gpu_draws_what_the_cpu_draws() {
-    let (adapter, device, queue) = match headless(wgpu::Backends::all()) {
-        Ok(d) => d,
-        Err(e) if std::env::var_os("EMCRAFT_REQUIRE_GPU").is_none() => {
-            eprintln!("skipping: {e}");
-            return;
-        }
-        Err(e) => panic!("{e}"),
-    };
+    let Some((adapter, device, queue)) = device() else { return };
     eprintln!("adapter: {:?}", adapter.get_info());
-    let caps = Caps::of(&adapter, &device);
-    let mut r = Renderer::new(&device, caps, FRAME).unwrap();
+    let mut r = Renderer::new(&device, Caps::of(&adapter, &device), FRAME).unwrap();
     let s = scene();
-    let packed = Arc::new(Packed::new(&s, 1));
-    let (w, h) = (240u32, 160u32);
-    let ground = (Rgb(235, 238, 242), Rgb(200, 205, 214));
     for (k, (view, projection)) in
         [(StandardView::Front, Projection::Perspective), (StandardView::Iso, Projection::Perspective), (StandardView::Iso, Projection::Orthographic)]
             .into_iter()
@@ -140,32 +171,26 @@ fn the_gpu_draws_what_the_cpu_draws() {
     {
         let mut cam = Camera { projection, ..Camera::default() };
         cam.standard(view);
-        cam.fit([-0.014, -0.008, -0.008], [0.014, 0.008, 0.010], f64::from(w) / f64::from(h));
-        for supersample in [1, 2] {
-            let uniforms = Uniforms::new(&packed, &cam, [w * supersample, h * supersample], f64::from(supersample), ground);
-            let frame = Frame { packed: packed.clone(), uniforms, size: [w * supersample, h * supersample], out: [w, h], supersample };
-            let gpu = gpu_picture(&device, &queue, &mut r, &frame);
-            let opt =
-                view3d::Options { width: w as usize, height: h as usize, supersample: supersample as usize, background: ground, line_width: 1.0 };
-            let cpu = view3d::render(&s, &cam, &opt).rgba;
-            assert_eq!(gpu.len(), cpu.len());
-            let differ = gpu.chunks(4).zip(cpu.chunks(4)).filter(|(g, c)| (0..3).any(|i| g[i].abs_diff(c[i]) > 24)).count();
-            let mean = gpu.chunks(4).zip(cpu.chunks(4)).map(|(g, c)| (0..3).map(|i| f64::from(g[i].abs_diff(c[i]))).sum::<f64>()).sum::<f64>()
-                / f64::from(3 * w * h);
-            eprintln!("view {k} ×{supersample}: {differ} of {} pixels differ, mean {mean:.2}", w * h);
-            if std::env::var_os("EMCRAFT_GPU_SHOTS").is_some() {
-                let dir = std::env::temp_dir();
-                let _ = std::fs::write(
-                    dir.join(format!("gpu3d-{k}-{supersample}-gpu.png")),
-                    emcraft_render::Canvas { w: w as usize, h: h as usize, rgba: gpu.clone() }.png().unwrap_or_default(),
-                );
-                let _ = std::fs::write(
-                    dir.join(format!("gpu3d-{k}-{supersample}-cpu.png")),
-                    emcraft_render::Canvas { w: w as usize, h: h as usize, rgba: cpu.clone() }.png().unwrap_or_default(),
-                );
-            }
-            assert!(differ * 100 < (w * h) as usize * 4, "view {k} ×{supersample}: {differ} pixels differ");
-            assert!(mean < 4.0, "view {k} ×{supersample}: mean difference {mean}");
-        }
+        cam.fit([-0.014, -0.008, -0.008], [0.014, 0.008, 0.010], 1.5);
+        compare(&device, &queue, &mut r, &s, 1, &cam, &format!("view{k}"), (0.03, 2.0));
     }
+}
+
+/// A section view of bodies inside a region (the high-pass filter's sections in its guide): the
+/// caps lie in one plane over each other, and the later is drawn, as on the CPU, not whichever
+/// the depth buffer's rounding picks.
+#[test]
+fn coplanar_section_caps_are_drawn_as_on_the_cpu() {
+    let Some((adapter, device, queue)) = device() else { return };
+    let mut r = Renderer::new(&device, Caps::of(&adapter, &device), FRAME).unwrap();
+    let mut s = Scene::default();
+    s.tagged(1, |s| s.cuboid([-0.012, -0.005, -0.025], [0.012, 0.005, 0.025], Rgb(175, 200, 232), 255));
+    s.tagged(2, |s| s.cuboid([-0.012, -0.005, -0.025], [0.012, 0.005, -0.010], Rgb(214, 150, 60), 255));
+    s.tagged(3, |s| s.cuboid([-0.012, -0.005, 0.010], [0.012, 0.005, 0.025], Rgb(214, 150, 60), 255));
+    let cut = view3d::section::section(&s, &view3d::Section::across(1, 0.0, view3d::Keep::Low)).unwrap();
+    let mut cam = Camera::default();
+    cam.standard(StandardView::Iso);
+    cam.fit([-0.012, -0.005, -0.025], [0.012, 0.005, 0.025], 1.5);
+    // Without the ranks, about 2.4 % of the pixels differ (the region's cap through the others').
+    compare(&device, &queue, &mut r, &cut, 2, &cam, "section", (0.015, 0.8));
 }

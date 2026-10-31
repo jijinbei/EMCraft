@@ -2,12 +2,17 @@
 //! made each frame. Plain arithmetic, no device, so it is checked against the CPU renderer's
 //! projection without a GPU.
 
+use std::collections::BTreeMap;
+
 use emcraft_render::Rgb;
 use emcraft_render::view3d::{Camera, Projection, Scene};
 
 /// Bytes per triangle vertex: position (3 × f32, from the scene's origin), the face's unit
-/// normal (3 × f32) and the colour with its opacity (4 × u8).
-pub const TRI_VERTEX: usize = 28;
+/// normal (3 × f32), its rank among coplanar faces (f32, [`Packed::new`]) and the colour with its
+/// opacity (4 × u8).
+pub const TRI_VERTEX: usize = 32;
+/// The most coplanar groups ranked apart in one plane.
+pub const MAX_RANK: u32 = 15;
 /// Bytes per line: both ends (2 × 3 × f32) and the colour with its opacity (4 × u8).
 pub const LINE: usize = 28;
 /// Bytes of [`Uniforms`].
@@ -53,6 +58,12 @@ impl Packed {
     /// `scene` packed: triangles with no area or a non-finite corner and anything fully
     /// transparent are left out, as the CPU renderer leaves them out.
     ///
+    /// Opaque faces lying in one plane (the section view's caps of nested bodies, the faces two
+    /// touching bodies share) are ranked by their runs in it: each time the colour and tag change
+    /// within the plane the rank goes up (to [`MAX_RANK`]). The vertex shader moves a higher rank
+    /// a little nearer, so the later face is drawn, as the CPU renderer, whose equal depths go to
+    /// the later triangle, draws it.
+    ///
     /// ```
     /// use emcraft_render::{Rgb, view3d::Scene};
     /// use emcraft_ui_egui::gpu3d::{Packed, TRI_VERTEX};
@@ -74,6 +85,11 @@ impl Packed {
         };
         let (origin, radius) = if origin.iter().all(|v| v.abs() < 1e12) && radius < 1e12 { (origin, radius) } else { ([0.0; 3], 0.0) };
         let mut p = Packed { id, origin, radius, ..Default::default() };
+        // Each plane's last group (tag and colour) and its run's rank.
+        let mut planes: BTreeMap<[i64; 4], ((u32, [u8; 3]), u32)> = BTreeMap::new();
+        // Planes within 10⁻⁵ of the scene apart count as one: the depth buffer cannot tell them
+        // apart (a body's cap a rounding below another's), where the CPU's f64 can.
+        let step = (radius * 1e-5).max(1e-15);
         for t in scene.tris.iter().filter(|t| t.alpha > 0) {
             if !t.p.iter().flatten().all(|v| v.is_finite()) {
                 continue;
@@ -84,6 +100,22 @@ impl Packed {
                 continue;
             }
             let n = n.map(|c| c / len);
+            let rank = if t.alpha == 255 {
+                // The plane, its normal turned one way.
+                let flip = n.iter().find(|c| c.abs() > 1e-9).is_some_and(|c| *c < 0.0);
+                let u = if flip { n.map(|c| -c) } else { n };
+                let d = dot(u, t.p[0]) / step;
+                let q = |v: f64| if v.is_finite() { v.round().clamp(-9e18, 9e18) as i64 } else { 0 };
+                let key = [q(u[0] * 1e6), q(u[1] * 1e6), q(u[2] * 1e6), q(d)];
+                let g = (t.tag, [t.color.0, t.color.1, t.color.2]);
+                let run = planes.entry(key).or_insert((g, 0));
+                if run.0 != g {
+                    *run = (g, (run.1 + 1).min(MAX_RANK));
+                }
+                run.1 as f32
+            } else {
+                0.0
+            };
             let out = if t.alpha == 255 { &mut p.opaque } else { &mut p.glass };
             if out.len() + 3 * TRI_VERTEX > MAX_BYTES {
                 continue;
@@ -91,6 +123,7 @@ impl Packed {
             for q in t.p {
                 put3(out, sub(q, origin));
                 put3(out, n);
+                out.extend_from_slice(&rank.to_le_bytes());
                 out.extend_from_slice(&[t.color.0, t.color.1, t.color.2, t.alpha]);
             }
         }
@@ -280,6 +313,20 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Coplanar opaque faces rank by their runs in the plane, the later higher; others rank 0.
+    #[test]
+    fn coplanar_faces_rank_by_order() {
+        let mut s = Scene::default();
+        let q = |z: f64| [[0.0, 0.0, z], [1.0, 0.0, z], [1.0, 1.0, z], [0.0, 1.0, z]];
+        s.tagged(1, |s| s.quad(q(0.0), Rgb(10, 10, 10), 255));
+        s.tagged(2, |s| s.quad(q(0.0), Rgb(20, 20, 20), 255));
+        s.tagged(1, |s| s.quad(q(0.0), Rgb(10, 10, 10), 255));
+        s.tagged(2, |s| s.quad(q(0.5), Rgb(20, 20, 20), 255));
+        let p = Packed::new(&s, 0);
+        let ranks: Vec<f32> = p.opaque.chunks(TRI_VERTEX).map(|v| f32::from_le_bytes([v[24], v[25], v[26], v[27]])).collect();
+        assert_eq!(ranks, [[0.0; 6], [1.0; 6], [2.0; 6], [0.0; 6]].concat());
     }
 
     #[test]

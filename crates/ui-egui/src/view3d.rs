@@ -155,6 +155,8 @@ pub struct View3d {
     pub drawn_by: Drawer,
     /// The scene packed for the GPU's view ([`crate::gpu3d`]).
     gpu: crate::gpu3d::Cache,
+    /// The window's GPU the view can draw with (its adapter), as last seen.
+    pub gpu_adapter: Option<String>,
     /// The tools: face and gap ports, the ruler, the reference plane's drag.
     pub tools: crate::tools3d::Tools,
     /// Bumped whenever the scene picked from is built or cut again.
@@ -191,6 +193,7 @@ impl Default for View3d {
             motion: None,
             drawn_by: Drawer::Cpu,
             gpu: Default::default(),
+            gpu_adapter: None,
             tools: crate::tools3d::Tools::default(),
             generation: 0,
         }
@@ -358,6 +361,7 @@ impl View3d {
             "gpu": self.drawn_on_gpu,
             "animating": self.animating(),
             "renderer": self.drawn_by.id(),
+            "gpu_adapter": self.gpu_adapter,
             "section": self.section.map(|s| s.inspect(l)),
             "section_dims": self.section_dims,
             "tools": self.tools.inspect(l),
@@ -442,7 +446,8 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     }
     // Moving pictures (a drag, a view change, a playing field).
     let moving = v.dragging || v.anim.is_some() || (overlay == Overlay::Field && field.player.playing);
-    let drawer = Drawer::choose(app.prefs.drawing, crate::gpu3d::available(ui.ctx()).is_some(), moving);
+    v.gpu_adapter = crate::gpu3d::available(ui.ctx()).map(|a| a.adapter);
+    let drawer = Drawer::choose(app.prefs.drawing, v.gpu_adapter.is_some(), moving);
     let p = ui.painter().with_clip_rect(rect);
     draw(v, ui, &p, rect, key, drawer, moving, t);
     labels(&p, rect, &v.camera, &built.labels, t);
