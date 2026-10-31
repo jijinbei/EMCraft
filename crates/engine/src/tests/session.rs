@@ -336,8 +336,11 @@ fn the_summary_names_the_solid_shape() {
 
 #[test]
 fn a_sample_opened_with_its_solve_has_current_results() {
+    // A 5 mm length of the straight guide, for speed: its own sweep, on a few hundred
+    // tetrahedra.
     let mut s = Session::new();
-    s.execute("file.sample", &json!({"name": "highpass", "solve": true})).unwrap();
+    s.execute("file.sample", &json!({"name": "straight", "values": {"l": 5}, "solve": true})).unwrap();
+    assert!(s.results.sweep.is_some());
     assert_eq!(s.solved_revision, Some(s.revision));
     // A change after it makes them stale.
     s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();

@@ -137,7 +137,7 @@ fn the_time_domain_agrees_with_the_fem_for_the_material_it_realises() {
     // The time domain realises tan δ = 0.05 as the conductivity matched at 10 GHz, so it solves
     // tan δ·10/f; the FEM solves that loss tangent at each frequency.
     let mut td = lossy_slab_session(0.05);
-    let r = td.execute("solve.time_domain", &json!({"frequencies": [8, 12], "cell": 1})).unwrap();
+    let r = td.execute("solve.time_domain", &json!({"frequencies": [8, 12], "cell": 1.5})).unwrap();
     assert_eq!(r["loss_reference"], 10.0);
     for (i, f) in [8.0, 12.0].into_iter().enumerate() {
         let mut fem = lossy_slab_session(0.05 * 10.0 / f);
@@ -147,9 +147,11 @@ fn the_time_domain_agrees_with_the_fem_for_the_material_it_realises() {
         let (t, e) = (&r["points"][i], &q["points"][0]);
         let gap = (c(t, "s11") - c(e, "s11")).norm().max((c(t, "s21") - c(e, "s21")).norm());
         let mag = (c(t, "s21").norm() - c(e, "s21").norm()).abs();
-        // The time domain's 1 mm grid (its phase error) against the FEM's 2e-3: measured 5.3e-3
-        // and 2.8e-2, in |S21| 4.4e-4 and 2.0e-3.
-        assert!(gap < 4e-2 && mag < 4e-3, "{f}: {gap:e} {mag:e}");
+        // The time domain's 1.5 mm grid (its phase error) against the FEM's 2e-3: measured 1.0e-2
+        // and 5.5e-2, in |S21| 1.1e-3 and 3.8e-3 (at 1 mm, a run six times as long: 5.3e-3 and
+        // 2.8e-2, 4.4e-4 and 2.0e-3). A loss tangent left at 0.05 instead would move |S21| by
+        // 2.5e-2 (the FEM's); the accuracy itself is the oracle's lossy-slab-time-domain.
+        assert!(gap < 8e-2 && mag < 6e-3, "{f}: {gap:e} {mag:e}");
     }
 }
 
@@ -191,14 +193,18 @@ fn the_device_is_a_setting_of_the_machine() {
 #[test]
 fn the_factorization_hands_its_large_fronts_to_the_device() {
     // Every front to the GPU's kernels, here on CubeCL's CPU runtime; CUDA is checked by
-    // emcraft-gpu's ignored tests.
+    // emcraft-gpu's ignored tests. A coarse mesh: the kernels' launches, not the fronts' size,
+    // cost here.
     let mut s = Session::new();
+    let coarse = json!({"size": 6});
     s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    s.execute("mesh.generate", &coarse).unwrap();
     let sweep = json!({"frequencies": [7.5], "order": 1});
     let cpu = s.execute("solve.frequency", &sweep).unwrap();
     let r = s.execute("solve.device", &json!({"device": "cubecl-cpu", "min_front": 1})).unwrap();
     assert!(r["factorization"].as_str().unwrap().contains("complex double"), "{r}");
     s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    s.execute("mesh.generate", &coarse).unwrap();
     let on = s.execute("solve.frequency", &sweep).unwrap();
     let s21 = |r: &Value| (r["points"][0]["s21"]["re"].as_f64().unwrap(), r["points"][0]["s21"]["im"].as_f64().unwrap());
     let (a, b) = (s21(&cpu), s21(&on));
