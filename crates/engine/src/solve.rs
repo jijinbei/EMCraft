@@ -137,10 +137,9 @@ pub fn refine(s: &mut Session, p: &Params) -> Result<Value> {
         n if n >= 3 => fast_sweep(&sw.driven, &new)?,
         _ => full_sweep(&sw.driven, &new)?,
     };
-    let mut all = sw.results.clone();
-    all.extend(sw.referred(results)?);
-    all.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
-    let merged = Sweep { results: all, ..(*sw).clone() };
+    let mut merged = (*sw).clone();
+    merged.results.extend(sw.referred(results)?);
+    merged.results.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
     // The run as the merged sweep: the last sweep's settings, its frequencies listed.
     let fu = s.display.frequency;
     let mut params = s.runs.iter().rev().find(|r| r.command == "solve.frequency").map_or_else(|| json!({}), |r| r.params.clone());

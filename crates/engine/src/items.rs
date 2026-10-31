@@ -149,7 +149,7 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
     let face = if p.cleared("face") {
         None
     } else if p.has("face") {
-        let was = old.face.map_or([0.0; 5], |f| [f.at, f.u0, f.v0, f.a, f.b]);
+        let was = old.face.map_or([0.0; 5], |f| f.values());
         let list = p.list("face", 5).required()?;
         if list.len() != 5 {
             return Err(p.error("face", "must be [at, u0, v0, a, b]"));
@@ -161,7 +161,7 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
             let given = p.number_of("face", x)?;
             v[k] = if given == unit.from_si(was[k]) { was[k] } else { unit.to_si(given) };
         }
-        Some(PortFace { axis: axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), at: v[0], u0: v[1], v0: v[2], a: v[3], b: v[4] })
+        Some(PortFace::from_values(axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), v))
     } else {
         match (old.face, axis) {
             (Some(f), Some(axis)) => Some(PortFace { axis, ..f }),
@@ -195,17 +195,18 @@ pub fn port_deembed(s: &mut Session, p: &Params) -> Result<Value> {
     let name = old.name.clone();
     s.model.replace_port(i, Port { deembed, ..old })?;
     let mut rerun = false;
-    if let Some(sw) = s.results.sweep.clone() {
+    if let Some(sw) = s.results.sweep.take() {
         if sw.driven.has_terminals() || sw.driven.periodic.is_some() || i >= sw.deembed.len() {
-            s.results.sweep = None;
             rerun = true;
         } else {
+            let mut sw = std::sync::Arc::unwrap_or_clone(sw);
             let mut to = sw.deembed.clone();
             if let Some(d) = to.get_mut(i) {
                 *d = deembed;
             }
-            let results = crate::session::rereference(&sw.driven, sw.results.clone(), &sw.deembed, &to)?;
-            s.results.sweep = Some(std::sync::Arc::new(crate::Sweep { results, deembed: to, ..(*sw).clone() }));
+            sw.results = crate::session::rereference(&sw.driven, std::mem::take(&mut sw.results), &sw.deembed, &to)?;
+            sw.deembed = to;
+            s.results.sweep = Some(std::sync::Arc::new(sw));
         }
     }
     let l = s.display.length;

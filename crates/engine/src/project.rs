@@ -60,6 +60,11 @@ pub fn push_undo(stack: &mut VecDeque<Snapshot>, s: Snapshot) {
 }
 
 impl Session {
+    /// The undoable state now, with `history` and the `project` to go back to.
+    pub(crate) fn snapshot(&self, history: Vec<Step>, project: Option<Box<Identity>>) -> Snapshot {
+        Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone(), project }
+    }
+
     /// The project the model belongs to, as it is now.
     pub(crate) fn identity(&self) -> Identity {
         Identity {
@@ -285,14 +290,11 @@ pub fn template_marks(name: &str, values: &Value) -> Result<Vec<TemplateMark>> {
         }
         Ok(out)
     };
-    let order: Vec<String> = template_parameters(name).unwrap_or_default().into_iter().map(|p| p.name).collect();
-    let mut out = Vec::new();
-    for n in &order {
-        if let Some(m) = marks.get(n) {
-            out.push(TemplateMark { name: n.clone(), from: point(&m["from"])?, to: point(&m["to"])? });
-        }
-    }
-    Ok(out)
+    template_parameters(name)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| marks.get(&p.name).map(|m| Ok(TemplateMark { from: point(&m["from"])?, to: point(&m["to"])?, name: p.name })))
+        .collect()
 }
 
 /// `file.templates`: the templates, each with its label and parameters.
@@ -396,8 +398,9 @@ struct ProjectFile<'m> {
 const FORMAT: &str = "emcraft-project";
 
 /// The newest version of project files read (2: the runs; 3: the views). A project without
-/// views is written as version 2, which older EMCraft reads.
+/// views is written as version 2 ([`VERSION_WITHOUT_VIEWS`]), which older EMCraft reads.
 const VERSION: u32 = 3;
+const VERSION_WITHOUT_VIEWS: u32 = 2;
 
 fn first_version() -> u32 {
     1
@@ -420,7 +423,7 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         None if copy => return Err(p.error("path", "is required for a copy")),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    let version = if s.views.is_empty() { 2 } else { VERSION };
+    let version = if s.views.is_empty() { VERSION_WITHOUT_VIEWS } else { VERSION };
     let file = ProjectFile {
         format: FORMAT.to_owned(),
         version,
@@ -466,8 +469,15 @@ pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
     Ok(s.summary())
 }
 
-/// A project file read and checked: its history, runs and views.
-fn read_project(path: &str) -> Result<(Vec<Step>, Vec<Run>, crate::views::Views)> {
+/// What a project file holds besides its model: the history, the runs and the views.
+struct Stored {
+    history: Vec<Step>,
+    runs: Vec<Run>,
+    views: crate::views::Views,
+}
+
+/// A project file read and checked.
+fn read_project(path: &str) -> Result<Stored> {
     let bytes = crate::geometry::read_capped(path, MAX_PROJECT_BYTES)?;
     let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
     if doc.get("format").and_then(Value::as_str) != Some(FORMAT) {
@@ -482,7 +492,7 @@ fn read_project(path: &str) -> Result<(Vec<Step>, Vec<Run>, crate::views::Views)
     }
     let runs = crate::runs::checked(file.runs).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     let views = file.views.checked().map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
-    Ok((file.history, runs, views))
+    Ok(Stored { history: file.history, runs, views })
 }
 
 /// Opens a project: its history replayed in a fresh session (so the mesh comes back the same),
@@ -495,13 +505,13 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         Some(o) if o.trim().is_empty() => return Err(p.error("original", "must not be empty")),
         o => o,
     };
-    let (history, runs, views) = read_project(path)?;
+    let stored = read_project(path)?;
     let mut fresh = s.fresh();
-    fresh.run_steps(&history)?;
+    fresh.run_steps(&stored.history)?;
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
-    fresh.runs = runs;
-    fresh.views = views;
+    fresh.runs = stored.runs;
+    fresh.views = stored.views;
     match original {
         None => {
             fresh.path = Some(path.to_owned());
@@ -510,12 +520,15 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         Some(o) => {
             // The original as it was last saved: the copy may be ahead of it. One that cannot be
             // read is unlike anything recovered (a baseline no history equals).
-            let (saved, saved_runs, saved_views) =
-                read_project(o).unwrap_or_else(|_| (vec![Step::new(UNREADABLE, json!({}))], Vec::new(), crate::views::Views::default()));
+            let saved = read_project(o).unwrap_or_else(|_| Stored {
+                history: vec![Step::new(UNREADABLE, json!({}))],
+                runs: Vec::new(),
+                views: crate::views::Views::default(),
+            });
             fresh.path = Some(o.to_owned());
-            fresh.saved = saved;
-            fresh.saved_runs = saved_runs;
-            fresh.saved_views = saved_views;
+            fresh.saved = saved.history;
+            fresh.saved_runs = saved.runs;
+            fresh.saved_views = saved.views;
         }
     }
     s.replace_with(fresh);

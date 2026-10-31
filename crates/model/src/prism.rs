@@ -33,16 +33,24 @@ fn turn(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
     (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 }
 
+/// Whether `c` lies in the box spanned by `a` and `b`.
+fn in_box(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> bool {
+    (0..2).all(|k| c[k] >= a[k].min(b[k]) && c[k] <= a[k].max(b[k]))
+}
+
+/// Whether two turns are strictly of opposite sense.
+fn opposite(x: f64, y: f64) -> bool {
+    (x > 0.0 && y < 0.0) || (x < 0.0 && y > 0.0)
+}
+
 /// Whether segments p–q and r–s meet (touching included).
 fn meet(p: [f64; 2], q: [f64; 2], r: [f64; 2], s: [f64; 2]) -> bool {
     let (d1, d2, d3, d4) = (turn(r, s, p), turn(r, s, q), turn(p, q, r), turn(p, q, s));
-    let on =
-        |a: [f64; 2], b: [f64; 2], c: [f64; 2]| c[0] >= a[0].min(b[0]) && c[0] <= a[0].max(b[0]) && c[1] >= a[1].min(b[1]) && c[1] <= a[1].max(b[1]);
-    ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0)) && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
-        || (d1 == 0.0 && on(r, s, p))
-        || (d2 == 0.0 && on(r, s, q))
-        || (d3 == 0.0 && on(p, q, r))
-        || (d4 == 0.0 && on(p, q, s))
+    opposite(d1, d2) && opposite(d3, d4)
+        || (d1 == 0.0 && in_box(r, s, p))
+        || (d2 == 0.0 && in_box(r, s, q))
+        || (d3 == 0.0 && in_box(p, q, r))
+        || (d4 == 0.0 && in_box(p, q, s))
 }
 
 /// The polygon checked and tidied: finite, its corners distinct, straight corners dropped, simple

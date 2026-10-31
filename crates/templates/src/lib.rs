@@ -80,7 +80,7 @@ pub const TEMPLATES: &[Template] = &[
         marks: include_str!("../scripts/h-tee.marks.json"),
         kinds: &[Analysis::Frequency],
     },
-    // Junctions, radius bends and couplers (feature/junctions).
+    // Junctions, radius bends and couplers.
     Template {
         name: "h-bend-radius",
         label: "H-plane 90° radius bend in WR-90: inner radius r (28.6 mm: a mean radius of one guide wavelength at 10 GHz), each arc drawn in 18 straight sides; ports on the arms' ends across y and x",

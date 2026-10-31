@@ -138,6 +138,17 @@ impl PortFace {
         PortFace { axis: Axis::Z, at: z, u0: x0, v0: y0, a, b }
     }
 
+    /// The rectangle from its numbers in the order files and commands give them:
+    /// `[at, u0, v0, a, b]`.
+    pub fn from_values(axis: Axis, [at, u0, v0, a, b]: [f64; 5]) -> PortFace {
+        PortFace { axis, at, u0, v0, a, b }
+    }
+
+    /// The rectangle's numbers `[at, u0, v0, a, b]` ([`PortFace::from_values`]).
+    pub fn values(&self) -> [f64; 5] {
+        [self.at, self.u0, self.v0, self.a, self.b]
+    }
+
     /// Checks the rectangle: finite, with positive sides.
     pub fn check(&self) -> Result<()> {
         all_finite("port face", &[self.at, self.u0, self.v0])?;
@@ -154,11 +165,8 @@ impl PortFace {
     /// Whether `q` lies on the rectangle, to `tol` (m).
     pub fn holds(&self, q: Point3, tol: f64) -> bool {
         let (u, v, _) = Frame::new(self.axis).axes();
-        (q[self.axis.index()] - self.at).abs() <= tol
-            && q[u] >= self.u0 - tol
-            && q[u] <= self.u0 + self.a + tol
-            && q[v] >= self.v0 - tol
-            && q[v] <= self.v0 + self.b + tol
+        let within = |x: f64, lo: f64, side: f64| (lo - tol..=lo + side + tol).contains(&x);
+        (q[self.axis.index()] - self.at).abs() <= tol && within(q[u], self.u0, self.a) && within(q[v], self.v0, self.b)
     }
 
     /// The rectangle's corners in the model's coordinates, counter-clockwise in (u, v).
