@@ -327,12 +327,12 @@ impl Session {
         Session::default()
     }
 
-    /// A fresh session with this one's limits.
     /// The analysis history ([`crate::archive`]), the oldest first.
     pub fn archive(&self) -> &[crate::archive::Archived] {
         &self.archive
     }
 
+    /// A fresh session with this one's limits.
     pub(crate) fn fresh(&self) -> Session {
         Session { limits: self.limits, compute: self.compute.clone(), ..Session::default() }
     }
@@ -398,8 +398,7 @@ impl Session {
         let history = if matches!(effect, Effect::None | Effect::View) { Vec::new() } else { self.history.clone() };
         // A command that replaces the project keeps the project to undo back to.
         let project = (effect == Effect::Replace).then(|| Box::new(self.identity()));
-        Before {
-            state: self.snapshot(history, project), results: self.results.clone(), revision: self.revision, views: self.views.clone() }
+        Before { state: self.snapshot(history, project), results: self.results.clone(), revision: self.revision, views: self.views.clone() }
     }
 
     /// Records a command that succeeded by its effect: one that changed the model leaves the

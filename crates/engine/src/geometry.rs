@@ -285,12 +285,10 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
         let metal = |b: &emcraft_io::Surface| material_of(&materials, &b.name) == crate::bodies::METAL;
         placed.extend(bodies.iter().filter(|b| metal(b)).map(|b| json!({"body": b.name, "material": crate::bodies::METAL, "as": "walls"})));
         let keep: Vec<bool> = bodies.iter().map(|b| !metal(b)).collect();
-        bodies.retain(|b| !metal(b));
-        let mut k = keep.iter();
-        sources.retain(|_| k.next().copied().unwrap_or(false));
+        retain_kept(&mut bodies, &keep);
+        retain_kept(&mut sources, &keep);
         if let Some(e) = exact.as_mut() {
-            let mut k = keep.iter();
-            e.retain(|_| k.next().copied().unwrap_or(false));
+            retain_kept(e, &keep);
         }
     } else if region == "box" {
         let margin = p.positive_length("margin").optional()?;
@@ -430,6 +428,12 @@ fn surface(b: emcraft_io::Surface, source: &[u32], fit: bool, known: Option<&[Op
     Shape::Surface { name: b.name, positions: b.positions, triangles: b.triangles, tags: b.tags, surfaces }
 }
 
+/// Keeps the items of `v` whose flag in `keep` is set (the bodies' lists kept in step).
+fn retain_kept<T>(v: &mut Vec<T>, keep: &[bool]) {
+    let mut k = keep.iter().copied();
+    v.retain(|_| k.next().unwrap_or(false));
+}
+
 /// A design's parameter overrides from `parameters` (name → a number in the unit the design
 /// shows it in, an expression of the project's variables (`"=a"`) read as such a number, or an
 /// expression the design evaluates (`"3 mm"`)), refused for a name the design lacks.
@@ -565,9 +569,9 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     let axis: Option<Axis> = p.choice("axis").optional()?;
     let face = p
         .lengths("face")
-        .and_then(|f| match f[..] {
-            [at, u0, v0, a, b] => Ok(PortFace { axis: axis.unwrap_or_default(), at, u0, v0, a, b }),
-            _ => Err(p.error("face", "must be [at, u0, v0, a, b]")),
+        .and_then(|f| {
+            let values: [f64; 5] = f.try_into().map_err(|_| p.error("face", "must be [at, u0, v0, a, b]"))?;
+            Ok(PortFace::from_values(axis.unwrap_or_default(), values))
         })
         .optional()?;
     if face.is_none() && axis.is_some_and(|a| a != Axis::Z) {
@@ -604,7 +608,7 @@ pub fn measure(s: &mut Session, p: &Params) -> Result<Value> {
     let l = s.display().length;
     Ok(json!({
         "distance": l.from_si(m.distance),
-        "delta": [l.from_si(m.delta.x), l.from_si(m.delta.y), l.from_si(m.delta.z)],
+        "delta": m.delta.to_array().map(|v| l.from_si(v)),
         "gap": m.gap.map(|g| l.from_si(g)),
         "angle": m.angle,
         "unit": l.symbol(),
