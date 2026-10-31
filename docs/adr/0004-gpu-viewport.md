@@ -43,6 +43,10 @@ pictures (`ui.render`, the scenarios, the CLI) and every fallback draw with it.
   the cut faces capped), because picking and the tools read the cut scene; the GPU draws that
   scene, so the caps are the CPU's, exactly. The stencil is used instead to draw lines over the
   see-through faces they lie in front of.
+  Caps of nested bodies lie in one plane (the region's under its sections'); the CPU's f64 depth
+  gives the later one, the depth buffer would give either in patches, so opaque faces sharing a
+  plane are ranked by their order in it and each rank is moved a little towards the eye
+  (`gpu3d::pack`, checked against the CPU on a sectioned scene).
 - **Tints.** The selection's and the hovered row's highlight are colours in the scene
   (`scene3d`), so both renderers show them; no per-tag tint uniform.
 - **Determinism.** What the GPU draws is a display: it is not a result, not saved and not

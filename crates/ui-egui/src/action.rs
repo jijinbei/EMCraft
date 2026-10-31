@@ -127,6 +127,8 @@ pub enum Pref {
     Navigator(crate::navigation::Navigator),
     /// How the 3D view is drawn.
     Drawing(crate::prefs::Drawing3d),
+    /// What the GPU's view adds.
+    GpuLook(crate::prefs::GpuLook),
     Length(Length),
     Frequency(Frequency),
     /// Drops a project from the recent list.
@@ -375,6 +377,7 @@ impl EmcraftApp {
             Pref::OrbitAround(o) => self.prefs.orbit_around = o.id().into(),
             Pref::Navigator(n) => self.prefs.navigator = n.id().into(),
             Pref::Drawing(d) => self.prefs.drawing = d,
+            Pref::GpuLook(l) => self.prefs.gpu_look = l,
             Pref::Length(u) => self.prefs.length = u,
             Pref::Frequency(u) => self.prefs.frequency = u,
             Pref::ForgetRecent(i) => {

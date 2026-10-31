@@ -30,6 +30,29 @@ pub enum Drawing3d {
     Fast,
 }
 
+/// What the GPU's view adds to the CPU's picture, each its own switch (Settings ▸ Drawing).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GpuLook {
+    /// Edges where surfaces crease or end, found per pixel.
+    pub edges: bool,
+    /// Ambient occlusion: corners and creases darkened.
+    pub ao: bool,
+    /// A ring round what is selected and what is under the pointer.
+    pub outline: bool,
+    /// Picking reads what the GPU drew under the pointer (the CPU's rays otherwise).
+    pub pick: bool,
+    /// The field's colour map on its plane evaluated by the GPU, its phase stepped without
+    /// building the scene again.
+    pub field: bool,
+}
+
+impl Default for GpuLook {
+    fn default() -> Self {
+        GpuLook { edges: true, ao: false, outline: true, pick: true, field: true }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
@@ -54,6 +77,8 @@ pub struct Prefs {
     /// How the 3D view is drawn (older files' `gpu3d` switch is not read: everyone starts on
     /// the GPU's view).
     pub drawing: Drawing3d,
+    /// What the GPU's view draws beyond the CPU's picture.
+    pub gpu_look: GpuLook,
     /// The display units new projects start with.
     pub length: Length,
     pub frequency: Frequency,
@@ -73,6 +98,7 @@ impl Default for Prefs {
             orbit_around: String::new(),
             navigator: String::new(),
             drawing: Drawing3d::Gpu,
+            gpu_look: GpuLook::default(),
             length: Length::default(),
             frequency: Frequency::default(),
         }

@@ -37,11 +37,15 @@ fn fs_ground(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 // `n.w` ranks coplanar faces: each rank moves the face towards the eye by 1/40 of the lines'
 // nudge, so the later of two faces in one plane is drawn as on the CPU, not whichever the depth
 // buffer's rounding picks; the lines, nudged further than 15 ranks, stay in front.
+fn placed(p: vec3<f32>, rank: f32) -> vec4<f32> {
+    let toward = u.forward_nudge.xyz * (u.forward_nudge.w * 0.025 * rank);
+    return u.view_proj * vec4<f32>(p - toward, 1.0);
+}
+
 @vertex
 fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>) -> V {
     var o: V;
-    let toward = u.forward_nudge.xyz * (u.forward_nudge.w * 0.025 * n.w);
-    o.pos = u.view_proj * vec4<f32>(p - toward, 1.0);
+    o.pos = placed(p, n.w);
     let k = 0.42 + 0.58 * abs(dot(n.xyz, u.light.xyz));
     o.color = vec4<f32>(c.rgb * k, c.a);
     return o;
@@ -130,4 +134,57 @@ fn vs_line(@builtin(vertex_index) vi: u32, @location(0) a: vec3<f32>, @location(
 @fragment
 fn fs_line(i: V) -> @location(0) vec4<f32> {
     return i.color;
+}
+
+// What lies under each pixel (gbuffer.rs): the opaque surface's normal (turned to the eye) and
+// window depth, and the tags of the nearest tagged and the nearest solid triangle.
+struct G {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) n: vec3<f32>,
+    @location(1) @interpolate(flat) tag: u32,
+    @location(2) alpha: f32,
+};
+
+@vertex
+fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(3) tag: u32) -> G {
+    var o: G;
+    o.pos = placed(p, n.w);
+    o.n = n.xyz;
+    o.tag = tag;
+    o.alpha = c.a;
+    return o;
+}
+
+struct Normals {
+    @location(0) n: vec4<f32>,
+    @location(1) depth: vec4<f32>,
+};
+
+@fragment
+fn fs_g_normals(i: G) -> Normals {
+    var n = normalize(i.n);
+    if (dot(n, u.forward_nudge.xyz) > 0.0) {
+        n = -n;
+    }
+    var o: Normals;
+    o.n = vec4<f32>(n, 1.0);
+    o.depth = vec4<f32>(i.pos.z, 0.0, 0.0, 0.0);
+    return o;
+}
+
+@fragment
+fn fs_g_any(i: G) -> @location(0) vec4<u32> {
+    if (i.tag == 0u) {
+        discard;
+    }
+    return vec4<u32>(i.tag, 0u, 0u, 0u);
+}
+
+// Solid: an opacity of 200 or more (the CPU's picking counts them so).
+@fragment
+fn fs_g_solid(i: G) -> @location(0) vec4<u32> {
+    if (i.tag == 0u || i.alpha * 255.0 < 199.5) {
+        discard;
+    }
+    return vec4<u32>(i.tag, 0u, 0u, 0u);
 }

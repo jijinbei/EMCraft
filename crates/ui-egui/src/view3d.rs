@@ -157,6 +157,12 @@ pub struct View3d {
     gpu: crate::gpu3d::Cache,
     /// The window's GPU the view can draw with (its adapter), as last seen.
     pub gpu_adapter: Option<String>,
+    /// The GPU frame drawn last whose per-pixel tags picking may read ([`crate::gpu3d::pick`]).
+    gpu_frame: Option<u64>,
+    /// The tag the GPU found under the pointer (outlined), with where and in which frame.
+    pointer_tag: Option<([u32; 2], u64, u32)>,
+    /// How the last pick was made: `gpu` or `cpu`.
+    pub picked_by: &'static str,
     /// The tools: face and gap ports, the ruler, the reference plane's drag.
     pub tools: crate::tools3d::Tools,
     /// Bumped whenever the scene picked from is built or cut again.
@@ -194,6 +200,9 @@ impl Default for View3d {
             drawn_by: Drawer::Cpu,
             gpu: Default::default(),
             gpu_adapter: None,
+            gpu_frame: None,
+            pointer_tag: None,
+            picked_by: "cpu",
             tools: crate::tools3d::Tools::default(),
             generation: 0,
         }
@@ -218,8 +227,17 @@ impl View3d {
     }
 
     /// What lies under `pos` in the view drawn into `rect`.
-    fn pick_at(&self, rect: Rect, pos: egui::Pos2) -> Option<scene3d::Pick> {
+    fn pick_at(&mut self, ctx: &egui::Context, rect: Rect, pos: egui::Pos2) -> Option<scene3d::Pick> {
         let at = pos - rect.min;
+        // The GPU's tags under the pointer, when the frame shown kept them; else the CPU's rays.
+        if let Some(key) = self.gpu_frame
+            && let Some((any, solid)) = crate::gpu3d::pick(ctx, key, pixel(ctx, at))
+        {
+            self.picked_by = "gpu";
+            return scene3d::Pick::from_tag(if solid != 0 { solid } else { any });
+        }
+        // The CPU's rays (through the scene's bounding volumes).
+        self.picked_by = "cpu";
         let tag =
             self.shown().and_then(|b| b.pick(&self.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
         tag.and_then(scene3d::Pick::from_tag)
@@ -362,6 +380,7 @@ impl View3d {
             "animating": self.animating(),
             "renderer": self.drawn_by.id(),
             "gpu_adapter": self.gpu_adapter,
+            "picked_by": self.picked_by,
             "section": self.section.map(|s| s.inspect(l)),
             "section_dims": self.section_dims,
             "tools": self.tools.inspect(l),
@@ -448,8 +467,13 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     let moving = v.dragging || v.anim.is_some() || (overlay == Overlay::Field && field.player.playing);
     v.gpu_adapter = crate::gpu3d::available(ui.ctx()).map(|a| a.adapter);
     let drawer = Drawer::choose(app.prefs.drawing, v.gpu_adapter.is_some(), moving);
+    let look = app.prefs.gpu_look;
+    if drawer != Drawer::Gpu || !look.pick {
+        v.gpu_frame = None;
+    }
+    pointer_tag(v, ui, rect, look.outline && !moving);
     let p = ui.painter().with_clip_rect(rect);
-    draw(v, ui, &p, rect, key, drawer, moving, t);
+    draw(v, ui, &p, rect, key, drawer, moving, look, t);
     labels(&p, rect, &v.camera, &built.labels, t);
     if let (Some(cut), true, Some(b)) = (v.section, v.section_dims, v.shown()) {
         crate::section3d::annotate(app, &b.scene, &v.camera, &p, rect, cut, bounds);
@@ -836,7 +860,7 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
             Some(LeftDrag::Nav(NavMode::Pan, false))
         } else if plain && grip.zip(at).is_some_and(|(g, p)| g.distance(p) <= crate::tools3d::GRIP_PX) {
             Some(LeftDrag::Grip)
-        } else if plain && at.is_some_and(|p| v.pick_at(rect, p) == Some(scene3d::Pick::Plane(0))) {
+        } else if plain && at.is_some_and(|p| v.pick_at(ui.ctx(), rect, p) == Some(scene3d::Pick::Plane(0))) {
             Some(LeftDrag::Plane)
         } else if let Some(m) = nav.mode(NavButton::Left, mods) {
             Some(LeftDrag::Nav(m, mods.shift))
@@ -966,7 +990,7 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
     if (resp.clicked() || resp.double_clicked())
         && let Some(pos) = resp.interact_pointer_pos()
     {
-        let pick = v.pick_at(rect, pos);
+        let pick = v.pick_at(ui.ctx(), rect, pos);
         if resp.double_clicked() {
             v.selected = pick.into_iter().collect();
             match pick {
@@ -1119,11 +1143,21 @@ impl Drawer {
 /// frame, full size) or as the CPU renderer's picture (cached by `scene_key`, the camera and the
 /// size).
 #[allow(clippy::too_many_arguments)]
-fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key: SceneKey, drawer: Drawer, moving: bool, t: &Tokens) {
+fn draw(
+    v: &mut View3d,
+    ui: &egui::Ui,
+    p: &egui::Painter,
+    rect: Rect,
+    scene_key: SceneKey,
+    drawer: Drawer,
+    moving: bool,
+    look: crate::prefs::GpuLook,
+    t: &Tokens,
+) {
     v.drawn_on_gpu = drawer != Drawer::Cpu;
     v.drawn_by = drawer;
     if drawer == Drawer::Gpu {
-        draw_gpu(v, ui, p, rect, moving, t);
+        draw_gpu(v, ui, p, rect, moving, look, t);
         return;
     }
     if drawer == Drawer::Painter {
@@ -1171,7 +1205,7 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
 
 /// The scene drawn by the window's GPU ([`crate::gpu3d`]), supersampled at rest as the CPU's
 /// picture is.
-fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving: bool, t: &Tokens) {
+fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving: bool, look: crate::prefs::GpuLook, t: &Tokens) {
     let began = Instant::now();
     let ppp = f64::from(ui.ctx().pixels_per_point());
     let out = [((f64::from(rect.width()) * ppp).round().max(1.0) as u32), ((f64::from(rect.height()) * ppp).round().max(1.0) as u32)];
@@ -1187,9 +1221,43 @@ fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving
     v.gpu = cache;
     let line_width = ppp.max(1.0) * f64::from(supersample);
     let uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
-    crate::gpu3d::paint(p, rect, crate::gpu3d::Frame { packed, uniforms, size, out, supersample });
+    let gpu_look = crate::gpu3d::Look { edges: look.edges, ao: look.ao, outline: look.outline, pick: look.pick || look.outline };
+    let rgba = |c: Color32, a: f32| [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0, a];
+    let hover = v.pointer_tag.map_or(0, |(_, _, tag)| tag);
+    let frame = crate::gpu3d::Frame {
+        look: gpu_look,
+        selected: v.selected.iter().map(|p| p.tag()).collect(),
+        hover: if v.selected.iter().any(|p| p.tag() == hover) { 0 } else { hover },
+        outline: rgba(t.accent, 1.0),
+        hover_color: rgba(t.accent, 0.5),
+        ppp: ppp as f32,
+        ..crate::gpu3d::Frame::plain(packed, uniforms, size, out, supersample)
+    };
+    v.gpu_frame = look.pick.then(|| frame.key());
+    crate::gpu3d::paint(p, rect, frame);
     v.last_ms = began.elapsed().as_secs_f64() * 1e3;
     v.last_size = size.map(|s| s as usize);
+}
+
+/// The window pixel under `at` (points from the view's corner).
+fn pixel(ctx: &egui::Context, at: egui::Vec2) -> [u32; 2] {
+    let ppp = ctx.pixels_per_point();
+    [(at.x * ppp).floor().max(0.0) as u32, (at.y * ppp).floor().max(0.0) as u32]
+}
+
+/// The tag under the pointer in the GPU's last frame, read again when the pointer or the frame
+/// changed (for its outline); none when `on` is off or the pointer is elsewhere.
+fn pointer_tag(v: &mut View3d, ui: &egui::Ui, rect: Rect, on: bool) {
+    let hovered = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p) && ui.rect_contains_pointer(rect));
+    let (Some(key), Some(pos), true) = (v.gpu_frame, hovered, on) else {
+        v.pointer_tag = None;
+        return;
+    };
+    let px = pixel(ui.ctx(), pos - rect.min);
+    if v.pointer_tag.is_some_and(|(p, k, _)| p == px && k == key) {
+        return;
+    }
+    v.pointer_tag = crate::gpu3d::pick(ui.ctx(), key, px).map(|(any, solid)| (px, key, if solid != 0 { solid } else { any }));
 }
 
 /// The scene's labels where they project, faint on faces turned away.

@@ -7,6 +7,34 @@ use emcraft_render::view3d::{self, Camera, Projection, Scene, StandardView};
 use super::renderer::{FRAME, Renderer};
 use super::*;
 
+/// Every shader parses and validates (naga, as wgpu compiles them), with the entry points the
+/// pipelines name, on any machine: no GPU needed.
+#[test]
+fn every_shader_validates() {
+    use super::renderer::{COMPOSITE_WGSL, SCENE_WGSL, SHOW_WGSL};
+    let shaders = [
+        ("scene.wgsl", SCENE_WGSL, &["vs_ground", "fs_ground", "vs_tri", "fs_opaque", "fs_blend", "fs_oit", "fs_none", "vs_line", "fs_line"][..]),
+        ("composite.wgsl", COMPOSITE_WGSL, &["vs", "fs_composite"][..]),
+        ("show.wgsl", SHOW_WGSL, &["vs", "fs_show"][..]),
+    ];
+    for (name, src, entries) in shaders {
+        let module = naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
+        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
+            .validate(&module)
+            .unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
+        let have: Vec<&str> = module.entry_points.iter().map(|e| e.name.as_str()).collect();
+        for e in entries {
+            assert!(have.contains(e), "{name}: no entry point {e} (has {have:?})");
+        }
+    }
+    // The shaders sit beside this module; a new one must join the list above.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/gpu3d");
+    let mut files: Vec<String> =
+        std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()?.file_name().into_string().ok()).filter(|n| n.ends_with(".wgsl")).collect();
+    files.sort();
+    assert_eq!(files, ["composite.wgsl", "full.wgsl", "scene.wgsl", "show.wgsl"], "a WGSL file not validated here");
+}
+
 /// Without any backend there is no adapter: an error, never a panic.
 #[test]
 fn no_adapter_is_an_error_not_a_panic() {
@@ -134,7 +162,7 @@ fn compare(device: &wgpu::Device, queue: &wgpu::Queue, r: &mut Renderer, s: &Sce
     let ground = (Rgb(235, 238, 242), Rgb(200, 205, 214));
     for supersample in [1, 2] {
         let uniforms = Uniforms::new(&packed, cam, [w * supersample, h * supersample], f64::from(supersample), ground);
-        let frame = Frame { packed: packed.clone(), uniforms, size: [w * supersample, h * supersample], out: [w, h], supersample };
+        let frame = Frame::plain(packed.clone(), uniforms, [w * supersample, h * supersample], [w, h], supersample);
         let gpu = gpu_picture(device, queue, r, &frame);
         let opt = view3d::Options { width: w as usize, height: h as usize, supersample: supersample as usize, background: ground, line_width: 1.0 };
         let cpu = view3d::render(s, cam, &opt).rgba;
@@ -193,4 +221,94 @@ fn coplanar_section_caps_are_drawn_as_on_the_cpu() {
     cam.fit([-0.012, -0.005, -0.025], [0.012, 0.005, 0.025], 1.5);
     // Without the ranks, about 2.4 % of the pixels differ (the region's cap through the others').
     compare(&device, &queue, &mut r, &cut, 2, &cam, "section", (0.015, 0.8));
+}
+
+/// A box seen from the iso view, a second box through it and a see-through pane in front.
+fn tagged_scene() -> (Scene, Camera) {
+    let mut s = Scene::default();
+    s.tagged(1 << 16, |s| s.cuboid([-0.010, -0.006, -0.004], [0.010, 0.006, 0.004], Rgb(200, 60, 40), 255));
+    s.tagged((2 << 16) | 3, |s| s.cuboid([0.002, -0.009, -0.002], [0.006, 0.009, 0.002], Rgb(60, 160, 60), 255));
+    s.tagged((2 << 16) | 4, |s| {
+        s.quad([[-0.014, -0.008, 0.008], [0.0, -0.008, 0.008], [0.0, 0.008, 0.008], [-0.014, 0.008, 0.008]], Rgb(40, 160, 220), 110)
+    });
+    let mut cam = Camera::default();
+    cam.standard(StandardView::Iso);
+    cam.fit([-0.014, -0.009, -0.004], [0.014, 0.009, 0.008], 1.5);
+    (s, cam)
+}
+
+/// What the GPU finds under a pixel is what the CPU's rays find: the nearest tagged triangle and
+/// the nearest solid one, untagged ones hiding nothing; they differ only on triangles' edges.
+#[test]
+fn gpu_picking_agrees_with_the_cpus_rays() {
+    let Some((adapter, device, queue)) = device() else { return };
+    let mut r = Renderer::new(&device, Caps::of(&adapter, &device), FRAME).unwrap();
+    let (mut s, cam) = tagged_scene();
+    // An untagged sheet in front of everything: the CPU's rays go through it.
+    s.quad([[-0.02, -0.02, 0.012], [0.02, -0.02, 0.012], [0.02, 0.02, 0.012], [-0.02, 0.02, 0.012]], Rgb(250, 250, 250), 255);
+    let packed = Arc::new(Packed::new(&s, 5));
+    let (w, h) = (180u32, 120u32);
+    let uniforms = Uniforms::new(&packed, &cam, [w, h], 1.0, (Rgb::WHITE, Rgb::WHITE));
+    let frame = Frame { look: Look { pick: true, ..Look::default() }, ..Frame::plain(packed, uniforms, [w, h], [w, h], 1) };
+    let _ = gpu_picture(&device, &queue, &mut r, &frame);
+    let (mut same, mut differ, mut hit) = (0, 0, 0);
+    for y in (1..h).step_by(3) {
+        for x in (1..w).step_by(3) {
+            let gpu = r.tags_at(&device, &queue, frame.key(), [x, y]).unwrap();
+            let cpu = view3d::hits(&s, &cam, f64::from(x) + 0.5, f64::from(y) + 0.5, f64::from(w), f64::from(h))
+                .map_or((0, 0), |(any, solid)| (any.tag, solid.map_or(0, |h| h.tag)));
+            if gpu == cpu {
+                same += 1;
+            } else {
+                differ += 1;
+            }
+            if cpu.0 != 0 {
+                hit += 1;
+            }
+        }
+    }
+    eprintln!("picking: {same} agree, {differ} differ, {hit} on something");
+    assert!(hit > 200, "the scene fills the view");
+    assert!(differ * 100 <= (same + differ) * 2, "{differ} of {} differ", same + differ);
+    // Another frame's key reads nothing: the caller asks the CPU.
+    assert!(r.tags_at(&device, &queue, frame.key() ^ 1, [10, 10]).is_none());
+}
+
+/// Each addition changes the picture only where it should: edges darken the box's outline, the
+/// occlusion darkens and never lightens, the outline rings the selected body in its colour.
+#[test]
+fn the_gpu_additions_draw_where_they_should() {
+    let Some((adapter, device, queue)) = device() else { return };
+    let mut r = Renderer::new(&device, Caps::of(&adapter, &device), FRAME).unwrap();
+    let (s, cam) = tagged_scene();
+    let packed = Arc::new(Packed::new(&s, 6));
+    let (w, h) = (240u32, 160u32);
+    let uniforms = Uniforms::new(&packed, &cam, [w, h], 1.0, (Rgb::WHITE, Rgb::WHITE));
+    let plain = Frame::plain(packed, uniforms, [w, h], [w, h], 1);
+    let base = gpu_picture(&device, &queue, &mut r, &plain);
+    let with = |look: Look, selected: u32| Frame { look, selected: vec![selected], outline: [1.0, 0.0, 1.0, 1.0], ..plain.clone() };
+    let lum = |p: &[u8]| u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2]);
+    let diff = |a: &[u8], b: &[u8]| a.chunks(4).zip(b.chunks(4)).filter(|(x, y)| x[..3] != y[..3]).count();
+    let edges = gpu_picture(&device, &queue, &mut r, &with(Look { edges: true, ..Look::default() }, 0));
+    let darker = edges.chunks(4).zip(base.chunks(4)).filter(|(e, b)| lum(e) + 30 < lum(b)).count();
+    let lighter = edges.chunks(4).zip(base.chunks(4)).filter(|(e, b)| lum(e) > lum(b) + 3).count();
+    eprintln!("edges: {darker} darker, {lighter} lighter");
+    assert!(darker > 200 && darker < (w * h) as usize / 5 && lighter == 0);
+    let ao = gpu_picture(&device, &queue, &mut r, &with(Look { ao: true, ..Look::default() }, 0));
+    let lighter = ao.chunks(4).zip(base.chunks(4)).filter(|(e, b)| lum(e) > lum(b) + 3).count();
+    eprintln!("occlusion: {} changed, {lighter} lighter", diff(&ao, &base));
+    assert!(diff(&ao, &base) > 50);
+    assert_eq!(lighter, 0);
+    let ring = gpu_picture(&device, &queue, &mut r, &with(Look { outline: true, ..Look::default() }, (2 << 16) | 3));
+    let magenta = ring.chunks(4).filter(|p| p[0] > 240 && p[1] < 20 && p[2] > 240).count();
+    eprintln!("outline: {magenta} magenta");
+    assert!(magenta > 100, "{magenta}");
+    let none = gpu_picture(&device, &queue, &mut r, &with(Look { outline: true, ..Look::default() }, 0));
+    assert_eq!(diff(&none, &base), 0, "no selection, no outline");
+    if std::env::var_os("EMCRAFT_GPU_SHOTS").is_some() {
+        for (name, rgba) in [("base", &base), ("edges", &edges), ("ao", &ao), ("ring", &ring)] {
+            let png = emcraft_render::Canvas { w: w as usize, h: h as usize, rgba: rgba.clone() }.png().unwrap_or_default();
+            let _ = std::fs::write(std::env::temp_dir().join(format!("gpu3d-look-{name}.png")), png);
+        }
+    }
 }

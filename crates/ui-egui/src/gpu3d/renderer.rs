@@ -21,6 +21,7 @@ use std::num::NonZeroU64;
 use eframe::wgpu;
 use eframe::wgpu::util::DeviceExt;
 
+use super::gbuffer;
 use super::pack::{LINE, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
 use super::{Frame, Gpu3dError};
 
@@ -30,11 +31,11 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 const ACCUM: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const REVEAL: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 /// Bytes of the show pass's uniform.
-const SHOW_BYTES: u64 = 16;
+const SHOW_BYTES: u64 = 128;
 
-const SCENE_WGSL: &str = include_str!("scene.wgsl");
-const COMPOSITE_WGSL: &str = concat!(include_str!("full.wgsl"), include_str!("composite.wgsl"));
-const SHOW_WGSL: &str = concat!(include_str!("full.wgsl"), include_str!("show.wgsl"));
+pub(super) const SCENE_WGSL: &str = include_str!("scene.wgsl");
+pub(super) const COMPOSITE_WGSL: &str = concat!(include_str!("full.wgsl"), include_str!("composite.wgsl"));
+pub(super) const SHOW_WGSL: &str = concat!(include_str!("full.wgsl"), include_str!("show.wgsl"));
 
 /// What the device offers the renderer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,7 +71,6 @@ struct Targets {
     accum: Option<(wgpu::TextureView, Option<wgpu::TextureView>)>,
     reveal: Option<(wgpu::TextureView, Option<wgpu::TextureView>)>,
     composite: Option<wgpu::BindGroup>,
-    show: wgpu::BindGroup,
 }
 
 struct SceneBuffers {
@@ -99,6 +99,13 @@ pub struct Renderer {
     show_uniform: wgpu::Buffer,
     targets: Option<Targets>,
     scene: Option<SceneBuffers>,
+    g: gbuffer::Pipelines,
+    /// What lies under each pixel, at the window's resolution.
+    g_targets: Option<gbuffer::Targets>,
+    /// The show pass's bindings, for the frame's and the per-pixel targets' sizes.
+    show_bind: Option<([u32; 4], wgpu::BindGroup)>,
+    /// The frame drawn last ([`Frame::key`]), which the per-pixel targets hold.
+    pub last: Option<u64>,
 }
 
 /// Runs `make` under error scopes: a validation or out-of-memory error is returned, not raised.
@@ -118,7 +125,7 @@ pub fn scoped<T>(device: &wgpu::Device, make: impl FnOnce() -> T) -> Result<T, S
 }
 
 fn tri_layout() -> wgpu::VertexBufferLayout<'static> {
-    const A: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4, 2 => Unorm8x4];
+    const A: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4, 2 => Unorm8x4, 3 => Uint32];
     wgpu::VertexBufferLayout { array_stride: TRI_VERTEX as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &A }
 }
 
@@ -307,7 +314,22 @@ impl Renderer {
         });
         let show_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("emcraft_view3d_show"),
-            entries: &[texture_entry(0), uniform_entry(1, wgpu::ShaderStages::FRAGMENT, SHOW_BYTES)],
+            entries: &[
+                texture_entry(0),
+                uniform_entry(1, wgpu::ShaderStages::FRAGMENT, SHOW_BYTES),
+                texture_entry(2),
+                texture_entry(3),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
         });
         let show_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("emcraft_view3d_show"),
@@ -336,7 +358,12 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let g = gbuffer::Pipelines::new(device, &scene, &layout, &[Some(tri_layout())]);
         Renderer {
+            g,
+            g_targets: None,
+            show_bind: None,
+            last: None,
             caps,
             srgb: window.is_srgb(),
             uniform,
@@ -428,20 +455,50 @@ impl Renderer {
                 })),
                 _ => None,
             };
-            let shown = resolved.clone().unwrap_or_else(|| color.clone());
-            let show = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            Targets { size, color, resolved, depth, accum, reveal, composite }
+        })
+        .map_err(Gpu3dError::Frame)?;
+        self.targets = Some(t);
+        Ok(())
+    }
+
+    /// The per-pixel targets at the window's `size`, and the show pass's bindings.
+    fn g_targets(&mut self, device: &wgpu::Device, out: [u32; 2]) -> Result<(), Gpu3dError> {
+        if self.g_targets.as_ref().is_none_or(|t| t.size != out) {
+            self.g_targets = None;
+            self.g_targets = Some(scoped(device, || gbuffer::Pipelines::targets(device, out)).map_err(Gpu3dError::Frame)?);
+        }
+        let (Some(t), Some(g)) = (&self.targets, &self.g_targets) else { return Err(Gpu3dError::Frame("no targets".into())) };
+        let key = [t.size[0], t.size[1], out[0], out[1]];
+        if self.show_bind.as_ref().is_some_and(|(k, _)| *k == key) {
+            return Ok(());
+        }
+        let shown = t.resolved.clone().unwrap_or_else(|| t.color.clone());
+        let ids = g.any.create_view(&Default::default());
+        let bind = scoped(device, || {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("emcraft_view3d_show"),
                 layout: &self.show_layout,
                 entries: &[
                     wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&shown) },
                     wgpu::BindGroupEntry { binding: 1, resource: self.show_uniform.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&g.normal) },
+                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&g.depth) },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&ids) },
                 ],
-            });
-            Targets { size, color, resolved, depth, accum, reveal, composite, show }
+            })
         })
         .map_err(Gpu3dError::Frame)?;
-        self.targets = Some(t);
+        self.show_bind = Some((key, bind));
         Ok(())
+    }
+
+    /// The tags under pixel `px` of the frame drawn last, if that frame was `key` and drew them.
+    pub fn tags_at(&self, device: &wgpu::Device, queue: &wgpu::Queue, key: u64, px: [u32; 2]) -> Option<(u32, u32)> {
+        if self.last != Some(key) {
+            return None;
+        }
+        gbuffer::read_tags(device, queue, self.g_targets.as_ref()?, px)
     }
 
     /// Draws `frame` offscreen, recorded into `encoder`.
@@ -454,18 +511,27 @@ impl Renderer {
     ) -> Result<(), Gpu3dError> {
         let side = self.caps.max_side.max(1);
         let size = [frame.size[0].clamp(1, side), frame.size[1].clamp(1, side)];
+        let out = [frame.out[0].clamp(1, side), frame.out[1].clamp(1, side)];
+        self.last = None;
         self.upload(device, &frame.packed)?;
         self.targets(device, size)?;
-        let (Some(t), Some(s)) = (&self.targets, &self.scene) else { return Err(Gpu3dError::Frame("no targets".into())) };
+        self.g_targets(device, out)?;
+        let (Some(t), Some(s), Some(g)) = (&self.targets, &self.scene, &self.g_targets) else { return Err(Gpu3dError::Frame("no targets".into())) };
         let u = Uniforms { viewport: [size[0] as f32, size[1] as f32, frame.uniforms.viewport[2], frame.uniforms.viewport[3]], ..frame.uniforms };
         queue.write_buffer(&self.uniform, 0, &u.bytes());
-        let mut show = Vec::with_capacity(SHOW_BYTES as usize);
-        for v in [frame.out[0] as f32, frame.out[1] as f32, frame.supersample.max(1) as f32, if self.srgb { 1.0 } else { 0.0 }] {
-            show.extend_from_slice(&v.to_le_bytes());
-        }
-        queue.write_buffer(&self.show_uniform, 0, &show);
+        queue.write_buffer(&self.show_uniform, 0, &frame.show_bytes(self.srgb));
         let glass = s.glass.as_ref();
         let oit = glass.is_some() && self.caps.oit;
+        let look = frame.look;
+        if look.edges || look.ao || look.outline || look.pick {
+            let draw = |pass: &mut wgpu::RenderPass<'_>, opaque_only: bool| {
+                for (b, n) in s.opaque.iter().chain(if opaque_only { None } else { glass }) {
+                    pass.set_vertex_buffer(0, b.slice(..));
+                    pass.draw(0..*n, 0..1);
+                }
+            };
+            self.g.record(encoder, g, &self.uniform_bind, look.edges || look.ao, look.outline || look.pick, &draw);
+        }
         let color = |load| {
             Some(wgpu::RenderPassColorAttachment {
                 view: &t.color,
@@ -524,7 +590,9 @@ impl Renderer {
                 }
             }
         }
+        let key = frame.key();
         if !oit {
+            self.last = Some(key);
             return Ok(());
         }
         let (Some(accum), Some(reveal), Some((composite, _)), Some(bind)) = (&t.accum, &t.reveal, &self.composite, &t.composite) else {
@@ -565,14 +633,16 @@ impl Renderer {
         pass.set_stencil_reference(1);
         tris(&mut pass, &self.glass_depth, glass);
         lines(&mut pass, &self.front_lines);
+        drop(pass);
+        self.last = Some(key);
         Ok(())
     }
 
     /// Shows the frame drawn last in `pass` (the window's, its viewport the 3D view).
     pub fn show(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if let Some(t) = &self.targets {
+        if let Some((_, bind)) = &self.show_bind {
             pass.set_pipeline(&self.show);
-            pass.set_bind_group(0, &t.show, &[]);
+            pass.set_bind_group(0, bind, &[]);
             pass.draw(0..3, 0..1);
         }
     }

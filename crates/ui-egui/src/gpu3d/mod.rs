@@ -24,6 +24,7 @@
 //! the offscreen frame shown by a paint callback, OIT targets and composite; the shaders and
 //! this code are written for EMCraft's scene.
 
+mod gbuffer;
 mod pack;
 mod renderer;
 
@@ -59,12 +60,30 @@ pub(crate) fn ready<T>(f: impl std::future::Future<Output = T>) -> Option<T> {
 }
 
 /// The window's GPU, as its 3D view uses it: kept in the window's context data by [`install`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Available {
     /// The adapter's name and backend.
     pub adapter: String,
     pub caps: Caps,
     failed: Arc<AtomicBool>,
+    rs: egui_wgpu::RenderState,
+}
+
+impl std::fmt::Debug for Available {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Available").field("adapter", &self.adapter).field("caps", &self.caps).field("failed", &self.failed()).finish()
+    }
+}
+
+/// The tags under window pixel `px` of the frame `key` the GPU drew last: the nearest tagged
+/// triangle's and the nearest solid one's (opacity ≥ 200), 0 for none, as
+/// `emcraft_render::view3d::hits` finds them. `None` where the GPU cannot tell (no GPU view, the
+/// frame drawn last was another, picking off): the caller asks the CPU.
+pub fn pick(ctx: &egui::Context, key: u64, px: [u32; 2]) -> Option<(u32, u32)> {
+    let a = available(ctx)?;
+    let r = a.rs.renderer.read();
+    let i = r.callback_resources.get::<Installed>()?;
+    i.renderer.tags_at(&a.rs.device, &a.rs.queue, key, px)
 }
 
 impl Available {
@@ -99,7 +118,7 @@ pub fn install(rs: &egui_wgpu::RenderState, ctx: &egui::Context) -> Result<Avail
     let caps = Caps::of(&rs.adapter, &rs.device);
     let r = Renderer::new(&rs.device, caps, rs.target_format)?;
     let info = rs.adapter.get_info();
-    let a = Available { adapter: format!("{} ({:?})", info.name, info.backend), caps, failed: failed.clone() };
+    let a = Available { adapter: format!("{} ({:?})", info.name, info.backend), caps, failed: failed.clone(), rs: rs.clone() };
     rs.renderer.write().callback_resources.insert(Installed { renderer: r, failed });
     ctx.data_mut(|d| d.insert_temp(key(), a.clone()));
     Ok(a)
@@ -111,6 +130,23 @@ struct Installed {
     failed: Arc<AtomicBool>,
 }
 
+/// What the GPU's view draws beyond the CPU's picture, each switched on its own (Settings ▸
+/// Drawing): all off draws what the CPU draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Look {
+    /// Edges where the surface creases or ends, found per pixel from depth and normals.
+    pub edges: bool,
+    /// Ambient occlusion: creases and corners darkened by what is near them.
+    pub ao: bool,
+    /// A ring round what is selected and what is under the pointer.
+    pub outline: bool,
+    /// The tags under each pixel kept for picking ([`pick`]).
+    pub pick: bool,
+}
+
+/// Most selected parts the outline rings (of a larger box selection, the first).
+pub const MAX_OUTLINED: usize = 8;
+
 /// One frame of the view.
 #[derive(Clone, Debug)]
 pub struct Frame {
@@ -121,6 +157,75 @@ pub struct Frame {
     /// The view's size in the window (pixels).
     pub out: [u32; 2],
     pub supersample: u32,
+    pub look: Look,
+    /// The tags outlined: the selection's (the first [`MAX_OUTLINED`]) and the one under the
+    /// pointer (0 none).
+    pub selected: Vec<u32>,
+    pub hover: u32,
+    /// The outlines' colours (0–1, with their opacity).
+    pub outline: [f32; 4],
+    pub hover_color: [f32; 4],
+    /// The window's pixels per point (the occlusion's radius and the outline's width follow it).
+    pub ppp: f32,
+}
+
+impl Frame {
+    /// A frame of `packed` with `uniforms`, nothing beyond the CPU's picture drawn.
+    pub fn plain(packed: Arc<Packed>, uniforms: Uniforms, size: [u32; 2], out: [u32; 2], supersample: u32) -> Frame {
+        Frame {
+            packed,
+            uniforms,
+            size,
+            out,
+            supersample,
+            look: Look::default(),
+            selected: Vec::new(),
+            hover: 0,
+            outline: [0.0; 4],
+            hover_color: [0.0; 4],
+            ppp: 1.0,
+        }
+    }
+
+    /// Tells this frame from another: the scene, the camera and the size, which the per-pixel
+    /// tags read back for picking ([`pick`]) were drawn for.
+    pub fn key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.packed.id.hash(&mut h);
+        self.uniforms.bytes().hash(&mut h);
+        self.out.hash(&mut h);
+        h.finish()
+    }
+
+    /// The show pass's uniform (`show.wgsl`'s `Show`).
+    pub fn show_bytes(&self, srgb: bool) -> Vec<u8> {
+        let mut out = Vec::with_capacity(128);
+        let f = |out: &mut Vec<u8>, v: f32| out.extend_from_slice(&v.to_le_bytes());
+        let look = self.look;
+        let flags = u32::from(look.edges) | (u32::from(look.ao) << 1) | (u32::from(look.outline) << 2);
+        for v in [self.out[0] as f32, self.out[1] as f32, self.supersample.max(1) as f32, if srgb { 1.0 } else { 0.0 }] {
+            f(&mut out, v);
+        }
+        let selected: Vec<u32> = self.selected.iter().copied().filter(|t| *t != 0).take(MAX_OUTLINED).collect();
+        for v in [flags, selected.len() as u32, self.hover] {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        f(&mut out, if self.uniforms.persp { 1.0 } else { 0.0 });
+        for v in [self.uniforms.depth_terms[0], self.uniforms.depth_terms[1], 0.0, 0.0] {
+            f(&mut out, v);
+        }
+        for v in self.outline.iter().chain(&self.hover_color) {
+            f(&mut out, *v);
+        }
+        for v in [12.0 * self.ppp.max(1.0), 0.25 * self.uniforms.radius.max(1e-9), 1.6, 0.0] {
+            f(&mut out, v);
+        }
+        for k in 0..MAX_OUTLINED {
+            out.extend_from_slice(&selected.get(k).copied().unwrap_or(0).to_le_bytes());
+        }
+        out
+    }
 }
 
 /// The scene packed for the GPU, made again when the scene changes.

@@ -64,7 +64,9 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
 - **Units: store SI, convert only at boundaries through `crates/model/src/units.rs`** (docs/units.md).
   Command parameters and replies are in the session's display units (mm and GHz by default).
   Time dependence is e^{jωt}.
-- **Rust only.**
+- **Rust only.** One exception: the rendering shaders of the window's GPU viewport are written in
+  WGSL (`crates/ui-egui/src/gpu3d/*.wgsl`, compiled by naga at run time and validated by a unit
+  test); compute kernels stay in Rust (CubeCL). See docs/adr/0004-gpu-viewport.md.
 
 ## Workflow for every change
 1. Work on a branch. While you work: `cargo check` and the tests your change can break,

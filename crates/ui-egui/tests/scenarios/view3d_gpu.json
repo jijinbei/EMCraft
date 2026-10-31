@@ -32,5 +32,18 @@
   {"click": "settings:3d:quality"},
   {"key": "Escape"},
   {"frames": 2},
-  {"expect": {"inspect": {"view3d.renderer": "cpu"}}}
+  {"expect": {"inspect": {"view3d.renderer": "cpu", "drawing.mode": "cpu"}}},
+  {"note": "What the GPU adds, each its own switch (edges, outline, picking and the field on by default; shadows off); headless, the CPU draws and picks"},
+  {"click": "bar:settings"},
+  {"click": "settings:section:3d"},
+  {"expect": {"inspect": {"drawing.gpu.edges": true, "drawing.gpu.ao": false, "drawing.gpu.outline": true, "drawing.gpu.pick": true, "drawing.gpu.field": true}, "handles": ["settings:3d:edges", "settings:3d:ao", "settings:3d:outline", "settings:3d:pick", "settings:3d:field"]}},
+  {"click": "settings:3d:ao"},
+  {"click": "settings:3d:edges"},
+  {"expect": {"inspect": {"drawing.gpu.edges": false, "drawing.gpu.ao": true}}},
+  {"shot": "settings-3d-gpu"},
+  {"click": "settings:3d:gpu"},
+  {"key": "Escape"},
+  {"click": "view3d"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.renderer": "cpu", "view3d.picked_by": "cpu", "view3d.gpu_adapter": null}}}
 ]
