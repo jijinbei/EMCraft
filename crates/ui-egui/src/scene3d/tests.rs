@@ -170,3 +170,152 @@ fn walls_with_a_thickness_are_drawn_round_the_inside_before_and_after_meshing() 
     s.execute("mesh.generate", &json!({"size": 6})).unwrap();
     reaches(&build(&s, Overlay::Plain).scene);
 }
+
+/// Pixels across a `w` × `h` view, and the camera fitted to `b` from a few directions.
+fn views(b: &Built, w: f64, h: f64) -> Vec<emcraft_render::view3d::Camera> {
+    use emcraft_render::view3d::{Camera, Projection, StandardView};
+    let (lo, hi) = b.bounds.or_else(|| b.scene.bounds()).unwrap();
+    [StandardView::Iso, StandardView::Front, StandardView::Top, StandardView::Right]
+        .into_iter()
+        .flat_map(|v| [Projection::Perspective, Projection::Orthographic].map(|p| (v, p)))
+        .map(|(v, p)| {
+            let mut c = Camera { projection: p, ..Camera::default() };
+            c.standard(v);
+            c.fit(lo, hi, w / h);
+            c
+        })
+        .collect()
+}
+
+/// A sample's scene picked through its index answers every pixel as the scan does, and the
+/// face under it is the same face: the tools snap and measure as before.
+#[test]
+fn picking_through_the_index_answers_as_the_scan_does() {
+    use emcraft_render::view3d::hits;
+    let s = meshed("highpass", None);
+    let (w, h) = (300.0, 200.0);
+    for o in [Overlay::Plain, Overlay::Ports, Overlay::Mesh] {
+        let b = build(&s, o);
+        b.cache.fill_now(&b.scene);
+        let index = b.cache.index(&b.scene).unwrap();
+        let mut picked = 0;
+        for c in views(&b, w, h) {
+            for k in 0..300 {
+                let (x, y) = ((k * 37 % 300) as f64 + 0.25, (k * 23 % 200) as f64 * 0.5 + 50.0);
+                let want = hits(&b.scene, &c, x, y, w, h);
+                assert_eq!(b.hits(&c, x, y, w, h), want, "{o:?} ({x}, {y})");
+                if let Some((near, _)) = want {
+                    picked += 1;
+                    if k % 10 == 0 {
+                        assert_eq!(faces::Face::of_indexed(&b.scene, Some(index), near.index), faces::Face::of(&b.scene, near.index));
+                    }
+                }
+            }
+        }
+        assert!(picked > 500, "{o:?}: {picked} pixels picked");
+    }
+}
+
+/// A large scene is drawn from a coarser copy while the view moves (each part's colour and tag
+/// kept), and picked from the full scene; a clone starts with nothing made.
+#[test]
+fn a_large_scene_moves_coarser_and_is_picked_in_full() {
+    use emcraft_render::view3d::{Camera, StandardView, hits};
+    let mut b = Built::default();
+    // A finely divided block: 6 × 2 × 120² triangles.
+    let n = 120;
+    for k in 0..3 {
+        let (i, j) = ((k + 1) % 3, (k + 2) % 3);
+        for side in [0.0, 0.01] {
+            b.scene.tagged(Pick::Solid.tag(), |s| {
+                for a in 0..n {
+                    for c in 0..n {
+                        let at = |u: usize, v: usize| {
+                            let mut p = [side; 3];
+                            (p[i], p[j]) = (u as f64 * 0.01 / n as f64, v as f64 * 0.01 / n as f64);
+                            p
+                        };
+                        s.quad([at(a, c), at(a + 1, c), at(a + 1, c + 1), at(a, c + 1)], Rgb(10, 20, 30), 255);
+                    }
+                }
+            });
+        }
+    }
+    assert!(b.scene.tris.len() >= cache::COARSE_FROM);
+    b.cache.fill_now(&b.scene);
+    let moving = b.moving();
+    assert!(moving.tris.len() <= cache::COARSE_TRIANGLES * 5 / 4, "{} triangles while moving", moving.tris.len());
+    assert!(moving.tris.iter().all(|t| t.tag == Pick::Solid.tag() && t.color == Rgb(10, 20, 30)));
+    // Still the block: its box, to rounding.
+    let ((lo, hi), (flo, fhi)) = (moving.bounds().unwrap(), b.scene.bounds().unwrap());
+    assert!((0..3).all(|k| (lo[k] - flo[k]).abs() < 1e-12 && (hi[k] - fhi[k]).abs() < 1e-12), "{lo:?} {hi:?}");
+    let mut c = Camera::default();
+    c.standard(StandardView::Iso);
+    c.fit([0.0; 3], [0.01; 3], 1.5);
+    for (x, y) in [(150.0, 100.0), (120.0, 80.0), (190.0, 130.0)] {
+        let got = b.hits(&c, x, y, 300.0, 200.0);
+        assert!(got.is_some());
+        assert_eq!(got, hits(&b.scene, &c, x, y, 300.0, 200.0));
+    }
+    let copy = b.clone();
+    assert!(format!("{:?}", copy.cache).contains("index: false"));
+}
+
+/// Milliseconds per pick, face and moving picture on the magic tee's fine mesh, scanned and
+/// through the index: `cargo test --release -p emcraft-ui-egui pick_timings -- --ignored
+/// --nocapture`.
+#[test]
+#[ignore = "timing report: run by hand"]
+fn pick_timings() {
+    use emcraft_render::view3d::{flatten, hits};
+    let size: f64 = std::env::var("EMCRAFT_PICK_MESH").ok().and_then(|v| v.parse().ok()).unwrap_or(1.2);
+    let t = std::time::Instant::now();
+    let s = meshed("magic-tee", Some(size));
+    println!("magic tee meshed at {size} mm in {:.1} s", t.elapsed().as_secs_f64());
+    for o in [Overlay::Plain, Overlay::Mesh] {
+        let b = build(&s, o);
+        let (w, h) = (1180.0, 620.0);
+        let c = views(&b, w, h)[0];
+        let t = std::time::Instant::now();
+        b.cache.fill_now(&b.scene);
+        let filled = t.elapsed().as_secs_f64() * 1e3;
+        let t = std::time::Instant::now();
+        let index = emcraft_render::view3d::SceneIndex::new(&b.scene);
+        let built = t.elapsed().as_secs_f64() * 1e3;
+        let pixels: Vec<(f64, f64)> = (0..400).map(|k| ((k * 37 % 1180) as f64, (k * 23 % 620) as f64)).collect();
+        let time = |f: &dyn Fn(f64, f64)| {
+            let t = std::time::Instant::now();
+            pixels.iter().for_each(|&(x, y)| f(x, y));
+            t.elapsed().as_secs_f64() * 1e3 / pixels.len() as f64
+        };
+        let scan = time(&|x, y| {
+            std::hint::black_box(hits(&b.scene, &c, x, y, w, h));
+        });
+        let indexed = time(&|x, y| {
+            std::hint::black_box(b.hits(&c, x, y, w, h));
+        });
+        let under: Vec<usize> = pixels.iter().filter_map(|&(x, y)| b.hits(&c, x, y, w, h)).map(|(n, _)| n.index).take(40).collect();
+        let face = |idx: Option<&emcraft_render::view3d::SceneIndex>| {
+            let t = std::time::Instant::now();
+            under.iter().for_each(|&i| {
+                std::hint::black_box(faces::Face::of_indexed(&b.scene, idx, i));
+            });
+            t.elapsed().as_secs_f64() * 1e3 / under.len().max(1) as f64
+        };
+        let (face_scan, face_indexed) = (face(None), face(Some(&index)));
+        let draw = |scene: &Scene| {
+            let t = std::time::Instant::now();
+            std::hint::black_box(flatten(scene, &c, w, h));
+            t.elapsed().as_secs_f64() * 1e3
+        };
+        let moving = b.moving();
+        println!(
+            "{o:?}: {} triangles ({} lines); index {built:.1} ms (with the coarser copy {filled:.0} ms); pick {scan:.3} ms scanned, {indexed:.4} ms indexed; face {face_scan:.2} ms scanned, {face_indexed:.2} ms indexed; moving picture {:.1} ms full, {:.1} ms from {} triangles",
+            b.scene.tris.len(),
+            b.scene.lines.len(),
+            draw(&b.scene),
+            draw(moving),
+            moving.tris.len()
+        );
+    }
+}

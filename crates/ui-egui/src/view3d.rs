@@ -181,9 +181,8 @@ impl View3d {
     /// What lies under `pos` in the view drawn into `rect`.
     fn pick_at(&self, rect: Rect, pos: egui::Pos2) -> Option<scene3d::Pick> {
         let at = pos - rect.min;
-        let tag = self
-            .shown()
-            .and_then(|b| view3d::pick(&b.scene, &self.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
+        let tag =
+            self.shown().and_then(|b| b.pick(&self.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
         tag.and_then(scene3d::Pick::from_tag)
     }
 
@@ -221,7 +220,7 @@ impl View3d {
                 let caps = scene3d::mesh_slice(model, now.axis, now.at, now.keep == Keep::Low);
                 scene.tris.extend(caps.tris);
                 let labels = full.labels.iter().filter(|l| s.keeps(l.at)).cloned().collect();
-                let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds };
+                let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds, cache: Default::default() };
                 self.cut = Some((key.clone(), now, built));
                 self.generation = self.generation.wrapping_add(1);
             }
@@ -272,8 +271,13 @@ impl View3d {
 
 use crate::theme::{color32 as color, rgb};
 
-static EMPTY: Built =
-    Built { scene: view3d::Scene { tris: Vec::new(), lines: Vec::new(), tag: 0 }, labels: Vec::new(), legend: Vec::new(), bounds: None };
+static EMPTY: Built = Built {
+    scene: view3d::Scene { tris: Vec::new(), lines: Vec::new(), tag: 0 },
+    labels: Vec::new(),
+    legend: Vec::new(),
+    bounds: None,
+    cache: scene3d::Cache::none(),
+};
 
 /// Draws the 3D view (its state `v`) in `rect` for `overlay`, the field view's planes (`field`)
 /// in it when the overlay shows them.
@@ -563,7 +567,9 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
         let began = Instant::now();
         p.add(gradient(rect, t.viewport_top, t.viewport_bottom));
         if let Some(b) = v.shown() {
-            p.add(mesh_of(&view3d::flatten(&b.scene, &v.camera, f64::from(rect.width()), f64::from(rect.height())), rect.min, 1.4));
+            // While the view moves, a large scene is drawn from its coarser copy.
+            let scene = if v.dragging { b.moving() } else { &b.scene };
+            p.add(mesh_of(&view3d::flatten(scene, &v.camera, f64::from(rect.width()), f64::from(rect.height())), rect.min, 1.4));
         }
         v.last_ms = began.elapsed().as_secs_f64() * 1e3;
         return;
@@ -680,6 +686,7 @@ impl Built {
             labels: self.labels.clone(),
             legend: self.legend.clone(),
             bounds: self.bounds.or_else(|| self.scene.bounds()),
+            cache: Default::default(),
         }
     }
 }

@@ -63,6 +63,9 @@ SolidCraft (`../solidcraft`, MIT OR Apache-2.0, Copyright (c) 2026 SolidCraft co
 | `apps/emcraft/src/control_server.rs` | SolidCraft `apps/solidcraft/src/control_server.rs` (itself from CADCraft, MIT OR Apache-2.0) | without the pending-request bookkeeping; EMCraft's waits |
 | `apps/emcraft/src/control_auth.rs` | SolidCraft `crates/engine/src/control_auth.rs` | EMCraft's folders and variables; the token made here |
 | `docs/control-protocol.md`, the "Running and looking at the app" section of `AGENTS.md` | SolidCraft's | rewritten for EMCraft's methods |
+| `crates/render/src/view3d/bvh.rs` | SolidCraft `crates/geom/src/bvh.rs` (`Bvh::new`, `visit`, `nearest`, the ray–box test) | on EMCraft's scene triangles (`[f64; 3]` boxes), the split ordered by centre then item, boxes grown by their size too; `SceneIndex` (nearest and nearest solid tagged triangle, the triangles near a plane) instead of `MeshIndex`; no pair traversal |
+| `crates/render/src/view3d/simplify.rs` | SolidCraft `crates/geom/src/simplify.rs` | on `[f64; 3]` points; no error measure (and no original-surface index); `coarser`, a scene simplified group by group (colour, opacity, tag), is new |
+| `crates/ui-egui/src/scene3d/cache.rs` | SolidCraft `crates/ui-egui/src/mesh_lod.rs` (levels made once per mesh on a thread, a cap on jobs, drawn in full until made) | one coarser copy per built scene for moving pictures, held with the scene's picking index; no per-instance level choice |
 
 The ribbon, browser, dialogs, viewport and glyphs (`crates/ui-egui/src/{ribbon,browser,dialogs,dialog_ui,viewport,glyphs,worker}.rs`)
 are new, laid out after SolidCraft's; no SolidCraft icon or image file is used (the glyphs are

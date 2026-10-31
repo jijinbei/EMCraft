@@ -19,8 +19,11 @@
 
 use crate::{Canvas, Rgb};
 
+pub mod bvh;
 pub mod section;
+pub mod simplify;
 
+pub use bvh::SceneIndex;
 pub use section::{Keep, Section, SectionError};
 
 /// The largest picture side, in pixels.
