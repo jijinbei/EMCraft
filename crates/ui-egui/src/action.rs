@@ -252,6 +252,8 @@ impl EmcraftApp {
                 }
             }
             Action::SetView(v) => self.view = v,
+            // Home's tab is step 0.
+            Action::ShowView(View::Home) => crate::steps::open_step(self, Some(crate::steps::Step::Intent)),
             Action::ShowView(v) => {
                 self.view = v;
                 if v == View::PortModes && self.replies.port_modes.is_none() && self.session.model().mesh.is_some() && !self.busy() {

@@ -1,16 +1,15 @@
-//! The active step's panel: its checks, its settings and its commands. Each step's own part
-//! is in its module: [`intent`] (the band), [`model`] (bodies, materials, boundaries, the
+//! The active step's panel: its checks, its settings and its commands. Step 0's are on the
+//! project's Home view (`viewport::project`), the panel showing there only for a docked dialog.
+//! Each other step's own part is in its module: [`model`] (bodies, materials, boundaries, the
 //! mesh), [`excitation`] (ports and their modes), [`setup`] (the solver, its settings and
 //! device), [`run`] (the preflight) and [`results`] (checks and export).
 
 mod excitation;
-mod intent;
 mod model;
 mod results;
 mod run;
 mod setup;
 
-pub use intent::{KindCard, apply_band, kind_card};
 pub use results::export_touchstone;
 
 use super::bar::mark;
@@ -25,6 +24,10 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
     let t = &Tokens::get();
     let states = statuses_now(app);
     let Some(state) = states.get(step.index()).cloned() else { return };
+    // Home's settings are its view's; the panel holds only a dialog docked there.
+    if step == Step::Intent && dialog.is_none() {
+        return;
+    }
     egui::Panel::right("emcraft_step_panel")
         .exact_size(t.form_card_width + 40.0)
         .show_separator_line(false)
@@ -45,7 +48,6 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                     crate::messages::job_card(app, ui, out);
                     ui.add_space(6.0);
                 }
-                let docked = dialog.is_some();
                 let dialog_h = if dialog.is_some() { (h * 0.58).max(260.0) } else { 0.0 };
                 egui::ScrollArea::vertical()
                     .id_salt("step_panel_scroll")
@@ -56,7 +58,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                         if !(step == Step::Run && running(app)) {
                             checks(ui, &state, t, out);
                         }
-                        body(app, fields, ui, step, &states, docked, t, out);
+                        body(app, fields, ui, step, &states, t, out);
                     });
                 if let Some(d) = dialog {
                     ui.add_space(6.0);
@@ -72,7 +74,9 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
 /// Why step `step` does nothing for the job's kind of analysis, when it does nothing for it.
 pub fn not_needed(app: &EmcraftApp, step: Step) -> Option<String> {
     let chosen = app.session.model().analysis?;
-    emcraft_engine::workflow::not_needed(Some(chosen)).contains(&step).then(|| trf("Not needed for {kind}", args!(kind = tr(kind_card(chosen).name))))
+    emcraft_engine::workflow::not_needed(Some(chosen))
+        .contains(&step)
+        .then(|| trf("Not needed for {kind}", args!(kind = tr(crate::kinds::kind_card(chosen).name))))
 }
 
 fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
@@ -131,7 +135,7 @@ fn fix_label(command: &str) -> String {
 }
 
 /// A one-line text field with its error under it; `true` when Enter was pressed in it.
-pub(super) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: Fixed) -> bool {
+pub(crate) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &str, error: Option<&str>, handle: Fixed) -> bool {
     let t = &Tokens::get();
     let mut enter = false;
     ui_kit::row(ui, label, false, |ui| {
@@ -166,22 +170,14 @@ pub(crate) fn fmt(v: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
-/// The step's own settings and information; `docked`: a dialog shares the panel.
-#[allow(clippy::too_many_arguments)]
-fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], docked: bool, t: &Tokens, out: &mut Actions) {
+/// The step's own settings and information.
+fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], t: &Tokens, out: &mut Actions) {
     let fu = app.session.display().frequency.symbol();
     let lu = app.session.display().length.symbol();
-    // The band fields follow the session's band when it changes.
-    let b = band(&app.session);
-    if f.band_seen != b {
-        if let Some((a, z)) = b {
-            f.start = fmt(a);
-            f.stop = fmt(z);
-        }
-        f.band_seen = b;
-    }
+    follow_band(app, f);
     match step {
-        Step::Intent => intent::intent(app, f, ui, fu, docked, t, out),
+        // On the Home view.
+        Step::Intent => {}
         Step::Geometry => model::geometry(app, ui, lu, t),
         Step::Materials => model::materials(app, ui, t),
         Step::Excitation => excitation::excitation(app, ui, fu, t, out),

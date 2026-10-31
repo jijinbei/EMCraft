@@ -18,7 +18,9 @@ emcraft_macros::named_enum! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
     #[serde(rename_all = "lowercase")]
     pub enum Step {
-        Intent = "intent" => "Intent",
+        /// The project's home: the kind of analysis, the band, the units (its id kept from when it
+        /// was called Intent).
+        Intent = "intent" => "Home",
         Geometry = "geometry" => "Geometry",
         Materials = "materials" => "Materials",
         Excitation = "excitation" => "Excitation",

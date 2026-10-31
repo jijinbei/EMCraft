@@ -43,7 +43,7 @@ pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver
             let points = take("points", integer(&f.points.clone(), 1, limit).map(|v| json!(v)), f);
             let order = if solver == Solver::Frequency { take("order", order.map(|v| json!(v)), f) } else { Some(Value::Null) };
             if band.is_none() {
-                bad.push(tr("no frequency band: set it in step 0 (Intent)").into());
+                bad.push(tr("no frequency band: set it on Home (step 0)").into());
             }
             match (points, order) {
                 (Some(p), Some(o)) if solver == Solver::Frequency => json!({"points": p, "order": o}),
