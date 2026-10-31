@@ -181,6 +181,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "frames": app.frames,
         "workflow": crate::steps::inspect(app),
         "view3d": app.view3d.inspect(app.session.display().length),
+        "navigation": {"mapping": app.prefs.nav().id, "orbit_around": app.prefs.orbit_around().id(), "navigator": app.prefs.navigator().id()},
         "undo": app.session.undo().len(),
         "redo": app.session.redo().len(),
         "history": app.session.history().len(),
@@ -486,6 +487,29 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         Some(Value::Null) => Some(None),
         Some(s) => Some(Some(cut_of(app, Args(s))?)),
     };
+    // The 3D view's navigation: the mouse mapping, what an orbit turns about, the navigator.
+    if let Some(id) = a.str("navigation") {
+        let p = crate::navigation::NAV_PRESETS.iter().find(|p| p.id == id).ok_or_else(|| {
+            format!(
+                "unknown mouse mapping `{}` (there are {})",
+                clip(id, 40),
+                crate::navigation::NAV_PRESETS.iter().map(|p| p.id).collect::<Vec<_>>().join(", ")
+            )
+        })?;
+        asked.push(Action::Pref(Pref::Navigation(p.id.into())));
+    }
+    if let Some(id) = a.str("orbit_around") {
+        let o = crate::navigation::OrbitAround::parse(id).ok_or_else(|| {
+            format!("unknown orbit centre `{}` (there are {})", clip(id, 40), <crate::navigation::OrbitAround as emcraft_macros::Named>::listed())
+        })?;
+        asked.push(Action::Pref(Pref::OrbitAround(o)));
+    }
+    if let Some(id) = a.str("navigator") {
+        let n = crate::navigation::Navigator::parse(id).ok_or_else(|| {
+            format!("unknown navigator `{}` (there are {})", clip(id, 40), <crate::navigation::Navigator as emcraft_macros::Named>::listed())
+        })?;
+        asked.push(Action::Pref(Pref::Navigator(n)));
+    }
     if let Some(v) = a.str("standard_view") {
         let view = emcraft_render::view3d::StandardView::parse(v).ok_or_else(|| format!("unknown standard view `{}`", clip(v, 40)))?;
         asked.push(Action::StandardView(view));
@@ -501,7 +525,8 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
     }
     if let Some(c) = a.get("camera") {
         let c = Args(c);
-        let cam = &mut app.view3d.camera;
+        let mut cam = app.view3d.camera;
+        let cam = &mut cam;
         if let Some(v) = c.num("yaw") {
             cam.yaw = v.to_radians();
         }
@@ -516,7 +541,13 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
             Some("perspective") => cam.projection = emcraft_render::view3d::Projection::Perspective,
             _ => {}
         }
-        *cam = cam.sanitized();
+        let cam = *cam;
+        // Turning or moving the camera ends a view change; the projection alone does not.
+        if ["yaw", "pitch", "distance"].iter().any(|k| c.get(k).is_some()) {
+            app.view3d.set_camera(cam);
+        } else {
+            app.view3d.camera = cam.sanitized();
+        }
     }
     Ok(ok(inspect(app)))
 }
@@ -608,16 +639,42 @@ fn drag(app: &mut EmcraftApp, a: Args) -> Handled {
     Ok(ok(Value::Null))
 }
 
+/// The wheel or trackpad at a point: `delta` lines up (and `dx` sideways), or with `unit`
+/// `point` that many points; `pan: true` sends them as a two-finger scroll (a gesture's start,
+/// move and end); `zoom` is a pinch's factor; the modifiers as for a click.
 fn scroll(app: &mut EmcraftApp, a: Args) -> Handled {
     let pos = point(a.0, "x", "y")?;
-    let delta = a.clamped("delta", -1.0, -100.0, 100.0) as f32;
-    let wheel = egui::Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Line,
-        delta: egui::vec2(0.0, delta),
-        modifiers: Default::default(),
-        phase: egui::TouchPhase::Move,
+    let unit = match a.str("unit") {
+        None | Some("line") => egui::MouseWheelUnit::Line,
+        Some("point") => egui::MouseWheelUnit::Point,
+        Some("page") => egui::MouseWheelUnit::Page,
+        Some(u) => return Err(format!("unknown unit `{}` (line, point or page)", clip(u, 16))),
     };
-    push(app, vec![egui::Event::PointerMoved(pos), wheel])?;
+    let limit = if unit == egui::MouseWheelUnit::Point { 4000.0 } else { 100.0 };
+    let delta = egui::vec2(a.clamped("dx", 0.0, -limit, limit) as f32, a.clamped("delta", -1.0, -limit, limit) as f32);
+    let modifiers = mods(a.0);
+    let wheel = |phase, delta| egui::Event::MouseWheel { unit, delta, modifiers, phase };
+    let mut ev = vec![egui::Event::ModifiersChanged(modifiers), egui::Event::PointerMoved(pos)];
+    if let Some(z) = a.num("zoom") {
+        if !(z.is_finite() && (0.05..=20.0).contains(&z)) {
+            return Err("`zoom` must be a pinch factor within 0.05–20".into());
+        }
+        ev.push(egui::Event::Zoom(z as f32));
+        ev.push(egui::Event::PointerMoved(pos));
+    } else if a.bool("pan") == Some(true) {
+        let unit_ok = unit == egui::MouseWheelUnit::Point;
+        if !unit_ok {
+            return Err("a two-finger scroll (`pan`) moves by points: give `unit`: `point`".into());
+        }
+        ev.extend([
+            wheel(egui::TouchPhase::Start, egui::Vec2::ZERO),
+            wheel(egui::TouchPhase::Move, delta),
+            wheel(egui::TouchPhase::End, egui::Vec2::ZERO),
+        ]);
+    } else {
+        ev.push(wheel(egui::TouchPhase::Move, delta));
+    }
+    push(app, ev)?;
     Ok(ok(Value::Null))
 }
 
@@ -625,7 +682,14 @@ fn key(app: &mut EmcraftApp, a: Args) -> Handled {
     let key = a.str("key").and_then(key_from).ok_or("unknown key")?;
     let m = mods(a.0);
     let press = |pressed| egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: m };
-    push(app, vec![press(true), press(false)])?;
+    // `press`: only down (held until an `up`) or only up; else a tap.
+    let events = match a.str("press") {
+        None => vec![press(true), press(false)],
+        Some("down") => vec![press(true), egui::Event::ModifiersChanged(m)],
+        Some("up") => vec![press(false)],
+        Some(p) => return Err(format!("unknown press `{}` (down or up)", clip(p, 16))),
+    };
+    push(app, events)?;
     Ok(ok(Value::Null))
 }
 

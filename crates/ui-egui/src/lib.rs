@@ -50,6 +50,7 @@ pub mod handle;
 pub mod home;
 pub mod lang;
 mod messages;
+pub mod navigation;
 pub mod pack;
 pub mod picture;
 pub mod prefs;
@@ -69,6 +70,7 @@ pub mod ui_ext;
 pub mod ui_kit;
 pub mod view;
 pub mod view3d;
+pub mod view_cube;
 pub mod viewport;
 pub mod worker;
 
