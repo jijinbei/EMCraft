@@ -26,7 +26,7 @@ pub struct Archived {
 /// Keeps the solve that just succeeded in `s`.
 pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) {
     s.archive_next = s.archive_next.saturating_add(1);
-    let state = Snapshot { model: s.model.clone(), display: s.display, history: s.history.clone(), variables: s.variables.clone(), project: None };
+    let state = s.snapshot(s.history.clone(), None);
     s.archive.push(Archived {
         id: s.archive_next,
         command: command.to_owned(),
@@ -64,8 +64,7 @@ fn changes(before: Option<&Archived>, now: &Archived) -> Vec<String> {
 
 /// A kept solve in brief: its id, command, how many frequencies, what changed since the one
 /// before it, whether it is pinned and whether the session's results are its own.
-fn row(s: &Session, k: usize) -> Value {
-    let a = &s.archive[k];
+fn row(s: &Session, before: Option<&Archived>, a: &Archived) -> Value {
     let fu = s.display.frequency;
     let points = a.results.sweep.as_ref().map(|sw| sw.results.len());
     let band = a.results.sweep.as_ref().and_then(|sw| Some((sw.results.first()?.frequency, sw.results.last()?.frequency)));
@@ -85,7 +84,7 @@ fn row(s: &Session, k: usize) -> Value {
         "best_s11_db": best.map(|b| b.1),
         "best_at": best.map(|b| fu.from_si(b.0)),
         "first_mode": eigen,
-        "changes": changes(k.checked_sub(1).and_then(|j| s.archive.get(j)), a),
+        "changes": changes(before, a),
         "pinned": a.pinned,
         "current": s.archive_current == Some(a.id),
     })
@@ -98,7 +97,8 @@ fn find(s: &Session, p: &Params) -> Result<usize> {
 
 /// The solves kept, the oldest first, as `results.history` lists them.
 pub fn rows(s: &Session) -> Vec<Value> {
-    (0..s.archive.len()).map(|k| row(s, k)).collect()
+    let before = std::iter::once(None).chain(s.archive.iter().map(Some));
+    before.zip(&s.archive).map(|(b, a)| row(s, b, a)).collect()
 }
 
 /// `results.history`: the solves kept, the oldest first.
@@ -110,16 +110,17 @@ pub fn list(s: &mut Session, _: &Params) -> Result<Value> {
 /// again (undo goes back).
 pub fn restore(s: &mut Session, p: &Params) -> Result<Value> {
     let k = find(s, p)?;
-    let a = s.archive[k].clone();
-    s.model = a.state.model;
-    s.display = a.state.display;
-    s.history = a.state.history;
-    s.variables = a.state.variables;
-    s.results = a.results;
+    let a = &s.archive[k];
+    let (id, reply, state, results) = (a.id, json!({"id": a.id, "command": a.command}), a.state.clone(), a.results.clone());
+    s.model = state.model;
+    s.display = state.display;
+    s.history = state.history;
+    s.variables = state.variables;
+    s.results = results;
     // Its results are the model's: current after the restore.
     s.solved_revision = Some(s.revision);
-    s.archive_current = Some(a.id);
-    Ok(json!({"id": a.id, "command": a.command}))
+    s.archive_current = Some(id);
+    Ok(reply)
 }
 
 /// `results.history.pin`: keeps a solve past the cap (or lets it go with the others).

@@ -12,7 +12,9 @@
 use std::collections::BTreeMap;
 
 use emcraft_model::Model;
+use emcraft_model::geom::{Point3, Vec3, triple};
 
+use super::faces::unit_normal;
 use super::style::sc;
 use super::surface::Kind;
 use super::{Built, Overlay, Pick};
@@ -20,40 +22,144 @@ use super::{Built, Overlay, Pick};
 /// The longest move, in thicknesses.
 pub(super) const MAX_STRETCH: f64 = 3.0;
 
+/// A triangle of the inside's surface: a wall, or open (a port, a symmetry plane).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Side {
+    Wall,
+    Open,
+}
+
+impl Side {
+    /// Open where `open` holds, else a wall.
+    pub(super) fn open_if(open: bool) -> Side {
+        if open { Side::Open } else { Side::Wall }
+    }
+}
+
 /// A surface round the inside: welded vertices (m) and triangles, each a wall or open.
 #[derive(Default)]
 pub(super) struct Inside {
-    pub positions: Vec<[f64; 3]>,
-    pub tris: Vec<[u32; 3]>,
-    pub open: Vec<bool>,
+    positions: Vec<Point3>,
+    tris: Vec<([u32; 3], Side)>,
     index: BTreeMap<[i64; 3], u32>,
 }
 
 impl Inside {
     /// The vertex at `p`, welded to one already there (within a nanometre).
-    pub(super) fn vertex(&mut self, p: [f64; 3]) -> u32 {
+    fn vertex(&mut self, p: [f64; 3]) -> u32 {
         let key = p.map(|c| (c * 1e9).round() as i64);
         let next = self.positions.len() as u32;
         *self.index.entry(key).or_insert_with(|| {
-            self.positions.push(p);
+            self.positions.push(p.into());
             next
         })
     }
 
     /// A triangle through these points.
-    pub(super) fn tri(&mut self, p: [[f64; 3]; 3], open: bool) {
+    pub(super) fn tri(&mut self, p: [[f64; 3]; 3], side: Side) {
         let v = p.map(|q| self.vertex(q));
         if v[0] != v[1] && v[1] != v[2] && v[0] != v[2] {
-            self.tris.push(v);
-            self.open.push(open);
+            self.tris.push((v, side));
         }
     }
 
     /// A quadrilateral through these points, in order round it.
-    pub(super) fn quad(&mut self, q: [[f64; 3]; 4], open: bool) {
-        self.tri([q[0], q[1], q[2]], open);
-        self.tri([q[0], q[2], q[3]], open);
+    pub(super) fn quad(&mut self, q: [[f64; 3]; 4], side: Side) {
+        self.tri([q[0], q[1], q[2]], side);
+        self.tri([q[0], q[2], q[3]], side);
     }
+
+    /// Vertex `v`'s position (the origin for one out of range).
+    fn at(&self, v: u32) -> Point3 {
+        self.positions.get(v as usize).copied().unwrap_or_default()
+    }
+
+    /// Whether triangle `i` is a wall.
+    fn wall(&self, i: usize) -> bool {
+        self.tris.get(i).is_some_and(|(_, side)| *side == Side::Wall)
+    }
+
+    /// The planes each vertex should lie on once moved: the distinct normals of the triangles
+    /// round it, a wall's `thickness` out, an open face's through the vertex.
+    fn planes(&self, normals: &[Option<Vec3>], thickness: f64) -> Vec<Vec<Plane>> {
+        let mut planes: Vec<Vec<Plane>> = vec![Vec::new(); self.positions.len()];
+        for ((t, side), normal) in self.tris.iter().zip(normals) {
+            let Some(normal) = *normal else { continue };
+            let open = *side == Side::Open;
+            let offset = if open { 0.0 } else { thickness };
+            for v in t {
+                let Some(w) = planes.get_mut(*v as usize) else { continue };
+                // An open face's sign does not matter: it only holds the vertex in its plane.
+                let same = |p: &Plane| p.offset == offset && (p.normal.dot(normal) > 1.0 - 1e-9 || (open && p.normal.dot(normal) < -1.0 + 1e-9));
+                if !w.iter().any(same) {
+                    w.push(Plane { normal, offset });
+                }
+            }
+        }
+        planes
+    }
+
+    /// Each edge with the triangles that have it, each in that triangle's turn.
+    fn edges(&self) -> BTreeMap<[u32; 2], Vec<(usize, [u32; 2])>> {
+        let mut edges: BTreeMap<[u32; 2], Vec<(usize, [u32; 2])>> = BTreeMap::new();
+        for (i, (t, _)) in self.tris.iter().enumerate() {
+            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                edges.entry([a.min(b), a.max(b)]).or_default().push((i, [a, b]));
+            }
+        }
+        edges
+    }
+}
+
+/// A plane a moved vertex should lie on: d · `normal` = `offset` for its move d.
+#[derive(Clone, Copy, Debug)]
+struct Plane {
+    normal: Vec3,
+    offset: f64,
+}
+
+/// The move d that best meets every plane, (AᵀA + λI) d = Aᵀb, capped at [`MAX_STRETCH`]
+/// `thickness`; `None` when no wall is among them (the vertex stays).
+fn mitre(planes: &[Plane], thickness: f64) -> Option<Vec3> {
+    const LAMBDA: f64 = 1e-9;
+    if !planes.iter().any(|p| p.offset > 0.0) {
+        return None;
+    }
+    let mut m = [[0.0; 3]; 3];
+    let mut r = [0.0; 3];
+    for Plane { normal: n, offset } in planes {
+        for i in 0..3 {
+            for j in 0..3 {
+                m[i][j] += n[i] * n[j];
+            }
+            r[i] += n[i] * offset;
+        }
+    }
+    for (i, row) in m.iter_mut().enumerate() {
+        row[i] += LAMBDA;
+    }
+    let d = solve3(m, r).unwrap_or(Vec3::ZERO);
+    let len = d.norm();
+    let cap = MAX_STRETCH * thickness;
+    Some(if len > cap { d.map(|c| c * cap / len) } else { d })
+}
+
+/// The 3 × 3 system m d = r, by Cramer's rule; `None` when it is singular.
+fn solve3(m: [[f64; 3]; 3], r: [f64; 3]) -> Option<Vec3> {
+    let det = |a: [[f64; 3]; 3]| triple(a[0].into(), a[1].into(), a[2].into());
+    let d = det(m);
+    if !(d.abs() > 1e-300) {
+        return None;
+    }
+    let mut out = Vec3::ZERO;
+    for k in 0..3 {
+        let mut a = m;
+        for (row, rk) in a.iter_mut().zip(r) {
+            row[k] = rk;
+        }
+        out[k] = det(a) / d;
+    }
+    Some(out)
 }
 
 /// The walls' outer surface and their rims, as triangles, and the outline edges (the rims'
@@ -65,47 +171,6 @@ pub(super) struct Shell {
     pub edges: Vec<([f64; 3], [f64; 3])>,
 }
 
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-/// A triangle's unit normal (its corners' turn), if it has an area.
-fn unit_normal(p: [[f64; 3]; 3]) -> Option<[f64; 3]> {
-    let n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
-    let len = dot(n, n).sqrt();
-    (len > 0.0 && len.is_finite()).then(|| n.map(|c| c / len))
-}
-
-/// The 3 × 3 system m d = r, by Cramer's rule; `None` when it is singular.
-fn solve3(m: [[f64; 3]; 3], r: [f64; 3]) -> Option<[f64; 3]> {
-    let det = |a: [[f64; 3]; 3]| dot(a[0], cross(a[1], a[2]));
-    let d = det(m);
-    if !(d.abs() > 1e-300) {
-        return None;
-    }
-    let mut out = [0.0; 3];
-    for (k, o) in out.iter_mut().enumerate() {
-        let mut a = m;
-        for row in 0..3 {
-            a[row][k] = r[row];
-        }
-        *o = det(a) / d;
-    }
-    Some(out)
-}
-
 /// The walls of `inside` offset outward by `thickness` (m). Wall triangles must turn so their
 /// normals point out of the inside, into the metal; open ones may turn either way.
 pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
@@ -113,68 +178,17 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
     if !(thickness > 0.0 && thickness.is_finite()) {
         return out;
     }
-    let n = inside.positions.len();
-    let normals: Vec<Option<[f64; 3]>> =
-        inside.tris.iter().map(|t| unit_normal(t.map(|v| inside.positions.get(v as usize).copied().unwrap_or([0.0; 3])))).collect();
-    // Per vertex: the distinct normals round it, each with where it wants the vertex (t or 0).
-    let mut wants: Vec<Vec<([f64; 3], f64)>> = vec![Vec::new(); n];
-    for ((t, nrm), open) in inside.tris.iter().zip(&normals).zip(&inside.open) {
-        let Some(nrm) = *nrm else { continue };
-        let target = if *open { 0.0 } else { thickness };
-        for v in t {
-            let Some(w) = wants.get_mut(*v as usize) else { continue };
-            // An open face's sign does not matter: it only holds the vertex in its plane.
-            let same = |(m, b): &([f64; 3], f64)| *b == target && (dot(*m, nrm) > 1.0 - 1e-9 || (*open && dot(*m, nrm) < -1.0 + 1e-9));
-            if !w.iter().any(same) {
-                w.push((nrm, target));
-            }
-        }
-    }
-    let moved: Vec<[f64; 3]> = inside
-        .positions
-        .iter()
-        .zip(&wants)
-        .map(|(p, w)| {
-            if !w.iter().any(|(_, b)| *b > 0.0) {
-                return *p;
-            }
-            let lambda = 1e-9;
-            let mut m = [[0.0; 3]; 3];
-            let mut r = [0.0; 3];
-            for (nrm, b) in w {
-                for i in 0..3 {
-                    for j in 0..3 {
-                        m[i][j] += nrm[i] * nrm[j];
-                    }
-                    r[i] += nrm[i] * b;
-                }
-            }
-            for (i, row) in m.iter_mut().enumerate() {
-                row[i] += lambda;
-            }
-            let d = solve3(m, r).unwrap_or([0.0; 3]);
-            let len = dot(d, d).sqrt();
-            let cap = MAX_STRETCH * thickness;
-            let d = if len > cap { d.map(|c| c * cap / len) } else { d };
-            add(*p, d)
-        })
-        .collect();
-    let at = |v: u32| inside.positions.get(v as usize).copied().unwrap_or([0.0; 3]);
-    let to = |v: u32| moved.get(v as usize).copied().unwrap_or([0.0; 3]);
-    // Edges: which triangles have each, the walls' in their turn.
-    let mut edges: BTreeMap<[u32; 2], Vec<(usize, [u32; 2])>> = BTreeMap::new();
-    for (i, t) in inside.tris.iter().enumerate() {
-        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
-            edges.entry([a.min(b), a.max(b)]).or_default().push((i, [a, b]));
-        }
-    }
-    let wall = |i: usize| !inside.open.get(i).copied().unwrap_or(true);
-    for (_, t) in inside.tris.iter().enumerate().filter(|(i, _)| wall(*i)) {
+    let normals: Vec<Option<Vec3>> = inside.tris.iter().map(|(t, _)| unit_normal(t.map(|v| inside.at(v)))).collect();
+    let moved: Vec<Point3> =
+        inside.positions.iter().zip(inside.planes(&normals, thickness)).map(|(p, planes)| mitre(&planes, thickness).map_or(*p, |d| *p + d)).collect();
+    let at = |v: u32| inside.at(v).to_array();
+    let to = |v: u32| moved.get(v as usize).copied().unwrap_or_default().to_array();
+    for (t, _) in inside.tris.iter().filter(|(_, side)| *side == Side::Wall) {
         out.outer.push(t.map(to));
     }
     let cos_sharp = 25f64.to_radians().cos();
-    for faces in edges.values() {
-        let walls: Vec<&(usize, [u32; 2])> = faces.iter().filter(|(i, _)| wall(*i)).collect();
+    for faces in inside.edges().values() {
+        let walls: Vec<&(usize, [u32; 2])> = faces.iter().filter(|(i, _)| inside.wall(*i)).collect();
         match walls.as_slice() {
             // A wall's edge on no other wall: the rim, from it out to its moved copy.
             [(_, [a, b])] => {
@@ -185,8 +199,8 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
                 out.edges.push((at(*b), to(*b)));
             }
             [(i, [a, b]), (j, _)] => {
-                let sharp = normals.get(*i).copied().flatten().zip(normals.get(*j).copied().flatten()).is_some_and(|(p, q)| dot(p, q) < cos_sharp);
-                if sharp {
+                let normal = |k: usize| normals.get(k).copied().flatten();
+                if normal(*i).zip(normal(*j)).is_some_and(|(p, q)| p.dot(q) < cos_sharp) {
                     out.edges.push((to(*a), to(*b)));
                 }
             }
@@ -218,15 +232,20 @@ pub(super) fn draw(m: &Model, overlay: Overlay, inside: &Inside, thickness: f64,
 
 /// Whether a point lies on one of the model's ports' faces (within a micrometre of its plane).
 pub(super) fn on_ports(m: &Model) -> impl Fn([f64; 3]) -> bool {
-    let tris: Vec<[[f64; 3]; 3]> = m.ports.iter().flat_map(|p| super::extras::port_face(m, p)).collect();
+    let faces: Vec<([Point3; 3], Vec3)> = m
+        .ports
+        .iter()
+        .flat_map(|p| super::extras::port_face(m, p))
+        .filter_map(|t| {
+            let t = t.map(Point3::from);
+            Some((t, unit_normal(t)?))
+        })
+        .collect();
     move |c: [f64; 3]| {
-        tris.iter().any(|t| {
-            let Some(n) = unit_normal(*t) else { return false };
-            if dot(sub(c, t[0]), n).abs() > 1e-6 {
-                return false;
-            }
-            // Inside: on the inner side of each edge (a hair of slack).
-            (0..3).all(|k| dot(cross(sub(t[(k + 1) % 3], t[k]), sub(c, t[k])), n) >= -1e-12)
+        let c = Point3::from(c);
+        faces.iter().any(|(t, n)| {
+            // In its plane, and on the inner side of each edge (a hair of slack).
+            !((c - t[0]).dot(*n).abs() > 1e-6) && (0..3).all(|k| (t[(k + 1) % 3] - t[k]).cross(c - t[k]).dot(*n) >= -1e-12)
         })
     }
 }
@@ -235,25 +254,25 @@ pub(super) fn on_ports(m: &Model) -> impl Fn([f64; 3]) -> bool {
 mod tests {
     use super::*;
 
-    /// A box [0, a] × [0, b] × [0, l], its faces turned outward, the z ends open.
-    fn guide(a: f64, b: f64, l: f64) -> Inside {
+    /// A box [0, a] × [0, b] × [0, l], its faces turned outward, the z ends `ends`.
+    fn guide(a: f64, b: f64, l: f64, ends: Side) -> Inside {
         let mut s = Inside::default();
         let c = |x: f64, y: f64, z: f64| [x, y, z];
         // Walls, outward: y = 0 (−y), y = b (+y), x = 0 (−x), x = a (+x).
-        s.quad([c(0.0, 0.0, 0.0), c(a, 0.0, 0.0), c(a, 0.0, l), c(0.0, 0.0, l)], false);
-        s.quad([c(0.0, b, 0.0), c(0.0, b, l), c(a, b, l), c(a, b, 0.0)], false);
-        s.quad([c(0.0, 0.0, 0.0), c(0.0, 0.0, l), c(0.0, b, l), c(0.0, b, 0.0)], false);
-        s.quad([c(a, 0.0, 0.0), c(a, b, 0.0), c(a, b, l), c(a, 0.0, l)], false);
+        s.quad([c(0.0, 0.0, 0.0), c(a, 0.0, 0.0), c(a, 0.0, l), c(0.0, 0.0, l)], Side::Wall);
+        s.quad([c(0.0, b, 0.0), c(0.0, b, l), c(a, b, l), c(a, b, 0.0)], Side::Wall);
+        s.quad([c(0.0, 0.0, 0.0), c(0.0, 0.0, l), c(0.0, b, l), c(0.0, b, 0.0)], Side::Wall);
+        s.quad([c(a, 0.0, 0.0), c(a, b, 0.0), c(a, b, l), c(a, 0.0, l)], Side::Wall);
         // The ends.
-        s.quad([c(0.0, 0.0, 0.0), c(0.0, b, 0.0), c(a, b, 0.0), c(a, 0.0, 0.0)], true);
-        s.quad([c(0.0, 0.0, l), c(a, 0.0, l), c(a, b, l), c(0.0, b, l)], true);
+        s.quad([c(0.0, 0.0, 0.0), c(0.0, b, 0.0), c(a, b, 0.0), c(a, 0.0, 0.0)], ends);
+        s.quad([c(0.0, 0.0, l), c(a, 0.0, l), c(a, b, l), c(0.0, b, l)], ends);
         s
     }
 
     #[test]
     fn a_guide_gets_a_mitred_shell_flush_with_its_ports() {
         let (a, b, l, t) = (0.02286, 0.01016, 0.05, 0.00127);
-        let s = shell(&guide(a, b, l), t);
+        let s = shell(&guide(a, b, l, Side::Open), t);
         assert_eq!(s.outer.len(), 8);
         // Every outer corner is where the offset planes meet: t outside two walls, on an end.
         for p in s.outer.iter().flatten() {
@@ -265,16 +284,21 @@ mod tests {
         assert_eq!(s.rim.len(), 16);
         assert!(s.rim.iter().flatten().all(|p| p[2].abs() < 1e-9 || (p[2] - l).abs() < 1e-9));
         // Its area is the frame's, (a + 2t)(b + 2t) − ab, at each end.
-        let area: f64 =
-            s.rim.iter().map(|p| 0.5 * dot(cross(sub(p[1], p[0]), sub(p[2], p[0])), cross(sub(p[1], p[0]), sub(p[2], p[0]))).sqrt()).sum();
+        let area: f64 = s
+            .rim
+            .iter()
+            .map(|p| {
+                let [a, b, c] = p.map(Point3::from);
+                0.5 * (b - a).cross(c - a).norm()
+            })
+            .sum();
         let frame = (a + 2.0 * t) * (b + 2.0 * t) - a * b;
         assert!((area - 2.0 * frame).abs() < 1e-6 * frame, "{area} against {}", 2.0 * frame);
     }
 
     #[test]
     fn a_closed_box_has_no_rim_and_nothing_breaks_on_nonsense() {
-        let mut g = guide(1.0, 1.0, 1.0);
-        g.open.iter_mut().for_each(|o| *o = false);
+        let g = guide(1.0, 1.0, 1.0, Side::Wall);
         let s = shell(&g, 0.1);
         assert!(s.rim.is_empty() && s.outer.len() == 12);
         for t in [0.0, -1.0, f64::NAN, f64::INFINITY] {

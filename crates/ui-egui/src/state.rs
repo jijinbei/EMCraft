@@ -143,9 +143,17 @@ impl Default for PatternSettings {
 pub struct StyleEdit {
     pub open: Option<emcraft_engine::views::ChartId>,
     pub title: String,
-    /// Each axis' label, min and max as typed.
-    pub axes: [[String; 3]; 2],
+    /// Each axis' fields, in [`emcraft_engine::views::AxisId::ALL`]'s order.
+    pub axes: [AxisText; 2],
     pub seen: Option<Value>,
+}
+
+/// An axis' label, low end and high end as typed in the chart style card.
+#[derive(Clone, Debug, Default)]
+pub struct AxisText {
+    pub label: String,
+    pub min: String,
+    pub max: String,
 }
 
 /// A band of the S-parameter chart picked by dragging across it, to solve more points in

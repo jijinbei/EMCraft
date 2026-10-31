@@ -162,10 +162,11 @@ fn walls_with_a_thickness_are_drawn_round_the_inside_before_and_after_meshing() 
     let thick = build(&s, Overlay::Plain).scene;
     assert!(thick.tris.len() > flush, "{} against {flush}", thick.tris.len());
     // The shell reaches 2 mm outside the guide, and no further than the ends.
-    let lo = thick.tris.iter().flat_map(|t| t.p).fold([f64::INFINITY; 3], |m, p| [m[0].min(p[0]), m[1].min(p[1]), m[2].min(p[2])]);
-    assert!((lo[0] + 2e-3).abs() < 1e-9 && (lo[1] + 2e-3).abs() < 1e-9 && lo[2].abs() < 1e-9, "{lo:?}");
+    let reaches = |scene: &emcraft_render::view3d::Scene| {
+        let lo = scene.tris.iter().flat_map(|t| t.p).fold([f64::INFINITY; 3], |m, p| [m[0].min(p[0]), m[1].min(p[1]), m[2].min(p[2])]);
+        assert!((lo[0] + 2e-3).abs() < 1e-9 && (lo[1] + 2e-3).abs() < 1e-9 && lo[2].abs() < 1e-9, "{lo:?}");
+    };
+    reaches(&thick);
     s.execute("mesh.generate", &json!({"size": 6})).unwrap();
-    let meshed = build(&s, Overlay::Plain).scene;
-    let lo = meshed.tris.iter().flat_map(|t| t.p).fold([f64::INFINITY; 3], |m, p| [m[0].min(p[0]), m[1].min(p[1]), m[2].min(p[2])]);
-    assert!((lo[0] + 2e-3).abs() < 1e-9 && (lo[1] + 2e-3).abs() < 1e-9 && lo[2].abs() < 1e-9, "{lo:?}");
+    reaches(&build(&s, Overlay::Plain).scene);
 }

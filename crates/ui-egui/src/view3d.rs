@@ -178,6 +178,15 @@ impl View3d {
         self.generation.wrapping_mul(2).wrapping_add(u64::from(cut))
     }
 
+    /// What lies under `pos` in the view drawn into `rect`.
+    fn pick_at(&self, rect: Rect, pos: egui::Pos2) -> Option<scene3d::Pick> {
+        let at = pos - rect.min;
+        let tag = self
+            .shown()
+            .and_then(|b| view3d::pick(&b.scene, &self.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
+        tag.and_then(scene3d::Pick::from_tag)
+    }
+
     /// The scene drawn and picked: the built one, cut when the section view is on.
     pub(crate) fn shown(&self) -> Option<&Built> {
         match (&self.cut, self.section) {
@@ -300,20 +309,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     if let Some(d) = edit.plane_drag {
         move_plane(app, &v.camera, field, rect, bounds, d);
     }
-    if edit.ref_started {
-        crate::tools3d::start_drag(app, v);
-    }
-    if let Some(d) = edit.ref_drag {
-        crate::tools3d::drag(app, v, rect, d);
-    }
-    if edit.ref_released {
-        crate::tools3d::end_drag(app, v, out);
-    }
-    crate::tools3d::hover(app, v, rect, ui.input(|i| i.pointer.hover_pos()));
-    if edit.tool_click && !app.busy() {
-        crate::tools3d::click(app, v, out);
-    }
-    escape(app, v, ui);
+    tools(app, v, ui, rect, &edit, out);
     if overlay == Overlay::Field {
         publish_plane(app, &v.camera, field, rect, bounds);
     }
@@ -448,12 +444,36 @@ struct Gesture {
     double: bool,
     /// The pointer's move this frame while dragging the field view's plane.
     plane_drag: Option<egui::Vec2>,
-    /// A drag began on the reference plane's grip, moved it this frame, or let it go.
-    ref_started: bool,
-    ref_drag: Option<egui::Vec2>,
-    ref_released: bool,
+    grip: GripDrag,
     /// A click with a tool on: the tool takes it.
     tool_click: bool,
+}
+
+/// A drag of the reference plane's grip this frame: it began, moved it, or let it go.
+#[derive(Default)]
+struct GripDrag {
+    started: bool,
+    moved: Option<egui::Vec2>,
+    released: bool,
+}
+
+/// The tools' share of the frame: the reference plane's drag, what the pointer is over, a
+/// tool's click and Escape.
+fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Gesture, out: &mut Actions) {
+    if edit.grip.started {
+        crate::tools3d::start_drag(app, v);
+    }
+    if let Some(d) = edit.grip.moved {
+        crate::tools3d::drag(app, v, rect, d);
+    }
+    if edit.grip.released {
+        crate::tools3d::end_drag(app, v, out);
+    }
+    crate::tools3d::hover(app, v, rect, ui.input(|i| i.pointer.hover_pos()));
+    if edit.tool_click && !app.busy() {
+        crate::tools3d::click(app, v, out);
+    }
+    escape(app, v, ui);
 }
 
 /// Escape clears what a tool picked, then turns it off (while no dialog or field takes the key).
@@ -489,29 +509,23 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
     });
     let d = resp.drag_delta();
     // A drag starting on the reference plane's grip moves that plane.
-    let mut ref_started = false;
+    let mut grip_drag = GripDrag::default();
     if resp.drag_started_by(egui::PointerButton::Primary) && !shift {
         let press = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos());
         v.moving_ref = grip.zip(press).is_some_and(|(g, p)| g.distance(p) <= crate::tools3d::GRIP_PX);
-        ref_started = v.moving_ref;
+        grip_drag.started = v.moving_ref;
     }
-    let ref_released = v.moving_ref && !resp.dragged();
+    grip_drag.released = v.moving_ref && !resp.dragged();
     // A drag starting on the field view's own plane (the first) moves it.
     if resp.drag_started_by(egui::PointerButton::Primary) && !shift && !v.moving_ref {
-        v.moving_plane = resp.interact_pointer_pos().is_some_and(|pos| {
-            let at = pos - rect.min;
-            let tag = v
-                .shown()
-                .and_then(|b| view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
-            tag.and_then(scene3d::Pick::from_tag) == Some(scene3d::Pick::Plane(0))
-        });
+        v.moving_plane = resp.interact_pointer_pos().is_some_and(|pos| v.pick_at(rect, pos) == Some(scene3d::Pick::Plane(0)));
     }
     if !resp.dragged() {
         v.moving_plane = false;
         v.moving_ref = false;
     }
     let plane_drag = (v.moving_plane && resp.dragged()).then_some(d);
-    let ref_drag = (v.moving_ref && resp.dragged()).then_some(d);
+    grip_drag.moved = (v.moving_ref && resp.dragged()).then_some(d);
     if resp.dragged() && (d.x != 0.0 || d.y != 0.0) && !v.moving_plane && !v.moving_ref {
         if middle || shift || resp.dragged_by(egui::PointerButton::Middle) {
             v.camera.pan(d.x as f64, d.y as f64, rect.height() as f64);
@@ -525,17 +539,12 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
     }
     let mut double = false;
     if v.tools.tool.is_some() {
-        let tool_click = resp.clicked();
-        return Gesture { clicked: false, double, plane_drag, ref_started, ref_drag, ref_released, tool_click };
+        return Gesture { clicked: false, double, plane_drag, grip: grip_drag, tool_click: resp.clicked() };
     }
     if (resp.clicked() || resp.double_clicked())
         && let Some(pos) = resp.interact_pointer_pos()
     {
-        let at = pos - rect.min;
-        let tag = v
-            .shown()
-            .and_then(|b| view3d::pick(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height())));
-        v.selected = tag.and_then(scene3d::Pick::from_tag);
+        v.selected = v.pick_at(rect, pos);
         if resp.double_clicked() {
             match v.selected {
                 Some(_) => double = true,
@@ -543,7 +552,7 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
             }
         }
     }
-    Gesture { clicked: resp.clicked(), double, plane_drag, ref_started, ref_drag, ref_released, tool_click: false }
+    Gesture { clicked: resp.clicked(), double, plane_drag, grip: grip_drag, tool_click: false }
 }
 
 /// The scene drawn into `rect`: by the window's GPU (every frame, full size) or the CPU
@@ -633,7 +642,11 @@ fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate:
     scenario::publish_target(Fixed::View3dSelected, r);
     let Some(item) = item else { return r };
     let mut x = r.right() - buttons;
-    for (glyph, handle, tip) in [(Glyph::Edit, Fixed::View3dSelectedEdit, "Edit"), (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete")] {
+    let actions: [(Glyph, Fixed, &str, fn(crate::browser::Item) -> Action); 2] = [
+        (Glyph::Edit, Fixed::View3dSelectedEdit, "Edit", Action::EditItem),
+        (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete", Action::DeleteItem),
+    ];
+    for (glyph, handle, tip, action) in actions {
         let b = Rect::from_center_size(pos2(x + pitch / 2.0, r.center().y), vec2(size, size));
         let resp = ui.hit(b, handle.into(), if enabled { Sense::click() } else { Sense::hover() });
         if resp.hovered() && enabled {
@@ -641,7 +654,7 @@ fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, row: &crate:
         }
         glyphs::paint(p, b.shrink(2.0), glyph, if enabled { t.text } else { t.text_dim }, t.accent);
         if resp.hint(tip).clicked() && enabled {
-            out.push(if handle == Fixed::View3dSelectedEdit { Action::EditItem(item.clone()) } else { Action::DeleteItem(item.clone()) });
+            out.push(action(item.clone()));
         }
         x += pitch;
     }

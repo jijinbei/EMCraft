@@ -3,8 +3,9 @@
 //! corners (where the outline turns), the straight edges between them and its centre — what the
 //! 3D view's tools snap to and highlight.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use emcraft_model::geom::{Point3, Vec3};
 use emcraft_render::view3d::Scene;
 
 /// Most triangles a face is looked for among (a fine mesh's wall).
@@ -33,90 +34,37 @@ pub struct Face {
     pub hi: [f64; 3],
 }
 
-pub fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+/// The unit normal of a triangle (its corners' turn); `None` for a degenerate one.
+pub(crate) fn unit_normal([a, b, c]: [Point3; 3]) -> Option<Vec3> {
+    (b - a).cross(c - a).normalized()
 }
 
-pub fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
+/// A point welded to a grid of step `tol`: points closer than that share a key.
+type Key = [i64; 3];
 
-pub fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
+/// The welding grid.
+#[derive(Clone, Copy)]
+struct Weld(f64);
 
-pub fn norm(a: [f64; 3]) -> f64 {
-    dot(a, a).sqrt()
-}
-
-pub fn lerp(a: [f64; 3], b: [f64; 3], t: f64) -> [f64; 3] {
-    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
-}
-
-/// The unit normal of a triangle; `None` for a degenerate one.
-fn normal_of(p: &[[f64; 3]; 3]) -> Option<[f64; 3]> {
-    let n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
-    let l = norm(n);
-    (l > 0.0 && l.is_finite()).then(|| n.map(|c| c / l))
+impl Weld {
+    fn key(self, p: [f64; 3]) -> Key {
+        p.map(|c| (c / self.0).round() as i64)
+    }
 }
 
 impl Face {
     /// The face of `scene`'s triangle `index`; `None` for a degenerate or missing triangle.
     pub fn of(scene: &Scene, index: usize) -> Option<Face> {
         let t0 = scene.tris.get(index)?;
-        let n = normal_of(&t0.p)?;
+        let n = unit_normal(t0.p.map(Point3::from))?;
         let (blo, bhi) = scene.bounds()?;
-        let size = norm(sub(bhi, blo)).max(1e-12);
-        let tol = 1e-7 * size;
-        let d = dot(n, t0.p[0]);
-        let key = |p: [f64; 3]| p.map(|c| (c / tol).round() as i64);
-        // The tag's triangles in the plane.
-        let mut by_vertex: BTreeMap<[i64; 3], Vec<usize>> = BTreeMap::new();
-        for (i, t) in scene.tris.iter().enumerate().filter(|(_, t)| t.tag == t0.tag).take(MAX_TRIS) {
-            let flat = t.p.iter().all(|p| (dot(n, *p) - d).abs() <= tol * 10.0);
-            if flat && normal_of(&t.p).is_some() {
-                for p in t.p {
-                    by_vertex.entry(key(p)).or_default().push(i);
-                }
-            }
-        }
-        // Those joined to the first, by shared corners.
-        let mut seen = std::collections::BTreeSet::from([index]);
-        let mut todo = vec![index];
-        while let Some(i) = todo.pop() {
-            let Some(t) = scene.tris.get(i) else { continue };
-            for p in t.p {
-                for &j in by_vertex.get(&key(p)).into_iter().flatten() {
-                    if seen.insert(j) {
-                        todo.push(j);
-                    }
-                }
-            }
-        }
-        let tris: Vec<usize> = seen.into_iter().collect();
-        let pts = |i: &usize| scene.tris.get(*i).map(|t| t.p);
-        // The outline: edges one triangle has.
-        let mut count: BTreeMap<([i64; 3], [i64; 3]), ([f64; 3], [f64; 3], u32)> = BTreeMap::new();
-        let (mut area, mut c) = (0.0, [0.0; 3]);
-        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-        for p in tris.iter().filter_map(pts) {
-            for (a, b) in [(p[0], p[1]), (p[1], p[2]), (p[2], p[0])] {
-                let (ka, kb) = (key(a), key(b));
-                let k = if ka <= kb { (ka, kb) } else { (kb, ka) };
-                count.entry(k).or_insert((a, b, 0)).2 += 1;
-            }
-            let w = 0.5 * norm(cross(sub(p[1], p[0]), sub(p[2], p[0])));
-            area += w;
-            for k in 0..3 {
-                c[k] += w * (p[0][k] + p[1][k] + p[2][k]) / 3.0;
-                lo[k] = lo[k].min(p[0][k]).min(p[1][k]).min(p[2][k]);
-                hi[k] = hi[k].max(p[0][k]).max(p[1][k]).max(p[2][k]);
-            }
-        }
-        let centre = if area > 0.0 { c.map(|v| v / area) } else { t0.p[0] };
-        let outline: Vec<([f64; 3], [f64; 3])> = count.into_values().filter(|e| e.2 == 1).map(|(a, b, _)| (a, b)).collect();
-        let (corners, edges) = runs(&outline, key);
-        Some(Face { tag: t0.tag, normal: n, tris, outline, corners, edges, centre, lo, hi })
+        let weld = Weld(1e-7 * Point3::from(blo).distance(Point3::from(bhi)).max(1e-12));
+        let tris = joined(scene, index, &in_plane(scene, t0.tag, n, n.dot(Point3::from(t0.p[0]).to_vec()), weld), weld);
+        let corners_of = |i: &usize| scene.tris.get(*i).map(|t| t.p);
+        let (centre, lo, hi) = centre_and_box(tris.iter().filter_map(corners_of));
+        let outline = outline(tris.iter().filter_map(corners_of), weld);
+        let (corners, edges) = runs(&outline, weld);
+        Some(Face { tag: t0.tag, normal: n.to_array(), tris, outline, corners, edges, centre: centre.unwrap_or(t0.p[0]), lo, hi })
     }
 
     /// Whether it lies in a plane z = const.
@@ -126,32 +74,93 @@ impl Face {
 
     /// The axis it lies across, when it is flat and in a plane x, y or z = const.
     pub fn axis(&self) -> Option<emcraft_model::Axis> {
+        let size = Point3::from(self.lo).distance(Point3::from(self.hi));
         (0..3)
-            .find(|&k| self.normal[k].abs() > 1.0 - 1e-9 && (self.hi[k] - self.lo[k]).abs() <= 1e-9 * norm(sub(self.hi, self.lo)))
+            .find(|&k| self.normal[k].abs() > 1.0 - 1e-9 && (self.hi[k] - self.lo[k]).abs() <= 1e-9 * size)
             .and_then(emcraft_model::Axis::from_index)
     }
 }
 
+/// The triangles tagged `tag` that lie in the plane n · p = `d`, by their welded corners.
+fn in_plane(scene: &Scene, tag: u32, n: Vec3, d: f64, weld: Weld) -> BTreeMap<Key, Vec<usize>> {
+    let mut by_vertex: BTreeMap<Key, Vec<usize>> = BTreeMap::new();
+    for (i, t) in scene.tris.iter().enumerate().filter(|(_, t)| t.tag == tag).take(MAX_TRIS) {
+        let flat = t.p.iter().all(|p| (n.dot(Point3::from(*p).to_vec()) - d).abs() <= weld.0 * 10.0);
+        if flat && unit_normal(t.p.map(Point3::from)).is_some() {
+            for p in t.p {
+                by_vertex.entry(weld.key(p)).or_default().push(i);
+            }
+        }
+    }
+    by_vertex
+}
+
+/// The triangles of `by_vertex` joined to triangle `start` by shared corners, in order.
+fn joined(scene: &Scene, start: usize, by_vertex: &BTreeMap<Key, Vec<usize>>, weld: Weld) -> Vec<usize> {
+    let mut seen = BTreeSet::from([start]);
+    let mut todo = vec![start];
+    while let Some(i) = todo.pop() {
+        let Some(t) = scene.tris.get(i) else { continue };
+        for p in t.p {
+            for &j in by_vertex.get(&weld.key(p)).into_iter().flatten() {
+                if seen.insert(j) {
+                    todo.push(j);
+                }
+            }
+        }
+    }
+    seen.into_iter().collect()
+}
+
+/// The area-weighted centroid of triangles (`None` for no area) and their box.
+fn centre_and_box(tris: impl Iterator<Item = [[f64; 3]; 3]>) -> (Option<[f64; 3]>, [f64; 3], [f64; 3]) {
+    let (mut area, mut c) = (0.0, Vec3::ZERO);
+    let (mut lo, mut hi) = (Point3::from([f64::INFINITY; 3]), Point3::from([f64::NEG_INFINITY; 3]));
+    for p in tris {
+        let [a, b, q] = p.map(Point3::from);
+        let w = 0.5 * (b - a).cross(q - a).norm();
+        area += w;
+        c += (a.to_vec() + b.to_vec() + q.to_vec()) * w / 3.0;
+        lo = lo.min(a).min(b).min(q);
+        hi = hi.max(a).max(b).max(q);
+    }
+    ((area > 0.0).then(|| (c / area).to_array()), lo.to_array(), hi.to_array())
+}
+
+/// The edges only one of these triangles has.
+fn outline(tris: impl Iterator<Item = [[f64; 3]; 3]>, weld: Weld) -> Vec<([f64; 3], [f64; 3])> {
+    let mut count: BTreeMap<(Key, Key), ([f64; 3], [f64; 3], u32)> = BTreeMap::new();
+    for p in tris {
+        for (a, b) in [(p[0], p[1]), (p[1], p[2]), (p[2], p[0])] {
+            let (ka, kb) = (weld.key(a), weld.key(b));
+            let k = if ka <= kb { (ka, kb) } else { (kb, ka) };
+            count.entry(k).or_insert((a, b, 0)).2 += 1;
+        }
+    }
+    count.into_values().filter(|e| e.2 == 1).map(|(a, b, _)| (a, b)).collect()
+}
+
 /// The outline's corners (where it turns, or branches) and its straight runs between them.
 #[allow(clippy::type_complexity)]
-fn runs(outline: &[([f64; 3], [f64; 3])], key: impl Fn([f64; 3]) -> [i64; 3]) -> (Vec<[f64; 3]>, Vec<([f64; 3], [f64; 3])>) {
-    let mut at: BTreeMap<[i64; 3], ([f64; 3], Vec<[i64; 3]>)> = BTreeMap::new();
+fn runs(outline: &[([f64; 3], [f64; 3])], weld: Weld) -> (Vec<[f64; 3]>, Vec<([f64; 3], [f64; 3])>) {
+    let mut at: BTreeMap<Key, ([f64; 3], Vec<Key>)> = BTreeMap::new();
     for &(a, b) in outline {
-        let (ka, kb) = (key(a), key(b));
+        let (ka, kb) = (weld.key(a), weld.key(b));
         at.entry(ka).or_insert((a, Vec::new())).1.push(kb);
         at.entry(kb).or_insert((b, Vec::new())).1.push(ka);
     }
-    let point = |k: &[i64; 3]| at.get(k).map(|v| v.0);
-    let is_corner = |k: &[i64; 3]| {
+    let point = |k: &Key| at.get(k).map(|v| v.0);
+    let is_corner = |k: &Key| {
         let Some((p, next)) = at.get(k) else { return false };
         let [a, b] = next[..] else { return true };
         let (Some(pa), Some(pb)) = (point(&a), point(&b)) else { return true };
-        let (u, v) = (sub(pa, *p), sub(*p, pb));
-        norm(cross(u, v)) > 1e-6 * norm(u) * norm(v)
+        let p = Point3::from(*p);
+        let (u, v) = (Point3::from(pa) - p, p - Point3::from(pb));
+        u.cross(v).norm() > 1e-6 * u.norm() * v.norm()
     };
-    let corners: Vec<[i64; 3]> = at.keys().filter(|k| is_corner(k)).take(MAX_CORNERS).copied().collect();
+    let corners: Vec<Key> = at.keys().filter(|k| is_corner(k)).take(MAX_CORNERS).copied().collect();
     let mut edges = Vec::new();
-    let mut done = std::collections::BTreeSet::new();
+    let mut done = BTreeSet::new();
     for c in &corners {
         let Some((start, next)) = at.get(c) else { continue };
         for first in next {
@@ -175,7 +184,6 @@ fn runs(outline: &[([f64; 3], [f64; 3])], key: impl Fn([f64; 3]) -> [i64; 3]) ->
     }
     (corners.iter().filter_map(point).collect(), edges)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,7 +199,7 @@ mod tests {
         let f = Face::of(&s, z0).unwrap();
         assert_eq!((f.tag, f.tris.len(), f.outline.len(), f.corners.len(), f.edges.len()), (5, 2, 4, 4, 4));
         assert!(f.across_z());
-        assert!(norm(sub(f.centre, [1.0, 0.5, 0.0])) < 1e-12);
+        assert!(Point3::from(f.centre).distance(Point3::new(1.0, 0.5, 0.0)) < 1e-12);
         assert_eq!((f.lo, f.hi), ([0.0, 0.0, 0.0], [2.0, 1.0, 0.0]));
         // A side face is not across z.
         let side = s.tris.iter().position(|t| t.tag == 5 && t.p.iter().all(|p| p[0] == 0.0)).unwrap();

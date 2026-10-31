@@ -114,14 +114,18 @@ pub fn compare_pens(k: usize) -> [Pen; 2] {
 pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: &[u32]) -> Result<Chart> {
     let mut chart = sparameter_chart_now(session, display)?;
     let fu = session.display.frequency;
+    let mut added = false;
     for (k, a) in crate::archive::picked(session, compare)?.into_iter().enumerate() {
         let Some(sw) = a.results.sweep.as_ref() else { continue };
+        added = true;
         let pts = |p: usize, q: usize| sw.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
         // Its solved points, as the session's own are drawn: data, not curves through it.
         let [p21, p11] = compare_pens(k);
         chart.series.push(Series::new(&format!("run{}.s21", a.id), format!("#{} {}", a.id, display.entry("21")), p21, Style::Joined, pts(1, 0)));
         chart.series.push(Series::new(&format!("run{}.s11", a.id), format!("#{} {}", a.id, display.entry("11")), p11, Style::Joined, pts(0, 0)));
-        // The axes take in what was added.
+    }
+    // The axes take in what was added.
+    if added {
         for s in chart.series.iter().flat_map(|s| &s.points) {
             chart.x.min = chart.x.min.min(s[0]);
             chart.x.max = chart.x.max.max(s[0]);
@@ -133,14 +137,17 @@ pub fn sparameter_chart_compared(session: &Session, display: SDisplay, compare: 
     Ok(chart)
 }
 
+/// The session's own S-parameter chart: its sweep's and time domain's, with the closed form
+/// when the chart's style adds it.
 fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     let sweep = session.results.sweep.as_ref();
     let td = session.results.time_domain.as_ref();
     let fu = session.display.frequency;
-    let (f0, f1) = match (sweep, td) {
-        (Some(sw), _) if !sw.results.is_empty() => (sw.results[0].frequency, sw.results[sw.results.len() - 1].frequency),
-        (_, Some(t)) if !t.frequencies.is_empty() => (t.frequencies[0], t.frequencies[t.frequencies.len() - 1]),
-        _ => return Err(EngineError::NotSolved { what: "results", run: "solve.frequency or solve.time_domain" }),
+    let span = sweep
+        .and_then(|sw| Some((sw.results.first()?.frequency, sw.results.last()?.frequency)))
+        .or_else(|| td.and_then(|t| Some((*t.frequencies.first()?, *t.frequencies.last()?))));
+    let Some((f0, f1)) = span else {
+        return Err(EngineError::NotSolved { what: "results", run: "solve.frequency or solve.time_domain" });
     };
     let pad = if f1 > f0 { 0.0 } else { 0.05 * f0 };
     let (f0, f1) = (f0 - pad, f1 + pad);

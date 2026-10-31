@@ -8,7 +8,7 @@ use serde_json::{Map, json};
 
 use super::*;
 use crate::glyphs::{Glyph, paint};
-use crate::state::StyleEdit;
+use crate::state::{AxisText, StyleEdit};
 
 /// The gear's side (points).
 const GEAR: f32 = 22.0;
@@ -73,11 +73,25 @@ fn fill(edit: &mut StyleEdit, shown: &Value) {
         _ => String::new(),
     };
     edit.title = text(&shown["title"]);
-    for (k, a) in AxisId::ALL.into_iter().enumerate() {
+    for (fields, a) in edit.axes.iter_mut().zip(AxisId::ALL) {
         let axis = &shown[a.id()];
-        edit.axes[k] = [text(&axis["label"]), text(&axis["min"]), text(&axis["max"])];
+        *fields = AxisText { label: text(&axis["label"]), min: text(&axis["min"]), max: text(&axis["max"]) };
     }
     edit.seen = Some(shown.clone());
+}
+
+/// The style's list `key` (curves hidden, curves added) as `view.chart.style` shows it.
+fn names<'a>(shown: &'a Value, key: &str) -> Vec<&'a str> {
+    shown[key].as_array().into_iter().flatten().filter_map(Value::as_str).collect()
+}
+
+/// `list` with `key` in it (`on`) or out of it.
+fn with<'a>(list: &[&'a str], key: &'a str, on: bool) -> Vec<&'a str> {
+    let mut list: Vec<&str> = list.iter().copied().filter(|k| *k != key).collect();
+    if on {
+        list.push(key);
+    }
+    list
 }
 
 /// `view.chart.style` for chart `id` with `params` added.
@@ -112,90 +126,99 @@ fn card(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, at: Rect, id: Chart
     let r = area.show(ui.ctx(), |ui| {
         t.card(t.dialog_body).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
             ui.set_width(CARD - 16.0);
-            ui.horizontal(|ui| {
-                ui.text(Style::Strong, "Axes and looks");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (r, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
-                    if crate::ui_kit::icon_button(ui, r, crate::ui_kit::Mark::Close, "Close", Fixed::ChartStyleClose).clicked() {
-                        edit.open = None;
-                    }
-                    ui.act(
-                        true,
-                        egui::Button::new(tr("Reset")).small(),
-                        Fixed::ChartStyleReset.into(),
-                        "Everything automatic again",
-                        || style(id, json!({"reset": true})),
-                        out,
-                    );
-                });
-            });
-            let commit = |r: &egui::Response| r.lost_focus();
+            header(ui, edit, id, out);
             // The title.
             let r = ui.named(
                 egui::TextEdit::singleline(&mut edit.title).hint_text(tr("title (automatic)")).desired_width(f32::INFINITY),
                 Fixed::ChartStyleTitle.into(),
             );
-            if commit(&r) && Some(edit.title.trim()) != shown["title"].as_str().or(Some("")) {
+            if r.lost_focus() && Some(edit.title.trim()) != shown["title"].as_str().or(Some("")) {
                 out.push(style(id, json!({"title": edit.title.trim()})));
             }
-            // Each axis: its label, its ends, log.
             egui::Grid::new("chart_style_axes").num_columns(5).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
-                for (k, a) in AxisId::ALL.into_iter().enumerate() {
-                    let name = a.id();
-                    ui.text(Style::Strong, Raw(name));
-                    let [label, min, max] = &mut edit.axes[k];
-                    let r = ui.named(egui::TextEdit::singleline(label).hint_text(tr("label")).desired_width(84.0), Handle::StyleAxis(name, "label"));
-                    if commit(&r) && Some(label.trim()) != shown[name]["label"].as_str().or(Some("")) {
-                        out.push(style(id, json!({format!("{name}_label"): label.trim()})));
-                    }
-                    for (part, text) in [("min", min), ("max", max)] {
-                        let bad = end(text).is_none();
-                        let mut edit_box = egui::TextEdit::singleline(text).hint_text(tr("auto")).desired_width(48.0);
-                        if bad {
-                            edit_box = edit_box.text_color(t.form_error);
-                        }
-                        let r = ui.named(edit_box, Handle::StyleAxis(name, part)).hint(if part == "min" {
-                            "low end (empty: automatic)"
-                        } else {
-                            "high end (empty: automatic)"
-                        });
-                        if commit(&r)
-                            && let Some(v) = end(text)
-                            && v != shown[name][part]
-                        {
-                            out.push(style(id, json!({format!("{name}_{part}"): v})));
-                        }
-                    }
-                    let log = shown[name]["log"].as_bool().unwrap_or(false);
-                    let r = ui.named(egui::Button::selectable(log, "log"), Handle::StyleAxis(name, "log")).hint("Logarithmic scale");
-                    if r.clicked() {
-                        out.push(style(id, json!({format!("{name}_scale"): if log { "linear" } else { "log" }})));
-                    }
-                    ui.end_row();
+                for (fields, a) in edit.axes.iter_mut().zip(AxisId::ALL) {
+                    axis_row(ui, &shown, fields, a.id(), id, out);
                 }
             });
-            // The grid and the legend.
-            ui.horizontal(|ui| {
-                let grid = shown["grid"].as_bool().unwrap_or(true);
-                let r = ui.named(egui::Button::selectable(grid, tr("grid")), Fixed::ChartStyleGrid.into());
-                if r.clicked() {
-                    out.push(style(id, json!({"grid": !grid})));
-                }
-                ui.separator();
-                let legend = shown["legend"].as_str().and_then(LegendAt::parse).unwrap_or_default();
-                for (at, mark, hint) in LEGENDS {
-                    let r = ui.named(egui::Button::selectable(legend == at, mark).small(), Handle::Legend(at.id())).hint(hint);
-                    if r.clicked() && legend != at {
-                        out.push(style(id, json!({"legend": at.id()})));
-                    }
-                }
-            });
+            grid_and_legend(ui, &shown, id, out);
             ui.separator();
             added_rows(ui, &shown, &emcraft_engine::views::optional_curves(&app.session, id), id, out);
             curve_rows(ui, &shown, &curves, id, out);
         });
     });
     scenario::publish_rect(Fixed::ChartStyleCard, r.response.rect);
+}
+
+/// The card's name, Reset and its close button.
+fn header(ui: &mut egui::Ui, edit: &mut StyleEdit, id: ChartId, out: &mut Actions) {
+    ui.horizontal(|ui| {
+        ui.text(Style::Strong, "Axes and looks");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
+            if crate::ui_kit::icon_button(ui, r, crate::ui_kit::Mark::Close, "Close", Fixed::ChartStyleClose).clicked() {
+                edit.open = None;
+            }
+            ui.act(
+                true,
+                egui::Button::new(tr("Reset")).small(),
+                Fixed::ChartStyleReset.into(),
+                "Everything automatic again",
+                || style(id, json!({"reset": true})),
+                out,
+            );
+        });
+    });
+}
+
+/// An axis' row of the card's grid: its label, its ends, log. A text field is committed when it
+/// loses focus.
+fn axis_row(ui: &mut egui::Ui, shown: &Value, fields: &mut AxisText, name: &'static str, id: ChartId, out: &mut Actions) {
+    let t = &Tokens::get();
+    let shown = &shown[name];
+    ui.text(Style::Strong, Raw(name));
+    let r = ui.named(egui::TextEdit::singleline(&mut fields.label).hint_text(tr("label")).desired_width(84.0), Handle::StyleAxis(name, "label"));
+    if r.lost_focus() && Some(fields.label.trim()) != shown["label"].as_str().or(Some("")) {
+        out.push(style(id, json!({format!("{name}_label"): fields.label.trim()})));
+    }
+    for (part, text, hint) in [("min", &mut fields.min, "low end (empty: automatic)"), ("max", &mut fields.max, "high end (empty: automatic)")] {
+        let bad = end(text).is_none();
+        let mut edit_box = egui::TextEdit::singleline(text).hint_text(tr("auto")).desired_width(48.0);
+        if bad {
+            edit_box = edit_box.text_color(t.form_error);
+        }
+        let r = ui.named(edit_box, Handle::StyleAxis(name, part)).hint(hint);
+        if r.lost_focus()
+            && let Some(v) = end(text)
+            && v != shown[part]
+        {
+            out.push(style(id, json!({format!("{name}_{part}"): v})));
+        }
+    }
+    let log = shown["log"].as_bool().unwrap_or(false);
+    let r = ui.named(egui::Button::selectable(log, "log"), Handle::StyleAxis(name, "log")).hint("Logarithmic scale");
+    if r.clicked() {
+        out.push(style(id, json!({format!("{name}_scale"): if log { "linear" } else { "log" }})));
+    }
+    ui.end_row();
+}
+
+/// The grid's switch and the legend's places.
+fn grid_and_legend(ui: &mut egui::Ui, shown: &Value, id: ChartId, out: &mut Actions) {
+    ui.horizontal(|ui| {
+        let grid = shown["grid"].as_bool().unwrap_or(true);
+        let r = ui.named(egui::Button::selectable(grid, tr("grid")), Fixed::ChartStyleGrid.into());
+        if r.clicked() {
+            out.push(style(id, json!({"grid": !grid})));
+        }
+        ui.separator();
+        let legend = shown["legend"].as_str().and_then(LegendAt::parse).unwrap_or_default();
+        for (at, mark, hint) in LEGENDS {
+            let r = ui.named(egui::Button::selectable(legend == at, mark).small(), Handle::Legend(at.id())).hint(hint);
+            if r.clicked() && legend != at {
+                out.push(style(id, json!({"legend": at.id()})));
+            }
+        }
+    });
 }
 
 /// The curves the chart can add to its data (a closed form to compare with), each a checkbox;
@@ -205,20 +228,14 @@ fn added_rows(ui: &mut egui::Ui, shown: &Value, optional: &[(String, String)], i
         return;
     }
     let t = &Tokens::get();
-    let added: Vec<&str> = shown["added"].as_array().map(|l| l.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    let added = names(shown, "added");
     crate::ui_kit::small(ui, "Add", t.text_dim);
     for (key, label) in optional {
         let on = added.contains(&key.as_str());
         ui.horizontal(|ui| {
             let r = ui.named(egui::Checkbox::without_text(&mut on.clone()), Handle::CurveAdd(key)).hint("Draw it over the data");
             if r.clicked() {
-                let mut list: Vec<&str> = added.clone();
-                if on {
-                    list.retain(|k| k != key);
-                } else {
-                    list.push(key);
-                }
-                out.push(style(id, json!({"added": list})));
+                out.push(style(id, json!({"added": with(&added, key, !on)})));
             }
             ui.label(egui::RichText::new(label).size(t.font_small));
         });
@@ -230,7 +247,7 @@ fn added_rows(ui: &mut egui::Ui, shown: &Value, optional: &[(String, String)], i
 /// colours), its width.
 fn curve_rows(ui: &mut egui::Ui, shown: &Value, curves: &[(String, String)], id: ChartId, out: &mut Actions) {
     let t = &Tokens::get();
-    let hidden: Vec<&str> = shown["hidden"].as_array().map(|l| l.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    let hidden = names(shown, "hidden");
     let palette = crate::theme::palette();
     let swatches: Vec<emcraft_render::Rgb> =
         (0..emcraft_render::palette::SERIES as u8).map(|i| palette.pen(emcraft_render::Pen::Series(i))).chain([palette.ink]).collect();
@@ -240,13 +257,7 @@ fn curve_rows(ui: &mut egui::Ui, shown: &Value, curves: &[(String, String)], id:
             ui.horizontal(|ui| {
                 let r = ui.named(egui::Checkbox::without_text(&mut on.clone()), Handle::Curve(key)).hint("Show this curve");
                 if r.clicked() {
-                    let mut list: Vec<&str> = hidden.clone();
-                    if on {
-                        list.push(key);
-                    } else {
-                        list.retain(|k| k != key);
-                    }
-                    out.push(style(id, json!({"hidden": list})));
+                    out.push(style(id, json!({"hidden": with(&hidden, key, on)})));
                 }
                 ui.add(egui::Label::new(egui::RichText::new(label).size(t.font_small)).truncate()).on_hover_text(key.as_str());
             });

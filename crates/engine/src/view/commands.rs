@@ -43,7 +43,7 @@ impl<'a> ChartFile<'a> {
 
     /// Draws `chart` in the project's style for chart `id` (`view.chart.style`) and writes it:
     /// the reply.
-    fn write(&self, s: &Session, id: crate::views::ChartId, chart: Chart) -> Result<Value> {
+    fn write(&self, s: &Session, id: ChartId, chart: Chart) -> Result<Value> {
         let chart = crate::views::style_chart(s, id, chart);
         let c = emcraft_render::chart::draw(&chart, self.width, self.height, &self.palette);
         write_png(self.path, c.png())?;

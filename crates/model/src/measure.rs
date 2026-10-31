@@ -30,6 +30,17 @@ pub struct Mark {
     pub kind: Kind,
 }
 
+impl Kind {
+    /// The kind with its direction made a unit one ([`unit`]).
+    fn normalized(self, what: &str) -> Result<Kind> {
+        Ok(match self {
+            Kind::Point => Kind::Point,
+            Kind::Plane(n) => Kind::Plane(unit(what, n)?),
+            Kind::Line(d) => Kind::Line(unit(what, d)?),
+        })
+    }
+}
+
 impl Mark {
     pub fn point(at: Point3) -> Mark {
         Mark { at, kind: Kind::Point }
@@ -87,14 +98,7 @@ pub fn measure(a: Mark, b: Mark) -> Result<Measure> {
             return Err(invalid(what, "must be a finite point"));
         }
     }
-    let kind = |what: &str, k: Kind| -> Result<Kind> {
-        Ok(match k {
-            Kind::Point => Kind::Point,
-            Kind::Plane(n) => Kind::Plane(unit(what, n)?),
-            Kind::Line(d) => Kind::Line(unit(what, d)?),
-        })
-    };
-    let (ka, kb) = (kind("from", a.kind)?, kind("to", b.kind)?);
+    let (ka, kb) = (a.kind.normalized("from")?, b.kind.normalized("to")?);
     let delta = b.at - a.at;
     let parallel = |x: Vec3, y: Vec3| x.cross(y).norm() < PARALLEL;
     let across = |x: Vec3, y: Vec3| x.dot(y).abs() < PARALLEL;

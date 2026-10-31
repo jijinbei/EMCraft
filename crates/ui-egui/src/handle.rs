@@ -61,6 +61,7 @@ emcraft_macros::named_enum! {
         HomeNew = "home:new",
         HomeOpen = "home:open",
         HomeSettings = "home:settings",
+        HomeBlank = "home:blank",
         // The window's cards.
         Ribbon = "ribbon",
         Steps = "steps",
@@ -77,18 +78,17 @@ emcraft_macros::named_enum! {
         // A result view of a model changed after its run: the band over it and its Re-run.
         Stale = "stale",
         StaleRerun = "stale:rerun",
-        // A template's card: its preview, Open, Cancel and Reset.
+        // A template's card: its preview, Open, Cancel, Reset and its mark.
         TemplatePreview = "template:preview",
-        // The analysis history's menu.
-        HistoryRestore = "history:restore",
-        SDisplay = "sparameters:display",
-        HistoryPin = "history:pin",
-        HistoryDelete = "history:delete",
-        HomeBlank = "home:blank",
         TemplateOpen = "template:open",
         TemplateCancel = "template:cancel",
         TemplateReset = "template:reset",
         TemplateMark = "template:mark",
+        // The analysis history's menu, and what the S-parameter chart displays.
+        HistoryRestore = "history:restore",
+        HistoryPin = "history:pin",
+        HistoryDelete = "history:delete",
+        SDisplay = "sparameters:display",
         // What a narrow window's ribbon has no room for: the tabs, the buttons.
         TabsMore = "tabs:more",
         ToolbarMore = "toolbar:more",
@@ -115,7 +115,7 @@ emcraft_macros::named_enum! {
         SetupOrder = "setup:order",
         RunStart = "run:start",
         RunError = "run:error",
-        /// The run's estimate in the Setup and Run steps and under a solve's dialog.
+        // The run's estimate in the Setup and Run steps and under a solve's dialog.
         SetupEstimate = "setup:estimate",
         RunEstimate = "run:estimate",
         DialogEstimate = "dialog:estimate",
@@ -144,7 +144,7 @@ emcraft_macros::named_enum! {
         ChartStyleGrid = "chart:style:grid",
         ChartStyleReset = "chart:style:reset",
         ChartStyleClose = "chart:style:close",
-        // The S-parameter chart's band to refine and the reference planes.
+        // The S-parameter chart's band to refine.
         RefineBand = "refine:band",
         RefinePoints = "refine:points",
         RefineStart = "refine:start",
@@ -170,18 +170,18 @@ emcraft_macros::named_enum! {
         View3dFace = "view3d:face",
         View3dPlay = "view3d:play",
         View3dProjection = "view3d:projection",
-        /// The section view's switch, its position slider and its flip.
+        // The section view's switch, its position slider and its flip.
         View3dSection = "view3d:section",
         View3dSectionAt = "view3d:section:at",
         View3dSectionFlip = "view3d:section:flip",
-        /// The selection card's Edit and Delete.
+        // The selection card's Edit and Delete.
         View3dSelectedEdit = "view3d:selected:edit",
         View3dSelectedDelete = "view3d:selected:delete",
         /// Where a tool's pick snaps to under the pointer.
         View3dSnap = "view3d:snap",
         /// The measurement's card.
         View3dMeasure = "view3d:measure",
-        /// The selected port's reference plane's grip.
+        // The selected port's reference plane: its grip, its field and its zero.
         View3dRefPlane = "view3d:refplane",
         View3dRefField = "view3d:refplane:field",
         View3dRefZero = "view3d:refplane:zero",

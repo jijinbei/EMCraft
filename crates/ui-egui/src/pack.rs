@@ -60,52 +60,56 @@ pub fn arrange(area: Vec2, least: Vec2, wants: &[Vec2]) -> Arrangement {
 
 /// Every block under the main picture, full width, the main picture taking the height left.
 fn all_under(area: Vec2, least: Vec2, wants: &[Vec2]) -> Arrangement {
-    let stacked: f32 = wants.iter().map(|w| w.y + GAP).sum();
-    let main_h = (area.y - stacked).max(least.y);
-    let main = Rect::from_min_size(pos2(0.0, 0.0), vec2(area.x, main_h));
-    let mut y = main.bottom();
-    let blocks = wants
-        .iter()
-        .map(|w| {
-            let r = Rect::from_min_size(pos2(0.0, y + GAP), vec2(area.x, w.y));
-            y = r.bottom();
-            r
-        })
-        .collect();
-    Arrangement { main, blocks, height: y.max(area.y), content: content(wants) }
+    place(area, least, wants, area.x, Column::default())
 }
 
 /// The blocks in a column beside the main picture as wide as the widest of them, as many as fit
 /// the area's height in order, the rest under the main picture; none when the main picture would
 /// be narrower than it may.
 fn beside(area: Vec2, least: Vec2, wants: &[Vec2]) -> Option<Arrangement> {
-    let column = wants.iter().map(|w| w.x).fold(0.0, f32::max);
-    let main_w = area.x - column - GAP;
+    let width = wants.iter().map(|w| w.x).fold(0.0, f32::max);
+    let main_w = area.x - width - GAP;
     if wants.is_empty() || main_w < least.x {
         return None;
     }
-    let (mut y, mut rects, mut left): (f32, Vec<Option<Rect>>, Vec<usize>) = (-GAP, vec![None; wants.len()], Vec::new());
-    for (k, w) in wants.iter().enumerate() {
-        if left.is_empty() && y + GAP + w.y <= area.y {
-            rects[k] = Some(Rect::from_min_size(pos2(main_w + GAP, y + GAP), vec2(column, w.y)));
+    let mut y = -GAP;
+    let count = wants
+        .iter()
+        .take_while(|w| {
+            let fits = y + GAP + w.y <= area.y;
             y += GAP + w.y;
-        } else {
-            left.push(k);
-        }
-    }
-    // What does not fit beside goes under the main picture, in the main picture's width.
-    let below: f32 = left.iter().map(|&k| wants[k].y + GAP).sum();
-    let main_h = (area.y - below).max(least.y);
-    let main = Rect::from_min_size(pos2(0.0, 0.0), vec2(main_w, main_h));
-    let mut y2 = main.bottom();
-    for &k in &left {
-        let r = Rect::from_min_size(pos2(0.0, y2 + GAP), vec2(main_w, wants[k].y));
-        y2 = r.bottom();
-        rects[k] = Some(r);
-    }
-    let blocks: Vec<Rect> = rects.into_iter().map(|r| r.unwrap_or(Rect::NOTHING)).collect();
+            fits
+        })
+        .count();
+    Some(place(area, least, wants, main_w, Column { count, width }))
+}
+
+/// The column beside the main picture: how many of the blocks, first first, go in it and its width.
+#[derive(Clone, Copy, Default)]
+struct Column {
+    count: usize,
+    width: f32,
+}
+
+/// The column's blocks right of a main picture `main_w` wide, the rest under it in its width;
+/// the main picture takes the height those under it leave.
+fn place(area: Vec2, least: Vec2, wants: &[Vec2], main_w: f32, column: Column) -> Arrangement {
+    let (beside, under) = wants.split_at(column.count.min(wants.len()));
+    let below: f32 = under.iter().map(|w| w.y + GAP).sum();
+    let main = Rect::from_min_size(pos2(0.0, 0.0), vec2(main_w, (area.y - below).max(least.y)));
+    let mut blocks: Vec<Rect> = stack(beside, main_w + GAP, -GAP, column.width).collect();
+    blocks.extend(stack(under, 0.0, main.bottom(), main_w));
     let height = blocks.iter().map(|r| r.bottom()).fold(main.bottom(), f32::max).max(area.y);
-    Some(Arrangement { main, blocks, height, content: content(wants) })
+    Arrangement { main, blocks, height, content: content(wants) }
+}
+
+/// Blocks of these heights stacked down from `top` at `x`, each `width` wide, a gap above each.
+fn stack(wants: &[Vec2], x: f32, top: f32, width: f32) -> impl Iterator<Item = Rect> + '_ {
+    wants.iter().scan(top, move |y, w| {
+        let r = Rect::from_min_size(pos2(x, *y + GAP), vec2(width, w.y));
+        *y = r.bottom();
+        Some(r)
+    })
 }
 
 #[cfg(test)]

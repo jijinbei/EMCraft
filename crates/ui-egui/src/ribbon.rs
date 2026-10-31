@@ -182,89 +182,97 @@ pub fn ribbon(app: &EmcraftApp, search: &mut Search, ui: &mut egui::Ui, out: &mu
             let row = Rect::from_min_size(card.min, vec2(card.width(), TAB_ROW_HEIGHT));
             let tabs_end = tabs(app, ui, row, row.right() - SEARCH_LEAST, out);
             search_field(search, ui, row, tabs_end, out);
-            let mut x = card.left() + 6.0;
-            let top = row.bottom() + 4.0;
-            let tab = app.tab;
-            let Some((_, panels)) = TABS.iter().find(|(name, _)| *name == tab) else { return };
-            let panels = ordered(app, tab, panels);
-            let accent = t.tab(tab);
-            let busy = app.busy();
-            let enabled = !busy;
-            // A panel's items: its commands, then the 3D view's tools it holds.
-            let items_of = |panel: &str, items: &[&'static str]| -> Vec<Item> {
-                let ports = app.session.model().analysis.is_none_or(|k| fits(k, "model.port.create"));
-                let tools = TOOLS.iter().filter(|(on, p, _)| *on == tab && *p == panel && ports).flat_map(|(_, _, tools)| tools.iter().copied());
-                items.iter().map(|&id| Item::Command(id)).chain(tools.map(Item::Tool)).collect()
-            };
-            // The buttons past the card's right edge go into a menu at its end.
-            let painter = ui.painter().clone();
-            let width_of = |item: Item| {
-                let g = painter.layout(item.text().to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
-                (g.size().x + 14.0).max(BUTTON_MIN_WIDTH)
-            };
-            let all: f32 =
-                panels.iter().map(|(panel, items)| items_of(panel, &items[..]).into_iter().map(|i| width_of(i) + 3.0).sum::<f32>() + 13.0).sum();
-            let limit = if x + all > card.right() - 4.0 { card.right() - 6.0 - MORE_WIDTH } else { f32::INFINITY };
-            let mut more: Vec<Item> = Vec::new();
-            for (panel, items) in panels.iter() {
-                let x0 = x;
-                for item in items_of(panel, &items[..]) {
-                    if !more.is_empty() || x + width_of(item) > limit {
-                        more.push(item);
-                        continue;
-                    }
-                    let active = item.active(app);
-                    let b = Button { text: item.text(), glyph: item.glyph(), handle: item.handle(), enabled, active };
-                    let (resp, w) = button(ui, b, pos2(x, top), accent);
-                    if item.hint(resp).clicked() {
-                        out.push(item.action(active));
-                    }
-                    x += w + 3.0;
-                }
-                if x == x0 {
-                    continue;
-                }
-                // The panel's name under its buttons, and a divider after it.
-                let pr = Rect::from_min_max(pos2(x0, top + BUTTON_HEIGHT), pos2(x, top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT));
-                ui.painter().text(pr.center(), Align2::CENTER_CENTER, tr(panel), FontId::proportional(10.5), t.text_dim);
-                scenario::publish_rect(Handle::Panel(tab, panel), pr);
-                x += 6.0;
-                ui.painter().vline(x, (top + 4.0)..=(top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT - 2.0), Stroke::new(1.0, t.border));
-                x += 7.0;
+            panels(app, ui, card, row.bottom() + 4.0, out);
+        });
+}
+
+/// The open tab's panels along `top`: each one's buttons, its name under them and a divider
+/// after it; the buttons past the card's right edge go into a menu at its end.
+fn panels(app: &EmcraftApp, ui: &mut egui::Ui, card: Rect, top: f32, out: &mut Actions) {
+    let t = &Tokens::get();
+    let tab = app.tab;
+    let Some((_, listed)) = TABS.iter().find(|(name, _)| *name == tab) else { return };
+    let panels: Vec<(&str, Vec<Item>)> = ordered(app, tab, listed).into_iter().map(|p| (p.name, p.items(app, tab))).collect();
+    let accent = t.tab(tab);
+    let enabled = !app.busy();
+    let mut x = card.left() + 6.0;
+    let all: f32 = panels.iter().map(|(_, items)| items.iter().map(|i| button_width(ui, i.text()) + 3.0).sum::<f32>() + 13.0).sum();
+    let limit = if x + all > card.right() - 4.0 { card.right() - 6.0 - MORE_WIDTH } else { f32::INFINITY };
+    let mut more: Vec<Item> = Vec::new();
+    for (panel, items) in &panels {
+        let x0 = x;
+        for &item in items {
+            if !more.is_empty() || x + button_width(ui, item.text()) > limit {
+                more.push(item);
+                continue;
             }
-            if !more.is_empty() {
-                let r = Rect::from_min_size(pos2(card.right() - 4.0 - MORE_WIDTH, top), vec2(MORE_WIDTH, BUTTON_HEIGHT));
-                let resp = more_button(ui, r, Fixed::ToolbarMore, "More commands");
-                egui::Popup::menu(&resp).show(|ui| {
-                    for item in more {
-                        let active = item.active(app);
-                        let r = ui.named_enabled(enabled, egui::Button::selectable(active, item.text()), item.handle());
-                        if item.hint(r).clicked() {
-                            out.push(item.action(active));
-                            ui.close();
-                        }
-                    }
-                });
+            let active = item.active(app);
+            let b = Button { text: item.text(), glyph: item.glyph(), handle: item.handle(), enabled, active };
+            let (resp, w) = button(ui, b, pos2(x, top), accent);
+            if item.hint(resp).clicked() {
+                out.push(item.action(active));
+            }
+            x += w + 3.0;
+        }
+        if x == x0 {
+            continue;
+        }
+        let pr = Rect::from_min_max(pos2(x0, top + BUTTON_HEIGHT), pos2(x, top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT));
+        ui.painter().text(pr.center(), Align2::CENTER_CENTER, tr(panel), FontId::proportional(10.5), t.text_dim);
+        scenario::publish_rect(Handle::Panel(tab, panel), pr);
+        x += 6.0;
+        ui.painter().vline(x, (top + 4.0)..=(top + BUTTON_HEIGHT + PANEL_LABEL_HEIGHT - 2.0), Stroke::new(1.0, t.border));
+        x += 7.0;
+    }
+    if !more.is_empty() {
+        let r = Rect::from_min_size(pos2(card.right() - 4.0 - MORE_WIDTH, top), vec2(MORE_WIDTH, BUTTON_HEIGHT));
+        let resp = more_button(ui, r, Fixed::ToolbarMore, "More commands");
+        egui::Popup::menu(&resp).show(|ui| {
+            for item in more {
+                let active = item.active(app);
+                let r = ui.named_enabled(enabled, egui::Button::selectable(active, item.text()), item.handle());
+                if item.hint(r).clicked() {
+                    out.push(item.action(active));
+                    ui.close();
+                }
             }
         });
+    }
+}
+
+/// A panel of a tab as the ribbon shows it: its name and its commands, in the order they go.
+#[derive(Clone, Debug, PartialEq)]
+struct Panel {
+    name: &'static str,
+    commands: Vec<&'static str>,
+}
+
+impl Panel {
+    /// What it holds: its commands, then the 3D view's tools it holds (unless the job's kind of
+    /// analysis has no ports).
+    fn items(&self, app: &EmcraftApp, tab: RibbonTab) -> Vec<Item> {
+        let ports = app.session.model().analysis.is_none_or(|k| fits(k, "model.port.create"));
+        let tools = TOOLS.iter().filter(|(on, p, _)| ports && *on == tab && *p == self.name).flat_map(|(_, _, tools)| tools.iter().copied());
+        self.commands.iter().map(|&id| Item::Command(id)).chain(tools.map(Item::Tool)).collect()
+    }
 }
 
 /// The tab's panels and their commands; SIMULATE's with the solve of the kind of analysis chosen
 /// at step 0 first (its panel first, the solve first in it).
-fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<(&'static str, Vec<&'static str>)> {
+fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<Panel> {
     let chosen = app.session.model().analysis;
     // A job of a chosen kind sees only its commands (the search still finds the others).
-    let mut out: Vec<(&'static str, Vec<&'static str>)> = panels
+    let mut out: Vec<Panel> = panels
         .iter()
-        .map(|(p, items)| (*p, items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id))).collect::<Vec<_>>()))
-        .filter(|(_, items)| !items.is_empty())
+        .map(|(name, items)| Panel { name, commands: items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id))).collect() })
+        .filter(|p| !p.commands.is_empty())
         .collect();
     let Some(kind) = chosen.filter(|_| tab == RibbonTab::Simulate) else { return out };
     let first = crate::steps::command(kind);
-    if let Some(i) = out.iter().position(|(_, items)| items.contains(&first)) {
+    if let Some(i) = out.iter().position(|p| p.commands.contains(&first)) {
         let mut panel = out.remove(i);
-        panel.1.retain(|c| *c != first);
-        panel.1.insert(0, first);
+        panel.commands.retain(|c| *c != first);
+        panel.commands.insert(0, first);
         out.insert(0, panel);
     }
     out
@@ -352,13 +360,19 @@ struct Button<'a> {
     active: bool,
 }
 
+/// The width of a ribbon button labelled `text`.
+fn button_width(ui: &egui::Ui, text: &str) -> f32 {
+    let t = &Tokens::get();
+    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
+    (g.size().x + 14.0).max(BUTTON_MIN_WIDTH)
+}
+
 /// Draws a ribbon button at `at` (60 pt high, its glyph over its label) in the tab's `accent`;
 /// its response and width.
 fn button(ui: &mut egui::Ui, b: Button, at: egui::Pos2, accent: [Color32; 3]) -> (egui::Response, f32) {
     let t = &Tokens::get();
     let Button { text, glyph, handle, enabled, active } = b;
-    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
-    let w = (g.size().x + 14.0).max(BUTTON_MIN_WIDTH);
+    let w = button_width(ui, text);
     let br = Rect::from_min_size(at, vec2(w, BUTTON_HEIGHT));
     let resp = ui.hit(br, handle, if enabled { Sense::click() } else { Sense::hover() });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
@@ -692,16 +706,16 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         let simulate = TABS.iter().find(|(t, _)| *t == RibbonTab::Simulate).map(|(_, p)| *p).unwrap_or(&[]);
         let listed = ordered(&h.app, RibbonTab::Simulate, simulate);
-        assert_eq!(listed.first().and_then(|p| p.1.first()), Some(&"solve.frequency"));
+        assert_eq!(listed.first().and_then(|p| p.commands.first()), Some(&"solve.frequency"));
         h.app.session.execute("project.analysis", &serde_json::json!({"kind": "time_domain"})).unwrap();
         let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
-        assert_eq!((moved[0].0, moved[0].1.as_slice()), ("TIME DOMAIN", &["solve.time_domain"][..]));
+        assert_eq!((moved[0].name, moved[0].commands.as_slice()), ("TIME DOMAIN", &["solve.time_domain"][..]));
         // The other kinds' solves are left out; the rest stays.
-        let all: Vec<&str> = moved.iter().flat_map(|p| p.1.iter().copied()).collect();
+        let all: Vec<&str> = moved.iter().flat_map(|p| p.commands.iter().copied()).collect();
         assert!(!all.contains(&"solve.frequency") && !all.contains(&"solve.eigenmodes") && all.contains(&"study.sweep"), "{all:?}");
         h.app.session.execute("project.analysis", &serde_json::json!({"kind": "radiation"})).unwrap();
         let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
-        assert_eq!(moved[0].1, ["solve.radiation"]);
+        assert_eq!(moved[0].commands, ["solve.radiation"]);
         let model = TABS.iter().find(|(t, _)| *t == RibbonTab::Model).map(|(_, p)| *p).unwrap_or(&[]);
         assert_eq!(ordered(&h.app, RibbonTab::Model, model).len(), model.len());
     }

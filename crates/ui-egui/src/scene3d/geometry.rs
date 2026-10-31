@@ -2,11 +2,12 @@
 //! vias; a solid's primitive (box, cylinder, sphere, imported surface), its Boolean features and
 //! inclusions; and the ports on its ends.
 
-use emcraft_model::{Axis, Combine, Model, Shape};
+use emcraft_model::{Axis, Combine, Model, Shape, Span, Waveguide};
 use emcraft_render::Rgb;
 use emcraft_render::view3d::Scene;
 
 use super::extras::port_face;
+use super::shell::{Inside, Side};
 use super::style::{material_rgb, sc};
 use super::{Built, Overlay, Pick, p3};
 
@@ -101,8 +102,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
     if let Some(w) = &m.waveguide {
         let mut z = 0.0;
         // A planar circuit's conductors lie inside: its walls let them show.
-        let layered = !w.layers.is_empty() || !w.strips.is_empty() || !w.vias.is_empty();
-        let alpha = if see_through || layered {
+        let alpha = if see_through || !w.plain() {
             70
         } else if overlay == Overlay::Materials {
             200
@@ -110,10 +110,10 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             255
         };
         for (i, s) in w.sections.iter().enumerate() {
-            let emcraft_model::Span { start: x0, width: a } = w.aperture(i).unwrap_or(w.across_x());
-            let emcraft_model::Span { start: y0, width: b } = w.aperture_y(i).unwrap_or(w.across_y());
-            out.scene
-                .tagged(Pick::Section(i).tag(), |scene| cuboid(scene, [x0, y0, z], [x0 + a, y0 + b, z + s.length], tint(&s.material), alpha, true));
+            let a = Aperture::of(w, i);
+            out.scene.tagged(Pick::Section(i).tag(), |scene| {
+                cuboid(scene, [a.x.start, a.y.start, z], [a.x.end(), a.y.end(), z + s.length], tint(&s.material), alpha, true)
+            });
             z += s.length;
         }
         let mut y = 0.0;
@@ -188,64 +188,17 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
 /// planar circuit) on the grid of their apertures' sides, so the faces meet edge to edge where
 /// one aperture steps to the next; a solid's own faces (no Boolean features). `None` for the
 /// rest, whose walls are drawn thick once meshed.
-fn inside(m: &Model) -> Option<super::shell::Inside> {
-    let mut out = super::shell::Inside::default();
+fn inside(m: &Model) -> Option<Inside> {
+    let mut out = Inside::default();
     let on_port = super::shell::on_ports(m);
-    let put = |out: &mut super::shell::Inside, q: [[f64; 3]; 4]| {
-        let c = [0, 1, 2].map(|k| q.iter().map(|p| p[k]).sum::<f64>() / 4.0);
-        out.quad(q, on_port(c));
-    };
     if let Some(w) = &m.waveguide {
-        if !w.layers.is_empty() || !w.strips.is_empty() || !w.vias.is_empty() {
+        if !w.plain() {
             return None;
         }
-        let rects: Vec<[f64; 4]> = (0..w.sections.len())
-            .map(|i| {
-                let x = w.aperture(i).unwrap_or(w.across_x());
-                let y = w.aperture_y(i).unwrap_or(w.across_y());
-                [x.start, x.start + x.width, y.start, y.start + y.width]
-            })
-            .collect();
-        let breaks = |lo: usize, hi: usize| {
-            let mut v: Vec<f64> = rects.iter().flat_map(|r| [r[lo], r[hi]]).collect();
-            v.sort_by(f64::total_cmp);
-            v.dedup();
-            v
-        };
-        let (xs, ys) = (breaks(0, 1), breaks(2, 3));
-        let within = |v: &[f64], lo: f64, hi: f64| v.windows(2).filter(|p| p[0] >= lo && p[1] <= hi).map(|p| (p[0], p[1])).collect::<Vec<_>>();
-        let mut z = 0.0;
-        for (i, (s, r)) in w.sections.iter().zip(&rects).enumerate() {
-            let (z0, z1) = (z, z + s.length);
-            // The four sides, outward, cut where any aperture's side lies.
-            for (x0, x1) in within(&xs, r[0], r[1]) {
-                put(&mut out, [[x0, r[2], z0], [x1, r[2], z0], [x1, r[2], z1], [x0, r[2], z1]]);
-                put(&mut out, [[x0, r[3], z0], [x0, r[3], z1], [x1, r[3], z1], [x1, r[3], z0]]);
-            }
-            for (y0, y1) in within(&ys, r[2], r[3]) {
-                put(&mut out, [[r[0], y0, z0], [r[0], y0, z1], [r[0], y1, z1], [r[0], y1, z0]]);
-                put(&mut out, [[r[1], y0, z0], [r[1], y1, z0], [r[1], y1, z1], [r[1], y0, z1]]);
-            }
-            // Where this section starts: the cells of one aperture and not the other (all of the
-            // first's at the start), facing out of the section they belong to; the last's end.
-            let before = i.checked_sub(1).and_then(|k| rects.get(k));
-            let has = |r: Option<&[f64; 4]>, x: f64, y: f64| r.is_some_and(|r| r[0] <= x && x <= r[1] && r[2] <= y && y <= r[3]);
-            for (x0, x1) in xs.windows(2).map(|p| (p[0], p[1])) {
-                for (y0, y1) in ys.windows(2).map(|p| (p[0], p[1])) {
-                    let (cx, cy) = (0.5 * (x0 + x1), 0.5 * (y0 + y1));
-                    let (low, high) = (has(before, cx, cy), has(Some(r), cx, cy));
-                    if high && !low {
-                        put(&mut out, [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]]);
-                    } else if low && !high {
-                        put(&mut out, [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]]);
-                    }
-                    if i + 1 == rects.len() && high {
-                        put(&mut out, [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]);
-                    }
-                }
-            }
-            z = z1;
-        }
+        guide_inside(w, |q| {
+            let c = [0, 1, 2].map(|k| q.iter().map(|p| p[k]).sum::<f64>() / 4.0);
+            out.quad(q, Side::open_if(on_port(c)));
+        });
         return Some(out);
     }
     let solid = m.solid.as_ref()?;
@@ -256,7 +209,90 @@ fn inside(m: &Model) -> Option<super::shell::Inside> {
     shape(&mut scene, &solid.shape, &|q| q, sc().metal, 255);
     for t in &scene.tris {
         let c = [0, 1, 2].map(|k| (t.p[0][k] + t.p[1][k] + t.p[2][k]) / 3.0);
-        out.tri(t.p, on_port(c));
+        out.tri(t.p, Side::open_if(on_port(c)));
     }
     Some(out)
+}
+
+/// A section's aperture: its spans across x and y (m).
+#[derive(Clone, Copy)]
+struct Aperture {
+    x: Span,
+    y: Span,
+}
+
+impl Aperture {
+    /// Section `i`'s (the guide's whole width and height where it has none of its own).
+    fn of(w: &Waveguide, i: usize) -> Aperture {
+        Aperture { x: w.aperture(i).unwrap_or(w.across_x()), y: w.aperture_y(i).unwrap_or(w.across_y()) }
+    }
+
+    /// Whether it holds the point (x, y), its sides included.
+    fn holds(self, x: f64, y: f64) -> bool {
+        self.x.start <= x && x <= self.x.end() && self.y.start <= y && y <= self.y.end()
+    }
+}
+
+/// The values sorted and each once: where the grid's lines lie.
+fn breaks(v: impl Iterator<Item = f64>) -> Vec<f64> {
+    let mut v: Vec<f64> = v.collect();
+    v.sort_by(f64::total_cmp);
+    v.dedup();
+    v
+}
+
+/// The cells of the grid `v` between `lo` and `hi`.
+fn cells(v: &[f64], lo: f64, hi: f64) -> impl Iterator<Item = (f64, f64)> + '_ {
+    v.windows(2).filter(move |p| p[0] >= lo && p[1] <= hi).map(|p| (p[0], p[1]))
+}
+
+/// A plain guide's inside as quadrilaterals to `put`, turned outward: each section's four
+/// sides, the steps where one aperture meets the next, and the two ends — all cut on the grid
+/// of every aperture's sides.
+fn guide_inside(w: &Waveguide, mut put: impl FnMut([[f64; 3]; 4])) {
+    let apertures: Vec<Aperture> = (0..w.sections.len()).map(|i| Aperture::of(w, i)).collect();
+    let xs = breaks(apertures.iter().flat_map(|a| [a.x.start, a.x.end()]));
+    let ys = breaks(apertures.iter().flat_map(|a| [a.y.start, a.y.end()]));
+    let mut z = 0.0;
+    for (i, (s, a)) in w.sections.iter().zip(&apertures).enumerate() {
+        let (z0, z1) = (z, z + s.length);
+        sides(*a, &xs, &ys, z0, z1, &mut put);
+        let before = i.checked_sub(1).and_then(|k| apertures.get(k)).copied();
+        let last = i + 1 == apertures.len();
+        steps(before, *a, last, &xs, &ys, (z0, z1), &mut put);
+        z = z1;
+    }
+}
+
+/// A section's four sides from `z0` to `z1`, outward, cut where any aperture's side lies.
+fn sides(a: Aperture, xs: &[f64], ys: &[f64], z0: f64, z1: f64, put: &mut impl FnMut([[f64; 3]; 4])) {
+    let (x0, x1, y0, y1) = (a.x.start, a.x.end(), a.y.start, a.y.end());
+    for (u0, u1) in cells(xs, x0, x1) {
+        put([[u0, y0, z0], [u1, y0, z0], [u1, y0, z1], [u0, y0, z1]]);
+        put([[u0, y1, z0], [u0, y1, z1], [u1, y1, z1], [u1, y1, z0]]);
+    }
+    for (v0, v1) in cells(ys, y0, y1) {
+        put([[x0, v0, z0], [x0, v0, z1], [x0, v1, z1], [x0, v1, z0]]);
+        put([[x1, v0, z0], [x1, v1, z0], [x1, v1, z1], [x1, v0, z1]]);
+    }
+}
+
+/// Where section `a` (from `z0` to `z1`) starts: the cells of one aperture and not the other's
+/// (`before`, none for the first: all of its own), each facing out of the section it belongs
+/// to; and, for the `last`, its end.
+fn steps(before: Option<Aperture>, a: Aperture, last: bool, xs: &[f64], ys: &[f64], (z0, z1): (f64, f64), put: &mut impl FnMut([[f64; 3]; 4])) {
+    for (x0, x1) in xs.windows(2).map(|p| (p[0], p[1])) {
+        for (y0, y1) in ys.windows(2).map(|p| (p[0], p[1])) {
+            let (cx, cy) = (0.5 * (x0 + x1), 0.5 * (y0 + y1));
+            let (low, high) = (before.is_some_and(|b| b.holds(cx, cy)), a.holds(cx, cy));
+            if high && !low {
+                put([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]]);
+            } else if low && !high {
+                put([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]]);
+            }
+            if last && high {
+                put([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]);
+            }
+        }
+    }
 }

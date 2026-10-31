@@ -10,7 +10,7 @@ mod results;
 mod run;
 mod setup;
 
-pub use intent::{apply_band, kind_card};
+pub use intent::{KindCard, apply_band, kind_card};
 pub use results::export_touchstone;
 
 use super::bar::mark;
@@ -72,7 +72,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
 /// Why step `step` does nothing for the job's kind of analysis, when it does nothing for it.
 pub fn not_needed(app: &EmcraftApp, step: Step) -> Option<String> {
     let chosen = app.session.model().analysis?;
-    emcraft_engine::workflow::not_needed(Some(chosen)).contains(&step).then(|| trf("Not needed for {kind}", args!(kind = tr(kind_card(chosen).1))))
+    emcraft_engine::workflow::not_needed(Some(chosen)).contains(&step).then(|| trf("Not needed for {kind}", args!(kind = tr(kind_card(chosen).name))))
 }
 
 fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {

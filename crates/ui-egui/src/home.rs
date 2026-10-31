@@ -274,7 +274,7 @@ fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Purpose");
     ui.horizontal(|ui| {
         for kind in crate::steps::Solver::ALL {
-            let (glyph, name, detail) = crate::steps::kind_card(kind);
+            let crate::steps::KindCard { glyph, name, detail } = crate::steps::kind_card(kind);
             let on = app.home.purpose == Some(kind);
             let (r, resp) = ui.allocate_exact_size(vec2(150.0, 76.0), Sense::click());
             let fill = if on {

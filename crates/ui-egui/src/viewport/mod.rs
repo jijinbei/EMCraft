@@ -285,8 +285,7 @@ fn draw_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui,
         None => (picture_width(ui), V::HEIGHT.of(ui)),
     };
     let mut drawn_now = None;
-    let mut pk = PictureKey::new(app.revision, width, key.clone());
-    pk.height = height;
+    let pk = PictureKey::new(app.revision, width, key.clone()).with_height(height);
     let drawn = V::Key::slot(&mut st.views).get_or_draw(pk, || {
         V::chart(app, &key).map(|c| {
             let curves: Vec<(String, String)> = c.curves().into_iter().map(|(k, l)| (k.to_owned(), chart_style::plain(l))).collect();

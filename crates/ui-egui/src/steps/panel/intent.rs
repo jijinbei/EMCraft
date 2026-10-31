@@ -23,15 +23,25 @@ pub(super) fn intent(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &s
 }
 
 /// A kind of analysis on its card: its glyph, its short name and what it does (on hover).
-pub fn kind_card(kind: Solver) -> (Glyph, &'static str, &'static str) {
-    match kind {
+pub fn kind_card(kind: Solver) -> KindCard {
+    let (glyph, name, detail) = match kind {
         Solver::Frequency => (Glyph::KindSweep, "S-parameters", "S-parameters between ports, swept over the band (solve.frequency)"),
         Solver::Eigenmodes => (Glyph::KindResonator, "Eigenmodes", "A closed resonator's modes and Q; nothing drives it (solve.eigenmodes)"),
         Solver::Radiation => {
             (Glyph::KindAntenna, "Radiation", "An antenna or a scatterer in an open boundary: fields and far field (solve.radiation)")
         }
         Solver::TimeDomain => (Glyph::KindPulse, "Time domain", "A pulse over the band: S-parameters by finite integration (solve.time_domain)"),
-    }
+    };
+    KindCard { glyph, name, detail }
+}
+
+/// A kind of analysis as its card shows it: its glyph, its name and what it is for (both to be
+/// translated).
+#[derive(Clone, Copy, Debug)]
+pub struct KindCard {
+    pub glyph: Glyph,
+    pub name: &'static str,
+    pub detail: &'static str,
 }
 
 /// The four kinds of analysis as cards in a row, the job's own marked (`auto` while it is
@@ -50,7 +60,7 @@ fn kinds(app: &EmcraftApp, ui: &mut egui::Ui, compact: bool, t: &Tokens, out: &m
             for &kind in row {
                 let (r, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
                 let resp = ui.hit(r, Handle::Kind(kind), if busy { Sense::hover() } else { Sense::click() });
-                let (glyph, name, detail) = kind_card(kind);
+                let KindCard { glyph, name, detail } = kind_card(kind);
                 let on = kind == current;
                 let p = ui.painter();
                 let fill = match (on, resp.hovered() && !busy) {

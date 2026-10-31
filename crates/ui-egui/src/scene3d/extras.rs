@@ -111,6 +111,11 @@ pub(crate) fn port_quad(m: &Model, p: &emcraft_model::Port) -> Option<[[f64; 3];
     Some([corner(lo[0], lo[1]), corner(hi[0], lo[1]), corner(hi[0], hi[1]), corner(lo[0], hi[1])])
 }
 
+/// The centre of a quadrilateral (the mean of its corners).
+pub(crate) fn quad_centre(q: &[[f64; 3]; 4]) -> [f64; 3] {
+    [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]))
+}
+
 /// Ports' labels, lumped ports, sources and the open boundary's layer.
 pub(super) fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
     let size = out.bounds.map_or(0.01, |(lo, hi)| ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt());
@@ -145,7 +150,7 @@ fn midpoint(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 }
 
 /// `a` moved by `k` along `d`.
-fn along(a: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
+pub(crate) fn along(a: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
     [a[0] + d[0] * k, a[1] + d[1] * k, a[2] + d[2] * k]
 }
 
@@ -154,7 +159,7 @@ fn along(a: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
 fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
     for p in &m.ports {
         let Some(q) = port_quad(m, p) else { continue };
-        let c = [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]));
+        let c = quad_centre(&q);
         let facing = match p.face {
             Some(f) if f.axis == emcraft_model::Axis::Z => None,
             _ => Some(port_normal(p).map(|x| -x)),

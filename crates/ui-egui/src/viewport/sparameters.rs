@@ -32,11 +32,11 @@ impl ChartView for SParameters {
     /// The history (once there are two solves to compare), the table of S and the ports'
     /// reference planes, packed round the chart.
     fn blocks(app: &EmcraftApp, _: &Parts) -> Vec<egui::Vec2> {
-        parts(app).iter().map(|p| p.wants(app)).collect()
+        parts(app).map(|p| p.wants(app)).collect()
     }
 
     fn block(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, k: usize, out: &mut Actions) {
-        match parts(app).get(k) {
+        match parts(app).nth(k) {
             Some(Part::History) => history(app, &mut st.views.compare, ui, out),
             Some(Part::Table) => table(app, ui),
             Some(Part::Planes) => {
@@ -75,13 +75,8 @@ enum Part {
 }
 
 /// The parts the session has, in the order they go.
-fn parts(app: &EmcraftApp) -> Vec<Part> {
-    let mut out = Vec::new();
-    if app.session.archive().len() >= 2 {
-        out.push(Part::History);
-    }
-    out.extend([Part::Table, Part::Planes]);
-    out
+fn parts(app: &EmcraftApp) -> impl Iterator<Item = Part> {
+    (app.session.archive().len() >= 2).then_some(Part::History).into_iter().chain([Part::Table, Part::Planes])
 }
 
 impl Part {
@@ -124,11 +119,11 @@ impl ChartMap {
         self.rect.min.x + px as f32 / self.size.x.max(1.0) * self.rect.width()
     }
 
-    /// The plot area's top and bottom on screen.
-    fn rows(&self) -> (f32, f32) {
+    /// The plot area's top to bottom on screen.
+    fn rows(&self) -> egui::Rangef {
         let [_, y0, _, ph] = self.layout.plane;
         let sy = self.rect.height() / self.size.y.max(1.0);
-        (self.rect.top() + y0 as f32 * sy, self.rect.top() + (y0 + ph) as f32 * sy)
+        egui::Rangef::new(self.rect.top() + y0 as f32 * sy, self.rect.top() + (y0 + ph) as f32 * sy)
     }
 }
 
@@ -140,10 +135,10 @@ fn frequency_marker(field: &mut FieldState, ui: &egui::Ui, r: &egui::Response, m
     let f = field.view.frequency;
     if f1 > f0 && field.view.mode.is_none() && (f0..=f1).contains(&f) {
         let x = map.x(f);
-        let (top, bottom) = map.rows();
-        if (r.rect.left()..=r.rect.right()).contains(&x) {
+        let top = map.rows().min;
+        if r.rect.x_range().contains(x) {
             let painter = ui.painter_at(r.rect);
-            painter.line_segment([pos2(x, top), pos2(x, bottom)], Stroke::new(1.5, t.accent));
+            painter.vline(x, map.rows(), Stroke::new(1.5, t.accent));
             let (at, align) =
                 if x + 60.0 > r.rect.right() { (pos2(x - 4.0, top), Align2::RIGHT_TOP) } else { (pos2(x + 4.0, top), Align2::LEFT_TOP) };
             painter.text(at, align, tr("fields shown"), FontId::proportional(t.font_small), t.accent);
@@ -182,8 +177,7 @@ fn refine_band(app: &EmcraftApp, refine: &mut crate::state::Refine, ui: &mut egu
         }
     }
     let Some((a, b)) = refine.band else { return };
-    let (top, bottom) = map.rows();
-    let band = Rect::from_min_max(pos2(map.x(a), top), pos2(map.x(b), bottom)).intersect(r.rect);
+    let band = Rect::from_x_y_ranges(map.x(a)..=map.x(b), map.rows()).intersect(r.rect);
     ui.painter().rect_filled(band, 0.0, t.accent.gamma_multiply(0.18));
     scenario::publish_target(Fixed::RefineBand, band);
     let fu = app.session.display().frequency;
@@ -331,21 +325,7 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
             Color32::TRANSPARENT
         };
         p.rect_filled(rect, t.radius_sm, fill);
-        // The swatch: its two curves' colours when drawn, the current one's ●, else a ring.
-        let c = pos2(rect.left() + 12.0, rect.center().y);
-        match (current, drawn) {
-            (true, _) => {
-                p.circle_filled(c, 5.0, t.accent);
-            }
-            (false, Some(k)) => {
-                let [a, b] = emcraft_engine::view::compare_pens(k).map(|pen| crate::theme::color32(palette.pen(pen)));
-                p.line_segment([c + vec2(-6.0, -3.0), c + vec2(6.0, -3.0)], Stroke::new(2.5, a));
-                p.line_segment([c + vec2(-6.0, 3.0), c + vec2(6.0, 3.0)], Stroke::new(2.5, b));
-            }
-            (false, None) => {
-                p.circle_stroke(c, 4.5, Stroke::new(1.2, t.text_dim));
-            }
-        }
+        swatch(p, pos2(rect.left() + 12.0, rect.center().y), current, drawn, &palette);
         let ink = if current { t.text } else { t.text_dim };
         let star = if pinned { " ★" } else { "" };
         p.text(pos2(rect.left() + 26.0, rect.top() + 9.0), Align2::LEFT_CENTER, format!("#{id}{star}"), FontId::proportional(t.font_body), ink);
@@ -356,17 +336,7 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
         if let Some(db) = r["best_s11_db"].as_f64() {
             p.text(pos2(rect.right() - 6.0, rect.top() + 9.0), Align2::RIGHT_CENTER, format!("{db:.1} dB"), font.clone(), ink);
         }
-        let mut tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
-        if let (Some(db), Some(at)) = (r["best_s11_db"].as_f64(), r["best_at"].as_f64()) {
-            tip = format!(
-                "{tip}\n{}",
-                trf(
-                    "deepest |S11| {db} dB at {f} {unit}",
-                    args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = app.session.display().frequency.symbol())
-                )
-            );
-        }
-        let resp = resp.hint(Raw(&tip));
+        let resp = resp.hint(Raw(&history_tip(app, r)));
         if resp.clicked() && !current {
             match drawn {
                 Some(k) => {
@@ -375,21 +345,52 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
                 None => compare.push(id),
             }
         }
-        resp.context_menu(|ui| {
-            let items = [
-                ("Restore", Fixed::HistoryRestore, "results.history.restore", json!({"id": id})),
-                (if pinned { "Unpin" } else { "Pin" }, Fixed::HistoryPin, "results.history.pin", json!({"id": id, "pinned": !pinned})),
-                ("Delete", Fixed::HistoryDelete, "results.history.delete", json!({"id": id})),
-            ];
-            for (label, handle, command, params) in items {
-                if ui.named_enabled(!busy, egui::Button::new(tr(label)), handle.into()).clicked() {
-                    out.push(Action::run(command, params));
-                    ui.close();
-                }
-            }
-        });
+        resp.context_menu(|ui| history_menu(ui, id, pinned, !busy, out));
     }
     crate::ui_kit::caption(ui, "Click: draw it over the chart · right-click: restore, pin, delete");
+}
+
+/// A kept solve's swatch centred on `c`: its two curves' colours when drawn (`drawn`: its place
+/// among those drawn), the current one's ●, else a ring.
+fn swatch(p: &egui::Painter, c: egui::Pos2, current: bool, drawn: Option<usize>, palette: &emcraft_render::Palette) {
+    let t = &Tokens::get();
+    match (current, drawn) {
+        (true, _) => {
+            p.circle_filled(c, 5.0, t.accent);
+        }
+        (false, Some(k)) => {
+            let [a, b] = emcraft_engine::view::compare_pens(k).map(|pen| crate::theme::color32(palette.pen(pen)));
+            p.line_segment([c + vec2(-6.0, -3.0), c + vec2(6.0, -3.0)], Stroke::new(2.5, a));
+            p.line_segment([c + vec2(-6.0, 3.0), c + vec2(6.0, 3.0)], Stroke::new(2.5, b));
+        }
+        (false, None) => {
+            p.circle_stroke(c, 4.5, Stroke::new(1.2, t.text_dim));
+        }
+    }
+}
+
+/// A kept solve's tip: its frequencies, and its deepest |S11| and where.
+fn history_tip(app: &EmcraftApp, r: &Value) -> String {
+    let tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
+    let (Some(db), Some(at)) = (r["best_s11_db"].as_f64(), r["best_at"].as_f64()) else { return tip };
+    let unit = app.session.display().frequency.symbol();
+    let deepest = trf("deepest |S11| {db} dB at {f} {unit}", args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = unit));
+    format!("{tip}\n{deepest}")
+}
+
+/// A kept solve's menu: restore, pin or unpin, delete.
+fn history_menu(ui: &mut egui::Ui, id: u32, pinned: bool, enabled: bool, out: &mut Actions) {
+    let items = [
+        ("Restore", Fixed::HistoryRestore, "results.history.restore", json!({"id": id})),
+        (if pinned { "Unpin" } else { "Pin" }, Fixed::HistoryPin, "results.history.pin", json!({"id": id, "pinned": !pinned})),
+        ("Delete", Fixed::HistoryDelete, "results.history.delete", json!({"id": id})),
+    ];
+    for (label, handle, command, params) in items {
+        if ui.named_enabled(enabled, egui::Button::new(tr(label)), handle.into()).clicked() {
+            out.push(Action::run(command, params));
+            ui.close();
+        }
+    }
 }
 
 #[cfg(test)]

@@ -123,10 +123,9 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
             ui_kit::caption(ui, Raw(command_doc(id)));
             ui.add_space(t.space_6);
             fields(ui, d, session);
-            if let Some((_, asked, e)) = app.workflow.dialog_estimate.as_ref().filter(|(_, a, _)| a["command"] == serde_json::json!(id)) {
-                let _ = asked;
+            if let Some(e) = app.workflow.dialog_estimate.as_ref().filter(|e| e.asked["command"] == id) {
                 ui.add_space(t.space_6);
-                crate::steps::estimate_line(ui, e, Fixed::DialogEstimate);
+                crate::steps::estimate_line(ui, &e.reply, Fixed::DialogEstimate);
             }
             if let Some(e) = &d.error {
                 ui.add_space(t.space_6);
