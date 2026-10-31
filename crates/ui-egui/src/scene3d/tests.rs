@@ -43,8 +43,8 @@ fn air_and_walls_let_what_is_inside_show() {
     let (air, wall, metal) = kinds(&open);
     assert!(air > 0 && wall == 0 && metal > 0, "{air} {wall} {metal}");
     // A coaxial line: its outer wall (curved), its inner conductor apart from it (the ends'
-    // ports join them).
-    let (air, wall, metal) = kinds(&meshed("coaxial-line", Some(3.0)));
+    // ports join them). 4 mm cells, for speed: the conductors' faces are there whatever the size.
+    let (air, wall, metal) = kinds(&meshed("coaxial-line", Some(4.0)));
     assert!(air == 0 && wall > 0 && metal > 0, "{air} {wall} {metal}");
     // Air is all but invisible; the conductors inside stay solid.
     let m = open.model();
