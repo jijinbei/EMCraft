@@ -178,6 +178,19 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   the square, references of `hplane-tee` and `eplane-tee`). The E-plane corner as a 2D Neumann problem of
   the LSE modes: R. E. Collin, *Field Theory of Guided Waves*, 2nd ed., IEEE Press 1991; N.
   Marcuvitz, *Waveguide Handbook*, McGraw-Hill 1951, ch. 5 — right-angle corners.
+- C. W. Cochran, R. A. Pecina, *Mode propagation in continuously curved waveguides*, Radio
+  Science 1(6):679–696, 1966; L. Lewin, D. C. Chang, E. F. Kuester, *Electromagnetic Waves and
+  Curved Structures*, Peter Peregrinus 1977, ch. 3 — the modes of a rectangular guide bent in
+  the H- or E-plane, e^{−jνφ} times a radial Bessel-equation eigenfunction (Dirichlet, or
+  Neumann with k_c for the bent LSE modes); L. N. Trefethen, *Spectral Methods in MATLAB*,
+  SIAM 2000, ch. 6–7 — Chebyshev collocation, here for ν₀ with inverse iteration; G. H. Golub,
+  C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins 2013, §8.5 — the cyclic Jacobi
+  method of the curved modes' symmetric Galerkin problem in the straight guide's modes;
+  S. O. Rice, *Reflections from circular bends in rectangular wave guides — matrix theory*,
+  Bell System Technical Journal 27(2):305–349, 1948 — the curved modes expanded in the straight
+  ones and the junctions matched mode by mode, a junction's reflection ∝ (w/R)²
+  (`emcraft-theory::curved`, the reference of the oracle's `hplane-bend-radius` and
+  `eplane-bend-radius`).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §5.8–5.9; R. E. Collin,
   *Foundations for Microwave Engineering*, 2nd ed., McGraw-Hill 1992, §5.10 — the theory of
   small reflections, Γ = ½ ∫ (d ln Z/dz) e^{−2jθ} dz, here for a linear taper between
