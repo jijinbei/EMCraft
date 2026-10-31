@@ -58,6 +58,7 @@ pub mod raster;
 pub mod ribbon;
 pub mod scenario;
 pub mod scene3d;
+pub mod selection;
 pub mod settings;
 mod shots;
 pub mod state;

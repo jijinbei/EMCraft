@@ -322,6 +322,11 @@ fn scenario_navigation() {
     scenario("navigation");
 }
 
+#[test]
+fn scenario_box_select() {
+    scenario("box_select");
+}
+
 /// Every scenario file has a test above.
 #[test]
 fn every_scenario_file_runs() {

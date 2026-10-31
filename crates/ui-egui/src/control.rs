@@ -631,10 +631,18 @@ fn drag(app: &mut EmcraftApp, a: Args) -> Handled {
     let (from, to) = (point(a.0, "x0", "y0")?, point(a.0, "x1", "y1")?);
     let (button, m) = (button(a.0), mods(a.0));
     let steps = a.clamped("steps", 10.0, 1.0, 200.0) as usize;
-    let mut ev = vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE), egui::Event::PointerMoved(from)];
-    ev.push(egui::Event::PointerButton { pos: from, button, pressed: true, modifiers: m });
+    // `press: false` goes on with a drag whose button is still down, `release: false` leaves it
+    // down (a picture of the drag under way).
+    let (press, release) = (a.bool("press") != Some(false), a.bool("release") != Some(false));
+    let mut ev = Vec::new();
+    if press {
+        ev.extend([egui::Event::ModifiersChanged(egui::Modifiers::NONE), egui::Event::PointerMoved(from)]);
+        ev.push(egui::Event::PointerButton { pos: from, button, pressed: true, modifiers: m });
+    }
     ev.extend((1..=steps).map(|k| egui::Event::PointerMoved(from + (to - from) * (k as f32 / steps as f32))));
-    ev.push(egui::Event::PointerButton { pos: to, button, pressed: false, modifiers: m });
+    if release {
+        ev.push(egui::Event::PointerButton { pos: to, button, pressed: false, modifiers: m });
+    }
     push(app, ev)?;
     Ok(ok(Value::Null))
 }

@@ -149,12 +149,12 @@ pub fn mesh_slice(m: &emcraft_model::Model, axis: usize, at: f64, keep_low: bool
 
 /// Builds the scene of `session` for `overlay`.
 pub fn build(session: &Session, overlay: Overlay) -> Built {
-    build_with(session, overlay, &[], None)
+    build_with(session, overlay, &[], &[])
 }
 
 /// Builds the scene, with the field's planes for [`Overlay::Field`] and what is selected
 /// highlighted.
-pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], selected: Option<Pick>) -> Built {
+pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], selected: &[Pick]) -> Built {
     let m = session.model();
     let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
@@ -175,27 +175,28 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
             });
         }
     }
-    if let Some(tag) = selected.map(Pick::tag) {
-        for t in out.scene.tris.iter_mut().filter(|t| t.tag == tag) {
+    let tags: std::collections::BTreeSet<u32> = selected.iter().map(|p| p.tag()).collect();
+    if !tags.is_empty() {
+        for t in out.scene.tris.iter_mut().filter(|t| tags.contains(&t.tag)) {
             t.color = t.color.mix(style::sc().highlight, 0.5);
             t.alpha = t.alpha.max(170);
         }
-        highlight_outline(&mut out.scene, tag);
+        highlight_outline(&mut out.scene, &tags);
     }
     out
 }
 
-/// The outline of the triangles tagged `tag` (their edges that no other of them shares), so a
-/// highlighted face stands out from its neighbours whatever its shading.
-fn highlight_outline(scene: &mut Scene, tag: u32) {
+/// The outline of each part tagged in `tags` (the edges of its triangles that no other of them
+/// shares), so a highlighted face stands out from its neighbours whatever its shading.
+fn highlight_outline(scene: &mut Scene, tags: &std::collections::BTreeSet<u32>) {
     use std::collections::BTreeMap;
     type Key = [u64; 3];
     let key = |p: [f64; 3]| p.map(|v| (v * 1e9).round().to_bits());
-    let mut edges: BTreeMap<(Key, Key), ([f64; 3], [f64; 3], u32)> = BTreeMap::new();
-    for t in scene.tris.iter().filter(|t| t.tag == tag).take(200_000) {
+    let mut edges: BTreeMap<(u32, Key, Key), ([f64; 3], [f64; 3], u32)> = BTreeMap::new();
+    for t in scene.tris.iter().filter(|t| tags.contains(&t.tag)).take(200_000) {
         for (a, b) in [(t.p[0], t.p[1]), (t.p[1], t.p[2]), (t.p[2], t.p[0])] {
             let (ka, kb) = (key(a), key(b));
-            let k = if ka <= kb { (ka, kb) } else { (kb, ka) };
+            let k = if ka <= kb { (t.tag, ka, kb) } else { (t.tag, kb, ka) };
             edges.entry(k).or_insert((a, b, 0)).2 += 1;
         }
     }

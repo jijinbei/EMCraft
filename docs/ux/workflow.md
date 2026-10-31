@@ -137,11 +137,17 @@ and a view cube (or the six signed axes, Settings ▸ 3D view ▸ Navigator).
 | Ctrl+arrows | pan a tenth of the view |
 | Ctrl+1…7 | front, back, left, right, top, bottom, isometric |
 | View cube: face, corner / arrows / Home, Fit / drag | look from it / quarter turns / home, fit / orbit (Shift snaps) |
+| Click / Shift+click or Ctrl+click | select the part under the pointer (on nothing: clear) / add or take it out |
+| Left drag left to right / right to left (Shift: add) | box select by window (the parts wholly inside) / by crossing (the parts it touches), as SolidCraft |
+| Escape / Delete | clear the selection (a tool on: its picks, then the tool) / delete the selected items (each by its command, each undoable) |
 
 The other mappings (SolidWorks, Inventor, Alias, Maya, Blender, Tinkercad, OpenSCAD, HFSS,
 Touchpad) bind the buttons as SolidCraft's do. A plain left press on the field's plane or a
 port's reference-plane grip drags them, as SolidCraft's in-view handles take a plain press; a
-mapping's left-button navigation applies on empty space or with its keys held. View changes
+mapping's left-button navigation applies on empty space or with its keys held; a left drag no
+mapping binds draws the selection box. Several parts selected are highlighted in 3D and in the
+browser (Shift or Ctrl on a row adds or takes out its part), the card at the top says how many
+and deletes the items among them; Edit is for one. View changes
 (standard views, fit, home, face the plane, the cube) animate for 0.5 s, up to 1 s for turns past
 a quarter turn, eased, the short way round, stepped by the frame's clock (the scenarios' clock is
 their frames', and `Harness::settle` waits for the end).
