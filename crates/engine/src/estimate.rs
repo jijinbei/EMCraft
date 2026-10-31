@@ -223,19 +223,18 @@ fn time_domain(s: &Session, p: &Params) -> Result<Cost> {
 pub fn estimate(s: &mut Session, p: &Params) -> Result<Value> {
     let order = p.integer("order", 1..=2).optional()?;
     let empty = json!({});
-    let latest = s.runs.last().cloned();
     let (command, given, units) = match p.string("command").optional()? {
-        Some(c) => (c.to_owned(), p.raw("params").cloned().unwrap_or_else(|| empty.clone()), s.display),
-        None => match &latest {
-            Some(run) => (run.command.clone(), run.params.clone(), run.units),
-            None => ("solve.frequency".to_owned(), empty.clone(), s.display),
+        Some(c) => (c, p.raw("params").unwrap_or(&empty), s.display),
+        None => match s.runs.last() {
+            Some(run) => (run.command.as_str(), &run.params, run.units),
+            None => ("solve.frequency", &empty, s.display),
         },
     };
     if !given.is_object() {
         return Err(p.error("params", "must be an object"));
     }
-    let inner = Params::new(&given, units).with_variables(&s.variables);
-    let c = cost(s, &command, &inner, order, 0)?;
+    let inner = Params::new(given, units).with_variables(&s.variables);
+    let c = cost(s, command, &inner, order, 0)?;
     let mut reply = json!({
         "command": command,
         "seconds": c.seconds,

@@ -208,6 +208,11 @@ impl Probe {
     pub fn point(&self) -> Point3 {
         Point3::new(self.at[0], self.at[1], self.at[2])
     }
+
+    /// The probe as replies give it: its name and point in `unit`.
+    fn shown(&self, unit: emcraft_model::units::Length) -> Value {
+        json!({"name": self.name, "at": self.at.map(|v| unit.from_si(v))})
+    }
 }
 
 /// How the project's results are looked at: the charts' styles by chart id, the probes.
@@ -561,8 +566,7 @@ fn probe_point(s: &Session, p: &Params) -> Result<[f64; 3]> {
 
 /// The probes as a reply lists them: name and point in display units.
 fn probes_reply(s: &Session) -> Value {
-    let l = s.display.length;
-    json!({"probes": s.views.probes.iter().map(|q| json!({"name": q.name, "at": q.at.map(|v| l.from_si(v))})).collect::<Vec<_>>()})
+    json!({"probes": s.views.probes.iter().map(|q| q.shown(s.display.length)).collect::<Vec<_>>()})
 }
 
 /// The index of the probe `name` names.
@@ -631,7 +635,6 @@ pub fn probes(s: &mut Session, p: &Params) -> Result<Value> {
     view.excitation = crate::args::excitation(s, p)?;
     let points: Vec<Point3> = s.views.probes.iter().map(Probe::point).collect();
     let (f, values) = crate::view::fields_at(s, &view, &points)?;
-    let l = s.display.length;
     let parts = |v: &emcraft_model::CVec3| v.iter().map(|c| json!([c.re, c.im])).collect::<Vec<_>>();
     let rows: Vec<Value> = s
         .views
@@ -639,14 +642,13 @@ pub fn probes(s: &mut Session, p: &Params) -> Result<Value> {
         .iter()
         .zip(&values)
         .map(|(q, v)| {
-            let mut row = json!({"name": q.name, "at": q.at.map(|x| l.from_si(x))});
+            let mut row = q.shown(s.display.length);
             match v {
                 Some((e, h)) => {
                     row["e"] = json!(parts(e));
                     row["h"] = json!(parts(h));
-                    let norm = |v: &emcraft_model::CVec3| v.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
-                    row["e_magnitude"] = json!(norm(e));
-                    row["h_magnitude"] = json!(norm(h));
+                    row["e_magnitude"] = json!(e.norm_sqr().sqrt());
+                    row["h_magnitude"] = json!(h.norm_sqr().sqrt());
                 }
                 None => row["outside"] = json!(true),
             }

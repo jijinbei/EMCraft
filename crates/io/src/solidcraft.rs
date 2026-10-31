@@ -96,7 +96,7 @@ fn vector(d: sx::Direction) -> Vec3 {
 
 fn body(b: &sx::Body) -> Result<Body> {
     let positions: Vec<Point3> = b.positions.iter().map(|p| point(*p)).collect();
-    if positions.iter().any(|p| [p.x, p.y, p.z].iter().any(|c| !c.is_finite() || c.abs() > MAX_COORD)) {
+    if positions.iter().flat_map(|p| p.to_array()).any(|c| !c.is_finite() || c.abs() > MAX_COORD) {
         return Err(Error::Invalid(format!("body `{}`: a coordinate is out of range", b.name)));
     }
     let mut surface = Surface { name: b.name.to_string(), positions, ..Surface::default() };
