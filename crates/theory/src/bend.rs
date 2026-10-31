@@ -69,18 +69,25 @@ fn gamma(m: usize, w: f64, k2: f64) -> C {
     if g.re < 0.0 { -g } else { g }
 }
 
-/// The square-cornered right-angle bend of a guide of broad dimension `a` and narrow `b` (m),
-/// empty, at `frequency` (Hz), with `modes` modes per guide: (S11, S21) of the dominant mode at
-/// the square's open sides.
-pub fn right_angle(corner: Corner, a: f64, b: f64, frequency: f64, modes: usize) -> Result<(C, C), TheoryError> {
+/// The square's modes for a corner or a junction (here and in [`crate::tee`]): the inputs
+/// checked (at most `max` modes), then the width w of the square, the modes' indices (from 1 for
+/// the H-plane, 0 for the E-plane) and their Γ, the dominant one propagating.
+pub(crate) fn square_modes(
+    corner: Corner,
+    a: f64,
+    b: f64,
+    frequency: f64,
+    modes: usize,
+    max: usize,
+) -> Result<(f64, Vec<usize>, Vec<C>), TheoryError> {
     if !(a.is_finite() && b.is_finite() && a > 0.0 && b > 0.0) {
         return Err(TheoryError::Invalid("guide dimensions".into()));
     }
     if !(frequency.is_finite() && frequency > 0.0) {
         return Err(TheoryError::Invalid("frequency".into()));
     }
-    if modes == 0 || modes > MAX_MODES {
-        return Err(TheoryError::Invalid(format!("mode count {modes} (1 to {MAX_MODES})")));
+    if modes == 0 || modes > max {
+        return Err(TheoryError::Invalid(format!("mode count {modes} (1 to {max})")));
     }
     let k = 2.0 * PI * frequency / C0;
     // The width of the square and the 2D wavenumber, and the first mode's index.
@@ -93,6 +100,14 @@ pub fn right_angle(corner: Corner, a: f64, b: f64, frequency: f64, modes: usize)
     if !(g[0].im > 0.0 && g[0].re.abs() < 1e-12 * g[0].im) {
         return Err(TheoryError::Invalid("frequency: the dominant mode does not propagate".into()));
     }
+    Ok((w, index, g))
+}
+
+/// The square-cornered right-angle bend of a guide of broad dimension `a` and narrow `b` (m),
+/// empty, at `frequency` (Hz), with `modes` modes per guide: (S11, S21) of the dominant mode at
+/// the square's open sides.
+pub fn right_angle(corner: Corner, a: f64, b: f64, frequency: f64, modes: usize) -> Result<(C, C), TheoryError> {
+    let (w, index, g) = square_modes(corner, a, b, frequency, modes, MAX_MODES)?;
     let alpha = |m: usize| m as f64 * PI / w;
     let sign = |m: usize| if m.is_multiple_of(2) { 1.0 } else { -1.0 };
     // e^{−2Γw}, |·| ≤ 1: the hyperbolic functions of Γw without overflow.

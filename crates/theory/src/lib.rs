@@ -49,6 +49,7 @@ pub mod radiation;
 pub mod slab;
 pub mod stripline;
 pub mod taper;
+pub mod tee;
 
 pub use modematch::{EPlaneLine, ESection, HPlaneLine, HSection};
 
