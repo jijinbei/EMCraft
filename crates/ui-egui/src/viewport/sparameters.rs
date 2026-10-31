@@ -10,6 +10,8 @@ impl ChartView for SParameters {
     const HANDLE: Fixed = Fixed::ChartSParameters;
     const CHART: emcraft_engine::views::ChartId = emcraft_engine::views::ChartId::SParameters;
     const HEIGHT: Height = OVER_TABLE;
+    /// The band to refine, under the chart.
+    const BELOW: f32 = 40.0;
 
     /// How S is shown — in dB, as a magnitude or a phase — as one small menu.
     fn controls(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &mut Actions) -> Option<SharedChart> {
@@ -90,7 +92,8 @@ impl Part {
             Part::Table => {
                 let rows = sweep.map_or(0, |s| s.results.len()) as f32;
                 let entries = sweep.map_or(2, |s| s.entries().len().clamp(2, TABLE_ENTRIES)) as f32;
-                vec2(80.0 + 170.0 * entries, 26.0 + 22.0 * rows)
+                let marks = if sweep.is_some_and(|s| marked(s)) { MARK } else { 0.0 };
+                vec2(marks + 80.0 + 170.0 * entries, 26.0 + 22.0 * rows)
             }
             Part::Planes => vec2(80.0 + 110.0 * app.session.model().ports.len() as f32, 46.0),
         }
@@ -273,19 +276,52 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
             ui.label(text);
         });
     };
-    egui::Grid::new("s_grid").striped(true).num_columns(headers.len()).spacing(vec2(0.0, 2.0)).show(ui, |ui| {
+    // A fast sweep's rows solved in full, marked as the chart marks them.
+    let marks = marked(sw);
+    let columns = headers.len() + usize::from(marks);
+    egui::Grid::new("s_grid").striped(true).num_columns(columns).spacing(vec2(0.0, 2.0)).show(ui, |ui| {
         super::dim_if_stale(ui);
+        if marks {
+            let r = full_mark(ui, true);
+            scenario::publish_target(Fixed::SFullMark, r.rect);
+        }
         for (h, w) in headers.iter().zip(&widths) {
             cell(ui, *w, egui::RichText::new(h).font(font.clone()).strong());
         }
         ui.end_row();
-        for row in &rows {
+        for (row, r) in rows.iter().zip(&sw.results) {
+            if marks {
+                full_mark(ui, r.full);
+            }
             for (c, w) in row.iter().zip(&widths) {
                 cell(ui, *w, egui::RichText::new(c).font(font.clone()));
             }
             ui.end_row();
         }
     });
+}
+
+/// The width of the table's column of marks (points).
+const MARK: f32 = 14.0;
+
+/// Whether the table marks its rows solved in full: a fast sweep's, some solved in its basis.
+fn marked(sw: &emcraft_engine::Sweep) -> bool {
+    sw.results.iter().any(|r| !r.full)
+}
+
+/// A cell of the column of marks: a small diamond, as on the chart, where `full`, its tip saying
+/// what it means.
+fn full_mark(ui: &mut egui::Ui, full: bool) -> egui::Response {
+    let t = &Tokens::get();
+    let (rect, r) = ui.allocate_exact_size(vec2(MARK, 18.0), Sense::hover());
+    if !full {
+        return r;
+    }
+    let c = rect.center();
+    let d = 3.5;
+    let corners = vec![c + vec2(0.0, -d), c + vec2(d, 0.0), c + vec2(0.0, d), c + vec2(-d, 0.0)];
+    ui.painter().add(egui::Shape::convex_polygon(corners, t.text, Stroke::NONE));
+    r.hint("Solved in full; the rest by the fast sweep")
 }
 
 /// The decimals that tell a sweep's frequencies (display units) apart: enough for their

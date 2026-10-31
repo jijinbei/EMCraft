@@ -222,6 +222,9 @@ pub struct ViewState {
     pub mode_picture: Cached<PictureKey<ModePicture>>,
     /// The eigenmode table and the session revision it was read at.
     pub eigen_table: Option<EigenTable>,
+    /// How the chart view last drawn packed its blocks: how many beside the chart, how many
+    /// under it (`None`: a chart without blocks).
+    pub packed: Option<[usize; 2]>,
 }
 
 /// The replies of the commands whose results the views show as they came: the last port-mode

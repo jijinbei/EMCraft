@@ -149,6 +149,8 @@ emcraft_macros::named_enum! {
         RefinePoints = "refine:points",
         RefineStart = "refine:start",
         RefineClear = "refine:clear",
+        // The S-parameter table's mark of a fast sweep's frequencies solved in full (its header).
+        SFullMark = "sparameters:full",
         // The field view's probes.
         ProbeAdd = "probe:add",
         // The field view.
@@ -228,6 +230,8 @@ pub enum Handle<'a> {
     SearchRow(&'a str),
     /// A kept solve's chip over the S-parameter chart: `history:run:3`.
     HistoryRun(u32),
+    /// A block packed round a chart (its history, its table): `chart:block:0`, in the view's order.
+    ChartBlock(usize),
     /// A purpose on the start page: `home:purpose:eigenmodes`.
     Purpose(crate::steps::Solver),
     /// A parameter's field on a template's card: `template:field:irises`.
@@ -344,6 +348,7 @@ impl fmt::Display for Handle<'_> {
             Handle::TemplateField(name) => write!(f, "template:field:{name}"),
             Handle::Purpose(k) => write!(f, "home:purpose:{}", k.id()),
             Handle::HistoryRun(id) => write!(f, "history:run:{id}"),
+            Handle::ChartBlock(k) => write!(f, "chart:block:{k}"),
             Handle::Panel(t, name) => write!(f, "panel:{}:{name}", t.id()),
             Handle::View(v) => write!(f, "view:{}", v.id()),
             Handle::Row(text) => write!(f, "row:{text}"),
@@ -426,7 +431,8 @@ mod tests {
 
     #[test]
     fn handles_read_as_the_protocol_names_them() {
-        let cases: [(Handle, &str); 13] = [
+        let cases: [(Handle, &str); 14] = [
+            (Handle::ChartBlock(1), "chart:block:1"),
             (Handle::Tab(RibbonTab::PortsSources), "tab:PORTS & SOURCES"),
             (Handle::Toolbar("mesh.generate"), "toolbar:mesh.generate"),
             (Handle::View(View::PortModes), "view:port_modes"),

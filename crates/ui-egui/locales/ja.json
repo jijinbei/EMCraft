@@ -66,6 +66,8 @@
     "Click two points: a lumped port between them": "2 点をクリック：その間に集中ポート",
     "Click: draw it over the chart · right-click: restore, pin, delete": "クリック：グラフに重ねる・右クリック：復元、ピン留め、削除",
     "Click: the fields there · drag: a band to solve more finely": "クリック：その周波数の電磁界 · ドラッグ：細かく解く帯域",
+    "Solved in full; the rest by the fast sweep": "完全に解いた点（他は高速掃引）",
+    "Time is the round trip from the port's reference plane; resolution about 1/(2 f_max) (low pass) or 1/bandwidth (band pass).": "時間はポートの基準面からの往復時間。分解能は約 1/(2 f_max)（ローパス）または 1/帯域幅（バンドパス）。",
     "Close": "閉じる",
     "Closed form": "厳密解",
     "Compare": "比較",

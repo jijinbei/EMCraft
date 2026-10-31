@@ -188,6 +188,9 @@ pub(super) trait ChartView {
     const CHART: emcraft_engine::views::ChartId;
     /// Its height in the card.
     const HEIGHT: Height;
+    /// The room kept under the chart for [`ChartView::below`] when its blocks are packed round
+    /// it (points).
+    const BELOW: f32 = 0.0;
 
     /// What goes over the chart (the view's settings, edited in `st`); what it shows, or `None`
     /// when there is nothing to chart.
@@ -248,6 +251,7 @@ pub(super) const OVER_TABLE: Height = Height::new(0.62, 260.0, 700.0);
 pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let wants = V::blocks(app, st);
     if wants.is_empty() {
+        st.views.packed = None;
         return chart_column::<V>(app, st, ui, out);
     }
     let Some(key) = V::controls(app, st, ui, out) else { return };
@@ -255,15 +259,16 @@ pub(super) fn show_chart<V: ChartView>(app: &EmcraftApp, st: &mut Parts, ui: &mu
     // the last few points); what does not fit scrolls.
     let area = vec2(ui.available_width() - 16.0, ui.available_height());
     let a = crate::pack::arrange(area, LEAST_CHART, &wants);
+    st.views.packed = Some(a.counts());
     let (whole, _) = ui.allocate_exact_size(vec2(area.x, a.height), Sense::hover());
     let at = |r: Rect| r.translate(whole.min.to_vec2());
     let mut main = ui.new_child(egui::UiBuilder::new().max_rect(at(a.main)));
     // Under the chart, in its rectangle, the view's own overlays (they need the chart's response).
-    let under = 40.0;
-    let size = [a.main.width(), (a.main.height() - under).max(LEAST_CHART.y)];
+    let size = [a.main.width(), (a.main.height() - V::BELOW).max(LEAST_CHART.y)];
     draw_chart::<V>(app, st, &mut main, key, Some(size), out);
     for (k, r) in a.blocks.iter().enumerate() {
         let mut b = ui.new_child(egui::UiBuilder::new().max_rect(at(*r)));
+        scenario::publish_target(Handle::ChartBlock(k), at(*r));
         V::block(app, st, &mut b, k, out);
     }
 }
@@ -379,4 +384,40 @@ pub(super) const NARROW: f32 = 640.0;
 /// A width for pictures, rounded so resizing does not redraw on every pixel.
 pub(super) fn picture_width(ui: &egui::Ui) -> usize {
     (((ui.available_width().max(MIN_PICTURE_WIDTH)) / 50.0).floor() * 50.0).min(2400.0) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_chart_view_packs_its_blocks_alike() {
+        // Each view's blocks as it sizes them: in a wide card a tall table beside the chart, a
+        // short one or the TDR's note under it (less left empty); in a small one all under it;
+        // the same sizes the same rectangles, at every size.
+        let views = [
+            ("tdr", vec![tdr::NOTE], [0, 1]),
+            ("dispersion", vec![dispersion::table_size(3, 19)], [1, 0]),
+            ("study", vec![study::points_size(1, 9, false)], [0, 1]),
+            ("study grid", vec![study::points_size(3, 27, true)], [1, 0]),
+        ];
+        for (name, wants, wide) in &views {
+            assert_eq!(crate::pack::arrange(vec2(1500.0, 800.0), LEAST_CHART, wants).counts(), *wide, "{name}");
+            assert_eq!(crate::pack::arrange(vec2(560.0, 480.0), LEAST_CHART, wants).counts(), [0, 1], "{name}");
+            for w in (400..=2400).step_by(100) {
+                for h in (300..=1400).step_by(100) {
+                    let area = vec2(w as f32, h as f32);
+                    let a = crate::pack::arrange(area, LEAST_CHART, wants);
+                    assert_eq!(a, crate::pack::arrange(area, LEAST_CHART, wants), "{name}");
+                    assert!(a.main.width() >= LEAST_CHART.x && a.main.height() >= LEAST_CHART.y, "{name} {area:?}");
+                    assert!(a.blocks.iter().all(|b| b.right() <= area.x + 1e-3 && !b.intersects(a.main.shrink(0.5))), "{name} {area:?}");
+                }
+            }
+        }
+        // Bigger tables want more room.
+        assert!(
+            dispersion::table_size(4, 10).x > dispersion::table_size(2, 10).x && dispersion::table_size(2, 20).y > dispersion::table_size(2, 10).y
+        );
+        assert!(study::points_size(1, 10, true).x > study::points_size(1, 10, false).x);
+    }
 }

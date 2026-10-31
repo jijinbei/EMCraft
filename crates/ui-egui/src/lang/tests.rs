@@ -113,7 +113,7 @@ const MODELS: &[Model] = &[
             {"command": "mesh.generate", "params": {"size": 8}},
             {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
             {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
-            {"command": "solve.frequency", "params": {"start": 7, "stop": 9, "points": 3, "order": 1}}]"#,
+            {"command": "solve.frequency", "params": {"start": 7, "stop": 9, "points": 9, "order": 1}}]"#,
         r#"[{"command": "solve.port_modes", "params": {"frequency": 9, "order": 1}},
             {"command": "view.probe.add", "params": {"at": [5, 5, 10]}},
             {"command": "results.compare", "params": {}},

@@ -192,6 +192,8 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     let estimate = |e: Option<&Result<Value, String>>| {
         e.and_then(|e| e.as_ref().ok()).map(|e| json!({"seconds": e["seconds"], "basis": e["basis"], "command": e["command"]}))
     };
+    // How the chart view last drawn packed its blocks.
+    v["packed"] = json!(app.views.packed.map(|[beside, under]| json!({"beside": beside, "under": under})));
     let s = &app.session;
     // A study's surrogate: whether it had one, and the rows it predicted.
     if let Some(study) = s.results().study.as_ref() {

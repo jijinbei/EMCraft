@@ -20,9 +20,21 @@ impl ChartView for Dispersion {
         emcraft_engine::periodic::dispersion_chart(&app.session).map_err(|e| e.to_string())
     }
 
-    fn below(app: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
+    /// The bands' table, packed beside or under the chart.
+    fn blocks(app: &EmcraftApp, _: &Parts) -> Vec<egui::Vec2> {
+        let Some(d) = app.session.results().dispersion.as_ref() else { return Vec::new() };
+        vec![table_size(d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0), d.points.len())]
+    }
+
+    fn block(app: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, _: usize, _: &mut Actions) {
         table(app, ui);
     }
+}
+
+/// The size the table of `bands` bands at `points` phases wants (points): from what it shows,
+/// not measured — a caption, a header and a row per phase; the phase, β and a column per band.
+pub(super) fn table_size(bands: usize, points: usize) -> egui::Vec2 {
+    vec2(150.0 + 120.0 * bands.min(12) as f32, 56.0 + 24.0 * points as f32)
 }
 
 /// The bands' frequencies at each phase.
@@ -32,7 +44,7 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let bands = d.points.iter().map(|p| p.frequencies.len()).max().unwrap_or(0);
     let period = format!("{:.4} {}", lu.from_si(d.period), lu.symbol());
     crate::ui_kit::caption(ui, trf("{n} unknowns after the periodic reduction; period {period}", args!(n = d.unknowns, period = period)));
-    egui::ScrollArea::vertical().id_salt("dispersion_table").show(ui, |ui| {
+    egui::ScrollArea::both().id_salt("dispersion_table").show(ui, |ui| {
         egui::Grid::new("dispersion_grid").striped(true).num_columns(2 + bands).show(ui, |ui| {
             super::dim_if_stale(ui);
             ui.label(egui::RichText::new("ψ (°)").strong());

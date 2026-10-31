@@ -101,15 +101,21 @@ impl ChartView for StudyView {
         emcraft_engine::view::chart_with_units(study, parameter.as_deref(), slice, &units).map_err(|e| e.to_string())
     }
 
-    fn below(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: &egui::Response, _: egui::Vec2, _: &mut Actions) {
+    /// The table of its points, packed beside or under the chart.
+    fn blocks(app: &EmcraftApp, _: &Parts) -> Vec<egui::Vec2> {
+        let Some(study) = app.session.results().study.as_ref() else { return Vec::new() };
+        let modes = study.rows.iter().any(|r| !r.modes.is_empty());
+        vec![points_size(study.variables.len(), study.rows.len().min(MAX_ROWS), modes)]
+    }
+
+    fn block(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: usize, _: &mut Actions) {
         study_table(app, st, ui);
     }
 
-    /// Why, in a line over the table.
-    fn failed(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, error: &str) {
+    /// Why, in a line where the chart goes (the table stays in its block).
+    fn failed(_: &EmcraftApp, _: &mut Parts, ui: &mut egui::Ui, error: &str) {
         let t = &Tokens::get();
         ui.label(egui::RichText::new(error).size(t.font_body).color(t.text_dim));
-        study_table(app, st, ui);
     }
 }
 
@@ -161,6 +167,17 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
     }
 }
 
+/// The most rows the table shows.
+const MAX_ROWS: usize = 500;
+
+/// The size the table of `variables` variables and `rows` points wants (points): from what it
+/// shows, not measured — a header and a row per point; the number, a column per variable, the
+/// goal or the band's extremes, the modes where any were found, and the row's note.
+pub(super) fn points_size(variables: usize, rows: usize, modes: bool) -> egui::Vec2 {
+    let modes = if modes { 220.0 } else { 0.0 };
+    vec2(40.0 + 90.0 * variables.min(8) as f32 + 200.0 + modes + 150.0, 30.0 + 24.0 * rows as f32)
+}
+
 /// The most values offered as pills for one held variable.
 const MAX_PILLS: usize = 101;
 
@@ -169,7 +186,7 @@ const MAX_PILLS: usize = 101;
 fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>, units: &[Option<String>]) {
     let t = &Tokens::get();
     let optimize = study.kind == Kind::Optimize;
-    egui::ScrollArea::vertical().id_salt("study_table").show(ui, |ui| {
+    egui::ScrollArea::both().id_salt("study_table").show(ui, |ui| {
         egui::Grid::new("study_grid").striped(true).show(ui, |ui| {
             super::dim_if_stale(ui);
             if optimize {
@@ -195,7 +212,7 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>, units: &[Opt
             }
             ui.label(egui::RichText::new("").strong());
             ui.end_row();
-            for (i, r) in study.rows.iter().enumerate().take(500) {
+            for (i, r) in study.rows.iter().enumerate().take(MAX_ROWS) {
                 let best = study.best == Some(i);
                 if optimize {
                     ui.label(format!("{}", i + 1));
