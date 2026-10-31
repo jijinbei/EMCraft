@@ -136,10 +136,11 @@ mod tests {
     }
 
     #[test]
-    fn balanis_example_13_4() {
-        // Balanis, Example 13.4 (3rd ed.): a1 = 5.5λ, b1 = 2.75λ, ρ1 = ρ2 = 6λ (a = 0.5λ,
-        // b = 0.25λ): D_p ≈ 75 (18.76 dB, from tabulated Fresnel integrals). Built from
-        // ρ1 = ρ2 = 6λ directly.
+    fn balanis_example_13_5() {
+        // Balanis, Example 13.5 (3rd ed., p. 779): a1 = 5.5λ, b1 = 2.75λ, ρ1 = ρ2 = 6λ (a = 0.5λ,
+        // b = 0.25λ): D_p = 18.78 dB from the E- and H-plane directivities (D_E = 12.79,
+        // D_H = 7.52, read from the book's curves), 18.93 dB by its loss approximations. Built
+        // from ρ1 = ρ2 = 6λ directly, within 0.1 dB of the first.
         let lambda: f64 = 1.0;
         let (a1, b1, rho) = (5.5 * lambda, 2.75 * lambda, 6.0 * lambda);
         let (cq, sq) = fresnel(b1 / (2.0 * lambda * rho).sqrt()).unwrap();
@@ -147,6 +148,6 @@ mod tests {
         let (cu, su) = fresnel(std::f64::consts::FRAC_1_SQRT_2 * (r / a1 + a1 / r)).unwrap();
         let (cv, sv) = fresnel(std::f64::consts::FRAC_1_SQRT_2 * (r / a1 - a1 / r)).unwrap();
         let d = 8.0 * std::f64::consts::PI * rho * rho / (a1 * b1) * (cq * cq + sq * sq) * ((cu - cv).powi(2) + (su - sv).powi(2));
-        assert!((10.0 * d.log10() - 18.76).abs() < 0.1, "{} dB", 10.0 * d.log10());
+        assert!((10.0 * d.log10() - 18.78).abs() < 0.1, "{} dB", 10.0 * d.log10());
     }
 }
