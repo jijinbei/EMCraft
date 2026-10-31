@@ -7,9 +7,10 @@
 //! Hughes, *Computer Graphics: Principles and Practice*, ch. 3 and 15; Pineda, "A parallel
 //! algorithm for polygon rasterization", SIGGRAPH 1988, for the edge functions): vertices to
 //! camera space, the projection, edge-function coverage at pixel centres, a depth buffer of
-//! inverse depth (linear in screen space under perspective). Opaque triangles first, then lines
-//! (nudged towards the eye so edges on a face show), then translucent triangles sorted back to
-//! front and blended without writing depth.
+//! inverse depth (linear in screen space under perspective). Opaque triangles first, then
+//! translucent triangles and lines together sorted back to front (lines nudged towards the eye so
+//! edges on a face show), blended without writing depth — the order the GPU path's `flatten`
+//! draws them in, so a still picture and a dragged one show the same edges.
 //!
 //! Deterministic: one thread, a fixed order, the same input gives the same bytes.
 //!
@@ -587,6 +588,13 @@ pub fn flatten(scene: &Scene, camera: &Camera, w: f64, h: f64) -> Vec<Flat> {
     out.into_iter().map(|(_, _, f)| f).collect()
 }
 
+/// A translucent triangle or a line, by its index, in the back-to-front pass.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Layer {
+    Tri(usize),
+    Line(usize),
+}
+
 pub fn render(scene: &Scene, camera: &Camera, opt: &Options) -> Canvas {
     let (w, h) = (opt.width.clamp(1, MAX_SIDE), opt.height.clamp(1, MAX_SIDE));
     let ss = opt.supersample.clamp(1, 3);
@@ -616,29 +624,34 @@ pub fn render(scene: &Scene, camera: &Camera, opt: &Options) -> Canvas {
             raster_tri(&mut t, s, c, 1.0, true);
         }
     }
-    // Lines, a little towards the eye so edges lying on faces win the depth test.
+    // Translucent triangles and lines together, farthest first (ties by their order in the
+    // scene, triangles before lines), as `flatten` orders them: a line in front of a
+    // see-through face is drawn over it, not washed out by it. Lines a little towards the eye
+    // so edges lying on faces win the depth test against opaque ones.
     let nudge = cam.distance * 4e-3;
     let lw = opt.line_width.clamp(0.5, 8.0) * ss as f64;
-    for l in lines.iter().filter(|l| l.alpha > 0) {
-        if let (Some(a), Some(z)) = (pr.project(l.a, nudge), pr.project(l.b, nudge)) {
-            raster_line(&mut t, a, z, lw, rgbf(l.color), f32::from(l.alpha) / 255.0);
-        }
-    }
-    // Translucent triangles, farthest first (ties by their order in the scene).
-    let mut glass: Vec<(f64, usize)> = tris
-        .iter()
-        .enumerate()
-        .filter(|(_, t)| t.alpha > 0 && t.alpha < 255)
-        .map(|(i, t)| {
-            let c = [(t.p[0][0] + t.p[1][0] + t.p[2][0]) / 3.0, (t.p[0][1] + t.p[1][1] + t.p[2][1]) / 3.0, (t.p[0][2] + t.p[1][2] + t.p[2][2]) / 3.0];
-            (dot(sub(c, b.eye), b.forward), i)
-        })
-        .collect();
-    glass.sort_by(|a, z| z.0.total_cmp(&a.0).then(a.1.cmp(&z.1)));
-    for (_, i) in glass {
-        let Some(tri) = tris.get(i) else { continue };
-        if let (Some(s), Some(c)) = (screen(tri), shade(tri, light)) {
-            raster_tri(&mut t, s, c, f32::from(tri.alpha) / 255.0, false);
+    let along = |p: [f64; 3]| dot(sub(p, b.eye), b.forward);
+    let glass = tris.iter().enumerate().filter(|(_, t)| t.alpha > 0 && t.alpha < 255).map(|(i, t)| {
+        let c = [(t.p[0][0] + t.p[1][0] + t.p[2][0]) / 3.0, (t.p[0][1] + t.p[1][1] + t.p[2][1]) / 3.0, (t.p[0][2] + t.p[1][2] + t.p[2][2]) / 3.0];
+        (along(c), Layer::Tri(i))
+    });
+    let edges = lines.iter().enumerate().filter(|(_, l)| l.alpha > 0).map(|(i, l)| (0.5 * (along(l.a) + along(l.b)) - nudge, Layer::Line(i)));
+    let mut layers: Vec<(f64, Layer)> = glass.chain(edges).collect();
+    layers.sort_by(|a, z| z.0.total_cmp(&a.0).then(a.1.cmp(&z.1)));
+    for (_, layer) in layers {
+        match layer {
+            Layer::Tri(i) => {
+                let Some(tri) = tris.get(i) else { continue };
+                if let (Some(s), Some(c)) = (screen(tri), shade(tri, light)) {
+                    raster_tri(&mut t, s, c, f32::from(tri.alpha) / 255.0, false);
+                }
+            }
+            Layer::Line(i) => {
+                let Some(l) = lines.get(i) else { continue };
+                if let (Some(a), Some(z)) = (pr.project(l.a, nudge), pr.project(l.b, nudge)) {
+                    raster_line(&mut t, a, z, lw, rgbf(l.color), f32::from(l.alpha) / 255.0);
+                }
+            }
         }
     }
     // Down to the output size, a box filter over each pixel's samples.
@@ -774,6 +787,21 @@ mod tests {
             let px = pa.pixel(32, 24).unwrap();
             assert!(px.0 > 100 && px.2 == 0, "{px:?}");
         }
+    }
+
+    #[test]
+    fn an_edge_on_a_see_through_face_is_drawn_over_it() {
+        // A light, see-through square with a black edge across it, and one behind it: the edge
+        // on the face shows black (the face is not blended over it), the one behind is dimmed.
+        let mut s = Scene::default();
+        s.quad([[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], Rgb(230, 230, 230), 110);
+        s.line([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], Rgb(0, 0, 0), 255);
+        s.line([0.0, -1.0, -2.0], [0.0, 1.0, -2.0], Rgb(0, 0, 0), 255);
+        let opt = Options { width: 81, height: 61, background: (Rgb(40, 40, 60), Rgb(40, 40, 60)), ..Default::default() };
+        let c = render(&s, &front(Projection::Orthographic), &opt);
+        let (on, behind) = (c.pixel(34, 30).unwrap(), c.pixel(40, 25).unwrap());
+        assert!(on.0 < 10, "the edge on the face: {on:?}");
+        assert!(behind.0 > 60, "the edge behind it, through the face: {behind:?}");
     }
 
     #[test]

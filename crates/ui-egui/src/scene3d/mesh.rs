@@ -64,6 +64,7 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
 fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &PeriodicPlanes) -> super::shell::Inside {
     let mut out = super::shell::Inside::default();
     let on_port = super::shell::on_ports(m);
+    let interior = super::shell::interior(m);
     for (i, f) in mesh.boundary.iter().enumerate() {
         if surface.kind(i) != Kind::Wall {
             continue;
@@ -79,7 +80,7 @@ fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &P
         let p = if inward { [p3(*a), p3(*c), p3(*b)] } else { [p3(*a), p3(*b), p3(*c)] };
         let centre = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
         let open = matches!(f.tag, Boundary::Symmetry(_)) || periodic.holds(mesh, &f.nodes) || on_port(centre);
-        out.tri(p, super::shell::Side::open_if(open));
+        out.wall_or_inner(p, super::shell::Side::open_if(open), &interior);
     }
     out
 }

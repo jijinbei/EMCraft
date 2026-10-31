@@ -191,13 +191,16 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
 fn inside(m: &Model) -> Option<Inside> {
     let mut out = Inside::default();
     let on_port = super::shell::on_ports(m);
+    let interior = super::shell::interior(m);
     if let Some(w) = &m.waveguide {
         if !w.plain() {
             return None;
         }
         guide_inside(w, |q| {
             let c = [0, 1, 2].map(|k| q.iter().map(|p| p[k]).sum::<f64>() / 4.0);
-            out.quad(q, Side::open_if(on_port(c)));
+            let side = Side::open_if(on_port(c));
+            out.wall_or_inner([q[0], q[1], q[2]], side, &interior);
+            out.wall_or_inner([q[0], q[2], q[3]], side, &interior);
         });
         return Some(out);
     }
@@ -209,7 +212,7 @@ fn inside(m: &Model) -> Option<Inside> {
     shape(&mut scene, &solid.shape, &|q| q, sc().metal, 255);
     for t in &scene.tris {
         let c = [0, 1, 2].map(|k| (t.p[0][k] + t.p[1][k] + t.p[2][k]) / 3.0);
-        out.tri(t.p, Side::open_if(on_port(c)));
+        out.wall_or_inner(t.p, Side::open_if(on_port(c)), &interior);
     }
     Some(out)
 }

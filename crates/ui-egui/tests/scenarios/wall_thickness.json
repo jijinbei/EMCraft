@@ -26,5 +26,11 @@
   {"shot": "walls-thick-tee"},
   {"call": "engine.execute", "params": {"command": "model.walls", "params": {}}},
   {"frames": 2},
-  {"expect": {"hidden": ["row:Wall thickness: 1.27 mm"]}}
+  {"expect": {"hidden": ["row:Wall thickness: 1.27 mm"]}},
+  {"note": "Edges show through the see-through walls, still or dragged: the iris filter in the dark theme"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "iris-bandpass"}}},
+  {"call": "ui.set", "params": {"theme": "dark"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"shot": "walls-thick-iris-dark"}
 ]
