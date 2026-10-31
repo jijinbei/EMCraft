@@ -77,7 +77,28 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");
+            if control.is_none() {
+                show_start_error(&e.to_string());
+            }
             ExitCode::FAILURE
         }
     }
 }
+
+/// The window could not open (typically no OpenGL 2 driver: a virtual machine, a remote
+/// desktop). A window program on Windows has no console for the error, so it is shown in a
+/// message box; elsewhere the terminal shows it. Not with `--control`: an agent reads stderr.
+#[cfg(all(windows, not(debug_assertions)))]
+fn show_start_error(error: &str) {
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("EMCraft")
+        .set_description(format!(
+            "EMCraft could not open its window.\n\n{error}\n\nEMCraft draws with OpenGL 2 or later: install or update the graphics driver."
+        ))
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
+}
+
+#[cfg(not(all(windows, not(debug_assertions))))]
+fn show_start_error(_error: &str) {}
