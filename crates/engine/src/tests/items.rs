@@ -190,12 +190,12 @@ fn values_reproduce_the_model() {
     };
     // A waveguide with everything a guide may have set.
     let mut s = super::small();
-    s.execute("model.walls", &json!({"conductivity": 5.8e7})).unwrap();
+    s.execute("model.walls", &json!({"conductivity": 5.8e7, "thickness": 1.27})).unwrap();
     s.execute("project.frequency", &json!({"start": 6.5, "stop": 9})).unwrap();
     s.execute("model.symmetry", &json!({"axis": "y", "kind": "electric"})).unwrap();
     s.execute("mesh.generate", &json!({"size": 5})).unwrap();
     s.execute("model.port.edit", &json!({"name": "1", "impedance": 50, "deembed": 1.5})).unwrap();
-    assert_eq!(unchanged(&mut s, "model.walls", json!({}), false), json!({"conductivity": 5.8e7}));
+    assert_eq!(unchanged(&mut s, "model.walls", json!({}), false), json!({"conductivity": 5.8e7, "thickness": 1.27}));
     assert_eq!(unchanged(&mut s, "project.frequency", json!({}), false), json!({"start": 6.5, "stop": 9.0}));
     assert_eq!(unchanged(&mut s, "model.symmetry", json!({"axis": "y"}), true)["kind"], "electric");
     assert_eq!(s.execute("project.values", &json!({"command": "model.symmetry", "axis": "x"})).unwrap(), json!({}));

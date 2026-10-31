@@ -499,9 +499,12 @@ pub static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "model.walls",
-        label: "Wall conductivity",
-        doc: "The conductivity of the guide's walls, irises and steps: losses by the Leontovich surface-impedance condition (good conductors, skin depth far below the guide). Without `conductivity` the walls are perfect conductors.",
-        params: &[opt("conductivity", K::Number, "σ in S/m (copper 5.8e7); leave out for perfect conductors")],
+        label: "Walls",
+        doc: "The conductivity and thickness of the guide's walls, irises and steps. The metal is never meshed: only the inside is, and the walls are a surface impedance on it, so a thickness costs no unknowns. With `conductivity`, losses by the Leontovich condition (good conductors, skin depth far below the guide), through a wall of `thickness` with free space behind it (Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt): thinner than a few skin depths it loses more; the time-domain solver takes walls as thick). Without `conductivity` the walls are perfect conductors; the thickness is then drawn round the guide only. Leave `thickness` out for infinitely thick walls drawn flush.",
+        params: &[
+            opt("conductivity", K::Number, "σ in S/m (copper 5.8e7); leave out for perfect conductors"),
+            opt("thickness", K::Number, "the walls' thickness; leave out for infinitely thick walls").of(L),
+        ],
         effect: Effect::Record,
         invalidates: Some(Change::Walls),
         run: crate::geometry::walls,

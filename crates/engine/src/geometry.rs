@@ -516,8 +516,10 @@ pub fn solid(s: &mut Session, p: &Params) -> Result<Value> {
 
 pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
     let sigma = p.number("conductivity").optional()?;
+    let thickness = p.positive_length("thickness").optional()?;
+    s.model.set_wall_thickness(thickness)?;
     s.model.set_wall_conductivity(sigma)?;
-    Ok(json!({"conductivity": sigma}))
+    Ok(json!({"conductivity": sigma, "thickness": thickness.map(|t| s.show_length(t))}))
 }
 
 emcraft_macros::named_enum! {

@@ -1,0 +1,9 @@
+{
+ "title": "Copper WR-90 with 0.5 µm walls, 200 mm: TE10 attenuation through walls thinner than the skin depth at 10 GHz",
+ "kind": "theory",
+ "source": "The wall a lossy line of length t loaded by free space, Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt), η_c = (1 + j)R_s, γ = (1 + j)/δ (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, eq. 2.91); Re Z_s = 0.035472 Ω in place of R_s in the TE10 conductor attenuation α_c = R_s(2bπ² + a³k²)/(a³bβkη) (eq. 3.96): 0.016966 Np/m, evaluated separately from EMCraft's code",
+ "quantities": [
+  {"id": "s21_db", "quantity": "|S21| at 10 GHz (dB): the loss of 200 mm of guide with 0.5 µm copper walls", "measure": {"step": "solve", "pointer": "/points/0/s21/db"}, "value": -0.029472639823673253, "tolerance": {"relative": 0.01}, "reason": "as wall-loss (the Leontovich condition with second-order elements of 4 mm, within 0.2 % for thick walls); the thin wall only changes Z_s"},
+  {"id": "s11_mag", "quantity": "|S11| at 10 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.0, "tolerance": {"absolute": 1e-3}, "reason": "the lossy guide's TE10 differs from the lossless port mode by order |Z_s|/η"}
+ ]
+}

@@ -3,6 +3,7 @@
  {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": "=er"}},
  {"command": "geometry.waveguide", "params": {"width": 34.0535, "height": 4, "sections": [{"length": 45.5934, "material": "ptfe"}], "strips": [{"y": 2, "x0": 8, "width": 3.3165, "z0": 0, "z1": 4}, {"y": 2, "x0": 8.9907, "width": 2.3258, "z0": 4, "z1": 13.4139}, {"y": 2, "x0": 11.4928, "width": 2.3258, "z0": 4, "z1": 13.4139}, {"y": 2, "x0": 11.4928, "width": 3.1217, "z0": 13.4139, "z1": 22.7967}, {"y": 2, "x0": 15.4659, "width": 3.1217, "z0": 13.4139, "z1": 22.7967}, {"y": 2, "x0": 15.4659, "width": 3.1217, "z0": 22.7967, "z1": 32.1795}, {"y": 2, "x0": 19.439, "width": 3.1217, "z0": 22.7967, "z1": 32.1795}, {"y": 2, "x0": 20.2349, "width": 2.3258, "z0": 32.1795, "z1": 41.5934}, {"y": 2, "x0": 22.737, "width": 2.3258, "z0": 32.1795, "z1": 41.5934}, {"y": 2, "x0": 22.737, "width": 3.3165, "z0": 41.5934, "z1": 45.5934}]}},
  {"command": "model.symmetry", "params": {"axis": "y", "kind": "magnetic"}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 2, "strip_edge": 0.05, "growth": 3, "strip_end": 0.5}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1, "impedance": 50}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1, "impedance": 50}},

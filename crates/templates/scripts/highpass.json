@@ -6,6 +6,7 @@
  {"command": "project.variable", "params": {"name": "l_gap", "value": 20, "quantity": "length"}},
  {"command": "model.material.create", "params": {"name": "ptfe-like", "eps_r": "=er"}},
  {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=l_fill", "material": "ptfe-like"}, {"length": "=l_gap", "material": "vacuum"}, {"length": "=l_fill", "material": "ptfe-like"}]}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 3}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},

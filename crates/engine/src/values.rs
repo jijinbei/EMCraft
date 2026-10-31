@@ -27,7 +27,16 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         "project.analysis" => m.analysis.map_or_else(|| json!({}), |a| json!({"kind": a.id()})),
         "units.set" => crate::reply::units(s.display),
         "solve.device" => json!({"device": s.compute.device(), "precision": s.compute.precision.id()}),
-        "model.walls" => m.wall_conductivity.map_or_else(|| json!({}), |c| json!({"conductivity": c})),
+        "model.walls" => {
+            let mut v = json!({});
+            if let Some(c) = m.wall_conductivity {
+                v["conductivity"] = json!(c);
+            }
+            if let Some(t) = m.wall_thickness {
+                v["thickness"] = json!(l(t));
+            }
+            v
+        }
         "model.open" => match m.open {
             None => json!({}),
             Some(o) => {

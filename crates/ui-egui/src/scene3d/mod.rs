@@ -16,6 +16,7 @@ mod field;
 mod geometry;
 mod legend;
 mod mesh;
+mod shell;
 mod style;
 mod surface;
 

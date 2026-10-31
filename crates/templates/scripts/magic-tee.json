@@ -12,6 +12,7 @@
  {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": "=rp", "length": "=b+2", "at": ["=l+a/2-hx", "=a+hp", 0]}},
  {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": "=rp", "length": "=b+2", "at": ["=l+a/2+hx", "=a+hp", 0]}},
  {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": "=rp", "length": "=b+4", "axis": "x", "at": ["=l+a/2-b/2-2", "=ey", "=b+ez"]}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": "=a/6"}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "x", "face": [0, 0, 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=2*l+a", 0, 0, "=a", "=b"]}},

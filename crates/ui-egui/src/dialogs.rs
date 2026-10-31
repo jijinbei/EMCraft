@@ -498,7 +498,7 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "geometry.feature" => json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
         "geometry.import" => json!({"angle": 30, "open": false}),
         "geometry.body" => json!({"material": "metal", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"}),
-        "model.walls" => json!({"conductivity": 5.8e7}),
+        "model.walls" => json!({"conductivity": 5.8e7, "thickness": 1}),
         "model.symmetry" => json!({"axis": "x", "kind": "magnetic"}),
         "model.periodic" => periodic(s),
         "model.port.create" => json!({"name": format!("{}", ports + 1), "end": if ports == 0 { "start" } else { "end" }, "modes": 4}),

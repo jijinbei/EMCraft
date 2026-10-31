@@ -4,6 +4,7 @@
  {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": "=er"}},
  {"command": "geometry.waveguide", "params": {"width": 20, "height": 4, "sections": [{"length": "=l", "material": "ptfe"}], "strips": [{"y": 2, "x0": 7.2181, "width": 2.6938}, {"y": 2, "x0": 10.0881, "width": 2.6938}]}},
  {"command": "model.symmetry", "params": {"axis": "y", "kind": "magnetic"}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 2, "strip_edge": 0.05, "growth": 2}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
