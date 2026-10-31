@@ -7,6 +7,7 @@ use std::f64::consts::PI;
 use emcraft_model::{Aabb, Axis, BoxSize, Combine, FaceSurface, Feature, Metres, Point3, Shape, Vec3};
 use emcraft_tetmesh::tet::geometry::AnalyticSurface;
 
+use super::grid::Planes;
 use super::mesher::{MPoint, MVec, RegionFace, RegionMesh, mesher_point, mesher_vec, model_point, model_vec};
 use crate::{MeshError, Result};
 
@@ -270,7 +271,7 @@ pub(super) fn interface_size(shape: &Shape, size: f64, conductor: bool) -> f64 {
 }
 
 /// A tessellation turned by `axis` and moved to `at`, its exact surfaces with it.
-fn transformed(t: Tessellation, axis: Axis, at: Point3) -> Tessellation {
+pub(super) fn transformed(t: Tessellation, axis: Axis, at: Point3) -> Tessellation {
     let place = |p: Point3| at + axis.turn(p.to_vec());
     // The exact surfaces' points and directions are the mesher's.
     let place_a = |p: MPoint| mesher_point(place(model_point(p)));
@@ -363,7 +364,7 @@ fn face_within_solid(f: &Feature, d: usize, solid: &Shape, size: f64, tol: f64) 
 /// and away for a difference; a union's face flush with the solid's from inside moves back into
 /// the feature when the solid's face holds it (refused otherwise: the union's face there would
 /// move).
-fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)> {
+pub(super) fn feature_body(f: &Feature, solid: &Shape, size: f64) -> Result<(Shape, Point3)> {
     let step = 0.1 * size;
     let base = flat_faces(solid, Point3::ORIGIN, Axis::Z);
     let scale = solid.bounds().max.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(size);
@@ -615,72 +616,77 @@ pub(super) fn joined(features: &[Feature], solid: &Shape, size: f64) -> Result<V
     Ok(moved)
 }
 
-/// The solid's tessellation combined with a feature: the feature's faces get tags after the
-/// solid's, with their exact surfaces.
-pub(super) fn combined(main: Tessellation, f: &Feature, k: usize, solid: &Shape, size: f64) -> Result<Tessellation> {
-    let (shape, at) = feature_body(f, solid, size)?;
-    // An imported body: in place, its faces flush with the region's (or an earlier body's) moved
-    // off them (`crate::flush`).
-    let imported = matches!(shape, Shape::Surface { .. });
-    let (shape, at, axis) = match shape {
-        Shape::Surface { name, positions, triangles, tags, surfaces } => {
-            let placed: Vec<Point3> = positions.iter().map(|p| at + f.axis.turn(p.to_vec())).collect();
-            let gaps = crate::flush::Gaps { step: 0.1 * size, flush: 1e-5 * size, near: 0.1 * size, mm: 1e3 };
-            let positions = crate::flush::moved(
-                &name,
-                crate::flush::Triangles { positions: &placed, triangles: &triangles },
-                crate::flush::Triangles { positions: &main.positions, triangles: &main.triangles },
-                f.combine,
-                gaps,
-            )?;
-            (Shape::Surface { name, positions, triangles, tags, surfaces }, Point3::ORIGIN, Axis::Z)
+/// The planes across x, y and z that a body's flat faces lie in: a box's six, a cylinder's caps,
+/// an imported surface's triangles flat across an axis (to a billionth of its size); in place, a
+/// feature's as it is combined (its flush faces moved, `feature_body`).
+fn planes_of(shape: &Shape, at: Point3, axis: Axis) -> Planes {
+    let mut out: Planes = Default::default();
+    match shape {
+        Shape::Surface { positions, triangles, .. } => {
+            let placed: Vec<Point3> = positions.iter().map(|p| at + axis.turn(p.to_vec())).collect();
+            let scale = Aabb::around(placed.iter().copied()).map_or(0.0, |b| (b.max - b.min).norm());
+            for t in triangles {
+                let Some(q) = crate::shared::corners(&placed, t) else { continue };
+                for (d, list) in out.iter_mut().enumerate() {
+                    if (q[0][d] - q[1][d]).abs() <= 1e-9 * scale && (q[0][d] - q[2][d]).abs() <= 1e-9 * scale {
+                        list.push(q[0][d]);
+                    }
+                }
+            }
         }
-        other => (other, at, f.axis),
-    };
-    // General position against the solid's tessellation: a round body turned about its own
-    // axis by an odd angle (it is the same body; an imported one is not round, and stays as it
-    // is), and every feature moved by up to a millionth of the element size (far below the mesh's
-    // resolution, far above rounding), so no vertex of one lies exactly on a grid line or plane
-    // of the other.
-    let mut own = tessellate(&shape, size);
-    if matches!(shape, Shape::Cylinder { .. } | Shape::Sphere { .. }) {
-        let (sn, cs) = 0.2345f64.sin_cos();
-        for p in &mut own.positions {
-            *p = Point3::new(cs * p.x - sn * p.y, sn * p.x + cs * p.y, p.z);
+        _ => {
+            for face in flat_faces(shape, at, axis) {
+                out[face.axis].push(face.at);
+            }
         }
     }
-    // Each feature by its own amount (the fractional parts of multiples of irrational numbers),
-    // so two features' grids that line up exactly do not stay lined up.
-    let jitter = Vec3::new(0.618_033_988_75, 0.414_213_562_37, 0.732_050_807_57).map(|v| ((k + 1) as f64 * v).fract() * 1e-6 * size);
-    let tool = transformed(own, axis, at + jitter);
-    let base = main.tri_face.iter().map(|t| t + 1).max().unwrap_or(0).max(main.analytic.len() as u32);
-    let op = match f.combine {
-        Combine::Add => crate::csg::Op::Union,
-        Combine::Subtract => crate::csg::Op::Difference,
-        Combine::Intersect => crate::csg::Op::Intersection,
-    };
-    let a = crate::csg::Surface { positions: main.positions, triangles: main.triangles, tags: main.tri_face };
-    let b = crate::csg::Surface { positions: tool.positions, triangles: tool.triangles, tags: tool.tri_face };
-    // An imported body's flat faces cross the region's in straight lines: the points its
-    // triangles' edges leave along them are collapsed away.
-    let out = if imported { crate::csg::combine_simplified(&a, &b, op, base)? } else { crate::csg::combine(&a, &b, op, base)? };
-    let mut analytic = main.analytic;
-    analytic.resize(base as usize, None);
-    // A difference's tool faces now face the other way.
-    analytic.extend(tool.analytic.into_iter().map(|a| match (a, op) {
-        (Some(AnalyticSurface::Plane { normal, point }), crate::csg::Op::Difference) => {
-            Some(AnalyticSurface::Plane { normal: normal.map(|v| -v), point })
+    for list in &mut out {
+        list.sort_by(f64::total_cmp);
+        list.dedup();
+    }
+    out
+}
+
+/// The planes the solid's flat faces lie in, and each feature's (as combined; as placed when
+/// `feature_body` refuses it, which `super::combine` may still combine another way).
+pub(super) fn body_planes(features: &[Feature], solid: &Shape, size: f64) -> (Planes, Vec<Planes>) {
+    let own = features
+        .iter()
+        .map(|f| match feature_body(f, solid, size) {
+            Ok((shape, at)) => planes_of(&shape, at, f.axis),
+            Err(_) => planes_of(&f.shape, f.at, f.axis),
+        })
+        .collect();
+    (planes_of(solid, Point3::ORIGIN, Axis::Z), own)
+}
+
+/// The planes of `lists` merged.
+pub(super) fn merged_planes<'a>(lists: impl IntoIterator<Item = &'a Planes>) -> Planes {
+    let mut out: Planes = Default::default();
+    for l in lists {
+        for (o, x) in out.iter_mut().zip(l) {
+            o.extend_from_slice(x);
         }
-        (a, _) => a,
-    }));
-    Ok(Tessellation {
-        positions: out.positions,
-        triangles: out.triangles,
-        tri_face: out.tags,
-        analytic,
-        start_face: main.start_face,
-        end_face: main.end_face,
-    })
+    }
+    for list in &mut out {
+        list.sort_by(f64::total_cmp);
+        list.dedup();
+    }
+    out
+}
+
+/// The axes along which a body's tessellation is a grid (box: all three; cylinder: its rings
+/// along its axis, `axis` in place).
+pub(super) fn grid_axes(shape: &Shape, axis: Axis) -> &'static [usize] {
+    match shape {
+        Shape::Box { .. } => &[0, 1, 2],
+        Shape::Cylinder { .. } => match axis {
+            Axis::X => &[0],
+            Axis::Y => &[1],
+            Axis::Z => &[2],
+        },
+        Shape::Sphere { .. } | Shape::Surface { .. } => &[],
+    }
 }
 
 /// An inclusion's tessellation moved to its place, one face tag per triangle (`0..n`). Its

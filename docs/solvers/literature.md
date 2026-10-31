@@ -15,6 +15,9 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 - S. W. Sloan, *A fast algorithm for generating constrained Delaunay triangulations*, Computers
   & Structures 47(3):441–450, 1993 — recovering the intersection segments in each triangle a
   Boolean splits, by flipping the edges that cross them (`emcraft-mesh::csg`).
+- I. E. Sutherland, G. W. Hodgman, *Reentrant polygon clipping*, Comm. ACM 17(1):32–42, 1974 —
+  the overlap of two facing triangles across a narrow gap, whose area sets the gap's element
+  estimate (`emcraft-mesh::solid::narrow`).
 - A. Van Oosterom, J. Strackee, *The solid angle of a plane triangle*, IEEE Trans. Biomed. Eng.
   30(2):125–126, 1983 — the winding number that classifies a Boolean's pieces inside or outside
   the other surface (`emcraft-mesh::csg`), and which pieces of a part's enclosed air are which

@@ -18,15 +18,18 @@
 //! corner whose faces' planes do not meet in one line past it (more planes than a corner of a
 //! polyhedron in general position keeps), or meet at too shallow an angle (a move longer than
 //! ten steps), is refused; so is a slanted face that would reach past the other surface into
-//! the region. A face parallel to the other surface's and closer than `near` without touching it
-//! (a sliver of air no mesh resolves) is refused too.
+//! the region. A face parallel to the other surface's and near it without touching it is left
+//! where it is: the gap is the mesher's to fill (`solid::narrow` refines it).
 //!
 //! Still refused: a flush face partly against the other surface and partly inside the region
 //! (outside it for a union). There the other surface turns away along a line in the face's plane
 //! (a step in the region's floor under a plate), and no move of the face keeps the result: the
 //! part against the surface must move off it, the rest must not, and the face joining them
 //! would lie in the other surface's turned face — a coplanar overlap again. Only a Boolean that
-//! takes coplanar triangles itself could do it.
+//! takes coplanar triangles itself could do it. A union whose flush face reaches out past the
+//! region's is taken another way when both lie behind that face's plane (`crate::clip`: both
+//! grown past it, united and cut back); one where the region reaches past the plane elsewhere
+//! stays refused.
 
 use std::collections::HashMap;
 
@@ -107,8 +110,6 @@ pub(crate) struct Gaps {
     pub(crate) step: f64,
     /// Faces within this of the other surface's plane are flush.
     pub(crate) flush: f64,
-    /// Parallel faces closer than this (and not flush) are refused.
-    pub(crate) near: f64,
     /// A length shown in messages: display millimetres.
     pub(crate) mm: f64,
 }
@@ -124,6 +125,25 @@ impl<'a> From<&'a Surface> for Triangles<'a> {
     fn from(s: &'a Surface) -> Self {
         Triangles { positions: &s.positions, triangles: &s.triangles }
     }
+}
+
+/// Whether a flat triangle of `body` still lies in a plane of `other`'s (within `flush`)
+/// overlapping one of its triangles there: what the Boolean cannot take. A face moved into
+/// the other surface can come to lie against another of its faces (a stub's foot pushed into
+/// the floor brings its sides into the side walls' planes).
+pub(crate) fn touching(body: Triangles, other: Triangles, flush: f64) -> bool {
+    let mut planes: [Vec<Flat>; 3] = Default::default();
+    for f in flats(other.positions, other.triangles, flush) {
+        planes[f.axis].push(f);
+    }
+    for list in &mut planes {
+        list.sort_by(|a, b| a.at.total_cmp(&b.at).then(a.tri.cmp(&b.tri)));
+    }
+    flats(body.positions, body.triangles, flush).iter().any(|f| {
+        let list = &planes[f.axis];
+        let from = list.partition_point(|o| o.at < f.at - flush);
+        list[from..].iter().take_while(|o| o.at <= f.at + flush).any(|o| overlap(&f.uv, &o.uv, flush))
+    })
 }
 
 /// The body's corners with its flush faces moved off the `other` surface, for
@@ -170,32 +190,20 @@ impl Flush<'_> {
     /// opposite (false) orientation.
     fn contacts(&self) -> Result<Vec<Option<bool>>> {
         let (name, g) = (self.name, self.g);
-        let reach = g.near.max(g.flush);
         let eps = g.flush;
         let mut contact: Vec<Option<bool>> = vec![None; self.flat.len()];
         for (i, f) in self.flat.iter().enumerate() {
             let list = &self.planes[f.axis];
-            let from = list.partition_point(|o| o.at < f.at - reach);
-            for o in list[from..].iter().take_while(|o| o.at <= f.at + reach) {
+            let from = list.partition_point(|o| o.at < f.at - g.flush);
+            for o in list[from..].iter().take_while(|o| o.at <= f.at + g.flush) {
                 if !overlap(&f.uv, &o.uv, eps) {
                     continue;
                 }
-                let gap = (o.at - f.at).abs();
-                if gap <= g.flush {
-                    let same = o.outward == f.outward;
-                    if contact[i].is_some_and(|c| c != same) {
-                        return Err(fail(format!("`{name}`: a face touches a surface from both sides")));
-                    }
-                    contact[i] = Some(same);
-                } else {
-                    let axis = ["x", "y", "z"][f.axis];
-                    return Err(fail(format!(
-                        "`{name}`: its face at {axis} = {:.6} mm lies {:.3e} mm from a parallel face — a gap narrower than {:.3} mm (a tenth of the element size) is not meshed; let them touch, keep them farther apart, or mesh finer",
-                        f.at * g.mm,
-                        gap * g.mm,
-                        g.near * g.mm
-                    )));
+                let same = o.outward == f.outward;
+                if contact[i].is_some_and(|c| c != same) {
+                    return Err(fail(format!("`{name}`: a face touches a surface from both sides")));
                 }
+                contact[i] = Some(same);
             }
         }
         Ok(contact)
@@ -432,7 +440,7 @@ mod tests {
         Triangles { positions, triangles }
     }
 
-    const G: Gaps = Gaps { step: 0.1, flush: 1e-9, near: 0.1, mm: 1.0 };
+    const G: Gaps = Gaps { step: 0.1, flush: 1e-9, mm: 1.0 };
 
     #[test]
     fn a_plate_on_three_walls_moves_out_of_them() {
@@ -507,11 +515,11 @@ mod tests {
     }
 
     #[test]
-    fn nearly_flush_faces_and_unkeepable_corners_are_refused() {
+    fn nearly_flush_faces_stay_and_unkeepable_corners_are_refused() {
         let (gp, gt) = cube([0.0, 0.0, 0.0], [10.0, 5.0, 20.0]);
+        // A face a hair off the wall is not flush: it stays (the gap is the mesher's to fill).
         let (pp, pt) = cube([0.001, 1.0, 8.0], [3.0, 4.0, 9.0]);
-        let e = moved("plate", tri(&pp, &pt), tri(&gp, &gt), Combine::Subtract, G).unwrap_err();
-        assert!(e.to_string().contains("gap narrower"), "{e}");
+        assert_eq!(moved("plate", tri(&pp, &pt), tri(&gp, &gt), Combine::Subtract, G).unwrap(), pp);
         // A wedge whose slanted face rises at a hair's angle: its foot would slide far.
         let mut flat = wedge().0;
         flat[3] = Point3::new(1.0, 0.01, 8.0);

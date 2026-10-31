@@ -407,16 +407,83 @@ fn a_cavity_with_a_ridge_takes_numerical_port_modes() {
 }
 
 /// Regression: the block in a box of air a micrometre beyond it left a sliver of air the mesher
-/// spent minutes on (or gave up on); a gap under a tenth of the element size is now refused at
-/// once, naming it.
+/// spent minutes on (or gave up on); a gap no element fits (under a tenth of the mesher's
+/// smallest size) is refused at once, naming it.
 #[test]
 fn a_box_of_air_too_thin_to_mesh_is_refused_at_once() {
     let mut s = Session::new();
     s.execute("geometry.import", &json!({"path": block_3mf(), "region": "box", "margin": 0.001})).unwrap();
     let start = std::time::Instant::now();
     let e = s.execute("mesh.generate", &json!({"size": 3})).unwrap_err().to_string();
-    assert!(e.contains("gap narrower than 0.300 mm"), "{e}");
+    assert!(e.contains("a gap 0.0010 mm wide") && e.contains("flat"), "{e}");
     assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+}
+
+/// The two-port model of `steps` (after the solid and its bodies) meshed at `size` mm and solved
+/// at 10 GHz: lossless and reciprocal to rounding, as any closed lossless two-port is. Returns
+/// the mesh's tetrahedra and |S21|.
+fn passive_two_port(steps: &[(&str, serde_json::Value)], size: f64, ports: [serde_json::Value; 2]) -> (u64, f64) {
+    let mut s = Session::new();
+    for (c, p) in steps {
+        s.execute(c, p).unwrap_or_else(|e| panic!("{c}: {e}"));
+    }
+    let m = s.execute("mesh.generate", &json!({"size": size})).unwrap();
+    for p in ports {
+        s.execute("model.port.create", &p).unwrap();
+    }
+    let r = s.execute("solve.frequency", &json!({"frequencies": [10], "order": 1})).unwrap();
+    let p = &r["points"][0];
+    let c = |k: &str| emcraft_solver::Complex64::from_polar(p[k]["mag"].as_f64().unwrap(), p[k]["deg"].as_f64().unwrap().to_radians());
+    for col in [["s11", "s21"], ["s12", "s22"]] {
+        let power = c(col[0]).norm_sqr() + c(col[1]).norm_sqr();
+        assert!((power - 1.0).abs() < 1e-6, "{p}");
+    }
+    assert!((c("s12") - c("s21")).norm() < 1e-6, "{p}");
+    (m["tetrahedra"].as_u64().unwrap_or(0), c("s21").norm())
+}
+
+fn ends() -> [serde_json::Value; 2] {
+    [json!({"name": "1", "end": "start", "modes": 1}), json!({"name": "2", "end": "end", "modes": 1})]
+}
+
+/// Regression (junction templates): bodies sharing a plane with the region's walls. An E-plane
+/// stub of a box added on WR-90's broad wall with its sides in the side walls was refused; a
+/// post from floor to roof of a prism region was combined with its caps a hair from the walls
+/// (90 000 tetrahedra in 90 s); a notch on a prism's floor likewise. All now mesh and solve,
+/// lossless and reciprocal, on coarse meshes.
+#[test]
+fn bodies_flush_with_the_walls_mesh_and_solve() {
+    let guide = ("geometry.solid", json!({"shape": "box", "size": [22.86, 10.16, 40]}));
+    let stub = ("geometry.feature", json!({"combine": "add", "shape": "box", "size": [22.86, 10, 10], "at": [0, 10.16, 15]}));
+    let (_, s21) = passive_two_port(&[guide, stub], 6.0, ends());
+    // A shorted stub reflects much of the wave (the box stub here: |S21| about 0.65).
+    assert!(s21 < 0.95, "{s21}");
+    let prism = ("geometry.solid", json!({"shape": "prism", "points": [[0, 0], [40, 0], [40, 22.86], [0, 22.86]], "length": 10.16}));
+    let x_ports = [
+        json!({"name": "1", "end": "start", "modes": 1, "axis": "x", "face": [0, 0, 0, 22.86, 10.16]}),
+        json!({"name": "2", "end": "end", "modes": 1, "axis": "x", "face": [40, 0, 0, 22.86, 10.16]}),
+    ];
+    let post = ("geometry.body", json!({"material": "metal", "shape": "cylinder", "radius": 1, "length": 10.16, "at": [20, 11.43, 0]}));
+    let (tets, _) = passive_two_port(&[prism.clone(), post], 6.0, x_ports.clone());
+    assert!(tets < 20_000, "{tets}");
+    let notch = ("geometry.body", json!({"material": "metal", "shape": "box", "size": [4, 6, 3], "at": [18, 8, 0]}));
+    passive_two_port(&[prism, notch], 6.0, x_ports);
+}
+
+/// Regression: narrow gaps. Two plates across WR-90 0.5 mm apart at 4 mm (their faces on a grid
+/// line of the walls, which left slivers boundary recovery refused) and a post 0.2 mm from a
+/// side wall (a gap under a tenth of the size, now filled with elements as small as it) mesh
+/// and solve, lossless and reciprocal.
+#[test]
+fn narrow_gaps_mesh_and_solve() {
+    let guide = ("geometry.solid", json!({"shape": "box", "size": [22.86, 10.16, 40]}));
+    let low = ("geometry.body", json!({"material": "metal", "shape": "box", "size": [22.86, 4.83, 1], "at": [0, 0, 20]}));
+    let high = ("geometry.body", json!({"material": "metal", "shape": "box", "size": [22.86, 4.83, 1], "at": [0, 5.33, 20]}));
+    let (_, s21) = passive_two_port(&[guide.clone(), low, high], 4.0, ends());
+    // A capacitive gap: most of the wave reflected.
+    assert!(s21 < 0.5, "{s21}");
+    let post = ("geometry.body", json!({"material": "metal", "shape": "box", "size": [2, 10.16, 2], "at": [0.2, 0, 20]}));
+    passive_two_port(&[guide, post], 6.0, ends());
 }
 
 #[test]

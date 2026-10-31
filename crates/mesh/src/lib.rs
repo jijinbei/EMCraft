@@ -7,6 +7,7 @@
 
 pub mod adapt;
 pub mod cavity;
+mod clip;
 mod crease;
 pub mod csg;
 mod flush;
