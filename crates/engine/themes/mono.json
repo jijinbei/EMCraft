@@ -60,7 +60,15 @@
     "tab_simulate_soft": "#ebebeb",
     "tab_results_fill": "#606060",
     "tab_results_ink": "#606060",
-    "tab_results_soft": "#ebebeb"
+    "tab_results_soft": "#ebebeb",
+    "kind_frequency_ink": "#6e6e6e",
+    "kind_frequency_soft": "#f5f5f5",
+    "kind_eigenmodes_ink": "#656565",
+    "kind_eigenmodes_soft": "#ebebeb",
+    "kind_radiation_ink": "#686868",
+    "kind_radiation_soft": "#eeeeee",
+    "kind_time_domain_ink": "#606060",
+    "kind_time_domain_soft": "#ebebeb"
   },
   "scene": {
     "metal": "#b2b2b2",

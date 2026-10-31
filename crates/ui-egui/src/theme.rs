@@ -99,6 +99,12 @@ pub struct Tokens {
     pub tab_mesh: [Color32; 3],
     pub tab_simulate: [Color32; 3],
     pub tab_results: [Color32; 3],
+    /// Each kind of analysis's own colour on its card (ink, the picture's ground): S-parameters,
+    /// eigenmodes, radiation, time domain.
+    pub kind_frequency: [Color32; 2],
+    pub kind_eigenmodes: [Color32; 2],
+    pub kind_radiation: [Color32; 2],
+    pub kind_time_domain: [Color32; 2],
 }
 
 /// The 3D view's colours.
@@ -177,6 +183,10 @@ colour_names!(Tokens: Color32, TOKEN_NAMES {
     "tab_mesh_fill" => tab_mesh[0], "tab_mesh_ink" => tab_mesh[1], "tab_mesh_soft" => tab_mesh[2],
     "tab_simulate_fill" => tab_simulate[0], "tab_simulate_ink" => tab_simulate[1], "tab_simulate_soft" => tab_simulate[2],
     "tab_results_fill" => tab_results[0], "tab_results_ink" => tab_results[1], "tab_results_soft" => tab_results[2],
+    "kind_frequency_ink" => kind_frequency[0], "kind_frequency_soft" => kind_frequency[1],
+    "kind_eigenmodes_ink" => kind_eigenmodes[0], "kind_eigenmodes_soft" => kind_eigenmodes[1],
+    "kind_radiation_ink" => kind_radiation[0], "kind_radiation_soft" => kind_radiation[1],
+    "kind_time_domain_ink" => kind_time_domain[0], "kind_time_domain_soft" => kind_time_domain[1],
 });
 
 colour_names!(Scene: Rgb, SCENE_NAMES {
@@ -622,7 +632,7 @@ mod tests {
             assert!(t.palette.ink.contrast_ratio(t.palette.ground) >= 4.5);
             assert_eq!(t.is_dark(), base.is_dark());
         }
-        assert_eq!(TOKEN_NAMES.len(), 59);
+        assert_eq!(TOKEN_NAMES.len(), 67);
         assert_eq!(Tokens::sizes().colour("text"), Some(Color32::TRANSPARENT));
         assert_eq!(Tokens::sizes().colour("nope"), None);
         // The fallback stands in with readable text.
