@@ -50,9 +50,11 @@ solidcraft-exchange = { git = "https://github.com/jijinbei/solidcraft", rev = "3
 png = "0.18"
 ab_glyph = "0.2.32"
 
-# ui: the same egui/eframe line as FieldCraft, drawn with the glow backend
+# ui: the same egui/eframe line as FieldCraft. The window draws with wgpu (the 3D view's depth-buffered
+# renderer, crates/ui-egui/src/gpu3d) and falls back to glow (OpenGL 2) where wgpu finds no adapter
+# (docs/adr/0004-gpu-viewport.md).
 egui = "0.36"
-eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "glow", "default_fonts", "wayland", "x11"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

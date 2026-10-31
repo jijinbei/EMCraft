@@ -151,6 +151,10 @@ pub struct View3d {
     key_hold: Option<KeyHold>,
     /// The touchpad mapping's button-free move: its mode and the pointer's last place.
     motion: Option<(NavMode, egui::Pos2)>,
+    /// What drew the last frame.
+    pub drawn_by: Drawer,
+    /// The scene packed for the GPU's view ([`crate::gpu3d`]).
+    gpu: crate::gpu3d::Cache,
     /// The tools: face and gap ports, the ruler, the reference plane's drag.
     pub tools: crate::tools3d::Tools,
     /// Bumped whenever the scene picked from is built or cut again.
@@ -185,6 +189,8 @@ impl Default for View3d {
             gesture: false,
             key_hold: None,
             motion: None,
+            drawn_by: Drawer::Cpu,
+            gpu: Default::default(),
             tools: crate::tools3d::Tools::default(),
             generation: 0,
         }
@@ -351,6 +357,7 @@ impl View3d {
             "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
             "animating": self.animating(),
+            "renderer": self.drawn_by.id(),
             "section": self.section.map(|s| s.inspect(l)),
             "section_dims": self.section_dims,
             "tools": self.tools.inspect(l),
@@ -433,10 +440,11 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     {
         out.extend(row.edit_action());
     }
-    // Moving pictures (an orbit, a playing field) draw on the GPU.
-    let gpu = app.prefs.gpu3d || v.dragging || v.anim.is_some() || (overlay == Overlay::Field && field.player.playing);
+    // Moving pictures (a drag, a view change, a playing field).
+    let moving = v.dragging || v.anim.is_some() || (overlay == Overlay::Field && field.player.playing);
+    let drawer = Drawer::choose(app.prefs.drawing, crate::gpu3d::available(ui.ctx()).is_some(), moving);
     let p = ui.painter().with_clip_rect(rect);
-    draw(v, ui, &p, rect, key, gpu, t);
+    draw(v, ui, &p, rect, key, drawer, moving, t);
     labels(&p, rect, &v.camera, &built.labels, t);
     if let (Some(cut), true, Some(b)) = (v.section, v.section_dims, v.shown()) {
         crate::section3d::annotate(app, &b.scene, &v.camera, &p, rect, cut, bounds);
@@ -1069,11 +1077,51 @@ fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, now: f64) {
     }
 }
 
-/// The scene drawn into `rect`: by the window's GPU (every frame, full size) or the CPU
-/// renderer's picture (cached by `scene_key`, the camera and the size).
-fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key: SceneKey, gpu: bool, t: &Tokens) {
-    v.drawn_on_gpu = gpu;
-    if gpu {
+/// What draws the 3D view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Drawer {
+    /// The window's GPU with a depth buffer ([`crate::gpu3d`]).
+    Gpu,
+    /// The CPU renderer's picture.
+    Cpu,
+    /// Egui's painter, back to front.
+    Painter,
+}
+
+impl Drawer {
+    /// What draws under the preference `d`, with or without the window's GPU view, `moving` or
+    /// at rest: the CPU's picture only at rest, the GPU's view where there is one.
+    pub fn choose(d: crate::prefs::Drawing3d, gpu: bool, moving: bool) -> Drawer {
+        use crate::prefs::Drawing3d;
+        match d {
+            Drawing3d::Gpu if gpu => Drawer::Gpu,
+            Drawing3d::Fast => Drawer::Painter,
+            _ if moving => Drawer::Painter,
+            _ => Drawer::Cpu,
+        }
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Drawer::Gpu => "gpu",
+            Drawer::Cpu => "cpu",
+            Drawer::Painter => "painter",
+        }
+    }
+}
+
+/// The scene drawn into `rect`: by the window's GPU with a depth buffer, by egui's painter (every
+/// frame, full size) or as the CPU renderer's picture (cached by `scene_key`, the camera and the
+/// size).
+#[allow(clippy::too_many_arguments)]
+fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key: SceneKey, drawer: Drawer, moving: bool, t: &Tokens) {
+    v.drawn_on_gpu = drawer != Drawer::Cpu;
+    v.drawn_by = drawer;
+    if drawer == Drawer::Gpu {
+        draw_gpu(v, ui, p, rect, moving, t);
+        return;
+    }
+    if drawer == Drawer::Painter {
         let began = Instant::now();
         p.add(gradient(rect, t.viewport_top, t.viewport_bottom));
         if let Some(b) = v.shown() {
@@ -1114,6 +1162,29 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, scene_key:
         let id = pic.texture(ui.ctx());
         p.image(id, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
+}
+
+/// The scene drawn by the window's GPU ([`crate::gpu3d`]), supersampled at rest as the CPU's
+/// picture is.
+fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving: bool, t: &Tokens) {
+    let began = Instant::now();
+    let ppp = f64::from(ui.ctx().pixels_per_point());
+    let out = [((f64::from(rect.width()) * ppp).round().max(1.0) as u32), ((f64::from(rect.height()) * ppp).round().max(1.0) as u32)];
+    let small = f64::from(out[0]) * f64::from(out[1]) <= SUPERSAMPLE_PIXELS && out[0].max(out[1]) <= 2048;
+    let supersample = if !moving && small { 2 } else { 1 };
+    let size = [out[0] * supersample, out[1] * supersample];
+    let id = v.scene_gen();
+    let mut cache = std::mem::take(&mut v.gpu);
+    let packed = match v.shown() {
+        Some(b) => cache.packed(&b.scene, id),
+        None => cache.packed(&EMPTY.scene, u64::MAX),
+    };
+    v.gpu = cache;
+    let line_width = ppp.max(1.0) * f64::from(supersample);
+    let uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
+    crate::gpu3d::paint(p, rect, crate::gpu3d::Frame { packed, uniforms, size, out, supersample });
+    v.last_ms = began.elapsed().as_secs_f64() * 1e3;
+    v.last_size = size.map(|s| s as usize);
 }
 
 /// The scene's labels where they project, faint on faces turned away.

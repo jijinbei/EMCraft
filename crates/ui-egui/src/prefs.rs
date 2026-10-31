@@ -14,6 +14,22 @@ pub const MAX_RECENT: usize = 12;
 /// Largest preferences file read.
 const MAX_BYTES: u64 = 1 << 20;
 
+/// How the 3D view is drawn (Settings ▸ Drawing).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Drawing3d {
+    /// By the window's GPU with a depth buffer, every frame (`gpu3d`); where the window has no
+    /// wgpu device, as [`Drawing3d::Cpu`].
+    #[default]
+    Gpu,
+    /// The CPU renderer's picture at rest (depth-buffered, supersampled), egui's painter while
+    /// moving.
+    Cpu,
+    /// Egui's painter every frame (back to front, no depth buffer): for a window without the GPU's
+    /// view and a mesh too large for the CPU's picture.
+    Fast,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
@@ -28,9 +44,6 @@ pub struct Prefs {
     pub language: String,
     /// Dialogs dock at the right, beside what they edit (new preferences; a file keeps its own).
     pub dock_dialogs: bool,
-    /// The 3D view drawn by the window's GPU (fast, painter's order) instead of the CPU
-    /// renderer (depth-buffered, supersampled) at rest.
-    pub gpu3d: bool,
     /// The 3D view's mouse mapping, by id (`crate::navigation::NAV_PRESETS`; the default
     /// when unknown).
     pub navigation: String,
@@ -38,13 +51,16 @@ pub struct Prefs {
     pub orbit_around: String,
     /// The 3D view's orientation control, by id (`crate::navigation::Navigator`).
     pub navigator: String,
+    /// How the 3D view is drawn (older files' `gpu3d` switch is not read: everyone starts on
+    /// the GPU's view).
+    pub drawing: Drawing3d,
     /// The display units new projects start with.
     pub length: Length,
     pub frequency: Frequency,
 }
 
 /// New preferences: dialogs docked, so they do not cover what they edit; the rest empty, the
-/// light theme, English, the CPU's 3D view, millimetres and gigahertz.
+/// light theme, English, the GPU's 3D view, millimetres and gigahertz.
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
@@ -53,10 +69,10 @@ impl Default for Prefs {
             dark: false,
             language: String::new(),
             dock_dialogs: true,
-            gpu3d: false,
             navigation: crate::navigation::FUSION.into(),
             orbit_around: String::new(),
             navigator: String::new(),
+            drawing: Drawing3d::Gpu,
             length: Length::default(),
             frequency: Frequency::default(),
         }

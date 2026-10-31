@@ -221,7 +221,7 @@ fn tour() -> Record {
     call(&mut h, "ui.set", json!({"language": "ja"}));
     record(true);
     // The 3D view drawn by egui's meshes, not the CPU's pictures: the words are the same.
-    h.app.prefs.gpu3d = true;
+    h.app.prefs.drawing = crate::prefs::Drawing3d::Fast;
     h.app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
     // The start page, empty and with a project missing from the recent list, the settings
     // (Files with no recent project too), the prompts.
