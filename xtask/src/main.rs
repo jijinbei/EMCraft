@@ -10,6 +10,7 @@ mod colours;
 mod dupes;
 #[cfg(feature = "fonts")]
 mod fonts;
+mod heavy;
 mod installer;
 mod layers;
 
@@ -160,7 +161,9 @@ fn cmd_test(rest: &[&str]) -> Result<(), String> {
     let mut c = cargo();
     c.args(["nextest", "run", "--no-tests", "pass"]).args(&packages).args(cargo_args);
     if heavy {
-        c.args(["--run-ignored", "only"]);
+        // Only the ignored tests marked heavy: not a GPU's, benchmarks or tours.
+        let names = heavy::names(&[root().join("crates"), root().join("apps")])?;
+        c.args(["--run-ignored", "only", "--no-fail-fast", "-E", &heavy::filter(&names)]);
     }
     c.arg("--").args(test_args);
     run(c, what)?;
