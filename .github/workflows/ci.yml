@@ -5,6 +5,11 @@ on:
     branches: [develop, main]
   pull_request:
 
+# A newer push to the same branch or pull request makes the running checks moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   # The GPU crate links CubeCL's LLVM into every test binary: without debug information they
@@ -28,8 +33,13 @@ jobs:
         id: toolchain
         with:
           components: rustfmt, clippy
-      # Compiled dependencies and the workspace's build, keyed on Cargo.lock and the toolchain.
+      # Compiled dependencies (and the git ones' checkouts), keyed on Cargo.lock, the toolchain and
+      # the job. Saved from main only, so branches restore main's and do not crowd it out of the
+      # repository's 10 GB; saved when a test fails too, as the build itself was good.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       - name: System libraries for the desktop app
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
       - run: cargo fmt --all --check
@@ -88,6 +98,9 @@ jobs:
           key: ${{ steps.heavy-key.outputs.key }}
       - uses: Swatinem/rust-cache@v2
         if: steps.heavy-cache.outputs.cache-hit != 'true'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       - name: System libraries for the desktop app
         if: steps.heavy-cache.outputs.cache-hit != 'true'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
