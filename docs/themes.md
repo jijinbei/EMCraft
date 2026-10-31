@@ -98,6 +98,7 @@ on `ground` 4.5 and `ink_dim` on `ground` 3.
 | `viewport_top`, `viewport_bottom` | the 3D view's ground (a gradient) |
 | `axis_x`, `axis_y`, `axis_z`, `axis_label` | the 3D view's axes navigator and the letters on it |
 | `tab_<tab>_fill`, `tab_<tab>_ink`, `tab_<tab>_soft` | each ribbon tab's accent (`<tab>`: `model`, `materials`, `ports`, `boundaries`, `mesh`, `simulate`, `results`): fill, ink and soft tint |
+| `kind_<kind>_ink`, `kind_<kind>_soft` | each kind of analysis's card (`<kind>`: `frequency`, `eigenmodes`, `radiation`, `time_domain`), on Home and the start page: its picture's ink and ground |
 
 ### `scene`
 

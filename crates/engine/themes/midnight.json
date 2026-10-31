@@ -60,7 +60,15 @@
     "tab_simulate_soft": "#183360",
     "tab_results_fill": "#4d7ed3",
     "tab_results_ink": "#7299dc",
-    "tab_results_soft": "#152c53"
+    "tab_results_soft": "#152c53",
+    "kind_frequency_ink": "#4679d1",
+    "kind_frequency_soft": "#193564",
+    "kind_eigenmodes_ink": "#4c7ed2",
+    "kind_eigenmodes_soft": "#183360",
+    "kind_radiation_ink": "#4779d1",
+    "kind_radiation_soft": "#193666",
+    "kind_time_domain_ink": "#4d7ed3",
+    "kind_time_domain_soft": "#152c53"
   },
   "scene": {
     "metal": "#9fb2d4",
