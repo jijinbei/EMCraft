@@ -69,13 +69,13 @@ fn chart_styles_apply_to_pngs_are_saved_and_refuse_bad_input() {
         assert!(s.execute("view.chart.style", &bad).is_err(), "{bad}");
         assert_eq!(s.views(), &before);
     }
-    // Saved with the project (version 3), opened again, clean; null clears, reset forgets.
+    // Saved with the project (version 4: its solves are kept too), opened again, clean; null clears, reset forgets.
     let dir = std::env::temp_dir().join(format!("emcraft-views-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("styled.emcraft").to_string_lossy().into_owned();
     s.execute("file.save", &json!({"path": path})).unwrap();
     let doc: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(doc["version"], json!(3));
+    assert_eq!(doc["version"], json!(4));
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
     assert_eq!(t.views(), s.views());

@@ -74,9 +74,12 @@ enum Part {
     Planes,
 }
 
-/// The parts the session has, in the order they go.
+/// The parts the session has, in the order they go: the history once there are two solves to
+/// compare, or one while nothing is solved now (a project just opened).
 fn parts(app: &EmcraftApp) -> impl Iterator<Item = Part> {
-    (app.session.archive().len() >= 2).then_some(Part::History).into_iter().chain([Part::Table, Part::Planes])
+    let kept = app.session.archive().len();
+    let history = kept >= 2 || (kept == 1 && app.session.results().sweep.is_none());
+    history.then_some(Part::History).into_iter().chain([Part::Table, Part::Planes])
 }
 
 impl Part {
@@ -336,7 +339,8 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
         if let Some(db) = r["best_s11_db"].as_f64() {
             p.text(pos2(rect.right() - 6.0, rect.top() + 9.0), Align2::RIGHT_CENTER, format!("{db:.1} dB"), font.clone(), ink);
         }
-        let resp = resp.hint(Raw(&history_tip(app, r)));
+        let stored = app.session.archive().iter().any(|a| a.id == id && !a.in_memory());
+        let resp = resp.hint(Raw(&history_tip(app, r, stored)));
         if resp.clicked() && !current {
             match drawn {
                 Some(k) => {
@@ -369,9 +373,16 @@ fn swatch(p: &egui::Painter, c: egui::Pos2, current: bool, drawn: Option<usize>,
     }
 }
 
-/// A kept solve's tip: its frequencies, and its deepest |S11| and where.
-fn history_tip(app: &EmcraftApp, r: &Value) -> String {
-    let tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
+/// A kept solve's tip: its label, its frequencies, its deepest |S11| and where, and for one read
+/// back from the project file (`stored`) that restoring it solves it again.
+fn history_tip(app: &EmcraftApp, r: &Value, stored: bool) -> String {
+    let mut tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
+    if let Some(label) = r["label"].as_str() {
+        tip = format!("{label}\n{tip}");
+    }
+    if stored {
+        tip = format!("{tip}\n{}", tr("Saved: restore solves it again"));
+    }
     let (Some(db), Some(at)) = (r["best_s11_db"].as_f64(), r["best_at"].as_f64()) else { return tip };
     let unit = app.session.display().frequency.symbol();
     let deepest = trf("deepest |S11| {db} dB at {f} {unit}", args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = unit));

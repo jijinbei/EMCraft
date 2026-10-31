@@ -204,10 +204,12 @@ pub struct Session {
     pub(crate) runs: Vec<Run>,
     pub(crate) saved_runs: Vec<Run>,
     /// The analysis history: the solves kept with their models and results
-    /// ([`crate::archive`]), the last id given, and the kept solve the session was restored to.
+    /// ([`crate::archive`]), the last id given, the kept solve the session was restored to, and
+    /// the solves' ids, pins and labels as last saved or opened.
     pub(crate) archive: Vec<crate::archive::Archived>,
     pub(crate) archive_next: u32,
     pub(crate) archive_current: Option<u32>,
+    pub(crate) saved_archive: Vec<crate::archive::Mark>,
     /// Where the solvers run (`solve.device`).
     pub(crate) compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
@@ -348,13 +350,18 @@ impl Session {
         self.saved = self.history.clone();
         self.saved_runs = self.runs.clone();
         self.saved_views = self.views.clone();
+        self.saved_archive = crate::archive::marks(&self.archive);
     }
 
     /// Whether the project changed since it was last saved or opened: its model's history or
     /// its runs (a solve with other parameters than the saved run's) or how its results are
-    /// looked at (a chart's style, a probe).
+    /// looked at (a chart's style, a probe) or its analysis history (a solve kept, pinned,
+    /// labelled or let go).
     pub fn is_dirty(&self) -> bool {
-        self.history != self.saved || self.runs != self.saved_runs || self.views != self.saved_views
+        self.history != self.saved
+            || self.runs != self.saved_runs
+            || self.views != self.saved_views
+            || crate::archive::marks(&self.archive) != self.saved_archive
     }
 
     /// The project's runs, the latest last ([`crate::runs`]).

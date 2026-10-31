@@ -78,6 +78,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("results.history", None, None, false),
     ui("results.history.restore", None, None, false),
     ui("results.history.pin", None, None, false),
+    ui("results.history.label", None, None, false),
     ui("results.history.delete", None, None, false),
     ui("results.probes", None, Some(Glyph::Probe), false),
     ui("view.probe.add", None, Some(Glyph::Probe), false),

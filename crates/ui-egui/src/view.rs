@@ -48,7 +48,9 @@ impl View {
         let r = app.session.results();
         match self {
             View::Model | View::Outline => true,
-            View::SParameters | View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
+            // A project just opened: its kept sweeps, drawn from the history.
+            View::SParameters => r.sweep.is_some() || r.time_domain.is_some() || app.session.archive().iter().any(|a| a.kept.sweep.is_some()),
+            View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),
             View::Field => r.sweep.is_some() || r.eigen.is_some() || r.radiation.is_some(),
             View::PortModes => app.replies.port_modes.is_some() || (app.session.model().mesh.is_some() && !app.session.model().ports.is_empty()),
             View::FarField => r.radiation.is_some() || r.td_radiation.is_some(),
