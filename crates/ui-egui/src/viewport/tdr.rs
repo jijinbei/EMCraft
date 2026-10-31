@@ -31,7 +31,7 @@ impl ChartView for Tdr {
     }
 
     /// How to read the chart, packed beside or under it.
-    fn blocks(_: &EmcraftApp, _: &Parts) -> Vec<egui::Vec2> {
+    fn blocks(_: &EmcraftApp, _: &Parts, _: &egui::Ui) -> Vec<egui::Vec2> {
         vec![NOTE]
     }
 

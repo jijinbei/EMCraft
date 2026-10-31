@@ -102,10 +102,13 @@ impl ChartView for StudyView {
     }
 
     /// The table of its points, packed beside or under the chart.
-    fn blocks(app: &EmcraftApp, _: &Parts) -> Vec<egui::Vec2> {
-        let Some(study) = app.session.results().study.as_ref() else { return Vec::new() };
-        let modes = study.rows.iter().any(|r| !r.modes.is_empty());
-        vec![points_size(study.variables.len(), study.rows.len().min(MAX_ROWS), modes)]
+    fn blocks(app: &EmcraftApp, st: &Parts, ui: &egui::Ui) -> Vec<egui::Vec2> {
+        let Some(t) = Points::of(app, st) else { return Vec::new() };
+        let body = egui::TextStyle::Body.resolve(ui.style());
+        let mut widths = super::column_widths(ui, &body, &t.headers, &t.rows);
+        let notes: Vec<Vec<String>> = t.notes.iter().map(|(n, _)| vec![n.clone()]).collect();
+        widths.extend(super::column_widths(ui, &FontId::proportional(Tokens::get().font_small), &[String::new()], &notes));
+        vec![points_size(super::grid_width(ui, &widths, ui.spacing().item_spacing.x), t.rows.len())]
     }
 
     fn block(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, _: usize, _: &mut Actions) {
@@ -126,11 +129,9 @@ fn parameters(study: &Study) -> Vec<String> {
 
 /// The table under the chart, of the S-parameter shown.
 fn study_table(app: &EmcraftApp, st: &Parts, ui: &mut egui::Ui) {
-    let Some(study) = app.session.results().study.as_ref() else { return };
-    let parameters = parameters(study);
-    let shown = st.views.study.parameter.as_deref().filter(|p| parameters.iter().any(|q| q == p));
-    let units = emcraft_engine::view::variable_units(&app.session, study);
-    table(ui, study, shown.or(parameters.first().map(String::as_str)), &units);
+    if let Some(t) = Points::of(app, st) {
+        table(ui, &t);
+    }
 }
 
 /// A grid sweep's slice: the variable charted along, and the value each other variable is held
@@ -170,80 +171,116 @@ fn slice_picker(ui: &mut egui::Ui, study: &Study, slice: &mut Slice) {
 /// The most rows the table shows.
 const MAX_ROWS: usize = 500;
 
-/// The size the table of `variables` variables and `rows` points wants (points): from what it
-/// shows, not measured — a header and a row per point; the number, a column per variable, the
-/// goal or the band's extremes, the modes where any were found, and the row's note.
-pub(super) fn points_size(variables: usize, rows: usize, modes: bool) -> egui::Vec2 {
-    let modes = if modes { 220.0 } else { 0.0 };
-    vec2(40.0 + 90.0 * variables.min(8) as f32 + 200.0 + modes + 150.0, 30.0 + 24.0 * rows as f32)
+/// The size the table `width` wide (measured) of `rows` points wants (points): a header and a
+/// row per point.
+pub(super) fn points_size(width: f32, rows: usize) -> egui::Vec2 {
+    vec2(width, 30.0 + 24.0 * rows as f32)
+}
+
+/// How a row's note is drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Note {
+    Error,
+    Best,
+    Predicted,
+}
+
+/// The study's points as drawn: the headers and each row's cells (the number when optimizing,
+/// the values, the goal or the band's extremes of the S-parameter shown, the modes where any
+/// were found), and each row's note (why it failed, best, predicted) in small text.
+struct Points {
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    notes: Vec<(String, Option<Note>)>,
+}
+
+impl Points {
+    fn of(app: &EmcraftApp, st: &Parts) -> Option<Points> {
+        let study = app.session.results().study.as_ref()?;
+        let parameters = parameters(study);
+        let shown = st.views.study.parameter.as_deref().filter(|p| parameters.iter().any(|q| q == p));
+        let parameter = shown.or(parameters.first().map(String::as_str));
+        let units = emcraft_engine::view::variable_units(&app.session, study);
+        let optimize = study.kind == Kind::Optimize;
+        let modes = !study.rows.iter().all(|r| r.modes.is_empty());
+        let mut headers: Vec<String> = Vec::new();
+        if optimize {
+            headers.push("#".into());
+        }
+        // Each variable with its unit, where the model says it.
+        for (n, u) in study.variables.iter().zip(units.iter().chain(std::iter::repeat(&None))) {
+            headers.push(u.as_ref().map_or_else(|| n.clone(), |u| format!("{n} ({u})")));
+        }
+        if optimize {
+            headers.push(match emcraft_engine::view::goal_unit(study) {
+                Some(u) => trf("goal ({unit})", args!(unit = u)),
+                None => tr("goal").to_owned(),
+            });
+        } else if let Some(p) = parameter {
+            let p = p.to_uppercase();
+            headers.extend([trf("min |{p}| dB", args!(p = p)), trf("max |{p}| dB", args!(p = p))]);
+        }
+        if modes {
+            headers.push(trf("modes ({unit})", args!(unit = study.frequency_unit)));
+        }
+        let (mut rows, mut notes) = (Vec::new(), Vec::new());
+        for (i, r) in study.rows.iter().enumerate().take(MAX_ROWS) {
+            let mut row: Vec<String> = Vec::new();
+            if optimize {
+                row.push(format!("{}", i + 1));
+            }
+            row.extend(r.values.iter().map(|v| short(*v)));
+            if optimize {
+                row.push(r.objective.map_or("–".into(), |o| format!("{o:.4}")));
+            } else if let Some(p) = parameter {
+                let db = r.db(p).unwrap_or_default();
+                let lo = db.iter().copied().fold(f64::INFINITY, f64::min);
+                let hi = db.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let cell = |x: f64| if x.is_finite() { format!("{x:.3}") } else { "–".into() };
+                row.extend([cell(lo), cell(hi)]);
+            }
+            if modes {
+                row.push(r.modes.iter().take(6).map(|f| format!("{f:.4}")).collect::<Vec<_>>().join(", "));
+            }
+            // A surrogate's prediction, with the largest σ of the |S| shown.
+            let sigma = parameter.and_then(|p| r.db_sigma(p)).map(|s| s.into_iter().fold(0.0, f64::max));
+            notes.push(match (&r.error, study.best == Some(i), r.is_predicted(), sigma) {
+                (Some(e), _, _, _) => (emcraft_engine::text::clip(e, 120), Some(Note::Error)),
+                (None, true, _, _) => (tr("best").to_owned(), Some(Note::Best)),
+                (None, false, true, Some(s)) => (trf("predicted ± {sigma} dB", args!(sigma = format!("{s:.3}"))), Some(Note::Predicted)),
+                (None, false, true, None) => (tr("predicted").to_owned(), Some(Note::Predicted)),
+                (None, false, false, _) => (String::new(), None),
+            });
+            rows.push(row);
+        }
+        Some(Points { headers, rows, notes })
+    }
 }
 
 /// The most values offered as pills for one held variable.
 const MAX_PILLS: usize = 101;
 
-/// The study's points: the values, the goal or the band's extremes of the S-parameter shown, and
-/// why a point failed.
-fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>, units: &[Option<String>]) {
+/// The study's points, each row's note last.
+fn table(ui: &mut egui::Ui, p: &Points) {
     let t = &Tokens::get();
-    let optimize = study.kind == Kind::Optimize;
     egui::ScrollArea::both().id_salt("study_table").show(ui, |ui| {
         egui::Grid::new("study_grid").striped(true).show(ui, |ui| {
             super::dim_if_stale(ui);
-            if optimize {
-                ui.label(egui::RichText::new("#").strong());
+            for h in &p.headers {
+                ui.label(egui::RichText::new(h).strong());
             }
-            // Each variable with its unit, where the model says it.
-            for (n, u) in study.variables.iter().zip(units.iter().chain(std::iter::repeat(&None))) {
-                let head = u.as_ref().map_or_else(|| n.clone(), |u| format!("{n} ({u})"));
-                ui.label(egui::RichText::new(head).strong());
-            }
-            if optimize {
-                match emcraft_engine::view::goal_unit(study) {
-                    Some(u) => ui.text(Style::Strong, trf("goal ({unit})", args!(unit = u))),
-                    None => ui.text(Style::Strong, "goal"),
-                };
-            } else if let Some(p) = parameter {
-                let p = p.to_uppercase();
-                ui.text(Style::Strong, trf("min |{p}| dB", args!(p = p)));
-                ui.text(Style::Strong, trf("max |{p}| dB", args!(p = p)));
-            }
-            if !study.rows.iter().all(|r| r.modes.is_empty()) {
-                ui.text(Style::Strong, trf("modes ({unit})", args!(unit = study.frequency_unit)));
-            }
-            ui.label(egui::RichText::new("").strong());
+            ui.label("");
             ui.end_row();
-            for (i, r) in study.rows.iter().enumerate().take(MAX_ROWS) {
-                let best = study.best == Some(i);
-                if optimize {
-                    ui.label(format!("{}", i + 1));
+            for (row, (note, kind)) in p.rows.iter().zip(&p.notes) {
+                for c in row {
+                    ui.label(c);
                 }
-                for v in &r.values {
-                    ui.label(short(*v));
-                }
-                if optimize {
-                    ui.label(r.objective.map_or("–".into(), |o| format!("{o:.4}")));
-                } else if let Some(p) = parameter {
-                    let db = r.db(p).unwrap_or_default();
-                    let lo = db.iter().copied().fold(f64::INFINITY, f64::min);
-                    let hi = db.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                    let cell = |x: f64| if x.is_finite() { format!("{x:.3}") } else { "–".into() };
-                    ui.label(cell(lo));
-                    ui.label(cell(hi));
-                }
-                if !study.rows.iter().all(|r| r.modes.is_empty()) {
-                    ui.label(r.modes.iter().take(6).map(|f| format!("{f:.4}")).collect::<Vec<_>>().join(", "));
-                }
-                // A surrogate's prediction, with the largest σ of the |S| shown.
-                let sigma = parameter.and_then(|p| r.db_sigma(p)).map(|s| s.into_iter().fold(0.0, f64::max));
-                match (&r.error, best, r.is_predicted(), sigma) {
-                    (Some(e), _, _, _) => ui.label(egui::RichText::new(emcraft_engine::text::clip(e, 120)).size(t.font_small).color(t.error)),
-                    (None, true, _, _) => crate::ui_kit::small(ui, "best", t.accent),
-                    (None, false, true, Some(s)) => {
-                        crate::ui_kit::small(ui, trf("predicted ± {sigma} dB", args!(sigma = format!("{s:.3}"))), t.text_dim)
-                    }
-                    (None, false, true, None) => crate::ui_kit::small(ui, "predicted", t.text_dim),
-                    (None, false, false, _) => ui.label(""),
+                let colour = match kind {
+                    Some(Note::Error) => t.error,
+                    Some(Note::Best) => t.accent,
+                    Some(Note::Predicted) | None => t.text_dim,
                 };
+                crate::ui_kit::small(ui, Raw(note), colour);
                 ui.end_row();
             }
         });

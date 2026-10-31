@@ -33,8 +33,8 @@ impl ChartView for SParameters {
 
     /// The history (once there are two solves to compare), the table of S and the ports'
     /// reference planes, packed round the chart.
-    fn blocks(app: &EmcraftApp, _: &Parts) -> Vec<egui::Vec2> {
-        parts(app).map(|p| p.wants(app)).collect()
+    fn blocks(app: &EmcraftApp, _: &Parts, ui: &egui::Ui) -> Vec<egui::Vec2> {
+        parts(app).map(|p| p.wants(app, ui)).collect()
     }
 
     fn block(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, k: usize, out: &mut Actions) {
@@ -82,19 +82,12 @@ fn parts(app: &EmcraftApp) -> impl Iterator<Item = Part> {
 }
 
 impl Part {
-    /// The size it wants (points): from what it shows, not measured.
-    fn wants(self, app: &EmcraftApp) -> egui::Vec2 {
-        let sweep = app.session.results().sweep.as_ref();
+    /// The size it wants (points): the table's measured, the others' from what they show.
+    fn wants(self, app: &EmcraftApp, ui: &egui::Ui) -> egui::Vec2 {
         match self {
             // A heading, a row per kept solve, a caption.
             Part::History => vec2(300.0, 30.0 + 34.0 * app.session.archive().len() as f32 + 34.0),
-            // A header and a row per frequency; a frequency column and two per entry of S.
-            Part::Table => {
-                let rows = sweep.map_or(0, |s| s.results.len()) as f32;
-                let entries = sweep.map_or(2, |s| s.entries().len().clamp(2, TABLE_ENTRIES)) as f32;
-                let marks = if sweep.is_some_and(|s| marked(s)) { MARK } else { 0.0 };
-                vec2(marks + 80.0 + 170.0 * entries, 26.0 + 22.0 * rows)
-            }
+            Part::Table => STable::of(app, ui).map_or(vec2(300.0, 26.0), |t| t.size(ui)),
             Part::Planes => vec2(80.0 + 110.0 * app.session.model().ports.len() as f32, 46.0),
         }
     }
@@ -234,42 +227,79 @@ fn reference_planes(app: &EmcraftApp, edits: &mut Vec<f64>, ui: &mut egui::Ui, o
 /// Most entries of S's first column the table shows.
 const TABLE_ENTRIES: usize = 8;
 
-/// The sweep's first column of S (S11, S21, and on with more ports or terminals) at each
-/// frequency.
+/// The table of S as drawn: its caption (a terminal port's entries named), headers, rows, each
+/// column's width (its widest text, measured in its font) and whether its rows are marked.
+struct STable {
+    caption: Option<String>,
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    widths: Vec<f32>,
+    marks: bool,
+}
+
+/// The table's font: monospace, so the numbers line up.
+fn table_font() -> FontId {
+    FontId::monospace(Tokens::get().font_body)
+}
+
+/// The padding of each of the table's cells (points).
+const CELL_PAD: f32 = 14.0;
+
+impl STable {
+    /// The sweep's first column of S (S11, S21, and on with more ports or terminals) at each
+    /// frequency, each column at its own decimals; `None` without a sweep.
+    fn of(app: &EmcraftApp, ui: &egui::Ui) -> Option<STable> {
+        let sw = app.session.results().sweep.as_ref()?;
+        let fu = app.session.display().frequency;
+        let entries = sw.entries();
+        let n = entries.len().clamp(2, TABLE_ENTRIES);
+        let caption = entries.iter().any(|e| e.terminal.is_some()).then(|| {
+            let names: Vec<String> = entries.iter().enumerate().map(|(i, e)| format!("{} = {}", i + 1, e.name)).collect();
+            trf("Entries of S: {entries}", args!(entries = names.join(", ")))
+        });
+        let freqs: Vec<f64> = sw.results.iter().map(|r| fu.from_si(r.frequency)).collect();
+        let fd = frequency_decimals(&freqs);
+        let headers: Vec<String> = std::iter::once(format!("f ({})", fu.symbol()))
+            .chain((1..=n).flat_map(|p| [format!("|S{p}1| (dB)"), format!("arg S{p}1 (°)")]))
+            .collect();
+        let rows: Vec<Vec<String>> = sw
+            .results
+            .iter()
+            .zip(&freqs)
+            .map(|(r, f)| {
+                let mut row = vec![format!("{f:.fd$}")];
+                for p in 0..n {
+                    match r.s.get(p, 0) {
+                        Some(c) => row.extend([format!("{:.2}", emcraft_model::units::decibels(c.norm())), format!("{:.1}", c.arg().to_degrees())]),
+                        None => row.extend(["–".to_owned(), "–".to_owned()]),
+                    }
+                }
+                row
+            })
+            .collect();
+        let widths = super::column_widths(ui, &table_font(), &headers, &rows).into_iter().map(|w| w + CELL_PAD).collect();
+        Some(STable { caption, headers, rows, widths, marks: marked(sw) })
+    }
+
+    /// The size it takes (points): its columns side by side (no gaps between them: each cell
+    /// carries its padding) and room for a scroll bar; a header, a row per frequency and the
+    /// caption.
+    fn size(&self, ui: &egui::Ui) -> egui::Vec2 {
+        let marks = if self.marks { MARK } else { 0.0 };
+        let caption = if self.caption.is_some() { 20.0 } else { 0.0 };
+        vec2(marks + super::grid_width(ui, &self.widths, 0.0), caption + 26.0 + 22.0 * self.rows.len() as f32)
+    }
+}
+
+/// The sweep's first column of S at each frequency, each column's numbers right-aligned under
+/// its header.
 fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
     let Some(sw) = app.session.results().sweep.as_ref() else { return };
-    let fu = app.session.display().frequency;
-    let entries = sw.entries();
-    let n = entries.len().clamp(2, TABLE_ENTRIES);
-    if entries.iter().any(|e| e.terminal.is_some()) {
-        let names: Vec<String> = entries.iter().enumerate().map(|(i, e)| format!("{} = {}", i + 1, e.name)).collect();
-        crate::ui_kit::caption(ui, trf("Entries of S: {entries}", args!(entries = names.join(", "))));
+    let Some(STable { caption, headers, rows, widths, marks }) = STable::of(app, ui) else { return };
+    if let Some(c) = caption {
+        crate::ui_kit::caption(ui, Raw(&c));
     }
-    let freqs: Vec<f64> = sw.results.iter().map(|r| fu.from_si(r.frequency)).collect();
-    let fd = frequency_decimals(&freqs);
-    // Each column's numbers right-aligned under its header, at the column's own decimals.
-    let t = &Tokens::get();
-    let font = FontId::monospace(t.font_body);
-    let width = |text: &str| ui.painter().layout_no_wrap(text.to_owned(), font.clone(), t.text).size().x;
-    let headers: Vec<String> =
-        std::iter::once(format!("f ({})", fu.symbol())).chain((1..=n).flat_map(|p| [format!("|S{p}1| (dB)"), format!("arg S{p}1 (°)")])).collect();
-    let rows: Vec<Vec<String>> = sw
-        .results
-        .iter()
-        .zip(&freqs)
-        .map(|(r, f)| {
-            let mut row = vec![format!("{f:.fd$}")];
-            for p in 0..n {
-                match r.s.get(p, 0) {
-                    Some(c) => row.extend([format!("{:.2}", emcraft_model::units::decibels(c.norm())), format!("{:.1}", c.arg().to_degrees())]),
-                    None => row.extend(["–".to_owned(), "–".to_owned()]),
-                }
-            }
-            row
-        })
-        .collect();
-    let widths: Vec<f32> =
-        (0..headers.len()).map(|k| rows.iter().map(|r| r.get(k).map_or(0.0, |c| width(c))).fold(width(&headers[k]), f32::max) + 14.0).collect();
+    let font = table_font();
     let cell = |ui: &mut egui::Ui, w: f32, text: egui::RichText| {
         ui.allocate_ui_with_layout(vec2(w, 18.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.set_min_width(w);
@@ -277,7 +307,6 @@ fn table(app: &EmcraftApp, ui: &mut egui::Ui) {
         });
     };
     // A fast sweep's rows solved in full, marked as the chart marks them.
-    let marks = marked(sw);
     let columns = headers.len() + usize::from(marks);
     egui::Grid::new("s_grid").striped(true).num_columns(columns).spacing(vec2(0.0, 2.0)).show(ui, |ui| {
         super::dim_if_stale(ui);
