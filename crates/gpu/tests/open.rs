@@ -68,7 +68,12 @@ fn worst(a: &OpenRun, b: &OpenRun) -> f64 {
     w.max(((fx.0 - fy.0).norm() + (fx.1 - fy.1).norm()) / (fy.0.norm() + fy.1.norm()))
 }
 
+/// One device run at a time: CubeCL's CPU runtime keeps threads of its own, and runs side by
+/// side oversubscribe the machine (as in tests/guide.rs).
+static DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn on(m: &Model, o: &OpenOptions, freqs: &[f64], backend: Backend, precision: Precision) -> OpenRun {
+    let _one = DEVICE.lock().unwrap_or_else(|e| e.into_inner());
     let t = Instant::now();
     let r = radiate_with(m, o, freqs, Some(&Gpu { backend, precision })).unwrap();
     eprintln!("{backend} {precision}: {} steps in {:.2?}", r.steps, t.elapsed());
@@ -77,8 +82,7 @@ fn on(m: &Model, o: &OpenOptions, freqs: &[f64], backend: Backend, precision: Pr
 
 /// `m` on CubeCL's CPU runtime in `precision` against the threads, cut short (the runtime
 /// launches slowly: 400 steps, two batches, of a coarse box). The largest difference, and
-/// whether the steps were the same. Each precision is a test of its own, side by side in the
-/// gate.
+/// whether the steps were the same. Each precision is a test of its own.
 fn gap(m: &Model, precision: Precision) -> (f64, bool) {
     let freqs = [9e9, 11e9];
     let o = OpenOptions { max_steps: 400, ..OpenOptions::new(2e-3) };

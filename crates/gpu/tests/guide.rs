@@ -42,15 +42,17 @@ fn on(backend: Backend, precision: Precision, o: &Options) -> TdResult {
     on_model(&filter(), &FREQS, backend, precision, o)
 }
 
+/// One device run at a time: CubeCL's CPU runtime keeps threads of its own, and runs side by
+/// side oversubscribe the machine (this binary took 44 s so, 26 s one at a time).
+static DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn on_model(m: &Model, freqs: &[f64], backend: Backend, precision: Precision, o: &Options) -> TdResult {
+    let _one = DEVICE.lock().unwrap_or_else(|e| e.into_inner());
     let t = Instant::now();
     let r = s_parameters_with(m, o, freqs, Some(&Gpu { backend, precision })).unwrap();
     eprintln!("{backend} {precision}: {} + {} steps in {:.2?}", r.steps, r.reference_steps, t.elapsed());
     r
 }
-
-// Each precision is a test of its own: CubeCL's CPU runtime takes some 9 ms a step here, and the
-// gate runs tests side by side.
 
 /// CubeCL's CPU runtime launches slowly: a run cut short at 520 steps (into the second batch,
 /// the pulse through both planes), the transforms compared as they stand. Bit-for-bit repeats
