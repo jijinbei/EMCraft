@@ -316,6 +316,18 @@ impl Session {
         }
     }
 
+    /// The driven entry of S (`view.driven`): its index among [`Session::sparameter_entries`],
+    /// the first when none is set or the one set names nothing now.
+    pub fn driven_entry(&self) -> usize {
+        self.views.driven.as_deref().and_then(|n| self.sparameter_entry(n)).map_or(0, |(k, _)| k)
+    }
+
+    /// The model's port the driven entry belongs to (its index in `model.ports`), when the model
+    /// has ports.
+    pub fn driven_port(&self) -> Option<usize> {
+        self.sparameter_entries().get(self.driven_entry()).map(|e| e.port).filter(|&i| i < self.model.ports.len())
+    }
+
     /// The entry of S named `name` (a terminal `<port>:<k>`, or a port: its first entry) and its
     /// index; `None` when nothing has that name.
     pub fn sparameter_entry(&self, name: &str) -> Option<(usize, SPort)> {

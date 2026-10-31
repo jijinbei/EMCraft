@@ -207,6 +207,10 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     v["chart_style"] = chart_style(app);
     v["refine"] = json!(app.views.refine.band.map(|(a, b)| [s.show_frequency(a), s.show_frequency(b)]));
     v["deembed"] = json!(s.model().ports.iter().map(|p| s.show_length(p.deembed)).collect::<Vec<_>>());
+    // Each waveguide port's role as the browser and the 3D view show it, the driven one the input.
+    v["ports"] =
+        json!(crate::browser::port_roles(s).iter().map(|r| json!({"name": r.name, "role": r.id(), "s": r.sparameter()})).collect::<Vec<_>>());
+    v["driven"] = json!(s.sparameter_entries().get(s.driven_entry()).map(|e| e.name.clone()));
     v["probes"] = json!(s.views().probes.iter().map(|p| json!({"name": p.name, "at": p.at.map(|x| s.show_length(x))})).collect::<Vec<_>>());
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
     v["estimate"] =

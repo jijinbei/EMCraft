@@ -52,7 +52,7 @@ pub(crate) fn field_plots(app: &EmcraftApp, field: &mut FieldState) -> Result<Ve
 }
 
 pub(super) fn field(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-    field_controls(app, &mut st.field, ui);
+    field_controls(app, &mut st.field, ui, out);
     let area = ui.available_rect_before_wrap();
     let gap = 10.0;
     // A narrow card stacks them, in the card's scroll: the model in 3D when asked, the picture,
@@ -216,7 +216,7 @@ pub(super) fn phasor(c: emcraft_model::Complex64, unit: &str) -> String {
     if c.norm() == 0.0 { format!("0 {unit}") } else { format!("{} {unit} ∠ {}°", format(c.norm()), format(c.arg().to_degrees().round())) }
 }
 
-pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
+pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal_wrapped(|ui| {
         field_choice(app, field, ui);
         ui.separator();
@@ -228,7 +228,7 @@ pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut 
         }
     });
     kept_planes(app, field, ui);
-    ui.horizontal_wrapped(|ui| field_display(app, field, ui));
+    ui.horizontal_wrapped(|ui| field_display(app, field, ui, out));
 }
 
 /// Which field: an eigenmode, or a solved frequency.
@@ -344,7 +344,7 @@ pub(super) fn kept_planes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egu
 
 /// What is drawn: the coloured component, the arrows, the excited port, and the phase played
 /// like a video.
-pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
+pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     let before = field.view.component;
     let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {
         for c in emcraft_engine::view::Component::ALL {
@@ -360,13 +360,17 @@ pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut e
     }
     ui.checkbox(&mut field.view.show_e, tr("E arrows"));
     ui.checkbox(&mut field.view.show_h, tr("H arrows"));
-    // Each entry of S is an excitation: a port, or a terminal of a terminal port.
+    // Each entry of S is an excitation: a port, or a terminal of a terminal port. The one
+    // shown is the driven port (`view.driven`), the input everywhere else too.
     let entries = app.session.sparameter_entries();
     if entries.len() > 1 && field.view.mode.is_none() {
         ui.separator();
         ui.text(Style::Body, "excite");
         for (i, e) in entries.iter().enumerate() {
-            ui.radio_value(&mut field.view.excitation, i, e.name.as_str());
+            if ui.radio(field.view.excitation == i, e.name.as_str()).clicked() && field.view.excitation != i {
+                field.view.excitation = i;
+                out.push(Action::run("view.driven", serde_json::json!({"port": e.name})));
+            }
         }
     }
     ui.separator();

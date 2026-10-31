@@ -573,7 +573,7 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
     let cam = &v.camera;
     let at = |q: [f64; 3]| screen(cam, rect, q);
     let l = app.session.display().length;
-    arrows(app.session.model(), p, cam, rect);
+    arrows(app, p, cam, rect);
     if let Some(r) = ref_plane(app, v) {
         reference(p, &r, cam, rect, l, t);
     }
@@ -813,22 +813,39 @@ fn arrow(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke) {
     p.add(egui::Shape::convex_polygon(tip.to_vec(), s.color, Stroke::NONE));
 }
 
-/// Which way each port sends its wave: from a waveguide port's face into the model, along a
-/// lumped port's gap from `from` to `to`.
-fn arrows(m: &emcraft_model::Model, p: &egui::Painter, cam: &Camera, rect: Rect) {
-    let ink = crate::theme::color32(crate::theme::scene().port);
-    let s = Stroke::new(3.0, ink);
+/// Which way each port's wave goes: at the driven port (the input) into the model, with its
+/// reflection (S11) coming back beside it; at the others (outputs) out of the model, the wave
+/// transmitted to them (S21, …); along a lumped port's gap from `from` to `to`.
+fn arrows(app: &EmcraftApp, p: &egui::Painter, cam: &Camera, rect: Rect) {
+    let m = app.session.model();
+    let sc = crate::theme::scene();
+    let driven = app.session.driven_port();
     let span = m.bounds().map_or(0.0, |b| (b.max.z - b.min.z).abs());
-    for port in &m.ports {
+    for (i, port) in m.ports.iter().enumerate() {
         let Some(q) = crate::scene3d::port_quad(m, port) else { continue };
         let c = quad_centre(&q);
         let size = (0..3).map(|k| (q[2][k] - q[0][k]).abs()).fold(0.0, f64::max);
         let len = (0.6 * size).min(0.3 * span).max(1e-9);
-        let tip = along(c, crate::scene3d::port_normal(port), len);
-        if let (Some(a), Some(b)) = (screen(cam, rect, c), screen(cam, rect, tip)) {
-            arrow(p, a, b, s);
+        let n = crate::scene3d::port_normal(port);
+        if driven == Some(i) {
+            let ink = crate::theme::color32(sc.port_input);
+            // The incident wave from outside the face into the model, its reflection back out.
+            let (from, tip) = (along(c, n, -0.35 * len), along(c, n, len));
+            if let (Some(a), Some(b)) = (screen(cam, rect, from), screen(cam, rect, tip)) {
+                let d = b - a;
+                let side = if d.length() > 1.0 { vec2(-d.y, d.x).normalized() * 7.0 } else { vec2(0.0, 7.0) };
+                arrow(p, a - side, b - side, Stroke::new(3.0, ink));
+                let back = a + (b - a) * 0.15;
+                arrow(p, b + side - (b - a) * 0.2, back + side, Stroke::new(2.0, ink.gamma_multiply(0.85)));
+            }
+        } else {
+            let ink = crate::theme::color32(sc.port_output);
+            if let (Some(a), Some(b)) = (screen(cam, rect, along(c, n, 0.35 * len)), screen(cam, rect, along(c, n, -len))) {
+                arrow(p, a, b, Stroke::new(3.0, ink));
+            }
         }
     }
+    let s = Stroke::new(3.0, crate::theme::color32(sc.port));
     for lp in &m.lumped {
         if let (Some(a), Some(b)) = (screen(cam, rect, lp.from.to_array()), screen(cam, rect, lp.to.to_array())) {
             arrow(p, a, b, s);

@@ -52,6 +52,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             trf("Analysis: {kind}.", args!(kind = kind))
         }
         "engine.script" => tr("Script done.").to_owned(),
+        "view.driven" => trf("Port {name} is the input.", args!(name = r.text("driven"))),
         "file.save" => trf("Saved {n} commands to {path}.", args!(n = r.count("commands"), path = r.text("path"))),
         "solve.frequency" => trf("Solved {n} frequencies, {unknowns} unknowns.", args!(n = r.list("points").len(), unknowns = r.count("unknowns"))),
         "solve.eigenmodes" => {

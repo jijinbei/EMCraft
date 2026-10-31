@@ -25,7 +25,9 @@ pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
             let c = crate::scene3d::material_rgb(m, i);
             let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
             ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c.0, c.1, c.2));
-            ui_kit::small(ui, format!("{}: {}", mat.name, mat.summary()), t.text);
+            let tex = format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat));
+            let r = ui.label(crate::math::job(&tex, t.font_small, t.text));
+            r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("{}: {}", mat.name, mat.summary())));
         });
     }
 }

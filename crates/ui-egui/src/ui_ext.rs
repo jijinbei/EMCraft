@@ -131,7 +131,8 @@ impl Hint for Response {
     fn hint(self, text: impl Shown) -> Response {
         match text.shown() {
             "" => self,
-            s => self.on_hover_text(s),
+            // Its symbols set as mathematics (`εr` with a lowered r).
+            s => crate::math::tip(self, s),
         }
     }
 

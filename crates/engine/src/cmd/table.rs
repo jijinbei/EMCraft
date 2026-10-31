@@ -68,7 +68,7 @@ const BODY_MATERIAL: ParamSpec = req("material", K::String, "`metal`, the region
 
 // A driven solution: a solved frequency and the port excited.
 const SOLVED_FREQUENCY: ParamSpec = req("frequency", K::Number, "a solved frequency").of(F);
-const EXCITATION: ParamSpec = opt("excitation", K::String, "the excited port (default the first)");
+const EXCITATION: ParamSpec = opt("excitation", K::String, "the excited port (default the driven one: view.driven)");
 
 // A field picture: the solution, the plane and the colour.
 const FIELD_FREQUENCY: ParamSpec = opt("frequency", K::Number, "a solved frequency (the nearest is used); required unless `mode` is given").of(F);
@@ -855,6 +855,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::View,
         invalidates: None,
         run: crate::views::probe_delete,
+    },
+    CommandSpec {
+        id: "view.driven",
+        label: "Driven port",
+        doc: "Chooses the driven port: the input the field views show excited and S is read against (S11 the reflection at it, S21 the transmission to port 2, …), the default `excitation` of the commands that take one. Every port is still excited in turn by a sweep (the whole S matrix); this only says which one is looked at. Without `port` the first is driven again. Saved with the project, not in its history. The reply: the driven port and each entry's role (`input`, `output`).",
+        params: &[opt("port", K::String, "the port or terminal `<port>:<k>` (default the first)")],
+        effect: Effect::View,
+        invalidates: None,
+        run: crate::views::driven,
     },
     CommandSpec {
         id: "view.chart.style",

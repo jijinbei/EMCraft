@@ -75,6 +75,8 @@
     "metal_dark": "#91734b",
     "port": "#d69758",
     "port_soft": "#dcb991",
+    "port_input": "#c8642e",
+    "port_output": "#3a8f94",
     "edge": "#34291b",
     "pml": "#9274bf",
     "rim": "#f0e9e1",

@@ -5,6 +5,11 @@
 //! names an item of the model (a material, a port, a body, a source) edits and deletes it: its
 //! right-click menu (Edit, Delete, Show in 3D), a double-click (Edit) and the Delete key on the
 //! selected row (undoable; a refusal shows as an error).
+//!
+//! Rows show their symbols set as mathematics ([`crate::math`]: `εr` with a lowered r, `S₂₁`)
+//! while their plain text names them (handles, keys). A waveguide port's row says its part in
+//! the S-parameters ([`PortRole`]): the driven input, whose reflection is S11, or an output,
+//! the transmission to it S21; its menu drives it (`view.driven`).
 
 use egui::{Align2, FontId, Rect, Sense, Stroke, pos2, vec2};
 
@@ -86,12 +91,101 @@ pub struct Row {
     pub pick: Option<Pick>,
     /// The item of the model it names, which it edits and deletes.
     pub item: Option<Item>,
+    /// What it shows, as TeX ([`crate::math`]), when not its text's symbols set as mathematics.
+    pub rich: Option<String>,
+    /// A waveguide port's part in the S-parameters.
+    pub role: Option<PortRole>,
+}
+
+/// A waveguide port's part in the S-parameters as they are read: the driven port is the input
+/// (what the field views show excited; its reflection is S11), the others outputs (the
+/// transmission to port 2 is S21). A sweep still drives every port in turn.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PortRole {
+    /// The port's name.
+    pub name: String,
+    pub input: bool,
+    /// The entry of S it reads, (row, column) from 1: (1, 1) at the input, (2, 1) at port 2.
+    pub s: (usize, usize),
+}
+
+impl PortRole {
+    /// `input` or `output`.
+    pub fn id(&self) -> &'static str {
+        if self.input { "input" } else { "output" }
+    }
+
+    /// The S-parameter in plain text: `S21` (`S12,1` past nine entries).
+    pub fn sparameter(&self) -> String {
+        let (i, j) = self.s;
+        if i < 10 && j < 10 { format!("S{i}{j}") } else { format!("S{i},{j}") }
+    }
+
+    /// Its role in short, in the current language, for its row's pill: `in · S11`, `out · S21`.
+    pub fn text(&self) -> String {
+        let s = self.sparameter();
+        if self.input { lang::trf("in · {s}", args!(s = s)) } else { lang::trf("out · {s}", args!(s = s)) }
+    }
+
+    /// Its role in full, for tooltips and the Excitation step: `input · reflection S11`,
+    /// `output · transmission S21`.
+    pub fn tip(&self) -> String {
+        let s = self.sparameter();
+        if self.input { lang::trf("input · reflection {s}", args!(s = s)) } else { lang::trf("output · transmission {s}", args!(s = s)) }
+    }
+
+    /// Its colour (the theme's `port_input` or `port_output`).
+    pub fn colour(&self) -> egui::Color32 {
+        let sc = crate::theme::scene();
+        crate::theme::color32(if self.input { sc.port_input } else { sc.port_output })
+    }
+}
+
+/// Each waveguide port's role, in the model's order: the driven one (`view.driven`) the input.
+pub fn port_roles(s: &emcraft_engine::Session) -> Vec<PortRole> {
+    let entries = s.sparameter_entries();
+    let k = s.driven_entry();
+    let driven = s.driven_port();
+    s.model()
+        .ports
+        .iter()
+        .enumerate()
+        .map(|(j, p)| {
+            let input = driven == Some(j);
+            let row = if input { k } else { entries.iter().position(|e| e.port == j).unwrap_or(j) };
+            PortRole { name: p.name.clone(), input, s: (row + 1, k + 1) }
+        })
+        .collect()
+}
+
+/// A port role's mark in `r`: for the input a wave going in with its reflection coming back,
+/// for an output a wave going out of a face.
+pub fn role_mark(p: &egui::Painter, r: Rect, input: bool, ink: egui::Color32) {
+    let s = Stroke::new(1.6, ink);
+    let (l, rt, c) = (r.left() + 1.0, r.right() - 1.0, r.center());
+    let head = |p: &egui::Painter, tip: egui::Pos2, dir: f32| {
+        p.add(egui::Shape::convex_polygon(vec![tip, tip + vec2(-4.0 * dir, -3.0), tip + vec2(-4.0 * dir, 3.0)], ink, Stroke::NONE));
+    };
+    if input {
+        // The face at the right; the wave in above, the reflection back below.
+        p.line_segment([pos2(rt, r.top() + 1.0), pos2(rt, r.bottom() - 1.0)], Stroke::new(2.0, ink));
+        let (y0, y1) = (c.y - 3.0, c.y + 3.5);
+        p.line_segment([pos2(l, y0), pos2(rt - 5.0, y0)], s);
+        head(p, pos2(rt - 2.0, y0), 1.0);
+        p.line_segment([pos2(rt - 3.0, y1), pos2(l + 4.0, y1)], Stroke::new(1.2, ink.gamma_multiply(0.8)));
+        head(p, pos2(l + 1.0, y1), -1.0);
+    } else {
+        // The face at the left, the wave leaving it.
+        p.line_segment([pos2(l, r.top() + 1.0), pos2(l, r.bottom() - 1.0)], Stroke::new(2.0, ink));
+        p.line_segment([pos2(l + 3.0, c.y), pos2(rt - 3.0, c.y)], s);
+        head(p, pos2(rt, c.y), 1.0);
+    }
 }
 
 /// A row of `template` (looked up in the current language) with its values.
 fn row(template: &str, args: &[(&str, &dyn Display)], glyph: Glyph, act: Act) -> Row {
     let Both { en, shown } = lang::both(template, args);
-    Row { text: en, shown, glyph, act, pick: None, item: None }
+    Row { text: en, shown, glyph, act, pick: None, item: None, rich: None, role: None }
 }
 
 impl Row {
@@ -113,6 +207,19 @@ impl Row {
         match &self.item {
             Some(item) => Some(Action::EditItem(item.clone())),
             None => self.act.clone().edit(),
+        }
+    }
+
+    /// What it shows as TeX: its own, else its text's symbols set as mathematics.
+    pub fn tex(&self) -> String {
+        self.rich.clone().unwrap_or_else(|| crate::math::texify(self.shown.trim_start()).into_owned())
+    }
+
+    /// Its text and, for a port, its role: what its tooltip says.
+    pub fn tip(&self) -> String {
+        match &self.role {
+            Some(role) => format!("{}\n{}", self.shown.trim_start(), role.tip()),
+            None => self.shown.trim_start().to_owned(),
         }
     }
 
@@ -166,16 +273,17 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
             m.materials
                 .iter()
                 .map(|mat| {
-                    row("{name}: {summary}", args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None).item(Item::new(
+                    let r = row("{name}: {summary}", args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None).item(Item::new(
                         "model.material.edit",
                         "model.material.delete",
                         "name",
                         serde_json::json!(mat.name),
-                    ))
+                    ));
+                    Row { rich: Some(format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat))), ..r }
                 })
                 .collect(),
         ),
-        ("Ports", ports(m)),
+        ("Ports", ports(&app.session)),
         ("Sources", sources(m, &f)),
         ("Boundaries", boundaries(m, &f)),
         ("Mesh", mesh(m)),
@@ -286,11 +394,16 @@ fn geometry(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
     rows
 }
 
-fn ports(m: &emcraft_model::Model) -> Vec<Row> {
+fn ports(s: &emcraft_engine::Session) -> Vec<Row> {
+    let m = s.model();
+    let roles = port_roles(s);
     let waveguide = m.ports.iter().enumerate().map(|(i, p)| {
         let Both { en, shown } = port_text(p);
         let item = Item::new("model.port.edit", "model.port.delete", "name", serde_json::json!(p.name));
-        Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None, item: None }.picks(Pick::Port(i)).item(item)
+        let role = roles.get(i).cloned();
+        Row { text: en, shown, glyph: Glyph::Port, act: Act::Show(View::PortModes), pick: None, item: None, rich: None, role }
+            .picks(Pick::Port(i))
+            .item(item)
     });
     let lumped = m.lumped.iter().enumerate().map(|(i, p)| {
         let item = Item::new("model.port.lumped.edit", "model.port.lumped.delete", "name", serde_json::json!(p.name));
@@ -507,13 +620,11 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                             } else if resp.hovered() {
                                 ui.painter().rect_filled(rect, t.radius_sm, t.hover);
                             }
-                            glyphs::paint(
-                                ui.painter(),
-                                Rect::from_center_size(pos2(rect.left() + indent + 7.0, rect.center().y), vec2(15.0, 15.0)),
-                                r.glyph,
-                                t.icon,
-                                t.accent,
-                            );
+                            let mark = Rect::from_center_size(pos2(rect.left() + indent + 7.0, rect.center().y), vec2(15.0, 15.0));
+                            match &r.role {
+                                Some(role) => role_mark(ui.painter(), mark, role.input, role.colour()),
+                                None => glyphs::paint(ui.painter(), mark, r.glyph, t.icon, t.accent),
+                            }
                             // A result of a model changed after its run: dimmed, marked at the right.
                             let out_of_date = stale && *section == "Results";
                             let ink = if selected {
@@ -529,19 +640,27 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 crate::steps::stale_mark(ui.painter(), c, t);
                                 clip.max.x -= 24.0;
                             }
-                            ui.painter().with_clip_rect(clip).text(
-                                pos2(rect.left() + indent + 19.0, rect.center().y),
-                                Align2::LEFT_CENTER,
-                                shown,
-                                FontId::proportional(t.font_body),
-                                ink,
-                            );
+                            if let Some(role) = &r.role {
+                                clip.max.x = role_pill(ui, rect, role, t).left() - 4.0;
+                            }
+                            // One line, ending in an ellipsis where it meets the pill or the edge.
+                            let left = rect.left() + indent + 19.0;
+                            let mut job = crate::math::job(&r.tex(), t.font_body, ink);
+                            job.wrap = egui::text::TextWrapping {
+                                max_width: (clip.right() - left).max(8.0),
+                                max_rows: 1,
+                                break_anywhere: true,
+                                overflow_character: Some('…'),
+                            };
+                            let galley = ui.painter().layout_job(job);
+                            let at = pos2(left, rect.center().y - galley.size().y / 2.0);
+                            ui.painter().with_clip_rect(clip).galley(at, galley, ink);
                             scenario::publish_target(Handle::Row(text), rect);
                             let resp = if out_of_date {
                                 let tip = lang::trf("{row} — out of date", args!(row = shown));
-                                resp.on_hover_text(tip)
+                                crate::math::tip(resp, &tip)
                             } else {
-                                resp.on_hover_text(shown)
+                                crate::math::tip(resp, &r.tip())
                             };
                             // Shift or Ctrl toggles a part in what is selected, as a click in 3D.
                             let toggles = ui.input(|i| i.modifiers.shift || i.modifiers.ctrl || i.modifiers.command);
@@ -572,9 +691,28 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         });
 }
 
-/// A row's right-click menu: Edit, Delete (its item's), Show in 3D (what it is there).
+/// A port's role at the right of its row: its mark's colour as a soft pill, the role in short
+/// with the S-parameter set as mathematics. The rectangle it took.
+fn role_pill(ui: &egui::Ui, rect: Rect, role: &PortRole, t: &Tokens) -> Rect {
+    let galley = ui.painter().layout_job(crate::math::rich(&role.text(), t.font_small, t.text));
+    let size = galley.size() + vec2(12.0, 2.0);
+    let pill = Rect::from_min_size(pos2(rect.right() - 4.0 - size.x, rect.center().y - size.y / 2.0), size);
+    let ink = role.colour();
+    ui.painter().rect_filled(pill, size.y / 2.0, ink.gamma_multiply(0.2));
+    ui.painter().rect_stroke(pill, size.y / 2.0, Stroke::new(1.0, ink), egui::StrokeKind::Inside);
+    ui.painter().galley(pill.min + vec2(6.0, 1.0), galley, t.text);
+    pill
+}
+
+/// A row's right-click menu: Edit, Delete (its item's), Show in 3D (what it is there); a port
+/// that is an output can be made the input (`view.driven`).
 fn row_menu(app: &EmcraftApp, r: &Row, key: &str, ui: &mut egui::Ui, out: &mut Actions) {
     let idle = !app.busy();
+    if let Some(role) = r.role.as_ref().filter(|role| !role.input) {
+        let drive = egui::Button::new(lang::tr("Make the input"));
+        let params = serde_json::json!({"port": role.name});
+        ui.act(idle, drive, Fixed::RowMenuDrive.into(), "", || Action::run("view.driven", params), out);
+    }
     if let Some(edit) = r.edit_action() {
         ui.act(idle, egui::Button::new(lang::tr("Edit…")), Fixed::RowMenuEdit.into(), "", || edit, out);
     }

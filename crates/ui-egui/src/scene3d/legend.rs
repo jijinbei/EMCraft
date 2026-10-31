@@ -19,13 +19,16 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
         }
         Overlay::Ports => {
             // Ports named as the browser and the Excitation step name them.
-            for p in &m.ports {
+            // The driven port in the input's colour, the others in the outputs'.
+            let driven = session.driven_port();
+            for (i, p) in m.ports.iter().enumerate() {
                 let template = match (p.face.is_some(), p.end) {
                     (true, _) => "Port {name} (on a face)",
                     (false, End::Start) => "Port {name} (start)",
                     (false, End::End) => "Port {name} (end)",
                 };
-                out.legend.push((trf(template, args!(name = p.name)), sc().port));
+                let colour = if driven == Some(i) { sc().port_input } else { sc().port_output };
+                out.legend.push((trf(template, args!(name = p.name)), colour));
             }
             for p in &m.lumped {
                 out.legend.push((trf("Lumped port {name}", args!(name = p.name)), sc().port));

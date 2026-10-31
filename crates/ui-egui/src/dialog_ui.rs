@@ -217,7 +217,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
             }
             Kind::Bool => {
                 ui_kit::row(ui, Raw(name), f.required, |ui| {
-                    let r = ui.named(egui::Checkbox::new(&mut f.on, ""), handle).on_hover_text(hint);
+                    let r = crate::math::tip(ui.named(egui::Checkbox::new(&mut f.on, ""), handle), hint);
                     drawn.push((r.id, false));
                 });
             }
@@ -232,7 +232,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
                             scenario::publish_target(handle, r.rect);
                         }
                         text_field(&r, &mut drawn);
-                        r.on_hover_text(hint);
+                        crate::math::tip(r, hint);
                     }
                     if !unit.is_empty() {
                         ui.label(egui::RichText::new(unit).size(t.font_small).color(t.text_dim));
@@ -242,7 +242,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
             Kind::Choice(list) => {
                 let list = list.clone();
                 ui_kit::row(ui, Raw(name), f.required, |ui| {
-                    let r = choice(ui, (name, 0, 0), &mut f.text, &list, ui.available_width() - 8.0, !f.required).on_hover_text(hint);
+                    let r = crate::math::tip(choice(ui, (name, 0, 0), &mut f.text, &list, ui.available_width() - 8.0, !f.required), hint);
                     scenario::publish_target(handle, r.rect);
                     drawn.push((r.id, false));
                 });
@@ -260,7 +260,7 @@ fn fields(ui: &mut egui::Ui, d: &mut Dialog, session: &emcraft_engine::Session) 
                     if invalid {
                         edit = edit.background_color(t.form_error_fill).text_color(t.form_error);
                     }
-                    let r = ui.named(edit, handle).on_hover_text(hint);
+                    let r = crate::math::tip(ui.named(edit, handle), hint);
                     text_field(&r, &mut drawn);
                     if !unit.is_empty() {
                         ui.label(egui::RichText::new(unit).size(t.font_small).color(t.text_dim));

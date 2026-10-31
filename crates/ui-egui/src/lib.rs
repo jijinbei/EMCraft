@@ -50,6 +50,7 @@ pub mod handle;
 pub mod home;
 pub mod kinds;
 pub mod lang;
+pub mod math;
 mod messages;
 pub mod navigation;
 pub mod pack;
@@ -651,6 +652,8 @@ impl EmcraftApp {
     /// Brings the caches the drawing reads up to date: they come from engine queries, which
     /// need the session mutable.
     fn prepare(&mut self) {
+        // The field views show the driven port's excitation (`view.driven`).
+        self.field.view.excitation = self.session.driven_entry();
         steps::prepare(self);
         if self.view == View::Eigenmodes {
             viewport::prepare_eigenmodes(self);

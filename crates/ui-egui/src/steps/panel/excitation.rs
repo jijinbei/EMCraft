@@ -18,9 +18,7 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
         ui_kit::small(ui, "none yet", t.text_dim);
     }
-    for p in &m.ports {
-        ui_kit::small(ui, crate::browser::port_text(p).shown, t.text);
-    }
+    port_roles(app, ui, t, out);
     for p in &m.lumped {
         ui_kit::small(ui, trf("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance)), t.text);
     }
@@ -51,13 +49,33 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     ui.act(true, ui_kit::styled("Show the mode patterns", false), Fixed::ExcitationPatterns.into(), "", || Action::SetView(View::PortModes), out);
 }
 
+/// The waveguide ports, each with its role (the input, whose reflection is S11, or an output
+/// and the S-parameter of its transmission) and, for an output, the choice to drive it instead
+/// (`view.driven`).
+fn port_roles(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens, out: &mut Actions) {
+    let m = app.session.model();
+    for (p, role) in m.ports.iter().zip(crate::browser::port_roles(&app.session)) {
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(16.0, 14.0), Sense::hover());
+            crate::browser::role_mark(ui.painter(), r, role.input, role.colour());
+            let text = crate::browser::port_text(p).shown;
+            crate::math::label(ui, &format!("{text}  ·  {}", role.tip()), t.font_small, t.text);
+            if !role.input {
+                let b = egui::Button::new(egui::RichText::new(tr("Make the input")).size(t.font_small)).small();
+                let params = serde_json::json!({"port": role.name});
+                ui.act(!app.busy(), b, Handle::DrivePort(&role.name), "", || Action::run("view.driven", params), out);
+            }
+        });
+    }
+}
+
 /// The port-mode preview: a row per mode. Hovering a row lights its port in the 3D view;
 /// clicking it opens the Port modes view at that mode.
 fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, out: &mut Actions) {
     let unit = reply.get("length_unit").and_then(Value::as_str).unwrap_or("m");
     let w = ui.available_width();
     let widths = [w * 0.34, w * 0.24, w * 0.2, w * 0.2];
-    let cell = |ui: &mut egui::Ui, width: f32, text: egui::RichText| {
+    let cell = |ui: &mut egui::Ui, width: f32, text: egui::WidgetText| {
         ui.allocate_ui_with_layout(vec2(width, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.set_min_width(width);
             ui.add_space(4.0);
@@ -68,7 +86,8 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, ou
         ui.spacing_mut().item_spacing.x = 0.0;
         let per = format!("β (rad/{unit})");
         for (h, width) in [tr("port / mode"), per.as_str(), "εeff", "Z (Ω)"].into_iter().zip(widths) {
-            cell(ui, width, Style::SmallDim.rich(h));
+            // εeff and β set as mathematics.
+            cell(ui, width, crate::math::rich(h, t.font_small, t.text_dim).into());
         }
     });
     let mut row = 0usize;
@@ -79,7 +98,7 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, ou
         let port = app.session.model().ports.iter().position(|q| q.name == name);
         for (k, mode) in p.get("modes").and_then(Value::as_array).into_iter().flatten().take(8).enumerate() {
             let n = |key: &str| mode.get(key).and_then(Value::as_f64);
-            let txt = |s: String| egui::RichText::new(s).size(t.font_small).color(t.text);
+            let txt = |s: String| egui::WidgetText::from(egui::RichText::new(s).size(t.font_small).color(t.text));
             let back = ui.painter().add(egui::Shape::Noop);
             let r = ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;

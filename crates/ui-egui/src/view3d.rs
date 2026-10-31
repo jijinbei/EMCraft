@@ -441,7 +441,11 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     }
     if let Some((_, row)) = single {
         let hint = if row.editable() && row.item.is_none() { tr("  ·  double-click to edit") } else { "" };
-        let text = format!("{}{hint}", row.shown.trim());
+        // Its symbols set as mathematics; a port with its role.
+        let text = match &row.role {
+            Some(role) => format!("{}  ·  {}{hint}", row.tex(), crate::math::texify(&role.tip())),
+            None => format!("{}{hint}", row.tex()),
+        };
         let item = row.item.clone();
         let card = Card { edit: item.clone().map(Action::EditItem), delete: item.map(|i| Action::DeleteItems(vec![i])) };
         let card = selection_card(ui, &p, rect, &text, card, !app.busy(), t, out);
@@ -1137,10 +1141,10 @@ struct Card {
     delete: Option<Action>,
 }
 
-/// The selection on a card at the top: its name (or how many parts), with Edit and Delete beside
-/// it for items of the model (a port, a body).
-fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, text: &str, card: Card, enabled: bool, t: &Tokens, out: &mut Actions) -> Rect {
-    let g = p.layout_no_wrap(text.to_owned(), FontId::proportional(t.font_small), t.text);
+/// The selection on a card at the top: its name (or how many parts; TeX, its symbols set as
+/// mathematics), with Edit and Delete beside it for items of the model (a port, a body).
+fn selection_card(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, tex: &str, card: Card, enabled: bool, t: &Tokens, out: &mut Actions) -> Rect {
+    let g = p.layout_job(crate::math::job(tex, t.font_small, t.text));
     let (size, pitch) = (20.0, 24.0);
     let actions: Vec<(Glyph, Fixed, &str, Action)> = [
         card.edit.map(|a| (Glyph::Edit, Fixed::View3dSelectedEdit, "Edit", a)),
@@ -1202,14 +1206,16 @@ fn legend(p: &egui::Painter, rect: Rect, items: &[(String, Rgb)], t: &Tokens) {
     }
     let font = FontId::proportional(t.font_small);
     let row = 18.0;
-    let width = items.iter().map(|(s, _)| p.layout_no_wrap(s.clone(), font.clone(), t.text).size().x).fold(0.0, f32::max) + 34.0;
+    // Each item's symbols set as mathematics (`εr` with a lowered r).
+    let galleys: Vec<_> = items.iter().map(|(s, _)| p.layout_job(crate::math::rich(s, font.size, t.text))).collect();
+    let width = galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 34.0;
     let r = Rect::from_min_size(rect.min + vec2(10.0, 10.0), vec2(width, row * items.len() as f32 + 8.0));
     p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.9));
     p.rect_stroke(r, 6.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    for (i, (s, c)) in items.iter().enumerate() {
+    for (i, ((_, c), g)) in items.iter().zip(galleys).enumerate() {
         let y = r.top() + 4.0 + row * (i as f32 + 0.5);
         p.rect_filled(Rect::from_center_size(pos2(r.left() + 14.0, y), vec2(12.0, 12.0)), 2.0, color(*c));
-        p.text(pos2(r.left() + 26.0, y), Align2::LEFT_CENTER, s, font.clone(), t.text);
+        p.galley(pos2(r.left() + 26.0, y - g.size().y / 2.0), g, t.text);
     }
 }
 

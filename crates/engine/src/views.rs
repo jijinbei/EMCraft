@@ -3,7 +3,9 @@
 //! ranges (automatic or fixed) and scales (linear or logarithmic), its title and axis labels,
 //! the curves shown, each curve's colour and width, the grid and where the legend goes —
 //! applied alike to the window's charts and the `view.*` PNGs ([`style_chart`]); and the named
-//! field probes (`view.probe.*`, read by `results.probes`).
+//! field probes (`view.probe.*`, read by `results.probes`); and the driven port (`view.driven`):
+//! the input whose excitation the field views show and S is read against (S11 its reflection,
+//! S21 the transmission to port 2), the default `excitation` of every command that takes one.
 //!
 //! A frequency axis keeps its fixed range in hertz, so it stays where it was when the display
 //! units change; the other axes keep the numbers they show.
@@ -222,6 +224,10 @@ pub struct Views {
     pub charts: BTreeMap<String, ChartStyle>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub probes: Vec<Probe>,
+    /// The driven port (an entry of S: a port or a terminal `<port>:<k>`) by name; the first
+    /// when none, or when it names nothing now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driven: Option<String>,
 }
 
 impl Views {
@@ -231,7 +237,7 @@ impl Views {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.charts.is_empty() && self.probes.is_empty()
+        self.charts.is_empty() && self.probes.is_empty() && self.driven.is_none()
     }
 
     /// The views as read from a project file, checked: charts the engine knows, styles within
@@ -260,7 +266,10 @@ impl Views {
                 return Err(EngineError::failed(format!("views: two probes named `{}`", crate::text::clip(&p.name, 40))));
             }
         }
-        Ok(Views { charts, probes: self.probes })
+        if self.driven.as_ref().is_some_and(|d| d.trim().is_empty() || d.chars().count() > MAX_NAME) {
+            return Err(EngineError::failed(format!("views: the driven port needs a name of 1 to {MAX_NAME} characters")));
+        }
+        Ok(Views { charts, probes: self.probes, driven: self.driven })
     }
 }
 
@@ -617,6 +626,22 @@ pub fn probe_delete(s: &mut Session, p: &Params) -> Result<Value> {
     let i = probe_named(s, p)?;
     s.views.probes.remove(i);
     Ok(probes_reply(s))
+}
+
+/// `view.driven`: the driven port (`port`, an entry of S), or the first again without one.
+/// The reply: the driven entry and every entry's role (`input` or `output`).
+pub fn driven(s: &mut Session, p: &Params) -> Result<Value> {
+    s.views.driven = crate::args::entry(s, p, "port")?.map(|(_, e)| e.name);
+    Ok(driven_reply(s))
+}
+
+/// The driven entry and the roles of all of S's entries.
+fn driven_reply(s: &Session) -> Value {
+    let entries = s.sparameter_entries();
+    let k = s.driven_entry();
+    let roles: Vec<Value> =
+        entries.iter().enumerate().map(|(i, e)| json!({"name": e.name, "role": if i == k { "input" } else { "output" }})).collect();
+    json!({"driven": entries.get(k).map(|e| e.name.clone()), "entries": roles})
 }
 
 /// `results.probes`: E and H at each probe for a solution (a frequency and excitation, or an

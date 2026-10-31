@@ -1,5 +1,6 @@
-//! What the 3D view draws over the model: ports' faces, outlines and labels, lumped ports,
-//! sources, and the open boundary's layer.
+//! What the 3D view draws over the model: ports' faces, outlines and labels (the driven port
+//! named the input, the others outputs, each in its role's colour), lumped ports, sources, and
+//! the open boundary's layer.
 
 use emcraft_model::{End, Model, Source};
 
@@ -116,11 +117,12 @@ pub(crate) fn quad_centre(q: &[[f64; 3]; 4]) -> [f64; 3] {
     [0, 1, 2].map(|k| 0.25 * (q[0][k] + q[1][k] + q[2][k] + q[3][k]))
 }
 
-/// Ports' labels, lumped ports, sources and the open boundary's layer.
-pub(super) fn extras(m: &Model, overlay: Overlay, out: &mut Built) {
+/// Ports' labels (`driven`: the input's index), lumped ports, sources and the open boundary's
+/// layer.
+pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &mut Built) {
     let size = out.bounds.map_or(0.01, |(lo, hi)| ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt());
     if matches!(overlay, Overlay::Ports | Overlay::Plain | Overlay::Boundaries) {
-        ports(m, overlay, size, out);
+        ports(m, driven, overlay, size, out);
     }
     let strong = overlay == Overlay::Ports;
     for (i, p) in m.lumped.iter().enumerate() {
@@ -154,10 +156,10 @@ pub(crate) fn along(a: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
     [a[0] + d[0] * k, a[1] + d[1] * k, a[2] + d[2] * k]
 }
 
-/// The ports' labels and, when ports are the subject, their outlines and the direction into
-/// the guide.
-fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
-    for p in &m.ports {
+/// The ports' labels, each with its role (`driven` the input), and, when ports are the
+/// subject, their outlines.
+fn ports(m: &Model, driven: Option<usize>, overlay: Overlay, size: f64, out: &mut Built) {
+    for (i, p) in m.ports.iter().enumerate() {
         let Some(q) = port_quad(m, p) else { continue };
         let c = quad_centre(&q);
         let facing = match p.face {
@@ -167,10 +169,16 @@ fn ports(m: &Model, overlay: Overlay, size: f64, out: &mut Built) {
         // The name stands off the face, outside the model, on a leader: the face's arrow points
         // the other way, into the model.
         let out_of = along(c, port_normal(p), -0.15 * size);
-        out.labels.push(Label { at: out_of, text: crate::lang::trf("Port {name}", args!(name = p.name)), color: sc().port, facing, anchor: Some(c) });
+        let (text, color) = if driven == Some(i) {
+            (crate::lang::trf("Port {name} · in", args!(name = p.name)), sc().port_input)
+        } else {
+            (crate::lang::trf("Port {name} · out", args!(name = p.name)), sc().port_output)
+        };
+        out.labels.push(Label { at: out_of, text, color, facing, anchor: Some(c) });
         if overlay == Overlay::Ports {
+            // Outlined in its role's colour.
             for (a, b) in outline(&port_face(m, p)) {
-                out.scene.line(a, b, sc().port, 255);
+                out.scene.line(a, b, color, 255);
             }
         }
     }
