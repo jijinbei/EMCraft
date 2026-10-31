@@ -1,0 +1,8 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "prism", "points": [[0, 0], [50.16, 0], [50.16, 10.16], [30.16, 10.16], [30.16, 30.16], [20, 30.16], [20, 10.16], [0, 10.16]], "length": 22.86}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "x", "face": [0, 0, 0, 10.16, 22.86]}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": [50.16, 0, 0, 10.16, 22.86]}},
+ {"command": "model.port.create", "params": {"name": "3", "end": "end", "modes": 4, "axis": "y", "face": [30.16, 20, 0, 10.16, 22.86]}},
+ {"command": "mesh.adapt", "params": {"size": 4, "frequency": 10.5, "passes": 4, "tolerance": 0.002, "fraction": 0.3, "order": 2}, "id": "adapt"},
+ {"command": "solve.frequency", "params": {"frequencies": [8.5, 10.5, 12], "order": 2}, "id": "solve"}
+]

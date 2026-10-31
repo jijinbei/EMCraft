@@ -170,7 +170,9 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Artech House 1993 — field superposition in a junction's region: its field the sum of
   expansions each closed by one of its walls, matched to the guides' modes on its open sides
   (`emcraft-theory::bend`, the square-cornered H-plane and E-plane bends, references of the
-  oracle's `hplane-corner` and `eplane-corner`). The E-plane corner as a 2D Neumann problem of
+  oracle's `hplane-corner` and `eplane-corner`; `emcraft-theory::tee`, any square junction of
+  open sides and walls with the symmetric H-plane and E-plane T-junctions, three expansions in
+  the square, references of `hplane-tee` and `eplane-tee`). The E-plane corner as a 2D Neumann problem of
   the LSE modes: R. E. Collin, *Field Theory of Guided Waves*, 2nd ed., IEEE Press 1991; N.
   Marcuvitz, *Waveguide Handbook*, McGraw-Hill 1951, ch. 5 — right-angle corners.
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §5.8–5.9; R. E. Collin,
