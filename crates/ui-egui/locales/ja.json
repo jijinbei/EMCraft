@@ -2,7 +2,10 @@
   "name": "日本語",
   "strings": {
     "  ·  double-click to edit": "  ·  ダブルクリックで編集",
+    " · Bayesian": " · ベイズ最適化",
+    " · Bayesian, surrogate {mean} ± {sigma}": " · ベイズ最適化、代理モデル {mean} ± {sigma}",
     ", {n} failed": "、失敗 {n} 件",
+    ", {solved} solved, {predicted} predicted": "、解析 {solved} 点、予測 {predicted} 点",
     "1 project": "1 件のプロジェクト",
     "3D view": "3D ビュー",
     "A card over the view, which you can move.": "ビューの上に浮かぶカード。移動できます。",
@@ -522,6 +525,8 @@
     "port": "ポート",
     "port / mode": "ポート / モード",
     "precision": "精度",
+    "predicted": "予測",
+    "predicted ± {sigma} dB": "予測 ± {sigma} dB",
     "real, imaginary": "実部、虚部",
     "ref.": "基準機",
     "remove this row": "この行を削除",
@@ -1211,7 +1216,7 @@
     },
     "study.sweep": {
       "label": "パラメータ掃引",
-      "doc": "変数を 1 つ、または複数をグリッド上で掃引する。各値（グリッドの各点：変数の値のすべての組み合わせ、最後の変数が最も速く変わる）ごとに、その値で履歴からモデルを組み直し（履歴にメッシュ生成があればメッシュも）、`solve`（`{\"command\": \"solve.frequency\", \"params\": {…}}`、任意の解析コマンド）で解いて結果を集める：解析周波数での Sパラメータ、固有モードの周波数、解析のその他の数値。1 変数の行には `value`、グリッドの行には `variables` の順の `values` が入り、応答には各変数のグリッドの値が入る。セッションのモデルは元のまま残る。組み立てや解析ができない点はその行で報告し、キャンセルすると次の点で止まる。",
+      "doc": "変数を 1 つ、または複数をグリッド上で掃引する。各値（グリッドの各点：変数の値のすべての組み合わせ、最後の変数が最も速く変わる）ごとに、その値で履歴からモデルを組み直し（履歴にメッシュ生成があればメッシュも）、`solve`（`{\"command\": \"solve.frequency\", \"params\": {…}}`、任意の解析コマンド）で解いて結果を集める：解析周波数での Sパラメータ、固有モードの周波数、解析のその他の数値。1 変数の行には `value`、グリッドの行には `variables` の順の `values` が入り、応答には各変数のグリッドの値が入る。セッションのモデルは元のまま残る。組み立てや解析ができない点はその行で報告し、キャンセルすると次の点で止まる。`surrogate`（{\"budget\": N}）を指定すると N 点だけを解析する：中心に最も近い格子点、次に選んだ点から最も遠い点を順に（計 2d + 1 点）、その後は解析済みの行のガウス過程代理モデルが最も不確かな点（予測分散が最大の点。Sacks ら, Statist. Sci. 4(4):409–435, 1989）を選ぶ。他の点はそれらから予測する：行の各出力（各周波数の |S|（dB）、固有モード、解析が返す数値）を、カーネル（Matérn 5/2、変数ごとの長さスケールを周辺尤度で選ぶ。Rasmussen & Williams, Gaussian Processes for Machine Learning, 2006）を共有する 1 つのガウス過程で予測し、その行には `predicted` を付け、Sパラメータごとに `db` と `sigma_db`、`modes_sigma`、`scalars_sigma` を持たせる。解析した行は指定しない場合と同じで、応答の `surrogate` は両方の数と長さスケールを示す。",
       "params": {
         "variable": "掃引する変数（または `variables` を指定）",
         "variables": "グリッド上で掃引する複数の変数：[{\"name\", \"values\"} または {\"name\", \"start\", \"stop\", \"points\"}]（最大 4 個、全体で最大 400 点）",
@@ -1220,18 +1225,20 @@
         "stop": "最後の値",
         "points": "start から stop までの値の数（既定 5、最大 101）",
         "solve": "各点での解析：{\"command\", \"params\"}",
-        "outputs": "保持する Sパラメータ、例 [\"s11\", \"s21\"]（既定はすべて）"
+        "outputs": "保持する Sパラメータ、例 [\"s11\", \"s21\"]（既定はすべて）",
+        "surrogate": "一部の点だけを解析し残りを予測する：{\"budget\": N}、N は 2 からグリッドの点数まで（3 点以上のグリッド）"
       }
     },
     "study.optimize": {
       "label": "最適化",
-      "doc": "目標を最小にする変数の値を範囲内で探す。範囲を [0, 1] に正規化し、現在の値から Nelder–Mead シンプレックス法（Comput. J. 7(4):308–313, 1965）で探索する。各点では履歴からモデルを組み直し `solve` で解く。目標（`type`）：`min_max_db`（周波数にわたる最大の |S|、既定 s11：反射）、`max_min_db`（最小の |S|、既定 s21：透過）、`target_db`（|S| を `target` dB に）、`eigenfrequency`（モード `mode`、既定 1、を表示単位で `target` に）、`maximize` または `minimize`（解析が返す数値：`quantity`）。モデルは最良点のまま残り（元に戻すで戻れる）、すべての評価を保持する。",
+      "doc": "目標を最小にする変数の値を範囲内で探す。範囲を [0, 1] に正規化し、現在の値から Nelder–Mead シンプレックス法（Comput. J. 7(4):308–313, 1965）で探索する。各点では履歴からモデルを組み直し `solve` で解く。目標（`type`）：`min_max_db`（周波数にわたる最大の |S|、既定 s11：反射）、`max_min_db`（最小の |S|、既定 s21：透過）、`target_db`（|S| を `target` dB に）、`eigenfrequency`（モード `mode`、既定 1、を表示単位で `target` に）、`maximize` または `minimize`（解析が返す数値：`quantity`）。モデルは最良点のまま残り（元に戻すで戻れる）、すべての評価を保持する。`method` を `bayesian` にするとベイズ最適化（Jones, Schonlau & Welch, J. Global Optim. 13:455–492, 1998）で探す：現在の値と 2d 個の Halton 点を解析し、その後は解析したすべての値のガウス過程代理モデル（Matérn 5/2、変数ごとの長さスケールを周辺尤度で選ぶ）のもとで期待改善量が最大の点を毎回解析する。期待改善量が `tolerance` × 解析した値の幅を下回るか、解析回数が尽きると止まる。報告する値はすべて実際の解析で、応答の `best.predicted` はそこでの代理モデルの目標値 ± σ、`surrogate` はその長さスケールを示す。応答の `method` はどちらで探したかを示す。",
       "params": {
         "variables": "変化させる変数：[{\"name\", \"min\", \"max\"}]（最大 8 個）",
         "goal": "最小化する対象：{\"type\", \"parameter\", \"target\", \"mode\", \"quantity\"}",
         "solve": "各点での解析：{\"command\", \"params\"}",
         "max_evaluations": "最大の解析回数（既定 50、最大 500）",
-        "tolerance": "停止するシンプレックスの大きさ、各範囲に対する割合（既定 1e-3）"
+        "tolerance": "停止の基準（既定 1e-3）：シンプレックスの大きさ、各範囲に対する割合。ベイズ最適化では期待改善量、解析した目標値の幅に対する割合",
+        "method": "`simplex`（Nelder–Mead、既定）または `bayesian`（ガウス過程代理モデルが各解析点を選ぶ）"
       }
     },
     "view.study": {

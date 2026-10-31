@@ -173,6 +173,11 @@ fn scenario_study_grid() {
 }
 
 #[test]
+fn scenario_study_surrogate() {
+    scenario("study_surrogate");
+}
+
+#[test]
 fn scenario_view3d_orbit() {
     scenario("view3d_orbit");
 }

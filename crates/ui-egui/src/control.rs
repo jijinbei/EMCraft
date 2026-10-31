@@ -193,6 +193,11 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         e.and_then(|e| e.as_ref().ok()).map(|e| json!({"seconds": e["seconds"], "basis": e["basis"], "command": e["command"]}))
     };
     let s = &app.session;
+    // A study's surrogate: whether it had one, and the rows it predicted.
+    if let Some(study) = s.results().study.as_ref() {
+        v["study"]["surrogate"] = json!(study.surrogate.is_some());
+        v["study"]["predicted"] = json!(study.rows.iter().filter(|r| r.is_predicted()).count());
+    }
     v["purpose"] = json!(app.home.purpose.map(|k| k.id()));
     v["kept"] = json!(emcraft_engine::archive::rows(&app.session));
     v["compare"] = json!(app.views.compare);
