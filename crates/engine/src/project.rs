@@ -60,6 +60,11 @@ pub fn push_undo(stack: &mut VecDeque<Snapshot>, s: Snapshot) {
 }
 
 impl Session {
+    /// The undoable state now, with `history` and the `project` to go back to.
+    pub(crate) fn snapshot(&self, history: Vec<Step>, project: Option<Box<Identity>>) -> Snapshot {
+        Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone(), project }
+    }
+
     /// The project the model belongs to, as it is now.
     pub(crate) fn identity(&self) -> Identity {
         Identity {

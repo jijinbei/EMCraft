@@ -398,8 +398,8 @@ impl Session {
         let history = if matches!(effect, Effect::None | Effect::View) { Vec::new() } else { self.history.clone() };
         // A command that replaces the project keeps the project to undo back to.
         let project = (effect == Effect::Replace).then(|| Box::new(self.identity()));
-        let state = project::Snapshot { model: self.model.clone(), display: self.display, history, variables: self.variables.clone(), project };
-        Before { state, results: self.results.clone(), revision: self.revision, views: self.views.clone() }
+        Before {
+            state: self.snapshot(history, project), results: self.results.clone(), revision: self.revision, views: self.views.clone() }
     }
 
     /// Records a command that succeeded by its effect: one that changed the model leaves the

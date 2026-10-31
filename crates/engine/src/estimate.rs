@@ -20,8 +20,17 @@ use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session};
 
-/// The reference machine's solve: unknowns, factor entries, seconds of factorization and solves.
-const REFERENCE: (f64, f64, f64) = (44_910.0, 24.0e6, 1.6);
+/// A solve the others are scaled from: its unknowns, factor entries and seconds of
+/// factorization and solves.
+#[derive(Clone, Copy, Debug)]
+struct Basis {
+    unknowns: f64,
+    entries: f64,
+    seconds: f64,
+}
+
+/// The reference machine's solve.
+const REFERENCE: Basis = Basis { unknowns: 44_910.0, entries: 24.0e6, seconds: 1.6 };
 /// The reference machine's time-domain cost per cell and step (s).
 const CELL_STEP: f64 = 2.0e-8;
 /// A reduced-basis solve's cost, as a share of a full one.
@@ -47,13 +56,18 @@ fn solve_cost(s: &Session, order: usize) -> Result<Solve> {
     let topo = emcraft_mesh::Topology::new(mesh);
     let (edges, faces) = (topo.edges.len() as f64, topo.faces.len() as f64);
     let unknowns = if order == 1 { edges } else { 2.0 * edges + 2.0 * faces };
-    let measured = s.results.sweep.as_ref().and_then(|sw| sw.results.iter().find(|r| r.timings.factor > 0.0).map(|r| (sw, r)));
-    let ((n0, entries0, seconds0), from_session) = match measured {
-        Some((sw, r)) => ((sw.driven.dofs.unknowns as f64, r.factor_entries as f64, r.timings.factor + r.timings.solve), true),
-        None => (REFERENCE, false),
-    };
-    let ratio = unknowns / n0.max(1.0);
-    Ok(Solve { unknowns, memory_mb: entries0 * ratio.powf(4.0 / 3.0) * 16.0 / 1.0e6, seconds: seconds0 * ratio * ratio, measured: from_session })
+    let measured = s.results.sweep.as_ref().and_then(|sw| {
+        let r = sw.results.iter().find(|r| r.timings.factor > 0.0)?;
+        Some(Basis { unknowns: sw.driven.dofs.unknowns as f64, entries: r.factor_entries as f64, seconds: r.timings.factor + r.timings.solve })
+    });
+    let basis = measured.unwrap_or(REFERENCE);
+    let ratio = unknowns / basis.unknowns.max(1.0);
+    Ok(Solve {
+        unknowns,
+        memory_mb: basis.entries * ratio.powf(4.0 / 3.0) * 16.0 / 1.0e6,
+        seconds: basis.seconds * ratio * ratio,
+        measured: measured.is_some(),
+    })
 }
 
 /// A run's cost: seconds in all, solves (factorizations, or a time domain's runs), the one
@@ -132,18 +146,11 @@ fn cost(s: &Session, command: &str, p: &Params, order: Option<usize>, depth: usi
             } else if let Some(vars) = p.list("variables", 4).optional()? {
                 let mut n = 1.0f64;
                 for (i, v) in vars.iter().enumerate() {
-                    let item = p.nested(v, format!("variable {}", i + 1));
-                    n *= match item.list("values", 101).optional()? {
-                        Some(list) => list.len() as f64,
-                        None => item.integer("points", 1..=101).or(5)? as f64,
-                    };
+                    n *= variable_points(&p.nested(v, format!("variable {}", i + 1)))?;
                 }
                 n.min(400.0)
             } else {
-                match p.list("values", 101).optional()? {
-                    Some(list) => list.len() as f64,
-                    None => p.integer("points", 1..=101).or(5)? as f64,
-                }
+                variable_points(p)?
             };
             let solve = p.raw("solve").ok_or_else(|| p.error("solve", "is needed: {\"command\", \"params\"}"))?;
             let inner_command = solve.get("command").and_then(Value::as_str).ok_or_else(|| p.error("solve", "needs a `command`"))?;
@@ -155,6 +162,14 @@ fn cost(s: &Session, command: &str, p: &Params, order: Option<usize>, depth: usi
         }
         other => Err(EngineError::Params(format!("`command`: cannot estimate `{}`", crate::text::clip(other, 40)))),
     }
+}
+
+/// The values a study's variable takes: `values` listed, else `points` (5).
+fn variable_points(p: &Params) -> Result<f64> {
+    Ok(match p.list("values", 101).optional()? {
+        Some(list) => list.len() as f64,
+        None => p.integer("points", 1..=101).or(5)? as f64,
+    })
 }
 
 /// The time domain's run: cells of `cell` (1 mm) over the model's box (and its layers), steps at
