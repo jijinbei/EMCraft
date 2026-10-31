@@ -35,6 +35,9 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Toke
     let m = app.session.model();
     kv(ui, "walls", m.wall_conductivity.map_or(tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")), t);
     let l = app.session.display().length;
+    if let Some(w) = m.wall_thickness {
+        kv(ui, "wall thickness", format!("{} {lu}", fmt(l.from_si(w))), t);
+    }
     let kind = |o: &emcraft_model::Open| tr(if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" });
     let thick =
         |o: &emcraft_model::Open| trf("{kind} {thickness} {unit} thick", args!(kind = kind(o), thickness = fmt(l.from_si(o.thickness)), unit = lu));

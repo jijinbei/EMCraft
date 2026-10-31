@@ -256,7 +256,7 @@ impl Driven {
         // Volakis, Approximate Boundary Conditions in Electromagnetics, IEE 1995, §2.2; Jin 2014,
         // §9.2).
         if let Some(w) = &self.wall {
-            let c = wall_factor(frequency, w.sigma);
+            let c = wall_factor(frequency, w.sigma, w.thickness);
             for (x, wij) in a.val.iter_mut().zip(&w.mass) {
                 *x += c * *wij;
             }

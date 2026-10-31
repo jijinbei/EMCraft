@@ -201,7 +201,11 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
 
 ## Losses
 - T. B. A. Senior, J. L. Volakis, *Approximate Boundary Conditions in Electromagnetics*, IEE 1995,
-  §2.2 — the Leontovich surface-impedance condition for walls of finite conductivity.
+  §2.2 — the Leontovich surface-impedance condition for walls of finite conductivity; §2.4 —
+  a coated or thin wall's impedance by the transmission line across it.
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, eq. 2.91 — the input impedance of a
+  lossy line: a wall of thickness t as a line of η_c, γ = (1 + j)/δ loaded by free space
+  (`emcraft_solver::driven::wall_impedance`; the metal is never meshed).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, eq. 3.96 — TE10 conductor
   attenuation (the reference); §1.3 — the loss tangent, dielectric ε = ε′ − jε″ and magnetic
   μ = μ′ − jμ″ alike (`emcraft-model::Material`, `magnetic_loss_tangent`); §3.3 — the modes of a

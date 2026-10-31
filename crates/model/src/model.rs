@@ -23,6 +23,9 @@ use crate::shape::{Combine, Feature, Inclusion, Solid};
 use crate::symmetry::Symmetry;
 use crate::waveguide::Waveguide;
 
+/// The thickest wall a model may have (m).
+pub const MAX_WALL_THICKNESS: f64 = 1.0;
+
 /// The model.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
@@ -42,6 +45,10 @@ pub struct Model {
     /// conducting when `None`.
     #[serde(default)]
     pub wall_conductivity: Option<f64>,
+    /// The walls' thickness (m): drawn round the guide, and with a conductivity the layer the
+    /// surface impedance sees through (never meshed); infinitely thick when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wall_thickness: Option<f64>,
     /// An open boundary (radiation into free space through a PML).
     #[serde(default)]
     pub open: Option<Open>,
@@ -107,6 +114,7 @@ impl Default for Model {
             features: Vec::new(),
             ports: Vec::new(),
             wall_conductivity: None,
+            wall_thickness: None,
             open: None,
             sources: Vec::new(),
             lumped: Vec::new(),
@@ -266,6 +274,19 @@ impl Model {
         Ok(())
     }
 
+    /// Sets the walls' thickness (m, at most [`MAX_WALL_THICKNESS`]), or infinitely thick walls
+    /// with `None`.
+    pub fn set_wall_thickness(&mut self, thickness: Option<f64>) -> Result<()> {
+        if let Some(t) = thickness {
+            positive("wall thickness", t)?;
+            if t > MAX_WALL_THICKNESS {
+                return Err(invalid("wall thickness", format!("must be at most {MAX_WALL_THICKNESS} m, got {t}")));
+            }
+        }
+        self.wall_thickness = thickness;
+        Ok(())
+    }
+
     /// The corners of everything that radiates or scatters: inclusions, features, dipoles and
     /// the ends of lumped ports (an open problem's Huygens box encloses them).
     pub fn radiators(&self) -> impl Iterator<Item = Point3> + '_ {
@@ -394,6 +415,11 @@ mod tests {
         assert_eq!(Issue::NoMesh.to_string(), "no mesh: mesh the geometry with mesh.generate");
         assert!(m.set_wall_conductivity(Some(-1.0)).is_err());
         m.set_wall_conductivity(Some(5.8e7)).unwrap();
+        for bad in [0.0, -1e-3, f64::NAN, f64::INFINITY, 2.0] {
+            assert!(m.set_wall_thickness(Some(bad)).is_err(), "{bad}");
+        }
+        m.set_wall_thickness(Some(1e-3)).unwrap();
+        assert_eq!(m.wall_thickness, Some(1e-3));
     }
 
     #[test]

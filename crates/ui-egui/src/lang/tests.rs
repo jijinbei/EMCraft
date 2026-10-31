@@ -139,7 +139,7 @@ const MODELS: &[Model] = &[
     // A cavity with an electric wall: eigenmodes.
     (
         r#"[{"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 30, "material": "vacuum"}]}},
-            {"command": "model.walls", "params": {"conductivity": 5.8e7}},
+            {"command": "model.walls", "params": {"conductivity": 5.8e7, "thickness": 1.27}},
             {"command": "mesh.generate", "params": {"size": 8}},
             {"command": "solve.eigenmodes", "params": {"near": 12, "count": 2, "order": 1}}]"#,
         "[]",

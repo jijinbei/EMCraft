@@ -47,12 +47,41 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         };
         faces.push((f.nodes, key, kind == Kind::Air && port.is_none()));
     }
+    if let Some(t) = m.wall_thickness
+        && m.open.is_none()
+    {
+        super::shell::draw(m, overlay, &inside(m, mesh, &surface, &periodic), t, out);
+    }
     // Dielectric bodies inside show through the see-through surfaces in every view but the
     // field's.
     if overlay != Overlay::Field {
         material_interfaces(m, mesh, out);
     }
     outline_edges(mesh, &faces, overlay, out);
+}
+
+/// The mesh's outer walls, turned out of the inside, and the ports and planes they end on.
+fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &PeriodicPlanes) -> super::shell::Inside {
+    let mut out = super::shell::Inside::default();
+    let on_port = super::shell::on_ports(m);
+    for (i, f) in mesh.boundary.iter().enumerate() {
+        if surface.kind(i) != Kind::Wall {
+            continue;
+        }
+        let (Some(a), Some(b), Some(c)) =
+            (mesh.nodes.get(f.nodes[0] as usize), mesh.nodes.get(f.nodes[1] as usize), mesh.nodes.get(f.nodes[2] as usize))
+        else {
+            continue;
+        };
+        // Out of the inside: away from the tetrahedron's fourth corner.
+        let fourth = mesh.tets.get(f.tet as usize).and_then(|t| t.iter().find(|n| !f.nodes.contains(n))).and_then(|n| mesh.nodes.get(*n as usize));
+        let inward = fourth.is_some_and(|q| (*b - *a).cross(*c - *a).dot(*q - *a) > 0.0);
+        let p = if inward { [p3(*a), p3(*c), p3(*b)] } else { [p3(*a), p3(*b), p3(*c)] };
+        let centre = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
+        let open = matches!(f.tag, Boundary::Symmetry(_)) || periodic.holds(mesh, &f.nodes) || on_port(centre);
+        out.tri(p, open);
+    }
+    out
 }
 
 /// The faces between materials, in the denser one's colour (opaque under the see-through

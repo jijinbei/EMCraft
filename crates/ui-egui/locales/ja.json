@@ -405,6 +405,7 @@
     "Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}": "ビア {n}：{wx} × {wz} {unit}、y {y0}〜{y1}",
     "View from {side} ({view})": "{side} から見る ({view})",
     "WHERE": "位置",
+    "Wall thickness: {thickness} {unit}": "壁の厚さ：{thickness} {unit}",
     "Walls": "壁",
     "Walls: perfect conductor": "壁：完全導体",
     "Walls: σ = {sigma} S/m": "壁：σ = {sigma} S/m",
@@ -553,6 +554,7 @@
     "units": "単位",
     "unknowns": "未知数",
     "waiting": "待機中",
+    "wall thickness": "壁の厚さ",
     "walls": "壁",
     "walls σ = {sigma} S/m": "壁 σ = {sigma} S/m",
     "walls: perfect conductor": "壁：完全導体",
@@ -849,10 +851,11 @@
       }
     },
     "model.walls": {
-      "label": "壁の導電率",
-      "doc": "導波管の壁、アイリス、段差の導電率：Leontovich の表面インピーダンス条件による損失（良導体、表皮深さが導波管より十分小さい場合）。`conductivity` がなければ壁は完全導体。",
+      "label": "壁",
+      "doc": "導波管の壁、アイリス、段差の導電率と厚さ。金属はメッシュしない：メッシュするのは内側だけで、壁はその表面のインピーダンスとして扱うので、厚さを与えても未知数は増えない。`conductivity` があれば Leontovich 条件による損失（良導体、表皮深さが導波管より十分小さい場合）を、外側が自由空間の厚さ `thickness` の壁を通して求める（Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt)：表皮深さの数倍より薄いと損失が増える。時間領域ソルバーは壁を厚いものとして扱う）。`conductivity` がなければ壁は完全導体で、厚さは導波管のまわりに描くだけ。`thickness` を省略すると無限に厚い壁として面一に描く。",
       "params": {
-        "conductivity": "σ（S/m、銅は 5.8e7）。完全導体にするには省略"
+        "conductivity": "σ（S/m、銅は 5.8e7）。完全導体にするには省略",
+        "thickness": "壁の厚さ。無限に厚い壁にするには省略"
       }
     },
     "model.symmetry": {

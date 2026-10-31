@@ -92,8 +92,8 @@ mod terms;
 pub(crate) use assembly::{System, rule_points};
 pub use dofs::Dofs;
 pub use floquet::{FloquetMode, FloquetPort, FloquetTerm};
-pub use losses::surface_resistance;
 pub(crate) use losses::wall_factor;
+pub use losses::{surface_resistance, wall_impedance};
 pub use lumped::LumpedData;
 pub use periodic::Tie;
 use pml::Layer;
@@ -399,7 +399,7 @@ impl Driven {
             None => None,
         };
         let wall = match sigma {
-            Some(sigma) => Some(WallLoss { sigma, mass: space.wall_mass(&pattern, &faces.walls)? }),
+            Some(sigma) => Some(WallLoss { sigma, thickness: model.wall_thickness, mass: space.wall_mass(&pattern, &faces.walls)? }),
             None => None,
         };
         Ok(Driven {

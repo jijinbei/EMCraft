@@ -341,13 +341,14 @@ Refines the mesh in passes until the S-parameters (or an open problem's far fiel
 | `strip_end` | number |  | no | waveguides: element size at strips' ends along z, as a fraction of the size (default `strip_edge`) |
 | `size_y` | number | length | no | waveguides: element size across the narrow wall (default the size; kept through the passes) |
 
-## `model.walls` — Wall conductivity
+## `model.walls` — Walls
 
-The conductivity of the guide's walls, irises and steps: losses by the Leontovich surface-impedance condition (good conductors, skin depth far below the guide). Without `conductivity` the walls are perfect conductors.
+The conductivity and thickness of the guide's walls, irises and steps. The metal is never meshed: only the inside is, and the walls are a surface impedance on it, so a thickness costs no unknowns. With `conductivity`, losses by the Leontovich condition (good conductors, skin depth far below the guide), through a wall of `thickness` with free space behind it (Z_s = η_c(η₀ + η_c tanh γt)/(η_c + η₀ tanh γt): thinner than a few skin depths it loses more; the time-domain solver takes walls as thick). Without `conductivity` the walls are perfect conductors; the thickness is then drawn round the guide only. Leave `thickness` out for infinitely thick walls drawn flush.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `conductivity` | number |  | no | σ in S/m (copper 5.8e7); leave out for perfect conductors |
+| `thickness` | number | length | no | the walls' thickness; leave out for infinitely thick walls |
 
 ## `model.symmetry` — Symmetry plane
 

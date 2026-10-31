@@ -5,6 +5,7 @@
  {"command": "project.variable", "params": {"name": "r_post", "value": 1.5, "quantity": "length"}},
  {"command": "geometry.solid", "params": {"shape": "box", "size": ["=a", "=b", "=l"]}},
  {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": "=r_post", "length": "=b", "at": ["=a/2", 0, "=l/2"], "axis": "y"}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 3}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},

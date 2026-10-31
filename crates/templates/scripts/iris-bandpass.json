@@ -9,6 +9,7 @@
  {"command": "project.variable", "params": {"name": "l_inner", "value": 16.75, "quantity": "length"}},
  {"command": "project.variable", "params": {"name": "feed", "value": 15, "quantity": "length"}},
  {"command": "geometry.iris_filter", "params": {"width": "=a", "height": "=b", "irises": "=irises", "iris_length": "=iris_t", "end_width": "=w_end", "inner_width": "=w_inner", "cavity": "=l_end", "inner_cavity": "=l_inner", "feed": "=feed"}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 3, "edge": 0.1, "size_y": "=b"}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4}},

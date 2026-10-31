@@ -166,6 +166,12 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             out.scene.tagged(Pick::Inclusion(i).tag(), |scene| shape(scene, &inc.shape, &turned(Axis::Z, inc.at), color, 255));
         }
     }
+    if let Some(t) = m.wall_thickness
+        && m.open.is_none()
+        && let Some(inside) = inside(m)
+    {
+        super::shell::draw(m, overlay, &inside, t, out);
+    }
     // Ports on the ends (the mesh tags them once meshed).
     let (color, alpha) = if overlay == Overlay::Ports { (sc().port, 255) } else { (sc().port_soft, 220) };
     for (i, p) in m.ports.iter().enumerate() {
@@ -176,4 +182,81 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             }
         });
     }
+}
+
+/// The inside's surface before meshing, its faces on ports open: a waveguide's sections (no
+/// planar circuit) on the grid of their apertures' sides, so the faces meet edge to edge where
+/// one aperture steps to the next; a solid's own faces (no Boolean features). `None` for the
+/// rest, whose walls are drawn thick once meshed.
+fn inside(m: &Model) -> Option<super::shell::Inside> {
+    let mut out = super::shell::Inside::default();
+    let on_port = super::shell::on_ports(m);
+    let put = |out: &mut super::shell::Inside, q: [[f64; 3]; 4]| {
+        let c = [0, 1, 2].map(|k| q.iter().map(|p| p[k]).sum::<f64>() / 4.0);
+        out.quad(q, on_port(c));
+    };
+    if let Some(w) = &m.waveguide {
+        if !w.layers.is_empty() || !w.strips.is_empty() || !w.vias.is_empty() {
+            return None;
+        }
+        let rects: Vec<[f64; 4]> = (0..w.sections.len())
+            .map(|i| {
+                let x = w.aperture(i).unwrap_or(w.across_x());
+                let y = w.aperture_y(i).unwrap_or(w.across_y());
+                [x.start, x.start + x.width, y.start, y.start + y.width]
+            })
+            .collect();
+        let breaks = |lo: usize, hi: usize| {
+            let mut v: Vec<f64> = rects.iter().flat_map(|r| [r[lo], r[hi]]).collect();
+            v.sort_by(f64::total_cmp);
+            v.dedup();
+            v
+        };
+        let (xs, ys) = (breaks(0, 1), breaks(2, 3));
+        let within = |v: &[f64], lo: f64, hi: f64| v.windows(2).filter(|p| p[0] >= lo && p[1] <= hi).map(|p| (p[0], p[1])).collect::<Vec<_>>();
+        let mut z = 0.0;
+        for (i, (s, r)) in w.sections.iter().zip(&rects).enumerate() {
+            let (z0, z1) = (z, z + s.length);
+            // The four sides, outward, cut where any aperture's side lies.
+            for (x0, x1) in within(&xs, r[0], r[1]) {
+                put(&mut out, [[x0, r[2], z0], [x1, r[2], z0], [x1, r[2], z1], [x0, r[2], z1]]);
+                put(&mut out, [[x0, r[3], z0], [x0, r[3], z1], [x1, r[3], z1], [x1, r[3], z0]]);
+            }
+            for (y0, y1) in within(&ys, r[2], r[3]) {
+                put(&mut out, [[r[0], y0, z0], [r[0], y0, z1], [r[0], y1, z1], [r[0], y1, z0]]);
+                put(&mut out, [[r[1], y0, z0], [r[1], y1, z0], [r[1], y1, z1], [r[1], y0, z1]]);
+            }
+            // Where this section starts: the cells of one aperture and not the other (all of the
+            // first's at the start), facing out of the section they belong to; the last's end.
+            let before = i.checked_sub(1).and_then(|k| rects.get(k));
+            let has = |r: Option<&[f64; 4]>, x: f64, y: f64| r.is_some_and(|r| r[0] <= x && x <= r[1] && r[2] <= y && y <= r[3]);
+            for (x0, x1) in xs.windows(2).map(|p| (p[0], p[1])) {
+                for (y0, y1) in ys.windows(2).map(|p| (p[0], p[1])) {
+                    let (cx, cy) = (0.5 * (x0 + x1), 0.5 * (y0 + y1));
+                    let (low, high) = (has(before, cx, cy), has(Some(r), cx, cy));
+                    if high && !low {
+                        put(&mut out, [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]]);
+                    } else if low && !high {
+                        put(&mut out, [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]]);
+                    }
+                    if i + 1 == rects.len() && high {
+                        put(&mut out, [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]);
+                    }
+                }
+            }
+            z = z1;
+        }
+        return Some(out);
+    }
+    let solid = m.solid.as_ref()?;
+    if !m.features.is_empty() {
+        return None;
+    }
+    let mut scene = Scene::default();
+    shape(&mut scene, &solid.shape, &|q| q, sc().metal, 255);
+    for t in &scene.tris {
+        let c = [0, 1, 2].map(|k| (t.p[0][k] + t.p[1][k] + t.p[2][k]) / 3.0);
+        out.tri(t.p, on_port(c));
+    }
+    Some(out)
 }

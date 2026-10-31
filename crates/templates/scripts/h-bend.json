@@ -4,6 +4,7 @@
  {"command": "project.variable", "params": {"name": "l", "value": 20, "quantity": "length"}},
  {"command": "project.variable", "params": {"name": "m", "value": 14.6, "quantity": "length"}},
  {"command": "geometry.solid", "params": {"shape": "prism", "points": [[0, 0], ["=a", 0], ["=a", "=l"], ["=l+a", "=l"], ["=l+a", "=l+a"], ["=m", "=l+a"], [0, "=l+a-m"]], "length": "=b"}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": "=a/8"}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "y", "face": [0, 0, 0, "=a", "=b"]}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 4, "axis": "x", "face": ["=l+a", "=l", 0, "=a", "=b"]}},

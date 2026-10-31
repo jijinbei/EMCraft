@@ -6,6 +6,7 @@
  {"command": "model.material.create", "params": {"name": "absorber", "eps_r": 1.5, "loss_tangent": 0.5}},
  {"command": "geometry.solid", "params": {"shape": "box", "size": ["=a", "=l", "=b"]}},
  {"command": "geometry.body", "params": {"material": "absorber", "shape": "prism", "points": [[1, "=l-1"], ["=a/2", "=l-w"], ["=a-1", "=l-1"]], "length": "=b-2", "at": [0, 0, 1]}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": "=a/8"}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 4, "axis": "y", "face": [0, 0, 0, "=a", "=b"]}},
  {"command": "solve.frequency", "params": {"start": "=187.37/a", "stop": "=283.3/a", "points": 101, "order": 2}}

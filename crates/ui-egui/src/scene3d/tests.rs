@@ -147,3 +147,25 @@ fn a_mesh_cut_fills_the_section_by_material() {
     assert_eq!(mesh_slice(m, 0, at, true).tris, cut.tris);
     assert!(mesh_slice(m, 0, hi[0] + 1.0, true).tris.is_empty());
 }
+
+#[test]
+fn walls_with_a_thickness_are_drawn_round_the_inside_before_and_after_meshing() {
+    let mut s = Session::new();
+    s.run_script(&json!([
+        {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}, {"length": 2, "material": "vacuum", "aperture": {"start": 6, "width": 10.86}}, {"length": 20, "material": "vacuum"}]}},
+        {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+        {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}}
+    ]))
+    .unwrap();
+    let flush = build(&s, Overlay::Plain).scene.tris.len();
+    s.execute("model.walls", &json!({"thickness": 2})).unwrap();
+    let thick = build(&s, Overlay::Plain).scene;
+    assert!(thick.tris.len() > flush, "{} against {flush}", thick.tris.len());
+    // The shell reaches 2 mm outside the guide, and no further than the ends.
+    let lo = thick.tris.iter().flat_map(|t| t.p).fold([f64::INFINITY; 3], |m, p| [m[0].min(p[0]), m[1].min(p[1]), m[2].min(p[2])]);
+    assert!((lo[0] + 2e-3).abs() < 1e-9 && (lo[1] + 2e-3).abs() < 1e-9 && lo[2].abs() < 1e-9, "{lo:?}");
+    s.execute("mesh.generate", &json!({"size": 6})).unwrap();
+    let meshed = build(&s, Overlay::Plain).scene;
+    let lo = meshed.tris.iter().flat_map(|t| t.p).fold([f64::INFINITY; 3], |m, p| [m[0].min(p[0]), m[1].min(p[1]), m[2].min(p[2])]);
+    assert!((lo[0] + 2e-3).abs() < 1e-9 && (lo[1] + 2e-3).abs() < 1e-9 && lo[2].abs() < 1e-9, "{lo:?}");
+}

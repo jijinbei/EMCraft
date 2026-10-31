@@ -5,6 +5,7 @@
  {"command": "model.material.create", "params": {"name": "ceramic", "eps_r": "=er"}},
  {"command": "geometry.solid", "params": {"shape": "sphere", "radius": "=r_cavity"}},
  {"command": "geometry.body", "params": {"material": "ceramic", "shape": "sphere", "radius": "=r_core", "at": [0, 0, 0]}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 3}},
  {"command": "solve.eigenmodes", "params": {"near": 11.8, "count": 3, "order": 2}}
 ]

@@ -1,0 +1,30 @@
+[
+  {"note": "Walls with a thickness: drawn round the inside, never meshed, a rim flush with each port"},
+  {"call": "engine.script", "params": {"commands": [
+    {"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 20, "material": "vacuum"}, {"length": 2, "material": "vacuum", "aperture": {"start": 6, "width": 10.86}}, {"length": 20, "material": "vacuum"}]}},
+    {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
+    {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}}
+  ]}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"inspect": {"view3d.triangles": {"max": 50}}, "hidden": ["row:Wall thickness: 2 mm"]}},
+  {"call": "engine.execute", "params": {"command": "model.walls", "params": {"thickness": 2}}},
+  {"frames": 2},
+  {"expect": {"query": {"command": "project.values", "params": {"command": "model.walls"}, "path": "thickness", "value": 2.0}}},
+  {"until": {"inspect": {"view3d.triangles": {"min": 70}}}, "timeout": 20},
+  {"expect": {"inspect": {"model.mesh": null}, "handles": ["row:Wall thickness: 2 mm"]}},
+  {"shot": "walls-thick-geometry"},
+  {"note": "Meshing keeps the inside alone: the walls are drawn from its surface"},
+  {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 4}}},
+  {"frames": 2},
+  {"shot": "walls-thick-mesh"},
+  {"note": "A junction template carries the standard wall"},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "h-tee"}}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"handles": ["row:Wall thickness: 1.27 mm"]}},
+  {"shot": "walls-thick-tee"},
+  {"call": "engine.execute", "params": {"command": "model.walls", "params": {}}},
+  {"frames": 2},
+  {"expect": {"hidden": ["row:Wall thickness: 1.27 mm"]}}
+]

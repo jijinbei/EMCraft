@@ -322,6 +322,9 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         None => row("Walls: perfect conductor", &[], Glyph::Walls, Act::Edit("model.walls")),
     };
     let mut rows = vec![walls];
+    if let Some(t) = m.wall_thickness {
+        rows.push(row("Wall thickness: {thickness} {unit}", args!(thickness = f.len(t), unit = f.unit()), Glyph::Walls, Act::Edit("model.walls")));
+    }
     if let Some(open) = &m.open {
         let template =
             if open.shape == emcraft_model::OpenShape::Sphere { "Open: spherical PML {thickness} {unit}" } else { "Open: PML {thickness} {unit}" };

@@ -183,6 +183,11 @@ fn scenario_view3d_geometry() {
 }
 
 #[test]
+fn scenario_wall_thickness() {
+    scenario("wall_thickness");
+}
+
+#[test]
 fn scenario_view3d_open_boundary() {
     scenario("view3d_open_boundary");
 }

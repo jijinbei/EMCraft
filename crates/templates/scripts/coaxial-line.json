@@ -6,6 +6,7 @@
  {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": "=er"}},
  {"command": "geometry.solid", "params": {"shape": "cylinder", "radius": "=r_outer", "length": "=l", "material": "ptfe"}},
  {"command": "geometry.body", "params": {"material": "metal", "shape": "cylinder", "radius": "=r_inner", "length": "=l", "at": [0, 0, 0]}},
+ {"command": "model.walls", "params": {"thickness": 1.27}},
  {"command": "mesh.generate", "params": {"size": 2}},
  {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 2}},
  {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 2}},
