@@ -109,6 +109,10 @@ pub struct Scene {
     pub metal_dark: Rgb,
     pub port: Rgb,
     pub port_soft: Rgb,
+    /// The driven port (the input: the wave in and its reflection, S11).
+    pub port_input: Rgb,
+    /// The other ports (outputs: the transmitted wave, S21, S31, …).
+    pub port_output: Rgb,
     pub edge: Rgb,
     /// The open boundary's layer.
     pub pml: Rgb,
@@ -180,7 +184,8 @@ colour_names!(Tokens: Color32, TOKEN_NAMES {
 });
 
 colour_names!(Scene: Rgb, SCENE_NAMES {
-    "metal" => metal, "metal_dark" => metal_dark, "port" => port, "port_soft" => port_soft, "edge" => edge, "pml" => pml,
+    "metal" => metal, "metal_dark" => metal_dark, "port" => port, "port_soft" => port_soft,
+    "port_input" => port_input, "port_output" => port_output, "edge" => edge, "pml" => pml,
     "rim" => rim, "source" => source, "periodic" => periodic, "highlight" => highlight, "vacuum" => vacuum,
     "material_1" => materials[0], "material_2" => materials[1], "material_3" => materials[2],
     "material_4" => materials[3], "material_5" => materials[4], "material_6" => materials[5],

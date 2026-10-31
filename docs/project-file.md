@@ -41,7 +41,7 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
   reading, each run must name a solve command, once, with parameters that command knows (the
   file is not trusted to name any other command); otherwise the file is refused.
 - `views` (since version 3) is how the project's results are looked at, set by
-  `view.chart.style` and `view.probe.*` (never by the history, so changing them leaves the
+  `view.chart.style`, `view.probe.*` and `view.driven` (never by the history, so changing them leaves the
   model and its results alone): `charts`, each chart's style by its id (`sparameters`, `tdr`,
   `pattern`, `dispersion`, `study`) — `title`, `x` and `y` (`label`, `min`, `max`, `log`),
   `hidden` (curves' keys), `curves` (a key's `colour` `#rrggbb` and `width` in pixels), `grid`,

@@ -19,9 +19,10 @@ pub(crate) fn entry(s: &Session, p: &Params, name: &str) -> Result<Option<(usize
     }
 }
 
-/// The entry of S `excitation` names, a port or a terminal (the first by default).
+/// The entry of S `excitation` names, a port or a terminal (the driven one by default:
+/// `view.driven`, else the first).
 pub(crate) fn excitation(s: &Session, p: &Params) -> Result<usize> {
-    Ok(entry(s, p, "excitation")?.map_or(0, |(k, _)| k))
+    Ok(entry(s, p, "excitation")?.map_or_else(|| s.driven_entry(), |(k, _)| k))
 }
 
 /// The frequency parameter `name` (Hz), the band's top when it is absent; `hint` says what else

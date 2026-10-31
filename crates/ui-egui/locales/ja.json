@@ -72,6 +72,10 @@
     "How an antenna radiates: its far-field pattern": "アンテナの放射：遠方界パターン",
     "Next: {step}": "次へ：{step}",
     "Project": "プロジェクト",
+    "Make the input": "入力にする",
+    "Port {name} is the input.": "ポート {name} を入力にしました。",
+    "Port {name} · in": "{name} 入力",
+    "Port {name} · out": "{name} 出力",
     "Solved in full; the rest by the fast sweep": "完全に解いた点（他は高速掃引）",
     "The guide's standard band": "導波管の標準帯域",
     "The resonances of a closed cavity and their Q": "閉じた空洞の共振と Q",
@@ -479,6 +483,8 @@
     "grid": "グリッド",
     "high end (empty: automatic)": "上端（空欄：自動）",
     "hover the picture to read the fields": "画像にポインターを置くと電磁界を読み取れます",
+    "in · {s}": "入力 {s}",
+    "input · reflection {s}": "入力 · 反射 {s}",
     "just now": "たった今",
     "label": "ラベル",
     "legend below the chart": "凡例をグラフの下に",
@@ -523,6 +529,8 @@
     "open boundary: PML {thickness}": "開放境界：PML {thickness}",
     "order": "次数",
     "out of date": "古い結果",
+    "out · {s}": "出力 {s}",
+    "output · transmission {s}": "出力 · 透過 {s}",
     "passive": "受動的",
     "path": "パス",
     "per wavelength": "波長あたり",
@@ -1055,7 +1063,7 @@
       "params": {
         "frequency": "解析済みの周波数",
         "at": "点 `[[x, y, z], …]`",
-        "excitation": "励振するポート（既定は最初のポート）"
+        "excitation": "励振するポート（既定は駆動ポート：view.driven）"
       }
     },
     "view.port_mode": {
@@ -1104,7 +1112,7 @@
         "component": "色で示す成分：ex、ey（既定）、ez、hx、hy、hz",
         "arrows": "描くベクトル界：`[\"e\", \"h\"]`（既定は色で示す成分の界。両方を表示するとき H の矢印は E の矢印の間に描く）",
         "phase": "ωt（度、既定 0）",
-        "excitation": "励振するポート（既定は最初のポート）",
+        "excitation": "励振するポート（既定は駆動ポート：view.driven）",
         "width": "画像の幅（ピクセル、既定 1100）"
       }
     },
@@ -1120,7 +1128,7 @@
         "at": "法線方向の平面の位置（既定は中央）",
         "component": "色で示す成分：ex、ey（既定）、ez、hx、hy、hz",
         "arrows": "描くベクトル界：`[\"e\", \"h\"]`（既定は色で示す成分の界）",
-        "excitation": "励振するポート（既定は最初のポート）",
+        "excitation": "励振するポート（既定は駆動ポート：view.driven）",
         "frames": "1 周期のフレーム数、4〜120（既定 24）",
         "period": "1 周期の再生秒数（既定 2）",
         "width": "画像の幅（ピクセル、既定 800）"
@@ -1487,7 +1495,7 @@
       "params": {
         "frequency": "解析済みの周波数（最も近いものを使う、既定は掃引の最初）",
         "mode": "駆動解の代わりの固有モード（1 = 最低次）",
-        "excitation": "励振するポート（既定は最初）"
+        "excitation": "励振するポート（既定は駆動ポート：view.driven）"
       }
     },
     "view.probe.add": {
@@ -1512,6 +1520,13 @@
       "doc": "プローブを取り除く。",
       "params": {
         "name": "プローブ"
+      }
+    },
+    "view.driven": {
+      "label": "駆動ポート",
+      "doc": "駆動ポートを選ぶ：フィールド表示で励振して見せ、S を読む基準となる入力（S11 はそこでの反射、S21 はポート 2 への透過、…）。`excitation` をとるコマンドの既定値になる。掃引はこれまでどおり各ポートを順に励振し（S 行列全体）、これはどのポートを見るかだけを決める。`port` がなければ最初のポートを再び駆動する。プロジェクトとともに保存され、履歴には残らない。応答：駆動ポートと各要素の役割（`input`、`output`）。",
+      "params": {
+        "port": "ポート、または端子 `<port>:<k>`（既定は最初）"
       }
     },
     "view.chart.style": {

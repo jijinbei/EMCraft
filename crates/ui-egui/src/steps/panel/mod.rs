@@ -161,7 +161,7 @@ pub(crate) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &st
 pub(super) fn kv(ui: &mut egui::Ui, k: &str, v: String, t: &Tokens) {
     ui.horizontal(|ui| {
         ui.add_sized(vec2(t.form_label_width, 16.0), egui::Label::new(Style::SmallDim.rich(tr(k))));
-        ui_kit::small(ui, v, t.text);
+        crate::math::label(ui, &v, t.font_small, t.text);
     });
 }
 

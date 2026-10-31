@@ -100,7 +100,21 @@ pub fn row<R>(ui: &mut Ui, label: impl Shown, required: bool, add: impl FnOnce(&
         ui.set_min_height(t.control_height);
         let (r, _) = ui.allocate_exact_size(vec2(t.form_label_width, t.control_height), Sense::hover());
         let text = if required { format!("{label} *") } else { label.to_owned() };
-        ui.painter().with_clip_rect(r).text(pos2(r.left(), r.center().y), Align2::LEFT_CENTER, &text, FontId::proportional(t.font_label), t.form_dim);
+        // A parameter with a symbol (`eps_r`: ε_r) shows it set as mathematics at the column's end.
+        let mut name = r;
+        if let Some(symbol) = crate::math::parameter_symbol(label) {
+            let g = ui.painter().layout_job(crate::math::job(symbol, t.font_label, t.form_ink));
+            let at = pos2(r.right() - t.space_6 - g.size().x, r.center().y - g.size().y / 2.0);
+            name.max.x = at.x - t.space_4;
+            ui.painter().galley(at, g, t.form_ink);
+        }
+        ui.painter().with_clip_rect(name).text(
+            pos2(r.left(), r.center().y),
+            Align2::LEFT_CENTER,
+            &text,
+            FontId::proportional(t.font_label),
+            t.form_dim,
+        );
         let lr = ui.interact(r, ui.id().with(("row_label", label)), Sense::hover());
         lr.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label));
         add(ui)

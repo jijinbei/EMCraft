@@ -45,6 +45,7 @@ emcraft_macros::named_enum! {
         RowMenuEdit = "row-menu:edit",
         RowMenuDelete = "row-menu:delete",
         RowMenuShow = "row-menu:show",
+        RowMenuDrive = "row-menu:drive",
         // The file prompt, the question before changes are lost, the history's export.
         FilePath = "file:path",
         FileOk = "file:ok",
@@ -287,6 +288,8 @@ pub enum Handle<'a> {
     Touchstone(&'a str),
     /// A row of the Excitation step's mode table: `portmode:row:4`.
     PortModeRow(usize),
+    /// The Excitation step's choice of the driven port, by the port's name: `excitation:input:2`.
+    DrivePort(&'a str),
     /// A row of the Port modes view's table (the mode counted from 1): `port_modes:row:1:2`.
     PortModesRow(&'a str, usize),
     /// An eigenmode's Field button (counted from 1): `eigen:field:1`.
@@ -395,6 +398,7 @@ impl fmt::Display for Handle<'_> {
             Handle::Refused(i) => write!(f, "run:refused:{i}"),
             Handle::Touchstone(format) => write!(f, "results:touchstone:{format}"),
             Handle::PortModeRow(row) => write!(f, "portmode:row:{row}"),
+            Handle::DrivePort(name) => write!(f, "excitation:input:{name}"),
             Handle::PortModesRow(port, mode) => write!(f, "port_modes:row:{port}:{mode}"),
             Handle::EigenField(n) => write!(f, "eigen:field:{n}"),
             Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.id()),

@@ -144,6 +144,48 @@ fn probes_are_named_moved_read_and_saved() {
 }
 
 #[test]
+fn the_driven_port_is_the_default_excitation_and_saved() {
+    let mut s = swept(2);
+    let r = s.execute("view.driven", &json!({})).unwrap();
+    assert_eq!(r["driven"], "1");
+    assert_eq!(r["entries"], json!([{"name": "1", "role": "input"}, {"name": "2", "role": "output"}]));
+    assert!(s.views().is_empty(), "the first is driven by default");
+    let at = json!({"frequency": 8, "at": [[11.43, 5, 10]]});
+    let first = s.execute("results.probe", &at).unwrap();
+    let steps = s.history().len();
+    let r = s.execute("view.driven", &json!({"port": "2"})).unwrap();
+    assert_eq!((r["driven"].as_str(), r["entries"][0]["role"].as_str()), (Some("2"), Some("output")));
+    assert_eq!((s.driven_entry(), s.driven_port()), (1, Some(1)));
+    assert_eq!((s.views().driven.as_deref(), s.history().len()), (Some("2"), steps), "a view setting, kept out of the model's history");
+    // The default excitation follows it; naming one still overrides.
+    let second = s.execute("results.probe", &at).unwrap();
+    let named = s.execute("results.probe", &json!({"frequency": 8, "at": [[11.43, 5, 10]], "excitation": "2"})).unwrap();
+    assert_eq!(second["points"], named["points"]);
+    assert_ne!(second["points"], first["points"]);
+    assert!(s.execute("view.driven", &json!({"port": "9"})).is_err());
+    assert!(s.execute("view.driven", &json!({"port": 2})).is_err());
+    assert_eq!(s.driven_entry(), 1, "a refusal changes nothing");
+    // Saved with the project and opened again.
+    let dir = std::env::temp_dir().join(format!("emcraft-driven-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("driven.emcraft").to_string_lossy().into_owned();
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    assert_eq!(t.views().driven.as_deref(), Some("2"));
+    // A file's driven port is checked; one naming no port drives the first.
+    let bad = dir.join("bad.emcraft");
+    std::fs::write(&bad, json!({"format": "emcraft-project", "version": 3, "history": [], "views": {"driven": ""}}).to_string()).unwrap();
+    assert!(t.execute("file.open", &json!({"path": bad.to_string_lossy()})).is_err());
+    t.execute("view.driven", &json!({})).unwrap();
+    assert_eq!(t.views().driven, None);
+    let mut u = Session::new();
+    u.views.driven = Some("gone".into());
+    assert_eq!((u.driven_entry(), u.driven_port()), (0, None));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_sweep_is_refined_and_recorded_as_one() {
     let mut s = swept(3);
     assert!(s.execute("solve.refine", &json!({"frequencies": []})).is_err());

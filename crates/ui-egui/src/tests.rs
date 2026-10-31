@@ -218,6 +218,11 @@ fn scenario_view3d_port_tool() {
 }
 
 #[test]
+fn scenario_port_roles() {
+    scenario("port_roles");
+}
+
+#[test]
 fn scenario_view3d_side_ports() {
     scenario("view3d_side_ports");
 }

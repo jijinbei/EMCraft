@@ -614,7 +614,7 @@ E (V/m) and H (A/m), complex, and their magnitudes at the project's named probes
 |---|---|---|---|---|
 | `frequency` | number | frequency | no | a solved frequency (the nearest is used; default the sweep's first) |
 | `mode` | integer |  | no | an eigenmode (1 = the lowest) instead of a driven solution |
-| `excitation` | string |  | no | the excited port (default the first) |
+| `excitation` | string |  | no | the excited port (default the driven one: view.driven) |
 
 ## `view.probe.add` — Add probe
 
@@ -642,6 +642,14 @@ Removes a probe.
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `name` | string |  | yes | the probe |
+
+## `view.driven` — Driven port
+
+Chooses the driven port: the input the field views show excited and S is read against (S11 the reflection at it, S21 the transmission to port 2, …), the default `excitation` of the commands that take one. Every port is still excited in turn by a sweep (the whole S matrix); this only says which one is looked at. Without `port` the first is driven again. Saved with the project, not in its history. The reply: the driven port and each entry's role (`input`, `output`).
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `port` | string |  | no | the port or terminal `<port>:<k>` (default the first) |
 
 ## `view.chart.style` — Chart style
 
@@ -676,7 +684,7 @@ E (V/m) and H (A/m), complex, at points, for a solved frequency and an excited p
 |---|---|---|---|---|
 | `frequency` | number | frequency | yes | a solved frequency |
 | `at` | array | length | yes | points `[[x, y, z], …]` |
-| `excitation` | string |  | no | the excited port (default the first) |
+| `excitation` | string |  | no | the excited port (default the driven one: view.driven) |
 
 ## `view.port_mode` — Port mode picture
 
@@ -729,7 +737,7 @@ Writes a PNG of the fields on a plane: a component as colour and the in-plane E 
 | `component` | string |  | no | colour: ex, ey (default), ez, hx, hy, hz, |e|, |h| |
 | `arrows` | array |  | no | vector fields drawn: `["e", "h"]` (default: the coloured component's field; H's arrows sit between E's when both show) |
 | `phase` | number |  | no | ωt in degrees (default 0) |
-| `excitation` | string |  | no | the excited port (default the first) |
+| `excitation` | string |  | no | the excited port (default the driven one: view.driven) |
 | `width` | integer |  | no | picture width in pixels (default 1100) |
 
 ## `view.animation` — Field animation
@@ -746,7 +754,7 @@ Writes an animated PNG of the fields on a plane over one period of ωt, looping:
 | `at` | number | length | no | the plane's position along its normal (default the middle) |
 | `component` | string |  | no | colour: ex, ey (default), ez, hx, hy, hz, |e|, |h| |
 | `arrows` | array |  | no | vector fields drawn: `["e", "h"]` (default: the coloured component's field) |
-| `excitation` | string |  | no | the excited port (default the first) |
+| `excitation` | string |  | no | the excited port (default the driven one: view.driven) |
 | `frames` | integer |  | no | frames in a period, 4 to 120 (default 24) |
 | `period` | number |  | no | seconds a period plays for (default 2) |
 | `width` | integer |  | no | picture width in pixels (default 800) |

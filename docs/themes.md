@@ -105,6 +105,7 @@ on `ground` 4.5 and `ink_dim` on `ground` 3.
 |---|---|
 | `metal`, `metal_dark` | walls; conductors inside, vias, subtracted features |
 | `port`, `port_soft` | ports when they are the subject, and otherwise |
+| `port_input`, `port_output` | the driven port (the input: its wave in and the reflection back, S11) and the others (outputs: the wave out, S21 …), in 3D and on the browser's port rows |
 | `edge` | the geometry's and the mesh's edges |
 | `pml` | the open boundary's layer |
 | `source` | dipoles and plane waves |

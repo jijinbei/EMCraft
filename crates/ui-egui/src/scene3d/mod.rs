@@ -186,7 +186,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         Some(_) => mesh::from_mesh(m, overlay, &mut out),
         None => geometry::from_geometry(m, overlay, &mut out),
     }
-    extras::extras(m, overlay, &mut out);
+    extras::extras(m, session.driven_port(), overlay, &mut out);
     legend::legend(session, overlay, &mut out);
     if overlay == Overlay::Field {
         // One colour scale for every plane: the largest peak.
