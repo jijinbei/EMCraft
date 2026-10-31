@@ -69,7 +69,8 @@ fn solids_mesh_unstructured_and_their_modes_meet_the_bessel_zeros() {
     // A dielectric rod along the axis's middle third.
     s.execute("model.material.create", &json!({"name": "ptfe", "eps_r": 2.1})).unwrap();
     s.execute("geometry.inclusion", &json!({"shape": "cylinder", "radius": 3, "length": 10, "at": [0, 0, 10], "material": "ptfe"})).unwrap();
-    let m = s.execute("mesh.generate", &json!({"size": 4})).unwrap();
+    // 6 mm: the rod's curved faces set the mesh still, in half the time of 4 mm.
+    let m = s.execute("mesh.generate", &json!({"size": 6})).unwrap();
     assert!(m["tetrahedra"].as_u64().unwrap() > 0);
     assert!(s.model.mesh.as_ref().unwrap().tet_material.contains(&1));
     assert!(s.execute("geometry.inclusion", &json!({"shape": "sphere", "radius": 20})).is_err());
