@@ -236,3 +236,32 @@ fn the_run_is_estimated_from_its_settings() {
         assert!(s.execute("project.estimate", &bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn each_point_says_whether_it_was_solved_in_full() {
+    use emcraft_render::chart::Style;
+    let flags = |r: &serde_json::Value| r["points"].as_array().unwrap().iter().map(|p| p["full"].as_bool().unwrap()).collect::<Vec<bool>>();
+    // A fast sweep: the band's ends in full, most of the rest in the basis.
+    let mut s = swept(9);
+    let fast = flags(&s.execute("results.sparameters", &json!({})).unwrap());
+    let counted = fast.iter().filter(|f| **f).count();
+    assert!(fast[0] && fast[8] && counted < 9, "{fast:?}");
+    // Its curves are lines, the full solves marked on them and named once in the legend.
+    let chart = view::sparameter_chart(&s).unwrap();
+    let s21: Vec<_> = chart.series.iter().filter(|c| c.key == "s21.fem").collect();
+    assert_eq!(s21.iter().map(|c| c.style).collect::<Vec<_>>(), [Style::Line, Style::Markers]);
+    assert_eq!((s21[0].points.len(), s21[1].points.len(), s21[1].label.as_str()), (9, counted, ""));
+    assert_eq!(chart.series.iter().filter(|c| c.key == view::FULL_SOLVES).count(), 1);
+    // A full sweep: every point in full, every point marked as before, no legend entry.
+    let r = s.execute("solve.frequency", &json!({"start": 6, "stop": 8, "points": 9, "order": 1, "sweep": "full"})).unwrap();
+    assert_eq!((flags(&r), r["solved_in_full"].as_u64()), (vec![true; 9], Some(9)));
+    let chart = view::sparameter_chart(&s).unwrap();
+    assert!(chart.series.iter().all(|c| c.key != view::FULL_SOLVES && (c.key != "s21.fem" || c.style == Style::Joined)));
+    // Refined: the point added says how it was solved, the others keep theirs.
+    let mut s = swept(9);
+    let r = s.execute("solve.refine", &json!({"frequencies": [6.1]})).unwrap();
+    assert_eq!(r["solved_in_full"], json!(1));
+    let mut after = fast.clone();
+    after.insert(1, true);
+    assert_eq!(flags(&r), after);
+}

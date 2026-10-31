@@ -103,18 +103,14 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
         Strategy::Fast => freqs.len() >= 3,
         Strategy::Full => false,
     };
-    let (results, full) = if fast { fast_sweep(&driven, &freqs)? } else { full_sweep(&driven, &freqs)? };
+    let results = if fast { fast_sweep(&driven, &freqs)? } else { full_sweep(&driven, &freqs)? };
+    let full = in_full(&results);
     let unknowns = driven.dofs.unknowns;
     s.results.sweep = Some(Arc::new(Sweep::new(order, Arc::new(driven), results)));
     let mut reply = sparameter_table(s)?;
     reply["unknowns"] = json!(unknowns);
     reply["order"] = json!(order.as_u8());
-    reply["solved_in_full"] = json!(full.iter().filter(|f| **f).count());
-    if let Some(points) = reply["points"].as_array_mut() {
-        for (pt, f) in points.iter_mut().zip(&full) {
-            pt["full"] = json!(f);
-        }
-    }
+    reply["solved_in_full"] = json!(full);
     Ok(reply)
 }
 
@@ -132,11 +128,12 @@ pub fn refine(s: &mut Session, p: &Params) -> Result<Value> {
     if total > s.limits.frequencies {
         return Err(EngineError::Params(format!("the sweep would hold {total} frequencies, more than {}", s.limits.frequencies)));
     }
-    let (results, full) = match new.len() {
-        0 => (Vec::new(), Vec::new()),
+    let results = match new.len() {
+        0 => Vec::new(),
         n if n >= 3 => fast_sweep(&sw.driven, &new)?,
         _ => full_sweep(&sw.driven, &new)?,
     };
+    let full = in_full(&results);
     let mut merged = (*sw).clone();
     merged.results.extend(sw.referred(results)?);
     merged.results.sort_by(|a, b| a.frequency.total_cmp(&b.frequency));
@@ -154,30 +151,32 @@ pub fn refine(s: &mut Session, p: &Params) -> Result<Value> {
     s.results.sweep = Some(Arc::new(merged));
     let mut reply = sparameter_table(s)?;
     reply["added"] = json!(new.iter().map(|f| fu.from_si(*f)).collect::<Vec<f64>>());
-    reply["solved_in_full"] = json!(full.iter().filter(|f| **f).count());
+    reply["solved_in_full"] = json!(full);
     reply["order"] = json!(sw.order.as_u8());
     Ok(reply)
 }
 
-/// The results at `freqs` by the reduced-basis sweep, and which were solved in full.
-fn fast_sweep(driven: &Driven, freqs: &[f64]) -> Result<(Vec<FrequencyResult>, Vec<bool>)> {
+/// How many of `results` were solved in full (each says: [`FrequencyResult::full`]).
+fn in_full(results: &[FrequencyResult]) -> usize {
+    results.iter().filter(|r| r.full).count()
+}
+
+/// The results at `freqs` by the reduced-basis sweep, each saying whether it was solved in full.
+fn fast_sweep(driven: &Driven, freqs: &[f64]) -> Result<Vec<FrequencyResult>> {
     crate::progress::report(0, freqs.len(), "fast sweep")?;
-    let r = emcraft_solver::sweep::fast_sweep(driven, freqs, &Default::default())?;
-    Ok((r.results, r.full))
+    Ok(emcraft_solver::sweep::fast_sweep(driven, freqs, &Default::default())?.results)
 }
 
 /// The results at `freqs`, each solved in full.
-fn full_sweep(driven: &Driven, freqs: &[f64]) -> Result<(Vec<FrequencyResult>, Vec<bool>)> {
-    let results = freqs
+fn full_sweep(driven: &Driven, freqs: &[f64]) -> Result<Vec<FrequencyResult>> {
+    freqs
         .iter()
         .enumerate()
         .map(|(k, f)| {
             crate::progress::report(k, freqs.len(), "frequency")?;
             Ok(driven.solve(*f)?)
         })
-        .collect::<Result<Vec<_>>>()?;
-    let full = vec![true; results.len()];
-    Ok((results, full))
+        .collect()
 }
 
 /// Where the solvers run: the time domain's leapfrog (in `precision`) and the factorization's

@@ -1,6 +1,7 @@
 //! The S-parameter chart: |S11| and |S21| (and the rest of the first column with more ports or
 //! terminals) against frequency — in dB, as a magnitude or as a phase in degrees — the solved
-//! points over the reference's curves, with the sections' cut-offs marked.
+//! points over the reference's curves, with the sections' cut-offs marked. A fast sweep's curves
+//! are lines marked only at the frequencies solved in full.
 
 use emcraft_model::units::decibels;
 use emcraft_render::chart::{Chart, Series, Style};
@@ -13,6 +14,10 @@ use crate::{EngineError, Result, Session};
 
 /// The most entries of S's first column the chart draws.
 const MAX_CHART_ENTRIES: usize = 8;
+
+/// The key of the legend's entry for a fast sweep's marks: the frequencies solved in full (the
+/// rest were solved in its reduced basis, the line between them).
+pub const FULL_SOLVES: &str = "full";
 
 /// The series colours of the first column's entries past S₂₁ (green, orange, purple).
 const MORE_PENS: [u8; 3] = [2, 4, 3];
@@ -159,15 +164,28 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
         Vec::new()
     };
     if let Some(sweep) = sweep {
-        let pts = |p: usize, q: usize| sweep.results.iter().filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect();
-        let label = format!("{} FEM (order {})", display.entry("21"), sweep.order.as_u8());
-        series.push(Series::new("s21.fem", label, Pen::Strong(0), Style::Joined, pts(1, 0)));
-        series.push(Series::new("s11.fem", format!("{} FEM", display.entry("11")), Pen::Strong(1), Style::Joined, pts(0, 0)));
+        let pts = |p: usize, q: usize, all: bool| {
+            sweep.results.iter().filter(|r| all || r.full).filter_map(|r| r.s.get(p, q).map(|s| [fu.from_si(r.frequency), display.of(s)])).collect()
+        };
+        // A fast sweep's curves: lines through every point, marked where solved in full.
+        let fast = sweep.results.iter().any(|r| !r.full);
+        let mut fem = |key: &str, label: String, pen: Pen, p: usize| {
+            if fast {
+                series.push(Series::new(key, label, pen, Style::Line, pts(p, 0, true)));
+                series.push(Series::new(key, "", pen, Style::Markers, pts(p, 0, false)));
+            } else {
+                series.push(Series::new(key, label, pen, Style::Joined, pts(p, 0, true)));
+            }
+        };
+        fem("s21.fem", format!("{} FEM (order {})", display.entry("21"), sweep.order.as_u8()), Pen::Strong(0), 1);
+        fem("s11.fem", format!("{} FEM", display.entry("11")), Pen::Strong(1), 0);
         // More entries (a terminal port's conductors, more ports): the rest of the first column.
         let n = sweep.results.first().map_or(0, |r| r.s.ports()).min(MAX_CHART_ENTRIES);
         for (p, k) in (2..n).zip(MORE_PENS.iter().cycle()) {
-            let label = format!("{} FEM", display.entry(&format!("{}1", p + 1)));
-            series.push(Series::new(&format!("s{}1.fem", p + 1), label, Pen::Strong(*k), Style::Joined, pts(p, 0)));
+            fem(&format!("s{}1.fem", p + 1), format!("{} FEM", display.entry(&format!("{}1", p + 1))), Pen::Strong(*k), p);
+        }
+        if fast {
+            series.push(Series::new(FULL_SOLVES, "solved in full", Pen::Ink, Style::Markers, Vec::new()));
         }
     }
     if let Some(td) = td {

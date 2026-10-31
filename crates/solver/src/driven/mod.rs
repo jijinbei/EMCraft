@@ -235,6 +235,8 @@ pub struct FrequencyResult {
     pub largest_front: usize,
     /// Where the time went (seconds).
     pub timings: Timings,
+    /// Solved in full (the whole system factorized), not in a fast sweep's reduced basis.
+    pub full: bool,
 }
 
 /// Seconds spent at one frequency, by stage. Not part of a result's value: two results compare

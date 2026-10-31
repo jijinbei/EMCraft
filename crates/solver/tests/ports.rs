@@ -324,6 +324,10 @@ fn a_fast_sweep_matches_the_full_one() {
     // residual squared: 8 solves and 4e-14 at a residual of 1e-6).
     assert!(worst < 1e-8, "{worst:e}");
     assert!(solved <= 8, "{solved}");
+    // Each result says how it was solved: the band's ends in full, the rest mostly in the basis.
+    assert_eq!(fast.results.iter().map(|r| r.full).collect::<Vec<_>>(), fast.full);
+    assert!(fast.full[0] && fast.full[20]);
+    assert!(d.solve(7e9).unwrap().full);
 }
 
 #[test]

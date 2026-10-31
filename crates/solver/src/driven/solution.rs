@@ -142,6 +142,7 @@ impl Solved {
             factor_entries: r.entries,
             largest_front: r.largest_front,
             timings: Timings { assembly: self.assembly, analysis: r.analysis, factor: r.factor, solve: self.started.elapsed().as_secs_f64() },
+            full: true,
         }
     }
 }
