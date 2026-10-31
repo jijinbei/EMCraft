@@ -10,8 +10,23 @@ use emcraft_engine::study::{Kind, Slice, Study};
 use super::*;
 use crate::lang::args;
 
-/// One-line account of a study.
+/// One-line account of a study, with its surrogate's where it had one.
 pub fn summary(study: &Study) -> String {
+    let Some(g) = &study.surrogate else { return plain_summary(study) };
+    let extra = match study.kind {
+        Kind::Sweep => {
+            let predicted = study.rows.iter().filter(|r| r.is_predicted()).count();
+            trf(", {solved} solved, {predicted} predicted", args!(solved = g.solves, predicted = predicted))
+        }
+        Kind::Optimize => match g.at_best {
+            Some((m, s)) => trf(" · Bayesian, surrogate {mean} ± {sigma}", args!(mean = short(m), sigma = short(s))),
+            None => tr(" · Bayesian").to_owned(),
+        },
+    };
+    format!("{}{extra}", plain_summary(study))
+}
+
+fn plain_summary(study: &Study) -> String {
     let names = study.variables.join(", ");
     let failed = study.rows.iter().filter(|r| r.error.is_some()).count();
     let failed = if failed > 0 { trf(", {n} failed", args!(n = failed)) } else { String::new() };
@@ -201,10 +216,16 @@ fn table(ui: &mut egui::Ui, study: &Study, parameter: Option<&str>, units: &[Opt
                 if !study.rows.iter().all(|r| r.modes.is_empty()) {
                     ui.label(r.modes.iter().take(6).map(|f| format!("{f:.4}")).collect::<Vec<_>>().join(", "));
                 }
-                match (&r.error, best) {
-                    (Some(e), _) => ui.label(egui::RichText::new(emcraft_engine::text::clip(e, 120)).size(t.font_small).color(t.error)),
-                    (None, true) => crate::ui_kit::small(ui, "best", t.accent),
-                    (None, false) => ui.label(""),
+                // A surrogate's prediction, with the largest σ of the |S| shown.
+                let sigma = parameter.and_then(|p| r.db_sigma(p)).map(|s| s.into_iter().fold(0.0, f64::max));
+                match (&r.error, best, r.is_predicted(), sigma) {
+                    (Some(e), _, _, _) => ui.label(egui::RichText::new(emcraft_engine::text::clip(e, 120)).size(t.font_small).color(t.error)),
+                    (None, true, _, _) => crate::ui_kit::small(ui, "best", t.accent),
+                    (None, false, true, Some(s)) => {
+                        crate::ui_kit::small(ui, trf("predicted ± {sigma} dB", args!(sigma = format!("{s:.3}"))), t.text_dim)
+                    }
+                    (None, false, true, None) => crate::ui_kit::small(ui, "predicted", t.text_dim),
+                    (None, false, false, _) => ui.label(""),
                 };
                 ui.end_row();
             }

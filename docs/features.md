@@ -929,7 +929,7 @@ No parameters.
 
 ## `study.sweep` — Parameter sweep
 
-Sweeps a variable, or several on a grid: for each value (each point of the grid: every combination of the variables' values, the last varying fastest) the model is rebuilt from the history with it (meshed when the history meshes), solved by `solve` (`{"command": "solve.frequency", "params": {…}}`, any solve command) and its results collected: S-parameters at the solve's frequencies, eigenmodes' frequencies, the solve's other numbers. One variable's rows carry its `value`; a grid's rows carry `values` in the order of `variables`, and the reply the grid's values of each variable. The session's model is left as it was. A point that cannot be built or solved is reported in its row; cancelling stops at the next point.
+Sweeps a variable, or several on a grid: for each value (each point of the grid: every combination of the variables' values, the last varying fastest) the model is rebuilt from the history with it (meshed when the history meshes), solved by `solve` (`{"command": "solve.frequency", "params": {…}}`, any solve command) and its results collected: S-parameters at the solve's frequencies, eigenmodes' frequencies, the solve's other numbers. One variable's rows carry its `value`; a grid's rows carry `values` in the order of `variables`, and the reply the grid's values of each variable. The session's model is left as it was. A point that cannot be built or solved is reported in its row; cancelling stops at the next point. With `surrogate` ({"budget": N}) only N points are solved — the grid point nearest the centre, then each the farthest from those chosen (2d + 1 in all), then each where a Gaussian-process surrogate of the rows solved is least sure (its largest variance; Sacks et al., Statist. Sci. 4(4):409–435, 1989) — and every other point is predicted from them: each row output (|S| in dB at each frequency, eigenmodes, the solve's numbers) by one Gaussian process sharing the kernel (Matérn 5/2, a length scale per variable by the marginal likelihood; Rasmussen & Williams, Gaussian Processes for Machine Learning, 2006), its row marked `predicted` with `db` and `sigma_db` per S-parameter, `modes_sigma` and `scalars_sigma`; solved rows are as without it, and the reply's `surrogate` counts both and gives the length scales.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -941,10 +941,11 @@ Sweeps a variable, or several on a grid: for each value (each point of the grid:
 | `points` | integer |  | no | values from start to stop (default 5, at most 101) |
 | `solve` | object |  | yes | the solve at each point: {"command", "params"} |
 | `outputs` | array |  | no | the S-parameters kept, such as ["s11", "s21"] (default all) |
+| `surrogate` | object |  | no | solve only some points and predict the rest: {"budget": N}, N from 2 to the grid's points (a grid of 3 or more) |
 
 ## `study.optimize` — Optimize
 
-Finds the variables' values within their bounds that minimize a goal, by the Nelder–Mead simplex (Comput. J. 7(4):308–313, 1965) on the range scaled to [0, 1], from the current values; each point is the model rebuilt from the history and solved by `solve`. Goals (`type`): `min_max_db` (the largest |S| over the frequencies, default s11: a reflection), `max_min_db` (the smallest |S|, default s21: a transmission), `target_db` (|S| at `target` dB), `eigenfrequency` (mode `mode`, default 1, at `target` in display units), `maximize` or `minimize` (a number the solve gives: `quantity`). The model is left at the best point (undo goes back); every evaluation is kept.
+Finds the variables' values within their bounds that minimize a goal, by the Nelder–Mead simplex (Comput. J. 7(4):308–313, 1965) on the range scaled to [0, 1], from the current values; each point is the model rebuilt from the history and solved by `solve`. Goals (`type`): `min_max_db` (the largest |S| over the frequencies, default s11: a reflection), `max_min_db` (the smallest |S|, default s21: a transmission), `target_db` (|S| at `target` dB), `eigenfrequency` (mode `mode`, default 1, at `target` in display units), `maximize` or `minimize` (a number the solve gives: `quantity`). The model is left at the best point (undo goes back); every evaluation is kept. `method` `bayesian` searches instead by Bayesian optimization (Jones, Schonlau & Welch, J. Global Optim. 13:455–492, 1998): the current values and 2d Halton points solved, then each time the point of the largest expected improvement under a Gaussian-process surrogate of every value solved (Matérn 5/2, a length scale per variable by the marginal likelihood), until that improvement falls below `tolerance` × the spread of the values solved or the solves run out; every value reported is a solve, and the reply's `best.predicted` gives the surrogate's goal ± σ there and `surrogate` its length scales. The reply's `method` says which ran.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -952,7 +953,8 @@ Finds the variables' values within their bounds that minimize a goal, by the Nel
 | `goal` | object |  | yes | what to minimize: {"type", "parameter", "target", "mode", "quantity"} |
 | `solve` | object |  | yes | the solve at each point: {"command", "params"} |
 | `max_evaluations` | integer |  | no | the most solves (default 50, at most 500) |
-| `tolerance` | number |  | no | the simplex's size at which it stops, a share of each range (default 1e-3) |
+| `tolerance` | number |  | no | where it stops (default 1e-3): the simplex's size, a share of each range; Bayesian, the expected improvement, a share of the spread of the goal's values solved |
+| `method` | string |  | no | `simplex` (Nelder–Mead, the default) or `bayesian` (a Gaussian-process surrogate choosing each solve) |
 
 ## `view.study` — Study chart
 

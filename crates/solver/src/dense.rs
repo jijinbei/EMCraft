@@ -341,7 +341,21 @@ impl Scalar for C {
 /// The Cholesky factor L of a small Hermitian (real: symmetric) positive definite matrix,
 /// A = L Lᴴ (Golub & Van Loan, *Matrix Computations*, 4th ed., §4.2), row-major n × n. Every
 /// sum runs over k in increasing order.
-pub(crate) struct Cholesky<T> {
+///
+/// ```
+/// use emcraft_solver::dense::Cholesky;
+///
+/// // A = [[4, 2], [2, 3]]: A x = b by the two triangular solves.
+/// let l = Cholesky::new(&[4.0, 2.0, 2.0, 3.0], 2).unwrap();
+/// let x = l.upper_solve(&l.lower_solve(&[2.0, 1.0]));
+/// assert!((x[0] - 0.5).abs() < 1e-15 && x[1].abs() < 1e-15);
+/// assert!((l.log_determinant() - 8f64.ln()).abs() < 1e-14);
+/// // Not positive definite, not square, or not finite: refused.
+/// assert!(Cholesky::new(&[1.0, 2.0, 2.0, 1.0], 2).is_none());
+/// assert!(Cholesky::new(&[1.0, 0.0, 0.0], 2).is_none());
+/// assert!(Cholesky::new(&[f64::NAN], 1).is_none());
+/// ```
+pub struct Cholesky<T> {
     n: usize,
     l: Vec<T>,
 }
@@ -349,8 +363,8 @@ pub(crate) struct Cholesky<T> {
 impl<T: Scalar> Cholesky<T> {
     /// The factor of `a` (n × n, row-major; its lower triangle and the real part of its
     /// diagonal are read); `None` unless a pivot is finite and > 0.
-    pub(crate) fn new(a: &[T], n: usize) -> Option<Cholesky<T>> {
-        if a.len() != n * n {
+    pub fn new(a: &[T], n: usize) -> Option<Cholesky<T>> {
+        if n.checked_mul(n) != Some(a.len()) {
             return None;
         }
         let mut l = vec![T::default(); n * n];
@@ -368,8 +382,18 @@ impl<T: Scalar> Cholesky<T> {
         Some(Cholesky { n, l })
     }
 
+    /// The order n.
+    pub fn n(&self) -> usize {
+        self.n
+    }
+
+    /// log det A = 2 Σ log Lᵢᵢ (the sum in increasing i).
+    pub fn log_determinant(&self) -> f64 {
+        2.0 * (0..self.n).map(|i| self.l[i * self.n + i].re().ln()).sum::<f64>()
+    }
+
     /// L⁻¹ b.
-    pub(crate) fn lower_solve(&self, b: &[T]) -> Vec<T> {
+    pub fn lower_solve(&self, b: &[T]) -> Vec<T> {
         let n = self.n;
         let mut x = vec![T::default(); n];
         for i in 0..n {
@@ -380,7 +404,7 @@ impl<T: Scalar> Cholesky<T> {
     }
 
     /// L⁻ᴴ b (L⁻ᵀ b for a real L).
-    pub(crate) fn upper_solve(&self, b: &[T]) -> Vec<T> {
+    pub fn upper_solve(&self, b: &[T]) -> Vec<T> {
         let n = self.n;
         let mut x = vec![T::default(); n];
         for i in (0..n).rev() {

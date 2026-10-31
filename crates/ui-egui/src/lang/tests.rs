@@ -136,6 +136,19 @@ const MODELS: &[Model] = &[
               "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}}}]"#,
         &["run", "results"],
     ),
+    // The filter optimized by the Bayesian search, then swept with a surrogate.
+    (
+        "[]",
+        r#"[{"command": "study.optimize", "params": {"variables": [{"name": "l", "min": 18, "max": 22}], "goal": {"type": "min_max_db", "parameter": "s11"},
+              "solve": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}, "max_evaluations": 3, "method": "bayesian"}}]"#,
+        &["results"],
+    ),
+    (
+        "[]",
+        r#"[{"command": "study.sweep", "params": {"variable": "l", "values": [16, 18, 20, 22], "outputs": ["s21"], "surrogate": {"budget": 3},
+              "solve": {"command": "solve.frequency", "params": {"frequencies": [7, 8], "order": 1}}}}]"#,
+        &["results"],
+    ),
     // A cavity with an electric wall: eigenmodes.
     (
         r#"[{"command": "geometry.waveguide", "params": {"width": 22.86, "height": 10.16, "sections": [{"length": 30, "material": "vacuum"}]}},
@@ -461,6 +474,8 @@ const UNREACHED: &[(&str, &str)] = &[
     ("Time-domain radiation", "a time-domain solve with sources takes too long for the gate"),
     ("Time domain: {n} frequencies", "a time-domain solve takes too long for the gate"),
     ("modes ({unit})", "a study of eigenmodes takes too long for the gate"),
+    ("predicted", "a surrogate sweep of eigenmodes takes too long for the gate"),
+    (" · Bayesian", "a Bayesian optimization with fewer than two points solved (unit tests of study::bayes)"),
     ("Entries of S: {entries}", "needs a terminal port (scenario terminal_ports)"),
     ("Port {name} (on a face)", "needs a port on an imported face (scenario import_cavity)"),
     ("Port {name} (on a face): {n} mode{impedance}", "needs a port on an imported face (scenario import_cavity)"),

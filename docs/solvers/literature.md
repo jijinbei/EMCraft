@@ -379,6 +379,26 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   (`emcraft-engine::study`).
 - D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley 2012, §2.5 and §5.4 — the quarter-wave
   transformer the optimizer's oracle case is checked against.
+- C. E. Rasmussen, C. K. I. Williams, *Gaussian Processes for Machine Learning*, MIT Press 2006,
+  ch. 2 (Algorithm 2.1: mean and variance by one Cholesky factor), §4.2 (the Matérn ν = 5/2
+  covariance) and ch. 5 (a length scale per variable, chosen by the marginal likelihood) — the
+  surrogate of the studies' results (`emcraft-engine::study::gp`): every output shares the
+  kernel and the factor, its signal variance concentrated out; the length scales from a fixed
+  ladder by a coordinate search, a nugget of 1e-8 raised until R factors.
+- D. R. Jones, M. Schonlau, W. J. Welch, *Efficient global optimization of expensive black-box
+  functions*, J. Global Optim. 13:455–492, 1998 — the expected improvement (eq. 15) and the
+  concentrated likelihood (eq. 4–6) of `study.optimize` `method: bayesian`
+  (`emcraft-engine::study::bayes`): the current values and 2d Halton points, then the point of
+  the largest expected improvement over Halton candidates refined by a compass search.
+- J. H. Halton, *On the efficiency of certain quasi-random sequences of points in evaluating
+  multi-dimensional integrals*, Numer. Math. 2:84–90, 1960 — the space-filling start and
+  candidates.
+- J. Sacks, W. J. Welch, T. J. Mitchell, H. P. Wynn, *Design and analysis of computer
+  experiments*, Statist. Sci. 4(4):409–435, 1989 — `study.sweep` `surrogate`
+  (`emcraft-engine::study::adaptive`): a maximin start on the grid, then the grid point of
+  largest predictive variance, the rest predicted with their σ.
+- M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, NBS 1964, 7.1.5 and 7.1.14 —
+  erfc for the normal distribution in the expected improvement.
 ## Periodic structures
 - G. Floquet, *Sur les équations différentielles linéaires à coefficients périodiques*, Ann.
   Sci. ÉNS 12:47–88, 1883 — fields of a periodic structure as E(r + L) = e^{−jψ}E(r).

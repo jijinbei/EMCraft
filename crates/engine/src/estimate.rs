@@ -152,6 +152,11 @@ fn cost(s: &Session, command: &str, p: &Params, order: Option<usize>, depth: usi
             } else {
                 variable_points(p)?
             };
+            // A surrogate sweep solves its budget only.
+            let points = match p.raw("surrogate").filter(|_| command == "study.sweep") {
+                Some(g) => points.min(p.nested(g, "surrogate").integer("budget", 2..=400).required()? as f64),
+                None => points,
+            };
             let solve = p.raw("solve").ok_or_else(|| p.error("solve", "is needed: {\"command\", \"params\"}"))?;
             let inner_command = solve.get("command").and_then(Value::as_str).ok_or_else(|| p.error("solve", "needs a `command`"))?;
             let empty = json!({});
