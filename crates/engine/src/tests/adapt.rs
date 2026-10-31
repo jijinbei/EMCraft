@@ -4,12 +4,14 @@ use serde_json::json;
 
 use crate::*;
 
-/// The inductive post through WR-90, its ports made, not meshed.
+/// An inductive post through WR-90, its ports made, not meshed. A post of 3 mm radius, not the
+/// template's 1.5: its curved wall sets the mesh, and the thicker post meshes three times as
+/// fast.
 fn post_unmeshed() -> Session {
     let mut s = Session::new();
     for (c, p) in [
         ("geometry.solid", json!({"shape": "box", "size": [22.86, 10.16, 30]})),
-        ("geometry.feature", json!({"combine": "subtract", "shape": "cylinder", "radius": 1.5, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"})),
+        ("geometry.feature", json!({"combine": "subtract", "shape": "cylinder", "radius": 3, "length": 10.16, "at": [11.43, 0, 15], "axis": "y"})),
         ("model.port.create", json!({"name": "1", "end": "start", "modes": 4})),
         ("model.port.create", json!({"name": "2", "end": "end", "modes": 4})),
     ] {
@@ -66,7 +68,16 @@ fn adaptive_passes_refine_a_waveguide_uniformly_until_s_settles() {
 
 #[test]
 fn hostile_adaptive_requests_are_refused() {
-    let mut s = post_unmeshed();
+    // An empty guide, not the post: the refusals read the parameters, and the one refused only
+    // after meshing (a frequency that overflows in hertz) meshes it in a moment.
+    let mut s = Session::new();
+    for (c, p) in [
+        ("geometry.solid", json!({"shape": "box", "size": [22.86, 10.16, 30]})),
+        ("model.port.create", json!({"name": "1", "end": "start", "modes": 4})),
+        ("model.port.create", json!({"name": "2", "end": "end", "modes": 4})),
+    ] {
+        s.execute(c, &p).unwrap();
+    }
     for p in [
         json!({}),
         json!({"size": 0}),
