@@ -329,7 +329,7 @@ impl EmcraftApp {
             Action::Measure(picks) => {
                 let params = crate::tools3d::measure_params(self.session.display().length, picks);
                 let reply = self.run("geometry.measure", params)?;
-                self.view3d.tools.measured = Some((picks, reply.clone()));
+                self.view3d.tools.measured = Some(crate::tools3d::Measured { picks, reply: reply.clone() });
                 return Ok(reply);
             }
             Action::Message { text, error } => {
