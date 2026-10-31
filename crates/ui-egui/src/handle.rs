@@ -172,6 +172,8 @@ emcraft_macros::named_enum! {
         View3dFace = "view3d:face",
         View3dPlay = "view3d:play",
         View3dProjection = "view3d:projection",
+        /// The view cube (a drag on it orbits).
+        View3dCube = "view3d:cube",
         // The section view's switch, its position slider and its flip.
         View3dSection = "view3d:section",
         View3dSectionAt = "view3d:section:at",
@@ -286,6 +288,11 @@ pub enum Handle<'a> {
     FieldKept(usize),
     /// A standard view in the 3D view's navigator: `view3d:std:front`.
     Standard(StandardView),
+    /// A face or corner of the view cube, by its direction's signs: `view3d:cube:+x`,
+    /// `view3d:cube:+x+y+z`.
+    CubeFacet([i8; 3]),
+    /// One of the view cube's buttons: `view3d:cube:left`, `view3d:cube:home`.
+    CubeButton(&'static str),
     /// The axis the section view cuts across (0 x, 1 y, 2 z): `view3d:section:x`.
     SectionAxis(usize),
     /// A tool's switch in the 3D view: `view3d:tool:measure`.
@@ -381,6 +388,16 @@ impl fmt::Display for Handle<'_> {
             Handle::FieldPlane(p) => write!(f, "field:plane:{}", p.id()),
             Handle::FieldKept(k) => write!(f, "field:kept:{k}"),
             Handle::Standard(v) => write!(f, "view3d:std:{}", v.id()),
+            Handle::CubeFacet(d) => {
+                f.write_str("view3d:cube:")?;
+                for (k, s) in d.iter().enumerate() {
+                    if *s != 0 {
+                        write!(f, "{}{}", if *s > 0 { '+' } else { '-' }, AXES.get(k).copied().unwrap_or("?"))?;
+                    }
+                }
+                Ok(())
+            }
+            Handle::CubeButton(b) => write!(f, "view3d:cube:{b}"),
             Handle::SectionAxis(k) => write!(f, "view3d:section:{}", AXES.get(k).copied().unwrap_or("?")),
             Handle::Tool(t) => write!(f, "view3d:tool:{}", t.id()),
             Handle::RibbonTool(t) => write!(f, "toolbar:tool:{}", t.id()),
@@ -431,7 +448,7 @@ mod tests {
 
     #[test]
     fn handles_read_as_the_protocol_names_them() {
-        let cases: [(Handle, &str); 14] = [
+        let cases: [(Handle, &str); 17] = [
             (Handle::ChartBlock(1), "chart:block:1"),
             (Handle::Tab(RibbonTab::PortsSources), "tab:PORTS & SOURCES"),
             (Handle::Toolbar("mesh.generate"), "toolbar:mesh.generate"),
@@ -445,6 +462,9 @@ mod tests {
             (Handle::Kind(Solver::Eigenmodes), "intent:kind:eigenmodes"),
             (Handle::FieldPlane(Plane::Cross), "field:plane:cross"),
             (Handle::Standard(StandardView::Front), "view3d:std:front"),
+            (Handle::CubeFacet([1, 0, 0]), "view3d:cube:+x"),
+            (Handle::CubeFacet([-1, 1, 1]), "view3d:cube:-x+y+z"),
+            (Handle::CubeButton("home"), "view3d:cube:home"),
             (Handle::StudyAt("b", 2), "study:at:b:2"),
         ];
         for (h, text) in cases {

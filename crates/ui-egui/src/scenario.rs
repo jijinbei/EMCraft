@@ -6,11 +6,13 @@
 //! A scenario is a JSON list of steps:
 //! - `{"call": "ui.start", "params": {…}, "fail"?: true}`: any control request (`fail`: it must
 //!   be refused)
-//! - `{"click": AT, "double"?: true}`, `{"move": AT}`, `{"drag": [AT, AT]}` where AT is `[x, y]`
+//! - `{"click": AT, "double"?: true}`, `{"move": AT}`, `{"drag": [AT, AT], "button"?, "ctrl"?,
+//!   "shift"?, "alt"?}` where AT is `[x, y]`
 //!   or a published handle's name (`"toolbar:mesh.generate"`, `"tab:SIMULATE"`, `"row:…"`), or
 //!   `{"handle": name, "offset": [dx, dy]}`
 //! - `{"widget": "Label"}`: click the widget whose accessible label is that text
-//! - `{"key": "Enter", "cmd"?: true}`, `{"text": "22.86"}`; `{"frames": n}`
+//! - `{"key": "Enter", "cmd"?: true, "press"?: "down" | "up"}` (held: down, frames, up),
+//!   `{"text": "22.86"}`; `{"frames": n}`
 //! - `{"until": {…}, "timeout"?: s}`: frames until the checks pass (a job running on the worker)
 //! - `{"expect": {…}}`: checks, see [`check`]
 //! - `{"shot": "name"}`: with `EMCRAFT_SCENARIO_SHOTS` set, the frame as a PNG in that folder
@@ -167,7 +169,8 @@ impl Harness {
         }
     }
 
-    /// Frames until the queued input is used up.
+    /// Frames until the queued input is used up and the 3D view's change of view has ended
+    /// (its animation steps by the frames' clock, so a scenario sees where it ends).
     pub fn settle(&mut self) {
         for _ in 0..2000 {
             if self.app.control.synthetic.is_empty() {
@@ -176,6 +179,12 @@ impl Harness {
             self.frame();
         }
         self.frames(3);
+        for _ in 0..600 {
+            if !self.app.view3d.animating() {
+                break;
+            }
+            self.frame();
+        }
     }
 
     /// The last frame as a picture.
@@ -258,13 +267,17 @@ impl Harness {
         } else if let Some(d) = s.get("drag") {
             let [x0, y0] = self.at(d.get(0).unwrap_or(&Value::Null))?;
             let [x1, y1] = self.at(d.get(1).unwrap_or(&Value::Null))?;
-            self.call("ui.drag", json!({"x0": x0, "y0": y0, "x1": x1, "y1": y1, "steps": 8}))
+            let button = s.get("button").cloned().unwrap_or(json!("left"));
+            self.call("ui.drag", json!({"x0": x0, "y0": y0, "x1": x1, "y1": y1, "steps": 8, "button": button, "ctrl": flag("ctrl"), "shift": flag("shift"), "alt": flag("alt")}))
         } else if let Some(text) = s.get("widget").and_then(Value::as_str) {
             let [x, y] = self.widget(text).ok_or_else(|| format!("no widget `{text}` on screen"))?;
             self.call("ui.move", json!({"x": x, "y": y}));
             self.call("ui.click", json!({"x": x, "y": y}))
         } else if let Some(k) = s.get("key").and_then(Value::as_str) {
-            self.call("ui.key", json!({"key": k, "cmd": flag("cmd"), "shift": flag("shift")}))
+            self.call(
+                "ui.key",
+                json!({"key": k, "cmd": flag("cmd"), "shift": flag("shift"), "press": s.get("press").cloned().unwrap_or(Value::Null)}),
+            )
         } else if let Some(t) = s.get("text").and_then(Value::as_str) {
             self.call("ui.text", json!({"text": t}))
         } else if let Some(n) = s.get("frames").and_then(Value::as_u64) {

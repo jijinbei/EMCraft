@@ -1,7 +1,9 @@
 //! The 3D view in the viewport: the session's scene ([`crate::scene3d`]) drawn by
-//! `emcraft-render`'s CPU renderer into a texture, with orbit (left drag), pan (middle or shift
-//! drag), zoom (wheel), fit (double click or Fit), the standard views, perspective or
-//! orthographic projection, labels, a legend and an orientation indicator. While dragging the
+//! `emcraft-render`'s CPU renderer into a texture, navigated as in SolidCraft
+//! ([`crate::navigation`]: the mouse mapping's orbit, pan and zoom, the wheel and pinch toward
+//! the cursor, the keys, animated view changes), fit (double click or Fit), the standard views,
+//! perspective or orthographic projection, labels, a legend and a view cube
+//! ([`crate::view_cube`]) or the axes. While dragging or animating the
 //! picture is drawn at half resolution; at rest at full resolution, supersampled when small
 //! enough. A section view cuts the scene across an axis (`emcraft_render::view3d::section`: the
 //! far side removed, the cut faces capped in each body's colour); both renderers draw, and
@@ -11,13 +13,14 @@ use std::time::Instant;
 
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use emcraft_render::Rgb;
-use emcraft_render::view3d::{self, Camera, Keep, Projection, StandardView};
+use emcraft_render::view3d::{self, Camera, CameraAnim, Drag, Keep, Projection, StandardView};
 
 use emcraft_engine::view::{FieldView, Plane};
 
 use crate::glyphs::{self, Glyph};
 use crate::handle::{Fixed, Handle};
 use crate::lang::{self, args, tr, trf};
+use crate::navigation::{NavMode, Navigator, OrbitAround};
 use crate::scene3d::{self, Built, Overlay};
 use crate::state::FieldState;
 use crate::theme::Tokens;
@@ -125,10 +128,23 @@ pub struct View3d {
     pub hover: Option<scene3d::Pick>,
     /// Whether the last frame was drawn by the window's GPU rather than the CPU renderer.
     pub drawn_on_gpu: bool,
-    /// A drag that began on the field view's plane moves it instead of orbiting.
-    moving_plane: bool,
-    /// A drag that began on the selected port's reference plane moves it.
-    moving_ref: bool,
+    /// What the left button's drag does, chosen when it was pressed: move the field view's plane
+    /// or the selected port's reference plane (pressed on them), or navigate.
+    left: Option<LeftDrag>,
+    /// A view change in progress, stepped by the frame's clock.
+    pub anim: Option<CameraAnim>,
+    /// A view change asked for, begun on the next frame (it needs the view's size).
+    pub goal: Option<Goal>,
+    /// The orbit in progress: the camera it began with and the pointer's whole move since.
+    orbit: Option<Drag>,
+    /// A drag on the view cube orbiting the view.
+    pub(crate) cube_drag: Option<Drag>,
+    /// Inside a trackpad's two-finger scroll (between its start and end).
+    gesture: bool,
+    /// An arrow key turning the view that is still down.
+    key_hold: Option<KeyHold>,
+    /// The touchpad mapping's button-free move: its mode and the pointer's last place.
+    motion: Option<(NavMode, egui::Pos2)>,
     /// The tools: face and gap ports, the ruler, the reference plane's drag.
     pub tools: crate::tools3d::Tools,
     /// Bumped whenever the scene picked from is built or cut again.
@@ -153,8 +169,14 @@ impl Default for View3d {
             selected: None,
             hover: None,
             drawn_on_gpu: false,
-            moving_plane: false,
-            moving_ref: false,
+            left: None,
+            anim: None,
+            goal: None,
+            orbit: None,
+            cube_drag: None,
+            gesture: false,
+            key_hold: None,
+            motion: None,
             tools: crate::tools3d::Tools::default(),
             generation: 0,
         }
@@ -238,9 +260,56 @@ impl View3d {
         self.hover.or(self.selected)
     }
 
+    /// Turns to a standard view (animated); the home (isometric) view also frames the model.
     pub fn standard(&mut self, v: StandardView) {
-        self.camera.standard(v);
-        self.fit_next = true;
+        self.goal = Some(if v == StandardView::Iso { Goal::Home } else { Goal::View(v) });
+    }
+
+    /// Whether a view change is under way or asked for.
+    pub fn animating(&self) -> bool {
+        self.anim.is_some() || self.goal.is_some()
+    }
+
+    /// Sets the camera at once, ending any view change.
+    pub fn set_camera(&mut self, c: Camera) {
+        self.camera = c.sanitized();
+        self.anim = None;
+        self.goal = None;
+        self.orbit = None;
+    }
+
+    /// Stops a view change where it is (the person moves the camera).
+    fn stop_animation(&mut self) {
+        self.anim = None;
+        self.goal = None;
+    }
+
+    /// The camera a view change starts from: where one under way is going, so rapid clicks and
+    /// key taps add up instead of starting again from the middle of a move.
+    fn heading(&self) -> Camera {
+        self.anim.map_or(self.camera, |a| a.to)
+    }
+
+    /// Begins the view change `goal` in a picture of `aspect`, framing `frame` where it frames.
+    fn begin(&mut self, goal: Goal, frame: ([f64; 3], [f64; 3]), aspect: f64, now: f64) {
+        let mut to = self.heading();
+        match goal {
+            Goal::View(view) => to.standard(view),
+            Goal::Home => {
+                to.standard(StandardView::Iso);
+                to.fit(frame.0, frame.1, aspect);
+            }
+            Goal::Fit => to.fit(frame.0, frame.1, aspect),
+            Goal::Face(lo, hi, view) => {
+                to.standard(view);
+                to.fit(lo, hi, aspect);
+            }
+            Goal::Turn { right, up, degrees } => to = to.stepped(right, up, degrees),
+            Goal::From(dir) => to = to.looking_from(dir),
+        }
+        let to = to.sanitized();
+        self.orbit = None;
+        self.anim = (to != self.camera).then(|| CameraAnim::new(self.camera, to, now));
     }
 
     pub fn toggle_projection(&mut self) {
@@ -264,6 +333,7 @@ impl View3d {
             "selected": self.selected.map(|p| format!("{p:?}")),
             "hover": self.hover.map(|p| format!("{p:?}")),
             "gpu": self.drawn_on_gpu,
+            "animating": self.animating(),
             "section": self.section.map(|s| s.inspect(l)),
             "tools": self.tools.inspect(l),
         })
@@ -303,9 +373,25 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         v.camera.fit(frame.0, frame.1, aspect);
         v.fitted = Some(bounds);
         v.fit_next = false;
+        v.anim = None;
+    }
+    // View changes step by the frame's clock (the scenarios' clock is their frames').
+    let now = ui.input(|i| i.time);
+    if let Some(goal) = v.goal.take() {
+        v.begin(goal, frame, aspect, now);
+    }
+    if let Some(a) = v.anim {
+        let (c, done) = a.sample(now);
+        v.camera = c;
+        if done {
+            v.anim = None;
+        } else {
+            ui.ctx().request_repaint();
+        }
     }
     let grip = crate::tools3d::grip(app, v, rect).filter(|_| !app.busy());
-    let edit = navigate(v, ui, rect, frame, grip);
+    let edit = navigate(app, v, ui, rect, frame, grip);
+    keys(app, v, ui, rect, now);
     if let Some(d) = edit.plane_drag {
         move_plane(app, &v.camera, field, rect, bounds, d);
     }
@@ -324,7 +410,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         out.extend(row.edit_action());
     }
     // Moving pictures (an orbit, a playing field) draw on the GPU.
-    let gpu = app.prefs.gpu3d || v.dragging || (overlay == Overlay::Field && field.player.playing);
+    let gpu = app.prefs.gpu3d || v.dragging || v.anim.is_some() || (overlay == Overlay::Field && field.player.playing);
     let p = ui.painter().with_clip_rect(rect);
     draw(v, ui, &p, rect, key, gpu, t);
     labels(&p, rect, &v.camera, &built.labels, t);
@@ -335,7 +421,10 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         crate::tools3d::ref_field(app, v, ui, card.center_bottom(), out);
     }
     let facing = v.facing.map(|f| facing_plane(app.session.display().length, bounds.0, f));
-    navigator(&v.camera, ui, rect, out);
+    match app.prefs.navigator() {
+        Navigator::Cube => crate::view_cube::show(v, ui, rect, out),
+        Navigator::Axes => navigator(&v.camera, ui, rect, out),
+    }
     nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, out);
     if v.section.is_some() {
         section_bar(v, ui, rect, bounds, app.session.display().length);
@@ -485,57 +574,302 @@ fn escape(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui) {
     }
 }
 
-/// Orbit, pan and zoom by the pointer; a click picks what is under it (empty space clears), a
-/// double-click on nothing fits the view. With a tool on, a click is the tool's; a drag from the
-/// reference plane's `grip` moves the plane.
-fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f64; 3]), grip: Option<egui::Pos2>) -> Gesture {
-    let resp = ui.hit(rect, Fixed::View3d.into(), Sense::click_and_drag());
-    let (shift, middle, scroll) = ui.input(|i| {
-        // Wheel steps: lines as they are, points and pages scaled.
-        let steps: f32 = i
-            .raw
-            .events
-            .iter()
-            .filter_map(|e| match e {
-                egui::Event::MouseWheel { unit, delta, .. } => Some(match unit {
-                    egui::MouseWheelUnit::Line => delta.y,
-                    egui::MouseWheelUnit::Point => delta.y / 40.0,
-                    egui::MouseWheelUnit::Page => delta.y * 5.0,
-                }),
-                _ => None,
+/// A view change asked of the 3D view.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Goal {
+    /// A standard view's direction, keeping the framing.
+    View(StandardView),
+    /// The isometric view, framing the model.
+    Home,
+    /// The model framed, keeping the direction.
+    Fit,
+    /// A box (m) seen from a standard view, framed (facing the field's plane).
+    Face([f64; 3], [f64; 3], StandardView),
+    /// Turned toward the screen's right and up by degrees (arrow keys, the cube's arrows).
+    Turn { right: f64, up: f64, degrees: f64 },
+    /// Looking from a direction (the view cube's faces and corners), keeping the framing.
+    From([f64; 3]),
+}
+
+/// What the left button's drag does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum LeftDrag {
+    /// Moves the selected port's reference plane (pressed on its grip).
+    Grip,
+    /// Moves the field view's plane (pressed on it).
+    Plane,
+    /// Navigates; `shift` when the press needed Shift (so Shift does not also snap).
+    Nav(NavMode, bool),
+}
+
+/// An arrow key turning the view that is still down.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct KeyHold {
+    key: egui::Key,
+    right: f64,
+    up: f64,
+    shift: bool,
+    since: f64,
+}
+
+/// The distances (m) a zoom keeps within, for a model of box `bounds`.
+fn zoom_limits((lo, hi): ([f64; 3], [f64; 3])) -> [f64; 2] {
+    let size = (0..3).map(|i| (hi[i] - lo[i]).powi(2)).sum::<f64>().sqrt();
+    let size = if size.is_finite() && size > 0.0 { size } else { 1.0 };
+    [size * 1e-4, size * 1e3]
+}
+
+/// The model point under `pos` on the view drawn into `rect`: the surface there, else where the
+/// pointer's ray meets the plane through the target facing the camera.
+fn zoom_anchor(v: &View3d, rect: Rect, pos: Option<egui::Pos2>) -> Option<[f64; 3]> {
+    let at = pos? - rect.min;
+    let (x, y, w, h) = (f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()));
+    v.shown().and_then(|b| view3d::surface_at(&b.scene, &v.camera, x, y, w, h)).or_else(|| v.camera.on_target_plane(x, y, w, h))
+}
+
+/// What an orbit beginning with the pointer at `pos` turns about (Settings ▸ 3D view ▸ Orbit
+/// around): the target (none), the origin, or the model point under the cursor (over empty
+/// space, the middle of what a fit frames), chosen once when the orbit begins.
+fn pivot(app: &EmcraftApp, v: &View3d, rect: Rect, pos: Option<egui::Pos2>, frame: ([f64; 3], [f64; 3])) -> Option<[f64; 3]> {
+    match app.prefs.orbit_around() {
+        OrbitAround::ViewCentre => None,
+        OrbitAround::Origin => Some([0.0; 3]),
+        OrbitAround::Cursor => Some(
+            pos.and_then(|p| {
+                let at = p - rect.min;
+                v.shown().and_then(|b| {
+                    view3d::surface_at(&b.scene, &v.camera, f64::from(at.x), f64::from(at.y), f64::from(rect.width()), f64::from(rect.height()))
+                })
             })
-            .sum();
-        (i.modifiers.shift, i.pointer.middle_down(), steps)
+            .unwrap_or_else(|| [0, 1, 2].map(|i| 0.5 * (frame.0[i] + frame.1[i]))),
+        ),
+    }
+}
+
+/// A wheel event's move in points, as egui counts them: lines at its line speed, pages at
+/// `page` points.
+fn wheel_points(unit: egui::MouseWheelUnit, delta: egui::Vec2, o: &egui::InputOptions, page: f32) -> egui::Vec2 {
+    match unit {
+        egui::MouseWheelUnit::Point => delta,
+        egui::MouseWheelUnit::Line => delta * o.line_scroll_speed,
+        egui::MouseWheelUnit::Page => delta * page,
+    }
+}
+
+/// The wheel's vertical share, with egui's modifiers that turn it sideways or upright.
+fn wheel_vertical(points: egui::Vec2, m: egui::Modifiers, o: &egui::InputOptions) -> f32 {
+    let (sideways, upright) = (m.matches_any(o.horizontal_scroll_modifier), m.matches_any(o.vertical_scroll_modifier));
+    if sideways && !upright {
+        0.0
+    } else if upright && !sideways {
+        points.x + points.y
+    } else {
+        points.y
+    }
+}
+
+/// This frame's wheel and trackpad: wheel zoom (points), pinch factor, two-finger pan and
+/// Shift + two-finger move.
+#[derive(Default)]
+struct Wheel {
+    zoom: f32,
+    pinch: f32,
+    pan: egui::Vec2,
+    shift_pan: egui::Vec2,
+}
+
+/// Reads the wheel events: a mouse wheel's lines and pages zoom; a trackpad's two-finger scroll
+/// (point moves between its start and end) pans, with Shift orbits where the mapping says so;
+/// bare point moves are a mouse with fine steps; the zoom modifier (Ctrl) and pinch zoom.
+fn wheel(v: &mut View3d, ui: &egui::Ui, nav: &crate::navigation::NavPreset) -> Wheel {
+    let o = ui.ctx().options(|o| o.input_options);
+    let page = ui.ctx().viewport_rect().height();
+    let mut w = Wheel { pinch: 1.0, ..Wheel::default() };
+    ui.input(|i| {
+        for e in &i.events {
+            match e {
+                egui::Event::Zoom(f) if f.is_finite() && *f > 0.0 => w.pinch *= f,
+                egui::Event::MouseWheel { unit, delta, modifiers, phase } => {
+                    let point = *unit == egui::MouseWheelUnit::Point;
+                    match phase {
+                        egui::TouchPhase::Start => {
+                            v.gesture |= point;
+                            continue;
+                        }
+                        egui::TouchPhase::End | egui::TouchPhase::Cancel => {
+                            v.gesture &= !point;
+                            continue;
+                        }
+                        egui::TouchPhase::Move => {}
+                    }
+                    let pts = wheel_points(*unit, *delta, &o, page);
+                    if !pts.is_finite() {
+                        continue;
+                    }
+                    if modifiers.matches_any(o.zoom_modifier) {
+                        let f = (o.scroll_zoom_speed * (pts.x + pts.y)).exp();
+                        if f.is_finite() && f > 0.0 {
+                            w.pinch *= f;
+                        }
+                        continue;
+                    }
+                    let shift = modifiers.shift && !modifiers.ctrl && !modifiers.command && !modifiers.alt;
+                    if point && v.gesture && nav.scroll_pans() {
+                        if shift && nav.shift_scroll_orbits() {
+                            w.shift_pan += pts;
+                        } else {
+                            w.pan += pts;
+                        }
+                    } else if point {
+                        // Bare point moves are a mouse: up and down zoom, sideways pans.
+                        w.zoom += wheel_vertical(pts, *modifiers, &o);
+                        w.pan.x -= pts.x;
+                    } else {
+                        w.zoom += wheel_vertical(pts, *modifiers, &o);
+                    }
+                }
+                _ => {}
+            }
+        }
     });
-    let d = resp.drag_delta();
-    // A drag starting on the reference plane's grip moves that plane.
+    w
+}
+
+/// Orbit, pan and zoom by the mouse mapping (Settings ▸ 3D view), the wheel and the trackpad; a
+/// click picks what is under it (empty space clears), a double-click on nothing fits the view, a
+/// middle double-click goes home (fits, in the mapping that does). A plain left press on the
+/// reference plane's `grip` or on the field view's plane drags that instead, as SolidCraft's
+/// in-view handles take a plain press on them: the mapping's left-button navigation is for
+/// empty space or with its keys held, and Ctrl+left drag orbits in every mapping. With a tool
+/// on, a click is the tool's.
+fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, frame: ([f64; 3], [f64; 3]), grip: Option<egui::Pos2>) -> Gesture {
+    use crate::navigation::{DRAG_ZOOM_PER_POINT, NavButton, OPENSCAD, WHEEL_ZOOM_PER_POINT};
+    let nav = app.prefs.nav();
+    let resp = ui.hit(rect, Fixed::View3d.into(), Sense::click_and_drag());
+    let (mods, hover, press, latest, space, any_down) = ui.input(|i| {
+        (i.modifiers, i.pointer.hover_pos(), i.pointer.press_origin(), i.pointer.latest_pos(), i.key_down(egui::Key::Space), i.pointer.any_down())
+    });
+    let space = space && !ui.ctx().egui_wants_keyboard_input();
+    let h = f64::from(rect.height());
+    let limits = zoom_limits(frame);
+    let sign = if nav.reverse_zoom { -1.0 } else { 1.0 };
+    let ctrl = mods.ctrl || mods.command;
+    // The left button: chosen once, when the drag begins.
     let mut grip_drag = GripDrag::default();
-    if resp.drag_started_by(egui::PointerButton::Primary) && !shift {
-        let press = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos());
-        v.moving_ref = grip.zip(press).is_some_and(|(g, p)| g.distance(p) <= crate::tools3d::GRIP_PX);
-        grip_drag.started = v.moving_ref;
+    if resp.drag_started_by(egui::PointerButton::Primary) {
+        let at = press.or(resp.interact_pointer_pos());
+        let plain = !mods.shift && !ctrl && !mods.alt;
+        v.left = if space {
+            Some(LeftDrag::Nav(NavMode::Pan, false))
+        } else if plain && grip.zip(at).is_some_and(|(g, p)| g.distance(p) <= crate::tools3d::GRIP_PX) {
+            Some(LeftDrag::Grip)
+        } else if plain && at.is_some_and(|p| v.pick_at(rect, p) == Some(scene3d::Pick::Plane(0))) {
+            Some(LeftDrag::Plane)
+        } else if let Some(m) = nav.mode(NavButton::Left, mods) {
+            Some(LeftDrag::Nav(m, mods.shift))
+        } else if ctrl && !mods.shift && !mods.alt {
+            Some(LeftDrag::Nav(NavMode::Orbit, false))
+        } else {
+            None
+        };
+        grip_drag.started = v.left == Some(LeftDrag::Grip);
     }
-    grip_drag.released = v.moving_ref && !resp.dragged();
-    // A drag starting on the field view's own plane (the first) moves it.
-    if resp.drag_started_by(egui::PointerButton::Primary) && !shift && !v.moving_ref {
-        v.moving_plane = resp.interact_pointer_pos().is_some_and(|pos| v.pick_at(rect, pos) == Some(scene3d::Pick::Plane(0)));
-    }
+    grip_drag.released = v.left == Some(LeftDrag::Grip) && !resp.dragged();
     if !resp.dragged() {
-        v.moving_plane = false;
-        v.moving_ref = false;
+        v.left = None;
     }
-    let plane_drag = (v.moving_plane && resp.dragged()).then_some(d);
-    grip_drag.moved = (v.moving_ref && resp.dragged()).then_some(d);
-    if resp.dragged() && (d.x != 0.0 || d.y != 0.0) && !v.moving_plane && !v.moving_ref {
-        if middle || shift || resp.dragged_by(egui::PointerButton::Middle) {
-            v.camera.pan(d.x as f64, d.y as f64, rect.height() as f64);
-        } else if resp.dragged_by(egui::PointerButton::Primary) {
-            v.camera.orbit(d.x as f64, d.y as f64);
+    let d = resp.drag_delta();
+    let plane_drag = (v.left == Some(LeftDrag::Plane) && resp.dragged()).then_some(d);
+    grip_drag.moved = (v.left == Some(LeftDrag::Grip) && resp.dragged()).then_some(d);
+    // The middle and right buttons by the mapping, the left as chosen at its press.
+    let button = if resp.dragged_by(egui::PointerButton::Middle) {
+        Some(NavButton::Middle)
+    } else if resp.dragged_by(egui::PointerButton::Secondary) {
+        Some(NavButton::Right)
+    } else {
+        None
+    };
+    let (mode, needs_shift) = match (button, v.left) {
+        (Some(b), _) => (nav.mode(b, mods), nav.mode(b, egui::Modifiers { shift: false, ..mods }) != nav.mode(b, mods)),
+        (None, Some(LeftDrag::Nav(m, shift))) if resp.dragged_by(egui::PointerButton::Primary) => (Some(m), shift),
+        _ => (None, false),
+    };
+    // The drag's first frame catches up the way from the press, so none of it is lost.
+    let d = if resp.drag_started() { press.zip(latest).map_or(d, |(a, b)| b - a) } else { d };
+    let d = if d.is_finite() { d } else { egui::Vec2::ZERO };
+    let mut orbiting = false;
+    match mode {
+        Some(NavMode::Orbit) => {
+            v.stop_animation();
+            let snap = mods.shift && !needs_shift && nav.id != OPENSCAD;
+            let o = match v.orbit {
+                Some(o) => o,
+                None => Drag::new(v.camera, pivot(app, v, rect, press.or(hover), frame)),
+            };
+            let mut o = o;
+            o.orbit(&mut v.camera, f64::from(d.x), f64::from(d.y), snap);
+            v.orbit = Some(o);
+            orbiting = true;
+        }
+        Some(NavMode::Pan) if d != egui::Vec2::ZERO => {
+            v.stop_animation();
+            v.camera.pan(f64::from(d.x), f64::from(d.y), h);
+        }
+        Some(NavMode::Zoom) if d != egui::Vec2::ZERO => {
+            v.stop_animation();
+            v.camera.zoom_at(None, (f64::from(d.y) * DRAG_ZOOM_PER_POINT).exp(), limits);
+        }
+        _ => {}
+    }
+    // The touchpad mapping: Shift or Alt held and the pointer moved, no button down.
+    let inside = resp.hovered() || resp.contains_pointer();
+    let motion = nav.motion_mode(mods).zip(hover).filter(|_| inside && !any_down && !ui.ctx().egui_wants_keyboard_input());
+    let before = v.motion;
+    v.motion = motion;
+    if let Some((m, at)) = motion {
+        let step = before.filter(|(b, _)| *b == m).map_or(egui::Vec2::ZERO, |(_, last)| at - last);
+        let step = if step.is_finite() && step.length() <= 1e4 { step } else { egui::Vec2::ZERO };
+        if step != egui::Vec2::ZERO {
+            v.stop_animation();
+            if m == NavMode::Orbit {
+                let mut o = v.orbit.unwrap_or_else(|| Drag::new(v.camera, pivot(app, v, rect, Some(at), frame)));
+                o.orbit(&mut v.camera, f64::from(step.x), f64::from(step.y), false);
+                v.orbit = Some(o);
+            } else {
+                v.camera.pan(f64::from(step.x), f64::from(step.y), h);
+            }
+        }
+        orbiting |= m == NavMode::Orbit;
+    }
+    // The wheel and the trackpad, toward the point under the cursor.
+    let w = wheel(v, ui, nav);
+    if inside {
+        if w.pinch != 1.0 && w.pinch.is_finite() {
+            v.stop_animation();
+            v.camera.zoom_at(zoom_anchor(v, rect, hover), f64::from(w.pinch).powf(-sign), limits);
+        }
+        if w.zoom != 0.0 && w.zoom.is_finite() {
+            v.stop_animation();
+            v.camera.zoom_at(zoom_anchor(v, rect, hover), (-f64::from(w.zoom) * WHEEL_ZOOM_PER_POINT * sign).exp(), limits);
+        }
+        if w.pan != egui::Vec2::ZERO && w.pan.is_finite() {
+            v.stop_animation();
+            v.camera.pan(f64::from(w.pan.x), f64::from(w.pan.y), h);
+        }
+        if w.shift_pan != egui::Vec2::ZERO && w.shift_pan.is_finite() {
+            v.stop_animation();
+            let mut o = v.orbit.unwrap_or_else(|| Drag::new(v.camera, pivot(app, v, rect, hover, frame)));
+            o.orbit(&mut v.camera, f64::from(w.shift_pan.x), f64::from(w.shift_pan.y), false);
+            v.orbit = Some(o);
+            orbiting = true;
         }
     }
-    v.dragging = resp.dragged();
-    if resp.hovered() && scroll != 0.0 {
-        v.camera.zoom(scroll as f64);
+    if !orbiting && !(v.gesture && v.orbit.is_some()) {
+        v.orbit = None;
+    }
+    v.dragging = resp.dragged() || orbiting;
+    if resp.double_clicked_by(egui::PointerButton::Middle) && inside {
+        v.goal = Some(if nav.middle_double_fits { Goal::Fit } else { Goal::Home });
     }
     let mut double = false;
     if v.tools.tool.is_some() {
@@ -548,11 +882,81 @@ fn navigate(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f
         if resp.double_clicked() {
             match v.selected {
                 Some(_) => double = true,
-                None => v.camera.fit(bounds.0, bounds.1, (rect.width() / rect.height().max(1.0)) as f64),
+                None => v.goal = Some(Goal::Fit),
             }
         }
     }
     Gesture { clicked: resp.clicked(), double, plane_drag, grip: grip_drag, tool_click: false }
+}
+
+/// Whether the keys are the 3D view's: no field, menu, dialog card's field, search or page
+/// has them.
+fn keys_free(app: &EmcraftApp, ui: &egui::Ui) -> bool {
+    app.settings.is_none()
+        && app.files.prompt.is_none()
+        && app.files.confirm.is_none()
+        && !app.search.open
+        && ui.ctx().memory(|m| m.focused().is_none())
+        && !ui.ctx().egui_wants_keyboard_input()
+        && !egui::Popup::is_any_open(ui.ctx())
+}
+
+/// The view keys, as SolidCraft's: the arrows turn the view 15° (with Shift a quarter turn),
+/// animated, and held past a tap keep turning it at a steady rate; Ctrl+arrows pan a tenth of the
+/// view; Ctrl+1…7 turn to Front, Back, Left, Right, Top, Bottom and the isometric view.
+fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, now: f64) {
+    use crate::navigation::{ARROWS, DIGIT_VIEWS, HOLD_DEGREES_PER_SECOND, KEY_PAN_SHARE, KEY_STEP_DEGREES, TAP_SECONDS};
+    if !keys_free(app, ui) {
+        v.key_hold = None;
+        return;
+    }
+    let presses: Vec<(egui::Key, egui::Modifiers, bool)> = ui.input(|i| {
+        i.events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::Key { key, pressed: true, repeat, modifiers, .. } => Some((*key, *modifiers, *repeat)),
+                _ => None,
+            })
+            .collect()
+    });
+    for (key, m, repeat) in presses {
+        let ctrl = m.ctrl || m.command;
+        if m.alt {
+            continue;
+        }
+        if let Some(&(_, right, up)) = ARROWS.iter().find(|(k, _, _)| *k == key) {
+            if ctrl {
+                // The model moves with the arrow, as under a pan drag.
+                let step = f64::from(rect.height() * KEY_PAN_SHARE);
+                v.stop_animation();
+                v.camera.pan(right * step, -up * step, f64::from(rect.height()));
+            } else if !repeat {
+                v.key_hold = Some(KeyHold { key, right, up, shift: m.shift, since: now });
+                v.goal = Some(Goal::Turn { right, up, degrees: KEY_STEP_DEGREES[usize::from(m.shift)] });
+            }
+        } else if ctrl
+            && !m.shift
+            && let Some(&(_, view)) = DIGIT_VIEWS.iter().find(|(k, _)| *k == key)
+        {
+            v.goal = Some(Goal::View(view));
+        }
+    }
+    let Some(hold) = v.key_hold else { return };
+    let (down, dt) = ui.input(|i| (i.key_down(hold.key), f64::from(i.stable_dt)));
+    if !down {
+        v.key_hold = None;
+        return;
+    }
+    ui.ctx().request_repaint();
+    if now - hold.since < TAP_SECONDS {
+        return;
+    }
+    let rate = if hold.shift { 2.0 * HOLD_DEGREES_PER_SECOND } else { HOLD_DEGREES_PER_SECOND };
+    let degrees = rate * if dt.is_finite() { dt.clamp(0.0, 0.1) } else { 0.0 };
+    if degrees > 1e-6 {
+        v.stop_animation();
+        v.camera = v.camera.stepped(hold.right, hold.up, degrees);
+    }
 }
 
 /// The scene drawn into `rect`: by the window's GPU (every frame, full size) or the CPU
@@ -814,15 +1218,14 @@ fn nav_bar(
         glyphs::paint(&p, r.shrink(4.0), glyph, ink, t.accent);
         if resp.on_hover_text(tip).clicked() {
             match handle {
-                Handle::Fixed(Fixed::View3dFit) => v.fit_next = true,
+                Handle::Fixed(Fixed::View3dFit) => v.goal = Some(Goal::Fit),
                 Handle::Standard(side) => out.push(Action::StandardView(side)),
                 Handle::Fixed(Fixed::View3dPlay) => out.push(Action::SetPlaying(!playing)),
                 Handle::Fixed(Fixed::View3dSection) => v.section = v.section.is_none().then(|| Cut::middle(0, bounds)),
                 Handle::Tool(tool) => out.push(Action::Tool((v.tools.tool != Some(tool)).then_some(tool))),
                 Handle::Fixed(Fixed::View3dFace) => {
                     if let Some((lo, hi, side)) = facing {
-                        v.camera.standard(side);
-                        v.camera.fit(lo, hi, (rect.width() / rect.height().max(1.0)) as f64);
+                        v.goal = Some(Goal::Face(lo, hi, side));
                     }
                 }
                 _ => v.toggle_projection(),

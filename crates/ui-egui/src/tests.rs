@@ -317,6 +317,11 @@ fn scenario_settings() {
     scenario("settings");
 }
 
+#[test]
+fn scenario_navigation() {
+    scenario("navigation");
+}
+
 /// Every scenario file has a test above.
 #[test]
 fn every_scenario_file_runs() {
@@ -477,4 +482,112 @@ fn scenario_run_history() {
 #[test]
 fn scenario_saved_history() {
     scenario("saved_history");
+}
+
+/// The high-pass filter's 3D view, front on, and the view's rectangle.
+fn front_view() -> (Harness, egui::Rect) {
+    let mut h = Harness::new();
+    h.run(&json!([
+        {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
+        {"call": "ui.set", "params": {"view": "model", "step": "none", "standard_view": "front"}},
+        {"frames": 2},
+    ]))
+    .unwrap();
+    let rect = crate::scenario::rect_of("view3d").unwrap();
+    (h, rect)
+}
+
+/// Where model point `p` is drawn in the view `rect` (window points).
+fn on_screen(h: &Harness, rect: egui::Rect, p: [f64; 3]) -> egui::Pos2 {
+    let q = h.app.view3d.camera.project(p, f64::from(rect.width()), f64::from(rect.height())).unwrap();
+    rect.min + egui::vec2(q[0] as f32, q[1] as f32)
+}
+
+/// The model point under window point `at` (the surface there).
+fn under(h: &Harness, rect: egui::Rect, at: egui::Pos2) -> Option<[f64; 3]> {
+    let q = at - rect.min;
+    let scene = &h.app.view3d.shown()?.scene;
+    emcraft_render::view3d::surface_at(scene, &h.app.view3d.camera, f64::from(q.x), f64::from(q.y), f64::from(rect.width()), f64::from(rect.height()))
+}
+
+/// The wheel, a pinch and Ctrl+wheel zoom toward the point under the cursor: it stays put.
+#[test]
+fn zooming_keeps_the_point_under_the_cursor() {
+    let (mut h, rect) = front_view();
+    // On the model, then over empty space (the plane through the target).
+    for at in [rect.center() + egui::vec2(40.0, -15.0), rect.left_top() + egui::vec2(60.0, 60.0)] {
+        let anchor = under(&h, rect, at).unwrap_or_else(|| {
+            let q = at - rect.min;
+            h.app.view3d.camera.on_target_plane(f64::from(q.x), f64::from(q.y), f64::from(rect.width()), f64::from(rect.height())).unwrap()
+        });
+        let before = h.app.view3d.camera.distance;
+        for params in [json!({"delta": 2}), json!({"zoom": 1.5}), json!({"delta": -1, "ctrl": true}), json!({"delta": -3})] {
+            let mut p = params;
+            p["x"] = json!(at.x);
+            p["y"] = json!(at.y);
+            assert_eq!(h.call("ui.scroll", p.clone())["ok"], json!(true), "{p}");
+            let now = on_screen(&h, rect, anchor);
+            assert!(now.distance(at) < 0.05, "{p}: {at:?} moved to {now:?}");
+        }
+        assert!(h.app.view3d.camera.distance != before);
+    }
+}
+
+/// An orbit about the point under the cursor keeps that point where it was on screen; the
+/// default (the view's centre) does not.
+#[test]
+fn orbiting_about_the_cursor_keeps_the_picked_point() {
+    let (mut h, rect) = front_view();
+    let at = rect.center() + egui::vec2(35.0, -10.0);
+    let picked = under(&h, rect, at).expect("the model under the pointer");
+    let drag = |h: &mut Harness| {
+        h.step(&json!({"drag": [[at.x, at.y], [at.x + 90.0, at.y + 40.0]], "button": "right"})).unwrap();
+    };
+    h.call("ui.set", json!({"orbit_around": "cursor"}));
+    drag(&mut h);
+    assert!(h.app.view3d.camera.yaw.to_degrees() > 300.0, "{:?}", h.app.view3d.camera);
+    assert!(on_screen(&h, rect, picked).distance(at) < 0.05, "{:?}", on_screen(&h, rect, picked));
+    let (mut h, rect) = front_view();
+    let picked = under(&h, rect, at).unwrap();
+    drag(&mut h);
+    assert!(on_screen(&h, rect, picked).distance(at) > 5.0);
+}
+
+/// View changes animate: frames between show the camera on its way, eased, the short way round.
+#[test]
+fn view_changes_animate_by_the_frames_clock() {
+    let (mut h, _) = front_view();
+    h.app.view3d.standard(emcraft_render::view3d::StandardView::Right);
+    let mut yaws = Vec::new();
+    for _ in 0..40 {
+        h.frame();
+        yaws.push(h.app.view3d.camera.yaw.to_degrees());
+    }
+    assert!(!h.app.view3d.animating());
+    // 0.5 s at 60 frames a second: under way for 30 frames, rising, slowest at its ends.
+    assert!(yaws[..29].iter().all(|y| *y < 90.0 - 1e-9), "{yaws:?}");
+    assert!((yaws[35] - 90.0).abs() < 1e-9);
+    assert!(yaws.windows(2).all(|w| w[1] >= w[0] - 1e-12), "{yaws:?}");
+    assert!(yaws[2] - yaws[1] < yaws[15] - yaws[14]);
+    // A double-click on empty space fits again, animated, to the framing the model opened with.
+    let fitted = h.app.view3d.camera.distance;
+    h.call("ui.set", json!({"camera": {"distance": fitted * 3.0}}));
+    let rect = crate::scenario::rect_of("view3d").unwrap();
+    let at = egui::pos2(rect.right() - 30.0, rect.center().y);
+    h.step(&json!({"click": [at.x, at.y], "double": true})).unwrap();
+    assert!((h.app.view3d.camera.distance - fitted).abs() < 1e-9 * fitted, "{} {fitted}", h.app.view3d.camera.distance);
+}
+
+/// A held arrow keeps turning the view after a tap's step, at 90° a second; let go, it stops.
+#[test]
+fn a_held_arrow_turns_the_view_steadily() {
+    let (mut h, _) = front_view();
+    h.step(&json!({"key": "ArrowRight", "press": "down"})).unwrap();
+    h.frames(60);
+    h.step(&json!({"key": "ArrowRight", "press": "up"})).unwrap();
+    let yaw = h.app.view3d.camera.yaw.to_degrees();
+    h.frames(30);
+    assert_eq!(h.app.view3d.camera.yaw.to_degrees(), yaw);
+    // About a second held: the 15° step's start, then a steady turn.
+    assert!(yaw > 60.0 && yaw < 120.0, "{yaw}");
 }

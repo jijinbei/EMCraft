@@ -8,3 +8,9 @@ Some code is adapted from FieldCraft (MIT OR Apache-2.0); ATTRIBUTION.md lists t
 EMCraft is an independent project and is not affiliated with, sponsored by or endorsed by
 Dassault Systèmes (CST Studio Suite), Ansys, Inc. (HFSS) or any other vendor; product names are
 trademarks of their owners and are used here only to describe the problem space.
+
+Fusion, AutoCAD, Inventor, Alias, Maya and Tinkercad are trademarks of Autodesk, Inc.; SolidWorks
+is a trademark of Dassault Systèmes; Blender is a trademark of the Blender Foundation; HFSS is a
+trademark of Ansys, Inc.; OpenSCAD is the name of the OpenSCAD project. Product names appear only
+to describe compatibility, such as the mouse navigation mappings in Settings ▸ 3D view (the same
+as SolidCraft's).

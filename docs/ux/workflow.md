@@ -120,7 +120,31 @@ commands), so the step panel holds only the step's checks, its own settings (the
 sweep, Run) and the dialog docked there; the views over the viewport are switched by its view
 tabs, which list only views with something to show; files and samples are in the File menu and
 on the start page; the 3D view's tools are icons (fit, home, face the field's plane, projection)
-and a navigator of the six signed axes.
+and a view cube (or the six signed axes, Settings ▸ 3D view ▸ Navigator).
+
+**Navigating the 3D view** works as in SolidCraft, so the sibling apps feel alike
+(`crates/ui-egui/src/navigation.rs`, `view_cube.rs`; scenario `navigation`):
+
+| Input | Default mapping (Fusion) |
+|---|---|
+| Right drag, Shift+middle drag, Ctrl+left drag (every mapping) | orbit about the view's centre (Settings ▸ 3D view ▸ Orbit around: origin, or the point under the cursor; over empty space the middle of the model) |
+| Middle drag, Space+left drag, two-finger scroll | pan |
+| Wheel, pinch, Ctrl+wheel | zoom toward the point under the cursor (e^(−0.0015) a point scrolled) |
+| Shift+two-finger scroll | orbit |
+| Shift while orbiting | snap to the nearest of the cube's 26 views |
+| Double-click empty space / middle double-click | fit / home (the SolidWorks mapping: fit) |
+| Arrows (Shift) | turn 15° (90°), animated; held, 90°/s (180°/s) |
+| Ctrl+arrows | pan a tenth of the view |
+| Ctrl+1…7 | front, back, left, right, top, bottom, isometric |
+| View cube: face, corner / arrows / Home, Fit / drag | look from it / quarter turns / home, fit / orbit (Shift snaps) |
+
+The other mappings (SolidWorks, Inventor, Alias, Maya, Blender, Tinkercad, OpenSCAD, HFSS,
+Touchpad) bind the buttons as SolidCraft's do. A plain left press on the field's plane or a
+port's reference-plane grip drags them, as SolidCraft's in-view handles take a plain press; a
+mapping's left-button navigation applies on empty space or with its keys held. View changes
+(standard views, fit, home, face the plane, the cube) animate for 0.5 s, up to 1 s for turns past
+a quarter turn, eased, the short way round, stepped by the frame's clock (the scenarios' clock is
+their frames', and `Harness::settle` waits for the end).
 
 ## 4. What the engine provides for it
 

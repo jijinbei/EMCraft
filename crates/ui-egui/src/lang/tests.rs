@@ -519,6 +519,8 @@ const UNREACHED: &[(&str, &str)] = &[
     ("goal", "an optimization of a number the solve gives (maximize, minimize): the tour's goal is in dB"),
     ("{command} · {what} · {secs} s", "a job whose run cannot be estimated (opening a file): it ends before a frame shows it"),
     ("terminal ports: solved again", "needs a sweep with terminal ports (scenario terminal_ports)"),
+    ("{view} — drag to orbit, Shift snaps", "the view cube's tip, shown while the pointer rests on a face"),
+    ("View from {side} ({view})", "the axes navigator's tip (Settings ▸ 3D view ▸ Navigator: Axes; scenario navigation)"),
 ];
 
 /// The texts that are looked up by name rather than written where they are shown: the views',
@@ -536,6 +538,15 @@ fn named() -> BTreeSet<String> {
     crate::steps::Status::ALL.iter().for_each(|v| add(v.label()));
     crate::steps::Solver::ALL.iter().for_each(|v| add(v.label()));
     crate::tools3d::Tool::ALL.iter().for_each(|v| add(v.label()));
+    // The mouse mappings' help (shown for the chosen one), the orbit centres, the navigators and
+    // the view cube's faces (those turned away are not drawn).
+    for p in crate::navigation::NAV_PRESETS {
+        add(p.help);
+    }
+    add("Touchpad");
+    crate::navigation::OrbitAround::ALL.iter().for_each(|v| add(v.label()));
+    crate::navigation::Navigator::ALL.iter().for_each(|v| add(v.label()));
+    crate::view_cube::FACE_NAMES.iter().for_each(|n| add(n));
     for (_, panels) in crate::ribbon::TABS {
         panels.iter().for_each(|(p, _)| add(p));
     }

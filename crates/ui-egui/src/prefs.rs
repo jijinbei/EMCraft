@@ -31,6 +31,13 @@ pub struct Prefs {
     /// The 3D view drawn by the window's GPU (fast, painter's order) instead of the CPU
     /// renderer (depth-buffered, supersampled) at rest.
     pub gpu3d: bool,
+    /// The 3D view's mouse mapping, by id (`crate::navigation::NAV_PRESETS`; the default
+    /// when unknown).
+    pub navigation: String,
+    /// What an orbit turns about, by id (`crate::navigation::OrbitAround`).
+    pub orbit_around: String,
+    /// The 3D view's orientation control, by id (`crate::navigation::Navigator`).
+    pub navigator: String,
     /// The display units new projects start with.
     pub length: Length,
     pub frequency: Frequency,
@@ -47,6 +54,9 @@ impl Default for Prefs {
             language: String::new(),
             dock_dialogs: true,
             gpu3d: false,
+            navigation: crate::navigation::FUSION.into(),
+            orbit_around: String::new(),
+            navigator: String::new(),
             length: Length::default(),
             frequency: Frequency::default(),
         }
@@ -71,12 +81,30 @@ impl Prefs {
         }
         p.theme = p.theme.chars().take(emcraft_engine::theme::MAX_NAME).collect();
         p.language = crate::lang::clip_id(&p.language);
+        for id in [&mut p.navigation, &mut p.orbit_around, &mut p.navigator] {
+            *id = id.chars().take(32).collect();
+        }
         p
     }
 
     /// The language's id: the one kept, English when it is empty or unknown.
     pub fn language(&self) -> &str {
         crate::lang::find(&self.language).map_or(crate::lang::ENGLISH, |l| l.id)
+    }
+
+    /// The 3D view's mouse mapping.
+    pub fn nav(&self) -> &'static crate::navigation::NavPreset {
+        crate::navigation::preset(&self.navigation)
+    }
+
+    /// What an orbit turns about.
+    pub fn orbit_around(&self) -> crate::navigation::OrbitAround {
+        crate::navigation::OrbitAround::parse(&self.orbit_around).unwrap_or_default()
+    }
+
+    /// The 3D view's orientation control.
+    pub fn navigator(&self) -> crate::navigation::Navigator {
+        crate::navigation::Navigator::parse(&self.navigator).unwrap_or_default()
     }
 
     /// The theme's name.
@@ -154,6 +182,17 @@ mod tests {
         std::fs::write(&path, r#"{"theme": "dark"}"#).unwrap();
         assert!(Prefs::load(&path).dock_dialogs);
         assert_eq!(Prefs::load(&dir.join("missing.json")), Prefs::default());
+        // The navigation: SolidCraft's default mapping; unknown ones read as the defaults.
+        assert_eq!(Prefs::default().nav().id, "fusion");
+        std::fs::write(&path, r#"{"navigation": "blender", "orbit_around": "cursor", "navigator": "axes"}"#).unwrap();
+        let nav = Prefs::load(&path);
+        assert_eq!(
+            (nav.nav().id, nav.orbit_around(), nav.navigator()),
+            ("blender", crate::navigation::OrbitAround::Cursor, crate::navigation::Navigator::Axes)
+        );
+        std::fs::write(&path, format!(r#"{{"navigation": "{}", "orbit_around": "sideways"}}"#, "x".repeat(5000))).unwrap();
+        let odd = Prefs::load(&path);
+        assert_eq!((odd.nav().id, odd.navigation.len(), odd.orbit_around()), ("fusion", 32, crate::navigation::OrbitAround::ViewCentre));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

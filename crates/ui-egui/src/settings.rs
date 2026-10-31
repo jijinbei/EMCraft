@@ -317,6 +317,29 @@ fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         (true, "Fast", "fast", "Drawn by the GPU every frame: for large meshes, where the CPU picture takes long."),
     ];
     options(ui, out, "3d", app.prefs.gpu3d, &drawing, |gpu| Action::Pref(Pref::Gpu3d(gpu)));
+    gap(ui);
+    // The mouse mappings, SolidCraft's: the same hands work in both apps.
+    let nav = app.prefs.nav();
+    heading(ui, "Mouse", nav.help);
+    let mappings: Vec<(&str, &str, &str)> = crate::navigation::NAV_PRESETS
+        .iter()
+        .map(|p| (p.id, if p.id == crate::navigation::TOUCHPAD { tr(p.label) } else { p.label }, p.id))
+        .collect();
+    choices(ui, out, "navigation", nav.id, &mappings, |id| Action::Pref(Pref::Navigation(id.to_owned())));
+    ui.add_space(Tokens::get().space_6);
+    ui.text(
+        Style::SmallDim,
+        "Every mapping: Ctrl+left drag orbits, Shift snaps an orbit, the wheel zooms to the cursor, arrows turn, Ctrl+1–7 standard views.",
+    );
+    gap(ui);
+    heading(ui, "Orbit around", "");
+    use crate::navigation::{Navigator, OrbitAround};
+    let around: Vec<(OrbitAround, &str, &str)> = OrbitAround::ALL.iter().map(|o| (*o, shown(*o), o.id())).collect();
+    choices(ui, out, "orbit_around", app.prefs.orbit_around(), &around, |o| Action::Pref(Pref::OrbitAround(o)));
+    gap(ui);
+    heading(ui, "Navigator", "");
+    let navigators: Vec<(Navigator, &str, &str)> = Navigator::ALL.iter().map(|n| (*n, shown(*n), n.id())).collect();
+    choices(ui, out, "navigator", app.prefs.navigator(), &navigators, |n| Action::Pref(Pref::Navigator(n)));
 }
 
 fn dialogs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {

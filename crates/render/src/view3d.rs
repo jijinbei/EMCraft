@@ -19,8 +19,10 @@
 
 use crate::{Canvas, Rgb};
 
+pub mod navigate;
 pub mod section;
 
+pub use navigate::{CameraAnim, Drag, cube_directions, ease_in_out};
 pub use section::{Keep, Section, SectionError};
 
 /// The largest picture side, in pixels.
@@ -217,6 +219,29 @@ impl Camera {
     }
 }
 
+impl Camera {
+    /// Where the ray through pixel (x, y) of a w × h picture meets the plane through the target
+    /// facing the camera: what a zoom over empty space keeps under the cursor.
+    ///
+    /// ```
+    /// use emcraft_render::view3d::Camera;
+    /// let c = Camera { target: [1.0, 2.0, 3.0], ..Camera::default() };
+    /// let p = c.on_target_plane(50.0, 50.0, 100.0, 100.0).unwrap();
+    /// assert!(p.iter().zip(c.target).all(|(a, b)| (a - b).abs() < 1e-9));
+    /// ```
+    pub fn on_target_plane(&self, x: f64, y: f64, w: f64, h: f64) -> Option<[f64; 3]> {
+        let (o, d) = self.ray(x, y, w, h)?;
+        let n = self.basis().forward;
+        let den = dot(d, n);
+        if den.abs() < 1e-9 {
+            return None;
+        }
+        let t = dot(sub(self.sanitized().target, o), n) / den;
+        let p = [0, 1, 2].map(|i| o[i] + d[i] * t);
+        p.iter().all(|v| v.is_finite()).then_some(p)
+    }
+}
+
 /// Where a ray meets a triangle: the distance along it (Möller and Trumbore, *Fast, minimum
 /// storage ray–triangle intersection*, J. Graphics Tools 2(1), 1997).
 fn hit(origin: [f64; 3], dir: [f64; 3], t: &Tri) -> Option<f64> {
@@ -282,6 +307,40 @@ pub fn hits(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> O
         Hit { index: i, at: [origin[0] + dir[0] * d, origin[1] + dir[1] * d, origin[2] + dir[2] * d], tag }
     };
     any.map(|a| (at(a), solid.map(at)))
+}
+
+/// The point of the scene under pixel (x, y), for zooming toward it or orbiting about it: where
+/// the ray through it meets the nearest solid triangle (opacity ≥ 200), else the nearest
+/// see-through one, whatever its tag; `None` over empty space.
+///
+/// ```
+/// use emcraft_render::view3d::{Camera, Scene, StandardView, surface_at};
+/// use emcraft_render::Rgb;
+/// let mut s = Scene::default();
+/// s.quad([[-1.0, -1.0, 0.5], [1.0, -1.0, 0.5], [1.0, 1.0, 0.5], [-1.0, 1.0, 0.5]], Rgb(9, 9, 9), 255);
+/// let mut cam = Camera::default();
+/// cam.standard(StandardView::Front);
+/// cam.fit([-1.0, -1.0, 0.0], [1.0, 1.0, 1.0], 1.0);
+/// let p = surface_at(&s, &cam, 50.0, 50.0, 100.0, 100.0).unwrap();
+/// assert!((p[2] - 0.5).abs() < 1e-9);
+/// assert!(surface_at(&s, &cam, 0.0, 0.0, 100.0, 100.0).is_none());
+/// ```
+pub fn surface_at(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<[f64; 3]> {
+    let (origin, dir) = camera.ray(x, y, w, h)?;
+    let (mut solid, mut any): (Option<f64>, Option<f64>) = (None, None);
+    for t in &scene.tris {
+        let Some(d) = hit(origin, dir, t) else { continue };
+        let keep = |best: &mut Option<f64>| {
+            if best.is_none_or(|b| d < b) {
+                *best = Some(d);
+            }
+        };
+        keep(&mut any);
+        if t.alpha >= 200 {
+            keep(&mut solid);
+        }
+    }
+    solid.or(any).map(|d| [0, 1, 2].map(|i| origin[i] + dir[i] * d)).filter(|p| p.iter().all(|v| v.is_finite()))
 }
 
 /// The tag under pixel (x, y): the nearest tagged triangle the ray through it meets, the
