@@ -19,11 +19,9 @@ fn s(r: &Value, i: usize, pq: &str) -> C {
     C::from_polar(e["mag"].as_f64().unwrap(), e["deg"].as_f64().unwrap().to_radians())
 }
 
-/// The template `name` with `values`, meshed at `size` (mm) and solved at `frequencies` (GHz).
-fn solved(name: &str, values: Value, size: f64, frequencies: &[f64]) -> Value {
-    let mut s = Session::new();
-    s.execute("file.sample", &json!({"name": name, "values": values})).unwrap();
-    s.execute("mesh.generate", &json!({"size": size})).unwrap();
+/// The template `name` meshed at `size` (mm) and solved at `frequencies` (GHz).
+fn solved(name: &str, size: f64, frequencies: &[f64]) -> Value {
+    let mut s = super::template_meshed(name, size);
     s.execute("solve.frequency", &json!({"frequencies": frequencies, "order": 2})).unwrap()
 }
 
@@ -49,17 +47,19 @@ fn phase(z: C, w: C) -> f64 {
 #[test]
 fn radius_bends_are_lossless_reciprocal_and_matched() {
     for name in ["h-bend-radius", "e-bend-radius"] {
-        let r = solved(name, json!({}), 5.0, &[10.0]);
+        // 8 mm cells, a fifth of the tetrahedra at 5 mm: S is unitary and symmetric to rounding
+        // on any mesh, and the bend's reflection stays well below the bound.
+        let r = solved(name, 8.0, &[10.0]);
         lossless_and_reciprocal(&r, 0, 2, 1e-6);
         // A mean radius of one guide wavelength: a smooth bend reflects little (|S11| about 0.002
-        // at 10 GHz on the template's mesh).
+        // at 10 GHz on the template's mesh, 0.005 at 8 mm).
         assert!(s(&r, 0, "s11").norm() < 0.02, "{name}: {}", s(&r, 0, "s11"));
     }
 }
 
 #[test]
 fn the_e_plane_tee_splits_equally_in_antiphase() {
-    let r = solved("e-tee", json!({}), 5.0, &[10.0]);
+    let r = solved("e-tee", 5.0, &[10.0]);
     lossless_and_reciprocal(&r, 0, 3, 1e-6);
     // The side arm's TE10 (E across its narrow side, along x) is odd under the mirror across
     // its middle plane x = l + b/2, so it feeds the two ends equally and in antiphase.
