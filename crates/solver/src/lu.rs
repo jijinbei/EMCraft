@@ -33,7 +33,9 @@ use faer::linalg::matmul::matmul;
 use faer::{Accum, MatMut, MatRef, Par};
 use num_complex::Complex64 as C;
 
-use crate::multifrontal::{Analysis, Counts, Eliminated, FactorError, Front, FrontKernel, MAX_FRONT, Update, check, factor_tree, refine};
+use crate::multifrontal::{
+    Analysis, Counts, Eliminated, FactorError, Front, FrontKernel, MAX_FRONT, Update, check, factor_tree, refine, refine_many,
+};
 use crate::sparse::Csr;
 
 /// Pivot columns per block.
@@ -382,6 +384,12 @@ impl Lu {
     /// that error.
     pub fn solve_refined(&self, a: &Csr, b: &[C], steps: usize) -> Result<(Vec<C>, f64), FactorError> {
         refine(a, b, steps, |x| self.solve(x))
+    }
+
+    /// [`Lu::solve_refined`] for several right-hand sides, each the same bits as its own (the LU
+    /// solves them one at a time).
+    pub fn solve_refined_many(&self, a: &Csr, bs: &[Vec<C>], steps: usize) -> Result<Vec<(Vec<C>, f64)>, FactorError> {
+        refine_many(a, bs, steps, |xs| xs.iter_mut().try_for_each(|x| self.solve(x)))
     }
 }
 
