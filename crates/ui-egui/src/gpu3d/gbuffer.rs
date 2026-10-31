@@ -12,8 +12,9 @@ use eframe::wgpu;
 
 /// The normal (xyz) of the opaque surface.
 pub const NORMAL: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-/// Its window depth (0 near, 1 far; 1 where there is none).
-pub const DEPTH_OUT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
+/// Its window depth (0 near, 1 far; 1 where there is none), as the bits of an f32: 32-bit float
+/// targets are not renderable everywhere (OpenGL ES), 32-bit integer ones are.
+pub const DEPTH_OUT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 pub const ID: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const ZBUF: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -121,7 +122,7 @@ impl Pipelines {
         let mut passes: Vec<(&str, Vec<Option<wgpu::RenderPassColorAttachment<'_>>>, &wgpu::RenderPipeline, bool)> = Vec::new();
         if normals {
             let none = wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
-            let far = wgpu::Color { r: 1.0, g: 0.0, b: 0.0, a: 0.0 };
+            let far = wgpu::Color { r: f64::from(1.0f32.to_bits()), g: 0.0, b: 0.0, a: 0.0 };
             passes.push(("emcraft_view3d_g_normals", vec![attach(&t.normal, none), attach(&t.depth, far)], &self.normals, true));
         }
         if ids {

@@ -242,7 +242,8 @@ fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: ve
 
 struct Normals {
     @location(0) n: vec4<f32>,
-    @location(1) depth: vec4<f32>,
+    // the window depth's bits
+    @location(1) depth: vec4<u32>,
 };
 
 @fragment
@@ -256,7 +257,7 @@ fn fs_g_normals(i: G) -> Normals {
     }
     var o: Normals;
     o.n = vec4<f32>(n, 1.0);
-    o.depth = vec4<f32>(i.pos.z, 0.0, 0.0, 0.0);
+    o.depth = vec4<u32>(bitcast<u32>(i.pos.z), 0u, 0u, 0u);
     return o;
 }
 

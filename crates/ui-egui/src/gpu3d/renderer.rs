@@ -367,7 +367,16 @@ impl Renderer {
                 texture_entry(0),
                 uniform_entry(1, wgpu::ShaderStages::FRAGMENT, SHOW_BYTES),
                 texture_entry(2),
-                texture_entry(3),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,

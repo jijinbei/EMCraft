@@ -1,16 +1,22 @@
-# ADR 0004: The 3D view on the window's GPU with wgpu
+# ADR 0004: The 3D view drawn only by the GPU, with wgpu
 
-Status: accepted (2026-10-31).
+Status: accepted (2026-10-31; GPU-only from 2026-11-01).
 
 ## Decision
 
-The desktop window draws with eframe's **wgpu** renderer, and the 3D view is drawn by the
-window's GPU with a depth buffer (`crates/ui-egui/src/gpu3d`, L7) every frame, still and moving.
-eframe keeps its **glow** renderer as well: where wgpu cannot open the window the app opens it
-again with OpenGL 2, and the 3D view is drawn as before (the CPU's picture at rest, egui's
-painter while moving). The CPU renderer (`emcraft_render::view3d`) stays the reference: headless
-pictures (`ui.render`, the scenarios, the CLI) and every fallback draw with it.
+The 3D view is drawn by the GPU with a depth buffer (`crates/ui-egui/src/gpu3d`, L7), and only by
+it: the CPU 3D rasterizer (`emcraft_render::view3d::render`, `flatten`, the egui-mesh drag path)
+is gone. `emcraft_render::view3d` keeps the scene, the camera, the section view and picking by ray
+(through its bounding-volume hierarchy), which the tools' snapping and the fallback read. Charts
+and field plots stay on the CPU (`emcraft_render`'s 2D renderer).
 
+- **Where it draws.** The desktop window draws with eframe's **wgpu** renderer; the view is drawn
+  by the window's device in an `egui_wgpu` paint callback. Without a window device of its own —
+  the window opened with eframe's **glow** renderer (OpenGL 2) because wgpu could not, the
+  headless harness, `ui.render`, the start page's and the template cards' pictures — the same
+  renderer draws on a device of the process's own (`gpu3d::headless`: any adapter, a software one
+  such as Mesa's lavapipe or llvmpipe or Windows' WARP when no other is found) and the picture is
+  read back into a texture. With no adapter at all the view says so.
 - **Versions.** eframe and egui-wgpu 0.36.2, wgpu 30.0.1 (the line egui 0.36 is built on;
   SolidCraft runs wgpu 30 with egui 0.37). No version of egui moves.
 - **Why wgpu and not glow.** Every glow call is `unsafe` (raw OpenGL), and the workspace
@@ -21,48 +27,45 @@ pictures (`ui.render`, the scenarios, the CLI) and every fallback draw with it.
   needs neither: the 3D view draws into its own offscreen targets (multisampled, with depth and
   stencil, sized by the view) and the callback only shows the resolved frame in egui's pass,
   which stays one sample with no depth (`NativeOptions { multisampling: 0, depth_buffer: 0 }`).
-  The window's pass never sees a sample count or a depth format of ours.
-- **Fallbacks, in order.** (1) wgpu cannot open the window (no adapter, no surface): eframe's
-  glow renderer opens it (`run_with`; `EMCRAFT_RENDERER=glow` forces it), the 3D view as before;
-  (2) the 3D view's pipelines cannot be made on the window's device: the view draws on the CPU
-  (`gpu3d::install` fails, reported on stderr); (3) a GPU error later (out of memory, a lost
-  device): the device's error handler, which replaces wgpu's default panicking one, marks the
-  view failed and it draws on the CPU from the next frame. (4) Neither renderer opens a window:
-  the error and the message box, as before.
-- **The same picture.** Both renderers draw one `Scene` (triangles with colour, opacity and tag,
-  lines). The GPU's transform is the CPU projector's (the same pixel for the same point, checked
-  in `gpu3d::pack`'s tests), its shading the CPU's (ambient plus Lambert from a light above and
-  right of the eye, both sides lit alike), lines as wide as the CPU's and moved towards the eye
-  by the same distance so edges on faces show. See-through faces use weighted blended
-  order-independent transparency (McGuire and Bavoil 2013) where the CPU sorts them: the two
-  agree where faces do not overlap and differ a little where they do. A test draws a scene on a
-  headless adapter and compares it with the CPU's picture pixel by pixel (it skips without an
-  adapter).
+- **Fallbacks, in order.** (1) wgpu cannot open the window: eframe's glow renderer opens it
+  (`run_with`; `EMCRAFT_RENDERER=glow` forces it) and the view draws offscreen; (2) the
+  pipelines cannot be made on the window's device, or a GPU error later (out of memory, a lost
+  device; the device's error handler, which replaces wgpu's panicking one, marks it): the view
+  draws offscreen; (3) no adapter at all: a message in the view; (4) neither renderer opens a
+  window: the error and the message box, as before.
+- **Tested against known answers**, not against another renderer (`gpu3d::tests`): faces at
+  known places and colours read back pixel by pixel against the shading formula (ambient plus
+  Lambert from a light above and right of the eye, both sides lit alike) and their depth order;
+  one see-through layer blending exactly by its opacity and two covering 1 − (1 − a)²; a line in
+  front of glass drawn whole and one behind it blended; nested section caps; the tags under a
+  pixel against rays met analytically; the field's colours against the colour map of known
+  values; smoothing, edges, occlusion and the outline only where they belong. They run on any
+  adapter, a software one included (`EMCRAFT_GPU_FALLBACK=1` asks for it); without any they skip
+  unless `EMCRAFT_REQUIRE_GPU` is set. The projection is checked against the camera's without a
+  GPU (`gpu3d::pack`), and every WGSL file is validated by naga. Checked on an NVIDIA GPU
+  (Vulkan), on Mesa's lavapipe (`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+  WGPU_BACKEND=vulkan`) and on llvmpipe through OpenGL ES (`WGPU_BACKEND=gl
+  LIBGL_ALWAYS_SOFTWARE=1`); the per-pixel depth is kept as the bits of an f32 in an integer
+  target, as OpenGL ES cannot render to 32-bit float ones.
 - **Section caps without a stencil cap pass.** SolidCraft caps its section with the stencil.
   EMCraft's section is cut on the CPU (`emcraft_render::view3d::section`: the far side removed,
   the cut faces capped), because picking and the tools read the cut scene; the GPU draws that
-  scene, so the caps are the CPU's, exactly. The stencil is used instead to draw lines over the
-  see-through faces they lie in front of.
-  Caps of nested bodies lie in one plane (the region's under its sections'); the CPU's f64 depth
-  gives the later one, the depth buffer would give either in patches, so opaque faces sharing a
-  plane are ranked by their order in it and each rank is moved a little towards the eye
-  (`gpu3d::pack`, checked against the CPU on a sectioned scene).
-- **Tints.** The selection's and the hovered row's highlight are colours in the scene
-  (`scene3d`), so both renderers show them; no per-tag tint uniform.
+  scene. The stencil is used instead to draw lines over the see-through faces they lie in front
+  of. Caps of nested bodies lie in one plane (the region's under its sections'); the depth
+  buffer would show either in patches, so opaque faces sharing a plane are ranked by their order
+  in it and each rank is moved a little towards the eye (`gpu3d::pack`).
 - **Determinism.** What the GPU draws is a display: it is not a result, not saved and not
-  compared bit for bit. Pictures that are compared (scenarios, `ui.render`, exports) are the
-  CPU's.
-- **Settings.** Settings ▸ 3D view ▸ Drawing: GPU (the default; Quality where there is no GPU
-  view), Quality (the CPU's picture at rest, egui's painter while moving) or Fast (egui's
-  painter always). `ui.inspect`'s `view3d.renderer` names what drew the last frame (`gpu`,
-  `cpu`, `painter`).
+  compared bit for bit; the scenarios check the view's state (`ui.inspect`), not its pixels.
+- **Settings.** Settings ▸ 3D view ▸ Drawing: the switches below. `ui.inspect`'s
+  `view3d.renderer` names what drew the last frame (`gpu` the window's device, `offscreen`, or
+  `none`) and `view3d.gpu_adapter` the adapter.
 
 ## What the GPU adds (shaders, each switched)
 
 WGSL is the one language besides Rust (AGENTS.md): the viewport's rendering shaders, compiled by
 naga at run time; a unit test validates every `.wgsl` file with naga, no GPU needed. Beyond the
-CPU's picture the GPU's view draws, each with a switch in Settings ▸ Drawing ▸ On the GPU
-(`prefs.gpu_look`) and the CPU's way as the fallback:
+plain picture the view draws, each with a switch in Settings ▸ 3D view ▸ Drawing
+(`prefs.gpu_look`):
 
 - **Per-pixel targets** at the window's resolution (`gpu3d::gbuffer`): the opaque surface's
   normal and window depth, and the tags of the nearest tagged and the nearest solid triangle.
@@ -74,29 +77,29 @@ CPU's picture the GPU's view draws, each with a switch in Settings ▸ Drawing �
   pointer (read from the tags), in the accent colour; the scene's own highlight stays.
 - **Picking** (on): a click reads the two tags under the pointer back (one pixel, at once) and
   takes the solid one, else the nearest, as `emcraft_render::view3d::pick` does; untagged
-  triangles hide nothing, as for the CPU's rays. Only when the frame shown is the one asked
-  about (scene, camera and size; `Frame::key`), else the CPU's rays; the tools' snapping and
-  headless picking stay on the CPU. Checked against the CPU's rays pixel by pixel.
+  triangles hide nothing, as for the rays. Only when the frame shown is the one asked about
+  (scene, camera and size; `Frame::key`), else the rays through the scene's bounding volumes
+  (`emcraft_render::view3d::bvh`); the tools' snapping stays on the rays. Checked against rays
+  met analytically.
 - **The field's colour map** (on): the plane's phasors (`PlaneSamples::phasors`: Re and Im of E
   or H at each sample) uploaded once; the fragment shader evaluates Re(F e^{jφ}) (a component
   or the length), averages each cell's corners and colours it with the theme's map as
   `scene3d::field` does — the same picture, checked cell by cell. The scene keeps the plane as one
   quad (picking, outline); without arrows the phase leaves the scene's key, so playing the phase
-  rebuilds nothing on the CPU. With arrows shown the arrows are still built per phase; with kept
-  planes the CPU colours them all.
+  rebuilds nothing. With arrows shown the arrows are still built per phase; with kept planes the
+  scene holds every plane's coloured cells (`scene3d::field`) and the GPU draws them as faces.
 
 ## A library instead of our own pipelines?
 
 What the view must do is narrow: draw one list of coloured triangles (opaque and see-through,
-each with a tag) and lines, as the CPU renderer draws them, with a depth buffer. The scene, the
+each with a tag) and lines, with a depth buffer. The scene, the
 section and its caps, the field's colour maps (vertex colours), the highlight and picking (rays
-against the scene) are ours already and stay on the CPU, because the headless pictures and the
-tools need them there. So a library would only replace the drawing of that list — about 900
+against the scene) are ours already and stay on the CPU, because the tools need them there. So a library would only replace the drawing of that list — about 900
 lines here (`gpu3d`: packing, projection, five passes, three small WGSL shaders).
 
-| Option | Licence | Size | What we would still write | CPU parity | Windows (MinGW cross build) |
+| Option | Licence | Size | What we would still write | Our look (shading, lines on faces) | Windows (MinGW cross build) |
 |---|---|---|---|---|---|
-| **wgpu offscreen + paint callback (chosen)** | MIT OR Apache-2.0 | +7 MB (Linux, stripped) | everything above, once; no `unsafe` | exact by construction: our projection, shading, line width and nudge, checked pixel by pixel | builds (`cargo xtask installer-windows`); DirectX 12, Vulkan, GL |
+| **wgpu offscreen + paint callback (chosen)** | MIT OR Apache-2.0 | +7 MB (Linux, stripped) | everything above, once; no `unsafe` | ours by construction: the camera's projection, our shading, line width and nudge, checked against known answers | builds (`cargo xtask installer-windows`); DirectX 12, Vulkan, GL |
 | glow paint callback with a depth buffer (eframe's current backend) | MIT OR Apache-2.0 | +0 | the same, in GLSL | the same | builds |
 | `three-d` 0.19 (glow, egui integration) | MIT | +1–2 MB | the scene's packing, see-through ordering (it blends in draw order, no OIT), wide lines with the nudge (its lines are meshes), our shading as a custom material, caps, colour maps, picking | only after matching its materials to our shading | builds (glow) |
 | `truck-platform` / `truck-rendimpl` (wgpu) | Apache-2.0 | wgpu and more | caps, lines, transparency, colour maps, picking; it draws B-rep shapes and polygon meshes with its own lighting | no: its own PBR-like shading | as wgpu; not in our tree (SolidCraft brings only truck's kernel crates) |
@@ -104,7 +107,7 @@ lines here (`gpu3d`: packing, projection, five passes, three small WGSL shaders)
 
 - **glow is out** because every glow call is `unsafe` and the workspace forbids `unsafe`; with
   wgpu the same renderer is safe Rust and its errors are values.
-- **three-d is not taken.** It would not remove the hard parts (the CPU's look, see-through
+- **three-d is not taken.** It would not remove the hard parts (our look, see-through
   faces, lines on faces, caps, picking), it ties our glow and egui versions to its own (it must
   use eframe's GL context, so its `glow` must be eframe's), and it is slowing: its latest
   release on crates.io is 0.19.0 (2026-04-17), the last change 2026-06-24 (winit 0.30), one

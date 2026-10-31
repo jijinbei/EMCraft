@@ -27,7 +27,7 @@ struct Show {
 @group(0) @binding(0) var frame_t: texture_2d<f32>;
 @group(0) @binding(1) var<uniform> show: Show;
 @group(0) @binding(2) var normal_t: texture_2d<f32>;
-@group(0) @binding(3) var depth_t: texture_2d<f32>;
+@group(0) @binding(3) var depth_t: texture_2d<u32>;
 @group(0) @binding(4) var id_t: texture_2d<u32>;
 
 fn to_linear(c: vec3<f32>) -> vec3<f32> {
@@ -46,7 +46,7 @@ fn surface(p: vec2<i32>) -> bool {
 }
 
 fn depth_at(p: vec2<i32>) -> f32 {
-    return textureLoad(depth_t, clamped(p), 0).r;
+    return bitcast<f32>(textureLoad(depth_t, clamped(p), 0).r);
 }
 
 // The view depth from the window depth.
