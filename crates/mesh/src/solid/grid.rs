@@ -10,12 +10,14 @@
 //! stays on its faces (a box's faces across the other axes, a cylinder's side) and the body is
 //! the same; only its triangles change. Grid lines farther than [`NEAR`] of the size from every
 //! other plane keep their places, so meshes without such a coincidence stay as they were, bit
-//! for bit.
+//! for bit: ten times the features' shift, the scale of the slivers (a plane a few millionths
+//! of the size off a grid line — 28.57 mm against 200/7 in the open-waveguide oracle — meshes
+//! as it is).
 
 use emcraft_model::Point3;
 
 /// A grid line within this fraction of the element size from another body's plane is moved.
-pub(super) const NEAR: f64 = 1e-3; // unit-factors: relative to the element size
+pub(super) const NEAR: f64 = 1e-5; // unit-factors: relative to the element size
 
 /// The planes across each axis (x, y, z) other bodies' flat faces lie in.
 pub(super) type Planes = [Vec<f64>; 3];
