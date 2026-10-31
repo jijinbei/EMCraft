@@ -1,4 +1,4 @@
-// EMCraft's 3D view on the GPU: the scene the CPU renderer draws (emcraft_render::view3d),
+// EMCraft's 3D view on the GPU: the scene of emcraft_render::view3d,
 // shaded the same way. Original shader for EMCraft (MIT OR Apache-2.0).
 
 struct U {

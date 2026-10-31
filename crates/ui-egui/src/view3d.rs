@@ -1,13 +1,13 @@
-//! The 3D view in the viewport: the session's scene ([`crate::scene3d`]) drawn by
-//! `emcraft-render`'s CPU renderer into a texture, navigated as in SolidCraft
+//! The 3D view in the viewport: the session's scene ([`crate::scene3d`]) drawn by the GPU
+//! ([`crate::gpu3d`]: the window's device in a paint callback, else an offscreen device read back
+//! into a texture; with no adapter at all, a message), navigated as in SolidCraft
 //! ([`crate::navigation`]: the mouse mapping's orbit, pan and zoom, the wheel and pinch toward
 //! the cursor, the keys, animated view changes), fit (double click or Fit), the standard views,
 //! perspective or orthographic projection, labels, a legend and a view cube
-//! ([`crate::view_cube`]) or the axes. While dragging or animating the
-//! picture is drawn at half resolution; at rest at full resolution, supersampled when small
-//! enough. A section view cuts the scene across an axis (`emcraft_render::view3d::section`: the
-//! far side removed, the cut faces capped in each body's colour); both renderers draw, and
-//! picking reads, the cut scene, cached per scene and cut.
+//! ([`crate::view_cube`]) or the axes. At rest the picture is supersampled when small enough. A
+//! section view cuts the scene across an axis (`emcraft_render::view3d::section`: the far side
+//! removed, the cut faces capped in each body's colour); the GPU draws, and picking reads, the cut
+//! scene, cached per scene and cut.
 
 use std::time::Instant;
 
@@ -27,8 +27,6 @@ use crate::state::FieldState;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Picture, UiExt, scenario};
 
-/// The most pixels the view is drawn with (beyond, it is drawn smaller and scaled up).
-const MAX_PIXELS: f64 = 2.4e6;
 /// Supersampled at rest up to this many output pixels.
 const SUPERSAMPLE_PIXELS: f64 = 1.3e6;
 
@@ -94,16 +92,6 @@ impl Cut {
     }
 }
 
-/// What the picture was drawn from.
-#[derive(Clone, Debug, PartialEq)]
-struct Key {
-    scene: SceneKey,
-    section: Option<Cut>,
-    camera: Camera,
-    size: [usize; 2],
-    supersample: usize,
-}
-
 /// The 3D view's state.
 pub struct View3d {
     pub camera: Camera,
@@ -120,7 +108,13 @@ pub struct View3d {
     facing: Option<Facing>,
     /// The browser rows of the selection, for the session's revision and the selection.
     picked: Option<((u64, Vec<scene3d::Pick>), Vec<(String, crate::browser::Row)>)>,
-    picture: Option<(Key, Picture)>,
+    /// The offscreen picture shown, by what it was drawn from ([`crate::gpu3d::Frame::key`] and
+    /// what the window adds).
+    picture: Option<(u64, Picture)>,
+    /// Why the GPU could not draw the view (shown in it).
+    gpu_error: Option<String>,
+    /// This view's id on the offscreen device ([`crate::gpu3d::picture`]).
+    client: u64,
     /// Milliseconds the last picture took, and its size.
     pub last_ms: f64,
     pub last_size: [usize; 2],
@@ -203,7 +197,9 @@ impl Default for View3d {
             gesture: false,
             key_hold: None,
             motion: None,
-            drawn_by: Drawer::Cpu,
+            drawn_by: Drawer::None,
+            gpu_error: None,
+            client: crate::gpu3d::next_id(),
             gpu: Default::default(),
             gpu_adapter: None,
             gpu_frame: None,
@@ -239,7 +235,7 @@ impl View3d {
         let at = pos - rect.min;
         // The GPU's tags under the pointer, when the frame shown kept them; else the CPU's rays.
         if let Some(key) = self.gpu_frame
-            && let Some((any, solid)) = crate::gpu3d::pick(ctx, key, pixel(ctx, at))
+            && let Some((any, solid)) = crate::gpu3d::pick(ctx, self.client, key, pixel(ctx, at))
         {
             self.picked_by = "gpu";
             return scene3d::Pick::from_tag(if solid != 0 { solid } else { any });
@@ -413,11 +409,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     let t = &Tokens::get();
     // The scene, built again only when what it shows changed (the field's planes, for the
     // Results step: the field view's and those kept).
-    let gpu_field = overlay == Overlay::Field
-        && app.prefs.drawing == crate::prefs::Drawing3d::Gpu
-        && app.prefs.gpu_look.field
-        && field.kept.is_empty()
-        && crate::gpu3d::available(ui.ctx()).is_some();
+    let gpu_field = overlay == Overlay::Field && app.prefs.gpu_look.field && field.kept.is_empty() && drawer_of(ui) != Drawer::None;
     let key = scene_key(app, v, field, overlay, gpu_field);
     if !v.is_built(&key) {
         build(app, v, field, overlay, key.clone(), out);
@@ -480,15 +472,19 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     }
     // Moving pictures (a drag, a view change, a playing field).
     let moving = v.dragging || v.anim.is_some() || (overlay == Overlay::Field && field.player.playing);
-    v.gpu_adapter = crate::gpu3d::available(ui.ctx()).map(|a| a.adapter);
-    let drawer = Drawer::choose(app.prefs.drawing, v.gpu_adapter.is_some(), moving);
+    let drawer = drawer_of(ui);
+    v.gpu_adapter = match drawer {
+        Drawer::Window => crate::gpu3d::available(ui.ctx()).map(|a| a.adapter),
+        Drawer::Offscreen => crate::gpu3d::headless::shared().ok().map(|o| o.adapter.clone()),
+        Drawer::None => None,
+    };
     let look = app.prefs.gpu_look;
-    if drawer != Drawer::Gpu || !look.pick {
+    if drawer == Drawer::None || !look.pick {
         v.gpu_frame = None;
     }
     pointer_tag(v, ui, rect, look.outline && !moving);
     let p = ui.painter().with_clip_rect(rect);
-    draw(v, ui, &p, rect, key, drawer, moving, look, t);
+    draw(v, ui, &p, rect, drawer, moving, look, t);
     labels(&p, rect, &v.camera, &built.labels, t);
     if let (Some(cut), true, Some(b)) = (v.section, v.section_dims, v.shown()) {
         crate::section3d::annotate(app, &b.scene, &v.camera, &p, rect, cut, bounds);
@@ -1129,106 +1125,104 @@ fn keys(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, now: f64) {
 /// What draws the 3D view.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Drawer {
-    /// The window's GPU with a depth buffer ([`crate::gpu3d`]).
-    Gpu,
-    /// The CPU renderer's picture.
-    Cpu,
-    /// Egui's painter, back to front.
-    Painter,
+    /// The window's GPU, in a paint callback ([`crate::gpu3d::paint`]).
+    Window,
+    /// A device of the process's own, its picture read back into a texture (a window without a
+    /// wgpu device, the headless harness, `ui.render`).
+    Offscreen,
+    /// No adapter at all: a message.
+    None,
 }
 
 impl Drawer {
-    /// What draws under the preference `d`, with or without the window's GPU view, `moving` or
-    /// at rest: the CPU's picture only at rest, the GPU's view where there is one.
-    pub fn choose(d: crate::prefs::Drawing3d, gpu: bool, moving: bool) -> Drawer {
-        use crate::prefs::Drawing3d;
-        match d {
-            Drawing3d::Gpu if gpu => Drawer::Gpu,
-            Drawing3d::Fast => Drawer::Painter,
-            _ if moving => Drawer::Painter,
-            _ => Drawer::Cpu,
+    /// The window's GPU where it has one, else the offscreen device, else nothing.
+    pub fn choose(window: bool, offscreen: bool) -> Drawer {
+        match (window, offscreen) {
+            (true, _) => Drawer::Window,
+            (false, true) => Drawer::Offscreen,
+            (false, false) => Drawer::None,
         }
     }
 
     pub fn id(self) -> &'static str {
         match self {
-            Drawer::Gpu => "gpu",
-            Drawer::Cpu => "cpu",
-            Drawer::Painter => "painter",
+            Drawer::Window => "gpu",
+            Drawer::Offscreen => "offscreen",
+            Drawer::None => "none",
         }
     }
 }
 
-/// The scene drawn into `rect`: by the window's GPU with a depth buffer, by egui's painter (every
-/// frame, full size) or as the CPU renderer's picture (cached by `scene_key`, the camera and the
-/// size).
+/// What draws the view in `ui`'s context.
+fn drawer_of(ui: &egui::Ui) -> Drawer {
+    Drawer::choose(crate::gpu3d::available(ui.ctx()).is_some(), crate::gpu3d::headless::shared().is_ok())
+}
+
+/// The scene drawn into `rect` by the GPU: by the window's in a paint callback, or offscreen
+/// into a picture (drawn again when what it shows changed); without either, a message.
 #[allow(clippy::too_many_arguments)]
-fn draw(
-    v: &mut View3d,
-    ui: &egui::Ui,
-    p: &egui::Painter,
-    rect: Rect,
-    scene_key: SceneKey,
-    drawer: Drawer,
-    moving: bool,
-    look: crate::prefs::GpuLook,
-    t: &Tokens,
-) {
-    v.drawn_on_gpu = drawer != Drawer::Cpu;
+fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, drawer: Drawer, moving: bool, look: crate::prefs::GpuLook, t: &Tokens) {
+    v.drawn_on_gpu = drawer != Drawer::None;
     v.drawn_by = drawer;
-    if drawer == Drawer::Gpu {
-        draw_gpu(v, ui, p, rect, moving, look, t);
-        return;
-    }
-    if drawer == Drawer::Painter {
-        let began = Instant::now();
-        p.add(gradient(rect, t.viewport_top, t.viewport_bottom));
-        if let Some(b) = v.shown() {
-            // While the view moves, a large scene is drawn from its coarser copy.
-            let scene = if v.dragging { b.moving() } else { &b.scene };
-            p.add(mesh_of(&view3d::flatten(scene, &v.camera, f64::from(rect.width()), f64::from(rect.height())), rect.min, 1.4));
+    let began = Instant::now();
+    let frame = match drawer {
+        Drawer::None => None,
+        _ => Some(gpu_frame(v, ui, rect, moving, look, t)),
+    };
+    match (drawer, frame) {
+        (Drawer::Window, Some(frame)) => {
+            v.gpu_frame = look.pick.then(|| frame.key());
+            v.last_size = frame.size.map(|s| s as usize);
+            crate::gpu3d::paint(p, rect, frame);
+            v.gpu_error = None;
         }
-        v.last_ms = began.elapsed().as_secs_f64() * 1e3;
-        return;
+        (Drawer::Offscreen, Some(frame)) => {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (frame.key(), frame.look, &frame.selected, frame.hover).hash(&mut h);
+            let key = h.finish();
+            if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
+                match crate::gpu3d::picture(v.client, &frame) {
+                    Ok(canvas) => {
+                        v.picture = Some((key, Picture::new(&canvas)));
+                        v.gpu_error = None;
+                    }
+                    Err(e) => {
+                        v.picture = None;
+                        v.gpu_error = Some(e.to_string());
+                    }
+                }
+            }
+            v.gpu_frame = (look.pick && v.picture.is_some()).then(|| frame.key());
+            v.last_size = frame.size.map(|s| s as usize);
+        }
+        _ => {
+            v.picture = None;
+            v.gpu_error = Some(tr("No GPU: the 3D view needs a graphics adapter (or a software one, such as Mesa's llvmpipe).").to_owned());
+        }
     }
-    let ppp = ui.ctx().pixels_per_point() as f64;
-    let mut scale = ppp;
-    let full = rect.width() as f64 * rect.height() as f64 * ppp * ppp;
-    if full > MAX_PIXELS {
-        scale *= (MAX_PIXELS / full).sqrt();
-    }
-    let size = [((rect.width() as f64 * scale).round() as usize).max(1), ((rect.height() as f64 * scale).round() as usize).max(1)];
-    let supersample = if (size[0] * size[1]) as f64 <= SUPERSAMPLE_PIXELS { 2 } else { 1 };
-    let key = Key { scene: scene_key, section: v.section, camera: v.camera, size, supersample };
-    if v.picture.as_ref().is_none_or(|(k, _)| *k != key) {
-        let began = Instant::now();
-        let opt = view3d::Options {
-            width: size[0],
-            height: size[1],
-            supersample,
-            background: (rgb(t.viewport_top), rgb(t.viewport_bottom)),
-            line_width: (scale / ppp).clamp(0.5, 2.0) * ppp.max(1.0),
-        };
-        let canvas = match v.shown() {
-            Some(b) => view3d::render(&b.scene, &v.camera, &opt),
-            None => emcraft_render::Canvas::new(size[0], size[1], rgb(t.viewport_top)),
-        };
-        v.last_ms = began.elapsed().as_secs_f64() * 1e3;
-        v.last_size = size;
-        v.picture = Some((key, Picture::new(&canvas)));
-    }
-    if let Some((_, pic)) = v.picture.as_mut() {
-        let id = pic.texture(ui.ctx());
-        p.image(id, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+    v.last_ms = began.elapsed().as_secs_f64() * 1e3;
+    if drawer != Drawer::Window {
+        match v.picture.as_mut() {
+            Some((_, pic)) => {
+                let id = pic.texture(ui.ctx());
+                p.image(id, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            }
+            None => {
+                p.rect_filled(rect, 0.0, t.viewport_bottom);
+                let text = v.gpu_error.clone().unwrap_or_default();
+                let g = p.layout(text, FontId::proportional(t.font_small), t.text_dim, (rect.width() - 40.0).max(80.0));
+                p.galley(rect.center() - g.size() / 2.0, g, t.text_dim);
+            }
+        }
     }
 }
 
-/// The scene drawn by the window's GPU ([`crate::gpu3d`]), supersampled at rest as the CPU's
-/// picture is.
-fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving: bool, look: crate::prefs::GpuLook, t: &Tokens) {
-    let began = Instant::now();
+/// The frame of the scene the GPU draws into `rect`, supersampled at rest when small enough.
+fn gpu_frame(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look: crate::prefs::GpuLook, t: &Tokens) -> crate::gpu3d::Frame {
     let ppp = f64::from(ui.ctx().pixels_per_point());
-    let out = [((f64::from(rect.width()) * ppp).round().max(1.0) as u32), ((f64::from(rect.height()) * ppp).round().max(1.0) as u32)];
+    let out =
+        [((f64::from(rect.width()) * ppp).round().clamp(1.0, 4096.0) as u32), ((f64::from(rect.height()) * ppp).round().clamp(1.0, 4096.0) as u32)];
     let small = f64::from(out[0]) * f64::from(out[1]) <= SUPERSAMPLE_PIXELS && out[0].max(out[1]) <= 2048;
     let supersample = if !moving && small { 2 } else { 1 };
     let size = [out[0] * supersample, out[1] * supersample];
@@ -1250,7 +1244,7 @@ fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving
     let gpu_look = crate::gpu3d::Look { edges: look.edges, ao: look.ao, outline: look.outline, pick: look.pick || look.outline };
     let rgba = |c: Color32, a: f32| [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0, a];
     let hover = v.pointer_tag.map_or(0, |(_, _, tag)| tag);
-    let frame = crate::gpu3d::Frame {
+    crate::gpu3d::Frame {
         look: gpu_look,
         selected: v.selected.iter().map(|p| p.tag()).collect(),
         hover: if v.selected.iter().any(|p| p.tag() == hover) { 0 } else { hover },
@@ -1259,11 +1253,7 @@ fn draw_gpu(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, moving
         ppp: ppp as f32,
         field: v.field_frame.clone(),
         ..crate::gpu3d::Frame::plain(packed, uniforms, size, out, supersample)
-    };
-    v.gpu_frame = look.pick.then(|| frame.key());
-    crate::gpu3d::paint(p, rect, frame);
-    v.last_ms = began.elapsed().as_secs_f64() * 1e3;
-    v.last_size = size.map(|s| s as usize);
+    }
 }
 
 /// The field view's plane for the GPU to colour: its phasors (uploaded again only when the
@@ -1316,7 +1306,7 @@ fn pointer_tag(v: &mut View3d, ui: &egui::Ui, rect: Rect, on: bool) {
     if v.pointer_tag.is_some_and(|(p, k, _)| p == px && k == key) {
         return;
     }
-    v.pointer_tag = crate::gpu3d::pick(ui.ctx(), key, px).map(|(any, solid)| (px, key, if solid != 0 { solid } else { any }));
+    v.pointer_tag = crate::gpu3d::pick(ui.ctx(), v.client, key, px).map(|(any, solid)| (px, key, if solid != 0 { solid } else { any }));
 }
 
 /// The scene's labels where they project, faint on faces turned away.
@@ -1643,45 +1633,4 @@ fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi): ([f64; 3
         v.section_dims = !dims;
     }
     v.section = Some(cut);
-}
-
-/// A vertical gradient filling `rect`.
-fn gradient(rect: Rect, top: Color32, bottom: Color32) -> egui::Shape {
-    let mut m = egui::Mesh::default();
-    m.colored_vertex(rect.left_top(), top);
-    m.colored_vertex(rect.right_top(), top);
-    m.colored_vertex(rect.right_bottom(), bottom);
-    m.colored_vertex(rect.left_bottom(), bottom);
-    m.add_triangle(0, 1, 2);
-    m.add_triangle(0, 2, 3);
-    egui::Shape::mesh(m)
-}
-
-/// The projected scene as one mesh in drawing order (lines as thin quads `width` points wide),
-/// offset to `origin`.
-fn mesh_of(flat: &[view3d::Flat], origin: egui::Pos2, width: f32) -> egui::Shape {
-    let mut m = egui::Mesh::default();
-    let color = |c: [u8; 4]| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
-    let at = |q: [f32; 2]| origin + vec2(q[0], q[1]);
-    for f in flat {
-        let base = m.vertices.len() as u32;
-        match *f {
-            view3d::Flat::Tri { p, rgba } => {
-                for q in p {
-                    m.colored_vertex(at(q), color(rgba));
-                }
-                m.add_triangle(base, base + 1, base + 2);
-            }
-            view3d::Flat::Line { a, b, rgba } => {
-                let d = vec2(b[0] - a[0], b[1] - a[1]);
-                let n = if d.length() > 0.0 { vec2(-d.y, d.x).normalized() * (width / 2.0) } else { vec2(0.0, 0.0) };
-                for q in [at(a) + n, at(b) + n, at(b) - n, at(a) - n] {
-                    m.colored_vertex(q, color(rgba));
-                }
-                m.add_triangle(base, base + 1, base + 2);
-                m.add_triangle(base, base + 2, base + 3);
-            }
-        }
-    }
-    egui::Shape::mesh(m)
 }

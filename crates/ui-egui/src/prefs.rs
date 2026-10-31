@@ -14,23 +14,7 @@ pub const MAX_RECENT: usize = 12;
 /// Largest preferences file read.
 const MAX_BYTES: u64 = 1 << 20;
 
-/// How the 3D view is drawn (Settings ▸ Drawing).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Drawing3d {
-    /// By the window's GPU with a depth buffer, every frame (`gpu3d`); where the window has no
-    /// wgpu device, as [`Drawing3d::Cpu`].
-    #[default]
-    Gpu,
-    /// The CPU renderer's picture at rest (depth-buffered, supersampled), egui's painter while
-    /// moving.
-    Cpu,
-    /// Egui's painter every frame (back to front, no depth buffer): for a window without the GPU's
-    /// view and a mesh too large for the CPU's picture.
-    Fast,
-}
-
-/// What the GPU's view adds to the CPU's picture, each its own switch (Settings ▸ Drawing).
+/// What the 3D view adds to the plain picture, each its own switch (Settings ▸ 3D view ▸ Drawing).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GpuLook {
@@ -74,9 +58,6 @@ pub struct Prefs {
     pub orbit_around: String,
     /// The 3D view's orientation control, by id (`crate::navigation::Navigator`).
     pub navigator: String,
-    /// How the 3D view is drawn (older files' `gpu3d` switch is not read: everyone starts on
-    /// the GPU's view).
-    pub drawing: Drawing3d,
     /// What the GPU's view draws beyond the CPU's picture.
     pub gpu_look: GpuLook,
     /// The display units new projects start with.
@@ -85,7 +66,7 @@ pub struct Prefs {
 }
 
 /// New preferences: dialogs docked, so they do not cover what they edit; the rest empty, the
-/// light theme, English, the GPU's 3D view, millimetres and gigahertz.
+/// light theme, English, millimetres and gigahertz.
 impl Default for Prefs {
     fn default() -> Self {
         Prefs {
@@ -97,7 +78,6 @@ impl Default for Prefs {
             navigation: crate::navigation::FUSION.into(),
             orbit_around: String::new(),
             navigator: String::new(),
-            drawing: Drawing3d::Gpu,
             gpu_look: GpuLook::default(),
             length: Length::default(),
             frequency: Frequency::default(),

@@ -311,20 +311,6 @@ fn units(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 }
 
 fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
-    use crate::prefs::Drawing3d;
-    heading(ui, "Drawing", "How the 3D view of the model, its mesh and fields is drawn.");
-    let drawing = [
-        (Drawing3d::Gpu, "GPU", "gpu", "Drawn by the graphics card with a depth buffer, still and moving. Without one, as Quality."),
-        (
-            Drawing3d::Cpu,
-            "Quality",
-            "quality",
-            "Drawn on the CPU with a depth buffer and smoothed edges when the view rests; the GPU while you drag.",
-        ),
-        (Drawing3d::Fast, "Fast", "fast", "Drawn by the GPU every frame, back to front: for large meshes, where the CPU picture takes long."),
-    ];
-    options(ui, out, "3d", app.prefs.drawing, &drawing, |d| Action::Pref(Pref::Drawing(d)));
-    gap(ui);
     // The mouse mappings, SolidCraft's: the same hands work in both apps.
     let nav = app.prefs.nav();
     heading(ui, "Mouse", nav.help);
@@ -347,8 +333,8 @@ fn view3d(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Navigator", "");
     let navigators: Vec<(Navigator, &str, &str)> = Navigator::ALL.iter().map(|n| (*n, shown(*n), n.id())).collect();
     choices(ui, out, "navigator", app.prefs.navigator(), &navigators, |n| Action::Pref(Pref::Navigator(n)));
-    ui.add_space(Tokens::get().space_12);
-    heading(ui, "On the GPU", "What the GPU's view adds to the picture; each off draws as the CPU does.");
+    gap(ui);
+    heading(ui, "Drawing", "What the 3D view adds to the plain picture, each its own switch.");
     let l = app.prefs.gpu_look;
     let switches: [(&str, &str, bool, fn(&mut crate::prefs::GpuLook) -> &mut bool, &str); 5] = [
         ("Edges", "edges", l.edges, |l| &mut l.edges, "Lines where surfaces crease or end, found per pixel."),

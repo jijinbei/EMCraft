@@ -1,6 +1,6 @@
 //! The scene and the camera as the GPU reads them: vertex bytes made once per scene, uniforms
-//! made each frame. Plain arithmetic, no device, so it is checked against the CPU renderer's
-//! projection without a GPU.
+//! made each frame. Plain arithmetic, no device, so it is checked against the camera's
+//! projection (`emcraft_render::view3d::Camera::project`) without a GPU.
 
 use std::collections::BTreeMap;
 
@@ -56,13 +56,12 @@ fn put3(out: &mut Vec<u8>, v: [f64; 3]) {
 
 impl Packed {
     /// `scene` packed: triangles with no area or a non-finite corner and anything fully
-    /// transparent are left out, as the CPU renderer leaves them out.
+    /// transparent are left out.
     ///
     /// Opaque faces lying in one plane (the section view's caps of nested bodies, the faces two
     /// touching bodies share) are ranked by their runs in it: each time the colour and tag change
     /// within the plane the rank goes up (to [`MAX_RANK`]). The vertex shader moves a higher rank
-    /// a little nearer, so the later face is drawn, as the CPU renderer, whose equal depths go to
-    /// the later triangle, draws it.
+    /// a little nearer, so the later face is drawn, not whichever the depth buffer's rounding picks.
     ///
     /// ```
     /// use emcraft_render::{Rgb, view3d::Scene};
@@ -172,7 +171,7 @@ pub struct Uniforms {
     /// From the scene's origin to clip space (columns).
     pub view_proj: [[f32; 4]; 4],
     /// The camera's forward direction and how far lines move towards the eye (m), so edges on
-    /// faces win the depth test, as the CPU renderer nudges them.
+    /// faces win the depth test.
     pub forward_nudge: [f32; 4],
     /// The light's direction (towards it).
     pub light: [f32; 4],
@@ -198,7 +197,7 @@ impl Uniforms {
     /// The uniforms for `packed` seen by `camera` in a target `size` pixels, with lines
     /// `line_width` pixels wide and the ground from `background.0` (top) to `background.1`.
     ///
-    /// The projection is the CPU renderer's (`emcraft_render::view3d::Camera::project`): the
+    /// The projection is the camera's (`emcraft_render::view3d::Camera::project`): the
     /// same pixel for the same point, with depth fitted to the scene's box.
     pub fn new(packed: &Packed, camera: &Camera, size: [u32; 2], line_width: f64, background: (Rgb, Rgb)) -> Uniforms {
         let c = camera.sanitized();
@@ -300,10 +299,10 @@ mod tests {
         s
     }
 
-    /// The GPU's transform puts every corner on the CPU renderer's pixel, depth inside 0–1 and
+    /// The GPU's transform puts every corner on the camera's pixel, depth inside 0–1 and
     /// ordered as the CPU's depth key, in both projections and from several directions.
     #[test]
-    fn the_projection_is_the_cpu_renderers() {
+    fn the_projection_is_the_cameras() {
         let s = scene();
         let p = Packed::new(&s, 0);
         for projection in [Projection::Perspective, Projection::Orthographic] {

@@ -1,24 +1,26 @@
-//! The 3D view drawn by the window's GPU (wgpu, through an `egui_wgpu` paint callback) with a
-//! depth buffer: the same [`Scene`] the CPU renderer (`emcraft_render::view3d`) draws, shaded
-//! and projected the same way, every frame, still or moving (docs/adr/0004-gpu-viewport.md).
+//! The 3D view drawn by the GPU (wgpu) with a depth buffer: the window's device through an
+//! `egui_wgpu` paint callback, or a device of the process's own read back into a texture
+//! ([`headless`]: a window that opened with OpenGL, `ui.render`, the scenarios, the start page's
+//! pictures). It is the only 3D renderer (docs/adr/0004-gpu-viewport.md); without any adapter the
+//! view says so.
 //!
-//! - Triangles in a depth buffer, multisampled (4× where the device takes it) and supersampled
-//!   2× at rest when the view is small enough, as the CPU's picture.
-//! - Lines as screen-space quads of the CPU's width, depth-tested and moved towards the eye as
-//!   the CPU moves them, so edges lying on faces show.
+//! - Triangles in a depth buffer, flat-shaded (ambient plus Lambert from a light above and right of
+//!   the eye, both sides alike), multisampled (4× where the device takes it) and supersampled 2×
+//!   at rest when the view is small enough.
+//! - Lines as screen-space quads, depth-tested and moved towards the eye so edges lying on faces
+//!   show.
 //! - See-through faces by weighted blended order-independent transparency (McGuire and Bavoil,
 //!   *Weighted Blended Order-Independent Transparency*, JCGT 2(2), 2013), with the stencil
 //!   marking where they are nearest so the lines in front of them are drawn over them
 //!   ([`renderer`]).
-//! - The selection's and the hovered row's tints and the section view's cut and caps are in the
-//!   scene itself (`scene3d`, `emcraft_render::view3d::section`), which picking reads too, so
-//!   both renderers show them alike.
+//! - Per pixel ([`gbuffer`]): edges, ambient occlusion, the outline of the selection and of what is
+//!   under the pointer, and picking by reading the tags under a pixel back; the field's colour map
+//!   from its phasors ([`field`]). Each is a switch (Settings ▸ 3D view ▸ Drawing).
+//! - The section view's cut and caps are in the scene itself (`emcraft_render::view3d::section`),
+//!   which the CPU's ray picking (the tools' snapping, the fallback) reads too.
 //!
-//! The CPU renderer stays the reference: headless pictures (`ui.render`, the scenarios) and
-//! windows without a wgpu device draw with it. A window has the GPU's view only when
-//! [`install`] succeeded on its context ([`available`]); any GPU error afterwards marks it
-//! failed and the view goes back to the CPU from the next frame. Nothing here panics: every
-//! device call that can fail runs under error scopes or the device's error handler.
+//! Nothing here panics: every device call that can fail runs under error scopes or the device's
+//! error handler, which marks the window's view failed (it draws offscreen from then on).
 //!
 //! The renderer's design follows SolidCraft's viewport (MIT OR Apache-2.0, ATTRIBUTION.md):
 //! the offscreen frame shown by a paint callback, OIT targets and composite; the shaders and
@@ -26,11 +28,12 @@
 
 mod field;
 mod gbuffer;
+pub mod headless;
 mod pack;
 mod renderer;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use eframe::{egui_wgpu, wgpu};
 use emcraft_render::view3d::Scene;
@@ -81,15 +84,19 @@ impl std::fmt::Debug for Available {
 /// triangle's and the nearest solid one's (opacity ≥ 200), 0 for none, as
 /// `emcraft_render::view3d::hits` finds them. `None` where the GPU cannot tell (no GPU view, the
 /// frame drawn last was another, picking off): the caller asks the CPU.
-pub fn pick(ctx: &egui::Context, key: u64, px: [u32; 2]) -> Option<(u32, u32)> {
-    let a = available(ctx)?;
-    let r = a.rs.renderer.read();
-    let i = r.callback_resources.get::<Installed>()?;
-    i.renderer.tags_at(&a.rs.device, &a.rs.queue, key, px)
+pub fn pick(ctx: &egui::Context, client: u64, key: u64, px: [u32; 2]) -> Option<(u32, u32)> {
+    match available(ctx) {
+        Some(a) => {
+            let r = a.rs.renderer.read();
+            let i = r.callback_resources.get::<Installed>()?;
+            i.renderer.tags_at(&a.rs.device, &a.rs.queue, key, px)
+        }
+        None => headless::shared().ok()?.tags_at(client, key, px),
+    }
 }
 
 impl Available {
-    /// Whether a GPU error has stopped it (the view draws on the CPU from then on).
+    /// Whether a GPU error has stopped it (the view draws offscreen from then on).
     pub fn failed(&self) -> bool {
         self.failed.load(Ordering::Acquire)
     }
@@ -114,7 +121,7 @@ pub fn install(rs: &egui_wgpu::RenderState, ctx: &egui::Context) -> Result<Avail
     rs.device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
         flag.store(true, Ordering::Release);
         if seen.fetch_add(1, Ordering::Relaxed) < 4 {
-            eprintln!("emcraft: GPU error, the 3D view draws on the CPU: {e}");
+            eprintln!("emcraft: GPU error, the 3D view draws offscreen: {e}");
         }
     }));
     let caps = Caps::of(&rs.adapter, &rs.device);
@@ -132,9 +139,9 @@ struct Installed {
     failed: Arc<AtomicBool>,
 }
 
-/// What the GPU's view draws beyond the CPU's picture, each switched on its own (Settings ▸
-/// Drawing): all off draws what the CPU draws.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// What the 3D view draws beyond the plain picture, each switched on its own (Settings ▸ 3D view ▸
+/// Drawing).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Look {
     /// Edges where the surface creases or ends, found per pixel from depth and normals.
     pub edges: bool,
@@ -174,7 +181,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// A frame of `packed` with `uniforms`, nothing beyond the CPU's picture drawn.
+    /// A frame of `packed` with `uniforms`, nothing beyond the plain picture drawn.
     pub fn plain(packed: Arc<Packed>, uniforms: Uniforms, size: [u32; 2], out: [u32; 2], supersample: u32) -> Frame {
         Frame {
             packed,
@@ -239,22 +246,29 @@ impl Frame {
 /// The scene packed for the GPU, made again when the scene changes.
 #[derive(Default)]
 pub struct Cache {
-    packed: Option<(Arc<Packed>, Option<(u32, usize, f64)>)>,
+    /// The scene's generation and field plane it was packed for, and the packing.
+    packed: Option<((u64, Option<(u32, usize, f64)>), Arc<Packed>)>,
+}
+
+/// A new scene's id, unique in the process: the renderers keep a scene's buffers by it.
+pub fn next_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 impl Cache {
-    /// `scene` packed, from the cache when `id` (the scene's generation) is unchanged.
-    pub fn packed(&mut self, scene: &Scene, id: u64) -> Arc<Packed> {
-        self.packed_with(scene, id, None)
+    /// `scene` packed, from the cache when `generation` (the scene's) is unchanged.
+    pub fn packed(&mut self, scene: &Scene, generation: u64) -> Arc<Packed> {
+        self.packed_with(scene, generation, None)
     }
 
     /// As [`Cache::packed`], the field's plane marked ([`Packed::with_field`]).
-    pub fn packed_with(&mut self, scene: &Scene, id: u64, field: Option<(u32, usize, f64)>) -> Arc<Packed> {
+    pub fn packed_with(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>) -> Arc<Packed> {
         match &self.packed {
-            Some((p, f)) if p.id == id && *f == field => p.clone(),
+            Some((k, p)) if *k == (generation, field) => p.clone(),
             _ => {
-                let p = Arc::new(Packed::with_field(scene, id, field));
-                self.packed = Some((p.clone(), field));
+                let p = Arc::new(Packed::with_field(scene, next_id(), field));
+                self.packed = Some(((generation, field), p.clone()));
                 p
             }
         }
@@ -281,7 +295,7 @@ impl egui_wgpu::CallbackTrait for Callback {
             && !i.failed.load(Ordering::Acquire)
             && let Err(e) = i.renderer.prepare(device, queue, encoder, &self.0)
         {
-            eprintln!("emcraft: {e}; the 3D view draws on the CPU");
+            eprintln!("emcraft: {e}; the 3D view draws offscreen");
             i.failed.store(true, Ordering::Release);
         }
         Vec::new()
@@ -296,21 +310,26 @@ impl egui_wgpu::CallbackTrait for Callback {
     }
 }
 
-/// A device of its own, without a window: the first adapter wgpu offers on `backends`.
-pub fn headless(backends: wgpu::Backends) -> Result<(wgpu::Adapter, wgpu::Device, wgpu::Queue), Gpu3dError> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends, ..wgpu::InstanceDescriptor::new_without_display_handle() });
-    let adapter = ready(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .ok_or_else(|| Gpu3dError::NoAdapter("the request did not finish".into()))?
-        .map_err(|e| Gpu3dError::NoAdapter(e.to_string()))?;
-    let (device, queue) = ready(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("emcraft_view3d_headless"),
-        required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
-        ..Default::default()
-    }))
-    .ok_or_else(|| Gpu3dError::Device("the request did not finish".into()))?
-    .map_err(|e| Gpu3dError::Device(e.to_string()))?;
-    device.on_uncaptured_error(Arc::new(|e: wgpu::Error| eprintln!("emcraft: GPU error: {e}")));
-    Ok((adapter, device, queue))
+/// A picture of `scene` through `camera`, `size` pixels, on the ground `background` (top,
+/// bottom), drawn offscreen on the process's own device and supersampled 2× (the start page's
+/// and the template cards' pictures).
+pub fn scene_picture(
+    scene: &Scene,
+    camera: &emcraft_render::view3d::Camera,
+    size: [u32; 2],
+    background: (emcraft_render::Rgb, emcraft_render::Rgb),
+) -> Result<emcraft_render::Canvas, Gpu3dError> {
+    let out = [size[0].clamp(1, 2048), size[1].clamp(1, 2048)];
+    let packed = Arc::new(Packed::new(scene, next_id()));
+    let big = [out[0] * 2, out[1] * 2];
+    let uniforms = Uniforms::new(&packed, camera, big, 4.0, background);
+    picture(0, &Frame { look: Look { edges: true, ..Look::default() }, ..Frame::plain(packed, uniforms, big, out, 2) })
+}
+
+/// A picture of `frame` drawn offscreen for view `client` (any id from [`next_id`]; 0 for the
+/// one-off pictures) on the process's own device ([`headless::shared`]).
+pub fn picture(client: u64, frame: &Frame) -> Result<emcraft_render::Canvas, Gpu3dError> {
+    headless::shared()?.picture(client, frame)
 }
 
 #[cfg(test)]

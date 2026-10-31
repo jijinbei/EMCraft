@@ -11,7 +11,7 @@
 //! 3. their weighted average laid over the frame; then their depth written where they are
 //!    nearer than the opaque, marking the stencil, and the lines drawn again only there and only
 //!    where they lie in front of them, so an edge on a see-through face is drawn over it, not
-//!    washed out by it, as the CPU renderer's back-to-front order draws it.
+//!    washed out by it.
 //!
 //! The resolved frame is then shown in the window's pass, each pixel the mean of its
 //! supersamples.
@@ -25,7 +25,7 @@ use super::gbuffer;
 use super::pack::{LINE, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
 use super::{Frame, Gpu3dError};
 
-/// The frame's colour: the bytes' scale, blended there as the CPU renderer blends.
+/// The frame's colour: the bytes' scale (sRGB values), blended there as the themes' colours are.
 pub const FRAME: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 const ACCUM: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -721,6 +721,10 @@ impl Renderer {
         drop(pass);
         self.last = Some(key);
         Ok(())
+    }
+
+    pub fn caps(&self) -> Caps {
+        self.caps
     }
 
     /// Shows the frame drawn last in `pass` (the window's, its viewport the 3D view).
