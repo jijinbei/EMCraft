@@ -424,7 +424,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "geometry.feature",
         label: "Combine a body",
-        doc: "Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall), and so are features of one kind meeting end to end when one's cross-section holds the other's (a stepped inner conductor); the surfaces must otherwise meet cleanly. A port's end face must stay whole.",
+        doc: "Combines a primitive with the solid: `add` (union: a stub, a housing), `subtract` (difference: a post, a screw, a notch; its surface becomes conducting wall) or `intersect`. The same shapes as geometry.solid, its origin at `at` and its z axis turned onto `axis`. Faces flush with the solid's are handled (a post may run wall to wall, a stub stand on a wall with its sides in the side walls), gaps narrower than a tenth of the element size are filled with elements as small as they are, and features of one kind may meet end to end when one's cross-section holds the other's (a stepped inner conductor); the surfaces must otherwise meet cleanly. A port's end face must stay whole.",
         params: &[
             req("combine", K::String, "`add`, `subtract` or `intersect`").one_of(&Combine::IDS),
             SHAPE,

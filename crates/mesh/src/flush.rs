@@ -26,7 +26,10 @@
 //! (a step in the region's floor under a plate), and no move of the face keeps the result: the
 //! part against the surface must move off it, the rest must not, and the face joining them
 //! would lie in the other surface's turned face — a coplanar overlap again. Only a Boolean that
-//! takes coplanar triangles itself could do it.
+//! takes coplanar triangles itself could do it. A union whose flush face reaches out past the
+//! region's is taken another way when both lie behind that face's plane (`crate::clip`: both
+//! grown past it, united and cut back); one where the region reaches past the plane elsewhere
+//! stays refused.
 
 use std::collections::HashMap;
 
