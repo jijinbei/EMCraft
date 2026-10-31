@@ -264,7 +264,7 @@ fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'
     // A job of a chosen kind sees only its commands (the search still finds the others).
     let mut out: Vec<Panel> = panels
         .iter()
-        .map(|(name, items)| Panel { name: *name, commands: items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id))).collect() })
+        .map(|(name, items)| Panel { name, commands: items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id))).collect() })
         .filter(|p| !p.commands.is_empty())
         .collect();
     let Some(kind) = chosen.filter(|_| tab == RibbonTab::Simulate) else { return out };

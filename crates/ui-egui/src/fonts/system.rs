@@ -236,7 +236,7 @@ fn read_face(file: &mut File, len: u64, path: &Path, index: u32, offset: u32) ->
     let records = read_at(file, u64::from(offset) + 12, usize::from(tables) * 16)?;
     // A table of at most `most` bytes, lying inside the file.
     let find = |tag: &[u8; 4], most: u32| -> Option<Span> {
-        records.chunks_exact(16).find_map(|r| {
+        records.as_chunks::<16>().0.iter().find_map(|r| {
             let (at, size) = (be32(r, 8)?, be32(r, 12)?);
             (r.get(..4)? == tag && size <= most && u64::from(at) + u64::from(size) <= len).then_some(Span { at, len: size })
         })
