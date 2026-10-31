@@ -22,11 +22,14 @@ use super::{Built, Overlay, Pick};
 /// The longest move, in thicknesses.
 pub(super) const MAX_STRETCH: f64 = 3.0;
 
-/// A triangle of the inside's surface: a wall, or open (a port, a symmetry plane).
+/// A triangle of the inside's surface: a wall, open (a port, a symmetry plane), or inner — metal
+/// with the inside again just beyond it (an iris, a post, a wall two guides share), which the
+/// outer walls' thickness does not concern.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Side {
     Wall,
     Open,
+    Inner,
 }
 
 impl Side {
@@ -55,6 +58,13 @@ impl Inside {
         })
     }
 
+    /// A triangle through these points (turned out of the inside), a wall made inner where
+    /// `interior` says the inside lies just beyond it.
+    pub(super) fn wall_or_inner(&mut self, p: [[f64; 3]; 3], side: Side, interior: &impl Fn([[f64; 3]; 3]) -> bool) {
+        let side = if side == Side::Wall && interior(p) { Side::Inner } else { side };
+        self.tri(p, side);
+    }
+
     /// A triangle through these points.
     pub(super) fn tri(&mut self, p: [[f64; 3]; 3], side: Side) {
         let v = p.map(|q| self.vertex(q));
@@ -64,6 +74,7 @@ impl Inside {
     }
 
     /// A quadrilateral through these points, in order round it.
+    #[cfg(test)]
     pub(super) fn quad(&mut self, q: [[f64; 3]; 4], side: Side) {
         self.tri([q[0], q[1], q[2]], side);
         self.tri([q[0], q[2], q[3]], side);
@@ -76,14 +87,19 @@ impl Inside {
 
     /// Whether triangle `i` is a wall.
     fn wall(&self, i: usize) -> bool {
-        self.tris.get(i).is_some_and(|(_, side)| *side == Side::Wall)
+        self.side(i) == Some(Side::Wall)
+    }
+
+    /// Triangle `i`'s side.
+    fn side(&self, i: usize) -> Option<Side> {
+        self.tris.get(i).map(|(_, side)| *side)
     }
 
     /// The planes each vertex should lie on once moved: the distinct normals of the triangles
     /// round it, a wall's `thickness` out, an open face's through the vertex.
     fn planes(&self, normals: &[Option<Vec3>], thickness: f64) -> Vec<Vec<Plane>> {
         let mut planes: Vec<Vec<Plane>> = vec![Vec::new(); self.positions.len()];
-        for ((t, side), normal) in self.tris.iter().zip(normals) {
+        for ((t, side), normal) in self.tris.iter().zip(normals).filter(|((_, side), _)| *side != Side::Inner) {
             let Some(normal) = *normal else { continue };
             let open = *side == Side::Open;
             let offset = if open { 0.0 } else { thickness };
@@ -189,9 +205,11 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
     let cos_sharp = 25f64.to_radians().cos();
     for faces in inside.edges().values() {
         let walls: Vec<&(usize, [u32; 2])> = faces.iter().filter(|(i, _)| inside.wall(*i)).collect();
+        let opens = faces.iter().any(|(i, _)| inside.side(*i) == Some(Side::Open));
         match walls.as_slice() {
-            // A wall's edge on no other wall: the rim, from it out to its moved copy.
-            [(_, [a, b])] => {
+            // A wall's edge on an open face and no other wall: the rim, from it out to its moved
+            // copy. (Where a wall meets an inner face, the metal goes on: no rim.)
+            [(_, [a, b])] if opens || faces.len() == 1 => {
                 out.rim.push([at(*a), at(*b), to(*b)]);
                 out.rim.push([at(*a), to(*b), to(*a)]);
                 out.edges.push((to(*a), to(*b)));
@@ -228,6 +246,41 @@ pub(super) fn draw(m: &Model, overlay: Overlay, inside: &Inside, thickness: f64,
     for (a, b) in s.edges {
         out.scene.line(a, b, sc().edge, 200);
     }
+}
+
+/// Whether the inside lies again just beyond a wall triangle (turned out of the inside): points
+/// along its normal from its centre, out to half the model's smallest side, tested against the
+/// geometry. An iris, a post or a shared wall is metal that thin; the guide's outer walls have
+/// nothing beyond them.
+pub(super) fn interior(m: &Model) -> impl Fn([[f64; 3]; 3]) -> bool + '_ {
+    const SAMPLES: usize = 8;
+    let reach = m.bounds().map_or(0.0, |b| {
+        let s = b.max - b.min;
+        0.5 * s.x.min(s.y).min(s.z)
+    });
+    move |p: [[f64; 3]; 3]| {
+        let p = p.map(Point3::from);
+        let Some(n) = unit_normal(p) else { return false };
+        let c = Point3::new((p[0].x + p[1].x + p[2].x) / 3.0, (p[0].y + p[1].y + p[2].y) / 3.0, (p[0].z + p[1].z + p[2].z) / 3.0);
+        (1..=SAMPLES).any(|k| inside(m, c + n * (reach * k as f64 / SAMPLES as f64)))
+    }
+}
+
+/// Whether a point lies inside the model's guide or region.
+fn inside(m: &Model, p: Point3) -> bool {
+    if let Some(w) = &m.waveguide {
+        let mut z = 0.0;
+        for (i, s) in w.sections.iter().enumerate() {
+            let end = z + s.length.get();
+            if p.z > z && p.z < end {
+                let (x, y) = (w.aperture(i).unwrap_or(w.across_x()), w.aperture_y(i).unwrap_or(w.across_y()));
+                return p.x > x.start && p.x < x.end() && p.y > y.start && p.y < y.end();
+            }
+            z = end;
+        }
+        return false;
+    }
+    m.material_at(p).is_some()
 }
 
 /// Whether a point lies on one of the model's ports' faces (within a micrometre of its plane).
