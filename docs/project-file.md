@@ -94,7 +94,8 @@ leaves the old file whole. A path without an extension gets `.emcraft`. The sess
 the file it was opened from or saved to (`file.save` without a path writes there) and whether
 the project changed since (`Session::is_dirty`): its history differs from the saved one, its
 views do, its runs do (a solve with other parameters than the saved run's), or its analysis
-history does (a solve kept — every solve that succeeds is —, one pinned, labelled or let go).
+history does (a solve kept — every solve that succeeds is, unless it repeats one kept with the
+same parameters, model and results, which is that one —, one pinned, labelled or let go).
 Saving itself changes nothing in the project. An undo back to the saved state is clean; the
 views have no undo of their own.
 

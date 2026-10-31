@@ -375,8 +375,8 @@ fn every_solve_is_kept_and_can_be_compared_restored_pinned_and_let_go() {
     assert_eq!(s.variables().get("l_gap"), Some(&24.0));
     // Pinned, a solve stays past the cap; deleted, it goes.
     s.execute("results.history.pin", &json!({"id": first})).unwrap();
-    for _ in 0..crate::archive::MAX_KEPT + 1 {
-        s.execute("solve.frequency", &json!({"frequencies": [8], "order": 1})).unwrap();
+    for i in 0..crate::archive::MAX_KEPT + 1 {
+        s.execute("solve.frequency", &json!({"frequencies": [8.0 + 0.01 * i as f64], "order": 1})).unwrap();
     }
     let ids: Vec<u64> =
         s.execute("results.history", &json!({})).unwrap()["history"].as_array().unwrap().iter().filter_map(|r| r["id"].as_u64()).collect();

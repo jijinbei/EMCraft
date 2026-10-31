@@ -82,16 +82,31 @@ fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// Keeps the solve that just succeeded in `s`.
-pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) {
+/// Keeps the solve that just succeeded in `s`; its id. The same solve again (its command,
+/// parameters, units and model, and the same results) is the one kept before, not another: a
+/// run repeated leaves the history, and the project, as they were.
+pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) -> u32 {
+    // Only finite values: a file writes no other (a variable of 1/0 is left out).
+    let variables: Variables = s.variables.iter().filter(|(_, v)| v.is_finite()).map(|(k, v)| (k.clone(), *v)).collect();
+    let kept = Kept::of(&s.results);
+    let same = |a: &Archived| {
+        a.command == command
+            && a.params == *params
+            && a.display == s.display
+            && *a.history == s.history
+            && *a.variables == variables
+            && *a.kept == kept
+    };
+    if let Some(a) = s.archive.iter_mut().find(|a| same(a)) {
+        a.solved = Some(Arc::new(Solved { model: s.model.clone(), results: s.results.clone() }));
+        return a.id;
+    }
     s.archive_next = s.archive_next.saturating_add(1);
     // The same model as the solve before: its history shared.
     let history = match s.archive.last() {
         Some(a) if *a.history == s.history => a.history.clone(),
         _ => Arc::new(s.history.clone()),
     };
-    // Only finite values: a file writes no other (a variable of 1/0 is left out).
-    let variables: Variables = s.variables.iter().filter(|(_, v)| v.is_finite()).map(|(k, v)| (k.clone(), *v)).collect();
     s.archive.push(Archived {
         id: s.archive_next,
         when: now(),
@@ -100,7 +115,7 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) {
         display: s.display,
         history,
         variables: Arc::new(variables),
-        kept: Arc::new(Kept::of(&s.results)),
+        kept: Arc::new(kept),
         pinned: false,
         label: None,
         solved: Some(Arc::new(Solved { model: s.model.clone(), results: s.results.clone() })),
@@ -110,6 +125,7 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) {
         let Some(k) = s.archive.iter().position(|a| !a.pinned) else { break };
         s.archive.remove(k);
     }
+    s.archive_next
 }
 
 /// What changed in the model between two kept solves: the variables whose values differ

@@ -439,8 +439,7 @@ impl Session {
                 self.solved_revision = Some(self.revision);
                 let params = if params.is_null() { json!({}) } else { params.clone() };
                 let run = self.next_run.take().unwrap_or(Run { command: spec.id.to_owned(), params, units: self.display });
-                crate::archive::keep(self, &run.command, &run.params);
-                self.archive_current = Some(self.archive_next);
+                self.archive_current = Some(crate::archive::keep(self, &run.command, &run.params));
                 crate::runs::record(&mut self.runs, run);
             }
             Effect::View | Effect::None => {}

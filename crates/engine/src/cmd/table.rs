@@ -774,7 +774,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "results.history",
         label: "Analysis history",
-        doc: "The project's solves kept, the oldest first: each one's id, when (`when`, seconds since 1970 UTC), command, label, frequencies, band, deepest |S11| (dB) and where, first eigenmode, what changed in the model since the one before (variables' values), whether it is pinned and whether the session's results are its own. Every solve that succeeds is kept with its model and results; at most 16 unpinned ones, the oldest let go first, and 32 pinned. The project file keeps them with their S-parameters, eigenmodes and time domain's S, not their models or fields.",
+        doc: "The project's solves kept, the oldest first: each one's id, when (`when`, seconds since 1970 UTC), command, label, frequencies, band, deepest |S11| (dB) and where, first eigenmode, what changed in the model since the one before (variables' values), whether it is pinned and whether the session's results are its own. Every solve that succeeds is kept with its model and results (one that repeats a kept one exactly is that one); at most 16 unpinned ones, the oldest let go first, and 32 pinned. The project file keeps them with their S-parameters, eigenmodes and time domain's S, not their models or fields.",
         params: &[],
         effect: Effect::None,
         invalidates: None,

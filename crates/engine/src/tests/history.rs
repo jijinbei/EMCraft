@@ -99,6 +99,9 @@ fn the_history_is_part_of_the_unsaved_state() {
     let (own, copy) = (scratch("history-own.emcraft"), scratch("history-copy.emcraft"));
     s.execute("file.save", &json!({"path": own})).unwrap();
     assert!(!s.is_dirty());
+    // The same solve again is the one kept: nothing new, nothing unsaved.
+    s.execute("solve.frequency", &json!({"start": 6.6, "stop": 9, "points": 3, "order": 1})).unwrap();
+    assert_eq!((s.archive().len(), s.archive_current, s.is_dirty()), (2, Some(2), false));
     s.execute("results.history.pin", &json!({"id": 2})).unwrap();
     assert!(s.is_dirty());
     s.execute("results.history.pin", &json!({"id": 2, "pinned": false})).unwrap();
