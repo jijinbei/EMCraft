@@ -1167,7 +1167,7 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, drawer: Dr
     let began = Instant::now();
     let frame = match drawer {
         Drawer::None => None,
-        _ => Some(gpu_frame(v, ui, rect, moving, look, t)),
+        _ => Some(gpu_frame(v, ui, rect, moving, drawer == Drawer::Offscreen, look, t)),
     };
     match (drawer, frame) {
         (Drawer::Window, Some(frame)) => {
@@ -1219,7 +1219,15 @@ fn draw(v: &mut View3d, ui: &egui::Ui, p: &egui::Painter, rect: Rect, drawer: Dr
 }
 
 /// The frame of the scene the GPU draws into `rect`, supersampled at rest when small enough.
-fn gpu_frame(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look: crate::prefs::GpuLook, t: &Tokens) -> crate::gpu3d::Frame {
+fn gpu_frame(
+    v: &mut View3d,
+    ui: &egui::Ui,
+    rect: Rect,
+    moving: bool,
+    offscreen: bool,
+    look: crate::prefs::GpuLook,
+    t: &Tokens,
+) -> crate::gpu3d::Frame {
     let ppp = f64::from(ui.ctx().pixels_per_point());
     let out =
         [((f64::from(rect.width()) * ppp).round().clamp(1.0, 4096.0) as u32), ((f64::from(rect.height()) * ppp).round().clamp(1.0, 4096.0) as u32)];
@@ -1235,6 +1243,8 @@ fn gpu_frame(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look: crat
         (scene3d::Pick::Plane(0).tag(), axis, g.corner[axis])
     });
     let packed = match v.shown() {
+        // Offscreen (read back, often on a software adapter) a large scene moves as its coarser copy.
+        Some(b) if moving && offscreen && !std::ptr::eq(b.moving(), &b.scene) => cache.packed_with(b.moving(), id.wrapping_add(1 << 63), field_plane),
         Some(b) => cache.packed_with(&b.scene, id, field_plane),
         None => cache.packed(&EMPTY.scene, u64::MAX),
     };

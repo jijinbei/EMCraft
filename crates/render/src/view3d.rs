@@ -502,12 +502,6 @@ mod tests {
         assert!(Camera::default().ray(f64::NAN, 0.0, 10.0, 10.0).is_none());
     }
 
-    fn square(z: f64, c: Rgb) -> Scene {
-        let mut s = Scene::default();
-        s.quad([[-1.0, -1.0, z], [1.0, -1.0, z], [1.0, 1.0, z], [-1.0, 1.0, z]], c, 255);
-        s
-    }
-
     fn front(projection: Projection) -> Camera {
         Camera { target: [0.0; 3], yaw: 0.0, pitch: 0.0, distance: 10.0, fov: 30f64.to_radians(), projection }
     }
