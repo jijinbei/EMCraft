@@ -5,6 +5,7 @@
 //! ATTRIBUTION.md.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod changed;
 mod colours;
 mod dupes;
 #[cfg(feature = "fonts")]
@@ -20,9 +21,12 @@ usage: cargo xtask <command>
 
 commands:
   layers          enforce the crate dependency layering (docs/architecture.md)
-  test [--heavy] [CARGO ARGS] [-- TEST ARGS]
-                  run the workspace tests; --heavy runs only the ignored (heavy) tests:
-                  convergence studies and fine meshes
+  test [--heavy] [--changed [BASE]] [CARGO ARGS] [-- TEST ARGS]
+                  run the workspace tests (with cargo-nextest when installed: every test in one
+                  pool, .config/nextest.toml; the doctests after); --heavy runs only the ignored
+                  (heavy) tests: convergence studies and fine meshes; --changed only the
+                  packages changed since BASE (default main; committed or not) and those built
+                  on them
   oracle [--case NAME]... [--bless NAME|all]... [--no-write]
                   run the verification cases (tests/oracle, docs/verification.md) against their
                   references and fixtures; write docs/oracle.md after a full run; --bless
@@ -122,18 +126,75 @@ fn cmd_layers() -> Result<(), String> {
 }
 
 fn cmd_test(rest: &[&str]) -> Result<(), String> {
-    let (heavy, rest) = match rest.split_first() {
-        Some((&"--heavy", after)) => (true, after),
-        _ => (false, rest),
-    };
-    let (cargo_args, test_args) = rest.iter().position(|a| *a == "--").map_or((rest, &[][..]), |i| (&rest[..i], &rest[i + 1..]));
-    let mut c = cargo();
-    c.args(["test", "--workspace"]).args(cargo_args).arg("--");
-    if heavy {
-        c.arg("--ignored");
+    let (mut heavy, mut changed, mut rest) = (false, None, rest);
+    loop {
+        match rest {
+            ["--heavy", after @ ..] => (heavy, rest) = (true, after),
+            ["--changed", base, after @ ..] if !base.starts_with('-') => (changed, rest) = (Some(*base), after),
+            ["--changed", after @ ..] => (changed, rest) = (Some("main"), after),
+            _ => break,
+        }
     }
-    c.args(test_args);
-    run(c, if heavy { "heavy tests" } else { "tests" })
+    let (cargo_args, test_args) = rest.iter().position(|a| *a == "--").map_or((rest, &[][..]), |i| (&rest[..i], &rest[i + 1..]));
+    let packages: Vec<String> = match changed.map(changed_packages).transpose()? {
+        None | Some(changed::Affected::All) => vec!["--workspace".into()],
+        Some(changed::Affected::Some(names)) if names.is_empty() => {
+            println!("tests: nothing changed that a test builds from");
+            return Ok(());
+        }
+        Some(changed::Affected::Some(names)) => {
+            println!("tests: {}", names.iter().cloned().collect::<Vec<_>>().join(", "));
+            names.into_iter().flat_map(|n| ["-p".into(), n]).collect()
+        }
+    };
+    let what = if heavy { "heavy tests" } else { "tests" };
+    if !nextest() {
+        let mut c = cargo();
+        c.args(["test"]).args(&packages).args(cargo_args).arg("--");
+        if heavy {
+            c.arg("--ignored");
+        }
+        c.args(test_args);
+        return run(c, what);
+    }
+    let mut c = cargo();
+    c.args(["nextest", "run", "--no-tests", "pass"]).args(&packages).args(cargo_args);
+    if heavy {
+        c.args(["--run-ignored", "only"]);
+    }
+    c.arg("--").args(test_args);
+    run(c, what)?;
+    // nextest leaves the doctests out; the heavy ones are none of them.
+    if heavy {
+        return Ok(());
+    }
+    let mut doc = cargo();
+    doc.args(["test", "--doc"]).args(&packages).args(cargo_args).arg("--").args(test_args);
+    run(doc, "doctests")
+}
+
+/// Whether cargo-nextest is installed.
+fn nextest() -> bool {
+    cargo().args(["nextest", "--version"]).output().is_ok_and(|o| o.status.success())
+}
+
+/// The packages the files changed since `base` (its merge base with HEAD: commits, the working
+/// tree and untracked files) touch.
+fn changed_packages(base: &str) -> Result<changed::Affected, String> {
+    let git = |args: &[&str]| -> Result<String, String> {
+        let out = Command::new("git").args(args).current_dir(root()).output().map_err(|e| format!("git: {e}"))?;
+        if !out.status.success() {
+            return Err(format!("git {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let from = git(&["merge-base", base, "HEAD"])?;
+    let mut files: Vec<String> = git(&["diff", "--name-only", from.trim()])?.lines().map(str::to_owned).collect();
+    files.extend(git(&["ls-files", "--others", "--exclude-standard"])?.lines().map(str::to_owned));
+    let out = cargo().args(["metadata", "--format-version", "1", "--no-deps"]).output().map_err(|e| format!("cargo metadata: {e}"))?;
+    let meta: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("cargo metadata: {e}"))?;
+    let root = meta["workspace_root"].as_str().map(PathBuf::from).unwrap_or_else(root);
+    changed::affected(&meta, &root, &files)
 }
 
 fn cmd_features() -> Result<(), String> {
