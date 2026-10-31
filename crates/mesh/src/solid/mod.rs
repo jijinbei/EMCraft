@@ -756,7 +756,7 @@ mod tests {
             axis: Axis::Z,
         })
         .unwrap();
-        let v: f64 = crate::volumes(&solid(&w, metres(0.003)).unwrap()).iter().sum();
+        let v: f64 = crate::volumes(&solid(&w, metres(0.005)).unwrap()).iter().sum();
         let exact = a * b * l + (0.03 - a) * b * 0.01;
         assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
     }
