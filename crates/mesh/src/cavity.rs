@@ -80,7 +80,7 @@ pub fn cavity(bodies: &[(String, Surface)], keep: Keep) -> Result<Cavity> {
     // Moved faces end up outside the air whatever the step; a small one cannot reach through a
     // thin wall into air beyond it. Faces within a millionth of the part's size are flush: well
     // above the bodies' moves below.
-    let gaps = Gaps { step: 1e-4 * scale, flush: 1e-6 * scale, near: 0.0, mm: 1e3 };
+    let gaps = Gaps { step: 1e-4 * scale, flush: 1e-6 * scale, mm: 1e3 };
     let mut air = bounding_box(Point3::from(lo), Point3::from(hi));
     for (k, (name, body)) in bodies.iter().enumerate() {
         let positions = moved(name, body.into(), (&air).into(), Combine::Subtract, gaps)?;

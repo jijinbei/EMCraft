@@ -9,17 +9,23 @@
 //! bending of edges onto curved surfaces in `curved`; here the regions are meshed until their
 //! interfaces agree and joined.
 
+mod combine;
 mod curved;
+mod grid;
 mod mesher;
+mod narrow;
 mod tessellation;
 
 use emcraft_model::{Aabb, Boundary, BoundaryFace, Buckets, Mesh, Metres, Model, Point3, Shape, SphericalLayer, Vec3, positive};
 use emcraft_tetmesh::size::{LocalSize, Region};
 
 use crate::{MeshError, Result, too_large};
+use combine::combined;
 use curved::bend;
 use mesher::{RegionFace, RegionMesh, mesher_point, region};
-use tessellation::{Tessellation, append, combined, extract, interface_size, joined, placed, same_triangles, tessellate};
+use tessellation::{
+    Tessellation, append, body_planes, extract, grid_axes, interface_size, joined, merged_planes, placed, same_triangles, tessellate,
+};
 
 /// The model's solid meshed with tetrahedra of about `size`: its end faces (box z0/z1, the
 /// cylinder's caps) tagged as ports 0 and 1, the rest as conducting walls. Inclusions make holes
@@ -160,7 +166,7 @@ fn spherical_layer(model: &Model) -> Result<Option<SphericalLayer>> {
 pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     let SolidOptions { sizes, curved, refine } = options;
     let curved = *curved;
-    let locals = local_sizes(refine)?;
+    let mut locals = local_sizes(refine)?;
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
     let size = sizes.of(material).get();
@@ -182,8 +188,15 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     if !refine.is_empty() {
         too_large(estimate + refined_estimate(&main.positions, size, refine))?;
     }
-    for (k, f) in joined(&model.features, &s.shape, size)?.iter().enumerate() {
-        main = combined(main, f, k, &s.shape, size)?;
+    let features = joined(&model.features, &s.shape, size)?;
+    if !features.is_empty() {
+        main = combine_all(main, &features, &s.shape, size)?;
+    }
+    // Gaps narrower than a tenth of the size filled with elements as small as they are.
+    let (gaps, gap_tets) = narrow::gap_sizes(&main, size, combine::gaps(size).flush)?;
+    if !gaps.is_empty() {
+        too_large(estimate + gap_tets)?;
+        locals.extend(gaps);
     }
     let body = Body { model, shape: &s.shape, material: material as u32, size, inner_size, locals, shell: layer.is_some() };
     let regions = body.regions(main)?;
@@ -194,6 +207,18 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     crate::check_tetrahedra(&mesh)?;
     mesh.buckets = Some(buckets(&mesh));
     Ok(mesh)
+}
+
+/// The solid's tessellation combined with each feature in turn, every body's grid lines kept
+/// off the other bodies' planes first (`grid`).
+fn combine_all(mut main: Tessellation, features: &[emcraft_model::Feature], solid: &Shape, size: f64) -> Result<Tessellation> {
+    let (own, planes) = body_planes(features, solid, size);
+    grid::keep_off(&mut main.positions, grid_axes(solid, emcraft_model::Axis::Z), &merged_planes(&planes), grid::NEAR * size);
+    for (k, f) in features.iter().enumerate() {
+        let others = merged_planes(std::iter::once(&own).chain(planes.iter().enumerate().filter(|(j, _)| *j != k).map(|(_, p)| p)));
+        main = combined(main, f, k, solid, size, &others)?;
+    }
+    Ok(main)
 }
 
 /// What a solid is meshed from: the model (its inclusions), the solid's shape, material and
@@ -720,7 +745,8 @@ mod tests {
         // Exact but for the features' shift by a millionth of the element size (1e-9 m here,
         // over the stub's 80 mm² foot).
         assert!((v - (a * b * l + 0.008 * 0.006 * 0.01)).abs() < 1e-7 * v, "{v}");
-        // Flush faces of a union reaching past the solid's face are refused, not guessed.
+        // A union flush with both broad walls, reaching out past a side wall: grown past the
+        // broad walls' planes, united and cut back at them (`crate::clip`), exactly.
         let mut w = Model::new();
         w.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
         w.add_feature(Feature {
@@ -730,7 +756,9 @@ mod tests {
             axis: Axis::Z,
         })
         .unwrap();
-        assert!(solid(&w, metres(0.003)).is_err());
+        let v: f64 = crate::volumes(&solid(&w, metres(0.003)).unwrap()).iter().sum();
+        let exact = a * b * l + (0.03 - a) * b * 0.01;
+        assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
     }
 
     /// A union flush with the solid's faces from inside, its faces within theirs: the solid's
@@ -755,6 +783,134 @@ mod tests {
             let exact = a * b * l + 0.008 * extra * 0.01;
             assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
         }
+    }
+
+    /// The area of the faces tagged as port `k`.
+    fn port_area(mesh: &Mesh, k: u32) -> f64 {
+        mesh.boundary.iter().filter(|f| f.tag == Boundary::Port(k)).map(|f| area(mesh, f)).sum()
+    }
+
+    /// Regression: a stub on WR-90's broad wall with its sides in the guide's side walls (an
+    /// E-plane tee of two boxes) was refused ("a union whose face is flush with the solid's and
+    /// reaches past the solid's face"); so was a box carrying the guide on past its end. Both lie
+    /// behind the side walls' planes, so they are grown past them, united and cut back there
+    /// (`crate::clip`): the volume is exact and the ports whole.
+    #[test]
+    fn unions_sharing_the_walls_planes_unite_exactly() {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.04);
+        let guide = || {
+            let mut m = Model::new();
+            m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
+            m
+        };
+        let mut tee = guide();
+        tee.add_feature(Feature {
+            combine: Combine::Add,
+            shape: Shape::Box { size: box_size(Vec3::new(a, 0.01, 0.01)) },
+            at: Point3::new(0.0, b, 0.015),
+            axis: Axis::Z,
+        })
+        .unwrap();
+        let mesh = solid(&tee, metres(0.004)).unwrap();
+        let v: f64 = crate::volumes(&mesh).iter().sum();
+        // Exact but for the stub's shift by a millionth of the element size.
+        let exact = a * b * l + a * 0.01 * 0.01;
+        assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
+        assert!((port_area(&mesh, 0) - a * b).abs() < 1e-12 && (port_area(&mesh, 1) - a * b).abs() < 1e-12);
+        // Carried on past the end: the end face is inside now, so no port 1 is left there.
+        let mut longer = guide();
+        longer
+            .add_feature(Feature {
+                combine: Combine::Add,
+                shape: Shape::Box { size: box_size(Vec3::new(a, b, 0.01)) },
+                at: Point3::new(0.0, 0.0, l),
+                axis: Axis::Z,
+            })
+            .unwrap();
+        let mesh = solid(&longer, metres(0.004)).unwrap();
+        let v: f64 = crate::volumes(&mesh).iter().sum();
+        assert!((v - a * b * (l + 0.01)).abs() < 1e-7 * v, "{v}");
+        assert!((port_area(&mesh, 0) - a * b).abs() < 1e-12 && port_area(&mesh, 1) == 0.0);
+        // An L-shaped prism region with a stub on its arm's end against the side wall x = 0:
+        // grown past x = 0 and z = 0 and cut back.
+        let prism_with = |outline: &[[f64; 2]], at: [f64; 2]| {
+            let mut m = Model::new();
+            m.set_solid(Solid { shape: Shape::prism(outline, metres(0.01)).unwrap(), material: "vacuum".into() }).unwrap();
+            m.add_feature(Feature {
+                combine: Combine::Add,
+                shape: Shape::Box { size: box_size(Vec3::new(0.01, 0.01, 0.005)) },
+                at: Point3::new(at[0], at[1], 0.0),
+                axis: Axis::Z,
+            })
+            .unwrap();
+            m
+        };
+        let ell = [[0.0, 0.0], [0.03, 0.0], [0.03, 0.03], [0.02, 0.03], [0.02, 0.01], [0.0, 0.01]];
+        let v: f64 = crate::volumes(&solid(&prism_with(&ell, [0.0, 0.01]), metres(0.004)).unwrap()).iter().sum();
+        let exact = 0.03 * 0.01 * 0.01 + 0.01 * 0.02 * 0.01 + 0.01 * 0.01 * 0.005;
+        assert!((v - exact).abs() < 1e-6 * exact, "{v} {exact}");
+        // A stub whose side lies in a wall's plane where the region reaches past that plane
+        // elsewhere (the notch's wall x = 10 mm, the region going on to x = 0 below it): no
+        // plane bounds both and no move keeps the union; refused, saying why.
+        let notched = [[0.0, 0.0], [0.03, 0.0], [0.03, 0.02], [0.01, 0.02], [0.01, 0.01], [0.0, 0.01]];
+        let e = solid(&prism_with(&notched, [0.01, 0.02]), metres(0.004)).unwrap_err().to_string();
+        assert!(e.contains("not supported yet") && e.contains("prism"), "{e}");
+    }
+
+    /// Regression: an iris plate against three walls of WR-90 meshed at 4 mm, its face at
+    /// z = 20 mm on a grid line of the guide's walls (divided every 4 mm), crossed the walls a
+    /// millionth of the size from that line; boundary recovery found the slivers' points on
+    /// another edge ("the surface is not a valid complex"). The walls' grid line is now moved off
+    /// the plate's plane first (`grid`): the volume is exact and the ports whole.
+    #[test]
+    fn a_face_on_a_wall_grid_line_meshes() {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.04);
+        for (y, h) in [(0.0, 0.00483), (0.00533, b - 0.00533)] {
+            let mut m = Model::new();
+            m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(a, b, l)) }, material: "vacuum".into() }).unwrap();
+            m.add_feature(Feature {
+                combine: Combine::Subtract,
+                shape: Shape::Box { size: box_size(Vec3::new(a, h, 0.001)) },
+                at: Point3::new(0.0, y, 0.02),
+                axis: Axis::Z,
+            })
+            .unwrap();
+            let mesh = solid(&m, metres(0.004)).unwrap();
+            let v: f64 = crate::volumes(&mesh).iter().sum();
+            let exact = a * b * l - a * h * 0.001;
+            assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
+            assert!((port_area(&mesh, 0) - a * b).abs() < 1e-12 && (port_area(&mesh, 1) - a * b).abs() < 1e-12);
+        }
+    }
+
+    /// Regression: a post from floor to roof of a prism solid (an imported region) was combined
+    /// with its caps a millionth of the size from the floor and roof — `feature_body` knows only
+    /// a box's and a cylinder's faces — leaving slivers the mesher filled with some 90 000
+    /// tetrahedra over a minute and a half. Its caps now move out of the walls as an imported
+    /// body's do: a few thousand tetrahedra, the volume that of the post's facets.
+    #[test]
+    fn a_post_across_a_prism_solid_moves_out_of_its_walls() {
+        use emcraft_model::Feature;
+        let (a, b, l, r) = (0.02286, 0.01016, 0.04, 0.001);
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::prism(&[[0.0, 0.0], [l, 0.0], [l, a], [0.0, a]], metres(b)).unwrap(), material: "vacuum".into() }).unwrap();
+        m.add_feature(Feature {
+            combine: Combine::Subtract,
+            shape: Shape::Cylinder { radius: metres(r), length: metres(b) },
+            at: Point3::new(0.02, a / 2.0, 0.0),
+            axis: Axis::Z,
+        })
+        .unwrap();
+        let mesh = solid(&m, metres(0.004)).unwrap();
+        assert!(mesh.tets.len() < 20_000, "{}", mesh.tets.len());
+        let v: f64 = crate::volumes(&mesh).iter().sum();
+        // The hole between the post's 12 inscribed facets and its circle (the curved elements'
+        // edges bent onto it): the post reaches from wall to wall, no sliver left.
+        let (facets, circle) = (0.5 * 12.0 * r * r * (2.0 * PI / 12.0).sin() * b, PI * r * r * b);
+        let hole = a * b * l - v;
+        assert!(hole > facets * (1.0 - 1e-9) && hole < circle, "{hole} {facets} {circle}");
     }
 
     /// An imported ramp (a wedge across the guide) standing on the floor and against both side
@@ -821,13 +977,50 @@ mod tests {
             let port = |k: u32| mesh.boundary.iter().filter(|f| f.tag == Boundary::Port(k)).map(|f| area(&mesh, f)).sum::<f64>();
             assert!((port(0) - a * b).abs() < 1e-12 && (port(1) - a * b).abs() < 1e-12);
         }
-        // A plate a micrometre off the wall leaves a gap no mesh resolves: refused at once.
+        // A plate a micrometre off the wall leaves a gap no element fits (a sixtieth of the
+        // mesher's smallest size): refused at once, naming the gap.
+        let start = std::time::Instant::now();
+        let e = solid(&plate_off_the_wall(1e-6), metres(0.003)).unwrap_err().to_string();
+        assert!(e.contains("a gap 0.0010 mm wide") && e.contains("flat"), "{e}");
+        assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+    }
+
+    /// WR-90, 32 mm long, less an imported iris plate 2 mm thick against both broad walls,
+    /// `gap` (m) off the side wall x = 0.
+    fn plate_off_the_wall(gap: f64) -> Model {
+        use emcraft_model::Feature;
+        let (a, b, l) = (0.02286, 0.01016, 0.032);
         let mut m = Model::new();
         m.set_solid(Solid { shape: imported_box("Guide", [0.0; 3], [a, b, l]), material: "vacuum".into() }).unwrap();
-        let shape = imported_box("Iris", [1e-6, 0.0, 0.015], [0.00543, b, 0.017]);
+        let shape = imported_box("Iris", [gap, 0.0, 0.015], [0.00543, b, 0.017]);
         m.add_feature(Feature { combine: Combine::Subtract, shape, at: Point3::ORIGIN, axis: Axis::Z }).unwrap();
-        let e = solid(&m, metres(0.003)).unwrap_err().to_string();
-        assert!(e.contains("gap narrower"), "{e}");
+        m
+    }
+
+    /// Regression: a face closer than a tenth of the element size to a parallel one was refused
+    /// ("a gap narrower than … is not meshed"). Now the gap is filled with elements about as
+    /// wide as it is (`narrow`): the plate 0.2 mm off the side wall at 3 mm meshes, its volume
+    /// exact and the gap's elements small.
+    #[test]
+    fn a_narrow_gap_is_filled_with_small_elements() {
+        let (b, gap) = (0.01016, 0.0002);
+        let mesh = solid(&plate_off_the_wall(gap), metres(0.003)).unwrap();
+        let v: f64 = crate::volumes(&mesh).iter().sum();
+        let exact = 0.02286 * b * 0.032 - (0.00543 - gap) * b * 0.002;
+        assert!((v - exact).abs() < 1e-7 * exact, "{v} {exact}");
+        // Every tetrahedron in the gap (its centroid there, away from its ends) no longer than a
+        // few gap widths; at the uniform size they would be ten times that.
+        let longest = mesh
+            .tets
+            .iter()
+            .map(|t| t.map(|n| mesh.nodes[n as usize]))
+            .filter(|p| {
+                let c = (0..3).map(|k| p.iter().map(|q| q[k]).sum::<f64>() / 4.0).collect::<Vec<_>>();
+                c[0] < gap && c[2] > 0.0152 && c[2] < 0.0168 && c[1] > 0.0005 && c[1] < b - 0.0005
+            })
+            .map(|p| (0..4).flat_map(|i| (i + 1..4).map(move |j| (i, j))).map(|(i, j)| p[i].distance(p[j])).fold(0.0, f64::max))
+            .fold(0.0, f64::max);
+        assert!(longest > 0.0 && longest < 6.0 * gap, "{longest}");
     }
 
     /// A coaxial line's inner conductor in two pieces meeting end to end: the solid (radius
@@ -856,10 +1049,7 @@ mod tests {
     fn nearly_touching_boundaries_stop_quickly() {
         let (m, size) = (stepped_coax(0.001), 0.0015);
         let s = m.solid.as_ref().unwrap();
-        let mut main = tessellate(&s.shape, size);
-        for (k, f) in m.features.iter().enumerate() {
-            main = combined(main, f, k, &s.shape, size).unwrap();
-        }
+        let main = combine_all(tessellate(&s.shape, size), &m.features, &s.shape, size).unwrap();
         let start = std::time::Instant::now();
         let e = region(&main, size, Vec::new(), &[]).err().expect("nearly touching boundaries are refused");
         assert!(e.to_string().contains("nearly touch"), "{e}");
