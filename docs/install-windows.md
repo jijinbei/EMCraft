@@ -116,14 +116,14 @@ that release) or by hand (`workflow_dispatch`: the installer is the run's
 
 | Check | How | Last result (2026-10-31, 0.1.0) |
 |---|---|---|
-| Cross build, lints | `cargo xtask installer-windows`; `cargo clippy --release --target x86_64-pc-windows-gnu -p emcraft -p emcraft-cli -- -D warnings` with MinGW's GCC as `CC` | builds, no warnings; installer 23.6 MB (`emcraft.exe` 42 MB, `emcraft-cli.exe` 35 MB) |
+| Cross build, lints | `cargo xtask installer-windows`; `cargo clippy --release --target x86_64-pc-windows-gnu -p emcraft -p emcraft-cli -- -D warnings` with MinGW's GCC as `CC` | builds (2026-11-01, with wgpu: DirectX 12, Vulkan and GL backends); installer 25.3 MB (`emcraft.exe` 47.7 MB, `emcraft-cli.exe` 34.5 MB) |
 | CLI | Wine 10 on Linux (Nix's `wineWow64Packages.stable`): `emcraft-cli commands`, `run` on an eigenmode script, `sample highpass --out DIR` | all run; the sample's worst \|S − S_exact\| = 1.0e-3, its pictures written |
 | Installer | Wine: `setup.exe /S`, the `.emcraft` association in the registry, `uninstall.exe /S` | installs to `%LOCALAPPDATA%\Programs\EMCraft`, association set, uninstall removes both |
-| Window | Wine on Xvfb with Mesa's software OpenGL (llvmpipe): `emcraft --sample highpass --control PORT`, then `ui.inspect` and `ui.render` over the control channel | the window opens, solves the sample (about 10 s), draws its S-parameters |
+| Window | Wine 10 on Xvfb (2026-11-01): `emcraft --sample highpass --control PORT`, then `ui.inspect`, `ui.render` and `ui.screenshot` over the control channel; Vulkan through Nix's loader and Mesa's lavapipe (`VK_ICD_FILENAMES`, `LD_LIBRARY_PATH`), Mono and Gecko off (`WINEDLLOVERRIDES=mscoree,mshtml=`) | with lavapipe: the window opens on wgpu, the 3D view drawn by its GPU (`view3d.renderer: gpu`, adapter `llvmpipe (Vulkan)`), the screenshot and `ui.render` alike; without Vulkan: wgpu finds no surface and the app tries OpenGL (`the window cannot draw with wgpu …; trying OpenGL`), which this Xvfb lacks too, so it reports and exits |
 | Install and run on Windows | the release workflow's `smoke` job on `windows-latest` | each tagged or hand-started run |
 
 What only a real Windows machine shows: SmartScreen and code signing; the window on real graphics
-drivers (OpenGL 2 on Intel, AMD, NVIDIA; HiDPI scaling; a remote desktop); the system's file
+drivers (DirectX 12, Vulkan or OpenGL on Intel, AMD, NVIDIA; WARP; HiDPI scaling; a remote desktop); the system's file
 dialogs and fonts as Windows draws them; opening a `.emcraft` file from Explorer; GPU kernels
 (not in this build).
 

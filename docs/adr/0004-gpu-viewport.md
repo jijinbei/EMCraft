@@ -99,7 +99,7 @@ lines here (`gpu3d`: packing, projection, five passes, three small WGSL shaders)
 
 | Option | Licence | Size | What we would still write | Our look (shading, lines on faces) | Windows (MinGW cross build) |
 |---|---|---|---|---|---|
-| **wgpu offscreen + paint callback (chosen)** | MIT OR Apache-2.0 | +7 MB (Linux, stripped) | everything above, once; no `unsafe` | ours by construction: the camera's projection, our shading, line width and nudge, checked against known answers | builds (`cargo xtask installer-windows`); DirectX 12, Vulkan, GL |
+| **wgpu offscreen + paint callback (chosen)** | MIT OR Apache-2.0 | +4.6 MB (Linux), +5.7 MB (Windows) | everything above, once; no `unsafe` | ours by construction: the camera's projection, our shading, line width and nudge, checked against known answers | builds (`cargo xtask installer-windows`); DirectX 12, Vulkan, GL |
 | glow paint callback with a depth buffer (eframe's current backend) | MIT OR Apache-2.0 | +0 | the same, in GLSL | the same | builds |
 | `three-d` 0.19 (glow, egui integration) | MIT | +1–2 MB | the scene's packing, see-through ordering (it blends in draw order, no OIT), wide lines with the nudge (its lines are meshes), our shading as a custom material, caps, colour maps, picking | only after matching its materials to our shading | builds (glow) |
 | `truck-platform` / `truck-rendimpl` (wgpu) | Apache-2.0 | wgpu and more | caps, lines, transparency, colour maps, picking; it draws B-rep shapes and polygon meshes with its own lighting | no: its own PBR-like shading | as wgpu; not in our tree (SolidCraft brings only truck's kernel crates) |
@@ -141,13 +141,17 @@ read from its manifest; no other licence than MIT, Apache-2.0 or both:
 
 ## Binary size and drivers
 
-- The Linux release binary grows from 23.1 MB to 30.4 MB (`cargo build --release -p emcraft`,
-  stripped, fat LTO); the Windows one similarly (the DirectX 12 and Vulkan backends).
+- Measured 2026-11-01, `cargo build --release -p emcraft` (stripped, fat LTO): the Linux binary
+  grows from 101.9 MB (main, glow only; most of it CubeCL's CUDA runtime and LLVM) to 106.5 MB
+  (+4.6 MB: wgpu, naga, the Vulkan and GL backends, the renderer). The Windows build
+  (`cargo xtask installer-windows`, MinGW): `emcraft.exe` 42 MB → 47.7 MB (DirectX 12, Vulkan
+  and GL), the installer 23.6 MB → 25.3 MB.
 - **Linux:** wgpu prefers Vulkan (Mesa's drivers, NVIDIA's, lavapipe in software), then OpenGL
   ES 3 through EGL. A machine with only OpenGL 2 opens the window with glow.
 - **Windows:** wgpu prefers DirectX 12 (Windows 10 and later), then Vulkan, then OpenGL through
   WGL. The installer's build is cross-compiled for `x86_64-pc-windows-gnu` with MinGW-w64 and
   builds with the wgpu backends (`cargo xtask installer-windows`). DirectX 12 compiles shaders
-  with FXC (`d3dcompiler_47.dll`, part of Windows). Under Wine without a GPU, wgpu finds no
-  adapter and the window opens with glow (or reports, as before, when there is no OpenGL).
+  with FXC (`d3dcompiler_47.dll`, part of Windows); WARP is the software adapter where there is
+  no GPU. Under Wine with Mesa's lavapipe the window opens on wgpu and draws the view on it
+  (docs/install-windows.md); without Vulkan the app falls back to OpenGL as above.
 - **macOS:** Metal (not built or shipped today).
