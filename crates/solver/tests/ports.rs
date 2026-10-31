@@ -331,6 +331,34 @@ fn a_fast_sweep_matches_the_full_one() {
 }
 
 #[test]
+fn a_fast_sweep_reports_its_full_solves_and_residuals() {
+    use emcraft_solver::SolveError;
+    use emcraft_solver::sweep::{SweepStep, fast_sweep, fast_sweep_each};
+    let d = Driven::new(&guide(&FILTER, 0.004, 4), Order::One).unwrap();
+    let freqs: Vec<f64> = (0..11).map(|i| 5e9 + 4e9 * i as f64 / 10.0).collect();
+    let o = Default::default();
+    let mut steps: Vec<SweepStep> = Vec::new();
+    let fast = fast_sweep_each::<SolveError>(&d, &freqs, &o, |s| {
+        steps.push(s);
+        Ok(())
+    })
+    .unwrap();
+    let solved = fast.full.iter().filter(|f| **f).count();
+    // Every step: the cap, the count of full solves never falling and never past what was made.
+    assert!(steps.iter().all(|s| s.max_full == 11 && s.tolerance == 1e-4 && s.full <= solved));
+    assert!(steps.windows(2).all(|w| w[0].full <= w[1].full));
+    // The ends first (no residual yet), then passes in the basis that report the last residual.
+    assert_eq!((steps[0].full, steps[0].residual), (0, None));
+    assert!(steps.iter().any(|s| s.pass_total == 11 - 2 && s.pass_done == 0));
+    let last = steps.last().unwrap();
+    assert!(last.full == solved && last.residual.is_some_and(|r| r > 0.0), "{last:?}");
+    // The same results as without the reports, and a refusal from `each` stops the sweep.
+    let plain = fast_sweep(&d, &freqs, &o).unwrap();
+    assert_eq!(plain.full, fast.full);
+    assert!(fast_sweep_each(&d, &freqs, &o, |s| if s.full >= 2 { Err(SolveError::NotReady("stop".into())) } else { Ok(()) }).is_err());
+}
+
+#[test]
 #[ignore = "benchmark: cargo test --release -p emcraft-solver --test ports factor_benchmark -- --ignored --nocapture"]
 fn factor_benchmark() {
     // The coaxial line's system at 3 GHz, factored five times: the fastest numeric factorization.

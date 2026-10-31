@@ -24,6 +24,10 @@ pub struct Progress {
     cancel: AtomicBool,
     done: AtomicU64,
     total: AtomicU64,
+    /// Whether `total` is only a cap ([`report_open`]).
+    open: AtomicBool,
+    /// The last residual's bits ([`f64::to_bits`]; NaN for none).
+    residual: AtomicU64,
     stage: Mutex<String>,
 }
 
@@ -35,12 +39,17 @@ pub struct Snapshot {
     pub total: u64,
     pub stage: String,
     pub cancelled: bool,
+    /// Whether how much work there is is not known: `total` is only the most there may be (a
+    /// fast sweep's full solves, added until its residuals are small).
+    pub open: bool,
+    /// The worst residual the work reported last (a fast sweep's), when it reports one.
+    pub residual: Option<f64>,
 }
 
 impl Snapshot {
-    /// The share done, when the total is known.
+    /// The share done, when the total is known (not for [`Snapshot::open`] work).
     pub fn fraction(&self) -> Option<f64> {
-        (self.total > 0).then(|| (self.done as f64 / self.total as f64).clamp(0.0, 1.0))
+        (self.total > 0 && !self.open).then(|| (self.done as f64 / self.total as f64).clamp(0.0, 1.0))
     }
 }
 
@@ -64,12 +73,21 @@ impl Progress {
             total: self.total.load(Ordering::Relaxed),
             stage: self.stage.lock().map(|s| s.clone()).unwrap_or_default(),
             cancelled: self.cancelled(),
+            open: self.open.load(Ordering::Relaxed),
+            // Only open work reports one (the default bits read 0.0).
+            residual: Some(f64::from_bits(self.residual.load(Ordering::Relaxed))).filter(|r| r.is_finite() && self.open.load(Ordering::Relaxed)),
         }
     }
 
     fn set(&self, done: usize, total: usize, stage: &str) {
+        self.set_open(done, total, stage, false, None);
+    }
+
+    fn set_open(&self, done: usize, total: usize, stage: &str, open: bool, residual: Option<f64>) {
         self.done.store(done as u64, Ordering::Relaxed);
         self.total.store(total as u64, Ordering::Relaxed);
+        self.open.store(open, Ordering::Relaxed);
+        self.residual.store(residual.filter(|r| r.is_finite()).unwrap_or(f64::NAN).to_bits(), Ordering::Relaxed);
         if let Ok(mut s) = self.stage.lock() {
             s.clear();
             s.extend(stage.chars().take(200));
@@ -139,6 +157,34 @@ pub fn report(done: usize, total: usize, stage: &str) -> Result<()> {
     })
 }
 
+/// Records that `done` steps of `stage` are finished where how many there will be is not known,
+/// `cap` the most there may be, with the work's last `residual` (a fast sweep: its full solves,
+/// at most its cap, added while the residual is above the tolerance); an error once the work
+/// was cancelled. Its [`Snapshot::fraction`] is `None`: a bar of it is indeterminate.
+///
+/// ```
+/// use emcraft_engine::progress::{Progress, report_open, scope};
+/// let p = Progress::new();
+/// scope(p.clone(), || report_open(3, 64, "fast sweep", Some(2e-2))).unwrap();
+/// let s = p.snapshot();
+/// assert_eq!((s.done, s.total, s.open, s.residual), (3, 64, true, Some(2e-2)));
+/// assert_eq!(s.fraction(), None);
+/// ```
+pub fn report_open(done: usize, cap: usize, stage: &str, residual: Option<f64>) -> Result<()> {
+    CURRENT.with(|c| match c.borrow().as_ref() {
+        Some(p) if p.cancelled() => Err(EngineError::Cancelled),
+        Some(p) => {
+            match OUTER.with(|o| o.borrow().clone()) {
+                // Inside an outer step: the step's start, the inner work's share not known.
+                Some((i, n, outer)) => p.set(i.saturating_mul(1000), n.saturating_mul(1000), &format!("{outer}: {stage}")),
+                None => p.set_open(done, cap, stage, true, residual),
+            }
+            Ok(())
+        }
+        None => Ok(()),
+    })
+}
+
 /// An error once the work was cancelled.
 pub fn check() -> Result<()> {
     CURRENT.with(|c| match c.borrow().as_ref() {
@@ -197,6 +243,24 @@ mod tests {
         let r = scope(p, || s.execute("solve.frequency", &serde_json::json!({"start": 8, "stop": 9, "points": 3, "order": 1})));
         assert_eq!(r, Err(EngineError::Cancelled));
         assert!(s.results.sweep.is_none());
+    }
+
+    /// A fast sweep's reports carry its count of full solves (open: how many is not known in
+    /// advance), its cap and the residual of its last pass; its share is not said.
+    #[test]
+    fn a_fast_sweep_reports_its_full_solves() {
+        let mut s = crate::Session::new();
+        s.execute("file.sample", &serde_json::json!({"name": "highpass"})).unwrap();
+        let p = Progress::new();
+        let r = scope(p.clone(), || s.execute("solve.frequency", &serde_json::json!({"start": 6, "stop": 9, "points": 9, "order": 1}))).unwrap();
+        let snap = p.snapshot();
+        assert_eq!((snap.stage.as_str(), snap.open, snap.total), ("fast sweep", true, 9));
+        assert_eq!(snap.done, r["solved_in_full"].as_u64().unwrap());
+        assert!(snap.done > 2 && snap.residual.is_some_and(|x| x > 0.0), "{snap:?}");
+        assert_eq!(snap.fraction(), None);
+        // A plain report after it is a counted one again.
+        scope(p.clone(), || report(1, 4, "frequency")).unwrap();
+        assert_eq!((p.snapshot().open, p.snapshot().residual, p.snapshot().fraction()), (false, None, Some(0.25)));
     }
 
     /// A script cancelled at any step is cancelled, not failed at that step.

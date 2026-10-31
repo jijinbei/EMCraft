@@ -122,24 +122,72 @@ impl Basis {
     }
 }
 
+/// How far a fast sweep is, as [`fast_sweep_each`] reports it. Its full solves are not known in
+/// advance (they are added until every residual is small): it says how many are done, the most
+/// it may make, how far the pass in the basis is, and the worst residual of the last pass.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SweepStep {
+    /// Frequencies solved in full so far.
+    pub full: usize,
+    /// The most that may be solved in full ([`SweepOptions::max_solves`], at most the frequencies).
+    pub max_full: usize,
+    /// Frequencies of the current pass solved in the basis so far, of `pass_total` (0 between
+    /// passes).
+    pub pass_done: usize,
+    pub pass_total: usize,
+    /// The worst relative residual of the last finished pass (`None` before the first).
+    pub residual: Option<f64>,
+    /// The residual every frequency must reach.
+    pub tolerance: f64,
+}
+
 /// Solves `d` at `frequencies` (Hz) by the reduced-basis sweep: the lowest and highest in full,
 /// then the worst-resolved one in full until every residual is within `o.tolerance`.
 pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<FastSweep> {
+    fast_sweep_each(d, frequencies, o, |_| Ok(()))
+}
+
+/// [`fast_sweep`], calling `each` before every full solve and every frequency solved in the
+/// basis with how far the sweep is; an error from `each` (a cancel) stops it there.
+pub fn fast_sweep_each<E>(
+    d: &Driven,
+    frequencies: &[f64],
+    o: &SweepOptions,
+    mut each: impl FnMut(SweepStep) -> std::result::Result<(), E>,
+) -> std::result::Result<FastSweep, E>
+where
+    E: From<crate::driven::SolveError>,
+{
     for &f in frequencies {
         check_frequency(f)?;
     }
     if !(o.tolerance.is_finite() && o.tolerance > 0.0) || o.max_solves < 2 {
-        return Err(invalid("sweep options", "the tolerance must be > 0 and at least two frequencies solved in full"));
+        return Err(invalid("sweep options", "the tolerance must be > 0 and at least two frequencies solved in full").into());
     }
     let nf = frequencies.len();
+    let max_full = o.max_solves.min(nf);
+    let step = |full: usize, pass_done: usize, pass_total: usize, residual: Option<f64>| SweepStep {
+        full,
+        max_full,
+        pass_done,
+        pass_total,
+        residual,
+        tolerance: o.tolerance,
+    };
     // A periodic cell's phases change with the frequency (and its system is not symmetric):
     // not supported yet in the reduced basis, so each frequency is solved in full.
     if d.tie.is_some() {
-        let results = frequencies.iter().map(|f| d.solve(*f)).collect::<Result<Vec<_>>>()?;
+        let mut results = Vec::with_capacity(nf);
+        for (k, f) in frequencies.iter().enumerate() {
+            each(SweepStep { max_full: nf, ..step(k, 0, 0, None) })?;
+            results.push(d.solve(*f)?);
+        }
         return Ok(FastSweep { results, full: vec![true; nf], basis: 0, worst_residual: 0.0 });
     }
     let mut results: Vec<Option<FrequencyResult>> = vec![None; nf];
     let mut full = vec![false; nf];
+    let mut solved = 0;
+    let mut last: Option<f64> = None;
     let mut basis = Basis { v: Vec::new(), kv: Vec::new(), mv: Vec::new(), wv: Vec::new(), dv: Vec::new() };
     let solve_full = |i: usize, basis: &mut Basis, results: &mut Vec<Option<FrequencyResult>>, full: &mut Vec<bool>| -> Result<()> {
         let r = d.solve(frequencies[i])?;
@@ -155,16 +203,19 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
     let (Some(lo), Some(hi)) = ((0..nf).min_by(by), (0..nf).max_by(by)) else {
         return Ok(FastSweep { results: Vec::new(), full, basis: 0, worst_residual: 0.0 });
     };
-    solve_full(lo, &mut basis, &mut results, &mut full)?;
-    if hi != lo {
-        solve_full(hi, &mut basis, &mut results, &mut full)?;
+    for i in if hi != lo { vec![lo, hi] } else { vec![lo] } {
+        each(step(solved, 0, 0, None))?;
+        solve_full(i, &mut basis, &mut results, &mut full)?;
+        solved += 1;
     }
     // The ports' terms at each frequency do not depend on the basis: made once.
     let mut terms: Vec<Option<Vec<Vec<PortTerm<'_>>>>> = (0..nf).map(|_| None).collect();
     let worst_residual = loop {
         // Every frequency not solved in full, in the basis.
         let mut worst: Option<(usize, f64)> = None;
-        for i in (0..nf).filter(|&i| !full[i]) {
+        let pass: Vec<usize> = (0..nf).filter(|&i| !full[i]).collect();
+        for (k, &i) in pass.iter().enumerate() {
+            each(step(solved, k, pass.len(), last))?;
             if terms[i].is_none() {
                 terms[i] = Some(d.checked_terms(frequencies[i])?);
             }
@@ -175,9 +226,12 @@ pub fn fast_sweep(d: &Driven, frequencies: &[f64], o: &SweepOptions) -> Result<F
             }
             results[i] = Some(r);
         }
+        last = worst.map(|(_, w)| w);
         match worst {
-            Some((i, w)) if w > o.tolerance && full.iter().filter(|f| **f).count() < o.max_solves => {
-                solve_full(i, &mut basis, &mut results, &mut full)?
+            Some((i, w)) if w > o.tolerance && solved < o.max_solves => {
+                each(step(solved, 0, 0, last))?;
+                solve_full(i, &mut basis, &mut results, &mut full)?;
+                solved += 1;
             }
             _ => break worst.map_or(0.0, |(_, w)| w),
         }
