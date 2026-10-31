@@ -49,21 +49,34 @@ fn on_model(m: &Model, freqs: &[f64], backend: Backend, precision: Precision, o:
     r
 }
 
+// Each precision is a test of its own: CubeCL's CPU runtime takes some 9 ms a step here, and the
+// gate runs tests side by side.
+
+/// CubeCL's CPU runtime launches slowly: a run cut short at 520 steps (into the second batch,
+/// the pulse through both planes), the transforms compared as they stand. Bit-for-bit repeats
+/// are checked on CUDA.
+fn short() -> Options {
+    Options { max_steps: 520, ..Options::new(0.003) }
+}
+
 #[test]
 fn the_cpu_backend_matches_the_threads() {
-    // CubeCL's CPU runtime launches slowly (some 3 ms a step here): a run cut short at 520 steps
-    // (into the second batch, the pulse through both planes), the transforms compared as they
-    // stand. Bit-for-bit repeats are checked on CUDA.
-    let o = Options { max_steps: 520, ..Options::new(0.003) };
+    let o = short();
     let cpu = s_parameters(&filter(), &o, &FREQS).unwrap();
     let double = on(Backend::Cpu, Precision::Double, &o);
     // The same steps; the arithmetic in another order (fused multiply–adds, the projections'
     // tree): rounding apart.
     assert_eq!((double.steps, double.reference_steps), (cpu.steps, cpu.reference_steps));
     assert!(worst(&double, &cpu) < 1e-9, "{:e}", worst(&double, &cpu));
+    assert!(cpu.s21.iter().all(|s| s.norm() > 0.1), "{cpu:?}");
+}
+
+#[test]
+fn the_cpu_backend_in_single_precision_matches_the_threads_to_its_precision() {
+    let o = short();
+    let cpu = s_parameters(&filter(), &o, &FREQS).unwrap();
     let single = on(Backend::Cpu, Precision::Single, &o);
     assert!(worst(&single, &cpu) < 1e-4, "{:e}", worst(&single, &cpu));
-    assert!(cpu.s21.iter().all(|s| s.norm() > 0.1), "{cpu:?}");
 }
 
 #[test]
@@ -90,19 +103,29 @@ fn lossy_guide() -> Model {
     m
 }
 
+/// The lossy guide on the device in `precision` against the threads, cut short as above: the
+/// walls' edges, their branches of surface current, the lossy edges and the magnetic faces'
+/// decay. The largest difference, and the threads' result.
+fn lossy_gap(precision: Precision) -> (f64, TdResult) {
+    let (m, freqs) = (lossy_guide(), [8e9, 12e9]);
+    let o = short();
+    let cpu = s_parameters(&m, &o, &freqs).unwrap();
+    let r = on_model(&m, &freqs, Backend::Cpu, precision, &o);
+    let gap = (0..2).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
+    (gap, cpu)
+}
+
 #[test]
 fn losses_and_lossy_walls_on_the_device_match_the_threads() {
-    // Cut short as above: the walls' edges, their branches of surface current, the lossy edges
-    // and the magnetic faces' decay against the threads'.
-    let (m, freqs) = (lossy_guide(), [8e9, 12e9]);
-    let o = Options { max_steps: 520, ..Options::new(0.003) };
-    let cpu = s_parameters(&m, &o, &freqs).unwrap();
-    let double = on_model(&m, &freqs, Backend::Cpu, Precision::Double, &o);
-    let gap = |r: &TdResult| (0..2).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
-    assert!(gap(&double) < 1e-9, "{:e}", gap(&double));
-    let single = on_model(&m, &freqs, Backend::Cpu, Precision::Single, &o);
-    assert!(gap(&single) < 1e-4, "{:e}", gap(&single));
+    let (gap, cpu) = lossy_gap(Precision::Double);
+    assert!(gap < 1e-9, "{gap:e}");
     assert!(cpu.s21.iter().all(|s| s.norm() > 0.05), "{cpu:?}");
+}
+
+#[test]
+fn losses_in_single_precision_match_the_threads_to_its_precision() {
+    let (gap, _) = lossy_gap(Precision::Single);
+    assert!(gap < 1e-4, "{gap:e}");
 }
 
 #[test]
