@@ -77,6 +77,12 @@ fn edge(p: vec2<i32>) -> f32 {
         if (!here) {
             continue;
         }
+        // Glyph silhouettes remain visible over a field plane as well as the background;
+        // their smooth curvature must not be mistaken for mesh creases.
+        if (textureLoad(normal_t, clamped(p), 0).w > 1.5) {
+            if (textureLoad(normal_t, clamped(a), 0).w < 1.5 || textureLoad(normal_t, clamped(b), 0).w < 1.5) { e = 1.0; }
+            continue;
+        }
         let da = depth_at(a);
         let db = depth_at(b);
         // A plane's window depth is linear across the screen: its second difference vanishes.
@@ -169,8 +175,9 @@ fn fs_show(i: Out) -> @location(0) vec4<f32> {
     if ((show.flags & 2u) != 0u) {
         c = c * (1.0 - occlusion(px));
     }
-    if ((show.flags & 1u) != 0u) {
-        c = mix(c, c * 0.3, 0.75 * edge(px));
+    if ((show.flags & 1u) != 0u && textureLoad(normal_t, clamped(px), 0).w < 1.5) {
+        var rim = c * 0.3;
+        c = mix(c, rim, 0.75 * edge(px));
     }
     if ((show.flags & 4u) != 0u) {
         if (show.hover != 0u) {

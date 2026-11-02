@@ -27,6 +27,7 @@ pub(crate) use extras::{along, port_normal, port_quad, quad_centre};
 pub(crate) use field::normal_axis;
 pub(crate) use geometry::{BOX_EDGES, box_corner};
 pub use style::material_rgb;
+pub(crate) use style::wire_rgb;
 
 emcraft_macros::named_enum! {
     /// What the view puts forward (the active workflow step's subject).
@@ -120,6 +121,8 @@ pub struct Label {
 #[derive(Clone, Debug, Default)]
 pub struct Built {
     pub scene: Scene,
+    pub(crate) gpu_scene: Option<Scene>,
+    pub(crate) arrows: Vec<crate::gpu3d::Arrow>,
     pub labels: Vec<Label>,
     pub legend: Vec<(String, Rgb)>,
     /// The model's box (m).
@@ -175,10 +178,22 @@ pub fn field_frame_of(session: &Session, plane: emcraft_engine::view::Plane, at:
     field::plane_frame(session, plane, at, x, y, lo)
 }
 
-/// A meshed model's cut across `axis` at `at` (m), every material filled ([`mesh::slice`]);
-/// empty without a mesh.
-pub fn mesh_slice(m: &emcraft_model::Model, axis: usize, at: f64, keep_low: bool) -> Scene {
-    mesh::slice(m, axis, at, keep_low)
+/// The perimeter of every mesh cell intersected by a section plane, in SI metres.
+/// No filled faces or artificial diagonals are added. Invalid planes give an empty scene.
+/// The perimeter is the same for either kept half (`keep_low` is retained for callers).
+///
+/// ```
+/// use emcraft_ui_egui::scene3d::mesh_slice;
+/// let model = emcraft_model::Model::default();
+/// assert!(mesh_slice(&model, 0, 0.005, true).tris.is_empty());
+/// assert!(mesh_slice(&model, 3, f64::NAN, true).lines.is_empty());
+/// ```
+pub fn mesh_slice(m: &emcraft_model::Model, axis: usize, at: f64, _keep_low: bool) -> Scene {
+    mesh::slice(m, axis, at, true)
+}
+
+pub(crate) fn section_outline(m: &emcraft_model::Model, axis: usize, at: f64) -> Scene {
+    mesh::slice(m, axis, at, false)
 }
 
 /// Builds the scene of `session` for `overlay`.
@@ -206,6 +221,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
                 field::field_plane(session, f, peak, i == 0, &mut part);
                 *scene = part.scene;
                 out.legend.extend(part.legend);
+                out.arrows.extend(part.arrows);
             });
         }
     }

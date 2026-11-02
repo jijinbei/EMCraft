@@ -271,8 +271,16 @@ fn tour() -> Record {
         h.app.workflow.fields.solver = None;
         let views: Vec<View> = View::ALL.into_iter().filter(|v| i == 0 || v.available(&h.app)).collect();
         for v in views {
+            if v == View::Field {
+                h.app.field.beside_3d = true;
+            }
             call(&mut h, "ui.set", json!({"view": v.id(), "step": "none"}));
             h.frames(3);
+            // Also tour the optional flat plot and its probing controls.
+            if v == View::Field {
+                h.app.field.beside_3d = false;
+                h.frames(2);
+            }
             // A chart's style card, and a band of the S-parameters dragged to refine.
             if crate::scenario::handle_at("chart:style").is_some() {
                 step(&mut h, json!({"click": "chart:style"}));
@@ -301,11 +309,21 @@ fn tour() -> Record {
             // a short job could outrun.
             call(&mut h, "ui.set", json!({"animate": false}));
             h.frames(2);
-            call(
-                &mut h,
-                "engine.execute",
-                json!({"command": "solve.frequency", "params": {"start": 7, "stop": 9, "points": 101, "order": 2}, "wait": false}),
-            );
+            // Keep the worker alive until the UI has inspected it, independently of
+            // solver speed and the time spent drawing on a software graphics adapter.
+            let (release, held) = std::sync::mpsc::channel();
+            h.app.job = Some(crate::worker::Job::spawn(
+                &h.app.session,
+                "solve.frequency",
+                json!({"start": 7, "stop": 9, "points": 101, "order": 2}),
+                None,
+                move |_| {
+                    emcraft_engine::progress::report(1, 101, "Frequency sweep")?;
+                    let _ = held.recv_timeout(std::time::Duration::from_secs(30));
+                    emcraft_engine::progress::report(2, 101, "Frequency sweep")?;
+                    Ok(json!({}))
+                },
+            ));
             call(&mut h, "ui.start", json!({"command": "mesh.generate"}));
             call(&mut h, "ui.set", json!({"step": "run"}));
             // Until the job says how far it is (bounded).
@@ -316,6 +334,10 @@ fn tour() -> Record {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
+            // Exercise the remaining-time wording without depending on rendering speed.
+            if let Some(job) = h.app.job.as_mut() {
+                job.started = job.started.checked_sub(std::time::Duration::from_secs(2)).unwrap_or(job.started);
+            }
             h.frames(1);
             assert!(h.app.busy(), "the job ended before the tour saw it run");
             // Closing while it runs.
@@ -324,6 +346,7 @@ fn tour() -> Record {
             h.app.files.confirm = None;
             apply(&mut h, [Action::File(FileAction::Request(Then::New))]);
             call(&mut h, "ui.cancel", json!({}));
+            let _ = release.send(());
             call(&mut h, "ui.set", json!({"step": "none"}));
         }
         call(&mut h, "ui.set", json!({"view": "model"}));
@@ -418,6 +441,11 @@ fn tour() -> Record {
     // Every command's dialog, docked and floating, some refused, a job running under one.
     for c in emcraft_engine::COMMANDS.iter().filter(|c| !c.params.is_empty()) {
         call(&mut h, "ui.start", json!({"command": c.id}));
+        h.frames(2);
+        if let Some(d) = h.app.dialog.as_mut() {
+            d.help = true;
+            d.options = true;
+        }
         h.frames(2);
     }
     // The import dialog on a design (its parameters), a 3MF package (its bodies) and an STL file

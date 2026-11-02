@@ -6,6 +6,7 @@
   {"click": "tab:RESULTS"},
   {"size": [1000, 680]},
   {"call": "ui.set", "params": {"view": "field"}},
+  {"click": "field:beside3d"},
   {"frames": 3},
   {"expect": {"view": "field", "inside": ["view:compare", "field:phase", "field:locator", "step:results", "search:field"]}},
   {"shot": "small-1000-field"},

@@ -134,6 +134,7 @@ emcraft_macros::named_enum! {
         RunEstimate = "run:estimate",
         DialogEstimate = "dialog:estimate",
         ResultsCheck = "results:check",
+        ResultsConvergence = "results:convergence",
         ResultsTouchstone = "results:touchstone",
         ResultsTouchstonePath = "results:touchstone:path",
         // The result views.

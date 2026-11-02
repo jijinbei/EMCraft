@@ -4,6 +4,7 @@
   {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"frequencies": [8], "order": 1}}},
   {"expect": {"busy": false}},
   {"click": "view:field"},
+  {"call": "ui.set", "params": {"animate": false}},
   {"frames": 2},
   {"note": "Keep the E-plane and the cross-section at z = 10 mm for the 3D view, then look at the cross-section at its middle"},
   {"click": "field:plane:e"},

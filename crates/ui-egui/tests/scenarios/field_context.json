@@ -1,0 +1,177 @@
+[
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.sample",
+      "params": {
+        "name": "highpass"
+      }
+    }
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "step": "boundaries",
+      "theme": "midnight",
+      "language": "ja",
+      "section": {
+        "axis": "x",
+        "at": 9
+      },
+      "camera": {
+        "yaw": 165,
+        "pitch": 10
+      }
+    }
+  },
+  {
+    "shot": "slim-boundary-directions"
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "solve.frequency",
+      "params": {
+        "frequencies": [
+          8
+        ],
+        "order": 1
+      }
+    }
+  },
+  {
+    "click": "view:field"
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "standard_view": "iso"
+    }
+  },
+  {
+    "until": {
+      "inspect": {
+        "view3d.animating": false
+      }
+    },
+    "timeout": 10
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "animate": false
+    }
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "handles": [
+        "view3d",
+        "field:plane:h",
+        "field:component"
+      ],
+      "hidden": [
+        "picture:field",
+        "field:frequency",
+        "field:locator",
+        "view3d:play",
+        "view3d:section"
+      ],
+      "inspect": {
+        "field.beside_3d": true,
+        "field.shown": true,
+        "view3d.overlay": "field",
+        "view3d.section": null
+      }
+    }
+  },
+  {
+    "shot": "field-context-electric"
+  },
+  {
+    "click": "field:plane:e"
+  },
+  {
+    "shot": "field-context-e-plane"
+  },
+  {
+    "click": "field:component"
+  },
+  {
+    "click": "choice:field_component:|h|"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "field.component": "|h|",
+        "field.arrows": [
+          false,
+          true
+        ]
+      }
+    }
+  },
+  {
+    "shot": "field-context-magnetic"
+  },
+  {
+    "click": "field:beside3d"
+  },
+  {
+    "expect": {
+      "handles": [
+        "picture:field"
+      ],
+      "inspect": {
+        "field.beside_3d": false
+      }
+    }
+  },
+  {
+    "click": "field:beside3d"
+  },
+  {
+    "expect": {
+      "handles": [
+        "view3d"
+      ],
+      "hidden": [
+        "picture:field",
+        "field:frequency",
+        "field:locator",
+        "view3d:play",
+        "view3d:section"
+      ]
+    }
+  },
+  {
+    "shot": "field-context-return"
+  },
+  {
+    "size": [
+      1000,
+      680
+    ]
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "handles": [
+        "field:spark"
+      ],
+      "hidden": [
+        "field:frequency",
+        "field:locator",
+        "view3d:play",
+        "view3d:section"
+      ]
+    }
+  },
+  {
+    "shot": "field-controls-compact"
+  }
+]

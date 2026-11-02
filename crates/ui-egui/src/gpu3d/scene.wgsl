@@ -10,6 +10,8 @@ struct U {
     viewport: vec4<f32>,
     top: vec4<f32>,
     bottom: vec4<f32>,
+    // Origin-relative section plane: dot(normal, world) <= offset. Zero normal disables it.
+    clip: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -73,12 +75,81 @@ fn field_colour(p: vec3<f32>) -> vec4<f32> {
     return vec4<f32>(mix(f.stops[k].rgb, f.stops[k + 1].rgb, s - f32(k)), 1.0);
 }
 
+fn removed(p: vec3<f32>) -> bool {
+    return dot(u.clip.xyz, u.clip.xyz) > 0.5 && dot(u.clip.xyz, p) >= u.clip.w - u.forward_nudge.w * 1e-5;
+}
+
+// A cylindrical shaft and conical head, twenty-four radial segments. Rust uploads only the
+// endpoints, colour and vertex ordinal; geometry and smooth surface normals live here.
+struct Glyph {
+    p: vec3<f32>,
+    n: vec3<f32>,
+};
+
+fn arrow_vertex(origin: vec3<f32>, vector: vec3<f32>, code: f32, im: vec3<f32>, motion: vec4<f32>) -> Glyph {
+    var start = origin;
+    var end = vector;
+    if (code < -9000.0) {
+        var d = vector * f.phase.x - im * f.phase.y;
+        let mag = length(d);
+        if (mag < motion.x * 0.05) { var empty: Glyph; empty.p = origin; empty.n = vec3<f32>(0.0, 0.0, 1.0); return empty; }
+        d *= min(1.0, motion.x / max(mag, 1e-12));
+        start = origin - 0.5 * d;
+        end = origin + 0.5 * d;
+    }
+    let ordinal = u32(max(-code - select(select(2.0, 1002.0, code < -1000.0), 10002.0, code < -9000.0), 0.0));
+    let segment = ordinal / 15u;
+    let k = ordinal % 15u;
+    let raw_length = length(end - start);
+    let centre = 0.5 * (start + end);
+    let centre_clip = u.view_proj * vec4<f32>(centre, 1.0);
+    let vertical_scale = length(vec3<f32>(u.view_proj[0].y, u.view_proj[1].y, u.view_proj[2].y));
+    let pixel = 2.0 * abs(centre_clip.w) / max(u.viewport.y * vertical_scale, 1e-12) * max(2.0 * u.viewport.z, 1.0);
+    var len = raw_length;
+    if (code < -9000.0) { len = max(raw_length, min(12.0 * pixel, motion.x)); }
+    let axis = (end - start) / max(raw_length, 1e-12);
+    start = centre - 0.5 * axis * len;
+    end = centre + 0.5 * axis * len;
+    var seed = vec3<f32>(1.0, 0.0, 0.0);
+    if (abs(axis.x) > 0.8) { seed = vec3<f32>(0.0, 1.0, 0.0); }
+    let ua = normalize(cross(axis, seed));
+    let va = cross(axis, ua);
+    var next = k == 2u || k == 4u || k == 5u || k == 8u || k == 10u || k == 13u;
+    let sides = select(24.0, 8.0, code < -1000.0);
+    let angle = 6.28318530718 * f32(segment + select(0u, 1u, next)) / sides;
+    let radial = ua * cos(angle) + va * sin(angle);
+    let shaft = max(0.028 * len, 1.05 * pixel);
+    let head_radius = max(0.085 * len, 3.0 * pixel);
+    let head_length = min(0.45 * len, max(0.25 * len, 5.0 * pixel));
+    let join = len - head_length;
+    var o: Glyph;
+    if (k < 6u) {
+        let high = k == 1u || k == 2u || k == 4u;
+        o.p = start + axis * select(0.0, join, high) + radial * shaft;
+        o.n = radial;
+    } else if (k < 9u) {
+        o.p = start + axis * (join) + radial * head_radius;
+        if (k == 7u) { o.p = end; }
+        o.n = normalize(radial + axis * (head_radius / max(head_length, 1e-12)));
+    } else {
+        let head = k >= 12u;
+        let centre = k == 9u || k == 12u;
+        o.p = start + axis * select(0.0, join, head);
+        if (!centre) { o.p += radial * select(shaft, head_radius, head); }
+        o.n = -axis;
+    }
+    return o;
+}
+
+fn is_field(flag: f32) -> bool { return flag > -1.5 && flag < -0.5; }
+
 struct V {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
     // From the scene's origin; the field's plane when `flag` is −1.
     @location(1) world: vec3<f32>,
-    @location(2) flag: f32,
+    @location(2) @interpolate(flat) flag: f32,
+    @location(3) normal: vec3<f32>,
 };
 
 // The ground: a full-screen triangle, top to bottom by pixel row as the CPU fills it.
@@ -105,35 +176,55 @@ fn placed(p: vec3<f32>, rank: f32) -> vec4<f32> {
 }
 
 @vertex
-fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>) -> V {
+fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(4) im: vec3<f32>, @location(5) motion: vec4<f32>) -> V {
     var o: V;
     o.pos = placed(p, max(n.w, 0.0));
-    let k = 0.42 + 0.58 * abs(dot(n.xyz, u.light.xyz));
-    o.color = vec4<f32>(c.rgb * k, c.a);
+    o.color = c;
     o.world = p;
+    o.normal = n.xyz;
     o.flag = n.w;
-    if (n.w < -0.5) {
-        o.color = vec4<f32>(k, k, k, c.a);
+    if (is_field(n.w)) {
+        o.color = vec4<f32>(1.0, 1.0, 1.0, c.a);
+    } else if (n.w < -1.5) {
+        let g = arrow_vertex(p, n.xyz, n.w, im, motion);
+        o.pos = placed(g.p, 0.0);
+        o.world = g.p;
+        o.normal = g.n;
+        o.flag = select(-2.0, -3.0, n.w < -1000.0);
     }
     return o;
 }
 
+// Per-fragment lighting preserves the cylinder/cone's curved appearance while orbiting.
+fn lit(i: V) -> vec4<f32> {
+    let n = normalize(i.normal);
+    let k = select(0.42 + 0.58 * abs(dot(n, u.light.xyz)), 0.72 + 0.28 * abs(dot(n, u.light.xyz)), i.flag < -1.5);
+    var color = i.color.rgb * k;
+    if (i.flag < -1.5) {
+        let specular = pow(max(dot(reflect(-u.light.xyz, n), -u.forward_nudge.xyz), 0.0), 16.0);
+        color += vec3<f32>(0.12 * specular);
+    }
+    return vec4<f32>(min(color, vec3<f32>(1.0)), i.color.a);
+}
+
 @fragment
 fn fs_opaque(i: V) -> @location(0) vec4<f32> {
-    if (i.flag < -0.5) {
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
+    if (is_field(i.flag)) {
         let fc = field_colour(i.world);
         if (fc.a < 0.5) {
             discard;
         }
-        return vec4<f32>(fc.rgb * i.color.rgb, 1.0);
+        return vec4<f32>(fc.rgb * lit(i).rgb, 1.0);
     }
-    return vec4<f32>(i.color.rgb, 1.0);
+    return vec4<f32>(lit(i).rgb, 1.0);
 }
 
 // See-through triangles blended in order (where the device has no order-independent targets).
 @fragment
 fn fs_blend(i: V) -> @location(0) vec4<f32> {
-    return i.color;
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
+    return lit(i);
 }
 
 // Weighted blended order-independent transparency (McGuire and Bavoil, JCGT 2(2), 2013): the
@@ -146,10 +237,12 @@ struct Oit {
 
 @fragment
 fn fs_oit(i: V) -> Oit {
-    let a = i.color.a;
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
+    let color = lit(i);
+    let a = color.a;
     let w = a * clamp(3e3 * pow(1.0 - i.pos.z, 3.0), 1e-2, 3e3);
     var o: Oit;
-    o.accum = vec4<f32>(i.color.rgb * a, a) * w;
+    o.accum = vec4<f32>(color.rgb * a, a) * w;
     o.reveal = vec4<f32>(a, 0.0, 0.0, 0.0);
     return o;
 }
@@ -157,6 +250,7 @@ fn fs_oit(i: V) -> Oit {
 // Depth (and the stencil) only.
 @fragment
 fn fs_none(i: V) -> @location(0) vec4<f32> {
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
     return vec4<f32>(0.0);
 }
 
@@ -168,9 +262,21 @@ fn vs_line(@builtin(vertex_index) vi: u32, @location(0) a: vec3<f32>, @location(
     o.color = c;
     o.world = vec3<f32>(0.0);
     o.flag = 0.0;
+    o.normal = vec3<f32>(0.0, 0.0, 1.0);
+    // Clip the original world-space segment before expanding it into a screen-space quad.
+    var wa = a;
+    var wb = b;
+    let da = dot(u.clip.xyz, wa) - u.clip.w;
+    let db = dot(u.clip.xyz, wb) - u.clip.w;
+    if (da > 0.0 && db > 0.0) {
+        o.pos = vec4<f32>(0.0, 0.0, -2.0, 1.0);
+        return o;
+    }
+    if (da > 0.0) { wa = mix(wa, wb, da / (da - db)); }
+    else if (db > 0.0) { wb = mix(wb, wa, db / (db - da)); }
     let toward = u.forward_nudge.xyz * u.forward_nudge.w;
-    var pa = u.view_proj * vec4<f32>(a - toward, 1.0);
-    var pb = u.view_proj * vec4<f32>(b - toward, 1.0);
+    var pa = u.view_proj * vec4<f32>(wa - toward, 1.0);
+    var pb = u.view_proj * vec4<f32>(wb - toward, 1.0);
     let near = u.viewport.w;
     if (pa.w < near && pb.w < near) {
         o.pos = vec4<f32>(0.0, 0.0, -2.0, 1.0);
@@ -220,16 +326,16 @@ struct G {
     @location(1) @interpolate(flat) tag: u32,
     @location(2) alpha: f32,
     @location(3) world: vec3<f32>,
-    @location(4) flag: f32,
+    @location(4) @interpolate(flat) flag: f32,
 };
 
 // The field's plane has no triangles where its cells are left out: neither has it pixels here.
 fn hole(i: G) -> bool {
-    return i.flag < -0.5 && field_colour(i.world).a < 0.5;
+    return (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) || (is_field(i.flag) && field_colour(i.world).a < 0.5);
 }
 
 @vertex
-fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(3) tag: u32) -> G {
+fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(3) tag: u32, @location(4) im: vec3<f32>, @location(5) motion: vec4<f32>) -> G {
     var o: G;
     o.pos = placed(p, max(n.w, 0.0));
     o.n = n.xyz;
@@ -237,6 +343,13 @@ fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: ve
     o.alpha = c.a;
     o.world = p;
     o.flag = n.w;
+    if (n.w < -1.5) {
+        let g = arrow_vertex(p, n.xyz, n.w, im, motion);
+        o.pos = placed(g.p, 0.0);
+        o.n = g.n;
+        o.world = g.p;
+        o.flag = select(-2.0, -3.0, n.w < -1000.0);
+    }
     return o;
 }
 
@@ -256,7 +369,7 @@ fn fs_g_normals(i: G) -> Normals {
         n = -n;
     }
     var o: Normals;
-    o.n = vec4<f32>(n, 1.0);
+    o.n = vec4<f32>(n, select(1.0, 2.0, i.flag < -1.5));
     o.depth = vec4<u32>(bitcast<u32>(i.pos.z), 0u, 0u, 0u);
     return o;
 }

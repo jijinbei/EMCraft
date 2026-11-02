@@ -163,7 +163,8 @@ pub fn scoped<T>(device: &wgpu::Device, make: impl FnOnce() -> T) -> Result<T, S
 }
 
 fn tri_layout() -> wgpu::VertexBufferLayout<'static> {
-    const A: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4, 2 => Unorm8x4, 3 => Uint32];
+    const A: [wgpu::VertexAttribute; 6] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4, 2 => Unorm8x4, 3 => Uint32, 4 => Float32x3, 5 => Float32x4];
     wgpu::VertexBufferLayout { array_stride: TRI_VERTEX as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &A }
 }
 
@@ -237,7 +238,7 @@ impl Renderer {
         });
         let field_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("emcraft_view3d_field"),
-            entries: &[uniform_entry(0, wgpu::ShaderStages::FRAGMENT, super::field::FIELD_BYTES as u64), texture_entry(1), texture_entry(2)],
+            entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX_FRAGMENT, super::field::FIELD_BYTES as u64), texture_entry(1), texture_entry(2)],
         });
         let field_uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("emcraft_view3d_field"),

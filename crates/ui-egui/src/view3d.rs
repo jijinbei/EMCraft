@@ -82,7 +82,7 @@ impl Cut {
 
     /// The render's section, outlined in the theme's scene edge colour.
     fn section(self) -> view3d::Section {
-        view3d::Section { outline: Some(crate::theme::scene().edge), ..view3d::Section::across(self.axis, self.at, self.keep) }
+        view3d::Section { outline: Some(scene3d::wire_rgb()), ..view3d::Section::across(self.axis, self.at, self.keep) }
     }
 
     /// The cut for `ui.inspect`, `at` in display units.
@@ -277,11 +277,29 @@ impl View3d {
         let s = now.section();
         match view3d::section::section(&full.scene, &s) {
             Ok(mut scene) => {
-                // A meshed model's cut is the mesh's: every material filled, the air too.
-                let caps = scene3d::mesh_slice(model, now.axis, now.at, now.keep == Keep::Low);
-                scene.tris.extend(caps.tris);
+                // Keep the cut open: generated caps otherwise overlap the mesh slice and
+                // make vacuum look like solid matter. The existing cap outlines stay.
+                let size = full.bounds.map_or(1.0, |(lo, hi)| (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max));
+                let eps = size * 1e-9;
+                scene.tris.retain(|t| !t.p.iter().all(|p| (p[now.axis] - now.at).abs() <= eps));
+                let cut = if key.overlay == Overlay::Mesh {
+                    scene3d::mesh_slice(model, now.axis, now.at, now.keep == Keep::Low)
+                } else {
+                    scene3d::section_outline(model, now.axis, now.at)
+                };
+                let mut gpu_scene = full.scene.clone();
+                gpu_scene.lines.extend(cut.lines.iter().copied());
+                scene.lines.extend(cut.lines);
                 let labels = full.labels.iter().filter(|l| s.keeps(l.at)).cloned().collect();
-                let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds, cache: Default::default() };
+                let built = Built {
+                    scene,
+                    gpu_scene: Some(gpu_scene),
+                    arrows: full.arrows.clone(),
+                    labels,
+                    legend: full.legend.clone(),
+                    bounds: full.bounds,
+                    cache: Default::default(),
+                };
                 self.cut = Some((key.clone(), now, built));
                 self.generation = self.generation.wrapping_add(1);
             }
@@ -384,6 +402,9 @@ impl View3d {
             "animating": self.animating(),
             "renderer": self.drawn_by.id(),
             "gpu_adapter": self.gpu_adapter,
+            "gpu_arrows": self.shown().map_or(0, |b| b.arrows.len()),
+            "gpu_clip": self.section.is_some(),
+            "scene_generation": self.scene_gen(),
             "picked_by": self.picked_by,
             "gpu_field": self.field_frame.is_some(),
             "section": self.section.map(|s| s.inspect(l)),
@@ -397,6 +418,8 @@ use crate::theme::{color32 as color, rgb};
 
 static EMPTY: Built = Built {
     scene: view3d::Scene { tris: Vec::new(), lines: Vec::new(), tag: 0 },
+    gpu_scene: None,
+    arrows: Vec::new(),
     labels: Vec::new(),
     legend: Vec::new(),
     bounds: None,
@@ -409,6 +432,11 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     let t = &Tokens::get();
     // The scene, built again only when what it shows changed (the field's planes, for the
     // Results step: the field view's and those kept).
+    // A geometry-inspection cut may hide the field plane entirely. Entering the field
+    // overlay starts with the whole model as context; its plane remains independently movable.
+    if overlay == Overlay::Field && v.built.as_ref().is_some_and(|(k, _)| k.overlay != Overlay::Field) {
+        v.section = None;
+    }
     let gpu_field = overlay == Overlay::Field && app.prefs.gpu_look.field && field.kept.is_empty() && drawer_of(ui) != Drawer::None;
     let key = scene_key(app, v, field, overlay, gpu_field);
     if !v.is_built(&key) {
@@ -517,8 +545,8 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         Navigator::Cube => crate::view_cube::show(v, ui, rect, out),
         Navigator::Axes => navigator(&v.camera, ui, rect, out),
     }
-    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, out);
-    if v.section.is_some() {
+    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, app.view != crate::View::Field, out);
+    if v.section.is_some() && app.view != crate::View::Field {
         section_bar(v, ui, rect, bounds, app.session.display().length);
     }
 }
@@ -586,7 +614,7 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         let l = app.session.display().length;
         field.view.at = field.at.map(|v| l.to_si(v));
         let mut view = field.view.clone();
-        if gpu && !view.show_e && !view.show_h {
+        if gpu {
             view.phase = 0.0;
         }
         FieldKey { view, at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect(), gpu }
@@ -608,9 +636,70 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     let gpu = key.field.as_ref().is_some_and(|f| f.gpu);
     let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at, gpu }).collect();
     v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
-    let built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
+    let mut built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
+    if gpu {
+        dynamic_field_arrows(app, field, &mut built);
+    }
     v.built = Some((key, built));
     v.generation = v.generation.wrapping_add(1);
+}
+
+/// Upload complex vectors once. Their phase, lengths and glyph geometry are evaluated in WGSL.
+fn dynamic_field_arrows(app: &EmcraftApp, field: &FieldState, built: &mut Built) {
+    let (Some(samples), Some((lo, _))) = (field.samples.as_ref(), built.bounds) else { return };
+    let (x, y) = samples.axes();
+    let [c, u, v] = scene3d::field_frame_of(&app.session, samples.plane, samples.at, x.span(), y.span(), lo);
+    let normal = scene3d::normal_axis(samples.plane);
+    let du = [0, 1, 2].map(|k| u[k] - c[k]);
+    let dv = [0, 1, 2].map(|k| v[k] - c[k]);
+    let len = |d: [f64; 3]| d.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let max_length = len(du).max(len(dv)) / 18.0 * 0.85;
+    for (shown, component, color) in [
+        (field.view.show_e, emcraft_engine::view::Component::E, crate::theme::scene().port_input),
+        (field.view.show_h, emcraft_engine::view::Component::H, crate::theme::scene().port_output),
+    ] {
+        if !shown {
+            continue;
+        }
+        let (nx, ny, mut data) = samples.phasors(component);
+        if nx < 2 || ny < 2 {
+            continue;
+        }
+        // Normalize against the full complex field, not its in-plane numerical residue.
+        let peak = emcraft_engine::view::robust_peak(data.iter().flatten().map(|(re, im)| len(*re).hypot(len(*im))).collect());
+        for (re, im) in data.iter_mut().flatten() {
+            re[normal] = 0.0;
+            im[normal] = 0.0;
+        }
+        if !(peak > 0.0 && peak.is_finite()) {
+            continue;
+        }
+        let stride = nx.max(ny).div_ceil(18).max(1);
+        for j in (stride / 2..ny).step_by(stride) {
+            for i in (stride / 2..nx).step_by(stride) {
+                let Some(Some((re, im))) = data.get(j * nx + i) else { continue };
+                if !re.iter().chain(im).all(|v| v.is_finite()) || len(*re).hypot(len(*im)) < peak * 0.05 {
+                    continue;
+                }
+                let centre = [0, 1, 2].map(|k| c[k] + du[k] * i as f64 / (nx - 1) as f64 + dv[k] * j as f64 / (ny - 1) as f64);
+                for side in [-1.0, 1.0] {
+                    let mut start = centre;
+                    start[normal] += side * max_length * 0.14;
+                    built.arrows.push(crate::gpu3d::Arrow {
+                        start,
+                        end: start,
+                        color,
+                        section_clip: true,
+                        motion: Some(crate::gpu3d::Motion {
+                            re: re.map(|v| v * max_length / peak),
+                            im: im.map(|v| v * max_length / peak),
+                            max_length,
+                        }),
+                    });
+                }
+            }
+        }
+    }
 }
 
 /// The browser rows of what is selected in the view, in its order (looked up again only when the
@@ -1244,13 +1333,20 @@ fn gpu_frame(
     });
     let packed = match v.shown() {
         // Offscreen (read back, often on a software adapter) a large scene moves as its coarser copy.
-        Some(b) if moving && offscreen && !std::ptr::eq(b.moving(), &b.scene) => cache.packed_with(b.moving(), id.wrapping_add(1 << 63), field_plane),
-        Some(b) => cache.packed_with(&b.scene, id, field_plane),
+        Some(b) if b.gpu_scene.is_none() && moving && offscreen && !std::ptr::eq(b.moving(), &b.scene) => {
+            cache.packed_arrows(b.moving(), id.wrapping_add(1 << 63), field_plane, &b.arrows)
+        }
+        Some(b) => cache.packed_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), id, field_plane, &b.arrows),
         None => cache.packed(&EMPTY.scene, u64::MAX),
     };
     v.gpu = cache;
     let line_width = ppp.max(1.0) * f64::from(supersample);
-    let uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
+    let mut uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
+    if let Some(cut) = v.section {
+        let sign = if cut.keep == Keep::Low { 1.0 } else { -1.0 };
+        uniforms.clip[cut.axis] = sign;
+        uniforms.clip[3] = (f64::from(sign) * (cut.at - packed.origin[cut.axis])) as f32;
+    }
     let gpu_look = crate::gpu3d::Look { edges: look.edges, ao: look.ao, outline: look.outline, pick: look.pick || look.outline };
     let rgba = |c: Color32, a: f32| [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0, a];
     let hover = v.pointer_tag.map_or(0, |(_, _, tag)| tag);
@@ -1402,6 +1498,8 @@ impl Built {
     fn clone_shallow(&self) -> Built {
         Built {
             scene: Default::default(),
+            gpu_scene: None,
+            arrows: Vec::new(),
             labels: self.labels.clone(),
             legend: self.legend.clone(),
             bounds: self.bounds.or_else(|| self.scene.bounds()),
@@ -1493,6 +1591,7 @@ fn nav_bar(
     facing: Option<([f64; 3], [f64; 3], StandardView)>,
     bounds: ([f64; 3], [f64; 3]),
     overlay: Overlay,
+    standalone: bool,
     out: &mut Actions,
 ) {
     let t = &Tokens::get();
@@ -1503,14 +1602,18 @@ fn nav_bar(
     ];
     if facing.is_some() {
         items.push((Glyph::Lookat, Fixed::View3dFace.into(), "Face the field's plane"));
-        // The field's phase, played like a video.
-        items.push(if playing {
-            (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
-        } else {
-            (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
-        });
+        // The standalone model view needs a player; the Field view already has one.
+        if standalone {
+            items.push(if playing {
+                (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
+            } else {
+                (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
+            });
+        }
     }
-    items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
+    if standalone {
+        items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
+    }
     items.push(if ortho {
         (Glyph::Orthographic, Fixed::View3dProjection.into(), "Orthographic — click for perspective")
     } else {

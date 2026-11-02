@@ -23,6 +23,23 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
         kv(ui, "largest σ(S)", format!("{:.6} — {}", n("largest_singular_value"), tr(if passive { "passive" } else { "NOT passive" })), t);
         kv(ui, "max |S − S^T|", format!("{:.3e}", n("reciprocity_error")), t);
     }
+    ui_kit::section(ui, "Mesh accuracy");
+    ui_kit::caption(
+        ui,
+        "Passivity and reciprocity check physical consistency. They do not measure mesh error. Refine the mesh and compare the results at frequencies important to your design.",
+    );
+    ui.act(
+        !busy && !stale,
+        ui_kit::styled("Set up mesh convergence", false),
+        Fixed::ResultsConvergence.into(),
+        "",
+        || Action::dialog("mesh.adapt"),
+        out,
+    );
+    ui_kit::caption(
+        ui,
+        "Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh.",
+    );
     ui_kit::section(ui, "Touchstone");
     let ports = app.session.sparameter_entries().len().max(1);
     if f.touchstone.is_empty() {

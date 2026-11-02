@@ -3,6 +3,7 @@
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 7, "stop": 8, "points": 2, "order": 1}}},
   {"click": "view:field"},
+  {"click": "field:beside3d"},
   {"frames": 2},
   {"expect": {"view": "field", "inspect": {"field.shown": true, "field.plane": "h", "probes": []}, "handles": ["probe:add", "picture:field"]}},
   {"click": "picture:field"},

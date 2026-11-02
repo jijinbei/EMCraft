@@ -47,13 +47,20 @@ and field plots stay on the CPU (`emcraft_render`'s 2D renderer).
   WGPU_BACKEND=vulkan`) and on llvmpipe through OpenGL ES (`WGPU_BACKEND=gl
   LIBGL_ALWAYS_SOFTWARE=1`); the per-pixel depth is kept as the bits of an f32 in an integer
   target, as OpenGL ES cannot render to 32-bit float ones.
-- **Section caps without a stencil cap pass.** SolidCraft caps its section with the stencil.
-  EMCraft's section is cut on the CPU (`emcraft_render::view3d::section`: the far side removed,
-  the cut faces capped), because picking and the tools read the cut scene; the GPU draws that
-  scene. The stencil is used instead to draw lines over the see-through faces they lie in front
-  of. Caps of nested bodies lie in one plane (the region's under its sections'); the depth
-  buffer would show either in patches, so opaque faces sharing a plane are ranked by their order
-  in it and each rank is moved a little towards the eye (`gpu3d::pack`).
+- **Section clipping in WGSL (2026-11-02).** The GPU receives the uncut scene and an
+  origin-relative clipping plane. Fragment shaders discard the removed half in opaque,
+  transparent, depth/stencil, normals and picking passes; the line vertex shader clips each
+  world-space segment before screen-space expansion. A CPU cut remains the reference for
+  ray picking, snapping and dimension outlines; it is not uploaded as the rendered geometry.
+  Mesh-cell perimeters on the cut are derived from the tetrahedral topology in Rust and
+  uploaded as lines. No cap fills or metal backing are drawn.
+- **Port direction glyphs in WGSL.** Only endpoints and colours are supplied by Rust. The
+  vertex shader constructs cylindrical shafts and conical heads, including surface normals;
+  the fragment shader lights the curved surfaces and adds a small specular highlight. The
+  same construction supplies the normals/depth pass. Glyphs are untagged annotations, kept
+  whole across a section and depth-tested against model geometry; they do not intercept picks.
+  Waveguide and lumped ports use these glyphs instead of egui arrows. Field-vector arrows use the same procedural geometry and follow the section clip; their sampled vectors still come from the solver in Rust. Labels, rulers and UI
+  controls stay in egui. Model topology, parameter validation and interaction stay in Rust.
 - **Determinism.** What the GPU draws is a display: it is not a result, not saved and not
   compared bit for bit; the scenarios check the view's state (`ui.inspect`), not its pixels.
 - **Settings.** Settings ▸ 3D view ▸ Drawing: the switches below. `ui.inspect`'s
@@ -86,7 +93,7 @@ plain picture the view draws, each with a switch in Settings ▸ 3D view ▸ Dra
   or the length), averages each cell's corners and colours it with the theme's map as
   `scene3d::field` does — the same picture, checked cell by cell. The scene keeps the plane as one
   quad (picking, outline); without arrows the phase leaves the scene's key, so playing the phase
-  rebuilds nothing. With arrows shown the arrows are still built per phase; with kept planes the
+  rebuilds nothing. For a single plane, complex E/H vectors are uploaded with the glyphs once, then rotated as Re(F exp(jφ)) in the vertex shader; scene and vertex buffers stay unchanged during playback. Shaft/head widths have a screen-space minimum and E/H use distinct theme colors without a white halo. With kept planes the arrows still use the CPU phase path; with kept planes the
   scene holds every plane's coloured cells (`scene3d::field`) and the GPU draws them as faces.
 
 ## A library instead of our own pipelines?
@@ -155,3 +162,5 @@ read from its manifest; no other licence than MIT, Apache-2.0 or both:
   no GPU. Under Wine with Mesa's lavapipe the window opens on wgpu and draws the view on it
   (docs/install-windows.md); without Vulkan the app falls back to OpenGL as above.
 - **macOS:** Metal (not built or shipped today).
+
+Vector glyph vertices carry the center, real and imaginary displacement, maximum length and vertex ordinal (64 bytes per vertex). Both the color and g-buffer stages use the same WGSL phase evaluation. Categorical flags are flat interpolated.

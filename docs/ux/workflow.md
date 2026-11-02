@@ -126,7 +126,7 @@ Work is not lost: closing the window with unsaved changes asks Save / Don't save
 job running, whether to stop it first); unsaved changes are copied aside every minute and
 offered on the start page after a crash (Recover, or dismiss).
 The 3D view cuts the model open: a section across x, y or z at a position along it, either side
-kept, the cut faces filled in each body's colour; a guide's H-plane (y = b/2) and E-plane (x = a/2) cuts
+kept, the cut faces left open with their outlines drawn; in the Mesh step the cut shows each intersected tetrahedron's perimeter, with stronger lines than the outer surface mesh; a guide's H-plane (y = b/2) and E-plane (x = a/2) cuts
 are one click each, a button turns the camera straight at the cut (orthographic), and the cut
 carries its dimensions (the outline's extents, the irises' and steps' apertures) and the ports
 where they meet it, named and sized. There is no separate 2D outline view: the section view is it.
@@ -204,3 +204,21 @@ their frames', and `Harness::settle` waits for the end).
 4. Preflight before Run; stale results; the run's timings in the log.
 5. File: save/open, history script export; Edit: undo/redo.
 6. Results: Touchstone export, the verification checks.
+
+## Dialog guidance and mesh accuracy
+
+Command dialogs start with their inputs; Help reveals the full command description.
+Mesh generation shows element size, wave divisions and frequency first, with edge grading,
+curvature and directional sizes under Advanced settings. Folding those settings preserves
+all values. Parameter ids and control handles stay the same for scripts and agents.
+
+Setup explains the memory/accuracy tradeoff of element orders. Results keeps physical
+consistency checks separate from mesh accuracy: passivity and reciprocity do not establish
+mesh convergence. For a current sweep, Set up mesh convergence opens `mesh.adapt` without
+running it. Review the single test frequency, tolerance and pass limit, then rerun the
+analysis on the resulting mesh; convergence at one frequency does not establish convergence
+across the whole band.
+
+Fields open on a plane inside the 3D model, retaining the model around the electric or magnetic field so its location is clear. Frequency, plane position, component and phase stay above the viewport. The 2D plot button opens the optional flat plot for probes and exports, and toggles back to the model. Entering field display clears the preceding geometry inspection cut; the field plane can be moved independently. Direction glyphs use a slender shaft and compact head, placed just outside each waveguide port face.
+
+In the 3D Field view, frequency is selected on the frequency chart, plane position on the top slider (or by dragging the plane itself), and playback on the top player. The duplicate frequency combo, position locator, bottom player and independent geometry-cut controls are absent. Eigenmode selection is retained. Electric and magnetic vectors use distinct colors and a minimum screen-space size, without a white rim.

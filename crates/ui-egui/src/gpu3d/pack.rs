@@ -9,17 +9,36 @@ use emcraft_render::view3d::{Camera, Projection, Scene};
 
 /// Bytes per triangle vertex: position (3 × f32, from the scene's origin), the face's unit
 /// normal (3 × f32), its rank among coplanar faces (f32, [`Packed::new`]), the colour with its
-/// opacity (4 × u8) and its tag (u32, for the outline and picking).
-pub const TRI_VERTEX: usize = 36;
+/// opacity (4 × u8), tag (u32), imaginary glyph displacement (3 × f32) and motion data (4 × f32).
+pub const TRI_VERTEX: usize = 64;
 /// The most coplanar groups ranked apart in one plane.
 pub const MAX_RANK: u32 = 15;
 /// Bytes per line: both ends (2 × 3 × f32) and the colour with its opacity (4 × u8).
 pub const LINE: usize = 28;
 /// Bytes of [`Uniforms`].
-pub const UNIFORM_BYTES: usize = 64 + 5 * 16;
+pub const UNIFORM_BYTES: usize = 64 + 6 * 16;
 /// The most vertex bytes one scene uploads (each kind): beyond, the rest is left out, as the CPU
 /// renderer leaves out primitives beyond `MAX_PRIMITIVES`.
 pub const MAX_BYTES: usize = 256 << 20;
+
+/// A port direction glyph; its cylinder and cone are generated in WGSL.
+#[derive(Clone, Debug)]
+pub(crate) struct Arrow {
+    pub start: [f64; 3],
+    pub end: [f64; 3],
+    pub color: Rgb,
+    pub section_clip: bool,
+    pub motion: Option<Motion>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Motion {
+    pub re: [f64; 3],
+    pub im: [f64; 3],
+    pub max_length: f64,
+}
+
+pub(crate) const ARROW_VERTICES: usize = 24 * 15;
 
 /// A scene in the GPU's vertex layout: opaque and see-through triangles apart, the lines, all
 /// relative to `origin` (the middle of its box) so f32 keeps the detail of a small part far
@@ -139,6 +158,7 @@ impl Packed {
                 out.extend_from_slice(&rank.to_le_bytes());
                 out.extend_from_slice(&[t.color.0, t.color.1, t.color.2, t.alpha]);
                 out.extend_from_slice(&t.tag.to_le_bytes());
+                out.extend_from_slice(&[0; 28]);
             }
         }
         for l in scene.lines.iter().filter(|l| l.alpha > 0) {
@@ -150,6 +170,53 @@ impl Packed {
             p.lines.extend_from_slice(&[l.color.0, l.color.1, l.color.2, l.alpha]);
         }
         p
+    }
+
+    pub(crate) fn append_arrows(&mut self, arrows: &[Arrow]) {
+        for a in arrows.iter().take(8192) {
+            if !a.start.iter().chain(&a.end).all(|v| v.is_finite() && v.abs() < 1e12) {
+                continue;
+            }
+            if let Some(m) = &a.motion {
+                if !m.re.iter().chain(&m.im).all(|v| v.is_finite() && v.abs() < 1e12) || !(m.max_length > 0.0 && m.max_length < 1e12) {
+                    continue;
+                }
+            } else {
+                let d = sub(a.end, a.start);
+                if dot(d, d) <= 1e-24 || sub(a.start, self.origin).map(|v| v as f32) == sub(a.end, self.origin).map(|v| v as f32) {
+                    continue;
+                }
+            }
+            // Dense field-vector grids use fewer radial segments than the large port glyphs.
+            let vertices = if a.section_clip { 8 * 15 } else { ARROW_VERTICES };
+            if self.opaque.len() + vertices * TRI_VERTEX > MAX_BYTES {
+                break;
+            }
+            for k in 0..vertices {
+                put3(&mut self.opaque, sub(a.start, self.origin));
+                put3(&mut self.opaque, a.motion.as_ref().map_or_else(|| sub(a.end, self.origin), |m| m.re));
+                self.opaque.extend_from_slice(
+                    &(-(if a.motion.is_some() {
+                        10002.0
+                    } else if a.section_clip {
+                        1002.0
+                    } else {
+                        2.0
+                    }) - k as f32)
+                        .to_le_bytes(),
+                );
+                self.opaque.extend_from_slice(&[a.color.0, a.color.1, a.color.2, 255]);
+                self.opaque.extend_from_slice(&0u32.to_le_bytes());
+                put3(&mut self.opaque, a.motion.as_ref().map_or([0.0; 3], |m| m.im));
+                for v in [a.motion.as_ref().map_or(0.0, |m| m.max_length) as f32, 0.0, 0.0, 0.0] {
+                    self.opaque.extend_from_slice(&v.to_le_bytes());
+                }
+            }
+            for p in [a.start, a.end] {
+                let d = sub(p, self.origin);
+                self.radius = self.radius.max(dot(d, d).sqrt() * 1.15);
+            }
+        }
     }
 
     pub fn opaque_vertices(&self) -> u32 {
@@ -181,6 +248,8 @@ pub struct Uniforms {
     /// The ground's colour at the top and the bottom (0–1, the bytes' scale).
     pub top: [f32; 4],
     pub bottom: [f32; 4],
+    /// Origin-relative clipping plane n·p <= d; a zero normal disables clipping.
+    pub clip: [f32; 4],
     /// Not in the scene's uniforms: the window depth's terms (perspective d = a + b / z,
     /// orthographic d = a (z − b)), whether it is perspective, and the scene's radius, for the
     /// ambient occlusion's reach.
@@ -258,6 +327,7 @@ impl Uniforms {
             ],
             top: rgba(background.0),
             bottom: rgba(background.1),
+            clip: [0.0; 4],
             depth_terms: depth_terms.map(|v| if v.is_finite() { v as f32 } else { 0.0 }),
             persp,
             radius: packed.radius as f32,
@@ -267,8 +337,16 @@ impl Uniforms {
     /// The bytes the uniform buffer holds.
     pub fn bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(UNIFORM_BYTES);
-        for v in
-            self.view_proj.iter().flatten().chain(&self.forward_nudge).chain(&self.light).chain(&self.viewport).chain(&self.top).chain(&self.bottom)
+        for v in self
+            .view_proj
+            .iter()
+            .flatten()
+            .chain(&self.forward_nudge)
+            .chain(&self.light)
+            .chain(&self.viewport)
+            .chain(&self.top)
+            .chain(&self.bottom)
+            .chain(&self.clip)
         {
             out.extend_from_slice(&v.to_le_bytes());
         }

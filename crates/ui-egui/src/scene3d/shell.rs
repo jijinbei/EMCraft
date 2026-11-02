@@ -248,7 +248,7 @@ pub(super) fn shell(inside: &Inside, thickness: f64) -> Shell {
 pub(super) fn draw(m: &Model, overlay: Overlay, inside: &Inside, thickness: f64, out: &mut Built) {
     let s = shell(inside, thickness);
     let (color, alpha) = super::style::wall_style(m, overlay, false, 0, Kind::Wall);
-    let rim_alpha = alpha.max(if overlay == Overlay::Field { 120 } else { 230 });
+    let rim_alpha = if overlay == Overlay::Mesh { alpha } else { alpha.max(if overlay == Overlay::Field { 120 } else { 230 }) };
     let pick = if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid };
     out.scene.tagged(pick.tag(), |scene| {
         for p in &s.outer {

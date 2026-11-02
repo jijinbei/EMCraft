@@ -616,3 +616,59 @@ fn a_held_arrow_turns_the_view_steadily() {
     // About a second held: the 15° step's start, then a steady turn.
     assert!(yaw > 60.0 && yaw < 120.0, "{yaw}");
 }
+
+#[test]
+fn scenario_dialog_guidance() {
+    scenario("dialog_guidance");
+}
+
+#[test]
+fn scenario_mesh_section_visibility() {
+    scenario("mesh_section_visibility");
+}
+
+#[test]
+fn section_views_leave_the_cut_open_and_show_mesh_cells() {
+    let mut h = Harness::new();
+    h.call("engine.execute", json!({"command": "file.sample", "params": {"name": "highpass"}}));
+    for step in ["mesh", "materials", "geometry"] {
+        h.call("ui.set", json!({"step": step, "section": {"axis": "x", "at": 9}}));
+        h.frames(2);
+        let scene = &h.app.view3d.shown().unwrap().scene;
+        assert!(!scene.lines.is_empty());
+        assert!(!scene.tris.iter().any(|t| t.p.iter().all(|p| (p[0] - 0.009).abs() < 1e-11)), "{step}: opaque cut faces hide the mesh");
+        let lines = scene.lines.iter().filter(|l| (l.a[0] - 0.009).abs() < 1e-11 && (l.b[0] - 0.009).abs() < 1e-11).count();
+        assert!(lines > if step == "mesh" { 100 } else { 0 });
+    }
+}
+
+#[test]
+fn scenario_wgsl_port_directions() {
+    scenario("wgsl_port_directions");
+}
+
+#[test]
+fn scenario_field_context() {
+    scenario("field_context");
+}
+
+#[test]
+fn field_phase_with_both_vectors_reuses_the_scene() {
+    let mut h = Harness::new();
+    h.call("engine.execute", json!({"command":"file.sample", "params":{"name":"highpass"}}));
+    h.call("engine.execute", json!({"command":"solve.frequency", "params":{"frequencies":[8],"order":1}}));
+    h.call("ui.set", json!({"view":"field","animate":false}));
+    h.app.field.view.show_e = true;
+    h.app.field.view.show_h = true;
+    h.frames(2);
+    let generation = h.app.view3d.inspect(h.app.session.display().length)["scene_generation"].clone();
+    let history = h.app.session.history().len();
+    let started = std::time::Instant::now();
+    for i in 0..24 {
+        h.app.field.view.phase = i as f64 * 0.2;
+        h.frames(1);
+        assert_eq!(h.app.view3d.inspect(h.app.session.display().length)["scene_generation"], generation);
+    }
+    assert_eq!(h.app.session.history().len(), history, "phase playback must not solve again");
+    eprintln!("24 cached phase frames with E/H arrows: {:?}", started.elapsed());
+}

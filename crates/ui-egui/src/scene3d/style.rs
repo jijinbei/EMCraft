@@ -13,6 +13,18 @@ pub(super) fn sc() -> Scene {
     crate::theme::scene()
 }
 
+/// Lines on the viewport need contrast against its background, rather than the pale
+/// shaded solids the theme's ordinary edge colour was chosen for.
+pub(crate) fn wire_rgb() -> Rgb {
+    let t = crate::theme::Tokens::get();
+    let edge = sc().edge;
+    if [t.viewport_top, t.viewport_bottom].iter().all(|c| edge.contrast_ratio(crate::theme::rgb(*c)) >= 3.0) {
+        edge
+    } else {
+        crate::theme::rgb(t.text)
+    }
+}
+
 /// A material's colour: vacuum pale blue, the others from the theme's palette by their index.
 pub fn material_rgb(model: &Model, index: usize) -> Rgb {
     let s = sc();
@@ -37,7 +49,8 @@ pub(super) fn wall_style(m: &Model, overlay: Overlay, port: bool, material: usiz
     let s = sc();
     match (overlay, kind) {
         (Overlay::Ports, _) if port => (s.port, 255),
-        (Overlay::Plain | Overlay::Mesh, _) if port => (s.port_soft, 255),
+        (Overlay::Plain, _) if port => (s.port_soft, 255),
+        (Overlay::Mesh, _) if port => (s.port_soft, 35),
         (Overlay::Boundaries, _) if port => (s.port_soft, 200),
         (Overlay::Materials, _) if port => (material_rgb(m, material), 200),
         (Overlay::Field, Kind::Conductor) => (s.metal_dark, 200),
@@ -46,7 +59,7 @@ pub(super) fn wall_style(m: &Model, overlay: Overlay, port: bool, material: usiz
         (Overlay::Materials, Kind::Air) => (material_rgb(m, material), 30),
         (_, Kind::Air) => (s.metal, if overlay == Overlay::Mesh { 0 } else { 16 }),
         (Overlay::Plain, Kind::Wall) => (s.metal, 110),
-        (Overlay::Mesh, Kind::Wall) => (s.mesh_wall, 130),
+        (Overlay::Mesh, Kind::Wall) => (s.mesh_wall, 25),
         (Overlay::Materials, Kind::Wall) => (material_rgb(m, material), 120),
         (Overlay::Ports, Kind::Wall) => (s.metal, 55),
         (Overlay::Boundaries, Kind::Wall) => (s.metal_dark, 110),
