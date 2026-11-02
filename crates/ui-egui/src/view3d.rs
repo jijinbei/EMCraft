@@ -82,7 +82,7 @@ impl Cut {
 
     /// The render's section, outlined in the theme's scene edge colour.
     fn section(self) -> view3d::Section {
-        view3d::Section { outline: Some(crate::theme::scene().edge), ..view3d::Section::across(self.axis, self.at, self.keep) }
+        view3d::Section { outline: Some(scene3d::wire_rgb()), ..view3d::Section::across(self.axis, self.at, self.keep) }
     }
 
     /// The cut for `ui.inspect`, `at` in display units.
@@ -277,9 +277,17 @@ impl View3d {
         let s = now.section();
         match view3d::section::section(&full.scene, &s) {
             Ok(mut scene) => {
-                // A meshed model's cut is the mesh's: every material filled, the air too.
-                let caps = scene3d::mesh_slice(model, now.axis, now.at, now.keep == Keep::Low);
-                scene.tris.extend(caps.tris);
+                // Keep the cut open: generated caps otherwise overlap the mesh slice and
+                // make vacuum look like solid matter. The existing cap outlines stay.
+                let size = full.bounds.map_or(1.0, |(lo, hi)| (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max));
+                let eps = size * 1e-9;
+                scene.tris.retain(|t| !t.p.iter().all(|p| (p[now.axis] - now.at).abs() <= eps));
+                let cut = if key.overlay == Overlay::Mesh {
+                    scene3d::mesh_slice(model, now.axis, now.at, now.keep == Keep::Low)
+                } else {
+                    scene3d::section_outline(model, now.axis, now.at)
+                };
+                scene.lines.extend(cut.lines);
                 let labels = full.labels.iter().filter(|l| s.keeps(l.at)).cloned().collect();
                 let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds, cache: Default::default() };
                 self.cut = Some((key.clone(), now, built));

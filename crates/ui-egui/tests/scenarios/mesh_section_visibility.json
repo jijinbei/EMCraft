@@ -1,0 +1,95 @@
+[
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.sample",
+      "params": {
+        "name": "highpass"
+      }
+    }
+  },
+  {
+    "click": "step:mesh"
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "theme": "midnight",
+      "standard_view": "iso",
+      "section": {
+        "axis": "x",
+        "at": 9
+      }
+    }
+  },
+  {
+    "frames": 3
+  },
+  {
+    "expect": {
+      "inspect": {
+        "view3d.overlay": "mesh",
+        "view3d.lines": {
+          "min": 500
+        }
+      }
+    }
+  },
+  {
+    "shot": "mesh-section-midnight"
+  },
+  {
+    "click": "view3d:section:look"
+  },
+  {
+    "until": {
+      "inspect": {
+        "view3d.animating": false
+      }
+    },
+    "timeout": 10
+  },
+  {
+    "shot": "mesh-section-face-midnight"
+  },
+  {
+    "click": "view3d:section:flip"
+  },
+  {
+    "shot": "mesh-section-flipped"
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "theme": "light"
+    }
+  },
+  {
+    "shot": "mesh-section-light"
+  },
+  {
+    "click": "step:materials"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "view3d.overlay": "materials"
+      }
+    }
+  },
+  {
+    "shot": "material-section-outline"
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "section": null
+    }
+  },
+  {
+    "click": "step:mesh"
+  },
+  {
+    "shot": "mesh-whole-light"
+  }
+]

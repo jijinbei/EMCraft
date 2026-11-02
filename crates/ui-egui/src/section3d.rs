@@ -48,7 +48,7 @@ fn across(k: usize) -> (usize, usize) {
     }
 }
 
-/// The box (m) the cut faces fill on the plane: the scene's triangles lying on it (the caps),
+/// The box (m) of the cut outlines and any triangles on the plane,
 /// else the model's box flattened onto the plane.
 pub fn outline(scene: &Scene, cut: Cut, bounds: ([f64; 3], [f64; 3])) -> ([f64; 3], [f64; 3]) {
     let k = cut.axis.min(2);
@@ -56,12 +56,17 @@ pub fn outline(scene: &Scene, cut: Cut, bounds: ([f64; 3], [f64; 3])) -> ([f64; 
     let eps = 1e-7 * size;
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
-    for t in scene.tris.iter().filter(|t| t.p.iter().all(|q| (q[k] - cut.at).abs() <= eps)) {
-        for q in &t.p {
-            for d in 0..3 {
-                lo[d] = lo[d].min(q[d]);
-                hi[d] = hi[d].max(q[d]);
-            }
+    let on_plane = |p: &[f64; 3]| (p[k] - cut.at).abs() <= eps;
+    let points = scene
+        .tris
+        .iter()
+        .filter(|t| t.p.iter().all(on_plane))
+        .flat_map(|t| t.p)
+        .chain(scene.lines.iter().filter(|l| on_plane(&l.a) && on_plane(&l.b)).flat_map(|l| [l.a, l.b]));
+    for q in points {
+        for d in 0..3 {
+            lo[d] = lo[d].min(q[d]);
+            hi[d] = hi[d].max(q[d]);
         }
     }
     if !(lo[0] <= hi[0]) {

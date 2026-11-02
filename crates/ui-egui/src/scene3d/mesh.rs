@@ -63,7 +63,7 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
     }
     // Dielectric bodies inside show through the see-through surfaces in every view but the
     // field's.
-    if overlay != Overlay::Field {
+    if !matches!(overlay, Overlay::Field | Overlay::Mesh) {
         material_interfaces(m, mesh, out);
     }
     outline_edges(mesh, &faces, overlay, out);
@@ -138,7 +138,7 @@ fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, o
     }
     edges.sort_unstable();
     let alpha = match overlay {
-        Overlay::Mesh => 150,
+        Overlay::Mesh => 90,
         Overlay::Materials | Overlay::Ports | Overlay::Boundaries | Overlay::Field => 120,
         Overlay::Plain => 200,
     };
@@ -152,24 +152,29 @@ fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, o
         let air = group.iter().all(|e| faces.get(e.1).is_some_and(|f| f.2));
         let [a, b] = group[0].0;
         if show && let (Some(a), Some(b)) = (node(a), node(b)) {
-            out.scene.line(p3(a), p3(b), sc().edge, if air { alpha / 3 } else { alpha });
+            out.scene.line(
+                p3(a),
+                p3(b),
+                if overlay == Overlay::Mesh { super::style::wire_rgb() } else { sc().edge },
+                if air { alpha / 3 } else { alpha },
+            );
         }
     }
 }
 
 /// The mesh cut across `axis` (0 x, 1 y, 2 z) at `at` (m): each tetrahedron the plane crosses
-/// gives its cut (a triangle or a quadrilateral) in its material's colour, facing the removed
-/// side (`keep_low`: the high side is removed), so a section view shows every material filled,
-/// the air too, and conductors (not meshed) in metal behind. Tetrahedra in the mesh's order: the same
-/// mesh gives the same cut.
-pub(crate) fn slice(m: &Model, axis: usize, at: f64, keep_low: bool) -> emcraft_render::view3d::Scene {
+/// gives its polygon perimeter, without a triangulation diagonal or a filled face. Shared
+/// edges are drawn once. With `wire`, internal edges show the volume mesh; otherwise only
+/// the domain's outline and material boundaries remain. Coordinates are SI metres.
+pub(crate) fn slice(m: &Model, axis: usize, at: f64, wire: bool) -> emcraft_render::view3d::Scene {
     let mut out = emcraft_render::view3d::Scene::default();
     let Some(mesh) = &m.mesh else { return out };
-    let k = axis.min(2);
+    if axis > 2 || !at.is_finite() {
+        return out;
+    }
+    let k = axis;
     let (u, v) = ((k + 1) % 3, (k + 2) % 3);
-    let tag = if m.waveguide.is_some() { Pick::Guide.tag() } else { Pick::Solid.tag() };
-    // Conductors are not meshed: the mesh's box on the plane, in metal and a hair behind the
-    // cut, shows through where no tetrahedron is.
+    // Coordinates relative to the mesh bounds keep the edge keys small and finite.
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
     for q in mesh.nodes.iter().map(|q| p3(*q)) {
         for c in 0..3 {
@@ -180,58 +185,57 @@ pub(crate) fn slice(m: &Model, axis: usize, at: f64, keep_low: bool) -> emcraft_
     if !(lo[k] < at && at < hi[k]) {
         return out;
     }
-    out.tagged(tag, |s| {
-        let size = (0..3).map(|c| hi[c] - lo[c]).fold(0.0, f64::max);
-        let behind = at + if keep_low { -1e-6 } else { 1e-6 } * size;
-        let corner = |a: f64, b: f64| {
-            let mut q = [0.0; 3];
-            (q[k], q[u], q[v]) = (behind, a, b);
-            q
-        };
-        let mut rect = [corner(lo[u], lo[v]), corner(hi[u], lo[v]), corner(hi[u], hi[v]), corner(lo[u], hi[v])];
-        if !keep_low {
-            rect.reverse();
-        }
-        s.tri(rect[0], rect[1], rect[2], sc().metal, 255);
-        s.tri(rect[0], rect[2], rect[3], sc().metal, 255);
-        for (t, tet) in mesh.tets.iter().enumerate() {
-            let Some(p) = tet.iter().map(|n| mesh.nodes.get(*n as usize).map(|q| p3(*q))).collect::<Option<Vec<[f64; 3]>>>() else { continue };
-            // Sides by the sign of the distance, the plane itself counted high, so a node on it
-            // is met once.
-            let d: Vec<f64> = p.iter().map(|q| q[k] - at).collect();
-            let mut pts: Vec<[f64; 3]> = Vec::with_capacity(4);
-            for i in 0..4 {
-                for j in i + 1..4 {
-                    if (d[i] < 0.0) != (d[j] < 0.0) {
-                        let s = d[i] / (d[i] - d[j]);
-                        let mut q = [0.0; 3];
-                        for c in 0..3 {
-                            q[c] = p[i][c] + s * (p[j][c] - p[i][c]);
-                        }
-                        q[k] = at;
-                        pts.push(q);
+    let size = (0..3).map(|c| hi[c] - lo[c]).fold(0.0, f64::max);
+    let key = |p: [f64; 3]| std::array::from_fn::<_, 3, _>(|c| ((p[c] - lo[c]) / size * 1e9).round() as i64);
+    type EdgeKey = ([i64; 3], [i64; 3]);
+    let mut edges: std::collections::BTreeMap<EdgeKey, ([f64; 3], [f64; 3], usize, usize, bool)> = std::collections::BTreeMap::new();
+    for (t, tet) in mesh.tets.iter().enumerate() {
+        let Some(p) = tet.iter().map(|n| mesh.nodes.get(*n as usize).map(|q| p3(*q))).collect::<Option<Vec<[f64; 3]>>>() else { continue };
+        // Sides by the sign of the distance, the plane itself counted high, so a node on it
+        // is met once.
+        let d: Vec<f64> = p.iter().map(|q| q[k] - at).collect();
+        let mut pts: Vec<[f64; 3]> = Vec::with_capacity(4);
+        for i in 0..4 {
+            for j in i + 1..4 {
+                if (d[i] < 0.0) != (d[j] < 0.0) {
+                    let s = d[i] / (d[i] - d[j]);
+                    let mut q = [0.0; 3];
+                    for c in 0..3 {
+                        q[c] = p[i][c] + s * (p[j][c] - p[i][c]);
                     }
+                    q[k] = at;
+                    pts.push(q);
                 }
             }
-            // A node on the plane is met by each of its edges: once is enough.
-            pts.sort_by(|a, b| a.iter().zip(b).fold(std::cmp::Ordering::Equal, |o, (x, y)| o.then(x.total_cmp(y))));
-            pts.dedup();
-            if pts.len() < 3 {
+        }
+        // A node on the plane is met by each of its edges: once is enough.
+        pts.sort_by(|a, b| a.iter().zip(b).fold(std::cmp::Ordering::Equal, |o, (x, y)| o.then(x.total_cmp(y))));
+        pts.dedup();
+        if pts.len() < 3 {
+            continue;
+        }
+        // Around the centre in the plane, turning so the face looks at the removed side.
+        let n = pts.len() as f64;
+        let c = [pts.iter().map(|q| q[u]).sum::<f64>() / n, pts.iter().map(|q| q[v]).sum::<f64>() / n];
+        let angle = |q: &[f64; 3]| (q[v] - c[1]).atan2(q[u] - c[0]);
+        pts.sort_by(|a, b| angle(a).total_cmp(&angle(b)));
+        let material = mesh.tet_material.get(t).copied().unwrap_or(0) as usize;
+        for i in 0..pts.len() {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            let (ka, kb) = (key(a), key(b));
+            if ka == kb {
                 continue;
             }
-            // Around the centre in the plane, turning so the face looks at the removed side.
-            let n = pts.len() as f64;
-            let c = [pts.iter().map(|q| q[u]).sum::<f64>() / n, pts.iter().map(|q| q[v]).sum::<f64>() / n];
-            let angle = |q: &[f64; 3]| (q[v] - c[1]).atan2(q[u] - c[0]);
-            pts.sort_by(|a, b| angle(a).total_cmp(&angle(b)));
-            if !keep_low {
-                pts.reverse();
-            }
-            let colour = material_rgb(m, mesh.tet_material.get(t).copied().unwrap_or(0) as usize);
-            for w in 1..pts.len() - 1 {
-                s.tri(pts[0], pts[w], pts[w + 1], colour, 255);
-            }
+            let (ka, kb, a, b) = if ka < kb { (ka, kb, a, b) } else { (kb, ka, b, a) };
+            let e = edges.entry((ka, kb)).or_insert((a, b, 0, material, false));
+            e.2 += 1;
+            e.4 |= e.3 != material;
         }
-    });
+    }
+    for (a, b, count, _, interface) in edges.into_values() {
+        if wire || count == 1 || interface {
+            out.line(a, b, super::style::wire_rgb(), if count == 1 || interface { 255 } else { 210 });
+        }
+    }
     out
 }

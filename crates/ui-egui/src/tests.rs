@@ -621,3 +621,23 @@ fn a_held_arrow_turns_the_view_steadily() {
 fn scenario_dialog_guidance() {
     scenario("dialog_guidance");
 }
+
+#[test]
+fn scenario_mesh_section_visibility() {
+    scenario("mesh_section_visibility");
+}
+
+#[test]
+fn section_views_leave_the_cut_open_and_show_mesh_cells() {
+    let mut h = Harness::new();
+    h.call("engine.execute", json!({"command": "file.sample", "params": {"name": "highpass"}}));
+    for step in ["mesh", "materials", "geometry"] {
+        h.call("ui.set", json!({"step": step, "section": {"axis": "x", "at": 9}}));
+        h.frames(2);
+        let scene = &h.app.view3d.shown().unwrap().scene;
+        assert!(!scene.lines.is_empty());
+        assert!(!scene.tris.iter().any(|t| t.p.iter().all(|p| (p[0] - 0.009).abs() < 1e-11)), "{step}: opaque cut faces hide the mesh");
+        let lines = scene.lines.iter().filter(|l| (l.a[0] - 0.009).abs() < 1e-11 && (l.b[0] - 0.009).abs() < 1e-11).count();
+        assert!(lines > if step == "mesh" { 100 } else { 0 });
+    }
+}

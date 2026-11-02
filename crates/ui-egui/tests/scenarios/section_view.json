@@ -1,5 +1,5 @@
 [
-  {"note": "The 3D view cut open: the section switch in its tool bar, then the axis, where along it and which side stays; the cut faces are filled in each body's colour"},
+  {"note": "The 3D view cut open: the section switch in its tool bar, then the axis, where along it and which side stays; the cut faces stay open with outlines"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"call": "ui.set", "params": {"view": "model", "standard_view": "iso"}},
   {"frames": 2},
@@ -30,7 +30,7 @@
   {"call": "ui.set", "params": {"section": {"axis": "x", "keep": "middle"}}, "fail": true},
   {"call": "ui.set", "params": {"section": {"axis": "x", "at": 1e300}}, "fail": true},
   {"expect": {"inspect": {"view3d.section.axis": "z"}}},
-  {"note": "A post in a guide, cut across its length: the post and the guide's sections show their cut faces; a click on a cap picks its body"},
+  {"note": "A post in a guide, cut across its length: the post and the guide show their cut outlines without opaque caps"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "inductive-post"}}},
   {"call": "ui.set", "params": {"view": "model", "standard_view": "iso", "section": {"axis": "z"}}},
   {"frames": 3},

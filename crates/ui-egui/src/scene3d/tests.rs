@@ -78,41 +78,32 @@ fn meshed(name: &str, size: Option<f64>) -> Session {
     s
 }
 
-/// A meshed guide cut along its length fills the whole cut, each material in its colour, the
-/// same cut twice the same; a plane outside the mesh cuts nothing.
+/// A cut shows the mesh throughout the domain, with neither filled caps nor a metal
+/// backing. Geometry views keep only the outline and material boundaries.
 #[test]
-fn a_mesh_cut_fills_the_section_by_material() {
+fn a_mesh_cut_shows_interior_edges_without_filled_faces() {
     let mut s = Session::new();
-    let script: serde_json::Value = serde_json::from_str(emcraft_engine::templates::find("highpass").unwrap().script).unwrap();
-    let steps: Vec<serde_json::Value> =
-        script.as_array().unwrap().iter().filter(|c| !c["command"].as_str().unwrap().starts_with("solve.")).cloned().collect();
-    s.run_script(&json!(steps)).unwrap();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
     let m = s.model();
     let (lo, hi) = m.bounds().map(|b| (p3(b.min), p3(b.max))).unwrap();
-    let at = 0.5 * (lo[0] + hi[0]);
-    let cut = mesh_slice(m, 0, at, true);
-    let area = |t: &emcraft_render::view3d::Tri| {
-        let (u, v) = ([0, 1, 2].map(|k| t.p[1][k] - t.p[0][k]), [0, 1, 2].map(|k| t.p[2][k] - t.p[0][k]));
-        0.5 * ((u[1] * v[2] - u[2] * v[1]).powi(2) + (u[2] * v[0] - u[0] * v[2]).powi(2) + (u[0] * v[1] - u[1] * v[0]).powi(2)).sqrt()
-    };
-    // The metal backing: two triangles behind the cut, as large as the mesh's box there.
-    let metal = super::style::sc().metal;
-    let (backing, caps): (Vec<&emcraft_render::view3d::Tri>, Vec<_>) = cut.tris.iter().partition(|t| t.p.iter().all(|p| p[0] < at));
-    assert_eq!(backing.len(), 2);
-    assert!(backing.iter().all(|t| t.color == metal));
-    let total: f64 = caps.iter().map(|t| area(t)).sum();
-    let want = (hi[1] - lo[1]) * (hi[2] - lo[2]);
-    assert!((total - want).abs() < 1e-9 * want.max(1e-12) + 1e-12, "{total} vs {want}");
-    assert!(caps.iter().all(|t| t.p.iter().all(|p| p[0] == at)));
-    // Facing the removed (high x) side.
-    assert!(cut.tris.iter().all(|t| {
-        let (u, v) = ([0, 1, 2].map(|k| t.p[1][k] - t.p[0][k]), [0, 1, 2].map(|k| t.p[2][k] - t.p[0][k]));
-        u[1] * v[2] - u[2] * v[1] >= 0.0
-    }));
-    let colours: std::collections::BTreeSet<_> = caps.iter().map(|t| (t.color.0, t.color.1, t.color.2)).collect();
-    assert_eq!(colours.len(), 2, "vacuum and ptfe-like");
-    assert_eq!(mesh_slice(m, 0, at, true).tris, cut.tris);
-    assert!(mesh_slice(m, 0, hi[0] + 1.0, true).tris.is_empty());
+    for axis in 0..3 {
+        let at = 0.47 * lo[axis] + 0.53 * hi[axis];
+        let cut = mesh_slice(m, axis, at, true);
+        let outline = section_outline(m, axis, at);
+        assert!(cut.tris.is_empty());
+        assert!(outline.tris.is_empty());
+        assert!(!outline.lines.is_empty());
+        assert!(cut.lines.len() > outline.lines.len());
+        assert!(cut.lines.iter().all(|l| [l.a, l.b].iter().all(|p| p[axis] == at)));
+        let u = (axis + 1) % 3;
+        let v = (axis + 2) % 3;
+        assert!(cut.lines.iter().any(|l| [l.a, l.b].iter().all(|p| p[u] > lo[u] && p[u] < hi[u] && p[v] > lo[v] && p[v] < hi[v])));
+        assert_eq!(mesh_slice(m, axis, at, false).lines, cut.lines);
+        assert_eq!(mesh_slice(m, axis, at, true).lines, cut.lines);
+        assert!(mesh_slice(m, axis, hi[axis] + 1.0, true).lines.is_empty());
+    }
+    assert!(mesh_slice(m, 3, 0.0, true).lines.is_empty());
+    assert!(mesh_slice(m, 0, f64::NAN, true).lines.is_empty());
 }
 
 #[test]
