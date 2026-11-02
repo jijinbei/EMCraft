@@ -700,3 +700,8 @@ fn scenario_field_plot_zoom() {
     let after = h.app.field.pinned.unwrap();
     assert!(after[1] < before[1], "scrolling down must probe farther down the same plane: {before:?} -> {after:?}");
 }
+
+#[test]
+fn scenario_multiport_power() {
+    scenario("multiport_power");
+}

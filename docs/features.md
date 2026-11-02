@@ -558,6 +558,15 @@ The S-parameter table of the last sweep: each S[p][q] (at port p for a wave into
 
 No parameters.
 
+## `results.power` — Power distribution
+
+The incident power fractions |S[p,q]|² at each reported port or terminal for one excitation and solved frequency. Includes reflected power, transmitted power, each output's share of transmitted power, and the signed unaccounted balance. The balance can include higher modes, radiation, loss and numerical error; it is not automatically absorbed power. Refuses evanescent or lossy-port pseudo-waves.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `frequency` | number |  | no | solved frequency (default last solved) |
+| `excitation` | string |  | no | input port or terminal (default driven port) |
+
 ## `results.compare` — Compare with theory
 
 Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, mode matching (`modes` TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.

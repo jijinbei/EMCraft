@@ -144,3 +144,5 @@ pub(crate) const EIGEN_MAX: usize = emcraft_solver::eigen::MAX_MODES;
 mod tests;
 
 pub mod visibility;
+
+pub mod power;

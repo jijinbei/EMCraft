@@ -7,6 +7,7 @@ use emcraft_model::{Aabb, Point3};
 
 use crate::lang::args;
 use crate::scene3d::{BOX_EDGES, box_corner, normal_axis};
+use crate::ui_kit;
 
 use super::field_params::FieldParams;
 
@@ -31,6 +32,7 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
     if field.view.mode.is_none() && app.session.results().sweep.is_some() {
         heading(ui, "FREQUENCY");
         spark(app, field, ui);
+        power_readout(app, field, ui);
         ui.add_space(t.space_8);
     }
     probes(app, field, ui, out);
@@ -186,20 +188,13 @@ fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     }
 }
 
-/// |S11| and |S21| over the sweep, small, with the view's frequency marked; a click picks the
-/// nearest solved frequency.
+/// Every destination of the selected excitation, with the current frequency marked.
 pub(super) fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     let t = &Tokens::get();
     let Some(sw) = app.session.results().sweep.as_ref() else { return };
-    let points: Vec<(f64, f64, f64)> = sw
-        .results
-        .iter()
-        .map(|r| {
-            let s = |i: usize| r.s.get(i, 0).map_or(0.0, |c| c.norm());
-            (r.frequency, s(0), s(1))
-        })
-        .collect();
-    let (Some(f0), Some(f1)) = (points.first().map(|p| p.0), points.last().map(|p| p.0)) else { return };
+    let (Some(first), Some(last)) = (sw.results.first(), sw.results.last()) else { return };
+    let (f0, f1) = (first.frequency, last.frequency);
+    let input = field.view.excitation;
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().min(SIDE - 8.0), 64.0), Sense::click());
     scenario::publish_target(Fixed::FieldSpark, rect);
     let painter = ui.painter_at(rect);
@@ -207,12 +202,10 @@ pub(super) fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui)
     let plot = rect.shrink2(vec2(8.0, 8.0));
     let fx = |f: f64| if f1 > f0 { plot.left() + ((f - f0) / (f1 - f0)) as f32 * plot.width() } else { plot.center().x };
     let sy = |m: f64| plot.bottom() - (m.clamp(0.0, 1.0) as f32) * plot.height();
-    // In the charts' colours: S11 red, S21 blue.
-    let pens = crate::theme::palette();
-    let s11 = crate::theme::color32(pens.pen(emcraft_render::Pen::Series(1)));
-    let s21 = crate::theme::color32(pens.pen(emcraft_render::Pen::Series(0)));
-    for (pick, colour) in [(1usize, s11), (2, s21)] {
-        let line: Vec<Pos2> = points.iter().map(|p| pos2(fx(p.0), sy(if pick == 1 { p.1 } else { p.2 }))).collect();
+    let palette = crate::theme::palette();
+    for row in 0..first.s.ports() {
+        let colour = crate::theme::color32(palette.pen(view::sparameter_pen(row)));
+        let line: Vec<Pos2> = sw.results.iter().filter_map(|r| r.s.get(row, input).map(|v| pos2(fx(r.frequency), sy(v.norm())))).collect();
         if line.len() > 1 {
             painter.add(egui::Shape::line(line.clone(), Stroke::new(1.4, colour)));
         }
@@ -220,19 +213,16 @@ pub(super) fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui)
             painter.circle_filled(q, 1.8, colour);
         }
     }
-    let f = field.view.frequency;
-    let x = fx(f);
+    let x = fx(field.view.frequency);
     painter.line_segment([pos2(x, rect.top() + 2.0), pos2(x, rect.bottom() - 2.0)], Stroke::new(1.6, t.accent));
     let fu = app.session.display().frequency;
     painter.text(
         pos2((x + 4.0).min(rect.right() - 70.0), rect.top() + 3.0),
         Align2::LEFT_TOP,
-        format!("{:.4} {}", fu.from_si(f), fu.symbol()),
+        format!("{:.4} {}", fu.from_si(field.view.frequency), fu.symbol()),
         FontId::proportional(t.font_small),
         t.text,
     );
-    painter.text(rect.left_bottom() + vec2(4.0, -2.0), Align2::LEFT_BOTTOM, "|S11|", FontId::proportional(t.font_small * 0.9), s11);
-    painter.text(rect.left_bottom() + vec2(40.0, -2.0), Align2::LEFT_BOTTOM, "|S21|", FontId::proportional(t.font_small * 0.9), s21);
     if resp.clicked()
         && let Some(pos) = resp.interact_pointer_pos()
         && plot.width() > 0.0
@@ -243,6 +233,46 @@ pub(super) fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui)
         }
     }
     resp.hint("Click to show the nearest solved frequency");
+    ui.horizontal_wrapped(|ui| {
+        for row in 0..first.s.ports() {
+            let colour = crate::theme::color32(palette.pen(view::sparameter_pen(row)));
+            ui.label(egui::RichText::new(format!("|S{}{}|", row + 1, input + 1)).size(t.font_small).color(colour));
+        }
+    });
+}
+
+fn power_readout(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
+    let key = (app.revision, field.view.frequency.to_bits(), field.view.excitation);
+    if field.power.as_ref().is_none_or(|p| p.key != key) {
+        field.power = Some(crate::state::PowerReadout {
+            key,
+            value: emcraft_engine::power::at(&app.session, field.view.frequency, field.view.excitation).map_err(|e| e.to_string()),
+        });
+    }
+    heading(ui, "POWER DISTRIBUTION");
+    let Some(readout) = field.power.as_ref() else { return };
+    let report = match &readout.value {
+        Ok(v) => v,
+        Err(e) => {
+            ui_kit::caption(ui, Raw(e));
+            return;
+        }
+    };
+    egui::Grid::new("field:power").num_columns(3).spacing(vec2(8.0, 3.0)).show(ui, |ui| {
+        for name in ["Port", "Incident power", "Output share"] {
+            ui.small(tr(name));
+        }
+        ui.end_row();
+        for output in report["outputs"].as_array().into_iter().flatten() {
+            let label = format!("{} · {}", output["port"].as_str().unwrap_or(""), output["s"].as_str().unwrap_or(""));
+            ui.small(label);
+            ui.small(format!("{:.1}%", 100.0 * output["incident_fraction"].as_f64().unwrap_or(0.0)));
+            ui.small(output["branch_fraction"].as_f64().map_or_else(|| "—".into(), |v| format!("{:.1}%", 100.0 * v)));
+            ui.end_row();
+        }
+    });
+    ui.small(trf("Unaccounted: {value}%", args!(value = format!("{:.2}", 100.0 * report["unaccounted"].as_f64().unwrap_or(0.0)))));
+    ui_kit::caption(ui, "Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error.");
 }
 
 /// The project's probes (`view.probe.*`): + adds one at the pinned point (the plane's middle

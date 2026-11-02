@@ -74,6 +74,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("results.eigenmodes", None, Some(Glyph::Eigen), false),
     ui("solve.port_modes", Some("Port modes"), Some(Glyph::PortModes), true),
     ui("results.sparameters", None, Some(Glyph::Chart), false),
+    ui("results.power", None, Some(Glyph::Chart), false),
     ui("results.compare", Some("Compare"), Some(Glyph::Compare), true),
     ui("results.field_error", None, Some(Glyph::Compare), true),
     ui("results.history", None, None, false),

@@ -8,6 +8,12 @@ use serde_json::Value;
 use crate::picture::{Cached, PictureKey};
 use crate::ui_kit;
 
+/// A frequency/excitation readout cached independently of phase playback.
+pub struct PowerReadout {
+    pub key: (u64, u64, usize),
+    pub value: Result<Value, String>,
+}
+
 /// The field view's state.
 pub struct FieldState {
     pub view: FieldView,
@@ -28,6 +34,7 @@ pub struct FieldState {
     /// Fields drawn in model context; false selects the optional flat plot.
     pub beside_3d: bool,
     pub plot_zoom: f32,
+    pub power: Option<PowerReadout>,
     /// The fields at the project's probes for the view's solution, and what they were read for.
     pub probe_values: Option<(ProbeKey, Vec<Option<(emcraft_model::CVec3, emcraft_model::CVec3)>>)>,
     /// A probe being dragged on the picture: its index and where it is now (picture axes).
@@ -59,6 +66,7 @@ impl Default for FieldState {
             kept: Vec::new(),
             beside_3d: true,
             plot_zoom: 1.0,
+            power: None,
             probe_values: None,
             dragging: None,
         }

@@ -111,3 +111,5 @@ The 2D field plot starts at column width and scrolls in both directions. `field:
 Material rows select `Material(i)` in 3D. `choice:material_visibility:<name>` toggles the row's eye through `view.material` (`name`, `visible`). `hidden_materials` reports the saved names. These settings affect material regions, while meshed physical walls and ports remain visible; they never invalidate mesh or field results.
 
 `view.visibility` takes `kind` (`material` or `geometry`), `name` (material name or geometry key) and `visible`. Geometry eyes publish `choice:geometry_visibility:<key>`; material eyes retain their existing handles. `hidden_geometry` lists hidden keys. `view.material` remains a compatible wrapper.
+
+`results.power` reads one solved `frequency` and optional `excitation` (port/terminal name), defaulting to the final solved frequency and driven input. The Field view exposes displayed labels in `field.s_curves` and its cached report in `field.power`.

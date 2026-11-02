@@ -716,7 +716,12 @@
     "Fit width": "幅に合わせる",
     "Fit whole plot": "全体表示",
     "Hide object": "この項目を非表示",
-    "Show object": "この項目を表示"
+    "Show object": "この項目を表示",
+    "POWER DISTRIBUTION": "電力分配",
+    "Incident power": "入射電力比",
+    "Output share": "出力内の比率",
+    "Unaccounted: {value}%": "未回収：{value}%",
+    "Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error.": "表示したS成分の電力比です。残差には損失・放射・高次モード・数値誤差が含まれます。"
   },
   "commands": {
     "project.frequency": {
@@ -1649,6 +1654,14 @@
         "kind": "material（材料）または geometry（形状）",
         "name": "材料名または形状キー（guide、solid、section:0、layer:0、strip:0、via:0、feature:0、inclusion:0）",
         "visible": "表示するか"
+      }
+    },
+    "results.power": {
+      "label": "電力分配",
+      "doc": "選択した励振・解析済み周波数の各ポートの入射電力比 |S|²、反射・透過電力、出力内の分岐比と未回収電力を表示する。残差は吸収電力とは限らず、高次モード・放射・損失・数値誤差を含む。損失媒質ポートの疑似波やエバネッセント波は未対応。",
+      "params": {
+        "frequency": "解析済み周波数（既定は最後）",
+        "excitation": "入力ポートまたは端子（既定は駆動ポート）"
       }
     }
   },

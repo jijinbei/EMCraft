@@ -766,6 +766,11 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::sparameters,
     },
     CommandSpec {
+        id: "results.power", label: "Power distribution", doc: "The incident power fractions |S[p,q]|² at each reported port or terminal for one excitation and solved frequency. Includes reflected power, transmitted power, each output's share of transmitted power, and the signed unaccounted balance. The balance can include higher modes, radiation, loss and numerical error; it is not automatically absorbed power. Refuses evanescent or lossy-port pseudo-waves.",
+        params: &[opt("frequency", K::Number, "solved frequency (default last solved)"),opt("excitation",K::String,"input port or terminal (default driven port)")],
+        effect: Effect::None, invalidates: None, run: crate::power::command,
+    },
+    CommandSpec {
         id: "results.compare",
         label: "Compare with theory",
         doc: "Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, mode matching (`modes` TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.",
