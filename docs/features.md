@@ -652,6 +652,16 @@ Removes a probe.
 |---|---|---|---|---|
 | `name` | string |  | yes | the probe |
 
+## `view.visibility` — Object visibility
+
+Shows or hides a material region or geometry object. Display only, saved with the project; preserves mesh and solved results.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `kind` | string |  | yes | material or geometry |
+| `name` | string |  | yes | material name or geometry key (guide, solid, section:0, layer:0, strip:0, via:0, feature:0, inclusion:0) |
+| `visible` | boolean |  | yes | whether the object is shown |
+
 ## `view.material` — Material visibility
 
 Shows or hides a material's region in the viewport. Display only: the material, mesh and results remain intact. Saved with the project.

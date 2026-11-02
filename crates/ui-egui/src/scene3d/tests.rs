@@ -312,6 +312,36 @@ fn material_selection_glows_and_visibility_preserves_walls_and_ports() {
     s.execute("view.material", &json!({"name":"ptfe-like","visible":false})).unwrap();
     let hidden = build(&s, Overlay::Materials);
     assert!(hidden.scene.tris.len() < before);
+    let material_colour = material_rgb(s.model(), 1);
+    assert!(
+        hidden
+            .scene
+            .tris
+            .iter()
+            .filter(|t| matches!(Pick::from_tag(t.tag), Some(Pick::Port(_))))
+            .all(|t| t.color != material_colour && t.alpha <= 25)
+    );
     assert!(hidden.scene.tris.iter().any(|t| matches!(Pick::from_tag(t.tag), Some(Pick::Port(_)))));
     assert!(hidden.scene.tris.iter().any(|t| t.tag == Pick::Guide.tag()));
+}
+
+#[test]
+fn dielectric_is_a_closed_block_and_geometry_visibility_hides_its_shell() {
+    let mut s = meshed("highpass", None);
+    let b = build(&s, Overlay::Materials);
+    let mut axes = [false; 3];
+    for t in b.scene.tris.iter().filter(|t| t.tag == Pick::Material(1).tag()) {
+        for (axis, found) in axes.iter_mut().enumerate() {
+            if t.p.iter().all(|p| (p[axis] - t.p[0][axis]).abs() < 1e-12) {
+                *found = true;
+            }
+        }
+    }
+    assert_eq!(axes, [true; 3], "material must have side faces as well as interface caps");
+    s.execute("view.visibility", &json!({"kind":"geometry","name":"guide","visible":false})).unwrap();
+    let b = build(&s, Overlay::Materials);
+    assert!(b.scene.tris.iter().all(|t| matches!(Pick::from_tag(t.tag), Some(Pick::Port(_)))));
+    assert!(s.model().mesh.is_some());
+    s.execute("view.visibility", &json!({"kind":"geometry","name":"guide","visible":true})).unwrap();
+    assert!(build(&s, Overlay::Materials).scene.tris.iter().any(|t| t.tag == Pick::Material(1).tag()));
 }

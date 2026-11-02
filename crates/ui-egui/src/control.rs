@@ -220,6 +220,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         json!(crate::browser::port_roles(s).iter().map(|r| json!({"name": r.name, "role": r.id(), "s": r.sparameter()})).collect::<Vec<_>>());
     v["driven"] = json!(s.sparameter_entries().get(s.driven_entry()).map(|e| e.name.clone()));
     v["probes"] = json!(s.views().probes.iter().map(|p| json!({"name": p.name, "at": p.at.map(|x| s.show_length(x))})).collect::<Vec<_>>());
+    v["hidden_geometry"] = json!(app.session.views().hidden_geometry);
     v["hidden_materials"] = json!(app.session.views().hidden_materials);
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
     v["estimate"] =

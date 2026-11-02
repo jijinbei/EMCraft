@@ -92,5 +92,63 @@
         ]
       }
     }
+  },
+  {
+    "click": "choice:geometry_visibility:guide"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "hidden_geometry": [
+          "guide"
+        ]
+      }
+    }
+  },
+  {
+    "shot": "geometry-hidden"
+  },
+  {
+    "click": "choice:geometry_visibility:guide"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "hidden_geometry": []
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "project.analysis",
+      "params": {
+        "kind": "frequency"
+      }
+    }
+  },
+  {
+    "click": "step:setup"
+  },
+  {
+    "expect": {
+      "handles": [
+        "setup:solver:frequency"
+      ],
+      "hidden": [
+        "setup:solver:radiation",
+        "setup:solver:time_domain",
+        "setup:solver:eigenmodes"
+      ]
+    }
+  },
+  {
+    "shot": "declared-frequency-setup"
   }
 ]

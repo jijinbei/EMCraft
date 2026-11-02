@@ -7,8 +7,9 @@ use crate::lang::args;
 pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Solver");
     let inferred = app.session.model().analysis();
-    let mut solver = f.solver.unwrap_or(inferred);
-    for s in Solver::ALL {
+    let declared = app.session.model().analysis;
+    let mut solver = declared.unwrap_or(f.solver.unwrap_or(inferred));
+    for s in Solver::ALL.into_iter().filter(|s| declared.is_none_or(|d| d == *s)) {
         let r = ui.radio_value(&mut solver, s, egui::RichText::new(shown(s)).size(t.font_small));
         scenario::publish_target(Handle::Solver(s), r.rect);
     }

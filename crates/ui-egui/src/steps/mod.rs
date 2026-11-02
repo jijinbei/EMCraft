@@ -181,6 +181,7 @@ pub struct Workflow {
     pub mode_focus: Option<ModeFocus>,
     /// `solve.devices`' reply, asked once: what this machine can run on.
     pub devices: Option<Value>,
+    pub device_chosen: bool,
     /// Run was refused for blocking problems: the steps still in the way show as needing
     /// attention, until a run starts or another project opens.
     pub blocked: bool,
@@ -242,6 +243,11 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
     if app.workflow.step == Some(Step::Setup) && app.workflow.devices.is_none() {
         let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
+        if !app.workflow.device_chosen {
+            let (device, precision) = recommended_device(&v, app.session.model().analysis());
+            let _ = app.session.execute("solve.device", &json!({"device":device,"precision":precision}));
+            app.workflow.device_chosen = true;
+        }
         app.workflow.devices = Some(v);
     }
     // The open dialog's run, when it starts one.
@@ -520,4 +526,37 @@ pub fn apply_band(app: &mut EmcraftApp) {
 fn band(s: &emcraft_engine::Session) -> Option<(f64, f64)> {
     let f = s.display().frequency;
     s.model().band.map(|b| (f.from_si(b.start.get()), f.from_si(b.stop.get())))
+}
+
+/// Prefer the available CUDA accelerator with double precision, preserving an explicit user
+/// choice elsewhere. The CubeCL CPU runtime is a verification backend, not an upgrade.
+fn recommended_device(list: &Value, solver: Solver) -> (&'static str, &'static str) {
+    let candidates: &[(&str, &str)] = match solver {
+        Solver::TimeDomain => &[("cuda", "double"), ("cuda", "single"), ("cpu", "double")],
+        _ => &[("cuda", "double"), ("cpu", "double")],
+    };
+    candidates
+        .iter()
+        .copied()
+        .find(|(name, p)| {
+            list["devices"].as_array().is_some_and(|ds| {
+                ds.iter()
+                    .any(|d| d["name"] == *name && d["available"] == true && d["precisions"].as_array().is_some_and(|ps| ps.iter().any(|v| v == *p)))
+            })
+        })
+        .unwrap_or(("cpu", "double"))
+}
+#[cfg(test)]
+mod device_preference_tests {
+    use super::*;
+    #[test]
+    fn advanced_available_device_wins_and_unsupported_double_falls_back() {
+        let mut list = json!({"devices":[{"name":"cpu","available":true,"precisions":["double"]},{"name":"cuda","available":true,"precisions":["single","double"]}]});
+        assert_eq!(recommended_device(&list, Solver::Frequency), ("cuda", "double"));
+        list["devices"][1]["precisions"] = json!(["single"]);
+        assert_eq!(recommended_device(&list, Solver::Frequency), ("cpu", "double"));
+        assert_eq!(recommended_device(&list, Solver::TimeDomain), ("cuda", "single"));
+        list["devices"][1]["available"] = json!(false);
+        assert_eq!(recommended_device(&list, Solver::TimeDomain), ("cpu", "double"));
+    }
 }

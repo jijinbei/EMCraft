@@ -69,6 +69,22 @@ pub enum Pick {
 }
 
 impl Pick {
+    pub(crate) fn display_object(self, m: &emcraft_model::Model) -> Option<emcraft_engine::visibility::DisplayObject> {
+        use emcraft_engine::visibility::{DisplayObject as O, GeometryObject as G};
+        Some(match self {
+            Self::Material(i) => O::Material(m.materials.get(i)?.name.clone()),
+            Self::Guide => O::Geometry(G::Guide),
+            Self::Solid => O::Geometry(G::Solid),
+            Self::Section(i) => O::Geometry(G::Section(i)),
+            Self::Layer(i) => O::Geometry(G::Layer(i)),
+            Self::Strip(i) => O::Geometry(G::Strip(i)),
+            Self::Via(i) => O::Geometry(G::Via(i)),
+            Self::Feature(i) => O::Geometry(G::Feature(i)),
+            Self::Inclusion(i) => O::Geometry(G::Inclusion(i)),
+            _ => return None,
+        })
+    }
+
     /// The triangle tag (0 is "nothing").
     pub fn tag(self) -> u32 {
         let (kind, i) = match self {
@@ -211,7 +227,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
     let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
         Some(_) => mesh::from_mesh(
-            m,
+            session,
             overlay,
             &mut out,
             selected.iter().find_map(|p| {
@@ -225,6 +241,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         None => geometry::from_geometry(m, overlay, &mut out),
     }
     present_materials(session, selected, &mut out);
+    filter_geometry(session, &mut out);
     extras::extras(m, session.driven_port(), overlay, &mut out);
     legend::legend(session, overlay, &mut out);
     if overlay == Overlay::Field {
@@ -298,6 +315,25 @@ fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
             }
         }
         true
+    });
+}
+
+/// The same geometry targets hide mesh surfaces, region surfaces and wire outlines.
+fn filter_geometry(session: &Session, out: &mut Built) {
+    use emcraft_engine::visibility::GeometryObject;
+    let m = session.model();
+    let hidden: Vec<_> = session.views().hidden_geometry.iter().filter_map(|s| GeometryObject::parse(s)).collect();
+    if hidden.is_empty() {
+        return;
+    }
+    let at = |p: [f64; 3]| emcraft_model::Point3::new(p[0], p[1], p[2]);
+    out.scene.tris.retain(|t| {
+        let centre = [0, 1, 2].map(|k| (t.p[0][k] + t.p[1][k] + t.p[2][k]) / 3.0);
+        !hidden.iter().any(|g| g.contains(m, at(centre)))
+    });
+    out.scene.lines.retain(|l| {
+        let centre = [0, 1, 2].map(|k| (l.a[k] + l.b[k]) / 2.0);
+        !hidden.iter().any(|g| g.contains(m, at(centre)))
     });
 }
 

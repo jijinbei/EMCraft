@@ -222,6 +222,8 @@ impl Probe {
 pub struct Views {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub hidden_materials: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub hidden_geometry: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub charts: BTreeMap<String, ChartStyle>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -239,7 +241,11 @@ impl Views {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.charts.is_empty() && self.probes.is_empty() && self.driven.is_none() && self.hidden_materials.is_empty()
+        self.charts.is_empty()
+            && self.probes.is_empty()
+            && self.driven.is_none()
+            && self.hidden_materials.is_empty()
+            && self.hidden_geometry.is_empty()
     }
 
     /// The views as read from a project file, checked: charts the engine knows, styles within
@@ -274,7 +280,10 @@ impl Views {
         if self.hidden_materials.len() > 4096 || self.hidden_materials.iter().any(|n| n.is_empty() || n.chars().count() > MAX_NAME) {
             return Err(EngineError::failed("views: invalid hidden material names"));
         }
-        Ok(Views { charts, probes: self.probes, driven: self.driven, hidden_materials: self.hidden_materials })
+        if self.hidden_geometry.len() > 4096 || self.hidden_geometry.iter().any(|k| crate::visibility::GeometryObject::parse(k).is_none()) {
+            return Err(EngineError::failed("views: invalid geometry visibility"));
+        }
+        Ok(Views { charts, probes: self.probes, driven: self.driven, hidden_materials: self.hidden_materials, hidden_geometry: self.hidden_geometry })
     }
 }
 
@@ -698,15 +707,5 @@ pub fn probes(s: &mut Session, p: &Params) -> Result<Value> {
 /// ```
 pub fn material_visibility(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
-    s.model().material(name)?;
-    let visible = p.flag("visible").required()?;
-    if name.chars().count() > MAX_NAME || (!visible && s.views.hidden_materials.len() >= 4096 && !s.views.hidden_materials.contains(name)) {
-        return Err(EngineError::failed("views: hidden material limit exceeded"));
-    }
-    if visible {
-        s.views.hidden_materials.remove(name);
-    } else {
-        s.views.hidden_materials.insert(name.to_owned());
-    }
-    Ok(json!({"name":name,"visible":visible}))
+    crate::visibility::set(s, crate::visibility::DisplayObject::Material(name.into()), p.flag("visible").required()?)
 }

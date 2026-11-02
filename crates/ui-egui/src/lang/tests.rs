@@ -219,6 +219,8 @@ fn tour() -> Record {
     use crate::{Action, View};
     let mut h = Harness::new();
     call(&mut h, "ui.set", json!({"language": "ja"}));
+    // Keep this language coverage tour independent of the machine's preferred accelerator.
+    call(&mut h, "engine.execute", json!({"command":"solve.device","params":{"device":"cpu","precision":"double"}}));
     record(true);
     h.app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
     // The start page, empty and with a project missing from the recent list, the settings
@@ -535,7 +537,7 @@ fn tour() -> Record {
 
 /// Texts a tour of the window cannot reach, with why.
 const UNREACHED: &[(&str, &str)] = &[
-    ("Show material", "tooltip on the eye of a hidden material (scenario material_visibility)"),
+    ("Show object", "tooltip on the eye of a hidden material (scenario material_visibility)"),
     ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
     ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),
     (

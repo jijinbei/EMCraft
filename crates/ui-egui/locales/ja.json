@@ -712,11 +712,11 @@
     "2D plot": "2Dグラフ",
     "Switch between a field plane in the 3D model and a flat plot": "モデル内の3D断面表示と2Dグラフを切り替えます",
     "Move the field plane in the model. Use 2D plot for point probes.": "モデル内の断面を動かして位置を確認できます。点での値の読み取りは「2Dグラフ」で行えます。",
-    "Hide material": "この材料を非表示",
-    "Show material": "この材料を表示",
     "Zoom": "拡大率",
     "Fit width": "幅に合わせる",
-    "Fit whole plot": "全体表示"
+    "Fit whole plot": "全体表示",
+    "Hide object": "この項目を非表示",
+    "Show object": "この項目を表示"
   },
   "commands": {
     "project.frequency": {
@@ -1640,6 +1640,15 @@
       "params": {
         "name": "材料名",
         "visible": "材料の領域を表示するか"
+      }
+    },
+    "view.visibility": {
+      "label": "項目の表示切り替え",
+      "doc": "材料の立体領域や形状を表示・非表示にする。表示状態はプロジェクトに保存され、メッシュや解析結果は保持される。",
+      "params": {
+        "kind": "material（材料）または geometry（形状）",
+        "name": "材料名または形状キー（guide、solid、section:0、layer:0、strip:0、via:0、feature:0、inclusion:0）",
+        "visible": "表示するか"
       }
     }
   },

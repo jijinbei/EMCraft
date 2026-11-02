@@ -332,3 +332,22 @@ fn material_visibility_is_display_only_and_saved() {
     assert!(t.views().hidden_materials.is_empty());
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn shared_object_visibility_is_saved_and_invalid_keys_are_refused() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name":"highpass"})).unwrap();
+    for (kind, name) in [("material", "ptfe-like"), ("geometry", "section:0")] {
+        s.execute("view.visibility", &json!({"kind":kind,"name":name,"visible":false})).unwrap();
+    }
+    let saved = s.views().clone();
+    for name in ["section:9999", "section:NaN", "solid", "garbage"] {
+        assert!(s.execute("view.visibility", &json!({"kind":"geometry","name":name,"visible":false})).is_err());
+        assert_eq!(s.views(), &saved);
+    }
+    let path = scratch("object-visibility.emcraft");
+    s.execute("file.save", &json!({"path":path})).unwrap();
+    s.execute("file.open", &json!({"path":path})).unwrap();
+    assert_eq!(s.views(), &saved);
+    let _ = std::fs::remove_file(path);
+}

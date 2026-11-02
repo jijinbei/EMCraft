@@ -109,3 +109,5 @@ In the 3D Field view, `field:spark` selects frequency and `field:at` positions t
 The 2D field plot starts at column width and scrolls in both directions. `field:plot:zoom`, `field:plot:width` and `field:plot:fit` control magnification; `field.plot_zoom` is the width-relative scale. `picture:field` targets the visible portion; probe coordinates use the full scrolled image.
 
 Material rows select `Material(i)` in 3D. `choice:material_visibility:<name>` toggles the row's eye through `view.material` (`name`, `visible`). `hidden_materials` reports the saved names. These settings affect material regions, while meshed physical walls and ports remain visible; they never invalidate mesh or field results.
+
+`view.visibility` takes `kind` (`material` or `geometry`), `name` (material name or geometry key) and `visible`. Geometry eyes publish `choice:geometry_visibility:<key>`; material eyes retain their existing handles. `hidden_geometry` lists hidden keys. `view.material` remains a compatible wrapper.

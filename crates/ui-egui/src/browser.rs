@@ -640,13 +640,22 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 t.text
                             };
                             let mut clip = rect;
-                            if let Some(Pick::Material(i)) = r.pick
-                                && let Some(mat) = app.session.model().materials.get(i)
-                            {
-                                let visible = !app.session.views().hidden_materials.contains(&mat.name);
+                            if let Some(object) = r.pick.and_then(|p| p.display_object(app.session.model())) {
+                                let visible = app.session.views().visible(&object);
+                                let name = object.name();
+                                let kind = object.kind();
                                 let eye = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(22.0, 20.0));
-                                let response = ui.interact(eye, ui.id().with(("material_eye", i)), Sense::click());
-                                scenario::publish_target(Handle::Choice("material_visibility", &mat.name), eye);
+                                let response = ui.interact(eye, ui.id().with(("object_eye", kind, &name)), Sense::click());
+                                scenario::publish_target(
+                                    Handle::Choice(
+                                        match kind {
+                                            "material" => "material_visibility",
+                                            _ => "geometry_visibility",
+                                        },
+                                        &name,
+                                    ),
+                                    eye,
+                                );
                                 let ink = if visible { t.text } else { t.text_dim };
                                 let c = eye.center();
                                 let points = vec![
@@ -667,8 +676,8 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                         Stroke::new(1.4, ink),
                                     );
                                 }
-                                if response.on_hover_text(lang::tr(if visible { "Hide material" } else { "Show material" })).clicked() {
-                                    out.push(Action::run("view.material", serde_json::json!({"name":mat.name,"visible":!visible})));
+                                if response.on_hover_text(lang::tr(if visible { "Hide object" } else { "Show object" })).clicked() {
+                                    out.push(Action::run("view.visibility", serde_json::json!({"kind":kind,"name":name,"visible":!visible})));
                                 }
                                 clip.max.x = eye.left() - 3.0;
                             }

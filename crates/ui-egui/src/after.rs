@@ -20,6 +20,9 @@ impl EmcraftApp {
             self.info(status::text(id, params, reply, &self.session));
             return;
         }
+        if id == "solve.device" {
+            self.workflow.device_chosen = true;
+        }
         self.revision = self.revision.wrapping_add(1);
         self.failure = None;
         // How results are looked at changes no result: the field's samples stay.

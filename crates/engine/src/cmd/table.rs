@@ -869,6 +869,11 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::views::probe_delete,
     },
     CommandSpec {
+        id: "view.visibility", label: "Object visibility", doc: "Shows or hides a material region or geometry object. Display only, saved with the project; preserves mesh and solved results.",
+        params: &[req("kind", K::String, "material or geometry"), req("name", K::String, "material name or geometry key (guide, solid, section:0, layer:0, strip:0, via:0, feature:0, inclusion:0)"), req("visible", K::Boolean, "whether the object is shown")],
+        effect: Effect::View, invalidates: None, run: crate::visibility::command,
+    },
+    CommandSpec {
         id: "view.material",
         label: "Material visibility",
         doc: "Shows or hides a material's region in the viewport. Display only: the material, mesh and results remain intact. Saved with the project.",
