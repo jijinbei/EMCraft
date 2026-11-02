@@ -15,13 +15,14 @@ impl EmcraftApp {
             Some((command, p)) => (command, p),
             None => (id, params),
         };
-        // A measurement changes nothing: the pictures and views stay.
-        if id == "geometry.measure" {
-            self.info(status::text(id, params, reply, &self.session));
-            return;
-        }
-        if id == "solve.device" {
-            self.workflow.device_chosen = true;
+        // Commands that transition machine/UI state without changing the model.
+        match id {
+            "geometry.measure" => {
+                self.info(status::text(id, params, reply, &self.session));
+                return;
+            }
+            "solve.device" => self.workflow.device_selection = steps::DeviceSelection::Explicit,
+            _ => {}
         }
         self.revision = self.revision.wrapping_add(1);
         self.failure = None;
@@ -92,16 +93,12 @@ impl EmcraftApp {
         self.replies.port_modes = None;
         self.replies.compare = None;
         let results = self.session.results();
-        self.view = if results.sweep.is_some() {
-            View::SParameters
-        } else if results.eigen.is_some() {
-            View::Eigenmodes
-        } else if results.radiation.is_some() {
-            View::FarField
-        } else if results.dispersion.is_some() {
-            View::Dispersion
-        } else {
-            View::Model
+        self.view = match (&results.sweep, &results.eigen, &results.radiation, &results.dispersion) {
+            (Some(_), _, _, _) => View::SParameters,
+            (None, Some(_), _, _) => View::Eigenmodes,
+            (None, None, Some(_), _) => View::FarField,
+            (None, None, None, Some(_)) => View::Dispersion,
+            (None, None, None, None) => View::Model,
         };
         self.pick_frequency();
         self.view3d.fit_next = true;
@@ -133,7 +130,10 @@ impl EmcraftApp {
                 }
             }
             "solve.time_domain" => {
-                self.view = if results.td_radiation.is_some() { View::FarField } else { View::SParameters };
+                self.view = match &results.td_radiation {
+                    Some(_) => View::FarField,
+                    None => View::SParameters,
+                };
             }
             "solve.port_modes" => {
                 self.replies.port_modes = Some(reply.clone());
@@ -152,7 +152,10 @@ impl EmcraftApp {
         if let Some(f) = crate::nearest(&freqs, self.field.view.frequency) {
             self.field.view.frequency = f;
         }
-        self.field.view.mode = if self.session.results().sweep.is_none() && self.session.results().eigen.is_some() { Some(0) } else { None };
+        self.field.view.mode = match (&self.session.results().sweep, &self.session.results().eigen) {
+            (None, Some(_)) => Some(0),
+            _ => None,
+        };
         self.field.at = None;
     }
 }

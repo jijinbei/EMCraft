@@ -981,13 +981,17 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
     grip_drag.released = v.left == Some(LeftDrag::Grip) && !resp.dragged();
     // The box follows the pointer from the press; let go, it selects.
     let mut select = false;
-    if let Some(LeftDrag::Box { add }) = v.left {
-        if resp.dragged() {
+    match (v.left, resp.dragged()) {
+        (Some(LeftDrag::Box { .. }), true) => {
             v.boxsel = press.zip(latest).map(|(a, b)| BoxSel::from_drag(a, b)).filter(|b| b.rect.is_finite());
-        } else if let Some(b) = v.boxsel.take() {
-            box_select(v, rect, b, add);
-            select = true;
         }
+        (Some(LeftDrag::Box { add }), false) => {
+            if let Some(b) = v.boxsel.take() {
+                box_select(v, rect, b, add);
+                select = true;
+            }
+        }
+        _ => {}
     }
     if !resp.dragged() {
         v.left = None;
@@ -1047,12 +1051,13 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
         let step = if step.is_finite() && step.length() <= 1e4 { step } else { egui::Vec2::ZERO };
         if step != egui::Vec2::ZERO {
             v.stop_animation();
-            if m == NavMode::Orbit {
-                let mut o = v.orbit.unwrap_or_else(|| Drag::new(v.camera, pivot(app, v, rect, Some(at), frame)));
-                o.orbit(&mut v.camera, f64::from(step.x), f64::from(step.y), false);
-                v.orbit = Some(o);
-            } else {
-                v.camera.pan(f64::from(step.x), f64::from(step.y), h);
+            match m {
+                NavMode::Orbit => {
+                    let mut o = v.orbit.unwrap_or_else(|| Drag::new(v.camera, pivot(app, v, rect, Some(at), frame)));
+                    o.orbit(&mut v.camera, f64::from(step.x), f64::from(step.y), false);
+                    v.orbit = Some(o);
+                }
+                NavMode::Pan | NavMode::Zoom => v.camera.pan(f64::from(step.x), f64::from(step.y), h),
             }
         }
         orbiting |= m == NavMode::Orbit;
@@ -1096,19 +1101,18 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let pick = v.pick_at(ui.ctx(), rect, pos);
-        if resp.double_clicked() {
-            v.selected = pick.into_iter().collect();
-            match pick {
-                Some(_) => double = true,
-                None => v.goal = Some(Goal::Fit),
+        match (resp.double_clicked(), mods.shift || ctrl, pick) {
+            (true, _, Some(p)) => {
+                v.selected = vec![p];
+                double = true;
             }
-        } else if mods.shift || ctrl {
-            // Shift or Ctrl toggles the part (on nothing, the selection stays), as in SolidCraft.
-            if let Some(p) = pick {
-                selection::toggle(&mut v.selected, p);
+            (true, _, None) => {
+                v.selected.clear();
+                v.goal = Some(Goal::Fit);
             }
-        } else {
-            v.selected = pick.into_iter().collect();
+            (false, true, Some(p)) => selection::toggle(&mut v.selected, p),
+            (false, true, None) => {}
+            (false, false, p) => v.selected = p.into_iter().collect(),
         }
     }
     Gesture { select: select || resp.clicked(), double, plane_drag, grip: grip_drag, tool_click: false }

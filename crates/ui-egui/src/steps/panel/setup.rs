@@ -45,13 +45,16 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
             field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
     }
-    if solver != Solver::TimeDomain {
-        let eo = e(f, "order");
-        field(ui, "Element order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
-        ui_kit::caption(
-            ui,
-            "Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence.",
-        );
+    match solver {
+        Solver::TimeDomain => {}
+        Solver::Frequency | Solver::Eigenmodes | Solver::Radiation => {
+            let eo = e(f, "order");
+            field(ui, "Element order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
+            ui_kit::caption(
+                ui,
+                "Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence.",
+            );
+        }
     }
     if let Some(e) = run_estimate(app) {
         super::super::estimate_line(ui, e, Fixed::SetupEstimate);

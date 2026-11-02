@@ -145,7 +145,10 @@
         "setup:solver:radiation",
         "setup:solver:time_domain",
         "setup:solver:eigenmodes"
-      ]
+      ],
+      "inspect": {
+        "workflow.device_selection": "automatic"
+      }
     }
   },
   {

@@ -164,6 +164,25 @@ impl Fields {
     }
 }
 
+/// Device choice progresses once from Pending to Automatic; any user command makes it
+/// Explicit. Opening another project preserves the choice for this machine.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeviceSelection {
+    #[default]
+    Pending,
+    Automatic,
+    Explicit,
+}
+impl DeviceSelection {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Automatic => "automatic",
+            Self::Explicit => "explicit",
+        }
+    }
+}
+
 /// The workflow's state in the app.
 #[derive(Default)]
 pub struct Workflow {
@@ -181,7 +200,7 @@ pub struct Workflow {
     pub mode_focus: Option<ModeFocus>,
     /// `solve.devices`' reply, asked once: what this machine can run on.
     pub devices: Option<Value>,
-    pub device_chosen: bool,
+    pub device_selection: DeviceSelection,
     /// Run was refused for blocking problems: the steps still in the way show as needing
     /// attention, until a run starts or another project opens.
     pub blocked: bool,
@@ -243,10 +262,13 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
     if app.workflow.step == Some(Step::Setup) && app.workflow.devices.is_none() {
         let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
-        if !app.workflow.device_chosen {
-            let (device, precision) = recommended_device(&v, app.session.model().analysis());
-            let _ = app.session.execute("solve.device", &json!({"device":device,"precision":precision}));
-            app.workflow.device_chosen = true;
+        match app.workflow.device_selection {
+            DeviceSelection::Pending => {
+                let (device, precision) = recommended_device(&v, app.session.model().analysis());
+                let _ = app.session.execute("solve.device", &json!({"device":device,"precision":precision}));
+                app.workflow.device_selection = DeviceSelection::Automatic;
+            }
+            DeviceSelection::Automatic | DeviceSelection::Explicit => {}
         }
         app.workflow.devices = Some(v);
     }
@@ -371,6 +393,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": f.diagram,
         "device": app.session.compute().device(),
+        "device_selection": app.workflow.device_selection.id(),
         "precision": app.session.compute().precision.id(),
         "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),

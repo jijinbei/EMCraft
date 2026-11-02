@@ -34,7 +34,8 @@
         "setup:precision:double"
       ],
       "inspect": {
-        "workflow.device": "cpu"
+        "workflow.device": "cpu",
+        "workflow.device_selection": "explicit"
       }
     }
   },

@@ -115,3 +115,5 @@ types changed) find what slipped through.
    sources alone, the far field in 48 directions.
 8. **Results.** Fields at any point from the element basis (H = −∇×E/(jωμ)); field plots sample
    a plane once and draw any component at any phase.
+
+UI machine choices use explicit lifecycle states: compute selection is Pending until Setup recommends a backend, Automatic afterwards, and Explicit after a user device command; opening a project does not reset it. View restoration and pointer gestures dispatch on result/interaction enum states through exhaustive matches. Input validation and geometric predicates remain guards rather than being cast into artificial UI states.
