@@ -5,7 +5,7 @@ use crate::lang::{args, plural, shown, tr};
 
 /// The solver and its parameters from the setup's fields (`f`); each bad field is marked.
 pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver, Value), String> {
-    let solver = f.solver.unwrap_or_else(|| s.model().analysis());
+    let solver = s.model().analysis();
     let band = band(s);
     let limit = s.limits().frequencies as u64;
     if f.points.is_empty() {
@@ -101,7 +101,7 @@ pub fn required(step: Step, solver: Option<Solver>) -> bool {
 /// left to do and steps waiting on another are not problems.
 pub fn preflight(s: &emcraft_engine::Session, f: &mut Fields, states: &[StepState]) -> Preflight {
     let mut out = Preflight::default();
-    let solver = f.solver.unwrap_or_else(|| s.model().analysis());
+    let solver = s.model().analysis();
     for s in states.iter().filter(|s| s.step.index() <= Step::Setup.index()) {
         let needed = required(s.step, Some(solver));
         let list = match s.status {

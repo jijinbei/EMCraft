@@ -5,17 +5,9 @@ use crate::Hint;
 use crate::lang::args;
 
 pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
-    ui_kit::section(ui, "Solver");
-    let inferred = app.session.model().analysis();
-    let declared = app.session.model().analysis;
-    let mut solver = declared.unwrap_or(f.solver.unwrap_or(inferred));
-    for s in Solver::ALL.into_iter().filter(|s| declared.is_none_or(|d| d == *s)) {
-        let r = ui.radio_value(&mut solver, s, egui::RichText::new(shown(s)).size(t.font_small));
-        scenario::publish_target(Handle::Solver(s), r.rect);
-    }
-    if solver != f.solver.unwrap_or(inferred) || f.solver.is_some() {
-        f.solver = Some(solver);
-    }
+    // Home is the sole authority for the analysis, including its inferred (auto) choice.
+    let solver = app.session.model().analysis();
+    f.solver = Some(solver);
     if f.points.is_empty() {
         f.points = "101".into();
     }

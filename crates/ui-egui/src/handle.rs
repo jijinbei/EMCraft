@@ -289,7 +289,6 @@ pub enum Handle<'a> {
     /// A choice in a dialog's drop-down: `choice:material:vacuum`.
     Choice(&'a str, &'a str),
     /// The Setup step's solver: `setup:solver:frequency`.
-    Solver(Solver),
     /// Home's card of a kind of analysis: `intent:kind:eigenmodes`.
     Kind(Solver),
     /// A guide band's preset on Home: `home:band:WR-90`.
@@ -413,7 +412,6 @@ impl fmt::Display for Handle<'_> {
             Handle::DialogRemove(name, row) => write!(f, "dialog:remove:{name}:{row}"),
             Handle::DialogParam(name) => write!(f, "dialog:param:{name}"),
             Handle::Choice(param, value) => write!(f, "choice:{param}:{value}"),
-            Handle::Solver(s) => write!(f, "setup:solver:{}", s.id()),
             Handle::Kind(s) => write!(f, "intent:kind:{}", s.id()),
             Handle::BandPreset(name) => write!(f, "home:band:{name}"),
             Handle::HomeUnit(group, id) => write!(f, "home:units:{group}:{id}"),
@@ -491,7 +489,7 @@ mod tests {
 
     #[test]
     fn handles_read_as_the_protocol_names_them() {
-        let cases: [(Handle, &str); 19] = [
+        let cases: [(Handle, &str); 18] = [
             (Handle::BandPreset("WR-90"), "home:band:WR-90"),
             (Handle::HomeUnit("length", "mm"), "home:units:length:mm"),
             (Handle::ChartBlock(1), "chart:block:1"),
@@ -503,7 +501,6 @@ mod tests {
             (Handle::Row("Port 1 (start): 4 modes"), "row:Port 1 (start): 4 modes"),
             (Handle::Step(Step::Mesh), "step:mesh"),
             (Handle::DialogCell("sections", 0, "length"), "dialog:cell:sections:0:length"),
-            (Handle::Solver(Solver::TimeDomain), "setup:solver:time_domain"),
             (Handle::Kind(Solver::Eigenmodes), "intent:kind:eigenmodes"),
             (Handle::FieldPlane(Plane::Cross), "field:plane:cross"),
             (Handle::Standard(StandardView::Front), "view3d:std:front"),

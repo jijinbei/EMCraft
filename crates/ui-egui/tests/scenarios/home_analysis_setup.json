@@ -1,0 +1,132 @@
+[
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.sample",
+      "params": {
+        "name": "highpass"
+      }
+    }
+  },
+  {
+    "click": "step:intent"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "workflow.analysis.kind": "frequency",
+        "workflow.analysis.chosen": false
+      }
+    }
+  },
+  {
+    "click": "step:setup"
+  },
+  {
+    "expect": {
+      "handles": [
+        "setup:points",
+        "setup:order"
+      ],
+      "hidden": [
+        "setup:solver:frequency",
+        "setup:solver:eigenmodes",
+        "setup:solver:radiation",
+        "setup:solver:time_domain"
+      ],
+      "inspect": {
+        "workflow.solver": "frequency"
+      }
+    }
+  },
+  {
+    "shot": "setup-home-auto-frequency"
+  },
+  {
+    "click": "step:intent"
+  },
+  {
+    "click": "intent:kind:eigenmodes"
+  },
+  {
+    "click": "step:setup"
+  },
+  {
+    "expect": {
+      "handles": [
+        "setup:count"
+      ],
+      "hidden": [
+        "setup:solver:frequency",
+        "setup:solver:eigenmodes",
+        "setup:solver:radiation",
+        "setup:solver:time_domain"
+      ],
+      "inspect": {
+        "workflow.solver": "eigenmodes",
+        "workflow.analysis.kind": "eigenmodes"
+      }
+    }
+  },
+  {
+    "shot": "setup-home-eigenmodes"
+  },
+  {
+    "click": "step:intent"
+  },
+  {
+    "click": "intent:kind:time_domain"
+  },
+  {
+    "click": "step:setup"
+  },
+  {
+    "expect": {
+      "handles": [
+        "setup:points"
+      ],
+      "hidden": [
+        "setup:solver:frequency",
+        "setup:solver:eigenmodes",
+        "setup:solver:radiation",
+        "setup:solver:time_domain"
+      ],
+      "inspect": {
+        "workflow.solver": "time_domain",
+        "workflow.analysis.kind": "time_domain"
+      }
+    }
+  },
+  {
+    "shot": "setup-home-time_domain"
+  },
+  {
+    "click": "step:intent"
+  },
+  {
+    "click": "intent:kind:frequency"
+  },
+  {
+    "click": "step:setup"
+  },
+  {
+    "expect": {
+      "handles": [
+        "setup:order"
+      ],
+      "hidden": [
+        "setup:solver:frequency",
+        "setup:solver:eigenmodes",
+        "setup:solver:radiation",
+        "setup:solver:time_domain"
+      ],
+      "inspect": {
+        "workflow.solver": "frequency",
+        "workflow.analysis.kind": "frequency"
+      }
+    }
+  },
+  {
+    "shot": "setup-home-frequency"
+  }
+]

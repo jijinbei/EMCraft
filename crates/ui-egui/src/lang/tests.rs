@@ -403,7 +403,7 @@ fn tour() -> Record {
         }
         call(&mut h, "ui.set", json!({"step": "setup"}));
         for s in Solver::ALL {
-            h.app.workflow.fields.solver = Some(s);
+            call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":s.id()}}));
             h.frames(2);
         }
         h.app.workflow.fields.solver = None;
@@ -495,15 +495,18 @@ fn tour() -> Record {
     call(&mut h, "engine.script", json!({"commands": json(MODELS[1].0)}));
     h.app.workflow.step = Some(Step::Intent);
     h.frames(1);
+    call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"radiation"}}));
     let f = &mut h.app.workflow.fields;
-    (f.start, f.stop, f.points, f.order, f.solver, f.frequency) =
-        ("x".into(), "0".into(), "many".into(), "7".into(), Some(Solver::Radiation), String::new());
+    (f.start, f.stop, f.points, f.order, f.frequency) = ("x".into(), "0".into(), "many".into(), "7".into(), String::new());
     apply(&mut h, [Action::ApplyBand, Action::StartRun]);
     h.app.workflow.step = Some(Step::Run);
     h.frames(2);
+    call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"frequency"}}));
     let f = &mut h.app.workflow.fields;
-    (f.start, f.stop, f.touchstone, f.solver) = ("9".into(), "8".into(), " ".into(), Some(Solver::Frequency));
-    apply(&mut h, [Action::ApplyBand, Action::ExportTouchstone]);
+    (f.start, f.stop) = ("9".into(), "8".into());
+    apply(&mut h, [Action::ApplyBand]);
+    h.app.workflow.fields.touchstone = " ".into();
+    apply(&mut h, [Action::ExportTouchstone]);
     h.app.workflow.step = Some(Step::Setup);
     h.frames(2);
     // The status line of every command, from an empty reply and the replies that change it.

@@ -81,8 +81,7 @@ pub fn results_stale(app: &EmcraftApp) -> bool {
     statuses_now(app).get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale)
 }
 
-/// The solver Run starts: a kind of analysis (`project.analysis`), its id the Setup step's
-/// `setup:solver:<id>` and Home's `intent:kind:<id>`.
+/// The analysis Run starts (`project.analysis`), chosen by Home's `intent:kind:<id>`.
 pub use emcraft_engine::workflow::Analysis as Solver;
 
 /// The command that runs `solver`.
@@ -90,10 +89,9 @@ pub const fn command(solver: Solver) -> &'static str {
     emcraft_engine::workflow::solve_command(solver)
 }
 
-/// The solver the Setup step starts on: the one picked there, else the job's kind of analysis
-/// (chosen on Home, else inferred from the model).
+/// The analysis chosen on Home, or Home's inferred choice. Setup never overrides it.
 pub fn solver(app: &EmcraftApp) -> Solver {
-    app.workflow.fields.solver.unwrap_or_else(|| app.session.model().analysis())
+    app.session.model().analysis()
 }
 
 /// The text fields of the step panels, with each one's error.
@@ -103,6 +101,7 @@ pub struct Fields {
     pub stop: String,
     /// The band the start and stop fields were last filled from.
     pub band_seen: Option<(f64, f64)>,
+    /// Cached analysis for restoring/repeating a matching run, never a solver selector.
     pub solver: Option<Solver>,
     pub points: String,
     pub order: String,
@@ -403,7 +402,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// The Setup step's fields from the project's latest run of a solver it starts
 /// (`project.runs`, in display units now), as after opening a project; none: left as they are.
 pub fn restore_setup(app: &mut EmcraftApp) {
-    let chosen = app.session.model().analysis;
+    let chosen = app.session.model().analysis();
     let f = &mut app.workflow.fields;
     f.from_run = None;
     let Ok(v) = app.session.execute("project.runs", &json!({})) else { return };
@@ -411,8 +410,8 @@ pub fn restore_setup(app: &mut EmcraftApp) {
     let found = runs.iter().rev().find_map(|r| {
         let command = r.get("command").and_then(Value::as_str)?;
         let solver = Solver::ALL.into_iter().find(|s| self::command(*s) == command)?;
-        // A kind chosen at step 0 restores only its own solver's run.
-        if chosen.is_some_and(|c| c != solver) {
+        // Home's effective analysis restores only a matching solver's run.
+        if chosen != solver {
             return None;
         }
         Some((solver, r.get("params")?))
@@ -441,7 +440,11 @@ pub fn restore_setup(app: &mut EmcraftApp) {
 /// as that run left them.
 pub fn reruns(app: &EmcraftApp) -> Option<&'static str> {
     let f = &app.workflow.fields;
-    let command = self::command(f.solver?);
+    let restored = f.solver?;
+    if restored != solver(app) {
+        return None;
+    }
+    let command = self::command(restored);
     (f.from_run.as_ref() == Some(&f.setup()) && app.session.runs().iter().any(|r| r.command == command)).then_some(command)
 }
 

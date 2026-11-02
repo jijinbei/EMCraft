@@ -363,7 +363,6 @@
     "Solve these frequencies and merge them into the sweep (solve.refine)": "これらの周波数を解いて掃引に加える (solve.refine)",
     "Solved the open problem: radiated power {power} W.": "開放問題を解析しました：放射電力 {power} W。",
     "Solved {n} frequencies, {unknowns} unknowns.": "{n} 周波数を解析しました、未知数 {unknowns}。",
-    "Solver": "ソルバー",
     "Solver: {solver}": "ソルバー：{solver}",
     "Sources": "波源",
     "Start": "スタート",

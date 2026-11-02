@@ -139,12 +139,14 @@
   {
     "expect": {
       "handles": [
-        "setup:solver:frequency"
+        "setup:points",
+        "setup:order"
       ],
       "hidden": [
         "setup:solver:radiation",
         "setup:solver:time_domain",
-        "setup:solver:eigenmodes"
+        "setup:solver:eigenmodes",
+        "setup:solver:frequency"
       ],
       "inspect": {
         "workflow.device_selection": "automatic"

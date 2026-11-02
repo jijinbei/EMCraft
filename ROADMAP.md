@@ -40,3 +40,5 @@ Display objects and setup consistency (2026-11-03): complete closed dielectric r
 Multiport power inspection (2026-11-03): the field frequency chart shows every reported destination for the selected excitation; the full chart follows the same input and colours. `results.power` reports incident-power fractions, output branch shares and a signed unaccounted balance, refusing lossy-port pseudo-wave interpretations. Readouts cache independently of phase playback. Analytic unitary-matrix and three-port command/UI checks included.
 
 UI state transitions (2026-11-03): device selection explicitly tracks pending/automatic/explicit choices. Result-view restoration, solver-specific controls, box drags, modifier clicks and touchpad navigation use exhaustive state matches; existing interaction and solver scenarios retain their behaviour.
+
+Home-only analysis selection (2026-11-03): Setup no longer repeats solver radios. Home's explicit or inferred analysis drives Setup, preflight, estimates and execution; stored runs restore settings only for that analysis. Regression scenarios cover auto frequency and changes to eigenmodes/time-domain on Home.

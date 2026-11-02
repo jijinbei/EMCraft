@@ -43,7 +43,13 @@
     "shot": "setup-device-cpu"
   },
   {
-    "click": "setup:solver:time_domain"
+    "click": "step:intent"
+  },
+  {
+    "click": "intent:kind:time_domain"
+  },
+  {
+    "click": "step:setup"
   },
   {
     "click": "setup:device:cubecl-cpu"

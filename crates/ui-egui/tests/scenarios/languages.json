@@ -33,7 +33,7 @@
   {"click": "dialog:cancel"},
   {"call": "ui.set", "params": {"step": "setup"}},
   {"frames": 3},
-  {"expect": {"handles": ["setup:solver:frequency", "setup:points"]}},
+  {"expect": {"handles": ["setup:points"]}},
   {"shot": "language-ja-setup"},
   {"call": "ui.set", "params": {"step": "none", "tab": "SIMULATE"}},
   {"click": "search:field"},

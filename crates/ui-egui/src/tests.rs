@@ -705,3 +705,8 @@ fn scenario_field_plot_zoom() {
 fn scenario_multiport_power() {
     scenario("multiport_power");
 }
+
+#[test]
+fn scenario_home_analysis_setup() {
+    scenario("home_analysis_setup");
+}

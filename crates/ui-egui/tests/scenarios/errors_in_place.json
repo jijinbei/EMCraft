@@ -32,7 +32,9 @@
     {"command": "mesh.generate", "params": {"size": 4}}
   ]}},
   {"call": "ui.set", "params": {"step": "setup"}},
-  {"click": "setup:solver:frequency"},
+  {"click": "step:intent"},
+  {"click": "intent:kind:frequency"},
+  {"click": "step:setup"},
   {"click": "step:run"},
   {"expect": {"hidden": ["run:refused:0"]}},
   {"click": "run:start"},
