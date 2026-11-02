@@ -83,7 +83,7 @@ fn inside_triangle(p: Pos2, t: [Pos2; 3]) -> bool {
 /// The parts the box `bx` (points from the view's top left) selects in `scene` seen by `camera`
 /// in a `w` × `h` view, in tag order (the same scene and box give the same list). By window a
 /// part is taken when every triangle of it is inside (one corner behind the eye keeps it out);
-/// by crossing when any triangle touches the box. Field planes are not parts of the model.
+/// by crossing when any triangle touches the box. Field planes and material display regions are not separately box-selected model parts.
 pub fn boxed(scene: &Scene, camera: &Camera, w: f64, h: f64, bx: BoxSel) -> Vec<Pick> {
     // Per tag: whether every triangle so far is in (window) or any touches (crossing).
     let mut parts: BTreeMap<u32, bool> = BTreeMap::new();
@@ -99,7 +99,12 @@ pub fn boxed(scene: &Scene, camera: &Camera, w: f64, h: f64, bx: BoxSel) -> Vec<
         let e = parts.entry(t.tag).or_insert(!bx.crossing);
         *e = if bx.crossing { *e || took } else { *e && took };
     }
-    parts.into_iter().filter(|(_, on)| *on).filter_map(|(tag, _)| Pick::from_tag(tag)).filter(|p| !matches!(p, Pick::Plane(_))).collect()
+    parts
+        .into_iter()
+        .filter(|(_, on)| *on)
+        .filter_map(|(tag, _)| Pick::from_tag(tag))
+        .filter(|p| !matches!(p, Pick::Plane(_) | Pick::Material(_)))
+        .collect()
 }
 
 /// `picks` added to `selection` (in their order, each once).
@@ -191,7 +196,7 @@ mod tests {
         assert!(boxed(&s, &cam, w, h, cut).is_empty());
         // Hostile: an empty scene, a zero-sized view.
         assert!(boxed(&Scene::default(), &cam, w, h, window).is_empty());
-        assert!(boxed(&s, &cam, 0.0, f64::NAN, crossing).iter().all(|p| !matches!(p, Pick::Plane(_))));
+        assert!(boxed(&s, &cam, 0.0, f64::NAN, crossing).iter().all(|p| !matches!(p, Pick::Plane(_) | Pick::Material(_))));
     }
 
     #[test]

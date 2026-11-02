@@ -297,3 +297,21 @@ fn mesh_port_rims_are_transparent_and_directions_are_world_space() {
     assert!(built.arrows[1].end[2] < built.arrows[1].start[2], "reflected goes out of the start port");
     assert!(built.arrows[2].end[2] > built.arrows[2].start[2], "transmitted goes out of the end port");
 }
+
+#[test]
+fn material_selection_glows_and_visibility_preserves_walls_and_ports() {
+    let mut s = meshed("highpass", None);
+    let baseline = build(&s, Overlay::Materials);
+    let selected = build_with(&s, Overlay::Materials, &[], &[Pick::Material(0)]);
+    assert!(selected.scene.tris.iter().any(|t| t.tag == Pick::Material(0).tag() && t.alpha >= 170));
+    s.execute("view.material", &json!({"name":"vacuum","visible":false})).unwrap();
+    let hidden = build_with(&s, Overlay::Materials, &[], &[Pick::Material(0)]);
+    assert!(!hidden.scene.tris.iter().any(|t| t.tag == Pick::Material(0).tag()));
+    assert_eq!(baseline.scene.tris.len(), hidden.scene.tris.len());
+    let before = hidden.scene.tris.len();
+    s.execute("view.material", &json!({"name":"ptfe-like","visible":false})).unwrap();
+    let hidden = build(&s, Overlay::Materials);
+    assert!(hidden.scene.tris.len() < before);
+    assert!(hidden.scene.tris.iter().any(|t| matches!(Pick::from_tag(t.tag), Some(Pick::Port(_)))));
+    assert!(hidden.scene.tris.iter().any(|t| t.tag == Pick::Guide.tag()));
+}

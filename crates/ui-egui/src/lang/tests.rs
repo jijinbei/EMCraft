@@ -535,6 +535,7 @@ fn tour() -> Record {
 
 /// Texts a tour of the window cannot reach, with why.
 const UNREACHED: &[(&str, &str)] = &[
+    ("Show material", "tooltip on the eye of a hidden material (scenario material_visibility)"),
     ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
     ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),
     (

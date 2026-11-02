@@ -6,7 +6,7 @@ use crate::scenario::Harness;
 
 /// Runs `tests/scenarios/<name>.json`; `$TMP` in it is a folder of its own, emptied first and
 /// removed after.
-fn scenario(name: &str) {
+fn scenario(name: &str) -> Harness {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios").join(format!("{name}.json"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let tmp = std::env::temp_dir().join(format!("emcraft-scenario-{name}-{}", std::process::id()));
@@ -20,6 +20,7 @@ fn scenario(name: &str) {
     if let Err(e) = r {
         panic!("scenario {name}: {e}\nlast messages: {:?}", h.app.messages.iter().rev().take(5).collect::<Vec<_>>());
     }
+    h
 }
 
 #[test]
@@ -671,4 +672,31 @@ fn field_phase_with_both_vectors_reuses_the_scene() {
     }
     assert_eq!(h.app.session.history().len(), history, "phase playback must not solve again");
     eprintln!("24 cached phase frames with E/H arrows: {:?}", started.elapsed());
+}
+
+#[test]
+fn scenario_material_visibility() {
+    scenario("material_visibility");
+}
+#[test]
+fn scenario_field_plot_zoom() {
+    let mut h = scenario("field_plot_zoom");
+    let rect = crate::scenario::rect_of("picture:field").unwrap();
+    assert!(rect.width() > 400.0, "portrait field must remain readable: {rect:?}");
+    assert!(h.app.field.layout.unwrap().height as f32 > rect.height() * 3.0);
+    let before = h.app.field.pinned.unwrap();
+    assert_eq!(h.call("ui.click", json!({"handle":"field:plot:fit"}))["ok"], json!(true));
+    h.frames(2);
+    let whole = crate::scenario::rect_of("picture:field").unwrap();
+    let native = h.app.field.picture.get_mut().unwrap().size();
+    assert!(native.y * whole.width() / native.x <= whole.height() + 1.0, "whole plot must fit without clipping");
+    assert_eq!(h.call("ui.click", json!({"handle":"field:plot:width"}))["ok"], json!(true));
+    h.frames(2);
+    let at = rect.center();
+    assert_eq!(h.call("ui.scroll", json!({"x":at.x,"y":at.y,"delta":-8}))["ok"], json!(true));
+    h.frames(12);
+    assert_eq!(h.call("ui.click", json!({"handle":"picture:field"}))["ok"], json!(true));
+    h.frames(2);
+    let after = h.app.field.pinned.unwrap();
+    assert!(after[1] < before[1], "scrolling down must probe farther down the same plane: {before:?} -> {after:?}");
 }

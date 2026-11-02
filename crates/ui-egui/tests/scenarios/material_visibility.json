@@ -1,0 +1,96 @@
+[
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.sample",
+      "params": {
+        "name": "highpass"
+      }
+    }
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "step": "materials",
+      "theme": "midnight",
+      "language": "ja"
+    }
+  },
+  {
+    "expect": {
+      "handles": [
+        "choice:material_visibility:vacuum",
+        "choice:material_visibility:ptfe-like"
+      ]
+    }
+  },
+  {
+    "click": "row:vacuum: εr 1, μr 1"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "view3d.selected": "Material(0)"
+      }
+    }
+  },
+  {
+    "shot": "vacuum-highlight"
+  },
+  {
+    "click": "choice:material_visibility:vacuum"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "hidden_materials": [
+          "vacuum"
+        ],
+        "view3d.selected": "Material(0)"
+      }
+    }
+  },
+  {
+    "shot": "vacuum-hidden"
+  },
+  {
+    "click": "choice:material_visibility:ptfe-like"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "hidden_materials": [
+          "ptfe-like",
+          "vacuum"
+        ]
+      }
+    }
+  },
+  {
+    "shot": "materials-hidden"
+  },
+  {
+    "click": "choice:material_visibility:vacuum"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "hidden_materials": [
+          "ptfe-like"
+        ]
+      }
+    }
+  }
+]

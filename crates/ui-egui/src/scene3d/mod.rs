@@ -53,6 +53,7 @@ emcraft_macros::named_enum! {
 pub enum Pick {
     /// The waveguide's walls (once meshed).
     Guide,
+    Material(usize),
     Section(usize),
     Layer(usize),
     Strip(usize),
@@ -72,6 +73,7 @@ impl Pick {
     pub fn tag(self) -> u32 {
         let (kind, i) = match self {
             Pick::Guide => (1, 0),
+            Pick::Material(i) => (12, i),
             Pick::Section(i) => (2, i),
             Pick::Layer(i) => (3, i),
             Pick::Strip(i) => (4, i),
@@ -90,6 +92,7 @@ impl Pick {
         let i = (tag & 0xFFFF) as usize;
         Some(match tag >> 16 {
             1 => Pick::Guide,
+            12 => Pick::Material(i),
             2 => Pick::Section(i),
             3 => Pick::Layer(i),
             4 => Pick::Strip(i),
@@ -207,9 +210,21 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
     let m = session.model();
     let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
-        Some(_) => mesh::from_mesh(m, overlay, &mut out),
+        Some(_) => mesh::from_mesh(
+            m,
+            overlay,
+            &mut out,
+            selected.iter().find_map(|p| {
+                if let Pick::Material(i) = p {
+                    m.materials.get(*i).filter(|m| !session.views().hidden_materials.contains(&m.name)).map(|_| *i)
+                } else {
+                    None
+                }
+            }),
+        ),
         None => geometry::from_geometry(m, overlay, &mut out),
     }
+    present_materials(session, selected, &mut out);
     extras::extras(m, session.driven_port(), overlay, &mut out);
     legend::legend(session, overlay, &mut out);
     if overlay == Overlay::Field {
@@ -234,6 +249,56 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         highlight_outline(&mut out.scene, &tags);
     }
     out
+}
+
+/// Material regions are display objects; hiding them never removes physical walls or ports.
+fn present_materials(session: &Session, selected: &[Pick], out: &mut Built) {
+    let m = session.model();
+    out.scene.tris.retain_mut(|t| {
+        let index = match Pick::from_tag(t.tag) {
+            Some(Pick::Material(i)) => Some(i),
+            Some(Pick::Section(i)) if m.mesh.is_none() => {
+                m.waveguide.as_ref().and_then(|w| w.sections.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i)
+            }
+            Some(Pick::Layer(i)) => m.waveguide.as_ref().and_then(|w| w.layers.get(i)).and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
+            Some(Pick::Solid) if m.mesh.is_none() => m.solid.as_ref().and_then(|s| m.material(&s.material).ok()).map(|(i, _)| i),
+            Some(Pick::Inclusion(i)) => m.inclusions.get(i).and_then(|s| s.material.as_ref()).and_then(|s| m.material(s).ok()).map(|(i, _)| i),
+            _ => None,
+        };
+        let Some(i) = index else { return true };
+        let Some(mat) = m.materials.get(i) else { return true };
+        if session.views().hidden_materials.contains(&mat.name) {
+            return false;
+        }
+        if selected.contains(&Pick::Material(i)) {
+            t.tag = Pick::Material(i).tag();
+            t.color = style::sc().highlight;
+            t.alpha = 120;
+        } else if mat.name == "vacuum" {
+            // Section caps are artificial region boundaries, not metal closing the bore.
+            if matches!(Pick::from_tag(t.tag), Some(Pick::Section(_))) {
+                if t.p.iter().all(|p| (p[2] - t.p[0][2]).abs() < 1e-12) {
+                    let z = t.p[0][2];
+                    let length = m.waveguide.as_ref().map_or(0.0, |w| w.length());
+                    let start = z.abs() < 1e-12;
+                    let end = (z - length).abs() < 1e-12;
+                    let port = m
+                        .ports
+                        .iter()
+                        .any(|p| p.face.is_none() && ((start && p.end == emcraft_model::End::Start) || (end && p.end == emcraft_model::End::End)));
+                    if (!start && !end) || port {
+                        return false;
+                    }
+                }
+                t.color = style::sc().metal;
+                t.alpha = 45;
+            } else {
+                t.color = style::sc().metal;
+                t.alpha = if m.open.is_some() { 12 } else { 45 };
+            }
+        }
+        true
+    });
 }
 
 /// The outline of each part tagged in `tags` (the edges of its triangles that no other of them

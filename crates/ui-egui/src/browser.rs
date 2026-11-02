@@ -272,14 +272,19 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
             "Materials",
             m.materials
                 .iter()
-                .map(|mat| {
+                .enumerate()
+                .map(|(i, mat)| {
                     let r = row("{name}: {summary}", args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None).item(Item::new(
                         "model.material.edit",
                         "model.material.delete",
                         "name",
                         serde_json::json!(mat.name),
                     ));
-                    Row { rich: Some(format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat))), ..r }
+                    Row {
+                        pick: Some(Pick::Material(i)),
+                        rich: Some(format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat))),
+                        ..r
+                    }
                 })
                 .collect(),
         ),
@@ -635,6 +640,38 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 t.text
                             };
                             let mut clip = rect;
+                            if let Some(Pick::Material(i)) = r.pick
+                                && let Some(mat) = app.session.model().materials.get(i)
+                            {
+                                let visible = !app.session.views().hidden_materials.contains(&mat.name);
+                                let eye = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(22.0, 20.0));
+                                let response = ui.interact(eye, ui.id().with(("material_eye", i)), Sense::click());
+                                scenario::publish_target(Handle::Choice("material_visibility", &mat.name), eye);
+                                let ink = if visible { t.text } else { t.text_dim };
+                                let c = eye.center();
+                                let points = vec![
+                                    c + vec2(-8.0, 0.0),
+                                    c + vec2(-4.0, -4.0),
+                                    c + vec2(0.0, -5.0),
+                                    c + vec2(4.0, -4.0),
+                                    c + vec2(8.0, 0.0),
+                                    c + vec2(4.0, 4.0),
+                                    c + vec2(0.0, 5.0),
+                                    c + vec2(-4.0, 4.0),
+                                ];
+                                ui.painter().add(egui::Shape::closed_line(points, Stroke::new(1.2, ink)));
+                                ui.painter().circle_filled(eye.center(), 2.0, ink);
+                                if !visible {
+                                    ui.painter().line_segment(
+                                        [eye.left_bottom() + vec2(3.0, -3.0), eye.right_top() + vec2(-3.0, 3.0)],
+                                        Stroke::new(1.4, ink),
+                                    );
+                                }
+                                if response.on_hover_text(lang::tr(if visible { "Hide material" } else { "Show material" })).clicked() {
+                                    out.push(Action::run("view.material", serde_json::json!({"name":mat.name,"visible":!visible})));
+                                }
+                                clip.max.x = eye.left() - 3.0;
+                            }
                             if out_of_date {
                                 let c = pos2(rect.right() - 12.0, rect.center().y);
                                 crate::steps::stale_mark(ui.painter(), c, t);

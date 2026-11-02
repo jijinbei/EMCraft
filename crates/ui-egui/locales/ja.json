@@ -711,7 +711,12 @@
     "Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh.": "適応メッシュは単一周波数でメッシュを更新します。許容差と反復上限を確認し、最終メッシュで解析をやり直してください。",
     "2D plot": "2Dグラフ",
     "Switch between a field plane in the 3D model and a flat plot": "モデル内の3D断面表示と2Dグラフを切り替えます",
-    "Move the field plane in the model. Use 2D plot for point probes.": "モデル内の断面を動かして位置を確認できます。点での値の読み取りは「2Dグラフ」で行えます。"
+    "Move the field plane in the model. Use 2D plot for point probes.": "モデル内の断面を動かして位置を確認できます。点での値の読み取りは「2Dグラフ」で行えます。",
+    "Hide material": "この材料を非表示",
+    "Show material": "この材料を表示",
+    "Zoom": "拡大率",
+    "Fit width": "幅に合わせる",
+    "Fit whole plot": "全体表示"
   },
   "commands": {
     "project.frequency": {
@@ -1627,6 +1632,14 @@
       "params": {
         "name": "ポート",
         "deembed": "基準面のモデル内側への距離（負：外側に線路を足す）"
+      }
+    },
+    "view.material": {
+      "label": "材料の表示切り替え",
+      "doc": "材料の領域を表示・非表示にする。表示のみの変更で、材料・メッシュ・解析結果はそのまま保持される。プロジェクトとともに保存される。",
+      "params": {
+        "name": "材料名",
+        "visible": "材料の領域を表示するか"
       }
     }
   },

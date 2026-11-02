@@ -869,6 +869,15 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::views::probe_delete,
     },
     CommandSpec {
+        id: "view.material",
+        label: "Material visibility",
+        doc: "Shows or hides a material's region in the viewport. Display only: the material, mesh and results remain intact. Saved with the project.",
+        params: &[req("name", K::String, "material name"), req("visible", K::Boolean, "whether the material region is visible")],
+        effect: Effect::View,
+        invalidates: None,
+        run: crate::views::material_visibility,
+    },
+    CommandSpec {
         id: "view.driven",
         label: "Driven port",
         doc: "Chooses the driven port: the input the field views show excited and S is read against (S11 the reflection at it, S21 the transmission to port 2, …), the default `excitation` of the commands that take one. Every port is still excited in turn by a sweep (the whole S matrix); this only says which one is looked at. Without `port` the first is driven again. Saved with the project, not in its history. The reply: the driven port and each entry's role (`input`, `output`).",

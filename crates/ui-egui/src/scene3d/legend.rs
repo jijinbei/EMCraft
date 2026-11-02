@@ -13,7 +13,7 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
     let l = session.display().length;
     match overlay {
         Overlay::Materials => {
-            for (i, mat) in m.materials.iter().enumerate() {
+            for (i, mat) in m.materials.iter().enumerate().filter(|(_, m)| !session.views().hidden_materials.contains(&m.name)) {
                 out.legend.push((format!("{} (εr {})", mat.name, mat.eps_r.get()), material_rgb(m, i)));
             }
         }

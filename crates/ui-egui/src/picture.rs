@@ -9,16 +9,51 @@ use std::sync::Arc;
 pub struct Picture {
     pub image: Arc<egui::ColorImage>,
     textures: Vec<(egui::Context, egui::TextureHandle)>,
+    regions: Vec<(egui::Context, [usize; 4], egui::TextureHandle)>,
 }
 
 impl Picture {
     pub fn new(canvas: &emcraft_render::Canvas) -> Picture {
         let image = egui::ColorImage::from_rgba_unmultiplied([canvas.w, canvas.h], &canvas.rgba);
-        Picture { image: Arc::new(image), textures: Vec::new() }
+        Picture { image: Arc::new(image), textures: Vec::new(), regions: Vec::new() }
     }
 
     pub fn size(&self) -> egui::Vec2 {
         egui::vec2(self.image.size[0] as f32, self.image.size[1] as f32)
+    }
+
+    /// Uploads the visible rectangle `[left, top, right, bottom]` in source pixels.
+    /// A scrolled portrait retains full horizontal resolution even if its total height exceeds
+    /// the backend's texture limit. Empty/outside rectangles return `None`.
+    pub(crate) fn region_texture(&mut self, ctx: &egui::Context, bounds: [usize; 4]) -> Option<egui::TextureId> {
+        let [w, h] = self.image.size;
+        let [x0, y0, x1, y1] = [bounds[0].min(w), bounds[1].min(h), bounds[2].min(w), bounds[3].min(h)];
+        if x0 >= x1 || y0 >= y1 {
+            return None;
+        }
+        let bounds = [x0, y0, x1, y1];
+        if let Some((_, _, t)) = self.regions.iter().find(|(c, b, _)| c == ctx && *b == bounds) {
+            return Some(t.id());
+        }
+        let mut pixels = Vec::with_capacity((x1 - x0) * (y1 - y0));
+        for y in y0..y1 {
+            pixels.extend_from_slice(self.image.pixels.get(y * w + x0..y * w + x1)?);
+        }
+        let image = egui::ColorImage::new([x1 - x0, y1 - y0], pixels);
+        let max = ctx.input(|i| i.max_texture_side).max(1);
+        let image = fit_within(&image, max).unwrap_or(image);
+        if let Some((_, old, t)) = self.regions.iter_mut().find(|(c, _, _)| c == ctx) {
+            *old = bounds;
+            t.set(image, egui::TextureOptions::LINEAR);
+            return Some(t.id());
+        }
+        let t = ctx.load_texture("picture:region", image, egui::TextureOptions::LINEAR);
+        let id = t.id();
+        if self.regions.len() >= 2 {
+            drop(self.regions.remove(1));
+        }
+        self.regions.push((ctx.clone(), bounds, t));
+        Some(id)
     }
 
     /// Its texture in `ctx`.
@@ -167,6 +202,19 @@ mod tests {
         let small = fit_within(&p.image, 2048).map(|i| i.size);
         assert_eq!(small, Some([745, 2048]));
         assert!(fit_within(&p.image, 4096).is_none());
+        // A scrolled visible region keeps all 900 columns, rather than the whole-image
+        // fallback's 745: even a backend capped at 2048 can display this part crisply.
+        let id = p.region_texture(&ctx, [0, 2000, 900, 2474]).unwrap();
+        let mut delta = ctx.tex_manager().write().take_delta();
+        let upload = delta.set.get(&id).unwrap().last().unwrap();
+        assert_eq!(upload.image.size(), [900, 474]);
+        delta.clear();
+        assert_eq!(p.region_texture(&ctx, [0, 2000, 900, 2474]), Some(id));
+        let mut unchanged = ctx.tex_manager().write().take_delta();
+        assert!(unchanged.set.is_empty());
+        unchanged.clear();
+        assert!(p.region_texture(&ctx, [900, 0, 1000, 20]).is_none());
+        assert!(p.region_texture(&ctx, [0, 50, 10, 40]).is_none());
     }
 
     #[test]

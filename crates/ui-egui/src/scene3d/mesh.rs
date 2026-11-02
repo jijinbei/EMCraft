@@ -13,7 +13,7 @@ use super::{Built, Overlay, Pick, p3};
 type Face = ([u32; 3], u32, bool);
 
 /// The mesh's boundary faces and, for materials, the faces between materials.
-pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
+pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built, selected_material: Option<usize>) {
     let Some(mesh) = &m.mesh else { return };
     let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
     let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
@@ -40,6 +40,10 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         let pick = port.map(Pick::Port).unwrap_or(if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid });
         if alpha > 0 {
             out.scene.tagged(pick.tag(), |s| s.tri(a, b, c, color, alpha));
+        }
+        // A separate selection surface leaves the physical wall and port styling intact.
+        if selected_material == Some(tet_mat(f.tet)) {
+            out.scene.tagged(Pick::Material(tet_mat(f.tet)).tag(), |s| s.tri(a, b, c, sc().highlight, 100));
         }
         let key = match f.tag {
             Boundary::Port(k) if port.is_some() => 1 + k,
@@ -116,7 +120,7 @@ fn material_interfaces(m: &Model, mesh: &emcraft_model::Mesh, out: &mut Built) {
         }
         let denser = if eps(ma) >= eps(mb) { ma } else { mb };
         if let (Some(a), Some(b), Some(c)) = (node(w[0].0[0]), node(w[0].0[1]), node(w[0].0[2])) {
-            out.scene.tri(a, b, c, material_rgb(m, denser), 235);
+            out.scene.tagged(Pick::Material(denser).tag(), |s| s.tri(a, b, c, material_rgb(m, denser), 235));
         }
     }
 }

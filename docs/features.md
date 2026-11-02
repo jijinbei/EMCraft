@@ -652,6 +652,15 @@ Removes a probe.
 |---|---|---|---|---|
 | `name` | string |  | yes | the probe |
 
+## `view.material` — Material visibility
+
+Shows or hides a material's region in the viewport. Display only: the material, mesh and results remain intact. Saved with the project.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | material name |
+| `visible` | boolean |  | yes | whether the material region is visible |
+
 ## `view.driven` — Driven port
 
 Chooses the driven port: the input the field views show excited and S is read against (S11 the reflection at it, S21 the transmission to port 2, …), the default `excitation` of the commands that take one. Every port is still excited in turn by a sweep (the whole S matrix); this only says which one is looked at. Without `port` the first is driven again. Saved with the project, not in its history. The reply: the driven port and each entry's role (`input`, `output`).

@@ -27,6 +27,7 @@ pub struct FieldState {
     pub kept: Vec<KeptPlane>,
     /// Fields drawn in model context; false selects the optional flat plot.
     pub beside_3d: bool,
+    pub plot_zoom: f32,
     /// The fields at the project's probes for the view's solution, and what they were read for.
     pub probe_values: Option<(ProbeKey, Vec<Option<(emcraft_model::CVec3, emcraft_model::CVec3)>>)>,
     /// A probe being dragged on the picture: its index and where it is now (picture axes).
@@ -57,6 +58,7 @@ impl Default for FieldState {
             pinned: None,
             kept: Vec::new(),
             beside_3d: true,
+            plot_zoom: 1.0,
             probe_values: None,
             dragging: None,
         }

@@ -172,7 +172,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "messages": app.messages.len(),
         "search": {"open": app.search.open, "text": app.search.text},
         "viewport": app.viewport_rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
-        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.id(), "component": app.field.view.component.id(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some() || (app.field.beside_3d && app.field.samples.is_some()), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
+        "field": {"frequency": app.field.view.frequency, "plane": app.field.view.plane.id(), "component": app.field.view.component.id(), "phase": app.field.view.phase, "mode": app.field.view.mode, "animate": app.field.player.playing, "speed": app.field.player.speed, "shown": app.field.picture.is_some() || (app.field.beside_3d && app.field.samples.is_some()), "arrows": [app.field.view.show_e, app.field.view.show_h], "hover": app.field.hover.map(|p| json!({"at": p.at, "e": [p.e.x.norm(), p.e.y.norm(), p.e.z.norm()]})), "pinned": app.field.pinned, "at": app.field.at, "beside_3d": app.field.beside_3d, "plot_zoom": app.field.plot_zoom, "excitation": app.session.sparameter_entries().get(app.field.view.excitation).map(|e| e.name.clone())},
         "chart": app.views.chart.key().map(|k| format!("{k:?}")),
         "sparameters": app.views.sdisplay.id(),
         "variables": app.session.variables(),
@@ -220,6 +220,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         json!(crate::browser::port_roles(s).iter().map(|r| json!({"name": r.name, "role": r.id(), "s": r.sparameter()})).collect::<Vec<_>>());
     v["driven"] = json!(s.sparameter_entries().get(s.driven_entry()).map(|e| e.name.clone()));
     v["probes"] = json!(s.views().probes.iter().map(|p| json!({"name": p.name, "at": p.at.map(|x| s.show_length(x))})).collect::<Vec<_>>());
+    v["hidden_materials"] = json!(app.session.views().hidden_materials);
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});
     v["estimate"] =
         json!({"run": estimate(crate::steps::run_estimate(app)), "dialog": estimate(app.workflow.dialog_estimate.as_ref().map(|e| &e.reply))});

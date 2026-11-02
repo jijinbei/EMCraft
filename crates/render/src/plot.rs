@@ -131,12 +131,12 @@ const BOTTOM: f64 = 90.0;
 pub use crate::axes::Layout;
 
 /// The layout of `plot` drawn `width` pixels wide (the height follows the plane's aspect
-/// ratio).
+/// ratio, capped at 6000 pixels high so portrait plots retain readable axes when scrolled).
 pub fn layout_of(plot: &FieldPlot, width: usize) -> Layout {
     let (x, y) = (plot.x.span(), plot.y.span());
     let pw = (width as f64 - LEFT - RIGHT).max(100.0);
-    let ph = (pw * (y.1 - y.0) / (x.1 - x.0)).clamp(60.0, 3000.0);
-    let pw = if ph >= 3000.0 { 3000.0 * (x.1 - x.0) / (y.1 - y.0) } else { pw };
+    let ph = (pw * (y.1 - y.0) / (x.1 - x.0)).clamp(60.0, 6000.0);
+    let pw = if ph >= 6000.0 { 6000.0 * (x.1 - x.0) / (y.1 - y.0) } else { pw };
     let (title, subtitle) = header(plot, pw + LEFT + RIGHT);
     let top = top(title.len() + subtitle.len());
     Layout {
@@ -298,6 +298,23 @@ mod tests {
         assert!((q[0] - 7.5).abs() < 1e-9 && (q[1] - 2.5).abs() < 1e-9);
         assert_eq!(l.to_axes([0.0, 0.0]), None);
         assert_eq!((l.width, l.height), (c.w, c.h));
+    }
+
+    #[test]
+    fn portrait_plots_keep_the_requested_width_with_a_bounded_height() {
+        let mut p = plot();
+        p.x = Axis::new("z", 0.0, 10.0);
+        p.y = Axis::new("x", 0.0, 80.0);
+        let l = layout_of(&p, 600);
+        assert_eq!(l.width, 600);
+        assert!(l.height > 3000 && l.height < crate::canvas::MAX_SIDE);
+        let q = [4.0, 60.0];
+        let back = l.to_axes(l.to_pixels(q)).unwrap();
+        assert!((back[0] - q[0]).abs() < 1e-9 && (back[1] - q[1]).abs() < 1e-9);
+        p.y = Axis::new("x", 0.0, 80000.0);
+        let l = layout_of(&p, 600);
+        assert_eq!(l.plane[3], 6000.0);
+        assert!(l.height < crate::canvas::MAX_SIDE);
     }
 
     #[test]

@@ -10,7 +10,7 @@
 //! A frequency axis keeps its fixed range in hertz, so it stays where it was when the display
 //! units change; the other axes keep the numbers they show.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use emcraft_model::Point3;
 use emcraft_render::Pen;
@@ -220,6 +220,8 @@ impl Probe {
 /// How the project's results are looked at: the charts' styles by chart id, the probes.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Views {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub hidden_materials: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub charts: BTreeMap<String, ChartStyle>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -237,7 +239,7 @@ impl Views {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.charts.is_empty() && self.probes.is_empty() && self.driven.is_none()
+        self.charts.is_empty() && self.probes.is_empty() && self.driven.is_none() && self.hidden_materials.is_empty()
     }
 
     /// The views as read from a project file, checked: charts the engine knows, styles within
@@ -269,7 +271,10 @@ impl Views {
         if self.driven.as_ref().is_some_and(|d| d.trim().is_empty() || d.chars().count() > MAX_NAME) {
             return Err(EngineError::failed(format!("views: the driven port needs a name of 1 to {MAX_NAME} characters")));
         }
-        Ok(Views { charts, probes: self.probes, driven: self.driven })
+        if self.hidden_materials.len() > 4096 || self.hidden_materials.iter().any(|n| n.is_empty() || n.chars().count() > MAX_NAME) {
+            return Err(EngineError::failed("views: invalid hidden material names"));
+        }
+        Ok(Views { charts, probes: self.probes, driven: self.driven, hidden_materials: self.hidden_materials })
     }
 }
 
@@ -681,4 +686,27 @@ pub fn probes(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect();
     Ok(json!({"frequency": s.show_frequency(f), "probes": rows}))
+}
+
+/// Changes only a material's display, preserving its mesh and solved fields.
+///
+/// ```
+/// let mut s = emcraft_engine::Session::new();
+/// s.execute("view.material", &serde_json::json!({"name":"vacuum","visible":false})).unwrap();
+/// assert!(s.views().hidden_materials.contains("vacuum"));
+/// assert!(s.execute("view.material", &serde_json::json!({"name":"missing","visible":false})).is_err());
+/// ```
+pub fn material_visibility(s: &mut Session, p: &Params) -> Result<Value> {
+    let name = p.string("name").required()?;
+    s.model().material(name)?;
+    let visible = p.flag("visible").required()?;
+    if name.chars().count() > MAX_NAME || (!visible && s.views.hidden_materials.len() >= 4096 && !s.views.hidden_materials.contains(name)) {
+        return Err(EngineError::failed("views: hidden material limit exceeded"));
+    }
+    if visible {
+        s.views.hidden_materials.remove(name);
+    } else {
+        s.views.hidden_materials.insert(name.to_owned());
+    }
+    Ok(json!({"name":name,"visible":visible}))
 }
