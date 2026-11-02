@@ -301,11 +301,21 @@ fn tour() -> Record {
             // a short job could outrun.
             call(&mut h, "ui.set", json!({"animate": false}));
             h.frames(2);
-            call(
-                &mut h,
-                "engine.execute",
-                json!({"command": "solve.frequency", "params": {"start": 7, "stop": 9, "points": 101, "order": 2}, "wait": false}),
-            );
+            // Keep the worker alive until the UI has inspected it, independently of
+            // solver speed and the time spent drawing on a software graphics adapter.
+            let (release, held) = std::sync::mpsc::channel();
+            h.app.job = Some(crate::worker::Job::spawn(
+                &h.app.session,
+                "solve.frequency",
+                json!({"start": 7, "stop": 9, "points": 101, "order": 2}),
+                None,
+                move |_| {
+                    emcraft_engine::progress::report(1, 101, "Frequency sweep")?;
+                    let _ = held.recv_timeout(std::time::Duration::from_secs(30));
+                    emcraft_engine::progress::report(2, 101, "Frequency sweep")?;
+                    Ok(json!({}))
+                },
+            ));
             call(&mut h, "ui.start", json!({"command": "mesh.generate"}));
             call(&mut h, "ui.set", json!({"step": "run"}));
             // Until the job says how far it is (bounded).
@@ -324,6 +334,7 @@ fn tour() -> Record {
             h.app.files.confirm = None;
             apply(&mut h, [Action::File(FileAction::Request(Then::New))]);
             call(&mut h, "ui.cancel", json!({}));
+            let _ = release.send(());
             call(&mut h, "ui.set", json!({"step": "none"}));
         }
         call(&mut h, "ui.set", json!({"view": "model"}));
@@ -418,6 +429,11 @@ fn tour() -> Record {
     // Every command's dialog, docked and floating, some refused, a job running under one.
     for c in emcraft_engine::COMMANDS.iter().filter(|c| !c.params.is_empty()) {
         call(&mut h, "ui.start", json!({"command": c.id}));
+        h.frames(2);
+        if let Some(d) = h.app.dialog.as_mut() {
+            d.help = true;
+            d.options = true;
+        }
         h.frames(2);
     }
     // The import dialog on a design (its parameters), a 3MF package (its bodies) and an STL file

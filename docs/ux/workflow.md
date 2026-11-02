@@ -204,3 +204,17 @@ their frames', and `Harness::settle` waits for the end).
 4. Preflight before Run; stale results; the run's timings in the log.
 5. File: save/open, history script export; Edit: undo/redo.
 6. Results: Touchstone export, the verification checks.
+
+## Dialog guidance and mesh accuracy
+
+Command dialogs start with their inputs; Help reveals the full command description.
+Mesh generation shows element size, wave divisions and frequency first, with edge grading,
+curvature and directional sizes under Advanced settings. Folding those settings preserves
+all values. Parameter ids and control handles stay the same for scripts and agents.
+
+Setup explains the memory/accuracy tradeoff of element orders. Results keeps physical
+consistency checks separate from mesh accuracy: passivity and reciprocity do not establish
+mesh convergence. For a current sweep, Set up mesh convergence opens `mesh.adapt` without
+running it. Review the single test frequency, tolerance and pass limit, then rerun the
+analysis on the resulting mesh; convergence at one frequency does not establish convergence
+across the whole band.

@@ -31,7 +31,7 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
     match solver {
         Solver::Frequency | Solver::TimeDomain => {
             let ep = e(f, "points");
-            field(ui, "points", &mut f.points, "", ep.as_deref(), Fixed::SetupPoints);
+            field(ui, "Frequency points", &mut f.points, "", ep.as_deref(), Fixed::SetupPoints);
         }
         Solver::Eigenmodes => {
             let ec = e(f, "count");
@@ -46,7 +46,11 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
     }
     if solver != Solver::TimeDomain {
         let eo = e(f, "order");
-        field(ui, "order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
+        field(ui, "Element order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
+        ui_kit::caption(
+            ui,
+            "Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence.",
+        );
     }
     if let Some(e) = run_estimate(app) {
         super::super::estimate_line(ui, e, Fixed::SetupEstimate);

@@ -128,9 +128,32 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
             if id == crate::import_ui::ID {
                 d.widgets = crate::import_ui::body(app, d, ui, &mut asked);
             } else {
-                ui_kit::caption(ui, Raw(command_doc(id)));
+                let help = ui_kit::button(ui, "Help", false, Fixed::DialogHelp);
+                let mut toggles = vec![(help.id, false)];
+                if help.clicked() {
+                    d.help = !d.help;
+                }
+                if d.help {
+                    ui_kit::caption(ui, Raw(command_doc(id)));
+                }
                 ui.add_space(t.space_6);
-                d.widgets = fields(ui, d, session, &|_| true, &|name| Raw(name));
+                if id == "mesh.generate" {
+                    ui_kit::caption(ui, "Choose an element size, or set elements per wavelength. Smaller elements increase memory and solve time; check convergence before trusting a result.");
+                    let basic = |name: &str| matches!(name, "size" | "per_wavelength" | "frequency");
+                    d.widgets = fields(ui, d, session, &basic, &mesh_label);
+                    let options = ui_kit::button(ui, "Advanced settings", false, Fixed::DialogOptions);
+                    toggles.push((options.id, false));
+                    if options.clicked() {
+                        d.options = !d.options;
+                    }
+                    if d.options {
+                        let drawn = fields(ui, d, session, &|name| !basic(name), &mesh_label);
+                        d.widgets.extend(drawn);
+                    }
+                } else {
+                    d.widgets = fields(ui, d, session, &|_| true, &|name| Raw(name));
+                }
+                d.widgets.extend(toggles);
             }
             if let Some(e) = app.workflow.dialog_estimate.as_ref().filter(|e| e.asked["command"] == id) {
                 ui.add_space(t.space_6);
@@ -159,6 +182,22 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
     }
     keys(app, d, ui, busy, &mut asked);
     asked
+}
+
+/// Display labels leave command parameter ids and automation handles unchanged.
+fn mesh_label(name: &'static str) -> &'static str {
+    match name {
+        "size" => "Element size",
+        "per_wavelength" => "Wave divisions",
+        "frequency" => "Mesh frequency",
+        "edge" => "Step edge ratio",
+        "growth" => "Growth factor",
+        "strip_edge" => "Strip edge ratio",
+        "strip_end" => "Strip end ratio",
+        "size_y" => "Size across y",
+        "curved" => "Curved elements",
+        _ => name,
+    }
 }
 
 /// The dialog's keys: Enter is OK while one of its text fields has the keyboard (or nothing

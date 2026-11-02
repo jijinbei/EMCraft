@@ -616,3 +616,8 @@ fn a_held_arrow_turns_the_view_steadily() {
     // About a second held: the 15° step's start, then a steady turn.
     assert!(yaw > 60.0 && yaw < 120.0, "{yaw}");
 }
+
+#[test]
+fn scenario_dialog_guidance() {
+    scenario("dialog_guidance");
+}
