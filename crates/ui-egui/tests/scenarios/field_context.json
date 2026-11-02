@@ -73,7 +73,11 @@
         "field:component"
       ],
       "hidden": [
-        "picture:field"
+        "picture:field",
+        "field:frequency",
+        "field:locator",
+        "view3d:play",
+        "view3d:section"
       ],
       "inspect": {
         "field.beside_3d": true,
@@ -134,11 +138,40 @@
         "view3d"
       ],
       "hidden": [
-        "picture:field"
+        "picture:field",
+        "field:frequency",
+        "field:locator",
+        "view3d:play",
+        "view3d:section"
       ]
     }
   },
   {
     "shot": "field-context-return"
+  },
+  {
+    "size": [
+      1000,
+      680
+    ]
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "handles": [
+        "field:spark"
+      ],
+      "hidden": [
+        "field:frequency",
+        "field:locator",
+        "view3d:play",
+        "view3d:section"
+      ]
+    }
+  },
+  {
+    "shot": "field-controls-compact"
   }
 ]

@@ -53,6 +53,10 @@ pub(crate) fn field_plots(app: &EmcraftApp, field: &mut FieldState) -> Result<Ve
 
 pub(super) fn field(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     field_controls(app, &mut st.field, ui, out);
+    // Keep the sole frequency picker available when there is no room for the side column.
+    if st.field.beside_3d && ui.available_width() < NARROW && st.field.view.mode.is_none() {
+        field_side::spark(app, &mut st.field, ui);
+    }
     let area = ui.available_rect_before_wrap();
     if st.field.beside_3d {
         ui.allocate_rect(area, Sense::hover());
@@ -215,9 +219,19 @@ pub(super) fn phasor(c: emcraft_model::Complex64, unit: &str) -> String {
 }
 
 pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
+    if field.view.mode.is_none() {
+        let freqs = app.frequencies();
+        if !freqs.iter().any(|f| (*f - field.view.frequency).abs() <= 1e-9 * *f)
+            && let Some(f) = crate::nearest(&freqs, field.view.frequency)
+        {
+            field.view.frequency = f;
+        }
+    }
     ui.horizontal_wrapped(|ui| {
-        field_choice(app, field, ui);
-        ui.separator();
+        if field.view.mode.is_some() || app.session.results().sweep.is_none() {
+            field_choice(app, field, ui);
+            ui.separator();
+        }
         plane_choice(app, field, ui);
         ui.separator();
         let r = ui.named(egui::Button::selectable(!field.beside_3d, tr("2D plot")), Fixed::FieldBeside3d.into());
@@ -247,21 +261,6 @@ pub(super) fn field_choice(app: &EmcraftApp, field: &mut FieldState, ui: &mut eg
             }
         });
         field.view.mode = Some(idx);
-    }
-    let freqs = app.frequencies();
-    if freqs.is_empty() || field.view.mode.is_some() {
-        return;
-    }
-    let mut idx = freqs.iter().position(|f| (f - field.view.frequency).abs() <= 1e-9 * f).unwrap_or(0);
-    let label = |f: f64| format!("{:.4} {}", fu.from_si(f), fu.symbol());
-    let r = egui::ComboBox::from_id_salt("frequency").selected_text(label(field.view.frequency)).show_ui(ui, |ui| {
-        for (i, f) in freqs.iter().enumerate() {
-            ui.selectable_value(&mut idx, i, label(*f));
-        }
-    });
-    scenario::publish_target(Fixed::FieldFrequency, r.response.rect);
-    if let Some(f) = freqs.get(idx) {
-        field.view.frequency = *f;
     }
 }
 

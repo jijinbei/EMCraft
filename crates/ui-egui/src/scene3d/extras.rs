@@ -141,6 +141,7 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
             end: along(origin, n, to * len),
             color,
             section_clip: false,
+            motion: None,
         };
         if driven == Some(i) {
             out.arrows.push(arrow(along(c, side, 0.14 * width.min(height)), -1.1, -0.15, sc().port_input));
@@ -152,7 +153,7 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
     let strong = overlay == Overlay::Ports;
     for (i, p) in m.lumped.iter().enumerate() {
         let (a, b) = (p3(p.from), p3(p.to));
-        out.arrows.push(crate::gpu3d::Arrow { start: a, end: b, color: sc().port, section_clip: false });
+        out.arrows.push(crate::gpu3d::Arrow { start: a, end: b, color: sc().port, section_clip: false, motion: None });
         // A small box round the gap's middle to pick it by.
         let (c, h) = (midpoint(a, b), 0.012 * size);
         out.scene.tagged(Pick::Lumped(i).tag(), |s| s.cuboid(c.map(|v| v - h), c.map(|v| v + h), sc().port, 255));

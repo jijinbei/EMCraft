@@ -462,6 +462,7 @@ fn shader_arrows_have_a_slim_shaft_and_distinct_head() {
             end: [0.7, 0.0, 0.0],
             color: Rgb(240, 120, 40),
             section_clip: false,
+            motion: None,
         }]);
     });
     assert!(shot.at([-0.4, 0.0, 0.0])[0] > 80.0, "shaft");
@@ -480,6 +481,7 @@ fn shader_arrows_have_a_slim_shaft_and_distinct_head() {
                 end: [0.7, 0.0, 0.0],
                 color: Rgb(240, 120, 40),
                 section_clip,
+                motion: None,
             }]);
             f.uniforms.clip = [1.0, 0.0, 0.0, 0.0];
         });
@@ -505,6 +507,7 @@ fn perspective_section_does_not_stipple_port_annotations() {
                 end: [0.7, 0.2, 0.5],
                 color: Rgb(240, 120, 40),
                 section_clip: false,
+                motion: None,
             }]);
             f.uniforms.clip = clip;
             f.look.edges = true;
@@ -517,4 +520,34 @@ fn perspective_section_does_not_stipple_port_annotations() {
         "port annotations must remain identical across a section ({} differing bytes)",
         full.rgba.iter().zip(&cut.rgba).filter(|(a, b)| a != b).count()
     );
+}
+
+#[test]
+fn complex_vector_glyphs_rotate_on_gpu_without_new_vertices() {
+    let Some(mut g) = gpu() else { return };
+    let mut scene = Scene::default();
+    rect(&mut scene, (-1.0, 1.0), (-1.0, 1.0), 0.0, Rgb::BLACK, 0);
+    let mut packed = Packed::new(&scene, IDS.fetch_add(1, Ordering::Relaxed));
+    packed.append_arrows(&[super::pack::Arrow {
+        start: [0.0; 3],
+        end: [0.0; 3],
+        color: Rgb(240, 160, 20),
+        section_clip: true,
+        motion: Some(super::pack::Motion { re: [1.0, 0.0, 0.0], im: [0.0, 1.0, 0.0], max_length: 1.0 }),
+    }]);
+    let packed = Arc::new(packed);
+    let grid = Arc::new(FieldGrid::new(6001, 2, 2, 0, &[Some(([1.0; 3], [0.0; 3])); 4], [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+    let cam = front(Projection::Orthographic);
+    let draw = |g: &mut Gpu, phase| {
+        g.shot(&scene, cam, [300, 240], None, |f| {
+            f.packed = packed.clone();
+            f.field = Some(FieldFrame { grid: grid.clone(), phase, peak: 1.0 });
+        })
+    };
+    let zero = draw(&mut g, 0.0);
+    let quarter = draw(&mut g, std::f64::consts::FRAC_PI_2);
+    assert!(zero.at([0.4, 0.0, 0.0])[0] > 80.0);
+    near(quarter.at([0.4, 0.0, 0.0]), [0.0; 3], 1.0, "x arrow rotated away");
+    assert!(quarter.at([0.0, -0.4, 0.0])[0] > 80.0);
+    near(zero.at([0.0, -0.4, 0.0]), [0.0; 3], 1.0, "no negative-y arrow at phase zero");
 }

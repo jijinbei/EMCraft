@@ -30,3 +30,5 @@ WGSL viewport (2026-11-02): section clipping shared by colour, transparency, dep
 Field context and direction styling (2026-11-02): the Field view opens on E/H planes inside the 3D model, with a flat plot available explicitly; inherited geometry cuts are cleared on entering fields. Slender, shorter direction heads and shafts stand outside port faces to avoid overlapping boundary shading. Context, component switching and flat-plot round trips covered by a scenario.
 
 Boundary glyph stippling fixed: categorical shader flags use flat interpolation and range checks, with a perspective GPU pixel regression that reproduces the old cut-dependent stippling.
+
+Field animation and controls (2026-11-02): colored E/H vectors without white rims, minimum screen-space shaft/head widths; one frequency control (the chart) and one field-position slider in 3D, with duplicate player/geometry-cut controls hidden. Single-plane vector phasors upload once and rotate in WGSL, so phase playback retains scene and vertex buffers; GPU pixel and scene-generation regressions cover this. Kept-plane views retain the CPU vector path.

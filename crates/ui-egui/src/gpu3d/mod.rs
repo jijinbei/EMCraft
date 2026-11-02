@@ -40,7 +40,7 @@ use eframe::{egui_wgpu, wgpu};
 use emcraft_render::view3d::Scene;
 
 pub use field::{FieldFrame, FieldGrid};
-pub(crate) use pack::Arrow;
+pub(crate) use pack::{Arrow, Motion};
 pub use pack::{LINE, MAX_BYTES, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
 pub use renderer::Caps;
 use renderer::Renderer;

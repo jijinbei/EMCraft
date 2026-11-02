@@ -220,3 +220,5 @@ analysis on the resulting mesh; convergence at one frequency does not establish 
 across the whole band.
 
 Fields open on a plane inside the 3D model, retaining the model around the electric or magnetic field so its location is clear. Frequency, plane position, component and phase stay above the viewport. The 2D plot button opens the optional flat plot for probes and exports, and toggles back to the model. Entering field display clears the preceding geometry inspection cut; the field plane can be moved independently. Direction glyphs use a slender shaft and compact head, placed just outside each waveguide port face.
+
+In the 3D Field view, frequency is selected on the frequency chart, plane position on the top slider (or by dragging the plane itself), and playback on the top player. The duplicate frequency combo, position locator, bottom player and independent geometry-cut controls are absent. Eigenmode selection is retained. Electric and magnetic vectors use distinct colors and a minimum screen-space size, without a white rim.

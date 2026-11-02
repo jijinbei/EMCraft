@@ -103,3 +103,5 @@ and `picture`. With `EMCRAFT_SCENARIO_SHOTS=DIR` each `shot` writes the frame th
 The 3D inspection includes `view3d.gpu_arrows` (the number of procedural port-direction glyphs) and `view3d.gpu_clip` (whether a section clipping plane is active in WGSL).
 
 Field presentation defaults to a 3D plane in model context (`field.beside_3d: true`, retained for compatibility). `field:beside3d` now toggles the optional 2D plot; component menu items publish `choice:field_component:<id>` (for example `hx` or `|h|`).
+
+In the 3D Field view, `field:spark` selects frequency and `field:at` positions the field plane; `field:frequency`, `field:locator`, `view3d:play` and `view3d:section` are not published there. The top player remains. `view3d.scene_generation` identifies scene rebuilds; single-plane phase playback, including E/H vectors, keeps it unchanged.

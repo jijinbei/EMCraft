@@ -93,7 +93,7 @@ plain picture the view draws, each with a switch in Settings ▸ 3D view ▸ Dra
   or the length), averages each cell's corners and colours it with the theme's map as
   `scene3d::field` does — the same picture, checked cell by cell. The scene keeps the plane as one
   quad (picking, outline); without arrows the phase leaves the scene's key, so playing the phase
-  rebuilds nothing. With arrows shown the arrows are still built per phase; with kept planes the
+  rebuilds nothing. For a single plane, complex E/H vectors are uploaded with the glyphs once, then rotated as Re(F exp(jφ)) in the vertex shader; scene and vertex buffers stay unchanged during playback. Shaft/head widths have a screen-space minimum and E/H use distinct theme colors without a white halo. With kept planes the arrows still use the CPU phase path; with kept planes the
   scene holds every plane's coloured cells (`scene3d::field`) and the GPU draws them as faces.
 
 ## A library instead of our own pipelines?
@@ -162,3 +162,5 @@ read from its manifest; no other licence than MIT, Apache-2.0 or both:
   no GPU. Under Wine with Mesa's lavapipe the window opens on wgpu and draws the view on it
   (docs/install-windows.md); without Vulkan the app falls back to OpenGL as above.
 - **macOS:** Metal (not built or shipped today).
+
+Vector glyph vertices carry the center, real and imaginary displacement, maximum length and vertex ordinal (64 bytes per vertex). Both the color and g-buffer stages use the same WGSL phase evaluation. Categorical flags are flat interpolated.

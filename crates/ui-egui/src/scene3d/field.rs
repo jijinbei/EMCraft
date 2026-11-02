@@ -114,7 +114,17 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
         if !(scale > 0.0) {
             continue;
         }
-        let color = crate::theme::palette().pen(set.pen);
+        let color = match set.pen {
+            emcraft_render::Pen::EArrows => crate::theme::scene().port_input,
+            emcraft_render::Pen::HArrows => crate::theme::scene().port_output,
+            _ => crate::theme::palette().pen(set.pen),
+        };
+        if f.gpu {
+            if legend {
+                out.legend.push((plain(&set.label), color));
+            }
+            continue;
+        }
         for (p, v) in &set.arrows {
             // Arrows above the scale (a source's spike) stop at the full length.
             let k = f.plot.arrow_length / scale.max(v[0].hypot(v[1]));
@@ -129,6 +139,7 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
                     end: point([p[0] + d[0] / 2.0, p[1] + d[1] / 2.0], side),
                     color,
                     section_clip: true,
+                    motion: None,
                 });
             }
         }

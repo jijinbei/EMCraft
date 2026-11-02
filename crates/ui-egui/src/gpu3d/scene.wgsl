@@ -86,12 +86,30 @@ struct Glyph {
     n: vec3<f32>,
 };
 
-fn arrow_vertex(start: vec3<f32>, end: vec3<f32>, code: f32) -> Glyph {
-    let ordinal = u32(max(-code - select(2.0, 1002.0, code < -1000.0), 0.0));
+fn arrow_vertex(origin: vec3<f32>, vector: vec3<f32>, code: f32, im: vec3<f32>, motion: vec4<f32>) -> Glyph {
+    var start = origin;
+    var end = vector;
+    if (code < -9000.0) {
+        var d = vector * f.phase.x - im * f.phase.y;
+        let mag = length(d);
+        if (mag < motion.x * 0.05) { var empty: Glyph; empty.p = origin; empty.n = vec3<f32>(0.0, 0.0, 1.0); return empty; }
+        d *= min(1.0, motion.x / max(mag, 1e-12));
+        start = origin - 0.5 * d;
+        end = origin + 0.5 * d;
+    }
+    let ordinal = u32(max(-code - select(select(2.0, 1002.0, code < -1000.0), 10002.0, code < -9000.0), 0.0));
     let segment = ordinal / 15u;
     let k = ordinal % 15u;
-    let len = length(end - start);
-    let axis = (end - start) / max(len, 1e-12);
+    let raw_length = length(end - start);
+    let centre = 0.5 * (start + end);
+    let centre_clip = u.view_proj * vec4<f32>(centre, 1.0);
+    let vertical_scale = length(vec3<f32>(u.view_proj[0].y, u.view_proj[1].y, u.view_proj[2].y));
+    let pixel = 2.0 * abs(centre_clip.w) / max(u.viewport.y * vertical_scale, 1e-12) * max(2.0 * u.viewport.z, 1.0);
+    var len = raw_length;
+    if (code < -9000.0) { len = max(raw_length, min(12.0 * pixel, motion.x)); }
+    let axis = (end - start) / max(raw_length, 1e-12);
+    start = centre - 0.5 * axis * len;
+    end = centre + 0.5 * axis * len;
     var seed = vec3<f32>(1.0, 0.0, 0.0);
     if (abs(axis.x) > 0.8) { seed = vec3<f32>(0.0, 1.0, 0.0); }
     let ua = normalize(cross(axis, seed));
@@ -100,20 +118,24 @@ fn arrow_vertex(start: vec3<f32>, end: vec3<f32>, code: f32) -> Glyph {
     let sides = select(24.0, 8.0, code < -1000.0);
     let angle = 6.28318530718 * f32(segment + select(0u, 1u, next)) / sides;
     let radial = ua * cos(angle) + va * sin(angle);
+    let shaft = max(0.028 * len, 1.05 * pixel);
+    let head_radius = max(0.085 * len, 3.0 * pixel);
+    let head_length = min(0.45 * len, max(0.25 * len, 5.0 * pixel));
+    let join = len - head_length;
     var o: Glyph;
     if (k < 6u) {
         let high = k == 1u || k == 2u || k == 4u;
-        o.p = start + axis * select(0.0, 0.80 * len, high) + radial * (0.018 * len);
+        o.p = start + axis * select(0.0, join, high) + radial * shaft;
         o.n = radial;
     } else if (k < 9u) {
-        o.p = start + axis * (0.80 * len) + radial * (0.065 * len);
+        o.p = start + axis * (join) + radial * head_radius;
         if (k == 7u) { o.p = end; }
-        o.n = normalize(radial + axis * (0.065 / 0.20));
+        o.n = normalize(radial + axis * (head_radius / max(head_length, 1e-12)));
     } else {
         let head = k >= 12u;
         let centre = k == 9u || k == 12u;
-        o.p = start + axis * select(0.0, 0.80 * len, head);
-        if (!centre) { o.p += radial * len * select(0.018, 0.065, head); }
+        o.p = start + axis * select(0.0, join, head);
+        if (!centre) { o.p += radial * select(shaft, head_radius, head); }
         o.n = -axis;
     }
     return o;
@@ -154,7 +176,7 @@ fn placed(p: vec3<f32>, rank: f32) -> vec4<f32> {
 }
 
 @vertex
-fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>) -> V {
+fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(4) im: vec3<f32>, @location(5) motion: vec4<f32>) -> V {
     var o: V;
     o.pos = placed(p, max(n.w, 0.0));
     o.color = c;
@@ -164,7 +186,7 @@ fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: 
     if (is_field(n.w)) {
         o.color = vec4<f32>(1.0, 1.0, 1.0, c.a);
     } else if (n.w < -1.5) {
-        let g = arrow_vertex(p, n.xyz, n.w);
+        let g = arrow_vertex(p, n.xyz, n.w, im, motion);
         o.pos = placed(g.p, 0.0);
         o.world = g.p;
         o.normal = g.n;
@@ -176,7 +198,7 @@ fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: 
 // Per-fragment lighting preserves the cylinder/cone's curved appearance while orbiting.
 fn lit(i: V) -> vec4<f32> {
     let n = normalize(i.normal);
-    let k = 0.42 + 0.58 * abs(dot(n, u.light.xyz));
+    let k = select(0.42 + 0.58 * abs(dot(n, u.light.xyz)), 0.72 + 0.28 * abs(dot(n, u.light.xyz)), i.flag < -1.5);
     var color = i.color.rgb * k;
     if (i.flag < -1.5) {
         let specular = pow(max(dot(reflect(-u.light.xyz, n), -u.forward_nudge.xyz), 0.0), 16.0);
@@ -313,7 +335,7 @@ fn hole(i: G) -> bool {
 }
 
 @vertex
-fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(3) tag: u32) -> G {
+fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: vec4<f32>, @location(3) tag: u32, @location(4) im: vec3<f32>, @location(5) motion: vec4<f32>) -> G {
     var o: G;
     o.pos = placed(p, max(n.w, 0.0));
     o.n = n.xyz;
@@ -322,7 +344,7 @@ fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: ve
     o.world = p;
     o.flag = n.w;
     if (n.w < -1.5) {
-        let g = arrow_vertex(p, n.xyz, n.w);
+        let g = arrow_vertex(p, n.xyz, n.w, im, motion);
         o.pos = placed(g.p, 0.0);
         o.n = g.n;
         o.world = g.p;

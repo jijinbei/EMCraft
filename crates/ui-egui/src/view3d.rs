@@ -404,6 +404,7 @@ impl View3d {
             "gpu_adapter": self.gpu_adapter,
             "gpu_arrows": self.shown().map_or(0, |b| b.arrows.len()),
             "gpu_clip": self.section.is_some(),
+            "scene_generation": self.scene_gen(),
             "picked_by": self.picked_by,
             "gpu_field": self.field_frame.is_some(),
             "section": self.section.map(|s| s.inspect(l)),
@@ -544,8 +545,8 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         Navigator::Cube => crate::view_cube::show(v, ui, rect, out),
         Navigator::Axes => navigator(&v.camera, ui, rect, out),
     }
-    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, out);
-    if v.section.is_some() {
+    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, app.view != crate::View::Field, out);
+    if v.section.is_some() && app.view != crate::View::Field {
         section_bar(v, ui, rect, bounds, app.session.display().length);
     }
 }
@@ -613,7 +614,7 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         let l = app.session.display().length;
         field.view.at = field.at.map(|v| l.to_si(v));
         let mut view = field.view.clone();
-        if gpu && !view.show_e && !view.show_h {
+        if gpu {
             view.phase = 0.0;
         }
         FieldKey { view, at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect(), gpu }
@@ -635,9 +636,70 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     let gpu = key.field.as_ref().is_some_and(|f| f.gpu);
     let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at, gpu }).collect();
     v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
-    let built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
+    let mut built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
+    if gpu {
+        dynamic_field_arrows(app, field, &mut built);
+    }
     v.built = Some((key, built));
     v.generation = v.generation.wrapping_add(1);
+}
+
+/// Upload complex vectors once. Their phase, lengths and glyph geometry are evaluated in WGSL.
+fn dynamic_field_arrows(app: &EmcraftApp, field: &FieldState, built: &mut Built) {
+    let (Some(samples), Some((lo, _))) = (field.samples.as_ref(), built.bounds) else { return };
+    let (x, y) = samples.axes();
+    let [c, u, v] = scene3d::field_frame_of(&app.session, samples.plane, samples.at, x.span(), y.span(), lo);
+    let normal = scene3d::normal_axis(samples.plane);
+    let du = [0, 1, 2].map(|k| u[k] - c[k]);
+    let dv = [0, 1, 2].map(|k| v[k] - c[k]);
+    let len = |d: [f64; 3]| d.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let max_length = len(du).max(len(dv)) / 18.0 * 0.85;
+    for (shown, component, color) in [
+        (field.view.show_e, emcraft_engine::view::Component::E, crate::theme::scene().port_input),
+        (field.view.show_h, emcraft_engine::view::Component::H, crate::theme::scene().port_output),
+    ] {
+        if !shown {
+            continue;
+        }
+        let (nx, ny, mut data) = samples.phasors(component);
+        if nx < 2 || ny < 2 {
+            continue;
+        }
+        // Normalize against the full complex field, not its in-plane numerical residue.
+        let peak = emcraft_engine::view::robust_peak(data.iter().flatten().map(|(re, im)| len(*re).hypot(len(*im))).collect());
+        for (re, im) in data.iter_mut().flatten() {
+            re[normal] = 0.0;
+            im[normal] = 0.0;
+        }
+        if !(peak > 0.0 && peak.is_finite()) {
+            continue;
+        }
+        let stride = nx.max(ny).div_ceil(18).max(1);
+        for j in (stride / 2..ny).step_by(stride) {
+            for i in (stride / 2..nx).step_by(stride) {
+                let Some(Some((re, im))) = data.get(j * nx + i) else { continue };
+                if !re.iter().chain(im).all(|v| v.is_finite()) || len(*re).hypot(len(*im)) < peak * 0.05 {
+                    continue;
+                }
+                let centre = [0, 1, 2].map(|k| c[k] + du[k] * i as f64 / (nx - 1) as f64 + dv[k] * j as f64 / (ny - 1) as f64);
+                for side in [-1.0, 1.0] {
+                    let mut start = centre;
+                    start[normal] += side * max_length * 0.14;
+                    built.arrows.push(crate::gpu3d::Arrow {
+                        start,
+                        end: start,
+                        color,
+                        section_clip: true,
+                        motion: Some(crate::gpu3d::Motion {
+                            re: re.map(|v| v * max_length / peak),
+                            im: im.map(|v| v * max_length / peak),
+                            max_length,
+                        }),
+                    });
+                }
+            }
+        }
+    }
 }
 
 /// The browser rows of what is selected in the view, in its order (looked up again only when the
@@ -1529,6 +1591,7 @@ fn nav_bar(
     facing: Option<([f64; 3], [f64; 3], StandardView)>,
     bounds: ([f64; 3], [f64; 3]),
     overlay: Overlay,
+    standalone: bool,
     out: &mut Actions,
 ) {
     let t = &Tokens::get();
@@ -1539,14 +1602,18 @@ fn nav_bar(
     ];
     if facing.is_some() {
         items.push((Glyph::Lookat, Fixed::View3dFace.into(), "Face the field's plane"));
-        // The field's phase, played like a video.
-        items.push(if playing {
-            (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
-        } else {
-            (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
-        });
+        // The standalone model view needs a player; the Field view already has one.
+        if standalone {
+            items.push(if playing {
+                (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
+            } else {
+                (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
+            });
+        }
     }
-    items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
+    if standalone {
+        items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
+    }
     items.push(if ortho {
         (Glyph::Orthographic, Fixed::View3dProjection.into(), "Orthographic — click for perspective")
     } else {

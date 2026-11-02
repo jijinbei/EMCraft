@@ -175,11 +175,8 @@ fn fs_show(i: Out) -> @location(0) vec4<f32> {
     if ((show.flags & 2u) != 0u) {
         c = c * (1.0 - occlusion(px));
     }
-    if ((show.flags & 1u) != 0u) {
+    if ((show.flags & 1u) != 0u && textureLoad(normal_t, clamped(px), 0).w < 1.5) {
         var rim = c * 0.3;
-        if (textureLoad(normal_t, clamped(px), 0).w > 1.5 && dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)) < 0.25) {
-            rim = vec3<f32>(0.95);
-        }
         c = mix(c, rim, 0.75 * edge(px));
     }
     if ((show.flags & 4u) != 0u) {

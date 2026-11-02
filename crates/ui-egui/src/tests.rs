@@ -651,3 +651,24 @@ fn scenario_wgsl_port_directions() {
 fn scenario_field_context() {
     scenario("field_context");
 }
+
+#[test]
+fn field_phase_with_both_vectors_reuses_the_scene() {
+    let mut h = Harness::new();
+    h.call("engine.execute", json!({"command":"file.sample", "params":{"name":"highpass"}}));
+    h.call("engine.execute", json!({"command":"solve.frequency", "params":{"frequencies":[8],"order":1}}));
+    h.call("ui.set", json!({"view":"field","animate":false}));
+    h.app.field.view.show_e = true;
+    h.app.field.view.show_h = true;
+    h.frames(2);
+    let generation = h.app.view3d.inspect(h.app.session.display().length)["scene_generation"].clone();
+    let history = h.app.session.history().len();
+    let started = std::time::Instant::now();
+    for i in 0..24 {
+        h.app.field.view.phase = i as f64 * 0.2;
+        h.frames(1);
+        assert_eq!(h.app.view3d.inspect(h.app.session.display().length)["scene_generation"], generation);
+    }
+    assert_eq!(h.app.session.history().len(), history, "phase playback must not solve again");
+    eprintln!("24 cached phase frames with E/H arrows: {:?}", started.elapsed());
+}

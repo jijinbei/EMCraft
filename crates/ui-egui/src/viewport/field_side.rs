@@ -23,9 +23,11 @@ fn heading(ui: &mut egui::Ui, text: &str) {
 
 pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut Actions) {
     let t = &Tokens::get();
-    heading(ui, "WHERE");
-    locator(app, field, ui);
-    ui.add_space(t.space_8);
+    if !field.beside_3d {
+        heading(ui, "WHERE");
+        locator(app, field, ui);
+        ui.add_space(t.space_8);
+    }
     if field.view.mode.is_none() && app.session.results().sweep.is_some() {
         heading(ui, "FREQUENCY");
         spark(app, field, ui);
@@ -186,7 +188,7 @@ fn locator(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
 
 /// |S11| and |S21| over the sweep, small, with the view's frequency marked; a click picks the
 /// nearest solved frequency.
-fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
+pub(super) fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
     let t = &Tokens::get();
     let Some(sw) = app.session.results().sweep.as_ref() else { return };
     let points: Vec<(f64, f64, f64)> = sw
@@ -198,7 +200,7 @@ fn spark(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui) {
         })
         .collect();
     let (Some(f0), Some(f1)) = (points.first().map(|p| p.0), points.last().map(|p| p.0)) else { return };
-    let (rect, resp) = ui.allocate_exact_size(vec2(SIDE - 8.0, 64.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().min(SIDE - 8.0), 64.0), Sense::click());
     scenario::publish_target(Fixed::FieldSpark, rect);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, t.radius_sm, t.panel);
