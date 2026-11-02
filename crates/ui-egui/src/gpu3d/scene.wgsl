@@ -103,17 +103,17 @@ fn arrow_vertex(start: vec3<f32>, end: vec3<f32>, code: f32) -> Glyph {
     var o: Glyph;
     if (k < 6u) {
         let high = k == 1u || k == 2u || k == 4u;
-        o.p = start + axis * select(0.0, 0.72 * len, high) + radial * (0.045 * len);
+        o.p = start + axis * select(0.0, 0.80 * len, high) + radial * (0.018 * len);
         o.n = radial;
     } else if (k < 9u) {
-        o.p = start + axis * (0.72 * len) + radial * (0.12 * len);
+        o.p = start + axis * (0.80 * len) + radial * (0.065 * len);
         if (k == 7u) { o.p = end; }
-        o.n = normalize(radial + axis * (0.12 / 0.28));
+        o.n = normalize(radial + axis * (0.065 / 0.20));
     } else {
         let head = k >= 12u;
         let centre = k == 9u || k == 12u;
-        o.p = start + axis * select(0.0, 0.72 * len, head);
-        if (!centre) { o.p += radial * len * select(0.045, 0.12, head); }
+        o.p = start + axis * select(0.0, 0.80 * len, head);
+        if (!centre) { o.p += radial * len * select(0.018, 0.065, head); }
         o.n = -axis;
     }
     return o;
@@ -126,7 +126,7 @@ struct V {
     @location(0) color: vec4<f32>,
     // From the scene's origin; the field's plane when `flag` is −1.
     @location(1) world: vec3<f32>,
-    @location(2) flag: f32,
+    @location(2) @interpolate(flat) flag: f32,
     @location(3) normal: vec3<f32>,
 };
 
@@ -179,15 +179,15 @@ fn lit(i: V) -> vec4<f32> {
     let k = 0.42 + 0.58 * abs(dot(n, u.light.xyz));
     var color = i.color.rgb * k;
     if (i.flag < -1.5) {
-        let specular = pow(max(dot(reflect(-u.light.xyz, n), -u.forward_nudge.xyz), 0.0), 24.0);
-        color += vec3<f32>(0.25 * specular);
+        let specular = pow(max(dot(reflect(-u.light.xyz, n), -u.forward_nudge.xyz), 0.0), 16.0);
+        color += vec3<f32>(0.12 * specular);
     }
     return vec4<f32>(min(color, vec3<f32>(1.0)), i.color.a);
 }
 
 @fragment
 fn fs_opaque(i: V) -> @location(0) vec4<f32> {
-    if (i.flag != -2.0 && removed(i.world)) { discard; }
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
     if (is_field(i.flag)) {
         let fc = field_colour(i.world);
         if (fc.a < 0.5) {
@@ -201,7 +201,7 @@ fn fs_opaque(i: V) -> @location(0) vec4<f32> {
 // See-through triangles blended in order (where the device has no order-independent targets).
 @fragment
 fn fs_blend(i: V) -> @location(0) vec4<f32> {
-    if (i.flag != -2.0 && removed(i.world)) { discard; }
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
     return lit(i);
 }
 
@@ -215,7 +215,7 @@ struct Oit {
 
 @fragment
 fn fs_oit(i: V) -> Oit {
-    if (i.flag != -2.0 && removed(i.world)) { discard; }
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
     let color = lit(i);
     let a = color.a;
     let w = a * clamp(3e3 * pow(1.0 - i.pos.z, 3.0), 1e-2, 3e3);
@@ -228,7 +228,7 @@ fn fs_oit(i: V) -> Oit {
 // Depth (and the stencil) only.
 @fragment
 fn fs_none(i: V) -> @location(0) vec4<f32> {
-    if (i.flag != -2.0 && removed(i.world)) { discard; }
+    if (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) { discard; }
     return vec4<f32>(0.0);
 }
 
@@ -304,12 +304,12 @@ struct G {
     @location(1) @interpolate(flat) tag: u32,
     @location(2) alpha: f32,
     @location(3) world: vec3<f32>,
-    @location(4) flag: f32,
+    @location(4) @interpolate(flat) flag: f32,
 };
 
 // The field's plane has no triangles where its cells are left out: neither has it pixels here.
 fn hole(i: G) -> bool {
-    return (i.flag != -2.0 && removed(i.world)) || (is_field(i.flag) && field_colour(i.world).a < 0.5);
+    return (!(i.flag > -2.5 && i.flag < -1.5) && removed(i.world)) || (is_field(i.flag) && field_colour(i.world).a < 0.5);
 }
 
 @vertex

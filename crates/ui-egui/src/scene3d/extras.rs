@@ -143,10 +143,10 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
             section_clip: false,
         };
         if driven == Some(i) {
-            out.arrows.push(arrow(along(c, side, 0.14 * width.min(height)), -0.5, 0.75, sc().port_input));
-            out.arrows.push(arrow(along(c, side, -0.14 * width.min(height)), 0.55, -0.5, sc().port_input));
+            out.arrows.push(arrow(along(c, side, 0.14 * width.min(height)), -1.1, -0.15, sc().port_input));
+            out.arrows.push(arrow(along(c, side, -0.14 * width.min(height)), -0.15, -1.1, sc().port_input));
         } else {
-            out.arrows.push(arrow(c, 0.25, -1.0, sc().port_output));
+            out.arrows.push(arrow(c, -0.15, -1.1, sc().port_output));
         }
     }
     let strong = overlay == Overlay::Ports;

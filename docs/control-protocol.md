@@ -101,3 +101,5 @@ and `picture`. With `EMCRAFT_SCENARIO_SHOTS=DIR` each `shot` writes the frame th
 ```
 
 The 3D inspection includes `view3d.gpu_arrows` (the number of procedural port-direction glyphs) and `view3d.gpu_clip` (whether a section clipping plane is active in WGSL).
+
+Field presentation defaults to a 3D plane in model context (`field.beside_3d: true`, retained for compatibility). `field:beside3d` now toggles the optional 2D plot; component menu items publish `choice:field_component:<id>` (for example `hx` or `|h|`).

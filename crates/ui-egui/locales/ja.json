@@ -46,7 +46,6 @@
     "Band": "帯域",
     "Band pass": "バンドパス",
     "Band {start} to {stop} {unit}.": "帯域 {start}〜{stop} {unit}。",
-    "Beside 3D": "3D と並べる",
     "Blank": "空のプロジェクト",
     "Bodies": "物体",
     "Body": "物体",
@@ -392,7 +391,6 @@
     "The factorization on the CPU, its large fronts on the GPU": "分解は CPU、その大きなフロントは GPU で計算",
     "The language of the window. It changes at once.": "ウィンドウの言語。すぐに切り替わります。",
     "The model changed after this run.": "この実行の後にモデルが変更されました。",
-    "The model in 3D beside the picture, the plane in it": "画像の横に 3D モデルとその中の断面を表示",
     "The next solve runs on the CPU's threads (double precision).": "次の解析は CPU のスレッドで実行します（倍精度）。",
     "The next solve runs on the CPU's threads.": "次の解析は CPU のスレッドで実行します。",
     "The next solve runs on the CPU, its factorization's large fronts on {device} (complex double).": "次の解析は CPU で実行し、分解の大きなフロントは {device} で実行します（複素倍精度）。",
@@ -710,7 +708,10 @@
     "Choose an element size, or set elements per wavelength. Smaller elements increase memory and solve time; check convergence before trusting a result.": "要素サイズ、または波長あたりの分割数を指定します。細かくするとメモリーと計算時間が増えます。結果を採用する前に収束を確認してください。",
     "Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence.": "1 次はメモリー使用量を抑え、2 次は通常、同じメッシュで精度を改善します。メッシュを細かくした結果と比較して収束を確認してください。",
     "Passivity and reciprocity check physical consistency. They do not measure mesh error. Refine the mesh and compare the results at frequencies important to your design.": "受動性と相反性は物理的な整合性を確認します。メッシュ誤差は測れません。設計上重要な周波数で、メッシュを細かくした結果と比較してください。",
-    "Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh.": "適応メッシュは単一周波数でメッシュを更新します。許容差と反復上限を確認し、最終メッシュで解析をやり直してください。"
+    "Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh.": "適応メッシュは単一周波数でメッシュを更新します。許容差と反復上限を確認し、最終メッシュで解析をやり直してください。",
+    "2D plot": "2Dグラフ",
+    "Switch between a field plane in the 3D model and a flat plot": "モデル内の3D断面表示と2Dグラフを切り替えます",
+    "Move the field plane in the model. Use 2D plot for point probes.": "モデル内の断面を動かして位置を確認できます。点での値の読み取りは「2Dグラフ」で行えます。"
   },
   "commands": {
     "project.frequency": {

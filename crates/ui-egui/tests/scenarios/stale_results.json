@@ -21,6 +21,7 @@
   {"shot": "stale-sparameters"},
   {"note": "Every result view shows the band"},
   {"call": "ui.set", "params": {"view": "field"}},
+  {"click": "field:beside3d"},
   {"frames": 2},
   {"expect": {"handles": ["stale:rerun", "picture:field"]}},
   {"shot": "stale-field"},

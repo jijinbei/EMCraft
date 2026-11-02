@@ -4,6 +4,7 @@
   {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"start": 7, "stop": 8, "points": 2, "order": 1}}},
   {"expect": {"busy": false, "view": "sparameters"}},
   {"click": "view:field"},
+  {"click": "field:beside3d"},
   {"frames": 2},
   {"expect": {"view": "field", "inspect": {"field.shown": true, "field.plane": "h", "field.frequency": [8e9, 1e-9]}, "handles": ["picture:field", "field:plane:cross", "field:phase"]}},
   {"shot": "field-h-plane"},

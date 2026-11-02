@@ -33,7 +33,11 @@ pub(super) fn side(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, 
     }
     probes(app, field, ui, out);
     ui.add_space(t.space_8);
-    readout(app, field, ui);
+    if field.beside_3d {
+        ui.text(Style::SmallDim, "Move the field plane in the model. Use 2D plot for point probes.");
+    } else {
+        readout(app, field, ui);
+    }
     ui.add_space(t.space_8);
     heading(ui, "SAVE");
     ui.horizontal(|ui| {

@@ -25,7 +25,7 @@ pub struct FieldState {
     pub pinned: Option<[f64; 2]>,
     /// Planes kept for the 3D view beside the field view's own.
     pub kept: Vec<KeptPlane>,
-    /// The model in 3D beside the picture.
+    /// Fields drawn in model context; false selects the optional flat plot.
     pub beside_3d: bool,
     /// The fields at the project's probes for the view's solution, and what they were read for.
     pub probe_values: Option<(ProbeKey, Vec<Option<(emcraft_model::CVec3, emcraft_model::CVec3)>>)>,
@@ -56,7 +56,7 @@ impl Default for FieldState {
             hover: None,
             pinned: None,
             kept: Vec::new(),
-            beside_3d: false,
+            beside_3d: true,
             probe_values: None,
             dragging: None,
         }

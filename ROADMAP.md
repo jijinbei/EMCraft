@@ -26,3 +26,7 @@ UI guidance (2026-11-02): command descriptions folded behind Help; mesh generati
 Mesh section visibility (2026-11-02): open cut outlines instead of opaque material caps and metal backing; tetrahedron perimeters throughout the slice; faint boundary mesh and translucent port faces; line contrast adapted to the viewport background, checked in light and midnight themes.
 
 WGSL viewport (2026-11-02): section clipping shared by colour, transparency, depth/stencil and picking passes; world-space port direction glyphs generated and lit in WGSL (cylinders and cones), replacing egui arrows; mesh port rims use the walls' transparency. CPU cuts retained for interaction and tetrahedron slice topology. GPU pixel checks and light/dark orbit scenarios included.
+
+Field context and direction styling (2026-11-02): the Field view opens on E/H planes inside the 3D model, with a flat plot available explicitly; inherited geometry cuts are cleared on entering fields. Slender, shorter direction heads and shafts stand outside port faces to avoid overlapping boundary shading. Context, component switching and flat-plot round trips covered by a scenario.
+
+Boundary glyph stippling fixed: categorical shader flags use flat interpolation and range checks, with a perspective GPU pixel regression that reproduces the old cut-dependent stippling.

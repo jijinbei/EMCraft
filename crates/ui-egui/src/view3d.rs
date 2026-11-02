@@ -431,6 +431,11 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
     let t = &Tokens::get();
     // The scene, built again only when what it shows changed (the field's planes, for the
     // Results step: the field view's and those kept).
+    // A geometry-inspection cut may hide the field plane entirely. Entering the field
+    // overlay starts with the whole model as context; its plane remains independently movable.
+    if overlay == Overlay::Field && v.built.as_ref().is_some_and(|(k, _)| k.overlay != Overlay::Field) {
+        v.section = None;
+    }
     let gpu_field = overlay == Overlay::Field && app.prefs.gpu_look.field && field.kept.is_empty() && drawer_of(ui) != Drawer::None;
     let key = scene_key(app, v, field, overlay, gpu_field);
     if !v.is_built(&key) {

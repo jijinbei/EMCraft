@@ -646,3 +646,8 @@ fn section_views_leave_the_cut_open_and_show_mesh_cells() {
 fn scenario_wgsl_port_directions() {
     scenario("wgsl_port_directions");
 }
+
+#[test]
+fn scenario_field_context() {
+    scenario("field_context");
+}

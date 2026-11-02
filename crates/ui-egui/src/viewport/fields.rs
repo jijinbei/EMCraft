@@ -1,4 +1,4 @@
-//! Fields on a plane: the picture, the probe and its readout, and the controls.
+//! Fields on a plane inside the 3D model, with an optional flat plot for probing and export.
 
 use super::*;
 use crate::lang::args;
@@ -54,30 +54,28 @@ pub(crate) fn field_plots(app: &EmcraftApp, field: &mut FieldState) -> Result<Ve
 pub(super) fn field(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     field_controls(app, &mut st.field, ui, out);
     let area = ui.available_rect_before_wrap();
-    let gap = 10.0;
-    // A narrow card stacks them, in the card's scroll: the model in 3D when asked, the picture,
-    // the side column.
-    if area.width() < NARROW {
-        if st.field.beside_3d {
-            let (r, _) = ui.allocate_exact_size(vec2(area.width(), (area.height() * 0.5).max(220.0)), Sense::hover());
-            crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, r, crate::scene3d::Overlay::Field, out);
-            ui.add_space(gap);
+    if st.field.beside_3d {
+        ui.allocate_rect(area, Sense::hover());
+        let side_width = if area.width() >= NARROW { field_side::SIDE } else { 0.0 };
+        let view = Rect::from_min_max(area.min, pos2(area.max.x - side_width, area.max.y));
+        crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Field, out);
+        if side_width > 0.0 {
+            let side = Rect::from_min_max(pos2(view.max.x + 10.0, area.min.y), area.max);
+            let mut side_ui = ui.new_child(egui::UiBuilder::new().max_rect(side));
+            egui::ScrollArea::vertical().id_salt("field:side").show(&mut side_ui, |ui| field_side::side(app, &mut st.field, ui, out));
         }
+        return;
+    }
+    let gap = 10.0;
+    // The optional flat plot stacks its picture and side column in narrow windows.
+    if area.width() < NARROW {
         picture_column(app, &mut st.field, ui, out);
         ui.add_space(gap);
         return field_side::side(app, &mut st.field, ui, out);
     }
-    // The model in 3D on the left when asked, then the picture and, beside it, the side column
-    // about it (where, which frequency, the readout, saving).
+    // The optional flat plot and its side column (position, frequency, readout, saving).
     ui.allocate_rect(area, Sense::hover());
-    let rest = if st.field.beside_3d {
-        let split = area.left() + (area.width() * 0.36).round();
-        let left = Rect::from_min_max(area.min, pos2(split - gap / 2.0, area.max.y));
-        crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, left, crate::scene3d::Overlay::Field, out);
-        Rect::from_min_max(pos2(split + gap / 2.0, area.min.y), area.max)
-    } else {
-        area
-    };
+    let rest = area;
     let side_rect = Rect::from_min_max(pos2(rest.max.x - field_side::SIDE, rest.min.y), rest.max);
     let pic_rect = Rect::from_min_max(rest.min, pos2(side_rect.min.x - gap, rest.max.y));
     let mut pic_ui = ui.new_child(egui::UiBuilder::new().max_rect(pic_rect));
@@ -222,8 +220,8 @@ pub(super) fn field_controls(app: &EmcraftApp, field: &mut FieldState, ui: &mut 
         ui.separator();
         plane_choice(app, field, ui);
         ui.separator();
-        let r = ui.named(egui::Button::selectable(field.beside_3d, tr("Beside 3D")), Fixed::FieldBeside3d.into());
-        if r.hint("The model in 3D beside the picture, the plane in it").clicked() {
+        let r = ui.named(egui::Button::selectable(!field.beside_3d, tr("2D plot")), Fixed::FieldBeside3d.into());
+        if r.hint("Switch between a field plane in the 3D model and a flat plot").clicked() {
             field.beside_3d = !field.beside_3d;
         }
     });
@@ -348,7 +346,8 @@ pub(super) fn field_display(app: &EmcraftApp, field: &mut FieldState, ui: &mut e
     let before = field.view.component;
     let r = egui::ComboBox::from_id_salt("component").selected_text(before.label()).show_ui(ui, |ui| {
         for c in emcraft_engine::view::Component::ALL {
-            ui.selectable_value(&mut field.view.component, c, c.label());
+            let r = ui.selectable_value(&mut field.view.component, c, c.label());
+            scenario::publish_target(Handle::Choice("field_component", c.id()), r.rect);
         }
     });
     scenario::publish_target(Fixed::FieldComponent, r.response.rect);

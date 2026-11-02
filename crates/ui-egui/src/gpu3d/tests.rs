@@ -449,7 +449,7 @@ fn shader_sections_clip_colour_lines_and_picking_together() {
 }
 
 #[test]
-fn shader_arrows_have_a_wide_cone_and_round_shaded_shaft() {
+fn shader_arrows_have_a_slim_shaft_and_distinct_head() {
     let Some(mut g) = gpu() else { return };
     let mut scene = Scene::default();
     // Invisible geometry supplies a known origin and radius for the camera.
@@ -466,11 +466,11 @@ fn shader_arrows_have_a_wide_cone_and_round_shaded_shaft() {
     });
     assert!(shot.at([-0.4, 0.0, 0.0])[0] > 80.0, "shaft");
     near(shot.at([-0.4, 0.12, 0.0]), [0.0; 3], 1.0, "outside shaft");
-    assert!(shot.at([0.35, 0.1, 0.0])[0] > 80.0, "wide cone");
+    assert!(shot.at([0.46, 0.04, 0.0])[0] > 80.0, "wide cone");
     assert!(shot.at([0.64, 0.0, 0.0])[0] > 80.0, "tip");
     near(shot.at([0.64, 0.1, 0.0]), [0.0; 3], 1.0, "outside tip");
-    let a = shot.at([-0.4, 0.04, 0.0]);
-    let b = shot.at([-0.4, -0.04, 0.0]);
+    let a = shot.at([-0.4, 0.012, 0.0]);
+    let b = shot.at([-0.4, -0.012, 0.0]);
     assert!((a[0] - b[0]).abs() > 5.0, "round shaft lighting: {a:?}, {b:?}");
     shot.png("procedural-arrow");
     for section_clip in [false, true] {
@@ -490,4 +490,31 @@ fn shader_arrows_have_a_wide_cone_and_round_shaded_shaft() {
             assert!(cut.at([0.6, 0.0, 0.0])[0] > 80.0, "port annotations stay whole");
         }
     }
+}
+
+#[test]
+fn perspective_section_does_not_stipple_port_annotations() {
+    let Some(mut g) = gpu() else { return };
+    let mut scene = Scene::default();
+    rect(&mut scene, (-1.0, 1.0), (-1.0, 1.0), 0.0, Rgb::BLACK, 0);
+    let cam = front(Projection::Perspective);
+    let draw = |g: &mut Gpu, clip| {
+        g.shot(&scene, cam, [320, 240], None, |f| {
+            Arc::make_mut(&mut f.packed).append_arrows(&[super::pack::Arrow {
+                start: [-0.7, -0.2, 0.0],
+                end: [0.7, 0.2, 0.5],
+                color: Rgb(240, 120, 40),
+                section_clip: false,
+            }]);
+            f.uniforms.clip = clip;
+            f.look.edges = true;
+        })
+    };
+    let full = draw(&mut g, [0.0; 4]);
+    let cut = draw(&mut g, [1.0, 0.0, 0.0, -0.9]);
+    assert!(
+        full.rgba == cut.rgba,
+        "port annotations must remain identical across a section ({} differing bytes)",
+        full.rgba.iter().zip(&cut.rgba).filter(|(a, b)| a != b).count()
+    );
 }
