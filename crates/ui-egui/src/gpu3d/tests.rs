@@ -422,3 +422,72 @@ fn smoothing_and_the_additions() {
     edges.png("edges");
     ring.png("ring");
 }
+
+#[test]
+fn shader_sections_clip_colour_lines_and_picking_together() {
+    let Some(mut g) = gpu() else { return };
+    let cam = front(Projection::Orthographic);
+    for alpha in [255, 100] {
+        let mut scene = Scene::default();
+        scene.tagged(42, |s| rect(s, (-0.9, 0.9), (-0.8, 0.8), 0.0, Rgb(240, 80, 20), alpha));
+        scene.line([-0.9, 0.0, 0.1], [0.9, 0.0, 0.1], Rgb(20, 240, 20), 255);
+        for sign in [-1.0, 1.0] {
+            let shot = g.shot(&scene, cam, [200, 160], None, |f| {
+                f.uniforms.clip = [sign as f32, 0.0, 0.0, 0.0];
+                f.look.pick = true;
+            });
+            near(shot.at([sign * 0.4, 0.3, 0.0]), [0.0; 3], 1.0, "removed face");
+            near(shot.at([sign * 0.4, 0.0, 0.1]), [0.0; 3], 1.0, "removed line");
+            assert!(shot.at([-sign * 0.4, 0.3, 0.0])[0] > 30.0);
+            for x in [-0.4, 0.4] {
+                let q = cam.project([x, 0.3, 0.0], 200.0, 160.0).unwrap();
+                let tag = g.r.tags_at(&g.device, &g.queue, shot.key, [q[0] as u32, q[1] as u32]).unwrap();
+                assert_eq!(tag, if sign * x < 0.0 { (42, if alpha == 255 { 42 } else { 0 }) } else { (0, 0) });
+            }
+        }
+    }
+}
+
+#[test]
+fn shader_arrows_have_a_wide_cone_and_round_shaded_shaft() {
+    let Some(mut g) = gpu() else { return };
+    let mut scene = Scene::default();
+    // Invisible geometry supplies a known origin and radius for the camera.
+    rect(&mut scene, (-1.0, 1.0), (-1.0, 1.0), 0.0, Rgb::BLACK, 0);
+    let cam = front(Projection::Orthographic);
+    let shot = g.shot(&scene, cam, [500, 360], None, |f| {
+        f.look.edges = true;
+        Arc::make_mut(&mut f.packed).append_arrows(&[super::pack::Arrow {
+            start: [-0.7, 0.0, 0.0],
+            end: [0.7, 0.0, 0.0],
+            color: Rgb(240, 120, 40),
+            section_clip: false,
+        }]);
+    });
+    assert!(shot.at([-0.4, 0.0, 0.0])[0] > 80.0, "shaft");
+    near(shot.at([-0.4, 0.12, 0.0]), [0.0; 3], 1.0, "outside shaft");
+    assert!(shot.at([0.35, 0.1, 0.0])[0] > 80.0, "wide cone");
+    assert!(shot.at([0.64, 0.0, 0.0])[0] > 80.0, "tip");
+    near(shot.at([0.64, 0.1, 0.0]), [0.0; 3], 1.0, "outside tip");
+    let a = shot.at([-0.4, 0.04, 0.0]);
+    let b = shot.at([-0.4, -0.04, 0.0]);
+    assert!((a[0] - b[0]).abs() > 5.0, "round shaft lighting: {a:?}, {b:?}");
+    shot.png("procedural-arrow");
+    for section_clip in [false, true] {
+        let cut = g.shot(&scene, cam, [300, 200], None, |f| {
+            Arc::make_mut(&mut f.packed).append_arrows(&[super::pack::Arrow {
+                start: [-0.7, 0.0, 0.0],
+                end: [0.7, 0.0, 0.0],
+                color: Rgb(240, 120, 40),
+                section_clip,
+            }]);
+            f.uniforms.clip = [1.0, 0.0, 0.0, 0.0];
+        });
+        assert!(cut.at([-0.4, 0.0, 0.0])[0] > 80.0);
+        if section_clip {
+            near(cut.at([0.6, 0.0, 0.0]), [0.0; 3], 1.0, "field glyph follows the cut");
+        } else {
+            assert!(cut.at([0.6, 0.0, 0.0])[0] > 80.0, "port annotations stay whole");
+        }
+    }
+}

@@ -121,6 +121,8 @@ pub struct Label {
 #[derive(Clone, Debug, Default)]
 pub struct Built {
     pub scene: Scene,
+    pub(crate) gpu_scene: Option<Scene>,
+    pub(crate) arrows: Vec<crate::gpu3d::Arrow>,
     pub labels: Vec<Label>,
     pub legend: Vec<(String, Rgb)>,
     /// The model's box (m).
@@ -219,6 +221,7 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
                 field::field_plane(session, f, peak, i == 0, &mut part);
                 *scene = part.scene;
                 out.legend.extend(part.legend);
+                out.arrows.extend(part.arrows);
             });
         }
     }

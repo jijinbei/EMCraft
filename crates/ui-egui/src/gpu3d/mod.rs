@@ -16,8 +16,9 @@
 //! - Per pixel ([`gbuffer`]): edges, ambient occlusion, the outline of the selection and of what is
 //!   under the pointer, and picking by reading the tags under a pixel back; the field's colour map
 //!   from its phasors ([`field`]). Each is a switch (Settings ▸ 3D view ▸ Drawing).
-//! - The section view's cut and caps are in the scene itself (`emcraft_render::view3d::section`),
-//!   which the CPU's ray picking (the tools' snapping, the fallback) reads too.
+//! - Sections clip the uncut scene in WGSL; CPU cuts remain for interaction and mesh slice lines.
+//! - Port direction glyphs are generated as cylinders and cones in WGSL.
+//!   Field-vector arrows use the same procedural geometry, clipped with the field.
 //!
 //! Nothing here panics: every device call that can fail runs under error scopes or the device's
 //! error handler, which marks the window's view failed (it draws offscreen from then on).
@@ -39,6 +40,7 @@ use eframe::{egui_wgpu, wgpu};
 use emcraft_render::view3d::Scene;
 
 pub use field::{FieldFrame, FieldGrid};
+pub(crate) use pack::Arrow;
 pub use pack::{LINE, MAX_BYTES, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
 pub use renderer::Caps;
 use renderer::Renderer;
@@ -264,10 +266,16 @@ impl Cache {
 
     /// As [`Cache::packed`], the field's plane marked ([`Packed::with_field`]).
     pub fn packed_with(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>) -> Arc<Packed> {
+        self.packed_arrows(scene, generation, field, &[])
+    }
+
+    pub(crate) fn packed_arrows(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>, arrows: &[Arrow]) -> Arc<Packed> {
         match &self.packed {
             Some((k, p)) if *k == (generation, field) => p.clone(),
             _ => {
-                let p = Arc::new(Packed::with_field(scene, next_id(), field));
+                let mut p = Packed::with_field(scene, next_id(), field);
+                p.append_arrows(arrows);
+                let p = Arc::new(p);
                 self.packed = Some(((generation, field), p.clone()));
                 p
             }

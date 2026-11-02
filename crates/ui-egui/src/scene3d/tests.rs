@@ -278,3 +278,17 @@ fn pick_timings() {
         );
     }
 }
+
+#[test]
+fn mesh_port_rims_are_transparent_and_directions_are_world_space() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let built = build(&s, Overlay::Mesh);
+    let rims: Vec<_> = built.scene.tris.iter().filter(|t| t.tag == Pick::Guide.tag()).collect();
+    assert!(!rims.is_empty());
+    assert!(rims.iter().all(|t| t.alpha <= 35), "the mouth must not hide the volume mesh");
+    assert_eq!(built.arrows.len(), 3);
+    assert!(built.arrows[0].end[2] > built.arrows[0].start[2], "incident goes into the start port");
+    assert!(built.arrows[1].end[2] < built.arrows[1].start[2], "reflected goes out of the start port");
+    assert!(built.arrows[2].end[2] > built.arrows[2].start[2], "transmitted goes out of the end port");
+}

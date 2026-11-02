@@ -5,7 +5,6 @@ use emcraft_engine::Session;
 use emcraft_engine::view::Plane;
 use emcraft_render::plot::ScalarKind;
 
-use super::style::sc;
 use super::{Built, FieldLayer, plain};
 
 /// Most cells along the field plane's longer side.
@@ -96,7 +95,7 @@ pub(super) fn field_plane(session: &Session, f: &FieldLayer, shared_peak: f64, l
     field_arrows(session, f, lo, legend, out);
 }
 
-/// The plot's arrows (E's, H's) on the field's plane, filled (a shaft and a head), a hair off
+/// The plot's arrows (E's, H's), generated and shaded in WGSL, a hair off
 /// the plane on both sides so they show from either.
 fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, out: &mut Built) {
     let l = session.display().length;
@@ -124,23 +123,13 @@ fn field_arrows(session: &Session, f: &FieldLayer, lo: [f64; 3], legend: bool, o
             if !(len.is_finite() && len > 0.08 * f.plot.arrow_length) {
                 continue;
             }
-            let (u, n) = ([d[0] / len, d[1] / len], [-d[1] / len, d[0] / len]);
-            // In plane coordinates: `along` the arrow from its tail, `across` it.
-            let at = |along: f64, across: f64| [p[0] - d[0] / 2.0 + along * u[0] + across * n[0], p[1] - d[1] / 2.0 + along * u[1] + across * n[1]];
-            let (head, shaft) = (0.4 * len, (0.07 * f.plot.arrow_length).min(0.15 * len));
-            // A white rim under each arrow (between it and the plane), as the pictures have, so
-            // a dark arrow shows on the colour map's dark end too.
-            let rim = 0.45 * shaft;
             for side in [lift, -lift] {
-                let q = |along: f64, across: f64| point(at(along, across), 0.5 * side);
-                let (h, w) = (head + 2.0 * rim, shaft / 2.0 + rim);
-                out.scene.quad([q(-rim, -w), q(len - head, -w), q(len - head, w), q(-rim, w)], sc().rim, 255);
-                out.scene.tri(q(len + rim - h, -0.45 * h), q(len + rim, 0.0), q(len + rim - h, 0.45 * h), sc().rim, 255);
-            }
-            for side in [lift, -lift] {
-                let q = |along: f64, across: f64| point(at(along, across), side);
-                out.scene.quad([q(0.0, -shaft / 2.0), q(len - head, -shaft / 2.0), q(len - head, shaft / 2.0), q(0.0, shaft / 2.0)], color, 255);
-                out.scene.tri(q(len - head, -0.45 * head), q(len, 0.0), q(len - head, 0.45 * head), color, 255);
+                out.arrows.push(crate::gpu3d::Arrow {
+                    start: point([p[0] - d[0] / 2.0, p[1] - d[1] / 2.0], side),
+                    end: point([p[0] + d[0] / 2.0, p[1] + d[1] / 2.0], side),
+                    color,
+                    section_clip: true,
+                });
             }
         }
         if legend {

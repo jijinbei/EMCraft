@@ -124,10 +124,35 @@ pub(super) fn extras(m: &Model, driven: Option<usize>, overlay: Overlay, out: &m
     if matches!(overlay, Overlay::Ports | Overlay::Plain | Overlay::Boundaries) {
         ports(m, driven, overlay, size, out);
     }
+    // World-space glyphs, depth tested and shaded by WGSL, for every workflow overlay.
+    for (i, p) in m.ports.iter().enumerate() {
+        let Some(q) = port_quad(m, p) else { continue };
+        let c = quad_centre(&q);
+        let frame = p.frame();
+        let (u, v, _) = frame.axes();
+        let width = (q[2][u] - q[0][u]).abs();
+        let height = (q[2][v] - q[0][v]).abs();
+        let len = (0.6 * width.max(height)).min(0.25 * size).max(1e-9);
+        let mut side = [0.0; 3];
+        side[u] = 1.0;
+        let n = port_normal(p);
+        let arrow = |origin, from, to, color| crate::gpu3d::Arrow {
+            start: along(origin, n, from * len),
+            end: along(origin, n, to * len),
+            color,
+            section_clip: false,
+        };
+        if driven == Some(i) {
+            out.arrows.push(arrow(along(c, side, 0.14 * width.min(height)), -0.5, 0.75, sc().port_input));
+            out.arrows.push(arrow(along(c, side, -0.14 * width.min(height)), 0.55, -0.5, sc().port_input));
+        } else {
+            out.arrows.push(arrow(c, 0.25, -1.0, sc().port_output));
+        }
+    }
     let strong = overlay == Overlay::Ports;
     for (i, p) in m.lumped.iter().enumerate() {
         let (a, b) = (p3(p.from), p3(p.to));
-        out.scene.line(a, b, sc().port, 255);
+        out.arrows.push(crate::gpu3d::Arrow { start: a, end: b, color: sc().port, section_clip: false });
         // A small box round the gap's middle to pick it by.
         let (c, h) = (midpoint(a, b), 0.012 * size);
         out.scene.tagged(Pick::Lumped(i).tag(), |s| s.cuboid(c.map(|v| v - h), c.map(|v| v + h), sc().port, 255));

@@ -24,3 +24,5 @@ exact solutions or published benchmarks.
 UI guidance (2026-11-02): command descriptions folded behind Help; mesh generation split into basic and advanced settings with display labels; element-order guidance; Results distinguishes physical checks from mesh convergence and opens the adaptive-mesh settings. Japanese text and a click-through scenario included.
 
 Mesh section visibility (2026-11-02): open cut outlines instead of opaque material caps and metal backing; tetrahedron perimeters throughout the slice; faint boundary mesh and translucent port faces; line contrast adapted to the viewport background, checked in light and midnight themes.
+
+WGSL viewport (2026-11-02): section clipping shared by colour, transparency, depth/stencil and picking passes; world-space port direction glyphs generated and lit in WGSL (cylinders and cones), replacing egui arrows; mesh port rims use the walls' transparency. CPU cuts retained for interaction and tetrahedron slice topology. GPU pixel checks and light/dark orbit scenarios included.

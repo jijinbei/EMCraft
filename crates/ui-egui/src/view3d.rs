@@ -287,9 +287,19 @@ impl View3d {
                 } else {
                     scene3d::section_outline(model, now.axis, now.at)
                 };
+                let mut gpu_scene = full.scene.clone();
+                gpu_scene.lines.extend(cut.lines.iter().copied());
                 scene.lines.extend(cut.lines);
                 let labels = full.labels.iter().filter(|l| s.keeps(l.at)).cloned().collect();
-                let built = Built { scene, labels, legend: full.legend.clone(), bounds: full.bounds, cache: Default::default() };
+                let built = Built {
+                    scene,
+                    gpu_scene: Some(gpu_scene),
+                    arrows: full.arrows.clone(),
+                    labels,
+                    legend: full.legend.clone(),
+                    bounds: full.bounds,
+                    cache: Default::default(),
+                };
                 self.cut = Some((key.clone(), now, built));
                 self.generation = self.generation.wrapping_add(1);
             }
@@ -392,6 +402,8 @@ impl View3d {
             "animating": self.animating(),
             "renderer": self.drawn_by.id(),
             "gpu_adapter": self.gpu_adapter,
+            "gpu_arrows": self.shown().map_or(0, |b| b.arrows.len()),
+            "gpu_clip": self.section.is_some(),
             "picked_by": self.picked_by,
             "gpu_field": self.field_frame.is_some(),
             "section": self.section.map(|s| s.inspect(l)),
@@ -405,6 +417,8 @@ use crate::theme::{color32 as color, rgb};
 
 static EMPTY: Built = Built {
     scene: view3d::Scene { tris: Vec::new(), lines: Vec::new(), tag: 0 },
+    gpu_scene: None,
+    arrows: Vec::new(),
     labels: Vec::new(),
     legend: Vec::new(),
     bounds: None,
@@ -1252,13 +1266,20 @@ fn gpu_frame(
     });
     let packed = match v.shown() {
         // Offscreen (read back, often on a software adapter) a large scene moves as its coarser copy.
-        Some(b) if moving && offscreen && !std::ptr::eq(b.moving(), &b.scene) => cache.packed_with(b.moving(), id.wrapping_add(1 << 63), field_plane),
-        Some(b) => cache.packed_with(&b.scene, id, field_plane),
+        Some(b) if b.gpu_scene.is_none() && moving && offscreen && !std::ptr::eq(b.moving(), &b.scene) => {
+            cache.packed_arrows(b.moving(), id.wrapping_add(1 << 63), field_plane, &b.arrows)
+        }
+        Some(b) => cache.packed_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), id, field_plane, &b.arrows),
         None => cache.packed(&EMPTY.scene, u64::MAX),
     };
     v.gpu = cache;
     let line_width = ppp.max(1.0) * f64::from(supersample);
-    let uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
+    let mut uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
+    if let Some(cut) = v.section {
+        let sign = if cut.keep == Keep::Low { 1.0 } else { -1.0 };
+        uniforms.clip[cut.axis] = sign;
+        uniforms.clip[3] = (f64::from(sign) * (cut.at - packed.origin[cut.axis])) as f32;
+    }
     let gpu_look = crate::gpu3d::Look { edges: look.edges, ao: look.ao, outline: look.outline, pick: look.pick || look.outline };
     let rgba = |c: Color32, a: f32| [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0, a];
     let hover = v.pointer_tag.map_or(0, |(_, _, tag)| tag);
@@ -1410,6 +1431,8 @@ impl Built {
     fn clone_shallow(&self) -> Built {
         Built {
             scene: Default::default(),
+            gpu_scene: None,
+            arrows: Vec::new(),
             labels: self.labels.clone(),
             legend: self.legend.clone(),
             bounds: self.bounds.or_else(|| self.scene.bounds()),
