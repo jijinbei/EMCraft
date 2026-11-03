@@ -222,3 +222,119 @@ fn every_solved_template_opens_with_its_results() {
         assert_eq!(u.solved_revision().is_some(), s.solved_revision() == Some(s.revision()), "{}", t.name);
     }
 }
+
+/// Property tests: results that need no system, random in their shapes and values, written to a
+/// file and read back the same — the write and the read of each kind cannot drift apart.
+mod properties {
+    use super::*;
+    use emcraft_solver::Complex64 as C;
+    use proptest::prelude::*;
+    use proptest::test_runner::{Config, RngSeed};
+
+    fn x() -> impl Strategy<Value = f64> {
+        prop_oneof![-1e3..1e3f64, Just(0.0), Just(f64::NAN), Just(f64::INFINITY)]
+    }
+    fn c() -> impl Strategy<Value = C> {
+        (-1.0..1.0f64, -1.0..1.0f64).prop_map(|(re, im)| C::new(re, im))
+    }
+    fn frequencies(n: usize) -> Vec<f64> {
+        (1..=n).map(|k| 1e9 * k as f64).collect()
+    }
+
+    fn time_domain() -> impl Strategy<Value = emcraft_fdtd::TdResult> {
+        (1usize..6).prop_flat_map(|n| {
+            (prop::collection::vec(c(), n), prop::collection::vec(c(), n), 0usize..1000, any::<bool>()).prop_map(
+                move |(s11, s21, steps, converged)| emcraft_fdtd::TdResult {
+                    frequencies: frequencies(n),
+                    s11,
+                    s21,
+                    cells: steps * 3,
+                    dt: 1e-12,
+                    steps,
+                    reference_steps: steps / 2,
+                    converged,
+                    loss_reference: 1e9,
+                },
+            )
+        })
+    }
+
+    fn dispersion() -> impl Strategy<Value = emcraft_solver::bloch::Dispersion> {
+        prop::collection::vec((x(), x(), prop::collection::vec(1e8..1e11f64, 0..4), 0usize..50), 0..5).prop_map(|points| {
+            emcraft_solver::bloch::Dispersion {
+                axis: 2,
+                period: 0.01,
+                points: points
+                    .into_iter()
+                    .map(|(psi, beta, frequencies, iterations)| emcraft_solver::bloch::BlochPoint { psi, beta, frequencies, iterations })
+                    .collect(),
+                unknowns: 99,
+            }
+        })
+    }
+
+    fn row(variables: usize) -> impl Strategy<Value = crate::study::Row> {
+        (1usize..4).prop_flat_map(move |f| {
+            (
+                prop::collection::vec(x(), variables),
+                prop::collection::vec((Just("s11".to_owned()), prop::collection::vec(c(), f)), 0..3),
+                prop::collection::vec(x(), 0..3),
+                prop::collection::vec((Just("power".to_owned()), x()), 0..2),
+                prop::option::of(x()),
+                prop::option::of(Just("did not mesh".to_owned())),
+                prop::option::of((prop::collection::vec(x(), f), prop::collection::vec(x(), f), prop::collection::vec(x(), 0..2))),
+            )
+                .prop_map(move |(values, s, modes, scalars, objective, error, predicted)| crate::study::Row {
+                    values,
+                    frequencies: frequencies(f),
+                    s,
+                    modes,
+                    scalars,
+                    objective,
+                    error,
+                    prediction: predicted.map(|(db, sigma, modes_sigma)| crate::study::Predicted {
+                        db: vec![("s11".into(), db, sigma)],
+                        modes_sigma,
+                        scalars_sigma: vec![("power".into(), 0.5)],
+                    }),
+                })
+        })
+    }
+
+    fn study() -> impl Strategy<Value = crate::study::Study> {
+        (1usize..3).prop_flat_map(|v| {
+            (prop::collection::vec(row(v), 1..5), any::<bool>(), prop::option::of(prop::collection::vec(0.0..1.0f64, v))).prop_map(
+                move |(rows, optimize, lengths)| {
+                    let best = Some(rows.len() - 1);
+                    crate::study::Study {
+                        kind: if optimize { crate::study::Kind::Optimize } else { crate::study::Kind::Sweep },
+                        variables: (0..v).map(|k| format!("v{k}")).collect(),
+                        grid: Vec::new(),
+                        solve: "solve.frequency".into(),
+                        frequency_unit: "GHz".into(),
+                        goal: optimize.then(|| "min |S11|".into()),
+                        rows,
+                        best,
+                        converged: optimize,
+                        surrogate: lengths.map(|lengths| crate::study::Surrogate { solves: 3, lengths, at_best: Some((-1.0, 0.1)) }),
+                    }
+                },
+            )
+        })
+    }
+
+    proptest! {
+        #![proptest_config(Config { cases: 32, rng_seed: RngSeed::Fixed(0x454d_4372), failure_persistence: None, ..Config::default() })]
+
+        #[test]
+        fn tables_round_trip(td in time_domain(), d in dispersion(), st in study()) {
+            let mut s = Session::new();
+            s.results.time_domain = Some(std::sync::Arc::new(td));
+            s.results.dispersion = Some(std::sync::Arc::new(d));
+            s.results.study = Some(std::sync::Arc::new(st));
+            let (t, opened) = reopened(&mut s, "round-trip", true);
+            prop_assert_eq!(opened["left_out"].as_array().map(Vec::len), Some(0), "{}", opened);
+            same_results(&s.results, &t.results);
+        }
+    }
+}
