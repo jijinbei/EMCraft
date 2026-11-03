@@ -19,6 +19,7 @@ cubecl-cpu = ["cubecl/cpu"]
 
 [dependencies]
 emcraft-macros = { workspace = true }
+serde = { workspace = true }
 emcraft-fdtd = { workspace = true }
 emcraft-solver = { workspace = true }
 cubecl = { workspace = true }

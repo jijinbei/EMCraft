@@ -2286,6 +2286,7 @@ dependencies = [
  "emcraft-model",
  "emcraft-solver",
  "num-complex",
+ "serde",
 ]
 
 [[package]]

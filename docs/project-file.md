@@ -60,7 +60,12 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
   each port's `deembed` (m), the `frequencies` (Hz) and per frequency S as 2n² numbers, row
   by row, real then imaginary (S[p][q] at 2(pn + q)); the `eigenmodes` (`frequency` in Hz,
   `q_walls`, `q_dielectric`, `q_magnetic`); the time domain's `frequencies`, `s11` and `s21`
-  (pairs as S's). **Not the model, the mesh, the fields or the far fields**: the highpass sample
+  (pairs as S's); and how it was made (`provenance`, optional): EMCraft's `version`, the
+  wall-clock `seconds`, the mesh's `tetrahedra`, the system's `unknowns`, the elements' `order`
+  and a sweep's `linear_solver` (`direct` or `iterative`) where they apply, the `device`, its
+  `precision` and the `threads` — so tries can be compared on cost as well as result; not part
+  of what a solve found (the same solve again is the same kept solve, its provenance the
+  latest). **Not the model, the mesh, the fields or the far fields**: the highpass sample
   solved three times over 101 frequencies is a file of 72 kB (4 kB without its history), about
   23 kB a two-port sweep of 101 frequencies, numbers written in full so they read back bit for
   bit (lists of numbers are written on one line). `next` is the id after the last
@@ -75,7 +80,9 @@ An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written
   each step of a history a command a history holds (one that changes the model), both with
   parameters they know; at most 2001 frequencies, 64 entries of S and 2²² numbers a solve,
   every size agreeing (2n² numbers an S matrix, one a frequency), every number finite,
-  frequencies positive and ascending, impedances positive; labels at most 80 characters.
+  frequencies positive and ascending, impedances positive; labels at most 80 characters; a
+  provenance's version at most 64 characters, its seconds finite and ≥ 0, its order 1 or 2,
+  its device and precision ones EMCraft knows.
   Otherwise the file is refused. Files of versions 1 to 3 open with an empty history.
 - `model` is the model as the engine holds it (SI units), for reading by other tools; opening
   does not use it. A port on a face holds `face` as `{"axis", "at", "u0", "v0", "a", "b"}` (its

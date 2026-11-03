@@ -71,6 +71,14 @@ impl Sweep {
         self.driven.entries()
     }
 
+    /// Its S-parameters (n × n at each frequency); an error when a value is not finite or
+    /// the matrices do not agree with the entries.
+    pub fn sdata(&self) -> std::result::Result<crate::SData, String> {
+        let n = self.results.first().map_or(0, |r| r.s.ports());
+        let s = self.results.iter().flat_map(|r| r.s.rows().flatten().copied()).collect();
+        crate::SData::square(self.results.iter().map(|r| r.frequency).collect(), n, s)
+    }
+
     /// The result at a frequency (Hz) solved within 10⁻⁹ of it, or the nearest when `nearest`.
     pub fn at(&self, frequency: f64, nearest: bool) -> Option<&FrequencyResult> {
         let best = self.results.iter().min_by(|a, b| (a.frequency - frequency).abs().total_cmp(&(b.frequency - frequency).abs()))?;
@@ -225,6 +233,12 @@ pub struct Session {
 }
 
 /// Reading the session.
+/// How a command that succeeded ran: its wall-clock seconds and its reply.
+struct Ran<'a> {
+    seconds: f64,
+    reply: &'a Value,
+}
+
 impl Session {
     pub fn model(&self) -> &Model {
         &self.model
@@ -398,11 +412,12 @@ impl Session {
         let before = self.before(spec.effect);
         let reader = Params::new(params, self.display).with_variables(&before.state.variables);
         let accelerator = self.compute.accelerator();
+        let started = std::time::Instant::now();
         let outcome =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emcraft_solver::accel::with(accelerator, || (spec.run)(self, &reader))));
         let error = match outcome {
             Ok(Ok(reply)) => {
-                self.commit(spec, params, before);
+                self.commit(spec, params, before, Ran { seconds: started.elapsed().as_secs_f64(), reply: &reply });
                 return Ok(reply);
             }
             Ok(Err(e)) => e,
@@ -422,7 +437,7 @@ impl Session {
 
     /// Records a command that succeeded by its effect: one that changed the model leaves the
     /// state before it to undo to and joins the history; a solve's results are current.
-    fn commit(&mut self, spec: &CommandSpec, params: &Value, before: Before) {
+    fn commit(&mut self, spec: &CommandSpec, params: &Value, before: Before, ran: Ran) {
         match spec.effect {
             Effect::Record | Effect::Adjust | Effect::Replace | Effect::Rebuild => {
                 if let Some(change) = spec.invalidates {
@@ -451,7 +466,8 @@ impl Session {
                 self.solved_revision = Some(self.revision);
                 let params = if params.is_null() { json!({}) } else { params.clone() };
                 let run = self.next_run.take().unwrap_or(Run { command: spec.id.to_owned(), params, units: self.display });
-                self.archive_current = Some(crate::archive::keep(self, &run.command, &run.params));
+                let provenance = crate::archive::Provenance::of(self, spec.id, ran.seconds, ran.reply);
+                self.archive_current = Some(crate::archive::keep(self, &run.command, &run.params, provenance));
                 crate::runs::record(&mut self.runs, run);
             }
             Effect::View | Effect::None => {}

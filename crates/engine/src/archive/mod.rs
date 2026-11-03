@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use emcraft_model::Model;
 use emcraft_model::units::Display;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::expr::Variables;
@@ -22,6 +23,7 @@ use crate::{EngineError, Params, Result, Results, Session, Step};
 pub mod file;
 pub mod kept;
 
+pub use file::{StoredResults, StoredSweep, StoredTimeDomain};
 pub use kept::{Kept, KeptSweep};
 
 /// Most solves kept besides the pinned ones.
@@ -32,6 +34,84 @@ pub const MAX_PINNED: usize = 32;
 
 /// Longest label of a kept solve (characters).
 pub const MAX_LABEL: usize = 80;
+
+/// Longest version text a file's provenance may give.
+const MAX_VERSION: usize = 64;
+
+/// Most threads a provenance may name.
+const MAX_THREADS: usize = 1 << 16;
+
+/// How a kept solve was made: by which EMCraft, on what, how large and how long. Not part of
+/// what it found ([`Kept`]): the same solve made elsewhere is the same solve.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Provenance {
+    /// EMCraft's version.
+    pub version: String,
+    /// Wall-clock seconds the solve took.
+    pub seconds: f64,
+    /// The mesh's tetrahedra, where it was meshed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tetrahedra: Option<usize>,
+    /// The system's unknowns, where the solve has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unknowns: Option<usize>,
+    /// The elements' order (1 or 2) of a frequency-domain solve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u8>,
+    /// How a sweep's systems were solved (direct or iterative).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linear_solver: Option<crate::LinearSolver>,
+    /// Where it ran, and the time domain's precision there.
+    pub device: crate::Device,
+    pub precision: crate::Precision,
+    /// The threads it had.
+    pub threads: usize,
+}
+
+impl Provenance {
+    /// How solve `command` that just ran in `s` was made, in `seconds`, replying `reply`.
+    pub(crate) fn of(s: &Session, command: &str, seconds: f64, reply: &Value) -> Provenance {
+        let sweep = s.results.sweep.as_ref().filter(|_| matches!(command, "solve.frequency" | "solve.refine"));
+        let count = |key: &str| reply.get(key).and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok());
+        Provenance {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            seconds: if seconds.is_finite() { seconds.max(0.0) } else { 0.0 },
+            tetrahedra: s.model.mesh.as_ref().map(|m| m.tets.len()),
+            unknowns: count("unknowns"),
+            order: count("order").and_then(|n| u8::try_from(n).ok()),
+            linear_solver: sweep.map(|sw| if sw.driven.iterative { crate::LinearSolver::Iterative } else { crate::LinearSolver::Direct }),
+            device: s.compute.device(),
+            precision: s.compute.precision,
+            threads: emcraft_solver::threads(),
+        }
+    }
+
+    /// Checked as read from a file (hostile).
+    pub(crate) fn checked(self) -> std::result::Result<Provenance, String> {
+        if self.version.chars().count() > MAX_VERSION || self.version.chars().any(char::is_control) {
+            return Err(format!("its version is at most {MAX_VERSION} characters, none of them control characters"));
+        }
+        if !(self.seconds.is_finite() && self.seconds >= 0.0) || self.threads > MAX_THREADS || self.order.is_some_and(|o| !(1..=2).contains(&o)) {
+            return Err(format!("its seconds are a finite number ≥ 0, its threads at most {MAX_THREADS}, its order 1 or 2"));
+        }
+        Ok(self)
+    }
+
+    /// As `results.history` gives it.
+    fn row(&self) -> Value {
+        json!({
+            "version": self.version,
+            "seconds": self.seconds,
+            "tetrahedra": self.tetrahedra,
+            "unknowns": self.unknowns,
+            "order": self.order,
+            "linear_solver": self.linear_solver.map(|l| l.id()),
+            "device": self.device.id(),
+            "precision": self.precision.id(),
+            "threads": self.threads,
+        })
+    }
+}
 
 /// A solve kept: its command and parameters, the model it solved and what it found.
 #[derive(Clone, Debug)]
@@ -50,6 +130,8 @@ pub struct Archived {
     pub kept: Arc<Kept>,
     pub pinned: bool,
     pub label: Option<String>,
+    /// How it was made (none for a solve read from a file written before it was kept).
+    pub provenance: Option<Provenance>,
     /// The model and the whole results, while the session holds them: not for a solve read
     /// back from a project file until it is restored.
     pub(crate) solved: Option<Arc<Solved>>,
@@ -85,7 +167,7 @@ fn now() -> u64 {
 /// Keeps the solve that just succeeded in `s`; its id. The same solve again (its command,
 /// parameters, units and model, and the same results) is the one kept before, not another: a
 /// run repeated leaves the history, and the project, as they were.
-pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) -> u32 {
+pub(crate) fn keep(s: &mut Session, command: &str, params: &Value, provenance: Provenance) -> u32 {
     // Only finite values: a file writes no other (a variable of 1/0 is left out).
     let variables: Variables = s.variables.iter().filter(|(_, v)| v.is_finite()).map(|(k, v)| (k.clone(), *v)).collect();
     let kept = Kept::of(&s.results);
@@ -99,6 +181,7 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) -> u32 {
     };
     if let Some(a) = s.archive.iter_mut().find(|a| same(a)) {
         a.solved = Some(Arc::new(Solved { model: s.model.clone(), results: s.results.clone() }));
+        a.provenance = Some(provenance);
         return a.id;
     }
     s.archive_next = s.archive_next.saturating_add(1);
@@ -118,6 +201,7 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value) -> u32 {
         kept: Arc::new(kept),
         pinned: false,
         label: None,
+        provenance: Some(provenance),
         solved: Some(Arc::new(Solved { model: s.model.clone(), results: s.results.clone() })),
     });
     // The oldest unpinned ones go past the cap.
@@ -153,8 +237,8 @@ fn changes(before: Option<&Archived>, now: &Archived) -> Vec<String> {
 fn row(s: &Session, before: Option<&Archived>, a: &Archived) -> Value {
     let fu = s.display.frequency;
     let sweep = a.kept.sweep.as_ref();
-    let points = sweep.map(|sw| sw.frequencies.len());
-    let band = sweep.and_then(|sw| Some((*sw.frequencies.first()?, *sw.frequencies.last()?)));
+    let points = sweep.map(|sw| sw.s.frequencies().len());
+    let band = sweep.and_then(|sw| Some((*sw.s.frequencies().first()?, *sw.s.frequencies().last()?)));
     // The deepest |S11| over the sweep, the usual figure of merit of a matched part.
     let best = sweep
         .and_then(|sw| sw.curve(0, 0).into_iter().map(|(f, c)| (f, emcraft_model::units::decibels(c.norm()))).min_by(|x, y| x.1.total_cmp(&y.1)));
@@ -172,6 +256,7 @@ fn row(s: &Session, before: Option<&Archived>, a: &Archived) -> Value {
         "changes": changes(before, a),
         "pinned": a.pinned,
         "current": s.archive_current == Some(a.id),
+        "provenance": a.provenance.as_ref().map(Provenance::row),
     })
 }
 

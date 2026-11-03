@@ -438,12 +438,20 @@ fn swatch(p: &egui::Painter, c: egui::Pos2, current: bool, drawn: Option<usize>,
     }
 }
 
-/// A kept solve's tip: its label, its frequencies, its deepest |S11| and where, and for one read
-/// back from the project file (`stored`) that restoring it solves it again.
+/// A kept solve's tip: its label, its frequencies, how it was made (how long, on what, how
+/// large), its deepest |S11| and where, and for one read back from the project file (`stored`)
+/// that restoring it solves it again.
 fn history_tip(app: &EmcraftApp, r: &Value, stored: bool) -> String {
     let mut tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
     if let Some(label) = r["label"].as_str() {
         tip = format!("{label}\n{tip}");
+    }
+    let made = &r["provenance"];
+    if let (Some(seconds), Some(device)) = (made["seconds"].as_f64(), made["device"].as_str()) {
+        tip = format!("{tip}\n{}", trf("solved in {seconds} s on {device}", args!(seconds = format!("{seconds:.1}"), device = device)));
+    }
+    if let (Some(unknowns), Some(tets)) = (made["unknowns"].as_u64(), made["tetrahedra"].as_u64()) {
+        tip = format!("{tip}\n{}", trf("{unknowns} unknowns, {tets} tetrahedra", args!(unknowns = unknowns, tets = tets)));
     }
     if stored {
         tip = format!("{tip}\n{}", tr("Saved: restore solves it again"));

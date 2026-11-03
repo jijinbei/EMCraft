@@ -67,7 +67,7 @@ emcraft_macros::named_serde!(Strategy);
 emcraft_macros::named_enum! {
     /// How a sweep's systems are solved (`solver`).
     #[derive(Clone, Copy, Debug, PartialEq)]
-    pub(crate) enum LinearSolver {
+    pub enum LinearSolver {
         Auto = "auto",
         Direct = "direct",
         Iterative = "iterative",
@@ -89,6 +89,8 @@ emcraft_macros::named_enum! {
         CubeclCpu = "cubecl-cpu",
     }
 }
+
+emcraft_macros::named_serde!(Device);
 
 impl Device {
     /// The GPU crate's backend (`None` for the CPU's threads).

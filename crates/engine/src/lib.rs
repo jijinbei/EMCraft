@@ -45,6 +45,7 @@ mod reply;
 mod results;
 pub mod runs;
 pub mod script;
+pub mod sdata;
 mod session;
 mod solve;
 pub mod study;
@@ -64,8 +65,9 @@ pub use emcraft_templates as templates;
 pub use params::{Edit, Params};
 pub use project::{Effect, TemplateMark, TemplateParameter, template_marks, template_parameters, template_steps};
 pub use script::Step;
+pub use sdata::SData;
 pub use session::{Change, Limits, Results, Session, Sweep};
-pub use solve::{Compute, Device};
+pub use solve::{Compute, Device, LinearSolver};
 pub use view::field_view;
 
 /// results.tdr's chart, for the UI.
