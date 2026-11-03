@@ -85,6 +85,21 @@ pub struct CommandSpec {
     pub run: fn(&mut Session, &Params) -> Result<Value>,
 }
 
+impl CommandSpec {
+    /// Whether it runs a solve: its effect is [`Effect::Solve`], or it repeats one
+    /// (`solve.rerun`). Not the port modes, nor picking or listing the devices.
+    ///
+    /// ```
+    /// use emcraft_engine::find_command;
+    /// let solves = |id| find_command(id).is_some_and(|c| c.solves());
+    /// assert!(solves("solve.frequency") && solves("solve.rerun"));
+    /// assert!(!solves("solve.port_modes") && !solves("solve.device") && !solves("no.such"));
+    /// ```
+    pub fn solves(&self) -> bool {
+        self.effect == Effect::Solve || self.id == "solve.rerun"
+    }
+}
+
 impl fmt::Debug for CommandSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CommandSpec").field("id", &self.id).field("effect", &self.effect).finish_non_exhaustive()

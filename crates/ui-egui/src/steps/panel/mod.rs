@@ -118,7 +118,7 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
                 status_color(s.status, t)
             }));
             // A fix that only leads back to this step is left out.
-            let here = m.command.as_deref().is_some_and(|c| c.starts_with("solve.") && Step::of_command(c) == Some(s.step));
+            let here = m.command.as_deref().is_some_and(|c| is_solve(c) && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
                 let hint = format!("{c}: {}", crate::label(c));
                 ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), &hint, || Action::Fix(c.clone()), out);
@@ -130,7 +130,7 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
 
 fn fix_label(command: &str) -> String {
     match Step::of_command(command) {
-        Some(step) if command.starts_with("solve.") && command != "solve.port_modes" => trf("Go to {step}", args!(step = shown(step))),
+        Some(step) if is_solve(command) => trf("Go to {step}", args!(step = shown(step))),
         Some(Step::Intent) if command == "project.frequency" => tr("Set the band").to_owned(),
         Some(Step::Intent) if command == "project.analysis" => tr("Choose the analysis").to_owned(),
         _ => trf("Fix: {command}", args!(command = crate::commands::button_label(command))),
