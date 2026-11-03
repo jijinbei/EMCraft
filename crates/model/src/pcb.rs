@@ -6,9 +6,11 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Result, invalid};
 
 /// The most routed segments a board may have.
-pub const MAX_SEGMENTS: usize = 20_000;
+pub const MAX_SEGMENTS: usize = 200_000;
+/// The most filled-copper polygons (pours, pads) a board may have.
+pub const MAX_COPPER: usize = 100_000;
 /// The most polygon vertices a board's filled copper may have in all.
-pub const MAX_VERTICES: usize = 200_000;
+pub const MAX_VERTICES: usize = 2_000_000;
 
 /// A copper layer: its name (as the source names it, e.g. `F.Cu`), its height z (m) and the
 /// relative permittivity of the dielectric below it, down to the next layer.
@@ -129,7 +131,7 @@ impl Board {
             || self.segments.is_empty()
             || self.segments.len() > MAX_SEGMENTS
             || self.vias.len() > MAX_SEGMENTS
-            || self.copper.len() > 4096
+            || self.copper.len() > MAX_COPPER
             || self.notes.len() > 128
             || self.notes.iter().any(|n| n.len() > 1024)
         {

@@ -165,12 +165,12 @@ fn embedded(s: &mut Session, board: Board) -> Result<Value> {
     Ok(reply)
 }
 
-/// `pcb.import`: a KiCad board read from `path` (at most 8 MiB).
+/// `pcb.import`: a KiCad board read from `path` (at most 64 MiB).
 pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
     let path = p.string("path").required()?;
     let file = std::fs::File::open(path).map_err(failed)?;
     let mut text = String::new();
-    file.take(8 * 1024 * 1024 + 1).read_to_string(&mut text).map_err(failed)?;
+    file.take(64 * 1024 * 1024 + 1).read_to_string(&mut text).map_err(failed)?;
     let layers = match p.raw("stackup") {
         None => None,
         Some(v) => {

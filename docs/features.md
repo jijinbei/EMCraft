@@ -16,7 +16,7 @@ Reads a KiCad board's routed straight segments, vias, explicit dielectric stacku
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `path` | string |  | yes | KiCad .kicad_pcb file, at most 8 MiB |
+| `path` | string |  | yes | KiCad .kicad_pcb file, at most 64 MiB |
 | `stackup` | array |  | no | optional copper layers [{name,z,eps_below}], lengths in display units; replaces file stackup |
 
 ## `pcb.sample` — PCB return-path example

@@ -110,7 +110,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Import PCB",
         doc: "Reads a KiCad board's routed straight segments, vias, explicit dielectric stackup and saved filled copper. Unsupported track arcs fail visibly; unfilled zones are not treated as copper. Pads, packages, mask and copper thickness are excluded. Imported data is embedded so reopening needs no source file.",
         params: &[
-            req("path", K::String, "KiCad .kicad_pcb file, at most 8 MiB"),
+            req("path", K::String, "KiCad .kicad_pcb file, at most 64 MiB"),
             opt("stackup", K::Array, "optional copper layers [{name,z,eps_below}], lengths in display units; replaces file stackup"),
         ],
         effect: Effect::Rebuild,

@@ -79,10 +79,14 @@ SI/EMC compliance verdict is computed by this feature.
 
 The reader is an original implementation of the public
 [KiCad S-expression PCB format](https://dev-docs.kicad.org/en/file-formats/sexpr-pcb/).
-It reads straight segments, vias, named nets, explicit dielectric/copper stackup and saved
-`filled_polygon` copper. Refill zones in the PCB editor and save before importing. An unfilled
-zone outline is skipped with a note; it is never treated as solid ground. Curved tracks are
-refused. Pads, footprints, board outlines, mask and copper thickness are excluded with a note.
+It reads tracks (curved ones as chords within a twentieth of their width of the circle), vias
+(with their drill), named nets, explicit dielectric/copper stackup, saved `filled_polygon`
+copper and footprints' copper pads (rectangles, rounded rectangles as rectangles, circles and
+ovals by chords; custom and trapezoid pads as their bounding rectangles, noted; a through-hole
+pad also a via of its drill between the outer layers; pads without a net skipped, noted). Refill
+zones in the PCB editor and save before importing. An unfilled zone outline is skipped with a
+note; it is never treated as solid ground. Board outlines, mask and copper thickness are not
+read.
 Coordinates are read in KiCad's millimetres and stored in SI metres.
 
 An absent stackup or missing dielectric permittivity is an error, not an assumed FR-4 board.
@@ -90,8 +94,8 @@ Mixed dielectric plies between two copper layers require a caller-supplied homog
 `pcb.import` accepts `stackup`, an array of `{name,z,eps_below}` copper layers in increasing
 depth order. `z` uses the session's display length unit; `eps_below` is the relative dielectric
 permittivity in the interval below that layer (last layer: unused, supply `1`). The file limit
-is 8 MiB, with at most 64 copper layers, 20,000 segments, 20,000 vias, 4,096 filled polygons and
-200,000 polygon vertices. Inspect a net with at most 512 segments; reports exceeding the
+is 64 MiB, with at most 64 copper layers, 200,000 segments, 200,000 vias, 100,000 filled
+polygons and pads and 2,000,000 polygon vertices. Inspect a net with at most 512 segments; reports exceeding the
 geometric work budget fail visibly. The first release is intended for small routed regions.
 
 ## Commands and native board data
