@@ -275,6 +275,8 @@ pub struct PcbUi {
     pub baseline: Option<Value>,
     /// The widths being edited of the route's segments (display units), by segment.
     pub widths: std::collections::BTreeMap<String, f64>,
+    /// Drawing the route in 3D: its last point (m) once there is one.
+    pub drawing: Option<Option<[f64; 2]>>,
 }
 impl Default for PcbUi {
     fn default() -> Self {
@@ -287,6 +289,7 @@ impl Default for PcbUi {
             attempted: None,
             baseline: None,
             widths: Default::default(),
+            drawing: None,
         }
     }
 }
