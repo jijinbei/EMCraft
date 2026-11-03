@@ -30,6 +30,7 @@
 //!     layers: &["top".into()],
 //!     nets: &["signal".into()],
 //!     outlines: &[Outline { layer: 0, net: 0, ring }],
+//!     lines: &[],
 //!     size: 0.5e-3,
 //!     edge_size: 0.1e-3,
 //! };
@@ -80,7 +81,8 @@ pub struct Outline {
 }
 
 /// What to triangulate: the region `lo`..`hi` (metres), the layers' and nets' names, the copper
-/// outlines and the element sizes far from copper (`size`) and at its edges (`edge_size`).
+/// outlines, other lines to follow and the element sizes far from copper (`size`) and at its
+/// edges (`edge_size`).
 #[derive(Clone, Copy, Debug)]
 pub struct Request<'a> {
     pub lo: [f64; 2],
@@ -88,6 +90,9 @@ pub struct Request<'a> {
     pub layers: &'a [String],
     pub nets: &'a [String],
     pub outlines: &'a [Outline],
+    /// Lines the mesh must follow besides the copper (metres, inside the region): where a
+    /// perfectly matched layer begins, say.
+    pub lines: &'a [[[f64; 2]; 2]],
     pub size: f64,
     pub edge_size: f64,
 }
@@ -235,8 +240,23 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     let size = |p: [f64; 2]| (small + GRADING * near.distances(p, reach).0).min(big);
     let mut points = Points::default();
     let mut edges: Vec<[u32; 2]> = Vec::new();
-    let mut is_copper: Vec<bool> = Vec::new();
-    for &(a, b, copper) in &outline {
+    let mut kinds: Vec<Kind> = Vec::new();
+    // The other lines, in the lattice, as more edges spaced by the size field.
+    let mut lines: Vec<([f64; 2], [f64; 2], Option<Kind>)> = outline.iter().map(|&(a, b, copper)| (a, b, copper.then_some(Kind::Segment))).collect();
+    for l in r.lines {
+        if !l.iter().flatten().all(|v| v.is_finite()) {
+            return Err(invalid("a line to follow has a point that is not finite"));
+        }
+        let clip = |p: [f64; 2]| [p[0].clamp(r.lo[0], r.hi[0]), p[1].clamp(r.lo[1], r.hi[1])];
+        let (a, b) = (lattice.on(clip(l[0])), lattice.on(clip(l[1])));
+        if a != b {
+            lines.push((a, b, None));
+        }
+    }
+    let followed = outline.len();
+    for (k, &(a, b, kind)) in lines.iter().enumerate() {
+        let copper = kind.is_some();
+        let kind = if copper || k >= followed { Kind::Segment } else { Kind::Outline };
         let mut prev = points.id(a);
         let along = if copper { vec![] } else { spaced(a, b, &size, small) };
         let n = if copper { ((b[0] - a[0]).hypot(b[1] - a[1]) / small).ceil().clamp(1.0, 1e6) as usize } else { along.len() + 1 };
@@ -245,7 +265,7 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
             let next = if i == n { points.id(b) } else { points.id([(a[0] + t * (b[0] - a[0])).round(), (a[1] + t * (b[1] - a[1])).round()]) };
             if next != prev {
                 edges.push([prev, next]);
-                is_copper.push(copper);
+                kinds.push(kind);
             }
             prev = next;
         }
@@ -254,11 +274,8 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
         }
     }
     let chains = split::split(&mut points, &edges)?;
-    let mut segments: Vec<([u32; 2], Kind)> = chains
-        .iter()
-        .zip(&is_copper)
-        .flat_map(|(c, &copper)| c.windows(2).map(move |w| ([w[0], w[1]], if copper { Kind::Segment } else { Kind::Outline })))
-        .collect();
+    let mut segments: Vec<([u32; 2], Kind)> =
+        chains.iter().zip(&kinds).flat_map(|(c, &kind)| c.windows(2).map(move |w| ([w[0], w[1]], kind))).collect();
     segments.sort_unstable_by_key(|s| [s.0[0].min(s.0[1]), s.0[0].max(s.0[1])]);
     segments.dedup_by_key(|s| [s.0[0].min(s.0[1]), s.0[0].max(s.0[1])]);
     let mut constrained: Vec<[u32; 2]> = segments.iter().map(|s| [s.0[0].min(s.0[1]), s.0[0].max(s.0[1])]).collect();

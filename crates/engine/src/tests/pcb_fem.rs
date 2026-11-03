@@ -180,3 +180,29 @@ fn a_via_is_a_conducting_barrel_through_its_layers() {
         .count();
     assert_eq!(outer + inner, mesh.boundary.len());
 }
+
+#[test]
+fn a_line_run_into_the_open_boundary_is_matched() {
+    // A microstrip over a ground pour, floating in air in an open box: the line runs into the
+    // layer on the box's far side, which takes its wave; its other end a 50 Ω port.
+    let board = json!({
+        "name": "open",
+        "layers": [{"name": "F.Cu", "z": 0, "eps_below": 9.8}, {"name": "B.Cu", "z": 0.635, "eps_below": 1}],
+        "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [3, 0], "end": [40, 0], "width": 0.6}],
+        "copper": [{"net": "GND", "layer": "B.Cu", "polygon": [[-10, -10], [50, -10], [50, 10], [-10, 10]]}],
+    });
+    let reflection = |open: bool| {
+        let mut s = Session::new();
+        s.execute("pcb.load", &json!({"data": board})).unwrap();
+        s.execute("pcb.region", &json!({"lo": [0, -5], "hi": [16, 5], "above": 5, "below": 3})).unwrap();
+        if open {
+            s.execute("model.open", &json!({"thickness": 2})).unwrap();
+        }
+        s.execute("pcb.port", &json!({"name": "1", "segment": "s", "end": "start"})).unwrap();
+        mag(&lumped_s(&mut s, 1.0), "s11")
+    };
+    let (closed, open) = (reflection(false), reflection(true));
+    // Shorted on the box's wall it reflects all; into the layer, little (0.045 measured: the
+    // line's and the feed's own mismatch, and the layer two cells deep).
+    assert!(closed > 0.9 && open < 0.07, "{closed} {open}");
+}

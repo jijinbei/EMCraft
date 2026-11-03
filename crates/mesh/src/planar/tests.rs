@@ -7,7 +7,7 @@ fn names(n: usize, what: &str) -> Vec<String> {
 }
 
 fn request<'a>(layers: &'a [String], nets: &'a [String], outlines: &'a [Outline]) -> Request<'a> {
-    Request { lo: [0.0, 0.0], hi: [4.0 * MM, 3.0 * MM], layers, nets, outlines, size: 0.6 * MM, edge_size: 0.1 * MM }
+    Request { lo: [0.0, 0.0], hi: [4.0 * MM, 3.0 * MM], layers, nets, outlines, lines: &[], size: 0.6 * MM, edge_size: 0.1 * MM }
 }
 
 fn rectangle(lo: [f64; 2], hi: [f64; 2]) -> Vec<[f64; 2]> {

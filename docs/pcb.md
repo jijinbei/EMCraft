@@ -206,6 +206,16 @@ referred to each port's impedance). [`pcb-lumped-line`](../tests/oracle/pcb-lump
 checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1.3e-3;
 the phase carries the feeds' own inductance (+1.8° at 1 GHz).
 
+### Open boards
+
+`model.open {"thickness": d}` after `pcb.region` lines the region's box with a perfectly matched
+layer: the board then radiates and a trace run into the layer is matched there. The layer's
+inner box is a line of the planar mesh and a level of the air, so no element straddles where it
+begins; the air above and below the board and half the region's sides must be thicker than the
+layer. The layer is the box's on every side, so the board floats in air with its ground as copper
+(`below` > 0). Resolve it with a few elements across: a line run into a 2 mm layer meshed at 1 mm
+reflects 0.045 at 1–10 GHz (the line's and its feed's own mismatch included).
+
 ## Coupling illustration
 
 At **Select route**, choose the source (orange) and receiver (blue), using the role buttons

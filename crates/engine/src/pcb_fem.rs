@@ -158,7 +158,19 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     let mut names: Vec<String> = board.layers.iter().map(|l| l.name.clone()).collect();
     names.push("vias".into());
     let w = [region.hi[0] - region.lo[0], region.hi[1] - region.lo[1]];
-    let planar = triangulate(&Request { lo: [0.0, 0.0], hi: w, layers: &names, nets: &nets, outlines: &outlines, size, edge_size: edge })?;
+    // An open boundary's layer: its inner box a line of the mesh in the plane (and a level
+    // across the air, below), so no prism straddles where the layer begins.
+    let layer_depth = s.model.open.as_ref().map(|o| o.thickness.get());
+    let mut lines = Vec::new();
+    if let Some(d) = layer_depth {
+        if !(2.0 * d < w[0] && 2.0 * d < w[1] && d < region.above && d < region.below) {
+            return Err(failed("the open boundary's layer must be thinner than the air above and below the board and than half the region's sides"));
+        }
+        let c = [[d, d], [w[0] - d, d], [w[0] - d, w[1] - d], [d, w[1] - d]];
+        lines.extend((0..4).map(|k| [c[k], c[(k + 1) % 4]]));
+    }
+    let planar =
+        triangulate(&Request { lo: [0.0, 0.0], hi: w, layers: &names, nets: &nets, outlines: &outlines, lines: &lines, size, edge_size: edge })?;
     // The stack from the floor: air, the substrates, air; cells across a substrate about twice
     // the edge size, the air's growing away from the board.
     let vacuum = 0;
@@ -172,9 +184,14 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         Slab { thickness: h, material, cells: n, ratio: if up { growth } else { 1.0 / growth } }
     };
     let air = |h: f64, up: bool| graded(h, vacuum, 2.0 * edge, AIR_GROWTH, up);
+    // The layer's air in slabs of their own, about square with the size far out.
+    let layer_slab = |d: f64| Slab { thickness: d, material: vacuum, cells: ((d / size).ceil() as usize).clamp(2, 16), ratio: 1.0 };
     let mut slabs = Vec::new();
+    if let Some(d) = layer_depth {
+        slabs.push(layer_slab(d));
+    }
     if region.below > 0.0 {
-        slabs.push(air(region.below, false));
+        slabs.push(air(region.below - layer_depth.unwrap_or(0.0), false));
     }
     let mut sheets = vec![(up[0], slabs.len())];
     for (k, w2) in up.windows(2).enumerate() {
@@ -189,7 +206,10 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         sheets.push((w2[1], slabs.len()));
     }
     if region.above > 0.0 {
-        slabs.push(air(region.above, true));
+        slabs.push(air(region.above - layer_depth.unwrap_or(0.0), true));
+    }
+    if let Some(d) = layer_depth {
+        slabs.push(layer_slab(d));
     }
     // Each via's barrel: its triangles' prisms out between its layers' interfaces.
     let interface_of = |name: &str| layer(name).ok().and_then(|l| sheets.iter().find(|s| s.0 == l)).map(|s| s.1);
