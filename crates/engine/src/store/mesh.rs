@@ -113,8 +113,7 @@ impl StoredMesh {
             None => None,
         };
         let mut mesh = Mesh { nodes, tets, tet_material, boundary, grid, buckets: None, curved };
-        mesh.check(materials)?;
-        emcraft_mesh::check_tetrahedra(&mesh).map_err(|e| e.to_string())?;
+        emcraft_mesh::check_mesh(&mesh, materials)?;
         if self.buckets {
             mesh.buckets = Some(emcraft_mesh::solid::buckets(&mesh));
         }
