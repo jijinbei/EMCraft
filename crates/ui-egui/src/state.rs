@@ -273,6 +273,8 @@ pub struct PcbUi {
     pub stop: String,
     pub attempted: Option<(u64, String)>,
     pub baseline: Option<Value>,
+    /// The widths being edited of the route's segments (display units), by segment.
+    pub widths: std::collections::BTreeMap<String, f64>,
 }
 impl Default for PcbUi {
     fn default() -> Self {
@@ -284,6 +286,7 @@ impl Default for PcbUi {
             stop: "1".into(),
             attempted: None,
             baseline: None,
+            widths: Default::default(),
         }
     }
 }

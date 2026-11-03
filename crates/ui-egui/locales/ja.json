@@ -396,6 +396,7 @@
     "Ports": "ポート",
     "Ports and sources": "ポートと波源",
     "Ports lie on flat faces across x, y or z": "ポートは x、y、z に垂直な平らな面に置く",
+    "Pour": "ベタ",
     "Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error.": "表示した S の要素の電力。残りには損失、放射、高次モード、数値誤差が含まれる",
     "Preferences file": "設定ファイル",
     "Preflight": "事前チェック",
@@ -442,6 +443,7 @@
     "Review results": "結果の確認",
     "Right drag orbits, middle or Shift+right drag pans": "右ドラッグで回転、中または Shift+右ドラッグでパン",
     "Route is branched, disconnected or closed": "配線が分岐、途切れ、または閉じている",
+    "Route segments": "配線のセグメント",
     "Run": "実行",
     "Run (step 7) starts this solve after checking the model.": "実行（ステップ 7）でモデルをチェックしてからこの解析を開始します。",
     "Run diagnosis": "診断の実行",
@@ -577,6 +579,7 @@
     "Tolerance": "公差",
     "Touchpad": "タッチパッド",
     "Touchstone": "Touchstone",
+    "Trace": "配線",
     "Unaccounted: {value}%": "未計上：{value} %",
     "Under the cursor": "カーソル位置",
     "Undo  ({n})": "元に戻す  ({n})",
@@ -586,6 +589,7 @@
     "Unpin": "ピン留めを外す",
     "Variables": "変数",
     "Verify the return via at this layer transition": "この層の乗り換えの帰路ビアを確認",
+    "Via": "ビア",
     "Via {n}: {wx} × {wz} {unit}, y {y0} to {y1}": "ビア {n}：{wx} × {wz} {unit}、y {y0}〜{y1}",
     "View centre": "ビューの中心",
     "View from {side} ({view})": "{side} から見る ({view})",
@@ -1765,6 +1769,59 @@
         "height": "基板の厚さ（既定 0.18 mm）",
         "er": "比誘電率（既定 4.2）",
         "gap": "平行な配線の間隔（既定 0.25 mm、最大 5 mm）"
+      }
+    },
+    "pcb.segment": {
+      "label": "配線セグメント",
+      "doc": "`net` の配線セグメントを `layer` 上に `start` から `end` まで幅 `width` で加える。または `id` のセグメントを変える（与えたものだけ）。変更後に基板を検査する。解析領域は残り、メッシュは破棄される。元に戻せる。",
+      "params": {
+        "id": "変えるセグメント。新しいセグメントはこの名前になる（既定 `edit:<n>`）",
+        "net": "ネット（新しいセグメントには必要）",
+        "layer": "銅箔の層（新しいセグメントには必要）",
+        "start": "始点 [x, y]",
+        "end": "終点 [x, y]",
+        "width": "幅"
+      }
+    },
+    "pcb.segment.delete": {
+      "label": "配線セグメントの削除",
+      "doc": "`id` のセグメントを取り除く。元に戻せる。",
+      "params": {
+        "id": "セグメント"
+      }
+    },
+    "pcb.via": {
+      "label": "ビア",
+      "doc": "`net` のビアを `at` に加え、2 つの `layers` をつなぐ。パッドの径は `diameter`、めっき穴の径は `drill`（なければパッドの径）。元に戻せる。",
+      "params": {
+        "net": "ネット",
+        "at": "位置 [x, y]",
+        "layers": "つなぐ 2 つの銅箔の層",
+        "diameter": "パッドの径",
+        "drill": "穴の径（既定はパッドの径）"
+      }
+    },
+    "pcb.via.delete": {
+      "label": "ビアの削除",
+      "doc": "`index` 番目のビア（基板の一覧の順、1 が最初）を取り除く。元に戻せる。",
+      "params": {
+        "index": "ビアの番号。1 が最初"
+      }
+    },
+    "pcb.pour": {
+      "label": "ベタ",
+      "doc": "`net` の塗りつぶしの銅箔を `layer` に加える。多角形の内側は偶奇規則で決まる（ブリッジで外形につながった穴は穴）。元に戻せる。",
+      "params": {
+        "net": "ネット",
+        "layer": "銅箔の層",
+        "polygon": "角 [[x, y], …]（3 点以上）"
+      }
+    },
+    "pcb.pour.delete": {
+      "label": "ベタの削除",
+      "doc": "`index` 番目の塗りつぶしの銅箔（パッドを含む、基板の一覧の順、1 が最初）を取り除く。元に戻せる。",
+      "params": {
+        "index": "塗りつぶしの銅箔の番号。1 が最初"
       }
     },
     "pcb.region": {

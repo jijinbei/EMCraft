@@ -39,7 +39,7 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
         &[
             ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.solid", "geometry.body"]),
             ("SETTINGS", &["units.set", "project.frequency"]),
-            ("PCB", &["pcb.import", "pcb.sample"]),
+            ("PCB", &["pcb.import", "pcb.sample", "pcb.segment", "pcb.via", "pcb.pour"]),
         ],
     ),
     (RibbonTab::Materials, &[("MATERIALS", &["model.material.create"])]),

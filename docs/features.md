@@ -33,6 +33,65 @@ Loads an original two-layer PCB routing example; `split` true gives the ground p
 | `er` | number |  | no | relative dielectric permittivity (default 4.2) |
 | `gap` | number | length | no | parallel trace clearance (default 0.25 mm, at most 5 mm) |
 
+## `pcb.segment` — Trace segment
+
+Adds a routed segment of `net` on `layer` from `start` to `end`, `width` wide, or changes the segment named `id` (only what is given). The board is checked after; its region stays, its mesh is dropped. Undoable.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `id` | string |  | no | the segment to change; a new one gets this name (default `edit:<n>`) |
+| `net` | string |  | no | its net (a new segment needs it) |
+| `layer` | string |  | no | its copper layer (a new segment needs it) |
+| `start` | array | length | no | its start [x, y] |
+| `end` | array | length | no | its end [x, y] |
+| `width` | number | length | no | its width |
+
+## `pcb.segment.delete` — Delete trace segment
+
+Removes the segment named `id`. Undoable.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `id` | string |  | yes | the segment |
+
+## `pcb.via` — Via
+
+Adds a via of `net` at `at` joining the two `layers`, its pads `diameter` across and its plated hole `drill` (the pads' when not given). Undoable.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `net` | string |  | yes | its net |
+| `at` | array | length | yes | its position [x, y] |
+| `layers` | array |  | yes | the two copper layers it joins |
+| `diameter` | number | length | yes | its pads' diameter |
+| `drill` | number | length | no | its hole's diameter (default the pads') |
+
+## `pcb.via.delete` — Delete via
+
+Removes via `index` (1 the first, in the order the board lists them). Undoable.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `index` | integer |  | yes | the via, 1 the first |
+
+## `pcb.pour` — Copper pour
+
+Adds filled copper of `net` on `layer`: the polygon's inside by the even–odd rule (a hole joined to the outline by a bridge is a hole). Undoable.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `net` | string |  | yes | its net |
+| `layer` | string |  | yes | its copper layer |
+| `polygon` | array | length | yes | its corners [[x, y], …], at least three |
+
+## `pcb.pour.delete` — Delete copper pour
+
+Removes filled copper `index` (1 the first, pads included, in the order the board lists them). Undoable.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `index` | integer |  | yes | the filled copper, 1 the first |
+
 ## `pcb.region` — PCB region
 
 Sets the part of the board the finite elements solve: a box round the copper (or `net`'s routes) by `margin`, or between the corners `lo` and `hi`, from `below` under the lowest layer to `above` over the highest, closed by conducting walls. The model's geometry becomes that box, the region's lower-left corner at the origin, the board's x and y the model's x and z, its height the model's y with the lowest layer `below` over the floor, each substrate a material `substrate εr …`; its ports go on the box's sides with model.port.create (cleared here). mesh.generate then meshes the copper of every layer in one triangulation, extruded through the substrates and the air, the copper conducting sheets of no thickness inside.

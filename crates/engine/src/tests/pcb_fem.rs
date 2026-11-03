@@ -281,3 +281,39 @@ fn second_order_solves_iteratively_as_they_factor() {
     }
     assert!(s.clone().execute("solve.frequency", &json!({"frequencies": [8], "order": 1, "solver": "iterative"})).is_err());
 }
+
+#[test]
+fn a_board_is_edited_by_commands_and_undone() {
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({"split": false, "neighbour": false})).unwrap();
+    let count = |s: &Session| {
+        let b = s.model().pcb.as_ref().unwrap();
+        (b.segments.len(), b.vias.len(), b.copper.len())
+    };
+    let before = count(&s);
+    let r = s.execute("pcb.segment", &json!({"net": "DATA", "layer": "F.Cu", "start": [45, 10], "end": [45, 15], "width": 0.3})).unwrap();
+    let id = r["id"].as_str().unwrap().to_owned();
+    s.execute("pcb.segment", &json!({"id": id, "width": 0.5})).unwrap();
+    assert!((s.model().pcb.as_ref().unwrap().segments.last().unwrap().width - 0.5e-3).abs() < 1e-15);
+    s.execute("pcb.via", &json!({"net": "DATA", "at": [45, 15], "layers": ["F.Cu", "B.Cu"], "diameter": 0.6, "drill": 0.3})).unwrap();
+    s.execute("pcb.pour", &json!({"net": "PWR", "layer": "F.Cu", "polygon": [[60, 0], [70, 0], [70, 5]]})).unwrap();
+    assert_eq!(count(&s), (before.0 + 1, before.1 + 1, before.2 + 1));
+    // Refused: an unknown layer, a drill wider than its pads, missing fields, out of range.
+    for (c, p) in [
+        ("pcb.segment", json!({"net": "X", "layer": "nope", "start": [0, 0], "end": [1, 0], "width": 0.2})),
+        ("pcb.segment", json!({"net": "X", "start": [0, 0]})),
+        ("pcb.via", json!({"net": "X", "at": [1, 1], "layers": ["F.Cu", "B.Cu"], "diameter": 0.3, "drill": 0.5})),
+        ("pcb.via.delete", json!({"index": 9})),
+        ("pcb.segment.delete", json!({"id": "nope"})),
+    ] {
+        assert!(s.execute(c, &p).is_err(), "{c} {p}");
+    }
+    s.execute("pcb.pour.delete", &json!({"index": before.2 + 1})).unwrap();
+    s.execute("pcb.via.delete", &json!({"index": 1})).unwrap();
+    s.execute("pcb.segment.delete", &json!({"id": id})).unwrap();
+    assert_eq!(count(&s), before);
+    for _ in 0..3 {
+        s.execute("edit.undo", &json!({})).unwrap();
+    }
+    assert_eq!(count(&s), (before.0 + 1, before.1 + 1, before.2 + 1));
+}

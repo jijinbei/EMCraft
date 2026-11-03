@@ -733,6 +733,11 @@ fn scenario_pcb_board() {
 }
 
 #[test]
+fn scenario_pcb_edit() {
+    scenario("pcb_edit");
+}
+
+#[test]
 fn scenario_pcb_region() {
     scenario("pcb_region");
 }
