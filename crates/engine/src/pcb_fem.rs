@@ -7,7 +7,7 @@
 
 use emcraft_mesh::planar::extrude::{Hole, Slab, Stack, extrude};
 use emcraft_mesh::planar::{Outline, Request, offset, triangulate};
-use emcraft_model::pcb::{Board, Region};
+use emcraft_model::pcb::{Board, Region, Segment};
 use emcraft_model::shape::{BoxSize, Shape, Solid};
 use emcraft_model::{End, LumpedPort, Material, Ohms, Point3, Vec3};
 use serde_json::{Value, json};
@@ -113,167 +113,46 @@ pub(crate) fn has_region(s: &Session) -> bool {
 
 /// `mesh.generate` on a board's region: `size` in the plane far from copper, `strip_edge` (a
 /// fraction of it) at the copper's edges, by default a sixth of the narrowest trace or a quarter
-/// of the thinnest substrate (the fields are singular at a strip's edges).
+/// of the thinnest substrate (the fields are singular at a strip's edges). The board's copper in
+/// one planar triangulation ([`Copper::of`]), extruded through its stack ([`stack`]) with its
+/// vias' barrels taken out ([`barrels`]), laid in the model's axes.
 pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Value> {
     let board = s.model.pcb.clone().ok_or_else(|| failed("no board"))?;
     let region = board.region.ok_or_else(|| failed("no region: set one with pcb.region"))?;
     let size = sizes.default.get();
-    let heights = board.heights();
-    // The layers from the lowest up, and the substrates between them.
-    let mut up: Vec<usize> = (0..board.layers.len()).collect();
-    up.sort_by(|&a, &b| heights[a].total_cmp(&heights[b]));
-    let gaps: Vec<f64> = up.windows(2).map(|w| heights[w[1]] - heights[w[0]]).collect();
-    let thinnest = gaps.iter().copied().fold(f64::INFINITY, f64::min);
-    // The narrowest trace in the region.
-    let inside = |g: &&emcraft_model::pcb::Segment| {
-        let (lo, hi) = ([g.start[0].min(g.end[0]), g.start[1].min(g.end[1])], [g.start[0].max(g.end[0]), g.start[1].max(g.end[1])]);
-        lo[0] <= region.hi[0] && hi[0] >= region.lo[0] && lo[1] <= region.hi[1] && hi[1] >= region.lo[1]
-    };
-    let narrowest = board.segments.iter().filter(inside).map(|g| g.width).fold(f64::INFINITY, f64::min);
     let edge = match p.number("strip_edge").check(|f| *f > 0.0 && *f <= 1.0, "between 0 and 1").optional()? {
         Some(f) => f * size,
-        None => (0.25 * size).min(narrowest / 6.0).min(0.25 * thinnest).max(size / 200.0),
+        None => edge_size(&board, &region, size),
     };
-    // The copper, the region's lower-left corner at the origin; nets in the order of their names.
-    let mut nets: Vec<String> = board
-        .segments
-        .iter()
-        .map(|g| g.net.clone())
-        .chain(board.copper.iter().map(|c| c.net.clone()))
-        .chain(board.vias.iter().map(|v| v.net.clone()))
-        .collect();
-    nets.sort();
-    nets.dedup();
-    let net = |n: &str| nets.binary_search_by(|x| x.as_str().cmp(n)).map(|i| i as u32).map_err(|_| failed("a net without a name"));
-    let layer = |n: &str| board.layers.iter().position(|l| l.name == n).ok_or_else(|| failed(format!("no layer {n}")));
-    let at = |q: [f64; 2]| [q[0] - region.lo[0], q[1] - region.lo[1]];
-    let mut outlines = Vec::new();
-    // A trace fed by a sheet port at an end stops there: no round end beyond the feed.
-    let fed = |q: [f64; 2]| {
-        let q = at(q);
-        s.model.lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.z - q[1]) <= 1e-9)
-    };
-    for g in &board.segments {
-        let ring = offset::trace_ends(at(g.start), at(g.end), g.width, SAG * g.width, [!fed(g.start), !fed(g.end)]);
-        outlines.push(Outline { layer: layer(&g.layer)?, net: net(&g.net)?, ring });
-    }
-    // Pours: their edges fine only near the traces and vias.
-    let mut coarse = Vec::new();
-    for c in &board.copper {
-        coarse.push(Outline { layer: layer(&c.layer)?, net: net(&c.net)?, ring: c.polygon.iter().map(|q| at(*q)).collect() });
-    }
-    // Vias: their pads on their layers, their barrels on a layer of their own after the
-    // board's (each its own "net", so the triangles it covers are known).
-    let barrels = board.layers.len();
-    let mut nets = nets.clone();
-    let first_via = nets.len() as u32;
-    for (i, v) in board.vias.iter().enumerate() {
-        for l in &v.layers {
-            outlines.push(Outline { layer: layer(l)?, net: net(&v.net)?, ring: offset::disc(at(v.at), v.diameter, SAG * v.diameter) });
-        }
-        nets.push(format!("via {} ({})", i + 1, v.net));
-        outlines.push(Outline { layer: barrels, net: first_via + i as u32, ring: offset::disc(at(v.at), v.barrel(), SAG * v.barrel()) });
-    }
-    let mut names: Vec<String> = board.layers.iter().map(|l| l.name.clone()).collect();
-    names.push("vias".into());
+    let copper = Copper::of(&board, &region, &s.model.lumped)?;
     let w = [region.hi[0] - region.lo[0], region.hi[1] - region.lo[1]];
     // An open boundary's layer: its inner box a line of the mesh in the plane (and a level
     // across the air, below), so no prism straddles where the layer begins.
-    let layer_depth = s.model.open.as_ref().map(|o| o.thickness.get());
-    let mut lines = Vec::new();
-    if let Some(d) = layer_depth {
-        if !(2.0 * d < w[0] && 2.0 * d < w[1] && d < region.above && d < region.below) {
+    let layer = s.model.open.as_ref().map(|o| o.thickness.get());
+    let lines: Vec<[[f64; 2]; 2]> = match layer {
+        Some(d) if !(2.0 * d < w[0] && 2.0 * d < w[1] && d < region.above && d < region.below) => {
             return Err(failed("the open boundary's layer must be thinner than the air above and below the board and than half the region's sides"));
         }
-        let c = [[d, d], [w[0] - d, d], [w[0] - d, w[1] - d], [d, w[1] - d]];
-        lines.extend((0..4).map(|k| [c[k], c[(k + 1) % 4]]));
-    }
+        Some(d) => {
+            let c = [[d, d], [w[0] - d, d], [w[0] - d, w[1] - d], [d, w[1] - d]];
+            (0..4).map(|k| [c[k], c[(k + 1) % 4]]).collect()
+        }
+        None => Vec::new(),
+    };
     let planar = triangulate(&Request {
         lo: [0.0, 0.0],
         hi: w,
-        layers: &names,
-        nets: &nets,
-        outlines: &outlines,
-        coarse: &coarse,
+        layers: &copper.layers,
+        nets: &copper.nets,
+        outlines: &copper.fine,
+        coarse: &copper.coarse,
         lines: &lines,
         size,
         edge_size: edge,
     })?;
-    // The stack from the floor: air, the substrates, air; cells across a substrate about twice
-    // the edge size, the air's growing away from the board.
-    let vacuum = 0;
-    let material = |er: f64| -> Result<u32> { if er == 1.0 { Ok(vacuum) } else { Ok(s.model.material(&substrate(er))?.0 as u32) } };
-    // A slab `h` thick whose cells grow by `growth` from `first` at its bottom (`up`) or top.
-    let graded = |h: f64, material: u32, first: f64, growth: f64, up: bool| {
-        let mut n = 1;
-        while n < 64 && first * (growth.powi(n as i32) - 1.0) / (growth - 1.0) < h {
-            n += 1;
-        }
-        Slab { thickness: h, material, cells: n, ratio: if up { growth } else { 1.0 / growth } }
-    };
-    let air = |h: f64, up: bool| graded(h, vacuum, 2.0 * edge, AIR_GROWTH, up);
-    // The layer's air in slabs of their own, about square with the size far out.
-    let layer_slab = |d: f64| Slab { thickness: d, material: vacuum, cells: ((d / size).ceil() as usize).clamp(2, 16), ratio: 1.0 };
-    let mut slabs = Vec::new();
-    if let Some(d) = layer_depth {
-        slabs.push(layer_slab(d));
-    }
-    if region.below > 0.0 {
-        slabs.push(air(region.below - layer_depth.unwrap_or(0.0), false));
-    }
-    let mut sheets = vec![(up[0], slabs.len())];
-    for (k, w2) in up.windows(2).enumerate() {
-        // A layer's dielectric lies below it, down to the next layer.
-        let er = board.layers[w2[1]].eps_below;
-        let h = gaps[k];
-        // Two halves, each fine at a layer with routes (the fields' edge singularities) and
-        // growing to the middle; at a plane alone, from a few edge sizes.
-        let m = material(er)?;
-        let first = |l: usize| {
-            let routed = board.segments.iter().any(|g| g.layer == board.layers[l].name);
-            if routed { edge } else { (4.0 * edge).min(h / 4.0) }
-        };
-        slabs.push(graded(h / 2.0, m, first(w2[0]), SUBSTRATE_GROWTH, true));
-        slabs.push(graded(h / 2.0, m, first(w2[1]), SUBSTRATE_GROWTH, false));
-        sheets.push((w2[1], slabs.len()));
-    }
-    if region.above > 0.0 {
-        slabs.push(air(region.above - layer_depth.unwrap_or(0.0), true));
-    }
-    if let Some(d) = layer_depth {
-        slabs.push(layer_slab(d));
-    }
-    // Each via's barrel: its triangles' prisms out between its layers' interfaces.
-    let interface_of = |name: &str| layer(name).ok().and_then(|l| sheets.iter().find(|s| s.0 == l)).map(|s| s.1);
-    let mut holes = Vec::new();
-    for (i, v) in board.vias.iter().enumerate() {
-        let (Some(from), Some(to)) = (interface_of(&v.layers[0]), interface_of(&v.layers[1])) else { continue };
-        let covered = planar.nets.get(barrels).into_iter().flatten().enumerate();
-        let triangles: Vec<u32> = covered.filter(|(_, n)| **n == first_via + i as u32).map(|(t, _)| t as u32).collect();
-        // A barrel through another net's copper on a layer between its ends would join the
-        // nets: the copper needs a clearance there.
-        let (a, b) = (heights[layer(&v.layers[0])?], heights[layer(&v.layers[1])?]);
-        for (l, name) in board.layers.iter().enumerate().filter(|(l, _)| heights[*l] > a.min(b) && heights[*l] < a.max(b)) {
-            let on = planar.nets.get(l).map(Vec::as_slice).unwrap_or(&[]);
-            if let Some(other) = triangles
-                .iter()
-                .filter_map(|&t| on.get(t as usize))
-                .find(|&&n| n != emcraft_mesh::planar::NO_NET && nets.get(n as usize) != Some(&v.net))
-            {
-                let other = nets.get(*other as usize).cloned().unwrap_or_default();
-                return Err(failed(format!(
-                    "the via of {} at ({:.3}, {:.3}) passes through {other}'s copper on {} with no clearance: give the pour a hole round it",
-                    v.net,
-                    s.display.length.from_si(v.at[0]),
-                    s.display.length.from_si(v.at[1]),
-                    name.name
-                )));
-            }
-        }
-        if !triangles.is_empty() {
-            holes.push(Hole { triangles, from, to });
-        }
-    }
+    let material = |er: f64| -> Result<u32> { if er == 1.0 { Ok(0) } else { Ok(s.model.material(&substrate(er))?.0 as u32) } };
+    let (slabs, sheets) = stack(&board, &region, edge, size, layer, material)?;
+    let holes = barrels(&board, &copper, &planar, &sheets, s.display.length)?;
     let (mut mesh, sheet_nets) = extrude(&planar, &Stack { z0: 0.0, slabs, sheets, holes })?;
     // Into the model's axes: the board's (x, y, height) is (x, z, y); the swap mirrors, so
     // each tetrahedron's last two nodes swap to keep its volume positive.
@@ -294,6 +173,186 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     });
     s.model.set_mesh(mesh);
     Ok(reply)
+}
+
+/// The board's layers from the lowest up (indices into its layers).
+fn upwards(board: &Board) -> Vec<usize> {
+    let heights = board.heights();
+    let mut up: Vec<usize> = (0..board.layers.len()).collect();
+    up.sort_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    up
+}
+
+/// The copper's edge size by default: a sixth of the narrowest trace in the region, a quarter of
+/// the thinnest substrate, a quarter of `size`, whichever is least (but no less than `size`/200).
+fn edge_size(board: &Board, region: &Region, size: f64) -> f64 {
+    let heights = board.heights();
+    let thinnest = upwards(board).windows(2).map(|w| heights[w[1]] - heights[w[0]]).fold(f64::INFINITY, f64::min);
+    let inside = |g: &&Segment| {
+        let (lo, hi) = ([g.start[0].min(g.end[0]), g.start[1].min(g.end[1])], [g.start[0].max(g.end[0]), g.start[1].max(g.end[1])]);
+        lo[0] <= region.hi[0] && hi[0] >= region.lo[0] && lo[1] <= region.hi[1] && hi[1] >= region.lo[1]
+    };
+    let narrowest = board.segments.iter().filter(inside).map(|g| g.width).fold(f64::INFINITY, f64::min);
+    (0.25 * size).min(narrowest / 6.0).min(0.25 * thinnest).max(size / 200.0)
+}
+
+/// A board's copper as the planar mesher takes it, the region's lower-left corner at the origin:
+/// the traces (cut square where a sheet port feeds them) and pads, fine at their edges; the pours,
+/// fine near those; and each via's barrel on a layer of its own after the board's, as a "net" of
+/// its own (so the triangles it covers are known).
+struct Copper {
+    layers: Vec<String>,
+    nets: Vec<String>,
+    fine: Vec<Outline>,
+    coarse: Vec<Outline>,
+    /// The barrels' layer, and the first barrel's net (barrel i is `first_barrel + i`).
+    barrels: usize,
+    first_barrel: u32,
+}
+
+impl Copper {
+    fn of(board: &Board, region: &Region, lumped: &[LumpedPort]) -> Result<Copper> {
+        // Nets in the order of their names.
+        let mut nets: Vec<String> = board
+            .segments
+            .iter()
+            .map(|g| &g.net)
+            .chain(board.copper.iter().map(|c| &c.net))
+            .chain(board.vias.iter().map(|v| &v.net))
+            .cloned()
+            .collect();
+        nets.sort();
+        nets.dedup();
+        let net = |n: &str| nets.binary_search_by(|x| x.as_str().cmp(n)).map(|i| i as u32).map_err(|_| failed("a net without a name"));
+        let layer = |n: &str| layer_index(board, n);
+        let at = |q: [f64; 2]| [q[0] - region.lo[0], q[1] - region.lo[1]];
+        // A trace fed by a sheet port at an end stops there: no round end beyond the feed.
+        let fed = |q: [f64; 2]| {
+            let q = at(q);
+            lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.z - q[1]) <= 1e-9)
+        };
+        let mut fine = Vec::with_capacity(board.segments.len() + 2 * board.vias.len());
+        for g in &board.segments {
+            let ring = offset::trace_ends(at(g.start), at(g.end), g.width, SAG * g.width, [!fed(g.start), !fed(g.end)]);
+            fine.push(Outline { layer: layer(&g.layer)?, net: net(&g.net)?, ring });
+        }
+        let coarse = board
+            .copper
+            .iter()
+            .map(|c| Ok(Outline { layer: layer(&c.layer)?, net: net(&c.net)?, ring: c.polygon.iter().map(|q| at(*q)).collect() }))
+            .collect::<Result<_>>()?;
+        let barrels = board.layers.len();
+        let first_barrel = nets.len() as u32;
+        let mut barrel_nets = Vec::with_capacity(board.vias.len());
+        for (i, v) in board.vias.iter().enumerate() {
+            for l in &v.layers {
+                fine.push(Outline { layer: layer(l)?, net: net(&v.net)?, ring: offset::disc(at(v.at), v.diameter, SAG * v.diameter) });
+            }
+            barrel_nets.push(format!("via {} ({})", i + 1, v.net));
+            fine.push(Outline { layer: barrels, net: first_barrel + i as u32, ring: offset::disc(at(v.at), v.barrel(), SAG * v.barrel()) });
+        }
+        nets.extend(barrel_nets);
+        let layers = board.layers.iter().map(|l| l.name.clone()).chain(std::iter::once("vias".to_owned())).collect();
+        Ok(Copper { layers, nets, fine, coarse, barrels, first_barrel })
+    }
+}
+
+/// The index of the board's layer `name`.
+fn layer_index(board: &Board, name: &str) -> Result<usize> {
+    board.layers.iter().position(|l| l.name == name).ok_or_else(|| failed(format!("no layer {name}")))
+}
+
+/// The stack from the floor up — the open boundary's layer (`layer`, its thickness), the air,
+/// the substrates, the air, the layer — and each copper layer's interface in it. A substrate is
+/// two halves, each fine at a layer with traces (the fields' edge singularities) and growing to
+/// the middle, at a plane alone from a few edge sizes; the air grows away from the board.
+fn stack(
+    board: &Board,
+    region: &Region,
+    edge: f64,
+    size: f64,
+    layer: Option<f64>,
+    material: impl Fn(f64) -> Result<u32>,
+) -> Result<(Vec<Slab>, Vec<(usize, usize)>)> {
+    const VACUUM: u32 = 0;
+    // A slab `h` thick whose cells grow by `growth` from `first` at its bottom (`up`) or top.
+    let graded = |h: f64, material: u32, first: f64, growth: f64, up: bool| {
+        let mut n = 1;
+        while n < 64 && first * (growth.powi(n as i32) - 1.0) / (growth - 1.0) < h {
+            n += 1;
+        }
+        Slab { thickness: h, material, cells: n, ratio: if up { growth } else { 1.0 / growth } }
+    };
+    let air = |h: f64, up: bool| graded(h, VACUUM, 2.0 * edge, AIR_GROWTH, up);
+    // The layer's air in slabs of their own, about square with the size far out.
+    let layer_slab = |d: f64| Slab { thickness: d, material: VACUUM, cells: ((d / size).ceil() as usize).clamp(2, 16), ratio: 1.0 };
+    let depth = layer.unwrap_or(0.0);
+    let heights = board.heights();
+    let up = upwards(board);
+    let mut slabs: Vec<Slab> = layer.map(layer_slab).into_iter().collect();
+    if region.below > 0.0 {
+        slabs.push(air(region.below - depth, false));
+    }
+    let mut sheets = up.first().map(|&l| (l, slabs.len())).into_iter().collect::<Vec<_>>();
+    let routed = |l: usize| board.segments.iter().any(|g| g.layer == board.layers[l].name);
+    for w in up.windows(2) {
+        let (lower, upper) = (w[0], w[1]);
+        let h = heights[upper] - heights[lower];
+        // A layer's dielectric lies below it, down to the next layer.
+        let m = material(board.layers[upper].eps_below)?;
+        let first = |l: usize| if routed(l) { edge } else { (4.0 * edge).min(h / 4.0) };
+        slabs.push(graded(h / 2.0, m, first(lower), SUBSTRATE_GROWTH, true));
+        slabs.push(graded(h / 2.0, m, first(upper), SUBSTRATE_GROWTH, false));
+        sheets.push((upper, slabs.len()));
+    }
+    if region.above > 0.0 {
+        slabs.push(air(region.above - depth, true));
+    }
+    slabs.extend(layer.map(layer_slab));
+    Ok((slabs, sheets))
+}
+
+/// Each via's barrel as a hole through the stack between its layers' interfaces (`sheets`),
+/// refused where it would pass through another net's copper on a layer between its ends (the
+/// copper needs a clearance there: the barrel would join the nets).
+fn barrels(
+    board: &Board,
+    copper: &Copper,
+    planar: &emcraft_mesh::planar::Planar,
+    sheets: &[(usize, usize)],
+    length: emcraft_model::units::Length,
+) -> Result<Vec<Hole>> {
+    let heights = board.heights();
+    let interface_of = |name: &str| layer_index(board, name).ok().and_then(|l| sheets.iter().find(|s| s.0 == l)).map(|s| s.1);
+    let covered = planar.nets.get(copper.barrels).map(Vec::as_slice).unwrap_or(&[]);
+    let mut holes = Vec::with_capacity(board.vias.len());
+    for (i, v) in board.vias.iter().enumerate() {
+        let (Some(from), Some(to)) = (interface_of(&v.layers[0]), interface_of(&v.layers[1])) else { continue };
+        let own = copper.first_barrel + i as u32;
+        let triangles: Vec<u32> = (0..covered.len() as u32).filter(|&t| covered[t as usize] == own).collect();
+        let (a, b) = (heights[layer_index(board, &v.layers[0])?], heights[layer_index(board, &v.layers[1])?]);
+        for (l, name) in board.layers.iter().enumerate().filter(|(l, _)| heights[*l] > a.min(b) && heights[*l] < a.max(b)) {
+            let on = planar.nets.get(l).map(Vec::as_slice).unwrap_or(&[]);
+            let other = triangles
+                .iter()
+                .filter_map(|&t| on.get(t as usize))
+                .find(|&&n| n != emcraft_mesh::planar::NO_NET && copper.nets.get(n as usize) != Some(&v.net));
+            if let Some(&other) = other {
+                let other = copper.nets.get(other as usize).cloned().unwrap_or_default();
+                return Err(failed(format!(
+                    "the via of {} at ({:.3}, {:.3}) passes through {other}'s copper on {} with no clearance: give the pour a hole round it",
+                    v.net,
+                    length.from_si(v.at[0]),
+                    length.from_si(v.at[1]),
+                    name.name
+                )));
+            }
+        }
+        if !triangles.is_empty() {
+            holes.push(Hole { triangles, from, to });
+        }
+    }
+    Ok(holes)
 }
 
 /// `pcb.port`: a lumped port at a trace's end, a sheet the trace's width wide from its reference
