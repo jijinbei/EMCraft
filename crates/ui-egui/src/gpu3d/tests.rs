@@ -522,6 +522,45 @@ fn perspective_section_does_not_stipple_port_annotations() {
     );
 }
 
+/// Independent points on an arch and ellipse must be coloured by procedural WGSL surfaces,
+/// with empty space between them. Also checks the shared depth/normal vertex path.
+#[test]
+fn pcb_curves_follow_their_analytic_paths_on_the_gpu() {
+    let Some(mut g) = gpu() else { return };
+    let mut scene = Scene::default();
+    rect(&mut scene, (-1.0, 1.0), (-1.0, 1.0), 0.0, Rgb::BLACK, 0);
+    let curves = [
+        Curve {
+            a: [-0.7, -0.4, 0.],
+            b: [0.7, -0.4, 0.],
+            lift: [0., 0.9, 0.],
+            radius: 0.025,
+            kind: CurveKind::Arch,
+            color: Rgb(240, 120, 40),
+            emphasis: 0.,
+        },
+        Curve {
+            a: [0., -0.4, 0.],
+            b: [0.3, -0.4, 0.],
+            lift: [0., 0.2, 0.],
+            radius: 0.025,
+            kind: CurveKind::Loop,
+            color: Rgb(40, 160, 240),
+            emphasis: 0.,
+        },
+    ];
+    let shot = g.shot(&scene, front(Projection::Orthographic), [400, 300], None, |f| {
+        Arc::make_mut(&mut f.packed).append_curves(&curves);
+        f.look.edges = true;
+    });
+    assert!(shot.at([0., 0.5, 0.])[0] > 100., "arch crest");
+    assert!(shot.at([-0.35, -0.4 + 0.9 * std::f64::consts::FRAC_1_SQRT_2, 0.])[0] > 100., "arch quarter");
+    assert!(shot.at([0., -0.2, 0.])[2] > 100., "ellipse top");
+    assert!(shot.at([0.3, -0.4, 0.])[2] > 100., "ellipse right");
+    near(shot.at([0., 0., 0.]), [0.; 3], 1., "empty space between symbolic curves");
+    shot.png("pcb-curves");
+}
+
 #[test]
 fn complex_vector_glyphs_rotate_on_gpu_without_new_vertices() {
     let Some(mut g) = gpu() else { return };

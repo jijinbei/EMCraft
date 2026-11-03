@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::lang::args;
+use crate::ui_kit;
 
 pub(crate) fn plane_span_of(app: &EmcraftApp, plane: Plane) -> Option<(f64, &'static str)> {
     let emcraft_model::Aabb { min: lo, max: hi } = app.session.model().bounds()?;
@@ -106,8 +107,40 @@ fn picture_column(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, o
         field.picture.set(key, &emcraft_render::plot::draw(&plot, width, &crate::theme::palette()));
     }
     let Some(p) = field.picture.get_mut() else { return };
-    let r = picture(ui, p, Fixed::PictureField);
-    probe_picture(app, field, ui, &r, out);
+    let size = p.size();
+    let available = ui.available_size();
+    ui.horizontal_wrapped(|ui| {
+        let r = ui.add(egui::Slider::new(&mut field.plot_zoom, 0.001..=6.0).logarithmic(true).text(tr("Zoom")));
+        scenario::publish_target(Fixed::FieldPlotZoom, r.rect);
+        if ui_kit::button(ui, "Fit width", false, Fixed::FieldPlotWidth).clicked() {
+            field.plot_zoom = 1.0;
+        }
+        if ui_kit::button(ui, "Fit whole plot", false, Fixed::FieldPlotFit).clicked() {
+            let width_fit = available.x / size.x;
+            field.plot_zoom = ((available.y - 36.0).max(80.0) / size.y / width_fit.max(0.01)).clamp(0.001, 6.0);
+        }
+    });
+    let scale = (ui.available_width() / size.x) * field.plot_zoom;
+    egui::ScrollArea::both().id_salt("field:plot:scroll").auto_shrink([false, false]).show(ui, |ui| {
+        let (_, r) = ui.allocate_exact_size(size * scale, Sense::click_and_drag());
+        let visible = r.rect.intersect(ui.clip_rect());
+        let lo = ((visible.min - r.rect.min) / scale).floor();
+        let hi = ((visible.max - r.rect.min) / scale).ceil();
+        let bounds = [lo.x.max(0.0) as usize, lo.y.max(0.0) as usize, hi.x.max(0.0) as usize, hi.y.max(0.0) as usize];
+        if let Some(p) = field.picture.get_mut()
+            && let Some(id) = p.region_texture(ui.ctx(), bounds)
+        {
+            let target = Rect::from_min_max(r.rect.min + lo * scale, r.rect.min + hi * scale);
+            let tint = if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new(STALE))).unwrap_or(false) {
+                Color32::WHITE.gamma_multiply(0.55)
+            } else {
+                Color32::WHITE
+            };
+            ui.painter().image(id, target, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), tint);
+        }
+        scenario::publish_target(Fixed::PictureField, visible);
+        probe_picture(app, field, ui, &r, out);
+    });
 }
 
 /// Most planes kept for the 3D view.

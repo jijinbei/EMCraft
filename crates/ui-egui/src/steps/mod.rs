@@ -81,8 +81,7 @@ pub fn results_stale(app: &EmcraftApp) -> bool {
     statuses_now(app).get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale)
 }
 
-/// The solver Run starts: a kind of analysis (`project.analysis`), its id the Setup step's
-/// `setup:solver:<id>` and Home's `intent:kind:<id>`.
+/// The analysis Run starts (`project.analysis`), chosen by Home's `intent:kind:<id>`.
 pub use emcraft_engine::workflow::Analysis as Solver;
 
 /// The command that runs `solver`.
@@ -90,10 +89,9 @@ pub const fn command(solver: Solver) -> &'static str {
     emcraft_engine::workflow::solve_command(solver)
 }
 
-/// The solver the Setup step starts on: the one picked there, else the job's kind of analysis
-/// (chosen on Home, else inferred from the model).
+/// The analysis chosen on Home, or Home's inferred choice. Setup never overrides it.
 pub fn solver(app: &EmcraftApp) -> Solver {
-    app.workflow.fields.solver.unwrap_or_else(|| app.session.model().analysis())
+    app.session.model().analysis()
 }
 
 /// The text fields of the step panels, with each one's error.
@@ -103,6 +101,7 @@ pub struct Fields {
     pub stop: String,
     /// The band the start and stop fields were last filled from.
     pub band_seen: Option<(f64, f64)>,
+    /// Cached analysis for restoring/repeating a matching run, never a solver selector.
     pub solver: Option<Solver>,
     pub points: String,
     pub order: String,
@@ -164,6 +163,25 @@ impl Fields {
     }
 }
 
+/// Device choice progresses once from Pending to Automatic; any user command makes it
+/// Explicit. Opening another project preserves the choice for this machine.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeviceSelection {
+    #[default]
+    Pending,
+    Automatic,
+    Explicit,
+}
+impl DeviceSelection {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Automatic => "automatic",
+            Self::Explicit => "explicit",
+        }
+    }
+}
+
 /// The workflow's state in the app.
 #[derive(Default)]
 pub struct Workflow {
@@ -181,6 +199,7 @@ pub struct Workflow {
     pub mode_focus: Option<ModeFocus>,
     /// `solve.devices`' reply, asked once: what this machine can run on.
     pub devices: Option<Value>,
+    pub device_selection: DeviceSelection,
     /// Run was refused for blocking problems: the steps still in the way show as needing
     /// attention, until a run starts or another project opens.
     pub blocked: bool,
@@ -242,6 +261,14 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
     if app.workflow.step == Some(Step::Setup) && app.workflow.devices.is_none() {
         let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
+        match app.workflow.device_selection {
+            DeviceSelection::Pending => {
+                let (device, precision) = recommended_device(&v, app.session.model().analysis());
+                let _ = app.session.execute("solve.device", &json!({"device":device,"precision":precision}));
+                app.workflow.device_selection = DeviceSelection::Automatic;
+            }
+            DeviceSelection::Automatic | DeviceSelection::Explicit => {}
+        }
         app.workflow.devices = Some(v);
     }
     // The open dialog's run, when it starts one.
@@ -365,6 +392,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": f.diagram,
         "device": app.session.compute().device(),
+        "device_selection": app.workflow.device_selection.id(),
         "precision": app.session.compute().precision.id(),
         "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
         "mode_focus": app.workflow.mode_focus.as_ref().map(|m| json!({"port": m.port, "mode": m.mode})),
@@ -374,7 +402,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// The Setup step's fields from the project's latest run of a solver it starts
 /// (`project.runs`, in display units now), as after opening a project; none: left as they are.
 pub fn restore_setup(app: &mut EmcraftApp) {
-    let chosen = app.session.model().analysis;
+    let chosen = app.session.model().analysis();
     let f = &mut app.workflow.fields;
     f.from_run = None;
     let Ok(v) = app.session.execute("project.runs", &json!({})) else { return };
@@ -382,8 +410,8 @@ pub fn restore_setup(app: &mut EmcraftApp) {
     let found = runs.iter().rev().find_map(|r| {
         let command = r.get("command").and_then(Value::as_str)?;
         let solver = Solver::ALL.into_iter().find(|s| self::command(*s) == command)?;
-        // A kind chosen at step 0 restores only its own solver's run.
-        if chosen.is_some_and(|c| c != solver) {
+        // Home's effective analysis restores only a matching solver's run.
+        if chosen != solver {
             return None;
         }
         Some((solver, r.get("params")?))
@@ -402,6 +430,7 @@ pub fn restore_setup(app: &mut EmcraftApp) {
             f.frequency = text("near");
         }
         Solver::Radiation => f.frequency = text("frequency"),
+        Solver::Pcb => {}
     }
     f.fill_defaults();
     f.errors.clear();
@@ -412,7 +441,11 @@ pub fn restore_setup(app: &mut EmcraftApp) {
 /// as that run left them.
 pub fn reruns(app: &EmcraftApp) -> Option<&'static str> {
     let f = &app.workflow.fields;
-    let command = self::command(f.solver?);
+    let restored = f.solver?;
+    if restored != solver(app) {
+        return None;
+    }
+    let command = self::command(restored);
     (f.from_run.as_ref() == Some(&f.setup()) && app.session.runs().iter().any(|r| r.command == command)).then_some(command)
 }
 
@@ -423,6 +456,12 @@ pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
 
 /// Opens a step: its panel and the view it calls for.
 pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
+    if app.session.model().analysis() == Solver::Pcb && step.is_some_and(|s| s != Step::Intent) {
+        app.workflow.step = None;
+        app.view = View::Pcb;
+        return;
+    }
+
     app.workflow.step = step;
     let Some(step) = step else { return };
     // The ribbon shows the step's tab.
@@ -520,4 +559,37 @@ pub fn apply_band(app: &mut EmcraftApp) {
 fn band(s: &emcraft_engine::Session) -> Option<(f64, f64)> {
     let f = s.display().frequency;
     s.model().band.map(|b| (f.from_si(b.start.get()), f.from_si(b.stop.get())))
+}
+
+/// Prefer the available CUDA accelerator with double precision, preserving an explicit user
+/// choice elsewhere. The CubeCL CPU runtime is a verification backend, not an upgrade.
+fn recommended_device(list: &Value, solver: Solver) -> (&'static str, &'static str) {
+    let candidates: &[(&str, &str)] = match solver {
+        Solver::TimeDomain => &[("cuda", "double"), ("cuda", "single"), ("cpu", "double")],
+        _ => &[("cuda", "double"), ("cpu", "double")],
+    };
+    candidates
+        .iter()
+        .copied()
+        .find(|(name, p)| {
+            list["devices"].as_array().is_some_and(|ds| {
+                ds.iter()
+                    .any(|d| d["name"] == *name && d["available"] == true && d["precisions"].as_array().is_some_and(|ps| ps.iter().any(|v| v == *p)))
+            })
+        })
+        .unwrap_or(("cpu", "double"))
+}
+#[cfg(test)]
+mod device_preference_tests {
+    use super::*;
+    #[test]
+    fn advanced_available_device_wins_and_unsupported_double_falls_back() {
+        let mut list = json!({"devices":[{"name":"cpu","available":true,"precisions":["double"]},{"name":"cuda","available":true,"precisions":["single","double"]}]});
+        assert_eq!(recommended_device(&list, Solver::Frequency), ("cuda", "double"));
+        list["devices"][1]["precisions"] = json!(["single"]);
+        assert_eq!(recommended_device(&list, Solver::Frequency), ("cpu", "double"));
+        assert_eq!(recommended_device(&list, Solver::TimeDomain), ("cuda", "single"));
+        list["devices"][1]["available"] = json!(false);
+        assert_eq!(recommended_device(&list, Solver::TimeDomain), ("cpu", "double"));
+    }
 }

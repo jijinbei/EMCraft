@@ -38,7 +38,7 @@
   {"shot": "workflow-5-mesh-dialog"},
   {"click": "dialog:cancel"},
   {"click": "step:setup"},
-  {"expect": {"inspect": {"workflow.solver": "frequency"}, "handles": ["setup:points", "setup:order", "setup:solver:frequency"]}},
+  {"expect": {"inspect": {"workflow.solver": "frequency"}, "handles": ["setup:points", "setup:order"]}},
   {"click": "setup:points"},
   {"key": "A", "cmd": true},
   {"text": "3"},

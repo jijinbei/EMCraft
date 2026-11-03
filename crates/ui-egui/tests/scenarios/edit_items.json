@@ -3,7 +3,7 @@
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"click": "row:ptfe-like: εr 2, μr 1", "button": "right"},
   {"frames": 2},
-  {"expect": {"handles": ["row-menu:edit", "row-menu:delete"], "hidden": ["row-menu:show"]}},
+  {"expect": {"handles": ["row-menu:edit", "row-menu:delete", "row-menu:show"]}},
   {"frames": 12},
   {"shot": "row-menu"},
   {"note": "Edit opens on the material as it is; a new name renames it everywhere it is used"},

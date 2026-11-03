@@ -40,7 +40,7 @@ use eframe::{egui_wgpu, wgpu};
 use emcraft_render::view3d::Scene;
 
 pub use field::{FieldFrame, FieldGrid};
-pub(crate) use pack::{Arrow, Motion};
+pub(crate) use pack::{Arrow, Curve, CurveKind, Motion};
 pub use pack::{LINE, MAX_BYTES, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
 pub use renderer::Caps;
 use renderer::Renderer;
@@ -327,8 +327,21 @@ pub fn scene_picture(
     size: [u32; 2],
     background: (emcraft_render::Rgb, emcraft_render::Rgb),
 ) -> Result<emcraft_render::Canvas, Gpu3dError> {
+    scene_picture_with_curves(scene, &[], camera, size, background)
+}
+
+/// The regular scene renderer with procedural WGSL annotations, also used by headless shots.
+pub(crate) fn scene_picture_with_curves(
+    scene: &Scene,
+    curves: &[pack::Curve],
+    camera: &emcraft_render::view3d::Camera,
+    size: [u32; 2],
+    background: (emcraft_render::Rgb, emcraft_render::Rgb),
+) -> Result<emcraft_render::Canvas, Gpu3dError> {
     let out = [size[0].clamp(1, 2048), size[1].clamp(1, 2048)];
-    let packed = Arc::new(Packed::new(scene, next_id()));
+    let mut packed = Packed::new(scene, next_id());
+    packed.append_curves(curves);
+    let packed = Arc::new(packed);
     let big = [out[0] * 2, out[1] * 2];
     let uniforms = Uniforms::new(&packed, camera, big, 4.0, background);
     picture(0, &Frame { look: Look { edges: true, ..Look::default() }, ..Frame::plain(packed, uniforms, big, out, 2) })

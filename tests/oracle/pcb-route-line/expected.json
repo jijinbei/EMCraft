@@ -1,0 +1,59 @@
+{
+  "title": "PCB routing diagnostic: continuous-plane lossless 40 mm microstrip approximation",
+  "kind": "theory",
+  "source": "Hammerstad and Jensen, IEEE MTT-S 1980 pp.407\u2013409; Pozar Microwave Engineering 4th ed. \u00a74.4. Reference values evaluated independently in Python from the formulas, without calling EMCraft. W=0.3 mm, h=0.18 mm, er=4.2; 50-ohm terminations, 1 GHz.",
+  "quantities": [
+    {
+      "id": "impedance",
+      "quantity": "HJ microstrip impedance, ohms",
+      "measure": {
+        "step": "route",
+        "pointer": "/sections/0/ideal_impedance"
+      },
+      "value": 55.37142015234814,
+      "tolerance": {
+        "relative": 1e-10
+      },
+      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+    },
+    {
+      "id": "delay",
+      "quantity": "40 mm line propagation delay, seconds",
+      "measure": {
+        "step": "route",
+        "pointer": "/si/delay_s"
+      },
+      "value": 2.371386557317447e-10,
+      "tolerance": {
+        "relative": 1e-10
+      },
+      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+    },
+    {
+      "id": "reflection",
+      "quantity": "1 GHz lossless line reflection magnitude",
+      "measure": {
+        "step": "route",
+        "pointer": "/si/points/63/s11/mag"
+      },
+      "value": 0.10135945381490674,
+      "tolerance": {
+        "relative": 1e-10
+      },
+      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+    },
+    {
+      "id": "transmission",
+      "quantity": "1 GHz lossless line transmission magnitude",
+      "measure": {
+        "step": "route",
+        "pointer": "/si/points/63/s21/mag"
+      },
+      "value": 0.9948498686346317,
+      "tolerance": {
+        "relative": 1e-10
+      },
+      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+    }
+  ]
+}

@@ -31,7 +31,7 @@ fn every_model_change_drops_the_results_it_makes_wrong() {
     for c in COMMANDS.iter().filter(|c| c.effect == Effect::Record) {
         assert_eq!(c.invalidates.is_none(), keeps.contains(&c.id), "{}", c.id);
     }
-    assert!(COMMANDS.iter().filter(|c| c.effect != Effect::Record).all(|c| c.invalidates.is_none()));
+    assert!(COMMANDS.iter().filter(|c| c.effect != Effect::Record).all(|c| c.invalidates.is_none() || c.effect == Effect::Rebuild));
     let mut s = small();
     // Failed: the sweep stays.
     assert!(s.execute("geometry.body", &json!({"shape": "sphere", "radius": -1, "material": "metal"})).is_err());
@@ -157,7 +157,7 @@ fn every_sample_opens() {
     for smp in emcraft_templates::TEMPLATES {
         let mut s = Session::new();
         s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
-        assert!(s.model.mesh.is_some(), "{}", smp.name);
+        assert!(s.model.mesh.is_some() || s.model.pcb.is_some(), "{}", smp.name);
     }
 }
 

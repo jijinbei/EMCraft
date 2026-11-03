@@ -219,6 +219,8 @@ fn tour() -> Record {
     use crate::{Action, View};
     let mut h = Harness::new();
     call(&mut h, "ui.set", json!({"language": "ja"}));
+    // Keep this language coverage tour independent of the machine's preferred accelerator.
+    call(&mut h, "engine.execute", json!({"command":"solve.device","params":{"device":"cpu","precision":"double"}}));
     record(true);
     h.app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
     // The start page, empty and with a project missing from the recent list, the settings
@@ -401,7 +403,7 @@ fn tour() -> Record {
         }
         call(&mut h, "ui.set", json!({"step": "setup"}));
         for s in Solver::ALL {
-            h.app.workflow.fields.solver = Some(s);
+            call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":s.id()}}));
             h.frames(2);
         }
         h.app.workflow.fields.solver = None;
@@ -438,6 +440,84 @@ fn tour() -> Record {
         h.frames(2);
     }
     h.app.search.open = false;
+    // PCB diagnostics use the same command path as the workspace, in both valid and blocked cases.
+    for split in [true, false] {
+        call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":split}}));
+        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":"net"}}));
+        h.frames(2);
+        call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+        h.frames(3);
+    }
+    call(&mut h, "ui.set", json!({"view":"home"}));
+    h.frames(2);
+    call(&mut h, "ui.set", json!({"view":"pcb"}));
+    for stage in emcraft_engine::pcb::Stage::ALL {
+        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":stage.id()}}));
+        h.frames(2);
+    }
+    h.app.views.pcb.baseline = h.app.replies.pcb.clone();
+    if let Some(r) = &mut h.app.replies.pcb {
+        r["findings"] = json!(
+            [
+                "return_gap",
+                "reference_edge",
+                "no_reference",
+                "route_topology",
+                "via_transition",
+                "missing_return_via",
+                "nearby_signal",
+                "unsupported_cross_section"
+            ]
+            .into_iter()
+            .map(|code| json!({"code":code,"detail":"","segment":null}))
+            .collect::<Vec<_>>()
+        );
+    }
+    h.frames(2);
+    call(&mut h, "engine.execute", json!({"command":"file.sample","params":{"name":"pcb-parallel"}}));
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"net":"DATA","victim":"CLK","stage":"net"}}));
+    h.frames(2);
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+    h.frames(2);
+    step(&mut h, json!({"click":"choice:pcb_coupling:keep"}));
+    for mode in emcraft_engine::pcb::CouplingMode::ALL {
+        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"mode":mode.id()}}));
+        h.frames(2);
+    }
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"section":false}}));
+    h.frames(2);
+    // A saved split still has copper elsewhere on the layer, so the local return can be absent.
+    call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":true}}));
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"victim":"CLK","mode":"return"}}));
+    h.frames(2);
+    let saved = h.app.replies.pcb.clone();
+    if let Some(r) = &mut h.app.replies.pcb {
+        r["coupling_pairs"] = json!([]);
+    }
+    h.frames(2);
+    h.app.replies.pcb = saved;
+    let mut no_ground = h.app.session.model().pcb.clone().unwrap();
+    no_ground.copper.clear();
+    no_ground.map_lengths(|v| h.app.session.display().length.from_si(v));
+    call(&mut h, "engine.execute", json!({"command":"pcb.load","params":{"data":no_ground}}));
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"victim":"CLK"}}));
+    h.frames(3);
+    call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":false}}));
+    // A native copy without a neighbour reaches the clean-screening wording too.
+    let mut board = h.app.session.model().pcb.clone().unwrap();
+    board.segments.retain(|s| s.net == "DATA");
+    board.map_lengths(|v| h.app.session.display().length.from_si(v));
+    call(&mut h, "engine.execute", json!({"command":"pcb.load","params":{"data":board}}));
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+    h.frames(3);
+    h.app.views.pcb.reference = "invalid".into();
+    h.frames(2);
+    h.app.replies.pcb = None;
+    h.app.views.pcb.attempted = None;
+    h.frames(2);
+    h.app.views.pcb.reference = "50".into();
     // Every command's dialog, docked and floating, some refused, a job running under one.
     for c in emcraft_engine::COMMANDS.iter().filter(|c| !c.params.is_empty()) {
         call(&mut h, "ui.start", json!({"command": c.id}));
@@ -493,15 +573,18 @@ fn tour() -> Record {
     call(&mut h, "engine.script", json!({"commands": json(MODELS[1].0)}));
     h.app.workflow.step = Some(Step::Intent);
     h.frames(1);
+    call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"radiation"}}));
     let f = &mut h.app.workflow.fields;
-    (f.start, f.stop, f.points, f.order, f.solver, f.frequency) =
-        ("x".into(), "0".into(), "many".into(), "7".into(), Some(Solver::Radiation), String::new());
+    (f.start, f.stop, f.points, f.order, f.frequency) = ("x".into(), "0".into(), "many".into(), "7".into(), String::new());
     apply(&mut h, [Action::ApplyBand, Action::StartRun]);
     h.app.workflow.step = Some(Step::Run);
     h.frames(2);
+    call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"frequency"}}));
     let f = &mut h.app.workflow.fields;
-    (f.start, f.stop, f.touchstone, f.solver) = ("9".into(), "8".into(), " ".into(), Some(Solver::Frequency));
-    apply(&mut h, [Action::ApplyBand, Action::ExportTouchstone]);
+    (f.start, f.stop) = ("9".into(), "8".into());
+    apply(&mut h, [Action::ApplyBand]);
+    h.app.workflow.fields.touchstone = " ".into();
+    apply(&mut h, [Action::ExportTouchstone]);
     h.app.workflow.step = Some(Step::Setup);
     h.frames(2);
     // The status line of every command, from an empty reply and the replies that change it.
@@ -535,6 +618,7 @@ fn tour() -> Record {
 
 /// Texts a tour of the window cannot reach, with why.
 const UNREACHED: &[(&str, &str)] = &[
+    ("Show object", "tooltip on the eye of a hidden material (scenario material_visibility)"),
     ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
     ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),
     (

@@ -23,6 +23,11 @@ const fn ui(id: &'static str, label: Option<&'static str>, glyph: Option<Glyph>,
 
 /// Every engine command, in the engine's order.
 pub const UI_COMMANDS: &[UiCommand] = &[
+    ui("pcb.load", None, Some(Glyph::Import), false),
+    ui("pcb.import", None, Some(Glyph::Import), true),
+    ui("pcb.sample", None, Some(Glyph::Waveguide), false),
+    ui("pcb.inspect", None, Some(Glyph::Chart), false),
+    ui("view.pcb", None, Some(Glyph::Chart), false),
     ui("project.frequency", Some("Band"), Some(Glyph::Band), false),
     ui("project.analysis", None, Some(Glyph::KindSweep), false),
     ui("project.status", None, None, false),
@@ -74,6 +79,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("results.eigenmodes", None, Some(Glyph::Eigen), false),
     ui("solve.port_modes", Some("Port modes"), Some(Glyph::PortModes), true),
     ui("results.sparameters", None, Some(Glyph::Chart), false),
+    ui("results.power", None, Some(Glyph::Chart), false),
     ui("results.compare", Some("Compare"), Some(Glyph::Compare), true),
     ui("results.field_error", None, Some(Glyph::Compare), true),
     ui("results.history", None, None, false),
@@ -85,6 +91,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("view.probe.add", None, Some(Glyph::Probe), false),
     ui("view.probe.move", None, Some(Glyph::Probe), false),
     ui("view.probe.delete", None, Some(Glyph::Probe), false),
+    ui("view.visibility", None, Some(Glyph::Material), false),
+    ui("view.material", None, Some(Glyph::Material), false),
     ui("view.driven", None, Some(Glyph::Port), false),
     ui("view.chart.style", None, Some(Glyph::Chart), false),
     ui("results.probe", None, Some(Glyph::Probe), false),

@@ -5,16 +5,9 @@ use crate::Hint;
 use crate::lang::args;
 
 pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
-    ui_kit::section(ui, "Solver");
-    let inferred = app.session.model().analysis();
-    let mut solver = f.solver.unwrap_or(inferred);
-    for s in Solver::ALL {
-        let r = ui.radio_value(&mut solver, s, egui::RichText::new(shown(s)).size(t.font_small));
-        scenario::publish_target(Handle::Solver(s), r.rect);
-    }
-    if solver != f.solver.unwrap_or(inferred) || f.solver.is_some() {
-        f.solver = Some(solver);
-    }
+    // Home is the sole authority for the analysis, including its inferred (auto) choice.
+    let solver = app.session.model().analysis();
+    f.solver = Some(solver);
     if f.points.is_empty() {
         f.points = "101".into();
     }
@@ -39,18 +32,22 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
             let ef = e(f, "frequency");
             field(ui, "near", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
+        Solver::Pcb => {}
         Solver::Radiation => {
             let ef = e(f, "frequency");
             field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
     }
-    if solver != Solver::TimeDomain {
-        let eo = e(f, "order");
-        field(ui, "Element order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
-        ui_kit::caption(
-            ui,
-            "Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence.",
-        );
+    match solver {
+        Solver::TimeDomain | Solver::Pcb => {}
+        Solver::Frequency | Solver::Eigenmodes | Solver::Radiation => {
+            let eo = e(f, "order");
+            field(ui, "Element order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
+            ui_kit::caption(
+                ui,
+                "Order 1 uses less memory; order 2 usually improves accuracy on the same mesh. Compare refined meshes to check convergence.",
+            );
+        }
     }
     if let Some(e) = run_estimate(app) {
         super::super::estimate_line(ui, e, Fixed::SetupEstimate);
@@ -152,6 +149,7 @@ fn solve_frequencies(app: &EmcraftApp, f: &Fields, solver: Solver) -> Vec<f64> {
             let Ok(n) = integer(&f.points, 1, app.session.limits().frequencies as u64) else { return Vec::new() };
             (0..n).map(|k| if n == 1 { a } else { a + (z - a) * k as f64 / (n - 1) as f64 }).collect()
         }
+        Solver::Pcb => Vec::new(),
         Solver::Eigenmodes | Solver::Radiation => {
             if f.frequency.trim().is_empty() {
                 vec![0.5 * (a + z)]

@@ -53,6 +53,12 @@ pub fn template_picture(name: &str, values: &Value, size: [usize; 2]) -> Result<
         .collect();
     let mut s = Session::new();
     s.run_steps(&steps).map_err(|e| e.to_string())?;
+    if let Some(board) = &s.model().pcb {
+        let t = Tokens::get();
+        let rgb = crate::theme::rgb;
+        let canvas = emcraft_render::pcb::preview(board, size, rgb(t.panel), rgb(t.panel).mix(rgb(t.success), 0.25), rgb(t.warning))?;
+        return Ok((Picture::new(&canvas), Camera::default()));
+    }
     let built = scene3d::build(&s, Overlay::Materials);
     let (lo, hi) = built.bounds.ok_or("nothing to draw")?;
     let [w, h] = size;
@@ -83,7 +89,13 @@ pub fn show(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut 
                 if big(ui, Glyph::OpenFile, "Open…", false, Fixed::HomeOpen) {
                     out.push(Action::File(FileAction::Request(Then::Open)));
                 }
-                if big(ui, Glyph::Import, "Import a SolidCraft design…", false, Fixed::HomeImport) {
+                if big(
+                    ui,
+                    Glyph::Import,
+                    if app.home.purpose == Some(crate::steps::Solver::Pcb) { "Import PCB…" } else { "Import a SolidCraft design…" },
+                    false,
+                    Fixed::HomeImport,
+                ) {
                     out.push(Action::File(FileAction::Request(Then::Import)));
                 }
             });
@@ -275,7 +287,7 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 /// chosen marked; a click chooses it (again: lets it go, every template shown).
 fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Analysis");
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         for kind in crate::steps::Solver::ALL {
             let on = app.home.purpose == Some(kind);
             let look = crate::kinds::Look { large: false, on, auto: false, enabled: true };

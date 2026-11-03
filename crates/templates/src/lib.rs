@@ -221,6 +221,27 @@ pub const TEMPLATES: &[Template] = &[
         marks: include_str!("../scripts/sphere-scattering.marks.json"),
         kinds: &[Analysis::Radiation],
     },
+    Template {
+        name: "pcb-microstrip",
+        label: "PCB microstrip over continuous GND: impedance, delay, S-parameters and TDR estimates",
+        script: include_str!("../scripts/pcb-microstrip.json"),
+        marks: "{}",
+        kinds: &[Analysis::Pcb],
+    },
+    Template {
+        name: "pcb-split-ground",
+        label: "PCB trace crossing a ground-plane slot: locate the broken return reference",
+        script: include_str!("../scripts/pcb-split-ground.json"),
+        marks: "{}",
+        kinds: &[Analysis::Pcb],
+    },
+    Template {
+        name: "pcb-parallel",
+        label: "PCB parallel signal routes: screen nearby traces and inspect the reference plane",
+        script: include_str!("../scripts/pcb-parallel.json"),
+        marks: "{}",
+        kinds: &[Analysis::Pcb],
+    },
 ];
 
 /// A SolidCraft design a template is built from, compiled in: no file is read when a template

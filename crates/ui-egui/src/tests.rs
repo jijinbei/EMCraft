@@ -6,7 +6,7 @@ use crate::scenario::Harness;
 
 /// Runs `tests/scenarios/<name>.json`; `$TMP` in it is a folder of its own, emptied first and
 /// removed after.
-fn scenario(name: &str) {
+fn scenario(name: &str) -> Harness {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios").join(format!("{name}.json"));
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let tmp = std::env::temp_dir().join(format!("emcraft-scenario-{name}-{}", std::process::id()));
@@ -20,6 +20,7 @@ fn scenario(name: &str) {
     if let Err(e) = r {
         panic!("scenario {name}: {e}\nlast messages: {:?}", h.app.messages.iter().rev().take(5).collect::<Vec<_>>());
     }
+    h
 }
 
 #[test]
@@ -671,4 +672,78 @@ fn field_phase_with_both_vectors_reuses_the_scene() {
     }
     assert_eq!(h.app.session.history().len(), history, "phase playback must not solve again");
     eprintln!("24 cached phase frames with E/H arrows: {:?}", started.elapsed());
+}
+
+#[test]
+fn scenario_material_visibility() {
+    scenario("material_visibility");
+}
+#[test]
+fn scenario_field_plot_zoom() {
+    let mut h = scenario("field_plot_zoom");
+    let rect = crate::scenario::rect_of("picture:field").unwrap();
+    assert!(rect.width() > 400.0, "portrait field must remain readable: {rect:?}");
+    assert!(h.app.field.layout.unwrap().height as f32 > rect.height() * 3.0);
+    let before = h.app.field.pinned.unwrap();
+    assert_eq!(h.call("ui.click", json!({"handle":"field:plot:fit"}))["ok"], json!(true));
+    h.frames(2);
+    let whole = crate::scenario::rect_of("picture:field").unwrap();
+    let native = h.app.field.picture.get_mut().unwrap().size();
+    assert!(native.y * whole.width() / native.x <= whole.height() + 1.0, "whole plot must fit without clipping");
+    assert_eq!(h.call("ui.click", json!({"handle":"field:plot:width"}))["ok"], json!(true));
+    h.frames(2);
+    let at = rect.center();
+    assert_eq!(h.call("ui.scroll", json!({"x":at.x,"y":at.y,"delta":-8}))["ok"], json!(true));
+    h.frames(12);
+    assert_eq!(h.call("ui.click", json!({"handle":"picture:field"}))["ok"], json!(true));
+    h.frames(2);
+    let after = h.app.field.pinned.unwrap();
+    assert!(after[1] < before[1], "scrolling down must probe farther down the same plane: {before:?} -> {after:?}");
+}
+
+#[test]
+fn scenario_multiport_power() {
+    scenario("multiport_power");
+}
+
+#[test]
+fn scenario_home_analysis_setup() {
+    scenario("home_analysis_setup");
+}
+
+#[test]
+fn scenario_pcb_route() {
+    scenario("pcb_route");
+}
+
+#[test]
+fn scenario_pcb_templates() {
+    scenario("pcb_templates");
+}
+
+#[test]
+fn scenario_pcb_workflow() {
+    scenario("pcb_workflow");
+}
+
+#[test]
+fn pcb_saved_results_restore_conditions_in_a_new_window() {
+    let file = std::env::temp_dir().join(format!("emcraft-pcb-conditions-{}.emcraft", std::process::id()));
+    let mut first = Harness::new();
+    assert_eq!(first.call("engine.execute", json!({"command":"pcb.sample","params":{"split":false}}))["ok"], true);
+    assert_eq!(first.call("engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA","reference":75,"stop":5}}))["ok"], true);
+    assert_eq!(first.call("engine.execute", json!({"command":"file.save","params":{"path":file}}))["ok"], true);
+    let mut next = Harness::new();
+    assert_eq!(next.call("engine.execute", json!({"command":"file.open","params":{"path":file}}))["ok"], true);
+    next.frames(3);
+    let r = next.app.replies.pcb.as_ref().unwrap();
+    assert_eq!(r["reference"], 75.);
+    assert_eq!(r["stop"], 5.);
+    assert_eq!(emcraft_engine::pcb::stage(&next.app.session), emcraft_engine::pcb::Stage::Results);
+    let _ = std::fs::remove_file(file);
+}
+
+#[test]
+fn scenario_pcb_coupling() {
+    scenario("pcb_coupling");
 }

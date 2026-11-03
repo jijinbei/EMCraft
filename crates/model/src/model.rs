@@ -30,6 +30,8 @@ pub const MAX_WALL_THICKNESS: f64 = 1.0;
 /// The model.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcb: Option<crate::pcb::Board>,
     pub materials: Vec<Material>,
     pub waveguide: Option<Waveguide>,
     /// A primitive body instead of a waveguide.
@@ -108,6 +110,7 @@ impl Default for Model {
     /// An empty model with one material, vacuum.
     fn default() -> Model {
         Model {
+            pcb: None,
             materials: vec![Material::vacuum()],
             waveguide: None,
             solid: None,
@@ -169,6 +172,7 @@ impl Model {
     /// Clears what was placed in the geometry just replaced: inclusions, features, the open
     /// boundary, sources, lumped ports and the mesh.
     fn drop_what_fits_the_old_geometry(&mut self) {
+        self.pcb = None;
         self.inclusions.clear();
         self.features.clear();
         self.open = None;

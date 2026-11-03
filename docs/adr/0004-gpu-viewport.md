@@ -164,3 +164,10 @@ read from its manifest; no other licence than MIT, Apache-2.0 or both:
 - **macOS:** Metal (not built or shipped today).
 
 Vector glyph vertices carry the center, real and imaginary displacement, maximum length and vertex ordinal (64 bytes per vertex). Both the color and g-buffer stages use the same WGSL phase evaluation. Categorical flags are flat interpolated.
+
+PCB explanatory curves use the same vertex layout with a separate ordinal range. Rust uploads
+bounded arch/ellipse/line descriptors and colours; `curve_vertex` constructs the tube surface
+and smooth normals in WGSL for both colour and g-buffer passes. These curves have a minimum
+screen-space radius, ordinary per-fragment glyph lighting and no white outline. They carry no
+field samples or physical phase. Analytical arch/ellipse point checks read back the GPU image;
+the PCB click scenario checks the magnified default, orbit and light/dark views.

@@ -1,0 +1,21 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "delay": {
+      "band": 1.0002371386557319e-15,
+      "value": 2.371386557317446e-10
+    },
+    "impedance": {
+      "band": 5.5371421152348145e-8,
+      "value": 55.37142015234814
+    },
+    "reflection": {
+      "band": 1.0136045381490675e-10,
+      "value": 0.10135945381490673
+    },
+    "transmission": {
+      "band": 9.948508686346316e-10,
+      "value": 0.9948498686346314
+    }
+  }
+}

@@ -25,6 +25,11 @@ pub(super) fn project_home(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, 
         ui_kit::section(ui, "Analysis");
         kinds(app, ui, out);
         ui.add_space(t.space_12);
+        if app.session.model().analysis() == Solver::Pcb {
+            pcb_home(app, ui, out);
+            units(app, ui, out);
+            return;
+        }
         let states = crate::steps::statuses_now(app);
         let gap = 24.0;
         let right = 320.0f32.min(width * 0.45);
@@ -50,6 +55,34 @@ pub(super) fn project_home(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, 
     });
 }
 
+/// PCB starts with routing data and net inspection; FEM meshing and device settings do not apply.
+fn pcb_home(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    ui_kit::caption(ui, "Inspect a routed net's signal quality and return reference. Start with a PCB template or import a KiCad board.");
+    ui.horizontal_wrapped(|ui| {
+        let r = ui.button(tr("Import PCB…"));
+        scenario::publish_target(Handle::Choice("pcb_home", "import"), r.rect);
+        if r.clicked() {
+            out.push(Action::dialog("pcb.import"));
+        }
+        let r = ui.button(tr("Open PCB workspace"));
+        scenario::publish_target(Handle::Choice("pcb_home", "workspace"), r.rect);
+        if r.clicked() {
+            out.push(Action::ShowView(View::Pcb));
+        }
+    });
+    ui_kit::section(ui, "PCB templates");
+    for template in emcraft_engine::templates::made_for(Solver::Pcb) {
+        let r = ui.button(template.name).on_hover_text(crate::lang::sample_label(template.name));
+        scenario::publish_target(Handle::Sample(template.name), r.rect);
+        if r.clicked() {
+            out.push(Action::Template(Some(template.name.to_owned())));
+        }
+    }
+    if let Some(board) = &app.session.model().pcb {
+        ui.label(&board.name);
+    }
+}
+
 /// The four kinds as large cards, the job's own marked (`auto` while inferred); a click
 /// chooses one (`project.analysis`).
 fn kinds(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
@@ -57,7 +90,7 @@ fn kinds(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let (current, chosen) = (m.analysis(), m.analysis);
     let gap = 12.0;
     let w = ui.available_width();
-    let per_row = if (w - 3.0 * gap) / 4.0 >= CARD_MIN { 4 } else { 2 };
+    let per_row = (((w + gap) / (CARD_MIN + gap)).floor() as usize).clamp(1, Solver::COUNT);
     let card_w = ((w - (per_row - 1) as f32 * gap) / per_row as f32).clamp(CARD_MIN, 270.0);
     let size = vec2(card_w, (card_w * 0.5).clamp(80.0, 130.0) + 74.0);
     let enabled = !app.busy();

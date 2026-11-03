@@ -13,7 +13,7 @@ use super::reference::{reference, section_cutoffs};
 use crate::{EngineError, Result, Session};
 
 /// The most entries of S's first column the chart draws.
-const MAX_CHART_ENTRIES: usize = 8;
+const MAX_CHART_ENTRIES: usize = 64;
 
 /// The key of the legend's entry for a fast sweep's marks: the frequencies solved in full (the
 /// rest were solved in its reduced basis, the line between them).
@@ -176,7 +176,7 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
     let (f0, f1) = (f0 - pad, f1 + pad);
     // The data only, and a closed form when the chart's style adds it.
     let wanted = |key: &str| crate::views::added(session, crate::views::ChartId::SParameters, key);
-    let mut series: Vec<Series> = if wanted("s21.ref") || wanted("s11.ref") {
+    let mut series: Vec<Series> = if session.driven_entry() == 0 && (wanted("s21.ref") || wanted("s11.ref")) {
         reference_curves(session, f0, f1, display).into_iter().filter(|c| wanted(&c.key)).collect()
     } else {
         Vec::new()
@@ -189,18 +189,17 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
         let fast = sweep.results.iter().any(|r| !r.full);
         let mut fem = |key: &str, label: String, pen: Pen, p: usize| {
             if fast {
-                series.push(Series::new(key, label, pen, Style::Line, pts(p, 0, true)));
-                series.push(Series::new(key, "", pen, Style::Markers, pts(p, 0, false)));
+                series.push(Series::new(key, label, pen, Style::Line, pts(p, session.driven_entry(), true)));
+                series.push(Series::new(key, "", pen, Style::Markers, pts(p, session.driven_entry(), false)));
             } else {
-                series.push(Series::new(key, label, pen, Style::Joined, pts(p, 0, true)));
+                series.push(Series::new(key, label, pen, Style::Joined, pts(p, session.driven_entry(), true)));
             }
         };
-        fem("s21.fem", format!("{} FEM (order {})", display.entry("21"), sweep.order.as_u8()), Pen::Strong(0), 1);
-        fem("s11.fem", format!("{} FEM", display.entry("11")), Pen::Strong(1), 0);
-        // More entries (a terminal port's conductors, more ports): the rest of the first column.
+        let input = session.driven_entry();
         let n = sweep.results.first().map_or(0, |r| r.s.ports()).min(MAX_CHART_ENTRIES);
-        for (p, k) in (2..n).zip(MORE_PENS.iter().cycle()) {
-            fem(&format!("s{}1.fem", p + 1), format!("{} FEM", display.entry(&format!("{}1", p + 1))), Pen::Strong(*k), p);
+        for p in (0..n).filter(|p| *p != input).chain(std::iter::once(input)).filter(|p| *p < n) {
+            let label = format!("{} FEM (order {})", display.entry(&format!("{}{}", p + 1, input + 1)), sweep.order.as_u8());
+            fem(&format!("s{}{}.fem", p + 1, input + 1), label, sparameter_pen(p), p);
         }
         if fast {
             series.push(Series::new(FULL_SOLVES, "solved in full", Pen::Ink, Style::Markers, Vec::new()));
@@ -244,4 +243,13 @@ fn reference_curves(session: &Session, f0: f64, f1: f64, display: SDisplay) -> V
     let mut out = curve("s21.ref", format!("{} {label}", display.entry("21")), Pen::Series(0), s21, display);
     out.extend(curve("s11.ref", format!("{} {label}", display.entry("11")), Pen::Series(1), s11, display));
     out
+}
+
+/// Consistent colours for each destination in full charts and the field frequency chart.
+pub fn sparameter_pen(row: usize) -> Pen {
+    match row {
+        0 => Pen::Strong(1),
+        1 => Pen::Strong(0),
+        _ => Pen::Strong(MORE_PENS[(row - 2) % MORE_PENS.len()]),
+    }
 }

@@ -50,3 +50,5 @@ fn small() -> Session {
     s.execute("solve.frequency", &json!({"frequencies": [5.5, 8.0], "order": 2})).unwrap();
     s
 }
+
+mod pcb;

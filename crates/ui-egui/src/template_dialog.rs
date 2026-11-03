@@ -206,7 +206,9 @@ fn preview(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
 /// Opens the template: its project built from the values (after asking about unsaved changes).
 pub fn open(app: &mut EmcraftApp, name: String, values: Value) {
     app.template = None;
-    let purpose = app.home.purpose;
+    let template = emcraft_engine::templates::find(&name);
+    let purpose =
+        app.home.purpose.filter(|p| template.is_some_and(|t| t.kinds.contains(p))).or_else(|| template.and_then(|t| t.kinds.first().copied()));
     crate::files::apply(app, FileAction::Request(Then::Sample { name, values, purpose }));
 }
 

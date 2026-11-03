@@ -15,10 +15,14 @@ impl EmcraftApp {
             Some((command, p)) => (command, p),
             None => (id, params),
         };
-        // A measurement changes nothing: the pictures and views stay.
-        if id == "geometry.measure" {
-            self.info(status::text(id, params, reply, &self.session));
-            return;
+        // Commands that transition machine/UI state without changing the model.
+        match id {
+            "geometry.measure" => {
+                self.info(status::text(id, params, reply, &self.session));
+                return;
+            }
+            "solve.device" => self.workflow.device_selection = steps::DeviceSelection::Explicit,
+            _ => {}
         }
         self.revision = self.revision.wrapping_add(1);
         self.failure = None;
@@ -27,7 +31,44 @@ impl EmcraftApp {
             self.field.forget_samples();
         }
         self.views.chart.clear();
+        if id == "units.set"
+            && let Some(r) = self.replies.pcb.as_ref()
+            && let Some(f) = r["stop_hz"].as_f64()
+        {
+            self.views.pcb.stop = self.session.display().frequency.from_si(f).to_string();
+            self.replies.pcb = None;
+        }
         match id {
+            "view.pcb" => {
+                if params.get("net").is_some() || params.get("victim").is_some() {
+                    self.replies.pcb = None;
+                }
+                self.view = View::Pcb;
+                self.workflow.step = None;
+                self.home.open = false;
+            }
+            "pcb.inspect" => {
+                self.views.pcb.ground = reply["ground"].as_str().unwrap_or("GND").to_owned();
+                self.views.pcb.reference = reply["reference"].to_string();
+                self.views.pcb.stop = reply["stop"].to_string();
+                self.replies.pcb = Some(reply.clone());
+                self.view = View::Pcb;
+                self.workflow.step = None;
+            }
+            "project.variable" if self.session.model().pcb.is_some() => {
+                self.replies.pcb = None;
+                if let Some(band) = self.session.model().band {
+                    self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
+                }
+                self.view = View::Pcb;
+                self.workflow.step = None;
+            }
+            "pcb.load" | "pcb.import" | "pcb.sample" => {
+                self.replies.pcb = None;
+                self.view = View::Pcb;
+                self.workflow.step = None;
+                self.home.open = false;
+            }
             "file.sample" | "engine.script" | "file.open" | "file.new" | "file.save" => self.after_file(id, reply),
             _ if id.starts_with("solve.") => self.after_solve(id, reply),
             "results.tdr" => {
@@ -44,7 +85,16 @@ impl EmcraftApp {
                 self.views.study.slice = emcraft_engine::study::Slice::default();
                 self.view = View::Study;
             }
-            "edit.undo" | "edit.redo" => self.replies.port_modes = None,
+            "edit.undo" | "edit.redo" => {
+                self.replies.port_modes = None;
+                self.replies.pcb = None;
+                if self.session.model().pcb.is_some() {
+                    self.view = View::Pcb;
+                    self.workflow.step = None;
+                } else if self.view == View::Pcb {
+                    self.view = View::Model;
+                }
+            }
             // A kind chosen at step 0: Setup starts on its solver.
             "project.analysis" => self.workflow.fields.solver = None,
             _ if id.starts_with("geometry.") => {
@@ -89,17 +139,29 @@ impl EmcraftApp {
         self.replies.port_modes = None;
         self.replies.compare = None;
         let results = self.session.results();
-        self.view = if results.sweep.is_some() {
-            View::SParameters
-        } else if results.eigen.is_some() {
-            View::Eigenmodes
-        } else if results.radiation.is_some() {
-            View::FarField
-        } else if results.dispersion.is_some() {
-            View::Dispersion
-        } else {
-            View::Model
+        self.view = match (&results.sweep, &results.eigen, &results.radiation, &results.dispersion) {
+            (Some(_), _, _, _) => View::SParameters,
+            (None, Some(_), _, _) => View::Eigenmodes,
+            (None, None, Some(_), _) => View::FarField,
+            (None, None, None, Some(_)) => View::Dispersion,
+            (None, None, None, None) => View::Model,
         };
+        self.replies.pcb = None;
+        if matches!(id, "file.new" | "file.open") {
+            self.views.pcb.illustration = Default::default();
+        }
+        if self.session.model().pcb.is_some() {
+            if let Some(band) = self.session.model().band {
+                self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
+            }
+            if let Some(c) = &self.session.views().pcb_conditions {
+                self.views.pcb.ground = c.ground.clone();
+                self.views.pcb.reference = c.reference.to_string();
+                self.views.pcb.stop = self.session.display().frequency.from_si(c.stop_hz).to_string();
+            }
+            self.view = View::Pcb;
+            self.workflow.step = None;
+        }
         self.pick_frequency();
         self.view3d.fit_next = true;
         self.workflow.check = None;
@@ -130,7 +192,10 @@ impl EmcraftApp {
                 }
             }
             "solve.time_domain" => {
-                self.view = if results.td_radiation.is_some() { View::FarField } else { View::SParameters };
+                self.view = match &results.td_radiation {
+                    Some(_) => View::FarField,
+                    None => View::SParameters,
+                };
             }
             "solve.port_modes" => {
                 self.replies.port_modes = Some(reply.clone());
@@ -149,7 +214,10 @@ impl EmcraftApp {
         if let Some(f) = crate::nearest(&freqs, self.field.view.frequency) {
             self.field.view.frequency = f;
         }
-        self.field.view.mode = if self.session.results().sweep.is_none() && self.session.results().eigen.is_some() { Some(0) } else { None };
+        self.field.view.mode = match (&self.session.results().sweep, &self.session.results().eigen) {
+            (None, Some(_)) => Some(0),
+            _ => None,
+        };
         self.field.at = None;
     }
 }

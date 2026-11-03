@@ -10,7 +10,7 @@
 //! A frequency axis keeps its fixed range in hertz, so it stays where it was when the display
 //! units change; the other axes keep the numbers they show.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use emcraft_model::Point3;
 use emcraft_render::Pen;
@@ -220,6 +220,18 @@ impl Probe {
 /// How the project's results are looked at: the charts' styles by chart id, the probes.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Views {
+    #[serde(default)]
+    pub pcb_illustration: crate::pcb::Illustration,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcb_conditions: Option<crate::pcb::Conditions>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcb_stage: Option<crate::pcb::Stage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcb_net: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub hidden_materials: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub hidden_geometry: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub charts: BTreeMap<String, ChartStyle>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -237,7 +249,15 @@ impl Views {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.charts.is_empty() && self.probes.is_empty() && self.driven.is_none()
+        self.pcb_illustration == crate::pcb::Illustration::default()
+            && self.pcb_conditions.is_none()
+            && self.pcb_stage.is_none()
+            && self.pcb_net.is_none()
+            && self.charts.is_empty()
+            && self.probes.is_empty()
+            && self.driven.is_none()
+            && self.hidden_materials.is_empty()
+            && self.hidden_geometry.is_empty()
     }
 
     /// The views as read from a project file, checked: charts the engine knows, styles within
@@ -269,7 +289,40 @@ impl Views {
         if self.driven.as_ref().is_some_and(|d| d.trim().is_empty() || d.chars().count() > MAX_NAME) {
             return Err(EngineError::failed(format!("views: the driven port needs a name of 1 to {MAX_NAME} characters")));
         }
-        Ok(Views { charts, probes: self.probes, driven: self.driven })
+        if self.hidden_materials.len() > 4096 || self.hidden_materials.iter().any(|n| n.is_empty() || n.chars().count() > MAX_NAME) {
+            return Err(EngineError::failed("views: invalid hidden material names"));
+        }
+        if self.hidden_geometry.len() > 4096 || self.hidden_geometry.iter().any(|k| crate::visibility::GeometryObject::parse(k).is_none()) {
+            return Err(EngineError::failed("views: invalid geometry visibility"));
+        }
+        if self.pcb_net.as_ref().is_some_and(|s| s.is_empty() || s.chars().count() > 128) {
+            return Err(EngineError::failed("invalid PCB selection"));
+        }
+        if self.pcb_conditions.as_ref().is_some_and(|c| {
+            c.ground.trim().is_empty()
+                || c.ground.chars().count() > 128
+                || !c.reference.is_finite()
+                || !(0.1..=10000.).contains(&c.reference)
+                || !c.stop_hz.is_finite()
+                || c.stop_hz <= 0.
+                || c.stop_hz > 1e12
+        }) {
+            return Err(EngineError::failed("invalid PCB inspection conditions"));
+        }
+        if self.pcb_illustration.victim.as_ref().is_some_and(|n| n.trim().is_empty() || n.chars().count() > 128) {
+            return Err(EngineError::failed("invalid PCB victim"));
+        }
+        Ok(Views {
+            pcb_illustration: self.pcb_illustration,
+            pcb_conditions: self.pcb_conditions,
+            pcb_stage: self.pcb_stage,
+            pcb_net: self.pcb_net,
+            charts,
+            probes: self.probes,
+            driven: self.driven,
+            hidden_materials: self.hidden_materials,
+            hidden_geometry: self.hidden_geometry,
+        })
     }
 }
 
@@ -681,4 +734,17 @@ pub fn probes(s: &mut Session, p: &Params) -> Result<Value> {
         })
         .collect();
     Ok(json!({"frequency": s.show_frequency(f), "probes": rows}))
+}
+
+/// Changes only a material's display, preserving its mesh and solved fields.
+///
+/// ```
+/// let mut s = emcraft_engine::Session::new();
+/// s.execute("view.material", &serde_json::json!({"name":"vacuum","visible":false})).unwrap();
+/// assert!(s.views().hidden_materials.contains("vacuum"));
+/// assert!(s.execute("view.material", &serde_json::json!({"name":"missing","visible":false})).is_err());
+/// ```
+pub fn material_visibility(s: &mut Session, p: &Params) -> Result<Value> {
+    let name = p.string("name").required()?;
+    crate::visibility::set(s, crate::visibility::DisplayObject::Material(name.into()), p.flag("visible").required()?)
 }

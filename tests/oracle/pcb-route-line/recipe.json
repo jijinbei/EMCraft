@@ -1,0 +1,17 @@
+[
+  {
+    "command": "pcb.sample",
+    "params": {
+      "split": false
+    }
+  },
+  {
+    "command": "pcb.inspect",
+    "params": {
+      "net": "DATA",
+      "stop": 1,
+      "points": 64
+    },
+    "id": "route"
+  }
+]

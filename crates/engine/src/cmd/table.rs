@@ -94,6 +94,11 @@ const RENAME: ParamSpec = opt("rename", K::String, "a new name, unique");
 const STUDY_SOLVE: ParamSpec = req("solve", K::Object, "the solve at each point: {\"command\", \"params\"}");
 
 pub static COMMANDS: &[CommandSpec] = &[
+    CommandSpec {id:"pcb.load",label:"Load PCB data",doc:"Load native PCB routing data in the session's length units. Replaces the model; geometry is checked before committing. Nets, stackup, segments, vias and saved filled copper are embedded in project history.",params:&[req("data",K::Object,"PCB object: name, layers [{name,z,eps_below}], segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes")],effect:Effect::Record,invalidates:Some(Change::Geometry),run:crate::pcb::load},
+    CommandSpec {id:"pcb.import",label:"Import PCB",doc:"Read a KiCad board's routed straight segments, vias, explicit dielectric stackup and saved filled copper. Unsupported track arcs fail visibly; unfilled zones are not treated as copper. Pads, packages, mask and copper thickness are excluded. Imported data is embedded so reopening needs no source file.",params:&[req("path",K::String,"KiCad .kicad_pcb file, at most 8 MiB"),opt("stackup",K::Array,"optional copper layers [{name,z,eps_below}], lengths in display units; replaces file stackup")],effect:Effect::Rebuild,invalidates:Some(Change::Geometry),run:crate::pcb::import},
+    CommandSpec {id:"pcb.sample",label:"PCB return-path example",doc:"Load an original two-layer PCB routing example; split=true has a ground-plane slot, false has continuous ground. Replaces the model and is undoable.",params:&[opt("split",K::Boolean,"ground-plane slot (default true)"),opt("neighbour",K::Boolean,"include a nearby parallel CLK trace (default true)"),opt("length",K::Number,"routed length (default 40 mm)").of(L),opt("width",K::Number,"trace width (default 0.3 mm)").of(L),opt("height",K::Number,"substrate thickness (default 0.18 mm)").of(L),opt("er",K::Number,"relative dielectric permittivity (default 4.2)"),opt("gap",K::Number,"parallel trace clearance (default 0.25 mm, at most 5 mm)").of(L)],effect:Effect::Record,invalidates:Some(Change::Geometry),run:crate::pcb::sample},
+    CommandSpec {id:"pcb.inspect",label:"Inspect PCB route",doc:"Screen the selected net's routed segments and filled reference copper. Report exact line/polygon coverage gaps, nearby parallel signals, topology and via-transition limitations. Only valid simple outer microstrip routes get a lossless quasi-static line approximation: impedance, delay, S11/S21 and TDR. Screening is not a solved return-current map, full-wave model, calculated crosstalk or compliance verdict.",params:&[opt("net",K::String,"signal net (default: selected net, or first routed signal)"),opt("ground",K::String,"reference net (default GND)"),opt("reference",K::Number,"source/load impedance in ohms (default 50)"),opt("stop",K::Number,"top frequency (default project band stop, otherwise 1 GHz)").of(F),opt("points",K::Integer,"harmonic sweep points, 4..128 (default 64)")],effect:Effect::View,invalidates:None,run:crate::pcb::inspect},
+    CommandSpec { id:"view.pcb",label:"PCB workflow",doc:"Navigate the PCB workflow (board, net, settings, inspect, results) or select a routed net without running a diagnosis. Stage and selection are saved with the project; invalid or premature selections are refused.",params:&[opt("stage",K::String,"PCB stage: board, net, settings, inspect or results").one_of(&crate::pcb::Stage::IDS),opt("net",K::String,"routed net to select"),opt("victim",K::String,"receiving net, different from the selected source"),opt("mode",K::String,"schematic mechanism").one_of(&crate::pcb::CouplingMode::IDS),opt("playing",K::Boolean,"play explanatory emphasis, not physical time"),opt("exaggerate",K::Boolean,"exaggerate depth by 10 for visibility"),opt("section",K::Boolean,"show local cross section"),opt("pick_victim",K::Boolean,"board clicks select the receiver")],effect:Effect::View,invalidates:None,run:crate::pcb::view },
     CommandSpec {
         id: "project.frequency",
         label: "Frequency band",
@@ -106,8 +111,8 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "project.analysis",
         label: "Analysis",
-        doc: "The kind of analysis the job is set up for, chosen at its start: `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports, the time domain no mesh (project.status lists the steps a kind does without under `not_needed`). Until one is chosen the kind is inferred from the model (eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). The results stay as they are. Undo goes back.",
-        params: &[req("kind", K::String, "`frequency`, `eigenmodes`, `radiation` or `time_domain`").one_of(&Analysis::IDS)],
+        doc: "The kind of analysis the job is set up for, chosen at its start (`pcb`: routed PCB signal-quality and return-reference inspection via pcb.inspect, without a FEM mesh or accelerator setup): `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports, the time domain no mesh (project.status lists the steps a kind does without under `not_needed`). Until one is chosen the kind is inferred from the model (PCB diagnosis for a loaded PCB, eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). The results stay as they are. Undo goes back.",
+        params: &[req("kind", K::String, "`frequency`, `eigenmodes`, `radiation`, `time_domain` or `pcb`").one_of(&Analysis::IDS)],
         effect: Effect::Adjust,
         invalidates: None,
         run: crate::project::analysis,
@@ -766,6 +771,11 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::results::sparameters,
     },
     CommandSpec {
+        id: "results.power", label: "Power distribution", doc: "The incident power fractions |S[p,q]|² at each reported port or terminal for one excitation and solved frequency. Includes reflected power, transmitted power, each output's share of transmitted power, and the signed unaccounted balance. The balance can include higher modes, radiation, loss and numerical error; it is not automatically absorbed power. Refuses evanescent or lossy-port pseudo-waves.",
+        params: &[opt("frequency", K::Number, "solved frequency (default last solved)"),opt("excitation",K::String,"input port or terminal (default driven port)")],
+        effect: Effect::None, invalidates: None, run: crate::power::command,
+    },
+    CommandSpec {
         id: "results.compare",
         label: "Compare with theory",
         doc: "Compares the sweep's S11 and S21 with the reference: the exact TE10 solution when every section has the full cross-section, mode matching (`modes` TE_m0 modes in the widest section) when the aperture changes. The errors per frequency and the worst.",
@@ -867,6 +877,20 @@ pub static COMMANDS: &[CommandSpec] = &[
         effect: Effect::View,
         invalidates: None,
         run: crate::views::probe_delete,
+    },
+    CommandSpec {
+        id: "view.visibility", label: "Object visibility", doc: "Shows or hides a material region or geometry object. Display only, saved with the project; preserves mesh and solved results.",
+        params: &[req("kind", K::String, "material or geometry"), req("name", K::String, "material name or geometry key (guide, solid, section:0, layer:0, strip:0, via:0, feature:0, inclusion:0)"), req("visible", K::Boolean, "whether the object is shown")],
+        effect: Effect::View, invalidates: None, run: crate::visibility::command,
+    },
+    CommandSpec {
+        id: "view.material",
+        label: "Material visibility",
+        doc: "Shows or hides a material's region in the viewport. Display only: the material, mesh and results remain intact. Saved with the project.",
+        params: &[req("name", K::String, "material name"), req("visible", K::Boolean, "whether the material region is visible")],
+        effect: Effect::View,
+        invalidates: None,
+        run: crate::views::material_visibility,
     },
     CommandSpec {
         id: "view.driven",
@@ -1179,7 +1203,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         id: "file.sample",
         label: "Open sample",
         doc: "Replaces the session with a sample model (`highpass`: the waveguide high-pass filter; `iris-bandpass`: an inductive-iris band-pass filter; `cavity`: a copper cavity's eigenmodes), built by its script, its parameters (the variables the script defines, `file.templates`) set to `values`; `solve: true` also runs its analysis.",
-        params: &[req("name", K::String, "sample name"), opt("values", K::Object, "`{parameter: number}`: the template's parameters to change, in the display units (the others keep their values)"), opt("analysis", K::String, "the kind of analysis the project is for (`project.analysis`): `frequency`, `eigenmodes`, `radiation` or `time_domain`; inferred from the model when left out").one_of(&Analysis::IDS), opt("solve", K::Boolean, "run the sample's sweep (default false)")],
+        params: &[req("name", K::String, "sample name"), opt("values", K::Object, "`{parameter: number}`: the template's parameters to change, in the display units (the others keep their values)"), opt("analysis", K::String, "the kind of analysis the project is for (`project.analysis`): `frequency`, `eigenmodes`, `radiation`, `time_domain` or `pcb`; inferred from the model when left out").one_of(&Analysis::IDS), opt("solve", K::Boolean, "run the sample's sweep (default false)")],
         effect: Effect::Replace,
         invalidates: None,
         run: crate::project::sample,
@@ -1187,7 +1211,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "file.templates",
         label: "Templates",
-        doc: "The templates `file.sample` opens: each one's name, label and parameters (the variables its script defines: name, value, what it measures and its display unit).",
+        doc: "The templates `file.sample` opens: each one's name, label, supported analysis kinds and parameters (the variables its script defines: name, value, what it measures and its display unit).",
         params: &[],
         effect: Effect::None,
         invalidates: None,

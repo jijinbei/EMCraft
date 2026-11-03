@@ -28,7 +28,7 @@ pub trait Picker: Send + Sync {
 }
 
 /// The extensions of the parts `geometry.import` reads.
-pub const PART_EXTENSIONS: &[&str] = &["solidcraft", "sc", "3mf", "stl"];
+pub const PART_EXTENSIONS: &[&str] = &["solidcraft", "sc", "3mf", "stl", "kicad_pcb"];
 
 /// Whether `path` names a part to import, by its extension.
 pub fn is_part(path: &str) -> bool {
@@ -76,6 +76,8 @@ pub struct Prompt {
 }
 
 pub struct Files {
+    /// Automatic landing waits for a worker to reveal whether the opened model is a PCB.
+    pub(crate) land_after_open: bool,
     pub picker: Option<Arc<dyn Picker>>,
     tx: Sender<(Purpose, Option<String>)>,
     rx: Receiver<(Purpose, Option<String>)>,
@@ -91,7 +93,7 @@ pub struct Files {
 impl Default for Files {
     fn default() -> Files {
         let (tx, rx) = channel();
-        Files { picker: None, tx, rx, picking: false, prompt: None, confirm: None, after_save: None }
+        Files { land_after_open: false, picker: None, tx, rx, picking: false, prompt: None, confirm: None, after_save: None }
     }
 }
 
@@ -188,7 +190,9 @@ fn go(app: &mut EmcraftApp, then: Then) {
         Then::Import => {
             new_project(app);
             app.home.open = false;
-            if let Err(e) = crate::steps::fix(app, "geometry.import") {
+            if app.session.model().analysis() == crate::steps::Solver::Pcb {
+                apply(app, FileAction::PickPart);
+            } else if let Err(e) = crate::steps::fix(app, "geometry.import") {
                 app.error(e);
             }
         }
@@ -197,9 +201,13 @@ fn go(app: &mut EmcraftApp, then: Then) {
 }
 
 /// A project the window opened (`opened`) shows its Home first, unless it has results to show.
-fn land(app: &mut EmcraftApp, opened: bool) {
+pub(crate) fn land(app: &mut EmcraftApp, opened: bool) {
+    if opened && app.busy() {
+        app.files.land_after_open = true;
+        return;
+    }
     let r = app.session.results();
-    if opened && !r.any() && r.study.is_none() {
+    if opened && app.session.model().pcb.is_none() && !r.any() && r.study.is_none() {
         crate::steps::open_step(app, Some(crate::steps::Step::Intent));
     }
 }
@@ -263,6 +271,14 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
 pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
     app.home.open = false;
     app.settings = None;
+    if std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("kicad_pcb")) {
+        app.workflow.step = None;
+        app.view = crate::View::Pcb;
+        if let Err(e) = app.open_dialog_with("pcb.import", json!({"path":path})) {
+            app.error(e);
+        }
+        return;
+    }
     if let Some(d) = app.dialog.as_mut().filter(|d| d.command.id == "geometry.import") {
         let _ = d.set("path", &json!(path));
         return;

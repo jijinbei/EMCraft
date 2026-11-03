@@ -34,6 +34,7 @@ pub struct Browser {
 pub enum Act {
     None,
     Show(View),
+    Run(&'static str, serde_json::Value),
     Edit(&'static str),
     /// Opens a command's dialog with these values over its usual ones (a body's material).
     EditWith(&'static str, serde_json::Value),
@@ -260,6 +261,14 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let f = Fmt::new(&app.session);
     let m = app.session.model();
     let mut sections = Vec::new();
+    if let Some(board) = &m.pcb {
+        let mut rows = vec![row("PCB: {name}", args!(name = board.name), Glyph::Box, Act::Show(View::Pcb))];
+        let nets: std::collections::BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
+        for net in nets.into_iter().take(128) {
+            rows.push(row("Net: {name}", args!(name = net), Glyph::Chart, Act::Run("view.pcb", serde_json::json!({"net":net,"stage":"net"}))));
+        }
+        return vec![("PCB", rows)];
+    }
     // The variables the job defined (a study's), not a template's own dimensions: double-click
     // to change one.
     let own = variables(&app.session);
@@ -272,14 +281,19 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
             "Materials",
             m.materials
                 .iter()
-                .map(|mat| {
+                .enumerate()
+                .map(|(i, mat)| {
                     let r = row("{name}: {summary}", args!(name = mat.name, summary = mat.summary()), Glyph::Material, Act::None).item(Item::new(
                         "model.material.edit",
                         "model.material.delete",
                         "name",
                         serde_json::json!(mat.name),
                     ));
-                    Row { rich: Some(format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat))), ..r }
+                    Row {
+                        pick: Some(Pick::Material(i)),
+                        rich: Some(format!("{}:  {}", mat.name.replace('$', "\\$"), crate::math::material(mat))),
+                        ..r
+                    }
                 })
                 .collect(),
         ),
@@ -635,6 +649,47 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 t.text
                             };
                             let mut clip = rect;
+                            if let Some(object) = r.pick.and_then(|p| p.display_object(app.session.model())) {
+                                let visible = app.session.views().visible(&object);
+                                let name = object.name();
+                                let kind = object.kind();
+                                let eye = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(22.0, 20.0));
+                                let response = ui.interact(eye, ui.id().with(("object_eye", kind, &name)), Sense::click());
+                                scenario::publish_target(
+                                    Handle::Choice(
+                                        match kind {
+                                            "material" => "material_visibility",
+                                            _ => "geometry_visibility",
+                                        },
+                                        &name,
+                                    ),
+                                    eye,
+                                );
+                                let ink = if visible { t.text } else { t.text_dim };
+                                let c = eye.center();
+                                let points = vec![
+                                    c + vec2(-8.0, 0.0),
+                                    c + vec2(-4.0, -4.0),
+                                    c + vec2(0.0, -5.0),
+                                    c + vec2(4.0, -4.0),
+                                    c + vec2(8.0, 0.0),
+                                    c + vec2(4.0, 4.0),
+                                    c + vec2(0.0, 5.0),
+                                    c + vec2(-4.0, 4.0),
+                                ];
+                                ui.painter().add(egui::Shape::closed_line(points, Stroke::new(1.2, ink)));
+                                ui.painter().circle_filled(eye.center(), 2.0, ink);
+                                if !visible {
+                                    ui.painter().line_segment(
+                                        [eye.left_bottom() + vec2(3.0, -3.0), eye.right_top() + vec2(-3.0, 3.0)],
+                                        Stroke::new(1.4, ink),
+                                    );
+                                }
+                                if response.on_hover_text(lang::tr(if visible { "Hide object" } else { "Show object" })).clicked() {
+                                    out.push(Action::run("view.visibility", serde_json::json!({"kind":kind,"name":name,"visible":!visible})));
+                                }
+                                clip.max.x = eye.left() - 3.0;
+                            }
                             if out_of_date {
                                 let c = pos2(rect.right() - 12.0, rect.center().y);
                                 crate::steps::stale_mark(ui.painter(), c, t);
@@ -674,8 +729,10 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 out.push(Action::Select { row, picks });
                             } else if resp.clicked() {
                                 out.push(Action::Select { row: Some(key.clone()), picks: r.pick.into_iter().collect() });
-                                if let Act::Show(v) = r.act {
-                                    out.push(Action::ShowView(v));
+                                match &r.act {
+                                    Act::Show(v) => out.push(Action::ShowView(*v)),
+                                    Act::Run(command, params) => out.push(Action::run(command, params.clone())),
+                                    _ => {}
                                 }
                             }
                             if resp.double_clicked() && !app.busy() {

@@ -307,3 +307,71 @@ fn each_point_says_whether_it_was_solved_in_full() {
     after.insert(1, true);
     assert_eq!(flags(&r), after);
 }
+
+#[test]
+fn material_visibility_is_display_only_and_saved() {
+    let mut s = swept(1);
+    let mesh = s.model().mesh.as_ref().unwrap().tets.clone();
+    let result = format!("{:?}", s.results().sweep);
+    let history = s.history().len();
+    s.execute("view.material", &json!({"name":"vacuum","visible":false})).unwrap();
+    assert!(s.views().hidden_materials.contains("vacuum"));
+    assert_eq!(s.model().mesh.as_ref().unwrap().tets, mesh);
+    assert_eq!(format!("{:?}", s.results().sweep), result);
+    assert_eq!(s.history().len(), history);
+    for bad in [json!({"name":"missing","visible":false}), json!({"name":"vacuum"}), json!({"name":"vacuum","visible":"no"})] {
+        assert!(s.execute("view.material", &bad).is_err());
+        assert!(s.views().hidden_materials.contains("vacuum"));
+    }
+    let path = scratch("material-visibility.emcraft");
+    s.execute("file.save", &json!({"path":path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path":path})).unwrap();
+    assert!(t.views().hidden_materials.contains("vacuum"));
+    t.execute("view.material", &json!({"name":"vacuum","visible":true})).unwrap();
+    assert!(t.views().hidden_materials.is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn shared_object_visibility_is_saved_and_invalid_keys_are_refused() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name":"highpass"})).unwrap();
+    for (kind, name) in [("material", "ptfe-like"), ("geometry", "section:0")] {
+        s.execute("view.visibility", &json!({"kind":kind,"name":name,"visible":false})).unwrap();
+    }
+    let saved = s.views().clone();
+    for name in ["section:9999", "section:NaN", "solid", "garbage"] {
+        assert!(s.execute("view.visibility", &json!({"kind":"geometry","name":name,"visible":false})).is_err());
+        assert_eq!(s.views(), &saved);
+    }
+    let path = scratch("object-visibility.emcraft");
+    s.execute("file.save", &json!({"path":path})).unwrap();
+    s.execute("file.open", &json!({"path":path})).unwrap();
+    assert_eq!(s.views(), &saved);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn three_ports_report_each_destination_and_follow_the_driven_input() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name":"h-tee"})).unwrap();
+    s.execute("mesh.generate", &json!({"size":6})).unwrap();
+    s.execute("solve.frequency", &json!({"frequencies":[8.5],"order":1})).unwrap();
+    let report = s.execute("results.power", &json!({"frequency":8.5})).unwrap();
+    assert_eq!(report["outputs"].as_array().unwrap().len(), 3);
+    assert!((report["accounted"].as_f64().unwrap() - 1.0).abs() < 1e-8);
+    let shares: f64 = report["outputs"].as_array().unwrap().iter().filter_map(|p| p["branch_fraction"].as_f64()).sum();
+    assert!((shares - 1.0).abs() < 1e-12);
+    s.execute("view.driven", &json!({"port":"2"})).unwrap();
+    let chart = crate::view::sparameter_chart(&s).unwrap();
+    for key in ["s12.fem", "s22.fem", "s32.fem"] {
+        assert!(chart.series.iter().any(|c| c.key == key));
+    }
+    assert!(!chart.series.iter().any(|c| c.key == "s11.fem"));
+    let report = s.execute("results.power", &json!({"frequency":8.5})).unwrap();
+    assert_eq!(report["excitation"], json!("2"));
+    assert_eq!(report["outputs"][2]["s"], json!("S32"));
+    assert!(s.execute("results.power", &json!({"frequency":8.7})).is_err());
+    assert!(s.execute("results.power", &json!({"excitation":"missing"})).is_err());
+}

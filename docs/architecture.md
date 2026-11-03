@@ -75,6 +75,21 @@ types changed) find what slipped through.
 
 ## The solver pipeline
 
+The PCB workspace is a separate screening/analytical pipeline, documented in [pcb.md](pcb.md):
+`model::pcb::Board` stores checked SI routing, stackup and filled copper; `io::pcb` reads the
+published KiCad format; `theory::pcb` screens reference geometry and builds an explicitly ideal
+microstrip cascade using the existing `microstrip` and `coupled` references. `engine::pcb`
+owns the import/load/inspect/sample commands, embedded history and replies, reusing the engine's
+TDR transform. `ui-egui::viewport::pcb` draws/picks routing and displays those replies. It does
+not send incomplete PCB data through the volume FEM solver. `model::units::Time` converts the
+SI delays at the UI boundary. The PCB data/diagnosis commands and `view.pcb` navigation are shared by UI, control, scripts and CLI.
+`Analysis::Pcb` declares or infers this workflow; three templates live in `emcraft-templates`
+beside the other project scripts. Their `pcb.sample` steps retain parameter expressions in
+history, while file imports embed checked board data. `render::pcb` shares even-odd copper
+spans between the interactive view and bounded CPU top-view previews (render depends on the
+L0 model for the board schema). Worker-driven file opens choose their automatic landing view
+after the loaded model is known, while preserving a user's view change made during the job.
+
 1. **Mesh.** `mesh.generate` puts grid lines through every aperture edge and divides each
    section along z on its own, so every material interface and aperture wall is a grid plane;
    cells outside a section's aperture are left out (an iris' or a step's metal), and lines close
@@ -115,3 +130,9 @@ types changed) find what slipped through.
    sources alone, the far field in 48 directions.
 8. **Results.** Fields at any point from the element basis (H = −∇×E/(jωμ)); field plots sample
    a plane once and draw any component at any phase.
+
+UI machine choices use explicit lifecycle states: compute selection is Pending until Setup recommends a backend, Automatic afterwards, and Explicit after a user device command; opening a project does not reset it. View restoration and pointer gestures dispatch on result/interaction enum states through exhaustive matches. Input validation and geometric predicates remain guards rather than being cast into artificial UI states.
+
+PCB workflow navigation is `engine::pcb::Stage`, stored in `Views::pcb_stage`. `view.pcb` validates stage/net changes without calculating a report; `pcb.inspect` advances to Results. The UI reuses the existing workflow status marks for the PCB bar, and displays stage-specific controls plus a schematic layer-stack section.
+
+PCB coupling uses `theory::pcb::pairs` for bounded, non-numerical parallel-overlap geometry. Engine replies expose typed pair endpoints/ids and units; `Views::pcb_illustration` saves role and display choices. `viewport::pcb_coupling` supplies copper/dielectric geometry and conceptual curve descriptors to the existing GPU renderer. WGSL generates tubular arches/loops/reference lines and their smooth normals in both colour and depth passes. These are explanatory annotations, never invented field samples. The initial view magnifies a local section; ordinary egui callouts attach net/layer names to the projected conductors and reference plane. Geometry comparison snapshots are temporary UI state.

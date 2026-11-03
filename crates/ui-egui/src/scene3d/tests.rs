@@ -297,3 +297,51 @@ fn mesh_port_rims_are_transparent_and_directions_are_world_space() {
     assert!(built.arrows[1].end[2] < built.arrows[1].start[2], "reflected goes out of the start port");
     assert!(built.arrows[2].end[2] > built.arrows[2].start[2], "transmitted goes out of the end port");
 }
+
+#[test]
+fn material_selection_glows_and_visibility_preserves_walls_and_ports() {
+    let mut s = meshed("highpass", None);
+    let baseline = build(&s, Overlay::Materials);
+    let selected = build_with(&s, Overlay::Materials, &[], &[Pick::Material(0)]);
+    assert!(selected.scene.tris.iter().any(|t| t.tag == Pick::Material(0).tag() && t.alpha >= 170));
+    s.execute("view.material", &json!({"name":"vacuum","visible":false})).unwrap();
+    let hidden = build_with(&s, Overlay::Materials, &[], &[Pick::Material(0)]);
+    assert!(!hidden.scene.tris.iter().any(|t| t.tag == Pick::Material(0).tag()));
+    assert_eq!(baseline.scene.tris.len(), hidden.scene.tris.len());
+    let before = hidden.scene.tris.len();
+    s.execute("view.material", &json!({"name":"ptfe-like","visible":false})).unwrap();
+    let hidden = build(&s, Overlay::Materials);
+    assert!(hidden.scene.tris.len() < before);
+    let material_colour = material_rgb(s.model(), 1);
+    assert!(
+        hidden
+            .scene
+            .tris
+            .iter()
+            .filter(|t| matches!(Pick::from_tag(t.tag), Some(Pick::Port(_))))
+            .all(|t| t.color != material_colour && t.alpha <= 25)
+    );
+    assert!(hidden.scene.tris.iter().any(|t| matches!(Pick::from_tag(t.tag), Some(Pick::Port(_)))));
+    assert!(hidden.scene.tris.iter().any(|t| t.tag == Pick::Guide.tag()));
+}
+
+#[test]
+fn dielectric_is_a_closed_block_and_geometry_visibility_hides_its_shell() {
+    let mut s = meshed("highpass", None);
+    let b = build(&s, Overlay::Materials);
+    let mut axes = [false; 3];
+    for t in b.scene.tris.iter().filter(|t| t.tag == Pick::Material(1).tag()) {
+        for (axis, found) in axes.iter_mut().enumerate() {
+            if t.p.iter().all(|p| (p[axis] - t.p[0][axis]).abs() < 1e-12) {
+                *found = true;
+            }
+        }
+    }
+    assert_eq!(axes, [true; 3], "material must have side faces as well as interface caps");
+    s.execute("view.visibility", &json!({"kind":"geometry","name":"guide","visible":false})).unwrap();
+    let b = build(&s, Overlay::Materials);
+    assert!(b.scene.tris.iter().all(|t| matches!(Pick::from_tag(t.tag), Some(Pick::Port(_)))));
+    assert!(s.model().mesh.is_some());
+    s.execute("view.visibility", &json!({"kind":"geometry","name":"guide","visible":true})).unwrap();
+    assert!(build(&s, Overlay::Materials).scene.tris.iter().any(|t| t.tag == Pick::Material(1).tag()));
+}

@@ -8,6 +8,12 @@ use serde_json::Value;
 use crate::picture::{Cached, PictureKey};
 use crate::ui_kit;
 
+/// A frequency/excitation readout cached independently of phase playback.
+pub struct PowerReadout {
+    pub key: (u64, u64, usize),
+    pub value: Result<Value, String>,
+}
+
 /// The field view's state.
 pub struct FieldState {
     pub view: FieldView,
@@ -27,6 +33,8 @@ pub struct FieldState {
     pub kept: Vec<KeptPlane>,
     /// Fields drawn in model context; false selects the optional flat plot.
     pub beside_3d: bool,
+    pub plot_zoom: f32,
+    pub power: Option<PowerReadout>,
     /// The fields at the project's probes for the view's solution, and what they were read for.
     pub probe_values: Option<(ProbeKey, Vec<Option<(emcraft_model::CVec3, emcraft_model::CVec3)>>)>,
     /// A probe being dragged on the picture: its index and where it is now (picture axes).
@@ -57,6 +65,8 @@ impl Default for FieldState {
             pinned: None,
             kept: Vec::new(),
             beside_3d: true,
+            plot_zoom: 1.0,
+            power: None,
             probe_values: None,
             dragging: None,
         }
@@ -199,6 +209,7 @@ pub struct KeptPlane {
 /// What the result views keep between frames.
 #[derive(Default)]
 pub struct ViewState {
+    pub pcb: PcbUi,
     /// The chart of the S-parameter, far-field or dispersion view (one at a time).
     pub chart: Cached<PictureKey<SharedChart>>,
     /// Where the chart last drawn put its plot area, and its curves (keys and plain labels,
@@ -231,6 +242,7 @@ pub struct ViewState {
 /// solve's, the last comparison with theory's.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Replies {
+    pub pcb: Option<Value>,
     pub port_modes: Option<Value>,
     pub compare: Option<Value>,
     /// What the import dialog's file holds (`geometry.import.inspect`).
@@ -242,6 +254,46 @@ pub struct Replies {
 pub struct ImportProbe {
     pub key: String,
     pub reply: Result<Value, String>,
+}
+
+/// PCB controls and an explicit pinned comparison, independent of the volume-field state.
+pub struct PcbCopperCache {
+    pub revision: u64,
+    pub rect: egui::Rect,
+    pub ground: String,
+    pub theme: crate::theme::ThemeKey,
+    pub shapes: Vec<egui::Shape>,
+}
+
+pub struct PcbUi {
+    pub(crate) illustration: crate::viewport::pcb_coupling::IllustrationUi,
+    pub copper: Option<PcbCopperCache>,
+    pub ground: String,
+    pub reference: String,
+    pub stop: String,
+    pub attempted: Option<(u64, String)>,
+    pub baseline: Option<Value>,
+}
+impl Default for PcbUi {
+    fn default() -> Self {
+        Self {
+            illustration: Default::default(),
+            copper: None,
+            ground: "GND".into(),
+            reference: "50".into(),
+            stop: "1".into(),
+            attempted: None,
+            baseline: None,
+        }
+    }
+}
+impl PcbUi {
+    /// All net selectors retain the same analysis controls and forward invalid text to the
+    /// engine for validation instead of silently falling back to another calculation.
+    pub(crate) fn params(&self, net: &str) -> Value {
+        let number = |s: &str| s.parse::<f64>().ok().filter(|v| v.is_finite()).map(Value::from).unwrap_or_else(|| Value::String(s.to_owned()));
+        serde_json::json!({"net":net,"ground":self.ground.trim(),"reference":number(&self.reference),"stop":number(&self.stop)})
+    }
 }
 
 #[cfg(test)]

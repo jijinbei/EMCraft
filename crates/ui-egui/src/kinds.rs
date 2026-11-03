@@ -42,6 +42,12 @@ pub fn kind_card(kind: Solver) -> KindCard {
             "How an antenna radiates: its far-field pattern",
             "An antenna or a scatterer in an open boundary: fields and far field (solve.radiation)",
         ),
+        Solver::Pcb => (
+            Glyph::Chart,
+            "PCB signal and return path",
+            "Signal quality and ground continuity on a routed net",
+            "PCB geometry screening and ideal transmission-line estimates (pcb.inspect)",
+        ),
         Solver::TimeDomain => (
             Glyph::KindPulse,
             "Time domain",
@@ -105,6 +111,7 @@ pub fn colours(kind: Solver, t: &Tokens) -> [egui::Color32; 2] {
         Solver::Eigenmodes => t.kind_eigenmodes,
         Solver::Radiation => t.kind_radiation,
         Solver::TimeDomain => t.kind_time_domain,
+        Solver::Pcb => [t.success, t.panel],
     }
 }
 
@@ -121,6 +128,7 @@ pub fn picture(p: &egui::Painter, r: Rect, kind: Solver, t: &Tokens) {
         Solver::Eigenmodes => pic.cavity(p),
         Solver::Radiation => pic.antenna(p),
         Solver::TimeDomain => pic.pulse(p),
+        Solver::Pcb => pic.pcb(p),
     }
 }
 
@@ -135,6 +143,17 @@ struct Pic {
 }
 
 impl Pic {
+    fn pcb(&self, p: &egui::Painter) {
+        for (a, b) in [(0.04, 0.46), (0.54, 0.96)] {
+            p.rect_filled(Rect::from_min_max(self.at(a, 0.12), self.at(b, 0.88)), 3., self.ink.gamma_multiply(0.2));
+        }
+        p.line_segment([self.at(0.12, 0.42), self.at(0.88, 0.42)], Stroke::new(3., self.edge));
+        p.line_segment([self.at(0.12, 0.65), self.at(0.88, 0.65)], Stroke::new(1.5, self.ink));
+        p.circle_stroke(self.at(0.5, 0.42), self.r.height() * 0.14, Stroke::new(2., self.ink));
+        for x in [0.12, 0.88] {
+            p.circle_filled(self.at(x, 0.42), 3., self.edge);
+        }
+    }
     fn at(&self, x: f32, y: f32) -> Pos2 {
         pos2(self.r.left() + x * self.r.width(), self.r.top() + y * self.r.height())
     }

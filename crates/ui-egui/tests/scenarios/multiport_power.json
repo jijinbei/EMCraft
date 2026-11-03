@@ -1,0 +1,122 @@
+[
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.sample",
+      "params": {
+        "name": "h-tee"
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "mesh.generate",
+      "params": {
+        "size": 6
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "solve.frequency",
+      "params": {
+        "frequencies": [
+          8.5,
+          9.0
+        ],
+        "order": 1
+      }
+    }
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "animate": false,
+      "theme": "midnight",
+      "language": "ja"
+    }
+  },
+  {
+    "click": "view:field"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "field.s_curves": [
+          "S11",
+          "S21",
+          "S31"
+        ],
+        "field.power.excitation": "1",
+        "field.power.outputs.2.port": "3",
+        "field.power.accounted": {
+          "min": 0.99999,
+          "max": 1.00001
+        }
+      }
+    }
+  },
+  {
+    "shot": "three-port-power-input-1"
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "view.driven",
+      "params": {
+        "port": "2"
+      }
+    }
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "field.s_curves": [
+          "S12",
+          "S22",
+          "S32"
+        ],
+        "field.power.excitation": "2",
+        "field.power.outputs.2.s": "S32"
+      }
+    }
+  },
+  {
+    "shot": "three-port-power-input-2"
+  },
+  {
+    "click": "view:sparameters"
+  },
+  {
+    "shot": "three-port-full-chart"
+  },
+  {
+    "click": "view:field"
+  },
+  {
+    "click": "choice:geometry_visibility:solid"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "hidden_geometry": [
+          "solid"
+        ]
+      }
+    }
+  },
+  {
+    "shot": "three-port-geometry-hidden"
+  }
+]

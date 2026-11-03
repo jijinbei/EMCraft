@@ -13,7 +13,8 @@ use super::{Built, Overlay, Pick, p3};
 type Face = ([u32; 3], u32, bool);
 
 /// The mesh's boundary faces and, for materials, the faces between materials.
-pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
+pub(super) fn from_mesh(session: &emcraft_engine::Session, overlay: Overlay, out: &mut Built, selected_material: Option<usize>) {
+    let m = session.model();
     let Some(mesh) = &m.mesh else { return };
     let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
     let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
@@ -30,13 +31,19 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
             Boundary::Pec | Boundary::Symmetry(_) => None,
         };
         let kind = surface.kind(i);
-        let (color, alpha) = match f.tag {
+        let (mut color, mut alpha) = match f.tag {
             // A periodic boundary is no wall either: tied to the opposite face.
             _ if port.is_none() && periodic.holds(mesh, &f.nodes) => (sc().periodic, plane_alpha(m, overlay, tet_mat(f.tet))),
             // A symmetry plane is no wall: its own colour in every overlay.
             Boundary::Symmetry(kind) => (symmetry_rgb(kind), plane_alpha(m, overlay, tet_mat(f.tet))),
             _ => wall_style(m, overlay, port.is_some(), tet_mat(f.tet), kind),
         };
+        // A port is still selectable when its filling is hidden, but must not retain the
+        // hidden dielectric's colour and look like a material cap across the empty bore.
+        if port.is_some() && m.materials.get(tet_mat(f.tet)).is_some_and(|mat| session.views().hidden_materials.contains(&mat.name)) {
+            color = sc().port_soft;
+            alpha = 25;
+        }
         let pick = port.map(Pick::Port).unwrap_or(if m.waveguide.is_some() { Pick::Guide } else { Pick::Solid });
         if alpha > 0 {
             out.scene.tagged(pick.tag(), |s| s.tri(a, b, c, color, alpha));
@@ -61,10 +68,8 @@ pub(super) fn from_mesh(m: &Model, overlay: Overlay, out: &mut Built) {
         };
         super::shell::draw(m, overlay, &inside, t.get(), out);
     }
-    // Dielectric bodies inside show through the see-through surfaces in every view but the
-    // field's.
-    if !matches!(overlay, Overlay::Field | Overlay::Mesh) {
-        material_interfaces(m, mesh, out);
+    if overlay != Overlay::Mesh || selected_material.is_some() {
+        material_regions(m, mesh, overlay, selected_material, out);
     }
     outline_edges(mesh, &faces, overlay, out);
 }
@@ -94,29 +99,39 @@ fn inside(m: &Model, mesh: &emcraft_model::Mesh, surface: &Surface, periodic: &P
     out
 }
 
-/// The faces between materials, in the denser one's colour (opaque under the see-through
-/// walls): faces two tetrahedra of different materials share.
-fn material_interfaces(m: &Model, mesh: &emcraft_model::Mesh, out: &mut Built) {
-    let tet_mat = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
-    let eps = |i: usize| m.materials.get(i).map_or(1.0, |x| x.eps_r.get());
-    let node = |n: u32| mesh.nodes.get(n as usize).map(|p| p3(*p));
-    let mut keyed: Vec<([u32; 3], u32)> = Vec::with_capacity(mesh.tets.len() * 4);
+/// The complete closed surface of each material region, including faces next to walls.
+/// Shared faces within one region are omitted; vacuum is shown only while selected.
+fn material_regions(m: &Model, mesh: &emcraft_model::Mesh, overlay: Overlay, selected: Option<usize>, out: &mut Built) {
+    let material = |t: u32| mesh.tet_material.get(t as usize).copied().unwrap_or(0) as usize;
+    let mut keyed = Vec::with_capacity(mesh.tets.len() * 4);
     for (t, tet) in mesh.tets.iter().enumerate() {
         for skip in 0..4 {
-            let mut f = [tet[(skip + 1) % 4], tet[(skip + 2) % 4], tet[(skip + 3) % 4]];
-            f.sort_unstable();
-            keyed.push((f, t as u32));
+            let mut face = [tet[(skip + 1) % 4], tet[(skip + 2) % 4], tet[(skip + 3) % 4]];
+            face.sort_unstable();
+            keyed.push((face, t as u32));
         }
     }
     keyed.sort_unstable();
-    for w in keyed.windows(2) {
-        let (ma, mb) = (tet_mat(w[0].1), tet_mat(w[1].1));
-        if w[0].0 != w[1].0 || ma == mb {
+    for group in keyed.chunk_by(|a, b| a.0 == b.0) {
+        if group.len() == 2 && material(group[0].1) == material(group[1].1) {
             continue;
         }
-        let denser = if eps(ma) >= eps(mb) { ma } else { mb };
-        if let (Some(a), Some(b), Some(c)) = (node(w[0].0[0]), node(w[0].0[1]), node(w[0].0[2])) {
-            out.scene.tri(a, b, c, material_rgb(m, denser), 235);
+        for &(face, tet) in group {
+            let mat = material(tet);
+            let Some(region) = m.materials.get(mat) else { continue };
+            if region.name == "vacuum" && selected != Some(mat) {
+                continue;
+            }
+            let [Some(a), Some(mut b), Some(mut c)] = face.map(|n| mesh.nodes.get(n as usize).copied()) else { continue };
+            let fourth = mesh.tets.get(tet as usize).and_then(|t| t.iter().find(|n| !face.contains(n))).and_then(|n| mesh.nodes.get(*n as usize));
+            if fourth.is_some_and(|p| (b - a).cross(c - a).dot(*p - a) > 0.0) {
+                std::mem::swap(&mut b, &mut c);
+            }
+            let alpha = match overlay {
+                Overlay::Field => 65,
+                _ => 220,
+            };
+            out.scene.tagged(Pick::Material(mat).tag(), |s| s.tri(p3(a), p3(b), p3(c), material_rgb(m, mat), alpha));
         }
     }
 }

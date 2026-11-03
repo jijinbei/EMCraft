@@ -172,3 +172,5 @@ mod tests {
         assert_eq!(read_bodies("one.stl", &stl, 1e-3).unwrap().len(), 1);
     }
 }
+
+pub mod pcb;

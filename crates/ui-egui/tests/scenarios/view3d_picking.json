@@ -7,7 +7,7 @@
   {"frames": 2},
   {"click": "view3d"},
   {"frames": 2},
-  {"expect": {"inspect": {"view3d.selected": "Section(1)"}, "handles": ["view3d:selected"]}},
+  {"expect": {"inspect": {"view3d.selected": "Guide"}, "handles": ["view3d:selected"]}},
   {"shot": "view3d-picked"},
   {"note": "The row of section 3 selects it in the view"},
   {"click": "row:Section 3: 15 mm, ptfe-like"},

@@ -115,6 +115,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             inner.ctx().data_mut(|d| d.insert_temp(egui::Id::new(STALE), stale));
             // The drawings fill the card; the results scroll when the window is too small for them.
             let body = |ui: &mut egui::Ui, st: &mut Parts, out: &mut Actions| match app.view {
+                View::Pcb => pcb::show(app, st, ui, out),
                 View::Home => project_home(app, &mut st.fields, ui, out),
                 View::Model => model3d(app, st, ui, out),
                 View::SParameters => show_chart::<SParameters>(app, st, ui, out),
@@ -460,3 +461,7 @@ mod tests {
         out.textures_delta.clear();
     }
 }
+
+mod pcb;
+pub(crate) mod pcb_coupling;
+pub(crate) use pcb::bar as pcb_bar;

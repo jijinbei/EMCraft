@@ -101,6 +101,13 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   International Microwave Symposium Digest, 1980, pp. 407–409 — microstrip's quasi-static
   effective permittivity and impedance, the benchmark for strips on a substrate
   (`emcraft-theory::microstrip`).
+- PCB routed-line estimates (`emcraft-theory::pcb`) reuse that zero-thickness, lossless
+  Hammerstad–Jensen fit and the uniform transmission-line ABCD matrices of D. M. Pozar,
+  *Microwave Engineering*, 4th ed., Wiley 2012, §4.4 (`coupled::line`, `product`, `s_params`).
+  Oracle `pcb-route-line` checks independently evaluated impedance, delay and S magnitudes.
+  Return-plane intersection/edge checks and the spacing/via-distance screens are explicitly
+  geometric heuristics, not Maxwell solutions or published SI compliance criteria; their
+  assumptions and limits are listed in [../pcb.md](../pcb.md).
 - S. B. Cohn, *Characteristic impedance of the shielded-strip transmission line*, IRE Trans. MTT
   2(2):52–57, 1954 — the zero-thickness stripline's exact impedance (`emcraft-theory::stripline`);
   its wide-strip limit K(k′)/K(k) → W/b + (2/π) ln 2 gives each edge's excess width b ln 2/π,
