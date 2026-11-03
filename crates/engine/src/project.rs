@@ -487,10 +487,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     let mut stored = crate::store::read(std::path::Path::new(path))?;
     let mut fresh = s.fresh();
     // The history replayed (each step checked as it runs), its meshing left to the file's mesh.
-    fresh.mesher_off = true;
-    let replayed = fresh.run_steps(&stored.history);
-    fresh.mesher_off = false;
-    replayed?;
+    fresh.replay(&stored.history, crate::session::Meshing::Recorded)?;
     let mesh = stored.mesh(fresh.model.materials.len()).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     fresh.model.mesh = mesh.map(std::sync::Arc::new);
     let (results, current, archived, dropped) = stored.results(&fresh.model);

@@ -292,12 +292,23 @@ pub struct Session {
     /// The run a solve command records in place of its own (`solve.refine` records the merged
     /// sweep as `solve.frequency`); taken when it succeeds.
     pub(crate) next_run: Option<Run>,
-    /// While a project file's history is replayed: the mesh commands are read and recorded,
-    /// not run (the file's own mesh is put on the model after).
-    pub(crate) mesher_off: bool,
+    /// Whether the mesh commands mesh, or (a project file's history replayed) are read and
+    /// recorded only, the file's own mesh put on the model after ([`Session::replay`]).
+    pub(crate) meshing: Meshing,
 }
 
 /// Reading the session.
+/// What the mesh commands do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Meshing {
+    /// They mesh.
+    #[default]
+    Run,
+    /// They read and record their parameters only (a project file's history replayed: its
+    /// mesh comes from the file).
+    Recorded,
+}
+
 /// The project as last saved or opened: its history, its runs, how its results are looked at
 /// and its kept solves' ids, pins and labels — what [`Session::is_dirty`] compares with.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -575,6 +586,15 @@ impl Session {
             .map(|(i, step)| Step::deserialize(step).map_err(|_| EngineError::Params(format!("step {}: no `command`", i + 1))))
             .collect::<Result<Vec<Step>>>()?;
         self.run_steps(&steps)
+    }
+
+    /// Runs `steps` with the mesh commands doing `meshing`, then meshing as it was (whether the
+    /// steps succeed or not).
+    pub(crate) fn replay(&mut self, steps: &[Step], meshing: Meshing) -> Result<Vec<Value>> {
+        let was = std::mem::replace(&mut self.meshing, meshing);
+        let done = self.run_steps(steps);
+        self.meshing = was;
+        done
     }
 
     /// Runs the steps of a script in order; stops at the first error. Returns each step's
