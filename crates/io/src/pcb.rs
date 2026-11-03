@@ -170,20 +170,31 @@ pub fn read(text: &str, override_layers: Option<Vec<Layer>>) -> Result<Board> {
             .ok_or_else(|| bad("stackup is missing: supply copper layers with z and eps_below"))?;
         let mut z = 0.0;
         let mut eps: Option<f64> = None;
+        let mut tan_d: Option<f64> = None;
         for n in stack.list().iter().filter(|n| n.head() == Some("layer")) {
             let name = n.text(1)?;
             if name.ends_with(".Cu") {
                 if let Some(previous) = layers.last_mut() {
                     previous.eps_below = eps.ok_or_else(|| bad("dielectric epsilon_r is missing"))?;
+                    previous.loss_below = tan_d.unwrap_or(0.0);
                 }
-                layers.push(Layer { name: name.into(), z, eps_below: 1.0 });
+                layers.push(Layer { name: name.into(), z, eps_below: 1.0, loss_below: 0.0 });
                 eps = None;
+                tan_d = None;
             } else if n.child("epsilon_r").is_some() || n.child("type").and_then(|n| n.text(1).ok()).is_some_and(|t| t == "prepreg" || t == "core") {
                 let er = n.num("epsilon_r")?;
                 if eps.is_some_and(|p| (p - er).abs() > 1e-9) {
                     return Err(bad("mixed dielectric plies: provide an explicitly homogenized stackup"));
                 }
                 eps = Some(er);
+                // The ply's loss tangent, where the stackup gives one (else lossless).
+                if n.child("loss_tangent").is_some() {
+                    let t = n.num("loss_tangent")?;
+                    if tan_d.is_some_and(|p| (p - t).abs() > 1e-12) {
+                        return Err(bad("mixed dielectric plies: provide an explicitly homogenized stackup"));
+                    }
+                    tan_d = Some(t);
+                }
                 z += Length::Millimetre.to_si(n.num("thickness")?);
             }
         }
@@ -408,6 +419,16 @@ mod tests {
         let b = read(&unfilled, None).unwrap();
         assert!(b.copper.is_empty());
         assert!(b.notes.iter().any(|n| n.contains("unfilled")));
+    }
+
+    /// A ply's loss tangent is the dielectric's below its upper copper; without one, lossless;
+    /// out of range, refused by the board's check.
+    #[test]
+    fn a_plys_loss_tangent_is_read() {
+        let b = read(&BOARD.replace("(epsilon_r 4.2)", "(epsilon_r 4.2) (loss_tangent 0.02)"), None).unwrap();
+        assert_eq!((b.layers[0].eps_below, b.layers[0].loss_below), (4.2, 0.02));
+        assert_eq!(read(BOARD, None).unwrap().layers[0].loss_below, 0.0);
+        assert!(read(&BOARD.replace("(epsilon_r 4.2)", "(epsilon_r 4.2) (loss_tangent -1)"), None).is_err());
     }
 
     #[test]

@@ -131,6 +131,9 @@ SI. Selection is a view change; importing/loading replaces the current model and
 }
 ```
 
+A layer may also give `loss_below`, the loss tangent of the dielectric below it (0 when left
+out; a KiCad stackup's `loss_tangent` sets it): the finite elements then solve that substrate
+lossy (the ideal line estimate stays lossless).
 Vias use `{net,at,layers:[from,to],diameter,drill}` (`drill` optional, the plated hole). Polygon interiors use the even-odd rule; multiple
 polygons on a reference layer are unioned for screening. Native input is checked before any
 model replacement; invalid numbers, layers, dimensions and excessive inputs return errors.
@@ -217,6 +220,9 @@ alumina against Hammerstad and Jensen: ε_eff within 0.2 %, the 4 mm line's phas
 ground planes against Cohn's even and odd impedances, within 0.22 % and 0.53 %.
 [`pcb-via-short`](../tests/oracle/pcb-via-short/README.md) — a line shorted by a via, S11's phase
 within 0.27° of the line and Goldfarb and Pucel's via inductance.
+[`pcb-lossy-microstrip-fem`](../tests/oracle/pcb-lossy-microstrip-fem/README.md) — the line on a
+substrate of tan δ = 0.02 (`loss_below`): its mode's dielectric attenuation within 0.6 % of the
+quasi-TEM line's and its |S21| within 1e-5 of the loss that gives over 4 mm.
 
 Ports at a trace's end instead of the box's sides: `pcb.port {"name":"1","segment":"s","end":"start"}`
 puts a 50 Ω lumped port there — a sheet the trace's width wide from its reference (the nearest

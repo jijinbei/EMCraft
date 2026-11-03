@@ -517,7 +517,10 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
         painter.text(
             pos2(r.center().x, (a + b) / 2.),
             egui::Align2::CENTER_CENTER,
-            format!("εr = {}   ·   {:.3} {}", pair[0].eps_below, h, app.session.display().length.symbol()),
+            match pair[0].loss_below {
+                0.0 => format!("εr = {}   ·   {:.3} {}", pair[0].eps_below, h, app.session.display().length.symbol()),
+                tan_d => format!("εr = {}   ·   tan δ = {tan_d}   ·   {:.3} {}", pair[0].eps_below, h, app.session.display().length.symbol()),
+            },
             FontId::proportional(12.),
             t.text,
         );
