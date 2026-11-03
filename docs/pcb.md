@@ -1,9 +1,25 @@
 # PCB route diagnostics
 
 On the start page or the project's Home, choose **PCB signal and return path**. This analysis
-uses routed board data and opens the PCB workspace directly; FEM meshing, modal-port setup
+uses routed board data and opens the PCB workspace; FEM meshing, modal-port setup
 and compute-device selection are not part of this workflow. Imported boards infer the PCB
 analysis automatically. `project.analysis {"kind":"pcb"}` declares it in scripts.
+
+The workflow bar above the workspace guides five stages: **Prepare board → Select route →
+Set conditions → Run diagnosis → Review results**. Use Next/Back or the available stages in
+this bar. First check the top-view layout and layer-stack section, then click a routed net,
+set the reference net/impedance/maximum frequency, and press **Inspect route**. Selecting a
+net alone does not calculate a result. Missing board/net selections disable later stages.
+Stage and net are saved with the project; a saved Results view recomputes its report on reopening.
+
+The layer-stack section shows copper depths, dielectric permittivity and actual thicknesses
+beside the 2D layout (drawn spacing is schematic). These dimensions enter the quasi-static
+model. Via/pad/bend fields and radiation remain outside this model: a 3D picture alone would
+not extend its physics. The supported route screening uses a top view plus stackup.
+
+`view.pcb {"stage":"net"}` navigates; `view.pcb {"stage":"net","net":"DATA"}` selects
+without calculation. Stages are `board`, `net`, `settings`, `inspect`, `results`; `pcb.inspect`
+performs the diagnosis and advances to Results. All entry points share these engine commands.
 
 Three templates are available from the start page, Home and File → Samples:
 
@@ -16,7 +32,7 @@ Three templates are available from the start page, Home and File → Samples:
 Each template has a top-view preview and parameters `l` (routed length), `w` (width), `h`
 (substrate thickness), `er` (relative permittivity) and `fmax` (maximum frequency). Defaults
 are 40 mm, 0.3 mm, 0.18 mm, 4.2 and 10 GHz. Edit them before opening; subsequent
-`project.variable` changes rebuild the PCB and refresh its report. For example:
+`project.variable` changes rebuild the PCB and return to board review before another diagnosis. For example:
 
 ```json
 {"command":"file.sample","params":{"name":"pcb-microstrip","values":{"l":60,"w":0.4,"fmax":5}}}
@@ -27,9 +43,9 @@ or a net in the browser, choose its reference net (default `GND`), reference imp
 maximum frequency, then **Inspect route**. The selected net is highlighted on a top view of
 the saved copper. Red spans and circles locate missing reference copper. **Keep for
 comparison** pins the current report's finding count while the board is changed or reimported.
-The split-ground and continuous-ground examples demonstrate the difference without an input
+The PCB templates demonstrate the difference without an input
 file. Saving an `.emcraft` project embeds the imported board; reopening does not need the
-original KiCad file. The selected net is saved too; its report is recomputed on reopening.
+original KiCad file. The selected net and last verified conditions are saved; a saved Results stage recomputes its report on reopening.
 
 ## What the report means
 

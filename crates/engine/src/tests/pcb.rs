@@ -74,3 +74,31 @@ fn pcb_templates_declare_their_workflow_and_rebuild_from_parameters() {
         assert_eq!(s.summary(), before);
     }
 }
+
+#[test]
+fn pcb_workflow_navigation_is_checked_saved_and_does_not_run_diagnosis() {
+    let mut s = Session::new();
+    s.execute("view.pcb", &json!({"stage":"board"})).unwrap();
+    assert!(s.execute("view.pcb", &json!({"stage":"net"})).is_err());
+    s.execute("pcb.sample", &json!({"split":false})).unwrap();
+    assert_eq!(crate::pcb::stage(&s), crate::pcb::Stage::Board);
+    assert!(s.execute("view.pcb", &json!({"stage":"settings"})).is_err());
+    assert!(s.execute("view.pcb", &json!({"net":"missing"})).is_err());
+    s.execute("view.pcb", &json!({"stage":"net","net":"DATA"})).unwrap();
+    s.execute("view.pcb", &json!({"stage":"settings"})).unwrap();
+    let file = scratch("pcb-stage.emcraft");
+    s.execute("file.save", &json!({"path":file})).unwrap();
+    let mut reopened = Session::new();
+    reopened.execute("file.open", &json!({"path":file})).unwrap();
+    assert_eq!(crate::pcb::stage(&reopened), crate::pcb::Stage::Settings);
+    assert_eq!(reopened.views().pcb_net.as_deref(), Some("DATA"));
+    reopened.execute("pcb.inspect", &json!({})).unwrap();
+    assert_eq!(crate::pcb::stage(&reopened), crate::pcb::Stage::Results);
+    reopened.execute("pcb.inspect", &json!({"reference":75,"stop":10})).unwrap();
+    reopened.execute("file.save", &json!({"path":file})).unwrap();
+    let mut again = Session::new();
+    again.execute("file.open", &json!({"path":file})).unwrap();
+    assert_eq!(again.views().pcb_conditions.as_ref().unwrap().reference, 75.);
+    assert_eq!(again.views().pcb_conditions.as_ref().unwrap().stop_hz, 1e10);
+    let _ = std::fs::remove_file(file);
+}

@@ -44,6 +44,15 @@ Screen the selected net's routed segments and filled reference copper. Report ex
 | `stop` | number | frequency | no | top frequency (default project band stop, otherwise 1 GHz) |
 | `points` | integer |  | no | harmonic sweep points, 4..128 (default 64) |
 
+## `view.pcb` — PCB workflow
+
+Navigate the PCB workflow (board, net, settings, inspect, results) or select a routed net without running a diagnosis. Stage and selection are saved with the project; invalid or premature selections are refused.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `stage` | string |  | no | PCB stage: board, net, settings, inspect or results |
+| `net` | string |  | no | routed net to select |
+
 ## `project.frequency` — Frequency band
 
 The job's frequency band: the default for meshing by wavelength (its top), for sweeps and for port-mode previews.

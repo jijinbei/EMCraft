@@ -82,7 +82,7 @@ microstrip cascade using the existing `microstrip` and `coupled` references. `en
 owns the import/load/inspect/sample commands, embedded history and replies, reusing the engine's
 TDR transform. `ui-egui::viewport::pcb` draws/picks routing and displays those replies. It does
 not send incomplete PCB data through the volume FEM solver. `model::units::Time` converts the
-SI delays at the UI boundary. The four PCB commands are shared by UI, control, scripts and CLI.
+SI delays at the UI boundary. The PCB data/diagnosis commands and `view.pcb` navigation are shared by UI, control, scripts and CLI.
 `Analysis::Pcb` declares or infers this workflow; three templates live in `emcraft-templates`
 beside the other project scripts. Their `pcb.sample` steps retain parameter expressions in
 history, while file imports embed checked board data. `render::pcb` shares even-odd copper
@@ -132,3 +132,5 @@ after the loaded model is known, while preserving a user's view change made duri
    a plane once and draw any component at any phase.
 
 UI machine choices use explicit lifecycle states: compute selection is Pending until Setup recommends a backend, Automatic afterwards, and Explicit after a user device command; opening a project does not reset it. View restoration and pointer gestures dispatch on result/interaction enum states through exhaustive matches. Input validation and geometric predicates remain guards rather than being cast into artificial UI states.
+
+PCB workflow navigation is `engine::pcb::Stage`, stored in `Views::pcb_stage`. `view.pcb` validates stage/net changes without calculating a report; `pcb.inspect` advances to Results. The UI reuses the existing workflow status marks for the PCB bar, and displays stage-specific controls plus a schematic layer-stack section.

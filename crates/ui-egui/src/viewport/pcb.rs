@@ -1,104 +1,283 @@
-//! PCB workspace: select real routed nets, highlight reference gaps, and keep geometry
-//! screening distinct from the explicitly idealized transmission-line result.
+//! Guided PCB diagnosis: board and stackup, route, conditions, diagnosis and results.
 use super::*;
 use crate::lang::{Raw, args};
 use crate::ui_kit;
-use emcraft_engine::pcb::near;
+use emcraft_engine::pcb::{Stage, near};
 use emcraft_model::units::{Time, Unit};
 use std::collections::BTreeSet;
 
-pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
-    ui.horizontal_wrapped(|ui| {
-        if ui.button(tr("Import PCB…")).clicked() {
-            out.push(Action::File(crate::files::FileAction::PickPart));
-        }
-        for (name, split) in [("Example: split ground", true), ("Example: continuous ground", false)] {
-            let r = ui.button(tr(name));
-            scenario::publish_target(Handle::Choice("pcb_example", if split { "split" } else { "continuous" }), r.rect);
-            if r.clicked() {
-                out.push(Action::run("pcb.sample", json!({"split":split})));
-            }
-        }
-    });
-    let Some(board) = app.session.model().pcb.as_ref() else {
-        ui_kit::caption(ui, "Import a PCB or open an example, then click a routed trace.");
-        return;
-    };
-    let state = &mut st.views.pcb;
-    let selected = app.session.views().pcb_net.as_deref().or_else(|| board.segments.first().map(|s| s.net.as_str())).unwrap_or("");
-    let mut net = selected.to_owned();
-    let nets: BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
-    ui.horizontal_wrapped(|ui| {
-        let r = egui::ComboBox::from_id_salt("pcb_net").selected_text(&net).show_ui(ui, |ui| {
-            for n in nets {
-                let r = ui.selectable_label(net == n, n);
-                scenario::publish_target(Handle::Choice("pcb_net", n), r.rect);
-                if r.clicked() {
-                    net = n.to_owned();
-                }
-            }
-        });
-        scenario::publish_target(Handle::Choice("pcb_control", "net"), r.response.rect);
-        for (name, field) in
-            [("Reference net", &mut state.ground), ("Reference impedance (Ω)", &mut state.reference), ("Maximum frequency", &mut state.stop)]
-        {
-            ui.small(tr(name));
-            let r = ui.add(egui::TextEdit::singleline(field).desired_width(65.0));
-            scenario::publish_target(Handle::Choice("pcb_control", name), r.rect);
-        }
-        ui.small(app.session.display().frequency.symbol());
-    });
-    let report = app.replies.pcb.as_ref().filter(|r| {
-        r["net"].as_str() == Some(net.as_str())
+fn go(out: &mut Actions, stage: Stage) {
+    out.push(Action::run("view.pcb", json!({"stage":stage.id()})));
+}
+fn report<'a>(app: &'a EmcraftApp, state: &crate::state::PcbUi, net: &str) -> Option<&'a Value> {
+    app.replies.pcb.as_ref().filter(|r| {
+        r["net"].as_str() == Some(net)
             && r["ground"].as_str() == Some(state.ground.trim())
             && r["reference"].as_f64() == state.reference.parse::<f64>().ok()
             && r["stop"].as_f64() == state.stop.parse::<f64>().ok()
             && r["frequency_unit"] == app.session.display().frequency.symbol()
-    });
-    let mut analyze = net != selected || app.replies.pcb.is_none();
-    if report.is_none() && app.replies.pcb.is_some() {
-        ui_kit::caption(ui, "Settings changed; inspect the route again.");
-    }
+    })
+}
+
+/// The PCB-specific workflow stays above the workspace, as the FEM workflow does.
+pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let current = emcraft_engine::pcb::stage(&app.session);
+    let loaded = app.session.model().pcb.is_some();
+    let net =
+        app.session.views().pcb_net.as_deref().filter(|n| app.session.model().pcb.as_ref().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)));
+    let ready = net.is_some_and(|n| report(app, &app.views.pcb, n).is_some());
+    egui::Panel::top("pcb_steps").show_separator_line(false).frame(egui::Frame::NONE.fill(Tokens::get().viewport_top).inner_margin(6)).show(
+        ui,
+        |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if ui.selectable_label(app.view == View::Home, tr("Home")).clicked() {
+                    out.push(Action::ShowView(View::Home));
+                }
+                for (i, stage) in Stage::ALL.into_iter().enumerate() {
+                    let enabled = match stage {
+                        Stage::Board => true,
+                        Stage::Net => loaded,
+                        Stage::Settings | Stage::Inspect => loaded && net.is_some(),
+                        Stage::Results => loaded && ready,
+                    };
+                    let done = match stage {
+                        Stage::Board => loaded,
+                        Stage::Net => net.is_some(),
+                        _ => ready,
+                    };
+                    let t = Tokens::get();
+                    let label = format!("{} {}", i + 1, shown(stage));
+                    let galley =
+                        ui.painter().layout_no_wrap(label.clone(), FontId::proportional(t.font_body), if enabled { t.text } else { t.text_dim });
+                    let (rect, _) = ui.allocate_exact_size(vec2(galley.size().x + 46., 30.), Sense::hover());
+                    let r = ui.interact(
+                        rect,
+                        egui::Id::new(("pcb_step", stage.id())),
+                        if enabled && !app.busy() { Sense::click() } else { Sense::hover() },
+                    );
+                    let active = app.view == View::Pcb && stage == current;
+                    ui.painter().rect(
+                        rect,
+                        12.,
+                        if active {
+                            t.accent_soft
+                        } else if r.hovered() {
+                            t.hover
+                        } else {
+                            Color32::TRANSPARENT
+                        },
+                        Stroke::new(1., if active { t.accent } else { t.border }),
+                        egui::StrokeKind::Inside,
+                    );
+                    crate::steps::mark(
+                        ui.painter(),
+                        pos2(rect.left() + 14., rect.center().y),
+                        if done {
+                            crate::steps::Status::Done
+                        } else if enabled {
+                            crate::steps::Status::Todo
+                        } else {
+                            crate::steps::Status::Waiting
+                        },
+                        &t,
+                    );
+                    ui.painter().galley(pos2(rect.left() + 28., rect.center().y - galley.size().y / 2.), galley, t.text);
+                    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label.clone()));
+                    scenario::publish_target(Handle::Choice("pcb_step", stage.id()), rect);
+                    if r.clicked() {
+                        go(out, stage);
+                    }
+                }
+            });
+        },
+    );
+}
+
+pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
+    let stage = emcraft_engine::pcb::stage(&app.session);
+    let state = &mut st.views.pcb;
+    let board = app.session.model().pcb.as_ref();
+    let selected = app.session.views().pcb_net.as_deref().filter(|n| board.is_some_and(|b| b.segments.iter().any(|s| s.net == *n))).unwrap_or("");
+    let result = report(app, state, selected);
+    ui.heading(shown(stage));
+    ui_kit::caption(
+        ui,
+        match stage {
+            Stage::Board => "1. Import a PCB or open a template, then check its copper layers and substrate thickness.",
+            Stage::Net => {
+                "2. Click the trace in the board view, or choose its net from the list. Orange is the selected route; green is reference copper."
+            }
+            Stage::Settings => "3. Set the reference net, source/load impedance and maximum frequency. The stackup below comes from the board.",
+            Stage::Inspect => "4. Review the selected route and conditions, then run the diagnosis.",
+            Stage::Results => "5. Red markers locate missing reference copper. Review the findings before reading the ideal line estimates.",
+        },
+    );
     ui.horizontal_wrapped(|ui| {
-        let r = ui.button(tr("Inspect route"));
+        if let Some(previous) = match stage {
+            Stage::Board => None,
+            Stage::Net => Some(Stage::Board),
+            Stage::Settings => Some(Stage::Net),
+            Stage::Inspect => Some(Stage::Settings),
+            Stage::Results => Some(Stage::Inspect),
+        } {
+            let r = ui.button(tr("Back"));
+            scenario::publish_target(Handle::Choice("pcb_control", "back"), r.rect);
+            if r.clicked() {
+                go(out, previous);
+            }
+        }
+        let next = match stage {
+            Stage::Board if board.is_some() => Some(Stage::Net),
+            Stage::Net if !selected.is_empty() => Some(Stage::Settings),
+            Stage::Settings => Some(Stage::Inspect),
+            _ => None,
+        };
+        if let Some(next) = next {
+            let r = ui.button(trf("Next: {step}", args!(step = shown(next))));
+            scenario::publish_target(Handle::Choice("pcb_control", "next"), r.rect);
+            if r.clicked() {
+                go(out, next);
+            }
+        }
+    });
+    if stage == Stage::Board {
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(tr("Import PCB…")).clicked() {
+                out.push(Action::File(crate::files::FileAction::PickPart));
+            }
+            ui.menu_button(tr("Templates"), |ui| {
+                for template in emcraft_engine::templates::made_for(crate::steps::Solver::Pcb) {
+                    if ui.button(crate::lang::sample_label(template.name)).clicked() {
+                        out.push(Action::Template(Some(template.name.into())));
+                        ui.close();
+                    }
+                }
+            });
+        });
+    }
+    let Some(board) = board else {
+        ui_kit::caption(ui, "Import a PCB or open an example, then click a routed trace.");
+        return;
+    };
+    if stage == Stage::Net {
+        let nets: BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
+        let r = egui::ComboBox::from_id_salt("pcb_net")
+            .selected_text(if selected.is_empty() { tr("Choose a routed net") } else { selected })
+            .show_ui(ui, |ui| {
+                for net in nets {
+                    let r = ui.selectable_label(net == selected, net);
+                    scenario::publish_target(Handle::Choice("pcb_net", net), r.rect);
+                    if r.clicked() {
+                        out.push(Action::run("view.pcb", json!({"net":net,"stage":"net"})));
+                    }
+                }
+            });
+        scenario::publish_target(Handle::Choice("pcb_control", "net"), r.response.rect);
+    }
+    if stage == Stage::Settings {
+        for (label, field) in
+            [("Reference net", &mut state.ground), ("Reference impedance (Ω)", &mut state.reference), ("Maximum frequency", &mut state.stop)]
+        {
+            ui.horizontal(|ui| {
+                ui.label(tr(label));
+                let r = ui.add(egui::TextEdit::singleline(field).desired_width(110.));
+                scenario::publish_target(Handle::Choice("pcb_control", label), r.rect);
+            });
+        }
+        ui.small(app.session.display().frequency.symbol());
+    }
+    if stage == Stage::Inspect {
+        ui.label(format!(
+            "{} → {}  |  {} Ω  |  {} {}",
+            selected,
+            state.ground,
+            state.reference,
+            state.stop,
+            app.session.display().frequency.symbol()
+        ));
+        let r = ui.add_enabled(!app.busy(), egui::Button::new(tr("Inspect route")));
         scenario::publish_target(Handle::Choice("pcb_control", "inspect"), r.rect);
         if r.clicked() {
-            state.attempted = None;
-            analyze = true;
-        }
-        let keep = ui.button(tr("Keep for comparison"));
-        scenario::publish_target(Handle::Choice("pcb_control", "keep"), keep.rect);
-        if report.is_some() && keep.clicked() {
-            state.baseline = report.cloned();
-        }
-    });
-    let ground = state.ground.trim().to_owned();
-    let reference = state.reference.parse::<f64>();
-    let stop = state.stop.parse::<f64>();
-    let key = (app.revision, net.clone());
-    if analyze && state.attempted.as_ref() != Some(&key) {
-        state.attempted = Some(key);
-        match (reference, stop) {
-            (Ok(reference), Ok(stop)) if reference.is_finite() && stop.is_finite() => out.push(Action::run("pcb.inspect", state.params(&net))),
-            _ => ui_kit::caption(ui, "Enter finite numeric impedance and frequency values."),
+            out.push(Action::run("pcb.inspect", state.params(selected)));
         }
     }
-    // An explicit retry after an error is allowed without generating a request every frame.
-    if ui.ctx().input(|i| i.key_pressed(egui::Key::Enter)) {
-        state.attempted = None;
+    if stage == Stage::Results {
+        if let Some(result) = result {
+            let r = ui.button(tr("Keep for comparison"));
+            scenario::publish_target(Handle::Choice("pcb_control", "keep"), r.rect);
+            if r.clicked() {
+                state.baseline = Some(result.clone());
+            }
+        } else if app.replies.pcb.is_some() {
+            ui_kit::caption(ui, "Settings changed; inspect the route again.");
+        }
+        if app.replies.pcb.is_none() && state.attempted.as_ref() != Some(&(app.revision, selected.to_owned())) {
+            state.attempted = Some((app.revision, selected.to_owned()));
+            out.push(Action::run("pcb.inspect", state.params(selected)));
+        }
     }
-    ui_kit::caption(ui, "Copper support is a geometry check, not a solved return-current map or an SI/EMC pass verdict.");
-    ui_kit::caption(ui, "Top view: selected net and projected reference copper; section rows identify the reference layers.");
-    let wide = ui.available_width() > 900.0;
-    let map_width = ui.available_width() * if wide { 0.52 } else { 1.0 };
+    if let Some(failure) = app.failure.as_ref().filter(|f| f.command == "pcb.inspect" || f.command == "view.pcb") {
+        ui.colored_label(Tokens::get().error, &failure.error);
+    }
+    let wide = ui.available_width() > 900.;
+    let map_width = ui.available_width() * if wide { 0.52 } else { 1. };
     let layout = if wide { egui::Layout::left_to_right(egui::Align::Min) } else { egui::Layout::top_down(egui::Align::Min) };
     ui.with_layout(layout, |ui| {
-        ui.allocate_ui_with_layout(vec2(map_width, 310.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-            draw_board(app, state, ui, out, &net, &ground, report);
+        ui.allocate_ui_with_layout(vec2(map_width, 310.), egui::Layout::top_down(egui::Align::Min), |ui| {
+            draw_board(app, state, ui, out, selected, &state.ground.clone(), result)
         });
-        ui.vertical(|ui| draw_report(app, state, ui, report));
+        ui.vertical(|ui| match stage {
+            Stage::Results => draw_report(app, state, ui, result),
+            _ => stackup(app, ui, selected, &state.ground),
+        });
     });
 }
+
+fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
+    let Some(board) = app.session.model().pcb.as_ref() else {
+        return;
+    };
+    ui.heading(tr("Layer stackup (section)"));
+    ui_kit::caption(ui, "The layout is a top view. Copper depth and dielectric thickness are included in the line estimate.");
+    let t = Tokens::get();
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width().min(540.), 180.), Sense::hover());
+    scenario::publish_target(Handle::Choice("pcb_control", "stackup"), r);
+    let painter = ui.painter_at(r);
+    painter.rect_filled(r, 4., t.panel);
+    let first = board.layers.first().map_or(0., |l| l.z);
+    let last = board.layers.last().map_or(1., |l| l.z);
+    let y = |z: f64| r.top() + 28. + ((z - first) / (last - first).max(1e-12)) as f32 * (r.height() - 62.);
+    for pair in board.layers.windows(2) {
+        let a = y(pair[0].z);
+        let b = y(pair[1].z);
+        painter.rect_filled(Rect::from_min_max(pos2(r.left() + 12., a), pos2(r.right() - 12., b)), 0., t.accent_soft);
+        let h = app.session.display().length.from_si(pair[1].z - pair[0].z);
+        painter.text(
+            pos2(r.center().x, (a + b) / 2.),
+            egui::Align2::CENTER_CENTER,
+            format!("εr = {}   ·   {:.3} {}", pair[0].eps_below, h, app.session.display().length.symbol()),
+            FontId::proportional(12.),
+            t.text,
+        );
+    }
+    for layer in &board.layers {
+        let chosen = board.segments.iter().any(|s| s.net == selected && s.layer == layer.name);
+        let reference = board.copper.iter().any(|c| c.net == ground && c.layer == layer.name);
+        let colour = if chosen {
+            t.warning
+        } else if reference {
+            t.success
+        } else {
+            t.text_dim
+        };
+        let at = y(layer.z);
+        painter.line_segment([pos2(r.left() + 12., at), pos2(r.right() - 12., at)], Stroke::new(3., colour));
+        painter.text(pos2(r.left() + 14., at - 7.), egui::Align2::LEFT_BOTTOM, &layer.name, FontId::proportional(12.), t.text);
+    }
+    ui_kit::caption(ui, "Depth spacing is schematic; labels show actual dimensions.");
+    ui_kit::caption(ui, "This is geometry screening and a quasi-static line estimate. 3D fields at vias, pads, bends and radiation are not solved.");
+}
+
 fn draw_board(
     app: &EmcraftApp,
     state: &mut crate::state::PcbUi,
@@ -202,7 +381,7 @@ fn draw_board(
         && let Some((_, n)) = nearest
     {
         state.attempted = None;
-        out.push(Action::run("pcb.inspect", state.params(n)));
+        out.push(Action::run("view.pcb", json!({"net":n,"stage":"net"})));
     }
 }
 fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, report: Option<&Value>) {

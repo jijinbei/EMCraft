@@ -221,6 +221,10 @@ impl Probe {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Views {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcb_conditions: Option<crate::pcb::Conditions>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcb_stage: Option<crate::pcb::Stage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcb_net: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub hidden_materials: BTreeSet<String>,
@@ -243,7 +247,9 @@ impl Views {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.pcb_net.is_none()
+        self.pcb_conditions.is_none()
+            && self.pcb_stage.is_none()
+            && self.pcb_net.is_none()
             && self.charts.is_empty()
             && self.probes.is_empty()
             && self.driven.is_none()
@@ -289,7 +295,20 @@ impl Views {
         if self.pcb_net.as_ref().is_some_and(|s| s.is_empty() || s.chars().count() > 128) {
             return Err(EngineError::failed("invalid PCB selection"));
         }
+        if self.pcb_conditions.as_ref().is_some_and(|c| {
+            c.ground.trim().is_empty()
+                || c.ground.chars().count() > 128
+                || !c.reference.is_finite()
+                || !(0.1..=10000.).contains(&c.reference)
+                || !c.stop_hz.is_finite()
+                || c.stop_hz <= 0.
+                || c.stop_hz > 1e12
+        }) {
+            return Err(EngineError::failed("invalid PCB inspection conditions"));
+        }
         Ok(Views {
+            pcb_conditions: self.pcb_conditions,
+            pcb_stage: self.pcb_stage,
             pcb_net: self.pcb_net,
             charts,
             probes: self.probes,

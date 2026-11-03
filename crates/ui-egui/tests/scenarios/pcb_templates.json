@@ -70,6 +70,31 @@
       "busy": false,
       "view": "pcb",
       "inspect": {
+        "pcb.stage": "board"
+      }
+    },
+    "timeout": 20
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_segment:signal:0"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:inspect"
+  },
+  {
+    "until": {
+      "busy": false,
+      "view": "pcb",
+      "inspect": {
         "model.analysis.kind": "pcb",
         "pcb.report.model_available": true,
         "pcb.report.stop": 10.0,
@@ -93,6 +118,31 @@
         "value": 60
       }
     }
+  },
+  {
+    "until": {
+      "busy": false,
+      "view": "pcb",
+      "inspect": {
+        "pcb.stage": "board"
+      }
+    },
+    "timeout": 20
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_segment:signal:0"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:inspect"
   },
   {
     "frames": 3
@@ -145,6 +195,31 @@
   },
   {
     "click": "confirm:discard"
+  },
+  {
+    "until": {
+      "busy": false,
+      "view": "pcb",
+      "inspect": {
+        "pcb.stage": "board"
+      }
+    },
+    "timeout": 20
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_segment:signal:0"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:inspect"
   },
   {
     "until": {

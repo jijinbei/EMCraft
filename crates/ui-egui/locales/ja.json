@@ -726,17 +726,12 @@
     "PCB: {name}": "PCB：{name}",
     "Net: {name}": "ネット：{name}",
     "Import PCB…": "PCBを読み込む…",
-    "Example: split ground": "サンプル：GND分断",
-    "Example: continuous ground": "サンプル：連続GND",
     "Import a PCB or open an example, then click a routed trace.": "PCBを読み込むかサンプルを開き、配線をクリックしてください。",
     "Reference net": "参照ネット",
     "Reference impedance (Ω)": "基準インピーダンス（Ω）",
     "Maximum frequency": "上限周波数",
     "Inspect route": "配線を診断",
     "Keep for comparison": "比較用に保持",
-    "Enter finite numeric impedance and frequency values.": "インピーダンスと周波数に有限の数値を入力してください。",
-    "Copper support is a geometry check, not a solved return-current map or an SI/EMC pass verdict.": "銅箔の支持は形状からのチェックです。帰路電流分布の数値解やSI・EMCの合格判定ではありません。",
-    "Top view: selected net and projected reference copper; section rows identify the reference layers.": "上面図：選択ネットと参照銅箔の投影。参照層は区間ごとの表示で確認できます。",
     "Selected net: {net}; routed length {length} {unit}": "選択ネット：{net}、配線長 {length} {unit}",
     "Return-path geometry": "帰路の形状チェック",
     "No issue found by the implemented geometry checks; this is not a compliance pass.": "実装済みの形状チェックで問題は見つかりませんでした。規格適合を保証する判定ではありません。",
@@ -762,7 +757,23 @@
     "PCB geometry screening and ideal transmission-line estimates (pcb.inspect)": "PCBの形状診断と理想伝送線路による近似（pcb.inspect）",
     "Inspect a routed net's signal quality and return reference. Start with a PCB template or import a KiCad board.": "配線ネットの信号品質と帰路を診断します。PCBテンプレートを開くか、KiCad基板を読み込んでください。",
     "Open PCB workspace": "PCB診断画面を開く",
-    "PCB templates": "PCBテンプレート"
+    "PCB templates": "PCBテンプレート",
+    "Prepare board": "基板を用意",
+    "Select route": "配線を選択",
+    "Set conditions": "条件を設定",
+    "Run diagnosis": "診断を実行",
+    "Review results": "結果を確認",
+    "Choose a routed net": "配線ネットを選択",
+    "1. Import a PCB or open a template, then check its copper layers and substrate thickness.": "1. PCBを読み込むかテンプレートを開き、銅箔の層と基板厚を確認して「次へ」を押してください。",
+    "2. Click the trace in the board view, or choose its net from the list. Orange is the selected route; green is reference copper.": "2. 基板図の配線をクリックするか、リストからネットを選びます。オレンジ色が選択配線、緑色が参照銅箔です。",
+    "3. Set the reference net, source/load impedance and maximum frequency. The stackup below comes from the board.": "3. 参照ネット・入出力の基準インピーダンス・上限周波数を設定します。積層構造は基板データの値です。",
+    "4. Review the selected route and conditions, then run the diagnosis.": "4. 選んだ配線と条件を確認し、「配線を診断」を押してください。",
+    "5. Red markers locate missing reference copper. Review the findings before reading the ideal line estimates.": "5. 赤い印が参照銅箔の欠損位置です。指摘事項を確認してから伝送線路の近似値を読み取ってください。",
+    "Layer stackup (section)": "積層構造（断面）",
+    "The layout is a top view. Copper depth and dielectric thickness are included in the line estimate.": "左は上面から見た配線図です。伝送線路の近似には、銅箔の層位置と誘電体の厚さも使います。",
+    "Depth spacing is schematic; labels show actual dimensions.": "断面の間隔は模式表示です。寸法値が実際の厚さを示します。",
+    "This is geometry screening and a quasi-static line estimate. 3D fields at vias, pads, bends and radiation are not solved.": "現在は形状診断と準静的な伝送線路近似です。ビア・パッド・曲がり・放射の3次元電磁界は解いていません。",
+    "Back": "戻る"
   },
   "commands": {
     "project.frequency": {
@@ -1741,6 +1752,14 @@
         "reference": "入力・終端の基準インピーダンス（Ω、既定50）",
         "stop": "上限周波数（省略時はプロジェクトの帯域上限、帯域がなければ1 GHz）",
         "points": "調和周波数掃引の点数（4～128、既定64）"
+      }
+    },
+    "view.pcb": {
+      "label": "PCBの解析手順",
+      "doc": "PCBの段階（基板・配線・条件・診断・結果）を切り替え、または配線ネットを選択します。診断計算は行いません。段階と選択をプロジェクトに保存し、不正な選択や基板のない段階への移動は拒否します。",
+      "params": {
+        "stage": "board、net、settings、inspect、results",
+        "net": "選択する配線ネット"
       }
     }
   },

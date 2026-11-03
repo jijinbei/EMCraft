@@ -463,3 +463,4 @@ mod tests {
 }
 
 mod pcb;
+pub(crate) use pcb::bar as pcb_bar;

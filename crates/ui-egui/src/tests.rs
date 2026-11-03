@@ -720,3 +720,25 @@ fn scenario_pcb_route() {
 fn scenario_pcb_templates() {
     scenario("pcb_templates");
 }
+
+#[test]
+fn scenario_pcb_workflow() {
+    scenario("pcb_workflow");
+}
+
+#[test]
+fn pcb_saved_results_restore_conditions_in_a_new_window() {
+    let file = std::env::temp_dir().join(format!("emcraft-pcb-conditions-{}.emcraft", std::process::id()));
+    let mut first = Harness::new();
+    assert_eq!(first.call("engine.execute", json!({"command":"pcb.sample","params":{"split":false}}))["ok"], true);
+    assert_eq!(first.call("engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA","reference":75,"stop":5}}))["ok"], true);
+    assert_eq!(first.call("engine.execute", json!({"command":"file.save","params":{"path":file}}))["ok"], true);
+    let mut next = Harness::new();
+    assert_eq!(next.call("engine.execute", json!({"command":"file.open","params":{"path":file}}))["ok"], true);
+    next.frames(3);
+    let r = next.app.replies.pcb.as_ref().unwrap();
+    assert_eq!(r["reference"], 75.);
+    assert_eq!(r["stop"], 5.);
+    assert_eq!(emcraft_engine::pcb::stage(&next.app.session), emcraft_engine::pcb::Stage::Results);
+    let _ = std::fs::remove_file(file);
+}

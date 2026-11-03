@@ -1,0 +1,261 @@
+[
+  {
+    "call": "ui.set",
+    "params": {
+      "language": "ja",
+      "theme": "midnight"
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "project.analysis",
+      "params": {
+        "kind": "pcb"
+      }
+    }
+  },
+  {
+    "call": "ui.set",
+    "params": {
+      "view": "pcb"
+    }
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "board",
+        "pcb.report": null
+      },
+      "handles": [
+        "choice:pcb_step:board",
+        "choice:pcb_step:net",
+        "choice:pcb_step:settings",
+        "choice:pcb_step:inspect",
+        "choice:pcb_step:results"
+      ]
+    }
+  },
+  {
+    "click": "choice:pcb_step:net"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "board"
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "pcb.sample",
+      "params": {
+        "split": false
+      }
+    }
+  },
+  {
+    "frames": 3
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "board",
+        "pcb.report": null
+      },
+      "handles": [
+        "choice:pcb_control:stackup"
+      ]
+    }
+  },
+  {
+    "shot": "pcb-step-1-board"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "net",
+        "pcb.selected_net": null,
+        "pcb.report": null
+      }
+    }
+  },
+  {
+    "click": "choice:pcb_segment:signal:0"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "net",
+        "pcb.selected_net": "DATA",
+        "pcb.report": null
+      }
+    }
+  },
+  {
+    "shot": "pcb-step-2-route"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "settings"
+      },
+      "handles": [
+        "choice:pcb_control:Reference net",
+        "choice:pcb_control:Reference impedance (Ω)",
+        "choice:pcb_control:Maximum frequency"
+      ]
+    }
+  },
+  {
+    "click": "choice:pcb_control:Maximum frequency"
+  },
+  {
+    "key": "A",
+    "cmd": true
+  },
+  {
+    "text": "10"
+  },
+  {
+    "shot": "pcb-step-3-conditions"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "inspect",
+        "pcb.report": null
+      }
+    }
+  },
+  {
+    "shot": "pcb-step-4-run"
+  },
+  {
+    "click": "choice:pcb_control:inspect"
+  },
+  {
+    "frames": 3
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "results",
+        "pcb.report.net": "DATA",
+        "pcb.report.stop": 10.0,
+        "pcb.report.model_available": true
+      }
+    }
+  },
+  {
+    "shot": "pcb-step-5-results"
+  },
+  {
+    "click": "choice:pcb_step:settings"
+  },
+  {
+    "click": "choice:pcb_control:Reference impedance (Ω)"
+  },
+  {
+    "key": "A",
+    "cmd": true
+  },
+  {
+    "text": "bad"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:inspect"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "inspect"
+      },
+      "status_error": true
+    }
+  },
+  {
+    "click": "choice:pcb_control:back"
+  },
+  {
+    "click": "choice:pcb_control:Reference impedance (Ω)"
+  },
+  {
+    "key": "A",
+    "cmd": true
+  },
+  {
+    "text": "75"
+  },
+  {
+    "click": "choice:pcb_control:next"
+  },
+  {
+    "click": "choice:pcb_control:inspect"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "results",
+        "pcb.report.reference": 75.0
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.save",
+      "params": {
+        "path": "$TMP/workflow.emcraft"
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.new"
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.open",
+      "params": {
+        "path": "$TMP/workflow.emcraft"
+      }
+    }
+  },
+  {
+    "frames": 3
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.stage": "results",
+        "pcb.report.model_available": true
+      }
+    }
+  }
+]

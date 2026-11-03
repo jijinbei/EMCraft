@@ -265,7 +265,7 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
         let mut rows = vec![row("PCB: {name}", args!(name = board.name), Glyph::Box, Act::Show(View::Pcb))];
         let nets: std::collections::BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
         for net in nets.into_iter().take(128) {
-            rows.push(row("Net: {name}", args!(name = net), Glyph::Chart, Act::Run("pcb.inspect", app.views.pcb.params(net))));
+            rows.push(row("Net: {name}", args!(name = net), Glyph::Chart, Act::Run("view.pcb", serde_json::json!({"net":net,"stage":"net"}))));
         }
         return vec![("PCB", rows)];
     }

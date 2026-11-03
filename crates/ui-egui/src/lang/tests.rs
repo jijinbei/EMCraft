@@ -443,11 +443,18 @@ fn tour() -> Record {
     // PCB diagnostics use the same command path as the workspace, in both valid and blocked cases.
     for split in [true, false] {
         call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":split}}));
+        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":"net"}}));
+        h.frames(2);
+        call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
         h.frames(3);
     }
     call(&mut h, "ui.set", json!({"view":"home"}));
     h.frames(2);
     call(&mut h, "ui.set", json!({"view":"pcb"}));
+    for stage in emcraft_engine::pcb::Stage::ALL {
+        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":stage.id()}}));
+        h.frames(2);
+    }
     h.app.views.pcb.baseline = h.app.replies.pcb.clone();
     if let Some(r) = &mut h.app.replies.pcb {
         r["findings"] = json!(
@@ -472,6 +479,7 @@ fn tour() -> Record {
     board.segments.retain(|s| s.net == "DATA");
     board.map_lengths(|v| h.app.session.display().length.from_si(v));
     call(&mut h, "engine.execute", json!({"command":"pcb.load","params":{"data":board}}));
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
     h.frames(3);
     h.app.views.pcb.reference = "invalid".into();
     h.frames(2);

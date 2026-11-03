@@ -686,7 +686,9 @@ impl EmcraftApp {
     /// step's panel or the docked dialog, the viewport, and what floats over them.
     fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, out: &mut Actions) {
         self.lend(|a| &mut a.search, |app, search| ribbon::ribbon(app, search, ui, out));
-        if self.view != View::Pcb && self.session.model().analysis() != steps::Solver::Pcb {
+        if self.view == View::Pcb || self.session.model().analysis() == steps::Solver::Pcb {
+            viewport::pcb_bar(self, ui, out);
+        } else {
             steps::bar(self, ui, out);
         }
         messages::area(self, ui, out);

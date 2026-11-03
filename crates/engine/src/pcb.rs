@@ -6,6 +6,60 @@ use emcraft_model::units::Length;
 pub use emcraft_theory::pcb::near;
 use serde_json::{Value, json};
 use std::io::Read;
+
+emcraft_macros::named_enum! {
+    /// PCB workspace stages, saved with the project by `view.pcb`.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Stage {
+        Board = "board" => "Prepare board",
+        Net = "net" => "Select route",
+        Settings = "settings" => "Set conditions",
+        Inspect = "inspect" => "Run diagnosis",
+        Results = "results" => "Review results",
+    }
+}
+emcraft_macros::named_serde!(Stage);
+
+/// Last verified PCB conditions; frequency is SI hertz, impedance is ohms.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Conditions {
+    pub ground: String,
+    pub reference: f64,
+    pub stop_hz: f64,
+}
+
+/// The current PCB stage; a newly loaded board begins with reviewing its stackup.
+/// ```
+/// use emcraft_engine::{Session,pcb::{stage,Stage}};
+/// assert_eq!(stage(&Session::new()),Stage::Board);
+/// ```
+pub fn stage(s: &Session) -> Stage {
+    match s.model.pcb {
+        Some(_) => s.views.pcb_stage.unwrap_or(Stage::Board),
+        None => Stage::Board,
+    }
+}
+
+/// Navigate the PCB workflow or select a routed net without calculating a result.
+pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
+    let stage = p.pick::<Stage>("stage").optional()?.unwrap_or_else(|| stage(s));
+    let net = p.string("net").optional()?;
+    let board = s.model.pcb.as_ref();
+    if stage != Stage::Board && board.is_none() {
+        return Err(failed("load a PCB before continuing"));
+    }
+    if let Some(net) = net {
+        if !board.is_some_and(|b| b.segments.iter().any(|seg| seg.net == net)) {
+            return Err(p.error("net", "select a routed net in this board"));
+        }
+        s.views.pcb_net = Some(net.to_owned());
+    }
+    if matches!(stage, Stage::Settings | Stage::Inspect | Stage::Results) && s.views.pcb_net.is_none() {
+        return Err(failed("select a routed net before continuing"));
+    }
+    s.views.pcb_stage = Some(stage);
+    Ok(json!({"stage":stage.id(),"net":s.views.pcb_net}))
+}
 fn failed(s: impl ToString) -> EngineError {
     EngineError::failed(s.to_string())
 }
@@ -14,6 +68,8 @@ fn install(s: &mut Session, board: Board) -> Result<Value> {
     let reply = json!({"board":board.name,"segments":board.segments.len(),"layers":board.layers.len(),"notes":board.notes});
     s.model = emcraft_model::Model { pcb: Some(board), ..Default::default() };
     s.views.pcb_net = None;
+    s.views.pcb_stage = None;
+    s.views.pcb_conditions = None;
     Ok(reply)
 }
 /// Native board JSON uses the session's display length unit, including layer z coordinates.
@@ -97,7 +153,7 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
         .or_else(|| s.views.pcb_net.as_deref().filter(|n| board.segments.iter().any(|seg| seg.net == *n)))
         .or_else(|| board.segments.iter().find(|seg| seg.net != ground).map(|seg| seg.net.as_str()))
         .ok_or_else(|| failed("load a PCB and select a signal net"))?;
-    if net.chars().count() > 128 || ground.chars().count() > 128 {
+    if net.chars().count() > 128 || ground.trim().is_empty() || ground.chars().count() > 128 {
         return Err(failed("net names must be at most 128 characters"));
     }
     let reference = p.number("reference").or(50.0)?;
@@ -138,5 +194,7 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
         reply["si"] = Value::Null;
     }
     s.views.pcb_net = Some(net.to_owned());
+    s.views.pcb_stage = Some(Stage::Results);
+    s.views.pcb_conditions = Some(Conditions { ground: ground.to_owned(), reference, stop_hz: stop });
     Ok(reply)
 }

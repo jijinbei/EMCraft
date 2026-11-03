@@ -39,6 +39,14 @@ impl EmcraftApp {
             self.replies.pcb = None;
         }
         match id {
+            "view.pcb" => {
+                if params.get("net").is_some() {
+                    self.replies.pcb = None;
+                }
+                self.view = View::Pcb;
+                self.workflow.step = None;
+                self.home.open = false;
+            }
             "pcb.inspect" => {
                 self.views.pcb.ground = reply["ground"].as_str().unwrap_or("GND").to_owned();
                 self.views.pcb.reference = reply["reference"].to_string();
@@ -142,6 +150,11 @@ impl EmcraftApp {
         if self.session.model().pcb.is_some() {
             if let Some(band) = self.session.model().band {
                 self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
+            }
+            if let Some(c) = &self.session.views().pcb_conditions {
+                self.views.pcb.ground = c.ground.clone();
+                self.views.pcb.reference = c.reference.to_string();
+                self.views.pcb.stop = self.session.display().frequency.from_si(c.stop_hz).to_string();
             }
             self.view = View::Pcb;
             self.workflow.step = None;
