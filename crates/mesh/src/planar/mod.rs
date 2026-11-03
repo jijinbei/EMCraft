@@ -304,7 +304,8 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     let chains = split::split(&mut points, &edges)?;
     let mut segments: Vec<([u32; 2], Kind)> =
         chains.iter().zip(&kinds).flat_map(|(c, &kind)| c.windows(2).map(move |w| ([w[0], w[1]], kind))).collect();
-    segments.sort_unstable_by_key(|s| [s.0[0].min(s.0[1]), s.0[0].max(s.0[1])]);
+    // Each piece once, the region's outline kept where another line runs along it.
+    segments.sort_unstable_by_key(|s| ([s.0[0].min(s.0[1]), s.0[0].max(s.0[1])], s.1 != Kind::Outline));
     segments.dedup_by_key(|s| [s.0[0].min(s.0[1]), s.0[0].max(s.0[1])]);
     let mut constrained: Vec<[u32; 2]> = segments.iter().map(|s| [s.0[0].min(s.0[1]), s.0[0].max(s.0[1])]).collect();
     constrained.sort_unstable();
