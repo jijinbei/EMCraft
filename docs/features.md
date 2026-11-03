@@ -40,15 +40,15 @@ Sets the part of the board the finite elements solve: a box round the copper (or
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `net` | string |  | no | the net whose routes the box surrounds (default all the copper) |
-| `margin` | number | length | no | the margin round the copper (default 5 board thicknesses) |
+| `margin` | number | length | no | the margin round the copper (default 5 thicknesses of the thinnest outer dielectric) |
 | `lo` | array | length | no | the lower-left corner [x, y] in the board's coordinates (default the copper's less the margin) |
 | `hi` | array | length | no | the upper-right corner [x, y] (default the copper's plus the margin) |
-| `above` | number | length | no | the air over the highest layer (default 5 board thicknesses) |
-| `below` | number | length | no | the air under the lowest layer (default 5 board thicknesses; 0 puts the lowest layer on the conducting floor) |
+| `above` | number | length | no | the air over the highest layer (default 5 thicknesses of the thinnest outer dielectric) |
+| `below` | number | length | no | the air under the lowest layer (default 5 thicknesses of the thinnest outer dielectric; 0 puts the lowest layer on the conducting floor) |
 
 ## `pcb.port` — PCB port
 
-Puts a lumped port at a trace's end in the board's region (pcb.region): a sheet the trace's width wide from its reference — the nearest layer below with another net's copper under that end, else the box's floor — up to the trace, its source in series with `impedance`. With lumped ports and no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.
+Puts a lumped port at a trace's end in the board's region (pcb.region): a sheet the trace's width wide from its reference — the nearest layer below with another net's copper under that end, else above, else the box's floor — to the trace, its source in series with `impedance`. With lumped ports and no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

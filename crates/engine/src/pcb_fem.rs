@@ -15,10 +15,10 @@ use serde_json::{Value, json};
 use crate::meshing::Sizes;
 use crate::{EngineError, Params, Result, Session};
 
-/// The air over and under a board when `pcb.region` leaves it out: this many board thicknesses.
+/// The air over and under a board when `pcb.region` leaves it out: this many thicknesses of the
+/// thinnest outer dielectric (the outer traces' fields reach that far).
 const AIR: f64 = 5.0;
-/// The margin round the copper when `pcb.region` leaves the corners out: this many board
-/// thicknesses.
+/// The margin round the copper when `pcb.region` leaves the corners out: as many.
 const MARGIN: f64 = 5.0;
 /// How much each cell of the air grows over the one nearer the board.
 const AIR_GROWTH: f64 = 1.4;
@@ -29,6 +29,17 @@ const SAG: f64 = 2e-3;
 
 fn failed(why: impl std::fmt::Display) -> EngineError {
     EngineError::failed(why)
+}
+
+/// The scale of the fields round the outer traces: the thinnest dielectric next to an outer
+/// layer (m), the board's thickness for a board of one layer.
+fn outer_gap(b: &Board) -> f64 {
+    let mut h = b.heights();
+    h.sort_by(f64::total_cmp);
+    match (h.first(), h.get(1), h.get(h.len().saturating_sub(2)), h.last()) {
+        (Some(a), Some(b2), Some(c), Some(d)) if h.len() >= 2 => (b2 - a).min(d - c),
+        _ => thickness(b),
+    }
 }
 
 /// The board's thickness: from its lowest layer to its highest (m).
@@ -45,7 +56,8 @@ fn substrate(er: f64) -> String {
 /// margin, or between given corners; the model's geometry becomes that box (its ports cleared).
 pub fn region(s: &mut Session, p: &Params) -> Result<Value> {
     let board = s.model.pcb.clone().ok_or_else(|| failed("load a PCB first: pcb.import, pcb.load or pcb.sample"))?;
-    let t = thickness(&board);
+    // The fields of the outer traces reach a few of their dielectrics' thicknesses out.
+    let t = outer_gap(&board);
     let margin = p.length("margin").check(|m| *m >= 0.0, "must be ≥ 0").or(MARGIN * t)?;
     let around = match p.string("net").optional()? {
         Some(net) => {
@@ -112,7 +124,12 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     up.sort_by(|&a, &b| heights[a].total_cmp(&heights[b]));
     let gaps: Vec<f64> = up.windows(2).map(|w| heights[w[1]] - heights[w[0]]).collect();
     let thinnest = gaps.iter().copied().fold(f64::INFINITY, f64::min);
-    let narrowest = board.segments.iter().map(|g| g.width).fold(f64::INFINITY, f64::min);
+    // The narrowest trace in the region.
+    let inside = |g: &&emcraft_model::pcb::Segment| {
+        let (lo, hi) = ([g.start[0].min(g.end[0]), g.start[1].min(g.end[1])], [g.start[0].max(g.end[0]), g.start[1].max(g.end[1])]);
+        lo[0] <= region.hi[0] && hi[0] >= region.lo[0] && lo[1] <= region.hi[1] && hi[1] >= region.lo[1]
+    };
+    let narrowest = board.segments.iter().filter(inside).map(|g| g.width).fold(f64::INFINITY, f64::min);
     let edge = match p.number("strip_edge").check(|f| *f > 0.0 && *f <= 1.0, "between 0 and 1").optional()? {
         Some(f) => f * size,
         None => (0.25 * size).min(narrowest / 6.0).min(0.25 * thinnest).max(size / 200.0),
@@ -209,11 +226,15 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         // A layer's dielectric lies below it, down to the next layer.
         let er = board.layers[w2[1]].eps_below;
         let h = gaps[k];
-        // Two halves, each fine at its copper (the fields' edge singularities) and growing
-        // to the middle.
+        // Two halves, each fine at a layer with routes (the fields' edge singularities) and
+        // growing to the middle; at a plane alone, from a few edge sizes.
         let m = material(er)?;
-        slabs.push(graded(h / 2.0, m, edge, SUBSTRATE_GROWTH, true));
-        slabs.push(graded(h / 2.0, m, edge, SUBSTRATE_GROWTH, false));
+        let first = |l: usize| {
+            let routed = board.segments.iter().any(|g| g.layer == board.layers[l].name);
+            if routed { edge } else { (4.0 * edge).min(h / 4.0) }
+        };
+        slabs.push(graded(h / 2.0, m, first(w2[0]), SUBSTRATE_GROWTH, true));
+        slabs.push(graded(h / 2.0, m, first(w2[1]), SUBSTRATE_GROWTH, false));
         sheets.push((w2[1], slabs.len()));
     }
     if region.above > 0.0 {
@@ -229,6 +250,26 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         let (Some(from), Some(to)) = (interface_of(&v.layers[0]), interface_of(&v.layers[1])) else { continue };
         let covered = planar.nets.get(barrels).into_iter().flatten().enumerate();
         let triangles: Vec<u32> = covered.filter(|(_, n)| **n == first_via + i as u32).map(|(t, _)| t as u32).collect();
+        // A barrel through another net's copper on a layer between its ends would join the
+        // nets: the copper needs a clearance there.
+        let (a, b) = (heights[layer(&v.layers[0])?], heights[layer(&v.layers[1])?]);
+        for (l, name) in board.layers.iter().enumerate().filter(|(l, _)| heights[*l] > a.min(b) && heights[*l] < a.max(b)) {
+            let on = planar.nets.get(l).map(Vec::as_slice).unwrap_or(&[]);
+            if let Some(other) = triangles
+                .iter()
+                .filter_map(|&t| on.get(t as usize))
+                .find(|&&n| n != emcraft_mesh::planar::NO_NET && nets.get(n as usize) != Some(&v.net))
+            {
+                let other = nets.get(*other as usize).cloned().unwrap_or_default();
+                return Err(failed(format!(
+                    "the via of {} at ({:.3}, {:.3}) passes through {other}'s copper on {} with no clearance: give the pour a hole round it",
+                    v.net,
+                    s.display.length.from_si(v.at[0]),
+                    s.display.length.from_si(v.at[1]),
+                    name.name
+                )));
+            }
+        }
         if !triangles.is_empty() {
             holes.push(Hole { triangles, from, to });
         }

@@ -225,3 +225,41 @@ fn the_four_layer_example_board_meshes_and_its_route_crosses_layers() {
     assert!(m["copper_faces"].as_u64().unwrap() > 0);
     emcraft_mesh::check_tetrahedra(s.model().mesh.as_ref().unwrap()).unwrap();
 }
+
+#[test]
+fn a_via_through_another_nets_plane_without_clearance_is_refused() {
+    let mut s = Session::new();
+    let board = json!({
+        "name": "short",
+        "layers": [{"name": "F.Cu", "z": 0, "eps_below": 4.4}, {"name": "In1", "z": 0.5, "eps_below": 4.4}, {"name": "B.Cu", "z": 1.0, "eps_below": 1}],
+        "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": [3, 0], "width": 0.5}],
+        "vias": [{"net": "S", "at": [3, 0], "layers": ["F.Cu", "B.Cu"], "diameter": 0.8, "drill": 0.4}],
+        "copper": [{"net": "GND", "layer": "In1", "polygon": [[-2, -2], [6, -2], [6, 2], [-2, 2]]}],
+    });
+    s.execute("pcb.load", &json!({"data": board})).unwrap();
+    s.execute("pcb.region", &json!({"margin": 1})).unwrap();
+    let e = s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap_err().to_string();
+    assert!(e.contains("GND") && e.contains("In1") && e.contains("clearance"), "{e}");
+}
+
+#[test]
+fn lumped_ports_sweep_fast_as_they_solve_in_full() {
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({"split": false, "neighbour": false, "length": 6})).unwrap();
+    s.execute("pcb.region", &json!({"net": "DATA", "margin": 1, "above": 1, "below": 0.5})).unwrap();
+    s.execute("pcb.port", &json!({"name": "1", "segment": "signal:0", "end": "start"})).unwrap();
+    s.execute("pcb.port", &json!({"name": "2", "segment": "signal:1", "end": "end"})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 3, "strip_edge": 0.1})).unwrap();
+    let sweep = |strategy: &str| {
+        let mut s = s.clone();
+        s.execute("solve.frequency", &json!({"start": 1, "stop": 9, "points": 9, "order": 1, "sweep": strategy})).unwrap()
+    };
+    let (fast, full) = (sweep("fast"), sweep("full"));
+    for (a, b) in fast["points"].as_array().unwrap().iter().zip(full["points"].as_array().unwrap()) {
+        for k in ["s11", "s21"] {
+            let d = (a[k]["re"].as_f64().unwrap() - b[k]["re"].as_f64().unwrap()).hypot(a[k]["im"].as_f64().unwrap() - b[k]["im"].as_f64().unwrap());
+            assert!(d < 1e-6, "{k}: {d}");
+        }
+    }
+    assert!(fast["solved_in_full"].as_u64().unwrap() < 9, "{}", fast["solved_in_full"]);
+}

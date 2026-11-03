@@ -5,9 +5,9 @@
 //! triangles joined across free edges (a component) are covered alike, and one point inside the
 //! component decides for all of them. That point is the centroid of the component's roundest
 //! triangle, its covering decided by the winding number about each outline near it (exact
-//! `orient2d`; nonzero is inside, whatever way the outline turns: D. Sunday, *Inclusion of a
-//! point in a polygon*, 2001, after Hormann and Agathos, *The point in polygon problem for
-//! arbitrary polygons*, Computational Geometry 20(3), 2001).
+//! `orient2d`; odd is inside, the even–odd rule — a pour's holes joined to its outline by a
+//! bridge are holes whichever way they turn: K. Hormann, A. Agathos, *The point in polygon
+//! problem for arbitrary polygons*, Computational Geometry 20(3), 2001).
 
 use emcraft_tetmesh::predicates::{ExactPoint2 as Point2, Sign, orient2d};
 
@@ -172,7 +172,7 @@ fn covering(rings: &Rings, p: [f64; 2], (layers, nets): (&[String], &[String])) 
     let exact = Point2::new(p[0], p[1]).map_err(|e| fail(e.to_string()))?;
     let mut on = vec![NO_NET; layers.len()];
     for ring in rings.near(p) {
-        if winding(&ring.points, &exact) == 0 {
+        if winding(&ring.points, &exact) % 2 == 0 {
             continue;
         }
         let Some(x) = on.get_mut(ring.layer) else { continue };

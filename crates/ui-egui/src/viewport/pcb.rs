@@ -312,7 +312,7 @@ fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &s
             ));
         }
         list.push(("mesh.generate".into(), json!({"size": size})));
-        list.push(("solve.frequency".into(), json!({"start": f / 11., "stop": f, "points": 11, "order": 1})));
+        list.push(("solve.frequency".into(), json!({"start": f / 21., "stop": f, "points": 21, "order": 1})));
         out.push(Action::RunAll(list));
     }
 }

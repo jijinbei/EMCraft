@@ -405,12 +405,11 @@ impl Reduced {
         Ok(Reduced { n, k2, dispersive, wall, pv, rank_one, ar })
     }
 
-    /// The field of a unit incident wave of the mode `t`, solved in the basis, and its relative
-    /// residual ‖b − A x‖/‖b‖ in the full equations.
-    fn solve(&self, basis: &Basis, t: &PortTerm<'_>) -> Result<(Vec<C>, f64)> {
+    /// The field of an excitation `b` (its nonzero entries: a unit incident wave of a port's
+    /// mode, or a lumped port's source), solved in the basis, and its relative residual
+    /// ‖b − A x‖/‖b‖ in the full equations.
+    fn solve(&self, basis: &Basis, b: &[(usize, C)]) -> Result<(Vec<C>, f64)> {
         let (n, m) = (self.n, basis.v.len());
-        // b = rhs · v of the excited port's first mode.
-        let b: Vec<(usize, C)> = t.excitation().collect();
         let br: Vec<C> = basis.v.iter().map(|v| b.iter().map(|&(i, x)| x * v[i]).sum()).collect();
         let z = zdense::solve(self.ar.clone(), br).ok_or_else(|| invalid("sweep", "a singular reduced system"))?;
         let x: Vec<C> = (0..n).map(|i| (0..m).map(|j| z[j] * basis.v[j][i]).sum()).collect();
@@ -438,7 +437,7 @@ impl Reduced {
                 -ax
             })
             .collect();
-        for &(i, bi) in &b {
+        for &(i, bi) in b {
             r[i] += bi;
         }
         for RankOne { factor, v } in &self.rank_one {
@@ -460,8 +459,19 @@ fn reduced(d: &Driven, basis: &Basis, frequency: f64, terms: &[Vec<PortTerm<'_>>
     let system = Reduced::new(d, basis, frequency, terms)?;
     let mut fields = Vec::with_capacity(terms.len());
     let mut worst: f64 = 0.0;
-    for t in d.excitations().into_iter().filter_map(|(p, m)| terms.get(p)?.get(m)) {
-        let (x, residual) = system.solve(basis, t)?;
+    // Each excitation's right-hand side: the ports' modes', or without waveguide ports the
+    // lumped ports' sources.
+    let rhs: Vec<Vec<(usize, C)>> = if d.ports.is_empty() {
+        let zero = C::new(0.0, 0.0);
+        d.lumped_excitations(frequency, d.dofs.unknowns)
+            .into_iter()
+            .map(|b| b.into_iter().enumerate().filter(|(_, x)| *x != zero).collect())
+            .collect()
+    } else {
+        d.excitations().into_iter().filter_map(|(p, m)| terms.get(p)?.get(m)).map(|t| t.excitation().collect()).collect()
+    };
+    for b in &rhs {
+        let (x, residual) = system.solve(basis, b)?;
         worst = worst.max(residual);
         fields.push(x);
     }
