@@ -161,6 +161,15 @@ most an eighth of the route) and a fast sweep of 21 frequencies up to the maximu
 elements; a few solved in full, the rest in their reduced basis). The S-parameters, TDR and fields then open as views; the field view starts on the
 plane halfway up the substrate, its vertical E.
 
+## Editing the board
+
+A board imported or loaded is edited by commands, each recorded and undoable: `pcb.segment`
+adds a trace segment or changes one (`id`: only what is given), `pcb.segment.delete` removes one;
+`pcb.via` / `pcb.via.delete` and `pcb.pour` / `pcb.pour.delete` add and remove vias and filled
+copper (pads included). The board is checked after each; its region stays, its mesh goes. In the
+window, the ribbon's PCB panel adds traces, vias and pours; in step 2 the selected route's
+segments are listed with their widths to change and a delete each.
+
 ## Solving a board's region with finite elements
 
 `pcb.region` turns part of the board into the model: a box round the copper (or one net's routes)

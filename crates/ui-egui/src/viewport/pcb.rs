@@ -224,6 +224,9 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
     }
     if stage == Stage::Net {
         super::pcb_coupling::select(app, ui, out);
+        if !selected.is_empty() {
+            segments(app, state, ui, board, selected, out);
+        }
     }
     if stage == Stage::Settings {
         for (label, field) in
@@ -281,6 +284,31 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
         }
         _ => stackup(app, ui, selected, &state.ground),
     }
+}
+
+/// The selected route's segments, each with its layer, its width to change and a delete
+/// (traces, vias and pours are added from the ribbon).
+fn segments(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, net: &str, out: &mut Actions) {
+    let l = app.session.display().length;
+    egui::CollapsingHeader::new(tr("Route segments")).id_salt("pcb_segments").default_open(true).show(ui, |ui| {
+        for g in board.segments.iter().filter(|g| g.net == net).take(64) {
+            ui.horizontal(|ui| {
+                ui.small(format!("{} · {}", g.id, g.layer));
+                let width = state.widths.entry(g.id.clone()).or_insert_with(|| l.from_si(g.width));
+                let r = ui.add(egui::DragValue::new(width).speed(0.01).range(0.001..=10.0).suffix(format!(" {}", l.symbol())));
+                scenario::publish_target(Handle::Choice("pcb_width", &g.id), r.rect);
+                if (r.drag_stopped() || r.lost_focus()) && (*width - l.from_si(g.width)).abs() > 1e-12 && !app.busy() {
+                    out.push(Action::run("pcb.segment", json!({"id": g.id, "width": *width})));
+                }
+                let d = ui.small_button("×").on_hover_text(tr("Delete"));
+                scenario::publish_target(Handle::Choice("pcb_delete", &g.id), d.rect);
+                if d.clicked() && !app.busy() {
+                    state.widths.remove(&g.id);
+                    out.push(Action::run("pcb.segment.delete", json!({"id": g.id})));
+                }
+            });
+        }
+    });
 }
 
 /// The route through the finite elements: its region, a 50 Ω port at each end, the mesh and a
