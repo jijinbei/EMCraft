@@ -633,6 +633,8 @@
     "cut-off {mode}: {f} {unit}": "遮断 {mode}：{f} {unit}",
     "dark": "ダーク",
     "deepest |S11| {db} dB at {f} {unit}": "|S11| 最小 {db} dB（{f} {unit}）",
+    "solved in {seconds} s on {device}": "解析時間 {seconds} 秒（{device}）",
+    "{unknowns} unknowns, {tets} tetrahedra": "未知数 {unknowns}、四面体 {tets}",
     "default": "既定",
     "device": "デバイス",
     "done": "完了",

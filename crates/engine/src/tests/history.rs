@@ -41,6 +41,11 @@ fn the_analysis_history_survives_saving_and_reopening() {
     let mut s = solved_twice();
     let before = rows(&mut s);
     assert_eq!((before[0]["pinned"].as_bool(), before[1]["label"].as_str()), (Some(true), Some("wider gap")));
+    // How each was made: the mesh, the system, how it was solved, on what.
+    let made = &before[1]["provenance"];
+    assert!(made["tetrahedra"].as_u64() > Some(0) && made["unknowns"].as_u64() > Some(0) && made["seconds"].as_f64() >= Some(0.0), "{made}");
+    assert_eq!((made["order"].as_u64(), made["linear_solver"].as_str(), made["device"].as_str()), (Some(1), Some("direct"), Some("cpu")));
+    assert_eq!(made["version"], env!("CARGO_PKG_VERSION"));
     let path = scratch("history.emcraft");
     let r = s.execute("file.save", &json!({"path": path})).unwrap();
     assert_eq!(r["kept"], 2);
@@ -209,6 +214,10 @@ fn hostile_histories_in_a_file_are_refused_and_nothing_panics() {
         ("/analysis_history/solves/0/results/sweep/frequencies", json!(vec![1.0; 3000]), "frequencies"),
         ("/analysis_history/solves/0/units", json!({"length": "furlong", "frequency": "GHz"}), "not a project file"),
         ("/analysis_history/solves", json!("x"), "not a project file"),
+        ("/analysis_history/solves/0/provenance/seconds", json!(-1.0), "provenance"),
+        ("/analysis_history/solves/0/provenance/version", json!("v".repeat(100)), "provenance"),
+        ("/analysis_history/solves/0/provenance/order", json!(3), "provenance"),
+        ("/analysis_history/solves/0/provenance/device", json!("abacus"), "not a project file"),
     ];
     for (at, value, why) in cases {
         let mut d = doc.clone();

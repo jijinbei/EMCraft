@@ -54,6 +54,8 @@ emcraft_macros::named_enum! {
     }
 }
 
+emcraft_macros::named_serde!(Precision);
+
 /// A device's backend and the precisions it can run.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Available {

@@ -183,16 +183,16 @@ pub fn probe(s: &mut Session, p: &Params) -> Result<Value> {
 /// The reflection at port `k` over its frequencies: the frequency sweep's, else the time
 /// domain's (port 1 only).
 fn reflection(s: &Session, k: usize) -> Result<(Vec<f64>, Vec<emcraft_solver::Complex64>)> {
-    if let Some(sw) = s.results.sweep.as_ref().filter(|sw| !sw.results.is_empty()) {
-        let pairs: Option<Vec<_>> = sw.results.iter().map(|r| r.s.get(k, k).map(|c| (r.frequency, c))).collect();
-        let pairs = pairs.ok_or_else(|| EngineError::failed(format!("the sweep has no reflection at port {}", k + 1)))?;
-        return Ok(pairs.into_iter().unzip());
+    let (data, what) = match (s.results.sweep.as_ref().filter(|sw| !sw.results.is_empty()), s.results.time_domain.as_ref()) {
+        (Some(sw), _) => (sw.sdata().map_err(EngineError::failed)?, "the sweep"),
+        (None, Some(td)) => (crate::sdata::of_time_domain(td).map_err(EngineError::failed)?, "the time domain's results"),
+        (None, None) => return Err(EngineError::NotSolved { what: "sweep", run: "solve.frequency or solve.time_domain" }),
+    };
+    let (f, r): (Vec<f64>, Vec<_>) = data.curve(k, k).unzip();
+    if f.len() != data.frequencies().len() || f.is_empty() {
+        return Err(EngineError::failed(format!("{what} hold no reflection at port {}", k + 1)));
     }
-    match s.results.time_domain.as_ref() {
-        Some(td) if k == 0 => Ok((td.frequencies.clone(), td.s11.clone())),
-        Some(_) => Err(EngineError::failed("the time domain's results reflect at port 1 only")),
-        None => Err(EngineError::NotSolved { what: "sweep", run: "solve.frequency or solve.time_domain" }),
-    }
+    Ok((f, r))
 }
 
 /// The transform of port `port`'s reflection (the first port by default), in `mode` (low pass

@@ -205,10 +205,10 @@ fn sparameter_chart_now(session: &Session, display: SDisplay) -> Result<Chart> {
             series.push(Series::new(FULL_SOLVES, "solved in full", Pen::Ink, Style::Markers, Vec::new()));
         }
     }
-    if let Some(td) = td {
-        let pts = |v: &[C]| td.frequencies.iter().zip(v).map(|(f, s)| [fu.from_si(*f), display.of(*s)]).collect();
-        series.extend(curve("s21.td", format!("{} time domain", display.entry("21")), Pen::Series(2), pts(&td.s21), display));
-        series.extend(curve("s11.td", format!("{} time domain", display.entry("11")), Pen::Series(4), pts(&td.s11), display));
+    if let Some(td) = td.and_then(|t| crate::sdata::of_time_domain(t).ok()) {
+        let pts = |p: usize| td.curve(p, 0).map(|(f, s)| [fu.from_si(f), display.of(s)]).collect();
+        series.extend(curve("s21.td", format!("{} time domain", display.entry("21")), Pen::Series(2), pts(1), display));
+        series.extend(curve("s11.td", format!("{} time domain", display.entry("11")), Pen::Series(4), pts(0), display));
     }
     let marks = section_cutoffs(session).into_iter().map(|(fc, name)| (fu.from_si(fc), format!("$f_c$ {name}"))).collect();
     let y = display.axis(&series);
