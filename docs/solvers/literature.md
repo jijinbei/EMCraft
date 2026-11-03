@@ -45,6 +45,18 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   on the axis' Plücker coordinates solved as the least eigenvector of a Schur complement; a torus
   is tried only where no plane, cylinder, sphere or cone fits (each is a torus' limit).
 
+- Planar meshes of circuit boards (`emcraft-mesh::planar`, its constrained triangulation
+  adapted from FieldCraft's): J. R. Shewchuk, *Delaunay refinement algorithms for triangular mesh
+  generation*, Computational Geometry 22:21–74, 2002 — constrained Delaunay insertion that never
+  crosses a segment; J. Ruppert, *A Delaunay refinement algorithm for quality 2-dimensional mesh
+  generation*, J. Algorithms 18(3):548–585, 1995 — circumcentres of triangles too large or too
+  thin, here with the segments split beforehand and clearances instead of encroachment;
+  J. D. Hobby, *Practical segment intersection with finite precision output*, Computational
+  Geometry 13(4):199–214, 1999 — crossings rounded to a lattice, the passes repeated until none
+  is left; K. Hormann, A. Agathos, *The point in polygon problem for arbitrary polygons*,
+  Computational Geometry 20(3):131–144, 2001 — the winding number that decides each component's
+  copper, so each layer's union of copper is read off the triangulation; Sutherland–Hodgman
+  (above) — copper clipped to the region.
 - The symmetric halves of solids (`emcraft-mesh::solid`, `halved`): extrusions (boxes, cylinders
   along the plane's normal, prisms) shortened to the kept side, other bodies cut by a box, the cut
   faces tagged as the wall (the conditions under Symmetry planes).

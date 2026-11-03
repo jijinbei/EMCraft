@@ -136,6 +136,39 @@ evaluated HJ/ABCD values for a 40 mm line. Unit tests cover narrow ground slots,
 invalid input and ordering; engine tests cover unit conversion, source-independent saving,
 reopening and undo; the UI scenario exercises actual route/net clicks and both ground examples.
 
+## Solving a board's region with finite elements
+
+`pcb.region` turns part of the board into the model: a box round the copper (or one net's routes)
+with a margin, or between given corners, with air above and below, closed by conducting walls.
+The box's lower-left corner is the origin, the lowest layer `below` over the floor; each substrate
+becomes a material `substrate εr …`. Ports go on the box's sides with `model.port.create`
+(`axis` x or y, `face` the side); their modes come from the cross-section solver, the strips
+crossing the side its conductors. `mesh.generate` meshes the region with the planar mesher:
+
+1. Every layer's copper — traces with round ends, vias' pads, filled polygons — in one
+   triangulation of the region, on a 1 nm lattice so the same board gives the same mesh;
+   overlapping copper of a net is joined, two nets overlapping on a layer are refused by name.
+2. The triangles refined to `size` far from copper and to the copper edge size at its edges
+   (`strip_edge` × `size`; by default a sixth of the narrowest trace), where the fields are
+   singular.
+3. The triangulation extruded through the substrates (cells about twice the edge size) and the
+   air (cells growing away from the board); the copper conducting sheets of no thickness.
+
+```json
+[
+  {"command":"pcb.load","params":{"data":{"name":"line","layers":[{"name":"F.Cu","z":0,"eps_below":9.8},{"name":"B.Cu","z":0.635,"eps_below":1}],
+    "segments":[{"id":"s","net":"S","layer":"F.Cu","start":[-1,0],"end":[5,0],"width":0.6}]}}},
+  {"command":"pcb.region","params":{"lo":[0,-7.2],"hi":[4,7.2],"above":23.4,"below":0}},
+  {"command":"model.port.create","params":{"name":"1","end":"start","axis":"x","face":[0,0,0,14.4,24]}},
+  {"command":"model.port.create","params":{"name":"2","end":"end","axis":"x","face":[4,0,0,14.4,24]}},
+  {"command":"mesh.generate","params":{"size":1}},
+  {"command":"solve.frequency","params":{"frequencies":[1],"order":2}}
+]
+```
+
+Verification: [`pcb-microstrip-fem`](../tests/oracle/pcb-microstrip-fem/README.md) — this line on
+alumina against Hammerstad and Jensen: ε_eff within 0.15 %, the 4 mm line's phase within 0.03°.
+
 ## Coupling illustration
 
 At **Select route**, choose the source (orange) and receiver (blue), using the role buttons

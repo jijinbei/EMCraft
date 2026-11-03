@@ -219,6 +219,7 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
             false => vec![poly(0.0, l + 10.0)],
         },
         notes: vec!["Original routing example; lossless, zero-thickness conductors and no pads.".into()],
+        region: None,
     };
     if !neighbour {
         board.segments.retain(|s| s.net != "CLK");

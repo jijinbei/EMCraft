@@ -94,7 +94,47 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     );
 }
 
+/// The PCB window: the stage's panel on the left, the board in 3D filling the rest with its top
+/// view as a minimap in the corner (a click on either picks a route).
 pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
+    let area = ui.available_rect_before_wrap();
+    ui.allocate_rect(area, Sense::hover());
+    let board = app.session.model().pcb.as_ref();
+    let side = if board.is_some() { (area.width() * 0.36).clamp(300., 440.).min(area.width()) } else { area.width() };
+    let panel = Rect::from_min_size(area.min, vec2(side, area.height()));
+    let mut left = ui.new_child(egui::UiBuilder::new().max_rect(panel));
+    egui::ScrollArea::vertical().id_salt("pcb_panel").auto_shrink(false).show(&mut left, |ui| stage_panel(app, st, ui, out));
+    let Some(board) = board else { return };
+    let view = Rect::from_min_max(pos2(panel.right() + 8., area.top()), area.max);
+    if view.width() < 80. {
+        return;
+    }
+    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Board, out);
+    scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
+    // A net picked in 3D becomes the route (or the receiving trace while one is being picked).
+    if let Some(crate::scene3d::Pick::Net(i)) = st.view3d.single()
+        && let Some(net) = crate::scene3d::board::nets(board).get(i)
+        && app.session.views().pcb_net.as_deref() != Some(net.as_str())
+        && board.segments.iter().any(|s| &s.net == net)
+        && !app.busy()
+    {
+        st.view3d.selected.clear();
+        st.views.pcb.attempted = None;
+        let victim = app.session.views().pcb_illustration.pick_victim;
+        out.push(Action::run("view.pcb", if victim { json!({"victim": net, "stage": "net"}) } else { json!({"net": net, "stage": "net"}) }));
+    }
+    // The top view, small, in the corner.
+    let size = vec2((view.width() * 0.3).clamp(160., 300.), (view.height() * 0.28).clamp(110., 190.));
+    let minimap = Rect::from_min_size(view.right_bottom() - size - vec2(12., 12.), size);
+    let selected = app.session.views().pcb_net.clone().unwrap_or_default();
+    let ground = st.views.pcb.ground.clone();
+    let result = report(app, &st.views.pcb, &selected).cloned();
+    let mut corner = ui.new_child(egui::UiBuilder::new().max_rect(minimap));
+    draw_board(app, &mut st.views.pcb, &mut corner, out, &selected, &ground, result.as_ref(), minimap.height());
+}
+
+/// The stage's heading, guidance and controls, then the stackup or, with results, the report.
+fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {
     let stage = emcraft_engine::pcb::stage(&app.session);
     let state = &mut st.views.pcb;
     let board = app.session.model().pcb.as_ref();
@@ -223,23 +263,16 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     if let Some(failure) = app.failure.as_ref().filter(|f| f.command == "pcb.inspect" || f.command == "view.pcb") {
         ui.colored_label(Tokens::get().error, &failure.error);
     }
-    let wide = ui.available_width() > 900.;
-    let map_width = ui.available_width() * if wide { 0.52 } else { 1. };
-    let layout = if wide { egui::Layout::left_to_right(egui::Align::Min) } else { egui::Layout::top_down(egui::Align::Min) };
-    ui.with_layout(layout, |ui| {
-        ui.allocate_ui_with_layout(vec2(map_width, 310.), egui::Layout::top_down(egui::Align::Min), |ui| {
-            draw_board(app, state, ui, out, selected, &state.ground.clone(), result)
-        });
-        ui.vertical(|ui| match stage {
-            Stage::Results => {
-                if let Some(r) = result {
-                    super::pcb_coupling::show(app, state, ui, r, out);
-                }
-                draw_report(app, state, ui, result)
+    ui.add_space(6.);
+    match stage {
+        Stage::Results => {
+            if let Some(r) = result {
+                super::pcb_coupling::show(app, state, ui, r, out);
             }
-            _ => stackup(app, ui, selected, &state.ground),
-        });
-    });
+            draw_report(app, state, ui, result)
+        }
+        _ => stackup(app, ui, selected, &state.ground),
+    }
 }
 
 fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
@@ -287,6 +320,9 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
     ui_kit::caption(ui, "This is geometry screening and a quasi-static line estimate. 3D fields at vias, pads, bends and radiation are not solved.");
 }
 
+/// The board's top view `height` tall: the reference copper filled, the routes as lines, the
+/// gaps the report found; a click picks the nearest route.
+#[allow(clippy::too_many_arguments)]
 fn draw_board(
     app: &EmcraftApp,
     state: &mut crate::state::PcbUi,
@@ -295,6 +331,7 @@ fn draw_board(
     net: &str,
     ground: &str,
     report: Option<&Value>,
+    height: f32,
 ) {
     let Some(board) = app.session.model().pcb.as_ref() else {
         return;
@@ -303,9 +340,9 @@ fn draw_board(
     let Some((lo, hi)) = board.bounds() else {
         return;
     };
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width().max(100.0), 310.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width().max(100.0), height), Sense::click());
     scenario::publish_target(Handle::Choice("pcb_control", "board"), rect);
-    let pad = rect.shrink(18.0);
+    let pad = rect.shrink(10.0);
     let scale = (pad.width() as f64 / (hi[0] - lo[0]).max(1e-9)).min(pad.height() as f64 / (hi[1] - lo[1]).max(1e-9));
     let to = |p: [f64; 2]| {
         pos2(pad.center().x + ((p[0] - (lo[0] + hi[0]) / 2.0) * scale) as f32, pad.center().y + ((p[1] - (lo[1] + hi[1]) / 2.0) * scale) as f32)

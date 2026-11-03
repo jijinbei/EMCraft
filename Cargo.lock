@@ -2386,6 +2386,7 @@ dependencies = [
  "emcraft-engine",
  "emcraft-gpu",
  "emcraft-macros",
+ "emcraft-mesh",
  "emcraft-model",
  "emcraft-render",
  "naga",

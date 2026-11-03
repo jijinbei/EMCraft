@@ -178,7 +178,7 @@ fn path(segments: &[&Segment]) -> Option<Vec<usize>> {
 /// outer microstrip on one layer over continuous ground.
 ///
 /// ```
-/// let empty = emcraft_model::pcb::Board { name: "empty".into(), layers: vec![], segments: vec![], vias: vec![], copper: vec![], notes: vec![] };
+/// let empty = emcraft_model::pcb::Board { name: "empty".into(), layers: vec![], segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
 /// assert!(emcraft_theory::pcb::inspect(&empty, "CLK", "GND").is_err());
 /// ```
 pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String> {
@@ -351,7 +351,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
 /// let ground = Copper { net: "GND".into(), layer: "B".into(), polygon: vec![[0.0, 0.0], [0.04, 0.0], [0.04, 0.02], [0.0, 0.02]] };
 /// let trace = Segment { id: "0".into(), net: "S".into(), layer: "F".into(), start: [0.005, 0.01], end: [0.035, 0.01], width: 3e-4 };
 /// let layers = vec![Layer { name: "F".into(), z: 0.0, eps_below: 4.2 }, Layer { name: "B".into(), z: 1.8e-4, eps_below: 1.0 }];
-/// let board = Board { name: "line".into(), layers, segments: vec![trace], vias: vec![], copper: vec![ground], notes: vec![] };
+/// let board = Board { name: "line".into(), layers, segments: vec![trace], vias: vec![], copper: vec![ground], notes: vec![], region: None };
 /// let report = emcraft_theory::pcb::inspect(&board, "S", "GND").unwrap();
 /// let (s11, s21) = emcraft_theory::pcb::s_parameters(&report, 1e9, 50.0).unwrap();
 /// // A lossless line: no power lost.
@@ -400,6 +400,7 @@ mod tests {
             vias: vec![],
             copper: vec![Copper { net: "GND".into(), layer: "ground".into(), polygon: vec![[0.0, 0.0], [0.05, 0.0], [0.05, 0.02], [0.0, 0.02]] }],
             notes: vec![],
+            region: None,
         }
     }
 
@@ -559,7 +560,7 @@ pub struct Pair {
 
 /// Find same-layer parallel overlaps, including wide spacing for before/after illustration.
 /// ```
-/// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};
+/// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![],region:None};
 /// assert!(emcraft_theory::pcb::pairs(&b,"DATA","GND").is_err());
 /// ```
 pub fn pairs(board: &Board, source: &str, ground: &str) -> Result<Vec<Pair>, String> {
@@ -640,6 +641,7 @@ mod pair_tests {
             vias: vec![],
             copper: vec![],
             notes: vec![],
+            region: None,
         };
         let p = pairs(&b, "A", "GND").unwrap();
         assert_eq!(p.len(), 1);

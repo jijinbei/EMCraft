@@ -12,6 +12,7 @@ use emcraft_render::view3d::{Camera, Hit, Scene};
 
 pub use cache::Cache;
 
+pub(crate) mod board;
 mod cache;
 mod extras;
 pub(crate) mod faces;
@@ -45,6 +46,8 @@ emcraft_macros::named_enum! {
         Mesh = "mesh",
         /// The field on its plane, inside see-through walls.
         Field = "field",
+        /// A circuit board: its layers' copper, substrates and vias ([`board`]).
+        Board = "board",
     }
 }
 
@@ -66,6 +69,8 @@ pub enum Pick {
     Via(usize),
     /// A lumped port's marker.
     Lumped(usize),
+    /// A board's net's copper (an index into [`board::nets`]).
+    Net(usize),
 }
 
 impl Pick {
@@ -100,6 +105,7 @@ impl Pick {
             Pick::Plane(i) => (9, i),
             Pick::Via(i) => (10, i),
             Pick::Lumped(i) => (11, i),
+            Pick::Net(i) => (13, i),
         };
         (kind << 16) | (i.min(0xFFFF) as u32)
     }
@@ -119,6 +125,7 @@ impl Pick {
             9 => Pick::Plane(i),
             10 => Pick::Via(i),
             11 => Pick::Lumped(i),
+            13 => Pick::Net(i),
             _ => return None,
         })
     }
@@ -224,6 +231,15 @@ pub fn build(session: &Session, overlay: Overlay) -> Built {
 /// highlighted.
 pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], selected: &[Pick]) -> Built {
     let m = session.model();
+    if overlay == Overlay::Board {
+        let mut out = Built::default();
+        if let Some(b) = &m.pcb {
+            let route = session.views().pcb_net.as_deref().unwrap_or("");
+            let reference = session.views().pcb_conditions.as_ref().map_or("GND", |c| c.ground.as_str());
+            board::build(b, route, reference, &mut out);
+        }
+        return out;
+    }
     let mut out = Built { bounds: m.bounds().map(|b| (p3(b.min), p3(b.max))), ..Default::default() };
     match &m.mesh {
         Some(_) => mesh::from_mesh(

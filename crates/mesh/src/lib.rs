@@ -1,6 +1,7 @@
 //! Meshing for EMCraft: structured tetrahedral meshes of a rectangular waveguide
 //! ([`waveguide`]), unstructured meshes of primitive bodies ([`solid`]) with Boolean features
-//! ([`csg`]) and adaptive refinement ([`adapt`]), the global numbering of edges and faces the
+//! ([`csg`]) and adaptive refinement ([`adapt`]), planar triangulations of circuit boards
+//! ([`planar`]), the global numbering of edges and faces the
 //! vector elements need ([`Topology`]), and point location ([`locate`]).
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -11,6 +12,7 @@ mod clip;
 mod crease;
 pub mod csg;
 mod flush;
+pub mod planar;
 mod shared;
 pub mod solid;
 mod topology;

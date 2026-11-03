@@ -1,0 +1,9 @@
+[
+ {"command": "pcb.load", "params": {"data": {"name": "microstrip", "layers": [{"name": "F.Cu", "z": 0, "eps_below": 9.8}, {"name": "B.Cu", "z": 0.635, "eps_below": 1}], "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [-1, 0], "end": [5, 0], "width": 0.600075}]}}},
+ {"command": "pcb.region", "params": {"lo": [0, -7.2009], "hi": [4, 7.2009], "above": 23.365, "below": 0}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "axis": "x", "face": [0, 0, 0, 14.4018, 24], "modes": 1}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "axis": "x", "face": [4, 0, 0, 14.4018, 24], "modes": 1}},
+ {"command": "mesh.generate", "params": {"size": 1}},
+ {"command": "solve.port_modes", "params": {"frequency": 1}, "id": "modes"},
+ {"command": "solve.frequency", "params": {"frequencies": [1], "order": 2}, "id": "solve"}
+]

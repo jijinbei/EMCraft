@@ -68,7 +68,9 @@
         "pcb.report": null
       },
       "handles": [
-        "choice:pcb_control:stackup"
+        "choice:pcb_control:stackup",
+        "choice:pcb_control:board3d",
+        "choice:pcb_control:board"
       ]
     }
   },
