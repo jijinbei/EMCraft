@@ -11,13 +11,9 @@
 use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
 
-use crate::Session;
+use super::s;
 
-/// S_pq at point `i` of the last sweep, complex.
-fn s(r: &Value, i: usize, pq: &str) -> C {
-    let e = &r["points"][i][pq];
-    C::from_polar(e["mag"].as_f64().unwrap(), e["deg"].as_f64().unwrap().to_radians())
-}
+use crate::Session;
 
 /// The template `name` meshed at `size` (mm) and solved at `frequencies` (GHz).
 fn solved(name: &str, size: f64, frequencies: &[f64]) -> Value {
