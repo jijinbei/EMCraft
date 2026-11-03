@@ -111,26 +111,25 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     }
     crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Board, out);
     scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
-    super::pcb_coupling::mode_bar(app, ui, view, out);
-    super::pcb_coupling::frame_view(app, &mut st.views.pcb.illustration, &mut st.view3d, view);
-    let illustration = &app.session.views().pcb_illustration;
-    if illustration.coupling && illustration.playing {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+    // What the view offers is the stage's: drawing while the board is prepared, picking a
+    // route while one is chosen, the coupling's illustrations once there are results.
+    let stage = emcraft_engine::pcb::stage(&app.session);
+    if stage != Stage::Board {
+        st.views.pcb.drawing = None;
     }
-    draw(app, &mut st.views.pcb, &st.view3d, ui, view, board, out);
-    // A net picked in 3D becomes the route (or the receiving trace while one is being picked).
-    if let Some(crate::scene3d::Pick::Net(i)) = st.view3d.single()
-        && !illustration.coupling
-        && st.views.pcb.drawing.is_none()
-        && let Some(net) = crate::scene3d::board::nets(board).get(i)
-        && app.session.views().pcb_net.as_deref() != Some(net.as_str())
-        && board.segments.iter().any(|s| &s.net == net)
-        && !app.busy()
-    {
-        st.view3d.selected.clear();
-        st.views.pcb.attempted = None;
-        let victim = app.session.views().pcb_illustration.pick_victim;
-        out.push(Action::run("view.pcb", if victim { json!({"victim": net, "stage": "net"}) } else { json!({"net": net, "stage": "net"}) }));
+    let illustrated = stage == Stage::Results && super::pcb_coupling::ready(app);
+    super::pcb_coupling::frame_view(app, illustrated, &mut st.views.pcb.illustration, &mut st.view3d, view);
+    match stage {
+        Stage::Board => draw(app, &mut st.views.pcb, &st.view3d, ui, view, board, out),
+        Stage::Net => pick_route(app, st, board, out),
+        Stage::Results if illustrated => {
+            super::pcb_coupling::mode_bar(app, ui, view, out);
+            let illustration = &app.session.views().pcb_illustration;
+            if illustration.illustrated.is_some() && illustration.playing {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+            }
+        }
+        Stage::Settings | Stage::Inspect | Stage::Results => {}
     }
     // The top view, small, in the corner.
     let minimap = minimap(view);
@@ -139,6 +138,19 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     let result = report(app, &st.views.pcb, &selected).cloned();
     let mut corner = ui.new_child(egui::UiBuilder::new().max_rect(minimap));
     draw_board(app, &mut st.views.pcb, &mut corner, out, &selected, &ground, result.as_ref(), minimap.height());
+}
+
+/// A net clicked in 3D becomes the route.
+fn pick_route(app: &EmcraftApp, st: &mut Parts, board: &emcraft_model::pcb::Board, out: &mut Actions) {
+    let Some(crate::scene3d::Pick::Net(i)) = st.view3d.single() else { return };
+    let nets = crate::scene3d::board::nets(board);
+    let Some(net) = nets.get(i).filter(|n| board.segments.iter().any(|s| &s.net == *n)) else { return };
+    if app.session.views().pcb_net.as_deref() == Some(net.as_str()) || app.busy() {
+        return;
+    }
+    st.view3d.selected.clear();
+    st.views.pcb.attempted = None;
+    out.push(Action::run("view.pcb", json!({"net": net, "stage": "net"})));
 }
 
 /// The stage's heading, guidance and controls, then the stackup or, with results, the report.
@@ -189,87 +201,69 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
             }
         }
     });
-    if stage == Stage::Board {
-        ui.horizontal_wrapped(|ui| {
-            if ui.button(tr("Import PCB…")).clicked() {
-                out.push(Action::File(crate::files::FileAction::PickPart));
-            }
-            ui.menu_button(tr("Templates"), |ui| {
-                for template in emcraft_engine::templates::made_for(crate::steps::Solver::Pcb) {
-                    if ui.button(crate::lang::sample_label(template.name)).clicked() {
-                        out.push(Action::Template(Some(template.name.into())));
-                        ui.close();
-                    }
-                }
-            });
-        });
-    }
     let Some(board) = board else {
+        board_sources(ui, out);
         ui_kit::caption(ui, "Import a PCB or open an example, then click a routed trace.");
         return;
     };
-    if stage == Stage::Net {
-        let nets: BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
-        let r = egui::ComboBox::from_id_salt("pcb_net")
-            .selected_text(if selected.is_empty() { tr("Choose a routed net") } else { selected })
-            .show_ui(ui, |ui| {
-                for net in nets {
-                    let r = ui.selectable_label(net == selected, net);
-                    scenario::publish_target(Handle::Choice("pcb_net", net), r.rect);
+    match stage {
+        Stage::Board => {
+            board_sources(ui, out);
+            if state.drawing.is_some() {
+                pen(app, state, ui, board, out);
+            }
+        }
+        Stage::Net => {
+            choose_net(ui, board, selected, out);
+            // A receiving trace only when there is another route to be one.
+            if board.segments.iter().any(|g| g.net != selected) {
+                super::pcb_coupling::select(app, ui, out);
+            }
+        }
+        Stage::Settings => {
+            for (label, field) in
+                [("Reference net", &mut state.ground), ("Reference impedance (Ω)", &mut state.reference), ("Maximum frequency", &mut state.stop)]
+            {
+                ui.horizontal(|ui| {
+                    ui.label(tr(label));
+                    let r = ui.add(egui::TextEdit::singleline(field).desired_width(110.));
+                    scenario::publish_target(Handle::Choice("pcb_control", label), r.rect);
+                });
+            }
+            ui.small(app.session.display().frequency.symbol());
+        }
+        Stage::Inspect => {
+            ui.label(format!(
+                "{} → {}  |  {} Ω  |  {} {}",
+                selected,
+                state.ground,
+                state.reference,
+                state.stop,
+                app.session.display().frequency.symbol()
+            ));
+            let r = ui.add_enabled(!app.busy(), egui::Button::new(tr("Inspect route")));
+            scenario::publish_target(Handle::Choice("pcb_control", "inspect"), r.rect);
+            if r.clicked() {
+                out.push(Action::run("pcb.inspect", state.params(selected)));
+            }
+            fem(app, state, ui, selected, out);
+        }
+        Stage::Results => {
+            match (result, &app.replies.pcb) {
+                (Some(result), _) => {
+                    let r = ui.button(tr("Keep for comparison"));
+                    scenario::publish_target(Handle::Choice("pcb_control", "keep"), r.rect);
                     if r.clicked() {
-                        out.push(Action::run("view.pcb", json!({"net": net, "stage": "net"})));
+                        state.baseline = Some(result.clone());
                     }
                 }
-            });
-        scenario::publish_target(Handle::Choice("pcb_control", "net"), r.response.rect);
-    }
-    if stage == Stage::Net {
-        super::pcb_coupling::select(app, ui, out);
-        if !selected.is_empty() {
-            segments(app, state, ui, board, selected, out);
-        }
-    }
-    if stage == Stage::Settings {
-        for (label, field) in
-            [("Reference net", &mut state.ground), ("Reference impedance (Ω)", &mut state.reference), ("Maximum frequency", &mut state.stop)]
-        {
-            ui.horizontal(|ui| {
-                ui.label(tr(label));
-                let r = ui.add(egui::TextEdit::singleline(field).desired_width(110.));
-                scenario::publish_target(Handle::Choice("pcb_control", label), r.rect);
-            });
-        }
-        ui.small(app.session.display().frequency.symbol());
-    }
-    if stage == Stage::Inspect {
-        ui.label(format!(
-            "{} → {}  |  {} Ω  |  {} {}",
-            selected,
-            state.ground,
-            state.reference,
-            state.stop,
-            app.session.display().frequency.symbol()
-        ));
-        let r = ui.add_enabled(!app.busy(), egui::Button::new(tr("Inspect route")));
-        scenario::publish_target(Handle::Choice("pcb_control", "inspect"), r.rect);
-        if r.clicked() {
-            out.push(Action::run("pcb.inspect", state.params(selected)));
-        }
-        fem(app, state, ui, selected, out);
-    }
-    if stage == Stage::Results {
-        if let Some(result) = result {
-            let r = ui.button(tr("Keep for comparison"));
-            scenario::publish_target(Handle::Choice("pcb_control", "keep"), r.rect);
-            if r.clicked() {
-                state.baseline = Some(result.clone());
+                (None, Some(_)) => ui_kit::caption(ui, "Settings changed; inspect the route again."),
+                (None, None) => {}
             }
-        } else if app.replies.pcb.is_some() {
-            ui_kit::caption(ui, "Settings changed; inspect the route again.");
-        }
-        if app.replies.pcb.is_none() && state.attempted.as_ref() != Some(&(app.revision, selected.to_owned())) {
-            state.attempted = Some((app.revision, selected.to_owned()));
-            out.push(Action::run("pcb.inspect", state.params(selected)));
+            if app.replies.pcb.is_none() && state.attempted.as_ref() != Some(&(app.revision, selected.to_owned())) {
+                state.attempted = Some((app.revision, selected.to_owned()));
+                out.push(Action::run("pcb.inspect", state.params(selected)));
+            }
         }
     }
     if let Some(failure) = app.failure.as_ref().filter(|f| f.command == "pcb.inspect" || f.command == "view.pcb") {
@@ -287,13 +281,83 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
     }
 }
 
+/// Where a board comes from: a KiCad file or a template.
+fn board_sources(ui: &mut egui::Ui, out: &mut Actions) {
+    ui.horizontal_wrapped(|ui| {
+        if ui.button(tr("Import PCB…")).clicked() {
+            out.push(Action::File(crate::files::FileAction::PickPart));
+        }
+        ui.menu_button(tr("Templates"), |ui| {
+            for template in emcraft_engine::templates::made_for(crate::steps::Solver::Pcb) {
+                if ui.button(crate::lang::sample_label(template.name)).clicked() {
+                    out.push(Action::Template(Some(template.name.into())));
+                    ui.close();
+                }
+            }
+        });
+    });
+}
+
+/// The routed nets to choose the route from.
+fn choose_net(ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, selected: &str, out: &mut Actions) {
+    let nets: BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
+    let r = egui::ComboBox::from_id_salt("pcb_net").selected_text(if selected.is_empty() { tr("Choose a routed net") } else { selected }).show_ui(
+        ui,
+        |ui| {
+            for net in nets {
+                let r = ui.selectable_label(net == selected, net);
+                scenario::publish_target(Handle::Choice("pcb_net", net), r.rect);
+                if r.clicked() {
+                    out.push(Action::run("view.pcb", json!({"net": net, "stage": "net"})));
+                }
+            }
+        },
+    );
+    scenario::publish_target(Handle::Choice("pcb_control", "net"), r.response.rect);
+}
+
+/// What the 3D view draws with (the pen): its net, layer and width, then that net's segments to
+/// change or delete.
+fn pen(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, out: &mut Actions) {
+    let Some(pen) = state.drawing.as_mut() else { return };
+    let l = app.session.display().length;
+    ui.add_space(6.);
+    ui.heading(tr("Draw the route"));
+    ui.horizontal_wrapped(|ui| {
+        let nets: BTreeSet<&str> = board.segments.iter().map(|g| g.net.as_str()).chain(board.copper.iter().map(|c| c.net.as_str())).collect();
+        egui::ComboBox::from_id_salt("pcb_pen_net").selected_text(pen.net.as_str()).show_ui(ui, |ui| {
+            for n in nets {
+                if ui.selectable_label(pen.net == n, n).clicked() {
+                    pen.net = n.to_owned();
+                    pen.from = None;
+                }
+            }
+        });
+        egui::ComboBox::from_id_salt("pcb_pen_layer").selected_text(pen.layer.as_str()).show_ui(ui, |ui| {
+            for layer in &board.layers {
+                if ui.selectable_label(pen.layer == layer.name, &layer.name).clicked() {
+                    pen.layer = layer.name.clone();
+                    pen.from = None;
+                }
+            }
+        });
+        let mut width = l.from_si(pen.width);
+        if ui.add(egui::DragValue::new(&mut width).speed(0.01).range(0.001..=10.0).suffix(format!(" {}", l.symbol()))).changed() {
+            pen.width = l.to_si(width);
+        }
+    });
+    ui_kit::caption(ui, "Click on the layer in the 3D view: each click adds a segment from the last. Right click or Esc ends the line.");
+    let net = pen.net.clone();
+    segments(app, state, ui, board, &net, out);
+}
+
 /// The grid traces are drawn on (m), and how near (m) a click snaps to a route's end.
 const DRAW_GRID: f64 = 0.05e-3;
 const DRAW_SNAP: f64 = 0.4e-3;
 
-/// Drawing the selected route on in 3D: a toggle over the view's top right; each click on the
-/// route's layer adds a segment from the last point (the first only sets it), snapped to the
-/// route's ends or a 0.05 mm grid, its width the route's; a right click or Escape ends it.
+/// Drawing copper in 3D: a toggle over the view's top right; while on, each click on the pen's
+/// layer adds a segment from the last point (the first only sets it), snapped to the pen net's
+/// ends there or a 0.05 mm grid; a right click or Escape ends the line, and with none, drawing.
 fn draw(
     app: &EmcraftApp,
     state: &mut crate::state::PcbUi,
@@ -303,27 +367,27 @@ fn draw(
     board: &emcraft_model::pcb::Board,
     out: &mut Actions,
 ) {
-    let net = app.session.views().pcb_net.clone().unwrap_or_default();
-    let Some(first) = board.segments.iter().find(|g| g.net == net) else {
-        state.drawing = None;
-        return;
-    };
     let toggle = Rect::from_min_size(pos2(view.right() - 140., view.top() + 8.), vec2(130., 28.));
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(toggle));
-    let r = child.selectable_label(state.drawing.is_some(), tr("Draw the route"));
+    let r = ui.new_child(egui::UiBuilder::new().max_rect(toggle)).selectable_label(state.drawing.is_some(), tr("Draw the route"));
     scenario::publish_target(Handle::Choice("pcb_mode", "draw"), r.rect);
     if r.clicked() {
-        state.drawing = if state.drawing.is_some() { None } else { Some(None) };
+        state.drawing = match state.drawing {
+            Some(_) => None,
+            None => Some(crate::state::Pen::for_board(board, app.session.views().pcb_net.as_deref())),
+        };
     }
-    let Some(last) = state.drawing else { return };
+    let Some(pen) = state.drawing.as_mut() else { return };
     // Escape or a right click ends the line being drawn, and with none, drawing.
     if ui.input(|i| i.key_pressed(egui::Key::Escape) || i.pointer.secondary_clicked()) {
-        state.drawing = last.map(|_| None);
+        match pen.from {
+            Some(_) => pen.from = None,
+            None => state.drawing = None,
+        }
         return;
     }
-    // The route's layer as the view lays it, and where the pointer's ray meets it.
+    // The pen's layer as the view lays it, and where the pointer's ray meets it.
     let frame = crate::scene3d::board::frame(board);
-    let Some(layer) = board.layers.iter().find(|l| l.name == first.layer) else { return };
+    let Some(layer) = board.layers.iter().find(|l| l.name == pen.layer) else { return };
     let height = frame.point([0.0, 0.0], layer.z, board)[1];
     let on_layer = |pos: egui::Pos2| -> Option<[f64; 2]> {
         let (o, d) =
@@ -332,40 +396,37 @@ fn draw(
         (d[1].abs() > 1e-12 && t > 0.0).then(|| [o[0] + t * d[0], o[2] + t * d[2]])
     };
     let snapped = |p: [f64; 2]| {
-        let ends = board.segments.iter().filter(|g| g.net == net && g.layer == first.layer).flat_map(|g| [g.start, g.end]);
+        let ends = board.segments.iter().filter(|g| g.net == pen.net && g.layer == pen.layer).flat_map(|g| [g.start, g.end]);
         match ends.map(|q| (emcraft_model::pcb::distance(p, q), q)).min_by(|a, b| a.0.total_cmp(&b.0)) {
             Some((d, q)) if d <= DRAW_SNAP => q,
             _ => p.map(|c| (c / DRAW_GRID).round() * DRAW_GRID),
         }
     };
-    // Not over the controls on the view: its mode bar, this toggle, the minimap.
-    let free = |p: &egui::Pos2| view.contains(*p) && p.y > view.top() + 44. && !minimap(view).contains(*p);
-    let hover = ui.input(|i| i.pointer.hover_pos()).filter(free);
-    let painter = ui.painter().with_clip_rect(view);
-    let t = Tokens::get();
+    // Not over the controls on the view: this toggle and the minimap.
+    let free = |p: &egui::Pos2| view.contains(*p) && !toggle.contains(*p) && !minimap(view).contains(*p);
+    let at = ui.input(|i| i.pointer.hover_pos()).filter(free).and_then(on_layer).map(snapped);
     let screen = |p: [f64; 2]| {
         let q = frame.point(p, layer.z, board);
         v.camera.project(q, f64::from(view.width()), f64::from(view.height())).map(|s| view.min + vec2(s[0] as f32, s[1] as f32))
     };
-    if let (Some(a), Some(h)) = (last, hover.and_then(on_layer).map(snapped))
+    if let (Some(a), Some(h)) = (pen.from, at)
         && let (Some(sa), Some(sh)) = (screen(a), screen(h))
     {
+        let t = Tokens::get();
+        let painter = ui.painter().with_clip_rect(view);
         painter.line_segment([sa, sh], Stroke::new(2., t.warning));
         painter.circle_filled(sa, 3., t.warning);
     }
-    let clicked = ui.input(|i| i.pointer.primary_clicked());
-    if let (true, Some(p)) = (clicked && !app.busy(), hover.and_then(on_layer).map(snapped)) {
+    let (Some(p), true) = (at, ui.input(|i| i.pointer.primary_clicked()) && !app.busy()) else { return };
+    if let Some(a) = pen.from.filter(|a| emcraft_model::pcb::distance(*a, p) > 0.0) {
         let l = app.session.display().length;
-        if let Some(a) = last
-            && emcraft_model::pcb::distance(a, p) > 0.0
-        {
-            out.push(Action::run(
-                "pcb.segment",
-                json!({"net": net, "layer": first.layer, "start": [l.from_si(a[0]), l.from_si(a[1])], "end": [l.from_si(p[0]), l.from_si(p[1])], "width": l.from_si(first.width)}),
-            ));
-        }
-        state.drawing = Some(Some(p));
+        let point = |q: [f64; 2]| [l.from_si(q[0]), l.from_si(q[1])];
+        out.push(Action::run(
+            "pcb.segment",
+            json!({"net": pen.net, "layer": pen.layer, "start": point(a), "end": point(p), "width": l.from_si(pen.width)}),
+        ));
     }
+    pen.from = Some(p);
 }
 
 /// Where the minimap sits in the 3D view: its bottom right corner.
@@ -609,10 +670,7 @@ fn draw_board(
         && let Some((_, n)) = nearest
     {
         state.attempted = None;
-        out.push(Action::run(
-            "view.pcb",
-            if app.session.views().pcb_illustration.pick_victim { json!({"victim": n, "stage": "net"}) } else { json!({"net": n, "stage": "net"}) },
-        ));
+        out.push(Action::run("view.pcb", json!({"net": n, "stage": "net"})));
     }
 }
 

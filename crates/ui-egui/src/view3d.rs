@@ -624,7 +624,7 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         FieldKey { view, at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect(), gpu }
     });
     let pcb = &app.session.views().pcb_illustration;
-    let motion = if overlay == Overlay::Board && pcb.coupling && pcb.playing { (now * 5.0) as u64 } else { 0 };
+    let motion = if overlay == Overlay::Board && pcb.illustrated.is_some() && pcb.playing { (now * 5.0) as u64 } else { 0 };
     SceneKey {
         revision: app.revision,
         overlay,

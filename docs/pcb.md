@@ -143,16 +143,20 @@ reopening and undo; the UI scenario exercises actual route/net clicks and both g
 ## The board in 3D
 
 The PCB window shows the board in 3D beside the stage's panel, its top view a minimap in the
-corner. Heights are stretched until the layers stand apart (the legend says by how much). Over
-the view, its modes:
+corner. Heights are stretched until the layers stand apart (the legend says by how much). The
+view offers what its stage needs, nothing more:
 
-- **Pick traces** — a click on a trace selects it as the route (or, after *Pick receiver*, as
-  the receiving trace). The route is orange, the receiver blue, the reference green.
-- **Electric coupling**, **Magnetic coupling**, **Return reference** — once a receiving trace
-  is chosen and the route inspected, the mode's schematic drawn on the board at the selected
-  parallel stretch (the view goes there): arches between the traces, loops round the source,
-  the reference under the route (never across a gap). *Explain motion* animates them. They are
-  schematics: no field or noise voltage is computed for them.
+- **1 Prepare board** — *Draw the route* over the view's top right: the panel then shows the pen
+  (net, layer, width) and that net's segments, their widths to change and a delete each; each
+  click on the pen's layer adds a segment from the last point (snapped to the net's ends there or
+  a 0.05 mm grid); a right click or Escape ends the line, and with none, drawing.
+- **2 Select route** — a click on a trace makes it the route (orange); the panel picks the
+  receiving trace (blue) of a coupling when the board has another route.
+- **5 Review results** — once a receiving trace's parallel stretch is in the report, the view's
+  top shows *Whole board*, **Electric coupling**, **Magnetic coupling**, **Return reference**: the
+  mechanism's schematic drawn on the board at that stretch (the view goes there) — arches between
+  the traces, loops round the source, the reference under the route (never across a gap) — with
+  *Explain motion*. They are schematics: no field or noise voltage is computed for them.
 
 In step 4, **Solve with FEM** runs the route through the finite elements in one go: its region
 (`pcb.region` round the net), a port at each of its two ends (`pcb.port`, the conditions'
@@ -167,11 +171,8 @@ A board imported or loaded is edited by commands, each recorded and undoable: `p
 adds a trace segment or changes one (`id`: only what is given), `pcb.segment.delete` removes one;
 `pcb.via` / `pcb.via.delete` and `pcb.pour` / `pcb.pour.delete` add and remove vias and filled
 copper (pads included). The board is checked after each; its region stays, its mesh goes. In the
-window, the ribbon's PCB panel adds traces, vias and pours; in step 2 the selected route's
-segments are listed with their widths to change and a delete each. *Draw the route*, over the 3D
-view's top right, draws on the route's layer: each click adds a segment from the last point (the
-first click only sets it), snapped to the route's ends or a 0.05 mm grid, the route's width; a
-right click or Escape ends the line, and again drawing.
+window, the ribbon's PCB panel adds traces, vias and pours; a net's segments are edited while
+drawing in step 1 (above).
 
 ## Solving a board's region with finite elements
 

@@ -137,12 +137,9 @@ Navigates the PCB workflow (board, net, settings, inspect, results) or selects a
 | `stage` | string |  | no | PCB stage: board, net, settings, inspect or results |
 | `net` | string |  | no | routed net to select |
 | `victim` | string |  | no | receiving net, different from the selected source |
-| `coupling` | boolean |  | no | the board's 3D view illustrates the coupling (`mode`) instead of picking routes |
-| `mode` | string |  | no | schematic mechanism |
+| `coupling` | boolean |  | no | false: the board's 3D view shows the whole board; true: it illustrates the coupling (the last mechanism, electric at first) |
+| `mode` | string |  | no | the mechanism the 3D view illustrates |
 | `playing` | boolean |  | no | play explanatory emphasis, not physical time |
-| `exaggerate` | boolean |  | no | exaggerate depth by 10 for visibility |
-| `section` | boolean |  | no | show local cross section |
-| `pick_victim` | boolean |  | no | board clicks select the receiver |
 
 ## `project.frequency` — Frequency band
 
