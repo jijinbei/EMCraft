@@ -271,29 +271,24 @@ pub struct Session {
     pub(crate) path: Option<String>,
     /// The sample the session was opened from, which names it until it is saved.
     pub(crate) sample: Option<String>,
-    /// The history as last saved or opened: the session has unsaved changes when its history
-    /// differs (an undo back to it is clean again).
-    pub(crate) saved: Vec<Step>,
+    /// The project as last saved or opened: the session has unsaved changes where it differs
+    /// (an undo back to it is clean again).
+    pub(crate) saved: Saved,
     /// The project's runs: the last solve of each solve command ([`crate::runs`]), the latest
-    /// last, and the runs as last saved or opened.
+    /// last.
     pub(crate) runs: Vec<Run>,
-    pub(crate) saved_runs: Vec<Run>,
     /// The analysis history: the solves kept with their models and results
-    /// ([`crate::archive`]), the last id given, the kept solve the session was restored to, and
-    /// the solves' ids, pins and labels as last saved or opened.
+    /// ([`crate::archive`]), the last id given and the kept solve the session was restored to.
     pub(crate) archive: Vec<crate::archive::Archived>,
     pub(crate) archive_next: u32,
     pub(crate) archive_current: Option<u32>,
-    pub(crate) saved_archive: Vec<crate::archive::Mark>,
     /// Where the solvers run (`solve.device`).
     pub(crate) compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
     /// commands of the history.
     pub(crate) variables: expr::Variables,
-    /// How the project's results are looked at (charts' styles, probes: [`crate::views`]), and
-    /// as last saved or opened.
+    /// How the project's results are looked at (charts' styles, probes: [`crate::views`]).
     pub(crate) views: crate::views::Views,
-    pub(crate) saved_views: crate::views::Views,
     /// The run a solve command records in place of its own (`solve.refine` records the merged
     /// sweep as `solve.frequency`); taken when it succeeds.
     pub(crate) next_run: Option<Run>,
@@ -303,6 +298,28 @@ pub struct Session {
 }
 
 /// Reading the session.
+/// The project as last saved or opened: its history, its runs, how its results are looked at
+/// and its kept solves' ids, pins and labels — what [`Session::is_dirty`] compares with.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Saved {
+    pub history: Vec<Step>,
+    pub runs: Vec<Run>,
+    pub views: crate::views::Views,
+    pub archive: Vec<crate::archive::Mark>,
+}
+
+impl Saved {
+    /// `s`'s project as it is now.
+    pub(crate) fn of(s: &Session) -> Saved {
+        Saved { history: s.history.clone(), runs: s.runs.clone(), views: s.views.clone(), archive: crate::archive::marks(&s.archive) }
+    }
+
+    /// Whether `s`'s project is this one (compared in place, nothing copied).
+    fn is(&self, s: &Session) -> bool {
+        self.history == s.history && self.runs == s.runs && self.views == s.views && crate::archive::marks(&s.archive) == self.archive
+    }
+}
+
 /// How a command that succeeded ran: its wall-clock seconds and its reply.
 struct Ran<'a> {
     seconds: f64,
@@ -441,12 +458,9 @@ impl Session {
         *self = Session { undo: std::mem::take(&mut self.undo), ..fresh };
     }
 
-    /// The history and the runs as they are now count as saved.
+    /// The project as it is now counts as saved.
     pub(crate) fn mark_saved(&mut self) {
-        self.saved = self.history.clone();
-        self.saved_runs = self.runs.clone();
-        self.saved_views = self.views.clone();
-        self.saved_archive = crate::archive::marks(&self.archive);
+        self.saved = Saved::of(self);
     }
 
     /// Whether the project changed since it was last saved or opened: its model's history or
@@ -454,10 +468,7 @@ impl Session {
     /// looked at (a chart's style, a probe) or its analysis history (a solve kept, pinned,
     /// labelled or let go).
     pub fn is_dirty(&self) -> bool {
-        self.history != self.saved
-            || self.runs != self.saved_runs
-            || self.views != self.saved_views
-            || crate::archive::marks(&self.archive) != self.saved_archive
+        !self.saved.is(self)
     }
 
     /// The project's runs, the latest last ([`crate::runs`]).
