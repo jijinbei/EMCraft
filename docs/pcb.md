@@ -170,7 +170,8 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
 1. Every layer's copper — traces with round ends, vias' pads, filled polygons — in one
    triangulation of the region, on a 1 nm lattice so the same board gives the same mesh;
    overlapping copper of a net is joined, two nets overlapping on a layer are refused by name.
-2. The triangles refined to `size` far from copper and to the copper edge size at its edges
+2. The triangles refined to `size` far from copper and to the copper edge size at its edges (a
+   pour's edges only within `size` of a trace or via; farther, they follow the size field)
    (`strip_edge` × `size`; by default a sixth of the narrowest trace), where the fields are
    singular.
 3. Each via's barrel (its `drill`, else its pads' diameter) on a layer of its own in that

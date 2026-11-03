@@ -194,7 +194,7 @@ fn copper(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn
     let (lo, hi) = ([lo[0] - margin, lo[1] - margin], [hi[0] + margin, hi[1] + margin]);
     let size = (hi[0] - lo[0]).max(hi[1] - lo[1]);
     let names: Vec<String> = board.layers.iter().map(|l| l.name.clone()).collect();
-    let request = Request { lo, hi, layers: &names, nets, outlines: &outlines, lines: &[], size, edge_size: size };
+    let request = Request { lo, hi, layers: &names, nets, outlines: &outlines, coarse: &[], lines: &[], size, edge_size: size };
     match triangulate(&request) {
         Ok(planar) => {
             for (l, covered) in planar.nets.iter().enumerate() {

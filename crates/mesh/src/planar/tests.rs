@@ -7,7 +7,7 @@ fn names(n: usize, what: &str) -> Vec<String> {
 }
 
 fn request<'a>(layers: &'a [String], nets: &'a [String], outlines: &'a [Outline]) -> Request<'a> {
-    Request { lo: [0.0, 0.0], hi: [4.0 * MM, 3.0 * MM], layers, nets, outlines, lines: &[], size: 0.6 * MM, edge_size: 0.1 * MM }
+    Request { lo: [0.0, 0.0], hi: [4.0 * MM, 3.0 * MM], layers, nets, outlines, coarse: &[], lines: &[], size: 0.6 * MM, edge_size: 0.1 * MM }
 }
 
 fn rectangle(lo: [f64; 2], hi: [f64; 2]) -> Vec<[f64; 2]> {
@@ -228,4 +228,17 @@ fn the_extruded_board_conforms_with_its_copper_inside() {
     ] {
         assert!(extrude(&planar, &bad).is_err());
     }
+}
+
+#[test]
+fn a_pour_far_from_the_traces_is_meshed_coarsely_and_covered_whole() {
+    let (layers, nets) = (names(2, "L"), names(2, "n"));
+    let trace = [Outline { layer: 0, net: 0, ring: offset::trace([0.5 * MM, 0.5 * MM], [1.5 * MM, 0.5 * MM], 0.2 * MM, 1e-6) }];
+    let pour = [Outline { layer: 1, net: 1, ring: rectangle([0.2 * MM, 0.2 * MM], [3.8 * MM, 2.8 * MM]) }];
+    let fine = triangulate(&Request { outlines: &[trace[0].clone(), pour[0].clone()], ..request(&layers, &nets, &[]) }).unwrap();
+    let coarse = triangulate(&Request { outlines: &trace, coarse: &pour, ..request(&layers, &nets, &[]) }).unwrap();
+    sound(&coarse, 12.0 * MM * MM);
+    assert!((coarse.copper_area(1) - 3.6 * 2.6 * MM * MM).abs() < 1e-15);
+    assert_eq!(fine.copper_area(1), coarse.copper_area(1));
+    assert!(coarse.triangles.len() < fine.triangles.len() * 3 / 4, "{} {}", coarse.triangles.len(), fine.triangles.len());
 }

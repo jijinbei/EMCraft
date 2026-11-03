@@ -30,6 +30,7 @@
 //!     layers: &["top".into()],
 //!     nets: &["signal".into()],
 //!     outlines: &[Outline { layer: 0, net: 0, ring }],
+//!     coarse: &[],
 //!     lines: &[],
 //!     size: 0.5e-3,
 //!     edge_size: 0.1e-3,
@@ -90,6 +91,9 @@ pub struct Request<'a> {
     pub layers: &'a [String],
     pub nets: &'a [String],
     pub outlines: &'a [Outline],
+    /// Copper whose edges need the copper's edge size only near the `outlines`' (a pour's
+    /// far from any trace): elsewhere they follow the size field.
+    pub coarse: &'a [Outline],
     /// Lines the mesh must follow besides the copper (metres, inside the region): where a
     /// perfectly matched layer begins, say.
     pub lines: &'a [[[f64; 2]; 2]],
@@ -146,11 +150,11 @@ fn check(r: &Request) -> Result<()> {
     if r.layers.is_empty() || r.layers.len() > MAX_LAYERS {
         return Err(invalid(format!("a board needs 1 to {MAX_LAYERS} layers")));
     }
-    let points: usize = r.outlines.iter().map(|o| o.ring.len()).sum();
+    let points: usize = r.outlines.iter().chain(r.coarse).map(|o| o.ring.len()).sum();
     if points > MAX_POINTS {
         return Err(invalid(format!("the copper outlines have {points} points, more than the limit of {MAX_POINTS}")));
     }
-    for o in r.outlines {
+    for o in r.outlines.iter().chain(r.coarse) {
         if o.layer >= r.layers.len() || o.net as usize >= r.nets.len() {
             return Err(invalid("an outline names a layer or net the board does not have"));
         }
@@ -172,9 +176,10 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     let mut points = Points::default();
     let ids: Vec<u32> = corners.iter().map(|&c| points.id(c)).collect();
     let mut edges: Vec<[u32; 2]> = (0..4).map(|k| [ids[k], ids[(k + 1) % 4]]).collect();
-    // Each kept outline's layer, net and first edge.
+    // Each kept outline's layer, net and first edge, and whether its edges are fine.
     let mut owners: Vec<(usize, u32, usize)> = Vec::new();
-    for o in r.outlines {
+    let mut fine: Vec<bool> = Vec::new();
+    for (o, is_fine) in r.outlines.iter().map(|o| (o, true)).chain(r.coarse.iter().map(|o| (o, false))) {
         let mut ring: Vec<u32> = offset::clipped(&o.ring, r.lo, r.hi).into_iter().map(|p| points.id(lattice.on(p))).collect();
         ring.dedup();
         while ring.len() > 1 && ring.first() == ring.last() {
@@ -184,6 +189,7 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
             continue;
         }
         owners.push((o.layer, o.net, edges.len()));
+        fine.push(is_fine);
         edges.extend((0..ring.len()).map(|k| [ring[k], ring[(k + 1) % ring.len()]]));
     }
     let chains = split::split(&mut points, &edges)?;
@@ -199,6 +205,13 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
             Ok(Ring { layer, net, points: exact(&xy)? })
         })
         .collect::<Result<_>>()?;
+    // The fine outlines' edges, for telling which copper edges need the edge size.
+    let fine_edges: Vec<([f64; 2], [f64; 2], bool)> = rings
+        .iter()
+        .zip(&fine)
+        .filter(|(_, f)| **f)
+        .flat_map(|(ring, _)| (0..ring.points.len()).map(move |k| (ring.points[k].coords(), ring.points[(k + 1) % ring.points.len()].coords(), true)))
+        .collect();
     let rings = Rings::new(rings, [0.0, 0.0], top)?;
     let (segments, constrained) = pieces(&chains, 4);
     let first = Cdt::build(&exact(&points.xy)?, &segments, MAX_TRIANGLES)?.into_triangulation();
@@ -236,6 +249,20 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     let step = lattice::STEP;
     let (big, small) = (r.size / step, r.edge_size / step);
     let reach = (big - small) / GRADING;
+    // A copper edge is fine within `size` of a fine outline's; the others are lines of the
+    // mesh spaced by the size field.
+    let mut coarse_edges: Vec<[[f64; 2]; 2]> = Vec::new();
+    if !fine.iter().all(|f| *f) {
+        let fine_near = Near::new(fine_edges, [0.0, 0.0], top, big)?;
+        outline.retain(|s| {
+            let mid = [0.5 * (s.0[0] + s.1[0]), 0.5 * (s.0[1] + s.1[1])];
+            let keep = !s.2 || fine_near.distances(mid, 2.0 * big).0 <= big;
+            if !keep {
+                coarse_edges.push([s.0, s.1]);
+            }
+            keep
+        });
+    }
     let near = Near::new(outline.iter().filter(|s| s.2).copied().collect(), [0.0, 0.0], top, big)?;
     let size = |p: [f64; 2]| (small + GRADING * near.distances(p, reach).0).min(big);
     let mut points = Points::default();
@@ -253,6 +280,7 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
             lines.push((a, b, None));
         }
     }
+    lines.extend(coarse_edges.iter().map(|&[a, b]| (a, b, None)));
     let followed = outline.len();
     for (k, &(a, b, kind)) in lines.iter().enumerate() {
         let copper = kind.is_some();

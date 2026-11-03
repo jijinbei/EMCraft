@@ -140,8 +140,10 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         let ring = offset::trace_ends(at(g.start), at(g.end), g.width, SAG * g.width, [!fed(g.start), !fed(g.end)]);
         outlines.push(Outline { layer: layer(&g.layer)?, net: net(&g.net)?, ring });
     }
+    // Pours: their edges fine only near the traces and vias.
+    let mut coarse = Vec::new();
     for c in &board.copper {
-        outlines.push(Outline { layer: layer(&c.layer)?, net: net(&c.net)?, ring: c.polygon.iter().map(|q| at(*q)).collect() });
+        coarse.push(Outline { layer: layer(&c.layer)?, net: net(&c.net)?, ring: c.polygon.iter().map(|q| at(*q)).collect() });
     }
     // Vias: their pads on their layers, their barrels on a layer of their own after the
     // board's (each its own "net", so the triangles it covers are known).
@@ -169,8 +171,17 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         let c = [[d, d], [w[0] - d, d], [w[0] - d, w[1] - d], [d, w[1] - d]];
         lines.extend((0..4).map(|k| [c[k], c[(k + 1) % 4]]));
     }
-    let planar =
-        triangulate(&Request { lo: [0.0, 0.0], hi: w, layers: &names, nets: &nets, outlines: &outlines, lines: &lines, size, edge_size: edge })?;
+    let planar = triangulate(&Request {
+        lo: [0.0, 0.0],
+        hi: w,
+        layers: &names,
+        nets: &nets,
+        outlines: &outlines,
+        coarse: &coarse,
+        lines: &lines,
+        size,
+        edge_size: edge,
+    })?;
     // The stack from the floor: air, the substrates, air; cells across a substrate about twice
     // the edge size, the air's growing away from the board.
     let vacuum = 0;
