@@ -65,19 +65,21 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.painter().rect_filled(r, 12.0, fill);
                 ui.painter().rect_stroke(r, 12.0, Stroke::new(1.0, if active { t.accent } else { t.border }), egui::StrokeKind::Inside);
                 let c = pos2(r.left() + 14.0, r.center().y);
-                if run_going {
-                    running_mark(ui, c, t);
-                } else if unneeded.is_some() && s.status == Status::Done {
-                    skip_mark(ui.painter(), c, t);
-                } else {
-                    mark(ui.painter(), c, s.status, t);
+                let look = match (run_going, unneeded.is_some(), s.status) {
+                    (true, _, _) => Look::Running,
+                    (false, true, Status::Done) => Look::Skipped,
+                    (false, true, status) => Look::Unneeded(status),
+                    (false, false, status) => Look::Plain(status),
+                };
+                match look {
+                    Look::Running => running_mark(ui, c, t),
+                    Look::Skipped => skip_mark(ui.painter(), c, t),
+                    Look::Unneeded(status) | Look::Plain(status) => mark(ui.painter(), c, status, t),
                 }
-                let ink = if active {
-                    t.selected_ink
-                } else if (s.status == Status::Waiting && !run_going) || unneeded.is_some() {
-                    t.text_dim
-                } else {
-                    t.text
+                let ink = match (active, look) {
+                    (true, _) => t.selected_ink,
+                    (false, Look::Skipped | Look::Unneeded(_) | Look::Plain(Status::Waiting)) => t.text_dim,
+                    (false, _) => t.text,
                 };
                 ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, ink);
                 if resp.on_hover_text(tip).clicked() {
@@ -94,6 +96,16 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 out.push(Action::OpenStep(if again { None } else { Some(step) }));
             }
         });
+}
+
+/// How a step's pill looks: the run under way, a step not needed (skipped when it is done),
+/// or its status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Look {
+    Running,
+    Skipped,
+    Unneeded(Status),
+    Plain(Status),
 }
 
 /// A status mark: a tick, a hollow ring, dots, an exclamation, a cross or a turning arrow.

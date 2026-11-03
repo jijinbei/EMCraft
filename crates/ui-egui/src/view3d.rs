@@ -748,25 +748,27 @@ struct Gesture {
     tool_click: bool,
 }
 
-/// A drag of the reference plane's grip this frame: it began, moved it, or let it go.
-#[derive(Default)]
-struct GripDrag {
-    started: bool,
-    moved: Option<egui::Vec2>,
-    released: bool,
+/// A drag of the reference plane's grip this frame: none, it began (and moved it this much), it
+/// moved it, or it let it go.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum GripDrag {
+    Idle,
+    Started(egui::Vec2),
+    Moved(egui::Vec2),
+    Released,
 }
 
 /// The tools' share of the frame: the reference plane's drag, what the pointer is over, a
 /// tool's click and Escape.
 fn tools(app: &EmcraftApp, v: &mut View3d, ui: &egui::Ui, rect: Rect, edit: &Gesture, out: &mut Actions) {
-    if edit.grip.started {
-        crate::tools3d::start_drag(app, v);
-    }
-    if let Some(d) = edit.grip.moved {
-        crate::tools3d::drag(app, v, rect, d);
-    }
-    if edit.grip.released {
-        crate::tools3d::end_drag(app, v, out);
+    match edit.grip {
+        GripDrag::Idle => {}
+        GripDrag::Started(d) => {
+            crate::tools3d::start_drag(app, v);
+            crate::tools3d::drag(app, v, rect, d);
+        }
+        GripDrag::Moved(d) => crate::tools3d::drag(app, v, rect, d),
+        GripDrag::Released => crate::tools3d::end_drag(app, v, out),
     }
     crate::tools3d::hover(app, v, rect, ui.input(|i| i.pointer.hover_pos()));
     if edit.tool_click && !app.busy() {
@@ -976,8 +978,8 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
     let sign = if nav.reverse_zoom { -1.0 } else { 1.0 };
     let ctrl = mods.ctrl || mods.command;
     // The left button: chosen once, when the drag begins.
-    let mut grip_drag = GripDrag::default();
-    if resp.drag_started_by(egui::PointerButton::Primary) {
+    let grip_started = resp.drag_started_by(egui::PointerButton::Primary);
+    if grip_started {
         let at = press.or(resp.interact_pointer_pos());
         let plain = !mods.shift && !ctrl && !mods.alt;
         v.left = if space {
@@ -995,9 +997,8 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
         } else {
             None
         };
-        grip_drag.started = v.left == Some(LeftDrag::Grip);
     }
-    grip_drag.released = v.left == Some(LeftDrag::Grip) && !resp.dragged();
+    let on_grip = v.left == Some(LeftDrag::Grip);
     // The box follows the pointer from the press; let go, it selects.
     let mut select = false;
     match (v.left, resp.dragged()) {
@@ -1019,7 +1020,12 @@ fn navigate(app: &EmcraftApp, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, fra
     let boxing = matches!(v.left, Some(LeftDrag::Box { .. }));
     let d = resp.drag_delta();
     let plane_drag = (v.left == Some(LeftDrag::Plane) && resp.dragged()).then_some(d);
-    grip_drag.moved = (v.left == Some(LeftDrag::Grip) && resp.dragged()).then_some(d);
+    let grip_drag = match (on_grip, grip_started, resp.dragged()) {
+        (false, _, _) => GripDrag::Idle,
+        (true, _, false) => GripDrag::Released,
+        (true, true, true) => GripDrag::Started(d),
+        (true, false, true) => GripDrag::Moved(d),
+    };
     // The middle and right buttons by the mapping, the left as chosen at its press.
     let button = if resp.dragged_by(egui::PointerButton::Middle) {
         Some(NavButton::Middle)
