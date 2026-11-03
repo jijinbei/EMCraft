@@ -268,7 +268,7 @@ mod tests {
         let x = l.upper_solve(&l.lower_solve(&b));
         for i in 0..3 {
             let ax: f64 = (0..3).map(|j| a[i * 3 + j] * x[j]).sum();
-            assert!((ax - b[i]).abs() < 1e-12);
+            approx::assert_abs_diff_eq!(ax, b[i], epsilon = 1e-12);
         }
         assert!(Cholesky::new(&[1.0, 2.0, 2.0, 1.0], 2).is_none());
     }

@@ -48,7 +48,7 @@ fn board_commands_refuse_hostile_inputs_and_keep_the_model() {
     assert_eq!(s.model(), &before);
     s.execute("units.set", &json!({"length": "m", "frequency": "MHz"})).unwrap();
     let r = s.execute("pcb.inspect", &json!({"net": "DATA", "stop": 1000})).unwrap();
-    assert!((r["length"].as_f64().unwrap() - 0.04).abs() < 1e-12);
+    approx::assert_abs_diff_eq!(r["length"].as_f64().unwrap(), 0.04, epsilon = 1e-12);
     assert_eq!(r["si"]["points"][63]["frequency"], 1000.0);
 }
 
@@ -64,12 +64,12 @@ fn pcb_templates_declare_their_workflow_and_rebuild_from_parameters() {
         assert!(status["not_needed"].as_array().unwrap().contains(&json!("mesh")));
         let r = s.execute("pcb.inspect", &json!({})).unwrap();
         assert_eq!(r["model_available"], model);
-        assert!((r["length"].as_f64().unwrap() - 80.).abs() < 1e-10);
+        approx::assert_abs_diff_eq!(r["length"].as_f64().unwrap(), 80., epsilon = 1e-10);
         assert_eq!(r["stop"], 5.);
         assert_eq!(r["findings"].as_array().unwrap().iter().any(|f| f["code"] == "nearby_signal"), nearby);
         s.execute("project.variable", &json!({"name": "l", "value": 60})).unwrap();
         let r = s.execute("pcb.inspect", &json!({"net": "DATA"})).unwrap();
-        assert!((r["length"].as_f64().unwrap() - 60.).abs() < 1e-10);
+        approx::assert_abs_diff_eq!(r["length"].as_f64().unwrap(), 60., epsilon = 1e-10);
         let before = s.summary();
         assert!(s.execute("project.variable", &json!({"name": "h", "value": -1})).is_err());
         assert_eq!(s.summary(), before);
@@ -113,7 +113,7 @@ fn coupling_pairs_roles_and_geometry_spacing_are_explicit() {
     let pairs = r["coupling_pairs"].as_array().unwrap();
     assert_eq!(pairs.len(), 2);
     assert_eq!(pairs[0]["target"], "CLK");
-    assert!((pairs[0]["gap"].as_f64().unwrap() - 0.25).abs() < 1e-10);
+    approx::assert_abs_diff_eq!(pairs[0]["gap"].as_f64().unwrap(), 0.25, epsilon = 1e-10);
     assert_eq!(pairs[0]["overlap"], 20.);
     assert_eq!(pairs[0]["method"], "geometry_only");
     assert!(s.execute("view.pcb", &json!({"victim": "DATA"})).is_err());
@@ -126,6 +126,6 @@ fn coupling_pairs_roles_and_geometry_spacing_are_explicit() {
     assert_eq!(s.views().pcb_illustration, again.views().pcb_illustration);
     s.execute("project.variable", &json!({"name": "gap", "value": 1.5})).unwrap();
     let r = s.execute("pcb.inspect", &json!({"net": "DATA"})).unwrap();
-    assert!((r["coupling_pairs"][0]["gap"].as_f64().unwrap() - 1.5).abs() < 1e-10);
+    approx::assert_abs_diff_eq!(r["coupling_pairs"][0]["gap"].as_f64().unwrap(), 1.5, epsilon = 1e-10);
     let _ = std::fs::remove_file(file);
 }

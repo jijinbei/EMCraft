@@ -158,10 +158,10 @@ mod tests {
     #[test]
     fn monomial_integrals() {
         // ∫ 1 = V, ∫ λ = V/4, ∫ λ² = V/10, ∫ λᵢλⱼ = V/20.
-        assert!((monomial_integral([0; 4], 2.0) - 2.0).abs() < 1e-15);
-        assert!((monomial_integral([1, 0, 0, 0], 1.0) - 0.25).abs() < 1e-15);
-        assert!((monomial_integral([0, 2, 0, 0], 1.0) - 0.1).abs() < 1e-15);
-        assert!((monomial_integral([0, 1, 0, 1], 1.0) - 0.05).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(monomial_integral([0; 4], 2.0), 2.0, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(monomial_integral([1, 0, 0, 0], 1.0), 0.25, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(monomial_integral([0, 2, 0, 0], 1.0), 0.1, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(monomial_integral([0, 1, 0, 1], 1.0), 0.05, epsilon = 1e-15);
     }
 
     #[test]

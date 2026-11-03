@@ -395,12 +395,12 @@ mod tests {
     #[test]
     fn the_normal_distribution_is_close_to_its_tables() {
         // Abramowitz & Stegun table 26.1 and erfc's known values.
-        assert!((normal_cdf(0.0) - 0.5).abs() < 1e-16);
-        assert!((normal_cdf(1.0) - 0.841_344_746_068_542_9).abs() < 1e-14);
-        assert!((normal_cdf(-2.0) - 0.022_750_131_948_179_2).abs() < 1e-15);
-        assert!((erfc(3.0) - 2.209_049_699_858_544e-5).abs() < 1e-18);
-        assert!((erfc(-3.0) - (2.0 - 2.209_049_699_858_544e-5)).abs() < 1e-14);
-        assert!((erfc(6.0) / 2.151_973_671_249_891_3e-17 - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(normal_cdf(0.0), 0.5, epsilon = 1e-16);
+        approx::assert_abs_diff_eq!(normal_cdf(1.0), 0.841_344_746_068_542_9, epsilon = 1e-14);
+        approx::assert_abs_diff_eq!(normal_cdf(-2.0), 0.022_750_131_948_179_2, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(erfc(3.0), 2.209_049_699_858_544e-5, epsilon = 1e-18);
+        approx::assert_abs_diff_eq!(erfc(-3.0), (2.0 - 2.209_049_699_858_544e-5), epsilon = 1e-14);
+        approx::assert_abs_diff_eq!(erfc(6.0) / 2.151_973_671_249_891_3e-17, 1.0, epsilon = 1e-12);
         assert!(normal_cdf(-40.0) >= 0.0 && normal_cdf(40.0) == 1.0);
         assert!(normal_cdf(f64::NAN).is_nan());
     }
@@ -440,8 +440,8 @@ mod tests {
         assert!(gp.variance_left(&x[3]).unwrap() < 1e-6);
         // The second output is the first scaled: the same correlations, ten times the σ.
         let at = gp.predict(&[0.3]).unwrap();
-        assert!((at.sigma[1] - 10.0 * at.sigma[0]).abs() < 1e-9 * at.sigma[1].max(1e-300));
-        assert!((at.mean[1] - (10.0 * at.mean[0] - 3.0)).abs() < 1e-9);
+        approx::assert_abs_diff_eq!(at.sigma[1], 10.0 * at.sigma[0], epsilon = 1e-9 * at.sigma[1].max(1e-300));
+        approx::assert_abs_diff_eq!(at.mean[1], (10.0 * at.mean[0] - 3.0), epsilon = 1e-9);
     }
 
     #[test]

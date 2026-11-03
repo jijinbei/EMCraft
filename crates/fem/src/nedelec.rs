@@ -521,8 +521,8 @@ mod tests {
                 let cs = 4.0 * e.volume * g[*i].cross(g[*j]).dot(g[*k].cross(g[*l]));
                 let cm =
                     ll(*i, *k) * g[*j].dot(g[*l]) - ll(*i, *l) * g[*j].dot(g[*k]) - ll(*j, *k) * g[*i].dot(g[*l]) + ll(*j, *l) * g[*i].dot(g[*k]);
-                assert!((s[p * 6 + q] - cs).abs() < 1e-12 * cs.abs().max(1.0));
-                assert!((m[p * 6 + q] - cm).abs() < 1e-14);
+                approx::assert_abs_diff_eq!(s[p * 6 + q], cs, epsilon = 1e-12 * cs.abs().max(1.0));
+                approx::assert_abs_diff_eq!(m[p * 6 + q], cm, epsilon = 1e-14);
             }
         }
     }
@@ -738,8 +738,8 @@ mod tests {
             let (s, m) = (e.stiffness(1.0), e.mass(1.0));
             let (sc, mc) = (e.stiffness_components(), e.mass_components());
             for k in 0..s.len() {
-                assert!((sc[0][k] + sc[1][k] + sc[2][k] - s[k]).abs() < 1e-11 * s[k].abs().max(1.0));
-                assert!((mc[0][k] + mc[1][k] + mc[2][k] - m[k]).abs() < 1e-14);
+                approx::assert_abs_diff_eq!(sc[0][k] + sc[1][k] + sc[2][k], s[k], epsilon = 1e-11 * s[k].abs().max(1.0));
+                approx::assert_abs_diff_eq!(mc[0][k] + mc[1][k] + mc[2][k], m[k], epsilon = 1e-14);
             }
         }
     }
@@ -773,7 +773,7 @@ mod tests {
         }
         // The face rule integrates the curved face's area: the same from both elements.
         let area = |e: &Element, f: [usize; 3]| e.face_rule(f, 6).iter().map(|r| r.1).sum::<f64>();
-        assert!((area(&a, [1, 2, 3]) - area(&b, [0, 1, 2])).abs() < 1e-14);
+        approx::assert_abs_diff_eq!(area(&a, [1, 2, 3]), area(&b, [0, 1, 2]), epsilon = 1e-14);
     }
 
     #[test]

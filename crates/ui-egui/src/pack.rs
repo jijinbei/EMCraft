@@ -137,7 +137,7 @@ mod tests {
             }
         }
         for (r, w) in a.blocks.iter().zip(wants) {
-            assert!((r.height() - w.y).abs() < 1e-3);
+            approx::assert_abs_diff_eq!(r.height(), w.y, epsilon = 1e-3);
         }
         assert!(a.main.width() >= least.x - 1e-3 || area.x < least.x);
         assert!(a.main.height() >= least.y - 1e-3);

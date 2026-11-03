@@ -62,7 +62,7 @@ mod tests {
     fn a_tetrahedron_winds_once_about_its_inside() {
         let p = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 0.0, 1.0)];
         let t = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
-        assert!((winding(&p, &t, Point3::new(0.1, 0.1, 0.1)) - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(winding(&p, &t, Point3::new(0.1, 0.1, 0.1)), 1.0, epsilon = 1e-12);
         assert!(winding(&p, &t, Point3::new(2.0, 2.0, 2.0)).abs() < 1e-12);
         // A missing corner skips its triangle, never panics.
         assert!(winding(&p, &[[0, 1, 9]], Point3::ORIGIN).is_finite());

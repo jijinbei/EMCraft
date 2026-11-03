@@ -61,10 +61,9 @@ pub fn is_run(id: &str) -> bool {
     is_solve(id) || id.starts_with("study.")
 }
 
-/// Whether command `id` is a solve: a `solve.` command other than the port modes' and those that
-/// pick or list the devices.
+/// Whether command `id` is a solve ([`emcraft_engine::CommandSpec::solves`]).
 pub fn is_solve(id: &str) -> bool {
-    id.starts_with("solve.") && !matches!(id, "solve.port_modes" | "solve.device" | "solve.devices")
+    emcraft_engine::find_command(id).is_some_and(emcraft_engine::CommandSpec::solves)
 }
 
 /// Whether a run is going on.

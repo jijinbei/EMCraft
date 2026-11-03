@@ -417,7 +417,7 @@ mod tests {
             let b = sample(&d.iter().map(|f| Factor { dim: f.dim, deg: 1 }).collect::<Vec<_>>(), 2);
             let ab = a.mul(&b).unwrap();
             for x in grid(&d) {
-                assert!((eval(&ab, &x) - eval(&a, &x) * eval(&b, &x)).abs() < 1e-12);
+                approx::assert_abs_diff_eq!(eval(&ab, &x), eval(&a, &x) * eval(&b, &x), epsilon = 1e-12);
             }
         }
     }
@@ -462,12 +462,12 @@ mod tests {
                         let lj = xa[f][j];
                         xa[f][i] += lj / 2.0;
                         xa[f][j] = lj / 2.0;
-                        assert!((eval(&a, &x) - eval(&p, &xa)).abs() < 1e-12);
+                        approx::assert_abs_diff_eq!(eval(&a, &x), eval(&p, &xa), epsilon = 1e-12);
                         let mut xb = x.clone();
                         let li = xb[f][i];
                         xb[f][j] += li / 2.0;
                         xb[f][i] = li / 2.0;
-                        assert!((eval(&b, &x) - eval(&p, &xb)).abs() < 1e-12);
+                        approx::assert_abs_diff_eq!(eval(&b, &x), eval(&p, &xb), epsilon = 1e-12);
                     }
                 }
             }
@@ -482,7 +482,7 @@ mod tests {
             for v in p.vertices() {
                 let x: Vec<Vec<f64>> = d.iter().zip(&v).map(|(f, &k)| (0..=f.dim).map(|c| if c == k { 1.0 } else { 0.0 }).collect()).collect();
                 let value = eval(&p, &x);
-                assert!((p.at_vertex(&v) - value).abs() < 1e-12);
+                approx::assert_abs_diff_eq!(p.at_vertex(&v), value, epsilon = 1e-12);
                 assert!(lo <= value && value <= hi);
             }
         }
@@ -491,12 +491,12 @@ mod tests {
         for m in one.multis() {
             one.set(m, 1.0);
         }
-        assert!((one.integral() - 1.0 / 6.0).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(one.integral(), 1.0 / 6.0, epsilon = 1e-15);
         let mut one = Bernstein::zero(&[Factor { dim: 2, deg: 1 }, seg(2)]).unwrap();
         for m in one.multis() {
             one.set(m, 1.0);
         }
-        assert!((one.integral() - 0.5).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(one.integral(), 0.5, epsilon = 1e-15);
     }
 
     #[test]

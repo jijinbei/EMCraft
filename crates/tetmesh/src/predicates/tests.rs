@@ -556,7 +556,7 @@ fn indirect_orient3d_matches_rational_constructions() {
         }
         let approx = lp.approx();
         for k in 0..3 {
-            assert!((approx[k] - rl[k].to_f64().unwrap()).abs() <= 1e-9 * (1.0 + approx[k].abs()));
+            approx::assert_abs_diff_eq!(approx[k], rl[k].to_f64().unwrap(), epsilon = 1e-9 * (1.0 + approx[k].abs()));
         }
     }
     assert!(checked > 500, "{checked}");

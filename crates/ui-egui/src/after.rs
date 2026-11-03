@@ -32,8 +32,7 @@ impl EmcraftApp {
         }
         self.views.chart.clear();
         if id == "units.set"
-            && let Some(r) = self.replies.pcb.as_ref()
-            && let Some(f) = r["stop_hz"].as_f64()
+            && let Some(f) = self.replies.pcb.as_ref().map(|r| r.stop_hz)
         {
             self.views.pcb.stop = self.session.display().frequency.from_si(f).to_string();
             self.replies.pcb = None;
@@ -48,10 +47,13 @@ impl EmcraftApp {
                 self.home.open = false;
             }
             "pcb.inspect" => {
-                self.views.pcb.ground = reply["ground"].as_str().unwrap_or("GND").to_owned();
-                self.views.pcb.reference = reply["reference"].to_string();
-                self.views.pcb.stop = reply["stop"].to_string();
-                self.replies.pcb = Some(reply.clone());
+                let report: Option<emcraft_engine::pcb::Inspection> = serde_json::from_value(reply.clone()).ok();
+                if let Some(r) = &report {
+                    self.views.pcb.ground = r.ground.clone();
+                    self.views.pcb.reference = r.reference.to_string();
+                    self.views.pcb.stop = r.stop.to_string();
+                }
+                self.replies.pcb = report;
                 self.view = View::Pcb;
                 self.workflow.step = None;
             }
@@ -106,7 +108,7 @@ impl EmcraftApp {
         }
         self.info(status::text(id, params, reply, &self.session));
         // A run started from the Run step goes on to Results.
-        if id.starts_with("solve.") && id != "solve.port_modes" && self.workflow.step == Some(steps::Step::Run) {
+        if steps::is_solve(id) && self.workflow.step == Some(steps::Step::Run) {
             steps::open_step(self, Some(steps::Step::Results));
         }
     }

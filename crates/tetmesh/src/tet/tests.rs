@@ -88,7 +88,7 @@ fn volume(cx: &TetComplex) -> f64 {
 fn cube_builds_and_rings() {
     let mut cx = cube();
     assert_eq!(cx.live_count(), 6);
-    assert!((volume(&cx) - 1.0).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(volume(&cx), 1.0, epsilon = 1e-15);
     let ring = cx.edge_ring(0, 7).unwrap().unwrap();
     assert!(ring.closed);
     assert_eq!(ring.verts.len(), 6);
@@ -110,13 +110,13 @@ fn interior_insertion_and_rollback() {
     };
     let v = insert_delaunay(&mut cx, p, VertexKind::Interior, Site::Interior(t), 1000).unwrap().unwrap();
     assert!(cx.is_used(v));
-    assert!((volume(&cx) - 1.0).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(volume(&cx), 1.0, epsilon = 1e-15);
     assert!(cx.live_count() > 6);
     cx.rollback(start).unwrap();
     cx.validate().unwrap();
     assert_eq!(cx.live_count(), 6);
     assert_eq!(cx.point_count(), 8);
-    assert!((volume(&cx) - 1.0).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(volume(&cx), 1.0, epsilon = 1e-15);
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn boundary_face_insertion_keeps_tags() {
     }
     let v = insert_delaunay(&mut cx, p, VertexKind::Face(4), site.unwrap(), 1000).unwrap().unwrap();
     assert!(cx.is_used(v));
-    assert!((volume(&cx) - 1.0).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(volume(&cx), 1.0, epsilon = 1e-15);
     let c = cx.compact().unwrap();
     let area: f64 = c
         .boundary
@@ -180,7 +180,7 @@ fn edge_and_face_removal_keep_the_mesh_valid() {
     }
     assert!(changed > 0);
     cx.validate().unwrap();
-    assert!((volume(&cx) - 1.0).abs() < 1e-14);
+    approx::assert_abs_diff_eq!(volume(&cx), 1.0, epsilon = 1e-14);
     for (_, vs) in cx.live_tets() {
         assert_eq!(cx.orient(vs).unwrap(), crate::predicates::Sign::Positive);
     }

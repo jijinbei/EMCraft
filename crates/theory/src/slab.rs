@@ -293,23 +293,20 @@ mod tests {
 
     /// The references of the oracle case `lossy-slab-guide` (its expected.json): WR-90 with
     /// εr = 2.25, tan δ = 0.02 in its lower half, 20 mm long.
-    #[test]
-    fn the_oracles_references() {
+    /// (GHz, ε_eff = −Re γ²/k₀², α in dB/mm, |S21| in dB, arg S21 in degrees)
+    #[rstest::rstest]
+    #[case(8.0, 0.8036894764051563, 0.012193127248945768, -0.2438625449789154, -172.25223277210745)]
+    #[case(10.0, 1.103149042794255, 0.01686754835768551, -0.33735096715371027, 107.74151176266264)]
+    #[case(12.0, 1.3057035873530582, 0.023702221207120386, -0.47404442414240805, 30.667253671338447)]
+    fn the_oracles_references(#[case] f: f64, #[case] eps_eff: f64, #[case] att: f64, #[case] s21_db: f64, #[case] s21_deg: f64) {
         let (a, b, l) = (0.02286, 0.01016, 0.02);
         let eps = C::new(2.25, -2.25 * 0.02);
         let db = 20.0 * std::f64::consts::LOG10_E;
-        let close = |x: f64, want: f64| (x - want).abs() <= 1e-9 * want.abs().max(1.0);
-        // (GHz, ε_eff = −Re γ²/k₀², α in dB/mm, |S21| in dB, arg S21 in degrees)
-        for (f, eps_eff, att, s21_db, s21_deg) in [
-            (8.0, 0.8036894764051563, 0.012193127248945768, -0.2438625449789154, -172.25223277210745),
-            (10.0, 1.103149042794255, 0.01686754835768551, -0.33735096715371027, 107.74151176266264),
-            (12.0, 1.3057035873530582, 0.023702221207120386, -0.47404442414240805, 30.667253671338447),
-        ] {
-            let k0 = 2.0 * PI * f * 1e9 / emcraft_model::units::C0;
-            let g = gamma_of(slab_loaded_modes_lossy(&SlabGuide { a, b, d: b / 2.0, eps_r: eps }, ModeSearch { k0, lowest: 0.0, count: 1 })[0]);
-            let s21 = (-g * l).exp();
-            assert!(close(-(g * g).re / (k0 * k0), eps_eff) && close(db * g.re * 1e-3, att), "{f}: {g}");
-            assert!(close(db * s21.norm().ln(), s21_db) && close(s21.arg().to_degrees(), s21_deg), "{f}: {s21}");
-        }
+        let close = |x: f64, want: f64| approx::relative_eq!(x, want, epsilon = 1e-9, max_relative = 1e-9);
+        let k0 = 2.0 * PI * f * 1e9 / emcraft_model::units::C0;
+        let g = gamma_of(slab_loaded_modes_lossy(&SlabGuide { a, b, d: b / 2.0, eps_r: eps }, ModeSearch { k0, lowest: 0.0, count: 1 })[0]);
+        let s21 = (-g * l).exp();
+        assert!(close(-(g * g).re / (k0 * k0), eps_eff) && close(db * g.re * 1e-3, att), "{f}: {g}");
+        assert!(close(db * s21.norm().ln(), s21_db) && close(s21.arg().to_degrees(), s21_deg), "{f}: {s21}");
     }
 }

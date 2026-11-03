@@ -200,6 +200,6 @@ mod tests {
         // Overlaps clipped exactly: two unit right triangles, one turned by half a turn.
         let a = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
         assert!((polygon_area(&overlap(a, [[1.0, 1.0], [0.0, 1.0], [1.0, 0.0]]))).abs() < 1e-15);
-        assert!((polygon_area(&overlap(a, [[0.5, 0.0], [0.5, 1.0], [-0.5, 0.0]])) - 0.3125).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(polygon_area(&overlap(a, [[0.5, 0.0], [0.5, 1.0], [-0.5, 0.0]])), 0.3125, epsilon = 1e-12);
     }
 }

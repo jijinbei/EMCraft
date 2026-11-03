@@ -362,7 +362,7 @@ fn the_field_is_coloured_by_its_values() {
         let grid = Arc::new(FieldGrid::new(50 + u64::from(axis) + u64::from(quarter), nx, ny, axis, &phasors, c, u, v));
         let phase = if quarter { std::f64::consts::FRAC_PI_2 } else { 0.0 };
         let peak = grid.peak(phase);
-        assert!((peak - 40.0).abs() < 1e-9);
+        approx::assert_abs_diff_eq!(peak, 40.0, epsilon = 1e-9);
         let tag = 9 << 16;
         let mut s = Scene::default();
         s.tagged(tag, |s| s.quad([c, u, [1.0, 0.0, 0.6], v], Rgb(128, 128, 128), 255));

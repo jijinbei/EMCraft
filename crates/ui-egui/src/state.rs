@@ -242,7 +242,7 @@ pub struct ViewState {
 /// solve's, the last comparison with theory's.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Replies {
-    pub pcb: Option<Value>,
+    pub pcb: Option<emcraft_engine::pcb::Inspection>,
     pub port_modes: Option<Value>,
     pub compare: Option<Value>,
     /// What the import dialog's file holds (`geometry.import.inspect`).
@@ -272,7 +272,7 @@ pub struct PcbUi {
     pub reference: String,
     pub stop: String,
     pub attempted: Option<(u64, String)>,
-    pub baseline: Option<Value>,
+    pub baseline: Option<emcraft_engine::pcb::Inspection>,
     /// The widths being edited of the route's segments (display units), by segment.
     pub widths: std::collections::BTreeMap<String, f64>,
     /// Drawing copper in the 3D view, while it is on.

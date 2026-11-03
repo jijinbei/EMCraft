@@ -96,7 +96,7 @@ mod tests {
         let s = SMatrix::from_fn(3, |p, q| C::new(2.0 * v[p] * v[q] - f64::from(p == q), 0.0));
         let p = fractions(&s, 0).unwrap();
         assert!(p[0] < 1e-28 && (p[1] - 0.6).abs() < 1e-14 && (p[2] - 0.4).abs() < 1e-14);
-        assert!((p.iter().sum::<f64>() - 1.0).abs() < 1e-14);
+        approx::assert_abs_diff_eq!(p.iter().sum::<f64>(), 1.0, epsilon = 1e-14);
         assert!(fractions(&s, 3).is_err());
         assert!(fractions(&SMatrix::from_fn(1, |_, _| C::new(f64::NAN, 0.0)), 0).is_err());
     }

@@ -5,6 +5,7 @@ use super::*;
 use crate::gpu3d::{Curve, CurveKind};
 use crate::scene3d::Label;
 use emcraft_engine::pcb::CouplingMode as Mode;
+use emcraft_engine::pcb::{Inspection, PairRow};
 
 fn curve_colour(mode: Mode) -> emcraft_render::Rgb {
     // Match the existing 3D E/H glyphs (scene3d::field); the flat-plot E pen can be black.
@@ -58,15 +59,16 @@ pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     });
 }
 
-fn points(v: &Value, unit: emcraft_model::units::Length) -> Option<[[f64; 2]; 2]> {
-    Some([[unit.to_si(v[0][0].as_f64()?), unit.to_si(v[0][1].as_f64()?)], [unit.to_si(v[1][0].as_f64()?), unit.to_si(v[1][1].as_f64()?)]])
+/// A stretch's ends in metres (the report gives display lengths).
+fn si(ends: [[f64; 2]; 2], unit: emcraft_model::units::Length) -> [[f64; 2]; 2] {
+    ends.map(|p| p.map(|x| unit.to_si(x)))
 }
 
 /// The report's coupling pairs with the receiving trace chosen.
-fn pairs(app: &EmcraftApp) -> Vec<&Value> {
-    let victim = app.session.views().pcb_illustration.victim.as_deref();
+fn pairs(app: &EmcraftApp) -> Vec<&PairRow> {
+    let Some(victim) = app.session.views().pcb_illustration.victim.as_deref() else { return Vec::new() };
     let Some(report) = app.replies.pcb.as_ref() else { return Vec::new() };
-    report["coupling_pairs"].as_array().into_iter().flatten().filter(|p| victim.is_some() && p["target"].as_str() == victim).collect()
+    report.coupling_pairs.iter().filter(|p| p.target == victim).collect()
 }
 
 /// Whether the board's view can illustrate the coupling: a receiving trace chosen and a
@@ -88,8 +90,8 @@ pub(crate) fn curves(app: &EmcraftApp, frame: &crate::scene3d::board::Frame, mot
         return;
     };
     let u = app.session.display().length;
-    let (Some(a), Some(b)) = (points(&pair["source_points"], u), points(&pair["target_points"], u)) else { return };
-    let Some(layer) = board.layers.iter().find(|l| Some(l.name.as_str()) == pair["layer"].as_str()) else { return };
+    let (a, b) = (si(pair.source_points, u), si(pair.target_points, u));
+    let Some(layer) = board.layers.iter().find(|l| l.name == pair.layer) else { return };
     let ground = &app.views.pcb.ground;
     let Some(reference) = board
         .layers
@@ -119,14 +121,7 @@ pub(crate) fn curves(app: &EmcraftApp, frame: &crate::scene3d::board::Frame, mot
             .filter(|c| c.net == *ground && c.layer == reference.name)
             .any(|c| emcraft_render::pcb::spans(&c.polygon, q[1]).iter().any(|v| q[0] >= v[0] && q[0] <= v[1]))
     };
-    let bad = app
-        .replies
-        .pcb
-        .as_ref()
-        .and_then(|r| r["findings"].as_array())
-        .into_iter()
-        .flatten()
-        .any(|f| f["code"].as_str().and_then(emcraft_engine::pcb::Code::parse).is_some_and(emcraft_engine::pcb::Code::reference));
+    let bad = app.replies.pcb.iter().flat_map(|r| &r.findings).any(|f| f.code.reference());
     let emphasis = if config.playing { (motion % 8 + 1) as f32 * 0.785 } else { 0. };
     for k in 0..if mode == Mode::Return { 1 } else { 5 } {
         let x = half * (k as f64 / 4. - 0.5);
@@ -235,7 +230,7 @@ pub(super) fn frame_view(app: &EmcraftApp, illustrated: bool, state: &mut Illust
 
 /// The coupling's panel: which parallel stretch, its clearance and length, what the mode
 /// means, and a kept geometry to compare with.
-pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, report: &Value, out: &mut Actions) {
+pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, report: &Inspection, out: &mut Actions) {
     let config = &app.session.views().pcb_illustration;
     let Some(victim) = &config.victim else {
         return;
@@ -263,10 +258,10 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
                 let text = format!(
                     "{}: ({}, {}) → ({}, {})",
                     i + 1,
-                    p["source_points"][0][0],
-                    p["source_points"][0][1],
-                    p["source_points"][1][0],
-                    p["source_points"][1][1]
+                    p.source_points[0][0],
+                    p.source_points[0][1],
+                    p.source_points[1][0],
+                    p.source_points[1][1]
                 );
                 if ui.selectable_label(i == state.index, text).clicked() {
                     state.index = i;
@@ -278,11 +273,7 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
     let unit = app.session.display().length.symbol();
     ui.small(crate::lang::trf(
         "Clearance {gap} {unit} · parallel length {length} {unit}",
-        &[
-            ("gap", &format!("{:.3}", pair["gap"].as_f64().unwrap_or(0.))),
-            ("length", &format!("{:.3}", pair["overlap"].as_f64().unwrap_or(0.))),
-            ("unit", &unit),
-        ],
+        &[("gap", &format!("{:.3}", pair.gap)), ("length", &format!("{:.3}", pair.overlap)), ("unit", &unit)],
     ));
     ui.small(tr(match config.illustrated.unwrap_or_default() {
         Mode::Electric => "Electric coupling: schematic connections between conductors; no field strength is implied.",
@@ -290,16 +281,11 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
         Mode::Return => "Return reference only, not a solved current. Missing ground is never bridged.",
     }));
     let length = app.session.display().length;
-    let source = report["net"].as_str().unwrap_or("").to_owned();
+    let source = report.net.clone();
     let keep = ui.button(tr("Keep geometry for comparison"));
     scenario::publish_target(Handle::Choice("pcb_coupling", "keep"), keep.rect);
     if keep.clicked() {
-        state.baseline = Some((
-            length.to_si(pair["gap"].as_f64().unwrap_or(0.)),
-            length.to_si(pair["overlap"].as_f64().unwrap_or(0.)),
-            source.clone(),
-            victim.clone(),
-        ));
+        state.baseline = Some((length.to_si(pair.gap), length.to_si(pair.overlap), source.clone(), victim.clone()));
     }
     if let Some((gap, overlap, s, v)) = &state.baseline
         && *s == source
@@ -310,9 +296,9 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
             "Clearance {before} → {after}; parallel length {old_length} → {length} {unit}",
             &[
                 ("before", &format!("{:.3}", length.from_si(*gap))),
-                ("after", &format!("{:.3}", pair["gap"].as_f64().unwrap_or(0.))),
+                ("after", &format!("{:.3}", pair.gap)),
                 ("old_length", &format!("{:.3}", length.from_si(*overlap))),
-                ("length", &format!("{:.3}", pair["overlap"].as_f64().unwrap_or(0.))),
+                ("length", &format!("{:.3}", pair.overlap)),
                 ("unit", &unit),
             ],
         ));

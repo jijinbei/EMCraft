@@ -237,6 +237,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arboard"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -877,7 +886,7 @@ version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a98d30140e3296250832bbaaff83b27dcd6fa3cc70fb6f1f3e5c9c0023b5317"
 dependencies = [
- "approx",
+ "approx 0.4.0",
  "num-traits",
  "serde",
 ]
@@ -2225,6 +2234,7 @@ dependencies = [
 name = "emcraft-engine"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-fdtd",
  "emcraft-fem",
  "emcraft-gpu",
@@ -2236,6 +2246,8 @@ dependencies = [
  "emcraft-solver",
  "emcraft-templates",
  "emcraft-theory",
+ "proptest",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2245,6 +2257,7 @@ dependencies = [
 name = "emcraft-fdtd"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-model",
  "emcraft-theory",
  "num-complex",
@@ -2255,6 +2268,7 @@ dependencies = [
 name = "emcraft-fem"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-model",
  "num-complex",
  "thiserror 2.0.21",
@@ -2278,6 +2292,7 @@ dependencies = [
 name = "emcraft-io"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-model",
  "quick-xml 0.42.0",
  "solidcraft-exchange",
@@ -2297,9 +2312,11 @@ dependencies = [
 name = "emcraft-mesh"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-fem",
  "emcraft-model",
  "emcraft-tetmesh",
+ "proptest",
  "thiserror 2.0.21",
 ]
 
@@ -2307,6 +2324,7 @@ dependencies = [
 name = "emcraft-model"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-macros",
  "num-complex",
  "serde",
@@ -2319,6 +2337,7 @@ name = "emcraft-render"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
+ "approx 0.5.1",
  "emcraft-macros",
  "emcraft-model",
  "png",
@@ -2328,6 +2347,7 @@ dependencies = [
 name = "emcraft-solver"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-fem",
  "emcraft-mesh",
  "emcraft-model",
@@ -2349,6 +2369,7 @@ dependencies = [
 name = "emcraft-testkit"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-engine",
  "emcraft-macros",
  "serde",
@@ -2360,6 +2381,7 @@ dependencies = [
 name = "emcraft-tetmesh"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "num-bigint",
  "num-rational",
  "num-traits",
@@ -2371,10 +2393,13 @@ dependencies = [
 name = "emcraft-theory"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "emcraft-fem",
  "emcraft-macros",
  "emcraft-model",
  "num-complex",
+ "rstest",
+ "serde",
  "thiserror 2.0.21",
 ]
 
@@ -2382,6 +2407,7 @@ dependencies = [
 name = "emcraft-ui-egui"
 version = "0.1.0"
 dependencies = [
+ "approx 0.5.1",
  "eframe",
  "egui",
  "emcraft-engine",
@@ -5339,6 +5365,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
+name = "proptest"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8530004ccb15eae51c7e40009fbe317f341f804db54dc033eec1c50be28cfa0"
+dependencies = [
+ "bitflags 2.13.2",
+ "chacha20",
+ "core_detect",
+ "num-traits",
+ "rand 0.10.3",
+ "rand_xorshift",
+ "regex-syntax",
+ "unarray",
+]
+
+[[package]]
 name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5571,6 +5613,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_xorshift"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60aa6af80be32871323012e02e6e65f8a7cc7890931ae421d217ad8fe0df2ccf"
+dependencies = [
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "range-alloc"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5737,6 +5788,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "relative-path"
+version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
+
+[[package]]
 name = "renderdoc-sys"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5806,6 +5863,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9da7f59328b09405b181fee1018925fad50f157afb43c0c0f5c522c256dd5907"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "rstest"
+version = "0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5a3193c063baaa2a95a33f03035c8a72b83d97a54916055ba22d35ed3839d49"
+dependencies = [
+ "rstest_macros",
+]
+
+[[package]]
+name = "rstest_macros"
+version = "0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c845311f0ff7951c5506121a9ad75aec44d083c31583b2ea5a30bcb0b0abba0"
+dependencies = [
+ "cfg-if",
+ "glob",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "relative-path",
+ "rustc_version",
+ "syn 2.0.119",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -7311,6 +7394,12 @@ name = "ucd-trie"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
+
+[[package]]
+name = "unarray"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "uncased"

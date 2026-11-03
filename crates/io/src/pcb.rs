@@ -402,8 +402,8 @@ mod tests {
         assert_eq!(b.segments.len(), 2);
         assert_eq!(b.copper.len(), 1);
         assert_eq!(b.segments[0].net, "DATA");
-        assert!((b.layers[1].z - 0.00018).abs() < 1e-15);
-        assert!((b.segments[0].width - 0.0003).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(b.layers[1].z, 0.00018, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(b.segments[0].width, 0.0003, epsilon = 1e-15);
         let unfilled = BOARD.replace("filled_polygon", "unfilled_polygon");
         let b = read(&unfilled, None).unwrap();
         assert!(b.copper.is_empty());
@@ -436,7 +436,7 @@ mod tests {
         let pads: Vec<_> = b.copper.iter().skip(1).collect();
         assert_eq!(pads.len(), 3);
         assert_eq!(b.vias.len(), 1);
-        assert!((b.vias[0].drill.unwrap() - 0.0006).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(b.vias[0].drill.unwrap(), 0.0006, epsilon = 1e-15);
         // Footprint at (30, 15) turned 90°: pad 1's (−1, 0) lands at (30, 16).
         let p1 = &pads[0];
         let c = p1.polygon.iter().fold([0.0, 0.0], |s, q| [s[0] + q[0] / 4.0, s[1] + q[1] / 4.0]);

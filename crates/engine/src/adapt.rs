@@ -410,7 +410,7 @@ mod tests {
         let a = [C::new(1.0, 0.0), C::new(0.0, 1.0)];
         assert_eq!(delta_far(&a, &a), 0.0);
         let b = [C::new(1.1, 0.0), C::new(0.0, 1.0)];
-        assert!((delta_far(&b, &a) - 0.1 / 2f64.sqrt()).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(delta_far(&b, &a), 0.1 / 2f64.sqrt(), epsilon = 1e-12);
         assert_eq!(delta_far(&a, &[C::new(0.0, 0.0); 2]), f64::INFINITY);
         assert_eq!(delta_far(&a, &a[..1]), f64::INFINITY);
         assert_eq!(directions().len(), 48);

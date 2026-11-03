@@ -144,17 +144,17 @@ mod tests {
     #[test]
     fn round_trips() {
         for u in [Length::Metre, Length::Millimetre] {
-            assert!((u.from_si(u.to_si(22.86)) - 22.86).abs() < 1e-12);
+            approx::assert_abs_diff_eq!(u.from_si(u.to_si(22.86)), 22.86, epsilon = 1e-12);
         }
         assert_eq!(Length::Millimetre.to_si(1000.0), 1.0);
         assert_eq!(Frequency::Gigahertz.to_si(1.0), 1e9);
-        assert!((Frequency::Megahertz.from_si(2.5e9) - 2500.0).abs() < 1e-9);
+        approx::assert_abs_diff_eq!(Frequency::Megahertz.from_si(2.5e9), 2500.0, epsilon = 1e-9);
     }
 
     #[test]
     fn vacuum_constants_are_consistent() {
         assert!((1.0 / (MU0 * EPS0).sqrt() - C0).abs() / C0 < 1e-15);
-        assert!((ETA0 - 376.730_313).abs() < 1e-5);
+        approx::assert_abs_diff_eq!(ETA0, 376.730_313, epsilon = 1e-5);
         assert!((decibels(0.1) + 20.0).abs() < 1e-12);
     }
 }

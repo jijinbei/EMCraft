@@ -2,7 +2,7 @@
 use super::*;
 use crate::lang::{Raw, args};
 use crate::ui_kit;
-use emcraft_engine::pcb::{Code, Stage, near};
+use emcraft_engine::pcb::{Code, Inspection, Stage, near};
 use emcraft_model::units::{Time, Unit};
 use std::collections::BTreeSet;
 
@@ -10,13 +10,14 @@ fn go(out: &mut Actions, stage: Stage) {
     out.push(Action::run("view.pcb", json!({"stage": stage.id()})));
 }
 
-fn report<'a>(app: &'a EmcraftApp, state: &crate::state::PcbUi, net: &str) -> Option<&'a Value> {
+/// The report of `net` under the panel's settings, while they are the ones it was made with.
+fn report<'a>(app: &'a EmcraftApp, state: &crate::state::PcbUi, net: &str) -> Option<&'a Inspection> {
     app.replies.pcb.as_ref().filter(|r| {
-        r["net"].as_str() == Some(net)
-            && r["ground"].as_str() == Some(state.ground.trim())
-            && r["reference"].as_f64() == state.reference.parse::<f64>().ok()
-            && r["stop"].as_f64() == state.stop.parse::<f64>().ok()
-            && r["frequency_unit"] == app.session.display().frequency.symbol()
+        r.net == net
+            && r.ground == state.ground.trim()
+            && Some(r.reference) == state.reference.parse::<f64>().ok()
+            && Some(r.stop) == state.stop.parse::<f64>().ok()
+            && r.frequency_unit == app.session.display().frequency.symbol()
     })
 }
 
@@ -552,7 +553,7 @@ fn draw_board(
     out: &mut Actions,
     net: &str,
     ground: &str,
-    report: Option<&Value>,
+    report: Option<&Inspection>,
     height: f32,
 ) {
     let Some(board) = app.session.model().pcb.as_ref() else {
@@ -601,13 +602,8 @@ fn draw_board(
     if let Some(c) = &state.copper {
         painter.extend(c.shapes.iter().cloned());
     }
-    let flagged: BTreeSet<_> = report
-        .and_then(|r| r["findings"].as_array())
-        .into_iter()
-        .flatten()
-        .filter(|f| f["code"].as_str().and_then(Code::parse).is_some_and(Code::reference))
-        .filter_map(|f| f["segment"].as_str())
-        .collect();
+    let flagged: BTreeSet<&str> =
+        report.into_iter().flat_map(|r| &r.findings).filter(|f| f.code.reference()).filter_map(|f| f.segment.as_deref()).collect();
     let mut nearest: Option<(f32, &str)> = None;
     for seg in &board.segments {
         let (a, b) = (to(seg.start), to(seg.end));
@@ -631,32 +627,22 @@ fn draw_board(
         }
     }
     if let Some(report) = report {
-        for section in report["sections"].as_array().into_iter().flatten() {
-            if let Some(seg) = board.segments.iter().find(|s| s.net == net && s.id == section["id"].as_str().unwrap_or("")) {
-                for gap in section["uncovered"].as_array().into_iter().flatten() {
-                    if let (Some(a), Some(b)) = (gap[0].as_f64(), gap[1].as_f64()) {
-                        let at = |t: f64| to([seg.start[0] + t * (seg.end[0] - seg.start[0]), seg.start[1] + t * (seg.end[1] - seg.start[1])]);
-                        painter.line_segment([at(a), at(b)], Stroke::new(6.0, t.error));
-                        painter.circle_stroke(at((a + b) / 2.0), 9.0, Stroke::new(2.0, t.error));
-                    }
+        for section in &report.sections {
+            if let Some(seg) = board.segments.iter().find(|s| s.net == net && s.id == section.id) {
+                for &[a, b] in &section.uncovered {
+                    let at = |t: f64| to([seg.start[0] + t * (seg.end[0] - seg.start[0]), seg.start[1] + t * (seg.end[1] - seg.start[1])]);
+                    painter.line_segment([at(a), at(b)], Stroke::new(6.0, t.error));
+                    painter.circle_stroke(at((a + b) / 2.0), 9.0, Stroke::new(2.0, t.error));
                 }
             }
         }
     }
     if let Some(report) = report {
-        let mut pairs = report["coupling_pairs"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|p| p["target"].as_str() == app.session.views().pcb_illustration.victim.as_deref());
+        let mut pairs = report.coupling_pairs.iter().filter(|p| app.session.views().pcb_illustration.victim.as_deref() == Some(p.target.as_str()));
         if let Some(pair) = pairs.nth(state.illustration.index) {
-            for (key, colour) in [("source_points", t.warning), ("target_points", t.accent)] {
-                let at = |i: usize| {
-                    to([
-                        app.session.display().length.to_si(pair[key][i][0].as_f64().unwrap_or(0.)),
-                        app.session.display().length.to_si(pair[key][i][1].as_f64().unwrap_or(0.)),
-                    ])
-                };
+            let length = app.session.display().length;
+            for (ends, colour) in [(pair.source_points, t.warning), (pair.target_points, t.accent)] {
+                let at = |i: usize| to(ends[i].map(|x| length.to_si(x)));
                 painter.line_segment([at(0), at(1)], Stroke::new(5., colour));
                 painter.circle_stroke(at(0) + (at(1) - at(0)) * 0.5, 7., Stroke::new(2., colour));
             }
@@ -673,7 +659,7 @@ fn draw_board(
     }
 }
 
-fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, report: Option<&Value>) {
+fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, report: Option<&Inspection>) {
     let t = Tokens::get();
     if let Some(crate::Failure { command, error }) = &app.failure
         && command == "pcb.inspect"
@@ -685,59 +671,52 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
     };
     ui.label(trf(
         "Selected net: {net}; routed length {length} {unit}",
-        args!(
-            net = report["net"].as_str().unwrap_or(""),
-            length = format!("{:.3}", report["length"].as_f64().unwrap_or(0.0)),
-            unit = report["length_unit"].as_str().unwrap_or("")
-        ),
+        args!(net = report.net, length = format!("{:.3}", report.length), unit = report.length_unit),
     ));
     ui.heading(tr("Return-path geometry"));
     let mut shown = BTreeSet::new();
-    if let Some(findings) = report["findings"].as_array() {
-        if findings.is_empty() {
-            ui_kit::caption(ui, "No issue found by the implemented geometry checks; this is not a compliance pass.");
+    if report.findings.is_empty() {
+        ui_kit::caption(ui, "No issue found by the implemented geometry checks; this is not a compliance pass.");
+    }
+    for f in &report.findings {
+        if !shown.insert((f.code.id(), f.detail.as_str())) {
+            continue;
         }
-        for f in findings {
-            if !shown.insert((f["code"].as_str(), f["detail"].as_str())) {
-                continue;
-            }
-            let code = f["code"].as_str().and_then(Code::parse).unwrap_or(Code::UnsupportedCrossSection);
-            ui.colored_label(if code == Code::NearbySignal { t.warning } else { t.error }, tr(finding_label(code)));
-            ui.small(f["detail"].as_str().unwrap_or(""));
-        }
+        ui.colored_label(if f.code == Code::NearbySignal { t.warning } else { t.error }, tr(finding_label(f.code)));
+        ui.small(f.detail.as_str());
     }
     ui.heading(tr("Ideal transmission-line estimate"));
     ui_kit::caption(
         ui,
         "Lossless quasi-static outer microstrip only. Bends, vias, pads, copper thickness, solder mask, dispersion and coupling are excluded.",
     );
-    for row in report["sections"].as_array().into_iter().flatten() {
+    for row in &report.sections {
         ui.small(format!(
             "{} → {}: {:.2} Ω, {:.1} ps",
-            row["id"].as_str().unwrap_or(""),
-            row["reference_layer"].as_str().unwrap_or(""),
-            row["ideal_impedance"].as_f64().unwrap_or(0.0),
-            Time::Picosecond.from_si(row["ideal_delay_s"].as_f64().unwrap_or(0.0))
+            row.id,
+            row.reference_layer,
+            row.ideal_impedance,
+            Time::Picosecond.from_si(row.ideal_delay_s)
         ));
     }
-    if report["model_available"] == true {
-        ui.small(trf(
-            "Propagation delay: {value} ps",
-            args!(value = format!("{:.1}", Time::Picosecond.from_si(report["si"]["delay_s"].as_f64().unwrap_or(0.0)))),
-        ));
-        let pts = report["si"]["points"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    if let Some(si) = report.si.as_ref().filter(|_| report.model_available) {
+        ui.small(trf("Propagation delay: {value} ps", args!(value = format!("{:.1}", Time::Picosecond.from_si(si.delay_s)))));
         ui.small(tr("Magnitude |S| (0 to 1); frequency spans zero to the selected maximum"));
-        chart(ui, pts, "frequency", &[("s11", t.error), ("s21", t.accent)], false, app.session.display().frequency.symbol());
+        let along = |f: fn(&emcraft_engine::pcb::LinePoint) -> f64| si.points.iter().map(|p| [p.frequency, f(p)]).collect::<Vec<_>>();
+        let top = si.points.last().map_or(1.0, |p| p.frequency);
+        let series = [("s11", t.error, along(|p| p.s11.mag)), ("s21", t.accent, along(|p| p.s21.mag))];
+        chart(ui, top, &series, false, app.session.display().frequency.symbol());
         ui.small(tr("TDR reflection (ideal line model)"));
-        let pts = report["si"]["tdr"].as_array().map(Vec::as_slice).unwrap_or(&[]);
-        let horizon = 4.0 * report["si"]["delay_s"].as_f64().unwrap_or(0.0).max(report["si"]["resolution_s"].as_f64().unwrap_or(0.0));
-        let end = pts.iter().position(|p| p["time_s"].as_f64().unwrap_or(0.0) > horizon).unwrap_or(pts.len()).max(2).min(pts.len());
-        chart(ui, &pts[..end], "time_s", &[("reflection", t.warning)], true, "ns");
+        let horizon = 4.0 * si.delay_s.max(si.resolution_s);
+        let end = si.tdr.iter().position(|p| p.time_s > horizon).unwrap_or(si.tdr.len()).max(2).min(si.tdr.len());
+        let shown = &si.tdr[..end];
+        let top = shown.last().map_or(1.0, |p| p.time_s);
+        chart(ui, top, &[("reflection", t.warning, shown.iter().map(|p| [p.time_s, p.reflection]).collect())], true, "ns");
         ui.small(trf(
             "TDR window {window} ns; resolution {resolution} ps",
             args!(
                 window = format!("{:.2}", Time::Nanosecond.from_si(horizon)),
-                resolution = format!("{:.1}", Time::Picosecond.from_si(report["si"]["resolution_s"].as_f64().unwrap_or(0.0)))
+                resolution = format!("{:.1}", Time::Picosecond.from_si(si.resolution_s))
             ),
         ));
     } else {
@@ -747,11 +726,10 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
         );
     }
     if let Some(old) = &state.baseline {
-        let count = |v: &Value| v["findings"].as_array().map_or(0, Vec::len);
-        ui.label(trf("Comparison — geometry findings: {before} → {after}", args!(before = count(old), after = count(report))));
+        ui.label(trf("Comparison — geometry findings: {before} → {after}", args!(before = old.findings.len(), after = report.findings.len())));
     }
-    for note in report["import_notes"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-        ui_kit::caption(ui, Raw(note));
+    for note in &report.import_notes {
+        ui_kit::caption(ui, Raw(note.as_str()));
     }
 }
 
@@ -768,11 +746,13 @@ fn finding_label(code: Code) -> &'static str {
     }
 }
 
-fn chart(ui: &mut egui::Ui, pts: &[Value], xkey: &str, series: &[(&str, Color32)], scalar: bool, unit: &str) {
+/// A small chart of `series` (each its name, colour and points `[x, y]`, x from 0 to `xmax`):
+/// magnitudes 0 to 1, or with `scalar` reflections −1 to 1 over times (s, shown in ns).
+fn chart(ui: &mut egui::Ui, xmax: f64, series: &[(&str, Color32, Vec<[f64; 2]>)], scalar: bool, unit: &str) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 112.0), Sense::hover());
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 3.0, Tokens::get().panel);
-    let xmax = pts.last().and_then(|v| v[xkey].as_f64()).unwrap_or(1.0).max(1e-30);
+    let xmax = xmax.max(1e-30);
     let pad = Rect::from_min_max(rect.min + vec2(28.0, 8.0), rect.max - vec2(10.0, 20.0));
     let tokens = Tokens::get();
     let font = egui::FontId::proportional(10.0);
@@ -784,25 +764,15 @@ fn chart(ui: &mut egui::Ui, pts: &[Value], xkey: &str, series: &[(&str, Color32)
     p.text(pos2(pad.left(), pad.bottom() + 5.0), egui::Align2::LEFT_TOP, "0", font.clone(), tokens.text_dim);
     let end = if scalar { Time::Nanosecond.from_si(xmax) } else { xmax };
     p.text(pos2(pad.right(), pad.bottom() + 5.0), egui::Align2::RIGHT_TOP, format!("{end:.2} {unit}"), font, tokens.text_dim);
-    for &(key, colour) in series {
-        let points: Vec<_> = pts
-            .iter()
-            .filter_map(|v| {
-                let x = v[xkey].as_f64()?;
-                let y = if scalar { v[key].as_f64()? } else { v[key]["mag"].as_f64()? };
-                Some(pos2(
-                    pad.left() + (x / xmax) as f32 * pad.width(),
-                    pad.bottom()
-                        - if scalar { ((y + 1.0) / 2.0).clamp(0.0, 1.0) as f32 * pad.height() } else { y.clamp(0.0, 1.0) as f32 * pad.height() },
-                ))
-            })
-            .collect();
+    for (_, colour, xy) in series {
+        let height = |y: f64| if scalar { ((y + 1.0) / 2.0).clamp(0.0, 1.0) } else { y.clamp(0.0, 1.0) } as f32 * pad.height();
+        let points: Vec<_> = xy.iter().map(|&[x, y]| pos2(pad.left() + (x / xmax) as f32 * pad.width(), pad.bottom() - height(y))).collect();
         if points.len() > 1 {
-            p.add(egui::Shape::line(points, Stroke::new(1.5, colour)));
+            p.add(egui::Shape::line(points, Stroke::new(1.5, *colour)));
         }
     }
     ui.horizontal_wrapped(|ui| {
-        for &(name, c) in series {
+        for &(name, c, _) in series {
             ui.colored_label(c, name);
         }
     });

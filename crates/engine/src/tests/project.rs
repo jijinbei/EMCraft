@@ -117,7 +117,7 @@ fn runs_belong_to_the_project() {
     assert_eq!(runs["runs"][0]["params"]["frequencies"], json!([8000.0]));
     let r = t.execute("solve.rerun", &json!({})).unwrap();
     assert_eq!(r["rerun"]["command"], "solve.frequency");
-    assert!((t.results.sweep.as_ref().unwrap().results[0].frequency - 8e9).abs() < 1e-3);
+    approx::assert_abs_diff_eq!(t.results.sweep.as_ref().unwrap().results[0].frequency, 8e9, epsilon = 1e-3);
     // The rerun is recorded in the units it ran in.
     assert_eq!(t.runs()[0].units.frequency, emcraft_model::units::Frequency::Megahertz);
     assert!(
@@ -142,23 +142,33 @@ fn a_samples_solves_are_its_runs() {
 }
 
 /// A project file's runs are hostile: anything but a solve command, a run twice or unknown
-/// parameters refuse the file; a version 1 file (no runs) opens.
+/// parameters refuse the file.
+#[rstest::rstest]
+#[case::not_a_solve(json!([{"command": "file.save", "params": {"path": "/tmp/x"}}]), "not a solve command")]
+#[case::twice(json!([{"command": "solve.frequency"}, {"command": "solve.frequency"}]), "run twice")]
+#[case::unknown_parameter(json!([{"command": "solve.frequency", "params": {"bogus": 1}}]), "unknown parameter")]
+#[case::params_not_an_object(json!([{"command": "solve.frequency", "params": [1]}]), "JSON object")]
+#[case::stray_field(json!([{"command": "solve.frequency", "units": {"length": "km", "frequency": "GHz"}}]), "not a project file")]
+#[case::not_a_list(json!("x"), "not a project file")]
+fn hostile_runs_in_a_file_are_refused(#[case] runs: serde_json::Value, #[case] why: &str) {
+    // A file of its own per case (the cases run in parallel).
+    let case = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::hash::DefaultHasher::new();
+        runs.to_string().hash(&mut h);
+        h.finish()
+    };
+    let path = scratch(&format!("hostile-runs-{case:016x}.emcraft"));
+    std::fs::write(&path, json!({"format": "emcraft-project", "version": 2, "history": [], "runs": runs}).to_string()).unwrap();
+    let r = Session::new().execute("file.open", &json!({"path": path}));
+    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{why}: {r:?}");
+}
+
+/// A version 1 file (no runs) opens.
 #[test]
-fn hostile_runs_in_a_file_are_refused() {
-    let path = scratch("hostile-runs.emcraft");
+fn a_version_1_file_opens_without_runs() {
+    let path = scratch("version-1.emcraft");
     let mut s = Session::new();
-    for (runs, why) in [
-        (json!([{"command": "file.save", "params": {"path": "/tmp/x"}}]), "not a solve command"),
-        (json!([{"command": "solve.frequency"}, {"command": "solve.frequency"}]), "run twice"),
-        (json!([{"command": "solve.frequency", "params": {"bogus": 1}}]), "unknown parameter"),
-        (json!([{"command": "solve.frequency", "params": [1]}]), "JSON object"),
-        (json!([{"command": "solve.frequency", "units": {"length": "km", "frequency": "GHz"}}]), "not a project file"),
-        (json!("x"), "not a project file"),
-    ] {
-        std::fs::write(&path, json!({"format": "emcraft-project", "version": 2, "history": [], "runs": runs}).to_string()).unwrap();
-        let r = s.execute("file.open", &json!({"path": path}));
-        assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{why}: {r:?}");
-    }
     std::fs::write(&path, json!({"format": "emcraft-project", "version": 1, "history": [{"command": "units.set"}]}).to_string()).unwrap();
     s.execute("file.open", &json!({"path": path})).unwrap();
     assert!(s.runs().is_empty() && !s.is_dirty());

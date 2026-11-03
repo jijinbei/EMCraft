@@ -250,8 +250,8 @@ mod tests {
             *c = Rgb(1, 2, 3);
         }
         assert_eq!(p.grid, Rgb(1, 2, 3));
-        assert!((Rgb::BLACK.contrast_ratio(Rgb::WHITE) - 21.0).abs() < 1e-9);
-        assert!((Rgb(9, 9, 9).contrast_ratio(Rgb(9, 9, 9)) - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(Rgb::BLACK.contrast_ratio(Rgb::WHITE), 21.0, epsilon = 1e-9);
+        approx::assert_abs_diff_eq!(Rgb(9, 9, 9).contrast_ratio(Rgb(9, 9, 9)), 1.0, epsilon = 1e-12);
         for q in [samples::light(), samples::dark(), Palette::fallback()] {
             assert_eq!(q.contrast_problem(), None, "{q:?}");
         }

@@ -499,21 +499,10 @@ fn tour() -> Record {
     }
     h.app.views.pcb.baseline = h.app.replies.pcb.clone();
     if let Some(r) = &mut h.app.replies.pcb {
-        r["findings"] = json!(
-            [
-                "return_gap",
-                "reference_edge",
-                "no_reference",
-                "route_topology",
-                "via_transition",
-                "missing_return_via",
-                "nearby_signal",
-                "unsupported_cross_section"
-            ]
+        r.findings = emcraft_engine::pcb::Code::ALL
             .into_iter()
-            .map(|code| json!({"code":code,"detail":"","segment":null}))
-            .collect::<Vec<_>>()
-        );
+            .map(|code| emcraft_engine::pcb::FindingRow { code, method: "geometry_screening".into(), segment: None, detail: String::new() })
+            .collect();
     }
     h.frames(2);
     call(&mut h, "engine.execute", json!({"command":"file.sample","params":{"name":"pcb-parallel"}}));
@@ -534,7 +523,7 @@ fn tour() -> Record {
     h.frames(2);
     let saved = h.app.replies.pcb.clone();
     if let Some(r) = &mut h.app.replies.pcb {
-        r["coupling_pairs"] = json!([]);
+        r.coupling_pairs.clear();
     }
     h.frames(2);
     h.app.replies.pcb = saved;

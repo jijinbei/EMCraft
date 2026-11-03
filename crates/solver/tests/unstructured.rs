@@ -110,7 +110,7 @@ fn unstructured_waveguide_transmits_with_the_te10_phase() {
         let e = (r.s[1][0] - exact.s21).norm().max(r.s[0][0].norm());
         // Measured 5e-5 to 2.4e-4: the unstructured mesh as accurate as the structured one.
         assert!(e < 1e-3, "{f}: {e:e}");
-        assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-10);
+        approx::assert_abs_diff_eq!(r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr(), 1.0, epsilon = 1e-10);
     }
 }
 
@@ -214,7 +214,7 @@ fn post_s(order: Order, size: f64) -> emcraft_solver::SMatrix {
 fn a_post_across_the_guide_conserves_power() {
     // Lossless and reciprocal whatever the order; first-order elements keep the gate fast.
     let s = post_s(Order::One, 0.004);
-    assert!((s[0][0].norm_sqr() + s[1][0].norm_sqr() - 1.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(s[0][0].norm_sqr() + s[1][0].norm_sqr(), 1.0, epsilon = 1e-9);
     assert!((s[0][1] - s[1][0]).norm() < 1e-9, "reciprocity");
     assert!(s[0][0].norm() > 0.8, "{}", s[0][0]);
 }
@@ -223,7 +223,7 @@ fn a_post_across_the_guide_conserves_power() {
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn a_post_across_the_guide_reflects_and_conserves_power() {
     let s = post_s(Order::Two, 0.003);
-    assert!((s[0][0].norm_sqr() + s[1][0].norm_sqr() - 1.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(s[0][0].norm_sqr() + s[1][0].norm_sqr(), 1.0, epsilon = 1e-9);
     assert!((s[0][1] - s[1][0]).norm() < 1e-9, "reciprocity");
     // Centred: S11 = S22 but for the mesh's asymmetry. A post is a small shunt reactance
     // (Marcuvitz, Waveguide Handbook, 1951, §5.11: X/Z0 about 0.12 here), so it reflects most of

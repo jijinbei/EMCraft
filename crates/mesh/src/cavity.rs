@@ -243,7 +243,7 @@ mod tests {
         let exact = a * b * l - 2.0 * 5.43 * b * 2.0;
         assert!((volume(&c.surface) - exact).abs() < 1e-6 * exact, "{}", volume(&c.surface));
         assert_eq!(c.kept.len(), 1);
-        assert!((c.kept[0] - exact).abs() < 1e-6 * exact);
+        approx::assert_abs_diff_eq!(c.kept[0], exact, epsilon = 1e-6 * exact);
         // The ends: the box's z faces, the channel's opening only.
         let ends: f64 = c
             .surface

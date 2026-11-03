@@ -58,7 +58,7 @@ fn the_e_plane_tee_splits_equally_in_antiphase() {
     let (s13, s23) = (s(&r, 0, "s13"), s(&r, 0, "s23"));
     assert!((s13.norm() - s23.norm()).abs() < 5e-3, "{s13} {s23}");
     assert!((phase(s13, s23).abs() - 180.0).abs() < 1.0, "{}", phase(s13, s23));
-    assert!((s(&r, 0, "s11").norm() - s(&r, 0, "s22").norm()).abs() < 5e-3);
+    approx::assert_abs_diff_eq!(s(&r, 0, "s11").norm(), s(&r, 0, "s22").norm(), epsilon = 5e-3);
 }
 
 /// The magic tee's checks at point `i`: the E and H arms (4 and 3) isolated, each splitting

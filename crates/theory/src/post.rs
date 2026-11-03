@@ -311,7 +311,7 @@ mod tests {
         // An offset post couples more weakly to TE10 (whose field is smaller there).
         let off = InductivePost { x: 5e-3, ..wr90() }.solve(10e9, 48).unwrap();
         assert!(off.s11.norm() < thick.s11.norm());
-        assert!((off.s11.norm_sqr() + off.s21.norm_sqr() - 1.0).abs() < 1e-8);
+        approx::assert_abs_diff_eq!(off.s11.norm_sqr() + off.s21.norm_sqr(), 1.0, epsilon = 1e-8);
     }
 
     #[test]

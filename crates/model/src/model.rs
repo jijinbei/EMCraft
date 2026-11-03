@@ -427,7 +427,7 @@ mod tests {
         w.sections[0].material = "nothing".into();
         assert!(matches!(m.set_waveguide(w), Err(ModelError::Unknown { .. })));
         m.set_waveguide(guide()).unwrap();
-        assert!((m.waveguide.as_ref().unwrap().length() - 0.01).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(m.waveguide.as_ref().unwrap().length(), 0.01, epsilon = 1e-15);
         m.add_port(Port::new("1", End::Start)).unwrap();
         m.add_port(Port::new("2", End::End)).unwrap();
         assert_eq!(m.check(), vec![Issue::NoMesh]);

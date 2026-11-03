@@ -342,7 +342,7 @@ mod tests {
         assert!((at_interface - C::new((b1 - b2) / (b1 + b2), 0.0)).norm() < 1e-12);
         // Power: |S11|² + |S21|²(power) = 1 with different port media.
         let (r, t) = s.s_power();
-        assert!((r.norm_sqr() + t.norm_sqr() - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(r.norm_sqr() + t.norm_sqr(), 1.0, epsilon = 1e-12);
     }
 
     #[test]
@@ -398,7 +398,7 @@ mod tests {
         // α = k² tan δ / (2β) to first order in tan δ.
         let k0 = 2.0 * PI * f / C0;
         let beta0 = (k0 * k0 - (PI / A).powi(2)).sqrt();
-        assert!((-b.im - k0 * k0 * 0.01 / (2.0 * beta0)).abs() < 1e-3 * b.im.abs());
+        approx::assert_abs_diff_eq!(-b.im, k0 * k0 * 0.01 / (2.0 * beta0), epsilon = 1e-3 * b.im.abs());
     }
 
     #[test]

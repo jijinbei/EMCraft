@@ -701,7 +701,7 @@ mod tests {
         let te = &modes[0];
         let phi: f64 = (0..cs.tris.len()).map(|t| cs.phi(te, t, [1.0 / 3.0; 3]).unwrap().abs()).fold(0.0, f64::max);
         assert!(phi > 1e-3, "{phi}");
-        assert!((modes[0].beta2 - exact[0]).abs() < 1e-5 * k0 * k0);
+        approx::assert_abs_diff_eq!(modes[0].beta2, exact[0], epsilon = 1e-5 * k0 * k0);
     }
 
     /// An annulus r_in < r < r_out in `rings` × `sectors` cells, two triangles each.

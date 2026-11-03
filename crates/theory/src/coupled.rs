@@ -328,7 +328,7 @@ mod tests {
         let (s11, s21) = s_params(&m, (ze * zo).sqrt());
         let c = coupling(ze, zo);
         assert!((s21.norm() - 2.0 * c * (1.0 - c * c).sqrt()).abs() < 1e-12, "{s21}");
-        assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(s11.norm_sqr() + s21.norm_sqr(), 1.0, epsilon = 1e-12);
         // The chain matrix of a reciprocal two-port: AD − BC = 1.
         let [[a, b], [cc, d]] = section(ze, zo, 0.7);
         assert!((a * d - b * cc - 1.0).norm() < 1e-12);
@@ -348,8 +348,8 @@ mod tests {
         assert!(r.norm() < 1e-12 && iso.norm() < 1e-12, "{r} {iso}");
         assert!((cpl - j * c * theta.sin() / den).norm() < 1e-12 && (thr - root / den).norm() < 1e-12);
         // |coupled| = C sin θ/√(1 − C² cos²θ); lossless.
-        assert!((cpl.norm() - c * theta.sin() / (1.0 - c * c * theta.cos().powi(2)).sqrt()).abs() < 1e-12);
-        assert!((cpl.norm_sqr() + thr.norm_sqr() - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cpl.norm(), c * theta.sin() / (1.0 - c * c * theta.cos().powi(2)).sqrt(), epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(cpl.norm_sqr() + thr.norm_sqr(), 1.0, epsilon = 1e-12);
         // Mismatched ports: still lossless, reflection and isolation no longer zero.
         let s = coupler(ze, zo, theta, 50.0 * 1.1);
         assert!((s.iter().map(|x| x.norm_sqr()).sum::<f64>() - 1.0).abs() < 1e-12 && s[0].norm() > 1e-3);
@@ -361,7 +361,7 @@ mod tests {
         let filter = CoupledFilter::design(&CoupledSpec { order: 3, ripple_db: 0.1, f0, fbw: 0.1, z0: 50.0, eps_r: 2.2 }).unwrap();
         assert_eq!(filter.sections.len(), 4);
         // Symmetric: the outer sections alike, the inner ones alike.
-        assert!((filter.sections[0].z0e - filter.sections[3].z0e).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(filter.sections[0].z0e, filter.sections[3].z0e, epsilon = 1e-12);
         // Matched at f0 within the ripple; ripple 0.1 dB is |S21|² ≥ 0.9772 in the band.
         let (_, s21) = filter.s(f0, 0.0);
         assert!(s21.norm_sqr() > 0.97, "{s21}");
@@ -372,7 +372,7 @@ mod tests {
         assert!(filter.s(0.8 * f0, 0.0).1.norm() < 0.1 && filter.s(1.2 * f0, 0.0).1.norm() < 0.1);
         // Lossless: |S11|² + |S21|² = 1.
         let (s11, s21) = filter.s(1.07 * f0, 0.0);
-        assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(s11.norm_sqr() + s21.norm_sqr(), 1.0, epsilon = 1e-12);
         let edge = crossing(|f| filter.s(f, 0.0).1.norm_sqr() - 0.5, f0, 1.3 * f0).unwrap();
         assert!(edge > 1.04 * f0 && edge < 1.1 * f0, "{edge}");
     }
@@ -405,7 +405,7 @@ mod tests {
         // At the quarter wave proper, between ports of √(Z0e Z0o): 2C√(1 − C²).
         let c = coupling(ze, zo);
         let (_, at_quarter) = s_params(&section(ze, zo, PI / 2.0), (ze * zo).sqrt());
-        assert!((at_quarter.norm() - 2.0 * c * (1.0 - c * c).sqrt()).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(at_quarter.norm(), 2.0 * c * (1.0 - c * c).sqrt(), epsilon = 1e-12);
         // The filter: (W, S, coupled length) per section, the feeds 3.3165 wide.
         let built = [(2.3258, 0.1763, 9.4139), (3.1217, 0.8514, 9.3828), (3.1217, 0.8514, 9.3828), (2.3258, 0.1763, 9.4139)];
         let filter = CoupledFilter {
@@ -427,7 +427,7 @@ mod tests {
         let edge = |lo: f64, hi: f64| crossing(|f| filter.s(f, 0.0).1.norm() - 0.5f64.sqrt(), lo, hi).unwrap();
         assert!((edge(4e9, 5e9) - 4655558405.811216).abs() < 1e3 && (edge(5e9, 6e9) - 5344466478.938534).abs() < 1e3);
         let db = |f: f64| 20.0 * filter.s(f, 0.0).1.norm().log10();
-        assert!((filter.s(5e9, 0.0).1.norm() - 0.9999999986744627).abs() < 1e-9);
+        approx::assert_abs_diff_eq!(filter.s(5e9, 0.0).1.norm(), 0.9999999986744627, epsilon = 1e-9);
         assert!((db(4.4e9) - -17.61693271520208).abs() < 1e-6 && (db(5.6e9) - -17.61614833364449).abs() < 1e-6);
     }
 
@@ -450,7 +450,7 @@ mod tests {
         assert!((db(cpl) - -10.000081297631308).abs() < 1e-9 && (db(thr) - -0.4575658735703948).abs() < 1e-9);
         assert!((cpl.arg().to_degrees() - 0.000014341973769460684).abs() < 1e-6 && (thr.arg().to_degrees() - -89.99998565802623).abs() < 1e-6);
         assert!((r.norm() - 0.000013239767164191834).abs() < 1e-12 && (iso.norm() - 0.000004413209825693818).abs() < 1e-12);
-        assert!(((cpl / thr).arg().to_degrees() - 90.0).abs() < 1e-9);
+        approx::assert_abs_diff_eq!((cpl / thr).arg().to_degrees(), 90.0, epsilon = 1e-9);
         assert!((db(at(4e9)[1]) - -10.394285400787203).abs() < 1e-9 && (db(at(6e9)[1]) - -10.394284047483557).abs() < 1e-9);
     }
 }

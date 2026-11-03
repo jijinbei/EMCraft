@@ -205,7 +205,7 @@ mod tests {
             report(3, 17, "frequency").unwrap();
             let s = p.snapshot();
             assert_eq!((s.done, s.total, s.stage.as_str()), (3, 17, "frequency"));
-            assert!((s.fraction().unwrap() - 3.0 / 17.0).abs() < 1e-12);
+            approx::assert_abs_diff_eq!(s.fraction().unwrap(), 3.0 / 17.0, epsilon = 1e-12);
             p.cancel();
             assert_eq!(report(4, 17, "frequency"), Err(EngineError::Cancelled));
             assert_eq!(EngineError::Cancelled.to_string(), CANCELLED);

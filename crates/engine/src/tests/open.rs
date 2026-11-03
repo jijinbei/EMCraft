@@ -118,11 +118,11 @@ fn a_lumped_gap_radiates_as_a_hertzian_dipole() {
     // Re Z = 80π²(l/λ)², the power balance, coarse as the mesh is.
     let r11 = r["ports"][0]["impedance"]["re"].as_f64().unwrap();
     assert!((r11 / 0.8785 - 1.0).abs() < 0.1, "{r11}");
-    assert!((r["radiation_efficiency"].as_f64().unwrap() - 1.0).abs() < 0.03);
+    approx::assert_abs_diff_eq!(r["radiation_efficiency"].as_f64().unwrap(), 1.0, epsilon = 0.03);
     let p = &r["ports"][0];
     let (zr, zi) = (p["impedance"]["re"].as_f64().unwrap(), p["impedance"]["im"].as_f64().unwrap());
     let expect = (((zr - 1e9).powi(2) + zi * zi) / ((zr + 1e9).powi(2) + zi * zi)).sqrt();
-    assert!((p["s11"]["mag"].as_f64().unwrap() - expect).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(p["s11"]["mag"].as_f64().unwrap(), expect, epsilon = 1e-9);
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn lumped_ports_feed_antennas() {
     let s11 = p["s11"]["mag"].as_f64().unwrap();
     let (zr, zi) = z;
     let expect = (((zr - 50.0).powi(2) + zi * zi) / ((zr + 50.0).powi(2) + zi * zi)).sqrt();
-    assert!((s11 - expect).abs() < 1e-12);
+    approx::assert_abs_diff_eq!(s11, expect, epsilon = 1e-12);
     assert!(p["induced_emf_impedance"]["re"].as_f64().is_some());
 }
 
@@ -180,9 +180,9 @@ fn the_time_domain_solves_open_problems() {
     // 80π²(l/λ)² for 2 mm: 3.51 Ω, coarse grid.
     let r11 = p["ports"][0]["impedance"]["re"].as_f64().unwrap();
     assert!((r11 / 3.514 - 1.0).abs() < 0.15, "{r11}");
-    assert!((p["radiation_efficiency"].as_f64().unwrap() - 1.0).abs() < 0.05);
+    approx::assert_abs_diff_eq!(p["radiation_efficiency"].as_f64().unwrap(), 1.0, epsilon = 0.05);
     let ff = s.execute("results.far_field", &json!({"theta": [90], "solver": "time_domain"})).unwrap();
-    assert!((ff["points"][0]["directivity"].as_f64().unwrap() / 1.5 - 1.0).abs() < 0.1);
+    approx::assert_abs_diff_eq!(ff["points"][0]["directivity"].as_f64().unwrap() / 1.5, 1.0, epsilon = 0.1);
     assert!(s.execute("results.far_field", &json!({"solver": "fem"})).is_err(), "no FEM solve yet");
     assert!(s.execute("results.far_field", &json!({"solver": "magic"})).is_err());
     let path = scratch("td-pattern.png");

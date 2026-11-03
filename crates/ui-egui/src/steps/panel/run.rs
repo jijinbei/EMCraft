@@ -48,12 +48,10 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     ui.add_space(6.0);
     ui_kit::small(ui, trf("Solver: {solver}", args!(solver = shown(solver))), t.text);
     let (nb, nw) = (pre.blocking.len(), pre.warnings.len());
-    let label = if nb > 0 {
-        plural(nb, "Run — {n} problem to fix first", "Run — {n} problems to fix first", args!(n = nb))
-    } else if nw == 0 {
-        tr("Run").to_owned()
-    } else {
-        plural(nw, "Run, accepting {n} warning", "Run, accepting {n} warnings", args!(n = nw))
+    let label = match (nb, nw) {
+        (0, 0) => tr("Run").to_owned(),
+        (0, nw) => plural(nw, "Run, accepting {n} warning", "Run, accepting {n} warnings", args!(n = nw)),
+        (nb, _) => plural(nb, "Run — {n} problem to fix first", "Run — {n} problems to fix first", args!(n = nb)),
     };
     let busy = app.busy();
     ui.act(!busy, ui_kit::styled(&label, true), Fixed::RunStart.into(), "", || Action::StartRun, out);

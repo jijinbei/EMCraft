@@ -164,13 +164,13 @@ mod tests {
             let Some(read) = read else { panic!("refused: {json}") };
             let v = &f.view;
             assert_eq!((read.plane, read.component, read.show_e, read.show_h, read.mode), (v.plane, v.component, v.show_e, v.show_h, v.mode));
-            assert!((read.phase - v.phase).abs() < 0.1f64.to_radians());
+            approx::assert_abs_diff_eq!(read.phase, v.phase, epsilon = 0.1f64.to_radians());
             if v.mode.is_none() {
-                assert!((read.frequency - v.frequency).abs() < 1e-6 * v.frequency);
+                approx::assert_abs_diff_eq!(read.frequency, v.frequency, epsilon = 1e-6 * v.frequency);
             }
             assert_eq!(read.at.is_some(), f.at.is_some());
             if let (Some(a), Some(b)) = (read.at, f.at) {
-                assert!((a - l.to_si(b)).abs() < l.to_si(1e-4));
+                approx::assert_abs_diff_eq!(a, l.to_si(b), epsilon = l.to_si(1e-4));
             }
         }
     }

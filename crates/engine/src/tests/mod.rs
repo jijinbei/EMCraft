@@ -10,6 +10,7 @@ mod junctions;
 mod open;
 mod pcb_fem;
 mod project;
+mod properties;
 mod session;
 mod sides;
 mod solve;

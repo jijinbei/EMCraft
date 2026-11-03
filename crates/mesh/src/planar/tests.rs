@@ -83,8 +83,8 @@ fn copper_on_two_layers_is_kept_apart() {
     ];
     let m = triangulate(&request(&layers, &nets, &outlines)).unwrap();
     sound(&m, 12.0 * MM * MM);
-    assert!((m.copper_area(0) - 1.5 * MM * MM).abs() < 1e-15);
-    assert!((m.copper_area(1) - 1.0 * MM * MM).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(m.copper_area(0), 1.5 * MM * MM, epsilon = 1e-15);
+    approx::assert_abs_diff_eq!(m.copper_area(1), 1.0 * MM * MM, epsilon = 1e-15);
     assert!(m.nets[0].iter().all(|&n| n == 0 || n == NO_NET) && m.nets[1].iter().all(|&n| n == 1 || n == NO_NET));
 }
 
@@ -238,8 +238,8 @@ fn a_pour_far_from_the_traces_is_meshed_coarsely_and_covered_whole() {
     let fine = triangulate(&Request { outlines: &[trace[0].clone(), pour[0].clone()], ..request(&layers, &nets, &[]) }).unwrap();
     let coarse = triangulate(&Request { outlines: &trace, coarse: &pour, ..request(&layers, &nets, &[]) }).unwrap();
     sound(&coarse, 12.0 * MM * MM);
-    assert!((coarse.copper_area(1) - 3.6 * 2.6 * MM * MM).abs() < 1e-15);
-    assert!((fine.copper_area(1) - coarse.copper_area(1)).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(coarse.copper_area(1), 3.6 * 2.6 * MM * MM, epsilon = 1e-15);
+    approx::assert_abs_diff_eq!(fine.copper_area(1), coarse.copper_area(1), epsilon = 1e-15);
     assert!(coarse.triangles.len() < fine.triangles.len() * 3 / 4, "{} {}", coarse.triangles.len(), fine.triangles.len());
 }
 
@@ -251,4 +251,59 @@ fn a_line_along_the_regions_outline_keeps_the_outline_whole() {
     let lines = [[[0.0, 0.0], [4.0 * MM, 0.0]], [[1.0 * MM, 0.0], [1.0 * MM, 3.0 * MM]]];
     let m = triangulate(&Request { lines: &lines, ..request(&layers, &nets, &[]) }).unwrap();
     sound(&m, 12.0 * MM * MM);
+}
+
+/// Property tests: a fixed seed and no saved failures, so the gate stays deterministic.
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+    use proptest::test_runner::{Config, RngSeed};
+
+    fn config(cases: u32) -> Config {
+        Config { cases, rng_seed: RngSeed::Fixed(0x454d_4372), failure_persistence: None, ..Config::default() }
+    }
+
+    /// A trace somewhere around the region (some ends outside it), on one of two layers and nets.
+    fn trace() -> impl Strategy<Value = Outline> {
+        let point = || (-1.0..5.0f64, -1.0..4.0f64).prop_map(|(x, y)| [x * MM, y * MM]);
+        (point(), point(), 0.05..1.0f64, 0usize..2, 0u32..2).prop_map(|(a, b, w, layer, net)| Outline {
+            layer,
+            net,
+            ring: offset::trace(a, b, w * MM, 1e-6),
+        })
+    }
+
+    proptest! {
+        #![proptest_config(config(24))]
+
+        /// Crossing, overlapping and degenerate traces mesh soundly, the same way twice, or are
+        /// refused; they never panic.
+        #[test]
+        fn random_traces_mesh_soundly_and_deterministically(outlines in prop::collection::vec(trace(), 0..5)) {
+            let (layers, nets) = (names(2, "L"), names(2, "n"));
+            let r = request(&layers, &nets, &outlines);
+            if let Ok(m) = triangulate(&r) {
+                sound(&m, 12.0 * MM * MM);
+                prop_assert_eq!(triangulate(&r).ok(), Some(m));
+            }
+        }
+    }
+
+    proptest! {
+        #![proptest_config(config(256))]
+
+        /// Any numbers for the region and the sizes (NaN, infinite, negative, huge) are refused or
+        /// meshed; they never panic.
+        #[test]
+        fn hostile_regions_are_refused_without_panicking(
+            lo in prop::array::uniform2(prop::num::f64::ANY),
+            hi in prop::array::uniform2(prop::num::f64::ANY),
+            size in prop::num::f64::ANY,
+            edge in prop::num::f64::ANY,
+        ) {
+            let (layers, nets) = (names(1, "L"), names(1, "n"));
+            let r = Request { lo, hi, size, edge_size: edge, ..request(&layers, &nets, &[]) };
+            let _ = triangulate(&r);
+        }
+    }
 }

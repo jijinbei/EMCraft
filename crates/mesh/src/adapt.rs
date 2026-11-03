@@ -117,9 +117,9 @@ mod tests {
         };
         let r = refinements(&mesh, &[0], 1e-3).unwrap();
         assert_eq!(r.len(), 1);
-        assert!((r[0].center.x - 0.5).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(r[0].center.x, 0.5, epsilon = 1e-15);
         let mean = (3.0 * 2.0 + 3.0 * 8f64.sqrt()) / 6.0;
-        assert!((r[0].size - mean / 2.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(r[0].size, mean / 2.0, epsilon = 1e-12);
         assert!(mesh.nodes.iter().all(|n| n.distance(r[0].center) <= r[0].radius + 1e-12));
         assert_eq!(refinements(&mesh, &[0], 10.0).unwrap()[0].size, 10.0, "the floor");
         assert!(refinements(&mesh, &[1], 1e-3).is_err());

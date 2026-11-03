@@ -349,7 +349,7 @@ mod tests {
         let (il, f) = (1e-3, 1e9);
         let lambda = C0 / f;
         let p = dipole_power(il, f);
-        assert!((p / (eta0() / (120.0 * PI) * 40.0 * PI * PI * (il / lambda).powi(2)) - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(p / (eta0() / (120.0 * PI) * 40.0 * PI * PI * (il / lambda).powi(2)), 1.0, epsilon = 1e-12);
         // The pattern integrates to the power: P = (1/2η) ∮ |F|² dΩ.
         let n = 2000;
         let total: f64 = (0..n)
@@ -358,7 +358,7 @@ mod tests {
                 dipole_far_field(il, f, t).powi(2) * t.sin() * PI / n as f64 * 2.0 * PI
             })
             .sum();
-        assert!((total / (2.0 * eta0()) / p - 1.0).abs() < 1e-6);
+        approx::assert_abs_diff_eq!(total / (2.0 * eta0()) / p, 1.0, epsilon = 1e-6);
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod tests {
         let (s, c) = si_ci(10.0);
         assert!((s - 1.658_347_594_219).abs() < 1e-10 && (c + 0.045_456_433_005).abs() < 1e-10);
         // Its directivity, 1.643 (Balanis eq. 4-91).
-        assert!((halfwave_directivity(PI / 2.0) - 1.641).abs() < 1e-3);
+        approx::assert_abs_diff_eq!(halfwave_directivity(PI / 2.0), 1.641, epsilon = 1e-3);
         // The thin half-wave dipole: 73.1 + j42.5 Ω (Balanis §4.6).
         let f = 1e9;
         let z = dipole_impedance(C0 / f / 2.0, 1e-6, f);
@@ -396,7 +396,7 @@ mod tests {
         );
         assert!((a - b).norm() < 1e-12 * a.norm());
         let (x, w) = gauss(16);
-        assert!((x.iter().zip(&w).map(|(x, w)| w * x.powi(31)).sum::<f64>() - 1.0 / 32.0).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(x.iter().zip(&w).map(|(x, w)| w * x.powi(31)).sum::<f64>(), 1.0 / 32.0, epsilon = 1e-15);
     }
 
     #[test]
@@ -423,8 +423,8 @@ mod tests {
     #[test]
     fn spherical_bessel_by_downward_recurrence() {
         let j = sph_j_all(12, 0.7);
-        assert!((j[0] - 0.7f64.sin() / 0.7).abs() < 1e-15);
-        assert!((j[1] - (0.7f64.sin() / 0.49 - 0.7f64.cos() / 0.7)).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(j[0], 0.7f64.sin() / 0.7, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(j[1], (0.7f64.sin() / 0.49 - 0.7f64.cos() / 0.7), epsilon = 1e-15);
         // Where the upward recurrence is accurate (n < ρ) the two agree.
         let j = sph_j_all(5, 9.3);
         for n in 0..5 {
@@ -432,7 +432,7 @@ mod tests {
         }
         // j₁₀(0.7) ≈ 0.7¹⁰/21!! (the small-argument limit).
         let df: f64 = (1..=21).step_by(2).map(|k| k as f64).product();
-        assert!((sph_j_all(10, 0.7)[10] / (0.7f64.powi(10) / df) - 1.0).abs() < 2e-2);
+        approx::assert_abs_diff_eq!(sph_j_all(10, 0.7)[10] / (0.7f64.powi(10) / df), 1.0, epsilon = 2e-2);
     }
 
     #[test]
@@ -457,7 +457,7 @@ mod tests {
             assert!((sca / ext - 1.0).abs() < 1e-10, "{x}");
         }
         let x: f64 = 0.01;
-        assert!((mie_efficiencies(x, None).0 / (10.0 / 3.0 * x.powi(4)) - 1.0).abs() < 1e-3);
+        approx::assert_abs_diff_eq!(mie_efficiencies(x, None).0 / (10.0 / 3.0 * x.powi(4)), 1.0, epsilon = 1e-3);
         let (s1, _) = mie_amplitudes_pec(x, PI);
         let back = 4.0 * s1.norm_sqr() / (x * x);
         assert!((back / (9.0 * x.powi(4)) - 1.0).abs() < 1e-3, "{back}");
@@ -465,8 +465,8 @@ mod tests {
         // twice it.
         let x = 60.0;
         let (s1, _) = mie_amplitudes_pec(x, PI);
-        assert!((4.0 * s1.norm_sqr() / (x * x) - 1.0).abs() < 0.05);
-        assert!((mie_efficiencies(x, None).1 - 2.0).abs() < 0.05);
+        approx::assert_abs_diff_eq!(4.0 * s1.norm_sqr() / (x * x), 1.0, epsilon = 0.05);
+        approx::assert_abs_diff_eq!(mie_efficiencies(x, None).1, 2.0, epsilon = 0.05);
     }
 
     #[test]
@@ -480,13 +480,13 @@ mod tests {
         // σ = 4π k⁴ a⁶ ((m² − 1)/(m² + 2))².
         let (x, m) = (0.01, 2.0);
         let l = (m * m - 1.0) / (m * m + 2.0);
-        assert!((mie_efficiencies(x, m).0 / (8.0 / 3.0 * x.powi(4) * l * l) - 1.0).abs() < 1e-3);
+        approx::assert_abs_diff_eq!(mie_efficiencies(x, m).0 / (8.0 / 3.0 * x.powi(4) * l * l), 1.0, epsilon = 1e-3);
         let (a, f) = (1e-4, 3e9);
         let k = 2.0 * PI * f / C0;
         let back = sphere_rcs(a, 4.0, f, PI, true);
-        assert!((back / (4.0 * PI * k.powi(4) * a.powi(6) * l * l) - 1.0).abs() < 1e-3);
+        approx::assert_abs_diff_eq!(back / (4.0 * PI * k.powi(4) * a.powi(6) * l * l), 1.0, epsilon = 1e-3);
         // E- and H-planes agree forwards and backwards (S₁ = S₂ there up to sign).
-        assert!((sphere_rcs(0.01, 4.0, 10e9, 0.0, true) - sphere_rcs(0.01, 4.0, 10e9, 0.0, false)).abs() < 1e-12);
-        assert!((sphere_rcs(0.01, 4.0, 10e9, PI, true) - sphere_rcs(0.01, 4.0, 10e9, PI, false)).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(sphere_rcs(0.01, 4.0, 10e9, 0.0, true), sphere_rcs(0.01, 4.0, 10e9, 0.0, false), epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(sphere_rcs(0.01, 4.0, 10e9, PI, true), sphere_rcs(0.01, 4.0, 10e9, PI, false), epsilon = 1e-12);
     }
 }

@@ -480,9 +480,9 @@ mod tests {
             ChartMap { rect: Rect::from_min_size(pos2(100.0, 0.0), vec2(500.0, 300.0)), size: vec2(1000.0, 600.0), layout, unit: Default::default() };
         // 90 px of the picture's 1000 is the plot's left (5 GHz); half-scale on screen.
         assert_eq!(map.frequency(145.0), Some(5e9));
-        assert!((map.frequency(365.0).unwrap_or(0.0) - 7e9).abs() < 1.0);
+        approx::assert_abs_diff_eq!(map.frequency(365.0).unwrap_or(0.0), 7e9, epsilon = 1.0);
         assert_eq!(map.frequency(101.0), None);
-        assert!((map.x(7e9) - 365.0).abs() < 1e-3);
+        approx::assert_abs_diff_eq!(map.x(7e9), 365.0, epsilon = 1e-3);
         assert_eq!(crate::nearest(&[5.0, 6.0, 7.0], 6.4), Some(6.0));
         assert_eq!(crate::nearest(&[], 6.4), None);
         // A sweep's frequencies with as many decimals as their step needs.

@@ -361,18 +361,17 @@ fn excitation(s: &Session) -> StepState {
     // A resonator's eigenmodes need nothing to drive them.
     let resonator = s.results.eigen.is_some() || chosen == Some(Analysis::Eigenmodes);
     let driven = !(m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty());
-    if !has_geometry(s) {
-        st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide"));
-    } else if !driven && !bloch && !resonator {
-        if chosen == Some(Analysis::Radiation) {
-            st.note(Status::Todo, "nothing drives the open problem yet: a lumped port, a dipole or a plane wave", Some("model.port.lumped"));
-        } else {
-            st.note(
-                Status::Todo,
-                "nothing drives the model yet: a waveguide port, a lumped port or a source (a resonator needs none: Run finds its eigenmodes)",
-                Some("model.port.create"),
-            );
+    match (has_geometry(s), driven || bloch || resonator, chosen) {
+        (false, _, _) => st.note(Status::Waiting, "waits for the geometry", Some("geometry.waveguide")),
+        (true, false, Some(Analysis::Radiation)) => {
+            st.note(Status::Todo, "nothing drives the open problem yet: a lumped port, a dipole or a plane wave", Some("model.port.lumped"))
         }
+        (true, false, _) => st.note(
+            Status::Todo,
+            "nothing drives the model yet: a waveguide port, a lumped port or a source (a resonator needs none: Run finds its eigenmodes)",
+            Some("model.port.create"),
+        ),
+        (true, true, _) => {}
     }
     if chosen == Some(Analysis::Eigenmodes) && driven {
         st.note(Status::Warning, "eigenmodes leave the ports and sources out (closed by walls)", Some("project.analysis"));

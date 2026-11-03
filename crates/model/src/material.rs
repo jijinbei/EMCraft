@@ -332,10 +332,10 @@ mod tests {
         let d = x().with_dispersion(vec![Pole::debye(3.0, tau).unwrap()]).unwrap();
         let e = d.eps_at(1.0 / (2.0 * PI * tau));
         assert!((e.re - 3.5).abs() < 1e-12 && (e.im + 1.5).abs() < 1e-12, "{e}");
-        assert!((d.eps_at(1e-3).re - 5.0).abs() < 1e-9);
+        approx::assert_abs_diff_eq!(d.eps_at(1e-3).re, 5.0, epsilon = 1e-9);
         // Lorentz: static ε∞ + Δε; above the resonance below ε∞; lossy (ε″ > 0).
         let l = x().with_dispersion(vec![Pole::lorentz(2.0, 1e10, 1e9).unwrap()]).unwrap();
-        assert!((l.eps_at(1.0).re - 4.0).abs() < 1e-9);
+        approx::assert_abs_diff_eq!(l.eps_at(1.0).re, 4.0, epsilon = 1e-9);
         assert!(l.eps_at(1e10).im < 0.0 && l.eps_at(3e10).re < 2.0);
         // Drude: χ = −ωp²/(ω² − jωγ).
         let (fp, g) = (1e10, 1e9);

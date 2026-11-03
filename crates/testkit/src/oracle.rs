@@ -617,7 +617,7 @@ mod tests {
         let points: Vec<Value> = (0..9).map(|i| f64::from(i) * 0.5).map(|x| json!({"f": x, "s": {"mag": (x - 2.3f64).abs()}})).collect();
         let reply = json!({"points": points});
         let spec = Axes { x: "/f".into(), y: "/s/mag".into() };
-        assert!((minimum(&reply, "/points", &spec).unwrap() - 2.3).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(minimum(&reply, "/points", &spec).unwrap(), 2.3, epsilon = 1e-12);
         // At the list's end, uneven, or without the keys: refused.
         let edge: Vec<Value> = (0..4).map(|i| json!({"f": f64::from(i), "s": {"mag": f64::from(i)}})).collect();
         assert!(minimum(&json!({"points": edge}), "/points", &spec).is_err());
@@ -630,8 +630,8 @@ mod tests {
     #[test]
     fn a_phase_difference_is_wrapped() {
         let reply = json!({"a": 170.0, "b": -100.0, "c": "x"});
-        assert!((phase_minus(&reply, "/a", "/b").unwrap() - -90.0).abs() < 1e-12);
-        assert!((phase_minus(&reply, "/b", "/a").unwrap() - 90.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(phase_minus(&reply, "/a", "/b").unwrap(), -90.0, epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(phase_minus(&reply, "/b", "/a").unwrap(), 90.0, epsilon = 1e-12);
         assert!(phase_minus(&reply, "/a", "/c").is_err() && phase_minus(&reply, "/a", "/d").is_err());
     }
 
@@ -641,8 +641,8 @@ mod tests {
         let points: Vec<Value> = (0..11).map(|i| f64::from(i) * 0.5).map(|x| json!({"f": x, "s": {"mag": 1.0 - (x - 2.5f64).abs() * 0.4}})).collect();
         let reply = json!({"points": points});
         let at = |level: f64, which: Which| Crossing { x: "/f".into(), y: "/s/mag".into(), level, which };
-        assert!((crossing(&reply, "/points", &at(0.5, Which::First)).unwrap() - 1.25).abs() < 1e-12);
-        assert!((crossing(&reply, "/points", &at(0.5, Which::Last)).unwrap() - 3.75).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(crossing(&reply, "/points", &at(0.5, Which::First)).unwrap(), 1.25, epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(crossing(&reply, "/points", &at(0.5, Which::Last)).unwrap(), 3.75, epsilon = 1e-12);
         assert!(crossing(&reply, "/points", &at(2.0, Which::First)).is_err());
         assert!(crossing(&reply, "/points", &at(f64::NAN, Which::First)).is_err());
         assert!(serde_json::from_value::<Crossing>(json!({"x": "/f", "y": "/s/mag"})).is_err());

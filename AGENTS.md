@@ -85,7 +85,10 @@ People trust EMCraft with their models; a crash loses their work. **This outrank
 4. **Keep the test gate fast.** A test that takes more than a few seconds (convergence studies,
    fine meshes) is `#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]`, with a fast
    representative test left in the gate.
-5. **Show how to call it.** A public building block others reuse (parameter reading, units,
+5. **Test tools** (dev-dependencies, ADR 0001): `approx::assert_abs_diff_eq!` for tolerances,
+   `proptest` for hostile input (a fixed `rng_seed`, `failure_persistence: None`: the gate stays
+   deterministic; see `crates/engine/src/tests/properties.rs`), `rstest` `#[case]`s for tables.
+6. **Show how to call it.** A public building block others reuse (parameter reading, units,
    closed forms, matrices) carries a short usage example in its docs: a doctest, run by
    `cargo test`, that shows the call, its units and how it refuses bad input.
 
