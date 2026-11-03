@@ -24,6 +24,8 @@ exact solutions or published benchmarks.
 
 UI guidance (2026-11-02): command descriptions folded behind Help; mesh generation split into basic and advanced settings with display labels; element-order guidance; Results distinguishes physical checks from mesh convergence and opens the adaptive-mesh settings. Japanese text and a click-through scenario included.
 
+PCB 3D readability (2026-11-03): procedural WGSL tubes with shared colour/depth normals replace schematic polylines; shallow copper faces and a transparent dielectric section establish depth. The initial view magnifies the selected section, with projected net/layer/field callouts and existing E/H palette colours. Japanese role/control labels follow the established UI wording. Analytical GPU pixel checks, a real orbit scenario and the full Japanese screen tour cover the display.
+
 Mesh section visibility (2026-11-02): open cut outlines instead of opaque material caps and metal backing; tetrahedron perimeters throughout the slice; faint boundary mesh and translucent port faces; line contrast adapted to the viewport background, checked in light and midnight themes.
 
 WGSL viewport (2026-11-02): section clipping shared by colour, transparency, depth/stencil and picking passes; world-space port direction glyphs generated and lit in WGSL (cylinders and cones), replacing egui arrows; mesh port rims use the walls' transparency. CPU cuts retained for interaction and tetrahedron slice topology. GPU pixel checks and light/dark orbit scenarios included.

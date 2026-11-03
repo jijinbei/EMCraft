@@ -152,8 +152,16 @@ holes; a return-reference line is withheld when the route's reference screening 
 or missing support. Curves and loops are original conceptual drawings, following the mechanisms
 explained in Texas Instruments' [Crosstalk on PCB Layouts](https://www.ti.com/content/dam/videos/external-videos/zh-tw/9/3816841626001/6307563213112.mp4/subassets/crosstalk-on-pcb-layouts-presentation-quiz.pdf), not field solutions.
 
+The existing viewport WGSL now generates lit tubular curves from descriptors, shared by the
+colour and depth/normal passes; it does not rasterize CPU polylines for these annotations.
+Callouts identify the source/receiver nets, their copper layer, the reference net/layer and
+the displayed electric/magnetic/return annotation. A translucent block locates the dielectric.
+Copper is zero-thickness in the input model; shallow display extrusions distinguish its faces
+and are labelled as schematic. Displayed extrusion thickness is not used in the line estimates.
+
 Drag to orbit and scroll to zoom. Depth is exaggerated ×10 by default; toggle it for actual
-layer spacing. Local section shortens the traces around the selected section. Motion defaults
+layer spacing. Local section now opens by default and shortens the traces around the selected
+section so that nearby conductors stay readable; turn it off to see the full overlap. Motion defaults
 to stopped, and only pulses the emphasis at five updates per second. It is not a wave simulation.
 Pair, mode, playback, depth and section choices are saved by `view.pcb` (`victim`, `mode`,
 `playing`, `exaggerate`, `section`, `pick_victim`); modes are `electric`, `magnetic`, `return`.

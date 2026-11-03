@@ -40,6 +40,27 @@ pub(crate) struct Motion {
 
 pub(crate) const ARROW_VERTICES: usize = 24 * 15;
 
+/// Conceptual curves, not solver field samples. WGSL builds their round surfaces and normals.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CurveKind {
+    Arch,
+    Loop,
+    Line,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct Curve {
+    /// Arch/line endpoints; for a loop, centre and centre + horizontal radius.
+    pub a: [f64; 3],
+    pub b: [f64; 3],
+    pub lift: [f64; 3],
+    pub radius: f64,
+    pub kind: CurveKind,
+    pub color: Rgb,
+    /// Explanatory brightness only, never physical phase. Zero disables animation.
+    pub emphasis: f32,
+}
+const CURVE_VERTICES: usize = 48 * 8 * 6;
+
 /// A scene in the GPU's vertex layout: opaque and see-through triangles apart, the lines, all
 /// relative to `origin` (the middle of its box) so f32 keeps the detail of a small part far
 /// from zero.
@@ -74,6 +95,41 @@ fn put3(out: &mut Vec<u8>, v: [f64; 3]) {
 }
 
 impl Packed {
+    pub(crate) fn append_curves(&mut self, curves: &[Curve]) {
+        for c in curves.iter().take(256) {
+            let d = sub(c.b, c.a);
+            if !c.a.iter().chain(&c.b).chain(&c.lift).all(|v| v.is_finite() && v.abs() < 1e12)
+                || !(c.radius > 0.0 && c.radius < 1e12 && c.emphasis.is_finite())
+                || dot(d, d) <= 1e-24
+                || sub(c.a, self.origin).map(|v| v as f32) == sub(c.b, self.origin).map(|v| v as f32)
+                || (matches!(c.kind, CurveKind::Loop) && dot(cross(d, c.lift), cross(d, c.lift)) <= 1e-48)
+            {
+                continue;
+            }
+            if self.opaque.len() + CURVE_VERTICES * TRI_VERTEX > MAX_BYTES {
+                break;
+            }
+            let kind = match c.kind {
+                CurveKind::Arch => 0.0f32,
+                CurveKind::Loop => 1.0,
+                CurveKind::Line => 2.0,
+            };
+            for k in 0..CURVE_VERTICES {
+                put3(&mut self.opaque, sub(c.a, self.origin));
+                put3(&mut self.opaque, sub(c.b, self.origin));
+                self.opaque.extend_from_slice(&(-20002.0 - k as f32).to_le_bytes());
+                self.opaque.extend_from_slice(&[c.color.0, c.color.1, c.color.2, 255]);
+                self.opaque.extend_from_slice(&0u32.to_le_bytes());
+                put3(&mut self.opaque, c.lift);
+                for v in [c.radius as f32, kind, c.emphasis, 0.0] {
+                    self.opaque.extend_from_slice(&v.to_le_bytes());
+                }
+            }
+            // Conservative enclosing sphere, including arch lift and tube radius.
+            self.radius =
+                self.radius.max(dot(sub(c.a, self.origin), sub(c.a, self.origin)).sqrt() + dot(d, d).sqrt() + dot(c.lift, c.lift).sqrt() + c.radius);
+        }
+    }
     /// `scene` packed: triangles with no area or a non-finite corner and anything fully
     /// transparent are left out.
     ///

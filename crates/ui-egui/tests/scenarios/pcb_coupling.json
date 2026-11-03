@@ -62,12 +62,34 @@
       ],
       "inspect": {
         "pcb.report.coupling_pairs.0.target": "CLK",
-        "pcb.report.coupling_pairs.0.method": "geometry_only"
+        "pcb.report.coupling_pairs.0.method": "geometry_only",
+        "pcb.illustration.section": true
       }
     }
   },
   {
     "shot": "pcb-coupling-electric"
+  },
+  {
+    "drag": [
+      {
+        "handle": "choice:pcb_coupling:scene",
+        "offset": [
+          -45,
+          -20
+        ]
+      },
+      {
+        "handle": "choice:pcb_coupling:scene",
+        "offset": [
+          30,
+          12
+        ]
+      }
+    ]
+  },
+  {
+    "shot": "pcb-coupling-orbit"
   },
   {
     "click": "choice:pcb_coupling:keep"

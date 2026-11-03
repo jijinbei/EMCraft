@@ -37,7 +37,7 @@ pub struct Illustration {
 }
 impl Default for Illustration {
     fn default() -> Self {
-        Self { victim: None, mode: CouplingMode::Electric, playing: false, exaggerate: true, section: false, pick_victim: false }
+        Self { victim: None, mode: CouplingMode::Electric, playing: false, exaggerate: true, section: true, pick_victim: false }
     }
 }
 /// Last verified PCB conditions; frequency is SI hertz, impedance is ohms.

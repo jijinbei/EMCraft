@@ -1,14 +1,98 @@
 //! Original conceptual coupling diagrams. No field samples, amplitudes or noise voltages are synthesized.
 use super::*;
+use crate::gpu3d::{Curve, CurveKind};
 use emcraft_engine::pcb::CouplingMode as Mode;
 use emcraft_render::view3d::{Camera, Scene};
+#[derive(Clone)]
+struct Diagram {
+    scene: Scene,
+    curves: Vec<Curve>,
+    // Source, receiver and reference-copper anchors for the ordinary egui callouts.
+    anchors: [[f64; 3]; 3],
+    reference_layer: String,
+    route_layer: String,
+}
+impl Diagram {
+    fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
+        let (mut lo, mut hi) = self.scene.bounds()?;
+        for c in &self.curves {
+            for i in 0..3 {
+                let reach = if matches!(c.kind, CurveKind::Loop) { (c.b[i] - c.a[i]).abs() } else { 0. };
+                lo[i] = lo[i].min(c.a[i].min(c.b[i]) - c.lift[i].abs() - reach);
+                hi[i] = hi[i].max(c.a[i].max(c.b[i]) + c.lift[i].abs() + reach);
+            }
+        }
+        Some((lo, hi))
+    }
+}
+
+fn curve_colour(mode: Mode) -> emcraft_render::Rgb {
+    // Match the existing 3D E/H glyphs (scene3d::field); the flat-plot E pen can be black.
+    let scene = crate::theme::scene();
+    match mode {
+        Mode::Electric => scene.port_input,
+        Mode::Magnetic => scene.port_output,
+        Mode::Return => crate::theme::palette().series[3],
+    }
+}
+fn callouts(ui: &egui::Ui, rect: Rect, camera: &Camera, diagram: &Diagram, names: [&str; 3], mode: Mode) {
+    let [source, target, ground] = names;
+    let t = Tokens::get();
+    let labels = [
+        (
+            format!("{}: {source} ({})", tr("Source"), diagram.route_layer),
+            t.warning,
+            pos2(rect.left() + 12., rect.top() + 12.),
+            egui::Align2::LEFT_TOP,
+        ),
+        (
+            format!("{}: {target} ({})", tr("Receiver"), diagram.route_layer),
+            t.accent,
+            pos2(rect.right() - 12., rect.top() + 42.),
+            egui::Align2::RIGHT_TOP,
+        ),
+        (format!("{ground} ({})", diagram.reference_layer), t.success, pos2(rect.left() + 12., rect.bottom() - 12.), egui::Align2::LEFT_BOTTOM),
+    ];
+    let painter = ui.painter().with_clip_rect(rect);
+    for (i, (label, color, pos, align)) in labels.into_iter().enumerate() {
+        let galley = painter.layout_no_wrap(label, FontId::proportional(t.font_body), color);
+        let box_rect = align.anchor_size(pos, galley.size());
+        if let Some(q) = camera.project(diagram.anchors[i], f64::from(rect.width()), f64::from(rect.height())) {
+            let anchor = rect.min + vec2(q[0] as f32, q[1] as f32);
+            if rect.contains(anchor) {
+                painter.line_segment([box_rect.center(), anchor], Stroke::new(1., color));
+                painter.circle_filled(anchor, 3., color);
+            }
+        }
+        painter.rect_filled(box_rect.expand(4.), t.radius_sm, t.panel);
+        painter.galley(box_rect.min, galley, color);
+    }
+    if let Some(c) = diagram.curves.first() {
+        let anchor = match c.kind {
+            CurveKind::Arch => std::array::from_fn(|i| (c.a[i] + c.b[i]) * 0.5 + c.lift[i]),
+            CurveKind::Loop => std::array::from_fn(|i| c.a[i] + c.lift[i]),
+            CurveKind::Line => std::array::from_fn(|i| (c.a[i] + c.b[i]) * 0.5),
+        };
+        let color = crate::theme::color32(c.color);
+        let galley = painter.layout_no_wrap(shown(mode).into(), FontId::proportional(t.font_body), color);
+        let box_rect = egui::Align2::RIGHT_BOTTOM.anchor_size(pos2(rect.right() - 12., rect.bottom() - 12.), galley.size());
+        if let Some(q) = camera.project(anchor, f64::from(rect.width()), f64::from(rect.height())) {
+            let at = rect.min + vec2(q[0] as f32, q[1] as f32);
+            if rect.contains(at) {
+                painter.line_segment([box_rect.center(), at], Stroke::new(1., color));
+            }
+        }
+        painter.rect_filled(box_rect.expand(4.), t.radius_sm, t.panel);
+        painter.galley(box_rect.min, galley, color);
+    }
+}
 #[derive(Default)]
 pub(crate) struct IllustrationUi {
     pub index: usize,
     camera: Camera,
     key: Option<String>,
     picture: Option<Picture>,
-    baseline: Option<(Scene, f64, f64, Mode, bool, bool, String, String)>,
+    baseline: Option<(Diagram, f64, f64, Mode, bool, bool, String, String)>,
     compare: Vec<Picture>,
     baseline_palette: [emcraft_render::Rgb; 3],
 }
@@ -58,7 +142,7 @@ pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 fn points(v: &Value, unit: emcraft_model::units::Length) -> Option<[[f64; 2]; 2]> {
     Some([[unit.to_si(v[0][0].as_f64()?), unit.to_si(v[0][1].as_f64()?)], [unit.to_si(v[1][0].as_f64()?), unit.to_si(v[1][1].as_f64()?)]])
 }
-fn scene(app: &EmcraftApp, pair: &Value, mode: Mode, exaggerate: bool, section: bool, alpha: u8) -> Option<Scene> {
+fn scene(app: &EmcraftApp, pair: &Value, mode: Mode, exaggerate: bool, section: bool, emphasis: f32) -> Option<Diagram> {
     let board = app.session.model().pcb.as_ref()?;
     let u = app.session.display().length;
     let a = points(&pair["source_points"], u)?;
@@ -87,7 +171,16 @@ fn scene(app: &EmcraftApp, pair: &Value, mode: Mode, exaggerate: bool, section: 
     let t = Tokens::get();
     let rgb = crate::theme::rgb;
     let mut scene = Scene::default();
-    let extent = if section { height * 8. + offset[0].hypot(offset[1]) * 2. } else { half.max(offset[0].hypot(offset[1]) * 2.) };
+    let extent = if section { height * 2. + offset[0].hypot(offset[1]) } else { half.max(offset[0].hypot(offset[1]) * 2.) };
+    // A transparent local dielectric section gives the two copper layers a readable depth.
+    // Copper itself is zero-thickness in the board model; the shallow extrusion is a display aid.
+    let bottom = at(centre, reference.z)[1];
+    scene.cuboid(
+        [centre[0] - extent, bottom.min(0.), centre[1] - extent],
+        [centre[0] + extent, bottom.max(0.), centre[1] + extent],
+        rgb(t.text_dim),
+        22,
+    );
     // Raster spans retain saved slots and holes; bounded local projection only.
     for copper in board.copper.iter().filter(|c| c.net == *ground && c.layer == reference.name) {
         for row in 0..80 {
@@ -103,7 +196,7 @@ fn scene(app: &EmcraftApp, pair: &Value, mode: Mode, exaggerate: bool, section: 
                     scene.quad(
                         [at([l, y], reference.z), at([r, y], reference.z), at([r, y + dy], reference.z), at([l, y + dy], reference.z)],
                         rgb(t.success),
-                        130,
+                        230,
                     );
                 }
             }
@@ -117,7 +210,18 @@ fn scene(app: &EmcraftApp, pair: &Value, mode: Mode, exaggerate: bool, section: 
             at([q[0] + shift[0] + side * n[0] * w, q[1] + shift[1] + side * n[1] * w], layer.z)
         };
         let span = if section { height.max(seg.width) * 1.5 } else { half };
-        scene.quad([q(-span, -1.), q(span, -1.), q(span, 1.), q(-span, 1.)], rgb(colour), 255);
+        let top = [q(-span, -1.), q(span, -1.), q(span, 1.), q(-span, 1.)];
+        let thickness = height * depth * 0.045;
+        let low = top.map(|mut v| {
+            v[1] -= thickness;
+            v
+        });
+        scene.quad(top, rgb(colour), 255);
+        scene.quad(low, rgb(colour), 255);
+        for i in 0..4 {
+            let j = (i + 1) % 4;
+            scene.quad([top[i], top[j], low[j], low[i]], rgb(colour), 255);
+        }
     }
     let covered = |p: [f64; 2]| {
         board
@@ -134,39 +238,44 @@ fn scene(app: &EmcraftApp, pair: &Value, mode: Mode, exaggerate: bool, section: 
         .as_array()?
         .iter()
         .any(|f| ["return_gap", "reference_edge", "no_reference"].contains(&f["code"].as_str().unwrap_or("")));
+    let mut curves = Vec::new();
     for k in 0..if section || mode == Mode::Return { 1 } else { 5 } {
         let x = if section { 0. } else { half * (k as f64 / 4. - 0.5) };
         let a = p(x);
         let b = [a[0] + offset[0], a[1] + offset[1]];
-        let mut curve = Vec::new();
-        for j in 0..=24 {
-            let f = j as f64 / 24.;
-            let point = match mode {
-                Mode::Electric => {
-                    let q = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-                    let mut v = at(q, layer.z);
-                    v[1] += height * depth * 0.7 * (std::f64::consts::PI * f).sin();
-                    v
-                }
-                Mode::Magnetic => {
-                    let angle = std::f64::consts::TAU * f;
-                    let radius = height * 5.;
-                    let mut v = at([a[0] + n[0] * radius * angle.cos(), a[1] + n[1] * radius * angle.cos()], layer.z);
-                    v[1] += height * 0.4 * depth * angle.sin();
-                    v
-                }
-                Mode::Return => at(p(-half + f * 2. * half), reference.z),
-            };
-            curve.push(point);
-        }
         if mode == Mode::Return && (bad || !(0..=24).all(|j| covered(p(-half + 2. * half * j as f64 / 24.)))) {
             continue;
         }
-        for v in curve.windows(2) {
-            scene.line(v[0], v[1], rgb(if mode == Mode::Electric { t.warning } else { t.accent }), alpha);
-        }
+        let (start, end, lift, kind) = match mode {
+            Mode::Electric => (at(a, layer.z), at(b, layer.z), [0., height * depth * 0.7, 0.], CurveKind::Arch),
+            Mode::Magnetic => {
+                (at(a, layer.z), at([a[0] + n[0] * height * 5., a[1] + n[1] * height * 5.], layer.z), [0., height * depth * 0.4, 0.], CurveKind::Loop)
+            }
+            Mode::Return => {
+                let span = if section { height * 1.5 } else { half };
+                let mut start = at(p(-span), reference.z);
+                let mut end = at(p(span), reference.z);
+                start[1] += height * depth * 0.06;
+                end[1] += height * depth * 0.06;
+                (start, end, [0.; 3], CurveKind::Line)
+            }
+        };
+        curves.push(Curve { a: start, b: end, lift, radius: height * depth * 0.022, kind, color: curve_colour(mode), emphasis });
     }
-    Some(scene)
+    let span = if section { height * 1.5 } else { half * 0.8 };
+    let source_anchor = p(-span);
+    let receiver_anchor = p(span);
+    Some(Diagram {
+        scene,
+        curves,
+        anchors: [
+            at(source_anchor, layer.z),
+            at([receiver_anchor[0] + offset[0], receiver_anchor[1] + offset[1]], layer.z),
+            at([centre[0] - extent * 0.5, centre[1] + extent * 0.5], reference.z),
+        ],
+        reference_layer: reference.name.clone(),
+        route_layer: layer.name.clone(),
+    })
 }
 
 pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, report: &Value, out: &mut Actions) {
@@ -176,53 +285,57 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
     };
     ui.heading(tr("Coupling illustration"));
     ui.colored_label(Tokens::get().warning, tr("Schematic only — fields and noise voltage are not calculated"));
-    ui.horizontal(|ui| {
-        ui.colored_label(Tokens::get().warning, format!("{}: {}", tr("Source"), report["net"].as_str().unwrap_or("")));
-        ui.colored_label(Tokens::get().accent, format!("{}: {}", tr("Receiver"), victim));
-    });
-    ui.small(tr("3D shows the selected parallel overlap; circles mark its centre in 2D."));
+    ui.small(tr(if config.section {
+        "3D shows a close-up at the circles in the layout."
+    } else {
+        "3D shows the selected parallel overlap; circles mark its centre in 2D."
+    }));
     let pairs: Vec<_> = report["coupling_pairs"].as_array().into_iter().flatten().filter(|p| p["target"].as_str() == Some(victim)).collect();
     if pairs.is_empty() {
         ui.label(tr("No supported parallel overlap for this pair. Angles, vias and interlayer coupling are not illustrated."));
         return;
     }
-    if app.session.variables().contains_key("gap") {
-        let r = ui.button(tr("Edit template spacing…"));
-        scenario::publish_target(Handle::Choice("pcb_coupling", "spacing"), r.rect);
-        if r.clicked() {
-            out.push(Action::dialog_with("project.variable", json!({"name":"gap"})));
-        }
-    }
     let state = &mut state.illustration;
     state.index = state.index.min(pairs.len() - 1);
-    egui::ComboBox::from_id_salt("coupling_section").selected_text(format!("{}/{}", state.index + 1, pairs.len())).show_ui(ui, |ui| {
-        for (i, p) in pairs.iter().enumerate() {
-            if ui
-                .selectable_label(
-                    i == state.index,
-                    format!(
-                        "{}: ({}, {}) → ({}, {})",
-                        i + 1,
-                        p["source_points"][0][0],
-                        p["source_points"][0][1],
-                        p["source_points"][1][0],
-                        p["source_points"][1][1]
-                    ),
-                )
-                .clicked()
-            {
-                state.index = i;
+    ui.horizontal_wrapped(|ui| {
+        if app.session.variables().contains_key("gap") {
+            let r = ui.button(tr("Edit template spacing…"));
+            scenario::publish_target(Handle::Choice("pcb_coupling", "spacing"), r.rect);
+            if r.clicked() {
+                out.push(Action::dialog_with("project.variable", json!({"name":"gap"})));
             }
         }
+        egui::ComboBox::from_id_salt("coupling_section").selected_text(format!("{}/{}", state.index + 1, pairs.len())).show_ui(ui, |ui| {
+            for (i, p) in pairs.iter().enumerate() {
+                if ui
+                    .selectable_label(
+                        i == state.index,
+                        format!(
+                            "{}: ({}, {}) → ({}, {})",
+                            i + 1,
+                            p["source_points"][0][0],
+                            p["source_points"][0][1],
+                            p["source_points"][1][0],
+                            p["source_points"][1][1]
+                        ),
+                    )
+                    .clicked()
+                {
+                    state.index = i;
+                }
+            }
+        });
+        let pair = pairs[state.index];
+        ui.small(crate::lang::trf(
+            "Clearance {gap} {unit} · parallel length {length} {unit}",
+            &[
+                ("gap", &format!("{:.3}", pair["gap"].as_f64().unwrap_or(0.))),
+                ("length", &format!("{:.3}", pair["overlap"].as_f64().unwrap_or(0.))),
+                ("unit", &app.session.display().length.symbol()),
+            ],
+        ));
     });
     let pair = pairs[state.index];
-    ui.small(format!(
-        "gap {:.3} {} · overlap {:.3} {}",
-        pair["gap"].as_f64().unwrap_or(0.),
-        app.session.display().length.symbol(),
-        pair["overlap"].as_f64().unwrap_or(0.),
-        app.session.display().length.symbol()
-    ));
     ui.horizontal_wrapped(|ui| {
         for mode in Mode::ALL {
             let r = ui.selectable_label(config.mode == mode, shown(mode));
@@ -243,7 +356,6 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
             }
         }
     });
-    ui.small(tr("Motion is explanatory emphasis, not physical time. Drag to orbit; scroll to zoom."));
     ui.small(tr(match config.mode {
         Mode::Electric => "Electric coupling: schematic connections between conductors; no field strength is implied.",
         Mode::Magnetic => "Magnetic coupling: symbolic loops around the source current and receiver; no flux is calculated.",
@@ -253,19 +365,20 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
     if config.playing {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
     }
-    let Some(scene) = scene(app, pair, config.mode, config.exaggerate, config.section, if config.playing { 100 + (frame * 18) as u8 } else { 220 })
+    let Some(scene) = scene(app, pair, config.mode, config.exaggerate, config.section, if config.playing { (frame + 1) as f32 * 0.785 } else { 0. })
     else {
         ui.label(tr("No supported reference geometry for a 3D illustration."));
         return;
     };
-    let (rect, r) = ui.allocate_exact_size(vec2(ui.available_width(), 280.), Sense::drag());
+    let (rect, r) = ui.allocate_exact_size(vec2(ui.available_width(), 320.), Sense::drag());
+    let r = r.on_hover_text(tr("Motion is explanatory emphasis, not physical time. Drag to orbit; scroll to zoom."));
     scenario::publish_target(Handle::Choice("pcb_coupling", "scene"), rect);
     let fitkey = format!("{}:{}:{}:{}", pair["source_segment"], pair["target_segment"], config.exaggerate, config.section);
     if state.key.as_ref().is_none_or(|s| !s.starts_with(&fitkey))
         && let Some((lo, hi)) = scene.bounds()
     {
         state.camera.fit(lo, hi, rect.aspect_ratio() as f64);
-        state.camera.distance *= 0.7;
+        state.camera.distance *= 0.85;
     }
     if r.dragged() {
         let d = ui.input(|i| i.pointer.delta());
@@ -288,7 +401,13 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
     if state.key.as_ref() != Some(&key) || state.picture.is_none() {
         state.compare.clear();
         let bg = crate::theme::rgb(Tokens::get().panel);
-        match crate::gpu3d::scene_picture(&scene, &state.camera, [rect.width().min(1000.) as u32, 280], (bg, bg)) {
+        match crate::gpu3d::scene_picture_with_curves(
+            &scene.scene,
+            &scene.curves,
+            &state.camera,
+            [rect.width().min(1000.) as u32, rect.height() as u32],
+            (bg, bg),
+        ) {
             Ok(c) => state.picture = Some(Picture::new(&c)),
             Err(e) => {
                 ui.label(e.to_string());
@@ -299,6 +418,11 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
     if let Some(p) = &mut state.picture {
         let id = p.texture(ui.ctx());
         ui.painter().image(id, rect, Rect::from_min_max(pos2(0., 0.), pos2(1., 1.)), Color32::WHITE);
+        callouts(ui, rect, &state.camera, &scene, [report["net"].as_str().unwrap_or(""), victim, &app.views.pcb.ground], config.mode);
+    }
+    ui.small(tr("Transparent block: dielectric. Copper thickness is schematic."));
+    if config.mode == Mode::Return && scene.curves.is_empty() {
+        ui.colored_label(Tokens::get().warning, tr("Reference copper is missing; the return path is not drawn."));
     }
     let keep = ui.button(tr("Keep geometry for comparison"));
     scenario::publish_target(Handle::Choice("pcb_coupling", "keep"), keep.rect);
@@ -326,13 +450,15 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
             && target == victim
         {
             ui.label(tr("Before / current geometry — no noise reduction is predicted"));
-            ui.small(format!(
-                "gap {:.3} → {:.3}; overlap {:.3} → {:.3} {}",
-                app.session.display().length.from_si(*gap),
-                pair["gap"].as_f64().unwrap_or(0.),
-                app.session.display().length.from_si(*length),
-                pair["overlap"].as_f64().unwrap_or(0.),
-                app.session.display().length.symbol()
+            ui.small(crate::lang::trf(
+                "Clearance {before} → {after}; parallel length {old_length} → {length} {unit}",
+                &[
+                    ("before", &format!("{:.3}", app.session.display().length.from_si(*gap))),
+                    ("after", &format!("{:.3}", pair["gap"].as_f64().unwrap_or(0.))),
+                    ("old_length", &format!("{:.3}", app.session.display().length.from_si(*length))),
+                    ("length", &format!("{:.3}", pair["overlap"].as_f64().unwrap_or(0.))),
+                    ("unit", &app.session.display().length.symbol()),
+                ],
             ));
             // Both pictures use exactly the current camera, size and depth scaling.
             if state.compare.is_empty() {
@@ -341,15 +467,18 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
                 let rgb = crate::theme::rgb;
                 let palette = [rgb(t.warning), rgb(t.accent), rgb(t.success)];
                 let remap = |c| state.baseline_palette.iter().position(|p| *p == c).map_or(c, |i| palette[i]);
-                for triangle in &mut themed.tris {
+                for triangle in &mut themed.scene.tris {
                     triangle.color = remap(triangle.color);
                 }
-                for line in &mut themed.lines {
+                for line in &mut themed.scene.lines {
                     line.color = remap(line.color);
+                }
+                for curve in &mut themed.curves {
+                    curve.color = curve_colour(config.mode);
                 }
                 for s in [&themed, &scene] {
                     let bg = crate::theme::rgb(Tokens::get().panel);
-                    if let Ok(c) = crate::gpu3d::scene_picture(s, &state.camera, [220, 140], (bg, bg)) {
+                    if let Ok(c) = crate::gpu3d::scene_picture_with_curves(&s.scene, &s.curves, &state.camera, [220, 140], (bg, bg)) {
                         state.compare.push(Picture::new(&c));
                     }
                 }
@@ -376,8 +505,8 @@ mod tests {
             assert_eq!(h.call("engine.execute", json!({"command":"pcb.sample","params":{"split":split}}))["ok"], true);
             assert_eq!(h.call("engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}))["ok"], true);
             let report = h.app.replies.pcb.as_ref().unwrap();
-            let diagram = scene(&h.app, &report["coupling_pairs"][0], Mode::Return, true, false, 220).unwrap();
-            assert_eq!(diagram.lines.is_empty(), split);
+            let diagram = scene(&h.app, &report["coupling_pairs"][0], Mode::Return, true, false, 0.).unwrap();
+            assert_eq!(diagram.curves.is_empty(), split);
             assert!(diagram.bounds().is_some());
         }
     }

@@ -484,6 +484,13 @@ fn tour() -> Record {
         call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"mode":mode.id()}}));
         h.frames(2);
     }
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"section":false}}));
+    h.frames(2);
+    // A saved split still has copper elsewhere on the layer, so the local return can be absent.
+    call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":true}}));
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"victim":"CLK","mode":"return"}}));
+    h.frames(2);
     let saved = h.app.replies.pcb.clone();
     if let Some(r) = &mut h.app.replies.pcb {
         r["coupling_pairs"] = json!([]);
