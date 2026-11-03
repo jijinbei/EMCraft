@@ -256,8 +256,9 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
 }
 
 /// `pcb.port`: a lumped port at a trace's end, a sheet the trace's width wide from its reference
-/// up to it — the reference the nearest layer below with copper under that end, else the box's
-/// floor — its source in series with `impedance` (50 Ω by default). The trace is cut square at
+/// to it — the reference the nearest layer below with another net's copper under that end, else
+/// the nearest above, else the box's floor — its source in series with `impedance` (50 Ω by
+/// default). The trace is cut square at
 /// the port when meshed. Without waveguide ports,
 /// solve.frequency reads S of the lumped ports.
 pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
@@ -280,7 +281,11 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
                 .iter()
                 .any(|x| &x.layer == name && x.net != g.net && emcraft_model::pcb::distance(near_point(x.start, x.end, at), at) <= 0.5 * x.width)
     };
-    let reference = (0..board.layers.len()).filter(|&l| heights[l] < top && covered(l)).max_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    // The nearest such layer below, else above (a bottom-side trace over the plane above it),
+    // else the floor.
+    let below = (0..board.layers.len()).filter(|&l| heights[l] < top && covered(l)).max_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    let above = (0..board.layers.len()).filter(|&l| heights[l] > top && covered(l)).min_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    let reference = below.or(above);
     let bottom = reference.map_or(-region.below, |l| heights[l]);
     let (x, y) = (at[0] - region.lo[0], at[1] - region.lo[1]);
     let d = [g.end[0] - g.start[0], g.end[1] - g.start[1]];
