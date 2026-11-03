@@ -188,7 +188,7 @@ fn the_extruded_board_conforms_with_its_copper_inside() {
     let planar = triangulate(&request(&layers, &nets, &outlines)).unwrap();
     let stack = Stack {
         z0: -1.6 * MM,
-        slabs: vec![Slab { thickness: 1.6 * MM, material: 1, cells: 4 }, Slab { thickness: 2.0 * MM, material: 0, cells: 3 }],
+        slabs: vec![Slab { thickness: 1.6 * MM, material: 1, cells: 4, ratio: 1.0 }, Slab { thickness: 2.0 * MM, material: 0, cells: 3, ratio: 1.5 }],
         sheets: vec![(0, 1)],
     };
     let (mesh, sheet_nets) = extrude(&planar, &stack).unwrap();
@@ -220,8 +220,9 @@ fn the_extruded_board_conforms_with_its_copper_inside() {
     // Refused: no slabs, no thickness, too many cells, a sheet on a layer the board lacks.
     for bad in [
         Stack { slabs: vec![], ..stack.clone() },
-        Stack { slabs: vec![Slab { thickness: 0.0, material: 0, cells: 1 }], ..stack.clone() },
-        Stack { slabs: vec![Slab { thickness: 1e-3, material: 0, cells: 1000 }], ..stack.clone() },
+        Stack { slabs: vec![Slab { thickness: 0.0, material: 0, cells: 1, ratio: 1.0 }], ..stack.clone() },
+        Stack { slabs: vec![Slab { thickness: 1e-3, material: 0, cells: 1000, ratio: 1.0 }], ..stack.clone() },
+        Stack { slabs: vec![Slab { thickness: 1e-3, material: 0, cells: 2, ratio: f64::NAN }], ..stack.clone() },
         Stack { sheets: vec![(5, 1)], ..stack.clone() },
     ] {
         assert!(extrude(&planar, &bad).is_err());

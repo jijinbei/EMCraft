@@ -47,6 +47,20 @@ pub struct Copper {
     pub polygon: Vec<[f64; 2]>,
 }
 
+/// The part of a board the finite elements solve: the box over `lo`..`hi` (m) from `below` under
+/// the lowest layer to `above` over the highest, closed by conducting walls (a shielded box: its
+/// sides carry the ports).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Region {
+    pub lo: [f64; 2],
+    pub hi: [f64; 2],
+    pub above: f64,
+    pub below: f64,
+}
+
+/// The longest side of a region (m).
+pub const MAX_REGION: f64 = 1.0;
+
 /// A board: its layers (top down), routes, vias, filled copper and the notes its reader left
 /// (what it skipped or could not represent).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -60,6 +74,9 @@ pub struct Board {
     pub copper: Vec<Copper>,
     #[serde(default)]
     pub notes: Vec<String>,
+    /// The region solved by the finite elements (`pcb.region`), if one is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<Region>,
 }
 
 impl Board {
@@ -67,7 +84,7 @@ impl Board {
     ///
     /// ```
     /// use emcraft_model::pcb::{Board, Layer, Segment};
-    /// let empty = Board { name: "empty".into(), layers: vec![], segments: vec![], vias: vec![], copper: vec![], notes: vec![] };
+    /// let empty = Board { name: "empty".into(), layers: vec![], segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
     /// assert!(empty.bounds().is_none());
     /// let segment = Segment { id: "0".into(), net: "A".into(), layer: "F.Cu".into(), start: [0.0, 0.001], end: [0.01, 0.002], width: 2e-4 };
     /// let line = Board { segments: vec![segment], layers: vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2 }], ..empty };
@@ -88,7 +105,7 @@ impl Board {
     /// Validate a board before storing it. Empty layers, unknown layers and non-finite geometry
     /// are refused. Coordinates and lengths are SI metres.
     /// ```
-    /// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};
+    /// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![],region:None};
     /// assert!(b.check().is_err());
     /// ```
     pub fn check(&self) -> Result<()> {
@@ -149,7 +166,23 @@ impl Board {
                 return Err(bad());
             }
         }
+        if let Some(r) = &self.region {
+            r.check()?;
+        }
         Ok(())
+    }
+
+    /// Each layer's height over the lowest layer (m): the board's z runs down from its top.
+    ///
+    /// ```
+    /// use emcraft_model::pcb::{Board, Layer};
+    /// let layers = vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2 }, Layer { name: "B.Cu".into(), z: 1.6e-3, eps_below: 1.0 }];
+    /// let b = Board { name: "b".into(), layers, segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
+    /// assert_eq!(b.heights(), vec![1.6e-3, 0.0]);
+    /// ```
+    pub fn heights(&self) -> Vec<f64> {
+        let bottom = self.layers.iter().map(|l| l.z).fold(f64::NEG_INFINITY, f64::max);
+        self.layers.iter().map(|l| bottom - l.z).collect()
     }
 
     /// Converts every length (layers' z, segments' ends and widths, vias, copper) by `convert`, at
@@ -157,7 +190,7 @@ impl Board {
     ///
     /// ```
     /// use emcraft_model::pcb::{Board, Layer};
-    /// let mut b = Board { name: "b".into(), layers: vec![Layer { name: "F.Cu".into(), z: 1.6, eps_below: 4.2 }], segments: vec![], vias: vec![], copper: vec![], notes: vec![] };
+    /// let mut b = Board { name: "b".into(), layers: vec![Layer { name: "F.Cu".into(), z: 1.6, eps_below: 4.2 }], segments: vec![], vias: vec![], copper: vec![], notes: vec![], region: None };
     /// b.map_lengths(|mm| mm * 1e-3);
     /// assert_eq!(b.layers[0].z, 1.6e-3);
     /// ```
@@ -185,6 +218,35 @@ impl Board {
                     *n = convert(*n);
                 }
             }
+        }
+        if let Some(r) = &mut self.region {
+            for v in r.lo.iter_mut().chain(&mut r.hi).chain([&mut r.above, &mut r.below]) {
+                *v = convert(*v);
+            }
+        }
+    }
+}
+
+impl Region {
+    /// Refuses a region that is not finite, has no area, or is larger than [`MAX_REGION`] on a
+    /// side or in height.
+    ///
+    /// ```
+    /// use emcraft_model::pcb::Region;
+    /// assert!(Region { lo: [0.0, 0.0], hi: [0.01, 0.005], above: 0.002, below: 0.0 }.check().is_ok());
+    /// assert!(Region { lo: [0.0, 0.0], hi: [0.0, 0.005], above: 0.002, below: 0.0 }.check().is_err());
+    /// assert!(Region { lo: [0.0, 0.0], hi: [0.01, 0.005], above: f64::NAN, below: 0.0 }.check().is_err());
+    /// ```
+    pub fn check(&self) -> Result<()> {
+        let side = |a: f64, b: f64| a.is_finite() && b.is_finite() && b > a && b - a <= MAX_REGION;
+        let height = |h: f64| h.is_finite() && (0.0..=MAX_REGION).contains(&h);
+        if side(self.lo[0], self.hi[0]) && side(self.lo[1], self.hi[1]) && height(self.above) && height(self.below) {
+            Ok(())
+        } else {
+            Err(invalid(
+                "PCB region",
+                format!("needs finite corners, the second above and right of the first, sides and air of at most {MAX_REGION} m"),
+            ))
         }
     }
 }

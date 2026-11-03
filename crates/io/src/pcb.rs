@@ -202,6 +202,7 @@ pub fn read(text: &str, override_layers: Option<Vec<Layer>>) -> Result<Board> {
         vias: Vec::new(),
         copper: Vec::new(),
         notes: vec!["Pads, packages, solder mask and copper thickness are not included in this routing model.".into()],
+        region: None,
     };
     for n in root.list() {
         match n.head() {

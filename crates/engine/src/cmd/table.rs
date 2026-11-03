@@ -135,6 +135,22 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::pcb::sample,
     },
     CommandSpec {
+        id: "pcb.region",
+        label: "PCB region",
+        doc: "Sets the part of the board the finite elements solve: a box round the copper (or `net`'s routes) by `margin`, or between the corners `lo` and `hi`, from `below` under the lowest layer to `above` over the highest, closed by conducting walls. The model's geometry becomes that box, the region's lower-left corner at the origin and the lowest layer `below` over its floor, each substrate a material `substrate εr …`; its ports go on the box's sides with model.port.create (cleared here). mesh.generate then meshes the copper of every layer in one triangulation, extruded through the substrates and the air, the copper conducting sheets of no thickness inside.",
+        params: &[
+            opt("net", K::String, "the net whose routes the box surrounds (default all the copper)"),
+            opt("margin", K::Number, "the margin round the copper (default 5 board thicknesses)").of(L),
+            opt("lo", K::Array, "the lower-left corner [x, y] in the board's coordinates (default the copper's less the margin)").of(L),
+            opt("hi", K::Array, "the upper-right corner [x, y] (default the copper's plus the margin)").of(L),
+            opt("above", K::Number, "the air over the highest layer (default 5 board thicknesses)").of(L),
+            opt("below", K::Number, "the air under the lowest layer (default 5 board thicknesses; 0 puts the lowest layer on the conducting floor)").of(L),
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::Geometry),
+        run: crate::pcb_fem::region,
+    },
+    CommandSpec {
         id: "pcb.inspect",
         label: "Inspect PCB route",
         doc: "Screens the selected net's routed segments and filled reference copper and reports exact line/polygon coverage gaps, nearby parallel signals, topology and via-transition limitations. Only valid simple outer microstrip routes get a lossless quasi-static line approximation: impedance, delay, S11/S21 and TDR. Screening is not a solved return-current map, full-wave model, calculated crosstalk or compliance verdict.",

@@ -237,12 +237,11 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     let mut edges: Vec<[u32; 2]> = Vec::new();
     let mut is_copper: Vec<bool> = Vec::new();
     for &(a, b, copper) in &outline {
-        let mid = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])];
-        let h = if copper { small } else { size(mid) };
-        let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / h).ceil().clamp(1.0, 1e6) as usize;
         let mut prev = points.id(a);
+        let along = if copper { vec![] } else { spaced(a, b, &size, small) };
+        let n = if copper { ((b[0] - a[0]).hypot(b[1] - a[1]) / small).ceil().clamp(1.0, 1e6) as usize } else { along.len() + 1 };
         for i in 1..=n {
-            let t = i as f64 / n as f64;
+            let t = if copper { i as f64 / n as f64 } else { along.get(i - 1).copied().unwrap_or(1.0) };
             let next = if i == n { points.id(b) } else { points.id([(a[0] + t * (b[0] - a[0])).round(), (a[1] + t * (b[1] - a[1])).round()]) };
             if next != prev {
                 edges.push([prev, next]);
@@ -275,6 +274,38 @@ pub fn triangulate(r: &Request) -> Result<Planar> {
     let mesh = mesh.into_triangulation();
     let nets = label::label(&mesh.points, &mesh.triangles, &constrained, &rings, (r.layers, r.nets))?;
     Ok(compact(mesh.points, mesh.triangles, nets, lattice))
+}
+
+/// The points (as fractions of the way, strictly between 0 and 1) splitting the edge `a`–`b`
+/// into pieces of about the local size `size`: the k-th where ∫ ds / h reaches k times the whole
+/// integral over its rounded-up value (a graded spacing, finer where `size` is smaller). `finest`
+/// is the smallest the size gets, which sets the samples of the integral.
+fn spaced(a: [f64; 2], b: [f64; 2], size: &dyn Fn([f64; 2]) -> f64, finest: f64) -> Vec<f64> {
+    let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+    let samples = ((2.0 * len / finest).ceil() as usize).clamp(2, 1 << 16);
+    let at = |t: f64| size([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+    // The running integral of 1/h at the samples (trapezoids).
+    let mut sum = vec![0.0; samples + 1];
+    let mut last = 1.0 / at(0.0);
+    for k in 1..=samples {
+        let here = 1.0 / at(k as f64 / samples as f64);
+        sum[k] = sum[k - 1] + 0.5 * (last + here) * len / samples as f64;
+        last = here;
+    }
+    let total = sum[samples];
+    let n = (total.ceil() as usize).clamp(1, 1 << 20);
+    let mut out = Vec::with_capacity(n.saturating_sub(1));
+    let mut k = 0;
+    for i in 1..n {
+        let target = total * i as f64 / n as f64;
+        while k < samples && sum[k + 1] < target {
+            k += 1;
+        }
+        let (lo, hi) = (sum[k], sum[(k + 1).min(samples)]);
+        let frac = if hi > lo { (target - lo) / (hi - lo) } else { 0.0 };
+        out.push((k as f64 + frac) / samples as f64);
+    }
+    out
 }
 
 /// The pieces of `chains` as constrained segments (the first `outline` chains the region's

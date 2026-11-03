@@ -162,9 +162,11 @@ fn what(p: &Port) -> String {
 }
 
 /// The aperture whose closed-form modes a port takes, `None` when the cross-section solver
-/// gives them (asked for, or not a whole rectangle or circle of one material).
+/// gives them (asked for, on a board, or not a whole rectangle or circle of one material).
 fn closed_form_shape(model: &Model, p: &Port) -> Option<PortShape> {
-    if p.mode_solver == ModeSolver::Numeric { None } else { model.port_shape_of(p).ok() }
+    // A board's region: its ports' cross-sections hold substrates and copper.
+    let board = model.pcb.as_ref().is_some_and(|b| b.region.is_some());
+    if p.mode_solver == ModeSolver::Numeric || board { None } else { model.port_shape_of(p).ok() }
 }
 
 /// Which of a port face point's basis values have a tangential trace on the face (a plane across

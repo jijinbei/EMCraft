@@ -148,3 +148,4 @@ pub mod visibility;
 pub mod power;
 
 pub mod pcb;
+pub mod pcb_fem;

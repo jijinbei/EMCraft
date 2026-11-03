@@ -27,7 +27,7 @@ pub fn spans(poly: &[[f64; 2]], y: f64) -> Vec<[f64; 2]> {
 /// Colours are supplied by the active theme; all board lengths are SI metres.
 /// ```
 /// use emcraft_render::{Rgb,pcb::preview};
-/// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};
+/// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![],region:None};
 /// assert!(preview(&b,[200,100],Rgb::BLACK,Rgb::WHITE,Rgb::WHITE).is_err());
 /// ```
 pub fn preview(board: &Board, size: [usize; 2], bg: Rgb, copper: Rgb, signal: Rgb) -> Result<Canvas, String> {

@@ -33,6 +33,19 @@ Loads an original two-layer PCB routing example; `split` true gives the ground p
 | `er` | number |  | no | relative dielectric permittivity (default 4.2) |
 | `gap` | number | length | no | parallel trace clearance (default 0.25 mm, at most 5 mm) |
 
+## `pcb.region` — PCB region
+
+Sets the part of the board the finite elements solve: a box round the copper (or `net`'s routes) by `margin`, or between the corners `lo` and `hi`, from `below` under the lowest layer to `above` over the highest, closed by conducting walls. The model's geometry becomes that box, the region's lower-left corner at the origin and the lowest layer `below` over its floor, each substrate a material `substrate εr …`; its ports go on the box's sides with model.port.create (cleared here). mesh.generate then meshes the copper of every layer in one triangulation, extruded through the substrates and the air, the copper conducting sheets of no thickness inside.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `net` | string |  | no | the net whose routes the box surrounds (default all the copper) |
+| `margin` | number | length | no | the margin round the copper (default 5 board thicknesses) |
+| `lo` | array | length | no | the lower-left corner [x, y] in the board's coordinates (default the copper's less the margin) |
+| `hi` | array | length | no | the upper-right corner [x, y] (default the copper's plus the margin) |
+| `above` | number | length | no | the air over the highest layer (default 5 board thicknesses) |
+| `below` | number | length | no | the air under the lowest layer (default 5 board thicknesses; 0 puts the lowest layer on the conducting floor) |
+
 ## `pcb.inspect` — Inspect PCB route
 
 Screens the selected net's routed segments and filled reference copper and reports exact line/polygon coverage gaps, nearby parallel signals, topology and via-transition limitations. Only valid simple outer microstrip routes get a lossless quasi-static line approximation: impedance, delay, S11/S21 and TDR. Screening is not a solved return-current map, full-wave model, calculated crosstalk or compliance verdict.

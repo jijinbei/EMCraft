@@ -20,12 +20,35 @@ use crate::{MAX_TETS, MeshError, Result};
 pub const MAX_CELLS: usize = 64;
 
 /// A slab of the stack: its thickness (m), the material of its tetrahedra and the cells across
-/// it.
+/// it, each `ratio` times the height of the one below (1: even; above 1 growing upwards, away
+/// from copper under the slab; below 1 shrinking towards copper over it).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Slab {
     pub thickness: f64,
     pub material: u32,
     pub cells: usize,
+    pub ratio: f64,
+}
+
+impl Slab {
+    /// The heights of the slab's levels over its bottom, the last its thickness.
+    fn levels(&self) -> Vec<f64> {
+        let n = self.cells;
+        let r = self.ratio;
+        // The first cell h₀ with h₀ (1 + r + … + rⁿ⁻¹) = thickness.
+        let sum = if (r - 1.0).abs() < 1e-12 { n as f64 } else { (r.powi(n as i32) - 1.0) / (r - 1.0) };
+        let mut at = 0.0;
+        let mut out: Vec<f64> = (0..n)
+            .map(|k| {
+                at += self.thickness * r.powi(k as i32) / sum;
+                at
+            })
+            .collect();
+        if let Some(last) = out.last_mut() {
+            *last = self.thickness;
+        }
+        out
+    }
 }
 
 /// The stack from the bottom (at `z0`) up, and where the copper lies: each sheet the layer's
@@ -49,8 +72,9 @@ pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
     if stack.slabs.is_empty() {
         return Err(invalid("a stack needs at least one slab"));
     }
-    if !stack.z0.is_finite() || stack.slabs.iter().any(|s| !(s.thickness > 0.0 && s.thickness.is_finite()) || s.cells == 0 || s.cells > MAX_CELLS) {
-        return Err(invalid(format!("each slab needs a positive thickness and 1 to {MAX_CELLS} cells across")));
+    let fine = |s: &Slab| s.thickness > 0.0 && s.thickness.is_finite() && (1..=MAX_CELLS).contains(&s.cells) && (0.1..=10.0).contains(&s.ratio);
+    if !stack.z0.is_finite() || !stack.slabs.iter().all(fine) {
+        return Err(invalid(format!("each slab needs a positive thickness, 1 to {MAX_CELLS} cells across and a ratio between 0.1 and 10")));
     }
     let levels: usize = stack.slabs.iter().map(|s| s.cells).sum::<usize>() + 1;
     let tets = 3.0 * planar.triangles.len() as f64 * (levels - 1) as f64;
@@ -63,7 +87,7 @@ pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
     let mut interface = vec![0usize];
     for s in &stack.slabs {
         let base = *z.last().unwrap_or(&stack.z0);
-        z.extend((1..=s.cells).map(|k| base + s.thickness * k as f64 / s.cells as f64));
+        z.extend(s.levels().into_iter().map(|h| base + h));
         interface.push(z.len() - 1);
     }
     let np = planar.points.len() as u32;
