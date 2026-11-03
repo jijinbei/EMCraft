@@ -13,6 +13,8 @@ use emcraft_model::Model;
 use emcraft_solver::Complex64 as C;
 use serde::{Deserialize, Serialize};
 
+pub mod mesh;
+
 use crate::archive::file::StoredHistory;
 use crate::runs::Run;
 use crate::{EngineError, Result, SData, Session, Step};
@@ -40,6 +42,8 @@ struct ProjectFile<'m> {
     runs: Vec<Run>,
     views: crate::views::Views,
     analysis_history: StoredHistory,
+    /// The model's mesh, its numbers array parts.
+    mesh: Option<mesh::StoredMesh>,
     /// For other tools to read; opening replays the history and does not read it.
     #[serde(skip_deserializing)]
     model: Option<&'m Model>,
@@ -53,6 +57,10 @@ pub(crate) struct Stored {
     pub views: crate::views::Views,
     pub archive: Vec<crate::archive::Archived>,
     pub archive_next: u32,
+    /// The model's mesh, read once the model is built ([`Stored::mesh`]).
+    mesh: Option<mesh::StoredMesh>,
+    /// The package, for the parts read once the model is built.
+    package: Option<Reader>,
 }
 
 impl Stored {
@@ -65,6 +73,17 @@ impl Stored {
             views: crate::views::Views::default(),
             archive: Vec::new(),
             archive_next: 0,
+            mesh: None,
+            package: None,
+        }
+    }
+
+    /// The file's mesh for a model of `materials` materials (none when the model had none),
+    /// checked.
+    pub(crate) fn mesh(&mut self, materials: usize) -> std::result::Result<Option<emcraft_model::Mesh>, String> {
+        match (self.mesh.take(), self.package.as_mut()) {
+            (Some(m), Some(r)) => m.read(r, materials).map(Some).map_err(|e| format!("its mesh: {e}")),
+            _ => Ok(None),
         }
     }
 }
@@ -88,6 +107,7 @@ pub(crate) fn write(s: &Session, path: &Path) -> Result<()> {
 fn write_to(s: &Session, path: &Path) -> Result<()> {
     let mut w = Writer::create(path).map_err(|e| failed(path, e))?;
     let analysis_history = crate::archive::file::stored(&s.archive, s.archive_next, &mut w).map_err(|e| failed(path, e))?;
+    let mesh = s.model.mesh.as_deref().map(|m| mesh::StoredMesh::write(m, &mut w)).transpose().map_err(|e| failed(path, e))?;
     let file = ProjectFile {
         format: FORMAT.to_owned(),
         version: VERSION.to_owned(),
@@ -96,6 +116,7 @@ fn write_to(s: &Session, path: &Path) -> Result<()> {
         runs: s.runs.clone(),
         views: s.views.clone(),
         analysis_history,
+        mesh,
         model: Some(&s.model),
     };
     // Through a JSON value, whose objects keep their keys sorted: the text does not depend on
@@ -124,7 +145,7 @@ pub(crate) fn read(path: &Path) -> Result<Stored> {
     let runs = crate::runs::checked(file.runs).map_err(|e| failed(path, e))?;
     let views = file.views.checked().map_err(|e| failed(path, e))?;
     let (archive, archive_next) = crate::archive::file::read(file.analysis_history, &mut r).map_err(|e| failed(path, e))?;
-    Ok(Stored { history: file.history, runs, views, archive, archive_next })
+    Ok(Stored { history: file.history, runs, views, archive, archive_next, mesh: file.mesh, package: Some(r) })
 }
 
 /// Complex values as an array part: real then imaginary, one after the other.

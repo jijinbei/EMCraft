@@ -50,6 +50,19 @@ pub(crate) fn write_project(path: &str, doc: &serde_json::Value, from: Option<&s
     w.finish().unwrap();
 }
 
+/// As [`write_project`] from `from`, part `name` replaced by `bytes`.
+pub(crate) fn write_project_with(path: &str, doc: &serde_json::Value, from: &str, name: &str, bytes: &[u8]) {
+    let mut w = emcraft_io::package::Writer::create(std::path::Path::new(path)).unwrap();
+    let mut r = emcraft_io::package::Reader::open(std::path::Path::new(from)).unwrap();
+    for part in r.names().into_iter().filter(|n| n != "project.json" && n != name) {
+        let b = r.bytes(&part, 1 << 30).unwrap();
+        w.raw(&part, &b).unwrap();
+    }
+    w.raw(name, bytes).unwrap();
+    w.text("project.json", &doc.to_string()).unwrap();
+    w.finish().unwrap();
+}
+
 /// The `project.json` of an empty project, its `extra` keys set.
 pub(crate) fn bare_project(extra: serde_json::Value) -> serde_json::Value {
     let mut doc = json!({"format": "emcraft-project", "version": "0.1", "emcraft": "0.0.0", "history": [], "runs": [], "views": {},

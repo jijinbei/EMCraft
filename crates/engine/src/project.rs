@@ -493,9 +493,15 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         Some(o) if o.trim().is_empty() => return Err(p.error("original", "must not be empty")),
         o => o,
     };
-    let stored = crate::store::read(std::path::Path::new(path))?;
+    let mut stored = crate::store::read(std::path::Path::new(path))?;
     let mut fresh = s.fresh();
-    fresh.run_steps(&stored.history)?;
+    // The history replayed (each step checked as it runs), its meshing left to the file's mesh.
+    fresh.mesher_off = true;
+    let replayed = fresh.run_steps(&stored.history);
+    fresh.mesher_off = false;
+    replayed?;
+    let mesh = stored.mesh(fresh.model.materials.len()).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
+    fresh.model.mesh = mesh.map(std::sync::Arc::new);
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
     fresh.runs = stored.runs;

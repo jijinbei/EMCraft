@@ -67,7 +67,60 @@ pub struct Buckets {
     pub items: Vec<u32>,
 }
 
+/// Most tetrahedra of a mesh read from a file (a board's layered mesh may pass the mesher's own
+/// cap for solids).
+pub const MAX_READ_TETS: usize = 1 << 25;
+
 impl Mesh {
+    /// Checks a mesh read from a file (hostile) against a model of `materials` materials: sizes
+    /// within [`MAX_READ_TETS`] and agreeing, every index in range (nodes, tetrahedra,
+    /// materials, a port's end 0 or 1), every number finite, the curved edges sorted, the grid
+    /// ascending with each cell's tetrahedra inside the mesh. The tetrahedra's shapes are the
+    /// mesher's to check (`emcraft_mesh::check_tetrahedra`).
+    ///
+    /// ```
+    /// use emcraft_model::{Mesh, Point3};
+    /// let mut m = Mesh { nodes: vec![Point3::new(0.0, 0.0, 0.0); 4], tets: vec![[0, 1, 2, 3]], tet_material: vec![0], ..Mesh::default() };
+    /// assert!(m.check(1).is_ok());
+    /// m.tets[0][3] = 4;
+    /// assert!(m.check(1).is_err());
+    /// ```
+    pub fn check(&self, materials: usize) -> Result<(), String> {
+        let (n, t) = (self.nodes.len(), self.tets.len());
+        if t > MAX_READ_TETS || n > 4 * MAX_READ_TETS || self.boundary.len() > 4 * MAX_READ_TETS || self.curved.len() > 6 * MAX_READ_TETS {
+            return Err(format!("a mesh has at most {MAX_READ_TETS} tetrahedra"));
+        }
+        let node = |i: u32| (i as usize) < n;
+        if !self.nodes.iter().all(|p| p.is_finite()) {
+            return Err("a mesh's nodes must be finite points".into());
+        }
+        if !self.tets.iter().flatten().all(|&i| node(i)) {
+            return Err("a tetrahedron names a node the mesh does not have".into());
+        }
+        if self.tet_material.len() != t || self.tet_material.iter().any(|&m| m as usize >= materials) {
+            return Err(format!("each tetrahedron has one of the model's {materials} materials"));
+        }
+        for f in &self.boundary {
+            if !f.nodes.iter().all(|&i| node(i)) || f.tet as usize >= t || matches!(f.tag, Boundary::Port(k) if k > 1) {
+                return Err("a boundary face names a node or tetrahedron the mesh does not have, or a port end other than 0 or 1".into());
+            }
+        }
+        if !self.curved.iter().all(|([a, b], p)| a < b && node(*b) && p.is_finite()) || self.curved.windows(2).any(|w| w[0].0 >= w[1].0) {
+            return Err("a mesh's curved edges are pairs of its nodes, ascending, sorted, each with a finite point".into());
+        }
+        if let Some(g) = &self.grid {
+            let lines = [&g.x, &g.y, &g.z];
+            if lines.iter().any(|l| l.len() < 2 || !l.iter().all(|x| x.is_finite()) || l.windows(2).any(|w| w[1] <= w[0])) {
+                return Err("a mesh's grid lines must be finite and ascending, at least 2 along each axis".into());
+            }
+            let cells = lines.iter().map(|l| l.len() - 1).try_fold(1usize, |a, k| a.checked_mul(k));
+            if cells != Some(g.cells.len()) || g.cells.iter().any(|&c| c != u32::MAX && (c as usize).saturating_add(TETS_PER_CELL) > t) {
+                return Err("a mesh's grid has one entry a cell, each the first of its tetrahedra or none".into());
+            }
+        }
+        Ok(())
+    }
+
     /// The curved midpoint of edge (a, b), if it is curved.
     pub fn midpoint(&self, a: u32, b: u32) -> Option<Point3> {
         let key = [a.min(b), a.max(b)];
