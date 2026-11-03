@@ -396,47 +396,6 @@ pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
     Ok(reply)
 }
 
-/// A project file (docs/project-file.md): the history that builds the model, the runs solved
-/// on it (their parameters, not their results), and the model for other tools to read (opening
-/// replays the history and does not read it).
-#[derive(serde::Serialize, serde::Deserialize)]
-struct ProjectFile<'m> {
-    format: String,
-    #[serde(default = "first_version")]
-    version: u32,
-    #[serde(default)]
-    history: Vec<Step>,
-    /// Since version 2.
-    #[serde(default)]
-    runs: Vec<Run>,
-    /// Since version 3: how the results are looked at.
-    #[serde(default, skip_serializing_if = "crate::views::Views::is_empty")]
-    views: crate::views::Views,
-    /// Since version 4: the analysis history (its solves' identities and results, not their
-    /// models: [`crate::archive::file::StoredHistory`]), read only from a file of that version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    analysis_history: Option<Value>,
-    #[serde(skip_deserializing)]
-    model: Option<&'m Model>,
-}
-
-/// What a project file's `format` says.
-const FORMAT: &str = "emcraft-project";
-
-/// The newest version of project files read (2: the runs; 3: the views; 4: the analysis
-/// history). A project is written in the oldest version that holds it: without an analysis
-/// history as version 3, without views either as version 2, which older EMCraft reads.
-const VERSION: u32 = 4;
-const VERSION_WITHOUT_HISTORY: u32 = 3;
-const VERSION_WITHOUT_VIEWS: u32 = 2;
-
-fn first_version() -> u32 {
-    1
-}
-
-/// Most bytes of a project file read.
-const MAX_PROJECT_BYTES: u64 = 64 << 20;
-
 /// The extension of project files.
 pub const EXTENSION: &str = "emcraft";
 
@@ -451,29 +410,7 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         None if copy => return Err(p.error("path", "is required for a copy")),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    let version = match (s.archive.is_empty(), s.views.is_empty()) {
-        (false, _) => VERSION,
-        (true, false) => VERSION_WITHOUT_HISTORY,
-        (true, true) => VERSION_WITHOUT_VIEWS,
-    };
-    let analysis_history = match s.archive.is_empty() {
-        true => None,
-        false => Some(serde_json::to_value(crate::archive::file::stored(&s.archive, s.archive_next)).map_err(EngineError::failed)?),
-    };
-    let file = ProjectFile {
-        format: FORMAT.to_owned(),
-        version,
-        history: s.history.clone(),
-        runs: s.runs.clone(),
-        views: s.views.clone(),
-        analysis_history,
-        model: Some(&s.model),
-    };
-    // Through a JSON value, whose objects keep their keys sorted: the file's text does not
-    // depend on the order the fields are declared in.
-    let doc = serde_json::to_value(&file).map_err(EngineError::failed)?;
-    let text = pretty(&doc)?;
-    write_atomically(&path, text.as_bytes())?;
+    crate::store::write(s, std::path::Path::new(&path))?;
     let kept = s.archive.len();
     if copy {
         return Ok(json!({"path": path, "copy": true, "commands": s.history.len(), "runs": s.runs.len(), "kept": kept}));
@@ -535,19 +472,6 @@ pub fn pretty(doc: &Value) -> Result<String> {
     Ok(out)
 }
 
-/// Writes `bytes` to a temporary file beside `path` and renames it over: a crash or a full
-/// disk leaves the old file whole.
-fn write_atomically(path: &str, bytes: &[u8]) -> Result<()> {
-    let target = std::path::Path::new(path);
-    let temp = target.with_extension(format!("{}.tmp", target.extension().and_then(|e| e.to_str()).unwrap_or(EXTENSION)));
-    let fail = |e: std::io::Error| EngineError::cannot_write(path, e);
-    std::fs::write(&temp, bytes).map_err(fail)?;
-    std::fs::rename(&temp, target).map_err(|e| {
-        let _ = std::fs::remove_file(&temp);
-        fail(e)
-    })
-}
-
 /// An empty project with the session's display units.
 pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
     let mut fresh = s.fresh();
@@ -557,44 +481,6 @@ pub fn new(s: &mut Session, _: &Params) -> Result<Value> {
     }
     s.replace_with(fresh);
     Ok(s.summary())
-}
-
-/// What a project file holds besides its model: the history, the runs, the views and the
-/// analysis history (its solves and the last id given).
-struct Stored {
-    history: Vec<Step>,
-    runs: Vec<Run>,
-    views: crate::views::Views,
-    archive: Vec<crate::archive::Archived>,
-    archive_next: u32,
-}
-
-/// A project file read and checked.
-fn read_project(path: &str) -> Result<Stored> {
-    let bytes = crate::geometry::read_capped(path, MAX_PROJECT_BYTES)?;
-    let doc: Value = serde_json::from_slice(&bytes).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
-    if doc.get("format").and_then(Value::as_str) != Some(FORMAT) {
-        return Err(EngineError::failed(format!("`{path}`: not an EMCraft project")));
-    }
-    let file: ProjectFile<'_> = serde_json::from_value(doc).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
-    if file.version > VERSION {
-        return Err(EngineError::failed(format!(
-            "`{path}`: a project of version {}, newer than this EMCraft reads ({VERSION}): open it with a newer EMCraft",
-            file.version
-        )));
-    }
-    let runs = crate::runs::checked(file.runs).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
-    let views = file.views.checked().map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
-    // Older versions hold no analysis history.
-    let (archive, archive_next) = match file.analysis_history.filter(|_| file.version >= VERSION) {
-        Some(h) => {
-            let h: crate::archive::file::StoredHistory =
-                serde_json::from_value(h).map_err(|e| EngineError::failed(format!("`{path}`: not a project file ({e})")))?;
-            crate::archive::file::read(h).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?
-        }
-        None => (Vec::new(), 0),
-    };
-    Ok(Stored { history: file.history, runs, views, archive, archive_next })
 }
 
 /// Opens a project: its history replayed in a fresh session (so the mesh comes back the same),
@@ -607,7 +493,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         Some(o) if o.trim().is_empty() => return Err(p.error("original", "must not be empty")),
         o => o,
     };
-    let stored = read_project(path)?;
+    let stored = crate::store::read(std::path::Path::new(path))?;
     let mut fresh = s.fresh();
     fresh.run_steps(&stored.history)?;
     // Undo inside the opened project, then back to before it.
@@ -624,13 +510,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         Some(o) => {
             // The original as it was last saved: the copy may be ahead of it. One that cannot be
             // read is unlike anything recovered (a baseline no history equals).
-            let saved = read_project(o).unwrap_or_else(|_| Stored {
-                history: vec![Step::new(UNREADABLE, json!({}))],
-                runs: Vec::new(),
-                views: crate::views::Views::default(),
-                archive: Vec::new(),
-                archive_next: 0,
-            });
+            let saved = crate::store::read(std::path::Path::new(o)).unwrap_or_else(|_| crate::store::Stored::unreadable());
             fresh.path = Some(o.to_owned());
             fresh.saved = saved.history;
             fresh.saved_runs = saved.runs;
@@ -643,10 +523,6 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
         json!({"path": s.path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "kept": s.archive.len(), "dirty": s.is_dirty(), "summary": s.summary()}),
     )
 }
-
-/// The saved baseline of a recovered project whose original cannot be read: no command has this
-/// id, so no history equals it.
-const UNREADABLE: &str = "(the original could not be read)";
 
 pub fn undo(s: &mut Session, _: &Params) -> Result<Value> {
     let back = s.undo.pop_back().ok_or_else(|| EngineError::failed("nothing to undo"))?;

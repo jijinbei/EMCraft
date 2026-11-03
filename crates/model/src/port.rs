@@ -118,16 +118,12 @@ emcraft_macros::named_serde!(ModeSolver);
 
 /// A port's rectangle on the plane `at` across `axis` (m): [u0, u0 + a] × [v0, v0 + b] in the
 /// plane's other two coordinates, in the order x, y, z (an x plane: y then z; a y plane: x then
-/// z; a z plane: x then y). Files written before side ports name `at` `z` and have no axis.
+/// z; a z plane: x then y).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PortFace {
-    #[serde(default)]
     pub axis: Axis,
-    #[serde(alias = "z")]
     pub at: f64,
-    #[serde(alias = "x0")]
     pub u0: f64,
-    #[serde(alias = "y0")]
     pub v0: f64,
     pub a: Metres,
     pub b: Metres,
@@ -488,10 +484,8 @@ mod tests {
     }
 
     #[test]
-    fn faces_written_before_side_ports_read_across_z() {
-        let old: PortFace = serde_json::from_str(r#"{"z": 0.025, "x0": 0.001, "y0": 0.002, "a": 0.02, "b": 0.01}"#).unwrap();
-        assert_eq!(old, PortFace::across_z(0.025, 0.001, 0.002, metres(0.02), metres(0.01)));
-        let side = PortFace { axis: Axis::X, ..old };
+    fn a_side_face_reads_back_and_holds_its_points() {
+        let side = PortFace { axis: Axis::X, ..PortFace::across_z(0.025, 0.001, 0.002, metres(0.02), metres(0.01)) };
         let back: PortFace = serde_json::from_str(&serde_json::to_string(&side).unwrap()).unwrap();
         assert_eq!(back, side);
         // On an x face (u, v) = (y, z): the rectangle's corners in the model's axes.

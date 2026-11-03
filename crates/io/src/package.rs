@@ -137,6 +137,12 @@ impl Writer {
         self.zip.write_all(&buf).map_err(|e| invalid(format!("{name}: {e}")))
     }
 
+    /// A part of raw bytes, stored as they are (a part copied from another package).
+    pub fn raw(&mut self, name: &str, bytes: &[u8]) -> Result<()> {
+        self.start(name, zip::CompressionMethod::Stored)?;
+        self.zip.write_all(bytes).map_err(|e| invalid(format!("{name}: {e}")))
+    }
+
     /// Closes the package (its directory written, the file flushed).
     pub fn finish(self) -> Result<()> {
         let out = self.zip.finish().map_err(|e| invalid(format!("closing it: {e}")))?;
@@ -173,8 +179,13 @@ impl Reader {
         self.zip.index_for_name(name).is_some()
     }
 
+    /// The parts' names, in the package's order.
+    pub fn names(&self) -> Vec<String> {
+        self.zip.file_names().filter_map(|n| n.ok().map(|n| n.into_owned())).collect()
+    }
+
     /// Part `name`'s bytes, at most `max` of them.
-    fn bytes(&mut self, name: &str, max: u64) -> Result<Vec<u8>> {
+    pub fn bytes(&mut self, name: &str, max: u64) -> Result<Vec<u8>> {
         check_name(name)?;
         let max = max.min(self.budget);
         let mut part = self.zip.by_name(name).map_err(|e| invalid(format!("{name}: {e}")))?;

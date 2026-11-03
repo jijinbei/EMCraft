@@ -31,11 +31,11 @@ fn undoing_an_open_brings_the_project_before_it_back() {
     assert_eq!((r["path"].as_str(), r["dirty"].as_bool()), (Some(a.as_str()), Some(true)));
     assert_eq!(s.model.band.map(|x| x.start.get()), Some(5e9));
     // The save after the undo writes A's file; B's is untouched.
-    let b_text = std::fs::read_to_string(&b).unwrap();
+    let b_bytes = std::fs::read(&b).unwrap();
     s.execute("file.save", &json!({})).unwrap();
     assert!(!s.is_dirty());
-    assert!(std::fs::read_to_string(&a).unwrap().contains("ptfe"));
-    assert_eq!(std::fs::read_to_string(&b).unwrap(), b_text);
+    assert!(super::project_json(&a).to_string().contains("ptfe"));
+    assert_eq!(std::fs::read(&b).unwrap(), b_bytes);
     // Redo: B again, clean, its own file.
     s.execute("edit.redo", &json!({})).unwrap();
     assert_eq!((s.path(), s.is_dirty(), s.model.band.map(|x| x.start.get())), (Some(b.as_str()), false, Some(7e9)));
@@ -96,10 +96,8 @@ fn runs_belong_to_the_project() {
     assert!(s.is_dirty(), "a run with other parameters is unsaved");
     s.execute("file.save", &json!({})).unwrap();
     assert!(!s.is_dirty());
-    let text = std::fs::read_to_string(&path).unwrap();
-    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
-    // Version 4: the solves are kept in the analysis history.
-    assert_eq!(doc["version"], 4);
+    let doc = super::project_json(&path);
+    assert_eq!(doc["version"], "0.1");
     assert_eq!(
         doc["runs"],
         json!([{"command": "solve.frequency", "params": {"frequencies": [8.0], "order": 1}, "units": {"length": "mm", "frequency": "GHz"}}])
@@ -159,19 +157,9 @@ fn hostile_runs_in_a_file_are_refused(#[case] runs: serde_json::Value, #[case] w
         h.finish()
     };
     let path = scratch(&format!("hostile-runs-{case:016x}.emcraft"));
-    std::fs::write(&path, json!({"format": "emcraft-project", "version": 2, "history": [], "runs": runs}).to_string()).unwrap();
+    super::write_project(&path, &super::bare_project(json!({"runs": runs})), None);
     let r = Session::new().execute("file.open", &json!({"path": path}));
     assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{why}: {r:?}");
-}
-
-/// A version 1 file (no runs) opens.
-#[test]
-fn a_version_1_file_opens_without_runs() {
-    let path = scratch("version-1.emcraft");
-    let mut s = Session::new();
-    std::fs::write(&path, json!({"format": "emcraft-project", "version": 1, "history": [{"command": "units.set"}]}).to_string()).unwrap();
-    s.execute("file.open", &json!({"path": path})).unwrap();
-    assert!(s.runs().is_empty() && !s.is_dirty());
 }
 
 /// An autosave is a copy: the project keeps its file, name and unsaved state; recovering it
@@ -184,7 +172,7 @@ fn autosave_copies_and_recovery() {
     let r = s.execute("file.save", &json!({"path": copy, "copy": true})).unwrap();
     assert_eq!(r["copy"], true);
     assert_eq!((s.path(), s.is_dirty(), s.name().as_str()), (Some(own.as_str()), true, "autosave-own"));
-    assert!(!std::fs::read_to_string(&own).unwrap().contains("ptfe"));
+    assert!(!super::project_json(&own).to_string().contains("ptfe"));
     assert!(matches!(s.execute("file.save", &json!({"copy": true})), Err(EngineError::Params(_))));
     // Recovered: the copy's model under the original's file, unsaved.
     let mut t = Session::new();

@@ -1,11 +1,12 @@
-//! The analysis history as a project file keeps it (`analysis_history`, since version 4;
-//! docs/project-file.md): the solves' identities and what they found ([`Kept`]), and the
-//! histories that built their models, each written once however many solves share it.
+//! The analysis history as a project file keeps it (`analysis_history`, docs/project-file.md):
+//! the solves' identities, how they were made and what they found ([`Kept`], the S-parameters
+//! as array parts), and the histories that built their models, each written once however many
+//! solves share it.
 //!
 //! A file is hostile: on reading, the solves are capped ([`MAX_KEPT`] unpinned + [`MAX_PINNED`]),
 //! ids ascend, every command is a solve command with parameters it knows, every step of a
 //! history is a command a history holds (one that changes the model), and every number is
-//! finite and every size agrees ([`Kept::checked`]); anything else refuses the file.
+//! finite and every size agrees ([`StoredResults::checked`]); anything else refuses the file.
 
 use std::sync::Arc;
 
@@ -13,12 +14,13 @@ use emcraft_model::units::Display;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use emcraft_io::package::{Reader, Writer};
+
 use super::kept::{KeptEntry, KeptMode, KeptSweep, MAX_ENTRIES, MAX_ENTRY_NAME};
-use super::{Archived, Kept, MAX_KEPT, MAX_PINNED, checked_label};
-use crate::SData;
+use super::{Archived, Kept, MAX_KEPT, MAX_PINNED, Provenance, checked_label};
 use crate::expr::{self, Variables};
+use crate::store::StoredS;
 use crate::{Effect, Step, find_command};
-use emcraft_solver::Complex64 as C;
 
 /// Most steps of one kept solve's history.
 pub const MAX_STEPS: usize = 20_000;
@@ -39,38 +41,32 @@ pub struct StoredHistory {
 pub struct StoredSolve {
     pub id: u32,
     /// Seconds since 1970, UTC.
-    #[serde(default)]
     pub when: u64,
     pub command: String,
-    #[serde(default = "no_params")]
     pub params: Value,
     /// The display units its parameters were read in.
     pub units: Display,
     /// Its model's history: an index into `histories`.
     pub history: usize,
-    #[serde(default)]
     pub variables: Variables,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    #[serde(default)]
     pub results: StoredResults,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<super::Provenance>,
+    pub provenance: Provenance,
 }
 
-/// What a kept solve found, as a file writes it ([`Kept`] once checked). Complex numbers are
-/// pairs of plain numbers, real then imaginary: an S matrix of n entries is 2n² numbers, row by
-/// row (S\[p\]\[q\] at 2(pn + q)).
+/// What a kept solve found, as a file writes it ([`Kept`] once checked), the S-parameters as
+/// array parts.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct StoredResults {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sweep: Option<StoredSweep>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub eigenmodes: Vec<KeptMode>,
+    /// The time domain's S11 and S21 (2 rows, entry 0 excited).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub time_domain: Option<StoredTimeDomain>,
+    pub time_domain: Option<StoredS>,
 }
 
 /// A driven sweep's S-parameters in a file.
@@ -79,57 +75,34 @@ pub struct StoredSweep {
     /// The elements' order (1 or 2).
     pub order: u8,
     pub entries: Vec<KeptEntry>,
-    #[serde(default)]
     pub deembed: Vec<f64>,
-    /// Ascending (Hz).
-    pub frequencies: Vec<f64>,
-    /// Per frequency, S as 2n² numbers (row by row, real then imaginary).
-    pub s: Vec<Vec<f64>>,
-}
-
-/// The time domain's S11 and S21 at its frequencies (Hz), each 2 numbers a frequency.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct StoredTimeDomain {
-    pub frequencies: Vec<f64>,
-    pub s11: Vec<f64>,
-    pub s21: Vec<f64>,
-}
-
-fn pairs(v: impl IntoIterator<Item = C>) -> Vec<f64> {
-    v.into_iter().flat_map(|c| [c.re, c.im]).collect()
-}
-
-/// Pairs of numbers as complex values (an odd one out is an error).
-fn complex(v: &[f64], what: &str) -> Result<Vec<C>, String> {
-    let (pairs, rest) = v.as_chunks::<2>();
-    if !rest.is_empty() {
-        return Err(format!("{what}: complex values are 2 numbers each"));
-    }
-    Ok(pairs.iter().map(|&[re, im]| C::new(re, im)).collect())
+    /// S (n × n, n the entries).
+    pub s: StoredS,
 }
 
 impl StoredResults {
-    /// `kept` as a file writes it.
-    pub fn of(kept: &Kept) -> StoredResults {
-        let sweep = kept.sweep.as_ref().map(|sw| StoredSweep {
-            order: sw.order.as_u8(),
-            entries: sw.entries.clone(),
-            deembed: sw.deembed.clone(),
-            frequencies: sw.s.frequencies().to_vec(),
-            s: (0..sw.s.frequencies().len()).map(|k| pairs(sw.s.at(k).iter().copied())).collect(),
-        });
-        let time_domain = kept.time_domain.as_ref().map(|t| StoredTimeDomain {
-            frequencies: t.frequencies().to_vec(),
-            s11: pairs(t.curve(0, 0).map(|(_, c)| c)),
-            s21: pairs(t.curve(1, 0).map(|(_, c)| c)),
-        });
-        StoredResults { sweep, eigenmodes: kept.eigenmodes.clone(), time_domain }
+    /// `kept` as a file writes it, its arrays as parts under `prefix`.
+    pub fn of(kept: &Kept, prefix: &str, w: &mut Writer) -> Result<StoredResults, String> {
+        let sweep = match &kept.sweep {
+            Some(sw) => Some(StoredSweep {
+                order: sw.order.as_u8(),
+                entries: sw.entries.clone(),
+                deembed: sw.deembed.clone(),
+                s: StoredS::write(&sw.s, &format!("{prefix}/s.c64"), w)?,
+            }),
+            None => None,
+        };
+        let time_domain = match &kept.time_domain {
+            Some(t) => Some(StoredS::write(t, &format!("{prefix}/time_domain.c64"), w)?),
+            None => None,
+        };
+        Ok(StoredResults { sweep, eigenmodes: kept.eigenmodes.clone(), time_domain })
     }
 
     /// Checked as read from a file (hostile): sizes within their caps and agreeing, numbers
     /// finite, frequencies positive and ascending.
-    pub fn checked(self) -> Result<Kept, String> {
-        let sweep = self.sweep.map(StoredSweep::checked).transpose()?;
+    pub fn checked(self, r: &mut Reader) -> Result<Kept, String> {
+        let sweep = self.sweep.map(|sw| sw.checked(r)).transpose()?;
         if self.eigenmodes.len() > crate::EIGEN_MAX {
             return Err(format!("more than {} eigenmodes", crate::EIGEN_MAX));
         }
@@ -139,13 +112,17 @@ impl StoredResults {
                 return Err("an eigenmode's frequency and Q must be finite numbers".into());
             }
         }
-        let time_domain = self.time_domain.map(StoredTimeDomain::checked).transpose()?;
+        let time_domain = match self.time_domain {
+            Some(t) if t.outputs != 2 || t.inputs != [0] => return Err("the time domain's S is S11 and S21 (2 rows, entry 0 excited)".into()),
+            Some(t) => Some(t.read(r)?),
+            None => None,
+        };
         Ok(Kept { sweep, eigenmodes: self.eigenmodes, time_domain })
     }
 }
 
 impl StoredSweep {
-    fn checked(self) -> Result<KeptSweep, String> {
+    fn checked(self, r: &mut Reader) -> Result<KeptSweep, String> {
         let order = emcraft_fem::Order::try_from(self.order).map_err(|n| format!("a sweep's order is 1 or 2, not {n}"))?;
         let n = self.entries.len();
         if n == 0 || n > MAX_ENTRIES || self.deembed.len() > MAX_ENTRIES {
@@ -162,36 +139,11 @@ impl StoredSweep {
         if !self.deembed.iter().all(|d| d.is_finite()) {
             return Err("de-embedding must be finite numbers".into());
         }
-        if self.s.len() != self.frequencies.len() {
-            return Err(format!("{} frequencies but {} S matrices", self.frequencies.len(), self.s.len()));
+        if self.s.outputs != n || self.s.inputs != (0..n).collect::<Vec<_>>() {
+            return Err(format!("a sweep's S is {n} × {n}, its entries'"));
         }
-        if let Some(row) = self.s.iter().find(|row| row.len() != 2 * n * n) {
-            return Err(format!("an S matrix of {n} entries is {} numbers, not {}", 2 * n * n, row.len()));
-        }
-        // Within the cap before a value is made of them.
-        if self.frequencies.len().saturating_mul(n * n) > crate::sdata::MAX_VALUES {
-            return Err(format!("S-parameters of more than {} values", crate::sdata::MAX_VALUES));
-        }
-        let mut s = Vec::with_capacity(self.frequencies.len() * n * n);
-        for row in &self.s {
-            s.extend(complex(row, "an S matrix")?);
-        }
-        let s = SData::square(self.frequencies, n, s)?;
+        let s = self.s.read(r)?;
         Ok(KeptSweep { order, entries: self.entries, deembed: self.deembed, s })
-    }
-}
-
-impl StoredTimeDomain {
-    fn checked(self) -> Result<SData, String> {
-        let n = 2 * self.frequencies.len();
-        if self.s11.len() != n || self.s21.len() != n {
-            return Err(format!("the time domain's S11 and S21 are 2 numbers a frequency: {n}"));
-        }
-        if self.frequencies.len() > crate::sdata::MAX_FREQUENCIES {
-            return Err(format!("more than {} frequencies", crate::sdata::MAX_FREQUENCIES));
-        }
-        let (s11, s21) = (complex(&self.s11, "S11")?, complex(&self.s21, "S21")?);
-        SData::new(self.frequencies, 2, vec![0], s11.into_iter().zip(s21).flat_map(|(a, b)| [a, b]).collect())
     }
 }
 
@@ -200,7 +152,7 @@ fn no_params() -> Value {
 }
 
 /// `archive` as a file keeps it, `next` the last id given.
-pub(crate) fn stored(archive: &[Archived], next: u32) -> StoredHistory {
+pub(crate) fn stored(archive: &[Archived], next: u32, w: &mut Writer) -> Result<StoredHistory, String> {
     let mut histories: Vec<&Arc<Vec<Step>>> = Vec::new();
     let mut solves = Vec::with_capacity(archive.len());
     for a in archive {
@@ -221,11 +173,11 @@ pub(crate) fn stored(archive: &[Archived], next: u32) -> StoredHistory {
             variables: (*a.variables).clone(),
             pinned: a.pinned,
             label: a.label.clone(),
-            results: StoredResults::of(&a.kept),
+            results: StoredResults::of(&a.kept, &format!("history/{}", a.id), w)?,
             provenance: a.provenance.clone(),
         });
     }
-    StoredHistory { next, histories: histories.into_iter().map(|h| (**h).clone()).collect(), solves }
+    Ok(StoredHistory { next, histories: histories.into_iter().map(|h| (**h).clone()).collect(), solves })
 }
 
 /// A command's parameters from a file: an object (null reads as none) with only the keys it
@@ -246,7 +198,7 @@ fn checked_params(command: &str, params: &mut Value, effects: &[Effect], what: &
 
 /// The kept solves of a file's analysis history, and the last id given; an error saying what
 /// is wrong with it.
-pub(crate) fn read(st: StoredHistory) -> Result<(Vec<Archived>, u32), String> {
+pub(crate) fn read(st: StoredHistory, r: &mut Reader) -> Result<(Vec<Archived>, u32), String> {
     let StoredHistory { next, histories, solves } = st;
     if solves.len() > MAX_KEPT + MAX_PINNED || solves.iter().filter(|s| s.pinned).count() > MAX_PINNED {
         return Err(format!("the analysis history keeps at most {MAX_KEPT} solves and {MAX_PINNED} pinned ones"));
@@ -280,8 +232,8 @@ pub(crate) fn read(st: StoredHistory) -> Result<(Vec<Archived>, u32), String> {
             Some(l) => checked_label(l).map_err(|e| format!("{what}: its label {e}"))?,
             None => None,
         };
-        let kept = s.results.checked().map_err(|e| format!("{what}: {e}"))?;
-        let provenance = s.provenance.map(super::Provenance::checked).transpose().map_err(|e| format!("{what}: its provenance: {e}"))?;
+        let kept = s.results.checked(r).map_err(|e| format!("{what}: {e}"))?;
+        let provenance = s.provenance.checked().map_err(|e| format!("{what}: its provenance: {e}"))?;
         out.push(Archived {
             id: s.id,
             when: s.when,
@@ -298,58 +250,4 @@ pub(crate) fn read(st: StoredHistory) -> Result<(Vec<Archived>, u32), String> {
         });
     }
     Ok((out, next))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sweep() -> StoredSweep {
-        let entries = ["1", "2"].map(|n| KeptEntry { name: n.into(), port: 0, terminal: None, reference: None }).to_vec();
-        StoredSweep { order: 1, entries, deembed: vec![0.0, 0.0], frequencies: vec![7e9, 8e9], s: vec![vec![0.5; 8], vec![0.25; 8]] }
-    }
-
-    #[test]
-    fn a_stored_sweep_reads_back_as_written() {
-        let kept = sweep().checked().unwrap();
-        assert_eq!(kept.curve(1, 0), vec![(7e9, C::new(0.5, 0.5)), (8e9, C::new(0.25, 0.25))]);
-        assert!(kept.curve(2, 0).is_empty());
-        let all = Kept { sweep: Some(kept), ..Kept::default() };
-        assert_eq!(StoredResults::of(&all).checked(), Ok(all.clone()));
-        assert_eq!(StoredResults::of(&all).sweep, Some(sweep()));
-    }
-
-    #[rstest::rstest]
-    #[case::order(|s: &mut StoredSweep| s.order = 3, "order")]
-    #[case::entries(|s: &mut StoredSweep| s.entries.clear(), "entries")]
-    #[case::ascending(|s: &mut StoredSweep| s.frequencies.reverse(), "ascending")]
-    #[case::positive(|s: &mut StoredSweep| s.frequencies[0] = -1.0, "positive")]
-    #[case::matrices(|s: &mut StoredSweep| drop(s.s.pop()), "S matrices")]
-    #[case::numbers(|s: &mut StoredSweep| s.s[0].push(1.0), "numbers, not")]
-    #[case::finite(|s: &mut StoredSweep| s.s[1][3] = f64::INFINITY, "finite")]
-    #[case::reference(|s: &mut StoredSweep| s.entries[0].reference = Some(0.0), "reference")]
-    fn a_stored_sweep_that_does_not_fit_is_refused(#[case] spoil: fn(&mut StoredSweep), #[case] why: &str) {
-        let mut s = sweep();
-        spoil(&mut s);
-        assert!(matches!(s.checked(), Err(m) if m.contains(why)), "{why}");
-    }
-
-    #[test]
-    fn too_many_frequencies_are_refused() {
-        let mut big = sweep();
-        big.frequencies = vec![1.0; crate::sdata::MAX_FREQUENCIES + 1];
-        big.s = vec![vec![0.0; 8]; big.frequencies.len()];
-        assert!(big.checked().is_err());
-    }
-
-    #[test]
-    fn stored_eigenmodes_and_time_domain_are_checked() {
-        let td = StoredTimeDomain { frequencies: vec![1e9], s11: vec![0.0, 1.0], s21: vec![1.0] };
-        assert!(StoredResults { time_domain: Some(td), ..StoredResults::default() }.checked().is_err());
-        let td = StoredTimeDomain { frequencies: vec![1e9], s11: vec![0.1, 0.0], s21: vec![0.9, 0.0] };
-        let kept = StoredResults { time_domain: Some(td.clone()), ..StoredResults::default() }.checked().unwrap();
-        assert_eq!(StoredResults::of(&kept).time_domain, Some(td));
-        let mode = KeptMode { frequency: 0.0, q_walls: None, q_dielectric: None, q_magnetic: None };
-        assert!(StoredResults { eigenmodes: vec![mode], ..StoredResults::default() }.checked().is_err());
-    }
 }

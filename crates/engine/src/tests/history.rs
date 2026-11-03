@@ -50,14 +50,13 @@ fn the_analysis_history_survives_saving_and_reopening() {
     let r = s.execute("file.save", &json!({"path": path})).unwrap();
     assert_eq!(r["kept"], 2);
     assert!(!s.is_dirty());
-    let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(doc["version"], 4);
+    let doc = super::project_json(&path);
     let h = &doc["analysis_history"];
-    // Two models, each history written once; the S-parameters, not the fields.
+    // Two models, each history written once; the S-parameters an array part of their own.
     assert_eq!((h["next"].as_u64(), h["histories"].as_array().map(Vec::len)), (Some(2), Some(2)));
-    let sweep = &h["solves"][0]["results"]["sweep"];
-    assert_eq!(sweep["frequencies"].as_array().map(Vec::len), Some(3));
-    assert_eq!(sweep["s"][0].as_array().map(Vec::len), Some(8));
+    let sweep = &h["solves"][0]["results"]["sweep"]["s"];
+    assert_eq!((sweep["frequencies"].as_array().map(Vec::len), sweep["outputs"].as_u64()), (Some(3), Some(2)));
+    assert_eq!(sweep["values"], "history/1/s.c64");
 
     // Opened: the same rows, number for number; clean; nothing current.
     let mut t = Session::new();
@@ -137,28 +136,6 @@ fn the_history_is_part_of_the_unsaved_state() {
     assert!(u.execute("results.history.label", &json!({"id": 9, "label": "a"})).is_err());
 }
 
-#[test]
-fn files_without_a_history_open_as_before_and_newer_ones_are_refused() {
-    let path = scratch("history-old.emcraft");
-    let mut s = Session::new();
-    // A project with nothing kept is written in the version it was before.
-    s.execute("project.frequency", &json!({"start": 5, "stop": 9})).unwrap();
-    s.execute("file.save", &json!({"path": path})).unwrap();
-    let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(doc["version"], 2);
-    assert!(doc.get("analysis_history").is_none());
-    // A version 3 file opens with an empty history, whatever it holds besides.
-    let mut doc = doc;
-    doc["version"] = json!(3);
-    doc["analysis_history"] = json!({"next": 1, "histories": [], "solves": "not read"});
-    std::fs::write(&path, doc.to_string()).unwrap();
-    s.execute("file.open", &json!({"path": path})).unwrap();
-    assert!(s.archive().is_empty() && !s.is_dirty());
-    doc["version"] = json!(5);
-    std::fs::write(&path, doc.to_string()).unwrap();
-    assert!(matches!(s.execute("file.open", &json!({"path": path})), Err(EngineError::Failed(m)) if m.contains("newer")));
-}
-
 /// A saved history's text, each value of it spoiled in turn: refused with a reason, or read
 /// when the change is harmless, and nothing panics.
 #[test]
@@ -166,13 +143,13 @@ fn hostile_histories_in_a_file_are_refused_and_nothing_panics() {
     let mut s = solved_twice();
     let good = scratch("history-good.emcraft");
     s.execute("file.save", &json!({"path": good})).unwrap();
-    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&good).unwrap()).unwrap();
+    let mut doc = super::project_json(&good);
     // The project's own model left out: opening replays nothing, so each try is quick.
     doc["history"] = json!([]);
     let path = scratch("history-hostile.emcraft");
     let mut t = Session::new();
     let open = |t: &mut Session, d: &Value| {
-        std::fs::write(&path, d.to_string()).unwrap();
+        super::write_project(&path, d, Some(&good));
         t.execute("file.open", &json!({"path": path}))
     };
     let solve = |d: &mut Value| d["analysis_history"]["solves"][0].clone();
@@ -202,16 +179,22 @@ fn hostile_histories_in_a_file_are_refused_and_nothing_panics() {
         ("/analysis_history/histories/0/0", json!({"command": "file.open", "params": {"path": "/tmp/x"}}), "a command a history holds"),
         ("/analysis_history/solves/0/variables", json!({"1x": 2.0}), "valid name"),
         ("/analysis_history/solves/1/label", json!("x".repeat(500)), "label"),
-        ("/analysis_history/solves/0/results/sweep/s/0", json!([1.0, 2.0]), "numbers, not"),
-        ("/analysis_history/solves/0/results/sweep/s", json!([]), "S matrices"),
-        ("/analysis_history/solves/0/results/sweep/frequencies/0", json!(-6.6e9), "positive"),
-        ("/analysis_history/solves/0/results/sweep/frequencies/0", json!(9.9e9), "ascending"),
+        ("/analysis_history/solves/0/results/sweep/s/outputs", json!(3), "2 × 2"),
+        ("/analysis_history/solves/0/results/sweep/s/values", json!("nothing.c64"), "nothing.c64"),
+        ("/analysis_history/solves/0/results/sweep/s/values", json!("../x"), "not a part name"),
+        ("/analysis_history/solves/0/results/sweep/s/frequencies/0", json!(-6.6e9), "positive"),
+        ("/analysis_history/solves/0/results/sweep/s/frequencies/0", json!(9.9e9), "ascending"),
         ("/analysis_history/solves/0/results/sweep/order", json!(7), "order"),
         ("/analysis_history/solves/0/results/sweep/entries", json!([]), "entries"),
         ("/analysis_history/solves/0/results/sweep/entries/0/reference", json!(-50.0), "reference"),
         ("/analysis_history/solves/0/results/eigenmodes", json!([{"frequency": 0.0}]), "eigenmode"),
-        ("/analysis_history/solves/0/results/time_domain", json!({"frequencies": [1e9], "s11": [1], "s21": [1, 0]}), "time domain"),
-        ("/analysis_history/solves/0/results/sweep/frequencies", json!(vec![1.0; 3000]), "frequencies"),
+        (
+            "/analysis_history/solves/0/results/time_domain",
+            json!({"frequencies": [1e9], "outputs": 3, "inputs": [0], "values": "x.c64"}),
+            "time domain",
+        ),
+        ("/analysis_history/solves/0/results/sweep/s/frequencies", json!(vec![1.0; 3000]), "values, not"),
+        ("/analysis_history/solves/0/provenance", json!(null), "not a project file"),
         ("/analysis_history/solves/0/units", json!({"length": "furlong", "frequency": "GHz"}), "not a project file"),
         ("/analysis_history/solves", json!("x"), "not a project file"),
         ("/analysis_history/solves/0/provenance/seconds", json!(-1.0), "provenance"),
