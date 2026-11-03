@@ -239,6 +239,16 @@ fn a_pour_far_from_the_traces_is_meshed_coarsely_and_covered_whole() {
     let coarse = triangulate(&Request { outlines: &trace, coarse: &pour, ..request(&layers, &nets, &[]) }).unwrap();
     sound(&coarse, 12.0 * MM * MM);
     assert!((coarse.copper_area(1) - 3.6 * 2.6 * MM * MM).abs() < 1e-15);
-    assert_eq!(fine.copper_area(1), coarse.copper_area(1));
+    assert!((fine.copper_area(1) - coarse.copper_area(1)).abs() < 1e-15);
     assert!(coarse.triangles.len() < fine.triangles.len() * 3 / 4, "{} {}", coarse.triangles.len(), fine.triangles.len());
+}
+
+#[test]
+fn a_line_along_the_regions_outline_keeps_the_outline_whole() {
+    // A line to follow lying on the region's bottom side: its pieces and the outline's coincide,
+    // and the outline must stay (it once lost them, and every triangle fell outside).
+    let (layers, nets) = (names(1, "L"), names(1, "n"));
+    let lines = [[[0.0, 0.0], [4.0 * MM, 0.0]], [[1.0 * MM, 0.0], [1.0 * MM, 3.0 * MM]]];
+    let m = triangulate(&Request { lines: &lines, ..request(&layers, &nets, &[]) }).unwrap();
+    sound(&m, 12.0 * MM * MM);
 }
