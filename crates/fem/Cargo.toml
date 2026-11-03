@@ -12,3 +12,6 @@ workspace = true
 emcraft-model = { workspace = true }
 num-complex = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }

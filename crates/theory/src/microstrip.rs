@@ -42,12 +42,12 @@ mod tests {
     fn the_fits_meet_their_limits() {
         // A wide strip: nearly all the field in the substrate; a narrow one: towards half of it
         // in each medium, slowly ((1 + 10/u)^{−ab}, ab ≈ 0.37).
-        assert!((eps_eff(1000.0, 9.8) - 9.8).abs() < 0.3);
+        approx::assert_abs_diff_eq!(eps_eff(1000.0, 9.8), 9.8, epsilon = 0.3);
         let narrow = eps_eff(0.01, 9.8) - (9.8 + 1.0) / 2.0;
         assert!(narrow > 0.0 && narrow < 0.5, "{narrow}");
         // The 50 Ω line on alumina is close to W = h (W/h ≈ 0.95); on εr = 1 the air line,
         // whose impedance is η₀/(2π) ln(f/u + √(1 + 4/u²)).
         assert!((z0(0.95, 9.8) - 50.0).abs() < 1.5, "{}", z0(0.95, 9.8));
-        assert!((eps_eff(3.0, 1.0) - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(eps_eff(3.0, 1.0), 1.0, epsilon = 1e-12);
     }
 }

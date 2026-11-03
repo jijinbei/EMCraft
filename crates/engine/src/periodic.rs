@@ -215,7 +215,7 @@ mod tests {
         let r = s.execute("model.periodic", &json!({"theta": 30, "phi": 20, "polarization": "tm"})).unwrap();
         assert_eq!(r["x"], true);
         assert_eq!(r["polarization"], "tm");
-        assert!((r["theta"].as_f64().unwrap() - 30.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(r["theta"].as_f64().unwrap(), 30.0, epsilon = 1e-12);
         s.execute("solve.frequency", &json!({"frequencies": [8, 10, 12]})).unwrap();
         let c = s.execute("results.compare", &json!({})).unwrap();
         assert_eq!(c["reference"], "exact (plane wave)");
@@ -245,7 +245,7 @@ mod tests {
             }
         }
         // β = ψ/L per mm at the zone's edge: π/10.
-        assert!((pts[2]["beta"].as_f64().unwrap() - std::f64::consts::PI / 10.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(pts[2]["beta"].as_f64().unwrap(), std::f64::consts::PI / 10.0, epsilon = 1e-12);
         let path = scratch("dispersion.png");
         s.execute("view.dispersion", &json!({"path": path, "width": 600, "height": 400})).unwrap();
         assert!(std::fs::read(&path).unwrap().len() > 1000);

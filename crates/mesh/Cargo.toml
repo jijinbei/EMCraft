@@ -13,3 +13,7 @@ emcraft-fem = { workspace = true }
 emcraft-model = { workspace = true }
 emcraft-tetmesh = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+approx = { workspace = true }

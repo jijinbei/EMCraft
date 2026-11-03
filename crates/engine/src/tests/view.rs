@@ -109,7 +109,7 @@ fn field_views_show_the_te10_pattern() {
     let wall = samples.probe([x.min, (y.min + y.max) / 2.0]).unwrap();
     assert!(wall.e.y.norm() < 0.05 * mid.e.y.norm(), "{wall:?}");
     let (_, amplitude) = mid.value(view::Component::Ey, 0.0);
-    assert!((amplitude - mid.e.y.norm()).abs() < 1e-12);
+    approx::assert_abs_diff_eq!(amplitude, mid.e.y.norm(), epsilon = 1e-12);
     assert!(samples.probe([x.max + 1.0, y.min]).is_none() && samples.probe([f64::NAN, 0.0]).is_none());
     // H-plane: E has no in-plane part, so only H arrows; E_y largest across the middle (x = a/2).
     let plot = view::field_plot(&s, &view::FieldView::new(8.0e9, view::Plane::H)).unwrap();

@@ -667,7 +667,7 @@ mod tests {
         assert!(d.tags.iter().any(|t| *t >= 10) && d.tags.iter().any(|t| *t < 10));
         // Apart: a union keeps both, an intersection nothing.
         let far = cube([5.0, 5.0, 5.0], [6.0, 6.0, 6.0]);
-        assert!((volume(&combine(&a, &far, Op::Union, 10).unwrap()) - 9.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(volume(&combine(&a, &far, Op::Union, 10).unwrap()), 9.0, epsilon = 1e-12);
         assert!(combine(&a, &far, Op::Intersection, 10).is_err());
     }
 

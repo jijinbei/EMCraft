@@ -178,11 +178,11 @@ mod tests {
         // A line section: S11 = S22 = 0, S21 = S12 = e^{−jθ}.
         let t = C::from_polar(1.0, -0.7);
         let s = SMatrix::from_fn(2, |p, q| if p == q { c(0.0, 0.0) } else { t });
-        assert!((s.largest_singular_value() - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(s.largest_singular_value(), 1.0, epsilon = 1e-12);
         assert_eq!(s.reciprocity_error(), 0.0);
         let mut lossy = s.clone();
         lossy[(1, 0)] = t * 0.5;
-        assert!((lossy.reciprocity_error() - 0.5).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(lossy.reciprocity_error(), 0.5, epsilon = 1e-12);
     }
 
     #[test]

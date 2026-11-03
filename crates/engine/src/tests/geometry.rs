@@ -114,7 +114,7 @@ fn imported_surfaces_mesh_and_carry_ports() {
     let mut s = Session::new();
     let r = s.execute("geometry.import", &json!({"path": path})).unwrap();
     assert_eq!(r["faces"], 6);
-    assert!((r["volume"].as_f64().unwrap() - 22.5e-3 * 10e-3 * 30e-3).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(r["volume"].as_f64().unwrap(), 22.5e-3 * 10e-3 * 30e-3, epsilon = 1e-15);
     s.execute("mesh.generate", &json!({"size": 3})).unwrap();
     s.execute("model.port.create", &json!({"name": "1", "end": "start"})).unwrap();
     s.execute("model.port.create", &json!({"name": "2", "end": "end"})).unwrap();
@@ -126,7 +126,7 @@ fn imported_surfaces_mesh_and_carry_ports() {
     // The same as ASCII, in centimetres.
     std::fs::write(&path, emcraft_io::stl::write_ascii(&box_surface(2.25, 1.0, 3.0), 1.0)).unwrap();
     let r = s.execute("geometry.import", &json!({"path": path, "unit": 10})).unwrap();
-    assert!((r["volume"].as_f64().unwrap() - 6.75e-6).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(r["volume"].as_f64().unwrap(), 6.75e-6, epsilon = 1e-15);
     // An open surface, a missing file and an unknown format are refused.
     let mut open = box_surface(1.0, 1.0, 1.0);
     open.triangles.pop();
@@ -218,8 +218,8 @@ fn meshes_follow_the_wavelength_in_each_material() {
     // Four per wavelength, for speed: 6.25 mm outside, 3.1 mm in the ceramic.
     let r = s.execute("mesh.generate", &json!({"per_wavelength": 4, "frequency": 12})).unwrap();
     let lambda = emcraft_model::units::C0 / 12e9 * 1e3;
-    assert!((r["sizes"]["vacuum"].as_f64().unwrap() - lambda / 4.0).abs() < 1e-9);
-    assert!((r["sizes"]["ceramic"].as_f64().unwrap() - lambda / 8.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(r["sizes"]["vacuum"].as_f64().unwrap(), lambda / 4.0, epsilon = 1e-9);
+    approx::assert_abs_diff_eq!(r["sizes"]["ceramic"].as_f64().unwrap(), lambda / 8.0, epsilon = 1e-9);
     // The ceramic's tetrahedra are about half the size: an eighth of the volume, less near the
     // interface, whose triangles the vacuum's tetrahedra share (3.9 measured, at 8 per wavelength too).
     let mesh = s.model.mesh.as_ref().unwrap();

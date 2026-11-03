@@ -186,7 +186,7 @@ mod tests {
         cw.reverse();
         for pts in [tee, cw] {
             let s = Shape::prism(&pts, m(2.0)).unwrap();
-            assert!((s.volume() - 12.0).abs() < 1e-12);
+            approx::assert_abs_diff_eq!(s.volume(), 12.0, epsilon = 1e-12);
             let Shape::Surface { triangles, tags, .. } = &s else { panic!() };
             assert_eq!(triangles.len(), 2 * 6 + 2 * 8);
             assert_eq!(tags.iter().max(), Some(&9));

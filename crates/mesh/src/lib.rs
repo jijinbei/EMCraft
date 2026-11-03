@@ -320,8 +320,8 @@ mod tests {
         let mesh = waveguide(&m, metres(0.004)).unwrap();
         let (a, b, l) = (0.02286, 0.01016, 0.05);
         let area = |tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(&mesh, &f.nodes)).sum::<f64>();
-        assert!((area(Boundary::Port(0)) - a * b).abs() < 1e-14);
-        assert!((area(Boundary::Port(1)) - a * b).abs() < 1e-14);
+        approx::assert_abs_diff_eq!(area(Boundary::Port(0)), a * b, epsilon = 1e-14);
+        approx::assert_abs_diff_eq!(area(Boundary::Port(1)), a * b, epsilon = 1e-14);
         assert!((area(Boundary::Pec) - 2.0 * (a + b) * l).abs() < 1e-13);
         // Every boundary face belongs to its tet.
         for f in &mesh.boundary {
@@ -339,10 +339,10 @@ mod tests {
         m.set_symmetry(vec![Symmetry { axis: Axis::X, at: a / 2.0, kind: SymmetryKind::Magnetic }]).unwrap();
         let half = waveguide(&m, metres(0.004)).unwrap();
         let area = |mesh: &Mesh, tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(mesh, &f.nodes)).sum::<f64>();
-        assert!((volumes(&half).iter().sum::<f64>() - a * b * l / 2.0).abs() < 1e-12 * a * b * l);
-        assert!((area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)) - b * l).abs() < 1e-13);
-        assert!((area(&half, Boundary::Port(0)) - a * b / 2.0).abs() < 1e-14);
-        assert!((area(&half, Boundary::Pec) - (a + b) * l).abs() < 1e-13);
+        approx::assert_abs_diff_eq!(volumes(&half).iter().sum::<f64>(), a * b * l / 2.0, epsilon = 1e-12 * a * b * l);
+        approx::assert_abs_diff_eq!(area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)), b * l, epsilon = 1e-13);
+        approx::assert_abs_diff_eq!(area(&half, Boundary::Port(0)), a * b / 2.0, epsilon = 1e-14);
+        approx::assert_abs_diff_eq!(area(&half, Boundary::Pec), (a + b) * l, epsilon = 1e-13);
         assert!(half.nodes.iter().all(|p| p.x <= a / 2.0));
         assert!(half.tets.len() * 2 <= full.tets.len() + full.tets.len() / 4, "{} of {}", half.tets.len(), full.tets.len());
         // A quarter: an electric wall across y as well.
@@ -352,9 +352,9 @@ mod tests {
         ])
         .unwrap();
         let quarter = waveguide(&m, metres(0.004)).unwrap();
-        assert!((volumes(&quarter).iter().sum::<f64>() - a * b * l / 4.0).abs() < 1e-12 * a * b * l);
-        assert!((area(&quarter, Boundary::Symmetry(SymmetryKind::Electric)) - a / 2.0 * l).abs() < 1e-13);
-        assert!((area(&quarter, Boundary::Symmetry(SymmetryKind::Magnetic)) - b / 2.0 * l).abs() < 1e-13);
+        approx::assert_abs_diff_eq!(volumes(&quarter).iter().sum::<f64>(), a * b * l / 4.0, epsilon = 1e-12 * a * b * l);
+        approx::assert_abs_diff_eq!(area(&quarter, Boundary::Symmetry(SymmetryKind::Electric)), a / 2.0 * l, epsilon = 1e-13);
+        approx::assert_abs_diff_eq!(area(&quarter, Boundary::Symmetry(SymmetryKind::Magnetic)), b / 2.0 * l, epsilon = 1e-13);
         // A guide no longer symmetric is refused.
         let mut w = m.waveguide.clone().unwrap();
         w.sections[1].width = Some(metres(0.01));
@@ -370,11 +370,11 @@ mod tests {
         for p in [[0.011, 0.005, 0.025], [0.0, 0.0, 0.0], [0.02286, 0.01016, 0.05], [0.001, 0.009, 0.0349]].map(Point3::from) {
             let (t, l) = locate(&mesh, p).unwrap();
             assert!(l.iter().all(|&x| x >= -1e-12), "{l:?}");
-            assert!((l.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+            approx::assert_abs_diff_eq!(l.iter().sum::<f64>(), 1.0, epsilon = 1e-12);
             let c = mesh.corners(t).unwrap();
             for d in 0..3 {
                 let q: f64 = (0..4).map(|i| l[i] * c[i][d]).sum();
-                assert!((q - p[d]).abs() < 1e-14);
+                approx::assert_abs_diff_eq!(q, p[d], epsilon = 1e-14);
             }
         }
         assert!(locate(&mesh, Point3::new(0.03, 0.0, 0.0)).is_none());
@@ -410,7 +410,7 @@ mod tests {
         let area = |tag: Boundary| mesh.boundary.iter().filter(|f| f.tag == tag).map(|f| tri_area(&mesh, &f.nodes)).sum::<f64>();
         let pec = 2.0 * (a + b) * 0.02 + 2.0 * (0.01 + b) * 0.002 + 2.0 * (a - 0.01) * b;
         assert!((area(Boundary::Pec) - pec).abs() < 1e-12, "{} {pec}", area(Boundary::Pec));
-        assert!((area(Boundary::Port(0)) - a * b).abs() < 1e-14);
+        approx::assert_abs_diff_eq!(area(Boundary::Port(0)), a * b, epsilon = 1e-14);
         // Points in the iris' metal are outside; on its faces they are inside.
         assert!(locate(&mesh, Point3::new(0.002, 0.005, 0.011)).is_none());
         assert!(locate(&mesh, Point3::new(0.002, 0.005, 0.01)).is_some());
@@ -492,7 +492,7 @@ mod tests {
         m.set_symmetry(vec![Symmetry { axis: Axis::Y, at: b / 2.0, kind: SymmetryKind::Magnetic }]).unwrap();
         let half = waveguide(&m, metres(0.001)).unwrap();
         let plane = a * l - via.wx * via.wz;
-        assert!((area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)) - (plane - strip.width * l)).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(area(&half, Boundary::Symmetry(SymmetryKind::Magnetic)), (plane - strip.width * l), epsilon = 1e-12);
         let half_walls = (2.0 * b / 2.0 + a) * l - via.wx * via.wz + 2.0 * (via.wx + via.wz) * b / 2.0;
         assert!((area(&half, Boundary::Pec) - half_walls - strip.width * l).abs() < 1e-12, "{}", area(&half, Boundary::Pec));
         // A via under the strip only (y1 below the plane) has no image: refused.

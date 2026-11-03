@@ -291,7 +291,7 @@ mod tests {
         let dark = |c: crate::Rgb| c.0 < 60 && c.1 < 60 && c.2 < 60;
         assert!(dark(at(5.7, 5.0)));
         // The aspect ratio is the plane's.
-        assert!((pw / ph - 2.0).abs() < 0.05);
+        approx::assert_abs_diff_eq!(pw / ph, 2.0, epsilon = 0.05);
         // Pixels and axes map back and forth.
         let l = layout_of(&plot(), 600);
         let q = l.to_axes(l.to_pixels([7.5, 2.5])).unwrap();

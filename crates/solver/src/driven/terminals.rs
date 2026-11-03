@@ -206,7 +206,7 @@ mod tests {
         // One conductor: T_I = √(2/Z), T_V = √(2Z).
         let z: f64 = 62.0;
         let t_v = voltages(&[C::new((2.0 / z).sqrt(), 0.0)], 1).unwrap();
-        assert!((t_v[0].re - (2.0 * z).sqrt()).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(t_v[0].re, (2.0 * z).sqrt(), epsilon = 1e-12);
         assert!(voltages(&[C::new(0.0, 0.0)], 1).is_none());
     }
 

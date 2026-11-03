@@ -607,7 +607,7 @@ mod tests {
         let mesh = mesh_of(Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.03)) }, 0.004);
         let v = crate::volumes(&mesh);
         assert!(v.iter().all(|x| *x > 0.0));
-        assert!((v.iter().sum::<f64>() - 6e-6).abs() < 1e-12 * 6e-6 + 1e-15);
+        approx::assert_abs_diff_eq!(v.iter().sum::<f64>(), 6e-6, epsilon = 1e-12 * 6e-6 + 1e-15);
         let port = |k: u32| mesh.boundary.iter().filter(|f| f.tag == Boundary::Port(k)).map(|f| area(&mesh, f)).sum::<f64>();
         assert!((port(0) - 2e-4).abs() < 1e-12 && (port(1) - 2e-4).abs() < 1e-12);
         assert!(
@@ -1212,7 +1212,7 @@ mod tests {
             let c = mesh.corners(t).unwrap();
             for d in 0..3 {
                 let q: f64 = (0..4).map(|i| l[i] * c[i][d]).sum();
-                assert!((q - p[d]).abs() < 1e-12);
+                approx::assert_abs_diff_eq!(q, p[d], epsilon = 1e-12);
             }
         }
         assert!(crate::locate(&mesh, Point3::new(0.02, 0.0, 0.01)).is_none());

@@ -105,7 +105,7 @@ fn half_model_is_the_whole_mirrored_model_to_rounding() {
         }
         // The power a unit wave carries into the half is half the whole's.
         let (ph, pw) = (dh.incident_power(0, f).unwrap(), dw.incident_power(0, f).unwrap());
-        assert!((2.0 * ph / pw - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(2.0 * ph / pw, 1.0, epsilon = 1e-12);
     }
     // The field beyond the plane is the image of the one inside: E_y even, E_x odd, H_x even.
     let r = dh.solve(10e9).unwrap();

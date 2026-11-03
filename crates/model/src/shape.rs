@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn shapes_are_checked() {
-        assert!((Shape::Sphere { radius: Metres::new(1.0).unwrap() }.volume() - 4.18879).abs() < 1e-5);
+        approx::assert_abs_diff_eq!(Shape::Sphere { radius: Metres::new(1.0).unwrap() }.volume(), 4.18879, epsilon = 1e-5);
         assert!(BoxSize::new(Vec3::new(1.0, 0.0, 1.0)).is_err());
         let file = r#"{"type": "cylinder", "radius": 1.0, "length": -1.0}"#;
         assert!(serde_json::from_str::<Shape>(file).is_err(), "a file is checked as the types are");
@@ -592,7 +592,7 @@ mod tests {
         assert_eq!(serde_json::to_string(&bx).unwrap(), r#"{"type":"box","size":[1.0,2.0,3.0]}"#);
         let closed = tetrahedron(vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]);
         closed.check().unwrap();
-        assert!((closed.volume() - 1.0 / 6.0).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(closed.volume(), 1.0 / 6.0, epsilon = 1e-15);
         assert!(closed.contains(Point3::new(0.1, 0.1, 0.1)) && !closed.contains(Point3::new(1.0, 1.0, 1.0)));
         assert_eq!(closed.end_triangles(), [vec![0], Vec::new()]);
         assert!(closed.end_face(End::Start).is_err(), "a triangle is neither a rectangle nor a disc");

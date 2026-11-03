@@ -355,6 +355,6 @@ mod tests {
         assert!(e_plane(B, A, k(PI / (2.0 * B), PI / A), 40).is_err());
         // One port, all walls but one: a short, |S11| = 1.
         let s = square(Corner::EPlane, A, B, f, &[Side::Top], 20).unwrap();
-        assert!((s[0][0].norm() - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(s[0][0].norm(), 1.0, epsilon = 1e-12);
     }
 }

@@ -19,3 +19,4 @@ rayon = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+approx = { workspace = true }

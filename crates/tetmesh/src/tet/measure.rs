@@ -278,8 +278,8 @@ mod tests {
     fn regular_tetrahedron() {
         let x = positive(REGULAR);
         assert!((quality(&x) - (8.0f64 / 9.0).sqrt()).abs() < 1e-12, "{}", quality(&x));
-        assert!((radius_ratio(&x) - 1.0).abs() < 1e-12);
-        assert!((radius_edge(&x) - 6f64.sqrt() / 4.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(radius_ratio(&x), 1.0, epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(radius_edge(&x), 6f64.sqrt() / 4.0, epsilon = 1e-12);
         let (lo, hi) = dihedral_range(&x);
         assert!((lo - 70.528_779).abs() < 1e-5 && (hi - lo).abs() < 1e-9, "{lo} {hi}");
         let o = circumcenter(&x).unwrap();

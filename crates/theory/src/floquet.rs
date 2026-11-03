@@ -241,7 +241,7 @@ mod tests {
             };
             let (s11, s21) = st.s(f).unwrap();
             assert!((s11.norm() - r).abs() < 1e-12, "{s11}");
-            assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-12);
+            approx::assert_abs_diff_eq!(s11.norm_sqr() + s21.norm_sqr(), 1.0, epsilon = 1e-12);
         }
     }
 
@@ -273,7 +273,7 @@ mod tests {
             let exact = ((PI / a).powi(2) + (psi / l).powi(2)).sqrt() * C0 / (2.0 * PI);
             assert!((f[0] - exact).abs() < 1e-9 * exact, "{f:?} {exact}");
             let bands = empty_guide_bands(&EmptyGuide { a, b: 0.01016, period: l, eps_r: 1.0 }, psi, 1);
-            assert!((bands[0] - exact).abs() < 1e-9 * exact);
+            approx::assert_abs_diff_eq!(bands[0], exact, epsilon = 1e-9 * exact);
         }
     }
 }

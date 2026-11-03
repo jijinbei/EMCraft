@@ -308,7 +308,7 @@ mod tests {
                 Order::One => assert!((g[0] + v[0] + v[1]).norm() < 1e-14),
                 Order::Two => (0..3).for_each(|k| assert!((g[3 + k] - v[3 + k]).norm() < 1e-14)),
             }
-            assert!((t.rule().iter().map(|r| r.1).sum::<f64>() - t.area).abs() < 1e-14);
+            approx::assert_abs_diff_eq!(t.rule().iter().map(|r| r.1).sum::<f64>(), t.area, epsilon = 1e-14);
         }
         assert!(Triangle::new(Order::One, [Point3::ORIGIN; 3]).is_none());
     }

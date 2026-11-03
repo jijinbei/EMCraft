@@ -13,3 +13,6 @@ emcraft-macros = { workspace = true }
 emcraft-model = { workspace = true }
 png = { workspace = true }
 ab_glyph = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }

@@ -592,7 +592,7 @@ fn view_changes_animate_by_the_frames_clock() {
     assert!(!h.app.view3d.animating());
     // 0.5 s at 60 frames a second: under way for 30 frames, rising, slowest at its ends.
     assert!(yaws[..29].iter().all(|y| *y < 90.0 - 1e-9), "{yaws:?}");
-    assert!((yaws[35] - 90.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(yaws[35], 90.0, epsilon = 1e-9);
     assert!(yaws.windows(2).all(|w| w[1] >= w[0] - 1e-12), "{yaws:?}");
     assert!(yaws[2] - yaws[1] < yaws[15] - yaws[14]);
     // A double-click on empty space fits again, animated, to the framing the model opened with.

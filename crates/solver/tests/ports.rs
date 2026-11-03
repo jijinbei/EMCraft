@@ -80,7 +80,7 @@ fn a_coaxial_line_transmits_its_tem_wave() {
     assert!(r.s[0][0].norm() < 2e-4, "{}", r.s[0][0]);
     assert!((r.s[1][0] - exact).norm() < 3e-4, "{} {exact}", r.s[1][0]);
     // Lossless (the coaxial template's invariants are a heavy test of the engine's).
-    assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-10);
+    approx::assert_abs_diff_eq!(r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr(), 1.0, epsilon = 1e-10);
 }
 
 /// WR-90 `length` long with a layer of εr `er` filling it from y = 0 to `d`, ports at both ends.
@@ -297,7 +297,7 @@ fn s_parameters_referred_to_50_ohms_follow_the_line_equations() {
     let zl = r.impedances[0].unwrap();
     assert!((zl / z0 - 1.0).abs() < 1e-3, "{zl} {z0}");
     assert!((r.s[0][0] - s11).norm() < 1e-3 && (r.s[1][0] - s21).norm() < 1e-3);
-    assert!((r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr() - 1.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(r.s[0][0].norm_sqr() + r.s[1][0].norm_sqr(), 1.0, epsilon = 1e-9);
     // A reference on a port without a line impedance (a waveguide) is refused.
     let mut wg = guide(&FILTER, 0.004, 2);
     wg.ports[0].reference = Some(ohms(50.0));

@@ -29,7 +29,7 @@ fn a_template_opens_its_design_and_passes_its_parameters() {
     assert!((size[0] - 22.86).abs() < 1e-6 && (size[1] - 10.16).abs() < 1e-6 && (size[2] - 30.0).abs() < 1e-6, "{size:?}");
     // A parameter changed later rebuilds the model from the design at its new value.
     s.execute("project.variable", &json!({"name": "l", "value": 45})).unwrap();
-    assert!((bounds(&mut s)[2] - 45.0).abs() < 1e-6);
+    approx::assert_abs_diff_eq!(bounds(&mut s)[2], 45.0, epsilon = 1e-6);
     assert_eq!(s.model.ports.len(), 2);
 }
 

@@ -130,7 +130,7 @@ fn coupled_lines_couple_less_than_they_carry_and_keep_the_power() {
     let p = lumped_s(&mut s, 1.5);
     let power: f64 = ["s11", "s21", "s31", "s41"].iter().map(|k| mag(&p, k).powi(2)).sum();
     assert!((power - 1.0).abs() < 1e-6, "{power}");
-    assert!((mag(&p, "s31") - mag(&p, "s13")).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(mag(&p, "s31"), mag(&p, "s13"), epsilon = 1e-9);
     // Through far more than either coupled end; the near end couples, if weakly.
     assert!(mag(&p, "s21") > 0.9 && mag(&p, "s31") < 0.3 && mag(&p, "s31") > 1e-3, "{p}");
 }
@@ -294,7 +294,7 @@ fn a_board_is_edited_by_commands_and_undone() {
     let r = s.execute("pcb.segment", &json!({"net": "DATA", "layer": "F.Cu", "start": [45, 10], "end": [45, 15], "width": 0.3})).unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
     s.execute("pcb.segment", &json!({"id": id, "width": 0.5})).unwrap();
-    assert!((s.model().pcb.as_ref().unwrap().segments.last().unwrap().width - 0.5e-3).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(s.model().pcb.as_ref().unwrap().segments.last().unwrap().width, 0.5e-3, epsilon = 1e-15);
     s.execute("pcb.via", &json!({"net": "DATA", "at": [45, 15], "layers": ["F.Cu", "B.Cu"], "diameter": 0.6, "drill": 0.3})).unwrap();
     s.execute("pcb.pour", &json!({"net": "PWR", "layer": "F.Cu", "polygon": [[60, 0], [70, 0], [70, 5]]})).unwrap();
     assert_eq!(count(&s), (before.0 + 1, before.1 + 1, before.2 + 1));

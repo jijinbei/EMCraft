@@ -54,11 +54,11 @@ mod tests {
     #[test]
     fn elliptic_integrals_and_limits() {
         // K(0) = π/2; K(1/√2) = Γ(1/4)²/(4√π) = 1.8540746773013719.
-        assert!((elliptic_k(0.0) - PI / 2.0).abs() < 1e-15);
-        assert!((elliptic_k(0.5f64.sqrt()) - 1.854_074_677_301_371_9).abs() < 1e-14);
+        approx::assert_abs_diff_eq!(elliptic_k(0.0), PI / 2.0, epsilon = 1e-15);
+        approx::assert_abs_diff_eq!(elliptic_k(0.5f64.sqrt()), 1.854_074_677_301_371_9, epsilon = 1e-14);
         // A wide strip is two parallel-plate lines in parallel: Z → η₀ b / (4 W √εr).
         let (w, b) = (0.05, 0.002);
-        assert!((z0(w, b, 1.0) / (MU0 * C0 * b / (4.0 * w)) - 1.0).abs() < 0.05);
+        approx::assert_abs_diff_eq!(z0(w, b, 1.0) / (MU0 * C0 * b / (4.0 * w)), 1.0, epsilon = 0.05);
         // The 50 Ω stripline on PTFE-like εr = 2.2 is about W = 0.8 b.
         assert!((z0(0.8 * 0.003, 0.003, 2.2) - 50.0).abs() < 3.0, "{}", z0(0.0024, 0.003, 2.2));
     }

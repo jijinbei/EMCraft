@@ -11,14 +11,14 @@ fn display_units_convert_at_the_boundary() {
     s.execute("units.set", &json!({"length": "m", "frequency": "MHz"})).unwrap();
     s.execute("geometry.waveguide", &json!({"width": 0.02286, "height": 0.01016, "sections": [{"length": 0.03, "material": "vacuum"}]})).unwrap();
     let w = s.model.waveguide.as_ref().unwrap();
-    assert!((w.width - 0.02286).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(w.width.get(), 0.02286, epsilon = 1e-15);
     s.execute("mesh.generate", &json!({"size": 0.005})).unwrap();
     s.execute("model.port.create", &json!({"name": "a", "end": "start"})).unwrap();
     s.execute("model.port.create", &json!({"name": "b", "end": "end"})).unwrap();
     let r = s.execute("solve.frequency", &json!({"frequencies": [9000], "order": 1})).unwrap();
     assert_eq!(r["frequency_unit"], "MHz");
     assert_eq!(r["points"][0]["frequency"], 9000.0);
-    assert!((s.results.sweep.as_ref().unwrap().results[0].frequency - 9e9).abs() < 1e-3);
+    approx::assert_abs_diff_eq!(s.results.sweep.as_ref().unwrap().results[0].frequency, 9e9, epsilon = 1e-3);
 }
 
 /// Every command that changes the model says which results the change leaves wrong, unless it

@@ -178,7 +178,7 @@ fn the_optimizer_converges_and_leaves_the_model_at_its_best() {
     assert_eq!(r["converged"], true);
     // The model is left at the optimum, as one step undo takes back.
     assert_eq!(s.variables["l"], best);
-    assert!((lengths(&s)[1] - best * 1e-3).abs() < 1e-15);
+    approx::assert_abs_diff_eq!(lengths(&s)[1], best * 1e-3, epsilon = 1e-15);
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.variables["l"], 8.0);
     let evaluations: Vec<&Value> = r["rows"].as_array().unwrap().iter().collect();

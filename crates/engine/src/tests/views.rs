@@ -264,7 +264,7 @@ fn the_run_is_estimated_from_its_settings() {
     assert!(td["seconds"].as_f64().unwrap() > 0.0 && td.get("unknowns").is_none());
     let study =
         est(&mut s, "study.sweep", json!({"values": [1, 2, 3], "solve": {"command": "solve.frequency", "params": {"points": 11, "order": 1}}}));
-    assert!((study["seconds"].as_f64().unwrap() / sweep["seconds"].as_f64().unwrap() - 3.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(study["seconds"].as_f64().unwrap() / sweep["seconds"].as_f64().unwrap(), 3.0, epsilon = 1e-9);
     // The latest run by default; after a sweep, this machine's numbers.
     s.execute("solve.frequency", &json!({"start": 6, "stop": 8, "points": 3, "order": 1})).unwrap();
     let latest = s.execute("project.estimate", &json!({})).unwrap();
@@ -364,9 +364,9 @@ fn three_ports_report_each_destination_and_follow_the_driven_input() {
     s.execute("solve.frequency", &json!({"frequencies":[8.5],"order":1})).unwrap();
     let report = s.execute("results.power", &json!({"frequency":8.5})).unwrap();
     assert_eq!(report["outputs"].as_array().unwrap().len(), 3);
-    assert!((report["accounted"].as_f64().unwrap() - 1.0).abs() < 1e-8);
+    approx::assert_abs_diff_eq!(report["accounted"].as_f64().unwrap(), 1.0, epsilon = 1e-8);
     let shares: f64 = report["outputs"].as_array().unwrap().iter().filter_map(|p| p["branch_fraction"].as_f64()).sum();
-    assert!((shares - 1.0).abs() < 1e-12);
+    approx::assert_abs_diff_eq!(shares, 1.0, epsilon = 1e-12);
     s.execute("view.driven", &json!({"port":"2"})).unwrap();
     let chart = crate::view::sparameter_chart(&s).unwrap();
     for key in ["s12.fem", "s22.fem", "s32.fem"] {

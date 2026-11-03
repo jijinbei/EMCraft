@@ -76,7 +76,7 @@ fn a_current_element_radiates_as_a_hertzian_dipole() {
     let r = radiate(&m, &OpenOptions::new(1e-3), &[f]).unwrap();
     // Measured +0.27 %, and the directivity within 0.4 % down to 20° from the axis.
     let exact = emcraft_theory::radiation::dipole_power(1e-3, f);
-    assert!((r.radiated[0] / exact - 1.0).abs() < 0.01);
+    approx::assert_abs_diff_eq!(r.radiated[0] / exact, 1.0, epsilon = 0.01);
     for t in [90.0f64, 45.0, 20.0] {
         let d = r.directivity(0, t.to_radians(), 0.3).unwrap();
         assert!((d / (1.5 * t.to_radians().sin().powi(2)) - 1.0).abs() < 0.01, "{t}: {d}");

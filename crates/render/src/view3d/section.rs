@@ -686,7 +686,7 @@ mod tests {
         s.line([0.0, 0.0, 0.0], [2.0, 0.0, 0.0], Rgb::BLACK, 255);
         s.line([1.5, 1.0, 0.0], [2.0, 1.0, 0.0], Rgb::BLACK, 255);
         let cut = section(&s, &Section::across(0, 1.0, Keep::Low)).unwrap();
-        assert!((cap_area(&cut, 0, 1.0) - 3.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cap_area(&cut, 0, 1.0), 3.0, epsilon = 1e-12);
         assert!(cut.tris.iter().flat_map(|t| t.p).all(|p| p[0] <= 1.0));
         // The kept faces: the x = 0 face and four half faces, area 3 + 2·(1 + 3).
         let total: f64 = cut.tris.iter().map(area).sum();
@@ -696,7 +696,7 @@ mod tests {
         assert_eq!(cut.lines[0].b, [1.0, 0.0, 0.0]);
         // The other side, and an arbitrary normal along the same axis' diagonal.
         let high = section(&s, &Section::across(0, 1.0, Keep::High)).unwrap();
-        assert!((cap_area(&high, 0, 1.0) - 3.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cap_area(&high, 0, 1.0), 3.0, epsilon = 1e-12);
         assert!(high.tris.iter().flat_map(|t| t.p).all(|p| p[0] >= 1.0));
         let r = 0.5f64.sqrt();
         let diag = section(&s, &Section::new([1.0, 1.0, 0.0], r)).unwrap();
@@ -711,7 +711,7 @@ mod tests {
         ring.cuboid([0.0; 3], [3.0; 3], A, 255);
         ring.cuboid([1.0; 3], [2.0; 3], A, 255);
         let cut = section(&ring, &Section::across(2, 1.5, Keep::Low)).unwrap();
-        assert!((cap_area(&cut, 2, 1.5) - 8.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cap_area(&cut, 2, 1.5), 8.0, epsilon = 1e-12);
         assert!(cap_at(&cut, 2, 1.5, [1.5, 1.5, 1.5]).is_empty());
         assert_eq!(cap_at(&cut, 2, 1.5, [0.5, 1.5, 1.5]), vec![A]);
         // Two bodies, one inside the other: the inner one's cap fills the outer one's hole.
@@ -811,9 +811,9 @@ mod tests {
         assert!(none.tris.is_empty() && none.lines.is_empty());
         // On a face: the face goes and the cap takes its place, the same square.
         let flush = section(&s, &Section::across(0, 1.0, Keep::Low)).unwrap();
-        assert!((cap_area(&flush, 0, 1.0) - 1.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cap_area(&flush, 0, 1.0), 1.0, epsilon = 1e-12);
         let total: f64 = flush.tris.iter().map(area).sum();
-        assert!((total - 6.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(total, 6.0, epsilon = 1e-12);
         // On the far face: an infinitely thin slice, nothing.
         assert!(section(&s, &Section::across(0, 0.0, Keep::Low)).unwrap().tris.is_empty());
         // Through two opposite edges (a diagonal plane) and through a corner only.
@@ -868,11 +868,11 @@ mod tests {
         }
         let sec = Section::across(2, 0.5, Keep::Low);
         let full = section_with(&s, &sec, LIMITS).unwrap();
-        assert!((cap_area(&full, 2, 0.5) - 5.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cap_area(&full, 2, 0.5), 5.0, epsilon = 1e-12);
         let few = section_with(&s, &sec, Limits { bodies: 2, ..LIMITS }).unwrap();
-        assert!((cap_area(&few, 2, 0.5) - 2.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cap_area(&few, 2, 0.5), 2.0, epsilon = 1e-12);
         let short = section_with(&s, &sec, Limits { segments: 16, ..LIMITS }).unwrap();
-        assert!((cap_area(&short, 2, 0.5) - 2.0).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(cap_area(&short, 2, 0.5), 2.0, epsilon = 1e-12);
         let outlined = Section { outline: Some(Rgb::BLACK), ..sec };
         let poor = section_with(&s, &outlined, Limits { work: 3, ..LIMITS }).unwrap();
         assert!(on(&poor, 2, 0.5).is_empty());
@@ -930,9 +930,9 @@ mod tests {
         let by_tag = |tag: u32| caps.iter().filter(|t| t.tag == tag).map(area).sum::<f64>();
         let post = by_tag(20);
         assert!((post - 0.003 * 0.01016).abs() < 1e-12, "{post}");
-        assert!((by_tag(10) - 0.02 * 0.01016).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(by_tag(10), 0.02 * 0.01016, epsilon = 1e-12);
         assert!((by_tag(11) - 0.015 * 0.01016 + post).abs() < 1e-12);
-        assert!((by_tag(12) - 0.02 * 0.01016).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(by_tag(12), 0.02 * 0.01016, epsilon = 1e-12);
         // Ports (open faces) are clipped, not capped.
         assert!(caps.iter().all(|t| t.tag < 30));
         assert!(cut.tris.iter().any(|t| t.tag == 30));

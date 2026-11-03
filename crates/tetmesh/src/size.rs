@@ -445,12 +445,12 @@ mod tests {
         assert_eq!(f.size(pt(20.0, 20.0, 20.0)), 2.0);
         assert_eq!(f.size(pt(10.5, 0.0, 0.0)), 0.25);
         assert_eq!(f.size(pt(0.2, 10.2, 0.0)), 1.0);
-        assert!((f.size(pt(0.2, 10.2, 1.0)) - 1.5).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(f.size(pt(0.2, 10.2, 1.0)), 1.5, epsilon = 1e-12);
         assert_eq!(f.finest(), 0.25);
         // Graded: the size never changes faster than the growth rate.
         let pts: Vec<Point3> = (0..400).map(|i| pt(-5.0 + 0.05 * i as f64, 1.0, 1.0)).collect();
         for w in pts.windows(2) {
-            assert!((f.size(w[1]) - f.size(w[0])).abs() <= 0.5 * 0.05 + 1e-12);
+            approx::assert_abs_diff_eq!(f.size(w[1]), f.size(w[0]), epsilon = 0.5 * 0.05 + 1e-12);
         }
         // Divisions follow it: a line through the box is cut finer inside.
         let line = [pt(-4.0, 1.0, 1.0), pt(6.0, 1.0, 1.0)];

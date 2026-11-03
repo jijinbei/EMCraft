@@ -208,8 +208,8 @@ mod tests {
         assert!(!a.is_log(), "a range through zero stays linear");
         // Pixels and values map back and forth on a log scale: 10 in the middle of 1..100.
         let l = Layout { width: 300, height: 200, plane: [0.0, 0.0, 200.0, 100.0], x: (1.0, 100.0), y: (0.0, 1.0), log: [true, false] };
-        assert!((l.to_pixels([10.0, 0.0])[0] - 100.0).abs() < 1e-9);
-        assert!((l.x_at(100.0).unwrap_or(0.0) - 10.0).abs() < 1e-9);
+        approx::assert_abs_diff_eq!(l.to_pixels([10.0, 0.0])[0], 100.0, epsilon = 1e-9);
+        approx::assert_abs_diff_eq!(l.x_at(100.0).unwrap_or(0.0), 10.0, epsilon = 1e-9);
         let q = l.to_axes([150.0, 50.0]).unwrap_or_default();
         assert!((q[0] - 10f64.powf(1.5)).abs() < 1e-9 && (q[1] - 0.5).abs() < 1e-12);
     }

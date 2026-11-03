@@ -82,9 +82,9 @@ mod tests {
     #[test]
     fn tabulated_zeros_and_values() {
         // Abramowitz & Stegun, Table 9.5; J₀(1) = 0.7651976865579666.
-        assert!((zeros(|x| j(0, x), 1, 20.0)[0] - 2.404825557695773).abs() < 1e-12);
-        assert!((zeros(|x| jp(1, x), 1, 20.0)[0] - 1.841183781340659).abs() < 1e-12);
-        assert!((j(0, 1.0) - 0.7651976865579666).abs() < 1e-14);
+        approx::assert_abs_diff_eq!(zeros(|x| j(0, x), 1, 20.0)[0], 2.404825557695773, epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(zeros(|x| jp(1, x), 1, 20.0)[0], 1.841183781340659, epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(j(0, 1.0), 0.7651976865579666, epsilon = 1e-14);
         assert!((j(1, -2.0) + j(1, 2.0)).abs() < 1e-16 && j(2, 0.0) == 0.0);
     }
 }

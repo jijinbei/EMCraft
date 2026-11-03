@@ -724,7 +724,7 @@ mod tests {
         let s = read(&package(&model(&res, "<item objectid=\"3\" transform=\"1 0 0 0 1 0 0 0 1 1 0 0\"/>"))).unwrap();
         assert!((s[0].positions[1] - Point3::new(3e-3, 0.0, 0.0)).norm() < 1e-15, "{:?}", s[0].positions[1]);
         assert!((s[0].positions[5] - Point3::new(1e-3, 2e-3, 0.0)).norm() < 1e-15, "{:?}", s[0].positions[5]);
-        assert!((volume(&s[0]) - 16.0 * 1e-9 / 6.0).abs() < 1e-19);
+        approx::assert_abs_diff_eq!(volume(&s[0]), 16.0 * 1e-9 / 6.0, epsilon = 1e-19);
     }
 
     #[test]

@@ -444,7 +444,7 @@ mod tests {
         rev.sections.reverse();
         let f = 10.0e9;
         let (s11, s21) = fwd.solve(f, 60).unwrap();
-        assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-10);
+        approx::assert_abs_diff_eq!(s11.norm_sqr() + s21.norm_sqr(), 1.0, epsilon = 1e-10);
         let (_, s12) = rev.solve(f, 60).unwrap();
         assert!((s21 - s12).norm() < 1e-10);
         // An inductive iris reflects, and more for a narrower one.
@@ -465,7 +465,7 @@ mod tests {
         let (s11, s21) = fwd.solve(f, 60).unwrap();
         let (_, s12) = rev.solve(f, 60).unwrap();
         assert!((s21 - s12).norm() < 1e-10);
-        assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-10);
+        approx::assert_abs_diff_eq!(s11.norm_sqr() + s21.norm_sqr(), 1.0, epsilon = 1e-10);
     }
 
     #[test]
@@ -481,7 +481,7 @@ mod tests {
         let iris = ESection { length: 0.001, y0: (b - 0.004) / 2.0, height: 0.004, ..full(0.0) };
         let line = EPlaneLine { a: A, sections: vec![full(0.01), iris, full(0.01)] };
         let (r, t) = line.solve(10.0e9, 80).unwrap();
-        assert!((r.norm_sqr() + t.norm_sqr() - 1.0).abs() < 1e-10);
+        approx::assert_abs_diff_eq!(r.norm_sqr() + t.norm_sqr(), 1.0, epsilon = 1e-10);
         assert!(r.norm() > 0.1, "{r}");
         let (r2, _) = line.solve(10.0e9, 160).unwrap();
         assert!((r2 - r).norm() < 5e-3, "{}", (r2 - r).norm());

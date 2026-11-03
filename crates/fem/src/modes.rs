@@ -279,11 +279,11 @@ mod tests {
         let names: Vec<String> = modes.iter().map(Mode::name).collect();
         assert_eq!(names, ["TE10", "TE20", "TE01", "TE11", "TM11"]);
         let te10 = modes[0];
-        assert!((te10.cutoff() - PI / a).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(te10.cutoff(), PI / a, epsilon = 1e-12);
         let e = te10.field(a / 2.0, 0.3 * b);
         assert!(e[0].abs() < 1e-15 && (e[1] - 1.0).abs() < 1e-15);
         let shifted = te10.at(0.005, 0.0);
-        assert!((shifted.field(0.005 + a / 2.0, 0.1 * b)[1] - 1.0).abs() < 1e-15);
+        approx::assert_abs_diff_eq!(shifted.field(0.005 + a / 2.0, 0.1 * b)[1], 1.0, epsilon = 1e-15);
     }
 
     #[test]
@@ -350,7 +350,7 @@ mod tests {
         let g = m.gamma_lossy(k2);
         assert!(g.re > 0.0 && g.im > 0.0 && (g * g - (kc * kc - k2)).norm() < 1e-9 * kc * kc);
         // α ≈ k″²/(2β) to first order.
-        assert!((g.re - 0.02 * kc * kc / (3f64.sqrt() * kc)).abs() < 1e-3 * g.re);
+        approx::assert_abs_diff_eq!(g.re, 0.02 * kc * kc / (3f64.sqrt() * kc), epsilon = 1e-3 * g.re);
         assert_eq!(m.kappa_lossy(k2), Some(g));
         assert!(m.kappa_lossy(C::new(kc * kc, 0.0)).is_none());
         let tm = Mode { kind: Kind::Tm, m: 1, n: 1, aperture: Aperture::Rect { a: 0.02, b: 0.01, x0: 0.0, y0: 0.0 } };
@@ -365,7 +365,7 @@ mod tests {
         let modes = lowest_circular(r, 9);
         let names: Vec<String> = modes.iter().map(Mode::name).collect();
         assert_eq!(names, ["TE11c", "TE11s", "TM01", "TE21c", "TE21s", "TE01", "TM11c", "TM11s", "TE31c"]);
-        assert!((modes[0].cutoff() * r - 1.841183781340659).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(modes[0].cutoff() * r, 1.841183781340659, epsilon = 1e-12);
         // The dominant mode points along +y at the centre (like the rectangle's TE₁₀).
         let e = modes[0].field(0.0, 0.0);
         assert!(e[0].abs() < 1e-15 && e[1] > 0.0);

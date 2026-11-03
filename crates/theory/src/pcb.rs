@@ -528,7 +528,7 @@ mod tests {
         let (s11, s21) = s_parameters(&r, 0.25e9, 50.0).unwrap();
         assert!(s11.norm() < 1e-14);
         assert!((s21 - C::new(0.0, -1.0)).norm() < 1e-14);
-        assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-14);
+        approx::assert_abs_diff_eq!(s11.norm_sqr() + s21.norm_sqr(), 1.0, epsilon = 1e-14);
         assert!(s_parameters(&r, f64::NAN, 50.0).is_err());
     }
 
@@ -687,8 +687,8 @@ mod pair_tests {
         };
         let p = pairs(&b, "A", "GND").unwrap();
         assert_eq!(p.len(), 1);
-        assert!((p[0].length - 0.02).abs() < 1e-12);
-        assert!((p[0].gap - 0.0007).abs() < 1e-12);
+        approx::assert_abs_diff_eq!(p[0].length, 0.02, epsilon = 1e-12);
+        approx::assert_abs_diff_eq!(p[0].gap, 0.0007, epsilon = 1e-12);
         assert_eq!(p[0].a[0], [0.01, 0.]);
         b.segments[1].layer = "bottom".into();
         assert!(pairs(&b, "A", "GND").unwrap().is_empty());

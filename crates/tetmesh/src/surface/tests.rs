@@ -123,7 +123,7 @@ fn cube_is_a_valid_boundary_with_its_edges_as_features() {
     assert_eq!(s.shells().len(), 1);
     let sh = s.shells()[0];
     assert_eq!((sh.genus, sh.triangles, sh.vertices, sh.void), (0, 12, 8, false));
-    assert!((s.volume() - 8.0).abs() < 1e-12);
+    approx::assert_abs_diff_eq!(s.volume(), 8.0, epsilon = 1e-12);
     assert_eq!(s.feature_edges().len(), 12);
     assert!(s.feature_edges().iter().all(|e| e.kind == FeatureKind::FaceBoundary && (e.angle - 90.0).abs() < 1e-9));
     assert_eq!(s.feature_corners(), (0..8).collect::<Vec<u32>>());
@@ -149,7 +149,7 @@ fn a_triangle_soup_welds_into_the_solid() {
     assert_eq!(s.source_vertex().len(), 8);
     assert_eq!(s.source_triangle(), (0..12).collect::<Vec<u32>>());
     assert_eq!(s.tri_face(), c.2.as_slice());
-    assert!((s.volume() - 27.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(s.volume(), 27.0, epsilon = 1e-9);
 
     // Tessellation noise below the tolerance welds; with exact welding it leaves holes.
     let mut noisy = soup(&c);
@@ -200,7 +200,7 @@ fn a_void_is_a_negative_shell_inside_another() {
     let s = prepare(&merge(cube([0.0; 3], 3.0), inner)).unwrap();
     assert_eq!(s.shells().len(), 2);
     assert!(!s.shells()[0].void && s.shells()[1].void);
-    assert!((s.volume() - 26.0).abs() < 1e-9);
+    approx::assert_abs_diff_eq!(s.volume(), 26.0, epsilon = 1e-9);
     assert!(s.tri_shell()[..12].iter().all(|&x| x == 0) && s.tri_shell()[12..].iter().all(|&x| x == 1));
 
     // Two separate solids are two outer shells.

@@ -216,7 +216,7 @@ fn a_magnetically_lossy_cavity_has_q_of_its_loss_tangent() {
     assert!(mode.q_dielectric.is_none());
     let qm = mode.q_magnetic.unwrap();
     assert!((qm / q_exact - 1.0).abs() < 1e-7, "{qm} {q_exact}");
-    assert!((mode.q().unwrap() - qm).abs() < 1e-9 * qm);
+    approx::assert_abs_diff_eq!(mode.q().unwrap(), qm, epsilon = 1e-9 * qm);
     // Both losses: 1/Q = 1/Q_d + 1/Q_m, shared by the powers each absorbs (equal tangents,
     // equal electric and magnetic energies at resonance: equal shares).
     let both = Material::new("fill", 1.0, 2.25).unwrap().with_magnetic_loss_tangent(tan_m).unwrap().with_loss_tangent(tan_m).unwrap();
