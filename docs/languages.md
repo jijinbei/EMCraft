@@ -70,6 +70,48 @@ changes at once and the choice is kept with the preferences (`language` in `pref
   language whose script egui's fonts lack needs a fallback font too (`crates/ui-egui/src/fonts.rs`
   and ATTRIBUTION.md).
 
+## How the Japanese is written
+
+One voice across the window, kept by the checks below where a machine can tell.
+
+- **Labels and buttons** are nouns or 「〜を…」: 適用、開く、PCB を読み込む、比較用に保持 — never
+  〜する.
+- **Tooltips, legends and findings** end in a noun or the plain form, usually without 。:
+  「配線の下に参照銅箔がない」「模式図のみ — 電磁界とノイズ電圧は計算していない」.
+- **です・ます only where the window speaks to the user**: messages, empty pages, the steps of a
+  guide (「PCB を読み込むかサンプルを開き、配線をクリックしてください。」).
+- **Command labels, descriptions and parameters** are in the plain form (〜する。〜しない。),
+  identifiers and values in backticks: `split`、`true`、`<port>:<k>`.
+- **Spacing**: a half-width space between Latin letters or digits and Japanese, and before a
+  unit: 3D ビュー、PCB を読み込む、既定 40 mm、90°. The one exception is Sパラメータ (a space
+  before it after Japanese: の Sパラメータ). The middle dot ・ joins short nouns without
+  spaces; the English 「 · 」 stays as it is.
+- **Punctuation**: 「：」 between a label and its value, 「、」 between list items, 「〜」
+  (U+301C) for ranges — never ～ (U+FF5E) —, 「」 only to name a control, sparingly.
+- **Nothing added, nothing dropped**: a caveat in the English (「計算していない」「規格適合の判定
+  ではない」) stays in the Japanese; no instruction the English lacks.
+- **One word for one thing**, across the window:
+
+  | English | Japanese |
+  |---|---|
+  | S-parameters | Sパラメータ |
+  | sweep, refine | 掃引、細分化 |
+  | excitation, source | 励振、波源 |
+  | field | 電磁界 |
+  | element order, points | 要素次数、点数 |
+  | estimate | 見積もり |
+  | zoom | ズーム |
+  | default | 既定 |
+  | route / trace, net | 配線、ネット |
+  | reference copper / plane, ground | 参照銅箔／参照プレーン、GND |
+  | return path | 帰路 |
+  | inspect, geometry check | 診断、形状チェック |
+  | electric / magnetic coupling | 電界結合／磁界結合 |
+  | noise source, receiving trace | ノイズ源、受信側 |
+
+- A generic English key (`Source`, `Back`, `Zoom`) keeps its general meaning; a feature that
+  needs its own word gets its own key (`Noise source`).
+
 ## The checks that keep it whole
 
 `cargo test -p emcraft-ui-egui lang::` (`crates/ui-egui/src/lang/tests.rs`):
@@ -77,6 +119,8 @@ changes at once and the choice is kept with the preferences (`language` in `pref
 - every engine command has a Japanese label, description and parameter descriptions, with no
   command or parameter that does not exist; every sample has its description;
 - each translation has the same placeholders as its English;
+- the Japanese keeps its style: spaces between Latin letters or digits and Japanese, no ～, no
+  です・ます in a command's texts (`the_japanese_keeps_its_style`);
 - **a tour of the window in Japanese** draws every page — the start page, every settings
   section, the prompts and menus, ten models with each kind of result (every view, the steps,
   each solver), every command's dialog (some refused), a job running, the search — recording

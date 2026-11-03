@@ -42,13 +42,13 @@ fn callouts(ui: &egui::Ui, rect: Rect, camera: &Camera, diagram: &Diagram, names
     let t = Tokens::get();
     let labels = [
         (
-            format!("{}: {source} ({})", tr("Source"), diagram.route_layer),
+            format!("{}: {source} ({})", tr("Noise source"), diagram.route_layer),
             t.warning,
             pos2(rect.left() + 12., rect.top() + 12.),
             egui::Align2::LEFT_TOP,
         ),
         (
-            format!("{}: {target} ({})", tr("Receiver"), diagram.route_layer),
+            format!("{}: {target} ({})", tr("Receiving trace"), diagram.route_layer),
             t.accent,
             pos2(rect.right() - 12., rect.top() + 42.),
             egui::Align2::RIGHT_TOP,
@@ -114,7 +114,7 @@ pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 action(out, json!({"pick_victim": role}));
             }
         }
-        ui.label(tr("Receiver"));
+        ui.label(tr("Receiving trace"));
         egui::ComboBox::from_id_salt("pcb_receiver").selected_text(c.victim.as_deref().unwrap_or("—")).show_ui(ui, |ui| {
             let nets: std::collections::BTreeSet<_> = app
                 .session
