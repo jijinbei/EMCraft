@@ -108,17 +108,34 @@ impl Device {
     }
 }
 
+/// The last sweep's system, when it is the model's still: the model unchanged since it was
+/// solved (the same revision), the same `order`, its reference planes the ones it was built
+/// with. A sweep run again on it skips the assembly (and its ordering, kept in the system).
+fn reusable(s: &Session, order: emcraft_fem::Order) -> Option<Arc<Driven>> {
+    let sw = s.results.sweep.as_ref()?;
+    let planes = sw.driven.ports.iter().map(|p| p.deembed).eq(sw.deembed.iter().copied());
+    (s.solved_revision == Some(s.revision) && sw.order == order && planes).then(|| sw.driven.clone())
+}
+
 pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     let freqs = frequencies(s, p)?;
     let order = p.order()?;
-    let mut driven = Driven::new(&s.model, order)?;
+    let asked = p.choice("solver").or(LinearSolver::Auto)?;
     // Second-order systems too large to factor whole are solved iteratively by default.
     let two = order == emcraft_fem::Order::Two;
-    driven.iterative = match p.choice("solver").or(LinearSolver::Auto)? {
-        LinearSolver::Auto => two && driven.dofs.unknowns > emcraft_solver::driven::MAX_UNKNOWNS,
-        LinearSolver::Direct => false,
-        LinearSolver::Iterative if two => true,
-        LinearSolver::Iterative => return Err(p.error("solver", "iterative needs second-order elements (`order` 2)")),
+    let iterative = |unknowns: usize| match asked {
+        LinearSolver::Auto => Ok(two && unknowns > emcraft_solver::driven::MAX_UNKNOWNS),
+        LinearSolver::Direct => Ok(false),
+        LinearSolver::Iterative if two => Ok(true),
+        LinearSolver::Iterative => Err(p.error("solver", "iterative needs second-order elements (`order` 2)")),
+    };
+    let driven = match reusable(s, order) {
+        Some(d) if d.iterative == iterative(d.dofs.unknowns)? => d,
+        _ => {
+            let mut d = Driven::new(&s.model, order)?;
+            d.iterative = iterative(d.dofs.unknowns)?;
+            Arc::new(d)
+        }
     };
     // Three frequencies or more: the reduced-basis sweep, unless asked for a full solve at each.
     let fast = match p.choice("sweep").or(Strategy::Fast)? {
@@ -128,7 +145,7 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     let results = if fast { fast_sweep(&driven, &freqs)? } else { full_sweep(&driven, &freqs)? };
     let full = in_full(&results);
     let unknowns = driven.dofs.unknowns;
-    s.results.sweep = Some(Arc::new(Sweep::new(order, Arc::new(driven), results)));
+    s.results.sweep = Some(Arc::new(Sweep::new(order, driven, results)));
     let mut reply = sparameter_table(s)?;
     reply["unknowns"] = json!(unknowns);
     reply["order"] = json!(order.as_u8());
