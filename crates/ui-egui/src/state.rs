@@ -244,7 +244,7 @@ pub struct ViewState {
 pub struct Replies {
     pub pcb: Option<emcraft_engine::pcb::Inspection>,
     pub port_modes: Option<Value>,
-    pub compare: Option<Value>,
+    pub compare: Option<emcraft_engine::Comparison>,
     /// What the import dialog's file holds (`geometry.import.inspect`).
     pub import: Option<ImportProbe>,
 }

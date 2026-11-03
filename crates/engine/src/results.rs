@@ -101,6 +101,29 @@ pub(crate) fn sparameter_table(s: &Session) -> Result<Value> {
     Ok(reply)
 }
 
+/// `results.compare`'s reply: the sweep against its reference, frequency by frequency.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Comparison {
+    /// The reference's name (the exact TE10 solution, mode matching).
+    pub reference: String,
+    pub points: Vec<ComparePoint>,
+    /// The worst |S − S_ref| over the points.
+    pub worst: f64,
+}
+
+/// One frequency of a [`Comparison`] (display units): the sweep's S11 and S21, the reference's
+/// and their differences |S − S_ref|.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ComparePoint {
+    pub frequency: f64,
+    pub s11: crate::Wave,
+    pub s21: crate::Wave,
+    pub exact_s11: crate::Wave,
+    pub exact_s21: crate::Wave,
+    pub error_s11: f64,
+    pub error_s21: f64,
+}
+
 pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
     let modes = p.integer("modes", 10..=1000).or(view::MODE_MATCHING_MODES)?;
     let sw = s.results.sweep()?;
@@ -118,15 +141,18 @@ pub fn compare(s: &mut Session, p: &Params) -> Result<Value> {
             let (f11, f21) = (r.s.get(0, 0).unwrap_or_default(), r.s.get(1, 0).unwrap_or_default());
             let (e11, e21) = ((f11 - s11).norm(), (f21 - s21).norm());
             worst = worst.max(e11).max(e21);
-            Ok(json!({
-                "frequency": s.show_frequency(r.frequency),
-                "s11": complex(f11), "s21": complex(f21),
-                "exact_s11": complex(s11), "exact_s21": complex(s21),
-                "error_s11": e11, "error_s21": e21,
-            }))
+            Ok(ComparePoint {
+                frequency: s.show_frequency(r.frequency),
+                s11: crate::Wave::of(f11),
+                s21: crate::Wave::of(f21),
+                exact_s11: crate::Wave::of(s11),
+                exact_s21: crate::Wave::of(s21),
+                error_s11: e11,
+                error_s21: e21,
+            })
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(json!({"reference": reference.label(), "points": rows, "worst": worst}))
+    serde_json::to_value(Comparison { reference: reference.label().to_owned(), points: rows, worst }).map_err(EngineError::failed)
 }
 
 /// The factor e^{γd} port `port` de-embedded by d moves a wave by at `frequency` (Hz), γ its first

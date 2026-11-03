@@ -184,7 +184,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
             "grid": s.grid.iter().map(Vec::len).collect::<Vec<_>>(), "free": s.variables.get(app.views.study.slice.free), "at": app.views.study.slice.at,
         })),
         "port_modes": app.replies.port_modes.is_some(),
-        "compare": app.replies.compare.as_ref().and_then(|c| c.get("worst")).cloned(),
+        "compare": app.replies.compare.as_ref().map(|c| c.worst),
         "frames": app.frames,
         "workflow": crate::steps::inspect(app),
         "view3d": app.view3d.inspect(app.session.display().length),

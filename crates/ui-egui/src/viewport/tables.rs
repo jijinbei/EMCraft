@@ -173,7 +173,7 @@ pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.label(
         egui::RichText::new(trf(
             "Against {reference} — worst |S − S_ref| = {worst}",
-            args!(reference = reply["reference"].as_str().unwrap_or("?"), worst = num(&reply["worst"], 6)),
+            args!(reference = reply.reference, worst = format!("{:.6}", reply.worst)),
         ))
         .size(t.font_heading),
     );
@@ -184,14 +184,12 @@ pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.text(Style::Strong, Raw(h));
             }
             ui.end_row();
-            for r in reply.get("points").and_then(Value::as_array).into_iter().flatten() {
-                ui.label(num(&r["frequency"], 4));
-                ui.label(num(&r["s11"]["mag"], 5));
-                ui.label(num(&r["exact_s11"]["mag"], 5));
-                ui.label(num(&r["s21"]["mag"], 5));
-                ui.label(num(&r["exact_s21"]["mag"], 5));
-                ui.label(format!("{:.2e}", r["error_s11"].as_f64().unwrap_or(f64::NAN)));
-                ui.label(format!("{:.2e}", r["error_s21"].as_f64().unwrap_or(f64::NAN)));
+            for r in &reply.points {
+                for (x, digits) in [(r.frequency, 4), (r.s11.mag, 5), (r.exact_s11.mag, 5), (r.s21.mag, 5), (r.exact_s21.mag, 5)] {
+                    ui.label(format!("{x:.digits$}"));
+                }
+                ui.label(format!("{:.2e}", r.error_s11));
+                ui.label(format!("{:.2e}", r.error_s21));
                 ui.end_row();
             }
         });

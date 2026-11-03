@@ -78,7 +78,7 @@ impl EmcraftApp {
                 self.view = View::Tdr;
             }
             "results.compare" => {
-                self.replies.compare = Some(reply.clone());
+                self.replies.compare = serde_json::from_value(reply.clone()).ok();
                 self.view = View::Compare;
             }
             "study.sweep" | "study.optimize" => {
