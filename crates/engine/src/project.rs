@@ -33,20 +33,16 @@ pub struct Snapshot {
 pub struct Identity {
     pub path: Option<String>,
     pub sample: Option<String>,
-    /// The history as last saved or opened.
-    pub saved: Vec<Step>,
-    /// The runs as last saved or opened.
-    pub saved_runs: Vec<Run>,
+    /// The project as last saved or opened.
+    pub(crate) saved: crate::session::Saved,
     pub runs: Vec<Run>,
-    /// How its results were looked at, and as last saved or opened.
+    /// How its results were looked at.
     pub views: crate::views::Views,
-    pub saved_views: crate::views::Views,
     /// Its analysis history ([`crate::archive`]): the solves kept, the last id given, the one
-    /// restored, and as last saved or opened.
+    /// restored.
     pub archive: Vec<crate::archive::Archived>,
     pub archive_next: u32,
     pub archive_current: Option<u32>,
-    pub saved_archive: Vec<crate::archive::Mark>,
     pub results: crate::Results,
     /// The revision the results were solved at, and whether that was the model's revision then
     /// (they come back current; else stale).
@@ -77,14 +73,11 @@ impl Session {
             path: self.path.clone(),
             sample: self.sample.clone(),
             saved: self.saved.clone(),
-            saved_runs: self.saved_runs.clone(),
             runs: self.runs.clone(),
             views: self.views.clone(),
-            saved_views: self.saved_views.clone(),
             archive: self.archive.clone(),
             archive_next: self.archive_next,
             archive_current: self.archive_current,
-            saved_archive: self.saved_archive.clone(),
             results: self.results.clone(),
             solved_revision: self.solved_revision,
             current: self.solved_revision == Some(self.revision),
@@ -102,14 +95,11 @@ impl Session {
                 path: std::mem::replace(&mut self.path, back.path),
                 sample: std::mem::replace(&mut self.sample, back.sample),
                 saved: std::mem::replace(&mut self.saved, back.saved),
-                saved_runs: std::mem::replace(&mut self.saved_runs, back.saved_runs),
                 runs: std::mem::replace(&mut self.runs, back.runs),
                 views: std::mem::replace(&mut self.views, back.views),
-                saved_views: std::mem::replace(&mut self.saved_views, back.saved_views),
                 archive: std::mem::replace(&mut self.archive, back.archive),
                 archive_next: std::mem::replace(&mut self.archive_next, back.archive_next),
                 archive_current: std::mem::replace(&mut self.archive_current, back.archive_current),
-                saved_archive: std::mem::replace(&mut self.saved_archive, back.saved_archive),
                 results: std::mem::replace(&mut self.results, back.results),
                 solved_revision: self.solved_revision,
                 current,
@@ -497,10 +487,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     let mut stored = crate::store::read(std::path::Path::new(path))?;
     let mut fresh = s.fresh();
     // The history replayed (each step checked as it runs), its meshing left to the file's mesh.
-    fresh.mesher_off = true;
-    let replayed = fresh.run_steps(&stored.history);
-    fresh.mesher_off = false;
-    replayed?;
+    fresh.replay(&stored.history, crate::session::Meshing::Recorded)?;
     let mesh = stored.mesh(fresh.model.materials.len()).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     fresh.model.mesh = mesh.map(std::sync::Arc::new);
     let (results, current, archived, dropped) = stored.results(&fresh.model);
@@ -527,10 +514,12 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
             // read is unlike anything recovered (a baseline no history equals).
             let saved = crate::store::read(std::path::Path::new(o)).unwrap_or_else(|_| crate::store::Stored::unreadable());
             fresh.path = Some(o.to_owned());
-            fresh.saved = saved.history;
-            fresh.saved_runs = saved.runs;
-            fresh.saved_views = saved.views;
-            fresh.saved_archive = crate::archive::marks(&saved.archive);
+            fresh.saved = crate::session::Saved {
+                history: saved.history,
+                runs: saved.runs,
+                views: saved.views,
+                archive: crate::archive::marks(&saved.archive),
+            };
         }
     }
     s.replace_with(fresh);

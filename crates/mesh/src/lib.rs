@@ -61,6 +61,24 @@ fn too_large(estimate: f64) -> Result<()> {
 /// built on it is meaningful.
 pub const MIN_TET_SHAPE: f64 = 1e-12;
 
+/// Checks a mesh from outside the mesher (a project file's) for a model of `materials`
+/// materials: its sizes, indices and numbers ([`Mesh::check`]) and its tetrahedra's shapes
+/// ([`check_tetrahedra`]) — what any mesh the solvers take must pass.
+///
+/// ```
+/// use emcraft_model::{Mesh, Point3};
+/// let p = |x, y, z| Point3::new(x, y, z);
+/// let mut m = Mesh { nodes: vec![p(0., 0., 0.), p(1., 0., 0.), p(0., 1., 0.), p(0., 0., 1.)], tets: vec![[0, 1, 2, 3]], tet_material: vec![0], ..Mesh::default() };
+/// assert!(emcraft_mesh::check_mesh(&m, 1).is_ok());
+/// m.tets[0].swap(0, 1); // inverted
+/// assert!(emcraft_mesh::check_mesh(&m, 1).is_err());
+/// assert!(emcraft_mesh::check_mesh(&m, 0).is_err()); // a material the model does not have
+/// ```
+pub fn check_mesh(mesh: &Mesh, materials: usize) -> std::result::Result<(), String> {
+    mesh.check(materials)?;
+    check_tetrahedra(mesh).map_err(|e| e.to_string())
+}
+
 /// Refuses a mesh with a degenerate or inverted tetrahedron (corners missing or not finite, its
 /// volume not positive, or flat to rounding: [`MIN_TET_SHAPE`]), so it never reaches a solver.
 /// The error names the first such tetrahedron and where it lies.

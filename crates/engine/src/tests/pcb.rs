@@ -1,4 +1,5 @@
 use super::*;
+use crate::Session;
 use serde_json::json;
 #[test]
 fn board_import_is_embedded_saved_undoable_and_diagnostics_are_explicit() {

@@ -378,9 +378,7 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
     let palette = crate::theme::palette();
     let font = FontId::proportional(t.font_small);
     for r in rows.iter().rev() {
-        let Some(id) = r["id"].as_u64().and_then(|n| u32::try_from(n).ok()) else { continue };
-        let current = r["current"] == json!(true);
-        let pinned = r["pinned"] == json!(true);
+        let (id, current, pinned) = (r.id, r.current, r.pinned);
         let drawn = compare.iter().position(|c| *c == id);
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
         let resp = ui.hit(rect, Handle::HistoryRun(id), Sense::click()).union(resp);
@@ -397,11 +395,10 @@ fn history(app: &EmcraftApp, compare: &mut Vec<u32>, ui: &mut egui::Ui, out: &mu
         let ink = if current { t.text } else { t.text_dim };
         let star = if pinned { " ★" } else { "" };
         p.text(pos2(rect.left() + 26.0, rect.top() + 9.0), Align2::LEFT_CENTER, format!("#{id}{star}"), FontId::proportional(t.font_body), ink);
-        let changes: Vec<&str> = r["changes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-        let what = if changes.is_empty() { tr("as it was").to_owned() } else { changes.join(", ") };
+        let what = if r.changes.is_empty() { tr("as it was").to_owned() } else { r.changes.join(", ") };
         let line = p.with_clip_rect(rect.shrink2(vec2(4.0, 0.0)));
         line.text(pos2(rect.left() + 26.0, rect.bottom() - 9.0), Align2::LEFT_CENTER, &what, font.clone(), t.text_dim);
-        if let Some(db) = r["best_s11_db"].as_f64() {
+        if let Some(db) = r.best_s11_db {
             p.text(pos2(rect.right() - 6.0, rect.top() + 9.0), Align2::RIGHT_CENTER, format!("{db:.1} dB"), font.clone(), ink);
         }
         let stored = app.session.archive().iter().any(|a| a.id == id && !a.in_memory());
@@ -441,22 +438,20 @@ fn swatch(p: &egui::Painter, c: egui::Pos2, current: bool, drawn: Option<usize>,
 /// A kept solve's tip: its label, its frequencies, how it was made (how long, on what, how
 /// large), its deepest |S11| and where, and for one read back from the project file (`stored`)
 /// that restoring it solves it again.
-fn history_tip(app: &EmcraftApp, r: &Value, stored: bool) -> String {
-    let mut tip = trf("{n} frequencies", args!(n = r["points"].as_u64().unwrap_or(0)));
-    if let Some(label) = r["label"].as_str() {
+fn history_tip(app: &EmcraftApp, r: &emcraft_engine::archive::HistoryRow, stored: bool) -> String {
+    let mut tip = trf("{n} frequencies", args!(n = r.points.unwrap_or(0)));
+    if let Some(label) = &r.label {
         tip = format!("{label}\n{tip}");
     }
-    let made = &r["provenance"];
-    if let (Some(seconds), Some(device)) = (made["seconds"].as_f64(), made["device"].as_str()) {
-        tip = format!("{tip}\n{}", trf("solved in {seconds} s on {device}", args!(seconds = format!("{seconds:.1}"), device = device)));
-    }
-    if let (Some(unknowns), Some(tets)) = (made["unknowns"].as_u64(), made["tetrahedra"].as_u64()) {
+    let made = &r.provenance;
+    tip = format!("{tip}\n{}", trf("solved in {seconds} s on {device}", args!(seconds = format!("{:.1}", made.seconds), device = made.device.id())));
+    if let (Some(unknowns), Some(tets)) = (made.unknowns, made.tetrahedra) {
         tip = format!("{tip}\n{}", trf("{unknowns} unknowns, {tets} tetrahedra", args!(unknowns = unknowns, tets = tets)));
     }
     if stored {
         tip = format!("{tip}\n{}", tr("Saved: restore solves it again"));
     }
-    let (Some(db), Some(at)) = (r["best_s11_db"].as_f64(), r["best_at"].as_f64()) else { return tip };
+    let (Some(db), Some(at)) = (r.best_s11_db, r.best_at) else { return tip };
     let unit = app.session.display().frequency.symbol();
     let deepest = trf("deepest |S11| {db} dB at {f} {unit}", args!(db = format!("{db:.1}"), f = format!("{at:.4}"), unit = unit));
     format!("{tip}\n{deepest}")

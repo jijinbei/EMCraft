@@ -334,7 +334,7 @@ struct Reply {
 
 pub fn adapt(s: &mut Session, p: &Params) -> Result<Value> {
     let (opts, mut refine) = options(s, p)?;
-    if s.mesher_off {
+    if s.meshing == crate::session::Meshing::Recorded {
         return Ok(serde_json::json!({"meshed": false}));
     }
     let mut last: Option<(Mesh, Measure)> = None;

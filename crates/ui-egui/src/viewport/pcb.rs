@@ -28,14 +28,17 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let net =
         app.session.views().pcb_net.as_deref().filter(|n| app.session.model().pcb.as_ref().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)));
     let ready = net.is_some_and(|n| report(app, &app.views.pcb, n).is_some());
-    egui::Panel::top("pcb_steps").show_separator_line(false).frame(egui::Frame::NONE.fill(Tokens::get().viewport_top).inner_margin(6)).show(
-        ui,
-        |ui| {
-            ui.horizontal_wrapped(|ui| {
-                if ui.selectable_label(app.view == View::Home, tr("Home")).clicked() {
-                    out.push(Action::ShowView(View::Home));
-                }
-                for (i, stage) in Stage::ALL.into_iter().enumerate() {
+    let t = Tokens::get();
+    egui::Panel::top("pcb_steps").show_separator_line(false).frame(egui::Frame::NONE.fill(t.viewport_top).inner_margin(6)).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            if ui.selectable_label(app.view == View::Home, tr("Home")).clicked() {
+                out.push(Action::ShowView(View::Home));
+            }
+            // Each stage open once the one before it is done: the board, a route on it, a report.
+            let list: Vec<crate::steps::Pill> = Stage::ALL
+                .into_iter()
+                .enumerate()
+                .map(|(i, stage)| {
                     let enabled = match stage {
                         Stage::Board => true,
                         Stage::Net => loaded,
@@ -45,54 +48,33 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                     let done = match stage {
                         Stage::Board => loaded,
                         Stage::Net => net.is_some(),
-                        _ => ready,
+                        Stage::Settings | Stage::Inspect | Stage::Results => ready,
                     };
-                    let t = Tokens::get();
-                    let label = format!("{} {}", i + 1, shown(stage));
-                    let galley =
-                        ui.painter().layout_no_wrap(label.clone(), FontId::proportional(t.font_body), if enabled { t.text } else { t.text_dim });
-                    let (rect, _) = ui.allocate_exact_size(vec2(galley.size().x + 46., 30.), Sense::hover());
-                    let r = ui.interact(
-                        rect,
-                        egui::Id::new(("pcb_step", stage.id())),
-                        if enabled && !app.busy() { Sense::click() } else { Sense::hover() },
-                    );
-                    let active = app.view == View::Pcb && stage == current;
-                    ui.painter().rect(
-                        rect,
-                        12.,
-                        if active {
-                            t.accent_soft
-                        } else if r.hovered() {
-                            t.hover
-                        } else {
-                            Color32::TRANSPARENT
-                        },
-                        Stroke::new(1., if active { t.accent } else { t.border }),
-                        egui::StrokeKind::Inside,
-                    );
-                    crate::steps::mark(
-                        ui.painter(),
-                        pos2(rect.left() + 14., rect.center().y),
-                        if done {
-                            crate::steps::Status::Done
-                        } else if enabled {
-                            crate::steps::Status::Todo
-                        } else {
-                            crate::steps::Status::Waiting
-                        },
-                        &t,
-                    );
-                    ui.painter().galley(pos2(rect.left() + 28., rect.center().y - galley.size().y / 2.), galley, t.text);
-                    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label.clone()));
-                    scenario::publish_target(Handle::Choice("pcb_step", stage.id()), rect);
-                    if r.clicked() {
-                        go(out, stage);
+                    let status = match (done, enabled) {
+                        (true, _) => crate::steps::Status::Done,
+                        (false, true) => crate::steps::Status::Todo,
+                        (false, false) => crate::steps::Status::Waiting,
+                    };
+                    crate::steps::Pill {
+                        text: format!("{} {}", i + 1, shown(stage)),
+                        short: (i + 1).to_string(),
+                        said: shown(status).to_owned(),
+                        look: crate::steps::Look::Plain(status),
+                        active: app.view == View::Pcb && stage == current,
+                        enabled: enabled && !app.busy(),
+                        tip: shown(stage).to_owned(),
+                        handle: Handle::Choice("pcb_step", stage.id()),
                     }
-                }
-            });
-        },
-    );
+                })
+                .collect();
+            let row = ui.available_rect_before_wrap();
+            let row = Rect::from_min_size(row.min, vec2(row.width(), 30.));
+            if let Some(i) = crate::steps::pills(ui, row, &list) {
+                go(out, Stage::ALL[i]);
+            }
+            ui.allocate_rect(row, Sense::hover());
+        });
+    });
 }
 
 /// The PCB window: the stage's panel on the left, the board in 3D filling the rest with its top

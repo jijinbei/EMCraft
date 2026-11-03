@@ -26,7 +26,7 @@ mod panel;
 mod run;
 
 pub use bar::bar;
-pub(crate) use bar::{mark, skip_mark};
+pub(crate) use bar::{Look, Pill, mark, pills, skip_mark};
 pub(crate) use panel::field;
 pub(crate) use panel::fmt;
 pub use panel::{export_touchstone, not_needed, panel};

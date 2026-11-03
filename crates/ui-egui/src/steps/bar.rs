@@ -23,85 +23,117 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let card = ui.max_rect();
             ui.painter().add(t.card(t.toolbar).paint(card));
             scenario::publish_rect(Fixed::Steps, card);
-            let font = FontId::proportional(t.font_body);
-            let mut x = card.left() + 8.0;
-            let mut clicked = None;
-            // The steps' names when they fit, else their numbers (the names on hover).
-            let named = |i: usize, s: &StepState| format!("{} {}", i, shown(s.step));
-            let pill = |text: String| ui.painter().layout_no_wrap(text, font.clone(), t.text).size().x + 34.0 + 16.0;
-            let full: f32 = states.iter().enumerate().map(|(i, s)| pill(named(i, s))).sum();
-            let short = full > card.width() - 16.0;
-            for (i, s) in states.iter().enumerate() {
-                let text = named(i, s);
-                let g = ui.painter().layout_no_wrap(if short { i.to_string() } else { text.clone() }, font.clone(), t.text);
-                let r = Rect::from_min_size(pos2(x, card.top() + 4.0), vec2(g.size().x + 34.0, card.height() - 8.0));
-                let resp = ui.hit(r, Handle::Step(s.step), Sense::click());
-                let run_going = running && s.step == Step::Run;
-                let status = if run_going { crate::lang::tr("running") } else { shown(s.status) };
-                let mut checks: Vec<String> = s.messages.iter().map(|m| m.text.clone()).collect();
-                if let Some(e) = run_failure(app).filter(|_| s.step == Step::Run) {
-                    checks
-                        .insert(0, crate::lang::trf("the last run failed: {error}", crate::lang::args!(error = emcraft_engine::text::clip(e, 300))));
-                }
-                let unneeded = not_needed(app, s.step);
-                if let Some(why) = &unneeded {
-                    checks.insert(0, why.clone());
-                }
-                let tip = if checks.is_empty() || run_going {
-                    format!("{}: {status}", shown(s.step))
-                } else {
-                    format!("{}: {status}\n{}", shown(s.step), checks.join("\n"))
-                };
-                // A screen reader hears the step and where it stands.
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{text}: {status}")));
-                let active = app.workflow.step == Some(s.step);
-                let fill = if active {
-                    t.accent_soft
-                } else if resp.hovered() {
-                    t.hover
-                } else {
-                    Color32::TRANSPARENT
-                };
-                ui.painter().rect_filled(r, 12.0, fill);
-                ui.painter().rect_stroke(r, 12.0, Stroke::new(1.0, if active { t.accent } else { t.border }), egui::StrokeKind::Inside);
-                let c = pos2(r.left() + 14.0, r.center().y);
-                let look = match (run_going, unneeded.is_some(), s.status) {
-                    (true, _, _) => Look::Running,
-                    (false, true, Status::Done) => Look::Skipped,
-                    (false, true, status) => Look::Unneeded(status),
-                    (false, false, status) => Look::Plain(status),
-                };
-                match look {
-                    Look::Running => running_mark(ui, c, t),
-                    Look::Skipped => skip_mark(ui.painter(), c, t),
-                    Look::Unneeded(status) | Look::Plain(status) => mark(ui.painter(), c, status, t),
-                }
-                let ink = match (active, look) {
-                    (true, _) => t.selected_ink,
-                    (false, Look::Skipped | Look::Unneeded(_) | Look::Plain(Status::Waiting)) => t.text_dim,
-                    (false, _) => t.text,
-                };
-                ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, ink);
-                if resp.on_hover_text(tip).clicked() {
-                    clicked = Some(s.step);
-                }
-                x = r.right() + 4.0;
-                if i + 1 < states.len() {
-                    ui.painter().hline(x..=x + 8.0, r.center().y, Stroke::new(1.0, t.border));
-                    x += 12.0;
-                }
-            }
-            if let Some(step) = clicked {
+            let list: Vec<Pill> = states
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let run_going = running && s.step == Step::Run;
+                    let status = if run_going { crate::lang::tr("running") } else { shown(s.status) };
+                    let mut checks: Vec<String> = s.messages.iter().map(|m| m.text.clone()).collect();
+                    if let Some(e) = run_failure(app).filter(|_| s.step == Step::Run) {
+                        checks.insert(
+                            0,
+                            crate::lang::trf("the last run failed: {error}", crate::lang::args!(error = emcraft_engine::text::clip(e, 300))),
+                        );
+                    }
+                    let unneeded = not_needed(app, s.step);
+                    if let Some(why) = &unneeded {
+                        checks.insert(0, why.clone());
+                    }
+                    let tip = if checks.is_empty() || run_going {
+                        format!("{}: {status}", shown(s.step))
+                    } else {
+                        format!("{}: {status}\n{}", shown(s.step), checks.join("\n"))
+                    };
+                    let look = match (run_going, unneeded.is_some(), s.status) {
+                        (true, _, _) => Look::Running,
+                        (false, true, Status::Done) => Look::Skipped,
+                        (false, true, status) => Look::Unneeded(status),
+                        (false, false, status) => Look::Plain(status),
+                    };
+                    Pill {
+                        text: format!("{} {}", i, shown(s.step)),
+                        short: i.to_string(),
+                        said: status.to_owned(),
+                        look,
+                        active: app.workflow.step == Some(s.step),
+                        enabled: true,
+                        tip,
+                        handle: Handle::Step(s.step),
+                    }
+                })
+                .collect();
+            if let Some(i) = pills(ui, card.shrink2(vec2(8.0, 4.0)), &list) {
+                let step = states[i].step;
                 let again = app.workflow.step == Some(step);
                 out.push(Action::OpenStep(if again { None } else { Some(step) }));
             }
         });
 }
 
+/// A stage of a staged bar (the step bar, the PCB window's stages): its text and its short form
+/// (when the texts do not fit), its status as a screen reader says it, its mark, whether it is
+/// the one open and whether it can be clicked, its tip and its handle.
+pub(crate) struct Pill<'a> {
+    pub text: String,
+    pub short: String,
+    pub said: String,
+    pub look: Look,
+    pub active: bool,
+    pub enabled: bool,
+    pub tip: String,
+    pub handle: Handle<'a>,
+}
+
+/// Draws `list` left to right in `row` (each a pill with its mark, joined by short lines; their
+/// short forms when the texts do not fit): the one clicked.
+pub(crate) fn pills(ui: &mut egui::Ui, row: Rect, list: &[Pill]) -> Option<usize> {
+    let t = &Tokens::get();
+    let font = FontId::proportional(t.font_body);
+    let width = |text: &str| ui.painter().layout_no_wrap(text.to_owned(), font.clone(), t.text).size().x + 34.0 + 16.0;
+    let short = list.iter().map(|p| width(&p.text)).sum::<f32>() > row.width();
+    let mut x = row.left();
+    let mut clicked = None;
+    for (i, p) in list.iter().enumerate() {
+        let g = ui.painter().layout_no_wrap(if short { p.short.clone() } else { p.text.clone() }, font.clone(), t.text);
+        let r = Rect::from_min_size(pos2(x, row.top()), vec2(g.size().x + 34.0, row.height()));
+        let resp = ui.hit(r, p.handle, if p.enabled { Sense::click() } else { Sense::hover() });
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, p.enabled, format!("{}: {}", p.text, p.said)));
+        let fill = match (p.active, resp.hovered() && p.enabled) {
+            (true, _) => t.accent_soft,
+            (false, true) => t.hover,
+            (false, false) => Color32::TRANSPARENT,
+        };
+        ui.painter().rect_filled(r, 12.0, fill);
+        ui.painter().rect_stroke(r, 12.0, Stroke::new(1.0, if p.active { t.accent } else { t.border }), egui::StrokeKind::Inside);
+        let c = pos2(r.left() + 14.0, r.center().y);
+        match p.look {
+            Look::Running => running_mark(ui, c, t),
+            Look::Skipped => skip_mark(ui.painter(), c, t),
+            Look::Unneeded(status) | Look::Plain(status) => mark(ui.painter(), c, status, t),
+        }
+        let ink = match (p.active, p.look) {
+            (true, _) => t.selected_ink,
+            (false, Look::Skipped | Look::Unneeded(_) | Look::Plain(Status::Waiting)) => t.text_dim,
+            (false, _) => t.text,
+        };
+        ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, ink);
+        if resp.on_hover_text(&p.tip).clicked() && p.enabled {
+            clicked = Some(i);
+        }
+        x = r.right() + 4.0;
+        if i + 1 < list.len() {
+            ui.painter().hline(x..=x + 8.0, r.center().y, Stroke::new(1.0, t.border));
+            x += 12.0;
+        }
+    }
+    clicked
+}
+
 /// How a step's pill looks: the run under way, a step not needed (skipped when it is done),
 /// or its status.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Look {
+pub(crate) enum Look {
     Running,
     Skipped,
     Unneeded(Status),

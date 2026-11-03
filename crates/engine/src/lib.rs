@@ -65,9 +65,11 @@ pub use emcraft_gpu::Precision;
 pub use emcraft_templates as templates;
 pub use params::{Edit, Params};
 pub use project::{Effect, TemplateMark, TemplateParameter, template_marks, template_parameters, template_steps};
+pub use reply::Wave;
+pub use results::{ComparePoint, Comparison};
 pub use script::Step;
 pub use sdata::SData;
-pub use session::{Change, Limits, Results, Session, Sweep};
+pub use session::{Change, Limits, ResultKind, Results, Session, Sweep};
 pub use solve::{Compute, Device, LinearSolver};
 pub use view::field_view;
 

@@ -410,27 +410,11 @@ pub struct Line {
     pub resolution_s: f64,
 }
 
-/// A complex wave: parts, magnitude, dB and degrees.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Wave {
-    pub re: f64,
-    pub im: f64,
-    pub mag: f64,
-    pub db: f64,
-    pub deg: f64,
-}
-
-impl Wave {
-    fn of(c: emcraft_solver::Complex64) -> Wave {
-        Wave { re: c.re, im: c.im, mag: c.norm(), db: emcraft_model::units::decibels(c.norm()), deg: c.arg().to_degrees() }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LinePoint {
     pub frequency: f64,
-    pub s11: Wave,
-    pub s21: Wave,
+    pub s11: crate::reply::Wave,
+    pub s21: crate::reply::Wave,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -449,7 +433,7 @@ fn line(report: &Report, stop: f64, points: usize, reference: f64, frequency: Fr
     for &f in &freqs {
         let (r, t) = emcraft_theory::pcb::s_parameters(report, f, reference).map_err(failed)?;
         waves.push(r);
-        rows.push(LinePoint { frequency: frequency.from_si(f), s11: Wave::of(r), s21: Wave::of(t) });
+        rows.push(LinePoint { frequency: frequency.from_si(f), s11: crate::reply::Wave::of(r), s21: crate::reply::Wave::of(t) });
     }
     let tdr = crate::tdr::transform(&freqs, &waves, crate::tdr::Mode::LowPass)?;
     let impedance = |r: f64| ((1.0 - r).abs() > 1e-9).then(|| reference * (1.0 + r) / (1.0 - r));

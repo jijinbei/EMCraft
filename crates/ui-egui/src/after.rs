@@ -78,7 +78,7 @@ impl EmcraftApp {
                 self.view = View::Tdr;
             }
             "results.compare" => {
-                self.replies.compare = Some(reply.clone());
+                self.replies.compare = serde_json::from_value(reply.clone()).ok();
                 self.view = View::Compare;
             }
             "study.sweep" | "study.optimize" => {
@@ -140,14 +140,10 @@ impl EmcraftApp {
         self.field.view.component = if self.session.model().open.is_some() { Component::E } else { Component::Ey };
         self.replies.port_modes = None;
         self.replies.compare = None;
+        // The chosen kind's own result first, else the first the session holds.
         let results = self.session.results();
-        self.view = match (&results.sweep, &results.eigen, &results.radiation, &results.dispersion) {
-            (Some(_), _, _, _) => View::SParameters,
-            (None, Some(_), _, _) => View::Eigenmodes,
-            (None, None, Some(_), _) => View::FarField,
-            (None, None, None, Some(_)) => View::Dispersion,
-            (None, None, None, None) => View::Model,
-        };
+        let chosen = emcraft_engine::workflow::spec(self.session.model().analysis()).results.iter().copied().find(|k| results.has(*k));
+        self.view = chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of);
         self.replies.pcb = None;
         if matches!(id, "file.new" | "file.open") {
             self.views.pcb.illustration = Default::default();

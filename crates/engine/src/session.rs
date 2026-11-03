@@ -120,35 +120,102 @@ pub enum Change {
     Open,
 }
 
-impl Results {
-    /// Drops the results a change to the model leaves wrong. Changes that leave them right
-    /// but old (the band, the units) keep them, marked stale by the workflow.
-    pub fn invalidate(&mut self, change: Change) {
+emcraft_macros::named_enum! {
+    /// A kind of result the session holds (a field of [`Results`]): what drops it, what makes
+    /// it, whether it is the model's own — one place for what every kind is.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum ResultKind {
+        Sweep = "sweep",
+        Eigen = "eigenmodes",
+        TimeDomain = "time_domain",
+        Radiation = "radiation",
+        TdRadiation = "td_radiation",
+        Dispersion = "dispersion",
+        Study = "study",
+    }
+}
+
+impl ResultKind {
+    /// Whether a change of `change` to the model leaves this kind wrong.
+    ///
+    /// ```
+    /// use emcraft_engine::{Change, ResultKind};
+    /// assert!(ResultKind::Sweep.dropped_by(Change::Ports) && !ResultKind::Eigen.dropped_by(Change::Ports));
+    /// // A study is solved on models rebuilt from the history: no change makes it wrong.
+    /// assert!(!ResultKind::Study.dropped_by(Change::Geometry));
+    /// ```
+    pub const fn dropped_by(self, change: Change) -> bool {
+        use ResultKind::*;
         match change {
-            Change::Geometry => *self = Results { study: self.study.take(), ..Results::default() },
-            Change::Walls => {
-                self.sweep = None;
-                self.eigen = None;
-            }
-            Change::Ports => {
-                self.sweep = None;
-                self.time_domain = None;
-            }
-            Change::Open => {
-                self.radiation = None;
-                self.td_radiation = None;
-            }
+            Change::Geometry => !matches!(self, Study),
+            Change::Walls => matches!(self, Sweep | Eigen),
+            Change::Ports => matches!(self, Sweep | TimeDomain),
+            Change::Open => matches!(self, Radiation | TdRadiation),
         }
     }
 
-    /// Whether any solver has run.
+    /// Whether it is a solve of the model now (a study's points are solves of other models).
+    pub const fn of_the_model(self) -> bool {
+        !matches!(self, ResultKind::Study)
+    }
+
+    /// The command that makes it.
+    pub const fn command(self) -> &'static str {
+        match self {
+            ResultKind::Sweep => "solve.frequency",
+            ResultKind::Eigen => "solve.eigenmodes",
+            ResultKind::TimeDomain | ResultKind::TdRadiation => "solve.time_domain",
+            ResultKind::Radiation => "solve.radiation",
+            ResultKind::Dispersion => "solve.dispersion",
+            ResultKind::Study => "study.sweep",
+        }
+    }
+}
+
+impl Results {
+    /// Whether the session holds a result of `kind`.
+    pub fn has(&self, kind: ResultKind) -> bool {
+        match kind {
+            ResultKind::Sweep => self.sweep.is_some(),
+            ResultKind::Eigen => self.eigen.is_some(),
+            ResultKind::TimeDomain => self.time_domain.is_some(),
+            ResultKind::Radiation => self.radiation.is_some(),
+            ResultKind::TdRadiation => self.td_radiation.is_some(),
+            ResultKind::Dispersion => self.dispersion.is_some(),
+            ResultKind::Study => self.study.is_some(),
+        }
+    }
+
+    /// Lets the result of `kind` go.
+    pub fn clear(&mut self, kind: ResultKind) {
+        match kind {
+            ResultKind::Sweep => self.sweep = None,
+            ResultKind::Eigen => self.eigen = None,
+            ResultKind::TimeDomain => self.time_domain = None,
+            ResultKind::Radiation => self.radiation = None,
+            ResultKind::TdRadiation => self.td_radiation = None,
+            ResultKind::Dispersion => self.dispersion = None,
+            ResultKind::Study => self.study = None,
+        }
+    }
+
+    /// The kinds the session holds, in [`ResultKind::ALL`]'s order.
+    pub fn kinds(&self) -> impl Iterator<Item = ResultKind> + '_ {
+        ResultKind::ALL.into_iter().filter(|k| self.has(*k))
+    }
+
+    /// Drops the results a change to the model leaves wrong ([`ResultKind::dropped_by`]).
+    /// Changes that leave them right but old (the band, the units) keep them, marked stale by
+    /// the workflow.
+    pub fn invalidate(&mut self, change: Change) {
+        for kind in ResultKind::ALL.into_iter().filter(|k| k.dropped_by(change)) {
+            self.clear(kind);
+        }
+    }
+
+    /// Whether any solver has run on the model (a study's solves are of other models).
     pub fn any(&self) -> bool {
-        self.sweep.is_some()
-            || self.eigen.is_some()
-            || self.time_domain.is_some()
-            || self.radiation.is_some()
-            || self.td_radiation.is_some()
-            || self.dispersion.is_some()
+        self.kinds().any(ResultKind::of_the_model)
     }
 
     /// The sweep, or an error asking for one.
@@ -204,38 +271,66 @@ pub struct Session {
     pub(crate) path: Option<String>,
     /// The sample the session was opened from, which names it until it is saved.
     pub(crate) sample: Option<String>,
-    /// The history as last saved or opened: the session has unsaved changes when its history
-    /// differs (an undo back to it is clean again).
-    pub(crate) saved: Vec<Step>,
+    /// The project as last saved or opened: the session has unsaved changes where it differs
+    /// (an undo back to it is clean again).
+    pub(crate) saved: Saved,
     /// The project's runs: the last solve of each solve command ([`crate::runs`]), the latest
-    /// last, and the runs as last saved or opened.
+    /// last.
     pub(crate) runs: Vec<Run>,
-    pub(crate) saved_runs: Vec<Run>,
     /// The analysis history: the solves kept with their models and results
-    /// ([`crate::archive`]), the last id given, the kept solve the session was restored to, and
-    /// the solves' ids, pins and labels as last saved or opened.
+    /// ([`crate::archive`]), the last id given and the kept solve the session was restored to.
     pub(crate) archive: Vec<crate::archive::Archived>,
     pub(crate) archive_next: u32,
     pub(crate) archive_current: Option<u32>,
-    pub(crate) saved_archive: Vec<crate::archive::Mark>,
     /// Where the solvers run (`solve.device`).
     pub(crate) compute: solve::Compute,
     /// The named variables expressions in parameters read (`project.variable`), defined by
     /// commands of the history.
     pub(crate) variables: expr::Variables,
-    /// How the project's results are looked at (charts' styles, probes: [`crate::views`]), and
-    /// as last saved or opened.
+    /// How the project's results are looked at (charts' styles, probes: [`crate::views`]).
     pub(crate) views: crate::views::Views,
-    pub(crate) saved_views: crate::views::Views,
     /// The run a solve command records in place of its own (`solve.refine` records the merged
     /// sweep as `solve.frequency`); taken when it succeeds.
     pub(crate) next_run: Option<Run>,
-    /// While a project file's history is replayed: the mesh commands are read and recorded,
-    /// not run (the file's own mesh is put on the model after).
-    pub(crate) mesher_off: bool,
+    /// Whether the mesh commands mesh, or (a project file's history replayed) are read and
+    /// recorded only, the file's own mesh put on the model after ([`Session::replay`]).
+    pub(crate) meshing: Meshing,
 }
 
 /// Reading the session.
+/// What the mesh commands do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Meshing {
+    /// They mesh.
+    #[default]
+    Run,
+    /// They read and record their parameters only (a project file's history replayed: its
+    /// mesh comes from the file).
+    Recorded,
+}
+
+/// The project as last saved or opened: its history, its runs, how its results are looked at
+/// and its kept solves' ids, pins and labels — what [`Session::is_dirty`] compares with.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Saved {
+    pub history: Vec<Step>,
+    pub runs: Vec<Run>,
+    pub views: crate::views::Views,
+    pub archive: Vec<crate::archive::Mark>,
+}
+
+impl Saved {
+    /// `s`'s project as it is now.
+    pub(crate) fn of(s: &Session) -> Saved {
+        Saved { history: s.history.clone(), runs: s.runs.clone(), views: s.views.clone(), archive: crate::archive::marks(&s.archive) }
+    }
+
+    /// Whether `s`'s project is this one (compared in place, nothing copied).
+    fn is(&self, s: &Session) -> bool {
+        self.history == s.history && self.runs == s.runs && self.views == s.views && crate::archive::marks(&s.archive) == self.archive
+    }
+}
+
 /// How a command that succeeded ran: its wall-clock seconds and its reply.
 struct Ran<'a> {
     seconds: f64,
@@ -374,12 +469,9 @@ impl Session {
         *self = Session { undo: std::mem::take(&mut self.undo), ..fresh };
     }
 
-    /// The history and the runs as they are now count as saved.
+    /// The project as it is now counts as saved.
     pub(crate) fn mark_saved(&mut self) {
-        self.saved = self.history.clone();
-        self.saved_runs = self.runs.clone();
-        self.saved_views = self.views.clone();
-        self.saved_archive = crate::archive::marks(&self.archive);
+        self.saved = Saved::of(self);
     }
 
     /// Whether the project changed since it was last saved or opened: its model's history or
@@ -387,10 +479,7 @@ impl Session {
     /// looked at (a chart's style, a probe) or its analysis history (a solve kept, pinned,
     /// labelled or let go).
     pub fn is_dirty(&self) -> bool {
-        self.history != self.saved
-            || self.runs != self.saved_runs
-            || self.views != self.saved_views
-            || crate::archive::marks(&self.archive) != self.saved_archive
+        !self.saved.is(self)
     }
 
     /// The project's runs, the latest last ([`crate::runs`]).
@@ -497,6 +586,15 @@ impl Session {
             .map(|(i, step)| Step::deserialize(step).map_err(|_| EngineError::Params(format!("step {}: no `command`", i + 1))))
             .collect::<Result<Vec<Step>>>()?;
         self.run_steps(&steps)
+    }
+
+    /// Runs `steps` with the mesh commands doing `meshing`, then meshing as it was (whether the
+    /// steps succeed or not).
+    pub(crate) fn replay(&mut self, steps: &[Step], meshing: Meshing) -> Result<Vec<Value>> {
+        let was = std::mem::replace(&mut self.meshing, meshing);
+        let done = self.run_steps(steps);
+        self.meshing = was;
+        done
     }
 
     /// Runs the steps of a script in order; stops at the first error. Returns each step's

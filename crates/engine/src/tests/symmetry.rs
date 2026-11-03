@@ -3,14 +3,9 @@
 //! other) differ by, on about half the unknowns. Second-order elements: on first-order ones at
 //! these coarse sizes the two meshes' errors alone differ by a few hundredths.
 
-use emcraft_solver::Complex64 as C;
 use serde_json::{Value, json};
 
-/// S_pq at point `i` of a sweep's reply.
-fn s(r: &Value, i: usize, pq: &str) -> C {
-    let e = &r["points"][i][pq];
-    C::from_polar(e["mag"].as_f64().unwrap(), e["deg"].as_f64().unwrap().to_radians())
-}
+use super::s;
 
 /// The template `name` at `size` (mm) solved at `frequencies` (GHz), whole and on the half below
 /// the plane across `axis` closed by a `kind` wall: the two replies.

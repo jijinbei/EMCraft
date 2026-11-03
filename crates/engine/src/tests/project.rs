@@ -3,7 +3,7 @@
 
 use serde_json::json;
 
-use super::scratch;
+use super::{board, sample, scratch};
 use crate::*;
 
 /// A project of a band and a material, saved at `path`.
@@ -265,23 +265,6 @@ fn reopens_with_its_mesh(s: &mut Session, name: &str) {
     assert_eq!(t.history, s.history, "{name}");
     assert_eq!(t.model, s.model, "{name}");
     assert!(!t.is_dirty());
-}
-
-fn sample(name: &str) -> Session {
-    let mut s = Session::new();
-    s.execute("file.sample", &json!({"name": name})).unwrap();
-    s
-}
-
-/// A board's region with a port at each end of its trace, meshed.
-fn board() -> Session {
-    let mut s = Session::new();
-    s.execute("pcb.sample", &json!({"split": false, "neighbour": false, "length": 6})).unwrap();
-    s.execute("pcb.region", &json!({"net": "DATA", "margin": 1, "above": 1, "below": 0.5})).unwrap();
-    s.execute("pcb.port", &json!({"name": "1", "segment": "signal:0", "end": "start"})).unwrap();
-    s.execute("pcb.port", &json!({"name": "2", "segment": "signal:1", "end": "end"})).unwrap();
-    s.execute("mesh.generate", &json!({"size": 3, "strip_edge": 0.1})).unwrap();
-    s
 }
 
 #[rstest::rstest]

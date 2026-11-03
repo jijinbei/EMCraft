@@ -96,21 +96,6 @@ impl Provenance {
         }
         Ok(self)
     }
-
-    /// As `results.history` gives it.
-    fn row(&self) -> Value {
-        json!({
-            "version": self.version,
-            "seconds": self.seconds,
-            "tetrahedra": self.tetrahedra,
-            "unknowns": self.unknowns,
-            "order": self.order,
-            "linear_solver": self.linear_solver.map(|l| l.id()),
-            "device": self.device.id(),
-            "precision": self.precision.id(),
-            "threads": self.threads,
-        })
-    }
 }
 
 /// A solve kept: its command and parameters, the model it solved and what it found.
@@ -240,33 +225,51 @@ fn changes(before: Option<&Archived>, now: &Archived) -> Vec<String> {
     out
 }
 
-/// A kept solve in brief: its id, when, command, label, how many frequencies, what changed since
-/// the one before it, whether it is pinned and whether the session's results are its own. Read
-/// from what it keeps ([`Kept`]), so a solve read back from a file reads the same.
-fn row(s: &Session, before: Option<&Archived>, a: &Archived) -> Value {
+/// A kept solve in brief, as `results.history` lists it: its id, when, command, label, how many
+/// frequencies and its band, its deepest |S11| and where, its first eigenmode (display units),
+/// what changed in the model since the one before, whether it is pinned and whether the
+/// session's results are its own, and how it was made.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HistoryRow {
+    pub id: u32,
+    pub when: u64,
+    pub command: String,
+    pub label: Option<String>,
+    pub points: Option<usize>,
+    pub band: Option<[f64; 2]>,
+    pub best_s11_db: Option<f64>,
+    pub best_at: Option<f64>,
+    pub first_mode: Option<f64>,
+    pub changes: Vec<String>,
+    pub pinned: bool,
+    pub current: bool,
+    pub provenance: Provenance,
+}
+
+/// A kept solve's row. Read from what it keeps ([`Kept`]), so a solve read back from a file
+/// reads the same.
+fn row(s: &Session, before: Option<&Archived>, a: &Archived) -> HistoryRow {
     let fu = s.display.frequency;
     let sweep = a.kept.sweep.as_ref();
-    let points = sweep.map(|sw| sw.s.frequencies().len());
     let band = sweep.and_then(|sw| Some((*sw.s.frequencies().first()?, *sw.s.frequencies().last()?)));
     // The deepest |S11| over the sweep, the usual figure of merit of a matched part.
     let best = sweep
         .and_then(|sw| sw.curve(0, 0).into_iter().map(|(f, c)| (f, emcraft_model::units::decibels(c.norm()))).min_by(|x, y| x.1.total_cmp(&y.1)));
-    let eigen = a.kept.eigenmodes.first().map(|m| fu.from_si(m.frequency));
-    json!({
-        "id": a.id,
-        "when": a.when,
-        "command": a.command,
-        "label": a.label,
-        "points": points,
-        "band": band.map(|(x, y)| [fu.from_si(x), fu.from_si(y)]),
-        "best_s11_db": best.map(|b| b.1),
-        "best_at": best.map(|b| fu.from_si(b.0)),
-        "first_mode": eigen,
-        "changes": changes(before, a),
-        "pinned": a.pinned,
-        "current": s.archive_current == Some(a.id),
-        "provenance": a.provenance.row(),
-    })
+    HistoryRow {
+        id: a.id,
+        when: a.when,
+        command: a.command.clone(),
+        label: a.label.clone(),
+        points: sweep.map(|sw| sw.s.frequencies().len()),
+        band: band.map(|(x, y)| [fu.from_si(x), fu.from_si(y)]),
+        best_s11_db: best.map(|b| b.1),
+        best_at: best.map(|b| fu.from_si(b.0)),
+        first_mode: a.kept.eigenmodes.first().map(|m| fu.from_si(m.frequency)),
+        changes: changes(before, a),
+        pinned: a.pinned,
+        current: s.archive_current == Some(a.id),
+        provenance: a.provenance.clone(),
+    }
 }
 
 fn find(s: &Session, p: &Params) -> Result<usize> {
@@ -275,7 +278,7 @@ fn find(s: &Session, p: &Params) -> Result<usize> {
 }
 
 /// The solves kept, the oldest first, as `results.history` lists them.
-pub fn rows(s: &Session) -> Vec<Value> {
+pub fn rows(s: &Session) -> Vec<HistoryRow> {
     let before = std::iter::once(None).chain(s.archive.iter().map(Some));
     before.zip(&s.archive).map(|(b, a)| row(s, b, a)).collect()
 }

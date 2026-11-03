@@ -578,3 +578,27 @@ fn coupled_microstrips_convert_with_modes_of_distinct_beta() {
     let check = s.execute("results.check", &json!({})).unwrap();
     assert!(check["unitarity_error"].as_f64().unwrap() < 1e-8 && check["reciprocity_error"].as_f64().unwrap() < 1e-9, "{check}");
 }
+
+/// A sweep run again on the model it solved reuses its system (no assembly) and gives what a
+/// fresh system gives, bit for bit; once the model changes, or the order does, it builds anew.
+#[test]
+fn a_sweep_again_reuses_its_system_while_the_model_is_the_same() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    s.execute("solve.frequency", &json!({"frequencies": [7], "order": 1})).unwrap();
+    let first = s.results.sweep.as_ref().unwrap().driven.clone();
+    s.execute("solve.frequency", &json!({"frequencies": [7.5, 8], "order": 1})).unwrap();
+    let again = s.results.sweep.as_ref().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&first, &again.driven));
+    let mut fresh = Session::new();
+    fresh.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    fresh.execute("solve.frequency", &json!({"frequencies": [7.5, 8], "order": 1})).unwrap();
+    assert_eq!(again.results, fresh.results.sweep.as_ref().unwrap().results);
+    // Another order, or a changed model: a system of its own.
+    s.execute("solve.frequency", &json!({"frequencies": [7], "order": 2})).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&first, &s.results.sweep.as_ref().unwrap().driven));
+    let second = s.results.sweep.as_ref().unwrap().driven.clone();
+    s.execute("model.walls", &json!({"conductivity": 5.8e7})).unwrap();
+    s.execute("solve.frequency", &json!({"frequencies": [7], "order": 2})).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&second, &s.results.sweep.as_ref().unwrap().driven));
+}
