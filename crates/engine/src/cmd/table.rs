@@ -137,7 +137,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "pcb.region",
         label: "PCB region",
-        doc: "Sets the part of the board the finite elements solve: a box round the copper (or `net`'s routes) by `margin`, or between the corners `lo` and `hi`, from `below` under the lowest layer to `above` over the highest, closed by conducting walls. The model's geometry becomes that box, the region's lower-left corner at the origin and the lowest layer `below` over its floor, each substrate a material `substrate εr …`; its ports go on the box's sides with model.port.create (cleared here). mesh.generate then meshes the copper of every layer in one triangulation, extruded through the substrates and the air, the copper conducting sheets of no thickness inside.",
+        doc: "Sets the part of the board the finite elements solve: a box round the copper (or `net`'s routes) by `margin`, or between the corners `lo` and `hi`, from `below` under the lowest layer to `above` over the highest, closed by conducting walls. The model's geometry becomes that box, the region's lower-left corner at the origin, the board's x and y the model's x and z, its height the model's y with the lowest layer `below` over the floor, each substrate a material `substrate εr …`; its ports go on the box's sides with model.port.create (cleared here). mesh.generate then meshes the copper of every layer in one triangulation, extruded through the substrates and the air, the copper conducting sheets of no thickness inside.",
         params: &[
             opt("net", K::String, "the net whose routes the box surrounds (default all the copper)"),
             opt("margin", K::Number, "the margin round the copper (default 5 board thicknesses)").of(L),
@@ -187,6 +187,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("stage", K::String, "PCB stage: board, net, settings, inspect or results").one_of(&crate::pcb::Stage::IDS),
             opt("net", K::String, "routed net to select"),
             opt("victim", K::String, "receiving net, different from the selected source"),
+            opt("coupling", K::Boolean, "the board's 3D view illustrates the coupling (`mode`) instead of picking routes"),
             opt("mode", K::String, "schematic mechanism").one_of(&crate::pcb::CouplingMode::IDS),
             opt("playing", K::Boolean, "play explanatory emphasis, not physical time"),
             opt("exaggerate", K::Boolean, "exaggerate depth by 10 for visibility"),

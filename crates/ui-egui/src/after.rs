@@ -1,7 +1,7 @@
 //! What follows a command's success: the cached pictures let go, the view the command calls
 //! for, the view state it resets, its message, and the workflow's next step.
 
-use emcraft_engine::view::Component;
+use emcraft_engine::view::{Component, Plane};
 use serde_json::Value;
 
 use crate::{EmcraftApp, View, files, status, steps};
@@ -175,6 +175,17 @@ impl EmcraftApp {
             "solve.frequency" => {
                 self.view = View::SParameters;
                 self.pick_frequency();
+                // A board's route: the field on the plane halfway up the substrate (the model's
+                // y is the board's height), where the line's E stands between trace and
+                // reference.
+                if let Some(board) = self.session.model().pcb.as_ref()
+                    && let Some(r) = board.region
+                {
+                    let thickness = board.heights().into_iter().fold(0.0, f64::max);
+                    self.field.view.plane = Plane::H;
+                    self.field.view.component = Component::Ey;
+                    self.field.at = Some(self.session.display().length.from_si(r.below + 0.5 * thickness));
+                }
             }
             "solve.dispersion" => self.view = View::Dispersion,
             "solve.eigenmodes" => {

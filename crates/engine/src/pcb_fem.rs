@@ -1,7 +1,7 @@
 //! A board's region solved by the finite elements. `pcb.region` sets the box: a shielded solid
 //! of air (its sides carry the ports, made with `model.port.create` on its faces) with the
-//! board's lower-left corner of the region at the origin and its lowest layer `below` over the
-//! floor. `mesh.generate` then meshes it with the planar mesher (`emcraft_mesh::planar`): the
+//! region's lower-left corner at the origin, the board's plane the model's x–z (its y the
+//! model's z) and its lowest layer `below` over the floor (the model's y up). `mesh.generate` then meshes it with the planar mesher (`emcraft_mesh::planar`): the
 //! copper of every layer in one triangulation, extruded through the substrates (each a material,
 //! `substrate εr …`) and the air, the copper conducting sheets inside.
 
@@ -77,7 +77,8 @@ pub fn region(s: &mut Session, p: &Params) -> Result<Value> {
 /// The model's geometry the box of `board`'s `region`, its substrates materials.
 fn install(s: &mut Session, mut board: Board, region: Region) -> Result<()> {
     let height = region.below + thickness(&board) + region.above;
-    let size = BoxSize::new(Vec3::new(region.hi[0] - region.lo[0], region.hi[1] - region.lo[1], height))?;
+    // The board's plane is the model's x–z, its height y (the 3D view's up).
+    let size = BoxSize::new(Vec3::new(region.hi[0] - region.lo[0], height, region.hi[1] - region.lo[1]))?;
     s.model.set_solid(Solid { shape: Shape::Box { size }, material: "vacuum".into() })?;
     for l in &board.layers {
         let name = substrate(l.eps_below);
@@ -131,7 +132,7 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     // A trace fed by a sheet port at an end stops there: no round end beyond the feed.
     let fed = |q: [f64; 2]| {
         let q = at(q);
-        s.model.lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.y - q[1]) <= 1e-9)
+        s.model.lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.z - q[1]) <= 1e-9)
     };
     for g in &board.segments {
         let ring = offset::trace_ends(at(g.start), at(g.end), g.width, SAG * g.width, [!fed(g.start), !fed(g.end)]);
@@ -176,7 +177,17 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     if region.above > 0.0 {
         slabs.push(air(region.above, true));
     }
-    let (mesh, sheet_nets) = extrude(&planar, &Stack { z0: 0.0, slabs, sheets })?;
+    let (mut mesh, sheet_nets) = extrude(&planar, &Stack { z0: 0.0, slabs, sheets })?;
+    // Into the model's axes: the board's (x, y, height) is (x, z, y); the swap mirrors, so
+    // each tetrahedron's last two nodes swap to keep its volume positive.
+    for p in &mut mesh.nodes {
+        *p = Point3::new(p.x, p.z, p.y);
+    }
+    for t in &mut mesh.tets {
+        t.swap(2, 3);
+    }
+    // Binned for locating points (fields, probes).
+    mesh.buckets = Some(emcraft_mesh::solid::buckets(&mesh));
     let reply = json!({
         "nodes": mesh.nodes.len(),
         "tetrahedra": mesh.tets.len(),
@@ -218,12 +229,12 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     let (x, y) = (at[0] - region.lo[0], at[1] - region.lo[1]);
     let d = [g.end[0] - g.start[0], g.end[1] - g.start[1]];
     let len = d[0].hypot(d[1]);
-    let across = Vec3::new(-d[1] / len, d[0] / len, 0.0) * (0.5 * g.width);
+    let across = Vec3::new(-d[1] / len, 0.0, d[0] / len) * (0.5 * g.width);
     let impedance: Ohms = p.checked("impedance").or(Ohms::new(50.0)?)?;
     s.model.add_lumped_port(LumpedPort {
         name: name.clone(),
-        from: Point3::new(x, y, region.below + bottom),
-        to: Point3::new(x, y, region.below + top),
+        from: Point3::new(x, region.below + bottom, y),
+        to: Point3::new(x, region.below + top, y),
         impedance,
         voltage: [1.0, 0.0],
         radius: 0.0,
@@ -251,4 +262,49 @@ fn inside(polygon: &[[f64; 2]], p: [f64; 2]) -> bool {
         }
     }
     odd
+}
+
+/// The two free ends of `net`'s route, where a port goes: (segment id, `start` or `end`) where
+/// only one of its segments ends (to a nanometre), in the order of the segments.
+///
+/// ```
+/// use emcraft_engine::Session;
+/// use emcraft_engine::pcb_fem::route_ends;
+/// let mut s = Session::new();
+/// s.execute("pcb.sample", &serde_json::json!({})).unwrap();
+/// let board = s.model().pcb.as_ref().unwrap();
+/// // The sample's route is two segments end to end: its ends are the first's start and the
+/// // second's end.
+/// assert_eq!(route_ends(board, "DATA"), vec![("signal:0".to_string(), "start"), ("signal:1".to_string(), "end")]);
+/// assert!(route_ends(board, "nothing").is_empty());
+/// ```
+pub fn route_ends(board: &Board, net: &str) -> Vec<(String, &'static str)> {
+    let route: Vec<_> = board.segments.iter().filter(|g| g.net == net).collect();
+    let meets = |q: [f64; 2]| route.iter().flat_map(|g| [g.start, g.end]).filter(|r| emcraft_model::pcb::distance(*r, q) <= 1e-9).count();
+    route
+        .iter()
+        .flat_map(|g| [(g, g.start, "start"), (g, g.end, "end")])
+        .filter(|(_, q, _)| meets(*q) == 1)
+        .map(|(g, _, e)| (g.id.clone(), e))
+        .collect()
+}
+
+/// An element size for `net`'s route swept up to `stop` (Hz): a tenth of the shortest
+/// wavelength in the board's substrates, at most an eighth of the route's length (m).
+///
+/// ```
+/// use emcraft_engine::Session;
+/// use emcraft_engine::pcb_fem::route_size;
+/// let mut s = Session::new();
+/// s.execute("pcb.sample", &serde_json::json!({})).unwrap();
+/// let board = s.model().pcb.as_ref().unwrap();
+/// // The 40 mm route: an eighth of it at 1 GHz (λ in εr 4.2 is 146 mm), λ/10 = 0.73 mm at
+/// // 20 GHz.
+/// assert!((route_size(board, "DATA", 1e9) - 0.005).abs() < 1e-12);
+/// assert!((route_size(board, "DATA", 20e9) - 0.000731).abs() < 1e-6);
+/// ```
+pub fn route_size(board: &Board, net: &str, stop: f64) -> f64 {
+    let er = board.layers.iter().map(|l| l.eps_below).fold(1.0, f64::max);
+    let length: f64 = board.segments.iter().filter(|g| g.net == net).map(|g| emcraft_model::pcb::distance(g.start, g.end)).sum();
+    (emcraft_model::units::C0 / (stop * er.sqrt()) / 10.0).min(length / 8.0)
 }

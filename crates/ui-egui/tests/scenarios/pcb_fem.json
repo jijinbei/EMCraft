@@ -1,0 +1,20 @@
+[
+  {"note": "Step 4 solves the selected route with finite elements: region, a port at each end, the mesh and the sweep run one after another; S-parameters, TDR and the field open as views"},
+  {"call": "ui.set", "params": {"language": "ja"}},
+  {"call": "engine.execute", "params": {"command": "pcb.sample", "params": {"split": false, "neighbour": false, "length": 6}}},
+  {"call": "engine.execute", "params": {"command": "view.pcb", "params": {"net": "DATA", "stage": "inspect"}}},
+  {"call": "ui.set", "params": {"view": "pcb"}},
+  {"frames": 2},
+  {"expect": {"handles": ["choice:pcb_control:fem"]}},
+  {"shot": "pcb-fem-step"},
+  {"click": "choice:pcb_control:fem"},
+  {"until": {"busy": false}},
+  {"frames": 2},
+  {"expect": {"handles": ["view:sparameters", "view:tdr", "view:field"], "inspect": {"pcb.loaded": true}}},
+  {"click": "view:sparameters"},
+  {"frames": 3},
+  {"shot": "pcb-fem-sparameters"},
+  {"click": "view:field"},
+  {"frames": 3},
+  {"shot": "pcb-fem-field"}
+]

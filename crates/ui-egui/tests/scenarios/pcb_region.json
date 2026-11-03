@@ -8,8 +8,8 @@
   {"frames": 3},
   {"expect": {"handles": ["choice:pcb_control:board3d"]}},
   {"shot": "pcb-region-3d"},
-  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "1", "end": "start", "axis": "x", "face": [0, 0, 0, 4, 3.18], "modes": 1}}},
-  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "2", "end": "end", "axis": "x", "face": [44, 0, 0, 4, 3.18], "modes": 1}}},
+  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "1", "end": "start", "axis": "x", "face": [0, 0, 0, 3.18, 4], "modes": 1}}},
+  {"call": "engine.execute", "params": {"command": "model.port.create", "params": {"name": "2", "end": "end", "axis": "x", "face": [44, 0, 0, 3.18, 4], "modes": 1}}},
   {"call": "engine.execute", "params": {"command": "mesh.generate", "params": {"size": 2}}},
   {"frames": 2},
   {"expect": {"inspect": {"model.ports.0.axis": "x", "model.ports.1.axis": "x"}, "handles": ["choice:pcb_control:board3d"]}}

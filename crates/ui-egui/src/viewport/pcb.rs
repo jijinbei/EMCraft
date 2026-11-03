@@ -111,8 +111,15 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     }
     crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Board, out);
     scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
+    super::pcb_coupling::mode_bar(app, ui, view, out);
+    super::pcb_coupling::frame_view(app, &mut st.views.pcb.illustration, &mut st.view3d, view);
+    let illustration = &app.session.views().pcb_illustration;
+    if illustration.coupling && illustration.playing {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+    }
     // A net picked in 3D becomes the route (or the receiving trace while one is being picked).
     if let Some(crate::scene3d::Pick::Net(i)) = st.view3d.single()
+        && !illustration.coupling
         && let Some(net) = crate::scene3d::board::nets(board).get(i)
         && app.session.views().pcb_net.as_deref() != Some(net.as_str())
         && board.segments.iter().any(|s| &s.net == net)
@@ -244,6 +251,7 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
         if r.clicked() {
             out.push(Action::run("pcb.inspect", state.params(selected)));
         }
+        fem(app, state, ui, selected, out);
     }
     if stage == Stage::Results {
         if let Some(result) = result {
@@ -272,6 +280,40 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
             draw_report(app, state, ui, result)
         }
         _ => stackup(app, ui, selected, &state.ground),
+    }
+}
+
+/// The route through the finite elements: its region, a 50 Ω port at each end, the mesh and a
+/// sweep up to the maximum frequency, one after another; their results open in the S-parameter,
+/// TDR and field views.
+fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &str, out: &mut Actions) {
+    let Some(board) = app.session.model().pcb.as_ref() else { return };
+    ui.add_space(8.);
+    ui.heading(tr("3D field solution (FEM)"));
+    ui_kit::caption(ui, "Solves the route in 3D with finite elements: a 50 Ω port at each end, its S-parameters and fields. It can take minutes.");
+    let ends = emcraft_engine::pcb_fem::route_ends(board, net);
+    let unit = app.session.display().frequency;
+    let stop = state.stop.parse::<f64>().ok().filter(|f| *f > 0.0).map(|f| unit.to_si(f));
+    let ready = ends.len() == 2 && stop.is_some();
+    let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr("Solve with FEM")));
+    scenario::publish_target(Handle::Choice("pcb_control", "fem"), r.rect);
+    if ends.len() != 2 {
+        ui_kit::caption(ui, "The route needs exactly two free ends for its ports.");
+    }
+    if let (true, Some(stop)) = (r.clicked(), stop) {
+        let length = app.session.display().length;
+        let size = length.from_si(emcraft_engine::pcb_fem::route_size(board, net, stop));
+        let f = unit.from_si(stop);
+        let mut list = vec![("pcb.region".to_owned(), json!({"net": net}))];
+        for (name, (id, end)) in ["1", "2"].into_iter().zip(&ends) {
+            list.push((
+                "pcb.port".into(),
+                json!({"name": name, "segment": id, "end": end, "impedance": state.reference.parse::<f64>().unwrap_or(50.)}),
+            ));
+        }
+        list.push(("mesh.generate".into(), json!({"size": size})));
+        list.push(("solve.frequency".into(), json!({"start": f / 11., "stop": f, "points": 11, "order": 1})));
+        out.push(Action::RunAll(list));
     }
 }
 
@@ -317,7 +359,10 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
         painter.text(pos2(r.left() + 14., at - 7.), egui::Align2::LEFT_BOTTOM, &layer.name, FontId::proportional(12.), t.text);
     }
     ui_kit::caption(ui, "Depth spacing is schematic; labels show actual dimensions.");
-    ui_kit::caption(ui, "This is geometry screening and a quasi-static line estimate. 3D fields at vias, pads, bends and radiation are not solved.");
+    ui_kit::caption(
+        ui,
+        "The diagnosis is geometry screening and a quasi-static line estimate; Solve with FEM (step 4) solves the route's 3D fields.",
+    );
 }
 
 /// The board's top view `height` tall: the reference copper filled, the routes as lines, the

@@ -44,6 +44,8 @@ emcraft_macros::named_serde!(CouplingMode);
 #[serde(default)]
 pub struct Illustration {
     pub victim: Option<String>,
+    /// Whether the board's 3D view illustrates the coupling (`mode`) rather than picks routes.
+    pub coupling: bool,
     pub mode: CouplingMode,
     pub playing: bool,
     pub exaggerate: bool,
@@ -53,7 +55,7 @@ pub struct Illustration {
 
 impl Default for Illustration {
     fn default() -> Self {
-        Self { victim: None, mode: CouplingMode::Electric, playing: false, exaggerate: true, section: true, pick_victim: false }
+        Self { victim: None, coupling: false, mode: CouplingMode::Electric, playing: false, exaggerate: true, section: true, pick_victim: false }
     }
 }
 
@@ -108,6 +110,9 @@ pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
     }
     if let Some(v) = p.pick("mode").optional()? {
         illustration.mode = v;
+    }
+    if let Some(v) = p.flag("coupling").optional()? {
+        illustration.coupling = v;
     }
     if let Some(v) = p.flag("playing").optional()? {
         illustration.playing = v;

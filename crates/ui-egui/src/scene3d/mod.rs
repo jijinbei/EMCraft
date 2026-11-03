@@ -149,6 +149,8 @@ pub struct Built {
     pub scene: Scene,
     pub(crate) gpu_scene: Option<Scene>,
     pub(crate) arrows: Vec<crate::gpu3d::Arrow>,
+    /// Symbolic curves drawn by the GPU (a board's coupling illustration): no field samples.
+    pub(crate) curves: Vec<crate::gpu3d::Curve>,
     pub labels: Vec<Label>,
     pub legend: Vec<(String, Rgb)>,
     /// The model's box (m).
@@ -236,7 +238,8 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
         if let Some(b) = &m.pcb {
             let route = session.views().pcb_net.as_deref().unwrap_or("");
             let reference = session.views().pcb_conditions.as_ref().map_or("GND", |c| c.ground.as_str());
-            board::build(b, route, reference, &mut out);
+            let receiver = session.views().pcb_illustration.victim.as_deref();
+            board::build(b, route, receiver, reference, &mut out);
         }
         return out;
     }

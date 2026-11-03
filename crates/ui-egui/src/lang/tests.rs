@@ -660,6 +660,10 @@ fn tour() -> Record {
 
 /// Texts a tour of the window cannot reach, with why.
 const UNREACHED: &[(&str, &str)] = &[
+    ("The route needs exactly two free ends for its ports.", "step 4 for a branching route; the samples' routes run end to end"),
+    ("Explain motion", "on the PCB 3D view's mode bar once a coupling is illustrated (scenario pcb_coupling)"),
+    ("Noise source", "a callout of the coupling illustrated in the PCB 3D view (scenario pcb_coupling)"),
+    ("Reference copper is missing; the return path is not drawn.", "the return illustration over a split ground (pcb_coupling's test)"),
     ("Show object", "tooltip on the eye of a hidden material (scenario material_visibility)"),
     ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
     ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),

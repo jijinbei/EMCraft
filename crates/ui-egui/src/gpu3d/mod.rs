@@ -266,15 +266,24 @@ impl Cache {
 
     /// As [`Cache::packed`], the field's plane marked ([`Packed::with_field`]).
     pub fn packed_with(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>) -> Arc<Packed> {
-        self.packed_arrows(scene, generation, field, &[])
+        self.packed_arrows(scene, generation, field, &[], &[])
     }
 
-    pub(crate) fn packed_arrows(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>, arrows: &[Arrow]) -> Arc<Packed> {
+    /// As [`Cache::packed_with`], with the field's arrows and symbolic curves.
+    pub(crate) fn packed_arrows(
+        &mut self,
+        scene: &Scene,
+        generation: u64,
+        field: Option<(u32, usize, f64)>,
+        arrows: &[Arrow],
+        curves: &[Curve],
+    ) -> Arc<Packed> {
         match &self.packed {
             Some((k, p)) if *k == (generation, field) => p.clone(),
             _ => {
                 let mut p = Packed::with_field(scene, next_id(), field);
                 p.append_arrows(arrows);
+                p.append_curves(curves);
                 let p = Arc::new(p);
                 self.packed = Some(((generation, field), p.clone()));
                 p
