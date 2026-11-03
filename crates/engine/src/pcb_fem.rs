@@ -47,9 +47,18 @@ fn thickness(b: &Board) -> f64 {
     b.heights().into_iter().fold(0.0, f64::max)
 }
 
-/// The material name of a substrate of permittivity `er`.
-fn substrate(er: f64) -> String {
-    format!("substrate εr {er}")
+/// The material name of the dielectric below layer `l`: its permittivity, and its loss tangent
+/// when it has one.
+fn substrate(l: &emcraft_model::pcb::Layer) -> String {
+    match l.loss_below {
+        0.0 => format!("substrate εr {}", l.eps_below),
+        tan_d => format!("substrate εr {} tanδ {tan_d}", l.eps_below),
+    }
+}
+
+/// Whether the dielectric below layer `l` is air (the region's own vacuum).
+fn is_air(l: &emcraft_model::pcb::Layer) -> bool {
+    l.eps_below == 1.0 && l.loss_below == 0.0
 }
 
 /// `pcb.region`: the box solved by the finite elements, round the copper or a net's routes by a
@@ -94,10 +103,10 @@ fn install(s: &mut Session, mut board: Board, region: Region) -> Result<()> {
     // The board's plane is the model's x–z, its height y (the 3D view's up).
     let size = BoxSize::new(Vec3::new(region.hi[0] - region.lo[0], height, region.hi[1] - region.lo[1]))?;
     s.model.set_solid(Solid { shape: Shape::Box { size }, material: "vacuum".into() })?;
-    for l in &board.layers {
-        let name = substrate(l.eps_below);
-        if l.eps_below != 1.0 && s.model.material(&name).is_err() {
-            s.model.add_material(Material::new(&name, l.eps_below, 1.0)?)?;
+    for l in board.layers.iter().filter(|l| !is_air(l)) {
+        let name = substrate(l);
+        if s.model.material(&name).is_err() {
+            s.model.add_material(Material::new(&name, l.eps_below, 1.0)?.with_loss_tangent(l.loss_below)?)?;
         }
     }
     s.model.ports.clear();
@@ -150,7 +159,7 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         size,
         edge_size: edge,
     })?;
-    let material = |er: f64| -> Result<u32> { if er == 1.0 { Ok(0) } else { Ok(s.model.material(&substrate(er))?.0 as u32) } };
+    let material = |l: &emcraft_model::pcb::Layer| -> Result<u32> { if is_air(l) { Ok(0) } else { Ok(s.model.material(&substrate(l))?.0 as u32) } };
     let (slabs, sheets) = stack(&board, &region, edge, size, layer, material)?;
     let holes = barrels(&board, &copper, &planar, &sheets, s.display.length)?;
     let (mut mesh, sheet_nets) = extrude(&planar, &Stack { z0: 0.0, slabs, sheets, holes })?;
@@ -272,7 +281,7 @@ fn stack(
     edge: f64,
     size: f64,
     layer: Option<f64>,
-    material: impl Fn(f64) -> Result<u32>,
+    material: impl Fn(&emcraft_model::pcb::Layer) -> Result<u32>,
 ) -> Result<(Vec<Slab>, Vec<(usize, usize)>)> {
     const VACUUM: u32 = 0;
     // A slab `h` thick whose cells grow by `growth` from `first` at its bottom (`up`) or top.
@@ -299,7 +308,7 @@ fn stack(
         let (lower, upper) = (w[0], w[1]);
         let h = heights[upper] - heights[lower];
         // A layer's dielectric lies below it, down to the next layer.
-        let m = material(board.layers[upper].eps_below)?;
+        let m = material(&board.layers[upper])?;
         let first = |l: usize| if routed(l) { edge } else { (4.0 * edge).min(h / 4.0) };
         slabs.push(graded(h / 2.0, m, first(lower), SUBSTRATE_GROWTH, true));
         slabs.push(graded(h / 2.0, m, first(upper), SUBSTRATE_GROWTH, false));

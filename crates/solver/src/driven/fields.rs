@@ -94,11 +94,12 @@ impl Driven {
         })
     }
 
-    /// ∫ f(field) dS over the walls, the field `which` and the wall's unit normal at each point.
+    /// ∫ f(field) dS over the walls, the field `which` and the wall's unit normal at each point;
+    /// a sheet inside the mesh on both its faces, each with the field on its side.
     pub(super) fn integrate_walls(&self, x: &[C], frequency: f64, which: Field, f: impl Fn(CVec3, Vec3) -> f64) -> Result<f64> {
         let (space, n) = (self.space(), rule_points(self.order));
-        self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)).try_fold(0.0, |total, b| {
-            let face = space.face_rule(b, n)?;
+        self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)).flat_map(|b| space.sides(b)).try_fold(0.0, |total, b| {
+            let face = space.face_rule(&b, n)?;
             let (el, tet) = (&face.el, face.tet);
             Ok(total + face.points.iter().map(|&(l, wa, normal)| wa * f(self.field_in(el, tet, x, frequency, which, l), normal)).sum::<f64>())
         })

@@ -388,7 +388,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
 /// // 30 mm of 0.3 mm trace over 0.18 mm of FR-4 with a whole ground plane below.
 /// let ground = Copper { net: "GND".into(), layer: "B".into(), polygon: vec![[0.0, 0.0], [0.04, 0.0], [0.04, 0.02], [0.0, 0.02]] };
 /// let trace = Segment { id: "0".into(), net: "S".into(), layer: "F".into(), start: [0.005, 0.01], end: [0.035, 0.01], width: 3e-4 };
-/// let layers = vec![Layer { name: "F".into(), z: 0.0, eps_below: 4.2 }, Layer { name: "B".into(), z: 1.8e-4, eps_below: 1.0 }];
+/// let layers = vec![Layer { name: "F".into(), z: 0.0, eps_below: 4.2, loss_below: 0.0 }, Layer { name: "B".into(), z: 1.8e-4, eps_below: 1.0, loss_below: 0.0 }];
 /// let board = Board { name: "line".into(), layers, segments: vec![trace], vias: vec![], copper: vec![ground], notes: vec![], region: None };
 /// let report = emcraft_theory::pcb::inspect(&board, "S", "GND").unwrap();
 /// let (s11, s21) = emcraft_theory::pcb::s_parameters(&report, 1e9, 50.0).unwrap();
@@ -426,7 +426,10 @@ mod tests {
     fn board() -> Board {
         Board {
             name: "test".into(),
-            layers: vec![Layer { name: "top".into(), z: 0.0, eps_below: 4.2 }, Layer { name: "ground".into(), z: 0.00018, eps_below: 1.0 }],
+            layers: vec![
+                Layer { name: "top".into(), z: 0.0, eps_below: 4.2, loss_below: 0.0 },
+                Layer { name: "ground".into(), z: 0.00018, eps_below: 1.0, loss_below: 0.0 },
+            ],
             segments: vec![Segment {
                 id: "route".into(),
                 net: "DATA".into(),
@@ -474,7 +477,10 @@ mod tests {
     #[test]
     fn a_return_via_screen_checks_distance_and_layer_span_without_claiming_a_via_model() {
         let mut b = board();
-        b.layers.extend([Layer { name: "g2".into(), z: 0.0014, eps_below: 4.2 }, Layer { name: "bottom".into(), z: 0.00158, eps_below: 1.0 }]);
+        b.layers.extend([
+            Layer { name: "g2".into(), z: 0.0014, eps_below: 4.2, loss_below: 0.0 },
+            Layer { name: "bottom".into(), z: 0.00158, eps_below: 1.0, loss_below: 0.0 },
+        ]);
         let mut plane = b.copper[0].clone();
         plane.layer = "g2".into();
         b.copper.push(plane);
@@ -677,7 +683,10 @@ mod pair_tests {
     fn overlaps_are_oriented_and_nonparallel_or_different_layers_are_withheld() {
         let mut b = Board {
             name: "pair".into(),
-            layers: vec![Layer { name: "top".into(), z: 0., eps_below: 4. }, Layer { name: "bottom".into(), z: 0.001, eps_below: 1. }],
+            layers: vec![
+                Layer { name: "top".into(), z: 0., eps_below: 4., loss_below: 0.0 },
+                Layer { name: "bottom".into(), z: 0.001, eps_below: 1., loss_below: 0.0 },
+            ],
             segments: vec![
                 Segment { id: "a".into(), net: "A".into(), layer: "top".into(), start: [0., 0.], end: [0.04, 0.], width: 0.0003 },
                 Segment { id: "b".into(), net: "B".into(), layer: "top".into(), start: [0.03, 0.001], end: [0.01, 0.001], width: 0.0003 },

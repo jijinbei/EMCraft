@@ -99,7 +99,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Load PCB data",
         doc: "Loads native PCB routing data in the session's length units. Replaces the model; geometry is checked before committing. Nets, stackup, segments, vias and saved filled copper are embedded in project history.",
         params: &[
-            req("data", K::Object, "PCB object: name, layers [{name,z,eps_below}], segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes"),
+            req("data", K::Object, "PCB object: name, layers [{name,z,eps_below,loss_below}] (loss_below the tan δ below, default 0), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes"),
         ],
         effect: Effect::Record,
         invalidates: Some(Change::Geometry),
@@ -108,10 +108,10 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "pcb.import",
         label: "Import PCB",
-        doc: "Reads a KiCad board's routed straight segments, vias, explicit dielectric stackup and saved filled copper. Unsupported track arcs fail visibly; unfilled zones are not treated as copper. Pads, packages, mask and copper thickness are excluded. Imported data is embedded so reopening needs no source file.",
+        doc: "Reads a KiCad board's tracks (arcs as chords), vias, footprints' copper pads (a plated hole a via), explicit dielectric stackup (each ply's epsilon_r and loss_tangent) and saved filled copper. Unfilled zones are not treated as copper; mask and copper thickness are excluded. Imported data is embedded so reopening needs no source file.",
         params: &[
             req("path", K::String, "KiCad .kicad_pcb file, at most 64 MiB"),
-            opt("stackup", K::Array, "optional copper layers [{name,z,eps_below}], lengths in display units; replaces file stackup"),
+            opt("stackup", K::Array, "optional copper layers [{name,z,eps_below,loss_below}], lengths in display units; replaces file stackup"),
         ],
         effect: Effect::Rebuild,
         invalidates: Some(Change::Geometry),

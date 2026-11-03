@@ -81,6 +81,19 @@ impl<'a> Space<'a> {
     }
 
     /// The quadrature of boundary face `b` with `n` points per direction.
+    /// Boundary face `b` as each side sees it: itself and, for a sheet inside the mesh (a face
+    /// between two tetrahedra: a conductor of no thickness, its current on both faces), the face
+    /// from the tetrahedron across.
+    pub(super) fn sides(&self, b: &BoundaryFace) -> impl Iterator<Item = BoundaryFace> + use<> {
+        let mut key = b.nodes;
+        key.sort_unstable();
+        let tet = b.tet as usize;
+        let face = self.topo.tet_faces.get(tet).and_then(|fs| fs.iter().map(|&f| f as usize).find(|&f| self.topo.faces.get(f) == Some(&key)));
+        let other =
+            face.and_then(|f| self.topo.face_tets.get(f)).and_then(|ts| ts.iter().copied().find(|&t| t != emcraft_mesh::NO_TET && t != b.tet));
+        std::iter::once(*b).chain(other.map(|t| BoundaryFace { tet: t, ..*b }))
+    }
+
     pub(super) fn face_rule(&self, b: &BoundaryFace, n: usize) -> Result<FaceRule> {
         let tet = b.tet as usize;
         let el = self.element(tet)?;
@@ -124,8 +137,9 @@ impl<'a> Space<'a> {
     /// The walls' tangential mass matrix ∫ N_i,t · N_j,t dS over the boundary faces `walls`.
     pub(super) fn wall_mass(&self, pattern: &Csr, walls: &[usize]) -> Result<Vec<f64>> {
         let mut ww = pattern.zeroed();
-        for b in walls.iter().filter_map(|&i| self.mesh.boundary.get(i)) {
-            let face = self.face_rule(b, rule_points(self.order()))?;
+        // A sheet's both faces: its tangential field is one, so twice the term.
+        for b in walls.iter().filter_map(|&i| self.mesh.boundary.get(i)).flat_map(|b| self.sides(b)) {
+            let face = self.face_rule(&b, rule_points(self.order()))?;
             for (l, wa, normal) in face.points {
                 let t: Vec<Vec3> = face.el.values(l).into_iter().map(|v| v.tangential(normal)).collect();
                 for Coupling { i, j, row, col } in couplings(&face.unknowns) {
@@ -323,5 +337,34 @@ impl ElementCache {
             self.map.insert(key, m.clone());
         }
         Ok(m)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use emcraft_model::Boundary;
+
+    /// Two tetrahedra sharing the face (0, 1, 2): that face, held as a boundary face, is a sheet
+    /// with two sides; the outer face (0, 1, 3) has one.
+    #[test]
+    fn a_sheet_inside_the_mesh_has_two_sides_a_wall_one() {
+        let p = |x: f64, y: f64, z: f64| emcraft_model::Point3::new(x, y, z);
+        let mesh = Mesh {
+            nodes: vec![p(0.0, 0.0, 0.0), p(1.0, 0.0, 0.0), p(0.0, 1.0, 0.0), p(0.0, 0.0, 1.0), p(0.0, 0.0, -1.0)],
+            tets: vec![[0, 1, 2, 3], [0, 2, 1, 4]],
+            tet_material: vec![0, 0],
+            boundary: vec![
+                BoundaryFace { nodes: [0, 1, 2], tet: 0, tag: Boundary::Pec },
+                BoundaryFace { nodes: [0, 1, 3], tet: 0, tag: Boundary::Pec },
+            ],
+            ..Mesh::default()
+        };
+        let topo = Topology::new(&mesh);
+        let dofs = Dofs::new(Order::One, &mesh, &topo, &[]).unwrap();
+        let space = Space { mesh: &mesh, topo: &topo, dofs: &dofs };
+        let sides = |b: &BoundaryFace| space.sides(b).map(|s| s.tet).collect::<Vec<_>>();
+        assert_eq!(sides(&mesh.boundary[0]), [0, 1]);
+        assert_eq!(sides(&mesh.boundary[1]), [0]);
     }
 }

@@ -8,16 +8,16 @@ Loads native PCB routing data in the session's length units. Replaces the model;
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `data` | object |  | yes | PCB object: name, layers [{name,z,eps_below}], segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes |
+| `data` | object |  | yes | PCB object: name, layers [{name,z,eps_below,loss_below}] (loss_below the tan δ below, default 0), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes |
 
 ## `pcb.import` — Import PCB
 
-Reads a KiCad board's routed straight segments, vias, explicit dielectric stackup and saved filled copper. Unsupported track arcs fail visibly; unfilled zones are not treated as copper. Pads, packages, mask and copper thickness are excluded. Imported data is embedded so reopening needs no source file.
+Reads a KiCad board's tracks (arcs as chords), vias, footprints' copper pads (a plated hole a via), explicit dielectric stackup (each ply's epsilon_r and loss_tangent) and saved filled copper. Unfilled zones are not treated as copper; mask and copper thickness are excluded. Imported data is embedded so reopening needs no source file.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | yes | KiCad .kicad_pcb file, at most 64 MiB |
-| `stackup` | array |  | no | optional copper layers [{name,z,eps_below}], lengths in display units; replaces file stackup |
+| `stackup` | array |  | no | optional copper layers [{name,z,eps_below,loss_below}], lengths in display units; replaces file stackup |
 
 ## `pcb.sample` — PCB return-path example
 

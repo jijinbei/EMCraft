@@ -131,6 +131,9 @@ SI. Selection is a view change; importing/loading replaces the current model and
 }
 ```
 
+A layer may also give `loss_below`, the loss tangent of the dielectric below it (0 when left
+out; a KiCad stackup's `loss_tangent` sets it): the finite elements then solve that substrate
+lossy (the ideal line estimate stays lossless).
 Vias use `{net,at,layers:[from,to],diameter,drill}` (`drill` optional, the plated hole). Polygon interiors use the even-odd rule; multiple
 polygons on a reference layer are unioned for screening. Native input is checked before any
 model replacement; invalid numbers, layers, dimensions and excessive inputs return errors.
@@ -217,6 +220,9 @@ alumina against Hammerstad and Jensen: ε_eff within 0.2 %, the 4 mm line's phas
 ground planes against Cohn's even and odd impedances, within 0.22 % and 0.53 %.
 [`pcb-via-short`](../tests/oracle/pcb-via-short/README.md) — a line shorted by a via, S11's phase
 within 0.27° of the line and Goldfarb and Pucel's via inductance.
+[`pcb-lossy-microstrip-fem`](../tests/oracle/pcb-lossy-microstrip-fem/README.md) — the line on a
+substrate of tan δ = 0.02 (`loss_below`): its mode's dielectric attenuation within 0.6 % of the
+quasi-TEM line's and its |S21| within 1e-5 of the loss that gives over 4 mm.
 
 Ports at a trace's end instead of the box's sides: `pcb.port {"name":"1","segment":"s","end":"start"}`
 puts a 50 Ω lumped port there — a sheet the trace's width wide from its reference (the nearest
@@ -226,6 +232,15 @@ cut square at the port. With lumped ports alone `solve.frequency` gives their S 
 referred to each port's impedance), swept fast as waveguide ports are. [`pcb-lumped-line`](../tests/oracle/pcb-lumped-line/README.md)
 checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1.3e-3;
 the phase carries the feeds' own inductance (+1.8° at 1 GHz).
+
+### Losses
+
+A layer's `loss_below` makes its substrate lossy (above). `model.walls {"conductivity": σ}` makes
+every conductor of the region lossy by its surface impedance: the copper sheets on both their
+faces (the current flows on each), the ground floor and the region's box (a shield of that
+metal). The copper has no thickness, so its current is singular at a trace's edges (∝ 1/√r) and
+its conductor loss grows slowly (logarithmically) as the edge size shrinks: read it as an
+estimate at the mesh's edge size, not a converged value — copper of finite thickness is to come.
 
 ### Open boards
 

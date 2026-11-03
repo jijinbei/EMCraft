@@ -1,0 +1,33 @@
+{
+ "title": "Microstrip on a lossy substrate (εr = 9.8, tan δ = 0.02, h = 0.635 mm, W/h = 0.945) loaded as a board, meshed by the planar mesher: its port mode's dielectric attenuation and the 4 mm line's |S21| at 1 GHz",
+ "kind": "benchmark",
+ "source": "The dielectric attenuation of a quasi-TEM line, α_d = k0 εr (ε_eff − 1) tan δ / (2 √ε_eff (εr − 1)) (D. M. Pozar, Microwave Engineering, 4th ed., Wiley 2012, §3.8), ε_eff from E. Hammerstad and Ø. Jensen's fit (IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409): the value of the oracle case `lossy-microstrip`, evaluated independently of the code (0.004395612793931512 dB/mm); a matched line's |S21| = 10^(−α_d L / 20) over L = 4 mm",
+ "quantities": [
+  {
+   "id": "att",
+   "quantity": "attenuation of the port mode at 1 GHz (dB/mm)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/attenuation_db"
+   },
+   "value": 0.004395612793931512,
+   "tolerance": {
+    "relative": 0.02
+   },
+   "reason": "as `lossy-microstrip`: the formula's filling factor (0.44 %), the fit's 0.2 %, the box and the cross-section's grading at the strip's edges"
+  },
+  {
+   "id": "s21_mag",
+   "quantity": "|S21| of the 4 mm line at 1 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 0.9979777929226281,
+   "tolerance": {
+    "absolute": 0.0002
+   },
+   "reason": "the line's loss (2.0e-3) within its 2 % (4e-5) and the ports' own mismatch (|S11| 7e-4 lossless: |S21| below 1 by 2.5e-7) and the volume mesh's dissipation against the port's"
+  }
+ ]
+}

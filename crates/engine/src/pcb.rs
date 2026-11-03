@@ -192,7 +192,10 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let poly = |x0, x1| Copper { net: "GND".into(), layer: "B.Cu".into(), polygon: vec![[x0, 0.0], [x1, 0.0], [x1, 20.0], [x0, 20.0]] };
     let mut board = Board {
         name: "PCB return-path example".into(),
-        layers: vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: er }, Layer { name: "B.Cu".into(), z: h, eps_below: 1.0 }],
+        layers: vec![
+            Layer { name: "F.Cu".into(), z: 0.0, eps_below: er, loss_below: 0.0 },
+            Layer { name: "B.Cu".into(), z: h, eps_below: 1.0, loss_below: 0.0 },
+        ],
         segments: vec![
             Segment { id: "signal:0".into(), net: "DATA".into(), layer: "F.Cu".into(), start: [5.0, 10.0], end: [5.0 + l / 2.0, 10.0], width: w },
             Segment { id: "signal:1".into(), net: "DATA".into(), layer: "F.Cu".into(), start: [5.0 + l / 2.0, 10.0], end: [5.0 + l, 10.0], width: w },
