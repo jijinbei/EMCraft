@@ -58,7 +58,7 @@ pub(super) fn wall_style(m: &Model, overlay: Overlay, port: bool, material: usiz
         (_, Kind::Conductor) => (s.metal_dark, 255),
         (Overlay::Materials, Kind::Air) => (material_rgb(m, material), 0),
         (_, Kind::Air) => (s.metal, if overlay == Overlay::Mesh { 0 } else { 16 }),
-        (Overlay::Plain, Kind::Wall) => (s.metal, 110),
+        (Overlay::Plain | Overlay::Board, Kind::Wall) => (s.metal, 110),
         (Overlay::Mesh, Kind::Wall) => (s.mesh_wall, 25),
         (Overlay::Materials, Kind::Wall) => (s.metal, 70),
         (Overlay::Ports, Kind::Wall) => (s.metal, 55),

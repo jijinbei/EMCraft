@@ -722,6 +722,11 @@ fn scenario_pcb_templates() {
 }
 
 #[test]
+fn scenario_pcb_region() {
+    scenario("pcb_region");
+}
+
+#[test]
 fn scenario_pcb_workflow() {
     scenario("pcb_workflow");
 }

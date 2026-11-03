@@ -63,6 +63,6 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
                 out.legend.push((trf("open boundary: PML {thickness}", args!(thickness = thickness)), sc().pml));
             }
         }
-        Overlay::Plain | Overlay::Mesh | Overlay::Field => {}
+        Overlay::Plain | Overlay::Mesh | Overlay::Field | Overlay::Board => {}
     }
 }

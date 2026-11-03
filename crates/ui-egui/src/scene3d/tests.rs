@@ -345,3 +345,27 @@ fn dielectric_is_a_closed_block_and_geometry_visibility_hides_its_shell() {
     s.execute("view.visibility", &json!({"kind":"geometry","name":"guide","visible":true})).unwrap();
     assert!(build(&s, Overlay::Materials).scene.tris.iter().any(|t| t.tag == Pick::Material(1).tag()));
 }
+
+#[test]
+fn a_board_shows_its_copper_by_role_with_its_heights_stretched() {
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({"split": true})).unwrap();
+    s.execute("view.pcb", &json!({"net": "DATA", "stage": "net"})).unwrap();
+    let b = build(&s, Overlay::Board);
+    let board = s.model().pcb.as_ref().unwrap();
+    let nets = board::nets(board);
+    let tagged = |net: &str| {
+        let tag = Pick::Net(nets.iter().position(|n| n == net).unwrap()).tag();
+        b.scene.tris.iter().filter(move |t| t.tag == tag)
+    };
+    let t = crate::theme::Tokens::get();
+    // The route in the warning colour, its reference in the success colour, both there.
+    assert!(tagged("DATA").count() > 0 && tagged("DATA").all(|t2| t2.color == crate::theme::rgb(t.warning)));
+    assert!(tagged("GND").count() > 0 && tagged("GND").all(|t2| t2.color == crate::theme::rgb(t.success)));
+    assert!(tagged("CLK").all(|t2| t2.color == sc().strip));
+    // The route's centre lines over it; the board's 0.18 mm stretched to show (the legend says).
+    assert_eq!(b.scene.lines.iter().filter(|l| l.color == crate::theme::rgb(t.warning)).count(), 2);
+    let (lo, hi) = b.bounds.unwrap();
+    assert!(hi[1] - lo[1] > 0.05 * (hi[0] - lo[0]), "{lo:?} {hi:?}");
+    assert!(b.legend.iter().any(|(text, _)| text.starts_with("heights")));
+}

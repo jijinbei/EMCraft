@@ -155,7 +155,7 @@ fn outline_edges(mesh: &emcraft_model::Mesh, faces: &[Face], overlay: Overlay, o
     let alpha = match overlay {
         Overlay::Mesh => 90,
         Overlay::Materials | Overlay::Ports | Overlay::Boundaries | Overlay::Field => 120,
-        Overlay::Plain => 200,
+        Overlay::Plain | Overlay::Board => 200,
     };
     let cos_sharp = 25f64.to_radians().cos();
     for group in edges.chunk_by(|x, y| x.0 == y.0) {

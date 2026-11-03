@@ -657,6 +657,7 @@
     "goal": "目的関数",
     "goal ({unit})": "目的関数 ({unit})",
     "grid": "グリッド",
+    "heights × {k}": "高さ × {k}",
     "high end (empty: automatic)": "上端（空欄：自動）",
     "hover the picture to read the fields": "画像にポインターを置くと電磁界を読み取れます",
     "in display units (STL has none)": "表示単位（STL は単位なし）",
