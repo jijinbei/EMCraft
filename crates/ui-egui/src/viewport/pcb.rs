@@ -7,8 +7,9 @@ use emcraft_model::units::{Time, Unit};
 use std::collections::BTreeSet;
 
 fn go(out: &mut Actions, stage: Stage) {
-    out.push(Action::run("view.pcb", json!({"stage":stage.id()})));
+    out.push(Action::run("view.pcb", json!({"stage": stage.id()})));
 }
+
 fn report<'a>(app: &'a EmcraftApp, state: &crate::state::PcbUi, net: &str) -> Option<&'a Value> {
     app.replies.pcb.as_ref().filter(|r| {
         r["net"].as_str() == Some(net)
@@ -168,7 +169,7 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
                     let r = ui.selectable_label(net == selected, net);
                     scenario::publish_target(Handle::Choice("pcb_net", net), r.rect);
                     if r.clicked() {
-                        out.push(Action::run("view.pcb", json!({"net":net,"stage":"net"})));
+                        out.push(Action::run("view.pcb", json!({"net": net, "stage": "net"})));
                     }
                 }
             });
@@ -412,10 +413,11 @@ fn draw_board(
         state.attempted = None;
         out.push(Action::run(
             "view.pcb",
-            if app.session.views().pcb_illustration.pick_victim { json!({"victim":n,"stage":"net"}) } else { json!({"net":n,"stage":"net"}) },
+            if app.session.views().pcb_illustration.pick_victim { json!({"victim": n, "stage": "net"}) } else { json!({"net": n, "stage": "net"}) },
         ));
     }
 }
+
 fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, report: Option<&Value>) {
     let t = Tokens::get();
     if let Some(crate::Failure { command, error }) = &app.failure
@@ -510,6 +512,7 @@ fn finding_label(code: &str) -> &'static str {
         _ => "Cross-section outside the supported line model",
     }
 }
+
 fn chart(ui: &mut egui::Ui, pts: &[Value], xkey: &str, series: &[(&str, Color32)], scalar: bool, unit: &str) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 112.0), Sense::hover());
     let p = ui.painter_at(rect);

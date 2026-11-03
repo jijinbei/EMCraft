@@ -1,7 +1,7 @@
 {
   "title": "PCB routing diagnostic: continuous-plane lossless 40 mm microstrip approximation",
   "kind": "theory",
-  "source": "Hammerstad and Jensen, IEEE MTT-S 1980 pp.407\u2013409; Pozar Microwave Engineering 4th ed. \u00a74.4. Reference values evaluated independently in Python from the formulas, without calling EMCraft. W=0.3 mm, h=0.18 mm, er=4.2; 50-ohm terminations, 1 GHz.",
+  "source": "Hammerstad and Jensen, IEEE MTT-S 1980 pp.407\u2013409; Pozar Microwave Engineering 4th ed. \u00a74.4. Reference values evaluated independently from the formulas by crates/theory/examples/pcb_line_reference.rs (`cargo run -p emcraft-theory --example pcb_line_reference -- 0.3 0.18 4.2 40 50 1`), which calls none of EMCraft's PCB code. W=0.3 mm, h=0.18 mm, er=4.2; 50-ohm terminations, 1 GHz.",
   "quantities": [
     {
       "id": "impedance",
@@ -14,7 +14,7 @@
       "tolerance": {
         "relative": 1e-10
       },
-      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+      "reason": "Independent evaluation (pcb_line_reference) of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
     },
     {
       "id": "delay",
@@ -27,7 +27,7 @@
       "tolerance": {
         "relative": 1e-10
       },
-      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+      "reason": "Independent evaluation (pcb_line_reference) of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
     },
     {
       "id": "reflection",
@@ -40,7 +40,7 @@
       "tolerance": {
         "relative": 1e-10
       },
-      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+      "reason": "Independent evaluation (pcb_line_reference) of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
     },
     {
       "id": "transmission",
@@ -53,7 +53,7 @@
       "tolerance": {
         "relative": 1e-10
       },
-      "reason": "Independent Python evaluation of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
+      "reason": "Independent evaluation (pcb_line_reference) of the published HJ fit and uniform lossless TEM line; this validates the approximation implementation, not a full-wave PCB."
     }
   ]
 }

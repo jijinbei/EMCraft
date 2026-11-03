@@ -304,12 +304,12 @@ fn material_selection_glows_and_visibility_preserves_walls_and_ports() {
     let baseline = build(&s, Overlay::Materials);
     let selected = build_with(&s, Overlay::Materials, &[], &[Pick::Material(0)]);
     assert!(selected.scene.tris.iter().any(|t| t.tag == Pick::Material(0).tag() && t.alpha >= 170));
-    s.execute("view.material", &json!({"name":"vacuum","visible":false})).unwrap();
+    s.execute("view.visibility", &json!({"kind":"material","name":"vacuum","visible":false})).unwrap();
     let hidden = build_with(&s, Overlay::Materials, &[], &[Pick::Material(0)]);
     assert!(!hidden.scene.tris.iter().any(|t| t.tag == Pick::Material(0).tag()));
     assert_eq!(baseline.scene.tris.len(), hidden.scene.tris.len());
     let before = hidden.scene.tris.len();
-    s.execute("view.material", &json!({"name":"ptfe-like","visible":false})).unwrap();
+    s.execute("view.visibility", &json!({"kind":"material","name":"ptfe-like","visible":false})).unwrap();
     let hidden = build(&s, Overlay::Materials);
     assert!(hidden.scene.tris.len() < before);
     let material_colour = material_rgb(s.model(), 1);

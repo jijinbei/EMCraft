@@ -92,7 +92,6 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("view.probe.move", None, Some(Glyph::Probe), false),
     ui("view.probe.delete", None, Some(Glyph::Probe), false),
     ui("view.visibility", None, Some(Glyph::Material), false),
-    ui("view.material", None, Some(Glyph::Material), false),
     ui("view.driven", None, Some(Glyph::Port), false),
     ui("view.chart.style", None, Some(Glyph::Chart), false),
     ui("results.probe", None, Some(Glyph::Probe), false),

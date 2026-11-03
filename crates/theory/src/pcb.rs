@@ -13,6 +13,7 @@ pub struct Finding {
     pub detail: String,
     pub segment: Option<String>,
 }
+
 #[derive(Clone, Debug)]
 pub struct Section {
     pub id: String,
@@ -23,6 +24,7 @@ pub struct Section {
     pub delay: f64,
     pub uncovered: Vec<[f64; 2]>,
 }
+
 #[derive(Clone, Debug)]
 pub struct Report {
     pub findings: Vec<Finding>,
@@ -31,19 +33,31 @@ pub struct Report {
     pub model_available: bool,
     pub length: f64,
 }
+
 fn cross(a: [f64; 2], b: [f64; 2]) -> f64 {
     a[0] * b[1] - a[1] * b[0]
 }
+
 fn sub(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
     [a[0] - b[0], a[1] - b[1]]
 }
-/// Point-to-segment distance (m) and projection, for drawing/picking and geometry screening.
+
+/// The distance (m) from `p` to the segment `a`–`b` and where along it (0 at `a`, 1 at `b`) the
+/// nearest point lies: for picking and the geometric screening.
+///
+/// ```
+/// let (d, t) = emcraft_theory::pcb::near([0.5, 0.2], [0.0, 0.0], [1.0, 0.0]);
+/// assert!((d - 0.2).abs() < 1e-15 && (t - 0.5).abs() < 1e-15);
+/// // Beyond an end, the end is nearest.
+/// assert_eq!(emcraft_theory::pcb::near([2.0, 0.0], [0.0, 0.0], [1.0, 0.0]), (1.0, 1.0));
+/// ```
 pub fn near(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> (f64, f64) {
     let d = sub(b, a);
     let q = sub(p, a);
     let t = ((q[0] * d[0] + q[1] * d[1]) / (d[0] * d[0] + d[1] * d[1]).max(1e-30)).clamp(0.0, 1.0);
     (distance(p, [a[0] + t * d[0], a[1] + t * d[1]]), t)
 }
+
 fn inside(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
     let mut on = false;
     for (a, b) in poly.iter().zip(poly.iter().cycle().skip(1)).take(poly.len()) {
@@ -108,9 +122,11 @@ fn gaps(a: [f64; 2], b: [f64; 2], polys: &[&[[f64; 2]]], budget: &mut usize) -> 
     }
     Ok(out)
 }
+
 fn key(layer: &str, p: [f64; 2]) -> (String, i64, i64) {
     (layer.into(), (p[0] / 1e-9).round() as i64, (p[1] / 1e-9).round() as i64)
 }
+
 fn path(segments: &[&Segment]) -> Option<Vec<usize>> {
     let mut graph: BTreeMap<_, Vec<usize>> = BTreeMap::new();
     for (i, s) in segments.iter().enumerate() {
@@ -156,11 +172,14 @@ fn path(segments: &[&Segment]) -> Option<Vec<usize>> {
     }
     (seen.len() == segments.len() && at == ends[1]).then_some(out)
 }
-/// Inspect a complete routed net. Coordinates/lengths are metres. Numerical S-parameters are
-/// enabled only for an unbranched, single-layer outer microstrip with continuous ground.
+
+/// Screens a routed net (lengths in m): its gaps in the reference copper, nearby signals, its
+/// topology and vias. Its line model (and so [`s_parameters`]) is given only for an unbranched
+/// outer microstrip on one layer over continuous ground.
+///
 /// ```
-/// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};
-/// assert!(emcraft_theory::pcb::inspect(&b,"CLK","GND").is_err());
+/// let empty = emcraft_model::pcb::Board { name: "empty".into(), layers: vec![], segments: vec![], vias: vec![], copper: vec![], notes: vec![] };
+/// assert!(emcraft_theory::pcb::inspect(&empty, "CLK", "GND").is_err());
 /// ```
 pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String> {
     board.check().map_err(|e| e.to_string())?;
@@ -321,8 +340,24 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
     }
     Ok(report)
 }
-/// Lossless line cascade for a valid report. Returns S11 and S21, both referred to `reference`
-/// ohms. Bends, via inductance, pads, losses and coupling are deliberately not synthesized.
+
+/// S11 and S21 at `frequency` (Hz) of the route's sections cascaded as lossless lines, referred
+/// to `reference` ohms at both ends (Pozar §4.4). Bends, vias, pads, losses and coupling are
+/// left out on purpose; a report with no model (not a simple outer microstrip) is refused.
+///
+/// ```
+/// use emcraft_model::pcb::{Board, Copper, Layer, Segment};
+/// // 30 mm of 0.3 mm trace over 0.18 mm of FR-4 with a whole ground plane below.
+/// let ground = Copper { net: "GND".into(), layer: "B".into(), polygon: vec![[0.0, 0.0], [0.04, 0.0], [0.04, 0.02], [0.0, 0.02]] };
+/// let trace = Segment { id: "0".into(), net: "S".into(), layer: "F".into(), start: [0.005, 0.01], end: [0.035, 0.01], width: 3e-4 };
+/// let layers = vec![Layer { name: "F".into(), z: 0.0, eps_below: 4.2 }, Layer { name: "B".into(), z: 1.8e-4, eps_below: 1.0 }];
+/// let board = Board { name: "line".into(), layers, segments: vec![trace], vias: vec![], copper: vec![ground], notes: vec![] };
+/// let report = emcraft_theory::pcb::inspect(&board, "S", "GND").unwrap();
+/// let (s11, s21) = emcraft_theory::pcb::s_parameters(&report, 1e9, 50.0).unwrap();
+/// // A lossless line: no power lost.
+/// assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-12);
+/// assert!(emcraft_theory::pcb::s_parameters(&report, -1.0, 50.0).is_err());
+/// ```
 pub fn s_parameters(report: &Report, frequency: f64, reference: f64) -> Result<(C, C), String> {
     if !report.model_available
         || !frequency.is_finite()
@@ -367,6 +402,7 @@ mod tests {
             notes: vec![],
         }
     }
+
     #[test]
     fn narrow_ground_slot_is_found_and_disables_si() {
         let mut b = board();
@@ -384,6 +420,7 @@ mod tests {
         assert!(r.findings.iter().any(|f| f.code == "return_gap"));
         assert!(s_parameters(&r, 1e9, 50.0).is_err());
     }
+
     #[test]
     fn a_reference_edge_invalidates_the_infinite_plane_model_even_under_covered_centreline() {
         let mut b = board();
@@ -394,6 +431,7 @@ mod tests {
         assert!(r.findings.iter().any(|f| f.code == "reference_edge"));
         assert!(!r.findings.iter().any(|f| f.code == "return_gap"));
     }
+
     #[test]
     fn a_return_via_screen_checks_distance_and_layer_span_without_claiming_a_via_model() {
         let mut b = board();
@@ -426,6 +464,7 @@ mod tests {
         b.vias[1].at[0] += 0.01;
         assert!(inspect(&b, "DATA", "GND").unwrap().findings.iter().any(|f| f.code == "missing_return_via"));
     }
+
     #[test]
     fn matched_quarter_wave_has_independent_closed_form_and_no_reflection() {
         let r = Report {
@@ -449,6 +488,7 @@ mod tests {
         assert!((s11.norm_sqr() + s21.norm_sqr() - 1.0).abs() < 1e-14);
         assert!(s_parameters(&r, f64::NAN, 50.0).is_err());
     }
+
     #[test]
     fn topology_layer_and_reference_failures_do_not_get_plausible_si() {
         let mut b = board();
@@ -471,6 +511,7 @@ mod tests {
         b.segments[0].width = f64::NAN;
         assert!(inspect(&b, "DATA", "GND").is_err());
     }
+
     #[test]
     fn a_route_crossing_itself_is_not_a_serial_line() {
         let mut b = board();
@@ -484,6 +525,7 @@ mod tests {
         assert!(r.findings.iter().any(|f| f.code == "route_topology"));
         assert!(s_parameters(&r, 1e9, 50.0).is_err());
     }
+
     #[test]
     fn serial_width_steps_do_not_depend_on_input_order() {
         let mut b = board();
@@ -514,6 +556,7 @@ pub struct Pair {
     pub gap: f64,
     pub length: f64,
 }
+
 /// Find same-layer parallel overlaps, including wide spacing for before/after illustration.
 /// ```
 /// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};

@@ -314,13 +314,17 @@ fn material_visibility_is_display_only_and_saved() {
     let mesh = s.model().mesh.as_ref().unwrap().tets.clone();
     let result = format!("{:?}", s.results().sweep);
     let history = s.history().len();
-    s.execute("view.material", &json!({"name":"vacuum","visible":false})).unwrap();
+    s.execute("view.visibility", &json!({"kind":"material","name":"vacuum","visible":false})).unwrap();
     assert!(s.views().hidden_materials.contains("vacuum"));
     assert_eq!(s.model().mesh.as_ref().unwrap().tets, mesh);
     assert_eq!(format!("{:?}", s.results().sweep), result);
     assert_eq!(s.history().len(), history);
-    for bad in [json!({"name":"missing","visible":false}), json!({"name":"vacuum"}), json!({"name":"vacuum","visible":"no"})] {
-        assert!(s.execute("view.material", &bad).is_err());
+    for bad in [
+        json!({"kind":"material","name":"missing","visible":false}),
+        json!({"kind":"material","name":"vacuum"}),
+        json!({"kind":"material","name":"vacuum","visible":"no"}),
+    ] {
+        assert!(s.execute("view.visibility", &bad).is_err());
         assert!(s.views().hidden_materials.contains("vacuum"));
     }
     let path = scratch("material-visibility.emcraft");
@@ -328,7 +332,7 @@ fn material_visibility_is_display_only_and_saved() {
     let mut t = Session::new();
     t.execute("file.open", &json!({"path":path})).unwrap();
     assert!(t.views().hidden_materials.contains("vacuum"));
-    t.execute("view.material", &json!({"name":"vacuum","visible":true})).unwrap();
+    t.execute("view.visibility", &json!({"kind":"material","name":"vacuum","visible":true})).unwrap();
     assert!(t.views().hidden_materials.is_empty());
     let _ = std::fs::remove_file(path);
 }
