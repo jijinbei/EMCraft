@@ -9,7 +9,7 @@ use emcraft_mesh::planar::extrude::{Hole, Slab, Stack, extrude};
 use emcraft_mesh::planar::{Outline, Request, offset, triangulate};
 use emcraft_model::pcb::{Board, Region};
 use emcraft_model::shape::{BoxSize, Shape, Solid};
-use emcraft_model::{LumpedPort, Material, Ohms, Point3, Vec3};
+use emcraft_model::{End, LumpedPort, Material, Ohms, Point3, Vec3};
 use serde_json::{Value, json};
 
 use crate::meshing::Sizes;
@@ -308,8 +308,7 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?.to_owned();
     let id = p.string("segment").required()?;
     let g = board.segments.iter().find(|g| g.id == id).ok_or_else(|| p.error("segment", "name a segment of the board"))?;
-    let end = p.string("end").check(|e| *e == "start" || *e == "end", "`start` or `end`").or("start")?;
-    let at = if end == "start" { g.start } else { g.end };
+    let at = g.at(p.pick("end").or(End::Start)?);
     let heights = board.heights();
     let layer = board.layers.iter().position(|l| l.name == g.layer).ok_or_else(|| failed("the segment's layer is missing"))?;
     let top = heights[layer];
@@ -377,15 +376,16 @@ fn inside(polygon: &[[f64; 2]], p: [f64; 2]) -> bool {
 /// let board = s.model().pcb.as_ref().unwrap();
 /// // The sample's route is two segments end to end: its ends are the first's start and the
 /// // second's end.
-/// assert_eq!(route_ends(board, "DATA"), vec![("signal:0".to_string(), "start"), ("signal:1".to_string(), "end")]);
+/// use emcraft_model::End;
+/// assert_eq!(route_ends(board, "DATA"), vec![("signal:0".to_string(), End::Start), ("signal:1".to_string(), End::End)]);
 /// assert!(route_ends(board, "nothing").is_empty());
 /// ```
-pub fn route_ends(board: &Board, net: &str) -> Vec<(String, &'static str)> {
+pub fn route_ends(board: &Board, net: &str) -> Vec<(String, End)> {
     let route: Vec<_> = board.segments.iter().filter(|g| g.net == net).collect();
     let meets = |q: [f64; 2]| route.iter().flat_map(|g| [g.start, g.end]).filter(|r| emcraft_model::pcb::distance(*r, q) <= 1e-9).count();
     route
         .iter()
-        .flat_map(|g| [(g, g.start, "start"), (g, g.end, "end")])
+        .flat_map(|g| [End::Start, End::End].map(|e| (g, g.at(e), e)))
         .filter(|(_, q, _)| meets(*q) == 1)
         .map(|(g, _, e)| (g.id.clone(), e))
         .collect()

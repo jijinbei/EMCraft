@@ -2372,6 +2372,7 @@ name = "emcraft-theory"
 version = "0.1.0"
 dependencies = [
  "emcraft-fem",
+ "emcraft-macros",
  "emcraft-model",
  "num-complex",
  "thiserror 2.0.21",

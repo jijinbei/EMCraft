@@ -2,7 +2,7 @@
 use super::*;
 use crate::lang::{Raw, args};
 use crate::ui_kit;
-use emcraft_engine::pcb::{Stage, near};
+use emcraft_engine::pcb::{Code, Stage, near};
 use emcraft_model::units::{Time, Unit};
 use std::collections::BTreeSet;
 
@@ -485,7 +485,7 @@ fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &s
         for (name, (id, end)) in ["1", "2"].into_iter().zip(&ends) {
             list.push((
                 "pcb.port".into(),
-                json!({"name": name, "segment": id, "end": end, "impedance": state.reference.parse::<f64>().unwrap_or(50.)}),
+                json!({"name": name, "segment": id, "end": end.id(), "impedance": state.reference.parse::<f64>().unwrap_or(50.)}),
             ));
         }
         list.push(("mesh.generate".into(), json!({"size": size})));
@@ -605,7 +605,7 @@ fn draw_board(
         .and_then(|r| r["findings"].as_array())
         .into_iter()
         .flatten()
-        .filter(|f| ["return_gap", "reference_edge", "no_reference"].contains(&f["code"].as_str().unwrap_or("")))
+        .filter(|f| f["code"].as_str().and_then(Code::parse).is_some_and(Code::reference))
         .filter_map(|f| f["segment"].as_str())
         .collect();
     let mut nearest: Option<(f32, &str)> = None;
@@ -702,8 +702,8 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
             if !shown.insert((f["code"].as_str(), f["detail"].as_str())) {
                 continue;
             }
-            let code = f["code"].as_str().unwrap_or("");
-            ui.colored_label(if code == "nearby_signal" { t.warning } else { t.error }, tr(finding_label(code)));
+            let code = f["code"].as_str().and_then(Code::parse).unwrap_or(Code::UnsupportedCrossSection);
+            ui.colored_label(if code == Code::NearbySignal { t.warning } else { t.error }, tr(finding_label(code)));
             ui.small(f["detail"].as_str().unwrap_or(""));
         }
     }
@@ -756,16 +756,16 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
     }
 }
 
-fn finding_label(code: &str) -> &'static str {
+fn finding_label(code: Code) -> &'static str {
     match code {
-        "return_gap" => "Reference copper missing beneath the route",
-        "reference_edge" => "Return corridor reaches a reference edge or slot",
-        "no_reference" => "No filled reference plane",
-        "route_topology" => "Route is branched, disconnected or closed",
-        "via_transition" => "Signal via needs a transition model",
-        "missing_return_via" => "Verify the return via at this layer transition",
-        "nearby_signal" => "Nearby parallel signal: check coupling",
-        _ => "Cross-section outside the supported line model",
+        Code::ReturnGap => "Reference copper missing beneath the route",
+        Code::ReferenceEdge => "Return corridor reaches a reference edge or slot",
+        Code::NoReference => "No filled reference plane",
+        Code::RouteTopology => "Route is branched, disconnected or closed",
+        Code::ViaTransition => "Signal via needs a transition model",
+        Code::MissingReturnVia => "Verify the return via at this layer transition",
+        Code::NearbySignal => "Nearby parallel signal: check coupling",
+        Code::UnsupportedCrossSection => "Cross-section outside the supported line model",
     }
 }
 

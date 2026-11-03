@@ -9,9 +9,45 @@ use num_complex::Complex64 as C;
 use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Debug)]
 pub struct Finding {
-    pub code: &'static str,
+    pub code: Code,
     pub detail: String,
     pub segment: Option<String>,
+}
+
+emcraft_macros::named_enum! {
+    /// What a geometric finding is about.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Code {
+        /// The route branches, breaks or closes: no two-terminal line.
+        RouteTopology = "route_topology",
+        /// The route changes layers through a via.
+        ViaTransition = "via_transition",
+        /// No reference copper on another layer.
+        NoReference = "no_reference",
+        /// Reference copper missing under part of the route.
+        ReturnGap = "return_gap",
+        /// The return corridor reaches the reference's edge or a slot.
+        ReferenceEdge = "reference_edge",
+        /// The cross-section is outside the line model.
+        UnsupportedCrossSection = "unsupported_cross_section",
+        /// Another signal runs close and parallel.
+        NearbySignal = "nearby_signal",
+        /// No return via beside a layer transition.
+        MissingReturnVia = "missing_return_via",
+    }
+}
+
+impl Code {
+    /// Whether it is about the reference copper under the route: none, a gap, an edge (the
+    /// return path the illustrations must not invent).
+    ///
+    /// ```
+    /// use emcraft_theory::pcb::Code;
+    /// assert!(Code::ReturnGap.reference() && !Code::NearbySignal.reference());
+    /// ```
+    pub fn reference(self) -> bool {
+        matches!(self, Code::ReturnGap | Code::ReferenceEdge | Code::NoReference)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -202,13 +238,13 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
         Some(p) => report.path = p,
         None => {
             report.model_available = false;
-            finding("route_topology", "Branched, disconnected or closed route: a two-terminal line model cannot represent it.".into(), None);
+            finding(Code::RouteTopology, "Branched, disconnected or closed route: a two-terminal line model cannot represent it.".into(), None);
         }
     }
     let signal_vias: Vec<_> = board.vias.iter().filter(|v| v.net == net).collect();
     if !signal_vias.is_empty() {
         report.model_available = false;
-        finding("via_transition", "Signal vias require a via/transition model; no two-port prediction is made.".into(), None);
+        finding(Code::ViaTransition, "Signal vias require a via/transition model; no two-port prediction is made.".into(), None);
     }
     let mut budget = 1_000_000;
     for s in &traces {
@@ -223,7 +259,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
             .min_by(|(_, a), (_, b)| (a.z - board.layers[index].z).abs().total_cmp(&(b.z - board.layers[index].z).abs()));
         let Some((ri, plane)) = reference else {
             report.model_available = false;
-            finding("no_reference", format!("No filled {ground} reference copper on another layer."), Some(s.id.clone()));
+            finding(Code::NoReference, format!("No filled {ground} reference copper on another layer."), Some(s.id.clone()));
             continue;
         };
         let h = (plane.z - board.layers[index].z).abs();
@@ -233,7 +269,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
         if !uncovered.is_empty() {
             report.model_available = false;
             finding(
-                "return_gap",
+                Code::ReturnGap,
                 format!("The route crosses missing {ground} copper on {}. Restore a continuous reference or reroute.", plane.name),
                 Some(s.id.clone()),
             );
@@ -247,7 +283,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
             if !gaps(a, b, &polys, &mut budget)?.is_empty() {
                 report.model_available = false;
                 finding(
-                    "reference_edge",
+                    Code::ReferenceEdge,
                     "Reference copper is missing within h + W/2 of this route; infinite-plane impedance is not applicable.".into(),
                     Some(s.id.clone()),
                 );
@@ -260,7 +296,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
         if !outer || index.abs_diff(ri) != 1 || !(0.01..=100.0).contains(&(s.width / h)) {
             report.model_available = false;
             finding(
-                "unsupported_cross_section",
+                Code::UnsupportedCrossSection,
                 "Only adjacent-plane outer microstrip within 0.01 ≤ W/h ≤ 100 is supported by this model.".into(),
                 Some(s.id.clone()),
             );
@@ -297,7 +333,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
             let parallel = cross(d, od).abs() / (len * distance(other.start, other.end));
             if gap < 3.0 * h && parallel < 0.1 {
                 finding(
-                    "nearby_signal",
+                    Code::NearbySignal,
                     format!(
                         "{} runs close and parallel (gap {:0.3e} m). This is geometric screening, not calculated crosstalk.",
                         other.net,
@@ -332,7 +368,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
         });
         if !stitched {
             finding(
-                "missing_return_via",
+                Code::MissingReturnVia,
                 "No reference-net via within 2 mm spanning the selected reference layers. Verify the return transition.".into(),
                 None,
             );
@@ -418,7 +454,7 @@ mod tests {
         b.copper = vec![left, right];
         let r = inspect(&b, "DATA", "GND").unwrap();
         assert!(!r.model_available);
-        assert!(r.findings.iter().any(|f| f.code == "return_gap"));
+        assert!(r.findings.iter().any(|f| f.code == Code::ReturnGap));
         assert!(s_parameters(&r, 1e9, 50.0).is_err());
     }
 
@@ -429,8 +465,8 @@ mod tests {
         b.copper[0].polygon[3][1] = 0.0102;
         let r = inspect(&b, "DATA", "GND").unwrap();
         assert!(!r.model_available);
-        assert!(r.findings.iter().any(|f| f.code == "reference_edge"));
-        assert!(!r.findings.iter().any(|f| f.code == "return_gap"));
+        assert!(r.findings.iter().any(|f| f.code == Code::ReferenceEdge));
+        assert!(!r.findings.iter().any(|f| f.code == Code::ReturnGap));
     }
 
     #[test]
@@ -456,20 +492,20 @@ mod tests {
         });
         let r = inspect(&b, "DATA", "GND").unwrap();
         assert!(!r.model_available);
-        assert!(r.findings.iter().any(|f| f.code == "missing_return_via"));
+        assert!(r.findings.iter().any(|f| f.code == Code::MissingReturnVia));
         let mut via = b.vias[0].clone();
         via.net = "GND".into();
         via.at[0] += 0.0005;
         b.vias.push(via);
         let r = inspect(&b, "DATA", "GND").unwrap();
         assert!(!r.model_available);
-        assert!(r.findings.iter().any(|f| f.code == "via_transition"));
-        assert!(!r.findings.iter().any(|f| f.code == "missing_return_via"));
+        assert!(r.findings.iter().any(|f| f.code == Code::ViaTransition));
+        assert!(!r.findings.iter().any(|f| f.code == Code::MissingReturnVia));
         b.vias[1].layers[1] = "ground".into();
-        assert!(inspect(&b, "DATA", "GND").unwrap().findings.iter().any(|f| f.code == "missing_return_via"));
+        assert!(inspect(&b, "DATA", "GND").unwrap().findings.iter().any(|f| f.code == Code::MissingReturnVia));
         b.vias[1].layers[1] = "bottom".into();
         b.vias[1].at[0] += 0.01;
-        assert!(inspect(&b, "DATA", "GND").unwrap().findings.iter().any(|f| f.code == "missing_return_via"));
+        assert!(inspect(&b, "DATA", "GND").unwrap().findings.iter().any(|f| f.code == Code::MissingReturnVia));
     }
 
     #[test]
@@ -512,7 +548,7 @@ mod tests {
         b.copper.clear();
         let r = inspect(&b, "DATA", "GND").unwrap();
         assert!(!r.model_available);
-        assert!(r.findings.iter().any(|f| f.code == "no_reference"));
+        assert!(r.findings.iter().any(|f| f.code == Code::NoReference));
         assert!(inspect(&b, "missing", "GND").is_err());
         assert!(inspect(&b, "DATA", "DATA").is_err());
         b.segments[0].width = f64::NAN;
@@ -529,7 +565,7 @@ mod tests {
             .map(|(i, p)| Segment { id: format!("track-{i}"), net: "DATA".into(), layer: "top".into(), start: p[0], end: p[1], width: 0.0003 })
             .collect();
         let r = inspect(&b, "DATA", "GND").unwrap();
-        assert!(r.findings.iter().any(|f| f.code == "route_topology"));
+        assert!(r.findings.iter().any(|f| f.code == Code::RouteTopology));
         assert!(s_parameters(&r, 1e9, 50.0).is_err());
     }
 

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session, Step};
 
-pub use emcraft_theory::pcb::{Pair, near};
+pub use emcraft_theory::pcb::{Code, Pair, near};
 
 emcraft_macros::named_enum! {
     /// PCB workspace stages, saved with the project by `view.pcb`.
@@ -287,7 +287,7 @@ fn section_json(v: &Section, length: Length) -> Value {
 
 /// A screening finding: geometry only, never a solved field.
 fn finding_json(f: &Finding) -> Value {
-    json!({"code": f.code, "method": "geometry_screening", "segment": f.segment, "detail": f.detail})
+    json!({"code": f.code.id(), "method": "geometry_screening", "segment": f.segment, "detail": f.detail})
 }
 
 /// A pair of parallel segments of two nets, in display lengths: geometry only.

@@ -228,7 +228,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         params: &[
             req("name", K::String, "port name"),
             req("segment", K::String, "the segment's id"),
-            opt("end", K::String, "`start` or `end` of the segment (default start)"),
+            opt("end", K::String, "`start` or `end` of the segment (default start)").one_of(&emcraft_model::End::IDS),
             opt("impedance", K::Number, "the port's impedance in ohms (default 50)"),
         ],
         effect: Effect::Record,

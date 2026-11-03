@@ -126,7 +126,7 @@ pub(crate) fn curves(app: &EmcraftApp, frame: &crate::scene3d::board::Frame, mot
         .and_then(|r| r["findings"].as_array())
         .into_iter()
         .flatten()
-        .any(|f| ["return_gap", "reference_edge", "no_reference"].contains(&f["code"].as_str().unwrap_or("")));
+        .any(|f| f["code"].as_str().and_then(emcraft_engine::pcb::Code::parse).is_some_and(emcraft_engine::pcb::Code::reference));
     let emphasis = if config.playing { (motion % 8 + 1) as f32 * 0.785 } else { 0. };
     for k in 0..if mode == Mode::Return { 1 } else { 5 } {
         let x = half * (k as f64 / 4. - 0.5);
