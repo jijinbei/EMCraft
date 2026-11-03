@@ -1,102 +1,87 @@
-# Project files (`.emcraft`)
+# Project files (`.emcraft`, version 0.1)
 
-An EMCraft project is one UTF-8 JSON file with the extension `.emcraft`, written by
-`file.save` and read by `file.open` (a `.json` file of the same form opens too):
+An EMCraft project is one file with the extension `.emcraft`, written by `file.save` and read
+by `file.open`: a zip package (`emcraft_io::package`) of `project.json`, readable JSON, and the
+arrays of numbers it names, each a part of its own, little-endian, stored as they are:
+
+```
+project.json                 the project (below), deflated
+mesh/nodes.f64               3 numbers a node (m)
+mesh/tets.u32                4 nodes a tetrahedron;  mesh/tet_material.u32  one each
+mesh/boundary.u32            6 a boundary face: 3 nodes, its tetrahedron, its condition (kind, value)
+mesh/curved.u32, .f64        a curved edge's 2 nodes and its midpoint;  mesh/grid_*.f64, grid_cells.u32
+results/sweep/numbers.f64    the sweep's numbers, in order;  results/sweep/fields/<k>.c64  frequency k's fields
+results/eigen/…, results/time_domain/…, results/dispersion/…, results/study/…, results/radiation/…, results/td_radiation/…
+history/<id>/s.c64           a kept solve's S-parameters (complex: real then imaginary)
+```
 
 ```json
 {
   "format": "emcraft-project",
-  "version": 4,
+  "version": "0.1",
+  "emcraft": "0.1.0",
   "history": [{"command": "units.set", "params": {"length": "mm"}}, …],
   "runs": [{"command": "solve.frequency", "params": {"start": 8, "stop": 12, "points": 41}, "units": {"length": "mm", "frequency": "GHz"}}],
   "views": {"charts": {"sparameters": {"x": {"min": 6.5e9, "max": 7.5e9}, "hidden": ["s11.ref"]}}, "probes": [{"name": "P1", "at": [0.0114, 0.005, 0.01]}]},
-  "analysis_history": {
-    "next": 2,
-    "histories": [[{"command": "units.set", "params": {"length": "mm"}}, …]],
-    "solves": [{"id": 1, "when": 1793433600, "command": "solve.frequency", "params": {"start": 6.6, "stop": 9, "points": 3},
-                "units": {"length": "mm", "frequency": "GHz"}, "history": 0, "variables": {"l_gap": 20.0}, "pinned": true, "label": "first try",
-                "results": {"sweep": {"order": 1, "entries": [{"name": "1", "port": 0}, {"name": "2", "port": 1}], "deembed": [0.0, 0.0],
-                                      "frequencies": [6.6e9, 7.8e9, 9e9], "s": [[0.91, -0.2, 0.1, 0.33, 0.1, 0.33, 0.9, -0.21], …]}}}]
-  },
+  "analysis_history": {"next": 2, "histories": [[…]], "solves": [{"id": 1, "when": 1793433600, "command": "solve.frequency", …,
+                       "results": {"sweep": {"order": 1, "entries": […], "deembed": [0.0, 0.0],
+                                             "s": {"frequencies": [6.6e9, 7.8e9, 9e9], "outputs": 2, "inputs": [0, 1], "values": "history/1/s.c64"}}},
+                       "provenance": {"version": "0.1.0", "seconds": 1.2, "tetrahedra": 5400, "unknowns": 6800, "order": 1, "linear_solver": "direct", "device": "cpu", "precision": "single", "threads": 8}}]},
+  "mesh": {"nodes": 1490, "tetrahedra": 5400, "boundary": 2200, "curved": 0, "grid": [8, 5, 46], "buckets": false},
+  "results": {"current": true, "archive_current": 1, "fields": true, "sweep": {"order": 1, "iterative": false, "entries": 2, "points": […], "numbers": "results/sweep/numbers.f64"}},
   "model": { … }
 }
 ```
 
 - `history` is the script of commands that built the model, in the session's display units at
-  the time each ran. Opening a project replays it in a fresh session, so the mesh comes back
-  bit for bit (meshing is deterministic). The project's variables are steps of it
+  the time each ran. Opening replays it in a fresh session, every step checked as it runs —
+  but the mesh commands (`mesh.generate`, `mesh.adapt`) are read and recorded, not run: the
+  model takes the file's own `mesh`. The project's variables are steps of it
   (`project.variable`), and the parameters that use them keep their expressions
-  (`"length": "=l"`), so changing a variable, sweeping or optimizing it replays the history with
-  the definition's value replaced. Edits and deletions of items (`model.port.edit`,
-  `geometry.body.delete`, …) are steps like any other, and so is the kind of analysis chosen at
-  the job's start (`project.analysis`): a file without it opens with the kind inferred from the
-  model, as before.
-- `runs` (since version 2) are the project's runs: the last successful solve of each solve
-  command (`solve.frequency`, `solve.eigenmodes`, `solve.time_domain`, `solve.radiation`,
-  `solve.dispersion`), the latest last, each with its parameters as given (expressions kept) and
-  the display units they were read in. Opening restores them **without running them**:
-  `project.runs` lists them (in the display units now) for the Setup step's fields,
-  `project.values` gives one command's, and `solve.rerun` runs one again. **Results are not
-  stored**: not the S-parameters, fields, eigenmodes or far fields; they are solved again. On
-  reading, each run must name a solve command, once, with parameters that command knows (the
-  file is not trusted to name any other command); otherwise the file is refused.
-- `views` (since version 3) is how the project's results are looked at, set by
-  `view.chart.style`, `view.probe.*` and `view.driven` (never by the history, so changing them leaves the
-  model and its results alone): `charts`, each chart's style by its id (`sparameters`, `tdr`,
-  `pattern`, `dispersion`, `study`) — `title`, `x` and `y` (`label`, `min`, `max`, `log`),
-  `hidden` (curves' keys), `curves` (a key's `colour` `#rrggbb` and `width` in pixels), `grid`,
-  `legend` — with a frequency axis' ends in hertz; and `probes`, each a `name` and a point `at`
-  in metres. Only what differs from automatic is written. On reading they are checked like
-  everything else (known charts, texts and lists within their caps, finite numbers, valid
-  colours, probes named once); otherwise the file is refused. Opening restores them, and a
-  change to them leaves the project unsaved.
-- `analysis_history` (since version 4) is the analysis history (`results.history`): the solves
-  kept, the oldest first, each with its `id`, `when` (seconds since 1970, UTC), its solve
-  `command` and `params` as given in the display `units` they were read in, the `history` that
-  built its model (an index into `histories`, where each distinct history of commands is written
-  once), its `variables`' values, `pinned` and `label`, and what it found as the history shows
-  and compares it (`results`): the sweep's `order`, S's `entries` (each a `name`, its `port`,
-  a terminal port's `terminal` and the `reference` impedance in Ω its waves are referred to),
-  each port's `deembed` (m), the `frequencies` (Hz) and per frequency S as 2n² numbers, row
-  by row, real then imaginary (S[p][q] at 2(pn + q)); the `eigenmodes` (`frequency` in Hz,
-  `q_walls`, `q_dielectric`, `q_magnetic`); the time domain's `frequencies`, `s11` and `s21`
-  (pairs as S's); and how it was made (`provenance`, optional): EMCraft's `version`, the
-  wall-clock `seconds`, the mesh's `tetrahedra`, the system's `unknowns`, the elements' `order`
-  and a sweep's `linear_solver` (`direct` or `iterative`) where they apply, the `device`, its
-  `precision` and the `threads` — so tries can be compared on cost as well as result; not part
-  of what a solve found (the same solve again is the same kept solve, its provenance the
-  latest). **Not the model, the mesh, the fields or the far fields**: the highpass sample
-  solved three times over 101 frequencies is a file of 72 kB (4 kB without its history), about
-  23 kB a two-port sweep of 101 frequencies, numbers written in full so they read back bit for
-  bit (lists of numbers are written on one line). `next` is the id after the last
-  given, so ids are never given twice. Opening restores the solves (`results.history` reads as
-  it did, number for number, nothing marked current since no results are loaded), and the
-  S-parameter chart draws them over each other (`compare`) before anything is solved.
-  `results.history.restore` of a solve read back from a file rebuilds its model by replaying
-  its history in a fresh session (the mesh comes back bit for bit) and runs its solve again,
-  which gives the saved results again (`same_as_saved`), at the cost of its first solve; with
-  `solve` false it brings back only the model. On reading, everything is checked: at most 16
-  unpinned and 32 pinned solves, ids ascending up to `next`, each `command` a solve command and
-  each step of a history a command a history holds (one that changes the model), both with
-  parameters they know; at most 2001 frequencies, 64 entries of S and 2²² numbers a solve,
-  every size agreeing (2n² numbers an S matrix, one a frequency), every number finite,
-  frequencies positive and ascending, impedances positive; labels at most 80 characters; a
-  provenance's version at most 64 characters, its seconds finite and ≥ 0, its order 1 or 2,
-  its device and precision ones EMCraft knows.
-  Otherwise the file is refused. Files of versions 1 to 3 open with an empty history.
-- `model` is the model as the engine holds it (SI units), for reading by other tools; opening
-  does not use it. A port on a face holds `face` as `{"axis", "at", "u0", "v0", "a", "b"}` (its
-  plane across x, y or z and its rectangle in the plane's other two axes, in the order x, y, z);
-  files written before ports across x and y name them `z`, `x0`, `y0` without an axis, and read
-  as a z face.
-- Histories written before ports across x and y replay unchanged: `model.port.create`'s `face`
-  `[z, x0, y0, a, b]` is the same list with `axis` left out (z).
-- `version` is 4 for a project with an analysis history, else 3 for one with views, else 2
-  (which older EMCraft reads). A file without one is read as version 1; version 1 files (no
-  `runs`) open as they always did, with no runs.
-  A file of a newer version is refused rather than half read.
+  (`"length": "=l"`), so changing a variable, sweeping or optimizing it replays the history —
+  then with the mesher — with the definition's value replaced.
+- `runs` are the project's runs: the last successful solve of each solve command, the latest
+  last, each with its parameters as given (expressions kept) and the display units they were
+  read in. `project.runs` lists them for the Setup step's fields and `solve.rerun` runs one
+  again. On reading, each run must name a solve command, once, with parameters that command
+  knows; otherwise the file is refused.
+- `views` is how the project's results are looked at, set by `view.chart.style`,
+  `view.probe.*` and `view.driven` (never by the history): each chart's style by its id, and
+  the probes. Only what differs from automatic is written; on reading they are checked (known
+  charts, texts and lists within their caps, finite numbers, valid colours, probes named once).
+- `analysis_history` is the analysis history (`results.history`): the solves kept, the oldest
+  first, each with its identity (`id`, `when`, `command`, `params`, `units`, its model's
+  `history` — an index into `histories`, each distinct history written once —, `variables`,
+  `pinned`, `label`), how it was made (`provenance`) and what it found (`results`: the sweep's
+  order, entries, de-embedding and S; the eigenmodes' frequencies and Q; the time domain's S11
+  and S21). Restoring one the session holds in memory takes no solve; one read from a file is
+  rebuilt from its history and solved again (`same_as_saved` says whether it gave the same).
+- `mesh` is the model's mesh: its counts here, its numbers in `mesh/`. On reading it is checked
+  (every index in range, every number finite, sizes agreeing and within 2²⁵ tetrahedra, the
+  curved edges sorted, the grid ascending; the tetrahedra's shapes by the mesher's check) and
+  its point-location buckets built again.
+- `results` are the session's results, so a project opens without solving again: the sweep
+  (each frequency's S, line impedances, backward error and — when `fields` — its field
+  vectors), the eigenmodes (frequencies, Q and vectors), the time domain, the dispersion
+  diagram, the study's table (every row, its predictions, the surrogate), the open problem
+  (its lumped ports, feed, Huygens samples and field) and the open time domain. Each result's
+  shape is here and its numbers a stream in `results/`, read back in the order written. No
+  system is written: a sweep's, the eigenmodes' and an open problem's are built again from the
+  model and its mesh (an assembly, no factorization) and the vectors read must fit it. A result
+  that does not fit is left out (`file.open` says which and why in `left_out`) rather than
+  refusing the file. `current` says whether they were the model's results when saved (else
+  stale), `archive_current` which kept solve they are. The field vectors are written up to
+  1 GB of them (`file.save` `fields`, default true; past the cap, or with `fields` false, the
+  S-parameters and tables are written and the fields are solved again).
+- `model` is the model as the engine holds it (SI units), for other tools; opening does not
+  read it.
+- `version` is `"0.1"`. A file of any other version, of none, or not a package (the plain JSON
+  of earlier EMCraft) is refused whole rather than half read. Every part read is capped (the
+  package 4 GB, `project.json` 64 MB, every array no longer than its shape says).
+- The same session saved twice gives the same bytes, but for its solves' wall-clock seconds:
+  the package's times are fixed (1980-01-01) and its parts in a fixed order.
 
-Saving writes a temporary file beside the target and renames it over, so a crash or a full disk
+Saving writes a temporary package beside the target and renames it over, so a crash or a full disk
 leaves the old file whole. A path without an extension gets `.emcraft`. The session remembers
 the file it was opened from or saved to (`file.save` without a path writes there) and whether
 the project changed since (`Session::is_dirty`): its history differs from the saved one, its

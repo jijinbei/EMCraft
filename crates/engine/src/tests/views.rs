@@ -69,13 +69,12 @@ fn chart_styles_apply_to_pngs_are_saved_and_refuse_bad_input() {
         assert!(s.execute("view.chart.style", &bad).is_err(), "{bad}");
         assert_eq!(s.views(), &before);
     }
-    // Saved with the project (version 4: its solves are kept too), opened again, clean; null clears, reset forgets.
+    // Saved with the project, opened again, clean; null clears, reset forgets.
     let dir = std::env::temp_dir().join(format!("emcraft-views-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("styled.emcraft").to_string_lossy().into_owned();
     s.execute("file.save", &json!({"path": path})).unwrap();
-    let doc: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(doc["version"], json!(4));
+    assert_eq!(super::project_json(&path)["views"], json!(s.views()));
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
     assert_eq!(t.views(), s.views());
@@ -95,9 +94,9 @@ fn chart_styles_apply_to_pngs_are_saved_and_refuse_bad_input() {
         json!({"probes": [{"name": "a", "at": [0, 0, 0]}, {"name": "a", "at": [0, 0, 0]}]}),
         json!({"probes": [{"name": "", "at": [0, 0, 0]}]}),
     ] {
-        let bad = dir.join("bad.emcraft");
-        std::fs::write(&bad, json!({"format": "emcraft-project", "version": 3, "history": [], "views": views}).to_string()).unwrap();
-        assert!(t.execute("file.open", &json!({"path": bad.to_string_lossy()})).is_err(), "{views}");
+        let bad = dir.join("bad.emcraft").to_string_lossy().into_owned();
+        super::write_project(&bad, &super::bare_project(json!({"views": views})), None);
+        assert!(t.execute("file.open", &json!({"path": bad})).is_err(), "{views}");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -174,9 +173,9 @@ fn the_driven_port_is_the_default_excitation_and_saved() {
     t.execute("file.open", &json!({"path": path})).unwrap();
     assert_eq!(t.views().driven.as_deref(), Some("2"));
     // A file's driven port is checked; one naming no port drives the first.
-    let bad = dir.join("bad.emcraft");
-    std::fs::write(&bad, json!({"format": "emcraft-project", "version": 3, "history": [], "views": {"driven": ""}}).to_string()).unwrap();
-    assert!(t.execute("file.open", &json!({"path": bad.to_string_lossy()})).is_err());
+    let bad = dir.join("bad.emcraft").to_string_lossy().into_owned();
+    super::write_project(&bad, &super::bare_project(json!({"views": {"driven": ""}})), None);
+    assert!(t.execute("file.open", &json!({"path": bad})).is_err());
     t.execute("view.driven", &json!({})).unwrap();
     assert_eq!(t.views().driven, None);
     let mut u = Session::new();

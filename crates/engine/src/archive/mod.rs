@@ -23,7 +23,7 @@ use crate::{EngineError, Params, Result, Results, Session, Step};
 pub mod file;
 pub mod kept;
 
-pub use file::{StoredResults, StoredSweep, StoredTimeDomain};
+pub use file::{StoredResults, StoredSweep};
 pub use kept::{Kept, KeptSweep};
 
 /// Most solves kept besides the pinned ones.
@@ -130,8 +130,8 @@ pub struct Archived {
     pub kept: Arc<Kept>,
     pub pinned: bool,
     pub label: Option<String>,
-    /// How it was made (none for a solve read from a file written before it was kept).
-    pub provenance: Option<Provenance>,
+    /// How it was made.
+    pub provenance: Provenance,
     /// The model and the whole results, while the session holds them: not for a solve read
     /// back from a project file until it is restored.
     pub(crate) solved: Option<Arc<Solved>>,
@@ -181,7 +181,7 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value, provenance: P
     };
     if let Some(a) = s.archive.iter_mut().find(|a| same(a)) {
         a.solved = Some(Arc::new(Solved { model: s.model.clone(), results: s.results.clone() }));
-        a.provenance = Some(provenance);
+        a.provenance = provenance;
         return a.id;
     }
     s.archive_next = s.archive_next.saturating_add(1);
@@ -201,7 +201,7 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value, provenance: P
         kept: Arc::new(kept),
         pinned: false,
         label: None,
-        provenance: Some(provenance),
+        provenance,
         solved: Some(Arc::new(Solved { model: s.model.clone(), results: s.results.clone() })),
     });
     // The oldest unpinned ones go past the cap.
@@ -210,6 +210,15 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value, provenance: P
         s.archive.remove(k);
     }
     s.archive_next
+}
+
+/// The session's model and results held as kept solve `id`'s (a project just opened with its
+/// results): restoring it needs no solve.
+pub(crate) fn attach(s: &mut Session, id: u32) {
+    let solved = Arc::new(Solved { model: s.model.clone(), results: s.results.clone() });
+    if let Some(a) = s.archive.iter_mut().find(|a| a.id == id) {
+        a.solved = Some(solved);
+    }
 }
 
 /// What changed in the model between two kept solves: the variables whose values differ
@@ -256,7 +265,7 @@ fn row(s: &Session, before: Option<&Archived>, a: &Archived) -> Value {
         "changes": changes(before, a),
         "pinned": a.pinned,
         "current": s.archive_current == Some(a.id),
-        "provenance": a.provenance.as_ref().map(Provenance::row),
+        "provenance": a.provenance.row(),
     })
 }
 

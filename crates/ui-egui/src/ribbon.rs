@@ -384,11 +384,33 @@ struct Button<'a> {
     active: bool,
 }
 
-/// The width of a ribbon button labelled `text`.
+/// Most rows of a ribbon button's label: two fit under its glyph.
+const LABEL_ROWS: usize = 2;
+
+/// The widest a ribbon button grows to keep its label in [`LABEL_ROWS`] rows.
+const BUTTON_MAX_WIDTH: f32 = 160.0;
+
+/// `text` laid out as a button's label within `width`: at most [`LABEL_ROWS`] rows, the rest cut
+/// with an ellipsis.
+fn label_galley(ui: &egui::Ui, text: &str, width: f32, color: Color32) -> std::sync::Arc<egui::Galley> {
+    let t = &Tokens::get();
+    let mut job = egui::text::LayoutJob::simple(text.to_owned(), FontId::proportional(t.font_small), color, width);
+    job.wrap.max_rows = LABEL_ROWS;
+    job.halign = egui::Align::Center;
+    ui.painter().layout_job(job)
+}
+
+/// The width of a ribbon button labelled `text`: its label wrapped at 80 pt, wider (up to
+/// [`BUTTON_MAX_WIDTH`]) where that takes more than [`LABEL_ROWS`] rows.
 fn button_width(ui: &egui::Ui, text: &str) -> f32 {
     let t = &Tokens::get();
-    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, 80.0);
-    (g.size().x + 14.0).max(BUTTON_MIN_WIDTH)
+    let rows = |w: f32| ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, w).rows.len();
+    let mut wrap = 80.0;
+    while rows(wrap) > LABEL_ROWS && wrap + 14.0 < BUTTON_MAX_WIDTH {
+        wrap += 10.0;
+    }
+    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, wrap);
+    (g.size().x + 14.0).clamp(BUTTON_MIN_WIDTH, BUTTON_MAX_WIDTH)
 }
 
 /// Draws a ribbon button at `at` (60 pt high, its glyph over its label) in the tab's `accent`;
@@ -408,8 +430,8 @@ fn button(ui: &mut egui::Ui, b: Button, at: egui::Pos2, accent: [Color32; 3]) ->
     let ink = if enabled { t.icon } else { t.icon.gamma_multiply(0.4) };
     glyphs::paint(ui.painter(), Rect::from_center_size(pos2(br.center().x, br.top() + 18.0), vec2(26.0, 26.0)), glyph, ink, accent[0]);
     let color = if enabled { if active { accent[1] } else { t.text } } else { t.text_dim };
-    let g = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), color, w - 6.0);
-    ui.painter().galley(pos2(br.center().x - g.size().x / 2.0, br.top() + 35.0), g, color);
+    let g = label_galley(ui, text, w - 6.0, color);
+    ui.painter().galley(pos2(br.center().x, br.top() + 35.0), g, color);
     (resp, w)
 }
 
@@ -711,6 +733,31 @@ pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every ribbon button's label, in every language, fits its button in two rows: none runs
+    /// over the panel's name below it.
+    #[test]
+    fn every_ribbon_label_fits_its_button_in_two_rows() {
+        let h = crate::scenario::Harness::new();
+        for lang in crate::lang::ids() {
+            crate::lang::set(lang);
+            let mut out = h.ctx.run_ui(egui::RawInput::default(), |ui| {
+                for (_, panels) in TABS {
+                    for (_, items) in *panels {
+                        for id in *items {
+                            let text = button_label(id);
+                            let w = button_width(ui, text);
+                            let t = &Tokens::get();
+                            let full = ui.painter().layout(text.to_owned(), FontId::proportional(t.font_small), t.text, w - 6.0);
+                            assert!(full.rows.len() <= LABEL_ROWS, "{lang}: `{text}` takes {} rows at {w}", full.rows.len());
+                        }
+                    }
+                }
+            });
+            out.textures_delta.clear();
+        }
+        crate::lang::set("en");
+    }
 
     #[test]
     fn tabs_parse_from_their_ids_in_the_ribbons_order() {

@@ -48,6 +48,7 @@ pub mod script;
 pub mod sdata;
 mod session;
 mod solve;
+mod store;
 pub mod study;
 pub mod tdr;
 pub mod text;

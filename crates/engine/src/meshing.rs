@@ -78,6 +78,9 @@ pub(crate) fn grid_options(p: &Params, size: Metres) -> Result<emcraft_mesh::Opt
 
 pub fn generate(s: &mut Session, p: &Params) -> Result<Value> {
     let sizes = Sizes::read(s, p)?;
+    if s.mesher_off {
+        return Ok(json!({"meshed": false}));
+    }
     if crate::pcb_fem::has_region(s) {
         return crate::pcb_fem::generate(s, p, &sizes);
     }

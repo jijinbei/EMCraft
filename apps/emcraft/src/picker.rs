@@ -6,7 +6,7 @@ use emcraft_ui_egui::files::Picker;
 pub struct SystemPicker;
 
 fn filters(d: rfd::FileDialog) -> rfd::FileDialog {
-    d.add_filter("EMCraft project", &[emcraft_engine::project::EXTENSION]).add_filter("Project as JSON", &["json"])
+    d.add_filter("EMCraft project", &[emcraft_engine::project::EXTENSION])
 }
 
 impl Picker for SystemPicker {

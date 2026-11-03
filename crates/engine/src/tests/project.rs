@@ -31,11 +31,11 @@ fn undoing_an_open_brings_the_project_before_it_back() {
     assert_eq!((r["path"].as_str(), r["dirty"].as_bool()), (Some(a.as_str()), Some(true)));
     assert_eq!(s.model.band.map(|x| x.start.get()), Some(5e9));
     // The save after the undo writes A's file; B's is untouched.
-    let b_text = std::fs::read_to_string(&b).unwrap();
+    let b_bytes = std::fs::read(&b).unwrap();
     s.execute("file.save", &json!({})).unwrap();
     assert!(!s.is_dirty());
-    assert!(std::fs::read_to_string(&a).unwrap().contains("ptfe"));
-    assert_eq!(std::fs::read_to_string(&b).unwrap(), b_text);
+    assert!(super::project_json(&a).to_string().contains("ptfe"));
+    assert_eq!(std::fs::read(&b).unwrap(), b_bytes);
     // Redo: B again, clean, its own file.
     s.execute("edit.redo", &json!({})).unwrap();
     assert_eq!((s.path(), s.is_dirty(), s.model.band.map(|x| x.start.get())), (Some(b.as_str()), false, Some(7e9)));
@@ -96,18 +96,16 @@ fn runs_belong_to_the_project() {
     assert!(s.is_dirty(), "a run with other parameters is unsaved");
     s.execute("file.save", &json!({})).unwrap();
     assert!(!s.is_dirty());
-    let text = std::fs::read_to_string(&path).unwrap();
-    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
-    // Version 4: the solves are kept in the analysis history.
-    assert_eq!(doc["version"], 4);
+    let doc = super::project_json(&path);
+    assert_eq!(doc["version"], "0.1");
     assert_eq!(
         doc["runs"],
         json!([{"command": "solve.frequency", "params": {"frequencies": [8.0], "order": 1}, "units": {"length": "mm", "frequency": "GHz"}}])
     );
-    // Opened: the run is back, nothing solved, clean.
+    // Opened: the run is back, its results with it (current), clean.
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
-    assert!(!t.results.any() && !t.is_dirty());
+    assert!(t.results.sweep.is_some() && t.solved_revision == Some(t.revision) && !t.is_dirty());
     let runs = t.execute("project.runs", &json!({})).unwrap();
     assert_eq!(runs["latest"], "solve.frequency");
     assert_eq!(runs["runs"][0]["params"], json!({"frequencies": [8.0], "order": 1}));
@@ -159,19 +157,9 @@ fn hostile_runs_in_a_file_are_refused(#[case] runs: serde_json::Value, #[case] w
         h.finish()
     };
     let path = scratch(&format!("hostile-runs-{case:016x}.emcraft"));
-    std::fs::write(&path, json!({"format": "emcraft-project", "version": 2, "history": [], "runs": runs}).to_string()).unwrap();
+    super::write_project(&path, &super::bare_project(json!({"runs": runs})), None);
     let r = Session::new().execute("file.open", &json!({"path": path}));
     assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{why}: {r:?}");
-}
-
-/// A version 1 file (no runs) opens.
-#[test]
-fn a_version_1_file_opens_without_runs() {
-    let path = scratch("version-1.emcraft");
-    let mut s = Session::new();
-    std::fs::write(&path, json!({"format": "emcraft-project", "version": 1, "history": [{"command": "units.set"}]}).to_string()).unwrap();
-    s.execute("file.open", &json!({"path": path})).unwrap();
-    assert!(s.runs().is_empty() && !s.is_dirty());
 }
 
 /// An autosave is a copy: the project keeps its file, name and unsaved state; recovering it
@@ -184,7 +172,7 @@ fn autosave_copies_and_recovery() {
     let r = s.execute("file.save", &json!({"path": copy, "copy": true})).unwrap();
     assert_eq!(r["copy"], true);
     assert_eq!((s.path(), s.is_dirty(), s.name().as_str()), (Some(own.as_str()), true, "autosave-own"));
-    assert!(!std::fs::read_to_string(&own).unwrap().contains("ptfe"));
+    assert!(!super::project_json(&own).to_string().contains("ptfe"));
     assert!(matches!(s.execute("file.save", &json!({"copy": true})), Err(EngineError::Params(_))));
     // Recovered: the copy's model under the original's file, unsaved.
     let mut t = Session::new();
@@ -264,4 +252,93 @@ fn the_analysis_kind_is_chosen_recorded_and_followed() {
     assert_eq!(step(&mut td, "mesh")["status"], "done");
     assert_eq!(step(&mut td, "run")["status"], "todo");
     assert_eq!(step(&mut td, "run")["messages"][0]["command"], "solve.time_domain");
+}
+
+/// A project saved and opened again: the same history and model, its mesh read from the file
+/// (not meshed again) equal to the one saved, bit for bit.
+fn reopens_with_its_mesh(s: &mut Session, name: &str) {
+    assert!(s.model.mesh.is_some(), "{name} is meshed");
+    let path = scratch(&format!("mesh-{name}.emcraft"));
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    assert_eq!(t.history, s.history, "{name}");
+    assert_eq!(t.model, s.model, "{name}");
+    assert!(!t.is_dirty());
+}
+
+fn sample(name: &str) -> Session {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": name})).unwrap();
+    s
+}
+
+/// A board's region with a port at each end of its trace, meshed.
+fn board() -> Session {
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({"split": false, "neighbour": false, "length": 6})).unwrap();
+    s.execute("pcb.region", &json!({"net": "DATA", "margin": 1, "above": 1, "below": 0.5})).unwrap();
+    s.execute("pcb.port", &json!({"name": "1", "segment": "signal:0", "end": "start"})).unwrap();
+    s.execute("pcb.port", &json!({"name": "2", "segment": "signal:1", "end": "end"})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 3, "strip_edge": 0.1})).unwrap();
+    s
+}
+
+#[rstest::rstest]
+#[case::structured(|| sample("highpass"), "highpass")]
+#[case::unstructured_curved(|| sample("inductive-post"), "inductive-post")]
+#[case::board(board, "board")]
+fn a_project_reopens_with_its_mesh(#[case] make: fn() -> Session, #[case] name: &str) {
+    reopens_with_its_mesh(&mut make(), name);
+}
+
+#[test]
+#[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
+fn every_meshed_template_reopens_with_its_mesh() {
+    for t in emcraft_templates::TEMPLATES {
+        let mut s = sample(t.name);
+        if s.model.mesh.is_some() {
+            reopens_with_its_mesh(&mut s, t.name);
+        }
+    }
+}
+
+/// A file's mesh is hostile: counts that do not agree with its parts, an index out of range or
+/// an inverted tetrahedron refuse the file; nothing panics.
+#[test]
+fn hostile_meshes_are_refused() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let good = scratch("mesh-good.emcraft");
+    s.execute("file.save", &json!({"path": good})).unwrap();
+    let doc = super::project_json(&good);
+    let path = scratch("mesh-hostile.emcraft");
+    let mut t = Session::new();
+    for (key, value, why) in [
+        ("nodes", json!(1), "larger than"),
+        ("tetrahedra", json!(doc["mesh"]["tetrahedra"].as_u64().unwrap() + 1), "numbers, not"),
+        ("boundary", json!(usize::MAX), "at most"),
+        ("grid", json!([2, 2, 2]), "grid"),
+        ("nodes", json!("many"), "not a project file"),
+    ] {
+        let mut d = doc.clone();
+        d["mesh"][key] = value;
+        super::write_project(&path, &d, Some(&good));
+        let r = t.execute("file.open", &json!({"path": path}));
+        assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{key} ({why}): {r:?}");
+    }
+    // The tetrahedra's corners swapped: inverted, or past the nodes.
+    let mut r = emcraft_io::package::Reader::open(std::path::Path::new(&good)).unwrap();
+    let tets: Vec<u32> = r.values("mesh/tets.u32", 1 << 26).unwrap();
+    for (spoil, why) in [((0usize, 1usize), "inverted"), ((2, 2), "node")] {
+        let mut bad = tets.clone();
+        match spoil {
+            (0, 1) => bad.swap(0, 1),
+            _ => bad[2] = u32::MAX,
+        }
+        let bytes: Vec<u8> = bad.iter().flat_map(|v| v.to_le_bytes()).collect();
+        super::write_project_with(&path, &doc, &good, "mesh/tets.u32", &bytes);
+        let r = t.execute("file.open", &json!({"path": path}));
+        assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{why}: {r:?}");
+    }
 }

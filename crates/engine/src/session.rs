@@ -230,6 +230,9 @@ pub struct Session {
     /// The run a solve command records in place of its own (`solve.refine` records the merged
     /// sweep as `solve.frequency`); taken when it succeeds.
     pub(crate) next_run: Option<Run>,
+    /// While a project file's history is replayed: the mesh commands are read and recorded,
+    /// not run (the file's own mesh is put on the model after).
+    pub(crate) mesher_off: bool,
 }
 
 /// Reading the session.

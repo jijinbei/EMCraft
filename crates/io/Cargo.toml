@@ -16,4 +16,5 @@ quick-xml = { workspace = true }
 solidcraft-exchange = { workspace = true }
 
 [dev-dependencies]
+proptest = { workspace = true }
 approx = { workspace = true }

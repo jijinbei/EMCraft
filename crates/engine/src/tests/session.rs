@@ -281,20 +281,24 @@ fn projects_save_as_emcraft_files_and_know_when_they_changed() {
     t.execute("file.new", &json!({})).unwrap();
     assert!(t.path.is_none() && !t.is_dirty() && t.model.band.is_none());
     assert_eq!(t.display.frequency, emcraft_model::units::Frequency::Megahertz);
-    // The file's text: the JSON object of the format, the version, the history and the model,
-    // its keys sorted, pretty printed (lists of numbers on one line).
-    let text = std::fs::read_to_string(&path).unwrap();
-    let want = json!({"format": "emcraft-project", "version": 2, "history": s.history, "runs": [], "model": s.model});
-    assert_eq!(text, crate::project::pretty(&want).unwrap());
-    assert_eq!(serde_json::from_str::<serde_json::Value>(&text).unwrap(), want);
-    // A newer version is refused; an older one without a version opens.
-    let newer = dir.join("newer.emcraft");
-    std::fs::write(&newer, json!({"format": "emcraft-project", "version": 5, "history": []}).to_string()).unwrap();
-    let r = t.execute("file.open", &json!({"path": newer.to_string_lossy()}));
-    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("version 5")), "{r:?}");
-    std::fs::write(&newer, json!({"format": "emcraft-project", "history": [{"command": "units.set"}]}).to_string()).unwrap();
-    t.execute("file.open", &json!({"path": newer.to_string_lossy()})).unwrap();
-    assert_eq!(t.history, vec![crate::Step::new("units.set", json!({}))]);
+    // The package's project.json: the format, the version, the EMCraft that wrote it, the
+    // history and the model.
+    let doc = super::project_json(&path);
+    assert_eq!(
+        (doc["format"].as_str(), doc["version"].as_str(), doc["emcraft"].as_str()),
+        (Some("emcraft-project"), Some("0.1"), Some(env!("CARGO_PKG_VERSION")))
+    );
+    assert_eq!((&doc["history"], &doc["model"]), (&json!(s.history), &json!(s.model)));
+    // Another version, none, or a plain JSON file: refused whole.
+    let other = dir.join("other.emcraft").to_string_lossy().into_owned();
+    for (version, why) in [(json!("9.9"), "version 9.9"), (json!(4), "version none"), (json!(null), "version none")] {
+        super::write_project(&other, &super::bare_project(json!({"version": version})), None);
+        let r = t.execute("file.open", &json!({"path": other}));
+        assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains(why)), "{r:?}");
+    }
+    std::fs::write(&other, json!({"format": "emcraft-project", "version": 4, "history": []}).to_string()).unwrap();
+    let r = t.execute("file.open", &json!({"path": other}));
+    assert!(matches!(&r, Err(EngineError::Failed(m)) if m.contains("not an EMCraft project")), "{r:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
