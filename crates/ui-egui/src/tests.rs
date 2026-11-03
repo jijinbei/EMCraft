@@ -758,8 +758,7 @@ fn pcb_saved_results_restore_conditions_in_a_new_window() {
     assert_eq!(next.call("engine.execute", json!({"command":"file.open","params":{"path":file}}))["ok"], true);
     next.frames(3);
     let r = next.app.replies.pcb.as_ref().unwrap();
-    assert_eq!(r["reference"], 75.);
-    assert_eq!(r["stop"], 5.);
+    assert_eq!((r.reference, r.stop), (75., 5.));
     assert_eq!(emcraft_engine::pcb::stage(&next.app.session), emcraft_engine::pcb::Stage::Results);
     let _ = std::fs::remove_file(file);
 }

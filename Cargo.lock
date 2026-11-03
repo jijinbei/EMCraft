@@ -2399,6 +2399,7 @@ dependencies = [
  "emcraft-model",
  "num-complex",
  "rstest",
+ "serde",
  "thiserror 2.0.21",
 ]
 

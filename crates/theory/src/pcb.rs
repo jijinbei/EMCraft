@@ -37,6 +37,8 @@ emcraft_macros::named_enum! {
     }
 }
 
+emcraft_macros::named_serde!(Code);
+
 impl Code {
     /// Whether it is about the reference copper under the route: none, a gap, an edge (the
     /// return path the illustrations must not invent).

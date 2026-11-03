@@ -7,6 +7,7 @@ use std::io::Read;
 use emcraft_model::pcb::{Board, Copper, Layer, Segment};
 use emcraft_model::units::{Frequency, Length};
 use emcraft_theory::pcb::{Finding, Report, Section};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session, Step};
@@ -244,89 +245,217 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
     let pairs = emcraft_theory::pcb::pairs(board, net, ground).map_err(failed)?;
     let report = emcraft_theory::pcb::inspect(board, net, ground).map_err(failed)?;
     let (length, frequency) = (s.display.length, s.display.frequency);
-    let mut reply = json!({
-        "net": net,
-        "ground": ground,
-        "board": board.name,
-        "length": length.from_si(report.length),
-        "length_unit": length.symbol(),
-        "model_available": report.model_available,
-        "sections": report.sections.iter().map(|v| section_json(v, length)).collect::<Vec<_>>(),
-        "findings": report.findings.iter().map(finding_json).collect::<Vec<_>>(),
-        "coupling_pairs": pairs.iter().map(|q| pair_json(q, length)).collect::<Vec<_>>(),
-        "import_notes": board.notes,
-        "model": "lossless quasi-static transmission-line approximation; zero-thickness outer microstrip, infinite continuous ground; excludes bends, pads, vias, losses and coupling",
-        "return_current": "Geometry screening only: filled copper support is not a solved return-current density.",
-        "reference": reference,
-        "stop": frequency.from_si(stop),
-        "stop_hz": stop,
-        "frequency_unit": frequency.symbol(),
-    });
-    reply["si"] = match report.model_available {
-        true => si_json(&report, stop, points, reference, frequency)?,
-        false => Value::Null,
+    let si = match report.model_available {
+        true => Some(line(&report, stop, points, reference, frequency)?),
+        false => None,
+    };
+    let reply = Inspection {
+        net: net.to_owned(),
+        ground: ground.to_owned(),
+        board: board.name.clone(),
+        length: length.from_si(report.length),
+        length_unit: length.symbol().to_owned(),
+        model_available: report.model_available,
+        sections: report.sections.iter().map(|v| SectionRow::of(v, length)).collect(),
+        findings: report.findings.iter().map(FindingRow::of).collect(),
+        coupling_pairs: pairs.iter().map(|q| PairRow::of(q, length)).collect(),
+        import_notes: board.notes.clone(),
+        model: "lossless quasi-static transmission-line approximation; zero-thickness outer microstrip, infinite continuous ground; excludes bends, pads, vias, losses and coupling".to_owned(),
+        return_current: "Geometry screening only: filled copper support is not a solved return-current density.".to_owned(),
+        reference,
+        stop: frequency.from_si(stop),
+        stop_hz: stop,
+        frequency_unit: frequency.symbol().to_owned(),
+        si,
     };
     s.views.pcb_net = Some(net.to_owned());
     s.views.pcb_stage = Some(Stage::Results);
     s.views.pcb_conditions = Some(Conditions { ground: ground.to_owned(), reference, stop_hz: stop });
-    Ok(reply)
+    serde_json::to_value(reply).map_err(|e| failed(e.to_string()))
 }
 
-/// A cross-section of the route, in display lengths.
-fn section_json(v: &Section, length: Length) -> Value {
-    json!({
-        "id": v.id,
-        "reference_layer": v.reference,
-        "length": length.from_si(v.length),
-        "height": length.from_si(v.h),
-        "ideal_impedance": v.impedance,
-        "ideal_delay_s": v.delay,
-        "uncovered": v.uncovered,
-    })
+/// `pcb.inspect`'s reply: the route's screening and, where the line model holds, its line.
+/// Lengths in the session's display unit (`length_unit`), frequencies in its own
+/// (`frequency_unit`), times in seconds. The window reads it back with `serde_json::from_value`.
+///
+/// ```
+/// use emcraft_engine::{Session, pcb::Inspection};
+/// use serde_json::json;
+///
+/// let mut s = Session::new();
+/// s.execute("pcb.sample", &json!({})).unwrap();
+/// let reply = s.execute("pcb.inspect", &json!({"net": "DATA", "stop": 5})).unwrap();
+/// let report: Inspection = serde_json::from_value(reply).unwrap();
+/// assert_eq!((report.net.as_str(), report.length_unit.as_str(), report.stop), ("DATA", "mm", 5.0));
+/// // The line and its sweep only where the route meets the line model.
+/// assert_eq!(report.si.is_some(), report.model_available);
+/// ```
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Inspection {
+    pub net: String,
+    pub ground: String,
+    pub board: String,
+    /// The route's length.
+    pub length: f64,
+    pub length_unit: String,
+    /// Whether the route meets the line model (`si` is given).
+    pub model_available: bool,
+    pub sections: Vec<SectionRow>,
+    pub findings: Vec<FindingRow>,
+    pub coupling_pairs: Vec<PairRow>,
+    pub import_notes: Vec<String>,
+    /// What the estimate assumes.
+    pub model: String,
+    pub return_current: String,
+    /// The reference impedance (Ω).
+    pub reference: f64,
+    /// The sweep's top frequency, in the display unit and in Hz.
+    pub stop: f64,
+    pub stop_hz: f64,
+    pub frequency_unit: String,
+    pub si: Option<Line>,
+}
+
+/// A cross-section of the route.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SectionRow {
+    pub id: String,
+    pub reference_layer: String,
+    pub length: f64,
+    pub height: f64,
+    /// The ideal line's impedance (Ω) and delay (s).
+    pub ideal_impedance: f64,
+    pub ideal_delay_s: f64,
+    /// The stretches (fractions along the segment, start and end) with no reference beneath.
+    pub uncovered: Vec<[f64; 2]>,
+}
+
+impl SectionRow {
+    fn of(v: &Section, length: Length) -> SectionRow {
+        SectionRow {
+            id: v.id.clone(),
+            reference_layer: v.reference.clone(),
+            length: length.from_si(v.length),
+            height: length.from_si(v.h),
+            ideal_impedance: v.impedance,
+            ideal_delay_s: v.delay,
+            uncovered: v.uncovered.clone(),
+        }
+    }
 }
 
 /// A screening finding: geometry only, never a solved field.
-fn finding_json(f: &Finding) -> Value {
-    json!({"code": f.code.id(), "method": "geometry_screening", "segment": f.segment, "detail": f.detail})
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FindingRow {
+    pub code: Code,
+    /// Always `geometry_screening`.
+    pub method: String,
+    pub segment: Option<String>,
+    pub detail: String,
 }
 
-/// A pair of parallel segments of two nets, in display lengths: geometry only.
-fn pair_json(p: &Pair, length: Length) -> Value {
-    let points = |ends: [[f64; 2]; 2]| ends.map(|v| v.map(|x| length.from_si(x)));
-    json!({
-        "source": p.source,
-        "target": p.target,
-        "source_segment": p.source_segment,
-        "target_segment": p.target_segment,
-        "layer": p.layer,
-        "source_points": points(p.a),
-        "target_points": points(p.b),
-        "gap": length.from_si(p.gap),
-        "overlap": length.from_si(p.length),
-        "method": "geometry_only",
-    })
+impl FindingRow {
+    fn of(f: &Finding) -> FindingRow {
+        FindingRow { code: f.code, method: "geometry_screening".to_owned(), segment: f.segment.clone(), detail: f.detail.clone() }
+    }
 }
 
-/// The ideal line's S11 and S21 at `points` frequencies up to `stop` (Hz) and its low-pass TDR.
-fn si_json(report: &Report, stop: f64, points: usize, reference: f64, frequency: Frequency) -> Result<Value> {
+/// A pair of parallel segments of two nets: geometry only.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PairRow {
+    pub source: String,
+    pub target: String,
+    pub source_segment: String,
+    pub target_segment: String,
+    pub layer: String,
+    /// The parallel stretch's ends on each segment.
+    pub source_points: [[f64; 2]; 2],
+    pub target_points: [[f64; 2]; 2],
+    pub gap: f64,
+    pub overlap: f64,
+    /// Always `geometry_only`.
+    pub method: String,
+}
+
+impl PairRow {
+    fn of(p: &Pair, length: Length) -> PairRow {
+        let points = |ends: [[f64; 2]; 2]| ends.map(|v| v.map(|x| length.from_si(x)));
+        PairRow {
+            source: p.source.clone(),
+            target: p.target.clone(),
+            source_segment: p.source_segment.clone(),
+            target_segment: p.target_segment.clone(),
+            layer: p.layer.clone(),
+            source_points: points(p.a),
+            target_points: points(p.b),
+            gap: length.from_si(p.gap),
+            overlap: length.from_si(p.length),
+            method: "geometry_only".to_owned(),
+        }
+    }
+}
+
+/// The ideal line's S11 and S21 and its low-pass TDR.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Line {
+    /// Always `analytical_transmission_line`.
+    pub method: String,
+    pub delay_s: f64,
+    pub frequency_unit: String,
+    pub points: Vec<LinePoint>,
+    pub tdr: Vec<TdrPoint>,
+    pub resolution_s: f64,
+}
+
+/// A complex wave: parts, magnitude, dB and degrees.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Wave {
+    pub re: f64,
+    pub im: f64,
+    pub mag: f64,
+    pub db: f64,
+    pub deg: f64,
+}
+
+impl Wave {
+    fn of(c: emcraft_solver::Complex64) -> Wave {
+        Wave { re: c.re, im: c.im, mag: c.norm(), db: emcraft_model::units::decibels(c.norm()), deg: c.arg().to_degrees() }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LinePoint {
+    pub frequency: f64,
+    pub s11: Wave,
+    pub s21: Wave,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TdrPoint {
+    pub time_s: f64,
+    pub reflection: f64,
+    /// The impedance the reflection means (Ω); none where it is total.
+    pub impedance: Option<f64>,
+}
+
+/// The ideal line at `points` frequencies up to `stop` (Hz) and its low-pass TDR.
+fn line(report: &Report, stop: f64, points: usize, reference: f64, frequency: Frequency) -> Result<Line> {
     let freqs: Vec<f64> = (1..=points).map(|i| stop * i as f64 / points as f64).collect();
     let mut waves = Vec::with_capacity(points);
     let mut rows = Vec::with_capacity(points);
     for &f in &freqs {
         let (r, t) = emcraft_theory::pcb::s_parameters(report, f, reference).map_err(failed)?;
         waves.push(r);
-        rows.push(json!({"frequency": frequency.from_si(f), "s11": crate::reply::complex(r), "s21": crate::reply::complex(t)}));
+        rows.push(LinePoint { frequency: frequency.from_si(f), s11: Wave::of(r), s21: Wave::of(t) });
     }
     let tdr = crate::tdr::transform(&freqs, &waves, crate::tdr::Mode::LowPass)?;
     let impedance = |r: f64| ((1.0 - r).abs() > 1e-9).then(|| reference * (1.0 + r) / (1.0 - r));
-    let tdr_rows: Vec<Value> =
-        tdr.times.iter().zip(&tdr.values).map(|(t, &r)| json!({"time_s": t, "reflection": r, "impedance": impedance(r)})).collect();
-    Ok(json!({
-        "method": "analytical_transmission_line",
-        "delay_s": report.sections.iter().map(|v| v.delay).sum::<f64>(),
-        "frequency_unit": frequency.symbol(),
-        "points": rows,
-        "tdr": tdr_rows,
-        "resolution_s": tdr.resolution,
-    }))
+    Ok(Line {
+        method: "analytical_transmission_line".to_owned(),
+        delay_s: report.sections.iter().map(|v| v.delay).sum::<f64>(),
+        frequency_unit: frequency.symbol().to_owned(),
+        points: rows,
+        tdr: tdr.times.iter().zip(&tdr.values).map(|(&t, &r)| TdrPoint { time_s: t, reflection: r, impedance: impedance(r) }).collect(),
+        resolution_s: tdr.resolution,
+    })
 }

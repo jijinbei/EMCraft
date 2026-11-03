@@ -12,6 +12,7 @@ workspace = true
 emcraft-fem = { workspace = true }
 emcraft-macros = { workspace = true }
 emcraft-model = { workspace = true }
+serde = { workspace = true }
 num-complex = { workspace = true }
 thiserror = { workspace = true }
 
