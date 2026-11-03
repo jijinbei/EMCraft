@@ -6,7 +6,7 @@ use emcraft_fem::nedelec::{LOCAL_EDGES, LOCAL_FACES};
 use emcraft_mesh::Topology;
 use emcraft_model::{Mesh, Point3};
 
-use super::{MAX_UNKNOWNS, Result, Slot, SolveError, invalid};
+use super::{MAX_ITERATIVE_UNKNOWNS, MAX_UNKNOWNS, Result, Slot, SolveError, invalid};
 
 /// Degrees of freedom: per edge and per face, those on conducting walls eliminated.
 #[derive(Clone, Debug)]
@@ -48,8 +48,11 @@ impl Dofs {
             }
         }
         let free = fixed.iter().filter(|f| !**f).count();
-        if free > MAX_UNKNOWNS {
-            return Err(SolveError::TooLarge { unknowns: free, limit: MAX_UNKNOWNS });
+        // Factored whole they may be at most MAX_UNKNOWNS (checked at the factorization);
+        // second-order ones solved iteratively more.
+        let limit = if order == Order::Two { MAX_ITERATIVE_UNKNOWNS } else { MAX_UNKNOWNS };
+        if free > limit {
+            return Err(SolveError::TooLarge { unknowns: free, limit });
         }
         let mut unknown = vec![Slot::NONE; total];
         let mut points = Vec::with_capacity(free);

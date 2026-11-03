@@ -263,3 +263,21 @@ fn lumped_ports_sweep_fast_as_they_solve_in_full() {
     }
     assert!(fast["solved_in_full"].as_u64().unwrap() < 9, "{}", fast["solved_in_full"]);
 }
+
+#[test]
+fn second_order_solves_iteratively_as_they_factor() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "highpass"})).unwrap();
+    let solve = |solver: &str| {
+        let mut s = s.clone();
+        s.execute("solve.frequency", &json!({"frequencies": [8, 9], "order": 2, "solver": solver, "sweep": "full"})).unwrap()
+    };
+    let (direct, iterative) = (solve("direct"), solve("iterative"));
+    for (a, b) in direct["points"].as_array().unwrap().iter().zip(iterative["points"].as_array().unwrap()) {
+        for k in ["s11", "s21"] {
+            let d = (a[k]["re"].as_f64().unwrap() - b[k]["re"].as_f64().unwrap()).hypot(a[k]["im"].as_f64().unwrap() - b[k]["im"].as_f64().unwrap());
+            assert!(d < 1e-6, "{k}: {d}");
+        }
+    }
+    assert!(s.clone().execute("solve.frequency", &json!({"frequencies": [8], "order": 1, "solver": "iterative"})).is_err());
+}

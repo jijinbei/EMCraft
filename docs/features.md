@@ -529,6 +529,7 @@ Solves the driven problem at each frequency, every port excited in turn by a uni
 | `points` | integer |  | no | frequencies from start to stop (default 101) |
 | `order` | integer |  | no | element order: 1 (Whitney) or 2 (default) |
 | `sweep` | string |  | no | `fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each) |
+| `solver` | string |  | no | `auto` (default: factored whole, or for second-order elements beyond 2 million unknowns iterative), `direct` or `iterative` (GMRES preconditioned by the first-order part factored, order 2 only) |
 
 ## `solve.refine` — Refine sweep
 

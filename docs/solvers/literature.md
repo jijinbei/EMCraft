@@ -64,6 +64,16 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   along the plane's normal, prisms) shortened to the kept side, other bodies cut by a box, the cut
   faces tagged as the wall (the conditions under Symmetry planes).
 
+## Iterative solution
+- Y. Saad, M. H. Schultz, *GMRES: a generalized minimal residual algorithm for solving
+  nonsymmetric linear systems*, SIAM J. Sci. Stat. Comput. 7(3):856–869, 1986 — restarted GMRES,
+  right-preconditioned, with Givens rotations (`emcraft-solver::driven::pmg`).
+- J.-F. Lee, D.-K. Sun, *p-Type multiplicative Schwarz (pMUS) method with vector finite elements
+  for modeling three-dimensional waveguide discontinuities*, IEEE Trans. MTT 52(3):864–870, 2004
+  — the p-multilevel preconditioner of hierarchical vector elements: the lower-order space
+  solved exactly, the higher-order unknowns relaxed; here the edges' unknowns (Whitney functions
+  and edge gradients) and the ports' border factored, the faces' by symmetric Gauss–Seidel.
+
 ## Special functions
 - M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, 1964, §9.12 and Tables 9.5,
   10.6 — Bessel functions by backward recurrence, their zeros (`emcraft-fem::bessel`, used by

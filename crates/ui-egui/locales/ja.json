@@ -1118,7 +1118,8 @@
         "stop": "最後の周波数",
         "points": "start から stop までの周波数点数（既定 101）",
         "order": "要素次数：1（Whitney）または 2（既定）",
-        "sweep": "`fast`（既定：3 点以上で縮約基底掃引）または `full`（各点で完全解析）"
+        "sweep": "`fast`（既定：3 点以上で縮約基底掃引）または `full`（各点で完全解析）",
+        "solver": "`auto`（既定：全体を分解、2 次要素で 200 万未知数を超えるときは反復法）、`direct`、`iterative`（1 次部分の分解を前処理とする GMRES、2 次要素のみ）"
       }
     },
     "solve.time_domain": {
