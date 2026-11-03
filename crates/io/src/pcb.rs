@@ -11,6 +11,7 @@ enum Node {
     Atom(String),
     List(Vec<Node>),
 }
+
 impl Node {
     fn atom(&self) -> Option<&str> {
         match self {
@@ -18,21 +19,26 @@ impl Node {
             _ => None,
         }
     }
+
     fn list(&self) -> &[Node] {
         match self {
             Self::List(a) => a,
             _ => &[],
         }
     }
+
     fn head(&self) -> Option<&str> {
         self.list().first()?.atom()
     }
+
     fn child(&self, k: &str) -> Option<&Node> {
         self.list().iter().find(|n| n.head() == Some(k))
     }
+
     fn text(&self, k: usize) -> Result<&str> {
         self.list().get(k).and_then(Node::atom).ok_or_else(|| bad("missing field"))
     }
+
     fn number(&self, k: usize) -> Result<f64> {
         let v = self.text(k)?.parse::<f64>().map_err(|_| bad("invalid number"))?;
         if !v.is_finite() {
@@ -40,31 +46,38 @@ impl Node {
         }
         Ok(v)
     }
+
     fn num(&self, key: &str) -> Result<f64> {
         self.child(key).ok_or_else(|| bad(key))?.number(1)
     }
+
     fn word(&self, key: &str) -> Result<&str> {
         self.child(key).ok_or_else(|| bad(key))?.text(1)
     }
+
     fn point(&self, key: &str) -> Result<[f64; 2]> {
         let n = self.child(key).ok_or_else(|| bad(key))?;
         Ok([n.number(1)?, n.number(2)?])
     }
 }
+
 fn bad(s: &str) -> Error {
     Error::Invalid(format!("PCB import: {s}"))
 }
+
 struct Parser<'a> {
     s: &'a [u8],
     at: usize,
     nodes: usize,
 }
+
 impl Parser<'_> {
     fn ws(&mut self) {
         while self.at < self.s.len() && self.s[self.at].is_ascii_whitespace() {
             self.at += 1;
         }
     }
+
     fn node(&mut self, depth: usize) -> Result<Node> {
         self.ws();
         self.nodes += 1;
@@ -132,6 +145,7 @@ impl Parser<'_> {
         Ok(Node::Atom(String::from_utf8(out).map_err(|_| bad("invalid UTF-8"))?))
     }
 }
+
 /// Read KiCad text with explicit stackup (or a caller-supplied stackup in SI metres).
 /// Unsupported arcs fail visibly; pads and packages are explicitly excluded from diagnostics.
 /// ```
@@ -262,6 +276,7 @@ mod tests {
         assert!(b.copper.is_empty());
         assert!(b.notes.iter().any(|n| n.contains("unfilled")));
     }
+
     #[test]
     fn hostile_or_unsupported_input_is_refused_without_panics() {
         for text in [

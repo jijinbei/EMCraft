@@ -12,6 +12,7 @@ struct Diagram {
     reference_layer: String,
     route_layer: String,
 }
+
 impl Diagram {
     fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
         let (mut lo, mut hi) = self.scene.bounds()?;
@@ -35,6 +36,7 @@ fn curve_colour(mode: Mode) -> emcraft_render::Rgb {
         Mode::Return => crate::theme::palette().series[3],
     }
 }
+
 fn callouts(ui: &egui::Ui, rect: Rect, camera: &Camera, diagram: &Diagram, names: [&str; 3], mode: Mode) {
     let [source, target, ground] = names;
     let t = Tokens::get();
@@ -86,6 +88,7 @@ fn callouts(ui: &egui::Ui, rect: Rect, camera: &Camera, diagram: &Diagram, names
         painter.galley(box_rect.min, galley, color);
     }
 }
+
 #[derive(Default)]
 pub(crate) struct IllustrationUi {
     pub index: usize,
@@ -100,6 +103,7 @@ pub(crate) struct IllustrationUi {
 fn action(out: &mut Actions, value: Value) {
     out.push(Action::run("view.pcb", value));
 }
+
 pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let c = &app.session.views().pcb_illustration;
     ui.horizontal_wrapped(|ui| {
@@ -107,7 +111,7 @@ pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let r = ui.selectable_label(c.pick_victim == role, tr(label));
             scenario::publish_target(Handle::Choice("pcb_coupling", if role { "pick_receiver" } else { "pick_source" }), r.rect);
             if r.clicked() {
-                action(out, json!({"pick_victim":role}));
+                action(out, json!({"pick_victim": role}));
             }
         }
         ui.label(tr("Receiver"));
@@ -125,7 +129,7 @@ pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 let r = ui.selectable_label(c.victim.as_deref() == Some(net), net);
                 scenario::publish_target(Handle::Choice("pcb_receiver", net), r.rect);
                 if r.clicked() {
-                    action(out, json!({"victim":net}));
+                    action(out, json!({"victim": net}));
                 }
             }
         });
@@ -134,14 +138,16 @@ pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         if r.clicked()
             && let (Some(a), Some(b)) = (&app.session.views().pcb_net, &c.victim)
         {
-            action(out, json!({"net":b,"victim":a,"stage":"net"}));
+            action(out, json!({"net": b, "victim": a, "stage": "net"}));
         }
     });
     ui.small(tr("Source is orange; receiver is blue. Select each role before clicking a trace."));
 }
+
 fn points(v: &Value, unit: emcraft_model::units::Length) -> Option<[[f64; 2]; 2]> {
     Some([[unit.to_si(v[0][0].as_f64()?), unit.to_si(v[0][1].as_f64()?)], [unit.to_si(v[1][0].as_f64()?), unit.to_si(v[1][1].as_f64()?)]])
 }
+
 fn scene(app: &EmcraftApp, pair: &Value, mode: Mode, exaggerate: bool, section: bool, emphasis: f32) -> Option<Diagram> {
     let board = app.session.model().pcb.as_ref()?;
     let u = app.session.display().length;
@@ -302,7 +308,7 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
             let r = ui.button(tr("Edit template spacing…"));
             scenario::publish_target(Handle::Choice("pcb_coupling", "spacing"), r.rect);
             if r.clicked() {
-                out.push(Action::dialog_with("project.variable", json!({"name":"gap"})));
+                out.push(Action::dialog_with("project.variable", json!({"name": "gap"})));
             }
         }
         egui::ComboBox::from_id_salt("coupling_section").selected_text(format!("{}/{}", state.index + 1, pairs.len())).show_ui(ui, |ui| {
@@ -341,7 +347,7 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
             let r = ui.selectable_label(config.mode == mode, shown(mode));
             scenario::publish_target(Handle::Choice("pcb_mode", mode.id()), r.rect);
             if r.clicked() {
-                action(out, json!({"mode":mode.id()}));
+                action(out, json!({"mode": mode.id()}));
             }
         }
         for (label, key, value) in [
@@ -352,7 +358,7 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
             let r = ui.selectable_label(value, tr(label));
             scenario::publish_target(Handle::Choice("pcb_coupling", key), r.rect);
             if r.clicked() {
-                action(out, json!({key:!value}));
+                action(out, json!({key: !value}));
             }
         }
     });
@@ -502,8 +508,8 @@ mod tests {
     fn a_ground_slot_never_gets_an_invented_return_line() {
         let mut h = crate::scenario::Harness::new();
         for split in [false, true] {
-            assert_eq!(h.call("engine.execute", json!({"command":"pcb.sample","params":{"split":split}}))["ok"], true);
-            assert_eq!(h.call("engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}))["ok"], true);
+            assert_eq!(h.call("engine.execute", json!({"command": "pcb.sample", "params": {"split": split}}))["ok"], true);
+            assert_eq!(h.call("engine.execute", json!({"command": "pcb.inspect", "params": {"net": "DATA"}}))["ok"], true);
             let report = h.app.replies.pcb.as_ref().unwrap();
             let diagram = scene(&h.app, &report["coupling_pairs"][0], Mode::Return, true, false, 0.).unwrap();
             assert_eq!(diagram.curves.is_empty(), split);

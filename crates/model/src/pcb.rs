@@ -1,15 +1,25 @@
-//! PCB routing and filled copper, in SI metres. Independent of file formats and solvers.
-use crate::error::{Result, invalid};
+//! A printed circuit board: its copper layers, routed segments, vias and filled copper, in SI
+//! metres. Independent of file formats (crates/io reads KiCad's) and of the solvers.
+
 use serde::{Deserialize, Serialize};
 
+use crate::error::{Result, invalid};
+
+/// The most routed segments a board may have.
 pub const MAX_SEGMENTS: usize = 20_000;
+/// The most polygon vertices a board's filled copper may have in all.
 pub const MAX_VERTICES: usize = 200_000;
+
+/// A copper layer: its name (as the source names it, e.g. `F.Cu`), its height z (m) and the
+/// relative permittivity of the dielectric below it, down to the next layer.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Layer {
     pub name: String,
     pub z: f64,
     pub eps_below: f64,
 }
+
+/// A straight routed segment of a net on a layer, `width` wide (m), from `start` to `end` (m).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Segment {
     pub id: String,
@@ -19,6 +29,8 @@ pub struct Segment {
     pub end: [f64; 2],
     pub width: f64,
 }
+
+/// A through or blind via of a net at `at` (m), joining the two named layers, `diameter` (m).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Via {
     pub net: String,
@@ -26,12 +38,17 @@ pub struct Via {
     pub layers: [String; 2],
     pub diameter: f64,
 }
+
+/// Filled copper of a net on a layer: a polygon (m), even–odd.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Copper {
     pub net: String,
     pub layer: String,
     pub polygon: Vec<[f64; 2]>,
 }
+
+/// A board: its layers (top down), routes, vias, filled copper and the notes its reader left
+/// (what it skipped or could not represent).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Board {
     pub name: String,
@@ -44,11 +61,17 @@ pub struct Board {
     #[serde(default)]
     pub notes: Vec<String>,
 }
+
 impl Board {
-    /// Routed/filled-copper bounds in metres, or `None` for an empty board.
+    /// The bounds (m) of the routes and filled copper, `None` for an empty board.
+    ///
     /// ```
-    /// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};
-    /// assert!(b.bounds().is_none());
+    /// use emcraft_model::pcb::{Board, Layer, Segment};
+    /// let empty = Board { name: "empty".into(), layers: vec![], segments: vec![], vias: vec![], copper: vec![], notes: vec![] };
+    /// assert!(empty.bounds().is_none());
+    /// let segment = Segment { id: "0".into(), net: "A".into(), layer: "F.Cu".into(), start: [0.0, 0.001], end: [0.01, 0.002], width: 2e-4 };
+    /// let line = Board { segments: vec![segment], layers: vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2 }], ..empty };
+    /// assert_eq!(line.bounds(), Some(([0.0, 0.001], [0.01, 0.002])));
     /// ```
     pub fn bounds(&self) -> Option<([f64; 2], [f64; 2])> {
         let mut lo = [f64::INFINITY; 2];
@@ -61,6 +84,7 @@ impl Board {
         }
         lo.iter().chain(&hi).all(|v| v.is_finite()).then_some((lo, hi))
     }
+
     /// Validate a board before storing it. Empty layers, unknown layers and non-finite geometry
     /// are refused. Coordinates and lengths are SI metres.
     /// ```
@@ -127,7 +151,16 @@ impl Board {
         }
         Ok(())
     }
-    /// Convert all lengths together at a command/file boundary; call `check` after conversion.
+
+    /// Converts every length (layers' z, segments' ends and widths, vias, copper) by `convert`, at
+    /// a command's or a file's boundary; `check` the board after.
+    ///
+    /// ```
+    /// use emcraft_model::pcb::{Board, Layer};
+    /// let mut b = Board { name: "b".into(), layers: vec![Layer { name: "F.Cu".into(), z: 1.6, eps_below: 4.2 }], segments: vec![], vias: vec![], copper: vec![], notes: vec![] };
+    /// b.map_lengths(|mm| mm * 1e-3);
+    /// assert_eq!(b.layers[0].z, 1.6e-3);
+    /// ```
     pub fn map_lengths(&mut self, mut convert: impl FnMut(f64) -> f64) {
         for l in &mut self.layers {
             l.z = convert(l.z);
@@ -155,6 +188,12 @@ impl Board {
         }
     }
 }
+
+/// The distance between two points of the board's plane.
+///
+/// ```
+/// assert_eq!(emcraft_model::pcb::distance([0.0, 0.0], [3.0, 4.0]), 5.0);
+/// ```
 pub fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1])
 }

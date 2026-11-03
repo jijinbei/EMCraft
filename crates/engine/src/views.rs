@@ -735,16 +735,3 @@ pub fn probes(s: &mut Session, p: &Params) -> Result<Value> {
         .collect();
     Ok(json!({"frequency": s.show_frequency(f), "probes": rows}))
 }
-
-/// Changes only a material's display, preserving its mesh and solved fields.
-///
-/// ```
-/// let mut s = emcraft_engine::Session::new();
-/// s.execute("view.material", &serde_json::json!({"name":"vacuum","visible":false})).unwrap();
-/// assert!(s.views().hidden_materials.contains("vacuum"));
-/// assert!(s.execute("view.material", &serde_json::json!({"name":"missing","visible":false})).is_err());
-/// ```
-pub fn material_visibility(s: &mut Session, p: &Params) -> Result<Value> {
-    let name = p.string("name").required()?;
-    crate::visibility::set(s, crate::visibility::DisplayObject::Material(name.into()), p.flag("visible").required()?)
-}

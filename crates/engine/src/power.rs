@@ -5,13 +5,15 @@ use crate::{EngineError, Params, Result, Session};
 use emcraft_solver::SMatrix;
 use serde_json::{Value, json};
 
-/// Fractions of incident power in one column of a power-wave S matrix.
+/// The fractions of the incident power at each port for excitation `excitation`: one column of a
+/// power-wave S matrix, |S[p, q]|².
+///
 /// ```
-/// use emcraft_solver::{SMatrix, Complex64};
-/// let through = SMatrix::from_fn(2, |p,q| Complex64::new(if p!=q {1.0} else {0.0},0.0));
-/// let fractions = emcraft_engine::power::fractions(&through,0).unwrap();
-/// assert_eq!(fractions, vec![0.0,1.0]);
-/// assert!(emcraft_engine::power::fractions(&through,2).is_err());
+/// use emcraft_solver::{Complex64, SMatrix};
+/// // A matched through line: everything goes on to the other port.
+/// let through = SMatrix::from_fn(2, |p, q| Complex64::new(if p != q { 1.0 } else { 0.0 }, 0.0));
+/// assert_eq!(emcraft_engine::power::fractions(&through, 0).unwrap(), vec![0.0, 1.0]);
+/// assert!(emcraft_engine::power::fractions(&through, 2).is_err());
 /// ```
 pub fn fractions(s: &SMatrix, excitation: usize) -> Result<Vec<f64>> {
     if excitation >= s.ports() {
@@ -24,7 +26,9 @@ pub fn fractions(s: &SMatrix, excitation: usize) -> Result<Vec<f64>> {
         })
         .collect()
 }
-/// Report one solved frequency (Hz); no interpolation or silent frequency substitution.
+
+/// The power fractions at one solved frequency (Hz) for excitation `excitation`: the frequency
+/// must be one solved, never interpolated or replaced by a neighbour.
 pub fn at(s: &Session, frequency: f64, excitation: usize) -> Result<Value> {
     let sw = s.results().sweep()?;
     let r = sw.at(frequency, false).ok_or_else(|| EngineError::failed("frequency not solved"))?;
@@ -48,17 +52,27 @@ pub fn at(s: &Session, frequency: f64, excitation: usize) -> Result<Value> {
         .iter()
         .enumerate()
         .map(|(p, value)| {
+            let branch = (p != excitation && transmitted > 0.0).then(|| value / transmitted);
             json!({
-                "port":entries.get(p).map(|e|e.name.as_str()), "s":format!("S{}{}",p+1,excitation+1),
-                "reflected":p==excitation,"incident_fraction":value,
-                "branch_fraction": if p!=excitation && transmitted>0.0 {Some(value/transmitted)} else {None}
+                "port": entries.get(p).map(|e| e.name.as_str()),
+                "s": format!("S{}{}", p + 1, excitation + 1),
+                "reflected": p == excitation,
+                "incident_fraction": value,
+                "branch_fraction": branch,
             })
         })
         .collect();
-    Ok(json!({"frequency":s.show_frequency(r.frequency),"excitation":entries[excitation].name,
-        "reflected":powers[excitation],"transmitted":transmitted,"accounted":accounted,
-        "unaccounted":1.0-accounted,"outputs":outputs}))
+    Ok(json!({
+        "frequency": s.show_frequency(r.frequency),
+        "excitation": entries[excitation].name,
+        "reflected": powers[excitation],
+        "transmitted": transmitted,
+        "accounted": accounted,
+        "unaccounted": 1.0 - accounted,
+        "outputs": outputs,
+    }))
 }
+
 pub fn command(s: &mut Session, p: &Params) -> Result<Value> {
     let frequency = p
         .frequency("frequency")
@@ -68,6 +82,7 @@ pub fn command(s: &mut Session, p: &Params) -> Result<Value> {
     let excitation = crate::args::excitation(s, p)?;
     at(s, frequency, excitation)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

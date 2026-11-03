@@ -15,6 +15,7 @@ pub enum GeometryObject {
     Feature(usize),
     Inclusion(usize),
 }
+
 impl GeometryObject {
     pub fn key(self) -> String {
         match self {
@@ -28,6 +29,7 @@ impl GeometryObject {
             Self::Inclusion(i) => format!("inclusion:{i}"),
         }
     }
+
     pub fn parse(key: &str) -> Option<Self> {
         match key {
             "guide" => Some(Self::Guide),
@@ -47,6 +49,7 @@ impl GeometryObject {
             }
         }
     }
+
     pub fn exists(self, m: &Model) -> bool {
         match self {
             Self::Guide => m.waveguide.is_some(),
@@ -59,6 +62,7 @@ impl GeometryObject {
             Self::Inclusion(i) => i < m.inclusions.len(),
         }
     }
+
     /// Whether a displayed point belongs to this object (SI metres). Sections include their
     /// wall shell, so hiding a section also hides the shell outside its material volume.
     pub fn contains(self, m: &Model, p: Point3) -> bool {
@@ -90,12 +94,14 @@ impl GeometryObject {
         }
     }
 }
+
 /// A material or geometry row's common visibility target.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DisplayObject {
     Material(String),
     Geometry(GeometryObject),
 }
+
 impl DisplayObject {
     pub fn kind(&self) -> &'static str {
         match self {
@@ -103,6 +109,7 @@ impl DisplayObject {
             Self::Geometry(_) => "geometry",
         }
     }
+
     pub fn name(&self) -> String {
         match self {
             Self::Material(s) => s.clone(),
@@ -110,6 +117,7 @@ impl DisplayObject {
         }
     }
 }
+
 impl crate::views::Views {
     /// Whether a display object is shown. For example, the default vacuum is visible:
     /// ```
@@ -123,6 +131,7 @@ impl crate::views::Views {
         }
     }
 }
+
 pub fn set(s: &mut Session, object: DisplayObject, visible: bool) -> Result<Value> {
     let name = object.name();
     let hidden = match &object {
@@ -148,8 +157,19 @@ pub fn set(s: &mut Session, object: DisplayObject, visible: bool) -> Result<Valu
             hidden.insert(name.clone());
         }
     }
-    Ok(json!({"kind":object.kind(),"name":name,"visible":visible}))
+    Ok(json!({"kind": object.kind(), "name": name, "visible": visible}))
 }
+
+/// `view.visibility`: shows or hides a material's region or a geometry object, the display only
+/// (the model, mesh and results stay as they are).
+///
+/// ```
+/// let mut s = emcraft_engine::Session::new();
+/// let hide = |name: &str| serde_json::json!({"kind": "material", "name": name, "visible": false});
+/// s.execute("view.visibility", &hide("vacuum")).unwrap();
+/// assert!(s.views().hidden_materials.contains("vacuum"));
+/// assert!(s.execute("view.visibility", &hide("missing")).is_err());
+/// ```
 pub fn command(s: &mut Session, p: &Params) -> Result<Value> {
     let name = p.string("name").required()?;
     let object = match p.string("kind").required()? {
