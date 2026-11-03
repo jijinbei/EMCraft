@@ -40,7 +40,7 @@ impl EmcraftApp {
         }
         match id {
             "view.pcb" => {
-                if params.get("net").is_some() {
+                if params.get("net").is_some() || params.get("victim").is_some() {
                     self.replies.pcb = None;
                 }
                 self.view = View::Pcb;
@@ -147,6 +147,9 @@ impl EmcraftApp {
             (None, None, None, None) => View::Model,
         };
         self.replies.pcb = None;
+        if matches!(id, "file.new" | "file.open") {
+            self.views.pcb.illustration = Default::default();
+        }
         if self.session.model().pcb.is_some() {
             if let Some(band) = self.session.model().band {
                 self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();

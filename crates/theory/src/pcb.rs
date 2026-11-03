@@ -280,7 +280,7 @@ pub fn inspect(board: &Board, net: &str, ground: &str) -> Result<Report, String>
                 finding(
                     "nearby_signal",
                     format!(
-                        "{} runs close and parallel (gap {:.3e} m). This is geometric screening, not calculated crosstalk.",
+                        "{} runs close and parallel (gap {:0.3e} m). This is geometric screening, not calculated crosstalk.",
                         other.net,
                         gap.max(0.0)
                     ),
@@ -498,5 +498,115 @@ mod tests {
         let waves = s_parameters(&a, 1e9, 50.0).unwrap();
         b.segments.reverse();
         assert_eq!(s_parameters(&inspect(&b, "DATA", "GND").unwrap(), 1e9, 50.0).unwrap(), waves);
+    }
+}
+
+/// A geometrically parallel overlapping pair. Points are SI metres; this is not a coupling coefficient.
+#[derive(Clone, Debug)]
+pub struct Pair {
+    pub source: String,
+    pub target: String,
+    pub source_segment: String,
+    pub target_segment: String,
+    pub layer: String,
+    pub a: [[f64; 2]; 2],
+    pub b: [[f64; 2]; 2],
+    pub gap: f64,
+    pub length: f64,
+}
+/// Find same-layer parallel overlaps, including wide spacing for before/after illustration.
+/// ```
+/// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};
+/// assert!(emcraft_theory::pcb::pairs(&b,"DATA","GND").is_err());
+/// ```
+pub fn pairs(board: &Board, source: &str, ground: &str) -> Result<Vec<Pair>, String> {
+    board.check().map_err(|e| e.to_string())?;
+    let selected: Vec<_> = board.segments.iter().filter(|s| s.net == source).collect();
+    if selected.is_empty() || selected.len() > 512 {
+        return Err("net must contain 1..512 routed segments".into());
+    }
+    let mut out = Vec::new();
+    let mut work = 0usize;
+    for s in selected {
+        let d = sub(s.end, s.start);
+        let len = distance(s.start, s.end);
+        let u = [d[0] / len, d[1] / len];
+        for t in board.segments.iter().filter(|t| t.net != source && t.net != ground && t.layer == s.layer) {
+            work += 1;
+            if work > 1_000_000 {
+                return Err("pair screening work limit exceeded".into());
+            }
+            let e = sub(t.end, t.start);
+            let el = distance(t.start, t.end);
+            // Only genuinely parallel straight sections get a schematic; angled/transition cases are withheld.
+            if cross(d, e).abs() / (len * el) > 1e-6 {
+                continue;
+            }
+            let dot = |p: [f64; 2]| {
+                let q = sub(p, s.start);
+                q[0] * u[0] + q[1] * u[1]
+            };
+            let x = dot(t.start);
+            let y = dot(t.end);
+            let lo = x.min(y).max(0.);
+            let hi = x.max(y).min(len);
+            if hi - lo < 1e-9 {
+                continue;
+            }
+            let a = |z: f64| [s.start[0] + z * u[0], s.start[1] + z * u[1]];
+            let b = |z: f64| {
+                let f = (z - x) / (y - x);
+                [t.start[0] + f * e[0], t.start[1] + f * e[1]]
+            };
+            let gap = distance(a(lo), b(lo)) - (s.width + t.width) / 2.;
+            if gap <= 0. {
+                continue;
+            }
+            if out.len() >= 256 {
+                return Err("too many parallel pairs; select a smaller net".into());
+            }
+            out.push(Pair {
+                source: s.net.clone(),
+                target: t.net.clone(),
+                source_segment: s.id.clone(),
+                target_segment: t.id.clone(),
+                layer: s.layer.clone(),
+                a: [a(lo), a(hi)],
+                b: [b(lo), b(hi)],
+                gap,
+                length: hi - lo,
+            });
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod pair_tests {
+    use super::*;
+    use emcraft_model::pcb::{Layer, Segment};
+    #[test]
+    fn overlaps_are_oriented_and_nonparallel_or_different_layers_are_withheld() {
+        let mut b = Board {
+            name: "pair".into(),
+            layers: vec![Layer { name: "top".into(), z: 0., eps_below: 4. }, Layer { name: "bottom".into(), z: 0.001, eps_below: 1. }],
+            segments: vec![
+                Segment { id: "a".into(), net: "A".into(), layer: "top".into(), start: [0., 0.], end: [0.04, 0.], width: 0.0003 },
+                Segment { id: "b".into(), net: "B".into(), layer: "top".into(), start: [0.03, 0.001], end: [0.01, 0.001], width: 0.0003 },
+            ],
+            vias: vec![],
+            copper: vec![],
+            notes: vec![],
+        };
+        let p = pairs(&b, "A", "GND").unwrap();
+        assert_eq!(p.len(), 1);
+        assert!((p[0].length - 0.02).abs() < 1e-12);
+        assert!((p[0].gap - 0.0007).abs() < 1e-12);
+        assert_eq!(p[0].a[0], [0.01, 0.]);
+        b.segments[1].layer = "bottom".into();
+        assert!(pairs(&b, "A", "GND").unwrap().is_empty());
+        b.segments[1].layer = "top".into();
+        b.segments[1].end[1] = 0.003;
+        assert!(pairs(&b, "A", "GND").unwrap().is_empty());
     }
 }

@@ -220,6 +220,8 @@ impl Probe {
 /// How the project's results are looked at: the charts' styles by chart id, the probes.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Views {
+    #[serde(default)]
+    pub pcb_illustration: crate::pcb::Illustration,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcb_conditions: Option<crate::pcb::Conditions>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -247,7 +249,8 @@ impl Views {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.pcb_conditions.is_none()
+        self.pcb_illustration == crate::pcb::Illustration::default()
+            && self.pcb_conditions.is_none()
             && self.pcb_stage.is_none()
             && self.pcb_net.is_none()
             && self.charts.is_empty()
@@ -306,7 +309,11 @@ impl Views {
         }) {
             return Err(EngineError::failed("invalid PCB inspection conditions"));
         }
+        if self.pcb_illustration.victim.as_ref().is_some_and(|n| n.trim().is_empty() || n.chars().count() > 128) {
+            return Err(EngineError::failed("invalid PCB victim"));
+        }
         Ok(Views {
+            pcb_illustration: self.pcb_illustration,
             pcb_conditions: self.pcb_conditions,
             pcb_stage: self.pcb_stage,
             pcb_net: self.pcb_net,

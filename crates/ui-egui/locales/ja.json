@@ -773,7 +773,32 @@
     "The layout is a top view. Copper depth and dielectric thickness are included in the line estimate.": "左は上面から見た配線図です。伝送線路の近似には、銅箔の層位置と誘電体の厚さも使います。",
     "Depth spacing is schematic; labels show actual dimensions.": "断面の間隔は模式表示です。寸法値が実際の厚さを示します。",
     "This is geometry screening and a quasi-static line estimate. 3D fields at vias, pads, bends and radiation are not solved.": "現在は形状診断と準静的な伝送線路近似です。ビア・パッド・曲がり・放射の3次元電磁界は解いていません。",
-    "Back": "戻る"
+    "Back": "戻る",
+    "Pick source": "加害側を選択",
+    "Pick receiver": "受け側を選択",
+    "Receiver": "受け側",
+    "Swap source / receiver": "加害側と受け側を交換",
+    "Source is orange; receiver is blue. Select each role before clicking a trace.": "加害側はオレンジ、受け側は青です。選ぶ役割を指定してから配線をクリックします。",
+    "Coupling illustration": "結合の3D模式図",
+    "Schematic only — fields and noise voltage are not calculated": "模式図：電磁界の強さ・ノイズ電圧は未計算",
+    "No supported parallel overlap for this pair. Angles, vias and interlayer coupling are not illustrated.": "このペアに対応する平行区間はありません。斜め配線・ビア・層間結合は模式表示の対象外です。",
+    "Explain motion": "説明用の再生",
+    "Depth ×10": "厚さを10倍表示",
+    "Cross section": "局所断面",
+    "Motion is explanatory emphasis, not physical time. Drag to orbit; scroll to zoom.": "動きは説明用の強調表示です。物理時間を表しません。ドラッグで回転、スクロールで拡大できます。",
+    "No supported reference geometry for a 3D illustration.": "3D模式図に対応する参照銅箔がありません。",
+    "Keep geometry for comparison": "比較用に形状を保持",
+    "Before / current geometry — no noise reduction is predicted": "変更前／現在の形状：ノイズ低減量の予測ではありません",
+    "Use the same mode and depth scale to compare geometry.": "同じペア・表示モード・厚さ倍率で形状を比較してください。",
+    "Edit template spacing…": "テンプレートの配線間隔を変更…",
+    "Electric coupling": "電界の結合",
+    "Magnetic coupling": "磁界の結合",
+    "Return reference": "帰路の参照",
+    "Electric coupling: schematic connections between conductors; no field strength is implied.": "電界の結合：導体間の関係を示す模式線です。電界強度を表しません。",
+    "Magnetic coupling: symbolic loops around the source current and receiver; no flux is calculated.": "磁界の結合：加害側の電流と受け側の周囲の模式ループです。磁束は未計算です。",
+    "Return reference only, not a solved current. Missing ground is never bridged.": "帰路の参照位置の模式表示です。電流分布の計算結果ではなく、GND欠損をまたぐ線は描きません。",
+    "Source": "加害側",
+    "3D shows the selected parallel overlap; circles mark its centre in 2D.": "3Dは選択した平行区間を表示しています。2D図の丸印はその中央です。"
   },
   "commands": {
     "project.frequency": {
@@ -1740,7 +1765,8 @@
         "length": "配線長（既定40 mm）",
         "width": "配線幅（既定0.3 mm）",
         "height": "基板厚（既定0.18 mm）",
-        "er": "比誘電率（既定4.2）"
+        "er": "比誘電率（既定4.2）",
+        "gap": "平行配線の間隔（既定0.25 mm、最大5 mm）"
       }
     },
     "pcb.inspect": {
@@ -1759,7 +1785,13 @@
       "doc": "PCBの段階（基板・配線・条件・診断・結果）を切り替え、または配線ネットを選択します。診断計算は行いません。段階と選択をプロジェクトに保存し、不正な選択や基板のない段階への移動は拒否します。",
       "params": {
         "stage": "board、net、settings、inspect、results",
-        "net": "選択する配線ネット"
+        "net": "選択する配線ネット",
+        "victim": "受け側ネット（加害側と異なるネット）",
+        "mode": "electric、magnetic、return（説明用の模式表示）",
+        "playing": "説明用の強調再生。物理時間ではありません",
+        "exaggerate": "見やすさのため厚さを10倍に表示",
+        "section": "選択区間の局所断面表示",
+        "pick_victim": "基板クリックで受け側を選ぶ"
       }
     }
   },

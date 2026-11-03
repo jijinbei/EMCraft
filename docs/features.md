@@ -31,6 +31,7 @@ Load an original two-layer PCB routing example; split=true has a ground-plane sl
 | `width` | number | length | no | trace width (default 0.3 mm) |
 | `height` | number | length | no | substrate thickness (default 0.18 mm) |
 | `er` | number |  | no | relative dielectric permittivity (default 4.2) |
+| `gap` | number | length | no | parallel trace clearance (default 0.25 mm, at most 5 mm) |
 
 ## `pcb.inspect` — Inspect PCB route
 
@@ -52,6 +53,12 @@ Navigate the PCB workflow (board, net, settings, inspect, results) or select a r
 |---|---|---|---|---|
 | `stage` | string |  | no | PCB stage: board, net, settings, inspect or results |
 | `net` | string |  | no | routed net to select |
+| `victim` | string |  | no | receiving net, different from the selected source |
+| `mode` | string |  | no | schematic mechanism |
+| `playing` | boolean |  | no | play explanatory emphasis, not physical time |
+| `exaggerate` | boolean |  | no | exaggerate depth by 10 for visibility |
+| `section` | boolean |  | no | show local cross section |
+| `pick_victim` | boolean |  | no | board clicks select the receiver |
 
 ## `project.frequency` — Frequency band
 

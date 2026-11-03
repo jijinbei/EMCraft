@@ -135,3 +135,37 @@ Verification: [`pcb-route-line`](../tests/oracle/pcb-route-line/README.md) freez
 evaluated HJ/ABCD values for a 40 mm line. Unit tests cover narrow ground slots, topology,
 invalid input and ordering; engine tests cover unit conversion, source-independent saving,
 reopening and undo; the UI scenario exercises actual route/net clicks and both ground examples.
+
+## Coupling illustration
+
+At **Select route**, choose the source (orange) and receiver (blue), using the role buttons
+before clicking a trace or using the receiver list. Swap exchanges the two roles. After
+**Inspect route**, Results shows a GPU-rendered 3D schematic linked to the highlighted 2D
+parallel overlap. Use its section list to select another overlap; circle marks locate its centre.
+Electric, magnetic and return-reference modes explain different relationships. Field strength,
+noise voltage, propagation speed and physical phase are **not calculated**. The permanent
+schematic banner remains in whole-window PNGs captured by `ui.render`.
+
+The first version only illustrates same-layer straight parallel overlaps with a known reference
+layer. Angles, interlayer coupling and vias get no invented field diagram. Ground holes remain
+holes; a return-reference line is withheld when the route's reference screening reports gaps
+or missing support. Curves and loops are original conceptual drawings, following the mechanisms
+explained in Texas Instruments' [Crosstalk on PCB Layouts](https://www.ti.com/content/dam/videos/external-videos/zh-tw/9/3816841626001/6307563213112.mp4/subassets/crosstalk-on-pcb-layouts-presentation-quiz.pdf), not field solutions.
+
+Drag to orbit and scroll to zoom. Depth is exaggerated ×10 by default; toggle it for actual
+layer spacing. Local section shortens the traces around the selected section. Motion defaults
+to stopped, and only pulses the emphasis at five updates per second. It is not a wave simulation.
+Pair, mode, playback, depth and section choices are saved by `view.pcb` (`victim`, `mode`,
+`playing`, `exaggerate`, `section`, `pick_victim`); modes are `electric`, `magnetic`, `return`.
+`pcb.inspect.coupling_pairs` replies give both segment ids, source/target endpoints, layer,
+clearance and overlap in display units, explicitly tagged `geometry_only`. The geometric
+pair search is bounded to one million candidates and 256 output sections; excessive inputs
+fail visibly. The illustration also caps drawing work and local ground triangles.
+
+**Keep geometry for comparison** pins a temporary scene in the current workspace. Matching
+roles/mode/depth/section settings show before/current pictures with the same camera, plus
+clearance and overlap values. No noise-reduction percentage is inferred. New/open project
+clears the pin. In `pcb-parallel`, **Edit template spacing…** edits the real `gap` project
+variable (default 0.25 mm, positive and at most 5 mm), rebuilding the board. Review it and
+select the pair again before diagnosing and comparing. Edited KiCad boards can similarly
+be reimported. The ordinary single-line S/TDR estimates below the schematic still exclude coupling.

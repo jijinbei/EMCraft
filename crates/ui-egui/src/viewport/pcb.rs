@@ -174,6 +174,9 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
             });
         scenario::publish_target(Handle::Choice("pcb_control", "net"), r.response.rect);
     }
+    if stage == Stage::Net {
+        super::pcb_coupling::select(app, ui, out);
+    }
     if stage == Stage::Settings {
         for (label, field) in
             [("Reference net", &mut state.ground), ("Reference impedance (Ω)", &mut state.reference), ("Maximum frequency", &mut state.stop)]
@@ -227,7 +230,12 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
             draw_board(app, state, ui, out, selected, &state.ground.clone(), result)
         });
         ui.vertical(|ui| match stage {
-            Stage::Results => draw_report(app, state, ui, result),
+            Stage::Results => {
+                if let Some(r) = result {
+                    super::pcb_coupling::show(app, state, ui, r, out);
+                }
+                draw_report(app, state, ui, result)
+            }
             _ => stackup(app, ui, selected, &state.ground),
         });
     });
@@ -345,8 +353,9 @@ fn draw_board(
         let (a, b) = (to(seg.start), to(seg.end));
         let chosen = seg.net == net;
         let colour = match (chosen, flagged.contains(seg.id.as_str())) {
-            (true, true) => t.error,
+            (true, true) => t.warning,
             (true, false) => t.warning,
+            _ if app.session.views().pcb_illustration.victim.as_deref() == Some(seg.net.as_str()) => t.accent,
             _ => t.text_dim,
         };
         painter.line_segment([a, b], Stroke::new((seg.width * scale) as f32 + if chosen { 2.0 } else { 0.5 }, colour));
@@ -374,6 +383,26 @@ fn draw_board(
             }
         }
     }
+    if let Some(report) = report {
+        let pairs: Vec<_> = report["coupling_pairs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|p| p["target"].as_str() == app.session.views().pcb_illustration.victim.as_deref())
+            .collect();
+        if let Some(pair) = pairs.get(state.illustration.index) {
+            for (key, colour) in [("source_points", t.warning), ("target_points", t.accent)] {
+                let at = |i: usize| {
+                    to([
+                        app.session.display().length.to_si(pair[key][i][0].as_f64().unwrap_or(0.)),
+                        app.session.display().length.to_si(pair[key][i][1].as_f64().unwrap_or(0.)),
+                    ])
+                };
+                painter.line_segment([at(0), at(1)], Stroke::new(5., colour));
+                painter.circle_stroke(at(0) + (at(1) - at(0)) * 0.5, 7., Stroke::new(2., colour));
+            }
+        }
+    }
     for via in &board.vias {
         painter.circle_stroke(to(via.at), (via.diameter * scale / 2.0).max(3.0) as f32, Stroke::new(1.4, t.accent));
     }
@@ -381,7 +410,10 @@ fn draw_board(
         && let Some((_, n)) = nearest
     {
         state.attempted = None;
-        out.push(Action::run("view.pcb", json!({"net":n,"stage":"net"})));
+        out.push(Action::run(
+            "view.pcb",
+            if app.session.views().pcb_illustration.pick_victim { json!({"victim":n,"stage":"net"}) } else { json!({"net":n,"stage":"net"}) },
+        ));
     }
 }
 fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, report: Option<&Value>) {

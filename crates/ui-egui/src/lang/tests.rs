@@ -474,6 +474,30 @@ fn tour() -> Record {
         );
     }
     h.frames(2);
+    call(&mut h, "engine.execute", json!({"command":"file.sample","params":{"name":"pcb-parallel"}}));
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"net":"DATA","victim":"CLK","stage":"net"}}));
+    h.frames(2);
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+    h.frames(2);
+    step(&mut h, json!({"click":"choice:pcb_coupling:keep"}));
+    for mode in emcraft_engine::pcb::CouplingMode::ALL {
+        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"mode":mode.id()}}));
+        h.frames(2);
+    }
+    let saved = h.app.replies.pcb.clone();
+    if let Some(r) = &mut h.app.replies.pcb {
+        r["coupling_pairs"] = json!([]);
+    }
+    h.frames(2);
+    h.app.replies.pcb = saved;
+    let mut no_ground = h.app.session.model().pcb.clone().unwrap();
+    no_ground.copper.clear();
+    no_ground.map_lengths(|v| h.app.session.display().length.from_si(v));
+    call(&mut h, "engine.execute", json!({"command":"pcb.load","params":{"data":no_ground}}));
+    call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"victim":"CLK"}}));
+    h.frames(3);
+    call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":false}}));
     // A native copy without a neighbour reaches the clean-screening wording too.
     let mut board = h.app.session.model().pcb.clone().unwrap();
     board.segments.retain(|s| s.net == "DATA");

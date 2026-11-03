@@ -102,3 +102,29 @@ fn pcb_workflow_navigation_is_checked_saved_and_does_not_run_diagnosis() {
     assert_eq!(again.views().pcb_conditions.as_ref().unwrap().stop_hz, 1e10);
     let _ = std::fs::remove_file(file);
 }
+
+#[test]
+fn coupling_pairs_roles_and_geometry_spacing_are_explicit() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name":"pcb-parallel"})).unwrap();
+    s.execute("view.pcb", &json!({"net":"DATA","victim":"CLK","mode":"magnetic"})).unwrap();
+    let r = s.execute("pcb.inspect", &json!({"net":"DATA"})).unwrap();
+    let pairs = r["coupling_pairs"].as_array().unwrap();
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[0]["target"], "CLK");
+    assert!((pairs[0]["gap"].as_f64().unwrap() - 0.25).abs() < 1e-10);
+    assert_eq!(pairs[0]["overlap"], 20.);
+    assert_eq!(pairs[0]["method"], "geometry_only");
+    assert!(s.execute("view.pcb", &json!({"victim":"DATA"})).is_err());
+    assert!(s.execute("view.pcb", &json!({"victim":"missing"})).is_err());
+    assert!(s.execute("view.pcb", &json!({"mode":"radiation"})).is_err());
+    let file = scratch("pcb-coupling.emcraft");
+    s.execute("file.save", &json!({"path":file})).unwrap();
+    let mut again = Session::new();
+    again.execute("file.open", &json!({"path":file})).unwrap();
+    assert_eq!(s.views().pcb_illustration, again.views().pcb_illustration);
+    s.execute("project.variable", &json!({"name":"gap","value":1.5})).unwrap();
+    let r = s.execute("pcb.inspect", &json!({"net":"DATA"})).unwrap();
+    assert!((r["coupling_pairs"][0]["gap"].as_f64().unwrap() - 1.5).abs() < 1e-10);
+    let _ = std::fs::remove_file(file);
+}

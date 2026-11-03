@@ -3,7 +3,7 @@
 use crate::{EngineError, Params, Result, Session, Step};
 use emcraft_model::pcb::{Board, Copper, Layer, Segment};
 use emcraft_model::units::Length;
-pub use emcraft_theory::pcb::near;
+pub use emcraft_theory::pcb::{Pair, near};
 use serde_json::{Value, json};
 use std::io::Read;
 
@@ -20,6 +20,26 @@ emcraft_macros::named_enum! {
 }
 emcraft_macros::named_serde!(Stage);
 
+emcraft_macros::named_enum! {
+    #[derive(Clone,Copy,Debug,PartialEq,Eq,Default)]
+    pub enum CouplingMode { #[default] Electric="electric"=>"Electric coupling", Magnetic="magnetic"=>"Magnetic coupling", Return="return"=>"Return reference" }
+}
+emcraft_macros::named_serde!(CouplingMode);
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Illustration {
+    pub victim: Option<String>,
+    pub mode: CouplingMode,
+    pub playing: bool,
+    pub exaggerate: bool,
+    pub section: bool,
+    pub pick_victim: bool,
+}
+impl Default for Illustration {
+    fn default() -> Self {
+        Self { victim: None, mode: CouplingMode::Electric, playing: false, exaggerate: true, section: false, pick_victim: false }
+    }
+}
 /// Last verified PCB conditions; frequency is SI hertz, impedance is ohms.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Conditions {
@@ -57,6 +77,32 @@ pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
     if matches!(stage, Stage::Settings | Stage::Inspect | Stage::Results) && s.views.pcb_net.is_none() {
         return Err(failed("select a routed net before continuing"));
     }
+    let mut illustration = s.views.pcb_illustration.clone();
+    if let Some(v) = p.string("victim").optional()? {
+        if !board.is_some_and(|b| b.segments.iter().any(|t| t.net == v)) || s.views.pcb_net.as_deref() == Some(v) {
+            return Err(p.error("victim", "choose a different routed net"));
+        }
+        illustration.victim = Some(v.to_owned());
+    }
+    if illustration.victim == s.views.pcb_net {
+        illustration.victim = None;
+    }
+    if let Some(v) = p.pick("mode").optional()? {
+        illustration.mode = v;
+    }
+    if let Some(v) = p.flag("playing").optional()? {
+        illustration.playing = v;
+    }
+    if let Some(v) = p.flag("exaggerate").optional()? {
+        illustration.exaggerate = v;
+    }
+    if let Some(v) = p.flag("section").optional()? {
+        illustration.section = v;
+    }
+    if let Some(v) = p.flag("pick_victim").optional()? {
+        illustration.pick_victim = v;
+    }
+    s.views.pcb_illustration = illustration;
     s.views.pcb_stage = Some(stage);
     Ok(json!({"stage":stage.id(),"net":s.views.pcb_net}))
 }
@@ -68,6 +114,7 @@ fn install(s: &mut Session, board: Board) -> Result<Value> {
     let reply = json!({"board":board.name,"segments":board.segments.len(),"layers":board.layers.len(),"notes":board.notes});
     s.model = emcraft_model::Model { pcb: Some(board), ..Default::default() };
     s.views.pcb_net = None;
+    s.views.pcb_illustration = Illustration::default();
     s.views.pcb_stage = None;
     s.views.pcb_conditions = None;
     Ok(reply)
@@ -110,6 +157,10 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let neighbour = p.flag("neighbour").or(true)?;
     let l = Length::Millimetre.from_si(p.positive_length("length").or(0.04)?);
     let w = Length::Millimetre.from_si(p.positive_length("width").or(0.0003)?);
+    let gap = Length::Millimetre.from_si(p.positive_length("gap").or(0.00025)?);
+    if gap > 5. {
+        return Err(p.error("gap", "must be at most 5 mm"));
+    }
     let h = Length::Millimetre.from_si(p.positive_length("height").or(0.00018)?);
     let er = p.number("er").or(4.2)?;
     if !(1.0..=1000.0).contains(&l) || !(0.001..=10.0).contains(&w) || !(0.001..=10.0).contains(&h) || !(1.0..=128.0).contains(&er) {
@@ -126,8 +177,8 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
                 id: "clock:0".into(),
                 net: "CLK".into(),
                 layer: "F.Cu".into(),
-                start: [5.0, 10.0 + w + 0.25],
-                end: [5.0 + l, 10.0 + w + 0.25],
+                start: [5.0, 10.0 + w + gap],
+                end: [5.0 + l, 10.0 + w + gap],
                 width: w,
             },
         ],
@@ -165,6 +216,7 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
         return Err(p.error("stop", "must be at most 1 THz"));
     }
     let points = p.integer("points", 4..=128).or(64)?;
+    let pairs = emcraft_theory::pcb::pairs(board, net, ground).map_err(failed)?;
     let report = emcraft_theory::pcb::inspect(board, net, ground).map_err(failed)?;
     let length = s.display.length;
     let frequency = s.display.frequency;
@@ -173,6 +225,7 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
         report.findings.iter().map(|f| json!({"code":f.code,"method":"geometry_screening","segment":f.segment,"detail":f.detail})).collect();
     let mut reply = json!({"net":net,"ground":ground,"board":board.name,"length":length.from_si(report.length),"length_unit":length.symbol(),"model_available":report.model_available,"sections":sections,"findings":findings,"import_notes":board.notes,
         "model":"lossless quasi-static transmission-line approximation; zero-thickness outer microstrip, infinite continuous ground; excludes bends, pads, vias, losses and coupling","return_current":"Geometry screening only: filled copper support is not a solved return-current density.","reference":reference,"stop":frequency.from_si(stop),"stop_hz":stop,"frequency_unit":frequency.symbol()});
+    reply["coupling_pairs"]=json!(pairs.iter().map(|p|json!({"source":p.source,"target":p.target,"source_segment":p.source_segment,"target_segment":p.target_segment,"layer":p.layer,"source_points":p.a.map(|v|v.map(|x|length.from_si(x))),"target_points":p.b.map(|v|v.map(|x|length.from_si(x))),"gap":length.from_si(p.gap),"overlap":length.from_si(p.length),"method":"geometry_only"})).collect::<Vec<_>>());
     if report.model_available {
         let freqs: Vec<_> = (1..=points).map(|i| stop * i as f64 / points as f64).collect();
         let mut waves = Vec::new();

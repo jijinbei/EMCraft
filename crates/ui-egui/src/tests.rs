@@ -742,3 +742,8 @@ fn pcb_saved_results_restore_conditions_in_a_new_window() {
     assert_eq!(emcraft_engine::pcb::stage(&next.app.session), emcraft_engine::pcb::Stage::Results);
     let _ = std::fs::remove_file(file);
 }
+
+#[test]
+fn scenario_pcb_coupling() {
+    scenario("pcb_coupling");
+}

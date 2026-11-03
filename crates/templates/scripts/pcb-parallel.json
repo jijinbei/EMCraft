@@ -39,6 +39,14 @@
     }
   },
   {
+    "command": "project.variable",
+    "params": {
+      "name": "gap",
+      "value": 0.25,
+      "quantity": "length"
+    }
+  },
+  {
     "command": "pcb.sample",
     "params": {
       "split": false,
@@ -46,7 +54,8 @@
       "length": "=l",
       "width": "=w",
       "height": "=h",
-      "er": "=er"
+      "er": "=er",
+      "gap": "=gap"
     }
   },
   {
