@@ -2,12 +2,12 @@
   "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
   "values": {
     "s11_mag": {
-      "band": 1.0100000100000001e-7,
-      "value": 0.9999999999999994
+      "band": 1.0100000100000002e-7,
+      "value": 1.0000000000000029
     },
     "s11_phase": {
-      "band": 0.0008001283120376492,
-      "value": 128.31203664918053
+      "band": 0.0008001283117120065,
+      "value": 128.3117110065125
     }
   }
 }

@@ -225,3 +225,19 @@ fn the_four_layer_example_board_meshes_and_its_route_crosses_layers() {
     assert!(m["copper_faces"].as_u64().unwrap() > 0);
     emcraft_mesh::check_tetrahedra(s.model().mesh.as_ref().unwrap()).unwrap();
 }
+
+#[test]
+fn a_via_through_another_nets_plane_without_clearance_is_refused() {
+    let mut s = Session::new();
+    let board = json!({
+        "name": "short",
+        "layers": [{"name": "F.Cu", "z": 0, "eps_below": 4.4}, {"name": "In1", "z": 0.5, "eps_below": 4.4}, {"name": "B.Cu", "z": 1.0, "eps_below": 1}],
+        "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": [3, 0], "width": 0.5}],
+        "vias": [{"net": "S", "at": [3, 0], "layers": ["F.Cu", "B.Cu"], "diameter": 0.8, "drill": 0.4}],
+        "copper": [{"net": "GND", "layer": "In1", "polygon": [[-2, -2], [6, -2], [6, 2], [-2, 2]]}],
+    });
+    s.execute("pcb.load", &json!({"data": board})).unwrap();
+    s.execute("pcb.region", &json!({"margin": 1})).unwrap();
+    let e = s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap_err().to_string();
+    assert!(e.contains("GND") && e.contains("In1") && e.contains("clearance"), "{e}");
+}

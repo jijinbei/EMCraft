@@ -179,9 +179,11 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
    (`strip_edge` × `size`; by default a sixth of the narrowest trace), where the fields are
    singular.
 3. Each via's barrel (its `drill`, else its pads' diameter) on a layer of its own in that
-   triangulation, so its prisms between its two layers are left out and their walls conduct.
-4. The triangulation extruded through the substrates (cells graded from the edge size at their
-   copper to the middle) and the
+   triangulation, so its prisms between its two layers are left out and their walls conduct; a
+   barrel through another net's copper on a layer between its ends is refused (the pour needs a
+   clearance round it). Copper is filled by the even–odd rule (a pour's holes are holes).
+4. The triangulation extruded through the substrates (cells graded from the edge size at a layer
+   with traces, from a few edge sizes at a plane, to the middle) and the
    air (cells growing away from the board); the copper conducting sheets of no thickness.
 
 ```json
