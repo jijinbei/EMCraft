@@ -5,7 +5,7 @@
 //! copper of every layer in one triangulation, extruded through the substrates (each a material,
 //! `substrate εr …`) and the air, the copper conducting sheets inside.
 
-use emcraft_mesh::planar::extrude::{Slab, Stack, extrude};
+use emcraft_mesh::planar::extrude::{Hole, Slab, Stack, extrude};
 use emcraft_mesh::planar::{Outline, Request, offset, triangulate};
 use emcraft_model::pcb::{Board, Region};
 use emcraft_model::shape::{BoxSize, Shape, Solid};
@@ -22,6 +22,8 @@ const AIR: f64 = 5.0;
 const MARGIN: f64 = 5.0;
 /// How much each cell of the air grows over the one nearer the board.
 const AIR_GROWTH: f64 = 1.4;
+/// How much each cell across a substrate grows over the one nearer its copper.
+const SUBSTRATE_GROWTH: f64 = 1.3;
 /// The chords of a trace's round ends stay within this fraction of its width of the circle.
 const SAG: f64 = 2e-3;
 
@@ -138,46 +140,100 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         let ring = offset::trace_ends(at(g.start), at(g.end), g.width, SAG * g.width, [!fed(g.start), !fed(g.end)]);
         outlines.push(Outline { layer: layer(&g.layer)?, net: net(&g.net)?, ring });
     }
+    // Pours: their edges fine only near the traces and vias.
+    let mut coarse = Vec::new();
     for c in &board.copper {
-        outlines.push(Outline { layer: layer(&c.layer)?, net: net(&c.net)?, ring: c.polygon.iter().map(|q| at(*q)).collect() });
+        coarse.push(Outline { layer: layer(&c.layer)?, net: net(&c.net)?, ring: c.polygon.iter().map(|q| at(*q)).collect() });
     }
-    for v in &board.vias {
+    // Vias: their pads on their layers, their barrels on a layer of their own after the
+    // board's (each its own "net", so the triangles it covers are known).
+    let barrels = board.layers.len();
+    let mut nets = nets.clone();
+    let first_via = nets.len() as u32;
+    for (i, v) in board.vias.iter().enumerate() {
         for l in &v.layers {
             outlines.push(Outline { layer: layer(l)?, net: net(&v.net)?, ring: offset::disc(at(v.at), v.diameter, SAG * v.diameter) });
         }
+        nets.push(format!("via {} ({})", i + 1, v.net));
+        outlines.push(Outline { layer: barrels, net: first_via + i as u32, ring: offset::disc(at(v.at), v.barrel(), SAG * v.barrel()) });
     }
-    let names: Vec<String> = board.layers.iter().map(|l| l.name.clone()).collect();
+    let mut names: Vec<String> = board.layers.iter().map(|l| l.name.clone()).collect();
+    names.push("vias".into());
     let w = [region.hi[0] - region.lo[0], region.hi[1] - region.lo[1]];
-    let planar = triangulate(&Request { lo: [0.0, 0.0], hi: w, layers: &names, nets: &nets, outlines: &outlines, size, edge_size: edge })?;
+    // An open boundary's layer: its inner box a line of the mesh in the plane (and a level
+    // across the air, below), so no prism straddles where the layer begins.
+    let layer_depth = s.model.open.as_ref().map(|o| o.thickness.get());
+    let mut lines = Vec::new();
+    if let Some(d) = layer_depth {
+        if !(2.0 * d < w[0] && 2.0 * d < w[1] && d < region.above && d < region.below) {
+            return Err(failed("the open boundary's layer must be thinner than the air above and below the board and than half the region's sides"));
+        }
+        let c = [[d, d], [w[0] - d, d], [w[0] - d, w[1] - d], [d, w[1] - d]];
+        lines.extend((0..4).map(|k| [c[k], c[(k + 1) % 4]]));
+    }
+    let planar = triangulate(&Request {
+        lo: [0.0, 0.0],
+        hi: w,
+        layers: &names,
+        nets: &nets,
+        outlines: &outlines,
+        coarse: &coarse,
+        lines: &lines,
+        size,
+        edge_size: edge,
+    })?;
     // The stack from the floor: air, the substrates, air; cells across a substrate about twice
     // the edge size, the air's growing away from the board.
     let vacuum = 0;
     let material = |er: f64| -> Result<u32> { if er == 1.0 { Ok(vacuum) } else { Ok(s.model.material(&substrate(er))?.0 as u32) } };
-    let air = |h: f64, towards_board_first: bool| {
-        let first = 2.0 * edge;
+    // A slab `h` thick whose cells grow by `growth` from `first` at its bottom (`up`) or top.
+    let graded = |h: f64, material: u32, first: f64, growth: f64, up: bool| {
         let mut n = 1;
-        while n < 64 && first * (AIR_GROWTH.powi(n as i32) - 1.0) / (AIR_GROWTH - 1.0) < h {
+        while n < 64 && first * (growth.powi(n as i32) - 1.0) / (growth - 1.0) < h {
             n += 1;
         }
-        let ratio = if towards_board_first { AIR_GROWTH } else { 1.0 / AIR_GROWTH };
-        Slab { thickness: h, material: vacuum, cells: n, ratio }
+        Slab { thickness: h, material, cells: n, ratio: if up { growth } else { 1.0 / growth } }
     };
+    let air = |h: f64, up: bool| graded(h, vacuum, 2.0 * edge, AIR_GROWTH, up);
+    // The layer's air in slabs of their own, about square with the size far out.
+    let layer_slab = |d: f64| Slab { thickness: d, material: vacuum, cells: ((d / size).ceil() as usize).clamp(2, 16), ratio: 1.0 };
     let mut slabs = Vec::new();
+    if let Some(d) = layer_depth {
+        slabs.push(layer_slab(d));
+    }
     if region.below > 0.0 {
-        slabs.push(air(region.below, false));
+        slabs.push(air(region.below - layer_depth.unwrap_or(0.0), false));
     }
     let mut sheets = vec![(up[0], slabs.len())];
     for (k, w2) in up.windows(2).enumerate() {
         // A layer's dielectric lies below it, down to the next layer.
         let er = board.layers[w2[1]].eps_below;
         let h = gaps[k];
-        slabs.push(Slab { thickness: h, material: material(er)?, cells: ((h / (2.0 * edge)).ceil() as usize).clamp(1, 16), ratio: 1.0 });
+        // Two halves, each fine at its copper (the fields' edge singularities) and growing
+        // to the middle.
+        let m = material(er)?;
+        slabs.push(graded(h / 2.0, m, edge, SUBSTRATE_GROWTH, true));
+        slabs.push(graded(h / 2.0, m, edge, SUBSTRATE_GROWTH, false));
         sheets.push((w2[1], slabs.len()));
     }
     if region.above > 0.0 {
-        slabs.push(air(region.above, true));
+        slabs.push(air(region.above - layer_depth.unwrap_or(0.0), true));
     }
-    let (mut mesh, sheet_nets) = extrude(&planar, &Stack { z0: 0.0, slabs, sheets })?;
+    if let Some(d) = layer_depth {
+        slabs.push(layer_slab(d));
+    }
+    // Each via's barrel: its triangles' prisms out between its layers' interfaces.
+    let interface_of = |name: &str| layer(name).ok().and_then(|l| sheets.iter().find(|s| s.0 == l)).map(|s| s.1);
+    let mut holes = Vec::new();
+    for (i, v) in board.vias.iter().enumerate() {
+        let (Some(from), Some(to)) = (interface_of(&v.layers[0]), interface_of(&v.layers[1])) else { continue };
+        let covered = planar.nets.get(barrels).into_iter().flatten().enumerate();
+        let triangles: Vec<u32> = covered.filter(|(_, n)| **n == first_via + i as u32).map(|(t, _)| t as u32).collect();
+        if !triangles.is_empty() {
+            holes.push(Hole { triangles, from, to });
+        }
+    }
+    let (mut mesh, sheet_nets) = extrude(&planar, &Stack { z0: 0.0, slabs, sheets, holes })?;
     // Into the model's axes: the board's (x, y, height) is (x, z, y); the swap mirrors, so
     // each tetrahedron's last two nodes swap to keep its volume positive.
     for p in &mut mesh.nodes {
@@ -200,8 +256,9 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
 }
 
 /// `pcb.port`: a lumped port at a trace's end, a sheet the trace's width wide from its reference
-/// up to it — the reference the nearest layer below with copper under that end, else the box's
-/// floor — its source in series with `impedance` (50 Ω by default). The trace is cut square at
+/// to it — the reference the nearest layer below with another net's copper under that end, else
+/// the nearest above, else the box's floor — its source in series with `impedance` (50 Ω by
+/// default). The trace is cut square at
 /// the port when meshed. Without waveguide ports,
 /// solve.frequency reads S of the lumped ports.
 pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
@@ -224,7 +281,11 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
                 .iter()
                 .any(|x| &x.layer == name && x.net != g.net && emcraft_model::pcb::distance(near_point(x.start, x.end, at), at) <= 0.5 * x.width)
     };
-    let reference = (0..board.layers.len()).filter(|&l| heights[l] < top && covered(l)).max_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    // The nearest such layer below, else above (a bottom-side trace over the plane above it),
+    // else the floor.
+    let below = (0..board.layers.len()).filter(|&l| heights[l] < top && covered(l)).max_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    let above = (0..board.layers.len()).filter(|&l| heights[l] > top && covered(l)).min_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    let reference = below.or(above);
     let bottom = reference.map_or(-region.below, |l| heights[l]);
     let (x, y) = (at[0] - region.lo[0], at[1] - region.lo[1]);
     let d = [g.end[0] - g.start[0], g.end[1] - g.start[1]];

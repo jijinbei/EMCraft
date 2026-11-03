@@ -447,7 +447,13 @@ mod tests {
         end.start = [0.025, 0.01];
         end.end = [0.045, 0.01];
         b.segments.push(end);
-        b.vias.push(emcraft_model::pcb::Via { net: "DATA".into(), at: [0.025, 0.01], layers: ["top".into(), "bottom".into()], diameter: 0.0006 });
+        b.vias.push(emcraft_model::pcb::Via {
+            net: "DATA".into(),
+            at: [0.025, 0.01],
+            layers: ["top".into(), "bottom".into()],
+            diameter: 0.0006,
+            drill: None,
+        });
         let r = inspect(&b, "DATA", "GND").unwrap();
         assert!(!r.model_available);
         assert!(r.findings.iter().any(|f| f.code == "missing_return_via"));

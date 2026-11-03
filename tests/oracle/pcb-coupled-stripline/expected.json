@@ -1,0 +1,46 @@
+{
+ "title": "Edge-coupled stripline on a board: two 2.4 mm traces 0.6 mm apart on the inner layer of a 3 mm εr = 2.2 board between its ground planes (the region's lid and floor), meshed by the planar mesher: the even and odd modes' impedances",
+ "kind": "theory",
+ "source": "Cohn's exact conformal mapping of zero-thickness coupled strips between infinite planes: Z0e = η0/(4√εr) K(ke′)/K(ke), ke = tanh(πW/2b) tanh(π(W + S)/2b), Z0o alike with ko = tanh(πW/2b) coth(π(W + S)/2b) (S. B. Cohn, Shielded coupled-strip transmission line, IRE Trans. MTT 3(5):29–38, 1955), K by the arithmetic–geometric mean (emcraft-theory::coupled::z0_even_odd, evaluated apart from the solver). The two TEM modes share β = k0 √εr, so any combination is a mode; the ports split them along the line's impedance matrix (power-orthogonal, orthogonal currents: equal currents on the strips, then opposite ones), each mode's impedance per conductor 2P/Σ|I|²",
+ "quantities": [
+  {
+   "id": "z0e",
+   "quantity": "the first port mode's impedance at 2 GHz, the even mode (Ω)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/impedance"
+   },
+   "value": 57.46078003811662,
+   "tolerance": {
+    "relative": 0.005
+   },
+   "reason": "−0.22 % measured: 1 mm triangles graded to 50 µm at the traces' edges, cells across the substrate graded towards the copper, side walls three spacings away where Cohn's planes are infinite"
+  },
+  {
+   "id": "z0o",
+   "quantity": "the second port mode's impedance at 2 GHz, the odd mode (Ω)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/1/impedance"
+   },
+   "value": 42.824609251107255,
+   "tolerance": {
+    "relative": 0.01
+   },
+   "reason": "−0.53 % measured: the odd mode's field crowds into the 0.6 mm gap, which the size field's growth away from the edges (half the distance) crosses in a few triangles; 25 µm at the edges gives −0.45 %"
+  },
+  {
+   "id": "eps_eff_odd",
+   "quantity": "(β/k0)² of the odd mode",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/1/eps_eff"
+   },
+   "value": 2.2,
+   "tolerance": {
+    "relative": 1e-09
+   },
+   "reason": "a TEM mode in one dielectric: εr exactly, to rounding"
+  }
+ ]
+}

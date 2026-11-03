@@ -242,6 +242,13 @@ pub const TEMPLATES: &[Template] = &[
         marks: "{}",
         kinds: &[Analysis::Pcb],
     },
+    Template {
+        name: "pcb-board",
+        label: "Four-layer board: a route through a via, a differential pair, a clock over a slotted ground",
+        script: include_str!("../scripts/pcb-board.json"),
+        marks: "{}",
+        kinds: &[Analysis::Pcb],
+    },
 ];
 
 /// A SolidCraft design a template is built from, compiled in: no file is read when a template

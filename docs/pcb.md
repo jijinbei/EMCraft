@@ -79,10 +79,14 @@ SI/EMC compliance verdict is computed by this feature.
 
 The reader is an original implementation of the public
 [KiCad S-expression PCB format](https://dev-docs.kicad.org/en/file-formats/sexpr-pcb/).
-It reads straight segments, vias, named nets, explicit dielectric/copper stackup and saved
-`filled_polygon` copper. Refill zones in the PCB editor and save before importing. An unfilled
-zone outline is skipped with a note; it is never treated as solid ground. Curved tracks are
-refused. Pads, footprints, board outlines, mask and copper thickness are excluded with a note.
+It reads tracks (curved ones as chords within a twentieth of their width of the circle), vias
+(with their drill), named nets, explicit dielectric/copper stackup, saved `filled_polygon`
+copper and footprints' copper pads (rectangles, rounded rectangles as rectangles, circles and
+ovals by chords; custom and trapezoid pads as their bounding rectangles, noted; a through-hole
+pad also a via of its drill between the outer layers; pads without a net skipped, noted). Refill
+zones in the PCB editor and save before importing. An unfilled zone outline is skipped with a
+note; it is never treated as solid ground. Board outlines, mask and copper thickness are not
+read.
 Coordinates are read in KiCad's millimetres and stored in SI metres.
 
 An absent stackup or missing dielectric permittivity is an error, not an assumed FR-4 board.
@@ -90,8 +94,8 @@ Mixed dielectric plies between two copper layers require a caller-supplied homog
 `pcb.import` accepts `stackup`, an array of `{name,z,eps_below}` copper layers in increasing
 depth order. `z` uses the session's display length unit; `eps_below` is the relative dielectric
 permittivity in the interval below that layer (last layer: unused, supply `1`). The file limit
-is 8 MiB, with at most 64 copper layers, 20,000 segments, 20,000 vias, 4,096 filled polygons and
-200,000 polygon vertices. Inspect a net with at most 512 segments; reports exceeding the
+is 64 MiB, with at most 64 copper layers, 200,000 segments, 200,000 vias, 100,000 filled
+polygons and pads and 2,000,000 polygon vertices. Inspect a net with at most 512 segments; reports exceeding the
 geometric work budget fail visibly. The first release is intended for small routed regions.
 
 ## Commands and native board data
@@ -127,7 +131,7 @@ SI. Selection is a view change; importing/loading replaces the current model and
 }
 ```
 
-Vias use `{net,at,layers:[from,to],diameter}`. Polygon interiors use the even-odd rule; multiple
+Vias use `{net,at,layers:[from,to],diameter,drill}` (`drill` optional, the plated hole). Polygon interiors use the even-odd rule; multiple
 polygons on a reference layer are unioned for screening. Native input is checked before any
 model replacement; invalid numbers, layers, dimensions and excessive inputs return errors.
 
@@ -170,10 +174,14 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
 1. Every layer's copper — traces with round ends, vias' pads, filled polygons — in one
    triangulation of the region, on a 1 nm lattice so the same board gives the same mesh;
    overlapping copper of a net is joined, two nets overlapping on a layer are refused by name.
-2. The triangles refined to `size` far from copper and to the copper edge size at its edges
+2. The triangles refined to `size` far from copper and to the copper edge size at its edges (a
+   pour's edges only within `size` of a trace or via; farther, they follow the size field)
    (`strip_edge` × `size`; by default a sixth of the narrowest trace), where the fields are
    singular.
-3. The triangulation extruded through the substrates (cells about twice the edge size) and the
+3. Each via's barrel (its `drill`, else its pads' diameter) on a layer of its own in that
+   triangulation, so its prisms between its two layers are left out and their walls conduct.
+4. The triangulation extruded through the substrates (cells graded from the edge size at their
+   copper to the middle) and the
    air (cells growing away from the board); the copper conducting sheets of no thickness.
 
 ```json
@@ -189,15 +197,30 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
 ```
 
 Verification: [`pcb-microstrip-fem`](../tests/oracle/pcb-microstrip-fem/README.md) — this line on
-alumina against Hammerstad and Jensen: ε_eff within 0.15 %, the 4 mm line's phase within 0.03°.
+alumina against Hammerstad and Jensen: ε_eff within 0.2 %, the 4 mm line's phase within 0.005°.
+[`pcb-coupled-stripline`](../tests/oracle/pcb-coupled-stripline/README.md) — two traces between
+ground planes against Cohn's even and odd impedances, within 0.22 % and 0.53 %.
+[`pcb-via-short`](../tests/oracle/pcb-via-short/README.md) — a line shorted by a via, S11's phase
+within 0.27° of the line and Goldfarb and Pucel's via inductance.
 
 Ports at a trace's end instead of the box's sides: `pcb.port {"name":"1","segment":"s","end":"start"}`
 puts a 50 Ω lumped port there — a sheet the trace's width wide from its reference (the nearest
-layer below with another net's copper under that end, else the floor) up to the trace, which is
+layer below with another net's copper under that end, else above, else the floor) to the trace,
+which is
 cut square at the port. With lumped ports alone `solve.frequency` gives their S (power waves
 referred to each port's impedance). [`pcb-lumped-line`](../tests/oracle/pcb-lumped-line/README.md)
-checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1e-4; the
-phase carries the feeds' own inductance (+1.8° at 1 GHz).
+checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1.3e-3;
+the phase carries the feeds' own inductance (+1.8° at 1 GHz).
+
+### Open boards
+
+`model.open {"thickness": d}` after `pcb.region` lines the region's box with a perfectly matched
+layer: the board then radiates and a trace run into the layer is matched there. The layer's
+inner box is a line of the planar mesh and a level of the air, so no element straddles where it
+begins; the air above and below the board and half the region's sides must be thicker than the
+layer. The layer is the box's on every side, so the board floats in air with its ground as copper
+(`below` > 0). Resolve it with a few elements across: a line run into a 2 mm layer meshed at 1 mm
+reflects 0.045 at 1–10 GHz (the line's and its feed's own mismatch included).
 
 ## Coupling illustration
 

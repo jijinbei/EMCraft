@@ -1,0 +1,8 @@
+[
+ {"command": "pcb.load", "params": {"data": {"name": "coupled stripline", "layers": [{"name": "TOP", "z": 0, "eps_below": 2.2}, {"name": "IN1", "z": 1.5, "eps_below": 2.2}, {"name": "BOT", "z": 3, "eps_below": 1}], "segments": [{"id": "a", "net": "A", "layer": "IN1", "start": [-1, -1.5], "end": [3, -1.5], "width": 2.4}, {"id": "b", "net": "B", "layer": "IN1", "start": [-1, 1.5], "end": [3, 1.5], "width": 2.4}]}}},
+ {"command": "pcb.region", "params": {"lo": [0, -11.7], "hi": [1, 11.7], "above": 0, "below": 0}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "axis": "x", "face": [0, 0, 0, 3, 23.4], "modes": 2}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "axis": "x", "face": [1, 0, 0, 3, 23.4], "modes": 2}},
+ {"command": "mesh.generate", "params": {"size": 1, "strip_edge": 0.05}},
+ {"command": "solve.port_modes", "params": {"frequency": 2}, "id": "modes"}
+]

@@ -110,7 +110,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Import PCB",
         doc: "Reads a KiCad board's routed straight segments, vias, explicit dielectric stackup and saved filled copper. Unsupported track arcs fail visibly; unfilled zones are not treated as copper. Pads, packages, mask and copper thickness are excluded. Imported data is embedded so reopening needs no source file.",
         params: &[
-            req("path", K::String, "KiCad .kicad_pcb file, at most 8 MiB"),
+            req("path", K::String, "KiCad .kicad_pcb file, at most 64 MiB"),
             opt("stackup", K::Array, "optional copper layers [{name,z,eps_below}], lengths in display units; replaces file stackup"),
         ],
         effect: Effect::Rebuild,
@@ -153,7 +153,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "pcb.port",
         label: "PCB port",
-        doc: "Puts a lumped port at a trace's end in the board's region (pcb.region): a sheet the trace's width wide from its reference — the nearest layer below with another net's copper under that end, else the box's floor — up to the trace, its source in series with `impedance`. With lumped ports and no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.",
+        doc: "Puts a lumped port at a trace's end in the board's region (pcb.region): a sheet the trace's width wide from its reference — the nearest layer below with another net's copper under that end, else above, else the box's floor — to the trace, its source in series with `impedance`. With lumped ports and no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.",
         params: &[
             req("name", K::String, "port name"),
             req("segment", K::String, "the segment's id"),

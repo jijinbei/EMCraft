@@ -1,0 +1,549 @@
+[
+  {
+    "command": "pcb.load",
+    "params": {
+      "data": {
+        "name": "Four-layer example board",
+        "layers": [
+          {
+            "name": "TOP",
+            "z": 0,
+            "eps_below": 4.3
+          },
+          {
+            "name": "GND",
+            "z": 0.2,
+            "eps_below": 4.6
+          },
+          {
+            "name": "PWR",
+            "z": 1.4,
+            "eps_below": 4.3
+          },
+          {
+            "name": "BOT",
+            "z": 1.6,
+            "eps_below": 1
+          }
+        ],
+        "segments": [
+          {
+            "id": "data:0",
+            "net": "DATA",
+            "layer": "TOP",
+            "start": [
+              3,
+              5
+            ],
+            "end": [
+              11,
+              5
+            ],
+            "width": 0.3
+          },
+          {
+            "id": "data:1",
+            "net": "DATA",
+            "layer": "TOP",
+            "start": [
+              11,
+              5
+            ],
+            "end": [
+              15,
+              9
+            ],
+            "width": 0.3
+          },
+          {
+            "id": "data:2",
+            "net": "DATA",
+            "layer": "TOP",
+            "start": [
+              15,
+              9
+            ],
+            "end": [
+              22,
+              9
+            ],
+            "width": 0.3
+          },
+          {
+            "id": "data:3",
+            "net": "DATA",
+            "layer": "BOT",
+            "start": [
+              22,
+              9
+            ],
+            "end": [
+              27,
+              9
+            ],
+            "width": 0.3
+          },
+          {
+            "id": "usb_p:0",
+            "net": "USB_P",
+            "layer": "TOP",
+            "start": [
+              3,
+              14.0
+            ],
+            "end": [
+              12,
+              14.0
+            ],
+            "width": 0.2
+          },
+          {
+            "id": "usb_p:1",
+            "net": "USB_P",
+            "layer": "TOP",
+            "start": [
+              12,
+              14.0
+            ],
+            "end": [
+              14,
+              16.0
+            ],
+            "width": 0.2
+          },
+          {
+            "id": "usb_p:2",
+            "net": "USB_P",
+            "layer": "TOP",
+            "start": [
+              14,
+              16.0
+            ],
+            "end": [
+              27,
+              16.0
+            ],
+            "width": 0.2
+          },
+          {
+            "id": "usb_n:0",
+            "net": "USB_N",
+            "layer": "TOP",
+            "start": [
+              3,
+              14.4
+            ],
+            "end": [
+              12,
+              14.4
+            ],
+            "width": 0.2
+          },
+          {
+            "id": "usb_n:1",
+            "net": "USB_N",
+            "layer": "TOP",
+            "start": [
+              12,
+              14.4
+            ],
+            "end": [
+              14,
+              16.4
+            ],
+            "width": 0.2
+          },
+          {
+            "id": "usb_n:2",
+            "net": "USB_N",
+            "layer": "TOP",
+            "start": [
+              14,
+              16.4
+            ],
+            "end": [
+              27,
+              16.4
+            ],
+            "width": 0.2
+          },
+          {
+            "id": "clk:0",
+            "net": "CLK",
+            "layer": "TOP",
+            "start": [
+              3,
+              2
+            ],
+            "end": [
+              27,
+              2
+            ],
+            "width": 0.25
+          }
+        ],
+        "vias": [
+          {
+            "net": "DATA",
+            "at": [
+              22,
+              9
+            ],
+            "layers": [
+              "TOP",
+              "BOT"
+            ],
+            "diameter": 0.6,
+            "drill": 0.3
+          },
+          {
+            "net": "GND",
+            "at": [
+              21,
+              10.2
+            ],
+            "layers": [
+              "TOP",
+              "GND"
+            ],
+            "diameter": 0.6,
+            "drill": 0.3
+          },
+          {
+            "net": "GND",
+            "at": [
+              23,
+              10.2
+            ],
+            "layers": [
+              "TOP",
+              "GND"
+            ],
+            "diameter": 0.6,
+            "drill": 0.3
+          }
+        ],
+        "copper": [
+          {
+            "net": "GND",
+            "layer": "GND",
+            "polygon": [
+              [
+                0,
+                0
+              ],
+              [
+                16,
+                0
+              ],
+              [
+                16,
+                4
+              ],
+              [
+                16.6,
+                4
+              ],
+              [
+                16.6,
+                0
+              ],
+              [
+                30,
+                0
+              ],
+              [
+                30,
+                20
+              ],
+              [
+                0,
+                20
+              ]
+            ]
+          },
+          {
+            "net": "3V3",
+            "layer": "PWR",
+            "polygon": [
+              [
+                0,
+                0
+              ],
+              [
+                14.8,
+                0
+              ],
+              [
+                14.8,
+                20
+              ],
+              [
+                0,
+                20
+              ]
+            ]
+          },
+          {
+            "net": "1V8",
+            "layer": "PWR",
+            "polygon": [
+              [
+                15.2,
+                0
+              ],
+              [
+                30,
+                0
+              ],
+              [
+                30,
+                20
+              ],
+              [
+                15.2,
+                20
+              ]
+            ]
+          },
+          {
+            "net": "DATA",
+            "layer": "TOP",
+            "polygon": [
+              [
+                2.7,
+                4.7
+              ],
+              [
+                3.3,
+                4.7
+              ],
+              [
+                3.3,
+                5.3
+              ],
+              [
+                2.7,
+                5.3
+              ]
+            ]
+          },
+          {
+            "net": "USB_P",
+            "layer": "TOP",
+            "polygon": [
+              [
+                2.85,
+                13.85
+              ],
+              [
+                3.15,
+                13.85
+              ],
+              [
+                3.15,
+                14.15
+              ],
+              [
+                2.85,
+                14.15
+              ]
+            ]
+          },
+          {
+            "net": "USB_N",
+            "layer": "TOP",
+            "polygon": [
+              [
+                2.85,
+                14.25
+              ],
+              [
+                3.15,
+                14.25
+              ],
+              [
+                3.15,
+                14.55
+              ],
+              [
+                2.85,
+                14.55
+              ]
+            ]
+          },
+          {
+            "net": "CLK",
+            "layer": "TOP",
+            "polygon": [
+              [
+                2.7,
+                1.7
+              ],
+              [
+                3.3,
+                1.7
+              ],
+              [
+                3.3,
+                2.3
+              ],
+              [
+                2.7,
+                2.3
+              ]
+            ]
+          },
+          {
+            "net": "DATA",
+            "layer": "BOT",
+            "polygon": [
+              [
+                26.7,
+                8.7
+              ],
+              [
+                27.3,
+                8.7
+              ],
+              [
+                27.3,
+                9.3
+              ],
+              [
+                26.7,
+                9.3
+              ]
+            ]
+          },
+          {
+            "net": "USB_P",
+            "layer": "TOP",
+            "polygon": [
+              [
+                26.85,
+                15.85
+              ],
+              [
+                27.15,
+                15.85
+              ],
+              [
+                27.15,
+                16.15
+              ],
+              [
+                26.85,
+                16.15
+              ]
+            ]
+          },
+          {
+            "net": "USB_N",
+            "layer": "TOP",
+            "polygon": [
+              [
+                26.85,
+                16.25
+              ],
+              [
+                27.15,
+                16.25
+              ],
+              [
+                27.15,
+                16.549999999999997
+              ],
+              [
+                26.85,
+                16.549999999999997
+              ]
+            ]
+          },
+          {
+            "net": "CLK",
+            "layer": "TOP",
+            "polygon": [
+              [
+                26.7,
+                1.7
+              ],
+              [
+                27.3,
+                1.7
+              ],
+              [
+                27.3,
+                2.3
+              ],
+              [
+                26.7,
+                2.3
+              ]
+            ]
+          },
+          {
+            "net": "GND",
+            "layer": "TOP",
+            "polygon": [
+              [
+                20.7,
+                9.899999999999999
+              ],
+              [
+                21.3,
+                9.899999999999999
+              ],
+              [
+                21.3,
+                10.5
+              ],
+              [
+                20.7,
+                10.5
+              ]
+            ]
+          },
+          {
+            "net": "GND",
+            "layer": "TOP",
+            "polygon": [
+              [
+                22.7,
+                9.899999999999999
+              ],
+              [
+                23.3,
+                9.899999999999999
+              ],
+              [
+                23.3,
+                10.5
+              ],
+              [
+                22.7,
+                10.5
+              ]
+            ]
+          }
+        ],
+        "notes": [
+          "Original example board: a single-ended route that changes layers through a via, a differential pair with a jog, a clock over a slot in the ground plane, a split power plane."
+        ]
+      }
+    }
+  },
+  {
+    "command": "project.frequency",
+    "params": {
+      "start": 0.01,
+      "stop": 5
+    }
+  },
+  {
+    "command": "project.analysis",
+    "params": {
+      "kind": "pcb"
+    }
+  }
+]

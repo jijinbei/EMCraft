@@ -24,6 +24,11 @@ fn at(x: f64, y: f64, height: f64) -> [f64; 3] {
 
 /// The board's height drawn at least this fraction of its width.
 const STRETCHED: f64 = 0.06;
+/// Each layer drawn at least this fraction of the board's width from the next.
+const LAYER_GAP: f64 = 0.03;
+/// How opaque planes are (copper of nets with no routes: grounds, supplies), so the layers under
+/// them show through.
+const PLANE_ALPHA: u8 = 150;
 /// Sides of a via's post.
 const VIA_SIDES: usize = 12;
 
@@ -35,13 +40,18 @@ pub(crate) struct Frame {
 }
 
 /// The board's frame: heights stretched until the board stands at least [`STRETCHED`] of its
-/// width.
+/// width and its layers stand apart.
 pub(crate) fn frame(board: &Board) -> Frame {
     let heights = board.heights();
     let thickness = heights.iter().copied().fold(0.0, f64::max);
     let width = board.bounds().map_or(0.0, |(lo, hi)| (hi[0] - lo[0]).max(hi[1] - lo[1]));
-    let stretch = if thickness > 0.0 { (STRETCHED * width / thickness).max(1.0) } else { 1.0 };
-    Frame { stretch, heights }
+    // And each layer apart from the next by at least [`LAYER_GAP`] of the width.
+    let mut sorted = heights.clone();
+    sorted.sort_by(f64::total_cmp);
+    let gap = sorted.windows(2).map(|w| w[1] - w[0]).fold(f64::INFINITY, f64::min);
+    let by_board = if thickness > 0.0 { STRETCHED * width / thickness } else { 1.0 };
+    let by_gap = if gap.is_finite() && gap > 0.0 { LAYER_GAP * width / gap } else { 1.0 };
+    Frame { stretch: by_board.max(by_gap).max(1.0), heights }
 }
 
 impl Frame {
@@ -190,11 +200,13 @@ fn copper(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn
             outlines.push(Outline { layer: l, net: net(&v.net), ring: offset::disc(v.at, v.diameter, 0.02 * v.diameter) });
         }
     }
+    // Planes see-through, routes solid.
+    let alpha = |name: &str| if board.segments.iter().any(|g| g.net == name) { 255 } else { PLANE_ALPHA };
     let margin = 1e-3 * (hi[0] - lo[0]).max(hi[1] - lo[1]).max(1e-6);
     let (lo, hi) = ([lo[0] - margin, lo[1] - margin], [hi[0] + margin, hi[1] + margin]);
     let size = (hi[0] - lo[0]).max(hi[1] - lo[1]);
     let names: Vec<String> = board.layers.iter().map(|l| l.name.clone()).collect();
-    let request = Request { lo, hi, layers: &names, nets, outlines: &outlines, size, edge_size: size };
+    let request = Request { lo, hi, layers: &names, nets, outlines: &outlines, coarse: &[], lines: &[], size, edge_size: size };
     match triangulate(&request) {
         Ok(planar) => {
             for (l, covered) in planar.nets.iter().enumerate() {
@@ -203,7 +215,7 @@ fn copper(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn
                     let Some(name) = nets.get(n as usize).filter(|_| n != NO_NET) else { continue };
                     let [a, b, c] = t.map(|v| planar.points.get(v as usize).copied().unwrap_or([0.0; 2]));
                     out.scene.tagged(Pick::Net(n as usize).tag(), |scene| {
-                        scene.tri(at(a[0], a[1], h), at(b[0], b[1], h), at(c[0], c[1], h), colour(name), 255)
+                        scene.tri(at(a[0], a[1], h), at(b[0], b[1], h), at(c[0], c[1], h), colour(name), alpha(name))
                     });
                 }
             }
@@ -215,7 +227,7 @@ fn copper(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn
                 let Some(&first) = o.ring.first() else { continue };
                 out.scene.tagged(Pick::Net(o.net as usize).tag(), |scene| {
                     for w in o.ring.windows(2).skip(1) {
-                        scene.tri(at(first[0], first[1], h), at(w[0][0], w[0][1], h), at(w[1][0], w[1][1], h), colour(name), 255);
+                        scene.tri(at(first[0], first[1], h), at(w[0][0], w[0][1], h), at(w[1][0], w[1][1], h), colour(name), alpha(name));
                     }
                 });
             }

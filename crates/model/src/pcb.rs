@@ -6,9 +6,11 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Result, invalid};
 
 /// The most routed segments a board may have.
-pub const MAX_SEGMENTS: usize = 20_000;
+pub const MAX_SEGMENTS: usize = 200_000;
+/// The most filled-copper polygons (pours, pads) a board may have.
+pub const MAX_COPPER: usize = 100_000;
 /// The most polygon vertices a board's filled copper may have in all.
-pub const MAX_VERTICES: usize = 200_000;
+pub const MAX_VERTICES: usize = 2_000_000;
 
 /// A copper layer: its name (as the source names it, e.g. `F.Cu`), its height z (m) and the
 /// relative permittivity of the dielectric below it, down to the next layer.
@@ -30,13 +32,23 @@ pub struct Segment {
     pub width: f64,
 }
 
-/// A through or blind via of a net at `at` (m), joining the two named layers, `diameter` (m).
+/// A through or blind via of a net at `at` (m), joining the two named layers: its pads
+/// `diameter` across (m) and its plated hole `drill` (m; the pads' when not given).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Via {
     pub net: String,
     pub at: [f64; 2],
     pub layers: [String; 2],
     pub diameter: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drill: Option<f64>,
+}
+
+impl Via {
+    /// The barrel's diameter (m): the drill, else the pads'.
+    pub fn barrel(&self) -> f64 {
+        self.drill.unwrap_or(self.diameter)
+    }
 }
 
 /// Filled copper of a net on a layer: a polygon (m), even–odd.
@@ -119,7 +131,7 @@ impl Board {
             || self.segments.is_empty()
             || self.segments.len() > MAX_SEGMENTS
             || self.vias.len() > MAX_SEGMENTS
-            || self.copper.len() > 4096
+            || self.copper.len() > MAX_COPPER
             || self.notes.len() > 128
             || self.notes.iter().any(|n| n.len() > 1024)
         {
@@ -153,7 +165,13 @@ impl Board {
             }
         }
         for v in &self.vias {
-            if !name(&v.net) || !point(v.at) || !size(v.diameter) || v.layers[0] == v.layers[1] || v.layers.iter().any(|l| !layer(l)) {
+            if !name(&v.net)
+                || !point(v.at)
+                || !size(v.diameter)
+                || v.drill.is_some_and(|d| !size(d) || d > v.diameter)
+                || v.layers[0] == v.layers[1]
+                || v.layers.iter().any(|l| !layer(l))
+            {
                 return Err(bad());
             }
         }
@@ -211,6 +229,7 @@ impl Board {
                 *n = convert(*n);
             }
             v.diameter = convert(v.diameter);
+            v.drill = v.drill.map(&mut convert);
         }
         for c in &mut self.copper {
             for p in &mut c.polygon {
