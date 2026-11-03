@@ -12,7 +12,7 @@ use emcraft_model::{Material, MaterialUse, Model, Pole, Port, PortFace, Source};
 use serde_json::{Value, json};
 
 use crate::geometry::{POLE_KINDS, pole_count, pole_kind, poles_of};
-use crate::{Change, EngineError, Params, Result, Session};
+use crate::{Change, Edit, EngineError, Params, Result, Session};
 
 /// The most names an error lists.
 const LISTED: usize = 20;
@@ -148,28 +148,30 @@ fn drop_open_results(s: &mut Session) {
 pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
     let (i, old) = port_named(&s.model, p, "name").map(|(i, x)| (i, x.clone()))?;
     let axis: Option<emcraft_model::Axis> = p.choice("axis").optional()?;
-    let face = if p.cleared("face") {
-        None
-    } else if p.has("face") {
-        let was = old.face.map_or([0.0; 5], |f| f.values());
-        let list = p.list("face", 5).required()?;
+    let given = || -> Result<Option<PortFace>> {
+        let Some(list) = p.list("face", 5).optional()? else { return Ok(None) };
         if list.len() != 5 {
             return Err(p.error("face", "must be [at, u0, v0, a, b]"));
         }
         // Each coordinate kept exactly when given as it shows.
+        let was = old.face.map_or([0.0; 5], |f| f.values());
         let unit = s.display.length;
         let mut v = [0.0; 5];
         for (k, x) in list.iter().enumerate() {
             let given = p.number_of("face", x)?;
             v[k] = if given == unit.from_si(was[k]) { was[k] } else { unit.to_si(given) };
         }
-        Some(PortFace::from_values(axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), v)?)
-    } else {
-        match (old.face, axis) {
+        Ok(Some(PortFace::from_values(axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), v)?))
+    };
+    let face = match p.edit("face", given)? {
+        Edit::Clear => None,
+        Edit::Set(f) => Some(f),
+        // Kept, turned to `axis` when given.
+        Edit::Keep => match (old.face, axis) {
             (Some(f), Some(axis)) => Some(PortFace { axis, ..f }),
             (None, Some(a)) if a != emcraft_model::Axis::Z => return Err(p.error("axis", "x or y needs `face` (a port's end lies across z)")),
             (f, _) => f,
-        }
+        },
     };
     let port = Port {
         name: p.string("rename").optional()?.unwrap_or(&old.name).to_owned(),
@@ -177,7 +179,7 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
         modes: p.integer("modes", 1..=emcraft_model::MAX_PORT_MODES as usize).optional()?.map_or(old.modes, |n| n as u32),
         face,
         mode_solver: p.choice("mode_solver").or(old.mode_solver)?,
-        reference: if p.cleared("impedance") { None } else { p.checked("impedance").optional()?.or(old.reference) },
+        reference: p.edit("impedance", || p.checked("impedance").optional())?.apply(old.reference),
         deembed: p.edit_length("deembed", old.deembed)?,
         terminals: p.choice("terminals").or(old.terminals)?,
     };

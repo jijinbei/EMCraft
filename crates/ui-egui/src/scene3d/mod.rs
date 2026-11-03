@@ -208,15 +208,14 @@ pub fn field_frame_of(session: &Session, plane: emcraft_engine::view::Plane, at:
 
 /// The perimeter of every mesh cell intersected by a section plane, in SI metres.
 /// No filled faces or artificial diagonals are added. Invalid planes give an empty scene.
-/// The perimeter is the same for either kept half (`keep_low` is retained for callers).
 ///
 /// ```
 /// use emcraft_ui_egui::scene3d::mesh_slice;
 /// let model = emcraft_model::Model::default();
-/// assert!(mesh_slice(&model, 0, 0.005, true).tris.is_empty());
-/// assert!(mesh_slice(&model, 3, f64::NAN, true).lines.is_empty());
+/// assert!(mesh_slice(&model, 0, 0.005).tris.is_empty());
+/// assert!(mesh_slice(&model, 3, f64::NAN).lines.is_empty());
 /// ```
-pub fn mesh_slice(m: &emcraft_model::Model, axis: usize, at: f64, _keep_low: bool) -> Scene {
+pub fn mesh_slice(m: &emcraft_model::Model, axis: usize, at: f64) -> Scene {
     mesh::slice(m, axis, at, true)
 }
 

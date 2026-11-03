@@ -150,7 +150,7 @@ fn pick_route(app: &EmcraftApp, st: &mut Parts, board: &emcraft_model::pcb::Boar
     }
     st.view3d.selected.clear();
     st.views.pcb.attempted = None;
-    out.push(Action::run("view.pcb", json!({"net": net, "stage": "net"})));
+    out.push(Action::run("view.pcb", json!({"net": net, "stage": Stage::Net.id()})));
 }
 
 /// The stage's heading, guidance and controls, then the stackup or, with results, the report.
@@ -308,7 +308,7 @@ fn choose_net(ui: &mut egui::Ui, board: &emcraft_model::pcb::Board, selected: &s
                 let r = ui.selectable_label(net == selected, net);
                 scenario::publish_target(Handle::Choice("pcb_net", net), r.rect);
                 if r.clicked() {
-                    out.push(Action::run("view.pcb", json!({"net": net, "stage": "net"})));
+                    out.push(Action::run("view.pcb", json!({"net": net, "stage": Stage::Net.id()})));
                 }
             }
         },
@@ -644,13 +644,12 @@ fn draw_board(
         }
     }
     if let Some(report) = report {
-        let pairs: Vec<_> = report["coupling_pairs"]
+        let mut pairs = report["coupling_pairs"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|p| p["target"].as_str() == app.session.views().pcb_illustration.victim.as_deref())
-            .collect();
-        if let Some(pair) = pairs.get(state.illustration.index) {
+            .filter(|p| p["target"].as_str() == app.session.views().pcb_illustration.victim.as_deref());
+        if let Some(pair) = pairs.nth(state.illustration.index) {
             for (key, colour) in [("source_points", t.warning), ("target_points", t.accent)] {
                 let at = |i: usize| {
                     to([
@@ -670,7 +669,7 @@ fn draw_board(
         && let Some((_, n)) = nearest
     {
         state.attempted = None;
-        out.push(Action::run("view.pcb", json!({"net": n, "stage": "net"})));
+        out.push(Action::run("view.pcb", json!({"net": n, "stage": Stage::Net.id()})));
     }
 }
 

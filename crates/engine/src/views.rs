@@ -489,11 +489,8 @@ fn set_axis(s: &Session, p: &Params, id: ChartId, a: AxisId, style: &mut AxisSty
     }
     for (end, slot) in style.ends_mut() {
         let name = format!("{a}_{end}");
-        if p.cleared(&name) {
-            *slot = None;
-        } else if let Some(v) = p.number(&name).optional()? {
-            *slot = Some(if is_frequency(id, a) { s.display.frequency.to_si(v) } else { v });
-        }
+        let given = || Ok(p.number(&name).optional()?.map(|v| if is_frequency(id, a) { s.display.frequency.to_si(v) } else { v }));
+        *slot = p.edit(&name, given)?.apply(*slot);
     }
     if let (Some(lo), Some(hi)) = (style.min, style.max)
         && lo >= hi
@@ -528,20 +525,22 @@ fn set_curve(p: &Params, chart: Option<&Chart>, style: &mut ChartStyle) -> Resul
         return Err(p.error("curve", crate::text::unknown(what, "curves: ", c.curves().into_iter().map(|(k, _)| k))));
     }
     let mut cs = style.curves.get(key).cloned().unwrap_or_default();
-    if p.cleared("colour") {
-        cs.colour = None;
-    } else if let Some(c) = p.string("colour").optional()? {
-        let colour = Colour::parse(c).filter(|c| c.a == 255).ok_or_else(|| p.error("colour", "must be #rrggbb"))?;
-        cs.colour = Some(colour.hex());
-    }
-    if p.cleared("width") {
-        cs.width = None;
-    } else if let Some(w) = p.number("width").optional()? {
-        if !WIDTHS.contains(&w) {
-            return Err(p.error("width", format!("must be {} to {} pixels", WIDTHS.start(), WIDTHS.end())));
-        }
-        cs.width = Some(w);
-    }
+    let colour = || {
+        p.string("colour")
+            .optional()?
+            .map(|c| Colour::parse(c).filter(|c| c.a == 255).map(|c| c.hex()).ok_or_else(|| p.error("colour", "must be #rrggbb")))
+            .transpose()
+    };
+    cs.colour = p.edit("colour", colour)?.apply(cs.colour.take());
+    let width = || {
+        p.number("width")
+            .optional()?
+            .map(
+                |w| if WIDTHS.contains(&w) { Ok(w) } else { Err(p.error("width", format!("must be {} to {} pixels", WIDTHS.start(), WIDTHS.end()))) },
+            )
+            .transpose()
+    };
+    cs.width = p.edit("width", width)?.apply(cs.width);
     if cs == CurveStyle::default() {
         style.curves.remove(key);
     } else if style.curves.len() >= MAX_CURVES && !style.curves.contains_key(key) {

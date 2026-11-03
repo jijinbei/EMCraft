@@ -11,14 +11,27 @@ use crate::lang::{Raw, args, command_doc, param_doc, tr, trf};
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Style, UiExt, scenario, ui_kit};
 
-/// What the card asked for.
-#[derive(Default)]
-pub(crate) struct Asked {
-    pub ok: bool,
-    pub cancel: bool,
-    pub dock: bool,
+/// What the card asked for this frame: at most one thing (a cancel wins over an OK pressed with
+/// it, as Close does).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Asked {
+    #[default]
+    Nothing,
+    Ok,
+    Cancel,
+    /// Dock or float the dialogs.
+    Dock,
     /// The import dialog's file is to be chosen in the file dialog.
-    pub pick: bool,
+    Pick,
+}
+
+impl Asked {
+    /// `what` asked for when `asked` (a cancel kept over anything after it).
+    pub(crate) fn ask(&mut self, what: Asked, asked: bool) {
+        if asked && *self != Asked::Cancel {
+            *self = what;
+        }
+    }
 }
 
 /// A floating dialog card over the viewport.
@@ -98,16 +111,12 @@ pub fn embedded(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32,
 
 /// What the card's buttons and keys ask for: docking flips where dialogs go (the open one too).
 fn act(app: &EmcraftApp, asked: Asked, out: &mut Actions) {
-    if asked.dock {
-        out.push(Action::SetDock(!app.dock_dialogs));
-    }
-    if asked.pick {
-        out.push(Action::File(crate::files::FileAction::PickPart));
-    }
-    if asked.cancel {
-        out.push(Action::DialogCancel);
-    } else if asked.ok {
-        out.push(Action::DialogOk);
+    match asked {
+        Asked::Nothing => {}
+        Asked::Ok => out.push(Action::DialogOk),
+        Asked::Cancel => out.push(Action::DialogCancel),
+        Asked::Dock => out.push(Action::SetDock(!app.dock_dialogs)),
+        Asked::Pick => out.push(Action::File(crate::files::FileAction::PickPart)),
     }
 }
 
@@ -118,9 +127,11 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
     let session = &app.session;
     let mut asked = Asked::default();
     let id = d.command.id;
-    let (close, dock) = ui_kit::header(ui, crate::commands::glyph(id), Raw(crate::label(id)), Some(d.docked), accent);
-    asked.cancel |= close;
-    asked.dock |= dock;
+    match ui_kit::header(ui, crate::commands::glyph(id), Raw(crate::label(id)), Some(d.docked), accent) {
+        Some(ui_kit::HeaderClick::Close) => asked.ask(Asked::Cancel, true),
+        Some(ui_kit::HeaderClick::Dock) => asked.ask(Asked::Dock, true),
+        None => {}
+    }
     let body_h = (max_h - t.form_header_height - t.form_footer_height - 8.0).max(80.0);
     egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
         egui::ScrollArea::vertical().max_height(body_h).auto_shrink([false, true]).show(ui, |ui| {
@@ -173,9 +184,9 @@ fn card(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, max_h: f32) -> Aske
         ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(vec2(12.0, 10.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
     let ok = footer.named_enabled(!busy, ui_kit::styled(ok_label(id), true), Fixed::DialogOk.into());
     let ok = ok.hint(if busy { "a job is running" } else { "" });
-    asked.ok |= ok.clicked();
+    asked.ask(Asked::Ok, ok.clicked());
     let cancel = ui_kit::button(&mut footer, "Cancel", false, Fixed::DialogCancel);
-    asked.cancel |= cancel.clicked();
+    asked.ask(Asked::Cancel, cancel.clicked());
     d.widgets.extend([(ok.id, false), (cancel.id, false)]);
     if busy {
         footer.text(Style::SmallDim, "busy…");
@@ -215,9 +226,9 @@ fn keys(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, busy: bool, asked: &mut
     let ours = |text_only: bool| focus.is_none_or(|f| d.widgets.iter().any(|(id, text)| *id == f && (*text || !text_only)));
     let take = |ui: &mut egui::Ui, key: egui::Key| ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key));
     if ours(false) && take(ui, egui::Key::Escape) {
-        asked.cancel = true;
+        asked.ask(Asked::Cancel, true);
     } else if ours(true) && !busy && take(ui, egui::Key::Enter) {
-        asked.ok = true;
+        asked.ask(Asked::Ok, true);
     }
 }
 

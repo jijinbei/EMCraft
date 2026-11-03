@@ -8,7 +8,7 @@
 //! camera each frame, so it follows orbiting, panning and zooming.
 
 use egui::{FontId, Pos2, Rect, Stroke, vec2};
-use emcraft_render::view3d::{Camera, Keep, Scene, StandardView};
+use emcraft_render::view3d::{Camera, Scene, StandardView};
 
 use crate::handle::Handle;
 use crate::theme::Tokens;
@@ -113,7 +113,7 @@ pub fn button(ui: &mut egui::Ui, p: &egui::Painter, r: Rect, handle: crate::hand
 /// The camera's goal for looking straight at the cut: its box framed from the side that was
 /// cut away, so the kept side lies behind the cut faces.
 pub fn look(cut: Cut, outline: ([f64; 3], [f64; 3])) -> Option<crate::view3d::Goal> {
-    let sign = if cut.keep == Keep::Low { 1.0 } else { -1.0 };
+    let sign = cut.keep.sign();
     let side: StandardView = crate::view3d::view_from(cut.axis.min(2), sign)?;
     // Framed with room round the cut for its dimensions and the ports' labels, and below it for
     // the view's bars.

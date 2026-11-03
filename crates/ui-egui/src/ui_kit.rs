@@ -12,7 +12,14 @@ use crate::{UiExt, scenario};
 
 /// A card's title band: glyph, title, optional dock toggle and a close button. Returns
 /// (close clicked, dock clicked).
-pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: impl Shown, docked: Option<bool>, accent: Color32) -> (bool, bool) {
+/// What a card's header was clicked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeaderClick {
+    Close,
+    Dock,
+}
+
+pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: impl Shown, docked: Option<bool>, accent: Color32) -> Option<HeaderClick> {
     let t = &Tokens::get();
     let title = title.shown();
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), t.form_header_height), Sense::hover());
@@ -39,7 +46,7 @@ pub fn header(ui: &mut Ui, glyph: crate::glyphs::Glyph, title: impl Shown, docke
     let tr = ui.interact(title_rect, ui.id().with("title"), Sense::hover());
     tr.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, title));
     ui.painter().hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, t.dialog_rule));
-    (close_r.clicked(), dock_clicked)
+    if close_r.clicked() { Some(HeaderClick::Close) } else { dock_clicked.then_some(HeaderClick::Dock) }
 }
 
 /// The mark an icon button draws.

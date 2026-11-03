@@ -90,7 +90,7 @@ impl Cut {
     /// The cut for `ui.inspect`, `at` in display units.
     pub fn inspect(self, l: emcraft_model::units::Length) -> serde_json::Value {
         let axis = crate::handle::AXES.get(self.axis).copied().unwrap_or("x");
-        serde_json::json!({"axis": axis, "at": l.from_si(self.at), "keep": if self.keep == Keep::Low { "low" } else { "high" }})
+        serde_json::json!({"axis": axis, "at": l.from_si(self.at), "keep": self.keep.id()})
     }
 }
 
@@ -285,7 +285,7 @@ impl View3d {
                 let eps = size * 1e-9;
                 scene.tris.retain(|t| !t.p.iter().all(|p| (p[now.axis] - now.at).abs() <= eps));
                 let cut = if key.overlay == Overlay::Mesh {
-                    scene3d::mesh_slice(model, now.axis, now.at, now.keep == Keep::Low)
+                    scene3d::mesh_slice(model, now.axis, now.at)
                 } else {
                     scene3d::section_outline(model, now.axis, now.at)
                 };
@@ -315,8 +315,8 @@ impl View3d {
     }
 
     /// What is drawn highlighted: the hovered row's part, else the selection.
-    pub fn highlighted(&self) -> Vec<scene3d::Pick> {
-        self.hover.map_or_else(|| self.selected.clone(), |h| vec![h])
+    pub fn highlighted(&self) -> &[scene3d::Pick] {
+        self.hover.as_ref().map_or(&self.selected[..], std::slice::from_ref)
     }
 
     /// The only part selected, when one is.
@@ -629,7 +629,7 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         revision: app.revision,
         overlay,
         field: planes,
-        highlighted: v.highlighted(),
+        highlighted: v.highlighted().to_vec(),
         theme: crate::theme::key(),
         language: lang::current(),
         motion,
@@ -1366,7 +1366,7 @@ fn gpu_frame(
     let line_width = ppp.max(1.0) * f64::from(supersample);
     let mut uniforms = crate::gpu3d::Uniforms::new(&packed, &v.camera, size, line_width, (rgb(t.viewport_top), rgb(t.viewport_bottom)));
     if let Some(cut) = v.section {
-        let sign = if cut.keep == Keep::Low { 1.0 } else { -1.0 };
+        let sign = cut.keep.sign() as f32;
         uniforms.clip[cut.axis] = sign;
         uniforms.clip[3] = (f64::from(sign) * (cut.at - packed.origin[cut.axis])) as f32;
     }
@@ -1754,7 +1754,7 @@ fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi): ([f64; 3
     }
     glyphs::paint(&p, r.shrink(3.0), Glyph::Flip, t.text, t.accent);
     if resp.on_hover_text(tip).clicked() {
-        cut.keep = if cut.keep == Keep::Low { Keep::High } else { Keep::Low };
+        cut.keep = cut.keep.flipped();
     }
     x += pitch;
     let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));

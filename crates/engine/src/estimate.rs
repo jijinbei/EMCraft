@@ -129,7 +129,10 @@ fn cost(s: &Session, command: &str, p: &Params, order: Option<usize>, depth: usi
         "solve.frequency" | "solve.refine" => {
             let n = frequency_count(p, max)?;
             let solve = solve_cost(s, order_of()?)?;
-            let full = if p.string("sweep").optional()? == Some("full") { n } else { full_solves(n) };
+            let full = match p.choice("sweep").or(crate::solve::Strategy::Fast)? {
+                crate::solve::Strategy::Full => n,
+                crate::solve::Strategy::Fast => full_solves(n),
+            };
             let what = if full < n {
                 format!("{n} frequencies, fast sweep: about {full} solved in full")
             } else {

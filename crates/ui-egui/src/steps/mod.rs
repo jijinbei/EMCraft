@@ -186,7 +186,7 @@ impl DeviceSelection {
 #[derive(Default)]
 pub struct Workflow {
     pub step: Option<Step>,
-    status: Option<(u64, Vec<StepState>)>,
+    status: Option<(u64, [StepState; 9])>,
     /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the
     /// run as set up).
     estimate: Option<Estimate>,
@@ -239,7 +239,7 @@ pub struct ModeFocus {
 pub fn prepare(app: &mut EmcraftApp) {
     let key = app.revision;
     if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
-        app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session).to_vec()));
+        app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session)));
     }
     // What the step's estimate is of: one solve at the Setup's order (Mesh), the run as set up
     // (Setup, Run).
@@ -344,10 +344,10 @@ pub fn run_estimate(app: &EmcraftApp) -> Option<&Result<Value, String>> {
 /// The statuses of the steps: the session's (the cache when it is current, else worked out on
 /// a copy), with what the window knows on top: after a refused Run, the steps that block it
 /// need attention; after a run failed, Run does.
-pub fn statuses_now(app: &EmcraftApp) -> Vec<StepState> {
+pub fn statuses_now(app: &EmcraftApp) -> [StepState; 9] {
     let mut states = match &app.workflow.status {
         Some((k, v)) if *k == app.revision => v.clone(),
-        _ => emcraft_engine::workflow::steps(&app.session).to_vec(),
+        _ => emcraft_engine::workflow::steps(&app.session),
     };
     if app.workflow.blocked {
         for s in states.iter_mut().filter(|s| run::required(s.step, None) && s.status == Status::Todo) {

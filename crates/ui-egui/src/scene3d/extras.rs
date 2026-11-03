@@ -36,7 +36,7 @@ pub(super) fn port_face(m: &Model, p: &emcraft_model::Port) -> Vec<[[f64; 3]; 3]
         Err(_) => {
             let Some(b) = m.bounds() else { return Vec::new() };
             // Just inside the body from the end face.
-            let inside = z + if p.end == End::Start { 1e-6 } else { -1e-6 } * (b.max.z - b.min.z).max(1e-9);
+            let inside = z + port_inward(p) * 1e-6 * (b.max.z - b.min.z).max(1e-9);
             let (dx, dy) = ((b.max.x - b.min.x) / PORT_CELLS as f64, (b.max.y - b.min.y) / PORT_CELLS as f64);
             let mut out = Vec::new();
             for j in 0..PORT_CELLS {

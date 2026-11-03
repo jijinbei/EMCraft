@@ -60,7 +60,7 @@ use std::fmt;
 
 pub use cmd::{COMMANDS, CommandSpec, Kind, ParamSpec, Quantity, features_markdown, find_command};
 pub use emcraft_templates as templates;
-pub use params::Params;
+pub use params::{Edit, Params};
 pub use project::{Effect, TemplateMark, TemplateParameter, template_marks, template_parameters, template_steps};
 pub use script::Step;
 pub use session::{Change, Limits, Results, Session, Sweep};

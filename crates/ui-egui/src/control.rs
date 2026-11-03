@@ -324,8 +324,8 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
         "ui.dialog" => ui_dialog(app, a),
         "ui.cancel" => Ok(wrap(app.apply(Action::CancelJob))),
         "ui.messages" => Ok(ok(messages(app, a))),
-        "ui.move" => pointer(app, a, None),
-        "ui.click" => pointer(app, a, Some(a.bool("double") == Some(true))),
+        "ui.move" => pointer(app, a, Press::None),
+        "ui.click" => pointer(app, a, if a.bool("double") == Some(true) { Press::Double } else { Press::Single }),
         "ui.drag" => drag(app, a),
         "ui.scroll" => scroll(app, a),
         "ui.key" => key(app, a),
@@ -595,9 +595,8 @@ fn cut_of(app: &EmcraftApp, s: Args) -> Result<crate::view3d::Cut, String> {
     let name = s.str("axis").ok_or("`section` takes {\"axis\": \"x\" | \"y\" | \"z\", \"at\"?, \"keep\"?: \"low\" | \"high\"} or null")?;
     let axis = crate::handle::AXES.iter().position(|a| *a == name).ok_or_else(|| format!("unknown axis `{}` (x, y or z)", clip(name, 16)))?;
     let keep = match s.str("keep") {
-        None | Some("low") => emcraft_render::view3d::Keep::Low,
-        Some("high") => emcraft_render::view3d::Keep::High,
-        Some(k) => return Err(format!("unknown side `{}` (low or high)", clip(k, 16))),
+        None => emcraft_render::view3d::Keep::Low,
+        Some(k) => emcraft_render::view3d::Keep::parse(k).ok_or_else(|| format!("unknown side `{}` (low or high)", clip(k, 16)))?,
     };
     let l = app.session.display().length;
     let at = match s.get("at") {
@@ -649,17 +648,29 @@ fn messages(app: &mut EmcraftApp, a: Args) -> Value {
     json!(app.messages.iter().map(|m| json!({"text": m.text, "error": m.error, "count": m.count})).collect::<Vec<_>>())
 }
 
-/// The pointer moved to a point, then clicked there (`double`: twice) when `click` is given.
-fn pointer(app: &mut EmcraftApp, a: Args, click: Option<bool>) -> Handled {
+/// What the pointer does where it moves to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Press {
+    /// Nothing: it only moves.
+    None,
+    Single,
+    Double,
+}
+
+/// The pointer moved to a point, then pressed there as `press` says.
+fn pointer(app: &mut EmcraftApp, a: Args, press: Press) -> Handled {
     let pos = point(a.0, "x", "y")?;
     let m = mods(a.0);
     let mut ev = vec![egui::Event::ModifiersChanged(m), egui::Event::PointerMoved(pos)];
-    if let Some(double) = click {
-        let button = button(a.0);
-        for _ in 0..if double { 2 } else { 1 } {
-            ev.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: m });
-            ev.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: m });
-        }
+    let clicks = match press {
+        Press::None => 0,
+        Press::Single => 1,
+        Press::Double => 2,
+    };
+    let button = button(a.0);
+    for _ in 0..clicks {
+        ev.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: m });
+        ev.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: m });
     }
     push(app, ev)?;
     Ok(ok(json!({"x": pos.x, "y": pos.y})))
