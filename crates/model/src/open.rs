@@ -126,6 +126,11 @@ pub struct LumpedPort {
     /// surface of the wire a centre-fed antenna's gap cuts — instead of along the line itself.
     #[serde(default)]
     pub radius: f64,
+    /// A sheet instead of a line: the current spread evenly across the gap from `−across` to
+    /// `+across` about its line (m; across the line) — a feed from a trace's end down to its
+    /// reference, the trace's width wide.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub across: Option<Vec3>,
 }
 
 fn unit_voltage() -> [f64; 2] {
@@ -138,6 +143,12 @@ impl LumpedPort {
     pub fn check(&self) -> Result<()> {
         if !(self.radius.is_finite() && self.radius >= 0.0) {
             return Err(invalid("lumped port radius", "must be a finite number ≥ 0"));
+        }
+        if let Some(a) = self.across {
+            let along = self.to - self.from;
+            if !(a.is_finite() && a.norm() > 0.0 && a.dot(along).abs() <= 1e-9 * a.norm() * along.norm()) || self.radius > 0.0 {
+                return Err(invalid("lumped port sheet", "must be finite, across the gap's line, and not with a band radius"));
+            }
         }
         if !(self.from.is_finite() && self.to.is_finite() && self.voltage.iter().all(|v| v.is_finite())) {
             return Err(invalid("lumped port", "its ends and voltage must be finite"));
@@ -236,8 +247,9 @@ impl Model {
             return Err(ModelError::Duplicate { kind: "port", name: p.name });
         }
         p.check()?;
+        // Inside or on the box: a board's feed may end on its conducting floor.
         if let Some(b) = self.bounds()
-            && !(b.holds_inside(p.from) && b.holds_inside(p.to))
+            && !(b.contains(p.from) && b.contains(p.to))
         {
             return Err(invalid("lumped port", "must lie inside the geometry"));
         }
@@ -307,6 +319,7 @@ mod tests {
             impedance: Ohms::new(50.0).unwrap(),
             voltage: unit_voltage(),
             radius: 0.0,
+            across: None,
         };
         for bad in [
             LumpedPort { name: " ".into(), ..feed.clone() },

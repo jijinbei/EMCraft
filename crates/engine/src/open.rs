@@ -63,6 +63,7 @@ pub fn port_lumped(s: &mut Session, p: &Params) -> Result<Value> {
         impedance: p.checked("impedance").or(Ohms::FIFTY)?,
         voltage: [amplitude * phase.cos(), amplitude * phase.sin()],
         radius: p.positive_length("radius").or(0.0)?,
+        across: None,
     })?;
     Ok(json!({"lumped_ports": s.model.lumped.len()}))
 }

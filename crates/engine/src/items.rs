@@ -241,6 +241,7 @@ pub fn lumped_edit(s: &mut Session, p: &Params) -> Result<Value> {
         impedance: p.checked("impedance").or(old.impedance)?,
         voltage,
         radius: p.edit_length("radius", old.radius)?,
+        across: old.across,
     };
     let name = port.name.clone();
     s.model.replace_lumped_port(i, port)?;

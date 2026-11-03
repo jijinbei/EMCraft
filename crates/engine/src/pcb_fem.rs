@@ -9,7 +9,7 @@ use emcraft_mesh::planar::extrude::{Slab, Stack, extrude};
 use emcraft_mesh::planar::{Outline, Request, offset, triangulate};
 use emcraft_model::pcb::{Board, Region};
 use emcraft_model::shape::{BoxSize, Shape, Solid};
-use emcraft_model::{Material, Vec3};
+use emcraft_model::{LumpedPort, Material, Ohms, Point3, Vec3};
 use serde_json::{Value, json};
 
 use crate::meshing::Sizes;
@@ -128,8 +128,14 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     let layer = |n: &str| board.layers.iter().position(|l| l.name == n).ok_or_else(|| failed(format!("no layer {n}")));
     let at = |q: [f64; 2]| [q[0] - region.lo[0], q[1] - region.lo[1]];
     let mut outlines = Vec::new();
+    // A trace fed by a sheet port at an end stops there: no round end beyond the feed.
+    let fed = |q: [f64; 2]| {
+        let q = at(q);
+        s.model.lumped.iter().any(|l| l.across.is_some() && (l.to.x - q[0]).hypot(l.to.y - q[1]) <= 1e-9)
+    };
     for g in &board.segments {
-        outlines.push(Outline { layer: layer(&g.layer)?, net: net(&g.net)?, ring: offset::trace(at(g.start), at(g.end), g.width, SAG * g.width) });
+        let ring = offset::trace_ends(at(g.start), at(g.end), g.width, SAG * g.width, [!fed(g.start), !fed(g.end)]);
+        outlines.push(Outline { layer: layer(&g.layer)?, net: net(&g.net)?, ring });
     }
     for c in &board.copper {
         outlines.push(Outline { layer: layer(&c.layer)?, net: net(&c.net)?, ring: c.polygon.iter().map(|q| at(*q)).collect() });
@@ -180,4 +186,69 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     });
     s.model.set_mesh(mesh);
     Ok(reply)
+}
+
+/// `pcb.port`: a lumped port at a trace's end, a sheet the trace's width wide from its reference
+/// up to it — the reference the nearest layer below with copper under that end, else the box's
+/// floor — its source in series with `impedance` (50 Ω by default). The trace is cut square at
+/// the port when meshed. Without waveguide ports,
+/// solve.frequency reads S of the lumped ports.
+pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
+    let board = s.model.pcb.clone().ok_or_else(|| failed("load a PCB first"))?;
+    let region = board.region.ok_or_else(|| failed("set the region first: pcb.region"))?;
+    let name = p.string("name").required()?.to_owned();
+    let id = p.string("segment").required()?;
+    let g = board.segments.iter().find(|g| g.id == id).ok_or_else(|| p.error("segment", "name a segment of the board"))?;
+    let end = p.string("end").check(|e| *e == "start" || *e == "end", "`start` or `end`").or("start")?;
+    let at = if end == "start" { g.start } else { g.end };
+    let heights = board.heights();
+    let layer = board.layers.iter().position(|l| l.name == g.layer).ok_or_else(|| failed("the segment's layer is missing"))?;
+    let top = heights[layer];
+    // The nearest layer below with copper of another net there (a pour, a trace), else the floor.
+    let covered = |l: usize| {
+        let name = &board.layers[l].name;
+        board.copper.iter().any(|c| &c.layer == name && c.net != g.net && inside(&c.polygon, at))
+            || board
+                .segments
+                .iter()
+                .any(|x| &x.layer == name && x.net != g.net && emcraft_model::pcb::distance(near_point(x.start, x.end, at), at) <= 0.5 * x.width)
+    };
+    let reference = (0..board.layers.len()).filter(|&l| heights[l] < top && covered(l)).max_by(|&a, &b| heights[a].total_cmp(&heights[b]));
+    let bottom = reference.map_or(-region.below, |l| heights[l]);
+    let (x, y) = (at[0] - region.lo[0], at[1] - region.lo[1]);
+    let d = [g.end[0] - g.start[0], g.end[1] - g.start[1]];
+    let len = d[0].hypot(d[1]);
+    let across = Vec3::new(-d[1] / len, d[0] / len, 0.0) * (0.5 * g.width);
+    let impedance: Ohms = p.checked("impedance").or(Ohms::new(50.0)?)?;
+    s.model.add_lumped_port(LumpedPort {
+        name: name.clone(),
+        from: Point3::new(x, y, region.below + bottom),
+        to: Point3::new(x, y, region.below + top),
+        impedance,
+        voltage: [1.0, 0.0],
+        radius: 0.0,
+        across: Some(across),
+    })?;
+    let reference = reference.map_or_else(|| "floor".to_owned(), |l| board.layers[l].name.clone());
+    Ok(json!({"name": name, "reference": reference, "lumped_ports": s.model.lumped.len()}))
+}
+
+/// The point of segment `a`–`b` nearest `p`.
+fn near_point(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> [f64; 2] {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let len2 = d[0] * d[0] + d[1] * d[1];
+    let t = if len2 > 0.0 { (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len2).clamp(0.0, 1.0) } else { 0.0 };
+    [a[0] + t * d[0], a[1] + t * d[1]]
+}
+
+/// Whether `p` lies inside `polygon` (even–odd, as the board's copper is read).
+fn inside(polygon: &[[f64; 2]], p: [f64; 2]) -> bool {
+    let mut odd = false;
+    for (i, a) in polygon.iter().enumerate() {
+        let b = polygon[(i + 1) % polygon.len()];
+        if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0] + (p[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0]) {
+            odd = !odd;
+        }
+    }
+    odd
 }

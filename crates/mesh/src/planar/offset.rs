@@ -19,6 +19,12 @@ fn chords(r: f64, sag: f64) -> usize {
 /// The outline of a trace from `a` to `b`, `width` wide, its ends round: counterclockwise, the
 /// arcs as chords within `sag` of the circle (metres). A trace of no length is a disc.
 pub fn trace(a: [f64; 2], b: [f64; 2], width: f64, sag: f64) -> Vec<[f64; 2]> {
+    trace_ends(a, b, width, sag, [true, true])
+}
+
+/// [`trace`] with each end round or cut square across at the end point (`round` for `a`, `b`):
+/// a trace fed by a port at its end stops there.
+pub fn trace_ends(a: [f64; 2], b: [f64; 2], width: f64, sag: f64, round: [bool; 2]) -> Vec<[f64; 2]> {
     let r = 0.5 * width;
     let d = [b[0] - a[0], b[1] - a[1]];
     let len = d[0].hypot(d[1]);
@@ -26,12 +32,14 @@ pub fn trace(a: [f64; 2], b: [f64; 2], width: f64, sag: f64) -> Vec<[f64; 2]> {
         return disc(a, width, sag);
     }
     let n = chords(r, sag);
-    // From the right of the direction round b's end, then round a's.
+    // From the right of the direction round b's end, then round a's (a cut end: its two
+    // corners alone).
     let right = (-d[0]).atan2(d[1]);
     let mut ring = Vec::with_capacity(2 * n + 2);
-    for (c, start) in [(b, right), (a, right + PI)] {
-        for k in 0..=n {
-            let phi = start + PI * k as f64 / n as f64;
+    for (c, start, rounded) in [(b, right, round[1]), (a, right + PI, round[0])] {
+        let steps = if rounded { n } else { 1 };
+        for k in 0..=steps {
+            let phi = start + PI * k as f64 / steps as f64;
             ring.push([c[0] + r * phi.cos(), c[1] + r * phi.sin()]);
         }
     }
@@ -91,6 +99,15 @@ mod tests {
         let exact = w * l + PI * w * w / 4.0;
         // Chords inside the circle: a little less, by under the sagitta times the perimeter.
         assert!(area(&ring) < exact && area(&ring) > exact - 1e-7 * PI * w, "{} {exact}", area(&ring));
+    }
+
+    #[test]
+    fn a_trace_cut_square_at_an_end_stops_there() {
+        let (w, l) = (0.2e-3, 3e-3);
+        let ring = trace_ends([0.0, 0.0], [l, 0.0], w, 1e-7, [false, true]);
+        let exact = w * l + PI * w * w / 8.0;
+        assert!(area(&ring) < exact && area(&ring) > exact - 1e-7 * PI * w, "{} {exact}", area(&ring));
+        assert!(ring.iter().all(|p| p[0] >= -1e-15));
     }
 
     #[test]

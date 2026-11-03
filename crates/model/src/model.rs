@@ -100,7 +100,7 @@ impl std::fmt::Display for Issue {
             Issue::Symmetry(why) => write!(f, "symmetry: {why} (clear it with model.symmetry, clear true)"),
             Issue::Periodic(why) => write!(f, "periodic: {why} (clear it with model.periodic, clear true)"),
             Issue::NoGeometry => f.write_str("no geometry: create one with geometry.waveguide or geometry.solid"),
-            Issue::NoPorts => f.write_str("no ports: create one with model.port.create"),
+            Issue::NoPorts => f.write_str("no ports: create one with model.port.create or model.port.lumped"),
             Issue::NoMesh => f.write_str("no mesh: mesh the geometry with mesh.generate"),
         }
     }
@@ -335,7 +335,7 @@ impl Model {
         if self.waveguide.is_none() && self.solid.is_none() {
             issues.push(Issue::NoGeometry);
         }
-        if self.ports.is_empty() {
+        if self.ports.is_empty() && self.lumped.is_empty() {
             issues.push(Issue::NoPorts);
         }
         if self.mesh.is_none() {

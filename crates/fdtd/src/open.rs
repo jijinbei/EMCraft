@@ -327,6 +327,9 @@ impl GridPort {
         if lp.voltage[1] != 0.0 {
             return Err(FdtdError::Unsupported("lumped ports with a phase in the time domain (their voltages must be real)".into()));
         }
+        if lp.across.is_some() {
+            return Err(FdtdError::Unsupported("sheet lumped ports in the time domain".into()));
+        }
         let (hs, n) = (grid.hs, grid.n);
         let d = lp.to - lp.from;
         let axis = d.dominant_axis();

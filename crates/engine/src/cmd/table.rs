@@ -151,6 +151,20 @@ pub static COMMANDS: &[CommandSpec] = &[
         run: crate::pcb_fem::region,
     },
     CommandSpec {
+        id: "pcb.port",
+        label: "PCB port",
+        doc: "Puts a lumped port at a trace's end in the board's region (pcb.region): a sheet the trace's width wide from its reference — the nearest layer below with another net's copper under that end, else the box's floor — up to the trace, its source in series with `impedance`. With lumped ports and no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.",
+        params: &[
+            req("name", K::String, "port name"),
+            req("segment", K::String, "the segment's id"),
+            opt("end", K::String, "`start` or `end` of the segment (default start)"),
+            opt("impedance", K::Number, "the port's impedance in ohms (default 50)"),
+        ],
+        effect: Effect::Record,
+        invalidates: Some(Change::Open),
+        run: crate::pcb_fem::port,
+    },
+    CommandSpec {
         id: "pcb.inspect",
         label: "Inspect PCB route",
         doc: "Screens the selected net's routed segments and filled reference copper and reports exact line/polygon coverage gaps, nearby parallel signals, topology and via-transition limitations. Only valid simple outer microstrip routes get a lossless quasi-static line approximation: impedance, delay, S11/S21 and TDR. Screening is not a solved return-current map, full-wave model, calculated crosstalk or compliance verdict.",
@@ -1186,7 +1200,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.port.lumped",
         label: "Lumped port",
-        doc: "A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usually between two conductors) across which a source of `voltage` at `phase` in series with `impedance` drives current from `from` towards `to`. solve.radiation reports its input (or, with several ports on, active) impedance, S11 against `impedance` and the power it delivers.",
+        doc: "A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usually between two conductors) across which a source of `voltage` at `phase` in series with `impedance` drives current from `from` towards `to`. solve.radiation reports its input (or, with several ports on, active) impedance, S11 against `impedance` and the power it delivers; in a closed model with no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.",
         params: &[
             req("name", K::String, "port name"),
             req("from", K::Array, "the gap's start [x, y, z]").of(L),
