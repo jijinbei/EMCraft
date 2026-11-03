@@ -710,3 +710,8 @@ fn scenario_multiport_power() {
 fn scenario_home_analysis_setup() {
     scenario("home_analysis_setup");
 }
+
+#[test]
+fn scenario_pcb_route() {
+    scenario("pcb_route");
+}

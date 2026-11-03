@@ -23,6 +23,10 @@ const fn ui(id: &'static str, label: Option<&'static str>, glyph: Option<Glyph>,
 
 /// Every engine command, in the engine's order.
 pub const UI_COMMANDS: &[UiCommand] = &[
+    ui("pcb.load", None, Some(Glyph::Import), false),
+    ui("pcb.import", None, Some(Glyph::Import), true),
+    ui("pcb.sample", None, Some(Glyph::Waveguide), false),
+    ui("pcb.inspect", None, Some(Glyph::Chart), false),
     ui("project.frequency", Some("Band"), Some(Glyph::Band), false),
     ui("project.analysis", None, Some(Glyph::KindSweep), false),
     ui("project.status", None, None, false),

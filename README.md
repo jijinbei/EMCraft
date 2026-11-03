@@ -62,6 +62,7 @@ and the accepted results are frozen so that any change that moves them fails CI
 
 [docs/architecture.md](docs/architecture.md) (crates and layers),
 [docs/solvers/literature.md](docs/solvers/literature.md) (the papers behind each method),
+[docs/pcb.md](docs/pcb.md) (PCB route selection, return-path screening and ideal line estimates),
 [docs/themes.md](docs/themes.md) (themes: the colours of the app and its pictures, your own as files),
 [docs/languages.md](docs/languages.md) (the window in English or Japanese, and how to translate it),
 [ROADMAP.md](ROADMAP.md), [AGENTS.md](AGENTS.md) (how to contribute, for people and agents).

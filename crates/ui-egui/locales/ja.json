@@ -720,7 +720,43 @@
     "Incident power": "入射電力比",
     "Output share": "出力内の比率",
     "Unaccounted: {value}%": "未回収：{value}%",
-    "Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error.": "表示したS成分の電力比です。残差には損失・放射・高次モード・数値誤差が含まれます。"
+    "Power in reported S entries. The balance includes loss, radiation, higher modes and numerical error.": "表示したS成分の電力比です。残差には損失・放射・高次モード・数値誤差が含まれます。",
+    "PCB": "PCB",
+    "PCB route": "PCB配線診断",
+    "PCB: {name}": "PCB：{name}",
+    "Net: {name}": "ネット：{name}",
+    "Import PCB…": "PCBを読み込む…",
+    "Example: split ground": "サンプル：GND分断",
+    "Example: continuous ground": "サンプル：連続GND",
+    "Import a PCB or open an example, then click a routed trace.": "PCBを読み込むかサンプルを開き、配線をクリックしてください。",
+    "Reference net": "参照ネット",
+    "Reference impedance (Ω)": "基準インピーダンス（Ω）",
+    "Maximum frequency": "上限周波数",
+    "Inspect route": "配線を診断",
+    "Keep for comparison": "比較用に保持",
+    "Enter finite numeric impedance and frequency values.": "インピーダンスと周波数に有限の数値を入力してください。",
+    "Copper support is a geometry check, not a solved return-current map or an SI/EMC pass verdict.": "銅箔の支持は形状からのチェックです。帰路電流分布の数値解やSI・EMCの合格判定ではありません。",
+    "Top view: selected net and projected reference copper; section rows identify the reference layers.": "上面図：選択ネットと参照銅箔の投影。参照層は区間ごとの表示で確認できます。",
+    "Selected net: {net}; routed length {length} {unit}": "選択ネット：{net}、配線長 {length} {unit}",
+    "Return-path geometry": "帰路の形状チェック",
+    "No issue found by the implemented geometry checks; this is not a compliance pass.": "実装済みの形状チェックで問題は見つかりませんでした。規格適合を保証する判定ではありません。",
+    "Ideal transmission-line estimate": "理想伝送線路モデルの近似",
+    "Lossless quasi-static outer microstrip only. Bends, vias, pads, copper thickness, solder mask, dispersion and coupling are excluded.": "無損失・準静的な外層マイクロストリップの近似です。曲がり・ビア・パッド・銅厚・ソルダーマスク・分散・結合は含みません。",
+    "Propagation delay: {value} ps": "伝搬遅延：{value} ps",
+    "Magnitude |S| (0 to 1); frequency spans zero to the selected maximum": "振幅 |S|（0～1）。周波数軸は0から選択した上限まで。",
+    "TDR reflection (ideal line model)": "TDR反射（理想線路モデル）",
+    "TDR window {window} ns; resolution {resolution} ps": "TDR表示範囲 {window} ns、分解能 {resolution} ps",
+    "No S-parameters or TDR: the route does not meet the model assumptions. Repair the reported geometry or use a detailed field model.": "この配線は近似モデルの前提を満たさないため、Sパラメータ・TDRは表示しません。指摘箇所を修正するか、詳細な電磁界モデルで確認してください。",
+    "Comparison — geometry findings: {before} → {after}": "比較 — 形状チェックの指摘数：{before} → {after}",
+    "Reference copper missing beneath the route": "配線直下の参照銅箔が欠けています",
+    "Return corridor reaches a reference edge or slot": "帰路周辺が参照銅箔の端やスリットにかかっています",
+    "No filled reference plane": "塗りつぶし済みの参照プレーンがありません",
+    "Route is branched, disconnected or closed": "配線に分岐・未接続・ループがあります",
+    "Signal via needs a transition model": "信号ビアには遷移部のモデルが必要です",
+    "Verify the return via at this layer transition": "この層変更の帰路ビアを確認してください",
+    "Nearby parallel signal: check coupling": "近接する平行配線があります：結合を確認してください",
+    "Cross-section outside the supported line model": "対応する伝送線路モデルの断面条件から外れています",
+    "Settings changed; inspect the route again.": "設定が変わりました。もう一度「配線を診断」を実行してください。"
   },
   "commands": {
     "project.frequency": {
@@ -1661,6 +1697,39 @@
       "params": {
         "frequency": "解析済み周波数（既定は最後）",
         "excitation": "入力ポートまたは端子（既定は駆動ポート）"
+      }
+    },
+    "pcb.load": {
+      "label": "PCBデータを読み込む",
+      "doc": "セッションの長さ単位のPCBデータを読み込む。モデルを置き換え、検証後に確定する。積層・ネット・配線・ビア・銅箔は履歴に埋め込まれる。",
+      "params": {
+        "data": "PCBオブジェクト：name、layers（name,z,eps_below）、segments（id,net,layer,start,end,width）、vias、copper（net,layer,polygon）、notes"
+      }
+    },
+    "pcb.import": {
+      "label": "PCBを読み込む",
+      "doc": "KiCad基板から直線配線、ビア、明示された積層と保存済みの銅箔を読み込む。曲線配線は未対応として拒否。未充填のゾーンを銅箔とは扱わない。パッド・パッケージ・マスク・銅厚は含まれない。データはプロジェクトに埋め込む。",
+      "params": {
+        "path": "KiCad .kicad_pcb ファイル（8 MiB以下）",
+        "stackup": "任意の銅層配列（name,z,eps_below）。zは表示長さ単位。ファイルの積層を置き換える"
+      }
+    },
+    "pcb.sample": {
+      "label": "PCB帰路サンプル",
+      "doc": "オリジナルの2層PCB配線サンプルを開く。split=trueでGNDスリット、falseで連続GND。モデルを置き換え、元に戻せる。",
+      "params": {
+        "split": "GNDにスリットを入れる（既定 true）"
+      }
+    },
+    "pcb.inspect": {
+      "label": "PCB配線を診断",
+      "doc": "選択ネットの配線と参照銅箔を形状からチェックする。銅箔欠落・近接平行配線・接続形状・ビア遷移の制約を報告する。対応する単純な外層マイクロストリップのみ、無損失準静的モデルでインピーダンス・遅延・S11/S21・TDRを近似する。電流分布・結合ノイズの数値解や規格適合判定ではない。",
+      "params": {
+        "net": "信号ネット",
+        "ground": "参照ネット（既定 GND）",
+        "reference": "入力・終端の基準インピーダンス（Ω、既定50）",
+        "stop": "上限周波数（既定1 GHz）",
+        "points": "調和周波数掃引の点数（4～128、既定64）"
       }
     }
   },

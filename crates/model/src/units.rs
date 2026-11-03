@@ -158,3 +158,26 @@ mod tests {
         assert!((decibels(0.1) + 20.0).abs() < 1e-12);
     }
 }
+
+emcraft_macros::named_enum! {
+    /// A time unit at result-display boundaries.
+    /// ```
+    /// use emcraft_model::units::{Time,Unit};
+    /// assert!((Time::Picosecond.from_si(1e-9)-1000.0).abs()<1e-10);
+    /// assert_eq!(Time::Nanosecond.to_si(1.0),1e-9);
+    /// ```
+    #[derive(Clone,Copy,Debug,PartialEq,Eq)]
+    pub enum Time { Second="s", Nanosecond="ns", Picosecond="ps" }
+}
+impl Unit for Time {
+    fn factor(self) -> f64 {
+        match self {
+            Self::Second => 1.0,
+            Self::Nanosecond => 1e-9,
+            Self::Picosecond => 1e-12,
+        }
+    }
+    fn symbol(self) -> &'static str {
+        self.id()
+    }
+}

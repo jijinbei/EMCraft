@@ -31,7 +31,7 @@ fn every_model_change_drops_the_results_it_makes_wrong() {
     for c in COMMANDS.iter().filter(|c| c.effect == Effect::Record) {
         assert_eq!(c.invalidates.is_none(), keeps.contains(&c.id), "{}", c.id);
     }
-    assert!(COMMANDS.iter().filter(|c| c.effect != Effect::Record).all(|c| c.invalidates.is_none()));
+    assert!(COMMANDS.iter().filter(|c| c.effect != Effect::Record).all(|c| c.invalidates.is_none() || c.effect == Effect::Rebuild));
     let mut s = small();
     // Failed: the sweep stays.
     assert!(s.execute("geometry.body", &json!({"shape": "sphere", "radius": -1, "material": "metal"})).is_err());

@@ -142,6 +142,9 @@ impl Action {
 
     /// Opens the dialog of command `id`.
     pub fn dialog(id: &str) -> Action {
+        if id == "pcb.import" {
+            return Action::File(crate::files::FileAction::PickPart);
+        }
         Action::OpenDialog { id: id.to_owned(), values: None }
     }
 

@@ -28,7 +28,7 @@ pub trait Picker: Send + Sync {
 }
 
 /// The extensions of the parts `geometry.import` reads.
-pub const PART_EXTENSIONS: &[&str] = &["solidcraft", "sc", "3mf", "stl"];
+pub const PART_EXTENSIONS: &[&str] = &["solidcraft", "sc", "3mf", "stl", "kicad_pcb"];
 
 /// Whether `path` names a part to import, by its extension.
 pub fn is_part(path: &str) -> bool {
@@ -263,6 +263,14 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
 pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
     app.home.open = false;
     app.settings = None;
+    if std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("kicad_pcb")) {
+        app.workflow.step = None;
+        app.view = crate::View::Pcb;
+        if let Err(e) = app.open_dialog_with("pcb.import", json!({"path":path})) {
+            app.error(e);
+        }
+        return;
+    }
     if let Some(d) = app.dialog.as_mut().filter(|d| d.command.id == "geometry.import") {
         let _ = d.set("path", &json!(path));
         return;

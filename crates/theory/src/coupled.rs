@@ -123,7 +123,13 @@ pub fn coupling(z0e: f64, z0o: f64) -> f64 {
 /// A two-port's chain matrix [[A, B], [C, D]].
 pub type Abcd = [[C; 2]; 2];
 
-fn product(p: &Abcd, q: &Abcd) -> Abcd {
+/// Cascade two chain matrices (left network followed by right).
+/// ```
+/// use emcraft_theory::coupled::{line, product};
+/// let q=line(50.0,0.3);
+/// assert_eq!(product(&line(50.0,0.0),&q),q);
+/// ```
+pub fn product(p: &Abcd, q: &Abcd) -> Abcd {
     let mut r = [[C::new(0.0, 0.0); 2]; 2];
     for i in 0..2 {
         for j in 0..2 {

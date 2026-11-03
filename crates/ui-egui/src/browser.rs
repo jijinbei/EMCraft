@@ -34,6 +34,7 @@ pub struct Browser {
 pub enum Act {
     None,
     Show(View),
+    Run(&'static str, serde_json::Value),
     Edit(&'static str),
     /// Opens a command's dialog with these values over its usual ones (a body's material).
     EditWith(&'static str, serde_json::Value),
@@ -260,6 +261,14 @@ pub fn tree(app: &EmcraftApp) -> Vec<(&'static str, Vec<Row>)> {
     let f = Fmt::new(&app.session);
     let m = app.session.model();
     let mut sections = Vec::new();
+    if let Some(board) = &m.pcb {
+        let mut rows = vec![row("PCB: {name}", args!(name = board.name), Glyph::Box, Act::Show(View::Pcb))];
+        let nets: std::collections::BTreeSet<_> = board.segments.iter().map(|s| s.net.as_str()).collect();
+        for net in nets.into_iter().take(128) {
+            rows.push(row("Net: {name}", args!(name = net), Glyph::Chart, Act::Run("pcb.inspect", app.views.pcb.params(net))));
+        }
+        return vec![("PCB", rows)];
+    }
     // The variables the job defined (a study's), not a template's own dimensions: double-click
     // to change one.
     let own = variables(&app.session);
@@ -720,8 +729,10 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                                 out.push(Action::Select { row, picks });
                             } else if resp.clicked() {
                                 out.push(Action::Select { row: Some(key.clone()), picks: r.pick.into_iter().collect() });
-                                if let Act::Show(v) = r.act {
-                                    out.push(Action::ShowView(v));
+                                match &r.act {
+                                    Act::Show(v) => out.push(Action::ShowView(*v)),
+                                    Act::Run(command, params) => out.push(Action::run(command, params.clone())),
+                                    _ => {}
                                 }
                             }
                             if resp.double_clicked() && !app.busy() {

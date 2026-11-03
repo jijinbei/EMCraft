@@ -682,7 +682,9 @@ impl EmcraftApp {
     /// step's panel or the docked dialog, the viewport, and what floats over them.
     fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, out: &mut Actions) {
         self.lend(|a| &mut a.search, |app, search| ribbon::ribbon(app, search, ui, out));
-        steps::bar(self, ui, out);
+        if self.view != View::Pcb {
+            steps::bar(self, ui, out);
+        }
         messages::area(self, ui, out);
         browser::show(self, ui, out);
         // With a step open, its panel holds the dialog.

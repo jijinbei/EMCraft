@@ -33,6 +33,7 @@ impl Picker for SystemPicker {
                 .add_filter("SolidCraft design", &["solidcraft", "sc"])
                 .add_filter("3MF", &["3mf"])
                 .add_filter("STL", &["stl"])
+                .add_filter("KiCad PCB", &["kicad_pcb"])
                 .pick_file();
             done(path.map(|p| p.to_string_lossy().into_owned()));
         });

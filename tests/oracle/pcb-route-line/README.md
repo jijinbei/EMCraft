@@ -1,0 +1,1 @@
+An original 40 mm outer microstrip with continuous GND. The oracle checks the stated lossless quasi-static approximation against independently evaluated Hammerstad–Jensen impedance/delay and the uniform TEM line closed form. It does not validate copper loss, vias, pads, coupling or radiation. A ground-slot regression separately refuses S/TDR predictions.

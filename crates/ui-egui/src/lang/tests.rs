@@ -440,6 +440,42 @@ fn tour() -> Record {
         h.frames(2);
     }
     h.app.search.open = false;
+    // PCB diagnostics use the same command path as the workspace, in both valid and blocked cases.
+    for split in [true, false] {
+        call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":split}}));
+        h.frames(3);
+    }
+    h.app.views.pcb.baseline = h.app.replies.pcb.clone();
+    if let Some(r) = &mut h.app.replies.pcb {
+        r["findings"] = json!(
+            [
+                "return_gap",
+                "reference_edge",
+                "no_reference",
+                "route_topology",
+                "via_transition",
+                "missing_return_via",
+                "nearby_signal",
+                "unsupported_cross_section"
+            ]
+            .into_iter()
+            .map(|code| json!({"code":code,"detail":"","segment":null}))
+            .collect::<Vec<_>>()
+        );
+    }
+    h.frames(2);
+    // A native copy without a neighbour reaches the clean-screening wording too.
+    let mut board = h.app.session.model().pcb.clone().unwrap();
+    board.segments.retain(|s| s.net == "DATA");
+    board.map_lengths(|v| h.app.session.display().length.from_si(v));
+    call(&mut h, "engine.execute", json!({"command":"pcb.load","params":{"data":board}}));
+    h.frames(3);
+    h.app.views.pcb.reference = "invalid".into();
+    h.frames(2);
+    h.app.replies.pcb = None;
+    h.app.views.pcb.attempted = None;
+    h.frames(2);
+    h.app.views.pcb.reference = "50".into();
     // Every command's dialog, docked and floating, some refused, a job running under one.
     for c in emcraft_engine::COMMANDS.iter().filter(|c| !c.params.is_empty()) {
         call(&mut h, "ui.start", json!({"command": c.id}));

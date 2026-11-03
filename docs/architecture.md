@@ -75,6 +75,15 @@ types changed) find what slipped through.
 
 ## The solver pipeline
 
+The PCB workspace is a separate screening/analytical pipeline, documented in [pcb.md](pcb.md):
+`model::pcb::Board` stores checked SI routing, stackup and filled copper; `io::pcb` reads the
+published KiCad format; `theory::pcb` screens reference geometry and builds an explicitly ideal
+microstrip cascade using the existing `microstrip` and `coupled` references. `engine::pcb`
+owns the import/load/inspect/sample commands, embedded history and replies, reusing the engine's
+TDR transform. `ui-egui::viewport::pcb` draws/picks routing and displays those replies. It does
+not send incomplete PCB data through the volume FEM solver. `model::units::Time` converts the
+SI delays at the UI boundary. The four PCB commands are shared by UI, control, scripts and CLI.
+
 1. **Mesh.** `mesh.generate` puts grid lines through every aperture edge and divides each
    section along z on its own, so every material interface and aperture wall is a grid plane;
    cells outside a section's aperture are left out (an iris' or a step's metal), and lines close

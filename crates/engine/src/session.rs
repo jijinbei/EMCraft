@@ -518,6 +518,7 @@ impl Session {
             "units": crate::reply::units(self.display),
             "analysis": crate::workflow::analysis_reply(&self.model),
             "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r, "loss_tangent": m.loss_tangent, "magnetic_loss_tangent": m.magnetic_loss_tangent})).collect::<Vec<_>>(),
+            "pcb":self.model.pcb.as_ref().map(|b|json!({"name":b.name,"segments":b.segments.len(),"copper_regions":b.copper.len(),"layers":b.layers.iter().map(|l|json!({"name":l.name,"z":self.display.length.from_si(l.z),"eps_below":l.eps_below})).collect::<Vec<_>>()})),
             "waveguide": w,
             "solid": self.model.solid.as_ref().map(|s| json!({"shape": s.shape.kind(), "material": s.material})),
             "ports": self.model.ports.iter().map(|p| {

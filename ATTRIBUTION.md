@@ -11,6 +11,7 @@ third-party material under an open licence.
 
 | File | Author | Source | Licence |
 |---|---|---|---|
+| crates/io/tests/fixtures/route.kicad_pcb; tests/oracle/pcb-route-line/{recipe,expected,fixture}.json; PCB route examples in crates/engine/src/pcb.rs | EMCraft contributors | Original two-layer routing examples and independently evaluated published HJ/ABCD formulas; no third-party board data or KiCad source code | MIT OR Apache-2.0 |
 | docs/media/app-results-3d.png, docs/media/app-start.png | EMCraft contributors | Original: drawn by the UI scenarios `view3d_field_arrows` and `start_page` (`EMCRAFT_SCENARIO_SHOTS=DIR cargo test -p emcraft-ui-egui scenario`) | MIT OR Apache-2.0 |
 | docs/media/highpass-fem-fdtd.png | EMCraft contributors | Original: drawn by `view.sparameters` after `file.sample highpass` solved and `solve.time_domain` from 5 to 9 GHz | MIT OR Apache-2.0 |
 | docs/media/bandpass-h-10GHz.png | EMCraft contributors | Original: drawn by `emcraft-cli sample iris-bandpass --frequency 10` (h-10GHz.png) | MIT OR Apache-2.0 |

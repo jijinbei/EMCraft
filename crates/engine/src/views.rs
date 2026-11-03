@@ -220,6 +220,8 @@ impl Probe {
 /// How the project's results are looked at: the charts' styles by chart id, the probes.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Views {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcb_net: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub hidden_materials: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -241,7 +243,8 @@ impl Views {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.charts.is_empty()
+        self.pcb_net.is_none()
+            && self.charts.is_empty()
             && self.probes.is_empty()
             && self.driven.is_none()
             && self.hidden_materials.is_empty()
@@ -283,7 +286,17 @@ impl Views {
         if self.hidden_geometry.len() > 4096 || self.hidden_geometry.iter().any(|k| crate::visibility::GeometryObject::parse(k).is_none()) {
             return Err(EngineError::failed("views: invalid geometry visibility"));
         }
-        Ok(Views { charts, probes: self.probes, driven: self.driven, hidden_materials: self.hidden_materials, hidden_geometry: self.hidden_geometry })
+        if self.pcb_net.as_ref().is_some_and(|s| s.is_empty() || s.chars().count() > 128) {
+            return Err(EngineError::failed("invalid PCB selection"));
+        }
+        Ok(Views {
+            pcb_net: self.pcb_net,
+            charts,
+            probes: self.probes,
+            driven: self.driven,
+            hidden_materials: self.hidden_materials,
+            hidden_geometry: self.hidden_geometry,
+        })
     }
 }
 

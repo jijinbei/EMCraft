@@ -1,0 +1,98 @@
+# PCB route diagnostics
+
+Open **Model → Import PCB**, or drop a `.kicad_pcb` file into EMCraft. Click a routed trace
+or a net in the browser, choose its reference net (default `GND`), reference impedance and
+maximum frequency, then **Inspect route**. The selected net is highlighted on a top view of
+the saved copper. Red spans and circles locate missing reference copper. **Keep for
+comparison** pins the current report's finding count while the board is changed or reimported.
+The split-ground and continuous-ground examples demonstrate the difference without an input
+file. Saving an `.emcraft` project embeds the imported board; reopening does not need the
+original KiCad file. The selected net is saved too; its report is recomputed on reopening.
+
+## What the report means
+
+The geometry checks identify missing filled reference copper below a trace, missing copper
+on either side at `h + W/2`, a missing reference plane, unsupported route topology and signal
+via transitions. Parallel nearby signal tracks closer than `3h` are flagged for review;
+this is a spacing screen, not a crosstalk voltage prediction. A layer change without a nearby
+ground via spanning the reference layers is flagged for review (2 mm geometric search).
+The via check does not establish electrical connectivity through pads or thermal reliefs.
+Trace/polygon intersections are used to locate slots; the check does not sample the trace
+at a fixed pitch that could skip a narrow slot. All checks have explicit work limits.
+
+The ideal line estimate uses Hammerstad–Jensen's quasi-static outer microstrip impedance and
+effective permittivity, followed by a lossless transmission-line ABCD cascade. It displays
+section impedance, propagation delay, S11/S21 magnitudes and a windowed low-pass TDR reflection.
+The TDR resolution is limited by the selected maximum frequency and is shown beside the
+plot. These are estimates for the stated ideal model, not a 3D FEM result. Bends, pads,
+packages, vias, copper thickness, mask, losses, dispersion, coupling and radiation are
+excluded. The comparison is a finding count, not a signed-off before/after SI measurement.
+
+S/TDR predictions are withheld for a split/edge crossing, missing reference, branched,
+closed, disconnected or self-crossing route, signal via, internal trace, non-adjacent ground,
+or width/height outside `0.01..100`. Only a simple single-layer outer trace over a continuous
+adjacent reference qualifies. Local section impedance/delay rows remain explicitly labelled
+as ideal estimates even when the complete route does not qualify. Copper support alone does
+not establish a low-impedance connected return to source/load: isolated islands, pads and
+complete current paths need further modelling. No return-current density, eye diagram or
+SI/EMC compliance verdict is computed by this feature.
+
+## Import contract
+
+The reader is an original implementation of the public
+[KiCad S-expression PCB format](https://dev-docs.kicad.org/en/file-formats/sexpr-pcb/).
+It reads straight segments, vias, named nets, explicit dielectric/copper stackup and saved
+`filled_polygon` copper. Refill zones in the PCB editor and save before importing. An unfilled
+zone outline is skipped with a note; it is never treated as solid ground. Curved tracks are
+refused. Pads, footprints, board outlines, mask and copper thickness are excluded with a note.
+Coordinates are read in KiCad's millimetres and stored in SI metres.
+
+An absent stackup or missing dielectric permittivity is an error, not an assumed FR-4 board.
+Mixed dielectric plies between two copper layers require a caller-supplied homogenized stackup.
+`pcb.import` accepts `stackup`, an array of `{name,z,eps_below}` copper layers in increasing
+depth order. `z` uses the session's display length unit; `eps_below` is the relative dielectric
+permittivity in the interval below that layer (last layer: unused, supply `1`). The file limit
+is 8 MiB, with at most 64 copper layers, 20,000 segments, 20,000 vias, 4,096 filled polygons and
+200,000 polygon vertices. Inspect a net with at most 512 segments; reports exceeding the
+geometric work budget fail visibly. The first release is intended for small routed regions.
+
+## Commands and native board data
+
+All operations use the engine. A CLI script (GHz/mm defaults) can reproduce the example:
+
+```json
+[
+  {"command":"pcb.sample","params":{"split":false}},
+  {"command":"pcb.inspect","params":{"net":"DATA","ground":"GND","reference":50,"stop":1,"points":64}},
+  {"command":"file.save","params":{"path":"route.emcraft"}}
+]
+```
+
+Run it with `cargo run -p emcraft-cli -- run script.json`. Replace the first step with
+`{"command":"pcb.import","params":{"path":"board.kicad_pcb"}}` to inspect a real board.
+`pcb.inspect` replies include per-section reference layers and uncovered intervals (fractions
+along each segment), geometry findings, the model assumptions, and either `si` data or
+`si: null`. Lengths/frequencies use the current display units; `*_s` and `*_hz` are explicitly
+SI. Selection is a view change; importing/loading replaces the current model and can be undone.
+
+`pcb.load` accepts `data` with this native schema (lengths in current display units):
+
+```json
+{
+  "name":"one route",
+  "layers":[{"name":"F.Cu","z":0,"eps_below":4.2},{"name":"B.Cu","z":0.18,"eps_below":1}],
+  "segments":[{"id":"track-1","net":"DATA","layer":"F.Cu","start":[5,10],"end":[45,10],"width":0.3}],
+  "vias":[],
+  "copper":[{"net":"GND","layer":"B.Cu","polygon":[[0,0],[50,0],[50,20],[0,20]]}],
+  "notes":[]
+}
+```
+
+Vias use `{net,at,layers:[from,to],diameter}`. Polygon interiors use the even-odd rule; multiple
+polygons on a reference layer are unioned for screening. Native input is checked before any
+model replacement; invalid numbers, layers, dimensions and excessive inputs return errors.
+
+Verification: [`pcb-route-line`](../tests/oracle/pcb-route-line/README.md) freezes independently
+evaluated HJ/ABCD values for a 40 mm line. Unit tests cover narrow ground slots, topology,
+invalid input and ordering; engine tests cover unit conversion, source-independent saving,
+reopening and undo; the UI scenario exercises actual route/net clicks and both ground examples.
