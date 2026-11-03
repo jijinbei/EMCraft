@@ -233,6 +233,15 @@ referred to each port's impedance), swept fast as waveguide ports are. [`pcb-lum
 checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1.3e-3;
 the phase carries the feeds' own inductance (+1.8° at 1 GHz).
 
+### Losses
+
+A layer's `loss_below` makes its substrate lossy (above). `model.walls {"conductivity": σ}` makes
+every conductor of the region lossy by its surface impedance: the copper sheets on both their
+faces (the current flows on each), the ground floor and the region's box (a shield of that
+metal). The copper has no thickness, so its current is singular at a trace's edges (∝ 1/√r) and
+its conductor loss grows slowly (logarithmically) as the edge size shrinks: read it as an
+estimate at the mesh's edge size, not a converged value — copper of finite thickness is to come.
+
 ### Open boards
 
 `model.open {"thickness": d}` after `pcb.region` lines the region's box with a perfectly matched
