@@ -14,6 +14,7 @@ use emcraft_solver::Complex64 as C;
 use serde::{Deserialize, Serialize};
 
 pub mod mesh;
+pub mod results;
 
 use crate::archive::file::StoredHistory;
 use crate::runs::Run;
@@ -44,6 +45,8 @@ struct ProjectFile<'m> {
     analysis_history: StoredHistory,
     /// The model's mesh, its numbers array parts.
     mesh: Option<mesh::StoredMesh>,
+    /// The session's results, their numbers array parts.
+    results: results::StoredSession,
     /// For other tools to read; opening replays the history and does not read it.
     #[serde(skip_deserializing)]
     model: Option<&'m Model>,
@@ -59,6 +62,8 @@ pub(crate) struct Stored {
     pub archive_next: u32,
     /// The model's mesh, read once the model is built ([`Stored::mesh`]).
     mesh: Option<mesh::StoredMesh>,
+    /// The results, read once the model and its mesh are ([`Stored::results`]).
+    results: Option<results::StoredSession>,
     /// The package, for the parts read once the model is built.
     package: Option<Reader>,
 }
@@ -74,7 +79,21 @@ impl Stored {
             archive: Vec::new(),
             archive_next: 0,
             mesh: None,
+            results: None,
             package: None,
+        }
+    }
+
+    /// The file's results for `model` (its mesh on): those that fit, whether they are the
+    /// model's, the kept solve they are, and why any was left out.
+    pub(crate) fn results(&mut self, model: &Model) -> (crate::Results, bool, Option<u32>, Vec<String>) {
+        match (self.results.take(), self.package.as_mut()) {
+            (Some(st), Some(r)) => {
+                let (current, archived) = (st.current, st.archive_current);
+                let (results, dropped) = st.read(r, model);
+                (results, current, archived, dropped)
+            }
+            _ => (crate::Results::default(), false, None, Vec::new()),
         }
     }
 
@@ -94,20 +113,26 @@ fn failed(path: &Path, e: impl std::fmt::Display) -> EngineError {
 
 /// Writes `s`'s project to `path`: to a temporary file beside it, renamed over it, so a crash
 /// or a full disk leaves the old file whole.
-pub(crate) fn write(s: &Session, path: &Path) -> Result<()> {
+pub(crate) fn write(s: &Session, path: &Path, fields: bool) -> Result<bool> {
     let temp = path.with_extension(format!("{}.tmp", path.extension().and_then(|e| e.to_str()).unwrap_or(crate::project::EXTENSION)));
-    let written = write_to(s, &temp);
-    let renamed = written.and_then(|()| std::fs::rename(&temp, path).map_err(|e| EngineError::cannot_write(&path.display().to_string(), e)));
+    let written = write_to(s, &temp, fields);
+    let renamed = written.and_then(|fields| {
+        std::fs::rename(&temp, path).map_err(|e| EngineError::cannot_write(&path.display().to_string(), e))?;
+        Ok(fields)
+    });
     if renamed.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
     renamed
 }
 
-fn write_to(s: &Session, path: &Path) -> Result<()> {
+/// Writes the package; whether the fields are in it.
+fn write_to(s: &Session, path: &Path, fields: bool) -> Result<bool> {
     let mut w = Writer::create(path).map_err(|e| failed(path, e))?;
     let analysis_history = crate::archive::file::stored(&s.archive, s.archive_next, &mut w).map_err(|e| failed(path, e))?;
     let mesh = s.model.mesh.as_deref().map(|m| mesh::StoredMesh::write(m, &mut w)).transpose().map_err(|e| failed(path, e))?;
+    let results = results::StoredSession::write(s, fields, &mut w).map_err(|e| failed(path, e))?;
+    let fields = results.fields;
     let file = ProjectFile {
         format: FORMAT.to_owned(),
         version: VERSION.to_owned(),
@@ -117,13 +142,15 @@ fn write_to(s: &Session, path: &Path) -> Result<()> {
         views: s.views.clone(),
         analysis_history,
         mesh,
+        results,
         model: Some(&s.model),
     };
     // Through a JSON value, whose objects keep their keys sorted: the text does not depend on
     // the order the fields are declared in.
     let doc = serde_json::to_value(&file).map_err(EngineError::failed)?;
     w.text(PROJECT, &crate::project::pretty(&doc)?).map_err(|e| failed(path, e))?;
-    w.finish().map_err(|e| failed(path, e))
+    w.finish().map_err(|e| failed(path, e))?;
+    Ok(fields)
 }
 
 /// The project file at `path`, read and checked.
@@ -145,7 +172,7 @@ pub(crate) fn read(path: &Path) -> Result<Stored> {
     let runs = crate::runs::checked(file.runs).map_err(|e| failed(path, e))?;
     let views = file.views.checked().map_err(|e| failed(path, e))?;
     let (archive, archive_next) = crate::archive::file::read(file.analysis_history, &mut r).map_err(|e| failed(path, e))?;
-    Ok(Stored { history: file.history, runs, views, archive, archive_next, mesh: file.mesh, package: Some(r) })
+    Ok(Stored { history: file.history, runs, views, archive, archive_next, mesh: file.mesh, results: Some(file.results), package: Some(r) })
 }
 
 /// Complex values as an array part: real then imaginary, one after the other.

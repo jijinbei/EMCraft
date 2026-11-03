@@ -212,6 +212,15 @@ pub(crate) fn keep(s: &mut Session, command: &str, params: &Value, provenance: P
     s.archive_next
 }
 
+/// The session's model and results held as kept solve `id`'s (a project just opened with its
+/// results): restoring it needs no solve.
+pub(crate) fn attach(s: &mut Session, id: u32) {
+    let solved = Arc::new(Solved { model: s.model.clone(), results: s.results.clone() });
+    if let Some(a) = s.archive.iter_mut().find(|a| a.id == id) {
+        a.solved = Some(solved);
+    }
+}
+
 /// What changed in the model between two kept solves: the variables whose values differ
 /// (`d 3 → 4`), else whether the model's history differs at all.
 fn changes(before: Option<&Archived>, now: &Archived) -> Vec<String> {

@@ -176,12 +176,13 @@ How long a run will take, before it starts: `command` with `params` (a solve, me
 
 ## `file.save` — Save project
 
-Saves the project as an `.emcraft` file (JSON: the commands that built the model, a script; the last run of each solve command with its parameters, not its results; and the model), to `path` or, without one, to the file it was opened from or last saved to. A path without an extension gets `.emcraft`. With `copy` it writes a copy to `path` and leaves the project's own file, name and unsaved state as they were (an autosave).
+Saves the project as an `.emcraft` file (version 0.1, docs/project-file.md: a package of the commands that built the model, the runs, the views, the analysis history, the mesh and the results — S-parameters, tables and, with `fields`, the field vectors — their numbers little-endian arrays), to `path` or, without one, to the file it was opened from or last saved to. A path without an extension gets `.emcraft`. With `copy` it writes a copy to `path` and leaves the project's own file, name and unsaved state as they were (an autosave).
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `path` | string |  | no | the file (default: the project's own; required with `copy`) |
 | `copy` | boolean |  | no | write a copy only: the project keeps its file and stays unsaved (default false) |
+| `fields` | boolean |  | no | write the field vectors too, up to 1 GB of them (default true): opened, the fields show without solving again |
 
 ## `file.new` — New project
 
@@ -191,7 +192,7 @@ No parameters.
 
 ## `file.open` — Open project
 
-Opens a project saved by file.save (`.emcraft`, or a `.json` of the same form): its commands are replayed, so the mesh comes back the same; its runs (project.runs) come back without running, and results are solved again (solve.rerun). With `original`, `path` is a copy of that project (an autosave being recovered): the project takes the original's file, unsaved where it differs from what that file holds. Undo goes back to the project before, its file included.
+Opens a project saved by file.save (`.emcraft`, version 0.1; any other version is refused): its commands are replayed (the mesh commands recorded, not run: the file's own mesh is put on the model) and its results come back as they were, no solve again — those that no longer fit are left out, with why (`left_out`); its runs (project.runs) come back too. With `original`, `path` is a copy of that project (an autosave being recovered): the project takes the original's file, unsaved where it differs from what that file holds. Undo goes back to the project before, its file included.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|

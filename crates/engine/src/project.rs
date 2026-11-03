@@ -403,6 +403,7 @@ pub const EXTENSION: &str = "emcraft";
 /// session's file, name and saved state alone (an autosave).
 pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
     let copy = p.flag("copy").or(false)?;
+    let fields = p.flag("fields").or(true)?;
     let path = match p.string("path").optional()? {
         Some(path) if path.trim().is_empty() => return Err(p.error("path", "must not be empty")),
         Some(path) if std::path::Path::new(path).extension().is_none() => format!("{path}.{EXTENSION}"),
@@ -410,14 +411,14 @@ pub fn save(s: &mut Session, p: &Params) -> Result<Value> {
         None if copy => return Err(p.error("path", "is required for a copy")),
         None => s.path.clone().ok_or_else(|| p.error("path", "is required: the project has no file yet"))?,
     };
-    crate::store::write(s, std::path::Path::new(&path))?;
+    let fields = crate::store::write(s, std::path::Path::new(&path), fields)?;
     let kept = s.archive.len();
     if copy {
-        return Ok(json!({"path": path, "copy": true, "commands": s.history.len(), "runs": s.runs.len(), "kept": kept}));
+        return Ok(json!({"path": path, "copy": true, "commands": s.history.len(), "runs": s.runs.len(), "kept": kept, "fields": fields}));
     }
     s.path = Some(path.clone());
     s.mark_saved();
-    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "kept": kept}))
+    Ok(json!({"path": path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "kept": kept, "fields": fields}))
 }
 
 /// `doc` as a project file writes it: pretty printed, two spaces a level, with each list of
@@ -502,12 +503,20 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     replayed?;
     let mesh = stored.mesh(fresh.model.materials.len()).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     fresh.model.mesh = mesh.map(std::sync::Arc::new);
+    let (results, current, archived, dropped) = stored.results(&fresh.model);
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
     fresh.runs = stored.runs;
     fresh.views = stored.views;
     fresh.archive = stored.archive;
     fresh.archive_next = stored.archive_next;
+    // The results as they were: no solve again; those that no longer fit left out, with why.
+    fresh.results = results;
+    fresh.solved_revision = (current && fresh.results.any()).then_some(fresh.revision);
+    fresh.archive_current = archived.filter(|id| current && fresh.archive.iter().any(|a| a.id == *id));
+    if let Some(id) = fresh.archive_current {
+        crate::archive::attach(&mut fresh, id);
+    }
     match original {
         None => {
             fresh.path = Some(path.to_owned());
@@ -526,7 +535,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     }
     s.replace_with(fresh);
     Ok(
-        json!({"path": s.path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "kept": s.archive.len(), "dirty": s.is_dirty(), "summary": s.summary()}),
+        json!({"path": s.path, "name": s.name(), "commands": s.history.len(), "runs": s.runs.len(), "kept": s.archive.len(), "dirty": s.is_dirty(), "summary": s.summary(), "results": s.results.any(), "left_out": dropped}),
     )
 }
 

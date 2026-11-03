@@ -20,8 +20,7 @@ fn solved_twice() -> Session {
     s
 }
 
-/// `results.history`'s rows without `current` (nothing is current in a project just opened:
-/// its results are not loaded until a solve is restored).
+/// `results.history`'s rows without `current` (which a restore moves).
 fn rows(s: &mut Session) -> Vec<Value> {
     let h = s.execute("results.history", &json!({})).unwrap();
     h["history"]
@@ -58,17 +57,18 @@ fn the_analysis_history_survives_saving_and_reopening() {
     assert_eq!((sweep["frequencies"].as_array().map(Vec::len), sweep["outputs"].as_u64()), (Some(3), Some(2)));
     assert_eq!(sweep["values"], "history/1/s.c64");
 
-    // Opened: the same rows, number for number; clean; nothing current.
+    // Opened: the same rows, number for number; clean; the last solve's results back with the
+    // project (current, in memory), the first's to be solved again.
     let mut t = Session::new();
     let r = t.execute("file.open", &json!({"path": path})).unwrap();
-    assert_eq!((r["kept"].as_u64(), r["dirty"].as_bool()), (Some(2), Some(false)));
+    assert_eq!((r["kept"].as_u64(), r["dirty"].as_bool(), r["results"].as_bool()), (Some(2), Some(false), Some(true)));
     assert_eq!(rows(&mut t), before);
-    assert!(t.archive().iter().all(|a| !a.in_memory()));
-    // Compared before anything is solved: the kept sweeps alone.
+    assert!(!t.archive()[0].in_memory() && t.archive()[1].in_memory());
+    assert_eq!(t.archive_current, Some(2));
+    // Both kept sweeps drawn over the project's own.
     let chart = crate::view::sparameter_chart_compared(&t, crate::view::SDisplay::Db, &[1, 2]).unwrap();
-    assert_eq!(chart.series.len(), 4);
+    assert_eq!(chart.series.iter().filter(|c| c.key.starts_with("run")).count(), 4);
     assert!(chart.x.min.is_finite() && chart.x.min < chart.x.max);
-    assert!(crate::view::sparameter_chart_compared(&t, crate::view::SDisplay::Db, &[]).is_err());
 
     // Restored: rebuilt from its history and solved again, the same results bit for bit.
     let r = t.execute("results.history.restore", &json!({"id": 1})).unwrap();
@@ -77,11 +77,11 @@ fn the_analysis_history_survives_saving_and_reopening() {
     assert!(t.results().sweep.is_some() && t.solved_revision() == Some(t.revision()));
     assert_eq!(rows(&mut t), before);
     assert!(t.archive()[0].in_memory());
-    // Only the model: nothing solved, nothing current.
+    // The second from memory (opened with the project): no solve.
     let r = t.execute("results.history.restore", &json!({"id": 2, "solve": false})).unwrap();
     assert!(r.get("solved_again").is_none());
     assert_eq!(t.variables().get("l_gap"), Some(&26.0));
-    assert!(t.results().sweep.is_none() && !t.archive()[1].in_memory());
+    assert!(t.results().sweep.is_some() && t.solved_revision() == Some(t.revision()));
     // Undo goes back to the first.
     t.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(t.variables().get("l_gap"), Some(&20.0));

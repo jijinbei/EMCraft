@@ -1,6 +1,6 @@
 //! Autosave and recovery: while the project has unsaved changes, a copy of it is written every
 //! [`Autosave::every`] seconds (never while a job runs) to `<config dir>/autosave/<name>.emcraft`
-//! by `file.save {"copy": true}`, which leaves the project's own file, name and unsaved state
+//! by `file.save {"copy": true, "fields": false}` (no field vectors: quick), which leaves the project's own file, name and unsaved state
 //! alone; a note beside it (`<name>.json`) names the project file it is a copy of. A real save
 //! or a clean close (the changes saved or let go) deletes it. On start, each copy newer than its
 //! project (or of a project never saved) is offered on the start page: Recover opens it with
@@ -180,7 +180,7 @@ impl EmcraftApp {
         let file = dir.join(format!("{}.{}", file_name(&name), emcraft_engine::project::EXTENSION));
         let written = std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display())).and_then(|()| {
             let path = file.display().to_string();
-            self.session.execute("file.save", &json!({"path": path, "copy": true})).map_err(|e| e.to_string())
+            self.session.execute("file.save", &json!({"path": path, "copy": true, "fields": false})).map_err(|e| e.to_string())
         });
         let r = written.and_then(|reply| {
             let original = self.session.path().filter(|p| !inside(Some(&dir), p));

@@ -9,7 +9,7 @@
   {"call": "engine.execute", "params": {"command": "file.open", "params": {"path": "$TMP/run.emcraft"}}},
   {"call": "ui.set", "params": {"step": "setup"}},
   {"frames": 2},
-  {"expect": {"inspect": {"workflow.solver": "frequency", "workflow.setup.points": "2", "workflow.setup.order": "1", "workflow.rerun": "solve.frequency", "model.results": null}}},
+  {"expect": {"inspect": {"workflow.solver": "frequency", "workflow.setup.points": "2", "workflow.setup.order": "1", "workflow.rerun": "solve.frequency", "model.results.frequencies": 2}}},
   {"shot": "setup-restored"},
   {"note": "Run: the run again, its own frequencies (not points over the band)"},
   {"click": "step:run"},

@@ -696,6 +696,10 @@ const UNREACHED: &[(&str, &str)] = &[
     ("solved in {seconds} s on {device}", "needs two solves kept (scenario run_history)"),
     ("{unknowns} unknowns, {tets} tetrahedra", "needs two solves kept (scenario run_history)"),
     ("Saved: restore solves it again", "a tip of a solve read back from a project file (scenario saved_history)"),
+    (
+        "Not read back (solve again): {what}",
+        "a project file whose results no longer fit its model (engine test results_that_do_not_fit_are_left_out_with_why)",
+    ),
     ("Parameters", "needs a template's card (scenario template_dialog)"),
     ("More commands", "needs a window too narrow for the ribbon's buttons (scenario small_window)"),
     ("More tabs", "needs a window too narrow for the ribbon's tabs (scenario small_window)"),

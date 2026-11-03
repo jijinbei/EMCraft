@@ -102,10 +102,10 @@ fn runs_belong_to_the_project() {
         doc["runs"],
         json!([{"command": "solve.frequency", "params": {"frequencies": [8.0], "order": 1}, "units": {"length": "mm", "frequency": "GHz"}}])
     );
-    // Opened: the run is back, nothing solved, clean.
+    // Opened: the run is back, its results with it (current), clean.
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
-    assert!(!t.results.any() && !t.is_dirty());
+    assert!(t.results.sweep.is_some() && t.solved_revision == Some(t.revision) && !t.is_dirty());
     let runs = t.execute("project.runs", &json!({})).unwrap();
     assert_eq!(runs["latest"], "solve.frequency");
     assert_eq!(runs["runs"][0]["params"], json!({"frequencies": [8.0], "order": 1}));

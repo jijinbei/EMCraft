@@ -42,10 +42,18 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
         "file.sample" if session.results().any() || session.model().pcb.is_some() => trf("Opened sample {name}.", args!(name = p.text("name"))),
         "file.sample" => trf("Opened sample {name}; Run (step 7) solves it.", args!(name = p.text("name"))),
         "file.open" if !p.text("original").is_empty() => trf("Recovered {name}.", args!(name = r.text("name"))),
-        "file.open" => match p.text("path") {
-            "" => tr("Opened the project.").to_owned(),
-            path => trf("Opened {path}.", args!(path = path)),
-        },
+        "file.open" => {
+            let opened = match p.text("path") {
+                "" => tr("Opened the project.").to_owned(),
+                path => trf("Opened {path}.", args!(path = path)),
+            };
+            // Results the file held that no longer fit: solved again on demand.
+            let left: Vec<&str> = reply["left_out"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            match left.is_empty() {
+                true => opened,
+                false => format!("{opened} {}", trf("Not read back (solve again): {what}", args!(what = left.join("; ")))),
+            }
+        }
         "file.new" => tr("New project.").to_owned(),
         "project.analysis" => {
             let kind = emcraft_engine::workflow::Analysis::parse(r.text("kind")).map_or("", crate::lang::shown);
