@@ -10,6 +10,7 @@
 //! checks them.
 
 use egui::{Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
+use emcraft_engine::{Device, Precision};
 use serde_json::{Value, json};
 
 use crate::handle::{Fixed, Handle};
@@ -264,7 +265,7 @@ pub fn prepare(app: &mut EmcraftApp) {
         match app.workflow.device_selection {
             DeviceSelection::Pending => {
                 let (device, precision) = recommended_device(&v, app.session.model().analysis());
-                let _ = app.session.execute("solve.device", &json!({"device":device,"precision":precision}));
+                let _ = app.session.execute("solve.device", &json!({"device": device.id(), "precision": precision.id()}));
                 app.workflow.device_selection = DeviceSelection::Automatic;
             }
             DeviceSelection::Automatic | DeviceSelection::Explicit => {}
@@ -391,7 +392,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "rerun": reruns(app),
         "check": app.workflow.check.as_ref().map(|c| c.1.clone()),
         "diagram": f.diagram,
-        "device": app.session.compute().device(),
+        "device": app.session.compute().device().id(),
         "device_selection": app.workflow.device_selection.id(),
         "precision": app.session.compute().precision.id(),
         "failure": app.failure.as_ref().map(|f| json!({"command": f.command, "error": f.error})),
@@ -563,21 +564,45 @@ fn band(s: &emcraft_engine::Session) -> Option<(f64, f64)> {
 
 /// Prefer the available CUDA accelerator with double precision, preserving an explicit user
 /// choice elsewhere. The CubeCL CPU runtime is a verification backend, not an upgrade.
-fn recommended_device(list: &Value, solver: Solver) -> (&'static str, &'static str) {
-    let candidates: &[(&str, &str)] = match solver {
-        Solver::TimeDomain => &[("cuda", "double"), ("cuda", "single"), ("cpu", "double")],
-        _ => &[("cuda", "double"), ("cpu", "double")],
+fn recommended_device(list: &Value, solver: Solver) -> (Device, Precision) {
+    use {Device::*, Precision::*};
+    let candidates: &[(Device, Precision)] = match solver {
+        Solver::TimeDomain => &[(Cuda, Double), (Cuda, Single), (Cpu, Double)],
+        _ => &[(Cuda, Double), (Cpu, Double)],
     };
-    candidates
-        .iter()
-        .copied()
-        .find(|(name, p)| {
-            list["devices"].as_array().is_some_and(|ds| {
-                ds.iter()
-                    .any(|d| d["name"] == *name && d["available"] == true && d["precisions"].as_array().is_some_and(|ps| ps.iter().any(|v| v == *p)))
-            })
+    let rows = device_rows(list);
+    candidates.iter().copied().find(|&(device, p)| rows.iter().any(|r| r.device == device && r.available && r.runs(p))).unwrap_or((Cpu, Double))
+}
+
+/// A device as `solve.devices` lists it.
+pub(crate) struct DeviceRow {
+    pub device: Device,
+    /// Whether this machine runs it.
+    pub available: bool,
+    /// The precisions it runs, in [`Precision::ALL`]'s order.
+    pub precisions: Vec<Precision>,
+    /// Why it cannot run here.
+    pub problem: Option<String>,
+}
+
+impl DeviceRow {
+    pub fn runs(&self, p: Precision) -> bool {
+        self.precisions.contains(&p)
+    }
+}
+
+/// The devices of a `solve.devices` reply (names this build does not know are left out).
+pub(crate) fn device_rows(list: &Value) -> Vec<DeviceRow> {
+    let rows = list.get("devices").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    rows.iter()
+        .filter_map(|d| {
+            let device = d.get("name").and_then(Value::as_str).and_then(Device::parse)?;
+            let listed = d.get("precisions").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            let precisions = Precision::ALL.into_iter().filter(|p| listed.iter().any(|v| v == p.id())).collect();
+            let problem = d.get("problem").and_then(Value::as_str).map(str::to_owned);
+            Some(DeviceRow { device, available: d.get("available").and_then(Value::as_bool) == Some(true), precisions, problem })
         })
-        .unwrap_or(("cpu", "double"))
+        .collect()
 }
 #[cfg(test)]
 mod device_preference_tests {
@@ -585,11 +610,11 @@ mod device_preference_tests {
     #[test]
     fn advanced_available_device_wins_and_unsupported_double_falls_back() {
         let mut list = json!({"devices":[{"name":"cpu","available":true,"precisions":["double"]},{"name":"cuda","available":true,"precisions":["single","double"]}]});
-        assert_eq!(recommended_device(&list, Solver::Frequency), ("cuda", "double"));
+        assert_eq!(recommended_device(&list, Solver::Frequency), (Device::Cuda, Precision::Double));
         list["devices"][1]["precisions"] = json!(["single"]);
-        assert_eq!(recommended_device(&list, Solver::Frequency), ("cpu", "double"));
-        assert_eq!(recommended_device(&list, Solver::TimeDomain), ("cuda", "single"));
+        assert_eq!(recommended_device(&list, Solver::Frequency), (Device::Cpu, Precision::Double));
+        assert_eq!(recommended_device(&list, Solver::TimeDomain), (Device::Cuda, Precision::Single));
         list["devices"][1]["available"] = json!(false);
-        assert_eq!(recommended_device(&list, Solver::TimeDomain), ("cpu", "double"));
+        assert_eq!(recommended_device(&list, Solver::TimeDomain), (Device::Cpu, Precision::Double));
     }
 }

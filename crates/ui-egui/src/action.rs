@@ -96,8 +96,8 @@ pub enum Action {
     ExportTouchstone,
     /// The device (and its precision) the solvers run on.
     SetDevice {
-        device: String,
-        precision: String,
+        device: emcraft_engine::Device,
+        precision: emcraft_engine::Precision,
     },
     /// The 3D view from a standard side, fitted.
     StandardView(StandardView),
@@ -327,7 +327,7 @@ impl EmcraftApp {
             }
             Action::ExportTouchstone => crate::steps::export_touchstone(self),
             Action::SetDevice { device, precision } => {
-                if let Err(e) = self.run("solve.device", json!({"device": device, "precision": precision})) {
+                if let Err(e) = self.run("solve.device", json!({"device": device.id(), "precision": precision.id()})) {
                     self.failure = Some(crate::Failure { command: "solve.device".into(), error: e.to_string() });
                 }
             }

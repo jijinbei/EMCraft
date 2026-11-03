@@ -26,7 +26,7 @@ pub fn values(s: &mut Session, p: &Params) -> Result<Value> {
         "project.frequency" => m.band.map_or_else(|| json!({}), |b| json!({"start": f(b.start.get()), "stop": f(b.stop.get())})),
         "project.analysis" => m.analysis.map_or_else(|| json!({}), |a| json!({"kind": a.id()})),
         "units.set" => crate::reply::units(s.display),
-        "solve.device" => json!({"device": s.compute.device(), "precision": s.compute.precision.id()}),
+        "solve.device" => json!({"device": s.compute.device().id(), "precision": s.compute.precision.id()}),
         "model.walls" => {
             let mut v = json!({});
             if let Some(c) = m.wall_conductivity {

@@ -3,6 +3,7 @@
 use super::*;
 use crate::Hint;
 use crate::lang::args;
+use emcraft_engine::{Device, Precision};
 
 pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
     // Home is the sole authority for the analysis, including its inferred (auto) choice.
@@ -66,38 +67,28 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
     let none = json!({});
     let list = app.workflow.devices.as_ref().unwrap_or(&none);
     let current = app.session.compute().device();
-    let precision = app.session.compute().precision.id();
+    let precision = app.session.compute().precision;
     let busy = app.busy();
-    let devices: Vec<(String, bool, Vec<String>, Option<String>)> = list
-        .get("devices")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .map(|d| {
-            let s = |k: &str| d.get(k).and_then(Value::as_str).map(str::to_owned);
-            let precisions =
-                d.get("precisions").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
-            (s("name").unwrap_or_default(), d.get("available").and_then(Value::as_bool) == Some(true), precisions, s("problem"))
-        })
-        .collect();
-    let mut chosen: Option<(String, String)> = None;
+    let devices = super::super::device_rows(list);
+    let mut chosen: Option<(Device, Precision)> = None;
     ui_kit::row(ui, "device", false, |ui| {
-        for (name, available, precisions, problem) in &devices {
-            let radio = egui::RadioButton::new(current == name, egui::RichText::new(name).size(t.font_small));
-            let r = ui.named_enabled(*available && !busy, radio, Handle::Device(name));
-            let r = match (available, problem) {
+        for d in &devices {
+            let name = d.device.id();
+            let radio = egui::RadioButton::new(current == d.device, egui::RichText::new(name).size(t.font_small));
+            let r = ui.named_enabled(d.available && !busy, radio, Handle::Device(d.device));
+            let r = match (d.available, &d.problem) {
                 (false, Some(p)) => r.hint_disabled(trf("{name} cannot run here: {problem}", args!(name = name, problem = p))),
                 (false, None) => r.hint_disabled(trf("{name} cannot run here", args!(name = name))),
-                _ => r.hint(match name.as_str() {
-                    "cpu" => "the CPU's threads",
-                    "cuda" => "an NVIDIA GPU",
-                    _ => "the GPU's kernels on the CPU (to check them without a GPU)",
+                (true, _) => r.hint(match d.device {
+                    Device::Cpu => "the CPU's threads",
+                    Device::Cuda => "an NVIDIA GPU",
+                    Device::CubeclCpu => "the GPU's kernels on the CPU (to check them without a GPU)",
                 }),
             };
-            if r.clicked() && current != name {
+            if r.clicked() && current != d.device {
                 // The precision set so far where the device runs it, else its first.
-                let p = if precisions.iter().any(|p| p == precision) { Some(precision.to_owned()) } else { precisions.first().cloned() };
-                chosen = Some((name.clone(), p.unwrap_or_else(|| precision.to_owned())));
+                let p = if d.runs(precision) { precision } else { d.precisions.first().copied().unwrap_or(precision) };
+                chosen = Some((d.device, p));
             }
         }
     });
@@ -105,15 +96,17 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
         ui_kit::small(ui, Raw(e), t.form_error);
     }
     // The CPU's threads run in double; a device runs the precisions it lists.
-    let runs: Vec<String> = devices.iter().find(|d| d.0 == current).map(|d| d.2.clone()).unwrap_or_default();
+    let on_cpu = current == Device::Cpu;
+    let runs = |p: Precision| devices.iter().any(|d| d.device == current && d.runs(p));
     ui_kit::row(ui, "precision", false, |ui| {
-        for p in ["single", "double"] {
-            let on = if current == "cpu" { p == "double" } else { precision == p };
-            let enabled = current != "cpu" && runs.iter().any(|x| x == p) && !busy;
-            let r = ui.named_enabled(enabled, egui::RadioButton::new(on, egui::RichText::new(tr(p)).size(t.font_small)), Handle::Precision(p));
-            let r = r.hint_disabled(if current == "cpu" { "the CPU's threads run in double" } else { "this device does not run it" });
+        for p in Precision::ALL {
+            let on = if on_cpu { p == Precision::Double } else { precision == p };
+            let enabled = !on_cpu && runs(p) && !busy;
+            let radio = egui::RadioButton::new(on, egui::RichText::new(tr(p.id())).size(t.font_small));
+            let r = ui.named_enabled(enabled, radio, Handle::Precision(p));
+            let r = r.hint_disabled(if on_cpu { "the CPU's threads run in double" } else { "this device does not run it" });
             if r.clicked() && !on {
-                chosen = Some((current.to_owned(), p.to_owned()));
+                chosen = Some((current, p));
             }
         }
     });
@@ -126,14 +119,14 @@ fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: 
     let pending = app.job.as_ref().is_some_and(|j| j.command == "solve.device");
     let template = match solver {
         _ if pending => "Switching the device…",
-        Solver::TimeDomain if current != "cpu" => "The next solve runs on {device} in {precision} precision.",
+        Solver::TimeDomain if !on_cpu => "The next solve runs on {device} in {precision} precision.",
         Solver::TimeDomain => "The next solve runs on the CPU's threads (double precision).",
-        Solver::Frequency | Solver::Eigenmodes | Solver::Radiation if current != "cpu" => {
+        Solver::Frequency | Solver::Eigenmodes | Solver::Radiation if !on_cpu => {
             "The next solve runs on the CPU, its factorization's large fronts on {device} (complex double)."
         }
         _ => "The next solve runs on the CPU's threads.",
     };
-    let next = trf(template, args!(device = current, precision = tr(precision)));
+    let next = trf(template, args!(device = current.id(), precision = tr(precision.id())));
     ui_kit::small(ui, next, t.text);
     if let Some((device, precision)) = chosen {
         out.push(Action::SetDevice { device, precision });
