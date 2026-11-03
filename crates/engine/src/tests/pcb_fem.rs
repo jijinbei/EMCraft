@@ -241,3 +241,25 @@ fn a_via_through_another_nets_plane_without_clearance_is_refused() {
     let e = s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap_err().to_string();
     assert!(e.contains("GND") && e.contains("In1") && e.contains("clearance"), "{e}");
 }
+
+#[test]
+fn lumped_ports_sweep_fast_as_they_solve_in_full() {
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({"split": false, "neighbour": false, "length": 6})).unwrap();
+    s.execute("pcb.region", &json!({"net": "DATA", "margin": 1, "above": 1, "below": 0.5})).unwrap();
+    s.execute("pcb.port", &json!({"name": "1", "segment": "signal:0", "end": "start"})).unwrap();
+    s.execute("pcb.port", &json!({"name": "2", "segment": "signal:1", "end": "end"})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 3, "strip_edge": 0.1})).unwrap();
+    let sweep = |strategy: &str| {
+        let mut s = s.clone();
+        s.execute("solve.frequency", &json!({"start": 1, "stop": 9, "points": 9, "order": 1, "sweep": strategy})).unwrap()
+    };
+    let (fast, full) = (sweep("fast"), sweep("full"));
+    for (a, b) in fast["points"].as_array().unwrap().iter().zip(full["points"].as_array().unwrap()) {
+        for k in ["s11", "s21"] {
+            let d = (a[k]["re"].as_f64().unwrap() - b[k]["re"].as_f64().unwrap()).hypot(a[k]["im"].as_f64().unwrap() - b[k]["im"].as_f64().unwrap());
+            assert!(d < 1e-6, "{k}: {d}");
+        }
+    }
+    assert!(fast["solved_in_full"].as_u64().unwrap() < 9, "{}", fast["solved_in_full"]);
+}

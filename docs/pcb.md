@@ -157,8 +157,8 @@ the view, its modes:
 In step 4, **Solve with FEM** runs the route through the finite elements in one go: its region
 (`pcb.region` round the net), a port at each of its two ends (`pcb.port`, the conditions'
 impedance), the mesh (a tenth of the wavelength in the substrate at the maximum frequency, at
-most an eighth of the route) and a sweep of 11 frequencies up to the maximum (first-order
-elements). The S-parameters, TDR and fields then open as views; the field view starts on the
+most an eighth of the route) and a fast sweep of 21 frequencies up to the maximum (first-order
+elements; a few solved in full, the rest in their reduced basis). The S-parameters, TDR and fields then open as views; the field view starts on the
 plane halfway up the substrate, its vertical E.
 
 ## Solving a board's region with finite elements
@@ -210,7 +210,7 @@ puts a 50 Ω lumped port there — a sheet the trace's width wide from its refer
 layer below with another net's copper under that end, else above, else the floor) to the trace,
 which is
 cut square at the port. With lumped ports alone `solve.frequency` gives their S (power waves
-referred to each port's impedance). [`pcb-lumped-line`](../tests/oracle/pcb-lumped-line/README.md)
+referred to each port's impedance), swept fast as waveguide ports are. [`pcb-lumped-line`](../tests/oracle/pcb-lumped-line/README.md)
 checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1.3e-3;
 the phase carries the feeds' own inductance (+1.8° at 1 GHz).
 

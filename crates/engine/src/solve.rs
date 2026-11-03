@@ -163,10 +163,6 @@ fn in_full(results: &[FrequencyResult]) -> usize {
 
 /// The results at `freqs` by the reduced-basis sweep, each saying whether it was solved in full.
 fn fast_sweep(driven: &Driven, freqs: &[f64]) -> Result<Vec<FrequencyResult>> {
-    // Lumped ports alone: each frequency in full (the reduced basis reads waveguide ports).
-    if driven.ports.is_empty() {
-        return full_sweep(driven, freqs);
-    }
     // Its full solves are not known in advance: an open count, with the residual's trend.
     let each = |s: emcraft_solver::sweep::SweepStep| crate::progress::report_open(s.full, s.max_full, "fast sweep", s.residual);
     Ok(emcraft_solver::sweep::fast_sweep_each::<crate::EngineError>(driven, freqs, &Default::default(), each)?.results)
