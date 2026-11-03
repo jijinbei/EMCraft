@@ -445,6 +445,9 @@ fn tour() -> Record {
         call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":split}}));
         h.frames(3);
     }
+    call(&mut h, "ui.set", json!({"view":"home"}));
+    h.frames(2);
+    call(&mut h, "ui.set", json!({"view":"pcb"}));
     h.app.views.pcb.baseline = h.app.replies.pcb.clone();
     if let Some(r) = &mut h.app.replies.pcb {
         r["findings"] = json!(

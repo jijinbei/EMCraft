@@ -26,6 +26,11 @@ Load an original two-layer PCB routing example; split=true has a ground-plane sl
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `split` | boolean |  | no | ground-plane slot (default true) |
+| `neighbour` | boolean |  | no | include a nearby parallel CLK trace (default true) |
+| `length` | number | length | no | routed length (default 40 mm) |
+| `width` | number | length | no | trace width (default 0.3 mm) |
+| `height` | number | length | no | substrate thickness (default 0.18 mm) |
+| `er` | number |  | no | relative dielectric permittivity (default 4.2) |
 
 ## `pcb.inspect` — Inspect PCB route
 
@@ -33,10 +38,10 @@ Screen the selected net's routed segments and filled reference copper. Report ex
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `net` | string |  | yes | signal net |
+| `net` | string |  | no | signal net (default: selected net, or first routed signal) |
 | `ground` | string |  | no | reference net (default GND) |
 | `reference` | number |  | no | source/load impedance in ohms (default 50) |
-| `stop` | number | frequency | no | top frequency (default 1 GHz) |
+| `stop` | number | frequency | no | top frequency (default project band stop, otherwise 1 GHz) |
 | `points` | integer |  | no | harmonic sweep points, 4..128 (default 64) |
 
 ## `project.frequency` — Frequency band
@@ -50,11 +55,11 @@ The job's frequency band: the default for meshing by wavelength (its top), for s
 
 ## `project.analysis` — Analysis
 
-The kind of analysis the job is set up for, chosen at its start: `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports, the time domain no mesh (project.status lists the steps a kind does without under `not_needed`). Until one is chosen the kind is inferred from the model (eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). The results stay as they are. Undo goes back.
+The kind of analysis the job is set up for, chosen at its start (`pcb`: routed PCB signal-quality and return-reference inspection via pcb.inspect, without a FEM mesh or accelerator setup): `frequency` (S-parameters between ports over the band, solve.frequency), `eigenmodes` (a closed resonator's modes, nothing driving it, solve.eigenmodes), `radiation` (an antenna or a scatterer in an open boundary, solve.radiation) or `time_domain` (a pulse over the band, solve.time_domain). The workflow's checks (project.status) follow it: a resonator needs no excitation and its ports are left out, radiation wants the open boundary and a source or a lumped port, a sweep and the time domain want ports, the time domain no mesh (project.status lists the steps a kind does without under `not_needed`). Until one is chosen the kind is inferred from the model (PCB diagnosis for a loaded PCB, eigenmodes without excitation, radiation with sources, lumped ports or an open boundary, else a sweep). The results stay as they are. Undo goes back.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `kind` | string |  | yes | `frequency`, `eigenmodes`, `radiation` or `time_domain` |
+| `kind` | string |  | yes | `frequency`, `eigenmodes`, `radiation`, `time_domain` or `pcb` |
 
 ## `project.status` — Workflow status
 
@@ -986,12 +991,12 @@ Replaces the session with a sample model (`highpass`: the waveguide high-pass fi
 |---|---|---|---|---|
 | `name` | string |  | yes | sample name |
 | `values` | object |  | no | `{parameter: number}`: the template's parameters to change, in the display units (the others keep their values) |
-| `analysis` | string |  | no | the kind of analysis the project is for (`project.analysis`): `frequency`, `eigenmodes`, `radiation` or `time_domain`; inferred from the model when left out |
+| `analysis` | string |  | no | the kind of analysis the project is for (`project.analysis`): `frequency`, `eigenmodes`, `radiation`, `time_domain` or `pcb`; inferred from the model when left out |
 | `solve` | boolean |  | no | run the sample's sweep (default false) |
 
 ## `file.templates` — Templates
 
-The templates `file.sample` opens: each one's name, label and parameters (the variables its script defines: name, value, what it measures and its display unit).
+The templates `file.sample` opens: each one's name, label, supported analysis kinds and parameters (the variables its script defines: name, value, what it measures and its display unit).
 
 No parameters.
 

@@ -157,7 +157,7 @@ fn every_sample_opens() {
     for smp in emcraft_templates::TEMPLATES {
         let mut s = Session::new();
         s.execute("file.sample", &json!({"name": smp.name})).unwrap_or_else(|e| panic!("{}: {e}", smp.name));
-        assert!(s.model.mesh.is_some(), "{}", smp.name);
+        assert!(s.model.mesh.is_some() || s.model.pcb.is_some(), "{}", smp.name);
     }
 }
 

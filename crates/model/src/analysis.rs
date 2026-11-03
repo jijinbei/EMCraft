@@ -16,6 +16,8 @@ emcraft_macros::named_enum! {
         Radiation = "radiation" => "Radiation (open problem)",
         /// A pulse in time, its spectrum over the band.
         TimeDomain = "time_domain" => "Time domain",
+        /// Routed PCB signal quality and geometric reference-copper screening.
+        Pcb = "pcb" => "PCB signal and return path",
     }
 }
 
@@ -34,7 +36,9 @@ impl Analysis {
     /// assert_eq!(Analysis::parse("transient"), None);
     /// ```
     pub fn infer(m: &Model) -> Analysis {
-        if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
+        if m.pcb.is_some() {
+            Analysis::Pcb
+        } else if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
             Analysis::Eigenmodes
         } else if !m.sources.is_empty() || !m.lumped.is_empty() || m.open.is_some() {
             Analysis::Radiation

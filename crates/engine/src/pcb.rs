@@ -51,28 +51,52 @@ pub fn import(s: &mut Session, p: &Params) -> Result<Value> {
 /// An original two-layer example, with/without a split in its return plane (not third-party data).
 pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     let split = p.flag("split").or(true)?;
+    let neighbour = p.flag("neighbour").or(true)?;
+    let l = Length::Millimetre.from_si(p.positive_length("length").or(0.04)?);
+    let w = Length::Millimetre.from_si(p.positive_length("width").or(0.0003)?);
+    let h = Length::Millimetre.from_si(p.positive_length("height").or(0.00018)?);
+    let er = p.number("er").or(4.2)?;
+    if !(1.0..=1000.0).contains(&l) || !(0.001..=10.0).contains(&w) || !(0.001..=10.0).contains(&h) || !(1.0..=128.0).contains(&er) {
+        return Err(failed("PCB example requires length 1..1000 mm, width/height 0.001..10 mm, er 1..128"));
+    }
     let poly = |x0, x1| Copper { net: "GND".into(), layer: "B.Cu".into(), polygon: vec![[x0, 0.0], [x1, 0.0], [x1, 20.0], [x0, 20.0]] };
     let mut board = Board {
         name: "PCB return-path example".into(),
-        layers: vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: 4.2 }, Layer { name: "B.Cu".into(), z: 0.18, eps_below: 1.0 }],
+        layers: vec![Layer { name: "F.Cu".into(), z: 0.0, eps_below: er }, Layer { name: "B.Cu".into(), z: h, eps_below: 1.0 }],
         segments: vec![
-            Segment { id: "signal:0".into(), net: "DATA".into(), layer: "F.Cu".into(), start: [5.0, 10.0], end: [25.0, 10.0], width: 0.3 },
-            Segment { id: "signal:1".into(), net: "DATA".into(), layer: "F.Cu".into(), start: [25.0, 10.0], end: [45.0, 10.0], width: 0.3 },
-            Segment { id: "clock:0".into(), net: "CLK".into(), layer: "F.Cu".into(), start: [5.0, 10.55], end: [45.0, 10.55], width: 0.3 },
+            Segment { id: "signal:0".into(), net: "DATA".into(), layer: "F.Cu".into(), start: [5.0, 10.0], end: [5.0 + l / 2.0, 10.0], width: w },
+            Segment { id: "signal:1".into(), net: "DATA".into(), layer: "F.Cu".into(), start: [5.0 + l / 2.0, 10.0], end: [5.0 + l, 10.0], width: w },
+            Segment {
+                id: "clock:0".into(),
+                net: "CLK".into(),
+                layer: "F.Cu".into(),
+                start: [5.0, 10.0 + w + 0.25],
+                end: [5.0 + l, 10.0 + w + 0.25],
+                width: w,
+            },
         ],
         vias: vec![],
         copper: match split {
-            true => vec![poly(0.0, 20.0), poly(22.0, 50.0)],
-            false => vec![poly(0.0, 50.0)],
+            true => vec![poly(0.0, 5.0 + 0.375 * l), poly(5.0 + 0.425 * l, l + 10.0)],
+            false => vec![poly(0.0, l + 10.0)],
         },
         notes: vec!["Original routing example; lossless, zero-thickness conductors and no pads.".into()],
     };
+    if !neighbour {
+        board.segments.retain(|s| s.net != "CLK");
+    }
     board.map_lengths(|v| Length::Millimetre.to_si(v));
-    embedded(s, board)
+    install(s, board)
 }
 pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
-    let net = p.string("net").required()?;
     let ground = p.string("ground").or("GND")?;
+    let board = s.model.pcb.as_ref().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
+    let net = p
+        .string("net")
+        .optional()?
+        .or_else(|| s.views.pcb_net.as_deref().filter(|n| board.segments.iter().any(|seg| seg.net == *n)))
+        .or_else(|| board.segments.iter().find(|seg| seg.net != ground).map(|seg| seg.net.as_str()))
+        .ok_or_else(|| failed("load a PCB and select a signal net"))?;
     if net.chars().count() > 128 || ground.chars().count() > 128 {
         return Err(failed("net names must be at most 128 characters"));
     }
@@ -80,12 +104,11 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
     if !(0.1..=10000.0).contains(&reference) {
         return Err(p.error("reference", "must be 0.1..10000 ohms"));
     }
-    let stop = p.frequency("stop").or(1e9)?;
+    let stop = p.frequency("stop").or(s.model.band.map_or(1e9, |b| b.stop.get()))?;
     if stop > 1e12 {
         return Err(p.error("stop", "must be at most 1 THz"));
     }
     let points = p.integer("points", 4..=128).or(64)?;
-    let board = s.model.pcb.as_ref().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
     let report = emcraft_theory::pcb::inspect(board, net, ground).map_err(failed)?;
     let length = s.display.length;
     let frequency = s.display.frequency;

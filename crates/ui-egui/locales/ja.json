@@ -756,7 +756,13 @@
     "Verify the return via at this layer transition": "この層変更の帰路ビアを確認してください",
     "Nearby parallel signal: check coupling": "近接する平行配線があります：結合を確認してください",
     "Cross-section outside the supported line model": "対応する伝送線路モデルの断面条件から外れています",
-    "Settings changed; inspect the route again.": "設定が変わりました。もう一度「配線を診断」を実行してください。"
+    "Settings changed; inspect the route again.": "設定が変わりました。もう一度「配線を診断」を実行してください。",
+    "PCB signal and return path": "PCB信号品質・帰路",
+    "Signal quality and ground continuity on a routed net": "配線の信号品質とGNDの連続性",
+    "PCB geometry screening and ideal transmission-line estimates (pcb.inspect)": "PCBの形状診断と理想伝送線路による近似（pcb.inspect）",
+    "Inspect a routed net's signal quality and return reference. Start with a PCB template or import a KiCad board.": "配線ネットの信号品質と帰路を診断します。PCBテンプレートを開くか、KiCad基板を読み込んでください。",
+    "Open PCB workspace": "PCB診断画面を開く",
+    "PCB templates": "PCBテンプレート"
   },
   "commands": {
     "project.frequency": {
@@ -771,7 +777,7 @@
       "label": "解析の種類",
       "doc": "ジョブの解析の種類を最初に選ぶ: `frequency`（帯域にわたるポート間の S パラメータ、solve.frequency）、`eigenmodes`（何も励振しない閉じた共振器のモード、solve.eigenmodes）、`radiation`（開放境界の中のアンテナや散乱体、solve.radiation）、`time_domain`（帯域にわたるパルス、solve.time_domain）。ワークフローのチェック（project.status）はこれに従う: 共振器は励振を必要とせずポートは除かれる、放射は開放境界と波源または集中定数ポートを求める、掃引と時間領域はポートを求める。選ぶまでは種類をモデルから推定する（励振がなければ固有モード、波源・集中定数ポート・開放境界があれば放射、それ以外は掃引）。結果はそのまま残る。元に戻せる。",
       "params": {
-        "kind": "`frequency`、`eigenmodes`、`radiation` または `time_domain`"
+        "kind": "frequency、eigenmodes、radiation、time_domain、pcb（PCB信号品質・帰路）"
       }
     },
     "project.status": {
@@ -1718,17 +1724,22 @@
       "label": "PCB帰路サンプル",
       "doc": "オリジナルの2層PCB配線サンプルを開く。split=trueでGNDスリット、falseで連続GND。モデルを置き換え、元に戻せる。",
       "params": {
-        "split": "GNDにスリットを入れる（既定 true）"
+        "split": "GNDにスリットを入れる（既定 true）",
+        "neighbour": "近接する平行CLK配線を含む（既定 true）",
+        "length": "配線長（既定40 mm）",
+        "width": "配線幅（既定0.3 mm）",
+        "height": "基板厚（既定0.18 mm）",
+        "er": "比誘電率（既定4.2）"
       }
     },
     "pcb.inspect": {
       "label": "PCB配線を診断",
       "doc": "選択ネットの配線と参照銅箔を形状からチェックする。銅箔欠落・近接平行配線・接続形状・ビア遷移の制約を報告する。対応する単純な外層マイクロストリップのみ、無損失準静的モデルでインピーダンス・遅延・S11/S21・TDRを近似する。電流分布・結合ノイズの数値解や規格適合判定ではない。",
       "params": {
-        "net": "信号ネット",
+        "net": "信号ネット（省略時は選択中、または最初の配線ネット）",
         "ground": "参照ネット（既定 GND）",
         "reference": "入力・終端の基準インピーダンス（Ω、既定50）",
-        "stop": "上限周波数（既定1 GHz）",
+        "stop": "上限周波数（省略時はプロジェクトの帯域上限、帯域がなければ1 GHz）",
         "points": "調和周波数掃引の点数（4～128、既定64）"
       }
     }
@@ -1759,6 +1770,9 @@
     "e-bend-radius": "WR-90 の E 面 90° 円弧曲がり：内側半径 r（35 mm：平均半径が 10 GHz の管内波長 1 つ分）、各円弧を 18 本の直線で描く。ポートは y と x に垂直な腕の端面",
     "e-tee": "WR-90 の E 面 T 分岐：直線導波管の広壁から出る側枝、3 ポート。側枝からは両端へ等分・逆相に分配",
     "magic-tee": "WR-90 のマジック T（ハイブリッド T）：一直線の腕 1 と 2、H 腕 3、E 腕 4。各腕を 9.5 GHz でポストで整合（H 腕に 2 本、E 腕を横切る 1 本）。3 と 4 はアイソレーション、どちらも 1 と 2 へ等分（H 腕からは同相、E 腕からは逆相）",
-    "cross-guide-coupler": "クロスガイド方向性結合器：厚さ t の共通の広壁を挟んで直交する 2 本の WR-90、重なりの対角線上の 2 つの円孔で結合。4 ポート、結合度約 30 dB"
+    "cross-guide-coupler": "クロスガイド方向性結合器：厚さ t の共通の広壁を挟んで直交する 2 本の WR-90、重なりの対角線上の 2 つの円孔で結合。4 ポート、結合度約 30 dB",
+    "pcb-microstrip": "連続GND上のマイクロストリップ：インピーダンス・遅延・Sパラメータ・TDRの近似",
+    "pcb-split-ground": "GND分断を横切る配線：帰路の参照銅箔が途切れる位置を確認",
+    "pcb-parallel": "近接する平行配線：配線間隔と参照GNDを確認"
   }
 }

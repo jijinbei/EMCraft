@@ -1,5 +1,27 @@
 # PCB route diagnostics
 
+On the start page or the project's Home, choose **PCB signal and return path**. This analysis
+uses routed board data and opens the PCB workspace directly; FEM meshing, modal-port setup
+and compute-device selection are not part of this workflow. Imported boards infer the PCB
+analysis automatically. `project.analysis {"kind":"pcb"}` declares it in scripts.
+
+Three templates are available from the start page, Home and File → Samples:
+
+| Template | Purpose |
+|---|---|
+| `pcb-microstrip` | A single outer microstrip over continuous GND; ideal impedance, delay, S and TDR |
+| `pcb-split-ground` | The same route over a GND slot; locate missing return reference and withhold S/TDR |
+| `pcb-parallel` | A neighbouring CLK trace; demonstrate geometric coupling screening |
+
+Each template has a top-view preview and parameters `l` (routed length), `w` (width), `h`
+(substrate thickness), `er` (relative permittivity) and `fmax` (maximum frequency). Defaults
+are 40 mm, 0.3 mm, 0.18 mm, 4.2 and 10 GHz. Edit them before opening; subsequent
+`project.variable` changes rebuild the PCB and refresh its report. For example:
+
+```json
+{"command":"file.sample","params":{"name":"pcb-microstrip","values":{"l":60,"w":0.4,"fmax":5}}}
+```
+
 Open **Model → Import PCB**, or drop a `.kicad_pcb` file into EMCraft. Click a routed trace
 or a net in the browser, choose its reference net (default `GND`), reference impedance and
 maximum frequency, then **Inspect route**. The selected net is highlighted on a top view of
@@ -70,7 +92,8 @@ All operations use the engine. A CLI script (GHz/mm defaults) can reproduce the 
 
 Run it with `cargo run -p emcraft-cli -- run script.json`. Replace the first step with
 `{"command":"pcb.import","params":{"path":"board.kicad_pcb"}}` to inspect a real board.
-`pcb.inspect` replies include per-section reference layers and uncovered intervals (fractions
+`pcb.inspect` can omit `net` to use the selection or first routed signal; its default maximum
+frequency comes from the project's band, or 1 GHz without a band. Replies include per-section reference layers and uncovered intervals (fractions
 along each segment), geometry findings, the model assumptions, and either `si` data or
 `si: null`. Lengths/frequencies use the current display units; `*_s` and `*_hz` are explicitly
 SI. Selection is a view change; importing/loading replaces the current model and can be undone.

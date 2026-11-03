@@ -413,11 +413,15 @@ impl EmcraftApp {
         };
         // A view chosen while the job ran stays: the job's end does not take it away.
         let chosen = job.view.filter(|v| *v != self.view).map(|_| self.view);
+        let land_after_open = std::mem::take(&mut self.files.land_after_open);
         match &reply {
             Ok(v) => {
                 self.after(&job.command, &job.params, v);
                 if let Some(v) = chosen {
                     self.view = v;
+                }
+                if land_after_open && chosen.is_none() {
+                    files::land(self, true);
                 }
                 if let Some(m) = self.messages.last_mut() {
                     match job.place() {
@@ -682,7 +686,7 @@ impl EmcraftApp {
     /// step's panel or the docked dialog, the viewport, and what floats over them.
     fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, out: &mut Actions) {
         self.lend(|a| &mut a.search, |app, search| ribbon::ribbon(app, search, ui, out));
-        if self.view != View::Pcb {
+        if self.view != View::Pcb && self.session.model().analysis() != steps::Solver::Pcb {
             steps::bar(self, ui, out);
         }
         messages::area(self, ui, out);

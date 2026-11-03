@@ -63,6 +63,7 @@ pub fn run_params(s: &emcraft_engine::Session, f: &mut Fields) -> Result<(Solver
                 _ => Value::Null,
             }
         }
+        Solver::Pcb => json!({}),
         Solver::Radiation => {
             let fr = take("frequency", freq(&f.frequency.clone()).map(|v| json!(v)), f);
             let order = take("order", order.map(|v| json!(v)), f);
@@ -86,6 +87,9 @@ pub struct Preflight {
 /// geometry, but for the time domain the mesh, but for a resonator's eigenmodes the excitation,
 /// and for radiation the open boundary.
 pub fn required(step: Step, solver: Option<Solver>) -> bool {
+    if solver == Some(Solver::Pcb) {
+        return step == Step::Geometry;
+    }
     match step {
         Step::Geometry => true,
         // The time domain grids the model itself.
@@ -127,6 +131,21 @@ pub fn preflight(s: &emcraft_engine::Session, f: &mut Fields, states: &[StepStat
 
 /// Run: refuses on blocking problems; warnings are accepted by pressing Run.
 pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
+    if solver(app) == Solver::Pcb {
+        app.workflow.step = None;
+        app.view = View::Pcb;
+        return app.run(
+            "pcb.inspect",
+            app.views.pcb.params(
+                app.session
+                    .views()
+                    .pcb_net
+                    .as_deref()
+                    .unwrap_or_else(|| app.session.model().pcb.as_ref().and_then(|b| b.segments.first()).map_or("", |s| s.net.as_str())),
+            ),
+        );
+    }
+
     let states = statuses_now(app);
     let pre = preflight(&app.session, &mut app.workflow.fields, &states);
     if !pre.blocking.is_empty() {

@@ -1,0 +1,196 @@
+[
+  {
+    "call": "ui.set",
+    "params": {
+      "language": "ja",
+      "theme": "midnight"
+    }
+  },
+  {
+    "click": "bar:start"
+  },
+  {
+    "click": "home:purpose:pcb"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "handles": [
+        "sample:pcb-microstrip",
+        "sample:pcb-split-ground",
+        "sample:pcb-parallel",
+        "home:blank"
+      ],
+      "hidden": [
+        "sample:highpass"
+      ]
+    }
+  },
+  {
+    "shot": "pcb-template-gallery"
+  },
+  {
+    "click": "sample:pcb-microstrip"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "template.name": "pcb-microstrip",
+        "template.preview": true,
+        "template.error": null
+      }
+    }
+  },
+  {
+    "shot": "pcb-template-preview"
+  },
+  {
+    "click": "template:field:l"
+  },
+  {
+    "key": "A",
+    "cmd": true
+  },
+  {
+    "text": "80"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "click": "template:open"
+  },
+  {
+    "until": {
+      "busy": false,
+      "view": "pcb",
+      "inspect": {
+        "model.analysis.kind": "pcb",
+        "pcb.report.model_available": true,
+        "pcb.report.stop": 10.0,
+        "pcb.report.length": [
+          80,
+          1e-10
+        ]
+      }
+    },
+    "timeout": 20
+  },
+  {
+    "shot": "pcb-template-result"
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "project.variable",
+      "params": {
+        "name": "l",
+        "value": 60
+      }
+    }
+  },
+  {
+    "frames": 3
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.report.length": [
+          60,
+          1e-10
+        ]
+      }
+    }
+  },
+  {
+    "click": "view:home"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "handles": [
+        "intent:kind:pcb",
+        "sample:pcb-split-ground",
+        "choice:pcb_home:workspace"
+      ],
+      "hidden": [
+        "intent:start",
+        "setup:points",
+        "step:mesh"
+      ]
+    }
+  },
+  {
+    "shot": "pcb-project-home"
+  },
+  {
+    "click": "sample:pcb-split-ground"
+  },
+  {
+    "click": "template:open"
+  },
+  {
+    "expect": {
+      "inspect": {
+        "files.confirm": true
+      }
+    }
+  },
+  {
+    "click": "confirm:discard"
+  },
+  {
+    "until": {
+      "busy": false,
+      "view": "pcb",
+      "inspect": {
+        "pcb.report.model_available": false,
+        "pcb.report.si": null
+      }
+    },
+    "timeout": 20
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.save",
+      "params": {
+        "path": "$TMP/pcb-template.emcraft"
+      }
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.new"
+    }
+  },
+  {
+    "call": "engine.execute",
+    "params": {
+      "command": "file.open",
+      "params": {
+        "path": "$TMP/pcb-template.emcraft"
+      }
+    }
+  },
+  {
+    "frames": 3
+  },
+  {
+    "expect": {
+      "view": "pcb",
+      "inspect": {
+        "model.analysis.kind": "pcb",
+        "pcb.report.model_available": false
+      }
+    }
+  }
+]

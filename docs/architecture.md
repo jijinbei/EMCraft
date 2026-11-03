@@ -83,6 +83,12 @@ owns the import/load/inspect/sample commands, embedded history and replies, reus
 TDR transform. `ui-egui::viewport::pcb` draws/picks routing and displays those replies. It does
 not send incomplete PCB data through the volume FEM solver. `model::units::Time` converts the
 SI delays at the UI boundary. The four PCB commands are shared by UI, control, scripts and CLI.
+`Analysis::Pcb` declares or infers this workflow; three templates live in `emcraft-templates`
+beside the other project scripts. Their `pcb.sample` steps retain parameter expressions in
+history, while file imports embed checked board data. `render::pcb` shares even-odd copper
+spans between the interactive view and bounded CPU top-view previews (render depends on the
+L0 model for the board schema). Worker-driven file opens choose their automatic landing view
+after the loaded model is known, while preserving a user's view change made during the job.
 
 1. **Mesh.** `mesh.generate` puts grid lines through every aperture edge and divides each
    section along z on its own, so every material interface and aperture wall is a grid plane;

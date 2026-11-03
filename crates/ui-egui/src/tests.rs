@@ -715,3 +715,8 @@ fn scenario_home_analysis_setup() {
 fn scenario_pcb_route() {
     scenario("pcb_route");
 }
+
+#[test]
+fn scenario_pcb_templates() {
+    scenario("pcb_templates");
+}

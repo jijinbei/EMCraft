@@ -50,3 +50,27 @@ fn board_commands_refuse_hostile_inputs_and_keep_the_model() {
     assert!((r["length"].as_f64().unwrap() - 0.04).abs() < 1e-12);
     assert_eq!(r["si"]["points"][63]["frequency"], 1000.0);
 }
+
+#[test]
+fn pcb_templates_declare_their_workflow_and_rebuild_from_parameters() {
+    for (name, model, nearby) in [("pcb-microstrip", true, false), ("pcb-split-ground", false, false), ("pcb-parallel", true, true)] {
+        let mut s = Session::new();
+        s.execute("file.sample", &json!({"name":name,"values":{"l":80,"w":0.4,"fmax":5}})).unwrap();
+        assert_eq!(s.model.analysis(), emcraft_model::Analysis::Pcb);
+        assert!(s.model.mesh.is_none());
+        let status = s.execute("project.status", &json!({})).unwrap();
+        assert_eq!(status["analysis"]["solve"], "pcb.inspect");
+        assert!(status["not_needed"].as_array().unwrap().contains(&json!("mesh")));
+        let r = s.execute("pcb.inspect", &json!({})).unwrap();
+        assert_eq!(r["model_available"], model);
+        assert!((r["length"].as_f64().unwrap() - 80.).abs() < 1e-10);
+        assert_eq!(r["stop"], 5.);
+        assert_eq!(r["findings"].as_array().unwrap().iter().any(|f| f["code"] == "nearby_signal"), nearby);
+        s.execute("project.variable", &json!({"name":"l","value":60})).unwrap();
+        let r = s.execute("pcb.inspect", &json!({"net":"DATA"})).unwrap();
+        assert!((r["length"].as_f64().unwrap() - 60.).abs() < 1e-10);
+        let before = s.summary();
+        assert!(s.execute("project.variable", &json!({"name":"h","value":-1})).is_err());
+        assert_eq!(s.summary(), before);
+    }
+}

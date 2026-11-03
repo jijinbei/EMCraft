@@ -112,14 +112,9 @@ fn draw_board(
         return;
     };
     let t = Tokens::get();
-    let points = board.segments.iter().flat_map(|s| [s.start, s.end]).chain(board.copper.iter().flat_map(|c| c.polygon.iter().copied()));
-    let (lo, hi) = points.fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(mut a, mut b), p| {
-        for k in 0..2 {
-            a[k] = a[k].min(p[k]);
-            b[k] = b[k].max(p[k]);
-        }
-        (a, b)
-    });
+    let Some((lo, hi)) = board.bounds() else {
+        return;
+    };
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width().max(100.0), 310.0), Sense::click());
     scenario::publish_target(Handle::Choice("pcb_control", "board"), rect);
     let pad = rect.shrink(18.0);
@@ -136,17 +131,12 @@ fn draw_board(
         let mut fill = egui::Mesh::default();
         for copper in board.copper.iter().filter(|c| c.net == ground) {
             let poly: Vec<_> = copper.polygon.iter().map(|p| to(*p)).collect();
+            let coords: Vec<_> = poly.iter().map(|p| [p.x as f64, p.y as f64]).collect();
             for row in 0..150 {
                 let step = pad.height() / 150.0;
                 let y = pad.top() + (row as f32 + 0.5) * step;
-                let mut xs = Vec::new();
-                for (a, b) in poly.iter().zip(poly.iter().cycle().skip(1)).take(poly.len()) {
-                    if (a.y > y) != (b.y > y) {
-                        xs.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y));
-                    }
-                }
-                xs.sort_by(f32::total_cmp);
-                for ab in xs.as_chunks::<2>().0 {
+                for [a, b] in emcraft_render::pcb::spans(&coords, y as f64) {
+                    let ab = [a as f32, b as f32];
                     fill.add_colored_rect(
                         Rect::from_min_max(pos2(ab[0], y - step / 2.0), pos2(ab[1], y + step / 2.0)),
                         t.success.gamma_multiply(0.18),

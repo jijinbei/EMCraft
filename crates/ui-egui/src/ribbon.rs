@@ -252,7 +252,7 @@ impl Panel {
     /// What it holds: its commands, then the 3D view's tools it holds (unless the job's kind of
     /// analysis has no ports).
     fn items(&self, app: &EmcraftApp, tab: RibbonTab) -> Vec<Item> {
-        let ports = app.session.model().analysis.is_none_or(|k| fits(k, "model.port.create"));
+        let ports = chosen_kind(app).is_none_or(|k| fits(k, "model.port.create"));
         let tools = TOOLS.iter().filter(|(on, p, _)| ports && *on == tab && *p == self.name).flat_map(|(_, _, tools)| tools.iter().copied());
         self.commands.iter().map(|&id| Item::Command(id)).chain(tools.map(Item::Tool)).collect()
     }
@@ -260,8 +260,12 @@ impl Panel {
 
 /// The tab's panels and their commands; SIMULATE's with the solve of the kind of analysis chosen
 /// at step 0 first (its panel first, the solve first in it).
+fn chosen_kind(app: &EmcraftApp) -> Option<crate::steps::Solver> {
+    app.session.model().analysis.or_else(|| app.session.model().pcb.as_ref().map(|_| crate::steps::Solver::Pcb))
+}
+
 fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'static [&'static str])]) -> Vec<Panel> {
-    let chosen = app.session.model().analysis;
+    let chosen = chosen_kind(app);
     // A job of a chosen kind sees only its commands (the search still finds the others).
     let mut out: Vec<Panel> = panels
         .iter()
@@ -282,7 +286,15 @@ fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'
 /// Whether a ribbon command belongs to a job of this kind of analysis: those of the other kinds
 /// are left out of the ribbon once a kind is chosen (the search still finds them).
 pub fn fits(kind: crate::steps::Solver, id: &str) -> bool {
-    use crate::steps::Solver::{Eigenmodes, Frequency, Radiation, TimeDomain};
+    use crate::steps::Solver::{Eigenmodes, Frequency, Pcb, Radiation, TimeDomain};
+    if kind == Pcb {
+        return id.starts_with("pcb.")
+            || id.starts_with("file.")
+            || matches!(id, "project.variable" | "project.analysis" | "project.frequency" | "units.set");
+    }
+    if id.starts_with("pcb.") {
+        return false;
+    }
     match id {
         "solve.frequency" => kind == Frequency,
         "solve.eigenmodes" | "solve.dispersion" | "view.dispersion" => kind == Eigenmodes,
@@ -718,6 +730,15 @@ mod tests {
         let moved = ordered(&h.app, RibbonTab::Simulate, simulate);
         assert_eq!(moved[0].commands, ["solve.radiation"]);
         let model = TABS.iter().find(|(t, _)| *t == RibbonTab::Model).map(|(_, p)| *p).unwrap_or(&[]);
-        assert_eq!(ordered(&h.app, RibbonTab::Model, model).len(), model.len());
+        let shown = ordered(&h.app, RibbonTab::Model, model);
+        assert!(shown.iter().all(|p| p.name != "PCB"));
+        assert_eq!(shown.len() + 1, model.len());
+        h.app.session.execute("project.analysis", &serde_json::json!({"kind":"pcb"})).unwrap();
+        let pcb = ordered(&h.app, RibbonTab::Simulate, simulate);
+        assert!(pcb.iter().flat_map(|p| &p.commands).all(|id| *id == "project.variable"));
+        h.app.session.execute("pcb.sample", &serde_json::json!({})).unwrap();
+        assert!(h.app.session.model().analysis.is_none());
+        assert_eq!(chosen_kind(&h.app), Some(crate::steps::Solver::Pcb));
+        assert_eq!(ordered(&h.app, RibbonTab::Simulate, simulate), pcb);
     }
 }

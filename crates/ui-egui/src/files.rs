@@ -76,6 +76,8 @@ pub struct Prompt {
 }
 
 pub struct Files {
+    /// Automatic landing waits for a worker to reveal whether the opened model is a PCB.
+    pub(crate) land_after_open: bool,
     pub picker: Option<Arc<dyn Picker>>,
     tx: Sender<(Purpose, Option<String>)>,
     rx: Receiver<(Purpose, Option<String>)>,
@@ -91,7 +93,7 @@ pub struct Files {
 impl Default for Files {
     fn default() -> Files {
         let (tx, rx) = channel();
-        Files { picker: None, tx, rx, picking: false, prompt: None, confirm: None, after_save: None }
+        Files { land_after_open: false, picker: None, tx, rx, picking: false, prompt: None, confirm: None, after_save: None }
     }
 }
 
@@ -188,7 +190,9 @@ fn go(app: &mut EmcraftApp, then: Then) {
         Then::Import => {
             new_project(app);
             app.home.open = false;
-            if let Err(e) = crate::steps::fix(app, "geometry.import") {
+            if app.session.model().analysis() == crate::steps::Solver::Pcb {
+                apply(app, FileAction::PickPart);
+            } else if let Err(e) = crate::steps::fix(app, "geometry.import") {
                 app.error(e);
             }
         }
@@ -197,9 +201,13 @@ fn go(app: &mut EmcraftApp, then: Then) {
 }
 
 /// A project the window opened (`opened`) shows its Home first, unless it has results to show.
-fn land(app: &mut EmcraftApp, opened: bool) {
+pub(crate) fn land(app: &mut EmcraftApp, opened: bool) {
+    if opened && app.busy() {
+        app.files.land_after_open = true;
+        return;
+    }
     let r = app.session.results();
-    if opened && !r.any() && r.study.is_none() {
+    if opened && app.session.model().pcb.is_none() && !r.any() && r.study.is_none() {
         crate::steps::open_step(app, Some(crate::steps::Step::Intent));
     }
 }

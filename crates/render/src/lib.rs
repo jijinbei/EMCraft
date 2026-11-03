@@ -14,6 +14,7 @@ pub mod font;
 pub mod icon;
 pub mod math;
 pub mod palette;
+pub mod pcb;
 pub mod plot;
 pub mod text;
 pub mod view3d;

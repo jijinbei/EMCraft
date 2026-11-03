@@ -32,13 +32,14 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
             let ef = e(f, "frequency");
             field(ui, "near", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
+        Solver::Pcb => {}
         Solver::Radiation => {
             let ef = e(f, "frequency");
             field(ui, "frequency", &mut f.frequency, fu, ef.as_deref(), Fixed::SetupFrequency);
         }
     }
     match solver {
-        Solver::TimeDomain => {}
+        Solver::TimeDomain | Solver::Pcb => {}
         Solver::Frequency | Solver::Eigenmodes | Solver::Radiation => {
             let eo = e(f, "order");
             field(ui, "Element order", &mut f.order, "", eo.as_deref(), Fixed::SetupOrder);
@@ -148,6 +149,7 @@ fn solve_frequencies(app: &EmcraftApp, f: &Fields, solver: Solver) -> Vec<f64> {
             let Ok(n) = integer(&f.points, 1, app.session.limits().frequencies as u64) else { return Vec::new() };
             (0..n).map(|k| if n == 1 { a } else { a + (z - a) * k as f64 / (n - 1) as f64 }).collect()
         }
+        Solver::Pcb => Vec::new(),
         Solver::Eigenmodes | Solver::Radiation => {
             if f.frequency.trim().is_empty() {
                 vec![0.5 * (a + z)]

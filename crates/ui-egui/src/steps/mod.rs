@@ -430,6 +430,7 @@ pub fn restore_setup(app: &mut EmcraftApp) {
             f.frequency = text("near");
         }
         Solver::Radiation => f.frequency = text("frequency"),
+        Solver::Pcb => {}
     }
     f.fill_defaults();
     f.errors.clear();
@@ -455,6 +456,12 @@ pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
 
 /// Opens a step: its panel and the view it calls for.
 pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
+    if app.session.model().analysis() == Solver::Pcb && step.is_some_and(|s| s != Step::Intent) {
+        app.workflow.step = None;
+        app.view = View::Pcb;
+        return;
+    }
+
     app.workflow.step = step;
     let Some(step) = step else { return };
     // The ribbon shows the step's tab.

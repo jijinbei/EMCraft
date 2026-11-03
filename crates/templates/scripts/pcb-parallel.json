@@ -1,0 +1,65 @@
+[
+  {
+    "command": "project.variable",
+    "params": {
+      "name": "l",
+      "value": 40,
+      "quantity": "length"
+    }
+  },
+  {
+    "command": "project.variable",
+    "params": {
+      "name": "w",
+      "value": 0.3,
+      "quantity": "length"
+    }
+  },
+  {
+    "command": "project.variable",
+    "params": {
+      "name": "h",
+      "value": 0.18,
+      "quantity": "length"
+    }
+  },
+  {
+    "command": "project.variable",
+    "params": {
+      "name": "er",
+      "value": 4.2
+    }
+  },
+  {
+    "command": "project.variable",
+    "params": {
+      "name": "fmax",
+      "value": 10,
+      "quantity": "frequency"
+    }
+  },
+  {
+    "command": "pcb.sample",
+    "params": {
+      "split": false,
+      "neighbour": true,
+      "length": "=l",
+      "width": "=w",
+      "height": "=h",
+      "er": "=er"
+    }
+  },
+  {
+    "command": "project.frequency",
+    "params": {
+      "start": "=fmax/1000",
+      "stop": "=fmax"
+    }
+  },
+  {
+    "command": "project.analysis",
+    "params": {
+      "kind": "pcb"
+    }
+  }
+]

@@ -142,6 +142,7 @@ pub const fn solve_command(a: Analysis) -> &'static str {
         Analysis::Eigenmodes => "solve.eigenmodes",
         Analysis::Radiation => "solve.radiation",
         Analysis::TimeDomain => "solve.time_domain",
+        Analysis::Pcb => "pcb.inspect",
     }
 }
 
@@ -227,6 +228,21 @@ pub fn cutoffs(s: &Session) -> Vec<Cutoff> {
 
 /// Where each step stands, from the model, the mesh and the results; in workflow order.
 pub fn steps(s: &Session) -> [StepState; 9] {
+    if s.model.analysis() == Analysis::Pcb {
+        let mut states = Step::ALL.map(StepState::new);
+        if s.model.pcb.is_none() {
+            states[Step::Geometry.index()].note(Status::Todo, "Import a PCB or open a PCB template.", Some("pcb.import"));
+            states[Step::Run.index()].note(Status::Waiting, "Import a PCB or open a PCB template.", Some("pcb.import"));
+        } else {
+            states[Step::Run.index()].note(Status::Todo, "Select a routed net in the PCB workspace and inspect it.", Some("pcb.inspect"));
+        }
+        states[Step::Results.index()].note(
+            Status::Waiting,
+            "PCB findings and ideal line estimates are shown in the PCB workspace.",
+            Some("pcb.inspect"),
+        );
+        return states;
+    }
     let above = [intent(s), geometry(s), materials(s), excitation(s), boundaries(s), mesh(s), setup(s)];
     let (run, results) = run_and_results(s, &above);
     let [intent, geometry, materials, excitation, boundaries, mesh, setup] = above;
@@ -242,6 +258,7 @@ pub fn required(chosen: Option<Analysis>) -> &'static [Step] {
         Some(Analysis::Frequency) => &[Step::Geometry, Step::Excitation, Step::Mesh],
         Some(Analysis::TimeDomain) => &[Step::Geometry, Step::Excitation],
         Some(Analysis::Radiation) => &[Step::Geometry, Step::Excitation, Step::Boundaries, Step::Mesh],
+        Some(Analysis::Pcb) => &[Step::Geometry],
     }
 }
 
@@ -257,6 +274,7 @@ pub fn not_needed(chosen: Option<Analysis>) -> &'static [Step] {
     match chosen {
         Some(Analysis::Eigenmodes) => &[Step::Excitation],
         Some(Analysis::TimeDomain) => &[Step::Mesh],
+        Some(Analysis::Pcb) => &[Step::Materials, Step::Excitation, Step::Boundaries, Step::Mesh, Step::Setup],
         _ => &[],
     }
 }

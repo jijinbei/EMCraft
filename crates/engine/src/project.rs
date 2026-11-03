@@ -329,7 +329,7 @@ pub fn templates(s: &mut Session, _: &Params) -> Result<Value> {
                     json!({"name": p.name, "value": p.value, "quantity": p.quantity, "unit": unit})
                 })
                 .collect();
-            json!({"name": t.name, "label": t.label, "parameters": parameters})
+            json!({"name": t.name, "label": t.label, "parameters": parameters, "kinds":t.kinds.iter().map(|k| k.id()).collect::<Vec<_>>()})
         })
         .collect();
     Ok(json!({"templates": list}))
@@ -375,7 +375,14 @@ pub fn summary(s: &mut Session, _: &Params) -> Result<Value> {
 
 /// Where each step of the workflow stands ([`crate::workflow`]); no solve.
 pub fn status(s: &mut Session, _: &Params) -> Result<Value> {
-    let not_needed: Vec<&str> = crate::workflow::not_needed(s.model.analysis).iter().map(|x| x.id()).collect();
+    let not_needed: Vec<&str> = crate::workflow::not_needed(if s.model.analysis() == emcraft_model::Analysis::Pcb {
+        Some(emcraft_model::Analysis::Pcb)
+    } else {
+        s.model.analysis
+    })
+    .iter()
+    .map(|x| x.id())
+    .collect();
     let mut reply = json!({
         "steps": crate::workflow::steps(s),
         "revision": s.revision,

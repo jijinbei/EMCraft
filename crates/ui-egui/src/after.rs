@@ -47,6 +47,14 @@ impl EmcraftApp {
                 self.view = View::Pcb;
                 self.workflow.step = None;
             }
+            "project.variable" if self.session.model().pcb.is_some() => {
+                self.replies.pcb = None;
+                if let Some(band) = self.session.model().band {
+                    self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
+                }
+                self.view = View::Pcb;
+                self.workflow.step = None;
+            }
             "pcb.load" | "pcb.import" | "pcb.sample" => {
                 self.replies.pcb = None;
                 self.view = View::Pcb;
@@ -132,6 +140,9 @@ impl EmcraftApp {
         };
         self.replies.pcb = None;
         if self.session.model().pcb.is_some() {
+            if let Some(band) = self.session.model().band {
+                self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
+            }
             self.view = View::Pcb;
             self.workflow.step = None;
         }

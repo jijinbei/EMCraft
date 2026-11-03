@@ -45,6 +45,22 @@ pub struct Board {
     pub notes: Vec<String>,
 }
 impl Board {
+    /// Routed/filled-copper bounds in metres, or `None` for an empty board.
+    /// ```
+    /// let b=emcraft_model::pcb::Board{name:"empty".into(),layers:vec![],segments:vec![],vias:vec![],copper:vec![],notes:vec![]};
+    /// assert!(b.bounds().is_none());
+    /// ```
+    pub fn bounds(&self) -> Option<([f64; 2], [f64; 2])> {
+        let mut lo = [f64::INFINITY; 2];
+        let mut hi = [f64::NEG_INFINITY; 2];
+        for p in self.segments.iter().flat_map(|s| [s.start, s.end]).chain(self.copper.iter().flat_map(|c| c.polygon.iter().copied())) {
+            for k in 0..2 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        lo.iter().chain(&hi).all(|v| v.is_finite()).then_some((lo, hi))
+    }
     /// Validate a board before storing it. Empty layers, unknown layers and non-finite geometry
     /// are refused. Coordinates and lengths are SI metres.
     /// ```
