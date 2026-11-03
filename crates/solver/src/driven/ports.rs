@@ -49,6 +49,8 @@ pub struct PortData {
     /// Terminals: the conductors of a cross-section holding two or more (one S entry each,
     /// [`super::terminals`]); 0 for a port read in its first mode.
     pub terminals: usize,
+    /// The model's symmetry planes in the port's own coordinates (`Frame::local_planes`).
+    pub planes: Vec<Symmetry>,
 }
 
 /// A port's modes: closed forms, or the numerical solver's on its cross-section.
@@ -209,7 +211,8 @@ pub(super) fn prepare(model: &Model, p: &Port, space: &Space, faces: &[usize]) -
             (PortModes::Numeric(Box::new(n)), t)
         }
     };
-    Ok(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference.map(f64::from), deembed: p.deembed, terminals })
+    let planes = p.frame().local_planes(&model.symmetry);
+    Ok(PortData { name: p.name.clone(), end: p.end, modes, reference: p.reference.map(f64::from), deembed: p.deembed, terminals, planes })
 }
 
 /// How many terminals a port whose cross-section is `section` has: its conductors when it asks
@@ -306,7 +309,8 @@ fn port_mode_list(model: &Model, p: &Port, shape: PortShape) -> Result<Vec<Mode>
         PortShape::Rect { x0, y0, a, b } => modes::lowest(a, b, candidates).into_iter().map(|md| md.at(x0, y0)).collect(),
         PortShape::Circle { cx, cy, r } => modes::lowest_circular(r, candidates).into_iter().map(|md| md.at(cx, cy)).collect(),
     };
-    let list: Vec<Mode> = all.into_iter().filter(|md| kept_by(md, &model.symmetry)).take(count).collect();
+    let planes = p.frame().local_planes(&model.symmetry);
+    let list: Vec<Mode> = all.into_iter().filter(|md| kept_by(md, &planes)).take(count).collect();
     if list.is_empty() {
         return Err(invalid(what(p), "no mode of its aperture has the symmetry the model's planes ask for"));
     }
@@ -316,7 +320,8 @@ fn port_mode_list(model: &Model, p: &Port, shape: PortShape) -> Result<Vec<Mode>
 /// Whether a mode has the parity every symmetry plane keeps: about a magnetic wall its normal E
 /// is odd and its tangential E even, about an electric wall the reverse. Tested at points of
 /// the aperture against their mirror images (the closed forms all have a definite parity about
-/// the aperture's middle).
+/// the aperture's middle). The planes are in the port's own coordinates
+/// (`emcraft_model::Frame::local_planes`).
 pub fn kept_by(mode: &Mode, planes: &[Symmetry]) -> bool {
     let samples: Vec<(f64, f64)> = match mode.aperture {
         modes::Aperture::Rect { a, b, x0, y0 } => {
@@ -491,7 +496,7 @@ pub fn port_modes(model: &Model, order: Order, frequency: f64) -> Result<Vec<(St
                             .into_iter()
                             .enumerate()
                             .map(|(i, m)| {
-                                let impedance = section.impedance_whole(&m, k0, &model.symmetry)?;
+                                let impedance = section.impedance_whole(&m, k0, &p.frame().local_planes(&model.symmetry))?;
                                 Ok(ModeInfo { name: format!("mode {}", i + 1), beta2: m.beta2, closed_form: false, impedance, gamma: None })
                             })
                             .collect::<Result<Vec<_>>>()?,

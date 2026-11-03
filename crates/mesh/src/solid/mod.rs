@@ -16,7 +16,9 @@ mod mesher;
 mod narrow;
 mod tessellation;
 
-use emcraft_model::{Aabb, Boundary, BoundaryFace, Buckets, Mesh, Metres, Model, Point3, Shape, SphericalLayer, Vec3, positive};
+use emcraft_model::{
+    Aabb, Axis, Boundary, BoundaryFace, BoxSize, Buckets, Combine, Feature, Mesh, Metres, Model, Point3, Shape, SphericalLayer, Vec3, positive,
+};
 use emcraft_tetmesh::size::{LocalSize, Region};
 
 use crate::{MeshError, Result, too_large};
@@ -169,9 +171,12 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
     let mut locals = local_sizes(refine)?;
     let s = model.solid.as_ref().ok_or_else(|| MeshError::Invalid { what: "model".into(), why: "has no solid".into() })?;
     let (material, _) = model.material(&s.material)?;
+    // The half a symmetry plane keeps: the shape itself shortened where it can be, else cut.
+    let (shape, cuts) = halved(model, &s.shape)?;
+    let shape = &shape;
     let size = sizes.of(material).get();
     let inner_size = inclusion_sizes(model, sizes, size)?;
-    let estimate = model.inclusions.iter().zip(&inner_size).fold(tets_in(s.shape.volume(), size), |e, (inc, h)| e + tets_in(inc.shape.volume(), *h));
+    let estimate = model.inclusions.iter().zip(&inner_size).fold(tets_in(shape.volume(), size), |e, (inc, h)| e + tets_in(inc.shape.volume(), *h));
     too_large(estimate)?;
     // A spherical layer (model.open, shape sphere): the solid's region is the ball inside the
     // layer's inner sphere, its surface an interface (tagged per triangle and frozen, like an
@@ -183,14 +188,15 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
             let ball = Shape::Sphere { radius: Metres::new(inner)? };
             placed(tessellate(&ball, interface_size(&ball, size, false)), Point3::ORIGIN)
         }
-        None => tessellate(&s.shape, size),
+        None => tessellate(shape, size),
     };
     if !refine.is_empty() {
         too_large(estimate + refined_estimate(&main.positions, size, refine))?;
     }
-    let features = joined(&model.features, &s.shape, size)?;
+    let mut features = joined(&model.features, shape, size)?;
+    features.extend(cuts);
     if !features.is_empty() {
-        main = combine_all(main, &features, &s.shape, size)?;
+        main = combine_all(main, &features, shape, size)?;
     }
     // Gaps narrower than a tenth of the size filled with elements as small as they are.
     let (gaps, gap_tets) = narrow::gap_sizes(&main, size, combine::gaps(size).flush)?;
@@ -198,15 +204,84 @@ pub fn solid_with(model: &Model, options: &SolidOptions) -> Result<Mesh> {
         too_large(estimate + gap_tets)?;
         locals.extend(gaps);
     }
-    let body = Body { model, shape: &s.shape, material: material as u32, size, inner_size, locals, shell: layer.is_some() };
+    let body = Body { model, shape, material: material as u32, size, inner_size, locals, shell: layer.is_some() };
     let regions = body.regions(main)?;
     let mut mesh = body.join(&regions)?;
+    tag_symmetry_planes(&mut mesh, model, size);
     if curved {
-        bend(&mut mesh, model, &s.shape, size);
+        bend(&mut mesh, model, shape, size);
     }
     crate::check_tetrahedra(&mesh)?;
     mesh.buckets = Some(buckets(&mesh));
     Ok(mesh)
+}
+
+/// The solid's shape for the half its symmetry planes keep (the side below each), and the cuts
+/// left to make by intersection. A box, a cylinder along its axis or an extrusion (every vertex
+/// on one of its two ends, a prism) is shortened to the plane, clean as it was; across any other
+/// direction, or where a feature added to the solid crosses the plane, the solid is intersected
+/// with a box stopping at it (a Boolean whose cut leaves slivers by the faces' grid lines, and so
+/// more elements).
+fn halved(model: &Model, shape: &Shape) -> Result<(Shape, Vec<Feature>)> {
+    let Some(bounds) = model.bounds() else { return Ok((shape.clone(), Vec::new())) };
+    let around = bounds.grown(0.1 * (bounds.max - bounds.min).norm());
+    let tol = 1e-9 * (bounds.max - bounds.min).norm();
+    let mut shape = shape.clone();
+    let mut cuts = Vec::new();
+    for plane in &model.symmetry {
+        let d = plane.axis.index();
+        let crossed =
+            model.features.iter().any(|f| f.combine == Combine::Add && f.bounds().min[d] < plane.at - tol && f.bounds().max[d] > plane.at + tol);
+        match shortened(&shape, d, plane.at, tol) {
+            Some(short) if !crossed => shape = short,
+            _ => {
+                let kept = Aabb::new(around.min, around.max.with(d, plane.at));
+                let size = BoxSize::new(kept.max - kept.min)?;
+                cuts.push(Feature { combine: Combine::Intersect, shape: Shape::Box { size }, at: kept.min, axis: Axis::Z });
+            }
+        }
+    }
+    Ok((shape, cuts))
+}
+
+/// `shape` stopped at `at` across axis `d`, if it is a box, a cylinder along z cut across z, or
+/// an extrusion along `d` (every vertex on one of its two ends).
+fn shortened(shape: &Shape, d: usize, at: f64, tol: f64) -> Option<Shape> {
+    match shape {
+        Shape::Box { size } => {
+            let size = BoxSize::new(size.with(d, at)).ok()?;
+            Some(Shape::Box { size })
+        }
+        Shape::Cylinder { radius, .. } if d == 2 => Some(Shape::Cylinder { radius: *radius, length: Metres::new(at).ok()? }),
+        Shape::Surface { name, positions, triangles, tags, surfaces } => {
+            let (lo, hi) = positions.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| (lo.min(p[d]), hi.max(p[d])));
+            let on_ends = positions.iter().all(|p| (p[d] - lo).abs() <= tol || (p[d] - hi).abs() <= tol);
+            (on_ends && at > lo + tol).then(|| Shape::Surface {
+                name: name.clone(),
+                positions: positions.iter().map(|p| if (p[d] - hi).abs() <= tol { p.with(d, at) } else { *p }).collect(),
+                triangles: triangles.clone(),
+                tags: tags.clone(),
+                surfaces: surfaces.clone(),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The boundary faces the symmetry planes cut (every corner on a plane, to a billionth of the
+/// size) tagged as the plane's wall.
+fn tag_symmetry_planes(mesh: &mut Mesh, model: &Model, size: f64) {
+    let tol = 1e-9 * size.max(model.bounds().map_or(0.0, |b| (b.max - b.min).norm()));
+    for plane in &model.symmetry {
+        let d = plane.axis.index();
+        let on = |n: &u32| mesh.nodes.get(*n as usize).is_some_and(|q| (q[d] - plane.at).abs() <= tol);
+        let cut: Vec<usize> = mesh.boundary.iter().enumerate().filter(|(_, f)| f.nodes.iter().all(on)).map(|(i, _)| i).collect();
+        for i in cut {
+            if let Some(f) = mesh.boundary.get_mut(i) {
+                f.tag = Boundary::Symmetry(plane.kind);
+            }
+        }
+    }
 }
 
 /// The solid's tessellation combined with each feature in turn, every body's grid lines kept

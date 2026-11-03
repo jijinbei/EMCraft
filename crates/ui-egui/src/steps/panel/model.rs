@@ -65,7 +65,7 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Toke
         .iter()
         .map(|s| {
             let wall = tr(if s.kind == emcraft_model::SymmetryKind::Electric { "electric" } else { "magnetic" });
-            format!("{} = {} {lu}, {wall}", if s.axis == emcraft_model::Axis::X { "x" } else { "y" }, fmt(l.from_si(s.at)))
+            format!("{} = {} {lu}, {wall}", s.axis.id(), fmt(l.from_si(s.at)))
         })
         .collect();
     kv(ui, "symmetry", if planes.is_empty() { tr("none (the whole model)").into() } else { planes.join("; ") }, t);

@@ -85,7 +85,10 @@ fn a_mitred_bend_is_the_same_turned_round() {
     // (Lossless and reciprocal, as every template: invariants.rs.)
     let (a, b, l, m) = (22.86, 10.16, 20.0, 14.6);
     let w = l + a;
+    // The template keeps its lower half (a symmetry plane at mid-height); the turned copy is whole.
     let mut s = super::template_meshed("h-bend", 4.0);
+    s.execute("model.symmetry", &json!({"clear": true})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 4})).unwrap();
     let r = s.execute("solve.frequency", &json!({"frequencies": [9, 11], "order": 2})).unwrap();
     // The same bend turned a quarter round about z, (x, y) → (w − y, x): its ports swap axes.
     let turned: Vec<[f64; 2]> = [[0.0, 0.0], [a, 0.0], [a, l], [w, l], [w, w], [m, w], [0.0, w - m]].iter().map(|p| [w - p[1], p[0]]).collect();

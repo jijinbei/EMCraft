@@ -31,6 +31,8 @@
   {"note": "A bend's ports lie across y and x; its reference plane moves along each port's own axis"},
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "h-bend"}}},
   {"until": {"busy": false}},
+  {"note": "The whole bend, not its lower half: the pointer sits on the middle of the port faces"},
+  {"call": "engine.execute", "params": {"command": "model.symmetry", "params": {"clear": true}}},
   {"call": "ui.set", "params": {"view": "model", "tab": "PORTS & SOURCES", "standard_view": "top"}},
   {"frames": 2},
   {"expect": {"inspect": {"model.ports.0.axis": "y", "model.ports.1.axis": "x"}}},

@@ -6,7 +6,7 @@ use emcraft_gpu::Precision;
 use emcraft_model::units::{Frequency, Length};
 use emcraft_model::{Analysis, Axis, Combine, End, ModeSolver, OpenShape, Polarization, SymmetryKind, Terminals};
 
-use crate::geometry::{Keep, PlaneAxis, Primitive};
+use crate::geometry::{Keep, Primitive};
 use crate::open::FarSolver;
 use crate::project::Format as TouchstoneFormat;
 use crate::solve::{Device, Strategy};
@@ -258,7 +258,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             opt("name", K::String, "the item of an item's edit command: a material's or a port's name"),
             opt("body", K::String, "geometry.body.edit's body"),
             opt("index", K::Integer, "source.edit's source, 1 = the first"),
-            opt("axis", K::String, "model.symmetry's plane: `x` or `y` (default the first there is)").one_of(&PlaneAxis::IDS),
+            opt("axis", K::String, "model.symmetry's plane: `x`, `y` or `z` (default the first there is)").one_of(&Axis::IDS),
         ],
         effect: Effect::None,
         invalidates: None,
@@ -605,11 +605,11 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "model.symmetry",
         label: "Symmetry plane",
-        doc: "Cuts a waveguide symmetric about its middle (x = a/2 or y = b/2) on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters; ports carry only the modes of the kept parity, fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. Waveguides only; the time-domain solver refuses symmetry planes. Drops the mesh.",
+        doc: "Cuts a model symmetric about its middle on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). A waveguide is cut across x (x = a/2) or y (y = b/2): TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters. A solid is cut across x, y or z when its body, features and inclusions mirror about the plane and the plane cuts every port's face through its middle (ports on faces; not yet with an open boundary, lumped ports or sources): an H-plane tee or bend about its mid-height with an electric wall. Ports carry only the modes of the kept parity; fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. The time-domain solver refuses symmetry planes. Drops the mesh.",
         params: &[
-            opt("axis", K::String, "`x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove").one_of(&PlaneAxis::IDS),
+            opt("axis", K::String, "`x`, `y` or `z` (the plane across that axis); with `clear`, the plane to remove").one_of(&Axis::IDS),
             opt("kind", K::String, "`electric` (PEC wall) or `magnetic` (PMC wall)").one_of(&SymmetryKind::IDS),
-            opt("at", K::Number, "the plane's position (default the guide's middle, the only one allowed)").of(L),
+            opt("at", K::Number, "the plane's position (default the model's middle, the only one allowed)").of(L),
             opt("clear", K::Boolean, "remove the plane across `axis`, or every plane without it"),
         ],
         effect: Effect::Record,

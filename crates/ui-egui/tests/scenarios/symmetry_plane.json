@@ -17,5 +17,20 @@
   {"call": "ui.dialog", "params": {"cancel": true}},
   {"click": "row:Symmetry: x = 11.43 mm, magnetic wall", "double": true},
   {"frames": 2},
-  {"expect": {"inspect": {"dialog.fields.axis": "x", "dialog.fields.kind": "magnetic"}}}
+  {"expect": {"inspect": {"dialog.fields.axis": "x", "dialog.fields.kind": "magnetic"}}},
+  {"note": "A solid tee keeps its lower half under an electric wall at mid-height: the browser names the plane across z, the 3D view draws the half and the fields beyond the plane as images"},
+  {"call": "ui.dialog", "params": {"cancel": true}},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "h-tee"}}},
+  {"until": {"busy": false}},
+  {"call": "ui.set", "params": {"step": "boundaries"}},
+  {"click": "view3d:std:iso"},
+  {"frames": 2},
+  {"expect": {"handles": ["row:Symmetry: z = 5.08 mm, electric wall"]}},
+  {"shot": "symmetry-solid-half"},
+  {"call": "engine.execute", "params": {"command": "solve.frequency", "params": {"frequencies": [9], "order": 1}}},
+  {"until": {"busy": false}},
+  {"click": "view:field"},
+  {"call": "ui.set", "params": {"animate": false}},
+  {"frames": 3},
+  {"shot": "symmetry-solid-field"}
 ]

@@ -247,6 +247,35 @@ impl Frame {
         self.global(Point3::ORIGIN + q).to_vec()
     }
 
+    /// Symmetry planes in the face's own coordinates: a plane across the model's axis of u is one
+    /// across x here, of v one across y; a plane parallel to the face comes out across z (it cuts
+    /// no aperture).
+    ///
+    /// ```
+    /// use emcraft_model::{Axis, Frame, Symmetry, SymmetryKind};
+    /// let plane = Symmetry { axis: Axis::Z, at: 0.02, kind: SymmetryKind::Magnetic };
+    /// // A face across x: its u is the model's y, its v the model's z.
+    /// let local = Frame::new(Axis::X).local_planes(&[plane]);
+    /// assert_eq!(local, [Symmetry { axis: Axis::Y, ..plane }]);
+    /// ```
+    pub fn local_planes(self, planes: &[crate::Symmetry]) -> Vec<crate::Symmetry> {
+        let (u, v, _) = self.axes();
+        planes
+            .iter()
+            .map(|p| {
+                let d = p.axis.index();
+                let axis = if d == u {
+                    Axis::X
+                } else if d == v {
+                    Axis::Y
+                } else {
+                    Axis::Z
+                };
+                crate::Symmetry { axis, ..*p }
+            })
+            .collect()
+    }
+
     /// A complex vector given in the face's own components, in the model's.
     pub fn global_cvec(self, q: CVec3) -> CVec3 {
         let mut p = CVec3::ZERO;

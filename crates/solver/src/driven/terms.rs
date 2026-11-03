@@ -19,7 +19,7 @@ use std::f64::consts::PI;
 
 use emcraft_fem::modes::Mode;
 use emcraft_model::units::{C0, MU0};
-use emcraft_model::{CVec3, Material};
+use emcraft_model::{CVec3, Material, Symmetry};
 use num_complex::Complex64 as C;
 
 use super::assembly::port_rule_points;
@@ -265,7 +265,7 @@ impl Driven {
             }
             PortModes::Numeric(n) => match lossy_modes(&n.section, &n.medium, frequency, n.count)? {
                 Some(modes) => self.lossy_numeric_terms(n, modes, frequency),
-                None => self.numeric_terms(n, k0, port.terminals),
+                None => self.numeric_terms(n, k0, port.terminals, &port.planes),
             },
             PortModes::Floquet(_) => Err(invalid(
                 format!("port `{}`", port.name),
@@ -368,13 +368,13 @@ impl Driven {
 
     /// A numerical port's terms; with `terminals` (≥ 2), its first modes carry their
     /// conductor currents.
-    fn numeric_terms(&self, n: &NumericPort, k0: f64, terminals: usize) -> Result<Vec<PortTerm<'static>>> {
+    fn numeric_terms(&self, n: &NumericPort, k0: f64, terminals: usize, planes: &[Symmetry]) -> Result<Vec<PortTerm<'static>>> {
         let modes = n.section.modes_split(k0, n.count)?;
         let v = self.numeric_vectors(n, &modes, false)?;
-        let t_i = if terminals >= 2 { Some(n.section.terminal_currents(&modes, k0, &self.symmetry)?) } else { None };
+        let t_i = if terminals >= 2 { Some(n.section.terminal_currents(&modes, k0, planes)?) } else { None };
         let column = |i: usize| t_i.as_ref().filter(|_| i < terminals).map(|t| (0..terminals).map(|r| t[r * terminals + i]).collect());
         let impedance = match modes.first() {
-            Some(m) => n.section.impedance_whole(m, k0, &self.symmetry)?,
+            Some(m) => n.section.impedance_whole(m, k0, planes)?,
             None => None,
         };
         Ok(modes

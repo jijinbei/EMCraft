@@ -484,7 +484,7 @@ fn boundaries(m: &emcraft_model::Model, f: &Fmt) -> Vec<Row> {
         rows.push(row(template, args!(thickness = f.len(open.thickness.get()), unit = f.unit()), Glyph::Open, Act::Edit("model.open")));
     }
     for plane in &m.symmetry {
-        let axis = if plane.axis == emcraft_model::Axis::X { "x" } else { "y" };
+        let axis = plane.axis.id();
         let template = if plane.kind == emcraft_model::SymmetryKind::Electric {
             "Symmetry: {axis} = {at} {unit}, electric wall"
         } else {
