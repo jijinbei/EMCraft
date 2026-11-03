@@ -380,6 +380,7 @@ impl Driven {
                     reference: None,
                     deembed: 0.0,
                     terminals: 0,
+                    planes: Vec::new(),
                 }),
                 None => ports::prepare(model, p, &space, f),
             })

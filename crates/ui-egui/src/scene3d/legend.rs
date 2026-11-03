@@ -2,7 +2,7 @@
 //! boundaries.
 
 use emcraft_engine::Session;
-use emcraft_model::{Axis, End};
+use emcraft_model::End;
 
 use super::style::{material_rgb, sc, symmetry_rgb};
 use super::{Built, Overlay};
@@ -44,7 +44,7 @@ pub(super) fn legend(session: &Session, overlay: Overlay, out: &mut Built) {
                     emcraft_model::SymmetryKind::Electric => "electric wall",
                     emcraft_model::SymmetryKind::Magnetic => "magnetic wall",
                 });
-                let axis = if s.axis == Axis::X { "x" } else { "y" };
+                let axis = s.axis.id();
                 let at = format!("{axis} = {} {}", l.from_si(s.at), l.symbol());
                 out.legend.push((trf("symmetry: {wall}, {at}", args!(wall = wall, at = at)), symmetry_rgb(s.kind)));
             }

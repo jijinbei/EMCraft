@@ -133,7 +133,7 @@ The parameters that reproduce the model's current state for `command`, in the di
 | `name` | string |  | no | the item of an item's edit command: a material's or a port's name |
 | `body` | string |  | no | geometry.body.edit's body |
 | `index` | integer |  | no | source.edit's source, 1 = the first |
-| `axis` | string |  | no | model.symmetry's plane: `x` or `y` (default the first there is) |
+| `axis` | string |  | no | model.symmetry's plane: `x`, `y` or `z` (default the first there is) |
 
 ## `edit.undo` — Undo
 
@@ -419,13 +419,13 @@ The conductivity and thickness of the guide's walls, irises and steps. The metal
 
 ## `model.symmetry` — Symmetry plane
 
-Cuts a waveguide symmetric about its middle (x = a/2 or y = b/2) on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters; ports carry only the modes of the kept parity, fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. Waveguides only; the time-domain solver refuses symmetry planes. Drops the mesh.
+Cuts a model symmetric about its middle on that plane: only the side below it is meshed and solved, the plane closed by an electric wall (a perfect conductor: tangential E = 0, the fields whose tangential E is odd about it) or a magnetic wall (tangential H = 0, normal E = 0: the fields whose tangential E is even). A waveguide is cut across x (x = a/2) or y (y = b/2): TE10 is kept by a magnetic wall at x = a/2 and an electric wall at y = b/2, so an H-plane iris or filter solves on a quarter with the whole model's S-parameters. A solid is cut across x, y or z when its body, features and inclusions mirror about the plane and the plane cuts every port's face through its middle (ports on faces; not yet with an open boundary, lumped ports or sources): an H-plane tee or bend about its mid-height with an electric wall. Ports carry only the modes of the kept parity; fields beyond the plane are shown as the images of those inside. One plane per axis (a new one replaces the old); `clear` removes one (`axis`) or all. The time-domain solver refuses symmetry planes. Drops the mesh.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `axis` | string |  | no | `x` (the plane x = const) or `y` (y = const); with `clear`, the plane to remove |
+| `axis` | string |  | no | `x`, `y` or `z` (the plane across that axis); with `clear`, the plane to remove |
 | `kind` | string |  | no | `electric` (PEC wall) or `magnetic` (PMC wall) |
-| `at` | number | length | no | the plane's position (default the guide's middle, the only one allowed) |
+| `at` | number | length | no | the plane's position (default the model's middle, the only one allowed) |
 | `clear` | boolean |  | no | remove the plane across `axis`, or every plane without it |
 
 ## `model.periodic` — Periodic boundaries

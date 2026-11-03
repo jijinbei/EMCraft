@@ -12,6 +12,7 @@ mod project;
 mod session;
 mod sides;
 mod solve;
+mod symmetry;
 mod view;
 mod views;
 

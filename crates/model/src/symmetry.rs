@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, invalid};
-use crate::geom::Point3;
+use crate::geom::{Aabb, Point3};
 use crate::model::Model;
-use crate::shape::Axis;
+use crate::shape::{Axis, Shape, Solid};
 use crate::waveguide::{Strip, Via, Waveguide};
 
 emcraft_macros::named_enum! {
@@ -97,9 +97,6 @@ impl Symmetry {
         if planes.len() > 2 {
             return Err(format!("at most two planes (one across x, one across y), got {}", planes.len()));
         }
-        if planes.iter().any(|p| p.axis == Axis::Z) {
-            return Err("a symmetry plane must be x = const or y = const (the ports lie on z planes)".into());
-        }
         if let [a, b] = planes
             && a.axis == b.axis
         {
@@ -116,7 +113,8 @@ impl Symmetry {
     fn check_guide(&self, w: &Waveguide) -> std::result::Result<(), String> {
         let (span, name) = match self.axis {
             Axis::X => (w.width.get(), "x = a/2"),
-            _ => (w.height.get(), "y = b/2"),
+            Axis::Y => (w.height.get(), "y = b/2"),
+            Axis::Z => return Err("a waveguide's symmetry plane must be x = const or y = const (its ports lie on z planes)".into()),
         };
         let tol = 1e-9 * span;
         let mid = span / 2.0;
@@ -144,6 +142,83 @@ impl Symmetry {
             return Err(format!("via {} has no mirror image about the plane: the guide is not symmetric about it", k + 1));
         }
         Ok(())
+    }
+
+    /// A box mirrored about the plane.
+    fn mirrored(self, b: Aabb) -> Aabb {
+        let d = self.axis.index();
+        let (lo, hi) = (2.0 * self.at - b.max[d], 2.0 * self.at - b.min[d]);
+        Aabb::new(b.min.with(d, lo), b.max.with(d, hi))
+    }
+
+    /// Checks the solid is symmetric about the plane: its body, every feature and inclusion
+    /// (each mirrored by one of the same kind), and that the plane cuts every port's face through
+    /// its middle, so each port keeps the half of its modes of the plane's parity. Tolerance
+    /// `tol` (m).
+    fn check_solid(&self, m: &Model, solid: &Solid, tol: f64) -> std::result::Result<(), String> {
+        let d = self.axis.index();
+        let same = |a: Aabb, b: Aabb| (0..3).all(|k| (a.min[k] - b.min[k]).abs() <= tol && (a.max[k] - b.max[k]).abs() <= tol);
+        let body = solid.shape.bounds();
+        if !same(self.mirrored(body), body) || !self.surface_mirrors(&solid.shape, |q| q, tol) {
+            return Err("the solid is not symmetric about the plane".into());
+        }
+        let unmirrored = |boxes: Vec<(Aabb, bool)>| {
+            boxes.iter().position(|(b, _)| {
+                let image = self.mirrored(*b);
+                !boxes.iter().any(|(o, _)| same(*o, image))
+            })
+        };
+        // Features and inclusions: each mirrored by one of the same combination, shape and axis
+        // (compared through their boxes; a body is its own image when it straddles the plane).
+        for (i, f) in m.features.iter().enumerate() {
+            let image = self.mirrored(f.bounds());
+            let mirrored = m.features.iter().any(|o| o.combine == f.combine && o.axis == f.axis && same(o.bounds(), image));
+            if !mirrored || !self.surface_mirrors(&f.shape, |q| f.at + f.axis.turn(q.to_vec()), tol) {
+                return Err(format!("feature {} has no mirror image about the plane: the solid is not symmetric about it", i + 1));
+            }
+        }
+        if let Some(k) = unmirrored(m.inclusions.iter().map(|inc| (inc.bounds(), inc.material.is_none())).collect()) {
+            return Err(format!("inclusion {} has no mirror image about the plane: the solid is not symmetric about it", k + 1));
+        }
+        if m.open.is_some() || !m.lumped.is_empty() || !m.sources.is_empty() {
+            return Err("not supported yet: a symmetry plane in an open problem, or with lumped ports or sources".into());
+        }
+        for p in &m.ports {
+            let Some(face) = &p.face else {
+                return Err(format!("port {} lies on an end of the solid: a symmetry plane cuts only ports on faces (axis and face)", p.name));
+            };
+            let (u, v, _) = crate::port::Frame::new(face.axis).axes();
+            let (lo, side) = match d {
+                _ if d == u => (face.u0, face.a.get()),
+                _ if d == v => (face.v0, face.b.get()),
+                _ => return Err(format!("port {}'s face is parallel to the plane: the plane must cut every port through its middle", p.name)),
+            };
+            if (lo + side / 2.0 - self.at).abs() > tol {
+                return Err(format!("the plane does not cut port {}'s face through its middle", p.name));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether an imported surface's vertices, placed by `place`, mirror onto its vertices (other
+    /// shapes pass: their boxes decide).
+    fn surface_mirrors(&self, shape: &Shape, place: impl Fn(Point3) -> Point3, tol: f64) -> bool {
+        let Shape::Surface { positions, .. } = shape else { return true };
+        let d = self.axis.index();
+        let key = |p: Point3| p.to_array().map(|c| (c / tol).round() as i64);
+        let placed: Vec<Point3> = positions.iter().map(|p| place(*p)).collect();
+        let keys: std::collections::BTreeSet<[i64; 3]> = placed.iter().map(|p| key(*p)).collect();
+        placed.iter().all(|p| {
+            let image = key(p.with(d, 2.0 * self.at - p[d]));
+            // A vertex rounded across a key's edge: its neighbours count too.
+            (-1..=1).any(|o| {
+                keys.contains(&{
+                    let mut k = image;
+                    k[d] += o;
+                    k
+                })
+            })
+        })
     }
 }
 
@@ -210,14 +285,14 @@ impl Model {
         }
         let symmetric = || {
             Symmetry::check_planes(planes)?;
-            let Some(w) = &self.waveguide else {
-                return Err(if self.solid.is_some() {
-                    "not supported yet: symmetry planes in a solid (they need the structured waveguide mesh, geometry.waveguide)".into()
-                } else {
-                    "needs a waveguide (geometry.waveguide) to cut".into()
-                });
-            };
-            planes.iter().try_for_each(|p| p.check_guide(w))
+            match (&self.waveguide, &self.solid) {
+                (Some(w), _) => planes.iter().try_for_each(|p| p.check_guide(w)),
+                (None, Some(solid)) => {
+                    let tol = 1e-9 * self.bounds().map_or(1.0, |b| (b.max - b.min).norm());
+                    planes.iter().try_for_each(|p| p.check_solid(self, solid, tol))
+                }
+                (None, None) => Err("needs a waveguide or a solid to cut".into()),
+            }
         };
         symmetric().err()
     }
@@ -288,8 +363,38 @@ mod tests {
         w.strips.push(Strip { y: 0.002, x0: 0.014, width: metres(0.004), z0: 0.0, z1: 0.01 });
         m.set_waveguide(w).unwrap();
         m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Electric)]).unwrap();
-        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.01)) }, material: "vacuum".into() }).unwrap();
-        assert!(m.check().iter().any(|i| i.to_string().contains("not supported yet")));
+    }
+
+    #[test]
+    fn a_solid_must_mirror_with_its_bodies_and_ports() {
+        let mut m = Model::new();
+        m.set_solid(Solid { shape: Shape::Box { size: box_size(Vec3::new(0.02, 0.01, 0.03)) }, material: "vacuum".into() }).unwrap();
+        // A box about its middle, across any axis (z too: its ports lie on faces).
+        m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic), plane(Axis::Z, 0.015, SymmetryKind::Electric)]).unwrap();
+        assert_eq!(m.symmetry_fraction(), 0.25);
+        assert!(m.set_symmetry(vec![plane(Axis::X, 0.012, SymmetryKind::Magnetic)]).is_err(), "off the middle");
+        m.set_symmetry(Vec::new()).unwrap();
+        // A port cut through its middle is kept; one off it, or on a face parallel to the plane, not.
+        let face = |axis: Axis, at: f64, u0: f64, a: f64| crate::PortFace { axis, at, u0, v0: 0.0, a: metres(a), b: metres(0.01) };
+        let port = |name: &str, f| crate::Port { face: Some(f), ..crate::Port::new(name, crate::End::Start) };
+        m.add_port(port("1", face(Axis::Z, 0.0, 0.0, 0.02))).unwrap();
+        m.set_symmetry(vec![plane(Axis::X, 0.01, SymmetryKind::Magnetic)]).unwrap();
+        m.ports[0].face = Some(face(Axis::Z, 0.0, 0.0, 0.015));
+        assert!(m.symmetry_issue().is_some_and(|why| why.contains("does not cut port 1")));
+        m.ports[0].face = Some(face(Axis::X, 0.0, 0.0, 0.03));
+        assert!(m.symmetry_issue().is_some_and(|why| why.contains("parallel to the plane")));
+        m.ports.clear();
+        // A post on one side needs its image on the other.
+        let post = |x: f64| crate::Feature {
+            combine: crate::Combine::Subtract,
+            shape: Shape::Cylinder { radius: metres(0.001), length: metres(0.01) },
+            at: Point3::new(x, 0.0, 0.015),
+            axis: Axis::Y,
+        };
+        m.features.push(post(0.006));
+        assert!(m.symmetry_issue().is_some_and(|why| why.starts_with("feature 1 has no mirror image")));
+        m.features.push(post(0.014));
+        assert_eq!(m.symmetry_issue(), None);
     }
 
     #[test]

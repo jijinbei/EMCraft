@@ -554,23 +554,9 @@ pub fn walls(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"conductivity": sigma, "thickness": thickness.map(|t| s.show_length(t.get()))}))
 }
 
-emcraft_macros::named_enum! {
-    /// A plane's axis for `model.symmetry` (z is not one: the ports lie on z planes).
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    pub(crate) enum PlaneAxis {
-        X = "x",
-        Y = "y",
-    }
-}
-
-emcraft_macros::named_serde!(PlaneAxis);
-
 pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     let clear = p.flag("clear").or(false)?;
-    let axis = p.choice::<PlaneAxis>("axis").optional()?.map(|a| match a {
-        PlaneAxis::X => Axis::X,
-        PlaneAxis::Y => Axis::Y,
-    });
+    let axis: Option<Axis> = p.choice("axis").optional()?;
     let mut planes = s.model.symmetry.clone();
     if clear {
         if p.has("kind") || p.has("at") {
@@ -580,7 +566,7 @@ pub fn symmetry(s: &mut Session, p: &Params) -> Result<Value> {
     } else {
         let axis = axis.ok_or_else(|| p.error("axis", "is required (or `clear`)"))?;
         let kind: SymmetryKind = p.choice("kind").required()?;
-        // The guide's middle by default: the only plane its walls are symmetric about.
+        // The model's middle by default: the only plane its walls are symmetric about.
         let middle = s.model.bounds().map(|b| 0.5 * (b.min[axis.index()] + b.max[axis.index()]));
         let at = p.length("at").or_maybe(middle).required_or("no geometry to take the middle of")?;
         planes.retain(|q| q.axis != axis);

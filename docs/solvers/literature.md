@@ -45,6 +45,10 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   on the axis' Plücker coordinates solved as the least eigenvector of a Schur complement; a torus
   is tried only where no plane, cylinder, sphere or cone fits (each is a torus' limit).
 
+- The symmetric halves of solids (`emcraft-mesh::solid`, `halved`): extrusions (boxes, cylinders
+  along the plane's normal, prisms) shortened to the kept side, other bodies cut by a box, the cut
+  faces tagged as the wall (the conditions under Symmetry planes).
+
 ## Special functions
 - M. Abramowitz, I. A. Stegun, *Handbook of Mathematical Functions*, 1964, §9.12 and Tables 9.5,
   10.6 — Bessel functions by backward recurrence, their zeros (`emcraft-fem::bessel`, used by
