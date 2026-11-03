@@ -48,7 +48,12 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
                 path => trf("Opened {path}.", args!(path = path)),
             };
             // Results the file held that no longer fit: solved again on demand.
-            let left: Vec<&str> = reply["left_out"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            let left: Vec<String> = reply["left_out"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|e| format!("{}: {}", e["part"].as_str().unwrap_or("?"), e["why"].as_str().unwrap_or("?")))
+                .collect();
             match left.is_empty() {
                 true => opened,
                 false => format!("{opened} {}", trf("Not read back (solve again): {what}", args!(what = left.join("; ")))),

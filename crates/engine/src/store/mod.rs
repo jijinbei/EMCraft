@@ -20,6 +20,20 @@ use crate::archive::file::StoredHistory;
 use crate::runs::Run;
 use crate::{EngineError, Result, SData, Session, Step};
 
+/// What is wrong with a part of a project file: the part (a result, the mesh, a kept solve) and
+/// why.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileError {
+    pub part: String,
+    pub why: String,
+}
+
+impl std::fmt::Display for FileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.part, self.why)
+    }
+}
+
 /// What a project file's `format` says.
 pub const FORMAT: &str = "emcraft-project";
 
@@ -86,7 +100,7 @@ impl Stored {
 
     /// The file's results for `model` (its mesh on): those that fit, whether they are the
     /// model's, the kept solve they are, and why any was left out.
-    pub(crate) fn results(&mut self, model: &Model) -> (crate::Results, bool, Option<u32>, Vec<String>) {
+    pub(crate) fn results(&mut self, model: &Model) -> (crate::Results, bool, Option<u32>, Vec<FileError>) {
         match (self.results.take(), self.package.as_mut()) {
             (Some(st), Some(r)) => {
                 let (current, archived) = (st.current, st.archive_current);
@@ -99,9 +113,9 @@ impl Stored {
 
     /// The file's mesh for a model of `materials` materials (none when the model had none),
     /// checked.
-    pub(crate) fn mesh(&mut self, materials: usize) -> std::result::Result<Option<emcraft_model::Mesh>, String> {
+    pub(crate) fn mesh(&mut self, materials: usize) -> std::result::Result<Option<emcraft_model::Mesh>, FileError> {
         match (self.mesh.take(), self.package.as_mut()) {
-            (Some(m), Some(r)) => m.read(r, materials).map(Some).map_err(|e| format!("its mesh: {e}")),
+            (Some(m), Some(r)) => m.read(r, materials).map(Some).map_err(|why| FileError { part: "its mesh".into(), why }),
             _ => Ok(None),
         }
     }

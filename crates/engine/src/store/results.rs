@@ -172,12 +172,12 @@ impl StoredSession {
 
     /// The results for `model` (its mesh on), each checked; those that do not fit are left
     /// out, each with why.
-    pub(crate) fn read(self, r: &mut Reader, model: &Model) -> (Results, Vec<String>) {
+    pub(crate) fn read(self, r: &mut Reader, model: &Model) -> (Results, Vec<super::FileError>) {
         let mut out = Results::default();
         let mut dropped = Vec::new();
         let mut keep = |what: &str, got: Result<(), String>| {
-            if let Err(e) = got {
-                dropped.push(format!("{what}: {e}"));
+            if let Err(why) = got {
+                dropped.push(super::FileError { part: what.to_owned(), why });
             }
         };
         if let Some(x) = self.sweep {

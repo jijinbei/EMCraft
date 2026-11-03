@@ -203,8 +203,8 @@ fn results_that_do_not_fit_are_left_out_with_why() {
         write_project(&path, &d, Some(&good));
         let mut t = Session::new();
         let r = t.execute("file.open", &json!({"path": path})).unwrap();
-        let left: Vec<String> = serde_json::from_value(r["left_out"].clone()).unwrap();
-        assert!(left.len() == 1 && left[0].contains(why) && t.results.sweep.is_none(), "{at}: {left:?}");
+        let left: Vec<crate::store::FileError> = serde_json::from_value(r["left_out"].clone()).unwrap();
+        assert!(left.len() == 1 && left[0].part == "the sweep" && left[0].why.contains(why) && t.results.sweep.is_none(), "{at}: {left:?}");
         assert_eq!(t.solved_revision(), None);
     }
 }
