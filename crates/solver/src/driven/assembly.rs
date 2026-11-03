@@ -212,6 +212,9 @@ impl Driven {
         let border = borders.len();
         let a = bordered(&a, &borders)?;
         let n = self.dofs.unknowns;
+        if self.ports.is_empty() {
+            return Ok(System { a, rhs: self.lumped_excitations(frequency, n + border), terms, border });
+        }
         let rhs = self
             .excitations()
             .into_iter()

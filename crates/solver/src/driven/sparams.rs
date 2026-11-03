@@ -52,11 +52,15 @@ pub(crate) fn read_s<T: ModeTerm>(terms: &[Vec<T>], excitations: &[(usize, usize
 
 impl Driven {
     /// S from the solutions `fields` of each excitation ([`Driven::excitations`]), with each
-    /// entry's line impedance (where a port's first mode has one): read ([`read_s`]), referred to
+    /// entry's line impedance (where a port's first mode has one): the lumped ports' when there
+    /// are no waveguide ports ([`Driven::lumped_s`]); else read ([`read_s`]), referred to
     /// the ports' reference impedances ([`Driven::refer`]) and de-embedded
     /// ([`Driven::deembed`]); with terminal ports, de-embedded per mode and converted to the
     /// terminals' waves, `fields` then made the entries' ([`Driven::to_terminals`]).
     pub(crate) fn s_parameters(&self, terms: &[Vec<PortTerm<'_>>], fields: &mut Vec<Vec<C>>, frequency: f64) -> Result<(SMatrix, Vec<Option<f64>>)> {
+        if self.ports.is_empty() {
+            return Ok((self.lumped_s(fields), self.lumped.iter().map(|l| Some(l.impedance)).collect()));
+        }
         let excitations = self.excitations();
         let modal = read_s(terms, &excitations, fields);
         if self.has_terminals() {

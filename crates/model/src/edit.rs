@@ -306,6 +306,7 @@ mod tests {
             impedance: ohms(50.0),
             voltage: [1.0, 0.0],
             radius: 0.0,
+            across: None,
         };
         m.add_lumped_port(gap("L1")).unwrap();
         assert!(m.replace_lumped_port(0, gap("b")).is_err(), "a waveguide port's name");

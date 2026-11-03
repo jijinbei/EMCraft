@@ -169,6 +169,14 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
 Verification: [`pcb-microstrip-fem`](../tests/oracle/pcb-microstrip-fem/README.md) — this line on
 alumina against Hammerstad and Jensen: ε_eff within 0.15 %, the 4 mm line's phase within 0.03°.
 
+Ports at a trace's end instead of the box's sides: `pcb.port {"name":"1","segment":"s","end":"start"}`
+puts a 50 Ω lumped port there — a sheet the trace's width wide from its reference (the nearest
+layer below with another net's copper under that end, else the floor) up to the trace, which is
+cut square at the port. With lumped ports alone `solve.frequency` gives their S (power waves
+referred to each port's impedance). [`pcb-lumped-line`](../tests/oracle/pcb-lumped-line/README.md)
+checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1e-4; the
+phase carries the feeds' own inductance (+1.8° at 1 GHz).
+
 ## Coupling illustration
 
 At **Select route**, choose the source (orange) and receiver (blue), using the role buttons

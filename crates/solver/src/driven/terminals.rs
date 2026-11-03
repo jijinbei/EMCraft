@@ -51,8 +51,17 @@ pub struct SPort {
 }
 
 impl Driven {
-    /// S's entries in order: each port's, its terminals' for a terminal port.
+    /// S's entries in order: each port's, its terminals' for a terminal port; without waveguide
+    /// ports, the lumped ports' (`port` their index among them), referred to their impedances.
     pub fn entries(&self) -> Vec<SPort> {
+        if self.ports.is_empty() {
+            return self
+                .lumped
+                .iter()
+                .enumerate()
+                .map(|(i, l)| SPort { name: l.name.clone(), port: i, terminal: None, reference: Some(l.impedance) })
+                .collect();
+        }
         let mut out = Vec::new();
         for (i, p) in self.ports.iter().enumerate() {
             if p.terminals >= 2 {

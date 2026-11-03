@@ -27,6 +27,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("pcb.import", None, Some(Glyph::Import), true),
     ui("pcb.sample", None, Some(Glyph::Waveguide), false),
     ui("pcb.region", Some("Region"), Some(Glyph::Open), false),
+    ui("pcb.port", Some("Port"), Some(Glyph::Port), false),
     ui("pcb.inspect", None, Some(Glyph::Chart), false),
     ui("view.pcb", None, Some(Glyph::Chart), false),
     ui("project.frequency", Some("Band"), Some(Glyph::Band), false),

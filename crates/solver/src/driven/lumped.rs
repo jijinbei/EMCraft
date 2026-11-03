@@ -29,9 +29,48 @@ impl LumpedData {
     }
 }
 
+impl super::Driven {
+    /// Without waveguide ports, one right-hand side (of `len` entries) per lumped port: its
+    /// source V_s = 2√R driving −jωμ₀ (V_s/R) c, a power wave a = V_s/(2√R) = 1 (1 W
+    /// available) into it, the other ports' sources off (their impedances still load them).
+    pub(crate) fn lumped_excitations(&self, frequency: f64, len: usize) -> Vec<Vec<C>> {
+        self.lumped
+            .iter()
+            .map(|l| {
+                let mut b = vec![C::new(0.0, 0.0); len];
+                let f = C::new(0.0, -2.0 * PI * frequency * MU0) * (2.0 / l.impedance.sqrt());
+                for &(i, ci) in &l.c {
+                    if let Some(x) = b.get_mut(i) {
+                        *x += f * ci;
+                    }
+                }
+                b
+            })
+            .collect()
+    }
+
+    /// S of the lumped ports from the field of each one's excitation
+    /// ([`super::Driven::lumped_excitations`]): with the gap's line integral cᵀx, its current
+    /// I = (V_s + cᵀx)/R and voltage V = −cᵀx, the wave out of port p is
+    /// b = (V − R I)/(2√R) = −(V_s + 2cᵀx)/(2√R) (K. Kurokawa, *Power waves and the scattering
+    /// matrix*, IEEE Trans. MTT 13(2):194–202, 1965), and S_pq = b_p for a unit wave into q.
+    pub(crate) fn lumped_s(&self, fields: &[Vec<C>]) -> crate::smatrix::SMatrix {
+        let n = self.lumped.len();
+        crate::smatrix::SMatrix::from_fn(n, |p, q| {
+            let (Some(l), Some(x)) = (self.lumped.get(p), fields.get(q)) else { return C::new(0.0, 0.0) };
+            let line: C = l.c.iter().map(|&(i, ci)| x.get(i).copied().unwrap_or_default() * ci).sum();
+            let source = if p == q { 2.0 * l.impedance.sqrt() } else { 0.0 };
+            -(source + 2.0 * line) / (2.0 * l.impedance.sqrt())
+        })
+    }
+}
+
 /// The model's lumped port `lp`: its gap's line integrals.
 pub(super) fn prepare(lp: &LumpedPort, space: &Space) -> Result<LumpedData> {
-    let c = band_vector(space, lp.from, lp.to, lp.radius)?;
+    let c = match lp.across {
+        Some(across) => sheet_vector(space, lp.from, lp.to, across)?,
+        None => band_vector(space, lp.from, lp.to, lp.radius)?,
+    };
     if c.is_empty() {
         return Err(invalid(format!("lumped port `{}`", lp.name), "its gap lies outside the mesh (inside a conductor?)"));
     }
@@ -56,6 +95,24 @@ fn band_vector(space: &Space, a: Point3, b: Point3, r: f64) -> Result<Vec<(usize
     for k in 0..n {
         let phi = 2.0 * PI * k as f64 / n as f64;
         let off = (u * phi.cos() + v * phi.sin()) * r;
+        for (i, c) in line_vector(space, a + off, b + off)? {
+            *out.entry(i).or_default() += c / n as f64;
+        }
+    }
+    Ok(out.into_iter().collect())
+}
+
+/// The lines across a sheet port: its voltage the mean of their line integrals.
+const SHEET_LINES: usize = 8;
+
+/// A sheet's vector: the mean of the line integrals along [`SHEET_LINES`] lines parallel to the
+/// gap, at the midpoints of equal stretches from `−across` to `+across` about it (the midpoint
+/// rule): the voltage is the sheet's mean and the current spreads evenly across it.
+fn sheet_vector(space: &Space, a: Point3, b: Point3, across: Vec3) -> Result<Vec<(usize, f64)>> {
+    let n = SHEET_LINES;
+    let mut out: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+    for k in 0..n {
+        let off = across * ((2 * k + 1) as f64 / n as f64 - 1.0);
         for (i, c) in line_vector(space, a + off, b + off)? {
             *out.entry(i).or_default() += c / n as f64;
         }

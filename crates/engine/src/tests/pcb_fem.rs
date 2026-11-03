@@ -49,3 +49,29 @@ fn a_region_needs_a_board_and_sane_corners() {
         assert!(s.execute("pcb.region", &bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn a_port_at_a_trace_end_finds_its_reference_and_lumped_ports_give_s() {
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({"split": false, "neighbour": false, "length": 6})).unwrap();
+    assert!(s.execute("pcb.port", &json!({"name": "1", "segment": "signal:0"})).is_err(), "no region yet");
+    s.execute("pcb.region", &json!({"net": "DATA", "margin": 1, "above": 1, "below": 0.5})).unwrap();
+    // The ground pour under the trace's start is its reference, not the floor.
+    let r = s.execute("pcb.port", &json!({"name": "1", "segment": "signal:0", "end": "start"})).unwrap();
+    assert_eq!(r["reference"], "B.Cu");
+    s.execute("pcb.port", &json!({"name": "2", "segment": "signal:1", "end": "end"})).unwrap();
+    for bad in [
+        json!({"name": "3", "segment": "nope"}),
+        json!({"name": "3", "segment": "signal:0", "end": "middle"}),
+        json!({"name": "1", "segment": "signal:0"}),
+    ] {
+        assert!(s.execute("pcb.port", &bad).is_err(), "{bad}");
+    }
+    s.execute("mesh.generate", &json!({"size": 3, "strip_edge": 0.1})).unwrap();
+    let f = s.execute("solve.frequency", &json!({"frequencies": [1], "order": 1})).unwrap();
+    let p = &f["points"][0];
+    // Lossless and reciprocal: power kept, S21 = S12.
+    let (s11, s21, s12) = (p["s11"]["mag"].as_f64().unwrap(), p["s21"]["mag"].as_f64().unwrap(), p["s12"]["mag"].as_f64().unwrap());
+    assert!((s11 * s11 + s21 * s21 - 1.0).abs() < 1e-6, "{s11} {s21}");
+    assert!((s21 - s12).abs() < 1e-9 && s21 > 0.9, "{s21} {s12}");
+}

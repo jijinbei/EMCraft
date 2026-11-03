@@ -212,8 +212,11 @@ impl Driven {
         let f = self.factor(&system)?;
         let crate::driven::System { a, rhs, terms, border } = system;
         let n = self.dofs.unknowns;
-        // A waveguide port's first mode drives it (the first port's), else nothing but the sources.
-        let mut b = rhs.into_iter().next().unwrap_or_else(|| vec![C::new(0.0, 0.0); n + border]);
+        // A waveguide port's first mode drives it (the first port's), else nothing but the sources
+        // (the lumped ports' own right-hand sides, with no waveguide port, are S's excitations:
+        // here their sources are added below, all on at once).
+        let zero = || vec![C::new(0.0, 0.0); n + border];
+        let mut b = if self.ports.is_empty() { zero() } else { rhs.into_iter().next().unwrap_or_else(zero) };
         let mut lifted: std::collections::BTreeMap<usize, C> = std::collections::BTreeMap::new();
         for src in &model.sources {
             match *src {

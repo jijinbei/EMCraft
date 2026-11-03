@@ -35,6 +35,7 @@ fn gap(name: &str, x: f64, z: f64, v: f64) -> LumpedPort {
         impedance: ohms(1e9),
         voltage: [v, 0.0],
         radius: 0.0,
+        across: None,
     }
 }
 

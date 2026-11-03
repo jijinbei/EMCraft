@@ -131,8 +131,15 @@ fn lumped_ports_in_lossy_materials_and_lossy_walls_are_refused() {
     let (material, _, _) = lossy();
     let mut m = sphere_model(material);
     m.sources.clear();
-    let gap =
-        LumpedPort { name: "1".into(), from: CENTRE, to: Point3::new(0.025, 0.025, 0.027), impedance: ohms(50.0), voltage: [1.0, 0.0], radius: 0.0 };
+    let gap = LumpedPort {
+        name: "1".into(),
+        from: CENTRE,
+        to: Point3::new(0.025, 0.025, 0.027),
+        impedance: ohms(50.0),
+        voltage: [1.0, 0.0],
+        radius: 0.0,
+        across: None,
+    };
     m.add_lumped_port(gap).unwrap();
     assert!(matches!(radiate(&m, &OpenOptions::new(2e-3), &[10e9]), Err(emcraft_fdtd::FdtdError::Unsupported(_))));
     let (material, _, _) = lossy();

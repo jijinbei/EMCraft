@@ -42,6 +42,7 @@ fn antennas(size: f64) -> Model {
             impedance: ohms(50.0),
             voltage: [1.0, 0.0],
             radius: 0.0,
+            across: None,
         };
         m.add_lumped_port(gap).unwrap();
     }

@@ -46,6 +46,17 @@ Sets the part of the board the finite elements solve: a box round the copper (or
 | `above` | number | length | no | the air over the highest layer (default 5 board thicknesses) |
 | `below` | number | length | no | the air under the lowest layer (default 5 board thicknesses; 0 puts the lowest layer on the conducting floor) |
 
+## `pcb.port` — PCB port
+
+Puts a lumped port at a trace's end in the board's region (pcb.region): a sheet the trace's width wide from its reference — the nearest layer below with another net's copper under that end, else the box's floor — up to the trace, its source in series with `impedance`. With lumped ports and no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | port name |
+| `segment` | string |  | yes | the segment's id |
+| `end` | string |  | no | `start` or `end` of the segment (default start) |
+| `impedance` | number |  | no | the port's impedance in ohms (default 50) |
+
 ## `pcb.inspect` — Inspect PCB route
 
 Screens the selected net's routed segments and filled reference copper and reports exact line/polygon coverage gaps, nearby parallel signals, topology and via-transition limitations. Only valid simple outer microstrip routes get a lossless quasi-static line approximation: impedance, delay, S11/S21 and TDR. Screening is not a solved return-current map, full-wave model, calculated crosstalk or compliance verdict.
@@ -903,7 +914,7 @@ A plane wave of 1 V/m on the model's dielectric and conducting bodies: the solve
 
 ## `model.port.lumped` — Lumped port
 
-A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usually between two conductors) across which a source of `voltage` at `phase` in series with `impedance` drives current from `from` towards `to`. solve.radiation reports its input (or, with several ports on, active) impedance, S11 against `impedance` and the power it delivers.
+A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usually between two conductors) across which a source of `voltage` at `phase` in series with `impedance` drives current from `from` towards `to`. solve.radiation reports its input (or, with several ports on, active) impedance, S11 against `impedance` and the power it delivers; in a closed model with no waveguide ports, solve.frequency gives S of the lumped ports, their waves referred to their impedances.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
