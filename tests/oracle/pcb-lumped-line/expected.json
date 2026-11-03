@@ -3,8 +3,44 @@
  "kind": "benchmark",
  "source": "E. Hammerstad, Ø. Jensen, Accurate models for microstrip computer-aided design, IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409 (Z0 50.66 Ω, ε_eff 6.548), the line's ABCD matrix between 50 Ω terminations (D. M. Pozar, Microwave Engineering, 4th ed., §4.4); evaluated independently of the code: `cargo run --release -p emcraft-theory --example pcb_line_reference -- 0.600075 0.635 9.8 5 50 1` (|S11| 0.0034782, |S21| 0.9999940, delay 4.26794e-11 s)",
  "quantities": [
-  {"id": "s11_mag", "quantity": "|S11| at 1 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0.00347822209062186, "tolerance": {"absolute": 0.0015}, "reason": "−9.5e-5 measured: the line's own mismatch to 50 Ω; the feeds' reactance (each sheet 0.635 mm tall) adds little to it at 1 GHz"},
-  {"id": "s21_mag", "quantity": "|S21| at 1 GHz", "measure": {"step": "solve", "pointer": "/points/0/s21/mag"}, "value": 0.99999395096724863, "tolerance": {"absolute": 1e-4}, "reason": "lossless: 1 − |S11|² to 6e-7 measured"},
-  {"id": "s21_phase", "quantity": "phase of S21 (degrees) at 1 GHz", "measure": {"step": "solve", "pointer": "/points/0/s21/deg"}, "value": -15.364596471006557, "tolerance": {"absolute": 2.5}, "reason": "−1.81° measured: the two feeds' series inductance (about 0.25 nH each, a sheet as tall as the substrate), which the line's closed form leaves out; the line itself is checked to 0.03° by pcb-microstrip-fem"}
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 1 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0.00347822209062186,
+   "tolerance": {
+    "absolute": 0.0015
+   },
+   "reason": "+1.3e-3 measured: the line's own mismatch to 50 Ω and the feeds' reactance (each sheet 0.635 mm tall)"
+  },
+  {
+   "id": "s21_mag",
+   "quantity": "|S21| at 1 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 0.9999939509672486,
+   "tolerance": {
+    "absolute": 0.0001
+   },
+   "reason": "lossless: 1 − |S11|² to 6e-7 measured"
+  },
+  {
+   "id": "s21_phase",
+   "quantity": "phase of S21 (degrees) at 1 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -15.364596471006557,
+   "tolerance": {
+    "absolute": 2.5
+   },
+   "reason": "−1.76° measured: the two feeds' series inductance (about 0.25 nH each, a sheet as tall as the substrate), which the line's closed form leaves out; the line itself is checked to 0.005° by pcb-microstrip-fem"
+  }
  ]
 }

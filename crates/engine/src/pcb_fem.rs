@@ -22,6 +22,8 @@ const AIR: f64 = 5.0;
 const MARGIN: f64 = 5.0;
 /// How much each cell of the air grows over the one nearer the board.
 const AIR_GROWTH: f64 = 1.4;
+/// How much each cell across a substrate grows over the one nearer its copper.
+const SUBSTRATE_GROWTH: f64 = 1.3;
 /// The chords of a trace's round ends stay within this fraction of its width of the circle.
 const SAG: f64 = 2e-3;
 
@@ -153,15 +155,15 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
     // the edge size, the air's growing away from the board.
     let vacuum = 0;
     let material = |er: f64| -> Result<u32> { if er == 1.0 { Ok(vacuum) } else { Ok(s.model.material(&substrate(er))?.0 as u32) } };
-    let air = |h: f64, towards_board_first: bool| {
-        let first = 2.0 * edge;
+    // A slab `h` thick whose cells grow by `growth` from `first` at its bottom (`up`) or top.
+    let graded = |h: f64, material: u32, first: f64, growth: f64, up: bool| {
         let mut n = 1;
-        while n < 64 && first * (AIR_GROWTH.powi(n as i32) - 1.0) / (AIR_GROWTH - 1.0) < h {
+        while n < 64 && first * (growth.powi(n as i32) - 1.0) / (growth - 1.0) < h {
             n += 1;
         }
-        let ratio = if towards_board_first { AIR_GROWTH } else { 1.0 / AIR_GROWTH };
-        Slab { thickness: h, material: vacuum, cells: n, ratio }
+        Slab { thickness: h, material, cells: n, ratio: if up { growth } else { 1.0 / growth } }
     };
+    let air = |h: f64, up: bool| graded(h, vacuum, 2.0 * edge, AIR_GROWTH, up);
     let mut slabs = Vec::new();
     if region.below > 0.0 {
         slabs.push(air(region.below, false));
@@ -171,7 +173,11 @@ pub(crate) fn generate(s: &mut Session, p: &Params, sizes: &Sizes) -> Result<Val
         // A layer's dielectric lies below it, down to the next layer.
         let er = board.layers[w2[1]].eps_below;
         let h = gaps[k];
-        slabs.push(Slab { thickness: h, material: material(er)?, cells: ((h / (2.0 * edge)).ceil() as usize).clamp(1, 16), ratio: 1.0 });
+        // Two halves, each fine at its copper (the fields' edge singularities) and growing
+        // to the middle.
+        let m = material(er)?;
+        slabs.push(graded(h / 2.0, m, edge, SUBSTRATE_GROWTH, true));
+        slabs.push(graded(h / 2.0, m, edge, SUBSTRATE_GROWTH, false));
         sheets.push((w2[1], slabs.len()));
     }
     if region.above > 0.0 {

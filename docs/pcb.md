@@ -173,7 +173,8 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
 2. The triangles refined to `size` far from copper and to the copper edge size at its edges
    (`strip_edge` × `size`; by default a sixth of the narrowest trace), where the fields are
    singular.
-3. The triangulation extruded through the substrates (cells about twice the edge size) and the
+3. The triangulation extruded through the substrates (cells graded from the edge size at their
+   copper to the middle) and the
    air (cells growing away from the board); the copper conducting sheets of no thickness.
 
 ```json
@@ -189,15 +190,17 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
 ```
 
 Verification: [`pcb-microstrip-fem`](../tests/oracle/pcb-microstrip-fem/README.md) — this line on
-alumina against Hammerstad and Jensen: ε_eff within 0.15 %, the 4 mm line's phase within 0.03°.
+alumina against Hammerstad and Jensen: ε_eff within 0.2 %, the 4 mm line's phase within 0.005°.
+[`pcb-coupled-stripline`](../tests/oracle/pcb-coupled-stripline/README.md) — two traces between
+ground planes against Cohn's even and odd impedances, within 0.22 % and 0.53 %.
 
 Ports at a trace's end instead of the box's sides: `pcb.port {"name":"1","segment":"s","end":"start"}`
 puts a 50 Ω lumped port there — a sheet the trace's width wide from its reference (the nearest
 layer below with another net's copper under that end, else the floor) up to the trace, which is
 cut square at the port. With lumped ports alone `solve.frequency` gives their S (power waves
 referred to each port's impedance). [`pcb-lumped-line`](../tests/oracle/pcb-lumped-line/README.md)
-checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1e-4; the
-phase carries the feeds' own inductance (+1.8° at 1 GHz).
+checks a 5 mm line between two such ports against the line's ABCD matrix: |S11| within 1.3e-3;
+the phase carries the feeds' own inductance (+1.8° at 1 GHz).
 
 ## Coupling illustration
 

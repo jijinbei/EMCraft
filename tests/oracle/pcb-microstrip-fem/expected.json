@@ -3,10 +3,70 @@
  "kind": "benchmark",
  "source": "E. Hammerstad, Ø. Jensen, Accurate models for microstrip computer-aided design, IEEE MTT-S International Microwave Symposium Digest, 1980, pp. 407–409: the quasi-static ε_eff and Z0 of an open microstrip (within 0.2 % and 0.01 %), the line's phase −360° f √ε_eff L / c; evaluated independently of the code: `cargo run --release -p emcraft-theory --example pcb_line_reference -- 0.600075 0.635 9.8 4 50 1` (the delay 3.41435e-11 s)",
  "quantities": [
-  {"id": "eps_eff", "quantity": "(β/k0)² of the port mode at 1 GHz", "measure": {"step": "modes", "pointer": "/ports/0/modes/0/eps_eff"}, "value": 6.548452971078884, "tolerance": {"relative": 0.005}, "reason": "+0.15 % measured: the fit's own 0.2 %, the box (cover 38 h up, walls 12 W away) and the planar mesh graded to 0.1 mm at the strip's edges (0.025 mm gives +0.08 %)"},
-  {"id": "z0", "quantity": "the port mode's characteristic impedance (Ω)", "measure": {"step": "modes", "pointer": "/ports/0/modes/0/impedance"}, "value": 50.66067854737923, "tolerance": {"relative": 0.03}, "reason": "−2.6 % measured: the impedance by power and the strip's current, whose edge singularity the 0.1 mm grading resolves to −2.6 % (0.05 mm: −1.4 %, 0.025 mm: −0.9 %)"},
-  {"id": "s21_phase", "quantity": "phase of S21 (degrees) at 1 GHz", "measure": {"step": "solve", "pointer": "/points/0/s21/deg"}, "value": -12.291677176805248, "tolerance": {"absolute": 0.06}, "reason": "−0.031° measured (ε_eff along the line +0.5 %): second-order elements on the extruded prisms, ports referred to their own modes"},
-  {"id": "s21_mag", "quantity": "|S21| at 1 GHz", "measure": {"step": "solve", "pointer": "/points/0/s21/mag"}, "value": 1, "tolerance": {"absolute": 1e-4}, "reason": "lossless and matched to its own ports' modes"},
-  {"id": "s11_mag", "quantity": "|S11| at 1 GHz", "measure": {"step": "solve", "pointer": "/points/0/s11/mag"}, "value": 0, "tolerance": {"absolute": 0.003}, "reason": "the ports referred to the line's own mode: no reflection but the mesh's (7e-4 measured)"}
+  {
+   "id": "eps_eff",
+   "quantity": "(β/k0)² of the port mode at 1 GHz",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/eps_eff"
+   },
+   "value": 6.548452971078884,
+   "tolerance": {
+    "relative": 0.005
+   },
+   "reason": "−0.20 % measured: the fit's own 0.2 %, the box (cover 38 h up, walls 12 W away) and the planar mesh graded to 0.1 mm at the strip's edges, the substrate's cells graded towards its copper"
+  },
+  {
+   "id": "z0",
+   "quantity": "the port mode's characteristic impedance (Ω)",
+   "measure": {
+    "step": "modes",
+    "pointer": "/ports/0/modes/0/impedance"
+   },
+   "value": 50.66067854737923,
+   "tolerance": {
+    "relative": 0.03
+   },
+   "reason": "−2.1 % measured: the impedance by power and the strip's current, whose edge singularity the 0.1 mm grading resolves only so far (finer edges converge towards it)"
+  },
+  {
+   "id": "s21_phase",
+   "quantity": "phase of S21 (degrees) at 1 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/deg"
+   },
+   "value": -12.291677176805248,
+   "tolerance": {
+    "absolute": 0.06
+   },
+   "reason": "−0.005° measured: second-order elements on the extruded prisms, ports referred to their own modes"
+  },
+  {
+   "id": "s21_mag",
+   "quantity": "|S21| at 1 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s21/mag"
+   },
+   "value": 1,
+   "tolerance": {
+    "absolute": 0.0001
+   },
+   "reason": "lossless and matched to its own ports' modes"
+  },
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 1 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 0,
+   "tolerance": {
+    "absolute": 0.003
+   },
+   "reason": "the ports referred to the line's own mode: no reflection but the mesh's (7e-4 measured)"
+  }
  ]
 }
