@@ -136,13 +136,35 @@ evaluated HJ/ABCD values for a 40 mm line. Unit tests cover narrow ground slots,
 invalid input and ordering; engine tests cover unit conversion, source-independent saving,
 reopening and undo; the UI scenario exercises actual route/net clicks and both ground examples.
 
+## The board in 3D
+
+The PCB window shows the board in 3D beside the stage's panel, its top view a minimap in the
+corner. Heights are stretched until the layers stand apart (the legend says by how much). Over
+the view, its modes:
+
+- **Pick traces** — a click on a trace selects it as the route (or, after *Pick receiver*, as
+  the receiving trace). The route is orange, the receiver blue, the reference green.
+- **Electric coupling**, **Magnetic coupling**, **Return reference** — once a receiving trace
+  is chosen and the route inspected, the mode's schematic drawn on the board at the selected
+  parallel stretch (the view goes there): arches between the traces, loops round the source,
+  the reference under the route (never across a gap). *Explain motion* animates them. They are
+  schematics: no field or noise voltage is computed for them.
+
+In step 4, **Solve with FEM** runs the route through the finite elements in one go: its region
+(`pcb.region` round the net), a port at each of its two ends (`pcb.port`, the conditions'
+impedance), the mesh (a tenth of the wavelength in the substrate at the maximum frequency, at
+most an eighth of the route) and a sweep of 11 frequencies up to the maximum (first-order
+elements). The S-parameters, TDR and fields then open as views; the field view starts on the
+plane halfway up the substrate, its vertical E.
+
 ## Solving a board's region with finite elements
 
 `pcb.region` turns part of the board into the model: a box round the copper (or one net's routes)
 with a margin, or between given corners, with air above and below, closed by conducting walls.
-The box's lower-left corner is the origin, the lowest layer `below` over the floor; each substrate
+The box's lower-left corner is the origin, the board's x and y the model's x and z and its
+height the model's y (up in the 3D view), the lowest layer `below` over the floor; each substrate
 becomes a material `substrate εr …`. Ports go on the box's sides with `model.port.create`
-(`axis` x or y, `face` the side); their modes come from the cross-section solver, the strips
+(`axis` x or z, `face` the side); their modes come from the cross-section solver, the strips
 crossing the side its conductors. `mesh.generate` meshes the region with the planar mesher:
 
 1. Every layer's copper — traces with round ends, vias' pads, filled polygons — in one
@@ -159,8 +181,8 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
   {"command":"pcb.load","params":{"data":{"name":"line","layers":[{"name":"F.Cu","z":0,"eps_below":9.8},{"name":"B.Cu","z":0.635,"eps_below":1}],
     "segments":[{"id":"s","net":"S","layer":"F.Cu","start":[-1,0],"end":[5,0],"width":0.6}]}}},
   {"command":"pcb.region","params":{"lo":[0,-7.2],"hi":[4,7.2],"above":23.4,"below":0}},
-  {"command":"model.port.create","params":{"name":"1","end":"start","axis":"x","face":[0,0,0,14.4,24]}},
-  {"command":"model.port.create","params":{"name":"2","end":"end","axis":"x","face":[4,0,0,14.4,24]}},
+  {"command":"model.port.create","params":{"name":"1","end":"start","axis":"x","face":[0,0,0,24,14.4]}},
+  {"command":"model.port.create","params":{"name":"2","end":"end","axis":"x","face":[4,0,0,24,14.4]}},
   {"command":"mesh.generate","params":{"size":1}},
   {"command":"solve.frequency","params":{"frequencies":[1],"order":2}}
 ]

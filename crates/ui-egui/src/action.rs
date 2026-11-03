@@ -18,6 +18,9 @@ use crate::{EmcraftApp, UiError, View};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     /// Runs an engine command: a quick one at once, a long one on the worker thread.
+    /// Commands in order, each after the one before has finished (a long one on the worker);
+    /// the first that fails stops the rest.
+    RunAll(Vec<(String, Value)>),
     Run {
         id: String,
         params: Value,
@@ -242,6 +245,7 @@ impl EmcraftApp {
     pub fn apply(&mut self, action: Action) -> Result<Value, UiError> {
         match action {
             Action::Run { id, params } => return self.run(&id, params),
+            Action::RunAll(list) => return self.run_all(list),
             Action::OpenDialog { id, values } => match values {
                 Some(v) => self.open_dialog_with(&id, v)?,
                 None => self.open_dialog(&id)?,

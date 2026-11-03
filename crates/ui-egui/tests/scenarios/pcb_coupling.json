@@ -1,217 +1,236 @@
 [
-  {
-    "call": "ui.set",
-    "params": {
-      "language": "ja",
-      "theme": "midnight"
-    }
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "file.sample",
-      "params": {
-        "name": "pcb-parallel"
-      }
-    }
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "view.pcb",
-      "params": {
-        "net": "DATA",
-        "stage": "net"
-      }
-    }
-  },
-  {
-    "click": "choice:pcb_coupling:pick_receiver"
-  },
-  {
-    "click": "choice:pcb_segment:clock:0"
-  },
-  {
-    "expect": {
-      "inspect": {
-        "pcb.illustration.victim": "CLK",
-        "pcb.selected_net": "DATA",
-        "pcb.report": null
-      }
-    }
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "pcb.inspect",
-      "params": {
-        "net": "DATA"
-      }
-    }
-  },
-  {
-    "frames": 3
-  },
-  {
-    "expect": {
-      "handles": [
-        "choice:pcb_coupling:scene",
-        "choice:pcb_mode:electric",
-        "choice:pcb_mode:magnetic",
-        "choice:pcb_mode:return"
-      ],
-      "inspect": {
-        "pcb.report.coupling_pairs.0.target": "CLK",
-        "pcb.report.coupling_pairs.0.method": "geometry_only",
-        "pcb.illustration.section": true
-      }
-    }
-  },
-  {
-    "shot": "pcb-coupling-electric"
-  },
-  {
-    "drag": [
-      {
-        "handle": "choice:pcb_coupling:scene",
-        "offset": [
-          -45,
-          -20
-        ]
-      },
-      {
-        "handle": "choice:pcb_coupling:scene",
-        "offset": [
-          30,
-          12
-        ]
-      }
-    ]
-  },
-  {
-    "shot": "pcb-coupling-orbit"
-  },
-  {
-    "click": "choice:pcb_coupling:keep"
-  },
-  {
-    "click": "choice:pcb_mode:magnetic"
-  },
-  {
-    "shot": "pcb-coupling-magnetic"
-  },
-  {
-    "click": "choice:pcb_mode:return"
-  },
-  {
-    "click": "choice:pcb_coupling:section"
-  },
-  {
-    "shot": "pcb-coupling-return"
-  },
-  {
-    "click": "choice:pcb_coupling:playing"
-  },
-  {
-    "expect": {
-      "inspect": {
-        "pcb.illustration.playing": true
-      }
-    }
-  },
-  {
-    "click": "choice:pcb_coupling:playing"
-  },
-  {
-    "click": "choice:pcb_coupling:section"
-  },
-  {
-    "click": "choice:pcb_mode:electric"
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "project.variable",
-      "params": {
-        "name": "gap",
-        "value": 1.5
-      }
-    }
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "view.pcb",
-      "params": {
-        "net": "DATA",
-        "victim": "CLK"
-      }
-    }
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "pcb.inspect",
-      "params": {
-        "net": "DATA"
-      }
-    }
-  },
-  {
-    "frames": 3
-  },
-  {
-    "expect": {
-      "inspect": {
-        "pcb.report.coupling_pairs.0.gap": [
-          1.5,
-          1e-10
-        ]
-      }
-    }
-  },
-  {
-    "shot": "pcb-coupling-before-after"
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "view.pcb",
-      "params": {
-        "stage": "net"
-      }
-    }
-  },
-  {
-    "click": "choice:pcb_coupling:swap"
-  },
-  {
-    "expect": {
-      "inspect": {
-        "pcb.selected_net": "CLK",
-        "pcb.illustration.victim": "DATA"
-      }
-    }
-  },
-  {
-    "call": "engine.execute",
-    "params": {
-      "command": "pcb.inspect",
-      "params": {
-        "net": "CLK"
-      }
-    }
-  },
-  {
-    "call": "ui.set",
-    "params": {
-      "theme": "light"
-    }
-  },
-  {
-    "frames": 3
-  },
-  {
-    "shot": "pcb-coupling-light"
+ {
+  "call": "ui.set",
+  "params": {
+   "language": "ja",
+   "theme": "midnight"
   }
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "file.sample",
+   "params": {
+    "name": "pcb-parallel"
+   }
+  }
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "view.pcb",
+   "params": {
+    "net": "DATA",
+    "stage": "net"
+   }
+  }
+ },
+ {
+  "click": "choice:pcb_coupling:pick_receiver"
+ },
+ {
+  "click": "choice:pcb_segment:clock:0"
+ },
+ {
+  "expect": {
+   "inspect": {
+    "pcb.illustration.victim": "CLK",
+    "pcb.selected_net": "DATA",
+    "pcb.report": null
+   }
+  }
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "pcb.inspect",
+   "params": {
+    "net": "DATA"
+   }
+  }
+ },
+ {
+  "frames": 3
+ },
+ {
+  "expect": {
+   "handles": [
+    "choice:pcb_control:board3d",
+    "choice:pcb_mode:select",
+    "choice:pcb_mode:electric",
+    "choice:pcb_mode:magnetic",
+    "choice:pcb_mode:return"
+   ],
+   "inspect": {
+    "pcb.report.coupling_pairs.0.target": "CLK",
+    "pcb.report.coupling_pairs.0.method": "geometry_only",
+    "pcb.illustration.section": true
+   }
+  }
+ },
+ {
+  "click": "choice:pcb_mode:electric"
+ },
+ {
+  "frames": 3
+ },
+ {
+  "expect": {
+   "inspect": {
+    "pcb.illustration.coupling": true,
+    "pcb.illustration.mode": "electric"
+   }
+  }
+ },
+ {
+  "shot": "pcb-coupling-electric"
+ },
+ {
+  "drag": [
+   {
+    "handle": "choice:pcb_control:board3d",
+    "offset": [
+     -45,
+     -20
+    ]
+   },
+   {
+    "handle": "choice:pcb_control:board3d",
+    "offset": [
+     30,
+     12
+    ]
+   }
+  ]
+ },
+ {
+  "shot": "pcb-coupling-orbit"
+ },
+ {
+  "click": "choice:pcb_coupling:keep"
+ },
+ {
+  "click": "choice:pcb_mode:magnetic"
+ },
+ {
+  "shot": "pcb-coupling-magnetic"
+ },
+ {
+  "click": "choice:pcb_mode:return"
+ },
+ {
+  "shot": "pcb-coupling-return"
+ },
+ {
+  "click": "choice:pcb_coupling:playing"
+ },
+ {
+  "expect": {
+   "inspect": {
+    "pcb.illustration.playing": true
+   }
+  }
+ },
+ {
+  "click": "choice:pcb_coupling:playing"
+ },
+ {
+  "click": "choice:pcb_mode:electric"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "project.variable",
+   "params": {
+    "name": "gap",
+    "value": 1.5
+   }
+  }
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "view.pcb",
+   "params": {
+    "net": "DATA",
+    "victim": "CLK"
+   }
+  }
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "pcb.inspect",
+   "params": {
+    "net": "DATA"
+   }
+  }
+ },
+ {
+  "frames": 3
+ },
+ {
+  "expect": {
+   "inspect": {
+    "pcb.report.coupling_pairs.0.gap": [
+     1.5,
+     1e-10
+    ]
+   }
+  }
+ },
+ {
+  "shot": "pcb-coupling-before-after"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "view.pcb",
+   "params": {
+    "stage": "net"
+   }
+  }
+ },
+ {
+  "click": "choice:pcb_coupling:swap"
+ },
+ {
+  "expect": {
+   "inspect": {
+    "pcb.selected_net": "CLK",
+    "pcb.illustration.victim": "DATA"
+   }
+  }
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "pcb.inspect",
+   "params": {
+    "net": "CLK"
+   }
+  }
+ },
+ {
+  "click": "choice:pcb_mode:select"
+ },
+ {
+  "expect": {
+   "inspect": {
+    "pcb.illustration.coupling": false
+   }
+  }
+ },
+ {
+  "call": "ui.set",
+  "params": {
+   "theme": "light"
+  }
+ },
+ {
+  "frames": 3
+ },
+ {
+  "shot": "pcb-coupling-light"
+ }
 ]

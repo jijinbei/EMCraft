@@ -27,6 +27,32 @@ const STRETCHED: f64 = 0.06;
 /// Sides of a via's post.
 const VIA_SIDES: usize = 12;
 
+/// How the board is laid in the view: its heights over the lowest layer (m) and how much they
+/// are stretched.
+pub(crate) struct Frame {
+    pub stretch: f64,
+    pub heights: Vec<f64>,
+}
+
+/// The board's frame: heights stretched until the board stands at least [`STRETCHED`] of its
+/// width.
+pub(crate) fn frame(board: &Board) -> Frame {
+    let heights = board.heights();
+    let thickness = heights.iter().copied().fold(0.0, f64::max);
+    let width = board.bounds().map_or(0.0, |(lo, hi)| (hi[0] - lo[0]).max(hi[1] - lo[1]));
+    let stretch = if thickness > 0.0 { (STRETCHED * width / thickness).max(1.0) } else { 1.0 };
+    Frame { stretch, heights }
+}
+
+impl Frame {
+    /// The view's point over board point `p` at depth `z` (the board's z, m, down from its top
+    /// layer).
+    pub fn point(&self, p: [f64; 2], z: f64, board: &Board) -> [f64; 3] {
+        let bottom = board.layers.iter().map(|l| l.z).fold(f64::NEG_INFINITY, f64::max);
+        at(p[0], p[1], (bottom - z) * self.stretch)
+    }
+}
+
 /// The board's nets in the order of their names: a [`Pick::Net`] indexes it.
 pub fn nets(board: &Board) -> Vec<String> {
     let mut nets: Vec<String> = board
@@ -44,24 +70,31 @@ pub fn nets(board: &Board) -> Vec<String> {
 /// The colours of the selected route, its reference and the other copper.
 struct Colours {
     route: Rgb,
+    receiver: Rgb,
     reference: Rgb,
     copper: Rgb,
 }
 
-/// Builds the board's scene: `route` the selected net, `reference` its reference net.
-pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built) {
+/// Builds the board's scene: `route` the selected net, `receiver` the receiving trace of a
+/// coupling (if any), `reference` the route's reference net.
+pub(super) fn build(board: &Board, route: &str, receiver: Option<&str>, reference: &str, out: &mut Built) {
     let t = crate::theme::Tokens::get();
-    let colours = Colours { route: crate::theme::rgb(t.warning), reference: crate::theme::rgb(t.success), copper: sc().strip };
+    let colours = Colours {
+        route: crate::theme::rgb(t.warning),
+        receiver: crate::theme::rgb(t.accent),
+        reference: crate::theme::rgb(t.success),
+        copper: sc().strip,
+    };
     let Some((lo, hi)) = board.bounds() else { return };
-    let heights = board.heights();
+    let Frame { stretch, heights } = frame(board);
     let thickness = heights.iter().copied().fold(0.0, f64::max);
-    let width = (hi[0] - lo[0]).max(hi[1] - lo[1]);
-    let stretch = if thickness > 0.0 { (STRETCHED * width / thickness).max(1.0) } else { 1.0 };
     let z = |layer: usize| heights.get(layer).copied().unwrap_or(0.0) * stretch;
     let nets = nets(board);
     let colour = |net: &str| {
         if net == route {
             colours.route
+        } else if Some(net) == receiver {
+            colours.receiver
         } else if net == reference {
             colours.reference
         } else {
@@ -121,6 +154,9 @@ pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built
         out.labels.push(Label { at: at(lo[0], hi[1], z(i)), text: l.name.clone(), color: super::style::wire_rgb(), facing: None, anchor: None });
     }
     out.legend.push((route.to_owned(), colours.route));
+    if let Some(r) = receiver {
+        out.legend.push((r.to_owned(), colours.receiver));
+    }
     if !reference.is_empty() {
         out.legend.push((reference.to_owned(), colours.reference));
     }

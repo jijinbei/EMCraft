@@ -18,7 +18,7 @@ fn microstrip(w: f64, h: f64, er: f64, l: f64, width: f64, height: f64) -> Sessi
     let r = s.execute("pcb.region", &json!({"lo": [0, -width / 2.0], "hi": [l, width / 2.0], "above": height - h, "below": 0})).unwrap();
     assert_eq!(r["hi"], json!([l, width / 2.0]));
     for (name, end, at) in [("1", "start", 0.0), ("2", "end", l)] {
-        s.execute("model.port.create", &json!({"name": name, "end": end, "axis": "x", "face": [at, 0, 0, width, height], "modes": 1})).unwrap();
+        s.execute("model.port.create", &json!({"name": name, "end": end, "axis": "x", "face": [at, 0, 0, height, width], "modes": 1})).unwrap();
     }
     s
 }

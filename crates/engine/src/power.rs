@@ -37,8 +37,10 @@ pub fn at(s: &Session, frequency: f64, excitation: usize) -> Result<Value> {
         return Err(EngineError::failed("no such excitation"));
     }
     // The lossy-port solver can use pseudo-waves: their |S|² is not real power. Refuse
-    // that interpretation instead of giving a plausible but physically wrong budget.
-    for entry in &entries {
+    // that interpretation instead of giving a plausible but physically wrong budget. (Lumped
+    // ports' waves are power waves of real impedances: their |S|² is power.)
+    let lumped = sw.driven.ports.is_empty();
+    for entry in entries.iter().filter(|_| !lumped) {
         let terms = sw.driven.port_terms(entry.port, frequency)?;
         let gamma = terms.first().ok_or_else(|| EngineError::failed("port has no mode"))?.gamma;
         if gamma.im <= 0.0 || (entry.reference.is_none() && gamma.re.abs() > 1e-9 * gamma.im.abs().max(1.0)) {

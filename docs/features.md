@@ -35,7 +35,7 @@ Loads an original two-layer PCB routing example; `split` true gives the ground p
 
 ## `pcb.region` — PCB region
 
-Sets the part of the board the finite elements solve: a box round the copper (or `net`'s routes) by `margin`, or between the corners `lo` and `hi`, from `below` under the lowest layer to `above` over the highest, closed by conducting walls. The model's geometry becomes that box, the region's lower-left corner at the origin and the lowest layer `below` over its floor, each substrate a material `substrate εr …`; its ports go on the box's sides with model.port.create (cleared here). mesh.generate then meshes the copper of every layer in one triangulation, extruded through the substrates and the air, the copper conducting sheets of no thickness inside.
+Sets the part of the board the finite elements solve: a box round the copper (or `net`'s routes) by `margin`, or between the corners `lo` and `hi`, from `below` under the lowest layer to `above` over the highest, closed by conducting walls. The model's geometry becomes that box, the region's lower-left corner at the origin, the board's x and y the model's x and z, its height the model's y with the lowest layer `below` over the floor, each substrate a material `substrate εr …`; its ports go on the box's sides with model.port.create (cleared here). mesh.generate then meshes the copper of every layer in one triangulation, extruded through the substrates and the air, the copper conducting sheets of no thickness inside.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -78,6 +78,7 @@ Navigates the PCB workflow (board, net, settings, inspect, results) or selects a
 | `stage` | string |  | no | PCB stage: board, net, settings, inspect or results |
 | `net` | string |  | no | routed net to select |
 | `victim` | string |  | no | receiving net, different from the selected source |
+| `coupling` | boolean |  | no | the board's 3D view illustrates the coupling (`mode`) instead of picking routes |
 | `mode` | string |  | no | schematic mechanism |
 | `playing` | boolean |  | no | play explanatory emphasis, not physical time |
 | `exaggerate` | boolean |  | no | exaggerate depth by 10 for visibility |

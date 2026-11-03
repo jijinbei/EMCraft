@@ -105,6 +105,8 @@ pub struct EmcraftApp {
     /// The Japanese font: the embedded one, and an installed one the window finds.
     pub fonts: fonts::Japanese,
     pub job: Option<worker::Job>,
+    /// Commands to run once the job ends well ([`EmcraftApp::run_all`]).
+    pub queued: Vec<(String, Value)>,
     pub tab: ribbon::RibbonTab,
     pub dialog: Option<dialogs::Dialog>,
     /// Dialogs open docked at the right instead of floating.
@@ -217,6 +219,7 @@ impl EmcraftApp {
             revision: 0,
             fonts: Default::default(),
             job: None,
+            queued: Vec::new(),
             tab: ribbon::RibbonTab::Model,
             dialog: None,
             dock_dialogs: prefs::Prefs::default().dock_dialogs,
@@ -393,6 +396,21 @@ impl EmcraftApp {
     }
 
     /// Takes a finished job's session and reply; answers the control requests waiting on it.
+    /// Runs `list` in order: quick commands at once, the rest after the job before them ends
+    /// well; the first failure drops what is left.
+    pub fn run_all(&mut self, list: Vec<(String, Value)>) -> Result<Value, UiError> {
+        let mut rest = list.into_iter();
+        let mut last = json!({});
+        while let Some((id, params)) = rest.next() {
+            last = self.run(&id, params).inspect_err(|_| self.queued.clear())?;
+            if self.job.is_some() {
+                self.queued = rest.collect();
+                break;
+            }
+        }
+        Ok(last)
+    }
+
     pub fn poll_job(&mut self) {
         let Some(job) = &self.job else { return };
         let done = match job.poll() {
@@ -444,8 +462,14 @@ impl EmcraftApp {
             Ok(v) => json!({"ok": true, "result": v}),
             Err(e) => json!({"ok": false, "error": e.to_string()}),
         };
+        let ok = answer["ok"] == json!(true);
         for w in job.waiting {
             let _ = w.send(answer.clone());
+        }
+        // What was queued behind it, once it ended well.
+        let queued = std::mem::take(&mut self.queued);
+        if ok && !queued.is_empty() {
+            let _ = self.run_all(queued);
         }
     }
 
@@ -469,6 +493,7 @@ impl EmcraftApp {
 
     /// Stops the running job: the session stays as it was before it.
     pub fn cancel_job(&mut self) -> bool {
+        self.queued.clear();
         let Some(job) = self.job.take() else { return false };
         job.cancel();
         self.dialog_job = None;
