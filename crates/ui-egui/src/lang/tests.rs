@@ -54,6 +54,48 @@ fn translations_keep_their_placeholders() {
     }
 }
 
+/// The Japanese style (docs/languages.md): a half-width space between Latin letters or digits
+/// and Japanese (Sパラメータ the one exception, code in backticks left alone), ranges with 〜
+/// (U+301C), never ～ (U+FF5E), and command texts in the plain form, never です・ます.
+#[test]
+fn the_japanese_keeps_its_style() {
+    // Kana and kanji; the middle dot ・ joins words without spaces.
+    fn japanese_char(c: char) -> bool {
+        c != '・' && matches!(c, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{9fff}')
+    }
+    fn unspaced(text: &str) -> Option<String> {
+        let text = text.replace("Sパラメータ", "S パラメータ");
+        let prose = text.split('`').step_by(2).collect::<String>();
+        let chars: Vec<char> = prose.chars().collect();
+        chars.windows(2).find_map(|w| {
+            let crossing = (w[0].is_ascii_alphanumeric() && japanese_char(w[1])) || (japanese_char(w[0]) && w[1].is_ascii_alphanumeric());
+            crossing.then(|| w.iter().collect())
+        })
+    }
+    let ja = japanese();
+    let mut texts: Vec<(String, &str, bool)> = ja.strings.iter().map(|(k, v)| (k.clone(), v.as_str(), false)).collect();
+    texts.extend(ja.samples.iter().map(|(k, v)| (format!("sample {k}"), v.as_str(), false)));
+    for (id, c) in &ja.commands {
+        texts.push((format!("{id} label"), &c.label, true));
+        texts.push((format!("{id} doc"), &c.doc, true));
+        texts.extend(c.params.iter().map(|(p, v)| (format!("{id}.{p}"), v.as_str(), true)));
+    }
+    let mut problems: Vec<String> = Vec::new();
+    for (key, text, command) in &texts {
+        if let Some(pair) = unspaced(text) {
+            problems.push(format!("{key}: no space in {pair:?}"));
+        }
+        if text.contains('～') {
+            problems.push(format!("{key}: ～ (U+FF5E) for a range, write 〜"));
+        }
+        if *command && (text.contains("です") || text.contains("ます")) {
+            problems.push(format!("{key}: です・ます in a command's text, write the plain form"));
+        }
+    }
+    problems.sort();
+    assert!(problems.is_empty(), "{} Japanese texts out of style:\n{}", problems.len(), problems.join("\n"));
+}
+
 #[test]
 fn placeholders_are_filled_once_and_braces_kept() {
     assert_eq!(fill("{a} and {b}", &[("a", &1), ("b", &"{a}")]), "1 and {a}");
