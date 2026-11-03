@@ -222,7 +222,10 @@ inner box is a line of the planar mesh and a level of the air, so no element str
 begins; the air above and below the board and half the region's sides must be thicker than the
 layer. The layer is the box's on every side, so the board floats in air with its ground as copper
 (`below` > 0). Resolve it with a few elements across: a line run into a 2 mm layer meshed at 1 mm
-reflects 0.045 at 1–10 GHz (the line's and its feed's own mismatch included).
+reflects 0.045 at 1–10 GHz — as much as the same line ended by a 50 Ω port (0.035–0.056: the line's
+and its feed's own mismatch), so the layer adds nothing measurable. Thicker layers reflect more at
+the same mesh (4 mm: 0.07–0.13, better with a weaker profile, `reflection` 1e-2): keep the layer a
+few elements thick rather than a quarter wavelength.
 
 ## Coupling illustration
 
