@@ -65,6 +65,18 @@ emcraft_macros::named_enum! {
 emcraft_macros::named_serde!(Strategy);
 
 emcraft_macros::named_enum! {
+    /// How a sweep's systems are solved (`solver`).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(crate) enum LinearSolver {
+        Auto = "auto",
+        Direct = "direct",
+        Iterative = "iterative",
+    }
+}
+
+emcraft_macros::named_serde!(LinearSolver);
+
+emcraft_macros::named_enum! {
     /// Where the solvers run (`device`): the CPU's threads, or a GPU crate backend.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     pub enum Device {
@@ -97,7 +109,15 @@ impl Device {
 pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
     let freqs = frequencies(s, p)?;
     let order = p.order()?;
-    let driven = Driven::new(&s.model, order)?;
+    let mut driven = Driven::new(&s.model, order)?;
+    // Second-order systems too large to factor whole are solved iteratively by default.
+    let two = order == emcraft_fem::Order::Two;
+    driven.iterative = match p.choice("solver").or(LinearSolver::Auto)? {
+        LinearSolver::Auto => two && driven.dofs.unknowns > emcraft_solver::driven::MAX_UNKNOWNS,
+        LinearSolver::Direct => false,
+        LinearSolver::Iterative if two => true,
+        LinearSolver::Iterative => return Err(p.error("solver", "iterative needs second-order elements (`order` 2)")),
+    };
     // Three frequencies or more: the reduced-basis sweep, unless asked for a full solve at each.
     let fast = match p.choice("sweep").or(Strategy::Fast)? {
         Strategy::Fast => freqs.len() >= 3,

@@ -9,7 +9,7 @@ use emcraft_model::{Analysis, Axis, Combine, End, ModeSolver, OpenShape, Polariz
 use crate::geometry::{Keep, Primitive};
 use crate::open::FarSolver;
 use crate::project::Format as TouchstoneFormat;
-use crate::solve::{Device, Strategy};
+use crate::solve::{Device, LinearSolver, Strategy};
 use crate::tdr::Mode as TdrMode;
 use crate::view::{Component, Cut, FarComponent, Plane, SDisplay};
 use crate::views::{ChartId, LegendAt, Scale};
@@ -732,6 +732,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             POINTS,
             opt("order", K::Integer, "element order: 1 (Whitney) or 2 (default)"),
             opt("sweep", K::String, "`fast` (default: the reduced-basis sweep for three frequencies or more) or `full` (a full solve at each)").one_of(&Strategy::IDS),
+            opt("solver", K::String, "`auto` (default: factored whole, or for second-order elements beyond 2 million unknowns iterative), `direct` or `iterative` (GMRES preconditioned by the first-order part factored, order 2 only)").one_of(&LinearSolver::IDS),
         ],
         effect: Effect::Solve,
         invalidates: None,

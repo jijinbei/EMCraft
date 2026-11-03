@@ -72,6 +72,9 @@ impl Driven {
     /// for the next frequencies (the first stays when two race) and its time reported only by the
     /// frequency that made it.
     fn factor_with<F>(&self, a: &Csr, points: &[Point3], border: usize, factor: impl Fn(&Analysis) -> Result<F>) -> Result<(F, f64)> {
+        if points.len() > super::MAX_UNKNOWNS {
+            return Err(super::SolveError::TooLarge { unknowns: points.len(), limit: super::MAX_UNKNOWNS });
+        }
         let an = self.analysis_of(a, points, border)?;
         let f = factor(&an)?;
         Ok(match an {
@@ -128,6 +131,13 @@ pub(super) fn solve_each(f: &impl Factor, a: &Csr, rhs: &[Vec<C>], keep: usize, 
 }
 
 impl Solved {
+    /// Fields solved without a factorization of the whole system (the iterative path), with
+    /// their worst relative residual and the seconds the first-order factorization took.
+    pub(super) fn iterative(fields: Vec<Vec<C>>, residual: f64, assembly: f64, factor: f64, started: Instant) -> Solved {
+        let report = FactorReport { perturbed: 0, entries: 0, largest_front: 0, analysis: 0.0, factor };
+        Solved { fields, backward_error: residual, report, assembly, started }
+    }
+
     /// The result at `frequency` with the S-parameters and impedances read from the fields.
     pub fn result(self, frequency: f64, s: SMatrix, impedances: Vec<Option<f64>>) -> FrequencyResult {
         let r = self.report;

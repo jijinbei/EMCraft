@@ -83,6 +83,7 @@ mod losses;
 mod lumped;
 mod media;
 mod periodic;
+mod pmg;
 mod pml;
 mod ports;
 mod solution;
@@ -108,8 +109,11 @@ use assembly::Space;
 use losses::WallLoss;
 use media::Media;
 
-/// The most unknowns a problem may have.
+/// The most unknowns a problem factored whole may have.
 pub const MAX_UNKNOWNS: usize = 2_000_000;
+/// The most unknowns a second-order problem solved iteratively may have (its first-order part
+/// factored, about a sixth of them).
+pub const MAX_ITERATIVE_UNKNOWNS: usize = 5_000_000;
 /// The most frequencies one sweep may solve.
 pub const MAX_FREQUENCIES: usize = 2001;
 /// The most moments a full solve adds to a fast sweep's basis per excitation
@@ -128,7 +132,9 @@ pub enum SolveError {
     Model(#[from] emcraft_model::ModelError),
     #[error("{0}")]
     Factor(#[from] FactorError),
-    #[error("{unknowns} unknowns exceed the limit of {limit}: use a larger element size or order 1")]
+    #[error(
+        "{unknowns} unknowns exceed the limit of {limit}: use a larger element size, order 1, or for order 2 the iterative solver (`solver`: iterative)"
+    )]
     TooLarge { unknowns: usize, limit: usize },
 }
 
@@ -217,6 +223,9 @@ pub struct Driven {
     /// The symbolic factorization of the system's pattern, made at the first frequency and
     /// shared by the others (the pattern does not change with the frequency).
     analysis: std::sync::OnceLock<crate::ldlt::Analysis>,
+    /// Solve second-order systems iteratively, preconditioned by their first-order part
+    /// ([`pmg`]), instead of factoring them whole.
+    pub iterative: bool,
 }
 
 /// The solution at one frequency.
@@ -420,6 +429,7 @@ impl Driven {
             periodic: model.periodic,
             tie,
             analysis: std::sync::OnceLock::new(),
+            iterative: false,
             mesh,
             topo,
         })
@@ -452,6 +462,9 @@ impl Driven {
         let t0 = std::time::Instant::now();
         let system = self.system(frequency)?;
         let assembly = t0.elapsed().as_secs_f64();
+        if self.iterative && self.order == Order::Two {
+            return Ok((self.solve_iterative(frequency, system, assembly)?, Vec::new()));
+        }
         let f = self.factor(&system)?;
         let System { a, rhs, terms, border } = system;
         let n = self.dofs.unknowns;
@@ -497,6 +510,26 @@ impl Driven {
         }
         let (s, impedances) = self.s_parameters(&terms, &mut solved.fields, frequency)?;
         Ok((solved.result(frequency, s, impedances), extra))
+    }
+
+    /// A frequency solved by GMRES preconditioned by the first-order part ([`pmg`]).
+    fn solve_iterative(&self, frequency: f64, system: System, assembly: f64) -> Result<FrequencyResult> {
+        let System { a, rhs, terms, border } = system;
+        let started = std::time::Instant::now();
+        let pre = self.two_level(&a, border)?;
+        let factor = started.elapsed().as_secs_f64();
+        let n = self.dofs.unknowns;
+        let mut fields = Vec::with_capacity(rhs.len());
+        let mut worst: f64 = 0.0;
+        for b in &rhs {
+            let (mut x, residual, _) = pre.solve(&a, b)?;
+            x.truncate(n);
+            worst = worst.max(residual);
+            fields.push(x);
+        }
+        let mut solved = solution::Solved::iterative(fields, worst, assembly, factor, started);
+        let (s, impedances) = self.s_parameters(&terms, &mut solved.fields, frequency)?;
+        Ok(solved.result(frequency, s, impedances))
     }
 
     pub(crate) fn element_of(&self, t: usize) -> Result<Element> {
