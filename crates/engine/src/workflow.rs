@@ -129,21 +129,80 @@ impl StepState {
     }
 }
 
+/// What a kind of analysis is, in one row: the command that runs it, the steps it cannot do
+/// without and those it does without, and the results its run gives (the first the one to
+/// look at).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AnalysisSpec {
+    pub analysis: Analysis,
+    pub solve: &'static str,
+    pub required: &'static [Step],
+    pub not_needed: &'static [Step],
+    pub results: &'static [crate::ResultKind],
+}
+
+/// Every kind of analysis, in [`Analysis::ALL`]'s order.
+pub const ANALYSES: [AnalysisSpec; Analysis::COUNT] = {
+    use crate::ResultKind as R;
+    use Step::*;
+    [
+        AnalysisSpec {
+            analysis: Analysis::Frequency,
+            solve: "solve.frequency",
+            required: &[Geometry, Excitation, Mesh],
+            not_needed: &[],
+            results: &[R::Sweep],
+        },
+        AnalysisSpec {
+            analysis: Analysis::Eigenmodes,
+            solve: "solve.eigenmodes",
+            required: &[Geometry, Mesh],
+            not_needed: &[Excitation],
+            results: &[R::Eigen],
+        },
+        AnalysisSpec {
+            analysis: Analysis::Radiation,
+            solve: "solve.radiation",
+            required: &[Geometry, Excitation, Boundaries, Mesh],
+            not_needed: &[],
+            results: &[R::Radiation],
+        },
+        AnalysisSpec {
+            analysis: Analysis::TimeDomain,
+            solve: "solve.time_domain",
+            required: &[Geometry, Excitation],
+            not_needed: &[Mesh],
+            results: &[R::TimeDomain, R::TdRadiation],
+        },
+        AnalysisSpec {
+            analysis: Analysis::Pcb,
+            solve: "pcb.inspect",
+            required: &[Geometry],
+            not_needed: &[Materials, Excitation, Boundaries, Mesh, Setup],
+            results: &[],
+        },
+    ]
+};
+
+/// The row of kind `a` ([`ANALYSES`]).
+///
+/// ```
+/// use emcraft_engine::workflow::{ANALYSES, Analysis, spec};
+/// assert!(Analysis::ALL.iter().all(|a| spec(*a).analysis == *a));
+/// assert!(ANALYSES.iter().all(|s| emcraft_engine::find_command(s.solve).is_some()));
+/// ```
+pub const fn spec(a: Analysis) -> &'static AnalysisSpec {
+    &ANALYSES[a as usize]
+}
+
 /// The command that runs a kind of analysis.
 ///
 /// ```
 /// use emcraft_engine::workflow::{Analysis, solve_command};
 /// assert_eq!(solve_command(Analysis::Eigenmodes), "solve.eigenmodes");
-/// assert!(Analysis::ALL.iter().all(|a| emcraft_engine::find_command(solve_command(*a)).is_some()));
 /// ```
 pub const fn solve_command(a: Analysis) -> &'static str {
-    match a {
-        Analysis::Frequency => "solve.frequency",
-        Analysis::Eigenmodes => "solve.eigenmodes",
-        Analysis::Radiation => "solve.radiation",
-        Analysis::TimeDomain => "solve.time_domain",
-        Analysis::Pcb => "pcb.inspect",
-    }
+    spec(a).solve
 }
 
 /// The job's kind of analysis as the replies give it: its id (`kind`), whether it was chosen
@@ -254,11 +313,8 @@ pub fn steps(s: &Session) -> [StepState; 9] {
 /// boundary, and the time domain no mesh (it grids the model itself).
 pub fn required(chosen: Option<Analysis>) -> &'static [Step] {
     match chosen {
-        None | Some(Analysis::Eigenmodes) => &[Step::Geometry, Step::Mesh],
-        Some(Analysis::Frequency) => &[Step::Geometry, Step::Excitation, Step::Mesh],
-        Some(Analysis::TimeDomain) => &[Step::Geometry, Step::Excitation],
-        Some(Analysis::Radiation) => &[Step::Geometry, Step::Excitation, Step::Boundaries, Step::Mesh],
-        Some(Analysis::Pcb) => &[Step::Geometry],
+        None => &[Step::Geometry, Step::Mesh],
+        Some(a) => spec(a).required,
     }
 }
 
@@ -271,12 +327,7 @@ pub fn required(chosen: Option<Analysis>) -> &'static [Step] {
 /// assert!(not_needed(None).is_empty() && not_needed(Some(Analysis::Frequency)).is_empty());
 /// ```
 pub fn not_needed(chosen: Option<Analysis>) -> &'static [Step] {
-    match chosen {
-        Some(Analysis::Eigenmodes) => &[Step::Excitation],
-        Some(Analysis::TimeDomain) => &[Step::Mesh],
-        Some(Analysis::Pcb) => &[Step::Materials, Step::Excitation, Step::Boundaries, Step::Mesh, Step::Setup],
-        _ => &[],
-    }
+    chosen.map_or(&[], |a| spec(a).not_needed)
 }
 
 /// The command that runs the job: the chosen kind's solve, else a sweep.
@@ -286,7 +337,7 @@ fn run_command(s: &Session) -> &'static str {
 
 /// Whether anything was solved: a solver's results or a parameter study's.
 fn solved(s: &Session) -> bool {
-    s.results.any() || s.results.study.is_some()
+    s.results.kinds().next().is_some()
 }
 
 fn has_geometry(s: &Session) -> bool {

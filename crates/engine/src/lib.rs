@@ -67,7 +67,7 @@ pub use params::{Edit, Params};
 pub use project::{Effect, TemplateMark, TemplateParameter, template_marks, template_parameters, template_steps};
 pub use script::Step;
 pub use sdata::SData;
-pub use session::{Change, Limits, Results, Session, Sweep};
+pub use session::{Change, Limits, ResultKind, Results, Session, Sweep};
 pub use solve::{Compute, Device, LinearSolver};
 pub use view::field_view;
 

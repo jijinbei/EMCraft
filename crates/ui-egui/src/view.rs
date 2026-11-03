@@ -45,6 +45,18 @@ impl View {
         }
     }
 
+    /// The view that shows a kind of result first.
+    pub const fn of(kind: emcraft_engine::ResultKind) -> View {
+        use emcraft_engine::ResultKind as R;
+        match kind {
+            R::Sweep | R::TimeDomain => View::SParameters,
+            R::Eigen => View::Eigenmodes,
+            R::Radiation | R::TdRadiation => View::FarField,
+            R::Dispersion => View::Dispersion,
+            R::Study => View::Study,
+        }
+    }
+
     /// Whether the view has something to show: the model always, results once solved.
     pub fn available(self, app: &EmcraftApp) -> bool {
         let r = app.session.results();

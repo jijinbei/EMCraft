@@ -120,35 +120,102 @@ pub enum Change {
     Open,
 }
 
-impl Results {
-    /// Drops the results a change to the model leaves wrong. Changes that leave them right
-    /// but old (the band, the units) keep them, marked stale by the workflow.
-    pub fn invalidate(&mut self, change: Change) {
+emcraft_macros::named_enum! {
+    /// A kind of result the session holds (a field of [`Results`]): what drops it, what makes
+    /// it, whether it is the model's own — one place for what every kind is.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum ResultKind {
+        Sweep = "sweep",
+        Eigen = "eigenmodes",
+        TimeDomain = "time_domain",
+        Radiation = "radiation",
+        TdRadiation = "td_radiation",
+        Dispersion = "dispersion",
+        Study = "study",
+    }
+}
+
+impl ResultKind {
+    /// Whether a change of `change` to the model leaves this kind wrong.
+    ///
+    /// ```
+    /// use emcraft_engine::{Change, ResultKind};
+    /// assert!(ResultKind::Sweep.dropped_by(Change::Ports) && !ResultKind::Eigen.dropped_by(Change::Ports));
+    /// // A study is solved on models rebuilt from the history: no change makes it wrong.
+    /// assert!(!ResultKind::Study.dropped_by(Change::Geometry));
+    /// ```
+    pub const fn dropped_by(self, change: Change) -> bool {
+        use ResultKind::*;
         match change {
-            Change::Geometry => *self = Results { study: self.study.take(), ..Results::default() },
-            Change::Walls => {
-                self.sweep = None;
-                self.eigen = None;
-            }
-            Change::Ports => {
-                self.sweep = None;
-                self.time_domain = None;
-            }
-            Change::Open => {
-                self.radiation = None;
-                self.td_radiation = None;
-            }
+            Change::Geometry => !matches!(self, Study),
+            Change::Walls => matches!(self, Sweep | Eigen),
+            Change::Ports => matches!(self, Sweep | TimeDomain),
+            Change::Open => matches!(self, Radiation | TdRadiation),
         }
     }
 
-    /// Whether any solver has run.
+    /// Whether it is a solve of the model now (a study's points are solves of other models).
+    pub const fn of_the_model(self) -> bool {
+        !matches!(self, ResultKind::Study)
+    }
+
+    /// The command that makes it.
+    pub const fn command(self) -> &'static str {
+        match self {
+            ResultKind::Sweep => "solve.frequency",
+            ResultKind::Eigen => "solve.eigenmodes",
+            ResultKind::TimeDomain | ResultKind::TdRadiation => "solve.time_domain",
+            ResultKind::Radiation => "solve.radiation",
+            ResultKind::Dispersion => "solve.dispersion",
+            ResultKind::Study => "study.sweep",
+        }
+    }
+}
+
+impl Results {
+    /// Whether the session holds a result of `kind`.
+    pub fn has(&self, kind: ResultKind) -> bool {
+        match kind {
+            ResultKind::Sweep => self.sweep.is_some(),
+            ResultKind::Eigen => self.eigen.is_some(),
+            ResultKind::TimeDomain => self.time_domain.is_some(),
+            ResultKind::Radiation => self.radiation.is_some(),
+            ResultKind::TdRadiation => self.td_radiation.is_some(),
+            ResultKind::Dispersion => self.dispersion.is_some(),
+            ResultKind::Study => self.study.is_some(),
+        }
+    }
+
+    /// Lets the result of `kind` go.
+    pub fn clear(&mut self, kind: ResultKind) {
+        match kind {
+            ResultKind::Sweep => self.sweep = None,
+            ResultKind::Eigen => self.eigen = None,
+            ResultKind::TimeDomain => self.time_domain = None,
+            ResultKind::Radiation => self.radiation = None,
+            ResultKind::TdRadiation => self.td_radiation = None,
+            ResultKind::Dispersion => self.dispersion = None,
+            ResultKind::Study => self.study = None,
+        }
+    }
+
+    /// The kinds the session holds, in [`ResultKind::ALL`]'s order.
+    pub fn kinds(&self) -> impl Iterator<Item = ResultKind> + '_ {
+        ResultKind::ALL.into_iter().filter(|k| self.has(*k))
+    }
+
+    /// Drops the results a change to the model leaves wrong ([`ResultKind::dropped_by`]).
+    /// Changes that leave them right but old (the band, the units) keep them, marked stale by
+    /// the workflow.
+    pub fn invalidate(&mut self, change: Change) {
+        for kind in ResultKind::ALL.into_iter().filter(|k| k.dropped_by(change)) {
+            self.clear(kind);
+        }
+    }
+
+    /// Whether any solver has run on the model (a study's solves are of other models).
     pub fn any(&self) -> bool {
-        self.sweep.is_some()
-            || self.eigen.is_some()
-            || self.time_domain.is_some()
-            || self.radiation.is_some()
-            || self.td_radiation.is_some()
-            || self.dispersion.is_some()
+        self.kinds().any(ResultKind::of_the_model)
     }
 
     /// The sweep, or an error asking for one.
