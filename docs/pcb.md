@@ -127,7 +127,7 @@ SI. Selection is a view change; importing/loading replaces the current model and
 }
 ```
 
-Vias use `{net,at,layers:[from,to],diameter}`. Polygon interiors use the even-odd rule; multiple
+Vias use `{net,at,layers:[from,to],diameter,drill}` (`drill` optional, the plated hole). Polygon interiors use the even-odd rule; multiple
 polygons on a reference layer are unioned for screening. Native input is checked before any
 model replacement; invalid numbers, layers, dimensions and excessive inputs return errors.
 
@@ -173,7 +173,9 @@ crossing the side its conductors. `mesh.generate` meshes the region with the pla
 2. The triangles refined to `size` far from copper and to the copper edge size at its edges
    (`strip_edge` × `size`; by default a sixth of the narrowest trace), where the fields are
    singular.
-3. The triangulation extruded through the substrates (cells graded from the edge size at their
+3. Each via's barrel (its `drill`, else its pads' diameter) on a layer of its own in that
+   triangulation, so its prisms between its two layers are left out and their walls conduct.
+4. The triangulation extruded through the substrates (cells graded from the edge size at their
    copper to the middle) and the
    air (cells growing away from the board); the copper conducting sheets of no thickness.
 
@@ -193,6 +195,8 @@ Verification: [`pcb-microstrip-fem`](../tests/oracle/pcb-microstrip-fem/README.m
 alumina against Hammerstad and Jensen: ε_eff within 0.2 %, the 4 mm line's phase within 0.005°.
 [`pcb-coupled-stripline`](../tests/oracle/pcb-coupled-stripline/README.md) — two traces between
 ground planes against Cohn's even and odd impedances, within 0.22 % and 0.53 %.
+[`pcb-via-short`](../tests/oracle/pcb-via-short/README.md) — a line shorted by a via, S11's phase
+within 0.27° of the line and Goldfarb and Pucel's via inductance.
 
 Ports at a trace's end instead of the box's sides: `pcb.port {"name":"1","segment":"s","end":"start"}`
 puts a 50 Ω lumped port there — a sheet the trace's width wide from its reference (the nearest

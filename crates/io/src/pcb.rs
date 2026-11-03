@@ -226,6 +226,7 @@ pub fn read(text: &str, override_layers: Option<Vec<Layer>>) -> Result<Board> {
                     at: n.point("at")?.map(|v| Length::Millimetre.to_si(v)),
                     layers: [ls.text(1)?.into(), ls.text(2)?.into()],
                     diameter: Length::Millimetre.to_si(n.num("size")?),
+                    drill: n.num("drill").ok().map(|d| Length::Millimetre.to_si(d)),
                 });
             }
             Some("arc") => return Err(bad("curved tracks are not supported yet; no tracks were imported")),

@@ -57,6 +57,9 @@ isotropic tetrahedron mesh generation*, ACM TOG 28(3), 2009; B. M. Klingner, J. 
   Computational Geometry 20(3):131–144, 2001 — the winding number that decides each component's
   copper, so each layer's union of copper is read off the triangulation; Sutherland–Hodgman
   (above) — copper clipped to the region.
+- M. E. Goldfarb, R. A. Pucel, *Modeling via hole grounds in microstrip*, IEEE Microwave Guided
+  Wave Lett. 1(6):135–137, 1991 — the inductance of a via to ground, the reference of
+  `pcb-via-short` (the via itself is meshed as a conducting barrel, `emcraft-mesh::planar::extrude`).
 - The symmetric halves of solids (`emcraft-mesh::solid`, `halved`): extrusions (boxes, cylinders
   along the plane's normal, prisms) shortened to the kept side, other bodies cut by a box, the cut
   faces tagged as the wall (the conditions under Symmetry planes).

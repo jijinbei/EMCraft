@@ -1,0 +1,33 @@
+{
+ "title": "Microstrip on alumina (εr = 9.8, h = 0.635 mm, W = 0.6 mm) shorted to its ground floor by a 0.4 mm via 4 mm from its port, at 2 GHz",
+ "kind": "benchmark",
+ "source": "E. Hammerstad, Ø. Jensen, Accurate models for microstrip computer-aided design, IEEE MTT-S Int. Microwave Symp. Dig., 1980, pp. 407–409 (Z0, ε_eff); M. E. Goldfarb, R. A. Pucel, Modeling via hole grounds in microstrip, IEEE Microwave Guided Wave Lett. 1(6):135–137, 1991 (the via's inductance, 98 pH); S11 = Γ e^{−2jβL} referred to the line; evaluated independently of the code: `cargo run --release -p emcraft-theory --example pcb_via_reference -- 0.600075 0.635 9.8 4 0.4 2`",
+ "quantities": [
+  {
+   "id": "s11_mag",
+   "quantity": "|S11| at 2 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/mag"
+   },
+   "value": 1,
+   "tolerance": {
+    "absolute": 0.0001
+   },
+   "reason": "lossless and shorted: everything comes back"
+  },
+  {
+   "id": "s11_phase",
+   "quantity": "phase of S11 (degrees) at 2 GHz",
+   "measure": {
+    "step": "solve",
+    "pointer": "/points/0/s11/deg"
+   },
+   "value": 128.0463489244056,
+   "tolerance": {
+    "absolute": 0.8
+   },
+   "reason": "+0.27° measured: the via's inductance turns S11 by 2.8° from an ideal short at its centre (Goldfarb–Pucel's fit, a few per cent, against the 12-sided barrel and its pad), the line by 2βL (checked to 0.005° by pcb-microstrip-fem); an open end would be 180° away"
+  }
+ ]
+}

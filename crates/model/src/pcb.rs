@@ -30,13 +30,23 @@ pub struct Segment {
     pub width: f64,
 }
 
-/// A through or blind via of a net at `at` (m), joining the two named layers, `diameter` (m).
+/// A through or blind via of a net at `at` (m), joining the two named layers: its pads
+/// `diameter` across (m) and its plated hole `drill` (m; the pads' when not given).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Via {
     pub net: String,
     pub at: [f64; 2],
     pub layers: [String; 2],
     pub diameter: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drill: Option<f64>,
+}
+
+impl Via {
+    /// The barrel's diameter (m): the drill, else the pads'.
+    pub fn barrel(&self) -> f64 {
+        self.drill.unwrap_or(self.diameter)
+    }
 }
 
 /// Filled copper of a net on a layer: a polygon (m), even–odd.
@@ -153,7 +163,13 @@ impl Board {
             }
         }
         for v in &self.vias {
-            if !name(&v.net) || !point(v.at) || !size(v.diameter) || v.layers[0] == v.layers[1] || v.layers.iter().any(|l| !layer(l)) {
+            if !name(&v.net)
+                || !point(v.at)
+                || !size(v.diameter)
+                || v.drill.is_some_and(|d| !size(d) || d > v.diameter)
+                || v.layers[0] == v.layers[1]
+                || v.layers.iter().any(|l| !layer(l))
+            {
                 return Err(bad());
             }
         }
@@ -211,6 +227,7 @@ impl Board {
                 *n = convert(*n);
             }
             v.diameter = convert(v.diameter);
+            v.drill = v.drill.map(&mut convert);
         }
         for c in &mut self.copper {
             for p in &mut c.polygon {

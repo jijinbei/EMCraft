@@ -1,0 +1,7 @@
+[
+ {"command": "pcb.load", "params": {"data": {"name": "via short", "layers": [{"name": "F.Cu", "z": 0, "eps_below": 9.8}, {"name": "B.Cu", "z": 0.635, "eps_below": 1}], "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [-1, 0], "end": [4, 0], "width": 0.600075}], "vias": [{"net": "S", "at": [4, 0], "layers": ["F.Cu", "B.Cu"], "diameter": 0.600075, "drill": 0.4}]}}},
+ {"command": "pcb.region", "params": {"lo": [0, -7.2009], "hi": [6, 7.2009], "above": 23.365, "below": 0}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "axis": "x", "face": [0, 0, 0, 24, 14.4018], "modes": 1}},
+ {"command": "mesh.generate", "params": {"size": 1}},
+ {"command": "solve.frequency", "params": {"frequencies": [2], "order": 2}, "id": "solve"}
+]

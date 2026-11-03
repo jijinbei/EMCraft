@@ -134,3 +134,49 @@ fn coupled_lines_couple_less_than_they_carry_and_keep_the_power() {
     // Through far more than either coupled end; the near end couples, if weakly.
     assert!(mag(&p, "s21") > 0.9 && mag(&p, "s31") < 0.3 && mag(&p, "s31") > 1e-3, "{p}");
 }
+
+#[test]
+fn a_via_is_a_conducting_barrel_through_its_layers() {
+    let mut s = Session::new();
+    let board = json!({
+        "name": "via",
+        "layers": [{"name": "F.Cu", "z": 0, "eps_below": 4.4}, {"name": "In1", "z": 0.5, "eps_below": 4.4}, {"name": "B.Cu", "z": 1.0, "eps_below": 1}],
+        "segments": [{"id": "s", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": [3, 0], "width": 0.5}],
+        "vias": [{"net": "S", "at": [3, 0], "layers": ["F.Cu", "In1"], "diameter": 0.8, "drill": 0.4}],
+    });
+    s.execute("pcb.load", &json!({"data": board})).unwrap();
+    s.execute("pcb.region", &json!({"margin": 1, "above": 1, "below": 1})).unwrap();
+    s.execute("mesh.generate", &json!({"size": 1, "strip_edge": 0.25})).unwrap();
+    let mesh = s.model().mesh.clone().unwrap();
+    emcraft_mesh::check_tetrahedra(&mesh).unwrap();
+    let volume: f64 = (0..mesh.tets.len())
+        .map(|t| {
+            let c = mesh.corners(t).unwrap();
+            emcraft_model::geom::triple(c[1] - c[0], c[2] - c[0], c[3] - c[0]) / 6.0
+        })
+        .sum();
+    let b = s.model().bounds().unwrap();
+    let full = (b.max.x - b.min.x) * (b.max.y - b.min.y) * (b.max.z - b.min.z);
+    // The barrel (a polygon inscribed in its 0.4 mm circle) through the 0.5 mm between its layers.
+    let barrel = std::f64::consts::PI * 0.2e-3 * 0.2e-3 * 0.5e-3;
+    assert!((full - volume) > 0.9 * barrel && (full - volume) < barrel, "{} {barrel}", full - volume);
+    // Conforming: the faces held by one tetrahedron are the walls (the box's and the barrel's).
+    let topo = emcraft_mesh::Topology::new(&mesh);
+    let outer = topo.face_tets.iter().filter(|o| o[1] == emcraft_mesh::NO_TET).count();
+    let inner = mesh
+        .boundary
+        .iter()
+        .filter(|f| {
+            topo.face_tets.iter().zip(&topo.faces).any(|(o, n)| {
+                o[1] != emcraft_mesh::NO_TET && {
+                    let mut a = *n;
+                    let mut b2 = f.nodes;
+                    a.sort_unstable();
+                    b2.sort_unstable();
+                    a == b2
+                }
+            })
+        })
+        .count();
+    assert_eq!(outer + inner, mesh.boundary.len());
+}

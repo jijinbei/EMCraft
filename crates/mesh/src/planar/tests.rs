@@ -190,6 +190,7 @@ fn the_extruded_board_conforms_with_its_copper_inside() {
         z0: -1.6 * MM,
         slabs: vec![Slab { thickness: 1.6 * MM, material: 1, cells: 4, ratio: 1.0 }, Slab { thickness: 2.0 * MM, material: 0, cells: 3, ratio: 1.5 }],
         sheets: vec![(0, 1)],
+        holes: vec![],
     };
     let (mesh, sheet_nets) = extrude(&planar, &stack).unwrap();
     crate::check_tetrahedra(&mesh).unwrap();

@@ -53,21 +53,32 @@ impl Slab {
 
 /// The stack from the bottom (at `z0`) up, and where the copper lies: each sheet the layer's
 /// index into [`Planar::nets`] and the interface it lies on (0 the bottom of the first slab, k
-/// the top of slab k − 1).
+/// the top of slab k − 1); and the holes conductors make through it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stack {
     pub z0: f64,
     pub slabs: Vec<Slab>,
     pub sheets: Vec<(usize, usize)>,
+    pub holes: Vec<Hole>,
+}
+
+/// A conductor through the stack between two interfaces (a via's barrel): its triangles'
+/// prisms left out, their walls conducting.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Hole {
+    pub triangles: Vec<u32>,
+    pub from: usize,
+    pub to: usize,
 }
 
 fn invalid(why: impl Into<String>) -> MeshError {
     MeshError::invalid("board stack", why)
 }
 
-/// The tetrahedral mesh of `planar` through `stack`: its outer faces conductors (the caller
-/// retags the ports'), the copper's triangles conducting sheets inside, and each sheet face's
-/// net in the second vector (in the order of the sheet faces among the boundary faces).
+/// The tetrahedral mesh of `planar` through `stack`: its outer faces and the holes' walls
+/// conductors (the caller retags the ports'), the copper's triangles conducting sheets inside,
+/// and each sheet face's net in the second vector (in the order of the sheet faces among the
+/// boundary faces).
 pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
     if stack.slabs.is_empty() {
         return Err(invalid("a stack needs at least one slab"));
@@ -94,33 +105,44 @@ pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
     let nodes: Vec<Point3> = z.iter().flat_map(|&h| planar.points.iter().map(move |p| Point3::new(p[0], p[1], h))).collect();
     let node = |level: usize, v: u32| level as u32 * np + v;
     let mut mesh = Mesh { nodes, ..Mesh::default() };
-    // The first tetrahedron of each prism, by level then triangle.
-    let prism = |level: usize, t: usize| (3 * (level * planar.triangles.len() + t)) as u32;
+    let top = levels - 1;
+    let count = planar.triangles.len();
+    // The prisms the holes take out, by level then triangle.
+    let mut gone = vec![false; top * count];
+    for h in &stack.holes {
+        let (Some(&from), Some(&to)) = (interface.get(h.from), interface.get(h.to)) else {
+            return Err(invalid("a hole names an interface the stack does not have"));
+        };
+        for level in from.min(to)..from.max(to) {
+            for &t in &h.triangles {
+                if let Some(g) = gone.get_mut(level * count + t as usize) {
+                    *g = true;
+                }
+            }
+        }
+    }
+    // The first tetrahedron of each prism left, by level then triangle.
+    let mut first = vec![u32::MAX; top * count];
     for (slab, s) in stack.slabs.iter().enumerate() {
         for level in interface[slab]..interface[slab] + s.cells {
-            for tri in &planar.triangles {
+            for (t, tri) in planar.triangles.iter().enumerate() {
+                if gone[level * count + t] {
+                    continue;
+                }
+                first[level * count + t] = mesh.tets.len() as u32;
                 let mut v = *tri;
                 v.sort_unstable();
                 let [a, b, c] = v.map(|x| node(level, x));
                 let [a2, b2, c2] = v.map(|x| node(level + 1, x));
-                for t in [[a, b, c, c2], [a, b, b2, c2], [a, a2, b2, c2]] {
-                    mesh.tets.push(positive(&mesh.nodes, t)?);
+                for k in [[a, b, c, c2], [a, b, b2, c2], [a, a2, b2, c2]] {
+                    mesh.tets.push(positive(&mesh.nodes, k)?);
                     mesh.tet_material.push(s.material);
                 }
             }
         }
     }
-    let top = levels - 1;
-    // The bottom and top: the bottom faces of the first level's (a, b, c, c′), the top faces of
-    // the last level's (a, a′, b′, c′).
-    for (t, tri) in planar.triangles.iter().enumerate() {
-        let mut v = *tri;
-        v.sort_unstable();
-        mesh.boundary.push(BoundaryFace { nodes: v.map(|x| node(0, x)), tet: prism(0, t), tag: Boundary::Pec });
-        mesh.boundary.push(BoundaryFace { nodes: v.map(|x| node(top, x)), tet: prism(top - 1, t) + 2, tag: Boundary::Pec });
-    }
-    // The sides: the planar mesh's outline edges, each a quadrilateral per level cut as the
-    // prism cuts it.
+    let prism = |level: usize, t: usize| first.get(level * count + t).copied().filter(|&f| f != u32::MAX);
+    // Each triangle's neighbour across each of its edges (none on the outline).
     let mut edges: Vec<([u32; 2], usize)> = planar
         .triangles
         .iter()
@@ -128,39 +150,55 @@ pub fn extrude(planar: &Planar, stack: &Stack) -> Result<(Mesh, Vec<u32>)> {
         .flat_map(|(t, v)| (0..3).map(move |k| ([v[k].min(v[(k + 1) % 3]), v[k].max(v[(k + 1) % 3])], t)))
         .collect();
     edges.sort_unstable();
-    for (k, &(e, t)) in edges.iter().enumerate() {
-        let shared = edges.get(k + 1).is_some_and(|x| x.0 == e) || (k > 0 && edges.get(k - 1).is_some_and(|x| x.0 == e));
-        if shared {
-            continue;
-        }
-        let [p, q] = e;
+    let across = |e: [u32; 2], t: usize| {
+        let i = edges.partition_point(|x| x.0 < e);
+        edges[i..].iter().take_while(|x| x.0 == e).find(|x| x.1 != t).map(|x| x.1)
+    };
+    // The walls: every face of a prism left with no prism across it — the box's outside, and
+    // the holes' sides and ends — a conductor.
+    for (t, tri) in planar.triangles.iter().enumerate() {
+        let mut v = *tri;
+        v.sort_unstable();
         for level in 0..top {
-            // The quadrilateral (p, q, q′, p′) cut along p–q′ (p the lesser).
-            let (pl, ql, pu, qu) = (node(level, p), node(level, q), node(level + 1, p), node(level + 1, q));
-            for face in [[pl, ql, qu], [pl, pu, qu]] {
-                let tet = holder(&mesh, prism(level, t), face)?;
-                mesh.boundary.push(BoundaryFace { nodes: face, tet, tag: Boundary::Pec });
+            let Some(f) = prism(level, t) else { continue };
+            // Below: the first tetrahedron's base (a, b, c); above: the third's (a′, b′, c′).
+            if level == 0 || prism(level - 1, t).is_none() {
+                mesh.boundary.push(BoundaryFace { nodes: v.map(|x| node(level, x)), tet: f, tag: Boundary::Pec });
+            }
+            if level + 1 == top || prism(level + 1, t).is_none() {
+                mesh.boundary.push(BoundaryFace { nodes: v.map(|x| node(level + 1, x)), tet: f + 2, tag: Boundary::Pec });
+            }
+            for k in 0..3 {
+                let (p, q) = (v[k].min(v[(k + 1) % 3]), v[k].max(v[(k + 1) % 3]));
+                if across([p, q], t).is_some_and(|n| prism(level, n).is_some()) {
+                    continue;
+                }
+                // The quadrilateral (p, q, q′, p′) cut along p–q′ (p the lesser).
+                let (pl, ql, pu, qu) = (node(level, p), node(level, q), node(level + 1, p), node(level + 1, q));
+                for face in [[pl, ql, qu], [pl, pu, qu]] {
+                    mesh.boundary.push(BoundaryFace { nodes: face, tet: holder(&mesh, f, face)?, tag: Boundary::Pec });
+                }
             }
         }
     }
-    // The copper: a sheet face per covered triangle on its interface.
+    // The copper: a sheet face per covered triangle on its interface, between two prisms (a
+    // face with a prism on one side only is a wall already).
     let mut nets = Vec::new();
     for &(layer, at) in &stack.sheets {
         let (Some(covered), Some(&level)) = (planar.nets.get(layer), interface.get(at)) else {
             return Err(invalid("a sheet names a layer or an interface the stack does not have"));
         };
-        // Copper on the bottom or the top is on the conducting wall already.
         if level == 0 || level == top {
             continue;
         }
         for (t, (tri, &net)) in planar.triangles.iter().zip(covered).enumerate() {
+            let (Some(above), Some(_)) = (prism(level, t), prism(level - 1, t)) else { continue };
             if net == NO_NET {
                 continue;
             }
             let mut v = *tri;
             v.sort_unstable();
-            // Held by the prism above it as its first tetrahedron's base.
-            mesh.boundary.push(BoundaryFace { nodes: v.map(|x| node(level, x)), tet: prism(level, t), tag: Boundary::Pec });
+            mesh.boundary.push(BoundaryFace { nodes: v.map(|x| node(level, x)), tet: above, tag: Boundary::Pec });
             nets.push(net);
         }
     }
