@@ -168,7 +168,10 @@ adds a trace segment or changes one (`id`: only what is given), `pcb.segment.del
 `pcb.via` / `pcb.via.delete` and `pcb.pour` / `pcb.pour.delete` add and remove vias and filled
 copper (pads included). The board is checked after each; its region stays, its mesh goes. In the
 window, the ribbon's PCB panel adds traces, vias and pours; in step 2 the selected route's
-segments are listed with their widths to change and a delete each.
+segments are listed with their widths to change and a delete each. *Draw the route*, over the 3D
+view's top right, draws on the route's layer: each click adds a segment from the last point (the
+first click only sets it), snapped to the route's ends or a 0.05 mm grid, the route's width; a
+right click or Escape ends the line, and again drawing.
 
 ## Solving a board's region with finite elements
 

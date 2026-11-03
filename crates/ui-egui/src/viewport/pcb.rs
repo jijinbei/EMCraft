@@ -117,9 +117,11 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     if illustration.coupling && illustration.playing {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
     }
+    draw(app, &mut st.views.pcb, &st.view3d, ui, view, board, out);
     // A net picked in 3D becomes the route (or the receiving trace while one is being picked).
     if let Some(crate::scene3d::Pick::Net(i)) = st.view3d.single()
         && !illustration.coupling
+        && st.views.pcb.drawing.is_none()
         && let Some(net) = crate::scene3d::board::nets(board).get(i)
         && app.session.views().pcb_net.as_deref() != Some(net.as_str())
         && board.segments.iter().any(|s| &s.net == net)
@@ -131,8 +133,7 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
         out.push(Action::run("view.pcb", if victim { json!({"victim": net, "stage": "net"}) } else { json!({"net": net, "stage": "net"}) }));
     }
     // The top view, small, in the corner.
-    let size = vec2((view.width() * 0.3).clamp(160., 300.), (view.height() * 0.28).clamp(110., 190.));
-    let minimap = Rect::from_min_size(view.right_bottom() - size - vec2(12., 12.), size);
+    let minimap = minimap(view);
     let selected = app.session.views().pcb_net.clone().unwrap_or_default();
     let ground = st.views.pcb.ground.clone();
     let result = report(app, &st.views.pcb, &selected).cloned();
@@ -284,6 +285,93 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
         }
         _ => stackup(app, ui, selected, &state.ground),
     }
+}
+
+/// The grid traces are drawn on (m), and how near (m) a click snaps to a route's end.
+const DRAW_GRID: f64 = 0.05e-3;
+const DRAW_SNAP: f64 = 0.4e-3;
+
+/// Drawing the selected route on in 3D: a toggle over the view's top right; each click on the
+/// route's layer adds a segment from the last point (the first only sets it), snapped to the
+/// route's ends or a 0.05 mm grid, its width the route's; a right click or Escape ends it.
+fn draw(
+    app: &EmcraftApp,
+    state: &mut crate::state::PcbUi,
+    v: &crate::view3d::View3d,
+    ui: &mut egui::Ui,
+    view: Rect,
+    board: &emcraft_model::pcb::Board,
+    out: &mut Actions,
+) {
+    let net = app.session.views().pcb_net.clone().unwrap_or_default();
+    let Some(first) = board.segments.iter().find(|g| g.net == net) else {
+        state.drawing = None;
+        return;
+    };
+    let toggle = Rect::from_min_size(pos2(view.right() - 140., view.top() + 8.), vec2(130., 28.));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(toggle));
+    let r = child.selectable_label(state.drawing.is_some(), tr("Draw the route"));
+    scenario::publish_target(Handle::Choice("pcb_mode", "draw"), r.rect);
+    if r.clicked() {
+        state.drawing = if state.drawing.is_some() { None } else { Some(None) };
+    }
+    let Some(last) = state.drawing else { return };
+    // Escape or a right click ends the line being drawn, and with none, drawing.
+    if ui.input(|i| i.key_pressed(egui::Key::Escape) || i.pointer.secondary_clicked()) {
+        state.drawing = last.map(|_| None);
+        return;
+    }
+    // The route's layer as the view lays it, and where the pointer's ray meets it.
+    let frame = crate::scene3d::board::frame(board);
+    let Some(layer) = board.layers.iter().find(|l| l.name == first.layer) else { return };
+    let height = frame.point([0.0, 0.0], layer.z, board)[1];
+    let on_layer = |pos: egui::Pos2| -> Option<[f64; 2]> {
+        let (o, d) =
+            v.camera.ray(f64::from(pos.x - view.left()), f64::from(pos.y - view.top()), f64::from(view.width()), f64::from(view.height()))?;
+        let t = (height - o[1]) / d[1];
+        (d[1].abs() > 1e-12 && t > 0.0).then(|| [o[0] + t * d[0], o[2] + t * d[2]])
+    };
+    let snapped = |p: [f64; 2]| {
+        let ends = board.segments.iter().filter(|g| g.net == net && g.layer == first.layer).flat_map(|g| [g.start, g.end]);
+        match ends.map(|q| (emcraft_model::pcb::distance(p, q), q)).min_by(|a, b| a.0.total_cmp(&b.0)) {
+            Some((d, q)) if d <= DRAW_SNAP => q,
+            _ => p.map(|c| (c / DRAW_GRID).round() * DRAW_GRID),
+        }
+    };
+    // Not over the controls on the view: its mode bar, this toggle, the minimap.
+    let free = |p: &egui::Pos2| view.contains(*p) && p.y > view.top() + 44. && !minimap(view).contains(*p);
+    let hover = ui.input(|i| i.pointer.hover_pos()).filter(free);
+    let painter = ui.painter().with_clip_rect(view);
+    let t = Tokens::get();
+    let screen = |p: [f64; 2]| {
+        let q = frame.point(p, layer.z, board);
+        v.camera.project(q, f64::from(view.width()), f64::from(view.height())).map(|s| view.min + vec2(s[0] as f32, s[1] as f32))
+    };
+    if let (Some(a), Some(h)) = (last, hover.and_then(on_layer).map(snapped))
+        && let (Some(sa), Some(sh)) = (screen(a), screen(h))
+    {
+        painter.line_segment([sa, sh], Stroke::new(2., t.warning));
+        painter.circle_filled(sa, 3., t.warning);
+    }
+    let clicked = ui.input(|i| i.pointer.primary_clicked());
+    if let (true, Some(p)) = (clicked && !app.busy(), hover.and_then(on_layer).map(snapped)) {
+        let l = app.session.display().length;
+        if let Some(a) = last
+            && emcraft_model::pcb::distance(a, p) > 0.0
+        {
+            out.push(Action::run(
+                "pcb.segment",
+                json!({"net": net, "layer": first.layer, "start": [l.from_si(a[0]), l.from_si(a[1])], "end": [l.from_si(p[0]), l.from_si(p[1])], "width": l.from_si(first.width)}),
+            ));
+        }
+        state.drawing = Some(Some(p));
+    }
+}
+
+/// Where the minimap sits in the 3D view: its bottom right corner.
+fn minimap(view: Rect) -> Rect {
+    let size = vec2((view.width() * 0.3).clamp(160., 300.), (view.height() * 0.28).clamp(110., 190.));
+    Rect::from_min_size(view.right_bottom() - size - vec2(12., 12.), size)
 }
 
 /// The selected route's segments, each with its layer, its width to change and a delete
