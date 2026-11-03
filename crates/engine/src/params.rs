@@ -44,6 +44,28 @@ use crate::expr::{self, Variables};
 use crate::{EngineError, Result};
 use emcraft_macros::Named;
 
+/// What an edit does to an optional setting ([`Params::edit`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Edit<T> {
+    /// Left out: the setting stays.
+    Keep,
+    /// Given as `null`: the setting goes.
+    Clear,
+    /// Given: the setting becomes this.
+    Set(T),
+}
+
+impl<T> Edit<T> {
+    /// The setting after the edit, `old` before it.
+    pub fn apply(self, old: Option<T>) -> Option<T> {
+        match self {
+            Edit::Keep => old,
+            Edit::Clear => None,
+            Edit::Set(v) => Some(v),
+        }
+    }
+}
+
 /// The parameters of a command, or of one item of a list inside them.
 #[derive(Clone, Debug)]
 pub struct Params<'a> {
@@ -285,6 +307,29 @@ impl<'a> Params<'a> {
     /// setting (a port's own reference impedance again, say).
     pub fn cleared(&self, name: &str) -> bool {
         self.value.get(name).is_some_and(Value::is_null)
+    }
+
+    /// What an edit does to the optional setting `name`: cleared when given as `null`, set to
+    /// what `given` reads when it is given, kept when left out.
+    ///
+    /// ```
+    /// use emcraft_engine::{Edit, Params};
+    /// use emcraft_model::units::Display;
+    /// use serde_json::json;
+    ///
+    /// let given = json!({"width": 2, "colour": null});
+    /// let p = Params::new(&given, Display::default());
+    /// let width = p.edit("width", || p.number("width").optional())?;
+    /// assert_eq!(width.apply(Some(1.0)), Some(2.0));
+    /// assert_eq!(p.edit("colour", || p.string("colour").optional())?.apply(Some("#000000")), None);
+    /// assert_eq!(p.edit("dash", || p.number("dash").optional())?.apply(Some(3.0)), Some(3.0));
+    /// # Ok::<(), emcraft_engine::EngineError>(())
+    /// ```
+    pub fn edit<T>(&self, name: &str, given: impl FnOnce() -> Result<Option<T>>) -> Result<Edit<T>> {
+        if self.cleared(name) {
+            return Ok(Edit::Clear);
+        }
+        Ok(given()?.map_or(Edit::Keep, Edit::Set))
     }
 
     /// An edit's length `name` (display units in, metres out): `old` when left out, and `old`

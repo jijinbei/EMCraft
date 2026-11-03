@@ -30,26 +30,22 @@ fn action(out: &mut Actions, value: Value) {
     out.push(Action::run("view.pcb", value));
 }
 
+/// The receiving trace of the coupling to illustrate: another routed net (the route is the
+/// noise source).
 pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let c = &app.session.views().pcb_illustration;
     ui.horizontal_wrapped(|ui| {
-        for (label, role) in [("Pick source", false), ("Pick receiver", true)] {
-            let r = ui.selectable_label(c.pick_victim == role, tr(label));
-            scenario::publish_target(Handle::Choice("pcb_coupling", if role { "pick_receiver" } else { "pick_source" }), r.rect);
-            if r.clicked() {
-                action(out, json!({"pick_victim": role}));
-            }
-        }
         ui.label(tr("Receiving trace"));
         egui::ComboBox::from_id_salt("pcb_receiver").selected_text(c.victim.as_deref().unwrap_or("—")).show_ui(ui, |ui| {
+            let route = app.session.views().pcb_net.as_deref();
             let nets: std::collections::BTreeSet<_> = app
                 .session
                 .model()
                 .pcb
                 .iter()
                 .flat_map(|b| b.segments.iter())
-                .filter(|s| Some(s.net.as_str()) != app.session.views().pcb_net.as_deref() && s.net != app.views.pcb.ground)
                 .map(|s| s.net.as_str())
+                .filter(|n| Some(*n) != route && *n != app.views.pcb.ground)
                 .collect();
             for net in nets {
                 let r = ui.selectable_label(c.victim.as_deref() == Some(net), net);
@@ -59,15 +55,7 @@ pub(super) fn select(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 }
             }
         });
-        let r = ui.button(tr("Swap source / receiver"));
-        scenario::publish_target(Handle::Choice("pcb_coupling", "swap"), r.rect);
-        if r.clicked()
-            && let (Some(a), Some(b)) = (&app.session.views().pcb_net, &c.victim)
-        {
-            action(out, json!({"net": b, "victim": a, "stage": "net"}));
-        }
     });
-    ui.small(tr("Source is orange; receiver is blue. Select each role before clicking a trace."));
 }
 
 fn points(v: &Value, unit: emcraft_model::units::Length) -> Option<[[f64; 2]; 2]> {
@@ -94,9 +82,9 @@ pub(super) fn ready(app: &EmcraftApp) -> bool {
 pub(crate) fn curves(app: &EmcraftApp, frame: &crate::scene3d::board::Frame, motion: u64, out: &mut crate::scene3d::Built) {
     let config = &app.session.views().pcb_illustration;
     let pairs = pairs(app);
-    let (Some(board), true, Some(pair)) =
-        (app.session.model().pcb.as_ref(), config.coupling, pairs.get(app.views.pcb.illustration.index.min(pairs.len().saturating_sub(1))))
-    else {
+    let results = emcraft_engine::pcb::stage(&app.session) == emcraft_engine::pcb::Stage::Results;
+    let index = app.views.pcb.illustration.index.min(pairs.len().saturating_sub(1));
+    let (Some(board), Some(mode), true, Some(pair)) = (app.session.model().pcb.as_ref(), config.illustrated, results, pairs.get(index)) else {
         return;
     };
     let u = app.session.display().length;
@@ -138,9 +126,8 @@ pub(crate) fn curves(app: &EmcraftApp, frame: &crate::scene3d::board::Frame, mot
         .and_then(|r| r["findings"].as_array())
         .into_iter()
         .flatten()
-        .any(|f| ["return_gap", "reference_edge", "no_reference"].contains(&f["code"].as_str().unwrap_or("")));
+        .any(|f| f["code"].as_str().and_then(emcraft_engine::pcb::Code::parse).is_some_and(emcraft_engine::pcb::Code::reference));
     let emphasis = if config.playing { (motion % 8 + 1) as f32 * 0.785 } else { 0. };
-    let mode = config.mode;
     for k in 0..if mode == Mode::Return { 1 } else { 5 } {
         let x = half * (k as f64 / 4. - 0.5);
         let a = p(x);
@@ -179,32 +166,28 @@ pub(crate) fn curves(app: &EmcraftApp, frame: &crate::scene3d::board::Frame, mot
     }
 }
 
-/// The 3D view's modes over its top edge: picking routes, or one of the coupling
-/// illustrations (once a receiving trace and its parallel stretch are known), and the
-/// explanatory motion.
+/// The coupling's illustrations over the 3D view's top edge, once there are results to draw
+/// them from: none (the whole board), electric, magnetic, return, and the explanatory motion.
 pub(super) fn mode_bar(app: &EmcraftApp, ui: &mut egui::Ui, view: Rect, out: &mut Actions) {
     let config = &app.session.views().pcb_illustration;
-    let ready = ready(app);
     let bar = Rect::from_center_size(pos2(view.center().x, view.top() + 22.), vec2(view.width().min(560.), 32.));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)));
     let ui = &mut child;
     egui::Frame::NONE.fill(Tokens::get().panel).corner_radius(Tokens::get().radius_lg).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
         ui.horizontal(|ui| {
-            let r = ui.selectable_label(!config.coupling, tr("Pick traces"));
+            let r = ui.selectable_label(config.illustrated.is_none(), tr("Whole board"));
             scenario::publish_target(Handle::Choice("pcb_mode", "select"), r.rect);
             if r.clicked() {
                 action(out, json!({"coupling": false}));
             }
             for mode in Mode::ALL {
-                let r = ui
-                    .add_enabled(ready, egui::Button::selectable(config.coupling && config.mode == mode, shown(mode)))
-                    .on_disabled_hover_text(tr("Choose a receiving trace and inspect the route to illustrate the coupling."));
+                let r = ui.selectable_label(config.illustrated == Some(mode), shown(mode));
                 scenario::publish_target(Handle::Choice("pcb_mode", mode.id()), r.rect);
                 if r.clicked() {
                     action(out, json!({"coupling": true, "mode": mode.id()}));
                 }
             }
-            if config.coupling && ready {
+            if config.illustrated.is_some() {
                 let r =
                     ui.selectable_label(config.playing, tr("Explain motion")).on_hover_text(tr("Motion is explanatory emphasis, not physical time."));
                 scenario::publish_target(Handle::Choice("pcb_coupling", "playing"), r.rect);
@@ -218,9 +201,9 @@ pub(super) fn mode_bar(app: &EmcraftApp, ui: &mut egui::Ui, view: Rect, out: &mu
 
 /// Brings the 3D view to the illustrated stretch when it is new (its curves with room round
 /// them), and back to the whole board when the view returns to picking routes.
-pub(super) fn frame_view(app: &EmcraftApp, state: &mut IllustrationUi, view: &mut crate::view3d::View3d, rect: Rect) {
+pub(super) fn frame_view(app: &EmcraftApp, illustrated: bool, state: &mut IllustrationUi, view: &mut crate::view3d::View3d, rect: Rect) {
     let config = &app.session.views().pcb_illustration;
-    if !config.coupling {
+    if !(illustrated && config.illustrated.is_some()) {
         if state.framed.take().is_some() {
             view.standard(emcraft_render::view3d::StandardView::Iso);
         }
@@ -301,7 +284,7 @@ pub(super) fn show(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut e
             ("unit", &unit),
         ],
     ));
-    ui.small(tr(match config.mode {
+    ui.small(tr(match config.illustrated.unwrap_or_default() {
         Mode::Electric => "Electric coupling: schematic connections between conductors; no field strength is implied.",
         Mode::Magnetic => "Magnetic coupling: symbolic loops around the source current and receiver; no flux is calculated.",
         Mode::Return => "Return reference only, not a solved current. Missing ground is never bridged.",

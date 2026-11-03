@@ -68,9 +68,9 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             let power = reply.get("power").or(reply.get("radiated_power")).and_then(Value::as_f64).unwrap_or(f64::NAN);
             trf("Solved the open problem: radiated power {power} W.", args!(power = format!("{power:.4e}")))
         }
-        "solve.time_domain" => match r.text("device") {
-            "" | "cpu" => trf("Time domain: solved in {n} steps.", args!(n = r.count("steps"))),
-            device => trf(
+        "solve.time_domain" => match (emcraft_engine::Device::parse(r.text("device")), r.text("device")) {
+            (None | Some(emcraft_engine::Device::Cpu), _) => trf("Time domain: solved in {n} steps.", args!(n = r.count("steps"))),
+            (Some(_), device) => trf(
                 "Time domain: solved in {n} steps on {device} ({precision} precision).",
                 args!(n = r.count("steps"), device = device, precision = tr(r.text("precision"))),
             ),

@@ -269,7 +269,10 @@ fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'
     // A job of a chosen kind sees only its commands (the search still finds the others).
     let mut out: Vec<Panel> = panels
         .iter()
-        .map(|(name, items)| Panel { name, commands: items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id))).collect() })
+        .map(|(name, items)| Panel {
+            name,
+            commands: items.iter().copied().filter(|id| chosen.is_none_or(|k| fits(k, id)) && ready(app, id)).collect(),
+        })
         .filter(|p| !p.commands.is_empty())
         .collect();
     let Some(kind) = chosen.filter(|_| tab == RibbonTab::Simulate) else { return out };
@@ -281,6 +284,14 @@ fn ordered(app: &EmcraftApp, tab: RibbonTab, panels: &'static [(&'static str, &'
         out.insert(0, panel);
     }
     out
+}
+
+/// Whether what a ribbon command works on is there: a board's edits need a board.
+fn ready(app: &EmcraftApp, id: &str) -> bool {
+    match id {
+        "pcb.segment" | "pcb.via" | "pcb.pour" => app.session.model().pcb.is_some(),
+        _ => true,
+    }
 }
 
 /// Whether a ribbon command belongs to a job of this kind of analysis: those of the other kinds

@@ -112,24 +112,24 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
 
 /// Where a solve runs, in brief: `CPU`, or `GPU cuda` (and the fronts it has taken).
 pub(crate) fn place_text(w: &crate::worker::Where) -> String {
-    // The GPU's kernels run on the CPU's SIMD there: no GPU at all.
-    if w.device == "cubecl-cpu" {
-        return trf("CPU kernels ({device})", args!(device = w.device));
-    }
-    match (w.gpu, w.stepped) {
-        (false, _) => tr("CPU").to_owned(),
-        (true, true) => trf("GPU {device}", args!(device = w.device)),
-        (true, false) if w.fronts > 0 => trf("GPU {device}: {n} fronts", args!(device = w.device, n = w.fronts)),
-        (true, false) => trf("CPU (no front large enough for {device})", args!(device = w.device)),
+    use emcraft_engine::Device;
+    let device = w.device.id();
+    match (w.device, w.stepped) {
+        (Device::Cpu, _) => tr("CPU").to_owned(),
+        // The GPU's kernels run on the CPU's SIMD there: no GPU at all.
+        (Device::CubeclCpu, _) => trf("CPU kernels ({device})", args!(device = device)),
+        (Device::Cuda, true) => trf("GPU {device}", args!(device = device)),
+        (Device::Cuda, false) if w.fronts > 0 => trf("GPU {device}: {n} fronts", args!(device = device, n = w.fronts)),
+        (Device::Cuda, false) => trf("CPU (no front large enough for {device})", args!(device = device)),
     }
 }
 
 /// The solve's device as a chip: the accent's while a GPU works, dim on the CPU.
 fn device_chip(ui: &mut egui::Ui, w: &crate::worker::Where, t: &theme::Tokens) {
-    let on = w.gpu && (w.stepped || w.fronts > 0);
+    let on = w.gpu() && (w.stepped || w.fronts > 0);
     let text = place_text(w);
     let (fill, ink) = if on { (t.accent, t.on_accent) } else { (t.panel_header, t.text_dim) };
-    let hint = match (w.gpu, w.stepped) {
+    let hint = match (w.gpu(), w.stepped) {
         (false, _) => "The CPU's threads (Setup › Compute picks a GPU)",
         (true, true) => "The time domain's steps on the GPU",
         (true, false) => "The factorization on the CPU, its large fronts on the GPU",

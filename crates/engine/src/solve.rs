@@ -217,9 +217,9 @@ impl std::fmt::Debug for Compute {
 }
 
 impl Compute {
-    /// The device's name as commands give it.
-    pub fn device(&self) -> &'static str {
-        Device::of(self.backend).id()
+    /// The device the solvers run on (`.id()` is its name as commands give it).
+    pub fn device(&self) -> Device {
+        Device::of(self.backend)
     }
 
     /// The fronts the device has held since it was set.

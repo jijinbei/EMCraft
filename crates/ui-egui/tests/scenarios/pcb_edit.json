@@ -1,6 +1,6 @@
 [
  {
-  "note": "Editing the board: a route's segment widened and deleted in the panel (undone), a via added from the ribbon's command"
+  "note": "Editing the board in step 1: drawing on, the pen's net's segments widened and deleted in the panel (undone), a via added, a segment drawn in 3D from the route's end"
  },
  {
   "call": "ui.set",
@@ -24,7 +24,7 @@
    "command": "view.pcb",
    "params": {
     "net": "DATA",
-    "stage": "net"
+    "stage": "board"
    }
   }
  },
@@ -33,6 +33,12 @@
   "params": {
    "view": "pcb"
   }
+ },
+ {
+  "frames": 2
+ },
+ {
+  "click": "choice:pcb_mode:draw"
  },
  {
   "frames": 2
@@ -95,9 +101,6 @@
  },
  {
   "note": "Drawing the route on in 3D: two clicks on its layer add a segment from the route's end"
- },
- {
-  "click": "choice:pcb_mode:draw"
  },
  {
   "call": "ui.set",

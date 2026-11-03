@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 emcraft-fem = { workspace = true }
+emcraft-macros = { workspace = true }
 emcraft-model = { workspace = true }
 num-complex = { workspace = true }
 thiserror = { workspace = true }

@@ -298,9 +298,9 @@ pub enum Handle<'a> {
     /// A step's line in Home's summary: `home:step:mesh`.
     HomeStep(Step),
     /// The Setup step's device: `setup:device:cpu`.
-    Device(&'a str),
+    Device(emcraft_engine::Device),
     /// The Setup step's precision: `setup:precision:double`.
-    Precision(&'a str),
+    Precision(emcraft_engine::Precision),
     /// A preflight finding's Go to: `preflight:blocks:0`, `preflight:warning:1`.
     Preflight(&'static str, usize),
     /// A refused Run's Go to: `run:refused:0`.

@@ -37,8 +37,8 @@ pub struct Job {
 
 /// The device a solve runs on.
 struct Device {
-    /// Its name (`cpu`, `cuda`, …).
-    name: String,
+    /// The device.
+    name: emcraft_engine::Device,
     /// The fronts the device had taken when the job started (the factorization's share on a
     /// GPU is the difference).
     fronts_before: usize,
@@ -50,16 +50,21 @@ struct Device {
 /// Where a solve runs, as the job row and its message say it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Where {
-    /// The device's name (`cpu`, `cuda`, …).
-    pub device: String,
-    /// Whether a device does (part of) the work: a GPU, or the GPU's kernels on the CPU's SIMD
-    /// (`cubecl-cpu`, not a GPU).
-    pub gpu: bool,
+    /// The device.
+    pub device: emcraft_engine::Device,
     /// The factorization's fronts the GPU has taken so far in this job.
     pub fronts: usize,
     /// Whether the solve is the time domain's (all of it on the device) rather than a
     /// factorization's (its large fronts).
     pub stepped: bool,
+}
+
+impl Where {
+    /// Whether a device does (part of) the work: a GPU, or the GPU's kernels on the CPU's SIMD
+    /// (`cubecl-cpu`, not a GPU).
+    pub fn gpu(&self) -> bool {
+        self.device != emcraft_engine::Device::Cpu
+    }
 }
 
 /// What [`Job::poll`] found.
@@ -100,8 +105,9 @@ impl Job {
         // A solve's device: the time domain names its own, else the session's.
         let device = crate::steps::is_solve(command).then(|| {
             let compute = session.compute();
-            let named = params.get("device").and_then(Value::as_str).filter(|_| command == "solve.time_domain");
-            Device { name: named.unwrap_or(compute.device()).to_owned(), fronts_before: compute.fronts_taken(), compute: compute.clone() }
+            let named =
+                params.get("device").and_then(Value::as_str).filter(|_| command == "solve.time_domain").and_then(emcraft_engine::Device::parse);
+            Device { name: named.unwrap_or(compute.device()), fronts_before: compute.fronts_taken(), compute: compute.clone() }
         });
         Job { command: command.to_owned(), params, started: Instant::now(), progress, rx, waiting: Vec::new(), view: None, estimate: None, device }
     }
@@ -111,7 +117,7 @@ impl Job {
         let d = self.device.as_ref()?;
         let stepped = self.command == "solve.time_domain";
         let fronts = d.compute.fronts_taken().saturating_sub(d.fronts_before);
-        Some(Where { device: d.name.clone(), gpu: d.name != "cpu", fronts, stepped })
+        Some(Where { device: d.name, fronts, stepped })
     }
 
     pub fn poll(&self) -> Poll {

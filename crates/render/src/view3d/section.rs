@@ -63,6 +63,42 @@ pub enum Keep {
     High,
 }
 
+impl Keep {
+    /// Its name in the control protocol and saved state: `low` or `high`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Keep::Low => "low",
+            Keep::High => "high",
+        }
+    }
+
+    /// The side named `id`.
+    pub fn parse(id: &str) -> Option<Keep> {
+        match id {
+            "low" => Some(Keep::Low),
+            "high" => Some(Keep::High),
+            _ => None,
+        }
+    }
+
+    /// +1 when the low side stays, −1 when the high one does: the cut's normal points away from
+    /// what stays.
+    pub fn sign(self) -> f64 {
+        match self {
+            Keep::Low => 1.0,
+            Keep::High => -1.0,
+        }
+    }
+
+    /// The other side.
+    pub fn flipped(self) -> Keep {
+        match self {
+            Keep::Low => Keep::High,
+            Keep::High => Keep::Low,
+        }
+    }
+}
+
 /// A cut: the plane n̂ · p = `offset` (n̂ the unit `normal`); the side the normal points to is
 /// removed.
 #[derive(Clone, Copy, Debug, PartialEq)]

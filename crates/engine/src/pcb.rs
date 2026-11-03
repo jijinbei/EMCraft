@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::{EngineError, Params, Result, Session, Step};
 
-pub use emcraft_theory::pcb::{Pair, near};
+pub use emcraft_theory::pcb::{Code, Pair, near};
 
 emcraft_macros::named_enum! {
     /// PCB workspace stages, saved with the project by `view.pcb`.
@@ -40,23 +40,15 @@ emcraft_macros::named_enum! {
 emcraft_macros::named_serde!(CouplingMode);
 
 /// The coupling schematic's settings, saved with the project by `view.pcb`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Illustration {
+    /// The receiving trace (the route is the noise source).
     pub victim: Option<String>,
-    /// Whether the board's 3D view illustrates the coupling (`mode`) rather than picks routes.
-    pub coupling: bool,
-    pub mode: CouplingMode,
+    /// The mechanism the board's 3D view illustrates, none for the whole board.
+    pub illustrated: Option<CouplingMode>,
+    /// Explanatory motion of the illustration (not physical time).
     pub playing: bool,
-    pub exaggerate: bool,
-    pub section: bool,
-    pub pick_victim: bool,
-}
-
-impl Default for Illustration {
-    fn default() -> Self {
-        Self { victim: None, coupling: false, mode: CouplingMode::Electric, playing: false, exaggerate: true, section: true, pick_victim: false }
-    }
 }
 
 /// Last verified PCB conditions; frequency is SI hertz, impedance is ohms.
@@ -108,23 +100,17 @@ pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
     if illustration.victim == s.views.pcb_net {
         illustration.victim = None;
     }
-    if let Some(v) = p.pick("mode").optional()? {
-        illustration.mode = v;
-    }
-    if let Some(v) = p.flag("coupling").optional()? {
-        illustration.coupling = v;
-    }
+    // `mode` illustrates that mechanism; `coupling` false the whole board again, true the last
+    // mechanism shown (the electric at first).
+    let mode: Option<CouplingMode> = p.pick("mode").optional()?;
+    illustration.illustrated = match (p.flag("coupling").optional()?, mode) {
+        (Some(false), _) => None,
+        (_, Some(m)) => Some(m),
+        (Some(true), None) => Some(illustration.illustrated.unwrap_or_default()),
+        (None, None) => illustration.illustrated,
+    };
     if let Some(v) = p.flag("playing").optional()? {
         illustration.playing = v;
-    }
-    if let Some(v) = p.flag("exaggerate").optional()? {
-        illustration.exaggerate = v;
-    }
-    if let Some(v) = p.flag("section").optional()? {
-        illustration.section = v;
-    }
-    if let Some(v) = p.flag("pick_victim").optional()? {
-        illustration.pick_victim = v;
     }
     s.views.pcb_illustration = illustration;
     s.views.pcb_stage = Some(stage);
@@ -301,7 +287,7 @@ fn section_json(v: &Section, length: Length) -> Value {
 
 /// A screening finding: geometry only, never a solved field.
 fn finding_json(f: &Finding) -> Value {
-    json!({"code": f.code, "method": "geometry_screening", "segment": f.segment, "detail": f.detail})
+    json!({"code": f.code.id(), "method": "geometry_screening", "segment": f.segment, "detail": f.detail})
 }
 
 /// A pair of parallel segments of two nets, in display lengths: geometry only.

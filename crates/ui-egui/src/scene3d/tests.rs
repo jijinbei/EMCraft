@@ -88,7 +88,7 @@ fn a_mesh_cut_shows_interior_edges_without_filled_faces() {
     let (lo, hi) = m.bounds().map(|b| (p3(b.min), p3(b.max))).unwrap();
     for axis in 0..3 {
         let at = 0.47 * lo[axis] + 0.53 * hi[axis];
-        let cut = mesh_slice(m, axis, at, true);
+        let cut = mesh_slice(m, axis, at);
         let outline = section_outline(m, axis, at);
         assert!(cut.tris.is_empty());
         assert!(outline.tris.is_empty());
@@ -98,12 +98,10 @@ fn a_mesh_cut_shows_interior_edges_without_filled_faces() {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
         assert!(cut.lines.iter().any(|l| [l.a, l.b].iter().all(|p| p[u] > lo[u] && p[u] < hi[u] && p[v] > lo[v] && p[v] < hi[v])));
-        assert_eq!(mesh_slice(m, axis, at, false).lines, cut.lines);
-        assert_eq!(mesh_slice(m, axis, at, true).lines, cut.lines);
-        assert!(mesh_slice(m, axis, hi[axis] + 1.0, true).lines.is_empty());
+        assert!(mesh_slice(m, axis, hi[axis] + 1.0).lines.is_empty());
     }
-    assert!(mesh_slice(m, 3, 0.0, true).lines.is_empty());
-    assert!(mesh_slice(m, 0, f64::NAN, true).lines.is_empty());
+    assert!(mesh_slice(m, 3, 0.0).lines.is_empty());
+    assert!(mesh_slice(m, 0, f64::NAN).lines.is_empty());
 }
 
 #[test]

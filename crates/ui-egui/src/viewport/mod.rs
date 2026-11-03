@@ -128,12 +128,15 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 View::Study => show_chart::<StudyView>(app, st, ui, out),
                 View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
             };
-            if matches!(app.view, View::Model | View::Pcb) {
-                body(&mut inner, st, out);
-            } else if app.view == View::Home {
-                egui::ScrollArea::vertical().id_salt("view_home").auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
-            } else {
-                egui::ScrollArea::both().id_salt(("view", app.view.id())).auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
+            // The 3D views fill the card; Home scrolls down; the results both ways.
+            match app.view {
+                View::Model | View::Pcb => body(&mut inner, st, out),
+                View::Home => {
+                    egui::ScrollArea::vertical().id_salt("view_home").auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
+                }
+                _ => {
+                    egui::ScrollArea::both().id_salt(("view", app.view.id())).auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
+                }
             }
         });
     shown

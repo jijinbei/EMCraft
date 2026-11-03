@@ -32,6 +32,23 @@ pub struct Segment {
     pub width: f64,
 }
 
+impl Segment {
+    /// The segment's point at `end`: its start or its end (m).
+    ///
+    /// ```
+    /// use emcraft_model::End;
+    /// use emcraft_model::pcb::Segment;
+    /// let g = Segment { id: "a".into(), net: "N".into(), layer: "F.Cu".into(), start: [0.0, 0.0], end: [0.01, 0.0], width: 2e-4 };
+    /// assert_eq!(g.at(End::End), [0.01, 0.0]);
+    /// ```
+    pub fn at(&self, end: crate::End) -> [f64; 2] {
+        match end {
+            crate::End::Start => self.start,
+            crate::End::End => self.end,
+        }
+    }
+}
+
 /// A through or blind via of a net at `at` (m), joining the two named layers: its pads
 /// `diameter` across (m) and its plated hole `drill` (m; the pads' when not given).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
