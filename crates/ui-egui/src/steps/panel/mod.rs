@@ -24,7 +24,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
     let t = &Tokens::get();
     let states = statuses_now(app);
     let Some(state) = states.get(step.index()).cloned() else { return };
-    // Home's settings are its view's; the panel holds only a dialog docked there.
+    // The kind of analysis is the step bar's switch; the panel holds only a dialog docked there.
     if step == Step::Intent && dialog.is_none() {
         return;
     }
@@ -179,7 +179,7 @@ fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states:
     let lu = app.session.display().length.symbol();
     follow_band(app, f);
     match step {
-        // On the Home view.
+        // The step bar's switch.
         Step::Intent => {}
         Step::Geometry => model::geometry(app, ui, lu, has_dialog, t, out),
         Step::Materials => model::materials(app, ui, t),

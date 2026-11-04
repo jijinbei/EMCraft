@@ -31,9 +31,8 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let t = Tokens::get();
     egui::Panel::top("pcb_steps").show_separator_line(false).frame(egui::Frame::NONE.fill(t.viewport_top).inner_margin(6)).show(ui, |ui| {
         ui.horizontal(|ui| {
-            if ui.selectable_label(app.view == View::Home, tr("Home")).clicked() {
-                out.push(Action::ShowView(View::Home));
-            }
+            let (kind, _) = ui.allocate_exact_size(vec2(crate::kinds::SWITCH_WIDTH, 30.0), Sense::hover());
+            crate::kinds::switch(app, ui, kind, out);
             // Each stage open once the one before it is done: the board, a route on it, a report.
             let list: Vec<crate::steps::Pill> = Stage::ALL
                 .into_iter()

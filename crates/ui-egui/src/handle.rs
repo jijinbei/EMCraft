@@ -114,12 +114,6 @@ emcraft_macros::named_enum! {
         /// Step 1's waveguide when there is no geometry yet.
         StepWaveguide = "step:waveguide",
         // The step panels.
-        /// The project's Home view (its rectangle) and its next step's button.
-        ProjectHome = "project:home",
-        HomeNext = "home:next",
-        IntentStart = "intent:start",
-        IntentStop = "intent:stop",
-        IntentApply = "intent:apply",
         ExcitationPreview = "excitation:preview",
         ExcitationPatterns = "excitation:patterns",
         SetupBand = "setup:band",
@@ -289,14 +283,8 @@ pub enum Handle<'a> {
     /// A choice in a dialog's drop-down: `choice:material:vacuum`.
     Choice(&'a str, &'a str),
     /// The Setup step's solver: `setup:solver:frequency`.
-    /// Home's card of a kind of analysis: `intent:kind:eigenmodes`.
+    /// A kind of analysis in the step bar's switch: `intent:kind:eigenmodes`.
     Kind(Solver),
-    /// A guide band's preset on Home: `home:band:WR-90`.
-    BandPreset(&'a str),
-    /// A unit's choice on Home: `home:units:length:mm`.
-    HomeUnit(&'static str, &'static str),
-    /// A step's line in Home's summary: `home:step:mesh`.
-    HomeStep(Step),
     /// The Setup step's device: `setup:device:cpu`.
     Device(emcraft_engine::Device),
     /// The Setup step's precision: `setup:precision:double`.
@@ -413,9 +401,6 @@ impl fmt::Display for Handle<'_> {
             Handle::DialogParam(name) => write!(f, "dialog:param:{name}"),
             Handle::Choice(param, value) => write!(f, "choice:{param}:{value}"),
             Handle::Kind(s) => write!(f, "intent:kind:{}", s.id()),
-            Handle::BandPreset(name) => write!(f, "home:band:{name}"),
-            Handle::HomeUnit(group, id) => write!(f, "home:units:{group}:{id}"),
-            Handle::HomeStep(s) => write!(f, "home:step:{}", s.id()),
             Handle::Device(name) => write!(f, "setup:device:{name}"),
             Handle::Precision(p) => write!(f, "setup:precision:{p}"),
             Handle::Preflight(what, i) => write!(f, "preflight:{what}:{i}"),
@@ -489,9 +474,7 @@ mod tests {
 
     #[test]
     fn handles_read_as_the_protocol_names_them() {
-        let cases: [(Handle, &str); 18] = [
-            (Handle::BandPreset("WR-90"), "home:band:WR-90"),
-            (Handle::HomeUnit("length", "mm"), "home:units:length:mm"),
+        let cases: [(Handle, &str); 16] = [
             (Handle::ChartBlock(1), "chart:block:1"),
             (Handle::Tab(RibbonTab::PortsSources), "tab:PORTS & SOURCES"),
             (Handle::Toolbar("mesh.generate"), "toolbar:mesh.generate"),

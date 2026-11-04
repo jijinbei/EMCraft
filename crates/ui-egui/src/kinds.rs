@@ -1,6 +1,6 @@
-//! The four kinds of analysis as cards, drawn alike on the start page (a glyph and a name) and
-//! on the project's Home (a small picture of what the kind models and gives, in its own colour,
-//! its name and a line in plain words).
+//! The kinds of analysis: as cards on the start page (a small picture of what the kind models
+//! and gives, in its own colour, its name and a line in plain words) and as the switch at the
+//! head of the step bar (its glyph and name, the kinds listed on a click).
 
 use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, pos2, vec2};
 
@@ -314,4 +314,58 @@ fn arrow_head(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke) {
     let n = vec2(-u.y, u.x);
     let head = 6.0;
     p.add(egui::Shape::convex_polygon(vec![b + u * 1.5, b - u * head + n * head * 0.55, b - u * head - n * head * 0.55], s.color, Stroke::NONE));
+}
+
+/// The switch's width, in points.
+pub const SWITCH_WIDTH: f32 = 200.0;
+
+/// The job's kind of analysis at the head of the step bar, in `r`: its glyph and name (`auto`
+/// while inferred); a click lists the kinds, and choosing one runs `project.analysis`.
+pub fn switch(app: &crate::EmcraftApp, ui: &mut egui::Ui, r: Rect, out: &mut crate::Actions) {
+    let t = &Tokens::get();
+    let m = app.session.model();
+    let (current, chosen) = (m.analysis(), m.analysis);
+    let enabled = !app.busy();
+    let resp = ui.hit(r, Handle::Step(crate::steps::Step::Intent), if enabled { Sense::click() } else { Sense::hover() });
+    let KindCard { glyph, name, detail, .. } = kind_card(current);
+    let fill = if resp.hovered() && enabled { t.hover } else { t.accent_soft };
+    let p = ui.painter().with_clip_rect(r);
+    p.rect(r, 12.0, fill, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+    glyphs::paint(&p, Rect::from_center_size(pos2(r.left() + 18.0, r.center().y), vec2(18.0, 18.0)), glyph, t.icon, colours(current, t)[0]);
+    let label = if chosen.is_none() { format!("{} ({})", tr(name), tr("auto")) } else { tr(name).to_owned() };
+    p.text(pos2(r.left() + 34.0, r.center().y), Align2::LEFT_CENTER, label, FontId::proportional(t.font_body), t.text);
+    let c = pos2(r.right() - 14.0, r.center().y);
+    p.add(egui::Shape::convex_polygon(vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 3.0)], t.text_dim, Stroke::NONE));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, enabled, tr(name)));
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).hint(format!("{}\n{}", tr(name), tr(detail)));
+    egui::Popup::menu(&resp).show(|ui| {
+        for kind in Solver::ALL {
+            let card = kind_card(kind);
+            // A row: the kind's glyph in its colour and its name, the job's own filled.
+            let (row, _) = ui.allocate_exact_size(vec2(SWITCH_WIDTH + 40.0, 28.0), Sense::hover());
+            let item = ui.hit(row, Handle::Kind(kind), if enabled { Sense::click() } else { Sense::hover() });
+            let fill = match (kind == current, item.hovered() && enabled) {
+                (true, _) => t.accent_soft,
+                (false, true) => t.hover,
+                (false, false) => egui::Color32::TRANSPARENT,
+            };
+            let p = ui.painter();
+            p.rect_filled(row, 6.0, fill);
+            glyphs::paint(
+                p,
+                Rect::from_center_size(pos2(row.left() + 16.0, row.center().y), vec2(18.0, 18.0)),
+                card.glyph,
+                t.icon,
+                colours(kind, t)[0],
+            );
+            p.text(pos2(row.left() + 34.0, row.center().y), Align2::LEFT_CENTER, tr(card.name), FontId::proportional(t.font_body), t.text);
+            item.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, kind == current, tr(card.name)));
+            if item.on_hover_cursor(egui::CursorIcon::PointingHand).hint(card.detail).clicked() {
+                if chosen != Some(kind) {
+                    out.push(crate::Action::run("project.analysis", serde_json::json!({"kind": kind.id()})));
+                }
+                ui.close();
+            }
+        }
+    });
 }

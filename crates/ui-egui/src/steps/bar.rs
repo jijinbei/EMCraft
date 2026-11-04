@@ -23,10 +23,14 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let card = ui.max_rect();
             ui.painter().add(t.card(t.toolbar).paint(card));
             scenario::publish_rect(Fixed::Steps, card);
+            // The kind of analysis first, then the steps from the geometry on.
+            let row = card.shrink2(vec2(8.0, 4.0));
+            let kind = Rect::from_min_size(row.min, vec2(crate::kinds::SWITCH_WIDTH, row.height()));
+            crate::kinds::switch(app, ui, kind, out);
+            let states: Vec<&StepState> = states.iter().filter(|s| s.step != Step::Intent).collect();
             let list: Vec<Pill> = states
                 .iter()
-                .enumerate()
-                .map(|(i, s)| {
+                .map(|s| {
                     let run_going = running && s.step == Step::Run;
                     let status = if run_going { crate::lang::tr("running") } else { shown(s.status) };
                     let mut checks: Vec<String> = s.messages.iter().map(|m| m.text.clone()).collect();
@@ -52,8 +56,8 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                         (false, false, status) => Look::Plain(status),
                     };
                     Pill {
-                        text: format!("{} {}", i, shown(s.step)),
-                        short: i.to_string(),
+                        text: format!("{} {}", s.step.index(), shown(s.step)),
+                        short: s.step.index().to_string(),
                         said: status.to_owned(),
                         look,
                         active: app.workflow.step == Some(s.step),
@@ -63,7 +67,8 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                     }
                 })
                 .collect();
-            if let Some(i) = pills(ui, card.shrink2(vec2(8.0, 4.0)), &list) {
+            let rest = Rect::from_min_max(pos2(kind.right() + 10.0, row.top()), row.max);
+            if let Some(i) = pills(ui, rest, &list) {
                 let step = states[i].step;
                 let again = app.workflow.step == Some(step);
                 out.push(Action::OpenStep(if again { None } else { Some(step) }));

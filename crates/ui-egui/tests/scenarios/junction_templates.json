@@ -13,7 +13,7 @@
   {"shot": "h-bend-radius"},
   {"click": "template:cancel"},
   {"frames": 2},
-  {"call": "ui.scroll", "params": {"x": 400, "y": 500, "delta": -3}},
+  {"call": "ui.scroll", "params": {"x": 400, "y": 500, "delta": -6}},
   {"frames": 2},
   {"click": "sample:e-bend-radius"},
   {"frames": 3},

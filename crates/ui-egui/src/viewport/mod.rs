@@ -23,7 +23,6 @@ pub mod field_params;
 mod field_side;
 mod fields;
 mod model;
-mod project;
 mod sparameters;
 mod study;
 mod tables;
@@ -33,7 +32,6 @@ use dispersion::*;
 use far_field::*;
 use fields::*;
 use model::*;
-use project::*;
 use sparameters::*;
 use study::*;
 use tables::*;
@@ -116,7 +114,6 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             // The drawings fill the card; the results scroll when the window is too small for them.
             let body = |ui: &mut egui::Ui, st: &mut Parts, out: &mut Actions| match app.view {
                 View::Pcb => pcb::show(app, st, ui, out),
-                View::Home => project_home(app, &mut st.fields, ui, out),
                 View::Model => model3d(app, st, ui, out),
                 View::SParameters => show_chart::<SParameters>(app, st, ui, out),
                 View::Tdr => show_chart::<Tdr>(app, st, ui, out),
@@ -131,9 +128,6 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             // The 3D views fill the card; Home scrolls down; the results both ways.
             match app.view {
                 View::Model | View::Pcb => body(&mut inner, st, out),
-                View::Home => {
-                    egui::ScrollArea::vertical().id_salt("view_home").auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
-                }
                 _ => {
                     egui::ScrollArea::both().id_salt(("view", app.view.id())).auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
                 }
@@ -142,10 +136,18 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
     shown
 }
 
-/// The views with something to show, as a row of pills.
+/// The results with something to show, and the model beside them, as a row of pills.
 pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.horizontal_wrapped(|ui| {
-        for v in View::ALL.into_iter().filter(|v| *v == app.view || v.available(app)) {
+        // The tabs are the results'; the model's (its field in 3D among them) joins them once there
+        // are results to go back to it from. The PCB route is its own bar's.
+        let results = View::ALL.into_iter().any(|v| v.is_result() && v.available(app));
+        let tab = |v: &View| match v {
+            View::Pcb => false,
+            View::Model => results,
+            v => *v == app.view || v.available(app),
+        };
+        for v in View::ALL.into_iter().filter(tab) {
             ui.act(true, pill(shown(v), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
         }
     });

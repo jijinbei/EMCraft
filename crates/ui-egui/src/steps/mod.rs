@@ -26,8 +26,7 @@ mod panel;
 mod run;
 
 pub use bar::bar;
-pub(crate) use bar::{Look, Pill, mark, pills, skip_mark};
-pub(crate) use panel::field;
+pub(crate) use bar::{Look, Pill, pills};
 pub(crate) use panel::fmt;
 pub use panel::{export_touchstone, not_needed, panel};
 pub use run::{Preflight, preflight, run_params, start_run};
@@ -456,9 +455,15 @@ pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
 
 /// Opens a step: its panel and the view it calls for.
 pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
-    if app.session.model().analysis() == Solver::Pcb && step.is_some_and(|s| s != Step::Intent) {
+    if app.session.model().analysis() == Solver::Pcb && step.is_some() {
         app.workflow.step = None;
         app.view = View::Pcb;
+        return;
+    }
+    // Step 0, the kind of analysis, is the step bar's switch: no panel, the model in view.
+    if step == Some(Step::Intent) {
+        app.workflow.step = None;
+        app.view = View::Model;
         return;
     }
 
@@ -475,7 +480,7 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
         Step::Results => RibbonTab::Results,
     };
     app.view = match step {
-        Step::Intent => View::Home,
+        Step::Intent => View::Model,
         Step::Results => {
             if app.session.results().sweep.is_some() || app.session.results().time_domain.is_some() {
                 View::SParameters

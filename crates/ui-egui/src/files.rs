@@ -200,7 +200,7 @@ fn go(app: &mut EmcraftApp, then: Then) {
     }
 }
 
-/// A project the window opened (`opened`) shows its Home first, unless it has results to show.
+/// A project the window opened (`opened`) shows its geometry step first, unless it has results to show.
 pub(crate) fn land(app: &mut EmcraftApp, opened: bool) {
     if opened && app.busy() {
         app.files.land_after_open = true;
@@ -208,7 +208,7 @@ pub(crate) fn land(app: &mut EmcraftApp, opened: bool) {
     }
     let r = app.session.results();
     if opened && app.session.model().pcb.is_none() && !r.any() && r.study.is_none() {
-        crate::steps::open_step(app, Some(crate::steps::Step::Intent));
+        crate::steps::open_step(app, Some(crate::steps::Step::Geometry));
     }
 }
 
