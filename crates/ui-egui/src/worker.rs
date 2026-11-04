@@ -33,6 +33,12 @@ pub struct Job {
     pub estimate: Option<f64>,
     /// Where a solve runs; `None` for a job that is not a solve.
     device: Option<Device>,
+    /// The dialog that started it: it opens again, with the error, if the job fails.
+    pub dialog: Option<crate::dialogs::Dialog>,
+    /// The commands to run after it, once it ends well (`run_all`).
+    pub then: Vec<(String, Value)>,
+    /// A project it opens lands on its step once it is in (`files::land`).
+    pub land: bool,
 }
 
 /// The device a solve runs on.
@@ -109,7 +115,20 @@ impl Job {
                 params.get("device").and_then(Value::as_str).filter(|_| command == "solve.time_domain").and_then(emcraft_engine::Device::parse);
             Device { name: named.unwrap_or(compute.device()), fronts_before: compute.fronts_taken(), compute: compute.clone() }
         });
-        Job { command: command.to_owned(), params, started: Instant::now(), progress, rx, waiting: Vec::new(), view: None, estimate: None, device }
+        Job {
+            command: command.to_owned(),
+            params,
+            started: Instant::now(),
+            progress,
+            rx,
+            waiting: Vec::new(),
+            view: None,
+            estimate: None,
+            device,
+            dialog: None,
+            then: Vec::new(),
+            land: false,
+        }
     }
 
     /// Where the job's solve runs, and how much of it the GPU has taken so far.

@@ -107,8 +107,6 @@ pub struct EmcraftApp {
     /// The Japanese font: the embedded one, and an installed one the window finds.
     pub fonts: fonts::Japanese,
     pub job: Option<worker::Job>,
-    /// Commands to run once the job ends well ([`EmcraftApp::run_all`]).
-    pub queued: Vec<(String, Value)>,
     pub tab: ribbon::RibbonTab,
     pub dialog: Option<dialogs::Dialog>,
     /// Dialogs open docked at the right instead of floating.
@@ -158,7 +156,6 @@ pub struct EmcraftApp {
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
     /// The dialog whose OK started the running job, to open again if the job fails.
-    dialog_job: Option<dialogs::Dialog>,
     /// The widget that had the keyboard at the end of the last frame: who a key pressed since
     /// was meant for (egui lets go of the keyboard on Escape before a frame is drawn).
     pub(crate) focus_last: Option<egui::Id>,
@@ -221,7 +218,6 @@ impl EmcraftApp {
             revision: 0,
             fonts: Default::default(),
             job: None,
-            queued: Vec::new(),
             tab: ribbon::RibbonTab::Model,
             dialog: None,
             dock_dialogs: prefs::Prefs::default().dock_dialogs,
@@ -251,7 +247,6 @@ impl EmcraftApp {
             template: None,
             settings: None,
             failure: None,
-            dialog_job: None,
             focus_last: None,
         };
         app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
@@ -476,7 +471,7 @@ impl EmcraftApp {
             self.workflow.fields = fields;
         } else if self.dialog.as_ref().is_some_and(|d| d.docked) {
             self.lend(|a| &mut a.dialog, |app, dialog| dialog.as_mut().map(|d| dialog_ui::docked(app, d, ui, out)));
-        } else if let Some(d) = self.dialog_job.as_ref().filter(|d| d.docked && self.job.is_some()) {
+        } else if let Some(d) = self.job.as_ref().and_then(|j| j.dialog.as_ref()).filter(|d| d.docked) {
             // The docked dialog that started the running job keeps its place with its progress.
             dialog_ui::docked_running(self, d, ui, out);
         }

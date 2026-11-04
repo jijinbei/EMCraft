@@ -69,9 +69,9 @@ impl EmcraftApp {
         let mut rest = list.into_iter();
         let mut last = json!({});
         while let Some((id, params)) = rest.next() {
-            last = self.run(&id, params).inspect_err(|_| self.queued.clear())?;
-            if self.job.is_some() {
-                self.queued = rest.collect();
+            last = self.run(&id, params)?;
+            if let Some(job) = self.job.as_mut() {
+                job.then = rest.collect();
                 break;
             }
         }
@@ -98,14 +98,13 @@ impl EmcraftApp {
         };
         // A view chosen while the job ran stays: the job's end does not take it away.
         let chosen = job.view.filter(|v| *v != self.view).map(|_| self.view);
-        let land_after_open = std::mem::take(&mut self.files.land_after_open);
         match &reply {
             Ok(v) => {
                 self.after(&job.command, &job.params, v);
                 if let Some(v) = chosen {
                     self.view = v;
                 }
-                if land_after_open && chosen.is_none() {
+                if job.land && chosen.is_none() {
                     files::land(self, true);
                 }
                 if let Some(m) = self.messages.last_mut() {
@@ -118,13 +117,12 @@ impl EmcraftApp {
             Err(e) => {
                 self.failed(&job.command, e);
                 // The dialog that started it opens again, the error under its field.
-                if let Some(mut d) = self.dialog_job.take().filter(|d| d.command.id == job.command && self.dialog.is_none()) {
+                if let Some(mut d) = job.dialog.filter(|d| d.command.id == job.command && self.dialog.is_none()) {
                     d.refused(&e.to_string());
                     self.dialog = Some(d);
                 }
             }
         }
-        self.dialog_job = None;
         let answer = match reply {
             Ok(v) => json!({"ok": true, "result": v}),
             Err(e) => json!({"ok": false, "error": e.to_string()}),
@@ -134,9 +132,8 @@ impl EmcraftApp {
             let _ = w.send(answer.clone());
         }
         // What was queued behind it, once it ended well.
-        let queued = std::mem::take(&mut self.queued);
-        if ok && !queued.is_empty() {
-            let _ = self.run_all(queued);
+        if ok && !job.then.is_empty() {
+            let _ = self.run_all(job.then);
         }
     }
 
@@ -160,10 +157,8 @@ impl EmcraftApp {
 
     /// Stops the running job: the session stays as it was before it.
     pub fn cancel_job(&mut self) -> bool {
-        self.queued.clear();
         let Some(job) = self.job.take() else { return false };
         job.cancel();
-        self.dialog_job = None;
         self.info_with("{command} cancelled.", args!(command = label(&job.command)));
 
         for w in job.waiting {

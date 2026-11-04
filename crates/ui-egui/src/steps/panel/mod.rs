@@ -185,7 +185,7 @@ fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states:
         Step::Boundaries => model::boundaries(app, ui, lu, t),
         Step::Mesh => model::mesh(app, ui, lu, t),
         Step::Setup => setup::setup(app, f, ui, fu, t, out),
-        Step::Run => run::run_panel(app, f, ui, states, t, out),
+        Step::Run => run::run_panel(app, ui, states, t, out),
         Step::Results => results::results(app, f, ui, states, t, out),
     }
 }

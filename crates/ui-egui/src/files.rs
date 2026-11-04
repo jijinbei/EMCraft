@@ -76,8 +76,6 @@ pub struct Prompt {
 }
 
 pub struct Files {
-    /// Automatic landing waits for a worker to reveal whether the opened model is a PCB.
-    pub(crate) land_after_open: bool,
     pub picker: Option<Arc<dyn Picker>>,
     tx: Sender<(Purpose, Option<String>)>,
     rx: Receiver<(Purpose, Option<String>)>,
@@ -93,7 +91,7 @@ pub struct Files {
 impl Default for Files {
     fn default() -> Files {
         let (tx, rx) = channel();
-        Files { land_after_open: false, picker: None, tx, rx, picking: false, prompt: None, confirm: None, after_save: None }
+        Files { picker: None, tx, rx, picking: false, prompt: None, confirm: None, after_save: None }
     }
 }
 
@@ -202,8 +200,8 @@ fn go(app: &mut EmcraftApp, then: Then) {
 
 /// A project the window opened (`opened`) shows its geometry step first, unless it has results to show.
 pub(crate) fn land(app: &mut EmcraftApp, opened: bool) {
-    if opened && app.busy() {
-        app.files.land_after_open = true;
+    if let Some(job) = app.job.as_mut().filter(|_| opened) {
+        job.land = true;
         return;
     }
     let r = app.session.results();

@@ -112,8 +112,6 @@ pub struct Fields {
     pub touchstone: String,
     pub format: String,
     pub errors: Vec<(&'static str, String)>,
-    /// Run's last refusal.
-    pub refused: Option<String>,
     /// What the Setup panel's band diagram last drew: the cut-offs' labels and the solve's
     /// frequencies.
     pub diagram: Option<Value>,
@@ -202,9 +200,9 @@ pub struct Workflow {
     /// `solve.devices`' reply, asked once: what this machine can run on.
     pub devices: Option<Value>,
     pub device_selection: DeviceSelection,
-    /// Run was refused for blocking problems: the steps still in the way show as needing
-    /// attention, until a run starts or another project opens.
-    pub blocked: bool,
+    /// Why Run was last refused for blocking problems: the steps still in the way show as
+    /// needing attention, until a run starts, another project opens or nothing blocks it.
+    pub refusal: Option<String>,
     /// The Setup form differs from the confirmed settings, or none are ([`unconfirmed`]).
     pub unconfirmed: bool,
 }
@@ -244,6 +242,12 @@ pub fn prepare(app: &mut EmcraftApp) {
     let key = app.revision;
     sync_setup(app);
     check_form(app);
+    // A refusal lasts while something blocks Run.
+    if let Some(r) = app.workflow.refusal.take()
+        && !run::preflight(&app.session, &statuses_now(app)).blocking.is_empty()
+    {
+        app.workflow.refusal = Some(r);
+    }
     if app.workflow.status.as_ref().is_none_or(|(k, _)| *k != key) {
         app.workflow.status = Some((key, emcraft_engine::workflow::steps(&app.session)));
     }
@@ -364,7 +368,7 @@ pub fn statuses_now(app: &EmcraftApp) -> [StepState; 9] {
             run.messages = vec![Check { text: format!("waits for {}", Step::Setup.id()), command: None }];
         }
     }
-    if app.workflow.blocked {
+    if app.workflow.refusal.is_some() {
         let solver = app.session.model().analysis();
         for s in states.iter_mut().filter(|s| run::required(s.step, solver) && s.status == Status::Todo) {
             s.status = Status::Missing;
@@ -399,7 +403,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "stale": states.get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale),
         "messages": messages,
         "errors": f.errors.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
-        "refused": f.refused,
+        "refused": app.workflow.refusal,
         "solver": solver(app).id(),
         "analysis": emcraft_engine::workflow::analysis_reply(app.session.model()),
         "not_needed": Step::ALL.into_iter().filter(|s| not_needed(app, *s).is_some()).map(Step::id).collect::<Vec<_>>(),

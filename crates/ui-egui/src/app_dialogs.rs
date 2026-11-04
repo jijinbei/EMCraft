@@ -76,7 +76,10 @@ impl EmcraftApp {
         match self.run(id, params) {
             Ok(v) => {
                 // A long command's dialog comes back with the error if its job fails.
-                self.dialog_job = self.dialog.take().filter(|_| commands::is_long(id));
+                let d = self.dialog.take().filter(|_| commands::is_long(id));
+                if let Some(job) = self.job.as_mut() {
+                    job.dialog = d;
+                }
                 Ok(v)
             }
             Err(e) => {

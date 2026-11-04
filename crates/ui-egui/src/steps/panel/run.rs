@@ -22,7 +22,7 @@ fn go_to(ui: &mut egui::Ui, step: Step, handle: Handle, out: &mut Actions) -> bo
 }
 
 /// Run: the preflight's findings and the button that starts the solve.
-pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, states: &[StepState], t: &Tokens, out: &mut Actions) {
+pub(super) fn run_panel(app: &EmcraftApp, ui: &mut egui::Ui, states: &[StepState], t: &Tokens, out: &mut Actions) {
     // While a run goes on, its progress and Cancel over the panel say all there is.
     if running(app) {
         return;
@@ -57,11 +57,8 @@ pub(super) fn run_panel(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, sta
     ui.act(!busy, ui_kit::styled(&label, true), Fixed::RunStart.into(), "", || Action::StartRun, out);
     // Why Run was refused, under the button: each blocking problem with the way to its step,
     // as long as it blocks.
-    if f.refused.is_some() && pre.blocking.is_empty() {
-        f.refused = None;
-    }
     let mut went = false;
-    if f.refused.is_some() {
+    if app.workflow.refusal.is_some() && !pre.blocking.is_empty() {
         let heading = plural(nb, "Run refused: {n} problem to fix first", "Run refused: {n} problems to fix first", args!(n = nb));
         refusal_band(ui, &heading, t, |ui| {
             for (i, (step, text)) in pre.blocking.iter().enumerate() {

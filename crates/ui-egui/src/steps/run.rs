@@ -129,13 +129,11 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
             if n == 1 { "blocks" } else { "block" },
             pre.blocking.iter().map(|(s, m)| format!("{} ({})", m, s.label())).collect::<Vec<_>>().join("; ")
         ));
-        app.workflow.fields.refused = Some(e.to_string());
-        app.workflow.blocked = true;
+        app.workflow.refusal = Some(e.to_string());
         app.error(&e);
         return Err(e);
     }
-    app.workflow.fields.refused = None;
-    app.workflow.blocked = false;
+    app.workflow.refusal = None;
     let n = pre.warnings.len();
     if n > 0 {
         app.info(plural(n, "Running with {n} accepted warning.", "Running with {n} accepted warnings.", args!(n = n)));
