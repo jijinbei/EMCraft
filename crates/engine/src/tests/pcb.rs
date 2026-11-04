@@ -78,6 +78,27 @@ fn pcb_templates_declare_their_workflow_and_rebuild_from_parameters() {
 }
 
 #[test]
+fn a_board_loaded_with_expressions_is_built_again_from_its_variables() {
+    // The microstrip circuit templates draw their boards with `pcb.load`, their numbers
+    // expressions of the template's parameters: a parameter changed moves the copper.
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "pcb-stub-filter", "values": {"l_stub": 6, "er": 9.8}})).unwrap();
+    assert_eq!(s.model.analysis(), emcraft_model::Analysis::Frequency);
+    let board = s.model.pcb.as_ref().unwrap();
+    let stub = board.segments.iter().find(|g| g.id == "stub").unwrap();
+    approx::assert_abs_diff_eq!(stub.end[1], 0.006, epsilon = 1e-12);
+    assert_eq!(board.layers[0].eps_below, 9.8);
+    s.execute("project.variable", &json!({"name": "l_stub", "value": 8})).unwrap();
+    let stub = s.model.pcb.as_ref().unwrap().segments.iter().find(|g| g.id == "stub").unwrap().clone();
+    approx::assert_abs_diff_eq!(stub.end[1], 0.008, epsilon = 1e-12);
+    // An expression of a name the session does not hold: refused, nothing changed.
+    let before = s.summary();
+    let bad = json!({"data": {"name": "x", "layers": [{"name": "F", "z": 0, "eps_below": "=nothing"}, {"name": "B", "z": 1, "eps_below": 1}], "segments": []}});
+    assert!(s.execute("pcb.load", &bad).is_err());
+    assert_eq!(s.summary(), before);
+}
+
+#[test]
 fn pcb_workflow_navigation_is_checked_saved_and_does_not_run_diagnosis() {
     let mut s = Session::new();
     s.execute("view.pcb", &json!({"stage": "board"})).unwrap();

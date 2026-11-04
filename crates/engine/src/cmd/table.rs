@@ -99,7 +99,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         label: "Load PCB data",
         doc: "Loads native PCB routing data in the session's length units. Replaces the model; geometry is checked before committing. Nets, stackup, segments, vias and saved filled copper are embedded in project history.",
         params: &[
-            req("data", K::Object, "PCB object: name, layers [{name,z,eps_below,loss_below}] (loss_below the tan δ below, default 0), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes"),
+            req("data", K::Object, "PCB object: name, layers [{name,z,eps_below,loss_below}] (loss_below the tan δ below, default 0), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes; any number may be an expression (\"=h\")"),
         ],
         effect: Effect::Record,
         invalidates: Some(Change::Geometry),

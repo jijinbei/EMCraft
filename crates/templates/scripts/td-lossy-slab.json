@@ -1,0 +1,13 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "er", "value": 2.2}},
+ {"command": "project.variable", "params": {"name": "tan_d", "value": 0.05}},
+ {"command": "project.variable", "params": {"name": "l_slab", "value": 20, "quantity": "length"}},
+ {"command": "model.material.create", "params": {"name": "lossy", "eps_r": "=er", "loss_tangent": "=tan_d"}},
+ {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": 10, "material": "vacuum"}, {"length": "=l_slab", "material": "lossy"}, {"length": 10, "material": "vacuum"}]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "model.port.create", "params": {"name": "1", "end": "start", "modes": 1}},
+ {"command": "model.port.create", "params": {"name": "2", "end": "end", "modes": 1}},
+ {"command": "solve.time_domain", "params": {"start": 8.2, "stop": 12.4, "points": 101, "cell": 1}}
+]

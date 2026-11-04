@@ -1,0 +1,17 @@
+[
+ {"command": "project.variable", "params": {"name": "l_driven", "value": 12.4, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_reflector", "value": 15.6, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_director", "value": 12.6, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "s_reflector", "value": 7.5, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "s_director", "value": 6, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "r_wire", "value": 0.5, "quantity": "length"}},
+ {"command": "geometry.solid", "params": {"shape": "box", "size": [70, 50, 50]}},
+ {"command": "geometry.inclusion", "params": {"shape": "cylinder", "radius": "=r_wire", "length": "=l_driven/2 - 0.5", "at": [30, 25, "=25 - l_driven/2"]}},
+ {"command": "geometry.inclusion", "params": {"shape": "cylinder", "radius": "=r_wire", "length": "=l_driven/2 - 0.5", "at": [30, 25, 25.5]}},
+ {"command": "geometry.inclusion", "params": {"shape": "cylinder", "radius": "=r_wire", "length": "=l_reflector", "at": ["=30 - s_reflector", 25, "=25 - l_reflector/2"]}},
+ {"command": "geometry.inclusion", "params": {"shape": "cylinder", "radius": "=r_wire", "length": "=l_director", "at": ["=30 + s_director", 25, "=25 - l_director/2"]}},
+ {"command": "model.open", "params": {"thickness": 12}},
+ {"command": "mesh.generate", "params": {"per_wavelength": 4, "frequency": 10}},
+ {"command": "model.port.lumped", "params": {"name": "feed", "from": [30, 25, 24.5], "to": [30, 25, 25.5], "impedance": 50, "radius": "=r_wire"}},
+ {"command": "solve.radiation", "params": {"frequency": 10}}
+]

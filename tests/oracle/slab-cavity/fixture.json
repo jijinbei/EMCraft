@@ -1,0 +1,13 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "te101": {
+      "band": 6.261917466265589e-9,
+      "value": 6.261916466265588
+    },
+    "te102": {
+      "band": 9.999632734988687e-9,
+      "value": 9.999631734988686
+    }
+  }
+}

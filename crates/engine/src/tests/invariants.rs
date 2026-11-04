@@ -111,7 +111,13 @@ templates! {
     circular_guide: "circular-guide",
     coupled_filter: "coupled-filter",
     coupler: "coupler",
-    taper: "taper";
+    taper: "taper",
+    pcb_stub_filter: "pcb-stub-filter",
+    pcb_lowpass: "pcb-lowpass",
+    pcb_quarter_wave: "pcb-quarter-wave",
+    pcb_branch_line: "pcb-branch-line",
+    pcb_coupled_line: "pcb-coupled-line",
+    pcb_bend: "pcb-bend";
     heavy:
     h_bend_radius: "h-bend-radius" ("4 s: its arcs"),
     e_bend_radius: "e-bend-radius" ("3 s: its arcs"),

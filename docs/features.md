@@ -8,7 +8,7 @@ Loads native PCB routing data in the session's length units. Replaces the model;
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
-| `data` | object |  | yes | PCB object: name, layers [{name,z,eps_below,loss_below}] (loss_below the tan δ below, default 0), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes |
+| `data` | object |  | yes | PCB object: name, layers [{name,z,eps_below,loss_below}] (loss_below the tan δ below, default 0), segments [{id,net,layer,start,end,width}], vias [{net,at,layers,diameter}], copper [{net,layer,polygon}], notes; any number may be an expression ("=h") |
 
 ## `pcb.import` — Import PCB
 

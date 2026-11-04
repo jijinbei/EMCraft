@@ -121,6 +121,38 @@ impl<'a> Params<'a> {
         }
     }
 
+    /// The JSON value of parameter `name` with every expression in it (a string starting with
+    /// `=`, at any depth) replaced by its number: data read whole, such as a board's.
+    ///
+    /// ```
+    /// use emcraft_engine::Params;
+    /// use emcraft_engine::expr::Variables;
+    /// use emcraft_model::units::Display;
+    /// use serde_json::json;
+    ///
+    /// let given = json!({"data": {"z": "=h", "at": [1, "=2*h"], "name": "F.Cu"}});
+    /// let vars = Variables::from([("h".to_owned(), 0.5)]);
+    /// let p = Params::new(&given, Display::default()).with_variables(&vars);
+    /// let data = p.resolved("data").required()?;
+    /// assert_eq!(data, json!({"z": 0.5, "at": [1, 1.0], "name": "F.Cu"}));
+    /// assert!(Params::new(&json!({"data": ["=nothing"]}), Display::default()).with_variables(&vars).resolved("data").required().is_err());
+    /// # Ok::<(), emcraft_engine::EngineError>(())
+    /// ```
+    pub fn resolved<'p>(&'p self, name: &'p str) -> Arg<'p, Value> {
+        self.arg(name, |v| self.resolve(name, v))
+    }
+
+    fn resolve(&self, name: &str, v: &Value) -> Result<Value> {
+        Ok(match v {
+            Value::String(t) if expr::body(t).is_some() => {
+                serde_json::Number::from_f64(self.number_of(name, v)?).map(Value::Number).unwrap_or(Value::Null)
+            }
+            Value::Array(list) => Value::Array(list.iter().map(|x| self.resolve(name, x)).collect::<Result<_>>()?),
+            Value::Object(map) => Value::Object(map.iter().map(|(k, x)| Ok((k.clone(), self.resolve(name, x)?))).collect::<Result<_>>()?),
+            other => other.clone(),
+        })
+    }
+
     /// The parameters' JSON object as given.
     pub fn value(&self) -> &'a Value {
         self.value

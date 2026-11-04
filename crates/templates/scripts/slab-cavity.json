@@ -1,0 +1,11 @@
+[
+ {"command": "project.variable", "params": {"name": "er", "value": 2.2}},
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "d1", "value": 15, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "d2", "value": 15, "quantity": "length"}},
+ {"command": "model.material.create", "params": {"name": "ptfe", "eps_r": "=er"}},
+ {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=d1", "material": "vacuum"}, {"length": "=d2", "material": "ptfe"}]}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 8, "count": 3, "order": 2}}
+]

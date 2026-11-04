@@ -137,7 +137,7 @@ fn install(s: &mut Session, board: Board) -> Result<Value> {
 
 /// `pcb.load`: a board from its JSON, lengths (layers' z too) in the session's display unit.
 pub fn load(s: &mut Session, p: &Params) -> Result<Value> {
-    let mut board: Board = serde_json::from_value(p.raw("data").cloned().ok_or_else(|| failed("give data"))?).map_err(failed)?;
+    let mut board: Board = serde_json::from_value(p.resolved("data").optional()?.ok_or_else(|| failed("give data"))?).map_err(failed)?;
     board.map_lengths(|v| s.display.length.to_si(v));
     install(s, board)
 }
