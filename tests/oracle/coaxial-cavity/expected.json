@@ -1,0 +1,9 @@
+{
+ "title": "Coaxial cavity shorted at both ends, conductors of radius 1 and 3.5 mm, 30 mm long: its TEM resonances",
+ "kind": "theory",
+ "source": "A TEM line shorted at both ends resonates where its length holds whole half wavelengths: f_p = p c/(2l), whatever the cross-section (D. M. Pozar, Microwave Engineering, 4th ed., §6.2)",
+ "quantities": [
+  {"id": "tem1", "quantity": "TEM, one half wavelength (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 4.996540966666667, "tolerance": {"relative": 5e-4}, "reason": "unstructured tetrahedra of 2 mm round curved conductors: the annulus's area off by the mesh, the line's L and C both"},
+  {"id": "tem2", "quantity": "TEM, two half wavelengths (GHz)", "measure": {"step": "modes", "pointer": "/modes/1/frequency"}, "value": 9.993081933333334, "tolerance": {"relative": 5e-4}, "reason": "as the first"}
+ ]
+}

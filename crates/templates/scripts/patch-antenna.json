@@ -1,0 +1,16 @@
+[
+ {"command": "project.variable", "params": {"name": "er", "value": 2.2}},
+ {"command": "project.variable", "params": {"name": "h", "value": 0.787, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w", "value": 11.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l", "value": 9.4, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w_feed", "value": 2.4, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "inset", "value": 3.0, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "notch", "value": 0.6, "quantity": "length"}},
+ {"command": "pcb.load", "params": {"data": {"name": "patch antenna", "layers": [{"name": "F.Cu", "z": 0, "eps_below": "=er"}, {"name": "B.Cu", "z": "=h", "eps_below": 1}], "segments": [{"id": "feed", "net": "S", "layer": "F.Cu", "start": ["=-l/2 - 6", 0], "end": ["=-l/2 + inset", 0], "width": "=w_feed"}], "copper": [{"net": "S", "layer": "F.Cu", "polygon": [["=-l/2", "=-w/2"], ["=l/2", "=-w/2"], ["=l/2", "=w/2"], ["=-l/2", "=w/2"], ["=-l/2", "=(w_feed/2 + notch)"], ["=-l/2 + inset", "=(w_feed/2 + notch)"], ["=-l/2 + inset", "=-(w_feed/2 + notch)"], ["=-l/2", "=-(w_feed/2 + notch)"]]}, {"net": "GND", "layer": "B.Cu", "polygon": [["=-l/2 - 7", "=-w/2 - 6"], ["=l/2 + 6", "=-w/2 - 6"], ["=l/2 + 6", "=w/2 + 6"], ["=-l/2 - 7", "=w/2 + 6"]]}]}}},
+ {"command": "pcb.region", "params": {"lo": ["=-l/2 - 14", "=-w/2 - 13"], "hi": ["=l/2 + 13", "=w/2 + 13"], "above": 12, "below": 12}},
+ {"command": "pcb.port", "params": {"name": "1", "segment": "feed", "end": "start"}},
+ {"command": "model.open", "params": {"thickness": 6}},
+ {"command": "mesh.generate", "params": {"size": 3.5, "strip_edge": 0.2}},
+ {"command": "project.analysis", "params": {"kind": "radiation"}},
+ {"command": "solve.radiation", "params": {"frequency": 10}}
+]

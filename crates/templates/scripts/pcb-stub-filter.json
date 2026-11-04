@@ -1,0 +1,13 @@
+[
+ {"command": "project.variable", "params": {"name": "er", "value": 3.55}},
+ {"command": "project.variable", "params": {"name": "h", "value": 0.508, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w", "value": 1.1, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_stub", "value": 9, "quantity": "length"}},
+ {"command": "pcb.load", "params": {"data": {"name": "open-stub notch filter", "layers": [{"name": "F.Cu", "z": 0, "eps_below": "=er"}, {"name": "B.Cu", "z": "=h", "eps_below": 1}], "segments": [{"id": "in", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": [10, 0], "width": "=w"}, {"id": "out", "net": "S", "layer": "F.Cu", "start": [10, 0], "end": [20, 0], "width": "=w"}, {"id": "stub", "net": "S", "layer": "F.Cu", "start": [10, 0], "end": [10, "=l_stub"], "width": "=w"}], "copper": []}}},
+ {"command": "pcb.region", "params": {"lo": [-2, -5], "hi": [22, "=l_stub + 4"], "above": 5, "below": 0}},
+ {"command": "pcb.port", "params": {"name": "1", "segment": "in", "end": "start"}},
+ {"command": "pcb.port", "params": {"name": "2", "segment": "out", "end": "end"}},
+ {"command": "mesh.generate", "params": {"size": 2, "strip_edge": 0.25}},
+ {"command": "project.analysis", "params": {"kind": "frequency"}},
+ {"command": "solve.frequency", "params": {"start": 1, "stop": 10, "points": 101, "order": 2}}
+]

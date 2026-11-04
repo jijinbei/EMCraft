@@ -118,7 +118,9 @@ along each segment), geometry findings, the model assumptions, and either `si` d
 `si: null`. Lengths/frequencies use the current display units; `*_s` and `*_hz` are explicitly
 SI. Selection is a view change; importing/loading replaces the current model and can be undone.
 
-`pcb.load` accepts `data` with this native schema (lengths in current display units):
+`pcb.load` accepts `data` with this native schema (lengths in current display units; any number
+may be an expression of the project's variables, `"=h"`, so a template's board follows its
+parameters):
 
 ```json
 {

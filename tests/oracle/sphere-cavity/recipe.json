@@ -1,0 +1,5 @@
+[
+ {"command": "geometry.solid", "params": {"shape": "sphere", "radius": 10}},
+ {"command": "mesh.generate", "params": {"size": 3}},
+ {"command": "solve.eigenmodes", "params": {"near": 13, "count": 3, "order": 2}, "id": "modes"}
+]

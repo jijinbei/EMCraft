@@ -1,0 +1,9 @@
+{
+ "title": "Rectangular cavity in two sections along its length, vacuum and εr = 2.2: TE101 and TE102",
+ "kind": "theory",
+ "source": "TE10p of a guide shorted at both ends, two sections d₁ and d₂: sin(β₁d₁)/β₁ cos(β₂d₂) + sin(β₂d₂)/β₂ cos(β₁d₁) = 0, β_i = √(ε_i k₀² − (π/a)²) (imaginary below a section's cut-off), from the transverse resonance condition (R. E. Collin, Foundations for Microwave Engineering, 2nd ed., §7.2); roots by bisection to 1e-15 relative",
+ "quantities": [
+  {"id": "te101", "quantity": "TE101 resonance (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 6.261743393658514, "tolerance": {"relative": 2e-4}, "reason": "structured tetrahedra of 3 mm, second order; the vacuum section evanescent at this frequency (its cut-off 6.56 GHz)"},
+  {"id": "te102", "quantity": "TE102 resonance (GHz)", "measure": {"step": "modes", "pointer": "/modes/1/frequency"}, "value": 9.99845772419587, "tolerance": {"relative": 2e-4}, "reason": "as TE101"}
+ ]
+}

@@ -1,0 +1,17 @@
+[
+ {"command": "project.variable", "params": {"name": "er", "value": 3.55}},
+ {"command": "project.variable", "params": {"name": "h", "value": 0.508, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w", "value": 1.1, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "w_t", "value": 1.85, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_q", "value": 15.4, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_feed", "value": 6, "quantity": "length"}},
+ {"command": "pcb.load", "params": {"data": {"name": "branch-line coupler", "layers": [{"name": "F.Cu", "z": 0, "eps_below": "=er"}, {"name": "B.Cu", "z": "=h", "eps_below": 1}], "segments": [{"id": "a", "net": "S", "layer": "F.Cu", "start": ["=l_feed", 0], "end": ["=l_feed + l_q", 0], "width": "=w_t"}, {"id": "b", "net": "S", "layer": "F.Cu", "start": ["=l_feed", "=l_q"], "end": ["=l_feed + l_q", "=l_q"], "width": "=w_t"}, {"id": "c", "net": "S", "layer": "F.Cu", "start": ["=l_feed", 0], "end": ["=l_feed", "=l_q"], "width": "=w"}, {"id": "d", "net": "S", "layer": "F.Cu", "start": ["=l_feed + l_q", 0], "end": ["=l_feed + l_q", "=l_q"], "width": "=w"}, {"id": "p1", "net": "S", "layer": "F.Cu", "start": [0, 0], "end": ["=l_feed", 0], "width": "=w"}, {"id": "p2", "net": "S", "layer": "F.Cu", "start": ["=l_feed + l_q", 0], "end": ["=2*l_feed + l_q", 0], "width": "=w"}, {"id": "p3", "net": "S", "layer": "F.Cu", "start": ["=l_feed + l_q", "=l_q"], "end": ["=2*l_feed + l_q", "=l_q"], "width": "=w"}, {"id": "p4", "net": "S", "layer": "F.Cu", "start": [0, "=l_q"], "end": ["=l_feed", "=l_q"], "width": "=w"}], "copper": []}}},
+ {"command": "pcb.region", "params": {"lo": [-2, -5], "hi": ["=2*l_feed + l_q + 2", "=l_q + 5"], "above": 5, "below": 0}},
+ {"command": "pcb.port", "params": {"name": "1", "segment": "p1", "end": "start"}},
+ {"command": "pcb.port", "params": {"name": "2", "segment": "p2", "end": "end"}},
+ {"command": "pcb.port", "params": {"name": "3", "segment": "p3", "end": "end"}},
+ {"command": "pcb.port", "params": {"name": "4", "segment": "p4", "end": "start"}},
+ {"command": "mesh.generate", "params": {"size": 2.5, "strip_edge": 0.25}},
+ {"command": "project.analysis", "params": {"kind": "frequency"}},
+ {"command": "solve.frequency", "params": {"start": 2, "stop": 4, "points": 41, "order": 2}}
+]

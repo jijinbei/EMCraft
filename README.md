@@ -22,9 +22,14 @@ Samples (the start page's templates, their dimensions variables):
   tees (`h-bend`, `e-bend`, `h-bend-radius`, `e-bend-radius`, `h-tee`, `e-tee`, `magic-tee`),
   `cross-guide-coupler`, `coupled-filter`, `coupler`, `inductive-post`, `circular-guide`,
   `coaxial-line`.
-- **Resonators:** `cavity`, `cylinder-cavity`, `loaded-sphere`.
-- **Antennas and scattering:** `dipole`, `halfwave-dipole`, `open-waveguide`, `horn`,
-  `sphere-scattering`.
+- **Microstrip circuits:** `pcb-stub-filter`, `pcb-lowpass`, `pcb-quarter-wave`,
+  `pcb-branch-line`, `pcb-coupled-line`, `pcb-bend`.
+- **Resonators:** `cavity`, `cylinder-cavity`, `sphere-cavity`, `coaxial-cavity`, `slab-cavity`,
+  `loaded-sphere`, `dielectric-resonator`, `combline-resonator`, `reentrant-cavity`.
+- **Antennas and scattering:** `dipole`, `halfwave-dipole`, `yagi`, `monopole`, `patch-antenna`,
+  `open-waveguide`, `horn`, `sphere-scattering`, `metal-sphere-scattering`.
+- **Time domain:** `td-dielectric-slab`, `td-quarter-wave`, `td-lossy-slab`,
+  `td-dispersive-slab`, `td-eplane-step`, `td-wall-loss`.
 - **Boards:** `pcb-microstrip`, `pcb-split-ground`, `pcb-parallel`, `pcb-board` (four layers).
 
 ## What it does

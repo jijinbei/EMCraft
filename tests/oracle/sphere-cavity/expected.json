@@ -1,0 +1,10 @@
+{
+ "title": "Spherical cavity, radius 10 mm, on a curved unstructured mesh: the TM11 triplet",
+ "kind": "theory",
+ "source": "Spherical cavity resonances: TM_{n1} at the roots of [x j_n(x)]' = 0, x'₁₁ = 2.743707269992269 (TM11, three-fold), f = c x/(2π a) (R. F. Harrington, Time-Harmonic Electromagnetic Fields, 1961, §6-7; the root found here by bisection to 1e-15)",
+ "quantities": [
+  {"id": "tm11_a", "quantity": "TM11 resonance, first of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/0/frequency"}, "value": 13.091174401040817, "tolerance": {"relative": 5e-4}, "reason": "unstructured tetrahedra of 3 mm on a sphere, those on the wall curved: +1.5e-4"},
+  {"id": "tm11_b", "quantity": "TM11 resonance, second of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/1/frequency"}, "value": 13.091174401040817, "tolerance": {"relative": 5e-4}, "reason": "as the first; the mesh splits the degenerate triplet slightly"},
+  {"id": "tm11_c", "quantity": "TM11 resonance, third of the triplet (GHz)", "measure": {"step": "modes", "pointer": "/modes/2/frequency"}, "value": 13.091174401040817, "tolerance": {"relative": 5e-4}, "reason": "as the first"}
+ ]
+}
