@@ -347,10 +347,10 @@ fn a_sample_opened_with_its_solve_has_current_results() {
     let mut s = Session::new();
     s.execute("file.sample", &json!({"name": "straight", "values": {"l": 5}, "solve": true})).unwrap();
     assert!(s.results.sweep.is_some());
-    assert_eq!(s.solved_revision, Some(s.revision));
+    assert!(!s.results.any_stale());
     // A change after it makes them stale.
     s.execute("project.setup", &json!({"kind": "frequency", "start": 5, "stop": 9})).unwrap();
-    assert_ne!(s.solved_revision, Some(s.revision));
+    assert!(s.results.any_stale());
 }
 
 #[test]
@@ -375,7 +375,7 @@ fn every_solve_is_kept_and_can_be_compared_restored_pinned_and_let_go() {
     // Back to the first: its model (the gap 20 mm) and results, current; undo comes back.
     s.execute("results.history.restore", &json!({"id": first})).unwrap();
     assert_eq!(s.variables().get("l_gap"), Some(&20.0));
-    assert!(s.results().sweep.is_some() && s.solved_revision() == Some(s.revision()));
+    assert!(s.results().sweep.is_some() && !s.results().any_stale());
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.variables().get("l_gap"), Some(&24.0));
     // Pinned, a solve stays past the cap; deleted, it goes.
@@ -389,4 +389,28 @@ fn every_solve_is_kept_and_can_be_compared_restored_pinned_and_let_go() {
     assert_eq!(ids.len(), crate::archive::MAX_KEPT + 1);
     s.execute("results.history.delete", &json!({"id": first})).unwrap();
     assert!(s.execute("results.history.restore", &json!({"id": first})).is_err());
+}
+
+/// Each result keeps its own staleness: a change leaves the sweep stale, and solving the
+/// eigenmodes after it makes them fresh, not the sweep; saved and opened, it stays so; undo
+/// ages them all, a sweep again makes it fresh.
+#[test]
+fn each_result_is_stale_on_its_own() {
+    use crate::ResultKind::{Eigen, Sweep};
+    let mut s = super::small();
+    assert!(!s.results.any_stale());
+    s.execute("project.setup", &json!({"kind": "frequency", "start": 6, "stop": 9, "points": 2, "order": 1})).unwrap();
+    assert!(s.results.is_stale(Sweep));
+    s.execute("solve.eigenmodes", &json!({"near": 8, "count": 1, "order": 1})).unwrap();
+    assert!(!s.results.is_stale(Eigen) && s.results.is_stale(Sweep), "the eigenmodes do not freshen the sweep");
+    let path = scratch("stale-kinds.emcraft");
+    s.execute("file.save", &json!({"path": path})).unwrap();
+    let mut t = Session::new();
+    t.execute("file.open", &json!({"path": path})).unwrap();
+    assert!(t.results.is_stale(Sweep) && !t.results.is_stale(Eigen));
+    s.execute("solve.run", &json!({})).unwrap();
+    assert!(!s.results.any_stale());
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(s.results.is_stale(Sweep) && s.results.is_stale(Eigen));
+    let _ = std::fs::remove_file(path);
 }

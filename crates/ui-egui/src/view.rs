@@ -42,6 +42,17 @@ impl View {
         }
     }
 
+    /// Whether what the view shows is stale: its own kinds of result, or (a view of no one
+    /// kind) any.
+    pub fn stale(self, app: &crate::EmcraftApp) -> bool {
+        let r = app.session.results();
+        let mut own = emcraft_engine::ResultKind::ALL.into_iter().filter(|k| View::of(*k) == self).peekable();
+        if own.peek().is_none() {
+            return r.any_stale();
+        }
+        own.any(|k| r.is_stale(k))
+    }
+
     /// The view that shows a kind of result first.
     pub const fn of(kind: emcraft_engine::ResultKind) -> View {
         use emcraft_engine::ResultKind as R;

@@ -69,8 +69,9 @@ history/<id>/s.c64           a kept solve's S-parameters (complex: real then ima
   system is written: a sweep's, the eigenmodes' and an open problem's are built again from the
   model and its mesh (an assembly, no factorization) and the vectors read must fit it. A result
   that does not fit is left out (`file.open` says which and why in `left_out`) rather than
-  refusing the file (each `{part, why}`). `current` says whether they were the model's results when saved (else
-  stale), `archive_current` which kept solve they are. The field vectors are written up to
+  refusing the file (each `{part, why}`). `stale` lists the kinds whose model changed after they were solved
+  (each result is stale on its own: solving one kind freshens only it), `archive_current`
+  which kept solve they are. The field vectors are written up to
   1 GB of them (`file.save` `fields`, default true; past the cap, or with `fields` false, the
   S-parameters and tables are written and the fields are solved again).
 - `model` is the model as the engine holds it (SI units), for other tools; opening does not

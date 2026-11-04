@@ -119,8 +119,10 @@ fn frequency(x: f64) -> Result<f64, String> {
 /// The session's results in a file.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct StoredSession {
-    /// Whether they are the model's (else stale: the model changed since without dropping them).
-    pub current: bool,
+    /// The kinds that are stale: the model changed after they were solved without dropping
+    /// them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stale: Vec<crate::ResultKind>,
     /// The kept solve they are ([`crate::archive`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive_current: Option<u32>,
@@ -157,7 +159,7 @@ impl StoredSession {
         let r = &s.results;
         let fields = fields && field_bytes(r) <= MAX_FIELD_BYTES;
         Ok(StoredSession {
-            current: s.solved_revision == Some(s.revision),
+            stale: r.stale_kinds().collect(),
             archive_current: s.archive_current,
             fields,
             sweep: r.sweep.as_deref().map(|sw| StoredSweep::write(sw, fields, w)).transpose()?,

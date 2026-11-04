@@ -545,7 +545,7 @@ fn run_and_results(s: &Session, above: &[StepState]) -> (StepState, StepState) {
             run.note(Status::Todo, "not run yet", Some(command));
         }
         results.note(Status::Waiting, "no results yet: Run (step 7) makes them", Some(command));
-    } else if s.solved_revision.is_some_and(|r| r < s.revision) {
+    } else if s.results.any_stale() {
         results.note(Status::Stale, "the model changed after this run: run again", Some(command));
         run.note(Status::Stale, "the model changed since the last run", Some(command));
     }

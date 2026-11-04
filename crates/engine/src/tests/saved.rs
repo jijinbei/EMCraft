@@ -74,7 +74,7 @@ fn a_solved_sweep_opens_with_its_fields_and_needs_no_solve() {
     assert_eq!((opened["results"].as_bool(), opened["left_out"].as_array().map(Vec::len)), (Some(true), Some(0)));
     same_results(&s.results, &t.results);
     // Current, the kept solve it is in memory (restoring it solves nothing), clean.
-    assert_eq!(t.solved_revision(), Some(t.revision()));
+    assert!(!t.results().any_stale());
     assert!(!t.is_dirty() && t.archive().last().is_some_and(|a| a.in_memory()));
     // The field at a point reads as before.
     let probe = json!({"frequency": 8, "at": [[11.43, 5.08, 50.0]]});
@@ -206,7 +206,7 @@ fn results_that_do_not_fit_are_left_out_with_why() {
         let r = t.execute("file.open", &json!({"path": path})).unwrap();
         let left: Vec<crate::store::FileError> = serde_json::from_value(r["left_out"].clone()).unwrap();
         assert!(left.len() == 1 && left[0].part == "the sweep" && left[0].why.contains(why) && t.results.sweep.is_none(), "{at}: {left:?}");
-        assert_eq!(t.solved_revision(), None);
+        assert!(!t.results().any_stale());
     }
 }
 
@@ -220,7 +220,7 @@ fn every_solved_template_opens_with_its_results() {
         let (u, opened) = reopened(&mut s, t.name, true);
         assert_eq!(opened["left_out"].as_array().map(Vec::len), Some(0), "{}: {opened}", t.name);
         same_results(&s.results, &u.results);
-        assert_eq!(u.solved_revision().is_some(), s.solved_revision() == Some(s.revision()), "{}", t.name);
+        assert!(u.results().stale_kinds().eq(s.results().stale_kinds()), "{}", t.name);
     }
 }
 

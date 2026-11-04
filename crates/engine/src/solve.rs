@@ -114,7 +114,7 @@ impl Device {
 fn reusable(s: &Session, order: emcraft_fem::Order) -> Option<Arc<Driven>> {
     let sw = s.results.sweep.as_ref()?;
     let planes = sw.driven.ports.iter().map(|p| p.deembed).eq(sw.deembed.iter().copied());
-    (s.solved_revision == Some(s.revision) && sw.order == order && planes).then(|| sw.driven.clone())
+    (!s.results.is_stale(crate::ResultKind::Sweep) && sw.order == order && planes).then(|| sw.driven.clone())
 }
 
 pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
@@ -159,7 +159,7 @@ pub fn frequency(s: &mut Session, p: &Params) -> Result<Value> {
 /// (`solve.frequency` with its frequencies), so running it again gives the same sweep.
 pub fn refine(s: &mut Session, p: &Params) -> Result<Value> {
     let sw = s.results.sweep.clone().ok_or(EngineError::NotSolved { what: "sweep", run: "solve.frequency" })?;
-    if s.solved_revision != Some(s.revision) {
+    if s.results.is_stale(crate::ResultKind::Sweep) {
         return Err(EngineError::failed("the model changed since the sweep: run the sweep again (solve.frequency)"));
     }
     let new: Vec<f64> = frequencies(s, p)?.into_iter().filter(|f| sw.at(*f, false).is_none()).collect();

@@ -43,11 +43,8 @@ pub struct Identity {
     pub archive: Vec<crate::archive::Archived>,
     pub archive_next: u32,
     pub archive_current: Option<u32>,
+    /// Its results, each with whether it is stale.
     pub results: crate::Results,
-    /// The revision the results were solved at, and whether that was the model's revision then
-    /// (they come back current; else stale).
-    pub solved_revision: Option<u64>,
-    pub current: bool,
 }
 
 /// The most states kept to undo to.
@@ -79,15 +76,12 @@ impl Session {
             archive_next: self.archive_next,
             archive_current: self.archive_current,
             results: self.results.clone(),
-            solved_revision: self.solved_revision,
-            current: self.solved_revision == Some(self.revision),
         }
     }
 
     /// The undoable state now, replaced by `with`; a new revision. The results stay, marked
     /// stale, unless `with` brings its project back: then that project's own come back.
     fn swap_snapshot(&mut self, with: Snapshot) -> Snapshot {
-        let current = self.solved_revision == Some(self.revision);
         self.revision += 1;
         let project = with.project.map(|back| {
             let back = *back;
@@ -101,12 +95,13 @@ impl Session {
                 archive_next: std::mem::replace(&mut self.archive_next, back.archive_next),
                 archive_current: std::mem::replace(&mut self.archive_current, back.archive_current),
                 results: std::mem::replace(&mut self.results, back.results),
-                solved_revision: self.solved_revision,
-                current,
             };
-            self.solved_revision = if back.current { Some(self.revision) } else { back.solved_revision };
             Box::new(now)
         });
+        // The model swapped: the results stay, stale, unless their own project came back.
+        if project.is_none() {
+            self.results.age();
+        }
         Snapshot {
             model: std::mem::replace(&mut self.model, with.model),
             display: std::mem::replace(&mut self.display, with.display),
@@ -477,7 +472,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     fresh.replay(&stored.history, crate::session::Meshing::Recorded)?;
     let mesh = stored.mesh(fresh.model.materials.len()).map_err(|e| EngineError::failed(format!("`{path}`: {e}")))?;
     fresh.model.mesh = mesh.map(std::sync::Arc::new);
-    let (results, current, archived, dropped) = stored.results(&fresh.model);
+    let (results, archived, dropped) = stored.results(&fresh.model);
     // Undo inside the opened project, then back to before it.
     fresh.undo.clear();
     fresh.runs = stored.runs;
@@ -486,7 +481,7 @@ pub fn open(s: &mut Session, p: &Params) -> Result<Value> {
     fresh.archive_next = stored.archive_next;
     // The results as they were: no solve again; those that no longer fit left out, with why.
     fresh.results = results;
-    fresh.solved_revision = (current && fresh.results.any()).then_some(fresh.revision);
+    let current = !fresh.results.any_stale();
     fresh.archive_current = archived.filter(|id| current && fresh.archive.iter().any(|a| a.id == *id));
     if let Some(id) = fresh.archive_current {
         crate::archive::attach(&mut fresh, id);

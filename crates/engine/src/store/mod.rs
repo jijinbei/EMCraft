@@ -98,16 +98,17 @@ impl Stored {
         }
     }
 
-    /// The file's results for `model` (its mesh on): those that fit, whether they are the
-    /// model's, the kept solve they are, and why any was left out.
-    pub(crate) fn results(&mut self, model: &Model) -> (crate::Results, bool, Option<u32>, Vec<FileError>) {
+    /// The file's results for `model` (its mesh on): those that fit, the stale ones marked,
+    /// the kept solve they are, and why any was left out.
+    pub(crate) fn results(&mut self, model: &Model) -> (crate::Results, Option<u32>, Vec<FileError>) {
         match (self.results.take(), self.package.as_mut()) {
             (Some(st), Some(r)) => {
-                let (current, archived) = (st.current, st.archive_current);
-                let (results, dropped) = st.read(r, model);
-                (results, current, archived, dropped)
+                let (stale, archived) = (st.stale.clone(), st.archive_current);
+                let (mut results, dropped) = st.read(r, model);
+                results.mark_stale(stale);
+                (results, archived, dropped)
             }
-            _ => (crate::Results::default(), false, None, Vec::new()),
+            _ => (crate::Results::default(), None, Vec::new()),
         }
     }
 

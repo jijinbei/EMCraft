@@ -213,7 +213,7 @@ fn a_reference_plane_moves_without_a_solve() {
     let mut s = swept(3);
     let r = s.execute("model.port.deembed", &json!({"name": "1", "deembed": 5})).unwrap();
     assert_eq!(r["rerun"], json!(false));
-    assert_eq!(s.solved_revision(), Some(s.revision()), "the results stay current");
+    assert!(!s.results().any_stale(), "the results stay current");
     let moved = s.results().sweep.clone().unwrap();
     // The same as solving with the plane there.
     let mut t = Session::new();

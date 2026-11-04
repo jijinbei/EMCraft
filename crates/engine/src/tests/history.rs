@@ -74,14 +74,14 @@ fn the_analysis_history_survives_saving_and_reopening() {
     let r = t.execute("results.history.restore", &json!({"id": 1})).unwrap();
     assert_eq!((r["solved_again"].as_bool(), r["same_as_saved"].as_bool()), (Some(true), Some(true)));
     assert_eq!(t.variables().get("l_gap"), Some(&20.0));
-    assert!(t.results().sweep.is_some() && t.solved_revision() == Some(t.revision()));
+    assert!(t.results().sweep.is_some() && !t.results().any_stale());
     assert_eq!(rows(&mut t), before);
     assert!(t.archive()[0].in_memory());
     // The second from memory (opened with the project): no solve.
     let r = t.execute("results.history.restore", &json!({"id": 2, "solve": false})).unwrap();
     assert!(r.get("solved_again").is_none());
     assert_eq!(t.variables().get("l_gap"), Some(&26.0));
-    assert!(t.results().sweep.is_some() && t.solved_revision() == Some(t.revision()));
+    assert!(t.results().sweep.is_some() && !t.results().any_stale());
     // Undo goes back to the first.
     t.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(t.variables().get("l_gap"), Some(&20.0));

@@ -105,6 +105,9 @@ pub struct Results {
     pub study: Option<Arc<study::Study>>,
     /// A periodic cell's dispersion diagram from `solve.dispersion`.
     pub dispersion: Option<Arc<emcraft_solver::bloch::Dispersion>>,
+    /// The kinds held that are stale: the model changed after they were solved (without
+    /// making them wrong, which drops them). Only kinds held; each solve makes its own fresh.
+    stale: std::collections::BTreeSet<ResultKind>,
 }
 
 /// What changed in the model, which decides the results that no longer hold.
@@ -123,7 +126,7 @@ pub enum Change {
 emcraft_macros::named_enum! {
     /// A kind of result the session holds (a field of [`Results`]): what drops it, what makes
     /// it, whether it is the model's own — one place for what every kind is.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
     pub enum ResultKind {
         Sweep = "sweep",
         Eigen = "eigenmodes",
@@ -134,6 +137,8 @@ emcraft_macros::named_enum! {
         Study = "study",
     }
 }
+
+emcraft_macros::named_serde!(ResultKind);
 
 impl ResultKind {
     /// Whether a change of `change` to the model leaves this kind wrong.
@@ -186,8 +191,61 @@ impl Results {
         }
     }
 
+    /// Whether the result of `kind` is held and stale: the model changed after it was solved.
+    pub fn is_stale(&self, kind: ResultKind) -> bool {
+        self.stale.contains(&kind)
+    }
+
+    /// Whether any result held is stale.
+    pub fn any_stale(&self) -> bool {
+        !self.stale.is_empty()
+    }
+
+    /// The stale kinds, in [`ResultKind::ALL`]'s order.
+    pub fn stale_kinds(&self) -> impl Iterator<Item = ResultKind> + '_ {
+        self.stale.iter().copied()
+    }
+
+    /// The model changed: every result held is stale.
+    pub(crate) fn age(&mut self) {
+        self.stale = self.kinds().collect();
+    }
+
+    /// `kinds` are stale (those held).
+    pub(crate) fn mark_stale(&mut self, kinds: impl IntoIterator<Item = ResultKind>) {
+        let held: Vec<ResultKind> = kinds.into_iter().filter(|k| self.has(*k)).collect();
+        self.stale.extend(held);
+    }
+
+    /// The kinds this holds that `before` did not hold as they are, those a solve just made,
+    /// are fresh.
+    pub(crate) fn solved_since(&mut self, before: &Results) {
+        fn same<T>(a: &Option<Arc<T>>, b: &Option<Arc<T>>) -> bool {
+            match (a, b) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        for kind in ResultKind::ALL {
+            let unchanged = match kind {
+                ResultKind::Sweep => same(&self.sweep, &before.sweep),
+                ResultKind::Eigen => same(&self.eigen, &before.eigen),
+                ResultKind::TimeDomain => same(&self.time_domain, &before.time_domain),
+                ResultKind::Radiation => same(&self.radiation, &before.radiation),
+                ResultKind::TdRadiation => same(&self.td_radiation, &before.td_radiation),
+                ResultKind::Dispersion => same(&self.dispersion, &before.dispersion),
+                ResultKind::Study => same(&self.study, &before.study),
+            };
+            if !unchanged {
+                self.stale.remove(&kind);
+            }
+        }
+    }
+
     /// Lets the result of `kind` go.
     pub fn clear(&mut self, kind: ResultKind) {
+        self.stale.remove(&kind);
         match kind {
             ResultKind::Sweep => self.sweep = None,
             ResultKind::Eigen => self.eigen = None,
@@ -263,10 +321,8 @@ pub struct Session {
     /// States to go back to (`edit.undo`) and forward again (`edit.redo`), the latest last.
     pub(crate) undo: VecDeque<project::Snapshot>,
     pub(crate) redo: VecDeque<project::Snapshot>,
-    /// The model's revision, raised by every command that changes it, and the revision the
-    /// latest results were solved at (older results are stale).
+    /// The model's revision, raised by every command that changes it.
     pub(crate) revision: u64,
-    pub(crate) solved_revision: Option<u64>,
     /// The project file the session was opened from or last saved to (`.emcraft`).
     pub(crate) path: Option<String>,
     /// The sample the session was opened from, which names it until it is saved.
@@ -379,11 +435,6 @@ impl Session {
     /// The model's revision, raised by every command that changes it.
     pub fn revision(&self) -> u64 {
         self.revision
-    }
-
-    /// The revision the latest results were solved at (older results are stale).
-    pub fn solved_revision(&self) -> Option<u64> {
-        self.solved_revision
     }
 
     /// The project file the session was opened from or last saved to.
@@ -535,14 +586,11 @@ impl Session {
                 if let Some(change) = spec.invalidates {
                     self.results.invalidate(change);
                 }
-                // A replaced session solved to its last state (a sample opened with its solve)
-                // keeps its results current, as does a change the command brought its results
-                // along with.
-                let current = match spec.effect {
-                    Effect::Record => false,
-                    Effect::Adjust => self.solved_revision == Some(before.revision),
-                    _ => self.solved_revision == Some(self.revision),
-                };
+                // A recorded change leaves the results it does not drop stale; an adjustment
+                // brings them along, and a replaced session has its own.
+                if spec.effect == Effect::Record {
+                    self.results.age();
+                }
                 project::push_undo(&mut self.undo, before.state);
                 self.redo.clear();
                 if matches!(spec.effect, Effect::Record | Effect::Adjust) {
@@ -550,12 +598,9 @@ impl Session {
                 }
                 // (A replaced session counts its own revisions from zero.)
                 self.revision = before.revision.max(self.revision) + 1;
-                if current {
-                    self.solved_revision = Some(self.revision);
-                }
             }
             Effect::Solve => {
-                self.solved_revision = Some(self.revision);
+                self.results.solved_since(&before.results);
                 let params = if params.is_null() { json!({}) } else { params.clone() };
                 let run = self.next_run.take().unwrap_or(Run { command: spec.id.to_owned(), params, units: self.display });
                 let provenance = crate::archive::Provenance::of(self, spec.id, ran.seconds, ran.reply);

@@ -330,13 +330,7 @@ pub fn restore(s: &mut Session, p: &Params) -> Result<Value> {
         }
     };
     // Its results are the model's: current after the restore.
-    if solved {
-        s.solved_revision = Some(s.revision);
-        s.archive_current = Some(a.id);
-    } else {
-        s.solved_revision = None;
-        s.archive_current = None;
-    }
+    s.archive_current = solved.then_some(a.id);
     Ok(reply)
 }
 

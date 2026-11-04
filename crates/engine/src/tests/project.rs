@@ -70,14 +70,14 @@ fn undoing_new_or_a_sample_brings_the_file_back() {
 #[test]
 fn undoing_an_open_brings_back_the_projects_results() {
     let mut s = super::small();
-    assert_eq!(s.solved_revision, Some(s.revision));
+    assert!(!s.results.any_stale());
     let b = scratch("results-b.emcraft");
     saved(&b, 7.0);
     s.execute("file.open", &json!({"path": b})).unwrap();
     assert!(!s.results.any());
     s.execute("edit.undo", &json!({})).unwrap();
     assert!(s.results.sweep.is_some());
-    assert_eq!(s.solved_revision, Some(s.revision), "current again");
+    assert!(!s.results.any_stale(), "current again");
     s.execute("edit.redo", &json!({})).unwrap();
     assert!(!s.results.any());
 }
@@ -105,7 +105,7 @@ fn runs_belong_to_the_project() {
     // Opened: the run is back, its results with it (current), clean.
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": path})).unwrap();
-    assert!(t.results.sweep.is_some() && t.solved_revision == Some(t.revision) && !t.is_dirty());
+    assert!(t.results.sweep.is_some() && !t.results.any_stale() && !t.is_dirty());
     let runs = t.execute("project.runs", &json!({})).unwrap();
     assert_eq!(runs["latest"], "solve.frequency");
     assert_eq!(runs["runs"][0]["params"], json!({"frequencies": [8.0], "order": 1}));

@@ -76,7 +76,6 @@ pub(super) fn adopt(s: &mut Session, mut rebuilt: Session) {
     rebuilt.archive = std::mem::take(&mut s.archive);
     (rebuilt.archive_next, rebuilt.archive_current) = (s.archive_next, None);
     rebuilt.results.study = s.results.study.take();
-    rebuilt.solved_revision = None;
     *s = rebuilt;
 }
 

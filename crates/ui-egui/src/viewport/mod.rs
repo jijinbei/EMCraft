@@ -105,7 +105,7 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 return;
             }
             // Results of a model changed after their run say so over the view, which is dimmed.
-            let stale = app.view.is_result() && crate::steps::results_stale(app);
+            let stale = app.view.is_result() && app.view.stale(app);
             if stale {
                 stale_band(app, &mut inner, out);
                 inner.add_space(4.0);
