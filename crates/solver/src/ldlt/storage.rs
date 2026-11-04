@@ -44,16 +44,17 @@ pub(crate) fn memory_budget() -> u64 {
     available.map_or(8_000_000_000, |kb| kb * 1024 / 4)
 }
 
-/// The directory for scratch files: `EMCRAFT_SCRATCH`, else `~/.cache/emcraft` (on disk; the
-/// system's temporary directory is often in memory), else the temporary directory.
-fn scratch_dir() -> std::path::PathBuf {
-    if let Some(d) = std::env::var_os("EMCRAFT_SCRATCH") {
-        return d.into();
+/// The directories for scratch files, in the order tried: `EMCRAFT_SCRATCH`, then
+/// `~/.cache/emcraft` (on disk; the system's temporary directory is often in memory), then the
+/// temporary directory. A directory that cannot be used (a drive not mounted, no permission)
+/// passes to the next.
+fn scratch_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = std::env::var_os("EMCRAFT_SCRATCH").into_iter().map(Into::into).collect();
+    if let Some(h) = std::env::var_os("HOME") {
+        dirs.push(std::path::Path::new(&h).join(".cache").join("emcraft"));
     }
-    match std::env::var_os("HOME") {
-        Some(h) => std::path::Path::new(&h).join(".cache").join("emcraft"),
-        None => std::env::temp_dir(),
-    }
+    dirs.push(std::env::temp_dir());
+    dirs
 }
 
 fn poisoned<T>(_: T) -> FactorError {
@@ -62,16 +63,27 @@ fn poisoned<T>(_: T) -> FactorError {
 
 impl Scratch {
     fn new() -> Result<Scratch, FactorError> {
+        Scratch::in_first(&scratch_dirs())
+    }
+
+    /// A scratch file in the first of `dirs` that takes one; why each refused when none does.
+    fn in_first(dirs: &[std::path::PathBuf]) -> Result<Scratch, FactorError> {
         static COUNT: AtomicU64 = AtomicU64::new(0);
-        let dir = scratch_dir();
-        let fail = |e: std::io::Error| FactorError::Scratch(format!("{}: {e}", dir.display()));
-        std::fs::create_dir_all(&dir).map_err(fail)?;
-        let n = COUNT.fetch_add(1, Ordering::Relaxed);
-        let path = dir.join(format!("factor-{}-{n}.bin", std::process::id()));
-        let file = std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(&path).map_err(fail)?;
-        // Unlinked at once where the system allows it (the open handle keeps the data).
-        let _ = std::fs::remove_file(&path);
-        Ok(Scratch { file: Mutex::new(file), end: 0 })
+        let mut refused = Vec::new();
+        for dir in dirs {
+            let n = COUNT.fetch_add(1, Ordering::Relaxed);
+            let path = dir.join(format!("factor-{}-{n}.bin", std::process::id()));
+            let opened = std::fs::create_dir_all(dir).and_then(|_| std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(&path));
+            match opened {
+                Ok(file) => {
+                    // Unlinked at once where the system allows it (the open handle keeps the data).
+                    let _ = std::fs::remove_file(&path);
+                    return Ok(Scratch { file: Mutex::new(file), end: 0 });
+                }
+                Err(e) => refused.push(format!("{}: {e}", dir.display())),
+            }
+        }
+        Err(FactorError::Scratch(format!("no directory takes the factor's scratch file ({})", refused.join("; "))))
     }
 
     fn write(&mut self, v: &[C]) -> Result<Columns, FactorError> {
@@ -155,5 +167,29 @@ impl Store {
     /// The scratch file, when any columns went to it.
     pub fn into_scratch(self) -> Result<Option<Scratch>, FactorError> {
         self.scratch.into_inner().map_err(|_| FactorError::Dimension("the scratch file's lock was poisoned".into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scratch directory that cannot be made (a drive not mounted) passes to the next; with
+    /// none usable the error names each.
+    #[test]
+    fn an_unusable_scratch_directory_passes_to_the_next() {
+        let base = std::env::temp_dir().join(format!("emcraft-scratch-test-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        // A plain file where a directory should be: no directory can be made under it.
+        let blocker = base.join("not-a-directory");
+        std::fs::write(&blocker, b"x").unwrap();
+        let bad = blocker.join("scratch");
+        let mut s = Scratch::in_first(&[bad.clone(), base.join("good")]).unwrap();
+        let v = [C::new(1.5, -2.0), C::new(0.0, 3.25)];
+        let Columns::Disk { offset, len } = s.write(&v).unwrap() else { panic!("not on disk") };
+        assert_eq!(s.read(offset, len).unwrap(), v);
+        let e = Scratch::in_first(std::slice::from_ref(&bad)).err().unwrap().to_string();
+        assert!(e.contains(&bad.display().to_string()), "{e}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
