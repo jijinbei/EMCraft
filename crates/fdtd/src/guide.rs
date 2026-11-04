@@ -235,6 +235,8 @@ impl Spacing {
 /// and lossy edges and the walls' edges; dt/μ per H face, and its decay when magnetic losses
 /// damp it (H ← decay H − c ∇×E; empty without magnetic losses).
 struct Coefficients {
+    /// The time step they are for (s).
+    dt: f64,
     e: [Vec<f64>; 3],
     h: [Vec<f64>; 3],
     h_decay: [Vec<f64>; 3],
@@ -244,6 +246,7 @@ struct Coefficients {
 impl Coefficients {
     /// The coefficients on the lattices `[e, h]` of the components.
     fn new(g: &Grid, sp: &Spacing, [e_dims, h_dims]: [[[usize; 3]; 3]; 2], dt: f64) -> Coefficients {
+        let cells = Cells { g, sp, dt };
         let mut dispersion = [Dispersion::none(), Dispersion::none(), Dispersion::none()];
         let e = [0, 1, 2].map(|a| {
             let dims = e_dims[a];
@@ -253,7 +256,7 @@ impl Coefficients {
                 for j in 0..dims[1] {
                     for i in 0..dims[0] {
                         let id = index(dims, i, j, k);
-                        c[id] = edge_coef(g, sp, a, [i, j, k], dt, len, id, &mut dispersion[a]);
+                        c[id] = cells.edge(a, [i, j, k], id, &mut dispersion[a]);
                     }
                 }
             }
@@ -272,7 +275,7 @@ impl Coefficients {
                 for j in 0..dims[1] {
                     for i in 0..dims[0] {
                         let id = index(dims, i, j, k);
-                        let (cf, d) = face_coef(g, a, [i, j, k], dt);
+                        let (cf, d) = cells.face(a, [i, j, k]);
                         c[id] = cf;
                         if let Some(x) = decay.get_mut(id) {
                             *x = d;
@@ -283,102 +286,113 @@ impl Coefficients {
             h_decay[a] = decay;
             c
         });
-        Coefficients { e, h, h_decay, dispersion }
+        Coefficients { dt, e, h, h_decay, dispersion }
     }
 }
 
-/// dt/ε of the E edge along `axis` at node `idx` (component index `id` of `edges`), 0 if it is
-/// not updated (on a perfect conductor).
-///
-/// An edge with its four cells inside takes their area-weighted ε; its conductivity and poles,
-/// each weighted by the share of its cells' area, go into `dispersion`. With walls of finite
-/// conductivity, an edge with two cells inside on one side of a flat wall is the wall's
-/// ([`crate::surface`]): Ampère's law over the half of its dual face inside, the H beyond the
-/// wall replaced by the wall's surface current. The curl the kernels form divides the
-/// difference across the wall by the full dual step (half a cell on the grid's outer walls,
-/// where it is exact): the edge's ε, σ and poles are scaled by half a cell over that step, so the
-/// one term the scaling leaves approximate is the normal H's along the wall, which a good
-/// conductor all but cancels. Edges in a corner (one cell inside, or three) stay perfect
-/// conductors, as do the grid's two ends along z, which close the absorbing layers.
-#[allow(clippy::too_many_arguments)]
-fn edge_coef(g: &Grid, sp: &Spacing, axis: usize, idx: [usize; 3], dt: f64, edges: usize, id: usize, dispersion: &mut Dispersion) -> f64 {
-    // The two axes across the edge, in order; the four cells at offsets −1, 0 along each, the
-    // first varying fastest.
-    let (p, q) = if axis == 0 { (1, 2) } else { (0, 3 - axis) };
-    let len = |d: usize, i: usize| sp.primal[d].get(i).copied().unwrap_or(0.0);
-    let cells = [(1, 1), (0, 1), (1, 0), (0, 0)].map(|(dp, dq): (usize, usize)| {
-        let mut c = idx.map(|x| x as isize);
-        c[p] -= dp as isize;
-        c[q] -= dq as isize;
-        (c, len(p, idx[p].wrapping_sub(dp)) * len(q, idx[q].wrapping_sub(dq)), [dp, dq])
-    });
-    let inside: Vec<([isize; 3], f64, [usize; 2])> = cells.into_iter().filter(|(c, _, _)| g.exists(c[0], c[1], c[2])).collect();
-    // The wall's normal (an axis), its dual step there and the scale of its half cell to it.
-    let mut wall = None;
-    match (inside.as_slice(), &g.wall) {
-        ([_, _, _, _], _) => {}
-        ([(_, _, a), (_, _, b)], Some(_)) => {
-            // Two cells side by side: the wall is normal to the axis along which they agree.
-            let normal = if a[0] == b[0] {
-                p
-            } else if a[1] == b[1] {
-                q
-            } else {
-                return 0.0;
-            };
-            let off = if normal == p { a[0] } else { a[1] };
-            let n = idx[normal];
-            if normal == 2 && (n == 0 || n == g.nz()) {
-                return 0.0;
-            }
-            let half = 0.5 * len(normal, n.wrapping_sub(off));
-            let dual = sp.dual[normal].get(n).copied().unwrap_or(0.0);
-            if !(half > 0.0 && dual > 0.0) {
-                return 0.0;
-            }
-            wall = Some((dual, half / dual));
-        }
-        _ => return 0.0,
-    }
-    let scale = wall.map_or(1.0, |(_, s)| s);
-    let area: f64 = inside.iter().map(|(_, a, _)| a).sum();
-    let layer = |c: &[isize; 3]| g.layers[c[2] as usize];
-    let eps = inside.iter().map(|(c, a, _)| a * layer(c).eps).sum::<f64>() / area * scale;
-    let sigma = inside.iter().map(|(c, a, _)| a * layer(c).sigma).sum::<f64>() / area * scale;
-    // The exponential update of a lossy edge (σ on the time step's scale or beyond).
-    let eps = eps * exponential_fit(sigma * dt / (EPS0 * eps));
-    let c = dt / (EPS0 * eps);
-    let poles = !g.poles.is_empty() && inside.iter().any(|(c, a, _)| *a > 0.0 && layer(c).disp != NO_POLES);
-    if poles || sigma > 0.0 || wall.is_some() {
-        let terms = inside.iter().flat_map(|&(c, a, _)| {
-            let list = g.poles.get(layer(&c).disp as usize).filter(|_| a > 0.0);
-            list.into_iter().flatten().map(move |pole| Term::new(*pole, a / area * scale, dt))
+/// The guide's cells and the time step their coefficients are for.
+#[derive(Clone, Copy)]
+struct Cells<'a> {
+    g: &'a Grid,
+    sp: &'a Spacing,
+    dt: f64,
+}
+
+impl Cells<'_> {
+    /// dt/ε of the E edge along `axis` at node `idx` (component index `id`), 0 if it is
+    /// not updated (on a perfect conductor).
+    ///
+    /// An edge with its four cells inside takes their area-weighted ε; its conductivity and poles,
+    /// each weighted by the share of its cells' area, go into `dispersion`. With walls of finite
+    /// conductivity, an edge with two cells inside on one side of a flat wall is the wall's
+    /// ([`crate::surface`]): Ampère's law over the half of its dual face inside, the H beyond the
+    /// wall replaced by the wall's surface current. The curl the kernels form divides the
+    /// difference across the wall by the full dual step (half a cell on the grid's outer walls,
+    /// where it is exact): the edge's ε, σ and poles are scaled by half a cell over that step, so the
+    /// one term the scaling leaves approximate is the normal H's along the wall, which a good
+    /// conductor all but cancels. Edges in a corner (one cell inside, or three) stay perfect
+    /// conductors, as do the grid's two ends along z, which close the absorbing layers.
+    fn edge(&self, axis: usize, idx: [usize; 3], id: usize, dispersion: &mut Dispersion) -> f64 {
+        let Cells { g, sp, dt } = *self;
+        // The two axes across the edge, in order; the four cells at offsets −1, 0 along each, the
+        // first varying fastest.
+        let (p, q) = if axis == 0 { (1, 2) } else { (0, 3 - axis) };
+        let len = |d: usize, i: usize| sp.primal[d].get(i).copied().unwrap_or(0.0);
+        let cells = [(1, 1), (0, 1), (1, 0), (0, 0)].map(|(dp, dq): (usize, usize)| {
+            let mut c = idx.map(|x| x as isize);
+            c[p] -= dp as isize;
+            c[q] -= dq as isize;
+            (c, len(p, idx[p].wrapping_sub(dp)) * len(q, idx[q].wrapping_sub(dq)), [dp, dq])
         });
-        let surface = match (wall, &g.wall) {
-            (Some((dual, _)), Some((sigma_w, branches))) => crate::surface::wall_terms(branches, *sigma_w, dt, dual),
-            _ => Vec::new(),
-        };
-        dispersion.add_edge(edges, id, dt / c, 0.5 * sigma * dt, terms.chain(surface));
+        let inside: Vec<([isize; 3], f64, [usize; 2])> = cells.into_iter().filter(|(c, _, _)| g.exists(c[0], c[1], c[2])).collect();
+        // The wall's normal (an axis), its dual step there and the scale of its half cell to it.
+        let mut wall = None;
+        match (inside.as_slice(), &g.wall) {
+            ([_, _, _, _], _) => {}
+            ([(_, _, a), (_, _, b)], Some(_)) => {
+                // Two cells side by side: the wall is normal to the axis along which they agree.
+                let normal = if a[0] == b[0] {
+                    p
+                } else if a[1] == b[1] {
+                    q
+                } else {
+                    return 0.0;
+                };
+                let off = if normal == p { a[0] } else { a[1] };
+                let n = idx[normal];
+                if normal == 2 && (n == 0 || n == g.nz()) {
+                    return 0.0;
+                }
+                let half = 0.5 * len(normal, n.wrapping_sub(off));
+                let dual = sp.dual[normal].get(n).copied().unwrap_or(0.0);
+                if !(half > 0.0 && dual > 0.0) {
+                    return 0.0;
+                }
+                wall = Some((dual, half / dual));
+            }
+            _ => return 0.0,
+        }
+        let scale = wall.map_or(1.0, |(_, s)| s);
+        let area: f64 = inside.iter().map(|(_, a, _)| a).sum();
+        let layer = |c: &[isize; 3]| g.layers[c[2] as usize];
+        let eps = inside.iter().map(|(c, a, _)| a * layer(c).eps).sum::<f64>() / area * scale;
+        let sigma = inside.iter().map(|(c, a, _)| a * layer(c).sigma).sum::<f64>() / area * scale;
+        // The exponential update of a lossy edge (σ on the time step's scale or beyond).
+        let eps = eps * exponential_fit(sigma * dt / (EPS0 * eps));
+        let c = dt / (EPS0 * eps);
+        let poles = !g.poles.is_empty() && inside.iter().any(|(c, a, _)| *a > 0.0 && layer(c).disp != NO_POLES);
+        if poles || sigma > 0.0 || wall.is_some() {
+            let terms = inside.iter().flat_map(|&(c, a, _)| {
+                let list = g.poles.get(layer(&c).disp as usize).filter(|_| a > 0.0);
+                list.into_iter().flatten().map(move |pole| Term::new(*pole, a / area * scale, dt))
+            });
+            let surface = match (wall, &g.wall) {
+                (Some((dual, _)), Some((sigma_w, branches))) => crate::surface::wall_terms(branches, *sigma_w, dt, dual),
+                _ => Vec::new(),
+            };
+            dispersion.add_edge(id, dt / c, 0.5 * sigma * dt, terms.chain(surface));
+        }
+        c
     }
-    c
-}
 
-/// dt/μ of the H face normal to `axis` at `idx` and the decay of H there: μ (and the magnetic
-/// conductivity σ_m) the average of the cells on either side of the face that exist (one may be
-/// metal), with magnetic losses the exponential update ([`magnetic_update`]); (0, 1) if neither
-/// cell exists.
-fn face_coef(g: &Grid, axis: usize, idx: [usize; 3], dt: f64) -> (f64, f64) {
-    let b = idx.map(|x| x as isize);
-    let mut a = b;
-    a[axis] -= 1;
-    let (mu, sigma_m, count) = [a, b].iter().filter(|c| g.exists(c[0], c[1], c[2])).fold((0.0, 0.0, 0usize), |(m, s, n), c| {
-        let l = g.layers[c[2] as usize];
-        (m + l.mu, s + l.sigma_m, n + 1)
-    });
-    if count == 0 {
-        return (0.0, 1.0);
+    /// dt/μ of the H face normal to `axis` at `idx` and the decay of H there: μ (and the magnetic
+    /// conductivity σ_m) the average of the cells on either side of the face that exist (one may be
+    /// metal), with magnetic losses the exponential update ([`magnetic_update`]); (0, 1) if neither
+    /// cell exists.
+    fn face(&self, axis: usize, idx: [usize; 3]) -> (f64, f64) {
+        let Cells { g, dt, .. } = *self;
+        let b = idx.map(|x| x as isize);
+        let mut a = b;
+        a[axis] -= 1;
+        let (mu, sigma_m, count) = [a, b].iter().filter(|c| g.exists(c[0], c[1], c[2])).fold((0.0, 0.0, 0usize), |(m, s, n), c| {
+            let l = g.layers[c[2] as usize];
+            (m + l.mu, s + l.sigma_m, n + 1)
+        });
+        if count == 0 {
+            return (0.0, 1.0);
+        }
+        magnetic_update(dt, MU0 * mu / count as f64, sigma_m / count as f64)
     }
-    magnetic_update(dt, MU0 * mu / count as f64, sigma_m / count as f64)
 }
 
 /// The CPML at the two ends of the guide, absorbing along z: coefficients for E (at the z
@@ -635,11 +649,11 @@ const CHECK: usize = 500;
 
 /// The run prepared for a device: the coefficients and the profiles moved into it, `profiles`
 /// the source's and the two planes'.
-fn plan(g: &Grid, sp: &Spacing, coef: Coefficients, cpml: &ZCpml, profiles: [Te10; 3], pulse: Pulse, dt: f64) -> Plan {
+fn plan(g: &Grid, sp: &Spacing, coef: Coefficients, cpml: &ZCpml, profiles: [Te10; 3], pulse: Pulse) -> Plan {
     let [src, w1, w2] = profiles;
     Plan {
         n: g.n(),
-        dt,
+        dt: coef.dt,
         poles: Poles::of(&coef.dispersion, coef.e.each_ref().map(Vec::len)),
         e: coef.e,
         h: coef.h,
@@ -690,7 +704,7 @@ pub(crate) fn run(
         if finished || failed { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
     };
     let steps = match device {
-        Some(device) => device.leapfrog(&plan(g, &sp, coef, &cpml, [src, w1, w2], pulse, dt), o.max_steps, &mut observe)?,
+        Some(device) => device.leapfrog(&plan(g, &sp, coef, &cpml, [src, w1, w2], pulse), o.max_steps, &mut observe)?,
         None => {
             let fields = Fields::new(g.n());
             let psi = Psi::new(&fields);

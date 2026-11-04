@@ -465,7 +465,7 @@ impl SolidGrid {
                         ce[id] = dt / (EPS0 * eps);
                         if sigma > 0.0 || round.iter().any(|(m, _)| m.is_dispersive()) {
                             let terms = round.iter().flat_map(|(m, s)| m.dispersion.iter().map(move |p| Term::new(*p, s / area, dt)));
-                            dispersion[a].add_edge(len, id, EPS0 * eps, 0.5 * sigma * dt, terms);
+                            dispersion[a].add_edge(id, EPS0 * eps, 0.5 * sigma * dt, terms);
                         }
                     }
                 }
@@ -476,7 +476,7 @@ impl SolidGrid {
             d.finish();
         }
         let (ch, h_decay) = crate::open::face_coefficients(model, h_dims, dt, losses, 0.0, |c| self.cell(c).map(material));
-        BoxCoefficients { ce, ch, h_decay, dispersion }
+        BoxCoefficients { dt, ce, ch, h_decay, dispersion }
     }
 
     /// Whether the E edge along `a` at node `idx` has its midpoint in a conductor inside the

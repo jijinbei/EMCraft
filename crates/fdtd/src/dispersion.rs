@@ -103,11 +103,8 @@ impl Poles {
             Poles { slot: [Vec::new(), Vec::new(), Vec::new()], eps: Vec::new(), loss: Vec::new(), start: vec![0], kind: Vec::new(), k: Vec::new() };
         for (a, d) in d.iter().enumerate() {
             let base = poles.eps.len() as u32;
-            poles.slot[a] = if d.slot_of.is_empty() {
-                vec![NO_SLOT; edges[a]]
-            } else {
-                d.slot_of.iter().map(|&s| if s == NO_SLOT { NO_SLOT } else { s + base }).collect()
-            };
+            poles.slot[a] = d.slot_of.iter().map(|&s| if s == NO_SLOT { NO_SLOT } else { s + base }).collect();
+            poles.slot[a].resize(edges[a], NO_SLOT);
             for slot in &d.slots {
                 poles.eps.push(slot.eps);
                 poles.loss.push(slot.loss);
@@ -133,11 +130,11 @@ impl Dispersion {
         Dispersion { slot_of: Vec::new(), slots: Vec::new(), terms: Vec::new(), p: Field::new([0; 3]), p_prev: Field::new([0; 3]) }
     }
 
-    /// Gives edge `id` of a component of `edges` edges a slot: ε₀ε∞ `eps`, σΔt/2 `loss` and
+    /// Gives edge `id` of a component a slot: ε₀ε∞ `eps`, σΔt/2 `loss` and
     /// `terms`.
-    pub(crate) fn add_edge(&mut self, edges: usize, id: usize, eps: f64, loss: f64, terms: impl IntoIterator<Item = Term>) {
-        if self.slot_of.is_empty() {
-            self.slot_of = vec![NO_SLOT; edges];
+    pub(crate) fn add_edge(&mut self, id: usize, eps: f64, loss: f64, terms: impl IntoIterator<Item = Term>) {
+        if self.slot_of.len() <= id {
+            self.slot_of.resize(id + 1, NO_SLOT);
         }
         let start = self.terms.len();
         self.terms.extend(terms);

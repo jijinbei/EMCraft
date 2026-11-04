@@ -121,11 +121,14 @@ const fn across(a: usize) -> (usize, usize) {
 
 /// The uniform grid of the box: `n` cells of `hs` along each axis, `npml` of them in the layer
 /// at each face.
-struct BoxGrid {
+pub(crate) struct BoxGrid {
     size: Vec3,
-    n: [usize; 3],
-    hs: [f64; 3],
-    npml: usize,
+    /// Cells along each axis.
+    pub(crate) n: [usize; 3],
+    /// The cell's sides (m).
+    pub(crate) hs: [f64; 3],
+    /// Cells of the absorbing layer on each side.
+    pub(crate) npml: usize,
 }
 
 impl BoxGrid {
@@ -240,7 +243,7 @@ impl BoxGrid {
                         ce[id] = dt / (EPS0 * eps);
                         if sigma > 0.0 || round.iter().any(|m| m.is_dispersive()) {
                             let terms = round.iter().flat_map(|m| m.dispersion.iter().map(|p| Term::new(*p, 0.25, dt)));
-                            dispersion[a].add_edge(len, id, EPS0 * eps, 0.5 * sigma * dt, terms);
+                            dispersion[a].add_edge(id, EPS0 * eps, 0.5 * sigma * dt, terms);
                         }
                     }
                 }
@@ -251,7 +254,7 @@ impl BoxGrid {
             d.finish();
         }
         let (ch, h_decay) = face_coefficients(model, h_dims, dt, losses, dt / MU0, cell);
-        Ok(BoxCoefficients { ce, ch, h_decay, dispersion })
+        Ok(BoxCoefficients { dt, ce, ch, h_decay, dispersion })
     }
 }
 
@@ -303,6 +306,8 @@ pub(crate) fn face_coefficients<'m>(
 /// The open box's update coefficients: dt/ε per E edge with the slots of the dispersive and
 /// lossy ones, dt/μ per H face and its decay with magnetic losses (empty without).
 pub(crate) struct BoxCoefficients {
+    /// The time step they are for (s).
+    pub(crate) dt: f64,
     pub(crate) ce: [Vec<f64>; 3],
     pub(crate) ch: [Vec<f64>; 3],
     pub(crate) h_decay: [Vec<f64>; 3],
@@ -334,7 +339,8 @@ struct Load {
 }
 
 /// The loads of the model's lumped elements by component and edge, for a time step `dt`.
-fn element_loads(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients, dt: f64) -> Result<std::collections::BTreeMap<(usize, usize), Load>> {
+fn element_loads(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients) -> Result<std::collections::BTreeMap<(usize, usize), Load>> {
+    let dt = coef.dt;
     let mut out: std::collections::BTreeMap<(usize, usize), Load> = std::collections::BTreeMap::new();
     for e in &model.elements {
         let parts = [e.resistance, e.inductance, e.capacitance].iter().filter(|x| **x > 0.0).count();
@@ -459,7 +465,6 @@ impl GridPort {
         lp: &emcraft_model::LumpedPort,
         grid: &BoxGrid,
         coef: &BoxCoefficients,
-        dt: f64,
         loads: &std::collections::BTreeMap<(usize, usize), Load>,
     ) -> Result<GridPort> {
         if lp.voltage[1] != 0.0 {
@@ -473,7 +478,7 @@ impl GridPort {
         let r_edge = lp.impedance / count;
         let area = grid.area(axis);
         let g = grid.hs[axis] / (r_edge * area);
-        let mut port = GridPort::of(lp.name.clone(), axis, &ids, (g, 1.0 / (r_edge * area)), coef, dt, loads)?;
+        let mut port = GridPort::of(lp.name.clone(), axis, &ids, (g, 1.0 / (r_edge * area)), coef, loads)?;
         (port.r_edge, port.sign, port.voltage) = (r_edge, sign, lp.voltage[0] / count);
         Ok(port)
     }
@@ -486,9 +491,9 @@ impl GridPort {
         ids: &[usize],
         (g, v): (f64, f64),
         coef: &BoxCoefficients,
-        dt: f64,
         loads: &std::collections::BTreeMap<(usize, usize), Load>,
     ) -> Result<GridPort> {
+        let dt = coef.dt;
         let ce = &coef.ce[axis];
         let edges = ids
             .iter()
@@ -542,7 +547,8 @@ struct Current {
 }
 
 /// The model's current elements, each on the grid edge nearest its centre.
-fn currents(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients, dt: f64) -> Result<Vec<Current>> {
+fn currents(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients) -> Result<Vec<Current>> {
+    let dt = coef.dt;
     let hs = grid.hs;
     let mut out = Vec::new();
     for s in &model.sources {
@@ -1003,8 +1009,8 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let coef = grid.coefficients(model, dt, Losses::new(band.fc))?;
     // Lumped elements: on a port's gap, in its update; on a gap of their own, a port without a
     // source (`loads`).
-    let element_loads = element_loads(model, &grid, &coef, dt)?;
-    let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &coef, dt, &element_loads)).collect::<Result<Vec<_>>>()?;
+    let element_loads = element_loads(model, &grid, &coef)?;
+    let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &coef, &element_loads)).collect::<Result<Vec<_>>>()?;
     let mut loads: Vec<GridPort> = {
         let on_ports: std::collections::BTreeSet<(usize, usize)> =
             ports.iter().flat_map(|p| p.edges.iter().map(|e| (p.axis.index(), e.id))).collect();
@@ -1014,10 +1020,10 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
         }
         (0..3)
             .filter(|&a| !by_axis[a].is_empty())
-            .map(|a| GridPort::of(format!("elements {a}"), a, &by_axis[a], (0.0, 0.0), &coef, dt, &element_loads))
+            .map(|a| GridPort::of(format!("elements {a}"), a, &by_axis[a], (0.0, 0.0), &coef, &element_loads))
             .collect::<Result<_>>()?
     };
-    let currents = currents(model, &grid, &coef, dt)?;
+    let currents = currents(model, &grid, &coef)?;
     let ce = &coef.ce;
     let wave = crate::planewave::of(model)?;
     if ports.is_empty() && currents.is_empty() && wave.is_none() {
@@ -1031,7 +1037,7 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
         Some(_) => {
             let bodies = emcraft_model::Aabb::around(model.radiators())
                 .ok_or_else(|| FdtdError::NotReady("nothing for the plane wave to scatter: add a body".into()))?;
-            Some(crate::planewave::split_box(bodies, grid.n, grid.hs, grid.npml)?)
+            Some(crate::planewave::split_box(bodies, &grid)?)
         }
         None => None,
     };
@@ -1043,7 +1049,7 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let mut wave = match (wave, split) {
         (Some(w), Some(split)) => {
             let a = w.0;
-            Some(crate::planewave::PlaneWave::new(w, grid.n, grid.hs, grid.npml, (&cpml.e[a], &cpml.h[a]), split, &coef, dt)?)
+            Some(crate::planewave::PlaneWave::new(w, &grid, (&cpml.e[a], &cpml.h[a]), split, &coef)?)
         }
         _ => None,
     };

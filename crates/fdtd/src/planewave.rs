@@ -11,7 +11,7 @@
 use emcraft_model::units::{EPS0, MU0};
 use emcraft_model::{Aabb, Model, Source};
 
-use crate::open::BoxCoefficients;
+use crate::open::{BoxCoefficients, BoxGrid};
 use crate::yee::{Cpml, Fields, index, lattices};
 use crate::{FdtdError, Result, invalid};
 
@@ -76,19 +76,17 @@ pub(crate) fn of(model: &Model) -> Result<Option<(usize, bool, usize, f64)>> {
 
 impl PlaneWave {
     /// The wave travelling along `axis` (up it when `up`) with E along `pol` of sign `e_sign`, on
-    /// a uniform grid of `n` cells of `hs` with the CPML `cpml_e`, `cpml_h` along the axis
-    /// (`npml` cells), its split on the box of nodes `lo`..`hi`.
-    #[allow(clippy::too_many_arguments)]
+    /// the uniform `grid` with the CPML `cpml` (E's, H's) along the axis, its split on the box of
+    /// nodes `lo`..`hi`.
     pub(crate) fn new(
         (axis, up, pol, e_sign): (usize, bool, usize, f64),
-        n: [usize; 3],
-        hs: [f64; 3],
-        npml: usize,
+        grid: &BoxGrid,
         cpml: (&[Cpml], &[Cpml]),
         (lo, hi): ([usize; 3], [usize; 3]),
         coef: &BoxCoefficients,
-        dt: f64,
     ) -> Result<PlaneWave> {
+        let BoxGrid { n, hs, npml, .. } = *grid;
+        let dt = coef.dt;
         let na = n[axis];
         let source = if up { npml + 2 } else { na - npml - 2 };
         if (up && source + 1 >= lo[axis]) || (!up && source <= hi[axis] + 1) {
@@ -219,9 +217,10 @@ impl PlaneWave {
     }
 }
 
-/// The split's box of nodes round `bodies` (m) on cells of `hs`: a cell clear of them on every
-/// side, inside the layer of `npml` cells with room for the Huygens box.
-pub(crate) fn split_box(bodies: Aabb, n: [usize; 3], hs: [f64; 3], npml: usize) -> Result<([usize; 3], [usize; 3])> {
+/// The split's box of nodes round `bodies` (m) on `grid`'s cells: a cell clear of them on every
+/// side, inside its absorbing layer with room for the Huygens box.
+pub(crate) fn split_box(bodies: Aabb, grid: &BoxGrid) -> Result<([usize; 3], [usize; 3])> {
+    let BoxGrid { n, hs, npml, .. } = *grid;
     let mut lo = [0usize; 3];
     let mut hi = [0usize; 3];
     for d in 0..3 {
