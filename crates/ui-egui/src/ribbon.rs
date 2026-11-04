@@ -37,15 +37,19 @@ pub const TABS: &[(RibbonTab, &[(&str, &[&str])])] = &[
     (
         RibbonTab::Model,
         &[
-            ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.solid", "geometry.body"]),
+            ("GEOMETRY", &["geometry.import", "geometry.waveguide", "geometry.solid", "geometry.body", "geometry.inclusion"]),
             ("SETTINGS", &["units.set", "project.frequency"]),
-            ("PCB", &["pcb.import", "pcb.sample", "pcb.segment", "pcb.via", "pcb.pour"]),
+            ("PCB", &["pcb.import", "pcb.sample", "pcb.segment", "pcb.via", "pcb.pour", "pcb.element"]),
         ],
     ),
     (RibbonTab::Materials, &[("MATERIALS", &["model.material.create"])]),
     (
         RibbonTab::PortsSources,
-        &[("PORTS", &["model.port.create", "model.port.lumped"]), ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"])],
+        &[
+            ("PORTS", &["model.port.create", "model.port.lumped"]),
+            ("ELEMENTS", &["model.element.create"]),
+            ("SOURCES", &["source.dipole", "source.plane_wave", "source.clear"]),
+        ],
     ),
     // The tabs follow the step bar: the boundaries are step 4, after the ports (step 3).
     (RibbonTab::Boundaries, &[("BOUNDARIES", &["model.walls", "model.open", "model.symmetry", "model.periodic"])]),
@@ -286,7 +290,7 @@ fn ordered(app: &EmcraftApp, panels: &'static [(&'static str, &'static [&'static
 /// Whether what a ribbon command works on is there: a board's edits need a board.
 fn ready(app: &EmcraftApp, id: &str) -> bool {
     match id {
-        "pcb.segment" | "pcb.via" | "pcb.pour" => app.session.model().pcb.is_some(),
+        "pcb.segment" | "pcb.via" | "pcb.pour" | "pcb.element" => app.session.model().pcb.is_some(),
         _ => true,
     }
 }
@@ -313,7 +317,7 @@ pub fn fits(kind: crate::steps::Solver, id: &str) -> bool {
         // S-parameters between ports.
         "results.touchstone" | "view.sparameters" | "results.tdr" | "results.compare" | "results.check" => matches!(kind, Frequency | TimeDomain),
         // Nothing drives a resonator.
-        "model.port.create" | "model.port.lumped" | "solve.port_modes" => kind != Eigenmodes,
+        "model.port.create" | "model.port.lumped" | "solve.port_modes" | "model.element.create" => kind != Eigenmodes,
         _ => true,
     }
 }
@@ -713,6 +717,8 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         let all = |app: &EmcraftApp| -> Vec<&str> { TABS.iter().flat_map(|(_, p)| ordered(app, p)).flat_map(|p| p.commands).collect() };
         let listed = all(&h.app);
+        // The lumped element and the inclusion have buttons of their own.
+        assert!(listed.contains(&"model.element.create") && listed.contains(&"geometry.inclusion"), "{listed:?}");
         assert!(
             listed.iter().all(|id| !matches!(
                 *id,

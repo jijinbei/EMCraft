@@ -114,7 +114,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("source.dipole", Some("Dipole"), Some(Glyph::Dipole), false),
     ui("source.plane_wave", Some("Plane wave"), Some(Glyph::PlaneWave), false),
     ui("model.port.lumped", Some("Lumped port"), Some(Glyph::Lumped), false),
-    ui("model.element.create", Some("Lumped element"), Some(Glyph::Lumped), false),
+    ui("model.element.create", Some("Element"), Some(Glyph::Lumped), false),
     ui("model.element.remove", None, Some(Glyph::Clear), false),
     ui("model.port.lumped.edit", None, Some(Glyph::Lumped), false),
     ui("model.port.lumped.delete", None, Some(Glyph::Lumped), false),
