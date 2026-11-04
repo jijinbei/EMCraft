@@ -67,7 +67,7 @@ fn confirm(app: &EmcraftApp, ui: &mut egui::Ui, ok: bool, out: &mut Actions) {
     let pending = super::super::unconfirmed(app);
     if pending {
         let label = format!("✔ {}", tr("Confirm settings"));
-        let r = ui.act(ok && !app.busy(), ui_kit::styled(Raw(&label), true), Fixed::SetupConfirm.into(), "", || Action::ConfirmSetup, out);
+        let r = ui.act(ok && !app.busy(), ui_kit::styled(Raw(&label), true), Fixed::SetupConfirm.into(), || Action::ConfirmSetup, out);
         let _ = r.hint_disabled("put the marked fields right first");
         ui_kit::small(ui, "Not confirmed: the mesh and Run wait for these settings.", t.warning);
     } else {

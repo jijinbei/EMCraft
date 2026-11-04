@@ -100,7 +100,7 @@ fn progress(app: &EmcraftApp, ui: &mut egui::Ui, t: &theme::Tokens, out: &mut Ac
     let Some(job) = &app.job else { return };
     ui.horizontal(|ui| {
         // Cancel first, where it stays put while the text beside it changes.
-        ui.act(true, ui_kit::styled("Cancel", false), Fixed::StatusCancel.into(), "", || Action::CancelJob, out);
+        ui.act(true, ui_kit::styled("Cancel", false), Fixed::StatusCancel.into(), || Action::CancelJob, out);
         ui.spinner();
         if let Some(w) = job.place() {
             device_chip(ui, &w, t);
@@ -183,7 +183,7 @@ pub(crate) fn job_card(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         });
         ui_kit::progress(ui, job.snapshot().fraction(), ui.available_width());
         ui.add_space(2.0);
-        ui.act(true, ui_kit::styled("Cancel", false), Fixed::JobCancel.into(), "", || Action::CancelJob, out);
+        ui.act(true, ui_kit::styled("Cancel", false), Fixed::JobCancel.into(), || Action::CancelJob, out);
     });
     scenario::publish_rect(Fixed::Job, r.response.rect);
 }

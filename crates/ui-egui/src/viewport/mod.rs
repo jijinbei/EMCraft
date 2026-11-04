@@ -149,7 +149,7 @@ pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) 
         };
         let any = View::ALL.into_iter().any(result);
         for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any } else { result(*v) }) {
-            ui.act(true, pill(shown(v), app.place.view() == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
+            ui.act(true, pill(shown(v), app.place.view() == v, 12, PillSize::Body), Handle::View(v), || Action::ShowView(v), out);
         }
     });
 }
@@ -374,7 +374,7 @@ pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
             ui.label(egui::RichText::new(tr("Out of date")).color(t.selected_ink)).hint("The model changed after this run.");
             let busy = app.busy();
             let hint = if busy { "a job is running" } else { "Solve again (the Setup step's run)" };
-            ui.act(!busy, crate::ui_kit::styled("Re-run", true), Fixed::StaleRerun.into(), hint, || Action::StartRun, out);
+            ui.act(!busy, crate::ui_kit::styled("Re-run", true), Fixed::StaleRerun.into(), || Action::StartRun, out).hint(hint);
         });
     });
     scenario::publish_rect(Fixed::Stale, r.response.rect);

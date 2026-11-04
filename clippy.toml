@@ -2,3 +2,6 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
+# Functions take at most six arguments: more travel together as a type of their own
+# (docs/architecture.md, Shared building blocks).
+too-many-arguments-threshold = 6

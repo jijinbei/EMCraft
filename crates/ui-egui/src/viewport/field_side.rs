@@ -298,10 +298,10 @@ fn probes(app: &EmcraftApp, field: &mut FieldState, ui: &mut egui::Ui, out: &mut
                 !busy,
                 egui::Button::new("+").small(),
                 Fixed::ProbeAdd.into(),
-                hint,
                 || Action::run("view.probe.add", serde_json::json!({"at": at})),
                 out,
-            );
+            )
+            .hint(hint);
         }
     });
     if probes.is_empty() {

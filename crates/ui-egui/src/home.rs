@@ -289,14 +289,7 @@ fn recover(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                         out.push(Action::DismissRecovery(i));
                     }
                     let then = Then::Recover { file: f.file.display().to_string(), original: f.original.clone() };
-                    ui.act(
-                        !app.busy(),
-                        crate::ui_kit::styled("Recover", true),
-                        Handle::Recover(i),
-                        "",
-                        || Action::File(FileAction::Request(then)),
-                        out,
-                    );
+                    ui.act(!app.busy(), crate::ui_kit::styled("Recover", true), Handle::Recover(i), || Action::File(FileAction::Request(then)), out);
                 });
             });
         });
@@ -412,5 +405,6 @@ fn settings(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.text(Style::SmallDim, "Units apply to new projects; an open one changes its own with Units in step 1.");
     ui.add_space(t.space_12);
     let all = crate::ui_kit::styled("All settings…", false);
-    ui.act(true, all, Fixed::HomeSettings.into(), "The theme, the 3D view, dialogs and files", || Action::Settings(Some(Section::Appearance)), out);
+    ui.act(true, all, Fixed::HomeSettings.into(), || Action::Settings(Some(Section::Appearance)), out)
+        .hint("The theme, the 3D view, dialogs and files");
 }

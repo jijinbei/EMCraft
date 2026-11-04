@@ -17,7 +17,7 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
     }
     ui_kit::section(ui, "Checks");
     let busy = app.busy();
-    ui.act(!busy, ui_kit::styled("Passivity and reciprocity", false), Fixed::ResultsCheck.into(), "", || Action::CheckResults, out);
+    ui.act(!busy, ui_kit::styled("Passivity and reciprocity", false), Fixed::ResultsCheck.into(), || Action::CheckResults, out);
     if let Some((_, c)) = &app.workflow.check {
         let n = |k: &str| c.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
         let passive = c.get("passive").and_then(Value::as_bool) == Some(true);
@@ -29,14 +29,7 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
         ui,
         "Passivity and reciprocity check physical consistency. They do not measure mesh error. Refine the mesh and compare the results at frequencies important to your design.",
     );
-    ui.act(
-        !busy && !stale,
-        ui_kit::styled("Set up mesh convergence", false),
-        Fixed::ResultsConvergence.into(),
-        "",
-        || Action::dialog("mesh.adapt"),
-        out,
-    );
+    ui.act(!busy && !stale, ui_kit::styled("Set up mesh convergence", false), Fixed::ResultsConvergence.into(), || Action::dialog("mesh.adapt"), out);
     ui_kit::caption(
         ui,
         "Adaptive mesh changes the mesh at one frequency. Review its tolerance and pass limit, then rerun your analysis on the final mesh.",
@@ -58,7 +51,7 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
             scenario::publish_target(Handle::Touchstone(v), r.rect);
         }
     });
-    ui.act(!busy, ui_kit::styled("Export", true), Fixed::ResultsTouchstone.into(), "", || Action::ExportTouchstone, out);
+    ui.act(!busy, ui_kit::styled("Export", true), Fixed::ResultsTouchstone.into(), || Action::ExportTouchstone, out);
 }
 
 /// Writes the Touchstone file the Results step's fields name.

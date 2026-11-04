@@ -767,21 +767,21 @@ fn row_menu(app: &EmcraftApp, r: &Row, key: &str, ui: &mut egui::Ui, out: &mut A
     if let Some(role) = r.role.as_ref().filter(|role| !role.input) {
         let drive = egui::Button::new(lang::tr("Make the input"));
         let params = serde_json::json!({"port": role.name});
-        ui.act(idle, drive, Fixed::RowMenuDrive.into(), "", || Action::run("view.driven", params), out);
+        ui.act(idle, drive, Fixed::RowMenuDrive.into(), || Action::run("view.driven", params), out);
     }
     if let Some(edit) = r.edit_action() {
-        ui.act(idle, egui::Button::new(lang::tr("Edit…")), Fixed::RowMenuEdit.into(), "", || edit, out);
+        ui.act(idle, egui::Button::new(lang::tr("Edit…")), Fixed::RowMenuEdit.into(), || edit, out);
     }
     if let Some(item) = &r.item {
         // A row among several parts selected deletes them all.
         let several = r.pick.is_some_and(|p| app.view3d.selected.len() > 1 && app.view3d.selected.contains(&p));
         let items = if several { selected_items(app) } else { vec![item.clone()] };
         let delete = egui::Button::new(lang::tr("Delete")).shortcut_text("Del");
-        ui.act(idle, delete, Fixed::RowMenuDelete.into(), "", || Action::DeleteItems(items), out);
+        ui.act(idle, delete, Fixed::RowMenuDelete.into(), || Action::DeleteItems(items), out);
     }
     if let Some(pick) = r.pick {
         let show = egui::Button::new(lang::tr("Show in 3D"));
-        if ui.act(true, show, Fixed::RowMenuShow.into(), "", || Action::Select { row: Some(key.to_owned()), picks: vec![pick] }, out).clicked() {
+        if ui.act(true, show, Fixed::RowMenuShow.into(), || Action::Select { row: Some(key.to_owned()), picks: vec![pick] }, out).clicked() {
             out.push(Action::SetView(View::Model));
         }
     }

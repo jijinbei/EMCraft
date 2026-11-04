@@ -132,8 +132,8 @@ pub fn show(app: &EmcraftApp, dlg: &mut TemplateDialog, ctx: &egui::Context, out
             let ready = dlg.error.is_none() && !busy;
             let values = dlg.values().unwrap_or(Value::Null);
             let name = dlg.name.clone();
-            ui.act(ready, ui_kit::styled("Open", true), Fixed::TemplateOpen.into(), "", || Action::OpenTemplate(name, values), out);
-            ui.act(true, ui_kit::styled("Cancel", false), Fixed::TemplateCancel.into(), "", || Action::Template(None), out);
+            ui.act(ready, ui_kit::styled("Open", true), Fixed::TemplateOpen.into(), || Action::OpenTemplate(name, values), out);
+            ui.act(true, ui_kit::styled("Cancel", false), Fixed::TemplateCancel.into(), || Action::Template(None), out);
             if ui.named(egui::Button::new(crate::lang::tr("Reset")).frame(false), Fixed::TemplateReset.into()).clicked() {
                 for f in &mut dlg.fields {
                     f.text = crate::steps::fmt(f.default);

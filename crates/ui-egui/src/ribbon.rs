@@ -130,9 +130,9 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 ui.set_min_width(200.0);
                 let (u, r) = (app.session.undo().len(), app.session.redo().len());
                 let undo = egui::Button::new(trf("Undo  ({n})", args!(n = u))).shortcut_text("Ctrl+Z");
-                ui.act(u > 0 && !busy, undo, Fixed::EditUndo.into(), "", || Action::Undo, out);
+                ui.act(u > 0 && !busy, undo, Fixed::EditUndo.into(), || Action::Undo, out);
                 let redo = egui::Button::new(trf("Redo  ({n})", args!(n = r))).shortcut_text("Ctrl+Y");
-                ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), "", || Action::Redo, out);
+                ui.act(r > 0 && !busy, redo, Fixed::EditRedo.into(), || Action::Redo, out);
             });
             // The project's name in the middle, a dot while it has unsaved changes.
             let mut title_right = x;

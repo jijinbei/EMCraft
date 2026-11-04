@@ -13,7 +13,7 @@ pub(super) fn port_modes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, ou
         let text = "No port modes yet: they need a meshed model with ports.";
         let enabled = !app.busy();
         return empty_with_action(ui, text, |ui| {
-            ui.act(enabled, egui::Button::new(tr("Solve port modes…")), Fixed::PortModesSolve.into(), "", || Action::dialog("solve.port_modes"), out)
+            ui.act(enabled, egui::Button::new(tr("Solve port modes…")), Fixed::PortModesSolve.into(), || Action::dialog("solve.port_modes"), out)
         });
     };
     let lu = reply.get("length_unit").and_then(Value::as_str).unwrap_or("mm").to_owned();
@@ -172,7 +172,7 @@ pub(super) fn compare(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         let ready = !app.busy() && app.session.results().sweep.is_some();
         let text = "Compare the sweep with the exact TE10 solution or mode matching.";
         return empty_with_action(ui, text, |ui| {
-            ui.act(ready, egui::Button::new(tr("Compare…")), Fixed::CompareRun.into(), "", || Action::run("results.compare", json!({})), out)
+            ui.act(ready, egui::Button::new(tr("Compare…")), Fixed::CompareRun.into(), || Action::run("results.compare", json!({})), out)
         });
     };
     ui.label(

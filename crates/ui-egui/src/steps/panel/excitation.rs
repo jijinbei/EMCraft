@@ -36,7 +36,7 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
     ui_kit::caption(ui, about);
     let busy = app.busy();
     let hint = if ready { "" } else { "needs a mesh (step 6)" };
-    ui.act(ready && !busy, ui_kit::styled("Preview port modes", true), Fixed::ExcitationPreview.into(), hint, || Action::PreviewPortModes, out);
+    ui.act(ready && !busy, ui_kit::styled("Preview port modes", true), Fixed::ExcitationPreview.into(), || Action::PreviewPortModes, out).hint(hint);
     let Some(reply) = app.replies.port_modes.as_ref() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
     ui_kit::small(ui, trf("at {f} {unit}", args!(f = fmt(f), unit = fu)), t.text_dim);
@@ -59,7 +59,7 @@ fn port_roles(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             if !role.input {
                 let b = egui::Button::new(egui::RichText::new(tr("Make the input")).size(t.font_small)).small();
                 let params = serde_json::json!({"port": role.name});
-                ui.act(!app.busy(), b, Handle::DrivePort(&role.name), "", || Action::run("view.driven", params), out);
+                ui.act(!app.busy(), b, Handle::DrivePort(&role.name), || Action::run("view.driven", params), out);
             }
         });
     }

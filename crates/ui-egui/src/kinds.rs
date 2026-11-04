@@ -170,9 +170,9 @@ impl Pic {
         p.rect_filled(Rect::from_min_max(self.at(x0, y0), self.at(x1, y1)), 1.0, self.edge);
     }
 
-    /// A sine wave of 2.5 cycles along y from x0 to x1, `amp` of the height, ending in an
+    /// A sine wave of 2.5 cycles along `y` from x0 to x1, `amp` of the height, ending in an
     /// arrowhead at x1.
-    fn wave(&self, p: &egui::Painter, x0: f32, x1: f32, y: f32, amp: f32, s: Stroke) {
+    fn wave(&self, p: &egui::Painter, (x0, x1): (f32, f32), y: f32, amp: f32, s: Stroke) {
         let (n, cycles) = (40, 2.5);
         let pts: Vec<Pos2> = (0..=n)
             .map(|k| k as f32 / n as f32)
@@ -202,10 +202,10 @@ impl Pic {
             p.text(self.at(x, 0.08), Align2::CENTER_BOTTOM, n, FontId::proportional(10.0), self.ink);
         }
         let font = FontId::proportional(10.0);
-        self.wave(p, 0.02, 0.31, 0.3, 0.1, Stroke::new(2.2, self.ink));
-        self.wave(p, 0.31, 0.04, 0.72, 0.05, Stroke::new(1.5, self.ink.gamma_multiply(0.6)));
+        self.wave(p, (0.02, 0.31), 0.3, 0.1, Stroke::new(2.2, self.ink));
+        self.wave(p, (0.31, 0.04), 0.72, 0.05, Stroke::new(1.5, self.ink.gamma_multiply(0.6)));
         p.text(self.at(0.17, 0.98), Align2::CENTER_BOTTOM, "S11", font.clone(), self.dim);
-        self.wave(p, 0.69, 0.98, 0.5, 0.09, Stroke::new(2.2, self.ink));
+        self.wave(p, (0.69, 0.98), 0.5, 0.09, Stroke::new(2.2, self.ink));
         p.text(self.at(0.83, 0.98), Align2::CENTER_BOTTOM, "S21", font, self.dim);
     }
 

@@ -161,7 +161,7 @@ impl Built {
     /// [`emcraft_render::view3d::hits`] on its scene, through its index once made.
     pub fn hits(&self, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
         match self.cache.index(&self.scene) {
-            Some(index) => index.hits(&self.scene, camera, x, y, w, h),
+            Some(index) => camera.ray(x, y, w, h).and_then(|r| index.hits(&self.scene, r)),
             None => emcraft_render::view3d::hits(&self.scene, camera, x, y, w, h),
         }
     }

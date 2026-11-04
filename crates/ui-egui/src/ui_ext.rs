@@ -51,21 +51,13 @@ impl Style {
 
 /// Controls that publish their handle and ask for an action.
 pub trait UiExt {
-    /// `widget` (greyed out unless `enabled`), published as `handle`, `hint` on hover (none
-    /// when empty); `action()` is asked for when it is clicked.
-    fn act(
-        &mut self,
-        enabled: bool,
-        widget: impl Widget,
-        handle: Handle,
-        hint: impl Shown,
-        action: impl FnOnce() -> Action,
-        out: &mut Actions,
-    ) -> Response;
+    /// `widget` (greyed out unless `enabled`), published as `handle`; `action()` is asked for
+    /// when it is clicked. Its hover text is the response's `hint`.
+    fn act(&mut self, enabled: bool, widget: impl Widget, handle: Handle, action: impl FnOnce() -> Action, out: &mut Actions) -> Response;
 
     /// A button labelled `label` doing that.
     fn action_button(&mut self, handle: Handle, label: impl Shown, hint: impl Shown, action: impl FnOnce() -> Action, out: &mut Actions) -> Response {
-        self.act(true, egui::Button::new(label.shown()), handle, hint, action, out)
+        self.act(true, egui::Button::new(label.shown()), handle, action, out).hint(hint)
     }
 
     /// `widget`, published as `handle` (a control whose change stays in the widget's state).
@@ -84,18 +76,9 @@ pub trait UiExt {
 }
 
 impl UiExt for Ui {
-    fn act(
-        &mut self,
-        enabled: bool,
-        widget: impl Widget,
-        handle: Handle,
-        hint: impl Shown,
-        action: impl FnOnce() -> Action,
-        out: &mut Actions,
-    ) -> Response {
+    fn act(&mut self, enabled: bool, widget: impl Widget, handle: Handle, action: impl FnOnce() -> Action, out: &mut Actions) -> Response {
         let r = self.add_enabled(enabled, widget);
         scenario::publish_target(handle, r.rect);
-        let r = r.hint(hint);
         if r.clicked() {
             out.push(action());
         }

@@ -14,8 +14,8 @@ pub use results::export_touchstone;
 
 use super::bar::mark;
 use super::*;
-use crate::Style;
 use crate::lang::{Raw, args, shown, tr, trf};
+use crate::{Hint, Style};
 
 /// The active step's panel at the right (with the open dialog docked in it): `fields` are its
 /// text fields, `dialog` the open dialog.
@@ -134,7 +134,7 @@ fn checks(ui: &mut egui::Ui, s: &StepState, out: &mut Actions) {
             let here = m.command.as_deref().is_some_and(|c| (is_solve(c) || c == "project.setup") && Step::of_command(c) == Some(s.step));
             if let Some(c) = m.command.as_ref().filter(|_| !here) {
                 let hint = format!("{c}: {}", crate::label(c));
-                ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), &hint, || Action::Fix(c.clone()), out);
+                ui.act(true, egui::Button::new(fix_label(c)).small(), Handle::StepFix(i), || Action::Fix(c.clone()), out).hint(&hint);
             }
         });
     }

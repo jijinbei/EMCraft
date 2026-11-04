@@ -46,6 +46,13 @@ Before writing a helper, look here: these exist so that no crate writes them aga
 `cargo xtask dupes` (exact copies) and `cargo xtask dupes --loose` (copies with names or scalar
 types changed) find what slipped through.
 
+A function takes at most six arguments, `self` included (`clippy.toml`). Before adding a
+seventh, see whether one is not needed (the callee can read it: `Tokens::get()`, the app, the
+`Ui`), whether some travel together as a type of their own (`Caps`, `Shell`, `BoxGrid`, a
+coefficient set holding its `dt`), whether an out-parameter is the return value, and whether the
+function is really a method of that type or a widget (`impl egui::Widget`). The GPU kernels and
+the fits' closures are allowed where they are written.
+
 | Where | What |
 |---|---|
 | `emcraft_macros::named_enum!`, `named_serde!`, `Named` | an enum named by text, its ids written once (views, tabs, units, axes, the choices command parameters take, backends): `ALL`, `IDS`, `id`, `label`, `parse` (aliases too), `Display`, its ids checked distinct when it compiles; `named_serde!` reads and writes it by id; `Named` is what generic code knows of one (`Params::pick`, `ParamSpec::one_of(&T::IDS)`) |

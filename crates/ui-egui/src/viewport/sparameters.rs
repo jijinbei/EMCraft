@@ -188,7 +188,8 @@ fn refine_band(app: &EmcraftApp, refine: &mut crate::state::Refine, ui: &mut egu
         let params = json!({"start": fu.from_si(a), "stop": fu.from_si(b), "points": refine.points});
         let busy = app.busy();
         let hint = if busy { "a job is running" } else { "Solve these frequencies and merge them into the sweep (solve.refine)" };
-        let r = ui.act(!busy, crate::ui_kit::styled("Refine", true), Fixed::RefineStart.into(), hint, || Action::run("solve.refine", params), out);
+        let r =
+            ui.act(!busy, crate::ui_kit::styled("Refine", true), Fixed::RefineStart.into(), || Action::run("solve.refine", params), out).hint(hint);
         let (x, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
         if crate::ui_kit::icon_button(ui, x, crate::ui_kit::Mark::Close, "Clear the band", Fixed::RefineClear).clicked() || r.clicked() {
             refine.band = None;

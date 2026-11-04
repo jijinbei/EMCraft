@@ -454,7 +454,7 @@ fn confirm(app: &EmcraftApp, ask: Option<&Ask>, ctx: &egui::Context, out: &mut A
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 for &(label, primary, handle, a) in answers {
-                    ui.act(true, ui_kit::styled(label, primary), handle.into(), "", || Action::File(FileAction::Confirm(a)), out);
+                    ui.act(true, ui_kit::styled(label, primary), handle.into(), || Action::File(FileAction::Confirm(a)), out);
                 }
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     out.push(Action::File(FileAction::Confirm(Answer::Cancel)));
@@ -516,7 +516,7 @@ pub fn menu(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     ui.set_min_width(240.0);
     let busy = app.busy();
     let item = |ui: &mut egui::Ui, out: &mut Actions, text: &str, keys: &str, handle: Fixed, enabled: bool, action: Action| {
-        ui.act(enabled, egui::Button::new(tr(text)).shortcut_text(keys), handle.into(), "", || action, out);
+        ui.act(enabled, egui::Button::new(tr(text)).shortcut_text(keys), handle.into(), || action, out);
     };
     let file = Action::File;
     item(ui, out, "New project", "Ctrl+N", Fixed::FileNew, !busy, file(FileAction::Request(Then::New)));
