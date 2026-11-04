@@ -87,14 +87,14 @@ pub fn tile(ui: &mut egui::Ui, kind: Solver, size: egui::Vec2, look: Look, handl
     let name_ink = if look.on { t.text } else { t.text_dim };
     if look.large {
         let pic = Rect::from_min_max(r.min + vec2(10.0, 10.0), pos2(r.right() - 10.0, r.bottom() - 58.0));
-        p.rect_filled(pic, 6.0, colours(kind, t)[1]);
-        picture(&p, pic.shrink(8.0), kind, t);
-        glyphs::paint(&p, Rect::from_min_size(pos2(r.left() + 10.0, pic.bottom() + 8.0), vec2(20.0, 20.0)), glyph, t.icon, colours(kind, t)[0]);
+        p.rect_filled(pic, 6.0, colours(kind)[1]);
+        picture(&p, pic.shrink(8.0), kind);
+        glyphs::paint(&p, Rect::from_min_size(pos2(r.left() + 10.0, pic.bottom() + 8.0), vec2(20.0, 20.0)), glyph, t.icon, colours(kind)[0]);
         p.text(pos2(r.left() + 36.0, pic.bottom() + 18.0), Align2::LEFT_CENTER, tr(name), FontId::proportional(t.font_body), t.text);
         let line = p.layout(tr(plain).to_owned(), FontId::proportional(t.font_small), t.text_dim, r.width() - 20.0);
         p.galley(pos2(r.left() + 10.0, pic.bottom() + 30.0), line, t.text_dim);
     } else {
-        glyphs::paint(&p, Rect::from_center_size(pos2(r.center().x, r.top() + 28.0), vec2(34.0, 34.0)), glyph, t.icon, colours(kind, t)[0]);
+        glyphs::paint(&p, Rect::from_center_size(pos2(r.center().x, r.top() + 28.0), vec2(34.0, 34.0)), glyph, t.icon, colours(kind)[0]);
         p.text(pos2(r.center().x, r.bottom() - 14.0), Align2::CENTER_CENTER, tr(name), FontId::proportional(t.font_body), name_ink);
     }
     if look.on && look.auto {
@@ -105,7 +105,8 @@ pub fn tile(ui: &mut egui::Ui, kind: Solver, size: egui::Vec2, look: Look, handl
 }
 
 /// A kind's own colours: its ink and its picture's ground.
-pub fn colours(kind: Solver, t: &Tokens) -> [egui::Color32; 2] {
+pub fn colours(kind: Solver) -> [egui::Color32; 2] {
+    let t = &Tokens::get();
     match kind {
         Solver::Frequency => t.kind_frequency,
         Solver::Eigenmodes => t.kind_eigenmodes,
@@ -120,8 +121,9 @@ pub fn colours(kind: Solver, t: &Tokens) -> [egui::Color32; 2] {
 /// closed cavity holding a standing wave, its resonance beside it; an antenna radiating
 /// wavefronts into space over its pattern; a pulse running down a guide, its echo off a
 /// discontinuity coming back.
-pub fn picture(p: &egui::Painter, r: Rect, kind: Solver, t: &Tokens) {
-    let [ink, _] = colours(kind, t);
+pub fn picture(p: &egui::Painter, r: Rect, kind: Solver) {
+    let t = &Tokens::get();
+    let [ink, _] = colours(kind);
     let pic = Pic { r, ink, metal: t.border, edge: t.text_dim, dim: t.text_dim };
     match kind {
         Solver::Frequency => pic.sparameters(p),
@@ -168,9 +170,10 @@ impl Pic {
         p.rect_filled(Rect::from_min_max(self.at(x0, y0), self.at(x1, y1)), 1.0, self.edge);
     }
 
-    /// A sine wave along y from x0 to x1, `amp` of the height, ending in an arrowhead at x1.
-    fn wave(&self, p: &egui::Painter, x0: f32, x1: f32, y: f32, amp: f32, cycles: f32, s: Stroke) {
-        let n = 40;
+    /// A sine wave of 2.5 cycles along y from x0 to x1, `amp` of the height, ending in an
+    /// arrowhead at x1.
+    fn wave(&self, p: &egui::Painter, x0: f32, x1: f32, y: f32, amp: f32, s: Stroke) {
+        let (n, cycles) = (40, 2.5);
         let pts: Vec<Pos2> = (0..=n)
             .map(|k| k as f32 / n as f32)
             .map(|u| {
@@ -199,10 +202,10 @@ impl Pic {
             p.text(self.at(x, 0.08), Align2::CENTER_BOTTOM, n, FontId::proportional(10.0), self.ink);
         }
         let font = FontId::proportional(10.0);
-        self.wave(p, 0.02, 0.31, 0.3, 0.1, 2.5, Stroke::new(2.2, self.ink));
-        self.wave(p, 0.31, 0.04, 0.72, 0.05, 2.5, Stroke::new(1.5, self.ink.gamma_multiply(0.6)));
+        self.wave(p, 0.02, 0.31, 0.3, 0.1, Stroke::new(2.2, self.ink));
+        self.wave(p, 0.31, 0.04, 0.72, 0.05, Stroke::new(1.5, self.ink.gamma_multiply(0.6)));
         p.text(self.at(0.17, 0.98), Align2::CENTER_BOTTOM, "S11", font.clone(), self.dim);
-        self.wave(p, 0.69, 0.98, 0.5, 0.09, 2.5, Stroke::new(2.2, self.ink));
+        self.wave(p, 0.69, 0.98, 0.5, 0.09, Stroke::new(2.2, self.ink));
         p.text(self.at(0.83, 0.98), Align2::CENTER_BOTTOM, "S21", font, self.dim);
     }
 
@@ -331,7 +334,7 @@ pub fn switch(app: &crate::EmcraftApp, ui: &mut egui::Ui, r: Rect, out: &mut cra
     let fill = if resp.hovered() && enabled { t.hover } else { t.accent_soft };
     let p = ui.painter().with_clip_rect(r);
     p.rect(r, 12.0, fill, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
-    glyphs::paint(&p, Rect::from_center_size(pos2(r.left() + 18.0, r.center().y), vec2(18.0, 18.0)), glyph, t.icon, colours(current, t)[0]);
+    glyphs::paint(&p, Rect::from_center_size(pos2(r.left() + 18.0, r.center().y), vec2(18.0, 18.0)), glyph, t.icon, colours(current)[0]);
     let label = if chosen.is_none() { format!("{} ({})", tr(name), tr("auto")) } else { tr(name).to_owned() };
     p.text(pos2(r.left() + 34.0, r.center().y), Align2::LEFT_CENTER, label, FontId::proportional(t.font_body), t.text);
     let c = pos2(r.right() - 14.0, r.center().y);
@@ -351,13 +354,7 @@ pub fn switch(app: &crate::EmcraftApp, ui: &mut egui::Ui, r: Rect, out: &mut cra
             };
             let p = ui.painter();
             p.rect_filled(row, 6.0, fill);
-            glyphs::paint(
-                p,
-                Rect::from_center_size(pos2(row.left() + 16.0, row.center().y), vec2(18.0, 18.0)),
-                card.glyph,
-                t.icon,
-                colours(kind, t)[0],
-            );
+            glyphs::paint(p, Rect::from_center_size(pos2(row.left() + 16.0, row.center().y), vec2(18.0, 18.0)), card.glyph, t.icon, colours(kind)[0]);
             p.text(pos2(row.left() + 34.0, row.center().y), Align2::LEFT_CENTER, tr(card.name), FontId::proportional(t.font_body), t.text);
             item.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, kind == current, tr(card.name)));
             if item.on_hover_cursor(egui::CursorIcon::PointingHand).hint(card.detail).clicked() {

@@ -117,23 +117,19 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     // What the view offers is the stage's: drawing while the board is prepared, picking a
     // route while one is chosen. Fields are the S-parameter steps' (step 4 makes the model).
     let stage = emcraft_engine::pcb::stage(&app.session);
-    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Board, out);
+    crate::view3d::show(app, st, ui, view, crate::scene3d::Overlay::Board, out);
     scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
     if stage != Stage::Board {
         st.views.pcb.drawing = None;
     }
     match stage {
-        Stage::Board => draw(app, &mut st.views.pcb, &st.view3d, ui, view, board, out),
+        Stage::Board => draw(app, st, ui, view, board, out),
         Stage::Net => pick_route(app, st, board, out),
         Stage::Settings | Stage::Inspect | Stage::Results => {}
     }
     // The top view, small, in the corner.
-    let minimap = minimap(view);
-    let selected = app.session.views().pcb.net().unwrap_or_default().to_owned();
-    let ground = st.views.pcb.ground.clone();
-    let result = report(app, &selected).cloned();
-    let mut corner = ui.new_child(egui::UiBuilder::new().max_rect(minimap));
-    draw_board(app, &mut st.views.pcb, &mut corner, out, &selected, &ground, result.as_ref(), minimap.height());
+    let mut corner = ui.new_child(egui::UiBuilder::new().max_rect(minimap(view)));
+    draw_board(app, &mut st.views.pcb, &mut corner, out);
 }
 
 /// A net clicked in 3D becomes the route.
@@ -320,15 +316,8 @@ const DRAW_SNAP: f64 = 0.4e-3;
 /// Drawing copper in 3D: a toggle over the view's top right; while on, each click on the pen's
 /// layer adds a segment from the last point (the first only sets it), snapped to the pen net's
 /// ends there or a 0.05 mm grid; a right click or Escape ends the line, and with none, drawing.
-fn draw(
-    app: &EmcraftApp,
-    state: &mut crate::state::PcbUi,
-    v: &crate::view3d::View3d,
-    ui: &mut egui::Ui,
-    view: Rect,
-    board: &emcraft_model::pcb::Board,
-    out: &mut Actions,
-) {
+fn draw(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, view: Rect, board: &emcraft_model::pcb::Board, out: &mut Actions) {
+    let (state, v) = (&mut st.views.pcb, &st.view3d);
     let toggle = Rect::from_min_size(pos2(view.right() - 140., view.top() + 8.), vec2(130., 28.));
     let r = ui.new_child(egui::UiBuilder::new().max_rect(toggle)).selectable_label(state.drawing.is_some(), tr("Draw the route"));
     scenario::publish_target(Handle::Choice("pcb_mode", "draw"), r.rect);
@@ -494,22 +483,17 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
     }
 }
 
-/// The board's top view `height` tall: the reference copper filled, the routes as lines, the
-/// gaps the report found; a click picks the nearest route.
-#[allow(clippy::too_many_arguments)]
-fn draw_board(
-    app: &EmcraftApp,
-    state: &mut crate::state::PcbUi,
-    ui: &mut egui::Ui,
-    out: &mut Actions,
-    net: &str,
-    ground: &str,
-    report: Option<&Inspection>,
-    height: f32,
-) {
+/// The board's top view filling `ui`: the reference copper filled, the routes as lines, the
+/// gaps the report of the selected route found; a click picks the nearest route.
+fn draw_board(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, out: &mut Actions) {
     let Some(board) = app.session.model().pcb.as_ref() else {
         return;
     };
+    let net = app.session.views().pcb.net().unwrap_or_default();
+    let ground = state.ground.clone();
+    let ground = ground.as_str();
+    let report = report(app, net);
+    let height = ui.max_rect().height();
     let t = Tokens::get();
     let Some((lo, hi)) = board.bounds() else {
         return;

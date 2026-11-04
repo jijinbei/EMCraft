@@ -113,9 +113,9 @@ pub(crate) fn pills(ui: &mut egui::Ui, row: Rect, list: &[Pill]) -> Option<usize
         ui.painter().rect_stroke(r, 12.0, Stroke::new(1.0, if p.active { t.accent } else { t.border }), egui::StrokeKind::Inside);
         let c = pos2(r.left() + 14.0, r.center().y);
         match p.look {
-            Look::Running => running_mark(ui, c, t),
-            Look::Skipped => skip_mark(ui.painter(), c, t),
-            Look::Unneeded(status) | Look::Plain(status) => mark(ui.painter(), c, status, t),
+            Look::Running => running_mark(ui, c),
+            Look::Skipped => skip_mark(ui.painter(), c),
+            Look::Unneeded(status) | Look::Plain(status) => mark(ui.painter(), c, status),
         }
         let ink = match (p.active, p.look) {
             (true, _) => t.selected_ink,
@@ -146,8 +146,9 @@ pub(crate) enum Look {
 }
 
 /// A status mark: a tick, a hollow ring, dots, an exclamation, a cross or a turning arrow.
-pub(crate) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
-    let col = status_color(s, t);
+pub(crate) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status) {
+    let t = &Tokens::get();
+    let col = status_color(s);
     let ink = Stroke::new(1.8, t.on_status);
     match s {
         Status::Done => {
@@ -185,13 +186,15 @@ pub(crate) fn mark(p: &egui::Painter, c: egui::Pos2, s: Status, t: &Tokens) {
 }
 
 /// The mark of a step the job's kind of analysis does without: a grey ring with a dash.
-pub(crate) fn skip_mark(p: &egui::Painter, c: egui::Pos2, t: &Tokens) {
+pub(crate) fn skip_mark(p: &egui::Painter, c: egui::Pos2) {
+    let t = &Tokens::get();
     p.circle_stroke(c, 6.0, Stroke::new(1.4, t.text_dim));
     p.line_segment([c + vec2(-3.0, 0.0), c + vec2(3.0, 0.0)], Stroke::new(1.6, t.text_dim));
 }
 
 /// Run's mark while a run goes on: an arc of the accent turning on a faint ring.
-pub(super) fn running_mark(ui: &egui::Ui, c: egui::Pos2, t: &Tokens) {
+pub(super) fn running_mark(ui: &egui::Ui, c: egui::Pos2) {
+    let t = &Tokens::get();
     let p = ui.painter();
     p.circle_stroke(c, 6.0, Stroke::new(1.6, t.accent_soft));
     let start = (ui.input(|i| i.time) * 4.0) as f32;

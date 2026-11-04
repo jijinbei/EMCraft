@@ -359,7 +359,7 @@ fn the_field_is_coloured_by_its_values() {
             })
             .collect();
         let (c, u, v) = ([-1.0, 0.0, -0.6], [1.0, 0.0, -0.6], [-1.0, 0.0, 0.6]);
-        let grid = Arc::new(FieldGrid::new(50 + u64::from(axis) + u64::from(quarter), nx, ny, axis, &phasors, c, u, v));
+        let grid = Arc::new(FieldGrid::new(50 + u64::from(axis) + u64::from(quarter), axis, (nx, ny, &phasors), [c, u, v]));
         let phase = if quarter { std::f64::consts::FRAC_PI_2 } else { 0.0 };
         let peak = grid.peak(phase);
         approx::assert_abs_diff_eq!(peak, 40.0, epsilon = 1e-9);
@@ -536,7 +536,7 @@ fn complex_vector_glyphs_rotate_on_gpu_without_new_vertices() {
         motion: Some(super::pack::Motion { re: [1.0, 0.0, 0.0], im: [0.0, 1.0, 0.0], max_length: 1.0 }),
     }]);
     let packed = Arc::new(packed);
-    let grid = Arc::new(FieldGrid::new(6001, 2, 2, 0, &[Some(([1.0; 3], [0.0; 3])); 4], [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+    let grid = Arc::new(FieldGrid::new(6001, 0, (2, 2, &[Some(([1.0; 3], [0.0; 3])); 4]), [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]));
     let cam = front(Projection::Orthographic);
     let draw = |g: &mut Gpu, phase| {
         g.shot(&scene, cam, [300, 240], None, |f| {

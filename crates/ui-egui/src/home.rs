@@ -224,40 +224,41 @@ fn grid(ui: &mut egui::Ui, n: usize, mut each: impl FnMut(&mut egui::Ui, usize))
     }
 }
 
-/// A card: a picture (or a glyph), a name and a line under it.
-fn card(ui: &mut egui::Ui, pic: Option<&mut Picture>, glyph: Glyph, name: &str, sub: &str, dim: bool, handle: Handle) -> egui::Response {
-    let t = &Tokens::get();
-    let (r, resp) = ui.allocate_exact_size(vec2(THUMB[0] + 16.0, THUMB[1] + 64.0), Sense::click());
-    let p = ui.painter();
-    p.rect(
-        r,
-        10.0,
-        t.panel_header,
-        Stroke::new(if resp.hovered() { 2.0 } else { 1.0 }, if resp.hovered() { t.accent } else { t.border }),
-        egui::StrokeKind::Inside,
-    );
-    let pr = Rect::from_min_size(r.min + vec2(8.0, 8.0), vec2(THUMB[0], THUMB[1]));
-    match pic {
-        Some(pic) => {
-            let id = pic.texture(ui.ctx());
-            p.image(id, pr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+/// A card: a picture (or a glyph), a name and a line under it (dimmed: its file is gone).
+fn card<'a>(pic: Option<&'a mut Picture>, glyph: Glyph, name: &'a str, sub: &'a str, dim: bool) -> impl egui::Widget + 'a {
+    move |ui: &mut egui::Ui| {
+        let t = &Tokens::get();
+        let (r, resp) = ui.allocate_exact_size(vec2(THUMB[0] + 16.0, THUMB[1] + 64.0), Sense::click());
+        let p = ui.painter();
+        p.rect(
+            r,
+            10.0,
+            t.panel_header,
+            Stroke::new(if resp.hovered() { 2.0 } else { 1.0 }, if resp.hovered() { t.accent } else { t.border }),
+            egui::StrokeKind::Inside,
+        );
+        let pr = Rect::from_min_size(r.min + vec2(8.0, 8.0), vec2(THUMB[0], THUMB[1]));
+        match pic {
+            Some(pic) => {
+                let id = pic.texture(ui.ctx());
+                p.image(id, pr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            }
+            None => {
+                p.rect_filled(pr, 6.0, t.panel);
+                glyphs::paint(p, Rect::from_center_size(pr.center(), vec2(56.0, 56.0)), glyph, if dim { t.text_dim } else { t.icon }, t.accent);
+            }
         }
-        None => {
-            p.rect_filled(pr, 6.0, t.panel);
-            glyphs::paint(p, Rect::from_center_size(pr.center(), vec2(56.0, 56.0)), glyph, if dim { t.text_dim } else { t.icon }, t.accent);
-        }
+        let clip = p.with_clip_rect(r.shrink(8.0));
+        clip.text(
+            pos2(r.left() + 10.0, pr.bottom() + 18.0),
+            Align2::LEFT_CENTER,
+            name,
+            FontId::proportional(t.font_body),
+            if dim { t.text_dim } else { t.text },
+        );
+        clip.text(pos2(r.left() + 10.0, pr.bottom() + 40.0), Align2::LEFT_CENTER, sub, FontId::proportional(t.font_small), t.text_dim);
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
     }
-    let clip = p.with_clip_rect(r.shrink(8.0));
-    clip.text(
-        pos2(r.left() + 10.0, pr.bottom() + 18.0),
-        Align2::LEFT_CENTER,
-        name,
-        FontId::proportional(t.font_body),
-        if dim { t.text_dim } else { t.text },
-    );
-    clip.text(pos2(r.left() + 10.0, pr.bottom() + 40.0), Align2::LEFT_CENTER, sub, FontId::proportional(t.font_small), t.text_dim);
-    scenario::publish_target(handle, r);
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// The autosaved copies found on start, newer than their projects: each a compact card — a
@@ -321,7 +322,7 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
         let exists = p.exists();
         let folder = p.parent().map(|d| d.display().to_string()).unwrap_or_default();
         let sub = if exists { folder } else { tr("missing").to_owned() };
-        let r = card(ui, None, Glyph::Waveguide, &name, &sub, !exists, Handle::Recent(i));
+        let r = ui.named(card(None, Glyph::Waveguide, &name, &sub, !exists), Handle::Recent(i));
         let r = r.on_hover_text(path.as_str());
         r.context_menu(|ui| {
             if ui.button(tr("Remove from the list")).clicked() {
@@ -377,7 +378,7 @@ fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut A
     let offset = usize::from(purpose.is_some());
     grid(ui, list.len() + offset, |ui, i| {
         if i < offset {
-            if card(ui, None, Glyph::New, tr("Blank"), tr("An empty project for this analysis"), false, Fixed::HomeBlank.into()).clicked() {
+            if ui.named(card(None, Glyph::New, tr("Blank"), tr("An empty project for this analysis"), false), Fixed::HomeBlank.into()).clicked() {
                 blank = true;
             }
             return;
@@ -391,7 +392,7 @@ fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut A
         }
         let pic = &mut slot.1;
         let about = sample_label(s.name);
-        if card(ui, pic.as_mut(), Glyph::Sample, s.name, about, false, Handle::Sample(s.name)).hint(Raw(about)).clicked() {
+        if ui.named(card(pic.as_mut(), Glyph::Sample, s.name, about, false), Handle::Sample(s.name)).hint(Raw(about)).clicked() {
             chosen = Some(s.name.to_owned());
         }
     });

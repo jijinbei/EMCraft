@@ -2,7 +2,8 @@
 
 use super::*;
 
-pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, states: &[StepState], t: &Tokens, out: &mut Actions) {
+pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, states: &[StepState], out: &mut Actions) {
+    let t = &Tokens::get();
     let stale = states.get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale);
     if stale {
         crate::viewport::stale_band(app, ui, out);
@@ -20,8 +21,8 @@ pub(super) fn results(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, state
     if let Some((_, c)) = &app.workflow.check {
         let n = |k: &str| c.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
         let passive = c.get("passive").and_then(Value::as_bool) == Some(true);
-        kv(ui, "largest σ(S)", format!("{:.6} — {}", n("largest_singular_value"), tr(if passive { "passive" } else { "NOT passive" })), t);
-        kv(ui, "max |S − S^T|", format!("{:.3e}", n("reciprocity_error")), t);
+        kv(ui, "largest σ(S)", format!("{:.6} — {}", n("largest_singular_value"), tr(if passive { "passive" } else { "NOT passive" })));
+        kv(ui, "max |S − S^T|", format!("{:.3e}", n("reciprocity_error")));
     }
     ui_kit::section(ui, "Mesh accuracy");
     ui_kit::caption(

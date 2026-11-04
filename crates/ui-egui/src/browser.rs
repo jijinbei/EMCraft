@@ -690,11 +690,11 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                             }
                             if out_of_date {
                                 let c = pos2(rect.right() - 12.0, rect.center().y);
-                                crate::steps::stale_mark(ui.painter(), c, t);
+                                crate::steps::stale_mark(ui.painter(), c);
                                 clip.max.x -= 24.0;
                             }
                             if let Some(role) = &r.role {
-                                clip.max.x = role_pill(ui, rect, role, t).left() - 4.0;
+                                clip.max.x = role_pill(ui, rect, role).left() - 4.0;
                             }
                             // One line, ending in an ellipsis where it meets the pill or the edge.
                             let left = rect.left() + indent + 19.0;
@@ -748,7 +748,8 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 
 /// A port's role at the right of its row: its mark's colour as a soft pill, the role in short
 /// with the S-parameter set as mathematics. The rectangle it took.
-fn role_pill(ui: &egui::Ui, rect: Rect, role: &PortRole, t: &Tokens) -> Rect {
+fn role_pill(ui: &egui::Ui, rect: Rect, role: &PortRole) -> Rect {
+    let t = &Tokens::get();
     let galley = ui.painter().layout_job(crate::math::rich(&role.text(), t.font_small, t.text));
     let size = galley.size() + vec2(12.0, 2.0);
     let pill = Rect::from_min_size(pos2(rect.right() - 4.0 - size.x, rect.center().y - size.y / 2.0), size);

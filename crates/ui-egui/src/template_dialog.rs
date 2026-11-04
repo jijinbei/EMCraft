@@ -184,7 +184,6 @@ fn fields(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
 /// The model as the fields make it (dimmed when they do not make one), with the active
 /// parameter's dimension on it.
 fn preview(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
-    let t = &Tokens::get();
     let (r, _) = ui.allocate_exact_size(vec2(PREVIEW[0], PREVIEW[1]), Sense::hover());
     scenario::publish_target(Fixed::TemplatePreview, r);
     if let Some(p) = dlg.preview.as_mut() {
@@ -199,7 +198,7 @@ fn preview(ui: &mut egui::Ui, dlg: &mut TemplateDialog) {
         && let Some(m) = dlg.marks.iter().find(|m| &m.name == name)
     {
         let (value, unit) = dlg.fields.iter().find(|f| &f.name == name).map_or(("", ""), |f| (f.text.as_str(), f.unit));
-        mark(ui.painter(), cam, r, m, &format!("{name} = {value} {unit}"), t);
+        mark(ui.painter(), cam, r, m, &format!("{name} = {value} {unit}"));
     }
 }
 
@@ -214,7 +213,8 @@ pub fn open(app: &mut EmcraftApp, name: String, values: Value) {
 
 /// A parameter's dimension on the preview: a line between its two points with a head at each
 /// end, and its name and value beside its middle.
-fn mark(p: &egui::Painter, cam: &emcraft_render::view3d::Camera, rect: egui::Rect, m: &emcraft_engine::TemplateMark, text: &str, t: &Tokens) {
+fn mark(p: &egui::Painter, cam: &emcraft_render::view3d::Camera, rect: egui::Rect, m: &emcraft_engine::TemplateMark, text: &str) {
+    let t = &Tokens::get();
     let (Some(a), Some(b)) = (crate::tools3d::screen(cam, rect, m.from), crate::tools3d::screen(cam, rect, m.to)) else { return };
     let p = p.with_clip_rect(rect);
     let s = egui::Stroke::new(2.5, t.accent);

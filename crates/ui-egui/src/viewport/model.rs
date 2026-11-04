@@ -11,5 +11,5 @@ pub(super) fn model3d(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: 
     if app.place.step() == Some(crate::steps::Step::Results) && View::Field.available(app) {
         overlay = crate::scene3d::Overlay::Field;
     }
-    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, area, overlay, out);
+    crate::view3d::show(app, st, ui, area, overlay, out);
 }

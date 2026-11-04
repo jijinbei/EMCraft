@@ -5,13 +5,14 @@ use crate::Hint;
 use crate::lang::args;
 use emcraft_engine::{Device, Precision};
 
-pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
+pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, out: &mut Actions) {
+    let fu = app.session.display().frequency.symbol();
     // Home is the sole authority for the analysis, including its inferred (auto) choice.
     let solver = app.session.model().analysis();
     f.fill_defaults();
     ui_kit::section(ui, "Settings");
     let solves = solve_frequencies(app, f, solver);
-    f.diagram = band_diagram(app, f, ui, &solves, t);
+    f.diagram = band_diagram(app, f, ui, &solves);
     let e = |f: &Fields, k: &str| f.error(k).map(str::to_owned);
     let lu = app.session.display().length.symbol();
     match solver {
@@ -54,13 +55,14 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
     }
     // The fields' errors as typed.
     let ok = setup_params(&app.session, f).is_ok();
-    confirm(app, ui, ok, t, out);
-    device(app, ui, solver, t, out);
+    confirm(app, ui, ok, out);
+    device(app, ui, solver, out);
 }
 
 /// The button that confirms the form (`project.setup`): the accent while the settings are not
 /// confirmed as they stand — the step, and Run after it, wait for it — and a check once they are.
-fn confirm(app: &EmcraftApp, ui: &mut egui::Ui, ok: bool, t: &Tokens, out: &mut Actions) {
+fn confirm(app: &EmcraftApp, ui: &mut egui::Ui, ok: bool, out: &mut Actions) {
+    let t = &Tokens::get();
     ui.add_space(8.0);
     let pending = super::super::unconfirmed(app);
     if pending {
@@ -77,7 +79,8 @@ fn confirm(app: &EmcraftApp, ui: &mut egui::Ui, ok: bool, t: &Tokens, out: &mut 
 /// Where the solve runs: the devices `solve.devices` lists (those this machine cannot run
 /// disabled, with the reason on hover) and the time domain's precision, set through
 /// `solve.device`.
-fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: &mut Actions) {
+fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, out: &mut Actions) {
+    let t = &Tokens::get();
     ui_kit::section(ui, "Compute device");
     let none = json!({});
     let list = app.workflow.devices.as_ref().unwrap_or(&none);
@@ -169,7 +172,8 @@ const MAX_SOLVE_TICKS: usize = 400;
 /// ports' modes and the guide's sections near it as dashed lines (a port's first mode in the
 /// warning colour: below it no power enters), and the frequencies the solve will work at as
 /// ticks. What it drew, for `ui.inspect`.
-fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64], t: &Tokens) -> Option<Value> {
+fn band_diagram(app: &EmcraftApp, f: &Fields, ui: &mut egui::Ui, solves: &[f64]) -> Option<Value> {
+    let t = &Tokens::get();
     let unit = app.session.display().frequency;
     let fu = unit.symbol();
     let (a, z) = form_band(f).or_else(|| solves.first().map(|x| (*x, *x)))?;

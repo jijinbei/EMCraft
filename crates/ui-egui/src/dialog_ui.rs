@@ -279,7 +279,7 @@ pub(crate) fn fields<L: crate::lang::Shown>(
         match &f.kind {
             Kind::Table(cols) => {
                 let cols = *cols;
-                drawn.extend(table(ui, f, cols, hint, session, t));
+                drawn.extend(table(ui, f, cols, hint, session));
             }
             Kind::Bool => {
                 ui_kit::row(ui, label(name), f.required, |ui| {
@@ -346,14 +346,8 @@ pub(crate) fn fields<L: crate::lang::Shown>(
 
 /// A table field: a row of cells per entry (sections, layers), each removable, and a button
 /// that adds one. The cells drawn, each with whether it takes text.
-fn table(
-    ui: &mut egui::Ui,
-    f: &mut Field,
-    cols: &'static [Column],
-    doc: &str,
-    session: &emcraft_engine::Session,
-    t: &Tokens,
-) -> Vec<(egui::Id, bool)> {
+fn table(ui: &mut egui::Ui, f: &mut Field, cols: &'static [Column], doc: &str, session: &emcraft_engine::Session) -> Vec<(egui::Id, bool)> {
+    let t = &Tokens::get();
     let mut drawn = Vec::new();
     let name = f.name;
     ui_kit::section(ui, format!("{name}{}", if f.required { " *" } else { "" }));

@@ -44,7 +44,8 @@ pub fn overlay(step: Step) -> Overlay {
 
 /// A status's colour in the step bar and panels: green done, neutral to do and waiting, amber
 /// warning, red needs attention, blue out of date.
-fn status_color(status: Status, t: &Tokens) -> Color32 {
+fn status_color(status: Status) -> Color32 {
+    let t = &Tokens::get();
     match status {
         Status::Done => t.success,
         Status::Todo | Status::Waiting => t.text_dim,
@@ -71,8 +72,8 @@ pub fn running(app: &EmcraftApp) -> bool {
 }
 
 /// The mark of results out of date (a turning arrow on blue), for the views and the browser.
-pub fn stale_mark(p: &egui::Painter, c: egui::Pos2, t: &Tokens) {
-    bar::mark(p, c, Status::Stale, t);
+pub fn stale_mark(p: &egui::Painter, c: egui::Pos2) {
+    bar::mark(p, c, Status::Stale);
 }
 
 /// Whether the results are older than the model (the Results step out of date).
@@ -316,7 +317,7 @@ pub fn duration(seconds: f64) -> String {
 /// A run's estimate (`project.estimate`'s reply) in a line — its time, `ref.` when it is the
 /// reference machine's — with what it counts on hover, published as `handle`.
 pub fn estimate_line(ui: &mut egui::Ui, e: &Result<Value, String>, handle: crate::Fixed) {
-    let t = &crate::theme::Tokens::get();
+    let t = &Tokens::get();
     let r = match e {
         Ok(e) => {
             let n = |k: &str| e.get(k).and_then(Value::as_f64);

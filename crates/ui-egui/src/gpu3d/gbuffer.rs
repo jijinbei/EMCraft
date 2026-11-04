@@ -93,17 +93,17 @@ impl Pipelines {
         }
     }
 
-    /// Records the passes: `draw` draws the triangles (`opaque_only` for the normals).
+    /// Records the passes `look` needs (the normals for its edges and shading, the tags for its
+    /// outline and picking): `draw` draws the triangles (`opaque_only` for the normals).
     pub fn record(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         t: &Targets,
-        uniforms: &wgpu::BindGroup,
-        field: &wgpu::BindGroup,
-        normals: bool,
-        ids: bool,
+        [uniforms, field]: [&wgpu::BindGroup; 2],
+        look: super::Look,
         draw: &dyn Fn(&mut wgpu::RenderPass<'_>, bool),
     ) {
+        let (normals, ids) = (look.edges || look.ao, look.outline || look.pick);
         fn attach(view: &wgpu::TextureView, clear: wgpu::Color) -> Option<wgpu::RenderPassColorAttachment<'_>> {
             Some(wgpu::RenderPassColorAttachment {
                 view,

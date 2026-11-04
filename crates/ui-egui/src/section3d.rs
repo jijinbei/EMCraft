@@ -8,7 +8,7 @@
 //! camera each frame, so it follows orbiting, panning and zooming.
 
 use egui::{FontId, Pos2, Rect, Stroke, vec2};
-use emcraft_render::view3d::{Camera, Scene, StandardView};
+use emcraft_render::view3d::{Scene, StandardView};
 
 use crate::handle::Handle;
 use crate::theme::Tokens;
@@ -92,9 +92,10 @@ pub enum Mark {
 }
 
 /// A button of the section bar in `r`, lit when `on`, `tip` on hover; whether it was clicked.
-pub fn button(ui: &mut egui::Ui, p: &egui::Painter, r: Rect, handle: crate::handle::Fixed, mark: Mark, tip: &str, on: bool) -> bool {
+pub fn button(ui: &mut egui::Ui, r: Rect, handle: crate::handle::Fixed, mark: Mark, tip: &str, on: bool) -> bool {
     use crate::UiExt;
     let t = &Tokens::get();
+    let p = &ui.painter_at(r);
     let tip = crate::lang::tr(tip);
     let resp = ui.hit(r, handle.into(), egui::Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
@@ -266,9 +267,11 @@ fn port_marks(
     out
 }
 
-/// Draws the cut's dimensions and port marks over the view in `rect`; each label is published
-/// as `view3d:section:dim:<i>` and `view3d:section:port:<i>`.
-pub fn annotate(app: &EmcraftApp, scene: &Scene, cam: &Camera, p: &egui::Painter, rect: Rect, cut: Cut, bounds: ([f64; 3], [f64; 3])) {
+/// Draws the cut's dimensions and port marks over the view `v` in `rect`, when it shows them;
+/// each label is published as `view3d:section:dim:<i>` and `view3d:section:port:<i>`.
+pub fn annotate(app: &EmcraftApp, v: &crate::view3d::View3d, p: &egui::Painter, rect: Rect, bounds: ([f64; 3], [f64; 3])) {
+    let (Some(cut), true, Some(b)) = (v.section, v.section_dims, v.shown()) else { return };
+    let (scene, cam) = (&b.scene, &v.camera);
     let t = &Tokens::get();
     let l = app.session.display().length;
     let (dims, ports) = notes(app.session.model(), l, app.session.driven_port(), cut, outline(scene, cut, bounds));
@@ -290,7 +293,7 @@ pub fn annotate(app: &EmcraftApp, scene: &Scene, cam: &Camera, p: &egui::Painter
         p.line_segment([a2, b2], Stroke::new(1.2, ink));
         arrowhead(p, a2, b2, ink);
         arrowhead(p, b2, a2, ink);
-        let r = label(p, a2 + (b2 - a2) / 2.0, &d.text, &font, ink, t.panel, t.border);
+        let r = label(p, a2 + (b2 - a2) / 2.0, &d.text, ink, t.border);
         scenario::publish_target(Handle::SectionNote("dim", i), r);
     }
     let sc = crate::theme::scene();
@@ -310,7 +313,7 @@ pub fn annotate(app: &EmcraftApp, scene: &Scene, cam: &Camera, p: &egui::Painter
         let reach = 10.0 + 0.5 * (g.size().x * dir.x.abs() + g.size().y * dir.y.abs()) + 4.0;
         let at = last + dir * reach;
         p.line_segment([last, last + dir * 8.0], Stroke::new(1.0, port));
-        let r = label(p, at, &m.text, &font, t.text, t.panel, port);
+        let r = label(p, at, &m.text, t.text, port);
         scenario::publish_target(Handle::SectionNote("port", i), r);
     }
 }
@@ -326,9 +329,11 @@ fn arrowhead(p: &egui::Painter, tip: Pos2, from: Pos2, ink: egui::Color32) {
     p.add(egui::Shape::convex_polygon(vec![tip, back + n * 3.0, back - n * 3.0], ink, Stroke::NONE));
 }
 
-/// `text` on a small card centred at `at`; its rectangle.
-fn label(p: &egui::Painter, at: Pos2, text: &str, font: &FontId, ink: egui::Color32, fill: egui::Color32, edge: egui::Color32) -> Rect {
-    let g = p.layout_no_wrap(text.to_owned(), font.clone(), ink);
+/// `text` in `ink` on a small card edged in `edge` centred at `at`; its rectangle.
+fn label(p: &egui::Painter, at: Pos2, text: &str, ink: egui::Color32, edge: egui::Color32) -> Rect {
+    let t = Tokens::get();
+    let fill = t.panel;
+    let g = p.layout_no_wrap(text.to_owned(), FontId::proportional(t.font_small), ink);
     let r = Rect::from_center_size(at, g.size() + vec2(8.0, 4.0));
     p.rect_filled(r, 3.0, fill.gamma_multiply(0.92));
     p.rect_stroke(r, 3.0, Stroke::new(1.0, edge), egui::StrokeKind::Inside);

@@ -63,7 +63,7 @@ pub(super) fn field(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &m
         ui.allocate_rect(area, Sense::hover());
         let side_width = if area.width() >= NARROW { field_side::SIDE } else { 0.0 };
         let view = Rect::from_min_max(area.min, pos2(area.max.x - side_width, area.max.y));
-        crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Field, out);
+        crate::view3d::show(app, st, ui, view, crate::scene3d::Overlay::Field, out);
         if side_width > 0.0 {
             let side = Rect::from_min_max(pos2(view.max.x + 10.0, area.min.y), area.max);
             let mut side_ui = ui.new_child(egui::UiBuilder::new().max_rect(side));

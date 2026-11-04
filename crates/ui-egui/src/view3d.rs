@@ -432,9 +432,10 @@ static EMPTY: Built = Built {
     cache: scene3d::Cache::none(),
 };
 
-/// Draws the 3D view (its state `v`) in `rect` for `overlay`, the field view's planes (`field`)
-/// in it when the overlay shows them.
-pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut egui::Ui, rect: Rect, overlay: Overlay, out: &mut Actions) {
+/// Draws the 3D view (its state, `st.view3d`) in `rect` for `overlay`, the field view's planes
+/// (`st.field`) in it when the overlay shows them.
+pub fn show(app: &EmcraftApp, st: &mut crate::viewport::Parts, ui: &mut egui::Ui, rect: Rect, overlay: Overlay, out: &mut Actions) {
+    let (v, field) = (&mut st.view3d, &mut st.field);
     let t = &Tokens::get();
     // The scene, built again only when what it shows changed (the field's planes, for the
     // Results step: the field view's and those kept).
@@ -517,16 +518,14 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         v.gpu_frame = None;
     }
     pointer_tag(v, ui, rect, look.outline && !moving);
+    draw(v, ui, rect, moving, look);
     let p = ui.painter().with_clip_rect(rect);
-    draw(v, ui, &p, rect, drawer, moving, look, t);
-    labels(&p, rect, &v.camera, &built.labels, t);
-    if let (Some(cut), true, Some(b)) = (v.section, v.section_dims, v.shown()) {
-        crate::section3d::annotate(app, &b.scene, &v.camera, &p, rect, cut, bounds);
-    }
-    legend(&p, rect, &built.legend, t);
+    labels(&p, rect, &v.camera, &built.labels);
+    crate::section3d::annotate(app, v, &p, rect, bounds);
+    legend(&p, rect, &built.legend);
     crate::tools3d::draw(app, v, &p, rect);
     if let Some(b) = v.boxsel {
-        paint_box(&p, b, t);
+        paint_box(&p, b);
     }
     if let Some((_, row)) = single {
         let hint = if row.editable() && row.item.is_none() { tr("  ·  double-click to edit") } else { "" };
@@ -536,22 +535,24 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
             None => format!("{}{hint}", row.tex()),
         };
         let item = row.item.clone();
-        let card = Card { edit: item.clone().map(Action::EditItem), delete: item.map(|i| Action::DeleteItems(vec![i])) };
-        let card = selection_card(ui, &p, rect, &text, card, !app.busy(), t, out);
+        let card =
+            Card { tex: text, edit: item.clone().map(Action::EditItem), delete: item.map(|i| Action::DeleteItems(vec![i])), enabled: !app.busy() };
+        let card = card.show(ui, rect, out);
         crate::tools3d::ref_field(app, v, ui, card.center_bottom(), out);
     } else if v.selected.len() > 1 {
         // Several parts: how many, and Delete for those that are items of the model.
         let items: Vec<crate::browser::Item> = picked.iter().filter_map(|(_, r)| r.item.clone()).collect();
         let text = trf("{n} selected", args!(n = v.selected.len()));
-        let card = Card { edit: None, delete: (!items.is_empty()).then_some(Action::DeleteItems(items)) };
-        selection_card(ui, &p, rect, &text, card, !app.busy(), t, out);
+        let card = Card { tex: text, edit: None, delete: (!items.is_empty()).then_some(Action::DeleteItems(items)), enabled: !app.busy() };
+        card.show(ui, rect, out);
     }
     let facing = v.facing.map(|f| facing_plane(app.session.display().length, bounds.0, f));
     match app.prefs.navigator() {
         Navigator::Cube => crate::view_cube::show(v, ui, rect, out),
         Navigator::Axes => navigator(&v.camera, ui, rect, out),
     }
-    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, app.place.view() != crate::View::Field, out);
+    let bar = NavBar { facing, standalone: app.place.view() != crate::View::Field, playing: field.player.playing, ports: overlay == Overlay::Ports };
+    bar.show(v, ui, rect, bounds, out);
     if v.section.is_some() && app.place.view() != crate::View::Field {
         section_bar(v, ui, rect, bounds, app.session.display().length);
     }

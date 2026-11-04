@@ -3,7 +3,9 @@
 use super::*;
 use crate::lang::args;
 
-pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, has_dialog: bool, t: &Tokens, out: &mut Actions) {
+pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, has_dialog: bool, out: &mut Actions) {
+    let lu = app.session.display().length.symbol();
+    let t = &Tokens::get();
     // No geometry yet: the two ways to begin, a guide or a design from SolidCraft.
     if app.session.model().bounds().is_none() && !has_dialog {
         let enabled = !app.busy();
@@ -12,7 +14,7 @@ pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, has_dialog
             (Glyph::Import, "Import a SolidCraft design", Fixed::StepImport, "geometry.import"),
             (Glyph::Waveguide, "Waveguide", Fixed::StepWaveguide, "geometry.waveguide"),
         ] {
-            if ui_kit::glyph_button(ui, glyph, label, vec2(0.0, 40.0), handle == Fixed::StepImport, enabled, handle.into()).clicked() {
+            if ui.named_enabled(enabled, ui_kit::glyph_button(glyph, label, handle == Fixed::StepImport), handle.into()).clicked() {
                 out.push(Action::Fix(command.to_owned()));
             }
             ui.add_space(4.0);
@@ -28,11 +30,12 @@ pub(super) fn geometry(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, has_dialog
     }
     if let Some(emcraft_model::Aabb { min: lo, max: hi }) = app.session.model().bounds() {
         let l = app.session.display().length;
-        kv(ui, "extent", format!("{} × {} × {} {lu}", fmt(l.from_si(hi.x - lo.x)), fmt(l.from_si(hi.y - lo.y)), fmt(l.from_si(hi.z - lo.z))), t);
+        kv(ui, "extent", format!("{} × {} × {} {lu}", fmt(l.from_si(hi.x - lo.x)), fmt(l.from_si(hi.y - lo.y)), fmt(l.from_si(hi.z - lo.z))));
     }
 }
 
-pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
+pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui) {
+    let t = &Tokens::get();
     ui_kit::section(ui, "Materials");
     let m = app.session.model();
     for (i, mat) in m.materials.iter().enumerate() {
@@ -47,19 +50,20 @@ pub(super) fn materials(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     }
 }
 
-pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
+pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
+    let lu = app.session.display().length.symbol();
     ui_kit::section(ui, "Boundaries");
     let m = app.session.model();
-    kv(ui, "walls", m.wall_conductivity.map_or(tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")), t);
+    kv(ui, "walls", m.wall_conductivity.map_or(tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")));
     let l = app.session.display().length;
     if let Some(w) = m.wall_thickness {
-        kv(ui, "wall thickness", format!("{} {lu}", fmt(l.from_si(w.get()))), t);
+        kv(ui, "wall thickness", format!("{} {lu}", fmt(l.from_si(w.get()))));
     }
     let kind = |o: &emcraft_model::Open| tr(if o.shape == emcraft_model::OpenShape::Sphere { "spherical PML" } else { "PML" });
     let thick = |o: &emcraft_model::Open| {
         trf("{kind} {thickness} {unit} thick", args!(kind = kind(o), thickness = fmt(l.from_si(o.thickness.get())), unit = lu))
     };
-    kv(ui, "open", m.open.map_or(tr("closed (no PML)").into(), |o| thick(&o)), t);
+    kv(ui, "open", m.open.map_or(tr("closed (no PML)").into(), |o| thick(&o)));
     let planes: Vec<String> = m
         .symmetry
         .iter()
@@ -68,40 +72,42 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Toke
             format!("{} = {} {lu}, {wall}", s.axis.id(), fmt(l.from_si(s.at)))
         })
         .collect();
-    kv(ui, "symmetry", if planes.is_empty() { tr("none (the whole model)").into() } else { planes.join("; ") }, t);
+    kv(ui, "symmetry", if planes.is_empty() { tr("none (the whole model)").into() } else { planes.join("; ") });
     if let Some(p) = &m.periodic {
-        kv(ui, "periodic", crate::browser::periodic_text(p), t);
+        kv(ui, "periodic", crate::browser::periodic_text(p));
     }
 }
 
-pub(super) fn mesh(app: &EmcraftApp, ui: &mut egui::Ui, lu: &str, t: &Tokens) {
+pub(super) fn mesh(app: &EmcraftApp, ui: &mut egui::Ui) {
+    let lu = app.session.display().length.symbol();
+    let t = &Tokens::get();
     ui_kit::section(ui, "Mesh");
     let l = app.session.display().length;
     let Some(m) = app.session.model().mesh.as_ref() else {
         ui_kit::small(ui, "not meshed yet", t.text_dim);
         return;
     };
-    kv(ui, "nodes", m.nodes.len().to_string(), t);
-    kv(ui, "tetrahedra", m.tets.len().to_string(), t);
-    kv(ui, "boundary faces", m.boundary.len().to_string(), t);
+    kv(ui, "nodes", m.nodes.len().to_string());
+    kv(ui, "tetrahedra", m.tets.len().to_string());
+    kv(ui, "boundary faces", m.boundary.len().to_string());
     let volume: f64 = (0..m.tets.len()).filter_map(|i| m.volume(i)).sum();
     let h = (6.0 * std::f64::consts::SQRT_2 * volume / m.tets.len().max(1) as f64).cbrt();
-    kv(ui, "mean element", format!("{:.3} {lu}", l.from_si(h)), t);
+    kv(ui, "mean element", format!("{:.3} {lu}", l.from_si(h)));
     if let Some(b) = app.session.model().job.range() {
         let index = app.session.model().materials.iter().map(|x| (x.eps_r.get() * x.mu_r.get()).sqrt()).fold(1.0, f64::max);
         let lambda = emcraft_model::units::C0 / (b.stop.get() * index);
-        kv(ui, "per wavelength", trf("{n} at the band's top", args!(n = format!("{:.1}", lambda / h.max(1e-300)))), t);
+        kv(ui, "per wavelength", trf("{n} at the band's top", args!(n = format!("{:.1}", lambda / h.max(1e-300)))));
     }
     ui_kit::section(ui, "Estimate");
     match estimate(app) {
         Ok(e) => {
             let n = |k: &str| e.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN);
             let order = e.get("order").and_then(Value::as_u64).unwrap_or(2);
-            kv(ui, "unknowns", trf("{n} (order {order})", args!(n = format!("{:.0}", n("unknowns")), order = order)), t);
-            kv(ui, "memory", format!("{:.0} MB", n("memory_mb")), t);
+            kv(ui, "unknowns", trf("{n} (order {order})", args!(n = format!("{:.0}", n("unknowns")), order = order)));
+            kv(ui, "memory", format!("{:.0} MB", n("memory_mb")));
             let measured = e.get("from_this_session").and_then(Value::as_bool) == Some(true);
             let template = if measured { "{secs} s per frequency" } else { "{secs} s per frequency (reference machine)" };
-            kv(ui, "time", trf(template, args!(secs = format!("{:.2}", n("seconds_per_frequency")))), t);
+            kv(ui, "time", trf(template, args!(secs = format!("{:.2}", n("seconds_per_frequency")))));
         }
         Err(e) => {
             ui_kit::small(ui, Raw(e), t.text_dim);

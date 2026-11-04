@@ -42,23 +42,16 @@ pub(super) fn drawer_of(ui: &egui::Ui) -> Drawer {
 
 /// The scene drawn into `rect` by the GPU: by the window's in a paint callback, or offscreen
 /// into a picture (drawn again when what it shows changed); without either, a message.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn draw(
-    v: &mut View3d,
-    ui: &egui::Ui,
-    p: &egui::Painter,
-    rect: Rect,
-    drawer: Drawer,
-    moving: bool,
-    look: crate::prefs::GpuLook,
-    t: &Tokens,
-) {
+pub(super) fn draw(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look: crate::prefs::GpuLook) {
+    let t = &Tokens::get();
+    let drawer = drawer_of(ui);
+    let p = &ui.painter().with_clip_rect(rect);
     v.drawn_on_gpu = drawer != Drawer::None;
     v.drawn_by = drawer;
     let began = Instant::now();
     let frame = match drawer {
         Drawer::None => None,
-        _ => Some(gpu_frame(v, ui, rect, moving, drawer == Drawer::Offscreen, look, t)),
+        _ => Some(gpu_frame(v, ui, rect, moving, look)),
     };
     match (drawer, frame) {
         (Drawer::Window, Some(frame)) => {
@@ -110,15 +103,9 @@ pub(super) fn draw(
 }
 
 /// The frame of the scene the GPU draws into `rect`, supersampled at rest when small enough.
-pub(super) fn gpu_frame(
-    v: &mut View3d,
-    ui: &egui::Ui,
-    rect: Rect,
-    moving: bool,
-    offscreen: bool,
-    look: crate::prefs::GpuLook,
-    t: &Tokens,
-) -> crate::gpu3d::Frame {
+pub(super) fn gpu_frame(v: &mut View3d, ui: &egui::Ui, rect: Rect, moving: bool, look: crate::prefs::GpuLook) -> crate::gpu3d::Frame {
+    let offscreen = v.drawn_by == Drawer::Offscreen;
+    let t = &Tokens::get();
     let ppp = f64::from(ui.ctx().pixels_per_point());
     let out =
         [((f64::from(rect.width()) * ppp).round().clamp(1.0, 4096.0) as u32), ((f64::from(rect.height()) * ppp).round().clamp(1.0, 4096.0) as u32)];
@@ -179,14 +166,14 @@ pub(super) fn field_frame(app: &EmcraftApp, v: &mut View3d, field: &FieldState) 
         _ => {
             let (nx, ny, phasors) = s.phasors(component);
             let (x, y) = s.axes();
-            let [c, u, w] = scene3d::field_frame_of(&app.session, s.plane, s.at, x.span(), y.span(), lo);
+            let frame = scene3d::field_frame_of(&app.session, s.plane, s.at, x.span(), y.span(), lo);
             let axis = match component {
                 emcraft_engine::view::Component::Ex | emcraft_engine::view::Component::Hx => 0,
                 emcraft_engine::view::Component::Ey | emcraft_engine::view::Component::Hy => 1,
                 emcraft_engine::view::Component::Ez | emcraft_engine::view::Component::Hz => 2,
                 _ => 3,
             };
-            let g = std::sync::Arc::new(crate::gpu3d::FieldGrid::new(id, nx, ny, axis, &phasors, c, u, w));
+            let g = std::sync::Arc::new(crate::gpu3d::FieldGrid::new(id, axis, (nx, ny, &phasors), frame));
             v.field_grid = Some(g.clone());
             g
         }
@@ -218,7 +205,8 @@ pub(super) fn pointer_tag(v: &mut View3d, ui: &egui::Ui, rect: Rect, on: bool) {
 }
 
 /// The scene's labels where they project, faint on faces turned away.
-pub(super) fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label], t: &Tokens) {
+pub(super) fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scene3d::Label]) {
+    let t = &Tokens::get();
     let font = FontId::proportional(t.font_small);
     let b = cam.basis();
     for l in labels {
@@ -243,54 +231,55 @@ pub(super) fn labels(p: &egui::Painter, rect: Rect, cam: &Camera, labels: &[scen
     }
 }
 
-/// What a selection card's buttons do: Edit (one item of the model), Delete (its items).
-pub(super) struct Card {
-    pub(super) edit: Option<Action>,
-    pub(super) delete: Option<Action>,
-}
-
 /// The selection on a card at the top: its name (or how many parts; TeX, its symbols set as
 /// mathematics), with Edit and Delete beside it for items of the model (a port, a body).
-pub(super) fn selection_card(
-    ui: &mut egui::Ui,
-    p: &egui::Painter,
-    rect: Rect,
-    tex: &str,
-    card: Card,
-    enabled: bool,
-    t: &Tokens,
-    out: &mut Actions,
-) -> Rect {
-    let g = p.layout_job(crate::math::job(tex, t.font_small, t.text));
-    let (size, pitch) = (20.0, 24.0);
-    let actions: Vec<(Glyph, Fixed, &str, Action)> = [
-        card.edit.map(|a| (Glyph::Edit, Fixed::View3dSelectedEdit, "Edit", a)),
-        card.delete.map(|a| (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete", a)),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    let buttons = if actions.is_empty() { 0.0 } else { actions.len() as f32 * pitch + 4.0 };
-    let width = g.size().x + 20.0 + buttons;
-    let r = Rect::from_min_size(pos2(rect.center().x - width / 2.0, rect.top() + 10.0), vec2(width, g.size().y.max(size) + 10.0));
-    p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
-    p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
-    p.galley(pos2(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, t.text);
-    scenario::publish_target(Fixed::View3dSelected, r);
-    let mut x = r.right() - buttons;
-    for (glyph, handle, tip, action) in actions {
-        let b = Rect::from_center_size(pos2(x + pitch / 2.0, r.center().y), vec2(size, size));
-        let resp = ui.hit(b, handle.into(), if enabled { Sense::click() } else { Sense::hover() });
-        if resp.hovered() && enabled {
-            p.rect_filled(b, 4.0, t.hover);
+pub(super) struct Card {
+    pub(super) tex: String,
+    /// Edit: one item of the model.
+    pub(super) edit: Option<Action>,
+    /// Delete: its items.
+    pub(super) delete: Option<Action>,
+    /// The buttons work (not while busy).
+    pub(super) enabled: bool,
+}
+
+impl Card {
+    /// The card at the top of `rect`; its rectangle.
+    pub(super) fn show(self, ui: &mut egui::Ui, rect: Rect, out: &mut Actions) -> Rect {
+        let Card { tex, edit, delete, enabled } = self;
+        let t = &Tokens::get();
+        let p = &ui.painter().with_clip_rect(rect);
+        let g = p.layout_job(crate::math::job(&tex, t.font_small, t.text));
+        let (size, pitch) = (20.0, 24.0);
+        let actions: Vec<(Glyph, Fixed, &str, Action)> = [
+            edit.map(|a| (Glyph::Edit, Fixed::View3dSelectedEdit, "Edit", a)),
+            delete.map(|a| (Glyph::Delete, Fixed::View3dSelectedDelete, "Delete", a)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let buttons = if actions.is_empty() { 0.0 } else { actions.len() as f32 * pitch + 4.0 };
+        let width = g.size().x + 20.0 + buttons;
+        let r = Rect::from_min_size(pos2(rect.center().x - width / 2.0, rect.top() + 10.0), vec2(width, g.size().y.max(size) + 10.0));
+        p.rect_filled(r, 6.0, t.panel.gamma_multiply(0.92));
+        p.rect_stroke(r, 6.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        p.galley(pos2(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, t.text);
+        scenario::publish_target(Fixed::View3dSelected, r);
+        let mut x = r.right() - buttons;
+        for (glyph, handle, tip, action) in actions {
+            let b = Rect::from_center_size(pos2(x + pitch / 2.0, r.center().y), vec2(size, size));
+            let resp = ui.hit(b, handle.into(), if enabled { Sense::click() } else { Sense::hover() });
+            if resp.hovered() && enabled {
+                p.rect_filled(b, 4.0, t.hover);
+            }
+            glyphs::paint(p, b.shrink(2.0), glyph, if enabled { t.text } else { t.text_dim }, t.accent);
+            if resp.hint(tip).clicked() && enabled {
+                out.push(action);
+            }
+            x += pitch;
         }
-        glyphs::paint(p, b.shrink(2.0), glyph, if enabled { t.text } else { t.text_dim }, t.accent);
-        if resp.hint(tip).clicked() && enabled {
-            out.push(action);
-        }
-        x += pitch;
+        r
     }
-    r
 }
 
 /// A field plane's box in the model (m) and the standard view that faces it.
@@ -319,7 +308,8 @@ impl Built {
     }
 }
 
-pub(super) fn legend(p: &egui::Painter, rect: Rect, items: &[(String, Rgb)], t: &Tokens) {
+pub(super) fn legend(p: &egui::Painter, rect: Rect, items: &[(String, Rgb)]) {
+    let t = &Tokens::get();
     if items.is_empty() {
         return;
     }
@@ -394,79 +384,85 @@ pub(super) fn navigator(cam: &Camera, ui: &mut egui::Ui, rect: Rect, out: &mut A
 
 /// The view's tools as icons in a bar at the bottom centre: fit, the home (isometric) view,
 /// facing the field's plane (in Results), the section view, perspective or orthographic.
-pub(super) fn nav_bar(
-    v: &mut View3d,
-    playing: bool,
-    ui: &mut egui::Ui,
-    rect: Rect,
-    facing: Option<([f64; 3], [f64; 3], StandardView)>,
-    bounds: ([f64; 3], [f64; 3]),
-    overlay: Overlay,
-    standalone: bool,
-    out: &mut Actions,
-) {
-    let t = &Tokens::get();
-    let ortho = v.camera.projection == Projection::Orthographic;
-    let mut items: Vec<(Glyph, Handle, &str)> = vec![
-        (Glyph::Fit, Fixed::View3dFit.into(), "Fit the model to the view (double-click the view)"),
-        (Glyph::Home, Handle::Standard(StandardView::Iso), "Home view (isometric)"),
-    ];
-    if facing.is_some() {
-        items.push((Glyph::Lookat, Fixed::View3dFace.into(), "Face the field's plane"));
-        // The standalone model view needs a player; the Field view already has one.
+pub(super) struct NavBar {
+    /// The field's plane to face: its box (m) and the view that faces it.
+    pub(super) facing: Option<([f64; 3], [f64; 3], StandardView)>,
+    /// The view stands alone (not inside the Field view, which has its own player and no
+    /// section view): it offers both.
+    pub(super) standalone: bool,
+    /// The field's animation is playing.
+    pub(super) playing: bool,
+    /// The ports are the subject: their tools too.
+    pub(super) ports: bool,
+}
+
+impl NavBar {
+    /// The bar at the bottom of `rect`; the section view cuts the model's `bounds`.
+    pub(super) fn show(self, v: &mut View3d, ui: &mut egui::Ui, rect: Rect, bounds: ([f64; 3], [f64; 3]), out: &mut Actions) {
+        let NavBar { facing, standalone, playing, ports } = self;
+        let t = &Tokens::get();
+        let ortho = v.camera.projection == Projection::Orthographic;
+        let mut items: Vec<(Glyph, Handle, &str)> = vec![
+            (Glyph::Fit, Fixed::View3dFit.into(), "Fit the model to the view (double-click the view)"),
+            (Glyph::Home, Handle::Standard(StandardView::Iso), "Home view (isometric)"),
+        ];
+        if facing.is_some() {
+            items.push((Glyph::Lookat, Fixed::View3dFace.into(), "Face the field's plane"));
+            // The standalone model view needs a player; the Field view already has one.
+            if standalone {
+                items.push(if playing {
+                    (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
+                } else {
+                    (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
+                });
+            }
+        }
         if standalone {
-            items.push(if playing {
-                (Glyph::Pause, Fixed::View3dPlay.into(), "Pause the field's animation")
-            } else {
-                (Glyph::Play, Fixed::View3dPlay.into(), "Play the field's animation")
-            });
+            items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
         }
-    }
-    if standalone {
-        items.push((Glyph::Section, Fixed::View3dSection.into(), if v.section.is_some() { "Section view: on" } else { "Section view" }));
-    }
-    items.push(if ortho {
-        (Glyph::Orthographic, Fixed::View3dProjection.into(), "Orthographic — click for perspective")
-    } else {
-        (Glyph::Perspective, Fixed::View3dProjection.into(), "Perspective — click for orthographic")
-    });
-    // The tools: the ports' where ports are the subject, the ruler everywhere.
-    use crate::tools3d::Tool;
-    for tool in Tool::ALL.into_iter().filter(|tool| !tool.ports() || overlay == Overlay::Ports) {
-        items.push((tool.glyph(), Handle::Tool(tool), tool.hint()));
-    }
-    let (size, pitch) = (28.0, 32.0);
-    let width = pitch * items.len() as f32 + 6.0;
-    let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 26.0), vec2(width, size + 8.0));
-    let p = ui.painter().with_clip_rect(rect);
-    let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|q| bar.expand(24.0).contains(q));
-    p.rect_filled(bar, 8.0, t.panel.gamma_multiply(if near { 0.95 } else { 0.6 }));
-    p.rect_stroke(bar, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    for (i, (glyph, handle, tip)) in items.into_iter().enumerate() {
-        let tip = tr(tip);
-        let r = Rect::from_center_size(pos2(bar.left() + 3.0 + pitch * (i as f32 + 0.5), bar.center().y), vec2(size, size));
-        let resp = ui.hit(r, handle, Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
-        let on = (handle == Handle::Fixed(Fixed::View3dSection) && v.section.is_some())
-            || matches!(handle, Handle::Tool(tool) if v.tools.tool == Some(tool));
-        if resp.hovered() || on {
-            p.rect_filled(r, 5.0, if on { t.accent_soft } else { t.hover });
+        items.push(if ortho {
+            (Glyph::Orthographic, Fixed::View3dProjection.into(), "Orthographic — click for perspective")
+        } else {
+            (Glyph::Perspective, Fixed::View3dProjection.into(), "Perspective — click for orthographic")
+        });
+        // The tools: the ports' where ports are the subject, the ruler everywhere.
+        use crate::tools3d::Tool;
+        for tool in Tool::ALL.into_iter().filter(|tool| !tool.ports() || ports) {
+            items.push((tool.glyph(), Handle::Tool(tool), tool.hint()));
         }
-        let ink = if near || resp.hovered() || on { t.text } else { t.text.gamma_multiply(0.7) };
-        glyphs::paint(&p, r.shrink(4.0), glyph, ink, t.accent);
-        if resp.on_hover_text(tip).clicked() {
-            match handle {
-                Handle::Fixed(Fixed::View3dFit) => v.goal = Some(Goal::Fit),
-                Handle::Standard(side) => out.push(Action::StandardView(side)),
-                Handle::Fixed(Fixed::View3dPlay) => out.push(Action::SetPlaying(!playing)),
-                Handle::Fixed(Fixed::View3dSection) => v.section = v.section.is_none().then(|| Cut::middle(0, bounds)),
-                Handle::Tool(tool) => out.push(Action::Tool((v.tools.tool != Some(tool)).then_some(tool))),
-                Handle::Fixed(Fixed::View3dFace) => {
-                    if let Some((lo, hi, side)) = facing {
-                        v.goal = Some(Goal::Face(lo, hi, side));
+        let (size, pitch) = (28.0, 32.0);
+        let width = pitch * items.len() as f32 + 6.0;
+        let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 26.0), vec2(width, size + 8.0));
+        let p = ui.painter().with_clip_rect(rect);
+        let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|q| bar.expand(24.0).contains(q));
+        p.rect_filled(bar, 8.0, t.panel.gamma_multiply(if near { 0.95 } else { 0.6 }));
+        p.rect_stroke(bar, 8.0, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+        for (i, (glyph, handle, tip)) in items.into_iter().enumerate() {
+            let tip = tr(tip);
+            let r = Rect::from_center_size(pos2(bar.left() + 3.0 + pitch * (i as f32 + 0.5), bar.center().y), vec2(size, size));
+            let resp = ui.hit(r, handle, Sense::click());
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
+            let on = (handle == Handle::Fixed(Fixed::View3dSection) && v.section.is_some())
+                || matches!(handle, Handle::Tool(tool) if v.tools.tool == Some(tool));
+            if resp.hovered() || on {
+                p.rect_filled(r, 5.0, if on { t.accent_soft } else { t.hover });
+            }
+            let ink = if near || resp.hovered() || on { t.text } else { t.text.gamma_multiply(0.7) };
+            glyphs::paint(&p, r.shrink(4.0), glyph, ink, t.accent);
+            if resp.on_hover_text(tip).clicked() {
+                match handle {
+                    Handle::Fixed(Fixed::View3dFit) => v.goal = Some(Goal::Fit),
+                    Handle::Standard(side) => out.push(Action::StandardView(side)),
+                    Handle::Fixed(Fixed::View3dPlay) => out.push(Action::SetPlaying(!playing)),
+                    Handle::Fixed(Fixed::View3dSection) => v.section = v.section.is_none().then(|| Cut::middle(0, bounds)),
+                    Handle::Tool(tool) => out.push(Action::Tool((v.tools.tool != Some(tool)).then_some(tool))),
+                    Handle::Fixed(Fixed::View3dFace) => {
+                        if let Some((lo, hi, side)) = facing {
+                            v.goal = Some(Goal::Face(lo, hi, side));
+                        }
                     }
+                    _ => v.toggle_projection(),
                 }
-                _ => v.toggle_projection(),
             }
         }
     }
@@ -494,7 +490,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
         (Preset::EPlane, Fixed::View3dSectionEPlane, "E", "E-plane cut (x = a/2)"),
     ] {
         let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
-        if button(ui, &p, r, handle, Mark::Text(letter), tip, preset.is(cut, (lo, hi))) {
+        if button(ui, r, handle, Mark::Text(letter), tip, preset.is(cut, (lo, hi))) {
             cut = preset.cut((lo, hi));
         }
         x += pitch;
@@ -545,7 +541,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     }
     x += pitch;
     let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
-    if button(ui, &p, r, Fixed::View3dSectionLook, Mark::Glyph(Glyph::Lookat), "Look straight at the cut", false) {
+    if button(ui, r, Fixed::View3dSectionLook, Mark::Glyph(Glyph::Lookat), "Look straight at the cut", false) {
         let outline = v.shown().map_or_else(|| crate::section3d::flat(cut, (lo, hi)), |b| crate::section3d::outline(&b.scene, cut, (lo, hi)));
         v.camera.projection = Projection::Orthographic;
         v.goal = crate::section3d::look(cut, outline);
@@ -553,7 +549,7 @@ pub(super) fn section_bar(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, (lo, hi
     x += pitch;
     let r = Rect::from_min_size(pos2(x, bar.center().y - size / 2.0), vec2(size, size));
     let dims = v.section_dims;
-    if button(ui, &p, r, Fixed::View3dSectionDims, Mark::Glyph(Glyph::Ruler), if dims { "Dimensions: on" } else { "Dimensions: off" }, dims) {
+    if button(ui, r, Fixed::View3dSectionDims, Mark::Glyph(Glyph::Ruler), if dims { "Dimensions: on" } else { "Dimensions: off" }, dims) {
         v.section_dims = !dims;
     }
     v.section = Some(cut);

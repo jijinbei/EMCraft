@@ -350,13 +350,12 @@ pub(super) fn empty(ui: &mut egui::Ui, text: impl Shown) {
     ui.centered_and_justified(|ui| ui.text(Style::HeadingDim, text));
 }
 
-/// The card's message while a view has nothing to show, with the button (`label`, published
-/// as `handle`) that asks for `action`, the action that makes it.
-pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, label: &str, enabled: bool, handle: Fixed, action: Action, out: &mut Actions) {
+/// The card's message while a view has nothing to show, with the button under it that makes it.
+pub(super) fn empty_with_action(ui: &mut egui::Ui, text: &str, button: impl FnOnce(&mut egui::Ui) -> egui::Response) {
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
         ui.text(Style::HeadingDim, text);
-        ui.act(enabled, egui::Button::new(tr(label)), handle.into(), "", || action, out);
+        button(ui);
     });
 }
 
@@ -371,7 +370,7 @@ pub(crate) fn stale_band(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions)
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             let (m, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-            crate::steps::stale_mark(ui.painter(), m.center(), t);
+            crate::steps::stale_mark(ui.painter(), m.center());
             ui.label(egui::RichText::new(tr("Out of date")).color(t.selected_ink)).hint("The model changed after this run.");
             let busy = app.busy();
             let hint = if busy { "a job is running" } else { "Solve again (the Setup step's run)" };

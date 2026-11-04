@@ -151,7 +151,8 @@ struct Ink {
     axes: [Color32; 3],
 }
 
-fn ink(t: &Tokens, active: bool) -> Ink {
+fn ink(active: bool) -> Ink {
+    let t = &Tokens::get();
     let fade = |c: Color32| if active { c } else { c.lerp_to_gamma(t.viewport_top, 0.55) };
     Ink {
         face: fade(t.panel),
@@ -165,7 +166,8 @@ fn ink(t: &Tokens, active: bool) -> Ink {
 
 /// Draws the patches: each filled (shaded by its tilt), the hovered view's patches in the hover
 /// colour and outlined, the cube's own edges, and each face's axis mark on its middle.
-fn paint(p: &egui::Painter, faces: &[Facet], hovered: Option<[i8; 3]>, k: Ink, t: &Tokens, scale: f32) {
+fn paint(p: &egui::Painter, faces: &[Facet], hovered: Option<[i8; 3]>, k: Ink, scale: f32) {
+    let t = &Tokens::get();
     let mut mesh = egui::Mesh::default();
     for f in faces {
         let lit = hovered == Some(f.dir);
@@ -229,10 +231,10 @@ pub fn show(v: &mut View3d, ui: &mut egui::Ui, rect: Rect, _out: &mut Actions) {
     let resp = ui.hit(outer, Fixed::View3dCube.into(), Sense::click_and_drag());
     let pointer = ui.input(|i| i.pointer.hover_pos());
     let active = resp.dragged() || pointer.is_some_and(|q| outer.contains(q));
-    let k = ink(t, active);
+    let k = ink(active);
     let hovered = if resp.dragged() { None } else { pointer.filter(|q| outer.contains(*q)).and_then(|q| hit(&faces, q)).and_then(|i| faces.get(i)) };
     let painter = ui.painter().with_clip_rect(rect);
-    paint(&painter, &faces, hovered.map(|f| f.dir), k, t, scale);
+    paint(&painter, &faces, hovered.map(|f| f.dir), k, scale);
     // Every view shown gets a handle at its patches' middle (a face's middle; a corner's three
     // squares meet at the corner); the faces keep the standard views' names too.
     let mut seen: Vec<[i8; 3]> = Vec::new();

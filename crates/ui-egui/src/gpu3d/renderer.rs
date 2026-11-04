@@ -622,7 +622,7 @@ impl Renderer {
                     pass.draw(0..*n, 0..1);
                 }
             };
-            self.g.record(encoder, g, &self.uniform_bind, &self.field_bind, look.edges || look.ao, look.outline || look.pick, &draw);
+            self.g.record(encoder, g, [&self.uniform_bind, &self.field_bind], look, &draw);
         }
         let color = |load| {
             Some(wgpu::RenderPassColorAttachment {

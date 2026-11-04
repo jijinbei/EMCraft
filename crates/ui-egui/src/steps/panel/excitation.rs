@@ -4,14 +4,16 @@ use super::*;
 use crate::Hint;
 use crate::lang::args;
 
-pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
+pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let fu = app.session.display().frequency.symbol();
+    let t = &Tokens::get();
     // Ports are made from the ribbon and the 3D view's tools; the panel lists them.
     ui_kit::section(ui, "Ports and sources");
     let m = app.session.model();
     if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
         ui_kit::small(ui, "none yet", t.text_dim);
     }
-    port_roles(app, ui, t, out);
+    port_roles(app, ui, out);
     for p in &m.lumped {
         ui_kit::small(ui, trf("Lumped port {name}: {impedance} Ω", args!(name = p.name, impedance = p.impedance)), t.text);
     }
@@ -39,13 +41,14 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
     ui_kit::small(ui, trf("at {f} {unit}", args!(f = fmt(f), unit = fu)), t.text_dim);
     // A row opens its mode in the Port modes view.
-    mode_table(app, ui, reply, t, out);
+    mode_table(app, ui, reply, out);
 }
 
 /// The waveguide ports, each with its role (the input, whose reflection is S11, or an output
 /// and the S-parameter of its transmission) and, for an output, the choice to drive it instead
 /// (`view.driven`).
-fn port_roles(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens, out: &mut Actions) {
+fn port_roles(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
+    let t = &Tokens::get();
     let m = app.session.model();
     for (p, role) in m.ports.iter().zip(crate::browser::port_roles(&app.session)) {
         ui.horizontal(|ui| {
@@ -64,7 +67,8 @@ fn port_roles(app: &EmcraftApp, ui: &mut egui::Ui, t: &Tokens, out: &mut Actions
 
 /// The port-mode preview: a row per mode. Hovering a row lights its port in the 3D view;
 /// clicking it opens the Port modes view at that mode.
-fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, t: &Tokens, out: &mut Actions) {
+fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, out: &mut Actions) {
+    let t = &Tokens::get();
     let unit = reply.get("length_unit").and_then(Value::as_str).unwrap_or("m");
     let w = ui.available_width();
     let widths = [w * 0.34, w * 0.24, w * 0.2, w * 0.2];

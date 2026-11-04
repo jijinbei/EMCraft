@@ -332,7 +332,8 @@ pub(super) fn box_select(v: &mut View3d, rect: Rect, b: BoxSel, add: bool) {
 
 /// The selection box: by window a solid outline, by crossing a dashed one in another colour, as
 /// SolidCraft draws them.
-pub(super) fn paint_box(p: &egui::Painter, b: BoxSel, t: &Tokens) {
+pub(super) fn paint_box(p: &egui::Painter, b: BoxSel) {
+    let t = &Tokens::get();
     let ink = if b.crossing { t.success } else { t.accent };
     p.rect_filled(b.rect, 0.0, ink.gamma_multiply(0.12));
     if b.crossing {

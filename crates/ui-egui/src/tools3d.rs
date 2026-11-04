@@ -574,10 +574,10 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
     let at = |q: [f64; 3]| screen(cam, rect, q);
     let l = app.session.display().length;
     if let Some(r) = ref_plane(app, v) {
-        reference(p, &r, cam, rect, l, t);
+        reference(p, &r, cam, rect, l);
     }
     if let (Some(tool), Some(h)) = (v.tools.tool, &v.tools.hover) {
-        hovered(app, v, tool, h, p, rect, t);
+        hovered(app, v, tool, h, p, rect);
     }
     // The points picked, and a line from the last to the pointer.
     for s in &v.tools.picks {
@@ -591,7 +591,7 @@ pub fn draw(app: &EmcraftApp, v: &View3d, p: &egui::Painter, rect: Rect) {
         dashed(p, a, b, Stroke::new(1.5, t.accent));
     }
     if let Some(m) = &v.tools.measured {
-        dimension(p, cam, rect, &m.picks, &m.reply, t);
+        dimension(p, cam, rect, &m.picks, &m.reply);
     }
     // The end faces a port may take, named for scenarios and agents.
     if v.tools.tool == Some(Tool::Port) {
@@ -612,7 +612,8 @@ const MAX_LIT: usize = 20_000;
 
 /// The face under the pointer lit, its outline and corners, and the port tool's tip or the snap's
 /// marker.
-fn hovered(app: &EmcraftApp, v: &View3d, tool: Tool, h: &Hover, p: &egui::Painter, rect: Rect, t: &Tokens) {
+fn hovered(app: &EmcraftApp, v: &View3d, tool: Tool, h: &Hover, p: &egui::Painter, rect: Rect) {
+    let t = &Tokens::get();
     let at = |q: [f64; 3]| screen(&v.camera, rect, q);
     let ok = !matches!(h.port, Some(PortTarget::No(_)));
     let ink = if ok { t.accent } else { t.text_dim };
@@ -644,10 +645,10 @@ fn hovered(app: &EmcraftApp, v: &View3d, tool: Tool, h: &Hover, p: &egui::Painte
     }
     if tool == Tool::Port {
         if let Some(q) = at(h.face.centre) {
-            tip(p, q, &port_text(app, h.port), ok, t);
+            tip(p, q, &port_text(app, h.port), ok);
         }
     } else if let Some(q) = at(h.snap.at) {
-        marker(p, q, h.snap.kind, t);
+        marker(p, q, h.snap.kind);
         scenario::publish_handle(Fixed::View3dSnap, q);
     }
 }
@@ -665,7 +666,8 @@ fn port_text(app: &EmcraftApp, target: Option<PortTarget>) -> String {
 }
 
 /// A short text on a pill at `at`.
-fn tip(p: &egui::Painter, at: Pos2, text: &str, ok: bool, t: &Tokens) {
+fn tip(p: &egui::Painter, at: Pos2, text: &str, ok: bool) {
+    let t = &Tokens::get();
     if text.is_empty() {
         return;
     }
@@ -677,7 +679,8 @@ fn tip(p: &egui::Painter, at: Pos2, text: &str, ok: bool, t: &Tokens) {
 
 /// A snap's marker: a square on a corner, a triangle on an edge's middle, a ringed dot on a
 /// centre, a diamond on an edge, a cross on a face.
-fn marker(p: &egui::Painter, q: Pos2, kind: SnapKind, t: &Tokens) {
+fn marker(p: &egui::Painter, q: Pos2, kind: SnapKind) {
+    let t = &Tokens::get();
     let s = Stroke::new(1.6, t.accent);
     let r = 5.5;
     match kind {
@@ -710,7 +713,8 @@ fn dashed(p: &egui::Painter, a: Pos2, b: Pos2, s: Stroke) {
 
 /// The measurement: the line between the picks with arrow ends, its legs along x, y and z in the
 /// axes' colours, the distance on it and a card with the components, the gap and the angle.
-fn dimension(p: &egui::Painter, cam: &Camera, rect: Rect, [a, b]: &[Snap; 2], reply: &Value, t: &Tokens) {
+fn dimension(p: &egui::Painter, cam: &Camera, rect: Rect, [a, b]: &[Snap; 2], reply: &Value) {
+    let t = &Tokens::get();
     let at = |q: [f64; 3]| screen(cam, rect, q);
     let unit = reply.get("unit").and_then(Value::as_str).unwrap_or("");
     let num = |k: &str| reply.get(k).and_then(Value::as_f64);
@@ -739,7 +743,7 @@ fn dimension(p: &egui::Painter, cam: &Camera, rect: Rect, [a, b]: &[Snap; 2], re
         p.circle_filled(s, 3.0, t.accent);
     }
     let distance = num("distance").map_or_else(|| "—".to_owned(), |x| format!("{} {unit}", trimmed(x, 4)));
-    tip(p, sa + d * 0.5 + vec2(0.0, -14.0), &distance, true, t);
+    tip(p, sa + d * 0.5 + vec2(0.0, -14.0), &distance, true);
     // The card: the distance, its components, the gap and the angle.
     let delta = reply.get("delta").and_then(Value::as_array);
     let comp = |k: usize| delta.and_then(|v| v.get(k)).and_then(Value::as_f64).map_or_else(|| "—".to_owned(), |x| trimmed(x, 4));
@@ -769,7 +773,8 @@ fn dimension(p: &egui::Painter, cam: &Camera, rect: Rect, [a, b]: &[Snap; 2], re
 
 /// The reference plane: its outline dashed inside the model, a line from the port's face to it
 /// and its grip with the distance.
-fn reference(p: &egui::Painter, r: &RefPlane, cam: &Camera, rect: Rect, l: emcraft_model::units::Length, t: &Tokens) {
+fn reference(p: &egui::Painter, r: &RefPlane, cam: &Camera, rect: Rect, l: emcraft_model::units::Length) {
+    let t = &Tokens::get();
     let at = |q: [f64; 3]| screen(cam, rect, q);
     let q = r.at();
     let pts: Vec<Pos2> = q.iter().filter_map(|c| at(*c)).collect();

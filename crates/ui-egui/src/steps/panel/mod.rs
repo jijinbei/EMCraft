@@ -38,7 +38,7 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                 ui.set_width(ui.available_width());
                 ui.set_min_height(h - 22.0);
                 scenario::publish_rect(Fixed::StepPanel, ui.max_rect());
-                header(app, ui, &state, t);
+                header(app, ui, &state);
                 if let Some(why) = not_needed(app, step) {
                     ui_kit::small(ui, why, t.text_dim);
                     ui.add_space(4.0);
@@ -59,9 +59,20 @@ pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs:
                     .show(ui, |ui| {
                         // Run's checks are about starting one, not the one going on.
                         if !(step == Step::Run && running(app)) {
-                            checks(ui, &state, t, out);
+                            checks(ui, &state, out);
                         }
-                        body(app, fields, ui, step, &states, has_dialog, t, out);
+                        match step {
+                            // The step bar's switch.
+                            Step::Intent => {}
+                            Step::Geometry => model::geometry(app, ui, has_dialog, out),
+                            Step::Materials => model::materials(app, ui),
+                            Step::Excitation => excitation::excitation(app, ui, out),
+                            Step::Boundaries => model::boundaries(app, ui),
+                            Step::Mesh => model::mesh(app, ui),
+                            Step::Setup => setup::setup(app, fields, ui, out),
+                            Step::Run => run::run_panel(app, ui, &states, out),
+                            Step::Results => results::results(app, fields, ui, &states, out),
+                        }
                     });
                 if let Some(d) = dialog {
                     ui.add_space(6.0);
@@ -82,27 +93,29 @@ pub fn not_needed(app: &EmcraftApp, step: Step) -> Option<String> {
         .then(|| trf("Not needed for {kind}", args!(kind = tr(crate::kinds::kind_card(chosen).name))))
 }
 
-fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState, t: &Tokens) {
+fn header(app: &EmcraftApp, ui: &mut egui::Ui, s: &StepState) {
+    let t = &Tokens::get();
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
         let run_going = s.step == Step::Run && running(app);
         if run_going {
-            super::bar::running_mark(ui, r.center(), t);
+            super::bar::running_mark(ui, r.center());
         } else {
-            mark(ui.painter(), r.center(), s.status, t);
+            mark(ui.painter(), r.center(), s.status);
         }
         ui.text(Style::Heading, trf("Step {n} · {step}", args!(n = s.step.index(), step = shown(s.step))));
         if run_going {
             ui_kit::small(ui, "running", t.accent);
         } else {
-            ui_kit::small(ui, Raw(shown(s.status)), status_color(s.status, t));
+            ui_kit::small(ui, Raw(shown(s.status)), status_color(s.status));
         }
     });
     ui.add_space(4.0);
 }
 
 /// The step's checks, each with its fix.
-fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
+fn checks(ui: &mut egui::Ui, s: &StepState, out: &mut Actions) {
+    let t = &Tokens::get();
     if s.messages.is_empty() {
         if s.status == Status::Done {
             ui_kit::small(ui, "Nothing to fix here.", t.success);
@@ -115,7 +128,7 @@ fn checks(ui: &mut egui::Ui, s: &StepState, t: &Tokens, out: &mut Actions) {
             ui.label(egui::RichText::new(&m.text).size(t.font_small).color(if s.status == Status::Done {
                 t.text_dim
             } else {
-                status_color(s.status, t)
+                status_color(s.status)
             }));
             // A fix that only leads back to this step (its solve, Setup's own button) is left out.
             let here = m.command.as_deref().is_some_and(|c| (is_solve(c) || c == "project.setup") && Step::of_command(c) == Some(s.step));
@@ -160,7 +173,8 @@ pub(crate) fn field(ui: &mut egui::Ui, label: &str, text: &mut String, unit: &st
     enter
 }
 
-pub(super) fn kv(ui: &mut egui::Ui, k: &str, v: String, t: &Tokens) {
+pub(super) fn kv(ui: &mut egui::Ui, k: &str, v: String) {
+    let t = &Tokens::get();
     ui.horizontal(|ui| {
         ui.add_sized(vec2(t.form_label_width, 16.0), egui::Label::new(Style::SmallDim.rich(tr(k))));
         crate::math::label(ui, &v, t.font_small, t.text);
@@ -170,24 +184,6 @@ pub(super) fn kv(ui: &mut egui::Ui, k: &str, v: String, t: &Tokens) {
 pub(crate) fn fmt(v: f64) -> String {
     let s = format!("{v:.6}");
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
-}
-
-/// The step's own settings and information.
-fn body(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, step: Step, states: &[StepState], has_dialog: bool, t: &Tokens, out: &mut Actions) {
-    let fu = app.session.display().frequency.symbol();
-    let lu = app.session.display().length.symbol();
-    match step {
-        // The step bar's switch.
-        Step::Intent => {}
-        Step::Geometry => model::geometry(app, ui, lu, has_dialog, t, out),
-        Step::Materials => model::materials(app, ui, t),
-        Step::Excitation => excitation::excitation(app, ui, fu, t, out),
-        Step::Boundaries => model::boundaries(app, ui, lu, t),
-        Step::Mesh => model::mesh(app, ui, lu, t),
-        Step::Setup => setup::setup(app, f, ui, fu, t, out),
-        Step::Run => run::run_panel(app, ui, states, t, out),
-        Step::Results => results::results(app, f, ui, states, t, out),
-    }
 }
 
 #[cfg(test)]

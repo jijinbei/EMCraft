@@ -83,23 +83,23 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
     let probe = app.replies.import.as_ref().filter(|p| p.key == key(d));
     let reply = probe.and_then(|p| p.reply.as_ref().ok());
     let format = reply.and_then(|r| r["format"].as_str());
-    chips(ui, format, t);
+    chips(ui, format);
     ui.add_space(t.space_6);
     let empty = text(d, "path").is_empty();
-    let pick = ui_kit::glyph_button(ui, Glyph::OpenFile, "Choose file…", vec2(0.0, 40.0), empty, !app.busy(), Fixed::DialogPick.into());
+    let pick = ui.named_enabled(!app.busy(), ui_kit::glyph_button(Glyph::OpenFile, "Choose file…", empty), Fixed::DialogPick.into());
     asked.ask(crate::dialog_ui::Asked::Pick, pick.hint("A SolidCraft design (.solidcraft), 3MF or STL").clicked());
     ui.vertical_centered(|ui| ui_kit::small(ui, "or drop it on the window", t.text_dim));
     ui.add_space(t.space_4);
     let mut drawn = crate::dialog_ui::fields(ui, d, session, &|n| n == "path", &short);
     match probe.map(|p| &p.reply) {
-        Some(Ok(r)) => detected(ui, d, r, session, &mut drawn, t),
+        Some(Ok(r)) => detected(ui, d, r, session, &mut drawn),
         Some(Err(e)) => {
             ui_kit::small(ui, Raw(e), t.form_error);
         }
         None => {}
     }
     ui.add_space(t.space_6);
-    outcome(ui, d, reply, t);
+    outcome(ui, d, reply);
     ui.add_space(t.space_6);
     // Options: the rest, folded.
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
@@ -135,7 +135,8 @@ pub(crate) fn body(app: &EmcraftApp, d: &mut Dialog, ui: &mut egui::Ui, asked: &
 }
 
 /// What can be imported, as chips; the detected format's lit.
-fn chips(ui: &mut egui::Ui, format: Option<&str>, t: &Tokens) {
+fn chips(ui: &mut egui::Ui, format: Option<&str>) {
+    let t = &Tokens::get();
     let kinds = [
         ("solidcraft", Glyph::Feature, "SolidCraft", "parametric"),
         ("3mf", Glyph::Box, "3MF", "face tags kept"),
@@ -168,7 +169,8 @@ fn chips(ui: &mut egui::Ui, format: Option<&str>, t: &Tokens) {
 
 /// What the file holds: its bodies, size and units; a design's parameters as fields that write
 /// the dialog's `parameters`.
-fn detected(ui: &mut egui::Ui, d: &mut Dialog, r: &Value, session: &emcraft_engine::Session, drawn: &mut Vec<(egui::Id, bool)>, t: &Tokens) {
+fn detected(ui: &mut egui::Ui, d: &mut Dialog, r: &Value, session: &emcraft_engine::Session, drawn: &mut Vec<(egui::Id, bool)>) {
+    let t = &Tokens::get();
     let l = session.display().length.symbol();
     let frame = egui::Frame::NONE.fill(t.panel).corner_radius(t.radius_sm).inner_margin(egui::Margin::symmetric(8, 6));
     let shown = frame.show(ui, |ui| {
@@ -190,7 +192,7 @@ fn detected(ui: &mut egui::Ui, d: &mut Dialog, r: &Value, session: &emcraft_engi
         if let Some(params) = params {
             ui.add_space(t.space_4);
             ui_kit::small(ui, "Parameters", t.text_dim);
-            parameters(ui, d, params, drawn, t);
+            parameters(ui, d, params, drawn);
         }
     });
     crate::scenario::publish_target(Fixed::DialogDetected, shown.response.rect);
@@ -198,7 +200,8 @@ fn detected(ui: &mut egui::Ui, d: &mut Dialog, r: &Value, session: &emcraft_engi
 
 /// A design's parameters, each a field holding its value as saved until changed; a change is
 /// written into the dialog's `parameters` (name → number, or an expression the design reads).
-fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[Value], drawn: &mut Vec<(egui::Id, bool)>, t: &Tokens) {
+fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[Value], drawn: &mut Vec<(egui::Id, bool)>) {
+    let t = &Tokens::get();
     let Some(field) = d.field_mut("parameters") else { return };
     let mut set: Map<String, Value> = serde_json::from_str(field.text.trim()).ok().and_then(|v: Value| v.as_object().cloned()).unwrap_or_default();
     let mut changed = false;
@@ -236,7 +239,7 @@ fn parameters(ui: &mut egui::Ui, d: &mut Dialog, params: &[Value], drawn: &mut V
 }
 
 /// What importing makes of the file: one line and its pictogram, by the region chosen.
-fn outcome(ui: &mut egui::Ui, d: &mut Dialog, reply: Option<&Value>, t: &Tokens) {
+fn outcome(ui: &mut egui::Ui, d: &mut Dialog, reply: Option<&Value>) {
     let bodies = reply.and_then(|r| r["bodies"].as_array()).map_or(0, Vec::len);
     let region = text(d, "region");
     let open = d.fields.iter().any(|f| f.name == "open" && f.on);
@@ -250,7 +253,7 @@ fn outcome(ui: &mut egui::Ui, d: &mut Dialog, reply: Option<&Value>, t: &Tokens)
     };
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(44.0, 30.0), Sense::hover());
-        pictogram(ui.painter(), r, kind, t);
+        pictogram(ui.painter(), r, kind);
         let w = ui.available_width() - 28.0;
         ui.add_sized(vec2(w, 30.0), egui::Label::new(Style::Small.rich(tr(line))).wrap());
         let help = ui.named(egui::Button::new(Style::Strong.rich("?")).min_size(vec2(22.0, 22.0)), Fixed::DialogHelp.into());
@@ -271,7 +274,8 @@ enum Pictogram {
 }
 
 /// A small drawing of what the import makes: metal grey, the region's air in the accent.
-fn pictogram(p: &egui::Painter, r: Rect, kind: Pictogram, t: &Tokens) {
+fn pictogram(p: &egui::Painter, r: Rect, kind: Pictogram) {
+    let t = &Tokens::get();
     let metal = t.text_dim;
     let air = t.accent_soft;
     let edge = Stroke::new(1.0, t.accent);

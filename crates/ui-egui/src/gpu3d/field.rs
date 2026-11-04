@@ -35,17 +35,13 @@ pub struct FieldGrid {
 pub const FIELD_CELLS: usize = 120;
 
 impl FieldGrid {
-    /// The grid of `phasors` (from `PlaneSamples::phasors`), `nx` × `ny`, for `axis`, over the
-    /// plane from `corner` to `u_end` and `v_end`.
+    /// The grid of `phasors`, `nx` × `ny` (`PlaneSamples::phasors`), for `axis`, over the plane
+    /// from `corner` to `u_end` and `v_end` (`scene3d::field_frame_of`).
     pub fn new(
         id: u64,
-        nx: usize,
-        ny: usize,
         axis: u32,
-        phasors: &[Option<([f64; 3], [f64; 3])>],
-        corner: [f64; 3],
-        u_end: [f64; 3],
-        v_end: [f64; 3],
+        (nx, ny, phasors): (usize, usize, &[Option<([f64; 3], [f64; 3])>]),
+        [corner, u_end, v_end]: [[f64; 3]; 3],
     ) -> FieldGrid {
         let nan = [f64::NAN; 3];
         let (re, im) = (0..nx * ny).map(|k| phasors.get(k).copied().flatten().unwrap_or((nan, nan))).unzip();
