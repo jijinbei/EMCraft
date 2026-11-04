@@ -448,7 +448,7 @@ pub fn check_form(app: &mut EmcraftApp) {
 }
 
 /// Two settings alike, numbers to a part in 10⁹ (a unit's round trip).
-fn same(a: &Value, b: &Value) -> bool {
+pub(crate) fn same(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Object(x), Value::Object(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w))),
         (Value::Number(x), Value::Number(y)) => match (x.as_f64(), y.as_f64()) {

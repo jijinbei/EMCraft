@@ -469,4 +469,4 @@ mod tests {
 }
 
 mod pcb;
-pub(crate) use pcb::bar as pcb_bar;
+pub(crate) use pcb::{bar as pcb_bar, sync as pcb_sync};

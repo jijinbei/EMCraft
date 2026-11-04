@@ -230,7 +230,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
             .unwrap_or_default()
     );
     v["field"]["power"] = json!(app.field.power.as_ref().and_then(|p| p.value.as_ref().ok()));
-    v["pcb"] = json!({"loaded":app.session.model().pcb.is_some(),"report":app.replies.pcb,"selected_net":app.session.views().pcb_net,"stage":emcraft_engine::pcb::stage(&app.session).id(),"illustration":app.session.views().pcb_illustration});
+    v["pcb"] = json!({"loaded":app.session.model().pcb.is_some(),"report":app.replies.pcb,"selected_net":app.session.views().pcb.net(),"conditions":app.session.views().pcb.conditions().map(|c| c.shown(app.session.display().frequency)),"unconfirmed":app.views.pcb.unconfirmed,"stage":emcraft_engine::pcb::stage(&app.session).id(),"illustration":app.session.views().pcb_illustration});
     v["hidden_geometry"] = json!(app.session.views().hidden_geometry);
     v["hidden_materials"] = json!(app.session.views().hidden_materials);
     v["pattern"] = json!({"cut": app.views.pattern.cut.id(), "angle": app.views.pattern.angle, "component": app.views.pattern.component.id()});

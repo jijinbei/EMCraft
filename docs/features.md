@@ -139,10 +139,20 @@ Screens the selected net's routed segments and filled reference copper and repor
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
 | `net` | string |  | no | signal net (default: selected net, or first routed signal) |
-| `ground` | string |  | no | reference net (default GND) |
-| `reference` | number |  | no | source/load impedance in ohms (default 50) |
-| `stop` | number | frequency | no | top frequency (default project band stop, otherwise 1 GHz) |
+| `ground` | string |  | no | reference net (default the confirmed conditions', else GND) |
+| `reference` | number |  | no | source/load impedance in ohms (default the confirmed conditions', else 50) |
+| `stop` | number | frequency | no | top frequency (default the confirmed conditions', else 1 GHz) |
 | `points` | integer |  | no | harmonic sweep points, 4..128 (default 64) |
+
+## `pcb.conditions` — PCB diagnosis conditions
+
+Confirms the conditions of the chosen route's diagnosis: the reference net (`ground`, a net of the board), the reference impedance and the top frequency; each left out keeps the confirmed one (else GND, 50 Ω, 1 GHz). The diagnosis is then ready: the Set conditions stage is done and pcb.inspect runs with them. Choosing another route keeps them. Saved with the project.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `ground` | string |  | no | reference net |
+| `reference` | number |  | no | source/load impedance in ohms, 0.1..10000 |
+| `stop` | number | frequency | no | top frequency, at most 1 THz |
 
 ## `view.pcb` — PCB workflow
 

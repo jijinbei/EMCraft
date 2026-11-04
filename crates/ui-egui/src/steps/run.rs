@@ -115,16 +115,7 @@ pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     if solver(app) == Solver::Pcb {
         app.workflow.step = None;
         app.view = View::Pcb;
-        return app.run(
-            "pcb.inspect",
-            app.views.pcb.params(
-                app.session
-                    .views()
-                    .pcb_net
-                    .as_deref()
-                    .unwrap_or_else(|| app.session.model().pcb.as_ref().and_then(|b| b.segments.first()).map_or("", |s| s.net.as_str())),
-            ),
-        );
+        return app.run("pcb.inspect", json!({}));
     }
 
     super::check_form(app);

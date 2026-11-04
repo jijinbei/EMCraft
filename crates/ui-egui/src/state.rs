@@ -265,11 +265,17 @@ pub struct PcbCopperCache {
     pub shapes: Vec<egui::Shape>,
 }
 
+/// The PCB window's state. `ground`, `reference` and `stop` are the Set conditions form, loaded
+/// from the confirmed conditions (`pcb.conditions`) whenever those change.
 pub struct PcbUi {
     pub copper: Option<PcbCopperCache>,
     pub ground: String,
     pub reference: String,
     pub stop: String,
+    /// The confirmed conditions the form was last loaded from, in the display unit.
+    pub seen: Option<Value>,
+    /// The form is not the confirmed conditions (or none are), as of the frame's start.
+    pub unconfirmed: bool,
     pub attempted: Option<(u64, String)>,
     pub baseline: Option<emcraft_engine::pcb::Inspection>,
     /// The widths being edited of the route's segments (display units), by segment.
@@ -306,6 +312,8 @@ impl Default for PcbUi {
             ground: "GND".into(),
             reference: "50".into(),
             stop: "1".into(),
+            seen: None,
+            unconfirmed: true,
             attempted: None,
             baseline: None,
             widths: Default::default(),
@@ -314,11 +322,11 @@ impl Default for PcbUi {
     }
 }
 impl PcbUi {
-    /// All net selectors retain the same analysis controls and forward invalid text to the
-    /// engine for validation instead of silently falling back to another calculation.
-    pub(crate) fn params(&self, net: &str) -> Value {
-        let number = |s: &str| s.parse::<f64>().ok().filter(|v| v.is_finite()).map(Value::from).unwrap_or_else(|| Value::String(s.to_owned()));
-        serde_json::json!({"net":net,"ground":self.ground.trim(),"reference":number(&self.reference),"stop":number(&self.stop)})
+    /// The form as `pcb.conditions` takes it; numbers that do not read go as they are typed,
+    /// for the engine to refuse.
+    pub(crate) fn conditions(&self) -> Value {
+        let number = |s: &str| s.trim().parse::<f64>().ok().filter(|v| v.is_finite()).map(Value::from).unwrap_or_else(|| Value::String(s.to_owned()));
+        serde_json::json!({"ground": self.ground.trim(), "reference": number(&self.reference), "stop": number(&self.stop)})
     }
 }
 

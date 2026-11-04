@@ -130,7 +130,35 @@
     "text": "10"
   },
   {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.unconfirmed": true,
+        "pcb.conditions": null
+      },
+      "handles": [
+        "choice:pcb_control:confirm"
+      ]
+    }
+  },
+  {
     "shot": "pcb-step-3-conditions"
+  },
+  {
+    "click": "choice:pcb_control:confirm"
+  },
+  {
+    "frames": 2
+  },
+  {
+    "expect": {
+      "inspect": {
+        "pcb.unconfirmed": false,
+        "pcb.conditions.stop": 10.0
+      }
+    }
   },
   {
     "click": "choice:pcb_step:inspect"
@@ -179,24 +207,23 @@
     "text": "bad"
   },
   {
-    "click": "choice:pcb_step:inspect"
-  },
-  {
-    "click": "choice:pcb_control:inspect"
+    "click": "choice:pcb_control:confirm"
   },
   {
     "frames": 2
   },
   {
-    "expect": {
-      "inspect": {
-        "pcb.stage": "inspect"
-      },
-      "status_error": true
-    }
+    "note": "A hostile impedance is refused: the confirmed conditions stay, and the diagnosis waits"
   },
   {
-    "click": "choice:pcb_step:settings"
+    "expect": {
+      "status_error": true,
+      "inspect": {
+        "pcb.stage": "settings",
+        "pcb.unconfirmed": true,
+        "pcb.conditions.reference": 50.0
+      }
+    }
   },
   {
     "click": "choice:pcb_control:Reference impedance (Ω)"
@@ -207,6 +234,9 @@
   },
   {
     "text": "75"
+  },
+  {
+    "click": "choice:pcb_control:confirm"
   },
   {
     "click": "choice:pcb_step:inspect"

@@ -441,6 +441,7 @@ impl EmcraftApp {
         // The field views show the driven port's excitation (`view.driven`).
         self.field.view.excitation = self.session.driven_entry();
         steps::prepare(self);
+        viewport::pcb_sync(self);
         import_ui::prepare(self);
         if self.view == View::Eigenmodes {
             viewport::prepare_eigenmodes(self);

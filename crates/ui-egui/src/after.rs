@@ -35,10 +35,8 @@ impl EmcraftApp {
             self.field.forget_samples();
         }
         self.views.chart.clear();
-        if id == "units.set"
-            && let Some(f) = self.replies.pcb.as_ref().map(|r| r.stop_hz)
-        {
-            self.views.pcb.stop = self.session.display().frequency.from_si(f).to_string();
+        // The report reads in the old units: made again in the new ones.
+        if id == "units.set" {
             self.replies.pcb = None;
         }
         match id {
@@ -152,11 +150,6 @@ impl EmcraftApp {
         self.view = chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of);
         self.replies.pcb = None;
         if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
-            if let Some(c) = &self.session.views().pcb_conditions {
-                self.views.pcb.ground = c.ground.clone();
-                self.views.pcb.reference = c.reference.to_string();
-                self.views.pcb.stop = self.session.display().frequency.from_si(c.stop_hz).to_string();
-            }
             self.view = View::Pcb;
             self.workflow.step = None;
         }

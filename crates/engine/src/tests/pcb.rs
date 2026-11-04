@@ -18,7 +18,7 @@ fn board_import_is_embedded_saved_undoable_and_diagnostics_are_explicit() {
     let mut t = Session::new();
     t.execute("file.open", &json!({"path": project})).unwrap();
     assert_eq!(s.model().pcb, t.model().pcb);
-    assert_eq!(t.views().pcb_net.as_deref(), Some("DATA"));
+    assert_eq!(t.views().pcb.net(), Some("DATA"));
     t.execute("pcb.sample", &json!({"split": true})).unwrap();
     let bad = t.execute("pcb.inspect", &json!({"net": "DATA"})).unwrap();
     assert!(bad["si"].is_null());
@@ -114,15 +114,15 @@ fn pcb_workflow_navigation_is_checked_saved_and_does_not_run_diagnosis() {
     let mut reopened = Session::new();
     reopened.execute("file.open", &json!({"path": file})).unwrap();
     assert_eq!(crate::pcb::stage(&reopened), crate::pcb::Stage::Settings);
-    assert_eq!(reopened.views().pcb_net.as_deref(), Some("DATA"));
+    assert_eq!(reopened.views().pcb.net(), Some("DATA"));
     reopened.execute("pcb.inspect", &json!({})).unwrap();
     assert_eq!(crate::pcb::stage(&reopened), crate::pcb::Stage::Results);
     reopened.execute("pcb.inspect", &json!({"reference": 75, "stop": 10})).unwrap();
     reopened.execute("file.save", &json!({"path": file})).unwrap();
     let mut again = Session::new();
     again.execute("file.open", &json!({"path": file})).unwrap();
-    assert_eq!(again.views().pcb_conditions.as_ref().unwrap().reference, 75.);
-    assert_eq!(again.views().pcb_conditions.as_ref().unwrap().stop_hz, 1e10);
+    assert_eq!(again.views().pcb.conditions().unwrap().reference, 75.);
+    assert_eq!(again.views().pcb.conditions().unwrap().stop_hz, 1e10);
     let _ = std::fs::remove_file(file);
 }
 
@@ -150,4 +150,37 @@ fn coupling_pairs_roles_and_geometry_spacing_are_explicit() {
     let r = s.execute("pcb.inspect", &json!({"net": "DATA"})).unwrap();
     approx::assert_abs_diff_eq!(r["coupling_pairs"][0]["gap"].as_f64().unwrap(), 1.5, epsilon = 1e-10);
     let _ = std::fs::remove_file(file);
+}
+
+/// The diagnosis's conditions: refused before a route and for hostile values (nothing
+/// changed), confirmed for the route, kept when another route is chosen, the defaults of
+/// pcb.inspect, and reset by another board.
+#[test]
+fn the_diagnosis_conditions_are_confirmed_for_a_route() {
+    use crate::pcb::Diagnosis;
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({})).unwrap();
+    assert!(s.execute("pcb.conditions", &json!({"reference": 75})).is_err(), "a route first");
+    s.execute("view.pcb", &json!({"net": "DATA"})).unwrap();
+    assert_eq!(s.views().pcb, Diagnosis::Routed { net: "DATA".into() });
+    for bad in [
+        json!({"ground": "NOPE"}),
+        json!({"ground": ""}),
+        json!({"reference": 0}),
+        json!({"reference": "x"}),
+        json!({"stop": -1}),
+        json!({"stop": 1e9}),
+        json!({"stop": f64::MAX}),
+    ] {
+        assert!(s.execute("pcb.conditions", &bad).is_err(), "{bad}");
+        assert_eq!(s.views().pcb, Diagnosis::Routed { net: "DATA".into() }, "{bad}");
+    }
+    let r = s.execute("pcb.conditions", &json!({"reference": 75, "stop": 5})).unwrap();
+    assert_eq!(r, json!({"ground": "GND", "reference": 75.0, "stop": 5.0}));
+    s.execute("view.pcb", &json!({"net": "CLK"})).unwrap();
+    assert_eq!((s.views().pcb.net(), s.views().pcb.conditions().map(|c| c.stop_hz)), (Some("CLK"), Some(5e9)));
+    let report = s.execute("pcb.inspect", &json!({})).unwrap();
+    assert_eq!((report["net"].as_str(), report["reference"].as_f64(), report["stop"].as_f64()), (Some("CLK"), Some(75.0), Some(5.0)));
+    s.execute("pcb.sample", &json!({})).unwrap();
+    assert_eq!(s.views().pcb, Diagnosis::Unrouted);
 }

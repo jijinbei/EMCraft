@@ -6,9 +6,9 @@ and compute-device selection are not part of this workflow. Imported boards infe
 analysis automatically. `project.analysis {"kind":"pcb"}` declares it in scripts.
 
 The workflow bar above the workspace guides five stages: **Prepare board → Select route →
-Set conditions → Run diagnosis → Review results**. Use Next/Back or the available stages in
-this bar. First check the top-view layout and layer-stack section, then click a routed net,
-set the reference net/impedance/maximum frequency, and press **Inspect route**. Selecting a
+Set conditions → Run diagnosis → Review results**: the stages in this bar. First check the
+top-view layout and layer-stack section, then click a routed net, set the reference
+net/impedance/maximum frequency and confirm them, and press **Inspect route**. Selecting a
 net alone does not calculate a result. Missing board/net selections disable later stages.
 Stage and net are saved with the project; a saved Results view recomputes its report on reopening.
 
@@ -156,7 +156,10 @@ view offers what its stage needs, nothing more:
   click on the pen's layer adds a segment from the last point (snapped to the net's ends there or
   a 0.05 mm grid); a right click or Escape ends the line, and with none, drawing.
 - **2 Select route** — a click on a trace makes it the route (orange).
-- **3 Set conditions** — done once the reference net, impedance and maximum frequency read.
+- **3 Set conditions** — the reference net, impedance and maximum frequency, confirmed with its
+  button (`pcb.conditions`); done only while the form is the confirmed conditions. The
+  diagnosis's state is one type (`Diagnosis`: unrouted → routed → ready, the conditions kept
+  when another route is chosen); Run diagnosis waits until it is ready.
 - **5 Review results** — the report beside the board.
 
 In step 4, **Make the FEM model** turns the route into a finite-element model and the job into

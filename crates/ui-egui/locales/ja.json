@@ -448,7 +448,7 @@
     "Set conditions": "条件の設定",
     "Set up mesh convergence": "メッシュ収束の確認",
     "Settings": "設定",
-    "Settings changed; inspect the route again.": "設定が変わりました。配線をもう一度診断してください。",
+    "Conditions changed; inspect the route again.": "条件が変わりました。配線をもう一度診断してください。",
     "Setup": "解析設定",
     "Shadows": "陰影",
     "Shift+Alt+left drag orbits, Shift+Alt+middle pans, Shift+Alt+right zooms; middle drag also pans and right drag orbits": "Shift+Alt+左ドラッグで回転、Shift+Alt+中ドラッグでパン、Shift+Alt+右ドラッグでズーム。中ドラッグでもパン、右ドラッグで回転",
@@ -764,7 +764,11 @@
     "order": "次数",
     "points": "点数",
     "start": "開始",
-    "stop": "終了"
+    "stop": "終了",
+    "Confirm conditions": "条件を確定",
+    "Conditions confirmed": "条件は確定済み",
+    "Not confirmed: the diagnosis waits for these conditions.": "未確定：診断はこの条件を待っています。",
+    "Confirm the conditions first (step 3).": "先に条件を確定してください（ステップ 3）。"
   },
   "commands": {
     "project.setup": {
@@ -1859,10 +1863,19 @@
       "doc": "選んだネットの配線と参照銅箔を形状から調べ、銅箔の欠け、近くの平行な信号、配線のつながり、ビアの乗り換えの制約を報告する。単純な外層マイクロストリップに限り、無損失の準静的モデルでインピーダンス、遅延、S11 と S21、TDR を見積もる。解いた帰路電流の分布でも、全波解析でも、計算したクロストークでも、規格適合の判定でもない。",
       "params": {
         "net": "信号ネット（既定は選択中、なければ最初の配線ネット）",
-        "ground": "参照ネット（既定 GND）",
-        "reference": "信号源と負荷のインピーダンス（Ω、既定 50）",
-        "stop": "上限周波数（既定はプロジェクトの帯域の上限、帯域がなければ 1 GHz）",
+        "ground": "基準ネット（既定は確定済みの条件、なければ GND）",
+        "reference": "信号源・負荷のインピーダンス（Ω、既定は確定済みの条件、なければ 50）",
+        "stop": "最高周波数（既定は確定済みの条件、なければ 1 GHz）",
         "points": "周波数点数（4〜128、既定 64）"
+      }
+    },
+    "pcb.conditions": {
+      "label": "PCB 診断の条件",
+      "doc": "選んだ配線の診断条件を確定する：基準ネット（`ground`、基板のネット）、基準インピーダンス、最高周波数。省いたものは確定済みの値（なければ GND、50 Ω、1 GHz）。確定すると診断は実行可能になる：条件の設定ステージは完了になり、pcb.inspect がこの条件で実行する。別の配線を選んでも条件は残る。プロジェクトと一緒に保存する。",
+      "params": {
+        "ground": "基準ネット",
+        "reference": "信号源・負荷のインピーダンス（Ω）、0.1〜10000",
+        "stop": "最高周波数、1 THz まで"
       }
     },
     "view.pcb": {

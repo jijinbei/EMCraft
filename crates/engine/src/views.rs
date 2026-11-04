@@ -222,12 +222,11 @@ impl Probe {
 pub struct Views {
     #[serde(default)]
     pub pcb_illustration: crate::pcb::Illustration,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcb_conditions: Option<crate::pcb::Conditions>,
+    /// The route's diagnosis: its route and confirmed conditions.
+    #[serde(default, skip_serializing_if = "is_unrouted")]
+    pub pcb: crate::pcb::Diagnosis,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcb_stage: Option<crate::pcb::Stage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcb_net: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub hidden_materials: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -250,9 +249,8 @@ impl Views {
 
     pub fn is_empty(&self) -> bool {
         self.pcb_illustration == crate::pcb::Illustration::default()
-            && self.pcb_conditions.is_none()
+            && self.pcb == crate::pcb::Diagnosis::Unrouted
             && self.pcb_stage.is_none()
-            && self.pcb_net.is_none()
             && self.charts.is_empty()
             && self.probes.is_empty()
             && self.driven.is_none()
@@ -295,28 +293,16 @@ impl Views {
         if self.hidden_geometry.len() > 4096 || self.hidden_geometry.iter().any(|k| crate::visibility::GeometryObject::parse(k).is_none()) {
             return Err(EngineError::failed("views: invalid geometry visibility"));
         }
-        if self.pcb_net.as_ref().is_some_and(|s| s.is_empty() || s.chars().count() > 128) {
-            return Err(EngineError::failed("invalid PCB selection"));
-        }
-        if self.pcb_conditions.as_ref().is_some_and(|c| {
-            c.ground.trim().is_empty()
-                || c.ground.chars().count() > 128
-                || !c.reference.is_finite()
-                || !(0.1..=10000.).contains(&c.reference)
-                || !c.stop_hz.is_finite()
-                || c.stop_hz <= 0.
-                || c.stop_hz > 1e12
-        }) {
-            return Err(EngineError::failed("invalid PCB inspection conditions"));
+        if !self.pcb.holds() {
+            return Err(EngineError::failed("invalid PCB route or inspection conditions"));
         }
         if self.pcb_illustration.victim.as_ref().is_some_and(|n| n.trim().is_empty() || n.chars().count() > 128) {
             return Err(EngineError::failed("invalid PCB victim"));
         }
         Ok(Views {
             pcb_illustration: self.pcb_illustration,
-            pcb_conditions: self.pcb_conditions,
+            pcb: self.pcb,
             pcb_stage: self.pcb_stage,
-            pcb_net: self.pcb_net,
             charts,
             probes: self.probes,
             driven: self.driven,
@@ -324,6 +310,10 @@ impl Views {
             hidden_geometry: self.hidden_geometry,
         })
     }
+}
+
+fn is_unrouted(d: &crate::pcb::Diagnosis) -> bool {
+    *d == crate::pcb::Diagnosis::Unrouted
 }
 
 /// Whether an axis of chart `id` is a frequency (its fixed ends kept in hertz).

@@ -509,6 +509,16 @@ fn tour() -> Record {
             .collect();
     }
     h.frames(2);
+    // Conditions typed but not confirmed: Set conditions asks for its button and the diagnosis
+    // waits; then a report of other conditions says so.
+    h.app.views.pcb.reference = "75".into();
+    for stage in ["settings", "inspect"] {
+        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":stage}}));
+        h.frames(2);
+    }
+    call(&mut h, "engine.execute", json!({"command":"pcb.conditions","params":{"reference":75}}));
+    call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":"results"}}));
+    h.frames(2);
     call(&mut h, "engine.execute", json!({"command":"file.sample","params":{"name":"pcb-parallel"}}));
     call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"net":"DATA","victim":"CLK","stage":"net"}}));
     h.frames(2);

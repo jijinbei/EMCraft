@@ -52,12 +52,114 @@ pub struct Illustration {
     pub playing: bool,
 }
 
-/// Last verified PCB conditions; frequency is SI hertz, impedance is ohms.
+/// A diagnosis's conditions: the reference net, the reference impedance (Ω) and the top
+/// frequency (Hz).
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Conditions {
     pub ground: String,
     pub reference: f64,
     pub stop_hz: f64,
+}
+
+impl Default for Conditions {
+    fn default() -> Conditions {
+        Conditions { ground: "GND".into(), reference: 50.0, stop_hz: 1e9 }
+    }
+}
+
+impl Conditions {
+    /// The conditions `p` gives, each left out taken from `base`, checked.
+    fn read(p: &Params, base: &Conditions) -> Result<Conditions> {
+        let c = Conditions {
+            ground: p.string("ground").optional()?.map_or_else(|| base.ground.clone(), str::to_owned),
+            reference: p.number("reference").or(base.reference)?,
+            stop_hz: p.frequency("stop").or(base.stop_hz)?,
+        };
+        c.check().map_err(|why| p.error(why.0, why.1))?;
+        Ok(c)
+    }
+
+    /// Why the conditions do not hold: the parameter and the reason.
+    fn check(&self) -> std::result::Result<(), (&'static str, &'static str)> {
+        if self.ground.trim().is_empty() || self.ground.chars().count() > 128 {
+            return Err(("ground", "must be a net name of 1 to 128 characters"));
+        }
+        if !(0.1..=10000.0).contains(&self.reference) {
+            return Err(("reference", "must be 0.1..10000 ohms"));
+        }
+        if !(self.stop_hz.is_finite() && self.stop_hz > 0.0 && self.stop_hz <= 1e12) {
+            return Err(("stop", "must be above 0 and at most 1 THz"));
+        }
+        Ok(())
+    }
+
+    /// The conditions as `pcb.conditions` takes them, in `unit` (the frequency's).
+    pub fn shown(&self, unit: Frequency) -> Value {
+        json!({"ground": self.ground, "reference": self.reference, "stop": unit.from_si(self.stop_hz)})
+    }
+}
+
+/// Where a route's diagnosis stands: no route chosen, a route, or a route with its conditions
+/// confirmed (`pcb.conditions`, or a `pcb.inspect` given them). Only a ready diagnosis runs from
+/// the workflow; its conditions are the board's, so choosing another route keeps them.
+///
+/// ```
+/// use emcraft_engine::pcb::{Conditions, Diagnosis};
+///
+/// let d = Diagnosis::default().route("DATA");
+/// assert_eq!((d.net(), d.conditions()), (Some("DATA"), None));
+/// let d = d.confirm(Conditions::default()).unwrap().route("CLK");
+/// assert_eq!((d.net(), d.conditions().map(|c| c.reference)), (Some("CLK"), Some(50.0)));
+/// assert!(Diagnosis::default().confirm(Conditions::default()).is_none(), "a route first");
+/// ```
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum Diagnosis {
+    #[default]
+    Unrouted,
+    Routed {
+        net: String,
+    },
+    Ready {
+        net: String,
+        conditions: Conditions,
+    },
+}
+
+impl Diagnosis {
+    /// The route chosen, if one is.
+    pub fn net(&self) -> Option<&str> {
+        match self {
+            Diagnosis::Unrouted => None,
+            Diagnosis::Routed { net } | Diagnosis::Ready { net, .. } => Some(net),
+        }
+    }
+
+    /// The confirmed conditions, if any.
+    pub fn conditions(&self) -> Option<&Conditions> {
+        match self {
+            Diagnosis::Ready { conditions, .. } => Some(conditions),
+            _ => None,
+        }
+    }
+
+    /// The diagnosis of route `net`, its confirmed conditions kept.
+    pub fn route(&self, net: &str) -> Diagnosis {
+        match self.conditions() {
+            Some(c) => Diagnosis::Ready { net: net.to_owned(), conditions: c.clone() },
+            None => Diagnosis::Routed { net: net.to_owned() },
+        }
+    }
+
+    /// The diagnosis with `conditions` confirmed; none without a route.
+    pub fn confirm(&self, conditions: Conditions) -> Option<Diagnosis> {
+        self.net().map(|net| Diagnosis::Ready { net: net.to_owned(), conditions })
+    }
+
+    /// Whether a project file's diagnosis holds: a net name and conditions within their caps.
+    pub(crate) fn holds(&self) -> bool {
+        self.net().is_none_or(|n| !n.is_empty() && n.chars().count() <= 128) && self.conditions().is_none_or(|c| c.check().is_ok())
+    }
 }
 
 /// The current PCB stage: a board just loaded starts on its stackup.
@@ -86,19 +188,19 @@ pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
         if !board.is_some_and(|b| b.segments.iter().any(|seg| seg.net == net)) {
             return Err(p.error("net", "select a routed net in this board"));
         }
-        s.views.pcb_net = Some(net.to_owned());
+        s.views.pcb = s.views.pcb.route(net);
     }
-    if matches!(stage, Stage::Settings | Stage::Inspect | Stage::Results) && s.views.pcb_net.is_none() {
+    if matches!(stage, Stage::Settings | Stage::Inspect | Stage::Results) && s.views.pcb.net().is_none() {
         return Err(failed("select a routed net before continuing"));
     }
     let mut illustration = s.views.pcb_illustration.clone();
     if let Some(v) = p.string("victim").optional()? {
-        if !board.is_some_and(|b| b.segments.iter().any(|t| t.net == v)) || s.views.pcb_net.as_deref() == Some(v) {
+        if !board.is_some_and(|b| b.segments.iter().any(|t| t.net == v)) || s.views.pcb.net() == Some(v) {
             return Err(p.error("victim", "choose a different routed net"));
         }
         illustration.victim = Some(v.to_owned());
     }
-    if illustration.victim == s.views.pcb_net {
+    if illustration.victim.as_deref() == s.views.pcb.net() {
         illustration.victim = None;
     }
     // `mode` illustrates that mechanism; `coupling` false the whole board again, true the last
@@ -115,7 +217,7 @@ pub fn view(s: &mut Session, p: &Params) -> Result<Value> {
     }
     s.views.pcb_illustration = illustration;
     s.views.pcb_stage = Some(stage);
-    Ok(json!({"stage": stage.id(), "net": s.views.pcb_net}))
+    Ok(json!({"stage": stage.id(), "net": s.views.pcb.net()}))
 }
 
 /// An engine failure with this text.
@@ -128,10 +230,9 @@ fn install(s: &mut Session, board: Board) -> Result<Value> {
     board.check()?;
     let reply = json!({"board": board.name, "segments": board.segments.len(), "layers": board.layers.len(), "notes": board.notes});
     s.model = emcraft_model::Model { pcb: Some(board), ..Default::default() };
-    s.views.pcb_net = None;
+    s.views.pcb = Diagnosis::Unrouted;
     s.views.pcb_illustration = Illustration::default();
     s.views.pcb_stage = None;
-    s.views.pcb_conditions = None;
     Ok(reply)
 }
 
@@ -223,26 +324,32 @@ pub fn sample(s: &mut Session, p: &Params) -> Result<Value> {
     install(s, board)
 }
 
-/// `pcb.inspect`: screens a net's route and, for a simple outer microstrip, estimates its line.
+/// `pcb.conditions`: confirms the diagnosis's conditions for the route chosen.
+pub fn conditions(s: &mut Session, p: &Params) -> Result<Value> {
+    let base = s.views.pcb.conditions().cloned().unwrap_or_default();
+    let c = Conditions::read(p, &base)?;
+    let board = s.model.pcb.as_ref().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
+    if !board.copper.iter().any(|x| x.net == c.ground) && !board.segments.iter().any(|x| x.net == c.ground) {
+        return Err(p.error("ground", "names no net of this board"));
+    }
+    s.views.pcb = s.views.pcb.confirm(c.clone()).ok_or_else(|| failed("select a routed net first (view.pcb)"))?;
+    Ok(c.shown(s.display.frequency))
+}
+
+/// `pcb.inspect`: screens a net's route and, for a simple outer microstrip, estimates its line;
+/// the conditions left out are the confirmed ones (else GND, 50 Ω, 1 GHz).
 pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
-    let ground = p.string("ground").or("GND")?;
+    let c = Conditions::read(p, &s.views.pcb.conditions().cloned().unwrap_or_default())?;
+    let (ground, reference, stop) = (c.ground.as_str(), c.reference, c.stop_hz);
     let board = s.model.pcb.as_ref().ok_or_else(|| failed("load a PCB with pcb.import, pcb.load or pcb.sample"))?;
     let net = p
         .string("net")
         .optional()?
-        .or_else(|| s.views.pcb_net.as_deref().filter(|n| board.segments.iter().any(|seg| seg.net == *n)))
+        .or_else(|| s.views.pcb.net().filter(|n| board.segments.iter().any(|seg| seg.net == *n)))
         .or_else(|| board.segments.iter().find(|seg| seg.net != ground).map(|seg| seg.net.as_str()))
         .ok_or_else(|| failed("load a PCB and select a signal net"))?;
-    if net.chars().count() > 128 || ground.trim().is_empty() || ground.chars().count() > 128 {
+    if net.chars().count() > 128 {
         return Err(failed("net names must be at most 128 characters"));
-    }
-    let reference = p.number("reference").or(50.0)?;
-    if !(0.1..=10000.0).contains(&reference) {
-        return Err(p.error("reference", "must be 0.1..10000 ohms"));
-    }
-    let stop = p.frequency("stop").or(1e9)?;
-    if stop > 1e12 {
-        return Err(p.error("stop", "must be at most 1 THz"));
     }
     let points = p.integer("points", 4..=128).or(64)?;
     let pairs = emcraft_theory::pcb::pairs(board, net, ground).map_err(failed)?;
@@ -271,9 +378,8 @@ pub fn inspect(s: &mut Session, p: &Params) -> Result<Value> {
         frequency_unit: frequency.symbol().to_owned(),
         si,
     };
-    s.views.pcb_net = Some(net.to_owned());
+    s.views.pcb = Diagnosis::Ready { net: net.to_owned(), conditions: c.clone() };
     s.views.pcb_stage = Some(Stage::Results);
-    s.views.pcb_conditions = Some(Conditions { ground: ground.to_owned(), reference, stop_hz: stop });
     serde_json::to_value(reply).map_err(|e| failed(e.to_string()))
 }
 

@@ -646,7 +646,7 @@ pub fn unit(q: Quantity, s: &Session) -> &'static str {
 fn route_size(s: &Session) -> Option<f64> {
     let m = s.model();
     let board = m.pcb.as_ref().filter(|b| b.region.is_some())?;
-    let net = s.views().pcb_net.as_deref()?;
+    let net = s.views().pcb.net()?;
     let stop = m.job.range()?.stop.get();
     let size = emcraft_engine::pcb_fem::route_size(board, net, stop);
     (size.is_finite() && size > 0.0).then(|| s.display().length.from_si(size))

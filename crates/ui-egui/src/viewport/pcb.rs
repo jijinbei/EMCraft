@@ -10,36 +10,46 @@ fn go(out: &mut Actions, stage: Stage) {
     out.push(Action::run("view.pcb", json!({"stage": stage.id()})));
 }
 
-/// The report of `net` under the panel's settings, while they are the ones it was made with.
-fn report<'a>(app: &'a EmcraftApp, state: &crate::state::PcbUi, net: &str) -> Option<&'a Inspection> {
+/// The report of `net`, while it was made under the confirmed conditions.
+fn report<'a>(app: &'a EmcraftApp, net: &str) -> Option<&'a Inspection> {
+    let c = app.session.views().pcb.conditions()?;
     app.replies.pcb.as_ref().filter(|r| {
         r.net == net
-            && r.ground == state.ground.trim()
-            && Some(r.reference) == state.reference.parse::<f64>().ok()
-            && Some(r.stop) == state.stop.parse::<f64>().ok()
+            && r.ground == c.ground
+            && r.reference == c.reference
+            && r.stop_hz == c.stop_hz
             && r.frequency_unit == app.session.display().frequency.symbol()
     })
+}
+
+/// The Set conditions form follows the confirmed conditions when they change (confirmed, a
+/// project opened, the units changed); and whether the form is them.
+pub(crate) fn sync(app: &mut EmcraftApp) {
+    let shown = app.session.views().pcb.conditions().map(|c| c.shown(app.session.display().frequency));
+    let state = &mut app.views.pcb;
+    if state.seen != shown {
+        if let Some(v) = &shown {
+            let text = |k: &str| v.get(k).map(crate::dialogs::value_text).unwrap_or_default();
+            (state.ground, state.reference, state.stop) = (text("ground"), text("reference"), text("stop"));
+        }
+        state.seen = shown;
+    }
+    state.unconfirmed = state.seen.as_ref().is_none_or(|c| !crate::steps::same(c, &state.conditions()));
+}
+
+/// The route chosen, while it is one of the board's.
+fn route(app: &EmcraftApp) -> Option<&str> {
+    app.session.views().pcb.net().filter(|n| app.session.model().pcb.as_ref().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)))
 }
 
 /// The PCB-specific workflow stays above the workspace, as the FEM workflow does.
 pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let current = emcraft_engine::pcb::stage(&app.session);
     let loaded = app.session.model().pcb.is_some();
-    let net =
-        app.session.views().pcb_net.as_deref().filter(|n| app.session.model().pcb.as_ref().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)));
-    let ready = net.is_some_and(|n| report(app, &app.views.pcb, n).is_some());
-    // The conditions are set once each reads: a net of the board, positive numbers.
-    let state = &app.views.pcb;
-    let positive = |text: &str| text.trim().parse::<f64>().is_ok_and(|v| v.is_finite() && v > 0.0);
-    let set = net.is_some()
-        && app
-            .session
-            .model()
-            .pcb
-            .as_ref()
-            .is_some_and(|b| b.copper.iter().any(|c| c.net == state.ground.trim()) || b.segments.iter().any(|s| s.net == state.ground.trim()))
-        && positive(&state.reference)
-        && positive(&state.stop);
+    let net = route(app);
+    let ready = net.is_some_and(|n| report(app, n).is_some());
+    // The conditions are set once confirmed as the form stands.
+    let set = net.is_some() && !app.views.pcb.unconfirmed;
     let t = Tokens::get();
     egui::Panel::top("pcb_steps").show_separator_line(false).frame(egui::Frame::NONE.fill(t.viewport_top).inner_margin(6)).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -59,7 +69,7 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                     let done = match stage {
                         Stage::Board => loaded,
                         Stage::Net => net.is_some(),
-                        Stage::Settings => set || ready,
+                        Stage::Settings => set,
                         Stage::Inspect | Stage::Results => ready,
                     };
                     let status = match (done, enabled) {
@@ -119,9 +129,9 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     }
     // The top view, small, in the corner.
     let minimap = minimap(view);
-    let selected = app.session.views().pcb_net.clone().unwrap_or_default();
+    let selected = app.session.views().pcb.net().unwrap_or_default().to_owned();
     let ground = st.views.pcb.ground.clone();
-    let result = report(app, &st.views.pcb, &selected).cloned();
+    let result = report(app, &selected).cloned();
     let mut corner = ui.new_child(egui::UiBuilder::new().max_rect(minimap));
     draw_board(app, &mut st.views.pcb, &mut corner, out, &selected, &ground, result.as_ref(), minimap.height());
 }
@@ -131,7 +141,7 @@ fn pick_route(app: &EmcraftApp, st: &mut Parts, board: &emcraft_model::pcb::Boar
     let Some(crate::scene3d::Pick::Net(i)) = st.view3d.single() else { return };
     let nets = crate::scene3d::board::nets(board);
     let Some(net) = nets.get(i).filter(|n| board.segments.iter().any(|s| &s.net == *n)) else { return };
-    if app.session.views().pcb_net.as_deref() == Some(net.as_str()) || app.busy() {
+    if app.session.views().pcb.net() == Some(net.as_str()) || app.busy() {
         return;
     }
     st.view3d.selected.clear();
@@ -144,8 +154,9 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
     let stage = emcraft_engine::pcb::stage(&app.session);
     let state = &mut st.views.pcb;
     let board = app.session.model().pcb.as_ref();
-    let selected = app.session.views().pcb_net.as_deref().filter(|n| board.is_some_and(|b| b.segments.iter().any(|s| s.net == *n))).unwrap_or("");
-    let result = report(app, state, selected);
+    let selected = route(app).unwrap_or("");
+    let result = report(app, selected);
+    let confirmed = app.session.views().pcb.conditions();
     // The stage's name only: what to do shows in its controls (kept few words).
     ui.heading(shown(stage));
     let Some(board) = board else {
@@ -171,22 +182,38 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
                 });
             }
             ui.small(app.session.display().frequency.symbol());
+            // The form is the conditions once confirmed; until then the diagnosis waits for it.
+            ui.add_space(6.);
+            if state.unconfirmed {
+                let label = format!("✔ {}", tr("Confirm conditions"));
+                let r = ui.add_enabled(!app.busy(), ui_kit::styled(Raw(&label), true));
+                scenario::publish_target(Handle::Choice("pcb_control", "confirm"), r.rect);
+                if r.clicked() {
+                    out.push(Action::run("pcb.conditions", state.conditions()));
+                }
+                ui_kit::small(ui, "Not confirmed: the diagnosis waits for these conditions.", Tokens::get().warning);
+            } else {
+                let r = ui.label(egui::RichText::new(format!("✔ {}", tr("Conditions confirmed"))).color(Tokens::get().success));
+                scenario::publish_target(Handle::Choice("pcb_control", "confirm"), r.rect);
+            }
         }
         Stage::Inspect => {
-            ui.label(format!(
-                "{} → {}  |  {} Ω  |  {} {}",
-                selected,
-                state.ground,
-                state.reference,
-                state.stop,
-                app.session.display().frequency.symbol()
-            ));
-            let r = ui.add_enabled(!app.busy(), egui::Button::new(tr("Inspect route")));
-            scenario::publish_target(Handle::Choice("pcb_control", "inspect"), r.rect);
-            if r.clicked() {
-                out.push(Action::run("pcb.inspect", state.params(selected)));
+            let unit = app.session.display().frequency;
+            if let Some(c) = confirmed {
+                ui.label(format!("{} → {}  |  {} Ω  |  {} {}", selected, c.ground, c.reference, unit.from_si(c.stop_hz), unit.symbol()));
             }
-            fem(app, state, ui, selected, out);
+            let ready = confirmed.is_some() && !state.unconfirmed;
+            let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr("Inspect route")));
+            scenario::publish_target(Handle::Choice("pcb_control", "inspect"), r.rect);
+            if !ready {
+                ui_kit::caption(ui, "Confirm the conditions first (step 3).");
+            }
+            if r.clicked() {
+                out.push(Action::run("pcb.inspect", json!({"net": selected})));
+            }
+            if let Some(c) = confirmed.filter(|_| ready) {
+                fem(app, c, ui, selected, out);
+            }
         }
         Stage::Results => {
             match (result, &app.replies.pcb) {
@@ -197,12 +224,12 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
                         state.baseline = Some(result.clone());
                     }
                 }
-                (None, Some(_)) => ui_kit::caption(ui, "Settings changed; inspect the route again."),
+                (None, Some(_)) => ui_kit::caption(ui, "Conditions changed; inspect the route again."),
                 (None, None) => {}
             }
-            if app.replies.pcb.is_none() && state.attempted.as_ref() != Some(&(app.revision, selected.to_owned())) {
+            if app.replies.pcb.is_none() && confirmed.is_some() && state.attempted.as_ref() != Some(&(app.revision, selected.to_owned())) {
                 state.attempted = Some((app.revision, selected.to_owned()));
-                out.push(Action::run("pcb.inspect", state.params(selected)));
+                out.push(Action::run("pcb.inspect", json!({"net": selected})));
             }
         }
     }
@@ -308,7 +335,7 @@ fn draw(
     if r.clicked() {
         state.drawing = match state.drawing {
             Some(_) => None,
-            None => Some(crate::state::Pen::for_board(board, app.session.views().pcb_net.as_deref())),
+            None => Some(crate::state::Pen::for_board(board, app.session.views().pcb.net())),
         };
     }
     let Some(pen) = state.drawing.as_mut() else { return };
@@ -398,12 +425,12 @@ fn segments(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui
 /// The route made a finite-element model: its region and a port at each end (the conditions'
 /// impedance) and the job turned to S-parameters — the setup (the band proposed up to the
 /// maximum frequency), the mesh and the run are then the S-parameter steps', opened on the setup.
-fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &str, out: &mut Actions) {
+fn fem(app: &EmcraftApp, c: &emcraft_engine::pcb::Conditions, ui: &mut egui::Ui, net: &str, out: &mut Actions) {
     let Some(board) = app.session.model().pcb.as_ref() else { return };
     ui.add_space(8.);
     let ends = emcraft_engine::pcb_fem::route_ends(board, net);
-    let stop = state.stop.parse::<f64>().ok().filter(|f| f.is_finite() && *f > 0.0);
-    let ready = ends.len() == 2 && stop.is_some();
+    let stop = Some(app.session.display().frequency.from_si(c.stop_hz));
+    let ready = ends.len() == 2;
     let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr("Make the FEM model")));
     scenario::publish_target(Handle::Choice("pcb_control", "fem"), r.rect);
     if ends.len() != 2 {
@@ -412,10 +439,7 @@ fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &s
     if let (true, Some(f)) = (r.clicked(), stop) {
         let mut list = vec![("pcb.region".to_owned(), json!({"net": net}))];
         for (name, (id, end)) in ["1", "2"].into_iter().zip(&ends) {
-            list.push((
-                "pcb.port".into(),
-                json!({"name": name, "segment": id, "end": end.id(), "impedance": state.reference.parse::<f64>().unwrap_or(50.)}),
-            ));
+            list.push(("pcb.port".into(), json!({"name": name, "segment": id, "end": end.id(), "impedance": c.reference})));
         }
         list.push(("project.analysis".into(), json!({"kind": "frequency"})));
         out.push(Action::RunAll(list));

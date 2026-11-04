@@ -233,8 +233,8 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
     if overlay == Overlay::Board {
         let mut out = Built::default();
         if let Some(b) = &m.pcb {
-            let route = session.views().pcb_net.as_deref().unwrap_or("");
-            let reference = session.views().pcb_conditions.as_ref().map_or("GND", |c| c.ground.as_str());
+            let route = session.views().pcb.net().unwrap_or("");
+            let reference = session.views().pcb.conditions().map_or("GND", |c| c.ground.as_str());
             board::build(b, route, reference, &mut out);
         }
         return out;

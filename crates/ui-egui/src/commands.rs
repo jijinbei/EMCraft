@@ -36,6 +36,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ui("pcb.port", Some("Port"), Some(Glyph::Port), false),
     ui("pcb.element", Some("Chip part"), Some(Glyph::Lumped), false),
     ui("pcb.inspect", None, Some(Glyph::Chart), false),
+    ui("pcb.conditions", None, Some(Glyph::Chart), false),
     ui("view.pcb", None, Some(Glyph::Chart), false),
     ui("project.setup", Some("Confirm settings"), Some(Glyph::Band), false),
     ui("project.analysis", None, Some(Glyph::KindSweep), false),

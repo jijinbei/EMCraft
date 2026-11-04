@@ -3,6 +3,7 @@
   {"call": "ui.set", "params": {"language": "ja"}},
   {"call": "engine.execute", "params": {"command": "pcb.sample", "params": {"split": false, "neighbour": false, "length": 6}}},
   {"call": "engine.execute", "params": {"command": "view.pcb", "params": {"net": "DATA", "stage": "inspect"}}},
+  {"call": "engine.execute", "params": {"command": "pcb.conditions", "params": {}}},
   {"call": "ui.set", "params": {"view": "pcb"}},
   {"frames": 2},
   {"expect": {"handles": ["choice:pcb_control:fem"]}},
