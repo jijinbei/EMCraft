@@ -143,40 +143,6 @@ fn arrow_vertex(origin: vec3<f32>, vector: vec3<f32>, code: f32, im: vec3<f32>, 
 
 fn is_field(flag: f32) -> bool { return flag > -1.5 && flag < -0.5; }
 
-// PCB explanatory arches, loops and reference lines. Only descriptors come from Rust;
-// curve evaluation, tubular geometry and smooth normals are generated on the GPU.
-fn curve_vertex(a: vec3<f32>, b: vec3<f32>, code: f32, lift: vec3<f32>, style: vec4<f32>) -> Glyph {
-    let ordinal = u32(max(-code - 20002.0, 0.0));
-    let cell = ordinal / 6u;
-    let corner = ordinal % 6u;
-    let next = corner == 1u || corner == 2u || corner == 4u;
-    let side = corner == 2u || corner == 4u || corner == 5u;
-    let t = f32(cell / 8u + select(0u, 1u, next)) / 48.0;
-    let angle = 6.28318530718 * f32(cell % 8u + select(0u, 1u, side)) / 8.0;
-    var p = mix(a, b, t);
-    var tangent = b - a;
-    if (style.y < 0.5) {
-        p += lift * sin(3.14159265359 * t);
-        tangent += lift * (3.14159265359 * cos(3.14159265359 * t));
-    } else if (style.y < 1.5) {
-        let theta = 6.28318530718 * t;
-        p = a + (b - a) * cos(theta) + lift * sin(theta);
-        tangent = -(b - a) * sin(theta) + lift * cos(theta);
-    }
-    let axis = normalize(tangent);
-    var seed = vec3<f32>(1.0, 0.0, 0.0);
-    if (abs(axis.x) > 0.8) { seed = vec3<f32>(0.0, 1.0, 0.0); }
-    let ua = normalize(cross(axis, seed));
-    let radial = ua * cos(angle) + cross(axis, ua) * sin(angle);
-    let clip = u.view_proj * vec4<f32>(p, 1.0);
-    let scale = length(vec3<f32>(u.view_proj[0].y, u.view_proj[1].y, u.view_proj[2].y));
-    let pixel = 2.0 * abs(clip.w) / max(u.viewport.y * scale, 1e-12);
-    var o: Glyph;
-    o.p = p + radial * max(style.x, 1.2 * pixel);
-    o.n = radial;
-    return o;
-}
-
 struct V {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -219,13 +185,6 @@ fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: 
     o.flag = n.w;
     if (is_field(n.w)) {
         o.color = vec4<f32>(1.0, 1.0, 1.0, c.a);
-    } else if (n.w < -20000.0) {
-        let g = curve_vertex(p, n.xyz, n.w, im, motion);
-        o.pos = placed(g.p, 0.0);
-        o.world = g.p;
-        o.normal = g.n;
-        o.flag = -2.0;
-        if (motion.z > 0.0) { o.color = vec4<f32>(c.rgb * (0.78 + 0.22 * cos(motion.z)), c.a); }
     } else if (n.w < -1.5) {
         let g = arrow_vertex(p, n.xyz, n.w, im, motion);
         o.pos = placed(g.p, 0.0);
@@ -384,13 +343,7 @@ fn vs_g(@location(0) p: vec3<f32>, @location(1) n: vec4<f32>, @location(2) c: ve
     o.alpha = c.a;
     o.world = p;
     o.flag = n.w;
-    if (n.w < -20000.0) {
-        let g = curve_vertex(p, n.xyz, n.w, im, motion);
-        o.pos = placed(g.p, 0.0);
-        o.n = g.n;
-        o.world = g.p;
-        o.flag = -2.0;
-    } else if (n.w < -1.5) {
+    if (n.w < -1.5) {
         let g = arrow_vertex(p, n.xyz, n.w, im, motion);
         o.pos = placed(g.p, 0.0);
         o.n = g.n;

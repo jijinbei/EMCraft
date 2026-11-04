@@ -1,90 +1,16 @@
 [
- {
-  "note": "The four-layer example board in 3D: its route through a via, its differential pair, its slotted ground and split power plane; the pair's coupling illustrated"
- },
- {
-  "call": "ui.set",
-  "params": {
-   "language": "ja"
-  }
- },
- {
-  "call": "engine.execute",
-  "params": {
-   "command": "file.sample",
-   "params": {
-    "name": "pcb-board"
-   }
-  }
- },
- {
-  "call": "engine.execute",
-  "params": {
-   "command": "view.pcb",
-   "params": {
-    "net": "DATA",
-    "stage": "net"
-   }
-  }
- },
- {
-  "call": "ui.set",
-  "params": {
-   "view": "pcb"
-  }
- },
- {
-  "frames": 3
- },
- {
-  "expect": {
-   "handles": [
-    "choice:pcb_control:board3d"
-   ]
-  }
- },
- {
-  "shot": "pcb-board-3d"
- },
- {
-  "call": "engine.execute",
-  "params": {
-   "command": "view.pcb",
-   "params": {
-    "net": "USB_P",
-    "victim": "USB_N",
-    "stage": "net"
-   }
-  }
- },
- {
-  "call": "engine.execute",
-  "params": {
-   "command": "pcb.inspect",
-   "params": {
-    "net": "USB_P"
-   }
-  }
- },
- {
-  "call": "engine.execute",
-  "params": {
-   "command": "view.pcb",
-   "params": {
-    "stage": "results"
-   }
-  }
- },
- {
-  "frames": 2
- },
- {
-  "click": "choice:pcb_mode:electric"
- },
- {
-  "frames": 3
- },
- {
-  "shot": "pcb-board-pair"
- }
+  {"note": "The four-layer example board in 3D: its route through a via, its differential pair, its slotted ground and split power plane; the pair's report"},
+  {"call": "ui.set", "params": {"language": "ja"}},
+  {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "pcb-board"}}},
+  {"call": "engine.execute", "params": {"command": "view.pcb", "params": {"net": "DATA", "stage": "net"}}},
+  {"call": "ui.set", "params": {"view": "pcb"}},
+  {"frames": 3},
+  {"expect": {"handles": ["choice:pcb_control:board3d"]}},
+  {"shot": "pcb-board-3d"},
+  {"call": "engine.execute", "params": {"command": "view.pcb", "params": {"net": "USB_P", "stage": "net"}}},
+  {"call": "engine.execute", "params": {"command": "pcb.inspect", "params": {"net": "USB_P"}}},
+  {"call": "engine.execute", "params": {"command": "view.pcb", "params": {"stage": "results"}}},
+  {"frames": 2},
+  {"frames": 3},
+  {"shot": "pcb-board-pair"}
 ]

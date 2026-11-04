@@ -398,21 +398,44 @@ impl Cdt {
         Ok(())
     }
 
-    /// Visits the triangles around vertex `v` counterclockwise, each with `v`'s local index,
-    /// until `visit` returns a value (or the rotation closes: `None`).
+    /// Visits the triangles around vertex `v`, each with `v`'s local index, until `visit` returns
+    /// a value (else `None`): counterclockwise from the vertex's triangle, and when that runs
+    /// into the boundary (a vertex on the hull, whose fan is open) clockwise from it too, so no
+    /// triangle of the fan is missed.
     fn around<R>(&self, v: u32, mut visit: impl FnMut(u32, &Tri, usize) -> Result<Option<R>>) -> Result<Option<R>> {
         let start = self.vt.get(v as usize).copied().ok_or_else(|| fail("vertex"))?;
+        let local = |tri: &Tri| tri.v.iter().position(|&x| x == v).ok_or_else(|| fail("the vertex map is stale"));
         let mut t = start;
         for _ in 0..self.tris.len() + 1 {
             let tri = self.t(t)?;
-            let k = tri.v.iter().position(|&x| x == v).ok_or_else(|| fail("the vertex map is stale"))?;
+            let k = local(tri)?;
             if let Some(r) = visit(t, tri, k)? {
                 return Ok(Some(r));
             }
             t = tri.n[(k + 1) % 3];
-            if t == NONE || t == start {
+            if t == start {
                 return Ok(None);
             }
+            if t == NONE {
+                break;
+            }
+        }
+        if t != NONE {
+            return Err(fail("a vertex rotation did not close"));
+        }
+        // The fan is open: the triangles clockwise of the start.
+        let first = self.t(start)?;
+        t = first.n[(local(first)? + 2) % 3];
+        for _ in 0..self.tris.len() + 1 {
+            if t == NONE {
+                return Ok(None);
+            }
+            let tri = self.t(t)?;
+            let k = local(tri)?;
+            if let Some(r) = visit(t, tri, k)? {
+                return Ok(Some(r));
+            }
+            t = tri.n[(k + 2) % 3];
         }
         Err(fail("a vertex rotation did not close"))
     }

@@ -226,6 +226,33 @@ fn the_four_layer_example_board_meshes_and_its_route_crosses_layers() {
     emcraft_mesh::check_tetrahedra(s.model().mesh.as_ref().unwrap()).unwrap();
 }
 
+/// The example board's planes cover their layers but for the slot and the clearance round the
+/// via: their outlines cut in to the clearance and back out the same way (a closing edge from the
+/// clearance to the corner took a triangle out of each plane, even–odd).
+#[test]
+fn the_example_boards_planes_have_no_hole_but_their_clearances() {
+    let mut s = Session::new();
+    s.execute("file.sample", &json!({"name": "pcb-board"})).unwrap();
+    let board = s.model().pcb.clone().unwrap();
+    // Even–odd: a point is copper when a ray from it crosses the outline an odd number of times.
+    let inside = |poly: &[[f64; 2]], [x, y]: [f64; 2]| {
+        let mut odd = false;
+        for (i, a) in poly.iter().enumerate() {
+            let b = poly[(i + 1) % poly.len()];
+            if (a[1] > y) != (b[1] > y) && x < a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]) {
+                odd = !odd;
+            }
+        }
+        odd
+    };
+    let mm = |x: f64, y: f64| [x * 1e-3, y * 1e-3];
+    for (net, at, clear) in [("GND", mm(5.0, 3.0), mm(22.0, 9.0)), ("1V8", mm(20.0, 8.0), mm(22.0, 9.0))] {
+        let covers = |p| board.copper.iter().filter(|c| c.net == net && c.layer != "TOP").any(|c| inside(&c.polygon, p));
+        assert!(covers(at), "{net} has a hole at {at:?}");
+        assert!(!covers(clear), "{net} covers its via's clearance");
+    }
+}
+
 #[test]
 fn a_via_through_another_nets_plane_without_clearance_is_refused() {
     let mut s = Session::new();

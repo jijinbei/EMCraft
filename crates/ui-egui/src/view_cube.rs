@@ -164,7 +164,7 @@ fn ink(t: &Tokens, active: bool) -> Ink {
 }
 
 /// Draws the patches: each filled (shaded by its tilt), the hovered view's patches in the hover
-/// colour and outlined, the cube's own edges, and the faces' names on their middles.
+/// colour and outlined, the cube's own edges, and each face's axis mark on its middle.
 fn paint(p: &egui::Painter, faces: &[Facet], hovered: Option<[i8; 3]>, k: Ink, t: &Tokens, scale: f32) {
     let mut mesh = egui::Mesh::default();
     for f in faces {
@@ -195,8 +195,16 @@ fn paint(p: &egui::Painter, faces: &[Facet], hovered: Option<[i8; 3]>, k: Ink, t
         if opacity <= 0.0 {
             continue;
         }
-        let size = (t.font_small * scale * 1.25 * (0.6 + 0.4 * f.depth as f32)).max(6.0);
-        p.text(f.centre, Align2::CENTER_CENTER, tr(face_name(f.dir)), FontId::proportional(size), k.text.gamma_multiply(opacity));
+        // The face's axis as a mark in the axis triad's colour (X, Y, Z): a disc on the positive
+        // side, a ring on the negative; its name is the tip's.
+        let Some(axis) = f.dir.iter().position(|c| *c != 0) else { continue };
+        let colour = k.axes[axis].gamma_multiply(opacity);
+        let r = (t.font_small * scale * 0.55 * (0.6 + 0.4 * f.depth as f32)).max(3.0);
+        if f.dir[axis] > 0 {
+            p.circle_filled(f.centre, r, colour);
+        } else {
+            p.circle_stroke(f.centre, r, Stroke::new(1.5 * scale, colour));
+        }
     }
 }
 

@@ -151,9 +151,6 @@ impl EmcraftApp {
         let chosen = emcraft_engine::workflow::spec(self.session.model().analysis()).results.iter().copied().find(|k| results.has(*k));
         self.view = chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of);
         self.replies.pcb = None;
-        if matches!(id, "file.new" | "file.open") {
-            self.views.pcb.illustration = Default::default();
-        }
         if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
             if let Some(band) = self.session.model().band {
                 self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();

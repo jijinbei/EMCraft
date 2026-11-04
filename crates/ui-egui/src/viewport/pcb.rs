@@ -28,6 +28,18 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     let net =
         app.session.views().pcb_net.as_deref().filter(|n| app.session.model().pcb.as_ref().is_some_and(|b| b.segments.iter().any(|s| s.net == *n)));
     let ready = net.is_some_and(|n| report(app, &app.views.pcb, n).is_some());
+    // The conditions are set once each reads: a net of the board, positive numbers.
+    let state = &app.views.pcb;
+    let positive = |text: &str| text.trim().parse::<f64>().is_ok_and(|v| v.is_finite() && v > 0.0);
+    let set = net.is_some()
+        && app
+            .session
+            .model()
+            .pcb
+            .as_ref()
+            .is_some_and(|b| b.copper.iter().any(|c| c.net == state.ground.trim()) || b.segments.iter().any(|s| s.net == state.ground.trim()))
+        && positive(&state.reference)
+        && positive(&state.stop);
     let t = Tokens::get();
     egui::Panel::top("pcb_steps").show_separator_line(false).frame(egui::Frame::NONE.fill(t.viewport_top).inner_margin(6)).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -47,7 +59,8 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                     let done = match stage {
                         Stage::Board => loaded,
                         Stage::Net => net.is_some(),
-                        Stage::Settings | Stage::Inspect | Stage::Results => ready,
+                        Stage::Settings => set || ready,
+                        Stage::Inspect | Stage::Results => ready,
                     };
                     let status = match (done, enabled) {
                         (true, _) => crate::steps::Status::Done,
@@ -91,26 +104,19 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
     if view.width() < 80. {
         return;
     }
-    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Board, out);
-    scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
     // What the view offers is the stage's: drawing while the board is prepared, picking a
-    // route while one is chosen, the coupling's illustrations once there are results.
+    // route while one is chosen, and in the results the solved field (once the route went
+    // through the finite elements), else the board.
     let stage = emcraft_engine::pcb::stage(&app.session);
+    let overlay = if stage == Stage::Results && View::Field.available(app) { crate::scene3d::Overlay::Field } else { crate::scene3d::Overlay::Board };
+    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, overlay, out);
+    scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
     if stage != Stage::Board {
         st.views.pcb.drawing = None;
     }
-    let illustrated = stage == Stage::Results && super::pcb_coupling::ready(app);
-    super::pcb_coupling::frame_view(app, illustrated, &mut st.views.pcb.illustration, &mut st.view3d, view);
     match stage {
         Stage::Board => draw(app, &mut st.views.pcb, &st.view3d, ui, view, board, out),
         Stage::Net => pick_route(app, st, board, out),
-        Stage::Results if illustrated => {
-            super::pcb_coupling::mode_bar(app, ui, view, out);
-            let illustration = &app.session.views().pcb_illustration;
-            if illustration.illustrated.is_some() && illustration.playing {
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
-            }
-        }
         Stage::Settings | Stage::Inspect | Stage::Results => {}
     }
     // The top view, small, in the corner.
@@ -142,23 +148,10 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
     let board = app.session.model().pcb.as_ref();
     let selected = app.session.views().pcb_net.as_deref().filter(|n| board.is_some_and(|b| b.segments.iter().any(|s| s.net == *n))).unwrap_or("");
     let result = report(app, state, selected);
+    // The stage's name only: what to do shows in its controls (kept few words).
     ui.heading(shown(stage));
-    ui_kit::caption(
-        ui,
-        match stage {
-            Stage::Board => "1. Import a PCB or open a template, then check its copper layers and substrate thickness.",
-            Stage::Net => {
-                "2. Click the trace in the board view, or choose its net from the list. Orange is the selected route; green is reference copper."
-            }
-            Stage::Settings => "3. Set the reference net, source/load impedance and maximum frequency. The stackup below comes from the board.",
-            Stage::Inspect => "4. Review the selected route and conditions, then run the diagnosis.",
-            Stage::Results => "5. Red markers locate missing reference copper. Review the findings before reading the ideal line estimates.",
-        },
-    );
-    // The stages are chosen from the steps above the window; no Back or Next here.
     let Some(board) = board else {
         board_sources(ui, out);
-        ui_kit::caption(ui, "Import a PCB or open an example, then click a routed trace.");
         return;
     };
     match stage {
@@ -168,13 +161,7 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
                 pen(app, state, ui, board, out);
             }
         }
-        Stage::Net => {
-            choose_net(ui, board, selected, out);
-            // A receiving trace only when there is another route to be one.
-            if board.segments.iter().any(|g| g.net != selected) {
-                super::pcb_coupling::select(app, ui, out);
-            }
-        }
+        Stage::Net => choose_net(ui, board, selected, out),
         Stage::Settings => {
             for (label, field) in
                 [("Reference net", &mut state.ground), ("Reference impedance (Ω)", &mut state.reference), ("Maximum frequency", &mut state.stop)]
@@ -226,12 +213,7 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
     }
     ui.add_space(6.);
     match stage {
-        Stage::Results => {
-            if let Some(r) = result {
-                super::pcb_coupling::show(app, state, ui, r, out);
-            }
-            draw_report(app, state, ui, result)
-        }
+        Stage::Results => draw_report(app, state, ui, result),
         _ => stackup(app, ui, selected, &state.ground),
     }
 }
@@ -301,7 +283,7 @@ fn pen(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui, boa
             pen.width = l.to_si(width);
         }
     });
-    ui_kit::caption(ui, "Click on the layer in the 3D view: each click adds a segment from the last. Right click or Esc ends the line.");
+    ui_kit::caption(ui, "Click to add segments; right click or Esc ends.");
     let net = pen.net.clone();
     segments(app, state, ui, board, &net, out);
 }
@@ -422,7 +404,6 @@ fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &s
     let Some(board) = app.session.model().pcb.as_ref() else { return };
     ui.add_space(8.);
     ui.heading(tr("3D field solution (FEM)"));
-    ui_kit::caption(ui, "Solves the route in 3D with finite elements: a 50 Ω port at each end, its S-parameters and fields. It can take minutes.");
     let ends = emcraft_engine::pcb_fem::route_ends(board, net);
     let unit = app.session.display().frequency;
     let stop = state.stop.parse::<f64>().ok().filter(|f| *f > 0.0).map(|f| unit.to_si(f));
@@ -454,7 +435,6 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
         return;
     };
     ui.heading(tr("Layer stackup (section)"));
-    ui_kit::caption(ui, "The layout is a top view. Copper depth and dielectric thickness are included in the line estimate.");
     let t = Tokens::get();
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width().min(540.), 180.), Sense::hover());
     scenario::publish_target(Handle::Choice("pcb_control", "stackup"), r);
@@ -493,11 +473,6 @@ fn stackup(app: &EmcraftApp, ui: &mut egui::Ui, selected: &str, ground: &str) {
         painter.line_segment([pos2(r.left() + 12., at), pos2(r.right() - 12., at)], Stroke::new(3., colour));
         painter.text(pos2(r.left() + 14., at - 7.), egui::Align2::LEFT_BOTTOM, &layer.name, FontId::proportional(12.), t.text);
     }
-    ui_kit::caption(ui, "Depth spacing is schematic; labels show actual dimensions.");
-    ui_kit::caption(
-        ui,
-        "The diagnosis is geometry screening and a quasi-static line estimate; Solve with FEM (step 4) solves the route's 3D fields.",
-    );
 }
 
 /// The board's top view `height` tall: the reference copper filled, the routes as lines, the
@@ -568,7 +543,6 @@ fn draw_board(
         let colour = match (chosen, flagged.contains(seg.id.as_str())) {
             (true, true) => t.warning,
             (true, false) => t.warning,
-            _ if app.session.views().pcb_illustration.victim.as_deref() == Some(seg.net.as_str()) => t.accent,
             _ => t.text_dim,
         };
         painter.line_segment([a, b], Stroke::new((seg.width * scale) as f32 + if chosen { 2.0 } else { 0.5 }, colour));
@@ -591,17 +565,6 @@ fn draw_board(
                     painter.line_segment([at(a), at(b)], Stroke::new(6.0, t.error));
                     painter.circle_stroke(at((a + b) / 2.0), 9.0, Stroke::new(2.0, t.error));
                 }
-            }
-        }
-    }
-    if let Some(report) = report {
-        let mut pairs = report.coupling_pairs.iter().filter(|p| app.session.views().pcb_illustration.victim.as_deref() == Some(p.target.as_str()));
-        if let Some(pair) = pairs.nth(state.illustration.index) {
-            let length = app.session.display().length;
-            for (ends, colour) in [(pair.source_points, t.warning), (pair.target_points, t.accent)] {
-                let at = |i: usize| to(ends[i].map(|x| length.to_si(x)));
-                painter.line_segment([at(0), at(1)], Stroke::new(5., colour));
-                painter.circle_stroke(at(0) + (at(1) - at(0)) * 0.5, 7., Stroke::new(2., colour));
             }
         }
     }
@@ -633,7 +596,7 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
     ui.heading(tr("Return-path geometry"));
     let mut shown = BTreeSet::new();
     if report.findings.is_empty() {
-        ui_kit::caption(ui, "No issue found by the implemented geometry checks; this is not a compliance pass.");
+        ui_kit::caption(ui, "No issues found.");
     }
     for f in &report.findings {
         if !shown.insert((f.code.id(), f.detail.as_str())) {
@@ -643,10 +606,6 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
         ui.small(f.detail.as_str());
     }
     ui.heading(tr("Ideal transmission-line estimate"));
-    ui_kit::caption(
-        ui,
-        "Lossless quasi-static outer microstrip only. Bends, vias, pads, copper thickness, solder mask, dispersion and coupling are excluded.",
-    );
     for row in &report.sections {
         ui.small(format!(
             "{} → {}: {:.2} Ω, {:.1} ps",
@@ -658,7 +617,6 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
     }
     if let Some(si) = report.si.as_ref().filter(|_| report.model_available) {
         ui.small(trf("Propagation delay: {value} ps", args!(value = format!("{:.1}", Time::Picosecond.from_si(si.delay_s)))));
-        ui.small(tr("Magnitude |S| (0 to 1); frequency spans zero to the selected maximum"));
         let along = |f: fn(&emcraft_engine::pcb::LinePoint) -> f64| si.points.iter().map(|p| [p.frequency, f(p)]).collect::<Vec<_>>();
         let top = si.points.last().map_or(1.0, |p| p.frequency);
         let series = [("s11", t.error, along(|p| p.s11.mag)), ("s21", t.accent, along(|p| p.s21.mag))];
@@ -677,10 +635,7 @@ fn draw_report(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui,
             ),
         ));
     } else {
-        ui_kit::caption(
-            ui,
-            "No S-parameters or TDR: the route does not meet the model assumptions. Repair the reported geometry or use a detailed field model.",
-        );
+        ui_kit::caption(ui, "No S-parameters: the route is outside the line model.");
     }
     if let Some(old) = &state.baseline {
         ui.label(trf("Comparison — geometry findings: {before} → {after}", args!(before = old.findings.len(), after = report.findings.len())));

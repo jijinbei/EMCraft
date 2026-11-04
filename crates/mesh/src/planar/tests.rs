@@ -307,3 +307,38 @@ mod properties {
         }
     }
 }
+
+/// Planes reaching close to the region's edge, coarse (the example board's split power plane
+/// and its ground with a keyhole clearance, as KiCad fractures a pour): recovering an edge from
+/// a vertex on the region's boundary must look at its whole open fan (it looked
+/// counterclockwise only, lost the edge and refused the board).
+#[test]
+fn planes_near_the_regions_edge_triangulate() {
+    let (layers, nets) = (names(1, "L"), names(1, "n"));
+    let (w, h, m) = (30.0 * MM, 20.0 * MM, 0.03 * MM);
+    let mut keyhole = vec![[0.0, 0.0], [w, 0.0], [w, h], [0.0, h], [0.0, 9.0 * MM], [21.5 * MM, 9.0 * MM]];
+    let sides = 16;
+    for k in 1..sides {
+        let a = std::f64::consts::PI + std::f64::consts::TAU * k as f64 / sides as f64;
+        keyhole.push([22.0 * MM + 0.5 * MM * a.cos(), 9.0 * MM - 0.5 * MM * a.sin()]);
+    }
+    keyhole.extend([[21.5 * MM, 9.0 * MM], [0.0, 9.0 * MM]]);
+    let hole = 0.5 * sides as f64 * (0.5 * MM) * (0.5 * MM) * (std::f64::consts::TAU / sides as f64).sin();
+    for (ring, area) in [(rectangle([0.0, 0.0], [14.8 * MM, h]), 14.8 * MM * h), (keyhole, w * h - hole)] {
+        let outlines = [Outline { layer: 0, net: 0, ring }];
+        let r = Request {
+            lo: [-m, -m],
+            hi: [w + m, h + m],
+            layers: &layers,
+            nets: &nets,
+            outlines: &outlines,
+            coarse: &[],
+            lines: &[],
+            size: w,
+            edge_size: w,
+        };
+        let p = triangulate(&r).unwrap();
+        sound(&p, (w + 2.0 * m) * (h + 2.0 * m));
+        assert!((p.copper_area(0) - area).abs() < 1e-9 * w * h, "{} {area}", p.copper_area(0));
+    }
+}

@@ -513,11 +513,6 @@ fn tour() -> Record {
     call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
     call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":"results"}}));
     h.frames(2);
-    step(&mut h, json!({"click":"choice:pcb_coupling:keep"}));
-    for mode in emcraft_engine::pcb::CouplingMode::ALL {
-        call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"mode":mode.id()}}));
-        h.frames(2);
-    }
     // A saved split still has copper elsewhere on the layer, so the local return can be absent.
     call(&mut h, "engine.execute", json!({"command":"pcb.sample","params":{"split":true}}));
     call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
@@ -650,14 +645,9 @@ fn tour() -> Record {
 
 /// Texts a tour of the window cannot reach, with why.
 const UNREACHED: &[(&str, &str)] = &[
-    (
-        "Click on the layer in the 3D view: each click adds a segment from the last. Right click or Esc ends the line.",
-        "step 1 while drawing (scenario pcb_edit)",
-    ),
+    ("Click to add segments; right click or Esc ends.", "step 1 while drawing (scenario pcb_edit)"),
     ("Route segments", "step 1 while drawing (scenario pcb_edit)"),
     ("The route needs exactly two free ends for its ports.", "step 4 for a branching route; the samples' routes run end to end"),
-    ("Noise source", "a callout of the coupling illustrated in the PCB 3D view (scenario pcb_coupling)"),
-    ("Reference copper is missing; the return path is not drawn.", "the return illustration over a split ground (pcb_coupling's test)"),
     ("Show object", "tooltip on the eye of a hidden material (scenario material_visibility)"),
     ("Drop to import", "shown while a file is dragged over the window, which the headless harness does not do"),
     ("Drop to open", "shown while a file is dragged over the window, which the headless harness does not do"),

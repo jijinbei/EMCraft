@@ -469,5 +469,4 @@ mod tests {
 }
 
 mod pcb;
-pub(crate) mod pcb_coupling;
 pub(crate) use pcb::bar as pcb_bar;

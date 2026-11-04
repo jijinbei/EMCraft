@@ -759,11 +759,6 @@ fn pcb_saved_results_restore_conditions_in_a_new_window() {
 }
 
 #[test]
-fn scenario_pcb_coupling() {
-    scenario("pcb_coupling");
-}
-
-#[test]
 fn a_board_solved_by_finite_elements_has_no_pcb_route_view() {
     let mut h = Harness::new();
     assert_eq!(h.call("engine.execute", json!({"command":"file.sample","params":{"name":"pcb-lowpass"}}))["ok"], true);

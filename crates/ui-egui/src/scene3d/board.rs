@@ -80,21 +80,14 @@ pub fn nets(board: &Board) -> Vec<String> {
 /// The colours of the selected route, its reference and the other copper.
 struct Colours {
     route: Rgb,
-    receiver: Rgb,
     reference: Rgb,
     copper: Rgb,
 }
 
-/// Builds the board's scene: `route` the selected net, `receiver` the receiving trace of a
-/// coupling (if any), `reference` the route's reference net.
-pub(super) fn build(board: &Board, route: &str, receiver: Option<&str>, reference: &str, out: &mut Built) {
+/// Builds the board's scene: `route` the selected net, `reference` the route's reference net.
+pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built) {
     let t = crate::theme::Tokens::get();
-    let colours = Colours {
-        route: crate::theme::rgb(t.warning),
-        receiver: crate::theme::rgb(t.accent),
-        reference: crate::theme::rgb(t.success),
-        copper: sc().strip,
-    };
+    let colours = Colours { route: crate::theme::rgb(t.warning), reference: crate::theme::rgb(t.success), copper: sc().strip };
     let Some((lo, hi)) = board.bounds() else { return };
     let Frame { stretch, heights } = frame(board);
     let thickness = heights.iter().copied().fold(0.0, f64::max);
@@ -103,8 +96,6 @@ pub(super) fn build(board: &Board, route: &str, receiver: Option<&str>, referenc
     let colour = |net: &str| {
         if net == route {
             colours.route
-        } else if Some(net) == receiver {
-            colours.receiver
         } else if net == reference {
             colours.reference
         } else {
@@ -163,9 +154,9 @@ pub(super) fn build(board: &Board, route: &str, receiver: Option<&str>, referenc
     for (i, l) in board.layers.iter().enumerate() {
         out.labels.push(Label { at: at(lo[0], hi[1], z(i)), text: l.name.clone(), color: super::style::wire_rgb(), facing: None, anchor: None });
     }
-    out.legend.push((route.to_owned(), colours.route));
-    if let Some(r) = receiver {
-        out.legend.push((r.to_owned(), colours.receiver));
+    // No route chosen yet: no swatch without a name.
+    if !route.is_empty() {
+        out.legend.push((route.to_owned(), colours.route));
     }
     if !reference.is_empty() {
         out.legend.push((reference.to_owned(), colours.reference));

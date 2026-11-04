@@ -47,8 +47,6 @@ struct SceneKey {
     theme: crate::theme::ThemeKey,
     /// The language its labels and legend are in.
     language: &'static str,
-    /// The step of a board's explanatory motion (0 when still).
-    motion: u64,
 }
 
 /// The field's state the Results step's planes are drawn from: the field view, its plane's
@@ -303,7 +301,6 @@ impl View3d {
                     scene,
                     gpu_scene: Some(gpu_scene),
                     arrows: full.arrows.clone(),
-                    curves: full.curves.clone(),
                     labels,
                     legend: full.legend.clone(),
                     bounds: full.bounds,
@@ -429,7 +426,6 @@ static EMPTY: Built = Built {
     scene: view3d::Scene { tris: Vec::new(), lines: Vec::new(), tag: 0 },
     gpu_scene: None,
     arrows: Vec::new(),
-    curves: Vec::new(),
     labels: Vec::new(),
     legend: Vec::new(),
     bounds: None,
@@ -448,7 +444,7 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         v.section = None;
     }
     let gpu_field = overlay == Overlay::Field && app.prefs.gpu_look.field && field.kept.is_empty() && drawer_of(ui) != Drawer::None;
-    let key = scene_key(app, v, field, overlay, gpu_field, ui.input(|i| i.time));
+    let key = scene_key(app, v, field, overlay, gpu_field);
     if !v.is_built(&key) {
         build(app, v, field, overlay, key.clone(), out);
     }
@@ -619,7 +615,7 @@ fn move_plane(app: &EmcraftApp, cam: &Camera, field: &mut FieldState, rect: Rect
 }
 
 /// What the scene for `overlay` is built from now.
-fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Overlay, gpu: bool, now: f64) -> SceneKey {
+fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Overlay, gpu: bool) -> SceneKey {
     let planes = (overlay == Overlay::Field).then(|| {
         let l = app.session.display().length;
         field.view.at = field.at.map(|v| l.to_si(v));
@@ -629,8 +625,6 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         }
         FieldKey { view, at: field.at, kept: field.kept.iter().map(|k| (k.plane, k.at)).collect(), gpu }
     });
-    let pcb = &app.session.views().pcb_illustration;
-    let motion = if overlay == Overlay::Board && pcb.illustrated.is_some() && pcb.playing { (now * 5.0) as u64 } else { 0 };
     SceneKey {
         revision: app.revision,
         overlay,
@@ -638,7 +632,6 @@ fn scene_key(app: &EmcraftApp, v: &View3d, field: &mut FieldState, overlay: Over
         highlighted: v.highlighted().to_vec(),
         theme: crate::theme::key(),
         language: lang::current(),
-        motion,
     }
 }
 
@@ -657,11 +650,6 @@ fn build(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, overlay: Over
     let fl: Vec<scene3d::FieldLayer> = layers.iter().map(|(plot, plane, at)| scene3d::FieldLayer { plot, plane: *plane, at: *at, gpu }).collect();
     v.facing = layers.first().map(|(plot, plane, at)| Facing { x: plot.x.span(), y: plot.y.span(), plane: *plane, at: *at });
     let mut built = scene3d::build_with(&app.session, overlay, &fl, &key.highlighted);
-    if overlay == Overlay::Board
-        && let Some(board) = app.session.model().pcb.as_ref()
-    {
-        crate::viewport::pcb_coupling::curves(app, &scene3d::board::frame(board), key.motion, &mut built);
-    }
     if gpu {
         dynamic_field_arrows(app, field, &mut built);
     }

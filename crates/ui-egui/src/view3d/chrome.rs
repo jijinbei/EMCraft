@@ -136,9 +136,9 @@ pub(super) fn gpu_frame(
     let packed = match v.shown() {
         // Offscreen (read back, often on a software adapter) a large scene moves as its coarser copy.
         Some(b) if b.gpu_scene.is_none() && moving && offscreen && !std::ptr::eq(b.moving(), &b.scene) => {
-            cache.packed_arrows(b.moving(), id.wrapping_add(1 << 63), field_plane, &b.arrows, &b.curves)
+            cache.packed_arrows(b.moving(), id.wrapping_add(1 << 63), field_plane, &b.arrows)
         }
-        Some(b) => cache.packed_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), id, field_plane, &b.arrows, &b.curves),
+        Some(b) => cache.packed_arrows(b.gpu_scene.as_ref().unwrap_or(&b.scene), id, field_plane, &b.arrows),
         None => cache.packed(&EMPTY.scene, u64::MAX),
     };
     v.gpu = cache;
@@ -311,7 +311,6 @@ impl Built {
             scene: Default::default(),
             gpu_scene: None,
             arrows: Vec::new(),
-            curves: Vec::new(),
             labels: self.labels.clone(),
             legend: self.legend.clone(),
             bounds: self.bounds.or_else(|| self.scene.bounds()),

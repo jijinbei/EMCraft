@@ -155,13 +155,10 @@ view offers what its stage needs, nothing more:
   (net, layer, width) and that net's segments, their widths to change and a delete each; each
   click on the pen's layer adds a segment from the last point (snapped to the net's ends there or
   a 0.05 mm grid); a right click or Escape ends the line, and with none, drawing.
-- **2 Select route** — a click on a trace makes it the route (orange); the panel picks the
-  receiving trace (blue) of a coupling when the board has another route.
-- **5 Review results** — once a receiving trace's parallel stretch is in the report, the view's
-  top shows *Whole board*, **Electric coupling**, **Magnetic coupling**, **Return reference**: the
-  mechanism's schematic drawn on the board at that stretch (the view goes there) — arches between
-  the traces, loops round the source, the reference under the route (never across a gap) — with
-  *Explain motion*. They are schematics: no field or noise voltage is computed for them.
+- **2 Select route** — a click on a trace makes it the route (orange).
+- **3 Set conditions** — done once the reference net, impedance and maximum frequency read.
+- **5 Review results** — the report beside the board; once the route went through the finite
+  elements (step 4), the view shows its solved field.
 
 In step 4, **Solve with FEM** runs the route through the finite elements in one go: its region
 (`pcb.region` round the net), a port at each of its two ends (`pcb.port`, the conditions'
@@ -262,44 +259,10 @@ and its feed's own mismatch), so the layer adds nothing measurable. Thicker laye
 the same mesh (4 mm: 0.07–0.13, better with a weaker profile, `reflection` 1e-2): keep the layer a
 few elements thick rather than a quarter wavelength.
 
-## Coupling illustration
+## Parallel routes
 
-At **Select route**, choose the source (orange) and receiver (blue), using the role buttons
-before clicking a trace or using the receiver list. Swap exchanges the two roles. After
-**Inspect route**, Results shows a GPU-rendered 3D schematic linked to the highlighted 2D
-parallel overlap. Use its section list to select another overlap; circle marks locate its centre.
-Electric, magnetic and return-reference modes explain different relationships. Field strength,
-noise voltage, propagation speed and physical phase are **not calculated**. The permanent
-schematic banner remains in whole-window PNGs captured by `ui.render`.
-
-The first version only illustrates same-layer straight parallel overlaps with a known reference
-layer. Angles, interlayer coupling and vias get no invented field diagram. Ground holes remain
-holes; a return-reference line is withheld when the route's reference screening reports gaps
-or missing support. Curves and loops are original conceptual drawings, following the mechanisms
-explained in Texas Instruments' [Crosstalk on PCB Layouts](https://www.ti.com/content/dam/videos/external-videos/zh-tw/9/3816841626001/6307563213112.mp4/subassets/crosstalk-on-pcb-layouts-presentation-quiz.pdf), not field solutions.
-
-The existing viewport WGSL now generates lit tubular curves from descriptors, shared by the
-colour and depth/normal passes; it does not rasterize CPU polylines for these annotations.
-Callouts identify the source/receiver nets, their copper layer, the reference net/layer and
-the displayed electric/magnetic/return annotation. A translucent block locates the dielectric.
-Copper is zero-thickness in the input model; shallow display extrusions distinguish its faces
-and are labelled as schematic. Displayed extrusion thickness is not used in the line estimates.
-
-Drag to orbit and scroll to zoom. Depth is exaggerated ×10 by default; toggle it for actual
-layer spacing. Local section now opens by default and shortens the traces around the selected
-section so that nearby conductors stay readable; turn it off to see the full overlap. Motion defaults
-to stopped, and only pulses the emphasis at five updates per second. It is not a wave simulation.
-Pair, mode, playback, depth and section choices are saved by `view.pcb` (`victim`, `mode`,
-`playing`, `exaggerate`, `section`, `pick_victim`); modes are `electric`, `magnetic`, `return`.
-`pcb.inspect.coupling_pairs` replies give both segment ids, source/target endpoints, layer,
-clearance and overlap in display units, explicitly tagged `geometry_only`. The geometric
-pair search is bounded to one million candidates and 256 output sections; excessive inputs
-fail visibly. The illustration also caps drawing work and local ground triangles.
-
-**Keep geometry for comparison** pins a temporary scene in the current workspace. Matching
-roles/mode/depth/section settings show before/current pictures with the same camera, plus
-clearance and overlap values. No noise-reduction percentage is inferred. New/open project
-clears the pin. In `pcb-parallel`, **Edit template spacing…** edits the real `gap` project
-variable (default 0.25 mm, positive and at most 5 mm), rebuilding the board. Review it and
-select the pair again before diagnosing and comparing. Edited KiCad boards can similarly
-be reimported. The ordinary single-line S/TDR estimates below the schematic still exclude coupling.
+`pcb.inspect` reports nearby parallel routes as geometry findings (`coupling_pairs`: both
+segment ids, endpoints, layer, clearance and overlap in display units, tagged `geometry_only`;
+bounded to one million candidates and 256 sections). No coupling is calculated and none is
+drawn: the fields come from **Solve with FEM**. In `pcb-parallel` the routes' spacing is the
+project variable `gap` (default 0.25 mm).

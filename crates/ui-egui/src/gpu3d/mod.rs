@@ -40,7 +40,7 @@ use eframe::{egui_wgpu, wgpu};
 use emcraft_render::view3d::Scene;
 
 pub use field::{FieldFrame, FieldGrid};
-pub(crate) use pack::{Arrow, Curve, CurveKind, Motion};
+pub(crate) use pack::{Arrow, Motion};
 pub use pack::{LINE, MAX_BYTES, Packed, TRI_VERTEX, UNIFORM_BYTES, Uniforms};
 pub use renderer::Caps;
 use renderer::Renderer;
@@ -266,24 +266,16 @@ impl Cache {
 
     /// As [`Cache::packed`], the field's plane marked ([`Packed::with_field`]).
     pub fn packed_with(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>) -> Arc<Packed> {
-        self.packed_arrows(scene, generation, field, &[], &[])
+        self.packed_arrows(scene, generation, field, &[])
     }
 
-    /// As [`Cache::packed_with`], with the field's arrows and symbolic curves.
-    pub(crate) fn packed_arrows(
-        &mut self,
-        scene: &Scene,
-        generation: u64,
-        field: Option<(u32, usize, f64)>,
-        arrows: &[Arrow],
-        curves: &[Curve],
-    ) -> Arc<Packed> {
+    /// As [`Cache::packed_with`], with the field's arrows.
+    pub(crate) fn packed_arrows(&mut self, scene: &Scene, generation: u64, field: Option<(u32, usize, f64)>, arrows: &[Arrow]) -> Arc<Packed> {
         match &self.packed {
             Some((k, p)) if *k == (generation, field) => p.clone(),
             _ => {
                 let mut p = Packed::with_field(scene, next_id(), field);
                 p.append_arrows(arrows);
-                p.append_curves(curves);
                 let p = Arc::new(p);
                 self.packed = Some(((generation, field), p.clone()));
                 p
@@ -336,21 +328,8 @@ pub fn scene_picture(
     size: [u32; 2],
     background: (emcraft_render::Rgb, emcraft_render::Rgb),
 ) -> Result<emcraft_render::Canvas, Gpu3dError> {
-    scene_picture_with_curves(scene, &[], camera, size, background)
-}
-
-/// The regular scene renderer with procedural WGSL annotations, also used by headless shots.
-pub(crate) fn scene_picture_with_curves(
-    scene: &Scene,
-    curves: &[pack::Curve],
-    camera: &emcraft_render::view3d::Camera,
-    size: [u32; 2],
-    background: (emcraft_render::Rgb, emcraft_render::Rgb),
-) -> Result<emcraft_render::Canvas, Gpu3dError> {
     let out = [size[0].clamp(1, 2048), size[1].clamp(1, 2048)];
-    let mut packed = Packed::new(scene, next_id());
-    packed.append_curves(curves);
-    let packed = Arc::new(packed);
+    let packed = Arc::new(Packed::new(scene, next_id()));
     let big = [out[0] * 2, out[1] * 2];
     let uniforms = Uniforms::new(&packed, camera, big, 4.0, background);
     picture(0, &Frame { look: Look { edges: true, ..Look::default() }, ..Frame::plain(packed, uniforms, big, out, 2) })

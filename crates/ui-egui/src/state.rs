@@ -266,7 +266,6 @@ pub struct PcbCopperCache {
 }
 
 pub struct PcbUi {
-    pub(crate) illustration: crate::viewport::pcb_coupling::IllustrationUi,
     pub copper: Option<PcbCopperCache>,
     pub ground: String,
     pub reference: String,
@@ -303,7 +302,6 @@ impl Pen {
 impl Default for PcbUi {
     fn default() -> Self {
         Self {
-            illustration: Default::default(),
             copper: None,
             ground: "GND".into(),
             reference: "50".into(),
