@@ -139,8 +139,8 @@ pub struct EmcraftApp {
     pub view3d: view3d::View3d,
     /// The workflow: the active step, the steps' statuses, the step panels' fields.
     pub workflow: steps::Workflow,
-    /// The path asked for when exporting the history as a script.
-    pub export: Option<String>,
+    /// The one question over the window (a path, "save the changes?", the history's export).
+    pub ask: Option<files::Ask>,
     /// The preferences, and where and as what they were last written.
     pub prefs: prefs::Prefs,
     prefs_store: PrefsStore,
@@ -150,8 +150,8 @@ pub struct EmcraftApp {
     pub home: home::Home,
     /// The template being set up before it is opened (start page, File ▸ Samples).
     pub template: Option<template_dialog::TemplateDialog>,
-    /// The settings page, at its section, while it is open.
-    pub settings: Option<settings::Section>,
+    /// What fills the window: the start page, the settings or the workspace.
+    pub page: home::Page,
     /// The command that failed and why, until a command succeeds: the panel that asked for it
     /// shows it there (the message log keeps every one).
     pub failure: Option<Failure>,
@@ -239,13 +239,13 @@ impl EmcraftApp {
             ctx: None,
             view3d: view3d::View3d::default(),
             workflow: steps::Workflow::default(),
-            export: None,
+            ask: None,
             prefs: prefs::Prefs::default(),
             prefs_store: PrefsStore::default(),
             files: files::Files::default(),
             home: home::Home::default(),
             template: None,
-            settings: None,
+            page: home::Page::Workspace,
             failure: None,
             focus_last: None,
         };
@@ -276,7 +276,7 @@ impl EmcraftApp {
             app.autosave.dir = Some(dir);
         }
         // The start page shows on launch, and whenever there is work to recover.
-        app.home.open = (sample.is_none() && host.open.is_none()) || !app.autosave.found.is_empty();
+        app.page = if (sample.is_none() && host.open.is_none()) || !app.autosave.found.is_empty() { home::Page::Home } else { home::Page::Workspace };
         if let Some(path) = host.open
             && let Err(e) = app.run("file.open", json!({"path": path}))
         {
@@ -414,14 +414,14 @@ impl EmcraftApp {
         self.prepare();
         let mut out = Actions::default();
         ribbon::app_bar(self, ui, &mut out);
-        if let Some(section) = self.settings {
+        if let Some(section) = self.page.settings() {
             settings::show(self, section, ui, &mut out);
-        } else if self.home.open {
+        } else if self.page == home::Page::Home {
             self.lend(|a| &mut a.home.thumbs, |app, thumbs| home::show(app, thumbs, ui, &mut out));
         } else {
             self.workspace(ui, &ctx, &mut out);
         }
-        self.lend(|a| &mut a.files.prompt, |app, prompt| files::show(app, prompt, &ctx, &mut out));
+        self.lend(|a| &mut a.ask, |app, ask| files::show(app, ask, &ctx, &mut out));
         self.lend(|a| &mut a.template, |app, d| d.as_mut().map(|d| template_dialog::show(app, d, &ctx, &mut out)));
         shortcuts(self, &ctx, &mut out);
         self.apply_all(out);
@@ -483,7 +483,7 @@ impl EmcraftApp {
             self.lend(|a| &mut a.dialog, |app, dialog| dialog.as_mut().map(|d| dialog_ui::floating(app, d, ctx, out)));
         }
         ribbon::search_popup(&mut self.search, ctx, out);
-        self.lend(|a| &mut a.export, |app, export| ribbon::export_prompt(app, export, ctx, out));
+        self.lend(|a| &mut a.ask, |app, ask| ribbon::export_prompt(app, ask, ctx, out));
     }
 }
 
@@ -493,7 +493,7 @@ fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
         return;
     }
     // Escape leaves the settings page.
-    if app.settings.is_some() && app.files.prompt.is_none() && app.files.confirm.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if app.page.settings().is_some() && app.ask.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         out.push(Action::Settings(None));
     }
     if app.busy() {
@@ -510,7 +510,7 @@ fn shortcuts(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
         out.push(Action::Undo);
     } else if redo {
         out.push(Action::Redo);
-    } else if app.dialog.is_none() && app.files.prompt.is_none() && app.files.confirm.is_none() {
+    } else if app.dialog.is_none() && app.ask.is_none() {
         files::shortcuts(ctx, out);
     }
 }

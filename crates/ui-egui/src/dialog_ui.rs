@@ -216,7 +216,7 @@ fn mesh_label(name: &'static str) -> &'static str {
 /// neither while something over it is open (the search, a drop-down, a prompt, the question
 /// before changes are lost), which takes them itself. A key the dialog takes is used up.
 fn keys(app: &EmcraftApp, d: &Dialog, ui: &mut egui::Ui, busy: bool, asked: &mut Asked) {
-    let over = app.search.open || app.files.prompt.is_some() || app.files.confirm.is_some() || app.export.is_some() || ui.ctx().any_popup_open();
+    let over = app.search.open || app.ask.is_some() || ui.ctx().any_popup_open();
     if over {
         return;
     }

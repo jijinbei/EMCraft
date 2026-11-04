@@ -156,11 +156,11 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "language": app.prefs.language(),
         "font": {"japanese": app.fonts.in_use()},
         "languages": crate::lang::ids(),
-        "home": app.home.open,
+        "home": app.page.home(),
         "template": app.template.as_ref().map(|d| d.inspect()),
-        "settings": app.settings.map(|s| s.id()),
+        "settings": app.page.settings().map(|s| s.id()),
         "project": {"name": app.session.name(), "path": app.session.path(), "dirty": app.session.is_dirty(), "title": crate::files::title(app)},
-        "files": {"prompt": app.files.prompt.as_ref().map(|p| p.text.clone()), "confirm": app.files.confirm.is_some(), "then": app.files.confirm.as_ref().map(|t| format!("{t:?}"))},
+        "files": {"prompt": match &app.ask { Some(crate::files::Ask::Path(p)) => Some(p.text.clone()), _ => None }, "confirm": matches!(app.ask, Some(crate::files::Ask::Save(_))), "then": match &app.ask { Some(crate::files::Ask::Save(t)) => Some(format!("{t:?}")), _ => None }},
         "quitting": app.quit_requested,
         "autosave": app.autosave_inspect(),
         "recent": app.prefs.recent,
@@ -192,7 +192,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         "undo": app.session.undo().len(),
         "redo": app.session.redo().len(),
         "history": app.session.history().len(),
-        "export": app.export,
+        "export": match &app.ask { Some(crate::files::Ask::Export(p)) => Some(p.clone()), _ => None },
         "model": app.session.summary(),
     });
     // How results are looked at: the chart's style, the band to refine, the reference planes,
@@ -367,7 +367,7 @@ pub fn handle(app: &mut EmcraftApp, ctx: &egui::Context, req: &ControlRequest) -
             if app.quit_requested {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            Ok(ok(json!({"quitting": app.quit_requested, "asking": app.files.confirm.is_some()})))
+            Ok(ok(json!({"quitting": app.quit_requested, "asking": matches!(app.ask, Some(crate::files::Ask::Save(_)))})))
         }
         "app.autosave" => autosave(app, a),
         other => Err(format!("unknown method `{}`", clip(other, 64))),

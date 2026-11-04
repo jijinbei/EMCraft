@@ -27,9 +27,63 @@ const KIND_MIN: f32 = 150.0;
 /// A card's picture, in points.
 const THUMB: [f32; 2] = [240.0, 150.0];
 
+/// What fills the window under the app bar: the start page, the settings (over the start page
+/// or the workspace, where closing them goes back to) or the workspace.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Page {
+    #[default]
+    Workspace,
+    Home,
+    Settings {
+        section: crate::settings::Section,
+        over_home: bool,
+    },
+}
+
+impl Page {
+    /// Whether the start page shows, or the settings over it.
+    pub const fn home(self) -> bool {
+        matches!(self, Page::Home | Page::Settings { over_home: true, .. })
+    }
+
+    /// The settings' section, while they show.
+    pub const fn settings(self) -> Option<crate::settings::Section> {
+        match self {
+            Page::Settings { section, .. } => Some(section),
+            _ => None,
+        }
+    }
+
+    /// The settings at `section` (`None`: closed, back to what they were over).
+    ///
+    /// ```
+    /// use emcraft_ui_egui::home::Page;
+    /// use emcraft_ui_egui::settings::Section;
+    ///
+    /// let over = Page::Home.with_settings(Some(Section::default()));
+    /// assert!(over.home() && over.settings().is_some());
+    /// assert_eq!(over.with_settings(None), Page::Home);
+    /// assert_eq!(over.leave_home().with_settings(None), Page::Workspace);
+    /// ```
+    pub const fn with_settings(self, section: Option<crate::settings::Section>) -> Page {
+        match section {
+            Some(section) => Page::Settings { section, over_home: self.home() },
+            None if self.home() => Page::Home,
+            None => Page::Workspace,
+        }
+    }
+
+    /// The start page left for the workspace (settings over it stay, over the workspace).
+    pub const fn leave_home(self) -> Page {
+        match self {
+            Page::Settings { section, .. } => Page::Settings { section, over_home: false },
+            _ => Page::Workspace,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Home {
-    pub open: bool,
     /// What the job is for, chosen first: the templates shown are those made for it, and the
     /// project opened or begun is set to it (`project.analysis`).
     pub purpose: Option<crate::steps::Solver>,

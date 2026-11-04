@@ -46,7 +46,7 @@ impl EmcraftApp {
                 }
                 self.view = View::Pcb;
                 self.workflow.step = None;
-                self.home.open = false;
+                self.page = self.page.leave_home();
             }
             "pcb.inspect" => {
                 let report: Option<emcraft_engine::pcb::Inspection> = serde_json::from_value(reply.clone()).ok();
@@ -68,7 +68,7 @@ impl EmcraftApp {
                 self.replies.pcb = None;
                 self.view = View::Pcb;
                 self.workflow.step = None;
-                self.home.open = false;
+                self.page = self.page.leave_home();
             }
             "file.sample" | "engine.script" | "file.open" | "file.new" | "file.save" => self.after_file(id, reply),
             _ if id.starts_with("solve.") => self.after_solve(id, reply),
@@ -131,8 +131,7 @@ impl EmcraftApp {
             return;
         }
         if matches!(id, "file.new" | "file.sample") {
-            self.home.open = false;
-            self.settings = None;
+            self.page = crate::home::Page::Workspace;
         }
         // The Setup step's form: the opened project's confirmed settings, else empty.
         if matches!(id, "file.open" | "file.sample" | "file.new") {

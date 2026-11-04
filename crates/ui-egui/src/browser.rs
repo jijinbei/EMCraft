@@ -792,7 +792,7 @@ fn delete_key(app: &EmcraftApp, ui: &egui::Ui, tree: &[(&'static str, Vec<Row>)]
     if app.browser.selected.is_none() && app.view3d.selected.is_empty() {
         return;
     }
-    if app.busy() || app.dialog.is_some() || app.files.confirm.is_some() || app.files.prompt.is_some() || ui.ctx().text_edit_focused() {
+    if app.busy() || app.dialog.is_some() || app.ask.is_some() || ui.ctx().text_edit_focused() {
         return;
     }
     if !ui.input(|i| i.key_pressed(egui::Key::Delete)) {

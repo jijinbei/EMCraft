@@ -290,14 +290,11 @@ impl EmcraftApp {
             Action::Undo => return self.run("edit.undo", json!({})),
             Action::Redo => return self.run("edit.redo", json!({})),
             Action::CancelJob => return Ok(json!({"cancelled": self.cancel_job()})),
-            Action::SetHome(open) => {
-                self.home.open = open;
-                self.settings = None;
-            }
+            Action::SetHome(open) => self.page = if open { crate::home::Page::Home } else { crate::home::Page::Workspace },
             Action::Purpose(kind) => self.home.purpose = kind,
             Action::Template(name) => self.template = name.and_then(|n| crate::template_dialog::TemplateDialog::new(self, &n)),
             Action::OpenTemplate(name, values) => crate::template_dialog::open(self, name, values),
-            Action::Settings(section) => self.settings = section,
+            Action::Settings(section) => self.page = self.page.with_settings(section),
             Action::Pref(p) => self.set_pref(p),
             Action::File(f) => crate::files::apply(self, f),
             Action::EditItem(item) => self.open_item_dialog(&item)?,
@@ -312,7 +309,7 @@ impl EmcraftApp {
                 return Ok(if replies.len() == 1 { replies.swap_remove(0) } else { Value::Array(replies) });
             }
             Action::DismissRecovery(i) => self.dismiss_recovery(i),
-            Action::AskExport => self.export = Some("emcraft-history.json".into()),
+            Action::AskExport => self.ask = Some(crate::files::Ask::Export("emcraft-history.json".into())),
             Action::ExportHistory(path) => self.export_history(path),
             Action::ConfirmSetup => return crate::steps::confirm_setup(self),
             Action::ProposeSetup(v) => self.workflow.fields.load(&v),
@@ -340,8 +337,7 @@ impl EmcraftApp {
                 self.view3d.tools.set(tool);
                 if tool.is_some() {
                     self.view = View::Model;
-                    self.settings = None;
-                    self.home.open = false;
+                    self.page = crate::home::Page::Workspace;
                 }
                 if tool.is_some_and(crate::tools3d::Tool::ports) && self.workflow.step != Some(crate::steps::Step::Excitation) {
                     crate::steps::open_step(self, Some(crate::steps::Step::Excitation));
@@ -408,7 +404,7 @@ impl EmcraftApp {
             Err(e) => {
                 self.error_with("Cannot write {path}: {error}", args!(path = path.trim(), error = e));
 
-                self.export = Some(path);
+                self.ask = Some(crate::files::Ask::Export(path));
             }
         }
     }

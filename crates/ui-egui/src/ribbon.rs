@@ -98,7 +98,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let house = Rect::from_center_size(pos2(r.left() + 20.0, r.center().y), vec2(26.0, 26.0));
             let home = ui.hit(house, Fixed::BarStart.into(), Sense::click());
             let p = ui.painter();
-            let at_home = app.home.open && app.settings.is_none();
+            let at_home = app.page == crate::home::Page::Home;
             if home.hovered() || at_home {
                 p.rect_filled(house, t.radius_sm, if at_home { t.app_bar_active } else { t.app_bar_hover });
             }
@@ -136,7 +136,7 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             });
             // The project's name in the middle, a dot while it has unsaved changes.
             let mut title_right = x;
-            if !app.home.open {
+            if !app.page.home() {
                 let title = crate::files::title(app);
                 let shape = ui.painter().text(r.center(), Align2::CENTER_CENTER, &title, FontId::proportional(t.font_body), t.app_bar_text);
                 title_right = title_right.max(shape.right());
@@ -145,12 +145,12 @@ pub fn app_bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             // At the right: the settings.
             let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(26.0, 26.0));
             let resp = ui.hit(gear, Fixed::BarSettings.into(), Sense::click());
-            if resp.hovered() || app.settings.is_some() {
-                ui.painter().rect_filled(gear, t.radius_sm, if app.settings.is_some() { t.app_bar_active } else { t.app_bar_hover });
+            if resp.hovered() || app.page.settings().is_some() {
+                ui.painter().rect_filled(gear, t.radius_sm, if app.page.settings().is_some() { t.app_bar_active } else { t.app_bar_hover });
             }
             glyphs::paint(ui.painter(), gear.shrink(4.0), Glyph::Settings, t.app_bar_text, t.app_bar_text);
             if resp.hint("Settings").clicked() {
-                out.push(Action::Settings(if app.settings.is_some() { None } else { Some(crate::settings::Section::default()) }));
+                out.push(Action::Settings(if app.page.settings().is_some() { None } else { Some(crate::settings::Section::default()) }));
             }
             // The running job, left of the gear, cut short with an ellipsis where the title
             // leaves no room.
@@ -642,8 +642,8 @@ pub fn search_popup(search: &mut Search, ctx: &egui::Context, out: &mut Actions)
 /// The history's export: where to write it (the session's model-changing commands as a script
 /// that rebuilds the model, `cargo run -p emcraft-cli -- run FILE`). `export` is the path
 /// field's text while the prompt is open.
-pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::Context, out: &mut Actions) {
-    let Some(path) = export.as_mut() else { return };
+pub fn export_prompt(app: &EmcraftApp, ask: &mut Option<crate::files::Ask>, ctx: &egui::Context, out: &mut Actions) {
+    let Some(crate::files::Ask::Export(path)) = ask.as_mut() else { return };
     let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let at = app.viewport_rect.map_or(pos2(200.0, 200.0), |r| r.center_top() + vec2(-200.0, 40.0));
@@ -661,8 +661,8 @@ pub fn export_prompt(app: &EmcraftApp, export: &mut Option<String>, ctx: &egui::
         });
     });
     if cancel || ok {
-        let path = export.take();
-        if let (true, Some(path)) = (ok && !cancel, path) {
+        let path = ask.take();
+        if let (true, Some(crate::files::Ask::Export(path))) = (ok && !cancel, path) {
             out.push(Action::ExportHistory(path));
         }
     }

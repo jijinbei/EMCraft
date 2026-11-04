@@ -267,7 +267,7 @@ fn tour() -> Record {
     h.app.info_with("Open a sample or a project (File) or build a model from the ribbon.", &[]);
     // The start page, empty and with a project missing from the recent list, the settings
     // (Files with no recent project too), the prompts.
-    h.app.home.open = true;
+    h.app.page = crate::home::Page::Home;
     call(&mut h, "ui.set", json!({"settings": "files"}));
     h.frames(2);
     call(&mut h, "ui.set", json!({"settings": "none"}));
@@ -280,13 +280,13 @@ fn tour() -> Record {
     }
     call(&mut h, "ui.set", json!({"settings": "none"}));
     for purpose in [Purpose::Open, Purpose::SaveAs, Purpose::Import] {
-        h.app.files.prompt = Some(Prompt { purpose, text: String::new() });
+        h.app.ask = Some(crate::files::Ask::Path(Prompt { purpose, text: String::new() }));
         h.frames(2);
     }
-    h.app.files.prompt = None;
-    h.app.files.confirm = Some(Then::New);
+    h.app.ask = None;
+    h.app.ask = Some(crate::files::Ask::Save(Then::New));
     h.frames(2);
-    h.app.files.confirm = None;
+    h.app.ask = None;
     // Autosaved copies to recover, of every age, of a saved project and of one never saved.
     let now = std::time::SystemTime::now();
     h.app.autosave.found = [0, 300, 7200, 200_000]
@@ -301,7 +301,7 @@ fn tour() -> Record {
         .collect();
     h.frames(2);
     h.app.autosave.found.clear();
-    h.app.home.open = false;
+    h.app.page = crate::home::Page::Workspace;
     // Each model: its views, its steps (each solver in Setup), the menus, the search.
     for (i, &(script, then, steps)) in MODELS.iter().enumerate() {
         if script.len() > 2 {
@@ -385,9 +385,9 @@ fn tour() -> Record {
             h.frames(1);
             assert!(h.app.busy(), "the job ended before the tour saw it run");
             // Closing while it runs.
-            h.app.files.confirm = Some(Then::Quit);
+            h.app.ask = Some(crate::files::Ask::Save(Then::Quit));
             h.frames(2);
-            h.app.files.confirm = None;
+            h.app.ask = None;
             apply(&mut h, [Action::File(FileAction::Request(Then::New))]);
             call(&mut h, "ui.cancel", json!({}));
             let _ = release.send(());
@@ -647,7 +647,7 @@ fn tour() -> Record {
     let _ = h.call("engine.execute", json!({"command": "model.material.create", "params": {"name": "tour", "eps_r": 3}}));
     assert!(h.app.autosave_now().is_err());
     h.app.autosave.dir = None;
-    h.app.export = Some("history.json".into());
+    h.app.ask = Some(crate::files::Ask::Export("history.json".into()));
     h.frames(2);
     let written = std::env::temp_dir().join(format!("emcraft-tour-{}.json", std::process::id()));
     apply(&mut h, [Action::ExportHistory(written.display().to_string()), Action::ExportHistory("/no/such/dir/history.json".into())]);

@@ -75,15 +75,23 @@ pub struct Prompt {
     pub text: String,
 }
 
+/// The one question over the window, which takes the keyboard while it is asked.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Ask {
+    /// A file's path, typed (there is no file dialog).
+    Path(Prompt),
+    /// "Save the changes first?" before going on with `Then`.
+    Save(Then),
+    /// Where the history goes (File › Export history), as typed.
+    Export(String),
+}
+
 pub struct Files {
     pub picker: Option<Arc<dyn Picker>>,
     tx: Sender<(Purpose, Option<String>)>,
     rx: Receiver<(Purpose, Option<String>)>,
     /// A file dialog is open.
     pub picking: bool,
-    pub prompt: Option<Prompt>,
-    /// Waiting on "save the changes?".
-    pub confirm: Option<Then>,
     /// After the save under way, carry on with this.
     after_save: Option<Then>,
 }
@@ -91,7 +99,7 @@ pub struct Files {
 impl Default for Files {
     fn default() -> Files {
         let (tx, rx) = channel();
-        Files { picker: None, tx, rx, picking: false, prompt: None, confirm: None, after_save: None }
+        Files { picker: None, tx, rx, picking: false, after_save: None }
     }
 }
 
@@ -136,7 +144,7 @@ pub(crate) fn apply(app: &mut EmcraftApp, a: FileAction) {
 fn request(app: &mut EmcraftApp, then: Then) {
     // Closing asks about a running job first, then about the changes.
     if then == Then::Quit && (app.busy() || app.session.is_dirty()) {
-        app.files.confirm = Some(then);
+        app.ask = Some(Ask::Save(then));
         return;
     }
     if app.busy() {
@@ -144,7 +152,7 @@ fn request(app: &mut EmcraftApp, then: Then) {
         return;
     }
     if app.session.is_dirty() {
-        app.files.confirm = Some(then);
+        app.ask = Some(Ask::Save(then));
     } else {
         go(app, then);
     }
@@ -187,7 +195,7 @@ fn go(app: &mut EmcraftApp, then: Then) {
         }
         Then::Import => {
             new_project(app);
-            app.home.open = false;
+            app.page = app.page.leave_home();
             if app.session.model().analysis() == crate::steps::Solver::Pcb {
                 apply(app, FileAction::PickPart);
             } else if let Err(e) = crate::steps::fix(app, "geometry.import") {
@@ -217,7 +225,7 @@ fn new_project(app: &mut EmcraftApp) {
         let _ = app.run("units.set", units);
     }
     // Begun from the start page for a purpose: the project is for it.
-    let purpose = app.home.purpose.filter(|_| app.home.open);
+    let purpose = app.home.purpose.filter(|_| app.page.home());
     let _ = app.run("file.new", json!({}));
     if let Some(kind) = purpose {
         let _ = app.run("project.analysis", json!({"kind": kind.id()}));
@@ -247,7 +255,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
             Purpose::SaveAs => app.session.path().filter(|_| has_file(app)).map_or(suggested, str::to_owned),
             Purpose::Import => String::new(),
         };
-        app.files.prompt = Some(Prompt { purpose, text });
+        app.ask = Some(Ask::Path(Prompt { purpose, text }));
         return;
     };
     let (tx, ctx) = (app.files.tx.clone(), app.ctx.clone());
@@ -267,8 +275,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
 
 /// `path` for import: into the open import dialog, else the dialog opened on it in step 1.
 pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
-    app.home.open = false;
-    app.settings = None;
+    app.page = crate::home::Page::Workspace;
     if std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("kicad_pcb")) {
         app.workflow.step = None;
         app.view = crate::View::Pcb;
@@ -350,11 +357,11 @@ pub(crate) fn poll(app: &mut EmcraftApp) {
     }
 }
 
-/// The windows of this module: the path prompt (its text in `prompt`) and the question before
-/// changes are lost.
-pub fn show(app: &EmcraftApp, prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actions) {
-    path_prompt(prompt, ctx, out);
-    confirm(app, ctx, out);
+/// The windows of this module: the path prompt and the question before changes are lost, as
+/// `ask` asks them.
+pub fn show(app: &EmcraftApp, ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
+    path_prompt(ask, ctx, out);
+    confirm(app, ask.as_ref(), ctx, out);
     drop_hint(ctx);
 }
 
@@ -381,8 +388,8 @@ fn drop_hint(ctx: &egui::Context) {
 }
 
 /// The path field, when there is no file dialog.
-fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actions) {
-    let Some(p) = prompt.as_mut() else { return };
+fn path_prompt(ask: &mut Option<Ask>, ctx: &egui::Context, out: &mut Actions) {
+    let Some(Ask::Path(p)) = ask.as_mut() else { return };
     let t = &Tokens::get();
     let (mut ok, mut cancel) = (false, false);
     let (title, what) = match p.purpose {
@@ -415,7 +422,7 @@ fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actio
     if !(ok || cancel) {
         return;
     }
-    if let Some(p) = prompt.take() {
+    if let Some(Ask::Path(p)) = ask.take() {
         let path = (!cancel).then(|| p.text.trim().to_owned());
         out.push(Action::File(FileAction::Chosen(p.purpose, path)));
     }
@@ -423,8 +430,8 @@ fn path_prompt(prompt: &mut Option<Prompt>, ctx: &egui::Context, out: &mut Actio
 
 /// "Save the changes to … first?": Save, Don't save, Cancel. Closing while a job runs asks
 /// first whether to stop it.
-fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
-    let Some(then) = &app.files.confirm else { return };
+fn confirm(app: &EmcraftApp, ask: Option<&Ask>, ctx: &egui::Context, out: &mut Actions) {
+    let Some(Ask::Save(then)) = ask else { return };
     let t = &Tokens::get();
     let job = app.job.as_ref().filter(|_| *then == Then::Quit);
     let at = ctx.content_rect().center_top() + vec2(-200.0, 120.0);
@@ -460,7 +467,13 @@ fn confirm(app: &EmcraftApp, ctx: &egui::Context, out: &mut Actions) {
 
 /// Carries on after "save the changes?".
 fn answered(app: &mut EmcraftApp, answer: Answer) {
-    let Some(then) = app.files.confirm.take() else { return };
+    let then = match app.ask.take() {
+        Some(Ask::Save(then)) => then,
+        other => {
+            app.ask = other;
+            return;
+        }
+    };
     match answer {
         Answer::Cancel => {}
         Answer::StopJob => {
@@ -491,8 +504,7 @@ pub fn opened(app: &mut EmcraftApp, path: &str) {
     if !crate::autosave::inside(app.autosave.dir.as_deref(), path) {
         app.prefs.add_recent(path);
     }
-    app.home.open = false;
-    app.settings = None;
+    app.page = crate::home::Page::Workspace;
 }
 
 /// The window's title: the project's name, with a dot while it has unsaved changes.
