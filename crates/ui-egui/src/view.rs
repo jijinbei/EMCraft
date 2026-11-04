@@ -63,7 +63,8 @@ impl View {
         match self {
             View::Home => true,
             View::Model => app.session.model().analysis() != crate::steps::Solver::Pcb,
-            View::Pcb => app.session.model().pcb.is_some() || app.session.model().analysis() == crate::steps::Solver::Pcb,
+            // The PCB diagnosis' own stages; a board solved by finite elements is the model's.
+            View::Pcb => app.session.model().analysis() == crate::steps::Solver::Pcb,
             // A project just opened: its kept sweeps, drawn from the history.
             View::SParameters => r.sweep.is_some() || r.time_domain.is_some() || app.session.archive().iter().any(|a| a.kept.sweep.is_some()),
             View::Tdr => r.sweep.is_some() || r.time_domain.is_some(),

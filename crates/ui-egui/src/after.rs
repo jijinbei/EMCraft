@@ -57,7 +57,7 @@ impl EmcraftApp {
                 self.view = View::Pcb;
                 self.workflow.step = None;
             }
-            "project.variable" if self.session.model().pcb.is_some() => {
+            "project.variable" if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb => {
                 self.replies.pcb = None;
                 if let Some(band) = self.session.model().band {
                     self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
@@ -98,7 +98,13 @@ impl EmcraftApp {
                 }
             }
             // A kind chosen at step 0: Setup starts on its solver.
-            "project.analysis" => self.workflow.fields.solver = None,
+            "project.analysis" => {
+                self.workflow.fields.solver = None;
+                // Away from the PCB diagnosis its stages go; the board is the model's.
+                if self.view == View::Pcb && !View::Pcb.available(self) {
+                    self.view = View::Model;
+                }
+            }
             _ if id.starts_with("geometry.") => {
                 self.view = View::Model;
                 self.replies.port_modes = None;
@@ -148,7 +154,7 @@ impl EmcraftApp {
         if matches!(id, "file.new" | "file.open") {
             self.views.pcb.illustration = Default::default();
         }
-        if self.session.model().pcb.is_some() {
+        if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
             if let Some(band) = self.session.model().band {
                 self.views.pcb.stop = self.session.display().frequency.from_si(band.stop.get()).to_string();
             }
