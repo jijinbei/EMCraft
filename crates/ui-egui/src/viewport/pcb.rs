@@ -156,34 +156,7 @@ fn stage_panel(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Ac
             Stage::Results => "5. Red markers locate missing reference copper. Review the findings before reading the ideal line estimates.",
         },
     );
-    ui.horizontal_wrapped(|ui| {
-        if let Some(previous) = match stage {
-            Stage::Board => None,
-            Stage::Net => Some(Stage::Board),
-            Stage::Settings => Some(Stage::Net),
-            Stage::Inspect => Some(Stage::Settings),
-            Stage::Results => Some(Stage::Inspect),
-        } {
-            let r = ui.button(tr("Back"));
-            scenario::publish_target(Handle::Choice("pcb_control", "back"), r.rect);
-            if r.clicked() {
-                go(out, previous);
-            }
-        }
-        let next = match stage {
-            Stage::Board if board.is_some() => Some(Stage::Net),
-            Stage::Net if !selected.is_empty() => Some(Stage::Settings),
-            Stage::Settings => Some(Stage::Inspect),
-            _ => None,
-        };
-        if let Some(next) = next {
-            let r = ui.button(trf("Next: {step}", args!(step = shown(next))));
-            scenario::publish_target(Handle::Choice("pcb_control", "next"), r.rect);
-            if r.clicked() {
-                go(out, next);
-            }
-        }
-    });
+    // The stages are chosen from the steps above the window; no Back or Next here.
     let Some(board) = board else {
         board_sources(ui, out);
         ui_kit::caption(ui, "Import a PCB or open an example, then click a routed trace.");

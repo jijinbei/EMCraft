@@ -76,16 +76,16 @@
     "timeout": 20
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:net"
   },
   {
     "click": "choice:pcb_segment:signal:0"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:settings"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:inspect"
   },
   {
     "click": "choice:pcb_control:inspect"
@@ -130,16 +130,16 @@
     "timeout": 20
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:net"
   },
   {
     "click": "choice:pcb_segment:signal:0"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:settings"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:inspect"
   },
   {
     "click": "choice:pcb_control:inspect"
@@ -207,16 +207,16 @@
     "timeout": 20
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:net"
   },
   {
     "click": "choice:pcb_segment:signal:0"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:settings"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:inspect"
   },
   {
     "click": "choice:pcb_control:inspect"

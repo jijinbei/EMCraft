@@ -78,7 +78,7 @@
     "shot": "pcb-step-1-board"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:net"
   },
   {
     "expect": {
@@ -105,7 +105,7 @@
     "shot": "pcb-step-2-route"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:settings"
   },
   {
     "expect": {
@@ -133,7 +133,7 @@
     "shot": "pcb-step-3-conditions"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:inspect"
   },
   {
     "expect": {
@@ -179,7 +179,7 @@
     "text": "bad"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:inspect"
   },
   {
     "click": "choice:pcb_control:inspect"
@@ -196,7 +196,7 @@
     }
   },
   {
-    "click": "choice:pcb_control:back"
+    "click": "choice:pcb_step:settings"
   },
   {
     "click": "choice:pcb_control:Reference impedance (Ω)"
@@ -209,7 +209,7 @@
     "text": "75"
   },
   {
-    "click": "choice:pcb_control:next"
+    "click": "choice:pcb_step:inspect"
   },
   {
     "click": "choice:pcb_control:inspect"

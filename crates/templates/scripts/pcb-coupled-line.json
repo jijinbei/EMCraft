@@ -11,6 +11,7 @@
  {"command": "pcb.port", "params": {"name": "3", "segment": "p3", "end": "end"}},
  {"command": "pcb.port", "params": {"name": "4", "segment": "p4", "end": "start"}},
  {"command": "mesh.generate", "params": {"size": 2, "strip_edge": 0.25}},
+ {"command": "project.frequency", "params": {"start": 1, "stop": 10}},
  {"command": "project.analysis", "params": {"kind": "frequency"}},
  {"command": "solve.frequency", "params": {"start": 1, "stop": 10, "points": 101, "order": 2}}
 ]
