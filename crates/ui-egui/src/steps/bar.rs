@@ -60,7 +60,7 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                         short: s.step.index().to_string(),
                         said: status.to_owned(),
                         look,
-                        active: app.workflow.step == Some(s.step),
+                        active: app.place.step() == Some(s.step),
                         enabled: true,
                         tip,
                         handle: Handle::Step(s.step),
@@ -70,7 +70,7 @@ pub fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
             let rest = Rect::from_min_max(pos2(kind.right() + 10.0, row.top()), row.max);
             if let Some(i) = pills(ui, rest, &list) {
                 let step = states[i].step;
-                let again = app.workflow.step == Some(step);
+                let again = app.place.step() == Some(step);
                 out.push(Action::OpenStep(if again { None } else { Some(step) }));
             }
         });

@@ -263,10 +263,10 @@ impl EmcraftApp {
                     d.docked = on;
                 }
             }
-            Action::SetView(v) => self.view = v,
+            Action::SetView(v) => self.place = self.place.show(v),
             // Home's tab is step 0.
             Action::ShowView(v) => {
-                self.view = v;
+                self.place = self.place.show(v);
                 if v == View::PortModes && self.replies.port_modes.is_none() && self.session.model().mesh.is_some() && !self.busy() {
                     self.open_dialog("solve.port_modes")?;
                 }
@@ -336,10 +336,10 @@ impl EmcraftApp {
             Action::Tool(tool) => {
                 self.view3d.tools.set(tool);
                 if tool.is_some() {
-                    self.view = View::Model;
+                    self.place = self.place.show(View::Model);
                     self.page = crate::home::Page::Workspace;
                 }
-                if tool.is_some_and(crate::tools3d::Tool::ports) && self.workflow.step != Some(crate::steps::Step::Excitation) {
+                if tool.is_some_and(crate::tools3d::Tool::ports) && self.place.step() != Some(crate::steps::Step::Excitation) {
                     crate::steps::open_step(self, Some(crate::steps::Step::Excitation));
                 }
             }

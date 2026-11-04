@@ -20,7 +20,7 @@ use crate::lang::{Raw, args, shown, tr, trf};
 /// The active step's panel at the right (with the open dialog docked in it): `fields` are its
 /// text fields, `dialog` the open dialog.
 pub fn panel(app: &EmcraftApp, fields: &mut Fields, dialog: Option<&mut dialogs::Dialog>, ui: &mut egui::Ui, out: &mut Actions) {
-    let Some(step) = app.workflow.step else { return };
+    let Some(step) = app.place.step() else { return };
     let t = &Tokens::get();
     let states = statuses_now(app);
     let Some(state) = states.get(step.index()).cloned() else { return };

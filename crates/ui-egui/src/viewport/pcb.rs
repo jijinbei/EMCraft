@@ -82,7 +82,7 @@ pub(crate) fn bar(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                         short: (i + 1).to_string(),
                         said: shown(status).to_owned(),
                         look: crate::steps::Look::Plain(status),
-                        active: app.view == View::Pcb && stage == current,
+                        active: app.place.view() == View::Pcb && stage == current,
                         enabled: enabled && !app.busy(),
                         tip: shown(stage).to_owned(),
                         handle: Handle::Choice("pcb_step", stage.id()),

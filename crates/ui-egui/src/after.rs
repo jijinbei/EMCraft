@@ -44,8 +44,7 @@ impl EmcraftApp {
                 if params.get("net").is_some() || params.get("victim").is_some() {
                     self.replies.pcb = None;
                 }
-                self.view = View::Pcb;
-                self.workflow.step = None;
+                self.place = self.place.show(View::Pcb);
                 self.page = self.page.leave_home();
             }
             "pcb.inspect" => {
@@ -56,54 +55,50 @@ impl EmcraftApp {
                     self.views.pcb.stop = r.stop.to_string();
                 }
                 self.replies.pcb = report;
-                self.view = View::Pcb;
-                self.workflow.step = None;
+                self.place = self.place.show(View::Pcb);
             }
             "project.variable" if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb => {
                 self.replies.pcb = None;
-                self.view = View::Pcb;
-                self.workflow.step = None;
+                self.place = self.place.show(View::Pcb);
             }
             "pcb.load" | "pcb.import" | "pcb.sample" => {
                 self.replies.pcb = None;
-                self.view = View::Pcb;
-                self.workflow.step = None;
+                self.place = self.place.show(View::Pcb);
                 self.page = self.page.leave_home();
             }
             "file.sample" | "engine.script" | "file.open" | "file.new" | "file.save" => self.after_file(id, reply),
             _ if id.starts_with("solve.") => self.after_solve(id, reply),
             "results.tdr" => {
                 self.views.tdr.params = crate::state::TdrParams::of(params);
-                self.view = View::Tdr;
+                self.place = self.place.show(View::Tdr);
             }
             "results.compare" => {
                 self.replies.compare = serde_json::from_value(reply.clone()).ok();
-                self.view = View::Compare;
+                self.place = self.place.show(View::Compare);
             }
             "study.sweep" | "study.optimize" => {
                 self.views.study.chart.clear();
                 // A new study: its grid charted along its first variable, the others at their first values.
                 self.views.study.slice = emcraft_engine::study::Slice::default();
-                self.view = View::Study;
+                self.place = self.place.show(View::Study);
             }
             "edit.undo" | "edit.redo" => {
                 self.replies.port_modes = None;
                 self.replies.pcb = None;
                 if self.session.model().pcb.is_some() {
-                    self.view = View::Pcb;
-                    self.workflow.step = None;
-                } else if self.view == View::Pcb {
-                    self.view = View::Model;
+                    self.place = self.place.show(View::Pcb);
+                } else if self.place.view() == View::Pcb {
+                    self.place = self.place.show(View::Model);
                 }
             }
             "project.analysis" => {
                 // Away from the PCB diagnosis its stages go; the board is the model's.
-                if self.view == View::Pcb && !View::Pcb.available(self) {
-                    self.view = View::Model;
+                if self.place.view() == View::Pcb && !View::Pcb.available(self) {
+                    self.place = self.place.show(View::Model);
                 }
             }
             _ if id.starts_with("geometry.") => {
-                self.view = View::Model;
+                self.place = self.place.show(View::Model);
                 self.replies.port_modes = None;
                 self.replies.compare = None;
             }
@@ -111,7 +106,7 @@ impl EmcraftApp {
         }
         self.info(status::text(id, params, reply, &self.session));
         // A run started from the Run step goes on to Results.
-        if steps::is_solve(id) && self.workflow.step == Some(steps::Step::Run) {
+        if steps::is_solve(id) && self.place.step() == Some(steps::Step::Run) {
             steps::open_step(self, Some(steps::Step::Results));
         }
     }
@@ -146,11 +141,10 @@ impl EmcraftApp {
         // The chosen kind's own result first, else the first the session holds.
         let results = self.session.results();
         let chosen = emcraft_engine::workflow::spec(self.session.model().analysis()).results.iter().copied().find(|k| results.has(*k));
-        self.view = chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of);
+        self.place = self.place.show(chosen.or_else(|| results.kinds().find(|k| k.of_the_model())).map_or(View::Model, View::of));
         self.replies.pcb = None;
         if self.session.model().pcb.is_some() && self.session.model().analysis() == crate::steps::Solver::Pcb {
-            self.view = View::Pcb;
-            self.workflow.step = None;
+            self.place = self.place.show(View::Pcb);
         }
         self.pick_frequency();
         self.view3d.fit_next = true;
@@ -163,7 +157,7 @@ impl EmcraftApp {
         let results = self.session.results();
         match id {
             "solve.frequency" => {
-                self.view = View::SParameters;
+                self.place = self.place.show(View::SParameters);
                 self.pick_frequency();
                 // A board's route: the field on the plane halfway up the substrate (the model's
                 // y is the board's height), where the line's E stands between trace and
@@ -177,13 +171,13 @@ impl EmcraftApp {
                     self.field.at = Some(self.session.display().length.from_si(r.below + 0.5 * thickness));
                 }
             }
-            "solve.dispersion" => self.view = View::Dispersion,
+            "solve.dispersion" => self.place = self.place.show(View::Dispersion),
             "solve.eigenmodes" => {
-                self.view = View::Eigenmodes;
+                self.place = self.place.show(View::Eigenmodes);
                 self.field.view.mode = Some(0);
             }
             "solve.radiation" => {
-                self.view = View::FarField;
+                self.place = self.place.show(View::FarField);
                 self.field.view.mode = None;
                 if self.field.view.component == Component::Ey {
                     self.field.view.component = Component::E;
@@ -193,16 +187,16 @@ impl EmcraftApp {
                 }
             }
             "solve.time_domain" => {
-                self.view = match &results.td_radiation {
+                self.place = self.place.show(match &results.td_radiation {
                     Some(_) => View::FarField,
                     None => View::SParameters,
-                };
+                });
             }
             "solve.port_modes" => {
                 self.replies.port_modes = Some(reply.clone());
                 // The Excitation step tabulates them in its panel, beside the 3D view.
-                if self.workflow.step != Some(steps::Step::Excitation) {
-                    self.view = View::PortModes;
+                if self.place.step() != Some(steps::Step::Excitation) {
+                    self.place = self.place.show(View::PortModes);
                 }
             }
             _ => {}

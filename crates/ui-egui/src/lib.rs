@@ -111,7 +111,8 @@ pub struct EmcraftApp {
     pub dialog: Option<dialogs::Dialog>,
     /// Dialogs open docked at the right instead of floating.
     pub dock_dialogs: bool,
-    pub view: View,
+    /// Where the window is: the PCB diagnosis' window, or a view with the step panel.
+    pub place: view::Place,
     pub field: FieldState,
     /// What the result views keep: their charts and settings.
     pub views: state::ViewState,
@@ -221,7 +222,7 @@ impl EmcraftApp {
             tab: ribbon::RibbonTab::Model,
             dialog: None,
             dock_dialogs: prefs::Prefs::default().dock_dialogs,
-            view: View::Model,
+            place: view::Place::default(),
             field: FieldState::default(),
             views: state::ViewState::default(),
             replies: state::Replies::default(),
@@ -354,7 +355,7 @@ impl EmcraftApp {
         self.autosave_tick(ctx.input(|i| i.time));
         // The phase plays while a field is on screen: the field view, or the 3D view in Results.
         let time = ctx.input(|i| i.time);
-        let showing = self.view == View::Field || (self.view == View::Model && self.workflow.step == Some(steps::Step::Results));
+        let showing = self.place.view() == View::Field || (self.place.view() == View::Model && self.place.step() == Some(steps::Step::Results));
         if showing && self.field.player.playing {
             let dt = self.last_frame.map_or(0.0, |t| time - t).clamp(0.0, 0.1);
             self.field.view.phase = self.field.player.advance(self.field.view.phase, dt);
@@ -438,7 +439,7 @@ impl EmcraftApp {
         steps::prepare(self);
         viewport::pcb_sync(self);
         import_ui::prepare(self);
-        if self.view == View::Eigenmodes {
+        if self.place.view() == View::Eigenmodes {
             viewport::prepare_eigenmodes(self);
         }
     }
@@ -456,7 +457,7 @@ impl EmcraftApp {
     /// step's panel or the docked dialog, the viewport, and what floats over them.
     fn workspace(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, out: &mut Actions) {
         self.lend(|a| &mut a.search, |app, search| ribbon::ribbon(app, search, ui, out));
-        if self.view == View::Pcb || self.session.model().analysis() == steps::Solver::Pcb {
+        if self.place.view() == View::Pcb || self.session.model().analysis() == steps::Solver::Pcb {
             viewport::pcb_bar(self, ui, out);
         } else {
             steps::bar(self, ui, out);
@@ -464,7 +465,7 @@ impl EmcraftApp {
         messages::area(self, ui, out);
         browser::show(self, ui, out);
         // With a step open, its panel holds the dialog.
-        let in_step = self.workflow.step.is_some();
+        let in_step = self.place.step().is_some();
         if in_step {
             let mut fields = std::mem::take(&mut self.workflow.fields);
             self.lend(|a| &mut a.dialog, |app, dialog| steps::panel(app, &mut fields, dialog.as_mut(), ui, out));

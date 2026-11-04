@@ -27,7 +27,7 @@ impl EmcraftApp {
             let asked = if matches!(id, "solve.rerun" | "solve.run") { json!({}) } else { json!({"command": id, "params": params}) };
             let estimate = self.session.execute("project.estimate", &asked).ok().and_then(|e| e.get("seconds").and_then(Value::as_f64));
             let mut job = worker::Job::start(&self.session, id, params, self.ctx.clone());
-            job.view = Some(self.view);
+            job.view = Some(self.place.view());
             job.estimate = estimate;
             self.job = Some(job);
             self.info(format!("{}…", label(id)));
@@ -97,12 +97,12 @@ impl EmcraftApp {
             None => Err(EngineError::failed("the worker stopped without an answer")),
         };
         // A view chosen while the job ran stays: the job's end does not take it away.
-        let chosen = job.view.filter(|v| *v != self.view).map(|_| self.view);
+        let chosen = job.view.filter(|v| *v != self.place.view()).map(|_| self.place.view());
         match &reply {
             Ok(v) => {
                 self.after(&job.command, &job.params, v);
                 if let Some(v) = chosen {
-                    self.view = v;
+                    self.place = self.place.show(v);
                 }
                 if job.land && chosen.is_none() {
                     files::land(self, true);

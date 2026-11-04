@@ -610,13 +610,13 @@ fn tour() -> Record {
     // The steps' fields refused, and Run refused.
     call(&mut h, "engine.execute", json!({"command": "file.new"}));
     call(&mut h, "engine.script", json!({"commands": json(MODELS[1].0)}));
-    h.app.workflow.step = Some(Step::Setup);
+    h.app.place = h.app.place.with_step(Some(Step::Setup));
     h.frames(1);
     call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"radiation"}}));
     let f = &mut h.app.workflow.fields;
     (f.start, f.stop, f.points, f.order, f.frequency) = ("x".into(), "0".into(), "many".into(), "7".into(), String::new());
     apply(&mut h, [Action::ConfirmSetup, Action::StartRun]);
-    h.app.workflow.step = Some(Step::Run);
+    h.app.place = h.app.place.with_step(Some(Step::Run));
     h.frames(2);
     call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"frequency"}}));
     let f = &mut h.app.workflow.fields;
@@ -624,7 +624,7 @@ fn tour() -> Record {
     apply(&mut h, [Action::ConfirmSetup]);
     h.app.workflow.fields.touchstone = " ".into();
     apply(&mut h, [Action::ExportTouchstone]);
-    h.app.workflow.step = Some(Step::Setup);
+    h.app.place = h.app.place.with_step(Some(Step::Setup));
     h.frames(2);
     // The status line of every command, from an empty reply and the replies that change it.
     let session = h.app.session.clone();

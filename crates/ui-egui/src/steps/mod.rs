@@ -185,7 +185,6 @@ impl DeviceSelection {
 /// The workflow's state in the app.
 #[derive(Default)]
 pub struct Workflow {
-    pub step: Option<Step>,
     status: Option<(u64, [StepState; 9])>,
     /// The estimate of the step's run (the Mesh step: one solve at an order; Setup and Run: the
     /// run as set up).
@@ -253,7 +252,7 @@ pub fn prepare(app: &mut EmcraftApp) {
     }
     // What the step's estimate is of: one solve at the Setup's order (Mesh), the run as the
     // form sets it up (Setup, Run).
-    let asked = match app.workflow.step {
+    let asked = match app.place.step() {
         Some(Step::Mesh) => {
             let order = app.workflow.fields.order.trim().parse::<u64>().ok().filter(|o| (1..=2).contains(o)).unwrap_or(2);
             Some(json!({"command": "solve.frequency", "params": {"points": 1}, "order": order}))
@@ -266,7 +265,7 @@ pub fn prepare(app: &mut EmcraftApp) {
     if let Some(asked) = asked {
         Estimate::refresh(&mut app.workflow.estimate, &mut app.session, key, asked);
     }
-    if app.workflow.step == Some(Step::Setup) && app.workflow.devices.is_none() {
+    if app.place.step() == Some(Step::Setup) && app.workflow.devices.is_none() {
         let v = app.session.execute("solve.devices", &json!({})).unwrap_or_else(|e| json!({"error": e.to_string()}));
         match app.workflow.device_selection {
             DeviceSelection::Pending => {
@@ -397,7 +396,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
         .collect();
     let f = &app.workflow.fields;
     json!({
-        "step": app.workflow.step.map(Step::id),
+        "step": app.place.step().map(Step::id),
         "steps": steps,
         "running": running(app),
         "stale": states.get(Step::Results.index()).is_some_and(|s| s.status == Status::Stale),
@@ -471,18 +470,16 @@ pub fn estimate(app: &EmcraftApp) -> Result<&Value, &str> {
 /// Opens a step: its panel and the view it calls for.
 pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
     if app.session.model().analysis() == Solver::Pcb && step.is_some() {
-        app.workflow.step = None;
-        app.view = View::Pcb;
+        app.place = app.place.show(View::Pcb);
         return;
     }
     // Step 0, the kind of analysis, is the step bar's switch: no panel, the model in view.
     if step == Some(Step::Intent) {
-        app.workflow.step = None;
-        app.view = View::Model;
+        app.place = View::Model.place();
         return;
     }
 
-    app.workflow.step = step;
+    app.place = app.place.with_step(step);
     let Some(step) = step else { return };
     // The ribbon shows the step's tab.
     app.tab = match step {
@@ -494,7 +491,7 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
         Step::Setup | Step::Run => RibbonTab::Simulate,
         Step::Results => RibbonTab::Results,
     };
-    app.view = match step {
+    app.place = app.place.show(match step {
         Step::Intent => View::Model,
         Step::Results => {
             if app.session.results().sweep.is_some() || app.session.results().time_domain.is_some() {
@@ -508,7 +505,7 @@ pub fn open_step(app: &mut EmcraftApp, step: Option<Step>) {
             }
         }
         _ => View::Model,
-    };
+    });
     // A dialog of another step closes.
     if app.dialog.as_ref().is_some_and(|d| Step::of_command(d.command.id) != Some(step)) {
         app.dialog = None;

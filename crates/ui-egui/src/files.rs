@@ -277,8 +277,7 @@ fn pick(app: &mut EmcraftApp, purpose: Purpose) {
 pub(crate) fn import_part(app: &mut EmcraftApp, path: &str) {
     app.page = crate::home::Page::Workspace;
     if std::path::Path::new(path).extension().and_then(|s| s.to_str()).is_some_and(|s| s.eq_ignore_ascii_case("kicad_pcb")) {
-        app.workflow.step = None;
-        app.view = crate::View::Pcb;
+        app.place = app.place.show(crate::View::Pcb);
         if let Err(e) = app.open_dialog_with("pcb.import", json!({"path":path})) {
             app.error(e);
         }

@@ -113,8 +113,7 @@ pub fn preflight(s: &emcraft_engine::Session, states: &[StepState]) -> Preflight
 /// Run: refuses on blocking problems; warnings are accepted by pressing Run.
 pub fn start_run(app: &mut EmcraftApp) -> Result<Value, UiError> {
     if solver(app) == Solver::Pcb {
-        app.workflow.step = None;
-        app.view = View::Pcb;
+        app.place = app.place.show(View::Pcb);
         return app.run("pcb.inspect", json!({}));
     }
 

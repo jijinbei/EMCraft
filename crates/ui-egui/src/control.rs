@@ -148,7 +148,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
     });
     let mut v = json!({
         "tab": app.tab.id(),
-        "view": app.view.id(),
+        "view": app.place.view().id(),
         "theme": app.theme,
         "dark": app.themes.get(&app.theme).is_dark(),
         "themes": app.themes.names(),
@@ -243,7 +243,7 @@ pub fn inspect(app: &EmcraftApp) -> Value {
 /// and the curves of the chart drawn; null away from a chart view.
 fn chart_style(app: &EmcraftApp) -> Value {
     use emcraft_engine::views::ChartId;
-    let id = match app.view {
+    let id = match app.place.view() {
         View::SParameters => ChartId::SParameters,
         View::Tdr => ChartId::Tdr,
         View::FarField => ChartId::Pattern,

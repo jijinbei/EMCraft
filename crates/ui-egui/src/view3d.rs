@@ -551,8 +551,8 @@ pub fn show(app: &EmcraftApp, v: &mut View3d, field: &mut FieldState, ui: &mut e
         Navigator::Cube => crate::view_cube::show(v, ui, rect, out),
         Navigator::Axes => navigator(&v.camera, ui, rect, out),
     }
-    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, app.view != crate::View::Field, out);
-    if v.section.is_some() && app.view != crate::View::Field {
+    nav_bar(v, field.player.playing, ui, rect, facing, bounds, overlay, app.place.view() != crate::View::Field, out);
+    if v.section.is_some() && app.place.view() != crate::View::Field {
         section_bar(v, ui, rect, bounds, app.session.display().length);
     }
 }

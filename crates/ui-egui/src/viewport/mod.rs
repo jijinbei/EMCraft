@@ -100,19 +100,19 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(10.0)));
             view_tabs(app, &mut inner, out);
             inner.add_space(4.0);
-            if let Some(text) = app.view.missing(app) {
+            if let Some(text) = app.place.view().missing(app) {
                 empty(&mut inner, text);
                 return;
             }
             // Results of a model changed after their run say so over the view, which is dimmed.
-            let stale = app.view.is_result() && app.view.stale(app);
+            let stale = app.place.view().is_result() && app.place.view().stale(app);
             if stale {
                 stale_band(app, &mut inner, out);
                 inner.add_space(4.0);
             }
             inner.ctx().data_mut(|d| d.insert_temp(egui::Id::new(STALE), stale));
             // The drawings fill the card; the results scroll when the window is too small for them.
-            let body = |ui: &mut egui::Ui, st: &mut Parts, out: &mut Actions| match app.view {
+            let body = |ui: &mut egui::Ui, st: &mut Parts, out: &mut Actions| match app.place.view() {
                 View::Pcb => pcb::show(app, st, ui, out),
                 View::Model => model3d(app, st, ui, out),
                 View::SParameters => show_chart::<SParameters>(app, st, ui, out),
@@ -126,10 +126,10 @@ pub fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actio
                 View::Dispersion => show_chart::<Dispersion>(app, st, ui, out),
             };
             // The 3D views fill the card; Home scrolls down; the results both ways.
-            match app.view {
+            match app.place.view() {
                 View::Model | View::Pcb => body(&mut inner, st, out),
                 _ => {
-                    egui::ScrollArea::both().id_salt(("view", app.view.id())).auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
+                    egui::ScrollArea::both().id_salt(("view", app.place.view().id())).auto_shrink(false).show(&mut inner, |ui| body(ui, st, out));
                 }
             }
         });
@@ -144,12 +144,12 @@ pub(super) fn view_tabs(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) 
         // The PCB route is its own bar's.
         let result = |v: View| match v {
             View::Model | View::Pcb => false,
-            View::PortModes => app.view == v,
-            v => v == app.view || v.available(app),
+            View::PortModes => app.place.view() == v,
+            v => v == app.place.view() || v.available(app),
         };
         let any = View::ALL.into_iter().any(result);
         for v in View::ALL.into_iter().filter(|v| if *v == View::Model { any } else { result(*v) }) {
-            ui.act(true, pill(shown(v), app.view == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
+            ui.act(true, pill(shown(v), app.place.view() == v, 12, PillSize::Body), Handle::View(v), "", || Action::ShowView(v), out);
         }
     });
 }

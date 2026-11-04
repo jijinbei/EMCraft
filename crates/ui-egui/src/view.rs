@@ -26,7 +26,74 @@ emcraft_macros::named_enum! {
     }
 }
 
+/// Where the window is: the PCB diagnosis' own window, or a view of the workflow with its
+/// step's panel open (or none). The step panel never shows over the PCB window, and a view of
+/// the workflow is never the PCB's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Place {
+    Pcb,
+    Workflow { view: View, step: Option<crate::steps::Step> },
+}
+
+impl Default for Place {
+    fn default() -> Place {
+        Place::Workflow { view: View::Model, step: None }
+    }
+}
+
+impl Place {
+    /// The view shown.
+    pub const fn view(self) -> View {
+        match self {
+            Place::Pcb => View::Pcb,
+            Place::Workflow { view, .. } => view,
+        }
+    }
+
+    /// The step whose panel is open.
+    pub const fn step(self) -> Option<crate::steps::Step> {
+        match self {
+            Place::Pcb => None,
+            Place::Workflow { step, .. } => step,
+        }
+    }
+
+    /// Showing `view`: the PCB's is its own window, without the step panel; another keeps the
+    /// step open.
+    ///
+    /// ```
+    /// use emcraft_ui_egui::view::{Place, View};
+    /// use emcraft_ui_egui::steps::Step;
+    ///
+    /// let at = Place::default().with_step(Some(Step::Mesh));
+    /// assert_eq!(at.show(View::Field).step(), Some(Step::Mesh));
+    /// assert_eq!(at.show(View::Pcb), Place::Pcb);
+    /// assert_eq!(Place::Pcb.with_step(Some(Step::Mesh)).view(), View::Model);
+    /// ```
+    pub const fn show(self, view: View) -> Place {
+        match view {
+            View::Pcb => Place::Pcb,
+            view => Place::Workflow { view, step: self.step() },
+        }
+    }
+
+    /// Step `step`'s panel open (`None`: closed); the view kept, the model's coming from the
+    /// PCB window.
+    pub const fn with_step(self, step: Option<crate::steps::Step>) -> Place {
+        let view = match self {
+            Place::Pcb => View::Model,
+            Place::Workflow { view, .. } => view,
+        };
+        Place::Workflow { view, step }
+    }
+}
+
 impl View {
+    /// The view shown with no step open (the PCB's: its window).
+    pub const fn place(self) -> Place {
+        Place::Workflow { view: View::Model, step: None }.show(self)
+    }
+
     /// What the card says while the view has nothing to show (`None` for the views that say it
     /// themselves, with a button that makes it).
     fn empty(self) -> Option<&'static str> {

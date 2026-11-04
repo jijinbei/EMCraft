@@ -769,12 +769,12 @@ fn a_board_solved_by_finite_elements_has_no_pcb_route_view() {
     assert_eq!(h.call("engine.execute", json!({"command":"file.sample","params":{"name":"pcb-lowpass"}}))["ok"], true);
     h.frames(2);
     assert!(!crate::View::Pcb.available(&h.app));
-    assert_ne!(h.app.view, crate::View::Pcb);
+    assert_ne!(h.app.place.view(), crate::View::Pcb);
     assert!(crate::browser::tree(&h.app).iter().all(|(section, _)| *section != "PCB"));
     // The same board under the PCB diagnosis keeps its stages.
     assert_eq!(h.call("engine.execute", json!({"command":"project.analysis","params":{"kind":"pcb"}}))["ok"], true);
     assert!(crate::View::Pcb.available(&h.app));
     assert_eq!(h.call("engine.execute", json!({"command":"project.analysis","params":{"kind":"frequency"}}))["ok"], true);
     h.frames(1);
-    assert_ne!(h.app.view, crate::View::Pcb);
+    assert_ne!(h.app.place.view(), crate::View::Pcb);
 }
