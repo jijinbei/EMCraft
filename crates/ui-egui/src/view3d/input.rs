@@ -152,6 +152,12 @@ pub(super) fn navigate(
     let limits = zoom_limits(frame);
     let sign = if nav.reverse_zoom { -1.0 } else { 1.0 };
     let ctrl = mods.ctrl || mods.command;
+    // An orbit by `d` points about the pivot under `at` (kept while the orbit goes on).
+    let orbit = |v: &mut View3d, at: Option<egui::Pos2>, d: egui::Vec2, snap: bool| {
+        let mut o = v.orbit.unwrap_or_else(|| Drag::new(v.camera, pivot(app, v, rect, at, frame)));
+        o.orbit(&mut v.camera, f64::from(d.x), f64::from(d.y), snap);
+        v.orbit = Some(o);
+    };
     // The left button: chosen once, when the drag begins.
     let grip_started = resp.drag_started_by(egui::PointerButton::Primary);
     if grip_started {
@@ -222,13 +228,7 @@ pub(super) fn navigate(
         Some(NavMode::Orbit) => {
             v.stop_animation();
             let snap = mods.shift && !needs_shift && nav.id != OPENSCAD;
-            let o = match v.orbit {
-                Some(o) => o,
-                None => Drag::new(v.camera, pivot(app, v, rect, press.or(hover), frame)),
-            };
-            let mut o = o;
-            o.orbit(&mut v.camera, f64::from(d.x), f64::from(d.y), snap);
-            v.orbit = Some(o);
+            orbit(v, press.or(hover), d, snap);
             orbiting = true;
         }
         Some(NavMode::Pan) if d != egui::Vec2::ZERO => {
@@ -252,11 +252,7 @@ pub(super) fn navigate(
         if step != egui::Vec2::ZERO {
             v.stop_animation();
             match m {
-                NavMode::Orbit => {
-                    let mut o = v.orbit.unwrap_or_else(|| Drag::new(v.camera, pivot(app, v, rect, Some(at), frame)));
-                    o.orbit(&mut v.camera, f64::from(step.x), f64::from(step.y), false);
-                    v.orbit = Some(o);
-                }
+                NavMode::Orbit => orbit(v, Some(at), step, false),
                 NavMode::Pan | NavMode::Zoom => v.camera.pan(f64::from(step.x), f64::from(step.y), h),
             }
         }
@@ -279,9 +275,7 @@ pub(super) fn navigate(
         }
         if w.shift_pan != egui::Vec2::ZERO && w.shift_pan.is_finite() {
             v.stop_animation();
-            let mut o = v.orbit.unwrap_or_else(|| Drag::new(v.camera, pivot(app, v, rect, hover, frame)));
-            o.orbit(&mut v.camera, f64::from(w.shift_pan.x), f64::from(w.shift_pan.y), false);
-            v.orbit = Some(o);
+            orbit(v, hover, w.shift_pan, false);
             orbiting = true;
         }
     }

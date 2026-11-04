@@ -586,30 +586,7 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (section, rows) in &tree {
                         let folded = app.browser.folded.iter().any(|f| f == section);
-                        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
-                        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, *section));
-                        if resp.hovered() {
-                            ui.painter().rect_filled(r, t.radius_sm, t.hover);
-                        }
-                        chevron(ui, pos2(r.left() + 9.0, r.center().y), !folded, t.text_dim);
-                        ui.painter().text(
-                            pos2(r.left() + 20.0, r.center().y),
-                            Align2::LEFT_CENTER,
-                            lang::tr(section),
-                            FontId::proportional(t.font_label),
-                            t.text,
-                        );
-                        ui.painter().text(
-                            pos2(r.right() - 6.0, r.center().y),
-                            Align2::RIGHT_CENTER,
-                            rows.len().to_string(),
-                            FontId::proportional(t.font_small),
-                            t.text_dim,
-                        );
-                        scenario::publish_target(Handle::Fold(section), r);
-                        if resp.clicked() {
-                            out.push(Action::Fold((*section).to_owned()));
-                        }
+                        section_header(ui, section, rows.len(), folded, out);
                         if folded {
                             continue;
                         }
@@ -620,130 +597,153 @@ pub fn show(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
                             });
                         }
                         for r in rows {
-                            let key = format!("{section}/{}", r.text);
-                            let selected = row_selected(app, &key, r);
-                            let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
-                            let text = r.text.trim_start();
-                            let shown = r.shown.trim_start();
-                            let indent = 20.0 + 12.0 * (r.text.len() - text.len()) as f32 / 2.0;
-                            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, shown));
-                            if selected {
-                                ui.painter().rect_filled(rect, t.radius_sm, t.selected_bg);
-                            } else if resp.hovered() {
-                                ui.painter().rect_filled(rect, t.radius_sm, t.hover);
-                            }
-                            let mark = Rect::from_center_size(pos2(rect.left() + indent + 7.0, rect.center().y), vec2(15.0, 15.0));
-                            match &r.role {
-                                Some(role) => role_mark(ui.painter(), mark, role.input, role.colour()),
-                                None => glyphs::paint(ui.painter(), mark, r.glyph, t.icon, t.accent),
-                            }
-                            // A result of a model changed after its run: dimmed, marked at the right.
-                            let out_of_date = stale && *section == "Results";
-                            let ink = if selected {
-                                t.selected_ink
-                            } else if out_of_date {
-                                t.text_dim
-                            } else {
-                                t.text
-                            };
-                            let mut clip = rect;
-                            if let Some(object) = r.pick.and_then(|p| p.display_object(app.session.model())) {
-                                let visible = app.session.views().visible(&object);
-                                let name = object.name();
-                                let kind = object.kind();
-                                let eye = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(22.0, 20.0));
-                                let response = ui.interact(eye, ui.id().with(("object_eye", kind, &name)), Sense::click());
-                                scenario::publish_target(
-                                    Handle::Choice(
-                                        match kind {
-                                            "material" => "material_visibility",
-                                            _ => "geometry_visibility",
-                                        },
-                                        &name,
-                                    ),
-                                    eye,
-                                );
-                                let ink = if visible { t.text } else { t.text_dim };
-                                let c = eye.center();
-                                let points = vec![
-                                    c + vec2(-8.0, 0.0),
-                                    c + vec2(-4.0, -4.0),
-                                    c + vec2(0.0, -5.0),
-                                    c + vec2(4.0, -4.0),
-                                    c + vec2(8.0, 0.0),
-                                    c + vec2(4.0, 4.0),
-                                    c + vec2(0.0, 5.0),
-                                    c + vec2(-4.0, 4.0),
-                                ];
-                                ui.painter().add(egui::Shape::closed_line(points, Stroke::new(1.2, ink)));
-                                ui.painter().circle_filled(eye.center(), 2.0, ink);
-                                if !visible {
-                                    ui.painter().line_segment(
-                                        [eye.left_bottom() + vec2(3.0, -3.0), eye.right_top() + vec2(-3.0, 3.0)],
-                                        Stroke::new(1.4, ink),
-                                    );
-                                }
-                                if response.on_hover_text(lang::tr(if visible { "Hide object" } else { "Show object" })).clicked() {
-                                    out.push(Action::run("view.visibility", serde_json::json!({"kind":kind,"name":name,"visible":!visible})));
-                                }
-                                clip.max.x = eye.left() - 3.0;
-                            }
-                            if out_of_date {
-                                let c = pos2(rect.right() - 12.0, rect.center().y);
-                                crate::steps::stale_mark(ui.painter(), c);
-                                clip.max.x -= 24.0;
-                            }
-                            if let Some(role) = &r.role {
-                                clip.max.x = role_pill(ui, rect, role).left() - 4.0;
-                            }
-                            // One line, ending in an ellipsis where it meets the pill or the edge.
-                            let left = rect.left() + indent + 19.0;
-                            let mut job = crate::math::job(&r.tex(), t.font_body, ink);
-                            job.wrap = egui::text::TextWrapping {
-                                max_width: (clip.right() - left).max(8.0),
-                                max_rows: 1,
-                                break_anywhere: true,
-                                overflow_character: Some('…'),
-                            };
-                            let galley = ui.painter().layout_job(job);
-                            let at = pos2(left, rect.center().y - galley.size().y / 2.0);
-                            ui.painter().with_clip_rect(clip).galley(at, galley, ink);
-                            scenario::publish_target(Handle::Row(text), rect);
-                            let resp = if out_of_date {
-                                let tip = lang::trf("{row} — out of date", args!(row = shown));
-                                crate::math::tip(resp, &tip)
-                            } else {
-                                crate::math::tip(resp, &r.tip())
-                            };
-                            // Shift or Ctrl toggles a part in what is selected, as a click in 3D.
-                            let toggles = ui.input(|i| i.modifiers.shift || i.modifiers.ctrl || i.modifiers.command);
-                            if resp.clicked()
-                                && toggles
-                                && let Some(p) = r.pick
-                            {
-                                let mut picks = app.view3d.selected.clone();
-                                crate::selection::toggle(&mut picks, p);
-                                let row = rows_of(app, &picks).pop().map(|(k, _)| k);
-                                out.push(Action::Select { row, picks });
-                            } else if resp.clicked() {
-                                out.push(Action::Select { row: Some(key.clone()), picks: r.pick.into_iter().collect() });
-                                match &r.act {
-                                    Act::Show(v) => out.push(Action::ShowView(*v)),
-                                    Act::Run(command, params) => out.push(Action::run(command, params.clone())),
-                                    _ => {}
-                                }
-                            }
-                            if resp.double_clicked() && !app.busy() {
-                                out.extend(r.edit_action());
-                            }
-                            if r.editable() || r.pick.is_some() {
-                                resp.context_menu(|ui| row_menu(app, r, &key, ui, out));
-                            }
+                            browser_row(app, ui, section, r, stale && *section == "Results", out);
                         }
                     }
                 });
             });
         });
+}
+
+/// A section's heading row: its chevron, name and count; a click folds or unfolds it.
+fn section_header(ui: &mut egui::Ui, section: &str, count: usize, folded: bool, out: &mut Actions) {
+    let t = &Tokens::get();
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, section));
+    if resp.hovered() {
+        ui.painter().rect_filled(r, t.radius_sm, t.hover);
+    }
+    chevron(ui, pos2(r.left() + 9.0, r.center().y), !folded, t.text_dim);
+    ui.painter().text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, lang::tr(section), FontId::proportional(t.font_label), t.text);
+    ui.painter().text(pos2(r.right() - 6.0, r.center().y), Align2::RIGHT_CENTER, count.to_string(), FontId::proportional(t.font_small), t.text_dim);
+    scenario::publish_target(Handle::Fold(section), r);
+    if resp.clicked() {
+        out.push(Action::Fold((*section).to_owned()));
+    }
+}
+
+/// A row of `section`: its mark, its text in one line, the eye of a displayed object, the
+/// out-of-date mark; a click selects it (or toggles it in the selection), a double click
+/// edits it.
+fn browser_row(app: &EmcraftApp, ui: &mut egui::Ui, section: &str, r: &Row, out_of_date: bool, out: &mut Actions) {
+    let t = &Tokens::get();
+    let key = format!("{section}/{}", r.text);
+    let selected = row_selected(app, &key, r);
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    let text = r.text.trim_start();
+    let shown = r.shown.trim_start();
+    let indent = 20.0 + 12.0 * (r.text.len() - text.len()) as f32 / 2.0;
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, shown));
+    if selected {
+        ui.painter().rect_filled(rect, t.radius_sm, t.selected_bg);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(rect, t.radius_sm, t.hover);
+    }
+    let mark = Rect::from_center_size(pos2(rect.left() + indent + 7.0, rect.center().y), vec2(15.0, 15.0));
+    match &r.role {
+        Some(role) => role_mark(ui.painter(), mark, role.input, role.colour()),
+        None => glyphs::paint(ui.painter(), mark, r.glyph, t.icon, t.accent),
+    }
+    // A result of a model changed after its run: dimmed, marked at the right.
+    let ink = if selected {
+        t.selected_ink
+    } else if out_of_date {
+        t.text_dim
+    } else {
+        t.text
+    };
+    let mut clip = rect;
+    if let Some(object) = r.pick.and_then(|p| p.display_object(app.session.model())) {
+        clip.max.x = visibility_eye(app, ui, rect, &object, out).left() - 3.0;
+    }
+    if out_of_date {
+        let c = pos2(rect.right() - 12.0, rect.center().y);
+        crate::steps::stale_mark(ui.painter(), c);
+        clip.max.x -= 24.0;
+    }
+    if let Some(role) = &r.role {
+        clip.max.x = role_pill(ui, rect, role).left() - 4.0;
+    }
+    // One line, ending in an ellipsis where it meets the pill or the edge.
+    let left = rect.left() + indent + 19.0;
+    let mut job = crate::math::job(&r.tex(), t.font_body, ink);
+    job.wrap =
+        egui::text::TextWrapping { max_width: (clip.right() - left).max(8.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let galley = ui.painter().layout_job(job);
+    let at = pos2(left, rect.center().y - galley.size().y / 2.0);
+    ui.painter().with_clip_rect(clip).galley(at, galley, ink);
+    scenario::publish_target(Handle::Row(text), rect);
+    let resp = if out_of_date {
+        let tip = lang::trf("{row} — out of date", args!(row = shown));
+        crate::math::tip(resp, &tip)
+    } else {
+        crate::math::tip(resp, &r.tip())
+    };
+    // Shift or Ctrl toggles a part in what is selected, as a click in 3D.
+    let toggles = ui.input(|i| i.modifiers.shift || i.modifiers.ctrl || i.modifiers.command);
+    if resp.clicked()
+        && toggles
+        && let Some(p) = r.pick
+    {
+        let mut picks = app.view3d.selected.clone();
+        crate::selection::toggle(&mut picks, p);
+        let row = rows_of(app, &picks).pop().map(|(k, _)| k);
+        out.push(Action::Select { row, picks });
+    } else if resp.clicked() {
+        out.push(Action::Select { row: Some(key.clone()), picks: r.pick.into_iter().collect() });
+        match &r.act {
+            Act::Show(v) => out.push(Action::ShowView(*v)),
+            Act::Run(command, params) => out.push(Action::run(command, params.clone())),
+            _ => {}
+        }
+    }
+    if resp.double_clicked() && !app.busy() {
+        out.extend(r.edit_action());
+    }
+    if r.editable() || r.pick.is_some() {
+        resp.context_menu(|ui| row_menu(app, r, &key, ui, out));
+    }
+}
+
+/// The eye at the right of `rect` that shows or hides `object`; its rectangle.
+fn visibility_eye(app: &EmcraftApp, ui: &mut egui::Ui, rect: Rect, object: &emcraft_engine::visibility::DisplayObject, out: &mut Actions) -> Rect {
+    let t = &Tokens::get();
+    let visible = app.session.views().visible(object);
+    let name = object.name();
+    let kind = object.kind();
+    let eye = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(22.0, 20.0));
+    let response = ui.interact(eye, ui.id().with(("object_eye", kind, &name)), Sense::click());
+    scenario::publish_target(
+        Handle::Choice(
+            match kind {
+                "material" => "material_visibility",
+                _ => "geometry_visibility",
+            },
+            &name,
+        ),
+        eye,
+    );
+    let ink = if visible { t.text } else { t.text_dim };
+    let c = eye.center();
+    let points = vec![
+        c + vec2(-8.0, 0.0),
+        c + vec2(-4.0, -4.0),
+        c + vec2(0.0, -5.0),
+        c + vec2(4.0, -4.0),
+        c + vec2(8.0, 0.0),
+        c + vec2(4.0, 4.0),
+        c + vec2(0.0, 5.0),
+        c + vec2(-4.0, 4.0),
+    ];
+    ui.painter().add(egui::Shape::closed_line(points, Stroke::new(1.2, ink)));
+    ui.painter().circle_filled(eye.center(), 2.0, ink);
+    if !visible {
+        ui.painter().line_segment([eye.left_bottom() + vec2(3.0, -3.0), eye.right_top() + vec2(-3.0, 3.0)], Stroke::new(1.4, ink));
+    }
+    if response.on_hover_text(lang::tr(if visible { "Hide object" } else { "Show object" })).clicked() {
+        out.push(Action::run("view.visibility", serde_json::json!({"kind":kind,"name":name,"visible":!visible})));
+    }
+    eye
 }
 
 /// A port's role at the right of its row: its mark's colour as a soft pill, the role in short

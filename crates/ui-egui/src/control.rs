@@ -295,6 +295,27 @@ impl<'a> Args<'a> {
     fn get(self, k: &str) -> Option<&'a Value> {
         self.0.get(k)
     }
+
+    /// `k` as one of `T`'s ids, a `what`: none when absent; an error naming the choices.
+    fn named<T: emcraft_macros::Named>(self, k: &str, what: &str) -> Result<Option<T>, String> {
+        match self.get(k) {
+            None => Ok(None),
+            Some(Value::String(x)) => T::parse(x).map(Some).ok_or_else(|| format!("unknown {what} `{}` (there are {})", clip(x, 40), T::listed())),
+            Some(_) => Err(format!("`{k}` must be a {what}'s name")),
+        }
+    }
+
+    /// [`Args::named`], or `none` for none of them (`Some(None)`).
+    fn named_or_none<T: emcraft_macros::Named>(self, k: &str, what: &str) -> Result<Option<Option<T>>, String> {
+        match self.get(k) {
+            None => Ok(None),
+            Some(Value::String(x)) if x == "none" => Ok(Some(None)),
+            Some(Value::String(x)) => {
+                T::parse(x).map(|t| Some(Some(t))).ok_or_else(|| format!("unknown {what} `{}` (there are {} or none)", clip(x, 40), T::listed()))
+            }
+            Some(_) => Err(format!("`{k}` must be a {what}'s name or `none`")),
+        }
+    }
 }
 
 /// What a method gives: its outcome, or why it refused.
@@ -437,18 +458,9 @@ fn commands() -> Value {
 /// position and animation, the workflow step, the 3D camera. Each is the action the window's own control
 /// asks for; all are read before any is performed.
 fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
-    for k in ["tab", "view"] {
-        if a.get(k).is_some_and(|v| !v.is_string()) {
-            return Err(format!("`{k}` must be a string"));
-        }
-    }
     let mut asked = Vec::new();
-    if let Some(tab) = a.str("tab") {
-        asked.push(Action::SetTab(crate::ribbon::RibbonTab::parse(tab).ok_or_else(|| format!("unknown tab `{}`", clip(tab, 40)))?));
-    }
-    if let Some(v) = a.str("view") {
-        asked.push(Action::SetView(View::parse(v).ok_or_else(|| format!("unknown view `{}`", clip(v, 40)))?));
-    }
+    asked.extend(a.named("tab", "tab")?.map(Action::SetTab));
+    asked.extend(a.named("view", "view")?.map(Action::SetView));
     // The theme by name; `dark` names the built-in ones by a switch. A reload reads the user's
     // theme files again before a theme is chosen.
     if a.bool("reload_themes") == Some(true) {
@@ -473,21 +485,7 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         asked.push(Action::SetDock(d));
     }
     // The settings page at a section; `none` closes it.
-    match a.get("settings") {
-        None => {}
-        Some(Value::String(x)) if x == "none" => asked.push(Action::Settings(None)),
-        Some(Value::String(x)) => {
-            let section = crate::settings::Section::parse(x).ok_or_else(|| {
-                format!(
-                    "unknown settings section `{}` (there are {} or none)",
-                    clip(x, 40),
-                    <crate::settings::Section as emcraft_macros::Named>::listed()
-                )
-            })?;
-            asked.push(Action::Settings(Some(section)));
-        }
-        Some(_) => return Err("`settings` must be a section's name or `none`".into()),
-    }
+    asked.extend(a.named_or_none("settings", "settings section")?.map(Action::Settings));
     if let Some(on) = a.bool("animate") {
         asked.push(Action::SetPlaying(on));
     }
@@ -497,17 +495,7 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         app.job.as_mut().ok_or("`job_estimate`: no job runs")?.estimate = Some(e);
     }
     // The 3D view's tool (`none` turns it off).
-    match a.get("tool") {
-        None => {}
-        Some(Value::String(x)) if x == "none" => asked.push(Action::Tool(None)),
-        Some(Value::String(x)) => {
-            let tool = crate::tools3d::Tool::parse(x).ok_or_else(|| {
-                format!("unknown tool `{}` (there are {} or none)", clip(x, 40), <crate::tools3d::Tool as emcraft_macros::Named>::listed())
-            })?;
-            asked.push(Action::Tool(Some(tool)));
-        }
-        Some(_) => return Err("`tool` must be a tool's name or `none`".into()),
-    }
+    asked.extend(a.named_or_none("tool", "tool")?.map(Action::Tool));
     // The workflow step (`none` closes the panel).
     match a.get("step") {
         None => {}
@@ -536,22 +524,9 @@ fn ui_set(app: &mut EmcraftApp, a: Args) -> Handled {
         })?;
         asked.push(Action::Pref(Pref::Navigation(p.id.into())));
     }
-    if let Some(id) = a.str("orbit_around") {
-        let o = crate::navigation::OrbitAround::parse(id).ok_or_else(|| {
-            format!("unknown orbit centre `{}` (there are {})", clip(id, 40), <crate::navigation::OrbitAround as emcraft_macros::Named>::listed())
-        })?;
-        asked.push(Action::Pref(Pref::OrbitAround(o)));
-    }
-    if let Some(id) = a.str("navigator") {
-        let n = crate::navigation::Navigator::parse(id).ok_or_else(|| {
-            format!("unknown navigator `{}` (there are {})", clip(id, 40), <crate::navigation::Navigator as emcraft_macros::Named>::listed())
-        })?;
-        asked.push(Action::Pref(Pref::Navigator(n)));
-    }
-    if let Some(v) = a.str("standard_view") {
-        let view = emcraft_render::view3d::StandardView::parse(v).ok_or_else(|| format!("unknown standard view `{}`", clip(v, 40)))?;
-        asked.push(Action::StandardView(view));
-    }
+    asked.extend(a.named("orbit_around", "orbit centre")?.map(|o| Action::Pref(Pref::OrbitAround(o))));
+    asked.extend(a.named("navigator", "navigator")?.map(|n| Action::Pref(Pref::Navigator(n))));
+    asked.extend(a.named("standard_view", "standard view")?.map(Action::StandardView));
     for action in asked {
         app.apply(action).map_err(|e| e.to_string())?;
     }
