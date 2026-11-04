@@ -261,6 +261,11 @@ impl Waveguide {
         Some(Span::new(s.offset_y.unwrap_or_else(|| (self.height.get() - h) / 2.0), h))
     }
 
+    /// Section i's apertures across x and y; past the sections, the whole guide's.
+    pub fn opening(&self, i: usize) -> [Span; 2] {
+        [self.aperture(i).unwrap_or_else(|| self.across_x()), self.aperture_y(i).unwrap_or_else(|| self.across_y())]
+    }
+
     /// The whole width, [0, a].
     pub fn across_x(&self) -> Span {
         Span::new(0.0, self.width.get())
@@ -315,10 +320,10 @@ impl Waveguide {
         let room = Room::of(self);
         for (i, s) in self.sections.iter().enumerate() {
             s.check(i + 1, &known)?;
-            if !self.across_x().holds(self.aperture(i).unwrap_or_else(|| self.across_x()), room.tol) {
+            if !self.across_x().holds(self.opening(i)[0], room.tol) {
                 return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's width"));
             }
-            if !self.across_y().holds(self.aperture_y(i).unwrap_or_else(|| self.across_y()), room.toly) {
+            if !self.across_y().holds(self.opening(i)[1], room.toly) {
                 return Err(invalid(format!("section {}", i + 1), "its aperture must lie within the guide's height"));
             }
         }

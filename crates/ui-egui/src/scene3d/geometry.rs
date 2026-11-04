@@ -110,7 +110,7 @@ pub(super) fn from_geometry(m: &Model, overlay: Overlay, out: &mut Built) {
             255
         };
         for (i, s) in w.sections.iter().enumerate() {
-            let (x, y) = (w.aperture(i).unwrap_or_else(|| w.across_x()), w.aperture_y(i).unwrap_or_else(|| w.across_y()));
+            let [x, y] = w.opening(i);
             out.scene.tagged(Pick::Section(i).tag(), |scene| {
                 cuboid(scene, [x.start, y.start, z], [x.end(), y.end(), z + s.length], tint(&s.material), alpha, true)
             });

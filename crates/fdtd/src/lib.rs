@@ -56,7 +56,7 @@
 use std::f64::consts::PI;
 
 use emcraft_model::units::{C0, EPS0, MU0};
-use emcraft_model::{Conductivity, Hertz, Material, Model, Quantity, Waveguide};
+use emcraft_model::{Conductivity, Hertz, Material, Model, Quantity, Span, Waveguide};
 use num_complex::Complex64 as C;
 
 pub use crate::device::{
@@ -333,8 +333,7 @@ impl PortGuide {
     fn new(model: &Model, w: &Waveguide, i: usize, losses: Losses) -> Result<PortGuide> {
         let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
         let (_, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
-        let width = w.aperture(i).map_or_else(|| w.width.get(), |a| a.width);
-        let height = w.aperture_y(i).map_or_else(|| w.height.get(), |a| a.width);
+        let [Span { width, .. }, Span { width: height, .. }] = w.opening(i);
         Ok(PortGuide { width, height, material: m.clone(), losses })
     }
 

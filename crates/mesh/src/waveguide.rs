@@ -354,8 +354,8 @@ fn along_z(model: &Model, w: &Waveguide, o: &Options, features: &Features, cross
         cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
         cuts.dedup_by(|a, b| (a.0 - b.0).abs() <= tolz);
         let (m, _) = model.material(&s.material)?;
-        let layer =
-            ZLayer { material: m as u32, x: w.aperture(i).unwrap_or_else(|| w.across_x()), y: w.aperture_y(i).unwrap_or_else(|| w.across_y()) };
+        let [x, y] = w.opening(i);
+        let layer = ZLayer { material: m as u32, x, y };
         for c in cuts.windows(2) {
             let zs = graded(c[0].0, c[1].0, o, fraction(c[0]), fraction(c[1]));
             let n = zs.len();

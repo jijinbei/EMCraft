@@ -132,8 +132,7 @@ impl Grid {
         let layer = |i: usize| -> Result<Layer> {
             let s = w.sections.get(i).ok_or_else(|| invalid("waveguide", "no sections"))?;
             let (index, m) = model.material(&s.material).map_err(|e| invalid("material", e.to_string()))?;
-            let Span { start: x0, width } = w.aperture(i).unwrap_or_else(|| w.across_x());
-            let Span { start: y0, width: height } = w.aperture_y(i).unwrap_or_else(|| w.across_y());
+            let [Span { start: x0, width }, Span { start: y0, width: height }] = w.opening(i);
             let slow = freqs.iter().map(|f| m.eps_at(*f).norm()).fold(m.eps_r.get(), f64::max);
             let disp = disp_of.get(index).copied().unwrap_or(NO_POLES);
             let (sigma, sigma_m) = losses.of(m);
