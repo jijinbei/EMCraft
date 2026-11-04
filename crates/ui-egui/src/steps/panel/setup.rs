@@ -61,7 +61,7 @@ pub(super) fn setup(app: &EmcraftApp, f: &mut Fields, ui: &mut egui::Ui, fu: &st
 
 /// Where the solve runs: the devices `solve.devices` lists (those this machine cannot run
 /// disabled, with the reason on hover) and the time domain's precision, set through
-/// `solve.device` (the ribbon's SIMULATE › Device sets the same).
+/// `solve.device`.
 fn device(app: &EmcraftApp, ui: &mut egui::Ui, solver: Solver, t: &Tokens, out: &mut Actions) {
     ui_kit::section(ui, "Compute device");
     let none = json!({});

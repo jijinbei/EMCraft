@@ -3,7 +3,7 @@
   {"call": "engine.execute", "params": {"command": "file.sample", "params": {"name": "highpass"}}},
   {"call": "engine.execute", "params": {"command": "project.frequency", "params": {"start": 6, "stop": 9}}},
   {"call": "ui.set", "params": {"step": "setup"}},
-  {"click": "tab:MODEL"},
+  {"call": "ui.set", "params": {"tab": "MODEL"}},
   {"click": "toolbar:project.frequency"},
   {"expect": {"dialog": "project.frequency", "inspect": {"workflow.step": "setup", "dialog.fields.start": "6"}}},
   {"note": "The first field has the keyboard: typing replaces its text"},

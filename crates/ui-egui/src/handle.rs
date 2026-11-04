@@ -92,7 +92,6 @@ emcraft_macros::named_enum! {
         HistoryDelete = "history:delete",
         SDisplay = "sparameters:display",
         // What a narrow window's ribbon has no room for: the tabs, the buttons.
-        TabsMore = "tabs:more",
         ToolbarMore = "toolbar:more",
         // Command search.
         SearchField = "search:field",
@@ -115,7 +114,6 @@ emcraft_macros::named_enum! {
         StepWaveguide = "step:waveguide",
         // The step panels.
         ExcitationPreview = "excitation:preview",
-        ExcitationPatterns = "excitation:patterns",
         SetupBand = "setup:band",
         SetupPoints = "setup:points",
         SetupCount = "setup:count",
@@ -230,8 +228,6 @@ pub enum Handle<'a> {
     Fixed(Fixed),
     /// A part of a fixed control: `field:phase:play`.
     Part(Fixed, Part),
-    /// A ribbon tab: `tab:MODEL`.
-    Tab(RibbonTab),
     /// A ribbon button: `toolbar:mesh.generate`.
     Toolbar(&'a str),
     /// A ribbon panel's name under its buttons: `panel:MODEL:GEOMETRY`.
@@ -323,8 +319,6 @@ pub enum Handle<'a> {
     Tool(crate::tools3d::Tool),
     /// A tool's button on the ribbon: `toolbar:tool:port`.
     RibbonTool(crate::tools3d::Tool),
-    /// A tool's button in a step's panel: `step:tool:lumped`.
-    StepTool(crate::tools3d::Tool),
     /// A corner of the face under the pointer while a tool is on: `view3d:corner:2`.
     Corner(usize),
     /// An end of the model while the port tool is on: `view3d:end:start`.
@@ -374,7 +368,6 @@ impl fmt::Display for Handle<'_> {
         match *self {
             Handle::Fixed(x) => f.write_str(x.id()),
             Handle::Part(x, p) => write!(f, "{}:{}", x.id(), p.id()),
-            Handle::Tab(t) => write!(f, "tab:{}", t.id()),
             Handle::Toolbar(id) => write!(f, "toolbar:{id}"),
             Handle::TemplateField(name) => write!(f, "template:field:{name}"),
             Handle::Purpose(k) => write!(f, "home:purpose:{}", k.id()),
@@ -427,7 +420,6 @@ impl fmt::Display for Handle<'_> {
             Handle::SectionNote(kind, i) => write!(f, "view3d:section:{kind}:{i}"),
             Handle::Tool(t) => write!(f, "view3d:tool:{}", t.id()),
             Handle::RibbonTool(t) => write!(f, "toolbar:tool:{}", t.id()),
-            Handle::StepTool(t) => write!(f, "step:tool:{}", t.id()),
             Handle::Corner(i) => write!(f, "view3d:corner:{i}"),
             Handle::PortEnd(e) => write!(f, "view3d:end:{}", e.id()),
             Handle::StudyParameter(p) => write!(f, "study:parameter:{p}"),
@@ -474,9 +466,8 @@ mod tests {
 
     #[test]
     fn handles_read_as_the_protocol_names_them() {
-        let cases: [(Handle, &str); 16] = [
+        let cases: [(Handle, &str); 15] = [
             (Handle::ChartBlock(1), "chart:block:1"),
-            (Handle::Tab(RibbonTab::PortsSources), "tab:PORTS & SOURCES"),
             (Handle::Toolbar("mesh.generate"), "toolbar:mesh.generate"),
             (Handle::View(View::PortModes), "view:port_modes"),
             (Fixed::FieldSaveVideo.into(), "field:save:video"),

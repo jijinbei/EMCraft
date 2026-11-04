@@ -305,7 +305,7 @@ fn units(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(
         ui,
         "New projects",
-        "The units new projects start with: what dialogs, tables and pictures show and commands read. An open project changes its own with MODEL › Units.",
+        "The units new projects start with: what dialogs, tables and pictures show and commands read. An open project changes its own with Units in step 1.",
     );
     unit_choices(app, ui, out);
 }

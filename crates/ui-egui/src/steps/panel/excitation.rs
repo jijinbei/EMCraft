@@ -5,15 +5,8 @@ use crate::Hint;
 use crate::lang::args;
 
 pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Tokens, out: &mut Actions) {
+    // Ports are made from the ribbon and the 3D view's tools; the panel lists them.
     ui_kit::section(ui, "Ports and sources");
-    // The ports made by pointing at the model in 3D.
-    ui.horizontal(|ui| {
-        for tool in [crate::tools3d::Tool::Port, crate::tools3d::Tool::Lumped] {
-            let on = app.view3d.tools.tool == Some(tool);
-            let b = egui::Button::new(tr(tool.label())).selected(on);
-            ui.act(!app.busy(), b, Handle::StepTool(tool), tool.hint(), || Action::Tool((!on).then_some(tool)), out);
-        }
-    });
     let m = app.session.model();
     if m.ports.is_empty() && m.lumped.is_empty() && m.sources.is_empty() {
         ui_kit::small(ui, "none yet", t.text_dim);
@@ -45,8 +38,8 @@ pub(super) fn excitation(app: &EmcraftApp, ui: &mut egui::Ui, fu: &str, t: &Toke
     let Some(reply) = app.replies.port_modes.as_ref() else { return };
     let f = reply.get("frequency").and_then(Value::as_f64).unwrap_or(f64::NAN);
     ui_kit::small(ui, trf("at {f} {unit}", args!(f = fmt(f), unit = fu)), t.text_dim);
+    // A row opens its mode in the Port modes view.
     mode_table(app, ui, reply, t, out);
-    ui.act(true, ui_kit::styled("Show the mode patterns", false), Fixed::ExcitationPatterns.into(), "", || Action::SetView(View::PortModes), out);
 }
 
 /// The waveguide ports, each with its role (the input, whose reflection is S11, or an output

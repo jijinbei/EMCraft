@@ -15,7 +15,7 @@
   {"expect": {"inspect": {"workflow.analysis.kind": "eigenmodes", "workflow.steps.excitation": "done", "workflow.not_needed": ["excitation"], "workflow.solver": "eigenmodes"}}},
   {"shot": "kind-eigenmodes"},
   {"click": "step:setup"},
-  {"expect": {"inspect": {"workflow.step": "setup", "workflow.solver": "eigenmodes"}, "handles": ["toolbar:solve.eigenmodes"]}},
+  {"expect": {"inspect": {"workflow.step": "setup", "workflow.solver": "eigenmodes"}}},
   {"shot": "kind-eigenmodes-setup"},
   {"note": "Radiation in a closed guide: the open boundary is to do, its fix opens model.open"},
   {"click": "step:intent"},
