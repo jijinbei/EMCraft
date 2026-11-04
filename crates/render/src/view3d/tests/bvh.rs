@@ -1,4 +1,4 @@
-use super::super::{Projection, StandardView, hits};
+use super::super::{Camera, Projection, StandardView, hits};
 use super::*;
 use crate::Rgb;
 
@@ -91,8 +91,7 @@ fn indexed_hits_answer_as_the_scan_does() {
                 (rng.range(-10.0, w + 10.0), rng.range(-10.0, h + 10.0))
             };
             let want = hits(&s, c, x, y, w, h);
-            assert_eq!(index.hits(&s, c, x, y, w, h), want, "camera {k} pixel ({x}, {y})");
-            assert_eq!(index.pick(&s, c, x, y, w, h), super::super::pick(&s, c, x, y, w, h));
+            assert_eq!(c.ray(x, y, w, h).and_then(|r| index.hits(&s, r)), want, "camera {k} pixel ({x}, {y})");
             if let Some((near, _)) = want {
                 hit_some += 1;
                 // A tie on the grid: another triangle as near.
@@ -136,12 +135,12 @@ fn another_scene_and_hostile_input_are_scanned_or_refused() {
     let mut c = Camera::default();
     c.fit([0.0, 0.0, 0.0], [24.0, 24.0, 20.0], 1.0);
     for (x, y) in [(50.0, 50.0), (30.0, 70.0)] {
-        assert_eq!(stale.hits(&s, &c, x, y, 100.0, 100.0), hits(&s, &c, x, y, 100.0, 100.0));
+        assert_eq!(c.ray(x, y, 100.0, 100.0).and_then(|r| stale.hits(&s, r)), hits(&s, &c, x, y, 100.0, 100.0));
     }
-    assert!(SceneIndex::new(&Scene::default()).hits(&Scene::default(), &c, 50.0, 50.0, 100.0, 100.0).is_none());
+    assert!(c.ray(50.0, 50.0, 100.0, 100.0).and_then(|r| SceneIndex::new(&Scene::default()).hits(&Scene::default(), r)).is_none());
     let index = SceneIndex::new(&s);
     for (x, y) in [(f64::NAN, 1.0), (f64::INFINITY, 0.0), (1e308, -1e308)] {
-        assert_eq!(index.hits(&s, &c, x, y, 100.0, 100.0), hits(&s, &c, x, y, 100.0, 100.0));
+        assert_eq!(c.ray(x, y, 100.0, 100.0).and_then(|r| index.hits(&s, r)), hits(&s, &c, x, y, 100.0, 100.0));
     }
 }
 
@@ -182,6 +181,6 @@ fn bvh_timing() {
         started.elapsed().as_secs_f64() * 1e3 / rays as f64
     };
     let scan = time(&|x, y| hits(&s, &c, x, y, 100.0, 100.0));
-    let indexed = time(&|x, y| index.hits(&s, &c, x, y, 100.0, 100.0));
+    let indexed = time(&|x, y| c.ray(x, y, 100.0, 100.0).and_then(|r| index.hits(&s, r)));
     eprintln!("{} triangles: index built in {build:.1} ms; a pick {scan:.3} ms scanned, {indexed:.4} ms indexed", s.tris.len());
 }

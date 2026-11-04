@@ -16,7 +16,7 @@
 //! little so a hit the ray–triangle test admits at its rounding edge is never lost to the box
 //! test; a triangle whose box is not finite is scanned rather than indexed.
 
-use super::{Camera, Hit, Scene, hit};
+use super::{Hit, Scene, hit};
 
 /// Most items in a leaf.
 const LEAF: usize = 4;
@@ -227,7 +227,7 @@ fn ray_box(o: [f64; 3], d: [f64; 3], inv: [f64; 3], b: &Aabb) -> Option<f64> {
 /// cam.fit([0.0, 0.0, 0.0], [40.0, 40.0, 0.0], 1.0);
 /// // Every pixel picks what the scan of every triangle picks.
 /// for (x, y) in [(50.0, 50.0), (13.0, 77.0), (0.5, 99.5), (500.0, 5.0)] {
-///     assert_eq!(index.hits(&s, &cam, x, y, 100.0, 100.0), hits(&s, &cam, x, y, 100.0, 100.0));
+///     assert_eq!(cam.ray(x, y, 100.0, 100.0).and_then(|r| index.hits(&s, r)), hits(&s, &cam, x, y, 100.0, 100.0));
 /// }
 /// ```
 #[derive(Clone, Debug, Default)]
@@ -275,12 +275,12 @@ impl SceneIndex {
         self.bounds
     }
 
-    /// [`super::hits`] through the index: the same answer, tie for tie.
-    pub fn hits(&self, scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
+    /// [`super::hits_along`] the ray `(origin, dir)` through the index: the same answer, tie for
+    /// tie (by the scan when the index is not `scene`'s).
+    pub fn hits(&self, scene: &Scene, (origin, dir): ([f64; 3], [f64; 3])) -> Option<(Hit, Option<Hit>)> {
         if !self.of(scene) {
-            return super::hits(scene, camera, x, y, w, h);
+            return super::hits_along(scene, (origin, dir));
         }
-        let (origin, dir) = camera.ray(x, y, w, h)?;
         let nearest = |solid: bool| {
             let at = |i: usize| scene.tris.get(i).filter(|t| t.tag != 0 && (!solid || t.alpha >= 200)).and_then(|t| hit(origin, dir, t));
             let mut best = self.bvh.nearest(origin, dir, |i| at(i as usize)).map(|(t, i)| (t, i as usize));
@@ -299,11 +299,6 @@ impl SceneIndex {
             Hit { index: i, at: [origin[0] + dir[0] * d, origin[1] + dir[1] * d, origin[2] + dir[2] * d], tag }
         };
         Some((at(any), solid.map(at)))
-    }
-
-    /// [`super::pick`] through the index.
-    pub fn pick(&self, scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<u32> {
-        self.hits(scene, camera, x, y, w, h).map(|(any, solid)| solid.unwrap_or(any).tag)
     }
 
     /// Calls `f` with every tagged triangle of `scene` that may have all its corners within

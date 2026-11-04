@@ -555,6 +555,9 @@ fn canonical(axis: Vec3) -> Vec3 {
 /// [`MAX_STEPS`] steps. Each step linearises at the state: `frame` gives what its parameter
 /// steps are measured in (the axis' basis), `row` a point's Jacobian row and residual (`None`
 /// leaves the point out), `apply` the state a parameter step leads to.
+// The four closures are the problem; bundled in a struct, their argument types are no longer
+// inferred at the call.
+#[allow(clippy::too_many_arguments)]
 fn refine<const N: usize, S: Copy, F: Copy>(
     points: &[Point3],
     scale: &Scale,
@@ -812,7 +815,7 @@ mod tests {
     /// A torus patch (centre `c`, axis `a`, radii `big` and `small`): `n` facets about the axis
     /// over `sweep` radians, `m` round the tube over `tube` radians (from the outer equator), a
     /// whole torus for 2π and 2π; one tag.
-    pub(crate) fn torus_surface(c: Point3, a: Vec3, big: f64, small: f64, sweep: f64, tube: f64, n: usize, m: usize) -> Surface {
+    pub(crate) fn torus_surface(c: Point3, a: Vec3, (big, small): (f64, f64), (sweep, tube): (f64, f64), (n, m): (usize, usize)) -> Surface {
         let (u, v) = basis(a);
         let closed = |angle: f64| (angle - 2.0 * std::f64::consts::PI).abs() < 1e-12;
         let (ni, mj) = (if closed(sweep) { n } else { n + 1 }, if closed(tube) { m } else { m + 1 });
@@ -849,7 +852,7 @@ mod tests {
             (0.008, 0.001, PI / 2.0, PI / 2.0, 12, 6),
             (0.005, 0.004, 2.0 * PI, 2.0 * PI, 24, 16),
         ] {
-            let s = torus_surface(c, a, big, small, sweep, tube, n, m);
+            let s = torus_surface(c, a, (big, small), (sweep, tube), (n, m));
             let fits = fit_faces(&s, &s.tags);
             let Some(FaceSurface::Torus { center, axis, major, minor }) = fits[0] else { panic!("{big} {small} {sweep}: {:?}", fits[0]) };
             assert!((major - big).abs() < 1e-11 && (minor - small).abs() < 1e-11, "{major} {minor}");
@@ -864,7 +867,7 @@ mod tests {
         let can = cylinder_surface(c, a, 0.002, 0.01, 24, 3);
         assert!(matches!(fit_faces(&can, &can.tags)[0], Some(FaceSurface::Cylinder { .. })));
         // A torus' vertices pushed off it by more than the tolerance: faceted.
-        let mut rough = torus_surface(c, a, 0.01, 0.002, 2.0 * PI, 2.0 * PI, 24, 8);
+        let mut rough = torus_surface(c, a, (0.01, 0.002), (2.0 * PI, 2.0 * PI), (24, 8));
         for (i, p) in rough.positions.iter_mut().enumerate() {
             *p += a * (1e-6 * ((i * 7919) % 13) as f64);
         }

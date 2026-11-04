@@ -395,20 +395,21 @@ struct Flat {
 struct Budget {
     elements: usize,
     visits: usize,
+    /// The (part, object) pairs above the one being placed, so a cycle is found.
+    stack: Vec<(String, u32)>,
 }
 
 impl Package {
     /// Places object `id` of part `part` by `xf` into `out`, recursing into its components.
-    /// `stack` holds the (part, object) pairs above it, so a cycle is found.
-    fn place(&self, part: &str, id: u32, xf: &Xf, out: &mut Flat, stack: &mut Vec<(String, u32)>, budget: &mut Budget) -> Result<()> {
+    fn place(&self, part: &str, id: u32, xf: &Xf, out: &mut Flat, budget: &mut Budget) -> Result<()> {
         budget.visits += 1;
         if budget.visits > MAX_COMPONENT_VISITS {
             return bad(format!("the components place objects more than {MAX_COMPONENT_VISITS} times"));
         }
-        if stack.len() > MAX_COMPONENT_DEPTH {
+        if budget.stack.len() > MAX_COMPONENT_DEPTH {
             return bad(format!("components nested more than {MAX_COMPONENT_DEPTH} deep"));
         }
-        if stack.iter().any(|(p, o)| p == part && *o == id) {
+        if budget.stack.iter().any(|(p, o)| p == part && *o == id) {
             return bad(format!("object {id} is a component of itself"));
         }
         let model = self.parts.get(part).ok_or_else(|| invalid(format!("no model part `{part}`")))?;
@@ -417,12 +418,12 @@ impl Package {
             out.name = Some(o.name.clone());
         }
         if !o.components.is_empty() {
-            stack.push((part.to_string(), id));
+            budget.stack.push((part.to_string(), id));
             for c in &o.components {
                 let sub = c.path.as_deref().map_or_else(|| part.to_string(), part_key);
-                self.place(&sub, c.id, &compose(xf, &c.xf), out, stack, budget)?;
+                self.place(&sub, c.id, &compose(xf, &c.xf), out, budget)?;
             }
-            stack.pop();
+            budget.stack.pop();
             return Ok(());
         }
         if !xf.iter().all(|c| c.is_finite() && c.abs() <= MAX_COORD) {
@@ -465,7 +466,8 @@ impl Package {
     fn item(&self, k: usize, c: &Component, budget: &mut Budget) -> Result<Surface> {
         let part = c.path.as_deref().map_or_else(|| self.root.clone(), part_key);
         let mut out = Flat::default();
-        self.place(&part, c.id, &c.xf, &mut out, &mut Vec::new(), budget)
+        budget.stack.clear();
+        self.place(&part, c.id, &c.xf, &mut out, budget)
             .map_err(|e| invalid(format!("build item {}: {}", k + 1, e.to_string().trim_start_matches("3MF: "))))?;
         if out.triangles.is_empty() {
             return bad(format!("build item {}: object {} has no triangles", k + 1, c.id));

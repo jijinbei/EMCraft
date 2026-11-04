@@ -279,7 +279,11 @@ pub struct Hit {
 /// assert!(hits(&s, &cam, 1.0, 1.0, 100.0, 100.0).is_none());
 /// ```
 pub fn hits(scene: &Scene, camera: &Camera, x: f64, y: f64, w: f64, h: f64) -> Option<(Hit, Option<Hit>)> {
-    let (origin, dir) = camera.ray(x, y, w, h)?;
+    hits_along(scene, camera.ray(x, y, w, h)?)
+}
+
+/// [`hits`] along the ray `(origin, dir)` (`Camera::ray`), by a scan of every triangle.
+pub fn hits_along(scene: &Scene, (origin, dir): ([f64; 3], [f64; 3])) -> Option<(Hit, Option<Hit>)> {
     let mut solid: Option<(f64, usize)> = None;
     let mut any: Option<(f64, usize)> = None;
     for (i, t) in scene.tris.iter().enumerate().filter(|(_, t)| t.tag != 0) {
