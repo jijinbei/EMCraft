@@ -18,16 +18,7 @@ fn metres(v: f64) -> emcraft_model::Metres {
 
 /// A box `a` × `b`, `length` long: `layers` from the floor up, the rest `fill`; `strips` across
 /// it at (y, x0, width); a port at each end.
-fn boxed(
-    materials: Vec<Material>,
-    a: f64,
-    b: f64,
-    length: f64,
-    fill: &str,
-    layers: Vec<(f64, &str)>,
-    strips: &[(f64, f64, f64)],
-    size: f64,
-) -> Model {
+fn boxed(materials: Vec<Material>, [a, b, length]: [f64; 3], fill: &str, layers: Vec<(f64, &str)>, strips: &[(f64, f64, f64)], size: f64) -> Model {
     let mut m = Model::new();
     for mat in materials {
         m.add_material(mat).unwrap();
@@ -60,7 +51,7 @@ fn tem_gamma(f: f64, eps_r: f64, tan_d: f64) -> C {
 fn two_ply_stripline(length: f64) -> Model {
     let core = Material::new("core", 4.4, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
     let prepreg = Material::new("prepreg", 4.4, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
-    boxed(vec![core, prepreg], 0.006, 0.003, length, "prepreg", vec![(0.0015, "core")], &[(0.0015, 0.00225, 0.0015)], 0.0015)
+    boxed(vec![core, prepreg], [0.006, 0.003, length], "prepreg", vec![(0.0015, "core")], &[(0.0015, 0.00225, 0.0015)], 0.0015)
 }
 
 /// The two-ply stripline's ports and S at `freqs` against the exact TEM γ, at `order`: the
@@ -109,7 +100,7 @@ fn a_guide_with_a_lossy_slab_transmits_collins_complex_mode() {
     // LSM₁₀'s complex γ from the LSE/LSM equations in complex arithmetic.
     let (a, b, length) = (0.02286, 0.01016, 0.02);
     let slab = Material::new("slab", 2.25, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
-    let m = boxed(vec![slab], a, b, length, "vacuum", vec![(b / 2.0, "slab")], &[], 0.002);
+    let m = boxed(vec![slab], [a, b, length], "vacuum", vec![(b / 2.0, "slab")], &[], 0.002);
     let d = Driven::new(&m, Order::Two).unwrap();
     let f = 10e9;
     let k0 = 2.0 * PI * f / C0;
@@ -134,7 +125,7 @@ fn a_guide_with_a_lossy_slab_transmits_collins_complex_mode() {
 /// (to `tol`).
 fn check_microstrip(order: Order, length: f64, tol: f64) {
     let fr4 = Material::new("fr4", 4.4, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
-    let m = boxed(vec![fr4], 0.006, 0.004, length, "vacuum", vec![(0.0008, "fr4")], &[(0.0008, 0.00225, 0.0015)], 0.001);
+    let m = boxed(vec![fr4], [0.006, 0.004, length], "vacuum", vec![(0.0008, "fr4")], &[(0.0008, 0.00225, 0.0015)], 0.001);
     let f = 5e9;
     let modes = emcraft_solver::driven::port_modes(&m, order, f).unwrap();
     let g = modes[0].1[0].gamma.unwrap();
@@ -166,7 +157,7 @@ fn a_shielded_lossy_microstrip_decays_by_its_own_attenuation_at_order_two() {
 fn a_terminal_port_in_a_lossy_medium_is_refused() {
     // Two strips on FR-4: terminal ports would need power-orthogonal modes.
     let fr4 = Material::new("fr4", 4.4, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
-    let mut m = boxed(vec![fr4], 0.008, 0.004, 0.005, "vacuum", vec![(0.0008, "fr4")], &[(0.0008, 0.002, 0.001), (0.0008, 0.005, 0.001)], 0.001);
+    let mut m = boxed(vec![fr4], [0.008, 0.004, 0.005], "vacuum", vec![(0.0008, "fr4")], &[(0.0008, 0.002, 0.001), (0.0008, 0.005, 0.001)], 0.001);
     m.ports.iter_mut().for_each(|p| p.terminals = Terminals::Auto);
     let e = Driven::new(&m, Order::One).unwrap_err();
     assert!(e.to_string().contains("not supported yet") && e.to_string().contains("terminal"), "{e}");
@@ -182,7 +173,7 @@ fn a_lossy_filling_with_te_and_tm_modes_of_equal_cut_off_is_solved() {
     // (no longer refused); every γ is the closed form's.
     let fill = Material::new("lossy", 2.2, 1.0).unwrap().with_loss_tangent(0.02).unwrap();
     let (a, b) = (0.02286, 0.01016);
-    let mut m = boxed(vec![fill], a, b, 0.01, "lossy", Vec::new(), &[], 0.003);
+    let mut m = boxed(vec![fill], [a, b, 0.01], "lossy", Vec::new(), &[], 0.003);
     m.ports.iter_mut().for_each(|p| {
         p.modes = 6;
         p.mode_solver = emcraft_model::ModeSolver::Numeric;

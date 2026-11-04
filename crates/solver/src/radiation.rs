@@ -415,8 +415,10 @@ impl Driven {
                     std::collections::hash_map::Entry::Vacant(v) => v.insert(self.element_of(t)?),
                 };
                 let l = el.barycentric(point);
-                let (e, h) =
-                    (self.field_in(el, t, x, frequency, crate::driven::Field::E, l), self.field_in(el, t, x, frequency, crate::driven::Field::H, l));
+                let (e, h) = (
+                    self.field_in((t, el), l, x, frequency, crate::driven::Field::E),
+                    self.field_in((t, el), l, x, frequency, crate::driven::Field::H),
+                );
                 Ok(HuygensSample { point, weight, normal, e, h })
             })
             .collect::<Result<Vec<_>>>()?;

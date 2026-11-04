@@ -102,11 +102,13 @@ fn scalings(a: &Csr) -> (Vec<f64>, Vec<f64>) {
 /// Eliminates the first `k` columns of a front (column-major m × m) in blocks of [`BLOCK`],
 /// interchanging rows among the first k (`eqs` follows them). On return the first k columns
 /// hold L and U₁₁, rows 0..k of the rest U₁₂, and the trailing block the Schur complement.
-fn factor_front(f: &mut [C], m: usize, k: usize, eqs: &mut [usize], tau: f64, perturbed: &mut usize) {
+/// Returns how many pivots were below `tau` and raised to it.
+fn factor_front(f: &mut [C], m: usize, k: usize, eqs: &mut [usize], tau: f64) -> usize {
+    let mut perturbed = 0;
     let mut b0 = 0;
     while b0 < k {
         let b1 = (b0 + BLOCK).min(k);
-        factor_panel(f, m, k, b0..b1, eqs, tau, perturbed);
+        perturbed += factor_panel(f, m, k, b0..b1, eqs, tau);
         if b1 == m {
             break;
         }
@@ -114,11 +116,14 @@ fn factor_front(f: &mut [C], m: usize, k: usize, eqs: &mut [usize], tau: f64, pe
         update_trailing(f, m, b0..b1);
         b0 = b1;
     }
+    perturbed
 }
 
 /// The panel: columns `block`, every row from its first, by rank-one updates, each column's
-/// pivot the largest among the fully summed rows j..k.
-fn factor_panel(f: &mut [C], m: usize, k: usize, block: Range<usize>, eqs: &mut [usize], tau: f64, perturbed: &mut usize) {
+/// pivot the largest among the fully summed rows j..k. Returns how many pivots were below `tau`
+/// and raised to it.
+fn factor_panel(f: &mut [C], m: usize, k: usize, block: Range<usize>, eqs: &mut [usize], tau: f64) -> usize {
+    let mut perturbed = 0;
     let zero = C::new(0.0, 0.0);
     let b1 = block.end;
     for j in block {
@@ -134,7 +139,7 @@ fn factor_panel(f: &mut [C], m: usize, k: usize, block: Range<usize>, eqs: &mut 
         if best < tau {
             let d = f[j * m + j];
             f[j * m + j] = if d.norm() > 0.0 { d / d.norm() * tau } else { C::new(tau, 0.0) };
-            *perturbed += 1;
+            perturbed += 1;
         } else if p != j {
             for c in 0..m {
                 f.swap(c * m + j, c * m + p);
@@ -157,6 +162,7 @@ fn factor_panel(f: &mut [C], m: usize, k: usize, block: Range<usize>, eqs: &mut 
             }
         }
     }
+    perturbed
 }
 
 /// U's block rows over the later columns: L₁₁⁻¹ (unit lower) applied to rows `block`.
@@ -279,8 +285,7 @@ impl FrontKernel for Kernel {
         let Front { rows, k, mut f } = front;
         let m = rows.len();
         let mut eqs: Vec<usize> = rows[..k].to_vec();
-        let mut perturbed = 0;
-        factor_front(&mut f, m, k, &mut eqs, self.tau, &mut perturbed);
+        let perturbed = factor_front(&mut f, m, k, &mut eqs, self.tau);
         let mu = m - k;
         let update = (mu > 0).then(|| {
             let mut u = Vec::with_capacity(mu * mu);

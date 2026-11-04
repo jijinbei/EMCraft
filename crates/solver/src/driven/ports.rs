@@ -442,7 +442,7 @@ fn cross_section(model: &Model, p: &Port, mesh: &Mesh, order: Order, faces: &[us
     let conductors = edges_on(&|i, b| !own.contains(&i) && b.tag == Boundary::Pec);
     // Its rim on a magnetic symmetry plane is free (the natural condition), not a wall.
     let magnetic = edges_on(&|_, b| b.tag == Boundary::Symmetry(SymmetryKind::Magnetic));
-    Ok((CrossSection::with_free_rim(order, nodes, tris, eps, mu, Walls { conductors: &conductors, free: &magnetic, curved: &curved })?, medium))
+    Ok((CrossSection::new(order, nodes, tris, eps, mu, Walls { conductors: &conductors, free: &magnetic, curved: &curved })?, medium))
 }
 
 /// The mode information of a closed-form mode in a lossy medium of k² `k2`.

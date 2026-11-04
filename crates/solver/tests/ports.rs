@@ -162,7 +162,7 @@ fn a_stripline_carries_tem_at_the_speed_of_light_in_its_fill() {
 
 /// A microstrip in a shielding box `a` × `b`: a substrate `h` thick of εr, a strip `w` wide
 /// centred on it, `length` long.
-fn microstrip(a: f64, b: f64, h: f64, w: f64, er: f64, length: f64, size: f64) -> Model {
+fn microstrip((a, b): (f64, f64), h: f64, w: f64, er: f64, length: f64, size: f64) -> Model {
     let mut m = Model::new();
     m.add_material(Material::new("substrate", er, 1.0).unwrap()).unwrap();
     let wg = emcraft_model::Waveguide {
@@ -195,7 +195,7 @@ fn a_microstrip_has_hammerstad_and_jensens_effective_permittivity() {
     let k0 = 2.0 * std::f64::consts::PI * 1e9 / emcraft_model::units::C0;
     for u in [0.4f64, 0.945, 3.0] {
         let w = u * h;
-        let dr = Driven::new(&microstrip((24.0 * w).max(0.012), 0.024, h, w, er, 0.0005, 0.0006), Order::Two).unwrap();
+        let dr = Driven::new(&microstrip(((24.0 * w).max(0.012), 0.024), h, w, er, 0.0005, 0.0006), Order::Two).unwrap();
         let emcraft_solver::driven::PortModes::Numeric(n) = &dr.ports[0].modes else { panic!("closed-form port on a microstrip") };
         let eps = n.section.modes(k0, 1).unwrap()[0].beta2 / (k0 * k0);
         let fit = emcraft_theory::microstrip::eps_eff(u, er);
@@ -220,7 +220,7 @@ fn strip_lines_have_their_closed_form_impedances() {
     let cohn = emcraft_theory::stripline::z0(w, b, er);
     assert!((z / cohn - 1.0).abs() < 5e-3, "{z} {cohn}");
     let (h, u, er) = (0.000635, 0.945, 9.8);
-    let z = z_of(&microstrip(24.0 * u * h, 0.024, h, u * h, er, 0.0005, 0.0006), 1e9);
+    let z = z_of(&microstrip((24.0 * u * h, 0.024), h, u * h, er, 0.0005, 0.0006), 1e9);
     let fit = emcraft_theory::microstrip::z0(u, er);
     assert!((z / fit - 1.0).abs() < 1e-2, "{z} {fit}");
 }

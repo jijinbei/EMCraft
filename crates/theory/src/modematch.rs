@@ -236,8 +236,9 @@ struct Seg {
     span: f64,
 }
 
-/// M_mn = ∫ e_m⁽¹⁾ e_n⁽²⁾ dt over aperture 2 (within aperture 1).
-fn coupling(basis: Basis, n1: usize, x1: f64, a1: f64, n2: usize, x2: f64, a2: f64) -> Mat {
+/// M_mn = ∫ e_m⁽¹⁾ e_n⁽²⁾ dt over aperture 2 (within aperture 1), each side's `n` modes over its
+/// aperture from `x`, `a` wide.
+fn coupling(basis: Basis, (n1, x1, a1): (usize, f64, f64), (n2, x2, a2): (usize, f64, f64)) -> Mat {
     let mut m = Mat::zeros(n1, n2);
     for i in 0..n1 {
         let k1 = basis.index(i) * PI / a1;
@@ -258,9 +259,10 @@ fn coupling(basis: Basis, n1: usize, x1: f64, a1: f64, n2: usize, x2: f64, a2: f
 }
 
 /// The junction of a wide guide (1) and a guide (2) whose aperture lies within it: the GSM with
-/// guide 1 on the left (D_i = diag ∫ e² dt, Y_i the modal admittances).
-fn junction(basis: Basis, n1: usize, s1: &Seg, y1: &[C], n2: usize, s2: &Seg, y2: &[C]) -> Result<Gsm, TheoryError> {
-    let m = coupling(basis, n1, s1.t0, s1.span, n2, s2.t0, s2.span);
+/// guide 1 on the left (D_i = diag ∫ e² dt, Y_i the modal admittances, one per mode).
+fn junction(basis: Basis, s1: &Seg, y1: &[C], s2: &Seg, y2: &[C]) -> Result<Gsm, TheoryError> {
+    let (n1, n2) = (y1.len(), y2.len());
+    let m = coupling(basis, (n1, s1.t0, s1.span), (n2, s2.t0, s2.span));
     let d1inv = Mat::diag(&(0..n1).map(|k| C::new(1.0 / basis.norm(k, s1.span), 0.0)).collect::<Vec<_>>());
     let d2y2 = Mat::diag(&y2.iter().enumerate().map(|(k, y)| y * basis.norm(k, s2.span)).collect::<Vec<_>>());
     let mt_y1 = m.transpose().mul(&Mat::diag(y1));
@@ -319,13 +321,12 @@ fn solve_line(basis: Basis, segs: &[Seg], frequency: f64, modes: usize) -> Resul
     let tol = 1e-9 * widest;
     for i in 1..segs.len() {
         let (a, b) = (&segs[i - 1], &segs[i]);
-        let (na, nb) = (count(a), count(b));
         let holds = |p: &Seg, q: &Seg| p.t0 <= q.t0 + tol && q.t0 + q.span <= p.t0 + p.span + tol;
         let j = if holds(a, b) {
-            junction(basis, na, a, &props[i - 1].1, nb, b, &props[i].1)?
+            junction(basis, a, &props[i - 1].1, b, &props[i].1)?
         } else if holds(b, a) {
             // The wide guide on the right: the same junction seen from the other side.
-            let g = junction(basis, nb, b, &props[i].1, na, a, &props[i - 1].1)?;
+            let g = junction(basis, b, &props[i].1, a, &props[i - 1].1)?;
             Gsm { ll: g.rr, lr: g.rl, rl: g.lr, rr: g.ll }
         } else {
             return Err(TheoryError::Invalid(format!("sections {i} and {}: apertures overlap only in part", i + 1)));
@@ -423,7 +424,7 @@ mod tests {
     #[test]
     fn coupling_integrals_match_quadrature() {
         let (x1, a1, x2, a2) = (0.0, A, 0.004, 0.012);
-        let m = coupling(Basis::Sin, 5, x1, a1, 3, x2, a2);
+        let m = coupling(Basis::Sin, (5, x1, a1), (3, x2, a2));
         let (x, w) = (0..2000).map(|i| (x2 + a2 * (i as f64 + 0.5) / 2000.0, a2 / 2000.0)).unzip::<f64, f64, Vec<_>, Vec<_>>();
         for i in 0..5 {
             for j in 0..3 {

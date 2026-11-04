@@ -99,7 +99,8 @@ impl Layer {
 /// s_r = 1 − j(σ₀/k₀)ξ², ξ = (r − r₀)/d, and the stretched radius r̃ = r + (1/jk₀)∫_{r₀}^r σ dr'
 /// = r − j(σ₀/k₀) d ξ³/3, give Λ = a r̂r̂ + b (I − r̂r̂) with a = (r̃/r)²/s_r, b = s_r. Returns
 /// (a, b); (1, 1) inside the inner sphere.
-pub(crate) fn spherical_stretch(r: f64, inner: f64, thickness: f64, sigma0: f64, k0: f64) -> (C, C) {
+pub(crate) fn spherical_stretch(r: f64, shell: Shell, k0: f64) -> (C, C) {
+    let Shell { inner, thickness, sigma0 } = shell;
     let xi = ((r - inner) / thickness).clamp(0.0, 1.0);
     if xi == 0.0 || r <= 0.0 {
         return (C::new(1.0, 0.0), C::new(1.0, 0.0));
@@ -109,6 +110,15 @@ pub(crate) fn spherical_stretch(r: f64, inner: f64, thickness: f64, sigma0: f64,
     let rt = C::new(r, -g * thickness * xi * xi * xi / 3.0);
     let q = rt / r;
     (q * q / s, s)
+}
+
+/// A spherical layer: from radius `inner` (m), `thickness` thick, its conductivity σ₀ at the
+/// outside (the profile σ₀ ξ²).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Shell {
+    pub inner: f64,
+    pub thickness: f64,
+    pub sigma0: f64,
 }
 
 impl Driven {
@@ -126,7 +136,9 @@ impl Driven {
         let sigma0 = layer.sigma0();
         let list = match &layer.kind {
             LayerKind::Box(list) => list,
-            LayerKind::Sphere { inner, tets } => return self.add_spherical_pml(a, k0, *inner, layer.thickness, sigma0, tets),
+            LayerKind::Sphere { inner, tets } => {
+                return self.add_spherical_pml(a, k0, Shell { inner: *inner, thickness: layer.thickness, sigma0 }, tets);
+            }
         };
         for &(t, depth) in list {
             let s = [depth.x, depth.y, depth.z].map(|x| C::new(1.0, -sigma0 / k0 * x * x));
@@ -187,7 +199,7 @@ impl Driven {
     /// Wave Lett. 7(11), 1997) — [`spherical_stretch`]. Its axes turn with r̂ inside an element,
     /// so the full tensors are evaluated at each quadrature point:
     /// (Λ v)·w = b v·w + (a − b)(v·r̂)(w·r̂), (Λ⁻¹ v)·w = v·w/b + (1/a − 1/b)(v·r̂)(w·r̂).
-    fn add_spherical_pml(&self, a: &mut Csr, k0: f64, inner: f64, thickness: f64, sigma0: f64, tets: &[usize]) -> Result<()> {
+    fn add_spherical_pml(&self, a: &mut Csr, k0: f64, shell: Shell, tets: &[usize]) -> Result<()> {
         let n = self.order.dofs();
         let mut local = vec![C::new(0.0, 0.0); n * n];
         for &t in tets {
@@ -205,7 +217,7 @@ impl Driven {
             for (l, w) in el.rule(points) {
                 let p = el.point(l).to_vec();
                 let r = p.norm();
-                let (sa, sb) = spherical_stretch(r, inner, thickness, sigma0, k0);
+                let (sa, sb) = spherical_stretch(r, shell, k0);
                 let rhat = if r > 0.0 { p / r } else { Vec3::ZERO };
                 let (v, c) = (el.values(l), el.curl_values(l));
                 let (vr, cr): (Vec<f64>, Vec<f64>) = v.iter().zip(&c).map(|(v, c)| (v.dot(rhat), c.dot(rhat))).unzip();
@@ -239,16 +251,17 @@ mod tests {
 
     #[test]
     fn the_spherical_stretch_is_the_closed_form() {
+        const SHELL: Shell = Shell { inner: 1.0, thickness: 0.5, sigma0: 10.0 };
         // Inside the inner sphere: no stretch.
-        assert_eq!(spherical_stretch(0.5, 1.0, 0.5, 10.0, 2.0), (C::new(1.0, 0.0), C::new(1.0, 0.0)));
+        assert_eq!(spherical_stretch(0.5, SHELL, 2.0), (C::new(1.0, 0.0), C::new(1.0, 0.0)));
         // Halfway in: s = 1 − j(σ₀/k₀)ξ², r̃ = r − j(σ₀/k₀)dξ³/3.
-        let (a, b) = spherical_stretch(1.25, 1.0, 0.5, 10.0, 2.0);
+        let (a, b) = spherical_stretch(1.25, SHELL, 2.0);
         let s = C::new(1.0, -5.0 * 0.25);
         let rt = C::new(1.25, -5.0 * 0.5 * 0.125 / 3.0);
         assert!((b - s).norm() < 1e-15);
         assert!((a - (rt / 1.25) * (rt / 1.25) / s).norm() < 1e-15);
         // Beyond the outer radius the profile stays at its last value.
-        assert_eq!(spherical_stretch(2.0, 1.0, 0.5, 10.0, 2.0).1, spherical_stretch(1.5, 1.0, 0.5, 10.0, 2.0).1);
+        assert_eq!(spherical_stretch(2.0, SHELL, 2.0).1, spherical_stretch(1.5, SHELL, 2.0).1);
     }
 
     #[test]
@@ -290,7 +303,7 @@ mod tests {
         let d = Driven::open(&m, Order::One).unwrap();
         let Some(Layer { kind: LayerKind::Sphere { tets, .. }, .. }) = &d.pml else { panic!("no spherical layer") };
         let mut a = d.pattern.zeroed();
-        d.add_spherical_pml(&mut a, 2.0 * PI * f / C0, 0.008, 0.004, 100.0, tets).unwrap();
+        d.add_spherical_pml(&mut a, 2.0 * PI * f / C0, Shell { inner: 0.008, thickness: 0.004, sigma0: 100.0 }, tets).unwrap();
         a
     }
 
@@ -321,7 +334,7 @@ mod tests {
         let all: Vec<usize> = (0..d.mesh.tets.len()).collect();
         let k0 = 2.0 * PI * 10e9 / C0;
         let mut p = d.pattern.zeroed();
-        d.add_spherical_pml(&mut p, k0, 1.0, 0.004, 100.0, &all).unwrap();
+        d.add_spherical_pml(&mut p, k0, Shell { inner: 1.0, thickness: 0.004, sigma0: 100.0 }, &all).unwrap();
         let mut q = d.pattern.zeroed();
         for t in all {
             let el = d.element_of(t).unwrap();

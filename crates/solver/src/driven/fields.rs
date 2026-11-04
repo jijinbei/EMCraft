@@ -19,7 +19,7 @@ impl Driven {
         let Image { point: q, e: se, h: sh } = Symmetry::image_through(&self.symmetry, p);
         let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = self.element_of(t).ok()?;
-        let v = self.field_in(&el, t, x, frequency, which, el.barycentric(q));
+        let v = self.field_in((t, &el), el.barycentric(q), x, frequency, which);
         Some(flipped(
             v,
             match which {
@@ -36,11 +36,11 @@ impl Driven {
         let (t, _) = emcraft_mesh::locate(&self.mesh, q)?;
         let el = self.element_of(t).ok()?;
         let l = el.barycentric(q);
-        Some((flipped(self.field_in(&el, t, x, frequency, Field::E, l), se), flipped(self.field_in(&el, t, x, frequency, Field::H, l), sh)))
+        Some((flipped(self.field_in((t, &el), l, x, frequency, Field::E), se), flipped(self.field_in((t, &el), l, x, frequency, Field::H), sh)))
     }
 
     /// The field `which` at barycentric coordinates `l` of tetrahedron `t` (its element `el`).
-    pub(crate) fn field_in(&self, el: &Element, t: usize, x: &[C], frequency: f64, which: Field, l: [f64; 4]) -> CVec3 {
+    pub(crate) fn field_in(&self, (t, el): (usize, &Element), l: [f64; 4], x: &[C], frequency: f64, which: Field) -> CVec3 {
         let values = match which {
             Field::E => el.values(l),
             Field::H => el.curl_values(l),
@@ -64,7 +64,7 @@ impl Driven {
         for t in 0..self.mesh.tets.len() {
             let el = self.element_of(t)?;
             for (l, w) in el.rule(n) {
-                let (u, e) = (self.field_in(&el, t, x, frequency, which, l), exact(el.point(l)));
+                let (u, e) = (self.field_in((t, &el), l, x, frequency, which), exact(el.point(l)));
                 err += w * (u - e).norm_sqr();
                 norm += w * e.norm_sqr();
             }
@@ -90,7 +90,7 @@ impl Driven {
         let n = rule_points(self.order);
         (0..self.mesh.tets.len()).filter(|t| keep(*t)).try_fold(0.0, |total, t| {
             let el = self.element_of(t)?;
-            Ok(total + el.rule(n).into_iter().map(|(l, w)| w * f(t, self.field_in(&el, t, x, frequency, which, l))).sum::<f64>())
+            Ok(total + el.rule(n).into_iter().map(|(l, w)| w * f(t, self.field_in((t, &el), l, x, frequency, which))).sum::<f64>())
         })
     }
 
@@ -101,7 +101,7 @@ impl Driven {
         self.walls.iter().filter_map(|&i| self.mesh.boundary.get(i)).flat_map(|b| space.sides(b)).try_fold(0.0, |total, b| {
             let face = space.face_rule(&b, n)?;
             let (el, tet) = (&face.el, face.tet);
-            Ok(total + face.points.iter().map(|&(l, wa, normal)| wa * f(self.field_in(el, tet, x, frequency, which, l), normal)).sum::<f64>())
+            Ok(total + face.points.iter().map(|&(l, wa, normal)| wa * f(self.field_in((tet, el), l, x, frequency, which), normal)).sum::<f64>())
         })
     }
 }

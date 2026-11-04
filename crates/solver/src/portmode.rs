@@ -101,35 +101,19 @@ pub struct Walls<'a> {
     pub curved: &'a std::collections::BTreeMap<[u32; 2], Point3>,
 }
 
-impl CrossSection {
-    /// A cross-section of triangles on `nodes` (their z ignored) with εr and μr per triangle;
-    /// its boundary edges and the `conductors` edges inside it are conducting walls. Edges in
-    /// `curved` (by their nodes, ascending) have their midpoints moved there, onto a curved wall:
-    /// their triangles are curved ([`Triangle::curved`]).
-    pub fn new(
-        order: Order,
-        nodes: Vec<Point3>,
-        tris: Vec<[u32; 3]>,
-        eps: Vec<f64>,
-        mu: Vec<f64>,
-        conductors: &[[u32; 2]],
-        curved: &std::collections::BTreeMap<[u32; 2], Point3>,
-    ) -> Result<CrossSection> {
-        CrossSection::with_free_rim(order, nodes, tris, eps, mu, Walls { conductors, free: &[], curved })
-    }
+impl Walls<'_> {
+    /// No walls of their own: the rim and nothing else is a conductor.
+    pub const NONE: Walls<'static> = Walls { conductors: &[], free: &[], curved: &std::collections::BTreeMap::new() };
+}
 
-    /// As [`CrossSection::new`] with the conductors and curved edges of `walls`, but its boundary
-    /// edges in `walls.free` are a magnetic wall — a symmetry plane's — rather than a conductor:
-    /// their tangential e and their φ are left free, the natural condition (tangential H = 0)
-    /// holding weakly.
-    pub fn with_free_rim(
-        order: Order,
-        nodes: Vec<Point3>,
-        tris: Vec<[u32; 3]>,
-        eps: Vec<f64>,
-        mu: Vec<f64>,
-        walls: Walls<'_>,
-    ) -> Result<CrossSection> {
+impl CrossSection {
+    /// A cross-section of triangles on `nodes` (their z ignored) with εr and μr per triangle.
+    /// Its boundary edges and the `walls.conductors` edges inside it are conducting walls, but
+    /// the boundary edges in `walls.free` are a magnetic wall — a symmetry plane's: their
+    /// tangential e and their φ are left free, the natural condition (tangential H = 0) holding
+    /// weakly. Edges in `walls.curved` have their midpoints moved there, onto a curved wall:
+    /// their triangles are curved ([`Triangle::curved`]).
+    pub fn new(order: Order, nodes: Vec<Point3>, tris: Vec<[u32; 3]>, eps: Vec<f64>, mu: Vec<f64>, walls: Walls<'_>) -> Result<CrossSection> {
         let Walls { conductors, free, curved } = walls;
         if tris.is_empty() || eps.len() != tris.len() || mu.len() != tris.len() {
             return Err(invalid("port cross-section", "needs triangles, each with its materials"));
@@ -643,7 +627,7 @@ mod tests {
         }
         let e: Vec<f64> = tris.iter().map(|t| Point3::centroid(t.map(|v| nodes[v as usize])).map_or(1.0, |c| eps(c.x, c.y))).collect();
         let mu = vec![1.0; tris.len()];
-        CrossSection::new(order, nodes, tris, e, mu, &[], &Default::default()).unwrap()
+        CrossSection::new(order, nodes, tris, e, mu, Walls::NONE).unwrap()
     }
 
     #[test]
@@ -720,7 +704,7 @@ mod tests {
             .flat_map(|i| (0..sectors).flat_map(move |j| [[id(i, j), id(i + 1, j), id(i + 1, j + 1)], [id(i, j), id(i + 1, j + 1), id(i, j + 1)]]))
             .collect();
         let n = tris.len();
-        CrossSection::new(order, nodes, tris, vec![eps; n], vec![1.0; n], &[], &Default::default()).unwrap()
+        CrossSection::new(order, nodes, tris, vec![eps; n], vec![1.0; n], Walls::NONE).unwrap()
     }
 
     #[test]
@@ -776,7 +760,7 @@ mod tests {
             }
         }
         let n = tris.len();
-        let cs = CrossSection::new(Order::Two, nodes, tris, vec![er; n], vec![1.0; n], &[], &curved).unwrap();
+        let cs = CrossSection::new(Order::Two, nodes, tris, vec![er; n], vec![1.0; n], Walls { curved: &curved, ..Walls::NONE }).unwrap();
         assert_eq!(cs.conductors().len(), 1);
         let k0 = 2.0 * std::f64::consts::PI * 3e9 / emcraft_model::units::C0;
         let modes = cs.modes(k0, 1).unwrap();

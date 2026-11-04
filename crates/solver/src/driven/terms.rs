@@ -120,9 +120,8 @@ pub(crate) fn lossy_modes(section: &CrossSection, medium: &PortMedium, frequency
 }
 
 /// A lossy mode's port term: its vector `v` (∫ Nᵢ · e dS), norm ‖e‖² over the faces meshed,
-/// μ the medium's complex permeability.
-fn lossy_term<'a>(name: String, v: Cow<'a, [(usize, C)]>, norm: f64, kappa: C, gamma: C, mu: C, propagating: bool) -> PortTerm<'a> {
-    let kappa = kappa / mu;
+/// `kappa` over the medium's complex permeability μ.
+fn lossy_term<'a>(name: String, v: Cow<'a, [(usize, C)]>, norm: f64, kappa: C, gamma: C, propagating: bool) -> PortTerm<'a> {
     let norm = C::new(norm, 0.0);
     PortTerm { name, v, factor: kappa / norm, rhs: 2.0 * kappa, norm, proxy: -J * kappa * norm, propagating, impedance: None, gamma, current: None }
 }
@@ -230,7 +229,14 @@ impl Driven {
                             invalid("frequency", format!("{} Hz is at the cut-off of mode {} at port `{}`", frequency, mode.name(), port.name))
                         })?;
                         let propagating = k2.re > mode.cutoff().powi(2);
-                        Ok(lossy_term(mode.name(), Cow::Borrowed(v.as_slice()), mode.norm() * fraction, kappa, mode.gamma_lossy(k2), mu, propagating))
+                        Ok(lossy_term(
+                            mode.name(),
+                            Cow::Borrowed(v.as_slice()),
+                            mode.norm() * fraction,
+                            kappa / mu,
+                            mode.gamma_lossy(k2),
+                            propagating,
+                        ))
                     })
                     .collect()
             }
@@ -335,7 +341,7 @@ impl Driven {
                     .enumerate()
                     .map(|(i, (lm, vm))| {
                         let v = Cow::Owned(n.support.iter().copied().zip(vm).collect());
-                        lossy_term(format!("mode {}", i + 1), v, 1.0, lm.kappa, lm.gamma, mu, lm.propagating)
+                        lossy_term(format!("mode {}", i + 1), v, 1.0, lm.kappa / mu, lm.gamma, lm.propagating)
                     })
                     .collect())
             }
@@ -419,7 +425,7 @@ mod tests {
             .flat_map(|j| (0..nx).flat_map(move |i| [[id(i, j), id(i + 1, j), id(i + 1, j + 1)], [id(i, j), id(i + 1, j + 1), id(i, j + 1)]]))
             .collect();
         let n = tris.len();
-        let cs = CrossSection::new(Order::Two, nodes, tris, vec![1.0; n], vec![1.0; n], &[], &Default::default()).unwrap();
+        let cs = CrossSection::new(Order::Two, nodes, tris, vec![1.0; n], vec![1.0; n], crate::portmode::Walls::NONE).unwrap();
         let m = Material::new("lossy", 2.2, 1.3).unwrap().with_loss_tangent(0.02).unwrap().with_magnetic_loss_tangent(0.01).unwrap();
         let f = 11e9;
         let unit = lossy_section_modes(&cs, &m, f, 4).unwrap().unwrap();
