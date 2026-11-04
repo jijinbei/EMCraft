@@ -295,8 +295,10 @@ pub(crate) fn factor_tree<K: FrontKernel>(kernel: &K, an: &Analysis) -> Result<(
         }
         nodes[s] = Some(f.node);
     }
-    let nodes =
-        nodes.into_iter().map(|n| n.ok_or(FactorError::Dimension("a supernode was left unfactored".into()))).collect::<Result<Vec<_>, _>>()?;
+    let nodes = nodes
+        .into_iter()
+        .map(|n| n.ok_or_else(|| FactorError::Dimension("a supernode was left unfactored".into())))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok((nodes, counts))
 }
 
@@ -305,7 +307,7 @@ pub(crate) fn factor_tree<K: FrontKernel>(kernel: &K, an: &Analysis) -> Result<(
 /// that error.
 pub(crate) fn refine(a: &Csr, b: &[C], steps: usize, solve: impl Fn(&mut [C]) -> Result<(), FactorError>) -> Result<(Vec<C>, f64), FactorError> {
     let mut one = refine_many(a, std::slice::from_ref(&b.to_vec()), steps, |bs| bs.iter_mut().try_for_each(|b| solve(b)))?;
-    one.pop().ok_or(FactorError::Dimension("a refined solve returned nothing".into()))
+    one.pop().ok_or_else(|| FactorError::Dimension("a refined solve returned nothing".into()))
 }
 
 /// [`refine`] for several right-hand sides at once: each pass of `solve_many` serves every one

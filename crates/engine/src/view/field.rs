@@ -247,7 +247,7 @@ fn solution<'a>(session: &'a Session, view: &FieldView) -> Result<Solution<'a>> 
             format!("a 1 W wave on its strip, the other terminals matched to {} Ω", entry.and_then(|e| e.reference).unwrap_or_default())
         }
         Some((None, Some(emcraft_solver::driven::PortModes::Analytic { modes, .. }))) => {
-            modes.first().map_or("TE10".to_owned(), |(m, _)| format!("1 V/m {}", m.name()))
+            modes.first().map_or_else(|| "TE10".to_owned(), |(m, _)| format!("1 V/m {}", m.name()))
         }
         _ => "its first mode".to_owned(),
     };

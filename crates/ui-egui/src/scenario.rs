@@ -254,21 +254,21 @@ impl Harness {
     pub fn step(&mut self, s: &Value) -> Result<(), String> {
         let flag = |k: &str| s.get(k).and_then(Value::as_bool).unwrap_or(false);
         let res = if let Some(m) = s.get("call").and_then(Value::as_str) {
-            self.call(m, s.get("params").cloned().unwrap_or(json!({})))
+            self.call(m, s.get("params").cloned().unwrap_or_else(|| json!({})))
         } else if let Some(at) = s.get("click") {
             let [x, y] = self.at(at)?;
             // A pause before each click, as a hand makes: clicks in quick succession would count
             // as double and triple clicks.
             self.time += 1.0;
             self.call("ui.move", json!({"x": x, "y": y}));
-            self.call("ui.click", json!({"x": x, "y": y, "double": flag("double"), "shift": flag("shift"), "button": s.get("button").cloned().unwrap_or(json!("left"))}))
+            self.call("ui.click", json!({"x": x, "y": y, "double": flag("double"), "shift": flag("shift"), "button": s.get("button").cloned().unwrap_or_else(|| json!("left"))}))
         } else if let Some(at) = s.get("move") {
             let [x, y] = self.at(at)?;
             self.call("ui.move", json!({"x": x, "y": y}))
         } else if let Some(d) = s.get("drag") {
             let [x0, y0] = self.at(d.get(0).unwrap_or(&Value::Null))?;
             let [x1, y1] = self.at(d.get(1).unwrap_or(&Value::Null))?;
-            let button = s.get("button").cloned().unwrap_or(json!("left"));
+            let button = s.get("button").cloned().unwrap_or_else(|| json!("left"));
             self.call("ui.drag", json!({"x0": x0, "y0": y0, "x1": x1, "y1": y1, "steps": 8, "button": button, "ctrl": flag("ctrl"), "shift": flag("shift"), "alt": flag("alt"), "press": s.get("press").cloned().unwrap_or(json!(true)), "release": s.get("release").cloned().unwrap_or(json!(true))}))
         } else if let Some(text) = s.get("widget").and_then(Value::as_str) {
             let [x, y] = self.widget(text).ok_or_else(|| format!("no widget `{text}` on screen"))?;
@@ -413,7 +413,7 @@ pub fn check(h: &mut Harness, e: &Value) -> Result<(), String> {
                 if crate::commands::is_long(id) {
                     return Err(format!("query: {id} is a long command"));
                 }
-                let reply = h.app.session.clone().execute(id, &v.get("params").cloned().unwrap_or(json!({}))).map_err(|e| e.to_string())?;
+                let reply = h.app.session.clone().execute(id, &v.get("params").cloned().unwrap_or_else(|| json!({}))).map_err(|e| e.to_string())?;
                 let got = at_path(&reply, v["path"].as_str().unwrap_or("")).cloned().unwrap_or(Value::Null);
                 compare(&got, &v["value"]).map_err(|m| format!("query {id}: {m}"))?;
             }

@@ -116,7 +116,7 @@ fn band_vector(space: &Space, a: Point3, b: Point3, r: f64) -> Result<Vec<(usize
     let s = (b - a).normalized().ok_or_else(|| invalid("lumped port", "its two ends coincide"))?;
     // Two unit vectors across the line.
     let helper = Vec3::unit(if s.x.abs() < 0.9 { 0 } else { 1 });
-    let u = s.cross(helper).normalized().unwrap_or(Vec3::unit(0));
+    let u = s.cross(helper).normalized().unwrap_or_else(|| Vec3::unit(0));
     let v = s.cross(u);
     let n = 16;
     let mut out: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();

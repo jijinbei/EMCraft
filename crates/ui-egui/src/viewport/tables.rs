@@ -127,7 +127,7 @@ fn mode_picture(
 }
 
 pub(super) fn num(v: &Value, digits: usize) -> String {
-    v.as_f64().map_or("–".into(), |x| format!("{x:.digits$}"))
+    v.as_f64().map_or_else(|| "–".into(), |x| format!("{x:.digits$}"))
 }
 
 pub(super) fn eigenmodes(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mut Actions) {

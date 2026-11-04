@@ -603,7 +603,7 @@ impl Session {
             Effect::Solve => {
                 self.results.solved_since(&before.results);
                 let params = if params.is_null() { json!({}) } else { params.clone() };
-                let run = self.next_run.take().unwrap_or(Run { command: spec.id.to_owned(), params, units: self.display });
+                let run = self.next_run.take().unwrap_or_else(|| Run { command: spec.id.to_owned(), params, units: self.display });
                 let provenance = crate::archive::Provenance::of(self, spec.id, ran.seconds, ran.reply);
                 self.archive_current = Some(crate::archive::keep(self, &run.command, &run.params, provenance));
                 crate::runs::record(&mut self.runs, run);
@@ -672,7 +672,7 @@ impl Session {
             json!({
                 "width": l.from_si(w.width.get()), "height": l.from_si(w.height.get()), "length": l.from_si(w.length()),
                 "sections": w.sections.iter().enumerate().map(|(i, s)| {
-                    let a = w.aperture(i).unwrap_or(w.across_x());
+                    let a = w.aperture(i).unwrap_or_else(|| w.across_x());
                     json!({"length": l.from_si(s.length.get()), "material": s.material, "aperture": [l.from_si(a.start), l.from_si(a.width)]})
                 }).collect::<Vec<_>>(),
             })

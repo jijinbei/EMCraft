@@ -69,7 +69,7 @@ pub fn serve(app: &mut EmcraftApp, ctx: &egui::Context) {
 }
 
 fn key_from(name: &str) -> Option<egui::Key> {
-    egui::Key::from_name(name).or(match name.to_ascii_lowercase().as_str() {
+    egui::Key::from_name(name).or_else(|| match name.to_ascii_lowercase().as_str() {
         "enter" | "return" => Some(egui::Key::Enter),
         "esc" | "escape" => Some(egui::Key::Escape),
         "delete" => Some(egui::Key::Delete),
@@ -405,7 +405,7 @@ fn autosave(app: &mut EmcraftApp, a: Args) -> Handled {
 
 fn engine_execute(app: &mut EmcraftApp, req: &ControlRequest, a: Args) -> Handled {
     let id = a.str("command").ok_or("missing `command`")?;
-    let params = a.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}));
+    let params = a.get("params").cloned().filter(|v| !v.is_null()).unwrap_or_else(|| json!({}));
     Ok(execute(app, req, id, params, a.bool("wait").unwrap_or(true)))
 }
 

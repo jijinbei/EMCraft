@@ -63,7 +63,7 @@ impl Slice {
             .filter(|(k, _)| *k != self.free)
             .filter_map(|(k, _)| {
                 let axis = study.grid.get(k)?;
-                Some(valued(study, units, k, *axis.get(self.at.get(k).copied().unwrap_or(0)).or(axis.first())?))
+                Some(valued(study, units, k, *axis.get(self.at.get(k).copied().unwrap_or(0)).or_else(|| axis.first())?))
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -115,7 +115,7 @@ pub fn chart_with_units(study: &Study, parameter: Option<&str>, slice: &Slice, u
 
 /// The name of the sweep's variable `free`, or `otherwise`.
 fn variable(study: &Study, free: usize, otherwise: &str) -> String {
-    study.variables.get(free).map_or(otherwise.to_owned(), |n| n.clone())
+    study.variables.get(free).map_or_else(|| otherwise.to_owned(), |n| n.clone())
 }
 
 /// Variable `k`'s unit, when known.

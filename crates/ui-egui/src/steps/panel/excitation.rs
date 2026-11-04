@@ -101,9 +101,9 @@ fn mode_table(app: &EmcraftApp, ui: &mut egui::Ui, reply: &Value, out: &mut Acti
                 ui.spacing_mut().item_spacing.x = 0.0;
                 cell(ui, widths[0], txt(format!("{name} · {}", mode.get("name").and_then(Value::as_str).unwrap_or(""))));
                 if mode.get("propagating").and_then(Value::as_bool) == Some(true) {
-                    cell(ui, widths[1], txt(n("beta").map_or("—".into(), |v| format!("{v:.4}"))));
-                    cell(ui, widths[2], txt(n("eps_eff").map_or("—".into(), |v| format!("{v:.4}"))));
-                    cell(ui, widths[3], txt(n("impedance").map_or("—".into(), |v| format!("{v:.2}"))));
+                    cell(ui, widths[1], txt(n("beta").map_or_else(|| "—".into(), |v| format!("{v:.4}"))));
+                    cell(ui, widths[2], txt(n("eps_eff").map_or_else(|| "—".into(), |v| format!("{v:.4}"))));
+                    cell(ui, widths[3], txt(n("impedance").map_or_else(|| "—".into(), |v| format!("{v:.2}"))));
                 } else {
                     let a = n("attenuation_db").unwrap_or(f64::NAN);
                     ui_kit::small(ui, trf("cut off, {a} dB/{unit}", args!(a = format!("{a:.1}"), unit = unit)), t.text_dim);

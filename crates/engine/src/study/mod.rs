@@ -234,16 +234,15 @@ impl Study {
     /// The rows of a grid sweep along variable `free`, every other variable at its value
     /// `at[k]` (an index into its axis; the first where missing), in the free variable's order.
     pub fn slice(&self, free: usize, at: &[usize]) -> Vec<&Row> {
-        let held: Vec<Option<f64>> =
-            (0..self.variables.len())
-                .map(|k| {
-                    if k == free {
-                        None
-                    } else {
-                        self.grid.get(k).and_then(|axis| axis.get(at.get(k).copied().unwrap_or(0)).or(axis.first())).copied()
-                    }
-                })
-                .collect();
+        let held: Vec<Option<f64>> = (0..self.variables.len())
+            .map(|k| {
+                if k == free {
+                    None
+                } else {
+                    self.grid.get(k).and_then(|axis| axis.get(at.get(k).copied().unwrap_or(0)).or_else(|| axis.first())).copied()
+                }
+            })
+            .collect();
         self.rows.iter().filter(|r| held.iter().zip(&r.values).all(|(h, v)| h.is_none_or(|h| h.to_bits() == v.to_bits()))).collect()
     }
 

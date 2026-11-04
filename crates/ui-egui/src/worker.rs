@@ -113,7 +113,7 @@ impl Job {
             let compute = session.compute();
             let named =
                 params.get("device").and_then(Value::as_str).filter(|_| command == "solve.time_domain").and_then(emcraft_engine::Device::parse);
-            Device { name: named.unwrap_or(compute.device()), fronts_before: compute.fronts_taken(), compute: compute.clone() }
+            Device { name: named.unwrap_or_else(|| compute.device()), fronts_before: compute.fronts_taken(), compute: compute.clone() }
         });
         Job {
             command: command.to_owned(),

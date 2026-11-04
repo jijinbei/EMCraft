@@ -153,7 +153,7 @@ pub fn scoped<T>(device: &wgpu::Device, make: impl FnOnce() -> T) -> Result<T, S
     let mut failed = None;
     for scope in scopes.into_iter().rev() {
         if let Some(e) = super::ready(scope.pop()).flatten() {
-            failed.get_or_insert(e.to_string());
+            failed.get_or_insert_with(|| e.to_string());
         }
     }
     match failed {

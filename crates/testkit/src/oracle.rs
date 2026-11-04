@@ -530,14 +530,17 @@ pub fn run(root: &Path, opts: &Options) -> Result<bool> {
             if !o.pass || o.fixture == Some(false) {
                 ok = false;
             }
-            let err = o.value.as_ref().map_or("—".into(), |v| {
-                if o.quantity.reference != 0.0 {
-                    let pct = 100.0 * (v - o.quantity.reference) / o.quantity.reference.abs();
-                    if pct.abs() < 0.01 { format!("{pct:.1e}%") } else { format!("{pct:.3}%") }
-                } else {
-                    sig(v - o.quantity.reference)
-                }
-            });
+            let err = o.value.as_ref().map_or_else(
+                |_| "—".into(),
+                |v| {
+                    if o.quantity.reference != 0.0 {
+                        let pct = 100.0 * (v - o.quantity.reference) / o.quantity.reference.abs();
+                        if pct.abs() < 0.01 { format!("{pct:.1e}%") } else { format!("{pct:.3}%") }
+                    } else {
+                        sig(v - o.quantity.reference)
+                    }
+                },
+            );
             page_rows.push(format!(
                 "| [{name}](../tests/oracle/{name}/) | {} | {} | {} | {err} | {} | {} | {fx} |",
                 o.quantity.description.replace('|', "\\|"),

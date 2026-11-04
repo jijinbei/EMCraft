@@ -219,7 +219,7 @@ fn cmd_dupes(rest: &[&str]) -> Result<(), String> {
             "--loose" => loose = true,
             "--min" => {
                 let v = it.next().ok_or("dupes: --min needs a number of lines")?;
-                min = v.parse().ok().filter(|n| (2..=1000).contains(n)).ok_or(format!("dupes: --min {v}: a whole number from 2 to 1000"))?;
+                min = v.parse().ok().filter(|n| (2..=1000).contains(n)).ok_or_else(|| format!("dupes: --min {v}: a whole number from 2 to 1000"))?;
             }
             other => return Err(format!("dupes: unknown argument `{other}`")),
         }

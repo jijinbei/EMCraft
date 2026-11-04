@@ -87,7 +87,8 @@ pub fn windows(root: &Path, rest: &[&str]) -> Result<(), String> {
         if std::env::var_os(IN_NIX).is_some() {
             return Err(format!("installer-windows: {GCC} or makensis missing inside nix-shell"));
         }
-        let nix = nix_shell().ok_or(format!("installer-windows: needs {GCC} (MinGW-w64) and makensis (NSIS) on PATH, or Nix to fetch them"))?;
+        let nix =
+            nix_shell().ok_or_else(|| format!("installer-windows: needs {GCC} (MinGW-w64) and makensis (NSIS) on PATH, or Nix to fetch them"))?;
         let me = std::env::current_exe().map_err(|e| format!("installer-windows: {e}"))?;
         let mut line = vec![sh_quote(&me.to_string_lossy()), "installer-windows".into()];
         line.extend(rest.iter().map(|a| sh_quote(a)));
@@ -96,7 +97,7 @@ pub fn windows(root: &Path, rest: &[&str]) -> Result<(), String> {
         return crate::run(c, "nix-shell (MinGW-w64, NSIS)");
     }
     let (version, target_dir) = metadata()?;
-    let file_version = file_version(&version).ok_or(format!("installer-windows: version `{version}` is not MAJOR.MINOR.PATCH"))?;
+    let file_version = file_version(&version).ok_or_else(|| format!("installer-windows: version `{version}` is not MAJOR.MINOR.PATCH"))?;
     build(root, &target_dir)?;
 
     let stage = target_dir.join("installer-windows");
@@ -171,7 +172,7 @@ fn build(root: &Path, target_dir: &Path) -> Result<(), String> {
     }
     // Some build scripts call `windres` without MinGW's prefix.
     if on_path("windres").is_none() {
-        let windres = on_path(WINDRES).ok_or(format!("installer-windows: {WINDRES} not on PATH"))?;
+        let windres = on_path(WINDRES).ok_or_else(|| format!("installer-windows: {WINDRES} not on PATH"))?;
         let shim = target_dir.join("installer-windows-bin");
         std::fs::create_dir_all(&shim).map_err(|e| format!("{}: {e}", shim.display()))?;
         let link = shim.join("windres");

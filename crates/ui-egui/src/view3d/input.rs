@@ -155,7 +155,7 @@ pub(super) fn navigate(
     // The left button: chosen once, when the drag begins.
     let grip_started = resp.drag_started_by(egui::PointerButton::Primary);
     if grip_started {
-        let at = press.or(resp.interact_pointer_pos());
+        let at = press.or_else(|| resp.interact_pointer_pos());
         let plain = !mods.shift && !ctrl && !mods.alt;
         v.left = if space {
             Some(LeftDrag::Nav(NavMode::Pan, false))

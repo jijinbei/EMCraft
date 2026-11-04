@@ -54,7 +54,7 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
     let lu = app.session.display().length.symbol();
     ui_kit::section(ui, "Boundaries");
     let m = app.session.model();
-    kv(ui, "walls", m.wall_conductivity.map_or(tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")));
+    kv(ui, "walls", m.wall_conductivity.map_or_else(|| tr("perfect conductor").into(), |s| format!("σ = {s:.3e} S/m")));
     let l = app.session.display().length;
     if let Some(w) = m.wall_thickness {
         kv(ui, "wall thickness", format!("{} {lu}", fmt(l.from_si(w.get()))));
@@ -63,7 +63,7 @@ pub(super) fn boundaries(app: &EmcraftApp, ui: &mut egui::Ui) {
     let thick = |o: &emcraft_model::Open| {
         trf("{kind} {thickness} {unit} thick", args!(kind = kind(o), thickness = fmt(l.from_si(o.thickness.get())), unit = lu))
     };
-    kv(ui, "open", m.open.map_or(tr("closed (no PML)").into(), |o| thick(&o)));
+    kv(ui, "open", m.open.map_or_else(|| tr("closed (no PML)").into(), |o| thick(&o)));
     let planes: Vec<String> = m
         .symmetry
         .iter()

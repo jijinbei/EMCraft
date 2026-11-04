@@ -150,7 +150,7 @@ pub(crate) fn serve(stream: TcpStream, token: &str, tx: &Sender<ControlRequest>,
                 }
                 let id = msg.get("id").cloned().unwrap_or(Value::Null);
                 let method = msg.get("method").and_then(Value::as_str).unwrap_or("").to_owned();
-                let params = msg.get("params").cloned().unwrap_or(json!({}));
+                let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
                 let wait = if method.starts_with("engine.") { LONG } else { SHORT };
                 let (req, rrx) = ControlRequest::new(method.clone(), params);
                 if tx.send(req).is_err() {

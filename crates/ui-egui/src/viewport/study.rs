@@ -43,7 +43,7 @@ fn plain_summary(study: &Study) -> String {
         Kind::Optimize => {
             let best = study.best.and_then(|b| study.rows.get(b)).map(|r| {
                 let at: Vec<String> = study.variables.iter().zip(&r.values).map(|(n, v)| format!("{n} = {}", short(*v))).collect();
-                trf("best {at} (goal {goal})", args!(at = at.join(", "), goal = r.objective.map_or("–".into(), short)))
+                trf("best {at} (goal {goal})", args!(at = at.join(", "), goal = r.objective.map_or_else(|| "–".into(), short)))
             });
             let state = tr(if study.converged { "converged" } else { "stopped at its budget" });
             let goal = study.goal.clone().unwrap_or_default();
@@ -199,7 +199,7 @@ impl Points {
         let study = app.session.results().study.as_ref()?;
         let parameters = parameters(study);
         let shown = st.views.study.parameter.as_deref().filter(|p| parameters.iter().any(|q| q == p));
-        let parameter = shown.or(parameters.first().map(String::as_str));
+        let parameter = shown.or_else(|| parameters.first().map(String::as_str));
         let units = emcraft_engine::view::variable_units(&app.session, study);
         let optimize = study.kind == Kind::Optimize;
         let modes = !study.rows.iter().all(|r| r.modes.is_empty());
@@ -231,7 +231,7 @@ impl Points {
             }
             row.extend(r.values.iter().map(|v| short(*v)));
             if optimize {
-                row.push(r.objective.map_or("–".into(), |o| format!("{o:.4}")));
+                row.push(r.objective.map_or_else(|| "–".into(), |o| format!("{o:.4}")));
             } else if let Some(p) = parameter {
                 let db = r.db(p).unwrap_or_default();
                 let lo = db.iter().copied().fold(f64::INFINITY, f64::min);

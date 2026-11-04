@@ -314,7 +314,7 @@ fn variables(s: &emcraft_engine::Session) -> Vec<Row> {
         .map(|(name, value)| {
             let given = s.history().iter().rev().find(|st| st.defines(name)).and_then(|st| st.param("value").cloned());
             let expression = given.as_ref().and_then(serde_json::Value::as_str).map(|e| format!(" ({e})")).unwrap_or_default();
-            let edit = serde_json::json!({"name": name, "value": given.unwrap_or(serde_json::json!(value))});
+            let edit = serde_json::json!({"name": name, "value": given.unwrap_or_else(|| serde_json::json!(value))});
             row(
                 "{name} = {value}{expression}",
                 args!(name = name, value = value, expression = expression),

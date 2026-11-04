@@ -167,7 +167,7 @@ pub fn open_indicator(driven: &Driven, model: &Model, r: &OpenResult) -> Result<
             Source::Dipole { at, .. } => {
                 let (t, _) = emcraft_mesh::locate(&driven.mesh, at).ok_or_else(|| invalid("dipole", "lies outside the mesh"))?;
                 let corners = driven.mesh.tets.get(t).copied().ok_or_else(|| invalid("mesh", format!("no tetrahedron {t}")))?;
-                let around = Aabb::around(driven.mesh.corners(t).into_iter().flatten()).unwrap_or(Aabb::point(at));
+                let around = Aabb::around(driven.mesh.corners(t).into_iter().flatten()).unwrap_or_else(|| Aabb::point(at));
                 for n in emcraft_mesh::tets_near(&driven.mesh, around) {
                     if driven.mesh.tets.get(n).is_some_and(|c| c.iter().any(|v| corners.contains(v))) {
                         leave_out(n);

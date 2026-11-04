@@ -151,7 +151,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
         let mut sections = Vec::with_capacity(w.sections.len());
         for (i, s) in w.sections.iter().enumerate() {
             let m = constant(session.model.material(&s.material)?.1)?;
-            let emcraft_model::Span { start: y0, width: height } = w.aperture_y(i).unwrap_or(w.across_y());
+            let emcraft_model::Span { start: y0, width: height } = w.aperture_y(i).unwrap_or_else(|| w.across_y());
             sections.push(ESection {
                 length: s.length.get(),
                 eps_r: m.eps_r.get(),
@@ -169,7 +169,7 @@ pub fn reference(session: &Session) -> Result<Reference> {
     let mut sections = Vec::with_capacity(w.sections.len());
     for (i, s) in w.sections.iter().enumerate() {
         let m = constant(session.model.material(&s.material)?.1)?;
-        let emcraft_model::Span { start: x0, width } = w.aperture(i).unwrap_or(w.across_x());
+        let emcraft_model::Span { start: x0, width } = w.aperture(i).unwrap_or_else(|| w.across_x());
         sections.push(HSection { length: s.length.get(), eps_r: m.eps_r.get(), mu_r: m.mu_r.get(), x0, width, loss_tangent: m.loss_tangent.get() });
     }
     Ok(Reference::ModeMatching(HPlaneLine { sections }))

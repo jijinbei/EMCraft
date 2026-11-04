@@ -78,7 +78,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             trf("Dispersion along {axis}: {n} phases, {bands} bands each.", args!(axis = r.text("axis"), n = points.len(), bands = bands))
         }
         "solve.radiation" => {
-            let power = reply.get("power").or(reply.get("radiated_power")).and_then(Value::as_f64).unwrap_or(f64::NAN);
+            let power = reply.get("power").or_else(|| reply.get("radiated_power")).and_then(Value::as_f64).unwrap_or(f64::NAN);
             trf("Solved the open problem: radiated power {power} W.", args!(power = format!("{power:.4e}")))
         }
         "solve.time_domain" => match (emcraft_engine::Device::parse(r.text("device")), r.text("device")) {
@@ -119,7 +119,7 @@ pub fn text(id: &str, params: &Value, reply: &Value, session: &Session) -> Strin
             // An open problem driven by sources alone converges on its far field.
             let far = r.text("quantity") == "far_field";
             let key = if far { "delta_far_field" } else { "delta_s" };
-            let last = passes.last().and_then(|p| p.get(key)?.as_f64()).map_or("—".to_owned(), |d| format!("{d:.2e}"));
+            let last = passes.last().and_then(|p| p.get(key)?.as_f64()).map_or_else(|| "—".to_owned(), |d| format!("{d:.2e}"));
             let tets = session.model().mesh.as_ref().map_or(0, |m| m.tets.len());
             let converged = tr(if r.flag("converged") { "converged" } else { "not converged" });
             let what = tr(if far { "far-field change" } else { "ΔS" });

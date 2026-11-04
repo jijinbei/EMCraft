@@ -161,7 +161,7 @@ pub fn port_edit(s: &mut Session, p: &Params) -> Result<Value> {
             let given = p.number_of("face", x)?;
             v[k] = if given == unit.from_si(was[k]) { was[k] } else { unit.to_si(given) };
         }
-        Ok(Some(PortFace::from_values(axis.or(old.face.map(|f| f.axis)).unwrap_or_default(), v)?))
+        Ok(Some(PortFace::from_values(axis.or_else(|| old.face.map(|f| f.axis)).unwrap_or_default(), v)?))
     };
     let face = match p.edit("face", given)? {
         Edit::Clear => None,

@@ -268,13 +268,16 @@ pub fn device(s: &mut Session, p: &Params) -> Result<Value> {
             }
             {
                 // Without `min_front`, the last setting's stays.
-                let min_front = p.integer("min_front", 1..=emcraft_gpu::MAX_ROWS).optional()?.or(s.compute.fronts.as_ref().map(|f| f.min_rows()));
+                let min_front =
+                    p.integer("min_front", 1..=emcraft_gpu::MAX_ROWS).optional()?.or_else(|| s.compute.fronts.as_ref().map(|f| f.min_rows()));
                 Some(Arc::new(Fronts::new(b, min_front)?))
             }
         }
     };
     s.compute = Compute { backend, precision, fronts };
-    Ok(json!({"device": name, "precision": precision.id(), "factorization": s.compute.fronts.as_ref().map_or("cpu".to_owned(), |f| f.name())}))
+    Ok(
+        json!({"device": name, "precision": precision.id(), "factorization": s.compute.fronts.as_ref().map_or_else(|| "cpu".to_owned(), |f| f.name())}),
+    )
 }
 
 pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
