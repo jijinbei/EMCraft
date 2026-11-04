@@ -413,6 +413,49 @@ pub fn port(s: &mut Session, p: &Params) -> Result<Value> {
     Ok(json!({"name": name, "reference": reference, "lumped_ports": s.model.lumped.len()}))
 }
 
+/// `pcb.element`: a lumped element on a layer of the board's region, from one board point to
+/// another (a chip resistor bridging two traces), its parts in Ω, nH and pF.
+pub fn element(s: &mut Session, p: &Params) -> Result<Value> {
+    let board = s.model.pcb.clone().ok_or_else(|| failed("load a PCB first"))?;
+    let region = board.region.ok_or_else(|| failed("set the region first: pcb.region"))?;
+    let layer = p.string("layer").required()?;
+    let l = board.layers.iter().position(|x| x.name == layer).ok_or_else(|| p.error("layer", "name a layer of the board"))?;
+    let height = region.below + board.heights()[l];
+    let unit = s.display.length;
+    let point = |name: &str| -> Result<Point3> {
+        let list = p.list(name, 2).required()?;
+        let xy: Vec<f64> = list.iter().map(|v| p.number_of(name, v).map(|x| unit.to_si(x))).collect::<Result<_>>()?;
+        match xy[..] {
+            [x, y] => Ok(Point3::new(x - region.lo[0], height, y - region.lo[1])),
+            _ => Err(p.error(name, "is a board point [x, y]")),
+        }
+    };
+    let (from, to) = (point("from")?, point("to")?);
+    let d = to - from;
+    let across = match p.positive_length("width").optional()? {
+        Some(w) if d.norm() > 0.0 => Some(Vec3::new(-d.z, 0.0, d.x) * (0.5 * w / d.norm())),
+        _ => None,
+    };
+    let part = |name: &str, si: f64| -> Result<f64> {
+        let v = p.number(name).or(0.0)?;
+        if !(v.is_finite() && v >= 0.0) {
+            return Err(p.error(name, "must be a finite number ≥ 0"));
+        }
+        Ok(v * si)
+    };
+    s.model.add_element(emcraft_model::LumpedElement {
+        name: p.string("name").required()?.to_owned(),
+        from,
+        to,
+        resistance: part("resistance", 1.0)?,
+        inductance: part("inductance", 1e-9)?,
+        capacitance: part("capacitance", 1e-12)?,
+        arrangement: p.pick("arrangement").or(emcraft_model::Arrangement::Series)?,
+        across,
+    })?;
+    Ok(json!({"elements": s.model.elements.len()}))
+}
+
 /// The point of segment `a`–`b` nearest `p`.
 fn near_point(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> [f64; 2] {
     let d = [b[0] - a[0], b[1] - a[1]];

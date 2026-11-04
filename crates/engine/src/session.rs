@@ -631,7 +631,7 @@ impl Session {
                 }).collect::<Vec<_>>(),
             })
         });
-        json!({
+        let mut summary = json!({
             "units": crate::reply::units(self.display),
             "analysis": crate::workflow::analysis_reply(&self.model),
             "materials": self.model.materials.iter().map(|m| json!({"name": m.name, "eps_r": m.eps_r, "mu_r": m.mu_r, "loss_tangent": m.loss_tangent, "magnetic_loss_tangent": m.magnetic_loss_tangent})).collect::<Vec<_>>(),
@@ -648,6 +648,10 @@ impl Session {
             "mesh": self.model.mesh.as_ref().map(|m| json!({"nodes": m.nodes.len(), "tetrahedra": m.tets.len()})),
             "results": self.results.sweep.as_ref().map(|s| json!({"order": s.order.as_u8(), "unknowns": s.driven.dofs.unknowns, "frequencies": s.results.len()})),
             "eigenmodes": self.results.eigen.as_ref().map(|e| e.modes.len()),
-        })
+        });
+        if !self.model.elements.is_empty() {
+            summary["elements"] = crate::elements::summary(self);
+        }
+        summary
     }
 }

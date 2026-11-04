@@ -379,10 +379,23 @@ impl StoredEigen {
     }
 }
 
+fn two_ports() -> usize {
+    2
+}
+
+fn first_port() -> Vec<usize> {
+    vec![0]
+}
+
 /// The time domain's S-parameters and how it ran.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct StoredTimeDomain {
     frequencies: usize,
+    /// The model's ports and those excited (the guide's two, port 1 excited, when left out).
+    #[serde(default = "two_ports")]
+    ports: usize,
+    #[serde(default = "first_port")]
+    inputs: Vec<usize>,
     cells: usize,
     steps: usize,
     reference_steps: usize,
@@ -394,11 +407,12 @@ impl StoredTimeDomain {
     fn write(t: &emcraft_fdtd::TdResult, w: &mut Writer) -> Result<StoredTimeDomain, String> {
         let mut nums = Out::default();
         nums.fs(&t.frequencies);
-        nums.cs(&t.s11);
-        nums.cs(&t.s21);
+        nums.cs(&t.s);
         nums.fs(&[t.dt, t.loss_reference]);
         Ok(StoredTimeDomain {
             frequencies: t.frequencies.len(),
+            ports: t.ports,
+            inputs: t.inputs.clone(),
             cells: t.cells,
             steps: t.steps,
             reference_steps: t.reference_steps,
@@ -411,13 +425,15 @@ impl StoredTimeDomain {
         let mut nums = In::read(r, &self.numbers, "the time domain")?;
         let n = self.frequencies;
         let frequencies = nums.fs(n)?;
-        let (s11, s21) = (nums.cs(n)?, nums.cs(n)?);
+        let count = n.checked_mul(self.ports).and_then(|x| x.checked_mul(self.inputs.len())).ok_or("the time domain's S-parameters overflow")?;
+        let s = nums.cs(count)?;
         let (dt, loss_reference) = (nums.f()?, nums.f()?);
         nums.done()?;
         let t = emcraft_fdtd::TdResult {
             frequencies,
-            s11,
-            s21,
+            ports: self.ports,
+            inputs: self.inputs,
+            s,
             cells: self.cells,
             dt,
             steps: self.steps,

@@ -1,0 +1,21 @@
+{
+  "note": "EMCraft's accepted results for this case, written by `cargo xtask oracle --bless`. A result outside its band fails CI.",
+  "values": {
+    "ceramic_sigma": {
+      "band": 8.24812689542013e-8,
+      "value": 82.4812679542013
+    },
+    "faint_back": {
+      "band": 1.1644667909930447e-15,
+      "value": 1.6446679099304453e-7
+    },
+    "faint_forward": {
+      "band": 1.4284735890896404e-15,
+      "value": 4.284735890896403e-7
+    },
+    "faint_sigma": {
+      "band": 1.1869370328839134e-15,
+      "value": 1.869370328839134e-7
+    }
+  }
+}

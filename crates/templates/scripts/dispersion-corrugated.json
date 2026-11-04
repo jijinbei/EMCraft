@@ -1,0 +1,11 @@
+[
+ {"command": "project.variable", "params": {"name": "a", "value": 22.86, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "b", "value": 10.16, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "p", "value": 8, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "l_tooth", "value": 4, "quantity": "length"}},
+ {"command": "project.variable", "params": {"name": "gap", "value": 4, "quantity": "length"}},
+ {"command": "geometry.waveguide", "params": {"width": "=a", "height": "=b", "sections": [{"length": "=(p-l_tooth)/2", "material": "vacuum"}, {"length": "=l_tooth", "material": "vacuum", "height": "=gap", "offset_y": 0}, {"length": "=(p-l_tooth)/2", "material": "vacuum"}]}},
+ {"command": "mesh.generate", "params": {"size": 2.5}},
+ {"command": "model.periodic", "params": {"x": false, "y": false, "z": true}},
+ {"command": "solve.dispersion", "params": {"from": 0, "to": 180, "points": 11, "bands": 3, "near": 18, "order": 2}}
+]

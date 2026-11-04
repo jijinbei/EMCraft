@@ -309,8 +309,9 @@ fn a_change_drops_the_results_it_makes_wrong_and_keeps_the_rest() {
         r.radiation = None;
         r.time_domain = Some(std::sync::Arc::new(emcraft_fdtd::TdResult {
             frequencies: Vec::new(),
-            s11: Vec::new(),
-            s21: Vec::new(),
+            ports: 2,
+            inputs: vec![0],
+            s: Vec::new(),
             cells: 0,
             dt: 0.0,
             steps: 0,

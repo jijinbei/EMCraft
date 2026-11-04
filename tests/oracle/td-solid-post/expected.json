@@ -1,0 +1,10 @@
+{
+ "title": "A 3 mm post across WR-90, wall to wall, by the time-domain solver for solids on 0.5 mm cells, at 10 GHz",
+ "kind": "theory",
+ "source": "The full-height post is a two-dimensional problem: the parallel-plate Green's function in modes with its static part summed in closed form (Marcuvitz, Waveguide Handbook, 1951, §5.11; Lewin, Theory of Waveguides, 1975, ch. 6), the first-kind integral equation on the post solved by Kress's log-split Nyström method (Kress, Linear Integral Equations, 3rd ed., 2014, ch. 12–13), evaluated at 128 nodes (emcraft-theory::post, independent of the time domain); the reference adaptive-post checks the FEM against",
+ "quantities": [
+  {"id": "s11_mag", "quantity": "|S11| at 10 GHz", "measure": {"step": "td", "pointer": "/points/1/s11/mag"}, "value": 0.9526530943809122, "tolerance": {"absolute": 0.02}, "reason": "the post staircased on 0.5 mm cells, three cells to its radius: the cells whose centres lie outside the circle and the edges whose midpoints lie inside it make it a little thicker (|S11| 0.9665, as a post about 0.15 mm wider would give: S moves by 478 per metre of radius)"},
+  {"id": "s11_phase", "quantity": "phase of S11 at 10 GHz (degrees)", "measure": {"step": "td", "pointer": "/points/1/s11/deg"}, "value": -99.58644368796473, "tolerance": {"absolute": 7.0}, "reason": "as |S11|: the staircase's thicker post, 5.3° off"},
+  {"id": "s21_mag", "quantity": "|S21| at 10 GHz", "measure": {"step": "td", "pointer": "/points/1/s21/mag"}, "value": 0.3040593504428821, "tolerance": {"absolute": 0.06}, "reason": "as |S11|; |S21| = √(1 − |S11|²) moves three times as fast (0.2565)"}
+ ]
+}

@@ -19,12 +19,13 @@ fn steps(len: f64, h: f64) -> usize {
     ((len / h) * (1.0 - 1e-9)).ceil().max(1.0) as usize
 }
 
-/// Grid lines from 0 to `len` through every break in `breaks` (positions along the axis), each
-/// interval divided evenly into steps of at most `h`.
-fn lines(mut breaks: Vec<f64>, len: f64, h: f64) -> Vec<f64> {
+/// Grid lines from the first break to the last through every break in `breaks` (positions along
+/// the axis; those within 10⁻⁹ `len` of each other one), each interval divided evenly into steps
+/// of at most `h`.
+pub(crate) fn lines(mut breaks: Vec<f64>, len: f64, h: f64) -> Vec<f64> {
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * len);
-    let mut x = vec![0.0];
+    let mut x: Vec<f64> = breaks.first().copied().into_iter().collect();
     for b in breaks.windows(2) {
         let n = steps(b[1] - b[0], h);
         x.extend((1..=n).map(|k| b[0] + (b[1] - b[0]) * k as f64 / n as f64));
@@ -603,11 +604,9 @@ impl Te10 {
 /// A Gaussian-modulated pulse over the band, its spectrum down to 1e-4 at the ports' TE₁₀
 /// cut-off: energy there travels ever more slowly and would linger in the feeds.
 fn pulse(g: &Grid, band: Band) -> Pulse {
-    let fc = band.fc;
     let cutoff = g.layers.iter().map(|l| l.cutoff(l.eps)).fold(0.0f64, f64::max);
     let cutoff = [g.layer(g.plane1), g.layers[g.plane2.saturating_sub(1)]].iter().map(|l| l.cutoff(l.eps)).fold(0.0f64, f64::max).min(cutoff);
-    let pulse = Pulse::over(band, 1e-3);
-    if fc > 1.01 * cutoff { Pulse::with_tau(pulse.tau.max((1e4f64).ln().sqrt() / (PI * (fc - cutoff))), fc) } else { pulse }
+    Pulse::above(band, cutoff, 1e-4)
 }
 
 /// When checks may begin: once the pulse has passed and the slowest in-band wave has crossed

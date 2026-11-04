@@ -146,8 +146,8 @@ impl BoxGrid {
         if !model.ports.is_empty() {
             return Err(FdtdError::Unsupported("waveguide ports in the time domain's open problems (use lumped ports)".into()));
         }
-        if model.sources.iter().any(|s| matches!(s, Source::PlaneWave { .. })) {
-            return Err(FdtdError::Unsupported("plane waves in the time domain".into()));
+        if !model.elements.is_empty() {
+            return Err(FdtdError::Unsupported("lumped elements in the time domain".into()));
         }
         let n = [0, 1, 2].map(|d| ((size[d] / h).round() as usize).max(4));
         let cells = n[0].saturating_mul(n[1]).saturating_mul(n[2]);
@@ -253,48 +253,63 @@ impl BoxGrid {
         for d in &mut dispersion {
             d.finish();
         }
-        let magnetic = model.materials.iter().any(|m| m.is_magnetically_lossy());
-        let mut h_decay = [Vec::new(), Vec::new(), Vec::new()];
-        let ch = [0, 1, 2].map(|a| {
-            let d = h_dims[a];
-            let mut ch = vec![dt / MU0; d.iter().product()];
-            let mut decay = if magnetic { vec![1.0; ch.len()] } else { Vec::new() };
-            for k in 0..d[2] {
-                for j in 0..d[1] {
-                    for i in 0..d[0] {
-                        let b = [i, j, k].map(|x| x as isize);
-                        let mut c = b;
-                        c[a] -= 1;
-                        let sides: Vec<&Material> = [c, b].into_iter().filter_map(cell).collect();
-                        if sides.is_empty() {
-                            continue;
-                        }
-                        let count = sides.len() as f64;
-                        let mu = MU0 * sides.iter().map(|m| m.mu_r.get()).sum::<f64>() / count;
-                        let sigma_m = sides.iter().map(|m| losses.of(m).1).sum::<f64>() / count;
-                        let id = index(d, i, j, k);
-                        let (c, x) = magnetic_update(dt, mu, sigma_m);
-                        ch[id] = c;
-                        if let Some(y) = decay.get_mut(id) {
-                            *y = x;
-                        }
-                    }
-                }
-            }
-            h_decay[a] = decay;
-            ch
-        });
+        let (ch, h_decay) = face_coefficients(model, h_dims, dt, losses, dt / MU0, cell);
         Ok(BoxCoefficients { ce, ch, h_decay, dispersion })
     }
 }
 
+/// dt/μ per H face on the lattices `dims` and its decay with magnetic losses (empty without):
+/// μ and the magnetic conductivity the mean of the cells either side that `cell` gives a material
+/// (`None`: metal or off the grid), `empty` where neither side has one.
+pub(crate) fn face_coefficients<'m>(
+    model: &Model,
+    dims: [[usize; 3]; 3],
+    dt: f64,
+    losses: Losses,
+    empty: f64,
+    cell: impl Fn([isize; 3]) -> Option<&'m Material>,
+) -> ([Vec<f64>; 3], [Vec<f64>; 3]) {
+    let magnetic = model.materials.iter().any(|m| m.is_magnetically_lossy());
+    let mut h_decay = [Vec::new(), Vec::new(), Vec::new()];
+    let ch = [0, 1, 2].map(|a| {
+        let d = dims[a];
+        let mut ch = vec![empty; d.iter().product()];
+        let mut decay = if magnetic { vec![1.0; ch.len()] } else { Vec::new() };
+        for k in 0..d[2] {
+            for j in 0..d[1] {
+                for i in 0..d[0] {
+                    let b = [i, j, k].map(|x| x as isize);
+                    let mut c = b;
+                    c[a] -= 1;
+                    let sides: Vec<&Material> = [c, b].into_iter().filter_map(&cell).collect();
+                    if sides.is_empty() {
+                        continue;
+                    }
+                    let count = sides.len() as f64;
+                    let mu = MU0 * sides.iter().map(|m| m.mu_r.get()).sum::<f64>() / count;
+                    let sigma_m = sides.iter().map(|m| losses.of(m).1).sum::<f64>() / count;
+                    let id = index(d, i, j, k);
+                    let (c, x) = magnetic_update(dt, mu, sigma_m);
+                    ch[id] = c;
+                    if let Some(y) = decay.get_mut(id) {
+                        *y = x;
+                    }
+                }
+            }
+        }
+        h_decay[a] = decay;
+        ch
+    });
+    (ch, h_decay)
+}
+
 /// The open box's update coefficients: dt/ε per E edge with the slots of the dispersive and
 /// lossy ones, dt/μ per H face and its decay with magnetic losses (empty without).
-struct BoxCoefficients {
-    ce: [Vec<f64>; 3],
-    ch: [Vec<f64>; 3],
-    h_decay: [Vec<f64>; 3],
-    dispersion: [Dispersion; 3],
+pub(crate) struct BoxCoefficients {
+    pub(crate) ce: [Vec<f64>; 3],
+    pub(crate) ch: [Vec<f64>; 3],
+    pub(crate) h_decay: [Vec<f64>; 3],
+    pub(crate) dispersion: [Dispersion; 3],
 }
 
 /// A lumped port's edge with its semi-implicit coefficients (Piket-May et al. 1994):
@@ -307,6 +322,9 @@ struct PortEdge {
     /// E on the edge before the step's plain update.
     old: f64,
 }
+
+/// The most cells a lumped port's ends are carried along its gap to reach a conductor.
+const REACH: usize = 2;
 
 /// A lumped port on the grid: its run of edges along `axis`.
 struct GridPort {
@@ -338,11 +356,57 @@ impl GridPort {
         }
         let snap = |p: Point3| [0, 1, 2].map(|q| ((p[q] / hs[q]).round().max(0.0) as usize).min(n[q]));
         let (a, b) = (snap(lp.from), snap(lp.to));
-        let (lo, hi) = (a[axis].min(b[axis]), a[axis].max(b[axis]));
+        let (mut lo, mut hi) = (a[axis].min(b[axis]), a[axis].max(b[axis]));
         if hi == lo {
             return Err(invalid("lumped port", format!("`{}`'s gap is shorter than a cell", lp.name)));
         }
-        let dims = lattices(n)[0][axis];
+        // The staircase may leave a terminal short of its conductor (a face between two grid
+        // nodes rounds away from it): each end is carried along the gap to the first node a
+        // conductor's edge touches, at most `REACH` cells. One terminal on a conductor and the
+        // other still floating would put an empty edge in series with the port and is refused;
+        // a gap with neither end near a conductor is a source standing free and stays.
+        let lattice = lattices(n)[0];
+        let dims = lattice[axis];
+        if (lo..hi).any(|t| {
+            let mut c = a;
+            c[axis] = t;
+            coef.dispersion[axis].has(index(dims, c[0], c[1], c[2]))
+        }) {
+            return Err(FdtdError::Unsupported(format!(
+                "a lumped port in a lossy or dispersive material in the time domain (`{}`: put its gap in a lossless one)",
+                lp.name
+            )));
+        }
+        let touches = |t: usize| {
+            let mut node = a;
+            node[axis] = t;
+            (0..3).any(|q| {
+                let at = |c: [usize; 3]| (0..3).all(|r| c[r] < lattice[q][r]) && ce[q][index(lattice[q], c[0], c[1], c[2])] == 0.0;
+                let mut back = node;
+                back[q] = node[q].wrapping_sub(1);
+                at(node) || (node[q] > 0 && at(back))
+            })
+        };
+        let (lo0, hi0) = (lo, hi);
+        for _ in 0..REACH {
+            if !touches(lo) && lo > 0 {
+                lo -= 1;
+            }
+            if !touches(hi) && hi < n[axis] {
+                hi += 1;
+            }
+        }
+        if !touches(lo) && !touches(hi) {
+            (lo, hi) = (lo0, hi0);
+        } else if !touches(lo) || !touches(hi) {
+            return Err(invalid(
+                "lumped port",
+                format!(
+                    "one of `{}`'s ends does not reach a conductor on the grid (within {REACH} cells of the gap): its terminals must sit on conductors, or use a smaller cell",
+                    lp.name
+                ),
+            ));
+        }
         let ids: Vec<usize> = (lo..hi)
             .map(|t| {
                 let mut c = a;
@@ -352,12 +416,6 @@ impl GridPort {
             .collect();
         if ids.iter().any(|&id| ce[axis][id] == 0.0) {
             return Err(invalid("lumped port", format!("`{}` crosses a conductor on the grid", lp.name)));
-        }
-        if ids.iter().any(|&id| coef.dispersion[axis].has(id)) {
-            return Err(FdtdError::Unsupported(format!(
-                "a lumped port in a lossy or dispersive material in the time domain (`{}`: put its gap in a lossless one)",
-                lp.name
-            )));
         }
         let count = ids.len() as f64;
         let r_edge = lp.impedance / count;
@@ -434,9 +492,9 @@ fn currents(model: &Model, grid: &BoxGrid, coef: &BoxCoefficients, dt: f64) -> R
 
 /// The CPML lining the six faces: coefficients per axis for E (at nodes) and H (at half
 /// cells).
-struct BoxCpml {
-    e: [Vec<Cpml>; 3],
-    h: [Vec<Cpml>; 3],
+pub(crate) struct BoxCpml {
+    pub(crate) e: [Vec<Cpml>; 3],
+    pub(crate) h: [Vec<Cpml>; 3],
 }
 
 impl BoxCpml {
@@ -456,26 +514,51 @@ impl BoxCpml {
 }
 
 /// Each component's CPML auxiliary variables for its two derivatives.
-struct BoxPsi {
+pub(crate) struct BoxPsi {
     e: [[Field; 2]; 3],
     h: [[Field; 2]; 3],
 }
 
 impl BoxPsi {
-    fn new(fields: &Fields) -> BoxPsi {
+    pub(crate) fn new(fields: &Fields) -> BoxPsi {
         let psi = |f: &Field| [f.zeros_like(), f.zeros_like()];
         BoxPsi { e: fields.e.each_ref().map(psi), h: fields.h.each_ref().map(psi) }
     }
 }
 
-/// The leapfrog of the box: uniform steps, CPML on every derivative.
-struct OpenKernel<'a> {
-    fields: &'a Fields,
-    coef: &'a BoxCoefficients,
-    cpml: &'a BoxCpml,
-    psi: &'a BoxPsi,
-    hs: [f64; 3],
-    dt: f64,
+/// The leapfrog of a tensor grid with a CPML on every derivative (the open box's, or a closed
+/// solid's with its feeds): the curls divide by the primal steps for H and the dual steps for E.
+pub(crate) struct OpenKernel<'a> {
+    pub(crate) fields: &'a Fields,
+    pub(crate) coef: &'a BoxCoefficients,
+    pub(crate) cpml: &'a BoxCpml,
+    pub(crate) psi: &'a BoxPsi,
+    pub(crate) steps: &'a Steps,
+    pub(crate) dt: f64,
+}
+
+/// A tensor grid's steps along each axis: primal (cell edges, one a cell) and dual (between
+/// cell centres, one a node; only the inner nodes' are read).
+pub(crate) struct Steps {
+    pub(crate) primal: [Vec<f64>; 3],
+    pub(crate) dual: [Vec<f64>; 3],
+}
+
+impl Steps {
+    /// Uniform steps `hs` on a grid of `n` cells.
+    pub(crate) fn uniform(n: [usize; 3], hs: [f64; 3]) -> Steps {
+        Steps { primal: [0, 1, 2].map(|d| vec![hs[d]; n[d]]), dual: [0, 1, 2].map(|d| vec![hs[d]; n[d] + 1]) }
+    }
+
+    /// The steps of grid lines `lines` along each axis.
+    pub(crate) fn of(lines: &[Vec<f64>; 3]) -> Steps {
+        let primal = lines.each_ref().map(|x| x.windows(2).map(|w| w[1] - w[0]).collect::<Vec<f64>>());
+        let dual = primal.each_ref().map(|d| {
+            let n = d.len();
+            (0..=n).map(|i| 0.5 * (if i > 0 { d[i - 1] } else { 0.0 } + if i < n { d[i] } else { 0.0 })).collect()
+        });
+        Steps { primal, dual }
+    }
 }
 
 impl OpenKernel<'_> {
@@ -487,6 +570,7 @@ impl OpenKernel<'_> {
         let (pu, pv) = (&self.cpml.h[u], &self.cpml.h[v]);
         let (su, sv) = (ev.stride(u), eu.stride(v));
         let (ch, h_decay) = (&self.coef.ch[A], &self.coef.h_decay[A]);
+        let (du, dv) = (&self.steps.primal[u], &self.steps.primal[v]);
         let d = h.dims();
         for k in ks.start.min(d[2])..ks.end.min(d[2]) {
             for j in 0..d[1] {
@@ -494,8 +578,8 @@ impl OpenKernel<'_> {
                     let idx = [i, j, k];
                     let id = h.at(i, j, k);
                     let (iv, iu) = (ev.at(i, j, k), eu.at(i, j, k));
-                    let dev_du = (ev.get(iv + su) - ev.get(iv)) / self.hs[u];
-                    let deu_dv = (eu.get(iu + sv) - eu.get(iu)) / self.hs[v];
+                    let dev_du = (ev.get(iv + su) - ev.get(iv)) / du[idx[u]];
+                    let deu_dv = (eu.get(iu + sv) - eu.get(iu)) / dv[idx[v]];
                     let q0 = pu[idx[u]].psi(p0.get(id), dev_du);
                     let q1 = pv[idx[v]].psi(p1.get(id), deu_dv);
                     p0.set(id, q0);
@@ -514,6 +598,7 @@ impl OpenKernel<'_> {
         let (pu, pv) = (&self.cpml.e[u], &self.cpml.e[v]);
         let (su, sv) = (hv.stride(u), hu.stride(v));
         let (ce, disp) = (&self.coef.ce[A], &self.coef.dispersion[A]);
+        let (du, dv) = (&self.steps.dual[u], &self.steps.dual[v]);
         let d = e.dims();
         for k in ks.start.min(d[2])..ks.end.min(d[2]) {
             for j in 0..d[1] {
@@ -525,8 +610,8 @@ impl OpenKernel<'_> {
                         continue;
                     }
                     let (iv, iu) = (hv.at(i, j, k), hu.at(i, j, k));
-                    let dhv_du = (hv.get(iv) - hv.get(iv - su)) / self.hs[u];
-                    let dhu_dv = (hu.get(iu) - hu.get(iu - sv)) / self.hs[v];
+                    let dhv_du = (hv.get(iv) - hv.get(iv - su)) / du[idx[u]];
+                    let dhu_dv = (hu.get(iu) - hu.get(iu - sv)) / dv[idx[v]];
                     let q0 = pu[idx[u]].psi(p0.get(id), dhv_du);
                     let q1 = pv[idx[v]].psi(p1.get(id), dhu_dv);
                     p0.set(id, q0);
@@ -574,12 +659,14 @@ struct HuygensBox {
 
 impl HuygensBox {
     /// A third of the layer inside it, or halfway to what radiates.
-    fn new(model: &Model, grid: &BoxGrid) -> Result<HuygensBox> {
+    fn new(model: &Model, grid: &BoxGrid, keep_out: Option<emcraft_model::Aabb>) -> Result<HuygensBox> {
         let BoxGrid { size, n, hs, npml } = *grid;
         let inner_lo = [0, 1, 2].map(|d| npml as f64 * hs[d]);
         let inner_hi = [0, 1, 2].map(|d| size[d] - npml as f64 * hs[d]);
-        // (A run always has a source, so the box is never empty.)
-        let emcraft_model::Aabb { min: clo, max: chi } = emcraft_model::Aabb::around(model.radiators()).unwrap_or_default();
+        // (A run always has a source, so the box is never empty.) With a plane wave, outside its
+        // total-field box too: in the scattered field alone.
+        let around = emcraft_model::Aabb::around(model.radiators()).unwrap_or_default();
+        let emcraft_model::Aabb { min: clo, max: chi } = keep_out.map_or(around, |k| around.union(k));
         let inset = npml as f64 / 3.0;
         let mut hlo = [0usize; 3];
         let mut hhi = [0usize; 3];
@@ -846,13 +933,36 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
     let mut ports = model.lumped.iter().map(|lp| GridPort::new(lp, &grid, &coef, dt)).collect::<Result<Vec<_>>>()?;
     let currents = currents(model, &grid, &coef, dt)?;
     let ce = &coef.ce;
-    if ports.is_empty() && currents.is_empty() {
-        return Err(FdtdError::NotReady("no sources: a dipole or a lumped port".into()));
+    let wave = crate::planewave::of(model)?;
+    if ports.is_empty() && currents.is_empty() && wave.is_none() {
+        return Err(FdtdError::NotReady("no sources: a dipole, a lumped port or a plane wave".into()));
     }
     let cpml = BoxCpml::new(&grid, dt, band.fc);
     // The pulse: Gaussian-modulated over the band.
     let pulse = Pulse::over(band, 0.4);
-    let hbox = HuygensBox::new(model, &grid)?;
+    // A plane wave: the total-field box round the bodies, the Huygens box two cells outside it.
+    let split = match wave {
+        Some(_) => {
+            let bodies = emcraft_model::Aabb::around(model.radiators())
+                .ok_or_else(|| FdtdError::NotReady("nothing for the plane wave to scatter: add a body".into()))?;
+            Some(crate::planewave::split_box(bodies, grid.n, grid.hs, grid.npml)?)
+        }
+        None => None,
+    };
+    let keep_out = split.map(|(lo, hi)| {
+        let at = |i: [usize; 3], by: f64| Point3::from([0, 1, 2].map(|d| (i[d] as f64 + by) * grid.hs[d]));
+        emcraft_model::Aabb::new(at(lo, -2.0), at(hi, 2.0))
+    });
+    let hbox = HuygensBox::new(model, &grid, keep_out)?;
+    let mut wave = match (wave, split) {
+        (Some(w), Some(split)) => {
+            let a = w.0;
+            Some(crate::planewave::PlaneWave::new(w, grid.n, grid.hs, grid.npml, (&cpml.e[a], &cpml.h[a]), split, &coef, dt)?)
+        }
+        _ => None,
+    };
+    // The plane wave's split runs on the CPU's threads.
+    let device = if wave.is_some() { None } else { device };
 
     let mut tr = Transforms::new(frequencies, dt, ports.len(), hbox.samples.len());
     let t_min = pulse.t0 + 4.0 * pulse.tau + 3.0 * grid.size.iter().fold(0.0f64, f64::max) / C0;
@@ -878,10 +988,14 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
         None => {
             let fields = Fields::new(grid.n);
             let psi = BoxPsi::new(&fields);
-            let kernel = OpenKernel { fields: &fields, coef: &coef, cpml: &cpml, psi: &psi, hs: grid.hs, dt };
+            let steps = Steps::uniform(grid.n, grid.hs);
+            let kernel = OpenKernel { fields: &fields, coef: &coef, cpml: &cpml, psi: &psi, steps: &steps, dt };
             let mut port_vi = Vec::with_capacity(ports.len());
             leapfrog(&kernel, grid.n[2] + 1, o.max_steps, |step| {
                 let s_now = pulse.at((step as f64 + 0.5) * dt);
+                if let Some(w) = wave.as_mut() {
+                    w.after_e(&fields);
+                }
                 // Lumped ports: redo their edges semi-implicitly; then the current elements.
                 port_vi.clear();
                 port_vi.extend(ports.iter().map(|p| {
@@ -896,7 +1010,15 @@ pub fn radiate_with(model: &Model, o: &OpenOptions, frequencies: &[f64], device:
                         e.set(c.id, e.get(c.id) + delta);
                     }
                 }
-                tr.add(step, s_now, &port_vi, &hbox, &fields);
+                // A plane wave's results are per unit of its incident field at the split's centre.
+                let source = match wave.as_mut() {
+                    Some(w) => w.step_e(pulse.at((step as f64 + 1.0) * dt)),
+                    None => s_now,
+                };
+                tr.add(step, source, &port_vi, &hbox, &fields);
+                if let Some(w) = &wave {
+                    w.correct_h(&fields);
+                }
                 checks.after(step, &port_vi, &tr)?;
                 for p in &mut ports {
                     p.remember(&fields.e[p.axis.index()]);

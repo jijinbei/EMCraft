@@ -96,7 +96,7 @@ pub use dofs::Dofs;
 pub use floquet::{FloquetMode, FloquetPort, FloquetTerm};
 pub(crate) use losses::wall_factor;
 pub use losses::{surface_resistance, wall_impedance};
-pub use lumped::LumpedData;
+pub use lumped::{ElementData, LumpedData};
 pub use periodic::Tie;
 use pml::Layer;
 pub use pml::PML_REFLECTION;
@@ -215,6 +215,8 @@ pub struct Driven {
     pub(crate) pml: Option<Layer>,
     /// Lumped ports: each with its vector cᵢ = ∫ Nᵢ · ŝ dl along its gap.
     pub lumped: Vec<LumpedData>,
+    /// The lumped elements: passive loads across gaps (`lumped`).
+    pub elements: Vec<ElementData>,
     /// The model's symmetry planes: the mesh is the part below them.
     pub symmetry: Vec<Symmetry>,
     /// The model's periodic boundaries and the reduction they make (a unit cell).
@@ -395,13 +397,15 @@ impl Driven {
             })
             .collect::<Result<Vec<_>>>()?;
         let lumped = model.lumped.iter().map(|lp| lumped::prepare(lp, &space)).collect::<Result<Vec<_>>>()?;
+        let elements = model.elements.iter().map(|e| lumped::prepare_element(e, &space)).collect::<Result<Vec<_>>>()?;
         // (The ports' rank-one terms border the matrix instead of filling it: see `system`.)
-        let pattern = space.pattern(lumped.iter().map(|l| l.c.iter().map(|(u, _)| *u).collect()));
+        let gaps = lumped.iter().map(|l| &l.c).chain(elements.iter().map(|e| &e.c));
+        let pattern = space.pattern(gaps.map(|c| c.iter().map(|(u, _)| *u).collect()));
         let in_pml = pml.as_ref().map(Layer::tets).unwrap_or_default();
         let volume = space.volume_matrices(&pattern, &media, |t| !in_pml.contains(&t))?;
         let tie = match &model.periodic {
             Some(per) => {
-                if !lumped.is_empty() || pml.is_some() {
+                if !lumped.is_empty() || !elements.is_empty() || pml.is_some() {
                     return Err(invalid("periodic boundaries", "not supported yet: lumped ports or a matched layer in a periodic cell"));
                 }
                 Some(periodic::Tie::new(&mesh, &topo, &dofs, per, &pattern)?)
@@ -425,6 +429,7 @@ impl Driven {
             ports,
             pml,
             lumped,
+            elements,
             symmetry: model.symmetry.clone(),
             periodic: model.periodic,
             tie,
@@ -473,6 +478,14 @@ impl Driven {
         let k2 = wavenumber(frequency).powi(2);
         let mut extra: Vec<Vec<C>> = Vec::new();
         let mut last: Vec<Vec<C>> = if moments > 0 { solved.fields.clone() } else { Vec::new() };
+        // With a layer, ∂A/∂k₀² = −(M − ∂P/∂k₀²): the moments follow its stretch too.
+        let layer = match &self.pml {
+            Some(_) if moments > 0 => {
+                let mut d = self.pattern.zeroed();
+                self.add_pml_derivative(&mut d, k2.sqrt())?.then_some(d)
+            }
+            _ => None,
+        };
         for _ in 0..moments.min(MAX_MOMENTS) {
             // M y with the permittivities at this frequency (k₀² εr,d M_d scaled back by k₀²).
             let rhs: Vec<Vec<C>> = last
@@ -488,9 +501,10 @@ impl Driven {
                                     for (c, md) in dispersive.iter().zip(&self.dispersive_mass) {
                                         m += c / k2 * md[k];
                                     }
+                                    let m = m - layer.as_ref().map_or(C::new(0.0, 0.0), |d| d.val[k]);
                                     m * y[self.pattern.col[k]]
                                 })
-                                .sum()
+                                .sum::<C>()
                         })
                         .collect();
                     b.resize(n + border, C::new(0.0, 0.0));

@@ -116,6 +116,22 @@ Puts a lumped port at a trace's end in the board's region (pcb.region): a sheet 
 | `end` | string |  | no | `start` or `end` of the segment (default start) |
 | `impedance` | number |  | no | the port's impedance in ohms (default 50) |
 
+## `pcb.element` — PCB lumped element
+
+A lumped element on a layer of the board's region (pcb.region), from the board point `from` to `to` — a chip resistor bridging two traces, a capacitor across a gap in one — as model.element.create puts one: its resistance, inductance and capacitance in series or in parallel, a sheet `width` wide across the gap's line when given.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | element name |
+| `layer` | string |  | yes | the copper layer it sits on |
+| `from` | array | length | yes | the gap's start on the board [x, y] |
+| `to` | array | length | yes | the gap's end on the board [x, y] |
+| `resistance` | number |  | no | R in ohms (default 0: none) |
+| `inductance` | number |  | no | L in nanohenries (default 0: none) |
+| `capacitance` | number |  | no | C in picofarads (default 0: none) |
+| `arrangement` | string |  | no | `series` (default) or `parallel` |
+| `width` | number | length | no | a sheet this wide across the gap's line (a chip's width); default the line itself |
+
 ## `pcb.inspect` — Inspect PCB route
 
 Screens the selected net's routed segments and filled reference copper and reports exact line/polygon coverage gaps, nearby parallel signals, topology and via-transition limitations. Only valid simple outer microstrip routes get a lossless quasi-static line approximation: impedance, delay, S11/S21 and TDR. Screening is not a solved return-current map, full-wave model, calculated crosstalk or compliance verdict.
@@ -601,7 +617,7 @@ Adds frequencies to the sweep: `points` evenly from `start` to `stop` (or `frequ
 
 ## `solve.time_domain` — Time domain
 
-The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM. Losses: a loss tangent (dielectric or magnetic) becomes a conductivity matched at the band's centre (`loss_reference` in the reply), so the material solved is εr − jσ/ω, tan δ exactly there and tan δ·f_ref/f elsewhere; walls of finite conductivity (model.walls) take the surface-impedance condition; ports may be lossy or dispersive (their complex propagation constant normalises S). For an open model (model.open) it solves the antenna instead: its lumped ports and dipoles on a uniform grid with a CPML on all sides, the ports' impedances and S11 and the radiated power at each frequency, the far field from a Huygens box (results.far_field and view.pattern with `solver` time_domain), with lossy, dispersive and magnetic bodies but perfect conductors. Gaps and dipoles must lie along grid axes; gaps in lossy or dispersive materials are refused.
+The S-parameters (port 1 excited) by the time-domain solver: finite integration on a hexahedral grid of cells about `cell` on a side, a TE10 pulse over the band, PML-terminated feeds, Fourier transforms at the frequencies. An independent check of the frequency-domain FEM. A solid (geometry.solid with its bodies) is staircased on a grid through its faces, its ports' edges and its bodies' bounds, each waveguide port a rectangle of one material on a face of the solid's bounding box with a feed and PML outward, its TE10 along the broad side; each port of `excite` is excited in turn (S in the reply as s<out><in>), with perfect walls, on the CPU's threads. Losses: a loss tangent (dielectric or magnetic) becomes a conductivity matched at the band's centre (`loss_reference` in the reply), so the material solved is εr − jσ/ω, tan δ exactly there and tan δ·f_ref/f elsewhere; walls of finite conductivity (model.walls) take the surface-impedance condition; ports may be lossy or dispersive (their complex propagation constant normalises S). For an open model (model.open) it solves the antenna instead: its lumped ports and dipoles (or a plane wave along a grid axis, by a total-field/scattered-field split round the bodies: the scattering and radar cross-sections) on a uniform grid with a CPML on all sides, the ports' impedances and S11 and the radiated power at each frequency, the far field from a Huygens box (results.far_field and view.pattern with `solver` time_domain), with lossy, dispersive and magnetic bodies but perfect conductors. Gaps and dipoles must lie along grid axes; gaps in lossy or dispersive materials are refused.
 
 | Parameter | Type | Unit | Required | Description |
 |---|---|---|---|---|
@@ -612,6 +628,7 @@ The S-parameters (port 1 excited) by the time-domain solver: finite integration 
 | `cell` | number | length | no | the cell size (default 1 mm) |
 | `device` | string |  | no | where the leapfrog runs: `cpu` (the CPU's threads), `cuda` (an NVIDIA GPU) or `cubecl-cpu` (the GPU's kernels on the CPU, to check them without a GPU); default solve.device's; solve.devices lists what this machine has |
 | `precision` | string |  | no | the fields' floating point on a GPU device: `single` or `double`, default solve.device's; the CPU's threads run in double |
+| `excite` | array |  | no | a solid's ports to excite, by name, one run each (default the first): the columns of S they give |
 
 ## `solve.rerun` — Run again
 
@@ -984,6 +1001,30 @@ A lumped (discrete) port: the feed of an antenna, a gap from `from` to `to` (usu
 | `voltage` | number |  | no | the source's voltage in volts, peak (default 1) |
 | `phase` | number |  | no | the source's phase in degrees (default 0) |
 | `radius` | number | length | no | spread the current round a band of this radius about the gap's line (a wire's radius, for a gap cut in a wire); default 0, the line itself |
+
+## `model.element.create` — Lumped element
+
+A lumped circuit element: a resistor, an inductor and a capacitor across the gap from `from` to `to` (usually between two conductors: a chip resistor bridging two traces, a capacitor across a gap), in series or in parallel, the parts left out (0) dropping from it. A passive load, not a port: the frequency domain adds its current I = Y(ω) V (V the gap's line integral, or its mean across a sheet `width` wide) to Ampère's law as a lumped port's without a source. Its name is unique among the ports and elements. Not in eigenmode analyses (Y depends on frequency) nor yet in the time domain. Drops every result. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | element name |
+| `from` | array | length | yes | the gap's start [x, y, z] |
+| `to` | array | length | yes | the gap's end [x, y, z] |
+| `resistance` | number |  | no | R in ohms (default 0: none) |
+| `inductance` | number |  | no | L in nanohenries (default 0: none) |
+| `capacitance` | number |  | no | C in picofarads (default 0: none) |
+| `arrangement` | string |  | no | `series` (default) or `parallel` |
+| `width` | number | length | no | spread the current across a sheet this wide about the gap's line (a chip's width); default the line itself |
+| `across` | array |  | no | the sheet's direction across the gap (default the axis after the gap's) |
+
+## `model.element.remove` — Remove lumped element
+
+Takes the lumped element `name` out of the model. Drops every result. Undo goes back.
+
+| Parameter | Type | Unit | Required | Description |
+|---|---|---|---|---|
+| `name` | string |  | yes | the element |
 
 ## `model.port.lumped.edit` — Edit lumped port
 

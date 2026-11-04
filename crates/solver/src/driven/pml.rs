@@ -147,6 +147,39 @@ impl Driven {
         Ok(())
     }
 
+    /// Adds the derivative of the box layer's matrix in k₀², ∂P/∂k₀², at k₀ (the fast sweep's
+    /// moments: the field's derivatives in k₀² see the layer stretch with k₀ as well as the mass);
+    /// `false` for a spherical layer, whose derivative is left out. With s_d = 1 − j g_d/k₀,
+    /// ∂s_d/∂k₀ = j g_d/k₀² and Λ_d's logarithmic derivative ℓ_d = Σ_{e≠d} s_e′/s_e − s_d′/s_d:
+    /// ∂P/∂k₀ = Σ_d −ℓ_d K_d/(μr Λ_d) − (2k₀ + k₀² ℓ_d) εr Λ_d M_d, and ∂/∂k₀² = ∂/∂k₀ / 2k₀
+    /// (εr(ω) taken as fixed, as the moments take it).
+    pub(crate) fn add_pml_derivative(&self, a: &mut Csr, k0: f64) -> Result<bool> {
+        let Some(layer) = &self.pml else { return Ok(true) };
+        let sigma0 = layer.sigma0();
+        let LayerKind::Box(list) = &layer.kind else { return Ok(false) };
+        for &(t, depth) in list {
+            let g = [depth.x, depth.y, depth.z].map(|x| sigma0 * x * x);
+            let s = g.map(|g| C::new(1.0, -g / k0));
+            let ds = g.map(|g| C::new(0.0, g / (k0 * k0)));
+            let log = [0, 1, 2].map(|d| ds[(d + 1) % 3] / s[(d + 1) % 3] + ds[(d + 2) % 3] / s[(d + 2) % 3] - ds[d] / s[d]);
+            let lambda = [s[1] * s[2] / s[0], s[2] * s[0] / s[1], s[0] * s[1] / s[2]];
+            let el = self.element_of(t)?;
+            let (kc, mc) = (el.stiffness_components(), el.mass_components());
+            let unknowns: Vec<_> = self.dofs_of(t).collect();
+            let n = unknowns.len();
+            let (eps, mu) = (self.eps_at(t, k0 * C0 / (2.0 * PI)), self.mu_of(t));
+            let to_k2 = 1.0 / (2.0 * k0);
+            for Coupling { i, j, row, col } in couplings(&unknowns) {
+                let mut v = C::new(0.0, 0.0);
+                for k in 0..3 {
+                    v += -log[k] * kc[k][i * n + j] / (mu * lambda[k]) - (2.0 * k0 + k0 * k0 * log[k]) * eps * lambda[k] * mc[k][i * n + j];
+                }
+                a.add(row, col, v * to_k2);
+            }
+        }
+        Ok(true)
+    }
+
     /// Adds the spherical layer's tetrahedra at wavenumber k₀. Stretching the radius alone,
     /// r → r̃ (W. C. Chew, W. H. Weedon, Microwave Opt. Technol. Lett. 7(13), 1994), is the
     /// Cartesian space filled with the anisotropic medium εr Λ, μr Λ of
@@ -216,6 +249,34 @@ mod tests {
         assert!((a - (rt / 1.25) * (rt / 1.25) / s).norm() < 1e-15);
         // Beyond the outer radius the profile stays at its last value.
         assert_eq!(spherical_stretch(2.0, 1.0, 0.5, 10.0, 2.0).1, spherical_stretch(1.5, 1.0, 0.5, 10.0, 2.0).1);
+    }
+
+    #[test]
+    fn the_box_layers_derivative_in_k0_squared_is_its_difference_quotient() {
+        let mut m = Model::new();
+        m.set_solid(Solid {
+            shape: Shape::Box { size: emcraft_model::BoxSize::new(emcraft_model::Vec3::new(0.03, 0.03, 0.03)).unwrap() },
+            material: "vacuum".into(),
+        })
+        .unwrap();
+        m.set_open(Some(Open { thickness: metres(0.008), reflection: None, shape: OpenShape::Box })).unwrap();
+        m.mesh = Some(emcraft_mesh::solid::solid(&m, metres(0.006)).unwrap().into());
+        let d = Driven::open(&m, Order::One).unwrap();
+        let k0 = 2.0 * PI * 10e9 / C0;
+        let at = |k: f64| {
+            let mut a = d.pattern.zeroed();
+            d.add_pml(&mut a, k).unwrap();
+            a.val
+        };
+        let mut dp = d.pattern.zeroed();
+        assert!(d.add_pml_derivative(&mut dp, k0).unwrap());
+        // Central differences in k₀²: second order, h = 1e-4 k₀².
+        let h = 1e-4 * k0 * k0;
+        let (hi, lo) = (at((k0 * k0 + h).sqrt()), at((k0 * k0 - h).sqrt()));
+        let scale = dp.val.iter().fold(0.0f64, |m, x| m.max(x.norm()));
+        assert!(scale > 0.0);
+        let worst = dp.val.iter().zip(hi.iter().zip(&lo)).map(|(d, (a, b))| (d - (a - b) / (2.0 * h)).norm()).fold(0.0f64, f64::max);
+        assert!(worst < 1e-6 * scale, "{worst} of {scale}");
     }
 
     /// A sphere of `material`, its spherical layer meshed, and the layer's matrix at `f`.

@@ -259,11 +259,12 @@ impl Driven {
             }
         }
         self.add_pml(&mut a, k0)?;
-        // Lumped ports: the current I = (V_s + cᵀx)/R through each gap adds (jωμ₀/R) c cᵀ.
-        for l in &self.lumped {
-            let f = l.factor(frequency);
-            for &(i, ci) in &l.c {
-                for &(j, cj) in &l.c {
+        // Lumped ports: the current I = (V_s + cᵀx)/R through each gap adds (jωμ₀/R) c cᵀ; a
+        // lumped element's I = Y V, jωμ₀Y c cᵀ.
+        let gaps = self.lumped.iter().map(|l| (l.factor(frequency), &l.c)).chain(self.elements.iter().map(|e| (e.factor(frequency), &e.c)));
+        for (f, c) in gaps {
+            for &(i, ci) in c {
+                for &(j, cj) in c {
                     a.add(i, j, f * (ci * cj));
                 }
             }

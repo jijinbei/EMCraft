@@ -29,6 +29,7 @@ pub mod archive;
 mod args;
 pub mod bodies;
 mod cmd;
+mod elements;
 mod estimate;
 pub mod expr;
 mod geometry;

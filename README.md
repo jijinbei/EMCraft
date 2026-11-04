@@ -23,13 +23,19 @@ Samples (the start page's templates, their dimensions variables):
   `cross-guide-coupler`, `coupled-filter`, `coupler`, `inductive-post`, `circular-guide`,
   `coaxial-line`.
 - **Microstrip circuits:** `pcb-stub-filter`, `pcb-lowpass`, `pcb-quarter-wave`,
-  `pcb-branch-line`, `pcb-coupled-line`, `pcb-bend`.
+  `pcb-branch-line`, `pcb-coupled-line`, `pcb-bend`, `pcb-wilkinson` (its isolating resistor a lumped
+  element), `pcb-ring`.
 - **Resonators:** `cavity`, `cylinder-cavity`, `sphere-cavity`, `coaxial-cavity`, `slab-cavity`,
   `loaded-sphere`, `dielectric-resonator`, `combline-resonator`, `reentrant-cavity`.
+- **Dispersion diagrams:** `dispersion-guide`, `dispersion-loaded`, `dispersion-iris`,
+  `dispersion-corrugated`.
 - **Antennas and scattering:** `dipole`, `halfwave-dipole`, `yagi`, `monopole`, `patch-antenna`,
   `open-waveguide`, `horn`, `sphere-scattering`, `metal-sphere-scattering`.
 - **Time domain:** `td-dielectric-slab`, `td-quarter-wave`, `td-lossy-slab`,
-  `td-dispersive-slab`, `td-eplane-step`, `td-wall-loss`.
+  `td-dispersive-slab`, `td-eplane-step`, `td-wall-loss`; on solids `td-h-bend`, `td-e-bend`,
+  `td-h-bend-radius`, `td-e-bend-radius`, `td-inductive-post`, `td-termination`, `td-h-tee`,
+  `td-e-tee`, `td-magic-tee`, `td-cross-guide-coupler`; the antenna `td-dipole`; plane waves on
+  `td-sphere-scattering` and `td-metal-sphere-scattering`.
 - **Boards:** `pcb-microstrip`, `pcb-split-ground`, `pcb-parallel`, `pcb-board` (four layers).
 
 ## What it does

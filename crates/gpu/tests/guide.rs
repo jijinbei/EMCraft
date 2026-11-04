@@ -48,7 +48,7 @@ fn dispersive_slab() -> Model {
 const FREQS: [f64; 3] = [5.5e9, 7.5e9, 8.5e9];
 
 fn worst(a: &TdResult, b: &TdResult) -> f64 {
-    (0..FREQS.len()).map(|i| (a.s11[i] - b.s11[i]).norm().max((a.s21[i] - b.s21[i]).norm())).fold(0.0, f64::max)
+    (0..FREQS.len()).map(|i| (a.s11()[i] - b.s11()[i]).norm().max((a.s21()[i] - b.s21()[i]).norm())).fold(0.0, f64::max)
 }
 
 fn on(backend: Backend, precision: Precision, o: &Options) -> TdResult {
@@ -83,7 +83,7 @@ fn the_cpu_backend_matches_the_threads() {
     // tree): rounding apart.
     assert_eq!((double.steps, double.reference_steps), (cpu.steps, cpu.reference_steps));
     assert!(worst(&double, &cpu) < 1e-9, "{:e}", worst(&double, &cpu));
-    assert!(cpu.s21.iter().all(|s| s.norm() > 0.1), "{cpu:?}");
+    assert!(cpu.s21().iter().all(|s| s.norm() > 0.1), "{cpu:?}");
 }
 
 #[test]
@@ -102,9 +102,9 @@ fn dispersive_edges_advance_their_poles_on_the_device() {
     let o = Options { max_steps: 520, ..Options::new(0.002) };
     let cpu = s_parameters(&m, &o, &freqs).unwrap();
     let double = on_model(&m, &freqs, Backend::Cpu, Precision::Double, &o);
-    let worst = (0..2).map(|i| (double.s11[i] - cpu.s11[i]).norm().max((double.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
+    let worst = (0..2).map(|i| (double.s11()[i] - cpu.s11()[i]).norm().max((double.s21()[i] - cpu.s21()[i]).norm())).fold(0.0, f64::max);
     assert!(worst < 1e-9, "{worst:e}");
-    assert!(cpu.s21.iter().all(|s| s.norm() > 0.1), "{cpu:?}");
+    assert!(cpu.s21().iter().all(|s| s.norm() > 0.1), "{cpu:?}");
 }
 
 /// Every loss at once: a lossy dielectric (a conductivity), a magnetically lossy ferrite and
@@ -131,7 +131,7 @@ fn lossy_gap(precision: Precision) -> (f64, TdResult) {
     let o = short();
     let cpu = s_parameters(&m, &o, &freqs).unwrap();
     let r = on_model(&m, &freqs, Backend::Cpu, precision, &o);
-    let gap = (0..2).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
+    let gap = (0..2).map(|i| (r.s11()[i] - cpu.s11()[i]).norm().max((r.s21()[i] - cpu.s21()[i]).norm())).fold(0.0, f64::max);
     (gap, cpu)
 }
 
@@ -139,7 +139,7 @@ fn lossy_gap(precision: Precision) -> (f64, TdResult) {
 fn losses_and_lossy_walls_on_the_device_match_the_threads() {
     let (gap, cpu) = lossy_gap(Precision::Double);
     assert!(gap < 1e-9, "{gap:e}");
-    assert!(cpu.s21.iter().all(|s| s.norm() > 0.05), "{cpu:?}");
+    assert!(cpu.s21().iter().all(|s| s.norm() > 0.05), "{cpu:?}");
 }
 
 #[test]
@@ -183,7 +183,7 @@ fn cuda_matches_the_threads() {
     let cpu = s_parameters(&m, &Options::new(0.0015), &freqs).unwrap();
     for precision in Precision::ALL {
         let r = on_model(&m, &freqs, Backend::Cuda, precision, &Options::new(0.0015));
-        let worst = (0..3).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
+        let worst = (0..3).map(|i| (r.s11()[i] - cpu.s11()[i]).norm().max((r.s21()[i] - cpu.s21()[i]).norm())).fold(0.0, f64::max);
         assert!(worst < if precision == Precision::Double { 1e-9 } else { 1e-4 }, "{precision}: {worst:e}");
     }
     // Every loss to the end.
@@ -191,7 +191,7 @@ fn cuda_matches_the_threads() {
     let cpu = s_parameters(&m, &Options::new(0.0015), &freqs).unwrap();
     for precision in Precision::ALL {
         let r = on_model(&m, &freqs, Backend::Cuda, precision, &Options::new(0.0015));
-        let worst = (0..3).map(|i| (r.s11[i] - cpu.s11[i]).norm().max((r.s21[i] - cpu.s21[i]).norm())).fold(0.0, f64::max);
+        let worst = (0..3).map(|i| (r.s11()[i] - cpu.s11()[i]).norm().max((r.s21()[i] - cpu.s21()[i]).norm())).fold(0.0, f64::max);
         assert!(worst < if precision == Precision::Double { 1e-9 } else { 1e-4 }, "lossy {precision}: {worst:e}");
     }
 }

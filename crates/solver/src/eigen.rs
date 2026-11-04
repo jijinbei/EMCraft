@@ -407,6 +407,10 @@ pub fn eigenmodes(model: &Model, order: Order, count: usize, near: f64) -> Resul
     if model.periodic.is_some() {
         return Err(invalid("eigenmodes", "a periodic cell's eigenmodes depend on the phase across it: use solve.dispersion"));
     }
+    if !model.elements.is_empty() {
+        // Y(ω) makes the eigenproblem nonlinear in ω.
+        return Err(invalid("eigenmodes", "not supported yet: lumped elements in an eigenmode analysis (their admittance depends on frequency)"));
+    }
     let driven = Driven::cavity(model, order)?;
     if driven.is_dispersive() {
         // ε(ω) makes the eigenproblem nonlinear in ω.

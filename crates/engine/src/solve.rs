@@ -294,26 +294,68 @@ pub fn time_domain(s: &mut Session, p: &Params) -> Result<Value> {
     let gpu = backend.map(|backend| Gpu { backend, precision });
     if s.model.open.is_some() {
         let mut reply = crate::open::solve_time_domain_open(s, &freqs, cell, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::OpenStepper))?;
+        // A plane wave's split runs on the CPU's threads.
+        let (device, gpu) = if crate::open::plane_wave(s).is_some() { (Device::Cpu, None) } else { (device, gpu) };
         reply["device"] = json!(device.id());
         reply["precision"] = json!(gpu.map_or("double", |g| g.precision.id()));
         return Ok(reply);
     }
-    let r =
-        emcraft_fdtd::s_parameters_with(&s.model, &emcraft_fdtd::Options::new(cell), &freqs, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::Stepper))?;
+    let options = emcraft_fdtd::Options::new(cell);
+    // A solid's ports on its faces (the guide's own sections otherwise): on the CPU's threads.
+    let solid = s.model.waveguide.is_none() && s.model.solid.is_some();
+    let r = if solid {
+        let inputs = excited(s, p)?;
+        emcraft_fdtd::s_parameters_solid(&s.model, &options, &freqs, &inputs)?
+    } else {
+        if p.has("excite") {
+            return Err(p.error("excite", "a guide's run excites port 1 (a solid's ports take `excite`)"));
+        }
+        emcraft_fdtd::s_parameters_with(&s.model, &options, &freqs, gpu.as_ref().map(|g| g as &dyn emcraft_fdtd::Stepper))?
+    };
+    let names: Vec<&str> = s.model.ports.iter().map(|p| p.name.as_str()).collect();
     let points: Vec<Value> = r
         .frequencies
         .iter()
-        .zip(r.s11.iter().zip(&r.s21))
-        .map(|(f, (a, b))| json!({"frequency": s.show_frequency(*f), "s11": complex(*a), "s21": complex(*b)}))
+        .enumerate()
+        .map(|(k, f)| {
+            let mut point = json!({"frequency": s.show_frequency(*f)});
+            for (c, &q) in r.inputs.iter().enumerate() {
+                for p in 0..r.ports {
+                    if let Some(x) = r.column(c, p).get(k) {
+                        point[format!("s{}{}", p + 1, q + 1)] = complex(*x);
+                    }
+                }
+            }
+            point
+        })
         .collect();
-    let precision = gpu.map_or("double", |g| g.precision.id());
-    let mut reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device.id(), "precision": precision, "frequency_unit": s.display.frequency.symbol(), "points": points});
+    let (device, precision) = if solid { (Device::Cpu, "double") } else { (device, gpu.map_or("double", |g| g.precision.id())) };
+    let excited: Vec<&str> = r.inputs.iter().filter_map(|&q| names.get(q).copied()).collect();
+    let mut reply = json!({"cells": r.cells, "steps": r.steps, "reference_steps": r.reference_steps, "converged": r.converged, "device": device.id(), "precision": precision, "frequency_unit": s.display.frequency.symbol(), "ports": names, "excited": excited, "points": points});
     // Where the time domain matches the loss tangents (as conductivities), when there are any.
     if s.model.materials.iter().any(|m| m.loss_tangent.get() != 0.0 || m.is_magnetically_lossy()) {
         reply["loss_reference"] = json!(s.show_frequency(r.loss_reference));
     }
     s.results.time_domain = Some(Arc::new(r));
     Ok(reply)
+}
+
+/// The ports `excite` names (indices into the model's), the first when it is left out.
+fn excited(s: &Session, p: &Params) -> Result<Vec<usize>> {
+    let Some(list) = p.list("excite", emcraft_fdtd::MAX_EXCITED).optional()? else { return Ok(vec![0]) };
+    let mut out = Vec::with_capacity(list.len());
+    for v in list {
+        let name = v.as_str().ok_or_else(|| p.error("excite", "lists port names"))?;
+        let q = s.model.ports.iter().position(|x| x.name == name).ok_or_else(|| p.error("excite", format!("names no port `{name}`")))?;
+        if out.contains(&q) {
+            return Err(p.error("excite", format!("names port `{name}` twice")));
+        }
+        out.push(q);
+    }
+    if out.is_empty() {
+        return Err(p.error("excite", "names no port"));
+    }
+    Ok(out)
 }
 
 pub fn devices(_: &mut Session, _: &Params) -> Result<Value> {
