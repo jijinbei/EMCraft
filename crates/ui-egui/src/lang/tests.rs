@@ -490,8 +490,10 @@ fn tour() -> Record {
         call(&mut h, "engine.execute", json!({"command":"pcb.inspect","params":{"net":"DATA"}}));
         h.frames(3);
     }
-    call(&mut h, "ui.set", json!({"view":"home"}));
+    // The kinds of analysis, listed by the step bar's switch.
+    call(&mut h, "ui.click", json!({"handle":"step:intent"}));
     h.frames(2);
+    call(&mut h, "ui.click", json!({"handle":"step:intent"}));
     call(&mut h, "ui.set", json!({"view":"pcb"}));
     for stage in emcraft_engine::pcb::Stage::ALL {
         call(&mut h, "engine.execute", json!({"command":"view.pcb","params":{"stage":stage.id()}}));
@@ -601,7 +603,7 @@ fn tour() -> Record {
     // The steps' fields refused, and Run refused.
     call(&mut h, "engine.execute", json!({"command": "file.new"}));
     call(&mut h, "engine.script", json!({"commands": json(MODELS[1].0)}));
-    h.app.workflow.step = Some(Step::Intent);
+    h.app.workflow.step = Some(Step::Setup);
     h.frames(1);
     call(&mut h, "engine.execute", json!({"command":"project.analysis","params":{"kind":"radiation"}}));
     let f = &mut h.app.workflow.fields;

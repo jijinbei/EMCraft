@@ -25,7 +25,7 @@
   {"click": "template:open"},
   {"until": {"busy": false}},
   {"frames": 3},
-  {"expect": {"status": "サンプル highpass を開きました", "inspect": {"home": false, "project.name": "highpass"}, "handles": ["tab:MODEL", "tab:PORTS & SOURCES", "step:mesh", "fold:Geometry", "toolbar:geometry.waveguide", "view:model"]}},
+  {"expect": {"status": "サンプル highpass を開きました", "inspect": {"home": false, "project.name": "highpass"}, "handles": ["tab:MODEL", "tab:PORTS & SOURCES", "step:mesh", "fold:Geometry", "toolbar:geometry.waveguide"]}},
   {"click": "toolbar:geometry.waveguide"},
   {"frames": 3},
   {"expect": {"dialog": "geometry.waveguide", "handles": ["dialog:ok", "dialog:field:width"]}},

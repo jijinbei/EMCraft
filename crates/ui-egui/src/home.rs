@@ -21,6 +21,9 @@ use crate::settings::Section;
 use crate::theme::Tokens;
 use crate::{Action, Actions, EmcraftApp, Hint, Picture, Style, UiExt, scenario};
 
+/// The narrowest card of a kind of analysis, in points.
+const KIND_MIN: f32 = 150.0;
+
 /// A card's picture, in points.
 const THUMB: [f32; 2] = [240.0, 150.0];
 
@@ -287,15 +290,26 @@ fn recent(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
 /// chosen marked; a click chooses it (again: lets it go, every template shown).
 fn purposes(app: &EmcraftApp, ui: &mut egui::Ui, out: &mut Actions) {
     heading(ui, "Analysis");
-    ui.horizontal_wrapped(|ui| {
-        for kind in crate::steps::Solver::ALL {
-            let on = app.home.purpose == Some(kind);
-            let look = crate::kinds::Look { large: false, on, auto: false, enabled: true };
-            if crate::kinds::tile(ui, kind, vec2(150.0, 76.0), look, Handle::Purpose(kind)).clicked() {
-                out.push(Action::Purpose((!on).then_some(kind)));
+    // Each kind as a card with a picture of what it gives, as many to a row as fit.
+    let kinds = crate::steps::Solver::ALL;
+    let gap = 12.0;
+    let w = ui.available_width();
+    let per_row = (((w + gap) / (KIND_MIN + gap)).floor() as usize).clamp(1, kinds.len());
+    let card_w = ((w - (per_row - 1) as f32 * gap) / per_row as f32).clamp(KIND_MIN, 240.0);
+    let size = vec2(card_w, (card_w * 0.5).clamp(70.0, 110.0) + 74.0);
+    for row in kinds.chunks(per_row) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for &kind in row {
+                let on = app.home.purpose == Some(kind);
+                let look = crate::kinds::Look { large: true, on, auto: false, enabled: true };
+                if crate::kinds::tile(ui, kind, size, look, Handle::Purpose(kind)).clicked() {
+                    out.push(Action::Purpose((!on).then_some(kind)));
+                }
             }
-        }
-    });
+        });
+        ui.add_space(gap);
+    }
 }
 
 fn samples(app: &EmcraftApp, thumbs: &mut Thumbs, ui: &mut egui::Ui, out: &mut Actions) {

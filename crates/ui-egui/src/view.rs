@@ -8,9 +8,6 @@ emcraft_macros::named_enum! {
     /// handles) and its tab's label.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum View {
-        /// The project's home: the kind of analysis, the band, the units, the project at a
-        /// glance (step 0).
-        Home = "home" => "Home",
         /// The model in 3D.
         Model = "model" => "Model 3D",
         Pcb = "pcb" => "PCB route",
@@ -34,7 +31,7 @@ impl View {
     /// themselves, with a button that makes it).
     fn empty(self) -> Option<&'static str> {
         match self {
-            View::Home | View::Model | View::Pcb | View::PortModes | View::Compare => None,
+            View::Model | View::Pcb | View::PortModes | View::Compare => None,
             View::SParameters => Some("No S-parameters yet: SIMULATE › Frequency sweep."),
             View::Tdr => Some("No sweep yet: SIMULATE › Frequency sweep (a harmonic one, f = k Δf, for low pass)."),
             View::Field => Some("No fields yet: solve a sweep, eigenmodes or an open problem first."),
@@ -61,7 +58,6 @@ impl View {
     pub fn available(self, app: &EmcraftApp) -> bool {
         let r = app.session.results();
         match self {
-            View::Home => true,
             View::Model => app.session.model().analysis() != crate::steps::Solver::Pcb,
             // The PCB diagnosis' own stages; a board solved by finite elements is the model's.
             View::Pcb => app.session.model().analysis() == crate::steps::Solver::Pcb,
@@ -81,7 +77,7 @@ impl View {
     /// Whether the view shows results (which go out of date when the model changes after its
     /// run), not the model.
     pub fn is_result(self) -> bool {
-        !matches!(self, View::Home | View::Model | View::Pcb)
+        !matches!(self, View::Model | View::Pcb)
     }
 
     /// What the card says instead of the view while it has nothing to show, for the views that
@@ -102,6 +98,6 @@ mod tests {
         }
         assert_eq!(View::Tdr.label(), "TDR");
         assert_eq!(View::PortModes.id(), "port_modes");
-        assert_eq!(View::COUNT, 12);
+        assert_eq!(View::COUNT, 11);
     }
 }

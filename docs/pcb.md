@@ -1,6 +1,6 @@
 # PCB route diagnostics
 
-On the start page or the project's Home, choose **PCB signal and return path**. This analysis
+On the start page or with the step bar's switch, choose **PCB signal and return path**. This analysis
 uses routed board data and opens the PCB workspace; FEM meshing, modal-port setup
 and compute-device selection are not part of this workflow. Imported boards infer the PCB
 analysis automatically. `project.analysis {"kind":"pcb"}` declares it in scripts.
@@ -21,7 +21,7 @@ not extend its physics. The supported route screening uses a top view plus stack
 without calculation. Stages are `board`, `net`, `settings`, `inspect`, `results`; `pcb.inspect`
 performs the diagnosis and advances to Results. All entry points share these engine commands.
 
-Three templates are available from the start page, Home and File → Samples:
+Three templates are available from the start page and File → Samples:
 
 | Template | Purpose |
 |---|---|
