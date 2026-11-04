@@ -1,0 +1,16 @@
+[
+  {"note": "Step 4 makes the route a finite-element model and turns the job to S-parameters, opened on the mesh step, nothing meshed or solved yet (the heavy pcb_fem goes on to mesh and run)"},
+  {"call": "ui.set", "params": {"language": "ja"}},
+  {"call": "engine.execute", "params": {"command": "pcb.sample", "params": {"split": false, "neighbour": false, "length": 6}}},
+  {"call": "engine.execute", "params": {"command": "view.pcb", "params": {"net": "DATA", "stage": "inspect"}}},
+  {"call": "ui.set", "params": {"view": "pcb"}},
+  {"frames": 2},
+  {"expect": {"handles": ["choice:pcb_control:fem"]}},
+  {"shot": "pcb-fem-step"},
+  {"click": "choice:pcb_control:fem"},
+  {"until": {"busy": false}},
+  {"frames": 2},
+  {"expect": {"view": "model", "inspect": {"workflow.step": "mesh", "workflow.analysis.kind": "frequency", "workflow.steps.geometry": "done", "workflow.steps.excitation": "done", "workflow.steps.boundaries": "done", "model.results": null}}},
+  {"expect": {"inspect": {"model.mesh": null, "dialog": null}}},
+  {"shot": "pcb-fem-mesh-step"}
+]

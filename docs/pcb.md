@@ -157,15 +157,17 @@ view offers what its stage needs, nothing more:
   a 0.05 mm grid); a right click or Escape ends the line, and with none, drawing.
 - **2 Select route** — a click on a trace makes it the route (orange).
 - **3 Set conditions** — done once the reference net, impedance and maximum frequency read.
-- **5 Review results** — the report beside the board; once the route went through the finite
-  elements (step 4), the view shows its solved field.
+- **5 Review results** — the report beside the board.
 
-In step 4, **Solve with FEM** runs the route through the finite elements in one go: its region
-(`pcb.region` round the net), a port at each of its two ends (`pcb.port`, the conditions'
-impedance), the mesh (a tenth of the wavelength in the substrate at the maximum frequency, at
-most an eighth of the route) and a fast sweep of 21 frequencies up to the maximum (first-order
-elements; a few solved in full, the rest in their reduced basis). The S-parameters, TDR and fields then open as views; the field view starts on the
-plane halfway up the substrate, its vertical E.
+In step 4, **Make the FEM model** turns the route into a finite-element model and the job into
+S-parameters: its region (`pcb.region` round the net), a port at each of its two ends
+(`pcb.port`, the conditions' impedance), the band up to the maximum frequency
+(`project.frequency`) and `project.analysis` `frequency`. The S-parameter steps open on the
+mesh (step 5), the board's copper and substrates drawn in the region: the mesh's dialog starts
+on the route's size (a tenth of the wavelength in the substrate at the band's top, at most an
+eighth of the route), its statistics and estimate show before anything is solved, Setup (step 6)
+chooses the frequencies and the order, Run (step 7) solves and Results (step 8) shows the
+S-parameters, TDR and fields. The kind of analysis's switch goes back to the PCB diagnosis.
 
 ## Editing the board
 
@@ -264,5 +266,5 @@ few elements thick rather than a quarter wavelength.
 `pcb.inspect` reports nearby parallel routes as geometry findings (`coupling_pairs`: both
 segment ids, endpoints, layer, clearance and overlap in display units, tagged `geometry_only`;
 bounded to one million candidates and 256 sections). No coupling is calculated and none is
-drawn: the fields come from **Solve with FEM**. In `pcb-parallel` the routes' spacing is the
+drawn: the fields come from the FEM model (step 4). In `pcb-parallel` the routes' spacing is the
 project variable `gap` (default 0.25 mm).

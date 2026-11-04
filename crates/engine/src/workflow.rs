@@ -461,7 +461,9 @@ fn boundaries(s: &Session) -> StepState {
     } else if !open && m.analysis == Some(Analysis::Radiation) {
         st.note(Status::Todo, "radiation wants the open boundary (a perfectly matched layer) around the model", Some("model.open"));
     }
-    if !open && (!m.sources.is_empty() || !m.lumped.is_empty()) {
+    // An antenna's sources radiate into a closed box's walls; S-parameters between lumped ports
+    // in a shielded box (a board's region) are what the box is for.
+    if !open && m.analysis() != Analysis::Frequency && (!m.sources.is_empty() || !m.lumped.is_empty()) {
         st.note(
             Status::Warning,
             "sources in a closed box: they radiate into its walls; line it with the open boundary for an antenna",

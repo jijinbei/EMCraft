@@ -226,6 +226,24 @@ fn the_four_layer_example_board_meshes_and_its_route_crosses_layers() {
     emcraft_mesh::check_tetrahedra(s.model().mesh.as_ref().unwrap()).unwrap();
 }
 
+/// Lumped ports in a board's shielded region are what an S-parameter job's box is for: no
+/// warning to open it; an antenna's (radiation) still gets one.
+#[test]
+fn lumped_ports_in_a_shielded_board_are_no_warning_for_s_parameters() {
+    let mut s = Session::new();
+    s.execute("pcb.sample", &json!({"split": false, "neighbour": false, "length": 6})).unwrap();
+    s.execute("pcb.region", &json!({"net": "DATA"})).unwrap();
+    s.execute("pcb.port", &json!({"name": "1", "segment": "signal:0", "end": "start"})).unwrap();
+    let boundaries = |s: &mut Session| {
+        let st = s.execute("project.status", &json!({})).unwrap();
+        st["steps"].as_array().unwrap().iter().find(|x| x["step"] == "boundaries").cloned().unwrap()
+    };
+    s.execute("project.analysis", &json!({"kind": "frequency"})).unwrap();
+    assert_eq!(boundaries(&mut s)["status"], "done");
+    s.execute("project.analysis", &json!({"kind": "radiation"})).unwrap();
+    assert!(boundaries(&mut s)["messages"].as_array().unwrap().iter().any(|m| m["command"] == "model.open"));
+}
+
 /// The example board's planes cover their layers but for the slot and the clearance round the
 /// via: their outlines cut in to the clearance and back out the same way (a closing edge from the
 /// clearance to the corner took a triangle out of each plane, even–odd).

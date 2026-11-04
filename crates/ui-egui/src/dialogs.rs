@@ -510,7 +510,10 @@ pub fn initial(command: &str, s: &Session) -> Value {
         "source.dipole" => json!({"at": [0, 0, 0], "direction": [0, 0, 1], "length": 1, "current": 1}),
         "source.plane_wave" => json!({"direction": [0, 0, 1], "polarization": [1, 0, 0]}),
         "model.open" => json!({"thickness": 10}),
-        // The mesh: with a band, it follows it (elements per wavelength at its top).
+        // The mesh: a board's route made a model, the route's own size (a tenth of the wavelength
+        // in its substrate at the band's top, at most an eighth of the route); with a band, it
+        // follows it (elements per wavelength at its top).
+        "mesh.generate" if route_size(s).is_some() => json!({"size": route_size(s).unwrap_or(1.0)}),
         "mesh.generate" if band.is_some() => json!({"per_wavelength": 10, "curved": true}),
         "mesh.generate" => json!({"size": 3, "curved": true}),
         "mesh.adapt" if band.is_some() => json!({"per_wavelength": 6, "passes": 6, "tolerance": 0.02, "fraction": 0.3}),
@@ -641,6 +644,17 @@ pub fn unit(q: Quantity, s: &Session) -> &'static str {
         Quantity::Length => s.display().length.symbol(),
         Quantity::Frequency => s.display().frequency.symbol(),
     }
+}
+
+/// The element size (display units) for a board's route made a model: the board's region, the
+/// route chosen and the band's top.
+fn route_size(s: &Session) -> Option<f64> {
+    let m = s.model();
+    let board = m.pcb.as_ref().filter(|b| b.region.is_some())?;
+    let net = s.views().pcb_net.as_deref()?;
+    let stop = m.band?.stop.get();
+    let size = emcraft_engine::pcb_fem::route_size(board, net, stop);
+    (size.is_finite() && size > 0.0).then(|| s.display().length.from_si(size))
 }
 
 #[cfg(test)]

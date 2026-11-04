@@ -171,8 +171,56 @@ pub(super) fn build(board: &Board, route: &str, reference: &str, out: &mut Built
 
 /// Each layer's copper at its height, tagged by net: the planar mesher's union, or the traces
 /// one by one when it refuses the board.
+/// A board's region made the model, before it is meshed: its substrates and copper where the
+/// mesh will put them (the region's lower-left corner the origin, the board's plane the model's
+/// x–z, the lowest layer `below` over the floor), unstretched.
+pub(super) fn in_model(board: &Board, out: &mut Built) {
+    let Some(region) = board.region else { return };
+    let mut b = board.clone();
+    let shift = |p: &mut [f64; 2]| {
+        p[0] -= region.lo[0];
+        p[1] -= region.lo[1];
+    };
+    for g in &mut b.segments {
+        shift(&mut g.start);
+        shift(&mut g.end);
+    }
+    for c in &mut b.copper {
+        c.polygon.iter_mut().for_each(shift);
+    }
+    for v in &mut b.vias {
+        shift(&mut v.at);
+    }
+    let heights = b.heights();
+    let z = |l: usize| region.below + heights.get(l).copied().unwrap_or(0.0);
+    let (w, d) = (region.hi[0] - region.lo[0], region.hi[1] - region.lo[1]);
+    let mut up: Vec<usize> = (0..b.layers.len()).collect();
+    up.sort_by(|&p, &q| heights[p].total_cmp(&heights[q]));
+    for pair in up.windows(2) {
+        if b.layers[pair[1]].eps_below > 1.0 {
+            let inset = 0.02 * (z(pair[1]) - z(pair[0]));
+            out.scene.cuboid(at(0.0, 0.0, z(pair[0]) + inset), at(w, d, z(pair[1]) - inset), sc().materials[0], 60);
+        }
+    }
+    let nets = nets(&b);
+    let strip = sc().strip;
+    copper_in(&b, &nets, &z, &|_| strip, ([0.0, 0.0], [w, d]), out);
+}
+
 fn copper(board: &Board, nets: &[String], z: &dyn Fn(usize) -> f64, colour: &dyn Fn(&str) -> Rgb, out: &mut Built) {
     let Some((lo, hi)) = board.bounds() else { return };
+    copper_in(board, nets, z, colour, (lo, hi), out);
+}
+
+/// [`copper`] cut to the box `lo`..`hi` (m, the board's plane).
+fn copper_in(
+    board: &Board,
+    nets: &[String],
+    z: &dyn Fn(usize) -> f64,
+    colour: &dyn Fn(&str) -> Rgb,
+    (lo, hi): ([f64; 2], [f64; 2]),
+    out: &mut Built,
+) {
     let net = |n: &str| nets.binary_search_by(|x| x.as_str().cmp(n)).unwrap_or(0) as u32;
     let layer = |n: &str| board.layers.iter().position(|l| l.name == n);
     let mut outlines = Vec::new();

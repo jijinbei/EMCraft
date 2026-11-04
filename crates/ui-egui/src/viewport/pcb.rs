@@ -105,11 +105,9 @@ pub(super) fn show(app: &EmcraftApp, st: &mut Parts, ui: &mut egui::Ui, out: &mu
         return;
     }
     // What the view offers is the stage's: drawing while the board is prepared, picking a
-    // route while one is chosen, and in the results the solved field (once the route went
-    // through the finite elements), else the board.
+    // route while one is chosen. Fields are the S-parameter steps' (step 4 makes the model).
     let stage = emcraft_engine::pcb::stage(&app.session);
-    let overlay = if stage == Stage::Results && View::Field.available(app) { crate::scene3d::Overlay::Field } else { crate::scene3d::Overlay::Board };
-    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, overlay, out);
+    crate::view3d::show(app, &mut st.view3d, &mut st.field, ui, view, crate::scene3d::Overlay::Board, out);
     scenario::publish_target(Handle::Choice("pcb_control", "board3d"), view);
     if stage != Stage::Board {
         st.views.pcb.drawing = None;
@@ -397,26 +395,21 @@ fn segments(app: &EmcraftApp, state: &mut crate::state::PcbUi, ui: &mut egui::Ui
     });
 }
 
-/// The route through the finite elements: its region, a 50 Ω port at each end, the mesh and a
-/// sweep up to the maximum frequency, one after another; their results open in the S-parameter,
-/// TDR and field views.
+/// The route made a finite-element model: its region and a port at each end (the conditions'
+/// impedance), the band up to the maximum frequency, and the job turned to S-parameters — the
+/// mesh, the setup and the run are then the S-parameter steps', opened on the mesh.
 fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &str, out: &mut Actions) {
     let Some(board) = app.session.model().pcb.as_ref() else { return };
     ui.add_space(8.);
-    ui.heading(tr("3D field solution (FEM)"));
     let ends = emcraft_engine::pcb_fem::route_ends(board, net);
-    let unit = app.session.display().frequency;
-    let stop = state.stop.parse::<f64>().ok().filter(|f| *f > 0.0).map(|f| unit.to_si(f));
+    let stop = state.stop.parse::<f64>().ok().filter(|f| f.is_finite() && *f > 0.0);
     let ready = ends.len() == 2 && stop.is_some();
-    let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr("Solve with FEM")));
+    let r = ui.add_enabled(ready && !app.busy(), egui::Button::new(tr("Make the FEM model")));
     scenario::publish_target(Handle::Choice("pcb_control", "fem"), r.rect);
     if ends.len() != 2 {
         ui_kit::caption(ui, "The route needs exactly two free ends for its ports.");
     }
-    if let (true, Some(stop)) = (r.clicked(), stop) {
-        let length = app.session.display().length;
-        let size = length.from_si(emcraft_engine::pcb_fem::route_size(board, net, stop));
-        let f = unit.from_si(stop);
+    if let (true, Some(f)) = (r.clicked(), stop) {
         let mut list = vec![("pcb.region".to_owned(), json!({"net": net}))];
         for (name, (id, end)) in ["1", "2"].into_iter().zip(&ends) {
             list.push((
@@ -424,9 +417,10 @@ fn fem(app: &EmcraftApp, state: &crate::state::PcbUi, ui: &mut egui::Ui, net: &s
                 json!({"name": name, "segment": id, "end": end.id(), "impedance": state.reference.parse::<f64>().unwrap_or(50.)}),
             ));
         }
-        list.push(("mesh.generate".into(), json!({"size": size})));
-        list.push(("solve.frequency".into(), json!({"start": f / 21., "stop": f, "points": 21, "order": 1})));
+        list.push(("project.frequency".into(), json!({"start": f / 20., "stop": f})));
+        list.push(("project.analysis".into(), json!({"kind": "frequency"})));
         out.push(Action::RunAll(list));
+        out.push(Action::OpenStep(Some(crate::steps::Step::Mesh)));
     }
 }
 

@@ -253,7 +253,13 @@ pub fn build_with(session: &Session, overlay: Overlay, fields: &[FieldLayer], se
                 }
             }),
         ),
-        None => geometry::from_geometry(m, overlay, &mut out),
+        None => {
+            geometry::from_geometry(m, overlay, &mut out);
+            // A board's region before it is meshed: its copper and substrates in place.
+            if let Some(b) = &m.pcb {
+                board::in_model(b, &mut out);
+            }
+        }
     }
     present_materials(session, selected, &mut out);
     filter_geometry(session, &mut out);

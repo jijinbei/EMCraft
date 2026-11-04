@@ -717,6 +717,11 @@ fn scenario_pcb_templates() {
 }
 
 #[test]
+fn scenario_pcb_fem_model() {
+    scenario("pcb_fem_model");
+}
+
+#[test]
 #[ignore = "heavy: cargo xtask test --heavy (CI heavy job)"]
 fn scenario_pcb_fem() {
     scenario("pcb_fem");
